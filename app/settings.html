@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Jellystructure — Settings</title>
+<link rel="stylesheet" href="wf.css">
+<link rel="stylesheet" href="app.css">
+</head>
+<body class="wf-body app-body">
+
+<main class="app-main2 wide" data-page="settings" data-screen-label="Settings">
+  <div class="pagebar">
+    <h1>Settings</h1>
+    <span class="badge ok">saved · 14:03</span>
+    <span class="spacer"></span>
+    <span class="btn sm">Test connections</span>
+    <span class="btn primary">Save</span>
+  </div>
+  <p class="page-sub">Everything here lives in <span class="mono">config.toml</span> on the mounted config volume, so it survives container restarts. Changes save live.</p>
+
+  <div class="row" style="align-items:flex-start;">
+    <!-- section nav -->
+    <div class="card flat" style="width:172px;flex:none;padding:8px;">
+      <div class="navitem active" style="border-radius:var(--radius-s);">Connections</div>
+      <div class="navitem">Library paths</div>
+      <div class="navitem">Behaviour</div>
+      <a class="navitem" href="cascade.html" style="text-decoration:none;color:var(--ink);">Cascade →</a>
+      <div class="navitem">Advanced</div>
+    </div>
+
+    <div class="col fill">
+      <div class="card">
+        <h3 style="font-size:1.05rem;margin:0 0 4px;">Connections</h3>
+        <div class="field"><label>TMDB API key (v3)</label><div class="input">••••••••••••••3f9a <span class="badge ok" style="margin-left:auto;">valid ✓</span></div><span class="hint">Fetches metadata, artwork and original_language.</span></div>
+        <div class="row">
+          <div class="field fill"><label>Jellyfin URL</label><div class="input">http://jellyfin:8096</div><span class="hint">Same Docker network → no reverse proxy needed.</span></div>
+          <div class="field fill"><label>Jellyfin API token</label><div class="input">••••••••••••••a1c <span class="badge ok" style="margin-left:auto;">204 ✓</span></div><span class="hint">Used to POST /Items/{id}/Refresh.</span></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3 style="font-size:1.05rem;margin:0 0 4px;">Library paths</h3>
+        <div class="field"><label>Movies directory</label><div class="input">/media/movies</div></div>
+        <div class="field"><label>TV directory</label><div class="input">/media/tv</div></div>
+        <div class="pill-row"><span class="btn sm">＋ add path</span></div>
+        <div class="row center box flat" style="margin-top:10px;background:var(--ok-soft);border-color:var(--ok);"><span class="badge ok">mounted rw</span><span class="tiny">Read/write OK · POSIX uid/gid 1000:1000 preserved.</span></div>
+      </div>
+
+      <div class="card">
+        <h3 style="font-size:1.05rem;margin:0 0 4px;">Behaviour</h3>
+        <div class="row center" style="padding:6px 0;"><div><b>Overwrite existing NFO</b><div class="tiny muted">Replace local NFO on re-scan (locked fields kept).</div></div><span class="spacer"></span><span class="toggle"></span></div>
+        <hr class="dash" style="margin:6px 0;">
+        <div class="row center" style="padding:6px 0;"><div><b>Download artwork</b><div class="tiny muted">Fetch poster / backdrop / logo from TMDB.</div></div><span class="spacer"></span><span class="toggle on"></span></div>
+        <hr class="dash" style="margin:6px 0;">
+        <div class="row center" style="padding:6px 0;"><div><b>Auto-tell Jellyfin to refresh</b><div class="tiny muted">POST refresh after each batch completes.</div></div><span class="spacer"></span><span class="toggle on"></span></div>
+        <hr class="dash" style="margin:6px 0;">
+        <div class="row center" style="padding:6px 0;"><div><b>Watch folders for new files</b><div class="tiny muted">Process new media automatically as it appears.</div></div><span class="spacer"></span><span class="toggle on"></span></div>
+      </div>
+    </div>
+
+    <!-- live toml -->
+    <div class="card" style="width:280px;flex:none;">
+      <h4 style="margin:0 0 8px;">Live config.toml</h4>
+      <div class="log" style="max-height:none;">
+        <div class="muted">[api_keys]</div>
+        <div>tmdb_v3_key = "•••3f9a"</div>
+        <div>jellyfin_url = "http://jellyfin:8096"</div>
+        <div>jellyfin_token = "•••a1c"</div>
+        <div>&nbsp;</div>
+        <div class="muted">[paths]</div>
+        <div>movies_dir = "/media/movies"</div>
+        <div>tv_dir = "/media/tv"</div>
+        <div>&nbsp;</div>
+        <div class="muted">[behavior]</div>
+        <div>overwrite_nfo = <span class="badc">false</span></div>
+        <div>fetch_images = <span class="okc">true</span></div>
+        <div>tell_jellyfin = <span class="okc">true</span></div>
+        <div>watch_folders = <span class="okc">true</span></div>
+      </div>
+      <div class="tiny muted center-x" style="margin-top:8px;">updates as you type</div>
+    </div>
+  </div>
+</main>
+
+<script src="app-shell.js"></script>
+</body>
+</html>
