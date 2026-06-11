@@ -36,12 +36,15 @@ class ConfigStore(private val filePath: String) {
     }
 
     private fun persist() {
+        val tmp = "$filePath.tmp"
         runCatching {
-            val path = Path(filePath)
-            val sink = SystemFileSystem.sink(path).buffered()
-            sink.writeString(Toml.encodeToString(AppConfig.serializer(), _config))
+            val content = Toml.encodeToString(AppConfig.serializer(), _config)
+            val sink = SystemFileSystem.sink(Path(tmp)).buffered()
+            sink.writeString(content)
             sink.flush()
             sink.close()
+            // Atomic rename — POSIX guarantees this is atomic on the same filesystem
+            platform.posix.rename(tmp, filePath)
         }.onFailure {
             println("[ERROR] Failed to persist config: ${it.message}")
         }

@@ -1,3 +1,5 @@
+@file:OptIn(org.jetbrains.kotlin.gradle.ExperimentalWasmDsl::class)
+
 plugins {
     alias(libs.plugins.kotlin.multiplatform)
     alias(libs.plugins.kotlin.serialization)
@@ -13,6 +15,15 @@ kotlin {
         }
     }
 
+    wasmJs {
+        browser {
+            webpackTask {
+                mainOutputFileName = "jellystructure"
+            }
+        }
+        binaries.executable()
+    }
+
     sourceSets {
         val linuxX64Main by getting {
             dependencies {
@@ -22,6 +33,9 @@ kotlin {
                 implementation(libs.ktor.server.content.negotiation)
                 implementation(libs.ktor.server.cors)
                 implementation(libs.ktor.serialization.kotlinx.json)
+                implementation(libs.ktor.client.core)
+                implementation(libs.ktor.client.cio)
+                implementation(libs.ktor.client.content.negotiation)
                 implementation(libs.kotlinx.coroutines.core)
                 implementation(libs.kotlinx.serialization.json)
                 implementation(libs.kotlinx.io.core)
@@ -31,6 +45,17 @@ kotlin {
         val linuxX64Test by getting {
             dependencies {
                 implementation(kotlin("test"))
+            }
+        }
+        val wasmJsMain by getting {
+            dependencies {
+                implementation(libs.kotlinx.browser)
+                implementation(libs.ktor.client.core)
+                implementation(libs.ktor.client.js)
+                implementation(libs.ktor.client.content.negotiation)
+                implementation(libs.ktor.serialization.kotlinx.json)
+                implementation(libs.kotlinx.serialization.json)
+                implementation(libs.kotlinx.coroutines.core)
             }
         }
     }

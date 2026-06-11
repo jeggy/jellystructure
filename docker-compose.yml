@@ -8,6 +8,8 @@ services:
       - ${MEDIA_PATH:-./media}:/media:rw
     environment:
       CONFIG_FILE: /config/config.toml
+      SESSIONS_FILE: /config/sessions.json
+      FRONTEND_DIR: /app/frontend
       SERVER_PORT: 9505
     restart: unless-stopped
     networks:
