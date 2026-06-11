@@ -19,5 +19,5 @@ FROM debian:bookworm-slim
 WORKDIR /app
 COPY --from=builder /app/build/bin/linuxX64/releaseExecutable/jellystructure.kexe /app/jellystructure
 RUN chmod +x /app/jellystructure
-EXPOSE 8080
+EXPOSE 9505
 CMD ["/app/jellystructure"]

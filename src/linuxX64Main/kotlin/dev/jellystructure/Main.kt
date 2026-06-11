@@ -9,7 +9,7 @@ import platform.posix.getenv
 @OptIn(ExperimentalForeignApi::class)
 fun main() {
     val configFile = env("CONFIG_FILE", "/config/config.toml")
-    val port = env("SERVER_PORT", "8080").toIntOrNull() ?: 8080
+    val port = env("SERVER_PORT", "9505").toIntOrNull() ?: 9505
 
     val configStore = ConfigStore(configFile)
     configStore.load()
