@@ -1,0 +1,16 @@
+[api_keys]
+tmdb_v3_key = ""
+jellyfin_token = ""
+jellyfin_url = ""
+
+[paths]
+movies_dir = ""
+tv_dir = ""
+
+[language_rules]
+audio_cascade = ["en"]
+sub_cascade = ["en"]
+
+[behavior]
+overwrite_nfo = false
+fetch_images = true

@@ -1,0 +1,20 @@
+services:
+  jellystructure:
+    build: .
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./config:/config
+      - ${MEDIA_PATH:-./media}:/media:rw
+    environment:
+      CONFIG_FILE: /config/config.toml
+      SERVER_PORT: 8080
+    restart: unless-stopped
+    networks:
+      - jellystructure
+
+networks:
+  jellystructure:
+    driver: bridge
+    # Phase 4: to share this network with Jellyfin, add the jellystructure network
+    # to your Jellyfin docker-compose and set external: true here.
