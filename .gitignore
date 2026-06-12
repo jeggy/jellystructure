@@ -24,3 +24,7 @@ media/
 # OS
 .DS_Store
 *.log
+
+# Config
+config/*
+!config/config.example.toml

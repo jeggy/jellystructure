@@ -2,7 +2,7 @@ package dev.jellystructure.auth
 
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
-import io.ktor.client.engine.cio.CIO
+import io.ktor.client.engine.curl.Curl
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.request.get
 import io.ktor.client.request.header
@@ -19,7 +19,7 @@ private const val AUTH_HEADER =
     """MediaBrowser Client="Jellystructure", Device="Server", DeviceId="$DEVICE_ID", Version="0.1.0""""
 
 class JellyfinClient {
-    private val http = HttpClient(CIO) {
+    private val http = HttpClient(Curl) {
         install(ContentNegotiation) {
             json(Json { ignoreUnknownKeys = true })
         }
