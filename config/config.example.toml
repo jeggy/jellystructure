@@ -3,13 +3,28 @@ tmdb_v3_key = ""
 jellyfin_token = ""
 jellyfin_url = ""
 
-[paths]
-movies_dir = ""
-tv_dir = ""
-
 [language_rules]
 fallback_language = "en"
 
 [behavior]
 overwrite_nfo = false
 fetch_images = true
+
+# One [[libraries]] entry per Jellyfin library.
+# jellyfin_id is the Id returned by GET /Library/VirtualFolders.
+# Set skip = true for libraries you don't want Jellystructure to manage.
+# Entries are created/updated from the Library Mapping section in Settings.
+
+# [[libraries]]
+# jellyfin_id = ""
+# name = "Movies"
+# collection_type = "movies"
+# local_path = "/media/movies"
+# skip = false
+
+# [[libraries]]
+# jellyfin_id = ""
+# name = "TV Shows"
+# collection_type = "tvshows"
+# local_path = "/media/tv"
+# skip = false

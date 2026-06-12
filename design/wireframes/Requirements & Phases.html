@@ -73,8 +73,10 @@
     <tr><th>ID</th><th>Requirement</th><th>Acceptance</th></tr>
     <tr><td>FR-C1</td><td>Store all settings in a human-readable <code>config.toml</code> on a persistent volume.</td><td>Settings survive container restart; file is valid TOML.</td></tr>
     <tr><td>FR-C2</td><td>Edit config from the website — both a sectioned form and a raw TOML view of the same data.</td><td>A change in either view persists to disk and is reflected in the other.</td></tr>
-    <tr><td>FR-C3</td><td>Manage: TMDB v3 API key; Jellyfin base URL + API token; movie &amp; TV library paths; behaviour toggles; global fallback language (single language, default <code>en</code>).</td><td>Each setting round-trips form → TOML → form.</td></tr>
+    <tr><td>FR-C3</td><td>Manage: TMDB v3 API key; Jellyfin base URL + API token; library path mappings (see FR-C5–6); behaviour toggles; global fallback language (single language, default <code>en</code>).</td><td>Each setting round-trips form → TOML → form.</td></tr>
     <tr><td>FR-C4</td><td>"Test connections" verifies TMDB and Jellyfin credentials and shows the literal result/status.</td><td>Bad key shows a clear failure; good key shows success.</td></tr>
+    <tr><td>FR-C5</td><td>Discover available libraries from the connected Jellyfin instance (<code>GET /Library/VirtualFolders</code>) and display each library's name and collection type in the UI. Discovery is triggered automatically after a successful connection test.</td><td>After a successful connection test the library list updates without a page reload; the list reflects the current state of the Jellyfin server.</td></tr>
+    <tr><td>FR-C6</td><td>For each discovered Jellyfin library the operator may either assign a local filesystem path (the folder Jellystructure can read/write) or mark the library as <em>skip</em>. Skipped libraries are entirely ignored during scans. The mapping is persisted as a <code>[[libraries]]</code> TOML array (fields: <code>jellyfin_id</code>, <code>name</code>, <code>collection_type</code>, <code>local_path</code>, <code>skip</code>).</td><td>Only non-skipped libraries with a valid <code>local_path</code> are scanned. Changing a mapping and saving updates the TOML without touching unrelated config sections.</td></tr>
   </table>
 
   <h3>2.2 Metadata &amp; NFO <span class="pri must">MUST</span></h3>
@@ -221,7 +223,8 @@
   <h2>6 · Out of scope / open questions</h2>
   <ul>
     <li><s>Auth</s> — <strong>decided:</strong> Jellyfin sign-in (Jellyseerr-style), admins only. See §2.9 and the Implementation Plan.</li>
-    <li>Music / other media types — currently movies + TV only.</li>
+    <li><s>Hardcoded movie/TV paths</s> — <strong>decided:</strong> library paths are discovered from Jellyfin and mapped per-library (FR-C5–6). Static <code>movies_dir</code>/<code>tv_dir</code> config keys are removed.</li>
+    <li>Music / other media types — any Jellyfin library type (music, books, photos) can be discovered via FR-C5 but is marked "skip" by the operator if not relevant. Metadata handling for non-movie/TV types is out of scope.</li>
     <li>Metadata providers beyond TMDB (e.g. TVDB, MusicBrainz) — future?</li>
     <li>Undo / change history depth — is a per-file history log required, or is the NFO on disk enough?</li>
     <li>Conflict handling when a file is edited outside Jellystructure after locking.</li>

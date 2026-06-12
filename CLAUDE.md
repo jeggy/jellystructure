@@ -77,7 +77,7 @@ All file I/O uses `kotlinx-io` (POSIX-compatible). `java.io` and `java.nio` do n
 
 ### Configuration
 
-Config is a TOML file (`config.toml`) with four sections: `[api_keys]`, `[paths]`, `[language_rules]`, `[behavior]`. See `config/config.example.toml` for the schema.
+Config is a TOML file (`config.toml`) with three scalar sections — `[api_keys]`, `[language_rules]`, `[behavior]` — plus a `[[libraries]]` array table for per-Jellyfin-library path mappings (fields: `jellyfin_id`, `name`, `collection_type`, `local_path`, `skip`). There is no static `[paths]` section; library paths come from the mapping. See `config/config.example.toml` for the schema.
 
 ## UI Pages
 
@@ -93,7 +93,7 @@ The app is a sidebar-nav SPA. See `design/app/` for pixel-accurate mockups and `
 | Language Settings | `/language` | Fallback language config, live resolver preview (enter track languages → see TMDB fetch language; runs in WASM) |
 | Track Order | `/track-order` | Before/after diff, exact command preview, apply button |
 | Activity | `/activity` | Live job console fed by WebSocket |
-| Settings | `/settings` | Config form + live TOML mirror |
+| Settings | `/settings` | Config form + live TOML mirror + Library Mapping section (discover Jellyfin libraries, assign local paths, toggle skip) |
 
 ## Development Phases
 
