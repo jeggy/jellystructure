@@ -73,7 +73,7 @@
     <tr><th>ID</th><th>Requirement</th><th>Acceptance</th></tr>
     <tr><td>FR-C1</td><td>Store all settings in a human-readable <code>config.toml</code> on a persistent volume.</td><td>Settings survive container restart; file is valid TOML.</td></tr>
     <tr><td>FR-C2</td><td>Edit config from the website — both a sectioned form and a raw TOML view of the same data.</td><td>A change in either view persists to disk and is reflected in the other.</td></tr>
-    <tr><td>FR-C3</td><td>Manage: TMDB v3 API key; Jellyfin base URL + API token; movie &amp; TV library paths; behaviour toggles; cascade rules; global fallback language.</td><td>Each setting round-trips form → TOML → form.</td></tr>
+    <tr><td>FR-C3</td><td>Manage: TMDB v3 API key; Jellyfin base URL + API token; movie &amp; TV library paths; behaviour toggles; global fallback language (single language, default <code>en</code>).</td><td>Each setting round-trips form → TOML → form.</td></tr>
     <tr><td>FR-C4</td><td>"Test connections" verifies TMDB and Jellyfin credentials and shows the literal result/status.</td><td>Bad key shows a clear failure; good key shows success.</td></tr>
   </table>
 
@@ -98,20 +98,21 @@
   <table class="reqtable">
     <tr><th>ID</th><th>Requirement</th><th>Acceptance</th></tr>
     <tr><td>FR-T1</td><td>Read every embedded audio/subtitle track via <code>ffprobe</code>: index, codec, language tag, default/forced flags, title.</td><td>Track list matches the file's real streams.</td></tr>
-    <tr><td>FR-T2</td><td>Set the default track / reorder via <code>mkvpropedit</code> (header-only, no re-encode) for MKV.</td><td>Default flag changes in &lt; ~100ms with no bitstream rewrite.</td></tr>
-    <tr><td>FR-T3</td><td>Fall back to <code>ffmpeg -c copy</code> remux for MP4 / reorder / track removal; warn that it is slower.</td><td>Output file has the intended track layout; UI flagged it as a remux.</td></tr>
+    <tr><td>FR-T2</td><td>Set the default track / reorder via <code>mkvpropedit</code> (header-only, no re-encode) for MKV. <strong>Manual only</strong> — initiated explicitly by the operator from the UI; never applied automatically.</td><td>Default flag changes in &lt; ~100ms with no bitstream rewrite.</td></tr>
+    <tr><td>FR-T3</td><td>Fall back to <code>ffmpeg -c copy</code> remux for MP4 / reorder / track removal; warn that it is slower. <strong>Manual only</strong> — same as FR-T2.</td><td>Output file has the intended track layout; UI flagged it as a remux.</td></tr>
     <tr><td>FR-T4</td><td>Preserve POSIX ownership/permissions on all writes so Jellyfin can still read the files.</td><td>uid/gid unchanged after edit.</td></tr>
     <tr><td>FR-T5</td><td>Show the exact command that will run before applying; support a dry-run plan across many files.</td><td>Dry run lists affected files + chosen tool with nothing written.</td></tr>
   </table>
 
-  <h3>2.5 Language cascade engine <span class="pri must">MUST</span> — the core feature</h3>
+  <h3>2.5 Language resolution for TMDB metadata <span class="pri must">MUST</span> — the core feature</h3>
+  <p>The system determines the TMDB fetch language per file based on the file's actual audio tracks. Track ordering and default flags are <strong>never changed automatically</strong>; they are always a manual operator action (see §2.4).</p>
   <table class="reqtable">
     <tr><th>ID</th><th>Requirement</th><th>Acceptance</th></tr>
-    <tr><td>FR-L1</td><td>Define an ordered cascade (e.g. <code>["fo","da","en","original"]</code>) plus a global fallback (default <code>en</code>).</td><td>Cascade editable and saved to <code>[language_rules]</code>.</td></tr>
-    <tr><td>FR-L2</td><td>Resolve per file: walk the cascade top-down against the file's available track languages; first match wins. <code>original</code> resolves from TMDB <code>original_language</code>.</td><td>File with [fo, da] resolves to <strong>fo</strong>; file with [da, en] under that rule resolves to <strong>da</strong>.</td></tr>
-    <tr><td>FR-L3</td><td>The resolved language governs both (a) the metadata-fetch language and (b) the default audio/subtitle track.</td><td>Both behaviours follow the same resolved value.</td></tr>
-    <tr><td>FR-L4</td><td>Support per-library / per-folder cascade overrides on top of the global default.</td><td>Most-specific path wins; others fall back to global.</td></tr>
-    <tr><td>FR-L5</td><td>Provide a live resolver preview (enter a file's languages → see the winner and resulting actions).</td><td>Preview output matches the engine's real decision.</td></tr>
+    <tr><td>FR-L1</td><td>Configure a single global <code>fallback_language</code> (default <code>en</code>) used when TMDB has no entry in any of the file's track languages.</td><td>Setting saved to <code>[language_rules] fallback_language</code>; only one language allowed.</td></tr>
+    <tr><td>FR-L2</td><td>Resolve the TMDB fetch language per file: query TMDB for each language found in the file's audio tracks, in physical track-index order (track 0 first, track 1 next, etc.); use the first language that returns a result. If no track language yields a result, use <code>fallback_language</code>.</td><td>File with tracks [fo, da]: tries TMDB in Faroese → if no result, tries Danish → if no result, uses fallback. File with tracks [da, fo]: tries Danish first.</td></tr>
+    <tr><td>FR-L3</td><td>The resolved language governs the metadata-fetch language only (title, plot, genres, etc. fetched from TMDB in that language). It does <strong>not</strong> automatically change any track default flag or ordering.</td><td>Metadata is written in the resolved language; no file track is touched by language resolution.</td></tr>
+    <tr><td>FR-L4</td><td>Support a per-library / per-folder override of <code>fallback_language</code> on top of the global default.</td><td>Most-specific path wins; others fall back to global.</td></tr>
+    <tr><td>FR-L5</td><td>Provide a live resolver preview: enter a file's track languages → see which TMDB language would be fetched and what metadata fields would be written.</td><td>Preview output matches the engine's real decision; runs in WASM with no round-trip.</td></tr>
   </table>
 
   <h3>2.6 Triage of untagged / mismatched tracks <span class="pri must">MUST</span></h3>

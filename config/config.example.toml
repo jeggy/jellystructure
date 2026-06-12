@@ -8,8 +8,7 @@ movies_dir = ""
 tv_dir = ""
 
 [language_rules]
-audio_cascade = ["en"]
-sub_cascade = ["en"]
+fallback_language = "en"
 
 [behavior]
 overwrite_nfo = false

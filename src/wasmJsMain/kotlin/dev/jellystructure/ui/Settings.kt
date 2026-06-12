@@ -58,15 +58,11 @@ fun renderSettings(container: Element, scope: CoroutineScope) {
             </div>
 
             <div class="card">
-              <h3 style="font-size:1rem;margin:0 0 14px">Language cascade defaults</h3>
+              <h3 style="font-size:1rem;margin:0 0 14px">Language</h3>
               <div class="field">
-                <label>Audio cascade</label>
-                <input id="audio-cascade" class="input" type="text" placeholder="en, da, fo" style="width:100%">
-                <span class="hint">Comma-separated BCP-47 codes, highest priority first</span>
-              </div>
-              <div class="field">
-                <label>Subtitle cascade</label>
-                <input id="sub-cascade" class="input" type="text" placeholder="en, da" style="width:100%">
+                <label>Fallback language</label>
+                <input id="fallback-language" class="input" type="text" placeholder="en" style="width:100%">
+                <span class="hint">BCP-47 code used when TMDB has no result in any of the file's track languages</span>
               </div>
             </div>
 
@@ -107,8 +103,7 @@ private fun populateForm(config: AppConfig) {
     setInputValue("tmdb-key", config.apiKeys.tmdbV3Key)
     setInputValue("movies-dir", config.paths.moviesDir)
     setInputValue("tv-dir", config.paths.tvDir)
-    setInputValue("audio-cascade", config.languageRules.audioCascade.joinToString(", "))
-    setInputValue("sub-cascade", config.languageRules.subCascade.joinToString(", "))
+    setInputValue("fallback-language", config.languageRules.fallbackLanguage)
 
     overwriteNfo = config.behavior.overwriteNfo
     fetchImages = config.behavior.fetchImages
@@ -130,7 +125,7 @@ private fun attachListeners(scope: CoroutineScope) {
         refreshTomlPreview(readForm())
     }
 
-    listOf("jellyfin-url", "jellyfin-token", "tmdb-key", "movies-dir", "tv-dir", "audio-cascade", "sub-cascade")
+    listOf("jellyfin-url", "jellyfin-token", "tmdb-key", "movies-dir", "tv-dir", "fallback-language")
         .forEach { id ->
             document.getElementById(id)?.addEventListener("input") {
                 refreshTomlPreview(readForm())
@@ -173,8 +168,7 @@ private fun readForm(): AppConfig = AppConfig(
         tvDir = getInputValue("tv-dir"),
     ),
     languageRules = LanguageRules(
-        audioCascade = getInputValue("audio-cascade").split(",").map { it.trim() }.filter { it.isNotEmpty() },
-        subCascade = getInputValue("sub-cascade").split(",").map { it.trim() }.filter { it.isNotEmpty() },
+        fallbackLanguage = getInputValue("fallback-language").ifEmpty { "en" },
     ),
     behavior = Behavior(
         overwriteNfo = overwriteNfo,
@@ -198,8 +192,7 @@ private fun buildToml(c: AppConfig): String = buildString {
     appendLine("""tv_dir = "${c.paths.tvDir}"""")
     appendLine()
     appendLine("[language_rules]")
-    appendLine("""audio_cascade = [${c.languageRules.audioCascade.joinToString(", ") { "\"$it\"" }}]""")
-    appendLine("""sub_cascade = [${c.languageRules.subCascade.joinToString(", ") { "\"$it\"" }}]""")
+    appendLine("""fallback_language = "${c.languageRules.fallbackLanguage}"""")
     appendLine()
     appendLine("[behavior]")
     appendLine("overwrite_nfo = ${c.behavior.overwriteNfo}")

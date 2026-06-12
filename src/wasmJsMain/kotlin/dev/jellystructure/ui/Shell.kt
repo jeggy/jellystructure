@@ -23,7 +23,7 @@ private val NAV: List<NavEntry> = listOf(
     NavLink("/triage", "Triage", "!", count = 214),
     NavLink("/activity", "Activity", "◷"),
     NavGroup("Setup"),
-    NavLink("/cascade", "Cascade rules", "≣"),
+    NavLink("/language", "Language", "≣"),
     NavLink("/settings", "Settings", "⚙"),
 )
 

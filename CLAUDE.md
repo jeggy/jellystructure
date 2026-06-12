@@ -88,9 +88,9 @@ The app is a sidebar-nav SPA. See `design/app/` for pixel-accurate mockups and `
 | Login | `/login` | Jellyfin credentials only; admin-only |
 | Dashboard | `/` | Stat tiles, attention queue, live activity log |
 | Library | `/library` | Poster grid with issue flags, filterable/pageable |
-| Media Detail | `/media/:id` | Metadata form, artwork rail, track table, cascade override, NFO raw view |
-| Triage | `/triage` | Focus queue of untagged/mismatched tracks; keyboard nav |
-| Cascade Rules | `/cascade` | Drag-ordered cascade list, live resolver preview (runs in WASM) |
+| Media Detail | `/media/:id` | Metadata form, artwork rail, track table, NFO raw view |
+| Triage | `/triage` | Focus queue of untagged tracks; keyboard nav |
+| Language Settings | `/language` | Fallback language config, live resolver preview (enter track languages → see TMDB fetch language; runs in WASM) |
 | Track Order | `/track-order` | Before/after diff, exact command preview, apply button |
 | Activity | `/activity` | Live job console fed by WebSocket |
 | Settings | `/settings` | Config form + live TOML mirror |
@@ -104,15 +104,17 @@ Current status is approximately end of **P1**. Phases are:
 | P0 | Scaffolding, Docker, healthz, WASM page | Done |
 | P1 | Config, auth, session, setup routes, login + settings UI | Done |
 | P2 | Directory scan, ffprobe, TMDB client, library + media detail UI | Next |
-| P3 | NFO writer, artwork downloader, CascadeResolver (shared), cascade UI | Upcoming |
+| P3 | NFO writer, artwork downloader, LanguageResolver (shared), language resolution UI | Upcoming |
 | P4 | mkvpropedit/ffmpeg track editing, triage, job runner, WebSocket progress, Jellyfin refresh | Upcoming |
 | P5 | Folder watcher, Blender film fixtures, Playwright CI | Upcoming |
 
 ## Key Domain Concepts
 
-**Language Cascade** — the central feature. An ordered list (e.g. `["fo", "da", "en", "original"]`) resolves per file: walk the cascade against the file's available track languages; first match wins. `original` resolves from TMDB `original_language`. The resolved language governs both the metadata-fetch language and which audio/subtitle track is set as default. `CascadeResolver` is shared code (pure, no I/O) that runs identically on the backend and in WASM (live preview with no round-trip).
+**Language Resolution** — the core feature for TMDB metadata fetching. Per file: query TMDB for each language in the file's audio tracks, in physical track-index order (track 0 first); use the first language that returns a result. If no track language yields a TMDB result, fall back to the single global `fallback_language` (config default `en`). This resolved language governs metadata only — titles, plot, genres written to NFO. It **never** automatically changes any track flag or ordering. `LanguageResolver` is shared code (pure, no I/O) that runs identically on backend and in WASM (live preview with no round-trip).
 
-**Triage queue** — tracks with no language tag that the cascade cannot act on, plus tracks whose current default disagrees with the cascade result. Operators assign languages inline; the fix writes back to the container.
+**Track ordering** — audio and subtitle track default flags and physical order are changed **only by explicit manual operator action** from the UI (Track Order page). mkvpropedit is used for MKV (header-only, no re-encode); ffmpeg -c copy for MP4 remux as fallback.
+
+**Triage queue** — tracks with no language tag (language resolver cannot act on these until fixed). Operators assign languages inline; the fix writes back to the container.
 
 **Subprocess chain** — ffprobe (read, JSON) → mkvpropedit (write header for MKV, <100ms, no re-encode) → ffmpeg `-c copy` (fallback for MP4 or track removal). Always run blocking subprocess calls on `Dispatchers.IO`, not the CIO event loop.
 

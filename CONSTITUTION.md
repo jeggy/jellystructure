@@ -50,14 +50,14 @@ These choices are fixed. Do not introduce alternatives without updating this doc
 - Written via kotlinx-io streaming (no full XML tree in RAM)
 - Images named per convention: `poster.jpg`, `backdrop.jpg`, `logo.png`
 
-### Language Cascade Logic
-This is the core domain logic. The cascade determines which audio/subtitle track is set as default:
+### Language Resolution for TMDB Metadata
+This is the core domain logic. It determines which language is used when fetching metadata from TMDB:
 
 1. Run `ffprobe` → parse JSON → build a track map (index, codec, language code)
-2. Identify tracks with no language tag → surface them in the UI for manual correction before cascade runs
-3. Call TMDB `/movie/{id}` or `/tv/{id}` to get `original_language`
-4. Apply user-configured cascade (e.g. `["fo", "da", "en", "original"]`) against the track map
-5. If the current default track does not match the cascade winner → apply modification
+2. Identify tracks with no language tag → surface them in the UI for manual correction
+3. For TMDB metadata fetching: query TMDB for each language found in the file's audio tracks, in physical track-index order (track 0 first, track 1 next, etc.); the first language that returns a result wins
+4. If no language from the file's tracks yields a TMDB result, fall back to the single global `fallback_language` (default `en`)
+5. Track default flags and ordering are **never changed automatically** — they are changed only via explicit manual action in the UI
 
 ### Subprocess Hierarchy
 Choose the **least destructive tool** sufficient for the operation:
@@ -90,8 +90,7 @@ movies_dir = ""
 tv_dir = ""
 
 [language_rules]
-audio_cascade = ["fo", "da", "en"]
-sub_cascade = ["fo", "da", "en"]
+fallback_language = "en"
 
 [behavior]
 overwrite_nfo = false

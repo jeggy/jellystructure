@@ -34,8 +34,7 @@ data class Paths(
 
 @Serializable
 data class LanguageRules(
-    @SerialName("audio_cascade") val audioCascade: List<String> = listOf("en"),
-    @SerialName("sub_cascade") val subCascade: List<String> = listOf("en"),
+    @SerialName("fallback_language") val fallbackLanguage: String = "en",
 )
 
 @Serializable
