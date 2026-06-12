@@ -286,20 +286,22 @@
     <div class="ph-inner">
       <h4>Objective</h4>
       <p>Edit the containers themselves, work the triage queue, and stream everything live. (FR-T2–5, FR-R1–4, FR-J1–2, FR-U1–2)</p>
-      <div class="lane"><span class="who sh">Shared</span><ul><li><code>JobEvent</code> sealed hierarchy; <code>TrackPlan</code> (before/after + chosen tool).</li></ul></div>
+      <div class="lane"><span class="who sh">Shared</span><ul><li><code>JobEvent</code> sealed hierarchy (<code>Started</code>, <code>FileProgress</code>, <code>FileDone</code>, <code>ItemScanned(item: MediaItem)</code>, <code>Finished</code>); <code>TrackPlan</code> (before/after + chosen tool).</li></ul></div>
       <div class="lane"><span class="who be">Back</span><ul>
         <li>Default/order via <code>mkvpropedit</code> (header-only) for MKV; <code>ffmpeg -c copy</code> remux fallback for MP4 / reorder / removal, flagged as slower (FR-T2–3).</li>
         <li>Dry-run planner across many files: list affected + tool, write nothing (FR-T5).</li>
         <li>Triage query: all untagged tracks + default≠cascade mismatches; assign-language writes back to the file (FR-R1–4).</li>
         <li>Job runner with a worker queue; broadcast <code>JobEvent</code>s over <code>/api/ws</code>; errors push the item to triage and continue (FR-U2).</li>
+        <li>Scanner calls <code>store.updateOne(item)</code> after each file and broadcasts <code>JobEvent.ItemScanned(item)</code> so the REST API and WebSocket both reflect in-progress state immediately (FR-M1, FR-U1).</li>
         <li>Jellyfin refresh: <code>POST /Items/{id}/Refresh</code> (and <code>/Library/Refresh</code> bulk) using the machine token; surface 204 (FR-J1–2).</li>
       </ul></div>
       <div class="lane"><span class="who fe">Front</span><ul>
         <li>Triage focus queue (keyboard assign, accept &amp; advance).</li>
         <li>Track-order before/after diff with exact command preview + Apply.</li>
         <li>Activity console + ambient dock, both fed by one WS <code>StateFlow</code> (FR-U1).</li>
+        <li>Library subscribes to the WS during an active scan; on each <code>ItemScanned</code> event, appends or updates the item in the poster grid immediately — operator sees results accumulate without waiting for completion (FR-M1, FR-U1).</li>
       </ul></div>
-      <div class="exit"><b>Exit criteria</b>Applying the cascade to a real MKV flips the default track in &lt;100ms with no re-encode (verified by re-probe); a batch streams live progress; a failed match lands in triage while the run continues; Jellyfin reflects the change with no manual refresh.</div>
+      <div class="exit"><b>Exit criteria</b>Applying the cascade to a real MKV flips the default track in &lt;100ms with no re-encode (verified by re-probe); a scan batch streams live progress and the Library poster grid populates item-by-item as each file finishes — no waiting for scan completion; a failed match lands in triage while the run continues; Jellyfin reflects the change with no manual refresh.</div>
     </div>
   </div>
 

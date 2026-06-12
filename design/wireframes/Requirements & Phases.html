@@ -82,7 +82,7 @@
   <h3>2.2 Metadata &amp; NFO <span class="pri must">MUST</span></h3>
   <table class="reqtable">
     <tr><th>ID</th><th>Requirement</th><th>Acceptance</th></tr>
-    <tr><td>FR-M1</td><td>Scan configured paths, derive identity from filename/folder (e.g. <code>Title (year)</code>), and fetch metadata from TMDB.</td><td>Movies and TV (show / season / episode) are matched and listed.</td></tr>
+    <tr><td>FR-M1</td><td>Scan configured paths, derive identity from filename/folder (e.g. <code>Title (year)</code>), and fetch metadata from TMDB. Each file that completes processing is persisted and visible in the Library immediately — the UI does not wait for the full scan to finish.</td><td>Movies and TV are matched and listed; a newly processed item appears in the Library grid as soon as it is ready, without waiting for the scan to complete.</td></tr>
     <tr><td>FR-M2</td><td>Write Kodi/Jellyfin-compatible NFO (<code>movie.nfo</code>, <code>tvshow.nfo</code>, <code>episodedetails</code>) including plot, genres, cast/crew, studio, ids, original language.</td><td>Jellyfin reads the NFO without its own scraper.</td></tr>
     <tr><td>FR-M3</td><td>Always include <code>&lt;lockdata&gt;true&lt;/lockdata&gt;</code> so Jellyfin never overwrites managed data.</td><td>Tag present in every generated NFO.</td></tr>
     <tr><td>FR-M4</td><td>Edit any field in the UI; "Re-pull" refills empty/unlocked fields without clobbering manual edits.</td><td>Locked field is unchanged after re-pull.</td></tr>
@@ -136,7 +136,7 @@
   <h3>2.8 Real-time UI <span class="pri must">MUST</span></h3>
   <table class="reqtable">
     <tr><th>ID</th><th>Requirement</th><th>Acceptance</th></tr>
-    <tr><td>FR-U1</td><td>Stream job progress to the browser over WebSocket — filenames, ffmpeg %, NFO/artwork status, errors — no polling.</td><td>UI updates within ~1s of backend events without reload.</td></tr>
+    <tr><td>FR-U1</td><td>Stream job progress to the browser over WebSocket — filenames, ffmpeg %, NFO/artwork status, errors — no polling. Scan jobs additionally broadcast a full <code>MediaItem</code> payload after each file is processed (<code>ItemScanned</code> event) so the Library grid can append/update items in real time without waiting for the scan to finish.</td><td>Library grid updates within ~1s of each file completing; the Activity console reflects all events; no page reload or full-scan-wait required to see in-progress results.</td></tr>
     <tr><td>FR-U2</td><td>Errors don't halt a batch; failed items drop into Triage and the job continues.</td><td>A failed match is queued for triage; remaining files still process.</td></tr>
     <tr><td>FR-U3</td><td>Optionally watch folders and process new files automatically.</td><td>A newly added file is detected and processed per rules.</td></tr>
   </table>

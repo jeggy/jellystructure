@@ -120,6 +120,10 @@ Current status is approximately end of **P1**. Phases are:
 
 **Machine token** — a separate `jellyfin_token` in `config.toml` used for background jobs (scan, Jellyfin refresh) so they work without a logged-in user session.
 
+**Incremental scan** — the scan is a background job. After processing each file the item is immediately persisted (`store.updateOne(item)`) and broadcast as `JobEvent.ItemScanned(item: MediaItem)` over the WebSocket. The frontend Library page subscribes to the WS during an active scan and appends/updates grid items as `ItemScanned` events arrive — the operator sees results accumulate without waiting for the full scan to finish. The `GET /api/scan/status` endpoint remains for page-load state-restoration (so a refresh mid-scan still shows the banner), but the live grid update path is WebSocket only.
+
+**`JobEvent` hierarchy** (`commonMain`) — `Started`, `FileProgress`, `FileDone`, `ItemScanned(item: MediaItem)`, `Finished`. Serialized with a `"type"` class discriminator. `ItemScanned` is the event that drives incremental Library updates.
+
 ## Out of Scope
 
 Music, TVDB/MusicBrainz, undo/change history, multi-tenant or cloud deployment.
