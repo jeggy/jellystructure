@@ -1,6 +1,26 @@
+# Gradle
 .gradle/
 build/
+
+# IntelliJ IDEA
 .idea/
 *.iml
+local.properties
+
+# Kotlin
+.kotlin/
+
+# Native build artifacts
+*.kexe
+*.klib
+
+# Node / Webpack (WASM frontend)
+node_modules/
+
+# Project-specific
 config/config.toml
 media/
+
+# OS
+.DS_Store
+*.log
