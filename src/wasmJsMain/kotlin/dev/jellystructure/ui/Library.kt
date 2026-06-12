@@ -6,6 +6,7 @@ import dev.jellystructure.api.MediaItem
 import dev.jellystructure.api.MediaKind
 import kotlinx.browser.document
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.w3c.dom.Element
 import org.w3c.dom.HTMLButtonElement
@@ -28,6 +29,8 @@ fun renderLibrary(container: Element, scope: CoroutineScope) {
         </div>
         <p class="page-sub">Everything Jellystructure manages. A red badge means untagged tracks — click any title to open its detail page.</p>
 
+        <div id="scan-banner" style="display:none;margin-bottom:14px"></div>
+
         <div class="row center" style="margin-bottom:16px;gap:10px;flex-wrap:wrap;">
           <span class="muted tiny">filter:</span>
           <button id="f-all" class="chip active-chip">All</button>
@@ -44,18 +47,27 @@ fun renderLibrary(container: Element, scope: CoroutineScope) {
 
         <div id="poster-grid" class="poster-grid"></div>
         <div class="row center" style="margin-top:18px;" id="lib-pager"></div>
-        <div id="scan-status" style="display:none;margin-top:12px;"></div>
     """.trimIndent()
 
-    scope.launch { loadLibraryPage(scope) }
     attachLibraryListeners(scope)
+
+    scope.launch {
+        val status = MediaApi.scanStatus()
+        if (status?.running == true) {
+            setScanRunning(true)
+            loadLibraryPage(scope)
+            pollScanUntilDone(scope)
+        } else {
+            loadLibraryPage(scope)
+        }
+    }
 }
 
 private fun attachLibraryListeners(scope: CoroutineScope) {
     fun reload() { libPage = 1; scope.launch { loadLibraryPage(scope) } }
 
     document.getElementById("scan-btn")?.addEventListener("click") {
-        scope.launch { runScan(scope) }
+        scope.launch { triggerScan(scope) }
     }
 
     mapOf(
@@ -72,6 +84,54 @@ private fun attachLibraryListeners(scope: CoroutineScope) {
         "k-tv" to { libKind = MediaKind.TV_SHOW },
     ).forEach { (id, setter) ->
         document.getElementById(id)?.addEventListener("click") { setter(); reload() }
+    }
+}
+
+private suspend fun triggerScan(scope: CoroutineScope) {
+    val btn = document.getElementById("scan-btn") as? HTMLButtonElement ?: return
+    if (btn.disabled) return
+
+    val started = MediaApi.startScan()
+    if (!started) {
+        val banner = document.getElementById("scan-banner") as? HTMLElement ?: return
+        banner.style.display = "block"
+        banner.innerHTML = """<span class="badge bad">Scan is already running or failed to start.</span>"""
+        return
+    }
+
+    setScanRunning(true)
+    pollScanUntilDone(scope)
+}
+
+private suspend fun pollScanUntilDone(scope: CoroutineScope) {
+    while (true) {
+        delay(2000)
+        val status = MediaApi.scanStatus() ?: break
+        if (!status.running) {
+            setScanRunning(false)
+            val count = status.lastCount
+            val banner = document.getElementById("scan-banner") as? HTMLElement
+            if (banner != null) {
+                banner.style.display = "block"
+                banner.innerHTML = """<span class="badge ok">Scan complete${if (count != null) " — $count item${if (count != 1) "s" else ""} found" else ""}.</span>"""
+            }
+            loadLibraryPage(scope)
+            break
+        }
+    }
+}
+
+private fun setScanRunning(running: Boolean) {
+    val btn = document.getElementById("scan-btn") as? HTMLButtonElement
+    val banner = document.getElementById("scan-banner") as? HTMLElement
+    if (running) {
+        btn?.disabled = true
+        btn?.textContent = "Scanning…"
+        banner?.style?.display = "block"
+        banner?.innerHTML = """<span class="badge">Scan in progress — results will appear when complete…</span>"""
+    } else {
+        btn?.disabled = false
+        btn?.textContent = "▶ Scan library"
     }
 }
 
@@ -93,7 +153,6 @@ private suspend fun loadLibraryPage(scope: CoroutineScope) {
         page.items.joinToString("") { posterCardHtml(it) }
     }
 
-    // attach click handlers to cards
     grid.querySelectorAll(".poster[data-id]").let { nodes ->
         for (i in 0 until nodes.length) {
             val el = nodes.item(i) as? HTMLElement ?: continue
@@ -142,22 +201,6 @@ private fun renderLibraryPager(total: Int, page: Int, pageSize: Int, scope: Coro
     document.getElementById("pg-next")?.addEventListener("click") {
         libPage++; scope.launch { loadLibraryPage(scope) }
     }
-}
-
-private suspend fun runScan(scope: CoroutineScope) {
-    val btn = document.getElementById("scan-btn") as? HTMLButtonElement ?: return
-    val status = document.getElementById("scan-status") as? HTMLElement
-    btn.disabled = true
-    btn.textContent = "Scanning…"
-    status?.style?.display = "block"
-    status?.innerHTML = """<span class="badge">Scan in progress — this may take a moment…</span>"""
-
-    val count = MediaApi.scan()
-    loadLibraryPage(scope)
-
-    btn.disabled = false
-    btn.textContent = "▶ Scan library"
-    status?.innerHTML = """<span class="badge ok">Scan complete — $count item${if (count != 1) "s" else ""} found.</span>"""
 }
 
 internal fun String.esc(): String =

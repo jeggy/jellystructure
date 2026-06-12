@@ -63,6 +63,9 @@ data class ArtworkStatus(val posterExists: Boolean, val fanartExists: Boolean)
 @Serializable
 data class NfoWriteResult(val path: String)
 
+@Serializable
+data class ScanStatus(val running: Boolean, val lastCount: Int? = null)
+
 object MediaApi {
     suspend fun list(
         kind: MediaKind? = null,
@@ -82,12 +85,15 @@ object MediaApi {
         httpClient.get("/api/media/$id").body<MediaItem>()
     }.getOrNull()
 
-    suspend fun scan(): Int = runCatching {
+    // Returns true if the scan was successfully started, false if already running or failed.
+    suspend fun startScan(): Boolean = runCatching {
         val response = httpClient.post("/api/scan")
-        if (response.status == HttpStatusCode.OK) {
-            response.body<Map<String, Int>>()["scanned"] ?: 0
-        } else 0
-    }.getOrDefault(0)
+        response.status == HttpStatusCode.Accepted
+    }.getOrDefault(false)
+
+    suspend fun scanStatus(): ScanStatus? = runCatching {
+        httpClient.get("/api/scan/status").body<ScanStatus>()
+    }.getOrNull()
 
     suspend fun stats(): StatsResponse? = runCatching {
         httpClient.get("/api/stats").body<StatsResponse>()

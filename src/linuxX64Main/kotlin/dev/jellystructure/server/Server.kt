@@ -7,6 +7,7 @@ import dev.jellystructure.config.ConfigStore
 import dev.jellystructure.media.ArtworkDownloader
 import dev.jellystructure.media.MediaStore
 import dev.jellystructure.media.Scanner
+import dev.jellystructure.media.ScanTracker
 import dev.jellystructure.server.routes.authRoutes
 import dev.jellystructure.server.routes.configureConfigRoutes
 import dev.jellystructure.server.routes.jellyfinRoutes
@@ -32,6 +33,8 @@ import io.ktor.server.routing.routing
 import io.ktor.server.websocket.WebSockets
 import io.ktor.server.websocket.webSocket
 import io.ktor.websocket.Frame
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.io.buffered
 import kotlinx.io.files.Path
 import kotlinx.io.files.SystemFileSystem
@@ -44,9 +47,11 @@ fun startServer(
     mediaStore: MediaStore,
     scanner: Scanner,
     artworkDownloader: ArtworkDownloader,
+    scanTracker: ScanTracker,
     frontendDir: String,
     port: Int,
 ) {
+    val appScope = CoroutineScope(SupervisorJob())
     embeddedServer(CIO, port = port) {
         install(ContentNegotiation) { json() }
         install(WebSockets)
@@ -72,7 +77,7 @@ fun startServer(
                 configureConfigRoutes(configStore)
                 setupRoutes(configStore, jellyfinClient)
                 jellyfinRoutes(configStore, jellyfinClient)
-                mediaRoutes(mediaStore, scanner, artworkDownloader)
+                mediaRoutes(mediaStore, scanner, artworkDownloader, appScope, scanTracker)
                 languageRoutes(configStore)
             }
 

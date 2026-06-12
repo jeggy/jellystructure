@@ -4,6 +4,7 @@ import dev.jellystructure.App
 import dev.jellystructure.api.MediaApi
 import kotlinx.browser.document
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.w3c.dom.Element
 import org.w3c.dom.HTMLButtonElement
@@ -19,23 +20,30 @@ fun renderDashboard(container: Element, scope: CoroutineScope) {
         </div>
         <p class="page-sub">Single source of truth for your media metadata. Jellyfin just reads what Jellystructure writes — you never touch its built-in scraper.</p>
 
+        <div id="dash-scan-banner" style="display:none;margin-bottom:14px"></div>
+
         <div class="statgrid">
           <div class="stat"><div class="k">Movies</div><div class="v" id="stat-movies">—</div></div>
           <div class="stat"><div class="k">TV episodes</div><div class="v">—</div></div>
           <div class="stat alert"><div class="k">Tracks needing attention</div><div class="v" id="stat-issues">—</div></div>
           <div class="stat"><div class="k">NFO coverage</div><div class="v">—</div></div>
         </div>
-
-        <div id="dash-scan-status" style="display:none;margin-top:14px;"></div>
     """.trimIndent()
-
-    scope.launch { loadDashboardStats() }
 
     document.getElementById("dash-browse")?.addEventListener("click") {
         App.navigate("/library")
     }
     document.getElementById("dash-scan")?.addEventListener("click") {
-        scope.launch { dashboardScan(scope) }
+        scope.launch { triggerDashboardScan(scope) }
+    }
+
+    scope.launch {
+        loadDashboardStats()
+        val status = MediaApi.scanStatus()
+        if (status?.running == true) {
+            setDashScanRunning(true)
+            pollDashScanUntilDone(scope)
+        }
     }
 }
 
@@ -45,16 +53,47 @@ private suspend fun loadDashboardStats() {
     (document.getElementById("stat-issues") as? HTMLElement)?.textContent = stats.issues.toString()
 }
 
-private suspend fun dashboardScan(scope: CoroutineScope) {
+private suspend fun triggerDashboardScan(scope: CoroutineScope) {
     val btn = document.getElementById("dash-scan") as? HTMLButtonElement ?: return
-    val status = document.getElementById("dash-scan-status") as? HTMLElement
-    btn.disabled = true
-    btn.textContent = "Scanning…"
-    status?.style?.display = "block"
-    status?.innerHTML = """<span class="badge">Scan in progress…</span>"""
-    val count = MediaApi.scan()
-    loadDashboardStats()
-    btn.disabled = false
-    btn.textContent = "▶ Scan library"
-    status?.innerHTML = """<span class="badge ok">Scan complete — $count item${if (count != 1) "s" else ""} found.</span>"""
+    if (btn.disabled) return
+
+    val started = MediaApi.startScan()
+    if (!started) {
+        val banner = document.getElementById("dash-scan-banner") as? HTMLElement ?: return
+        banner.style.display = "block"
+        banner.innerHTML = """<span class="badge bad">Scan is already running or failed to start.</span>"""
+        return
+    }
+    setDashScanRunning(true)
+    pollDashScanUntilDone(scope)
+}
+
+private suspend fun pollDashScanUntilDone(scope: CoroutineScope) {
+    while (true) {
+        delay(2000)
+        val status = MediaApi.scanStatus() ?: break
+        if (!status.running) {
+            setDashScanRunning(false)
+            val count = status.lastCount
+            val banner = document.getElementById("dash-scan-banner") as? HTMLElement
+            banner?.style?.display = "block"
+            banner?.innerHTML = """<span class="badge ok">Scan complete${if (count != null) " — $count item${if (count != 1) "s" else ""} found" else ""}.</span>"""
+            loadDashboardStats()
+            break
+        }
+    }
+}
+
+private fun setDashScanRunning(running: Boolean) {
+    val btn = document.getElementById("dash-scan") as? HTMLButtonElement
+    val banner = document.getElementById("dash-scan-banner") as? HTMLElement
+    if (running) {
+        btn?.disabled = true
+        btn?.textContent = "Scanning…"
+        banner?.style?.display = "block"
+        banner?.innerHTML = """<span class="badge">Scan in progress — this may take a moment…</span>"""
+    } else {
+        btn?.disabled = false
+        btn?.textContent = "▶ Scan library"
+    }
 }

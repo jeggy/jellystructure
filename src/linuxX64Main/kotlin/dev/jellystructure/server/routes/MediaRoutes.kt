@@ -3,6 +3,7 @@ package dev.jellystructure.server.routes
 import dev.jellystructure.media.ArtworkDownloader
 import dev.jellystructure.media.MediaStore
 import dev.jellystructure.media.Scanner
+import dev.jellystructure.media.ScanTracker
 import dev.jellystructure.model.MediaKind
 import dev.jellystructure.nfo.NfoWriter
 import io.ktor.http.ContentType
@@ -13,8 +14,16 @@ import io.ktor.server.routing.Route
 import io.ktor.server.routing.get
 import io.ktor.server.routing.post
 import io.ktor.server.routing.route
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.launch
 
-fun Route.mediaRoutes(store: MediaStore, scanner: Scanner, artwork: ArtworkDownloader) {
+fun Route.mediaRoutes(
+    store: MediaStore,
+    scanner: Scanner,
+    artwork: ArtworkDownloader,
+    appScope: CoroutineScope,
+    scanTracker: ScanTracker,
+) {
     route("/media") {
         get {
             val kindStr = call.request.queryParameters["kind"]
@@ -52,9 +61,7 @@ fun Route.mediaRoutes(store: MediaStore, scanner: Scanner, artwork: ArtworkDownl
                     val item = store.get(id)
                         ?: return@post call.respond(HttpStatusCode.NotFound)
                     NfoWriter.write(item)
-                        .onSuccess { path ->
-                            call.respond(mapOf("path" to path))
-                        }
+                        .onSuccess { path -> call.respond(mapOf("path" to path)) }
                         .onFailure { e ->
                             println("[ERROR] NFO write failed for $id: ${e.message}")
                             call.respond(HttpStatusCode.InternalServerError, mapOf("error" to (e.message ?: "write failed")))
@@ -76,18 +83,34 @@ fun Route.mediaRoutes(store: MediaStore, scanner: Scanner, artwork: ArtworkDownl
                         ?: return@post call.respond(HttpStatusCode.BadRequest)
                     val item = store.get(id)
                         ?: return@post call.respond(HttpStatusCode.NotFound)
-                    val status = artwork.fetch(item)
-                    call.respond(status)
+                    call.respond(artwork.fetch(item))
                 }
             }
         }
     }
 
     post("/scan") {
-        println("[INFO] Library scan triggered via API")
-        val items = scanner.scan()
-        store.update(items)
-        call.respond(mapOf("scanned" to items.size))
+        if (scanTracker.running) {
+            call.respond(HttpStatusCode.Conflict, mapOf("error" to "scan already running"))
+            return@post
+        }
+        appScope.launch {
+            scanTracker.running = true
+            try {
+                println("[INFO] Library scan started (background)")
+                val items = scanner.scan()
+                store.update(items)
+                scanTracker.lastCount = items.size
+                println("[INFO] Library scan complete — ${items.size} items")
+            } finally {
+                scanTracker.running = false
+            }
+        }
+        call.respond(HttpStatusCode.Accepted, mapOf("status" to "started"))
+    }
+
+    get("/scan/status") {
+        call.respond(scanTracker.status())
     }
 
     get("/stats") {
