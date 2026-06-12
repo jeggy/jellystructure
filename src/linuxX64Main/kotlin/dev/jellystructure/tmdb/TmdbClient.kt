@@ -33,11 +33,17 @@ data class TmdbSearchResult(
 data class TmdbMovieDetails(
     val id: Int,
     val title: String,
+    @SerialName("original_title") val originalTitle: String = "",
     @SerialName("original_language") val originalLanguage: String = "",
     @SerialName("poster_path") val posterPath: String? = null,
+    @SerialName("backdrop_path") val backdropPath: String? = null,
     val overview: String = "",
     @SerialName("release_date") val releaseDate: String = "",
+    val genres: List<TmdbGenre> = emptyList(),
 )
+
+@Serializable
+data class TmdbGenre(val id: Int, val name: String)
 
 class TmdbClient(private val configStore: ConfigStore) {
     private val http = HttpClient(Curl) {
@@ -68,22 +74,33 @@ class TmdbClient(private val configStore: ConfigStore) {
          .getOrNull()
     }
 
-    suspend fun getMovieDetails(tmdbId: Int): TmdbMovieDetails? {
-        detailsCache[tmdbId]?.let { return it }
+    suspend fun getMovieDetails(tmdbId: Int, language: String? = null): TmdbMovieDetails? {
+        val cacheKey = tmdbId
+        if (language == null) detailsCache[cacheKey]?.let { return it }
         val key = apiKey()
         if (key.isBlank()) return null
         return runCatching {
             val response = http.get("https://api.themoviedb.org/3/movie/$tmdbId") {
                 parameter("api_key", key)
+                if (!language.isNullOrBlank()) parameter("language", language)
             }
             if (response.status == HttpStatusCode.TooManyRequests) {
                 delay(3000)
-                return getMovieDetails(tmdbId)
+                return getMovieDetails(tmdbId, language)
             }
             val details = response.body<TmdbMovieDetails>()
-            detailsCache[tmdbId] = details
+            if (language == null) detailsCache[cacheKey] = details
             details
-        }.onFailure { println("[WARN] TMDB details failed for id=$tmdbId: ${it.message}") }
+        }.onFailure { println("[WARN] TMDB details failed for id=$tmdbId lang=$language: ${it.message}") }
          .getOrNull()
+    }
+
+    // Try each language in priority order; use the first that has a non-empty overview.
+    suspend fun getMovieDetailsLocalized(tmdbId: Int, languages: List<String>): TmdbMovieDetails? {
+        for (lang in languages) {
+            val d = getMovieDetails(tmdbId, lang) ?: continue
+            if (d.overview.isNotBlank()) return d
+        }
+        return getMovieDetails(tmdbId)
     }
 }

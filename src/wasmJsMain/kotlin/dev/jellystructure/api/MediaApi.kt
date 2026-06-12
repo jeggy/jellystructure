@@ -5,6 +5,7 @@ import io.ktor.client.request.get
 import io.ktor.client.request.parameter
 import io.ktor.client.request.post
 import io.ktor.http.HttpStatusCode
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 @Serializable
@@ -29,13 +30,17 @@ data class Track(
 data class MediaItem(
     val id: String,
     val title: String,
+    val originalTitle: String? = null,
     val year: Int?,
     val kind: MediaKind,
     val path: String,
     val tmdbId: Int?,
     val originalLanguage: String?,
+    val resolvedLanguage: String? = null,
     val posterPath: String?,
+    val backdropPath: String? = null,
     val overview: String?,
+    val genres: List<String> = emptyList(),
     val tracks: List<Track>,
     val issueCount: Int,
     val scannedAt: Long,
@@ -50,10 +55,13 @@ data class MediaPage(
 )
 
 @Serializable
-data class StatsResponse(
-    val movies: Int,
-    val issues: Int,
-)
+data class StatsResponse(val movies: Int, val issues: Int)
+
+@Serializable
+data class ArtworkStatus(val posterExists: Boolean, val fanartExists: Boolean)
+
+@Serializable
+data class NfoWriteResult(val path: String)
 
 object MediaApi {
     suspend fun list(
@@ -83,5 +91,24 @@ object MediaApi {
 
     suspend fun stats(): StatsResponse? = runCatching {
         httpClient.get("/api/stats").body<StatsResponse>()
+    }.getOrNull()
+
+    suspend fun getNfo(id: String): String? = runCatching {
+        val response = httpClient.get("/api/media/$id/nfo")
+        if (response.status == HttpStatusCode.OK) response.body<String>() else null
+    }.getOrNull()
+
+    suspend fun writeNfo(id: String): NfoWriteResult? = runCatching {
+        val response = httpClient.post("/api/media/$id/nfo")
+        if (response.status == HttpStatusCode.OK) response.body<NfoWriteResult>() else null
+    }.getOrNull()
+
+    suspend fun getArtworkStatus(id: String): ArtworkStatus? = runCatching {
+        httpClient.get("/api/media/$id/artwork").body<ArtworkStatus>()
+    }.getOrNull()
+
+    suspend fun fetchArtwork(id: String): ArtworkStatus? = runCatching {
+        val response = httpClient.post("/api/media/$id/artwork")
+        if (response.status == HttpStatusCode.OK) response.body<ArtworkStatus>() else null
     }.getOrNull()
 }

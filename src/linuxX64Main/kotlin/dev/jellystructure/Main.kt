@@ -3,6 +3,7 @@ package dev.jellystructure
 import dev.jellystructure.auth.JellyfinClient
 import dev.jellystructure.auth.SessionService
 import dev.jellystructure.config.ConfigStore
+import dev.jellystructure.media.ArtworkDownloader
 import dev.jellystructure.media.MediaStore
 import dev.jellystructure.media.Scanner
 import dev.jellystructure.server.startServer
@@ -28,11 +29,12 @@ fun main() {
     val mediaStore = MediaStore(mediaFile)
     mediaStore.load()
     val scanner = Scanner(configStore, tmdbClient)
+    val artworkDownloader = ArtworkDownloader()
 
     println("[INFO] Starting jellystructure on port $port")
     println("[INFO] Serving frontend from $frontendDir")
 
-    startServer(configStore, sessionService, jellyfinClient, mediaStore, scanner, frontendDir, port)
+    startServer(configStore, sessionService, jellyfinClient, mediaStore, scanner, artworkDownloader, frontendDir, port)
 }
 
 @OptIn(ExperimentalForeignApi::class)

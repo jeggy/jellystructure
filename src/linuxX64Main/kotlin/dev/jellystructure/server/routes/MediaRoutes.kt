@@ -1,16 +1,20 @@
 package dev.jellystructure.server.routes
 
+import dev.jellystructure.media.ArtworkDownloader
 import dev.jellystructure.media.MediaStore
 import dev.jellystructure.media.Scanner
 import dev.jellystructure.model.MediaKind
+import dev.jellystructure.nfo.NfoWriter
+import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.response.respond
+import io.ktor.server.response.respondText
 import io.ktor.server.routing.Route
 import io.ktor.server.routing.get
 import io.ktor.server.routing.post
 import io.ktor.server.routing.route
 
-fun Route.mediaRoutes(store: MediaStore, scanner: Scanner) {
+fun Route.mediaRoutes(store: MediaStore, scanner: Scanner, artwork: ArtworkDownloader) {
     route("/media") {
         get {
             val kindStr = call.request.queryParameters["kind"]
@@ -22,12 +26,60 @@ fun Route.mediaRoutes(store: MediaStore, scanner: Scanner) {
             call.respond(store.list(kind, filter, page, pageSize))
         }
 
-        get("/{id}") {
-            val id = call.parameters["id"]
-                ?: return@get call.respond(HttpStatusCode.BadRequest)
-            val item = store.get(id)
-                ?: return@get call.respond(HttpStatusCode.NotFound)
-            call.respond(item)
+        route("/{id}") {
+            get {
+                val id = call.parameters["id"]
+                    ?: return@get call.respond(HttpStatusCode.BadRequest)
+                val item = store.get(id)
+                    ?: return@get call.respond(HttpStatusCode.NotFound)
+                call.respond(item)
+            }
+
+            route("/nfo") {
+                get {
+                    val id = call.parameters["id"]
+                        ?: return@get call.respond(HttpStatusCode.BadRequest)
+                    val item = store.get(id)
+                        ?: return@get call.respond(HttpStatusCode.NotFound)
+                    val raw = NfoWriter.readRaw(item)
+                        ?: return@get call.respond(HttpStatusCode.NotFound)
+                    call.respondText(raw, ContentType.Text.Xml)
+                }
+
+                post {
+                    val id = call.parameters["id"]
+                        ?: return@post call.respond(HttpStatusCode.BadRequest)
+                    val item = store.get(id)
+                        ?: return@post call.respond(HttpStatusCode.NotFound)
+                    NfoWriter.write(item)
+                        .onSuccess { path ->
+                            call.respond(mapOf("path" to path))
+                        }
+                        .onFailure { e ->
+                            println("[ERROR] NFO write failed for $id: ${e.message}")
+                            call.respond(HttpStatusCode.InternalServerError, mapOf("error" to (e.message ?: "write failed")))
+                        }
+                }
+            }
+
+            route("/artwork") {
+                get {
+                    val id = call.parameters["id"]
+                        ?: return@get call.respond(HttpStatusCode.BadRequest)
+                    val item = store.get(id)
+                        ?: return@get call.respond(HttpStatusCode.NotFound)
+                    call.respond(artwork.check(item))
+                }
+
+                post {
+                    val id = call.parameters["id"]
+                        ?: return@post call.respond(HttpStatusCode.BadRequest)
+                    val item = store.get(id)
+                        ?: return@post call.respond(HttpStatusCode.NotFound)
+                    val status = artwork.fetch(item)
+                    call.respond(status)
+                }
+            }
         }
     }
 

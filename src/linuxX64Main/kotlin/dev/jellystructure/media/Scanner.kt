@@ -4,6 +4,7 @@ import dev.jellystructure.config.ConfigStore
 import dev.jellystructure.model.MediaItem
 import dev.jellystructure.model.MediaKind
 import dev.jellystructure.model.TrackKind
+import dev.jellystructure.resolver.LanguageResolver
 import dev.jellystructure.tmdb.TmdbClient
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.coroutines.delay
@@ -70,8 +71,16 @@ class Scanner(
         println("[INFO] Scanning: $title (${year ?: "?"})")
 
         val tracks = FfprobeRunner.probe(filePath)
+
+        val audioLangs = tracks.filter { it.kind == TrackKind.AUDIO }.map { it.language }
+        val fallback = configStore.current.languageRules.fallbackLanguage
+        val langPriority = LanguageResolver.priorityList(audioLangs, fallback)
+
         val tmdbResult = tmdb.searchMovie(title, year)
-        val details = tmdbResult?.let { tmdb.getMovieDetails(it.id) }
+        val details = tmdbResult?.let { tmdb.getMovieDetailsLocalized(it.id, langPriority) }
+        val resolvedLang = details?.let {
+            langPriority.firstOrNull { lang -> it.overview.isNotBlank() } ?: langPriority.lastOrNull()
+        }
 
         val issueCount = tracks.count {
             (it.kind == TrackKind.AUDIO || it.kind == TrackKind.SUBTITLE) && it.language == null
@@ -79,14 +88,18 @@ class Scanner(
 
         return MediaItem(
             id = slugify(title, year),
-            title = title,
+            title = details?.title ?: title,
+            originalTitle = details?.originalTitle?.takeIf { it.isNotBlank() },
             year = year,
             kind = kind,
             path = filePath,
             tmdbId = details?.id,
             originalLanguage = details?.originalLanguage,
+            resolvedLanguage = resolvedLang,
             posterPath = details?.posterPath,
+            backdropPath = details?.backdropPath,
             overview = details?.overview?.takeIf { it.isNotBlank() },
+            genres = details?.genres?.map { it.name } ?: emptyList(),
             tracks = tracks,
             issueCount = issueCount,
             scannedAt = epochSeconds(),
