@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Jellystructure — Media Detail</title>
+<link rel="stylesheet" href="wf.css">
+</head>
+<body class="wf-body">
+
+<div class="wf-page wide" data-variant-scope>
+  <div class="screen-head">
+    <span class="kicker">one file, total control</span>
+    <h1>Media detail</h1>
+    <p>Everything Jellyfin would scrape — metadata, artwork, NFO, embedded tracks — for a single title, editable in one place. Save writes the NFO + image files to disk (with <span class="mono">&lt;lockdata&gt;true&lt;/lockdata&gt;</span>) and edits the container, then optionally pings Jellyfin to reload.</p>
+  </div>
+
+  <div class="variant-tabs">
+    <button class="active" data-target="a">A · Form + side rail<span class="sub">friendly fields, artwork visible</span></button>
+    <button data-target="b">B · Raw NFO editor<span class="sub">XML on disk, power-user</span></button>
+  </div>
+
+  <!-- ===== A ===== -->
+  <div class="variant active" data-variant="a">
+    <div class="frame">
+      <div class="frame-bar"><span class="dots"><i></i><i></i><i></i></span><span class="url">jellystructure.home.lan / library / sintel-2010</span></div>
+      <div class="frame-body" style="padding:0;">
+        <div class="app">
+          <main class="app-main" style="grid-column:1 / -1;">
+            <div class="app-bar">
+              <span class="btn sm ghost">‹ Library</span>
+              <h2>Sintel <span class="muted">(2010)</span></h2>
+              <span class="badge ok">NFO locked</span>
+              <span class="spacer"></span>
+              <span class="btn sm">Re-pull from TMDB</span>
+              <span class="btn primary">Save → disk</span>
+              <span class="btn">Save &amp; tell Jellyfin ↻</span>
+            </div>
+
+            <!-- internal tabs -->
+            <div class="pill-row" style="margin-bottom:14px;">
+              <span class="chip" style="background:var(--hi);">Overview</span><span class="chip">Tracks</span><span class="chip">Artwork</span><span class="chip">NFO (raw)</span><span class="chip">History</span>
+            </div>
+
+            <div class="row" style="align-items:flex-start;">
+              <!-- left: artwork rail -->
+              <div class="col" style="width:230px;flex:none;">
+                <div class="card">
+                  <h4 style="margin:0 0 8px;">Artwork</h4>
+                  <div class="imgslot" style="height:230px;margin-bottom:8px;"><div class="x"></div><span>poster.jpg<br>(drop / fetch)</span></div>
+                  <div class="row" style="gap:8px;">
+                    <div class="imgslot fill" style="height:60px;"><span>backdrop</span></div>
+                    <div class="imgslot fill" style="height:60px;"><span>logo.png</span></div>
+                  </div>
+                  <div class="pill-row" style="margin-top:10px;"><span class="btn sm">Fetch all</span><span class="btn sm ghost">Upload</span></div>
+                  <div class="tiny muted" style="margin-top:8px;">3 of 4 assets present · clearlogo missing</div>
+                </div>
+                <div class="card">
+                  <h4 style="margin:0 0 6px;">Identity</h4>
+                  <div class="field" style="margin:0 0 8px;"><label>TMDB id</label><div class="input">45745</div></div>
+                  <div class="row center tiny" style="gap:7px;"><span class="muted">match confidence</span><span class="badge ok">exact</span></div>
+                </div>
+              </div>
+
+              <!-- right: fields -->
+              <div class="col fill">
+                <div class="card">
+                  <div class="row"><div class="field fill"><label>Title</label><div class="input">Sintel</div></div><div class="field" style="width:110px;"><label>Year</label><div class="input">2010</div></div></div>
+                  <div class="field"><label>Plot</label><div class="input" style="min-height:70px;align-items:flex-start;">A lonely young woman, Sintel, helps and befriends a dragon…</div></div>
+                  <div class="row">
+                    <div class="field fill"><label>Genres</label><div class="pill-row"><span class="chip">Animation ✕</span><span class="chip">Fantasy ✕</span><span class="chip ghost">＋</span></div></div>
+                    <div class="field" style="width:160px;"><label>Original language</label><div class="input"><span class="lang">en</span> &nbsp;· from TMDB</div></div>
+                  </div>
+                  <div class="row">
+                    <div class="field fill"><label>Director</label><div class="input">Colin Levy</div></div>
+                    <div class="field fill"><label>Studio</label><div class="input">Blender Foundation</div></div>
+                  </div>
+                </div>
+
+                <div class="card">
+                  <div class="row center"><h4 style="margin:0;">Embedded tracks</h4><span class="spacer"></span><span class="btn sm">Open track editor ↗</span></div>
+                  <hr class="dash" style="margin:10px 0;">
+                  <table class="wf-table">
+                    <tr><th>#</th><th>Kind</th><th>Lang</th><th>Codec</th><th>Default</th><th>Forced</th></tr>
+                    <tr><td class="num">0:a:0</td><td>audio</td><td><span class="lang">en</span></td><td class="num">vorbis</td><td><span class="badge ok">default</span></td><td>—</td></tr>
+                    <tr class="attn"><td class="num">0:a:1</td><td>audio</td><td class="muted">none</td><td class="num">ac3</td><td>—</td><td>—</td></tr>
+                    <tr><td class="num">0:s:0</td><td>subtitle</td><td><span class="lang">en</span></td><td class="num">srt</td><td>—</td><td>—</td></tr>
+                  </table>
+                </div>
+
+                <div class="row center box flat" style="background:var(--ok-soft);border-color:var(--ok);">
+                  <span class="badge ok">lockdata</span><span class="tiny">Written into NFO so Jellyfin never overwrites these values.</span>
+                  <span class="spacer"></span><span class="toggle on"></span>
+                </div>
+              </div>
+            </div>
+          </main>
+        </div>
+      </div>
+    </div>
+    <div class="note-row">
+      <div class="note">Artwork rail always visible — you see what's missing (clearlogo) at a glance.</div>
+      <div class="note r blue">Every field maps 1:1 to a Kodi/Jellyfin NFO tag. "Re-pull" refills empties without clobbering locked edits.</div>
+    </div>
+  </div>
+
+  <!-- ===== B: RAW NFO ===== -->
+  <div class="variant" data-variant="b">
+    <div class="frame">
+      <div class="frame-bar"><span class="dots"><i></i><i></i><i></i></span><span class="url">jellystructure.home.lan / library / sintel-2010 / nfo</span></div>
+      <div class="frame-body" style="padding:16px;">
+        <div class="app-bar"><span class="btn sm ghost">‹ back</span><h2>movie.nfo</h2><span class="chip mono">/media/movies/Sintel (2010)/movie.nfo</span><span class="spacer"></span><span class="btn sm">Format</span><span class="btn sm">Revert</span><span class="btn primary">Save → disk</span></div>
+        <div class="row" style="align-items:stretch;">
+          <div class="log fill" style="max-height:none;min-height:360px;color:#e8e5da;">
+            <div class="muted" style="color:#8fb98f;">&lt;?xml version="1.0" encoding="UTF-8"?&gt;</div>
+            <div>&lt;<span class="okc">movie</span>&gt;</div>
+            <div>&nbsp;&nbsp;&lt;title&gt;Sintel&lt;/title&gt;</div>
+            <div>&nbsp;&nbsp;&lt;year&gt;2010&lt;/year&gt;</div>
+            <div>&nbsp;&nbsp;&lt;tmdbid&gt;45745&lt;/tmdbid&gt;</div>
+            <div>&nbsp;&nbsp;&lt;originallanguage&gt;<span class="warnc">en</span>&lt;/originallanguage&gt;</div>
+            <div>&nbsp;&nbsp;&lt;genre&gt;Animation&lt;/genre&gt;</div>
+            <div>&nbsp;&nbsp;&lt;genre&gt;Fantasy&lt;/genre&gt;</div>
+            <div>&nbsp;&nbsp;&lt;director&gt;Colin Levy&lt;/director&gt;</div>
+            <div>&nbsp;&nbsp;&lt;studio&gt;Blender Foundation&lt;/studio&gt;</div>
+            <div>&nbsp;&nbsp;<span class="badgec" style="color:#8fd58f;">&lt;lockdata&gt;true&lt;/lockdata&gt;</span></div>
+            <div>&lt;/<span class="okc">movie</span>&gt;</div>
+          </div>
+          <div class="col" style="width:280px;">
+            <div class="card"><h4 style="margin:0 0 6px;">On disk, next to file</h4>
+              <div class="tiny mono" style="line-height:1.9;">
+                <div class="row center"><span class="dot ok"></span> movie.nfo</div>
+                <div class="row center"><span class="dot ok"></span> poster.jpg</div>
+                <div class="row center"><span class="dot ok"></span> fanart.jpg</div>
+                <div class="row center"><span class="dot bad"></span> clearlogo.png &nbsp;<span class="muted">missing</span></div>
+              </div>
+            </div>
+            <div class="card"><h4 style="margin:0 0 6px;">Validation</h4><div class="tiny"><span class="badge ok">well-formed XML</span><br><span class="muted" style="margin-top:6px;display:block;">lockdata present → Jellyfin will respect this file.</span></div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="note-row">
+      <div class="note">For when you want to see exactly what's written. Backend serialises via Okio streams — this is the truth on disk.</div>
+    </div>
+  </div>
+
+</div>
+
+<script src="wf-nav.js"></script>
+</body>
+</html>

@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Jellystructure — Track Order</title>
+<link rel="stylesheet" href="wf.css">
+</head>
+<body class="wf-body">
+
+<div class="wf-page wide" data-variant-scope>
+  <div class="screen-head">
+    <span class="kicker">editing the file itself, not just metadata</span>
+    <h1>Audio &amp; subtitle track order</h1>
+    <p>Set which language is the <strong>default</strong> and the order tracks appear in the player. For <span class="mono">.mkv</span> this is an instant header edit (<span class="mono">mkvpropedit</span>, milliseconds, no re-encode). When a real reorder or removal is needed it falls back to <span class="mono">ffmpeg -c copy</span> remux. How should the human drive it?</p>
+  </div>
+
+  <div class="variant-tabs">
+    <button class="active" data-target="a">A · Drag to reorder<span class="sub">manual, see the command</span></button>
+    <button data-target="b">B · Before / after diff<span class="sub">cascade proposes, you approve</span></button>
+    <button data-target="c">C · Cascade-only<span class="sub">declare rule, it computes</span></button>
+  </div>
+
+  <!-- ===== A: DRAG ===== -->
+  <div class="variant active" data-variant="a">
+    <div class="frame">
+      <div class="frame-bar"><span class="dots"><i></i><i></i><i></i></span><span class="url">jellystructure.home.lan / library / sintel-2010 / tracks</span></div>
+      <div class="frame-body" style="padding:16px;">
+        <div class="app-bar"><h2>Tracks — Sintel (2010)</h2><span class="chip mono">.mkv · matroska</span><span class="spacer"></span><span class="seg"><span class="on">Audio</span><span>Subtitles</span></span></div>
+        <div class="row" style="align-items:flex-start;">
+          <div class="col fill">
+            <div class="card" style="padding:0;">
+              <div class="row center" style="padding:10px 14px;background:var(--fill-2);border-bottom:2px solid var(--ink);"><b>Audio tracks</b><span class="muted tiny">drag ⠿ to reorder · ★ = default</span></div>
+              <!-- track rows -->
+              <div class="row center" style="padding:11px 14px;border-bottom:1.5px solid rgba(35,33,28,.18);background:var(--hi-soft);">
+                <span class="drag-handle">⠿</span><span class="num" style="width:48px;">a:0</span>
+                <span class="badge warn">★ default</span>
+                <span class="lang" style="font-size:1rem;width:34px;">da</span><span class="muted tiny">Dansk · ac3 5.1</span>
+                <span class="spacer"></span><span class="btn sm ghost">★ set default</span><span class="btn sm ghost">remove</span>
+              </div>
+              <div class="row center" style="padding:11px 14px;border-bottom:1.5px solid rgba(35,33,28,.18);">
+                <span class="drag-handle">⠿</span><span class="num" style="width:48px;">a:1</span>
+                <span class="badge" style="visibility:hidden;">★</span>
+                <span class="lang" style="font-size:1rem;width:34px;">en</span><span class="muted tiny">English · vorbis</span>
+                <span class="spacer"></span><span class="btn sm ghost">★ set default</span><span class="btn sm ghost">remove</span>
+              </div>
+              <div class="row center" style="padding:11px 14px;">
+                <span class="drag-handle">⠿</span><span class="num" style="width:48px;">a:2</span>
+                <span class="badge" style="visibility:hidden;">★</span>
+                <span class="lang muted" style="font-size:1rem;width:34px;">??</span><span class="muted tiny">no language · ac3 commentary</span>
+                <span class="spacer"></span><span class="badge bad">tag first</span>
+              </div>
+            </div>
+            <div class="note red" style="transform:none;max-width:none;">Was: default = <b>en</b>. You dragged <b>da</b> to top &amp; starred it. Cascade for this file = <span class="mono">da › en › orig</span> ✓ matches.</div>
+          </div>
+
+          <div class="col" style="width:300px;">
+            <div class="card">
+              <h4 style="margin:0 0 8px;">Will run</h4>
+              <div class="log" style="max-height:none;">
+                <div class="okc">mkvpropedit</div>
+                <div>&nbsp;Sintel.mkv \</div>
+                <div>&nbsp;--edit track:a1 \</div>
+                <div>&nbsp;&nbsp;--set flag-default=1 \</div>
+                <div>&nbsp;--edit track:a2 \</div>
+                <div>&nbsp;&nbsp;--set flag-default=0</div>
+              </div>
+              <div class="badge ok" style="margin-top:8px;">header-only · ~40ms</div>
+              <div class="btn primary" style="margin-top:12px;width:100%;justify-content:center;">Apply to file</div>
+              <div class="tiny muted center-x" style="margin-top:6px;">no re-encode · POSIX perms kept</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="note-row">
+      <div class="note">Full manual control + a live preview of the exact command. Trust through transparency.</div>
+      <div class="note r blue">Untagged track is locked from reorder until you give it a language (links back to Triage).</div>
+    </div>
+  </div>
+
+  <!-- ===== B: DIFF ===== -->
+  <div class="variant" data-variant="b">
+    <div class="frame">
+      <div class="frame-bar"><span class="dots"><i></i><i></i><i></i></span><span class="url">jellystructure.home.lan / library / sintel-2010 / tracks</span></div>
+      <div class="frame-body" style="padding:16px;">
+        <div class="app-bar"><h2>Proposed change</h2><span class="muted">cascade: <span class="mono">da › en › original</span></span><span class="spacer"></span><span class="btn sm ghost">edit cascade</span></div>
+        <div class="row" style="align-items:stretch;">
+          <div class="card fill">
+            <h4 style="margin:0 0 10px;">Current order <span class="muted tiny">on disk</span></h4>
+            <div class="col" style="gap:8px;">
+              <div class="box flat row center" style="padding:8px 10px;"><span class="num" style="width:40px;">a:0</span><span class="lang">en</span><span class="badge warn">★ default</span><span class="spacer"></span><span class="muted tiny">vorbis</span></div>
+              <div class="box flat row center" style="padding:8px 10px;"><span class="num" style="width:40px;">a:1</span><span class="lang">da</span><span class="spacer"></span><span class="muted tiny">ac3</span></div>
+              <div class="box flat row center" style="padding:8px 10px;opacity:.6;"><span class="num" style="width:40px;">a:2</span><span class="lang muted">??</span><span class="spacer"></span><span class="muted tiny">commentary</span></div>
+            </div>
+          </div>
+          <div class="col center" style="justify-content:center;"><div class="callout"><span class="arr">➜</span></div></div>
+          <div class="card fill" style="border-color:var(--ok);">
+            <h4 style="margin:0 0 10px;">After cascade <span class="badge ok">proposed</span></h4>
+            <div class="col" style="gap:8px;">
+              <div class="box flat row center" style="padding:8px 10px;background:var(--ok-soft);border-color:var(--ok);"><span class="num" style="width:40px;">a:0</span><span class="lang">da</span><span class="badge ok">★ default</span><span class="spacer"></span><span class="chip" style="font-size:.65rem;">moved ▲</span></div>
+              <div class="box flat row center" style="padding:8px 10px;"><span class="num" style="width:40px;">a:1</span><span class="lang">en</span><span class="spacer"></span><span class="muted tiny">was default</span></div>
+              <div class="box flat row center" style="padding:8px 10px;opacity:.6;"><span class="num" style="width:40px;">a:2</span><span class="lang muted">??</span><span class="spacer"></span><span class="badge bad">tag first</span></div>
+            </div>
+          </div>
+        </div>
+        <div class="row center" style="margin-top:14px;">
+          <span class="chip">tool: <b class="mono">mkvpropedit</b></span><span class="chip">est. ~40ms</span><span class="chip ok">no re-encode</span>
+          <span class="spacer"></span>
+          <span class="btn ghost">skip this file</span><span class="btn primary">Apply &amp; next file →</span>
+        </div>
+      </div>
+    </div>
+    <div class="note-row">
+      <div class="note">You never think about flags — the cascade computes the target, you just eyeball before→after and approve.</div>
+      <div class="note r blue">"Apply &amp; next" turns 200 files into a rhythm. Tool badge warns when a slow ffmpeg remux is needed.</div>
+    </div>
+  </div>
+
+  <!-- ===== C: CASCADE ONLY ===== -->
+  <div class="variant" data-variant="c">
+    <div class="frame">
+      <div class="frame-bar"><span class="dots"><i></i><i></i><i></i></span><span class="url">jellystructure.home.lan / tracks / bulk</span></div>
+      <div class="frame-body" style="padding:16px;">
+        <div class="app-bar"><h2>Apply cascade to many files</h2><span class="spacer"></span></div>
+        <div class="row" style="align-items:flex-start;">
+          <div class="card" style="width:330px;flex:none;">
+            <h4 style="margin:0 0 8px;">Rule</h4>
+            <div class="pill-row" style="margin-bottom:6px;"><span class="chip" style="background:var(--hi);">1 da</span><span class="chip" style="background:var(--hi);">2 en</span><span class="chip" style="background:var(--hi);">3 original</span></div>
+            <div class="tiny muted">Per-file "original" resolves from TMDB original_language.</div>
+            <hr class="dash" style="margin:12px 0;">
+            <h4 style="margin:0 0 8px;">Scope</h4>
+            <div class="field" style="margin-bottom:8px;"><div class="select">/media/movies/**</div></div>
+            <div class="row center tiny" style="gap:8px;"><span class="toggle on"></span> only files where default ≠ cascade</div>
+            <div class="row center tiny" style="gap:8px;margin-top:8px;"><span class="toggle"></span> allow ffmpeg remux (slower)</div>
+          </div>
+
+          <div class="card fill">
+            <div class="row center"><h4 style="margin:0;">Dry run — 142 files affected</h4><span class="spacer"></span><span class="badge ok">138 header-only</span><span class="badge warn">4 need remux</span></div>
+            <hr class="dash" style="margin:10px 0;">
+            <table class="wf-table">
+              <tr><th>File</th><th>Now</th><th>→ Default</th><th>Tool</th><th></th></tr>
+              <tr><td>Sintel (2010)</td><td><span class="lang">en</span></td><td><span class="lang">da</span></td><td><span class="badge ok">mkvpropedit</span></td><td><span class="dot ok"></span></td></tr>
+              <tr><td>Cosmos Laundromat</td><td><span class="lang">en</span></td><td><span class="lang">en</span></td><td class="muted tiny">no change</td><td><span class="dot none"></span></td></tr>
+              <tr><td>Caminandes 3</td><td class="muted">none</td><td><span class="lang">da</span></td><td><span class="badge ok">mkvpropedit</span></td><td><span class="dot ok"></span></td></tr>
+              <tr class="attn"><td>Glass Half (mp4)</td><td><span class="lang">en</span></td><td><span class="lang">da</span></td><td><span class="badge warn">ffmpeg remux</span></td><td><span class="dot warn"></span></td></tr>
+            </table>
+            <div class="row center" style="margin-top:12px;"><span class="muted tiny">Nothing has been written yet.</span><span class="spacer"></span><span class="btn">Export plan</span><span class="btn primary">Run on 142 files ▶</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="note-row">
+      <div class="note">Declare the rule once, dry-run shows the blast radius and flags the slow ffmpeg cases before you commit.</div>
+      <div class="note r red">This is the "set it and forget it" path. Progress then streams into the Scan Activity screen.</div>
+    </div>
+  </div>
+
+</div>
+
+<script src="wf-nav.js"></script>
+</body>
+</html>

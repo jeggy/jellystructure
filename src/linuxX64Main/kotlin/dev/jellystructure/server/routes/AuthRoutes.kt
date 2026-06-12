@@ -7,7 +7,6 @@ import dev.jellystructure.auth.SessionService
 import dev.jellystructure.auth.UserProfile
 import dev.jellystructure.config.ConfigStore
 import io.ktor.http.Cookie
-import io.ktor.http.CookieSameSite
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.request.receive
 import io.ktor.server.response.respond
@@ -70,7 +69,7 @@ fun Route.authRoutes(
                     httpOnly = true,
                     path = "/",
                     maxAge = 7 * 24 * 60 * 60,
-                    sameSite = CookieSameSite.Lax,
+                    extensions = mapOf("SameSite" to "Lax"),
                 ),
             )
             call.respond(UserProfile(authResult.user.id, authResult.user.name))

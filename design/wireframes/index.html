@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Jellystructure — Wireframes · Overview</title>
+<link rel="stylesheet" href="wf.css">
+</head>
+<body class="wf-body">
+
+<div class="wf-page wide" data-variant-scope>
+
+  <div class="screen-head">
+    <span class="kicker">low-fi wireframes — structure, not styling</span>
+    <h1>Jellystructure</h1>
+    <p>A self-hosted control panel that <strong>replaces Jellyfin's built-in metadata scraper</strong>. You manage NFO files, artwork, and the media files themselves (audio / subtitle track order) from one place — then tell Jellyfin to reload. These are rough sketches to agree on layout and flow before any pixels are polished. The real app targets dark mode; here we stay in marker-on-paper so we argue about structure, not colours.</p>
+  </div>
+
+  <div class="note-row">
+    <div class="note">Goal: never click "Refresh Metadata" inside Jellyfin again. Everything lives here.</div>
+    <div class="note r blue">Built Kotlin Native (backend) + Kotlin WASM → real DOM (frontend). Updates stream in live over WebSocket.</div>
+    <div class="note red">The killer feature: per-file <b>language cascade</b> + a triage list of tracks missing a language tag.</div>
+  </div>
+
+  <hr class="dash">
+
+  <h2 style="font-size:1.4rem;">The app shell — two navigation directions</h2>
+  <p class="muted" style="max-width:70ch;">Same dashboard content, two ways to get around. This decides the skeleton every other screen hangs on.</p>
+
+  <div class="variant-tabs">
+    <button class="active" data-target="a">A · Left sidebar<span class="sub">persistent nav, counts inline</span></button>
+    <button data-target="b">B · Top bar + command palette<span class="sub">more canvas, keyboard-driven</span></button>
+  </div>
+
+  <!-- ============ VARIANT A : SIDEBAR ============ -->
+  <div class="variant active" data-variant="a">
+    <div class="frame">
+      <div class="frame-bar"><span class="dots"><i></i><i></i><i></i></span><span class="url">jellystructure.home.lan / library</span></div>
+      <div class="frame-body">
+        <div class="app">
+          <!-- sidebar -->
+          <aside class="side">
+            <div class="logo"><span class="glyph"></span> Jellystructure</div>
+            <div class="navitem active"><span class="l"><span class="ico"></span>Dashboard</span></div>
+            <div class="navitem"><span class="l"><span class="ico"></span>Library</span></div>
+            <div class="navitem"><span class="l"><span class="ico"></span>Triage</span><span class="count">214</span></div>
+            <div class="navitem"><span class="l"><span class="ico"></span>Activity</span></div>
+            <div class="group-label">Setup</div>
+            <div class="navitem"><span class="l"><span class="ico"></span>Cascade rules</span></div>
+            <div class="navitem"><span class="l"><span class="ico"></span>Settings</span></div>
+            <div class="fill"></div>
+            <div class="box flat tiny" style="padding:8px;">
+              <div class="row center" style="gap:7px;"><span class="dot ok"></span> Jellyfin online</div>
+              <div class="row center" style="gap:7px;"><span class="dot ok"></span> TMDB key OK</div>
+            </div>
+          </aside>
+
+          <!-- main -->
+          <main class="app-main">
+            <div class="app-bar">
+              <h2>Dashboard</h2>
+              <span class="spacer"></span>
+              <span class="btn sm ghost">⌕ Search…</span>
+              <span class="btn primary">▶ Scan library</span>
+            </div>
+
+            <!-- stat tiles -->
+            <div class="grid" style="grid-template-columns:repeat(4,1fr);">
+              <div class="card"><div class="tiny muted">MOVIES</div><div style="font-size:1.8rem;font-weight:700;">1,842</div></div>
+              <div class="card"><div class="tiny muted">TV EPISODES</div><div style="font-size:1.8rem;font-weight:700;">9,531</div></div>
+              <div class="card" style="border-color:var(--bad);background:var(--bad-soft);"><div class="tiny" style="color:#8a2e10;">TRACKS NEEDING ATTENTION</div><div style="font-size:1.8rem;font-weight:700;color:#8a2e10;">214</div></div>
+              <div class="card"><div class="tiny muted">NFO COVERAGE</div><div style="font-size:1.8rem;font-weight:700;">96%</div></div>
+            </div>
+
+            <div class="row" style="margin-top:14px;align-items:stretch;">
+              <div class="card fill">
+                <div class="row center"><h3 style="font-size:1.05rem;margin:0;">Needs your attention</h3><span class="spacer"></span><span class="badge bad">214 tracks</span></div>
+                <hr class="dash" style="margin:10px 0;">
+                <table class="wf-table">
+                  <tr><td>Sintel (2010)</td><td><span class="badge bad">audio · no language</span></td><td class="muted tiny">track 0:a:2</td><td><span class="btn sm">Fix</span></td></tr>
+                  <tr><td>Tears of Steel (2012)</td><td><span class="badge bad">audio · no language</span></td><td class="muted tiny">track 0:a:1</td><td><span class="btn sm">Fix</span></td></tr>
+                  <tr><td>Big Buck Bunny (2008)</td><td><span class="badge warn">default ≠ cascade</span></td><td class="muted tiny">da expected</td><td><span class="btn sm">Fix</span></td></tr>
+                </table>
+                <div class="tiny muted" style="margin-top:8px;">…211 more →</div>
+              </div>
+              <div class="col" style="width:300px;">
+                <div class="card">
+                  <h3 style="font-size:1.05rem;">Live activity</h3>
+                  <div class="log">
+                    <div><span class="ts">14:02:11</span> scan /media/movies</div>
+                    <div><span class="ts">14:02:13</span> <span class="okc">nfo ✓</span> Sintel</div>
+                    <div><span class="ts">14:02:14</span> <span class="warnc">mkvpropedit</span> reorder a-tracks…</div>
+                    <div><span class="ts">14:02:15</span> <span class="okc">✓</span> default = da</div>
+                  </div>
+                </div>
+                <div class="card">
+                  <h3 style="font-size:1.05rem;">Quick actions</h3>
+                  <div class="pill-row">
+                    <span class="chip">Re-pull artwork</span><span class="chip">Apply cascade</span><span class="chip">Tell Jellyfin to refresh</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </main>
+        </div>
+      </div>
+    </div>
+    <div class="note-row">
+      <div class="note">Sidebar carries the <b>214</b> badge everywhere — the triage count is always one glance away.</div>
+    </div>
+  </div>
+
+  <!-- ============ VARIANT B : TOPBAR ============ -->
+  <div class="variant" data-variant="b">
+    <div class="frame">
+      <div class="frame-bar"><span class="dots"><i></i><i></i><i></i></span><span class="url">jellystructure.home.lan / library</span></div>
+      <div class="frame-body">
+        <div class="app topnav-layout">
+          <main class="app-main" style="padding-top:0;">
+            <!-- in-app top bar -->
+            <div class="row center" style="background:var(--fill-2);border-bottom:2px solid var(--ink);margin:0 -18px 16px;padding:10px 18px;gap:14px;">
+              <div class="logo" style="padding:0;font-weight:700;"><span class="glyph" style="width:18px;height:18px;border:2px solid var(--ink);border-radius:6px 3px 7px 4px;display:inline-block;background:repeating-linear-gradient(135deg,transparent 0 3px,var(--ink) 3px 4px);"></span> Jellystructure</div>
+              <div class="seg" style="margin-left:8px;">
+                <span class="on">Dashboard</span><span>Library</span><span>Triage · 214</span><span>Activity</span>
+              </div>
+              <span class="spacer"></span>
+              <span class="input ph" style="width:260px;">⌕ &nbsp;Search or jump…&nbsp; <span class="kbd" style="margin-left:auto;">⌘K</span></span>
+              <span class="btn primary">▶ Scan</span>
+            </div>
+
+            <div class="grid" style="grid-template-columns:repeat(4,1fr);">
+              <div class="card"><div class="tiny muted">MOVIES</div><div style="font-size:1.8rem;font-weight:700;">1,842</div></div>
+              <div class="card"><div class="tiny muted">TV EPISODES</div><div style="font-size:1.8rem;font-weight:700;">9,531</div></div>
+              <div class="card" style="border-color:var(--bad);background:var(--bad-soft);"><div class="tiny" style="color:#8a2e10;">NEEDS ATTENTION</div><div style="font-size:1.8rem;font-weight:700;color:#8a2e10;">214</div></div>
+              <div class="card"><div class="tiny muted">NFO COVERAGE</div><div style="font-size:1.8rem;font-weight:700;">96%</div></div>
+            </div>
+
+            <div class="row" style="margin-top:14px;">
+              <div class="card fill">
+                <h3 style="font-size:1.05rem;">Recently processed</h3>
+                <hr class="dash" style="margin:10px 0;">
+                <table class="wf-table">
+                  <tr><td>Sintel (2010)</td><td><span class="badge ok">cascade applied</span></td><td class="muted tiny">da → en → orig</td></tr>
+                  <tr><td>Cosmos Laundromat (2015)</td><td><span class="badge ok">artwork ✓</span></td><td class="muted tiny">poster, backdrop, logo</td></tr>
+                  <tr class="attn"><td>Tears of Steel (2012)</td><td><span class="badge bad">untagged audio</span></td><td class="muted tiny">needs you</td></tr>
+                </table>
+              </div>
+              <div class="card" style="width:320px;">
+                <h3 style="font-size:1.05rem;">⌘K command palette</h3>
+                <p class="tiny muted">Everything is reachable by typing. Power-user first.</p>
+                <div class="box flat" style="padding:8px;">
+                  <div class="tiny mono" style="line-height:1.9;">
+                    &gt; scan movies<br>
+                    &gt; fix untagged tracks<br>
+                    &gt; cascade: da en orig<br>
+                    &gt; jellyfin refresh all
+                  </div>
+                </div>
+              </div>
+            </div>
+          </main>
+        </div>
+      </div>
+    </div>
+    <div class="note-row">
+      <div class="note r">More horizontal room for wide tables. Trades the always-visible count badge for a keyboard palette.</div>
+    </div>
+  </div>
+
+  <hr class="dash">
+  <div class="legend">
+    <b>Legend:</b>
+    <span><span class="dot bad"></span> needs attention</span>
+    <span><span class="dot warn"></span> mismatch / warning</span>
+    <span><span class="dot ok"></span> resolved</span>
+    <span><span class="imgslot" style="width:34px;height:22px;"><span style="font-size:.6rem;">img</span></span> artwork placeholder</span>
+    <span class="note" style="transform:none;padding:4px 8px;font-size:.9rem;">sticky = design note</span>
+  </div>
+
+</div>
+
+<script src="wf-nav.js"></script>
+</body>
+</html>

@@ -19,17 +19,17 @@ data class SessionData(
 )
 
 @Serializable
-internal data class JellyfinPolicy(@SerialName("IsAdministrator") val isAdministrator: Boolean)
+data class JellyfinPolicy(@SerialName("IsAdministrator") val isAdministrator: Boolean)
 
 @Serializable
-internal data class JellyfinUser(
+data class JellyfinUser(
     @SerialName("Id") val id: String,
     @SerialName("Name") val name: String,
     @SerialName("Policy") val policy: JellyfinPolicy,
 )
 
 @Serializable
-internal data class JellyfinAuthResponse(
+data class JellyfinAuthResponse(
     @SerialName("User") val user: JellyfinUser,
     @SerialName("AccessToken") val accessToken: String,
 )

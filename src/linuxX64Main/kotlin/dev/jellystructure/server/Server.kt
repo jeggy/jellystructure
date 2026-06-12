@@ -17,6 +17,7 @@ import io.ktor.server.engine.embeddedServer
 import io.ktor.server.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.server.plugins.cors.routing.CORS
 import io.ktor.server.request.path
+import io.ktor.server.response.respond
 import io.ktor.server.response.respondBytes
 import io.ktor.server.response.respondText
 import io.ktor.server.routing.get
@@ -71,7 +72,7 @@ fun startServer(
 
             // SPA: serve Wasm frontend for all non-API paths
             get("{...}") {
-                serveFrontendFile(frontendDir, call.request.path())
+                call.serveFrontendFile(frontendDir, call.request.path())
             }
         }
     }.start(wait = true)

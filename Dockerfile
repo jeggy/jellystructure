@@ -21,7 +21,11 @@ COPY src ./src
 RUN --mount=type=cache,target=/root/.gradle \
     --mount=type=cache,target=/root/.konan \
     --mount=type=cache,target=/root/.npm \
-    ./gradlew linkReleaseExecutableLinuxX64 wasmJsBrowserDistribution --no-daemon
+    ./gradlew linkReleaseExecutableLinuxX64 --no-daemon
+RUN --mount=type=cache,target=/root/.gradle \
+    --mount=type=cache,target=/root/.konan \
+    --mount=type=cache,target=/root/.npm \
+    ./gradlew wasmJsBrowserDistribution --no-daemon
 
 FROM debian:bookworm-slim
 WORKDIR /app

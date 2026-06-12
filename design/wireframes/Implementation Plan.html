@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Jellystructure — Implementation Plan</title>
+<link rel="stylesheet" href="wf.css">
+<style>
+  .doc { max-width: 900px; margin: 0 auto; padding: 40px 32px 120px; }
+  .doc h1 { font-size: 2.4rem; margin: 0; }
+  .doc .lead { font-size: 1.15rem; color: var(--ink-soft); max-width: 62ch; }
+  .doc .body { font-size: 15.5px; line-height: 1.62; font-family: system-ui, -apple-system, 'Segoe UI', sans-serif; }
+  .doc .body p { margin: 0 0 12px; }
+  .doc .body ul, .doc .body ol { margin: 0 0 14px; padding-left: 20px; }
+  .doc .body li { margin: 4px 0; }
+  .doc h2 { font-size: 1.55rem; margin: 40px 0 6px; padding-top: 14px; border-top: 2px dashed var(--ink); }
+  .doc h3 { font-size: 1.15rem; margin: 24px 0 6px; }
+  .doc h4 { font-size: 1rem; margin: 16px 0 4px; text-transform: uppercase; letter-spacing: .05em; color: var(--ink-soft); }
+  .meta { display: flex; gap: 10px; flex-wrap: wrap; margin: 14px 0 8px; }
+  .meta .chip { font-family: system-ui, sans-serif; }
+  .reqtable { width: 100%; border-collapse: collapse; margin: 10px 0 18px; font-size: 13.5px; }
+  .reqtable th, .reqtable td { border: 1.5px solid var(--ink); padding: 7px 9px; text-align: left; vertical-align: top; font-family: system-ui, sans-serif; }
+  .reqtable th { background: var(--fill-2); font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
+  .reqtable td:first-child { white-space: nowrap; font-family: ui-monospace, monospace; font-weight: 700; font-size: 12px; background: var(--hi-soft); }
+  pre.code {
+    font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; font-size: 12.5px; line-height: 1.5;
+    background: var(--ink); color: #e8e5da; padding: 13px 15px; border-radius: var(--radius-s);
+    overflow-x: auto; margin: 8px 0 14px; border: 2px solid var(--ink);
+  }
+  pre.code .c { color: #8fb98f; } /* comment */
+  pre.code .k { color: #ffd54a; } /* keyword */
+  pre.code .s { color: #ff9e6c; } /* string */
+  pre.code .t { color: #8fc7ff; } /* type */
+  .phase {
+    border: 2.5px solid var(--ink); border-radius: var(--radius); background: var(--fill);
+    padding: 0; margin: 18px 0; box-shadow: var(--shadow); overflow: hidden;
+  }
+  .phase > .ph-head {
+    display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap;
+    background: var(--ink); color: var(--paper); padding: 12px 16px;
+  }
+  .phase > .ph-head .ph-no { font-family: 'Kalam'; font-weight: 700; font-size: 1.25rem; color: var(--hi); }
+  .phase > .ph-head .ph-name { font-weight: 700; font-size: 1.1rem; }
+  .phase > .ph-head .dur { margin-left: auto; font-size: 12.5px; opacity: .75; font-family: system-ui; }
+  .phase .ph-inner { padding: 14px 18px 18px; font-family: system-ui, sans-serif; font-size: 14.5px; line-height: 1.55; }
+  .phase .ph-inner h4:first-child { margin-top: 4px; }
+  .lane { display: grid; grid-template-columns: 70px 1fr; gap: 0 12px; align-items: start; margin: 6px 0; }
+  .lane .who { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; padding: 3px 7px; border-radius: 20px; border: 1.5px solid var(--ink); text-align: center; height: fit-content; }
+  .lane .who.be { background: var(--info-soft); }
+  .lane .who.fe { background: var(--ok-soft); }
+  .lane .who.sh { background: var(--hi-soft); }
+  .lane .who.ops { background: var(--bad-soft); }
+  .lane ul { margin: 2px 0 8px; padding-left: 18px; }
+  .exit { border: 2px solid var(--ok); background: var(--ok-soft); border-radius: var(--radius-s); padding: 10px 13px; margin-top: 10px; font-size: 14px; }
+  .exit b { display:block; margin-bottom: 3px; }
+  .callbox { border: 2px solid var(--info); background: var(--info-soft); border-radius: var(--radius-s); padding: 12px 14px; margin: 14px 0; font-family: system-ui; font-size: 14.5px; }
+  .warnbox { border: 2px solid var(--bad); background: var(--bad-soft); border-radius: var(--radius-s); padding: 12px 14px; margin: 14px 0; font-family: system-ui; font-size: 14.5px; }
+  .tree { font-family: ui-monospace, monospace; font-size: 12.5px; line-height: 1.65; background: var(--fill-2); border: 2px solid var(--ink); border-radius: var(--radius-s); padding: 13px 15px; white-space: pre; overflow-x: auto; }
+  .seq { counter-reset: step; }
+  .seq > li { margin: 6px 0; }
+  code { font-family: ui-monospace, monospace; font-size: .88em; background: var(--fill-2); padding: 1px 5px; border-radius: 4px; }
+  @media print { .wf-topnav { display:none; } body.wf-body { background:#fff; } .doc { max-width:none; padding:0; } .phase, .reqtable, pre.code { break-inside: avoid; } }
+</style>
+</head>
+<body class="wf-body">
+
+<div class="doc">
+  <p style="font-family:'Caveat',cursive;font-size:1.4rem;color:var(--bad);transform:rotate(-1deg);margin:0 0 4px;">build-ready implementation plan · v0.1</p>
+  <h1>Jellystructure — Build Plan</h1>
+  <p class="lead">End-to-end instructions to implement the system: shared Kotlin domain, Kotlin/Native backend, Kotlin/Wasm DOM frontend, Jellyfin sign-in, and the Docker deployment — broken into six buildable phases, each with concrete tasks and exit criteria.</p>
+
+  <div class="meta">
+    <span class="chip">Kotlin Multiplatform</span>
+    <span class="chip">Native backend · Ktor CIO</span>
+    <span class="chip">Wasm frontend · real DOM</span>
+    <span class="chip">Jellyfin auth (seerr-style)</span>
+    <span class="chip">Docker Compose</span>
+  </div>
+
+  <div class="body">
+
+  <p>Read this alongside the <a href="Requirements & Phases.html">Requirements &amp; Phases</a> doc (it owns the numbered FR/NFR IDs) and the <a href="index.html">wireframes</a> (they own the screens). This doc owns <em>how we build it</em>.</p>
+
+  <h2>0 · Architecture at a glance</h2>
+
+  <p>One Gradle multiplatform repo, three Kotlin modules plus a Tailwind toolchain. The <strong>shared</strong> module is the trick that makes the app feel coherent: DTOs and the cascade-resolution logic live there, compiled into <em>both</em> the Native backend and the Wasm frontend — so the live resolver preview in the browser runs the exact same code the backend uses to make decisions.</p>
+
+  <div class="tree">jellystructure/
+├── settings.gradle.kts
+├── build.gradle.kts
+├── gradle/libs.versions.toml         <span style="color:var(--ink-soft)"># version catalog</span>
+├── shared/                           <span style="color:var(--ink-soft)"># commonMain only — pure Kotlin</span>
+│   └── src/commonMain/kotlin/
+│       ├── model/                    <span style="color:var(--ink-soft)"># @Serializable DTOs (API contract)</span>
+│       ├── cascade/                  <span style="color:var(--ink-soft)"># CascadeResolver — pure, unit-tested</span>
+│       └── nfo/                      <span style="color:var(--ink-soft)"># NFO field model</span>
+├── backend/                          <span style="color:var(--ink-soft)"># linuxX64 + linuxArm64 executable</span>
+│   └── src/
+│       ├── nativeMain/kotlin/
+│       │   ├── Main.kt               <span style="color:var(--ink-soft)"># Ktor CIO embeddedServer</span>
+│       │   ├── config/  auth/  jellyfin/  tmdb/
+│       │   ├── media/                <span style="color:var(--ink-soft)"># scan, ffprobe, mkvpropedit, ffmpeg</span>
+│       │   ├── nfo/                   <span style="color:var(--ink-soft)"># Okio NFO writer</span>
+│       │   ├── jobs/                  <span style="color:var(--ink-soft)"># job runner + WS broadcaster</span>
+│       │   └── db/                    <span style="color:var(--ink-soft)"># SQLDelight (sessions, cache, issues)</span>
+│       └── nativeTest/kotlin/
+├── frontend/                         <span style="color:var(--ink-soft)"># wasmJs browser app</span>
+│   ├── src/wasmJsMain/kotlin/
+│   │   ├── App.kt  Router.kt  api/  ws/  ui/  state/
+│   │   └── resources/index.html
+│   ├── tailwind.config.js  postcss.config.js  styles.css
+│   └── package.json
+├── e2e/                              <span style="color:var(--ink-soft)"># Playwright tests + fixture builder</span>
+├── docker/Dockerfile
+└── docker-compose.yml</div>
+
+  <h3>0.1 Locked technology choices</h3>
+  <table class="reqtable">
+    <tr><th>Concern</th><th>Choice</th><th>Why / note</th></tr>
+    <tr><td>Build</td><td>Gradle KMP + version catalog</td><td>One repo, shared module compiled to native + wasm.</td></tr>
+    <tr><td>HTTP server</td><td>Ktor <code>CIO</code> engine</td><td>Only engine that runs on Kotlin/Native. REST + WebSocket.</td></tr>
+    <tr><td>HTTP client</td><td>Ktor client <code>CIO</code></td><td>Calls TMDB + Jellyfin. ContentNegotiation + kotlinx.serialization.</td></tr>
+    <tr><td>Serialization</td><td>kotlinx.serialization</td><td>JSON for the API + TMDB/Jellyfin; drives the shared DTOs.</td></tr>
+    <tr><td>Config</td><td>ktoml</td><td>Typed TOML read/write of <code>config.toml</code> (NFR-4).</td></tr>
+    <tr><td>File I/O</td><td>Okio</td><td>All disk reads/writes + NFO streaming (NFR-3).</td></tr>
+    <tr><td>Local DB</td><td>SQLDelight + native SQLite driver</td><td>Sessions, scan cache, triage issues, TMDB response cache.</td></tr>
+    <tr><td>Subprocess</td><td><code>com.kgit2:kommand</code></td><td>KMP process API over ffmpeg/ffprobe/mkvpropedit with streamed stdout/stderr (NFR-5).</td></tr>
+    <tr><td>Frontend</td><td>Kotlin/Wasm + <code>kotlinx-browser</code></td><td>Direct real-DOM rendering; <em>not</em> Compose canvas (NFR-6).</td></tr>
+    <tr><td>FE state</td><td>kotlinx.coroutines <code>StateFlow</code></td><td>Reactive stores → tiny DOM patch helper. WS pushes into flows.</td></tr>
+    <tr><td>Styling</td><td>Tailwind via PostCSS</td><td>Built by npm, output CSS served by backend. Dark mode (NFR-7).</td></tr>
+    <tr><td>Auth</td><td>Jellyfin <code>AuthenticateByName</code> + opaque session cookie</td><td>No JWT lib (JVM-only); server-side tokens in SQLite (FR-AUTH*).</td></tr>
+  </table>
+
+  <div class="warnbox"><strong>Native gotchas to design around up front.</strong> (1) No JVM crypto — generate session tokens from <code>/dev/urandom</code>, not <code>java.security</code>. (2) No <code>ktor-server-auth-jwt</code> on Native — use opaque sessions. (3) Subprocess + file ops are blocking — run them on <code>Dispatchers.IO</code>-style worker contexts so the CIO event loop stays free. (4) Pin Kotlin + Ktor versions known to ship wasmJs + native artifacts together before writing much code.</div>
+
+  <h2>1 · The auth model (Jellyseerr-style)</h2>
+  <p>There is no Jellystructure password. The user signs in with Jellyfin credentials; we verify them against the Jellyfin server and issue our own session. This satisfies FR-AUTH1–5.</p>
+
+  <h4>Login sequence</h4>
+  <ol class="seq">
+    <li>Browser POSTs <code>{ username, password }</code> to <code>POST /api/auth/login</code>.</li>
+    <li>Backend calls Jellyfin <code>POST {jellyfin_url}/Users/AuthenticateByName</code> with an auth header and body <code>{ "Username", "Pw" }</code>.</li>
+    <li>Jellyfin returns <code>{ User { Id, Name, Policy.IsAdministrator }, AccessToken, ServerId }</code>.</li>
+    <li>Reject if <code>IsAdministrator == false</code> (FR-AUTH2). Otherwise mint an opaque session token, store <code>(token → userId, jellyfinUserAccessToken, expiresAt)</code> in SQLite.</li>
+    <li>Set cookie <code>js_session=&lt;token&gt;; HttpOnly; SameSite=Lax; Path=/</code> (add <code>Secure</code> behind TLS). Return the safe user profile (no token) as JSON.</li>
+    <li>A Ktor plugin validates the cookie on every <code>/api/**</code> route and on the WebSocket upgrade; missing/expired → <code>401</code> (FR-AUTH3). The password is never persisted (FR-AUTH1).</li>
+  </ol>
+
+  <pre class="code"><span class="c">// Jellyfin auth header — same scheme seerr uses</span>
+<span class="t">Authorization</span>: MediaBrowser Client=<span class="s">"Jellystructure"</span>, Device=<span class="s">"Server"</span>,
+              DeviceId=<span class="s">"&lt;stable-uuid&gt;"</span>, Version=<span class="s">"0.1.0"</span>
+<span class="c">// after login, machine calls add Token="&lt;accessToken&gt;"</span>
+
+<span class="c">// backend route</span>
+<span class="k">post</span>(<span class="s">"/api/auth/login"</span>) {
+    <span class="k">val</span> creds = call.receive&lt;<span class="t">LoginRequest</span>&gt;()
+    <span class="k">val</span> res = jellyfin.authenticateByName(creds.username, creds.password)
+    <span class="k">if</span> (!res.user.policy.isAdministrator) <span class="k">return@post</span> call.respond(<span class="t">Forbidden</span>)
+    <span class="k">val</span> token = sessions.create(res.user.id, res.accessToken)
+    call.response.cookies.append(sessionCookie(token))
+    call.respond(<span class="t">UserProfile</span>.from(res.user))
+}</pre>
+
+  <div class="callbox"><strong>Two Jellyfin tokens, on purpose (FR-AUTH5).</strong> The <em>user</em> access token from login authenticates UI session ownership. Background jobs (scan, refresh) use the separate machine <code>jellyfin_token</code> from Settings so they run with nobody logged in. Never use a user's login token for scheduled work — it dies when they log out.</div>
+
+  <h4>Bootstrap</h4>
+  <p>Before <code>jellyfin_url</code> is set there's no one to authenticate against, so the very first run shows a one-time <strong>setup</strong> screen (enter Jellyfin URL + TMDB key, write <code>config.toml</code>) that is open <em>only</em> until config exists; afterwards it 404s and login is required.</p>
+
+  <h2>2 · Shared API contract</h2>
+  <p>Define DTOs once in <code>shared/model</code>; both sides import them, so the wire format can't drift. A representative slice:</p>
+  <pre class="code"><span class="k">@Serializable</span> <span class="k">data class</span> <span class="t">MediaItem</span>(
+  <span class="k">val</span> id: <span class="t">String</span>, <span class="k">val</span> title: <span class="t">String</span>, <span class="k">val</span> year: <span class="t">Int</span>?,
+  <span class="k">val</span> kind: <span class="t">MediaKind</span>, <span class="k">val</span> path: <span class="t">String</span>,
+  <span class="k">val</span> tmdbId: <span class="t">Int</span>?, <span class="k">val</span> originalLanguage: <span class="t">String</span>?,
+  <span class="k">val</span> tags: <span class="t">List</span>&lt;<span class="t">String</span>&gt;,
+  <span class="k">val</span> tracks: <span class="t">List</span>&lt;<span class="t">Track</span>&gt;,
+  <span class="k">val</span> artwork: <span class="t">ArtworkStatus</span>,
+  <span class="k">val</span> cascadeOverride: <span class="t">List</span>&lt;<span class="t">String</span>&gt;?   <span class="c">// null = inherit global</span>
+)
+<span class="k">@Serializable</span> <span class="k">data class</span> <span class="t">Track</span>(
+  <span class="k">val</span> index: <span class="t">String</span>,            <span class="c">// "0:a:1"</span>
+  <span class="k">val</span> kind: <span class="t">TrackKind</span>, <span class="k">val</span> codec: <span class="t">String</span>,
+  <span class="k">val</span> language: <span class="t">String</span>?,        <span class="c">// null ⇒ shows up in Triage</span>
+  <span class="k">val</span> title: <span class="t">String</span>?, <span class="k">val</span> default: <span class="t">Boolean</span>, <span class="k">val</span> forced: <span class="t">Boolean</span>
+)
+<span class="c">// the same resolver runs on backend AND in the browser preview</span>
+<span class="k">object</span> <span class="t">CascadeResolver</span> {
+  <span class="k">fun</span> resolve(available: <span class="t">List</span>&lt;<span class="t">String</span>&gt;, rule: <span class="t">Cascade</span>, originalLang: <span class="t">String</span>?): <span class="t">String</span>
+}</pre>
+  <p>WebSocket frames are a sealed <code>JobEvent</code> hierarchy (<code>Started</code>, <code>FileProgress</code>, <code>FileDone</code>, <code>Error</code>, <code>Finished</code>) serialized with a class discriminator — the frontend exhaustively <code>when</code>s over them.</p>
+
+  <h2>3 · Delivery phases</h2>
+  <p>Six phases. Each ends in something you can run and verify. Lanes: <span class="chip" style="background:var(--hi-soft);">SHARED</span> <span class="chip" style="background:var(--info-soft);">BACKEND</span> <span class="chip" style="background:var(--ok-soft);">FRONTEND</span> <span class="chip" style="background:var(--bad-soft);">OPS</span>.</p>
+
+  <!-- PHASE 0 -->
+  <div class="phase">
+    <div class="ph-head"><span class="ph-no">P0</span><span class="ph-name">Scaffolding &amp; deployable skeleton</span><span class="dur">~1 week</span></div>
+    <div class="ph-inner">
+      <h4>Objective</h4>
+      <p>A container that builds and serves a "hello" page, so the whole toolchain (KMP → native binary + wasm bundle → Docker) is proven before any features.</p>
+      <div class="lane"><span class="who ops">Ops</span><ul>
+        <li>Repo, version catalog, Gradle KMP with <code>linuxX64</code>/<code>linuxArm64</code> + <code>wasmJs</code> targets.</li>
+        <li><code>Dockerfile</code>: multi-stage — build stage runs Gradle, runtime stage is slim Debian with <code>ffmpeg</code> + <code>mkvtoolnix</code> installed, runs as non-root <code>1000:1000</code>.</li>
+        <li><code>docker-compose.yml</code>: media volume (<code>:rw</code>), config volume (<code>:rw</code>), shared network with Jellyfin, <code>restart: unless-stopped</code> (NFR-8).</li>
+      </ul></div>
+      <div class="lane"><span class="who be">Back</span><ul><li>Ktor CIO <code>embeddedServer</code>; <code>GET /healthz</code>; serve the wasm bundle + static assets from one port.</li></ul></div>
+      <div class="lane"><span class="who fe">Front</span><ul><li>Minimal wasmJs <code>main()</code> that writes a node into <code>document.body</code>; Tailwind build wired (<code>styles.css</code> → served).</li></ul></div>
+      <div class="exit"><b>Exit criteria</b><code>docker compose up</code> serves a Tailwind-styled page rendered by Kotlin/Wasm; <code>/healthz</code> returns 200; ffmpeg/ffprobe/mkvpropedit resolve on <code>PATH</code> inside the container.</div>
+    </div>
+  </div>
+
+  <!-- PHASE 1 -->
+  <div class="phase">
+    <div class="ph-head"><span class="ph-no">P1</span><span class="ph-name">Config, DB &amp; auth foundation</span><span class="dur">~2 weeks</span></div>
+    <div class="ph-inner">
+      <h4>Objective</h4>
+      <p>Persistent typed config, the local DB, and full Jellyfin sign-in with sessions gating the API. (FR-C1–4, FR-AUTH1–5)</p>
+      <div class="lane"><span class="who sh">Shared</span><ul><li><code>AppConfig</code>, <code>LoginRequest</code>, <code>UserProfile</code> DTOs.</li></ul></div>
+      <div class="lane"><span class="who be">Back</span><ul>
+        <li>ktoml load/save of <code>/config/config.toml</code>; defaults on first run; atomic write (temp + rename via Okio).</li>
+        <li>SQLDelight schema: <code>session</code>, <code>setting_audit</code>. Native SQLite driver; migrations.</li>
+        <li><code>JellyfinClient.authenticateByName()</code>; <code>SessionService</code> (urandom token, TTL, revoke); <code>AuthPlugin</code> intercepting <code>/api/**</code> + WS upgrade.</li>
+        <li>Routes: <code>/api/auth/login</code>, <code>/logout</code>, <code>/me</code>; <code>/api/config</code> GET/PUT; <code>/api/setup</code> (open until config exists).</li>
+        <li><code>POST /api/connections/test</code> → pings TMDB + Jellyfin, returns literal status (FR-C4).</li>
+      </ul></div>
+      <div class="lane"><span class="who fe">Front</span><ul>
+        <li>Router + app shell (sidebar from wireframes); auth guard redirecting to <code>/login</code>.</li>
+        <li>Login screen; Settings screen (sectioned form ↔ live TOML mirror) bound to <code>/api/config</code>.</li>
+      </ul></div>
+      <div class="exit"><b>Exit criteria</b>Admin logs in with Jellyfin creds and reaches Settings; a non-admin is refused; editing a field persists to <code>config.toml</code> and survives container restart; hitting any API without the cookie returns 401.</div>
+    </div>
+  </div>
+
+  <!-- PHASE 2 -->
+  <div class="phase">
+    <div class="ph-head"><span class="ph-no">P2</span><span class="ph-name">Scan, probe &amp; the media model</span><span class="dur">~3 weeks</span></div>
+    <div class="ph-inner">
+      <h4>Objective</h4>
+      <p>Walk the library, read real track data, match against TMDB, and render Library + Media Detail. (FR-M1, FR-T1, parts of FR-A/M)</p>
+      <div class="lane"><span class="who sh">Shared</span><ul><li><code>MediaItem</code>, <code>Track</code>, <code>TrackKind</code>, <code>MediaKind</code>, <code>TmdbMatch</code>.</li></ul></div>
+      <div class="lane"><span class="who be">Back</span><ul>
+        <li>Okio directory walk of configured paths; parse <code>Title (year)</code>, season/episode for TV.</li>
+        <li><code>ffprobe -show_streams -print_format json</code> via kommand → per-track index, codec, language, default/forced, title (FR-T1).</li>
+        <li><code>TmdbClient</code> (search + details + <code>original_language</code>); cache responses in SQLDelight; resilient to rate limits.</li>
+        <li>Persist scanned items + tracks + detected issues; <code>/api/media</code> (list, filter, paginate), <code>/api/media/{id}</code>.</li>
+      </ul></div>
+      <div class="lane"><span class="who fe">Front</span><ul>
+        <li>Library poster grid (filters, issue flags, paging) → Media Detail (form + artwork rail + tags + embedded-track table).</li>
+        <li>Tag add/remove UI bound to the item; per-title cascade override control (stored, applied later).</li>
+      </ul></div>
+      <div class="exit"><b>Exit criteria</b>A real folder scans into the Library; opening a title shows fields from TMDB and the genuine track list from ffprobe; untagged tracks are flagged.</div>
+    </div>
+  </div>
+
+  <!-- PHASE 3 -->
+  <div class="phase">
+    <div class="ph-head"><span class="ph-no">P3</span><span class="ph-name">NFO, artwork &amp; cascade engine</span><span class="dur">~3 weeks</span></div>
+    <div class="ph-inner">
+      <h4>Objective</h4>
+      <p>Write the on-disk truth (NFO + images) and stand up the cascade resolver with its live preview. (FR-M2–4, FR-A1–3, FR-L1–5)</p>
+      <div class="lane"><span class="who sh">Shared</span><ul><li><code>Cascade</code>, <code>CascadeResolver.resolve(...)</code> (pure, fully unit-tested), <code>NfoFields</code>.</li></ul></div>
+      <div class="lane"><span class="who be">Back</span><ul>
+        <li>Okio NFO writer for <code>movie.nfo</code> / <code>tvshow.nfo</code> / <code>episodedetails</code>, always emitting <code>&lt;lockdata&gt;true&lt;/lockdata&gt;</code> (FR-M3); atomic write; preserve uid/gid &amp; mode (FR-T4).</li>
+        <li>"Re-pull" merge that fills empty/unlocked fields without clobbering edits (FR-M4).</li>
+        <li>Artwork downloader (Ktor client, parallel) → <code>poster.jpg</code>/<code>fanart.jpg</code>/<code>clearlogo.png</code>; report present/missing (FR-A1–3).</li>
+        <li>Cascade endpoints: global rule in config; per-title override on the item; <code>/api/cascade/resolve</code> echoing the shared resolver for the preview.</li>
+      </ul></div>
+      <div class="lane"><span class="who fe">Front</span><ul>
+        <li>Cascade screen: drag-ordered list + fallback + live resolver (runs the shared resolver in-wasm — no round trip).</li>
+        <li>Artwork rail: fetch/upload/replace; NFO raw view.</li>
+      </ul></div>
+      <div class="exit"><b>Exit criteria</b>Saving a title writes a locked, well-formed NFO and images next to the media with ownership intact; the resolver preview and backend agree byte-for-byte on the chosen language.</div>
+    </div>
+  </div>
+
+  <!-- PHASE 4 -->
+  <div class="phase">
+    <div class="ph-head"><span class="ph-no">P4</span><span class="ph-name">Track editing, triage, jobs &amp; live UI</span><span class="dur">~3 weeks</span></div>
+    <div class="ph-inner">
+      <h4>Objective</h4>
+      <p>Edit the containers themselves, work the triage queue, and stream everything live. (FR-T2–5, FR-R1–4, FR-J1–2, FR-U1–2)</p>
+      <div class="lane"><span class="who sh">Shared</span><ul><li><code>JobEvent</code> sealed hierarchy; <code>TrackPlan</code> (before/after + chosen tool).</li></ul></div>
+      <div class="lane"><span class="who be">Back</span><ul>
+        <li>Default/order via <code>mkvpropedit</code> (header-only) for MKV; <code>ffmpeg -c copy</code> remux fallback for MP4 / reorder / removal, flagged as slower (FR-T2–3).</li>
+        <li>Dry-run planner across many files: list affected + tool, write nothing (FR-T5).</li>
+        <li>Triage query: all untagged tracks + default≠cascade mismatches; assign-language writes back to the file (FR-R1–4).</li>
+        <li>Job runner with a worker queue; broadcast <code>JobEvent</code>s over <code>/api/ws</code>; errors push the item to triage and continue (FR-U2).</li>
+        <li>Jellyfin refresh: <code>POST /Items/{id}/Refresh</code> (and <code>/Library/Refresh</code> bulk) using the machine token; surface 204 (FR-J1–2).</li>
+      </ul></div>
+      <div class="lane"><span class="who fe">Front</span><ul>
+        <li>Triage focus queue (keyboard assign, accept &amp; advance).</li>
+        <li>Track-order before/after diff with exact command preview + Apply.</li>
+        <li>Activity console + ambient dock, both fed by one WS <code>StateFlow</code> (FR-U1).</li>
+      </ul></div>
+      <div class="exit"><b>Exit criteria</b>Applying the cascade to a real MKV flips the default track in &lt;100ms with no re-encode (verified by re-probe); a batch streams live progress; a failed match lands in triage while the run continues; Jellyfin reflects the change with no manual refresh.</div>
+    </div>
+  </div>
+
+  <!-- PHASE 5 -->
+  <div class="phase">
+    <div class="ph-head"><span class="ph-no">P5</span><span class="ph-name">Automation, fixtures &amp; test regime</span><span class="dur">~2–3 weeks</span></div>
+    <div class="ph-inner">
+      <h4>Objective</h4>
+      <p>Folder watching, the real-media test harness, and CI. (FR-U3, NFR-T1–4)</p>
+      <div class="lane"><span class="who be">Back</span><ul>
+        <li>Folder watcher → auto-process new files per rules (FR-U3); debounce partial copies.</li>
+        <li>Hardening: cancellation, retries, structured logs, graceful shutdown closing WS + DB.</li>
+      </ul></div>
+      <div class="lane"><span class="who ops">Ops</span><ul>
+        <li>Fixture builder: download Big Buck Bunny / Sintel / Tears of Steel, mux in alternate-language audio, set a <em>wrong</em> default — a genuinely broken library to repair (NFR-T2). Real containers, never renamed text files.</li>
+        <li>Playwright-in-Docker: log in, save config, run a reorder, assert the live UI updates; visual snapshots of key states (NFR-T1).</li>
+        <li>Post-run assertions via <code>ffprobe</code> that defaults/order actually changed; mock TMDB for determinism (NFR-T3); CI on every change (NFR-T4).</li>
+      </ul></div>
+      <div class="exit"><b>Exit criteria</b>From a freshly built broken fixture, CI logs in, runs the cascade, and ffprobe confirms every file's default now matches the rule — green on every push.</div>
+    </div>
+  </div>
+
+  <h2>4 · Build order &amp; dependencies</h2>
+  <p>Strictly sequential at the seams: <strong>P0</strong> proves the toolchain, <strong>P1</strong> gives you auth + config that everything else assumes, <strong>P2</strong> produces the data model the UI hangs on, <strong>P3</strong> makes writes safe (NFO/lockdata) before <strong>P4</strong> touches media bytes, and <strong>P5</strong> automates + proves it. Within a phase, build <span class="chip" style="background:var(--hi-soft);">SHARED</span> first, then <span class="chip" style="background:var(--info-soft);">BACKEND</span>, then <span class="chip" style="background:var(--ok-soft);">FRONTEND</span> against the live endpoints.</p>
+
+  <h2>5 · Decisions still open</h2>
+  <ul>
+    <li><strong>Undo / history depth</strong> — is the on-disk NFO + a lightweight audit row enough, or do you want a restorable change log per file? (Affects the DB schema in P1.)</li>
+    <li><strong>Session lifetime</strong> — default TTL and "remember me"? (Trivial, but pick a number for P1.)</li>
+    <li><strong>External-edit conflicts</strong> — if a file changes outside Jellystructure after locking, warn / re-scan / ignore?</li>
+    <li><strong>Music &amp; other providers</strong> — TVDB/MusicBrainz remain out of scope unless you want them slotted after P4.</li>
+  </ul>
+
+  <p class="muted" style="margin-top:24px;">Next concrete step: scaffold P0 — the Gradle KMP repo + Dockerfile that builds the native binary and wasm bundle into one container. Say the word and I'll write the actual starter repo files.</p>
+
+  </div>
+</div>
+
+<script src="wf-nav.js"></script>
+</body>
+</html>
