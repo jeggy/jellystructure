@@ -2,24 +2,34 @@ package dev.jellystructure.ui
 
 import dev.jellystructure.App
 import dev.jellystructure.api.MediaApi
-import dev.jellystructure.api.MediaItem
-import dev.jellystructure.api.MediaKind
+import dev.jellystructure.jobs.JobEvent
+import dev.jellystructure.model.MediaItem
+import dev.jellystructure.model.MediaKind
 import kotlinx.browser.document
+import kotlinx.browser.window
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.serialization.json.Json
 import org.w3c.dom.Element
 import org.w3c.dom.HTMLButtonElement
 import org.w3c.dom.HTMLElement
+import org.w3c.dom.WebSocket
+import org.w3c.dom.events.Event
+
+private val scanJson = Json { classDiscriminator = "type"; ignoreUnknownKeys = true }
 
 private const val TMDB_IMG = "https://image.tmdb.org/t/p/w342"
 
 private var libPage = 1
 private var libKind: MediaKind? = null
 private var libFilter: String? = null
+private var libScanSocket: WebSocket? = null
+private var libScannedCount = 0
 
 fun renderLibrary(container: Element, scope: CoroutineScope) {
-    libPage = 1; libKind = null; libFilter = null
+    libPage = 1; libKind = null; libFilter = null; libScannedCount = 0
+    libScanSocket?.close()
+    libScanSocket = null
 
     container.innerHTML = """
         <div class="pagebar">
@@ -54,9 +64,10 @@ fun renderLibrary(container: Element, scope: CoroutineScope) {
     scope.launch {
         val status = MediaApi.scanStatus()
         if (status?.running == true) {
+            libScannedCount = status.lastCount ?: 0
             setScanRunning(true)
             loadLibraryPage(scope)
-            pollScanUntilDone(scope)
+            connectScanSocket(scope)
         } else {
             loadLibraryPage(scope)
         }
@@ -99,26 +110,77 @@ private suspend fun triggerScan(scope: CoroutineScope) {
         return
     }
 
+    libScannedCount = 0
     setScanRunning(true)
-    pollScanUntilDone(scope)
+    // Clear the grid so items stream in fresh
+    document.getElementById("poster-grid")?.innerHTML = ""
+    document.getElementById("lib-total")?.textContent = ""
+    document.getElementById("lib-pager")?.innerHTML = ""
+    connectScanSocket(scope)
 }
 
-private suspend fun pollScanUntilDone(scope: CoroutineScope) {
-    while (true) {
-        delay(2000)
-        val status = MediaApi.scanStatus() ?: break
-        if (!status.running) {
-            setScanRunning(false)
-            val count = status.lastCount
-            val banner = document.getElementById("scan-banner") as? HTMLElement
-            if (banner != null) {
-                banner.style.display = "block"
-                banner.innerHTML = """<span class="badge ok">Scan complete${if (count != null) " — $count item${if (count != 1) "s" else ""} found" else ""}.</span>"""
+private fun connectScanSocket(scope: CoroutineScope) {
+    val proto = if (window.location.protocol == "https:") "wss" else "ws"
+    val ws = WebSocket("$proto://${window.location.host}/ws")
+    libScanSocket = ws
+
+    ws.onmessage = { ev ->
+        val text = ev.data.toString()
+        runCatching {
+            val event = scanJson.decodeFromString<JobEvent>(text)
+            when (event) {
+                is JobEvent.ItemScanned -> {
+                    libScannedCount++
+                    appendItemToGrid(event.item, scope)
+                    updateScanBannerCount(libScannedCount)
+                }
+                is JobEvent.Finished -> {
+                    ws.close()
+                    libScanSocket = null
+                    setScanRunning(false)
+                    val banner = document.getElementById("scan-banner") as? HTMLElement
+                    banner?.style?.display = "block"
+                    val n = event.succeeded
+                    banner?.innerHTML = """<span class="badge ok">Scan complete — $n item${if (n != 1) "s" else ""} found.</span>"""
+                    // Reload from REST to get proper pagination and ordering
+                    scope.launch { loadLibraryPage(scope) }
+                }
+                else -> {}
             }
-            loadLibraryPage(scope)
-            break
         }
     }
+
+    ws.onclose = { _: Event ->
+        if (libScanSocket == ws) libScanSocket = null
+    }
+}
+
+private fun appendItemToGrid(item: MediaItem, scope: CoroutineScope) {
+    val grid = document.getElementById("poster-grid") ?: return
+    // Remove empty-state placeholder
+    grid.querySelector(".muted")?.remove()
+
+    val existing = grid.querySelector(".poster[data-id=\"${item.id}\"]")
+    val html = posterCardHtml(item)
+
+    if (existing != null) {
+        val tmp = document.createElement("div")
+        tmp.innerHTML = html
+        val newCard = tmp.firstElementChild ?: return
+        existing.replaceWith(newCard)
+        (newCard as? HTMLElement)?.addEventListener("click") { App.navigate("/media/${item.id}") }
+    } else {
+        val tmp = document.createElement("div")
+        tmp.innerHTML = html
+        val newCard = tmp.firstElementChild ?: return
+        grid.appendChild(newCard)
+        (newCard as? HTMLElement)?.addEventListener("click") { App.navigate("/media/${item.id}") }
+    }
+}
+
+private fun updateScanBannerCount(count: Int) {
+    val banner = document.getElementById("scan-banner") as? HTMLElement ?: return
+    banner.innerHTML = """<span class="badge">Scanning — $count item${if (count != 1) "s" else ""} found so far…</span>"""
 }
 
 private fun setScanRunning(running: Boolean) {
@@ -128,7 +190,7 @@ private fun setScanRunning(running: Boolean) {
         btn?.disabled = true
         btn?.textContent = "Scanning…"
         banner?.style?.display = "block"
-        banner?.innerHTML = """<span class="badge">Scan in progress — results will appear when complete…</span>"""
+        banner?.innerHTML = """<span class="badge">Scanning — items appear as they are processed.</span>"""
     } else {
         btn?.disabled = false
         btn?.textContent = "▶ Scan library"

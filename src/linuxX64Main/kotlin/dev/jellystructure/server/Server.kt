@@ -81,7 +81,7 @@ fun startServer(
                 configureConfigRoutes(configStore)
                 setupRoutes(configStore, jellyfinClient)
                 jellyfinRoutes(configStore, jellyfinClient)
-                mediaRoutes(mediaStore, scanner, artworkDownloader, appScope, scanTracker)
+                mediaRoutes(mediaStore, scanner, artworkDownloader, appScope, scanTracker, broadcaster)
                 languageRoutes(configStore)
                 triageRoutes(mediaStore)
                 trackRoutes(mediaStore, configStore, jellyfinClient)

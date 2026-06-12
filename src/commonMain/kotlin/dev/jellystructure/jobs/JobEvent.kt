@@ -1,5 +1,6 @@
 package dev.jellystructure.jobs
 
+import dev.jellystructure.model.MediaItem
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
@@ -13,6 +14,9 @@ sealed class JobEvent {
 
     @Serializable @SerialName("file_done")
     data class FileDone(val jobId: String, val file: String, val ok: Boolean, val msg: String? = null) : JobEvent()
+
+    @Serializable @SerialName("item_scanned")
+    data class ItemScanned(val jobId: String, val item: MediaItem) : JobEvent()
 
     @Serializable @SerialName("finished")
     data class Finished(val jobId: String, val succeeded: Int, val failed: Int) : JobEvent()

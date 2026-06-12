@@ -2,15 +2,25 @@ package dev.jellystructure.ui
 
 import dev.jellystructure.App
 import dev.jellystructure.api.MediaApi
+import dev.jellystructure.jobs.JobEvent
 import kotlinx.browser.document
+import kotlinx.browser.window
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.serialization.json.Json
 import org.w3c.dom.Element
 import org.w3c.dom.HTMLButtonElement
 import org.w3c.dom.HTMLElement
+import org.w3c.dom.WebSocket
+import org.w3c.dom.events.Event
+
+private val dashJson = Json { classDiscriminator = "type"; ignoreUnknownKeys = true }
+private var dashScanSocket: WebSocket? = null
 
 fun renderDashboard(container: Element, scope: CoroutineScope) {
+    dashScanSocket?.close()
+    dashScanSocket = null
+
     container.innerHTML = """
         <div class="pagebar">
           <h1>Dashboard</h1>
@@ -42,7 +52,7 @@ fun renderDashboard(container: Element, scope: CoroutineScope) {
         val status = MediaApi.scanStatus()
         if (status?.running == true) {
             setDashScanRunning(true)
-            pollDashScanUntilDone(scope)
+            connectDashScanSocket(scope)
         }
     }
 }
@@ -65,22 +75,43 @@ private suspend fun triggerDashboardScan(scope: CoroutineScope) {
         return
     }
     setDashScanRunning(true)
-    pollDashScanUntilDone(scope)
+    connectDashScanSocket(scope)
 }
 
-private suspend fun pollDashScanUntilDone(scope: CoroutineScope) {
-    while (true) {
-        delay(2000)
-        val status = MediaApi.scanStatus() ?: break
-        if (!status.running) {
-            setDashScanRunning(false)
-            val count = status.lastCount
-            val banner = document.getElementById("dash-scan-banner") as? HTMLElement
-            banner?.style?.display = "block"
-            banner?.innerHTML = """<span class="badge ok">Scan complete${if (count != null) " — $count item${if (count != 1) "s" else ""} found" else ""}.</span>"""
-            loadDashboardStats()
-            break
+private fun connectDashScanSocket(scope: CoroutineScope) {
+    val proto = if (window.location.protocol == "https:") "wss" else "ws"
+    val ws = WebSocket("$proto://${window.location.host}/ws")
+    dashScanSocket = ws
+
+    var scannedCount = 0
+
+    ws.onmessage = { ev ->
+        val text = ev.data.toString()
+        runCatching {
+            val event = dashJson.decodeFromString<JobEvent>(text)
+            when (event) {
+                is JobEvent.ItemScanned -> {
+                    scannedCount++
+                    val banner = document.getElementById("dash-scan-banner") as? HTMLElement
+                    banner?.innerHTML = """<span class="badge">Scanning — $scannedCount item${if (scannedCount != 1) "s" else ""} found so far…</span>"""
+                }
+                is JobEvent.Finished -> {
+                    ws.close()
+                    dashScanSocket = null
+                    setDashScanRunning(false)
+                    val n = event.succeeded
+                    val banner = document.getElementById("dash-scan-banner") as? HTMLElement
+                    banner?.style?.display = "block"
+                    banner?.innerHTML = """<span class="badge ok">Scan complete — $n item${if (n != 1) "s" else ""} found.</span>"""
+                    scope.launch { loadDashboardStats() }
+                }
+                else -> {}
+            }
         }
+    }
+
+    ws.onclose = { _: Event ->
+        if (dashScanSocket == ws) dashScanSocket = null
     }
 }
 
@@ -91,7 +122,7 @@ private fun setDashScanRunning(running: Boolean) {
         btn?.disabled = true
         btn?.textContent = "Scanning…"
         banner?.style?.display = "block"
-        banner?.innerHTML = """<span class="badge">Scan in progress — this may take a moment…</span>"""
+        banner?.innerHTML = """<span class="badge">Scanning — items appear in Library as they are processed.</span>"""
     } else {
         btn?.disabled = false
         btn?.textContent = "▶ Scan library"

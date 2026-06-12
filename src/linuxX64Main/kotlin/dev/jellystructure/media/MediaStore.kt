@@ -56,6 +56,15 @@ class MediaStore(private val cacheFile: String) {
 
     fun allItems(): List<MediaItem> = items
 
+    suspend fun addOrUpdate(item: MediaItem) = mutex.withLock {
+        items = if (items.any { it.id == item.id }) {
+            items.map { if (it.id == item.id) item else it }
+        } else {
+            items + item
+        }
+        persist()
+    }
+
     suspend fun updateOne(item: MediaItem) = mutex.withLock {
         items = items.map { if (it.id == item.id) item else it }
         persist()

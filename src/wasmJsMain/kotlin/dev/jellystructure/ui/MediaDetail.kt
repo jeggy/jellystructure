@@ -3,9 +3,9 @@ package dev.jellystructure.ui
 import dev.jellystructure.App
 import dev.jellystructure.api.ArtworkStatus
 import dev.jellystructure.api.MediaApi
-import dev.jellystructure.api.MediaItem
-import dev.jellystructure.api.Track
-import dev.jellystructure.api.TrackKind
+import dev.jellystructure.model.MediaItem
+import dev.jellystructure.model.Track
+import dev.jellystructure.model.TrackKind
 import kotlinx.browser.document
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch

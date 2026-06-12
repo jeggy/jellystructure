@@ -18,8 +18,8 @@ class Scanner(
     private val configStore: ConfigStore,
     private val tmdb: TmdbClient,
 ) {
-    suspend fun scan(): List<MediaItem> {
-        val results = mutableListOf<MediaItem>()
+    suspend fun scan(onItemReady: suspend (MediaItem) -> Unit): Int {
+        var total = 0
         for (lib in configStore.current.libraries) {
             if (lib.skip || lib.localPath.isBlank()) continue
             println("[INFO] Scanning library '${lib.name}' (${lib.collectionType}) at ${lib.localPath}")
@@ -27,18 +27,22 @@ class Scanner(
                 "tvshows" -> MediaKind.TV_SHOW
                 else -> MediaKind.MOVIE
             }
-            results += scanDir(lib.localPath, kind)
+            total += scanDir(lib.localPath, kind, onItemReady)
         }
-        return results
+        return total
     }
 
-    private suspend fun scanDir(dir: String, kind: MediaKind): List<MediaItem> {
+    private suspend fun scanDir(
+        dir: String,
+        kind: MediaKind,
+        onItemReady: suspend (MediaItem) -> Unit,
+    ): Int {
         val root = Path(dir)
         if (!SystemFileSystem.exists(root)) {
             println("[WARN] Library dir not found: $dir")
-            return emptyList()
+            return 0
         }
-        val items = mutableListOf<MediaItem>()
+        var count = 0
         for (entry in SystemFileSystem.list(root).sortedBy { it.toString() }) {
             val entryStr = entry.toString()
             val entryName = entryStr.trimEnd('/').substringAfterLast('/')
@@ -51,19 +55,25 @@ class Scanner(
                             childMeta?.isRegularFile == true && isVideoFile(child.toString())
                         }
                     if (videoFile != null) {
-                        scanOneFile(videoFile.toString(), entryName, kind)?.let { items += it }
+                        scanOneFile(videoFile.toString(), entryName, kind)?.let {
+                            onItemReady(it)
+                            count++
+                        }
                         delay(150)
                     }
                 }
                 meta.isRegularFile && isVideoFile(entryStr) -> {
                     val nameWithoutExt = entryName.substringBeforeLast('.')
-                    scanOneFile(entryStr, nameWithoutExt, kind)?.let { items += it }
+                    scanOneFile(entryStr, nameWithoutExt, kind)?.let {
+                        onItemReady(it)
+                        count++
+                    }
                     delay(150)
                 }
             }
         }
-        println("[INFO] Found ${items.size} items in $dir")
-        return items
+        println("[INFO] Found $count items in $dir")
+        return count
     }
 
     private suspend fun scanOneFile(filePath: String, displayName: String, kind: MediaKind): MediaItem? {

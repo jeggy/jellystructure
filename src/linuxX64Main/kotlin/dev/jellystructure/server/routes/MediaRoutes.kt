@@ -1,5 +1,7 @@
 package dev.jellystructure.server.routes
 
+import dev.jellystructure.jobs.JobEvent
+import dev.jellystructure.jobs.WsBroadcaster
 import dev.jellystructure.media.ArtworkDownloader
 import dev.jellystructure.media.MediaStore
 import dev.jellystructure.media.Scanner
@@ -23,6 +25,7 @@ fun Route.mediaRoutes(
     artwork: ArtworkDownloader,
     appScope: CoroutineScope,
     scanTracker: ScanTracker,
+    broadcaster: WsBroadcaster,
 ) {
     route("/media") {
         get {
@@ -94,14 +97,29 @@ fun Route.mediaRoutes(
             call.respond(HttpStatusCode.Conflict, mapOf("error" to "scan already running"))
             return@post
         }
+        @OptIn(kotlinx.cinterop.ExperimentalForeignApi::class)
+        val jobId = "scan-${platform.posix.time(null)}"
         appScope.launch {
             scanTracker.running = true
+            val allItems = mutableListOf<dev.jellystructure.model.MediaItem>()
+            var succeeded = 0
             try {
-                println("[INFO] Library scan started (background)")
-                val items = scanner.scan()
-                store.update(items)
-                scanTracker.lastCount = items.size
-                println("[INFO] Library scan complete — ${items.size} items")
+                println("[INFO] Library scan started (background) jobId=$jobId")
+                broadcaster.broadcast(JobEvent.Started(jobId, -1))
+                scanner.scan { item ->
+                    allItems += item
+                    store.addOrUpdate(item)
+                    succeeded++
+                    scanTracker.lastCount = succeeded
+                    broadcaster.broadcast(JobEvent.ItemScanned(jobId, item))
+                }
+                store.update(allItems)
+                scanTracker.lastCount = succeeded
+                println("[INFO] Library scan complete — $succeeded items")
+                broadcaster.broadcast(JobEvent.Finished(jobId, succeeded, 0))
+            } catch (e: Exception) {
+                println("[ERROR] Scan failed: ${e.message}")
+                broadcaster.broadcast(JobEvent.Finished(jobId, succeeded, 1))
             } finally {
                 scanTracker.running = false
             }
