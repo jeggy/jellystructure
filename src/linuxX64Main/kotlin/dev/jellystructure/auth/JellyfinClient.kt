@@ -59,6 +59,14 @@ class JellyfinClient {
             header("Authorization", """$AUTH_HEADER, Token="$token"""")
         }.body<List<JellyfinLibrary>>()
     }.getOrDefault(emptyList())
+
+    suspend fun triggerLibraryRefresh(baseUrl: String, token: String): Boolean = runCatching {
+        val url = baseUrl.trimEnd('/') + "/Library/Refresh"
+        val response = http.post(url) {
+            header("Authorization", """$AUTH_HEADER, Token="$token"""")
+        }
+        response.status.value in 200..299
+    }.getOrDefault(false)
 }
 
 private fun String.jsonEscape(): String =

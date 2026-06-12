@@ -1,6 +1,7 @@
 package dev.jellystructure
 
 import dev.jellystructure.api.AuthApi
+import dev.jellystructure.ui.renderActivity
 import dev.jellystructure.ui.renderDashboard
 import dev.jellystructure.ui.renderLanguage
 import dev.jellystructure.ui.renderLibrary
@@ -9,6 +10,7 @@ import dev.jellystructure.ui.renderMediaDetail
 import dev.jellystructure.ui.renderSetup
 import dev.jellystructure.ui.renderSettings
 import dev.jellystructure.ui.renderShell
+import dev.jellystructure.ui.renderTriage
 import dev.jellystructure.ui.updateActiveNav
 import kotlinx.browser.document
 import kotlinx.coroutines.MainScope
@@ -57,6 +59,8 @@ object App {
                 else renderLibrary(container, scope)
             }
             route == "/language" -> renderLanguage(container, scope)
+            route == "/triage"   -> renderTriage(container, scope)
+            route == "/activity" -> renderActivity(container, scope)
             route == "/settings" -> renderSettings(container, scope)
             else -> renderDashboard(container, scope)
         }

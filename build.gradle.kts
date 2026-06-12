@@ -43,6 +43,11 @@ tasks.register<Exec>("runBackend") {
 }
 
     sourceSets {
+        val commonMain by getting {
+            dependencies {
+                implementation(libs.kotlinx.serialization.json)
+            }
+        }
         val linuxX64Main by getting {
             dependencies {
                 implementation(libs.ktor.server.core)

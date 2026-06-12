@@ -54,6 +54,13 @@ class MediaStore(private val cacheFile: String) {
 
     fun get(id: String): MediaItem? = items.firstOrNull { it.id == id }
 
+    fun allItems(): List<MediaItem> = items
+
+    suspend fun updateOne(item: MediaItem) = mutex.withLock {
+        items = items.map { if (it.id == item.id) item else it }
+        persist()
+    }
+
     fun movieCount(): Int = items.count { it.kind == MediaKind.MOVIE }
 
     fun totalIssueCount(): Int = items.sumOf { it.issueCount }

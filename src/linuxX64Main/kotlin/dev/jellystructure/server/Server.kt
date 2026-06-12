@@ -4,6 +4,7 @@ import dev.jellystructure.auth.JellyfinClient
 import dev.jellystructure.auth.SessionService
 import dev.jellystructure.auth.installAuthPlugin
 import dev.jellystructure.config.ConfigStore
+import dev.jellystructure.jobs.WsBroadcaster
 import dev.jellystructure.media.ArtworkDownloader
 import dev.jellystructure.media.MediaStore
 import dev.jellystructure.media.Scanner
@@ -14,6 +15,8 @@ import dev.jellystructure.server.routes.jellyfinRoutes
 import dev.jellystructure.server.routes.languageRoutes
 import dev.jellystructure.server.routes.mediaRoutes
 import dev.jellystructure.server.routes.setupRoutes
+import dev.jellystructure.server.routes.trackRoutes
+import dev.jellystructure.server.routes.triageRoutes
 import io.ktor.http.ContentType
 import io.ktor.http.HttpMethod
 import io.ktor.http.HttpStatusCode
@@ -52,6 +55,7 @@ fun startServer(
     port: Int,
 ) {
     val appScope = CoroutineScope(SupervisorJob())
+    val broadcaster = WsBroadcaster()
     embeddedServer(CIO, port = port) {
         install(ContentNegotiation) { json() }
         install(WebSockets)
@@ -79,11 +83,18 @@ fun startServer(
                 jellyfinRoutes(configStore, jellyfinClient)
                 mediaRoutes(mediaStore, scanner, artworkDownloader, appScope, scanTracker)
                 languageRoutes(configStore)
+                triageRoutes(mediaStore)
+                trackRoutes(mediaStore, configStore, jellyfinClient)
             }
 
             webSocket("/ws") {
-                for (frame in incoming) {
-                    if (frame is Frame.Close) break
+                broadcaster.register(this)
+                try {
+                    for (frame in incoming) {
+                        if (frame is Frame.Close) break
+                    }
+                } finally {
+                    broadcaster.unregister(this)
                 }
             }
 
