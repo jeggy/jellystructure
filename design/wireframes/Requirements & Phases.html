@@ -80,12 +80,14 @@
   </table>
 
   <h3>2.2 Metadata &amp; NFO <span class="pri must">MUST</span></h3>
+  <p>Discovery is driven by <strong>Jellyfin's own library API</strong>, not a filesystem walk. Jellystructure queries Jellyfin for all Movies and Series, then verifies and enriches each item against the actual media files on disk.</p>
   <table class="reqtable">
     <tr><th>ID</th><th>Requirement</th><th>Acceptance</th></tr>
-    <tr><td>FR-M1</td><td>Scan configured paths, derive identity from filename/folder (e.g. <code>Title (year)</code>), and fetch metadata from TMDB. Each file that completes processing is persisted and visible in the Library immediately — the UI does not wait for the full scan to finish.</td><td>Movies and TV are matched and listed; a newly processed item appears in the Library grid as soon as it is ready, without waiting for the scan to complete.</td></tr>
-    <tr><td>FR-M2</td><td>Write Kodi/Jellyfin-compatible NFO (<code>movie.nfo</code>, <code>tvshow.nfo</code>, <code>episodedetails</code>) including plot, genres, cast/crew, studio, ids, original language.</td><td>Jellyfin reads the NFO without its own scraper.</td></tr>
-    <tr><td>FR-M3</td><td>Always include <code>&lt;lockdata&gt;true&lt;/lockdata&gt;</code> so Jellyfin never overwrites managed data.</td><td>Tag present in every generated NFO.</td></tr>
-    <tr><td>FR-M4</td><td>Edit any field in the UI; "Re-pull" refills empty/unlocked fields without clobbering manual edits.</td><td>Locked field is unchanged after re-pull.</td></tr>
+    <tr><td>FR-M1</td><td>Enumerate items from Jellyfin via <code>GET /Items?IncludeItemTypes=Movie,Series&amp;Recursive=true</code> using the machine token. Only <em>Movie</em> and <em>Series</em> types are managed — Episodes, Seasons, and any other type are ignored entirely. Each Jellyfin item carries a <code>Path</code> (local filesystem location) and optional <code>ProviderIds.Tmdb</code>. Each item that completes processing is persisted and visible in the Library immediately.</td><td>All Movies and Series in the connected Jellyfin library appear in Jellystructure; Episodes and Seasons never appear as top-level items; items stream into the UI as they are processed.</td></tr>
+    <tr><td>FR-M2</td><td>Fetch metadata from TMDB. Use Jellyfin's <code>ProviderIds.Tmdb</code> when present to skip title search; fall back to TMDB search by name + year only if no TMDB ID is available.</td><td>Items with a Jellyfin-provided TMDB ID never produce a wrong match; items without one fall back gracefully to title search.</td></tr>
+    <tr><td>FR-M3</td><td>Write Kodi/Jellyfin-compatible NFO: <code>movie.nfo</code> for Movies, <code>tvshow.nfo</code> for Series. Episode-level NFOs are out of scope. Always include <code>&lt;lockdata&gt;true&lt;/lockdata&gt;</code> so Jellyfin never overwrites managed metadata.</td><td>Jellyfin reads the NFO without its own scraper; <code>lockdata</code> is present in every generated NFO.</td></tr>
+    <tr><td>FR-M4</td><td>Edit any field in the UI; "Re-pull" refills empty/unlocked fields from TMDB without clobbering manual edits.</td><td>Locked field is unchanged after re-pull.</td></tr>
+    <tr><td>FR-M5</td><td><strong>TV series language sampling.</strong> Because a series may have many episodes, Jellystructure does not probe every file. Instead it samples up to 5 episode files spread across the series directory, probes each with <code>ffprobe</code>, and checks whether all samples share the same set of audio language tags. <ul style="margin:6px 0 0;"><li>All samples agree → use that language set for the whole series (language resolution runs as normal).</li><li>Samples disagree → mark the series as <em>language mix — unsupported</em>: displayed with a warning badge in the Library; no NFO or artwork is written until the operator resolves the inconsistency or explicitly overrides the language setting.</li></ul></td><td>A uniform series processes normally; a mixed-language series shows a clear warning and is skipped for writes until the operator acts.</td></tr>
   </table>
 
   <h3>2.3 Artwork <span class="pri must">MUST</span></h3>
@@ -107,7 +109,7 @@
   </table>
 
   <h3>2.5 Language resolution for TMDB metadata <span class="pri must">MUST</span> — the core feature</h3>
-  <p>The system determines the TMDB fetch language per file based on the file's actual audio tracks. Track ordering and default flags are <strong>never changed automatically</strong>; they are always a manual operator action (see §2.4).</p>
+  <p>The system determines the TMDB fetch language per item based on the item's actual audio tracks. For Movies this is the single media file; for TV Series this is a sample of episode files (see FR-M5). Track ordering and default flags are <strong>never changed automatically</strong>; they are always a manual operator action (see §2.4).</p>
   <table class="reqtable">
     <tr><th>ID</th><th>Requirement</th><th>Acceptance</th></tr>
     <tr><td>FR-L1</td><td>Configure a single global <code>fallback_language</code> (default <code>en</code>) used when TMDB has no entry in any of the file's track languages.</td><td>Setting saved to <code>[language_rules] fallback_language</code>; only one language allowed.</td></tr>
@@ -129,8 +131,9 @@
   <h3>2.7 Jellyfin integration <span class="pri must">MUST</span></h3>
   <table class="reqtable">
     <tr><th>ID</th><th>Requirement</th><th>Acceptance</th></tr>
-    <tr><td>FR-J1</td><td>After writes, trigger a targeted reload via Jellyfin REST (<code>/Items/{id}/Refresh</code>, or <code>/Library/Refresh</code> for bulk).</td><td>Jellyfin reloads NFO/art from disk; HTTP 204 surfaced in the UI.</td></tr>
-    <tr><td>FR-J2</td><td>Operator never needs Jellyfin's own metadata refresh.</td><td>End-to-end change reflects in Jellyfin clients using only Jellystructure.</td></tr>
+    <tr><td>FR-J1</td><td>Enumerate the library by querying <code>GET /Items?IncludeItemTypes=Movie,Series&amp;Recursive=true</code> with the machine token. Each item exposes <code>Id</code>, <code>Name</code>, <code>ProductionYear</code>, <code>Path</code>, and <code>ProviderIds</code> (incl. <code>Tmdb</code> when Jellyfin has already matched it).</td><td>Jellystructure's library matches exactly what Jellyfin knows about; no filesystem walk is required.</td></tr>
+    <tr><td>FR-J2</td><td>After NFO/artwork writes, trigger a targeted reload via Jellyfin REST: <code>POST /Items/{jellyfinId}/Refresh</code> for individual items, <code>POST /Library/Refresh</code> for a bulk scan completion.</td><td>Jellyfin reloads NFO/art from disk without a manual refresh; HTTP response is surfaced in the UI.</td></tr>
+    <tr><td>FR-J3</td><td>Operator never needs Jellyfin's own "Refresh Metadata" action.</td><td>End-to-end metadata change reflects in Jellyfin clients using only Jellystructure.</td></tr>
   </table>
 
   <h3>2.8 Real-time UI <span class="pri must">MUST</span></h3>
@@ -224,6 +227,8 @@
   <ul>
     <li><s>Auth</s> — <strong>decided:</strong> Jellyfin sign-in (Jellyseerr-style), admins only. See §2.9 and the Implementation Plan.</li>
     <li><s>Hardcoded movie/TV paths</s> — <strong>decided:</strong> library paths are discovered from Jellyfin and mapped per-library (FR-C5–6). Static <code>movies_dir</code>/<code>tv_dir</code> config keys are removed.</li>
+    <li><s>Filesystem walk for discovery</s> — <strong>decided:</strong> Jellyfin API is the source of truth for what exists. Jellystructure never walks directories to discover items; it uses <code>GET /Items</code> and then verifies paths on disk. See FR-M1, FR-J1.</li>
+    <li><strong>Per-episode and per-season management — explicitly out of scope.</strong> Jellystructure manages TV at the <em>Series</em> level only. Episode NFOs, season artwork, and per-episode track manipulation are deferred indefinitely. A series with inconsistent audio languages across episodes is flagged as <em>unsupported</em> until a future release adds mixed-language series handling (FR-M5).</li>
     <li>Music / other media types — any Jellyfin library type (music, books, photos) can be discovered via FR-C5 but is marked "skip" by the operator if not relevant. Metadata handling for non-movie/TV types is out of scope.</li>
     <li>Metadata providers beyond TMDB (e.g. TVDB, MusicBrainz) — future?</li>
     <li>Undo / change history depth — is a per-file history log required, or is the NFO on disk enough?</li>

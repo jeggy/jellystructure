@@ -103,14 +103,18 @@ Current status is approximately end of **P1**. Phases are:
 |-------|-------|--------|
 | P0 | Scaffolding, Docker, healthz, WASM page | Done |
 | P1 | Config, auth, session, setup routes, login + settings UI | Done |
-| P2 | Directory scan, ffprobe, TMDB client, library + media detail UI | Next |
+| P2 | Jellyfin-API-driven discovery, ffprobe, TMDB client, library + media detail UI | Next |
 | P3 | NFO writer, artwork downloader, LanguageResolver (shared), language resolution UI | Upcoming |
 | P4 | mkvpropedit/ffmpeg track editing, triage, job runner, WebSocket progress, Jellyfin refresh | Upcoming |
 | P5 | Folder watcher, Blender film fixtures, Playwright CI | Upcoming |
 
 ## Key Domain Concepts
 
-**Language Resolution** — the core feature for TMDB metadata fetching. Per file: query TMDB for each language in the file's audio tracks, in physical track-index order (track 0 first); use the first language that returns a result. If no track language yields a TMDB result, fall back to the single global `fallback_language` (config default `en`). This resolved language governs metadata only — titles, plot, genres written to NFO. It **never** automatically changes any track flag or ordering. `LanguageResolver` is shared code (pure, no I/O) that runs identically on backend and in WASM (live preview with no round-trip).
+**Discovery via Jellyfin API** — `Scanner` calls `GET /Items?IncludeItemTypes=Movie,Series&Recursive=true&Fields=Path,ProviderIds,ProductionYear` using the machine token. Only `Movie` and `Series` types are processed; `Episode`, `Season`, and all other types are ignored. Each Jellyfin item carries a `Path` (the local filesystem path Jellystructure can reach) and optionally `ProviderIds.Tmdb`. There is no filesystem walk — Jellyfin is the authoritative source of what exists.
+
+**TV Series — series-level management only** — Jellystructure manages TV at the Series level. Individual episodes and seasons are never top-level items. For language detection, the `SeriesSampler` probes up to 5 episode files spread across the series directory. If all samples share the same audio language set, the series is `Uniform(langs)` and proceeds normally. If samples disagree, the series is marked `LanguageMix` (displayed with an orange warning badge) and NFO/artwork writes are blocked until the operator overrides or the series is fixed.
+
+**Language Resolution** — the core feature for TMDB metadata fetching. Per item (Movie or a Uniform TV Series): query TMDB for each language in the audio tracks, in physical track-index order (track 0 first); use the first language that returns a result. If no track language yields a TMDB result, fall back to the single global `fallback_language` (config default `en`). This resolved language governs metadata only — titles, plot, genres written to NFO. It **never** automatically changes any track flag or ordering. `LanguageResolver` is shared code (pure, no I/O) that runs identically on backend and in WASM (live preview with no round-trip).
 
 **Track ordering** — audio and subtitle track default flags and physical order are changed **only by explicit manual operator action** from the UI (Track Order page). mkvpropedit is used for MKV (header-only, no re-encode); ffmpeg -c copy for MP4 remux as fallback.
 
@@ -126,7 +130,7 @@ Current status is approximately end of **P1**. Phases are:
 
 ## Out of Scope
 
-Music, TVDB/MusicBrainz, undo/change history, multi-tenant or cloud deployment.
+Music, TVDB/MusicBrainz, undo/change history, multi-tenant or cloud deployment. **Per-episode and per-season management** — deferred; Jellystructure only manages at the Movie or Series level. Mixed-language series (where episode files disagree on audio language sets) are flagged as unsupported rather than guessed at.
 
 ## Hard Constraints (from CONSTITUTION.md)
 
