@@ -33,3 +33,10 @@ data class JellyfinAuthResponse(
     @SerialName("User") val user: JellyfinUser,
     @SerialName("AccessToken") val accessToken: String,
 )
+
+@Serializable
+data class JellyfinLibrary(
+    @SerialName("ItemId") val id: String,
+    @SerialName("Name") val name: String,
+    @SerialName("CollectionType") val collectionType: String? = null,
+)

@@ -8,6 +8,7 @@ import dev.jellystructure.media.MediaStore
 import dev.jellystructure.media.Scanner
 import dev.jellystructure.server.routes.authRoutes
 import dev.jellystructure.server.routes.configureConfigRoutes
+import dev.jellystructure.server.routes.jellyfinRoutes
 import dev.jellystructure.server.routes.mediaRoutes
 import dev.jellystructure.server.routes.setupRoutes
 import io.ktor.http.ContentType
@@ -67,6 +68,7 @@ fun startServer(
                 authRoutes(sessionService, jellyfinClient, configStore)
                 configureConfigRoutes(configStore)
                 setupRoutes(configStore, jellyfinClient)
+                jellyfinRoutes(configStore, jellyfinClient)
                 mediaRoutes(mediaStore, scanner)
             }
 

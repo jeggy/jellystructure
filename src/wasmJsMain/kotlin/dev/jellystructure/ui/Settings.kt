@@ -2,9 +2,10 @@ package dev.jellystructure.ui
 
 import dev.jellystructure.api.AppConfig
 import dev.jellystructure.api.ApiKeys
-import dev.jellystructure.api.Paths
 import dev.jellystructure.api.LanguageRules
 import dev.jellystructure.api.Behavior
+import dev.jellystructure.api.LibraryMapping
+import dev.jellystructure.api.JellyfinLibrary
 import dev.jellystructure.api.ConfigApi
 import kotlinx.browser.document
 import kotlinx.coroutines.CoroutineScope
@@ -46,14 +47,13 @@ fun renderSettings(container: Element, scope: CoroutineScope) {
             </div>
 
             <div class="card">
-              <h3 style="font-size:1rem;margin:0 0 14px">Media paths</h3>
-              <div class="field">
-                <label>Movies directory</label>
-                <input id="movies-dir" class="input" type="text" placeholder="/media/movies" style="width:100%">
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+                <h3 style="font-size:1rem;margin:0">Library mapping</h3>
+                <button id="fetch-libraries" class="btn sm ghost">Fetch libraries</button>
               </div>
-              <div class="field">
-                <label>TV directory</label>
-                <input id="tv-dir" class="input" type="text" placeholder="/media/tv" style="width:100%">
+              <p class="hint" style="margin:0 0 12px">Assign a local path for each Jellyfin library, or mark it as skip.</p>
+              <div id="library-mapping-list">
+                <span class="muted tiny">Run "Test connections" or click "Fetch libraries" to load.</span>
               </div>
             </div>
 
@@ -96,19 +96,21 @@ fun renderSettings(container: Element, scope: CoroutineScope) {
 
 private var overwriteNfo = false
 private var fetchImages = true
+private var libraryMappings: MutableList<LibraryMapping> = mutableListOf()
 
 private fun populateForm(config: AppConfig) {
     setInputValue("jellyfin-url", config.apiKeys.jellyfinUrl)
     setInputValue("jellyfin-token", config.apiKeys.jellyfinToken)
     setInputValue("tmdb-key", config.apiKeys.tmdbV3Key)
-    setInputValue("movies-dir", config.paths.moviesDir)
-    setInputValue("tv-dir", config.paths.tvDir)
     setInputValue("fallback-language", config.languageRules.fallbackLanguage)
 
     overwriteNfo = config.behavior.overwriteNfo
     fetchImages = config.behavior.fetchImages
     updateToggle("overwrite-nfo-toggle", overwriteNfo)
     updateToggle("fetch-images-toggle", fetchImages)
+
+    libraryMappings = config.libraries.toMutableList()
+    if (libraryMappings.isNotEmpty()) renderLibraryList()
 
     refreshTomlPreview(config)
 }
@@ -125,12 +127,11 @@ private fun attachListeners(scope: CoroutineScope) {
         refreshTomlPreview(readForm())
     }
 
-    listOf("jellyfin-url", "jellyfin-token", "tmdb-key", "movies-dir", "tv-dir", "fallback-language")
-        .forEach { id ->
-            document.getElementById(id)?.addEventListener("input") {
-                refreshTomlPreview(readForm())
-            }
+    listOf("jellyfin-url", "jellyfin-token", "tmdb-key", "fallback-language").forEach { id ->
+        document.getElementById(id)?.addEventListener("input") {
+            refreshTomlPreview(readForm())
         }
+    }
 
     document.getElementById("save-settings")?.addEventListener("click") {
         scope.launch {
@@ -138,6 +139,10 @@ private fun attachListeners(scope: CoroutineScope) {
             val ok = ConfigApi.save(config)
             showSettingsMsg(if (ok) "Saved." else "Save failed.", ok)
         }
+    }
+
+    document.getElementById("fetch-libraries")?.addEventListener("click") {
+        scope.launch { fetchAndRenderLibraries() }
     }
 
     document.getElementById("test-connections")?.addEventListener("click") {
@@ -153,6 +158,77 @@ private fun attachListeners(scope: CoroutineScope) {
                 append(if (result?.tmdb == true) "TMDB ✓" else "TMDB ✗")
                 append("</span>")
             }
+            if (result?.jellyfin == true) fetchAndRenderLibraries()
+        }
+    }
+}
+
+private suspend fun fetchAndRenderLibraries() {
+    val listEl = document.getElementById("library-mapping-list") as? HTMLElement ?: return
+    listEl.innerHTML = """<span class="muted tiny">Loading…</span>"""
+
+    val fetched = ConfigApi.getJellyfinLibraries()
+    if (fetched == null) {
+        listEl.innerHTML = """<span class="badge bad">Failed to fetch libraries. Check URL and token.</span>"""
+        return
+    }
+
+    // Merge: keep existing localPath/skip for known IDs, add new entries for unknowns
+    val existing = libraryMappings.associateBy { it.jellyfinId }
+    libraryMappings = fetched.map { lib ->
+        existing[lib.id] ?: LibraryMapping(
+            jellyfinId = lib.id,
+            name = lib.name,
+            collectionType = lib.collectionType ?: "",
+            localPath = "",
+            skip = false,
+        )
+    }.toMutableList()
+
+    renderLibraryList()
+    refreshTomlPreview(readForm())
+}
+
+private fun renderLibraryList() {
+    val listEl = document.getElementById("library-mapping-list") as? HTMLElement ?: return
+    if (libraryMappings.isEmpty()) {
+        listEl.innerHTML = """<span class="muted tiny">No libraries found.</span>"""
+        return
+    }
+
+    listEl.innerHTML = libraryMappings.mapIndexed { i, lib ->
+        val skipped = lib.skip
+        val typeLabel = lib.collectionType.ifEmpty { "?" }
+        """
+        <div style="border:1.5px solid var(--border);border-radius:6px;padding:10px 12px;margin-bottom:10px;${if (skipped) "opacity:.5" else ""}">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+            <strong style="font-size:.9rem;flex:1">${lib.name}</strong>
+            <span class="badge" style="font-size:.72rem;padding:1px 7px;background:var(--fill-2)">$typeLabel</span>
+            <label style="display:flex;align-items:center;gap:5px;font-size:.82rem;cursor:pointer">
+              <input type="checkbox" id="lib-skip-$i" ${if (skipped) "checked" else ""}>
+              Skip
+            </label>
+          </div>
+          <input id="lib-path-$i" class="input" type="text" placeholder="/media/path"
+            value="${lib.localPath}" style="width:100%;${if (skipped) "pointer-events:none" else ""}">
+        </div>
+        """.trimIndent()
+    }.joinToString("")
+
+    // Attach change listeners after DOM is built
+    libraryMappings.forEachIndexed { i, _ ->
+        document.getElementById("lib-skip-$i")?.addEventListener("change") {
+            val checked = (document.getElementById("lib-skip-$i") as? HTMLInputElement)?.checked ?: false
+            val current = libraryMappings[i]
+            libraryMappings[i] = current.copy(skip = checked)
+            renderLibraryList()
+            refreshTomlPreview(readForm())
+        }
+        document.getElementById("lib-path-$i")?.addEventListener("input") {
+            val value = (document.getElementById("lib-path-$i") as? HTMLInputElement)?.value?.trim() ?: ""
+            val current = libraryMappings[i]
+            libraryMappings[i] = current.copy(localPath = value)
+            refreshTomlPreview(readForm())
         }
     }
 }
@@ -163,10 +239,6 @@ private fun readForm(): AppConfig = AppConfig(
         jellyfinToken = getInputValue("jellyfin-token"),
         tmdbV3Key = getInputValue("tmdb-key"),
     ),
-    paths = Paths(
-        moviesDir = getInputValue("movies-dir"),
-        tvDir = getInputValue("tv-dir"),
-    ),
     languageRules = LanguageRules(
         fallbackLanguage = getInputValue("fallback-language").ifEmpty { "en" },
     ),
@@ -174,6 +246,7 @@ private fun readForm(): AppConfig = AppConfig(
         overwriteNfo = overwriteNfo,
         fetchImages = fetchImages,
     ),
+    libraries = libraryMappings.toList(),
 )
 
 private fun refreshTomlPreview(config: AppConfig) {
@@ -187,16 +260,21 @@ private fun buildToml(c: AppConfig): String = buildString {
     appendLine("""jellyfin_token = "${c.apiKeys.jellyfinToken}"""")
     appendLine("""tmdb_v3_key = "${c.apiKeys.tmdbV3Key}"""")
     appendLine()
-    appendLine("[paths]")
-    appendLine("""movies_dir = "${c.paths.moviesDir}"""")
-    appendLine("""tv_dir = "${c.paths.tvDir}"""")
-    appendLine()
     appendLine("[language_rules]")
     appendLine("""fallback_language = "${c.languageRules.fallbackLanguage}"""")
     appendLine()
     appendLine("[behavior]")
     appendLine("overwrite_nfo = ${c.behavior.overwriteNfo}")
     appendLine("fetch_images = ${c.behavior.fetchImages}")
+    for (lib in c.libraries) {
+        appendLine()
+        appendLine("[[libraries]]")
+        appendLine("""jellyfin_id = "${lib.jellyfinId}"""")
+        appendLine("""name = "${lib.name}"""")
+        appendLine("""collection_type = "${lib.collectionType}"""")
+        appendLine("""local_path = "${lib.localPath}"""")
+        appendLine("skip = ${lib.skip}")
+    }
 }
 
 private fun showSettingsMsg(msg: String, ok: Boolean) {

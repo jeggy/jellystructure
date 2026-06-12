@@ -52,6 +52,13 @@ class JellyfinClient {
         }
         response.status.value in 200..299
     }.getOrDefault(false)
+
+    suspend fun getLibraries(baseUrl: String, token: String): List<JellyfinLibrary> = runCatching {
+        val url = baseUrl.trimEnd('/') + "/Library/VirtualFolders"
+        http.get(url) {
+            header("Authorization", """$AUTH_HEADER, Token="$token"""")
+        }.body<List<JellyfinLibrary>>()
+    }.getOrDefault(emptyList())
 }
 
 private fun String.jsonEscape(): String =

@@ -19,7 +19,7 @@ node_modules/
 
 # Project-specific
 config/config.toml
-media/
+/media/
 
 # OS
 .DS_Store
