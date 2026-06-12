@@ -4,8 +4,11 @@ import dev.jellystructure.auth.JellyfinClient
 import dev.jellystructure.auth.SessionService
 import dev.jellystructure.auth.installAuthPlugin
 import dev.jellystructure.config.ConfigStore
+import dev.jellystructure.media.MediaStore
+import dev.jellystructure.media.Scanner
 import dev.jellystructure.server.routes.authRoutes
 import dev.jellystructure.server.routes.configureConfigRoutes
+import dev.jellystructure.server.routes.mediaRoutes
 import dev.jellystructure.server.routes.setupRoutes
 import io.ktor.http.ContentType
 import io.ktor.http.HttpMethod
@@ -35,6 +38,8 @@ fun startServer(
     configStore: ConfigStore,
     sessionService: SessionService,
     jellyfinClient: JellyfinClient,
+    mediaStore: MediaStore,
+    scanner: Scanner,
     frontendDir: String,
     port: Int,
 ) {
@@ -62,6 +67,7 @@ fun startServer(
                 authRoutes(sessionService, jellyfinClient, configStore)
                 configureConfigRoutes(configStore)
                 setupRoutes(configStore, jellyfinClient)
+                mediaRoutes(mediaStore, scanner)
             }
 
             webSocket("/ws") {

@@ -2,7 +2,9 @@ package dev.jellystructure
 
 import dev.jellystructure.api.AuthApi
 import dev.jellystructure.ui.renderDashboard
+import dev.jellystructure.ui.renderLibrary
 import dev.jellystructure.ui.renderLogin
+import dev.jellystructure.ui.renderMediaDetail
 import dev.jellystructure.ui.renderSetup
 import dev.jellystructure.ui.renderSettings
 import dev.jellystructure.ui.renderShell
@@ -46,9 +48,15 @@ object App {
         val container = document.getElementById("page-content") ?: return
         updateActiveNav(route)
         when {
-            route == "/" || route.isEmpty() || route == "/dashboard" -> renderDashboard(container)
+            route == "/" || route.isEmpty() || route == "/dashboard" -> renderDashboard(container, scope)
+            route == "/library" -> renderLibrary(container, scope)
+            route.startsWith("/media/") -> {
+                val id = route.removePrefix("/media/")
+                if (id.isNotEmpty()) renderMediaDetail(container, scope, id)
+                else renderLibrary(container, scope)
+            }
             route == "/settings" -> renderSettings(container, scope)
-            else -> renderDashboard(container)
+            else -> renderDashboard(container, scope)
         }
     }
 }

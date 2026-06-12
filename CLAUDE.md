@@ -139,5 +139,6 @@ Music, TVDB/MusicBrainz, undo/change history, multi-tenant or cloud deployment.
 |----------|---------|---------|
 | `CONFIG_FILE` | `/config/config.toml` | TOML config path |
 | `SESSIONS_FILE` | `/config/sessions.json` | Session store path |
+| `MEDIA_FILE` | `/config/media.json` | Scan cache (MediaItem list) |
 | `FRONTEND_DIR` | `/app/frontend` | Served SPA assets |
 | `SERVER_PORT` | `9505` | HTTP listen port |
