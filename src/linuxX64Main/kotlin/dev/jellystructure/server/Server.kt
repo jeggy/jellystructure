@@ -39,7 +39,9 @@ import io.ktor.server.websocket.webSocket
 import io.ktor.websocket.Frame
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.io.buffered
 import kotlinx.io.files.Path
 import kotlinx.io.files.SystemFileSystem
@@ -56,11 +58,11 @@ fun startServer(
     folderWatcher: FolderWatcher,
     frontendDir: String,
     port: Int,
-) {
+): () -> Unit {
     val appScope = CoroutineScope(SupervisorJob())
     appScope.launch { folderWatcher.start() }
     val broadcaster = WsBroadcaster()
-    embeddedServer(CIO, port = port) {
+    val engine = embeddedServer(CIO, port = port) {
         install(ContentNegotiation) { json() }
         install(WebSockets)
         install(CORS) {
@@ -107,7 +109,14 @@ fun startServer(
                 call.serveFrontendFile(frontendDir, call.request.path())
             }
         }
-    }.start(wait = true)
+    }
+    engine.start(wait = false)
+    return {
+        runBlocking { broadcaster.closeAll() }
+        engine.stop(1_000L, 5_000L)
+        appScope.cancel()
+        println("[INFO] Server stopped")
+    }
 }
 
 private suspend fun io.ktor.server.application.ApplicationCall.serveFrontendFile(

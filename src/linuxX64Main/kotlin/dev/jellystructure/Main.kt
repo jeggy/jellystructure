@@ -11,8 +11,21 @@ import dev.jellystructure.server.startServer
 import dev.jellystructure.tmdb.TmdbClient
 import dev.jellystructure.watcher.FolderWatcher
 import kotlinx.cinterop.ExperimentalForeignApi
+import kotlinx.cinterop.staticCFunction
 import kotlinx.cinterop.toKString
+import platform.posix.SIGINT
+import platform.posix.SIGTERM
 import platform.posix.getenv
+import platform.posix.signal
+import platform.posix.sleep
+import kotlin.concurrent.AtomicInt
+
+private val shutdownRequested = AtomicInt(0)
+
+@OptIn(ExperimentalForeignApi::class)
+private fun onSignal(sig: Int) {
+    shutdownRequested.value = 1
+}
 
 @OptIn(ExperimentalForeignApi::class)
 fun main() {
@@ -21,20 +34,20 @@ fun main() {
     val mediaFile = env("MEDIA_FILE", "/config/media.json")
     val frontendDir = env("FRONTEND_DIR", "/app/frontend")
     val port = env("SERVER_PORT", "9505").toIntOrNull() ?: 9505
+    val tmdbBaseUrl = env("TMDB_BASE_URL", "https://api.themoviedb.org/3")
 
     val configStore = ConfigStore(configFile)
     configStore.load()
 
     val sessionService = SessionService(sessionsFile)
     val jellyfinClient = JellyfinClient()
-    val tmdbClient = TmdbClient(configStore)
+    val tmdbClient = TmdbClient(configStore, tmdbBaseUrl)
     val mediaStore = MediaStore(mediaFile)
     mediaStore.load()
     val scanner = Scanner(configStore, tmdbClient, jellyfinClient)
     val artworkDownloader = ArtworkDownloader()
     val scanTracker = ScanTracker()
     val folderWatcher = FolderWatcher(configStore) {
-        // Auto-scan: only start if not already running
         if (!scanTracker.running) {
             println("[INFO] FolderWatcher: starting automatic scan")
             scanTracker.running = true
@@ -57,13 +70,22 @@ fun main() {
         }
     }
 
+    signal(SIGTERM, staticCFunction(::onSignal))
+    signal(SIGINT, staticCFunction(::onSignal))
+
     println("[INFO] Starting jellystructure on port $port")
     println("[INFO] Serving frontend from $frontendDir")
 
-    startServer(
+    val shutdown = startServer(
         configStore, sessionService, jellyfinClient, mediaStore, scanner,
         artworkDownloader, scanTracker, folderWatcher, frontendDir, port,
     )
+
+    while (shutdownRequested.value == 0) {
+        sleep(1u)
+    }
+    println("[INFO] Shutdown signal received — stopping gracefully")
+    shutdown()
 }
 
 @OptIn(ExperimentalForeignApi::class)

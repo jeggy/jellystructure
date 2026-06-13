@@ -1,0 +1,26 @@
+[api_keys]
+tmdb_v3_key = "test-key"
+jellyfin_token = "mock-access-token"
+jellyfin_url = "http://jellyfin-mock:8096"
+
+[language_rules]
+fallback_language = "en"
+
+[behavior]
+overwrite_nfo = true
+fetch_images = false
+watch_enabled = false
+
+[[libraries]]
+jellyfin_id = "movies-lib-id"
+name = "Movies"
+collection_type = "movies"
+local_path = "/media/movies"
+skip = false
+
+[[libraries]]
+jellyfin_id = "tv-lib-id"
+name = "TV Shows"
+collection_type = "tvshows"
+local_path = "/media/tv"
+skip = false

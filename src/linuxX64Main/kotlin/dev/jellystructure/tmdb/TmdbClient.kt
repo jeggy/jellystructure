@@ -70,7 +70,10 @@ data class TmdbTvDetails(
     val genres: List<TmdbGenre> = emptyList(),
 )
 
-class TmdbClient(private val configStore: ConfigStore) {
+class TmdbClient(
+    private val configStore: ConfigStore,
+    private val baseUrl: String = "https://api.themoviedb.org/3",
+) {
     private val http = HttpClient(Curl) {
         install(ContentNegotiation) {
             json(Json { ignoreUnknownKeys = true })
@@ -85,7 +88,7 @@ class TmdbClient(private val configStore: ConfigStore) {
         val key = apiKey()
         if (key.isBlank()) return null
         return runCatching {
-            val response = http.get("https://api.themoviedb.org/3/search/movie") {
+            val response = http.get("$baseUrl/search/movie") {
                 parameter("api_key", key)
                 parameter("query", title)
                 if (year != null) parameter("year", year)
@@ -105,7 +108,7 @@ class TmdbClient(private val configStore: ConfigStore) {
         val key = apiKey()
         if (key.isBlank()) return null
         return runCatching {
-            val response = http.get("https://api.themoviedb.org/3/movie/$tmdbId") {
+            val response = http.get("$baseUrl/movie/$tmdbId") {
                 parameter("api_key", key)
                 if (!language.isNullOrBlank()) parameter("language", language)
             }
@@ -133,7 +136,7 @@ class TmdbClient(private val configStore: ConfigStore) {
         val key = apiKey()
         if (key.isBlank()) return null
         return runCatching {
-            val response = http.get("https://api.themoviedb.org/3/search/tv") {
+            val response = http.get("$baseUrl/search/tv") {
                 parameter("api_key", key)
                 parameter("query", title)
                 if (year != null) parameter("first_air_date_year", year)
@@ -151,7 +154,7 @@ class TmdbClient(private val configStore: ConfigStore) {
         val key = apiKey()
         if (key.isBlank()) return null
         return runCatching {
-            val response = http.get("https://api.themoviedb.org/3/tv/$tmdbId") {
+            val response = http.get("$baseUrl/tv/$tmdbId") {
                 parameter("api_key", key)
                 if (!language.isNullOrBlank()) parameter("language", language)
             }

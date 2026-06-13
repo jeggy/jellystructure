@@ -1,16 +1,48 @@
-# CI test stack: builds app + runs Playwright against real fixtures.
+# CI test stack: builds app + runs Playwright against mock services and real fixtures.
 # Usage:
-#   ./scripts/build-fixtures.sh          # create test MKV files
-#   docker-compose -f docker-compose.test.yml up --build --abort-on-container-exit
+#   ./scripts/build-fixtures.sh
+#   docker compose -f docker-compose.test.yml up --build --abort-on-container-exit
 #
-# Required env (passed from CI or .env.test):
-#   JELLYFIN_URL   — Jellyfin base URL (or mock)
-#   JELLYFIN_TOKEN — machine API token
-#   TMDB_KEY       — TMDB v3 API key (use a test key or mock)
-#   JELLYFIN_USER  — admin Jellyfin username for login test
-#   JELLYFIN_PASS  — admin Jellyfin password for login test
+# No external secrets needed — all API calls go to the bundled mocks.
+# Optional env overrides:
+#   FIXTURE_DIR   — path to fixture MKVs on the host (default: /tmp/jellystructure-fixtures)
+#   JELLYFIN_USER — Jellyfin admin username used by Playwright login test (default: admin)
+#   JELLYFIN_PASS — Jellyfin admin password used by Playwright login test (default: password)
 
 services:
+  jellyfin-mock:
+    image: node:20-alpine
+    command: node /mock/server.js
+    volumes:
+      - ./tests/mock-jellyfin:/mock:ro
+    environment:
+      PORT: 8096
+      JELLYFIN_USER: ${JELLYFIN_USER:-admin}
+      JELLYFIN_PASS: ${JELLYFIN_PASS:-password}
+      MEDIA_ROOT: /media
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8096/Library/VirtualFolders"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+    networks:
+      - testnet
+
+  tmdb-mock:
+    image: node:20-alpine
+    command: node /mock/server.js
+    volumes:
+      - ./tests/mock-tmdb:/mock:ro
+    environment:
+      PORT: 3001
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3001/search/movie?query=test"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+    networks:
+      - testnet
+
   app:
     build: .
     ports:
@@ -24,6 +56,12 @@ services:
       MEDIA_FILE: /config/media.json
       FRONTEND_DIR: /app/frontend
       SERVER_PORT: 9505
+      TMDB_BASE_URL: http://tmdb-mock:3001
+    depends_on:
+      jellyfin-mock:
+        condition: service_healthy
+      tmdb-mock:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:9505/api/health"]
       interval: 5s

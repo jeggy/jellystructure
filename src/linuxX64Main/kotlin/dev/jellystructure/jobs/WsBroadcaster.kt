@@ -1,7 +1,9 @@
 package dev.jellystructure.jobs
 
 import io.ktor.server.websocket.DefaultWebSocketServerSession
+import io.ktor.websocket.CloseReason
 import io.ktor.websocket.Frame
+import io.ktor.websocket.close
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.encodeToString
@@ -28,6 +30,13 @@ class WsBroadcaster {
         for (session in active) {
             runCatching { session.send(frame) }
                 .onFailure { mutex.withLock { sessions.remove(session) } }
+        }
+    }
+
+    suspend fun closeAll() {
+        val all = mutex.withLock { sessions.toList().also { sessions.clear() } }
+        for (session in all) {
+            runCatching { session.close(CloseReason(CloseReason.Codes.GOING_AWAY, "server shutdown")) }
         }
     }
 }
