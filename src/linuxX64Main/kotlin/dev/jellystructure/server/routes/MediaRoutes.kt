@@ -12,14 +12,22 @@ import dev.jellystructure.model.MediaKind
 import dev.jellystructure.nfo.NfoWriter
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
+import io.ktor.http.content.PartData
+import io.ktor.http.content.forEachPart
+import io.ktor.server.request.receiveMultipart
 import io.ktor.server.response.respond
 import io.ktor.server.response.respondText
 import io.ktor.server.routing.Route
 import io.ktor.server.routing.get
 import io.ktor.server.routing.post
 import io.ktor.server.routing.route
+import io.ktor.utils.io.readRemaining
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
+import kotlinx.io.buffered
+import kotlinx.io.files.Path
+import kotlinx.io.files.SystemFileSystem
+import kotlinx.io.readByteArray
 
 fun Route.mediaRoutes(
     store: MediaStore,
@@ -104,6 +112,58 @@ fun Route.mediaRoutes(
                         }
                     }
                     call.respond(status)
+                }
+
+                // POST /api/media/{id}/artwork/upload — upload poster.jpg or fanart.jpg from client
+                post("/upload") {
+                    val id = call.parameters["id"]
+                        ?: return@post call.respond(HttpStatusCode.BadRequest)
+                    val item = store.get(id)
+                        ?: return@post call.respond(HttpStatusCode.NotFound)
+
+                    val multipart = call.receiveMultipart()
+                    var type = ""
+                    var fileBytes: ByteArray? = null
+
+                    multipart.forEachPart { part ->
+                        when (part) {
+                            is PartData.FormItem -> if (part.name == "type") type = part.value
+                            is PartData.FileItem -> if (part.name == "file") {
+                                fileBytes = part.provider().readRemaining().readByteArray()
+                            }
+                            else -> {}
+                        }
+                        part.release()
+                    }
+
+                    if (type !in setOf("poster", "fanart")) {
+                        call.respond(HttpStatusCode.BadRequest, mapOf("error" to "type must be poster or fanart"))
+                        return@post
+                    }
+                    val bytes = fileBytes
+                    if (bytes == null || bytes.isEmpty()) {
+                        call.respond(HttpStatusCode.BadRequest, mapOf("error" to "no file data received"))
+                        return@post
+                    }
+
+                    val dir = item.path.substringBeforeLast('/')
+                    val filename = if (type == "poster") "poster.jpg" else "fanart.jpg"
+                    val destPath = "$dir/$filename"
+                    val tmpPath = "$destPath.tmp"
+                    val sink = SystemFileSystem.sink(Path(tmpPath)).buffered()
+                    sink.write(bytes, 0, bytes.size)
+                    sink.flush()
+                    sink.close()
+                    @OptIn(kotlinx.cinterop.ExperimentalForeignApi::class)
+                    platform.posix.rename(tmpPath, destPath)
+                    println("[INFO] Artwork uploaded: $destPath (${bytes.size} bytes)")
+
+                    val cfg = configStore.current
+                    if (!item.jellyfinId.isNullOrBlank() && cfg.apiKeys.jellyfinUrl.isNotBlank()) {
+                        jellyfinClient.refreshItem(cfg.apiKeys.jellyfinUrl, cfg.apiKeys.jellyfinToken, item.jellyfinId)
+                    }
+
+                    call.respond(artwork.check(item))
                 }
             }
         }

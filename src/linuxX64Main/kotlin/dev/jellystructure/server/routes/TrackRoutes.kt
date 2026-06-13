@@ -2,6 +2,7 @@ package dev.jellystructure.server.routes
 
 import dev.jellystructure.auth.JellyfinClient
 import dev.jellystructure.config.ConfigStore
+import dev.jellystructure.media.FfmpegRunner
 import dev.jellystructure.media.FfprobeRunner
 import dev.jellystructure.media.MediaStore
 import dev.jellystructure.media.MkvpropeditRunner
@@ -41,27 +42,32 @@ fun Route.trackRoutes(store: MediaStore, configStore: ConfigStore, jellyfinClien
                 ?: return@get call.respond(HttpStatusCode.NotFound, mapOf("error" to "track not found"))
 
             val ext = item.path.substringAfterLast('.').lowercase()
-            if (ext != "mkv") {
-                call.respond(HttpStatusCode.BadRequest, mapOf("error" to "only MKV supported for header-only edits"))
-                return@get
-            }
-
             val sameType = item.tracks.filter { it.kind == targetTrack.kind }
-            val escaped = item.path.replace("'", "'\\''")
-            val parts = sameType.map { t ->
-                val flag = if (t.streamIndex == targetTrack.streamIndex) 1 else 0
-                "--edit track:@${t.streamIndex + 1} --set flag-default=$flag"
-            }.joinToString(" \\\n  ")
-            val command = "mkvpropedit '$escaped' \\\n  $parts"
 
-            call.respond(
-                TrackPlan(
-                    command = command,
-                    tool = "mkvpropedit",
-                    estimatedMs = 40,
-                    targetSpecifier = specifier,
+            if (ext == "mkv") {
+                val escaped = item.path.replace("'", "'\\''")
+                val parts = sameType.map { t ->
+                    val flag = if (t.streamIndex == targetTrack.streamIndex) 1 else 0
+                    "--edit track:@${t.streamIndex + 1} --set flag-default=$flag"
+                }.joinToString(" \\\n  ")
+                call.respond(
+                    TrackPlan(
+                        command = "mkvpropedit '$escaped' \\\n  $parts",
+                        tool = "mkvpropedit",
+                        estimatedMs = 40,
+                        targetSpecifier = specifier,
+                    )
                 )
-            )
+            } else {
+                call.respond(
+                    TrackPlan(
+                        command = FfmpegRunner.planSetDefault(item.path, targetTrack.streamIndex, sameType.map { it.streamIndex }, targetTrack.kind),
+                        tool = "ffmpeg",
+                        estimatedMs = 5000,
+                        targetSpecifier = specifier,
+                    )
+                )
+            }
         }
 
         // POST /api/media/{id}/tracks/default — set a track as default for its type
@@ -76,19 +82,17 @@ fun Route.trackRoutes(store: MediaStore, configStore: ConfigStore, jellyfinClien
                 ?: return@post call.respond(HttpStatusCode.NotFound, mapOf("error" to "track not found"))
 
             val ext = item.path.substringAfterLast('.').lowercase()
-            if (ext != "mkv") {
-                call.respond(HttpStatusCode.BadRequest, mapOf("error" to "only MKV supported for header-only edits"))
-                return@post
+            val sameType = item.tracks.filter { it.kind == targetTrack.kind }
+
+            val ok = if (ext == "mkv") {
+                MkvpropeditRunner.setDefault(item.path, targetTrack.streamIndex, sameType.map { it.streamIndex })
+            } else {
+                FfmpegRunner.setDefault(item.path, targetTrack.streamIndex, sameType.map { it.streamIndex }, targetTrack.kind)
             }
 
-            val sameType = item.tracks.filter { it.kind == targetTrack.kind }
-            val ok = MkvpropeditRunner.setDefault(
-                item.path,
-                targetTrack.streamIndex,
-                sameType.map { it.streamIndex },
-            )
             if (!ok) {
-                call.respond(HttpStatusCode.InternalServerError, mapOf("error" to "mkvpropedit failed"))
+                val tool = if (ext == "mkv") "mkvpropedit" else "ffmpeg"
+                call.respond(HttpStatusCode.InternalServerError, mapOf("error" to "$tool failed"))
                 return@post
             }
 

@@ -8,9 +8,12 @@ import dev.jellystructure.model.Track
 import dev.jellystructure.model.TrackKind
 import kotlinx.browser.document
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.w3c.dom.Element
 import org.w3c.dom.HTMLElement
+import org.w3c.dom.HTMLFormElement
+import org.w3c.dom.HTMLInputElement
 
 private const val TMDB_IMG_LG = "https://image.tmdb.org/t/p/w500"
 
@@ -154,9 +157,22 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
               <div class="row center" style="margin-bottom:10px">
                 <h4 style="margin:0">Artwork</h4>
                 <span class="spacer"></span>
+                <button id="upload-poster-btn" class="btn sm ghost">Upload poster</button>
+                <button id="upload-fanart-btn" class="btn sm ghost">Upload fanart</button>
                 <button id="fetch-artwork-btn" class="btn sm ghost">Download from TMDB</button>
               </div>
               <div id="artwork-status"><span class="muted tiny">Checking…</span></div>
+              <iframe id="upload-frame" name="upload-frame" style="display:none"></iframe>
+              <form id="poster-form" method="post" action="/api/media/${item.id}/artwork/upload"
+                    enctype="multipart/form-data" target="upload-frame" style="display:none">
+                <input type="hidden" name="type" value="poster">
+                <input type="file" id="poster-file" name="file" accept="image/jpeg,image/jpg,image/png">
+              </form>
+              <form id="fanart-form" method="post" action="/api/media/${item.id}/artwork/upload"
+                    enctype="multipart/form-data" target="upload-frame" style="display:none">
+                <input type="hidden" name="type" value="fanart">
+                <input type="file" id="fanart-file" name="file" accept="image/jpeg,image/jpg,image/png">
+              </form>
             </div>
 
             <div class="card">
@@ -190,6 +206,29 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
 
     document.getElementById("fetch-artwork-btn")?.addEventListener("click") {
         scope.launch { handleFetchArtwork(item.id) }
+    }
+
+    document.getElementById("upload-poster-btn")?.addEventListener("click") {
+        (document.getElementById("poster-file") as? HTMLInputElement)?.click()
+    }
+    document.getElementById("upload-fanart-btn")?.addEventListener("click") {
+        (document.getElementById("fanart-file") as? HTMLInputElement)?.click()
+    }
+    document.getElementById("poster-file")?.addEventListener("change") {
+        (document.getElementById("poster-form") as? HTMLFormElement)?.submit()
+        scope.launch {
+            delay(2000)
+            loadArtworkStatus(item.id)
+            showDetailMsg("Poster upload submitted.", true)
+        }
+    }
+    document.getElementById("fanart-file")?.addEventListener("change") {
+        (document.getElementById("fanart-form") as? HTMLFormElement)?.submit()
+        scope.launch {
+            delay(2000)
+            loadArtworkStatus(item.id)
+            showDetailMsg("Fanart upload submitted.", true)
+        }
     }
 
     scope.launch { loadArtworkStatus(item.id) }

@@ -77,7 +77,7 @@ All file I/O uses `kotlinx-io` (POSIX-compatible). `java.io` and `java.nio` do n
 
 ### Configuration
 
-Config is a TOML file (`config.toml`) with three scalar sections — `[api_keys]`, `[language_rules]`, `[behavior]` — plus a `[[libraries]]` array table for per-Jellyfin-library path mappings (fields: `jellyfin_id`, `name`, `collection_type`, `local_path`, `skip`). There is no static `[paths]` section; library paths come from the mapping. See `config/config.example.toml` for the schema.
+Config is a TOML file (`config.toml`) with three scalar sections — `[api_keys]`, `[language_rules]`, `[behavior]` — plus a `[[libraries]]` array table for per-Jellyfin-library path mappings (fields: `jellyfin_id`, `name`, `collection_type`, `jellyfin_path`, `local_path`, `skip`, `fallback_language`). There is no static `[paths]` section; library paths come from the mapping. `jellyfin_path` is the path prefix as Jellyfin's container sees it; `local_path` is the equivalent path on the host. If `jellyfin_path` is blank, `local_path` is used for both matching and filesystem access. See `config/config.example.toml` for the schema.
 
 ## UI Pages
 
@@ -97,16 +97,16 @@ The app is a sidebar-nav SPA. See `design/app/` for pixel-accurate mockups and `
 
 ## Development Phases
 
-Current status is approximately end of **P1**. Phases are:
+Current status is end of **P4** (all pages and core features implemented; test suite not started). Phases are:
 
 | Phase | Focus | Status |
 |-------|-------|--------|
 | P0 | Scaffolding, Docker, healthz, WASM page | Done |
 | P1 | Config, auth, session, setup routes, login + settings UI | Done |
-| P2 | Jellyfin-API-driven discovery, ffprobe, TMDB client, library + media detail UI | Next |
-| P3 | NFO writer, artwork downloader, LanguageResolver (shared), language resolution UI | Upcoming |
-| P4 | mkvpropedit/ffmpeg track editing, triage, job runner, WebSocket progress, Jellyfin refresh | Upcoming |
-| P5 | Folder watcher, Blender film fixtures, Playwright CI | Upcoming |
+| P2 | Jellyfin-API-driven discovery, ffprobe, TMDB client, library + media detail UI | Done |
+| P3 | NFO writer, artwork downloader, LanguageResolver (shared), language resolution UI | Done |
+| P4 | mkvpropedit/ffmpeg track editing, triage, job runner, WebSocket progress, Jellyfin refresh | Done |
+| P5 | Folder watcher, Blender film fixtures, Playwright CI | In progress (FolderWatcher done; no test fixtures or Playwright yet) |
 
 ## Key Domain Concepts
 

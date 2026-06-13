@@ -2,6 +2,7 @@ package dev.jellystructure.server.routes
 
 import dev.jellystructure.auth.JellyfinClient
 import dev.jellystructure.config.ConfigStore
+import dev.jellystructure.media.FfmpegRunner
 import dev.jellystructure.media.FfprobeRunner
 import dev.jellystructure.media.MediaStore
 import dev.jellystructure.media.MkvpropeditRunner
@@ -66,18 +67,18 @@ fun Route.triageRoutes(store: MediaStore, jellyfinClient: JellyfinClient, config
             }
 
             val ext = item.path.substringAfterLast('.').lowercase()
-            if (ext != "mkv") {
-                call.respond(HttpStatusCode.BadRequest, mapOf("error" to "language assignment only supported for MKV files"))
-                return@post
+            val ok = if (ext == "mkv") {
+                MkvpropeditRunner.setLanguage(item.path, track.streamIndex, lang)
+            } else {
+                FfmpegRunner.setLanguage(item.path, track.streamIndex, lang)
             }
 
-            val ok = MkvpropeditRunner.setLanguage(item.path, track.streamIndex, lang)
             if (!ok) {
-                call.respond(HttpStatusCode.InternalServerError, mapOf("error" to "mkvpropedit failed"))
+                val tool = if (ext == "mkv") "mkvpropedit" else "ffmpeg"
+                call.respond(HttpStatusCode.InternalServerError, mapOf("error" to "$tool failed"))
                 return@post
             }
 
-            // Re-probe and update the item in the store
             val newTracks = FfprobeRunner.probe(item.path)
             val newIssueCount = newTracks.count {
                 (it.kind == TrackKind.AUDIO || it.kind == TrackKind.SUBTITLE) && it.language == null
