@@ -43,25 +43,66 @@ tasks.register<Exec>("runBackend") {
 }
 
 tasks.register("runDev") {
-    description = "Build FE + BE then start the dev server; WASM bundle rebuilds automatically on source changes"
+    description = "Compile backend, then start API server (port 9505) + frontend dev server (port 8081). Run './gradlew buildFrontend' first if the frontend has never been built."
     group = "application"
-    dependsOn("wasmJsBrowserDevelopmentWebpack", "linkDebugExecutableLinuxX64")
+    dependsOn("linkDebugExecutableLinuxX64")
 
     doLast {
+        // Kill any leftover instances from previous runs before starting fresh.
+        ProcessBuilder("pkill", "-f", "jellystructure.kexe").inheritIO().start().waitFor()
+        ProcessBuilder("pkill", "-f", "webpack-dev-server").inheritIO().start().waitFor()
+        Thread.sleep(500)
+
         val configDir = rootProject.layout.projectDirectory.dir("config").asFile
         configDir.mkdirs()
         val frontendDir = layout.buildDirectory.dir("dist/wasmJs/developmentExecutable").get().asFile
         val binary = layout.buildDirectory.file("bin/linuxX64/debugExecutable/jellystructure.kexe").get().asFile
-        val gradlew = rootProject.layout.projectDirectory.file("gradlew").asFile.absolutePath
 
-        // Rebuild WASM bundle whenever frontend sources change
-        val frontendWatch = ProcessBuilder(gradlew, "wasmJsBrowserDevelopmentWebpack", "--continuous", "--warn")
-            .directory(rootProject.layout.projectDirectory.asFile)
-            .inheritIO()
+        // Locate node binary (newest version in ~/.gradle/nodejs/)
+        val nodeHome = File(System.getProperty("user.home"), ".gradle/nodejs")
+        val node = nodeHome.listFiles()
+            ?.filter { it.isDirectory && it.name.startsWith("node-") }
+            ?.maxByOrNull { it.lastModified() }
+            ?.resolve("bin/node")
+            ?: error("Node.js not found in ~/.gradle/nodejs — run './gradlew buildFrontend' first")
+
+        // Locate webpack-dev-server in Kotlin's yarn tooling (~/.kotlin/kotlin-npm-tooling/)
+        val yarnTooling = File(System.getProperty("user.home"), ".kotlin/kotlin-npm-tooling/yarn")
+        val toolingNodeModules = yarnTooling.listFiles()
+            ?.filter { it.isDirectory }
+            ?.mapNotNull { it.resolve("node_modules").takeIf { f -> f.isDirectory } }
+            ?.firstOrNull()
+            ?: error("Kotlin npm tooling not found in ~/.kotlin/kotlin-npm-tooling — run './gradlew buildFrontend' first")
+        val webpackDevServer = toolingNodeModules.resolve(".bin/webpack-dev-server")
+
+        val webpackConfig = layout.buildDirectory.file("wasm/packages/jellystructure/webpack.config.js").get().asFile
+        if (!webpackConfig.exists()) {
+            error("webpack.config.js not found at ${webpackConfig.absolutePath} — run './gradlew buildFrontend' first")
+        }
+
+        println("[runDev] Starting frontend dev server on http://localhost:8081")
+        println("[runDev] Starting backend API server on http://localhost:9505")
+
+        fun Process.pipeToGradle(prefix: String) {
+            val out = System.out
+            Thread {
+                inputStream.bufferedReader().forEachLine { out.println("[$prefix] $it") }
+            }.apply { isDaemon = true; start() }
+            Thread {
+                errorStream.bufferedReader().forEachLine { out.println("[$prefix] $it") }
+            }.apply { isDaemon = true; start() }
+        }
+
+        val frontend = ProcessBuilder(node.absolutePath, webpackDevServer.absolutePath, "--config", webpackConfig.absolutePath)
+            .directory(webpackConfig.parentFile)
+            .apply {
+                environment()["KOTLIN_TOOLING_DIR"] = toolingNodeModules.absolutePath
+                environment()["NODE_PATH"] = toolingNodeModules.absolutePath
+            }
             .start()
+            .also { it.pipeToGradle("fe") }
 
         val backend = ProcessBuilder(binary.absolutePath)
-            .inheritIO()
             .apply {
                 environment()["CONFIG_FILE"] = configDir.resolve("config.toml").absolutePath
                 environment()["SESSIONS_FILE"] = configDir.resolve("sessions.json").absolutePath
@@ -70,18 +111,23 @@ tasks.register("runDev") {
                 environment()["SERVER_PORT"] = "9505"
             }
             .start()
+            .also { it.pipeToGradle("be") }
 
         Runtime.getRuntime().addShutdownHook(Thread {
-            frontendWatch.destroyForcibly()
             backend.destroyForcibly()
+            frontend.destroyForcibly()
         })
 
-        try {
-            backend.waitFor()
-        } finally {
-            frontendWatch.destroyForcibly()
-        }
+        val exitCode = backend.waitFor()
+        frontend.destroyForcibly()
+        if (exitCode != 0) error("Backend exited with code $exitCode — see output above")
     }
+}
+
+tasks.register("buildFrontend") {
+    description = "Build the WASM frontend bundle (run once before runDev, or with --continuous for hot reload)."
+    group = "application"
+    dependsOn("wasmJsBrowserDevelopmentWebpack")
 }
 
     sourceSets {
