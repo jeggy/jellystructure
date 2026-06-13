@@ -11,13 +11,29 @@ import dev.jellystructure.server.startServer
 import dev.jellystructure.tmdb.TmdbClient
 import dev.jellystructure.watcher.FolderWatcher
 import kotlinx.cinterop.ExperimentalForeignApi
+import kotlinx.cinterop.alloc
+import kotlinx.cinterop.convert
+import kotlinx.cinterop.memScoped
+import kotlinx.cinterop.ptr
+import kotlinx.cinterop.reinterpret
+import kotlinx.cinterop.sizeOf
 import kotlinx.cinterop.staticCFunction
 import kotlinx.cinterop.toKString
+import platform.posix.AF_INET
 import platform.posix.SIGINT
 import platform.posix.SIGTERM
+import platform.posix.SOCK_STREAM
+import platform.posix.close
+import platform.posix.connect
+import platform.posix.exit
 import platform.posix.getenv
+import platform.posix.htonl
+import platform.posix.htons
+import platform.posix.memset
 import platform.posix.signal
 import platform.posix.sleep
+import platform.posix.sockaddr_in
+import platform.posix.socket
 import kotlin.concurrent.AtomicInt
 
 private val shutdownRequested = AtomicInt(0)
@@ -73,6 +89,7 @@ fun main() {
     signal(SIGTERM, staticCFunction(::onSignal))
     signal(SIGINT, staticCFunction(::onSignal))
 
+    checkPortFree(port)
     println("[INFO] Starting jellystructure on port $port")
     println("[INFO] Serving frontend from $frontendDir")
 
@@ -91,3 +108,25 @@ fun main() {
 @OptIn(ExperimentalForeignApi::class)
 fun env(name: String, default: String): String =
     getenv(name)?.toKString() ?: default
+
+// Fails fast with a human-readable message if the port is already bound,
+// before Ktor gets a chance to produce an unreadable coroutine cancellation trace.
+@OptIn(ExperimentalForeignApi::class)
+private fun checkPortFree(port: Int) {
+    val sock = socket(AF_INET, SOCK_STREAM, 0)
+    if (sock < 0) return
+    memScoped {
+        val addr = alloc<sockaddr_in>()
+        memset(addr.ptr, 0, sizeOf<sockaddr_in>().convert())
+        addr.sin_family = AF_INET.convert()
+        addr.sin_port = htons(port.convert())
+        addr.sin_addr.s_addr = htonl(0x7f000001u) // 127.0.0.1
+        val connected = connect(sock, addr.ptr.reinterpret(), sizeOf<sockaddr_in>().convert())
+        close(sock)
+        if (connected == 0) {
+            println("[ERROR] Port $port is already in use — is another jellystructure instance running?")
+            println("[ERROR]   kill it with:  fuser -k ${port}/tcp")
+            exit(1)
+        }
+    }
+}
