@@ -188,13 +188,14 @@ private suspend fun fetchAndRenderLibraries() {
         return
     }
 
-    // Merge: keep existing localPath/skip for known IDs, add new entries for unknowns
+    // Merge: keep existing jellyfinPath/localPath/skip for known IDs, add new entries for unknowns
     val existing = libraryMappings.associateBy { it.jellyfinId }
     libraryMappings = fetched.map { lib ->
         existing[lib.id] ?: LibraryMapping(
             jellyfinId = lib.id,
             name = lib.name,
             collectionType = lib.collectionType ?: "",
+            jellyfinPath = "",
             localPath = "",
             skip = false,
         )
@@ -224,8 +225,16 @@ private fun renderLibraryList() {
               Skip
             </label>
           </div>
-          <input id="lib-path-$i" class="input" type="text" placeholder="/media/path"
-            value="${lib.localPath}" style="width:100%;${if (skipped) "pointer-events:none" else ""}">
+          <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px">
+            <span style="font-size:.75rem;color:var(--ink-soft);width:80px;flex-shrink:0">Jellyfin path</span>
+            <input id="lib-jellyfin-path-$i" class="input" type="text" placeholder="/media/movies/"
+              value="${lib.jellyfinPath}" style="flex:1;${if (skipped) "pointer-events:none" else ""}">
+          </div>
+          <div style="display:flex;gap:6px;align-items:center">
+            <span style="font-size:.75rem;color:var(--ink-soft);width:80px;flex-shrink:0">Local path</span>
+            <input id="lib-path-$i" class="input" type="text" placeholder="/mnt/host/movies/"
+              value="${lib.localPath}" style="flex:1;${if (skipped) "pointer-events:none" else ""}">
+          </div>
         </div>
         """.trimIndent()
     }.joinToString("")
@@ -239,10 +248,14 @@ private fun renderLibraryList() {
             renderLibraryList()
             refreshTomlPreview(readForm())
         }
+        document.getElementById("lib-jellyfin-path-$i")?.addEventListener("input") {
+            val value = (document.getElementById("lib-jellyfin-path-$i") as? HTMLInputElement)?.value?.trim() ?: ""
+            libraryMappings[i] = libraryMappings[i].copy(jellyfinPath = value)
+            refreshTomlPreview(readForm())
+        }
         document.getElementById("lib-path-$i")?.addEventListener("input") {
             val value = (document.getElementById("lib-path-$i") as? HTMLInputElement)?.value?.trim() ?: ""
-            val current = libraryMappings[i]
-            libraryMappings[i] = current.copy(localPath = value)
+            libraryMappings[i] = libraryMappings[i].copy(localPath = value)
             refreshTomlPreview(readForm())
         }
     }
@@ -289,6 +302,7 @@ private fun buildToml(c: AppConfig): String = buildString {
         appendLine("""jellyfin_id = "${lib.jellyfinId}"""")
         appendLine("""name = "${lib.name}"""")
         appendLine("""collection_type = "${lib.collectionType}"""")
+        if (lib.jellyfinPath.isNotBlank()) appendLine("""jellyfin_path = "${lib.jellyfinPath}"""")
         appendLine("""local_path = "${lib.localPath}"""")
         appendLine("skip = ${lib.skip}")
     }

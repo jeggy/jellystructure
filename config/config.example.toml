@@ -14,17 +14,25 @@ fetch_images = true
 # jellyfin_id is the Id returned by GET /Library/VirtualFolders.
 # Set skip = true for libraries you don't want Jellystructure to manage.
 # Entries are created/updated from the Library Mapping section in Settings.
+#
+# Path mapping: if Jellyfin runs in a container its item paths will use a
+# container-internal prefix. Set jellyfin_path to that prefix and local_path
+# to the equivalent path on this host. The scanner replaces the prefix before
+# accessing files. If jellyfin_path is blank, local_path is used for both
+# matching and filesystem access (no translation needed).
 
 # [[libraries]]
 # jellyfin_id = ""
 # name = "Movies"
 # collection_type = "movies"
-# local_path = "/media/movies"
+# jellyfin_path = "/media/movies/"   # path inside Jellyfin's container
+# local_path = "/mnt/host/movies/"   # same directory as seen by this app
 # skip = false
 
 # [[libraries]]
 # jellyfin_id = ""
 # name = "TV Shows"
 # collection_type = "tvshows"
-# local_path = "/media/tv"
+# jellyfin_path = "/media/tv/"
+# local_path = "/mnt/host/tv/"
 # skip = false

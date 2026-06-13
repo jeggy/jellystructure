@@ -34,26 +34,35 @@ class Scanner(
         val jellyfinItems = jellyfinClient.getItems(baseUrl, token)
         println("[INFO] Jellyfin returned ${jellyfinItems.size} items")
 
-        // Build prefix map: localPath → LibraryMapping for skip/fallback lookup
         val libraries = config.libraries.filter { !it.skip && it.localPath.isNotBlank() }
         val globalFallback = config.languageRules.fallbackLanguage
 
         var count = 0
         for (jItem in jellyfinItems) {
-            val path = jItem.path ?: continue
+            val jellyfinPath = jItem.path ?: continue
 
-            // Find the matching library config by path prefix
-            val lib = libraries.firstOrNull { path.startsWith(it.localPath) }
+            // Match using jellyfinPath prefix if configured, otherwise fall back to localPath
+            val lib = libraries.firstOrNull { lib ->
+                val prefix = lib.jellyfinPath.ifBlank { lib.localPath }
+                prefix.isNotBlank() && jellyfinPath.startsWith(prefix)
+            }
             if (lib == null) {
-                println("[DEBUG] No matching library for path: $path — skipping")
+                println("[DEBUG] No matching library for path: $jellyfinPath — skipping")
                 continue
+            }
+
+            // Translate Jellyfin container path → local filesystem path
+            val localPath = if (lib.jellyfinPath.isNotBlank()) {
+                jellyfinPath.replaceFirst(lib.jellyfinPath, lib.localPath)
+            } else {
+                jellyfinPath
             }
 
             val effectiveFallback = lib.fallbackLanguage ?: globalFallback
 
             val mediaItem = when (jItem.type) {
-                "Movie" -> scanMovie(jItem, effectiveFallback)
-                "Series" -> scanSeries(jItem, effectiveFallback)
+                "Movie" -> scanMovie(jItem, localPath, effectiveFallback)
+                "Series" -> scanSeries(jItem, localPath, effectiveFallback)
                 else -> null
             }
 
@@ -72,17 +81,16 @@ class Scanner(
         return count
     }
 
-    private suspend fun scanMovie(jItem: JellyfinItem, fallback: String): MediaItem? {
-        val path = jItem.path ?: return null
-        if (!SystemFileSystem.exists(Path(path))) {
-            println("[WARN] Movie file not found on disk: $path")
+    private suspend fun scanMovie(jItem: JellyfinItem, localPath: String, fallback: String): MediaItem? {
+        if (!SystemFileSystem.exists(Path(localPath))) {
+            println("[WARN] Movie file not found on disk: $localPath")
             return null
         }
 
         val (title, year) = parseTitleYear(jItem.name)
         println("[INFO] Scanning movie: $title (${year ?: "?"})")
 
-        val tracks = FfprobeRunner.probe(path)
+        val tracks = FfprobeRunner.probe(localPath)
         val audioLangs = tracks.filter { it.kind == TrackKind.AUDIO }.map { it.language }
         val langPriority = LanguageResolver.priorityList(audioLangs, fallback)
 
@@ -104,7 +112,7 @@ class Scanner(
             originalTitle = details?.originalTitle?.takeIf { it.isNotBlank() },
             year = year,
             kind = MediaKind.MOVIE,
-            path = path,
+            path = localPath,
             jellyfinId = jItem.id,
             tmdbId = details?.id,
             originalLanguage = details?.originalLanguage?.takeIf { it.isNotBlank() },
@@ -120,19 +128,18 @@ class Scanner(
         )
     }
 
-    private suspend fun scanSeries(jItem: JellyfinItem, fallback: String): MediaItem? {
-        val dirPath = jItem.path ?: return null
-        if (!SystemFileSystem.exists(Path(dirPath))) {
-            println("[WARN] Series directory not found on disk: $dirPath")
+    private suspend fun scanSeries(jItem: JellyfinItem, localPath: String, fallback: String): MediaItem? {
+        if (!SystemFileSystem.exists(Path(localPath))) {
+            println("[WARN] Series directory not found on disk: $localPath")
             return null
         }
 
         val (title, year) = parseTitleYear(jItem.name)
         println("[INFO] Scanning series: $title (${year ?: "?"})")
 
-        val episodeFiles = findEpisodeFiles(dirPath)
+        val episodeFiles = findEpisodeFiles(localPath)
         if (episodeFiles.isEmpty()) {
-            println("[WARN] No episode files found in: $dirPath")
+            println("[WARN] No episode files found in: $localPath")
             return null
         }
 
@@ -159,7 +166,7 @@ class Scanner(
                 title = title,
                 year = year,
                 kind = MediaKind.TV_SHOW,
-                path = dirPath,
+                path = localPath,
                 jellyfinId = jItem.id,
                 tmdbId = jItem.providerIds?.tmdb?.toIntOrNull(),
                 originalLanguage = null,
@@ -192,7 +199,7 @@ class Scanner(
             originalTitle = details?.originalName?.takeIf { it.isNotBlank() },
             year = year,
             kind = MediaKind.TV_SHOW,
-            path = dirPath,
+            path = localPath,
             jellyfinId = jItem.id,
             tmdbId = details?.id,
             originalLanguage = details?.originalLanguage?.takeIf { it.isNotBlank() },

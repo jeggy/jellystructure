@@ -43,6 +43,7 @@ data class LibraryMapping(
     @SerialName("jellyfin_id") val jellyfinId: String = "",
     val name: String = "",
     @SerialName("collection_type") val collectionType: String = "",
+    @SerialName("jellyfin_path") val jellyfinPath: String = "",
     @SerialName("local_path") val localPath: String = "",
     val skip: Boolean = false,
 )
