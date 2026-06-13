@@ -42,6 +42,48 @@ tasks.register<Exec>("runBackend") {
     environment("SERVER_PORT", "9505")
 }
 
+tasks.register("runDev") {
+    description = "Build FE + BE then start the dev server; WASM bundle rebuilds automatically on source changes"
+    group = "application"
+    dependsOn("wasmJsBrowserDevelopmentWebpack", "linkDebugExecutableLinuxX64")
+
+    doLast {
+        val configDir = rootProject.layout.projectDirectory.dir("config").asFile
+        configDir.mkdirs()
+        val frontendDir = layout.buildDirectory.dir("dist/wasmJs/developmentExecutable").get().asFile
+        val binary = layout.buildDirectory.file("bin/linuxX64/debugExecutable/jellystructure.kexe").get().asFile
+        val gradlew = rootProject.layout.projectDirectory.file("gradlew").asFile.absolutePath
+
+        // Rebuild WASM bundle whenever frontend sources change
+        val frontendWatch = ProcessBuilder(gradlew, "wasmJsBrowserDevelopmentWebpack", "--continuous", "--warn")
+            .directory(rootProject.layout.projectDirectory.asFile)
+            .inheritIO()
+            .start()
+
+        val backend = ProcessBuilder(binary.absolutePath)
+            .inheritIO()
+            .apply {
+                environment()["CONFIG_FILE"] = configDir.resolve("config.toml").absolutePath
+                environment()["SESSIONS_FILE"] = configDir.resolve("sessions.json").absolutePath
+                environment()["MEDIA_FILE"] = configDir.resolve("media.json").absolutePath
+                environment()["FRONTEND_DIR"] = frontendDir.absolutePath
+                environment()["SERVER_PORT"] = "9505"
+            }
+            .start()
+
+        Runtime.getRuntime().addShutdownHook(Thread {
+            frontendWatch.destroyForcibly()
+            backend.destroyForcibly()
+        })
+
+        try {
+            backend.waitFor()
+        } finally {
+            frontendWatch.destroyForcibly()
+        }
+    }
+}
+
     sourceSets {
         val commonMain by getting {
             dependencies {
