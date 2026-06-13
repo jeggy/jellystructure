@@ -1,0 +1,56 @@
+# CI test stack: builds app + runs Playwright against real fixtures.
+# Usage:
+#   ./scripts/build-fixtures.sh          # create test MKV files
+#   docker-compose -f docker-compose.test.yml up --build --abort-on-container-exit
+#
+# Required env (passed from CI or .env.test):
+#   JELLYFIN_URL   — Jellyfin base URL (or mock)
+#   JELLYFIN_TOKEN — machine API token
+#   TMDB_KEY       — TMDB v3 API key (use a test key or mock)
+#   JELLYFIN_USER  — admin Jellyfin username for login test
+#   JELLYFIN_PASS  — admin Jellyfin password for login test
+
+services:
+  app:
+    build: .
+    ports:
+      - "9505:9505"
+    volumes:
+      - ./config-test:/config
+      - ${FIXTURE_DIR:-/tmp/jellystructure-fixtures}:/media:rw
+    environment:
+      CONFIG_FILE: /config/config.toml
+      SESSIONS_FILE: /config/sessions.json
+      MEDIA_FILE: /config/media.json
+      FRONTEND_DIR: /app/frontend
+      SERVER_PORT: 9505
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:9505/api/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    networks:
+      - testnet
+
+  playwright:
+    image: mcr.microsoft.com/playwright:v1.45.0-noble
+    working_dir: /tests
+    volumes:
+      - ./tests:/tests
+      - ${FIXTURE_DIR:-/tmp/jellystructure-fixtures}:${FIXTURE_DIR:-/tmp/jellystructure-fixtures}:ro
+    environment:
+      APP_URL: http://app:9505
+      FIXTURE_DIR: ${FIXTURE_DIR:-/tmp/jellystructure-fixtures}
+      JELLYFIN_USER: ${JELLYFIN_USER:-admin}
+      JELLYFIN_PASS: ${JELLYFIN_PASS:-password}
+    command: >
+      sh -c "npm ci && npx playwright install chromium && npx playwright test"
+    depends_on:
+      app:
+        condition: service_healthy
+    networks:
+      - testnet
+
+networks:
+  testnet:
+    driver: bridge

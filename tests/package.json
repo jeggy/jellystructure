@@ -1,0 +1,13 @@
+{
+  "name": "jellystructure-tests",
+  "private": true,
+  "scripts": {
+    "test": "playwright test",
+    "test:auth": "playwright test auth.spec.ts",
+    "test:fixtures": "playwright test scan-fixture.spec.ts"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.45.0",
+    "@types/node": "^20.0.0"
+  }
+}

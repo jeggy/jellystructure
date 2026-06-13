@@ -60,6 +60,26 @@ class JellyfinClient {
         }.body<List<JellyfinLibrary>>()
     }.getOrDefault(emptyList())
 
+    suspend fun getItems(baseUrl: String, token: String): List<JellyfinItem> = runCatching {
+        val url = baseUrl.trimEnd('/') +
+            "/Items?IncludeItemTypes=Movie,Series&Recursive=true&Fields=Path,ProviderIds,ProductionYear"
+        http.get(url) {
+            header("Authorization", """$AUTH_HEADER, Token="$token"""")
+        }.body<JellyfinItemsResponse>().items
+            .filter { it.type == "Movie" || it.type == "Series" }
+    }.onFailure { println("[WARN] Jellyfin getItems failed: ${it.message}") }
+     .getOrDefault(emptyList())
+
+    suspend fun refreshItem(baseUrl: String, token: String, jellyfinId: String): Boolean = runCatching {
+        val url = baseUrl.trimEnd('/') +
+            "/Items/$jellyfinId/Refresh?MetadataRefreshMode=ValidationOnly&ImageRefreshMode=ValidationOnly"
+        val response = http.post(url) {
+            header("Authorization", """$AUTH_HEADER, Token="$token"""")
+        }
+        println("[INFO] Jellyfin item refresh $jellyfinId: ${response.status.value}")
+        response.status.value in 200..299
+    }.getOrDefault(false)
+
     suspend fun triggerLibraryRefresh(baseUrl: String, token: String): Boolean = runCatching {
         val url = baseUrl.trimEnd('/') + "/Library/Refresh"
         val response = http.post(url) {

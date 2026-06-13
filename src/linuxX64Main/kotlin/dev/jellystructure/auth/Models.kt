@@ -40,3 +40,23 @@ data class JellyfinLibrary(
     @SerialName("Name") val name: String,
     @SerialName("CollectionType") val collectionType: String? = null,
 )
+
+@Serializable
+data class JellyfinProviderIds(
+    @SerialName("Tmdb") val tmdb: String? = null,
+)
+
+@Serializable
+data class JellyfinItem(
+    @SerialName("Id") val id: String,
+    @SerialName("Name") val name: String,
+    @SerialName("ProductionYear") val year: Int? = null,
+    @SerialName("Path") val path: String? = null,
+    @SerialName("ProviderIds") val providerIds: JellyfinProviderIds? = null,
+    @SerialName("Type") val type: String,
+)
+
+@Serializable
+data class JellyfinItemsResponse(
+    @SerialName("Items") val items: List<JellyfinItem> = emptyList(),
+)

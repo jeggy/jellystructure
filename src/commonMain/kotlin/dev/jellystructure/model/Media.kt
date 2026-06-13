@@ -28,6 +28,7 @@ data class MediaItem(
     val year: Int?,
     val kind: MediaKind,
     val path: String,
+    val jellyfinId: String? = null,
     val tmdbId: Int?,
     val originalLanguage: String?,
     val resolvedLanguage: String? = null,
@@ -37,6 +38,7 @@ data class MediaItem(
     val genres: List<String> = emptyList(),
     val tracks: List<Track>,
     val issueCount: Int,
+    val languageMix: Boolean = false,
     val scannedAt: Long,
 )
 

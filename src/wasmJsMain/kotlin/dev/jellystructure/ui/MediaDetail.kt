@@ -52,14 +52,44 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
            </div>"""
     } else ""
 
-    val issueBadge = if (item.issueCount > 0) {
-        """<span class="badge bad">${item.issueCount} untagged track${if (item.issueCount != 1) "s" else ""}</span>"""
-    } else {
-        """<span class="badge ok">all tracks tagged</span>"""
+    val issueBadge = when {
+        item.languageMix ->
+            """<span class="badge warn">language mix — writes blocked</span>"""
+        item.issueCount > 0 ->
+            """<span class="badge bad">${item.issueCount} untagged track${if (item.issueCount != 1) "s" else ""}</span>"""
+        else ->
+            """<span class="badge ok">all tracks tagged</span>"""
     }
 
     val resolvedLangBadge = if (!item.resolvedLanguage.isNullOrBlank()) {
         """<span class="badge" title="TMDB fetch language resolved from track order">lang: ${item.resolvedLanguage.esc()}</span>"""
+    } else ""
+
+    val nfoDisabled = item.tmdbId == null || item.languageMix
+    val nfoDisabledReason = when {
+        item.languageMix -> "Language mix — resolve track languages first"
+        item.tmdbId == null -> "No TMDB match"
+        else -> ""
+    }
+
+    val tvSeriesSectionHtml = if (item.kind.name == "TV_SHOW") {
+        if (item.languageMix) {
+            """<div class="card" style="border-left:3px solid var(--warn,#f59e0b);padding:14px 16px;">
+                 <div class="row center" style="gap:8px;margin-bottom:6px;">
+                   <span class="badge warn">Language Mix Detected</span>
+                 </div>
+                 <p style="margin:0;font-size:.88rem;">Audio tracks differ across sampled episodes — this series cannot be uniformly language-resolved. NFO and artwork writes are blocked until the inconsistency is resolved or you assign a language override in Triage.</p>
+               </div>"""
+        } else {
+            val audioLangs = item.tracks.filter { it.kind.name == "AUDIO" }.mapNotNull { it.language }
+            val langsDisplay = if (audioLangs.isNotEmpty()) audioLangs.joinToString(", ") else "—"
+            """<div class="card" style="border-left:3px solid var(--ok,#22c55e);padding:14px 16px;">
+                 <div class="row center" style="gap:8px;margin-bottom:6px;">
+                   <span class="badge ok">Uniform Audio Languages</span>
+                 </div>
+                 <p style="margin:0;font-size:.88rem;">Sampled up to 5 episodes — audio language set is consistent across samples: <strong>$langsDisplay</strong>.${if (!item.resolvedLanguage.isNullOrBlank()) " Resolved TMDB fetch language: <strong>${item.resolvedLanguage.esc()}</strong>." else ""}</p>
+               </div>"""
+        }
     } else ""
 
     container.innerHTML = """
@@ -69,10 +99,13 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
           ${if (item.tmdbId != null) """<span class="badge ok">TMDB matched</span>""" else """<span class="badge warn">No TMDB match</span>"""}
           $resolvedLangBadge
           <span class="spacer"></span>
-          <button id="write-nfo-btn" class="btn primary" ${if (item.tmdbId == null) """disabled title="No TMDB match"""" else ""}>Save → NFO</button>
+          <button id="track-order-btn" class="btn sm ghost">Track order →</button>
+          <button id="write-nfo-btn" class="btn primary" ${if (nfoDisabled) """disabled title="${nfoDisabledReason.esc()}"""" else ""}>Save → NFO</button>
         </div>
 
         <div id="detail-msg" style="display:none;margin-bottom:14px"></div>
+
+        $tvSeriesSectionHtml
 
         <div class="row" style="align-items:flex-start;gap:22px;flex-wrap:wrap;">
           <div class="col" style="width:220px;flex:none;">
@@ -145,6 +178,10 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
 
     document.getElementById("back-btn")?.addEventListener("click") {
         App.navigate("/library")
+    }
+
+    document.getElementById("track-order-btn")?.addEventListener("click") {
+        App.navigate("/track-order?id=${item.id}")
     }
 
     document.getElementById("write-nfo-btn")?.addEventListener("click") {

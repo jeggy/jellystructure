@@ -1,5 +1,7 @@
 package dev.jellystructure.server.routes
 
+import dev.jellystructure.auth.JellyfinClient
+import dev.jellystructure.config.ConfigStore
 import dev.jellystructure.jobs.JobEvent
 import dev.jellystructure.jobs.WsBroadcaster
 import dev.jellystructure.media.ArtworkDownloader
@@ -26,6 +28,8 @@ fun Route.mediaRoutes(
     appScope: CoroutineScope,
     scanTracker: ScanTracker,
     broadcaster: WsBroadcaster,
+    jellyfinClient: JellyfinClient,
+    configStore: ConfigStore,
 ) {
     route("/media") {
         get {
@@ -64,7 +68,13 @@ fun Route.mediaRoutes(
                     val item = store.get(id)
                         ?: return@post call.respond(HttpStatusCode.NotFound)
                     NfoWriter.write(item)
-                        .onSuccess { path -> call.respond(mapOf("path" to path)) }
+                        .onSuccess { path ->
+                            val cfg = configStore.current
+                            if (!item.jellyfinId.isNullOrBlank() && cfg.apiKeys.jellyfinUrl.isNotBlank()) {
+                                jellyfinClient.refreshItem(cfg.apiKeys.jellyfinUrl, cfg.apiKeys.jellyfinToken, item.jellyfinId)
+                            }
+                            call.respond(mapOf("path" to path))
+                        }
                         .onFailure { e ->
                             println("[ERROR] NFO write failed for $id: ${e.message}")
                             call.respond(HttpStatusCode.InternalServerError, mapOf("error" to (e.message ?: "write failed")))
@@ -86,7 +96,14 @@ fun Route.mediaRoutes(
                         ?: return@post call.respond(HttpStatusCode.BadRequest)
                     val item = store.get(id)
                         ?: return@post call.respond(HttpStatusCode.NotFound)
-                    call.respond(artwork.fetch(item))
+                    val status = artwork.fetch(item)
+                    if (status.posterExists || status.fanartExists) {
+                        val cfg = configStore.current
+                        if (!item.jellyfinId.isNullOrBlank() && cfg.apiKeys.jellyfinUrl.isNotBlank()) {
+                            jellyfinClient.refreshItem(cfg.apiKeys.jellyfinUrl, cfg.apiKeys.jellyfinToken, item.jellyfinId)
+                        }
+                    }
+                    call.respond(status)
                 }
             }
         }
@@ -101,12 +118,13 @@ fun Route.mediaRoutes(
         val jobId = "scan-${platform.posix.time(null)}"
         appScope.launch {
             scanTracker.running = true
+            scanTracker.reset()
             val allItems = mutableListOf<dev.jellystructure.model.MediaItem>()
             var succeeded = 0
             try {
                 println("[INFO] Library scan started (background) jobId=$jobId")
                 broadcaster.broadcast(JobEvent.Started(jobId, -1))
-                scanner.scan { item ->
+                scanner.scan(tracker = scanTracker) { item ->
                     allItems += item
                     store.addOrUpdate(item)
                     succeeded++
@@ -115,8 +133,16 @@ fun Route.mediaRoutes(
                 }
                 store.update(allItems)
                 scanTracker.lastCount = succeeded
-                println("[INFO] Library scan complete — $succeeded items")
+                val cancelled = scanTracker.cancelRequested
+                println("[INFO] Library scan ${if (cancelled) "cancelled" else "complete"} — $succeeded items")
                 broadcaster.broadcast(JobEvent.Finished(jobId, succeeded, 0))
+
+                if (!cancelled) {
+                    val cfg = configStore.current
+                    if (cfg.apiKeys.jellyfinUrl.isNotBlank() && cfg.apiKeys.jellyfinToken.isNotBlank()) {
+                        jellyfinClient.triggerLibraryRefresh(cfg.apiKeys.jellyfinUrl, cfg.apiKeys.jellyfinToken)
+                    }
+                }
             } catch (e: Exception) {
                 println("[ERROR] Scan failed: ${e.message}")
                 broadcaster.broadcast(JobEvent.Finished(jobId, succeeded, 1))
@@ -127,6 +153,15 @@ fun Route.mediaRoutes(
         call.respond(HttpStatusCode.Accepted, mapOf("status" to "started"))
     }
 
+    post("/scan/cancel") {
+        if (!scanTracker.running) {
+            call.respond(HttpStatusCode.Conflict, mapOf("error" to "no scan running"))
+            return@post
+        }
+        scanTracker.cancel()
+        call.respond(mapOf("status" to "cancel requested"))
+    }
+
     get("/scan/status") {
         call.respond(scanTracker.status())
     }
@@ -135,7 +170,9 @@ fun Route.mediaRoutes(
         call.respond(
             mapOf(
                 "movies" to store.movieCount(),
+                "tvShows" to store.tvShowCount(),
                 "issues" to store.totalIssueCount(),
+                "nfoCoverage" to store.nfoCoveredCount(),
             )
         )
     }

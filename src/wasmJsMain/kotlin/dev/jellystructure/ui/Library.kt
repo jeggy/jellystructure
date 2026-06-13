@@ -37,7 +37,7 @@ fun renderLibrary(container: Element, scope: CoroutineScope) {
           <span class="spacer"></span>
           <button id="scan-btn" class="btn primary">▶ Scan library</button>
         </div>
-        <p class="page-sub">Everything Jellystructure manages. A red badge means untagged tracks — click any title to open its detail page.</p>
+        <p class="page-sub">Everything Jellystructure manages. Orange = language mix (writes blocked). Red = untagged tracks. Click any title to open its detail page.</p>
 
         <div id="scan-banner" style="display:none;margin-bottom:14px"></div>
 
@@ -228,6 +228,8 @@ private suspend fun loadLibraryPage(scope: CoroutineScope) {
 
 private fun posterCardHtml(item: MediaItem): String {
     val badge = when {
+        item.languageMix ->
+            """<span class="badge warn" style="font-size:.62rem;">lang mix</span>"""
         item.issueCount > 0 ->
             """<span class="badge bad" style="font-size:.62rem;">${item.issueCount} issue${if (item.issueCount != 1) "s" else ""}</span>"""
         else ->

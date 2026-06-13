@@ -35,6 +35,7 @@ data class LanguageRules(
 data class Behavior(
     @SerialName("overwrite_nfo") val overwriteNfo: Boolean = false,
     @SerialName("fetch_images") val fetchImages: Boolean = true,
+    @SerialName("watch_enabled") val watchEnabled: Boolean = false,
 )
 
 @Serializable

@@ -7,14 +7,30 @@ import io.ktor.client.call.body
 import io.ktor.client.request.get
 import io.ktor.client.request.parameter
 import io.ktor.client.request.post
+import io.ktor.client.request.setBody
+import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
+import io.ktor.http.contentType
 import kotlinx.serialization.Serializable
 
 @Serializable
-data class StatsResponse(val movies: Int, val issues: Int)
+data class StatsResponse(
+    val movies: Int,
+    val tvShows: Int = 0,
+    val issues: Int,
+    val nfoCoverage: Int = 0,
+)
 
 @Serializable
 data class ArtworkStatus(val posterExists: Boolean, val fanartExists: Boolean)
+
+@Serializable
+data class TrackPlan(
+    val command: String,
+    val tool: String,
+    val estimatedMs: Int,
+    val targetSpecifier: String,
+)
 
 @Serializable
 data class NfoWriteResult(val path: String)
@@ -51,6 +67,11 @@ object MediaApi {
         httpClient.get("/api/scan/status").body<ScanStatus>()
     }.getOrNull()
 
+    suspend fun cancelScan(): Boolean = runCatching {
+        val response = httpClient.post("/api/scan/cancel")
+        response.status.value in 200..299
+    }.getOrDefault(false)
+
     suspend fun stats(): StatsResponse? = runCatching {
         httpClient.get("/api/stats").body<StatsResponse>()
     }.getOrNull()
@@ -73,4 +94,18 @@ object MediaApi {
         val response = httpClient.post("/api/media/$id/artwork")
         if (response.status == HttpStatusCode.OK) response.body<ArtworkStatus>() else null
     }.getOrNull()
+
+    suspend fun getTrackPlan(id: String, specifier: String): TrackPlan? = runCatching {
+        httpClient.get("/api/media/$id/tracks/plan") {
+            parameter("specifier", specifier)
+        }.body<TrackPlan>()
+    }.getOrNull()
+
+    suspend fun setDefaultTrack(id: String, specifier: String): Boolean = runCatching {
+        val response = httpClient.post("/api/media/$id/tracks/default") {
+            setBody("""{"specifier":"$specifier"}""")
+            contentType(io.ktor.http.ContentType.Application.Json)
+        }
+        response.status.value in 200..299
+    }.getOrDefault(false)
 }

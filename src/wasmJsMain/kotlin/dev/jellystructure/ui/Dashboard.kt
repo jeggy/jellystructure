@@ -34,9 +34,9 @@ fun renderDashboard(container: Element, scope: CoroutineScope) {
 
         <div class="statgrid">
           <div class="stat"><div class="k">Movies</div><div class="v" id="stat-movies">—</div></div>
-          <div class="stat"><div class="k">TV episodes</div><div class="v">—</div></div>
+          <div class="stat"><div class="k">TV Series</div><div class="v" id="stat-tv">—</div></div>
           <div class="stat alert"><div class="k">Tracks needing attention</div><div class="v" id="stat-issues">—</div></div>
-          <div class="stat"><div class="k">NFO coverage</div><div class="v">—</div></div>
+          <div class="stat"><div class="k">NFO coverage</div><div class="v" id="stat-nfo">—</div></div>
         </div>
     """.trimIndent()
 
@@ -60,7 +60,9 @@ fun renderDashboard(container: Element, scope: CoroutineScope) {
 private suspend fun loadDashboardStats() {
     val stats = MediaApi.stats() ?: return
     (document.getElementById("stat-movies") as? HTMLElement)?.textContent = stats.movies.toString()
+    (document.getElementById("stat-tv") as? HTMLElement)?.textContent = stats.tvShows.toString()
     (document.getElementById("stat-issues") as? HTMLElement)?.textContent = stats.issues.toString()
+    (document.getElementById("stat-nfo") as? HTMLElement)?.textContent = stats.nfoCoverage.toString()
 }
 
 private suspend fun triggerDashboardScan(scope: CoroutineScope) {
@@ -113,6 +115,14 @@ private fun connectDashScanSocket(scope: CoroutineScope) {
     ws.onclose = { _: Event ->
         if (dashScanSocket == ws) dashScanSocket = null
     }
+
+    // Wire cancel button — it's injected dynamically into the banner by setDashScanRunning
+    fun wireCancelBtn() {
+        document.getElementById("cancel-scan-btn")?.addEventListener("click") {
+            scope.launch { MediaApi.cancelScan() }
+        }
+    }
+    wireCancelBtn()
 }
 
 private fun setDashScanRunning(running: Boolean) {
@@ -122,7 +132,7 @@ private fun setDashScanRunning(running: Boolean) {
         btn?.disabled = true
         btn?.textContent = "Scanning…"
         banner?.style?.display = "block"
-        banner?.innerHTML = """<span class="badge">Scanning — items appear in Library as they are processed.</span>"""
+        banner?.innerHTML = """<span class="badge">Scanning — items appear in Library as they are processed.</span> <button id="cancel-scan-btn" class="btn sm ghost" style="margin-left:8px">Cancel</button>"""
     } else {
         btn?.disabled = false
         btn?.textContent = "▶ Scan library"

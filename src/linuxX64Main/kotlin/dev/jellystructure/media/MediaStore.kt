@@ -3,6 +3,7 @@ package dev.jellystructure.media
 import dev.jellystructure.model.MediaItem
 import dev.jellystructure.model.MediaKind
 import dev.jellystructure.model.MediaPage
+import dev.jellystructure.nfo.NfoWriter
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.io.buffered
@@ -72,7 +73,13 @@ class MediaStore(private val cacheFile: String) {
 
     fun movieCount(): Int = items.count { it.kind == MediaKind.MOVIE }
 
+    fun tvShowCount(): Int = items.count { it.kind == MediaKind.TV_SHOW }
+
     fun totalIssueCount(): Int = items.sumOf { it.issueCount }
+
+    fun nfoCoveredCount(): Int = items.count { NfoWriter.exists(it) }
+
+    fun languageMixCount(): Int = items.count { it.languageMix }
 
     private fun persist() {
         val tmp = "$cacheFile.tmp"

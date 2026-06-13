@@ -1,5 +1,7 @@
 package dev.jellystructure.server.routes
 
+import dev.jellystructure.auth.JellyfinClient
+import dev.jellystructure.config.ConfigStore
 import dev.jellystructure.media.FfprobeRunner
 import dev.jellystructure.media.MediaStore
 import dev.jellystructure.media.MkvpropeditRunner
@@ -35,7 +37,7 @@ data class TriageItem(
 @Serializable
 private data class AssignLanguageRequest(val language: String)
 
-fun Route.triageRoutes(store: MediaStore) {
+fun Route.triageRoutes(store: MediaStore, jellyfinClient: JellyfinClient, configStore: ConfigStore) {
     route("/triage") {
         get {
             val items = store.allItems()
@@ -82,6 +84,11 @@ fun Route.triageRoutes(store: MediaStore) {
             }
             val updated = item.copy(tracks = newTracks, issueCount = newIssueCount)
             store.updateOne(updated)
+
+            val cfg = configStore.current
+            if (!item.jellyfinId.isNullOrBlank() && cfg.apiKeys.jellyfinUrl.isNotBlank()) {
+                jellyfinClient.refreshItem(cfg.apiKeys.jellyfinUrl, cfg.apiKeys.jellyfinToken, item.jellyfinId)
+            }
 
             call.respond(mapOf("ok" to true, "language" to lang))
         }

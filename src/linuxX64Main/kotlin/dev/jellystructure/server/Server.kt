@@ -9,6 +9,7 @@ import dev.jellystructure.media.ArtworkDownloader
 import dev.jellystructure.media.MediaStore
 import dev.jellystructure.media.Scanner
 import dev.jellystructure.media.ScanTracker
+import dev.jellystructure.watcher.FolderWatcher
 import dev.jellystructure.server.routes.authRoutes
 import dev.jellystructure.server.routes.configureConfigRoutes
 import dev.jellystructure.server.routes.jellyfinRoutes
@@ -38,6 +39,7 @@ import io.ktor.server.websocket.webSocket
 import io.ktor.websocket.Frame
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import kotlinx.io.buffered
 import kotlinx.io.files.Path
 import kotlinx.io.files.SystemFileSystem
@@ -51,10 +53,12 @@ fun startServer(
     scanner: Scanner,
     artworkDownloader: ArtworkDownloader,
     scanTracker: ScanTracker,
+    folderWatcher: FolderWatcher,
     frontendDir: String,
     port: Int,
 ) {
     val appScope = CoroutineScope(SupervisorJob())
+    appScope.launch { folderWatcher.start() }
     val broadcaster = WsBroadcaster()
     embeddedServer(CIO, port = port) {
         install(ContentNegotiation) { json() }
@@ -81,9 +85,9 @@ fun startServer(
                 configureConfigRoutes(configStore)
                 setupRoutes(configStore, jellyfinClient)
                 jellyfinRoutes(configStore, jellyfinClient)
-                mediaRoutes(mediaStore, scanner, artworkDownloader, appScope, scanTracker, broadcaster)
+                mediaRoutes(mediaStore, scanner, artworkDownloader, appScope, scanTracker, broadcaster, jellyfinClient, configStore)
                 languageRoutes(configStore)
-                triageRoutes(mediaStore)
+                triageRoutes(mediaStore, jellyfinClient, configStore)
                 trackRoutes(mediaStore, configStore, jellyfinClient)
             }
 

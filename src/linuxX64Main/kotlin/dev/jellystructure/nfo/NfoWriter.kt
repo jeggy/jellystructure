@@ -10,26 +10,33 @@ import kotlinx.io.writeString
 object NfoWriter {
     fun buildXml(item: MediaItem): String = when (item.kind) {
         MediaKind.MOVIE -> buildMovieXml(item)
-        MediaKind.TV_SHOW -> buildMovieXml(item) // TV nfo extended in P4
+        MediaKind.TV_SHOW -> buildTvShowXml(item)
     }
 
-    fun write(item: MediaItem): Result<String> = runCatching {
-        val dir = item.path.substringBeforeLast('/')
-        val filename = when (item.kind) {
-            MediaKind.MOVIE -> "movie.nfo"
-            MediaKind.TV_SHOW -> "tvshow.nfo"
+    fun write(item: MediaItem): Result<String> {
+        if (item.languageMix) {
+            return Result.failure(
+                IllegalStateException("NFO write blocked: series '${item.title}' has mixed audio languages")
+            )
         }
-        val nfoPath = "$dir/$filename"
-        val tmp = "$nfoPath.tmp"
+        return runCatching {
+            val dir = item.path.substringBeforeLast('/')
+            val filename = when (item.kind) {
+                MediaKind.MOVIE -> "movie.nfo"
+                MediaKind.TV_SHOW -> "tvshow.nfo"
+            }
+            val nfoPath = "$dir/$filename"
+            val tmp = "$nfoPath.tmp"
 
-        val sink = SystemFileSystem.sink(Path(tmp)).buffered()
-        sink.writeString(buildXml(item))
-        sink.flush()
-        sink.close()
+            val sink = SystemFileSystem.sink(Path(tmp)).buffered()
+            sink.writeString(buildXml(item))
+            sink.flush()
+            sink.close()
 
-        platform.posix.rename(tmp, nfoPath)
-        println("[INFO] Wrote NFO: $nfoPath")
-        nfoPath
+            platform.posix.rename(tmp, nfoPath)
+            println("[INFO] Wrote NFO: $nfoPath")
+            nfoPath
+        }
     }
 
     fun exists(item: MediaItem): Boolean {
@@ -77,6 +84,31 @@ object NfoWriter {
             appendLine("  <genre>${genre.esc()}</genre>")
         }
         appendLine("</movie>")
+    }
+
+    private fun buildTvShowXml(item: MediaItem): String = buildString {
+        appendLine("""<?xml version="1.0" encoding="utf-8" standalone="yes"?>""")
+        appendLine("<tvshow>")
+        appendLine("  <lockdata>true</lockdata>")
+        appendLine("  <title>${item.title.esc()}</title>")
+        if (!item.originalTitle.isNullOrBlank()) {
+            appendLine("  <originaltitle>${item.originalTitle.esc()}</originaltitle>")
+        }
+        if (item.year != null) appendLine("  <year>${item.year}</year>")
+        if (!item.overview.isNullOrBlank()) {
+            appendLine("  <plot>${item.overview.esc()}</plot>")
+        }
+        if (item.tmdbId != null) {
+            appendLine("  <tmdbid>${item.tmdbId}</tmdbid>")
+            appendLine("""  <uniqueid type="tmdb" default="true">${item.tmdbId}</uniqueid>""")
+        }
+        if (!item.originalLanguage.isNullOrBlank()) {
+            appendLine("  <originallanguage>${item.originalLanguage.esc()}</originallanguage>")
+        }
+        for (genre in item.genres) {
+            appendLine("  <genre>${genre.esc()}</genre>")
+        }
+        appendLine("</tvshow>")
     }
 
     private fun String.esc() =

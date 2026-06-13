@@ -9,6 +9,7 @@ import dev.jellystructure.media.Scanner
 import dev.jellystructure.media.ScanTracker
 import dev.jellystructure.server.startServer
 import dev.jellystructure.tmdb.TmdbClient
+import dev.jellystructure.watcher.FolderWatcher
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.toKString
 import platform.posix.getenv
@@ -29,14 +30,40 @@ fun main() {
     val tmdbClient = TmdbClient(configStore)
     val mediaStore = MediaStore(mediaFile)
     mediaStore.load()
-    val scanner = Scanner(configStore, tmdbClient)
+    val scanner = Scanner(configStore, tmdbClient, jellyfinClient)
     val artworkDownloader = ArtworkDownloader()
     val scanTracker = ScanTracker()
+    val folderWatcher = FolderWatcher(configStore) {
+        // Auto-scan: only start if not already running
+        if (!scanTracker.running) {
+            println("[INFO] FolderWatcher: starting automatic scan")
+            scanTracker.running = true
+            scanTracker.reset()
+            try {
+                var count = 0
+                scanner.scan(tracker = scanTracker) { item ->
+                    mediaStore.addOrUpdate(item)
+                    count++
+                    scanTracker.lastCount = count
+                }
+                scanTracker.lastCount = count
+            } catch (e: Exception) {
+                println("[ERROR] FolderWatcher auto-scan failed: ${e.message}")
+            } finally {
+                scanTracker.running = false
+            }
+        } else {
+            println("[INFO] FolderWatcher: scan already running — skipping auto-scan")
+        }
+    }
 
     println("[INFO] Starting jellystructure on port $port")
     println("[INFO] Serving frontend from $frontendDir")
 
-    startServer(configStore, sessionService, jellyfinClient, mediaStore, scanner, artworkDownloader, scanTracker, frontendDir, port)
+    startServer(
+        configStore, sessionService, jellyfinClient, mediaStore, scanner,
+        artworkDownloader, scanTracker, folderWatcher, frontendDir, port,
+    )
 }
 
 @OptIn(ExperimentalForeignApi::class)

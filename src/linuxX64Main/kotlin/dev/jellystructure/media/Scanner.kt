@@ -1,5 +1,7 @@
 package dev.jellystructure.media
 
+import dev.jellystructure.auth.JellyfinClient
+import dev.jellystructure.auth.JellyfinItem
 import dev.jellystructure.config.ConfigStore
 import dev.jellystructure.model.MediaItem
 import dev.jellystructure.model.MediaKind
@@ -17,79 +19,79 @@ private val VIDEO_EXTENSIONS = setOf("mkv", "mp4", "avi", "mov", "m4v", "webm", 
 class Scanner(
     private val configStore: ConfigStore,
     private val tmdb: TmdbClient,
+    private val jellyfinClient: JellyfinClient,
 ) {
-    suspend fun scan(onItemReady: suspend (MediaItem) -> Unit): Int {
-        var total = 0
-        for (lib in configStore.current.libraries) {
-            if (lib.skip || lib.localPath.isBlank()) continue
-            println("[INFO] Scanning library '${lib.name}' (${lib.collectionType}) at ${lib.localPath}")
-            val kind = when (lib.collectionType.lowercase()) {
-                "tvshows" -> MediaKind.TV_SHOW
-                else -> MediaKind.MOVIE
-            }
-            total += scanDir(lib.localPath, kind, onItemReady)
-        }
-        return total
-    }
+    suspend fun scan(tracker: ScanTracker? = null, onItemReady: suspend (MediaItem) -> Unit): Int {
+        val config = configStore.current
+        val baseUrl = config.apiKeys.jellyfinUrl
+        val token = config.apiKeys.jellyfinToken
 
-    private suspend fun scanDir(
-        dir: String,
-        kind: MediaKind,
-        onItemReady: suspend (MediaItem) -> Unit,
-    ): Int {
-        val root = Path(dir)
-        if (!SystemFileSystem.exists(root)) {
-            println("[WARN] Library dir not found: $dir")
+        if (baseUrl.isBlank() || token.isBlank()) {
+            println("[WARN] Jellyfin URL or token not configured — skipping scan")
             return 0
         }
+
+        val jellyfinItems = jellyfinClient.getItems(baseUrl, token)
+        println("[INFO] Jellyfin returned ${jellyfinItems.size} items")
+
+        // Build prefix map: localPath → LibraryMapping for skip/fallback lookup
+        val libraries = config.libraries.filter { !it.skip && it.localPath.isNotBlank() }
+        val globalFallback = config.languageRules.fallbackLanguage
+
         var count = 0
-        for (entry in SystemFileSystem.list(root).sortedBy { it.toString() }) {
-            val entryStr = entry.toString()
-            val entryName = entryStr.trimEnd('/').substringAfterLast('/')
-            val meta = SystemFileSystem.metadataOrNull(entry) ?: continue
-            when {
-                meta.isDirectory -> {
-                    val videoFile = SystemFileSystem.list(entry)
-                        .firstOrNull { child ->
-                            val childMeta = SystemFileSystem.metadataOrNull(child)
-                            childMeta?.isRegularFile == true && isVideoFile(child.toString())
-                        }
-                    if (videoFile != null) {
-                        scanOneFile(videoFile.toString(), entryName, kind)?.let {
-                            onItemReady(it)
-                            count++
-                        }
-                        delay(150)
-                    }
-                }
-                meta.isRegularFile && isVideoFile(entryStr) -> {
-                    val nameWithoutExt = entryName.substringBeforeLast('.')
-                    scanOneFile(entryStr, nameWithoutExt, kind)?.let {
-                        onItemReady(it)
-                        count++
-                    }
-                    delay(150)
-                }
+        for (jItem in jellyfinItems) {
+            val path = jItem.path ?: continue
+
+            // Find the matching library config by path prefix
+            val lib = libraries.firstOrNull { path.startsWith(it.localPath) }
+            if (lib == null) {
+                println("[DEBUG] No matching library for path: $path — skipping")
+                continue
+            }
+
+            val effectiveFallback = lib.fallbackLanguage ?: globalFallback
+
+            val mediaItem = when (jItem.type) {
+                "Movie" -> scanMovie(jItem, effectiveFallback)
+                "Series" -> scanSeries(jItem, effectiveFallback)
+                else -> null
+            }
+
+            if (tracker?.cancelRequested == true) {
+                println("[INFO] Scan cancelled after $count items")
+                break
+            }
+
+            if (mediaItem != null) {
+                onItemReady(mediaItem)
+                count++
+                delay(100)
             }
         }
-        println("[INFO] Found $count items in $dir")
+        println("[INFO] Scan complete — $count items processed")
         return count
     }
 
-    private suspend fun scanOneFile(filePath: String, displayName: String, kind: MediaKind): MediaItem? {
-        val (title, year) = parseTitleYear(displayName)
-        println("[INFO] Scanning: $title (${year ?: "?"})")
+    private suspend fun scanMovie(jItem: JellyfinItem, fallback: String): MediaItem? {
+        val path = jItem.path ?: return null
+        if (!SystemFileSystem.exists(Path(path))) {
+            println("[WARN] Movie file not found on disk: $path")
+            return null
+        }
 
-        val tracks = FfprobeRunner.probe(filePath)
+        val (title, year) = parseTitleYear(jItem.name)
+        println("[INFO] Scanning movie: $title (${year ?: "?"})")
 
+        val tracks = FfprobeRunner.probe(path)
         val audioLangs = tracks.filter { it.kind == TrackKind.AUDIO }.map { it.language }
-        val fallback = configStore.current.languageRules.fallbackLanguage
         val langPriority = LanguageResolver.priorityList(audioLangs, fallback)
 
-        val tmdbResult = tmdb.searchMovie(title, year)
-        val details = tmdbResult?.let { tmdb.getMovieDetailsLocalized(it.id, langPriority) }
+        val tmdbId = jItem.providerIds?.tmdb?.toIntOrNull()
+            ?: tmdb.searchMovie(title, year)?.id
+        val details = tmdbId?.let { tmdb.getMovieDetailsLocalized(it, langPriority) }
         val resolvedLang = details?.let {
-            langPriority.firstOrNull { lang -> it.overview.isNotBlank() } ?: langPriority.lastOrNull()
+            langPriority.firstOrNull { lang -> it.overview.isNotBlank() && lang != fallback }
+                ?: langPriority.lastOrNull()
         }
 
         val issueCount = tracks.count {
@@ -101,10 +103,11 @@ class Scanner(
             title = details?.title ?: title,
             originalTitle = details?.originalTitle?.takeIf { it.isNotBlank() },
             year = year,
-            kind = kind,
-            path = filePath,
+            kind = MediaKind.MOVIE,
+            path = path,
+            jellyfinId = jItem.id,
             tmdbId = details?.id,
-            originalLanguage = details?.originalLanguage,
+            originalLanguage = details?.originalLanguage?.takeIf { it.isNotBlank() },
             resolvedLanguage = resolvedLang,
             posterPath = details?.posterPath,
             backdropPath = details?.backdropPath,
@@ -112,8 +115,123 @@ class Scanner(
             genres = details?.genres?.map { it.name } ?: emptyList(),
             tracks = tracks,
             issueCount = issueCount,
+            languageMix = false,
             scannedAt = epochSeconds(),
         )
+    }
+
+    private suspend fun scanSeries(jItem: JellyfinItem, fallback: String): MediaItem? {
+        val dirPath = jItem.path ?: return null
+        if (!SystemFileSystem.exists(Path(dirPath))) {
+            println("[WARN] Series directory not found on disk: $dirPath")
+            return null
+        }
+
+        val (title, year) = parseTitleYear(jItem.name)
+        println("[INFO] Scanning series: $title (${year ?: "?"})")
+
+        val episodeFiles = findEpisodeFiles(dirPath)
+        if (episodeFiles.isEmpty()) {
+            println("[WARN] No episode files found in: $dirPath")
+            return null
+        }
+
+        // Sample up to 5 files spread evenly across the collection
+        val samples = selectSamples(episodeFiles, maxSamples = 5)
+        val probedSamples = samples.map { FfprobeRunner.probe(it) }
+
+        // Compare audio language sets across samples
+        val audioSets = probedSamples.map { tracks ->
+            tracks.filter { it.kind == TrackKind.AUDIO }.map { it.language }.toSet()
+        }
+        val uniform = audioSets.all { it == audioSets.first() }
+        val languageMix = !uniform
+
+        val firstTracks = probedSamples.firstOrNull() ?: emptyList()
+        val issueCount = firstTracks.count {
+            (it.kind == TrackKind.AUDIO || it.kind == TrackKind.SUBTITLE) && it.language == null
+        }
+
+        if (languageMix) {
+            println("[INFO] Series '$title' has mixed audio languages across episodes — marking as language mix")
+            return MediaItem(
+                id = slugify(title, year),
+                title = title,
+                year = year,
+                kind = MediaKind.TV_SHOW,
+                path = dirPath,
+                jellyfinId = jItem.id,
+                tmdbId = jItem.providerIds?.tmdb?.toIntOrNull(),
+                originalLanguage = null,
+                resolvedLanguage = null,
+                posterPath = null,
+                backdropPath = null,
+                overview = null,
+                genres = emptyList(),
+                tracks = firstTracks,
+                issueCount = issueCount,
+                languageMix = true,
+                scannedAt = epochSeconds(),
+            )
+        }
+
+        val audioLangs = firstTracks.filter { it.kind == TrackKind.AUDIO }.map { it.language }
+        val langPriority = LanguageResolver.priorityList(audioLangs, fallback)
+
+        val tmdbId = jItem.providerIds?.tmdb?.toIntOrNull()
+            ?: tmdb.searchTv(title, year)?.id
+        val details = tmdbId?.let { tmdb.getTvDetailsLocalized(it, langPriority) }
+        val resolvedLang = details?.let {
+            langPriority.firstOrNull { lang -> it.overview.isNotBlank() && lang != fallback }
+                ?: langPriority.lastOrNull()
+        }
+
+        return MediaItem(
+            id = slugify(title, year),
+            title = details?.name ?: title,
+            originalTitle = details?.originalName?.takeIf { it.isNotBlank() },
+            year = year,
+            kind = MediaKind.TV_SHOW,
+            path = dirPath,
+            jellyfinId = jItem.id,
+            tmdbId = details?.id,
+            originalLanguage = details?.originalLanguage?.takeIf { it.isNotBlank() },
+            resolvedLanguage = resolvedLang,
+            posterPath = details?.posterPath,
+            backdropPath = details?.backdropPath,
+            overview = details?.overview?.takeIf { it.isNotBlank() },
+            genres = details?.genres?.map { it.name } ?: emptyList(),
+            tracks = firstTracks,
+            issueCount = issueCount,
+            languageMix = false,
+            scannedAt = epochSeconds(),
+        )
+    }
+
+    private fun findEpisodeFiles(dir: String): List<String> {
+        val result = mutableListOf<String>()
+        fun recurse(d: String) {
+            val path = Path(d)
+            if (!SystemFileSystem.exists(path)) return
+            val meta = SystemFileSystem.metadataOrNull(path) ?: return
+            if (!meta.isDirectory) return
+            for (entry in SystemFileSystem.list(path).sortedBy { it.toString() }) {
+                val entryStr = entry.toString()
+                val entryMeta = SystemFileSystem.metadataOrNull(entry) ?: continue
+                when {
+                    entryMeta.isDirectory -> recurse(entryStr)
+                    entryMeta.isRegularFile && isVideoFile(entryStr) -> result += entryStr
+                }
+            }
+        }
+        recurse(dir)
+        return result
+    }
+
+    private fun selectSamples(files: List<String>, maxSamples: Int): List<String> {
+        if (files.size <= maxSamples) return files
+        val step = (files.size - 1).toDouble() / (maxSamples - 1)
+        return (0 until maxSamples).map { i -> files[(i * step).toInt()] }
     }
 
     private fun parseTitleYear(name: String): Pair<String, Int?> {

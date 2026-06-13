@@ -45,6 +45,31 @@ data class TmdbMovieDetails(
 @Serializable
 data class TmdbGenre(val id: Int, val name: String)
 
+@Serializable
+data class TmdbTvSearchResponse(
+    val results: List<TmdbTvSearchResult> = emptyList(),
+)
+
+@Serializable
+data class TmdbTvSearchResult(
+    val id: Int,
+    val name: String = "",
+    @SerialName("first_air_date") val firstAirDate: String = "",
+)
+
+@Serializable
+data class TmdbTvDetails(
+    val id: Int,
+    val name: String = "",
+    @SerialName("original_name") val originalName: String = "",
+    @SerialName("original_language") val originalLanguage: String = "",
+    @SerialName("poster_path") val posterPath: String? = null,
+    @SerialName("backdrop_path") val backdropPath: String? = null,
+    val overview: String = "",
+    @SerialName("first_air_date") val firstAirDate: String = "",
+    val genres: List<TmdbGenre> = emptyList(),
+)
+
 class TmdbClient(private val configStore: ConfigStore) {
     private val http = HttpClient(Curl) {
         install(ContentNegotiation) {
@@ -102,5 +127,48 @@ class TmdbClient(private val configStore: ConfigStore) {
             if (d.overview.isNotBlank()) return d
         }
         return getMovieDetails(tmdbId)
+    }
+
+    suspend fun searchTv(title: String, year: Int?): TmdbTvSearchResult? {
+        val key = apiKey()
+        if (key.isBlank()) return null
+        return runCatching {
+            val response = http.get("https://api.themoviedb.org/3/search/tv") {
+                parameter("api_key", key)
+                parameter("query", title)
+                if (year != null) parameter("first_air_date_year", year)
+            }
+            if (response.status == HttpStatusCode.TooManyRequests) {
+                delay(3000)
+                return searchTv(title, year)
+            }
+            response.body<TmdbTvSearchResponse>().results.firstOrNull()
+        }.onFailure { println("[WARN] TMDB TV search failed for '$title': ${it.message}") }
+         .getOrNull()
+    }
+
+    suspend fun getTvDetails(tmdbId: Int, language: String? = null): TmdbTvDetails? {
+        val key = apiKey()
+        if (key.isBlank()) return null
+        return runCatching {
+            val response = http.get("https://api.themoviedb.org/3/tv/$tmdbId") {
+                parameter("api_key", key)
+                if (!language.isNullOrBlank()) parameter("language", language)
+            }
+            if (response.status == HttpStatusCode.TooManyRequests) {
+                delay(3000)
+                return getTvDetails(tmdbId, language)
+            }
+            response.body<TmdbTvDetails>()
+        }.onFailure { println("[WARN] TMDB TV details failed for id=$tmdbId lang=$language: ${it.message}") }
+         .getOrNull()
+    }
+
+    suspend fun getTvDetailsLocalized(tmdbId: Int, languages: List<String>): TmdbTvDetails? {
+        for (lang in languages) {
+            val d = getTvDetails(tmdbId, lang) ?: continue
+            if (d.overview.isNotBlank()) return d
+        }
+        return getTvDetails(tmdbId)
     }
 }

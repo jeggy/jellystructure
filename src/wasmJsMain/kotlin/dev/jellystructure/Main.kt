@@ -11,6 +11,7 @@ import dev.jellystructure.ui.renderSetup
 import dev.jellystructure.ui.renderSettings
 import dev.jellystructure.ui.renderShell
 import dev.jellystructure.ui.renderTriage
+import dev.jellystructure.ui.renderTrackOrder
 import dev.jellystructure.ui.updateActiveNav
 import kotlinx.browser.document
 import kotlinx.coroutines.MainScope
@@ -62,6 +63,11 @@ object App {
             route == "/triage"   -> renderTriage(container, scope)
             route == "/activity" -> renderActivity(container, scope)
             route == "/settings" -> renderSettings(container, scope)
+            route.startsWith("/track-order") -> {
+                val id = route.substringAfter("id=", "").substringBefore("&")
+                if (id.isNotEmpty()) renderTrackOrder(container, scope, id)
+                else renderLibrary(container, scope)
+            }
             else -> renderDashboard(container, scope)
         }
     }

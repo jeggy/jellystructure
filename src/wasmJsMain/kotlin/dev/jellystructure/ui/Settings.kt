@@ -72,9 +72,16 @@ fun renderSettings(container: Element, scope: CoroutineScope) {
                 <span style="font-size:.9rem">Overwrite existing NFO fields</span>
                 <span id="overwrite-nfo-toggle" class="toggle" style="cursor:pointer"></span>
               </div>
-              <div style="display:flex;align-items:center;justify-content:space-between">
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
                 <span style="font-size:.9rem">Fetch artwork automatically</span>
                 <span id="fetch-images-toggle" class="toggle" style="cursor:pointer"></span>
+              </div>
+              <div style="display:flex;align-items:center;justify-content:space-between">
+                <div>
+                  <span style="font-size:.9rem">Watch library folders for new files</span>
+                  <div class="hint" style="margin-top:2px">Polls every 30s; triggers a scan when stable new video files are detected</div>
+                </div>
+                <span id="watch-enabled-toggle" class="toggle" style="cursor:pointer;flex-shrink:0;margin-left:12px"></span>
               </div>
             </div>
 
@@ -96,6 +103,7 @@ fun renderSettings(container: Element, scope: CoroutineScope) {
 
 private var overwriteNfo = false
 private var fetchImages = true
+private var watchEnabled = false
 private var libraryMappings: MutableList<LibraryMapping> = mutableListOf()
 
 private fun populateForm(config: AppConfig) {
@@ -106,8 +114,10 @@ private fun populateForm(config: AppConfig) {
 
     overwriteNfo = config.behavior.overwriteNfo
     fetchImages = config.behavior.fetchImages
+    watchEnabled = config.behavior.watchEnabled
     updateToggle("overwrite-nfo-toggle", overwriteNfo)
     updateToggle("fetch-images-toggle", fetchImages)
+    updateToggle("watch-enabled-toggle", watchEnabled)
 
     libraryMappings = config.libraries.toMutableList()
     if (libraryMappings.isNotEmpty()) renderLibraryList()
@@ -124,6 +134,11 @@ private fun attachListeners(scope: CoroutineScope) {
     document.getElementById("fetch-images-toggle")?.addEventListener("click") {
         fetchImages = !fetchImages
         updateToggle("fetch-images-toggle", fetchImages)
+        refreshTomlPreview(readForm())
+    }
+    document.getElementById("watch-enabled-toggle")?.addEventListener("click") {
+        watchEnabled = !watchEnabled
+        updateToggle("watch-enabled-toggle", watchEnabled)
         refreshTomlPreview(readForm())
     }
 
@@ -245,6 +260,7 @@ private fun readForm(): AppConfig = AppConfig(
     behavior = Behavior(
         overwriteNfo = overwriteNfo,
         fetchImages = fetchImages,
+        watchEnabled = watchEnabled,
     ),
     libraries = libraryMappings.toList(),
 )
@@ -266,6 +282,7 @@ private fun buildToml(c: AppConfig): String = buildString {
     appendLine("[behavior]")
     appendLine("overwrite_nfo = ${c.behavior.overwriteNfo}")
     appendLine("fetch_images = ${c.behavior.fetchImages}")
+    appendLine("watch_enabled = ${c.behavior.watchEnabled}")
     for (lib in c.libraries) {
         appendLine()
         appendLine("[[libraries]]")
