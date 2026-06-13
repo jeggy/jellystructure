@@ -49,9 +49,18 @@ tasks.register("runDev") {
 
     doLast {
         // Kill any leftover instances from previous runs before starting fresh.
-        ProcessBuilder("pkill", "-f", "jellystructure.kexe").inheritIO().start().waitFor()
-        ProcessBuilder("pkill", "-f", "webpack-dev-server").inheritIO().start().waitFor()
-        Thread.sleep(500)
+        // Use SIGKILL so the socket is released immediately rather than waiting for graceful shutdown.
+        ProcessBuilder("pkill", "-KILL", "-f", "jellystructure.kexe").inheritIO().start().waitFor()
+        ProcessBuilder("pkill", "-KILL", "-f", "webpack-dev-server").inheritIO().start().waitFor()
+        // Poll until port 9505 is actually free (up to 5 s).
+        val deadline = System.currentTimeMillis() + 5_000
+        while (System.currentTimeMillis() < deadline) {
+            Thread.sleep(100)
+            // Exit code 0 = something answered on the port (still in use); non-0 = port free.
+            val inUse = ProcessBuilder("bash", "-c", "echo > /dev/tcp/localhost/9505")
+                .start().waitFor() == 0
+            if (!inUse) break
+        }
 
         val configDir = rootProject.layout.projectDirectory.dir("config").asFile
         configDir.mkdirs()
@@ -118,9 +127,15 @@ tasks.register("runDev") {
             frontend.destroyForcibly()
         })
 
-        val exitCode = backend.waitFor()
-        frontend.destroyForcibly()
-        if (exitCode != 0) error("Backend exited with code $exitCode — see output above")
+        try {
+            val exitCode = backend.waitFor()
+            frontend.destroyForcibly()
+            if (exitCode != 0) error("Backend exited with code $exitCode — see output above")
+        } catch (_: InterruptedException) {
+            backend.destroyForcibly()
+            frontend.destroyForcibly()
+            Thread.currentThread().interrupt()
+        }
     }
 }
 

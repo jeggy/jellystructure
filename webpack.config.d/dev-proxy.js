@@ -16,3 +16,7 @@ config.devServer.proxy = [
         ws: true,
     },
 ];
+// Move webpack-dev-server's own HMR WebSocket off /ws so it doesn't get
+// intercepted by the proxy above and misdirected to the backend.
+config.devServer.webSocketServer = { options: { path: '/webpack-hmr' } };
+config.devServer.client = { webSocketURL: { pathname: '/webpack-hmr' } };

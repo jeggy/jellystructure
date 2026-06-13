@@ -102,6 +102,7 @@ code, .mono { font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; 
   background: var(--fill); color: var(--ink);
   border: 2px solid var(--ink); border-radius: var(--radius-s);
   box-shadow: var(--shadow);
+  transition: transform 80ms ease;
 }
 .variant-tabs button .sub { display: block; font-weight: 400; font-size: .75rem; color: var(--ink-soft); }
 .variant-tabs button.active { background: var(--hi); }
@@ -183,6 +184,7 @@ code, .mono { font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; 
   display: inline-flex; align-items: center; gap: 7px;
   padding: 7px 14px; background: var(--fill); color: var(--ink);
   border: 2px solid var(--ink); border-radius: var(--radius-s); box-shadow: var(--shadow);
+  transition: transform 80ms ease;
 }
 .btn:hover { transform: translate(-1px,-1px); }
 .btn.primary { background: var(--hi); }
