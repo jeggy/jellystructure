@@ -167,6 +167,33 @@ fun Route.mediaRoutes(
                 }
             }
         }
+
+        // POST /api/media/{id}/repull — re-fetch TMDB metadata without re-probing the file
+        route("/{id}/repull") {
+            post {
+                val id = call.parameters["id"]
+                    ?: return@post call.respond(HttpStatusCode.BadRequest)
+                val item = store.get(id)
+                    ?: return@post call.respond(HttpStatusCode.NotFound)
+
+                val updated = scanner.rescanMetadata(item)
+                if (updated == null) {
+                    println("[WARN] Re-pull TMDB failed for $id (no TMDB match or API error)")
+                    call.respond(HttpStatusCode.InternalServerError, mapOf("error" to "TMDB fetch failed — no match found"))
+                    return@post
+                }
+
+                store.updateOne(updated)
+                println("[INFO] Re-pulled TMDB for '$id': title='${updated.title}' tmdbId=${updated.tmdbId}")
+
+                val cfg = configStore.current
+                if (!item.jellyfinId.isNullOrBlank() && cfg.apiKeys.jellyfinUrl.isNotBlank()) {
+                    jellyfinClient.refreshItem(cfg.apiKeys.jellyfinUrl, cfg.apiKeys.jellyfinToken, item.jellyfinId)
+                }
+
+                call.respond(updated)
+            }
+        }
     }
 
     post("/scan") {

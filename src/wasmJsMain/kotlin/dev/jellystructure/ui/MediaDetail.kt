@@ -102,6 +102,7 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
           ${if (item.tmdbId != null) """<span class="badge ok">TMDB matched</span>""" else """<span class="badge warn">No TMDB match</span>"""}
           $resolvedLangBadge
           <span class="spacer"></span>
+          <button id="repull-btn" class="btn sm ghost">Re-pull from TMDB</button>
           <button id="track-order-btn" class="btn sm ghost">Track order →</button>
           <button id="write-nfo-btn" class="btn primary" ${if (nfoDisabled) """disabled title="${nfoDisabledReason.esc()}"""" else ""}>Save → NFO</button>
         </div>
@@ -200,6 +201,10 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
         App.navigate("/track-order?id=${item.id}")
     }
 
+    document.getElementById("repull-btn")?.addEventListener("click") {
+        scope.launch { handleRepull(item, container, scope) }
+    }
+
     document.getElementById("write-nfo-btn")?.addEventListener("click") {
         scope.launch { handleWriteNfo(item.id) }
     }
@@ -232,6 +237,25 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
     }
 
     scope.launch { loadArtworkStatus(item.id) }
+}
+
+private suspend fun handleRepull(item: MediaItem, container: Element, scope: CoroutineScope) {
+    val btn = document.getElementById("repull-btn") as? HTMLElement
+    btn?.setAttribute("disabled", "true")
+    btn?.textContent = "Pulling…"
+
+    val updated = MediaApi.repull(item.id)
+
+    btn?.removeAttribute("disabled")
+    btn?.textContent = "Re-pull from TMDB"
+
+    if (updated != null) {
+        showDetailMsg("TMDB data refreshed. Reloading…", true)
+        delay(600)
+        renderDetailView(container, updated, scope)
+    } else {
+        showDetailMsg("Re-pull failed — no TMDB match found.", false)
+    }
 }
 
 private suspend fun loadArtworkStatus(id: String) {

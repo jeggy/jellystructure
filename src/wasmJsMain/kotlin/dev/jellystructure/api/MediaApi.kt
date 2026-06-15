@@ -108,4 +108,9 @@ object MediaApi {
         }
         response.status.value in 200..299
     }.getOrDefault(false)
+
+    suspend fun repull(id: String): MediaItem? = runCatching {
+        val response = httpClient.post("/api/media/$id/repull")
+        if (response.status == HttpStatusCode.OK) response.body<MediaItem>() else null
+    }.getOrNull()
 }
