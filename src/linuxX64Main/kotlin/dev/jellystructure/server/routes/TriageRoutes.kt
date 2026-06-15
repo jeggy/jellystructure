@@ -27,12 +27,20 @@ data class TriageTrack(
 )
 
 @Serializable
+data class CascadeMismatch(
+    val resolvedLanguage: String,
+    val expectedDefaultSpecifier: String,
+    val actualDefaultLang: String? = null,
+)
+
+@Serializable
 data class TriageItem(
     val mediaId: String,
     val title: String,
     val year: Int?,
     val path: String,
     val untaggedTracks: List<TriageTrack>,
+    val cascadeMismatch: CascadeMismatch? = null,
 )
 
 @Serializable
@@ -42,8 +50,7 @@ fun Route.triageRoutes(store: MediaStore, jellyfinClient: JellyfinClient, config
     route("/triage") {
         get {
             val items = store.allItems()
-                .filter { it.issueCount > 0 }
-                .map { it.toTriageItem() }
+                .mapNotNull { it.toTriageItem() }
             call.respond(items)
         }
 
@@ -96,12 +103,8 @@ fun Route.triageRoutes(store: MediaStore, jellyfinClient: JellyfinClient, config
     }
 }
 
-private fun MediaItem.toTriageItem() = TriageItem(
-    mediaId = id,
-    title = title,
-    year = year,
-    path = path,
-    untaggedTracks = tracks
+private fun MediaItem.toTriageItem(): TriageItem? {
+    val untagged = tracks
         .filter { (it.kind == TrackKind.AUDIO || it.kind == TrackKind.SUBTITLE) && it.language == null }
         .map { t ->
             TriageTrack(
@@ -111,5 +114,28 @@ private fun MediaItem.toTriageItem() = TriageItem(
                 codec = t.codec,
                 title = t.title,
             )
-        },
-)
+        }
+    val mismatch = detectCascadeMismatch()
+    if (untagged.isEmpty() && mismatch == null) return null
+    return TriageItem(
+        mediaId = id,
+        title = title,
+        year = year,
+        path = path,
+        untaggedTracks = untagged,
+        cascadeMismatch = mismatch,
+    )
+}
+
+private fun MediaItem.detectCascadeMismatch(): CascadeMismatch? {
+    if (languageMix || resolvedLanguage.isNullOrBlank()) return null
+    val audioTracks = tracks.filter { it.kind == TrackKind.AUDIO }
+    val expectedTrack = audioTracks.firstOrNull { it.language == resolvedLanguage } ?: return null
+    val currentDefault = audioTracks.firstOrNull { it.default }
+    if (currentDefault != null && currentDefault.specifier == expectedTrack.specifier) return null
+    return CascadeMismatch(
+        resolvedLanguage = resolvedLanguage,
+        expectedDefaultSpecifier = expectedTrack.specifier,
+        actualDefaultLang = currentDefault?.language,
+    )
+}

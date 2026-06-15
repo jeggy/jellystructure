@@ -46,6 +46,7 @@ data class LibraryMapping(
     @SerialName("jellyfin_path") val jellyfinPath: String = "",
     @SerialName("local_path") val localPath: String = "",
     val skip: Boolean = false,
+    @SerialName("fallback_language") val fallbackLanguage: String? = null,
 )
 
 @Serializable

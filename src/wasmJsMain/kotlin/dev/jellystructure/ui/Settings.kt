@@ -230,10 +230,17 @@ private fun renderLibraryList() {
             <input id="lib-jellyfin-path-$i" class="input" type="text" placeholder="/media/movies/"
               value="${lib.jellyfinPath}" style="flex:1;${if (skipped) "pointer-events:none" else ""}">
           </div>
-          <div style="display:flex;gap:6px;align-items:center">
+          <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px">
             <span style="font-size:.75rem;color:var(--ink-soft);width:80px;flex-shrink:0">Local path</span>
             <input id="lib-path-$i" class="input" type="text" placeholder="/mnt/host/movies/"
               value="${lib.localPath}" style="flex:1;${if (skipped) "pointer-events:none" else ""}">
+          </div>
+          <div style="display:flex;gap:6px;align-items:center">
+            <span style="font-size:.75rem;color:var(--ink-soft);width:80px;flex-shrink:0">Fallback lang</span>
+            <input id="lib-fallback-$i" class="input" type="text" placeholder="(global default)"
+              value="${lib.fallbackLanguage ?: ""}" maxlength="10"
+              style="width:110px;${if (skipped) "pointer-events:none" else ""}">
+            <span style="font-size:.72rem;color:var(--ink-soft)">overrides global fallback for this library</span>
           </div>
         </div>
         """.trimIndent()
@@ -256,6 +263,11 @@ private fun renderLibraryList() {
         document.getElementById("lib-path-$i")?.addEventListener("input") {
             val value = (document.getElementById("lib-path-$i") as? HTMLInputElement)?.value?.trim() ?: ""
             libraryMappings[i] = libraryMappings[i].copy(localPath = value)
+            refreshTomlPreview(readForm())
+        }
+        document.getElementById("lib-fallback-$i")?.addEventListener("input") {
+            val value = (document.getElementById("lib-fallback-$i") as? HTMLInputElement)?.value?.trim() ?: ""
+            libraryMappings[i] = libraryMappings[i].copy(fallbackLanguage = value.ifEmpty { null })
             refreshTomlPreview(readForm())
         }
     }
@@ -305,6 +317,7 @@ private fun buildToml(c: AppConfig): String = buildString {
         if (lib.jellyfinPath.isNotBlank()) appendLine("""jellyfin_path = "${lib.jellyfinPath}"""")
         appendLine("""local_path = "${lib.localPath}"""")
         appendLine("skip = ${lib.skip}")
+        if (!lib.fallbackLanguage.isNullOrBlank()) appendLine("""fallback_language = "${lib.fallbackLanguage}"""")
     }
 }
 

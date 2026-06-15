@@ -11,7 +11,6 @@ import io.ktor.http.contentType
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.Json
 import org.w3c.dom.Element
 import org.w3c.dom.HTMLElement
 import org.w3c.dom.HTMLInputElement
@@ -27,15 +26,22 @@ data class TriageTrack(
 )
 
 @Serializable
+data class CascadeMismatch(
+    val resolvedLanguage: String,
+    val expectedDefaultSpecifier: String,
+    val actualDefaultLang: String? = null,
+)
+
+@Serializable
 data class TriageItem(
     val mediaId: String,
     val title: String,
     val year: Int? = null,
     val path: String,
     val untaggedTracks: List<TriageTrack>,
+    val cascadeMismatch: CascadeMismatch? = null,
 )
 
-private val json = Json { ignoreUnknownKeys = true }
 private var triageItems: List<TriageItem> = emptyList()
 private var focusedIndex = 0
 private var triageScope: CoroutineScope? = null
@@ -58,6 +64,17 @@ fun renderTriage(container: Element, scope: CoroutineScope) {
           <div id="triage-hint" class="mb-4 text-xs text-slate-500">
             Use <kbd class="bg-slate-700 px-1 rounded">↑</kbd> / <kbd class="bg-slate-700 px-1 rounded">↓</kbd> to navigate items &nbsp;·&nbsp;
             <kbd class="bg-slate-700 px-1 rounded">Enter</kbd> to focus first input in selected item
+          </div>
+          <div id="bulk-bar" class="hidden flex items-center gap-3 mb-4 p-3 bg-slate-800 rounded-lg border border-slate-700">
+            <span class="text-xs text-slate-400 font-medium">Bulk assign all untagged tracks:</span>
+            <input id="bulk-lang-input"
+              class="bg-slate-900 border border-slate-600 rounded px-2 py-1 text-xs text-white w-24 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              placeholder="e.g. eng" maxlength="10">
+            <button id="bulk-assign-btn"
+              class="bg-blue-600 hover:bg-blue-700 text-white text-xs px-3 py-1 rounded">
+              Assign all
+            </button>
+            <span id="bulk-result" class="text-xs"></span>
           </div>
           <div id="triage-list" class="space-y-3"></div>
           <div id="triage-empty" class="hidden text-center py-16 text-slate-500">
@@ -98,18 +115,29 @@ private fun renderTriageList() {
     val empty = container.querySelector("#triage-empty")
     val count = container.querySelector("#triage-count")
 
+    val bulkBar = container.querySelector("#bulk-bar")
     if (triageItems.isEmpty()) {
         list.innerHTML = ""
         empty?.classList?.remove("hidden")
         count?.textContent = ""
+        bulkBar?.classList?.add("hidden")
         return
     }
     empty?.classList?.add("hidden")
     count?.textContent = "${triageItems.size} item${if (triageItems.size != 1) "s" else ""} need attention"
 
+    val totalUntagged = triageItems.sumOf { it.untaggedTracks.size }
+    if (totalUntagged > 0) {
+        bulkBar?.classList?.remove("hidden")
+        wireUpBulkAssign()
+    } else {
+        bulkBar?.classList?.add("hidden")
+    }
+
     list.innerHTML = triageItems.mapIndexed { idx, item ->
         val isActive = idx == focusedIndex
         val activeClass = if (isActive) "ring-2 ring-blue-500" else ""
+
         val tracksHtml = item.untaggedTracks.joinToString("") { track ->
             val kindBadge = when (track.kind) {
                 "audio"    -> """<span class="bg-blue-900 text-blue-300 text-xs px-2 py-0.5 rounded font-mono">audio</span>"""
@@ -137,6 +165,25 @@ private fun renderTriageList() {
             </div>
             """.trimIndent()
         }
+
+        val mismatchHtml = item.cascadeMismatch?.let { m ->
+            val fromLang = m.actualDefaultLang ?: "none"
+            """
+            <div class="flex items-center gap-3 py-2 border-t border-slate-700">
+              <span class="bg-yellow-900 text-yellow-300 text-xs px-2 py-0.5 rounded font-mono">cascade</span>
+              <span class="text-xs text-slate-400 flex-1">default should be
+                <strong class="text-yellow-300">${m.resolvedLanguage}</strong>,
+                current default is <strong class="text-slate-300">$fromLang</strong></span>
+              <button
+                class="cascade-fix-btn bg-yellow-700 hover:bg-yellow-600 text-white text-xs px-3 py-1 rounded"
+                data-media-id="${item.mediaId}"
+                data-specifier="${m.expectedDefaultSpecifier}"
+              >Fix default</button>
+              <span class="cascade-result text-xs" data-media-id="${item.mediaId}"></span>
+            </div>
+            """.trimIndent()
+        } ?: ""
+
         """
         <div class="triage-item bg-slate-800 rounded-lg p-4 cursor-pointer $activeClass" data-idx="$idx">
           <div class="flex items-start justify-between mb-1">
@@ -146,7 +193,7 @@ private fun renderTriageList() {
             </div>
             <span class="text-xs text-slate-500 font-mono truncate max-w-xs ml-4" title="${item.path}">${item.path.substringAfterLast('/')}</span>
           </div>
-          <div class="mt-2">$tracksHtml</div>
+          <div class="mt-2">$tracksHtml$mismatchHtml</div>
         </div>
         """.trimIndent()
     }.joinToString("")
@@ -221,6 +268,72 @@ private fun renderTriageList() {
             }
         }
     }
+
+    // Cascade fix button listeners
+    list.querySelectorAll(".cascade-fix-btn").let { nodes ->
+        for (i in 0 until nodes.length) {
+            val btn = nodes.item(i) as? HTMLElement ?: continue
+            btn.addEventListener("click") {
+                val mediaId = btn.getAttribute("data-media-id") ?: return@addEventListener
+                val specifier = btn.getAttribute("data-specifier") ?: return@addEventListener
+                val resultEl = list.querySelector(".cascade-result[data-media-id=\"$mediaId\"]")
+                resultEl?.textContent = "…"
+                triageScope?.launch {
+                    val ok = fixCascadeDefault(mediaId, specifier)
+                    if (ok) {
+                        resultEl?.textContent = "✓ fixed"
+                        resultEl?.setAttribute("class", "cascade-result text-xs text-green-400")
+                        triageItems = triageItems.mapNotNull { item ->
+                            if (item.mediaId != mediaId) return@mapNotNull item
+                            if (item.untaggedTracks.isEmpty()) null else item.copy(cascadeMismatch = null)
+                        }
+                        if (focusedIndex >= triageItems.size) focusedIndex = maxOf(0, triageItems.size - 1)
+                        renderTriageList()
+                    } else {
+                        resultEl?.textContent = "✗ failed"
+                        resultEl?.setAttribute("class", "cascade-result text-xs text-red-400")
+                    }
+                }
+            }
+        }
+    }
+}
+
+private fun wireUpBulkAssign() {
+    val container = triageContainer ?: return
+    val btn = container.querySelector("#bulk-assign-btn") as? HTMLElement ?: return
+    // Replace the button to remove any previous listener
+    val newBtn = btn.cloneNode(true) as HTMLElement
+    btn.parentNode?.replaceChild(newBtn, btn)
+    newBtn.addEventListener("click") {
+        val input = container.querySelector("#bulk-lang-input") as? HTMLInputElement ?: return@addEventListener
+        val lang = input.value.trim()
+        if (lang.isBlank()) { input.focus(); return@addEventListener }
+        val resultEl = container.querySelector("#bulk-result") as? HTMLElement
+        resultEl?.textContent = "Working…"
+        resultEl?.setAttribute("class", "text-xs text-slate-400")
+        newBtn.setAttribute("disabled", "true")
+        triageScope?.launch {
+            var ok = 0
+            var fail = 0
+            val allPairs = triageItems.flatMap { item ->
+                item.untaggedTracks.map { track -> item.mediaId to track.specifier }
+            }
+            for ((mediaId, specifier) in allPairs) {
+                if (assignLanguage(mediaId, specifier, lang)) ok++ else fail++
+            }
+            // Reload fresh state from server — backend re-probed all files
+            val fresh = fetchTriage()
+            if (fresh != null) {
+                triageItems = fresh
+                if (focusedIndex >= triageItems.size) focusedIndex = maxOf(0, triageItems.size - 1)
+            }
+            resultEl?.textContent = if (fail == 0) "✓ $ok assigned" else "✓ $ok done, $fail failed"
+            resultEl?.setAttribute("class", "text-xs ${if (fail == 0) "text-green-400" else "text-yellow-400"}")
+            newBtn.removeAttribute("disabled")
+            renderTriageList()
+        }
+    }
 }
 
 private fun moveFocus(delta: Int) {
@@ -248,4 +361,13 @@ private suspend fun assignLanguage(mediaId: String, specifier: String, language:
             setBody("""{"language":"$language"}""")
         }
         response.status == HttpStatusCode.OK
+    }.getOrDefault(false)
+
+private suspend fun fixCascadeDefault(mediaId: String, specifier: String): Boolean =
+    runCatching {
+        val response = httpClient.post("/api/media/$mediaId/tracks/default") {
+            contentType(ContentType.Application.Json)
+            setBody("""{"specifier":"$specifier"}""")
+        }
+        response.status.value in 200..299
     }.getOrDefault(false)
