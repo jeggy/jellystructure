@@ -31,7 +31,8 @@ object FfmpegRunner {
             "-disposition:$typeStr:$relIdx $flag"
         }.joinToString(" ")
 
-        val cmd = "ffmpeg -y -i '$escaped' -map 0 -c copy $dispositions '$escapedTmp' 2>&1 && mv '$escapedTmp' '$escaped'"
+        val core = "ffmpeg -y -i '$escaped' -map 0 -c copy $dispositions '$escapedTmp' 2>&1 && mv '$escapedTmp' '$escaped'"
+        val cmd = withOwnershipPreservation(escaped, core)
         val ok = runCommand(cmd)
         if (!ok) {
             @OptIn(ExperimentalForeignApi::class)
@@ -47,7 +48,8 @@ object FfmpegRunner {
         val escapedTmp = tmp.replace("'", "'\\''")
         val cleanLang = language.replace("'", "").replace("\"", "").take(10)
 
-        val cmd = "ffmpeg -y -i '$escaped' -map 0 -c copy -metadata:s:$streamIndex language=$cleanLang '$escapedTmp' 2>&1 && mv '$escapedTmp' '$escaped'"
+        val core = "ffmpeg -y -i '$escaped' -map 0 -c copy -metadata:s:$streamIndex language=$cleanLang '$escapedTmp' 2>&1 && mv '$escapedTmp' '$escaped'"
+        val cmd = withOwnershipPreservation(escaped, core)
         val ok = runCommand(cmd)
         if (!ok) {
             @OptIn(ExperimentalForeignApi::class)
@@ -68,6 +70,17 @@ object FfmpegRunner {
         }.joinToString(" \\\n  ")
         return "ffmpeg -y -i '$escaped' \\\n  -map 0 -c copy \\\n  $dispositions \\\n  '$escapedTmp' && mv '$escapedTmp' '$escaped'"
     }
+
+    // Wraps a core shell command with stat capture before and chown/chmod restore after success.
+    // `escapedOrig` must already be single-quote-safe. The approach is shell-only so it works
+    // in any POSIX sh (GNU stat -c is Linux-specific but that's our only deployment target).
+    private fun withOwnershipPreservation(escapedOrig: String, core: String): String =
+        "_jsu=\$(stat -c '%u' '$escapedOrig' 2>/dev/null);" +
+        "_jsg=\$(stat -c '%g' '$escapedOrig' 2>/dev/null);" +
+        "_jsm=\$(stat -c '%a' '$escapedOrig' 2>/dev/null);" +
+        "$core && " +
+        "{ [ -n \"\$_jsu\" ] && chown \"\${_jsu}:\${_jsg}\" '$escapedOrig' 2>/dev/null || true;" +
+        "[ -n \"\$_jsm\" ] && chmod \"\$_jsm\" '$escapedOrig' 2>/dev/null || true; }"
 
     private fun tmpPath(filePath: String): String {
         val dir = filePath.substringBeforeLast('/')
