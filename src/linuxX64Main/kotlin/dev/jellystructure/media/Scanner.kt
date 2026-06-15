@@ -215,6 +215,61 @@ class Scanner(
         )
     }
 
+    // Re-fetches TMDB metadata for an already-scanned item without re-probing
+    // the file. Keeps existing tracks, path, and Jellyfin IDs.
+    suspend fun rescanMetadata(item: MediaItem): MediaItem? {
+        val config = configStore.current
+        val globalFallback = config.languageRules.fallbackLanguage
+        val lib = config.libraries.firstOrNull { lib ->
+            val prefix = lib.localPath.ifBlank { lib.jellyfinPath }
+            prefix.isNotBlank() && item.path.startsWith(prefix)
+        }
+        val fallback = lib?.fallbackLanguage ?: globalFallback
+        val audioLangs = item.tracks.filter { it.kind == TrackKind.AUDIO }.map { it.language }
+        val langPriority = LanguageResolver.priorityList(audioLangs, fallback)
+
+        return when (item.kind) {
+            MediaKind.MOVIE -> {
+                val tmdbId = item.tmdbId ?: tmdb.searchMovie(item.title, item.year)?.id
+                val details = tmdbId?.let { tmdb.getMovieDetailsLocalized(it, langPriority) }
+                    ?: return null
+                val resolvedLang = langPriority.firstOrNull { lang ->
+                    details.overview.isNotBlank() && lang != fallback
+                } ?: langPriority.lastOrNull()
+                item.copy(
+                    title = details.title,
+                    originalTitle = details.originalTitle.takeIf { it.isNotBlank() },
+                    tmdbId = details.id,
+                    originalLanguage = details.originalLanguage.takeIf { it.isNotBlank() },
+                    resolvedLanguage = resolvedLang,
+                    posterPath = details.posterPath,
+                    backdropPath = details.backdropPath,
+                    overview = details.overview.takeIf { it.isNotBlank() },
+                    genres = details.genres.map { it.name },
+                )
+            }
+            MediaKind.TV_SHOW -> {
+                val tmdbId = item.tmdbId ?: tmdb.searchTv(item.title, item.year)?.id
+                val details = tmdbId?.let { tmdb.getTvDetailsLocalized(it, langPriority) }
+                    ?: return null
+                val resolvedLang = langPriority.firstOrNull { lang ->
+                    details.overview.isNotBlank() && lang != fallback
+                } ?: langPriority.lastOrNull()
+                item.copy(
+                    title = details.name,
+                    originalTitle = details.originalName.takeIf { it.isNotBlank() },
+                    tmdbId = details.id,
+                    originalLanguage = details.originalLanguage.takeIf { it.isNotBlank() },
+                    resolvedLanguage = resolvedLang,
+                    posterPath = details.posterPath,
+                    backdropPath = details.backdropPath,
+                    overview = details.overview.takeIf { it.isNotBlank() },
+                    genres = details.genres.map { it.name },
+                )
+            }
+        }
+    }
+
     private fun findEpisodeFiles(dir: String): List<String> {
         val result = mutableListOf<String>()
         fun recurse(d: String) {

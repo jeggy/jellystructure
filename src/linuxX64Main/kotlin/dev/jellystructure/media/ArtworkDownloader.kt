@@ -5,6 +5,8 @@ import io.ktor.client.HttpClient
 import io.ktor.client.engine.curl.Curl
 import io.ktor.client.request.get
 import io.ktor.client.statement.readRawBytes
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.io.buffered
 import kotlinx.io.files.Path
 import kotlinx.io.files.SystemFileSystem
@@ -32,14 +34,20 @@ class ArtworkDownloader {
             return check(item)
         }
         val dir = mediaDir(item)
-        var posterOk = SystemFileSystem.exists(Path("$dir/poster.jpg"))
-        var fanartOk = SystemFileSystem.exists(Path("$dir/fanart.jpg"))
+        val posterExists = SystemFileSystem.exists(Path("$dir/poster.jpg"))
+        val fanartExists = SystemFileSystem.exists(Path("$dir/fanart.jpg"))
 
-        if (!posterOk && !item.posterPath.isNullOrBlank()) {
-            posterOk = download("$TMDB_ORIGINAL${item.posterPath}", "$dir/poster.jpg")
-        }
-        if (!fanartOk && !item.backdropPath.isNullOrBlank()) {
-            fanartOk = download("$TMDB_ORIGINAL${item.backdropPath}", "$dir/fanart.jpg")
+        val posterOk: Boolean
+        val fanartOk: Boolean
+        coroutineScope {
+            val posterJob = if (!posterExists && !item.posterPath.isNullOrBlank()) {
+                async { download("$TMDB_ORIGINAL${item.posterPath}", "$dir/poster.jpg") }
+            } else null
+            val fanartJob = if (!fanartExists && !item.backdropPath.isNullOrBlank()) {
+                async { download("$TMDB_ORIGINAL${item.backdropPath}", "$dir/fanart.jpg") }
+            } else null
+            posterOk = posterJob?.await() ?: posterExists
+            fanartOk = fanartJob?.await() ?: fanartExists
         }
         return ArtworkStatus(posterExists = posterOk, fanartExists = fanartOk)
     }
