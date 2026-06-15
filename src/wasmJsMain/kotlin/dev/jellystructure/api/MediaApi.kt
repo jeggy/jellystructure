@@ -25,15 +25,39 @@ data class StatsResponse(
 data class ArtworkStatus(val posterExists: Boolean, val fanartExists: Boolean)
 
 @Serializable
+data class TrackSnap(
+    val specifier: String,
+    val language: String?,
+    val codec: String,
+    val title: String?,
+    val isDefault: Boolean,
+    val kind: String,
+)
+
+@Serializable
 data class TrackPlan(
     val command: String,
     val tool: String,
     val estimatedMs: Int,
     val targetSpecifier: String,
+    val before: List<TrackSnap> = emptyList(),
+    val after: List<TrackSnap> = emptyList(),
 )
 
 @Serializable
 data class NfoWriteResult(val path: String)
+
+@Serializable
+data class TriageCount(val untagged: Int, val mismatch: Int, val total: Int)
+
+@Serializable
+data class HistoryEntry(
+    val id: String,
+    val mediaId: String,
+    val timestamp: Long,
+    val action: String,
+    val detail: String,
+)
 
 @Serializable
 data class ScanStatus(val running: Boolean, val lastCount: Int? = null)
@@ -113,4 +137,12 @@ object MediaApi {
         val response = httpClient.post("/api/media/$id/repull")
         if (response.status == HttpStatusCode.OK) response.body<MediaItem>() else null
     }.getOrNull()
+
+    suspend fun getTriageCount(): TriageCount? = runCatching {
+        httpClient.get("/api/triage/count").body<TriageCount>()
+    }.getOrNull()
+
+    suspend fun getHistory(id: String): List<HistoryEntry> = runCatching {
+        httpClient.get("/api/media/$id/history").body<List<HistoryEntry>>()
+    }.getOrDefault(emptyList())
 }

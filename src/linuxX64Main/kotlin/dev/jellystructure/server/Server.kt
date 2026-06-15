@@ -6,6 +6,7 @@ import dev.jellystructure.auth.installAuthPlugin
 import dev.jellystructure.config.ConfigStore
 import dev.jellystructure.jobs.WsBroadcaster
 import dev.jellystructure.media.ArtworkDownloader
+import dev.jellystructure.media.MediaHistory
 import dev.jellystructure.media.MediaStore
 import dev.jellystructure.media.Scanner
 import dev.jellystructure.media.ScanTracker
@@ -56,6 +57,7 @@ fun startServer(
     artworkDownloader: ArtworkDownloader,
     scanTracker: ScanTracker,
     folderWatcher: FolderWatcher,
+    mediaHistory: MediaHistory,
     frontendDir: String,
     port: Int,
 ): () -> Unit {
@@ -87,10 +89,10 @@ fun startServer(
                 configureConfigRoutes(configStore)
                 setupRoutes(configStore, jellyfinClient)
                 jellyfinRoutes(configStore, jellyfinClient)
-                mediaRoutes(mediaStore, scanner, artworkDownloader, appScope, scanTracker, broadcaster, jellyfinClient, configStore)
+                mediaRoutes(mediaStore, scanner, artworkDownloader, appScope, scanTracker, broadcaster, jellyfinClient, configStore, mediaHistory)
                 languageRoutes(configStore)
-                triageRoutes(mediaStore, jellyfinClient, configStore)
-                trackRoutes(mediaStore, configStore, jellyfinClient)
+                triageRoutes(mediaStore, jellyfinClient, configStore, mediaHistory)
+                trackRoutes(mediaStore, configStore, jellyfinClient, mediaHistory)
             }
 
             webSocket("/ws") {

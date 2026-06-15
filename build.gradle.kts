@@ -43,9 +43,9 @@ tasks.register<Exec>("runBackend") {
 }
 
 tasks.register("runDev") {
-    description = "Compile backend, then start API server (port 9505) + frontend dev server (port 8081). Run './gradlew buildFrontend' first if the frontend has never been built."
+    description = "Compile backend + frontend (incremental), then start API server (port 9505) + frontend dev server (port 8081)."
     group = "application"
-    dependsOn("linkDebugExecutableLinuxX64")
+    dependsOn("linkDebugExecutableLinuxX64", "syncDesignAssets")
 
     doLast {
         // Kill any leftover instances from previous runs before starting fresh.
@@ -73,7 +73,7 @@ tasks.register("runDev") {
             ?.filter { it.isDirectory && it.name.startsWith("node-") }
             ?.maxByOrNull { it.lastModified() }
             ?.resolve("bin/node")
-            ?: error("Node.js not found in ~/.gradle/nodejs — run './gradlew buildFrontend' first")
+            ?: error("Node.js not found in ~/.gradle/nodejs")
 
         // Locate webpack-dev-server in Kotlin's yarn tooling (~/.kotlin/kotlin-npm-tooling/)
         val yarnTooling = File(System.getProperty("user.home"), ".kotlin/kotlin-npm-tooling/yarn")
@@ -81,13 +81,11 @@ tasks.register("runDev") {
             ?.filter { it.isDirectory }
             ?.mapNotNull { it.resolve("node_modules").takeIf { f -> f.isDirectory } }
             ?.firstOrNull()
-            ?: error("Kotlin npm tooling not found in ~/.kotlin/kotlin-npm-tooling — run './gradlew buildFrontend' first")
+            ?: error("Kotlin npm tooling not found in ~/.kotlin/kotlin-npm-tooling")
         val webpackDevServer = toolingNodeModules.resolve(".bin/webpack-dev-server")
 
         val webpackConfig = layout.buildDirectory.file("wasm/packages/jellystructure/webpack.config.js").get().asFile
-        if (!webpackConfig.exists()) {
-            error("webpack.config.js not found at ${webpackConfig.absolutePath} — run './gradlew buildFrontend' first")
-        }
+        if (!webpackConfig.exists()) error("webpack.config.js not found at ${webpackConfig.absolutePath}")
 
         println("[runDev] Starting frontend dev server on http://localhost:8081")
         println("[runDev] Starting backend API server on http://localhost:9505")
@@ -139,10 +137,22 @@ tasks.register("runDev") {
     }
 }
 
+// Copy wf.css and app.css from the canonical app/ design directory into the webpack dist output.
+// This task is the single source of truth for CSS in the running app — no copies in src/resources.
+tasks.register<Copy>("syncDesignAssets") {
+    description = "Copy design CSS from app/ into the frontend dist directory"
+    group = "application"
+    from(rootProject.layout.projectDirectory.dir("app")) {
+        include("wf.css", "app.css")
+    }
+    into(layout.buildDirectory.dir("dist/wasmJs/developmentExecutable"))
+    dependsOn("wasmJsBrowserDevelopmentWebpack")
+}
+
 tasks.register("buildFrontend") {
     description = "Build the WASM frontend bundle (run once before runDev, or with --continuous for hot reload)."
     group = "application"
-    dependsOn("wasmJsBrowserDevelopmentWebpack")
+    dependsOn("syncDesignAssets")
 }
 
     sourceSets {

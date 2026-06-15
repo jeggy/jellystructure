@@ -26,9 +26,19 @@ fun renderSettings(container: Element, scope: CoroutineScope) {
         <div id="settings-msg" style="display:none;margin-bottom:14px"></div>
 
         <div class="row" style="align-items:flex-start;gap:22px;flex-wrap:wrap">
+
+          <nav style="width:160px;flex-shrink:0;position:sticky;top:16px;">
+            <div style="display:flex;flex-direction:column;gap:2px;">
+              <a href="#sect-connections" class="settings-nav-item" style="padding:5px 8px;border-radius:5px;font-size:.85rem;text-decoration:none;color:var(--ink-soft);">Connections</a>
+              <a href="#sect-libraries" class="settings-nav-item" style="padding:5px 8px;border-radius:5px;font-size:.85rem;text-decoration:none;color:var(--ink-soft);">Library mapping</a>
+              <a href="#sect-language" class="settings-nav-item" style="padding:5px 8px;border-radius:5px;font-size:.85rem;text-decoration:none;color:var(--ink-soft);">Language</a>
+              <a href="#sect-behaviour" class="settings-nav-item" style="padding:5px 8px;border-radius:5px;font-size:.85rem;text-decoration:none;color:var(--ink-soft);">Behaviour</a>
+            </div>
+          </nav>
+
           <div class="col fill" style="min-width:280px">
 
-            <div class="card">
+            <div class="card" id="sect-connections">
               <h3 style="font-size:1rem;margin:0 0 14px">Connections</h3>
               <div class="field">
                 <label>Jellyfin URL</label>
@@ -46,7 +56,7 @@ fun renderSettings(container: Element, scope: CoroutineScope) {
               <div id="conn-result" style="display:none;margin-top:8px"></div>
             </div>
 
-            <div class="card">
+            <div class="card" id="sect-libraries">
               <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
                 <h3 style="font-size:1rem;margin:0">Library mapping</h3>
                 <button id="fetch-libraries" class="btn sm ghost">Fetch libraries</button>
@@ -57,7 +67,7 @@ fun renderSettings(container: Element, scope: CoroutineScope) {
               </div>
             </div>
 
-            <div class="card">
+            <div class="card" id="sect-language">
               <h3 style="font-size:1rem;margin:0 0 14px">Language</h3>
               <div class="field">
                 <label>Fallback language</label>
@@ -66,7 +76,7 @@ fun renderSettings(container: Element, scope: CoroutineScope) {
               </div>
             </div>
 
-            <div class="card">
+            <div class="card" id="sect-behaviour">
               <h3 style="font-size:1rem;margin:0 0 14px">Behaviour</h3>
               <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
                 <span style="font-size:.9rem">Overwrite existing NFO fields</span>
@@ -87,7 +97,7 @@ fun renderSettings(container: Element, scope: CoroutineScope) {
 
           </div>
 
-          <div class="card" style="width:340px;flex-shrink:0">
+          <div class="card" style="width:300px;flex-shrink:0">
             <h3 style="font-size:1rem;margin:0 0 10px">config.toml preview</h3>
             <pre class="log" id="toml-preview" style="max-height:480px;font-size:.73rem;line-height:1.5"></pre>
           </div>

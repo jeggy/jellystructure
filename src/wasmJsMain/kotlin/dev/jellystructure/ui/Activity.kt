@@ -11,6 +11,7 @@ import org.w3c.dom.events.Event
 private fun currentTimeString(): String = js("new Date().toLocaleTimeString()")
 
 private var activitySocket: WebSocket? = null
+private var jobItemCount = 0
 
 fun renderActivity(container: Element, scope: CoroutineScope) {
     // Close any existing socket when navigating away
@@ -19,7 +20,7 @@ fun renderActivity(container: Element, scope: CoroutineScope) {
 
     container.innerHTML = """
         <div class="p-6">
-          <div class="flex items-center justify-between mb-6">
+          <div class="flex items-center justify-between mb-4">
             <div>
               <h1 class="text-2xl font-bold text-white">Activity</h1>
               <p class="text-sm text-slate-400 mt-1">Live job events streamed from the backend.</p>
@@ -29,8 +30,23 @@ fun renderActivity(container: Element, scope: CoroutineScope) {
               <button id="clear-btn" class="text-xs bg-slate-700 hover:bg-slate-600 text-slate-300 px-3 py-1.5 rounded">Clear</button>
             </div>
           </div>
+
+          <div id="job-progress-card" class="bg-slate-800 rounded-lg border border-slate-700 p-4 mb-4" style="display:none">
+            <div class="flex items-center justify-between mb-2">
+              <span class="text-sm font-semibold text-white">Scan in progress</span>
+              <span id="job-id-badge" class="text-xs text-slate-400 font-mono"></span>
+            </div>
+            <div class="flex items-center gap-6 text-sm text-slate-300 mb-3">
+              <span>Items scanned: <strong id="job-count">0</strong></span>
+              <span id="job-current-file" class="text-slate-400 text-xs font-mono truncate max-w-xs"></span>
+            </div>
+            <div class="w-full bg-slate-700 rounded-full h-1.5">
+              <div id="job-progress-bar" class="bg-indigo-500 h-1.5 rounded-full transition-all" style="width:0%"></div>
+            </div>
+          </div>
+
           <div id="activity-console"
-               class="bg-slate-950 rounded-lg border border-slate-700 p-4 font-mono text-xs text-slate-300 h-[calc(100vh-13rem)] overflow-y-auto space-y-0.5">
+               class="bg-slate-950 rounded-lg border border-slate-700 p-4 font-mono text-xs text-slate-300 h-[calc(100vh-18rem)] overflow-y-auto space-y-0.5">
             <div class="text-slate-600 italic">Waiting for job events…</div>
           </div>
         </div>
@@ -82,7 +98,6 @@ private fun connectWebSocket(container: Element) {
 }
 
 private fun handleEvent(container: Element, raw: String) {
-    // Parse the "type" discriminator without a full serialization round-trip
     val type = extractJsonField(raw, "type") ?: run {
         appendLine(container, "raw", raw)
         return
@@ -91,13 +106,20 @@ private fun handleEvent(container: Element, raw: String) {
         "started" -> {
             val jobId = extractJsonField(raw, "jobId") ?: "?"
             val total = extractJsonField(raw, "total") ?: "?"
+            jobItemCount = 0
+            showProgressCard(container, jobId)
             appendLine(container, "started", "▶ Job $jobId started — $total files")
         }
         "progress" -> {
             val file = extractJsonField(raw, "file") ?: "?"
             val current = extractJsonField(raw, "current") ?: "?"
             val total = extractJsonField(raw, "total") ?: "?"
+            updateProgressFile(container, file.substringAfterLast('/'))
             appendLine(container, "progress", "  [$current/$total] ${file.substringAfterLast('/')}")
+        }
+        "item_scanned" -> {
+            jobItemCount++
+            updateProgressCount(container, jobItemCount)
         }
         "file_done" -> {
             val file = extractJsonField(raw, "file") ?: "?"
@@ -112,11 +134,32 @@ private fun handleEvent(container: Element, raw: String) {
             val jobId = extractJsonField(raw, "jobId") ?: "?"
             val succeeded = extractJsonField(raw, "succeeded") ?: "?"
             val failed = extractJsonField(raw, "failed") ?: "?"
+            hideProgressCard(container)
             appendLine(container, "finished", "■ Job $jobId finished — $succeeded succeeded, $failed failed")
             appendLine(container, "separator", "─".repeat(60))
         }
         else -> appendLine(container, "raw", raw)
     }
+}
+
+private fun showProgressCard(container: Element, jobId: String) {
+    val card = container.querySelector("#job-progress-card") as? HTMLElement ?: return
+    card.style.display = "block"
+    (container.querySelector("#job-id-badge") as? HTMLElement)?.textContent = jobId
+    (container.querySelector("#job-count") as? HTMLElement)?.textContent = "0"
+    (container.querySelector("#job-progress-bar") as? HTMLElement)?.setAttribute("style", "width:0%")
+}
+
+private fun hideProgressCard(container: Element) {
+    (container.querySelector("#job-progress-card") as? HTMLElement)?.style?.display = "none"
+}
+
+private fun updateProgressFile(container: Element, shortName: String) {
+    (container.querySelector("#job-current-file") as? HTMLElement)?.textContent = shortName
+}
+
+private fun updateProgressCount(container: Element, count: Int) {
+    (container.querySelector("#job-count") as? HTMLElement)?.textContent = count.toString()
 }
 
 private fun appendLine(

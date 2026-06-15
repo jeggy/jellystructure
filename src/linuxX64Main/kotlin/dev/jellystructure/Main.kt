@@ -4,6 +4,7 @@ import dev.jellystructure.auth.JellyfinClient
 import dev.jellystructure.auth.SessionService
 import dev.jellystructure.config.ConfigStore
 import dev.jellystructure.media.ArtworkDownloader
+import dev.jellystructure.media.MediaHistory
 import dev.jellystructure.media.MediaStore
 import dev.jellystructure.media.Scanner
 import dev.jellystructure.media.ScanTracker
@@ -93,9 +94,10 @@ fun main() {
     println("[INFO] Starting jellystructure on port $port")
     println("[INFO] Serving frontend from $frontendDir")
 
+    val mediaHistory = MediaHistory()
     val shutdown = startServer(
         configStore, sessionService, jellyfinClient, mediaStore, scanner,
-        artworkDownloader, scanTracker, folderWatcher, frontendDir, port,
+        artworkDownloader, scanTracker, folderWatcher, mediaHistory, frontendDir, port,
     )
 
     while (shutdownRequested.value == 0) {

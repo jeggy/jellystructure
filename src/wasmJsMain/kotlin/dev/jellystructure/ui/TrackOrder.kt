@@ -2,6 +2,7 @@ package dev.jellystructure.ui
 
 import dev.jellystructure.App
 import dev.jellystructure.api.MediaApi
+import dev.jellystructure.api.TrackSnap
 import dev.jellystructure.model.MediaItem
 import dev.jellystructure.model.Track
 import dev.jellystructure.model.TrackKind
@@ -104,6 +105,20 @@ private fun renderTrackOrderView(container: Element, item: MediaItem, scope: Cor
           </table>"""}
         </div>
 
+        <div class="card" id="diff-card" style="display:none;">
+          <h4 style="margin:0 0 12px;">Track changes</h4>
+          <div class="row" style="gap:16px;">
+            <div class="col fill">
+              <div class="muted tiny" style="margin-bottom:6px;">Before</div>
+              <div id="diff-before"></div>
+            </div>
+            <div class="col fill">
+              <div class="muted tiny" style="margin-bottom:6px;">After</div>
+              <div id="diff-after"></div>
+            </div>
+          </div>
+        </div>
+
         <div class="card" id="plan-card" style="display:none;">
           <div class="row center" style="margin-bottom:10px;">
             <h4 style="margin:0;">Command preview</h4>
@@ -139,6 +154,9 @@ private fun renderTrackOrderView(container: Element, item: MediaItem, scope: Cor
                     val planCard = document.getElementById("plan-card") as? HTMLElement
                     val planCommand = document.getElementById("plan-command") as? HTMLElement
                     val planMeta = document.getElementById("plan-meta") as? HTMLElement
+                    val diffCard = document.getElementById("diff-card") as? HTMLElement
+                    val diffBefore = document.getElementById("diff-before") as? HTMLElement
+                    val diffAfter = document.getElementById("diff-after") as? HTMLElement
                     if (plan != null) {
                         planCard?.style?.display = "block"
                         planCommand?.textContent = plan.command
@@ -146,7 +164,12 @@ private fun renderTrackOrderView(container: Element, item: MediaItem, scope: Cor
                             <span class="chip">${plan.tool}</span>
                             <span class="chip">~${plan.estimatedMs}ms</span>
                         """.trimIndent()
-                        planCard?.scrollIntoView()
+                        if (plan.before.isNotEmpty()) {
+                            diffCard?.style?.display = "block"
+                            diffBefore?.innerHTML = plan.before.joinToString("") { snapRowHtml(it, plan.targetSpecifier) }
+                            diffAfter?.innerHTML = plan.after.joinToString("") { snapRowHtml(it, plan.targetSpecifier) }
+                        }
+                        diffCard?.scrollIntoView()
                     } else {
                         showTrackOrderMsg("Failed to get plan — is this an MKV file?", false)
                     }
@@ -180,4 +203,18 @@ private fun showTrackOrderMsg(msg: String, ok: Boolean) {
     val el = document.getElementById("track-order-msg") as? HTMLElement ?: return
     el.style.display = "block"
     el.innerHTML = """<span class="badge ${if (ok) "ok" else "bad"}">$msg</span>"""
+}
+
+private fun snapRowHtml(snap: TrackSnap, targetSpecifier: String): String {
+    val isTarget = snap.specifier == targetSpecifier
+    val defaultMark = if (snap.isDefault) """<span class="badge ok" style="font-size:.65rem;padding:1px 5px;">●</span>""" else """<span class="muted tiny">○</span>"""
+    val langBadge = snap.language?.let { """<span class="lang">${it.esc()}</span>""" }
+        ?: """<span class="badge bad" style="font-size:.65rem;">?</span>"""
+    val bg = if (isTarget) "background:var(--hi-soft,rgba(123,110,240,.1));border-radius:4px;" else ""
+    return """<div style="display:flex;align-items:center;gap:5px;padding:3px 5px;margin-bottom:2px;$bg">
+                $defaultMark
+                <span class="mono tiny">${snap.specifier.esc()}</span>
+                $langBadge
+                <span class="muted tiny">${snap.codec.esc()}</span>
+              </div>"""
 }

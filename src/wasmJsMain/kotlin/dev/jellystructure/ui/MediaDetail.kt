@@ -2,6 +2,7 @@ package dev.jellystructure.ui
 
 import dev.jellystructure.App
 import dev.jellystructure.api.ArtworkStatus
+import dev.jellystructure.api.HistoryEntry
 import dev.jellystructure.api.MediaApi
 import dev.jellystructure.model.MediaItem
 import dev.jellystructure.model.Track
@@ -109,86 +110,111 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
 
         <div id="detail-msg" style="display:none;margin-bottom:14px"></div>
 
-        $tvSeriesSectionHtml
+        <div class="seg" id="detail-tabs" style="margin-bottom:16px;">
+          <span class="seg-item active" data-tab="overview">Overview</span>
+          <span class="seg-item" data-tab="tracks">Tracks &amp; order</span>
+          <span class="seg-item" data-tab="artwork">Artwork</span>
+          <span class="seg-item" data-tab="nfo">NFO raw</span>
+          <span class="seg-item" data-tab="history">History</span>
+        </div>
 
-        <div class="row" style="align-items:flex-start;gap:22px;flex-wrap:wrap;">
-          <div class="col" style="width:220px;flex:none;">
-            <div class="card">
-              <h4 style="margin:0 0 10px;">Poster</h4>
-              $posterHtml
+        <div id="tab-overview">
+          $tvSeriesSectionHtml
+          <div class="row" style="align-items:flex-start;gap:22px;flex-wrap:wrap;">
+            <div class="col" style="width:220px;flex:none;">
+              <div class="card">
+                <h4 style="margin:0 0 10px;">Poster</h4>
+                $posterHtml
+              </div>
+              <div class="card">
+                <h4 style="margin:0 0 8px;">Identity</h4>
+                <div class="field" style="margin:0 0 6px;">
+                  <label>TMDB id</label>
+                  <div class="input">${item.tmdbId ?: "—"}</div>
+                </div>
+                <div class="field" style="margin:0 0 6px;">
+                  <label>Original language</label>
+                  <div class="input">${item.originalLanguage ?: "—"}</div>
+                </div>
+                <div class="field" style="margin:0;">
+                  <label>Kind</label>
+                  <div class="input">${item.kind.name.lowercase().replace('_', ' ')}</div>
+                </div>
+              </div>
             </div>
-            <div class="card">
-              <h4 style="margin:0 0 8px;">Identity</h4>
-              <div class="field" style="margin:0 0 6px;">
-                <label>TMDB id</label>
-                <div class="input">${item.tmdbId ?: "—"}</div>
-              </div>
-              <div class="field" style="margin:0 0 6px;">
-                <label>Original language</label>
-                <div class="input">${item.originalLanguage ?: "—"}</div>
-              </div>
-              <div class="field" style="margin:0;">
-                <label>Kind</label>
-                <div class="input">${item.kind.name.lowercase().replace('_', ' ')}</div>
+            <div class="col fill">
+              <div class="card">
+                <div class="row">
+                  <div class="field fill">
+                    <label>Title</label>
+                    <div class="input">${item.title.esc()}</div>
+                  </div>
+                  <div class="field" style="width:110px;">
+                    <label>Year</label>
+                    <div class="input">${item.year ?: "—"}</div>
+                  </div>
+                </div>
+                $overviewHtml
+                $genresHtml
+                <div class="field">
+                  <label>File path</label>
+                  <div class="input mono" style="font-size:.82rem;word-break:break-all;">${item.path.esc()}</div>
+                </div>
               </div>
             </div>
           </div>
+        </div>
 
-          <div class="col fill">
-            <div class="card">
-              <div class="row">
-                <div class="field fill">
-                  <label>Title</label>
-                  <div class="input">${item.title.esc()}</div>
-                </div>
-                <div class="field" style="width:110px;">
-                  <label>Year</label>
-                  <div class="input">${item.year ?: "—"}</div>
-                </div>
-              </div>
-              $overviewHtml
-              $genresHtml
-              <div class="field">
-                <label>File path</label>
-                <div class="input mono" style="font-size:.82rem;word-break:break-all;">${item.path.esc()}</div>
-              </div>
+        <div id="tab-tracks" style="display:none;">
+          <div class="card">
+            <div class="row center" style="margin-bottom:10px;">
+              <h4 style="margin:0;">Embedded tracks</h4>
+              <span class="spacer"></span>
+              $issueBadge
             </div>
+            $tracksHtml
+          </div>
+        </div>
 
-            <div class="card" id="artwork-card">
-              <div class="row center" style="margin-bottom:10px">
-                <h4 style="margin:0">Artwork</h4>
-                <span class="spacer"></span>
-                <button id="upload-poster-btn" class="btn sm ghost">Upload poster</button>
-                <button id="upload-fanart-btn" class="btn sm ghost">Upload fanart</button>
-                <button id="fetch-artwork-btn" class="btn sm ghost">Download from TMDB</button>
-              </div>
-              <div id="artwork-status"><span class="muted tiny">Checking…</span></div>
-              <iframe id="upload-frame" name="upload-frame" style="display:none"></iframe>
-              <form id="poster-form" method="post" action="/api/media/${item.id}/artwork/upload"
-                    enctype="multipart/form-data" target="upload-frame" style="display:none">
-                <input type="hidden" name="type" value="poster">
-                <input type="file" id="poster-file" name="file" accept="image/jpeg,image/jpg,image/png">
-              </form>
-              <form id="fanart-form" method="post" action="/api/media/${item.id}/artwork/upload"
-                    enctype="multipart/form-data" target="upload-frame" style="display:none">
-                <input type="hidden" name="type" value="fanart">
-                <input type="file" id="fanart-file" name="file" accept="image/jpeg,image/jpg,image/png">
-              </form>
+        <div id="tab-artwork" style="display:none;">
+          <div class="card" id="artwork-card">
+            <div class="row center" style="margin-bottom:10px">
+              <h4 style="margin:0">Artwork</h4>
+              <span class="spacer"></span>
+              <button id="upload-poster-btn" class="btn sm ghost">Upload poster</button>
+              <button id="upload-fanart-btn" class="btn sm ghost">Upload fanart</button>
+              <button id="fetch-artwork-btn" class="btn sm ghost">Download from TMDB</button>
             </div>
+            <div id="artwork-status"><span class="muted tiny">Checking…</span></div>
+            <iframe id="upload-frame" name="upload-frame" style="display:none"></iframe>
+            <form id="poster-form" method="post" action="/api/media/${item.id}/artwork/upload"
+                  enctype="multipart/form-data" target="upload-frame" style="display:none">
+              <input type="hidden" name="type" value="poster">
+              <input type="file" id="poster-file" name="file" accept="image/jpeg,image/jpg,image/png">
+            </form>
+            <form id="fanart-form" method="post" action="/api/media/${item.id}/artwork/upload"
+                  enctype="multipart/form-data" target="upload-frame" style="display:none">
+              <input type="hidden" name="type" value="fanart">
+              <input type="file" id="fanart-file" name="file" accept="image/jpeg,image/jpg,image/png">
+            </form>
+          </div>
+        </div>
 
-            <div class="card">
-              <div class="row center" style="margin-bottom:10px;">
-                <h4 style="margin:0;">Embedded tracks</h4>
-                <span class="spacer"></span>
-                $issueBadge
-              </div>
-              $tracksHtml
+        <div id="tab-nfo" style="display:none;">
+          <div class="card" id="nfo-card">
+            <div class="row center" style="margin-bottom:10px;">
+              <h4 style="margin:0">NFO (written to disk)</h4>
+              <span class="spacer"></span>
+              <span class="muted tiny">Click "Save → NFO" to write and view here</span>
             </div>
+            <pre class="log" id="nfo-raw" style="font-size:.73rem;line-height:1.5;max-height:420px;overflow:auto"></pre>
+          </div>
+        </div>
 
-            <div class="card" id="nfo-card" style="display:none">
-              <h4 style="margin:0 0 10px">NFO (written to disk)</h4>
-              <pre class="log" id="nfo-raw" style="font-size:.73rem;line-height:1.5;max-height:360px;overflow:auto"></pre>
-            </div>
+        <div id="tab-history" style="display:none;">
+          <div class="card" id="history-card">
+            <h4 style="margin:0 0 12px;">Action history</h4>
+            <div id="history-list"><span class="muted tiny">Loading…</span></div>
           </div>
         </div>
     """.trimIndent()
@@ -236,7 +262,63 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
         }
     }
 
+    // Tab switching
+    val tabIds = listOf("overview", "tracks", "artwork", "nfo", "history")
+    document.getElementById("detail-tabs")?.let { tabBar ->
+        tabBar.querySelectorAll(".seg-item").let { items ->
+            for (i in 0 until items.length) {
+                val item2 = items.item(i) as? HTMLElement ?: continue
+                item2.addEventListener("click") {
+                    val tab = item2.getAttribute("data-tab") ?: return@addEventListener
+                    // update tab bar
+                    for (j in 0 until items.length) {
+                        (items.item(j) as? HTMLElement)?.className = "seg-item"
+                    }
+                    item2.className = "seg-item active"
+                    // show/hide panels
+                    tabIds.forEach { id ->
+                        val panel = document.getElementById("tab-$id") as? HTMLElement
+                        panel?.style?.display = if (id == tab) "block" else "none"
+                    }
+                    // lazy-load history
+                    if (tab == "history") {
+                        scope.launch { loadHistory(item.id) }
+                    }
+                    // lazy-load artwork status
+                    if (tab == "artwork") {
+                        scope.launch { loadArtworkStatus(item.id) }
+                    }
+                }
+            }
+        }
+    }
+
     scope.launch { loadArtworkStatus(item.id) }
+}
+
+private suspend fun loadHistory(id: String) {
+    val listEl = document.getElementById("history-list") as? HTMLElement ?: return
+    val entries = MediaApi.getHistory(id)
+    if (entries.isEmpty()) {
+        listEl.innerHTML = """<span class="muted tiny">No history yet — write an NFO or change a track default to create entries.</span>"""
+        return
+    }
+    listEl.innerHTML = entries.joinToString("") { entry ->
+        val actionLabel = when (entry.action) {
+            "nfo_write" -> "NFO written"
+            "artwork_fetch" -> "Artwork downloaded"
+            "set_default" -> "Track default changed"
+            "assign_language" -> "Language assigned"
+            else -> entry.action
+        }
+        """<div style="display:flex;gap:10px;padding:6px 0;border-bottom:1px solid var(--border);">
+             <span class="muted tiny" style="width:160px;flex-shrink:0;padding-top:1px;">${formatTimestamp(entry.timestamp.toDouble() * 1000.0)}</span>
+             <div>
+               <span class="chip" style="font-size:.72rem;">$actionLabel</span>
+               <span class="muted tiny" style="margin-left:6px;">${entry.detail.esc()}</span>
+             </div>
+           </div>"""
+    }
 }
 
 private suspend fun handleRepull(item: MediaItem, container: Element, scope: CoroutineScope) {
@@ -284,10 +366,7 @@ private suspend fun handleWriteNfo(id: String) {
     if (result != null) {
         val raw = MediaApi.getNfo(id)
         if (raw != null) {
-            val card = document.getElementById("nfo-card") as? HTMLElement
-            val pre = document.getElementById("nfo-raw") as? HTMLElement
-            card?.style?.display = "block"
-            pre?.textContent = raw
+            (document.getElementById("nfo-raw") as? HTMLElement)?.textContent = raw
         }
     }
 }
@@ -313,6 +392,8 @@ private fun showDetailMsg(msg: String, ok: Boolean) {
     el.style.display = "block"
     el.innerHTML = """<span class="badge ${if (ok) "ok" else "bad"}">$msg</span>"""
 }
+
+private fun formatTimestamp(epochMs: Double): String = js("new Date(epochMs).toLocaleString()")
 
 private fun buildTracksTable(tracks: List<Track>): String {
     val displayed = tracks.filter { it.kind != TrackKind.VIDEO && it.kind != TrackKind.DATA }

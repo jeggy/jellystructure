@@ -4,6 +4,7 @@ import dev.jellystructure.auth.JellyfinClient
 import dev.jellystructure.config.ConfigStore
 import dev.jellystructure.media.FfmpegRunner
 import dev.jellystructure.media.FfprobeRunner
+import dev.jellystructure.media.MediaHistory
 import dev.jellystructure.media.MediaStore
 import dev.jellystructure.media.MkvpropeditRunner
 import dev.jellystructure.model.MediaItem
@@ -44,10 +45,22 @@ data class TriageItem(
 )
 
 @Serializable
+data class TriageCount(val untagged: Int, val mismatch: Int, val total: Int)
+
+@Serializable
 private data class AssignLanguageRequest(val language: String)
 
-fun Route.triageRoutes(store: MediaStore, jellyfinClient: JellyfinClient, configStore: ConfigStore) {
+fun Route.triageRoutes(store: MediaStore, jellyfinClient: JellyfinClient, configStore: ConfigStore, mediaHistory: MediaHistory) {
     route("/triage") {
+        get("/count") {
+            val all = store.allItems()
+            val untagged = all.sumOf { item ->
+                item.tracks.count { (it.kind == TrackKind.AUDIO || it.kind == TrackKind.SUBTITLE) && it.language == null }
+            }
+            val mismatch = all.count { it.detectCascadeMismatch() != null }
+            call.respond(TriageCount(untagged = untagged, mismatch = mismatch, total = untagged + mismatch))
+        }
+
         get {
             val items = store.allItems()
                 .mapNotNull { it.toTriageItem() }
@@ -92,6 +105,7 @@ fun Route.triageRoutes(store: MediaStore, jellyfinClient: JellyfinClient, config
             }
             val updated = item.copy(tracks = newTracks, issueCount = newIssueCount)
             store.updateOne(updated)
+            mediaHistory.record(mediaId, "assign_language", "specifier=$specifier lang=$lang")
 
             val cfg = configStore.current
             if (!item.jellyfinId.isNullOrBlank() && cfg.apiKeys.jellyfinUrl.isNotBlank()) {

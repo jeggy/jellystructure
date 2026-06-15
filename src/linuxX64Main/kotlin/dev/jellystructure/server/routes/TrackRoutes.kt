@@ -4,6 +4,7 @@ import dev.jellystructure.auth.JellyfinClient
 import dev.jellystructure.config.ConfigStore
 import dev.jellystructure.media.FfmpegRunner
 import dev.jellystructure.media.FfprobeRunner
+import dev.jellystructure.media.MediaHistory
 import dev.jellystructure.media.MediaStore
 import dev.jellystructure.media.MkvpropeditRunner
 import dev.jellystructure.model.TrackKind
@@ -20,14 +21,26 @@ import kotlinx.serialization.Serializable
 private data class SetDefaultRequest(val specifier: String)
 
 @Serializable
+data class TrackSnap(
+    val specifier: String,
+    val language: String?,
+    val codec: String,
+    val title: String?,
+    val isDefault: Boolean,
+    val kind: String,
+)
+
+@Serializable
 data class TrackPlan(
     val command: String,
     val tool: String,
     val estimatedMs: Int,
     val targetSpecifier: String,
+    val before: List<TrackSnap> = emptyList(),
+    val after: List<TrackSnap> = emptyList(),
 )
 
-fun Route.trackRoutes(store: MediaStore, configStore: ConfigStore, jellyfinClient: JellyfinClient) {
+fun Route.trackRoutes(store: MediaStore, configStore: ConfigStore, jellyfinClient: JellyfinClient, mediaHistory: MediaHistory) {
     route("/media/{id}") {
         // GET /api/media/{id}/tracks/plan?specifier=a:0 — dry-run: returns command without executing
         get("/tracks/plan") {
@@ -44,6 +57,14 @@ fun Route.trackRoutes(store: MediaStore, configStore: ConfigStore, jellyfinClien
             val ext = item.path.substringAfterLast('.').lowercase()
             val sameType = item.tracks.filter { it.kind == targetTrack.kind }
 
+            val kindStr = targetTrack.kind.name.lowercase()
+            val beforeSnaps = sameType.map { t ->
+                TrackSnap(t.specifier, t.language, t.codec, t.title, t.default, kindStr)
+            }
+            val afterSnaps = sameType.map { t ->
+                TrackSnap(t.specifier, t.language, t.codec, t.title, t.streamIndex == targetTrack.streamIndex, kindStr)
+            }
+
             if (ext == "mkv") {
                 val escaped = item.path.replace("'", "'\\''")
                 val parts = sameType.map { t ->
@@ -56,6 +77,8 @@ fun Route.trackRoutes(store: MediaStore, configStore: ConfigStore, jellyfinClien
                         tool = "mkvpropedit",
                         estimatedMs = 40,
                         targetSpecifier = specifier,
+                        before = beforeSnaps,
+                        after = afterSnaps,
                     )
                 )
             } else {
@@ -65,6 +88,8 @@ fun Route.trackRoutes(store: MediaStore, configStore: ConfigStore, jellyfinClien
                         tool = "ffmpeg",
                         estimatedMs = 5000,
                         targetSpecifier = specifier,
+                        before = beforeSnaps,
+                        after = afterSnaps,
                     )
                 )
             }
@@ -102,6 +127,7 @@ fun Route.trackRoutes(store: MediaStore, configStore: ConfigStore, jellyfinClien
             }
             val updated = item.copy(tracks = newTracks, issueCount = newIssueCount)
             store.updateOne(updated)
+            mediaHistory.record(id, "set_default", "specifier=${req.specifier}")
 
             val cfg = configStore.current
             if (!item.jellyfinId.isNullOrBlank() && cfg.apiKeys.jellyfinUrl.isNotBlank()) {

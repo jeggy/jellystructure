@@ -5,6 +5,7 @@ import dev.jellystructure.config.ConfigStore
 import dev.jellystructure.jobs.JobEvent
 import dev.jellystructure.jobs.WsBroadcaster
 import dev.jellystructure.media.ArtworkDownloader
+import dev.jellystructure.media.MediaHistory
 import dev.jellystructure.media.MediaStore
 import dev.jellystructure.media.Scanner
 import dev.jellystructure.media.ScanTracker
@@ -38,6 +39,7 @@ fun Route.mediaRoutes(
     broadcaster: WsBroadcaster,
     jellyfinClient: JellyfinClient,
     configStore: ConfigStore,
+    mediaHistory: MediaHistory,
 ) {
     route("/media") {
         get {
@@ -59,6 +61,12 @@ fun Route.mediaRoutes(
                 call.respond(item)
             }
 
+            get("/history") {
+                val id = call.parameters["id"]
+                    ?: return@get call.respond(HttpStatusCode.BadRequest)
+                call.respond(mediaHistory.forItem(id))
+            }
+
             route("/nfo") {
                 get {
                     val id = call.parameters["id"]
@@ -77,6 +85,7 @@ fun Route.mediaRoutes(
                         ?: return@post call.respond(HttpStatusCode.NotFound)
                     NfoWriter.write(item)
                         .onSuccess { path ->
+                            mediaHistory.record(id, "nfo_write", path)
                             val cfg = configStore.current
                             if (!item.jellyfinId.isNullOrBlank() && cfg.apiKeys.jellyfinUrl.isNotBlank()) {
                                 jellyfinClient.refreshItem(cfg.apiKeys.jellyfinUrl, cfg.apiKeys.jellyfinToken, item.jellyfinId)
@@ -106,6 +115,7 @@ fun Route.mediaRoutes(
                         ?: return@post call.respond(HttpStatusCode.NotFound)
                     val status = artwork.fetch(item)
                     if (status.posterExists || status.fanartExists) {
+                        mediaHistory.record(id, "artwork_fetch", "poster=${status.posterExists} fanart=${status.fanartExists}")
                         val cfg = configStore.current
                         if (!item.jellyfinId.isNullOrBlank() && cfg.apiKeys.jellyfinUrl.isNotBlank()) {
                             jellyfinClient.refreshItem(cfg.apiKeys.jellyfinUrl, cfg.apiKeys.jellyfinToken, item.jellyfinId)

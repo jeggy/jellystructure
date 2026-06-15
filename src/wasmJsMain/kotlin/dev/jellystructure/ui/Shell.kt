@@ -2,6 +2,7 @@ package dev.jellystructure.ui
 
 import dev.jellystructure.App
 import dev.jellystructure.api.AuthApi
+import dev.jellystructure.api.MediaApi
 import dev.jellystructure.api.UserProfile
 import kotlinx.browser.document
 import kotlinx.coroutines.MainScope
@@ -20,7 +21,7 @@ private data class NavGroup(val label: String) : NavEntry()
 private val NAV: List<NavEntry> = listOf(
     NavLink("/dashboard", "Dashboard", "▦"),
     NavLink("/library", "Library", "▤"),
-    NavLink("/triage", "Triage", "!", count = 214),
+    NavLink("/triage", "Triage", "!", count = null),
     NavLink("/activity", "Activity", "◷"),
     NavGroup("Setup"),
     NavLink("/language", "Language", "≣"),
@@ -49,6 +50,16 @@ fun renderShell(user: UserProfile) {
             App.start()
         }
     }
+
+    MainScope().launch {
+        val count = MediaApi.getTriageCount()
+        val badge = document.getElementById("triage-count-badge") as? HTMLElement
+        if (badge != null && count != null && count.total > 0) {
+            badge.textContent = count.total.toString()
+        } else {
+            badge?.remove()
+        }
+    }
 }
 
 fun updateActiveNav(currentRoute: String) {
@@ -66,8 +77,12 @@ private fun shellHtml(user: UserProfile): String {
             is NavGroup ->
                 """<div class="group-label">${entry.label}</div>"""
             is NavLink -> {
-                val count = entry.count?.let { """<span class="count">$it</span>""" } ?: ""
-                """<a href="${entry.href}"><span class="l"><span class="ico">${entry.icon}</span>${entry.label}</span>$count</a>"""
+                val countHtml = when {
+                    entry.href == "/triage" -> """<span class="count" id="triage-count-badge"></span>"""
+                    entry.count != null -> """<span class="count">${entry.count}</span>"""
+                    else -> ""
+                }
+                """<a href="${entry.href}"><span class="l"><span class="ico">${entry.icon}</span>${entry.label}</span>$countHtml</a>"""
             }
         }
     }
