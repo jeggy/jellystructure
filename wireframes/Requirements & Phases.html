@@ -43,7 +43,7 @@
 <body class="wf-body">
 
 <div class="doc">
-  <p style="font-family:'Caveat',cursive;font-size:1.4rem;color:var(--bad);transform:rotate(-1deg);margin:0 0 4px;">requirements &amp; delivery plan · v0.1 · draft</p>
+  <p style="font-family:'Caveat',cursive;font-size:1.4rem;color:var(--ok);transform:rotate(-1deg);margin:0 0 4px;">requirements &amp; delivery plan · v0.3 · P0–P4 shipped · P5 in progress</p>
   <h1>Jellystructure</h1>
   <p class="lead">A self-hosted, Docker-deployed web system that fully replaces Jellyfin's built-in metadata scraper — owning NFO files, artwork, and the media containers themselves (audio/subtitle track order), driven by a language-cascade rule and updated live in the browser.</p>
 
@@ -76,7 +76,7 @@
     <tr><td>FR-C3</td><td>Manage: TMDB v3 API key; Jellyfin base URL + API token; library path mappings (see FR-C5–6); behaviour toggles; global fallback language (single language, default <code>en</code>).</td><td>Each setting round-trips form → TOML → form.</td></tr>
     <tr><td>FR-C4</td><td>"Test connections" verifies TMDB and Jellyfin credentials and shows the literal result/status.</td><td>Bad key shows a clear failure; good key shows success.</td></tr>
     <tr><td>FR-C5</td><td>Discover available libraries from the connected Jellyfin instance (<code>GET /Library/VirtualFolders</code>) and display each library's name and collection type in the UI. Discovery is triggered automatically after a successful connection test.</td><td>After a successful connection test the library list updates without a page reload; the list reflects the current state of the Jellyfin server.</td></tr>
-    <tr><td>FR-C6</td><td>For each discovered Jellyfin library the operator may either assign a local filesystem path (the folder Jellystructure can read/write) or mark the library as <em>skip</em>. Skipped libraries are entirely ignored during scans. The mapping is persisted as a <code>[[libraries]]</code> TOML array (fields: <code>jellyfin_id</code>, <code>name</code>, <code>collection_type</code>, <code>local_path</code>, <code>skip</code>).</td><td>Only non-skipped libraries with a valid <code>local_path</code> are scanned. Changing a mapping and saving updates the TOML without touching unrelated config sections.</td></tr>
+    <tr><td>FR-C6</td><td>For each discovered Jellyfin library the operator may either assign a local filesystem path (the folder Jellystructure can read/write) or mark the library as <em>skip</em>. Skipped libraries are entirely ignored during scans. Each library row also carries an optional <code>fallback_language</code> override (empty = inherit global, see FR-L4). The mapping is persisted as a <code>[[libraries]]</code> TOML array (fields: <code>jellyfin_id</code>, <code>name</code>, <code>collection_type</code>, <code>jellyfin_path</code>, <code>local_path</code>, <code>skip</code>, <code>fallback_language</code>).</td><td>Only non-skipped libraries with a valid <code>local_path</code> are scanned. Changing a mapping and saving updates the TOML without touching unrelated config sections.</td></tr>
   </table>
 
   <h3>2.2 Metadata &amp; NFO <span class="pri must">MUST</span></h3>
@@ -160,7 +160,7 @@
     <tr><th>ID</th><th>Requirement</th></tr>
     <tr><td>NFR-1</td><td><strong>Backend in Kotlin Native</strong> (no JVM) — small footprint, fast cold start; talks to POSIX via C-interop.</td></tr>
     <tr><td>NFR-2</td><td><strong>Ktor with the CIO engine</strong> (Netty/Tomcat unavailable on Native); REST + WebSocket endpoints.</td></tr>
-    <tr><td>NFR-3</td><td><strong>Okio</strong> for all file I/O (buffered streams) and memory-efficient NFO/XML generation — no <code>java.io/nio</code>.</td></tr>
+    <tr><td>NFR-3</td><td><strong>kotlinx-io</strong> (<code>org.jetbrains.kotlinx:kotlinx-io-core</code>) for all file I/O — the JetBrains-maintained KMP I/O library; no <code>java.io/nio</code>. NFO/XML written as streaming strings, not a DOM tree.</td></tr>
     <tr><td>NFR-4</td><td><strong>ktoml + kotlinx.serialization</strong> for typed TOML config.</td></tr>
     <tr><td>NFR-5</td><td>Subprocess abstraction (e.g. Kommand) over <code>ffmpeg/ffprobe/mkvpropedit</code>, capturing stdout/stderr for live progress.</td></tr>
     <tr><td>NFR-6</td><td><strong>Frontend in Kotlin WASM rendering to the real DOM</strong> (kotlinx.browser + type-safe HTML DSL) — explicitly <em>not</em> Compose-on-canvas, for accessibility, SEO and native text.</td></tr>
@@ -180,59 +180,107 @@
   <div class="callbox"><strong>Test data must be real media.</strong> Fixtures can't be text files renamed to <code>.mkv</code> (ffprobe would fail). The script builds genuine containers with injected tracks so the repair path is exercised end-to-end.</div>
 
   <h2>5 · Delivery phases</h2>
-  <p>Iterative, each phase independently verifiable before the next builds on it. Durations are rough.</p>
+  <p>Iterative, each phase independently verifiable before the next builds on it. Status as of <strong>June 2026</strong>.</p>
 
   <div class="phase">
-    <div class="ph-head"><span class="ph-no">Phase 1</span><strong>Infrastructure &amp; backend foundation</strong><span class="dur">~2 weeks</span></div>
+    <div class="ph-head"><span class="ph-no">P0</span><strong>Scaffolding &amp; deployable skeleton</strong><span class="dur" style="color:var(--ok);font-weight:700;">✓ done</span></div>
     <ul>
       <li>Docker Compose with media/config volumes and shared Jellyfin network.</li>
       <li>Ktor Native server on the CIO engine; health endpoint.</li>
-      <li>ktoml config load/save from the persistent volume; typed config classes.</li>
+      <li>Kotlin/Wasm renders to real DOM; Tailwind PostCSS wired.</li>
     </ul>
   </div>
   <div class="phase">
-    <div class="ph-head"><span class="ph-no">Phase 2</span><strong>DOM frontend &amp; API layer</strong><span class="dur">~3 weeks</span></div>
+    <div class="ph-head"><span class="ph-no">P1</span><strong>Config, DB, auth &amp; library mapping</strong><span class="dur" style="color:var(--ok);font-weight:700;">✓ done</span></div>
     <ul>
-      <li>Kotlin WASM project rendering to the real DOM; Tailwind via PostCSS.</li>
-      <li>App shell + Settings screen reading/writing config over REST.</li>
-      <li>WebSocket channel established; live status plumbing end-to-end.</li>
+      <li>ktoml config load/save from persistent volume; <code>[[libraries]]</code> TOML array (replaces flat <code>[paths]</code>).</li>
+      <li>Jellyfin sign-in with opaque session cookie; admin-only gate on all API/WS routes.</li>
+      <li>Setup screen (one-time first-run: Jellyfin URL + machine token + TMDB key).</li>
+      <li>Settings screen: form ↔ live TOML mirror; connection test; library discovery + per-library path/skip/fallback.</li>
     </ul>
   </div>
   <div class="phase">
-    <div class="ph-head"><span class="ph-no">Phase 3</span><strong>Domain engine &amp; process execution</strong><span class="dur">~4 weeks</span></div>
+    <div class="ph-head"><span class="ph-no">P2</span><strong>Jellyfin-driven discovery, probe &amp; media model</strong><span class="dur" style="color:var(--ok);font-weight:700;">✓ done</span></div>
     <ul>
-      <li>Okio-based NFO/XML generation with <code>lockdata</code>.</li>
-      <li>Subprocess abstraction over ffmpeg/ffprobe/mkvpropedit.</li>
-      <li>TMDB client; identify <code>original_language</code>; scan + media list + media detail.</li>
+      <li>Enumerate Movies + Series from Jellyfin API; verify on disk; no filesystem walk.</li>
+      <li>ffprobe track map (index, codec, language, flags) per file.</li>
+      <li>TV series 5-episode language sample; uniform vs. mixed-language detection.</li>
+      <li>Library grid + Media Detail; WebSocket streams <code>ItemScanned</code> events live.</li>
     </ul>
   </div>
   <div class="phase">
-    <div class="ph-head"><span class="ph-no">Phase 4</span><strong>Cascade, triage &amp; Jellyfin integration</strong><span class="dur">~3 weeks</span></div>
+    <div class="ph-head"><span class="ph-no">P3</span><strong>NFO, artwork &amp; cascade engine</strong><span class="dur" style="color:var(--ok);font-weight:700;">✓ done</span></div>
     <ul>
-      <li>Cascade resolver + editor; per-folder overrides; live preview.</li>
-      <li>Track reorder/default via mkvpropedit, ffmpeg fallback, dry-run.</li>
-      <li>Triage list for untagged/mismatched tracks; artwork download; Jellyfin <code>/Items/{id}/Refresh</code>.</li>
+      <li>kotlinx-io NFO writer (<code>movie.nfo</code> / <code>tvshow.nfo</code>) with <code>&lt;lockdata&gt;true&lt;/lockdata&gt;</code>; atomic write; ownership preserved.</li>
+      <li>Artwork downloader (poster / fanart / clearlogo) parallel async; present/missing surfaced.</li>
+      <li>Cascade resolver (shared Kotlin) — same code in backend and live browser preview.</li>
+      <li>Language Settings screen with in-WASM resolver preview (no round-trip).</li>
     </ul>
   </div>
   <div class="phase">
-    <div class="ph-head"><span class="ph-no">Phase 5</span><strong>Automation &amp; test regime</strong><span class="dur">~2–3 weeks</span></div>
+    <div class="ph-head"><span class="ph-no">P4</span><strong>Track editing, triage, jobs &amp; live UI</strong><span class="dur" style="color:var(--ok);font-weight:700;">✓ done</span></div>
     <ul>
-      <li>Blender-film fixture/download script with injected tracks + broken defaults.</li>
-      <li>Playwright-in-Docker integration tests with simulated clicks and visual snapshots.</li>
-      <li>Final validation, hardening, documentation.</li>
+      <li>Track default/reorder via <code>mkvpropedit</code> (MKV, header-only) or <code>ffmpeg -c copy</code> remux (MP4 / removal); command preview before apply.</li>
+      <li>Triage queue: untagged tracks + cascade/default-flag mismatches; keyboard assign; bulk mode.</li>
+      <li>Dashboard attention queue; scan jobs stream over WebSocket; failed items → triage; Library grid updates live during scan.</li>
+      <li>Jellyfin <code>POST /Items/{id}/Refresh</code> + <code>/Library/Refresh</code> after writes.</li>
+    </ul>
+  </div>
+  <div class="phase">
+    <div class="ph-head"><span class="ph-no">P5</span><strong>Automation &amp; test regime</strong><span class="dur" style="color:var(--warn);font-weight:700;">⟳ in progress</span></div>
+    <ul>
+      <li><strong>Done:</strong> Blender-film fixture builder (Big Buck Bunny, Sintel, Tears of Steel injected tracks + broken defaults); Playwright-in-Docker triage E2E test (BBB language assignment).</li>
+      <li><strong>Remaining:</strong> full scan batch Playwright test; visual snapshot suite; folder-watcher (<code>FR-U3</code>); final hardening + graceful shutdown.</li>
     </ul>
   </div>
 
-  <h2>6 · Out of scope / open questions</h2>
+  <h2>6 · Remaining implementation gaps (post-P4)</h2>
+  <p>These are verified gaps between the HTML mockups / spec and the current <code>src/wasmJsMain</code> implementation. They are frontend-only changes unless noted.</p>
+  <table class="reqtable">
+    <tr><th>ID</th><th>Gap</th><th>What needs doing</th></tr>
+    <tr><td>GAP-1</td><td><strong>Media detail tabs</strong></td><td>
+      The mockup has 5 tabs (Overview, Tracks &amp; order, Artwork, NFO raw, History). <code>MediaDetail.kt</code> is a single scrollable page — tab switching not implemented. Each tab needs a content section:<br>
+      <ul style="margin:6px 0 0;">
+        <li><em>Tracks &amp; order</em> — embed the <code>TrackOrder</code> view inline or deep-link.</li>
+        <li><em>Artwork</em> — poster/backdrop/logo slot grid with fetch/upload per asset.</li>
+        <li><em>NFO raw</em> — read-only XML preview (already shown inline post-save; promote to a tab).</li>
+        <li><em>History</em> — per-item audit log (lightweight DB rows; <strong>decided:</strong> lightweight audit row per write is sufficient — no full diff history needed).</li>
+      </ul>
+    </td></tr>
+    <tr><td>GAP-2</td><td><strong>Activity page three-panel layout</strong></td><td>
+      Mockup shows: (1) overall progress card (file count + status chips), (2) "Now processing" card (current file, poster slot, ffmpeg %, per-file progress), (3) live log panel. <code>Activity.kt</code> is only a timestamped console. The two progress cards need to be wired into <code>JobEvent.FileProgress</code> / <code>FileDone</code> WebSocket events.
+    </td></tr>
+    <tr><td>GAP-3</td><td><strong>Track order before/after diff</strong></td><td>
+      Mockup shows a side-by-side "Current order" vs. "After your change" card pair with diff highlighting and change chips ("moved ▲", "tag first", "was default"). <code>TrackOrder.kt</code> renders a flat track table + command preview card — no visual diff. The diff should be generated from the <code>TrackPlan</code> response (<code>/api/media/{id}/tracks/plan</code>).
+    </td></tr>
+    <tr><td>GAP-4</td><td><strong>Shell triage count badge</strong></td><td>
+      Nav sidebar shows a live triage item count. <code>Shell.kt</code> hardcodes <code>214</code> — no API call. Should fetch <code>/api/triage/count</code> (or reuse the dashboard stats) on load and update when <code>ItemScanned</code> WebSocket events arrive.
+    </td></tr>
+    <tr><td>GAP-5</td><td><strong>Settings left-nav sidebar</strong></td><td>
+      Mockup has a sectioned left nav (Connections · Library mapping · Behaviour · Language → · Advanced). <code>Settings.kt</code> renders all sections as one scroll. Sidebar nav would let the operator jump directly to a section; anchor-scroll or tab approach both work.
+    </td></tr>
+    <tr><td>GAP-6</td><td><strong>Triage — table view</strong></td><td>
+      The pagebar has a "switch to table view" button. Not implemented. Table view shows all untagged/mismatch items as rows (media title · track ID · kind · codec · issue) with inline assign dropdowns for bulk fixes.
+    </td></tr>
+    <tr><td>GAP-7</td><td><strong>Dry-run across many files (FR-T5)</strong></td><td>
+      The spec (FR-T5) requires a dry-run plan spanning many files — list every file that would be touched + the chosen tool, write nothing. Currently <code>TrackOrder.kt</code> shows a preview for one file only. A "Plan all" action that sweeps the library and produces a dry-run report is undesigned and unimplemented.
+    </td></tr>
+    <tr><td>GAP-8</td><td><strong>Folder watcher (FR-U3)</strong></td><td>
+      Auto-process new files when they land in a watched library path. Backend debounce + trigger is planned for P5. No UI toggle exists yet beyond the <code>watch_folders</code> boolean already in Settings.
+    </td></tr>
+  </table>
+
+  <h2>7 · Out of scope / decisions</h2>
   <ul>
-    <li><s>Auth</s> — <strong>decided:</strong> Jellyfin sign-in (Jellyseerr-style), admins only. See §2.9 and the Implementation Plan.</li>
-    <li><s>Hardcoded movie/TV paths</s> — <strong>decided:</strong> library paths are discovered from Jellyfin and mapped per-library (FR-C5–6). Static <code>movies_dir</code>/<code>tv_dir</code> config keys are removed.</li>
-    <li><s>Filesystem walk for discovery</s> — <strong>decided:</strong> Jellyfin API is the source of truth for what exists. Jellystructure never walks directories to discover items; it uses <code>GET /Items</code> and then verifies paths on disk. See FR-M1, FR-J1.</li>
-    <li><strong>Per-episode and per-season management — explicitly out of scope.</strong> Jellystructure manages TV at the <em>Series</em> level only. Episode NFOs, season artwork, and per-episode track manipulation are deferred indefinitely. A series with inconsistent audio languages across episodes is flagged as <em>unsupported</em> until a future release adds mixed-language series handling (FR-M5).</li>
-    <li>Music / other media types — any Jellyfin library type (music, books, photos) can be discovered via FR-C5 but is marked "skip" by the operator if not relevant. Metadata handling for non-movie/TV types is out of scope.</li>
-    <li>Metadata providers beyond TMDB (e.g. TVDB, MusicBrainz) — future?</li>
-    <li>Undo / change history depth — is a per-file history log required, or is the NFO on disk enough?</li>
-    <li>Conflict handling when a file is edited outside Jellystructure after locking.</li>
+    <li><s>Auth</s> — <strong>decided:</strong> Jellyfin sign-in (Jellyseerr-style), admins only (§2.9).</li>
+    <li><s>Hardcoded movie/TV paths</s> — <strong>decided:</strong> library paths are discovered from Jellyfin and mapped per-library (FR-C5–6). No static <code>movies_dir</code>/<code>tv_dir</code>.</li>
+    <li><s>Filesystem walk for discovery</s> — <strong>decided:</strong> Jellyfin API is the source of truth; Jellystructure never walks directories to discover items (FR-M1, FR-J1).</li>
+    <li><s>Undo / change history depth</s> — <strong>decided:</strong> lightweight audit row per write in the local DB. Stored in the History tab (GAP-1). No full diff store or undo.</li>
+    <li><s>Session lifetime</s> — <strong>decided:</strong> 7 days default, shown on login screen. No "remember me" toggle for now.</li>
+    <li><strong>Per-episode and per-season management — explicitly out of scope.</strong> Jellystructure manages TV at the <em>Series</em> level only. A series with inconsistent audio languages is flagged as <em>unsupported</em> (FR-M5).</li>
+    <li>Music / other media types — any Jellyfin library (music, books, photos) can be discovered via FR-C5 but is marked "skip" by the operator. Handling is out of scope.</li>
+    <li>Metadata providers beyond TMDB (TVDB, MusicBrainz) — future.</li>
+    <li>External-edit conflicts — if a file changes outside Jellystructure after locking: warn on next scan (show a "file changed" badge in Library); no automatic re-lock or merge. Open for a future release.</li>
   </ul>
 
   </div>
