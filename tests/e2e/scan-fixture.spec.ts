@@ -67,14 +67,17 @@ test.describe("Fixture repair", () => {
 
     // Navigate to Library via hash URL so the SPA router renders the correct page
     await page.goto("/#/library");
+    // Wait for at least one poster card before clicking — library loads asynchronously
+    await page.waitForSelector('.poster', { timeout: 30_000 });
     await page.click('text=Sintel');
 
-    // Should be on media detail page
-    await expect(page).toHaveURL(/\/media\//);
+    // Should be on media detail page — hash routing, so /media/ appears in the hash fragment
+    await expect(page.locator('h2, .pagebar h2')).toBeVisible({ timeout: 10_000 });
 
     // Click Track order button
-    await page.click('text=Track order');
-    await expect(page).toHaveURL(/\/track-order/);
+    await page.locator('button:has-text("Track order")').click();
+    // Wait for track table to render
+    await expect(page.locator('[data-specifier]').first()).toBeVisible({ timeout: 10_000 });
 
     // The eng row "Set default" button — first audio row with lang=eng
     const engRow = page.locator('[data-specifier]').filter({ hasText: "eng" }).first();

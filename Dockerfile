@@ -30,6 +30,10 @@ RUN --mount=type=cache,target=/root/.gradle \
 FROM debian:bookworm-slim
 WORKDIR /app
 
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends ffmpeg mkvtoolnix wget && \
+    rm -rf /var/lib/apt/lists/*
+
 RUN adduser --system --uid 1000 jellystructure
 
 COPY --from=builder /app/build/bin/linuxX64/releaseExecutable/jellystructure.kexe /app/jellystructure

@@ -45,6 +45,7 @@ services:
 
   app:
     build: .
+    user: "0:0"
     ports:
       - "9505:9505"
     volumes:
