@@ -15,12 +15,21 @@
     <span class="crumb"><a href="library.html">Movies</a> / Sintel (2010)</span>
   </div>
 
+  <!-- demo state toggle (not part of real UI) -->
+  <div class="row center" style="gap:8px;margin-bottom:2px;padding:6px 0 0;opacity:.7;">
+    <span class="tiny muted">demo state:</span>
+    <div class="seg" id="demoModeSeg">
+      <span class="seg-item active" data-dm="movie">Movie</span>
+      <span class="seg-item" data-dm="tv">TV series</span>
+    </div>
+  </div>
+
   <div class="pagebar">
-    <h1>Sintel <span class="muted">(2010)</span></h1>
-    <span class="badge ok">NFO locked</span>
+    <h1 id="pageTitle">Sintel <span class="muted">(2010)</span></h1>
+    <span class="badge ok" id="nfoBadge">NFO locked</span>
     <span class="spacer"></span>
     <span class="btn sm">Re-pull from TMDB</span>
-    <span class="btn primary">Save → disk</span>
+    <span class="btn primary" id="saveBtn">Save → disk</span>
     <span class="btn">Save &amp; tell Jellyfin ↻</span>
   </div>
 
@@ -86,6 +95,27 @@
         </div>
       </div>
 
+      <!-- TV series: language mix warning (hidden in movie mode) -->
+      <div id="tvLangWarn" class="note" style="display:none;background:var(--warn-soft);border-color:var(--warn);color:var(--ink);">
+        <b>Mixed audio languages detected across sampled episodes.</b><br>
+        Probed 5 episodes: 3 have <span class="lang">da</span> as track 0, 2 have <span class="lang">en</span>. The language resolver may return different results per episode — metadata fetch is blocked until the series has a consistent track layout. <a href="triage.html">Fix in triage →</a>
+      </div>
+
+      <!-- TV series: episode sample card (hidden in movie mode) -->
+      <div id="tvSampleCard" class="card" style="display:none;">
+        <div class="row center"><h4 style="margin:0;">Episode language sample</h4><span class="spacer"></span><span class="badge warn">mixed</span></div>
+        <hr class="dash" style="margin:10px 0;">
+        <table class="wf-table">
+          <tr><th>Episode</th><th>Track 0 lang</th><th>Track 1 lang</th></tr>
+          <tr><td>S01E01</td><td><span class="lang">da</span></td><td><span class="lang">en</span></td></tr>
+          <tr><td>S01E02</td><td><span class="lang">da</span></td><td><span class="lang">en</span></td></tr>
+          <tr><td>S01E03</td><td><span class="lang">en</span></td><td class="muted">—</td></tr>
+          <tr class="attn"><td>S01E04</td><td><span class="lang">en</span></td><td class="muted">—</td></tr>
+          <tr><td>S01E05</td><td><span class="lang">da</span></td><td><span class="lang">en</span></td></tr>
+        </table>
+        <div class="tiny muted" style="margin-top:8px;">S01E03 and S01E04 differ from series majority (da). Fix track tags or reorder before saving metadata.</div>
+      </div>
+
       <!-- RESOLVED METADATA LANGUAGE (read-only) -->
       <div class="override">
         <div class="row center">
@@ -124,6 +154,29 @@
         <span class="badge ok">lockdata</span><span class="tiny">Written into the NFO so Jellyfin never overwrites these values.</span>
         <span class="spacer"></span><span class="toggle on"></span>
       </div>
+
+      <!-- NFO preview card (hidden until Save is clicked) -->
+      <div id="nfoPreview" class="card" style="display:none;">
+        <div class="row center"><h4 style="margin:0;">NFO written</h4><span class="spacer"></span><span class="badge ok">saved</span></div>
+        <hr class="dash" style="margin:10px 0;">
+        <div class="log mono tiny" style="height:160px;overflow:auto;padding:10px 12px;">&lt;?xml version=&quot;1.0&quot; encoding=&quot;UTF-8&quot; standalone=&quot;yes&quot;?&gt;
+&lt;movie&gt;
+  &lt;title&gt;Sintel&lt;/title&gt;
+  &lt;year&gt;2010&lt;/year&gt;
+  &lt;plot&gt;A lonely young woman, Sintel, helps and befriends a dragon…&lt;/plot&gt;
+  &lt;genre&gt;Animation&lt;/genre&gt;
+  &lt;genre&gt;Fantasy&lt;/genre&gt;
+  &lt;tag&gt;short film&lt;/tag&gt;
+  &lt;tag&gt;open movie&lt;/tag&gt;
+  &lt;tag&gt;blender&lt;/tag&gt;
+  &lt;director&gt;Colin Levy&lt;/director&gt;
+  &lt;studio&gt;Blender Foundation&lt;/studio&gt;
+  &lt;tmdbid&gt;45745&lt;/tmdbid&gt;
+  &lt;originaltitle&gt;Sintel&lt;/originaltitle&gt;
+  &lt;lockdata&gt;true&lt;/lockdata&gt;
+&lt;/movie&gt;</div>
+        <div class="tiny muted" style="margin-top:8px;">Written to <span class="mono">/media/movies/Sintel (2010)/Sintel (2010).nfo</span></div>
+      </div>
     </div>
   </div>
 </main>
@@ -143,6 +196,34 @@
     document.getElementById('tagrow').appendChild(c);
     s.remove();
   }));
+
+  // Save → show NFO preview
+  document.getElementById('saveBtn').addEventListener('click', () => {
+    document.getElementById('nfoPreview').style.display = '';
+    document.getElementById('nfoPreview').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    const t = document.createElement('div'); t.className = 'toast'; t.textContent = 'NFO saved ✓';
+    document.body.appendChild(t); setTimeout(() => t.remove(), 900);
+  });
+
+  // Demo mode toggle: Movie ↔ TV series
+  const tvElements = ['tvLangWarn', 'tvSampleCard'];
+  document.querySelectorAll('#demoModeSeg .seg-item').forEach(item => {
+    item.addEventListener('click', () => {
+      document.querySelectorAll('#demoModeSeg .seg-item').forEach(i => i.classList.remove('active'));
+      item.classList.add('active');
+      const isTv = item.getAttribute('data-dm') === 'tv';
+      document.getElementById('pageTitle').innerHTML = isTv
+        ? 'The Expanse <span class="muted">(2015)</span>'
+        : 'Sintel <span class="muted">(2010)</span>';
+      document.getElementById('nfoBadge').textContent = isTv ? 'NFO blocked' : 'NFO locked';
+      document.getElementById('nfoBadge').className = isTv ? 'badge bad' : 'badge ok';
+      document.getElementById('saveBtn').disabled = isTv;
+      document.getElementById('saveBtn').style.opacity = isTv ? '.45' : '';
+      tvElements.forEach(id => {
+        document.getElementById(id).style.display = isTv ? '' : 'none';
+      });
+    });
+  });
 })();
 </script>
 </body>

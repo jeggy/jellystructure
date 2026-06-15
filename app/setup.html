@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Jellystructure — Setup</title>
+<link rel="stylesheet" href="wf.css">
+<link rel="stylesheet" href="app.css">
+<style>
+  .login-wrap { min-height: 100vh; display: grid; place-items: center; padding: 40px 20px; }
+  .login-card { width: 100%; max-width: 440px; }
+  .login-brand { display: flex; align-items: center; gap: 13px; justify-content: center; margin-bottom: 26px; }
+  .login-brand .glyph { width: 40px; height: 40px; border-radius: 12px; flex: none; background: var(--grad);
+    position: relative; box-shadow: 0 6px 20px rgba(123,110,240,.5); }
+  .login-brand .glyph::after { content: ''; position: absolute; inset: 10px; border-radius: 5px;
+    border: 2.5px solid rgba(255,255,255,.95); border-right-color: transparent; border-bottom-color: transparent; transform: rotate(45deg); }
+  .login-brand b { font-family: 'Space Grotesk', sans-serif; font-size: 1.5rem; font-weight: 600; letter-spacing: -.01em; }
+  .login-input { width: 100%; }
+  .login-foot { text-align: center; margin-top: 22px; }
+  .step-row { display: flex; align-items: center; gap: 10px; margin-bottom: 22px; }
+  .step-pip { width: 22px; height: 22px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+    font-size: .72rem; font-weight: 700; flex: none; }
+  .step-pip.active { background: var(--grad); color: #fff; box-shadow: 0 2px 8px rgba(123,110,240,.45); }
+  .step-pip.done { background: var(--ok); color: #fff; }
+  .step-pip.idle { background: var(--surface2); color: var(--muted); }
+  .step-line { flex: 1; height: 2px; background: var(--border); border-radius: 1px; }
+  .step-label { font-size: .78rem; color: var(--muted); font-weight: 500; white-space: nowrap; }
+  .step-label.active { color: var(--ink); }
+</style>
+</head>
+<body class="wf-body" data-screen-label="Setup">
+
+<div class="login-wrap">
+  <div class="login-card">
+    <div class="login-brand"><span class="glyph"></span><b>Jellystructure</b></div>
+
+    <div class="card">
+      <div class="step-row">
+        <span class="step-pip active">1</span>
+        <span class="step-label active">Connect</span>
+        <span class="step-line"></span>
+        <span class="step-pip idle">2</span>
+        <span class="step-label">Sign in</span>
+      </div>
+
+      <h2 style="margin:0 0 4px;font-size:1.35rem;">Connect your servers</h2>
+      <p class="muted" style="margin:0 0 22px;font-size:.92rem;">This runs once. After saving you'll sign in with your Jellyfin admin account.</p>
+
+      <form id="setupForm" autocomplete="off">
+
+        <div class="field">
+          <label for="jurl">Jellyfin URL</label>
+          <input class="input login-input" id="jurl" type="url" placeholder="http://localhost:8096" />
+          <span class="hint">Base URL of your Jellyfin server — no trailing slash</span>
+        </div>
+
+        <div class="field">
+          <label for="jtoken">Jellyfin machine token</label>
+          <input class="input login-input" id="jtoken" type="text" placeholder="xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" autocomplete="off" />
+          <span class="hint">API key for background jobs. Jellyfin → Dashboard → API Keys → <b>+ New key</b></span>
+        </div>
+
+        <div class="field">
+          <label for="tmdb">
+            TMDB API key (v3)
+            <span class="badge muted" style="font-weight:400;font-size:.73rem;margin-left:4px;">optional for now</span>
+          </label>
+          <input class="input login-input" id="tmdb" type="text" placeholder="Paste your v3 key here" />
+          <span class="hint">Free key at <span class="mono">themoviedb.org/settings/api</span> — required before scanning metadata</span>
+        </div>
+
+        <div id="setupErr" class="note red" style="display:none;margin:4px 0 12px;"></div>
+
+        <button type="submit" id="saveBtn" class="btn primary" style="width:100%;justify-content:center;margin-top:10px;padding:11px;">
+          Save &amp; continue to sign in →
+        </button>
+      </form>
+    </div>
+
+    <div class="login-foot tiny muted">
+      Credentials stored in <span class="mono">/config/config.toml</span> inside the container. The Jellyfin password is never saved.
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  const root = document.documentElement;
+  root.setAttribute('data-dir', 'aurora');
+  root.setAttribute('data-theme', localStorage.getItem('js-theme') || 'dark');
+})();
+
+const form = document.getElementById('setupForm');
+const saveBtn = document.getElementById('saveBtn');
+const errEl = document.getElementById('setupErr');
+
+function showErr(msg) { errEl.textContent = msg; errEl.style.display = ''; }
+function hideErr() { errEl.style.display = 'none'; }
+
+form.addEventListener('submit', function (e) {
+  e.preventDefault();
+  hideErr();
+  const url = document.getElementById('jurl').value.trim();
+  const token = document.getElementById('jtoken').value.trim();
+
+  if (!url) { showErr('Jellyfin URL is required.'); return; }
+  if (!token) { showErr('Jellyfin machine token is required.'); return; }
+  if (url.endsWith('/')) { showErr('Remove the trailing slash from the Jellyfin URL.'); return; }
+
+  // demo: simulate saving then redirect to sign in
+  saveBtn.disabled = true;
+  saveBtn.textContent = 'Saving…';
+  setTimeout(function () {
+    location.href = 'login.html';
+  }, 900);
+});
+</script>
+</body>
+</html>

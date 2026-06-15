@@ -182,7 +182,8 @@ hr.dash { border: none; border-top: 1px solid var(--line); margin: 18px 0; }
   border-right: 1px solid var(--line); transition: background .2s ease, color .2s ease; }
 .seg span:last-child { border-right: 0; }
 .seg span:hover { color: var(--ink); }
-.seg span.on { background: var(--hi-soft); color: var(--acc-ink); }
+.seg span.on, .seg .seg-item.active { background: var(--hi-soft); color: var(--acc-ink); }
+.seg .seg-item { display: flex; align-items: center; gap: 6px; }
 
 /* ---------- chips / badges ---------- */
 .chip {

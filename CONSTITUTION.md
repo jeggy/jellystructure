@@ -84,10 +84,7 @@ TOML sections and their purpose:
 [api_keys]
 tmdb_v3_key = ""
 jellyfin_token = ""
-
-[paths]
-movies_dir = ""
-tv_dir = ""
+jellyfin_url = ""
 
 [language_rules]
 fallback_language = "en"
@@ -95,9 +92,19 @@ fallback_language = "en"
 [behavior]
 overwrite_nfo = false
 fetch_images = true
+watch_folders = false
+
+[[libraries]]
+jellyfin_id = "abc123"
+name = "Movies"
+collection_type = "movies"
+jellyfin_path = "/media/movies"
+local_path = "/mnt/media/movies"
+skip = false
+fallback_language = ""   # empty = inherit global
 ```
 
-Config is readable and writable from the web UI. Changes are posted as JSON to Ktor, converted to TOML, and written to `/config/config.toml`.
+Library paths are **not static**. They are auto-discovered from the Jellyfin API (`GET /Library/VirtualFolders`) after a successful connection test and stored as `[[libraries]]` TOML array entries. The operator assigns the local mount path per library; all other fields come from Jellyfin. Config is readable and writable from the web UI; changes are posted as JSON to Ktor, converted to TOML, and written to `/config/config.toml`.
 
 ---
 
