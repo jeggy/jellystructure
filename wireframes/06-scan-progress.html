@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Jellystructure — Scan Activity</title>
+<link rel="stylesheet" href="wf.css">
+</head>
+<body class="wf-body">
+
+<div class="wf-page wide" data-variant-scope>
+  <div class="screen-head">
+    <span class="kicker">why it feels modern — live, no refresh</span>
+    <h1>Scan &amp; processing activity</h1>
+    <p>Long jobs (scanning, fetching, <span class="mono">ffmpeg</span> remuxes, NFO writes) stream progress to the browser over a <strong>WebSocket</strong>. The DOM updates granularly — filenames, percentages, tool output — without polling or page reloads.</p>
+  </div>
+
+  <div class="variant-tabs">
+    <button class="active" data-target="a">A · Job console<span class="sub">full-screen progress + log</span></button>
+    <button data-target="b">B · Ambient ticker<span class="sub">runs in the background, expandable</span></button>
+  </div>
+
+  <!-- ===== A: JOB CONSOLE ===== -->
+  <div class="variant active" data-variant="a">
+    <div class="frame">
+      <div class="frame-bar"><span class="dots"><i></i><i></i><i></i></span><span class="url">jellystructure.home.lan / activity</span></div>
+      <div class="frame-body" style="padding:16px;">
+        <div class="app-bar"><h2>Applying cascade — Movies</h2><span class="badge warn">running</span><span class="spacer"></span><span class="btn sm">Pause</span><span class="btn sm bad">Stop</span></div>
+
+        <div class="card" style="margin-bottom:14px;">
+          <div class="row center"><b>Overall</b><span class="spacer"></span><span class="mono tiny">88 / 142 files · ~2m left</span></div>
+          <div class="bar" style="margin-top:8px;"><i style="width:62%"></i></div>
+          <div class="row" style="margin-top:10px;gap:10px;flex-wrap:wrap;">
+            <span class="chip ok">71 header edits ✓</span><span class="chip warn">2 remuxing…</span><span class="chip">12 NFO written</span><span class="chip">9 artwork fetched</span><span class="chip bad" style="background:var(--bad-soft);">3 errors</span>
+          </div>
+        </div>
+
+        <div class="row" style="align-items:stretch;">
+          <div class="card fill">
+            <div class="row center"><h4 style="margin:0;">Now processing</h4><span class="spacer"></span><span class="mono tiny">Glass Half (2015).mp4</span></div>
+            <hr class="dash" style="margin:10px 0;">
+            <div class="row center" style="gap:8px;"><span class="badge warn">ffmpeg remux</span><span class="muted tiny">-map 0:v -map 0:a -c copy</span></div>
+            <div class="bar" style="margin-top:8px;"><i style="width:44%"></i></div>
+            <div class="tiny muted mono" style="margin-top:6px;">frame=10240 fps=611 time=00:01:08 speed=4.1x</div>
+            <hr class="dash" style="margin:12px 0;">
+            <div class="row" style="gap:10px;">
+              <div class="imgslot" style="width:60px;height:88px;flex:none;"><span>poster</span></div>
+              <div class="tiny" style="line-height:1.8;">
+                <div><span class="okc" style="color:var(--ok)">✓</span> TMDB matched · original = <span class="lang">en</span></div>
+                <div><span class="okc" style="color:var(--ok)">✓</span> NFO written · lockdata</div>
+                <div><span class="warnc" style="color:#b9912a">⟳</span> remuxing to set default = <span class="lang">da</span></div>
+                <div class="muted">→ then POST Jellyfin refresh</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="card" style="width:380px;">
+            <div class="row center"><h4 style="margin:0;">Live log</h4><span class="spacer"></span><span class="chip" style="font-size:.65rem;"><span class="dot ok"></span> ws connected</span></div>
+            <div class="log" style="max-height:280px;margin-top:8px;">
+              <div><span class="ts">14:03:01</span> Sintel <span class="okc">✓ default=da</span> <span class="muted">(mkvpropedit 38ms)</span></div>
+              <div><span class="ts">14:03:01</span> Sintel → jellyfin refresh <span class="okc">204</span></div>
+              <div><span class="ts">14:03:02</span> Caminandes 3 <span class="okc">✓ nfo</span></div>
+              <div><span class="ts">14:03:03</span> Caminandes 3 <span class="okc">✓ artwork ×3</span></div>
+              <div><span class="ts">14:03:04</span> Glass Half <span class="warnc">⟳ remux 44%</span></div>
+              <div><span class="ts">14:03:05</span> Big Buck Bunny <span class="okc">✓ default=da</span></div>
+              <div><span class="ts">14:03:06</span> Wing It! <span class="badc">✗ TMDB no match</span></div>
+              <div><span class="ts">14:03:06</span> Wing It! <span class="muted">→ queued for triage</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="note-row">
+      <div class="note">One job, fully observable: overall bar, the file in flight with real ffmpeg %, and a streaming log. No "is it done yet?"</div>
+      <div class="note r red">Errors don't stop the run — they drop into Triage and the job keeps going.</div>
+    </div>
+  </div>
+
+  <!-- ===== B: AMBIENT TICKER ===== -->
+  <div class="variant" data-variant="b">
+    <div class="frame">
+      <div class="frame-bar"><span class="dots"><i></i><i></i><i></i></span><span class="url">jellystructure.home.lan / library</span></div>
+      <div class="frame-body" style="padding:0;position:relative;min-height:420px;">
+        <div class="app">
+          <main class="app-main" style="grid-column:1 / -1;">
+            <div class="app-bar"><h2>Library</h2><span class="muted tiny">you keep browsing while it works</span></div>
+            <div class="grid" style="grid-template-columns:repeat(5,1fr);gap:12px;opacity:.55;">
+              <div class="imgslot" style="height:150px;"><span>poster</span></div>
+              <div class="imgslot" style="height:150px;"><span>poster</span></div>
+              <div class="imgslot" style="height:150px;"><span>poster</span></div>
+              <div class="imgslot" style="height:150px;"><span>poster</span></div>
+              <div class="imgslot" style="height:150px;"><span>poster</span></div>
+            </div>
+            <p class="muted tiny" style="margin-top:10px;">Processing runs as a background job; the dock below stays pinned wherever you navigate.</p>
+          </main>
+        </div>
+
+        <!-- pinned dock -->
+        <div style="position:absolute;right:16px;bottom:16px;width:330px;">
+          <div class="card" style="background:var(--ink);color:var(--paper);border-color:var(--ink);">
+            <div class="row center"><span class="dot ok"></span><b style="color:var(--paper);">Cascade · Movies</b><span class="spacer"></span><span class="tiny" style="opacity:.7;">88/142</span><span class="kbd" style="background:transparent;color:var(--paper);border-color:var(--paper);">▴</span></div>
+            <div class="bar" style="margin-top:8px;background:rgba(255,255,255,.15);border-color:var(--paper);"><i style="width:62%;background:var(--hi);"></i></div>
+            <div class="mono tiny" style="margin-top:7px;opacity:.85;">Glass Half · ffmpeg 44% · ~2m left</div>
+            <div class="row" style="margin-top:9px;gap:7px;">
+              <span class="chip" style="font-size:.62rem;background:transparent;color:var(--paper);border-color:var(--paper);">71 ✓</span>
+              <span class="chip" style="font-size:.62rem;background:transparent;color:var(--paper);border-color:var(--paper);">3 ✗ → triage</span>
+              <span class="spacer"></span>
+              <span class="tiny" style="opacity:.7;text-decoration:underline;">open console</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="note-row">
+      <div class="note">Job runs in the background; a pinned dock shows live progress while you browse. Click ▴ to pop the full console.</div>
+      <div class="note r blue">Better for "kick it off and keep working" than a dedicated full-screen page.</div>
+    </div>
+  </div>
+
+</div>
+
+<script src="wf-nav.js"></script>
+</body>
+</html>

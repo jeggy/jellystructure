@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Jellystructure — Sign in</title>
+<link rel="stylesheet" href="wf.css">
+<link rel="stylesheet" href="app.css">
+<style>
+  .login-wrap { min-height: 100vh; display: grid; place-items: center; padding: 40px 20px; }
+  .login-card { width: 100%; max-width: 408px; }
+  .login-card .card { padding: 34px 32px; }
+  .login-brand { display: flex; align-items: center; gap: 13px; justify-content: center; margin-bottom: 26px; }
+  .login-brand .glyph { width: 40px; height: 40px; border-radius: 12px; flex: none; background: var(--grad);
+    position: relative; box-shadow: 0 6px 20px rgba(123,110,240,.5); }
+  .login-brand .glyph::after { content: ''; position: absolute; inset: 10px; border-radius: 5px;
+    border: 2.5px solid rgba(255,255,255,.95); border-right-color: transparent; border-bottom-color: transparent; transform: rotate(45deg); }
+  .login-brand b { font-family: 'Space Grotesk', sans-serif; font-size: 1.5rem; font-weight: 600; letter-spacing: -.01em; }
+  .login-input { width: 100%; }
+  .login-foot { text-align: center; margin-top: 22px; }
+</style>
+</head>
+<body class="wf-body" data-screen-label="Login">
+
+<div class="login-wrap">
+  <div class="login-card">
+    <div class="login-brand"><span class="glyph"></span><b>Jellystructure</b></div>
+
+    <div class="card">
+      <h2 style="margin:0 0 4px;font-size:1.35rem;">Sign in</h2>
+      <p class="muted" style="margin:0 0 22px;font-size:.92rem;">Use your <b>Jellyfin administrator</b> account. Only admin accounts can manage metadata — there are no separate Jellystructure logins.</p>
+
+      <form id="loginForm" autocomplete="off">
+        <div class="field">
+          <label for="u">Jellyfin username</label>
+          <input class="input login-input" id="u" type="text" placeholder="admin" autocomplete="username" />
+        </div>
+        <div class="field" style="margin-bottom:8px;">
+          <label for="p">Password</label>
+          <input class="input login-input" id="p" type="password" placeholder="••••••••" autocomplete="current-password" />
+        </div>
+
+        <div id="err" class="note red" style="display:none;margin:6px 0 14px;">Not an admin account — ask your Jellyfin owner for admin access.</div>
+
+        <button type="submit" class="btn primary" style="width:100%;justify-content:center;margin-top:8px;padding:11px;">Sign in</button>
+      </form>
+
+      <hr class="dash" style="margin:20px 0 14px;">
+      <div class="row center" style="gap:8px;font-size:.84rem;">
+        <span class="dot ok"></span><span class="muted">Connected to</span>
+        <span class="mono" style="color:var(--ink);">jellyfin:8096</span>
+        <span class="spacer"></span>
+        <span class="badge ok">online</span>
+      </div>
+    </div>
+
+    <div class="login-foot tiny muted">
+      Authenticates via Jellyfin <span class="mono">/Users/AuthenticateByName</span>. Session lasts 7 days.
+    </div>
+  </div>
+</div>
+
+<!-- minimal appearance boot (no sidebar shell on this page) -->
+<script>
+(function () {
+  const root = document.documentElement;
+  root.setAttribute('data-dir', 'aurora');
+  root.setAttribute('data-theme', localStorage.getItem('js-theme') || 'dark');
+})();
+document.getElementById('loginForm').addEventListener('submit', function (e) {
+  e.preventDefault();
+  const u = document.getElementById('u').value.trim().toLowerCase();
+  // demo: anything but "guest"/"user" is treated as admin and proceeds
+  if (u === 'guest' || u === 'user') {
+    document.getElementById('err').style.display = '';
+    return;
+  }
+  location.href = 'index.html';
+});
+</script>
+</body>
+</html>

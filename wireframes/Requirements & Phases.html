@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Jellystructure — Requirements & Phases</title>
+<link rel="stylesheet" href="wf.css">
+<style>
+  .doc { max-width: 860px; margin: 0 auto; padding: 40px 32px 100px; }
+  .doc, .doc p, .doc li, .doc td, .doc th { font-family: 'Kalam', system-ui, sans-serif; }
+  .doc .body { font-family: system-ui, -apple-system, 'Segoe UI', sans-serif; }
+  .doc .body, .doc .body li, .doc .body p, .doc .body td, .doc .body th { font-family: system-ui, -apple-system, 'Segoe UI', sans-serif; }
+  .doc h1 { font-size: 2.4rem; margin: 0; }
+  .doc .lead { font-size: 1.15rem; color: var(--ink-soft); max-width: 60ch; }
+  .doc .body { font-size: 15.5px; line-height: 1.6; }
+  .doc h2 { font-size: 1.5rem; margin: 38px 0 6px; padding-top: 14px; border-top: 2px dashed var(--ink); }
+  .doc h3 { font-size: 1.12rem; margin: 22px 0 6px; }
+  .doc .body p { margin: 0 0 12px; }
+  .doc .body ul { margin: 0 0 14px; padding-left: 20px; }
+  .doc .body li { margin: 3px 0; }
+  .reqtable { width: 100%; border-collapse: collapse; margin: 10px 0 18px; font-size: 14px; }
+  .reqtable th, .reqtable td { border: 1.5px solid var(--ink); padding: 8px 10px; text-align: left; vertical-align: top; }
+  .reqtable th { background: var(--fill-2); font-size: 12.5px; text-transform: uppercase; letter-spacing: .05em; }
+  .reqtable td:first-child { white-space: nowrap; font-family: ui-monospace, monospace; font-weight: 700; font-size: 12.5px; background: var(--hi-soft); }
+  .meta { display: flex; gap: 10px; flex-wrap: wrap; margin: 14px 0 8px; }
+  .meta .chip { font-family: system-ui, sans-serif; }
+  .phase { border: 2px solid var(--ink); border-radius: var(--radius); background: var(--fill); padding: 14px 16px; margin: 12px 0; box-shadow: var(--shadow); }
+  .phase .ph-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+  .phase .ph-no { font-family:'Kalam'; font-weight:700; font-size: 1.3rem; }
+  .phase .dur { margin-left: auto; font-size: 13px; color: var(--ink-soft); font-family: system-ui; }
+  .phase ul { margin: 8px 0 0; padding-left: 20px; font-family: system-ui; font-size: 14.5px; line-height: 1.55; }
+  .pri { font-size: 11px; font-weight: 700; padding: 1px 7px; border-radius: 20px; border: 1.5px solid var(--ink); }
+  .pri.must { background: var(--bad-soft); } .pri.should { background: var(--hi-soft); } .pri.could { background: var(--fill-2); }
+  .callbox { border: 2px solid var(--info); background: var(--info-soft); border-radius: var(--radius-s); padding: 12px 14px; margin: 14px 0; font-family: system-ui; font-size: 14.5px; }
+  @media print {
+    .wf-topnav { display: none; }
+    body.wf-body { background: #fff; }
+    .doc { max-width: none; padding: 0; }
+    .phase, .reqtable { break-inside: avoid; }
+  }
+</style>
+</head>
+<body class="wf-body">
+
+<div class="doc">
+  <p style="font-family:'Caveat',cursive;font-size:1.4rem;color:var(--bad);transform:rotate(-1deg);margin:0 0 4px;">requirements &amp; delivery plan · v0.1 · draft</p>
+  <h1>Jellystructure</h1>
+  <p class="lead">A self-hosted, Docker-deployed web system that fully replaces Jellyfin's built-in metadata scraper — owning NFO files, artwork, and the media containers themselves (audio/subtitle track order), driven by a language-cascade rule and updated live in the browser.</p>
+
+  <div class="meta">
+    <span class="chip">Backend: Kotlin Native · Ktor CIO</span>
+    <span class="chip">Frontend: Kotlin WASM · real DOM</span>
+    <span class="chip">Deploy: Docker Compose</span>
+    <span class="chip">Config: TOML</span>
+  </div>
+
+  <div class="body">
+
+  <h2>1 · Vision &amp; principles</h2>
+  <p>Jellystructure is the single source of truth for media metadata. Once it manages a library, the operator should <strong>never run Jellyfin's "Refresh Metadata" again</strong> — Jellystructure writes locked NFO files and artwork to disk and tells Jellyfin only to reload them.</p>
+  <ul>
+    <li><strong>Own the file, not just the database.</strong> It edits NFO, images, <em>and</em> the MKV/MP4 containers (default audio/subtitle track, order, removal).</li>
+    <li><strong>One rule drives everything.</strong> A language cascade decides both the metadata-fetch language and the default track per file.</li>
+    <li><strong>Nothing silent.</strong> Long operations stream live progress; the operator always sees what tool ran and what it did.</li>
+    <li><strong>Power-user first, single operator.</strong> Dense, keyboard-friendly, self-hosted; not a multi-tenant product.</li>
+    <li><strong>Lightweight.</strong> No JVM; small memory footprint and fast cold start suited to a home server container.</li>
+  </ul>
+
+  <h2>2 · Functional requirements</h2>
+
+  <h3>2.1 Configuration <span class="pri must">MUST</span></h3>
+  <table class="reqtable">
+    <tr><th>ID</th><th>Requirement</th><th>Acceptance</th></tr>
+    <tr><td>FR-C1</td><td>Store all settings in a human-readable <code>config.toml</code> on a persistent volume.</td><td>Settings survive container restart; file is valid TOML.</td></tr>
+    <tr><td>FR-C2</td><td>Edit config from the website — both a sectioned form and a raw TOML view of the same data.</td><td>A change in either view persists to disk and is reflected in the other.</td></tr>
+    <tr><td>FR-C3</td><td>Manage: TMDB v3 API key; Jellyfin base URL + API token; library path mappings (see FR-C5–6); behaviour toggles; global fallback language (single language, default <code>en</code>).</td><td>Each setting round-trips form → TOML → form.</td></tr>
+    <tr><td>FR-C4</td><td>"Test connections" verifies TMDB and Jellyfin credentials and shows the literal result/status.</td><td>Bad key shows a clear failure; good key shows success.</td></tr>
+    <tr><td>FR-C5</td><td>Discover available libraries from the connected Jellyfin instance (<code>GET /Library/VirtualFolders</code>) and display each library's name and collection type in the UI. Discovery is triggered automatically after a successful connection test.</td><td>After a successful connection test the library list updates without a page reload; the list reflects the current state of the Jellyfin server.</td></tr>
+    <tr><td>FR-C6</td><td>For each discovered Jellyfin library the operator may either assign a local filesystem path (the folder Jellystructure can read/write) or mark the library as <em>skip</em>. Skipped libraries are entirely ignored during scans. The mapping is persisted as a <code>[[libraries]]</code> TOML array (fields: <code>jellyfin_id</code>, <code>name</code>, <code>collection_type</code>, <code>local_path</code>, <code>skip</code>).</td><td>Only non-skipped libraries with a valid <code>local_path</code> are scanned. Changing a mapping and saving updates the TOML without touching unrelated config sections.</td></tr>
+  </table>
+
+  <h3>2.2 Metadata &amp; NFO <span class="pri must">MUST</span></h3>
+  <p>Discovery is driven by <strong>Jellyfin's own library API</strong>, not a filesystem walk. Jellystructure queries Jellyfin for all Movies and Series, then verifies and enriches each item against the actual media files on disk.</p>
+  <table class="reqtable">
+    <tr><th>ID</th><th>Requirement</th><th>Acceptance</th></tr>
+    <tr><td>FR-M1</td><td>Enumerate items from Jellyfin via <code>GET /Items?IncludeItemTypes=Movie,Series&amp;Recursive=true</code> using the machine token. Only <em>Movie</em> and <em>Series</em> types are managed — Episodes, Seasons, and any other type are ignored entirely. Each Jellyfin item carries a <code>Path</code> (local filesystem location) and optional <code>ProviderIds.Tmdb</code>. Each item that completes processing is persisted and visible in the Library immediately.</td><td>All Movies and Series in the connected Jellyfin library appear in Jellystructure; Episodes and Seasons never appear as top-level items; items stream into the UI as they are processed.</td></tr>
+    <tr><td>FR-M2</td><td>Fetch metadata from TMDB. Use Jellyfin's <code>ProviderIds.Tmdb</code> when present to skip title search; fall back to TMDB search by name + year only if no TMDB ID is available.</td><td>Items with a Jellyfin-provided TMDB ID never produce a wrong match; items without one fall back gracefully to title search.</td></tr>
+    <tr><td>FR-M3</td><td>Write Kodi/Jellyfin-compatible NFO: <code>movie.nfo</code> for Movies, <code>tvshow.nfo</code> for Series. Episode-level NFOs are out of scope. Always include <code>&lt;lockdata&gt;true&lt;/lockdata&gt;</code> so Jellyfin never overwrites managed metadata.</td><td>Jellyfin reads the NFO without its own scraper; <code>lockdata</code> is present in every generated NFO.</td></tr>
+    <tr><td>FR-M4</td><td>Edit any field in the UI; "Re-pull" refills empty/unlocked fields from TMDB without clobbering manual edits.</td><td>Locked field is unchanged after re-pull.</td></tr>
+    <tr><td>FR-M5</td><td><strong>TV series language sampling.</strong> Because a series may have many episodes, Jellystructure does not probe every file. Instead it samples up to 5 episode files spread across the series directory, probes each with <code>ffprobe</code>, and checks whether all samples share the same set of audio language tags. <ul style="margin:6px 0 0;"><li>All samples agree → use that language set for the whole series (language resolution runs as normal).</li><li>Samples disagree → mark the series as <em>language mix — unsupported</em>: displayed with a warning badge in the Library; no NFO or artwork is written until the operator resolves the inconsistency or explicitly overrides the language setting.</li></ul></td><td>A uniform series processes normally; a mixed-language series shows a clear warning and is skipped for writes until the operator acts.</td></tr>
+  </table>
+
+  <h3>2.3 Artwork <span class="pri must">MUST</span></h3>
+  <table class="reqtable">
+    <tr><th>ID</th><th>Requirement</th><th>Acceptance</th></tr>
+    <tr><td>FR-A1</td><td>Download poster, backdrop/fanart, logo from TMDB, named per Jellyfin/Kodi convention, written next to the media.</td><td>Files land as <code>poster.jpg</code>, <code>fanart.jpg</code>, <code>logo/clearlogo.png</code>, etc.</td></tr>
+    <tr><td>FR-A2</td><td>Surface which assets are present/missing per title; allow manual upload/replace.</td><td>Missing asset is visibly flagged; upload replaces it.</td></tr>
+    <tr><td>FR-A3</td><td>Fetch assets in parallel (async) without blocking the rest of a batch.</td><td>Batch continues while images download.</td></tr>
+  </table>
+
+  <h3>2.4 Media container manipulation <span class="pri must">MUST</span></h3>
+  <table class="reqtable">
+    <tr><th>ID</th><th>Requirement</th><th>Acceptance</th></tr>
+    <tr><td>FR-T1</td><td>Read every embedded audio/subtitle track via <code>ffprobe</code>: index, codec, language tag, default/forced flags, title.</td><td>Track list matches the file's real streams.</td></tr>
+    <tr><td>FR-T2</td><td>Set the default track / reorder via <code>mkvpropedit</code> (header-only, no re-encode) for MKV. <strong>Manual only</strong> — initiated explicitly by the operator from the UI; never applied automatically.</td><td>Default flag changes in &lt; ~100ms with no bitstream rewrite.</td></tr>
+    <tr><td>FR-T3</td><td>Fall back to <code>ffmpeg -c copy</code> remux for MP4 / reorder / track removal; warn that it is slower. <strong>Manual only</strong> — same as FR-T2.</td><td>Output file has the intended track layout; UI flagged it as a remux.</td></tr>
+    <tr><td>FR-T4</td><td>Preserve POSIX ownership/permissions on all writes so Jellyfin can still read the files.</td><td>uid/gid unchanged after edit.</td></tr>
+    <tr><td>FR-T5</td><td>Show the exact command that will run before applying; support a dry-run plan across many files.</td><td>Dry run lists affected files + chosen tool with nothing written.</td></tr>
+  </table>
+
+  <h3>2.5 Language resolution for TMDB metadata <span class="pri must">MUST</span> — the core feature</h3>
+  <p>The system determines the TMDB fetch language per item based on the item's actual audio tracks. For Movies this is the single media file; for TV Series this is a sample of episode files (see FR-M5). Track ordering and default flags are <strong>never changed automatically</strong>; they are always a manual operator action (see §2.4).</p>
+  <table class="reqtable">
+    <tr><th>ID</th><th>Requirement</th><th>Acceptance</th></tr>
+    <tr><td>FR-L1</td><td>Configure a single global <code>fallback_language</code> (default <code>en</code>) used when TMDB has no entry in any of the file's track languages.</td><td>Setting saved to <code>[language_rules] fallback_language</code>; only one language allowed.</td></tr>
+    <tr><td>FR-L2</td><td>Resolve the TMDB fetch language per file: query TMDB for each language found in the file's audio tracks, in physical track-index order (track 0 first, track 1 next, etc.); use the first language that returns a result. If no track language yields a result, use <code>fallback_language</code>.</td><td>File with tracks [fo, da]: tries TMDB in Faroese → if no result, tries Danish → if no result, uses fallback. File with tracks [da, fo]: tries Danish first.</td></tr>
+    <tr><td>FR-L3</td><td>The resolved language governs the metadata-fetch language only (title, plot, genres, etc. fetched from TMDB in that language). It does <strong>not</strong> automatically change any track default flag or ordering.</td><td>Metadata is written in the resolved language; no file track is touched by language resolution.</td></tr>
+    <tr><td>FR-L4</td><td>Support a per-library / per-folder override of <code>fallback_language</code> on top of the global default.</td><td>Most-specific path wins; others fall back to global.</td></tr>
+    <tr><td>FR-L5</td><td>Provide a live resolver preview: enter a file's track languages → see which TMDB language would be fetched and what metadata fields would be written.</td><td>Preview output matches the engine's real decision; runs in WASM with no round-trip.</td></tr>
+  </table>
+
+  <h3>2.6 Triage of untagged / mismatched tracks <span class="pri must">MUST</span></h3>
+  <table class="reqtable">
+    <tr><th>ID</th><th>Requirement</th><th>Acceptance</th></tr>
+    <tr><td>FR-R1</td><td>List every audio/subtitle track that has <strong>no language tag</strong> — the cascade can't act on these until fixed.</td><td>All untagged tracks across the library appear in one place.</td></tr>
+    <tr><td>FR-R2</td><td>Also surface tracks whose current default disagrees with the cascade.</td><td>Mismatches are listed and one-click fixable.</td></tr>
+    <tr><td>FR-R3</td><td>Assign a language inline (single, multi-select bulk, or one-at-a-time focus); write it back to the file.</td><td>Assigned language is written to the container and the item leaves triage.</td></tr>
+    <tr><td>FR-R4</td><td>Show <code>ffprobe</code> hints (track title, codec) to guide manual assignment.</td><td>Detected hints visible per row.</td></tr>
+  </table>
+
+  <h3>2.7 Jellyfin integration <span class="pri must">MUST</span></h3>
+  <table class="reqtable">
+    <tr><th>ID</th><th>Requirement</th><th>Acceptance</th></tr>
+    <tr><td>FR-J1</td><td>Enumerate the library by querying <code>GET /Items?IncludeItemTypes=Movie,Series&amp;Recursive=true</code> with the machine token. Each item exposes <code>Id</code>, <code>Name</code>, <code>ProductionYear</code>, <code>Path</code>, and <code>ProviderIds</code> (incl. <code>Tmdb</code> when Jellyfin has already matched it).</td><td>Jellystructure's library matches exactly what Jellyfin knows about; no filesystem walk is required.</td></tr>
+    <tr><td>FR-J2</td><td>After NFO/artwork writes, trigger a targeted reload via Jellyfin REST: <code>POST /Items/{jellyfinId}/Refresh</code> for individual items, <code>POST /Library/Refresh</code> for a bulk scan completion.</td><td>Jellyfin reloads NFO/art from disk without a manual refresh; HTTP response is surfaced in the UI.</td></tr>
+    <tr><td>FR-J3</td><td>Operator never needs Jellyfin's own "Refresh Metadata" action.</td><td>End-to-end metadata change reflects in Jellyfin clients using only Jellystructure.</td></tr>
+  </table>
+
+  <h3>2.8 Real-time UI <span class="pri must">MUST</span></h3>
+  <table class="reqtable">
+    <tr><th>ID</th><th>Requirement</th><th>Acceptance</th></tr>
+    <tr><td>FR-U1</td><td>Stream job progress to the browser over WebSocket — filenames, ffmpeg %, NFO/artwork status, errors — no polling. Scan jobs additionally broadcast a full <code>MediaItem</code> payload after each file is processed (<code>ItemScanned</code> event) so the Library grid can append/update items in real time without waiting for the scan to finish.</td><td>Library grid updates within ~1s of each file completing; the Activity console reflects all events; no page reload or full-scan-wait required to see in-progress results.</td></tr>
+    <tr><td>FR-U2</td><td>Errors don't halt a batch; failed items drop into Triage and the job continues.</td><td>A failed match is queued for triage; remaining files still process.</td></tr>
+    <tr><td>FR-U3</td><td>Optionally watch folders and process new files automatically.</td><td>A newly added file is detected and processed per rules.</td></tr>
+  </table>
+
+  <h3>2.9 Authentication — sign in with Jellyfin <span class="pri must">MUST</span></h3>
+  <p>Auth works exactly like Jellyseerr/Overseerr: there is <strong>no separate Jellystructure account</strong>. The operator signs in with their existing Jellyfin username + password; Jellystructure authenticates those credentials against the Jellyfin server and creates its own session. Only Jellyfin <strong>administrators</strong> may use Jellystructure.</p>
+  <table class="reqtable">
+    <tr><th>ID</th><th>Requirement</th><th>Acceptance</th></tr>
+    <tr><td>FR-AUTH1</td><td>Login screen takes a Jellyfin username + password and authenticates via <code>POST /Users/AuthenticateByName</code> against the configured Jellyfin server. Jellystructure never stores the password.</td><td>Valid Jellyfin creds log in; the password is never written to disk or DB.</td></tr>
+    <tr><td>FR-AUTH2</td><td>Only users whose Jellyfin <code>Policy.IsAdministrator</code> is true are admitted; everyone else is rejected with a clear message.</td><td>A non-admin Jellyfin user cannot get a session.</td></tr>
+    <tr><td>FR-AUTH3</td><td>On success, mint an opaque server-side session token (stored in the local DB), set it as an <code>HttpOnly</code>, <code>SameSite=Lax</code> cookie, and gate every API + WebSocket route behind it.</td><td>Unauthenticated requests get 401; the WebSocket upgrade is rejected without a valid session.</td></tr>
+    <tr><td>FR-AUTH4</td><td>Sessions are revocable and expire; logout deletes the server-side token. Session lifetime is configurable.</td><td>After logout or expiry the cookie no longer grants access.</td></tr>
+    <tr><td>FR-AUTH5</td><td>The per-user Jellyfin <em>access token</em> returned at login is distinct from the machine <code>jellyfin_token</code> in settings used by background jobs (FR-J1). Background refreshes must work with no user logged in.</td><td>A scheduled/auto job triggers a Jellyfin refresh while no browser session exists.</td></tr>
+  </table>
+
+  <h2>3 · Architecture &amp; non-functional requirements</h2>
+  <table class="reqtable">
+    <tr><th>ID</th><th>Requirement</th></tr>
+    <tr><td>NFR-1</td><td><strong>Backend in Kotlin Native</strong> (no JVM) — small footprint, fast cold start; talks to POSIX via C-interop.</td></tr>
+    <tr><td>NFR-2</td><td><strong>Ktor with the CIO engine</strong> (Netty/Tomcat unavailable on Native); REST + WebSocket endpoints.</td></tr>
+    <tr><td>NFR-3</td><td><strong>Okio</strong> for all file I/O (buffered streams) and memory-efficient NFO/XML generation — no <code>java.io/nio</code>.</td></tr>
+    <tr><td>NFR-4</td><td><strong>ktoml + kotlinx.serialization</strong> for typed TOML config.</td></tr>
+    <tr><td>NFR-5</td><td>Subprocess abstraction (e.g. Kommand) over <code>ffmpeg/ffprobe/mkvpropedit</code>, capturing stdout/stderr for live progress.</td></tr>
+    <tr><td>NFR-6</td><td><strong>Frontend in Kotlin WASM rendering to the real DOM</strong> (kotlinx.browser + type-safe HTML DSL) — explicitly <em>not</em> Compose-on-canvas, for accessibility, SEO and native text.</td></tr>
+    <tr><td>NFR-7</td><td><strong>Tailwind CSS</strong> built via Gradle/PostCSS; dark mode; responsive.</td></tr>
+    <tr><td>NFR-8</td><td><strong>Docker Compose</strong> deployment: media volume <code>rw</code>, config volume <code>rw</code>, shared network with Jellyfin, <code>restart: unless-stopped</code>, run as non-root matching host media uid/gid.</td></tr>
+  </table>
+
+  <h2>4 · Testing &amp; tooling</h2>
+  <table class="reqtable">
+    <tr><th>ID</th><th>Requirement</th></tr>
+    <tr><td>NFR-T1</td><td>Containerised Playwright (official image) UI integration tests: simulate entering keys, saving config, running a reorder, and assert the live progress UI updates; visual snapshot key states.</td></tr>
+    <tr><td>NFR-T2</td><td>A setup script (bash or Kotlin CLI) downloads open Blender films (Big Buck Bunny, Sintel, Tears of Steel), muxes in alternate-language audio, and sets a "wrong" default to create a broken fixture the suite must repair.</td></tr>
+    <tr><td>NFR-T3</td><td>Tests assert via <code>ffprobe</code> that the output file's default/track order was actually changed; mock TMDB so runs are deterministic.</td></tr>
+    <tr><td>NFR-T4</td><td>CI runs the suite on every change.</td></tr>
+  </table>
+
+  <div class="callbox"><strong>Test data must be real media.</strong> Fixtures can't be text files renamed to <code>.mkv</code> (ffprobe would fail). The script builds genuine containers with injected tracks so the repair path is exercised end-to-end.</div>
+
+  <h2>5 · Delivery phases</h2>
+  <p>Iterative, each phase independently verifiable before the next builds on it. Durations are rough.</p>
+
+  <div class="phase">
+    <div class="ph-head"><span class="ph-no">Phase 1</span><strong>Infrastructure &amp; backend foundation</strong><span class="dur">~2 weeks</span></div>
+    <ul>
+      <li>Docker Compose with media/config volumes and shared Jellyfin network.</li>
+      <li>Ktor Native server on the CIO engine; health endpoint.</li>
+      <li>ktoml config load/save from the persistent volume; typed config classes.</li>
+    </ul>
+  </div>
+  <div class="phase">
+    <div class="ph-head"><span class="ph-no">Phase 2</span><strong>DOM frontend &amp; API layer</strong><span class="dur">~3 weeks</span></div>
+    <ul>
+      <li>Kotlin WASM project rendering to the real DOM; Tailwind via PostCSS.</li>
+      <li>App shell + Settings screen reading/writing config over REST.</li>
+      <li>WebSocket channel established; live status plumbing end-to-end.</li>
+    </ul>
+  </div>
+  <div class="phase">
+    <div class="ph-head"><span class="ph-no">Phase 3</span><strong>Domain engine &amp; process execution</strong><span class="dur">~4 weeks</span></div>
+    <ul>
+      <li>Okio-based NFO/XML generation with <code>lockdata</code>.</li>
+      <li>Subprocess abstraction over ffmpeg/ffprobe/mkvpropedit.</li>
+      <li>TMDB client; identify <code>original_language</code>; scan + media list + media detail.</li>
+    </ul>
+  </div>
+  <div class="phase">
+    <div class="ph-head"><span class="ph-no">Phase 4</span><strong>Cascade, triage &amp; Jellyfin integration</strong><span class="dur">~3 weeks</span></div>
+    <ul>
+      <li>Cascade resolver + editor; per-folder overrides; live preview.</li>
+      <li>Track reorder/default via mkvpropedit, ffmpeg fallback, dry-run.</li>
+      <li>Triage list for untagged/mismatched tracks; artwork download; Jellyfin <code>/Items/{id}/Refresh</code>.</li>
+    </ul>
+  </div>
+  <div class="phase">
+    <div class="ph-head"><span class="ph-no">Phase 5</span><strong>Automation &amp; test regime</strong><span class="dur">~2–3 weeks</span></div>
+    <ul>
+      <li>Blender-film fixture/download script with injected tracks + broken defaults.</li>
+      <li>Playwright-in-Docker integration tests with simulated clicks and visual snapshots.</li>
+      <li>Final validation, hardening, documentation.</li>
+    </ul>
+  </div>
+
+  <h2>6 · Out of scope / open questions</h2>
+  <ul>
+    <li><s>Auth</s> — <strong>decided:</strong> Jellyfin sign-in (Jellyseerr-style), admins only. See §2.9 and the Implementation Plan.</li>
+    <li><s>Hardcoded movie/TV paths</s> — <strong>decided:</strong> library paths are discovered from Jellyfin and mapped per-library (FR-C5–6). Static <code>movies_dir</code>/<code>tv_dir</code> config keys are removed.</li>
+    <li><s>Filesystem walk for discovery</s> — <strong>decided:</strong> Jellyfin API is the source of truth for what exists. Jellystructure never walks directories to discover items; it uses <code>GET /Items</code> and then verifies paths on disk. See FR-M1, FR-J1.</li>
+    <li><strong>Per-episode and per-season management — explicitly out of scope.</strong> Jellystructure manages TV at the <em>Series</em> level only. Episode NFOs, season artwork, and per-episode track manipulation are deferred indefinitely. A series with inconsistent audio languages across episodes is flagged as <em>unsupported</em> until a future release adds mixed-language series handling (FR-M5).</li>
+    <li>Music / other media types — any Jellyfin library type (music, books, photos) can be discovered via FR-C5 but is marked "skip" by the operator if not relevant. Metadata handling for non-movie/TV types is out of scope.</li>
+    <li>Metadata providers beyond TMDB (e.g. TVDB, MusicBrainz) — future?</li>
+    <li>Undo / change history depth — is a per-file history log required, or is the NFO on disk enough?</li>
+    <li>Conflict handling when a file is edited outside Jellystructure after locking.</li>
+  </ul>
+
+  </div>
+</div>
+
+<script src="wf-nav.js"></script>
+</body>
+</html>

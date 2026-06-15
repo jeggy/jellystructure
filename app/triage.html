@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Jellystructure — Triage</title>
+<link rel="stylesheet" href="wf.css">
+<link rel="stylesheet" href="app.css">
+</head>
+<body class="wf-body app-body">
+
+<main class="app-main2 wide" data-page="triage" data-screen-label="Triage focus queue">
+  <div class="pagebar">
+    <h1>Triage</h1>
+    <span class="crumb">focus queue · item <b id="qpos">3</b> of <b id="qtot">214</b></span>
+    <span class="spacer"></span>
+    <div class="bar" style="width:220px;"><i id="qbar" style="width:1.4%"></i></div>
+    <span class="btn sm ghost">switch to table view</span>
+  </div>
+  <p class="page-sub">One untagged track at a time. Assign a language with a number key, <span class="kbd">Enter</span> accepts the suggestion and advances. Tagged tracks let the language resolver fetch metadata in the right language — it writes back to the file immediately.</p>
+
+  <div class="row" style="align-items:stretch;">
+    <div class="card fill" style="max-width:780px;">
+      <div class="row" style="align-items:flex-start;">
+        <div class="imgslot" style="width:120px;height:178px;flex:none;"><div class="x"></div><span>poster</span></div>
+        <div class="fill">
+          <div class="row center"><h2 style="margin:0 0 2px;" id="qtitle">Tears of Steel <span class="muted">(2012)</span></h2><span class="spacer"></span><a class="btn sm ghost" href="media.html">open detail ↗</a></div>
+          <div class="pill-row" style="margin-bottom:10px;"><span class="chip">movie</span><span class="chip mono" id="qpath">…/Tears of Steel (2012)/…mkv</span></div>
+
+          <div class="box flat" style="background:var(--bad-soft);border-color:var(--bad);">
+            <b id="qtrack">Audio track 0:a:1</b> — <span class="mono" id="qcodec">aac · stereo</span> · titled <span class="mono" id="qttl">"commentary"</span><br>
+            <span class="badge bad" style="margin-top:6px;">no language tag</span>
+          </div>
+
+          <h4 style="margin:14px 0 6px;">Assign language</h4>
+          <div class="pill-row" id="langbtns">
+            <span class="btn lang-pick" data-l="en">en <span class="kbd">1</span></span>
+            <span class="btn lang-pick" data-l="da">da <span class="kbd">2</span></span>
+            <span class="btn lang-pick" data-l="is">is <span class="kbd">3</span></span>
+            <span class="btn lang-pick" data-l="fo">fo <span class="kbd">4</span></span>
+            <span class="btn ghost">other… <span class="kbd">/</span></span>
+          </div>
+          <div class="note blue" style="transform:none;max-width:none;margin-top:14px;">TMDB says original language = <b>en</b>. Suggested → <b id="qsugg">en</b>. Press <span class="kbd">Enter</span> to accept &amp; advance.</div>
+        </div>
+      </div>
+
+      <hr class="dash" style="margin:16px 0 12px;">
+      <div class="row center">
+        <span class="btn ghost" id="skip">‹ skip <span class="kbd">←</span></span>
+        <span class="spacer"></span>
+        <span class="btn">remove track ✕</span>
+        <span class="btn primary" id="accept">accept &amp; next <span class="kbd">↵</span></span>
+      </div>
+    </div>
+
+    <div class="col" style="width:250px;">
+      <div class="card">
+        <h4 style="margin:0 0 8px;">Up next</h4>
+        <div class="tiny" style="line-height:2;" id="upnext">
+          <div class="row center"><span class="dot bad"></span> Cosmos Laundromat · sub</div>
+          <div class="row center"><span class="dot bad"></span> The Expanse S01E05 · a2</div>
+          <div class="row center"><span class="dot bad"></span> Big Buck Bunny · a1</div>
+          <div class="muted">…211 more</div>
+        </div>
+      </div>
+      <div class="card">
+        <h4 style="margin:0 0 6px;">This session</h4>
+        <div style="font-size:1.7rem;font-weight:700;"><span id="fixed">2</span> fixed</div>
+        <div class="tiny muted">~3s each · keep going</div>
+      </div>
+      <div class="card">
+        <h4 style="margin:0 0 6px;">Why this matters</h4>
+        <div class="tiny muted">The <a href="language.html">language resolver</a> walks a file's audio tracks in order and can't read a language it can't see. Tag every track once and metadata resolves correctly from then on.</div>
+      </div>
+    </div>
+  </div>
+</main>
+
+<script src="app-shell.js"></script>
+<script>
+(function () {
+  let fixed = 2, pos = 3;
+  const qsugg = document.getElementById('qsugg');
+  function flash(lang) {
+    fixed++; pos++;
+    document.getElementById('fixed').textContent = fixed;
+    document.getElementById('qpos').textContent = Math.min(pos, 214);
+    document.getElementById('qbar').style.width = ((pos / 214) * 100).toFixed(1) + '%';
+    // tiny confirmation toast
+    const t = document.createElement('div');
+    t.className = 'toast';
+    t.textContent = 'assigned ' + lang + ' ✓';
+    document.body.appendChild(t);
+    setTimeout(() => t.remove(), 850);
+  }
+  document.querySelectorAll('.lang-pick').forEach(b =>
+    b.addEventListener('click', () => flash(b.getAttribute('data-l'))));
+  document.getElementById('accept').addEventListener('click', () => flash(qsugg.textContent));
+  document.getElementById('skip').addEventListener('click', () => {
+    pos++; document.getElementById('qpos').textContent = Math.min(pos, 214);
+    document.getElementById('qbar').style.width = ((pos / 214) * 100).toFixed(1) + '%';
+  });
+  document.addEventListener('keydown', (e) => {
+    const map = { '1': 'en', '2': 'da', '3': 'is', '4': 'fo' };
+    if (map[e.key]) flash(map[e.key]);
+    else if (e.key === 'Enter') flash(qsugg.textContent);
+    else if (e.key === 'ArrowLeft') document.getElementById('skip').click();
+  });
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Jellystructure — Cascade Rules</title>
+<link rel="stylesheet" href="wf.css">
+</head>
+<body class="wf-body">
+
+<div class="wf-page wide" data-variant-scope>
+  <div class="screen-head">
+    <span class="kicker">the rule that drives everything</span>
+    <h1>Language cascade rules</h1>
+    <p>One ordered preference list decides two things at once: which language Jellystructure <strong>fetches metadata in</strong>, and which audio/subtitle track becomes <strong>default</strong>. The list walks top-down per file: first match in the file's available languages wins; <span class="mono">original</span> resolves via TMDB; a final global fallback (default <span class="lang">en</span>) catches the rest.</p>
+  </div>
+
+  <div class="variant-tabs">
+    <button class="active" data-target="a">A · Visual priority list<span class="sub">drag chips + live resolver</span></button>
+    <button data-target="b">B · Global + overrides table<span class="sub">per-library exceptions</span></button>
+  </div>
+
+  <!-- ===== A ===== -->
+  <div class="variant active" data-variant="a">
+    <div class="frame">
+      <div class="frame-bar"><span class="dots"><i></i><i></i><i></i></span><span class="url">jellystructure.home.lan / cascade</span></div>
+      <div class="frame-body" style="padding:16px;">
+        <div class="row" style="align-items:flex-start;">
+          <div class="card fill">
+            <div class="row center"><h3 style="margin:0;font-size:1.1rem;">Default cascade</h3><span class="spacer"></span><span class="muted tiny">drag ⠿ to reorder</span></div>
+            <hr class="dash" style="margin:10px 0;">
+            <div class="col" style="gap:9px;">
+              <div class="box flat row center" style="padding:10px 12px;background:var(--hi-soft);"><span class="drag-handle">⠿</span><span class="badge warn">1</span><span class="lang" style="font-size:1.05rem;">da</span><span class="muted">Dansk</span><span class="spacer"></span><span class="btn sm ghost">✕</span></div>
+              <div class="box flat row center" style="padding:10px 12px;"><span class="drag-handle">⠿</span><span class="badge">2</span><span class="lang" style="font-size:1.05rem;">fo</span><span class="muted">Føroyskt</span><span class="spacer"></span><span class="btn sm ghost">✕</span></div>
+              <div class="box flat row center" style="padding:10px 12px;"><span class="drag-handle">⠿</span><span class="badge">3</span><span class="lang" style="font-size:1.05rem;">en</span><span class="muted">English</span><span class="spacer"></span><span class="btn sm ghost">✕</span></div>
+              <div class="box flat row center" style="padding:10px 12px;border-style:dashed;"><span class="drag-handle">⠿</span><span class="badge info">4</span><span class="lang" style="font-size:1.05rem;">original</span><span class="muted">whatever TMDB says</span><span class="spacer"></span><span class="btn sm ghost">✕</span></div>
+            </div>
+            <div class="pill-row" style="margin-top:12px;"><span class="btn sm">＋ add language</span><span class="btn sm">＋ original</span></div>
+            <hr class="dash" style="margin:14px 0;">
+            <div class="row center"><span class="muted tiny">final global fallback if nothing matches</span><span class="spacer"></span><span class="select" style="width:130px;"><span class="lang">en</span> English</span></div>
+          </div>
+
+          <div class="col" style="width:340px;">
+            <div class="card" style="background:var(--info-soft);border-color:var(--info);">
+              <h4 style="margin:0 0 8px;">How it resolves — try a file</h4>
+              <div class="field" style="margin-bottom:10px;"><label>File has languages</label><div class="pill-row"><span class="chip">fo</span><span class="chip">da</span><span class="chip">??</span></div></div>
+              <div class="box" style="background:var(--fill);">
+                <div class="tiny mono" style="line-height:1.9;">
+                  da? &nbsp;<span style="color:var(--ok)">✓ present</span> → <b>winner</b><br>
+                  <span class="muted">fo? &nbsp;skipped (da already won)</span><br>
+                  <span class="muted">en? · original? · fallback?</span>
+                </div>
+                <hr class="dash" style="margin:8px 0;">
+                <div class="row center"><span>Fetch metadata in</span><span class="spacer"></span><span class="badge ok lang">da</span></div>
+                <div class="row center" style="margin-top:5px;"><span>Set default track</span><span class="spacer"></span><span class="badge ok lang">da</span></div>
+              </div>
+            </div>
+            <div class="card"><h4 style="margin:0 0 6px;">Saved to</h4><div class="tiny mono">config.toml → [language_rules]<br>audio_cascade = ["da","fo","en","original"]</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="note-row">
+      <div class="note">The live resolver is the whole point — type in a file's languages, watch which one wins. No guessing.</div>
+      <div class="note r blue">Matches your Faroese→Danish→fallback example exactly.</div>
+    </div>
+  </div>
+
+  <!-- ===== B: OVERRIDES ===== -->
+  <div class="variant" data-variant="b">
+    <div class="frame">
+      <div class="frame-bar"><span class="dots"><i></i><i></i><i></i></span><span class="url">jellystructure.home.lan / cascade</span></div>
+      <div class="frame-body" style="padding:16px;">
+        <div class="app-bar"><h2>Cascade rules</h2><span class="muted">global default + exceptions per library / folder</span><span class="spacer"></span><span class="btn sm primary">＋ add override</span></div>
+        <div class="card" style="padding:0;">
+          <table class="wf-table">
+            <tr><th>Scope</th><th>Audio cascade</th><th>Subtitle cascade</th><th>Fallback</th><th></th></tr>
+            <tr style="background:var(--hi-soft);">
+              <td><b>Global default</b><div class="tiny muted">applies everywhere</div></td>
+              <td><span class="pill-row"><span class="chip">da</span><span class="chip">fo</span><span class="chip">en</span><span class="chip">original</span></span></td>
+              <td><span class="pill-row"><span class="chip">da</span><span class="chip">en</span></span></td>
+              <td><span class="lang">en</span></td>
+              <td><span class="btn sm ghost">edit</span></td>
+            </tr>
+            <tr>
+              <td><span class="mono">/media/anime/**</span><div class="tiny muted">override</div></td>
+              <td><span class="pill-row"><span class="chip">original</span><span class="chip">en</span></span></td>
+              <td><span class="pill-row"><span class="chip">en</span></span></td>
+              <td><span class="lang">en</span></td>
+              <td><span class="btn sm ghost">edit</span> <span class="btn sm ghost">✕</span></td>
+            </tr>
+            <tr>
+              <td><span class="mono">/media/kids/**</span><div class="tiny muted">override</div></td>
+              <td><span class="pill-row"><span class="chip">da</span><span class="chip">dubbed</span></span></td>
+              <td><span class="pill-row"><span class="chip muted">— off —</span></span></td>
+              <td><span class="lang">da</span></td>
+              <td><span class="btn sm ghost">edit</span> <span class="btn sm ghost">✕</span></td>
+            </tr>
+          </table>
+        </div>
+        <div class="row" style="margin-top:14px;">
+          <div class="card fill"><h4 style="margin:0 0 6px;">Editing: /media/anime/**</h4>
+            <div class="row center" style="gap:10px;"><span class="muted tiny">audio:</span><span class="pill-row"><span class="chip" style="background:var(--hi);">⠿ original</span><span class="chip" style="background:var(--hi);">⠿ en</span><span class="chip ghost">＋</span></span></div>
+            <div class="row center" style="gap:10px;margin-top:8px;"><span class="muted tiny">subs:</span><span class="pill-row"><span class="chip" style="background:var(--hi);">⠿ en</span><span class="chip ghost">＋</span></span></div>
+          </div>
+          <div class="card" style="width:280px;"><h4 style="margin:0 0 6px;">Resolution order</h4><div class="tiny">Most specific path wins. A file under <span class="mono">/media/anime</span> uses that row; everything else falls to <b>Global default</b>.</div></div>
+        </div>
+      </div>
+    </div>
+    <div class="note-row">
+      <div class="note">Power-user move: anime wants original-language audio, kids want Danish dub. Per-folder overrides cover it.</div>
+    </div>
+  </div>
+
+</div>
+
+<script src="wf-nav.js"></script>
+</body>
+</html>

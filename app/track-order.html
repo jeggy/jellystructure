@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Jellystructure — Track order</title>
+<link rel="stylesheet" href="wf.css">
+<link rel="stylesheet" href="app.css">
+</head>
+<body class="wf-body app-body">
+
+<main class="app-main2 wide" data-page="library" data-screen-label="Track order diff">
+  <div class="backrow">
+    <a class="btn sm ghost" href="media.html">‹ Sintel (2010)</a>
+    <span class="crumb"><a href="library.html">Movies</a> / <a href="media.html">Sintel (2010)</a> / Tracks</span>
+  </div>
+
+  <div class="pagebar">
+    <h1>Track order</h1>
+    <span class="crumb">manual edit · <span class="mono">Sintel (2010).mkv</span></span>
+    <span class="spacer"></span>
+    <span class="seg"><span class="on">Audio</span><span>Subtitles</span></span>
+  </div>
+  <p class="page-sub">You set the default audio track and order by hand — nothing here happens automatically. Drag a track or star it, then eyeball the before → after and apply. MKV default-flag edits are instant via <span class="mono">mkvpropedit</span>; an MP4 or a real reorder needs a slower <span class="mono">ffmpeg -c copy</span> remux (flagged below).</p>
+
+  <div class="row" style="align-items:stretch;">
+    <div class="card fill">
+      <h4 style="margin:0 0 10px;">Current order <span class="muted tiny">on disk</span></h4>
+      <div class="col" style="gap:8px;">
+        <div class="box flat row center" style="padding:9px 11px;"><span class="num" style="width:42px;">a:0</span><span class="lang">en</span><span class="badge warn">★ default</span><span class="spacer"></span><span class="muted tiny">vorbis</span></div>
+        <div class="box flat row center" style="padding:9px 11px;"><span class="num" style="width:42px;">a:1</span><span class="lang">da</span><span class="spacer"></span><span class="muted tiny">ac3 5.1</span></div>
+        <div class="box flat row center" style="padding:9px 11px;opacity:.6;"><span class="num" style="width:42px;">a:2</span><span class="lang muted">??</span><span class="spacer"></span><span class="muted tiny">commentary</span></div>
+      </div>
+    </div>
+
+    <div class="col center" style="justify-content:center;"><div class="callout"><span class="arr">➜</span></div></div>
+
+    <div class="card fill" style="border-color:var(--ok);">
+      <h4 style="margin:0 0 10px;">After your change <span class="badge ok">staged</span></h4>
+      <div class="col" style="gap:8px;">
+        <div class="box flat row center" style="padding:9px 11px;background:var(--ok-soft);border-color:var(--ok);"><span class="num" style="width:42px;">a:0</span><span class="lang">da</span><span class="badge ok">★ default</span><span class="spacer"></span><span class="chip" style="font-size:.62rem;">moved ▲</span></div>
+        <div class="box flat row center" style="padding:9px 11px;"><span class="num" style="width:42px;">a:1</span><span class="lang">en</span><span class="spacer"></span><span class="muted tiny">was default</span></div>
+        <div class="box flat row center" style="padding:9px 11px;opacity:.6;"><span class="num" style="width:42px;">a:2</span><span class="lang muted">??</span><span class="spacer"></span><span class="badge bad">tag first</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="row center" style="margin-top:14px;gap:8px;flex-wrap:wrap;">
+    <span class="chip">tool: <b class="mono">mkvpropedit</b></span>
+    <span class="chip">est. ~40ms</span>
+    <span class="chip ok" style="background:var(--ok-soft);">no re-encode</span>
+    <span class="chip">POSIX perms kept</span>
+    <span class="spacer" style="flex:1"></span>
+    <span class="btn ghost">skip this file</span>
+    <span class="btn primary" id="apply">Apply &amp; next file →</span>
+  </div>
+
+  <hr class="dash">
+
+  <div class="row" style="align-items:flex-start;">
+    <div class="card fill">
+      <h4 style="margin:0 0 6px;">Exact command preview</h4>
+      <div class="log">
+        <div class="okc">mkvpropedit "Sintel (2010).mkv" \</div>
+        <div>&nbsp;--edit track:a1 --set flag-default=1 \</div>
+        <div>&nbsp;--edit track:a2 --set flag-default=0</div>
+      </div>
+    </div>
+    <div class="card" style="width:300px;">
+      <h4 style="margin:0 0 6px;">Untagged track can't be moved yet</h4>
+      <div class="tiny muted">Track <span class="mono">a:2</span> has no language tag, so you can't identify it to reorder it. <a href="triage.html">Tag it in triage →</a> first.</div>
+    </div>
+  </div>
+</main>
+
+<script src="app-shell.js"></script>
+<script>
+document.getElementById('apply').addEventListener('click', () => {
+  const t = document.createElement('div');
+  t.className = 'toast';
+  t.textContent = 'applied · default = da ✓';
+  document.body.appendChild(t);
+  setTimeout(() => t.remove(), 1000);
+});
+</script>
+</body>
+</html>
