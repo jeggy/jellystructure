@@ -13,8 +13,8 @@ test.describe("Authentication", () => {
     await page.fill('[id="password"], input[name="password"], input[type="password"]', JF_PASS);
     await page.click('button[type="submit"], button:has-text("Sign in"), button:has-text("Login")');
 
-    // Expect redirect to dashboard
-    await expect(page).toHaveURL(/\/(dashboard)?$/, { timeout: 10_000 });
+    // After login the app sets hash to "#/" — wait for dashboard content to confirm success
+    await expect(page.locator('.statgrid, h1:has-text("Dashboard")')).toBeVisible({ timeout: 10_000 });
   });
 
   test("bad credentials show an error", async ({ page }) => {

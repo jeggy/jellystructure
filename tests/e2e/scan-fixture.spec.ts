@@ -31,14 +31,16 @@ async function login(page: Page) {
   await page.fill('input[type="text"]', JF_USER);
   await page.fill('input[type="password"]', JF_PASS);
   await page.click('button[type="submit"], button:has-text("Sign in"), button:has-text("Login")');
-  await expect(page).toHaveURL(/\/(dashboard)?$/, { timeout: 15_000 });
+  // After login the app sets hash to "#/" — wait for dashboard content to confirm success
+  await expect(page.locator('.statgrid, h1:has-text("Dashboard")')).toBeVisible({ timeout: 15_000 });
 }
 
 async function waitForScanComplete(page: Page) {
-  // The scan button transitions back to "▶ Scan library" when done
-  await expect(page.locator('button:has-text("▶ Scan library")')).toBeVisible({
-    timeout: 120_000,
-  });
+  // First wait for the scan to actually start (button becomes disabled)
+  await expect(page.locator('#dash-scan')).toBeDisabled({ timeout: 10_000 });
+  // Then wait for the scan to finish (button re-enables with original text)
+  await expect(page.locator('#dash-scan')).toBeEnabled({ timeout: 120_000 });
+  await expect(page.locator('#dash-scan')).toHaveText('▶ Scan library');
 }
 
 function ffprobeDefaultAudio(mkv: string): string {
@@ -63,8 +65,8 @@ test.describe("Fixture repair", () => {
     await page.click('button:has-text("▶ Scan library"), button:has-text("Scan library")');
     await waitForScanComplete(page);
 
-    // Navigate to Library, find Sintel
-    await page.goto("/library");
+    // Navigate to Library via hash URL so the SPA router renders the correct page
+    await page.goto("/#/library");
     await page.click('text=Sintel');
 
     // Should be on media detail page

@@ -14,6 +14,7 @@ import dev.jellystructure.ui.renderTriage
 import dev.jellystructure.ui.renderTrackOrder
 import dev.jellystructure.ui.updateActiveNav
 import kotlinx.browser.document
+import kotlinx.browser.window
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.launch
 
@@ -41,7 +42,14 @@ object App {
 
         renderShell(user)
         Router.init { route -> handleRoute(route) }
-        handleRoute(Router.current())
+        val current = Router.current()
+        if (window.location.hash.isEmpty()) {
+            // Came from a plain URL (e.g. /login with no hash) — set canonical hash so
+            // the address bar reflects the current route and URL checks work reliably.
+            Router.navigate(current) // fires hashchange → handleRoute via listener
+        } else {
+            handleRoute(current)
+        }
     }
 
     fun navigate(route: String) {

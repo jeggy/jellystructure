@@ -82,7 +82,7 @@ services:
       JELLYFIN_USER: ${JELLYFIN_USER:-admin}
       JELLYFIN_PASS: ${JELLYFIN_PASS:-password}
     command: >
-      sh -c "npm ci && npx playwright install chromium && npx playwright test"
+      sh -c "apt-get update -qq && apt-get install -y --no-install-recommends ffmpeg && npm ci && npx playwright install chromium && npx playwright test"
     depends_on:
       app:
         condition: service_healthy
