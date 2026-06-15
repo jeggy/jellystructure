@@ -38,6 +38,15 @@ fun renderDashboard(container: Element, scope: CoroutineScope) {
           <div class="stat alert"><div class="k">Tracks needing attention</div><div class="v" id="stat-issues">—</div></div>
           <div class="stat"><div class="k">NFO coverage</div><div class="v" id="stat-nfo">—</div></div>
         </div>
+
+        <div id="attention-queue" style="display:none;margin-top:18px">
+          <div class="row center" style="margin-bottom:10px;gap:8px">
+            <h3 style="margin:0;font-size:1rem">Needs attention</h3>
+            <span class="spacer"></span>
+            <button id="dash-triage" class="btn sm ghost">Go to triage →</button>
+          </div>
+          <div id="attention-list"></div>
+        </div>
     """.trimIndent()
 
     document.getElementById("dash-browse")?.addEventListener("click") {
@@ -46,13 +55,56 @@ fun renderDashboard(container: Element, scope: CoroutineScope) {
     document.getElementById("dash-scan")?.addEventListener("click") {
         scope.launch { triggerDashboardScan(scope) }
     }
+    document.getElementById("dash-triage")?.addEventListener("click") {
+        App.navigate("/triage")
+    }
 
     scope.launch {
         loadDashboardStats()
+        loadAttentionQueue()
         val status = MediaApi.scanStatus()
         if (status?.running == true) {
             setDashScanRunning(true)
             connectDashScanSocket(scope)
+        }
+    }
+}
+
+private suspend fun loadAttentionQueue() {
+    val page = MediaApi.list(filter = "attention", pageSize = 8) ?: return
+    val queueEl = document.getElementById("attention-queue") as? HTMLElement ?: return
+    val listEl = document.getElementById("attention-list") as? HTMLElement ?: return
+    if (page.total == 0) {
+        queueEl.style.display = "none"
+        return
+    }
+    queueEl.style.display = "block"
+    listEl.innerHTML = page.items.joinToString("") { item ->
+        val badge = when {
+            item.languageMix ->
+                """<span class="badge warn" style="font-size:.7rem">language mix</span>"""
+            item.issueCount > 0 ->
+                """<span class="badge bad" style="font-size:.7rem">${item.issueCount} untagged</span>"""
+            else -> ""
+        }
+        val year = item.year?.let { " ($it)" } ?: ""
+        val kind = item.kind.name.lowercase().replace('_', ' ')
+        """<div class="row center" style="padding:7px 0;border-bottom:1px solid var(--border);gap:8px;cursor:pointer"
+              data-nav="/media/${item.id}">
+             <span style="flex:1;font-size:.9rem">${item.title.esc()}$year</span>
+             <span class="muted tiny">$kind</span>
+             $badge
+           </div>"""
+    }
+    if (page.total > 8) {
+        listEl.innerHTML += """<div class="muted tiny" style="padding-top:6px">Showing 8 of ${page.total} items — <span style="cursor:pointer;text-decoration:underline" id="dash-see-all">see all in triage</span></div>"""
+        document.getElementById("dash-see-all")?.addEventListener("click") { App.navigate("/triage") }
+    }
+    listEl.querySelectorAll("[data-nav]").let { nodes ->
+        for (i in 0 until nodes.length) {
+            val el = nodes.item(i) as? HTMLElement ?: continue
+            val nav = el.getAttribute("data-nav") ?: continue
+            el.addEventListener("click") { App.navigate(nav) }
         }
     }
 }

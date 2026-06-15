@@ -45,7 +45,7 @@ class MediaStore(private val cacheFile: String) {
         var filtered = items
         if (kind != null) filtered = filtered.filter { it.kind == kind }
         when (filter) {
-            "attention" -> filtered = filtered.filter { it.issueCount > 0 }
+            "attention" -> filtered = filtered.filter { it.issueCount > 0 || it.languageMix }
             "missing_artwork" -> filtered = filtered.filter { it.posterPath == null }
         }
         val total = filtered.size
