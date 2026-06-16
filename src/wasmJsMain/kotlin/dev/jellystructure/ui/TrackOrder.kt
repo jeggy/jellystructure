@@ -1,8 +1,10 @@
 package dev.jellystructure.ui
 
 import dev.jellystructure.App
+import dev.jellystructure.encodeURIComponent
 import dev.jellystructure.api.MediaApi
 import dev.jellystructure.api.TrackSnap
+import dev.jellystructure.model.Episode
 import dev.jellystructure.model.MediaItem
 import dev.jellystructure.model.Track
 import dev.jellystructure.model.TrackKind
@@ -14,7 +16,7 @@ import org.w3c.dom.Element
 import org.w3c.dom.HTMLElement
 import org.w3c.dom.HTMLInputElement
 
-fun renderTrackOrder(container: Element, scope: CoroutineScope, mediaId: String) {
+fun renderTrackOrder(container: Element, scope: CoroutineScope, mediaId: String, episodeFilename: String? = null) {
     container.innerHTML = """<span class="muted" style="padding:24px;display:block;">Loading…</span>"""
     scope.launch {
         val item = MediaApi.get(mediaId)
@@ -22,7 +24,16 @@ fun renderTrackOrder(container: Element, scope: CoroutineScope, mediaId: String)
             container.innerHTML = """<span class="muted" style="padding:24px;display:block;">Item not found.</span>"""
             return@launch
         }
-        renderTrackOrderView(container, item, scope)
+        if (episodeFilename != null) {
+            val ep = item.episodes.firstOrNull { it.filename == episodeFilename }
+            if (ep == null) {
+                container.innerHTML = """<span class="muted" style="padding:24px;display:block;">Episode not found.</span>"""
+                return@launch
+            }
+            renderEpisodeTrackOrderView(container, item, ep, scope)
+        } else {
+            renderTrackOrderView(container, item, scope)
+        }
     }
 }
 
@@ -311,6 +322,123 @@ private fun updateLangPreview(editRow: HTMLElement, filePath: String, specifier:
     } else {
         "ffmpeg -i '$escaped' -map 0 -c copy -metadata:s:$specifier language=$lang ..."
     }
+}
+
+private fun renderEpisodeTrackOrderView(container: Element, item: MediaItem, ep: Episode, scope: CoroutineScope) {
+    val ext = ep.path.substringAfterLast('.').lowercase()
+    val isMkv = ext == "mkv"
+
+    val audioTracks = ep.tracks.filter { it.kind == TrackKind.AUDIO }
+    val subTracks = ep.tracks.filter { it.kind == TrackKind.SUBTITLE }
+
+    val epCode = if (ep.seasonNumber != null && ep.episodeNumber != null) {
+        "S${ep.seasonNumber.toString().padStart(2, '0')}E${ep.episodeNumber.toString().padStart(2, '0')}"
+    } else ep.filename.substringBeforeLast('.')
+
+    val toolNote = if (isMkv)
+        """<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;"><span class="chip">tool: mkvpropedit</span><span class="chip">est. ~40ms</span><span class="chip">no re-encode</span></div>"""
+    else
+        """<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;"><span class="chip">tool: ffmpeg -c copy</span><span class="chip">slower remux</span><span class="badge warn" style="font-size:.7rem;">MP4 — re-mux required</span></div>"""
+
+    fun trackRowHtml(t: Track, kind: String): String {
+        val defaultBadge = if (t.default) """<span class="badge ok" style="font-size:.68rem;">default</span>""" else "—"
+        val langCell = if (t.language != null) """<span class="lang">${t.language.esc()}</span>"""
+                       else """<span class="badge bad" style="font-size:.68rem;">untagged</span>"""
+        val defaultAction = if (isMkv) """<button class="btn sm ghost ep-set-default-btn" data-specifier="${t.specifier.esc()}">Set default</button>""" else "—"
+        return """<tr data-specifier="${t.specifier.esc()}">
+                    <td class="num">${t.specifier.esc()}</td><td>$kind</td><td>$langCell</td>
+                    <td class="num">${t.codec.esc()}</td>
+                    <td>${t.title?.esc() ?: """<span class="muted">—</span>"""}</td>
+                    <td>$defaultBadge</td><td>$defaultAction</td>
+                  </tr>"""
+    }
+
+    val audioRows = audioTracks.joinToString("") { trackRowHtml(it, "audio") }
+    val subRows = subTracks.joinToString("") { trackRowHtml(it, "subtitle") }
+
+    container.innerHTML = """
+        <div class="pagebar">
+          <button id="ep-back-btn" class="btn sm ghost">‹ ${item.title.esc()}</button>
+          <h2>Track order</h2>
+          <span class="muted">${epCode.esc()} ${ep.title?.esc() ?: ""}</span>
+          <span class="spacer"></span>
+        </div>
+        <p class="page-sub">Select a track to set as default for this episode. MKV edits are instant; MP4 needs a remux.</p>
+        <div class="card">$toolNote</div>
+        <div class="card">
+          <h4 style="margin:0 0 12px;">Audio Tracks</h4>
+          ${if (audioTracks.isEmpty()) """<span class="muted tiny">No audio tracks found.</span>""" else """
+          <table class="wf-table"><tr><th>#</th><th>Kind</th><th>Lang</th><th>Codec</th><th>Title</th><th>Default</th><th>Action</th></tr>$audioRows</table>"""}
+        </div>
+        <div class="card">
+          <h4 style="margin:0 0 12px;">Subtitle Tracks</h4>
+          ${if (subTracks.isEmpty()) """<span class="muted tiny">No subtitle tracks found.</span>""" else """
+          <table class="wf-table"><tr><th>#</th><th>Kind</th><th>Lang</th><th>Codec</th><th>Title</th><th>Default</th><th>Action</th></tr>$subRows</table>"""}
+        </div>
+        <div class="card" id="ep-plan-card" style="display:none;">
+          <div class="row center" style="margin-bottom:10px;">
+            <h4 style="margin:0;">Command preview</h4>
+            <span class="spacer"></span>
+            <button id="ep-apply-btn" class="btn primary">Apply</button>
+          </div>
+          <pre id="ep-plan-command" class="log" style="font-size:.75rem;line-height:1.5;overflow:auto;"></pre>
+        </div>
+        <div id="ep-track-order-msg" style="display:none;margin-top:14px;"></div>
+    """.trimIndent()
+
+    document.getElementById("ep-back-btn")?.addEventListener("click") {
+        App.navigate("/media/${item.id}")
+    }
+
+    var pendingSpecifier: String? = null
+
+    container.querySelectorAll(".ep-set-default-btn").let { nodes ->
+        for (i in 0 until nodes.length) {
+            val btn = nodes.item(i) as? HTMLElement ?: continue
+            val specifier = btn.getAttribute("data-specifier") ?: continue
+            btn.addEventListener("click") {
+                pendingSpecifier = specifier
+                scope.launch {
+                    val plan = MediaApi.getEpisodeTrackPlan(item.id, ep.filename, specifier)
+                    val planCard = document.getElementById("ep-plan-card") as? HTMLElement
+                    val planCommand = document.getElementById("ep-plan-command") as? HTMLElement
+                    if (plan != null) {
+                        planCard?.style?.display = "block"
+                        planCommand?.textContent = plan.command
+                        planCard?.scrollIntoView()
+                    } else {
+                        showEpTrackOrderMsg("Failed to get plan — is this an MKV file?", false)
+                    }
+                }
+            }
+        }
+    }
+
+    document.getElementById("ep-apply-btn")?.addEventListener("click") {
+        val spec = pendingSpecifier ?: return@addEventListener
+        val applyBtn = document.getElementById("ep-apply-btn") as? HTMLElement
+        applyBtn?.setAttribute("disabled", "true")
+        applyBtn?.textContent = "Applying…"
+        scope.launch {
+            val ok = MediaApi.setEpisodeDefaultTrack(item.id, ep.filename, spec)
+            showEpTrackOrderMsg(
+                if (ok) "Default track updated. Reloading…" else "Failed to apply — check server logs.",
+                ok,
+            )
+            applyBtn?.removeAttribute("disabled")
+            applyBtn?.textContent = "Apply"
+            if (ok) {
+                delay(800)
+                App.navigate("/track-order?id=${item.id}&ep=${encodeURIComponent(ep.filename)}")
+            }
+        }
+    }
+}
+
+private fun showEpTrackOrderMsg(msg: String, ok: Boolean) {
+    val el = document.getElementById("ep-track-order-msg") as? HTMLElement ?: return
+    el.style.display = "block"
+    el.innerHTML = """<span class="badge ${if (ok) "ok" else "bad"}">$msg</span>"""
 }
 
 private fun snapRowHtml(snap: TrackSnap, targetSpecifier: String): String {

@@ -1,5 +1,6 @@
 package dev.jellystructure.media
 
+import dev.jellystructure.model.Episode
 import dev.jellystructure.model.MediaItem
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.curl.Curl
@@ -16,6 +17,9 @@ private const val TMDB_ORIGINAL = "https://image.tmdb.org/t/p/original"
 
 @Serializable
 data class ArtworkStatus(val posterExists: Boolean, val fanartExists: Boolean)
+
+@Serializable
+data class EpisodeStillStatus(val stillExists: Boolean, val stillPath: String)
 
 class ArtworkDownloader {
     private val http = HttpClient(Curl)
@@ -65,6 +69,31 @@ class ArtworkDownloader {
         true
     }.onFailure { println("[WARN] Failed to download $url: ${it.message}") }
      .getOrDefault(false)
+
+    fun checkEpisodeStill(episode: Episode): EpisodeStillStatus {
+        val destPath = episodeStillPath(episode)
+        return EpisodeStillStatus(
+            stillExists = SystemFileSystem.exists(Path(destPath)),
+            stillPath = destPath,
+        )
+    }
+
+    suspend fun fetchEpisodeStill(episode: Episode): EpisodeStillStatus {
+        val destPath = episodeStillPath(episode)
+        val stillUrl = episode.stillPath
+        return if (!stillUrl.isNullOrBlank() && !SystemFileSystem.exists(Path(destPath))) {
+            val ok = download("$TMDB_ORIGINAL$stillUrl", destPath)
+            EpisodeStillStatus(stillExists = ok, stillPath = destPath)
+        } else {
+            EpisodeStillStatus(stillExists = SystemFileSystem.exists(Path(destPath)), stillPath = destPath)
+        }
+    }
+
+    private fun episodeStillPath(episode: Episode): String {
+        val dir = episode.path.substringBeforeLast('/')
+        val baseName = episode.filename.substringBeforeLast('.')
+        return "$dir/$baseName-thumb.jpg"
+    }
 
     private fun mediaDir(item: MediaItem) = item.path.substringBeforeLast('/')
 }

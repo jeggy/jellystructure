@@ -1,6 +1,7 @@
 package dev.jellystructure.ui
 
 import dev.jellystructure.App
+import dev.jellystructure.encodeURIComponent
 import dev.jellystructure.api.ArtworkStatus
 import dev.jellystructure.api.HistoryEntry
 import dev.jellystructure.api.MediaApi
@@ -369,7 +370,7 @@ private fun buildEpisodesTab(item: MediaItem): String {
             val issueSummary = if (seasonIssues > 0)
                 """<span class="badge bad" style="font-size:.72rem;">$seasonIssues untagged</span>"""
             else ""
-            val rows = eps.mapIndexed { idx, ep -> buildEpisodeRow(ep, season, idx) }.joinToString("")
+            val rows = eps.mapIndexed { idx, ep -> buildEpisodeRow(ep, season, idx, item.id) }.joinToString("")
             """<div style="margin-bottom:20px;">
                  <div class="row center" style="margin-bottom:8px;">
                    <h4 style="margin:0;">${seasonLabel.esc()}</h4>
@@ -388,7 +389,7 @@ private fun buildEpisodesTab(item: MediaItem): String {
         </div>"""
 }
 
-private fun buildEpisodeRow(ep: Episode, season: Int?, idx: Int): String {
+private fun buildEpisodeRow(ep: Episode, season: Int?, idx: Int, mediaId: String): String {
     val epCode = if (season != null && ep.episodeNumber != null) {
         "S${season.toString().padStart(2, '0')}E${ep.episodeNumber.toString().padStart(2, '0')}"
     } else ep.filename.substringBeforeLast('.')
@@ -424,6 +425,11 @@ private fun buildEpisodeRow(ep: Episode, season: Int?, idx: Int): String {
            </tr>"""
     }
 
+    val hasOverview = !ep.overview.isNullOrBlank()
+    val titleDisplay = if (!ep.title.isNullOrBlank()) ep.title.esc() else ""
+    val encodedFilename = encodeURIComponent(ep.filename)
+    val trackOrderHref = "/track-order?id=$mediaId&ep=${encodedFilename.esc()}"
+
     val bodyId = "ep-body-s${season ?: 0}-$idx"
     val toggleId = "ep-toggle-s${season ?: 0}-$idx"
 
@@ -432,17 +438,22 @@ private fun buildEpisodeRow(ep: Episode, season: Int?, idx: Int): String {
           <div id="$toggleId" class="ep-toggle-row" data-body="$bodyId"
                style="display:flex;align-items:center;gap:10px;padding:9px 12px;cursor:pointer;">
             <span class="num" style="min-width:64px;font-size:.82rem;">${epCode.esc()}</span>
+            ${if (titleDisplay.isNotEmpty()) """<span style="font-size:.85rem;font-weight:500;flex:none;max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="$titleDisplay">$titleDisplay</span>""" else ""}
             <div style="display:flex;gap:4px;flex-wrap:wrap;flex:1;">$trackChips</div>
             $issueBadge
             <span class="ep-chev" style="color:var(--ink-soft);font-size:.9rem;margin-left:4px;">›</span>
           </div>
           <div id="$bodyId" style="display:none;padding:0 12px 12px;">
+            ${if (hasOverview) """<p style="font-size:.82rem;color:var(--ink-soft);margin:8px 0;">${ep.overview!!.esc()}</p>""" else ""}
             ${if (trackTableRows.isNotEmpty()) """
             <table class="wf-table" style="margin:0 0 6px;">
               <tr><th>#</th><th>Kind</th><th>Lang</th><th>Title</th><th>Codec</th><th>Default</th><th>Forced</th></tr>
               $trackTableRows
             </table>""" else """<span class="muted tiny">No audio/subtitle tracks.</span>"""}
-            <div class="muted tiny" style="margin-top:4px;font-family:monospace;">${ep.filename.esc()}</div>
+            <div class="row center" style="margin-top:6px;gap:8px;">
+              <div class="muted tiny" style="flex:1;font-family:monospace;">${ep.filename.esc()}</div>
+              <a href="#$trackOrderHref" class="btn sm ghost" style="font-size:.72rem;">Track order →</a>
+            </div>
           </div>
         </div>"""
 }

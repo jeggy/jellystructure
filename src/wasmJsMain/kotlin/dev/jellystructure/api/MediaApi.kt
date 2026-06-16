@@ -1,5 +1,6 @@
 package dev.jellystructure.api
 
+import dev.jellystructure.encodeURIComponent
 import dev.jellystructure.model.MediaItem
 import dev.jellystructure.model.MediaKind
 import dev.jellystructure.model.MediaPage
@@ -153,4 +154,39 @@ object MediaApi {
     suspend fun getHistory(id: String): List<HistoryEntry> = runCatching {
         httpClient.get("/api/media/$id/history").body<List<HistoryEntry>>()
     }.getOrDefault(emptyList())
+
+    suspend fun writeEpisodeNfos(id: String): Map<String, Int>? = runCatching {
+        val response = httpClient.post("/api/media/$id/episodes/nfo")
+        if (response.status == HttpStatusCode.OK) response.body<Map<String, Int>>() else null
+    }.getOrNull()
+
+    suspend fun fetchEpisodeStills(id: String): Map<String, Int>? = runCatching {
+        val response = httpClient.post("/api/media/$id/episodes/stills")
+        if (response.status == HttpStatusCode.OK) response.body<Map<String, Int>>() else null
+    }.getOrNull()
+
+    suspend fun getEpisodeTrackPlan(mediaId: String, epFilename: String, specifier: String): TrackPlan? = runCatching {
+        val encoded = encodeURIComponent(epFilename)
+        httpClient.get("/api/media/$mediaId/episodes/$encoded/tracks/plan") {
+            parameter("specifier", specifier)
+        }.body<TrackPlan>()
+    }.getOrNull()
+
+    suspend fun setEpisodeDefaultTrack(mediaId: String, epFilename: String, specifier: String): Boolean = runCatching {
+        val encoded = encodeURIComponent(epFilename)
+        val response = httpClient.post("/api/media/$mediaId/episodes/$encoded/tracks/default") {
+            setBody("""{"specifier":"$specifier"}""")
+            contentType(ContentType.Application.Json)
+        }
+        response.status.value in 200..299
+    }.getOrDefault(false)
+
+    suspend fun setEpisodeTrackLanguage(mediaId: String, epFilename: String, specifier: String, language: String): Boolean = runCatching {
+        val encoded = encodeURIComponent(epFilename)
+        val response = httpClient.post("/api/media/$mediaId/episodes/$encoded/tracks/language") {
+            setBody("""{"specifier":"${specifier.replace("\"","")}","language":"${language.replace("\"","")}"}""")
+            contentType(ContentType.Application.Json)
+        }
+        response.status.value in 200..299
+    }.getOrDefault(false)
 }

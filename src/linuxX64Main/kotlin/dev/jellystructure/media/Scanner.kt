@@ -153,14 +153,30 @@ class Scanner(
             episodeFiles
         }
 
+        // Resolve TMDB series ID once upfront so it can be reused for both
+        // per-episode detail fetching and the series-level metadata fetch below.
+        val seriesTmdbId = jItem.providerIds?.tmdb?.toIntOrNull()
+            ?: tmdb.searchTv(title, year)?.id
+
         val episodes = mutableListOf<Episode>()
         for (file in filesToProbe) {
             val tracks = FfprobeRunner.probe(file)
             val epIssueCount = tracks.count {
                 (it.kind == TrackKind.AUDIO || it.kind == TrackKind.SUBTITLE) && it.language == null
             }
-            val firstAudioLang = tracks.firstOrNull { it.kind == TrackKind.AUDIO }?.language
+            val audioLangs = tracks.filter { it.kind == TrackKind.AUDIO }.map { it.language }
+            val epLangPriority = LanguageResolver.priorityList(audioLangs, fallback)
+            val epResolvedLang = epLangPriority.firstOrNull()
             val (seasonNum, epNum) = parseSeasonEpisode(file)
+
+            // Fetch per-episode TMDB details in the episode's own resolved language
+            val epDetails = if (seriesTmdbId != null && seasonNum != null && epNum != null) {
+                epLangPriority.firstNotNullOfOrNull { lang ->
+                    tmdb.getEpisodeDetails(seriesTmdbId, seasonNum, epNum, lang)
+                        ?.takeIf { it.name.isNotBlank() || it.overview.isNotBlank() }
+                } ?: tmdb.getEpisodeDetails(seriesTmdbId, seasonNum, epNum)
+            } else null
+
             episodes += Episode(
                 filename = file.substringAfterLast('/'),
                 path = file,
@@ -168,7 +184,11 @@ class Scanner(
                 episodeNumber = epNum,
                 tracks = tracks,
                 issueCount = epIssueCount,
-                resolvedLanguage = firstAudioLang,
+                resolvedLanguage = epResolvedLang,
+                title = epDetails?.name?.takeIf { it.isNotBlank() },
+                overview = epDetails?.overview?.takeIf { it.isNotBlank() },
+                stillPath = epDetails?.stillPath,
+                tmdbEpisodeId = epDetails?.id,
             )
         }
 
@@ -176,7 +196,7 @@ class Scanner(
             compareBy({ it.seasonNumber ?: 999 }, { it.episodeNumber ?: 999 })
         )
 
-        // Compare audio language sets across all probed episodes
+        // Language mix: audio language sets differ across episodes
         val audioSets = sortedEpisodes.map { ep ->
             ep.tracks.filter { it.kind == TrackKind.AUDIO }.map { it.language }.toSet()
         }
@@ -187,20 +207,22 @@ class Scanner(
 
         if (languageMix) {
             println("[INFO] Series '$title' has mixed audio languages across episodes — marking as language mix")
+            // Still fetch series details using the TMDB id even for mixed series — needed for artwork
+            val mixDetails = seriesTmdbId?.let { tmdb.getTvDetails(it) }
             return MediaItem(
                 id = slugify(title, year),
-                title = title,
+                title = mixDetails?.name ?: title,
                 year = year,
                 kind = MediaKind.TV_SHOW,
                 path = localPath,
                 jellyfinId = jItem.id,
-                tmdbId = jItem.providerIds?.tmdb?.toIntOrNull(),
-                originalLanguage = null,
+                tmdbId = seriesTmdbId,
+                originalLanguage = mixDetails?.originalLanguage?.takeIf { it.isNotBlank() },
                 resolvedLanguage = null,
-                posterPath = null,
-                backdropPath = null,
+                posterPath = mixDetails?.posterPath,
+                backdropPath = mixDetails?.backdropPath,
                 overview = null,
-                genres = emptyList(),
+                genres = mixDetails?.genres?.map { it.name } ?: emptyList(),
                 tracks = firstTracks,
                 episodes = sortedEpisodes,
                 issueCount = totalIssueCount,
@@ -212,9 +234,7 @@ class Scanner(
         val audioLangs = firstTracks.filter { it.kind == TrackKind.AUDIO }.map { it.language }
         val langPriority = LanguageResolver.priorityList(audioLangs, fallback)
 
-        val tmdbId = jItem.providerIds?.tmdb?.toIntOrNull()
-            ?: tmdb.searchTv(title, year)?.id
-        val details = tmdbId?.let { tmdb.getTvDetailsLocalized(it, langPriority) }
+        val details = seriesTmdbId?.let { tmdb.getTvDetailsLocalized(it, langPriority) }
         val resolvedLang = details?.let {
             langPriority.firstOrNull { lang -> it.overview.isNotBlank() && lang != fallback }
                 ?: langPriority.lastOrNull()
@@ -228,7 +248,7 @@ class Scanner(
             kind = MediaKind.TV_SHOW,
             path = localPath,
             jellyfinId = jItem.id,
-            tmdbId = details?.id,
+            tmdbId = details?.id ?: seriesTmdbId,
             originalLanguage = details?.originalLanguage?.takeIf { it.isNotBlank() },
             resolvedLanguage = resolvedLang,
             posterPath = details?.posterPath,

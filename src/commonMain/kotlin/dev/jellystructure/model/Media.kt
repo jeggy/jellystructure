@@ -29,6 +29,10 @@ data class Episode(
     val tracks: List<Track>,
     val issueCount: Int,
     val resolvedLanguage: String? = null,
+    val title: String? = null,
+    val overview: String? = null,
+    val stillPath: String? = null,
+    val tmdbEpisodeId: Int? = null,
 )
 
 @Serializable

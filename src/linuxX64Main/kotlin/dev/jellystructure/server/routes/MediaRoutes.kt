@@ -5,16 +5,21 @@ import dev.jellystructure.config.ConfigStore
 import dev.jellystructure.jobs.JobEvent
 import dev.jellystructure.jobs.WsBroadcaster
 import dev.jellystructure.media.ArtworkDownloader
+import dev.jellystructure.media.FfmpegRunner
+import dev.jellystructure.media.FfprobeRunner
 import dev.jellystructure.media.MediaHistory
 import dev.jellystructure.media.MediaStore
+import dev.jellystructure.media.MkvpropeditRunner
 import dev.jellystructure.media.Scanner
 import dev.jellystructure.media.ScanTracker
 import dev.jellystructure.model.MediaKind
+import dev.jellystructure.model.TrackKind
 import dev.jellystructure.nfo.NfoWriter
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.content.PartData
 import io.ktor.http.content.forEachPart
+import io.ktor.server.request.receive
 import io.ktor.server.request.receiveMultipart
 import io.ktor.server.response.respond
 import io.ktor.server.response.respondText
@@ -29,6 +34,8 @@ import kotlinx.io.buffered
 import kotlinx.io.files.Path
 import kotlinx.io.files.SystemFileSystem
 import kotlinx.io.readByteArray
+import kotlinx.serialization.Serializable
+
 
 fun Route.mediaRoutes(
     store: MediaStore,
@@ -89,6 +96,16 @@ fun Route.mediaRoutes(
                     NfoWriter.write(item)
                         .onSuccess { path ->
                             mediaHistory.record(id, "nfo_write", path)
+                            // For TV shows, also write episodedetails.nfo for each episode
+                            if (item.kind == MediaKind.TV_SHOW) {
+                                var epWritten = 0
+                                for (ep in item.episodes) {
+                                    NfoWriter.writeEpisode(ep)
+                                        .onSuccess { epWritten++ }
+                                        .onFailure { println("[WARN] Episode NFO write failed for ${ep.filename}: ${it.message}") }
+                                }
+                                if (epWritten > 0) println("[INFO] Wrote $epWritten episode NFO(s) for '$id'")
+                            }
                             val cfg = configStore.current
                             if (!item.jellyfinId.isNullOrBlank() && cfg.apiKeys.jellyfinUrl.isNotBlank()) {
                                 jellyfinClient.refreshItem(cfg.apiKeys.jellyfinUrl, cfg.apiKeys.jellyfinToken, item.jellyfinId)
@@ -117,6 +134,17 @@ fun Route.mediaRoutes(
                     val item = store.get(id)
                         ?: return@post call.respond(HttpStatusCode.NotFound)
                     val status = artwork.fetch(item)
+                    // For TV shows, also fetch episode stills
+                    if (item.kind == MediaKind.TV_SHOW) {
+                        var stillsFetched = 0
+                        for (ep in item.episodes) {
+                            if (!ep.stillPath.isNullOrBlank()) {
+                                val result = artwork.fetchEpisodeStill(ep)
+                                if (result.stillExists) stillsFetched++
+                            }
+                        }
+                        if (stillsFetched > 0) println("[INFO] Fetched $stillsFetched episode still(s) for '$id'")
+                    }
                     if (status.posterExists || status.fanartExists) {
                         mediaHistory.record(id, "artwork_fetch", "poster=${status.posterExists} fanart=${status.fanartExists}")
                         val cfg = configStore.current
@@ -177,6 +205,162 @@ fun Route.mediaRoutes(
                     }
 
                     call.respond(artwork.check(item))
+                }
+            }
+        }
+
+        // Episode sub-routes — all scoped under /media/{id}/episodes
+        route("/{id}/episodes") {
+            // GET /api/media/{id}/episodes/stills — check still status for all episodes
+            get("/stills") {
+                val id = call.parameters["id"]
+                    ?: return@get call.respond(HttpStatusCode.BadRequest)
+                val item = store.get(id)
+                    ?: return@get call.respond(HttpStatusCode.NotFound)
+                val statuses = item.episodes.map { ep ->
+                    val status = artwork.checkEpisodeStill(ep)
+                    mapOf("filename" to ep.filename, "stillExists" to status.stillExists, "stillPath" to status.stillPath)
+                }
+                call.respond(statuses)
+            }
+
+            // POST /api/media/{id}/episodes/stills — fetch all missing episode stills from TMDB
+            post("/stills") {
+                val id = call.parameters["id"]
+                    ?: return@post call.respond(HttpStatusCode.BadRequest)
+                val item = store.get(id)
+                    ?: return@post call.respond(HttpStatusCode.NotFound)
+                var fetched = 0
+                for (ep in item.episodes) {
+                    if (ep.stillPath != null) {
+                        val result = artwork.fetchEpisodeStill(ep)
+                        if (result.stillExists) fetched++
+                    }
+                }
+                mediaHistory.record(id, "episode_stills_fetch", "fetched=$fetched")
+                call.respond(mapOf("fetched" to fetched))
+            }
+
+            // POST /api/media/{id}/episodes/nfo — write episodedetails.nfo for all episodes
+            post("/nfo") {
+                val id = call.parameters["id"]
+                    ?: return@post call.respond(HttpStatusCode.BadRequest)
+                val item = store.get(id)
+                    ?: return@post call.respond(HttpStatusCode.NotFound)
+                var written = 0
+                var failed = 0
+                for (ep in item.episodes) {
+                    NfoWriter.writeEpisode(ep)
+                        .onSuccess { written++ }
+                        .onFailure { failed++ }
+                }
+                mediaHistory.record(id, "episode_nfo_write", "written=$written failed=$failed")
+                call.respond(mapOf("written" to written, "failed" to failed))
+            }
+
+            // Episode track routes — {epFilename} identifies the episode by filename
+            route("/{epFilename}") {
+                // GET /api/media/{id}/episodes/{epFilename}/tracks/plan?specifier=...
+                get("/tracks/plan") {
+                    val id = call.parameters["id"]
+                        ?: return@get call.respond(HttpStatusCode.BadRequest)
+                    val epFilename = call.parameters["epFilename"]
+                        ?: return@get call.respond(HttpStatusCode.BadRequest)
+                    val item = store.get(id)
+                        ?: return@get call.respond(HttpStatusCode.NotFound)
+                    val ep = item.episodes.firstOrNull { it.filename == epFilename }
+                        ?: return@get call.respond(HttpStatusCode.NotFound, mapOf("error" to "episode not found"))
+
+                    val specifier = call.request.queryParameters["specifier"]
+                        ?: return@get call.respond(HttpStatusCode.BadRequest, mapOf("error" to "specifier required"))
+                    val targetTrack = ep.tracks.firstOrNull { it.specifier == specifier }
+                        ?: return@get call.respond(HttpStatusCode.NotFound, mapOf("error" to "track not found"))
+
+                    val ext = ep.path.substringAfterLast('.').lowercase()
+                    val sameType = ep.tracks.filter { it.kind == targetTrack.kind }
+                    val kindStr = targetTrack.kind.name.lowercase()
+                    val beforeSnaps = sameType.map { t -> TrackSnap(t.specifier, t.language, t.codec, t.title, t.default, kindStr) }
+                    val afterSnaps = sameType.map { t -> TrackSnap(t.specifier, t.language, t.codec, t.title, t.streamIndex == targetTrack.streamIndex, kindStr) }
+
+                    if (ext == "mkv") {
+                        val escaped = ep.path.replace("'", "'\\''")
+                        val parts = sameType.map { t ->
+                            val flag = if (t.streamIndex == targetTrack.streamIndex) 1 else 0
+                            "--edit track:@${t.streamIndex + 1} --set flag-default=$flag"
+                        }.joinToString(" \\\n  ")
+                        call.respond(TrackPlan("mkvpropedit '$escaped' \\\n  $parts", "mkvpropedit", 40, specifier, beforeSnaps, afterSnaps))
+                    } else {
+                        call.respond(TrackPlan(FfmpegRunner.planSetDefault(ep.path, targetTrack.streamIndex, sameType.map { it.streamIndex }, targetTrack.kind), "ffmpeg", 5000, specifier, beforeSnaps, afterSnaps))
+                    }
+                }
+
+                // POST /api/media/{id}/episodes/{epFilename}/tracks/default
+                post("/tracks/default") {
+                    val id = call.parameters["id"]
+                        ?: return@post call.respond(HttpStatusCode.BadRequest)
+                    val epFilename = call.parameters["epFilename"]
+                        ?: return@post call.respond(HttpStatusCode.BadRequest)
+                    val item = store.get(id)
+                        ?: return@post call.respond(HttpStatusCode.NotFound)
+                    val epIdx = item.episodes.indexOfFirst { it.filename == epFilename }
+                    if (epIdx < 0) return@post call.respond(HttpStatusCode.NotFound, mapOf("error" to "episode not found"))
+                    val ep = item.episodes[epIdx]
+
+                    @Serializable data class Req(val specifier: String)
+                    val req = call.receive<Req>()
+                    val targetTrack = ep.tracks.firstOrNull { it.specifier == req.specifier }
+                        ?: return@post call.respond(HttpStatusCode.NotFound, mapOf("error" to "track not found"))
+                    val ext = ep.path.substringAfterLast('.').lowercase()
+                    val sameType = ep.tracks.filter { it.kind == targetTrack.kind }
+
+                    val ok = if (ext == "mkv") MkvpropeditRunner.setDefault(ep.path, targetTrack.streamIndex, sameType.map { it.streamIndex })
+                             else FfmpegRunner.setDefault(ep.path, targetTrack.streamIndex, sameType.map { it.streamIndex }, targetTrack.kind)
+
+                    if (!ok) { call.respond(HttpStatusCode.InternalServerError, mapOf("error" to "tool failed")); return@post }
+
+                    val newTracks = FfprobeRunner.probe(ep.path)
+                    val newIssue = newTracks.count { (it.kind == TrackKind.AUDIO || it.kind == TrackKind.SUBTITLE) && it.language == null }
+                    val updatedEpisodes = item.episodes.toMutableList()
+                    updatedEpisodes[epIdx] = ep.copy(tracks = newTracks, issueCount = newIssue)
+                    store.updateOne(item.copy(episodes = updatedEpisodes))
+                    mediaHistory.record(id, "set_default", "ep=${ep.filename} specifier=${req.specifier}")
+                    call.respond(mapOf("ok" to true))
+                }
+
+                // POST /api/media/{id}/episodes/{epFilename}/tracks/language
+                post("/tracks/language") {
+                    val id = call.parameters["id"]
+                        ?: return@post call.respond(HttpStatusCode.BadRequest)
+                    val epFilename = call.parameters["epFilename"]
+                        ?: return@post call.respond(HttpStatusCode.BadRequest)
+                    val item = store.get(id)
+                        ?: return@post call.respond(HttpStatusCode.NotFound)
+                    val epIdx = item.episodes.indexOfFirst { it.filename == epFilename }
+                    if (epIdx < 0) return@post call.respond(HttpStatusCode.NotFound, mapOf("error" to "episode not found"))
+                    val ep = item.episodes[epIdx]
+
+                    @Serializable data class LangReq(val specifier: String, val language: String)
+                    val req = call.receive<LangReq>()
+                    if (!req.language.matches(Regex("[a-zA-Z]{2,8}(-[a-zA-Z0-9]{2,8})*"))) {
+                        call.respond(HttpStatusCode.BadRequest, mapOf("error" to "invalid language code"))
+                        return@post
+                    }
+                    val targetTrack = ep.tracks.firstOrNull { it.specifier == req.specifier }
+                        ?: return@post call.respond(HttpStatusCode.NotFound, mapOf("error" to "track not found"))
+                    val ext = ep.path.substringAfterLast('.').lowercase()
+
+                    val ok = if (ext == "mkv") MkvpropeditRunner.setLanguage(ep.path, targetTrack.streamIndex, req.language)
+                             else FfmpegRunner.setLanguage(ep.path, targetTrack.streamIndex, req.language)
+
+                    if (!ok) { call.respond(HttpStatusCode.InternalServerError, mapOf("error" to "tool failed")); return@post }
+
+                    val newTracks = FfprobeRunner.probe(ep.path)
+                    val newIssue = newTracks.count { (it.kind == TrackKind.AUDIO || it.kind == TrackKind.SUBTITLE) && it.language == null }
+                    val updatedEpisodes = item.episodes.toMutableList()
+                    updatedEpisodes[epIdx] = ep.copy(tracks = newTracks, issueCount = newIssue)
+                    store.updateOne(item.copy(episodes = updatedEpisodes))
+                    mediaHistory.record(id, "set_language", "ep=${ep.filename} specifier=${req.specifier} lang=${req.language}")
+                    call.respond(mapOf("ok" to true, "language" to req.language))
                 }
             }
         }

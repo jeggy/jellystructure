@@ -1,5 +1,6 @@
 package dev.jellystructure.nfo
 
+import dev.jellystructure.model.Episode
 import dev.jellystructure.model.MediaItem
 import dev.jellystructure.model.MediaKind
 import kotlinx.io.buffered
@@ -59,6 +60,56 @@ object NfoWriter {
         return runCatching {
             SystemFileSystem.source(path).buffered().use { it.readString() }
         }.getOrNull()
+    }
+
+    fun writeEpisode(episode: Episode): Result<String> = runCatching {
+        val dir = episode.path.substringBeforeLast('/')
+        val baseName = episode.filename.substringBeforeLast('.')
+        val nfoPath = "$dir/$baseName.nfo"
+        val tmp = "$nfoPath.tmp"
+
+        val sink = SystemFileSystem.sink(Path(tmp)).buffered()
+        sink.writeString(buildEpisodeXml(episode))
+        sink.flush()
+        sink.close()
+
+        platform.posix.rename(tmp, nfoPath)
+        println("[INFO] Wrote episode NFO: $nfoPath")
+        nfoPath
+    }
+
+    fun episodeNfoExists(episode: Episode): Boolean {
+        val dir = episode.path.substringBeforeLast('/')
+        val baseName = episode.filename.substringBeforeLast('.')
+        return SystemFileSystem.exists(Path("$dir/$baseName.nfo"))
+    }
+
+    fun readRawEpisode(episode: Episode): String? {
+        val dir = episode.path.substringBeforeLast('/')
+        val baseName = episode.filename.substringBeforeLast('.')
+        val path = Path("$dir/$baseName.nfo")
+        if (!SystemFileSystem.exists(path)) return null
+        return runCatching {
+            SystemFileSystem.source(path).buffered().use { it.readString() }
+        }.getOrNull()
+    }
+
+    private fun buildEpisodeXml(episode: Episode): String = buildString {
+        appendLine("""<?xml version="1.0" encoding="utf-8" standalone="yes"?>""")
+        appendLine("<episodedetails>")
+        appendLine("  <lockdata>true</lockdata>")
+        if (!episode.title.isNullOrBlank()) {
+            appendLine("  <title>${episode.title.esc()}</title>")
+        }
+        if (episode.seasonNumber != null) appendLine("  <season>${episode.seasonNumber}</season>")
+        if (episode.episodeNumber != null) appendLine("  <episode>${episode.episodeNumber}</episode>")
+        if (!episode.overview.isNullOrBlank()) {
+            appendLine("  <plot>${episode.overview.esc()}</plot>")
+        }
+        if (episode.tmdbEpisodeId != null) {
+            appendLine("""  <uniqueid type="tmdb">${episode.tmdbEpisodeId}</uniqueid>""")
+        }
+        appendLine("</episodedetails>")
     }
 
     private fun buildMovieXml(item: MediaItem): String = buildString {

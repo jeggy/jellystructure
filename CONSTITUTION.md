@@ -8,12 +8,12 @@ This document defines the non-negotiable architectural decisions, core principle
 
 jellystructure is a self-hosted web system that **fully replaces Jellyfin's built-in metadata scraper**. Once this system is running, users should never need to use "Refresh Metadata" inside Jellyfin. The system owns:
 
-- NFO files (Kodi/Jellyfin-compatible XML)
-- All image assets (posters, backdrops, logos, etc.)
+- NFO files (Kodi/Jellyfin-compatible XML): `movie.nfo`, `tvshow.nfo`, `episodedetails.nfo`
+- All image assets (posters, backdrops, logos, per-episode stills)
 - Media file track ordering (audio and subtitle default flags)
 - Config management (editable from the web UI)
 
-The metadata language is driven by the actual audio tracks present in each file — not a global default — using a cascading priority system backed by TMDB.
+The metadata language is driven by the actual audio tracks present in each file — not a global default — using a language-resolution algorithm backed by TMDB.
 
 ---
 
@@ -24,8 +24,10 @@ These choices are fixed. Do not introduce alternatives without updating this doc
 ### Backend — Kotlin Native
 - Target: `linuxX64` / `linuxArm64`, producing a native binary (no JVM)
 - HTTP server: **Ktor with CIO engine** — the only async engine available outside the JVM; no Netty, no Tomcat
-- File I/O: **kotlinx-io** (`org.jetbrains.kotlinx:kotlinx-io-core`) — `java.io` and `java.nio` do not exist in Kotlin Native; raw POSIX I/O is error-prone; kotlinx-io is the JetBrains-maintained KMP I/O library
+- File I/O: **kotlinx-io** (`org.jetbrains.kotlinx:kotlinx-io-core`) — `java.io` and `java.nio` do not exist in Kotlin Native; kotlinx-io is the JetBrains-maintained KMP I/O library
 - Config: **ktoml + kotlinx.serialization** — TOML format, `@Serializable` data classes, no runtime reflection
+- Local DB: **SQLDelight with native SQLite driver** — sessions, scan cache, audit log, triage issues
+- Subprocess: **Kotlin Native process API** via Kommand or equivalent — wraps `ffmpeg`, `ffprobe`, `mkvpropedit`
 - Real-time: **Ktor WebSockets** — push status updates from backend to frontend; no HTTP polling
 
 ### Frontend — Kotlin WASM
@@ -33,6 +35,7 @@ These choices are fixed. Do not introduce alternatives without updating this doc
 - DOM interaction via **kotlinx.browser** — direct manipulation of the browser's native HTML tree
 - **No Compose Multiplatform for Web** — canvas-based rendering is explicitly rejected (breaks accessibility, SEO, and CSS integration)
 - Styling: **Tailwind CSS** via Webpack + PostCSS in the Gradle build pipeline; class names in Kotlin source are scanned at build time
+- State: **kotlinx.coroutines StateFlow** — reactive stores; WS pushes into flows; no client-side router library
 
 ### Infrastructure
 - Deployment: **Docker Compose** only
@@ -44,20 +47,40 @@ These choices are fixed. Do not introduce alternatives without updating this doc
 
 ## Architectural Invariants
 
+### Authentication
+Auth follows the Jellyseerr model — there is **no separate Jellystructure account**:
+1. Operator signs in with Jellyfin username + password via `POST /Users/AuthenticateByName`.
+2. Jellystructure rejects non-admin users (`Policy.IsAdministrator == false`).
+3. On success, an opaque session token (generated from `/dev/urandom`) is stored in SQLite and set as an `HttpOnly; SameSite=Lax` cookie.
+4. Every `/api/**` route and WebSocket upgrade validates the cookie; missing/expired → 401.
+5. The password is **never** persisted. The per-user Jellyfin access token is stored only in the session row, not in config.
+6. A separate machine token (`jellyfin_token` in config) is used by background jobs so they work with no user session active.
+
+Before `jellyfin_url` is configured, a one-time setup screen (`/setup`) is served; it 404s once config exists.
+
 ### NFO Files
-- Format: Kodi-compatible XML (`<movie>`, `<tvshow>`, `<episodedetails>`)
+- Format: Kodi-compatible XML
+  - Movies: `<movie>` → `movie.nfo` beside the movie file
+  - Series: `<tvshow>` → `tvshow.nfo` in the series directory
+  - Episodes: `<episodedetails>` → `{S01E03}.nfo` (or matching filename) beside each episode file
 - **Always include `<lockdata>true</lockdata>`** — this instructs Jellyfin to never overwrite these files
 - Written via kotlinx-io streaming (no full XML tree in RAM)
-- Images named per convention: `poster.jpg`, `backdrop.jpg`, `logo.png`
+- Atomic write: write to `.tmp` file then `rename()` to avoid partial reads by Jellyfin
+
+### Artwork Conventions
+- Series/Movie: `poster.jpg`, `fanart.jpg`, `clearlogo.png` in the media directory
+- Episodes: `{episode-filename-without-ext}-thumb.jpg` beside each episode file (Kodi/Jellyfin convention)
 
 ### Language Resolution for TMDB Metadata
 This is the core domain logic. It determines which language is used when fetching metadata from TMDB:
 
-1. Run `ffprobe` → parse JSON → build a track map (index, codec, language code)
-2. Identify tracks with no language tag → surface them in the UI for manual correction
-3. For TMDB metadata fetching: query TMDB for each language found in the file's audio tracks, in physical track-index order (track 0 first, track 1 next, etc.); the first language that returns a result wins
-4. If no language from the file's tracks yields a TMDB result, fall back to the single global `fallback_language` (default `en`)
+1. Run `ffprobe` → parse JSON → build a track list (index, codec, language code)
+2. Identify tracks with no language tag → surface them in Triage for manual correction
+3. **Per-file resolution**: query TMDB for each language found in the file's audio tracks, in physical track-index order (track 0 first, track 1 next, etc.); the first language that returns a result wins
+4. If no language from the file's tracks yields a TMDB result, fall back to the single global `fallback_language` (default `en`); per-library overrides take precedence over the global default
 5. Track default flags and ordering are **never changed automatically** — they are changed only via explicit manual action in the UI
+
+**For TV series**: language resolution runs **per episode** on that episode's own audio tracks. The series (`tvshow.nfo`) uses the **majority** of its episodes' resolved languages. Mixed-language series surface a distribution view and an override; no writes are blocked by a mix.
 
 ### Subprocess Hierarchy
 Choose the **least destructive tool** sufficient for the operation:
@@ -72,6 +95,12 @@ Choose the **least destructive tool** sufficient for the operation:
 
 FFmpeg/mkvpropedit stdout+stderr is streamed to the frontend via WebSocket during long operations.
 
+### Series and Episode Management
+- **Discovery**: Jellyfin API is the source of truth for series existence; episodes are discovered by filesystem walk within the series directory (no reliance on `GET /Shows/{id}/Episodes` for file discovery, since Jellyfin may not have probed all episodes)
+- **Per-episode**: each episode has its own resolved language, TMDB episode metadata (title, overview, still), and episodedetails.nfo
+- **Triage**: Series Triage is a multi-step flow — step 1 is series-level (metadata, artwork, language majority); each subsequent step is an episode needing attention (untagged tracks, missing still/overview)
+- **Track editing**: every episode supports the same track default and language editing as a movie, from the episode's own file
+
 ### Jellyfin API Integration
 After completing metadata or file modifications, the system calls Jellyfin's REST API to trigger a refresh — the user never has to do this manually:
 - `POST /Items/{itemId}/Refresh` with `MetadataRefreshMode=FullRefresh`
@@ -83,7 +112,7 @@ TOML sections and their purpose:
 ```toml
 [api_keys]
 tmdb_v3_key = ""
-jellyfin_token = ""
+jellyfin_token = ""   # machine token for background jobs
 jellyfin_url = ""
 
 [language_rules]
@@ -98,13 +127,13 @@ watch_folders = false
 jellyfin_id = "abc123"
 name = "Movies"
 collection_type = "movies"
-jellyfin_path = "/media/movies"
-local_path = "/mnt/media/movies"
+jellyfin_path = "/media/movies"    # path as Jellyfin sees it
+local_path = "/mnt/media/movies"   # path as Jellystructure sees it
 skip = false
-fallback_language = ""   # empty = inherit global
+fallback_language = ""             # empty = inherit global
 ```
 
-Library paths are **not static**. They are auto-discovered from the Jellyfin API (`GET /Library/VirtualFolders`) after a successful connection test and stored as `[[libraries]]` TOML array entries. The operator assigns the local mount path per library; all other fields come from Jellyfin. Config is readable and writable from the web UI; changes are posted as JSON to Ktor, converted to TOML, and written to `/config/config.toml`.
+Library paths are **not static**. They are auto-discovered from the Jellyfin API (`GET /Library/VirtualFolders`) after a successful connection test and stored as `[[libraries]]` TOML array entries. There is no static `[paths]` section. The operator assigns the local mount path per library; all other fields come from Jellyfin. Config is readable and writable from the web UI; changes are posted as JSON to Ktor, converted to TOML, and written to `/config/config.toml`.
 
 ---
 
@@ -114,6 +143,7 @@ Library paths are **not static**. They are auto-discovered from the Jellyfin API
 - All long-running backend operations (scans, downloads, ffmpeg jobs) emit granular JSON progress events over this connection
 - The frontend updates specific DOM nodes reactively — no full page reloads
 - UI state changes (e.g. a job starting) are reflected immediately, before the backend confirms
+- On each `ItemScanned` event during a scan, the Library grid appends/updates the item without waiting for scan completion
 
 ---
 
@@ -121,27 +151,31 @@ Library paths are **not static**. They are auto-discovered from the Jellyfin API
 
 ### Integration Tests
 - **Playwright** in Docker (`mcr.microsoft.com/playwright`) against the full stack
-- Element selection via accessibility selectors (aria-labels), not CSS class names
-- Visual regression via `expect(page).toHaveScreenshot()` on stable UI states
-- Docker IPC configured with `--ipc=host` to prevent Chromium shared-memory crashes
+- Element selection via data attributes (`data-tab`, `data-specifier`) and semantic text matchers — not fragile CSS selectors
+- Post-operation validation runs `ffprobe` to assert the file actually changed (not just the UI)
+- Mock TMDB and Jellyfin servers run in Docker Compose for deterministic results
 
 ### Test Data
-A setup script (bash or Kotlin CLI) downloads and prepares test media before tests run:
+A setup script (`scripts/build-fixtures.sh`) downloads and prepares test media before tests run:
 - Source films: **Big Buck Bunny**, **Sintel**, **Tears of Steel** (Blender Foundation, open license)
-- Script injects alternative audio tracks with `ffmpeg -map 0:v -map 1:a -c copy` and then uses `mkvpropedit` to set a wrong default flag — creating a "broken" state the test suite must repair
-- Files are placed in `/media/movies/Sintel (2010)/Sintel (2010).mkv` etc. to satisfy scraper naming conventions
+- **Sintel**: `fra` injected as wrong default audio (must be repaired to `eng`)
+- **Big Buck Bunny**: 2 untagged audio tracks (→ triage queue)
+- **Tears of Steel**: split into 3 episode files under a fake series directory (→ series episode tab)
+- **Babel Fish**: mixed-language series fixture (→ language mix badge, NFO blocked)
 - Post-test validation runs `ffprobe` and asserts the correct track is now flagged as default
 
 ---
 
 ## Development Phases
 
-| Phase | Focus | Key Deliverables |
+| Phase | Status | Focus |
 |---|---|---|
-| 1 | Infrastructure + Backend Foundation | Docker Compose, Ktor Native (CIO), ktoml config read/write |
-| 2 | Frontend + API Layer | Kotlin WASM + Standard DOM, Tailwind build pipeline, WebSocket + REST wiring |
-| 3 | Domain Engine | Okio NFO XML writer, subprocess abstraction (ffprobe/ffmpeg/mkvpropedit), TMDB client |
-| 4 | Jellyfin Integration + Language Cascade | Full cascade algorithm, mkvpropedit orchestration, Jellyfin `/Refresh` calls, image downloads |
-| 5 | Test Regime + Automation | Test data script, Playwright suite, visual snapshots, CI pipeline |
+| 0 | ✓ Done | Scaffolding — Gradle KMP, Docker Compose, native binary + WASM bundle |
+| 1 | ✓ Done | Config, DB, auth (Jellyfin sign-in, session cookie, admin gate), library mapping |
+| 2 | ✓ Done | Jellyfin-driven discovery, ffprobe track data, TMDB match, Library + Media Detail UI |
+| 3 | ✓ Done | NFO write (movie + tvshow), artwork download, language resolver, cascade settings UI |
+| 4 | ✓ Done | Track editing (mkvpropedit/ffmpeg), triage queue, live WebSocket scan, Jellyfin refresh |
+| 5 | ✓ Done | Folder watcher, Playwright E2E tests, fixture builder, series episode tab |
+| 6 | ✓ Done | Per-episode TMDB metadata, episodedetails.nfo, episode stills, per-episode track editing |
 
 Phases are sequential. Do not begin a phase until the prior phase's core deliverables are working end-to-end.

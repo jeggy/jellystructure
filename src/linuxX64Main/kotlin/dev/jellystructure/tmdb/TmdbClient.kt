@@ -70,6 +70,16 @@ data class TmdbTvDetails(
     val genres: List<TmdbGenre> = emptyList(),
 )
 
+@Serializable
+data class TmdbEpisodeDetails(
+    val id: Int,
+    val name: String = "",
+    val overview: String = "",
+    @SerialName("season_number") val seasonNumber: Int = 0,
+    @SerialName("episode_number") val episodeNumber: Int = 0,
+    @SerialName("still_path") val stillPath: String? = null,
+)
+
 class TmdbClient(
     private val configStore: ConfigStore,
     private val baseUrl: String = "https://api.themoviedb.org/3",
@@ -173,5 +183,23 @@ class TmdbClient(
             if (d.overview.isNotBlank()) return d
         }
         return getTvDetails(tmdbId)
+    }
+
+    suspend fun getEpisodeDetails(seriesId: Int, season: Int, episode: Int, language: String? = null): TmdbEpisodeDetails? {
+        val key = apiKey()
+        if (key.isBlank()) return null
+        return runCatching {
+            val response = http.get("$baseUrl/tv/$seriesId/season/$season/episode/$episode") {
+                parameter("api_key", key)
+                if (!language.isNullOrBlank()) parameter("language", language)
+            }
+            if (response.status == HttpStatusCode.TooManyRequests) {
+                delay(3000)
+                return getEpisodeDetails(seriesId, season, episode, language)
+            }
+            if (response.status.value == 404) return null
+            response.body<TmdbEpisodeDetails>()
+        }.onFailure { println("[WARN] TMDB episode details failed for series=$seriesId s${season}e${episode} lang=$language: ${it.message}") }
+         .getOrNull()
     }
 }

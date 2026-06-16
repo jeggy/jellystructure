@@ -73,7 +73,8 @@ object App {
             route == "/settings" -> renderSettings(container, scope)
             route.startsWith("/track-order") -> {
                 val id = route.substringAfter("id=", "").substringBefore("&")
-                if (id.isNotEmpty()) renderTrackOrder(container, scope, id)
+                val ep = decodeURIComponent(route.substringAfter("ep=", "").substringBefore("&"))
+                if (id.isNotEmpty()) renderTrackOrder(container, scope, id, ep.ifEmpty { null })
                 else renderLibrary(container, scope)
             }
             else -> renderDashboard(container, scope)
