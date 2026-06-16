@@ -115,4 +115,42 @@ test.describe.serial("Fixture suite", () => {
     const langs = ffprobeAudioLangs(BBB_MKV);
     expect(langs[0]).toBe("eng");
   });
+
+  test("Tears of Steel detail shows Seasons & episodes tab with 3 episode rows", async ({ page }) => {
+    await login(page);
+    await page.goto("/#/library");
+    await page.waitForSelector('.poster', { timeout: 30_000 });
+
+    await page.locator('.ttl', { hasText: 'Tears of Steel' }).first().click();
+    await expect(page.locator('h2')).toContainText('Tears of Steel', { timeout: 10_000 });
+
+    // TV shows must have "Seasons & episodes" tab, not the movie "Tracks & order" tab
+    const episodesTab = page.locator('[data-tab="episodes"]');
+    await expect(episodesTab).toBeVisible({ timeout: 5_000 });
+    await expect(page.locator('[data-tab="tracks"]')).toHaveCount(0);
+
+    // Click the episodes tab and verify 3 episode rows appear
+    await episodesTab.click();
+    await expect(page.locator('.ep-toggle-row')).toHaveCount(3, { timeout: 10_000 });
+    await expect(page.locator('.ep-toggle-row').first()).toContainText('S01E01');
+    await expect(page.locator('.ep-toggle-row').nth(2)).toContainText('S01E03');
+  });
+
+  test("Babel Fish mixed-language series shows language mix badge and no NFO button", async ({ page }) => {
+    await login(page);
+    await page.goto("/#/library");
+    await page.waitForSelector('.poster', { timeout: 30_000 });
+
+    await page.locator('.ttl', { hasText: 'Babel Fish' }).first().click();
+    await expect(page.locator('h2')).toContainText('Babel Fish', { timeout: 10_000 });
+
+    // Language mix badge visible in the page header (issueBadge area)
+    await expect(page.locator('.badge.warn', { hasText: 'language mix — writes blocked' })).toBeVisible({ timeout: 5_000 });
+
+    // "Language Mix Detected" card visible in the overview tab
+    await expect(page.locator('.badge.warn', { hasText: 'Language Mix Detected' })).toBeVisible();
+
+    // Save → NFO button must be disabled because languageMix blocks writes
+    await expect(page.locator('#write-nfo-btn')).toBeDisabled();
+  });
 });

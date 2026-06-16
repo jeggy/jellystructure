@@ -112,11 +112,47 @@ for ep in 01 02 03; do
 done
 rm -rf "$TMP"
 
+# ─── fixture 4: Babel Fish (2000) — mixed-language TV series ──────────────────
+log "Building: Babel Fish (2000) — mixed-language TV series (eng/dan/fao)"
+BF_DIR="$FIXTURE_DIR/tv/Babel Fish"
+mkdir -p "$BF_DIR/Season 01"
+TMP=$(mktemp -d)
+make_video "$TMP/vid.y4m"
+
+# Each episode has a different audio language — triggers languageMix=true in scanner
+make_audio_track eng 44100 "$TMP/eng.wav"
+ffmpeg -y \
+  -i "$TMP/vid.y4m" -i "$TMP/eng.wav" \
+  -map 0:v -map 1:a \
+  -metadata:s:a:0 language=eng \
+  -disposition:a:0 default \
+  -c copy "$BF_DIR/Season 01/Babel Fish S01E01.mkv" -loglevel error
+
+make_audio_track da 48000 "$TMP/dan.wav"
+ffmpeg -y \
+  -i "$TMP/vid.y4m" -i "$TMP/dan.wav" \
+  -map 0:v -map 1:a \
+  -metadata:s:a:0 language=dan \
+  -disposition:a:0 default \
+  -c copy "$BF_DIR/Season 01/Babel Fish S01E02.mkv" -loglevel error
+
+make_audio_track fo 32000 "$TMP/fao.wav"
+ffmpeg -y \
+  -i "$TMP/vid.y4m" -i "$TMP/fao.wav" \
+  -map 0:v -map 1:a \
+  -metadata:s:a:0 language=fao \
+  -disposition:a:0 default \
+  -c copy "$BF_DIR/Season 01/Babel Fish S01E03.mkv" -loglevel error
+
+rm -rf "$TMP"
+log "  → $BF_DIR/Season 01/ (S01E01=eng, S01E02=dan, S01E03=fao — mixed language)"
+
 log ""
 log "Fixtures ready in $FIXTURE_DIR"
-log "  movies/Sintel (2010)/Sintel (2010).mkv       — wrong fra default (must be fixed to eng)"
-log "  movies/Big Buck Bunny (2008)/...mkv           — untagged tracks (→ triage)"
+log "  movies/Sintel (2010)/Sintel (2010).mkv        — wrong fra default (must be fixed to eng)"
+log "  movies/Big Buck Bunny (2008)/...mkv            — untagged tracks (→ triage)"
 log "  tv/Tears of Steel/Season 01/...mkv (3 files)  — uniform eng"
+log "  tv/Babel Fish/Season 01/...mkv (3 files)      — mixed eng/dan/fao (languageMix=true)"
 log ""
 log "Verify with:"
 log "  ffprobe -v quiet -print_format json -show_streams '$SINTEL_DIR/Sintel (2010).mkv' | grep -E 'language|disposition'"

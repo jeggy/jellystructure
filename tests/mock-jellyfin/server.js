@@ -54,6 +54,14 @@ const ITEMS = [
     Path: `${MEDIA_ROOT}/tv/Tears of Steel`,
     ProviderIds: { Tmdb: "99999" },
   },
+  {
+    Id: "babel-id",
+    Name: "Babel Fish",
+    Type: "Series",
+    ProductionYear: 2000,
+    Path: `${MEDIA_ROOT}/tv/Babel Fish`,
+    ProviderIds: {},
+  },
 ];
 
 http.createServer(async (req, res) => {
