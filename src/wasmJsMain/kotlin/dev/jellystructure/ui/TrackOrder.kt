@@ -106,6 +106,12 @@ private fun renderTrackOrderView(container: Element, item: MediaItem, scope: Cor
     val audioRows = audioTracks.joinToString("") { trackRowHtml(it, "audio") }
     val subRows = subTracks.joinToString("") { trackRowHtml(it, "subtitle") }
 
+    val allBeforeHtml = allEditable.filter { it.kind == TrackKind.AUDIO || it.kind == TrackKind.SUBTITLE }
+        .joinToString("") { t ->
+            val snap = TrackSnap(t.specifier, t.language, t.codec, t.title, t.default, t.kind.name.lowercase())
+            snapRowHtml(snap, "")
+        }
+
     container.innerHTML = """
         <div class="pagebar">
           <button id="back-btn" class="btn sm ghost">‹ ${item.title.esc()}</button>
@@ -117,11 +123,20 @@ private fun renderTrackOrderView(container: Element, item: MediaItem, scope: Cor
 
         $untaggedWarning
 
-        <div class="card">
+        <div class="card" style="margin-bottom:14px;">
           $toolNote
         </div>
 
-        <div class="card">
+        <div class="row center" style="margin-bottom:10px;gap:8px">
+          <span class="seg">
+            <span id="seg-audio" class="on">Audio <span class="mono" style="opacity:.7">· ${audioTracks.size}</span></span>
+            <span id="seg-sub">Subtitles <span class="mono" style="opacity:.7">· ${subTracks.size}</span></span>
+          </span>
+          <span class="spacer"></span>
+          <span class="muted tiny"><b>★ default</b> = auto-selected on playback · set with mkvpropedit, no re-encode</span>
+        </div>
+
+        <div class="card" id="audio-card">
           <h4 style="margin:0 0 12px;">Audio Tracks</h4>
           ${if (audioTracks.isEmpty()) """<span class="muted tiny">No audio tracks found.</span>""" else """
           <table class="wf-table">
@@ -130,7 +145,7 @@ private fun renderTrackOrderView(container: Element, item: MediaItem, scope: Cor
           </table>"""}
         </div>
 
-        <div class="card">
+        <div class="card" id="sub-card" style="display:none">
           <h4 style="margin:0 0 12px;">Subtitle Tracks</h4>
           ${if (subTracks.isEmpty()) """<span class="muted tiny">No subtitle tracks found.</span>""" else """
           <table class="wf-table">
@@ -139,16 +154,16 @@ private fun renderTrackOrderView(container: Element, item: MediaItem, scope: Cor
           </table>"""}
         </div>
 
-        <div class="card" id="diff-card" style="display:none;">
+        <div class="card" id="diff-card">
           <h4 style="margin:0 0 12px;">Track changes</h4>
           <div class="row" style="gap:16px;">
             <div class="col fill">
-              <div class="muted tiny" style="margin-bottom:6px;">Before</div>
-              <div id="diff-before"></div>
+              <div class="muted tiny" style="margin-bottom:6px;">Current state (before)</div>
+              <div id="diff-before">$allBeforeHtml</div>
             </div>
             <div class="col fill">
-              <div class="muted tiny" style="margin-bottom:6px;">After</div>
-              <div id="diff-after"></div>
+              <div class="muted tiny" style="margin-bottom:6px;">After — select a default above</div>
+              <div id="diff-after"><span class="muted tiny">No pending change.</span></div>
             </div>
           </div>
         </div>
@@ -174,6 +189,20 @@ private fun renderTrackOrderView(container: Element, item: MediaItem, scope: Cor
         e.preventDefault()
         App.navigate("/triage")
     }
+
+    // Segment switcher: Audio / Subtitles
+    fun setTrackTab(tab: String) {
+        val audioCard = document.getElementById("audio-card") as? HTMLElement
+        val subCard = document.getElementById("sub-card") as? HTMLElement
+        val segAudio = document.getElementById("seg-audio") as? HTMLElement
+        val segSub = document.getElementById("seg-sub") as? HTMLElement
+        audioCard?.style?.display = if (tab == "audio") "" else "none"
+        subCard?.style?.display = if (tab == "subtitle") "" else "none"
+        segAudio?.className = if (tab == "audio") "on" else ""
+        segSub?.className = if (tab == "subtitle") "on" else ""
+    }
+    document.getElementById("seg-audio")?.addEventListener("click") { setTrackTab("audio") }
+    document.getElementById("seg-sub")?.addEventListener("click") { setTrackTab("subtitle") }
 
     var pendingSpecifier: String? = null
 

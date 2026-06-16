@@ -58,6 +58,57 @@ object FfmpegRunner {
         return ok
     }
 
+    // Remux file removing a single track (by absolute stream index).
+    fun removeTrack(filePath: String, streamIndex: Int): Boolean {
+        val tmp = tmpPath(filePath)
+        val escaped = filePath.replace("'", "'\\''")
+        val escapedTmp = tmp.replace("'", "'\\''")
+        val core = "ffmpeg -y -i '$escaped' -map 0 -map -0:$streamIndex -c copy '$escapedTmp' 2>&1 && mv '$escapedTmp' '$escaped'"
+        val cmd = withOwnershipPreservation(escaped, core)
+        val ok = runCommand(cmd)
+        if (!ok) {
+            @OptIn(ExperimentalForeignApi::class)
+            remove(tmp)
+        }
+        return ok
+    }
+
+    // Remux file reordering tracks of a given type. orderedIndices gives the desired physical order
+    // (absolute stream indices). Video and the opposite type are mapped first/last unchanged.
+    // Pass the opposite type char: "a" when reordering subtitles, "s" when reordering audio.
+    fun reorderTracks(filePath: String, kind: TrackKind, orderedIndices: List<Int>): Boolean {
+        val tmp = tmpPath(filePath)
+        val escaped = filePath.replace("'", "'\\''")
+        val escapedTmp = tmp.replace("'", "'\\''")
+        val maps = buildReorderMaps(kind, orderedIndices)
+        val core = "ffmpeg -y -i '$escaped' $maps -c copy '$escapedTmp' 2>&1 && mv '$escapedTmp' '$escaped'"
+        val cmd = withOwnershipPreservation(escaped, core)
+        val ok = runCommand(cmd)
+        if (!ok) {
+            @OptIn(ExperimentalForeignApi::class)
+            remove(tmp)
+        }
+        return ok
+    }
+
+    // Remux file reordering tracks — dry-run command string.
+    fun planReorderTracks(filePath: String, kind: TrackKind, orderedIndices: List<Int>): String {
+        val tmp = tmpPath(filePath)
+        val escaped = filePath.replace("'", "'\\''")
+        val escapedTmp = tmp.replace("'", "'\\''")
+        val maps = buildReorderMaps(kind, orderedIndices)
+        return "ffmpeg -y -i '$escaped' \\\n  $maps -c copy \\\n  '$escapedTmp' && mv '$escapedTmp' '$escaped'"
+    }
+
+    private fun buildReorderMaps(kind: TrackKind, orderedIndices: List<Int>): String {
+        val specificMaps = orderedIndices.joinToString(" ") { "-map 0:$it" }
+        return when (kind) {
+            TrackKind.AUDIO -> "-map 0:v $specificMaps -map 0:s? -map 0:d?"
+            TrackKind.SUBTITLE -> "-map 0:v -map 0:a $specificMaps -map 0:d?"
+            else -> "-map 0 $specificMaps"
+        }
+    }
+
     // Build the dry-run command string (for /tracks/plan endpoint).
     fun planSetDefault(filePath: String, defaultStreamIndex: Int, sameTypeIndices: List<Int>, kind: TrackKind): String {
         val typeStr = typeChar(kind)

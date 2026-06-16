@@ -5,6 +5,7 @@ import dev.jellystructure.model.MediaItem
 import dev.jellystructure.model.MediaKind
 import dev.jellystructure.model.MediaPage
 import io.ktor.client.call.body
+import io.ktor.client.request.delete
 import io.ktor.client.request.get
 import io.ktor.client.request.parameter
 import io.ktor.client.request.patch
@@ -19,12 +20,17 @@ import kotlinx.serialization.Serializable
 data class StatsResponse(
     val movies: Int,
     val tvShows: Int = 0,
+    val tvEpisodes: Int = 0,
     val issues: Int,
     val nfoCoverage: Int = 0,
 )
 
 @Serializable
-data class ArtworkStatus(val posterExists: Boolean, val fanartExists: Boolean)
+data class ArtworkStatus(
+    val posterExists: Boolean,
+    val fanartExists: Boolean,
+    val logoExists: Boolean = false,
+)
 
 @Serializable
 data class TrackSnap(
@@ -68,12 +74,16 @@ object MediaApi {
     suspend fun list(
         kind: MediaKind? = null,
         filter: String? = null,
+        search: String? = null,
+        sort: String? = null,
         page: Int = 1,
         pageSize: Int = 20,
     ): MediaPage? = runCatching {
         httpClient.get("/api/media") {
             if (kind != null) parameter("kind", kind.name)
             if (filter != null) parameter("filter", filter)
+            if (!search.isNullOrBlank()) parameter("search", search)
+            if (!sort.isNullOrBlank()) parameter("sort", sort)
             parameter("page", page)
             parameter("pageSize", pageSize)
         }.body<MediaPage>()
@@ -151,12 +161,26 @@ object MediaApi {
         if (response.status == HttpStatusCode.OK) response.body<MediaItem>() else null
     }.getOrNull()
 
-    suspend fun editMetadata(id: String, title: String?, overview: String?, year: Int?, originalTitle: String?): MediaItem? = runCatching {
+    suspend fun editMetadata(
+        id: String,
+        title: String? = null,
+        overview: String? = null,
+        year: Int? = null,
+        originalTitle: String? = null,
+        tags: List<String>? = null,
+        director: String? = null,
+        studio: String? = null,
+        network: String? = null,
+    ): MediaItem? = runCatching {
         val parts = buildList {
             if (title != null) add(""""title":"${title.replace("\"", "\\\"").replace("\n", "")}"""")
             if (overview != null) add(""""overview":"${overview.replace("\"", "\\\"")}"""")
             if (year != null) add(""""year":$year""")
             if (originalTitle != null) add(""""originalTitle":"${originalTitle.replace("\"", "\\\"")}"""")
+            if (tags != null) add(""""tags":[${tags.joinToString(",") { "\"${it.replace("\"", "\\\"")}\"" }}]""")
+            if (director != null) add(""""director":"${director.replace("\"", "\\\"")}"""")
+            if (studio != null) add(""""studio":"${studio.replace("\"", "\\\"")}"""")
+            if (network != null) add(""""network":"${network.replace("\"", "\\\"")}"""")
         }
         val response = httpClient.patch("/api/media/$id/metadata") {
             setBody("{${parts.joinToString(",")}}")
@@ -210,6 +234,35 @@ object MediaApi {
             setBody("""{"specifier":"${specifier.replace("\"","")}","language":"${language.replace("\"","")}"}""")
             contentType(ContentType.Application.Json)
         }
+        response.status.value in 200..299
+    }.getOrDefault(false)
+
+    suspend fun removeTrack(id: String, specifier: String): Boolean = runCatching {
+        val encoded = encodeURIComponent(specifier)
+        val response = httpClient.delete("/api/media/$id/tracks/$encoded")
+        response.status.value in 200..299
+    }.getOrDefault(false)
+
+    suspend fun reorderTracks(id: String, kind: String, order: List<String>): Boolean = runCatching {
+        val orderJson = order.joinToString(",") { "\"${it.replace("\"", "")}\"" }
+        val response = httpClient.post("/api/media/$id/tracks/reorder") {
+            setBody("""{"kind":"$kind","order":[$orderJson]}""")
+            contentType(ContentType.Application.Json)
+        }
+        response.status.value in 200..299
+    }.getOrDefault(false)
+
+    suspend fun getRecentActivity(): List<HistoryEntry> = runCatching {
+        httpClient.get("/api/activity/recent").body<List<HistoryEntry>>()
+    }.getOrDefault(emptyList())
+
+    suspend fun getTriageSuggestion(mediaId: String): String? = runCatching {
+        @Serializable data class SuggestResp(val language: String?)
+        httpClient.get("/api/triage/$mediaId/suggest").body<SuggestResp>().language
+    }.getOrNull()
+
+    suspend fun jellyfinRefresh(id: String): Boolean = runCatching {
+        val response = httpClient.post("/api/media/$id/jellyfin-refresh")
         response.status.value in 200..299
     }.getOrDefault(false)
 }

@@ -7,6 +7,7 @@ import dev.jellystructure.ui.renderLanguage
 import dev.jellystructure.ui.renderLibrary
 import dev.jellystructure.ui.renderLogin
 import dev.jellystructure.ui.renderMediaDetail
+import dev.jellystructure.ui.renderSeriesTriage
 import dev.jellystructure.ui.renderSetup
 import dev.jellystructure.ui.renderSettings
 import dev.jellystructure.ui.renderShell
@@ -69,6 +70,11 @@ object App {
             }
             route == "/language" -> renderLanguage(container, scope)
             route == "/triage"   -> renderTriage(container, scope)
+            route.startsWith("/series-triage") -> {
+                val id = route.substringAfter("id=", "").substringBefore("&")
+                if (id.isNotEmpty()) renderSeriesTriage(container, scope, id)
+                else renderTriage(container, scope)
+            }
             route == "/activity" -> renderActivity(container, scope)
             route == "/settings" -> renderSettings(container, scope)
             route.startsWith("/track-order") -> {

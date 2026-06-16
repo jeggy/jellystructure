@@ -1,8 +1,10 @@
 package dev.jellystructure.ui
 
+import dev.jellystructure.api.MediaApi
 import kotlinx.browser.document
 import kotlinx.browser.window
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.launch
 import org.w3c.dom.Element
 import org.w3c.dom.HTMLElement
 import org.w3c.dom.WebSocket
@@ -11,50 +13,63 @@ import org.w3c.dom.events.Event
 private fun currentTimeString(): String = js("new Date().toLocaleTimeString()")
 
 private var activitySocket: WebSocket? = null
+private var activityScope: CoroutineScope? = null
 private var jobItemCount = 0
+private var jobDoneCount = 0
+private var jobFailCount = 0
+private var jobCurrentTitle: String? = null
 
 fun renderActivity(container: Element, scope: CoroutineScope) {
-    // Close any existing socket when navigating away
+    activityScope = scope
     activitySocket?.close()
     activitySocket = null
+    jobItemCount = 0
+    jobDoneCount = 0
+    jobFailCount = 0
+    jobCurrentTitle = null
 
     container.innerHTML = """
-        <div class="p-6">
-          <div class="flex items-center justify-between mb-4">
-            <div>
-              <h1 class="text-2xl font-bold text-white">Activity</h1>
-              <p class="text-sm text-slate-400 mt-1">Live job events streamed from the backend.</p>
-            </div>
-            <div class="flex items-center gap-3">
-              <span id="ws-status" class="text-xs px-2 py-1 rounded-full bg-slate-700 text-slate-400">Connecting…</span>
-              <button id="clear-btn" class="text-xs bg-slate-700 hover:bg-slate-600 text-slate-300 px-3 py-1.5 rounded">Clear</button>
-            </div>
-          </div>
+        <div class="pagebar">
+          <h1>Activity</h1>
+          <span id="act-crumb" style="display:none" class="crumb"></span>
+          <span class="spacer"></span>
+          <span id="ws-status" class="badge">Connecting…</span>
+          <button id="act-cancel-btn" class="btn sm ghost" style="display:none">Pause</button>
+          <button id="clear-btn" class="btn sm ghost">Clear</button>
+        </div>
+        <p class="page-sub">Live job events streamed from the backend WebSocket.</p>
 
-          <div id="job-progress-card" class="bg-slate-800 rounded-lg border border-slate-700 p-4 mb-4" style="display:none">
-            <div class="flex items-center justify-between mb-2">
-              <span class="text-sm font-semibold text-white">Scan in progress</span>
-              <span id="job-id-badge" class="text-xs text-slate-400 font-mono"></span>
-            </div>
-            <div class="flex items-center gap-6 text-sm text-slate-300 mb-3">
-              <span>Items scanned: <strong id="job-count">0</strong></span>
-              <span id="job-current-file" class="text-slate-400 text-xs font-mono truncate max-w-xs"></span>
-            </div>
-            <div class="w-full bg-slate-700 rounded-full h-1.5">
-              <div id="job-progress-bar" class="bg-indigo-500 h-1.5 rounded-full transition-all" style="width:0%"></div>
-            </div>
-          </div>
+        <div id="act-chips" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px"></div>
 
-          <div id="activity-console"
-               class="bg-slate-950 rounded-lg border border-slate-700 p-4 font-mono text-xs text-slate-300 h-[calc(100vh-18rem)] overflow-y-auto space-y-0.5">
-            <div class="text-slate-600 italic">Waiting for job events…</div>
+        <div id="job-progress-card" class="card" style="display:none;margin-bottom:14px">
+          <div class="row center" style="margin-bottom:10px">
+            <span style="font-size:.9rem;font-weight:600">Scan in progress</span>
+            <span class="spacer"></span>
+            <span id="job-id-badge" class="num tiny muted"></span>
           </div>
+          <div class="row center" style="gap:16px;margin-bottom:10px">
+            <span class="tiny muted">Items found: <b id="job-count">0</b></span>
+            <span id="job-current-file" class="tiny muted mono" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0"></span>
+          </div>
+          <div style="width:100%;background:var(--fill-3);border-radius:4px;height:4px">
+            <div id="job-progress-bar" style="width:0%;height:4px;border-radius:4px;background:var(--grad,var(--hi));transition:width .3s"></div>
+          </div>
+        </div>
+
+        <div id="activity-console" class="log" style="font-size:.76rem;line-height:1.6;min-height:300px;max-height:calc(100vh - 22rem);overflow-y:auto;padding:14px 16px;border-radius:10px;border:1px solid var(--border)">
+          <div class="muted tiny">Waiting for job events…</div>
         </div>
     """.trimIndent()
 
     container.querySelector("#clear-btn")?.addEventListener("click") {
         val console = container.querySelector("#activity-console")
-        console?.innerHTML = """<div class="text-slate-600 italic">Console cleared.</div>"""
+        console?.innerHTML = """<div class="muted tiny">Console cleared.</div>"""
+        jobItemCount = 0; jobDoneCount = 0; jobFailCount = 0
+        updateActivityChips(container)
+    }
+
+    container.querySelector("#act-cancel-btn")?.addEventListener("click") {
+        scope.launch { MediaApi.cancelScan() }
     }
 
     connectWebSocket(container)
@@ -66,27 +81,25 @@ private fun connectWebSocket(container: Element) {
     val ws = WebSocket(url)
     activitySocket = ws
 
-    val statusEl = { container.querySelector("#ws-status") as? HTMLElement }
-
     ws.onopen = { _: Event ->
-        statusEl()?.let {
-            it.textContent = "● Connected"
-            it.className = "text-xs px-2 py-1 rounded-full bg-green-900 text-green-300"
+        (container.querySelector("#ws-status") as? HTMLElement)?.let {
+            it.textContent = "● live"
+            it.className = "badge ok"
         }
     }
 
     ws.onclose = { _: Event ->
-        statusEl()?.let {
-            it.textContent = "○ Disconnected"
-            it.className = "text-xs px-2 py-1 rounded-full bg-slate-700 text-slate-400"
+        (container.querySelector("#ws-status") as? HTMLElement)?.let {
+            it.textContent = "○ disconnected"
+            it.className = "badge"
         }
         appendLine(container, "system", "WebSocket disconnected.")
     }
 
     ws.onerror = { _: Event ->
-        statusEl()?.let {
-            it.textContent = "✗ Error"
-            it.className = "text-xs px-2 py-1 rounded-full bg-red-900 text-red-400"
+        (container.querySelector("#ws-status") as? HTMLElement)?.let {
+            it.textContent = "✗ error"
+            it.className = "badge bad"
         }
         appendLine(container, "error", "WebSocket error — check server logs.")
     }
@@ -106,8 +119,11 @@ private fun handleEvent(container: Element, raw: String) {
         "started" -> {
             val jobId = extractJsonField(raw, "jobId") ?: "?"
             val total = extractJsonField(raw, "total") ?: "?"
-            jobItemCount = 0
+            jobItemCount = 0; jobDoneCount = 0; jobFailCount = 0
             showProgressCard(container, jobId)
+            (container.querySelector("#act-cancel-btn") as? HTMLElement)?.style?.display = ""
+            (container.querySelector("#act-crumb") as? HTMLElement)?.let { it.textContent = "Scanning"; it.style.display = "" }
+            updateActivityChips(container)
             appendLine(container, "started", "▶ Job $jobId started — $total files")
         }
         "progress" -> {
@@ -120,6 +136,7 @@ private fun handleEvent(container: Element, raw: String) {
         "item_scanned" -> {
             jobItemCount++
             updateProgressCount(container, jobItemCount)
+            updateActivityChips(container)
         }
         "file_done" -> {
             val file = extractJsonField(raw, "file") ?: "?"
@@ -127,18 +144,32 @@ private fun handleEvent(container: Element, raw: String) {
             val msg = extractJsonField(raw, "msg")
             val icon = if (ok == "true") "✓" else "✗"
             val detail = if (msg != null) " — $msg" else ""
-            val colorClass = if (ok == "true") "text-green-400" else "text-red-400"
-            appendLine(container, "file_done", "$icon ${file.substringAfterLast('/')}$detail", colorClass)
+            val lineKind = if (ok == "true") "ok" else "bad"
+            if (ok == "true") jobDoneCount++ else jobFailCount++
+            updateActivityChips(container)
+            appendLine(container, lineKind, "$icon ${file.substringAfterLast('/')}$detail")
         }
         "finished" -> {
             val jobId = extractJsonField(raw, "jobId") ?: "?"
             val succeeded = extractJsonField(raw, "succeeded") ?: "?"
             val failed = extractJsonField(raw, "failed") ?: "?"
             hideProgressCard(container)
-            appendLine(container, "finished", "■ Job $jobId finished — $succeeded succeeded, $failed failed")
+            (container.querySelector("#act-cancel-btn") as? HTMLElement)?.style?.display = "none"
+            (container.querySelector("#act-crumb") as? HTMLElement)?.style?.display = "none"
+            appendLine(container, "finished", "■ Job $jobId done — $succeeded succeeded, $failed failed")
             appendLine(container, "separator", "─".repeat(60))
         }
         else -> appendLine(container, "raw", raw)
+    }
+}
+
+private fun updateActivityChips(container: Element) {
+    val el = container.querySelector("#act-chips") as? HTMLElement ?: return
+    if (jobItemCount == 0 && jobDoneCount == 0 && jobFailCount == 0) { el.innerHTML = ""; return }
+    el.innerHTML = buildString {
+        if (jobItemCount > 0) append("""<span class="chip"><span class="dot ok"></span> $jobItemCount scanned</span>""")
+        if (jobDoneCount > 0) append("""<span class="chip"><span class="dot ok"></span> $jobDoneCount done ✓</span>""")
+        if (jobFailCount > 0) append("""<span class="chip"><span class="dot bad"></span> $jobFailCount failed</span>""")
     }
 }
 
@@ -162,29 +193,24 @@ private fun updateProgressCount(container: Element, count: Int) {
     (container.querySelector("#job-count") as? HTMLElement)?.textContent = count.toString()
 }
 
-private fun appendLine(
-    container: Element,
-    kind: String,
-    text: String,
-    extraClass: String = "",
-) {
+private fun appendLine(container: Element, kind: String, text: String) {
     val console = container.querySelector("#activity-console") ?: return
-    // Remove placeholder on first real message
-    console.querySelector(".italic")?.remove()
+    console.querySelector(".muted")?.remove()
 
     val ts = currentTimeString()
-    val baseClass = when (kind) {
-        "started"   -> "text-blue-400"
-        "finished"  -> "text-yellow-400"
-        "error"     -> "text-red-400"
-        "separator" -> "text-slate-700"
-        else        -> "text-slate-300"
+    val color = when (kind) {
+        "started"   -> "color:var(--hi)"
+        "finished"  -> "color:var(--warn,#f59e0b)"
+        "error", "bad" -> "color:var(--bad)"
+        "ok"        -> "color:var(--ok)"
+        "separator" -> "opacity:.25"
+        "system"    -> "opacity:.4"
+        else        -> ""
     }
     val div = document.createElement("div")
-    div.className = "$baseClass $extraClass"
+    div.setAttribute("style", "white-space:pre;$color")
     div.textContent = if (kind == "separator") text else "[$ts] $text"
     console.appendChild(div)
-    // Auto-scroll to bottom
     (console as? HTMLElement)?.let { it.scrollTop = it.scrollHeight.toDouble() }
 }
 

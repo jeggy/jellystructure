@@ -34,9 +34,9 @@ fun renderDashboard(container: Element, scope: CoroutineScope) {
 
         <div class="statgrid">
           <div class="stat"><div class="k">Movies</div><div class="v" id="stat-movies">—</div></div>
-          <div class="stat"><div class="k">TV Series</div><div class="v" id="stat-tv">—</div></div>
-          <div class="stat alert"><div class="k">Tracks needing attention</div><div class="v" id="stat-issues">—</div></div>
-          <div class="stat"><div class="k">NFO coverage</div><div class="v" id="stat-nfo">—</div></div>
+          <div class="stat"><div class="k">TV episodes</div><div class="v" id="stat-tv">—</div></div>
+          <div class="stat alert" style="cursor:pointer" id="stat-issues-cell"><div class="k">Tracks needing attention</div><div class="v" id="stat-issues">—</div></div>
+          <div class="stat"><div class="k">NFO coverage</div><div class="v" id="stat-nfo">—%</div></div>
         </div>
 
         <div id="attention-queue" style="display:none;margin-top:18px">
@@ -47,6 +47,21 @@ fun renderDashboard(container: Element, scope: CoroutineScope) {
           </div>
           <div id="attention-list"></div>
         </div>
+
+        <div class="row" style="margin-top:18px;gap:18px;flex-wrap:wrap;align-items:flex-start;">
+          <div class="card fill" style="min-width:240px">
+            <h3 style="font-size:1rem;margin:0 0 12px">Quick actions</h3>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;">
+              <button id="qa-triage" class="chip ghost">Triage untagged tracks</button>
+              <button id="qa-track-order" class="chip ghost">Set track defaults</button>
+              <button id="qa-activity" class="chip ghost">View activity</button>
+            </div>
+          </div>
+          <div class="card" style="min-width:240px;flex:1">
+            <h3 style="font-size:1rem;margin:0 0 12px">Recently processed</h3>
+            <div id="recent-list"><span class="muted tiny">Loading…</span></div>
+          </div>
+        </div>
     """.trimIndent()
 
     document.getElementById("dash-browse")?.addEventListener("click") {
@@ -55,13 +70,16 @@ fun renderDashboard(container: Element, scope: CoroutineScope) {
     document.getElementById("dash-scan")?.addEventListener("click") {
         scope.launch { triggerDashboardScan(scope) }
     }
-    document.getElementById("dash-triage")?.addEventListener("click") {
-        App.navigate("/triage")
-    }
+    document.getElementById("dash-triage")?.addEventListener("click") { App.navigate("/triage") }
+    document.getElementById("stat-issues-cell")?.addEventListener("click") { App.navigate("/triage") }
+    document.getElementById("qa-triage")?.addEventListener("click") { App.navigate("/triage") }
+    document.getElementById("qa-track-order")?.addEventListener("click") { App.navigate("/track-order") }
+    document.getElementById("qa-activity")?.addEventListener("click") { App.navigate("/activity") }
 
     scope.launch {
         loadDashboardStats()
         loadAttentionQueue()
+        loadRecentActivity()
         val status = MediaApi.scanStatus()
         if (status?.running == true) {
             setDashScanRunning(true)
@@ -112,9 +130,25 @@ private suspend fun loadAttentionQueue() {
 private suspend fun loadDashboardStats() {
     val stats = MediaApi.stats() ?: return
     (document.getElementById("stat-movies") as? HTMLElement)?.textContent = stats.movies.toString()
-    (document.getElementById("stat-tv") as? HTMLElement)?.textContent = stats.tvShows.toString()
+    (document.getElementById("stat-tv") as? HTMLElement)?.textContent = stats.tvEpisodes.toString()
     (document.getElementById("stat-issues") as? HTMLElement)?.textContent = stats.issues.toString()
-    (document.getElementById("stat-nfo") as? HTMLElement)?.textContent = stats.nfoCoverage.toString()
+    (document.getElementById("stat-nfo") as? HTMLElement)?.textContent = "${stats.nfoCoverage}%"
+}
+
+private suspend fun loadRecentActivity() {
+    val entries = MediaApi.getRecentActivity()
+    val el = document.getElementById("recent-list") as? HTMLElement ?: return
+    if (entries.isEmpty()) {
+        el.innerHTML = """<span class="muted tiny">No activity yet — run a scan to get started.</span>"""
+        return
+    }
+    el.innerHTML = entries.take(8).joinToString("") { entry ->
+        val actionLabel = entry.action.replace('_', ' ')
+        """<div style="display:flex;align-items:baseline;gap:6px;padding:4px 0;border-bottom:1px solid var(--border);">
+             <span style="font-size:.82rem;flex:1">${entry.detail.take(54).esc()}</span>
+             <span class="badge" style="font-size:.65rem;flex-shrink:0">$actionLabel</span>
+           </div>"""
+    }
 }
 
 private suspend fun triggerDashboardScan(scope: CoroutineScope) {

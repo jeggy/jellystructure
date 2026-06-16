@@ -54,10 +54,12 @@ fun Route.mediaRoutes(
             val kindStr = call.request.queryParameters["kind"]
             val kind = kindStr?.let { runCatching { MediaKind.valueOf(it) }.getOrNull() }
             val filter = call.request.queryParameters["filter"]
+            val search = call.request.queryParameters["search"]?.takeIf { it.isNotBlank() }
+            val sort = call.request.queryParameters["sort"]
             val pageNum = call.request.queryParameters["page"]?.toIntOrNull()?.coerceAtLeast(1) ?: 1
             val pageSize = call.request.queryParameters["pageSize"]?.toIntOrNull()
                 ?.coerceIn(1, 100) ?: 20
-            val result = store.list(kind, filter, pageNum, pageSize)
+            val result = store.list(kind, filter, search, sort, pageNum, pageSize)
             // Strip episode data from list responses — full episode list is on the individual item endpoint
             val stripped = result.copy(items = result.items.map { it.copy(episodes = emptyList()) })
             call.respond(stripped)
@@ -178,8 +180,8 @@ fun Route.mediaRoutes(
                         part.release()
                     }
 
-                    if (type !in setOf("poster", "fanart")) {
-                        call.respond(HttpStatusCode.BadRequest, mapOf("error" to "type must be poster or fanart"))
+                    if (type !in setOf("poster", "fanart", "logo")) {
+                        call.respond(HttpStatusCode.BadRequest, mapOf("error" to "type must be poster, fanart, or logo"))
                         return@post
                     }
                     val bytes = fileBytes
@@ -189,7 +191,11 @@ fun Route.mediaRoutes(
                     }
 
                     val dir = item.path.substringBeforeLast('/')
-                    val filename = if (type == "poster") "poster.jpg" else "fanart.jpg"
+                    val filename = when (type) {
+                        "poster" -> "poster.jpg"
+                        "fanart" -> "fanart.jpg"
+                        else -> "clearlogo.png"
+                    }
                     val destPath = "$dir/$filename"
                     val tmpPath = "$destPath.tmp"
                     val sink = SystemFileSystem.sink(Path(tmpPath)).buffered()
@@ -429,7 +435,7 @@ fun Route.mediaRoutes(
             call.respond(updated)
         }
 
-        // PATCH /api/media/{id}/metadata — edit title, overview, year inline
+        // PATCH /api/media/{id}/metadata — edit title, overview, year, tags, director, studio, network
         patch("/{id}/metadata") {
             val id = call.parameters["id"]
                 ?: return@patch call.respond(HttpStatusCode.BadRequest)
@@ -441,6 +447,10 @@ fun Route.mediaRoutes(
                 val overview: String? = null,
                 val year: Int? = null,
                 val originalTitle: String? = null,
+                val tags: List<String>? = null,
+                val director: String? = null,
+                val studio: String? = null,
+                val network: String? = null,
             )
             val req = call.receive<MetadataEditReq>()
             val updated = item.copy(
@@ -448,6 +458,10 @@ fun Route.mediaRoutes(
                 overview = if (req.overview != null) req.overview else item.overview,
                 year = req.year ?: item.year,
                 originalTitle = if (req.originalTitle != null) req.originalTitle.ifBlank { null } else item.originalTitle,
+                tags = req.tags ?: item.tags,
+                director = if (req.director != null) req.director.ifBlank { null } else item.director,
+                studio = if (req.studio != null) req.studio.ifBlank { null } else item.studio,
+                network = if (req.network != null) req.network.ifBlank { null } else item.network,
             )
             store.updateOne(updated)
             mediaHistory.record(id, "metadata_edit", "title=${updated.title}")
@@ -544,9 +558,14 @@ fun Route.mediaRoutes(
             mapOf(
                 "movies" to store.movieCount(),
                 "tvShows" to store.tvShowCount(),
+                "tvEpisodes" to store.tvEpisodeCount(),
                 "issues" to store.totalIssueCount(),
-                "nfoCoverage" to store.nfoCoveredCount(),
+                "nfoCoverage" to store.nfoCoveragePercent(),
             )
         )
+    }
+
+    get("/activity/recent") {
+        call.respond(mediaHistory.recent())
     }
 }

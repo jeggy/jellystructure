@@ -1,5 +1,6 @@
 package dev.jellystructure.ui
 
+import dev.jellystructure.api.MediaApi
 import dev.jellystructure.api.httpClient
 import io.ktor.client.call.body
 import io.ktor.client.request.get
@@ -8,6 +9,8 @@ import io.ktor.client.request.setBody
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
+import kotlinx.browser.document
+import kotlinx.browser.window
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
@@ -48,6 +51,8 @@ data class TriageItem(
     val year: Int? = null,
     val path: String,
     val kind: String = "movie",
+    val posterPath: String? = null,
+    val originalLanguage: String? = null,
     val untaggedTracks: List<TriageTrack>,
     val cascadeMismatch: CascadeMismatch? = null,
     val episodeIssues: List<EpisodeTriageItem> = emptyList(),
@@ -55,8 +60,12 @@ data class TriageItem(
     val languageMix: Boolean = false,
 )
 
+private val QUICK_LANGS = listOf("en", "da", "is", "fo")
+private const val TMDB_IMG_TRIAGE = "https://image.tmdb.org/t/p/w185"
+
 private var triageItems: List<TriageItem> = emptyList()
 private var focusedIndex = 0
+private var sessionCount = 0
 private var triageScope: CoroutineScope? = null
 private var triageContainer: Element? = null
 private var triageViewMode = "focus"  // "focus" or "table"
@@ -65,6 +74,7 @@ fun renderTriage(container: Element, scope: CoroutineScope) {
     triageScope = scope
     triageContainer = container
     focusedIndex = 0
+    sessionCount = 0
 
     container.innerHTML = buildTriageShell()
 
@@ -78,10 +88,20 @@ fun renderTriage(container: Element, scope: CoroutineScope) {
 
     (container as? HTMLElement)?.addEventListener("keydown") { ev ->
         val ke = ev as KeyboardEvent
+        val activeTag = document.activeElement?.tagName?.lowercase()
+        val inInput = activeTag == "input" || activeTag == "textarea"
         when (ke.key) {
             "ArrowDown", "ArrowRight" -> { ke.preventDefault(); moveFocus(1) }
             "ArrowUp", "ArrowLeft"    -> { ke.preventDefault(); moveFocus(-1) }
-            "Enter"                   -> focusFirstInput()
+            "Enter" -> {
+                if (!inInput) {
+                    if (triageViewMode == "focus") acceptSuggestion() else focusFirstInput()
+                }
+            }
+            "1" -> if (triageViewMode == "focus" && !inInput) { ke.preventDefault(); quickAssignByIndex(0, QUICK_LANGS[0]) }
+            "2" -> if (triageViewMode == "focus" && !inInput) { ke.preventDefault(); quickAssignByIndex(0, QUICK_LANGS[1]) }
+            "3" -> if (triageViewMode == "focus" && !inInput) { ke.preventDefault(); quickAssignByIndex(0, QUICK_LANGS[2]) }
+            "4" -> if (triageViewMode == "focus" && !inInput) { ke.preventDefault(); quickAssignByIndex(0, QUICK_LANGS[3]) }
         }
     }
     (container as? HTMLElement)?.setAttribute("tabindex", "-1")
@@ -177,6 +197,7 @@ private fun renderTriageList() {
 private fun renderFocusQueue(list: Element) {
     val item = triageItems.getOrNull(focusedIndex) ?: return
     val total = triageItems.size
+    val pct = if (total > 0) ((focusedIndex + 1) * 100 / total) else 100
 
     val navPrev = if (focusedIndex > 0)
         """<button id="focus-prev" class="bg-slate-700 hover:bg-slate-600 text-white text-xs px-3 py-1.5 rounded">‹ Previous</button>"""
@@ -187,8 +208,15 @@ private fun renderFocusQueue(list: Element) {
     else
         """<button class="bg-slate-800 text-slate-600 text-xs px-3 py-1.5 rounded cursor-not-allowed" disabled>Next ›</button>"""
 
+    val progressHtml = """
+        <div class="w-full bg-slate-700 rounded-full mb-3" style="height:3px">
+          <div class="bg-blue-500 rounded-full" style="height:3px;width:${pct}%;transition:width 0.3s"></div>
+        </div>
+    """.trimIndent()
+
     if (item.kind == "tv") {
         list.innerHTML = """
+            $progressHtml
             <div class="flex items-center gap-3 mb-3 text-xs text-slate-500">
               $navPrev
               <span>Item ${focusedIndex + 1} of $total</span>
@@ -202,6 +230,16 @@ private fun renderFocusQueue(list: Element) {
         return
     }
 
+    val posterHtml = if (item.posterPath != null) {
+        """<img src="$TMDB_IMG_TRIAGE${item.posterPath}" alt=""
+             class="rounded flex-shrink-0" style="width:68px;height:102px;object-fit:cover;">"""
+    } else {
+        """<div class="flex-shrink-0 rounded bg-slate-700 flex items-center justify-center"
+              style="width:68px;height:102px;">
+             <span class="text-slate-600 text-xs">no art</span>
+           </div>"""
+    }
+
     val tracksHtml = item.untaggedTracks.joinToString("") { track ->
         val kindBadge = when (track.kind) {
             "audio"    -> """<span class="bg-blue-900 text-blue-300 text-xs px-2 py-0.5 rounded font-mono">audio</span>"""
@@ -209,23 +247,27 @@ private fun renderFocusQueue(list: Element) {
             else       -> """<span class="bg-slate-700 text-slate-300 text-xs px-2 py-0.5 rounded font-mono">${track.kind}</span>"""
         }
         val label = track.title?.let { ", $it" } ?: ""
+        val pillsHtml = QUICK_LANGS.mapIndexed { i, lang ->
+            """<button class="lang-pill-btn bg-slate-700 hover:bg-blue-600 text-slate-300 hover:text-white text-xs px-2 py-0.5 rounded"
+                 data-media-id="${item.mediaId}" data-specifier="${track.specifier}" data-lang="$lang">
+                 <span style="font-size:0.6rem;opacity:0.6;margin-right:1px">${i + 1}</span>$lang
+               </button>"""
+        }.joinToString("")
         """
-        <div class="flex items-center gap-3 py-2 border-t border-slate-700">
+        <div class="flex items-center gap-2 py-2 border-t border-slate-700 flex-wrap">
           $kindBadge
-          <span class="text-xs text-slate-400 font-mono flex-1">#${track.streamIndex} ${track.codec}$label</span>
-          <input
-            class="triage-lang-input bg-slate-800 border border-slate-600 rounded px-2 py-1 text-xs text-white w-24 focus:outline-none focus:ring-1 focus:ring-blue-500"
-            placeholder="e.g. eng"
-            data-media-id="${item.mediaId}"
-            data-specifier="${track.specifier}"
-            maxlength="10"
-          />
-          <button
-            class="triage-assign-btn bg-blue-600 hover:bg-blue-700 text-white text-xs px-3 py-1 rounded"
-            data-media-id="${item.mediaId}"
-            data-specifier="${track.specifier}"
-          >Assign</button>
-          <span class="triage-result text-xs" data-specifier="${track.specifier}"></span>
+          <span class="text-xs text-slate-400 font-mono flex-1 min-w-0 truncate">#${track.streamIndex} ${track.codec}$label</span>
+          <div class="flex gap-1 items-center flex-wrap">
+            $pillsHtml
+            <input class="triage-lang-input bg-slate-800 border border-slate-600 rounded px-2 py-0.5 text-xs text-white w-20 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              placeholder="other…"
+              data-media-id="${item.mediaId}" data-specifier="${track.specifier}" maxlength="10">
+            <button class="triage-assign-btn bg-slate-600 hover:bg-blue-600 text-white text-xs px-2 py-0.5 rounded"
+              data-media-id="${item.mediaId}" data-specifier="${track.specifier}">→</button>
+            <button class="remove-track-btn bg-red-950 hover:bg-red-800 text-red-400 hover:text-red-200 text-xs px-2 py-0.5 rounded"
+              data-media-id="${item.mediaId}" data-specifier="${track.specifier}" title="Remove track (ffmpeg remux)">✕</button>
+          </div>
+          <span class="triage-result text-xs w-full" data-specifier="${track.specifier}"></span>
         </div>
         """.trimIndent()
     }
@@ -238,31 +280,78 @@ private fun renderFocusQueue(list: Element) {
           <span class="text-xs text-slate-400 flex-1">default should be
             <strong class="text-yellow-300">${m.resolvedLanguage}</strong>,
             current default is <strong class="text-slate-300">$fromLang</strong></span>
-          <button
-            class="cascade-fix-btn bg-yellow-700 hover:bg-yellow-600 text-white text-xs px-3 py-1 rounded"
-            data-media-id="${item.mediaId}"
-            data-specifier="${m.expectedDefaultSpecifier}"
-          >Fix default</button>
+          <button class="cascade-fix-btn bg-yellow-700 hover:bg-yellow-600 text-white text-xs px-3 py-1 rounded"
+            data-media-id="${item.mediaId}" data-specifier="${m.expectedDefaultSpecifier}">Fix default</button>
           <span class="cascade-result text-xs" data-media-id="${item.mediaId}"></span>
         </div>
         """.trimIndent()
     } ?: ""
 
+    val suggestion = item.originalLanguage
+    val suggestionHtml = if (suggestion != null) {
+        """<div class="mt-3 text-xs text-slate-400 bg-slate-900 rounded px-3 py-2 border border-slate-700">
+             TMDB original language: <span class="text-blue-300 font-mono font-semibold">$suggestion</span>
+             <span class="text-slate-600 ml-2">— press <kbd class="bg-slate-700 px-1 rounded">Enter</kbd> to apply to first track</span>
+           </div>"""
+    } else ""
+
+    val upNextItems = triageItems.drop(focusedIndex + 1).take(3)
+    val upNextHtml = if (upNextItems.isNotEmpty()) """
+        <div class="text-xs text-slate-500 uppercase tracking-wider mb-2">Up next</div>
+        ${upNextItems.mapIndexed { i, next ->
+            """<div class="text-xs text-slate-400 py-1.5 border-b border-slate-700/50 truncate" title="${next.title.esc()}">
+                 <span class="text-slate-600 mr-1">${focusedIndex + i + 2}.</span>${next.title.esc()}${next.year?.let { " ($it)" } ?: ""}
+               </div>"""
+        }.joinToString("")}
+    """.trimIndent() else ""
+
+    val sessionHtml = """
+        <div class="mt-4 text-xs text-slate-500">
+          This session<br>
+          <span class="text-white font-bold" style="font-size:1.4rem">$sessionCount</span>
+          <span class="text-slate-500 text-xs"> fixed</span>
+        </div>
+    """.trimIndent()
+
+    val hintHtml = """
+        <div class="text-xs text-slate-600 mt-3">
+          Keys: <kbd class="bg-slate-800 px-1 rounded">1</kbd>–<kbd class="bg-slate-800 px-1 rounded">4</kbd> quick-assign first track &nbsp;·&nbsp;
+          <kbd class="bg-slate-800 px-1 rounded">Enter</kbd> accept TMDB suggestion &nbsp;·&nbsp;
+          <kbd class="bg-slate-800 px-1 rounded">←</kbd><kbd class="bg-slate-800 px-1 rounded">→</kbd> navigate
+        </div>
+    """.trimIndent()
+
     list.innerHTML = """
+        $progressHtml
         <div class="flex items-center gap-3 mb-3 text-xs text-slate-500">
           $navPrev
           <span>Item ${focusedIndex + 1} of $total</span>
           $navNext
         </div>
-        <div class="triage-item bg-slate-800 rounded-lg p-4 ring-2 ring-blue-500">
-          <div class="flex items-start justify-between mb-1">
-            <div>
-              <span class="font-semibold text-white">${item.title}</span>
-              ${item.year?.let { """<span class="text-slate-400 text-sm ml-2">($it)</span>""" } ?: ""}
+        <div class="flex gap-4 items-start">
+          <div class="flex-1 min-w-0">
+            <div class="triage-item bg-slate-800 rounded-lg p-4 ring-2 ring-blue-500">
+              <div class="flex gap-3">
+                $posterHtml
+                <div class="flex-1 min-w-0">
+                  <div class="flex items-start justify-between mb-1">
+                    <div>
+                      <span class="font-semibold text-white">${item.title.esc()}</span>
+                      ${item.year?.let { """<span class="text-slate-400 text-sm ml-2">($it)</span>""" } ?: ""}
+                    </div>
+                    <span class="text-xs text-slate-500 font-mono truncate ml-4" title="${item.path.esc()}">${item.path.substringAfterLast('/').esc()}</span>
+                  </div>
+                  <div class="mt-2">$tracksHtml$mismatchHtml</div>
+                  $suggestionHtml
+                </div>
+              </div>
             </div>
-            <span class="text-xs text-slate-500 font-mono truncate max-w-xs ml-4" title="${item.path}">${item.path.substringAfterLast('/')}</span>
+            $hintHtml
           </div>
-          <div class="mt-2">$tracksHtml$mismatchHtml</div>
+          <div class="w-44 flex-shrink-0">
+            $upNextHtml
+            $sessionHtml
+          </div>
         </div>
     """.trimIndent()
 
@@ -272,6 +361,8 @@ private fun renderFocusQueue(list: Element) {
     wireAssignButtons(list)
     wireCascadeButtons(list)
     wireLanguageInputs(list)
+    wireLanguagePillButtons(list)
+    wireRemoveTrackButtons(list)
 }
 
 private fun renderTableView(list: Element) {
@@ -419,6 +510,69 @@ private fun wireLanguageInputs(list: Element) {
     }
 }
 
+private fun wireLanguagePillButtons(list: Element) {
+    list.querySelectorAll(".lang-pill-btn").let { nodes ->
+        for (i in 0 until nodes.length) {
+            val btn = nodes.item(i) as? HTMLElement ?: continue
+            btn.addEventListener("click") {
+                val mediaId = btn.getAttribute("data-media-id") ?: return@addEventListener
+                val specifier = btn.getAttribute("data-specifier") ?: return@addEventListener
+                val lang = btn.getAttribute("data-lang") ?: return@addEventListener
+                val resultEl = list.querySelector(".triage-result[data-specifier=\"$specifier\"]")
+                resultEl?.textContent = "…"
+                triageScope?.launch {
+                    val ok = assignLanguage(mediaId, specifier, lang)
+                    if (ok) {
+                        sessionCount++
+                        resultEl?.textContent = "✓ $lang"
+                        resultEl?.setAttribute("class", "triage-result text-xs text-green-400 w-full")
+                        triageItems = triageItems.mapNotNull { item ->
+                            if (item.mediaId != mediaId) return@mapNotNull item
+                            val remaining = item.untaggedTracks.filter { t -> t.specifier != specifier }
+                            if (remaining.isEmpty()) null else item.copy(untaggedTracks = remaining)
+                        }
+                        if (focusedIndex >= triageItems.size) focusedIndex = maxOf(0, triageItems.size - 1)
+                        renderTriageList()
+                    } else {
+                        resultEl?.textContent = "✗ failed"
+                        resultEl?.setAttribute("class", "triage-result text-xs text-red-400 w-full")
+                    }
+                }
+            }
+        }
+    }
+}
+
+private fun wireRemoveTrackButtons(list: Element) {
+    list.querySelectorAll(".remove-track-btn").let { nodes ->
+        for (i in 0 until nodes.length) {
+            val btn = nodes.item(i) as? HTMLElement ?: continue
+            btn.addEventListener("click") {
+                val mediaId = btn.getAttribute("data-media-id") ?: return@addEventListener
+                val specifier = btn.getAttribute("data-specifier") ?: return@addEventListener
+                if (!window.confirm("Remove track $specifier? This requires an ffmpeg remux and cannot be undone.")) return@addEventListener
+                btn.setAttribute("disabled", "true")
+                btn.textContent = "…"
+                triageScope?.launch {
+                    val ok = MediaApi.removeTrack(mediaId, specifier)
+                    if (ok) {
+                        triageItems = triageItems.mapNotNull { item ->
+                            if (item.mediaId != mediaId) return@mapNotNull item
+                            val remaining = item.untaggedTracks.filter { t -> t.specifier != specifier }
+                            if (remaining.isEmpty()) null else item.copy(untaggedTracks = remaining)
+                        }
+                        if (focusedIndex >= triageItems.size) focusedIndex = maxOf(0, triageItems.size - 1)
+                        renderTriageList()
+                    } else {
+                        btn.removeAttribute("disabled")
+                        btn.textContent = "✕"
+                    }
+                }
+            }
+        }
+    }
+}
+
 private fun wireCascadeButtons(list: Element) {
     list.querySelectorAll(".cascade-fix-btn").let { nodes ->
         for (i in 0 until nodes.length) {
@@ -498,6 +652,47 @@ private fun moveFocus(delta: Int) {
 private fun focusFirstInput() {
     val item = triageContainer?.querySelector(".triage-item[data-idx=\"$focusedIndex\"]")
     (item?.querySelector(".triage-lang-input") as? HTMLInputElement)?.focus()
+}
+
+private fun quickAssignByIndex(trackIndex: Int, lang: String) {
+    val item = triageItems.getOrNull(focusedIndex) ?: return
+    val track = item.untaggedTracks.getOrNull(trackIndex) ?: return
+    val mediaId = item.mediaId
+    val specifier = track.specifier
+    triageScope?.launch {
+        val ok = assignLanguage(mediaId, specifier, lang)
+        if (ok) {
+            sessionCount++
+            triageItems = triageItems.mapNotNull { item2 ->
+                if (item2.mediaId != mediaId) return@mapNotNull item2
+                val remaining = item2.untaggedTracks.filter { t -> t.specifier != specifier }
+                if (remaining.isEmpty()) null else item2.copy(untaggedTracks = remaining)
+            }
+            if (focusedIndex >= triageItems.size) focusedIndex = maxOf(0, triageItems.size - 1)
+            renderTriageList()
+        }
+    }
+}
+
+private fun acceptSuggestion() {
+    val item = triageItems.getOrNull(focusedIndex) ?: return
+    val suggestion = item.originalLanguage ?: return
+    val track = item.untaggedTracks.firstOrNull() ?: return
+    val mediaId = item.mediaId
+    val specifier = track.specifier
+    triageScope?.launch {
+        val ok = assignLanguage(mediaId, specifier, suggestion)
+        if (ok) {
+            sessionCount++
+            triageItems = triageItems.mapNotNull { item2 ->
+                if (item2.mediaId != mediaId) return@mapNotNull item2
+                val remaining = item2.untaggedTracks.filter { t -> t.specifier != specifier }
+                if (remaining.isEmpty()) null else item2.copy(untaggedTracks = remaining)
+            }
+            if (focusedIndex >= triageItems.size) focusedIndex = maxOf(0, triageItems.size - 1)
+            renderTriageList()
+        }
+    }
 }
 
 private fun seriesTriageCardHtml(item: TriageItem, isActive: Boolean): String {

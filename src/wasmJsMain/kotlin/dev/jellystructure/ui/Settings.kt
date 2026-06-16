@@ -33,6 +33,7 @@ fun renderSettings(container: Element, scope: CoroutineScope) {
               <a href="#sect-libraries" class="settings-nav-item" style="padding:5px 8px;border-radius:5px;font-size:.85rem;text-decoration:none;color:var(--ink-soft);">Library mapping</a>
               <a href="#sect-language" class="settings-nav-item" style="padding:5px 8px;border-radius:5px;font-size:.85rem;text-decoration:none;color:var(--ink-soft);">Language</a>
               <a href="#sect-behaviour" class="settings-nav-item" style="padding:5px 8px;border-radius:5px;font-size:.85rem;text-decoration:none;color:var(--ink-soft);">Behaviour</a>
+              <a href="#sect-advanced" class="settings-nav-item" style="padding:5px 8px;border-radius:5px;font-size:.85rem;text-decoration:none;color:var(--ink-soft);">Advanced</a>
             </div>
           </nav>
 
@@ -45,13 +46,13 @@ fun renderSettings(container: Element, scope: CoroutineScope) {
                 <input id="jellyfin-url" class="input" type="url" placeholder="http://localhost:8096" style="width:100%">
               </div>
               <div class="field">
-                <label>Jellyfin machine token</label>
-                <input id="jellyfin-token" class="input" type="text" style="width:100%">
+                <label>Jellyfin machine token <span id="jf-token-badge" style="display:none;margin-left:8px"></span></label>
+                <input id="jellyfin-token" class="input" type="password" style="width:100%">
                 <span class="hint">Background jobs — not your login token</span>
               </div>
               <div class="field">
-                <label>TMDB API key (v3)</label>
-                <input id="tmdb-key" class="input" type="text" style="width:100%">
+                <label>TMDB API key (v3) <span id="tmdb-key-badge" style="display:none;margin-left:8px"></span></label>
+                <input id="tmdb-key" class="input" type="password" style="width:100%">
               </div>
               <div id="conn-result" style="display:none;margin-top:8px"></div>
             </div>
@@ -86,13 +87,25 @@ fun renderSettings(container: Element, scope: CoroutineScope) {
                 <span style="font-size:.9rem">Fetch artwork automatically</span>
                 <span id="fetch-images-toggle" class="toggle" style="cursor:pointer"></span>
               </div>
-              <div style="display:flex;align-items:center;justify-content:space-between">
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
                 <div>
                   <span style="font-size:.9rem">Watch library folders for new files</span>
                   <div class="hint" style="margin-top:2px">Polls every 30s; triggers a scan when stable new video files are detected</div>
                 </div>
                 <span id="watch-enabled-toggle" class="toggle" style="cursor:pointer;flex-shrink:0;margin-left:12px"></span>
               </div>
+              <div style="display:flex;align-items:center;justify-content:space-between">
+                <div>
+                  <span style="font-size:.9rem">Auto-tell Jellyfin to refresh</span>
+                  <div class="hint" style="margin-top:2px">After writing NFO or artwork, trigger Jellyfin metadata refresh automatically</div>
+                </div>
+                <span id="tell-jellyfin-toggle" class="toggle" style="cursor:pointer;flex-shrink:0;margin-left:12px"></span>
+              </div>
+            </div>
+
+            <div class="card" id="sect-advanced">
+              <h3 style="font-size:1rem;margin:0 0 10px">Advanced</h3>
+              <p class="hint" style="margin:0">Advanced configuration options will appear here in a future release.</p>
             </div>
 
           </div>
@@ -114,6 +127,7 @@ fun renderSettings(container: Element, scope: CoroutineScope) {
 private var overwriteNfo = false
 private var fetchImages = true
 private var watchEnabled = false
+private var tellJellyfin = true
 private var libraryMappings: MutableList<LibraryMapping> = mutableListOf()
 
 private fun populateForm(config: AppConfig) {
@@ -125,9 +139,11 @@ private fun populateForm(config: AppConfig) {
     overwriteNfo = config.behavior.overwriteNfo
     fetchImages = config.behavior.fetchImages
     watchEnabled = config.behavior.watchEnabled
+    tellJellyfin = config.behavior.tellJellyfin
     updateToggle("overwrite-nfo-toggle", overwriteNfo)
     updateToggle("fetch-images-toggle", fetchImages)
     updateToggle("watch-enabled-toggle", watchEnabled)
+    updateToggle("tell-jellyfin-toggle", tellJellyfin)
 
     libraryMappings = config.libraries.toMutableList()
     if (libraryMappings.isNotEmpty()) renderLibraryList()
@@ -149,6 +165,11 @@ private fun attachListeners(scope: CoroutineScope) {
     document.getElementById("watch-enabled-toggle")?.addEventListener("click") {
         watchEnabled = !watchEnabled
         updateToggle("watch-enabled-toggle", watchEnabled)
+        refreshTomlPreview(readForm())
+    }
+    document.getElementById("tell-jellyfin-toggle")?.addEventListener("click") {
+        tellJellyfin = !tellJellyfin
+        updateToggle("tell-jellyfin-toggle", tellJellyfin)
         refreshTomlPreview(readForm())
     }
 
@@ -182,6 +203,17 @@ private fun attachListeners(scope: CoroutineScope) {
                 append("""<span class="badge ${if (result?.tmdb == true) "ok" else "bad"}">""")
                 append(if (result?.tmdb == true) "TMDB ✓" else "TMDB ✗")
                 append("</span>")
+            }
+            // Update per-field inline badges
+            val jfBadge = document.getElementById("jf-token-badge") as? HTMLElement
+            if (jfBadge != null) {
+                jfBadge.style.display = "inline"
+                jfBadge.innerHTML = if (result?.jellyfin == true) """<span class="badge ok" style="font-size:.72rem">valid ✓</span>""" else """<span class="badge bad" style="font-size:.72rem">invalid ✗</span>"""
+            }
+            val tmdbBadge = document.getElementById("tmdb-key-badge") as? HTMLElement
+            if (tmdbBadge != null) {
+                tmdbBadge.style.display = "inline"
+                tmdbBadge.innerHTML = if (result?.tmdb == true) """<span class="badge ok" style="font-size:.72rem">valid ✓</span>""" else """<span class="badge bad" style="font-size:.72rem">invalid ✗</span>"""
             }
             if (result?.jellyfin == true) fetchAndRenderLibraries()
         }
@@ -296,6 +328,7 @@ private fun readForm(): AppConfig = AppConfig(
         overwriteNfo = overwriteNfo,
         fetchImages = fetchImages,
         watchEnabled = watchEnabled,
+        tellJellyfin = tellJellyfin,
     ),
     libraries = libraryMappings.toList(),
 )
@@ -318,6 +351,7 @@ private fun buildToml(c: AppConfig): String = buildString {
     appendLine("overwrite_nfo = ${c.behavior.overwriteNfo}")
     appendLine("fetch_images = ${c.behavior.fetchImages}")
     appendLine("watch_enabled = ${c.behavior.watchEnabled}")
+    appendLine("tell_jellyfin = ${c.behavior.tellJellyfin}")
     for (lib in c.libraries) {
         appendLine()
         appendLine("[[libraries]]")

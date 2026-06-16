@@ -13,6 +13,8 @@ import kotlinx.serialization.json.Json
 import org.w3c.dom.Element
 import org.w3c.dom.HTMLButtonElement
 import org.w3c.dom.HTMLElement
+import org.w3c.dom.HTMLInputElement
+import org.w3c.dom.HTMLSelectElement
 import org.w3c.dom.WebSocket
 import org.w3c.dom.events.Event
 
@@ -23,11 +25,13 @@ private const val TMDB_IMG = "https://image.tmdb.org/t/p/w342"
 private var libPage = 1
 private var libKind: MediaKind? = null
 private var libFilter: String? = null
+private var libSearch: String? = null
+private var libSort: String? = null
 private var libScanSocket: WebSocket? = null
 private var libScannedCount = 0
 
 fun renderLibrary(container: Element, scope: CoroutineScope) {
-    libPage = 1; libKind = null; libFilter = null; libScannedCount = 0
+    libPage = 1; libKind = null; libFilter = null; libSearch = null; libSort = null; libScannedCount = 0
     libScanSocket?.close()
     libScanSocket = null
 
@@ -37,16 +41,22 @@ fun renderLibrary(container: Element, scope: CoroutineScope) {
           <span class="spacer"></span>
           <button id="scan-btn" class="btn primary">▶ Scan library</button>
         </div>
-        <p class="page-sub">Everything Jellystructure manages. Orange = language mix (writes blocked). Red = untagged tracks. Click any title to open its detail page.</p>
+        <p class="page-sub">Everything Jellystructure manages. A red corner means at least one untagged track; an orange one means a mixed-language series. Click any title to open its detail page.</p>
 
         <div id="scan-banner" style="display:none;margin-bottom:14px"></div>
 
-        <div class="row center" style="margin-bottom:16px;gap:10px;flex-wrap:wrap;">
+        <div class="row center" style="margin-bottom:10px;gap:8px;flex-wrap:wrap;">
+          <input id="lib-search" class="input" type="search" placeholder="⌕ search title…" style="width:200px;flex-shrink:0;">
           <span class="muted tiny">filter:</span>
           <button id="f-all" class="chip active-chip">All</button>
           <button id="f-attention" class="chip">Needs attention</button>
           <button id="f-artwork" class="chip">Missing artwork</button>
           <span class="spacer" style="flex:1"></span>
+          <select id="lib-sort" class="input" style="width:auto;font-size:.83rem;">
+            <option value="">recently added ▾</option>
+            <option value="title">title A–Z</option>
+            <option value="year">year newest first</option>
+          </select>
           <div class="seg">
             <button id="k-all" class="on">All</button>
             <button id="k-movie">Movies</button>
@@ -81,12 +91,31 @@ private fun attachLibraryListeners(scope: CoroutineScope) {
         scope.launch { triggerScan(scope) }
     }
 
+    document.getElementById("lib-search")?.addEventListener("input") {
+        val v = (document.getElementById("lib-search") as? HTMLInputElement)?.value?.trim()
+        libSearch = if (v.isNullOrBlank()) null else v
+        reload()
+    }
+
+    document.getElementById("lib-sort")?.addEventListener("change") {
+        val v = (document.getElementById("lib-sort") as? HTMLSelectElement)?.value?.trim()
+        libSort = if (v.isNullOrBlank()) null else v
+        reload()
+    }
+
     mapOf(
         "f-all" to { libFilter = null },
         "f-attention" to { libFilter = "attention" },
         "f-artwork" to { libFilter = "missing_artwork" },
     ).forEach { (id, setter) ->
-        document.getElementById(id)?.addEventListener("click") { setter(); reload() }
+        document.getElementById(id)?.addEventListener("click") {
+            setter()
+            // Update active chip
+            listOf("f-all", "f-attention", "f-artwork").forEach { chipId ->
+                (document.getElementById(chipId) as? HTMLElement)?.className = if (chipId == id) "chip active-chip" else "chip"
+            }
+            reload()
+        }
     }
 
     mapOf(
@@ -94,7 +123,13 @@ private fun attachLibraryListeners(scope: CoroutineScope) {
         "k-movie" to { libKind = MediaKind.MOVIE },
         "k-tv" to { libKind = MediaKind.TV_SHOW },
     ).forEach { (id, setter) ->
-        document.getElementById(id)?.addEventListener("click") { setter(); reload() }
+        document.getElementById(id)?.addEventListener("click") {
+            setter()
+            listOf("k-all", "k-movie", "k-tv").forEach { btnId ->
+                (document.getElementById(btnId) as? HTMLElement)?.className = if (btnId == id) "on" else ""
+            }
+            reload()
+        }
     }
 }
 
@@ -201,7 +236,7 @@ private suspend fun loadLibraryPage(scope: CoroutineScope) {
     val grid = document.getElementById("poster-grid") ?: return
     grid.innerHTML = """<span class="muted" style="padding:24px;display:block;">Loading…</span>"""
 
-    val page = MediaApi.list(libKind, libFilter, libPage, 20)
+    val page = MediaApi.list(libKind, libFilter, libSearch, libSort, libPage, 20)
     if (page == null) {
         grid.innerHTML = """<span class="muted" style="padding:24px;display:block;">Failed to load library.</span>"""
         return

@@ -16,7 +16,11 @@ import kotlinx.serialization.Serializable
 private const val TMDB_ORIGINAL = "https://image.tmdb.org/t/p/original"
 
 @Serializable
-data class ArtworkStatus(val posterExists: Boolean, val fanartExists: Boolean)
+data class ArtworkStatus(
+    val posterExists: Boolean,
+    val fanartExists: Boolean,
+    val logoExists: Boolean = false,
+)
 
 @Serializable
 data class EpisodeStillStatus(val stillExists: Boolean, val stillPath: String)
@@ -29,6 +33,7 @@ class ArtworkDownloader {
         return ArtworkStatus(
             posterExists = SystemFileSystem.exists(Path("$dir/poster.jpg")),
             fanartExists = SystemFileSystem.exists(Path("$dir/fanart.jpg")),
+            logoExists = SystemFileSystem.exists(Path("$dir/clearlogo.png")),
         )
     }
 
@@ -40,6 +45,7 @@ class ArtworkDownloader {
         val dir = mediaDir(item)
         val posterExists = SystemFileSystem.exists(Path("$dir/poster.jpg"))
         val fanartExists = SystemFileSystem.exists(Path("$dir/fanart.jpg"))
+        val logoExists = SystemFileSystem.exists(Path("$dir/clearlogo.png"))
 
         val posterOk: Boolean
         val fanartOk: Boolean
@@ -53,7 +59,7 @@ class ArtworkDownloader {
             posterOk = posterJob?.await() ?: posterExists
             fanartOk = fanartJob?.await() ?: fanartExists
         }
-        return ArtworkStatus(posterExists = posterOk, fanartExists = fanartOk)
+        return ArtworkStatus(posterExists = posterOk, fanartExists = fanartOk, logoExists = logoExists)
     }
 
     private suspend fun download(url: String, destPath: String): Boolean = runCatching {

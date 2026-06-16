@@ -134,6 +134,15 @@ object NfoWriter {
         for (genre in item.genres) {
             appendLine("  <genre>${genre.esc()}</genre>")
         }
+        for (tag in item.tags) {
+            appendLine("  <tag>${tag.esc()}</tag>")
+        }
+        if (!item.director.isNullOrBlank()) {
+            appendLine("  <director>${item.director.esc()}</director>")
+        }
+        if (!item.studio.isNullOrBlank()) {
+            appendLine("  <studio>${item.studio.esc()}</studio>")
+        }
         appendLine("</movie>")
     }
 
@@ -158,6 +167,15 @@ object NfoWriter {
         }
         for (genre in item.genres) {
             appendLine("  <genre>${genre.esc()}</genre>")
+        }
+        for (tag in item.tags) {
+            appendLine("  <tag>${tag.esc()}</tag>")
+        }
+        if (!item.studio.isNullOrBlank()) {
+            appendLine("  <studio>${item.studio.esc()}</studio>")
+        }
+        if (!item.network.isNullOrBlank()) {
+            appendLine("  <tvstudio>${item.network.esc()}</tvstudio>")
         }
         appendLine("</tvshow>")
     }

@@ -12,6 +12,7 @@ import io.ktor.http.HttpStatusCode
 import io.ktor.server.request.receive
 import io.ktor.server.response.respond
 import io.ktor.server.routing.Route
+import io.ktor.server.routing.delete
 import io.ktor.server.routing.get
 import io.ktor.server.routing.post
 import io.ktor.server.routing.route
@@ -181,6 +182,78 @@ fun Route.trackRoutes(store: MediaStore, configStore: ConfigStore, jellyfinClien
                 jellyfinClient.refreshItem(cfg.apiKeys.jellyfinUrl, cfg.apiKeys.jellyfinToken, item.jellyfinId)
             }
 
+            call.respond(mapOf("ok" to true))
+        }
+
+        // DELETE /api/media/{id}/tracks/{specifier} — remove a track from the file (ffmpeg remux)
+        delete("/tracks/{specifier}") {
+            val id = call.parameters["id"]
+                ?: return@delete call.respond(HttpStatusCode.BadRequest)
+            val specifier = call.parameters["specifier"]
+                ?: return@delete call.respond(HttpStatusCode.BadRequest)
+            val item = store.get(id)
+                ?: return@delete call.respond(HttpStatusCode.NotFound)
+            val targetTrack = item.tracks.firstOrNull { it.specifier == specifier }
+                ?: return@delete call.respond(HttpStatusCode.NotFound, mapOf("error" to "track not found"))
+
+            val ok = FfmpegRunner.removeTrack(item.path, targetTrack.streamIndex)
+            if (!ok) {
+                call.respond(HttpStatusCode.InternalServerError, mapOf("error" to "ffmpeg failed"))
+                return@delete
+            }
+
+            val newTracks = FfprobeRunner.probe(item.path)
+            val newIssueCount = newTracks.count {
+                (it.kind == TrackKind.AUDIO || it.kind == TrackKind.SUBTITLE) && it.language == null
+            }
+            store.updateOne(item.copy(tracks = newTracks, issueCount = newIssueCount))
+            mediaHistory.record(id, "remove_track", "specifier=$specifier")
+
+            val cfg = configStore.current
+            if (!item.jellyfinId.isNullOrBlank() && cfg.apiKeys.jellyfinUrl.isNotBlank()) {
+                jellyfinClient.refreshItem(cfg.apiKeys.jellyfinUrl, cfg.apiKeys.jellyfinToken, item.jellyfinId)
+            }
+            call.respond(mapOf("ok" to true))
+        }
+
+        // POST /api/media/{id}/tracks/reorder — reorder tracks of a given type (ffmpeg remux)
+        post("/tracks/reorder") {
+            val id = call.parameters["id"]
+                ?: return@post call.respond(HttpStatusCode.BadRequest)
+            val item = store.get(id)
+                ?: return@post call.respond(HttpStatusCode.NotFound)
+
+            @Serializable data class ReorderRequest(val kind: String, val order: List<String>)
+            val req = call.receive<ReorderRequest>()
+            val kind = when (req.kind.lowercase()) {
+                "audio" -> TrackKind.AUDIO
+                "subtitle" -> TrackKind.SUBTITLE
+                else -> return@post call.respond(HttpStatusCode.BadRequest, mapOf("error" to "kind must be audio or subtitle"))
+            }
+            val orderedTracks = req.order.mapNotNull { spec -> item.tracks.firstOrNull { it.specifier == spec } }
+            if (orderedTracks.size != req.order.size) {
+                call.respond(HttpStatusCode.BadRequest, mapOf("error" to "one or more specifiers not found"))
+                return@post
+            }
+            val orderedIndices = orderedTracks.map { it.streamIndex }
+
+            val ok = FfmpegRunner.reorderTracks(item.path, kind, orderedIndices)
+            if (!ok) {
+                call.respond(HttpStatusCode.InternalServerError, mapOf("error" to "ffmpeg remux failed"))
+                return@post
+            }
+
+            val newTracks = FfprobeRunner.probe(item.path)
+            val newIssueCount = newTracks.count {
+                (it.kind == TrackKind.AUDIO || it.kind == TrackKind.SUBTITLE) && it.language == null
+            }
+            store.updateOne(item.copy(tracks = newTracks, issueCount = newIssueCount))
+            mediaHistory.record(id, "reorder_tracks", "kind=${req.kind} order=${req.order.joinToString(",")}")
+
+            val cfg = configStore.current
+            if (!item.jellyfinId.isNullOrBlank() && cfg.apiKeys.jellyfinUrl.isNotBlank()) {
+                jellyfinClient.refreshItem(cfg.apiKeys.jellyfinUrl, cfg.apiKeys.jellyfinToken, item.jellyfinId)
+            }
             call.respond(mapOf("ok" to true))
         }
 

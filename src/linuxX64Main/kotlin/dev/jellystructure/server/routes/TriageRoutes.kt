@@ -51,6 +51,8 @@ data class TriageItem(
     val year: Int?,
     val path: String,
     val kind: String = "movie",
+    val posterPath: String? = null,
+    val originalLanguage: String? = null,
     val untaggedTracks: List<TriageTrack>,
     val cascadeMismatch: CascadeMismatch? = null,
     val episodeIssues: List<EpisodeTriageItem> = emptyList(),
@@ -85,6 +87,14 @@ fun Route.triageRoutes(store: MediaStore, jellyfinClient: JellyfinClient, config
             val items = store.allItems()
                 .mapNotNull { it.toTriageItem() }
             call.respond(items)
+        }
+
+        get("/{mediaId}/suggest") {
+            val mediaId = call.parameters["mediaId"]
+                ?: return@get call.respond(HttpStatusCode.BadRequest)
+            val item = store.get(mediaId)
+                ?: return@get call.respond(HttpStatusCode.NotFound)
+            call.respond(mapOf("language" to item.originalLanguage))
         }
 
         post("/{mediaId}/episodes/{epFilename}/tracks/{specifier}/language") {
@@ -207,6 +217,8 @@ private fun MediaItem.toTriageItem(): TriageItem? {
             year = year,
             path = path,
             kind = "tv",
+            posterPath = posterPath,
+            originalLanguage = originalLanguage,
             untaggedTracks = emptyList(),
             episodeIssues = epIssues,
             resolvedLanguage = resolvedLanguage,
@@ -232,6 +244,8 @@ private fun MediaItem.toTriageItem(): TriageItem? {
         year = year,
         path = path,
         kind = "movie",
+        posterPath = posterPath,
+        originalLanguage = originalLanguage,
         untaggedTracks = untagged,
         cascadeMismatch = mismatch,
     )

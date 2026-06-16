@@ -39,6 +39,8 @@ class MediaStore(private val cacheFile: String) {
     fun list(
         kind: MediaKind? = null,
         filter: String? = null,
+        search: String? = null,
+        sort: String? = null,
         page: Int = 1,
         pageSize: Int = 20,
     ): MediaPage {
@@ -47,6 +49,15 @@ class MediaStore(private val cacheFile: String) {
         when (filter) {
             "attention" -> filtered = filtered.filter { it.issueCount > 0 || it.languageMix }
             "missing_artwork" -> filtered = filtered.filter { it.posterPath == null }
+        }
+        if (!search.isNullOrBlank()) {
+            val q = search.lowercase()
+            filtered = filtered.filter { it.title.lowercase().contains(q) || it.originalTitle?.lowercase()?.contains(q) == true }
+        }
+        filtered = when (sort) {
+            "title" -> filtered.sortedBy { it.title.lowercase() }
+            "year" -> filtered.sortedByDescending { it.year ?: 0 }
+            else -> filtered.sortedByDescending { it.scannedAt }
         }
         val total = filtered.size
         val paged = filtered.drop((page - 1) * pageSize).take(pageSize)
@@ -75,9 +86,17 @@ class MediaStore(private val cacheFile: String) {
 
     fun tvShowCount(): Int = items.count { it.kind == MediaKind.TV_SHOW }
 
+    fun tvEpisodeCount(): Int = items.filter { it.kind == MediaKind.TV_SHOW }.sumOf { it.episodes.size }
+
     fun totalIssueCount(): Int = items.sumOf { it.issueCount }
 
     fun nfoCoveredCount(): Int = items.count { NfoWriter.exists(it) }
+
+    fun nfoCoveragePercent(): Int {
+        val total = items.size
+        if (total == 0) return 0
+        return (nfoCoveredCount() * 100) / total
+    }
 
     fun languageMixCount(): Int = items.count { it.languageMix }
 

@@ -2,9 +2,11 @@ package dev.jellystructure.ui
 
 import dev.jellystructure.App
 import dev.jellystructure.api.AuthApi
+import dev.jellystructure.api.ConfigApi
 import dev.jellystructure.api.MediaApi
 import dev.jellystructure.api.UserProfile
 import kotlinx.browser.document
+import kotlinx.browser.window
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.launch
 import org.w3c.dom.HTMLElement
@@ -17,6 +19,9 @@ private data class NavLink(
     val count: Int? = null,
 ) : NavEntry()
 private data class NavGroup(val label: String) : NavEntry()
+
+private val SUN_SVG = """<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><line x1="12" y1="2" x2="12" y2="5"/><line x1="12" y1="19" x2="12" y2="22"/><line x1="4.22" y1="4.22" x2="6.34" y2="6.34"/><line x1="17.66" y1="17.66" x2="19.78" y2="19.78"/><line x1="2" y1="12" x2="5" y2="12"/><line x1="19" y1="12" x2="22" y2="12"/><line x1="4.22" y1="19.78" x2="6.34" y2="17.66"/><line x1="17.66" y1="6.34" x2="19.78" y2="4.22"/></svg>"""
+private val MOON_SVG = """<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>"""
 
 private val ICONS = mapOf(
     "dashboard" to """<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg>""",
@@ -39,7 +44,12 @@ private val NAV: List<NavEntry> = listOf(
 
 fun renderShell(user: UserProfile) {
     val body = document.body ?: return
-    body.innerHTML = shellHtml(user)
+
+    // Apply persisted theme before rendering HTML to avoid flash
+    val savedTheme = window.localStorage.getItem("js-theme") ?: "dark"
+    document.documentElement?.setAttribute("data-theme", savedTheme)
+
+    body.innerHTML = shellHtml(user, savedTheme)
 
     document.querySelectorAll(".app-side a").let { links ->
         for (i in 0 until links.length) {
@@ -60,7 +70,19 @@ fun renderShell(user: UserProfile) {
         }
     }
 
+    // Theme toggle
+    document.getElementById("theme-btn")?.addEventListener("click") {
+        val root = document.documentElement ?: return@addEventListener
+        val current = root.getAttribute("data-theme") ?: "dark"
+        val next = if (current == "dark") "light" else "dark"
+        root.setAttribute("data-theme", next)
+        window.localStorage.setItem("js-theme", next)
+        val btn = document.getElementById("theme-btn") as? HTMLElement
+        btn?.innerHTML = if (next == "dark") MOON_SVG else SUN_SVG
+    }
+
     MainScope().launch {
+        // Triage badge count
         val count = MediaApi.getTriageCount()
         val badge = document.getElementById("triage-count-badge") as? HTMLElement
         if (badge != null && count != null && count.total > 0) {
@@ -68,6 +90,26 @@ fun renderShell(user: UserProfile) {
         } else {
             badge?.remove()
         }
+        // Sidebar status dots
+        updateSidebarStatus(count?.total ?: 0)
+        // Connection status (non-blocking, best effort)
+        try {
+            val conn = ConfigApi.testConnections()
+            if (conn != null) {
+                (document.getElementById("status-jf") as? HTMLElement)?.apply {
+                    innerHTML = """<span class="dot ${if (conn.jellyfin) "ok" else "bad"}"></span> Jellyfin ${if (conn.jellyfin) "online" else "offline"}"""
+                }
+                (document.getElementById("status-tmdb") as? HTMLElement)?.apply {
+                    innerHTML = """<span class="dot ${if (conn.tmdb) "ok" else "bad"}"></span> TMDB key ${if (conn.tmdb) "OK" else "invalid"}"""
+                }
+            }
+        } catch (_: Exception) {}
+    }
+}
+
+private fun updateSidebarStatus(triageCount: Int) {
+    (document.getElementById("status-triage") as? HTMLElement)?.apply {
+        innerHTML = """<span class="dot ${if (triageCount > 0) "warn" else "ok"}"></span> $triageCount to triage"""
     }
 }
 
@@ -80,7 +122,7 @@ fun updateActiveNav(currentRoute: String) {
     }
 }
 
-private fun shellHtml(user: UserProfile): String {
+private fun shellHtml(user: UserProfile, theme: String = "dark"): String {
     val navHtml = NAV.joinToString("") { entry ->
         when (entry) {
             is NavGroup ->
@@ -95,6 +137,7 @@ private fun shellHtml(user: UserProfile): String {
             }
         }
     }
+    val themeIcon = if (theme == "dark") MOON_SVG else SUN_SVG
     return """
         <div class="shell">
           <aside class="app-side">
@@ -102,10 +145,21 @@ private fun shellHtml(user: UserProfile): String {
             $navHtml
             <div class="grow"></div>
             <div class="status">
-              <div class="row"><span class="dot ok"></span> ${user.name}</div>
+              <div class="row" id="status-jf"><span class="dot ok"></span> Jellyfin…</div>
+              <div class="row" id="status-tmdb" style="margin-top:2px"><span class="dot ok"></span> TMDB…</div>
+              <div class="row" id="status-triage" style="margin-top:2px"><span class="dot ok"></span> — to triage</div>
+              <div class="row" style="margin-top:6px">
+                <span class="dot ok"></span> ${user.name}
+              </div>
               <div class="row" style="margin-top:3px">
                 <a id="logout-btn" href="#" style="color:var(--ink-soft);font-size:.76rem;text-decoration:none">Sign out</a>
               </div>
+            </div>
+            <div style="padding:10px 0 4px">
+              <button id="theme-btn" class="theme-btn wide" title="Toggle light / dark theme" style="display:flex;align-items:center;gap:8px;width:100%;padding:7px 10px;border-radius:8px;background:var(--fill-3);border:1px solid var(--border);cursor:pointer;color:var(--ink-soft)">
+                <span class="ico" style="width:16px;height:16px">$themeIcon</span>
+                <span style="font-size:.78rem">Toggle theme</span>
+              </button>
             </div>
           </aside>
           <main class="app-main2 wide" id="page-content"></main>

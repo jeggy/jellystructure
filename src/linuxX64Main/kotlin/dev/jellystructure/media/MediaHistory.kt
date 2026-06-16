@@ -35,6 +35,9 @@ class MediaHistory {
 
     fun forItem(mediaId: String): List<HistoryEntry> =
         entries.filter { it.mediaId == mediaId }
+
+    fun recent(limit: Int = 8): List<HistoryEntry> =
+        entries.take(limit)
 }
 
 @OptIn(ExperimentalForeignApi::class)

@@ -60,6 +60,27 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
            </div>"""
     } else ""
 
+    val directorHtml = """<div class="field">
+      <label>${if (item.kind == MediaKind.TV_SHOW) "Network" else "Director"}</label>
+      <input id="edit-director" class="input" value="${(if (item.kind == MediaKind.TV_SHOW) item.network else item.director)?.esc() ?: ""}" style="width:100%;" placeholder="—">
+    </div>
+    <div class="field">
+      <label>Studio</label>
+      <input id="edit-studio" class="input" value="${item.studio?.esc() ?: ""}" style="width:100%;" placeholder="—">
+    </div>"""
+
+    val currentTags = item.tags.toMutableList()
+    val tagsChipsHtml = """<div class="field" id="tags-section">
+      <label>Tags <span class="muted tiny">(written to NFO &lt;tag&gt;)</span></label>
+      <div id="tags-chips" style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:6px;">
+        ${currentTags.joinToString("") { tag -> """<span class="chip" style="cursor:default;">${tag.esc()} <span class="tag-rm" data-tag="${tag.esc()}" style="cursor:pointer;margin-left:4px;color:var(--bad);">✕</span></span>""" }}
+      </div>
+      <div style="display:flex;gap:6px;">
+        <input id="tag-input" class="input" type="text" placeholder="add tag…" maxlength="40" style="width:160px;">
+        <button id="tag-add-btn" class="btn sm ghost">Add</button>
+      </div>
+    </div>"""
+
     val issueBadge = when {
         item.languageMix ->
             """<span class="badge warn">language mix — writes blocked</span>"""
@@ -115,6 +136,35 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
           <span id="lang-override-msg" class="tiny muted"></span>
         </div>""".trimIndent()
 
+    // Series language card for left rail
+    val seriesLangCard = if (isTvShow && item.episodes.isNotEmpty()) {
+        val votes = mutableMapOf<String, Int>()
+        for (ep in item.episodes) { val l = ep.resolvedLanguage ?: "?"; votes[l] = (votes[l] ?: 0) + 1 }
+        val total = item.episodes.size
+        val sortedVotes = votes.toList().sortedByDescending { it.second }
+        val winner = sortedVotes.firstOrNull()?.first
+        val bars = sortedVotes.take(4).joinToString("") { (lang, count) ->
+            val pct = (count * 100) / total
+            val isWinner = lang == winner
+            """<div style="display:flex;align-items:center;gap:6px;padding:3px 0;">
+                 <span class="mono" style="min-width:24px;font-size:.8rem;${if (isWinner) "color:var(--ok)" else ""};">${lang.esc()}</span>
+                 <div style="flex:1;height:4px;background:var(--fill-3);border-radius:2px;">
+                   <div style="width:$pct%;height:100%;background:${if (isWinner) "var(--ok)" else "var(--hi)"};border-radius:2px;"></div>
+                 </div>
+                 <span class="tiny muted">$count/$total</span>
+                 ${if (isWinner) """<span class="badge ok" style="font-size:.6rem;">✓</span>""" else ""}
+               </div>"""
+        }
+        """<div class="card" style="margin-top:12px;">
+             <h4 style="margin:0 0 8px;font-size:.9rem;">Series language</h4>
+             $bars
+             <div class="field" style="margin:10px 0 0;">
+               <label style="font-size:.75rem;">tvshow.nfo language</label>
+               <div class="input mono" style="font-size:.85rem;padding:3px 8px;">${(item.resolvedLanguage ?: winner ?: "—").esc()}</div>
+             </div>
+           </div>"""
+    } else ""
+
     val tvOverviewBanner = if (isTvShow) {
         if (item.languageMix) {
             """<div class="card" style="border-left:3px solid var(--warn,#f59e0b);padding:14px 16px;">
@@ -139,6 +189,32 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
     } else ""
 
     val tracksHtml = if (!isTvShow) buildTracksTable(item.tracks) else ""
+
+    // Embedded tracks summary for the overview tab (movies only — condensed read-only view)
+    val embeddedTracksSummary = if (!isTvShow && item.tracks.any { it.kind == TrackKind.AUDIO || it.kind == TrackKind.SUBTITLE }) {
+        val untagged = item.tracks.count { (it.kind == TrackKind.AUDIO || it.kind == TrackKind.SUBTITLE) && it.language == null }
+        val summaryBadge = if (untagged > 0)
+            """<span class="badge bad" style="font-size:.72rem;">$untagged untagged</span>"""
+        else
+            """<span class="badge ok" style="font-size:.72rem;">all tagged</span>"""
+        val trackChips = item.tracks
+            .filter { it.kind == TrackKind.AUDIO || it.kind == TrackKind.SUBTITLE }
+            .joinToString("") { t ->
+                val lang = t.language?.esc() ?: "?"
+                val badStyle = if (t.language == null) "border-color:var(--bad);" else ""
+                val defMark = if (t.default) " ★" else ""
+                """<span class="chip mono" style="font-size:.72rem;$badStyle">${t.kind.name.lowercase().first()} · $lang · ${t.codec.esc()}$defMark</span>"""
+            }
+        """<div class="card" style="margin-top:16px;">
+             <div class="row center" style="margin-bottom:8px;">
+               <h4 style="margin:0;font-size:.9rem;">Embedded tracks</h4>
+               <span class="spacer"></span>
+               $summaryBadge
+               <a href="#/track-order?id=${item.id}" class="btn sm ghost" style="font-size:.72rem;margin-left:8px;">Open track editor ↗</a>
+             </div>
+             <div style="display:flex;flex-wrap:wrap;gap:5px;">$trackChips</div>
+           </div>"""
+    } else ""
     val episodesTabHtml = if (isTvShow) buildEpisodesTab(item) else ""
 
     container.innerHTML = """
@@ -150,7 +226,8 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
           <span class="spacer"></span>
           <button id="repull-btn" class="btn sm ghost">Re-pull from TMDB</button>
           ${if (!isTvShow) """<button id="track-order-btn" class="btn sm ghost">Track order →</button>""" else ""}
-          <button id="write-nfo-btn" class="btn primary" ${if (nfoDisabled) """disabled title="${nfoDisabledReason.esc()}"""" else ""}>Save → NFO</button>
+          <button id="write-nfo-btn" class="btn ghost" ${if (nfoDisabled) """disabled title="${nfoDisabledReason.esc()}"""" else ""}>Save → disk</button>
+          <button id="write-nfo-refresh-btn" class="btn primary" ${if (nfoDisabled) """disabled title="${nfoDisabledReason.esc()}"""" else ""}>Save &amp; tell Jellyfin ↻</button>
         </div>
 
         <div id="detail-msg" style="display:none;margin-bottom:14px"></div>
@@ -159,12 +236,14 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
 
         <div id="tab-overview">
           $tvOverviewBanner
+          $embeddedTracksSummary
           <div class="row" style="align-items:flex-start;gap:22px;flex-wrap:wrap;">
             <div class="col" style="width:220px;flex:none;">
               <div class="card">
                 <h4 style="margin:0 0 10px;">Poster</h4>
                 $posterHtml
               </div>
+              $seriesLangCard
               <div class="card">
                 <h4 style="margin:0 0 8px;">Identity</h4>
                 <div class="field" style="margin:0 0 6px;">
@@ -208,7 +287,13 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
                   <textarea id="edit-overview" class="input" rows="4" style="width:100%;resize:vertical;">${item.overview?.esc() ?: ""}</textarea>
                 </div>
                 $genresHtml
-                <div class="field">
+                $directorHtml
+                $tagsChipsHtml
+                <div class="row center" style="margin-top:12px;padding:10px 12px;background:var(--fill-2);border-radius:6px;gap:10px;">
+                  <span class="toggle on" style="pointer-events:none;flex-shrink:0;"></span>
+                  <span style="font-size:.82rem;">lockdata=true — written to NFO so Jellyfin never overwrites these values</span>
+                </div>
+                <div class="field" style="margin-top:12px;">
                   <label>File path</label>
                   <div class="input mono" style="font-size:.82rem;word-break:break-all;">${item.path.esc()}</div>
                 </div>
@@ -238,6 +323,7 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
               <span class="spacer"></span>
               <button id="upload-poster-btn" class="btn sm ghost">Upload poster</button>
               <button id="upload-fanart-btn" class="btn sm ghost">Upload fanart</button>
+              <button id="upload-logo-btn" class="btn sm ghost">Upload logo</button>
               <button id="fetch-artwork-btn" class="btn sm ghost">Download from TMDB</button>
             </div>
             <div id="artwork-status"><span class="muted tiny">Checking…</span></div>
@@ -251,6 +337,11 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
                   enctype="multipart/form-data" target="upload-frame" style="display:none">
               <input type="hidden" name="type" value="fanart">
               <input type="file" id="fanart-file" name="file" accept="image/jpeg,image/jpg,image/png">
+            </form>
+            <form id="logo-form" method="post" action="/api/media/${item.id}/artwork/upload"
+                  enctype="multipart/form-data" target="upload-frame" style="display:none">
+              <input type="hidden" name="type" value="logo">
+              <input type="file" id="logo-file" name="file" accept="image/png,image/jpeg">
             </form>
           </div>
         </div>
@@ -305,7 +396,10 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
     }
 
     document.getElementById("write-nfo-btn")?.addEventListener("click") {
-        scope.launch { handleWriteNfo(item.id) }
+        scope.launch { handleWriteNfo(item.id, refresh = false) }
+    }
+    document.getElementById("write-nfo-refresh-btn")?.addEventListener("click") {
+        scope.launch { handleWriteNfo(item.id, refresh = true) }
     }
 
     document.getElementById("fetch-artwork-btn")?.addEventListener("click") {
@@ -317,6 +411,9 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
     }
     document.getElementById("upload-fanart-btn")?.addEventListener("click") {
         (document.getElementById("fanart-file") as? HTMLInputElement)?.click()
+    }
+    document.getElementById("upload-logo-btn")?.addEventListener("click") {
+        (document.getElementById("logo-file") as? HTMLInputElement)?.click()
     }
     document.getElementById("poster-file")?.addEventListener("change") {
         (document.getElementById("poster-form") as? HTMLFormElement)?.submit()
@@ -332,6 +429,14 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
             delay(2000)
             loadArtworkStatus(item.id)
             showDetailMsg("Fanart upload submitted.", true)
+        }
+    }
+    document.getElementById("logo-file")?.addEventListener("change") {
+        (document.getElementById("logo-form") as? HTMLFormElement)?.submit()
+        scope.launch {
+            delay(2000)
+            loadArtworkStatus(item.id)
+            showDetailMsg("Logo upload submitted.", true)
         }
     }
 
@@ -366,7 +471,7 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
     scope.launch { loadArtworkStatus(item.id) }
 
     // Inline metadata editing — show Save button when any field changes
-    val editableIds = listOf("edit-title", "edit-year", "edit-original-title", "edit-overview")
+    val editableIds = listOf("edit-title", "edit-year", "edit-original-title", "edit-overview", "edit-director", "edit-studio")
     val origValues = editableIds.associateWith { id ->
         (document.getElementById(id) as? HTMLInputElement)?.value
             ?: (document.getElementById(id) as? HTMLTextAreaElement)?.value ?: ""
@@ -388,16 +493,62 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
         val year = (document.getElementById("edit-year") as? HTMLInputElement)?.value?.toIntOrNull()
         val originalTitle = (document.getElementById("edit-original-title") as? HTMLInputElement)?.value?.trim()
         val overview = (document.getElementById("edit-overview") as? HTMLTextAreaElement)?.value
+        val directorVal = (document.getElementById("edit-director") as? HTMLInputElement)?.value?.trim()
+        val studioVal = (document.getElementById("edit-studio") as? HTMLInputElement)?.value?.trim()
+        // Read current tags from state
+        val tagChips = document.getElementById("tags-chips")?.querySelectorAll(".tag-rm")
+        val tagsVal = if (tagChips != null) {
+            (0 until tagChips.length).mapNotNull { (tagChips.item(it) as? HTMLElement)?.getAttribute("data-tag") }.filter { it.isNotBlank() }
+        } else null
         val msg = document.getElementById("save-metadata-msg") as? HTMLElement
         msg?.textContent = "Saving…"
         scope.launch {
-            val updated = MediaApi.editMetadata(item.id, title, overview, year, originalTitle)
+            val updated = MediaApi.editMetadata(
+                id = item.id,
+                title = title,
+                overview = overview,
+                year = year,
+                originalTitle = originalTitle,
+                tags = tagsVal,
+                director = if (item.kind != MediaKind.TV_SHOW) directorVal else null,
+                studio = studioVal,
+                network = if (item.kind == MediaKind.TV_SHOW) directorVal else null,
+            )
             if (updated != null) {
                 msg?.textContent = "Saved ✓"
                 delay(600)
                 renderDetailView(container, updated, scope)
             } else {
                 msg?.textContent = "Save failed"
+            }
+        }
+    }
+
+    // Tag add button
+    document.getElementById("tag-add-btn")?.addEventListener("click") {
+        val input = document.getElementById("tag-input") as? HTMLInputElement ?: return@addEventListener
+        val tag = input.value.trim()
+        if (tag.isBlank()) return@addEventListener
+        input.value = ""
+        val chipsEl = document.getElementById("tags-chips") as? HTMLElement ?: return@addEventListener
+        val span = document.createElement("span")
+        span.className = "chip"
+        span.setAttribute("style", "cursor:default;")
+        span.innerHTML = """${tag.esc()} <span class="tag-rm" data-tag="${tag.esc()}" style="cursor:pointer;margin-left:4px;color:var(--bad);">✕</span>"""
+        chipsEl.appendChild(span)
+        span.querySelector(".tag-rm")?.addEventListener("click") { span.remove() }
+        // Mark dirty
+        val saveBtn = document.getElementById("save-metadata-btn") as? HTMLElement
+        saveBtn?.style?.display = "inline-flex"
+    }
+    // Wire existing tag removes
+    document.querySelectorAll("#tags-chips .tag-rm").let { nodes ->
+        for (i in 0 until nodes.length) {
+            val rm = nodes.item(i) as? HTMLElement ?: continue
+            rm.addEventListener("click") {
+                rm.parentElement?.remove()
+                val saveBtn = document.getElementById("save-metadata-btn") as? HTMLElement
+                saveBtn?.style?.display = "inline-flex"
             }
         }
     }
@@ -465,10 +616,26 @@ private fun buildEpisodesTab(item: MediaItem): String {
                </div>"""
         }
 
+    // Season summary chips
+    val totalUntagged = item.episodes.sumOf { ep -> ep.tracks.count { (it.kind == TrackKind.AUDIO || it.kind == TrackKind.SUBTITLE) && it.language == null } }
+    val missingStill = item.episodes.count { it.stillPath.isNullOrBlank() }
+    val missingOverview = item.episodes.count { it.overview.isNullOrBlank() }
+    val seasonSummary = buildString {
+        append("""<div class="row center" style="gap:8px;flex-wrap:wrap;margin-bottom:16px;">""")
+        if (totalUntagged > 0) append("""<span class="badge bad">$totalUntagged untagged track${if (totalUntagged != 1) "s" else ""}</span>""")
+        if (missingStill > 0) append("""<span class="badge warn">$missingStill missing still${if (missingStill != 1) "s" else ""}</span>""")
+        if (missingOverview > 0) append("""<span class="badge">$missingOverview missing overview${if (missingOverview != 1) "s" else ""}</span>""")
+        if (totalUntagged > 0) append("""<a href="#/triage" class="btn sm ghost" style="font-size:.75rem;">Fix all in triage →</a>""")
+        append("</div>")
+    }
+
     return """
-        <div class="row" style="align-items:flex-start;gap:16px;flex-wrap:wrap;">
-          $votingCard
-          <div class="col fill">$seasonBlocks</div>
+        <div>
+          $seasonSummary
+          <div class="row" style="align-items:flex-start;gap:16px;flex-wrap:wrap;">
+            $votingCard
+            <div class="col fill">$seasonBlocks</div>
+          </div>
         </div>"""
 }
 
@@ -516,10 +683,21 @@ private fun buildEpisodeRow(ep: Episode, season: Int?, idx: Int, mediaId: String
     val bodyId = "ep-body-s${season ?: 0}-$idx"
     val toggleId = "ep-toggle-s${season ?: 0}-$idx"
 
+    val stillThumb = if (!ep.stillPath.isNullOrBlank()) {
+        """<div style="width:72px;height:40px;flex-shrink:0;border-radius:3px;overflow:hidden;background:var(--fill-3);">
+             <img src="$TMDB_IMG_LG${ep.stillPath}" alt="" style="width:100%;height:100%;object-fit:cover;">
+           </div>"""
+    } else {
+        """<div style="width:72px;height:40px;flex-shrink:0;border-radius:3px;background:var(--fill-3);display:flex;align-items:center;justify-content:center;">
+             <span style="font-size:.65rem;color:var(--ink-soft);">no still</span>
+           </div>"""
+    }
+
     return """
         <div style="border:1px solid var(--line);border-radius:6px;margin-bottom:6px;overflow:hidden;background:var(--fill-2);">
           <div id="$toggleId" class="ep-toggle-row" data-body="$bodyId"
                style="display:flex;align-items:center;gap:10px;padding:9px 12px;cursor:pointer;">
+            $stillThumb
             <span class="num" style="min-width:64px;font-size:.82rem;">${epCode.esc()}</span>
             ${if (titleDisplay.isNotEmpty()) """<span style="font-size:.85rem;font-weight:500;flex:none;max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="$titleDisplay">$titleDisplay</span>""" else ""}
             <div style="display:flex;gap:4px;flex-wrap:wrap;flex:1;">$trackChips</div>
@@ -648,24 +826,33 @@ private fun renderArtworkStatus(status: ArtworkStatus) {
     val el = document.getElementById("artwork-status") as? HTMLElement ?: return
     fun badge(exists: Boolean, label: String) =
         """<span class="badge ${if (exists) "ok" else "bad"}" style="margin-right:6px">$label ${if (exists) "✓" else "missing"}</span>"""
-    el.innerHTML = badge(status.posterExists, "poster.jpg") + badge(status.fanartExists, "fanart.jpg")
+    val count = listOf(status.posterExists, status.fanartExists, status.logoExists).count { it }
+    el.innerHTML = """<span class="muted tiny" style="margin-right:10px;">$count of 3 assets</span>""" +
+        badge(status.posterExists, "poster.jpg") +
+        badge(status.fanartExists, "fanart.jpg") +
+        badge(status.logoExists, "clearlogo.png")
 }
 
-private suspend fun handleWriteNfo(id: String) {
-    val btn = document.getElementById("write-nfo-btn") as? HTMLElement
-    btn?.setAttribute("disabled", "true")
-    btn?.textContent = "Writing…"
+private suspend fun handleWriteNfo(id: String, refresh: Boolean = false) {
+    val btn1 = document.getElementById("write-nfo-btn") as? HTMLElement
+    val btn2 = document.getElementById("write-nfo-refresh-btn") as? HTMLElement
+    btn1?.setAttribute("disabled", "true"); btn1?.textContent = "Writing…"
+    btn2?.setAttribute("disabled", "true"); btn2?.textContent = "Writing…"
 
     val result = MediaApi.writeNfo(id)
 
     showDetailMsg(if (result != null) "NFO written to ${result.path}" else "NFO write failed.", result != null)
-    btn?.removeAttribute("disabled")
-    btn?.textContent = "Save → NFO"
+    btn1?.removeAttribute("disabled"); btn1?.textContent = "Save → disk"
+    btn2?.removeAttribute("disabled"); btn2?.textContent = "Save & tell Jellyfin ↻"
 
     if (result != null) {
         val raw = MediaApi.getNfo(id)
         if (raw != null) {
             (document.getElementById("nfo-raw") as? HTMLElement)?.textContent = raw
+        }
+        if (refresh) {
+            MediaApi.jellyfinRefresh(id)
+            showDetailMsg("NFO written and Jellyfin notified ✓", true)
         }
     }
 }
