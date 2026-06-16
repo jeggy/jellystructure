@@ -18,6 +18,7 @@ import org.w3c.dom.Element
 import org.w3c.dom.HTMLElement
 import org.w3c.dom.HTMLFormElement
 import org.w3c.dom.HTMLInputElement
+import org.w3c.dom.HTMLTextAreaElement
 
 private const val TMDB_IMG_LG = "https://image.tmdb.org/t/p/w500"
 
@@ -182,17 +183,30 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
             </div>
             <div class="col fill">
               <div class="card">
+                <div class="row center" style="margin-bottom:10px;">
+                  <h4 style="margin:0;">Metadata</h4>
+                  <span class="spacer"></span>
+                  <button id="save-metadata-btn" class="btn sm primary" style="display:none;">Save changes</button>
+                  <span id="save-metadata-msg" class="tiny muted" style="margin-left:8px;"></span>
+                </div>
                 <div class="row">
                   <div class="field fill">
                     <label>Title</label>
-                    <div class="input">${item.title.esc()}</div>
+                    <input id="edit-title" class="input" value="${item.title.esc()}" style="width:100%;">
                   </div>
                   <div class="field" style="width:110px;">
                     <label>Year</label>
-                    <div class="input">${item.year ?: "—"}</div>
+                    <input id="edit-year" class="input" type="number" value="${item.year ?: ""}" placeholder="—" style="width:100%;">
                   </div>
                 </div>
-                $overviewHtml
+                <div class="field">
+                  <label>Original title</label>
+                  <input id="edit-original-title" class="input" value="${(item.originalTitle ?: "").esc()}" style="width:100%;">
+                </div>
+                <div class="field">
+                  <label>Overview</label>
+                  <textarea id="edit-overview" class="input" rows="4" style="width:100%;resize:vertical;">${item.overview?.esc() ?: ""}</textarea>
+                </div>
                 $genresHtml
                 <div class="field">
                   <label>File path</label>
@@ -350,6 +364,43 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
     }
 
     scope.launch { loadArtworkStatus(item.id) }
+
+    // Inline metadata editing — show Save button when any field changes
+    val editableIds = listOf("edit-title", "edit-year", "edit-original-title", "edit-overview")
+    val origValues = editableIds.associateWith { id ->
+        (document.getElementById(id) as? HTMLInputElement)?.value
+            ?: (document.getElementById(id) as? HTMLTextAreaElement)?.value ?: ""
+    }
+    fun checkDirty() {
+        val dirty = editableIds.any { id ->
+            val current = (document.getElementById(id) as? HTMLInputElement)?.value
+                ?: (document.getElementById(id) as? HTMLTextAreaElement)?.value ?: ""
+            current != (origValues[id] ?: "")
+        }
+        val saveBtn = document.getElementById("save-metadata-btn") as? HTMLElement
+        saveBtn?.style?.display = if (dirty) "inline-flex" else "none"
+    }
+    editableIds.forEach { id ->
+        document.getElementById(id)?.addEventListener("input") { checkDirty() }
+    }
+    document.getElementById("save-metadata-btn")?.addEventListener("click") {
+        val title = (document.getElementById("edit-title") as? HTMLInputElement)?.value?.trim()
+        val year = (document.getElementById("edit-year") as? HTMLInputElement)?.value?.toIntOrNull()
+        val originalTitle = (document.getElementById("edit-original-title") as? HTMLInputElement)?.value?.trim()
+        val overview = (document.getElementById("edit-overview") as? HTMLTextAreaElement)?.value
+        val msg = document.getElementById("save-metadata-msg") as? HTMLElement
+        msg?.textContent = "Saving…"
+        scope.launch {
+            val updated = MediaApi.editMetadata(item.id, title, overview, year, originalTitle)
+            if (updated != null) {
+                msg?.textContent = "Saved ✓"
+                delay(600)
+                renderDetailView(container, updated, scope)
+            } else {
+                msg?.textContent = "Save failed"
+            }
+        }
+    }
 }
 
 private fun buildEpisodesTab(item: MediaItem): String {
