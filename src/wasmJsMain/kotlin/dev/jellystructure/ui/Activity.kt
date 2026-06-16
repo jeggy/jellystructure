@@ -10,14 +10,17 @@ import org.w3c.dom.HTMLElement
 import org.w3c.dom.WebSocket
 import org.w3c.dom.events.Event
 
-private fun currentTimeString(): String = js("new Date().toLocaleTimeString()")
+private fun currentTimeString(): String = js("new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false})")
+
+private const val TMDB_POSTER_W92 = "https://image.tmdb.org/t/p/w92"
 
 private var activitySocket: WebSocket? = null
 private var activityScope: CoroutineScope? = null
 private var jobItemCount = 0
 private var jobDoneCount = 0
 private var jobFailCount = 0
-private var jobCurrentTitle: String? = null
+private var activityCurrentTitle: String? = null
+private var activityCurrentPoster: String? = null
 
 fun renderActivity(container: Element, scope: CoroutineScope) {
     activityScope = scope
@@ -26,7 +29,8 @@ fun renderActivity(container: Element, scope: CoroutineScope) {
     jobItemCount = 0
     jobDoneCount = 0
     jobFailCount = 0
-    jobCurrentTitle = null
+    activityCurrentTitle = null
+    activityCurrentPoster = null
 
     container.innerHTML = """
         <div class="pagebar">
@@ -37,27 +41,56 @@ fun renderActivity(container: Element, scope: CoroutineScope) {
           <button id="act-cancel-btn" class="btn sm ghost" style="display:none">Pause</button>
           <button id="clear-btn" class="btn sm ghost">Clear</button>
         </div>
-        <p class="page-sub">Live job events streamed from the backend WebSocket.</p>
+        <p class="page-sub">The full console for the job also shown in the ambient dock. Everything streams over WebSocket — no polling, no page reloads. Errors drop into <a href="#/triage">Triage</a> and the run keeps going.</p>
 
-        <div id="act-chips" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px"></div>
-
-        <div id="job-progress-card" class="card" style="display:none;margin-bottom:14px">
-          <div class="row center" style="margin-bottom:10px">
-            <span style="font-size:.9rem;font-weight:600">Scan in progress</span>
+        <div id="overall-card" class="card" style="display:none;margin-bottom:14px">
+          <div class="row center">
+            <b>Overall</b>
             <span class="spacer"></span>
-            <span id="job-id-badge" class="num tiny muted"></span>
+            <span class="mono tiny" id="ov-label">0 items</span>
           </div>
-          <div class="row center" style="gap:16px;margin-bottom:10px">
-            <span class="tiny muted">Items found: <b id="job-count">0</b></span>
-            <span id="job-current-file" class="tiny muted mono" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0"></span>
+          <div class="bar" style="margin-top:8px"><i id="ov-bar" style="width:0%"></i></div>
+          <div id="act-chips" style="display:flex;gap:10px;flex-wrap:wrap;margin-top:10px"></div>
+        </div>
+
+        <div id="act-columns" class="row" style="display:none;align-items:stretch;gap:14px">
+          <div class="card fill" id="now-card">
+            <div class="row center">
+              <h4 style="margin:0">Now processing</h4>
+              <span class="spacer"></span>
+              <span class="mono tiny" id="now-filename" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:220px"></span>
+            </div>
+            <hr class="dash" style="margin:10px 0">
+            <div id="now-status-row" class="row center" style="gap:8px;display:none">
+              <span id="now-tool-badge" class="badge warn">processing</span>
+            </div>
+            <div class="bar" id="now-bar-wrap" style="margin-top:8px;display:none"><i id="now-bar" style="width:0%"></i></div>
+            <hr class="dash" style="margin:12px 0">
+            <div class="row" style="gap:10px;align-items:flex-start">
+              <div class="imgslot" id="now-poster" style="width:60px;height:88px;flex:none;background:var(--fill-3);border-radius:6px;overflow:hidden;display:flex;align-items:center;justify-content:center">
+                <span class="tiny muted">poster</span>
+              </div>
+              <div class="tiny" style="line-height:1.85" id="now-ops">
+                <div class="muted">Waiting for next item…</div>
+              </div>
+            </div>
           </div>
-          <div style="width:100%;background:var(--fill-3);border-radius:4px;height:4px">
-            <div id="job-progress-bar" style="width:0%;height:4px;border-radius:4px;background:var(--grad,var(--hi));transition:width .3s"></div>
+
+          <div class="card" style="width:420px;min-width:280px;flex:none">
+            <div class="row center">
+              <h4 style="margin:0">Live log</h4>
+              <span class="spacer"></span>
+              <span class="chip" style="font-size:.65rem" id="log-ws-chip"><span class="dot ok"></span> ws connected</span>
+            </div>
+            <div class="log" id="activity-console" style="max-height:360px;margin-top:8px">
+              <div class="muted tiny">Waiting for job events…</div>
+            </div>
+            <div class="tiny muted center-x" style="margin-top:8px">streaming live</div>
           </div>
         </div>
 
-        <div id="activity-console" class="log" style="font-size:.76rem;line-height:1.6;min-height:300px;max-height:calc(100vh - 22rem);overflow-y:auto;padding:14px 16px;border-radius:10px;border:1px solid var(--border)">
-          <div class="muted tiny">Waiting for job events…</div>
+        <div id="act-idle" class="card" style="margin-top:16px">
+          <div class="muted tiny">No job is currently running. Start a scan from the Dashboard or Library.</div>
         </div>
     """.trimIndent()
 
@@ -120,23 +153,31 @@ private fun handleEvent(container: Element, raw: String) {
             val jobId = extractJsonField(raw, "jobId") ?: "?"
             val total = extractJsonField(raw, "total") ?: "?"
             jobItemCount = 0; jobDoneCount = 0; jobFailCount = 0
-            showProgressCard(container, jobId)
+            showJobUI(container, jobId)
             (container.querySelector("#act-cancel-btn") as? HTMLElement)?.style?.display = ""
             (container.querySelector("#act-crumb") as? HTMLElement)?.let { it.textContent = "Scanning"; it.style.display = "" }
             updateActivityChips(container)
-            appendLine(container, "started", "▶ Job $jobId started — $total files")
+            appendLine(container, "started", "▶ Job $jobId started${if (total != "-1") " — $total files" else ""}")
         }
         "progress" -> {
             val file = extractJsonField(raw, "file") ?: "?"
             val current = extractJsonField(raw, "current") ?: "?"
             val total = extractJsonField(raw, "total") ?: "?"
-            updateProgressFile(container, file.substringAfterLast('/'))
-            appendLine(container, "progress", "  [$current/$total] ${file.substringAfterLast('/')}")
+            val shortName = file.substringAfterLast('/')
+            updateNowFilename(container, shortName)
+            appendLine(container, "progress", "  [$current/$total] $shortName")
         }
         "item_scanned" -> {
             jobItemCount++
-            updateProgressCount(container, jobItemCount)
+            val title = extractJsonField(raw, "title") ?: extractNestedField(raw, "item", "title")
+            val poster = extractJsonField(raw, "posterPath") ?: extractNestedField(raw, "item", "posterPath")
+            val path = extractNestedField(raw, "item", "path")
+            activityCurrentTitle = title
+            activityCurrentPoster = poster
+            updateNowCard(container, title, poster, path)
+            updateOvLabel(container)
             updateActivityChips(container)
+            appendLine(container, "scanned", title ?: path?.substringAfterLast('/') ?: "item scanned")
         }
         "file_done" -> {
             val file = extractJsonField(raw, "file") ?: "?"
@@ -153,7 +194,7 @@ private fun handleEvent(container: Element, raw: String) {
             val jobId = extractJsonField(raw, "jobId") ?: "?"
             val succeeded = extractJsonField(raw, "succeeded") ?: "?"
             val failed = extractJsonField(raw, "failed") ?: "?"
-            hideProgressCard(container)
+            hideJobUI(container)
             (container.querySelector("#act-cancel-btn") as? HTMLElement)?.style?.display = "none"
             (container.querySelector("#act-crumb") as? HTMLElement)?.style?.display = "none"
             appendLine(container, "finished", "■ Job $jobId done — $succeeded succeeded, $failed failed")
@@ -163,34 +204,75 @@ private fun handleEvent(container: Element, raw: String) {
     }
 }
 
+private fun showJobUI(container: Element, jobId: String) {
+    (container.querySelector("#overall-card") as? HTMLElement)?.style?.display = "block"
+    (container.querySelector("#act-columns") as? HTMLElement)?.style?.display = "flex"
+    (container.querySelector("#act-idle") as? HTMLElement)?.style?.display = "none"
+    (container.querySelector("#ov-bar") as? HTMLElement)?.setAttribute("style", "width:0%")
+}
+
+private fun hideJobUI(container: Element) {
+    (container.querySelector("#overall-card") as? HTMLElement)?.style?.display = "none"
+    (container.querySelector("#act-columns") as? HTMLElement)?.style?.display = "none"
+    (container.querySelector("#act-idle") as? HTMLElement)?.style?.display = "block"
+    resetNowCard(container)
+}
+
+private fun updateNowFilename(container: Element, shortName: String) {
+    (container.querySelector("#now-filename") as? HTMLElement)?.textContent = shortName
+}
+
+private fun updateNowCard(container: Element, title: String?, poster: String?, path: String?) {
+    val displayName = title ?: path?.substringAfterLast('/') ?: "Unknown"
+    updateNowFilename(container, displayName)
+
+    // Update poster
+    val posterEl = container.querySelector("#now-poster") as? HTMLElement
+    if (posterEl != null) {
+        val posterUrl = when {
+            poster == null -> null
+            poster.startsWith("http") -> poster
+            poster.startsWith("/") && poster.length < 120 -> "$TMDB_POSTER_W92$poster"
+            else -> null
+        }
+        if (posterUrl != null) {
+            posterEl.innerHTML = """<img src="$posterUrl" style="width:100%;height:100%;object-fit:cover" alt="poster">"""
+        } else {
+            posterEl.innerHTML = """<span class="tiny muted" style="text-align:center;padding:4px">${displayName.take(20)}</span>"""
+        }
+    }
+
+    // Update ops checklist
+    val opsEl = container.querySelector("#now-ops") as? HTMLElement
+    if (opsEl != null) {
+        opsEl.innerHTML = buildString {
+            if (title != null) append("""<div><b>$title</b></div>""")
+            if (path != null) append("""<div class="muted mono" style="font-size:.7rem">${path.substringAfterLast('/')}</div>""")
+            append("""<div style="margin-top:6px;color:var(--hi)">⟳ processing…</div>""")
+        }
+    }
+}
+
+private fun resetNowCard(container: Element) {
+    (container.querySelector("#now-filename") as? HTMLElement)?.textContent = ""
+    (container.querySelector("#now-poster") as? HTMLElement)?.innerHTML = """<span class="tiny muted">poster</span>"""
+    (container.querySelector("#now-ops") as? HTMLElement)?.innerHTML = """<div class="muted">Waiting for next item…</div>"""
+    activityCurrentTitle = null
+    activityCurrentPoster = null
+}
+
+private fun updateOvLabel(container: Element) {
+    (container.querySelector("#ov-label") as? HTMLElement)?.textContent = "$jobItemCount item${if (jobItemCount != 1) "s" else ""} scanned"
+}
+
 private fun updateActivityChips(container: Element) {
     val el = container.querySelector("#act-chips") as? HTMLElement ?: return
     if (jobItemCount == 0 && jobDoneCount == 0 && jobFailCount == 0) { el.innerHTML = ""; return }
     el.innerHTML = buildString {
-        if (jobItemCount > 0) append("""<span class="chip"><span class="dot ok"></span> $jobItemCount scanned</span>""")
-        if (jobDoneCount > 0) append("""<span class="chip"><span class="dot ok"></span> $jobDoneCount done ✓</span>""")
-        if (jobFailCount > 0) append("""<span class="chip"><span class="dot bad"></span> $jobFailCount failed</span>""")
+        if (jobItemCount > 0) append("""<span class="chip ok" style="background:var(--ok-soft)">$jobItemCount scanned</span>""")
+        if (jobDoneCount > 0) append("""<span class="chip ok" style="background:var(--ok-soft)">$jobDoneCount done ✓</span>""")
+        if (jobFailCount > 0) append("""<span class="chip bad" style="background:var(--bad-soft)">$jobFailCount failed</span>""")
     }
-}
-
-private fun showProgressCard(container: Element, jobId: String) {
-    val card = container.querySelector("#job-progress-card") as? HTMLElement ?: return
-    card.style.display = "block"
-    (container.querySelector("#job-id-badge") as? HTMLElement)?.textContent = jobId
-    (container.querySelector("#job-count") as? HTMLElement)?.textContent = "0"
-    (container.querySelector("#job-progress-bar") as? HTMLElement)?.setAttribute("style", "width:0%")
-}
-
-private fun hideProgressCard(container: Element) {
-    (container.querySelector("#job-progress-card") as? HTMLElement)?.style?.display = "none"
-}
-
-private fun updateProgressFile(container: Element, shortName: String) {
-    (container.querySelector("#job-current-file") as? HTMLElement)?.textContent = shortName
-}
-
-private fun updateProgressCount(container: Element, count: Int) {
-    (container.querySelector("#job-count") as? HTMLElement)?.textContent = count.toString()
 }
 
 private fun appendLine(container: Element, kind: String, text: String) {
@@ -198,7 +280,7 @@ private fun appendLine(container: Element, kind: String, text: String) {
     console.querySelector(".muted")?.remove()
 
     val ts = currentTimeString()
-    val color = when (kind) {
+    val colorStyle = when (kind) {
         "started"   -> "color:var(--hi)"
         "finished"  -> "color:var(--warn,#f59e0b)"
         "error", "bad" -> "color:var(--bad)"
@@ -207,15 +289,22 @@ private fun appendLine(container: Element, kind: String, text: String) {
         "system"    -> "opacity:.4"
         else        -> ""
     }
+
     val div = document.createElement("div")
-    div.setAttribute("style", "white-space:pre;$color")
-    div.textContent = if (kind == "separator") text else "[$ts] $text"
+    if (kind == "separator") {
+        div.setAttribute("style", "opacity:.25;white-space:pre")
+        div.textContent = text
+    } else {
+        div.innerHTML = """<span class="ts">$ts</span> <span style="$colorStyle">${text.escapeHtml()}</span>"""
+    }
     console.appendChild(div)
     (console as? HTMLElement)?.let { it.scrollTop = it.scrollHeight.toDouble() }
 }
 
+private fun String.escapeHtml(): String =
+    replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
 private fun extractJsonField(json: String, field: String): String? {
-    // Simple regex-free field extraction for known flat JSON shapes
     val key = "\"$field\":"
     val start = json.indexOf(key).takeIf { it >= 0 } ?: return null
     val valueStart = start + key.length
@@ -225,10 +314,29 @@ private fun extractJsonField(json: String, field: String): String? {
             val end = trimmed.indexOf('"', 1).takeIf { it >= 0 } ?: return null
             trimmed.substring(1, end)
         }
+        trimmed.startsWith('{') || trimmed.startsWith('[') -> null
         else -> {
             val end = trimmed.indexOfFirst { it == ',' || it == '}' || it == ']' }
                 .takeIf { it >= 0 } ?: trimmed.length
-            trimmed.substring(0, end).trim()
+            trimmed.substring(0, end).trim().takeIf { it != "null" }
         }
     }
+}
+
+/** Extracts a field nested inside an object field, e.g. extractNestedField(raw, "item", "title") */
+private fun extractNestedField(json: String, outerKey: String, innerKey: String): String? {
+    val outerStart = json.indexOf("\"$outerKey\":")
+    if (outerStart < 0) return null
+    val objStart = json.indexOf('{', outerStart)
+    if (objStart < 0) return null
+    var depth = 0
+    var objEnd = objStart
+    for (i in objStart until json.length) {
+        when (json[i]) {
+            '{' -> depth++
+            '}' -> { depth--; if (depth == 0) { objEnd = i; break } }
+        }
+    }
+    val inner = json.substring(objStart, objEnd + 1)
+    return extractJsonField(inner, innerKey)
 }
