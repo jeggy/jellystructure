@@ -8,6 +8,7 @@ import dev.jellystructure.media.MediaHistory
 import dev.jellystructure.media.MediaStore
 import dev.jellystructure.media.MkvpropeditRunner
 import dev.jellystructure.model.MediaItem
+import dev.jellystructure.model.MediaKind
 import dev.jellystructure.model.TrackKind
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.request.receive
@@ -35,13 +36,26 @@ data class CascadeMismatch(
 )
 
 @Serializable
+data class EpisodeTriageItem(
+    val filename: String,
+    val episodeCode: String,
+    val title: String? = null,
+    val untaggedTracks: List<TriageTrack>,
+    val missingOverview: Boolean,
+)
+
+@Serializable
 data class TriageItem(
     val mediaId: String,
     val title: String,
     val year: Int?,
     val path: String,
+    val kind: String = "movie",
     val untaggedTracks: List<TriageTrack>,
     val cascadeMismatch: CascadeMismatch? = null,
+    val episodeIssues: List<EpisodeTriageItem> = emptyList(),
+    val resolvedLanguage: String? = null,
+    val languageMix: Boolean = false,
 )
 
 @Serializable
@@ -55,7 +69,13 @@ fun Route.triageRoutes(store: MediaStore, jellyfinClient: JellyfinClient, config
         get("/count") {
             val all = store.allItems()
             val untagged = all.sumOf { item ->
-                item.tracks.count { (it.kind == TrackKind.AUDIO || it.kind == TrackKind.SUBTITLE) && it.language == null }
+                if (item.kind == MediaKind.TV_SHOW) {
+                    item.episodes.sumOf { ep ->
+                        ep.tracks.count { (it.kind == TrackKind.AUDIO || it.kind == TrackKind.SUBTITLE) && it.language == null }
+                    }
+                } else {
+                    item.tracks.count { (it.kind == TrackKind.AUDIO || it.kind == TrackKind.SUBTITLE) && it.language == null }
+                }
             }
             val mismatch = all.count { it.detectCascadeMismatch() != null }
             call.respond(TriageCount(untagged = untagged, mismatch = mismatch, total = untagged + mismatch))
@@ -65,6 +85,50 @@ fun Route.triageRoutes(store: MediaStore, jellyfinClient: JellyfinClient, config
             val items = store.allItems()
                 .mapNotNull { it.toTriageItem() }
             call.respond(items)
+        }
+
+        post("/{mediaId}/episodes/{epFilename}/tracks/{specifier}/language") {
+            val mediaId = call.parameters["mediaId"]
+                ?: return@post call.respond(HttpStatusCode.BadRequest)
+            val epFilename = call.parameters["epFilename"]
+                ?: return@post call.respond(HttpStatusCode.BadRequest)
+            val specifier = call.parameters["specifier"]
+                ?: return@post call.respond(HttpStatusCode.BadRequest)
+
+            val item = store.get(mediaId)
+                ?: return@post call.respond(HttpStatusCode.NotFound)
+            val ep = item.episodes.firstOrNull { it.filename == epFilename }
+                ?: return@post call.respond(HttpStatusCode.NotFound, mapOf("error" to "episode not found"))
+            val track = ep.tracks.firstOrNull { it.specifier == specifier }
+                ?: return@post call.respond(HttpStatusCode.NotFound, mapOf("error" to "track not found"))
+
+            val req = call.receive<AssignLanguageRequest>()
+            val lang = req.language.trim()
+            if (lang.isBlank()) {
+                call.respond(HttpStatusCode.BadRequest, mapOf("error" to "language is required"))
+                return@post
+            }
+
+            val ext = ep.path.substringAfterLast('.').lowercase()
+            val ok = if (ext == "mkv") MkvpropeditRunner.setLanguage(ep.path, track.streamIndex, lang)
+                     else FfmpegRunner.setLanguage(ep.path, track.streamIndex, lang)
+
+            if (!ok) {
+                val tool = if (ext == "mkv") "mkvpropedit" else "ffmpeg"
+                call.respond(HttpStatusCode.InternalServerError, mapOf("error" to "$tool failed"))
+                return@post
+            }
+
+            val newTracks = FfprobeRunner.probe(ep.path)
+            val updatedEp = ep.copy(tracks = newTracks)
+            val updatedEpisodes = item.episodes.map { if (it.filename == epFilename) updatedEp else it }
+            val totalIssues = updatedEpisodes.sumOf { e ->
+                e.tracks.count { (it.kind == TrackKind.AUDIO || it.kind == TrackKind.SUBTITLE) && it.language == null }
+            }
+            store.updateOne(item.copy(episodes = updatedEpisodes, issueCount = totalIssues))
+            mediaHistory.record(mediaId, "ep_assign_language", "ep=$epFilename specifier=$specifier lang=$lang")
+
+            call.respond(mapOf("ok" to true, "language" to lang))
         }
 
         post("/{mediaId}/tracks/{specifier}/language") {
@@ -118,6 +182,37 @@ fun Route.triageRoutes(store: MediaStore, jellyfinClient: JellyfinClient, config
 }
 
 private fun MediaItem.toTriageItem(): TriageItem? {
+    if (kind == MediaKind.TV_SHOW) {
+        val epIssues = episodes.mapNotNull { ep ->
+            val untagged = ep.tracks
+                .filter { (it.kind == TrackKind.AUDIO || it.kind == TrackKind.SUBTITLE) && it.language == null }
+                .map { t -> TriageTrack(specifier = t.specifier, streamIndex = t.streamIndex, kind = t.kind.name.lowercase(), codec = t.codec, title = t.title) }
+            val missingOverview = ep.overview.isNullOrBlank()
+            if (untagged.isEmpty() && !missingOverview) return@mapNotNull null
+            val code = if (ep.seasonNumber != null && ep.episodeNumber != null) {
+                "S${ep.seasonNumber.toString().padStart(2, '0')}E${ep.episodeNumber.toString().padStart(2, '0')}"
+            } else ep.filename.substringBeforeLast('.')
+            EpisodeTriageItem(
+                filename = ep.filename,
+                episodeCode = code,
+                title = ep.title,
+                untaggedTracks = untagged,
+                missingOverview = missingOverview,
+            )
+        }
+        if (epIssues.isEmpty()) return null
+        return TriageItem(
+            mediaId = id,
+            title = title,
+            year = year,
+            path = path,
+            kind = "tv",
+            untaggedTracks = emptyList(),
+            episodeIssues = epIssues,
+            resolvedLanguage = resolvedLanguage,
+            languageMix = languageMix,
+        )
+    }
     val untagged = tracks
         .filter { (it.kind == TrackKind.AUDIO || it.kind == TrackKind.SUBTITLE) && it.language == null }
         .map { t ->
@@ -136,6 +231,7 @@ private fun MediaItem.toTriageItem(): TriageItem? {
         title = title,
         year = year,
         path = path,
+        kind = "movie",
         untaggedTracks = untagged,
         cascadeMismatch = mismatch,
     )

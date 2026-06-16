@@ -33,13 +33,26 @@ data class CascadeMismatch(
 )
 
 @Serializable
+data class EpisodeTriageItem(
+    val filename: String,
+    val episodeCode: String,
+    val title: String? = null,
+    val untaggedTracks: List<TriageTrack>,
+    val missingOverview: Boolean,
+)
+
+@Serializable
 data class TriageItem(
     val mediaId: String,
     val title: String,
     val year: Int? = null,
     val path: String,
+    val kind: String = "movie",
     val untaggedTracks: List<TriageTrack>,
     val cascadeMismatch: CascadeMismatch? = null,
+    val episodeIssues: List<EpisodeTriageItem> = emptyList(),
+    val resolvedLanguage: String? = null,
+    val languageMix: Boolean = false,
 )
 
 private var triageItems: List<TriageItem> = emptyList()
@@ -165,6 +178,30 @@ private fun renderFocusQueue(list: Element) {
     val item = triageItems.getOrNull(focusedIndex) ?: return
     val total = triageItems.size
 
+    val navPrev = if (focusedIndex > 0)
+        """<button id="focus-prev" class="bg-slate-700 hover:bg-slate-600 text-white text-xs px-3 py-1.5 rounded">‹ Previous</button>"""
+    else
+        """<button class="bg-slate-800 text-slate-600 text-xs px-3 py-1.5 rounded cursor-not-allowed" disabled>‹ Previous</button>"""
+    val navNext = if (focusedIndex < total - 1)
+        """<button id="focus-next" class="bg-slate-700 hover:bg-slate-600 text-white text-xs px-3 py-1.5 rounded">Next ›</button>"""
+    else
+        """<button class="bg-slate-800 text-slate-600 text-xs px-3 py-1.5 rounded cursor-not-allowed" disabled>Next ›</button>"""
+
+    if (item.kind == "tv") {
+        list.innerHTML = """
+            <div class="flex items-center gap-3 mb-3 text-xs text-slate-500">
+              $navPrev
+              <span>Item ${focusedIndex + 1} of $total</span>
+              $navNext
+            </div>
+            ${seriesTriageCardHtml(item, true)}
+        """.trimIndent()
+        list.querySelector("#focus-prev")?.addEventListener("click") { moveFocus(-1) }
+        list.querySelector("#focus-next")?.addEventListener("click") { moveFocus(1) }
+        wireSeriesTriageButtons(list)
+        return
+    }
+
     val tracksHtml = item.untaggedTracks.joinToString("") { track ->
         val kindBadge = when (track.kind) {
             "audio"    -> """<span class="bg-blue-900 text-blue-300 text-xs px-2 py-0.5 rounded font-mono">audio</span>"""
@@ -211,16 +248,6 @@ private fun renderFocusQueue(list: Element) {
         """.trimIndent()
     } ?: ""
 
-    val navPrev = if (focusedIndex > 0)
-        """<button id="focus-prev" class="bg-slate-700 hover:bg-slate-600 text-white text-xs px-3 py-1.5 rounded">‹ Previous</button>"""
-    else
-        """<button class="bg-slate-800 text-slate-600 text-xs px-3 py-1.5 rounded cursor-not-allowed" disabled>‹ Previous</button>"""
-
-    val navNext = if (focusedIndex < total - 1)
-        """<button id="focus-next" class="bg-slate-700 hover:bg-slate-600 text-white text-xs px-3 py-1.5 rounded">Next ›</button>"""
-    else
-        """<button class="bg-slate-800 text-slate-600 text-xs px-3 py-1.5 rounded cursor-not-allowed" disabled>Next ›</button>"""
-
     list.innerHTML = """
         <div class="flex items-center gap-3 mb-3 text-xs text-slate-500">
           $navPrev
@@ -251,6 +278,9 @@ private fun renderTableView(list: Element) {
     val triageItems = triageItems
     list.innerHTML = triageItems.mapIndexed { idx, item ->
         val isActive = idx == focusedIndex
+
+        if (item.kind == "tv") return@mapIndexed seriesTriageCardHtml(item, isActive)
+
         val activeClass = if (isActive) "ring-2 ring-blue-500" else ""
 
         val tracksHtml = item.untaggedTracks.joinToString("") { track ->
@@ -332,6 +362,7 @@ private fun renderTableView(list: Element) {
     wireAssignButtons(list)
     wireCascadeButtons(list)
     wireLanguageInputs(list)
+    wireSeriesTriageButtons(list)
 }
 
 private fun wireAssignButtons(list: Element) {
@@ -469,9 +500,148 @@ private fun focusFirstInput() {
     (item?.querySelector(".triage-lang-input") as? HTMLInputElement)?.focus()
 }
 
+private fun seriesTriageCardHtml(item: TriageItem, isActive: Boolean): String {
+    val activeClass = if (isActive) "ring-2 ring-blue-500" else ""
+    val langBadge = when {
+        item.languageMix -> """<span class="bg-yellow-900 text-yellow-300 text-xs px-2 py-0.5 rounded">Mixed languages</span>"""
+        !item.resolvedLanguage.isNullOrBlank() -> """<span class="bg-blue-900 text-blue-300 text-xs px-2 py-0.5 rounded font-mono">${item.resolvedLanguage}</span>"""
+        else -> """<span class="bg-slate-700 text-slate-400 text-xs px-2 py-0.5 rounded">No language</span>"""
+    }
+
+    val episodesHtml = item.episodeIssues.joinToString("") { ep ->
+        val tracksHtml = ep.untaggedTracks.joinToString("") { track ->
+            val kindBadge = when (track.kind) {
+                "audio"    -> """<span class="bg-blue-900 text-blue-300 text-xs px-2 py-0.5 rounded font-mono">audio</span>"""
+                "subtitle" -> """<span class="bg-purple-900 text-purple-300 text-xs px-2 py-0.5 rounded font-mono">sub</span>"""
+                else       -> """<span class="bg-slate-700 text-slate-300 text-xs px-2 py-0.5 rounded font-mono">${track.kind}</span>"""
+            }
+            val label = track.title?.let { ", $it" } ?: ""
+            """<div class="flex items-center gap-3 py-1.5">
+                 $kindBadge
+                 <span class="text-xs text-slate-400 font-mono flex-1">#${track.streamIndex} ${track.codec}$label</span>
+                 <input class="ep-triage-lang-input bg-slate-800 border border-slate-600 rounded px-2 py-1 text-xs text-white w-24 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                   placeholder="e.g. eng"
+                   data-media-id="${item.mediaId}"
+                   data-ep-filename="${ep.filename.esc()}"
+                   data-specifier="${track.specifier.esc()}"
+                   maxlength="10">
+                 <button class="ep-triage-assign-btn bg-blue-600 hover:bg-blue-700 text-white text-xs px-3 py-1 rounded"
+                   data-media-id="${item.mediaId}"
+                   data-ep-filename="${ep.filename.esc()}"
+                   data-specifier="${track.specifier.esc()}">Assign</button>
+                 <span class="ep-triage-result text-xs" data-ep-filename="${ep.filename.esc()}" data-specifier="${track.specifier.esc()}"></span>
+               </div>"""
+        }
+        val overviewBadge = if (ep.missingOverview)
+            """<span class="bg-orange-900 text-orange-300 text-xs px-2 py-0.5 rounded ml-2">no overview</span>"""
+        else ""
+        """<div class="border-t border-slate-700 pt-2 mt-2">
+             <div class="flex items-center gap-2 mb-1">
+               <span class="text-xs font-semibold text-slate-300 font-mono">${ep.episodeCode}</span>
+               ${ep.title?.let { """<span class="text-xs text-slate-400">${it.esc()}</span>""" } ?: ""}
+               $overviewBadge
+             </div>
+             ${if (tracksHtml.isEmpty()) """<span class="text-xs text-slate-500">No untagged tracks.</span>""" else tracksHtml}
+           </div>"""
+    }
+
+    val totalUntagged = item.episodeIssues.sumOf { it.untaggedTracks.size }
+    val untaggedBadge = if (totalUntagged > 0)
+        """<span class="bg-red-900 text-red-300 text-xs px-2 py-0.5 rounded">$totalUntagged untagged track${if (totalUntagged != 1) "s" else ""}</span>"""
+    else ""
+    val missingOverviewCount = item.episodeIssues.count { it.missingOverview }
+    val overviewBadge = if (missingOverviewCount > 0)
+        """<span class="bg-orange-900 text-orange-300 text-xs px-2 py-0.5 rounded">$missingOverviewCount missing overview${if (missingOverviewCount != 1) "s" else ""}</span>"""
+    else ""
+
+    return """<div class="triage-item bg-slate-800 rounded-lg p-4 $activeClass" data-media-id="${item.mediaId}">
+                <div class="flex items-start justify-between mb-2">
+                  <div class="flex items-center gap-2 flex-wrap">
+                    <span class="font-semibold text-white">${item.title.esc()}</span>
+                    ${item.year?.let { """<span class="text-slate-400 text-sm">($it)</span>""" } ?: ""}
+                    <span class="bg-slate-600 text-slate-300 text-xs px-2 py-0.5 rounded">TV</span>
+                    $langBadge
+                    $untaggedBadge
+                    $overviewBadge
+                  </div>
+                </div>
+                <div class="series-episodes-body">$episodesHtml</div>
+              </div>"""
+}
+
+private fun wireSeriesTriageButtons(list: Element) {
+    list.querySelectorAll(".ep-triage-assign-btn").let { nodes ->
+        for (i in 0 until nodes.length) {
+            val btn = nodes.item(i) as? HTMLElement ?: continue
+            btn.addEventListener("click") {
+                val mediaId = btn.getAttribute("data-media-id") ?: return@addEventListener
+                val epFilename = btn.getAttribute("data-ep-filename") ?: return@addEventListener
+                val specifier = btn.getAttribute("data-specifier") ?: return@addEventListener
+                val input = list.querySelector(
+                    ".ep-triage-lang-input[data-media-id=\"$mediaId\"][data-ep-filename=\"$epFilename\"][data-specifier=\"$specifier\"]"
+                ) as? HTMLInputElement ?: return@addEventListener
+                val lang = input.value.trim()
+                if (lang.isBlank()) { input.focus(); return@addEventListener }
+                val resultEl = list.querySelector(
+                    ".ep-triage-result[data-ep-filename=\"$epFilename\"][data-specifier=\"$specifier\"]"
+                )
+                resultEl?.textContent = "…"
+                triageScope?.launch {
+                    val ok = assignEpisodeLanguage(mediaId, epFilename, specifier, lang)
+                    if (ok) {
+                        resultEl?.textContent = "✓"
+                        resultEl?.setAttribute("class", "ep-triage-result text-xs text-green-400")
+                        triageItems = triageItems.mapNotNull { item ->
+                            if (item.mediaId != mediaId) return@mapNotNull item
+                            val updatedEps = item.episodeIssues.mapNotNull { ep ->
+                                if (ep.filename != epFilename) return@mapNotNull ep
+                                val remaining = ep.untaggedTracks.filter { it.specifier != specifier }
+                                if (remaining.isEmpty() && !ep.missingOverview) null
+                                else ep.copy(untaggedTracks = remaining)
+                            }
+                            if (updatedEps.isEmpty()) null else item.copy(episodeIssues = updatedEps)
+                        }
+                        if (focusedIndex >= triageItems.size) focusedIndex = maxOf(0, triageItems.size - 1)
+                        renderTriageList()
+                    } else {
+                        resultEl?.textContent = "✗ failed"
+                        resultEl?.setAttribute("class", "ep-triage-result text-xs text-red-400")
+                    }
+                }
+            }
+        }
+    }
+
+    list.querySelectorAll(".ep-triage-lang-input").let { nodes ->
+        for (i in 0 until nodes.length) {
+            val el = nodes.item(i) as? HTMLInputElement ?: continue
+            el.addEventListener("keydown") { ev ->
+                if ((ev as KeyboardEvent).key == "Enter") {
+                    ev.preventDefault()
+                    val mediaId = el.getAttribute("data-media-id") ?: return@addEventListener
+                    val epFilename = el.getAttribute("data-ep-filename") ?: return@addEventListener
+                    val specifier = el.getAttribute("data-specifier") ?: return@addEventListener
+                    list.querySelector(
+                        ".ep-triage-assign-btn[data-media-id=\"$mediaId\"][data-ep-filename=\"$epFilename\"][data-specifier=\"$specifier\"]"
+                    )?.let { (it as? HTMLElement)?.click() }
+                }
+            }
+        }
+    }
+}
+
 private suspend fun fetchTriage(): List<TriageItem>? = runCatching {
     httpClient.get("/api/triage").body<List<TriageItem>>()
 }.getOrNull()
+
+private suspend fun assignEpisodeLanguage(mediaId: String, epFilename: String, specifier: String, language: String): Boolean =
+    runCatching {
+        val response = httpClient.post("/api/triage/$mediaId/episodes/$epFilename/tracks/$specifier/language") {
+            contentType(ContentType.Application.Json)
+            setBody("""{"language":"$language"}""")
+        }
+        response.status == HttpStatusCode.OK
+    }.getOrDefault(false)
 
 private suspend fun assignLanguage(mediaId: String, specifier: String, language: String): Boolean =
     runCatching {
