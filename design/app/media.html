@@ -86,25 +86,25 @@
         </div>
       </div>
 
-      <!-- PER-TITLE CASCADE OVERRIDE -->
+      <!-- RESOLVED METADATA LANGUAGE (read-only) -->
       <div class="override">
         <div class="row center">
-          <h4 style="margin:0;">Language cascade for this title</h4>
+          <h4 style="margin:0;">Resolved metadata language</h4>
           <span class="spacer"></span>
-          <span class="tiny muted">override global rule</span>
-          <span class="toggle" id="ovToggle"></span>
+          <span class="badge info">automatic</span>
         </div>
-        <div id="ovInherit" class="tiny" style="margin-top:8px;">
-          Using <b>global cascade</b> — <span class="pill-row" style="display:inline-flex;gap:5px;vertical-align:middle;"><span class="chip">da</span><span class="chip">fo</span><span class="chip">en</span><span class="chip">original</span></span> · <a href="cascade.html">edit global →</a>
+        <div class="tiny" style="margin-top:8px;">
+          The resolver walks this title's audio tracks in physical order and fetches TMDB metadata in the first language that returns a result. Track flags are never touched by this.
         </div>
-        <div id="ovCustom" style="margin-top:10px;display:none;">
-          <div class="row center" style="gap:8px;flex-wrap:wrap;">
-            <span class="muted tiny">this title only:</span>
-            <span class="pill-row"><span class="chip" style="background:var(--hi);">⠿ original</span><span class="chip" style="background:var(--hi);">⠿ en</span><span class="chip ghost">＋</span></span>
-            <span class="muted tiny">fallback</span><span class="chip">en</span>
+        <div class="box flat" style="margin-top:10px;background:var(--bg-2);">
+          <div class="mono tiny" style="line-height:2;">
+            <div>0:a:0 <span class="lang">en</span>? <span class="okc">✓ TMDB result → winner</span></div>
+            <div class="muted">0:a:1 ?? untagged → skipped (see triage)</div>
           </div>
-          <div class="tiny muted" style="margin-top:8px;">Overrides the global rule for Sintel only. Resolves to default audio = <span class="badge ok lang">en</span> (no Danish track present).</div>
+          <hr class="dash" style="margin:9px 0;">
+          <div class="row center"><span class="tiny">Fetching metadata in</span><span class="spacer"></span><span class="badge ok lang">en</span></div>
         </div>
+        <div class="tiny muted" style="margin-top:8px;">Global fallback is <span class="lang">en</span> · <a href="language.html">Language Settings →</a></div>
       </div>
 
       <!-- EMBEDDED TRACKS SUMMARY -->
@@ -117,7 +117,7 @@
           <tr class="attn"><td class="num">0:a:1</td><td>audio</td><td class="muted">none</td><td class="num">ac3</td><td>—</td></tr>
           <tr><td class="num">0:s:0</td><td>subtitle</td><td><span class="lang">en</span></td><td class="num">srt</td><td>—</td></tr>
         </table>
-        <div class="row center box flat" style="margin-top:10px;"><span class="badge bad">1 untagged track</span><span class="tiny muted">blocks cascade for this file</span><span class="spacer"></span><a class="btn sm" href="triage.html">Fix in triage →</a></div>
+        <div class="row center box flat" style="margin-top:10px;"><span class="badge bad">1 untagged track</span><span class="tiny muted">needs a language tag — metadata already resolved from track 0</span><span class="spacer"></span><a class="btn sm" href="triage.html">Fix in triage →</a></div>
       </div>
 
       <div class="row center box flat" style="background:var(--ok-soft);border-color:var(--ok);">
@@ -143,13 +143,6 @@
     document.getElementById('tagrow').appendChild(c);
     s.remove();
   }));
-  // override toggle
-  const t = document.getElementById('ovToggle');
-  t.addEventListener('click', () => {
-    const on = t.classList.toggle('on');
-    document.getElementById('ovInherit').style.display = on ? 'none' : '';
-    document.getElementById('ovCustom').style.display = on ? '' : 'none';
-  });
 })();
 </script>
 </body>

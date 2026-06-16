@@ -17,12 +17,11 @@
 
   <div class="pagebar">
     <h1>Track order</h1>
-    <span class="crumb">cascade: <span class="mono">da › fo › en › original</span></span>
+    <span class="crumb">manual edit · <span class="mono">Sintel (2010).mkv</span></span>
     <span class="spacer"></span>
-    <a class="btn sm ghost" href="cascade.html">edit cascade</a>
     <span class="seg"><span class="on">Audio</span><span>Subtitles</span></span>
   </div>
-  <p class="page-sub">The cascade computes the target default + order; you eyeball the before → after and approve. MKV header edits are instant; an MP4 or a real reorder needs a slower remux (flagged below).</p>
+  <p class="page-sub">You set the default audio track and order by hand — nothing here happens automatically. Drag a track or star it, then eyeball the before → after and apply. MKV default-flag edits are instant via <span class="mono">mkvpropedit</span>; an MP4 or a real reorder needs a slower <span class="mono">ffmpeg -c copy</span> remux (flagged below).</p>
 
   <div class="row" style="align-items:stretch;">
     <div class="card fill">
@@ -37,7 +36,7 @@
     <div class="col center" style="justify-content:center;"><div class="callout"><span class="arr">➜</span></div></div>
 
     <div class="card fill" style="border-color:var(--ok);">
-      <h4 style="margin:0 0 10px;">After cascade <span class="badge ok">proposed</span></h4>
+      <h4 style="margin:0 0 10px;">After your change <span class="badge ok">staged</span></h4>
       <div class="col" style="gap:8px;">
         <div class="box flat row center" style="padding:9px 11px;background:var(--ok-soft);border-color:var(--ok);"><span class="num" style="width:42px;">a:0</span><span class="lang">da</span><span class="badge ok">★ default</span><span class="spacer"></span><span class="chip" style="font-size:.62rem;">moved ▲</span></div>
         <div class="box flat row center" style="padding:9px 11px;"><span class="num" style="width:42px;">a:1</span><span class="lang">en</span><span class="spacer"></span><span class="muted tiny">was default</span></div>
@@ -68,8 +67,8 @@
       </div>
     </div>
     <div class="card" style="width:300px;">
-      <h4 style="margin:0 0 6px;">Untagged track blocks full ordering</h4>
-      <div class="tiny muted">Track <span class="mono">a:2</span> has no language, so it can't be placed by the cascade. <a href="triage.html">Tag it in triage →</a> to include it.</div>
+      <h4 style="margin:0 0 6px;">Untagged track can't be moved yet</h4>
+      <div class="tiny muted">Track <span class="mono">a:2</span> has no language tag, so you can't identify it to reorder it. <a href="triage.html">Tag it in triage →</a> first.</div>
     </div>
   </div>
 </main>
@@ -78,8 +77,7 @@
 <script>
 document.getElementById('apply').addEventListener('click', () => {
   const t = document.createElement('div');
-  t.className = 'note';
-  t.style.cssText = 'position:fixed;left:50%;top:18px;transform:translateX(-50%) rotate(-1deg);z-index:200;';
+  t.className = 'toast';
   t.textContent = 'applied · default = da ✓';
   document.body.appendChild(t);
   setTimeout(() => t.remove(), 1000);
