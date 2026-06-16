@@ -568,4 +568,29 @@ fun Route.mediaRoutes(
     get("/activity/recent") {
         call.respond(mediaHistory.recent())
     }
+
+    post("/jellyfin/refresh") {
+        val cfg = configStore.current
+        if (cfg.apiKeys.jellyfinUrl.isBlank() || cfg.apiKeys.jellyfinToken.isBlank()) {
+            call.respond(HttpStatusCode.ServiceUnavailable, mapOf("error" to "Jellyfin not configured"))
+            return@post
+        }
+        appScope.launch {
+            jellyfinClient.triggerLibraryRefresh(cfg.apiKeys.jellyfinUrl, cfg.apiKeys.jellyfinToken)
+        }
+        call.respond(HttpStatusCode.Accepted, mapOf("status" to "refresh triggered"))
+    }
+
+    post("/media/batch/artwork") {
+        val items = store.allItems()
+        appScope.launch {
+            for (item in items) {
+                val status = artwork.check(item)
+                if (!status.posterExists || !status.fanartExists) {
+                    artwork.fetch(item)
+                }
+            }
+        }
+        call.respond(HttpStatusCode.Accepted, mapOf("status" to "artwork fetch started", "total" to items.size))
+    }
 }

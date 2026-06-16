@@ -51,11 +51,14 @@ fun renderDashboard(container: Element, scope: CoroutineScope) {
         <div class="row" style="margin-top:18px;gap:18px;flex-wrap:wrap;align-items:flex-start;">
           <div class="card fill" style="min-width:240px">
             <h3 style="font-size:1rem;margin:0 0 12px">Quick actions</h3>
-            <div style="display:flex;gap:8px;flex-wrap:wrap;">
-              <button id="qa-triage" class="chip ghost">Triage untagged tracks</button>
-              <button id="qa-track-order" class="chip ghost">Set track defaults</button>
-              <button id="qa-activity" class="chip ghost">View activity</button>
+            <div class="pill-row" style="display:flex;gap:8px;flex-wrap:wrap;">
+              <button id="qa-triage" class="chip">Triage untagged tracks</button>
+              <button id="qa-track-order" class="chip">Set track defaults</button>
+              <button id="qa-artwork" class="chip">Re-pull artwork</button>
+              <button id="qa-jf-refresh" class="chip">Tell Jellyfin to refresh</button>
+              <button id="qa-activity" class="chip">View activity</button>
             </div>
+            <div id="qa-feedback" style="margin-top:10px;min-height:20px"></div>
           </div>
           <div class="card" style="min-width:240px;flex:1">
             <h3 style="font-size:1rem;margin:0 0 12px">Recently processed</h3>
@@ -75,6 +78,28 @@ fun renderDashboard(container: Element, scope: CoroutineScope) {
     document.getElementById("qa-triage")?.addEventListener("click") { App.navigate("/triage") }
     document.getElementById("qa-track-order")?.addEventListener("click") { App.navigate("/track-order") }
     document.getElementById("qa-activity")?.addEventListener("click") { App.navigate("/activity") }
+
+    document.getElementById("qa-artwork")?.addEventListener("click") {
+        scope.launch {
+            setQaFeedback("Fetching artwork for all items…", "badge")
+            val ok = MediaApi.batchFetchArtwork()
+            setQaFeedback(
+                if (ok) "Artwork fetch started in background ✓" else "Failed to start artwork fetch",
+                if (ok) "badge ok" else "badge bad"
+            )
+        }
+    }
+
+    document.getElementById("qa-jf-refresh")?.addEventListener("click") {
+        scope.launch {
+            setQaFeedback("Sending refresh signal to Jellyfin…", "badge")
+            val ok = MediaApi.jellyfinRefreshAll()
+            setQaFeedback(
+                if (ok) "Jellyfin library refresh triggered ✓" else "Failed — check Jellyfin connection in Settings",
+                if (ok) "badge ok" else "badge bad"
+            )
+        }
+    }
 
     scope.launch {
         loadDashboardStats()
@@ -209,6 +234,11 @@ private fun connectDashScanSocket(scope: CoroutineScope) {
         }
     }
     wireCancelBtn()
+}
+
+private fun setQaFeedback(msg: String, cls: String = "badge") {
+    (document.getElementById("qa-feedback") as? HTMLElement)?.innerHTML =
+        """<span class="$cls" style="font-size:.75rem">$msg</span>"""
 }
 
 private fun setDashScanRunning(running: Boolean) {

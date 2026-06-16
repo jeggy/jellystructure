@@ -265,4 +265,14 @@ object MediaApi {
         val response = httpClient.post("/api/media/$id/jellyfin-refresh")
         response.status.value in 200..299
     }.getOrDefault(false)
+
+    suspend fun jellyfinRefreshAll(): Boolean = runCatching {
+        val response = httpClient.post("/api/jellyfin/refresh")
+        response.status.value in 200..299
+    }.getOrDefault(false)
+
+    suspend fun batchFetchArtwork(): Boolean = runCatching {
+        val response = httpClient.post("/api/media/batch/artwork")
+        response.status.value in 200..299
+    }.getOrDefault(false)
 }
