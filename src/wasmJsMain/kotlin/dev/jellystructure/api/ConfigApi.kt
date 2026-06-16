@@ -54,6 +54,7 @@ data class JellyfinLibrary(
     @SerialName("ItemId") val id: String,
     @SerialName("Name") val name: String,
     @SerialName("CollectionType") val collectionType: String? = null,
+    @SerialName("Locations") val locations: List<String> = emptyList(),
 )
 
 @Serializable

@@ -47,7 +47,7 @@ class Scanner(
                 prefix.isNotBlank() && jellyfinPath.startsWith(prefix)
             }
             if (lib == null) {
-                println("[DEBUG] No matching library for path: $jellyfinPath — skipping")
+                println("[WARN] No matching library for '$jellyfinPath' — check library mapping config")
                 continue
             }
 

@@ -205,8 +205,8 @@ private suspend fun fetchAndRenderLibraries() {
             jellyfinId = lib.id,
             name = lib.name,
             collectionType = lib.collectionType ?: "",
-            jellyfinPath = "",
-            localPath = "",
+            jellyfinPath = lib.locations.firstOrNull() ?: "",
+            localPath = lib.locations.firstOrNull() ?: "",
             skip = false,
         )
     }.toMutableList()
