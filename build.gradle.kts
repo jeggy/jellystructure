@@ -137,13 +137,22 @@ tasks.register("runDev") {
     }
 }
 
-// Copy wf.css and app.css from the canonical app/ design directory into the webpack dist output.
-// This task is the single source of truth for CSS in the running app — no copies in src/resources.
+// Assemble the complete frontend dist that the backend serves at FRONTEND_DIR.
+// Three sources feed into dist/wasmJs/developmentExecutable/:
+//   1. app/          — wf.css and app.css (canonical design tokens)
+//   2. kotlin-webpack — jellystructure.js + the content-hashed *.wasm bundle (webpack output)
+//   3. wasm/packages/jellystructure/kotlin — index.html (Kotlin resource, processed by wasmJsProcessResources)
 tasks.register<Copy>("syncDesignAssets") {
-    description = "Copy design CSS from app/ into the frontend dist directory"
+    description = "Assemble the complete frontend dist (CSS + JS bundle + index.html) after webpack"
     group = "application"
     from(rootProject.layout.projectDirectory.dir("app")) {
         include("wf.css", "app.css")
+    }
+    from(layout.buildDirectory.dir("kotlin-webpack/wasmJs/developmentExecutable")) {
+        include("jellystructure.js", "*.wasm")
+    }
+    from(layout.buildDirectory.dir("wasm/packages/jellystructure/kotlin")) {
+        include("index.html")
     }
     into(layout.buildDirectory.dir("dist/wasmJs/developmentExecutable"))
     dependsOn("wasmJsBrowserDevelopmentWebpack")
