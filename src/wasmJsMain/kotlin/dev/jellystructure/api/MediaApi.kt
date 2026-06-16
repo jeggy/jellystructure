@@ -266,6 +266,19 @@ object MediaApi {
         response.status.value in 200..299
     }.getOrDefault(false)
 
+    suspend fun setEpisodeMetadata(mediaId: String, filename: String, title: String?, overview: String?): Boolean = runCatching {
+        val encoded = encodeURIComponent(filename)
+        val parts = buildList {
+            if (title != null) add(""""title":"${title.replace("\"", "\\\"").replace("\n", "")}"""")
+            if (overview != null) add(""""overview":"${overview.replace("\"", "\\\"")}"""")
+        }
+        val response = httpClient.patch("/api/media/$mediaId/episodes/$encoded/metadata") {
+            setBody("{${parts.joinToString(",")}}")
+            contentType(ContentType.Application.Json)
+        }
+        response.status.value in 200..299
+    }.getOrDefault(false)
+
     suspend fun jellyfinRefreshAll(): Boolean = runCatching {
         val response = httpClient.post("/api/jellyfin/refresh")
         response.status.value in 200..299

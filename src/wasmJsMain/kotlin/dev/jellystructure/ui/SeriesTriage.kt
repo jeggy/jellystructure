@@ -366,9 +366,11 @@ private fun buildEpisodeStep(item: MediaItem, ep: Episode): String {
                 <div class="field" style="margin:0"><label>Overview</label>
                   $overviewHtml
                 </div>
-                <div class="pill-row">
+                <div class="pill-row" style="align-items:center">
                   <span class="chip mono">$epCode</span>
-                  <button id="ep-repull" class="btn sm" data-ep-filename="${ep.filename.esc()}">Re-pull from TMDB</button>
+                  <button id="ep-save-meta" class="btn sm" style="display:none" data-ep-filename="${ep.filename.esc()}">Save episode</button>
+                  <span id="ep-meta-msg" class="tiny muted"></span>
+                  <button id="ep-repull" class="btn sm ghost" data-ep-filename="${ep.filename.esc()}">Re-pull from TMDB</button>
                 </div>
               </div>
             </div>
@@ -680,6 +682,34 @@ private fun wireEpisodeStepListeners(item: MediaItem) {
             MediaApi.fetchEpisodeStills(item.id)
             val updated = MediaApi.get(item.id)
             if (updated != null) { stItem = updated; renderSeriesTriagePage() }
+        }
+    }
+
+    // Episode metadata inputs — reveal save button on change
+    for (sel in listOf("#ep-title-input", ".ep-overview-input")) {
+        container.querySelector(sel)?.addEventListener("input") {
+            (container.querySelector("#ep-save-meta") as? HTMLElement)?.style?.display = ""
+        }
+    }
+
+    // Save episode metadata
+    container.querySelector("#ep-save-meta")?.addEventListener("click") {
+        val epFilename = (container.querySelector("#ep-save-meta") as? HTMLElement)
+            ?.getAttribute("data-ep-filename") ?: return@addEventListener
+        val msgEl = container.querySelector("#ep-meta-msg") as? HTMLElement ?: return@addEventListener
+        val title = (container.querySelector("#ep-title-input") as? HTMLInputElement)?.value?.trim()
+        val overview = (container.querySelector(".ep-overview-input") as? org.w3c.dom.HTMLTextAreaElement)?.value?.trim()
+        msgEl.textContent = "Saving…"
+        stScope?.launch {
+            val ok = MediaApi.setEpisodeMetadata(item.id, epFilename, title, overview)
+            if (ok) {
+                (container.querySelector("#ep-save-meta") as? HTMLElement)?.style?.display = "none"
+                msgEl.textContent = "Saved ✓"
+                val updated = MediaApi.get(item.id)
+                if (updated != null) stItem = updated
+            } else {
+                msgEl.textContent = "Save failed"
+            }
         }
     }
 

@@ -412,6 +412,32 @@ fun Route.mediaRoutes(
                     mediaHistory.record(id, "set_language", "ep=${ep.filename} specifier=${req.specifier} lang=${req.language}")
                     call.respond(mapOf("ok" to true, "language" to req.language))
                 }
+
+                // PATCH /api/media/{id}/episodes/{epFilename}/metadata — edit episode title/overview
+                patch("/metadata") {
+                    val id = call.parameters["id"]
+                        ?: return@patch call.respond(HttpStatusCode.BadRequest)
+                    val epFilename = call.parameters["epFilename"]
+                        ?: return@patch call.respond(HttpStatusCode.BadRequest)
+                    val item = store.get(id)
+                        ?: return@patch call.respond(HttpStatusCode.NotFound)
+                    val epIdx = item.episodes.indexOfFirst { it.filename == epFilename }
+                    if (epIdx < 0) return@patch call.respond(HttpStatusCode.NotFound, mapOf("error" to "episode not found"))
+                    val ep = item.episodes[epIdx]
+
+                    @Serializable data class EpMetaReq(val title: String? = null, val overview: String? = null)
+                    val req = call.receive<EpMetaReq>()
+                    val updatedEp = ep.copy(
+                        title = if (req.title != null) req.title.ifBlank { null } else ep.title,
+                        overview = if (req.overview != null) req.overview.ifBlank { null } else ep.overview,
+                    )
+                    val updatedEpisodes = item.episodes.toMutableList()
+                    updatedEpisodes[epIdx] = updatedEp
+                    val updatedItem = item.copy(episodes = updatedEpisodes)
+                    store.updateOne(updatedItem)
+                    mediaHistory.record(id, "episode_meta_edit", "ep=${ep.filename}")
+                    call.respond(updatedEp)
+                }
             }
         }
 
