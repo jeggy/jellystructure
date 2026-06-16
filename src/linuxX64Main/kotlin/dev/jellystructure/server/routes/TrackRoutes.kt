@@ -21,6 +21,9 @@ import kotlinx.serialization.Serializable
 private data class SetDefaultRequest(val specifier: String)
 
 @Serializable
+private data class SetLanguageRequest(val specifier: String, val language: String)
+
+@Serializable
 data class TrackSnap(
     val specifier: String,
     val language: String?,
@@ -128,6 +131,50 @@ fun Route.trackRoutes(store: MediaStore, configStore: ConfigStore, jellyfinClien
             val updated = item.copy(tracks = newTracks, issueCount = newIssueCount)
             store.updateOne(updated)
             mediaHistory.record(id, "set_default", "specifier=${req.specifier}")
+
+            val cfg = configStore.current
+            if (!item.jellyfinId.isNullOrBlank() && cfg.apiKeys.jellyfinUrl.isNotBlank()) {
+                jellyfinClient.refreshItem(cfg.apiKeys.jellyfinUrl, cfg.apiKeys.jellyfinToken, item.jellyfinId)
+            }
+
+            call.respond(mapOf("ok" to true))
+        }
+
+        // POST /api/media/{id}/tracks/language — write a language tag to a single track
+        post("/tracks/language") {
+            val id = call.parameters["id"]
+                ?: return@post call.respond(HttpStatusCode.BadRequest)
+            val item = store.get(id)
+                ?: return@post call.respond(HttpStatusCode.NotFound)
+
+            val req = call.receive<SetLanguageRequest>()
+            if (!req.language.matches(Regex("[a-zA-Z]{2,8}(-[a-zA-Z0-9]{2,8})*"))) {
+                call.respond(HttpStatusCode.BadRequest, mapOf("error" to "invalid language code"))
+                return@post
+            }
+
+            val targetTrack = item.tracks.firstOrNull { it.specifier == req.specifier }
+                ?: return@post call.respond(HttpStatusCode.NotFound, mapOf("error" to "track not found"))
+
+            val ext = item.path.substringAfterLast('.').lowercase()
+            val ok = if (ext == "mkv") {
+                MkvpropeditRunner.setLanguage(item.path, targetTrack.streamIndex, req.language)
+            } else {
+                FfmpegRunner.setLanguage(item.path, targetTrack.streamIndex, req.language)
+            }
+
+            if (!ok) {
+                val tool = if (ext == "mkv") "mkvpropedit" else "ffmpeg"
+                call.respond(HttpStatusCode.InternalServerError, mapOf("error" to "$tool failed"))
+                return@post
+            }
+
+            val newTracks = FfprobeRunner.probe(item.path)
+            val newIssueCount = newTracks.count {
+                (it.kind == TrackKind.AUDIO || it.kind == TrackKind.SUBTITLE) && it.language == null
+            }
+            store.updateOne(item.copy(tracks = newTracks, issueCount = newIssueCount))
+            mediaHistory.record(id, "set_language", "specifier=${req.specifier} language=${req.language}")
 
             val cfg = configStore.current
             if (!item.jellyfinId.isNullOrBlank() && cfg.apiKeys.jellyfinUrl.isNotBlank()) {

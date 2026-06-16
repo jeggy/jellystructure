@@ -12,6 +12,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.w3c.dom.Element
 import org.w3c.dom.HTMLElement
+import org.w3c.dom.HTMLInputElement
 
 fun renderTrackOrder(container: Element, scope: CoroutineScope, mediaId: String) {
     container.innerHTML = """<span class="muted" style="padding:24px;display:block;">Loading…</span>"""
@@ -56,16 +57,38 @@ private fun renderTrackOrderView(container: Element, item: MediaItem, scope: Cor
     }
 
     fun trackRowHtml(t: Track, kind: String): String {
-        val langDisplay = t.language ?: """<span class="badge bad" style="font-size:.68rem;">untagged</span>"""
         val defaultBadge = if (t.default) """<span class="badge ok" style="font-size:.68rem;">default</span>""" else "—"
+        val langCell = if (t.language != null) {
+            """<span class="lang">${t.language.esc()}</span>
+               <button class="btn sm ghost set-lang-btn" style="margin-left:6px;font-size:.65rem;padding:1px 6px;"
+                 data-specifier="${t.specifier.esc()}" data-current="${t.language.esc()}">edit</button>"""
+        } else {
+            """<span class="badge bad" style="font-size:.68rem;">untagged</span>
+               <button class="btn sm set-lang-btn" style="margin-left:6px;font-size:.65rem;padding:1px 6px;"
+                 data-specifier="${t.specifier.esc()}" data-current="">Tag</button>"""
+        }
+        val defaultAction = if (isMkv) """<button class="btn sm ghost set-default-btn" data-specifier="${t.specifier.esc()}" data-id="${item.id.esc()}">Set default</button>""" else "—"
         return """<tr data-specifier="${t.specifier.esc()}">
                     <td class="num">${t.specifier.esc()}</td>
                     <td>$kind</td>
-                    <td>${if (t.language != null) """<span class="lang">${t.language.esc()}</span>""" else langDisplay}</td>
+                    <td>$langCell</td>
                     <td class="num">${t.codec.esc()}</td>
                     <td>${t.title?.esc() ?: """<span class="muted">—</span>"""}</td>
                     <td>$defaultBadge</td>
-                    <td>${if (isMkv) """<button class="btn sm ghost set-default-btn" data-specifier="${t.specifier.esc()}" data-id="${item.id.esc()}">Set default</button>""" else "—"}</td>
+                    <td>$defaultAction</td>
+                  </tr>
+                  <tr class="lang-edit-row" data-for="${t.specifier.esc()}" style="display:none;">
+                    <td colspan="7" style="padding:6px 12px 10px;background:var(--bg-2,#1a1a2e);">
+                      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                        <span class="tiny muted">Language tag (BCP-47):</span>
+                        <input class="input lang-input" style="width:90px;padding:3px 8px;font-size:.8rem;"
+                          placeholder="e.g. en" value="${(t.language ?: "").esc()}"
+                          data-specifier="${t.specifier.esc()}" data-id="${item.id.esc()}">
+                        <code class="lang-preview mono tiny muted" style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></code>
+                        <button class="btn sm lang-apply-btn" data-specifier="${t.specifier.esc()}" data-id="${item.id.esc()}">Apply</button>
+                        <button class="btn sm ghost lang-cancel-btn" data-specifier="${t.specifier.esc()}">Cancel</button>
+                      </div>
+                    </td>
                   </tr>"""
     }
 
@@ -178,6 +201,80 @@ private fun renderTrackOrderView(container: Element, item: MediaItem, scope: Cor
         }
     }
 
+    // language edit: toggle expand row
+    container.querySelectorAll(".set-lang-btn").let { nodes ->
+        for (i in 0 until nodes.length) {
+            val btn = nodes.item(i) as? HTMLElement ?: continue
+            val specifier = btn.getAttribute("data-specifier") ?: continue
+            btn.addEventListener("click") {
+                val editRow = container.querySelector(".lang-edit-row[data-for='$specifier']") as? HTMLElement ?: return@addEventListener
+                val isOpen = editRow.style.display != "none"
+                if (isOpen) {
+                    editRow.style.display = "none"
+                } else {
+                    editRow.style.display = ""
+                    val input = editRow.querySelector(".lang-input") as? HTMLInputElement
+                    input?.focus()
+                    updateLangPreview(editRow, item.path, specifier, input?.value ?: "", isMkv)
+                }
+            }
+        }
+    }
+
+    // language edit: live preview
+    container.querySelectorAll(".lang-input").let { nodes ->
+        for (i in 0 until nodes.length) {
+            val input = nodes.item(i) as? HTMLInputElement ?: continue
+            val specifier = input.getAttribute("data-specifier") ?: continue
+            input.addEventListener("input") {
+                val editRow = container.querySelector(".lang-edit-row[data-for='$specifier']") as? HTMLElement ?: return@addEventListener
+                updateLangPreview(editRow, item.path, specifier, input.value, isMkv)
+            }
+        }
+    }
+
+    // language edit: cancel
+    container.querySelectorAll(".lang-cancel-btn").let { nodes ->
+        for (i in 0 until nodes.length) {
+            val btn = nodes.item(i) as? HTMLElement ?: continue
+            val specifier = btn.getAttribute("data-specifier") ?: continue
+            btn.addEventListener("click") {
+                val editRow = container.querySelector(".lang-edit-row[data-for='$specifier']") as? HTMLElement ?: return@addEventListener
+                editRow.style.display = "none"
+            }
+        }
+    }
+
+    // language edit: apply
+    container.querySelectorAll(".lang-apply-btn").let { nodes ->
+        for (i in 0 until nodes.length) {
+            val applyBtn = nodes.item(i) as? HTMLElement ?: continue
+            val specifier = applyBtn.getAttribute("data-specifier") ?: continue
+            val mediaId = applyBtn.getAttribute("data-id") ?: continue
+            applyBtn.addEventListener("click") {
+                val editRow = container.querySelector(".lang-edit-row[data-for='$specifier']") as? HTMLElement ?: return@addEventListener
+                val input = editRow.querySelector(".lang-input") as? HTMLInputElement ?: return@addEventListener
+                val lang = input.value.trim()
+                if (lang.isBlank()) return@addEventListener
+                applyBtn.setAttribute("disabled", "true")
+                applyBtn.textContent = "Applying…"
+                scope.launch {
+                    val ok = MediaApi.setTrackLanguage(mediaId, specifier, lang)
+                    applyBtn.removeAttribute("disabled")
+                    applyBtn.textContent = "Apply"
+                    showTrackOrderMsg(
+                        if (ok) "Language set to '$lang' on $specifier. Reloading…" else "Failed to set language — check server logs.",
+                        ok,
+                    )
+                    if (ok) {
+                        delay(800)
+                        App.navigate("/track-order?id=$mediaId")
+                    }
+                }
+            }
+        }
+    }
+
     document.getElementById("apply-btn")?.addEventListener("click") {
         val spec = pendingSpecifier ?: return@addEventListener
         val applyBtn = document.getElementById("apply-btn") as? HTMLElement
@@ -203,6 +300,17 @@ private fun showTrackOrderMsg(msg: String, ok: Boolean) {
     val el = document.getElementById("track-order-msg") as? HTMLElement ?: return
     el.style.display = "block"
     el.innerHTML = """<span class="badge ${if (ok) "ok" else "bad"}">$msg</span>"""
+}
+
+private fun updateLangPreview(editRow: HTMLElement, filePath: String, specifier: String, lang: String, isMkv: Boolean) {
+    val preview = editRow.querySelector(".lang-preview") as? HTMLElement ?: return
+    if (lang.isBlank()) { preview.textContent = ""; return }
+    val escaped = filePath.replace("'", "\\'")
+    preview.textContent = if (isMkv) {
+        "mkvpropedit '$escaped' --edit track:@? --set language=$lang"
+    } else {
+        "ffmpeg -i '$escaped' -map 0 -c copy -metadata:s:$specifier language=$lang ..."
+    }
 }
 
 private fun snapRowHtml(snap: TrackSnap, targetSpecifier: String): String {

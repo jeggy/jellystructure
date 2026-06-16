@@ -133,6 +133,14 @@ object MediaApi {
         response.status.value in 200..299
     }.getOrDefault(false)
 
+    suspend fun setTrackLanguage(id: String, specifier: String, language: String): Boolean = runCatching {
+        val response = httpClient.post("/api/media/$id/tracks/language") {
+            setBody("""{"specifier":"${specifier.replace("\"", "")}","language":"${language.replace("\"", "")}"}""")
+            contentType(ContentType.Application.Json)
+        }
+        response.status.value in 200..299
+    }.getOrDefault(false)
+
     suspend fun repull(id: String): MediaItem? = runCatching {
         val response = httpClient.post("/api/media/$id/repull")
         if (response.status == HttpStatusCode.OK) response.body<MediaItem>() else null
