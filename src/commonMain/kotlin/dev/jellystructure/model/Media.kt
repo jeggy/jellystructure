@@ -21,6 +21,17 @@ data class Track(
 )
 
 @Serializable
+data class Episode(
+    val filename: String,
+    val path: String,
+    val seasonNumber: Int?,
+    val episodeNumber: Int?,
+    val tracks: List<Track>,
+    val issueCount: Int,
+    val resolvedLanguage: String? = null,
+)
+
+@Serializable
 data class MediaItem(
     val id: String,
     val title: String,
@@ -37,6 +48,7 @@ data class MediaItem(
     val overview: String?,
     val genres: List<String> = emptyList(),
     val tracks: List<Track>,
+    val episodes: List<Episode> = emptyList(),
     val issueCount: Int,
     val languageMix: Boolean = false,
     val scannedAt: Long,

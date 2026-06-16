@@ -3,6 +3,7 @@ package dev.jellystructure.media
 import dev.jellystructure.auth.JellyfinClient
 import dev.jellystructure.auth.JellyfinItem
 import dev.jellystructure.config.ConfigStore
+import dev.jellystructure.model.Episode
 import dev.jellystructure.model.MediaItem
 import dev.jellystructure.model.MediaKind
 import dev.jellystructure.model.TrackKind
@@ -14,6 +15,7 @@ import kotlinx.io.files.Path
 import kotlinx.io.files.SystemFileSystem
 
 private val TITLE_YEAR_RE = Regex("""^(.+?)\s+\((\d{4})\)\s*$""")
+private val SEASON_EP_RE = Regex("""[Ss](\d{1,2})[Ee](\d{1,3})""")
 private val VIDEO_EXTENSIONS = setOf("mkv", "mp4", "avi", "mov", "m4v", "webm", "ts", "m2ts")
 
 class Scanner(
@@ -143,21 +145,45 @@ class Scanner(
             return null
         }
 
-        // Sample up to 5 files spread evenly across the collection
-        val samples = selectSamples(episodeFiles, maxSamples = 5)
-        val probedSamples = samples.map { FfprobeRunner.probe(it) }
-
-        // Compare audio language sets across samples
-        val audioSets = probedSamples.map { tracks ->
-            tracks.filter { it.kind == TrackKind.AUDIO }.map { it.language }.toSet()
+        // Probe all episodes (cap at 100 for very large series)
+        val filesToProbe = if (episodeFiles.size > 100) {
+            println("[INFO] Series has ${episodeFiles.size} episodes — probing a spread of 100")
+            selectSamples(episodeFiles, 100)
+        } else {
+            episodeFiles
         }
-        val uniform = audioSets.all { it == audioSets.first() }
-        val languageMix = !uniform
 
-        val firstTracks = probedSamples.firstOrNull() ?: emptyList()
-        val issueCount = firstTracks.count {
-            (it.kind == TrackKind.AUDIO || it.kind == TrackKind.SUBTITLE) && it.language == null
+        val episodes = mutableListOf<Episode>()
+        for (file in filesToProbe) {
+            val tracks = FfprobeRunner.probe(file)
+            val epIssueCount = tracks.count {
+                (it.kind == TrackKind.AUDIO || it.kind == TrackKind.SUBTITLE) && it.language == null
+            }
+            val firstAudioLang = tracks.firstOrNull { it.kind == TrackKind.AUDIO }?.language
+            val (seasonNum, epNum) = parseSeasonEpisode(file)
+            episodes += Episode(
+                filename = file.substringAfterLast('/'),
+                path = file,
+                seasonNumber = seasonNum,
+                episodeNumber = epNum,
+                tracks = tracks,
+                issueCount = epIssueCount,
+                resolvedLanguage = firstAudioLang,
+            )
         }
+
+        val sortedEpisodes = episodes.sortedWith(
+            compareBy({ it.seasonNumber ?: 999 }, { it.episodeNumber ?: 999 })
+        )
+
+        // Compare audio language sets across all probed episodes
+        val audioSets = sortedEpisodes.map { ep ->
+            ep.tracks.filter { it.kind == TrackKind.AUDIO }.map { it.language }.toSet()
+        }
+        val languageMix = audioSets.size > 1 && !audioSets.all { it == audioSets.first() }
+
+        val firstTracks = sortedEpisodes.firstOrNull()?.tracks ?: emptyList()
+        val totalIssueCount = sortedEpisodes.sumOf { it.issueCount }
 
         if (languageMix) {
             println("[INFO] Series '$title' has mixed audio languages across episodes — marking as language mix")
@@ -176,7 +202,8 @@ class Scanner(
                 overview = null,
                 genres = emptyList(),
                 tracks = firstTracks,
-                issueCount = issueCount,
+                episodes = sortedEpisodes,
+                issueCount = totalIssueCount,
                 languageMix = true,
                 scannedAt = epochSeconds(),
             )
@@ -209,10 +236,17 @@ class Scanner(
             overview = details?.overview?.takeIf { it.isNotBlank() },
             genres = details?.genres?.map { it.name } ?: emptyList(),
             tracks = firstTracks,
-            issueCount = issueCount,
+            episodes = sortedEpisodes,
+            issueCount = totalIssueCount,
             languageMix = false,
             scannedAt = epochSeconds(),
         )
+    }
+
+    private fun parseSeasonEpisode(path: String): Pair<Int?, Int?> {
+        val filename = path.substringAfterLast('/')
+        val match = SEASON_EP_RE.find(filename) ?: return Pair(null, null)
+        return Pair(match.groupValues[1].toIntOrNull(), match.groupValues[2].toIntOrNull())
     }
 
     // Re-fetches TMDB metadata for an already-scanned item without re-probing

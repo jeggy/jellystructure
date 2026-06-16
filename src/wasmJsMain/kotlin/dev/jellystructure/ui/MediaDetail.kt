@@ -4,7 +4,9 @@ import dev.jellystructure.App
 import dev.jellystructure.api.ArtworkStatus
 import dev.jellystructure.api.HistoryEntry
 import dev.jellystructure.api.MediaApi
+import dev.jellystructure.model.Episode
 import dev.jellystructure.model.MediaItem
+import dev.jellystructure.model.MediaKind
 import dev.jellystructure.model.Track
 import dev.jellystructure.model.TrackKind
 import kotlinx.browser.document
@@ -31,14 +33,14 @@ fun renderMediaDetail(container: Element, scope: CoroutineScope, mediaId: String
 }
 
 private fun renderDetailView(container: Element, item: MediaItem, scope: CoroutineScope) {
+    val isTvShow = item.kind == MediaKind.TV_SHOW
+
     val posterHtml = if (item.posterPath != null) {
         """<img src="$TMDB_IMG_LG${item.posterPath}" alt="${item.title.esc()}"
              style="width:100%;height:auto;border-radius:4px;">"""
     } else {
         """<div class="imgslot" style="height:260px;"><div class="x"></div><span>No poster</span></div>"""
     }
-
-    val tracksHtml = buildTracksTable(item.tracks)
 
     val overviewHtml = if (!item.overview.isNullOrBlank()) {
         """<div class="field">
@@ -76,25 +78,55 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
         else -> ""
     }
 
-    val tvSeriesSectionHtml = if (item.kind.name == "TV_SHOW") {
+    // Tab list differs for TV shows vs movies
+    val tabItems = if (isTvShow) {
+        listOf(
+            "overview" to "Overview",
+            "episodes" to "Seasons &amp; episodes",
+            "artwork" to "Artwork",
+            "nfo" to "NFO raw",
+            "history" to "History",
+        )
+    } else {
+        listOf(
+            "overview" to "Overview",
+            "tracks" to "Tracks &amp; order",
+            "artwork" to "Artwork",
+            "nfo" to "NFO raw",
+            "history" to "History",
+        )
+    }
+    val tabIds = tabItems.map { it.first }
+
+    val tabBarHtml = tabItems.joinToString("") { (key, label) ->
+        val active = if (key == "overview") " active" else ""
+        """<span class="seg-item$active" data-tab="$key">$label</span>"""
+    }
+
+    // TV overview banner (replaces the old tvSeriesSectionHtml in overview tab)
+    val tvOverviewBanner = if (isTvShow) {
         if (item.languageMix) {
             """<div class="card" style="border-left:3px solid var(--warn,#f59e0b);padding:14px 16px;">
                  <div class="row center" style="gap:8px;margin-bottom:6px;">
                    <span class="badge warn">Language Mix Detected</span>
                  </div>
-                 <p style="margin:0;font-size:.88rem;">Audio tracks differ across sampled episodes — this series cannot be uniformly language-resolved. NFO and artwork writes are blocked until the inconsistency is resolved or you assign a language override in Triage.</p>
+                 <p style="margin:0;font-size:.88rem;">Audio tracks differ across sampled episodes — this series cannot be uniformly language-resolved. NFO and artwork writes are blocked until the inconsistency is resolved.</p>
                </div>"""
         } else {
-            val audioLangs = item.tracks.filter { it.kind.name == "AUDIO" }.mapNotNull { it.language }
-            val langsDisplay = if (audioLangs.isNotEmpty()) audioLangs.joinToString(", ") else "—"
+            val epCount = item.episodes.size
+            val countNote = if (epCount > 0) " Probed $epCount episodes." else ""
             """<div class="card" style="border-left:3px solid var(--ok,#22c55e);padding:14px 16px;">
                  <div class="row center" style="gap:8px;margin-bottom:6px;">
                    <span class="badge ok">Uniform Audio Languages</span>
+                   ${if (!item.resolvedLanguage.isNullOrBlank()) """<span class="badge">lang: ${item.resolvedLanguage.esc()}</span>""" else ""}
                  </div>
-                 <p style="margin:0;font-size:.88rem;">Sampled up to 5 episodes — audio language set is consistent across samples: <strong>$langsDisplay</strong>.${if (!item.resolvedLanguage.isNullOrBlank()) " Resolved TMDB fetch language: <strong>${item.resolvedLanguage.esc()}</strong>." else ""}</p>
+                 <p style="margin:0;font-size:.88rem;">Audio languages are consistent across all probed episodes.$countNote${if (!item.resolvedLanguage.isNullOrBlank()) " TMDB metadata fetched in <strong>${item.resolvedLanguage.esc()}</strong>." else ""}</p>
                </div>"""
         }
     } else ""
+
+    val tracksHtml = if (!isTvShow) buildTracksTable(item.tracks) else ""
+    val episodesTabHtml = if (isTvShow) buildEpisodesTab(item) else ""
 
     container.innerHTML = """
         <div class="pagebar">
@@ -104,22 +136,16 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
           $resolvedLangBadge
           <span class="spacer"></span>
           <button id="repull-btn" class="btn sm ghost">Re-pull from TMDB</button>
-          <button id="track-order-btn" class="btn sm ghost">Track order →</button>
+          ${if (!isTvShow) """<button id="track-order-btn" class="btn sm ghost">Track order →</button>""" else ""}
           <button id="write-nfo-btn" class="btn primary" ${if (nfoDisabled) """disabled title="${nfoDisabledReason.esc()}"""" else ""}>Save → NFO</button>
         </div>
 
         <div id="detail-msg" style="display:none;margin-bottom:14px"></div>
 
-        <div class="seg" id="detail-tabs" style="margin-bottom:16px;">
-          <span class="seg-item active" data-tab="overview">Overview</span>
-          <span class="seg-item" data-tab="tracks">Tracks &amp; order</span>
-          <span class="seg-item" data-tab="artwork">Artwork</span>
-          <span class="seg-item" data-tab="nfo">NFO raw</span>
-          <span class="seg-item" data-tab="history">History</span>
-        </div>
+        <div class="seg" id="detail-tabs" style="margin-bottom:16px;">$tabBarHtml</div>
 
         <div id="tab-overview">
-          $tvSeriesSectionHtml
+          $tvOverviewBanner
           <div class="row" style="align-items:flex-start;gap:22px;flex-wrap:wrap;">
             <div class="col" style="width:220px;flex:none;">
               <div class="card">
@@ -165,6 +191,7 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
           </div>
         </div>
 
+        ${if (!isTvShow) """
         <div id="tab-tracks" style="display:none;">
           <div class="card">
             <div class="row center" style="margin-bottom:10px;">
@@ -174,7 +201,9 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
             </div>
             $tracksHtml
           </div>
-        </div>
+        </div>""" else ""}
+
+        ${if (isTvShow) """<div id="tab-episodes" style="display:none;">$episodesTabHtml</div>""" else ""}
 
         <div id="tab-artwork" style="display:none;">
           <div class="card" id="artwork-card">
@@ -262,38 +291,180 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
         }
     }
 
+    // Wire up episode row toggles
+    if (isTvShow) wireEpisodeToggles()
+
     // Tab switching
-    val tabIds = listOf("overview", "tracks", "artwork", "nfo", "history")
     document.getElementById("detail-tabs")?.let { tabBar ->
-        tabBar.querySelectorAll(".seg-item").let { items ->
-            for (i in 0 until items.length) {
-                val item2 = items.item(i) as? HTMLElement ?: continue
-                item2.addEventListener("click") {
-                    val tab = item2.getAttribute("data-tab") ?: return@addEventListener
-                    // update tab bar
-                    for (j in 0 until items.length) {
-                        (items.item(j) as? HTMLElement)?.className = "seg-item"
+        tabBar.querySelectorAll(".seg-item").let { segItems ->
+            for (i in 0 until segItems.length) {
+                val segItem = segItems.item(i) as? HTMLElement ?: continue
+                segItem.addEventListener("click") {
+                    val tab = segItem.getAttribute("data-tab") ?: return@addEventListener
+                    for (j in 0 until segItems.length) {
+                        (segItems.item(j) as? HTMLElement)?.className = "seg-item"
                     }
-                    item2.className = "seg-item active"
-                    // show/hide panels
+                    segItem.className = "seg-item active"
                     tabIds.forEach { id ->
                         val panel = document.getElementById("tab-$id") as? HTMLElement
                         panel?.style?.display = if (id == tab) "block" else "none"
                     }
-                    // lazy-load history
-                    if (tab == "history") {
-                        scope.launch { loadHistory(item.id) }
-                    }
-                    // lazy-load artwork status
-                    if (tab == "artwork") {
-                        scope.launch { loadArtworkStatus(item.id) }
-                    }
+                    if (tab == "history") scope.launch { loadHistory(item.id) }
+                    if (tab == "artwork") scope.launch { loadArtworkStatus(item.id) }
                 }
             }
         }
     }
 
     scope.launch { loadArtworkStatus(item.id) }
+}
+
+private fun buildEpisodesTab(item: MediaItem): String {
+    if (item.episodes.isEmpty()) {
+        return """<div class="card"><span class="muted tiny">No episode data available — run a scan to populate.</span></div>"""
+    }
+
+    // Compute language voting across all episodes
+    val votes = mutableMapOf<String, Int>()
+    for (ep in item.episodes) {
+        val lang = ep.resolvedLanguage ?: "?"
+        votes[lang] = (votes[lang] ?: 0) + 1
+    }
+    val total = item.episodes.size
+    val sortedVotes = votes.toList().sortedByDescending { it.second }
+    val winner = sortedVotes.firstOrNull()?.first
+
+    val voteRows = sortedVotes.joinToString("") { (lang, count) ->
+        val pct = (count * 100) / total
+        val isWinner = lang == winner && sortedVotes.size > 1
+        val langColor = if (isWinner) "var(--ok,#22c55e)" else "var(--ink-soft)"
+        val winnerTag = if (isWinner) """<span class="badge ok" style="font-size:.65rem;">winner</span>""" else ""
+        """<div style="display:flex;align-items:center;gap:8px;padding:4px 0;">
+             <span class="mono" style="min-width:28px;color:$langColor;font-size:.85rem;">${lang.esc()}</span>
+             <div style="flex:1;height:5px;background:var(--fill-3);border-radius:3px;">
+               <div style="width:$pct%;height:100%;background:var(--hi);border-radius:3px;"></div>
+             </div>
+             <span class="muted tiny" style="min-width:42px;text-align:right;">$count/$total</span>
+             $winnerTag
+           </div>"""
+    }
+
+    val votingCard = """
+        <div class="card" style="width:220px;flex:none;">
+          <h4 style="margin:0 0 10px;">Language voting</h4>
+          $voteRows
+          <div class="field" style="margin-top:12px;margin-bottom:0;">
+            <label>tvshow.nfo language</label>
+            <div class="input mono" style="font-size:.88rem;">${(item.resolvedLanguage ?: winner ?: "—").esc()}</div>
+          </div>
+        </div>"""
+
+    // Group episodes by season
+    val bySeason = item.episodes.groupBy { it.seasonNumber }
+    val seasonBlocks = bySeason.toList()
+        .sortedBy { it.first ?: 999 }
+        .joinToString("") { (season, eps) ->
+            val seasonLabel = if (season != null) "Season $season" else "Unsorted"
+            val seasonIssues = eps.sumOf { it.issueCount }
+            val issueSummary = if (seasonIssues > 0)
+                """<span class="badge bad" style="font-size:.72rem;">$seasonIssues untagged</span>"""
+            else ""
+            val rows = eps.mapIndexed { idx, ep -> buildEpisodeRow(ep, season, idx) }.joinToString("")
+            """<div style="margin-bottom:20px;">
+                 <div class="row center" style="margin-bottom:8px;">
+                   <h4 style="margin:0;">${seasonLabel.esc()}</h4>
+                   <span class="chip" style="margin-left:8px;font-size:.75rem;">${eps.size} ep</span>
+                   $issueSummary
+                   <span class="spacer"></span>
+                 </div>
+                 $rows
+               </div>"""
+        }
+
+    return """
+        <div class="row" style="align-items:flex-start;gap:16px;flex-wrap:wrap;">
+          $votingCard
+          <div class="col fill">$seasonBlocks</div>
+        </div>"""
+}
+
+private fun buildEpisodeRow(ep: Episode, season: Int?, idx: Int): String {
+    val epCode = if (season != null && ep.episodeNumber != null) {
+        "S${season.toString().padStart(2, '0')}E${ep.episodeNumber.toString().padStart(2, '0')}"
+    } else ep.filename.substringBeforeLast('.')
+
+    val audioTracks = ep.tracks.filter { it.kind == TrackKind.AUDIO }
+    val subTracks = ep.tracks.filter { it.kind == TrackKind.SUBTITLE }
+
+    val trackChips = (audioTracks + subTracks).joinToString("") { t ->
+        val lang = t.language?.esc() ?: "?"
+        val defaultMark = if (t.default) " ★" else ""
+        val badStyle = if (t.language == null) "border-color:var(--bad);background:var(--bad-soft);" else ""
+        """<span class="chip mono" style="font-size:.72rem;$badStyle">$lang · ${t.codec.esc()}$defaultMark</span>"""
+    }
+
+    val issueBadge = if (ep.issueCount > 0)
+        """<span class="badge bad" style="font-size:.7rem;">${ep.issueCount} untagged</span>"""
+    else ""
+
+    val trackTableRows = (audioTracks + subTracks).joinToString("") { t ->
+        val langCell = if (t.language != null)
+            """<span class="lang">${t.language.esc()}</span>"""
+        else
+            """<span class="badge bad" style="font-size:.7rem;">none</span>"""
+        val rowClass = if (t.language == null) """ class="attn"""" else ""
+        """<tr$rowClass>
+             <td class="num">${t.specifier.esc()}</td>
+             <td>${t.kind.name.lowercase()}</td>
+             <td>$langCell</td>
+             <td>${t.title?.esc() ?: """<span class="muted">—</span>"""}</td>
+             <td class="num">${t.codec.esc()}</td>
+             <td>${if (t.default) """<span class="badge ok">default</span>""" else "—"}</td>
+             <td>${if (t.forced) "yes" else "—"}</td>
+           </tr>"""
+    }
+
+    val bodyId = "ep-body-s${season ?: 0}-$idx"
+    val toggleId = "ep-toggle-s${season ?: 0}-$idx"
+
+    return """
+        <div style="border:1px solid var(--line);border-radius:6px;margin-bottom:6px;overflow:hidden;background:var(--fill-2);">
+          <div id="$toggleId" class="ep-toggle-row" data-body="$bodyId"
+               style="display:flex;align-items:center;gap:10px;padding:9px 12px;cursor:pointer;">
+            <span class="num" style="min-width:64px;font-size:.82rem;">${epCode.esc()}</span>
+            <div style="display:flex;gap:4px;flex-wrap:wrap;flex:1;">$trackChips</div>
+            $issueBadge
+            <span class="ep-chev" style="color:var(--ink-soft);font-size:.9rem;margin-left:4px;">›</span>
+          </div>
+          <div id="$bodyId" style="display:none;padding:0 12px 12px;">
+            ${if (trackTableRows.isNotEmpty()) """
+            <table class="wf-table" style="margin:0 0 6px;">
+              <tr><th>#</th><th>Kind</th><th>Lang</th><th>Title</th><th>Codec</th><th>Default</th><th>Forced</th></tr>
+              $trackTableRows
+            </table>""" else """<span class="muted tiny">No audio/subtitle tracks.</span>"""}
+            <div class="muted tiny" style="margin-top:4px;font-family:monospace;">${ep.filename.esc()}</div>
+          </div>
+        </div>"""
+}
+
+private fun wireEpisodeToggles() {
+    document.querySelectorAll(".ep-toggle-row").let { rows ->
+        for (i in 0 until rows.length) {
+            val row = rows.item(i) as? HTMLElement ?: continue
+            val bodyId = row.getAttribute("data-body") ?: continue
+            row.addEventListener("click") {
+                val body = document.getElementById(bodyId) as? HTMLElement ?: return@addEventListener
+                val chev = row.querySelector(".ep-chev") as? HTMLElement
+                if (body.style.display == "none") {
+                    body.style.display = "block"
+                    chev?.textContent = "⌄"
+                } else {
+                    body.style.display = "none"
+                    chev?.textContent = "›"
+                }
+            }
+        }
+    }
 }
 
 private suspend fun loadHistory(id: String) {

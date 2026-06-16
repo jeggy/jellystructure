@@ -46,10 +46,13 @@ fun Route.mediaRoutes(
             val kindStr = call.request.queryParameters["kind"]
             val kind = kindStr?.let { runCatching { MediaKind.valueOf(it) }.getOrNull() }
             val filter = call.request.queryParameters["filter"]
-            val page = call.request.queryParameters["page"]?.toIntOrNull()?.coerceAtLeast(1) ?: 1
+            val pageNum = call.request.queryParameters["page"]?.toIntOrNull()?.coerceAtLeast(1) ?: 1
             val pageSize = call.request.queryParameters["pageSize"]?.toIntOrNull()
                 ?.coerceIn(1, 100) ?: 20
-            call.respond(store.list(kind, filter, page, pageSize))
+            val result = store.list(kind, filter, pageNum, pageSize)
+            // Strip episode data from list responses — full episode list is on the individual item endpoint
+            val stripped = result.copy(items = result.items.map { it.copy(episodes = emptyList()) })
+            call.respond(stripped)
         }
 
         route("/{id}") {
