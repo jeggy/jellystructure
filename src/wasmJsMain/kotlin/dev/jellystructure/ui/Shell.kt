@@ -5,11 +5,15 @@ import dev.jellystructure.api.AuthApi
 import dev.jellystructure.api.ConfigApi
 import dev.jellystructure.api.MediaApi
 import dev.jellystructure.api.UserProfile
+import dev.jellystructure.jobs.JobEvent
 import kotlinx.browser.document
 import kotlinx.browser.window
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.launch
+import kotlinx.serialization.json.Json
 import org.w3c.dom.HTMLElement
+import org.w3c.dom.WebSocket
+import org.w3c.dom.events.Event
 
 private sealed class NavEntry
 private data class NavLink(
@@ -19,6 +23,11 @@ private data class NavLink(
     val count: Int? = null,
 ) : NavEntry()
 private data class NavGroup(val label: String) : NavEntry()
+
+private val dockJson = Json { classDiscriminator = "type"; ignoreUnknownKeys = true }
+private var dockSocket: WebSocket? = null
+private var dockScanned = 0
+private var dockTotal = 0
 
 private val SUN_SVG = """<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><line x1="12" y1="2" x2="12" y2="5"/><line x1="12" y1="19" x2="12" y2="22"/><line x1="4.22" y1="4.22" x2="6.34" y2="6.34"/><line x1="17.66" y1="17.66" x2="19.78" y2="19.78"/><line x1="2" y1="12" x2="5" y2="12"/><line x1="19" y1="12" x2="22" y2="12"/><line x1="4.22" y1="19.78" x2="6.34" y2="17.66"/><line x1="17.66" y1="6.34" x2="19.78" y2="4.22"/></svg>"""
 private val MOON_SVG = """<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>"""
@@ -81,6 +90,9 @@ fun renderShell(user: UserProfile) {
         btn?.innerHTML = if (next == "dark") MOON_SVG else SUN_SVG
     }
 
+    // Inject ambient dock into body (hidden until a scan starts)
+    injectDock(body as HTMLElement)
+
     MainScope().launch {
         // Triage badge count
         val count = MediaApi.getTriageCount()
@@ -104,7 +116,112 @@ fun renderShell(user: UserProfile) {
                 }
             }
         } catch (_: Exception) {}
+
+        // Check if a scan is already running — show dock immediately if so
+        val status = MediaApi.scanStatus()
+        if (status?.running == true) {
+            dockScanned = status.lastCount ?: 0
+            showDock()
+            updateDockCount()
+        }
+        // Always connect dock WS to catch scans started from any page
+        connectDockSocket()
     }
+}
+
+private fun injectDock(body: HTMLElement) {
+    val el = document.createElement("div") as HTMLElement
+    el.id = "ambient-dock"
+    el.className = "dock"
+    el.style.display = "none"
+    el.innerHTML = """
+        <div class="dock-head" id="dock-head">
+          <span class="dot ok" id="dock-dot"></span>
+          <b id="dock-title">Scanning</b>
+          <span class="spacer"></span>
+          <span class="tiny mono" id="dock-count"></span>
+          <span class="kbd toggle-dock" id="dock-toggle" style="cursor:pointer;padding:0 4px">⌄</span>
+        </div>
+        <div class="dock-body">
+          <div class="bar"><i id="dock-bar" style="width:0%"></i></div>
+          <div class="mono tiny" id="dock-file" style="margin-top:9px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></div>
+          <div class="row center" style="gap:7px;margin-top:11px">
+            <span class="chip" style="font-size:.68rem" id="dock-chip-scanned"><span class="dot ok"></span> 0</span>
+            <span class="spacer"></span>
+            <a href="#" id="dock-activity-link" class="tiny">open console ↗</a>
+          </div>
+        </div>
+    """.trimIndent()
+    body.appendChild(el)
+
+    el.querySelector("#dock-toggle")?.addEventListener("click") { e ->
+        e.stopPropagation()
+        val dock = document.getElementById("ambient-dock") as? HTMLElement ?: return@addEventListener
+        val collapsed = dock.className.contains("collapsed")
+        dock.className = if (collapsed) "dock" else "dock collapsed"
+        (el.querySelector("#dock-toggle") as? HTMLElement)?.textContent = if (collapsed) "⌄" else "⌃"
+    }
+
+    el.querySelector("#dock-activity-link")?.addEventListener("click") { e ->
+        e.preventDefault()
+        App.navigate("/activity")
+    }
+}
+
+private fun connectDockSocket() {
+    val proto = if (window.location.protocol == "https:") "wss" else "ws"
+    val ws = WebSocket("$proto://${window.location.host}/ws")
+    dockSocket = ws
+
+    ws.onmessage = { ev ->
+        val text = ev.data.toString()
+        runCatching {
+            when (val event = dockJson.decodeFromString<JobEvent>(text)) {
+                is JobEvent.Started -> {
+                    dockScanned = 0
+                    dockTotal = event.total
+                    showDock()
+                    updateDockCount()
+                }
+                is JobEvent.ItemScanned -> {
+                    dockScanned++
+                    updateDockCount()
+                }
+                is JobEvent.FileProgress -> {
+                    val short = event.file.substringAfterLast('/')
+                    (document.getElementById("dock-file") as? HTMLElement)?.textContent = short
+                    if (event.total > 0) {
+                        val pct = (event.current * 100 / event.total).coerceIn(0, 100)
+                        (document.getElementById("dock-bar") as? HTMLElement)?.setAttribute("style", "width:${pct}%")
+                    }
+                }
+                is JobEvent.Finished -> hideDock()
+                else -> {}
+            }
+        }
+    }
+
+    ws.onclose = { _: Event ->
+        if (dockSocket == ws) dockSocket = null
+    }
+}
+
+private fun showDock() {
+    // Don't show dock on the Activity page
+    val currentRoute = window.location.hash.removePrefix("#")
+    if (currentRoute.startsWith("/activity")) return
+    (document.getElementById("ambient-dock") as? HTMLElement)?.style?.display = ""
+}
+
+private fun hideDock() {
+    (document.getElementById("ambient-dock") as? HTMLElement)?.style?.display = "none"
+}
+
+private fun updateDockCount() {
+    (document.getElementById("dock-count") as? HTMLElement)?.textContent =
+        if (dockTotal > 0) "$dockScanned/$dockTotal" else "$dockScanned"
+    (document.getElementById("dock-chip-scanned") as? HTMLElement)?.innerHTML =
+        """<span class="dot ok"></span> $dockScanned"""
 }
 
 private fun updateSidebarStatus(triageCount: Int) {
@@ -119,6 +236,14 @@ fun updateActiveNav(currentRoute: String) {
         val a = links.item(i) as? HTMLElement ?: continue
         val href = a.getAttribute("href") ?: continue
         a.className = if (href == currentRoute) "nav active" else "nav"
+    }
+    // Hide dock on Activity page, restore it elsewhere if scan is running
+    val dock = document.getElementById("ambient-dock") as? HTMLElement ?: return
+    if (currentRoute.startsWith("/activity")) {
+        dock.style.display = "none"
+    } else if (dock.style.display == "none" && dockScanned > 0) {
+        // A scan was running before nav — re-show the dock
+        dock.style.display = ""
     }
 }
 
