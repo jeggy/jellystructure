@@ -321,8 +321,11 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
         }
     }
 
-    // Wire up episode row toggles
-    if (isTvShow) wireEpisodeToggles()
+    // Wire up episode row toggles and still uploads
+    if (isTvShow) {
+        wireEpisodeToggles()
+        wireEpisodeStillUploads(scope)
+    }
 
     // Tab switching
     document.getElementById("detail-tabs")?.let { tabBar ->
@@ -481,8 +484,16 @@ private fun buildEpisodeRow(ep: Episode, season: Int?, idx: Int, mediaId: String
             </table>""" else """<span class="muted tiny">No audio/subtitle tracks.</span>"""}
             <div class="row center" style="margin-top:6px;gap:8px;">
               <div class="muted tiny" style="flex:1;font-family:monospace;">${ep.filename.esc()}</div>
+              <button class="btn sm ghost ep-still-upload-btn" style="font-size:.72rem;"
+                data-form-id="still-form-$bodyId">Upload still</button>
               <a href="#$trackOrderHref" class="btn sm ghost" style="font-size:.72rem;">Track order →</a>
             </div>
+            <form id="still-form-$bodyId" method="post"
+                  action="/api/media/$mediaId/episodes/${encodedFilename.esc()}/still/upload"
+                  enctype="multipart/form-data" target="upload-frame" style="display:none">
+              <input type="file" id="still-file-$bodyId" name="file" accept="image/jpeg,image/jpg,image/png"
+                class="ep-still-file-input" data-form-id="still-form-$bodyId">
+            </form>
           </div>
         </div>"""
 }
@@ -501,6 +512,32 @@ private fun wireEpisodeToggles() {
                 } else {
                     body.style.display = "none"
                     chev?.textContent = "›"
+                }
+            }
+        }
+    }
+}
+
+private fun wireEpisodeStillUploads(scope: CoroutineScope) {
+    document.querySelectorAll(".ep-still-upload-btn").let { btns ->
+        for (i in 0 until btns.length) {
+            val btn = btns.item(i) as? HTMLElement ?: continue
+            val formId = btn.getAttribute("data-form-id") ?: continue
+            btn.addEventListener("click") {
+                val fileInput = document.querySelector("#$formId input[type=file]") as? HTMLInputElement
+                fileInput?.click()
+            }
+        }
+    }
+    document.querySelectorAll(".ep-still-file-input").let { inputs ->
+        for (i in 0 until inputs.length) {
+            val input = inputs.item(i) as? HTMLInputElement ?: continue
+            val formId = input.getAttribute("data-form-id") ?: continue
+            input.addEventListener("change") {
+                (document.getElementById(formId) as? HTMLFormElement)?.submit()
+                scope.launch {
+                    delay(2000)
+                    showDetailMsg("Still upload submitted.", true)
                 }
             }
         }
