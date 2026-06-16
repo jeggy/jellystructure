@@ -145,7 +145,7 @@ tasks.register("runDev") {
 tasks.register<Copy>("syncDesignAssets") {
     description = "Assemble the complete frontend dist (CSS + JS bundle + index.html) after webpack"
     group = "application"
-    from(rootProject.layout.projectDirectory.dir("app")) {
+    from(rootProject.layout.projectDirectory.dir("design/app")) {
         include("wf.css", "app.css")
     }
     from(layout.buildDirectory.dir("kotlin-webpack/wasmJs/developmentExecutable")) {

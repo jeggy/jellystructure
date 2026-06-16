@@ -18,14 +18,23 @@ private data class NavLink(
 ) : NavEntry()
 private data class NavGroup(val label: String) : NavEntry()
 
+private val ICONS = mapOf(
+    "dashboard" to """<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg>""",
+    "library"   to """<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m16 6 4 14"/><path d="M12 6v14"/><path d="M8 8v12"/><path d="M4 4v16"/></svg>""",
+    "triage"    to """<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>""",
+    "activity"  to """<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>""",
+    "language"  to """<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/><path d="M2 12h20"/></svg>""",
+    "settings"  to """<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><line x1="3" y1="8" x2="10" y2="8"/><circle cx="12" cy="8" r="2"/><line x1="14" y1="8" x2="21" y2="8"/><line x1="3" y1="16" x2="7" y2="16"/><circle cx="9" cy="16" r="2"/><line x1="11" y1="16" x2="21" y2="16"/></svg>""",
+)
+
 private val NAV: List<NavEntry> = listOf(
-    NavLink("/dashboard", "Dashboard", "▦"),
-    NavLink("/library", "Library", "▤"),
-    NavLink("/triage", "Triage", "!", count = null),
-    NavLink("/activity", "Activity", "◷"),
+    NavLink("/dashboard", "Dashboard", "dashboard"),
+    NavLink("/library", "Library", "library"),
+    NavLink("/triage", "Triage", "triage", count = null),
+    NavLink("/activity", "Activity", "activity"),
     NavGroup("Setup"),
-    NavLink("/language", "Language", "≣"),
-    NavLink("/settings", "Settings", "⚙"),
+    NavLink("/language", "Language", "language"),
+    NavLink("/settings", "Settings", "settings"),
 )
 
 fun renderShell(user: UserProfile) {
@@ -67,7 +76,7 @@ fun updateActiveNav(currentRoute: String) {
     for (i in 0 until links.length) {
         val a = links.item(i) as? HTMLElement ?: continue
         val href = a.getAttribute("href") ?: continue
-        a.className = if (href == currentRoute) "active" else ""
+        a.className = if (href == currentRoute) "nav active" else "nav"
     }
 }
 
@@ -82,7 +91,7 @@ private fun shellHtml(user: UserProfile): String {
                     entry.count != null -> """<span class="count">${entry.count}</span>"""
                     else -> ""
                 }
-                """<a href="${entry.href}"><span class="l"><span class="ico">${entry.icon}</span>${entry.label}</span>$countHtml</a>"""
+                """<a class="nav" href="${entry.href}"><span class="l"><span class="ico">${ICONS[entry.icon] ?: entry.icon}</span>${entry.label}</span>$countHtml</a>"""
             }
         }
     }

@@ -5,8 +5,8 @@ config.devServer.port = 8081;
 config.devServer.static = [
     { directory: require("path").resolve(__dirname, "kotlin") },
     // Serve wf.css and app.css directly from the canonical design directory.
-    // __dirname is build/wasm/packages/jellystructure/ so ../../../../ is the project root.
-    { directory: require("path").resolve(__dirname, "../../../../app"), publicPath: "/" },
+    // __dirname is build/wasm/packages/jellystructure/ so ../../../../design/app is the design dir.
+    { directory: require("path").resolve(__dirname, "../../../../design/app"), publicPath: "/" },
 ];
 config.devServer.proxy = [
     {
