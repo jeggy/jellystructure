@@ -1,6 +1,7 @@
 package dev.jellystructure.ui
 
 import dev.jellystructure.App
+import dev.jellystructure.encodeURIComponent
 import dev.jellystructure.api.MediaApi
 import dev.jellystructure.api.httpClient
 import dev.jellystructure.model.Episode
@@ -680,7 +681,8 @@ private fun wireEpisodeStepListeners(item: MediaItem) {
 
 private suspend fun stAssignEpisodeLanguage(mediaId: String, epFilename: String, specifier: String, language: String): Boolean =
     runCatching {
-        val response = httpClient.post("/api/triage/$mediaId/episodes/$epFilename/tracks/$specifier/language") {
+        val encoded = encodeURIComponent(epFilename)
+        val response = httpClient.post("/api/triage/$mediaId/episodes/$encoded/tracks/$specifier/language") {
             contentType(ContentType.Application.Json)
             setBody("""{"language":"$language"}""")
         }
