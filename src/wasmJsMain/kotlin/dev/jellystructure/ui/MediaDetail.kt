@@ -3,6 +3,7 @@ package dev.jellystructure.ui
 import dev.jellystructure.App
 import dev.jellystructure.encodeURIComponent
 import dev.jellystructure.api.ArtworkStatus
+import dev.jellystructure.api.ConfigApi
 import dev.jellystructure.api.HistoryEntry
 import dev.jellystructure.api.MediaApi
 import dev.jellystructure.model.Episode
@@ -30,11 +31,66 @@ fun renderMediaDetail(container: Element, scope: CoroutineScope, mediaId: String
             container.innerHTML = """<span class="muted" style="padding:24px;display:block;">Item not found.</span>"""
             return@launch
         }
-        renderDetailView(container, item, scope)
+        val fallbackLang = ConfigApi.get()?.languageRules?.fallbackLanguage ?: "en"
+        renderDetailView(container, item, scope, fallbackLang)
     }
 }
 
-private fun renderDetailView(container: Element, item: MediaItem, scope: CoroutineScope) {
+private fun buildResolverTrace(item: MediaItem, fallbackLang: String): String {
+    if (item.kind == MediaKind.TV_SHOW) return ""
+    val audioTracks = item.tracks.filter { it.kind == TrackKind.AUDIO }
+    if (audioTracks.isEmpty()) return ""
+    val resolved = item.resolvedLanguage
+    var winnerFound = false
+    val traceLines = audioTracks.joinToString("") { t ->
+        val spec = t.specifier.esc()
+        when {
+            t.language.isNullOrBlank() ->
+                """<div class="muted">$spec <span style="font-size:.85em">??</span> untagged → skipped (see triage)</div>"""
+            t.language == resolved && !winnerFound -> {
+                winnerFound = true
+                """<div>$spec <span class="lang">${t.language.esc()}</span>? <span style="color:var(--ok)">✓ TMDB result → winner</span></div>"""
+            }
+            t.language == resolved ->
+                """<div class="muted">$spec <span class="lang">${t.language.esc()}</span> → duplicate, already resolved</div>"""
+            winnerFound ->
+                """<div class="muted">$spec <span class="lang">${t.language.esc()}</span> → skipped (winner already found)</div>"""
+            else ->
+                """<div class="muted">$spec <span class="lang">${t.language.esc()}</span>? → tried, no TMDB result</div>"""
+        }
+    }
+    val fallbackLine = if (!winnerFound && resolved != null) {
+        """<div>fallback → <span class="lang">${resolved.esc()}</span> <span style="color:var(--ok)">✓ TMDB result → winner</span></div>"""
+    } else if (!winnerFound) {
+        """<div class="muted">fallback <span class="lang">${fallbackLang.esc()}</span> → no TMDB match</div>"""
+    } else ""
+    val resolvedBadge = if (resolved != null)
+        """<span class="badge ok lang">${resolved.esc()}</span>"""
+    else
+        """<span class="badge warn">not resolved</span>"""
+    return """
+        <div class="override" style="margin-top:16px;">
+          <div class="row center">
+            <h4 style="margin:0;">Resolved metadata language</h4>
+            <span class="spacer"></span>
+            <span class="badge info">automatic</span>
+          </div>
+          <div class="tiny" style="margin-top:8px;">
+            The resolver walks audio tracks in physical order and fetches TMDB metadata in the first language that returns a result. Track flags are never changed automatically.
+          </div>
+          <div class="box flat" style="margin-top:10px;background:var(--fill-2);">
+            <div class="mono tiny" style="line-height:2.1;">
+              $traceLines
+              $fallbackLine
+            </div>
+            <hr class="dash" style="margin:9px 0;">
+            <div class="row center"><span class="tiny">Fetching metadata in</span><span class="spacer"></span>$resolvedBadge</div>
+          </div>
+          <div class="tiny muted" style="margin-top:8px;">Global fallback is <span class="lang">${fallbackLang.esc()}</span> · <a href="#/language">Language Settings →</a></div>
+        </div>""".trimIndent()
+}
+
+private fun renderDetailView(container: Element, item: MediaItem, scope: CoroutineScope, fallbackLang: String = "en") {
     val isTvShow = item.kind == MediaKind.TV_SHOW
 
     val posterHtml = if (item.posterPath != null) {
@@ -215,6 +271,7 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
              <div style="display:flex;flex-wrap:wrap;gap:5px;">$trackChips</div>
            </div>"""
     } else ""
+    val resolverTraceHtml = buildResolverTrace(item, fallbackLang)
     val episodesTabHtml = if (isTvShow) buildEpisodesTab(item) else ""
 
     container.innerHTML = """
@@ -298,6 +355,7 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
                   <div class="input mono" style="font-size:.82rem;word-break:break-all;">${item.path.esc()}</div>
                 </div>
               </div>
+              $resolverTraceHtml
             </div>
           </div>
         </div>
