@@ -15,18 +15,12 @@
     <span class="crumb">focus queue · item <b id="qpos">3</b> of <b id="qtot">214</b></span>
     <span class="spacer"></span>
     <div class="bar" style="width:220px;"><i id="qbar" style="width:1.4%"></i></div>
-    <div class="seg" id="triageMode">
-      <span class="seg-item active" data-mode="untagged">Untagged <span class="badge bad">198</span></span>
-      <span class="seg-item" data-mode="mismatch">Default mismatch <span class="badge warn">16</span></span>
-    </div>
     <span class="btn sm ghost">switch to table view</span>
   </div>
-  <p class="page-sub" id="pageSub">One untagged track at a time. Assign a language with a number key, <span class="kbd">Enter</span> accepts the suggestion and advances. Tagged tracks let the language resolver fetch metadata in the right language — it writes back to the file immediately.</p>
+  <p class="page-sub">One untagged track at a time. Assign a language with a number key, <span class="kbd">Enter</span> accepts the suggestion and advances. Tagged tracks let the language resolver fetch metadata in the right language — it writes back to the file immediately.</p>
 
   <div class="row" style="align-items:stretch;">
-
-    <!-- ── Untagged state ── -->
-    <div class="card fill" style="max-width:780px;" id="panelUntagged">
+    <div class="card fill" style="max-width:780px;">
       <div class="row" style="align-items:flex-start;">
         <div class="imgslot" style="width:120px;height:178px;flex:none;"><div class="x"></div><span>poster</span></div>
         <div class="fill">
@@ -59,51 +53,6 @@
       </div>
     </div>
 
-    <!-- ── Default-mismatch state ── -->
-    <div class="card fill" style="max-width:780px;display:none;" id="panelMismatch">
-      <div class="row" style="align-items:flex-start;">
-        <div class="imgslot" style="width:120px;height:178px;flex:none;"><div class="x"></div><span>poster</span></div>
-        <div class="fill">
-          <div class="row center"><h2 style="margin:0 0 2px;">Sintel <span class="muted">(2010)</span></h2><span class="spacer"></span><a class="btn sm ghost" href="media.html">open detail ↗</a></div>
-          <div class="pill-row" style="margin-bottom:10px;"><span class="chip">movie</span><span class="chip mono">…/Sintel (2010)/Sintel (2010).mkv</span></div>
-
-          <div class="box flat" style="background:var(--warn-soft);border-color:var(--warn);">
-            <div class="row center" style="gap:14px;flex-wrap:wrap;">
-              <div>
-                <span class="tiny muted">Default now</span><br>
-                <b>a:0</b> <span class="lang">en</span> <span class="badge warn">★ default</span>
-              </div>
-              <span style="color:var(--muted);font-size:1.1rem;">→</span>
-              <div>
-                <span class="tiny muted">Resolver says use</span><br>
-                <b>a:1</b> <span class="lang">da</span> <span class="badge ok">should be default</span>
-              </div>
-            </div>
-            <div class="tiny muted" style="margin-top:10px;">The language resolver walks tracks in order — track a:0 is <span class="lang">en</span> but TMDB returns no result for en; track a:1 is <span class="lang">da</span> and TMDB matches. Metadata will be fetched in <b>da</b> once the default flag is corrected.</div>
-          </div>
-
-          <h4 style="margin:14px 0 6px;">Planned fix</h4>
-          <div class="box flat mono tiny" style="background:var(--surface2);margin-bottom:10px;">
-            mkvpropedit "Sintel (2010).mkv" \<br>
-            &nbsp;&nbsp;--edit track:a1 --set flag-default=0 \<br>
-            &nbsp;&nbsp;--edit track:a2 --set flag-default=1
-          </div>
-          <div class="pill-row" style="gap:8px;">
-            <span class="badge" style="background:var(--surface2);color:var(--ink);">mkvpropedit</span>
-            <span class="tiny muted">no re-encode · ~40ms</span>
-          </div>
-        </div>
-      </div>
-
-      <hr class="dash" style="margin:16px 0 12px;">
-      <div class="row center">
-        <span class="btn ghost" id="skipMis">‹ skip <span class="kbd">←</span></span>
-        <span class="spacer"></span>
-        <a class="btn ghost" href="track-order.html">edit in track order ↗</a>
-        <span class="btn primary" id="applyMis">apply fix &amp; next <span class="kbd">↵</span></span>
-      </div>
-    </div>
-
     <div class="col" style="width:250px;">
       <div class="card">
         <h4 style="margin:0 0 8px;">Up next</h4>
@@ -130,42 +79,20 @@
 <script src="app-shell.js"></script>
 <script>
 (function () {
-  let mode = 'untagged';
   let fixed = 2, pos = 3;
   const qsugg = document.getElementById('qsugg');
-
-  // segment toggle
-  document.querySelectorAll('#triageMode .seg-item').forEach(item => {
-    item.addEventListener('click', () => {
-      mode = item.getAttribute('data-mode');
-      document.querySelectorAll('#triageMode .seg-item').forEach(i => i.classList.remove('active'));
-      item.classList.add('active');
-      document.getElementById('panelUntagged').style.display = mode === 'untagged' ? '' : 'none';
-      document.getElementById('panelMismatch').style.display = mode === 'mismatch' ? '' : 'none';
-      const sub = document.getElementById('pageSub');
-      if (mode === 'mismatch') {
-        sub.innerHTML = 'Tracks with a correct language tag but the wrong <b>default flag</b>. The language resolver uses track order — the fix is a header-only edit via mkvpropedit (~40ms, no re-encode).';
-      } else {
-        sub.innerHTML = 'One untagged track at a time. Assign a language with a number key, <span class="kbd">Enter</span> accepts the suggestion and advances. Tagged tracks let the language resolver fetch metadata in the right language — it writes back to the file immediately.';
-      }
-    });
-  });
-
-  function toast(msg) {
-    const t = document.createElement('div');
-    t.className = 'toast'; t.textContent = msg;
-    document.body.appendChild(t);
-    setTimeout(() => t.remove(), 850);
-  }
-
   function flash(lang) {
     fixed++; pos++;
     document.getElementById('fixed').textContent = fixed;
     document.getElementById('qpos').textContent = Math.min(pos, 214);
     document.getElementById('qbar').style.width = ((pos / 214) * 100).toFixed(1) + '%';
-    toast('assigned ' + lang + ' ✓');
+    // tiny confirmation toast
+    const t = document.createElement('div');
+    t.className = 'toast';
+    t.textContent = 'assigned ' + lang + ' ✓';
+    document.body.appendChild(t);
+    setTimeout(() => t.remove(), 850);
   }
-
   document.querySelectorAll('.lang-pick').forEach(b =>
     b.addEventListener('click', () => flash(b.getAttribute('data-l'))));
   document.getElementById('accept').addEventListener('click', () => flash(qsugg.textContent));
@@ -173,27 +100,11 @@
     pos++; document.getElementById('qpos').textContent = Math.min(pos, 214);
     document.getElementById('qbar').style.width = ((pos / 214) * 100).toFixed(1) + '%';
   });
-  document.getElementById('applyMis').addEventListener('click', () => {
-    pos++; fixed++;
-    document.getElementById('fixed').textContent = fixed;
-    document.getElementById('qpos').textContent = Math.min(pos, 214);
-    document.getElementById('qbar').style.width = ((pos / 214) * 100).toFixed(1) + '%';
-    toast('default fixed · a:1 da ✓');
-  });
-  document.getElementById('skipMis').addEventListener('click', () => {
-    pos++; document.getElementById('qpos').textContent = Math.min(pos, 214);
-    document.getElementById('qbar').style.width = ((pos / 214) * 100).toFixed(1) + '%';
-  });
   document.addEventListener('keydown', (e) => {
-    if (mode === 'untagged') {
-      const map = { '1': 'en', '2': 'da', '3': 'is', '4': 'fo' };
-      if (map[e.key]) flash(map[e.key]);
-      else if (e.key === 'Enter') flash(qsugg.textContent);
-      else if (e.key === 'ArrowLeft') document.getElementById('skip').click();
-    } else {
-      if (e.key === 'Enter') document.getElementById('applyMis').click();
-      else if (e.key === 'ArrowLeft') document.getElementById('skipMis').click();
-    }
+    const map = { '1': 'en', '2': 'da', '3': 'is', '4': 'fo' };
+    if (map[e.key]) flash(map[e.key]);
+    else if (e.key === 'Enter') flash(qsugg.textContent);
+    else if (e.key === 'ArrowLeft') document.getElementById('skip').click();
   });
 })();
 </script>

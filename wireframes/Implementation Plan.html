@@ -65,7 +65,7 @@
 <body class="wf-body">
 
 <div class="doc">
-  <p style="font-family:'Caveat',cursive;font-size:1.4rem;color:var(--ok);transform:rotate(-1deg);margin:0 0 4px;">implementation plan · v0.3 · P0–P4 shipped · P5 + remaining gaps below</p>
+  <p style="font-family:'Caveat',cursive;font-size:1.4rem;color:var(--bad);transform:rotate(-1deg);margin:0 0 4px;">build-ready implementation plan · v0.1</p>
   <h1>Jellystructure — Build Plan</h1>
   <p class="lead">End-to-end instructions to implement the system: shared Kotlin domain, Kotlin/Native backend, Kotlin/Wasm DOM frontend, Jellyfin sign-in, and the Docker deployment — broken into six buildable phases, each with concrete tasks and exit criteria.</p>
 
@@ -122,7 +122,7 @@
     <tr><td>HTTP client</td><td>Ktor client <code>CIO</code></td><td>Calls TMDB + Jellyfin. ContentNegotiation + kotlinx.serialization.</td></tr>
     <tr><td>Serialization</td><td>kotlinx.serialization</td><td>JSON for the API + TMDB/Jellyfin; drives the shared DTOs.</td></tr>
     <tr><td>Config</td><td>ktoml</td><td>Typed TOML read/write of <code>config.toml</code> (NFR-4).</td></tr>
-    <tr><td>File I/O</td><td>kotlinx-io</td><td>All disk reads/writes + NFO streaming (NFR-3). JetBrains-maintained KMP I/O; no Okio, no java.io.</td></tr>
+    <tr><td>File I/O</td><td>Okio</td><td>All disk reads/writes + NFO streaming (NFR-3).</td></tr>
     <tr><td>Local DB</td><td>SQLDelight + native SQLite driver</td><td>Sessions, scan cache, triage issues, TMDB response cache.</td></tr>
     <tr><td>Subprocess</td><td><code>com.kgit2:kommand</code></td><td>KMP process API over ffmpeg/ffprobe/mkvpropedit with streamed stdout/stderr (NFR-5).</td></tr>
     <tr><td>Frontend</td><td>Kotlin/Wasm + <code>kotlinx-browser</code></td><td>Direct real-DOM rendering; <em>not</em> Compose canvas (NFR-6).</td></tr>
@@ -270,7 +270,7 @@
       <p>Write the on-disk truth (NFO + images) and stand up the cascade resolver with its live preview. (FR-M2–4, FR-A1–3, FR-L1–5)</p>
       <div class="lane"><span class="who sh">Shared</span><ul><li><code>Cascade</code>, <code>CascadeResolver.resolve(...)</code> (pure, fully unit-tested), <code>NfoFields</code>.</li></ul></div>
       <div class="lane"><span class="who be">Back</span><ul>
-        <li>kotlinx-io NFO writer for <code>movie.nfo</code> / <code>tvshow.nfo</code> (episode-level NFOs are out of scope), always emitting <code>&lt;lockdata&gt;true&lt;/lockdata&gt;</code> (FR-M3); atomic write (temp + rename); preserve uid/gid &amp; mode (FR-T4).</li>
+        <li>Okio NFO writer for <code>movie.nfo</code> / <code>tvshow.nfo</code> / <code>episodedetails</code>, always emitting <code>&lt;lockdata&gt;true&lt;/lockdata&gt;</code> (FR-M3); atomic write; preserve uid/gid &amp; mode (FR-T4).</li>
         <li>"Re-pull" merge that fills empty/unlocked fields without clobbering edits (FR-M4).</li>
         <li>Artwork downloader (Ktor client, parallel) → <code>poster.jpg</code>/<code>fanart.jpg</code>/<code>clearlogo.png</code>; report present/missing (FR-A1–3).</li>
         <li>Cascade endpoints: global rule in config; per-title override on the item; <code>/api/cascade/resolve</code> echoing the shared resolver for the preview.</li>
@@ -330,52 +330,15 @@
   <h2>4 · Build order &amp; dependencies</h2>
   <p>Strictly sequential at the seams: <strong>P0</strong> proves the toolchain, <strong>P1</strong> gives you auth + config that everything else assumes, <strong>P2</strong> produces the data model the UI hangs on, <strong>P3</strong> makes writes safe (NFO/lockdata) before <strong>P4</strong> touches media bytes, and <strong>P5</strong> automates + proves it. Within a phase, build <span class="chip" style="background:var(--hi-soft);">SHARED</span> first, then <span class="chip" style="background:var(--info-soft);">BACKEND</span>, then <span class="chip" style="background:var(--ok-soft);">FRONTEND</span> against the live endpoints.</p>
 
-  <h2>5 · Decisions closed</h2>
+  <h2>5 · Decisions still open</h2>
   <ul>
-    <li><s><strong>Undo / history depth</strong></s> — <strong>decided:</strong> lightweight audit row per write in the SQLite DB; surfaced in the History tab of Media Detail (GAP-1 in §6 below). No restorable diff store.</li>
-    <li><s><strong>Session lifetime</strong></s> — <strong>decided:</strong> 7-day default, displayed on the login screen. No "remember me" toggle.</li>
-    <li><s><strong>External-edit conflicts</strong></s> — <strong>decided:</strong> warn on next scan (show a "file changed" badge in Library). No automatic re-lock. Deferred to a future minor release.</li>
-    <li><s><strong>Music &amp; other providers</strong></s> — out of scope. Jellyfin library discovery (FR-C5) surfaces music/books/photos; the operator marks them "skip".</li>
+    <li><strong>Undo / history depth</strong> — is the on-disk NFO + a lightweight audit row enough, or do you want a restorable change log per file? (Affects the DB schema in P1.)</li>
+    <li><strong>Session lifetime</strong> — default TTL and "remember me"? (Trivial, but pick a number for P1.)</li>
+    <li><strong>External-edit conflicts</strong> — if a file changes outside Jellystructure after locking, warn / re-scan / ignore?</li>
+    <li><strong>Music &amp; other providers</strong> — TVDB/MusicBrainz remain out of scope unless you want them slotted after P4.</li>
   </ul>
 
-  <h2>6 · Remaining work (post-P4, to-do list)</h2>
-  <p>P0–P4 are shipped. P5 is in progress. The items below are what's left to reach a fully spec-complete v1.0, sorted roughly by build order.</p>
-
-  <h3>6.1 P5 — still pending</h3>
-  <div class="lane"><span class="who be">Back</span><ul>
-    <li><strong>Folder watcher (FR-U3)</strong> — inotify/kqueue watcher on mounted library paths; debounce partial copies; trigger per-file scan job. Add <code>watch_folders</code> toggle to Settings behaviour card (already in UI and config schema, just needs the backend watcher loop).</li>
-    <li>Graceful shutdown: cancel in-flight jobs, flush WS, close SQLite cleanly.</li>
-    <li>Retry / back-off on TMDB rate-limit (429) responses.</li>
-  </ul></div>
-  <div class="lane"><span class="who ops">Ops</span><ul>
-    <li>Full Playwright scan-batch test: trigger scan, assert Library grid populates live, assert <code>ffprobe</code> confirms correct default track post-apply.</li>
-    <li>Visual snapshot suite: key stable states (Login, Dashboard, Media Detail, Triage focus).</li>
-    <li>CI green on every push (NFR-T4).</li>
-  </ul></div>
-
-  <h3>6.2 Frontend gaps (GAP-1 → GAP-8 from Requirements doc)</h3>
-  <div class="lane"><span class="who fe">Front</span><ul>
-    <li><strong>GAP-1 — Media detail tabs.</strong> Add tab-switching to <code>MediaDetail.kt</code>. Tabs: Overview (current inline content), Tracks &amp; order (embed or deep-link TrackOrder), Artwork (per-asset fetch/upload grid), NFO raw (read-only XML), History (audit rows from DB). The History tab requires <code>GET /api/media/{id}/history</code> — add to backend in the same pass.</li>
-    <li><strong>GAP-2 — Activity three-panel layout.</strong> Update <code>Activity.kt</code>: add an overall-progress card (file count, status chips for header-edits / remux / NFO / artwork / → triage) and a "Now processing" card (current file name, poster thumbnail, ffmpeg %, per-file progress bar). Wire both from <code>JobEvent.FileProgress</code> and <code>FileDone</code> WS events. The log panel already works.</li>
-    <li><strong>GAP-3 — Track order before/after diff.</strong> Update <code>TrackOrder.kt</code>: replace the flat track table with a side-by-side "Current order" / "After your change" card pair, diff-highlighted. Data comes from the existing <code>/api/media/{id}/tracks/plan</code> response (<code>TrackPlan</code>); add before/after arrays to <code>TrackPlan</code> DTO if not already present.</li>
-    <li><strong>GAP-4 — Shell triage count badge.</strong> <code>Shell.kt</code> hardcodes 214. Fetch <code>/api/triage/count</code> on load and subscribe to WS <code>ItemScanned</code> events to decrement as items are fixed. Backend: add <code>GET /api/triage/count</code> returning <code>{ untagged: Int, mismatch: Int }</code>.</li>
-    <li><strong>GAP-5 — Settings left-nav sidebar.</strong> Add anchor-scroll sidebar to <code>Settings.kt</code> (Connections · Library mapping · Behaviour · Language → · Advanced). Matches the mockup and is purely cosmetic — no new data model needed.</li>
-    <li><strong>GAP-6 — Triage table view.</strong> Add a "switch to table view" mode to <code>Triage.kt</code>: flat paginated table with all untagged + mismatch rows, inline language dropdown per row, bulk-select checkbox column. Backend: <code>GET /api/triage?view=table&amp;page=N</code> (extend existing triage query endpoint).</li>
-    <li><strong>GAP-7 — Dry-run across many files (FR-T5).</strong> Add a "Plan all" action to <code>TrackOrder.kt</code>: sweep the library for files whose default track disagrees with cascade; return a dry-run report (file path, current default, proposed default, tool, estimated time) without writing. Backend: <code>POST /api/tracks/plan-all</code> returning <code>List&lt;TrackPlan&gt;</code>. UI shows the report as a paginated table with an "Apply all" confirm.</li>
-    <li><strong>GAP-8 — Folder watcher toggle in UI.</strong> The <code>watch_folders</code> boolean is already in the Settings behaviour card and in <code>config.toml</code>; the backend watcher loop (GAP-8 backend) just needs to read it on startup and on config save.</li>
-  </ul></div>
-
-  <h3>6.3 Build order for remaining work</h3>
-  <ol>
-    <li>P5 backend hardening (folder watcher, shutdown, retry) — close P5 first so CI is reliable.</li>
-    <li>GAP-4 (shell triage count) — tiny, immediate quality-of-life.</li>
-    <li>GAP-3 (track order diff) — standalone, no backend changes needed beyond <code>TrackPlan</code> DTO extension.</li>
-    <li>GAP-2 (activity three-panel) — only frontend changes, WS events already exist.</li>
-    <li>GAP-1 (media detail tabs) — largest; do History last as it needs a new backend endpoint.</li>
-    <li>GAP-5 (settings sidebar) — cosmetic; any time.</li>
-    <li>GAP-6 (triage table view) — nice-to-have; do after focus-queue is solid.</li>
-    <li>GAP-7 (dry-run all) — last, as it involves a new backend endpoint + new UI surface.</li>
-  </ol>
+  <p class="muted" style="margin-top:24px;">Next concrete step: scaffold P0 — the Gradle KMP repo + Dockerfile that builds the native binary and wasm bundle into one container. Say the word and I'll write the actual starter repo files.</p>
 
   </div>
 </div>

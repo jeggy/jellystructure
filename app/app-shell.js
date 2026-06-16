@@ -21,7 +21,8 @@
     settings:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><line x1="4" y1="8" x2="20" y2="8"/><line x1="4" y1="16" x2="20" y2="16"/><circle cx="15" cy="8" r="2.4" fill="var(--fill-2)"/><circle cx="9" cy="16" r="2.4" fill="var(--fill-2)"/></svg>',
     signout:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M14 4h4a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1h-4"/><path d="M9 8l-4 4 4 4"/><line x1="5" y1="12" x2="15" y2="12"/></svg>',
     sun:       '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><circle cx="12" cy="12" r="4.2"/><line x1="12" y1="2.5" x2="12" y2="5"/><line x1="12" y1="19" x2="12" y2="21.5"/><line x1="2.5" y1="12" x2="5" y2="12"/><line x1="19" y1="12" x2="21.5" y2="12"/><line x1="5.4" y1="5.4" x2="7.1" y2="7.1"/><line x1="16.9" y1="16.9" x2="18.6" y2="18.6"/><line x1="5.4" y1="18.6" x2="7.1" y2="16.9"/><line x1="16.9" y1="7.1" x2="18.6" y2="5.4"/></svg>',
-    moon:      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><path d="M20 14.5A8 8 0 0 1 9.5 4 8 8 0 1 0 20 14.5z"/></svg>'
+    moon:      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><path d="M20 14.5A8 8 0 0 1 9.5 4 8 8 0 1 0 20 14.5z"/></svg>',
+    menu:      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="17" x2="20" y2="17"/></svg>'
   };
 
   const NAV = [
@@ -69,6 +70,30 @@
   if (main) { main.parentNode.removeChild(main); shell.appendChild(main); }
   document.body.insertBefore(shell, document.body.firstChild);
 
+  /* ---- mobile top bar + drawer backdrop (CSS hides these on desktop) ---- */
+  const topbar = document.createElement('div');
+  topbar.className = 'app-topbar';
+  topbar.innerHTML =
+    '<button class="burger" id="navburger" aria-label="Open menu" aria-expanded="false">' + I.menu + '</button>' +
+    '<span class="tb-logo"><span class="glyph"></span> Jellystructure</span>';
+  document.body.insertBefore(topbar, document.body.firstChild);
+
+  const backdrop = document.createElement('div');
+  backdrop.className = 'nav-backdrop';
+  document.body.appendChild(backdrop);
+
+  const burger = topbar.querySelector('#navburger');
+  function setNav(open) {
+    document.body.classList.toggle('nav-open', open);
+    burger.setAttribute('aria-expanded', open ? 'true' : 'false');
+  }
+  burger.addEventListener('click', () => setNav(!document.body.classList.contains('nav-open')));
+  backdrop.addEventListener('click', () => setNav(false));
+  // close the drawer when a nav destination is chosen, or on Escape / desktop resize
+  side.addEventListener('click', (e) => { if (e.target.closest('a.nav')) setNav(false); });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') setNav(false); });
+  window.addEventListener('resize', () => { if (window.innerWidth > 980) setNav(false); });
+
   /* ---- theme toggle wiring ---- */
   function paintSwitcher() {
     const t = root.getAttribute('data-theme');
@@ -81,8 +106,9 @@
   });
   paintSwitcher();
 
-  /* ---- ambient scan dock (hidden on the dedicated activity page) ---- */
-  if (current !== 'activity') {
+  /* ---- ambient scan dock (hidden on the activity page + any data-no-dock page) ---- */
+  const noDock = main && main.hasAttribute('data-no-dock');
+  if (current !== 'activity' && !noDock) {
     const dock = document.createElement('div');
     dock.className = 'dock';
     dock.innerHTML =

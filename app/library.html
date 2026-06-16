@@ -14,28 +14,9 @@
     <h1>Library</h1>
     <span class="spacer"></span>
     <span class="input ph" style="width:220px;">⌕ search title…</span>
-    <div class="seg" id="kindSeg">
-      <span class="seg-item active" data-kind="movies">Movies</span>
-      <span class="seg-item" data-kind="tv">TV</span>
-    </div>
-    <span class="btn sm" id="scanBtn">▶ Scan library</span>
+    <span class="seg"><span class="on">Movies</span><span>TV</span></span>
   </div>
   <p class="page-sub">Everything Jellystructure manages. A red corner means at least one untagged track; an orange one means a mixed-language series — click any title to open its detail page.</p>
-
-  <!-- scan-in-progress banner (hidden by default) -->
-  <div id="scanBanner" style="display:none;margin-bottom:14px;">
-    <div class="box flat" style="background:var(--hi-soft, rgba(123,110,240,.08));border-color:var(--hi, #7b6ef0);padding:10px 14px;">
-      <div class="row center" style="gap:10px;flex-wrap:wrap;">
-        <span class="dot" style="background:var(--hi);animation:pulse 1s ease-in-out infinite;"></span>
-        <span style="font-weight:600;">Scanning…</span>
-        <span class="muted tiny" id="scanFile">Glass Half (2015)/Glass Half.mkv</span>
-        <span class="spacer"></span>
-        <span class="tiny muted"><span id="scanDone">88</span> / <span id="scanTotal">1842</span> items</span>
-        <div class="bar" style="width:140px;"><i id="scanProg" style="width:4.8%"></i></div>
-        <span class="btn sm ghost" id="stopBtn">■ Stop</span>
-      </div>
-    </div>
-  </div>
 
   <div class="row center" style="margin-bottom:16px;gap:10px;">
     <span class="muted tiny">filter:</span>
@@ -46,7 +27,7 @@
     <span class="muted tiny">sort: recently added ▾</span>
   </div>
 
-  <div class="poster-grid" id="posterGrid">
+  <div class="poster-grid">
     <a class="poster" href="media.html"><div class="imgslot"><div class="x"></div><span>poster</span></div><div class="ttl">Sintel</div><div class="yr">2010 · <span class="badge bad" style="font-size:.62rem;">1 issue</span></div></a>
     <a class="poster" href="media.html"><div class="imgslot"><div class="x"></div><span>poster</span></div><div class="ttl">Tears of Steel</div><div class="yr">2012 · <span class="badge bad" style="font-size:.62rem;">2 issues</span></div></a>
     <a class="poster" href="media.html"><div class="imgslot"><div class="x"></div><span>poster</span></div><div class="ttl">Big Buck Bunny</div><div class="yr">2008 · <span class="badge warn" style="font-size:.62rem;">default</span></div></a>
@@ -59,47 +40,9 @@
     <a class="poster" href="media.html"><div class="imgslot"><div class="x"></div><span>poster</span></div><div class="ttl">Hero</div><div class="yr">2018 · <span class="badge ok" style="font-size:.62rem;">ok</span></div></a>
   </div>
 
-  <div class="row center" style="margin-top:18px;"><span class="muted tiny" id="countLbl">Showing 1–10 of 1,842</span><span class="spacer" style="flex:1"></span><span class="btn sm ghost">‹ prev</span><span class="btn sm">next ›</span></div>
+  <div class="row center" style="margin-top:18px;"><span class="muted tiny">Showing 1–10 of 1,842</span><span class="spacer" style="flex:1"></span><span class="btn sm ghost">‹ prev</span><span class="btn sm">next ›</span></div>
 </main>
 
 <script src="app-shell.js"></script>
-<script>
-(function () {
-  let scanning = false, scanTimer = null, done = 88, total = 1842;
-  const files = ['Glass Half (2015)/Glass Half.mkv','Sintel (2010)/Sintel.mkv','Caminandes 3 (2016)/Caminandes.mkv','Wing It! (2023)/Wing It.mkv'];
-  let fi = 0;
-
-  function startScan() {
-    scanning = true;
-    document.getElementById('scanBanner').style.display = '';
-    document.getElementById('scanBtn').textContent = '■ Stop scanning';
-    scanTimer = setInterval(tick, 600);
-  }
-  function stopScan() {
-    scanning = false; clearInterval(scanTimer);
-    document.getElementById('scanBanner').style.display = 'none';
-    document.getElementById('scanBtn').textContent = '▶ Scan library';
-  }
-  function tick() {
-    done = Math.min(done + 12, total);
-    fi = (fi + 1) % files.length;
-    document.getElementById('scanDone').textContent = done;
-    document.getElementById('scanFile').textContent = files[fi];
-    document.getElementById('scanProg').style.width = ((done / total) * 100).toFixed(1) + '%';
-    document.getElementById('countLbl').textContent = 'Showing 1–10 of ' + done.toLocaleString() + ' (scanning…)';
-    if (done >= total) stopScan();
-  }
-
-  document.getElementById('scanBtn').addEventListener('click', () => scanning ? stopScan() : startScan());
-  document.getElementById('stopBtn').addEventListener('click', stopScan);
-
-  document.querySelectorAll('#kindSeg .seg-item').forEach(item => {
-    item.addEventListener('click', () => {
-      document.querySelectorAll('#kindSeg .seg-item').forEach(i => i.classList.remove('active'));
-      item.classList.add('active');
-    });
-  });
-})();
-</script>
 </body>
 </html>

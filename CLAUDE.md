@@ -24,8 +24,7 @@ Pull them with the GitHub tools (ref `main`).
   glassy, gradient); theme persisted in localStorage by `app/app-shell.js`.
   Jellyfin-style purple→blue gradient accent.
 - Type: Space Grotesk (display) · Sora (UI) · JetBrains Mono (code/IDs).
-- All 9 screens share `app/wf.css` (tokens + components) and `app/app.css` (shell)
-  (login.html + setup.html use a minimal shell; the other 7 share the full nav shell).
+- All 8 screens share `app/wf.css` (tokens + components) and `app/app.css` (shell).
 
 ## Spec conformance (done — was a content gap, now aligned)
 The mockups were brought in line with CONSTITUTION.md + the repo CLAUDE.md:
@@ -35,17 +34,13 @@ The mockups were brought in line with CONSTITUTION.md + the repo CLAUDE.md:
   flags/order are **never** changed automatically. Live in-WASM resolver preview.
 - **Track Order** (`track-order.html`) is framed as a **manual** operator action
   (set default + order by hand → before/after diff → mkvpropedit/ffmpeg). No "cascade".
-- **Triage** = untagged tracks + cascade/default-flag mismatch items (tracks where
-  the resolved language differs from the currently-flagged default). Both states are
-  shown in the focus-queue and handled by the Kotlin `Triage.kt` implementation.
+- **Triage** = untagged tracks only (no automatic "default ≠ cascade" mismatch).
 - **Media detail** shows a read-only *resolved metadata language* trace — no per-title
   cascade override.
 - **Settings → Library mapping** uses `[[libraries]]` discovered from the Jellyfin API
   (fields: jellyfin_id, name, collection_type, jellyfin_path, local_path, skip,
   fallback_language). No static `[paths]`.
 - **Login** (`login.html`, `/login`) added — Jellyfin admin creds only.
-- **Setup** (`setup.html`, shown before login on first run) — one-time wizard:
-  Jellyfin URL + machine API token + TMDB API key. Matches `Setup.kt`.
 
 NOTE on config shape: CONSTITUTION.md still shows an older `[paths]` example, but the
 repo CLAUDE.md explicitly supersedes it ("There is no static `[paths]` section; library

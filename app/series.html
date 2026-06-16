@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Jellystructure — Nordvest (2023)</title>
+<link rel="stylesheet" href="wf.css">
+<link rel="stylesheet" href="app.css">
+<style>
+  /* episode rows */
+  .ep { border: 1px solid var(--line); border-radius: var(--radius-s); background: var(--fill-2); overflow: hidden; transition: border-color .2s ease; }
+  .ep + .ep { margin-top: 10px; }
+  .ep.attn { border-color: rgba(255,111,97,.35); }
+  .ep.open { border-color: var(--hi); }
+  .ep-row { display: flex; align-items: center; gap: 14px; padding: 11px 14px; cursor: pointer; }
+  .ep-row:hover { background: var(--hi-soft); }
+  .ep-thumb { width: 92px; height: 52px; flex: none; }
+  .ep-meta { min-width: 0; flex: 1; }
+  .ep-meta .t { font-weight: 600; font-size: .96rem; display: flex; align-items: center; gap: 9px; flex-wrap: wrap; }
+  .ep-meta .s { font-size: .8rem; color: var(--ink-soft); margin-top: 2px; display: flex; align-items: center; gap: 9px; flex-wrap: wrap; }
+  .ep-flags { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+  .ep-chev { color: var(--ink-soft); font-size: 1.1rem; transition: transform .2s ease; flex: none; }
+  .ep.open .ep-chev { transform: rotate(90deg); }
+  .ep-body { display: none; padding: 0 14px 16px; }
+  .ep.open .ep-body { display: block; }
+  .ep-body .grid2 { display: grid; grid-template-columns: 260px 1fr; gap: 16px; align-items: start; }
+  @media (max-width: 1100px) { .ep-body .grid2 { grid-template-columns: 1fr; } }
+  .seasonbar { display: flex; align-items: center; gap: 12px; padding: 4px 2px 14px; flex-wrap: wrap; }
+</style>
+</head>
+<body class="wf-body app-body">
+
+<main class="app-main2 wide" data-page="library" data-screen-label="Series detail">
+  <div class="backrow">
+    <a class="btn sm ghost" href="library.html">‹ Library</a>
+    <span class="crumb"><a href="library.html">TV</a> / Nordvest (2023)</span>
+  </div>
+
+  <div class="pagebar">
+    <h1>Nordvest <span class="muted">(2023)</span></h1>
+    <span class="badge ok">NFO locked</span>
+    <span class="badge bad">4 episodes need attention</span>
+    <span class="spacer"></span>
+    <a class="btn" href="series-triage.html">Open Series triage →</a>
+    <span class="btn primary">Save → disk</span>
+    <span class="btn">Save &amp; tell Jellyfin ↻</span>
+  </div>
+
+  <div class="tabs2">
+    <span>Overview</span>
+    <span class="on">Seasons &amp; episodes</span>
+    <span>Artwork</span>
+    <span>NFO (raw)</span>
+    <span>History</span>
+  </div>
+
+  <div class="row" style="align-items:flex-start;">
+    <!-- LEFT RAIL -->
+    <div class="col" style="width:250px;flex:none;">
+      <div class="card">
+        <h4 style="margin:0 0 8px;">Series artwork</h4>
+        <div class="imgslot" style="height:250px;margin-bottom:8px;"><span>poster.jpg<br>(drop / fetch)</span></div>
+        <div class="row" style="gap:8px;">
+          <div class="imgslot fill" style="height:54px;"><span>backdrop</span></div>
+          <div class="imgslot fill" style="height:54px;"><span style="background:var(--bad-soft);border-color:var(--bad);color:var(--bad);">logo · missing</span></div>
+        </div>
+        <div class="pill-row" style="margin-top:10px;"><span class="btn sm">Fetch all</span><span class="btn sm ghost">Upload</span></div>
+        <div class="tiny muted" style="margin-top:8px;">2 of 3 series assets present</div>
+      </div>
+
+      <div class="card">
+        <h4 style="margin:0 0 6px;">Identity</h4>
+        <div class="field" style="margin:0 0 8px;"><label>TMDB id</label><div class="input">tv/210041</div></div>
+        <div class="row center tiny" style="gap:7px;"><span class="muted">match</span><span class="badge ok">exact</span></div>
+      </div>
+
+      <div class="override">
+        <div class="row center"><h4 style="margin:0;white-space:nowrap;">Series language</h4><span class="spacer"></span><span class="badge info">majority</span></div>
+        <div class="tiny" style="margin-top:8px;">
+          Each episode resolves its own fetch language. The series NFO uses the language most episodes share.
+        </div>
+        <div class="box flat" style="margin-top:10px;background:var(--bg-2);">
+          <div class="mono tiny" style="line-height:2;">
+            <div><span class="okc">fo</span> ······ 7 / 8 episodes ✓ winner</div>
+            <div class="muted">da ······ 1 / 8 (S01E04)</div>
+          </div>
+          <hr class="dash" style="margin:9px 0;">
+          <div class="row center"><span class="tiny">tvshow.nfo language</span><span class="spacer"></span><span class="badge ok lang">fo</span></div>
+        </div>
+        <div class="tiny muted" style="margin-top:8px;"><a href="series-triage.html">Review &amp; override →</a></div>
+      </div>
+    </div>
+
+    <!-- MAIN -->
+    <div class="col fill">
+      <!-- series metadata -->
+      <div class="card">
+        <div class="row"><div class="field fill"><label>Series title</label><div class="input">Nordvest</div></div><div class="field" style="width:110px;"><label>Year</label><div class="input">2023</div></div></div>
+        <div class="field"><label>Plot</label><div class="input" style="min-height:60px;align-items:flex-start;">In a fog-bound Faroese fishing town, a detective returns home to a death that reopens a buried family secret.</div></div>
+        <div class="row">
+          <div class="field fill"><label>Genres</label><div class="pill-row"><span class="chip">Crime ✕</span><span class="chip">Drama ✕</span><span class="chip">Thriller ✕</span><span class="chip ghost">＋</span></div></div>
+          <div class="field" style="width:180px;"><label>Network</label><div class="input">Kringvarp</div></div>
+        </div>
+      </div>
+
+      <!-- seasons & episodes -->
+      <div class="card">
+        <div class="row center"><h4 style="margin:0;white-space:nowrap;">Season 1</h4><span class="chip">8 episodes</span><span class="spacer"></span><span class="seg"><span class="on">Season 1</span><span>Season 2</span></span></div>
+        <hr class="dash" style="margin:12px 0;">
+        <div class="seasonbar">
+          <span class="muted tiny">episode-level:</span>
+          <span class="chip"><span class="dot bad"></span> 2 untagged tracks</span>
+          <span class="chip"><span class="dot warn"></span> 1 missing still</span>
+          <span class="chip"><span class="dot warn"></span> 2 missing overview</span>
+          <span class="spacer" style="flex:1"></span>
+          <a class="btn sm" href="series-triage.html">Fix all in triage →</a>
+        </div>
+
+        <div id="eplist">
+          <!-- E01 ok -->
+          <div class="ep" data-ep="S01E01">
+            <div class="ep-row">
+              <div class="imgslot ep-thumb"><span style="font-size:.52rem;">still</span></div>
+              <div class="ep-meta">
+                <div class="t"><span class="num">S01E01</span> Hvalvík <span class="lang" style="font-size:.7rem;">fo</span></div>
+                <div class="s">58 min · <span class="ep-flags"><span class="badge ok">complete</span></span></div>
+              </div>
+              <span class="ep-chev">›</span>
+            </div>
+            <div class="ep-body">
+              <div class="grid2">
+                <div class="imgslot" style="height:150px;"><span>still / thumb<br>(drop / fetch)</span></div>
+                <div class="col" style="gap:10px;">
+                  <div class="field" style="margin:0;"><label>Episode title</label><div class="input">Hvalvík</div></div>
+                  <div class="field" style="margin:0;"><label>Overview</label><div class="input" style="min-height:54px;align-items:flex-start;">Detective Eyð Restorff steps off the ferry into a town that would rather forget her.</div></div>
+                  <div class="row center" style="gap:8px;"><span class="muted tiny">tracks:</span><span class="chip mono">fo · eac3 ★</span><span class="chip mono">da · aac</span><span class="chip mono">da · srt</span><span class="spacer"></span><a class="btn sm ghost" href="series-triage.html">Edit tracks ↗</a></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- E02 missing art + overview -->
+          <div class="ep attn open" data-ep="S01E02">
+            <div class="ep-row">
+              <div class="imgslot ep-thumb"><span style="font-size:.5rem;background:var(--bad-soft);border-color:var(--bad);color:var(--bad);">no still</span></div>
+              <div class="ep-meta">
+                <div class="t"><span class="num">S01E02</span> Bóndin <span class="lang" style="font-size:.7rem;">fo</span></div>
+                <div class="s">54 min · <span class="ep-flags"><span class="badge bad">missing still</span><span class="badge bad">no overview</span></span></div>
+              </div>
+              <span class="ep-chev">›</span>
+            </div>
+            <div class="ep-body">
+              <div class="grid2">
+                <div class="imgslot" style="height:150px;"><span style="background:var(--bad-soft);border-color:var(--bad);color:var(--bad);">still · missing<br>(fetch / upload)</span></div>
+                <div class="col" style="gap:10px;">
+                  <div class="field" style="margin:0;"><label>Episode title</label><div class="input">Bóndin</div></div>
+                  <div class="field" style="margin:0;"><label>Overview</label><div class="input ph" style="min-height:54px;align-items:flex-start;background:var(--bad-soft);border-color:var(--bad);">No overview — fetch from TMDB or write one…</div></div>
+                  <div class="row center" style="gap:8px;flex-wrap:wrap;"><span class="btn sm">Fetch from TMDB</span><span class="btn sm ghost">Upload still</span><span class="spacer"></span><a class="btn sm" href="series-triage.html">Fix in triage →</a></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- E03 untagged -->
+          <div class="ep attn" data-ep="S01E03">
+            <div class="ep-row">
+              <div class="imgslot ep-thumb"><span style="font-size:.52rem;">still</span></div>
+              <div class="ep-meta">
+                <div class="t"><span class="num">S01E03</span> Grindadráp <span class="lang" style="font-size:.7rem;">fo</span></div>
+                <div class="s">61 min · <span class="ep-flags"><span class="badge bad">1 untagged track</span></span></div>
+              </div>
+              <span class="ep-chev">›</span>
+            </div>
+            <div class="ep-body">
+              <div class="grid2">
+                <div class="imgslot" style="height:150px;"><span>still / thumb</span></div>
+                <div class="col" style="gap:10px;">
+                  <div class="field" style="margin:0;"><label>Overview</label><div class="input" style="min-height:54px;align-items:flex-start;">A whale hunt on the black beach surfaces a body that has been in the water far too long.</div></div>
+                  <div class="box flat row center" style="background:var(--bad-soft);border-color:var(--bad);gap:8px;"><span class="num">0:a:1</span><span class="badge bad">no language</span><span class="muted tiny mono">ac3 · "commentary"</span><span class="spacer"></span><a class="btn sm" href="series-triage.html">Tag in triage →</a></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- E04 ok (da) -->
+          <div class="ep" data-ep="S01E04">
+            <div class="ep-row">
+              <div class="imgslot ep-thumb"><span style="font-size:.52rem;">still</span></div>
+              <div class="ep-meta">
+                <div class="t"><span class="num">S01E04</span> Útróður <span class="lang" style="font-size:.7rem;">da</span></div>
+                <div class="s">57 min · <span class="ep-flags"><span class="badge ok">complete</span><span class="badge info">resolves da</span></span></div>
+              </div>
+              <span class="ep-chev">›</span>
+            </div>
+            <div class="ep-body">
+              <div class="grid2">
+                <div class="imgslot" style="height:150px;"><span>still / thumb</span></div>
+                <div class="col" style="gap:10px;">
+                  <div class="field" style="margin:0;"><label>Overview</label><div class="input" style="min-height:54px;align-items:flex-start;">A Copenhagen prosecutor arrives; the case — and the language in the room — shifts south.</div></div>
+                  <div class="note blue" style="margin:0;">This episode's tracks lead with <span class="lang">da</span>, so it fetches its own metadata in Danish — independent of the series language <span class="lang">fo</span>.</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- E05 ok -->
+          <div class="ep" data-ep="S01E05">
+            <div class="ep-row">
+              <div class="imgslot ep-thumb"><span style="font-size:.52rem;">still</span></div>
+              <div class="ep-meta">
+                <div class="t"><span class="num">S01E05</span> Foss <span class="lang" style="font-size:.7rem;">fo</span></div>
+                <div class="s">55 min · <span class="ep-flags"><span class="badge ok">complete</span></span></div>
+              </div>
+              <span class="ep-chev">›</span>
+            </div>
+            <div class="ep-body">
+              <div class="grid2">
+                <div class="imgslot" style="height:150px;"><span>still / thumb</span></div>
+                <div class="col" style="gap:10px;">
+                  <div class="field" style="margin:0;"><label>Overview</label><div class="input" style="min-height:54px;align-items:flex-start;">Eyð follows the money upriver to a salmon farm that everyone in town depends on.</div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- E06 untagged subtitle -->
+          <div class="ep attn" data-ep="S01E06">
+            <div class="ep-row">
+              <div class="imgslot ep-thumb"><span style="font-size:.52rem;">still</span></div>
+              <div class="ep-meta">
+                <div class="t"><span class="num">S01E06</span> Náttúra <span class="lang" style="font-size:.7rem;">fo</span></div>
+                <div class="s">59 min · <span class="ep-flags"><span class="badge bad">1 untagged subtitle</span></span></div>
+              </div>
+              <span class="ep-chev">›</span>
+            </div>
+            <div class="ep-body">
+              <div class="grid2">
+                <div class="imgslot" style="height:150px;"><span>still / thumb</span></div>
+                <div class="col" style="gap:10px;">
+                  <div class="field" style="margin:0;"><label>Overview</label><div class="input" style="min-height:54px;align-items:flex-start;">A storm strands the island and the suspect list narrows to the people Eyð grew up with.</div></div>
+                  <div class="box flat row center" style="background:var(--bad-soft);border-color:var(--bad);gap:8px;"><span class="num">0:s:0</span><span class="badge bad">no language</span><span class="muted tiny mono">srt · "forced?"</span><span class="spacer"></span><a class="btn sm" href="series-triage.html">Tag in triage →</a></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- E07 ok -->
+          <div class="ep" data-ep="S01E07">
+            <div class="ep-row">
+              <div class="imgslot ep-thumb"><span style="font-size:.52rem;">still</span></div>
+              <div class="ep-meta">
+                <div class="t"><span class="num">S01E07</span> Heim <span class="lang" style="font-size:.7rem;">fo</span></div>
+                <div class="s">56 min · <span class="ep-flags"><span class="badge ok">complete</span></span></div>
+              </div>
+              <span class="ep-chev">›</span>
+            </div>
+            <div class="ep-body">
+              <div class="grid2">
+                <div class="imgslot" style="height:150px;"><span>still / thumb</span></div>
+                <div class="col" style="gap:10px;">
+                  <div class="field" style="margin:0;"><label>Overview</label><div class="input" style="min-height:54px;align-items:flex-start;">The secret her father carried to sea finally washes back to the harbour wall.</div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- E08 missing overview -->
+          <div class="ep attn" data-ep="S01E08">
+            <div class="ep-row">
+              <div class="imgslot ep-thumb"><span style="font-size:.52rem;">still</span></div>
+              <div class="ep-meta">
+                <div class="t"><span class="num">S01E08</span> Endi <span class="lang" style="font-size:.7rem;">fo</span></div>
+                <div class="s">63 min · <span class="ep-flags"><span class="badge bad">no overview</span></span></div>
+              </div>
+              <span class="ep-chev">›</span>
+            </div>
+            <div class="ep-body">
+              <div class="grid2">
+                <div class="imgslot" style="height:150px;"><span>still / thumb</span></div>
+                <div class="col" style="gap:10px;">
+                  <div class="field" style="margin:0;"><label>Episode title</label><div class="input">Endi</div></div>
+                  <div class="field" style="margin:0;"><label>Overview</label><div class="input ph" style="min-height:54px;align-items:flex-start;background:var(--bad-soft);border-color:var(--bad);">No overview — fetch from TMDB or write one…</div></div>
+                  <div class="row center" style="gap:8px;"><span class="btn sm">Fetch from TMDB</span><span class="spacer"></span><a class="btn sm" href="series-triage.html">Fix in triage →</a></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="row center box flat" style="background:var(--ok-soft);border-color:var(--ok);">
+        <span class="badge ok">lockdata</span><span class="tiny">tvshow.nfo and every episodedetails.nfo are locked so Jellyfin never overwrites managed metadata.</span>
+        <span class="spacer"></span><span class="toggle on"></span>
+      </div>
+    </div>
+  </div>
+</main>
+
+<script src="app-shell.js"></script>
+<script>
+(function () {
+  document.querySelectorAll('.ep-row').forEach(row => {
+    row.addEventListener('click', () => row.closest('.ep').classList.toggle('open'));
+  });
+})();
+</script>
+</body>
+</html>
