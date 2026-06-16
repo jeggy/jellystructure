@@ -105,13 +105,23 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
     }
 
     // TV overview banner (replaces the old tvSeriesSectionHtml in overview tab)
+    val langOverrideControl = """
+        <div class="row center" style="gap:8px;margin-top:10px;flex-wrap:wrap;">
+          <span class="tiny muted">Override language:</span>
+          <input id="lang-override-input" class="input" style="width:80px;padding:3px 8px;font-size:.8rem;"
+            placeholder="e.g. en" maxlength="10" value="${(item.resolvedLanguage ?: "").esc()}">
+          <button id="lang-override-btn" class="btn sm ghost">Apply</button>
+          <span id="lang-override-msg" class="tiny muted"></span>
+        </div>""".trimIndent()
+
     val tvOverviewBanner = if (isTvShow) {
         if (item.languageMix) {
             """<div class="card" style="border-left:3px solid var(--warn,#f59e0b);padding:14px 16px;">
                  <div class="row center" style="gap:8px;margin-bottom:6px;">
                    <span class="badge warn">Language Mix Detected</span>
                  </div>
-                 <p style="margin:0;font-size:.88rem;">Audio tracks differ across sampled episodes — this series cannot be uniformly language-resolved. NFO and artwork writes are blocked until the inconsistency is resolved.</p>
+                 <p style="margin:0;font-size:.88rem;">Audio tracks differ across sampled episodes — NFO and artwork writes are blocked. You can override the resolved language below to unlock writes.</p>
+                 $langOverrideControl
                </div>"""
         } else {
             val epCount = item.episodes.size
@@ -122,6 +132,7 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
                    ${if (!item.resolvedLanguage.isNullOrBlank()) """<span class="badge">lang: ${item.resolvedLanguage.esc()}</span>""" else ""}
                  </div>
                  <p style="margin:0;font-size:.88rem;">Audio languages are consistent across all probed episodes.$countNote${if (!item.resolvedLanguage.isNullOrBlank()) " TMDB metadata fetched in <strong>${item.resolvedLanguage.esc()}</strong>." else ""}</p>
+                 $langOverrideControl
                </div>"""
         }
     } else ""
@@ -259,6 +270,24 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
 
     document.getElementById("repull-btn")?.addEventListener("click") {
         scope.launch { handleRepull(item, container, scope) }
+    }
+
+    document.getElementById("lang-override-btn")?.addEventListener("click") {
+        val input = document.getElementById("lang-override-input") as? HTMLInputElement ?: return@addEventListener
+        val lang = input.value.trim()
+        if (lang.isBlank()) return@addEventListener
+        val msg = document.getElementById("lang-override-msg") as? HTMLElement
+        msg?.textContent = "Saving…"
+        scope.launch {
+            val updated = MediaApi.overrideLanguage(item.id, lang)
+            if (updated != null) {
+                msg?.textContent = "Saved ✓"
+                delay(600)
+                renderMediaDetail(container, scope, item.id)
+            } else {
+                msg?.textContent = "Failed"
+            }
+        }
     }
 
     document.getElementById("write-nfo-btn")?.addEventListener("click") {

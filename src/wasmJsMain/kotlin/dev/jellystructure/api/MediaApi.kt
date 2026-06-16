@@ -7,6 +7,7 @@ import dev.jellystructure.model.MediaPage
 import io.ktor.client.call.body
 import io.ktor.client.request.get
 import io.ktor.client.request.parameter
+import io.ktor.client.request.patch
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.http.ContentType
@@ -141,6 +142,28 @@ object MediaApi {
         }
         response.status.value in 200..299
     }.getOrDefault(false)
+
+    suspend fun overrideLanguage(id: String, language: String): MediaItem? = runCatching {
+        val response = httpClient.patch("/api/media/$id/language") {
+            setBody("""{"language":"${language.replace("\"", "")}"}""")
+            contentType(ContentType.Application.Json)
+        }
+        if (response.status == HttpStatusCode.OK) response.body<MediaItem>() else null
+    }.getOrNull()
+
+    suspend fun editMetadata(id: String, title: String?, overview: String?, year: Int?, originalTitle: String?): MediaItem? = runCatching {
+        val parts = buildList {
+            if (title != null) add(""""title":"${title.replace("\"", "\\\"").replace("\n", "")}"""")
+            if (overview != null) add(""""overview":"${overview.replace("\"", "\\\"")}"""")
+            if (year != null) add(""""year":$year""")
+            if (originalTitle != null) add(""""originalTitle":"${originalTitle.replace("\"", "\\\"")}"""")
+        }
+        val response = httpClient.patch("/api/media/$id/metadata") {
+            setBody("{${parts.joinToString(",")}}")
+            contentType(ContentType.Application.Json)
+        }
+        if (response.status == HttpStatusCode.OK) response.body<MediaItem>() else null
+    }.getOrNull()
 
     suspend fun repull(id: String): MediaItem? = runCatching {
         val response = httpClient.post("/api/media/$id/repull")

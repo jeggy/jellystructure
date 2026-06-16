@@ -25,6 +25,7 @@ import io.ktor.server.response.respond
 import io.ktor.server.response.respondText
 import io.ktor.server.routing.Route
 import io.ktor.server.routing.get
+import io.ktor.server.routing.patch
 import io.ktor.server.routing.post
 import io.ktor.server.routing.route
 import io.ktor.utils.io.readRemaining
@@ -258,6 +259,49 @@ fun Route.mediaRoutes(
                 call.respond(mapOf("written" to written, "failed" to failed))
             }
 
+            // POST /api/media/{id}/episodes/{epFilename}/still/upload — upload episode still
+            post("/{epFilename}/still/upload") {
+                val id = call.parameters["id"]
+                    ?: return@post call.respond(HttpStatusCode.BadRequest)
+                val epFilename = call.parameters["epFilename"]
+                    ?: return@post call.respond(HttpStatusCode.BadRequest)
+                val item = store.get(id)
+                    ?: return@post call.respond(HttpStatusCode.NotFound)
+                val ep = item.episodes.firstOrNull { it.filename == epFilename }
+                    ?: return@post call.respond(HttpStatusCode.NotFound, mapOf("error" to "episode not found"))
+
+                val multipart = call.receiveMultipart()
+                var fileBytes: ByteArray? = null
+                multipart.forEachPart { part ->
+                    if (part is PartData.FileItem && part.name == "file") {
+                        fileBytes = part.provider().readRemaining().readByteArray()
+                    }
+                    part.release()
+                }
+                val bytes = fileBytes
+                if (bytes == null || bytes.isEmpty()) {
+                    call.respond(HttpStatusCode.BadRequest, mapOf("error" to "no file data received"))
+                    return@post
+                }
+
+                val stillStatus = artwork.checkEpisodeStill(ep)
+                val destPath = stillStatus.stillPath
+                val tmpPath = "$destPath.tmp"
+                val sink = SystemFileSystem.sink(Path(tmpPath)).buffered()
+                sink.write(bytes, 0, bytes.size)
+                sink.flush()
+                sink.close()
+                @OptIn(kotlinx.cinterop.ExperimentalForeignApi::class)
+                platform.posix.rename(tmpPath, destPath)
+                println("[INFO] Episode still uploaded: $destPath (${bytes.size} bytes)")
+
+                val cfg = configStore.current
+                if (!item.jellyfinId.isNullOrBlank() && cfg.apiKeys.jellyfinUrl.isNotBlank()) {
+                    jellyfinClient.refreshItem(cfg.apiKeys.jellyfinUrl, cfg.apiKeys.jellyfinToken, item.jellyfinId)
+                }
+                call.respond(mapOf("ok" to true, "path" to destPath))
+            }
+
             // Episode track routes — {epFilename} identifies the episode by filename
             route("/{epFilename}") {
                 // GET /api/media/{id}/episodes/{epFilename}/tracks/plan?specifier=...
@@ -363,6 +407,51 @@ fun Route.mediaRoutes(
                     call.respond(mapOf("ok" to true, "language" to req.language))
                 }
             }
+        }
+
+        // PATCH /api/media/{id}/language — override the resolved language for a series
+        patch("/{id}/language") {
+            val id = call.parameters["id"]
+                ?: return@patch call.respond(HttpStatusCode.BadRequest)
+            val item = store.get(id)
+                ?: return@patch call.respond(HttpStatusCode.NotFound)
+
+            @Serializable data class LangOverrideReq(val language: String)
+            val req = call.receive<LangOverrideReq>()
+            val lang = req.language.trim()
+            if (lang.isBlank() || !lang.matches(Regex("[a-zA-Z]{2,8}(-[a-zA-Z0-9]{2,8})*"))) {
+                call.respond(HttpStatusCode.BadRequest, mapOf("error" to "invalid language code"))
+                return@patch
+            }
+            val updated = item.copy(resolvedLanguage = lang)
+            store.updateOne(updated)
+            mediaHistory.record(id, "language_override", lang)
+            call.respond(updated)
+        }
+
+        // PATCH /api/media/{id}/metadata — edit title, overview, year inline
+        patch("/{id}/metadata") {
+            val id = call.parameters["id"]
+                ?: return@patch call.respond(HttpStatusCode.BadRequest)
+            val item = store.get(id)
+                ?: return@patch call.respond(HttpStatusCode.NotFound)
+
+            @Serializable data class MetadataEditReq(
+                val title: String? = null,
+                val overview: String? = null,
+                val year: Int? = null,
+                val originalTitle: String? = null,
+            )
+            val req = call.receive<MetadataEditReq>()
+            val updated = item.copy(
+                title = req.title?.takeIf { it.isNotBlank() } ?: item.title,
+                overview = if (req.overview != null) req.overview else item.overview,
+                year = req.year ?: item.year,
+                originalTitle = if (req.originalTitle != null) req.originalTitle.ifBlank { null } else item.originalTitle,
+            )
+            store.updateOne(updated)
+            mediaHistory.record(id, "metadata_edit", "title=${updated.title}")
+            call.respond(updated)
         }
 
         // POST /api/media/{id}/repull — re-fetch TMDB metadata without re-probing the file
