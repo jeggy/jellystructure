@@ -30,6 +30,7 @@ private var stContainer: Element? = null
 private var stRailOpen = true
 private var stOnlyIssues = false
 private var stTrackTab: MutableMap<String, String> = mutableMapOf()   // epFilename -> "audio"|"subtitle"
+private var stMetaDirty = false
 
 private val ST_QUICK_LANGS = listOf("fo", "da", "en", "is")
 
@@ -40,6 +41,7 @@ fun renderSeriesTriage(container: Element, scope: CoroutineScope, mediaId: Strin
     stRailOpen = true
     stOnlyIssues = false
     stTrackTab = mutableMapOf()
+    stMetaDirty = false
     stItem = null
 
     container.innerHTML = """
@@ -93,6 +95,8 @@ private fun buildSeriesTriageHTML(item: MediaItem): String {
             </div>
             <span class="spacer"></span>
             <span class="chip"><span class="dot bad"></span> $attnCount episode${if (attnCount != 1) "s" else ""} need attention</span>
+            <span id="st-meta-msg" class="tiny muted"></span>
+            <button id="st-save-meta" class="btn sm" style="${if (stMetaDirty) "" else "display:none"}">Save metadata</button>
             <button id="st-save-nfo" class="btn ghost">Save → disk</button>
             <button id="st-save-jellyfin" class="btn primary">Save &amp; tell Jellyfin ↻</button>
           </div>
@@ -543,6 +547,44 @@ private fun wireStListeners(item: MediaItem) {
             MediaApi.writeNfo(item.id)
             MediaApi.writeEpisodeNfos(item.id)
             MediaApi.jellyfinRefresh(item.id)
+        }
+    }
+
+    // Series metadata inputs — mark dirty and reveal save button
+    val metaInputIds = listOf("#st-title", "#st-year", "#st-overview", "#st-network")
+    for (sel in metaInputIds) {
+        container.querySelector(sel)?.addEventListener("input") {
+            stMetaDirty = true
+            (container.querySelector("#st-save-meta") as? HTMLElement)?.style?.display = ""
+        }
+    }
+
+    // Save series metadata
+    container.querySelector("#st-save-meta")?.addEventListener("click") {
+        val msgEl = container.querySelector("#st-meta-msg") as? HTMLElement ?: return@addEventListener
+        val title = (container.querySelector("#st-title") as? HTMLInputElement)?.value?.trim() ?: item.title
+        val year = (container.querySelector("#st-year") as? HTMLInputElement)?.value?.toIntOrNull()
+        val overview = (container.querySelector("#st-overview") as? HTMLElement)?.let {
+            (it as? org.w3c.dom.HTMLTextAreaElement)?.value ?: it.textContent ?: ""
+        }?.trim()
+        val network = (container.querySelector("#st-network") as? HTMLInputElement)?.value?.trim()
+        msgEl.textContent = "Saving…"
+        stScope?.launch {
+            val updated = MediaApi.editMetadata(
+                id = item.id,
+                title = title.ifEmpty { null },
+                year = year,
+                overview = overview?.ifEmpty { null },
+                network = network?.ifEmpty { null },
+            )
+            if (updated != null) {
+                stItem = updated
+                stMetaDirty = false
+                (container.querySelector("#st-save-meta") as? HTMLElement)?.style?.display = "none"
+                msgEl.textContent = "Saved ✓"
+            } else {
+                msgEl.textContent = "Save failed"
+            }
         }
     }
 
