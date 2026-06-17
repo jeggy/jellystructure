@@ -508,6 +508,26 @@ class Scanner(
                 val resolvedLang = langPriority.firstOrNull { lang ->
                     details.overview.isNotBlank() && lang != fallback
                 } ?: langPriority.lastOrNull()
+                val lang = resolvedLang ?: langPriority.firstOrNull()
+                // Re-fetch per-episode TMDB details (title, overview, still, tmdbEpisodeId)
+                val updatedEpisodes = item.episodes.map { ep ->
+                    val s = ep.seasonNumber
+                    val e = ep.episodeNumber
+                    if (s != null && e != null) {
+                        val epDetails = if (lang != null)
+                            tmdb.getEpisodeDetails(details.id, s, e, lang)
+                                ?: tmdb.getEpisodeDetails(details.id, s, e)
+                        else
+                            tmdb.getEpisodeDetails(details.id, s, e)
+                        if (epDetails != null) ep.copy(
+                            title = epDetails.name.takeIf { it.isNotBlank() },
+                            overview = epDetails.overview.takeIf { it.isNotBlank() },
+                            stillPath = epDetails.stillPath,
+                            tmdbEpisodeId = epDetails.id,
+                            resolvedLanguage = lang,
+                        ) else ep
+                    } else ep
+                }
                 item.copy(
                     title = details.name,
                     originalTitle = details.originalName.takeIf { it.isNotBlank() },
@@ -518,6 +538,7 @@ class Scanner(
                     backdropPath = details.backdropPath,
                     overview = details.overview.takeIf { it.isNotBlank() },
                     genres = details.genres.map { it.name },
+                    episodes = updatedEpisodes,
                 )
             }
         }

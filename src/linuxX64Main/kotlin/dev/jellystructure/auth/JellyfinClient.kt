@@ -70,13 +70,15 @@ class JellyfinClient {
     }.onFailure { println("[WARN] Jellyfin getItems failed: ${it.message}") }
      .getOrDefault(emptyList())
 
-    suspend fun refreshItem(baseUrl: String, token: String, jellyfinId: String): Boolean = runCatching {
+    suspend fun refreshItem(baseUrl: String, token: String, jellyfinId: String, full: Boolean = false): Boolean = runCatching {
+        val mode = if (full) "FullRefresh" else "ValidationOnly"
+        val extra = if (full) "&Recursive=true&ReplaceAllMetadata=true" else ""
         val url = baseUrl.trimEnd('/') +
-            "/Items/$jellyfinId/Refresh?MetadataRefreshMode=ValidationOnly&ImageRefreshMode=ValidationOnly"
+            "/Items/$jellyfinId/Refresh?MetadataRefreshMode=$mode&ImageRefreshMode=$mode$extra"
         val response = http.post(url) {
             header("Authorization", """$AUTH_HEADER, Token="$token"""")
         }
-        println("[INFO] Jellyfin item refresh $jellyfinId: ${response.status.value}")
+        println("[INFO] Jellyfin item refresh $jellyfinId (${if (full) "full/recursive" else "validation"}): ${response.status.value}")
         response.status.value in 200..299
     }.getOrDefault(false)
 

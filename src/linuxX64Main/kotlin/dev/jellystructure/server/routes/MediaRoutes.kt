@@ -593,12 +593,7 @@ fun Route.mediaRoutes(
                 }
 
                 store.updateOne(updated)
-                println("[INFO] Re-pulled TMDB for '$id': title='${updated.title}' tmdbId=${updated.tmdbId}")
-
-                val cfg = configStore.current
-                if (!item.jellyfinId.isNullOrBlank() && cfg.apiKeys.jellyfinUrl.isNotBlank()) {
-                    jellyfinClient.refreshItem(cfg.apiKeys.jellyfinUrl, cfg.apiKeys.jellyfinToken, item.jellyfinId)
-                }
+                println("[INFO] Re-pulled TMDB for '$id': title='${updated.title}' tmdbId=${updated.tmdbId} episodes=${updated.episodes.size}")
 
                 call.respond(updated)
             }
