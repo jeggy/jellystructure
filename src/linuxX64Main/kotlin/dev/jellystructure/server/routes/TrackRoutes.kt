@@ -269,7 +269,7 @@ fun Route.trackRoutes(store: MediaStore, configStore: ConfigStore, jellyfinClien
             }
             val jellyfinId = item?.jellyfinId
             val ok = if (!jellyfinId.isNullOrBlank()) {
-                jellyfinClient.refreshItem(config.apiKeys.jellyfinUrl, config.apiKeys.jellyfinToken, jellyfinId)
+                jellyfinClient.refreshItem(config.apiKeys.jellyfinUrl, config.apiKeys.jellyfinToken, jellyfinId, full = true)
             } else {
                 jellyfinClient.triggerLibraryRefresh(config.apiKeys.jellyfinUrl, config.apiKeys.jellyfinToken)
             }
