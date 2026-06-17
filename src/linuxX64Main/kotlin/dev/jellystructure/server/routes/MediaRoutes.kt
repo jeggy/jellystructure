@@ -120,6 +120,23 @@ fun Route.mediaRoutes(
                             call.respond(HttpStatusCode.InternalServerError, mapOf("error" to (e.message ?: "write failed")))
                         }
                 }
+
+                get("/writable") {
+                    val id = call.parameters["id"]
+                        ?: return@get call.respond(HttpStatusCode.BadRequest)
+                    val item = store.get(id)
+                        ?: return@get call.respond(HttpStatusCode.NotFound)
+                    val dir = item.path.substringBeforeLast('/')
+                    val testFile = "$dir/.jellystructure-write-test.tmp"
+                    @Serializable data class WritableResult(val writable: Boolean, val path: String, val error: String? = null)
+                    val error = runCatching {
+                        val sink = SystemFileSystem.sink(Path(testFile)).buffered()
+                        sink.close()
+                        runCatching { SystemFileSystem.delete(Path(testFile)) }
+                        null as String?
+                    }.getOrElse { it.message ?: "write failed" }
+                    call.respond(WritableResult(writable = error == null, path = dir, error = error))
+                }
             }
 
             route("/artwork") {

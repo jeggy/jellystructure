@@ -24,6 +24,7 @@ import org.w3c.dom.HTMLInputElement
 import org.w3c.dom.HTMLTextAreaElement
 
 private const val TMDB_IMG_LG = "https://image.tmdb.org/t/p/w500"
+private const val MONO_CODE_STYLE = "font-family:'JetBrains Mono',monospace;font-size:.78rem;"
 
 fun renderMediaDetail(container: Element, scope: CoroutineScope, mediaId: String) {
     container.innerHTML = """<span class="muted" style="padding:24px;display:block;">Loading…</span>"""
@@ -315,6 +316,7 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
         </div>
 
         <div id="detail-msg" style="display:none;margin-bottom:14px"></div>
+        <div id="nfo-perm-banner" style="display:none;margin-bottom:14px"></div>
 
         <div class="seg" id="detail-tabs" style="margin-bottom:16px;">$tabBarHtml</div>
 
@@ -718,6 +720,14 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
                 rm.parentElement?.remove()
                 checkDirty()
             }
+        }
+    }
+
+    // Proactive write-permission check — runs in background after DOM is ready
+    scope.launch {
+        val result = MediaApi.checkNfoWritable(item.id)
+        if (result != null && !result.writable) {
+            showNfoPermBanner(result.error ?: "write permission check failed", result.path)
         }
     }
 }
@@ -1137,20 +1147,25 @@ private suspend fun handleWriteNfo(id: String, refresh: Boolean = false) {
     }
 }
 
+private fun nfoPermSuggestionsHtml(path: String): String {
+    val pathRef = if (path.isNotBlank()) path.esc() else "/path/to/media"
+    return """
+    <div style="margin-top:10px;">
+      <div style="font-size:.8rem;font-weight:600;margin-bottom:6px;color:var(--ink);">How to fix:</div>
+      <ul style="margin:0;padding-left:18px;font-size:.8rem;line-height:1.8;color:var(--ink-soft);">
+        <li>Make sure the media volume is <strong>not mounted read-only</strong> (no <code style="${MONO_CODE_STYLE}">:ro</code> flag in docker-compose.yml).</li>
+        <li>Add <code style="$MONO_CODE_STYLE">user: "uid:gid"</code> to the Jellystructure service so it runs as the same user that owns the media files.</li>
+        <li>Or grant write access: <code style="$MONO_CODE_STYLE">chown -R uid:gid $pathRef</code> on the host.</li>
+        <li>Run <code style="$MONO_CODE_STYLE">stat $pathRef</code> on the host to find the correct UID/GID.</li>
+      </ul>
+    </div>
+""".trimIndent()
+}
+
 private fun showNfoWriteError(message: String) {
     val el = document.getElementById("detail-msg") as? HTMLElement ?: return
     val isPermission = message.contains("Permission denied", ignoreCase = true)
-    val suggestions = if (isPermission) """
-        <div style="margin-top:10px;">
-          <div style="font-size:.8rem;font-weight:600;margin-bottom:6px;color:var(--ink);">How to fix:</div>
-          <ul style="margin:0;padding-left:18px;font-size:.8rem;line-height:1.8;color:var(--ink-soft);">
-            <li>Make sure the media volume is <strong>not mounted read-only</strong> (no <code style="font-family:'JetBrains Mono',monospace;font-size:.78rem;">:ro</code> flag in docker-compose.yml).</li>
-            <li>Add <code style="font-family:'JetBrains Mono',monospace;font-size:.78rem;">user: "uid:gid"</code> to the Jellystructure service so it runs as the same user that owns the media files.</li>
-            <li>Or grant write access: <code style="font-family:'JetBrains Mono',monospace;font-size:.78rem;">chown -R uid:gid /path/to/media</code> on the host.</li>
-            <li>Run <code style="font-family:'JetBrains Mono',monospace;font-size:.78rem;">stat /path/to/media</code> on the host to find the correct UID/GID.</li>
-          </ul>
-        </div>
-    """.trimIndent() else ""
+    val suggestions = if (isPermission) nfoPermSuggestionsHtml("") else ""
     el.style.display = "block"
     el.innerHTML = """
         <div style="background:color-mix(in srgb,var(--bad) 10%,transparent);border:1px solid var(--bad);border-radius:var(--radius-s);padding:12px 16px;">
@@ -1159,6 +1174,21 @@ private fun showNfoWriteError(message: String) {
             <span style="font-family:'JetBrains Mono',monospace;font-size:.8rem;word-break:break-all;">${message.esc()}</span>
           </div>
           $suggestions
+        </div>
+    """.trimIndent()
+}
+
+private fun showNfoPermBanner(message: String, path: String) {
+    val el = document.getElementById("nfo-perm-banner") as? HTMLElement ?: return
+    el.style.display = "block"
+    el.innerHTML = """
+        <div style="background:color-mix(in srgb,var(--warn) 12%,transparent);border:1px solid var(--warn);border-radius:var(--radius-s);padding:12px 16px;">
+          <div style="display:flex;align-items:flex-start;gap:8px;margin-bottom:8px;">
+            <span class="badge warn" style="flex-shrink:0;">No write access</span>
+            <span style="font-family:'JetBrains Mono',monospace;font-size:.8rem;word-break:break-all;">${message.esc()}</span>
+            <button onclick="this.closest('[id=nfo-perm-banner]').style.display='none'" style="margin-left:auto;background:none;border:none;cursor:pointer;color:var(--ink-soft);font-size:1rem;padding:0 2px;flex-shrink:0;">✕</button>
+          </div>
+          ${nfoPermSuggestionsHtml(path)}
         </div>
     """.trimIndent()
 }

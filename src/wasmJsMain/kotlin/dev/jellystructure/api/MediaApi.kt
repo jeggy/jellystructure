@@ -56,6 +56,9 @@ data class TrackPlan(
 data class NfoWriteResult(val path: String)
 
 @Serializable
+data class NfoWritableResult(val writable: Boolean, val path: String, val error: String? = null)
+
+@Serializable
 data class TriageCount(val untagged: Int, val mismatch: Int, val total: Int)
 
 @Serializable
@@ -126,6 +129,10 @@ object MediaApi {
     suspend fun getNfo(id: String): String? = runCatching {
         val response = httpClient.get("/api/media/$id/nfo")
         if (response.status == HttpStatusCode.OK) response.body<String>() else null
+    }.getOrNull()
+
+    suspend fun checkNfoWritable(id: String): NfoWritableResult? = runCatching {
+        httpClient.get("/api/media/$id/nfo/writable").body<NfoWritableResult>()
     }.getOrNull()
 
     suspend fun writeNfo(id: String): Pair<NfoWriteResult?, String?> = runCatching {
