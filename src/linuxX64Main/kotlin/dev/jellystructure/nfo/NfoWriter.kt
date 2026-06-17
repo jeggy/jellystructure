@@ -25,14 +25,11 @@ object NfoWriter {
                 MediaKind.TV_SHOW -> "tvshow.nfo"
             }
             val nfoPath = "$dir/$filename"
-            val tmp = "$nfoPath.tmp"
-
-            val sink = SystemFileSystem.sink(Path(tmp)).buffered()
-            sink.writeString(buildXml(item))
-            sink.flush()
-            sink.close()
-
-            platform.posix.rename(tmp, nfoPath)
+            println("[DEBUG] NfoWriter.write: id='${item.id}' kind=${item.kind} item.path='${item.path}' nfoPath='$nfoPath'")
+            val dirExists = SystemFileSystem.exists(Path(dir))
+            println("[DEBUG] NfoWriter.write: dir exists=$dirExists")
+            val xml = buildXml(item)
+            writeAtomically(nfoPath, xml)
             println("[INFO] Wrote NFO: $nfoPath")
             nfoPath
         }
@@ -70,14 +67,7 @@ object NfoWriter {
         val dir = episode.path.substringBeforeLast('/')
         val baseName = episode.filename.substringBeforeLast('.')
         val nfoPath = "$dir/$baseName.nfo"
-        val tmp = "$nfoPath.tmp"
-
-        val sink = SystemFileSystem.sink(Path(tmp)).buffered()
-        sink.writeString(buildEpisodeXml(episode))
-        sink.flush()
-        sink.close()
-
-        platform.posix.rename(tmp, nfoPath)
+        writeAtomically(nfoPath, buildEpisodeXml(episode))
         println("[INFO] Wrote episode NFO: $nfoPath")
         nfoPath
     }
@@ -186,6 +176,43 @@ object NfoWriter {
 
     private fun String.esc() =
         replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+}
+
+/**
+ * Write [content] to [destPath] as safely as possible.
+ *
+ * Strategy:
+ * 1. Write to a sibling .tmp file in the same directory.
+ * 2. Atomically rename .tmp → dest (works when both are on the same filesystem).
+ * 3. If rename fails (e.g. EXDEV cross-device error in Docker), fall back to a direct
+ *    overwrite of the destination file.  This is less atomic but still correct for
+ *    our use case (single-writer, single-reader, small files).
+ *
+ * Throws if neither strategy succeeds.
+ */
+@OptIn(kotlinx.cinterop.ExperimentalForeignApi::class)
+private fun writeAtomically(destPath: String, content: String) {
+    val tmp = "$destPath.tmp"
+    // Write content to the .tmp file
+    val sink = SystemFileSystem.sink(Path(tmp)).buffered()
+    sink.writeString(content)
+    sink.flush()
+    sink.close()
+
+    // Try atomic rename first
+    val rc = platform.posix.rename(tmp, destPath)
+    if (rc == 0) return
+
+    // Rename failed — clean up .tmp and fall back to direct write
+    val renameErrno = platform.posix.errno
+    runCatching { SystemFileSystem.delete(Path(tmp)) }
+    println("[WARN] writeAtomically: rename failed (errno=$renameErrno), falling back to direct write for '$destPath'")
+
+    // Direct overwrite
+    val sink2 = SystemFileSystem.sink(Path(destPath)).buffered()
+    sink2.writeString(content)
+    sink2.flush()
+    sink2.close()
 }
 
 private fun kotlinx.io.Source.readString(): String {

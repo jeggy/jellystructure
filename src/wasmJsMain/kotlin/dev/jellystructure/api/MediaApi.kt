@@ -334,4 +334,9 @@ object MediaApi {
         val response = httpClient.post("/api/media/batch/artwork")
         response.status.value in 200..299
     }.getOrDefault(false)
+
+    suspend fun batchJellyfinPush(): Boolean = runCatching {
+        val response = httpClient.post("/api/media/batch/jellyfin-push")
+        response.status.value in 200..299
+    }.getOrDefault(false)
 }

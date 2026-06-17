@@ -12,14 +12,12 @@ import io.ktor.client.request.setBody
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
-import kotlinx.browser.document
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import org.w3c.dom.Element
 import org.w3c.dom.HTMLButtonElement
 import org.w3c.dom.HTMLElement
 import org.w3c.dom.HTMLInputElement
-import org.w3c.dom.HTMLSelectElement
 
 private const val TMDB_BASE_ST = "https://image.tmdb.org/t/p"
 
@@ -95,8 +93,9 @@ private fun buildSeriesTriageHTML(item: MediaItem): String {
             </div>
             <span class="spacer"></span>
             <span class="chip"><span class="dot bad"></span> $attnCount episode${if (attnCount != 1) "s" else ""} need attention</span>
-            <span id="st-meta-msg" class="tiny muted"></span>
+            <span id="st-meta-msg" class="tiny muted" style="max-width:420px;overflow:hidden;text-overflow:ellipsis"></span>
             <button id="st-save-meta" class="btn sm" style="${if (stMetaDirty) "" else "display:none"}">Save metadata</button>
+            <button id="st-diagnose" class="btn ghost sm" title="Check write access to the series directory">Diagnose</button>
             <button id="st-save-nfo" class="btn ghost">Save → disk</button>
             <button id="st-save-jellyfin" class="btn primary">Save &amp; tell Jellyfin ↻</button>
           </div>
@@ -145,8 +144,11 @@ private fun buildRailHtml(item: MediaItem): String {
             val bg = if (on) "var(--hi-soft)" else "var(--fill-2)"
             val dotColor = if (ep.issueCount > 0) "var(--bad)" else "var(--ok)"
             val dotGlow = if (ep.issueCount > 0) "rgba(255,111,97,.7)" else "rgba(45,212,154,.6)"
-            val epCode = ep.seasonNumber?.let { s -> ep.episodeNumber?.let { e ->
-                "S${s.toString().padStart(2,'0')}E${e.toString().padStart(2,'0')}" } } ?: ep.filename.take(10)
+            val epCode = ep.seasonNumber?.let { s ->
+                ep.episodeNumber?.let { e ->
+                    "S${s.toString().padStart(2, '0')}E${e.toString().padStart(2, '0')}"
+                }
+            } ?: ep.filename.take(10)
             val stillHtml = if (ep.stillPath != null)
                 """<img src="$TMDB_BASE_ST/w185${ep.stillPath}" style="width:92px;height:52px;object-fit:cover;border-radius:4px">"""
             else
@@ -321,8 +323,11 @@ private fun artSlotHtml(label: String, w: Int, h: Int, exists: Boolean): String 
 }
 
 private fun buildEpisodeStep(item: MediaItem, ep: Episode): String {
-    val epCode = ep.seasonNumber?.let { s -> ep.episodeNumber?.let { e ->
-        "S${s.toString().padStart(2,'0')}E${e.toString().padStart(2,'0')}" } } ?: ep.filename
+    val epCode = ep.seasonNumber?.let { s ->
+        ep.episodeNumber?.let { e ->
+            "S${s.toString().padStart(2, '0')}E${e.toString().padStart(2, '0')}"
+        }
+    } ?: ep.filename
     val issueCount = ep.issueCount
     val stillHtml = if (ep.stillPath != null) {
         """<img src="$TMDB_BASE_ST/w300${ep.stillPath}" style="width:228px;height:128px;object-fit:cover;border-radius:6px;flex:none">"""
@@ -344,10 +349,12 @@ private fun buildEpisodeStep(item: MediaItem, ep: Episode): String {
             <span class="kicker2">$epCode · ${(ep.title ?: ep.filename).esc()}</span>
             <span class="badge info">episodedetails.nfo</span>
             <span class="spacer"></span>
-            ${if (issueCount == 0)
-                """<span class="badge ok">✓ complete</span>"""
-            else
-                """<span class="badge bad">$issueCount to fix</span>"""}
+            ${
+        if (issueCount == 0)
+            """<span class="badge ok">✓ complete</span>"""
+        else
+            """<span class="badge bad">$issueCount to fix</span>"""
+    }
           </div>
 
           <!-- still + fields -->
@@ -381,8 +388,10 @@ private fun buildEpisodeStep(item: MediaItem, ep: Episode): String {
             <div class="row center" style="margin:0 0 12px">
               <h4 style="margin:0">
                 Tracks — language &amp; order
-                ${if (ep.tracks.any { it.language.isNullOrBlank() && it.kind != TrackKind.VIDEO && it.kind != TrackKind.DATA })
-                    """<span class="badge bad" style="margin-left:8px">untagged</span>""" else ""}
+                ${
+        if (ep.tracks.any { it.language.isNullOrBlank() && it.kind != TrackKind.VIDEO && it.kind != TrackKind.DATA })
+            """<span class="badge bad" style="margin-left:8px">untagged</span>""" else ""
+    }
               </h4>
               <span class="spacer"></span>
               <a class="btn sm ghost" id="open-track-order" href="#" data-media-id="${item.id}" data-ep-filename="${ep.filename.esc()}">Full track order ↗</a>
@@ -460,10 +469,12 @@ private fun buildTrackManager(item: MediaItem, ep: Episode): String {
                $langDisplay
                <span class="muted tiny mono">${track.codec}${if (!track.title.isNullOrBlank()) " · \"${track.title!!.esc()}\"" else ""}</span>
                <span class="spacer"></span>
-               ${if (track.default)
-                   """<span class="badge warn">★ default</span>"""
-               else
-                   """<button class="ep-set-default btn sm ghost" data-media-id="${item.id}" data-ep-filename="${ep.filename.esc()}" data-specifier="${track.specifier.esc()}">set default ★</button>"""}
+               ${
+            if (track.default)
+                """<span class="badge warn">★ default</span>"""
+            else
+                """<button class="ep-set-default btn sm ghost" data-media-id="${item.id}" data-ep-filename="${ep.filename.esc()}" data-specifier="${track.specifier.esc()}">set default ★</button>"""
+        }
                <span id="$resultId" class="tiny" style="min-width:2ch;text-align:center"></span>
              </div>
              $assignRow
@@ -531,24 +542,56 @@ private fun wireStListeners(item: MediaItem) {
     // First issue button
     container.querySelector("#st-first-issue")?.addEventListener("click") {
         val idx = item.episodes.indexOfFirst { it.issueCount > 0 }
-        if (idx >= 0) { stActiveStep = idx + 1; renderSeriesTriagePage() }
+        if (idx >= 0) {
+            stActiveStep = idx + 1; renderSeriesTriagePage()
+        }
     }
 
     // Save NFO
     container.querySelector("#st-save-nfo")?.addEventListener("click") {
+        val msgEl = container.querySelector("#st-meta-msg") as? HTMLElement
+        msgEl?.textContent = "Writing NFO…"
         stScope?.launch {
-            val result = MediaApi.writeNfo(item.id)
-            // Could also write episode NFOs
+            val (result, err) = MediaApi.writeNfo(item.id)
+            if (err != null) {
+                msgEl?.textContent = "NFO write failed: $err"
+                return@launch
+            }
             MediaApi.writeEpisodeNfos(item.id)
+            msgEl?.textContent = "NFO written ✓ → ${result?.path ?: "?"}"
+        }
+    }
+
+    // Diagnose write access
+    container.querySelector("#st-diagnose")?.addEventListener("click") {
+        val msgEl = container.querySelector("#st-meta-msg") as? HTMLElement
+        msgEl?.textContent = "Checking…"
+        stScope?.launch {
+            val r = MediaApi.checkNfoWritable(item.id)
+            if (r == null) {
+                msgEl?.textContent = "Diagnose: network error"
+            } else if (r.writable) {
+                msgEl?.textContent = "✓ Writable: ${r.path}"
+            } else {
+                msgEl?.textContent = "✗ Not writable: ${r.path} — ${r.error ?: "unknown error"}"
+            }
         }
     }
 
     // Save & tell Jellyfin
     container.querySelector("#st-save-jellyfin")?.addEventListener("click") {
+        val msgEl = container.querySelector("#st-meta-msg") as? HTMLElement
+        msgEl?.textContent = "Saving & refreshing…"
         stScope?.launch {
-            MediaApi.writeNfo(item.id)
+            val (result, err) = MediaApi.writeNfo(item.id)
+            if (err != null) {
+                msgEl?.textContent = "NFO write failed: $err"
+                return@launch
+            }
             MediaApi.writeEpisodeNfos(item.id)
-            MediaApi.jellyfinRefresh(item.id)
+            val jfOk = MediaApi.jellyfinRefresh(item.id)
+            msgEl?.textContent =
+                if (jfOk) "Saved & refreshed ✓ → ${result?.path ?: "?"}" else "NFO written but Jellyfin refresh failed"
         }
     }
 
@@ -624,7 +667,9 @@ private fun wireEpisodeStepListeners(item: MediaItem) {
                         resultEl?.setAttribute("style", "min-width:2ch;text-align:center;color:var(--ok)")
                         // Reload to update issue counts
                         val updated = MediaApi.get(item.id)
-                        if (updated != null) { stItem = updated; renderSeriesTriagePage() }
+                        if (updated != null) {
+                            stItem = updated; renderSeriesTriagePage()
+                        }
                     } else {
                         resultEl?.textContent = "✗"
                         resultEl?.setAttribute("style", "min-width:2ch;text-align:center;color:var(--bad)")
@@ -649,7 +694,9 @@ private fun wireEpisodeStepListeners(item: MediaItem) {
                         val ok = stAssignEpisodeLanguage(mediaId, epFilename, specifier, lang)
                         if (ok) {
                             val updated = MediaApi.get(item.id)
-                            if (updated != null) { stItem = updated; renderSeriesTriagePage() }
+                            if (updated != null) {
+                                stItem = updated; renderSeriesTriagePage()
+                            }
                         }
                     }
                 }
@@ -669,7 +716,9 @@ private fun wireEpisodeStepListeners(item: MediaItem) {
                     val ok = MediaApi.setEpisodeDefaultTrack(mediaId, epFilename, specifier)
                     if (ok) {
                         val updated = MediaApi.get(item.id)
-                        if (updated != null) { stItem = updated; renderSeriesTriagePage() }
+                        if (updated != null) {
+                            stItem = updated; renderSeriesTriagePage()
+                        }
                     }
                 }
             }
@@ -678,10 +727,18 @@ private fun wireEpisodeStepListeners(item: MediaItem) {
 
     // Fetch still
     container.querySelector("#ep-fetch-still")?.addEventListener("click") {
+        val btn = it.target as? HTMLButtonElement
+        val oldText = btn?.textContent
+        btn?.disabled = true
+        btn?.textContent = "Fetching…"
         stScope?.launch {
             MediaApi.fetchEpisodeStills(item.id)
             val updated = MediaApi.get(item.id)
-            if (updated != null) { stItem = updated; renderSeriesTriagePage() }
+            if (updated != null) {
+                stItem = updated; renderSeriesTriagePage()
+            }
+            btn?.disabled = false
+            btn?.textContent = oldText ?: "Fetch still"
         }
     }
 
@@ -698,7 +755,8 @@ private fun wireEpisodeStepListeners(item: MediaItem) {
             ?.getAttribute("data-ep-filename") ?: return@addEventListener
         val msgEl = container.querySelector("#ep-meta-msg") as? HTMLElement ?: return@addEventListener
         val title = (container.querySelector("#ep-title-input") as? HTMLInputElement)?.value?.trim()
-        val overview = (container.querySelector(".ep-overview-input") as? org.w3c.dom.HTMLTextAreaElement)?.value?.trim()
+        val overview =
+            (container.querySelector(".ep-overview-input") as? org.w3c.dom.HTMLTextAreaElement)?.value?.trim()
         msgEl.textContent = "Saving…"
         stScope?.launch {
             val ok = MediaApi.setEpisodeMetadata(item.id, epFilename, title, overview)
@@ -715,10 +773,21 @@ private fun wireEpisodeStepListeners(item: MediaItem) {
 
     // Re-pull from TMDB
     container.querySelector("#ep-repull")?.addEventListener("click") {
+        val btn = it.target as? HTMLButtonElement
+        val msgEl = container.querySelector("#ep-meta-msg") as? HTMLElement
+        btn?.disabled = true
+        msgEl?.textContent = "Re-pulling…"
         stScope?.launch {
             MediaApi.repull(item.id)
             val updated = MediaApi.get(item.id)
-            if (updated != null) { stItem = updated; renderSeriesTriagePage() }
+            if (updated != null) {
+                stItem = updated
+                msgEl?.textContent = "Re-pulled ✓"
+                renderSeriesTriagePage()
+            } else {
+                msgEl?.textContent = "Re-pull failed"
+                btn?.disabled = false
+            }
         }
     }
 
@@ -727,12 +796,14 @@ private fun wireEpisodeStepListeners(item: MediaItem) {
         ev.preventDefault()
         val mediaId = (ev.target as? HTMLElement)?.getAttribute("data-media-id") ?: item.id
         val epFile = (ev.target as? HTMLElement)?.getAttribute("data-ep-filename") ?: ""
-        App.navigate("/track-order?id=$mediaId&ep=$epFile")
+        App.navigate("/track-order?id=$mediaId&ep=${encodeURIComponent(epFile)}")
     }
 
     // Prev / Next issue navigation
     container.querySelector("#ep-prev")?.addEventListener("click") {
-        if (stActiveStep > 0) { stActiveStep--; renderSeriesTriagePage() }
+        if (stActiveStep > 0) {
+            stActiveStep--; renderSeriesTriagePage()
+        }
     }
     container.querySelector("#ep-next-issue")?.addEventListener("click") {
         val it2 = stItem ?: return@addEventListener
@@ -740,18 +811,28 @@ private fun wireEpisodeStepListeners(item: MediaItem) {
         val nextIssueEpIdx = it2.episodes.indexOfFirst { ep2 ->
             it2.episodes.indexOf(ep2) > currentEpIdx && ep2.issueCount > 0
         }
-        if (nextIssueEpIdx >= 0) { stActiveStep = nextIssueEpIdx + 1; renderSeriesTriagePage() }
-        else if (stActiveStep < it2.episodes.size) { stActiveStep++; renderSeriesTriagePage() }
+        if (nextIssueEpIdx >= 0) {
+            stActiveStep = nextIssueEpIdx + 1; renderSeriesTriagePage()
+        } else if (stActiveStep < it2.episodes.size) {
+            stActiveStep++; renderSeriesTriagePage()
+        }
     }
 
     // Skip
     container.querySelector("#ep-skip")?.addEventListener("click") {
         val it2 = stItem ?: return@addEventListener
-        if (stActiveStep < it2.episodes.size) { stActiveStep++; renderSeriesTriagePage() }
+        if (stActiveStep < it2.episodes.size) {
+            stActiveStep++; renderSeriesTriagePage()
+        }
     }
 }
 
-private suspend fun stAssignEpisodeLanguage(mediaId: String, epFilename: String, specifier: String, language: String): Boolean =
+private suspend fun stAssignEpisodeLanguage(
+    mediaId: String,
+    epFilename: String,
+    specifier: String,
+    language: String
+): Boolean =
     runCatching {
         val encoded = encodeURIComponent(epFilename)
         val response = httpClient.post("/api/triage/$mediaId/episodes/$encoded/tracks/$specifier/language") {

@@ -678,6 +678,45 @@ fun Route.mediaRoutes(
         }
         call.respond(HttpStatusCode.Accepted, mapOf("status" to "artwork fetch started", "total" to items.size))
     }
+
+    // POST /api/media/batch/jellyfin-push — write NFOs for all items and refresh each in Jellyfin
+    post("/media/batch/jellyfin-push") {
+        val cfg = configStore.current
+        if (cfg.apiKeys.jellyfinUrl.isBlank() || cfg.apiKeys.jellyfinToken.isBlank()) {
+            call.respond(HttpStatusCode.ServiceUnavailable, mapOf("error" to "Jellyfin not configured"))
+            return@post
+        }
+        val items = store.allItems()
+        call.respond(HttpStatusCode.Accepted, mapOf("status" to "push started", "total" to items.size))
+        appScope.launch {
+            var nfoOk = 0
+            var nfoFail = 0
+            var refreshOk = 0
+            var refreshFail = 0
+            val freshCfg = configStore.current
+            for (item in items) {
+                NfoWriter.write(item)
+                    .onSuccess {
+                        nfoOk++
+                        if (item.kind == MediaKind.TV_SHOW) {
+                            for (ep in item.episodes) {
+                                NfoWriter.writeEpisode(ep)
+                                    .onFailure { println("[WARN] batch-push: episode NFO failed for ${ep.filename}: ${it.message}") }
+                            }
+                        }
+                    }
+                    .onFailure { nfoFail++; println("[WARN] batch-push: NFO write failed for '${item.id}': ${it.message}") }
+                if (!item.jellyfinId.isNullOrBlank()) {
+                    val ok = jellyfinClient.refreshItem(freshCfg.apiKeys.jellyfinUrl, freshCfg.apiKeys.jellyfinToken, item.jellyfinId, full = true)
+                    if (ok) refreshOk++ else { refreshFail++; println("[WARN] batch-push: Jellyfin refresh failed for '${item.id}'") }
+                }
+            }
+            // Trigger a library scan after all NFOs are written so Jellyfin reliably picks up
+            // tvshow.nfo changes — per-item FullRefresh alone is not sufficient for TV series NFOs.
+            jellyfinClient.triggerLibraryRefresh(freshCfg.apiKeys.jellyfinUrl, freshCfg.apiKeys.jellyfinToken)
+            println("[INFO] batch-push complete: nfoOk=$nfoOk nfoFail=$nfoFail refreshOk=$refreshOk refreshFail=$refreshFail (+ library scan triggered)")
+        }
+    }
 }
 
 /** Write NFO files, sync artwork, and do a full recursive Jellyfin refresh. */
@@ -706,8 +745,20 @@ private suspend fun pushToJellyfin(
     appScope.launch { artwork.fetch(item) }
 
     val cfg = configStore.current
-    if (!item.jellyfinId.isNullOrBlank() && cfg.apiKeys.jellyfinUrl.isNotBlank()) {
-        jellyfinClient.refreshItem(cfg.apiKeys.jellyfinUrl, cfg.apiKeys.jellyfinToken, item.jellyfinId, full = true)
+    if (cfg.apiKeys.jellyfinUrl.isBlank() || cfg.apiKeys.jellyfinToken.isBlank()) return
+
+    if (!item.jellyfinId.isNullOrBlank()) {
+        val ok = jellyfinClient.refreshItem(cfg.apiKeys.jellyfinUrl, cfg.apiKeys.jellyfinToken, item.jellyfinId, full = true)
+        if (!ok) println("[WARN] pushToJellyfin: Jellyfin refresh failed for '${item.id}' (jellyfinId=${item.jellyfinId})")
+    } else {
+        println("[WARN] pushToJellyfin: no jellyfinId for '${item.id}' — skipping per-item Jellyfin refresh")
+    }
+
+    // For TV shows, also trigger a library scan so Jellyfin reliably re-reads tvshow.nfo from disk.
+    // Per-item FullRefresh alone does not consistently pick up tvshow.nfo changes in Jellyfin.
+    if (item.kind == MediaKind.TV_SHOW) {
+        jellyfinClient.triggerLibraryRefresh(cfg.apiKeys.jellyfinUrl, cfg.apiKeys.jellyfinToken)
+        println("[INFO] pushToJellyfin: triggered library scan to pick up tvshow.nfo for '${item.id}'")
     }
 }
 

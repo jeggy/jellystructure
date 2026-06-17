@@ -1,5 +1,6 @@
 package dev.jellystructure.ui
 
+import dev.jellystructure.encodeURIComponent
 import dev.jellystructure.api.MediaApi
 import dev.jellystructure.api.httpClient
 import io.ktor.client.call.body
@@ -620,11 +621,17 @@ private fun wireUpBulkAssign() {
         triageScope?.launch {
             var ok = 0
             var fail = 0
-            val allPairs = triageItems.flatMap { item ->
-                item.untaggedTracks.map { track -> item.mediaId to track.specifier }
-            }
-            for ((mediaId, specifier) in allPairs) {
-                if (assignLanguage(mediaId, specifier, lang)) ok++ else fail++
+            for (item in triageItems) {
+                // Handle movie tracks
+                for (track in item.untaggedTracks) {
+                    if (assignLanguage(item.mediaId, track.specifier, lang)) ok++ else fail++
+                }
+                // Handle TV episode tracks
+                for (ep in item.episodeIssues) {
+                    for (track in ep.untaggedTracks) {
+                        if (assignEpisodeLanguage(item.mediaId, ep.filename, track.specifier, lang)) ok++ else fail++
+                    }
+                }
             }
             // Reload fresh state from server — backend re-probed all files
             val fresh = fetchTriage()
@@ -831,7 +838,8 @@ private suspend fun fetchTriage(): List<TriageItem>? = runCatching {
 
 private suspend fun assignEpisodeLanguage(mediaId: String, epFilename: String, specifier: String, language: String): Boolean =
     runCatching {
-        val response = httpClient.post("/api/triage/$mediaId/episodes/$epFilename/tracks/$specifier/language") {
+        val encoded = encodeURIComponent(epFilename)
+        val response = httpClient.post("/api/triage/$mediaId/episodes/$encoded/tracks/$specifier/language") {
             contentType(ContentType.Application.Json)
             setBody("""{"language":"$language"}""")
         }

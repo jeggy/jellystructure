@@ -7,6 +7,7 @@ import dev.jellystructure.media.FfprobeRunner
 import dev.jellystructure.media.MediaHistory
 import dev.jellystructure.media.MediaStore
 import dev.jellystructure.media.MkvpropeditRunner
+import dev.jellystructure.model.MediaKind
 import dev.jellystructure.model.TrackKind
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.request.receive
@@ -271,6 +272,11 @@ fun Route.trackRoutes(store: MediaStore, configStore: ConfigStore, jellyfinClien
             val ok = if (!jellyfinId.isNullOrBlank()) {
                 jellyfinClient.refreshItem(config.apiKeys.jellyfinUrl, config.apiKeys.jellyfinToken, jellyfinId, full = true)
             } else {
+                jellyfinClient.triggerLibraryRefresh(config.apiKeys.jellyfinUrl, config.apiKeys.jellyfinToken)
+            }
+            // For TV shows, also trigger a library scan so Jellyfin reliably re-reads tvshow.nfo.
+            // Per-item FullRefresh alone does not consistently pick up tvshow.nfo changes.
+            if (item?.kind == MediaKind.TV_SHOW) {
                 jellyfinClient.triggerLibraryRefresh(config.apiKeys.jellyfinUrl, config.apiKeys.jellyfinToken)
             }
             if (ok) call.respond(mapOf("ok" to true))

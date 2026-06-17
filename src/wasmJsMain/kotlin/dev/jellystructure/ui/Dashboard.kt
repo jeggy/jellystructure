@@ -55,7 +55,8 @@ fun renderDashboard(container: Element, scope: CoroutineScope) {
               <button id="qa-triage" class="chip">Triage untagged tracks</button>
               <button id="qa-track-order" class="chip">Set track defaults</button>
               <button id="qa-artwork" class="chip">Re-pull artwork</button>
-              <button id="qa-jf-refresh" class="chip">Tell Jellyfin to refresh</button>
+              <button id="qa-jf-push" class="chip">Sync NFOs to Jellyfin</button>
+              <button id="qa-jf-refresh" class="chip">Jellyfin library scan</button>
               <button id="qa-activity" class="chip">View activity</button>
             </div>
             <div id="qa-feedback" style="margin-top:10px;min-height:20px"></div>
@@ -90,12 +91,23 @@ fun renderDashboard(container: Element, scope: CoroutineScope) {
         }
     }
 
+    document.getElementById("qa-jf-push")?.addEventListener("click") {
+        scope.launch {
+            setQaFeedback("Writing NFOs and pushing metadata to Jellyfin…", "badge")
+            val ok = MediaApi.batchJellyfinPush()
+            setQaFeedback(
+                if (ok) "NFO push started — Jellyfin will refresh all items ✓" else "Failed — check Jellyfin connection in Settings",
+                if (ok) "badge ok" else "badge bad"
+            )
+        }
+    }
+
     document.getElementById("qa-jf-refresh")?.addEventListener("click") {
         scope.launch {
-            setQaFeedback("Sending refresh signal to Jellyfin…", "badge")
+            setQaFeedback("Sending library scan signal to Jellyfin…", "badge")
             val ok = MediaApi.jellyfinRefreshAll()
             setQaFeedback(
-                if (ok) "Jellyfin library refresh triggered ✓" else "Failed — check Jellyfin connection in Settings",
+                if (ok) "Jellyfin library scan triggered ✓" else "Failed — check Jellyfin connection in Settings",
                 if (ok) "badge ok" else "badge bad"
             )
         }
