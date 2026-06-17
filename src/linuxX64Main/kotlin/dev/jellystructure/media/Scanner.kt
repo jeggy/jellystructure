@@ -23,7 +23,11 @@ class Scanner(
     private val tmdb: TmdbClient,
     private val jellyfinClient: JellyfinClient,
 ) {
-    suspend fun scan(tracker: ScanTracker? = null, onItemReady: suspend (MediaItem) -> Unit): Int {
+    suspend fun scan(
+        tracker: ScanTracker? = null,
+        skipIds: Set<String> = emptySet(),
+        onItemReady: suspend (MediaItem) -> Unit,
+    ): Int {
         val config = configStore.current
         val baseUrl = config.apiKeys.jellyfinUrl
         val token = config.apiKeys.jellyfinToken
@@ -34,13 +38,18 @@ class Scanner(
         }
 
         val jellyfinItems = jellyfinClient.getItems(baseUrl, token)
-        println("[INFO] Jellyfin returned ${jellyfinItems.size} items")
+        println("[INFO] Jellyfin returned ${jellyfinItems.size} items (${skipIds.size} will be skipped for resume)")
 
         val libraries = config.libraries.filter { !it.skip && it.localPath.isNotBlank() }
         val globalFallback = config.languageRules.fallbackLanguage
 
         var count = 0
         for (jItem in jellyfinItems) {
+            if (jItem.id in skipIds) {
+                println("[INFO] Resume: skipping already-processed '${jItem.name}'")
+                continue
+            }
+
             val jellyfinPath = jItem.path ?: continue
 
             // Match using jellyfinPath prefix if configured, otherwise fall back to localPath

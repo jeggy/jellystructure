@@ -527,43 +527,21 @@ fun Route.mediaRoutes(
             call.respond(HttpStatusCode.Conflict, mapOf("error" to "scan already running"))
             return@post
         }
-        @OptIn(kotlinx.cinterop.ExperimentalForeignApi::class)
-        val jobId = "scan-${platform.posix.time(null)}"
-        appScope.launch {
-            scanTracker.running = true
-            scanTracker.reset()
-            val allItems = mutableListOf<dev.jellystructure.model.MediaItem>()
-            var succeeded = 0
-            try {
-                println("[INFO] Library scan started (background) jobId=$jobId")
-                broadcaster.broadcast(JobEvent.Started(jobId, -1))
-                scanner.scan(tracker = scanTracker) { item ->
-                    allItems += item
-                    store.addOrUpdate(item)
-                    succeeded++
-                    scanTracker.lastCount = succeeded
-                    broadcaster.broadcast(JobEvent.ItemScanned(jobId, item))
-                }
-                store.update(allItems)
-                scanTracker.lastCount = succeeded
-                val cancelled = scanTracker.cancelRequested
-                println("[INFO] Library scan ${if (cancelled) "cancelled" else "complete"} — $succeeded items")
-                broadcaster.broadcast(JobEvent.Finished(jobId, succeeded, 0))
-
-                if (!cancelled) {
-                    val cfg = configStore.current
-                    if (cfg.apiKeys.jellyfinUrl.isNotBlank() && cfg.apiKeys.jellyfinToken.isNotBlank()) {
-                        jellyfinClient.triggerLibraryRefresh(cfg.apiKeys.jellyfinUrl, cfg.apiKeys.jellyfinToken)
-                    }
-                }
-            } catch (e: Exception) {
-                println("[ERROR] Scan failed: ${e.message}")
-                broadcaster.broadcast(JobEvent.Finished(jobId, succeeded, 1))
-            } finally {
-                scanTracker.running = false
-            }
-        }
+        val jobId = scanTracker.startNew()
+        appScope.launch { runScan(jobId, skipIds = emptySet(), store, scanner, scanTracker, broadcaster, configStore, jellyfinClient) }
         call.respond(HttpStatusCode.Accepted, mapOf("status" to "started"))
+    }
+
+    post("/scan/resume") {
+        val currentStatus = scanTracker.status().status
+        if (currentStatus != "CANCELLED") {
+            call.respond(HttpStatusCode.Conflict, mapOf("error" to "no cancelled scan to resume (status=$currentStatus)"))
+            return@post
+        }
+        val skipIds = scanTracker.processedIdsSnapshot
+        val jobId = scanTracker.startResume()
+        appScope.launch { runScan(jobId, skipIds, store, scanner, scanTracker, broadcaster, configStore, jellyfinClient) }
+        call.respond(HttpStatusCode.Accepted, mapOf("status" to "resumed", "skipping" to skipIds.size))
     }
 
     post("/scan/cancel") {
@@ -618,5 +596,48 @@ fun Route.mediaRoutes(
             }
         }
         call.respond(HttpStatusCode.Accepted, mapOf("status" to "artwork fetch started", "total" to items.size))
+    }
+}
+
+private suspend fun runScan(
+    jobId: String,
+    skipIds: Set<String>,
+    store: dev.jellystructure.media.MediaStore,
+    scanner: dev.jellystructure.media.Scanner,
+    scanTracker: dev.jellystructure.media.ScanTracker,
+    broadcaster: dev.jellystructure.jobs.WsBroadcaster,
+    configStore: dev.jellystructure.config.ConfigStore,
+    jellyfinClient: dev.jellystructure.auth.JellyfinClient,
+) {
+    val allItems = mutableListOf<dev.jellystructure.model.MediaItem>()
+    var succeeded = 0
+    try {
+        println("[INFO] Library scan started jobId=$jobId (skip=${skipIds.size})")
+        broadcaster.broadcast(JobEvent.Started(jobId, -1))
+        scanner.scan(tracker = scanTracker, skipIds = skipIds) { item ->
+            allItems += item
+            store.addOrUpdate(item)
+            succeeded++
+            item.jellyfinId?.let { scanTracker.recordProcessed(it) }
+            broadcaster.broadcast(JobEvent.ItemScanned(jobId, item))
+        }
+        scanTracker.flush()
+        store.update(allItems)
+        val cancelled = scanTracker.cancelRequested
+        println("[INFO] Library scan ${if (cancelled) "cancelled" else "complete"} — $succeeded new items")
+        if (!cancelled) {
+            scanTracker.complete()
+            broadcaster.broadcast(JobEvent.Finished(jobId, succeeded, 0))
+            val cfg = configStore.current
+            if (cfg.apiKeys.jellyfinUrl.isNotBlank() && cfg.apiKeys.jellyfinToken.isNotBlank()) {
+                jellyfinClient.triggerLibraryRefresh(cfg.apiKeys.jellyfinUrl, cfg.apiKeys.jellyfinToken)
+            }
+        } else {
+            broadcaster.broadcast(JobEvent.Finished(jobId, succeeded, 0))
+        }
+    } catch (e: Exception) {
+        println("[ERROR] Scan failed: ${e.message}")
+        scanTracker.cancel()
+        broadcaster.broadcast(JobEvent.Finished(jobId, succeeded, 1))
     }
 }

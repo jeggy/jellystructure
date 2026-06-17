@@ -68,7 +68,13 @@ data class HistoryEntry(
 )
 
 @Serializable
-data class ScanStatus(val running: Boolean, val lastCount: Int? = null)
+data class ScanStatus(
+    val running: Boolean,
+    val status: String = "IDLE",
+    val jobId: String? = null,
+    val startedAt: Long? = null,
+    val processedCount: Int = 0,
+)
 
 object MediaApi {
     suspend fun list(
@@ -102,6 +108,11 @@ object MediaApi {
     suspend fun scanStatus(): ScanStatus? = runCatching {
         httpClient.get("/api/scan/status").body<ScanStatus>()
     }.getOrNull()
+
+    suspend fun resumeScan(): Boolean = runCatching {
+        val response = httpClient.post("/api/scan/resume")
+        response.status.value in 200..299
+    }.getOrDefault(false)
 
     suspend fun cancelScan(): Boolean = runCatching {
         val response = httpClient.post("/api/scan/cancel")

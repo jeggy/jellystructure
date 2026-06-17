@@ -30,7 +30,7 @@ fun renderDashboard(container: Element, scope: CoroutineScope) {
         </div>
         <p class="page-sub">Single source of truth for your media metadata. Jellyfin just reads what Jellystructure writes — you never touch its built-in scraper.</p>
 
-        <div id="dash-scan-banner" style="display:none;margin-bottom:14px"></div>
+        <div id="dash-scan-banner" style="margin-bottom:14px"></div>
 
         <div class="statgrid">
           <div class="stat"><div class="k">Movies</div><div class="v" id="stat-movies">—</div></div>
@@ -71,7 +71,7 @@ fun renderDashboard(container: Element, scope: CoroutineScope) {
         App.navigate("/library")
     }
     document.getElementById("dash-scan")?.addEventListener("click") {
-        scope.launch { triggerDashboardScan(scope) }
+        scope.launch { triggerDashboardScan(scope, resume = false) }
     }
     document.getElementById("dash-triage")?.addEventListener("click") { App.navigate("/triage") }
     document.getElementById("stat-issues-cell")?.addEventListener("click") { App.navigate("/triage") }
@@ -106,9 +106,13 @@ fun renderDashboard(container: Element, scope: CoroutineScope) {
         loadAttentionQueue()
         loadRecentActivity()
         val status = MediaApi.scanStatus()
-        if (status?.running == true) {
-            setDashScanRunning(true)
-            connectDashScanSocket(scope)
+        when (status?.status) {
+            "RUNNING" -> {
+                setDashScanRunning(status.processedCount)
+                connectDashScanSocket(scope, baseCount = status.processedCount)
+            }
+            "CANCELLED" -> setDashScanCancelled(status.processedCount, scope)
+            else -> setDashScanIdle()
         }
     }
 }
@@ -176,27 +180,27 @@ private suspend fun loadRecentActivity() {
     }
 }
 
-private suspend fun triggerDashboardScan(scope: CoroutineScope) {
+private suspend fun triggerDashboardScan(scope: CoroutineScope, resume: Boolean) {
     val btn = document.getElementById("dash-scan") as? HTMLButtonElement ?: return
     if (btn.disabled) return
 
-    val started = MediaApi.startScan()
+    val started = if (resume) MediaApi.resumeScan() else MediaApi.startScan()
     if (!started) {
         val banner = document.getElementById("dash-scan-banner") as? HTMLElement ?: return
-        banner.style.display = "block"
-        banner.innerHTML = """<span class="badge bad">Scan is already running or failed to start.</span>"""
+        banner.innerHTML = """<span class="badge bad">Scan failed to start — check server connection.</span>"""
         return
     }
-    setDashScanRunning(true)
-    connectDashScanSocket(scope)
+    val status = MediaApi.scanStatus()
+    setDashScanRunning(status?.processedCount ?: 0)
+    connectDashScanSocket(scope, baseCount = status?.processedCount ?: 0)
 }
 
-private fun connectDashScanSocket(scope: CoroutineScope) {
+private fun connectDashScanSocket(scope: CoroutineScope, baseCount: Int = 0) {
     val proto = if (window.location.protocol == "https:") "wss" else "ws"
     val ws = WebSocket("$proto://${window.location.host}/ws")
     dashScanSocket = ws
 
-    var scannedCount = 0
+    var scannedCount = baseCount
 
     ws.onmessage = { ev ->
         val text = ev.data.toString()
@@ -206,16 +210,16 @@ private fun connectDashScanSocket(scope: CoroutineScope) {
                 is JobEvent.ItemScanned -> {
                     scannedCount++
                     val banner = document.getElementById("dash-scan-banner") as? HTMLElement
-                    banner?.innerHTML = """<span class="badge">Scanning — $scannedCount item${if (scannedCount != 1) "s" else ""} found so far…</span>"""
+                    banner?.innerHTML = """<span class="badge">Scanning — $scannedCount item${if (scannedCount != 1) "s" else ""} found so far…</span> <button id="cancel-scan-btn" class="btn sm ghost" style="margin-left:8px">Cancel</button>"""
+                    wireCancelBtn(scope)
                 }
                 is JobEvent.Finished -> {
                     ws.close()
                     dashScanSocket = null
-                    setDashScanRunning(false)
+                    setDashScanIdle()
                     val n = event.succeeded
                     val banner = document.getElementById("dash-scan-banner") as? HTMLElement
-                    banner?.style?.display = "block"
-                    banner?.innerHTML = """<span class="badge ok">Scan complete — $n item${if (n != 1) "s" else ""} found.</span>"""
+                    banner?.innerHTML = """<span class="badge ok">Scan complete — $n new item${if (n != 1) "s" else ""} processed.</span>"""
                     scope.launch { loadDashboardStats() }
                 }
                 else -> {}
@@ -227,13 +231,13 @@ private fun connectDashScanSocket(scope: CoroutineScope) {
         if (dashScanSocket == ws) dashScanSocket = null
     }
 
-    // Wire cancel button — it's injected dynamically into the banner by setDashScanRunning
-    fun wireCancelBtn() {
-        document.getElementById("cancel-scan-btn")?.addEventListener("click") {
-            scope.launch { MediaApi.cancelScan() }
-        }
+    wireCancelBtn(scope)
+}
+
+private fun wireCancelBtn(scope: CoroutineScope) {
+    document.getElementById("cancel-scan-btn")?.addEventListener("click") {
+        scope.launch { MediaApi.cancelScan() }
     }
-    wireCancelBtn()
 }
 
 private fun setQaFeedback(msg: String, cls: String = "badge") {
@@ -241,16 +245,38 @@ private fun setQaFeedback(msg: String, cls: String = "badge") {
         """<span class="$cls" style="font-size:.75rem">$msg</span>"""
 }
 
-private fun setDashScanRunning(running: Boolean) {
-    val btn = document.getElementById("dash-scan") as? HTMLButtonElement
-    val banner = document.getElementById("dash-scan-banner") as? HTMLElement
-    if (running) {
-        btn?.disabled = true
-        btn?.textContent = "Scanning…"
-        banner?.style?.display = "block"
-        banner?.innerHTML = """<span class="badge">Scanning — items appear in Library as they are processed.</span> <button id="cancel-scan-btn" class="btn sm ghost" style="margin-left:8px">Cancel</button>"""
-    } else {
-        btn?.disabled = false
-        btn?.textContent = "▶ Scan library"
+private fun setDashScanIdle() {
+    val btn = document.getElementById("dash-scan") as? HTMLButtonElement ?: return
+    btn.disabled = false
+    btn.textContent = "▶ Scan library"
+    btn.onclick = null
+}
+
+private fun setDashScanRunning(processedCount: Int) {
+    val btn = document.getElementById("dash-scan") as? HTMLButtonElement ?: return
+    btn.disabled = true
+    btn.textContent = "Scanning…"
+    val banner = document.getElementById("dash-scan-banner") as? HTMLElement ?: return
+    val countNote = if (processedCount > 0) "Scanning — $processedCount item${if (processedCount != 1) "s" else ""} processed so far…" else "Scanning — items appear in Library as they are processed."
+    banner.innerHTML = """<span class="badge">$countNote</span> <button id="cancel-scan-btn" class="btn sm ghost" style="margin-left:8px">Cancel</button>"""
+}
+
+private fun setDashScanCancelled(processedCount: Int, scope: CoroutineScope) {
+    val btn = document.getElementById("dash-scan") as? HTMLButtonElement ?: return
+    btn.disabled = false
+    btn.textContent = "▶ New scan"
+    btn.onclick = null
+    val banner = document.getElementById("dash-scan-banner") as? HTMLElement ?: return
+    banner.innerHTML = """
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+          <span class="badge warn">Scan paused — $processedCount item${if (processedCount != 1) "s" else ""} already processed</span>
+          <button id="resume-scan-btn" class="btn sm primary">↻ Continue scan</button>
+          <button id="new-scan-btn" class="btn sm ghost">Start new scan</button>
+        </div>""".trimIndent()
+    document.getElementById("resume-scan-btn")?.addEventListener("click") {
+        scope.launch { triggerDashboardScan(scope, resume = true) }
+    }
+    document.getElementById("new-scan-btn")?.addEventListener("click") {
+        scope.launch { triggerDashboardScan(scope, resume = false) }
     }
 }

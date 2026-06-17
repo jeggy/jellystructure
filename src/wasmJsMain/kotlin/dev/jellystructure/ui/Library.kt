@@ -74,7 +74,7 @@ fun renderLibrary(container: Element, scope: CoroutineScope) {
     scope.launch {
         val status = MediaApi.scanStatus()
         if (status?.running == true) {
-            libScannedCount = status.lastCount ?: 0
+            libScannedCount = status.processedCount
             setScanRunning(true)
             loadLibraryPage(scope)
             connectScanSocket(scope)

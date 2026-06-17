@@ -117,12 +117,14 @@ fun renderShell(user: UserProfile) {
             }
         } catch (_: Exception) {}
 
-        // Check if a scan is already running — show dock immediately if so
+        // Reflect backend scan state — dock count comes from server, not just WS events
         val status = MediaApi.scanStatus()
         if (status?.running == true) {
-            dockScanned = status.lastCount ?: 0
+            dockScanned = status.processedCount
             showDock()
             updateDockCount()
+        } else if (status?.status == "CANCELLED") {
+            showCancelledBanner(status.processedCount)
         }
         // Always connect dock WS to catch scans started from any page
         connectDockSocket()
@@ -178,8 +180,8 @@ private fun connectDockSocket() {
         runCatching {
             when (val event = dockJson.decodeFromString<JobEvent>(text)) {
                 is JobEvent.Started -> {
-                    dockScanned = 0
-                    dockTotal = event.total
+                    // Only reset to 0 for a fresh scan; resume keeps the existing dockScanned base
+                    if (dockScanned == 0) dockTotal = event.total
                     showDock()
                     updateDockCount()
                 }
@@ -195,7 +197,11 @@ private fun connectDockSocket() {
                         (document.getElementById("dock-bar") as? HTMLElement)?.setAttribute("style", "width:${pct}%")
                     }
                 }
-                is JobEvent.Finished -> hideDock()
+                is JobEvent.Finished -> {
+                    hideDock()
+                    dockScanned = 0
+                    hideCancelledBanner()
+                }
                 else -> {}
             }
         }
@@ -204,6 +210,27 @@ private fun connectDockSocket() {
     ws.onclose = { _: Event ->
         if (dockSocket == ws) dockSocket = null
     }
+}
+
+private fun showCancelledBanner(processedCount: Int) {
+    val statusEl = document.getElementById("status-triage") as? HTMLElement ?: return
+    val existing = document.getElementById("scan-cancelled-banner")
+    if (existing != null) return
+    val banner = document.createElement("div") as HTMLElement
+    banner.id = "scan-cancelled-banner"
+    banner.setAttribute(
+        "style",
+        "margin-top:6px;padding:6px 8px;background:color-mix(in srgb,var(--warn) 12%,transparent);border:1px solid color-mix(in srgb,var(--warn) 40%,transparent);border-radius:6px;font-size:.73rem;line-height:1.4;",
+    )
+    banner.innerHTML = """
+        <div style="color:var(--warn);font-weight:600;margin-bottom:2px;">Scan paused</div>
+        <div style="color:var(--ink-soft);">$processedCount item${if (processedCount != 1) "s" else ""} done — <a href="#/dashboard" style="color:var(--hi);text-decoration:none;">resume from Dashboard →</a></div>
+    """.trimIndent()
+    statusEl.parentElement?.insertBefore(banner, statusEl)
+}
+
+private fun hideCancelledBanner() {
+    document.getElementById("scan-cancelled-banner")?.remove()
 }
 
 private fun showDock() {

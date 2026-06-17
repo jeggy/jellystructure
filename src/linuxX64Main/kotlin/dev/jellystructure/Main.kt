@@ -49,6 +49,7 @@ fun main() {
     val configFile = env("CONFIG_FILE", "/config/config.toml")
     val sessionsFile = env("SESSIONS_FILE", "/config/sessions.json")
     val mediaFile = env("MEDIA_FILE", "/config/media.json")
+    val scanStateFile = env("SCAN_STATE_FILE", configFile.substringBeforeLast('/') + "/scan-state.json")
     val frontendDir = env("FRONTEND_DIR", "/app/frontend")
     val port = env("SERVER_PORT", "9505").toIntOrNull() ?: 9505
     val tmdbBaseUrl = env("TMDB_BASE_URL", "https://api.themoviedb.org/3")
@@ -63,24 +64,22 @@ fun main() {
     mediaStore.load()
     val scanner = Scanner(configStore, tmdbClient, jellyfinClient)
     val artworkDownloader = ArtworkDownloader()
-    val scanTracker = ScanTracker()
+    val scanTracker = ScanTracker(scanStateFile)
+    scanTracker.load()
     val folderWatcher = FolderWatcher(configStore) {
         if (!scanTracker.running) {
             println("[INFO] FolderWatcher: starting automatic scan")
-            scanTracker.running = true
-            scanTracker.reset()
+            val jobId = scanTracker.startNew()
             try {
-                var count = 0
                 scanner.scan(tracker = scanTracker) { item ->
                     mediaStore.addOrUpdate(item)
-                    count++
-                    scanTracker.lastCount = count
+                    item.jellyfinId?.let { scanTracker.recordProcessed(it) }
                 }
-                scanTracker.lastCount = count
+                scanTracker.complete()
+                println("[INFO] FolderWatcher: auto-scan complete jobId=$jobId")
             } catch (e: Exception) {
                 println("[ERROR] FolderWatcher auto-scan failed: ${e.message}")
-            } finally {
-                scanTracker.running = false
+                scanTracker.cancel()
             }
         } else {
             println("[INFO] FolderWatcher: scan already running — skipping auto-scan")
