@@ -508,23 +508,25 @@ class Scanner(
                 val resolvedLang = langPriority.firstOrNull { lang ->
                     details.overview.isNotBlank() && lang != fallback
                 } ?: langPriority.lastOrNull()
-                val lang = resolvedLang ?: langPriority.firstOrNull()
-                // Re-fetch per-episode TMDB details (title, overview, still, tmdbEpisodeId)
+                // Re-fetch per-episode TMDB details using the same priority-list pattern as the scanner:
+                // try each language in the episode's own audio-track priority order, take first hit
+                // with non-blank name or overview, fall back to no-language if nothing matches.
                 val updatedEpisodes = item.episodes.map { ep ->
                     val s = ep.seasonNumber
                     val e = ep.episodeNumber
                     if (s != null && e != null) {
-                        val epDetails = if (lang != null)
+                        val epAudioLangs = ep.tracks.filter { it.kind == TrackKind.AUDIO }.map { it.language }
+                        val epLangPriority = LanguageResolver.priorityList(epAudioLangs, fallback)
+                        val epDetails = epLangPriority.firstNotNullOfOrNull { lang ->
                             tmdb.getEpisodeDetails(details.id, s, e, lang)
-                                ?: tmdb.getEpisodeDetails(details.id, s, e)
-                        else
-                            tmdb.getEpisodeDetails(details.id, s, e)
+                                ?.takeIf { it.name.isNotBlank() || it.overview.isNotBlank() }
+                        } ?: tmdb.getEpisodeDetails(details.id, s, e)
                         if (epDetails != null) ep.copy(
                             title = epDetails.name.takeIf { it.isNotBlank() },
                             overview = epDetails.overview.takeIf { it.isNotBlank() },
                             stillPath = epDetails.stillPath,
                             tmdbEpisodeId = epDetails.id,
-                            resolvedLanguage = lang,
+                            resolvedLanguage = epLangPriority.firstOrNull(),
                         ) else ep
                     } else ep
                 }
