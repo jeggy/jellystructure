@@ -168,7 +168,10 @@ internal fun langDisplay(code: String): String {
     return if (entry != null) "${entry.name} (${entry.code})" else code
 }
 
-// Top-level single-expression functions for js() interop (required by Kotlin/WASM)
+// Top-level single-expression helpers for Kotlin/WASM js() constraints
+private fun elRectBottom(el: HTMLElement): Double = js("el.getBoundingClientRect().bottom")
+private fun elRectLeft(el: HTMLElement): Double = js("el.getBoundingClientRect().left")
+private fun elRectWidth(el: HTMLElement): Double = js("el.getBoundingClientRect().width")
 private fun scrollIntoViewNearest(el: HTMLElement): Unit = js("el.scrollIntoView({block:'nearest'})")
 
 /** Currently open picker dropdown — only one open at a time. */
@@ -179,7 +182,7 @@ private fun ensureDocumentListener() {
     if (documentListenerInstalled) return
     documentListenerInstalled = true
     // Any click that reaches the document closes the open picker.
-    // Clicks inside a picker wrapper are stopped before reaching the document.
+    // Clicks inside a picker wrapper are stopped via stopPropagation before reaching here.
     document.addEventListener("click") { _ ->
         openPickerDropdown?.style?.display = "none"
         openPickerDropdown = null
@@ -200,20 +203,35 @@ fun installLanguagePicker(inputEl: HTMLInputElement) {
     val origStyle = inputEl.getAttribute("style") ?: ""
     val origClass = inputEl.className
 
-    // Wrapper holds the hidden input, the display div, and the dropdown.
+    // Strip width constraints from the display style so the display is never clipped
+    // to the original (possibly very narrow) input width. The wrapper preserves the
+    // original sizing for layout purposes while the display fills it at 100%.
+    val displayStyle = origStyle.split(";")
+        .map { it.trim() }
+        .filter { it.isNotEmpty() && !it.startsWith("width:") && !it.startsWith("max-width:") }
+        .joinToString(";")
+
+    // Wrapper: keeps the original dimensions for layout (flex sizing etc.) + min-width
     val wrapper = document.createElement("div") as HTMLElement
     wrapper.className = "lp-wrap"
-    // Stop all clicks inside the wrapper from reaching the document listener.
+    wrapper.setAttribute("style", "${origStyle};min-width:180px;")
+    // Stop clicks inside the wrapper reaching the document close-listener
     wrapper.addEventListener("click") { it.stopPropagation() }
 
+    // Display: looks like the input but fills wrapper width and never clips the name
     val display = document.createElement("div") as HTMLElement
     display.className = "$origClass lp-display"
-    display.setAttribute("style", "$origStyle;cursor:pointer;user-select:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;")
+    display.setAttribute("style", "${displayStyle};width:100%;cursor:pointer;user-select:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;box-sizing:border-box;")
     display.tabIndex = 0
 
+    // Dropdown is appended to <body> so it is never clipped by overflow:hidden ancestors.
+    // It is positioned with position:fixed using getBoundingClientRect coordinates on open.
     val dropdown = document.createElement("div") as HTMLElement
     dropdown.className = "lp-dropdown"
     dropdown.style.display = "none"
+    // Stop clicks inside dropdown from reaching document close-listener
+    dropdown.addEventListener("click") { it.stopPropagation() }
+    document.body?.appendChild(dropdown)
 
     val searchEl = document.createElement("input") as HTMLInputElement
     searchEl.type = "text"
@@ -230,7 +248,7 @@ fun installLanguagePicker(inputEl: HTMLInputElement) {
     inputEl.style.display = "none"
     wrapper.appendChild(inputEl)
     wrapper.appendChild(display)
-    wrapper.appendChild(dropdown)
+    // dropdown is in body, not in wrapper
 
     fun updateDisplay(code: String) {
         val label = langDisplay(code)
@@ -283,11 +301,22 @@ fun installLanguagePicker(inputEl: HTMLInputElement) {
         selIdx = -1
     }
 
+    fun positionAndShow() {
+        // Position dropdown with fixed coordinates so it escapes overflow:hidden parents
+        val bottom = elRectBottom(display)
+        val left = elRectLeft(display)
+        val w = elRectWidth(display).coerceAtLeast(220.0)
+        dropdown.style.setProperty("top", "${bottom + 3}px")
+        dropdown.style.setProperty("left", "${left}px")
+        dropdown.style.setProperty("width", "${w}px")
+        dropdown.style.display = "block"
+    }
+
     fun openDropdown() {
         openPickerDropdown?.style?.display = "none"
         renderList("")
         searchEl.value = ""
-        dropdown.style.display = "block"
+        positionAndShow()
         openPickerDropdown = dropdown
         searchEl.focus()
     }
@@ -338,16 +367,16 @@ private fun injectPickerStyles() {
     val style = document.createElement("style") as? org.w3c.dom.HTMLStyleElement ?: return
     style.id = "lp-styles"
     style.textContent = """
-        .lp-wrap { position: relative; display: block; }
+        .lp-wrap { position: relative; display: inline-block; vertical-align: middle; }
         .lp-display { display: flex !important; align-items: center; }
         .lp-dropdown {
-            position: absolute; top: calc(100% + 3px); left: 0;
-            min-width: 220px; width: 100%;
-            background: var(--surface, #1a1d27);
-            border: 1px solid var(--line, rgba(255,255,255,.15));
-            border-radius: 7px;
-            box-shadow: 0 8px 28px rgba(0,0,0,.4);
-            z-index: 900; overflow: hidden;
+            position: fixed;
+            background: var(--surface, #1e2130);
+            border: 1px solid var(--line, rgba(255,255,255,.18));
+            border-radius: 8px;
+            box-shadow: 0 8px 32px rgba(0,0,0,.55);
+            z-index: 9999;
+            overflow: hidden;
         }
         .lp-search {
             display: block; width: 100%; box-sizing: border-box;
