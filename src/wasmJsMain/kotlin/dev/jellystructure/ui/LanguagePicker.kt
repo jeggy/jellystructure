@@ -371,30 +371,30 @@ private fun injectPickerStyles() {
         .lp-display { display: flex !important; align-items: center; }
         .lp-dropdown {
             position: fixed;
-            background: var(--surface, #1e2130);
-            border: 1px solid var(--line, rgba(255,255,255,.18));
+            background: var(--fill);
+            border: 1px solid var(--line-2);
             border-radius: 8px;
-            box-shadow: 0 8px 32px rgba(0,0,0,.55);
+            box-shadow: var(--shadow);
             z-index: 9999;
             overflow: hidden;
         }
         .lp-search {
             display: block; width: 100%; box-sizing: border-box;
-            border: none; border-bottom: 1px solid var(--line, rgba(255,255,255,.1));
+            border: none; border-bottom: 1px solid var(--line);
             border-radius: 0;
-            background: var(--fill-2, rgba(255,255,255,.05));
-            color: var(--ink, #e2e8f0);
+            background: var(--fill-2);
+            color: var(--ink);
             padding: 8px 10px; font-size: .82rem; outline: none;
         }
-        .lp-search:focus { background: var(--fill-3, rgba(255,255,255,.08)); }
+        .lp-search:focus { background: var(--fill-3); }
         .lp-list { max-height: 224px; overflow-y: auto; }
         .lp-opt {
             padding: 7px 10px; font-size: .82rem;
-            color: var(--ink, #e2e8f0); cursor: pointer;
+            color: var(--ink); cursor: pointer;
         }
         .lp-opt:hover, .lp-opt.active {
-            background: var(--fill-3, rgba(255,255,255,.08));
-            color: var(--hi, #a78bfa);
+            background: var(--fill-3);
+            color: var(--hi);
         }
     """.trimIndent()
     document.head?.appendChild(style)
