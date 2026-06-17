@@ -193,8 +193,11 @@ private fun ensureDocumentListener() {
  * Upgrades an existing HTMLInputElement into a searchable language picker.
  * The input is hidden but retains its id and value; existing `input` event
  * listeners on it continue to fire when a selection is made.
+ *
+ * @param allowedCodes when non-null, the dropdown is restricted to those ISO codes.
+ *   The current value is always displayed even if it falls outside the set.
  */
-fun installLanguagePicker(inputEl: HTMLInputElement) {
+fun installLanguagePicker(inputEl: HTMLInputElement, allowedCodes: Set<String>? = null) {
     if (inputEl.getAttribute("data-picker") == "installed") return
     inputEl.setAttribute("data-picker", "installed")
     injectPickerStyles()
@@ -260,7 +263,10 @@ fun installLanguagePicker(inputEl: HTMLInputElement) {
     }
     updateDisplay(inputEl.value)
 
-    var filtered = LANGUAGES
+    val baseList = if (allowedCodes != null && allowedCodes.isNotEmpty())
+        LANGUAGES.filter { it.code in allowedCodes }
+    else LANGUAGES
+    var filtered = baseList
     var selIdx = -1
 
     fun markActive() {
@@ -287,8 +293,8 @@ fun installLanguagePicker(inputEl: HTMLInputElement) {
     }
 
     fun renderList(query: String) {
-        filtered = if (query.isBlank()) LANGUAGES
-                   else LANGUAGES.filter { it.name.contains(query, ignoreCase = true) || it.code.contains(query, ignoreCase = true) }
+        filtered = if (query.isBlank()) baseList
+                   else baseList.filter { it.name.contains(query, ignoreCase = true) || it.code.contains(query, ignoreCase = true) }
         listEl.innerHTML = ""
         filtered.forEachIndexed { i, entry ->
             val opt = document.createElement("div") as HTMLElement
@@ -345,9 +351,9 @@ fun installLanguagePicker(inputEl: HTMLInputElement) {
 }
 
 /** Convenience wrapper: looks up by element id before installing. */
-fun installLanguagePickerById(id: String) {
+fun installLanguagePickerById(id: String, allowedCodes: Set<String>? = null) {
     val el = document.getElementById(id) as? HTMLInputElement ?: return
-    installLanguagePicker(el)
+    installLanguagePicker(el, allowedCodes)
 }
 
 /** Call this if an input's value is set externally after picker installation. */

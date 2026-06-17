@@ -200,6 +200,10 @@ object MediaApi {
         if (response.status == HttpStatusCode.OK) response.body<MediaItem>() else null
     }.getOrNull()
 
+    suspend fun getTmdbLanguages(id: String): Set<String> = runCatching {
+        httpClient.get("/api/media/$id/tmdb-languages").body<List<String>>().toSet()
+    }.getOrElse { emptySet() }
+
     suspend fun repull(id: String): MediaItem? = runCatching {
         val response = httpClient.post("/api/media/$id/repull")
         if (response.status == HttpStatusCode.OK) response.body<MediaItem>() else null

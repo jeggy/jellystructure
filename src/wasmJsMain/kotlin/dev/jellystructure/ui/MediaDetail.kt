@@ -36,7 +36,8 @@ fun renderMediaDetail(container: Element, scope: CoroutineScope, mediaId: String
         val config = ConfigApi.get()
         val fallbackLang = config?.languageRules?.fallbackLanguage ?: "en"
         val jellyfinUrl = config?.apiKeys?.jellyfinUrl?.trimEnd('/') ?: ""
-        renderDetailView(container, item, scope, fallbackLang, jellyfinUrl)
+        val tmdbLangs = if (item.tmdbId != null) MediaApi.getTmdbLanguages(item.id) else null
+        renderDetailView(container, item, scope, fallbackLang, jellyfinUrl, tmdbLangs)
     }
 }
 
@@ -94,7 +95,7 @@ private fun buildResolverTrace(item: MediaItem, fallbackLang: String): String {
         </div>""".trimIndent()
 }
 
-private fun renderDetailView(container: Element, item: MediaItem, scope: CoroutineScope, fallbackLang: String = "en", jellyfinUrl: String = "") {
+private fun renderDetailView(container: Element, item: MediaItem, scope: CoroutineScope, fallbackLang: String = "en", jellyfinUrl: String = "", tmdbLangs: Set<String>? = null) {
     val isTvShow = item.kind == MediaKind.TV_SHOW
 
     val posterHtml = if (item.posterPath != null) {
@@ -479,7 +480,7 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
         </div>
     """.trimIndent()
 
-    installLanguagePickerById("lang-override-input")
+    installLanguagePickerById("lang-override-input", tmdbLangs)
 
     document.getElementById("back-btn")?.addEventListener("click") {
         App.navigate("/library")
@@ -490,7 +491,7 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
     }
 
     document.getElementById("repull-btn")?.addEventListener("click") {
-        scope.launch { handleRepull(item, container, scope, fallbackLang, jellyfinUrl) }
+        scope.launch { handleRepull(item, container, scope, fallbackLang, jellyfinUrl, prevTmdbLangs = tmdbLangs) }
     }
 
     document.getElementById("lang-override-btn")?.addEventListener("click") {
@@ -692,7 +693,7 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
             if (updated != null) {
                 msg?.textContent = "Saved ✓"
                 delay(600)
-                renderDetailView(container, updated, scope, fallbackLang, jellyfinUrl)
+                renderDetailView(container, updated, scope, fallbackLang, jellyfinUrl, tmdbLangs)
             } else {
                 msg?.textContent = "Save failed"
             }
@@ -970,7 +971,7 @@ private suspend fun loadHistory(id: String) {
     }
 }
 
-private suspend fun handleRepull(item: MediaItem, container: Element, scope: CoroutineScope, fallbackLang: String = "en", jellyfinUrl: String = "") {
+private suspend fun handleRepull(item: MediaItem, container: Element, scope: CoroutineScope, fallbackLang: String = "en", jellyfinUrl: String = "", prevTmdbLangs: Set<String>? = null) {
     val btn = document.getElementById("repull-btn") as? HTMLElement
     btn?.setAttribute("disabled", "true")
     btn?.textContent = "Pulling…"
@@ -983,7 +984,9 @@ private suspend fun handleRepull(item: MediaItem, container: Element, scope: Cor
     if (updated != null) {
         showDetailMsg("TMDB data refreshed. Reloading…", true)
         delay(600)
-        renderDetailView(container, updated, scope, fallbackLang, jellyfinUrl)
+        // Re-fetch languages in case the TMDB match changed
+        val tmdbLangs = if (updated.tmdbId != null) MediaApi.getTmdbLanguages(updated.id) else prevTmdbLangs
+        renderDetailView(container, updated, scope, fallbackLang, jellyfinUrl, tmdbLangs)
     } else {
         showDetailMsg("Re-pull failed — no TMDB match found.", false)
     }

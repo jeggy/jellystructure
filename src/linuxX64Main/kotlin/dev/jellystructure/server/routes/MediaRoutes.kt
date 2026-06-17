@@ -496,6 +496,21 @@ fun Route.mediaRoutes(
             call.respond(updated)
         }
 
+        // GET /api/media/{id}/tmdb-languages — language codes TMDB has translations for
+        get("/{id}/tmdb-languages") {
+            val id = call.parameters["id"]
+                ?: return@get call.respond(HttpStatusCode.BadRequest)
+            val item = store.get(id)
+                ?: return@get call.respond(HttpStatusCode.NotFound)
+            val tmdbId = item.tmdbId
+            if (tmdbId == null) {
+                call.respond(emptyList<String>())
+                return@get
+            }
+            val langs = scanner.translationLanguages(tmdbId, item.kind == MediaKind.MOVIE)
+            call.respond(langs)
+        }
+
         // POST /api/media/{id}/repull — re-fetch TMDB metadata without re-probing the file
         route("/{id}/repull") {
             post {

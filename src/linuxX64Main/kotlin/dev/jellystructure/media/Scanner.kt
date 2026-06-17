@@ -403,6 +403,9 @@ class Scanner(
             .trim('-')
     }
 
+    suspend fun translationLanguages(tmdbId: Int, isMovie: Boolean): List<String> =
+        tmdb.getTranslationLanguages(tmdbId, isMovie)
+
     @OptIn(ExperimentalForeignApi::class)
     private fun epochSeconds(): Long = platform.posix.time(null)
 }
