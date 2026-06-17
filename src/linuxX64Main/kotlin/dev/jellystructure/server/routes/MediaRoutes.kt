@@ -12,6 +12,7 @@ import dev.jellystructure.media.MediaStore
 import dev.jellystructure.media.MkvpropeditRunner
 import dev.jellystructure.media.Scanner
 import dev.jellystructure.media.ScanTracker
+import dev.jellystructure.model.MediaItem
 import dev.jellystructure.model.MediaKind
 import dev.jellystructure.model.TrackKind
 import dev.jellystructure.nfo.NfoWriter
@@ -551,6 +552,7 @@ fun Route.mediaRoutes(
             store.updateOne(updated)
             broadcaster.broadcast(JobEvent.ItemScanned("sync-$id", updated))
             mediaHistory.record(id, "sync", "kind=${item.kind.name.lowercase()} scope=${req.scope}")
+            pushToJellyfin(updated, artwork, configStore, jellyfinClient, appScope)
             call.respond(updated)
         }
 
@@ -574,6 +576,7 @@ fun Route.mediaRoutes(
             store.updateOne(updatedItem)
             broadcaster.broadcast(JobEvent.ItemScanned("sync-$id-s$seasonNumber", updatedItem))
             mediaHistory.record(id, "season_sync", "season=$seasonNumber scope=${req.scope} synced=$synced")
+            pushToJellyfin(updatedItem, artwork, configStore, jellyfinClient, appScope)
             call.respond(mapOf("synced" to synced))
         }
 
@@ -594,7 +597,7 @@ fun Route.mediaRoutes(
 
                 store.updateOne(updated)
                 println("[INFO] Re-pulled TMDB for '$id': title='${updated.title}' tmdbId=${updated.tmdbId} episodes=${updated.episodes.size}")
-
+                pushToJellyfin(updated, artwork, configStore, jellyfinClient, appScope)
                 call.respond(updated)
             }
         }
@@ -674,6 +677,37 @@ fun Route.mediaRoutes(
             }
         }
         call.respond(HttpStatusCode.Accepted, mapOf("status" to "artwork fetch started", "total" to items.size))
+    }
+}
+
+/** Write NFO files, sync artwork, and do a full recursive Jellyfin refresh. */
+private suspend fun pushToJellyfin(
+    item: MediaItem,
+    artwork: ArtworkDownloader,
+    configStore: ConfigStore,
+    jellyfinClient: JellyfinClient,
+    appScope: CoroutineScope,
+) {
+    NfoWriter.write(item)
+        .onSuccess { path ->
+            println("[INFO] pushToJellyfin: wrote NFO $path")
+            if (item.kind == MediaKind.TV_SHOW) {
+                var epWritten = 0
+                for (ep in item.episodes) {
+                    NfoWriter.writeEpisode(ep)
+                        .onSuccess { epWritten++ }
+                        .onFailure { println("[WARN] pushToJellyfin: episode NFO failed for ${ep.filename}: ${it.message}") }
+                }
+                if (epWritten > 0) println("[INFO] pushToJellyfin: wrote $epWritten episode NFOs for '${item.id}'")
+            }
+        }
+        .onFailure { println("[WARN] pushToJellyfin: NFO write failed for '${item.id}': ${it.message}") }
+
+    appScope.launch { artwork.fetch(item) }
+
+    val cfg = configStore.current
+    if (!item.jellyfinId.isNullOrBlank() && cfg.apiKeys.jellyfinUrl.isNotBlank()) {
+        jellyfinClient.refreshItem(cfg.apiKeys.jellyfinUrl, cfg.apiKeys.jellyfinToken, item.jellyfinId, full = true)
     }
 }
 
