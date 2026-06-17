@@ -188,19 +188,9 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
         """<span class="seg-item$active" data-tab="$key">$label</span>"""
     }
 
-    // Language control — sets resolvedLanguage (used for NFO writes and TMDB queries).
-    val tmdbLangHint = """
-        <div style="margin-top:10px;padding-top:8px;border-top:1px solid var(--line);display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
-          <span class="tiny muted" style="font-weight:600;">Primary language for NFO:</span>
-          <input id="lang-override-input" class="input" style="width:72px;padding:2px 7px;font-size:.78rem;"
-            placeholder="e.g. fo" maxlength="10" value="${(item.resolvedLanguage ?: "").esc()}">
-          <button id="lang-override-btn" class="btn sm ghost">Save</button>
-          <span id="lang-override-msg" class="tiny muted"></span>
-          <span class="tiny muted" style="flex-basis:100%;margin-top:1px;">Also used when pulling metadata from TMDB. Does not affect audio tracks in the files.</span>
-        </div>""".trimIndent()
-
-    // Series language card for left rail — counts ALL audio tracks across all episodes
-    val seriesLangCard = if (isTvShow && item.episodes.isNotEmpty()) {
+    // Combined series-language card for the left rail — replaces both the old seriesLangCard
+    // and the tvOverviewBanner (FR-U1 Phase 12).
+    val seriesLangCard = if (isTvShow) {
         val votes = mutableMapOf<String, Int>()
         for (ep in item.episodes) {
             for (track in ep.tracks) {
@@ -210,93 +200,65 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
                 }
             }
         }
-        val totalTracks = votes.values.sum().coerceAtLeast(1)
-        val sortedVotes = votes.toList().sortedByDescending { it.second }
-        val winner = item.resolvedLanguage ?: sortedVotes.firstOrNull()?.first
-        val bars = sortedVotes.take(4).joinToString("") { (lang, count) ->
-            val pct = (count * 100) / totalTracks
-            val isPrimary = lang == winner
-            """<div style="display:flex;align-items:center;gap:6px;padding:3px 0;">
-                 <span class="mono" style="min-width:24px;font-size:.8rem;${if (isPrimary) "color:var(--ok)" else ""};">${lang.esc()}</span>
-                 <div style="flex:1;height:4px;background:var(--fill-3);border-radius:2px;">
-                   <div style="width:$pct%;height:100%;background:${if (isPrimary) "var(--ok)" else "var(--hi)"};border-radius:2px;"></div>
-                 </div>
-                 <span class="tiny muted">$count tracks</span>
-                 ${if (isPrimary) """<span class="badge ok" style="font-size:.6rem;">primary</span>""" else ""}
-               </div>"""
-        }
-        """<div class="card" style="margin-top:12px;">
-             <h4 style="margin:0 0 8px;font-size:.9rem;">Series language</h4>
-             $bars
-             <div class="field" style="margin:10px 0 0;">
-               <label style="font-size:.75rem;">tvshow.nfo language</label>
-               <div class="input mono" style="font-size:.85rem;padding:3px 8px;">${(item.resolvedLanguage ?: "—").esc()}</div>
-             </div>
-           </div>"""
-    } else ""
+        val totalTracks = votes.values.sum()
+        val epCount = item.episodes.size
+        val hasUntagged = votes.containsKey("?")
+        val winner = item.resolvedLanguage
+        val statusBadge = if (!item.languageMix)
+            """<span class="badge ok" style="font-size:.7rem;padding:1px 6px;">Uniform</span>"""
+        else
+            """<span class="badge warn" style="font-size:.7rem;padding:1px 6px;">Mixed</span>"""
 
-    val tvOverviewBanner = if (isTvShow) {
-        if (item.languageMix) {
-            // Count ALL audio tracks across ALL episodes for the distribution
-            val votes = mutableMapOf<String, Int>()
-            for (ep in item.episodes) {
-                for (track in ep.tracks) {
-                    if (track.kind == TrackKind.AUDIO) {
-                        val l = track.language ?: "?"
-                        votes[l] = (votes[l] ?: 0) + 1
-                    }
-                }
-            }
-            val totalTracks = votes.values.sum().coerceAtLeast(1)
-            val sortedVotes = votes.toList().sortedByDescending { it.second }
-            val primaryLang = item.resolvedLanguage
-            val distBars = sortedVotes.joinToString("") { (lang, count) ->
-                val pct = (count * 100) / totalTracks
-                val isPrimary = lang == primaryLang
+        val contentHtml = if (votes.isNotEmpty()) {
+            val safeTotal = totalTracks.coerceAtLeast(1)
+            val barsHtml = votes.toList().sortedByDescending { it.second }.joinToString("") { (lang, count) ->
+                val pct = (count * 100) / safeTotal
+                val isPrimary = lang == winner
                 val barColor = when {
-                    isPrimary -> "var(--ok,#22c55e)"
-                    lang == "?" -> "var(--bad,#ef4444)"
-                    else -> "var(--hi,#7c3aed)"
+                    isPrimary -> "var(--ok)"
+                    lang == "?" -> "var(--bad)"
+                    else -> "var(--hi)"
                 }
-                """<div style="display:flex;align-items:center;gap:8px;padding:3px 0;font-size:.82rem;">
-                     <span class="mono" style="min-width:32px;${if (isPrimary) "color:var(--ok);" else ""}">${lang.esc()}</span>
-                     <div style="flex:1;height:5px;background:var(--fill-3);border-radius:3px;min-width:80px;">
-                       <div style="width:$pct%;height:100%;background:$barColor;border-radius:3px;"></div>
+                val codeColor = when {
+                    isPrimary -> "color:var(--ok);"
+                    lang == "?" -> "color:var(--bad);"
+                    else -> ""
+                }
+                """<div style="display:flex;align-items:center;gap:5px;padding:2px 0;">
+                     <span class="mono" style="min-width:24px;font-size:.78rem;${codeColor}">${lang.esc()}</span>
+                     <div style="flex:1;height:4px;background:var(--fill-3);border-radius:2px;">
+                       <div style="width:$pct%;height:100%;background:$barColor;border-radius:2px;"></div>
                      </div>
-                     <span class="muted tiny">$count tracks</span>
-                     ${if (isPrimary) """<span class="badge ok" style="font-size:.6rem;padding:1px 5px;">primary</span>""" else ""}
+                     <span class="tiny muted">$count</span>
                    </div>"""
             }
-            val epCount = item.episodes.size
-            val hasUntagged = votes.containsKey("?")
-            """<div class="card" style="border-left:3px solid var(--warn,#f59e0b);padding:14px 16px;">
-                 <div class="row center" style="gap:8px;margin-bottom:10px;">
-                   <span class="badge warn">Multi-language series</span>
-                   ${if (!primaryLang.isNullOrBlank()) """<span class="badge ok" style="font-size:.72rem;">NFO: ${primaryLang.esc()}</span>""" else """<span class="badge warn" style="font-size:.72rem;">No primary language set</span>"""}
-                 </div>
-                 <p style="margin:0 0 12px;font-size:.88rem;">
-                   Episodes have audio tracks in multiple languages. Jellystructure uses the primary language
-                   for NFO writes and TMDB metadata. You can override it below.
-                 </p>
-                 <div style="margin-bottom:4px;">
-                   <div class="tiny muted" style="margin-bottom:6px;font-weight:600;">Audio track distribution ($epCount episodes, $totalTracks tracks total)</div>
-                   $distBars
-                   ${if (hasUntagged) """<div class="tiny muted" style="margin-top:4px;">Tracks marked <span class="mono" style="color:var(--bad);">?</span> have no language tag — use <a href="#/triage/series/${item.id}" class="link">Series Triage</a> to fix them.</div>""" else ""}
-                 </div>
-                 $tmdbLangHint
-               </div>"""
+            val triageLink = if (hasUntagged)
+                """<div class="tiny" style="margin-top:5px;"><a href="#/triage/series/${item.id}">Fix untagged →</a></div>"""
+            else ""
+            """<div class="tiny muted" style="margin-bottom:8px;">${epCount} episode${if (epCount != 1) "s" else ""} · $totalTracks tracks total</div>
+               $barsHtml
+               $triageLink"""
         } else {
-            val epCount = item.episodes.size
-            val countNote = if (epCount > 0) " Probed $epCount episodes." else ""
-            """<div class="card" style="border-left:3px solid var(--ok,#22c55e);padding:14px 16px;">
-                 <div class="row center" style="gap:8px;margin-bottom:6px;">
-                   <span class="badge ok">Uniform Audio Languages</span>
-                   ${if (!item.resolvedLanguage.isNullOrBlank()) """<span class="badge">lang: ${item.resolvedLanguage.esc()}</span>""" else ""}
-                 </div>
-                 <p style="margin:0;font-size:.88rem;">Audio languages are consistent across all probed episodes.$countNote${if (!item.resolvedLanguage.isNullOrBlank()) " TMDB metadata fetched in <strong>${item.resolvedLanguage.esc()}</strong>." else ""}</p>
-                 $tmdbLangHint
-               </div>"""
+            """<div class="tiny muted" style="margin-bottom:8px;">No episode data yet.</div>"""
         }
+
+        val overrideVal = (item.resolvedLanguage ?: "").esc()
+        """<div class="card" style="margin-top:12px;">
+             <div class="row center" style="gap:6px;margin-bottom:4px;flex-wrap:nowrap;">
+               <h4 style="margin:0;font-size:.9rem;white-space:nowrap;">Series language</h4>
+               $statusBadge
+             </div>
+             $contentHtml
+             <hr style="margin:10px 0 8px;border:none;border-top:1px solid var(--line);">
+             <label style="font-size:.75rem;font-weight:600;display:block;margin-bottom:5px;">NFO language</label>
+             <input id="lang-override-input" class="input" style="width:100%;padding:3px 8px;font-size:.82rem;"
+               placeholder="e.g. en" maxlength="10" value="$overrideVal">
+             <div style="display:flex;gap:6px;align-items:center;margin-top:6px;">
+               <button id="lang-override-btn" class="btn sm ghost">Save</button>
+               <span id="lang-override-msg" class="tiny muted"></span>
+             </div>
+             <div class="tiny muted" style="margin-top:6px;line-height:1.4;">Used for TMDB metadata and tvshow.nfo writes. Does not affect audio tracks.</div>
+           </div>"""
     } else ""
 
     val tracksHtml = if (!isTvShow) buildTracksTable(item.tracks) else ""
@@ -329,6 +291,13 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
     val resolverTraceHtml = buildResolverTrace(item, fallbackLang)
     val episodesTabHtml = if (isTvShow) buildEpisodesTab(item) else ""
 
+    val tmdbLinkHtml = if (item.tmdbId != null) {
+        val tmdbPath = if (item.kind == MediaKind.TV_SHOW) "tv" else "movie"
+        val lang = item.resolvedLanguage
+        val langParam = if (!lang.isNullOrBlank()) "?language=$lang" else ""
+        """<a href="https://www.themoviedb.org/$tmdbPath/${item.tmdbId}$langParam" target="_blank" rel="noopener" class="btn sm ghost">TMDB ↗</a>"""
+    } else ""
+
     container.innerHTML = """
         <div class="pagebar">
           <button id="back-btn" class="btn sm ghost">‹ Library</button>
@@ -337,7 +306,7 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
           $resolvedLangBadge
           <span class="spacer"></span>
           ${if (jellyfinUrl.isNotBlank() && item.jellyfinId != null) """<a href="$jellyfinUrl/web/index.html#!/details?id=${item.jellyfinId}" target="_blank" rel="noopener" class="btn sm ghost">Jellyfin ↗</a>""" else ""}
-          ${if (item.tmdbId != null) { val tmdbPath = if (item.kind == MediaKind.TV_SHOW) "tv" else "movie"; """<a href="https://www.themoviedb.org/$tmdbPath/${item.tmdbId}" target="_blank" rel="noopener" class="btn sm ghost">TMDB ↗</a>""" } else ""}
+          $tmdbLinkHtml
           <button id="repull-btn" class="btn sm ghost">Re-pull from TMDB</button>
           ${if (!isTvShow) """<button id="track-order-btn" class="btn sm ghost">Track order →</button>""" else ""}
           <button id="write-nfo-btn" class="btn ghost" ${if (nfoDisabled) """disabled title="${nfoDisabledReason.esc()}"""" else ""}>Save → disk</button>
@@ -349,7 +318,6 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
         <div class="seg" id="detail-tabs" style="margin-bottom:16px;">$tabBarHtml</div>
 
         <div id="tab-overview">
-          $tvOverviewBanner
           $embeddedTracksSummary
           <div class="row" style="align-items:flex-start;gap:22px;flex-wrap:wrap;">
             <div class="col" style="width:220px;flex:none;">
@@ -510,11 +478,6 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
                 msg?.textContent = "Failed"
             }
         }
-    }
-
-    document.getElementById("open-series-triage-btn")?.addEventListener("click") { e ->
-        e.preventDefault()
-        App.navigate("/triage/series/${item.id}")
     }
 
     document.getElementById("write-nfo-btn")?.addEventListener("click") {
