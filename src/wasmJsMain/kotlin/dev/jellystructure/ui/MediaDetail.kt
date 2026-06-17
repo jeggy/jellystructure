@@ -1129,22 +1129,26 @@ private suspend fun handleWriteNfo(id: String, refresh: Boolean = false) {
 
     val (result, error) = MediaApi.writeNfo(id)
 
-    btn1?.removeAttribute("disabled"); btn1?.textContent = "Save → disk"
-    btn2?.removeAttribute("disabled"); btn2?.textContent = "Save & tell Jellyfin ↻"
-
     if (result != null) {
-        showDetailMsg("NFO written to ${result.path}", true)
         val raw = MediaApi.getNfo(id)
         if (raw != null) {
             (document.getElementById("nfo-raw") as? HTMLElement)?.textContent = raw
         }
         if (refresh) {
+            btn2?.textContent = "Syncing artwork…"
+            MediaApi.fetchArtwork(id)
+            btn2?.textContent = "Notifying Jellyfin…"
             MediaApi.jellyfinRefresh(id)
-            showDetailMsg("NFO written and Jellyfin notified ✓", true)
+            showDetailMsg("NFO written, artwork synced, Jellyfin notified ✓", true)
+        } else {
+            showDetailMsg("NFO written to ${result.path}", true)
         }
     } else {
         showNfoWriteError(error ?: "NFO write failed.")
     }
+
+    btn1?.removeAttribute("disabled"); btn1?.textContent = "Save → disk"
+    btn2?.removeAttribute("disabled"); btn2?.textContent = "Save & tell Jellyfin ↻"
 }
 
 private fun permCopyBlock(command: String, comment: String? = null): String {

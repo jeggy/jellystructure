@@ -56,7 +56,29 @@ class ArtworkDownloader {
             posterOk = posterJob?.await() ?: posterExists
             fanartOk = fanartJob?.await() ?: fanartExists
         }
+
+        // For TV shows: clean up any artwork that was previously written to the wrong
+        // location (parent of the series directory) due to the substringBeforeLast('/') bug.
+        // Only delete the old file once the correct-path file is confirmed present.
+        if (item.kind == MediaKind.TV_SHOW) {
+            val oldDir = item.path.substringBeforeLast('/')
+            if (oldDir != dir) {
+                if (posterOk) deleteIfExists("$oldDir/poster.jpg")
+                if (fanartOk) deleteIfExists("$oldDir/fanart.jpg")
+                if (logoExists) deleteIfExists("$oldDir/clearlogo.png")
+            }
+        }
+
         return ArtworkStatus(posterExists = posterOk, fanartExists = fanartOk, logoExists = logoExists)
+    }
+
+    private fun deleteIfExists(path: String) {
+        val p = Path(path)
+        if (SystemFileSystem.exists(p)) {
+            runCatching { SystemFileSystem.delete(p) }
+                .onSuccess { println("[INFO] Removed misplaced artwork: $path") }
+                .onFailure { println("[WARN] Could not remove misplaced artwork $path: ${it.message}") }
+        }
     }
 
     private suspend fun download(url: String, destPath: String): Boolean = runCatching {
