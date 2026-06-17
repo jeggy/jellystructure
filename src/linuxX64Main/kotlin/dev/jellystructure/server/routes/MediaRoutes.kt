@@ -408,7 +408,9 @@ fun Route.mediaRoutes(
                     val newIssue = newTracks.count { (it.kind == TrackKind.AUDIO || it.kind == TrackKind.SUBTITLE) && it.language == null }
                     val updatedEpisodes = item.episodes.toMutableList()
                     updatedEpisodes[epIdx] = ep.copy(tracks = newTracks, issueCount = newIssue)
-                    store.updateOne(item.copy(episodes = updatedEpisodes))
+                    // Keep item.tracks in sync with the first episode's tracks so repull language resolution is correct
+                    val updatedItemTracks = if (epIdx == 0) newTracks else item.tracks
+                    store.updateOne(item.copy(episodes = updatedEpisodes, tracks = updatedItemTracks))
                     mediaHistory.record(id, "set_language", "ep=${ep.filename} specifier=${req.specifier} lang=${req.language}")
                     call.respond(mapOf("ok" to true, "language" to req.language))
                 }

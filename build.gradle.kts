@@ -1,5 +1,8 @@
 @file:OptIn(org.jetbrains.kotlin.gradle.ExperimentalWasmDsl::class)
 
+import java.net.ConnectException
+import java.net.Socket
+
 plugins {
     alias(libs.plugins.kotlin.multiplatform)
     alias(libs.plugins.kotlin.serialization)
@@ -53,12 +56,19 @@ tasks.register("runDev") {
         ProcessBuilder("pkill", "-KILL", "-f", "jellystructure.kexe").inheritIO().start().waitFor()
         ProcessBuilder("pkill", "-KILL", "-f", "webpack-dev-server").inheritIO().start().waitFor()
         // Poll until port 9505 is actually free (up to 5 s).
+        // Uses a Java socket instead of bash /dev/tcp — /dev/tcp is not enabled in all
+        // bash builds and returns a misleading non-zero exit even when the port is occupied.
         val deadline = System.currentTimeMillis() + 5_000
         while (System.currentTimeMillis() < deadline) {
-            Thread.sleep(100)
-            // Exit code 0 = something answered on the port (still in use); non-0 = port free.
-            val inUse = ProcessBuilder("bash", "-c", "echo > /dev/tcp/localhost/9505")
-                .start().waitFor() == 0
+            Thread.sleep(200)
+            val inUse = try {
+                Socket("localhost", 9505).also { it.close() }
+                true   // connected → port is still in use
+            } catch (_: ConnectException) {
+                false  // ECONNREFUSED → port is free
+            } catch (_: Exception) {
+                false  // any other error → treat as free
+            }
             if (!inUse) break
         }
 

@@ -135,7 +135,9 @@ fun Route.triageRoutes(store: MediaStore, jellyfinClient: JellyfinClient, config
             val totalIssues = updatedEpisodes.sumOf { e ->
                 e.tracks.count { (it.kind == TrackKind.AUDIO || it.kind == TrackKind.SUBTITLE) && it.language == null }
             }
-            store.updateOne(item.copy(episodes = updatedEpisodes, issueCount = totalIssues))
+            // Keep item.tracks in sync with the first episode's tracks so repull language resolution is correct
+            val updatedItemTracks = if (updatedEpisodes.firstOrNull()?.filename == epFilename) newTracks else item.tracks
+            store.updateOne(item.copy(episodes = updatedEpisodes, issueCount = totalIssues, tracks = updatedItemTracks))
             mediaHistory.record(mediaId, "ep_assign_language", "ep=$epFilename specifier=$specifier lang=$lang")
 
             call.respond(mapOf("ok" to true, "language" to lang))

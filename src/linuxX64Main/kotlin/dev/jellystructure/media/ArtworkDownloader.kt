@@ -38,10 +38,6 @@ class ArtworkDownloader {
     }
 
     suspend fun fetch(item: MediaItem): ArtworkStatus {
-        if (item.languageMix) {
-            println("[INFO] Artwork download skipped for '${item.title}': language mix detected")
-            return check(item)
-        }
         val dir = mediaDir(item)
         val posterExists = SystemFileSystem.exists(Path("$dir/poster.jpg"))
         val fanartExists = SystemFileSystem.exists(Path("$dir/fanart.jpg"))

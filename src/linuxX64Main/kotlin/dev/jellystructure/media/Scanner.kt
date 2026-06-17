@@ -69,7 +69,7 @@ class Scanner(
                 jellyfinPath
             }
 
-            val effectiveFallback = lib.fallbackLanguage ?: globalFallback
+            val effectiveFallback = lib.fallbackLanguage?.ifBlank { null } ?: globalFallback
 
             val mediaItem = when (jItem.type) {
                 "Movie" -> scanMovie(jItem, localPath, effectiveFallback)
@@ -215,22 +215,34 @@ class Scanner(
         val totalIssueCount = sortedEpisodes.sumOf { it.issueCount }
 
         if (languageMix) {
-            println("[INFO] Series '$title' has mixed audio languages across episodes — marking as language mix")
-            // Still fetch series details using the TMDB id even for mixed series — needed for artwork
-            val mixDetails = seriesTmdbId?.let { tmdb.getTvDetails(it) }
+            println("[INFO] Series '$title' has mixed audio languages across episodes — using majority language for NFO")
+            // Vote on each episode's primary (first) audio track to find the majority language.
+            val langVotes = mutableMapOf<String, Int>()
+            for (ep in sortedEpisodes) {
+                val primaryLang = ep.tracks
+                    .firstOrNull { it.kind == TrackKind.AUDIO }?.language
+                    ?.let { LanguageResolver.normalize(it) }
+                if (primaryLang != null) langVotes[primaryLang] = (langVotes[primaryLang] ?: 0) + 1
+            }
+            val majorityLang = langVotes.maxByOrNull { it.value }?.key
+            val mixPriority = LanguageResolver.priorityList(
+                majorityLang?.let { listOf(it) } ?: emptyList(), fallback
+            )
+            val mixDetails = seriesTmdbId?.let { tmdb.getTvDetailsLocalized(it, mixPriority) }
             return MediaItem(
                 id = slugify(title, year),
                 title = mixDetails?.name ?: title,
+                originalTitle = mixDetails?.originalName?.takeIf { it.isNotBlank() },
                 year = year,
                 kind = MediaKind.TV_SHOW,
                 path = localPath,
                 jellyfinId = jItem.id,
                 tmdbId = seriesTmdbId,
                 originalLanguage = mixDetails?.originalLanguage?.takeIf { it.isNotBlank() },
-                resolvedLanguage = null,
+                resolvedLanguage = majorityLang,
                 posterPath = mixDetails?.posterPath,
                 backdropPath = mixDetails?.backdropPath,
-                overview = null,
+                overview = mixDetails?.overview?.takeIf { it.isNotBlank() },
                 genres = mixDetails?.genres?.map { it.name } ?: emptyList(),
                 tracks = firstTracks,
                 episodes = sortedEpisodes,
@@ -287,9 +299,20 @@ class Scanner(
             val prefix = lib.localPath.ifBlank { lib.jellyfinPath }
             prefix.isNotBlank() && item.path.startsWith(prefix)
         }
-        val fallback = lib?.fallbackLanguage ?: globalFallback
-        val audioLangs = item.tracks.filter { it.kind == TrackKind.AUDIO }.map { it.language }
-        val langPriority = LanguageResolver.priorityList(audioLangs, fallback)
+        val fallback = lib?.fallbackLanguage?.ifBlank { null } ?: globalFallback
+        // For TV shows, item.tracks mirrors the first episode's tracks but may be stale after triage edits.
+        // Read from episodes.first() when available so repull sees the current (post-triage) track state.
+        val sourceTracks = if (item.kind == MediaKind.TV_SHOW)
+            item.episodes.firstOrNull()?.tracks ?: item.tracks
+        else item.tracks
+        val audioLangs = sourceTracks.filter { it.kind == TrackKind.AUDIO }.map { it.language }
+        val basePriority = LanguageResolver.priorityList(audioLangs, fallback)
+        // If the user has explicitly set a language override (e.g. via the language-mix control),
+        // honour it as the first TMDB query language so repull fetches metadata in that language.
+        val overrideLang = item.resolvedLanguage?.ifBlank { null }?.let { LanguageResolver.normalize(it) }
+        val langPriority = if (overrideLang != null && basePriority.firstOrNull() != overrideLang)
+            listOf(overrideLang) + basePriority.filter { it != overrideLang }
+        else basePriority
 
         return when (item.kind) {
             MediaKind.MOVIE -> {

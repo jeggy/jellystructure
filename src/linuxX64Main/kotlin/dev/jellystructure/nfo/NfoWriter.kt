@@ -15,11 +15,6 @@ object NfoWriter {
     }
 
     fun write(item: MediaItem): Result<String> {
-        if (item.languageMix) {
-            return Result.failure(
-                IllegalStateException("NFO write blocked: series '${item.title}' has mixed audio languages")
-            )
-        }
         return runCatching {
             val dir = item.path.substringBeforeLast('/')
             val filename = when (item.kind) {
