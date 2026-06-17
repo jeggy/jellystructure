@@ -33,8 +33,10 @@ fun renderMediaDetail(container: Element, scope: CoroutineScope, mediaId: String
             container.innerHTML = """<span class="muted" style="padding:24px;display:block;">Item not found.</span>"""
             return@launch
         }
-        val fallbackLang = ConfigApi.get()?.languageRules?.fallbackLanguage ?: "en"
-        renderDetailView(container, item, scope, fallbackLang)
+        val config = ConfigApi.get()
+        val fallbackLang = config?.languageRules?.fallbackLanguage ?: "en"
+        val jellyfinUrl = config?.apiKeys?.jellyfinUrl?.trimEnd('/') ?: ""
+        renderDetailView(container, item, scope, fallbackLang, jellyfinUrl)
     }
 }
 
@@ -92,7 +94,7 @@ private fun buildResolverTrace(item: MediaItem, fallbackLang: String): String {
         </div>""".trimIndent()
 }
 
-private fun renderDetailView(container: Element, item: MediaItem, scope: CoroutineScope, fallbackLang: String = "en") {
+private fun renderDetailView(container: Element, item: MediaItem, scope: CoroutineScope, fallbackLang: String = "en", jellyfinUrl: String = "") {
     val isTvShow = item.kind == MediaKind.TV_SHOW
 
     val posterHtml = if (item.posterPath != null) {
@@ -333,6 +335,8 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
           ${if (item.tmdbId != null) """<span class="badge ok">TMDB matched</span>""" else """<span class="badge warn">No TMDB match</span>"""}
           $resolvedLangBadge
           <span class="spacer"></span>
+          ${if (jellyfinUrl.isNotBlank() && item.jellyfinId != null) """<a href="$jellyfinUrl/web/index.html#!/details?id=${item.jellyfinId}" target="_blank" rel="noopener" class="btn sm ghost">Jellyfin ↗</a>""" else ""}
+          ${if (item.tmdbId != null) { val tmdbPath = if (item.kind == MediaKind.TV_SHOW) "tv" else "movie"; """<a href="https://www.themoviedb.org/$tmdbPath/${item.tmdbId}" target="_blank" rel="noopener" class="btn sm ghost">TMDB ↗</a>""" } else ""}
           <button id="repull-btn" class="btn sm ghost">Re-pull from TMDB</button>
           ${if (!isTvShow) """<button id="track-order-btn" class="btn sm ghost">Track order →</button>""" else ""}
           <button id="write-nfo-btn" class="btn ghost" ${if (nfoDisabled) """disabled title="${nfoDisabledReason.esc()}"""" else ""}>Save → disk</button>
@@ -484,7 +488,7 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
     }
 
     document.getElementById("repull-btn")?.addEventListener("click") {
-        scope.launch { handleRepull(item, container, scope) }
+        scope.launch { handleRepull(item, container, scope, fallbackLang, jellyfinUrl) }
     }
 
     document.getElementById("lang-override-btn")?.addEventListener("click") {
@@ -686,7 +690,7 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
             if (updated != null) {
                 msg?.textContent = "Saved ✓"
                 delay(600)
-                renderDetailView(container, updated, scope)
+                renderDetailView(container, updated, scope, fallbackLang, jellyfinUrl)
             } else {
                 msg?.textContent = "Save failed"
             }
@@ -964,7 +968,7 @@ private suspend fun loadHistory(id: String) {
     }
 }
 
-private suspend fun handleRepull(item: MediaItem, container: Element, scope: CoroutineScope) {
+private suspend fun handleRepull(item: MediaItem, container: Element, scope: CoroutineScope, fallbackLang: String = "en", jellyfinUrl: String = "") {
     val btn = document.getElementById("repull-btn") as? HTMLElement
     btn?.setAttribute("disabled", "true")
     btn?.textContent = "Pulling…"
@@ -977,7 +981,7 @@ private suspend fun handleRepull(item: MediaItem, container: Element, scope: Cor
     if (updated != null) {
         showDetailMsg("TMDB data refreshed. Reloading…", true)
         delay(600)
-        renderDetailView(container, updated, scope)
+        renderDetailView(container, updated, scope, fallbackLang, jellyfinUrl)
     } else {
         showDetailMsg("Re-pull failed — no TMDB match found.", false)
     }

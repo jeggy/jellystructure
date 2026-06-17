@@ -423,7 +423,7 @@ The real frontend uses **Tailwind CSS**; mockups use CSS variables as the visual
 | 7 | ✓ Done | Persistent scan state + resume — survive page refresh and backend restart (FR-S1) |
 | 8 | ✓ Done | Three-way theme picker — Light / Dark / System with OS sync (FR-T1) |
 | 9 | ✓ Done | Per-field dirty indicators + diff popup on Media Detail metadata editing (FR-D2) |
-| 10 | Planned | External links on Media Detail — open item in Jellyfin and TMDB (FR-X1) |
+| 10 | ✓ Done | External links on Media Detail — open item in Jellyfin and TMDB (FR-X1) |
 | 11 | Planned | Language pickers — searchable dropdowns replacing all free-text language inputs (FR-L1) |
 | 12 | Planned | Simplify TV series language UI — merge overview banner into compact left-rail card (FR-U1) |
 | 13 | Planned | Sync single media item — targeted rescan for one item, season, or series (FR-S2) |
