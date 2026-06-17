@@ -1147,33 +1147,89 @@ private suspend fun handleWriteNfo(id: String, refresh: Boolean = false) {
     }
 }
 
-private fun nfoPermSuggestionsHtml(path: String): String {
-    val pathRef = if (path.isNotBlank()) path.esc() else "/path/to/media"
+private fun permCopyBlock(command: String, comment: String? = null): String {
+    val attrSafe = command.replace("&", "&amp;").replace("\"", "&quot;")
+    val display = if (comment != null) "${command.esc()}<span style='color:var(--ink-soft);'> # ${comment.esc()}</span>" else command.esc()
+    return """<div style="display:flex;align-items:stretch;background:var(--fill-3);border:1px solid var(--line);border-radius:4px;overflow:hidden;margin:4px 0 2px;">
+      <code style="flex:1;padding:7px 10px;$MONO_CODE_STYLE;white-space:pre-wrap;word-break:break-all;">$display</code>
+      <button data-copy="$attrSafe" onclick="navigator.clipboard.writeText(this.dataset.copy);var b=this;b.textContent='Copied!';setTimeout(function(){b.textContent='Copy'},1500);" style="padding:0 12px;background:var(--fill-2);border:none;border-left:1px solid var(--line);cursor:pointer;color:var(--ink-soft);font-size:.75rem;white-space:nowrap;flex-shrink:0;">Copy</button>
+    </div>""".trimIndent()
+}
+
+private fun buildNfoPermFixHtml(path: String): String {
+    val p = if (path.isNotBlank()) path else "/path/to/media"
+    val tabActive = "padding:6px 14px;border:none;cursor:pointer;background:none;border-bottom:2px solid var(--hi);font-weight:600;color:var(--ink);font-size:.82rem;"
+    val tabInactive = "padding:6px 14px;border:none;cursor:pointer;background:none;border-bottom:2px solid transparent;color:var(--ink-soft);font-size:.82rem;"
+    val switchDocker = "document.getElementById('perm-tab-docker').style.display='';document.getElementById('perm-tab-native').style.display='none';document.getElementById('perm-tab-docker-btn').setAttribute('style','$tabActive');document.getElementById('perm-tab-native-btn').setAttribute('style','$tabInactive');"
+    val switchNative = "document.getElementById('perm-tab-native').style.display='';document.getElementById('perm-tab-docker').style.display='none';document.getElementById('perm-tab-native-btn').setAttribute('style','$tabActive');document.getElementById('perm-tab-docker-btn').setAttribute('style','$tabInactive');"
+
+    val dockerTab = """
+        <div id="perm-tab-docker">
+          <p class="tiny muted" style="margin:8px 0 10px;">Run these on your <strong>host machine</strong> (not inside the container).</p>
+          <div style="margin-bottom:10px;">
+            <div class="tiny muted" style="margin-bottom:4px;"><strong>Step 1</strong> — find the UID:GID that owns the media directory:</div>
+            ${permCopyBlock("stat $p")}
+            <div class="tiny muted" style="margin-top:3px;">Look for <code style="$MONO_CODE_STYLE">Uid:</code> and <code style="$MONO_CODE_STYLE">Gid:</code> in the output.</div>
+          </div>
+          <div style="margin-bottom:10px;">
+            <div class="tiny muted" style="margin-bottom:4px;"><strong>Step 2a (preferred)</strong> — add a <code style="$MONO_CODE_STYLE">user:</code> line to the jellystructure service in docker-compose.yml, then restart:</div>
+            ${permCopyBlock("    user: \"1000:1000\"", "replace with UID:GID from Step 1")}
+            ${permCopyBlock("docker compose up -d jellystructure")}
+          </div>
+          <div>
+            <div class="tiny muted" style="margin-bottom:4px;"><strong>Step 2b (alternative)</strong> — change ownership of the media directory on the host:</div>
+            ${permCopyBlock("sudo chown -R 1000:1000 $p", "replace 1000:1000 with UID:GID from Step 1")}
+          </div>
+        </div>
+    """.trimIndent()
+
+    val nativeTab = """
+        <div id="perm-tab-native" style="display:none;">
+          <p class="tiny muted" style="margin:8px 0 10px;">The user running the Jellystructure binary needs write access to the media directory.</p>
+          <div style="margin-bottom:10px;">
+            <div class="tiny muted" style="margin-bottom:4px;"><strong>Option 1</strong> — change ownership to the current user:</div>
+            ${permCopyBlock("sudo chown -R \$(id -u):\$(id -g) $p")}
+          </div>
+          <div style="margin-bottom:10px;">
+            <div class="tiny muted" style="margin-bottom:4px;"><strong>Option 2</strong> — add write permission for the directory's group:</div>
+            ${permCopyBlock("sudo chmod -R g+w $p")}
+          </div>
+          <div>
+            <div class="tiny muted" style="margin-bottom:4px;">Check current ownership:</div>
+            ${permCopyBlock("stat $p")}
+          </div>
+        </div>
+    """.trimIndent()
+
     return """
-    <div style="margin-top:10px;">
-      <div style="font-size:.8rem;font-weight:600;margin-bottom:6px;color:var(--ink);">How to fix:</div>
-      <ul style="margin:0;padding-left:18px;font-size:.8rem;line-height:1.8;color:var(--ink-soft);">
-        <li>Make sure the media volume is <strong>not mounted read-only</strong> (no <code style="${MONO_CODE_STYLE}">:ro</code> flag in docker-compose.yml).</li>
-        <li>Add <code style="$MONO_CODE_STYLE">user: "uid:gid"</code> to the Jellystructure service so it runs as the same user that owns the media files.</li>
-        <li>Or grant write access: <code style="$MONO_CODE_STYLE">chown -R uid:gid $pathRef</code> on the host.</li>
-        <li>Run <code style="$MONO_CODE_STYLE">stat $pathRef</code> on the host to find the correct UID/GID.</li>
-      </ul>
-    </div>
-""".trimIndent()
+        <div style="margin-top:10px;">
+          <div style="display:flex;border-bottom:1px solid var(--line);margin-bottom:10px;">
+            <button id="perm-tab-docker-btn" onclick="$switchDocker" style="$tabActive">Docker Compose</button>
+            <button id="perm-tab-native-btn" onclick="$switchNative" style="$tabInactive">Native</button>
+          </div>
+          $dockerTab
+          $nativeTab
+        </div>
+    """.trimIndent()
 }
 
 private fun showNfoWriteError(message: String) {
     val el = document.getElementById("detail-msg") as? HTMLElement ?: return
     val isPermission = message.contains("Permission denied", ignoreCase = true)
-    val suggestions = if (isPermission) nfoPermSuggestionsHtml("") else ""
+    val bannerVisible = (document.getElementById("nfo-perm-banner") as? HTMLElement)?.style?.display != "none"
+    val extra = when {
+        isPermission && bannerVisible -> """<div class="tiny muted" style="margin-top:8px;">See the warning above for fix instructions.</div>"""
+        isPermission -> buildNfoPermFixHtml("")
+        else -> ""
+    }
     el.style.display = "block"
     el.innerHTML = """
         <div style="background:color-mix(in srgb,var(--bad) 10%,transparent);border:1px solid var(--bad);border-radius:var(--radius-s);padding:12px 16px;">
-          <div style="display:flex;align-items:flex-start;gap:8px;${if (isPermission) "margin-bottom:8px;" else ""}">
+          <div style="display:flex;align-items:flex-start;gap:8px;${if (extra.isNotBlank()) "margin-bottom:4px;" else ""}">
             <span class="badge bad" style="flex-shrink:0;">Write failed</span>
-            <span style="font-family:'JetBrains Mono',monospace;font-size:.8rem;word-break:break-all;">${message.esc()}</span>
+            <span style="$MONO_CODE_STYLE;word-break:break-all;">${message.esc()}</span>
           </div>
-          $suggestions
+          $extra
         </div>
     """.trimIndent()
 }
@@ -1183,12 +1239,12 @@ private fun showNfoPermBanner(message: String, path: String) {
     el.style.display = "block"
     el.innerHTML = """
         <div style="background:color-mix(in srgb,var(--warn) 12%,transparent);border:1px solid var(--warn);border-radius:var(--radius-s);padding:12px 16px;">
-          <div style="display:flex;align-items:flex-start;gap:8px;margin-bottom:8px;">
+          <div style="display:flex;align-items:flex-start;gap:8px;">
             <span class="badge warn" style="flex-shrink:0;">No write access</span>
-            <span style="font-family:'JetBrains Mono',monospace;font-size:.8rem;word-break:break-all;">${message.esc()}</span>
-            <button onclick="this.closest('[id=nfo-perm-banner]').style.display='none'" style="margin-left:auto;background:none;border:none;cursor:pointer;color:var(--ink-soft);font-size:1rem;padding:0 2px;flex-shrink:0;">✕</button>
+            <span style="$MONO_CODE_STYLE;word-break:break-all;">${message.esc()}</span>
+            <button onclick="document.getElementById('nfo-perm-banner').style.display='none'" style="margin-left:auto;background:none;border:none;cursor:pointer;color:var(--ink-soft);font-size:1rem;padding:0 2px;flex-shrink:0;" title="Dismiss">✕</button>
           </div>
-          ${nfoPermSuggestionsHtml(path)}
+          ${buildNfoPermFixHtml(path)}
         </div>
     """.trimIndent()
 }
