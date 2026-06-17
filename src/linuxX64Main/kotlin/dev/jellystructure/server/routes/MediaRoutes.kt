@@ -109,10 +109,6 @@ fun Route.mediaRoutes(
                                 }
                                 if (epWritten > 0) println("[INFO] Wrote $epWritten episode NFO(s) for '$id'")
                             }
-                            val cfg = configStore.current
-                            if (!item.jellyfinId.isNullOrBlank() && cfg.apiKeys.jellyfinUrl.isNotBlank()) {
-                                jellyfinClient.refreshItem(cfg.apiKeys.jellyfinUrl, cfg.apiKeys.jellyfinToken, item.jellyfinId)
-                            }
                             call.respond(mapOf("path" to path))
                         }
                         .onFailure { e ->
@@ -126,7 +122,10 @@ fun Route.mediaRoutes(
                         ?: return@get call.respond(HttpStatusCode.BadRequest)
                     val item = store.get(id)
                         ?: return@get call.respond(HttpStatusCode.NotFound)
-                    val dir = item.path.substringBeforeLast('/')
+                    val dir = when (item.kind) {
+                        MediaKind.MOVIE -> item.path.substringBeforeLast('/')
+                        MediaKind.TV_SHOW -> item.path
+                    }
                     val testFile = "$dir/.jellystructure-write-test.tmp"
                     @Serializable data class WritableResult(val writable: Boolean, val path: String, val error: String? = null)
                     val error = runCatching {

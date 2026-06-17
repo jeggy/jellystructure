@@ -16,7 +16,10 @@ object NfoWriter {
 
     fun write(item: MediaItem): Result<String> {
         return runCatching {
-            val dir = item.path.substringBeforeLast('/')
+            val dir = when (item.kind) {
+                MediaKind.MOVIE -> item.path.substringBeforeLast('/')
+                MediaKind.TV_SHOW -> item.path  // item.path IS the series directory
+            }
             val filename = when (item.kind) {
                 MediaKind.MOVIE -> "movie.nfo"
                 MediaKind.TV_SHOW -> "tvshow.nfo"
@@ -36,7 +39,10 @@ object NfoWriter {
     }
 
     fun exists(item: MediaItem): Boolean {
-        val dir = item.path.substringBeforeLast('/')
+        val dir = when (item.kind) {
+            MediaKind.MOVIE -> item.path.substringBeforeLast('/')
+            MediaKind.TV_SHOW -> item.path
+        }
         val filename = when (item.kind) {
             MediaKind.MOVIE -> "movie.nfo"
             MediaKind.TV_SHOW -> "tvshow.nfo"
@@ -45,7 +51,10 @@ object NfoWriter {
     }
 
     fun readRaw(item: MediaItem): String? {
-        val dir = item.path.substringBeforeLast('/')
+        val dir = when (item.kind) {
+            MediaKind.MOVIE -> item.path.substringBeforeLast('/')
+            MediaKind.TV_SHOW -> item.path
+        }
         val filename = when (item.kind) {
             MediaKind.MOVIE -> "movie.nfo"
             MediaKind.TV_SHOW -> "tvshow.nfo"
