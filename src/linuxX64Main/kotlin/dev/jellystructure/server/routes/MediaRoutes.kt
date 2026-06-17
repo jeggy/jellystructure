@@ -511,6 +511,56 @@ fun Route.mediaRoutes(
             call.respond(langs)
         }
 
+        // POST /api/media/{id}/sync — targeted full rescan for one item (no ScanTracker transitions)
+        post("/{id}/sync") {
+            val id = call.parameters["id"] ?: return@post call.respond(HttpStatusCode.BadRequest)
+            val item = store.get(id) ?: return@post call.respond(HttpStatusCode.NotFound)
+            if (scanTracker.running) {
+                call.respond(HttpStatusCode.Conflict, mapOf("error" to "scan already running"))
+                return@post
+            }
+            @Serializable data class SyncReq(val scope: String = "episodes")
+            val req = runCatching { call.receive<SyncReq>() }.getOrDefault(SyncReq())
+            val updated = when (item.kind) {
+                MediaKind.MOVIE -> scanner.syncMovie(item)
+                MediaKind.TV_SHOW -> when (req.scope) {
+                    "series" -> scanner.rescanMetadata(item)
+                    else -> scanner.syncSeriesEpisodes(item)
+                }
+            }
+            if (updated == null) {
+                call.respond(HttpStatusCode.InternalServerError, mapOf("error" to "sync failed — file not found or no TMDB match"))
+                return@post
+            }
+            store.updateOne(updated)
+            broadcaster.broadcast(JobEvent.ItemScanned("sync-$id", updated))
+            mediaHistory.record(id, "sync", "kind=${item.kind.name.lowercase()} scope=${req.scope}")
+            call.respond(updated)
+        }
+
+        // POST /api/media/{id}/seasons/{seasonNumber}/sync — per-season resync
+        post("/{id}/seasons/{seasonNumber}/sync") {
+            val id = call.parameters["id"] ?: return@post call.respond(HttpStatusCode.BadRequest)
+            val seasonNumber = call.parameters["seasonNumber"]?.toIntOrNull()
+                ?: return@post call.respond(HttpStatusCode.BadRequest, mapOf("error" to "invalid season number"))
+            val item = store.get(id) ?: return@post call.respond(HttpStatusCode.NotFound)
+            if (item.kind != MediaKind.TV_SHOW) {
+                call.respond(HttpStatusCode.BadRequest, mapOf("error" to "only available for TV shows"))
+                return@post
+            }
+            if (scanTracker.running) {
+                call.respond(HttpStatusCode.Conflict, mapOf("error" to "scan already running"))
+                return@post
+            }
+            @Serializable data class SeasonSyncReq(val scope: String = "episodes")
+            val req = runCatching { call.receive<SeasonSyncReq>() }.getOrDefault(SeasonSyncReq())
+            val (updatedItem, synced) = scanner.syncSeason(item, seasonNumber, probeFiles = req.scope != "season")
+            store.updateOne(updatedItem)
+            broadcaster.broadcast(JobEvent.ItemScanned("sync-$id-s$seasonNumber", updatedItem))
+            mediaHistory.record(id, "season_sync", "season=$seasonNumber scope=${req.scope} synced=$synced")
+            call.respond(mapOf("synced" to synced))
+        }
+
         // POST /api/media/{id}/repull — re-fetch TMDB metadata without re-probing the file
         route("/{id}/repull") {
             post {

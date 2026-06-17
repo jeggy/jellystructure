@@ -204,6 +204,24 @@ object MediaApi {
         httpClient.get("/api/media/$id/tmdb-languages").body<List<String>>().toSet()
     }.getOrElse { emptySet() }
 
+    suspend fun syncMedia(id: String, scope: String? = null): MediaItem? = runCatching {
+        val body = if (scope != null) """{"scope":"$scope"}""" else "{}"
+        val response = httpClient.post("/api/media/$id/sync") {
+            setBody(body)
+            contentType(ContentType.Application.Json)
+        }
+        if (response.status == HttpStatusCode.OK) response.body<MediaItem>() else null
+    }.getOrNull()
+
+    suspend fun syncSeason(id: String, seasonNumber: Int, scope: String = "episodes"): Int? = runCatching {
+        @Serializable data class R(val synced: Int)
+        val response = httpClient.post("/api/media/$id/seasons/$seasonNumber/sync") {
+            setBody("""{"scope":"$scope"}""")
+            contentType(ContentType.Application.Json)
+        }
+        if (response.status == HttpStatusCode.OK) response.body<R>().synced else null
+    }.getOrNull()
+
     suspend fun repull(id: String): MediaItem? = runCatching {
         val response = httpClient.post("/api/media/$id/repull")
         if (response.status == HttpStatusCode.OK) response.body<MediaItem>() else null

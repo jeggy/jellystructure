@@ -307,6 +307,7 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
           <span class="spacer"></span>
           ${if (jellyfinUrl.isNotBlank() && item.jellyfinId != null) """<a href="$jellyfinUrl/web/index.html#!/details?id=${item.jellyfinId}" target="_blank" rel="noopener" class="btn sm ghost">Jellyfin ↗</a>""" else ""}
           $tmdbLinkHtml
+          <button id="sync-btn" class="btn sm ghost">Sync ↻</button>
           <button id="repull-btn" class="btn sm ghost">Re-pull from TMDB</button>
           ${if (!isTvShow) """<button id="track-order-btn" class="btn sm ghost">Track order →</button>""" else ""}
           <button id="write-nfo-btn" class="btn ghost" ${if (nfoDisabled) """disabled title="${nfoDisabledReason.esc()}"""" else ""}>Save → disk</button>
@@ -462,6 +463,28 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
         scope.launch { handleRepull(item, container, scope, fallbackLang, jellyfinUrl, prevTmdbLangs = tmdbLangs) }
     }
 
+    document.getElementById("sync-btn")?.addEventListener("click") {
+        if (isTvShow) {
+            showSyncModal(item, container, scope)
+        } else {
+            val btn = document.getElementById("sync-btn") as? HTMLElement
+            btn?.setAttribute("disabled", "true")
+            btn?.textContent = "Syncing…"
+            scope.launch {
+                val updated = MediaApi.syncMedia(item.id)
+                btn?.removeAttribute("disabled")
+                btn?.textContent = "Sync ↻"
+                if (updated != null) {
+                    showDetailMsg("Sync complete. Reloading…", true)
+                    delay(600)
+                    renderMediaDetail(container, scope, item.id)
+                } else {
+                    showDetailMsg("Sync failed — check if a scan is already running.", false)
+                }
+            }
+        }
+    }
+
     document.getElementById("lang-override-btn")?.addEventListener("click") {
         val input = document.getElementById("lang-override-input") as? HTMLInputElement ?: return@addEventListener
         val lang = input.value.trim()
@@ -525,10 +548,19 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
         }
     }
 
-    // Wire up episode row toggles and still uploads
+    // Wire up episode row toggles, still uploads, and season sync buttons
     if (isTvShow) {
         wireEpisodeToggles()
         wireEpisodeStillUploads(scope)
+        val seasonSyncBtns = document.querySelectorAll(".season-sync-btn")
+        for (i in 0 until seasonSyncBtns.length) {
+            val btn = seasonSyncBtns.item(i) as? HTMLElement ?: continue
+            val season = btn.getAttribute("data-season")?.toIntOrNull() ?: continue
+            btn.addEventListener("click") { e ->
+                e.stopPropagation()
+                showSeasonSyncModal(item, season, container, scope)
+            }
+        }
     }
 
     // Tab switching
@@ -741,12 +773,14 @@ private fun buildEpisodesTab(item: MediaItem): String {
                 """<span class="badge bad" style="font-size:.72rem;">$seasonIssues untagged</span>"""
             else ""
             val rows = eps.mapIndexed { idx, ep -> buildEpisodeRow(ep, season, idx, item.id) }.joinToString("")
+            val seasonAttr = if (season != null) """data-season="$season"""" else ""
             """<div style="margin-bottom:20px;">
                  <div class="row center" style="margin-bottom:8px;">
                    <h4 style="margin:0;">${seasonLabel.esc()}</h4>
                    <span class="chip" style="margin-left:8px;font-size:.75rem;">${eps.size} ep</span>
                    $issueSummary
                    <span class="spacer"></span>
+                   ${if (season != null) """<button class="btn sm ghost season-sync-btn" $seasonAttr style="padding:3px 9px;font-size:.75rem;" title="Sync season $season">↻</button>""" else ""}
                  </div>
                  $rows
                </div>"""
@@ -861,6 +895,112 @@ private fun buildEpisodeRow(ep: Episode, season: Int?, idx: Int, mediaId: String
             </form>
           </div>
         </div>"""
+}
+
+private fun showSyncModal(item: MediaItem, container: Element, scope: CoroutineScope) {
+    document.getElementById("sync-modal-overlay")?.remove()
+    val overlay = document.createElement("div") as HTMLElement
+    overlay.id = "sync-modal-overlay"
+    overlay.setAttribute("style", "position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:8000;display:flex;align-items:center;justify-content:center;")
+    overlay.innerHTML = """
+        <div style="background:var(--fill);border:1px solid var(--line-2);border-radius:var(--radius);padding:24px;max-width:480px;width:90%;box-shadow:var(--shadow);">
+          <h4 style="margin:0 0 5px;">Sync series</h4>
+          <p class="muted tiny" style="margin:0 0 16px;">Choose how to resync this item.</p>
+          <div style="display:flex;flex-direction:column;gap:8px;">
+            <div id="sync-opt-series" style="padding:12px 14px;border:1px solid var(--line-2);border-radius:var(--radius-s);cursor:pointer;">
+              <div style="font-weight:600;font-size:.9rem;margin-bottom:2px;">Series metadata only</div>
+              <div class="tiny muted">Re-fetches TMDB series info. Fast.</div>
+            </div>
+            <div id="sync-opt-episodes" style="padding:12px 14px;border:1px solid var(--line-2);border-radius:var(--radius-s);cursor:pointer;">
+              <div style="font-weight:600;font-size:.9rem;margin-bottom:2px;">Full sync</div>
+              <div class="tiny muted">Re-probes all episode files and re-fetches TMDB. May take several minutes for large series.</div>
+            </div>
+          </div>
+          <div style="display:flex;justify-content:flex-end;margin-top:16px;gap:8px;align-items:center;">
+            <span id="sync-modal-status" class="tiny muted" style="flex:1;"></span>
+            <button id="sync-cancel-btn" class="btn sm ghost">Cancel</button>
+          </div>
+        </div>"""
+    document.body?.appendChild(overlay)
+
+    fun closeModal() { overlay.remove() }
+    overlay.addEventListener("click") { e -> if ((e.target as? HTMLElement) == overlay) closeModal() }
+    document.getElementById("sync-cancel-btn")?.addEventListener("click") { closeModal() }
+
+    fun doSync(scopeStr: String) {
+        val statusEl = document.getElementById("sync-modal-status") as? HTMLElement
+        statusEl?.textContent = "Syncing…"
+        listOf("sync-opt-series", "sync-opt-episodes", "sync-cancel-btn")
+            .forEach { (document.getElementById(it) as? HTMLElement)?.setAttribute("style", "pointer-events:none;opacity:.5;") }
+        scope.launch {
+            val updated = MediaApi.syncMedia(item.id, scopeStr)
+            if (updated != null) {
+                closeModal()
+                renderMediaDetail(container, scope, item.id)
+            } else {
+                statusEl?.textContent = "Sync failed — scan may already be running."
+                listOf("sync-opt-series", "sync-opt-episodes")
+                    .forEach { (document.getElementById(it) as? HTMLElement)?.removeAttribute("style") }
+                (document.getElementById("sync-cancel-btn") as? HTMLElement)?.removeAttribute("style")
+            }
+        }
+    }
+
+    document.getElementById("sync-opt-series")?.addEventListener("click") { doSync("series") }
+    document.getElementById("sync-opt-episodes")?.addEventListener("click") { doSync("episodes") }
+}
+
+private fun showSeasonSyncModal(item: MediaItem, seasonNumber: Int, container: Element, scope: CoroutineScope) {
+    document.getElementById("sync-modal-overlay")?.remove()
+    val overlay = document.createElement("div") as HTMLElement
+    overlay.id = "sync-modal-overlay"
+    overlay.setAttribute("style", "position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:8000;display:flex;align-items:center;justify-content:center;")
+    overlay.innerHTML = """
+        <div style="background:var(--fill);border:1px solid var(--line-2);border-radius:var(--radius);padding:24px;max-width:480px;width:90%;box-shadow:var(--shadow);">
+          <h4 style="margin:0 0 5px;">Sync Season $seasonNumber</h4>
+          <p class="muted tiny" style="margin:0 0 16px;">Choose what to resync for this season.</p>
+          <div style="display:flex;flex-direction:column;gap:8px;">
+            <div id="sync-opt-season" style="padding:12px 14px;border:1px solid var(--line-2);border-radius:var(--radius-s);cursor:pointer;">
+              <div style="font-weight:600;font-size:.9rem;margin-bottom:2px;">Season metadata only</div>
+              <div class="tiny muted">Re-fetches TMDB episode titles and overviews. Fast.</div>
+            </div>
+            <div id="sync-opt-season-eps" style="padding:12px 14px;border:1px solid var(--line-2);border-radius:var(--radius-s);cursor:pointer;">
+              <div style="font-weight:600;font-size:.9rem;margin-bottom:2px;">Season + all episodes</div>
+              <div class="tiny muted">Re-probes episode files and re-fetches TMDB metadata.</div>
+            </div>
+          </div>
+          <div style="display:flex;justify-content:flex-end;margin-top:16px;gap:8px;align-items:center;">
+            <span id="sync-modal-status" class="tiny muted" style="flex:1;"></span>
+            <button id="sync-cancel-btn" class="btn sm ghost">Cancel</button>
+          </div>
+        </div>"""
+    document.body?.appendChild(overlay)
+
+    fun closeModal() { overlay.remove() }
+    overlay.addEventListener("click") { e -> if ((e.target as? HTMLElement) == overlay) closeModal() }
+    document.getElementById("sync-cancel-btn")?.addEventListener("click") { closeModal() }
+
+    fun doSeasonSync(scopeStr: String) {
+        val statusEl = document.getElementById("sync-modal-status") as? HTMLElement
+        statusEl?.textContent = "Syncing…"
+        listOf("sync-opt-season", "sync-opt-season-eps", "sync-cancel-btn")
+            .forEach { (document.getElementById(it) as? HTMLElement)?.setAttribute("style", "pointer-events:none;opacity:.5;") }
+        scope.launch {
+            val synced = MediaApi.syncSeason(item.id, seasonNumber, scopeStr)
+            if (synced != null) {
+                closeModal()
+                renderMediaDetail(container, scope, item.id)
+            } else {
+                statusEl?.textContent = "Sync failed — scan may already be running."
+                listOf("sync-opt-season", "sync-opt-season-eps")
+                    .forEach { (document.getElementById(it) as? HTMLElement)?.removeAttribute("style") }
+                (document.getElementById("sync-cancel-btn") as? HTMLElement)?.removeAttribute("style")
+            }
+        }
+    }
+
+    document.getElementById("sync-opt-season")?.addEventListener("click") { doSeasonSync("season") }
+    document.getElementById("sync-opt-season-eps")?.addEventListener("click") { doSeasonSync("episodes") }
 }
 
 private fun wireEpisodeToggles() {

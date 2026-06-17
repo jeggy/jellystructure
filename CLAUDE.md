@@ -426,7 +426,7 @@ The real frontend uses **Tailwind CSS**; mockups use CSS variables as the visual
 | 10 | ✓ Done | External links on Media Detail — open item in Jellyfin and TMDB (FR-X1) |
 | 11 | ✓ Done | Language pickers — searchable dropdowns replacing all free-text language inputs (FR-L1) |
 | 12 | ✓ Done | Simplify TV series language UI — merge overview banner into compact left-rail card (FR-U1) |
-| 13 | Planned | Sync single media item — targeted rescan for one item, season, or series (FR-S2) |
+| 13 | ✓ Done | Sync single media item — targeted rescan for one item, season, or series (FR-S2) |
 | 14 | Planned | Fix library path matching — diagnostics and path-check in Test connections (FR-B1) |
 | 15 | Planned | Multi-worker scanner — configurable coroutine workers + thread pool (FR-W1) |
 | 16 | Planned | Activity log backend — persistent log, category filter, active worker display (FR-A1) |

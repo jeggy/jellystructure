@@ -290,6 +290,173 @@ class Scanner(
         return Pair(match.groupValues[1].toIntOrNull(), match.groupValues[2].toIntOrNull())
     }
 
+    /** Full re-probe + TMDB for a movie. Replaces tracks and re-resolves language. */
+    suspend fun syncMovie(item: MediaItem): MediaItem? {
+        val config = configStore.current
+        val lib = config.libraries.firstOrNull { lib ->
+            val prefix = lib.localPath.ifBlank { lib.jellyfinPath }
+            prefix.isNotBlank() && item.path.startsWith(prefix)
+        }
+        val fallback = lib?.fallbackLanguage?.ifBlank { null } ?: config.languageRules.fallbackLanguage
+        if (!SystemFileSystem.exists(Path(item.path))) {
+            println("[WARN] Sync: movie file not found: ${item.path}")
+            return null
+        }
+        val tracks = FfprobeRunner.probe(item.path)
+        val audioLangs = tracks.filter { it.kind == TrackKind.AUDIO }.map { it.language }
+        val langPriority = LanguageResolver.priorityList(audioLangs, fallback)
+        val tmdbId = item.tmdbId ?: tmdb.searchMovie(item.title, item.year)?.id
+        val details = tmdbId?.let { tmdb.getMovieDetailsLocalized(it, langPriority) } ?: return null
+        val resolvedLang = langPriority.firstOrNull { lang -> details.overview.isNotBlank() && lang != fallback }
+            ?: langPriority.lastOrNull()
+        val issueCount = tracks.count { (it.kind == TrackKind.AUDIO || it.kind == TrackKind.SUBTITLE) && it.language == null }
+        return item.copy(
+            title = details.title,
+            originalTitle = details.originalTitle.takeIf { it.isNotBlank() },
+            tmdbId = details.id,
+            originalLanguage = details.originalLanguage.takeIf { it.isNotBlank() },
+            resolvedLanguage = resolvedLang,
+            posterPath = details.posterPath,
+            backdropPath = details.backdropPath,
+            overview = details.overview.takeIf { it.isNotBlank() },
+            genres = details.genres.map { it.name },
+            tracks = tracks,
+            issueCount = issueCount,
+            scannedAt = epochSeconds(),
+        )
+    }
+
+    /** Re-probes every episode file on disk and re-fetches TMDB for a TV series. */
+    suspend fun syncSeriesEpisodes(item: MediaItem): MediaItem? {
+        val config = configStore.current
+        val lib = config.libraries.firstOrNull { lib ->
+            val prefix = lib.localPath.ifBlank { lib.jellyfinPath }
+            prefix.isNotBlank() && item.path.startsWith(prefix)
+        }
+        val fallback = lib?.fallbackLanguage?.ifBlank { null } ?: config.languageRules.fallbackLanguage
+        if (!SystemFileSystem.exists(Path(item.path))) {
+            println("[WARN] Sync: series directory not found: ${item.path}")
+            return null
+        }
+        val episodeFiles = findEpisodeFiles(item.path)
+        if (episodeFiles.isEmpty()) {
+            println("[WARN] Sync: no episode files found in: ${item.path}")
+            return null
+        }
+        val seriesTmdbId = item.tmdbId
+        val episodes = mutableListOf<Episode>()
+        for (file in episodeFiles) {
+            val tracks = FfprobeRunner.probe(file)
+            val epIssueCount = tracks.count { (it.kind == TrackKind.AUDIO || it.kind == TrackKind.SUBTITLE) && it.language == null }
+            val audioLangs = tracks.filter { it.kind == TrackKind.AUDIO }.map { it.language }
+            val epLangPriority = LanguageResolver.priorityList(audioLangs, fallback)
+            val (seasonNum, epNum) = parseSeasonEpisode(file)
+            val existingEp = item.episodes.firstOrNull { it.filename == file.substringAfterLast('/') }
+            val epDetails = if (seriesTmdbId != null && seasonNum != null && epNum != null) {
+                epLangPriority.firstNotNullOfOrNull { lang ->
+                    tmdb.getEpisodeDetails(seriesTmdbId, seasonNum, epNum, lang)
+                        ?.takeIf { it.name.isNotBlank() || it.overview.isNotBlank() }
+                } ?: tmdb.getEpisodeDetails(seriesTmdbId, seasonNum, epNum)
+            } else null
+            episodes += Episode(
+                filename = file.substringAfterLast('/'),
+                path = file,
+                seasonNumber = seasonNum,
+                episodeNumber = epNum,
+                tracks = tracks,
+                issueCount = epIssueCount,
+                resolvedLanguage = epLangPriority.firstOrNull(),
+                title = epDetails?.name?.takeIf { it.isNotBlank() } ?: existingEp?.title,
+                overview = epDetails?.overview?.takeIf { it.isNotBlank() } ?: existingEp?.overview,
+                stillPath = epDetails?.stillPath ?: existingEp?.stillPath,
+                tmdbEpisodeId = epDetails?.id ?: existingEp?.tmdbEpisodeId,
+            )
+        }
+        val sortedEpisodes = episodes.sortedWith(compareBy({ it.seasonNumber ?: 999 }, { it.episodeNumber ?: 999 }))
+        val audioSets = sortedEpisodes.map { ep -> ep.tracks.filter { it.kind == TrackKind.AUDIO }.map { it.language }.toSet() }
+        val languageMix = audioSets.size > 1 && !audioSets.all { it == audioSets.first() }
+        val firstTracks = sortedEpisodes.firstOrNull()?.tracks ?: emptyList()
+        val totalIssueCount = sortedEpisodes.sumOf { it.issueCount }
+        val resolvedLang: String?
+        val updatedDetails = if (languageMix) {
+            val langVotes = mutableMapOf<String, Int>()
+            for (ep in sortedEpisodes) {
+                val primaryLang = ep.tracks.firstOrNull { it.kind == TrackKind.AUDIO }?.language
+                    ?.let { LanguageResolver.normalize(it) }
+                if (primaryLang != null) langVotes[primaryLang] = (langVotes[primaryLang] ?: 0) + 1
+            }
+            val majorityLang = langVotes.maxByOrNull { it.value }?.key
+            resolvedLang = majorityLang
+            val mixPriority = LanguageResolver.priorityList(majorityLang?.let { listOf(it) } ?: emptyList(), fallback)
+            seriesTmdbId?.let { tmdb.getTvDetailsLocalized(it, mixPriority) }
+        } else {
+            val audioLangs = firstTracks.filter { it.kind == TrackKind.AUDIO }.map { it.language }
+            val langPriority = LanguageResolver.priorityList(audioLangs, fallback)
+            val details = seriesTmdbId?.let { tmdb.getTvDetailsLocalized(it, langPriority) }
+            resolvedLang = details?.let {
+                langPriority.firstOrNull { lang -> it.overview.isNotBlank() && lang != fallback } ?: langPriority.lastOrNull()
+            }
+            details
+        }
+        return item.copy(
+            title = updatedDetails?.name ?: item.title,
+            originalTitle = updatedDetails?.originalName?.takeIf { it.isNotBlank() } ?: item.originalTitle,
+            tmdbId = updatedDetails?.id ?: seriesTmdbId,
+            originalLanguage = updatedDetails?.originalLanguage?.takeIf { it.isNotBlank() } ?: item.originalLanguage,
+            resolvedLanguage = resolvedLang,
+            posterPath = updatedDetails?.posterPath ?: item.posterPath,
+            backdropPath = updatedDetails?.backdropPath ?: item.backdropPath,
+            overview = updatedDetails?.overview?.takeIf { it.isNotBlank() } ?: item.overview,
+            genres = updatedDetails?.genres?.map { it.name } ?: item.genres,
+            tracks = firstTracks,
+            episodes = sortedEpisodes,
+            issueCount = totalIssueCount,
+            languageMix = languageMix,
+            scannedAt = epochSeconds(),
+        )
+    }
+
+    /** Re-syncs episodes of a specific season. probeFiles=true re-runs ffprobe on each file. */
+    suspend fun syncSeason(item: MediaItem, seasonNumber: Int, probeFiles: Boolean): Pair<MediaItem, Int> {
+        val config = configStore.current
+        val lib = config.libraries.firstOrNull { lib ->
+            val prefix = lib.localPath.ifBlank { lib.jellyfinPath }
+            prefix.isNotBlank() && item.path.startsWith(prefix)
+        }
+        val fallback = lib?.fallbackLanguage?.ifBlank { null } ?: config.languageRules.fallbackLanguage
+        val seriesTmdbId = item.tmdbId
+        val updatedEpisodes = item.episodes.toMutableList()
+        var synced = 0
+        for ((idx, ep) in updatedEpisodes.withIndex()) {
+            if (ep.seasonNumber != seasonNumber) continue
+            val tracks = if (probeFiles) FfprobeRunner.probe(ep.path) else ep.tracks
+            val epIssueCount = if (probeFiles)
+                tracks.count { (it.kind == TrackKind.AUDIO || it.kind == TrackKind.SUBTITLE) && it.language == null }
+            else ep.issueCount
+            val audioLangs = tracks.filter { it.kind == TrackKind.AUDIO }.map { it.language }
+            val epLangPriority = LanguageResolver.priorityList(audioLangs, fallback)
+            val epNum = ep.episodeNumber
+            val epDetails = if (seriesTmdbId != null && epNum != null) {
+                epLangPriority.firstNotNullOfOrNull { lang ->
+                    tmdb.getEpisodeDetails(seriesTmdbId, seasonNumber, epNum, lang)
+                        ?.takeIf { it.name.isNotBlank() || it.overview.isNotBlank() }
+                } ?: tmdb.getEpisodeDetails(seriesTmdbId, seasonNumber, epNum)
+            } else null
+            updatedEpisodes[idx] = ep.copy(
+                tracks = tracks,
+                issueCount = epIssueCount,
+                resolvedLanguage = epLangPriority.firstOrNull(),
+                title = epDetails?.name?.takeIf { it.isNotBlank() } ?: ep.title,
+                overview = epDetails?.overview?.takeIf { it.isNotBlank() } ?: ep.overview,
+                stillPath = epDetails?.stillPath ?: ep.stillPath,
+                tmdbEpisodeId = epDetails?.id ?: ep.tmdbEpisodeId,
+            )
+            synced++
+        }
+        val totalIssueCount = updatedEpisodes.sumOf { it.issueCount }
+        return Pair(item.copy(episodes = updatedEpisodes, issueCount = totalIssueCount, scannedAt = epochSeconds()), synced)
+    }
+
     // Re-fetches TMDB metadata for an already-scanned item without re-probing
     // the file. Keeps existing tracks, path, and Jellyfin IDs.
     suspend fun rescanMetadata(item: MediaItem): MediaItem? {
