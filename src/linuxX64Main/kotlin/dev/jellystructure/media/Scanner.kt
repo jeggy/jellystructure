@@ -365,6 +365,8 @@ class Scanner(
             if (!meta.isDirectory) return
             for (entry in SystemFileSystem.list(path).sortedBy { it.toString() }) {
                 val entryStr = entry.toString()
+                val entryName = entryStr.substringAfterLast('/')
+                if (entryName.startsWith(".")) continue  // skip hidden files and directories
                 val entryMeta = SystemFileSystem.metadataOrNull(entry) ?: continue
                 when {
                     entryMeta.isDirectory -> recurse(entryStr)
@@ -388,8 +390,11 @@ class Scanner(
         return Pair(match.groupValues[1].trim(), match.groupValues[2].toIntOrNull())
     }
 
-    private fun isVideoFile(path: String): Boolean =
-        path.substringAfterLast('.').lowercase() in VIDEO_EXTENSIONS
+    private fun isVideoFile(path: String): Boolean {
+        val filename = path.substringAfterLast('/')
+        if (filename.startsWith(".")) return false  // skip hidden files (._foo, .DS_Store, etc.)
+        return filename.substringAfterLast('.').lowercase() in VIDEO_EXTENSIONS
+    }
 
     private fun slugify(title: String, year: Int?): String {
         val base = if (year != null) "$title $year" else title
