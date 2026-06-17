@@ -104,6 +104,7 @@ fun renderLanguage(container: Element, scope: CoroutineScope) {
         val config = ConfigApi.get()
         fallbackState = config?.languageRules?.fallbackLanguage ?: "en"
         setInputValue("lang-fallback", fallbackState)
+        installLanguagePickerById("lang-fallback")
         updateTomlPreview()
         renderTrackChips()
         renderTmdbChips()

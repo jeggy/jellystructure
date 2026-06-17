@@ -120,6 +120,7 @@ fun renderSettings(container: Element, scope: CoroutineScope) {
     scope.launch {
         val config = ConfigApi.get()
         if (config != null) populateForm(config)
+        installLanguagePickerById("fallback-language")
         attachListeners(scope)
     }
 }
@@ -312,6 +313,7 @@ private fun renderLibraryList() {
             libraryMappings[i] = libraryMappings[i].copy(fallbackLanguage = value.ifEmpty { null })
             refreshTomlPreview(readForm())
         }
+        installLanguagePickerById("lib-fallback-$i")
     }
 }
 

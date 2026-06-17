@@ -479,6 +479,8 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
         </div>
     """.trimIndent()
 
+    installLanguagePickerById("lang-override-input")
+
     document.getElementById("back-btn")?.addEventListener("click") {
         App.navigate("/library")
     }
