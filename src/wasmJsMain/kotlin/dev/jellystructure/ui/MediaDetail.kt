@@ -1117,13 +1117,13 @@ private suspend fun handleWriteNfo(id: String, refresh: Boolean = false) {
     btn1?.setAttribute("disabled", "true"); btn1?.textContent = "Writing…"
     btn2?.setAttribute("disabled", "true"); btn2?.textContent = "Writing…"
 
-    val result = MediaApi.writeNfo(id)
+    val (result, error) = MediaApi.writeNfo(id)
 
-    showDetailMsg(if (result != null) "NFO written to ${result.path}" else "NFO write failed.", result != null)
     btn1?.removeAttribute("disabled"); btn1?.textContent = "Save → disk"
     btn2?.removeAttribute("disabled"); btn2?.textContent = "Save & tell Jellyfin ↻"
 
     if (result != null) {
+        showDetailMsg("NFO written to ${result.path}", true)
         val raw = MediaApi.getNfo(id)
         if (raw != null) {
             (document.getElementById("nfo-raw") as? HTMLElement)?.textContent = raw
@@ -1132,7 +1132,35 @@ private suspend fun handleWriteNfo(id: String, refresh: Boolean = false) {
             MediaApi.jellyfinRefresh(id)
             showDetailMsg("NFO written and Jellyfin notified ✓", true)
         }
+    } else {
+        showNfoWriteError(error ?: "NFO write failed.")
     }
+}
+
+private fun showNfoWriteError(message: String) {
+    val el = document.getElementById("detail-msg") as? HTMLElement ?: return
+    val isPermission = message.contains("Permission denied", ignoreCase = true)
+    val suggestions = if (isPermission) """
+        <div style="margin-top:10px;">
+          <div style="font-size:.8rem;font-weight:600;margin-bottom:6px;color:var(--ink);">How to fix:</div>
+          <ul style="margin:0;padding-left:18px;font-size:.8rem;line-height:1.8;color:var(--ink-soft);">
+            <li>Make sure the media volume is <strong>not mounted read-only</strong> (no <code style="font-family:'JetBrains Mono',monospace;font-size:.78rem;">:ro</code> flag in docker-compose.yml).</li>
+            <li>Add <code style="font-family:'JetBrains Mono',monospace;font-size:.78rem;">user: "uid:gid"</code> to the Jellystructure service so it runs as the same user that owns the media files.</li>
+            <li>Or grant write access: <code style="font-family:'JetBrains Mono',monospace;font-size:.78rem;">chown -R uid:gid /path/to/media</code> on the host.</li>
+            <li>Run <code style="font-family:'JetBrains Mono',monospace;font-size:.78rem;">stat /path/to/media</code> on the host to find the correct UID/GID.</li>
+          </ul>
+        </div>
+    """.trimIndent() else ""
+    el.style.display = "block"
+    el.innerHTML = """
+        <div style="background:color-mix(in srgb,var(--bad) 10%,transparent);border:1px solid var(--bad);border-radius:var(--radius-s);padding:12px 16px;">
+          <div style="display:flex;align-items:flex-start;gap:8px;${if (isPermission) "margin-bottom:8px;" else ""}">
+            <span class="badge bad" style="flex-shrink:0;">Write failed</span>
+            <span style="font-family:'JetBrains Mono',monospace;font-size:.8rem;word-break:break-all;">${message.esc()}</span>
+          </div>
+          $suggestions
+        </div>
+    """.trimIndent()
 }
 
 private suspend fun handleFetchArtwork(id: String) {

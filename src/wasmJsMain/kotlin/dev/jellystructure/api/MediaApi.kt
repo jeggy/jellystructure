@@ -128,10 +128,16 @@ object MediaApi {
         if (response.status == HttpStatusCode.OK) response.body<String>() else null
     }.getOrNull()
 
-    suspend fun writeNfo(id: String): NfoWriteResult? = runCatching {
+    suspend fun writeNfo(id: String): Pair<NfoWriteResult?, String?> = runCatching {
         val response = httpClient.post("/api/media/$id/nfo")
-        if (response.status == HttpStatusCode.OK) response.body<NfoWriteResult>() else null
-    }.getOrNull()
+        if (response.status == HttpStatusCode.OK) {
+            Pair(response.body<NfoWriteResult>(), null)
+        } else {
+            @Serializable data class ErrBody(val error: String = "")
+            val msg = runCatching { response.body<ErrBody>().error }.getOrElse { "" }
+            Pair(null, msg.ifBlank { "HTTP ${response.status.value}" })
+        }
+    }.getOrElse { e -> Pair(null, e.message ?: "network error") }
 
     suspend fun getArtworkStatus(id: String): ArtworkStatus? = runCatching {
         httpClient.get("/api/media/$id/artwork").body<ArtworkStatus>()
