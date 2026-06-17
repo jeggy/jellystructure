@@ -66,9 +66,18 @@ fun renderShell(user: UserProfile) {
             val href = a.getAttribute("href") ?: continue
             a.addEventListener("click") { e ->
                 e.preventDefault()
+                document.body?.classList?.remove("nav-open")
                 App.navigate(href)
             }
         }
+    }
+
+    document.getElementById("nav-burger")?.addEventListener("click") { _ ->
+        val cl = document.body?.classList ?: return@addEventListener
+        if (cl.contains("nav-open")) cl.remove("nav-open") else cl.add("nav-open")
+    }
+    document.getElementById("nav-backdrop")?.addEventListener("click") { _ ->
+        document.body?.classList?.remove("nav-open")
     }
 
     document.getElementById("logout-btn")?.addEventListener("click") { e ->
@@ -302,6 +311,7 @@ private fun shellHtml(user: UserProfile, savedPref: String = "system"): String {
         }
     }
     return """
+        <div class="nav-backdrop" id="nav-backdrop"></div>
         <div class="shell">
           <aside class="app-side">
             <div class="logo"><span class="glyph"></span> Jellystructure</div>
@@ -326,7 +336,15 @@ private fun shellHtml(user: UserProfile, savedPref: String = "system"): String {
               </div>
             </div>
           </aside>
-          <main class="app-main2 wide" id="page-content"></main>
+          <div class="app-main-col">
+            <header class="app-topbar">
+              <button class="burger" id="nav-burger" aria-label="Open navigation">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+              </button>
+              <div class="tb-logo"><span class="glyph"></span> Jellystructure</div>
+            </header>
+            <main class="app-main2 wide" id="page-content"></main>
+          </div>
         </div>
     """.trimIndent()
 }

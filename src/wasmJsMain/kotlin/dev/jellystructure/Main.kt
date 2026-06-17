@@ -70,7 +70,13 @@ object App {
             }
             route == "/language" -> renderLanguage(container, scope)
             route == "/triage"   -> renderTriage(container, scope)
+            route.startsWith("/triage/series/") -> {
+                val id = route.removePrefix("/triage/series/")
+                if (id.isNotEmpty()) renderSeriesTriage(container, scope, id)
+                else renderTriage(container, scope)
+            }
             route.startsWith("/series-triage") -> {
+                // Legacy / support for ?id= form
                 val id = route.substringAfter("id=", "").substringBefore("&")
                 if (id.isNotEmpty()) renderSeriesTriage(container, scope, id)
                 else renderTriage(container, scope)

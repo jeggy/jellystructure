@@ -74,6 +74,9 @@
 .switcher .theme-btn:hover { color: var(--ink); border-color: var(--hi); background: var(--fill-3); }
 .switcher .theme-btn svg { width: 17px; height: 17px; }
 
+/* ---------- main column wrapper (flex column: topbar above content) ---------- */
+.app-main-col { display: flex; flex-direction: column; min-width: 0; }
+
 /* ---------- main ---------- */
 .app-main2 { padding: 32px 38px 140px; max-width: 1240px; }
 .app-main2.wide { max-width: 1480px; }
