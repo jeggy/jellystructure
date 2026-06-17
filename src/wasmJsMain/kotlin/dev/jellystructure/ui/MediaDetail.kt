@@ -1,3 +1,5 @@
+@file:OptIn(kotlin.js.ExperimentalWasmJsInterop::class)
+
 package dev.jellystructure.ui
 
 import dev.jellystructure.App
@@ -117,17 +119,17 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
     } else ""
 
     val directorHtml = """<div class="field">
-      <label>${if (item.kind == MediaKind.TV_SHOW) "Network" else "Director"}</label>
+      <label>${if (item.kind == MediaKind.TV_SHOW) "Network" else "Director"} <button class="diff-trigger" id="diff-edit-director">≠</button></label>
       <input id="edit-director" class="input" value="${(if (item.kind == MediaKind.TV_SHOW) item.network else item.director)?.esc() ?: ""}" style="width:100%;" placeholder="—">
     </div>
     <div class="field">
-      <label>Studio</label>
+      <label>Studio <button class="diff-trigger" id="diff-edit-studio">≠</button></label>
       <input id="edit-studio" class="input" value="${item.studio?.esc() ?: ""}" style="width:100%;" placeholder="—">
     </div>"""
 
     val currentTags = item.tags.toMutableList()
     val tagsChipsHtml = """<div class="field" id="tags-section">
-      <label>Tags <span class="muted tiny">(written to NFO &lt;tag&gt;)</span></label>
+      <label>Tags <span class="muted tiny">(written to NFO &lt;tag&gt;)</span> <button class="diff-trigger" id="diff-tags">≠</button></label>
       <div id="tags-chips" style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:6px;">
         ${currentTags.joinToString("") { tag -> """<span class="chip" style="cursor:default;">${tag.esc()} <span class="tag-rm" data-tag="${tag.esc()}" style="cursor:pointer;margin-left:4px;color:var(--bad);">✕</span></span>""" }}
       </div>
@@ -327,20 +329,20 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
                 </div>
                 <div class="row">
                   <div class="field fill">
-                    <label>Title</label>
+                    <label>Title <button class="diff-trigger" id="diff-edit-title">≠</button></label>
                     <input id="edit-title" class="input" value="${item.title.esc()}" style="width:100%;">
                   </div>
                   <div class="field" style="width:110px;">
-                    <label>Year</label>
+                    <label>Year <button class="diff-trigger" id="diff-edit-year">≠</button></label>
                     <input id="edit-year" class="input" type="number" value="${item.year ?: ""}" placeholder="—" style="width:100%;">
                   </div>
                 </div>
                 <div class="field">
-                  <label>Original title</label>
+                  <label>Original title <button class="diff-trigger" id="diff-edit-original-title">≠</button></label>
                   <input id="edit-original-title" class="input" value="${(item.originalTitle ?: "").esc()}" style="width:100%;">
                 </div>
                 <div class="field">
-                  <label>Overview</label>
+                  <label>Overview <button class="diff-trigger" id="diff-edit-overview">≠</button></label>
                   <textarea id="edit-overview" class="input" rows="4" style="width:100%;resize:vertical;">${item.overview?.esc() ?: ""}</textarea>
                 </div>
                 $genresHtml
@@ -528,23 +530,77 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
 
     scope.launch { loadArtworkStatus(item.id) }
 
-    // Inline metadata editing — show Save button when any field changes
+    // Inject diff styles once per document lifetime
+    injectDiffStyles()
+
+    // Inline metadata editing — per-field dirty indicators + diff triggers
     val editableIds = listOf("edit-title", "edit-year", "edit-original-title", "edit-overview", "edit-director", "edit-studio")
     val origValues = editableIds.associateWith { id ->
         (document.getElementById(id) as? HTMLInputElement)?.value
             ?: (document.getElementById(id) as? HTMLTextAreaElement)?.value ?: ""
     }
-    fun checkDirty() {
-        val dirty = editableIds.any { id ->
-            val current = (document.getElementById(id) as? HTMLInputElement)?.value
-                ?: (document.getElementById(id) as? HTMLTextAreaElement)?.value ?: ""
-            current != (origValues[id] ?: "")
+    val origTags = item.tags.toSet()
+
+    fun currentTagSet(): Set<String> {
+        val chips = document.getElementById("tags-chips")?.querySelectorAll(".tag-rm") ?: return emptySet()
+        return (0 until chips.length)
+            .mapNotNull { (chips.item(it) as? HTMLElement)?.getAttribute("data-tag") }
+            .filter { it.isNotBlank() }.toSet()
+    }
+
+    fun setFieldDirty(fieldEl: HTMLElement?, triggerEl: HTMLElement?, dirty: Boolean) {
+        val cls = fieldEl?.className ?: ""
+        fieldEl?.className = if (dirty) {
+            if ("field-dirty" !in cls) "$cls field-dirty".trim() else cls
+        } else {
+            cls.replace("field-dirty", "").trim()
         }
-        val saveBtn = document.getElementById("save-metadata-btn") as? HTMLElement
-        saveBtn?.style?.display = if (dirty) "inline-flex" else "none"
+        triggerEl?.style?.display = if (dirty) "inline-flex" else "none"
+    }
+
+    fun checkDirty() {
+        var anyDirty = false
+        editableIds.forEach { id ->
+            val el = document.getElementById(id)
+            val current = (el as? HTMLInputElement)?.value ?: (el as? HTMLTextAreaElement)?.value ?: ""
+            val dirty = current != (origValues[id] ?: "")
+            if (dirty) anyDirty = true
+            setFieldDirty(el?.parentElement as? HTMLElement, document.getElementById("diff-$id") as? HTMLElement, dirty)
+        }
+        val tagsDirty = currentTagSet() != origTags
+        if (tagsDirty) anyDirty = true
+        setFieldDirty(document.getElementById("tags-section") as? HTMLElement, document.getElementById("diff-tags") as? HTMLElement, tagsDirty)
+        (document.getElementById("save-metadata-btn") as? HTMLElement)?.style?.display = if (anyDirty) "inline-flex" else "none"
     }
     editableIds.forEach { id ->
         document.getElementById(id)?.addEventListener("input") { checkDirty() }
+    }
+
+    // Wire diff trigger buttons
+    val diffLabels = mapOf(
+        "edit-title" to "Title",
+        "edit-year" to "Year",
+        "edit-original-title" to "Original title",
+        "edit-overview" to "Overview",
+        "edit-director" to (if (item.kind == MediaKind.TV_SHOW) "Network" else "Director"),
+        "edit-studio" to "Studio",
+    )
+    diffLabels.forEach { (fieldId, label) ->
+        document.getElementById("diff-$fieldId")?.addEventListener("click") {
+            val orig = origValues[fieldId] ?: ""
+            val current = (document.getElementById(fieldId) as? HTMLInputElement)?.value
+                ?: (document.getElementById(fieldId) as? HTMLTextAreaElement)?.value ?: ""
+            showDiffPopup(label, orig, current, isNumeric = fieldId == "edit-year")
+        }
+    }
+    document.getElementById("diff-tags")?.addEventListener("click") {
+        showTagsDiffPopup(origTags.sorted(), currentTagSet().sorted())
+    }
+    // Escape key dismissal for diff popup
+    document.addEventListener("keydown") { e ->
+        if ((e as? org.w3c.dom.events.KeyboardEvent)?.key == "Escape") {
+            document.getElementById("diff-modal-overlay")?.remove()
+        }
     }
     document.getElementById("save-metadata-btn")?.addEventListener("click") {
         val title = (document.getElementById("edit-title") as? HTMLInputElement)?.value?.trim()
@@ -594,10 +650,8 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
         span.setAttribute("style", "cursor:default;")
         span.innerHTML = """${tag.esc()} <span class="tag-rm" data-tag="${tag.esc()}" style="cursor:pointer;margin-left:4px;color:var(--bad);">✕</span>"""
         chipsEl.appendChild(span)
-        span.querySelector(".tag-rm")?.addEventListener("click") { span.remove() }
-        // Mark dirty
-        val saveBtn = document.getElementById("save-metadata-btn") as? HTMLElement
-        saveBtn?.style?.display = "inline-flex"
+        span.querySelector(".tag-rm")?.addEventListener("click") { span.remove(); checkDirty() }
+        checkDirty()
     }
     // Wire existing tag removes
     document.querySelectorAll("#tags-chips .tag-rm").let { nodes ->
@@ -605,8 +659,7 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
             val rm = nodes.item(i) as? HTMLElement ?: continue
             rm.addEventListener("click") {
                 rm.parentElement?.remove()
-                val saveBtn = document.getElementById("save-metadata-btn") as? HTMLElement
-                saveBtn?.style?.display = "inline-flex"
+                checkDirty()
             }
         }
     }
@@ -968,4 +1021,148 @@ private fun buildTracksTable(tracks: List<Track>): String {
           <tr><th>#</th><th>Kind</th><th>Lang</th><th>Title</th><th>Codec</th><th>Default</th><th>Forced</th></tr>
           $rows
         </table>"""
+}
+
+// ── Diff styles ──────────────────────────────────────────────────────────────
+
+private fun injectDiffStyles() {
+    if (document.getElementById("detail-diff-styles") != null) return
+    val style = document.createElement("style") as? org.w3c.dom.HTMLStyleElement ?: return
+    style.id = "detail-diff-styles"
+    style.textContent = """
+        .field-dirty > input.input, .field-dirty > textarea.input {
+          border-left: 3px solid var(--warn, #f59e0b) !important;
+          background: color-mix(in srgb, var(--warn, #f59e0b) 7%, transparent) !important;
+        }
+        .diff-trigger {
+          display: none; align-items: center; justify-content: center;
+          width: 16px; height: 16px; border-radius: 3px; margin-left: 5px;
+          background: color-mix(in srgb, var(--warn, #f59e0b) 18%, transparent);
+          border: 1px solid color-mix(in srgb, var(--warn, #f59e0b) 45%, transparent);
+          color: var(--warn, #f59e0b); font-size: .65rem; cursor: pointer;
+          vertical-align: middle; padding: 0; line-height: 1;
+        }
+        .diff-modal-overlay {
+          position: fixed; inset: 0; background: rgba(0,0,0,.55); z-index: 1000;
+          display: flex; align-items: center; justify-content: center; padding: 16px;
+        }
+        .diff-modal {
+          background: var(--surface, #1a1d27); border: 1px solid var(--line, rgba(255,255,255,.1));
+          border-radius: 10px; max-width: 560px; width: 100%; padding: 20px;
+          box-shadow: 0 12px 40px rgba(0,0,0,.4); max-height: 80vh; overflow-y: auto;
+        }
+        .diff-section { margin-top: 14px; }
+        .diff-section-label { font-size: .72rem; font-weight: 600; color: var(--ink-soft); margin-bottom: 5px; }
+        .diff-content { font-size: .88rem; line-height: 1.7; padding: 8px 12px;
+          background: var(--fill-2); border-radius: 6px; }
+        .diff-removed { color: var(--bad, #ef4444); text-decoration: line-through;
+          background: color-mix(in srgb, var(--bad, #ef4444) 12%, transparent);
+          border-radius: 2px; padding: 0 2px; }
+        .diff-added { color: var(--ok, #22c55e);
+          background: color-mix(in srgb, var(--ok, #22c55e) 12%, transparent);
+          border-radius: 2px; padding: 0 2px; }
+    """.trimIndent()
+    document.head?.appendChild(style)
+}
+
+// ── Word diff ─────────────────────────────────────────────────────────────────
+
+private data class DiffEntry(val word: String, val status: String)
+
+private fun computeWordDiff(original: String, current: String): List<DiffEntry> {
+    val ow = original.split(Regex("\\s+")).filter { it.isNotEmpty() }
+    val cw = current.split(Regex("\\s+")).filter { it.isNotEmpty() }
+    val m = ow.size; val n = cw.size
+    val dp = Array(m + 1) { IntArray(n + 1) }
+    for (i in 1..m) for (j in 1..n)
+        dp[i][j] = if (ow[i-1] == cw[j-1]) dp[i-1][j-1] + 1 else maxOf(dp[i-1][j], dp[i][j-1])
+    val result = mutableListOf<DiffEntry>()
+    var i = m; var j = n
+    while (i > 0 || j > 0) {
+        when {
+            i > 0 && j > 0 && ow[i-1] == cw[j-1] -> { result += DiffEntry(ow[i-1], "same"); i--; j-- }
+            j > 0 && (i == 0 || dp[i][j-1] >= dp[i-1][j]) -> { result += DiffEntry(cw[j-1], "added"); j-- }
+            else -> { result += DiffEntry(ow[i-1], "removed"); i-- }
+        }
+    }
+    result.reverse()
+    return result
+}
+
+private fun diffBeforeHtml(diff: List<DiffEntry>): String =
+    diff.filter { it.status != "added" }.joinToString(" ") { (w, s) ->
+        if (s == "removed") """<span class="diff-removed">${w.esc()}</span>""" else w.esc()
+    }.ifBlank { """<span class="muted tiny">empty</span>""" }
+
+private fun diffAfterHtml(diff: List<DiffEntry>): String =
+    diff.filter { it.status != "removed" }.joinToString(" ") { (w, s) ->
+        if (s == "added") """<span class="diff-added">${w.esc()}</span>""" else w.esc()
+    }.ifBlank { """<span class="muted tiny">empty</span>""" }
+
+// ── Diff popups ───────────────────────────────────────────────────────────────
+
+private fun showDiffPopup(label: String, original: String, current: String, isNumeric: Boolean = false) {
+    document.getElementById("diff-modal-overlay")?.remove()
+    val diff = if (isNumeric) null else computeWordDiff(original, current)
+    val beforeHtml = if (isNumeric) original.esc().ifBlank { """<span class="muted tiny">empty</span>""" }
+                     else diff?.let { diffBeforeHtml(it) } ?: original.esc()
+    val afterHtml  = if (isNumeric) current.esc().ifBlank { """<span class="muted tiny">empty</span>""" }
+                     else diff?.let { diffAfterHtml(it) } ?: current.esc()
+    renderDiffOverlay("""
+        <div class="row center" style="margin-bottom:2px;">
+          <strong style="font-size:.95rem;">$label — changes</strong>
+          <span class="spacer"></span>
+          <button id="diff-modal-close" class="btn sm ghost" style="padding:2px 8px;">✕</button>
+        </div>
+        <div class="diff-section">
+          <div class="diff-section-label">Before</div>
+          <div class="diff-content">$beforeHtml</div>
+        </div>
+        <div class="diff-section">
+          <div class="diff-section-label">After</div>
+          <div class="diff-content">$afterHtml</div>
+        </div>
+    """.trimIndent())
+}
+
+private fun showTagsDiffPopup(origTags: List<String>, currentTags: List<String>) {
+    document.getElementById("diff-modal-overlay")?.remove()
+    val origSet = origTags.toSet(); val curSet = currentTags.toSet()
+    val removed = origTags.filter { it !in curSet }
+    val added = currentTags.filter { it !in origSet }
+    val kept = origTags.filter { it in curSet }
+    fun chip(tag: String, style: String) = """<span class="chip" style="$style">${tag.esc()}</span>"""
+    val rmStyle = "background:color-mix(in srgb,var(--bad)12%,transparent);border-color:var(--bad);color:var(--bad);text-decoration:line-through;"
+    val addStyle = "background:color-mix(in srgb,var(--ok)12%,transparent);border-color:var(--ok);color:var(--ok);"
+    val beforeHtml = (kept.map { chip(it, "") } + removed.map { chip(it, rmStyle) })
+        .joinToString(" ").ifBlank { """<span class="muted tiny">no tags</span>""" }
+    val afterHtml = (kept.map { chip(it, "") } + added.map { chip(it, addStyle) })
+        .joinToString(" ").ifBlank { """<span class="muted tiny">no tags</span>""" }
+    renderDiffOverlay("""
+        <div class="row center" style="margin-bottom:2px;">
+          <strong style="font-size:.95rem;">Tags — changes</strong>
+          <span class="spacer"></span>
+          <button id="diff-modal-close" class="btn sm ghost" style="padding:2px 8px;">✕</button>
+        </div>
+        <div class="diff-section">
+          <div class="diff-section-label">Before</div>
+          <div class="diff-content" style="display:flex;flex-wrap:wrap;gap:5px;">$beforeHtml</div>
+        </div>
+        <div class="diff-section">
+          <div class="diff-section-label">After</div>
+          <div class="diff-content" style="display:flex;flex-wrap:wrap;gap:5px;">$afterHtml</div>
+        </div>
+    """.trimIndent())
+}
+
+private fun renderDiffOverlay(bodyHtml: String) {
+    val overlay = document.createElement("div") as? HTMLElement ?: return
+    overlay.id = "diff-modal-overlay"
+    overlay.className = "diff-modal-overlay"
+    overlay.innerHTML = """<div class="diff-modal">$bodyHtml</div>"""
+    document.body?.appendChild(overlay)
+    overlay.addEventListener("click") { e ->
+        if ((e.target as? HTMLElement)?.id == "diff-modal-overlay") overlay.remove()
+    }
+    document.getElementById("diff-modal-close")?.addEventListener("click") { overlay.remove() }
 }
