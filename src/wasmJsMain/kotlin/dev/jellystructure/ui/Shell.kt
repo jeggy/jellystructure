@@ -1,6 +1,8 @@
 package dev.jellystructure.ui
 
 import dev.jellystructure.App
+import dev.jellystructure.installSystemThemeWatcher
+import dev.jellystructure.prefersDark
 import dev.jellystructure.api.AuthApi
 import dev.jellystructure.api.ConfigApi
 import dev.jellystructure.api.MediaApi
@@ -29,9 +31,6 @@ private var dockSocket: WebSocket? = null
 private var dockScanned = 0
 private var dockTotal = 0
 
-private val SUN_SVG = """<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><line x1="12" y1="2" x2="12" y2="5"/><line x1="12" y1="19" x2="12" y2="22"/><line x1="4.22" y1="4.22" x2="6.34" y2="6.34"/><line x1="17.66" y1="17.66" x2="19.78" y2="19.78"/><line x1="2" y1="12" x2="5" y2="12"/><line x1="19" y1="12" x2="22" y2="12"/><line x1="4.22" y1="19.78" x2="6.34" y2="17.66"/><line x1="17.66" y1="6.34" x2="19.78" y2="4.22"/></svg>"""
-private val MOON_SVG = """<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>"""
-
 private val ICONS = mapOf(
     "dashboard" to """<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg>""",
     "library"   to """<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m16 6 4 14"/><path d="M12 6v14"/><path d="M8 8v12"/><path d="M4 4v16"/></svg>""",
@@ -55,8 +54,9 @@ fun renderShell(user: UserProfile) {
     val body = document.body ?: return
 
     // Apply persisted theme before rendering HTML to avoid flash
-    val savedTheme = window.localStorage.getItem("js-theme") ?: "dark"
-    document.documentElement?.setAttribute("data-theme", savedTheme)
+    val savedTheme = window.localStorage.getItem("js-theme") ?: "system"
+    val effectiveTheme = resolveTheme(savedTheme)
+    document.documentElement?.setAttribute("data-theme", effectiveTheme)
 
     body.innerHTML = shellHtml(user, savedTheme)
 
@@ -79,15 +79,22 @@ fun renderShell(user: UserProfile) {
         }
     }
 
-    // Theme toggle
-    document.getElementById("theme-btn")?.addEventListener("click") {
-        val root = document.documentElement ?: return@addEventListener
-        val current = root.getAttribute("data-theme") ?: "dark"
-        val next = if (current == "dark") "light" else "dark"
-        root.setAttribute("data-theme", next)
-        window.localStorage.setItem("js-theme", next)
-        val btn = document.getElementById("theme-btn") as? HTMLElement
-        btn?.innerHTML = if (next == "dark") MOON_SVG else SUN_SVG
+    // Install OS preference watcher (fires only when preference is "system")
+    installSystemThemeWatcher()
+
+    // Three-way theme picker
+    document.querySelectorAll("#theme-picker span").let { items ->
+        for (i in 0 until items.length) {
+            val span = items.item(i) as? HTMLElement ?: continue
+            span.addEventListener("click") {
+                val opt = span.getAttribute("data-theme-opt") ?: return@addEventListener
+                document.documentElement?.setAttribute("data-theme", resolveTheme(opt))
+                window.localStorage.setItem("js-theme", opt)
+                for (j in 0 until items.length) {
+                    (items.item(j) as? HTMLElement)?.className = if (j == i) "on" else ""
+                }
+            }
+        }
     }
 
     // Inject ambient dock into body (hidden until a scan starts)
@@ -274,7 +281,12 @@ fun updateActiveNav(currentRoute: String) {
     }
 }
 
-private fun shellHtml(user: UserProfile, theme: String = "dark"): String {
+private fun resolveTheme(pref: String): String = when (pref) {
+    "system" -> if (prefersDark()) "dark" else "light"
+    else -> pref
+}
+
+private fun shellHtml(user: UserProfile, savedPref: String = "system"): String {
     val navHtml = NAV.joinToString("") { entry ->
         when (entry) {
             is NavGroup ->
@@ -289,7 +301,6 @@ private fun shellHtml(user: UserProfile, theme: String = "dark"): String {
             }
         }
     }
-    val themeIcon = if (theme == "dark") MOON_SVG else SUN_SVG
     return """
         <div class="shell">
           <aside class="app-side">
@@ -307,11 +318,12 @@ private fun shellHtml(user: UserProfile, theme: String = "dark"): String {
                 <a id="logout-btn" href="#" style="color:var(--ink-soft);font-size:.76rem;text-decoration:none">Sign out</a>
               </div>
             </div>
-            <div style="padding:10px 0 4px">
-              <button id="theme-btn" class="theme-btn wide" title="Toggle light / dark theme" style="display:flex;align-items:center;gap:8px;width:100%;padding:7px 10px;border-radius:8px;background:var(--fill-3);border:1px solid var(--border);cursor:pointer;color:var(--ink-soft)">
-                <span class="ico" style="width:16px;height:16px">$themeIcon</span>
-                <span style="font-size:.78rem">Toggle theme</span>
-              </button>
+            <div style="padding:8px 0 4px">
+              <div class="seg" id="theme-picker" style="width:100%;font-size:.75rem;">
+                <span class="${"on".takeIf { savedPref == "light" } ?: ""}" data-theme-opt="light">Light</span>
+                <span class="${"on".takeIf { savedPref == "dark" } ?: ""}" data-theme-opt="dark">Dark</span>
+                <span class="${"on".takeIf { savedPref == "system" || (savedPref != "light" && savedPref != "dark") } ?: ""}" data-theme-opt="system">System</span>
+              </div>
             </div>
           </aside>
           <main class="app-main2 wide" id="page-content"></main>
