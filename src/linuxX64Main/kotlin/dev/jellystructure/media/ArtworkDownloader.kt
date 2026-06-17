@@ -2,6 +2,7 @@ package dev.jellystructure.media
 
 import dev.jellystructure.model.Episode
 import dev.jellystructure.model.MediaItem
+import dev.jellystructure.model.MediaKind
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.curl.Curl
 import io.ktor.client.request.get
@@ -97,5 +98,8 @@ class ArtworkDownloader {
         return "$dir/$baseName-thumb.jpg"
     }
 
-    private fun mediaDir(item: MediaItem) = item.path.substringBeforeLast('/')
+    private fun mediaDir(item: MediaItem) = when (item.kind) {
+        MediaKind.MOVIE -> item.path.substringBeforeLast('/')
+        MediaKind.TV_SHOW -> item.path  // item.path IS the series directory
+    }
 }
