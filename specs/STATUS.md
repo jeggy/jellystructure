@@ -8,7 +8,7 @@ _Last updated: 2026-06-18_
 
 ## Current focus
 
-**Next up: Phase 21** — Flag multiple default audio tracks (FR-DA1).
+**Next up: Phase 22** — Remove lockdata & detect Jellyfin field locks (FR-LK1).
 
 See [`requirements/README.md`](requirements/README.md) for the full phase index.
 

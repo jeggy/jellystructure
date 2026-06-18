@@ -389,8 +389,12 @@ private fun buildEpisodeStep(item: MediaItem, ep: Episode): String {
               <h4 style="margin:0">
                 Tracks — language &amp; order
                 ${
-        if (ep.tracks.any { it.language.isNullOrBlank() && it.kind != TrackKind.VIDEO && it.kind != TrackKind.DATA })
-            """<span class="badge bad" style="margin-left:8px">untagged</span>""" else ""
+        buildString {
+            if (ep.tracks.any { it.language.isNullOrBlank() && it.kind != TrackKind.VIDEO && it.kind != TrackKind.DATA })
+                append("""<span class="badge bad" style="margin-left:8px">untagged</span>""")
+            if (ep.tracks.filter { it.kind == TrackKind.AUDIO && it.default }.size >= 2)
+                append("""<span class="badge bad" style="margin-left:6px">multi-default</span>""")
+        }
     }
               </h4>
               <span class="spacer"></span>
@@ -440,10 +444,22 @@ private fun buildTrackManager(item: MediaItem, ep: Episode): String {
         return """$tabBar<div class="box flat tiny muted" style="padding:14px 12px;text-align:center">No ${if (tab == "audio") "audio" else "subtitle"} tracks in this episode.</div>"""
     }
 
+    val multiDefaultBanner = if (tab == "audio" && audioTracks.count { it.default } >= 2) {
+        """<div class="box flat" style="background:var(--bad-soft);border-color:var(--bad);padding:10px 12px;margin-bottom:10px;font-size:.82rem">
+             <b style="color:var(--bad)">Multiple default audio tracks</b> — a file should have exactly one.
+             Click <b>set default ★</b> on the track to keep; the others will be cleared automatically.
+           </div>"""
+    } else ""
+
     val trackRows = tracks.joinToString("") { track ->
         val untagged = track.language.isNullOrBlank()
-        val bgStyle = if (untagged) "background:var(--bad-soft);border-color:var(--bad)" else ""
-        val defStyle = if (track.default) "border-color:rgba(245,184,64,.45)" else ""
+        val multiDefaultRow = tab == "audio" && track.default && audioTracks.count { it.default } >= 2
+        val bgStyle = when {
+            multiDefaultRow -> "background:var(--bad-soft);border-color:var(--bad)"
+            untagged -> "background:var(--bad-soft);border-color:var(--bad)"
+            else -> ""
+        }
+        val defStyle = if (track.default && !multiDefaultRow) "border-color:rgba(245,184,64,.45)" else ""
         val pillsHtml = ST_QUICK_LANGS.joinToString("") { l ->
             """<span class="lang-assign-btn btn sm" data-media-id="${item.id}" data-ep-filename="${ep.filename.esc()}" data-specifier="${track.specifier.esc()}" data-lang="$l">$l</span>"""
         }
@@ -489,7 +505,7 @@ private fun buildTrackManager(item: MediaItem, ep: Episode): String {
         </div>
     """.trimIndent()
 
-    return "$tabBar<div>$trackRows</div>$noteHtml"
+    return "$tabBar$multiDefaultBanner<div>$trackRows</div>$noteHtml"
 }
 
 private fun wireStListeners(item: MediaItem) {

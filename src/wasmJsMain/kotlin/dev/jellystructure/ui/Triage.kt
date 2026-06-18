@@ -37,12 +37,16 @@ data class CascadeMismatch(
 )
 
 @Serializable
+data class MultiDefaultIssue(val defaultSpecifiers: List<String>)
+
+@Serializable
 data class EpisodeTriageItem(
     val filename: String,
     val episodeCode: String,
     val title: String? = null,
     val untaggedTracks: List<TriageTrack>,
     val missingOverview: Boolean,
+    val multiDefault: MultiDefaultIssue? = null,
 )
 
 @Serializable
@@ -59,6 +63,7 @@ data class TriageItem(
     val episodeIssues: List<EpisodeTriageItem> = emptyList(),
     val resolvedLanguage: String? = null,
     val languageMix: Boolean = false,
+    val multiDefault: MultiDefaultIssue? = null,
 )
 
 private val QUICK_LANGS = listOf("en", "da", "is", "fo")
@@ -288,6 +293,23 @@ private fun renderFocusQueue(list: Element) {
         """.trimIndent()
     } ?: ""
 
+    val multiDefaultHtml = item.multiDefault?.let { md ->
+        val btns = md.defaultSpecifiers.joinToString("") { spec ->
+            """<button class="multi-default-pick-btn bg-slate-700 hover:bg-red-700 text-slate-300 hover:text-white text-xs px-3 py-1 rounded"
+                 data-media-id="${item.mediaId}" data-specifier="$spec">$spec — keep as default</button>"""
+        }
+        """
+        <div class="py-2 border-t border-slate-700">
+          <div class="flex items-center gap-2 mb-2">
+            <span class="bg-red-900 text-red-300 text-xs px-2 py-0.5 rounded font-mono">multi-default</span>
+            <span class="text-xs text-slate-400">Multiple audio tracks are marked default. Pick one to keep — the others will be cleared.</span>
+          </div>
+          <div class="flex flex-wrap gap-2">$btns</div>
+          <span class="multi-default-result text-xs mt-1 block" data-media-id="${item.mediaId}"></span>
+        </div>
+        """.trimIndent()
+    } ?: ""
+
     val suggestion = item.originalLanguage
     val suggestionHtml = if (suggestion != null) {
         """<div class="mt-3 text-xs text-slate-400 bg-slate-900 rounded px-3 py-2 border border-slate-700">
@@ -342,7 +364,7 @@ private fun renderFocusQueue(list: Element) {
                     </div>
                     <span class="text-xs text-slate-500 font-mono truncate ml-4" title="${item.path.esc()}">${item.path.substringAfterLast('/').esc()}</span>
                   </div>
-                  <div class="mt-2">$tracksHtml$mismatchHtml</div>
+                  <div class="mt-2">$tracksHtml$mismatchHtml$multiDefaultHtml</div>
                   $suggestionHtml
                 </div>
               </div>
@@ -361,9 +383,11 @@ private fun renderFocusQueue(list: Element) {
 
     wireAssignButtons(list)
     wireCascadeButtons(list)
+    wireMultiDefaultButtons(list)
     wireLanguageInputs(list)
     wireLanguagePillButtons(list)
     wireRemoveTrackButtons(list)
+    wireEpMultiDefaultButtons(list)
 }
 
 private fun renderTableView(list: Element) {
@@ -421,6 +445,23 @@ private fun renderTableView(list: Element) {
             """.trimIndent()
         } ?: ""
 
+        val multiDefaultHtml = item.multiDefault?.let { md ->
+            val tracksHtml2 = md.defaultSpecifiers.joinToString("") { spec ->
+                """<button class="multi-default-pick-btn bg-slate-700 hover:bg-red-700 text-slate-300 hover:text-white text-xs px-2 py-0.5 rounded"
+                     data-media-id="${item.mediaId}" data-specifier="$spec">$spec — keep</button>"""
+            }
+            """
+            <div class="py-2 border-t border-slate-700">
+              <div class="flex items-center gap-2 mb-1">
+                <span class="bg-red-900 text-red-300 text-xs px-2 py-0.5 rounded font-mono">multi-default</span>
+                <span class="text-xs text-slate-400">Multiple audio tracks marked default. Pick one to keep.</span>
+              </div>
+              <div class="flex flex-wrap gap-1">$tracksHtml2</div>
+              <span class="multi-default-result text-xs mt-1 block" data-media-id="${item.mediaId}"></span>
+            </div>
+            """.trimIndent()
+        } ?: ""
+
         """
         <div class="triage-item bg-slate-800 rounded-lg p-4 cursor-pointer $activeClass" data-idx="$idx">
           <div class="flex items-start justify-between mb-1">
@@ -430,7 +471,7 @@ private fun renderTableView(list: Element) {
             </div>
             <span class="text-xs text-slate-500 font-mono truncate max-w-xs ml-4" title="${item.path}">${item.path.substringAfterLast('/')}</span>
           </div>
-          <div class="mt-2">$tracksHtml$mismatchHtml</div>
+          <div class="mt-2">$tracksHtml$mismatchHtml$multiDefaultHtml</div>
         </div>
         """.trimIndent()
     }.joinToString("")
@@ -453,6 +494,8 @@ private fun renderTableView(list: Element) {
 
     wireAssignButtons(list)
     wireCascadeButtons(list)
+    wireMultiDefaultButtons(list)
+    wireEpMultiDefaultButtons(list)
     wireLanguageInputs(list)
     wireSeriesTriageButtons(list)
 }
@@ -604,6 +647,38 @@ private fun wireCascadeButtons(list: Element) {
     }
 }
 
+private fun wireMultiDefaultButtons(list: Element) {
+    val scope = triageScope ?: return
+    list.querySelectorAll(".multi-default-pick-btn").let { nodes ->
+        for (i in 0 until nodes.length) {
+            val btn = nodes.item(i) as? HTMLElement ?: continue
+            val mediaId = btn.getAttribute("data-media-id") ?: continue
+            val specifier = btn.getAttribute("data-specifier") ?: continue
+            btn.addEventListener("click") {
+                val resultEl = list.querySelector(".multi-default-result[data-media-id='$mediaId']") as? HTMLElement
+                resultEl?.textContent = "Working…"
+                scope.launch {
+                    val ok = MediaApi.setDefaultTrack(mediaId, specifier)
+                    if (ok) {
+                        sessionCount++
+                        triageItems = triageItems.mapNotNull { item ->
+                            if (item.mediaId != mediaId) return@mapNotNull item
+                            val remaining = item.copy(multiDefault = null)
+                            if (remaining.untaggedTracks.isEmpty() && remaining.cascadeMismatch == null && remaining.multiDefault == null) null
+                            else remaining
+                        }
+                        if (focusedIndex >= triageItems.size) focusedIndex = maxOf(0, triageItems.size - 1)
+                        renderTriageList()
+                    } else {
+                        resultEl?.textContent = "✗ failed"
+                        resultEl?.setAttribute("class", "multi-default-result text-xs text-red-400")
+                    }
+                }
+            }
+        }
+    }
+}
+
 private fun wireUpBulkAssign() {
     val container = triageContainer ?: return
     val btn = container.querySelector("#bulk-assign-btn") as? HTMLElement ?: return
@@ -737,13 +812,25 @@ private fun seriesTriageCardHtml(item: TriageItem, isActive: Boolean): String {
         val overviewBadge = if (ep.missingOverview)
             """<span class="bg-orange-900 text-orange-300 text-xs px-2 py-0.5 rounded ml-2">no overview</span>"""
         else ""
+        val epMultiDefaultBadge = if (ep.multiDefault != null)
+            """<span class="bg-red-900 text-red-300 text-xs px-2 py-0.5 rounded ml-2">multi-default</span>"""
+        else ""
+        val epMultiDefaultHtml = ep.multiDefault?.let { md ->
+            val btns = md.defaultSpecifiers.joinToString("") { spec ->
+                """<button class="ep-multi-default-pick-btn bg-slate-700 hover:bg-red-700 text-slate-300 hover:text-white text-xs px-2 py-0.5 rounded"
+                     data-media-id="${item.mediaId}" data-ep-filename="${ep.filename.esc()}" data-specifier="$spec">$spec — keep</button>"""
+            }
+            """<div class="flex flex-wrap gap-1 mt-1">$btns</div>"""
+        } ?: ""
         """<div class="border-t border-slate-700 pt-2 mt-2">
              <div class="flex items-center gap-2 mb-1">
                <span class="text-xs font-semibold text-slate-300 font-mono">${ep.episodeCode}</span>
                ${ep.title?.let { """<span class="text-xs text-slate-400">${it.esc()}</span>""" } ?: ""}
-               $overviewBadge
+               $overviewBadge$epMultiDefaultBadge
              </div>
-             ${if (tracksHtml.isEmpty()) """<span class="text-xs text-slate-500">No untagged tracks.</span>""" else tracksHtml}
+             ${if (tracksHtml.isEmpty() && ep.multiDefault == null) """<span class="text-xs text-slate-500">No untagged tracks.</span>""" else tracksHtml}
+             $epMultiDefaultHtml
+             <span class="ep-multi-default-result text-xs" data-ep-filename="${ep.filename.esc()}"></span>
            </div>"""
     }
 
@@ -755,6 +842,10 @@ private fun seriesTriageCardHtml(item: TriageItem, isActive: Boolean): String {
     val overviewBadge = if (missingOverviewCount > 0)
         """<span class="bg-orange-900 text-orange-300 text-xs px-2 py-0.5 rounded">$missingOverviewCount missing overview${if (missingOverviewCount != 1) "s" else ""}</span>"""
     else ""
+    val multiDefaultCount = item.episodeIssues.count { it.multiDefault != null }
+    val multiDefaultBadge = if (multiDefaultCount > 0)
+        """<span class="bg-red-900 text-red-300 text-xs px-2 py-0.5 rounded">$multiDefaultCount multi-default</span>"""
+    else ""
 
     return """<div class="triage-item bg-slate-800 rounded-lg p-4 $activeClass" data-media-id="${item.mediaId}">
                 <div class="flex items-start justify-between mb-2">
@@ -765,6 +856,7 @@ private fun seriesTriageCardHtml(item: TriageItem, isActive: Boolean): String {
                     $langBadge
                     $untaggedBadge
                     $overviewBadge
+                    $multiDefaultBadge
                   </div>
                 </div>
                 <div class="series-episodes-body">$episodesHtml</div>
@@ -826,6 +918,41 @@ private fun wireSeriesTriageButtons(list: Element) {
                     list.querySelector(
                         ".ep-triage-assign-btn[data-media-id=\"$mediaId\"][data-ep-filename=\"$epFilename\"][data-specifier=\"$specifier\"]"
                     )?.let { (it as? HTMLElement)?.click() }
+                }
+            }
+        }
+    }
+}
+
+private fun wireEpMultiDefaultButtons(list: Element) {
+    val scope = triageScope ?: return
+    list.querySelectorAll(".ep-multi-default-pick-btn").let { nodes ->
+        for (i in 0 until nodes.length) {
+            val btn = nodes.item(i) as? HTMLElement ?: continue
+            val mediaId = btn.getAttribute("data-media-id") ?: continue
+            val epFilename = btn.getAttribute("data-ep-filename") ?: continue
+            val specifier = btn.getAttribute("data-specifier") ?: continue
+            btn.addEventListener("click") {
+                val resultEl = list.querySelector(".ep-multi-default-result[data-ep-filename='$epFilename']") as? HTMLElement
+                resultEl?.textContent = "Working…"
+                scope.launch {
+                    val ok = MediaApi.setEpisodeDefaultTrack(mediaId, epFilename, specifier)
+                    if (ok) {
+                        sessionCount++
+                        triageItems = triageItems.mapNotNull { item ->
+                            if (item.mediaId != mediaId) return@mapNotNull item
+                            val updatedEps = item.episodeIssues.mapNotNull { ep ->
+                                if (ep.filename != epFilename) return@mapNotNull ep
+                                val updated = ep.copy(multiDefault = null)
+                                if (updated.untaggedTracks.isEmpty() && !updated.missingOverview && updated.multiDefault == null) null else updated
+                            }
+                            if (updatedEps.isEmpty()) null else item.copy(episodeIssues = updatedEps)
+                        }
+                        if (focusedIndex >= triageItems.size) focusedIndex = maxOf(0, triageItems.size - 1)
+                        renderTriageList()
+                    } else {
+                        resultEl?.textContent = "✗ failed"
+                    }
                 }
             }
         }

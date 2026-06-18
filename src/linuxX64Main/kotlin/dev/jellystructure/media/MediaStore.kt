@@ -41,13 +41,13 @@ class MediaStore(private val db: JellystructureDb) {
         untaggedAudio: Boolean = false,
         tags: List<String> = emptyList(),
     ): MediaPage {
-        val filterAttention = if (filter == "attention") 1L else 0L
+        // Attention filter is applied in-memory so multi-default items (issueCount=0) are included.
         val filterMissingArtwork = if (filter == "missing_artwork") 1L else 0L
         val searchArg = search?.takeIf { it.isNotBlank() }
 
         val jsonBlobs = db.mediaQueries.listFiltered(
             kind = kind?.name,
-            filterAttention = filterAttention,
+            filterAttention = 0L,
             filterMissingArtwork = filterMissingArtwork,
             search = searchArg,
         ).executeAsList()
@@ -56,6 +56,11 @@ class MediaStore(private val db: JellystructureDb) {
             runCatching { json.decodeFromString(MediaItem.serializer(), blob) }.getOrNull()
         }.let { items ->
             var result = items
+            if (filter == "attention") {
+                result = result.filter { item ->
+                    item.issueCount > 0 || item.languageMix || item.hasMultiDefaultAudio()
+                }
+            }
             if (studios.isNotEmpty()) result = result.filter { item -> studios.any { s -> item.studio.equals(s, ignoreCase = true) } }
             if (networks.isNotEmpty()) result = result.filter { item -> networks.any { n -> item.network.equals(n, ignoreCase = true) } }
             if (genres.isNotEmpty()) result = result.filter { item -> genres.any { g -> item.genres.any { it.equals(g, ignoreCase = true) } } }
@@ -195,6 +200,12 @@ data class MetaFacets(
     val genres: List<TrackFacetItem>,
     val tags: List<TrackFacetItem>,
 )
+
+private fun MediaItem.hasMultiDefaultAudio(): Boolean {
+    val tracks = if (kind == MediaKind.TV_SHOW) episodes.flatMap { it.tracks } else tracks
+    return tracks.filter { it.kind == TrackKind.AUDIO && it.default }.size >= 2 ||
+        (kind == MediaKind.TV_SHOW && episodes.any { ep -> ep.tracks.count { it.kind == TrackKind.AUDIO && it.default } >= 2 })
+}
 
 private fun MediaItem.allAudioTracks() =
     (if (kind == MediaKind.TV_SHOW) episodes.flatMap { it.tracks } else tracks)
