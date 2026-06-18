@@ -175,7 +175,7 @@ data class Episode(
 | GET | `/config` | Full `AppConfig` as JSON |
 | PATCH | `/config` | Partial update; writes to `config.toml` |
 | POST | `/config/test-connection` | Test Jellyfin + TMDB connectivity |
-| GET | `/config/path-check` | Per-library path diagnostics (Phase 14) |
+| GET | `/config/path-check` | Per-library path diagnostics (Phase 15) |
 
 ### Jellyfin
 | Method | Path | Description |
@@ -276,7 +276,7 @@ All events are JSON; `type` field is the discriminator:
 ```
 
 The Shell renders an **ambient dock** that appears when a scan is running and hides on the Activity
-page (which has its own full console view). A `log_line` event type is planned in Phase 16.
+page (which has its own full console view). A `log_line` event type is planned in Phase 17.
 
 ---
 
@@ -292,4 +292,6 @@ page (which has its own full console view). A `log_line` event type is planned i
 8. On scan complete: call Jellyfin library refresh
 
 Scan state persistence and the resume checkpoint (`scan-state.json`) are specified in Phase 7
-(see [`requirements/completed.md`](requirements/completed.md)).
+(see [`requirements/archive/phase-07-persistent-scan-state.md`](requirements/archive/phase-07-persistent-scan-state.md)).
+Note: the persistence mechanism is moving to SQLite in
+[`requirements/phase-14-persistence-sqlite.md`](requirements/phase-14-persistence-sqlite.md).
