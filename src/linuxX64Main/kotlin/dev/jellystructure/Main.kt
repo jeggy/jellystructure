@@ -46,9 +46,9 @@ private fun onSignal(sig: Int) {
 
 @OptIn(ExperimentalForeignApi::class)
 fun main() {
-    val configFile = env("CONFIG_FILE", "/config/config.toml")
-    val sessionsFile = env("SESSIONS_FILE", "/config/sessions.json")
-    val mediaFile = env("MEDIA_FILE", "/config/media.json")
+    val configFile = env("CONFIG_FILE", "./data/config.toml")
+    val sessionsFile = env("SESSIONS_FILE", "./data/sessions.json")
+    val mediaFile = env("MEDIA_FILE", "./data/media.json")
     val scanStateFile = env("SCAN_STATE_FILE", configFile.substringBeforeLast('/') + "/scan-state.json")
     val frontendDir = env("FRONTEND_DIR", "/app/frontend")
     val port = env("SERVER_PORT", "9505").toIntOrNull() ?: 9505
@@ -112,6 +112,7 @@ fun env(name: String, default: String): String =
 
 // Fails fast with a human-readable message if the port is already bound,
 // before Ktor gets a chance to produce an unreadable coroutine cancellation trace.
+// TODO: This function doesn't work. Let's just solve this issue by catching the exception instead of checking upfront.
 @OptIn(ExperimentalForeignApi::class)
 private fun checkPortFree(port: Int) {
     val sock = socket(AF_INET, SOCK_STREAM, 0)
