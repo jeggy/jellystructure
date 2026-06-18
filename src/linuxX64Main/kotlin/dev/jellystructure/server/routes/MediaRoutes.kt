@@ -786,6 +786,7 @@ private suspend fun runScan(
     val allItems = mutableListOf<MediaItem>()
     val allItemsMutex = Mutex()
     val succeeded = AtomicInt(0)
+    val nextWorkerId = AtomicInt(0)
     try {
         println("[INFO] Library scan started jobId=$jobId (skip=${skipIds.size})")
         broadcaster.broadcast(JobEvent.Started(jobId, -1))
@@ -817,27 +818,35 @@ private suspend fun runScan(
         }
 
         // Worker factory
-        fun launchWorker() = launch(scanDispatcher) {
-            scanTracker.activeWorkers.incrementAndGet()
-            try {
-                for (jItem in channel) {
-                    if (scanTracker.cancelRequested) break
-                    val item = try { scanner.scanItem(jItem) } catch (e: Exception) {
-                        println("[ERROR] scanItem failed for '${jItem.name}': ${e.message}")
-                        null
+        fun launchWorker() {
+            val wid = nextWorkerId.incrementAndGet()
+            launch(scanDispatcher) {
+                println("[INFO] Worker #$wid starting")
+                scanTracker.activeWorkers.incrementAndGet()
+                try {
+                    for (jItem in channel) {
+                        if (scanTracker.cancelRequested) break
+                        val item = try { scanner.scanItem(jItem) } catch (e: Exception) {
+                            println("[ERROR] Worker #$wid: scanItem failed for '${jItem.name}': ${e.message}")
+                            null
+                        }
+                        if (item != null) {
+                            allItemsMutex.withLock { allItems += item }
+                            store.addOrUpdate(item)
+                            jItem.id?.let { scanTracker.recordProcessed(it) }
+                            broadcaster.broadcast(JobEvent.ItemScanned(jobId, item))
+                            succeeded.incrementAndGet()
+                        }
+                        // Scale-down drain: exit if we are excess
+                        if (scanTracker.activeWorkers.value > scanTracker.targetWorkers.value) {
+                            println("[INFO] Worker #$wid draining (scale-down)")
+                            break
+                        }
                     }
-                    if (item != null) {
-                        allItemsMutex.withLock { allItems += item }
-                        store.addOrUpdate(item)
-                        jItem.id?.let { scanTracker.recordProcessed(it) }
-                        broadcaster.broadcast(JobEvent.ItemScanned(jobId, item))
-                        succeeded.incrementAndGet()
-                    }
-                    // Scale-down drain: exit if we are excess
-                    if (scanTracker.activeWorkers.value > scanTracker.targetWorkers.value) break
+                } finally {
+                    scanTracker.activeWorkers.decrementAndGet()
+                    println("[INFO] Worker #$wid stopped")
                 }
-            } finally {
-                scanTracker.activeWorkers.decrementAndGet()
             }
         }
 
