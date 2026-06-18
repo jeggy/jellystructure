@@ -35,8 +35,8 @@ fun renderMediaDetail(container: Element, scope: CoroutineScope, mediaId: String
             return@launch
         }
         val config = ConfigApi.get()
-        val fallbackLang = config?.languageRules?.fallbackLanguage ?: "en"
-        val jellyfinUrl = config?.apiKeys?.jellyfinUrl?.trimEnd('/') ?: ""
+        val fallbackLang = config?.config?.languageRules?.fallbackLanguage ?: "en"
+        val jellyfinUrl = config?.config?.apiKeys?.jellyfinUrl?.trimEnd('/') ?: ""
         val tmdbLangs = if (item.tmdbId != null) MediaApi.getTmdbLanguages(item.id) else null
         renderDetailView(container, item, scope, fallbackLang, jellyfinUrl, tmdbLangs)
     }

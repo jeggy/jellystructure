@@ -37,6 +37,8 @@ data class Behavior(
     @SerialName("fetch_images") val fetchImages: Boolean = true,
     @SerialName("watch_enabled") val watchEnabled: Boolean = false,
     @SerialName("tell_jellyfin") val tellJellyfin: Boolean = true,
+    @SerialName("scan_workers") val scanWorkers: Int = 1,
+    @SerialName("scan_threads") val scanThreads: Int = 4,
 )
 
 @Serializable
@@ -62,6 +64,12 @@ data class JellyfinLibrary(
 data class ConnectionTestResult(val jellyfin: Boolean, val tmdb: Boolean)
 
 @Serializable
+data class ConfigResponse(
+    val config: AppConfig,
+    val effectiveScanThreads: Int,
+)
+
+@Serializable
 data class LibraryPathDiag(
     val name: String,
     val jellyfinPath: String = "",
@@ -71,8 +79,8 @@ data class LibraryPathDiag(
 )
 
 object ConfigApi {
-    suspend fun get(): AppConfig? = runCatching {
-        httpClient.get("/api/config").body<AppConfig>()
+    suspend fun get(): ConfigResponse? = runCatching {
+        httpClient.get("/api/config").body<ConfigResponse>()
     }.getOrNull()
 
     suspend fun save(config: AppConfig): Boolean = runCatching {

@@ -7,14 +7,15 @@ _Last updated: 2026-06-18_
 
 ## Snapshot
 
-- **Phases 0–15: ✓ Done.** Core system complete: Jellyfin-driven discovery, ffprobe track data,
+- **Phases 0–16: ✓ Done.** Core system complete: Jellyfin-driven discovery, ffprobe track data,
   TMDB matching, NFO writing, artwork, per-file/per-episode language resolution, track editing,
   triage, live WebSocket scans, persistent/resumable scan state, theme picker, dirty-indicator diff
   popups, external links, language pickers, simplified series language UI, targeted single-item
-  sync, SQLite persistence via SQLDelight (Phase 14), and **library path-match diagnostics**
-  (Phase 15 — augmented WARN log + `GET /api/config/path-check` + Settings UI path-check panel).
-- **Phases 16–25: Planned.** See [`requirements/`](requirements/).
-- **Next up: Phase 16** — Multi-worker scanner, dynamic scaling (FR-W1).
+  sync, SQLite persistence via SQLDelight (Phase 14), and **library path-match diagnostics** (Phase 15), and **multi-worker scanner with dynamic scaling**
+  (Phase 16 — producer/consumer Channel, `limitedParallelism` dispatcher, `AtomicInt` worker
+  counters, live scale-up/down, `scan_workers`/`scan_threads` config, Settings Scanning section).
+- **Phases 17–25: Planned.** See [`requirements/`](requirements/).
+- **Next up: Phase 17** — Activity log backend + live runners.
 
 ### Key cross-cutting findings (2026-06-18) — see [`requirements/_investigation-findings.md`](requirements/_investigation-findings.md)
 - **SQLite/SQLDelight now live.** All four stores (MediaStore, SessionService, ScanTracker,
@@ -28,6 +29,11 @@ _Last updated: 2026-06-18_
 
 ## Recent work (git)
 
+- **Phase 16 complete:** Multi-worker scanner with dynamic scaling. `scan_workers` (hot-configurable)
+  and `scan_threads` (restart required) added to `[behavior]`. `runScan` uses Channel + N workers on
+  `Dispatchers.Default.limitedParallelism(scanThreads)`. `ScanTracker` now exposes `activeWorkers` /
+  `configuredWorkers` in status. Settings Scanning section shows restart banner when `scanThreads`
+  differs from the running effective value.
 - **Phase 15 complete:** Library path-match diagnostics. Augmented `[WARN]` log now includes all
   configured prefixes. New `GET /api/config/path-check` endpoint returns per-library
   `{ name, jellyfinPath, localPath, matchPrefix, localExists }`. Settings page shows path-check

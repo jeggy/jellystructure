@@ -4,6 +4,7 @@ import dev.jellystructure.api.AppConfig
 import dev.jellystructure.api.ApiKeys
 import dev.jellystructure.api.LanguageRules
 import dev.jellystructure.api.Behavior
+import dev.jellystructure.api.ConfigResponse
 import dev.jellystructure.api.LibraryMapping
 import dev.jellystructure.api.LibraryPathDiag
 import dev.jellystructure.api.JellyfinLibrary
@@ -34,6 +35,7 @@ fun renderSettings(container: Element, scope: CoroutineScope) {
               <a href="#sect-libraries" class="settings-nav-item" style="padding:5px 8px;border-radius:5px;font-size:.85rem;text-decoration:none;color:var(--ink-soft);">Library mapping</a>
               <a href="#sect-language" class="settings-nav-item" style="padding:5px 8px;border-radius:5px;font-size:.85rem;text-decoration:none;color:var(--ink-soft);">Language</a>
               <a href="#sect-behaviour" class="settings-nav-item" style="padding:5px 8px;border-radius:5px;font-size:.85rem;text-decoration:none;color:var(--ink-soft);">Behaviour</a>
+              <a href="#sect-scanning" class="settings-nav-item" style="padding:5px 8px;border-radius:5px;font-size:.85rem;text-decoration:none;color:var(--ink-soft);">Scanning</a>
               <a href="#sect-advanced" class="settings-nav-item" style="padding:5px 8px;border-radius:5px;font-size:.85rem;text-decoration:none;color:var(--ink-soft);">Advanced</a>
             </div>
           </nav>
@@ -109,6 +111,21 @@ fun renderSettings(container: Element, scope: CoroutineScope) {
               </div>
             </div>
 
+            <div class="card" id="sect-scanning">
+              <h3 style="font-size:1rem;margin:0 0 14px">Scanning</h3>
+              <div class="field">
+                <label>Scan workers</label>
+                <input id="scan-workers" class="input" type="number" min="1" max="32" style="width:90px">
+                <span class="hint">Number of items processed concurrently. Changing this during a scan takes effect immediately — more workers start at once; fewer drain after finishing their current item.</span>
+              </div>
+              <div class="field">
+                <label>Scan thread pool size</label>
+                <input id="scan-threads" class="input" type="number" min="1" max="32" style="width:90px">
+                <span class="hint">Thread pool the workers run on. <strong>Requires an application restart.</strong></span>
+              </div>
+              <div id="scan-threads-restart-banner" style="display:none;margin-top:10px;padding:8px 12px;border-radius:6px;background:var(--warn-fill,#7c5100);color:var(--warn-ink,#fff);font-size:.83rem"></div>
+            </div>
+
             <div class="card" id="sect-advanced">
               <h3 style="font-size:1rem;margin:0 0 10px">Advanced</h3>
               <p class="hint" style="margin:0">Advanced configuration options will appear here in a future release.</p>
@@ -124,8 +141,8 @@ fun renderSettings(container: Element, scope: CoroutineScope) {
     """.trimIndent()
 
     scope.launch {
-        val config = ConfigApi.get()
-        if (config != null) populateForm(config)
+        val response = ConfigApi.get()
+        if (response != null) populateForm(response)
         installLanguagePickerById("fallback-language")
         attachListeners(scope)
     }
@@ -135,9 +152,15 @@ private var overwriteNfo = false
 private var fetchImages = true
 private var watchEnabled = false
 private var tellJellyfin = true
+private var scanWorkers = 1
+private var scanThreads = 4
+private var effectiveScanThreads = 4
 private var libraryMappings: MutableList<LibraryMapping> = mutableListOf()
 
-private fun populateForm(config: AppConfig) {
+private fun populateForm(response: ConfigResponse) {
+    val config = response.config
+    effectiveScanThreads = response.effectiveScanThreads
+
     setInputValue("jellyfin-url", config.apiKeys.jellyfinUrl)
     setInputValue("jellyfin-token", config.apiKeys.jellyfinToken)
     setInputValue("tmdb-key", config.apiKeys.tmdbV3Key)
@@ -147,10 +170,15 @@ private fun populateForm(config: AppConfig) {
     fetchImages = config.behavior.fetchImages
     watchEnabled = config.behavior.watchEnabled
     tellJellyfin = config.behavior.tellJellyfin
+    scanWorkers = config.behavior.scanWorkers
+    scanThreads = config.behavior.scanThreads
     updateToggle("overwrite-nfo-toggle", overwriteNfo)
     updateToggle("fetch-images-toggle", fetchImages)
     updateToggle("watch-enabled-toggle", watchEnabled)
     updateToggle("tell-jellyfin-toggle", tellJellyfin)
+    setInputValue("scan-workers", scanWorkers.toString())
+    setInputValue("scan-threads", scanThreads.toString())
+    updateRestartBanner()
 
     libraryMappings = config.libraries.toMutableList()
     if (libraryMappings.isNotEmpty()) renderLibraryList()
@@ -184,6 +212,16 @@ private fun attachListeners(scope: CoroutineScope) {
         document.getElementById(id)?.addEventListener("input") {
             refreshTomlPreview(readForm())
         }
+    }
+
+    document.getElementById("scan-workers")?.addEventListener("input") {
+        scanWorkers = (document.getElementById("scan-workers") as? HTMLInputElement)?.value?.toIntOrNull()?.coerceIn(1, 32) ?: 1
+        refreshTomlPreview(readForm())
+    }
+    document.getElementById("scan-threads")?.addEventListener("input") {
+        scanThreads = (document.getElementById("scan-threads") as? HTMLInputElement)?.value?.toIntOrNull()?.coerceIn(1, 32) ?: 4
+        updateRestartBanner()
+        refreshTomlPreview(readForm())
     }
 
     document.getElementById("save-settings")?.addEventListener("click") {
@@ -349,6 +387,8 @@ private fun readForm(): AppConfig = AppConfig(
         fetchImages = fetchImages,
         watchEnabled = watchEnabled,
         tellJellyfin = tellJellyfin,
+        scanWorkers = scanWorkers,
+        scanThreads = scanThreads,
     ),
     libraries = libraryMappings.toList(),
 )
@@ -372,6 +412,8 @@ private fun buildToml(c: AppConfig): String = buildString {
     appendLine("fetch_images = ${c.behavior.fetchImages}")
     appendLine("watch_enabled = ${c.behavior.watchEnabled}")
     appendLine("tell_jellyfin = ${c.behavior.tellJellyfin}")
+    appendLine("scan_workers = ${c.behavior.scanWorkers}")
+    appendLine("scan_threads = ${c.behavior.scanThreads}")
     for (lib in c.libraries) {
         appendLine()
         appendLine("[[libraries]]")
@@ -402,6 +444,18 @@ private fun setInputValue(id: String, value: String) {
 
 private fun getInputValue(id: String): String =
     (document.getElementById(id) as? HTMLInputElement)?.value?.trim() ?: ""
+
+private fun updateRestartBanner() {
+    val banner = document.getElementById("scan-threads-restart-banner") as? HTMLElement ?: return
+    if (scanThreads != effectiveScanThreads) {
+        banner.style.display = "block"
+        banner.innerHTML = "⚠ Thread pool size has changed — restart the application for this to take effect.<br>" +
+            "Current: $effectiveScanThreads thread${if (effectiveScanThreads != 1) "s" else ""} · " +
+            "Pending: $scanThreads thread${if (scanThreads != 1) "s" else ""}"
+    } else {
+        banner.style.display = "none"
+    }
+}
 
 private fun renderPathCheckResult(diags: List<LibraryPathDiag>?) {
     val el = document.getElementById("path-check-result") as? HTMLElement ?: return

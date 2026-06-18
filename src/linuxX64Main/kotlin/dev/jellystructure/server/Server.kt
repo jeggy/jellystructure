@@ -38,6 +38,7 @@ import io.ktor.server.routing.routing
 import io.ktor.server.websocket.WebSockets
 import io.ktor.server.websocket.webSocket
 import io.ktor.websocket.Frame
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
@@ -60,6 +61,8 @@ fun startServer(
     mediaHistory: MediaHistory,
     frontendDir: String,
     port: Int,
+    scanDispatcher: CoroutineDispatcher,
+    effectiveScanThreads: Int,
 ): () -> Unit {
     val appScope = CoroutineScope(SupervisorJob())
     appScope.launch { folderWatcher.start() }
@@ -86,10 +89,10 @@ fun startServer(
                 }
 
                 authRoutes(sessionService, jellyfinClient, configStore)
-                configureConfigRoutes(configStore)
+                configureConfigRoutes(configStore, effectiveScanThreads)
                 setupRoutes(configStore, jellyfinClient)
                 jellyfinRoutes(configStore, jellyfinClient)
-                mediaRoutes(mediaStore, scanner, artworkDownloader, appScope, scanTracker, broadcaster, jellyfinClient, configStore, mediaHistory)
+                mediaRoutes(mediaStore, scanner, artworkDownloader, appScope, scanTracker, broadcaster, jellyfinClient, configStore, mediaHistory, scanDispatcher)
                 languageRoutes(configStore)
                 triageRoutes(mediaStore, jellyfinClient, configStore, mediaHistory)
                 trackRoutes(mediaStore, configStore, jellyfinClient, mediaHistory)

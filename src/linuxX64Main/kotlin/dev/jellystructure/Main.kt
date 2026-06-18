@@ -13,6 +13,7 @@ import dev.jellystructure.server.startServer
 import dev.jellystructure.tmdb.TmdbClient
 import dev.jellystructure.watcher.FolderWatcher
 import kotlinx.cinterop.ExperimentalForeignApi
+import kotlinx.coroutines.Dispatchers
 import kotlinx.cinterop.alloc
 import kotlinx.cinterop.convert
 import kotlinx.cinterop.memScoped
@@ -66,6 +67,10 @@ fun main() {
     val artworkDownloader = ArtworkDownloader()
     val scanTracker = ScanTracker(db)
     scanTracker.load()
+
+    val effectiveScanThreads = configStore.current.behavior.scanThreads.coerceIn(1, 32)
+    val scanDispatcher = Dispatchers.Default.limitedParallelism(effectiveScanThreads)
+    scanTracker.targetWorkers.value = configStore.current.behavior.scanWorkers.coerceIn(1, 32)
     val folderWatcher = FolderWatcher(configStore) {
         if (!scanTracker.running) {
             println("[INFO] FolderWatcher: starting automatic scan")
@@ -97,6 +102,7 @@ fun main() {
     val shutdown = startServer(
         configStore, sessionService, jellyfinClient, mediaStore, scanner,
         artworkDownloader, scanTracker, folderWatcher, mediaHistory, frontendDir, port,
+        scanDispatcher, effectiveScanThreads,
     )
 
     while (shutdownRequested.value == 0) {

@@ -7,12 +7,12 @@ See [`STATUS.md`](STATUS.md) for the overall snapshot.
 
 ---
 
-## Active: Phase 16 — Multi-worker scanner, dynamic scaling (FR-W1)
+## Active: Phase 17 — Activity log backend + live runners (FR-A1)
 
-Spec: [`requirements/phase-16-multi-worker-scanner.md`](requirements/phase-16-multi-worker-scanner.md)
+Spec: [`requirements/phase-17-activity-log-backend.md`](requirements/phase-17-activity-log-backend.md)
 
 ### Steps (seed from spec before starting)
-- [ ] Read the Phase 16 spec and break into concrete steps here.
+- [ ] Read the Phase 17 spec and break into concrete steps here.
 
 ---
 

@@ -13,6 +13,12 @@ import kotlinx.io.files.SystemFileSystem
 import kotlinx.serialization.Serializable
 
 @Serializable
+data class ConfigResponse(
+    val config: AppConfig,
+    val effectiveScanThreads: Int,
+)
+
+@Serializable
 data class LibraryPathDiag(
     val name: String,
     val jellyfinPath: String,
@@ -21,9 +27,9 @@ data class LibraryPathDiag(
     val localExists: Boolean,
 )
 
-fun Route.configureConfigRoutes(configStore: ConfigStore) {
+fun Route.configureConfigRoutes(configStore: ConfigStore, effectiveScanThreads: Int) {
     get("/config") {
-        call.respond(configStore.current)
+        call.respond(ConfigResponse(configStore.current, effectiveScanThreads))
     }
     put("/config") {
         val config = call.receive<AppConfig>()

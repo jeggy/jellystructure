@@ -2,7 +2,10 @@ package dev.jellystructure.media
 
 import dev.jellystructure.db.JellystructureDb
 import kotlinx.cinterop.ExperimentalForeignApi
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.Serializable
+import kotlin.concurrent.AtomicInt
 
 @Serializable
 data class ScanStatusResponse(
@@ -11,6 +14,8 @@ data class ScanStatusResponse(
     val jobId: String? = null,
     val startedAt: Long? = null,
     val processedCount: Int = 0,
+    val activeWorkers: Int = 0,
+    val configuredWorkers: Int = 1,
 )
 
 class ScanTracker(private val db: JellystructureDb) {
@@ -18,6 +23,12 @@ class ScanTracker(private val db: JellystructureDb) {
     private var _status: String = "IDLE"
     private var _jobId: String = ""
     private var _startedAt: Long = 0L
+
+    // Worker pool counters — updated by runScan workers
+    val targetWorkers = AtomicInt(1)
+    val activeWorkers = AtomicInt(0)
+
+    private val recordMutex = Mutex()
 
     val running get() = _status == "RUNNING"
     var cancelRequested: Boolean = false
@@ -46,9 +57,9 @@ class ScanTracker(private val db: JellystructureDb) {
 
     fun startNew(): String {
         val jobId = "scan-${epochSeconds()}"
-        // Clear processed IDs from all prior runs
         db.scanStateQueries.clearOldProcessed(jobId)
         cancelRequested = false
+        activeWorkers.value = 0
         _status = "RUNNING"
         _jobId = jobId
         _startedAt = epochSeconds()
@@ -63,6 +74,7 @@ class ScanTracker(private val db: JellystructureDb) {
 
     fun startResume(): String {
         cancelRequested = false
+        activeWorkers.value = 0
         _status = "RUNNING"
         db.scanStateQueries.upsertState(
             status = "RUNNING",
@@ -73,11 +85,12 @@ class ScanTracker(private val db: JellystructureDb) {
         return _jobId
     }
 
-    fun recordProcessed(jellyfinId: String) {
-        db.scanStateQueries.insertProcessed(job_id = _jobId, jellyfin_id = jellyfinId)
+    suspend fun recordProcessed(jellyfinId: String) {
+        recordMutex.withLock {
+            db.scanStateQueries.insertProcessed(job_id = _jobId, jellyfin_id = jellyfinId)
+        }
     }
 
-    // No-op with DB persistence — every recordProcessed is already written immediately
     fun flush() {}
 
     fun cancel() {
@@ -95,6 +108,7 @@ class ScanTracker(private val db: JellystructureDb) {
 
     fun complete() {
         _status = "COMPLETE"
+        activeWorkers.value = 0
         db.scanStateQueries.clearProcessed(_jobId)
         db.scanStateQueries.upsertState(
             status = "COMPLETE",
@@ -110,6 +124,8 @@ class ScanTracker(private val db: JellystructureDb) {
         jobId = _jobId.ifBlank { null },
         startedAt = _startedAt.takeIf { it > 0L },
         processedCount = db.scanStateQueries.countProcessed(_jobId).executeAsOne().toInt(),
+        activeWorkers = activeWorkers.value,
+        configuredWorkers = targetWorkers.value,
     )
 }
 
