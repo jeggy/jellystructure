@@ -40,5 +40,5 @@ one item, one season, or one series.
    - Cancel button.
 8. During any sync operation, the triggering button is disabled and shows "Syncing…". WS events stream to the Activity page in parallel.
 
-## Related (Phase 18)
-- Sync/repull must preserve Jellystructure tags — see [`../phase-18-metadata-page.md`](../phase-18-metadata-page.md) §14.
+## Related (Phase 19)
+- Sync/repull must preserve Jellystructure tags — see [`../phase-19-metadata-page.md`](../phase-19-metadata-page.md) §14.

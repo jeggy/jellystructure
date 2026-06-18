@@ -4,6 +4,7 @@ The **"what"** — features, acceptance criteria, and goals, one file per develo
 
 - **Active / planned** phases live directly in this directory.
 - **Completed** phases are archived in [`archive/`](archive/) for reference (the spec is preserved as it was written, even though the work is done).
+- [`_investigation-findings.md`](_investigation-findings.md) — cross-cutting facts (no SQLite; studio/network not populated; TMDB has no network search; routing constraints) that several active specs depend on. **Read it before starting phases 14–25.**
 
 Phases are sequential. Do not begin a phase until the prior phase's core deliverables work
 end-to-end. See [`../STATUS.md`](../STATUS.md) for where work currently stands and
@@ -27,11 +28,18 @@ end-to-end. See [`../STATUS.md`](../STATUS.md) for where work currently stands a
 | 11 | ✓ Done | Language pickers — searchable dropdowns (FR-L1) | [archive](archive/phase-11-language-pickers.md) |
 | 12 | ✓ Done | Simplify TV series language UI (FR-U1) | [archive](archive/phase-12-simplify-series-language-ui.md) |
 | 13 | ✓ Done | Sync single media item (FR-S2) | [archive](archive/phase-13-sync-single-media-item.md) |
-| 14 | Planned | Fix library path matching — diagnostics + path-check (FR-B1) | [spec](phase-14-library-path-matching.md) |
-| 15 | Planned | Multi-worker scanner — configurable workers + thread pool (FR-W1) | [spec](phase-15-multi-worker-scanner.md) |
-| 16 | Planned | Activity log backend — persistent log, filters, worker display (FR-A1) | [spec](phase-16-activity-log-backend.md) |
-| 17 | Planned | Settings page cleanup — nav fix, section reorganisation (FR-C1) | [spec](phase-17-settings-page-cleanup.md) |
-| 18 | Planned | Studios, Networks, Genres & Tags metadata page (FR-M1) | [spec](phase-18-metadata-page.md) |
+| 14 | Planned · **first** | Persistence layer — SQLite/SQLDelight, migrate the JSON/in-memory stores (FR-P1) | [spec](phase-14-persistence-sqlite.md) |
+| 15 | Planned | Fix library path matching — diagnostics + path-check (FR-B1) | [spec](phase-15-library-path-matching.md) |
+| 16 | Planned | Multi-worker scanner — dynamic workers + thread pool (FR-W1) | [spec](phase-16-multi-worker-scanner.md) |
+| 17 | Planned | Activity log backend — persistent log, filters, live runners (FR-A1) | [spec](phase-17-activity-log-backend.md) |
+| 18 | Planned | Settings page cleanup — nav fix, section reorganisation (FR-C1) | [spec](phase-18-settings-page-cleanup.md) |
+| 19 | Planned | Studios, Networks, Genres & Tags metadata page (FR-M1) | [spec](phase-19-metadata-page.md) |
+| 20 | Planned | Library audio-track filter — find audio-description/commentary tracks (FR-LF1) | [spec](phase-20-library-audio-track-filter.md) |
+| 21 | Planned | Flag multiple default audio tracks in Triage (FR-DA1) | [spec](phase-21-multiple-default-audio-triage.md) |
+| 22 | Planned | Remove lockdata & detect Jellyfin field locks (FR-LK1) | [spec](phase-22-remove-lockdata-detect-locks.md) |
+| 23 | Planned | Remove the Language page (FR-RL1) | [spec](phase-23-remove-language-page.md) |
+| 24 | Planned | Manage the TMDB ID field on Media Detail (FR-TI1) | [spec](phase-24-manage-tmdb-id.md) |
+| 25 | Planned | Fix Sync button → "Re-pull from Jellyfin…" (FR-RJ1) | [spec](phase-25-repull-from-jellyfin.md) |
 
 ## Adding a new phase
 1. Create `phase-NN-short-name.md` in this directory using an existing planned spec as a template (Problem → Current state → Requirements → Invariants).

@@ -202,4 +202,4 @@ A setup script (`scripts/build-fixtures.sh`) downloads and prepares test media b
 3. **NFO writes are atomic** — `.tmp` + `rename()`.
 4. **Frontend renders server-pushed state only** — no derived/optimistic state.
 5. **No Compose for Web** — DOM manipulation only via `kotlinx.browser`.
-6. **Jellystructure tags survive re-syncs** — on sync/repull, tags defined in `js_tags` are always preserved (see Phase 18).
+6. **Jellystructure tags survive re-syncs** — on sync/repull, tags defined in `js_tags` are always preserved (see Phase 19).
