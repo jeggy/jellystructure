@@ -41,6 +41,9 @@ end-to-end. See [`../STATUS.md`](../STATUS.md) for where work currently stands a
 | 24 | Planned | Manage the TMDB ID field on Media Detail (FR-TI1) | [spec](phase-24-manage-tmdb-id.md) |
 | 25 | Planned | Fix Sync button → "Re-pull from Jellyfin…" (FR-RJ1) | [spec](phase-25-repull-from-jellyfin.md) |
 | 26 | Planned | qBittorrent seeding guard — block mkvpropedit when file is actively seeded (FR-QB1) | [spec](phase-26-qbittorrent-seeding-guard.md) |
+| 27 | Planned | Merge Triage into Media Detail + floating Triage dock (FR-MT1) | [spec](phase-27-merge-triage-into-media-detail.md) |
+| 28 | Planned | URL-based tab & view-state navigation (FR-UN1) | [spec](phase-28-url-based-tab-navigation.md) |
+| 29 | Planned | Multi-language library search — remember every title ever pulled (FR-ML1) | [spec](phase-29-multi-language-library-search.md) |
 
 ## Adding a new phase
 1. Create `phase-NN-short-name.md` in this directory using an existing planned spec as a template (Problem → Current state → Requirements → Invariants).
