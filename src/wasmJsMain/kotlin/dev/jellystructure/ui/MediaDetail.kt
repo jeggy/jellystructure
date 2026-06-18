@@ -322,7 +322,7 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
           <span class="spacer"></span>
           ${if (jellyfinUrl.isNotBlank() && item.jellyfinId != null) """<a href="$jellyfinUrl/web/index.html#!/details?id=${item.jellyfinId}" target="_blank" rel="noopener" class="btn sm ghost">Jellyfin ↗</a>""" else ""}
           $tmdbLinkHtml
-          <button id="sync-btn" class="btn sm ghost">Sync ↻</button>
+          <button id="repull-jellyfin-btn" class="btn sm ghost">Re-pull from Jellyfin…</button>
           <button id="repull-btn" class="btn sm ghost">Re-pull from TMDB</button>
           ${if (!isTvShow) """<button id="track-order-btn" class="btn sm ghost">Track order →</button>""" else ""}
           <button id="write-nfo-btn" class="btn ghost" ${if (nfoDisabled) """disabled title="${nfoDisabledReason.esc()}"""" else ""}>Save → disk</button>
@@ -539,26 +539,8 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
         scope.launch { handleRepull(item, container, scope, fallbackLang, jellyfinUrl, prevTmdbLangs = tmdbLangs) }
     }
 
-    document.getElementById("sync-btn")?.addEventListener("click") {
-        if (isTvShow) {
-            showSyncModal(item, container, scope)
-        } else {
-            val btn = document.getElementById("sync-btn") as? HTMLElement
-            btn?.setAttribute("disabled", "true")
-            btn?.textContent = "Syncing…"
-            scope.launch {
-                val updated = MediaApi.syncMedia(item.id)
-                btn?.removeAttribute("disabled")
-                btn?.textContent = "Sync ↻"
-                if (updated != null) {
-                    showDetailMsg("Sync complete. Reloading…", true)
-                    delay(600)
-                    renderMediaDetail(container, scope, item.id)
-                } else {
-                    showDetailMsg("Sync failed — check if a scan is already running.", false)
-                }
-            }
-        }
+    document.getElementById("repull-jellyfin-btn")?.addEventListener("click") {
+        showRepullJellyfinModal(item, container, scope)
     }
 
     document.getElementById("lang-override-btn")?.addEventListener("click") {
@@ -1141,6 +1123,47 @@ private fun showSeasonSyncModal(item: MediaItem, seasonNumber: Int, container: E
 
     document.getElementById("sync-opt-season")?.addEventListener("click") { doSeasonSync("season") }
     document.getElementById("sync-opt-season-eps")?.addEventListener("click") { doSeasonSync("episodes") }
+}
+
+private fun showRepullJellyfinModal(item: MediaItem, container: Element, scope: CoroutineScope) {
+    document.getElementById("repull-jf-modal-overlay")?.remove()
+    val overlay = document.createElement("div") as HTMLElement
+    overlay.id = "repull-jf-modal-overlay"
+    overlay.setAttribute("style", "position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:8000;display:flex;align-items:center;justify-content:center;")
+    overlay.innerHTML = """
+        <div style="background:var(--fill);border:1px solid var(--line-2);border-radius:var(--radius);padding:24px;max-width:480px;width:90%;box-shadow:var(--shadow);">
+          <h4 style="margin:0 0 8px;">Re-pull from Jellyfin</h4>
+          <p style="margin:0 0 20px;font-size:.9rem;color:var(--ink-soft);">Re-fetches this item's name, file path, provider IDs and tracks from Jellyfin, then re-resolves language and TMDB metadata. Use this when the item moved, was renamed, or its Jellyfin match changed.</p>
+          <div style="display:flex;justify-content:flex-end;gap:8px;align-items:center;">
+            <span id="repull-jf-status" class="tiny muted" style="flex:1;"></span>
+            <button id="repull-jf-cancel-btn" class="btn sm ghost">Cancel</button>
+            <button id="repull-jf-confirm-btn" class="btn sm primary">Re-pull</button>
+          </div>
+        </div>"""
+    document.body?.appendChild(overlay)
+
+    fun closeModal() { overlay.remove() }
+    overlay.addEventListener("click") { e -> if ((e.target as? HTMLElement) == overlay) closeModal() }
+    document.getElementById("repull-jf-cancel-btn")?.addEventListener("click") { closeModal() }
+    document.getElementById("repull-jf-confirm-btn")?.addEventListener("click") {
+        val statusEl = document.getElementById("repull-jf-status") as? HTMLElement
+        val confirmBtn = document.getElementById("repull-jf-confirm-btn") as? HTMLElement
+        val cancelBtn = document.getElementById("repull-jf-cancel-btn") as? HTMLElement
+        statusEl?.textContent = "Re-pulling…"
+        confirmBtn?.setAttribute("disabled", "true")
+        cancelBtn?.setAttribute("disabled", "true")
+        scope.launch {
+            val updated = MediaApi.repullFromJellyfin(item.id)
+            if (updated != null) {
+                closeModal()
+                renderMediaDetail(container, scope, item.id)
+            } else {
+                statusEl?.textContent = "Re-pull failed — scan may be running or item not found in Jellyfin."
+                confirmBtn?.removeAttribute("disabled")
+                cancelBtn?.removeAttribute("disabled")
+            }
+        }
+    }
 }
 
 private fun wireEpisodeToggles() {

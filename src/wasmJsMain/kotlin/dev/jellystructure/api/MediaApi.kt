@@ -160,6 +160,11 @@ object MediaApi {
         }.body<MediaItem>()
     }.getOrNull()
 
+    /** Re-fetches the item from Jellyfin and re-runs a full scan (ffprobe + TMDB). */
+    suspend fun repullFromJellyfin(id: String): MediaItem? = runCatching {
+        httpClient.post("/api/media/$id/repull-jellyfin").body<MediaItem>()
+    }.getOrNull()
+
     // Returns true if the scan was successfully started, false if already running or failed.
     suspend fun startScan(): Boolean = runCatching {
         val response = httpClient.post("/api/scan")

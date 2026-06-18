@@ -75,7 +75,7 @@ class JellyfinClient {
 
     suspend fun getItem(baseUrl: String, token: String, jellyfinId: String): JellyfinItem? = runCatching {
         val url = baseUrl.trimEnd('/') +
-            "/Items/$jellyfinId?Fields=LockData,LockedFields"
+            "/Items/$jellyfinId?Fields=Path,ProviderIds,ProductionYear,LockData,LockedFields"
         http.get(url) {
             header("Authorization", """$AUTH_HEADER, Token="$token"""")
         }.body<JellyfinItem>()

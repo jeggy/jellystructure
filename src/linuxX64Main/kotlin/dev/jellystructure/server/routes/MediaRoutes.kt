@@ -632,6 +632,30 @@ fun Route.mediaRoutes(
             call.respond(langs)
         }
 
+        // POST /api/media/{id}/repull-jellyfin — re-fetch item from Jellyfin + full rescan
+        post("/{id}/repull-jellyfin") {
+            val id = call.parameters["id"] ?: return@post call.respond(HttpStatusCode.BadRequest)
+            val item = store.resolve(id) ?: return@post call.respond(HttpStatusCode.NotFound)
+            if (item.jellyfinId.isNullOrBlank()) {
+                call.respond(HttpStatusCode.BadRequest, mapOf("error" to "item has no Jellyfin ID"))
+                return@post
+            }
+            if (scanTracker.running) {
+                call.respond(HttpStatusCode.Conflict, mapOf("error" to "scan already running"))
+                return@post
+            }
+            val updated = scanner.rescanFromJellyfin(item)
+            if (updated == null) {
+                call.respond(HttpStatusCode.InternalServerError, mapOf("error" to "re-pull failed — item not found in Jellyfin or config missing"))
+                return@post
+            }
+            store.updateOne(updated)
+            broadcaster.broadcast(JobEvent.ItemScanned("repull-jellyfin-$id", updated))
+            mediaHistory.record(id, "repull_jellyfin", "jellyfinId=${item.jellyfinId}")
+            pushToJellyfin(updated, artwork, configStore, jellyfinClient, appScope)
+            call.respond(updated)
+        }
+
         // POST /api/media/{id}/sync — targeted full rescan for one item (no ScanTracker transitions)
         post("/{id}/sync") {
             val id = call.parameters["id"] ?: return@post call.respond(HttpStatusCode.BadRequest)
