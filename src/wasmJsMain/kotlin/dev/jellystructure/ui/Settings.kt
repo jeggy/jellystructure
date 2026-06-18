@@ -233,8 +233,6 @@ private fun attachListeners(scope: CoroutineScope) {
 
     document.getElementById("save-settings")?.addEventListener("click") {
         scope.launch {
-            libraryMappings = (libraryMappings.filter { !it.skip } + libraryMappings.filter { it.skip }).toMutableList()
-            renderLibraryList()
             val config = readForm()
             val ok = ConfigApi.save(config)
             showSettingsMsg(if (ok) "Saved." else "Save failed.", ok)
