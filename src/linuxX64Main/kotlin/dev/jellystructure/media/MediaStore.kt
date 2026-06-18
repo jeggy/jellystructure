@@ -31,6 +31,9 @@ class MediaStore(private val db: JellystructureDb) {
         sort: String? = null,
         page: Int = 1,
         pageSize: Int = 20,
+        studio: String? = null,
+        network: String? = null,
+        genre: String? = null,
     ): MediaPage {
         val filterAttention = if (filter == "attention") 1L else 0L
         val filterMissingArtwork = if (filter == "missing_artwork") 1L else 0L
@@ -45,6 +48,12 @@ class MediaStore(private val db: JellystructureDb) {
 
         val decoded = jsonBlobs.mapNotNull { blob ->
             runCatching { json.decodeFromString(MediaItem.serializer(), blob) }.getOrNull()
+        }.let { items ->
+            var result = items
+            if (studio != null) result = result.filter { it.studio.equals(studio, ignoreCase = true) }
+            if (network != null) result = result.filter { it.network.equals(network, ignoreCase = true) }
+            if (genre != null) result = result.filter { g -> g.genres.any { it.equals(genre, ignoreCase = true) } }
+            result
         }
 
         val sorted = when (sort) {
@@ -62,6 +71,9 @@ class MediaStore(private val db: JellystructureDb) {
         val blob = db.mediaQueries.getById(id).executeAsOneOrNull() ?: return null
         return runCatching { json.decodeFromString(MediaItem.serializer(), blob) }.getOrNull()
     }
+
+    // Resolves either a slug id or a Jellyfin UUID — Jellyfin ID is the canonical URL form.
+    fun resolve(id: String): MediaItem? = get(id) ?: allItems().firstOrNull { it.jellyfinId == id }
 
     fun allItems(): List<MediaItem> =
         db.mediaQueries.getAll().executeAsList().mapNotNull { blob ->

@@ -21,6 +21,8 @@ import dev.jellystructure.server.routes.languageRoutes
 import dev.jellystructure.server.routes.mediaRoutes
 import dev.jellystructure.server.routes.setupRoutes
 import dev.jellystructure.server.routes.trackRoutes
+import dev.jellystructure.media.JsTagStore
+import dev.jellystructure.server.routes.metadataRoutes
 import dev.jellystructure.server.routes.triageRoutes
 import io.ktor.http.ContentType
 import io.ktor.http.HttpMethod
@@ -68,6 +70,7 @@ fun startServer(
     port: Int,
     scanDispatcher: CoroutineDispatcher,
     effectiveScanThreads: Int,
+    jsTagStore: JsTagStore,
 ): suspend () -> Unit {
     val appScope = CoroutineScope(SupervisorJob())
     val engine = embeddedServer(CIO, port = port) {
@@ -99,6 +102,7 @@ fun startServer(
                 activityRoutes(activityLog)
                 languageRoutes(configStore)
                 triageRoutes(mediaStore, jellyfinClient, configStore, mediaHistory)
+                metadataRoutes(mediaStore, jsTagStore)
                 trackRoutes(mediaStore, configStore, jellyfinClient, mediaHistory)
             }
 

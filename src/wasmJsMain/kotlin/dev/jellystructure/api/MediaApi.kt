@@ -89,6 +89,9 @@ object MediaApi {
         sort: String? = null,
         page: Int = 1,
         pageSize: Int = 20,
+        studio: String? = null,
+        network: String? = null,
+        genre: String? = null,
     ): MediaPage? = runCatching {
         httpClient.get("/api/media") {
             if (kind != null) parameter("kind", kind.name)
@@ -97,6 +100,9 @@ object MediaApi {
             if (!sort.isNullOrBlank()) parameter("sort", sort)
             parameter("page", page)
             parameter("pageSize", pageSize)
+            if (!studio.isNullOrBlank()) parameter("studio", studio)
+            if (!network.isNullOrBlank()) parameter("network", network)
+            if (!genre.isNullOrBlank()) parameter("genre", genre)
         }.body<MediaPage>()
     }.getOrNull()
 

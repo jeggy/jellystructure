@@ -51,7 +51,7 @@ fun Route.trackRoutes(store: MediaStore, configStore: ConfigStore, jellyfinClien
         get("/tracks/plan") {
             val id = call.parameters["id"]
                 ?: return@get call.respond(HttpStatusCode.BadRequest)
-            val item = store.get(id)
+            val item = store.resolve(id)
                 ?: return@get call.respond(HttpStatusCode.NotFound)
 
             val specifier = call.request.queryParameters["specifier"]
@@ -104,7 +104,7 @@ fun Route.trackRoutes(store: MediaStore, configStore: ConfigStore, jellyfinClien
         post("/tracks/default") {
             val id = call.parameters["id"]
                 ?: return@post call.respond(HttpStatusCode.BadRequest)
-            val item = store.get(id)
+            val item = store.resolve(id)
                 ?: return@post call.respond(HttpStatusCode.NotFound)
 
             val req = call.receive<SetDefaultRequest>()
@@ -146,7 +146,7 @@ fun Route.trackRoutes(store: MediaStore, configStore: ConfigStore, jellyfinClien
         post("/tracks/language") {
             val id = call.parameters["id"]
                 ?: return@post call.respond(HttpStatusCode.BadRequest)
-            val item = store.get(id)
+            val item = store.resolve(id)
                 ?: return@post call.respond(HttpStatusCode.NotFound)
 
             val req = call.receive<SetLanguageRequest>()
@@ -192,7 +192,7 @@ fun Route.trackRoutes(store: MediaStore, configStore: ConfigStore, jellyfinClien
                 ?: return@delete call.respond(HttpStatusCode.BadRequest)
             val specifier = call.parameters["specifier"]
                 ?: return@delete call.respond(HttpStatusCode.BadRequest)
-            val item = store.get(id)
+            val item = store.resolve(id)
                 ?: return@delete call.respond(HttpStatusCode.NotFound)
             val targetTrack = item.tracks.firstOrNull { it.specifier == specifier }
                 ?: return@delete call.respond(HttpStatusCode.NotFound, mapOf("error" to "track not found"))
@@ -221,7 +221,7 @@ fun Route.trackRoutes(store: MediaStore, configStore: ConfigStore, jellyfinClien
         post("/tracks/reorder") {
             val id = call.parameters["id"]
                 ?: return@post call.respond(HttpStatusCode.BadRequest)
-            val item = store.get(id)
+            val item = store.resolve(id)
                 ?: return@post call.respond(HttpStatusCode.NotFound)
 
             @Serializable data class ReorderRequest(val kind: String, val order: List<String>)
@@ -262,7 +262,7 @@ fun Route.trackRoutes(store: MediaStore, configStore: ConfigStore, jellyfinClien
         post("/jellyfin-refresh") {
             val id = call.parameters["id"]
                 ?: return@post call.respond(HttpStatusCode.BadRequest)
-            val item = store.get(id)
+            val item = store.resolve(id)
             val config = configStore.current
             if (config.apiKeys.jellyfinUrl.isBlank() || config.apiKeys.jellyfinToken.isBlank()) {
                 call.respond(HttpStatusCode.BadRequest, mapOf("error" to "Jellyfin not configured"))

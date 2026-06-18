@@ -73,7 +73,10 @@ fun Route.mediaRoutes(
             val pageNum = call.request.queryParameters["page"]?.toIntOrNull()?.coerceAtLeast(1) ?: 1
             val pageSize = call.request.queryParameters["pageSize"]?.toIntOrNull()
                 ?.coerceIn(1, 100) ?: 20
-            val result = store.list(kind, filter, search, sort, pageNum, pageSize)
+            val studio = call.request.queryParameters["studio"]?.takeIf { it.isNotBlank() }
+            val network = call.request.queryParameters["network"]?.takeIf { it.isNotBlank() }
+            val genre = call.request.queryParameters["genre"]?.takeIf { it.isNotBlank() }
+            val result = store.list(kind, filter, search, sort, pageNum, pageSize, studio, network, genre)
             // Strip episode data from list responses — full episode list is on the individual item endpoint
             val stripped = result.copy(items = result.items.map { it.copy(episodes = emptyList()) })
             call.respond(stripped)
@@ -93,7 +96,7 @@ fun Route.mediaRoutes(
             get {
                 val id = call.parameters["id"]
                     ?: return@get call.respond(HttpStatusCode.BadRequest)
-                val item = store.get(id)
+                val item = store.resolve(id)
                     ?: return@get call.respond(HttpStatusCode.NotFound)
                 call.respond(item)
             }
@@ -108,7 +111,7 @@ fun Route.mediaRoutes(
                 get {
                     val id = call.parameters["id"]
                         ?: return@get call.respond(HttpStatusCode.BadRequest)
-                    val item = store.get(id)
+                    val item = store.resolve(id)
                         ?: return@get call.respond(HttpStatusCode.NotFound)
                     val raw = NfoWriter.readRaw(item)
                         ?: return@get call.respond(HttpStatusCode.NotFound)
@@ -118,7 +121,7 @@ fun Route.mediaRoutes(
                 post {
                     val id = call.parameters["id"]
                         ?: return@post call.respond(HttpStatusCode.BadRequest)
-                    val item = store.get(id)
+                    val item = store.resolve(id)
                         ?: return@post call.respond(HttpStatusCode.NotFound)
                     NfoWriter.write(item)
                         .onSuccess { path ->
@@ -144,7 +147,7 @@ fun Route.mediaRoutes(
                 get("/writable") {
                     val id = call.parameters["id"]
                         ?: return@get call.respond(HttpStatusCode.BadRequest)
-                    val item = store.get(id)
+                    val item = store.resolve(id)
                         ?: return@get call.respond(HttpStatusCode.NotFound)
                     val dir = when (item.kind) {
                         MediaKind.MOVIE -> item.path.substringBeforeLast('/')
@@ -166,7 +169,7 @@ fun Route.mediaRoutes(
                 get {
                     val id = call.parameters["id"]
                         ?: return@get call.respond(HttpStatusCode.BadRequest)
-                    val item = store.get(id)
+                    val item = store.resolve(id)
                         ?: return@get call.respond(HttpStatusCode.NotFound)
                     call.respond(artwork.check(item))
                 }
@@ -174,7 +177,7 @@ fun Route.mediaRoutes(
                 post {
                     val id = call.parameters["id"]
                         ?: return@post call.respond(HttpStatusCode.BadRequest)
-                    val item = store.get(id)
+                    val item = store.resolve(id)
                         ?: return@post call.respond(HttpStatusCode.NotFound)
                     val status = artwork.fetch(item)
                     // For TV shows, also fetch episode stills
@@ -202,7 +205,7 @@ fun Route.mediaRoutes(
                 post("/upload") {
                     val id = call.parameters["id"]
                         ?: return@post call.respond(HttpStatusCode.BadRequest)
-                    val item = store.get(id)
+                    val item = store.resolve(id)
                         ?: return@post call.respond(HttpStatusCode.NotFound)
 
                     val multipart = call.receiveMultipart()
@@ -262,7 +265,7 @@ fun Route.mediaRoutes(
             get("/stills") {
                 val id = call.parameters["id"]
                     ?: return@get call.respond(HttpStatusCode.BadRequest)
-                val item = store.get(id)
+                val item = store.resolve(id)
                     ?: return@get call.respond(HttpStatusCode.NotFound)
                 val statuses = item.episodes.map { ep ->
                     val status = artwork.checkEpisodeStill(ep)
@@ -275,7 +278,7 @@ fun Route.mediaRoutes(
             post("/stills") {
                 val id = call.parameters["id"]
                     ?: return@post call.respond(HttpStatusCode.BadRequest)
-                val item = store.get(id)
+                val item = store.resolve(id)
                     ?: return@post call.respond(HttpStatusCode.NotFound)
                 var fetched = 0
                 for (ep in item.episodes) {
@@ -292,7 +295,7 @@ fun Route.mediaRoutes(
             post("/nfo") {
                 val id = call.parameters["id"]
                     ?: return@post call.respond(HttpStatusCode.BadRequest)
-                val item = store.get(id)
+                val item = store.resolve(id)
                     ?: return@post call.respond(HttpStatusCode.NotFound)
                 var written = 0
                 var failed = 0
@@ -311,7 +314,7 @@ fun Route.mediaRoutes(
                     ?: return@post call.respond(HttpStatusCode.BadRequest)
                 val epFilename = call.parameters["epFilename"]
                     ?: return@post call.respond(HttpStatusCode.BadRequest)
-                val item = store.get(id)
+                val item = store.resolve(id)
                     ?: return@post call.respond(HttpStatusCode.NotFound)
                 val ep = item.episodes.firstOrNull { it.filename == epFilename }
                     ?: return@post call.respond(HttpStatusCode.NotFound, mapOf("error" to "episode not found"))
@@ -356,7 +359,7 @@ fun Route.mediaRoutes(
                         ?: return@get call.respond(HttpStatusCode.BadRequest)
                     val epFilename = call.parameters["epFilename"]
                         ?: return@get call.respond(HttpStatusCode.BadRequest)
-                    val item = store.get(id)
+                    val item = store.resolve(id)
                         ?: return@get call.respond(HttpStatusCode.NotFound)
                     val ep = item.episodes.firstOrNull { it.filename == epFilename }
                         ?: return@get call.respond(HttpStatusCode.NotFound, mapOf("error" to "episode not found"))
@@ -390,7 +393,7 @@ fun Route.mediaRoutes(
                         ?: return@post call.respond(HttpStatusCode.BadRequest)
                     val epFilename = call.parameters["epFilename"]
                         ?: return@post call.respond(HttpStatusCode.BadRequest)
-                    val item = store.get(id)
+                    val item = store.resolve(id)
                         ?: return@post call.respond(HttpStatusCode.NotFound)
                     val epIdx = item.episodes.indexOfFirst { it.filename == epFilename }
                     if (epIdx < 0) return@post call.respond(HttpStatusCode.NotFound, mapOf("error" to "episode not found"))
@@ -423,7 +426,7 @@ fun Route.mediaRoutes(
                         ?: return@post call.respond(HttpStatusCode.BadRequest)
                     val epFilename = call.parameters["epFilename"]
                         ?: return@post call.respond(HttpStatusCode.BadRequest)
-                    val item = store.get(id)
+                    val item = store.resolve(id)
                         ?: return@post call.respond(HttpStatusCode.NotFound)
                     val epIdx = item.episodes.indexOfFirst { it.filename == epFilename }
                     if (epIdx < 0) return@post call.respond(HttpStatusCode.NotFound, mapOf("error" to "episode not found"))
@@ -461,7 +464,7 @@ fun Route.mediaRoutes(
                         ?: return@patch call.respond(HttpStatusCode.BadRequest)
                     val epFilename = call.parameters["epFilename"]
                         ?: return@patch call.respond(HttpStatusCode.BadRequest)
-                    val item = store.get(id)
+                    val item = store.resolve(id)
                         ?: return@patch call.respond(HttpStatusCode.NotFound)
                     val epIdx = item.episodes.indexOfFirst { it.filename == epFilename }
                     if (epIdx < 0) return@patch call.respond(HttpStatusCode.NotFound, mapOf("error" to "episode not found"))
@@ -487,7 +490,7 @@ fun Route.mediaRoutes(
         patch("/{id}/language") {
             val id = call.parameters["id"]
                 ?: return@patch call.respond(HttpStatusCode.BadRequest)
-            val item = store.get(id)
+            val item = store.resolve(id)
                 ?: return@patch call.respond(HttpStatusCode.NotFound)
 
             @Serializable data class LangOverrideReq(val language: String)
@@ -507,7 +510,7 @@ fun Route.mediaRoutes(
         patch("/{id}/metadata") {
             val id = call.parameters["id"]
                 ?: return@patch call.respond(HttpStatusCode.BadRequest)
-            val item = store.get(id)
+            val item = store.resolve(id)
                 ?: return@patch call.respond(HttpStatusCode.NotFound)
 
             @Serializable data class MetadataEditReq(
@@ -540,7 +543,7 @@ fun Route.mediaRoutes(
         get("/{id}/tmdb-languages") {
             val id = call.parameters["id"]
                 ?: return@get call.respond(HttpStatusCode.BadRequest)
-            val item = store.get(id)
+            val item = store.resolve(id)
                 ?: return@get call.respond(HttpStatusCode.NotFound)
             val tmdbId = item.tmdbId
             if (tmdbId == null) {
@@ -554,7 +557,7 @@ fun Route.mediaRoutes(
         // POST /api/media/{id}/sync — targeted full rescan for one item (no ScanTracker transitions)
         post("/{id}/sync") {
             val id = call.parameters["id"] ?: return@post call.respond(HttpStatusCode.BadRequest)
-            val item = store.get(id) ?: return@post call.respond(HttpStatusCode.NotFound)
+            val item = store.resolve(id) ?: return@post call.respond(HttpStatusCode.NotFound)
             if (scanTracker.running) {
                 call.respond(HttpStatusCode.Conflict, mapOf("error" to "scan already running"))
                 return@post
@@ -584,7 +587,7 @@ fun Route.mediaRoutes(
             val id = call.parameters["id"] ?: return@post call.respond(HttpStatusCode.BadRequest)
             val seasonNumber = call.parameters["seasonNumber"]?.toIntOrNull()
                 ?: return@post call.respond(HttpStatusCode.BadRequest, mapOf("error" to "invalid season number"))
-            val item = store.get(id) ?: return@post call.respond(HttpStatusCode.NotFound)
+            val item = store.resolve(id) ?: return@post call.respond(HttpStatusCode.NotFound)
             if (item.kind != MediaKind.TV_SHOW) {
                 call.respond(HttpStatusCode.BadRequest, mapOf("error" to "only available for TV shows"))
                 return@post
@@ -608,7 +611,7 @@ fun Route.mediaRoutes(
             post {
                 val id = call.parameters["id"]
                     ?: return@post call.respond(HttpStatusCode.BadRequest)
-                val item = store.get(id)
+                val item = store.resolve(id)
                     ?: return@post call.respond(HttpStatusCode.NotFound)
 
                 val updated = scanner.rescanMetadata(item)

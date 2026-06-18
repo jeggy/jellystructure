@@ -41,10 +41,18 @@ data class TmdbMovieDetails(
     val overview: String = "",
     @SerialName("release_date") val releaseDate: String = "",
     val genres: List<TmdbGenre> = emptyList(),
+    @SerialName("production_companies") val productionCompanies: List<TmdbCompany> = emptyList(),
 )
 
 @Serializable
 data class TmdbGenre(val id: Int, val name: String)
+
+@Serializable
+data class TmdbCompany(
+    val id: Int,
+    val name: String,
+    @SerialName("logo_path") val logoPath: String? = null,
+)
 
 @Serializable
 data class TmdbTvSearchResponse(
@@ -69,6 +77,14 @@ data class TmdbTvDetails(
     val overview: String = "",
     @SerialName("first_air_date") val firstAirDate: String = "",
     val genres: List<TmdbGenre> = emptyList(),
+    val networks: List<TmdbNetwork> = emptyList(),
+)
+
+@Serializable
+data class TmdbNetwork(
+    val id: Int,
+    val name: String,
+    @SerialName("logo_path") val logoPath: String? = null,
 )
 
 @Serializable
