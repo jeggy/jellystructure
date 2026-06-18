@@ -8,7 +8,7 @@ _Last updated: 2026-06-18_
 
 ## Current focus
 
-**Active: Phase 18** — Settings page cleanup (FR-C1). In progress.
+**Next up: Phase 19** — Studios, Networks, Genres & Tags metadata page (FR-M1).
 
 See [`requirements/README.md`](requirements/README.md) for the full phase index.
 
@@ -24,9 +24,9 @@ See [`requirements/README.md`](requirements/README.md) for the full phase index.
 
 ## Recent work (git)
 
-- **Phase 18 in progress:** Settings page cleanup — nav links changed from `<a href="#sect-…">` to
+- **Phase 18 complete:** Settings page cleanup — nav links changed from `<a href="#sect-…">` to
   smooth-scroll buttons with IntersectionObserver highlight; sections reorganised (Scanning, Metadata,
-  Advanced danger zone); `DELETE /api/media/all` backend endpoint added.
+  Advanced danger zone with "Clear all scanned data"); `DELETE /api/media/all` backend endpoint.
 - **Phase 17 complete:** Activity log backend + live runners. Unified Logger (stdout + ActivityLog
   delegation), `log_line` WS broadcast, `GET/DELETE /api/activity/log`, persistent JSON snapshot,
   frontend filter bar, workers chip, runBlocking main, all `*Sync` Logger variants removed.
