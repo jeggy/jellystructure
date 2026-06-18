@@ -78,7 +78,6 @@ fun renderSettings(container: Element, scope: CoroutineScope) {
               <div id="library-mapping-list">
                 <span class="muted tiny">Run "Test connections" or click "Fetch libraries" to load.</span>
               </div>
-              <div id="path-check-result" style="display:none;margin-top:12px"></div>
             </div>
 
             <div class="card" id="sect-scanning">
@@ -237,7 +236,7 @@ private fun attachListeners(scope: CoroutineScope) {
             val config = readForm()
             val ok = ConfigApi.save(config)
             showSettingsMsg(if (ok) "Saved." else "Save failed.", ok)
-            if (ok) renderPathCheckResult(ConfigApi.pathCheck())
+            if (ok) renderPathCheckInline(ConfigApi.pathCheck())
         }
     }
 
@@ -286,7 +285,7 @@ private fun attachListeners(scope: CoroutineScope) {
             }
             if (result?.jellyfin == true) {
                 fetchAndRenderLibraries()
-                renderPathCheckResult(ConfigApi.pathCheck())
+                renderPathCheckInline(ConfigApi.pathCheck())
             }
         }
     }
@@ -334,6 +333,7 @@ private fun renderLibraryList() {
           <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
             <strong style="font-size:.9rem;flex:1">${lib.name}</strong>
             <span class="badge" style="font-size:.72rem;padding:1px 7px;background:var(--fill-2)">$typeLabel</span>
+            <span id="lib-path-status-$i"></span>
             <label style="display:flex;align-items:center;gap:5px;font-size:.82rem;cursor:pointer">
               <input type="checkbox" id="lib-skip-$i" ${if (skipped) "checked" else ""}>
               Skip
@@ -503,30 +503,16 @@ private fun wireSettingsNav(container: Element) {
     }
 }
 
-private fun renderPathCheckResult(diags: List<LibraryPathDiag>?) {
-    val el = document.getElementById("path-check-result") as? HTMLElement ?: return
-    if (diags == null) { el.style.display = "none"; return }
-    el.style.display = "block"
-    el.innerHTML = buildString {
-        append("""<div style="font-size:.82rem;font-weight:600;margin-bottom:6px">Library path check</div>""")
-        if (diags.isEmpty()) {
-            append("""<span class="hint">No libraries configured.</span>""")
-            return@buildString
-        }
-        for (d in diags) {
-            append("""<div style="display:flex;align-items:flex-start;gap:8px;margin-bottom:6px;flex-wrap:wrap">""")
-            append("""<span style="font-size:.82rem;min-width:80px;flex-shrink:0">${d.name}</span>""")
-            append("""<code style="font-size:.72rem;color:var(--ink-soft);word-break:break-all">${d.matchPrefix.ifEmpty { "(none)" }}</code>""")
-            if (d.localExists) {
-                append("""<span class="badge ok" style="font-size:.72rem">Local path found ✓</span>""")
-            } else {
-                append("""<span class="badge bad" style="font-size:.72rem">Local path not found ✗</span>""")
-                append("""<span class="hint" style="align-self:center">Check that localPath is mounted correctly in the Jellystructure container</span>""")
-            }
-            if (d.jellyfinPath.isBlank()) {
-                append("""<span class="badge warn" style="font-size:.72rem">jellyfinPath not set — using localPath as match prefix</span>""")
-            }
-            append("</div>")
+private fun renderPathCheckInline(diags: List<LibraryPathDiag>?) {
+    if (diags == null) return
+    val diagsByName = diags.associateBy { it.name }
+    libraryMappings.forEachIndexed { i, lib ->
+        val statusEl = document.getElementById("lib-path-status-$i") as? HTMLElement ?: return@forEachIndexed
+        val diag = diagsByName[lib.name] ?: return@forEachIndexed
+        statusEl.innerHTML = if (diag.localExists) {
+            """<span class="badge ok" style="font-size:.7rem">path ✓</span>"""
+        } else {
+            """<span class="badge bad" style="font-size:.7rem" title="Local path not found — check mount">path ✗</span>"""
         }
     }
 }
