@@ -102,7 +102,7 @@ fun renderLanguage(container: Element, scope: CoroutineScope) {
 
     scope.launch {
         val config = ConfigApi.get()
-        fallbackState = config?.languageRules?.fallbackLanguage ?: "en"
+        fallbackState = config?.config?.languageRules?.fallbackLanguage ?: "en"
         setInputValue("lang-fallback", fallbackState)
         installLanguagePickerById("lang-fallback")
         updateTomlPreview()
@@ -119,9 +119,9 @@ fun renderLanguage(container: Element, scope: CoroutineScope) {
 
     document.getElementById("lang-save")?.addEventListener("click") {
         scope.launch {
-            val config = ConfigApi.get() ?: return@launch
-            val updated = config.copy(
-                languageRules = config.languageRules.copy(fallbackLanguage = fallbackState),
+            val response = ConfigApi.get() ?: return@launch
+            val updated = response.config.copy(
+                languageRules = response.config.languageRules.copy(fallbackLanguage = fallbackState),
             )
             val ok = ConfigApi.save(updated)
             val msgEl = document.getElementById("lang-save-msg") as? HTMLElement ?: return@launch

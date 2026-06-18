@@ -23,66 +23,66 @@ class Scanner(
     private val tmdb: TmdbClient,
     private val jellyfinClient: JellyfinClient,
 ) {
+    /** Processes a single Jellyfin item end-to-end. Used by the worker pool and the sequential scan. */
+    suspend fun scanItem(jItem: JellyfinItem): MediaItem? {
+        val config = configStore.current
+        val libraries = config.libraries.filter { !it.skip && it.localPath.isNotBlank() }
+        val globalFallback = config.languageRules.fallbackLanguage
+
+        val jellyfinPath = jItem.path ?: return null
+        val lib = libraries.firstOrNull { lib ->
+            val prefix = lib.jellyfinPath.ifBlank { lib.localPath }
+            prefix.isNotBlank() && jellyfinPath.startsWith(prefix)
+        }
+        if (lib == null) {
+            val prefixes = libraries.map { it.jellyfinPath.ifBlank { it.localPath } }
+            println("[WARN] No matching library for '$jellyfinPath' — configured prefixes: $prefixes")
+            return null
+        }
+        val localPath = if (lib.jellyfinPath.isNotBlank()) {
+            jellyfinPath.replaceFirst(lib.jellyfinPath, lib.localPath)
+        } else {
+            jellyfinPath
+        }
+        val effectiveFallback = lib.fallbackLanguage?.ifBlank { null } ?: globalFallback
+        return when (jItem.type) {
+            "Movie" -> scanMovie(jItem, localPath, effectiveFallback)
+            "Series" -> scanSeries(jItem, localPath, effectiveFallback)
+            else -> null
+        }
+    }
+
+    /** Fetches all Jellyfin items. Returns null if URL/token not configured. */
+    suspend fun fetchItems(): List<JellyfinItem>? {
+        val config = configStore.current
+        val baseUrl = config.apiKeys.jellyfinUrl
+        val token = config.apiKeys.jellyfinToken
+        if (baseUrl.isBlank() || token.isBlank()) {
+            println("[WARN] Jellyfin URL or token not configured — skipping scan")
+            return null
+        }
+        return jellyfinClient.getItems(baseUrl, token)
+    }
+
+    /** Sequential single-worker scan — used by FolderWatcher auto-scans. */
     suspend fun scan(
         tracker: ScanTracker? = null,
         skipIds: Set<String> = emptySet(),
         onItemReady: suspend (MediaItem) -> Unit,
     ): Int {
-        val config = configStore.current
-        val baseUrl = config.apiKeys.jellyfinUrl
-        val token = config.apiKeys.jellyfinToken
-
-        if (baseUrl.isBlank() || token.isBlank()) {
-            println("[WARN] Jellyfin URL or token not configured — skipping scan")
-            return 0
-        }
-
-        val jellyfinItems = jellyfinClient.getItems(baseUrl, token)
+        val jellyfinItems = fetchItems() ?: return 0
         println("[INFO] Jellyfin returned ${jellyfinItems.size} items (${skipIds.size} will be skipped for resume)")
-
-        val libraries = config.libraries.filter { !it.skip && it.localPath.isNotBlank() }
-        val globalFallback = config.languageRules.fallbackLanguage
-
         var count = 0
         for (jItem in jellyfinItems) {
             if (jItem.id in skipIds) {
                 println("[INFO] Resume: skipping already-processed '${jItem.name}'")
                 continue
             }
-
-            val jellyfinPath = jItem.path ?: continue
-
-            // Match using jellyfinPath prefix if configured, otherwise fall back to localPath
-            val lib = libraries.firstOrNull { lib ->
-                val prefix = lib.jellyfinPath.ifBlank { lib.localPath }
-                prefix.isNotBlank() && jellyfinPath.startsWith(prefix)
-            }
-            if (lib == null) {
-                val prefixes = libraries.map { it.jellyfinPath.ifBlank { it.localPath } }
-                println("[WARN] No matching library for '$jellyfinPath' — configured prefixes: $prefixes")
-                continue
-            }
-
-            // Translate Jellyfin container path → local filesystem path
-            val localPath = if (lib.jellyfinPath.isNotBlank()) {
-                jellyfinPath.replaceFirst(lib.jellyfinPath, lib.localPath)
-            } else {
-                jellyfinPath
-            }
-
-            val effectiveFallback = lib.fallbackLanguage?.ifBlank { null } ?: globalFallback
-
-            val mediaItem = when (jItem.type) {
-                "Movie" -> scanMovie(jItem, localPath, effectiveFallback)
-                "Series" -> scanSeries(jItem, localPath, effectiveFallback)
-                else -> null
-            }
-
             if (tracker?.cancelRequested == true) {
                 println("[INFO] Scan cancelled after $count items")
                 break
             }
-
+            val mediaItem = scanItem(jItem)
             if (mediaItem != null) {
                 onItemReady(mediaItem)
                 count++
