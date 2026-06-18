@@ -15,8 +15,12 @@ _Last updated: 2026-06-18_
   multi-worker scanner with dynamic scaling (Phase 16), and **activity log backend + live runners**
   (Phase 17 — unified Logger→ActivityLog, `log_line` WS events, `GET/DELETE /api/activity/log`,
   filter bar, workers chip, runBlocking main, all *Sync variants removed).
-- **Phases 18–26: Planned.** See [`requirements/`](requirements/).
+- **Phases 18–29: Planned.** See [`requirements/`](requirements/).
 - **Next up: Phase 18** — Settings page cleanup.
+- **New (2026-06-18): Phases 27–29 drafted** — merge Triage into Media Detail + floating triage dock
+  (27), URL-based tab/view-state navigation everywhere (28), multi-language library search that
+  remembers every title ever pulled per language (29). Specs only; not yet sequenced into the active
+  flow. 27 and 28 pair naturally; 28 also unblocks Phase 19 deep links.
 
 ### Key cross-cutting findings (2026-06-18) — see [`requirements/_investigation-findings.md`](requirements/_investigation-findings.md)
 - **SQLite/SQLDelight now live.** All four stores (MediaStore, SessionService, ScanTracker,
