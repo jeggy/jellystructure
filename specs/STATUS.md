@@ -8,7 +8,7 @@ _Last updated: 2026-06-18_
 
 ## Current focus
 
-**Next up: Phase 29** — Multi-language library search (FR-ML1).
+All planned phases (14–29) complete. No active work item.
 
 See [`requirements/README.md`](requirements/README.md) for the full phase index.
 

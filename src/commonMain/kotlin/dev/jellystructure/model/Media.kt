@@ -66,6 +66,7 @@ data class MediaItem(
     val scannedAt: Long,
     val jellyfinLockData: Boolean = false,
     val jellyfinLockedFields: List<String> = emptyList(),
+    val titlesByLang: Map<String, String> = emptyMap(),
 )
 
 @Serializable

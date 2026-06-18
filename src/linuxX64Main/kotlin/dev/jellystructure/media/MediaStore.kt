@@ -19,9 +19,16 @@ class MediaStore(private val db: JellystructureDb) {
     }
 
     suspend fun update(newItems: List<MediaItem>) {
+        // Snapshot existing titlesByLang before deleting so a full rescan never erases
+        // languages pulled in earlier scans.
+        val existingTitles: Map<String, Map<String, String>> = allItems().associate { it.id to it.titlesByLang }
         db.transaction {
             db.mediaQueries.deleteAll()
-            newItems.forEach { upsertItem(it) }
+            newItems.forEach { item ->
+                val old = existingTitles[item.id]
+                val merged = if (!old.isNullOrEmpty()) item.copy(titlesByLang = old + item.titlesByLang) else item
+                upsertItem(merged)
+            }
         }
     }
 
@@ -43,7 +50,9 @@ class MediaStore(private val db: JellystructureDb) {
     ): MediaPage {
         // Attention filter is applied in-memory so multi-default items (issueCount=0) are included.
         val filterMissingArtwork = if (filter == "missing_artwork") 1L else 0L
-        val searchArg = search?.takeIf { it.isNotBlank() }
+        // When a search term is given, skip SQL LIKE (which only covers `title`) and do in-memory
+        // search across title + originalTitle + all titlesByLang values for multi-language coverage.
+        val searchArg = if (search.isNullOrBlank()) null else null // always null: in-memory below
 
         val jsonBlobs = db.mediaQueries.listFiltered(
             kind = kind?.name,
@@ -52,10 +61,19 @@ class MediaStore(private val db: JellystructureDb) {
             search = searchArg,
         ).executeAsList()
 
+        val searchLower = search?.lowercase()?.takeIf { it.isNotBlank() }
+
         val decoded = jsonBlobs.mapNotNull { blob ->
             runCatching { json.decodeFromString(MediaItem.serializer(), blob) }.getOrNull()
         }.let { items ->
             var result = items
+            if (searchLower != null) {
+                result = result.filter { item ->
+                    item.title.lowercase().contains(searchLower) ||
+                    item.originalTitle?.lowercase()?.contains(searchLower) == true ||
+                    item.titlesByLang.values.any { it.lowercase().contains(searchLower) }
+                }
+            }
             if (filter == "attention") {
                 result = result.filter { item ->
                     item.issueCount > 0 || item.languageMix || item.hasMultiDefaultAudio()
@@ -99,9 +117,21 @@ class MediaStore(private val db: JellystructureDb) {
             runCatching { json.decodeFromString(MediaItem.serializer(), blob) }.getOrNull()
         }
 
-    suspend fun addOrUpdate(item: MediaItem) = upsertItem(item)
+    suspend fun addOrUpdate(item: MediaItem) {
+        val existing = get(item.id)
+        val merged = if (existing != null && existing.titlesByLang.isNotEmpty()) {
+            item.copy(titlesByLang = existing.titlesByLang + item.titlesByLang)
+        } else item
+        upsertItem(merged)
+    }
 
-    suspend fun updateOne(item: MediaItem) = upsertItem(item)
+    suspend fun updateOne(item: MediaItem) {
+        val existing = get(item.id)
+        val merged = if (existing != null && existing.titlesByLang.isNotEmpty()) {
+            item.copy(titlesByLang = existing.titlesByLang + item.titlesByLang)
+        } else item
+        upsertItem(merged)
+    }
 
     fun movieCount(): Int = db.mediaQueries.countByKind("MOVIE").executeAsOne().toInt()
 
