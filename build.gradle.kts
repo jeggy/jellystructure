@@ -146,7 +146,10 @@ tasks.register("runDev") {
             .also { it.pipeToGradle("fe") }
         frontendProc = frontend
 
-        val backend = ProcessBuilder(binary.absolutePath)
+        // stdbuf -oL forces line-buffered stdout so every println flushes immediately.
+        // Without it the C runtime switches to fully-buffered mode when stdout is piped,
+        // causing logs to appear in large delayed bursts rather than in real time.
+        val backend = ProcessBuilder("stdbuf", "-oL", binary.absolutePath)
             .apply {
                 environment()["CONFIG_FILE"] = configDir.resolve("config.toml").absolutePath
                 environment()["DB_FILE"] = configDir.resolve("jellystructure.db").absolutePath
