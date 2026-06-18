@@ -8,7 +8,7 @@ _Last updated: 2026-06-18_
 
 ## Current focus
 
-**Next up: Phase 27** — Merge Triage into Media Detail + floating Triage dock (FR-MT1).
+**Next up: Phase 28** — URL-based tab & view-state navigation (FR-UN1).
 
 See [`requirements/README.md`](requirements/README.md) for the full phase index.
 

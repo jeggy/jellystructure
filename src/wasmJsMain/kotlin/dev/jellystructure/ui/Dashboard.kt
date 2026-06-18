@@ -43,7 +43,7 @@ fun renderDashboard(container: Element, scope: CoroutineScope) {
           <div class="row center" style="margin-bottom:10px;gap:8px">
             <h3 style="margin:0;font-size:1rem">Needs attention</h3>
             <span class="spacer"></span>
-            <button id="dash-triage" class="btn sm ghost">Go to triage →</button>
+            <button id="dash-triage" class="btn sm ghost">View in library →</button>
           </div>
           <div id="attention-list"></div>
         </div>
@@ -52,7 +52,7 @@ fun renderDashboard(container: Element, scope: CoroutineScope) {
           <div class="card fill" style="min-width:240px">
             <h3 style="font-size:1rem;margin:0 0 12px">Quick actions</h3>
             <div class="pill-row" style="display:flex;gap:8px;flex-wrap:wrap;">
-              <button id="qa-triage" class="chip">Triage untagged tracks</button>
+              <button id="qa-triage" class="chip">View items needing attention</button>
               <button id="qa-track-order" class="chip">Set track defaults</button>
               <button id="qa-artwork" class="chip">Re-pull artwork</button>
               <button id="qa-jf-push" class="chip">Sync NFOs to Jellyfin</button>
@@ -74,9 +74,9 @@ fun renderDashboard(container: Element, scope: CoroutineScope) {
     document.getElementById("dash-scan")?.addEventListener("click") {
         scope.launch { triggerDashboardScan(scope, resume = false) }
     }
-    document.getElementById("dash-triage")?.addEventListener("click") { App.navigate("/triage") }
-    document.getElementById("stat-issues-cell")?.addEventListener("click") { App.navigate("/triage") }
-    document.getElementById("qa-triage")?.addEventListener("click") { App.navigate("/triage") }
+    document.getElementById("dash-triage")?.addEventListener("click") { App.navigate("/library") }
+    document.getElementById("stat-issues-cell")?.addEventListener("click") { App.navigate("/library") }
+    document.getElementById("qa-triage")?.addEventListener("click") { App.navigate("/library") }
     document.getElementById("qa-track-order")?.addEventListener("click") { App.navigate("/track-order") }
     document.getElementById("qa-activity")?.addEventListener("click") { App.navigate("/activity") }
 
@@ -156,8 +156,8 @@ private suspend fun loadAttentionQueue() {
            </div>"""
     }
     if (page.total > 8) {
-        listEl.innerHTML += """<div class="muted tiny" style="padding-top:6px">Showing 8 of ${page.total} items — <span style="cursor:pointer;text-decoration:underline" id="dash-see-all">see all in triage</span></div>"""
-        document.getElementById("dash-see-all")?.addEventListener("click") { App.navigate("/triage") }
+        listEl.innerHTML += """<div class="muted tiny" style="padding-top:6px">Showing 8 of ${page.total} items — <span style="cursor:pointer;text-decoration:underline" id="dash-see-all">see all in library</span></div>"""
+        document.getElementById("dash-see-all")?.addEventListener("click") { App.navigate("/library") }
     }
     listEl.querySelectorAll("[data-nav]").let { nodes ->
         for (i in 0 until nodes.length) {

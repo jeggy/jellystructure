@@ -31,6 +31,10 @@ private var dockSocket: WebSocket? = null
 private var dockScanned = 0
 private var dockTotal = 0
 
+// Triage dock state
+private var triageDockItems: List<String> = emptyList() // mediaIds in attention order
+private var triageDockIndex: Int = 0
+
 private val ICONS = mapOf(
     "dashboard" to """<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg>""",
     "library"   to """<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m16 6 4 14"/><path d="M12 6v14"/><path d="M8 8v12"/><path d="M4 4v16"/></svg>""",
@@ -45,7 +49,6 @@ private val NAV: List<NavEntry> = listOf(
     NavLink("/dashboard", "Dashboard", "dashboard"),
     NavLink("/library", "Library", "library"),
     NavLink("/metadata", "Metadata", "metadata"),
-    NavLink("/triage", "Triage", "triage", count = null),
     NavLink("/activity", "Activity", "activity"),
     NavGroup("Setup"),
     NavLink("/settings", "Settings", "settings"),
@@ -107,11 +110,12 @@ fun renderShell(user: UserProfile) {
         }
     }
 
-    // Inject ambient dock into body (hidden until a scan starts)
+    // Inject ambient dock and triage dock into body
     injectDock(body as HTMLElement)
+    injectTriageDock(body)
 
     MainScope().launch {
-        // Triage badge count
+        // Triage badge count + dock
         val count = MediaApi.getTriageCount()
         val badge = document.getElementById("triage-count-badge") as? HTMLElement
         if (badge != null && count != null && count.total > 0) {
@@ -121,6 +125,13 @@ fun renderShell(user: UserProfile) {
         }
         // Sidebar status dots
         updateSidebarStatus(count?.total ?: 0)
+        // Load triage dock items
+        if ((count?.total ?: 0) > 0) {
+            val items = MediaApi.getTriageItems()
+            triageDockItems = items.map { it.mediaId }
+            triageDockIndex = 0
+            updateTriageDock()
+        }
         // Connection status (non-blocking, best effort)
         try {
             val conn = ConfigApi.testConnections()
@@ -184,6 +195,87 @@ private fun injectDock(body: HTMLElement) {
     el.querySelector("#dock-activity-link")?.addEventListener("click") { e ->
         e.preventDefault()
         App.navigate("/activity")
+    }
+}
+
+private fun injectTriageDock(body: HTMLElement) {
+    val el = document.createElement("div") as HTMLElement
+    el.id = "triage-dock"
+    el.className = "dock"
+    el.style.display = "none"
+    el.style.bottom = "72px"
+    el.innerHTML = """
+        <div class="dock-head" id="triage-dock-head">
+          <span class="dot warn" style="background:var(--warn,#f59e0b);"></span>
+          <b id="triage-dock-title">Triage</b>
+          <span class="spacer"></span>
+          <span class="tiny mono" id="triage-dock-pos"></span>
+          <span class="kbd toggle-dock" id="triage-dock-toggle" style="cursor:pointer;padding:0 4px">⌄</span>
+        </div>
+        <div class="dock-body">
+          <div class="row center" style="gap:6px;margin-top:4px;">
+            <button class="btn sm ghost" id="triage-dock-prev" style="font-size:.75rem;padding:2px 8px;">← Prev</button>
+            <span class="spacer"></span>
+            <button class="btn sm primary" id="triage-dock-next" style="font-size:.75rem;padding:2px 8px;">Next →</button>
+          </div>
+        </div>
+    """.trimIndent()
+    body.appendChild(el)
+
+    el.querySelector("#triage-dock-toggle")?.addEventListener("click") { e ->
+        e.stopPropagation()
+        val dock = document.getElementById("triage-dock") as? HTMLElement ?: return@addEventListener
+        val collapsed = dock.className.contains("collapsed")
+        dock.className = if (collapsed) "dock" else "dock collapsed"
+        dock.style.bottom = if (collapsed) "72px" else "72px"
+        (el.querySelector("#triage-dock-toggle") as? HTMLElement)?.textContent = if (collapsed) "⌄" else "⌃"
+    }
+
+    el.querySelector("#triage-dock-prev")?.addEventListener("click") { e ->
+        e.stopPropagation()
+        if (triageDockItems.isEmpty()) return@addEventListener
+        triageDockIndex = (triageDockIndex - 1 + triageDockItems.size) % triageDockItems.size
+        updateTriageDock()
+        App.navigate("/media/${triageDockItems[triageDockIndex]}")
+    }
+
+    el.querySelector("#triage-dock-next")?.addEventListener("click") { e ->
+        e.stopPropagation()
+        if (triageDockItems.isEmpty()) return@addEventListener
+        triageDockIndex = (triageDockIndex + 1) % triageDockItems.size
+        updateTriageDock()
+        App.navigate("/media/${triageDockItems[triageDockIndex]}")
+    }
+}
+
+internal fun updateTriageDock() {
+    val el = document.getElementById("triage-dock") as? HTMLElement ?: return
+    if (triageDockItems.isEmpty()) {
+        el.style.display = "none"
+        return
+    }
+    el.style.display = ""
+    val total = triageDockItems.size
+    val pos = triageDockIndex + 1
+    (document.getElementById("triage-dock-title") as? HTMLElement)?.textContent = "$total need attention"
+    (document.getElementById("triage-dock-pos") as? HTMLElement)?.textContent = "$pos / $total"
+}
+
+internal fun refreshTriageDockCount() {
+    MainScope().launch {
+        val count = MediaApi.getTriageCount()
+        val total = count?.total ?: 0
+        if (total == 0) {
+            triageDockItems = emptyList()
+            triageDockIndex = 0
+            updateTriageDock()
+        } else {
+            val items = MediaApi.getTriageItems()
+            triageDockItems = items.map { it.mediaId }
+            if (triageDockIndex >= triageDockItems.size) triageDockIndex = 0
+            updateTriageDock()
+        }
+        updateSidebarStatus(total)
     }
 }
 
@@ -281,13 +373,19 @@ fun updateActiveNav(currentRoute: String) {
         val href = a.getAttribute("href") ?: continue
         a.className = if (href == currentRoute) "nav active" else "nav"
     }
-    // Hide dock on Activity page, restore it elsewhere if scan is running
+    // Hide scan dock on Activity page, restore it elsewhere if scan is running
     val dock = document.getElementById("ambient-dock") as? HTMLElement ?: return
     if (currentRoute.startsWith("/activity")) {
         dock.style.display = "none"
     } else if (dock.style.display == "none" && dockScanned > 0) {
-        // A scan was running before nav — re-show the dock
         dock.style.display = ""
+    }
+    // Sync triage dock index when navigating to a media item
+    if (currentRoute.startsWith("/media/")) {
+        val mediaId = currentRoute.removePrefix("/media/")
+        val idx = triageDockItems.indexOf(mediaId)
+        if (idx >= 0) triageDockIndex = idx
+        updateTriageDock()
     }
 }
 
