@@ -48,6 +48,8 @@ import kotlinx.io.buffered
 import kotlinx.io.files.Path
 import kotlinx.io.files.SystemFileSystem
 import kotlinx.io.readByteArray
+import dev.jellystructure.torrent.SeedingCheckResult
+import dev.jellystructure.torrent.SeedingGuard
 import kotlinx.serialization.Serializable
 
 @Serializable
@@ -64,6 +66,7 @@ fun Route.mediaRoutes(
     configStore: ConfigStore,
     mediaHistory: MediaHistory,
     scanDispatcher: CoroutineDispatcher,
+    seedingGuard: SeedingGuard,
 ) {
     route("/media") {
         get {
@@ -450,6 +453,12 @@ fun Route.mediaRoutes(
                     val ext = ep.path.substringAfterLast('.').lowercase()
                     val sameType = ep.tracks.filter { it.kind == targetTrack.kind }
 
+                    when (val guard = seedingGuard.check(ep.path, configStore.current)) {
+                        is SeedingCheckResult.Blocked -> { call.respond(HttpStatusCode.Conflict, mapOf("error" to "File is seeded by '${guard.torrentName}'")); return@post }
+                        is SeedingCheckResult.Unreachable -> { call.respond(HttpStatusCode.ServiceUnavailable, mapOf("error" to "qBittorrent unreachable: ${guard.reason}")); return@post }
+                        else -> Unit
+                    }
+
                     val ok = if (ext == "mkv") MkvpropeditRunner.setDefault(ep.path, targetTrack.streamIndex, sameType.map { it.streamIndex })
                              else FfmpegRunner.setDefault(ep.path, targetTrack.streamIndex, sameType.map { it.streamIndex }, targetTrack.kind)
 
@@ -485,6 +494,12 @@ fun Route.mediaRoutes(
                     val targetTrack = ep.tracks.firstOrNull { it.specifier == req.specifier }
                         ?: return@post call.respond(HttpStatusCode.NotFound, mapOf("error" to "track not found"))
                     val ext = ep.path.substringAfterLast('.').lowercase()
+
+                    when (val guard = seedingGuard.check(ep.path, configStore.current)) {
+                        is SeedingCheckResult.Blocked -> { call.respond(HttpStatusCode.Conflict, mapOf("error" to "File is seeded by '${guard.torrentName}'")); return@post }
+                        is SeedingCheckResult.Unreachable -> { call.respond(HttpStatusCode.ServiceUnavailable, mapOf("error" to "qBittorrent unreachable: ${guard.reason}")); return@post }
+                        else -> Unit
+                    }
 
                     val ok = if (ext == "mkv") MkvpropeditRunner.setLanguage(ep.path, targetTrack.streamIndex, req.language)
                              else FfmpegRunner.setLanguage(ep.path, targetTrack.streamIndex, req.language)

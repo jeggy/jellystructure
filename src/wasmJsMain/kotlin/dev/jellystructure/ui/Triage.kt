@@ -658,8 +658,8 @@ private fun wireMultiDefaultButtons(list: Element) {
                 val resultEl = list.querySelector(".multi-default-result[data-media-id='$mediaId']") as? HTMLElement
                 resultEl?.textContent = "Working…"
                 scope.launch {
-                    val ok = MediaApi.setDefaultTrack(mediaId, specifier)
-                    if (ok) {
+                    val err = MediaApi.setDefaultTrack(mediaId, specifier)
+                    if (err == null) {
                         sessionCount++
                         triageItems = triageItems.mapNotNull { item ->
                             if (item.mediaId != mediaId) return@mapNotNull item
@@ -670,7 +670,7 @@ private fun wireMultiDefaultButtons(list: Element) {
                         if (focusedIndex >= triageItems.size) focusedIndex = maxOf(0, triageItems.size - 1)
                         renderTriageList()
                     } else {
-                        resultEl?.textContent = "✗ failed"
+                        resultEl?.textContent = "✗ ${err}"
                         resultEl?.setAttribute("class", "multi-default-result text-xs text-red-400")
                     }
                 }
@@ -936,8 +936,8 @@ private fun wireEpMultiDefaultButtons(list: Element) {
                 val resultEl = list.querySelector(".ep-multi-default-result[data-ep-filename='$epFilename']") as? HTMLElement
                 resultEl?.textContent = "Working…"
                 scope.launch {
-                    val ok = MediaApi.setEpisodeDefaultTrack(mediaId, epFilename, specifier)
-                    if (ok) {
+                    val err = MediaApi.setEpisodeDefaultTrack(mediaId, epFilename, specifier)
+                    if (err == null) {
                         sessionCount++
                         triageItems = triageItems.mapNotNull { item ->
                             if (item.mediaId != mediaId) return@mapNotNull item
@@ -951,7 +951,7 @@ private fun wireEpMultiDefaultButtons(list: Element) {
                         if (focusedIndex >= triageItems.size) focusedIndex = maxOf(0, triageItems.size - 1)
                         renderTriageList()
                     } else {
-                        resultEl?.textContent = "✗ failed"
+                        resultEl?.textContent = "✗ ${err}"
                     }
                 }
             }

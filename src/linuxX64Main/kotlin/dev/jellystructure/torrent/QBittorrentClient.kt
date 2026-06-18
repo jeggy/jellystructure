@@ -1,0 +1,69 @@
+package dev.jellystructure.torrent
+
+import dev.jellystructure.config.QBittorrentConfig
+import dev.jellystructure.log.Logger
+import io.ktor.client.HttpClient
+import io.ktor.client.call.body
+import io.ktor.client.engine.curl.Curl
+import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
+import io.ktor.client.request.get
+import io.ktor.client.request.header
+import io.ktor.client.request.post
+import io.ktor.client.request.setBody
+import io.ktor.http.ContentType
+import io.ktor.http.HttpStatusCode
+import io.ktor.http.contentType
+import io.ktor.serialization.kotlinx.json.json
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
+
+@Serializable
+data class QBTorrent(
+    val hash: String,
+    val name: String,
+    val state: String,
+    @SerialName("save_path") val savePath: String,
+    @SerialName("content_path") val contentPath: String,
+)
+
+class QBittorrentClient {
+    private val http = HttpClient(Curl) {
+        install(ContentNegotiation) {
+            json(Json { ignoreUnknownKeys = true })
+        }
+    }
+
+    suspend fun login(config: QBittorrentConfig): String {
+        val url = config.url.trimEnd('/') + "/api/v2/auth/login"
+        val response = http.post(url) {
+            contentType(ContentType.Application.FormUrlEncoded)
+            setBody("username=${config.username}&password=${config.password}")
+        }
+        if (response.status != HttpStatusCode.OK) {
+            throw IllegalStateException("qBittorrent login failed: HTTP ${response.status.value}")
+        }
+        val body = response.body<String>()
+        if (body.trim() == "Fails.") {
+            throw IllegalArgumentException("qBittorrent login rejected — wrong credentials")
+        }
+        val sid = response.headers["Set-Cookie"]
+            ?.split(";")
+            ?.firstOrNull { it.trim().startsWith("SID=") }
+            ?.removePrefix("SID=")
+            ?.trim()
+            ?: throw IllegalStateException("qBittorrent login succeeded but no SID cookie in response")
+        return sid
+    }
+
+    suspend fun getTorrents(config: QBittorrentConfig, sid: String): List<QBTorrent> {
+        val url = config.url.trimEnd('/') + "/api/v2/torrents/info?filter=all"
+        val response = http.get(url) {
+            header("Cookie", "SID=$sid")
+        }
+        if (response.status != HttpStatusCode.OK) {
+            throw IllegalStateException("qBittorrent getTorrents failed: HTTP ${response.status.value}")
+        }
+        return response.body()
+    }
+}

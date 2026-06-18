@@ -2,6 +2,8 @@ package dev.jellystructure.server.routes
 
 import dev.jellystructure.auth.JellyfinClient
 import dev.jellystructure.config.ConfigStore
+import dev.jellystructure.torrent.SeedingCheckResult
+import dev.jellystructure.torrent.SeedingGuard
 import dev.jellystructure.media.FfmpegRunner
 import dev.jellystructure.media.FfprobeRunner
 import dev.jellystructure.media.MediaHistory
@@ -72,7 +74,7 @@ data class TriageCount(val untagged: Int, val mismatch: Int, val multiDefault: I
 @Serializable
 private data class AssignLanguageRequest(val language: String)
 
-fun Route.triageRoutes(store: MediaStore, jellyfinClient: JellyfinClient, configStore: ConfigStore, mediaHistory: MediaHistory) {
+fun Route.triageRoutes(store: MediaStore, jellyfinClient: JellyfinClient, configStore: ConfigStore, mediaHistory: MediaHistory, seedingGuard: SeedingGuard) {
     route("/triage") {
         get("/count") {
             val all = store.allItems()
@@ -130,6 +132,13 @@ fun Route.triageRoutes(store: MediaStore, jellyfinClient: JellyfinClient, config
             }
 
             val ext = ep.path.substringAfterLast('.').lowercase()
+
+            when (val guard = seedingGuard.check(ep.path, configStore.current)) {
+                is SeedingCheckResult.Blocked -> { call.respond(HttpStatusCode.Conflict, mapOf("error" to "File is seeded by '${guard.torrentName}'")); return@post }
+                is SeedingCheckResult.Unreachable -> { call.respond(HttpStatusCode.ServiceUnavailable, mapOf("error" to "qBittorrent unreachable: ${guard.reason}")); return@post }
+                else -> Unit
+            }
+
             val ok = if (ext == "mkv") MkvpropeditRunner.setLanguage(ep.path, track.streamIndex, lang)
                      else FfmpegRunner.setLanguage(ep.path, track.streamIndex, lang)
 
@@ -179,6 +188,13 @@ fun Route.triageRoutes(store: MediaStore, jellyfinClient: JellyfinClient, config
             }
 
             val ext = item.path.substringAfterLast('.').lowercase()
+
+            when (val guard = seedingGuard.check(item.path, configStore.current)) {
+                is SeedingCheckResult.Blocked -> { call.respond(HttpStatusCode.Conflict, mapOf("error" to "File is seeded by '${guard.torrentName}'")); return@post }
+                is SeedingCheckResult.Unreachable -> { call.respond(HttpStatusCode.ServiceUnavailable, mapOf("error" to "qBittorrent unreachable: ${guard.reason}")); return@post }
+                else -> Unit
+            }
+
             val ok = if (ext == "mkv") {
                 MkvpropeditRunner.setLanguage(item.path, track.streamIndex, lang)
             } else {

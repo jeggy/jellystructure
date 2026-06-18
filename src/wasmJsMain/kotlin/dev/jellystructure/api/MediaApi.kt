@@ -224,21 +224,28 @@ object MediaApi {
         }.body<TrackPlan>()
     }.getOrNull()
 
-    suspend fun setDefaultTrack(id: String, specifier: String): Boolean = runCatching {
+    @Serializable
+    data class TrackOpError(val error: String = "")
+
+    /** Returns null on success, error message string on failure (including seeding guard 409/503). */
+    suspend fun setDefaultTrack(id: String, specifier: String): String? = runCatching {
         val response = httpClient.post("/api/media/$id/tracks/default") {
             setBody("""{"specifier":"$specifier"}""")
             contentType(io.ktor.http.ContentType.Application.Json)
         }
-        response.status.value in 200..299
-    }.getOrDefault(false)
+        if (response.status.value in 200..299) null
+        else runCatching { response.body<TrackOpError>().error }.getOrDefault("HTTP ${response.status.value}")
+    }.getOrDefault("request failed")
 
-    suspend fun setTrackLanguage(id: String, specifier: String, language: String): Boolean = runCatching {
+    /** Returns null on success, error message string on failure (including seeding guard 409/503). */
+    suspend fun setTrackLanguage(id: String, specifier: String, language: String): String? = runCatching {
         val response = httpClient.post("/api/media/$id/tracks/language") {
             setBody("""{"specifier":"${specifier.replace("\"", "")}","language":"${language.replace("\"", "")}"}""")
             contentType(ContentType.Application.Json)
         }
-        response.status.value in 200..299
-    }.getOrDefault(false)
+        if (response.status.value in 200..299) null
+        else runCatching { response.body<TrackOpError>().error }.getOrDefault("HTTP ${response.status.value}")
+    }.getOrDefault("request failed")
 
     suspend fun overrideLanguage(id: String, language: String): MediaItem? = runCatching {
         val response = httpClient.patch("/api/media/$id/language") {
@@ -328,23 +335,25 @@ object MediaApi {
         }.body<TrackPlan>()
     }.getOrNull()
 
-    suspend fun setEpisodeDefaultTrack(mediaId: String, epFilename: String, specifier: String): Boolean = runCatching {
+    suspend fun setEpisodeDefaultTrack(mediaId: String, epFilename: String, specifier: String): String? = runCatching {
         val encoded = encodeURIComponent(epFilename)
         val response = httpClient.post("/api/media/$mediaId/episodes/$encoded/tracks/default") {
             setBody("""{"specifier":"$specifier"}""")
             contentType(ContentType.Application.Json)
         }
-        response.status.value in 200..299
-    }.getOrDefault(false)
+        if (response.status.value in 200..299) null
+        else runCatching { response.body<TrackOpError>().error }.getOrDefault("HTTP ${response.status.value}")
+    }.getOrDefault("request failed")
 
-    suspend fun setEpisodeTrackLanguage(mediaId: String, epFilename: String, specifier: String, language: String): Boolean = runCatching {
+    suspend fun setEpisodeTrackLanguage(mediaId: String, epFilename: String, specifier: String, language: String): String? = runCatching {
         val encoded = encodeURIComponent(epFilename)
         val response = httpClient.post("/api/media/$mediaId/episodes/$encoded/tracks/language") {
             setBody("""{"specifier":"${specifier.replace("\"","")}","language":"${language.replace("\"","")}"}""")
             contentType(ContentType.Application.Json)
         }
-        response.status.value in 200..299
-    }.getOrDefault(false)
+        if (response.status.value in 200..299) null
+        else runCatching { response.body<TrackOpError>().error }.getOrDefault("HTTP ${response.status.value}")
+    }.getOrDefault("request failed")
 
     suspend fun removeTrack(id: String, specifier: String): Boolean = runCatching {
         val encoded = encodeURIComponent(specifier)

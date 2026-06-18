@@ -9,6 +9,7 @@ data class AppConfig(
     @SerialName("language_rules") val languageRules: LanguageRules = LanguageRules(),
     val behavior: Behavior = Behavior(),
     val libraries: List<LibraryMapping> = emptyList(),
+    val qbittorrent: QBittorrentConfig? = null,
 )
 
 @Serializable
@@ -31,6 +32,21 @@ data class Behavior(
     @SerialName("tell_jellyfin") val tellJellyfin: Boolean = true,
     @SerialName("scan_workers") val scanWorkers: Int = 1,
     @SerialName("scan_threads") val scanThreads: Int = 4,
+)
+
+@Serializable
+data class QBittorrentConfig(
+    val url: String = "",
+    val username: String = "",
+    val password: String = "",
+    val enabled: Boolean = true,
+    @SerialName("path_mappings") val pathMappings: List<QBittorrentPathMapping> = emptyList(),
+)
+
+@Serializable
+data class QBittorrentPathMapping(
+    val local: String,
+    val remote: String,
 )
 
 @Serializable
