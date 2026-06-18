@@ -35,7 +35,7 @@ See [`../tasks.md`](../tasks.md) for the active TODO breakdown.
 | 16 | ✓ Done | Multi-worker scanner — dynamic workers + thread pool (FR-W1) | [archive](archive/phase-16-multi-worker-scanner.md) |
 | 17 | ✓ Done | Activity log backend — persistent log, filters, live runners (FR-A1) | [archive](archive/phase-17-activity-log-backend.md) |
 | 18 | ✓ Done | Settings page cleanup — nav fix, section reorganisation (FR-C1) | [archive](archive/phase-18-settings-page-cleanup.md) |
-| 19 | Planned | Studios, Networks, Genres & Tags metadata page (FR-M1) | [spec](phase-19-metadata-page.md) |
+| 19 | ✓ Done | Studios, Networks, Genres & Tags metadata page (FR-M1) | [archive](archive/phase-19-metadata-page.md) |
 | 20 | Planned | Library audio-track filter — find audio-description/commentary tracks (FR-LF1) | [spec](phase-20-library-audio-track-filter.md) |
 | 21 | Planned | Flag multiple default audio tracks in Triage (FR-DA1) | [spec](phase-21-multiple-default-audio-triage.md) |
 | 22 | Planned | Remove lockdata & detect Jellyfin field locks (FR-LK1) | [spec](phase-22-remove-lockdata-detect-locks.md) |

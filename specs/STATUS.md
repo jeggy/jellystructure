@@ -8,7 +8,7 @@ _Last updated: 2026-06-18_
 
 ## Current focus
 
-**Next up: Phase 19** — Studios, Networks, Genres & Tags metadata page (FR-M1).
+**Next up: Phase 20** — Library audio-track filter (FR-LF1).
 
 See [`requirements/README.md`](requirements/README.md) for the full phase index.
 
@@ -24,6 +24,9 @@ See [`requirements/README.md`](requirements/README.md) for the full phase index.
 
 ## Recent work (git)
 
+- **Phase 19 complete:** Studios/Networks/Genres/Tags metadata page — TMDB studio/network fields
+  populated at scan time; JsTagStore (JSON CRUD); `/api/metadata/*` + `/api/tags` routes; Metadata.kt
+  UI with tabbed glassmorphism cards, client-side filter, sort; Jellyfin ID-based media URLs.
 - **Phase 18 complete:** Settings page cleanup — nav links changed from `<a href="#sect-…">` to
   smooth-scroll buttons with IntersectionObserver highlight; sections reorganised (Scanning, Metadata,
   Advanced danger zone with "Clear all scanned data"); `DELETE /api/media/all` backend endpoint.
