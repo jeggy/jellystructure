@@ -63,7 +63,6 @@ fun renderSettings(container: Element, scope: CoroutineScope) {
                 <input id="tmdb-key" class="input" type="password" style="width:100%">
               </div>
               <div id="conn-result" style="display:none;margin-top:8px"></div>
-              <div id="path-check-result" style="display:none;margin-top:8px"></div>
             </div>
 
             <div class="card" id="sect-libraries">
@@ -79,6 +78,7 @@ fun renderSettings(container: Element, scope: CoroutineScope) {
               <div id="library-mapping-list">
                 <span class="muted tiny">Run "Test connections" or click "Fetch libraries" to load.</span>
               </div>
+              <div id="path-check-result" style="display:none;margin-top:12px"></div>
             </div>
 
             <div class="card" id="sect-scanning">
