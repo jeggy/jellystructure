@@ -92,11 +92,11 @@ private fun loadTab(container: Element, scope: CoroutineScope, tab: String, sort
         when (tab) {
             "studios" -> {
                 val entries = MetadataApi.getStudios(sort)
-                content.innerHTML = if (entries == null) errorHtml() else renderEntryGrid(entries, "studio", "/library?studio=")
+                content.innerHTML = if (entries == null) errorHtml() else renderEntryGrid(entries, "studio", "/library?studios=")
             }
             "networks" -> {
                 val entries = MetadataApi.getNetworks(sort)
-                content.innerHTML = if (entries == null) errorHtml() else renderEntryGrid(entries, "network", "/library?network=")
+                content.innerHTML = if (entries == null) errorHtml() else renderEntryGrid(entries, "network", "/library?networks=")
             }
             "genres" -> {
                 val entries = MetadataApi.getGenres(sort)
@@ -142,7 +142,7 @@ private fun renderGenreChips(entries: List<MetadataEntry>): String {
         append("""<div style="display:flex;flex-wrap:wrap;gap:8px">""")
         for (e in entries) {
             val encoded = dev.jellystructure.encodeURIComponent(e.name)
-            append("""<a href="#/library?genre=$encoded" data-filter-name="${e.name.lowercase()}" style="text-decoration:none"><span style="display:inline-flex;align-items:center;gap:6px;padding:6px 14px;border-radius:99px;background:var(--fill-3);border:1px solid var(--line-2);font-size:.85rem;color:var(--ink);cursor:pointer;transition:background .12s,border-color .12s" onmouseover="this.style.background='var(--hi-soft)';this.style.borderColor='var(--hi)'" onmouseout="this.style.background='var(--fill-3)';this.style.borderColor='var(--line-2)'">${e.name}<span style="font-size:.75rem;color:var(--ink-soft)">${e.count}</span></span></a>""")
+            append("""<a href="#/library?genres=$encoded" data-filter-name="${e.name.lowercase()}" style="text-decoration:none"><span style="display:inline-flex;align-items:center;gap:6px;padding:6px 14px;border-radius:99px;background:var(--fill-3);border:1px solid var(--line-2);font-size:.85rem;color:var(--ink);cursor:pointer;transition:background .12s,border-color .12s" onmouseover="this.style.background='var(--hi-soft)';this.style.borderColor='var(--hi)'" onmouseout="this.style.background='var(--fill-3)';this.style.borderColor='var(--line-2)'">${e.name}<span style="font-size:.75rem;color:var(--ink-soft)">${e.count}</span></span></a>""")
         }
         append("</div>")
         append("""<p id="metadata-filter-empty" class="muted tiny" style="display:none;margin-top:16px">No matches.</p>""")

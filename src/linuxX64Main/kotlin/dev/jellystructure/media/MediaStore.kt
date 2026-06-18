@@ -5,6 +5,7 @@ import dev.jellystructure.log.Logger
 import dev.jellystructure.model.MediaItem
 import dev.jellystructure.model.MediaKind
 import dev.jellystructure.model.MediaPage
+import dev.jellystructure.model.TrackKind
 import dev.jellystructure.nfo.NfoWriter
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
@@ -31,9 +32,14 @@ class MediaStore(private val db: JellystructureDb) {
         sort: String? = null,
         page: Int = 1,
         pageSize: Int = 20,
-        studio: String? = null,
-        network: String? = null,
-        genre: String? = null,
+        studios: List<String> = emptyList(),
+        networks: List<String> = emptyList(),
+        genres: List<String> = emptyList(),
+        audioLangs: List<String> = emptyList(),
+        trackTitle: String? = null,
+        audioCodec: String? = null,
+        untaggedAudio: Boolean = false,
+        tags: List<String> = emptyList(),
     ): MediaPage {
         val filterAttention = if (filter == "attention") 1L else 0L
         val filterMissingArtwork = if (filter == "missing_artwork") 1L else 0L
@@ -50,9 +56,17 @@ class MediaStore(private val db: JellystructureDb) {
             runCatching { json.decodeFromString(MediaItem.serializer(), blob) }.getOrNull()
         }.let { items ->
             var result = items
-            if (studio != null) result = result.filter { it.studio.equals(studio, ignoreCase = true) }
-            if (network != null) result = result.filter { it.network.equals(network, ignoreCase = true) }
-            if (genre != null) result = result.filter { g -> g.genres.any { it.equals(genre, ignoreCase = true) } }
+            if (studios.isNotEmpty()) result = result.filter { item -> studios.any { s -> item.studio.equals(s, ignoreCase = true) } }
+            if (networks.isNotEmpty()) result = result.filter { item -> networks.any { n -> item.network.equals(n, ignoreCase = true) } }
+            if (genres.isNotEmpty()) result = result.filter { item -> genres.any { g -> item.genres.any { it.equals(g, ignoreCase = true) } } }
+            if (audioLangs.isNotEmpty() || trackTitle != null || audioCodec != null || untaggedAudio) {
+                result = result.filter { item -> item.matchesAudioFilter(audioLangs, trackTitle, audioCodec, untaggedAudio) }
+            }
+            if (tags.isNotEmpty()) {
+                result = result.filter { item ->
+                    tags.any { tag -> item.tags.any { it.equals(tag, ignoreCase = true) } }
+                }
+            }
             result
         }
 
@@ -102,6 +116,53 @@ class MediaStore(private val db: JellystructureDb) {
         return (nfoCoveredCount() * 100) / total
     }
 
+    fun trackFacets(): TrackFacets {
+        val items = allItems()
+        val langCounts = mutableMapOf<String, Int>()
+        val codecCounts = mutableMapOf<String, Int>()
+        val titleCounts = mutableMapOf<String, Int>()
+        for (item in items) {
+            val audioTracks = item.allAudioTracks()
+            val allTracks = if (item.kind == MediaKind.TV_SHOW) item.episodes.flatMap { it.tracks } else item.tracks
+            val langs = audioTracks.mapNotNull { it.language?.lowercase() }.toSet()
+            val codecs = audioTracks.map { it.codec.lowercase() }.toSet()
+            // titles from audio + subtitle tracks
+            val titles = allTracks.filter { it.kind == TrackKind.AUDIO || it.kind == TrackKind.SUBTITLE }
+                .mapNotNull { it.title?.takeIf { t -> t.isNotBlank() } }.toSet()
+            for (lang in langs) langCounts[lang] = (langCounts[lang] ?: 0) + 1
+            for (codec in codecs) codecCounts[codec] = (codecCounts[codec] ?: 0) + 1
+            for (title in titles) titleCounts[title] = (titleCounts[title] ?: 0) + 1
+        }
+        return TrackFacets(
+            audioLanguages = langCounts.entries.sortedByDescending { it.value }
+                .map { TrackFacetItem(it.key, it.value) },
+            audioCodecs = codecCounts.entries.sortedByDescending { it.value }
+                .map { TrackFacetItem(it.key, it.value) },
+            trackTitles = titleCounts.entries.sortedByDescending { it.value }
+                .map { TrackFacetItem(it.key, it.value) },
+        )
+    }
+
+    fun metaFacets(): MetaFacets {
+        val items = allItems()
+        val studioCounts  = mutableMapOf<String, Int>()
+        val networkCounts = mutableMapOf<String, Int>()
+        val genreCounts   = mutableMapOf<String, Int>()
+        val tagCounts     = mutableMapOf<String, Int>()
+        for (item in items) {
+            item.studio?.let  { s -> studioCounts[s]  = (studioCounts[s]  ?: 0) + 1 }
+            item.network?.let { n -> networkCounts[n] = (networkCounts[n] ?: 0) + 1 }
+            item.genres.forEach { g -> genreCounts[g] = (genreCounts[g] ?: 0) + 1 }
+            item.tags.forEach   { t -> tagCounts[t]   = (tagCounts[t]   ?: 0) + 1 }
+        }
+        return MetaFacets(
+            studios  = studioCounts.entries.sortedByDescending { it.value }.map { TrackFacetItem(it.key, it.value) },
+            networks = networkCounts.entries.sortedByDescending { it.value }.map { TrackFacetItem(it.key, it.value) },
+            genres   = genreCounts.entries.sortedByDescending { it.value }.map { TrackFacetItem(it.key, it.value) },
+            tags     = tagCounts.entries.sortedByDescending { it.value }.map { TrackFacetItem(it.key, it.value) },
+        )
+    }
+
     private fun upsertItem(item: MediaItem) {
         db.mediaQueries.upsert(
             id = item.id,
@@ -119,4 +180,34 @@ class MediaStore(private val db: JellystructureDb) {
             episode_count = item.episodes.size.toLong(),
         )
     }
+}
+
+data class TrackFacetItem(val value: String, val count: Int)
+data class TrackFacets(
+    val audioLanguages: List<TrackFacetItem>,
+    val audioCodecs: List<TrackFacetItem>,
+    val trackTitles: List<TrackFacetItem>,
+)
+
+data class MetaFacets(
+    val studios: List<TrackFacetItem>,
+    val networks: List<TrackFacetItem>,
+    val genres: List<TrackFacetItem>,
+    val tags: List<TrackFacetItem>,
+)
+
+private fun MediaItem.allAudioTracks() =
+    (if (kind == MediaKind.TV_SHOW) episodes.flatMap { it.tracks } else tracks)
+        .filter { it.kind == TrackKind.AUDIO }
+
+private fun MediaItem.matchesAudioFilter(
+    audioLangs: List<String>,
+    trackTitle: String?,
+    audioCodec: String?,
+    untaggedAudio: Boolean,
+): Boolean = allAudioTracks().any { t ->
+    (audioLangs.isEmpty() || audioLangs.any { lang -> t.language?.equals(lang, ignoreCase = true) == true }) &&
+    (trackTitle == null || t.title?.contains(trackTitle, ignoreCase = true) == true) &&
+    (audioCodec == null || t.codec.equals(audioCodec, ignoreCase = true)) &&
+    (!untaggedAudio || t.language == null)
 }

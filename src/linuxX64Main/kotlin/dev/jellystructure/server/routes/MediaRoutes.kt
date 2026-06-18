@@ -73,13 +73,55 @@ fun Route.mediaRoutes(
             val pageNum = call.request.queryParameters["page"]?.toIntOrNull()?.coerceAtLeast(1) ?: 1
             val pageSize = call.request.queryParameters["pageSize"]?.toIntOrNull()
                 ?.coerceIn(1, 100) ?: 20
-            val studio = call.request.queryParameters["studio"]?.takeIf { it.isNotBlank() }
-            val network = call.request.queryParameters["network"]?.takeIf { it.isNotBlank() }
-            val genre = call.request.queryParameters["genre"]?.takeIf { it.isNotBlank() }
-            val result = store.list(kind, filter, search, sort, pageNum, pageSize, studio, network, genre)
+            val studios = call.request.queryParameters["studios"]
+                ?.split(",")?.map { it.trim() }?.filter { it.isNotBlank() } ?: emptyList()
+            val networks = call.request.queryParameters["networks"]
+                ?.split(",")?.map { it.trim() }?.filter { it.isNotBlank() } ?: emptyList()
+            val genres = call.request.queryParameters["genres"]
+                ?.split(",")?.map { it.trim() }?.filter { it.isNotBlank() } ?: emptyList()
+            val audioLangs = call.request.queryParameters["audioLang"]
+                ?.split(",")?.map { it.trim() }?.filter { it.isNotBlank() } ?: emptyList()
+            val trackTitle = call.request.queryParameters["trackTitle"]?.takeIf { it.isNotBlank() }
+            val audioCodec = call.request.queryParameters["audioCodec"]?.takeIf { it.isNotBlank() }
+            val untaggedAudio = call.request.queryParameters["untaggedAudio"] == "true"
+            val tags = call.request.queryParameters["tags"]
+                ?.split(",")?.map { it.trim() }?.filter { it.isNotBlank() } ?: emptyList()
+            val result = store.list(kind, filter, search, sort, pageNum, pageSize, studios, networks, genres, audioLangs, trackTitle, audioCodec, untaggedAudio, tags)
             // Strip episode data from list responses — full episode list is on the individual item endpoint
             val stripped = result.copy(items = result.items.map { it.copy(episodes = emptyList()) })
             call.respond(stripped)
+        }
+
+        get("/meta-facets") {
+            @Serializable data class FacetItem(val value: String, val count: Int)
+            @Serializable data class MetaFacetsResponse(
+                val studios: List<FacetItem>,
+                val networks: List<FacetItem>,
+                val genres: List<FacetItem>,
+                val tags: List<FacetItem>,
+            )
+            val f = store.metaFacets()
+            call.respond(MetaFacetsResponse(
+                studios  = f.studios.map  { FacetItem(it.value, it.count) },
+                networks = f.networks.map { FacetItem(it.value, it.count) },
+                genres   = f.genres.map   { FacetItem(it.value, it.count) },
+                tags     = f.tags.map     { FacetItem(it.value, it.count) },
+            ))
+        }
+
+        get("/track-facets") {
+            @Serializable data class FacetItem(val value: String, val count: Int)
+            @Serializable data class FacetsResponse(
+                val audioLanguages: List<FacetItem>,
+                val audioCodecs: List<FacetItem>,
+                val trackTitles: List<FacetItem>,
+            )
+            val f = store.trackFacets()
+            call.respond(FacetsResponse(
+                audioLanguages = f.audioLanguages.map { FacetItem(it.value, it.count) },
+                audioCodecs = f.audioCodecs.map { FacetItem(it.value, it.count) },
+                trackTitles = f.trackTitles.map { FacetItem(it.value, it.count) },
+            ))
         }
 
         delete("/all") {

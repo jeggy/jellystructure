@@ -71,6 +71,24 @@ data class HistoryEntry(
 )
 
 @Serializable
+data class TrackFacetItem(val value: String, val count: Int)
+
+@Serializable
+data class TrackFacets(
+    val audioLanguages: List<TrackFacetItem> = emptyList(),
+    val audioCodecs: List<TrackFacetItem> = emptyList(),
+    val trackTitles: List<TrackFacetItem> = emptyList(),
+)
+
+@Serializable
+data class MetaFacets(
+    val studios: List<TrackFacetItem> = emptyList(),
+    val networks: List<TrackFacetItem> = emptyList(),
+    val genres: List<TrackFacetItem> = emptyList(),
+    val tags: List<TrackFacetItem> = emptyList(),
+)
+
+@Serializable
 data class ScanStatus(
     val running: Boolean,
     val status: String = "IDLE",
@@ -89,9 +107,14 @@ object MediaApi {
         sort: String? = null,
         page: Int = 1,
         pageSize: Int = 20,
-        studio: String? = null,
-        network: String? = null,
-        genre: String? = null,
+        studios: List<String> = emptyList(),
+        networks: List<String> = emptyList(),
+        genres: List<String> = emptyList(),
+        audioLangs: List<String> = emptyList(),
+        trackTitle: String? = null,
+        audioCodec: String? = null,
+        untaggedAudio: Boolean = false,
+        tags: List<String> = emptyList(),
     ): MediaPage? = runCatching {
         httpClient.get("/api/media") {
             if (kind != null) parameter("kind", kind.name)
@@ -100,10 +123,23 @@ object MediaApi {
             if (!sort.isNullOrBlank()) parameter("sort", sort)
             parameter("page", page)
             parameter("pageSize", pageSize)
-            if (!studio.isNullOrBlank()) parameter("studio", studio)
-            if (!network.isNullOrBlank()) parameter("network", network)
-            if (!genre.isNullOrBlank()) parameter("genre", genre)
+            if (studios.isNotEmpty()) parameter("studios", studios.joinToString(","))
+            if (networks.isNotEmpty()) parameter("networks", networks.joinToString(","))
+            if (genres.isNotEmpty()) parameter("genres", genres.joinToString(","))
+            if (audioLangs.isNotEmpty()) parameter("audioLang", audioLangs.joinToString(","))
+            if (!trackTitle.isNullOrBlank()) parameter("trackTitle", trackTitle)
+            if (!audioCodec.isNullOrBlank()) parameter("audioCodec", audioCodec)
+            if (untaggedAudio) parameter("untaggedAudio", "true")
+            if (tags.isNotEmpty()) parameter("tags", tags.joinToString(","))
         }.body<MediaPage>()
+    }.getOrNull()
+
+    suspend fun trackFacets(): TrackFacets? = runCatching {
+        httpClient.get("/api/media/track-facets").body<TrackFacets>()
+    }.getOrNull()
+
+    suspend fun metaFacets(): MetaFacets? = runCatching {
+        httpClient.get("/api/media/meta-facets").body<MetaFacets>()
     }.getOrNull()
 
     suspend fun get(id: String): MediaItem? = runCatching {

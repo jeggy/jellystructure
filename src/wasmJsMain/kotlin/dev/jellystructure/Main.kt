@@ -63,12 +63,7 @@ object App {
         updateActiveNav(route)
         when {
             route == "/" || route.isEmpty() || route == "/dashboard" -> renderDashboard(container, scope)
-            route.startsWith("/library") -> {
-                val studio = route.substringAfter("studio=", "").substringBefore("&").let { dev.jellystructure.decodeURIComponent(it).ifEmpty { null } }
-                val network = route.substringAfter("network=", "").substringBefore("&").let { dev.jellystructure.decodeURIComponent(it).ifEmpty { null } }
-                val genre = route.substringAfter("genre=", "").substringBefore("&").let { dev.jellystructure.decodeURIComponent(it).ifEmpty { null } }
-                renderLibrary(container, scope, studio, network, genre)
-            }
+            route.startsWith("/library") -> renderLibrary(container, scope)
             route.startsWith("/media/") -> {
                 val id = route.removePrefix("/media/")
                 if (id.isNotEmpty()) renderMediaDetail(container, scope, id)
