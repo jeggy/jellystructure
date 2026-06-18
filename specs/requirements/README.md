@@ -39,7 +39,7 @@ See [`../tasks.md`](../tasks.md) for the active TODO breakdown.
 | 20 | ✓ Done | Library audio-track filter — find audio-description/commentary tracks (FR-LF1) | [archive](archive/phase-20-library-audio-track-filter.md) |
 | 21 | ✓ Done | Flag multiple default audio tracks in Triage (FR-DA1) | [archive](archive/phase-21-multiple-default-audio-triage.md) |
 | 22 | ✓ Done | Remove lockdata & detect Jellyfin field locks (FR-LK1) | [archive](archive/phase-22-remove-lockdata-detect-locks.md) |
-| 23 | Planned | Remove the Language page (FR-RL1) | [spec](phase-23-remove-language-page.md) |
+| 23 | ✓ Done | Remove the Language page (FR-RL1) | [archive](archive/phase-23-remove-language-page.md) |
 | 24 | Planned | Manage the TMDB ID field on Media Detail (FR-TI1) | [spec](phase-24-manage-tmdb-id.md) |
 | 25 | Planned | Fix Sync button → "Re-pull from Jellyfin…" (FR-RJ1) | [spec](phase-25-repull-from-jellyfin.md) |
 | 26 | Planned | qBittorrent seeding guard — block mkvpropedit when file is actively seeded (FR-QB1) | [spec](phase-26-qbittorrent-seeding-guard.md) |

@@ -17,7 +17,6 @@ import dev.jellystructure.server.routes.activityRoutes
 import dev.jellystructure.server.routes.authRoutes
 import dev.jellystructure.server.routes.configureConfigRoutes
 import dev.jellystructure.server.routes.jellyfinRoutes
-import dev.jellystructure.server.routes.languageRoutes
 import dev.jellystructure.server.routes.mediaRoutes
 import dev.jellystructure.server.routes.setupRoutes
 import dev.jellystructure.server.routes.trackRoutes
@@ -100,7 +99,6 @@ fun startServer(
                 jellyfinRoutes(configStore, jellyfinClient)
                 mediaRoutes(mediaStore, scanner, artworkDownloader, appScope, scanTracker, broadcaster, jellyfinClient, configStore, mediaHistory, scanDispatcher)
                 activityRoutes(activityLog)
-                languageRoutes(configStore)
                 triageRoutes(mediaStore, jellyfinClient, configStore, mediaHistory)
                 metadataRoutes(mediaStore, jsTagStore)
                 trackRoutes(mediaStore, configStore, jellyfinClient, mediaHistory)

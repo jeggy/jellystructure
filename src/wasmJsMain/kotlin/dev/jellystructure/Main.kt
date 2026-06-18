@@ -3,7 +3,6 @@ package dev.jellystructure
 import dev.jellystructure.api.AuthApi
 import dev.jellystructure.ui.renderActivity
 import dev.jellystructure.ui.renderDashboard
-import dev.jellystructure.ui.renderLanguage
 import dev.jellystructure.ui.renderLibrary
 import dev.jellystructure.ui.renderLogin
 import dev.jellystructure.ui.renderMediaDetail
@@ -69,7 +68,6 @@ object App {
                 if (id.isNotEmpty()) renderMediaDetail(container, scope, id)
                 else renderLibrary(container, scope)
             }
-            route == "/language" -> renderLanguage(container, scope)
             route == "/triage"   -> renderTriage(container, scope)
             route.startsWith("/triage/series/") -> {
                 val id = route.removePrefix("/triage/series/")
