@@ -729,8 +729,8 @@ private fun wireEpisodeStepListeners(item: MediaItem) {
                 val epFilename = btn.getAttribute("data-ep-filename") ?: return@addEventListener
                 val specifier = btn.getAttribute("data-specifier") ?: return@addEventListener
                 stScope?.launch {
-                    val ok = MediaApi.setEpisodeDefaultTrack(mediaId, epFilename, specifier)
-                    if (ok) {
+                    val err = MediaApi.setEpisodeDefaultTrack(mediaId, epFilename, specifier)
+                    if (err == null) {
                         val updated = MediaApi.get(item.id)
                         if (updated != null) {
                             stItem = updated; renderSeriesTriagePage()

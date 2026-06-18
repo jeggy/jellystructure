@@ -3,6 +3,8 @@ package dev.jellystructure
 import dev.jellystructure.auth.JellyfinClient
 import dev.jellystructure.auth.SessionService
 import dev.jellystructure.config.ConfigStore
+import dev.jellystructure.torrent.QBittorrentClient
+import dev.jellystructure.torrent.SeedingGuard
 import dev.jellystructure.db.createDatabase
 import dev.jellystructure.jobs.WsBroadcaster
 import dev.jellystructure.log.Logger
@@ -113,10 +115,11 @@ fun main() = runBlocking {
     val mediaHistory = MediaHistory(db)
     val jsTagStore = dev.jellystructure.media.JsTagStore(dbFile.substringBeforeLast('/') + "/js-tags.json")
     jsTagStore.load()
+    val seedingGuard = SeedingGuard(QBittorrentClient())
     val shutdown = startServer(
         configStore, sessionService, jellyfinClient, mediaStore, scanner,
         artworkDownloader, scanTracker, folderWatcher, mediaHistory, activityLog, broadcaster,
-        frontendDir, port, scanDispatcher, effectiveScanThreads, jsTagStore,
+        frontendDir, port, scanDispatcher, effectiveScanThreads, jsTagStore, seedingGuard,
     )
 
     while (shutdownRequested.value == 0) {

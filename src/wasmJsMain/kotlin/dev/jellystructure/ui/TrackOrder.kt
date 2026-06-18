@@ -299,11 +299,12 @@ private fun renderTrackOrderView(container: Element, item: MediaItem, scope: Cor
                 applyBtn.setAttribute("disabled", "true")
                 applyBtn.textContent = "Applying…"
                 scope.launch {
-                    val ok = MediaApi.setTrackLanguage(mediaId, specifier, lang)
+                    val err = MediaApi.setTrackLanguage(mediaId, specifier, lang)
+                    val ok = err == null
                     applyBtn.removeAttribute("disabled")
                     applyBtn.textContent = "Apply"
                     showTrackOrderMsg(
-                        if (ok) "Language set to '$lang' on $specifier. Reloading…" else "Failed to set language — check server logs.",
+                        if (ok) "Language set to '$lang' on $specifier. Reloading…" else (err ?: "Failed to set language — check server logs."),
                         ok,
                     )
                     if (ok) {
@@ -321,9 +322,10 @@ private fun renderTrackOrderView(container: Element, item: MediaItem, scope: Cor
         applyBtn?.setAttribute("disabled", "true")
         applyBtn?.textContent = "Applying…"
         scope.launch {
-            val ok = MediaApi.setDefaultTrack(item.id, spec)
+            val err = MediaApi.setDefaultTrack(item.id, spec)
+            val ok = err == null
             showTrackOrderMsg(
-                if (ok) "Default track updated successfully. Reloading…" else "Failed to apply — check server logs.",
+                if (ok) "Default track updated successfully. Reloading…" else (err ?: "Failed to apply — check server logs."),
                 ok,
             )
             applyBtn?.removeAttribute("disabled")
@@ -449,9 +451,10 @@ private fun renderEpisodeTrackOrderView(container: Element, item: MediaItem, ep:
         applyBtn?.setAttribute("disabled", "true")
         applyBtn?.textContent = "Applying…"
         scope.launch {
-            val ok = MediaApi.setEpisodeDefaultTrack(item.id, ep.filename, spec)
+            val err = MediaApi.setEpisodeDefaultTrack(item.id, ep.filename, spec)
+            val ok = err == null
             showEpTrackOrderMsg(
-                if (ok) "Default track updated. Reloading…" else "Failed to apply — check server logs.",
+                if (ok) "Default track updated. Reloading…" else (err ?: "Failed to apply — check server logs."),
                 ok,
             )
             applyBtn?.removeAttribute("disabled")

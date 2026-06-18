@@ -9,6 +9,8 @@ import dev.jellystructure.media.MediaStore
 import dev.jellystructure.media.MkvpropeditRunner
 import dev.jellystructure.model.MediaKind
 import dev.jellystructure.model.TrackKind
+import dev.jellystructure.torrent.SeedingCheckResult
+import dev.jellystructure.torrent.SeedingGuard
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.request.receive
 import io.ktor.server.response.respond
@@ -45,7 +47,7 @@ data class TrackPlan(
     val after: List<TrackSnap> = emptyList(),
 )
 
-fun Route.trackRoutes(store: MediaStore, configStore: ConfigStore, jellyfinClient: JellyfinClient, mediaHistory: MediaHistory) {
+fun Route.trackRoutes(store: MediaStore, configStore: ConfigStore, jellyfinClient: JellyfinClient, mediaHistory: MediaHistory, seedingGuard: SeedingGuard) {
     route("/media/{id}") {
         // GET /api/media/{id}/tracks/plan?specifier=a:0 — dry-run: returns command without executing
         get("/tracks/plan") {
@@ -114,6 +116,12 @@ fun Route.trackRoutes(store: MediaStore, configStore: ConfigStore, jellyfinClien
             val ext = item.path.substringAfterLast('.').lowercase()
             val sameType = item.tracks.filter { it.kind == targetTrack.kind }
 
+            when (val guard = seedingGuard.check(item.path, configStore.current)) {
+                is SeedingCheckResult.Blocked -> { call.respond(HttpStatusCode.Conflict, mapOf("error" to "File is seeded by '${guard.torrentName}'")); return@post }
+                is SeedingCheckResult.Unreachable -> { call.respond(HttpStatusCode.ServiceUnavailable, mapOf("error" to "qBittorrent unreachable: ${guard.reason}")); return@post }
+                else -> Unit
+            }
+
             val ok = if (ext == "mkv") {
                 MkvpropeditRunner.setDefault(item.path, targetTrack.streamIndex, sameType.map { it.streamIndex })
             } else {
@@ -159,6 +167,13 @@ fun Route.trackRoutes(store: MediaStore, configStore: ConfigStore, jellyfinClien
                 ?: return@post call.respond(HttpStatusCode.NotFound, mapOf("error" to "track not found"))
 
             val ext = item.path.substringAfterLast('.').lowercase()
+
+            when (val guard = seedingGuard.check(item.path, configStore.current)) {
+                is SeedingCheckResult.Blocked -> { call.respond(HttpStatusCode.Conflict, mapOf("error" to "File is seeded by '${guard.torrentName}'")); return@post }
+                is SeedingCheckResult.Unreachable -> { call.respond(HttpStatusCode.ServiceUnavailable, mapOf("error" to "qBittorrent unreachable: ${guard.reason}")); return@post }
+                else -> Unit
+            }
+
             val ok = if (ext == "mkv") {
                 MkvpropeditRunner.setLanguage(item.path, targetTrack.streamIndex, req.language)
             } else {

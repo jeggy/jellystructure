@@ -23,6 +23,7 @@ import dev.jellystructure.server.routes.trackRoutes
 import dev.jellystructure.media.JsTagStore
 import dev.jellystructure.server.routes.metadataRoutes
 import dev.jellystructure.server.routes.triageRoutes
+import dev.jellystructure.torrent.SeedingGuard
 import io.ktor.http.ContentType
 import io.ktor.http.HttpMethod
 import io.ktor.http.HttpStatusCode
@@ -70,6 +71,7 @@ fun startServer(
     scanDispatcher: CoroutineDispatcher,
     effectiveScanThreads: Int,
     jsTagStore: JsTagStore,
+    seedingGuard: SeedingGuard,
 ): suspend () -> Unit {
     val appScope = CoroutineScope(SupervisorJob())
     val engine = embeddedServer(CIO, port = port) {
@@ -97,11 +99,11 @@ fun startServer(
                 configureConfigRoutes(configStore, effectiveScanThreads)
                 setupRoutes(configStore, jellyfinClient)
                 jellyfinRoutes(configStore, jellyfinClient)
-                mediaRoutes(mediaStore, scanner, artworkDownloader, appScope, scanTracker, broadcaster, jellyfinClient, configStore, mediaHistory, scanDispatcher)
+                mediaRoutes(mediaStore, scanner, artworkDownloader, appScope, scanTracker, broadcaster, jellyfinClient, configStore, mediaHistory, scanDispatcher, seedingGuard)
                 activityRoutes(activityLog)
-                triageRoutes(mediaStore, jellyfinClient, configStore, mediaHistory)
+                triageRoutes(mediaStore, jellyfinClient, configStore, mediaHistory, seedingGuard)
                 metadataRoutes(mediaStore, jsTagStore)
-                trackRoutes(mediaStore, configStore, jellyfinClient, mediaHistory)
+                trackRoutes(mediaStore, configStore, jellyfinClient, mediaHistory, seedingGuard)
             }
 
             webSocket("/ws") {
