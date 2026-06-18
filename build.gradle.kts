@@ -63,6 +63,19 @@ tasks.register("runDev") {
     group = "application"
     dependsOn("linkDebugExecutableLinuxX64", "syncDesignAssets")
 
+    // These are set from doLast and read by the buildFinished callback below.
+    var backendProc: Process? = null
+    var frontendProc: Process? = null
+
+    // buildFinished fires when the Gradle build ends — including on Ctrl+C cancellation — even
+    // when the Gradle daemon JVM stays alive. A JVM shutdown hook alone is not enough because the
+    // daemon doesn't exit on Ctrl+C; it stays alive to serve the next build.
+    @Suppress("DEPRECATION")
+    project.gradle.buildFinished {
+        backendProc?.destroyForcibly()
+        frontendProc?.destroyForcibly()
+    }
+
     doLast {
         // Kill any leftover instances from previous runs before starting fresh.
         // Use SIGKILL so the socket is released immediately rather than waiting for graceful shutdown.
@@ -131,6 +144,7 @@ tasks.register("runDev") {
             }
             .start()
             .also { it.pipeToGradle("fe") }
+        frontendProc = frontend
 
         val backend = ProcessBuilder(binary.absolutePath)
             .apply {
@@ -141,7 +155,9 @@ tasks.register("runDev") {
             }
             .start()
             .also { it.pipeToGradle("be") }
+        backendProc = backend
 
+        // Fallback: if the Gradle daemon JVM ever does exit, clean up then too.
         Runtime.getRuntime().addShutdownHook(Thread {
             backend.destroyForcibly()
             frontend.destroyForcibly()
