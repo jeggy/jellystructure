@@ -7,15 +7,16 @@ _Last updated: 2026-06-18_
 
 ## Snapshot
 
-- **Phases 0–16: ✓ Done.** Core system complete: Jellyfin-driven discovery, ffprobe track data,
+- **Phases 0–17: ✓ Done.** Core system complete: Jellyfin-driven discovery, ffprobe track data,
   TMDB matching, NFO writing, artwork, per-file/per-episode language resolution, track editing,
   triage, live WebSocket scans, persistent/resumable scan state, theme picker, dirty-indicator diff
   popups, external links, language pickers, simplified series language UI, targeted single-item
-  sync, SQLite persistence via SQLDelight (Phase 14), and **library path-match diagnostics** (Phase 15), and **multi-worker scanner with dynamic scaling**
-  (Phase 16 — producer/consumer Channel, `limitedParallelism` dispatcher, `AtomicInt` worker
-  counters, live scale-up/down, `scan_workers`/`scan_threads` config, Settings Scanning section).
-- **Phases 17–25: Planned.** See [`requirements/`](requirements/).
-- **Next up: Phase 17** — Activity log backend + live runners.
+  sync, SQLite persistence via SQLDelight (Phase 14), library path-match diagnostics (Phase 15),
+  multi-worker scanner with dynamic scaling (Phase 16), and **activity log backend + live runners**
+  (Phase 17 — unified Logger→ActivityLog, `log_line` WS events, `GET/DELETE /api/activity/log`,
+  filter bar, workers chip, runBlocking main, all *Sync variants removed).
+- **Phases 18–26: Planned.** See [`requirements/`](requirements/).
+- **Next up: Phase 18** — Settings page cleanup.
 
 ### Key cross-cutting findings (2026-06-18) — see [`requirements/_investigation-findings.md`](requirements/_investigation-findings.md)
 - **SQLite/SQLDelight now live.** All four stores (MediaStore, SessionService, ScanTracker,
@@ -29,6 +30,10 @@ _Last updated: 2026-06-18_
 
 ## Recent work (git)
 
+- **Phase 17 complete:** Activity log backend + live runners. Unified Logger (stdout + ActivityLog
+  delegation), `log_line` WS broadcast, `GET/DELETE /api/activity/log`, persistent JSON snapshot,
+  frontend filter bar with category chips + errors-only toggle, workers chip polling. All `*Sync`
+  Logger variants removed — codebase is fully suspend. `fun main()` wrapped in `runBlocking`.
 - **Phase 16 complete:** Multi-worker scanner with dynamic scaling. `scan_workers` (hot-configurable)
   and `scan_threads` (restart required) added to `[behavior]`. `runScan` uses Channel + N workers on
   `Dispatchers.Default.limitedParallelism(scanThreads)`. `ScanTracker` now exposes `activeWorkers` /

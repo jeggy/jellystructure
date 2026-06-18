@@ -3,8 +3,10 @@ package dev.jellystructure
 import dev.jellystructure.auth.JellyfinClient
 import dev.jellystructure.auth.SessionService
 import dev.jellystructure.config.ConfigStore
-import dev.jellystructure.log.Logger
 import dev.jellystructure.db.createDatabase
+import dev.jellystructure.jobs.WsBroadcaster
+import dev.jellystructure.log.Logger
+import dev.jellystructure.media.ActivityLog
 import dev.jellystructure.media.ArtworkDownloader
 import dev.jellystructure.media.MediaHistory
 import dev.jellystructure.media.MediaStore
@@ -14,7 +16,6 @@ import dev.jellystructure.server.startServer
 import dev.jellystructure.tmdb.TmdbClient
 import dev.jellystructure.watcher.FolderWatcher
 import kotlinx.cinterop.ExperimentalForeignApi
-import kotlinx.coroutines.Dispatchers
 import kotlinx.cinterop.alloc
 import kotlinx.cinterop.convert
 import kotlinx.cinterop.memScoped
@@ -23,6 +24,11 @@ import kotlinx.cinterop.reinterpret
 import kotlinx.cinterop.sizeOf
 import kotlinx.cinterop.staticCFunction
 import kotlinx.cinterop.toKString
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.runBlocking
 import platform.posix.AF_INET
 import platform.posix.SIGINT
 import platform.posix.SIGTERM
@@ -35,7 +41,6 @@ import platform.posix.htonl
 import platform.posix.htons
 import platform.posix.memset
 import platform.posix.signal
-import platform.posix.sleep
 import platform.posix.sockaddr_in
 import platform.posix.socket
 import kotlin.concurrent.AtomicInt
@@ -48,7 +53,7 @@ private fun onSignal(sig: Int) {
 }
 
 @OptIn(ExperimentalForeignApi::class)
-fun main() {
+fun main() = runBlocking {
     val configFile = env("CONFIG_FILE", "./data/config.toml")
     val dbFile = env("DB_FILE", "./data/jellystructure.db")
     val frontendDir = env("FRONTEND_DIR", "/app/frontend")
@@ -64,6 +69,12 @@ fun main() {
     val tmdbClient = TmdbClient(configStore, tmdbBaseUrl)
     val mediaStore = MediaStore(db)
     mediaStore.load()
+    val rootScope = CoroutineScope(SupervisorJob())
+    val broadcaster = WsBroadcaster()
+    val activityLogFile = env("ACTIVITY_LOG_FILE", dbFile.substringBeforeLast('/') + "/activity-log.json")
+    val activityLog = ActivityLog(activityLogFile, broadcaster, rootScope)
+    activityLog.load()
+    Logger.activityLog = activityLog
     val scanner = Scanner(configStore, tmdbClient, jellyfinClient)
     val artworkDownloader = ArtworkDownloader()
     val scanTracker = ScanTracker(db)
@@ -96,20 +107,20 @@ fun main() {
     signal(SIGINT, staticCFunction(::onSignal))
 
     checkPortFree(port)
-    Logger.infoSync("Starting jellystructure on port $port")
-    Logger.infoSync("Serving frontend from $frontendDir")
+    Logger.info("Starting jellystructure on port $port")
+    Logger.info("Serving frontend from $frontendDir")
 
     val mediaHistory = MediaHistory(db)
     val shutdown = startServer(
         configStore, sessionService, jellyfinClient, mediaStore, scanner,
-        artworkDownloader, scanTracker, folderWatcher, mediaHistory, frontendDir, port,
-        scanDispatcher, effectiveScanThreads,
+        artworkDownloader, scanTracker, folderWatcher, mediaHistory, activityLog, broadcaster,
+        frontendDir, port, scanDispatcher, effectiveScanThreads,
     )
 
     while (shutdownRequested.value == 0) {
-        sleep(1u)
+        delay(1_000L)
     }
-    Logger.infoSync("Shutdown signal received — stopping gracefully")
+    Logger.info("Shutdown signal received — stopping gracefully")
     shutdown()
 }
 
@@ -121,7 +132,7 @@ fun env(name: String, default: String): String =
 // before Ktor gets a chance to produce an unreadable coroutine cancellation trace.
 // TODO: This function doesn't work. Let's just solve this issue by catching the exception instead of checking upfront.
 @OptIn(ExperimentalForeignApi::class)
-private fun checkPortFree(port: Int) {
+private suspend fun checkPortFree(port: Int) {
     val sock = socket(AF_INET, SOCK_STREAM, 0)
     if (sock < 0) return
     memScoped {
@@ -133,8 +144,8 @@ private fun checkPortFree(port: Int) {
         val connected = connect(sock, addr.ptr.reinterpret(), sizeOf<sockaddr_in>().convert())
         close(sock)
         if (connected == 0) {
-            Logger.errorSync("Port $port is already in use — is another jellystructure instance running?")
-            Logger.errorSync("  kill it with:  fuser -k ${port}/tcp")
+            Logger.error("Port $port is already in use — is another jellystructure instance running?")
+            Logger.error("  kill it with:  fuser -k ${port}/tcp")
             exit(1)
         }
     }

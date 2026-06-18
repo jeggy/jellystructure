@@ -791,7 +791,7 @@ private suspend fun runScan(
     val succeeded = AtomicInt(0)
     val nextWorkerId = AtomicInt(0)
 
-    Logger.info("Library scan started jobId=$jobId (skip=${skipIds.size})")
+    Logger.info("Library scan started jobId=$jobId (skip=${skipIds.size})", "scan")
     broadcaster.broadcast(JobEvent.Started(jobId, -1))
 
     val jellyfinItems = scanner.fetchItems()
@@ -800,7 +800,7 @@ private suspend fun runScan(
         broadcaster.broadcast(JobEvent.Finished(jobId, 0, 0))
         return
     }
-    Logger.info("Jellyfin returned ${jellyfinItems.size} items (${skipIds.size} will be skipped for resume)")
+    Logger.info("Jellyfin returned ${jellyfinItems.size} items (${skipIds.size} will be skipped for resume)", "scan")
 
     // coroutineScope suspends here until the producer, all workers, and the supervisor have ALL finished.
     // Post-scan cleanup runs only after this block returns.
@@ -830,12 +830,12 @@ private suspend fun runScan(
                 // not after its coroutine has been scheduled and started.
                 scanTracker.activeWorkers.incrementAndGet()
                 launch(scanDispatcher + WorkerId(wid)) {
-                    Logger.info("Worker starting")
+                    Logger.info("Worker starting", "scan")
                     try {
                         for (jItem in channel) {
                             if (scanTracker.cancelRequested) break
                             val item = try { scanner.scanItem(jItem) } catch (e: Exception) {
-                                Logger.error("scanItem failed for '${jItem.name}': ${e.message}")
+                                Logger.error("scanItem failed for '${jItem.name}': ${e.message}", "scan")
                                 null
                             }
                             if (item != null) {
@@ -847,13 +847,13 @@ private suspend fun runScan(
                             }
                             // Scale-down drain: exit if we are excess
                             if (scanTracker.activeWorkers.value > scanTracker.targetWorkers.value) {
-                                Logger.info("Worker draining (scale-down)")
+                                Logger.info("Worker draining (scale-down)", "scan")
                                 break
                             }
                         }
                     } finally {
                         scanTracker.activeWorkers.decrementAndGet()
-                        Logger.info("Worker stopped")
+                        Logger.info("Worker stopped", "scan")
                     }
                 }
             }
@@ -867,7 +867,7 @@ private suspend fun runScan(
                     delay(500)
                     val newTarget = configStore.current.behavior.scanWorkers.coerceIn(1, 32)
                     if (newTarget != scanTracker.targetWorkers.value) {
-                        Logger.info("Scan workers: ${scanTracker.targetWorkers.value} → $newTarget")
+                        Logger.info("Scan workers: ${scanTracker.targetWorkers.value} → $newTarget", "scan")
                         scanTracker.targetWorkers.value = newTarget
                     }
                     val active = scanTracker.activeWorkers.value
@@ -881,7 +881,7 @@ private suspend fun runScan(
     } catch (e: CancellationException) {
         throw e
     } catch (e: Exception) {
-        Logger.error("Scan failed: ${e.message}")
+        Logger.error("Scan failed: ${e.message}", "scan")
         scanTracker.cancel()
         broadcaster.broadcast(JobEvent.Finished(jobId, succeeded.value, 1))
         return
@@ -890,7 +890,7 @@ private suspend fun runScan(
     // Post-scan cleanup — runs only after all workers have finished
     store.update(allItems)
     val cancelled = scanTracker.cancelRequested
-    Logger.info("Library scan ${if (cancelled) "cancelled" else "complete"} — ${succeeded.value} items")
+    Logger.info("Library scan ${if (cancelled) "cancelled" else "complete"} — ${succeeded.value} items", "scan")
     if (!cancelled) {
         scanTracker.complete()
         broadcaster.broadcast(JobEvent.Finished(jobId, succeeded.value, 0))

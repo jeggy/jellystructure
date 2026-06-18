@@ -14,13 +14,13 @@ object MkvpropeditRunner {
     // mkvpropedit uses 1-based track numbers matching the overall stream index from ffprobe.
     private fun trackArg(streamIndex: Int) = "track:@${streamIndex + 1}"
 
-    fun setLanguage(filePath: String, streamIndex: Int, language: String): Boolean {
+    suspend fun setLanguage(filePath: String, streamIndex: Int, language: String): Boolean {
         val escaped = filePath.replace("'", "'\\''")
         val cmd = "mkvpropedit '$escaped' --edit ${trackArg(streamIndex)} --set language=${language.replace("'", "")}"
         return runCommand(cmd)
     }
 
-    fun setDefault(filePath: String, defaultStreamIndex: Int, sameTypeIndices: List<Int>): Boolean {
+    suspend fun setDefault(filePath: String, defaultStreamIndex: Int, sameTypeIndices: List<Int>): Boolean {
         val escaped = filePath.replace("'", "'\\''")
         val parts = sameTypeIndices.map { idx ->
             val flag = if (idx == defaultStreamIndex) 1 else 0
@@ -31,15 +31,15 @@ object MkvpropeditRunner {
     }
 
     @OptIn(ExperimentalForeignApi::class)
-    private fun runCommand(cmd: String): Boolean {
-        Logger.infoSync("mkvpropedit: $cmd")
+    private suspend fun runCommand(cmd: String): Boolean {
+        Logger.info("mkvpropedit: $cmd", "track")
         return memScoped {
             val pipe = popen("$cmd 2>&1", "r") ?: return false
             val sb = StringBuilder()
             val buf = allocArray<ByteVar>(4096)
             while (fgets(buf, 4096, pipe) != null) sb.append(buf.toKString())
             val rc = pclose(pipe)
-            if (rc != 0) Logger.warnSync("mkvpropedit exit $rc: $sb")
+            if (rc != 0) Logger.warn("mkvpropedit exit $rc: $sb", "track")
             rc == 0
         }
     }

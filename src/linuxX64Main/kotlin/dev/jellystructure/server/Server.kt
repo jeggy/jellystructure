@@ -3,6 +3,7 @@ package dev.jellystructure.server
 import dev.jellystructure.auth.JellyfinClient
 import dev.jellystructure.auth.SessionService
 import dev.jellystructure.log.Logger
+import dev.jellystructure.media.ActivityLog
 import dev.jellystructure.auth.installAuthPlugin
 import dev.jellystructure.config.ConfigStore
 import dev.jellystructure.jobs.WsBroadcaster
@@ -12,6 +13,7 @@ import dev.jellystructure.media.MediaStore
 import dev.jellystructure.media.Scanner
 import dev.jellystructure.media.ScanTracker
 import dev.jellystructure.watcher.FolderWatcher
+import dev.jellystructure.server.routes.activityRoutes
 import dev.jellystructure.server.routes.authRoutes
 import dev.jellystructure.server.routes.configureConfigRoutes
 import dev.jellystructure.server.routes.jellyfinRoutes
@@ -60,14 +62,14 @@ fun startServer(
     scanTracker: ScanTracker,
     folderWatcher: FolderWatcher,
     mediaHistory: MediaHistory,
+    activityLog: ActivityLog,
+    broadcaster: WsBroadcaster,
     frontendDir: String,
     port: Int,
     scanDispatcher: CoroutineDispatcher,
     effectiveScanThreads: Int,
-): () -> Unit {
+): suspend () -> Unit {
     val appScope = CoroutineScope(SupervisorJob())
-    appScope.launch { folderWatcher.start() }
-    val broadcaster = WsBroadcaster()
     val engine = embeddedServer(CIO, port = port) {
         install(ContentNegotiation) { json() }
         install(WebSockets)
@@ -94,6 +96,7 @@ fun startServer(
                 setupRoutes(configStore, jellyfinClient)
                 jellyfinRoutes(configStore, jellyfinClient)
                 mediaRoutes(mediaStore, scanner, artworkDownloader, appScope, scanTracker, broadcaster, jellyfinClient, configStore, mediaHistory, scanDispatcher)
+                activityRoutes(activityLog)
                 languageRoutes(configStore)
                 triageRoutes(mediaStore, jellyfinClient, configStore, mediaHistory)
                 trackRoutes(mediaStore, configStore, jellyfinClient, mediaHistory)
@@ -118,10 +121,10 @@ fun startServer(
     }
     engine.start(wait = false)
     return {
-        runBlocking { broadcaster.closeAll() }
+        broadcaster.closeAll()
         engine.stop(1_000L, 5_000L)
         appScope.cancel()
-        Logger.infoSync("Server stopped")
+        Logger.info("Server stopped")
     }
 }
 

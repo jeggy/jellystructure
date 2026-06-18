@@ -12,9 +12,9 @@ import kotlinx.serialization.json.Json
 class MediaStore(private val db: JellystructureDb) {
     private val json = Json { ignoreUnknownKeys = true }
 
-    fun load() {
+    suspend fun load() {
         val count = db.mediaQueries.count().executeAsOne()
-        Logger.infoSync("MediaStore: DB has $count media items")
+        Logger.info("MediaStore: DB has $count media items")
     }
 
     suspend fun update(newItems: List<MediaItem>) {

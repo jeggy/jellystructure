@@ -15,7 +15,7 @@ object NfoWriter {
         MediaKind.TV_SHOW -> buildTvShowXml(item)
     }
 
-    fun write(item: MediaItem): Result<String> {
+    suspend fun write(item: MediaItem): Result<String> {
         return runCatching {
             val dir = when (item.kind) {
                 MediaKind.MOVIE -> item.path.substringBeforeLast('/')
@@ -26,12 +26,12 @@ object NfoWriter {
                 MediaKind.TV_SHOW -> "tvshow.nfo"
             }
             val nfoPath = "$dir/$filename"
-            Logger.infoSync("NfoWriter.write: id='${item.id}' kind=${item.kind} item.path='${item.path}' nfoPath='$nfoPath'")
+            Logger.info("NfoWriter.write: id='${item.id}' kind=${item.kind} item.path='${item.path}' nfoPath='$nfoPath'")
             val dirExists = SystemFileSystem.exists(Path(dir))
-            Logger.infoSync("NfoWriter.write: dir exists=$dirExists")
+            Logger.info("NfoWriter.write: dir exists=$dirExists")
             val xml = buildXml(item)
             writeAtomically(nfoPath, xml)
-            Logger.infoSync("Wrote NFO: $nfoPath")
+            Logger.info("Wrote NFO: $nfoPath", "nfo")
             nfoPath
         }
     }
@@ -64,12 +64,12 @@ object NfoWriter {
         }.getOrNull()
     }
 
-    fun writeEpisode(episode: Episode): Result<String> = runCatching {
+    suspend fun writeEpisode(episode: Episode): Result<String> = runCatching {
         val dir = episode.path.substringBeforeLast('/')
         val baseName = episode.filename.substringBeforeLast('.')
         val nfoPath = "$dir/$baseName.nfo"
         writeAtomically(nfoPath, buildEpisodeXml(episode))
-        Logger.infoSync("Wrote episode NFO: $nfoPath")
+        Logger.info("Wrote episode NFO: $nfoPath", "nfo")
         nfoPath
     }
 
@@ -192,7 +192,7 @@ object NfoWriter {
  * Throws if neither strategy succeeds.
  */
 @OptIn(kotlinx.cinterop.ExperimentalForeignApi::class)
-private fun writeAtomically(destPath: String, content: String) {
+private suspend fun writeAtomically(destPath: String, content: String) {
     val tmp = "$destPath.tmp"
     // Write content to the .tmp file
     val sink = SystemFileSystem.sink(Path(tmp)).buffered()
@@ -207,7 +207,7 @@ private fun writeAtomically(destPath: String, content: String) {
     // Rename failed — clean up .tmp and fall back to direct write
     val renameErrno = platform.posix.errno
     runCatching { SystemFileSystem.delete(Path(tmp)) }
-    Logger.warnSync("writeAtomically: rename failed (errno=$renameErrno), falling back to direct write for '$destPath'")
+    Logger.warn("writeAtomically: rename failed (errno=$renameErrno), falling back to direct write for '$destPath'")
 
     // Direct overwrite
     val sink2 = SystemFileSystem.sink(Path(destPath)).buffered()

@@ -77,6 +77,8 @@ data class ScanStatus(
     val jobId: String? = null,
     val startedAt: Long? = null,
     val processedCount: Int = 0,
+    val activeWorkers: Int = 0,
+    val configuredWorkers: Int = 1,
 )
 
 object MediaApi {
