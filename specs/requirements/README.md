@@ -40,6 +40,7 @@ end-to-end. See [`../STATUS.md`](../STATUS.md) for where work currently stands a
 | 23 | Planned | Remove the Language page (FR-RL1) | [spec](phase-23-remove-language-page.md) |
 | 24 | Planned | Manage the TMDB ID field on Media Detail (FR-TI1) | [spec](phase-24-manage-tmdb-id.md) |
 | 25 | Planned | Fix Sync button → "Re-pull from Jellyfin…" (FR-RJ1) | [spec](phase-25-repull-from-jellyfin.md) |
+| 26 | Planned | qBittorrent seeding guard — block mkvpropedit when file is actively seeded (FR-QB1) | [spec](phase-26-qbittorrent-seeding-guard.md) |
 
 ## Adding a new phase
 1. Create `phase-NN-short-name.md` in this directory using an existing planned spec as a template (Problem → Current state → Requirements → Invariants).
