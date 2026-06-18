@@ -182,7 +182,7 @@ private fun renderTrackOrderView(container: Element, item: MediaItem, scope: Cor
     """.trimIndent()
 
     document.getElementById("back-btn")?.addEventListener("click") {
-        App.navigate("/media/${item.id}")
+        App.navigate("/media/${item.jellyfinId ?: item.id}")
     }
 
     document.getElementById("go-triage")?.addEventListener("click") { e ->
@@ -416,7 +416,7 @@ private fun renderEpisodeTrackOrderView(container: Element, item: MediaItem, ep:
     """.trimIndent()
 
     document.getElementById("ep-back-btn")?.addEventListener("click") {
-        App.navigate("/media/${item.id}")
+        App.navigate("/media/${item.jellyfinId ?: item.id}")
     }
 
     var pendingSpecifier: String? = null

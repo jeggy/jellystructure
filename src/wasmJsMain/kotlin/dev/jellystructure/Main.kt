@@ -7,6 +7,7 @@ import dev.jellystructure.ui.renderLanguage
 import dev.jellystructure.ui.renderLibrary
 import dev.jellystructure.ui.renderLogin
 import dev.jellystructure.ui.renderMediaDetail
+import dev.jellystructure.ui.renderMetadata
 import dev.jellystructure.ui.renderSeriesTriage
 import dev.jellystructure.ui.renderSetup
 import dev.jellystructure.ui.renderSettings
@@ -62,7 +63,12 @@ object App {
         updateActiveNav(route)
         when {
             route == "/" || route.isEmpty() || route == "/dashboard" -> renderDashboard(container, scope)
-            route == "/library" -> renderLibrary(container, scope)
+            route.startsWith("/library") -> {
+                val studio = route.substringAfter("studio=", "").substringBefore("&").let { dev.jellystructure.decodeURIComponent(it).ifEmpty { null } }
+                val network = route.substringAfter("network=", "").substringBefore("&").let { dev.jellystructure.decodeURIComponent(it).ifEmpty { null } }
+                val genre = route.substringAfter("genre=", "").substringBefore("&").let { dev.jellystructure.decodeURIComponent(it).ifEmpty { null } }
+                renderLibrary(container, scope, studio, network, genre)
+            }
             route.startsWith("/media/") -> {
                 val id = route.removePrefix("/media/")
                 if (id.isNotEmpty()) renderMediaDetail(container, scope, id)
@@ -83,6 +89,10 @@ object App {
             }
             route == "/activity" -> renderActivity(container, scope)
             route == "/settings" -> renderSettings(container, scope)
+            route.startsWith("/metadata") -> {
+                val tab = route.substringAfter("tab=", "").substringBefore("&")
+                renderMetadata(container, scope, tab.ifEmpty { "studios" })
+            }
             route.startsWith("/track-order") -> {
                 val id = route.substringAfter("id=", "").substringBefore("&")
                 val ep = decodeURIComponent(route.substringAfter("ep=", "").substringBefore("&"))

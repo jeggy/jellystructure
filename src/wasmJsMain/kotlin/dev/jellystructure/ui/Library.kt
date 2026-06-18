@@ -29,9 +29,13 @@ private var libSearch: String? = null
 private var libSort: String? = null
 private var libScanSocket: WebSocket? = null
 private var libScannedCount = 0
+private var libStudio: String? = null
+private var libNetwork: String? = null
+private var libGenre: String? = null
 
-fun renderLibrary(container: Element, scope: CoroutineScope) {
+fun renderLibrary(container: Element, scope: CoroutineScope, studio: String? = null, network: String? = null, genre: String? = null) {
     libPage = 1; libKind = null; libFilter = null; libSearch = null; libSort = null; libScannedCount = 0
+    libStudio = studio; libNetwork = network; libGenre = genre
     libScanSocket?.close()
     libScanSocket = null
 
@@ -195,7 +199,7 @@ private fun appendItemToGrid(item: MediaItem, scope: CoroutineScope) {
     // Remove empty-state placeholder
     grid.querySelector(".muted")?.remove()
 
-    val existing = grid.querySelector(".poster[data-id=\"${item.id}\"]")
+    val existing = grid.querySelector(".poster[data-id=\"${item.jellyfinId ?: item.id}\"]")
     val html = posterCardHtml(item)
 
     if (existing != null) {
@@ -203,13 +207,13 @@ private fun appendItemToGrid(item: MediaItem, scope: CoroutineScope) {
         tmp.innerHTML = html
         val newCard = tmp.firstElementChild ?: return
         existing.replaceWith(newCard)
-        (newCard as? HTMLElement)?.addEventListener("click") { App.navigate("/media/${item.id}") }
+        (newCard as? HTMLElement)?.addEventListener("click") { App.navigate("/media/${item.jellyfinId ?: item.id}") }
     } else {
         val tmp = document.createElement("div")
         tmp.innerHTML = html
         val newCard = tmp.firstElementChild ?: return
         grid.appendChild(newCard)
-        (newCard as? HTMLElement)?.addEventListener("click") { App.navigate("/media/${item.id}") }
+        (newCard as? HTMLElement)?.addEventListener("click") { App.navigate("/media/${item.jellyfinId ?: item.id}") }
     }
 }
 
@@ -236,7 +240,7 @@ private suspend fun loadLibraryPage(scope: CoroutineScope) {
     val grid = document.getElementById("poster-grid") ?: return
     grid.innerHTML = """<span class="muted" style="padding:24px;display:block;">Loading…</span>"""
 
-    val page = MediaApi.list(libKind, libFilter, libSearch, libSort, libPage, 20)
+    val page = MediaApi.list(libKind, libFilter, libSearch, libSort, libPage, 20, libStudio, libNetwork, libGenre)
     if (page == null) {
         grid.innerHTML = """<span class="muted" style="padding:24px;display:block;">Failed to load library.</span>"""
         return
@@ -277,7 +281,7 @@ private fun posterCardHtml(item: MediaItem): String {
         """<div class="x"></div><span>${item.title.esc()}</span>"""
     }
     return """
-        <div class="poster" data-id="${item.id}" style="cursor:pointer;">
+        <div class="poster" data-id="${item.jellyfinId ?: item.id}" style="cursor:pointer;">
           <div class="imgslot">$imgContent</div>
           <div class="ttl">${item.title.esc()}</div>
           <div class="yr">${item.year ?: "—"} · $badge</div>

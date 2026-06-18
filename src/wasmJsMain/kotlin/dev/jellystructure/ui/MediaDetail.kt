@@ -7,6 +7,7 @@ import dev.jellystructure.encodeURIComponent
 import dev.jellystructure.api.ArtworkStatus
 import dev.jellystructure.api.ConfigApi
 import dev.jellystructure.api.HistoryEntry
+import dev.jellystructure.api.JsTag
 import dev.jellystructure.api.MediaApi
 import dev.jellystructure.model.Episode
 import dev.jellystructure.model.MediaItem
@@ -38,7 +39,8 @@ fun renderMediaDetail(container: Element, scope: CoroutineScope, mediaId: String
         val fallbackLang = config?.config?.languageRules?.fallbackLanguage ?: "en"
         val jellyfinUrl = config?.config?.apiKeys?.jellyfinUrl?.trimEnd('/') ?: ""
         val tmdbLangs = if (item.tmdbId != null) MediaApi.getTmdbLanguages(item.id) else null
-        renderDetailView(container, item, scope, fallbackLang, jellyfinUrl, tmdbLangs)
+        val jsTags = dev.jellystructure.api.MetadataApi.getAllJsTags() ?: emptyList()
+        renderDetailView(container, item, scope, fallbackLang, jellyfinUrl, tmdbLangs, jsTags = jsTags)
     }
 }
 
@@ -96,7 +98,7 @@ private fun buildResolverTrace(item: MediaItem, fallbackLang: String): String {
         </div>""".trimIndent()
 }
 
-private fun renderDetailView(container: Element, item: MediaItem, scope: CoroutineScope, fallbackLang: String = "en", jellyfinUrl: String = "", tmdbLangs: Set<String>? = null) {
+private fun renderDetailView(container: Element, item: MediaItem, scope: CoroutineScope, fallbackLang: String = "en", jellyfinUrl: String = "", tmdbLangs: Set<String>? = null, jsTags: List<JsTag> = emptyList()) {
     val isTvShow = item.kind == MediaKind.TV_SHOW
 
     val posterHtml = if (item.posterPath != null) {
@@ -132,13 +134,25 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
     </div>"""
 
     val currentTags = item.tags.toMutableList()
+    val jsTagMap = jsTags.associateBy { it.name }
+    fun tagChipHtml(tag: String): String {
+        val jt = jsTagMap[tag]
+        val dot = if (jt != null) """<span style="width:8px;height:8px;border-radius:50%;background:${jt.color};flex-shrink:0;display:inline-block;margin-right:3px;vertical-align:middle"></span>""" else ""
+        return """<span class="chip" style="cursor:default;display:inline-flex;align-items:center;">$dot${tag.esc()} <span class="tag-rm" data-tag="${tag.esc()}" style="cursor:pointer;margin-left:4px;color:var(--bad);">✕</span></span>"""
+    }
+    val tagSuggestions = jsTags.joinToString("") { jt ->
+        """<div class="tag-suggest-item" data-tag="${jt.name.esc()}" style="display:flex;align-items:center;gap:7px;padding:5px 10px;cursor:pointer;font-size:.85rem;border-radius:4px" onmouseover="this.style.background='var(--fill-2)'" onmouseout="this.style.background=''"><span style="width:10px;height:10px;border-radius:50%;background:${jt.color};flex-shrink:0;display:inline-block"></span>${jt.name.esc()}</div>"""
+    }
     val tagsChipsHtml = """<div class="field" id="tags-section">
       <label>Tags <span class="muted tiny">(written to NFO &lt;tag&gt;)</span> <button class="diff-trigger" id="diff-tags">≠</button></label>
       <div id="tags-chips" style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:6px;">
-        ${currentTags.joinToString("") { tag -> """<span class="chip" style="cursor:default;">${tag.esc()} <span class="tag-rm" data-tag="${tag.esc()}" style="cursor:pointer;margin-left:4px;color:var(--bad);">✕</span></span>""" }}
+        ${currentTags.joinToString("") { tagChipHtml(it) }}
       </div>
-      <div style="display:flex;gap:6px;">
-        <input id="tag-input" class="input" type="text" placeholder="add tag…" maxlength="40" style="width:160px;">
+      <div style="display:flex;gap:6px;position:relative;flex-wrap:wrap">
+        <div style="position:relative">
+          <input id="tag-input" class="input" type="text" placeholder="add tag…" maxlength="40" style="width:160px;" autocomplete="off">
+          <div id="tag-dropdown" style="display:none;position:absolute;top:calc(100% + 2px);left:0;z-index:50;background:var(--surface);border:1px solid var(--border);border-radius:6px;box-shadow:0 4px 16px rgba(0,0,0,.15);min-width:160px;padding:4px 0">$tagSuggestions</div>
+        </div>
         <button id="tag-add-btn" class="btn sm ghost">Add</button>
       </div>
     </div>"""
@@ -697,20 +711,76 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
         }
     }
 
+    fun addTagChip(tag: String) {
+        val chipsEl = document.getElementById("tags-chips") as? HTMLElement ?: return
+        // Avoid duplicate
+        val existing = chipsEl.querySelectorAll(".tag-rm")
+        for (i in 0 until existing.length) {
+            if ((existing.item(i) as? HTMLElement)?.getAttribute("data-tag") == tag) return
+        }
+        val span = document.createElement("span") as HTMLElement
+        span.innerHTML = tagChipHtml(tag)
+        chipsEl.appendChild(span.firstElementChild ?: span)
+        chipsEl.lastElementChild?.querySelector(".tag-rm")?.addEventListener("click") {
+            chipsEl.lastElementChild?.remove(); checkDirty()
+        }
+        checkDirty()
+    }
+
+    // Tag input dropdown wiring
+    val tagInput = document.getElementById("tag-input") as? HTMLInputElement
+    val tagDropdown = document.getElementById("tag-dropdown") as? HTMLElement
+    if (tagInput != null && tagDropdown != null) {
+        tagInput.addEventListener("input") { _ ->
+            val q = tagInput.value.trim().lowercase()
+            val items = tagDropdown.querySelectorAll(".tag-suggest-item")
+            var anyVisible = false
+            for (i in 0 until items.length) {
+                val el = items.item(i) as? HTMLElement ?: continue
+                val name = el.getAttribute("data-tag") ?: ""
+                val visible = q.isEmpty() || name.lowercase().contains(q)
+                (el as? HTMLElement)?.style?.display = if (visible) "" else "none"
+                if (visible) anyVisible = true
+            }
+            tagDropdown.style.display = if (anyVisible) "block" else "none"
+        }
+        tagInput.addEventListener("focus") { _ ->
+            if (jsTags.isNotEmpty()) tagDropdown.style.display = "block"
+        }
+        tagInput.addEventListener("blur") { _ ->
+            // Delay so click on suggestion fires first
+            kotlinx.browser.window.setTimeout({ tagDropdown.style.display = "none"; null }, 150)
+        }
+        tagInput.addEventListener("keydown") { ev ->
+            val ke = ev as? org.w3c.dom.events.KeyboardEvent ?: return@addEventListener
+            if (ke.key == "Enter") {
+                ke.preventDefault()
+                val tag = tagInput.value.trim()
+                if (tag.isNotBlank()) { addTagChip(tag); tagInput.value = ""; tagDropdown.style.display = "none" }
+            } else if (ke.key == "Escape") {
+                tagDropdown.style.display = "none"
+            }
+        }
+        // Wire suggestion clicks
+        val items = tagDropdown.querySelectorAll(".tag-suggest-item")
+        for (i in 0 until items.length) {
+            val el = items.item(i) as? HTMLElement ?: continue
+            el.addEventListener("mousedown") { ev ->
+                ev.preventDefault()
+                val name = el.getAttribute("data-tag") ?: return@addEventListener
+                addTagChip(name); tagInput.value = ""; tagDropdown.style.display = "none"
+            }
+        }
+    }
+
     // Tag add button
     document.getElementById("tag-add-btn")?.addEventListener("click") {
         val input = document.getElementById("tag-input") as? HTMLInputElement ?: return@addEventListener
         val tag = input.value.trim()
         if (tag.isBlank()) return@addEventListener
         input.value = ""
-        val chipsEl = document.getElementById("tags-chips") as? HTMLElement ?: return@addEventListener
-        val span = document.createElement("span")
-        span.className = "chip"
-        span.setAttribute("style", "cursor:default;")
-        span.innerHTML = """${tag.esc()} <span class="tag-rm" data-tag="${tag.esc()}" style="cursor:pointer;margin-left:4px;color:var(--bad);">✕</span>"""
-        chipsEl.appendChild(span)
-        span.querySelector(".tag-rm")?.addEventListener("click") { span.remove(); checkDirty() }
-        checkDirty()
+        tagDropdown?.style?.display = "none"
+        addTagChip(tag)
     }
     // Wire existing tag removes
     document.querySelectorAll("#tags-chips .tag-rm").let { nodes ->

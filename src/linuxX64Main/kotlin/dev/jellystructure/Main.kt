@@ -111,10 +111,12 @@ fun main() = runBlocking {
     Logger.info("Serving frontend from $frontendDir")
 
     val mediaHistory = MediaHistory(db)
+    val jsTagStore = dev.jellystructure.media.JsTagStore(dbFile.substringBeforeLast('/') + "/js-tags.json")
+    jsTagStore.load()
     val shutdown = startServer(
         configStore, sessionService, jellyfinClient, mediaStore, scanner,
         artworkDownloader, scanTracker, folderWatcher, mediaHistory, activityLog, broadcaster,
-        frontendDir, port, scanDispatcher, effectiveScanThreads,
+        frontendDir, port, scanDispatcher, effectiveScanThreads, jsTagStore,
     )
 
     while (shutdownRequested.value == 0) {

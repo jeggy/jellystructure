@@ -92,7 +92,7 @@ fun Route.triageRoutes(store: MediaStore, jellyfinClient: JellyfinClient, config
         get("/{mediaId}/suggest") {
             val mediaId = call.parameters["mediaId"]
                 ?: return@get call.respond(HttpStatusCode.BadRequest)
-            val item = store.get(mediaId)
+            val item = store.resolve(mediaId)
                 ?: return@get call.respond(HttpStatusCode.NotFound)
             call.respond(mapOf("language" to item.originalLanguage))
         }
@@ -105,7 +105,7 @@ fun Route.triageRoutes(store: MediaStore, jellyfinClient: JellyfinClient, config
             val specifier = call.parameters["specifier"]
                 ?: return@post call.respond(HttpStatusCode.BadRequest)
 
-            val item = store.get(mediaId)
+            val item = store.resolve(mediaId)
                 ?: return@post call.respond(HttpStatusCode.NotFound)
             val ep = item.episodes.firstOrNull { it.filename == epFilename }
                 ?: return@post call.respond(HttpStatusCode.NotFound, mapOf("error" to "episode not found"))
@@ -155,7 +155,7 @@ fun Route.triageRoutes(store: MediaStore, jellyfinClient: JellyfinClient, config
             val specifier = call.parameters["specifier"]
                 ?: return@post call.respond(HttpStatusCode.BadRequest)
 
-            val item = store.get(mediaId)
+            val item = store.resolve(mediaId)
                 ?: return@post call.respond(HttpStatusCode.NotFound)
 
             val track = item.tracks.firstOrNull { it.specifier == specifier }

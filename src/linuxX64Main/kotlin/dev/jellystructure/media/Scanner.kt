@@ -119,6 +119,7 @@ class Scanner(
             (it.kind == TrackKind.AUDIO || it.kind == TrackKind.SUBTITLE) && it.language == null
         }
 
+        val primaryCompany = details?.productionCompanies?.firstOrNull()
         return MediaItem(
             id = slugify(title, year),
             title = details?.title ?: title,
@@ -134,6 +135,9 @@ class Scanner(
             backdropPath = details?.backdropPath,
             overview = details?.overview?.takeIf { it.isNotBlank() },
             genres = details?.genres?.map { it.name } ?: emptyList(),
+            studio = primaryCompany?.name,
+            studioTmdbId = primaryCompany?.id,
+            studioLogoPath = primaryCompany?.logoPath,
             tracks = tracks,
             issueCount = issueCount,
             languageMix = false,
@@ -231,6 +235,7 @@ class Scanner(
                 majorityLang?.let { listOf(it) } ?: emptyList(), fallback
             )
             val mixDetails = seriesTmdbId?.let { tmdb.getTvDetailsLocalized(it, mixPriority) }
+            val mixNetwork = mixDetails?.networks?.firstOrNull()
             return MediaItem(
                 id = slugify(title, year),
                 title = mixDetails?.name ?: title,
@@ -246,6 +251,9 @@ class Scanner(
                 backdropPath = mixDetails?.backdropPath,
                 overview = mixDetails?.overview?.takeIf { it.isNotBlank() },
                 genres = mixDetails?.genres?.map { it.name } ?: emptyList(),
+                network = mixNetwork?.name,
+                networkTmdbId = mixNetwork?.id,
+                networkLogoPath = mixNetwork?.logoPath,
                 tracks = firstTracks,
                 episodes = sortedEpisodes,
                 issueCount = totalIssueCount,
@@ -278,6 +286,9 @@ class Scanner(
             backdropPath = details?.backdropPath,
             overview = details?.overview?.takeIf { it.isNotBlank() },
             genres = details?.genres?.map { it.name } ?: emptyList(),
+            network = details?.networks?.firstOrNull()?.name,
+            networkTmdbId = details?.networks?.firstOrNull()?.id,
+            networkLogoPath = details?.networks?.firstOrNull()?.logoPath,
             tracks = firstTracks,
             episodes = sortedEpisodes,
             issueCount = totalIssueCount,
@@ -312,6 +323,7 @@ class Scanner(
         val resolvedLang = langPriority.firstOrNull { lang -> details.overview.isNotBlank() && lang != fallback }
             ?: langPriority.lastOrNull()
         val issueCount = tracks.count { (it.kind == TrackKind.AUDIO || it.kind == TrackKind.SUBTITLE) && it.language == null }
+        val primaryCompany = details.productionCompanies.firstOrNull()
         return item.copy(
             title = details.title,
             originalTitle = details.originalTitle.takeIf { it.isNotBlank() },
@@ -322,6 +334,9 @@ class Scanner(
             backdropPath = details.backdropPath,
             overview = details.overview.takeIf { it.isNotBlank() },
             genres = details.genres.map { it.name },
+            studio = primaryCompany?.name,
+            studioTmdbId = primaryCompany?.id,
+            studioLogoPath = primaryCompany?.logoPath,
             tracks = tracks,
             issueCount = issueCount,
             scannedAt = epochSeconds(),
@@ -400,6 +415,7 @@ class Scanner(
             }
             details
         }
+        val syncNetwork = updatedDetails?.networks?.firstOrNull()
         return item.copy(
             title = updatedDetails?.name ?: item.title,
             originalTitle = updatedDetails?.originalName?.takeIf { it.isNotBlank() } ?: item.originalTitle,
@@ -410,6 +426,9 @@ class Scanner(
             backdropPath = updatedDetails?.backdropPath ?: item.backdropPath,
             overview = updatedDetails?.overview?.takeIf { it.isNotBlank() } ?: item.overview,
             genres = updatedDetails?.genres?.map { it.name } ?: item.genres,
+            network = syncNetwork?.name ?: item.network,
+            networkTmdbId = syncNetwork?.id ?: item.networkTmdbId,
+            networkLogoPath = syncNetwork?.logoPath ?: item.networkLogoPath,
             tracks = firstTracks,
             episodes = sortedEpisodes,
             issueCount = totalIssueCount,
@@ -491,6 +510,7 @@ class Scanner(
                 val resolvedLang = langPriority.firstOrNull { lang ->
                     details.overview.isNotBlank() && lang != fallback
                 } ?: langPriority.lastOrNull()
+                val rescanCompany = details.productionCompanies.firstOrNull()
                 item.copy(
                     title = details.title,
                     originalTitle = details.originalTitle.takeIf { it.isNotBlank() },
@@ -501,6 +521,9 @@ class Scanner(
                     backdropPath = details.backdropPath,
                     overview = details.overview.takeIf { it.isNotBlank() },
                     genres = details.genres.map { it.name },
+                    studio = rescanCompany?.name,
+                    studioTmdbId = rescanCompany?.id,
+                    studioLogoPath = rescanCompany?.logoPath,
                 )
             }
             MediaKind.TV_SHOW -> {
@@ -529,6 +552,7 @@ class Scanner(
                         ) else ep
                     } else ep
                 }
+                val rescanNetwork = details.networks.firstOrNull()
                 item.copy(
                     title = details.name,
                     originalTitle = details.originalName.takeIf { it.isNotBlank() },
@@ -539,6 +563,9 @@ class Scanner(
                     backdropPath = details.backdropPath,
                     overview = details.overview.takeIf { it.isNotBlank() },
                     genres = details.genres.map { it.name },
+                    network = rescanNetwork?.name ?: item.network,
+                    networkTmdbId = rescanNetwork?.id ?: item.networkTmdbId,
+                    networkLogoPath = rescanNetwork?.logoPath ?: item.networkLogoPath,
                     episodes = updatedEpisodes,
                 )
             }

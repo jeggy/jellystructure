@@ -149,7 +149,7 @@ private suspend fun loadAttentionQueue() {
         val year = item.year?.let { " ($it)" } ?: ""
         val kind = item.kind.name.lowercase().replace('_', ' ')
         """<div class="row center" style="padding:7px 0;border-bottom:1px solid var(--border);gap:8px;cursor:pointer"
-              data-nav="/media/${item.id}">
+              data-nav="/media/${item.jellyfinId ?: item.id}">
              <span style="flex:1;font-size:.9rem">${item.title.esc()}$year</span>
              <span class="muted tiny">$kind</span>
              $badge

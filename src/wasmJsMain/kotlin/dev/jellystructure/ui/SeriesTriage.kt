@@ -503,7 +503,7 @@ private fun wireStListeners(item: MediaItem) {
 
     // Breadcrumb nav
     container.querySelector("#st-breadcrumb")?.addEventListener("click") {
-        App.navigate("/media/${item.id}")
+        App.navigate("/media/${item.jellyfinId ?: item.id}")
     }
 
     // Rail card clicks
