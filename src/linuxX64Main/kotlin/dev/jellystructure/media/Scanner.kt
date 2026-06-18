@@ -58,7 +58,8 @@ class Scanner(
                 prefix.isNotBlank() && jellyfinPath.startsWith(prefix)
             }
             if (lib == null) {
-                println("[WARN] No matching library for '$jellyfinPath' — check library mapping config")
+                val prefixes = libraries.map { it.jellyfinPath.ifBlank { it.localPath } }
+                println("[WARN] No matching library for '$jellyfinPath' — configured prefixes: $prefixes")
                 continue
             }
 

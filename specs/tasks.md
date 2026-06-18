@@ -7,19 +7,17 @@ See [`STATUS.md`](STATUS.md) for the overall snapshot.
 
 ---
 
-## Active: Phase 15 — Fix library path matching (FR-B1)
+## Active: Phase 16 — Multi-worker scanner, dynamic scaling (FR-W1)
 
-Movies fail to match a library during scans when `jellyfinPath` and `localPath` differ across
-container mounts. Spec: [`requirements/phase-15-library-path-matching.md`](requirements/phase-15-library-path-matching.md)
+Spec: [`requirements/phase-16-multi-worker-scanner.md`](requirements/phase-16-multi-worker-scanner.md)
 
 ### Steps (seed from spec before starting)
-- [ ] Read the Phase 15 spec and break into concrete steps here.
+- [ ] Read the Phase 16 spec and break into concrete steps here.
 
 ---
 
 ## Backlog (next phases)
 Rough dependency order — confirm sequencing before starting each.
-- [ ] **Phase 16** — Multi-worker scanner, dynamic scaling (FR-W1)
 - [ ] **Phase 17** — Activity log backend + live runners (FR-A1) — surfaces Phase 16's worker counts; use SQLite (Phase 14 ✓)
 - [ ] **Phase 18** — Settings page cleanup (FR-C1) — hosts Phase 16 scanning fields + Phase 23 fallback-lang
 - [ ] **Phase 19** — Studios/Networks/Genres/Tags metadata page (FR-M1) — needs P1/P2 scanner prerequisites; js_tags in SQLite (Phase 14 ✓)

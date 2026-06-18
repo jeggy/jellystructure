@@ -61,6 +61,15 @@ data class JellyfinLibrary(
 @Serializable
 data class ConnectionTestResult(val jellyfin: Boolean, val tmdb: Boolean)
 
+@Serializable
+data class LibraryPathDiag(
+    val name: String,
+    val jellyfinPath: String = "",
+    val localPath: String = "",
+    val matchPrefix: String,
+    val localExists: Boolean,
+)
+
 object ConfigApi {
     suspend fun get(): AppConfig? = runCatching {
         httpClient.get("/api/config").body<AppConfig>()
@@ -80,5 +89,9 @@ object ConfigApi {
 
     suspend fun getJellyfinLibraries(): List<JellyfinLibrary>? = runCatching {
         httpClient.get("/api/jellyfin/libraries").body<List<JellyfinLibrary>>()
+    }.getOrNull()
+
+    suspend fun pathCheck(): List<LibraryPathDiag>? = runCatching {
+        httpClient.get("/api/config/path-check").body<List<LibraryPathDiag>>()
     }.getOrNull()
 }
