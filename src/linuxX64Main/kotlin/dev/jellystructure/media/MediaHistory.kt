@@ -1,10 +1,10 @@
 package dev.jellystructure.media
 
+import dev.jellystructure.db.JellystructureDb
 import kotlinx.cinterop.ExperimentalForeignApi
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.Serializable
-import platform.posix.time
+
+private const val HISTORY_CAP = 2000L
 
 @Serializable
 data class HistoryEntry(
@@ -15,30 +15,40 @@ data class HistoryEntry(
     val detail: String,
 )
 
-class MediaHistory {
-    private val mutex = Mutex()
-    private val entries = ArrayDeque<HistoryEntry>()
-    private var nextId = 1
+class MediaHistory(private val db: JellystructureDb) {
 
-    suspend fun record(mediaId: String, action: String, detail: String) = mutex.withLock {
-        entries.addFirst(
-            HistoryEntry(
-                id = (nextId++).toString(),
-                mediaId = mediaId,
-                timestamp = epochSeconds(),
-                action = action,
-                detail = detail,
-            )
+    suspend fun record(mediaId: String, action: String, detail: String) {
+        db.mediaHistoryQueries.insert(
+            media_id = mediaId,
+            ts = epochSeconds(),
+            action = action,
+            detail = detail,
         )
-        if (entries.size > 2000) entries.removeLast()
+        db.mediaHistoryQueries.trimToMax(HISTORY_CAP)
     }
 
     fun forItem(mediaId: String): List<HistoryEntry> =
-        entries.filter { it.mediaId == mediaId }
+        db.mediaHistoryQueries.forItem(mediaId).executeAsList().map { row ->
+            HistoryEntry(
+                id = row.id.toString(),
+                mediaId = row.media_id,
+                timestamp = row.ts,
+                action = row.action,
+                detail = row.detail,
+            )
+        }
 
     fun recent(limit: Int = 8): List<HistoryEntry> =
-        entries.take(limit)
+        db.mediaHistoryQueries.recent(limit.toLong()).executeAsList().map { row ->
+            HistoryEntry(
+                id = row.id.toString(),
+                mediaId = row.media_id,
+                timestamp = row.ts,
+                action = row.action,
+                detail = row.detail,
+            )
+        }
 }
 
 @OptIn(ExperimentalForeignApi::class)
-private fun epochSeconds(): Long = time(null)
+private fun epochSeconds(): Long = platform.posix.time(null)

@@ -3,27 +3,23 @@
 Cross-cutting facts discovered while scoping phases 14–25. Several specs reference these. Verify
 against code before implementing — they were true at the commit noted in [`../STATUS.md`](../STATUS.md).
 
-## Persistence is JSON files + in-memory — NOT SQLite
+## Persistence — SQLite/SQLDelight (Phase 14 ✓ Done)
 
-> **Now owned by [`phase-14`](phase-14-persistence-sqlite.md)** (foundational, first to be picked up):
-> introduce SQLDelight + native SQLite and migrate the stores. After Phase 14 lands, the activity log
+> **Phase 14 is complete.** All four stores now run against a real SQLite DB. The activity log
 > ([`phase-17`](phase-17-activity-log-backend.md)) and JS tags ([`phase-19`](phase-19-metadata-page.md))
-> should use SQLite tables, not the JSON pattern those specs currently describe.
+> should use SQLite tables when implemented, not a new JSON-file pattern.
 
-The constitution and earlier specs say "SQLDelight with native SQLite driver." **No `.sq` files exist
-and no SQLite is wired.** Actual persistence:
+Persistence as of Phase 14:
 
-| Data | Mechanism | File / location |
-|------|-----------|-----------------|
-| Media cache | JSON, atomic `.tmp`+`rename` | `MediaStore` → `./data/media.json` (env `MEDIA_FILE`) |
-| Scan state | JSON, atomic | `ScanTracker` → `<config dir>/scan-state.json` |
-| Config | TOML | `ConfigStore` → `./data/config.toml` (env `CONFIG_FILE`) |
-| Sessions | JSON | `SessionService` → `./data/sessions.json` |
-| Audit history | **in-memory only** (`ArrayDeque`, cap 2000) | `MediaHistory` — not persisted, lost on restart |
+| Data | Mechanism | Location |
+|------|-----------|----------|
+| Media cache | SQLite — `media` table (blob + indexed scalars) | `DB_FILE` env, default `./data/jellystructure.db` |
+| Scan state | SQLite — `scan_state` + `scan_processed` tables | same DB |
+| Config | TOML (user-editable, intentionally not in DB) | `CONFIG_FILE` env, default `./data/config.toml` |
+| Sessions | SQLite — `session` table | same DB |
+| Audit history | SQLite — `media_history` table (cap 2000, trimmed on insert) | same DB; **survives restart** |
 
-**Implication:** new persistent stores (activity log, JS tags) should follow the same JSON-file +
-atomic-write pattern (or a small SQLite introduction if deliberately chosen — but that is a new
-dependency, not "as the constitution already says"). The constitution should be corrected.
+No migration from legacy JSON files — new installs start fresh.
 
 ## `studio` / `network` are never populated from TMDB
 

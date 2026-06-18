@@ -1,0 +1,35 @@
+CREATE TABLE scan_state (
+    id INTEGER NOT NULL PRIMARY KEY,
+    status TEXT NOT NULL,
+    job_id TEXT NOT NULL,
+    started_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+);
+
+CREATE TABLE scan_processed (
+    job_id TEXT NOT NULL,
+    jellyfin_id TEXT NOT NULL,
+    PRIMARY KEY (job_id, jellyfin_id)
+);
+
+upsertState:
+INSERT OR REPLACE INTO scan_state(id, status, job_id, started_at, updated_at)
+VALUES (1, :status, :job_id, :started_at, :updated_at);
+
+getState:
+SELECT * FROM scan_state WHERE id = 1;
+
+insertProcessed:
+INSERT OR IGNORE INTO scan_processed(job_id, jellyfin_id) VALUES (:job_id, :jellyfin_id);
+
+getProcessedIds:
+SELECT jellyfin_id FROM scan_processed WHERE job_id = :job_id;
+
+countProcessed:
+SELECT COUNT(*) FROM scan_processed WHERE job_id = :job_id;
+
+clearProcessed:
+DELETE FROM scan_processed WHERE job_id = :job_id;
+
+clearOldProcessed:
+DELETE FROM scan_processed WHERE job_id != :job_id;

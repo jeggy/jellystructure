@@ -1,0 +1,28 @@
+CREATE TABLE media_history (
+    id INTEGER NOT NULL PRIMARY KEY,
+    media_id TEXT NOT NULL,
+    ts INTEGER NOT NULL,
+    action TEXT NOT NULL,
+    detail TEXT NOT NULL
+);
+
+CREATE INDEX media_history_media_id ON media_history(media_id);
+CREATE INDEX media_history_ts ON media_history(ts);
+
+insert:
+INSERT INTO media_history(media_id, ts, action, detail)
+VALUES (:media_id, :ts, :action, :detail);
+
+forItem:
+SELECT * FROM media_history WHERE media_id = :media_id ORDER BY ts DESC;
+
+recent:
+SELECT * FROM media_history ORDER BY ts DESC LIMIT :limit;
+
+count:
+SELECT COUNT(*) FROM media_history;
+
+trimToMax:
+DELETE FROM media_history WHERE id NOT IN (
+    SELECT id FROM media_history ORDER BY ts DESC LIMIT :max_rows
+);
