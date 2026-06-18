@@ -8,7 +8,7 @@ _Last updated: 2026-06-18_
 
 ## Current focus
 
-**Next up: Phase 22** — Remove lockdata & detect Jellyfin field locks (FR-LK1).
+**Next up: Phase 23** — Remove the Language page (FR-RL1).
 
 See [`requirements/README.md`](requirements/README.md) for the full phase index.
 
@@ -41,8 +41,6 @@ See [`requirements/README.md`](requirements/README.md) for the full phase index.
 
 ## Known issues / open threads
 
-- **`<lockdata>` removal** — Phase 22 drops it and adds Jellyfin lock detection. The constitution
-  §"NFO Files" still mandates lockdata and must be corrected when Phase 22 lands.
 - **Port free-check logic** — unresolved `TODO` in `Main.kt` (`checkPortFree` "doesn't work");
   suggestion: catch the bind exception instead.
 

@@ -55,6 +55,8 @@ data class JellyfinItem(
     @SerialName("Path") val path: String? = null,
     @SerialName("ProviderIds") val providerIds: JellyfinProviderIds? = null,
     @SerialName("Type") val type: String,
+    @SerialName("LockData") val lockData: Boolean = false,
+    @SerialName("LockedFields") val lockedFields: List<String> = emptyList(),
 )
 
 @Serializable
