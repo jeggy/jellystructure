@@ -331,7 +331,7 @@ fun Route.mediaRoutes(
                 if (!item.jellyfinId.isNullOrBlank() && cfg.apiKeys.jellyfinUrl.isNotBlank()) {
                     jellyfinClient.refreshItem(cfg.apiKeys.jellyfinUrl, cfg.apiKeys.jellyfinToken, item.jellyfinId)
                 }
-                call.respond(mapOf("ok" to true, "path" to destPath))
+                call.respond(mapOf("path" to destPath))
             }
 
             // Episode track routes — {epFilename} identifies the episode by filename
@@ -438,7 +438,7 @@ fun Route.mediaRoutes(
                     val updatedItemTracks = if (epIdx == 0) newTracks else item.tracks
                     store.updateOne(item.copy(episodes = updatedEpisodes, tracks = updatedItemTracks))
                     mediaHistory.record(id, "set_language", "ep=${ep.filename} specifier=${req.specifier} lang=${req.language}")
-                    call.respond(mapOf("ok" to true, "language" to req.language))
+                    call.respond(mapOf("language" to req.language))
                 }
 
                 // PATCH /api/media/{id}/episodes/{epFilename}/metadata — edit episode title/overview
@@ -631,7 +631,8 @@ fun Route.mediaRoutes(
         val skipIds = scanTracker.processedIdsSnapshot
         val jobId = scanTracker.startResume()
         appScope.launch { runScan(jobId, skipIds, store, scanner, scanTracker, broadcaster, configStore, jellyfinClient, scanDispatcher) }
-        call.respond(HttpStatusCode.Accepted, mapOf("status" to "resumed", "skipping" to skipIds.size))
+        println("[INFO] Scan resumed jobId=$jobId, skipping ${skipIds.size} already-processed items")
+        call.respond(HttpStatusCode.Accepted, mapOf("status" to "resumed"))
     }
 
     post("/scan/cancel") {
