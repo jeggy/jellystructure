@@ -3,6 +3,7 @@ package dev.jellystructure.media
 import dev.jellystructure.auth.JellyfinClient
 import dev.jellystructure.auth.JellyfinItem
 import dev.jellystructure.config.ConfigStore
+import dev.jellystructure.log.Logger
 import dev.jellystructure.model.Episode
 import dev.jellystructure.model.MediaItem
 import dev.jellystructure.model.MediaKind
@@ -36,7 +37,7 @@ class Scanner(
         }
         if (lib == null) {
             val prefixes = libraries.map { it.jellyfinPath.ifBlank { it.localPath } }
-            println("[WARN] No matching library for '$jellyfinPath' — configured prefixes: $prefixes")
+            Logger.warn("No matching library for '$jellyfinPath' — configured prefixes: $prefixes")
             return null
         }
         val localPath = if (lib.jellyfinPath.isNotBlank()) {
@@ -58,7 +59,7 @@ class Scanner(
         val baseUrl = config.apiKeys.jellyfinUrl
         val token = config.apiKeys.jellyfinToken
         if (baseUrl.isBlank() || token.isBlank()) {
-            println("[WARN] Jellyfin URL or token not configured — skipping scan")
+            Logger.warn("Jellyfin URL or token not configured — skipping scan")
             return null
         }
         return jellyfinClient.getItems(baseUrl, token)
@@ -71,15 +72,15 @@ class Scanner(
         onItemReady: suspend (MediaItem) -> Unit,
     ): Int {
         val jellyfinItems = fetchItems() ?: return 0
-        println("[INFO] Jellyfin returned ${jellyfinItems.size} items (${skipIds.size} will be skipped for resume)")
+        Logger.info("Jellyfin returned ${jellyfinItems.size} items (${skipIds.size} will be skipped for resume)")
         var count = 0
         for (jItem in jellyfinItems) {
             if (jItem.id in skipIds) {
-                println("[INFO] Resume: skipping already-processed '${jItem.name}'")
+                Logger.info("Resume: skipping already-processed '${jItem.name}'")
                 continue
             }
             if (tracker?.cancelRequested == true) {
-                println("[INFO] Scan cancelled after $count items")
+                Logger.info("Scan cancelled after $count items")
                 break
             }
             val mediaItem = scanItem(jItem)
@@ -89,18 +90,18 @@ class Scanner(
                 delay(100)
             }
         }
-        println("[INFO] Scan complete — $count items processed")
+        Logger.info("Scan complete — $count items processed")
         return count
     }
 
     private suspend fun scanMovie(jItem: JellyfinItem, localPath: String, fallback: String): MediaItem? {
         if (!SystemFileSystem.exists(Path(localPath))) {
-            println("[WARN] Movie file not found on disk: $localPath")
+            Logger.warn("Movie file not found on disk: $localPath")
             return null
         }
 
         val (title, year) = parseTitleYear(jItem.name)
-        println("[INFO] Scanning movie: $title (${year ?: "?"})")
+        Logger.info("Scanning movie: $title (${year ?: "?"})")
 
         val tracks = FfprobeRunner.probe(localPath)
         val audioLangs = tracks.filter { it.kind == TrackKind.AUDIO }.map { it.language }
@@ -142,22 +143,22 @@ class Scanner(
 
     private suspend fun scanSeries(jItem: JellyfinItem, localPath: String, fallback: String): MediaItem? {
         if (!SystemFileSystem.exists(Path(localPath))) {
-            println("[WARN] Series directory not found on disk: $localPath")
+            Logger.warn("Series directory not found on disk: $localPath")
             return null
         }
 
         val (title, year) = parseTitleYear(jItem.name)
-        println("[INFO] Scanning series: $title (${year ?: "?"})")
+        Logger.info("Scanning series: $title (${year ?: "?"})")
 
         val episodeFiles = findEpisodeFiles(localPath)
         if (episodeFiles.isEmpty()) {
-            println("[WARN] No episode files found in: $localPath")
+            Logger.warn("No episode files found in: $localPath")
             return null
         }
 
         // Probe all episodes (cap at 100 for very large series)
         val filesToProbe = if (episodeFiles.size > 100) {
-            println("[INFO] Series has ${episodeFiles.size} episodes — probing a spread of 100")
+            Logger.info("Series has ${episodeFiles.size} episodes — probing a spread of 100")
             selectSamples(episodeFiles, 100)
         } else {
             episodeFiles
@@ -216,7 +217,7 @@ class Scanner(
         val totalIssueCount = sortedEpisodes.sumOf { it.issueCount }
 
         if (languageMix) {
-            println("[INFO] Series '$title' has mixed audio languages across episodes — using majority language for NFO")
+            Logger.info("Series '$title' has mixed audio languages across episodes — using majority language for NFO")
             // Vote on each episode's primary (first) audio track to find the majority language.
             val langVotes = mutableMapOf<String, Int>()
             for (ep in sortedEpisodes) {
@@ -300,7 +301,7 @@ class Scanner(
         }
         val fallback = lib?.fallbackLanguage?.ifBlank { null } ?: config.languageRules.fallbackLanguage
         if (!SystemFileSystem.exists(Path(item.path))) {
-            println("[WARN] Sync: movie file not found: ${item.path}")
+            Logger.warn("Sync: movie file not found: ${item.path}")
             return null
         }
         val tracks = FfprobeRunner.probe(item.path)
@@ -336,12 +337,12 @@ class Scanner(
         }
         val fallback = lib?.fallbackLanguage?.ifBlank { null } ?: config.languageRules.fallbackLanguage
         if (!SystemFileSystem.exists(Path(item.path))) {
-            println("[WARN] Sync: series directory not found: ${item.path}")
+            Logger.warn("Sync: series directory not found: ${item.path}")
             return null
         }
         val episodeFiles = findEpisodeFiles(item.path)
         if (episodeFiles.isEmpty()) {
-            println("[WARN] Sync: no episode files found in: ${item.path}")
+            Logger.warn("Sync: no episode files found in: ${item.path}")
             return null
         }
         val seriesTmdbId = item.tmdbId

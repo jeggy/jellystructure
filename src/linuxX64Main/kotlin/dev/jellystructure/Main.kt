@@ -3,6 +3,7 @@ package dev.jellystructure
 import dev.jellystructure.auth.JellyfinClient
 import dev.jellystructure.auth.SessionService
 import dev.jellystructure.config.ConfigStore
+import dev.jellystructure.log.Logger
 import dev.jellystructure.db.createDatabase
 import dev.jellystructure.media.ArtworkDownloader
 import dev.jellystructure.media.MediaHistory
@@ -73,7 +74,7 @@ fun main() {
     scanTracker.targetWorkers.value = configStore.current.behavior.scanWorkers.coerceIn(1, 32)
     val folderWatcher = FolderWatcher(configStore) {
         if (!scanTracker.running) {
-            println("[INFO] FolderWatcher: starting automatic scan")
+            Logger.info("FolderWatcher: starting automatic scan")
             val jobId = scanTracker.startNew()
             try {
                 scanner.scan(tracker = scanTracker) { item ->
@@ -81,13 +82,13 @@ fun main() {
                     item.jellyfinId?.let { scanTracker.recordProcessed(it) }
                 }
                 scanTracker.complete()
-                println("[INFO] FolderWatcher: auto-scan complete jobId=$jobId")
+                Logger.info("FolderWatcher: auto-scan complete jobId=$jobId")
             } catch (e: Exception) {
-                println("[ERROR] FolderWatcher auto-scan failed: ${e.message}")
+                Logger.error("FolderWatcher auto-scan failed: ${e.message}")
                 scanTracker.cancel()
             }
         } else {
-            println("[INFO] FolderWatcher: scan already running — skipping auto-scan")
+            Logger.info("FolderWatcher: scan already running — skipping auto-scan")
         }
     }
 
@@ -95,8 +96,8 @@ fun main() {
     signal(SIGINT, staticCFunction(::onSignal))
 
     checkPortFree(port)
-    println("[INFO] Starting jellystructure on port $port")
-    println("[INFO] Serving frontend from $frontendDir")
+    Logger.infoSync("Starting jellystructure on port $port")
+    Logger.infoSync("Serving frontend from $frontendDir")
 
     val mediaHistory = MediaHistory(db)
     val shutdown = startServer(
@@ -108,7 +109,7 @@ fun main() {
     while (shutdownRequested.value == 0) {
         sleep(1u)
     }
-    println("[INFO] Shutdown signal received — stopping gracefully")
+    Logger.infoSync("Shutdown signal received — stopping gracefully")
     shutdown()
 }
 
@@ -132,8 +133,8 @@ private fun checkPortFree(port: Int) {
         val connected = connect(sock, addr.ptr.reinterpret(), sizeOf<sockaddr_in>().convert())
         close(sock)
         if (connected == 0) {
-            println("[ERROR] Port $port is already in use — is another jellystructure instance running?")
-            println("[ERROR]   kill it with:  fuser -k ${port}/tcp")
+            Logger.errorSync("Port $port is already in use — is another jellystructure instance running?")
+            Logger.errorSync("  kill it with:  fuser -k ${port}/tcp")
             exit(1)
         }
     }

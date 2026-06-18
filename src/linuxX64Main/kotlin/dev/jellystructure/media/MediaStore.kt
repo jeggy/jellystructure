@@ -1,6 +1,7 @@
 package dev.jellystructure.media
 
 import dev.jellystructure.db.JellystructureDb
+import dev.jellystructure.log.Logger
 import dev.jellystructure.model.MediaItem
 import dev.jellystructure.model.MediaKind
 import dev.jellystructure.model.MediaPage
@@ -13,7 +14,7 @@ class MediaStore(private val db: JellystructureDb) {
 
     fun load() {
         val count = db.mediaQueries.count().executeAsOne()
-        println("[INFO] MediaStore: DB has $count media items")
+        Logger.infoSync("MediaStore: DB has $count media items")
     }
 
     suspend fun update(newItems: List<MediaItem>) {

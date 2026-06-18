@@ -1,6 +1,7 @@
 package dev.jellystructure.watcher
 
 import dev.jellystructure.config.ConfigStore
+import dev.jellystructure.log.Logger
 import kotlinx.coroutines.delay
 import kotlinx.io.files.Path
 import kotlinx.io.files.SystemFileSystem
@@ -16,7 +17,7 @@ class FolderWatcher(
     private val knownPaths = mutableSetOf<String>()
 
     suspend fun start() {
-        println("[INFO] FolderWatcher starting")
+        Logger.info("FolderWatcher starting")
         initKnownFiles()
 
         while (true) {
@@ -27,18 +28,18 @@ class FolderWatcher(
             val newFiles = detectNewFiles()
             if (newFiles.isEmpty()) continue
 
-            println("[INFO] FolderWatcher: ${newFiles.size} new file(s) detected — debouncing for ${DEBOUNCE_MS}ms")
+            Logger.info("FolderWatcher: ${newFiles.size} new file(s) detected — debouncing for ${DEBOUNCE_MS}ms")
             delay(DEBOUNCE_MS)
 
             // Only process files that are still present and stable (non-zero size)
             val stable = newFiles.filter { isStable(it) }
             if (stable.isNotEmpty()) {
-                println("[INFO] FolderWatcher: ${stable.size} stable new file(s) — triggering scan")
-                stable.forEach { println("[INFO]   $it") }
+                Logger.info("FolderWatcher: ${stable.size} stable new file(s) — triggering scan")
+                stable.forEach { Logger.infoSync("  $it") }
                 runCatching { onNewFilesDetected() }
-                    .onFailure { println("[WARN] FolderWatcher: scan trigger failed: ${it.message}") }
+                    .onFailure { Logger.warnSync("FolderWatcher: scan trigger failed: ${it.message}") }
             } else {
-                println("[INFO] FolderWatcher: no stable new files after debounce (still copying?)")
+                Logger.info("FolderWatcher: no stable new files after debounce (still copying?)")
             }
         }
     }
@@ -46,7 +47,7 @@ class FolderWatcher(
     private fun initKnownFiles() {
         knownPaths.clear()
         collectAll(knownPaths)
-        println("[INFO] FolderWatcher: tracking ${knownPaths.size} existing video file(s)")
+        Logger.infoSync("FolderWatcher: tracking ${knownPaths.size} existing video file(s)")
     }
 
     private fun detectNewFiles(): List<String> {
@@ -80,7 +81,7 @@ class FolderWatcher(
                     entryMeta.isRegularFile && isVideoFile(entryStr) -> result.add(entryStr)
                 }
             }
-        }.onFailure { println("[WARN] FolderWatcher: error reading $dir: ${it.message}") }
+        }.onFailure { Logger.warnSync("FolderWatcher: error reading $dir: ${it.message}") }
     }
 
     private fun isVideoFile(path: String) =

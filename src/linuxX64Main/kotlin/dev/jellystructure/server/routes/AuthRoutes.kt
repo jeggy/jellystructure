@@ -2,6 +2,7 @@ package dev.jellystructure.server.routes
 
 import dev.jellystructure.auth.JellyfinClient
 import dev.jellystructure.auth.LoginRequest
+import dev.jellystructure.log.Logger
 import dev.jellystructure.auth.SessionKey
 import dev.jellystructure.auth.SessionService
 import dev.jellystructure.auth.UserProfile
@@ -40,8 +41,8 @@ fun Route.authRoutes(
                     creds.password,
                 )
             }.getOrElse { e ->
-                println("jellyfin: ${config.apiKeys.jellyfinUrl}")
-                println("[WARN] Jellyfin auth error: ${e.message}")
+                Logger.infoSync("jellyfin: ${config.apiKeys.jellyfinUrl}")
+                Logger.warnSync("Jellyfin auth error: ${e.message}")
                 call.respond(
                     HttpStatusCode.Unauthorized,
                     mapOf("error" to (e.message ?: "Authentication failed")),
