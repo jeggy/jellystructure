@@ -48,7 +48,6 @@ private val NAV: List<NavEntry> = listOf(
     NavLink("/triage", "Triage", "triage", count = null),
     NavLink("/activity", "Activity", "activity"),
     NavGroup("Setup"),
-    NavLink("/language", "Language", "language"),
     NavLink("/settings", "Settings", "settings"),
 )
 

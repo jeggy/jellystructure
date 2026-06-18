@@ -94,7 +94,7 @@ private fun buildResolverTrace(item: MediaItem, fallbackLang: String): String {
             <hr class="dash" style="margin:9px 0;">
             <div class="row center"><span class="tiny">Fetching metadata in</span><span class="spacer"></span>$resolvedBadge</div>
           </div>
-          <div class="tiny muted" style="margin-top:8px;">Global fallback is <span class="lang">${fallbackLang.esc()}</span> · <a href="#/language">Language Settings →</a></div>
+          <div class="tiny muted" style="margin-top:8px;">Global fallback is <span class="lang">${fallbackLang.esc()}</span> · <a href="#/settings">Language Settings →</a></div>
         </div>""".trimIndent()
 }
 
