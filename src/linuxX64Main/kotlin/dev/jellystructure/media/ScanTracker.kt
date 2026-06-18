@@ -119,6 +119,14 @@ class ScanTracker(private val db: JellystructureDb) {
         )
     }
 
+    fun reset() {
+        _status = "IDLE"
+        _jobId = ""
+        _startedAt = 0L
+        activeWorkers.value = 0
+        db.scanStateQueries.clearOldProcessed("")
+    }
+
     fun status() = ScanStatusResponse(
         running = _status == "RUNNING",
         status = _status,

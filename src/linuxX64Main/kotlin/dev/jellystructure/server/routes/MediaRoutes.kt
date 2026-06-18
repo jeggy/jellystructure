@@ -28,6 +28,7 @@ import io.ktor.server.request.receiveMultipart
 import io.ktor.server.response.respond
 import io.ktor.server.response.respondText
 import io.ktor.server.routing.Route
+import io.ktor.server.routing.delete
 import io.ktor.server.routing.get
 import io.ktor.server.routing.patch
 import io.ktor.server.routing.post
@@ -76,6 +77,16 @@ fun Route.mediaRoutes(
             // Strip episode data from list responses — full episode list is on the individual item endpoint
             val stripped = result.copy(items = result.items.map { it.copy(episodes = emptyList()) })
             call.respond(stripped)
+        }
+
+        delete("/all") {
+            if (scanTracker.status().running) {
+                return@delete call.respond(HttpStatusCode.Conflict, mapOf("error" to "A scan is currently running — stop it before clearing data."))
+            }
+            store.update(emptyList())
+            scanTracker.reset()
+            Logger.info("All scanned data cleared by user request", "system")
+            call.respond(HttpStatusCode.NoContent)
         }
 
         route("/{id}") {
