@@ -1,5 +1,6 @@
 package dev.jellystructure.auth
 
+import dev.jellystructure.db.JellystructureDb
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.addressOf
 import kotlinx.cinterop.alloc
@@ -7,33 +8,22 @@ import kotlinx.cinterop.convert
 import kotlinx.cinterop.memScoped
 import kotlinx.cinterop.ptr
 import kotlinx.cinterop.usePinned
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
-import kotlinx.io.buffered
-import kotlinx.io.files.Path
-import kotlinx.io.files.SystemFileSystem
-import kotlinx.io.readString
-import kotlinx.io.writeString
-import kotlinx.serialization.decodeFromString
-import kotlinx.serialization.encodeToString
-import kotlinx.serialization.json.Json
 import platform.posix.CLOCK_REALTIME
 import platform.posix.O_RDONLY
 import platform.posix.close
 import platform.posix.clock_gettime
 import platform.posix.open
 import platform.posix.read
-import platform.posix.rename
 import platform.posix.timespec
 
 private const val SESSION_TTL_MS = 7L * 24 * 60 * 60 * 1000
 
-class SessionService(private val storeFile: String) {
-    private val mutex = Mutex()
-    private val sessions = mutableMapOf<String, SessionData>()
-    private val json = Json { ignoreUnknownKeys = true }
+class SessionService(private val db: JellystructureDb) {
 
-    init { load() }
+    init {
+        // Remove expired sessions on startup
+        db.sessionQueries.deleteExpired(nowMs())
+    }
 
     suspend fun create(
         jellyfinUserId: String,
@@ -41,52 +31,30 @@ class SessionService(private val storeFile: String) {
         jellyfinUserToken: String,
     ): String {
         val token = generateSecureToken()
-        val session = SessionData(
+        db.sessionQueries.upsert(
             token = token,
-            jellyfinUserId = jellyfinUserId,
-            jellyfinUsername = jellyfinUsername,
-            jellyfinUserToken = jellyfinUserToken,
-            expiresAt = nowMs() + SESSION_TTL_MS,
+            jellyfin_user_id = jellyfinUserId,
+            jellyfin_username = jellyfinUsername,
+            jellyfin_user_token = jellyfinUserToken,
+            expires_at = nowMs() + SESSION_TTL_MS,
         )
-        mutex.withLock {
-            sessions[token] = session
-            persist()
-        }
         return token
     }
 
     fun validate(token: String): SessionData? {
-        val session = sessions[token] ?: return null
-        if (session.expiresAt < nowMs()) return null
-        return session
+        val row = db.sessionQueries.getByToken(token).executeAsOneOrNull() ?: return null
+        if (row.expires_at < nowMs()) return null
+        return SessionData(
+            token = row.token,
+            jellyfinUserId = row.jellyfin_user_id,
+            jellyfinUsername = row.jellyfin_username,
+            jellyfinUserToken = row.jellyfin_user_token,
+            expiresAt = row.expires_at,
+        )
     }
 
-    suspend fun revoke(token: String) = mutex.withLock {
-        sessions.remove(token)
-        persist()
-    }
-
-    private fun load() {
-        val path = Path(storeFile)
-        if (!SystemFileSystem.exists(path)) return
-        runCatching {
-            val content = SystemFileSystem.source(path).buffered().readString()
-            val list = json.decodeFromString<List<SessionData>>(content)
-            val now = nowMs()
-            list.filter { it.expiresAt > now }.forEach { sessions[it.token] = it }
-        }.onFailure { println("[WARN] Could not load sessions: ${it.message}") }
-    }
-
-    private fun persist() {
-        val tmp = "$storeFile.tmp"
-        runCatching {
-            val content = json.encodeToString(sessions.values.toList())
-            val sink = SystemFileSystem.sink(Path(tmp)).buffered()
-            sink.writeString(content)
-            sink.flush()
-            sink.close()
-            rename(tmp, storeFile)
-        }.onFailure { println("[ERROR] Could not persist sessions: ${it.message}") }
+    suspend fun revoke(token: String) {
+        db.sessionQueries.deleteByToken(token)
     }
 }
 

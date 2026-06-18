@@ -1,39 +1,26 @@
 package dev.jellystructure.media
 
+import dev.jellystructure.db.JellystructureDb
 import dev.jellystructure.model.MediaItem
 import dev.jellystructure.model.MediaKind
 import dev.jellystructure.model.MediaPage
 import dev.jellystructure.nfo.NfoWriter
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
-import kotlinx.io.buffered
-import kotlinx.io.files.Path
-import kotlinx.io.files.SystemFileSystem
-import kotlinx.io.readString
-import kotlinx.io.writeString
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
 
-class MediaStore(private val cacheFile: String) {
-    private val mutex = Mutex()
-    private var items: List<MediaItem> = emptyList()
+class MediaStore(private val db: JellystructureDb) {
     private val json = Json { ignoreUnknownKeys = true }
 
     fun load() {
-        val path = Path(cacheFile)
-        if (!SystemFileSystem.exists(path)) return
-        runCatching {
-            val content = SystemFileSystem.source(path).buffered().readString()
-            items = json.decodeFromString(ListSerializer(MediaItem.serializer()), content)
-            println("[INFO] Loaded ${items.size} media items from cache")
-        }.onFailure {
-            println("[WARN] Failed to load media cache: ${it.message}")
-        }
+        val count = db.mediaQueries.count().executeAsOne()
+        println("[INFO] MediaStore: DB has $count media items")
     }
 
-    suspend fun update(newItems: List<MediaItem>) = mutex.withLock {
-        items = newItems
-        persist()
+    suspend fun update(newItems: List<MediaItem>) {
+        db.transaction {
+            db.mediaQueries.deleteAll()
+            newItems.forEach { upsertItem(it) }
+        }
     }
 
     fun list(
@@ -44,73 +31,79 @@ class MediaStore(private val cacheFile: String) {
         page: Int = 1,
         pageSize: Int = 20,
     ): MediaPage {
-        var filtered = items
-        if (kind != null) filtered = filtered.filter { it.kind == kind }
-        when (filter) {
-            "attention" -> filtered = filtered.filter { it.issueCount > 0 || it.languageMix }
-            "missing_artwork" -> filtered = filtered.filter { it.posterPath == null }
+        val filterAttention = if (filter == "attention") 1L else 0L
+        val filterMissingArtwork = if (filter == "missing_artwork") 1L else 0L
+        val searchArg = search?.takeIf { it.isNotBlank() }
+
+        val jsonBlobs = db.mediaQueries.listFiltered(
+            kind = kind?.name,
+            filterAttention = filterAttention,
+            filterMissingArtwork = filterMissingArtwork,
+            search = searchArg,
+        ).executeAsList()
+
+        val decoded = jsonBlobs.mapNotNull { blob ->
+            runCatching { json.decodeFromString(MediaItem.serializer(), blob) }.getOrNull()
         }
-        if (!search.isNullOrBlank()) {
-            val q = search.lowercase()
-            filtered = filtered.filter { it.title.lowercase().contains(q) || it.originalTitle?.lowercase()?.contains(q) == true }
+
+        val sorted = when (sort) {
+            "title" -> decoded.sortedBy { it.title.lowercase() }
+            "year" -> decoded.sortedByDescending { it.year ?: 0 }
+            else -> decoded.sortedByDescending { it.scannedAt }
         }
-        filtered = when (sort) {
-            "title" -> filtered.sortedBy { it.title.lowercase() }
-            "year" -> filtered.sortedByDescending { it.year ?: 0 }
-            else -> filtered.sortedByDescending { it.scannedAt }
-        }
-        val total = filtered.size
-        val paged = filtered.drop((page - 1) * pageSize).take(pageSize)
+
+        val total = sorted.size
+        val paged = sorted.drop((page - 1) * pageSize).take(pageSize)
         return MediaPage(paged, total, page, pageSize)
     }
 
-    fun get(id: String): MediaItem? = items.firstOrNull { it.id == id }
+    fun get(id: String): MediaItem? {
+        val blob = db.mediaQueries.getById(id).executeAsOneOrNull() ?: return null
+        return runCatching { json.decodeFromString(MediaItem.serializer(), blob) }.getOrNull()
+    }
 
-    fun allItems(): List<MediaItem> = items
-
-    suspend fun addOrUpdate(item: MediaItem) = mutex.withLock {
-        items = if (items.any { it.id == item.id }) {
-            items.map { if (it.id == item.id) item else it }
-        } else {
-            items + item
+    fun allItems(): List<MediaItem> =
+        db.mediaQueries.getAll().executeAsList().mapNotNull { blob ->
+            runCatching { json.decodeFromString(MediaItem.serializer(), blob) }.getOrNull()
         }
-        persist()
-    }
 
-    suspend fun updateOne(item: MediaItem) = mutex.withLock {
-        items = items.map { if (it.id == item.id) item else it }
-        persist()
-    }
+    suspend fun addOrUpdate(item: MediaItem) = upsertItem(item)
 
-    fun movieCount(): Int = items.count { it.kind == MediaKind.MOVIE }
+    suspend fun updateOne(item: MediaItem) = upsertItem(item)
 
-    fun tvShowCount(): Int = items.count { it.kind == MediaKind.TV_SHOW }
+    fun movieCount(): Int = db.mediaQueries.countByKind("MOVIE").executeAsOne().toInt()
 
-    fun tvEpisodeCount(): Int = items.filter { it.kind == MediaKind.TV_SHOW }.sumOf { it.episodes.size }
+    fun tvShowCount(): Int = db.mediaQueries.countByKind("TV_SHOW").executeAsOne().toInt()
 
-    fun totalIssueCount(): Int = items.sumOf { it.issueCount }
+    fun tvEpisodeCount(): Int = db.mediaQueries.sumEpisodeCount().executeAsOne().toInt()
 
-    fun nfoCoveredCount(): Int = items.count { NfoWriter.exists(it) }
+    fun totalIssueCount(): Int = db.mediaQueries.sumIssueCount().executeAsOne().toInt()
+
+    fun languageMixCount(): Int = db.mediaQueries.countLanguageMix().executeAsOne().toInt()
+
+    fun nfoCoveredCount(): Int = allItems().count { NfoWriter.exists(it) }
 
     fun nfoCoveragePercent(): Int {
-        val total = items.size
+        val total = db.mediaQueries.count().executeAsOne().toInt()
         if (total == 0) return 0
         return (nfoCoveredCount() * 100) / total
     }
 
-    fun languageMixCount(): Int = items.count { it.languageMix }
-
-    private fun persist() {
-        val tmp = "$cacheFile.tmp"
-        runCatching {
-            val content = json.encodeToString(ListSerializer(MediaItem.serializer()), items)
-            val sink = SystemFileSystem.sink(Path(tmp)).buffered()
-            sink.writeString(content)
-            sink.flush()
-            sink.close()
-            platform.posix.rename(tmp, cacheFile)
-        }.onFailure {
-            println("[ERROR] Failed to persist media cache: ${it.message}")
-        }
+    private fun upsertItem(item: MediaItem) {
+        db.mediaQueries.upsert(
+            id = item.id,
+            json = json.encodeToString(MediaItem.serializer(), item),
+            kind = item.kind.name,
+            title = item.title,
+            year = item.year?.toLong(),
+            studio = item.studio,
+            network = item.network,
+            issue_count = item.issueCount.toLong(),
+            language_mix = if (item.languageMix) 1L else 0L,
+            scanned_at = item.scannedAt,
+            tmdb_id = item.tmdbId?.toLong(),
+            poster_path = item.posterPath,
+            episode_count = item.episodes.size.toLong(),
+        )
     }
 }

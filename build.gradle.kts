@@ -6,6 +6,16 @@ import java.net.Socket
 plugins {
     alias(libs.plugins.kotlin.multiplatform)
     alias(libs.plugins.kotlin.serialization)
+    alias(libs.plugins.sqldelight)
+}
+
+
+sqldelight {
+    databases {
+        create("JellystructureDb") {
+            packageName.set("dev.jellystructure.db")
+        }
+    }
 }
 
 kotlin {
@@ -14,6 +24,9 @@ kotlin {
             executable {
                 entryPoint = "dev.jellystructure.main"
                 baseName = "jellystructure"
+                // ld.lld doesn't search multiarch lib dirs; --allow-shlib-undefined lets libsqlite3.so's
+                // glibc symbol references (pow, dlclose) resolve at runtime via the system linker.
+                linkerOpts("-L/usr/lib/x86_64-linux-gnu", "--allow-shlib-undefined")
             }
         }
     }
@@ -122,8 +135,7 @@ tasks.register("runDev") {
         val backend = ProcessBuilder(binary.absolutePath)
             .apply {
                 environment()["CONFIG_FILE"] = configDir.resolve("config.toml").absolutePath
-                environment()["SESSIONS_FILE"] = configDir.resolve("sessions.json").absolutePath
-                environment()["MEDIA_FILE"] = configDir.resolve("media.json").absolutePath
+                environment()["DB_FILE"] = configDir.resolve("jellystructure.db").absolutePath
                 environment()["FRONTEND_DIR"] = frontendDir.absolutePath
                 environment()["SERVER_PORT"] = "9505"
             }
@@ -180,7 +192,17 @@ tasks.register("buildFrontend") {
                 implementation(libs.kotlinx.serialization.json)
             }
         }
+        // Intermediate native source set — SQLDelight generates its DB types here so they are visible
+        // to linuxX64Main (and future linuxArm64Main) but NOT to wasmJsMain, avoiding the
+        // "wasmJs can't resolve sqldelight:runtime" error. Requires applyDefaultHierarchyTemplate=false.
+        val nativeMain by creating {
+            dependsOn(commonMain)
+            dependencies {
+                implementation(libs.sqldelight.native.driver)
+            }
+        }
         val linuxX64Main by getting {
+            dependsOn(nativeMain)
             dependencies {
                 implementation(libs.ktor.server.core)
                 implementation(libs.ktor.server.cio)
@@ -213,5 +235,33 @@ tasks.register("buildFrontend") {
                 implementation(libs.kotlinx.coroutines.core)
             }
         }
+    }
+}
+
+// SQLDelight 2.0.2 generates code into commonMain and adds `app.cash.sqldelight:runtime` as a
+// commonMain dependency. The wasmJs frontend has no SQLite code at all, but it inherits
+// commonMain — so it would fail to resolve sqldelight:runtime (no wasmJs artifact exists).
+// Fix: after the SQLDelight plugin has wired itself up, reroute its generated source directory
+// and its runtime dependency from commonMain to linuxX64Main.
+afterEvaluate {
+    val kotlin = extensions.getByType(org.jetbrains.kotlin.gradle.dsl.KotlinMultiplatformExtension::class.java)
+    val generatedDir = layout.buildDirectory
+        .dir("generated/sqldelight/code/JellystructureDb/commonMain")
+        .get().asFile
+
+    val commonMain = kotlin.sourceSets.getByName("commonMain")
+    val linuxX64Main = kotlin.sourceSets.getByName("linuxX64Main")
+
+    // Move generated source directory: commonMain → linuxX64Main
+    commonMain.kotlin.setSrcDirs(commonMain.kotlin.srcDirs.filter { it != generatedDir })
+    linuxX64Main.kotlin.srcDir(generatedDir)
+
+    // Move the sqldelight:runtime dependency: commonMainApi → linuxX64MainImplementation
+    // (SQLDelight adds it to commonMainApi, not commonMainImplementation)
+    val rtDeps = configurations.getByName("commonMainApi").dependencies
+        .filter { it.group == "app.cash.sqldelight" && it.name == "runtime" }
+    rtDeps.forEach { dep ->
+        configurations.getByName("commonMainApi").dependencies.remove(dep)
+        dependencies.add("linuxX64MainImplementation", dep)
     }
 }

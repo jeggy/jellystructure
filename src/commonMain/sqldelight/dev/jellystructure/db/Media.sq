@@ -1,0 +1,56 @@
+CREATE TABLE media (
+    id TEXT NOT NULL PRIMARY KEY,
+    json TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    title TEXT NOT NULL,
+    year INTEGER,
+    studio TEXT,
+    network TEXT,
+    issue_count INTEGER NOT NULL DEFAULT 0,
+    language_mix INTEGER NOT NULL DEFAULT 0,
+    scanned_at INTEGER NOT NULL,
+    tmdb_id INTEGER,
+    poster_path TEXT,
+    episode_count INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE INDEX media_kind ON media(kind);
+CREATE INDEX media_scanned_at ON media(scanned_at);
+
+upsert:
+INSERT OR REPLACE INTO media(id, json, kind, title, year, studio, network, issue_count, language_mix, scanned_at, tmdb_id, poster_path, episode_count)
+VALUES (:id, :json, :kind, :title, :year, :studio, :network, :issue_count, :language_mix, :scanned_at, :tmdb_id, :poster_path, :episode_count);
+
+getById:
+SELECT json FROM media WHERE id = :id;
+
+getAll:
+SELECT json FROM media;
+
+count:
+SELECT COUNT(*) FROM media;
+
+countByKind:
+SELECT COUNT(*) FROM media WHERE kind = :kind;
+
+sumIssueCount:
+SELECT COALESCE(SUM(issue_count), 0) FROM media;
+
+sumEpisodeCount:
+SELECT COALESCE(SUM(episode_count), 0) FROM media WHERE kind = 'TV_SHOW';
+
+countLanguageMix:
+SELECT COUNT(*) FROM media WHERE language_mix = 1;
+
+listFiltered:
+SELECT json FROM media
+WHERE (:kind IS NULL OR kind = :kind)
+  AND (:filterAttention = 0 OR (issue_count > 0 OR language_mix = 1))
+  AND (:filterMissingArtwork = 0 OR poster_path IS NULL)
+  AND (:search IS NULL OR lower(title) LIKE ('%' || lower(:search) || '%'));
+
+deleteById:
+DELETE FROM media WHERE id = :id;
+
+deleteAll:
+DELETE FROM media;

@@ -1,21 +1,8 @@
 package dev.jellystructure.media
 
-import kotlinx.io.buffered
-import kotlinx.io.files.Path
-import kotlinx.io.files.SystemFileSystem
-import kotlinx.io.readString
-import kotlinx.io.writeString
+import dev.jellystructure.db.JellystructureDb
+import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.Json
-
-@Serializable
-private data class ScanStateFile(
-    val status: String = "IDLE",
-    val jobId: String = "",
-    val startedAt: Long = 0L,
-    val updatedAt: Long = 0L,
-    val processedIds: List<String> = emptyList(),
-)
 
 @Serializable
 data class ScanStatusResponse(
@@ -26,119 +13,105 @@ data class ScanStatusResponse(
     val processedCount: Int = 0,
 )
 
-class ScanTracker(private val stateFile: String) {
-    private val json = Json { ignoreUnknownKeys = true }
-    private var state = ScanStateFile()
-    private val _processedIds: MutableSet<String> = mutableSetOf()
-    private var dirtyCount = 0
+class ScanTracker(private val db: JellystructureDb) {
+    // In-memory fast-read flags; authoritative state persisted in DB
+    private var _status: String = "IDLE"
+    private var _jobId: String = ""
+    private var _startedAt: Long = 0L
 
-    val running get() = state.status == "RUNNING"
-    val processedIdsSnapshot: Set<String> get() = _processedIds.toSet()
+    val running get() = _status == "RUNNING"
     var cancelRequested: Boolean = false
         private set
 
+    val processedIdsSnapshot: Set<String>
+        get() = db.scanStateQueries.getProcessedIds(_jobId).executeAsList().toSet()
+
     fun load() {
-        val path = Path(stateFile)
-        if (!SystemFileSystem.exists(path)) return
-        runCatching {
-            val content = SystemFileSystem.source(path).buffered().readString()
-            val loaded = json.decodeFromString<ScanStateFile>(content)
-            _processedIds.clear()
-            _processedIds.addAll(loaded.processedIds)
-            state = if (loaded.status == "RUNNING") {
-                println("[INFO] ScanTracker: previous scan was interrupted — marking as CANCELLED")
-                loaded.copy(status = "CANCELLED", updatedAt = epochSeconds())
-            } else {
-                loaded
-            }
-            if (loaded.status == "RUNNING") persist()
-        }.onFailure {
-            println("[WARN] ScanTracker: failed to load state: ${it.message}")
+        val row = db.scanStateQueries.getState().executeAsOneOrNull() ?: return
+        _jobId = row.job_id
+        _startedAt = row.started_at
+        if (row.status == "RUNNING") {
+            println("[INFO] ScanTracker: previous scan was interrupted — marking as CANCELLED")
+            _status = "CANCELLED"
+            db.scanStateQueries.upsertState(
+                status = "CANCELLED",
+                job_id = row.job_id,
+                started_at = row.started_at,
+                updated_at = epochSeconds(),
+            )
+        } else {
+            _status = row.status
         }
     }
 
     fun startNew(): String {
-        @OptIn(kotlinx.cinterop.ExperimentalForeignApi::class)
-        val jobId = "scan-${platform.posix.time(null)}"
-        _processedIds.clear()
+        val jobId = "scan-${epochSeconds()}"
+        // Clear processed IDs from all prior runs
+        db.scanStateQueries.clearOldProcessed(jobId)
         cancelRequested = false
-        dirtyCount = 0
-        state = ScanStateFile(
+        _status = "RUNNING"
+        _jobId = jobId
+        _startedAt = epochSeconds()
+        db.scanStateQueries.upsertState(
             status = "RUNNING",
-            jobId = jobId,
-            startedAt = epochSeconds(),
-            updatedAt = epochSeconds(),
+            job_id = jobId,
+            started_at = _startedAt,
+            updated_at = _startedAt,
         )
-        persist()
         return jobId
     }
 
     fun startResume(): String {
         cancelRequested = false
-        dirtyCount = 0
-        state = state.copy(status = "RUNNING", updatedAt = epochSeconds())
-        persist()
-        return state.jobId
+        _status = "RUNNING"
+        db.scanStateQueries.upsertState(
+            status = "RUNNING",
+            job_id = _jobId,
+            started_at = _startedAt,
+            updated_at = epochSeconds(),
+        )
+        return _jobId
     }
 
     fun recordProcessed(jellyfinId: String) {
-        _processedIds.add(jellyfinId)
-        dirtyCount++
-        if (dirtyCount >= 10) flush()
+        db.scanStateQueries.insertProcessed(job_id = _jobId, jellyfin_id = jellyfinId)
     }
 
-    fun flush() {
-        state = state.copy(processedIds = _processedIds.toList(), updatedAt = epochSeconds())
-        persist()
-        dirtyCount = 0
-    }
+    // No-op with DB persistence — every recordProcessed is already written immediately
+    fun flush() {}
 
     fun cancel() {
-        if (state.status == "RUNNING") {
+        if (_status == "RUNNING") {
             cancelRequested = true
-            state = state.copy(
+            _status = "CANCELLED"
+            db.scanStateQueries.upsertState(
                 status = "CANCELLED",
-                processedIds = _processedIds.toList(),
-                updatedAt = epochSeconds(),
+                job_id = _jobId,
+                started_at = _startedAt,
+                updated_at = epochSeconds(),
             )
-            persist()
         }
     }
 
     fun complete() {
-        state = ScanStateFile(
+        _status = "COMPLETE"
+        db.scanStateQueries.clearProcessed(_jobId)
+        db.scanStateQueries.upsertState(
             status = "COMPLETE",
-            jobId = state.jobId,
-            startedAt = state.startedAt,
-            updatedAt = epochSeconds(),
-            processedIds = emptyList(),
+            job_id = _jobId,
+            started_at = _startedAt,
+            updated_at = epochSeconds(),
         )
-        _processedIds.clear()
-        persist()
     }
 
     fun status() = ScanStatusResponse(
-        running = state.status == "RUNNING",
-        status = state.status,
-        jobId = state.jobId.ifBlank { null },
-        startedAt = state.startedAt.takeIf { it > 0L },
-        processedCount = _processedIds.size,
+        running = _status == "RUNNING",
+        status = _status,
+        jobId = _jobId.ifBlank { null },
+        startedAt = _startedAt.takeIf { it > 0L },
+        processedCount = db.scanStateQueries.countProcessed(_jobId).executeAsOne().toInt(),
     )
-
-    private fun persist() {
-        val tmp = "$stateFile.tmp"
-        runCatching {
-            val sink = SystemFileSystem.sink(Path(tmp)).buffered()
-            sink.writeString(json.encodeToString(ScanStateFile.serializer(), state))
-            sink.flush()
-            sink.close()
-            @OptIn(kotlinx.cinterop.ExperimentalForeignApi::class)
-            platform.posix.rename(tmp, stateFile)
-        }.onFailure {
-            println("[WARN] ScanTracker: persist failed: ${it.message}")
-        }
-    }
-
-    @OptIn(kotlinx.cinterop.ExperimentalForeignApi::class)
-    private fun epochSeconds(): Long = platform.posix.time(null)
 }
+
+@OptIn(ExperimentalForeignApi::class)
+private fun epochSeconds(): Long = platform.posix.time(null)

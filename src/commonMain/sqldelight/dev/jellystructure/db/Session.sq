@@ -1,0 +1,26 @@
+CREATE TABLE session (
+    token TEXT NOT NULL PRIMARY KEY,
+    jellyfin_user_id TEXT NOT NULL,
+    jellyfin_username TEXT NOT NULL,
+    jellyfin_user_token TEXT NOT NULL,
+    expires_at INTEGER NOT NULL
+);
+
+upsert:
+INSERT OR REPLACE INTO session(token, jellyfin_user_id, jellyfin_username, jellyfin_user_token, expires_at)
+VALUES (:token, :jellyfin_user_id, :jellyfin_username, :jellyfin_user_token, :expires_at);
+
+getByToken:
+SELECT * FROM session WHERE token = :token;
+
+deleteByToken:
+DELETE FROM session WHERE token = :token;
+
+deleteExpired:
+DELETE FROM session WHERE expires_at < :now;
+
+getAll:
+SELECT * FROM session;
+
+countAll:
+SELECT COUNT(*) FROM session;

@@ -3,6 +3,7 @@ package dev.jellystructure
 import dev.jellystructure.auth.JellyfinClient
 import dev.jellystructure.auth.SessionService
 import dev.jellystructure.config.ConfigStore
+import dev.jellystructure.db.createDatabase
 import dev.jellystructure.media.ArtworkDownloader
 import dev.jellystructure.media.MediaHistory
 import dev.jellystructure.media.MediaStore
@@ -47,9 +48,7 @@ private fun onSignal(sig: Int) {
 @OptIn(ExperimentalForeignApi::class)
 fun main() {
     val configFile = env("CONFIG_FILE", "./data/config.toml")
-    val sessionsFile = env("SESSIONS_FILE", "./data/sessions.json")
-    val mediaFile = env("MEDIA_FILE", "./data/media.json")
-    val scanStateFile = env("SCAN_STATE_FILE", configFile.substringBeforeLast('/') + "/scan-state.json")
+    val dbFile = env("DB_FILE", "./data/jellystructure.db")
     val frontendDir = env("FRONTEND_DIR", "/app/frontend")
     val port = env("SERVER_PORT", "9505").toIntOrNull() ?: 9505
     val tmdbBaseUrl = env("TMDB_BASE_URL", "https://api.themoviedb.org/3")
@@ -57,14 +56,15 @@ fun main() {
     val configStore = ConfigStore(configFile)
     configStore.load()
 
-    val sessionService = SessionService(sessionsFile)
+    val db = createDatabase(dbFile)
+    val sessionService = SessionService(db)
     val jellyfinClient = JellyfinClient()
     val tmdbClient = TmdbClient(configStore, tmdbBaseUrl)
-    val mediaStore = MediaStore(mediaFile)
+    val mediaStore = MediaStore(db)
     mediaStore.load()
     val scanner = Scanner(configStore, tmdbClient, jellyfinClient)
     val artworkDownloader = ArtworkDownloader()
-    val scanTracker = ScanTracker(scanStateFile)
+    val scanTracker = ScanTracker(db)
     scanTracker.load()
     val folderWatcher = FolderWatcher(configStore) {
         if (!scanTracker.running) {
@@ -93,7 +93,7 @@ fun main() {
     println("[INFO] Starting jellystructure on port $port")
     println("[INFO] Serving frontend from $frontendDir")
 
-    val mediaHistory = MediaHistory()
+    val mediaHistory = MediaHistory(db)
     val shutdown = startServer(
         configStore, sessionService, jellyfinClient, mediaStore, scanner,
         artworkDownloader, scanTracker, folderWatcher, mediaHistory, frontendDir, port,

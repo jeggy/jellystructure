@@ -35,7 +35,7 @@ These choices are fixed. Do not introduce alternatives without updating this doc
 - HTTP server: **Ktor with CIO engine** — the only async engine available outside the JVM; no Netty, no Tomcat
 - File I/O: **kotlinx-io** (`org.jetbrains.kotlinx:kotlinx-io-core`) — `java.io` and `java.nio` do not exist in Kotlin Native; kotlinx-io is the JetBrains-maintained KMP I/O library
 - Config: **ktoml + kotlinx.serialization** — TOML format, `@Serializable` data classes, no runtime reflection
-- Local DB: **SQLDelight with native SQLite driver** — sessions, scan cache, audit log, triage issues
+- Local DB: **SQLDelight with native SQLite driver** — `media`, `session`, `media_history`, `scan_state`, `scan_processed` tables in `jellystructure.db` (env `DB_FILE`). Config stays TOML.
 - Subprocess: **Kotlin Native process API** — wraps `ffmpeg`, `ffprobe`, `mkvpropedit`
 - Real-time: **Ktor WebSockets** — push status updates from backend to frontend; no HTTP polling
 

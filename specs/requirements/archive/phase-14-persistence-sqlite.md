@@ -1,6 +1,6 @@
 # Phase 14 — Persistence Layer: SQLite / SQLDelight (FR-P1)
 
-**Status:** Planned · **Foundational — pick up first.** Several later phases depend on it.
+**Status:** Done (2026-06-18). Migration requirement dropped — new installs start fresh (no import from legacy JSON files).
 
 ## Problem
 The constitution mandates "**SQLDelight with native SQLite driver** — sessions, scan cache, audit
