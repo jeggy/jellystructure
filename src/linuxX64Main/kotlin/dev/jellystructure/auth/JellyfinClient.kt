@@ -1,5 +1,6 @@
 package dev.jellystructure.auth
 
+import dev.jellystructure.log.Logger
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.engine.curl.Curl
@@ -67,7 +68,7 @@ class JellyfinClient {
             header("Authorization", """$AUTH_HEADER, Token="$token"""")
         }.body<JellyfinItemsResponse>().items
             .filter { it.type == "Movie" || it.type == "Series" }
-    }.onFailure { println("[WARN] Jellyfin getItems failed: ${it.message}") }
+    }.onFailure { Logger.warnSync("Jellyfin getItems failed: ${it.message}") }
      .getOrDefault(emptyList())
 
     suspend fun refreshItem(baseUrl: String, token: String, jellyfinId: String, full: Boolean = false): Boolean = runCatching {
@@ -78,7 +79,7 @@ class JellyfinClient {
         val response = http.post(url) {
             header("Authorization", """$AUTH_HEADER "$token"""")
         }
-        println("[INFO] Jellyfin item refresh $jellyfinId (${if (full) "full/recursive" else "validation"}): ${response.status.value}")
+        Logger.info("Jellyfin item refresh $jellyfinId (${if (full) "full/recursive" else "validation"}): ${response.status.value}")
         response.status.value in 200..299
     }.getOrDefault(false)
 

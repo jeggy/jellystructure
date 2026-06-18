@@ -1,5 +1,6 @@
 package dev.jellystructure.media
 
+import dev.jellystructure.log.Logger
 import dev.jellystructure.model.Track
 import dev.jellystructure.model.TrackKind
 import kotlinx.cinterop.ByteVar
@@ -43,11 +44,11 @@ private data class FfprobeTags(
 private val json = Json { ignoreUnknownKeys = true }
 
 object FfprobeRunner {
-    fun probe(filePath: String): List<Track> {
+    suspend fun probe(filePath: String): List<Track> {
         val escaped = filePath.replace("'", "'\\''")
         val command = "ffprobe -v quiet -print_format json -show_streams '$escaped' 2>/dev/null"
         val output = runCommand(command) ?: run {
-            println("[WARN] ffprobe returned no output for: $filePath")
+            Logger.warn("ffprobe returned no output for: $filePath")
             return emptyList()
         }
         return runCatching {
@@ -83,7 +84,7 @@ object FfprobeRunner {
                 )
             }
         }.getOrElse { e ->
-            println("[WARN] Failed to parse ffprobe output for $filePath: ${e.message}")
+            Logger.warnSync("Failed to parse ffprobe output for $filePath: ${e.message}")
             emptyList()
         }
     }

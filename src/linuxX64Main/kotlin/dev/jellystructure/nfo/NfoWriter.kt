@@ -1,5 +1,6 @@
 package dev.jellystructure.nfo
 
+import dev.jellystructure.log.Logger
 import dev.jellystructure.model.Episode
 import dev.jellystructure.model.MediaItem
 import dev.jellystructure.model.MediaKind
@@ -25,12 +26,12 @@ object NfoWriter {
                 MediaKind.TV_SHOW -> "tvshow.nfo"
             }
             val nfoPath = "$dir/$filename"
-            println("[DEBUG] NfoWriter.write: id='${item.id}' kind=${item.kind} item.path='${item.path}' nfoPath='$nfoPath'")
+            Logger.infoSync("NfoWriter.write: id='${item.id}' kind=${item.kind} item.path='${item.path}' nfoPath='$nfoPath'")
             val dirExists = SystemFileSystem.exists(Path(dir))
-            println("[DEBUG] NfoWriter.write: dir exists=$dirExists")
+            Logger.infoSync("NfoWriter.write: dir exists=$dirExists")
             val xml = buildXml(item)
             writeAtomically(nfoPath, xml)
-            println("[INFO] Wrote NFO: $nfoPath")
+            Logger.infoSync("Wrote NFO: $nfoPath")
             nfoPath
         }
     }
@@ -68,7 +69,7 @@ object NfoWriter {
         val baseName = episode.filename.substringBeforeLast('.')
         val nfoPath = "$dir/$baseName.nfo"
         writeAtomically(nfoPath, buildEpisodeXml(episode))
-        println("[INFO] Wrote episode NFO: $nfoPath")
+        Logger.infoSync("Wrote episode NFO: $nfoPath")
         nfoPath
     }
 
@@ -206,7 +207,7 @@ private fun writeAtomically(destPath: String, content: String) {
     // Rename failed — clean up .tmp and fall back to direct write
     val renameErrno = platform.posix.errno
     runCatching { SystemFileSystem.delete(Path(tmp)) }
-    println("[WARN] writeAtomically: rename failed (errno=$renameErrno), falling back to direct write for '$destPath'")
+    Logger.warnSync("writeAtomically: rename failed (errno=$renameErrno), falling back to direct write for '$destPath'")
 
     // Direct overwrite
     val sink2 = SystemFileSystem.sink(Path(destPath)).buffered()

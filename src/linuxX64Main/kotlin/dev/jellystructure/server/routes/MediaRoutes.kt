@@ -5,6 +5,8 @@ import dev.jellystructure.auth.JellyfinItem
 import dev.jellystructure.config.ConfigStore
 import dev.jellystructure.jobs.JobEvent
 import dev.jellystructure.jobs.WsBroadcaster
+import dev.jellystructure.log.Logger
+import dev.jellystructure.log.WorkerId
 import dev.jellystructure.media.ArtworkDownloader
 import dev.jellystructure.media.FfmpegRunner
 import dev.jellystructure.media.FfprobeRunner
@@ -116,14 +118,14 @@ fun Route.mediaRoutes(
                                 for (ep in item.episodes) {
                                     NfoWriter.writeEpisode(ep)
                                         .onSuccess { epWritten++ }
-                                        .onFailure { println("[WARN] Episode NFO write failed for ${ep.filename}: ${it.message}") }
+                                        .onFailure { Logger.warn("Episode NFO write failed for ${ep.filename}: ${it.message}") }
                                 }
-                                if (epWritten > 0) println("[INFO] Wrote $epWritten episode NFO(s) for '$id'")
+                                if (epWritten > 0) Logger.info("Wrote $epWritten episode NFO(s) for '$id'")
                             }
                             call.respond(mapOf("path" to path))
                         }
                         .onFailure { e ->
-                            println("[ERROR] NFO write failed for $id: ${e.message}")
+                            Logger.error("NFO write failed for $id: ${e.message}")
                             call.respond(HttpStatusCode.InternalServerError, mapOf("error" to (e.message ?: "write failed")))
                         }
                 }
@@ -173,7 +175,7 @@ fun Route.mediaRoutes(
                                 if (result.stillExists) stillsFetched++
                             }
                         }
-                        if (stillsFetched > 0) println("[INFO] Fetched $stillsFetched episode still(s) for '$id'")
+                        if (stillsFetched > 0) Logger.info("Fetched $stillsFetched episode still(s) for '$id'")
                     }
                     if (status.posterExists || status.fanartExists) {
                         mediaHistory.record(id, "artwork_fetch", "poster=${status.posterExists} fanart=${status.fanartExists}")
@@ -231,7 +233,7 @@ fun Route.mediaRoutes(
                     sink.close()
                     @OptIn(kotlinx.cinterop.ExperimentalForeignApi::class)
                     platform.posix.rename(tmpPath, destPath)
-                    println("[INFO] Artwork uploaded: $destPath (${bytes.size} bytes)")
+                    Logger.info("Artwork uploaded: $destPath (${bytes.size} bytes)")
 
                     val cfg = configStore.current
                     if (!item.jellyfinId.isNullOrBlank() && cfg.apiKeys.jellyfinUrl.isNotBlank()) {
@@ -326,7 +328,7 @@ fun Route.mediaRoutes(
                 sink.close()
                 @OptIn(kotlinx.cinterop.ExperimentalForeignApi::class)
                 platform.posix.rename(tmpPath, destPath)
-                println("[INFO] Episode still uploaded: $destPath (${bytes.size} bytes)")
+                Logger.info("Episode still uploaded: $destPath (${bytes.size} bytes)")
 
                 val cfg = configStore.current
                 if (!item.jellyfinId.isNullOrBlank() && cfg.apiKeys.jellyfinUrl.isNotBlank()) {
@@ -600,13 +602,13 @@ fun Route.mediaRoutes(
 
                 val updated = scanner.rescanMetadata(item)
                 if (updated == null) {
-                    println("[WARN] Re-pull TMDB failed for $id (no TMDB match or API error)")
+                    Logger.warn("Re-pull TMDB failed for $id (no TMDB match or API error)")
                     call.respond(HttpStatusCode.InternalServerError, mapOf("error" to "TMDB fetch failed — no match found"))
                     return@post
                 }
 
                 store.updateOne(updated)
-                println("[INFO] Re-pulled TMDB for '$id': title='${updated.title}' tmdbId=${updated.tmdbId} episodes=${updated.episodes.size}")
+                Logger.info("Re-pulled TMDB for '$id': title='${updated.title}' tmdbId=${updated.tmdbId} episodes=${updated.episodes.size}")
                 pushToJellyfin(updated, artwork, configStore, jellyfinClient, appScope)
                 call.respond(updated)
             }
@@ -632,7 +634,7 @@ fun Route.mediaRoutes(
         val skipIds = scanTracker.processedIdsSnapshot
         val jobId = scanTracker.startResume()
         appScope.launch { runScan(jobId, skipIds, store, scanner, scanTracker, broadcaster, configStore, jellyfinClient, scanDispatcher) }
-        println("[INFO] Scan resumed jobId=$jobId, skipping ${skipIds.size} already-processed items")
+        Logger.info("Scan resumed jobId=$jobId, skipping ${skipIds.size} already-processed items")
         call.respond(HttpStatusCode.Accepted, mapOf("status" to "resumed"))
     }
 
@@ -712,20 +714,20 @@ fun Route.mediaRoutes(
                         if (item.kind == MediaKind.TV_SHOW) {
                             for (ep in item.episodes) {
                                 NfoWriter.writeEpisode(ep)
-                                    .onFailure { println("[WARN] batch-push: episode NFO failed for ${ep.filename}: ${it.message}") }
+                                    .onFailure { Logger.warn("batch-push: episode NFO failed for ${ep.filename}: ${it.message}") }
                             }
                         }
                     }
-                    .onFailure { nfoFail++; println("[WARN] batch-push: NFO write failed for '${item.id}': ${it.message}") }
+                    .onFailure { nfoFail++; Logger.warn("batch-push: NFO write failed for '${item.id}': ${it.message}") }
                 if (!item.jellyfinId.isNullOrBlank()) {
                     val ok = jellyfinClient.refreshItem(freshCfg.apiKeys.jellyfinUrl, freshCfg.apiKeys.jellyfinToken, item.jellyfinId, full = true)
-                    if (ok) refreshOk++ else { refreshFail++; println("[WARN] batch-push: Jellyfin refresh failed for '${item.id}'") }
+                    if (ok) refreshOk++ else { refreshFail++; Logger.warn("batch-push: Jellyfin refresh failed for '${item.id}'") }
                 }
             }
             // Trigger a library scan after all NFOs are written so Jellyfin reliably picks up
             // tvshow.nfo changes — per-item FullRefresh alone is not sufficient for TV series NFOs.
             jellyfinClient.triggerLibraryRefresh(freshCfg.apiKeys.jellyfinUrl, freshCfg.apiKeys.jellyfinToken)
-            println("[INFO] batch-push complete: nfoOk=$nfoOk nfoFail=$nfoFail refreshOk=$refreshOk refreshFail=$refreshFail (+ library scan triggered)")
+            Logger.info("batch-push complete: nfoOk=$nfoOk nfoFail=$nfoFail refreshOk=$refreshOk refreshFail=$refreshFail (+ library scan triggered)")
         }
     }
 }
@@ -740,18 +742,18 @@ private suspend fun pushToJellyfin(
 ) {
     NfoWriter.write(item)
         .onSuccess { path ->
-            println("[INFO] pushToJellyfin: wrote NFO $path")
+            Logger.info("pushToJellyfin: wrote NFO $path")
             if (item.kind == MediaKind.TV_SHOW) {
                 var epWritten = 0
                 for (ep in item.episodes) {
                     NfoWriter.writeEpisode(ep)
                         .onSuccess { epWritten++ }
-                        .onFailure { println("[WARN] pushToJellyfin: episode NFO failed for ${ep.filename}: ${it.message}") }
+                        .onFailure { Logger.warn("pushToJellyfin: episode NFO failed for ${ep.filename}: ${it.message}") }
                 }
-                if (epWritten > 0) println("[INFO] pushToJellyfin: wrote $epWritten episode NFOs for '${item.id}'")
+                if (epWritten > 0) Logger.info("pushToJellyfin: wrote $epWritten episode NFOs for '${item.id}'")
             }
         }
-        .onFailure { println("[WARN] pushToJellyfin: NFO write failed for '${item.id}': ${it.message}") }
+        .onFailure { Logger.warn("pushToJellyfin: NFO write failed for '${item.id}': ${it.message}") }
 
     appScope.launch { artwork.fetch(item) }
 
@@ -760,16 +762,16 @@ private suspend fun pushToJellyfin(
 
     if (!item.jellyfinId.isNullOrBlank()) {
         val ok = jellyfinClient.refreshItem(cfg.apiKeys.jellyfinUrl, cfg.apiKeys.jellyfinToken, item.jellyfinId, full = true)
-        if (!ok) println("[WARN] pushToJellyfin: Jellyfin refresh failed for '${item.id}' (jellyfinId=${item.jellyfinId})")
+        if (!ok) Logger.warn("pushToJellyfin: Jellyfin refresh failed for '${item.id}' (jellyfinId=${item.jellyfinId})")
     } else {
-        println("[WARN] pushToJellyfin: no jellyfinId for '${item.id}' — skipping per-item Jellyfin refresh")
+        Logger.warn("pushToJellyfin: no jellyfinId for '${item.id}' — skipping per-item Jellyfin refresh")
     }
 
     // For TV shows, also trigger a library scan so Jellyfin reliably re-reads tvshow.nfo from disk.
     // Per-item FullRefresh alone does not consistently pick up tvshow.nfo changes in Jellyfin.
     if (item.kind == MediaKind.TV_SHOW) {
         jellyfinClient.triggerLibraryRefresh(cfg.apiKeys.jellyfinUrl, cfg.apiKeys.jellyfinToken)
-        println("[INFO] pushToJellyfin: triggered library scan to pick up tvshow.nfo for '${item.id}'")
+        Logger.info("pushToJellyfin: triggered library scan to pick up tvshow.nfo for '${item.id}'")
     }
 }
 
@@ -789,7 +791,7 @@ private suspend fun runScan(
     val succeeded = AtomicInt(0)
     val nextWorkerId = AtomicInt(0)
 
-    println("[INFO] Library scan started jobId=$jobId (skip=${skipIds.size})")
+    Logger.info("Library scan started jobId=$jobId (skip=${skipIds.size})")
     broadcaster.broadcast(JobEvent.Started(jobId, -1))
 
     val jellyfinItems = scanner.fetchItems()
@@ -798,7 +800,7 @@ private suspend fun runScan(
         broadcaster.broadcast(JobEvent.Finished(jobId, 0, 0))
         return
     }
-    println("[INFO] Jellyfin returned ${jellyfinItems.size} items (${skipIds.size} will be skipped for resume)")
+    Logger.info("Jellyfin returned ${jellyfinItems.size} items (${skipIds.size} will be skipped for resume)")
 
     // coroutineScope suspends here until the producer, all workers, and the supervisor have ALL finished.
     // Post-scan cleanup runs only after this block returns.
@@ -813,7 +815,7 @@ private suspend fun runScan(
                 for (jItem in jellyfinItems) {
                     if (scanTracker.cancelRequested) break
                     if (jItem.id in skipIds) {
-                        println("[INFO] Resume: skipping '${jItem.name}'")
+                        Logger.info("Resume: skipping '${jItem.name}'")
                         continue
                     }
                     channel.send(jItem)
@@ -824,14 +826,14 @@ private suspend fun runScan(
             // Worker factory
             fun launchWorker() {
                 val wid = nextWorkerId.incrementAndGet()
-                launch(scanDispatcher) {
-                    println("[INFO] Worker #$wid starting")
+                launch(scanDispatcher + WorkerId(wid)) {
+                    Logger.info("Worker starting")
                     scanTracker.activeWorkers.incrementAndGet()
                     try {
                         for (jItem in channel) {
                             if (scanTracker.cancelRequested) break
                             val item = try { scanner.scanItem(jItem) } catch (e: Exception) {
-                                println("[ERROR] Worker #$wid: scanItem failed for '${jItem.name}': ${e.message}")
+                                Logger.error("scanItem failed for '${jItem.name}': ${e.message}")
                                 null
                             }
                             if (item != null) {
@@ -843,13 +845,13 @@ private suspend fun runScan(
                             }
                             // Scale-down drain: exit if we are excess
                             if (scanTracker.activeWorkers.value > scanTracker.targetWorkers.value) {
-                                println("[INFO] Worker #$wid draining (scale-down)")
+                                Logger.info("Worker draining (scale-down)")
                                 break
                             }
                         }
                     } finally {
                         scanTracker.activeWorkers.decrementAndGet()
-                        println("[INFO] Worker #$wid stopped")
+                        Logger.info("Worker stopped")
                     }
                 }
             }
@@ -863,7 +865,7 @@ private suspend fun runScan(
                     delay(500)
                     val newTarget = configStore.current.behavior.scanWorkers.coerceIn(1, 32)
                     if (newTarget != scanTracker.targetWorkers.value) {
-                        println("[INFO] Scan workers: ${scanTracker.targetWorkers.value} → $newTarget")
+                        Logger.info("Scan workers: ${scanTracker.targetWorkers.value} → $newTarget")
                         scanTracker.targetWorkers.value = newTarget
                     }
                     val active = scanTracker.activeWorkers.value
@@ -877,7 +879,7 @@ private suspend fun runScan(
     } catch (e: CancellationException) {
         throw e
     } catch (e: Exception) {
-        println("[ERROR] Scan failed: ${e.message}")
+        Logger.error("Scan failed: ${e.message}")
         scanTracker.cancel()
         broadcaster.broadcast(JobEvent.Finished(jobId, succeeded.value, 1))
         return
@@ -886,7 +888,7 @@ private suspend fun runScan(
     // Post-scan cleanup — runs only after all workers have finished
     store.update(allItems)
     val cancelled = scanTracker.cancelRequested
-    println("[INFO] Library scan ${if (cancelled) "cancelled" else "complete"} — ${succeeded.value} items")
+    Logger.info("Library scan ${if (cancelled) "cancelled" else "complete"} — ${succeeded.value} items")
     if (!cancelled) {
         scanTracker.complete()
         broadcaster.broadcast(JobEvent.Finished(jobId, succeeded.value, 0))

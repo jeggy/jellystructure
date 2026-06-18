@@ -1,6 +1,7 @@
 package dev.jellystructure.media
 
 import dev.jellystructure.db.JellystructureDb
+import dev.jellystructure.log.Logger
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -42,7 +43,7 @@ class ScanTracker(private val db: JellystructureDb) {
         _jobId = row.job_id
         _startedAt = row.started_at
         if (row.status == "RUNNING") {
-            println("[INFO] ScanTracker: previous scan was interrupted — marking as CANCELLED")
+            Logger.infoSync("ScanTracker: previous scan was interrupted — marking as CANCELLED")
             _status = "CANCELLED"
             db.scanStateQueries.upsertState(
                 status = "CANCELLED",

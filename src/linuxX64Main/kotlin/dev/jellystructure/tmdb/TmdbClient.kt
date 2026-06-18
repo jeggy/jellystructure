@@ -1,6 +1,7 @@
 package dev.jellystructure.tmdb
 
 import dev.jellystructure.config.ConfigStore
+import dev.jellystructure.log.Logger
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.engine.curl.Curl
@@ -124,7 +125,7 @@ class TmdbClient(
                 return searchMovie(title, year)
             }
             response.body<TmdbSearchResponse>().results.firstOrNull()
-        }.onFailure { println("[WARN] TMDB search failed for '$title': ${it.message}") }
+        }.onFailure { Logger.warnSync("TMDB search failed for '$title': ${it.message}") }
          .getOrNull()
     }
 
@@ -145,7 +146,7 @@ class TmdbClient(
             val details = response.body<TmdbMovieDetails>()
             if (language == null) detailsCache[cacheKey] = details
             details
-        }.onFailure { println("[WARN] TMDB details failed for id=$tmdbId lang=$language: ${it.message}") }
+        }.onFailure { Logger.warnSync("TMDB details failed for id=$tmdbId lang=$language: ${it.message}") }
          .getOrNull()
     }
 
@@ -172,7 +173,7 @@ class TmdbClient(
                 return searchTv(title, year)
             }
             response.body<TmdbTvSearchResponse>().results.firstOrNull()
-        }.onFailure { println("[WARN] TMDB TV search failed for '$title': ${it.message}") }
+        }.onFailure { Logger.warnSync("TMDB TV search failed for '$title': ${it.message}") }
          .getOrNull()
     }
 
@@ -189,7 +190,7 @@ class TmdbClient(
                 return getTvDetails(tmdbId, language)
             }
             response.body<TmdbTvDetails>()
-        }.onFailure { println("[WARN] TMDB TV details failed for id=$tmdbId lang=$language: ${it.message}") }
+        }.onFailure { Logger.warnSync("TMDB TV details failed for id=$tmdbId lang=$language: ${it.message}") }
          .getOrNull()
     }
 
@@ -217,7 +218,7 @@ class TmdbClient(
                 .filter { it.languageCode.isNotBlank() && it.data.overview.isNotBlank() }
                 .map { it.languageCode }
                 .distinct()
-        }.onFailure { println("[WARN] TMDB translations failed tmdbId=$tmdbId: ${it.message}") }
+        }.onFailure { Logger.warnSync("TMDB translations failed tmdbId=$tmdbId: ${it.message}") }
          .getOrElse { emptyList() }
     }
 
@@ -235,7 +236,7 @@ class TmdbClient(
             }
             if (response.status.value == 404) return null
             response.body<TmdbEpisodeDetails>()
-        }.onFailure { println("[WARN] TMDB episode details failed for series=$seriesId s${season}e${episode} lang=$language: ${it.message}") }
+        }.onFailure { Logger.warnSync("TMDB episode details failed for series=$seriesId s${season}e${episode} lang=$language: ${it.message}") }
          .getOrNull()
     }
 }

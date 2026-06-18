@@ -1,5 +1,6 @@
 package dev.jellystructure.media
 
+import dev.jellystructure.log.Logger
 import dev.jellystructure.model.TrackKind
 import kotlinx.cinterop.ByteVar
 import kotlinx.cinterop.ExperimentalForeignApi
@@ -141,14 +142,14 @@ object FfmpegRunner {
 
     @OptIn(ExperimentalForeignApi::class)
     private fun runCommand(cmd: String): Boolean {
-        println("[INFO] ffmpeg: $cmd")
+        Logger.infoSync("ffmpeg: $cmd")
         return memScoped {
             val pipe = popen(cmd, "r") ?: return false
             val sb = StringBuilder()
             val buf = allocArray<ByteVar>(4096)
             while (fgets(buf, 4096, pipe) != null) sb.append(buf.toKString())
             val rc = pclose(pipe)
-            if (rc != 0) println("[WARN] ffmpeg exit $rc: $sb")
+            if (rc != 0) Logger.warnSync("ffmpeg exit $rc: $sb")
             rc == 0
         }
     }

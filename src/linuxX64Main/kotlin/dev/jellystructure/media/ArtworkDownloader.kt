@@ -1,5 +1,6 @@
 package dev.jellystructure.media
 
+import dev.jellystructure.log.Logger
 import dev.jellystructure.model.Episode
 import dev.jellystructure.model.MediaItem
 import dev.jellystructure.model.MediaKind
@@ -76,8 +77,8 @@ class ArtworkDownloader {
         val p = Path(path)
         if (SystemFileSystem.exists(p)) {
             runCatching { SystemFileSystem.delete(p) }
-                .onSuccess { println("[INFO] Removed misplaced artwork: $path") }
-                .onFailure { println("[WARN] Could not remove misplaced artwork $path: ${it.message}") }
+                .onSuccess { Logger.infoSync("Removed misplaced artwork: $path") }
+                .onFailure { Logger.warnSync("Could not remove misplaced artwork $path: ${it.message}") }
         }
     }
 
@@ -90,9 +91,9 @@ class ArtworkDownloader {
         sink.flush()
         sink.close()
         platform.posix.rename(tmp, destPath)
-        println("[INFO] Downloaded artwork: $destPath")
+        Logger.info("Downloaded artwork: $destPath")
         true
-    }.onFailure { println("[WARN] Failed to download $url: ${it.message}") }
+    }.onFailure { Logger.warnSync("Failed to download $url: ${it.message}") }
      .getOrDefault(false)
 
     fun checkEpisodeStill(episode: Episode): EpisodeStillStatus {

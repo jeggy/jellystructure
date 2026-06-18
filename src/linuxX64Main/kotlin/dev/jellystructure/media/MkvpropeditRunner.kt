@@ -1,5 +1,6 @@
 package dev.jellystructure.media
 
+import dev.jellystructure.log.Logger
 import kotlinx.cinterop.ByteVar
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.allocArray
@@ -31,14 +32,14 @@ object MkvpropeditRunner {
 
     @OptIn(ExperimentalForeignApi::class)
     private fun runCommand(cmd: String): Boolean {
-        println("[INFO] mkvpropedit: $cmd")
+        Logger.infoSync("mkvpropedit: $cmd")
         return memScoped {
             val pipe = popen("$cmd 2>&1", "r") ?: return false
             val sb = StringBuilder()
             val buf = allocArray<ByteVar>(4096)
             while (fgets(buf, 4096, pipe) != null) sb.append(buf.toKString())
             val rc = pclose(pipe)
-            if (rc != 0) println("[WARN] mkvpropedit exit $rc: $sb")
+            if (rc != 0) Logger.warnSync("mkvpropedit exit $rc: $sb")
             rc == 0
         }
     }

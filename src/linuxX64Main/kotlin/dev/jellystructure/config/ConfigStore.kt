@@ -1,6 +1,7 @@
 package dev.jellystructure.config
 
 import com.akuleshov7.ktoml.Toml
+import dev.jellystructure.log.Logger
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.io.buffered
@@ -19,14 +20,14 @@ class ConfigStore(private val filePath: String) {
         val path = Path(filePath)
         if (!SystemFileSystem.exists(path)) {
             persist()
-            println("[INFO] Created default config at $filePath")
+            Logger.infoSync("Created default config at $filePath")
             return
         }
         runCatching {
             val content = SystemFileSystem.source(path).buffered().readString()
             _config = Toml.decodeFromString(AppConfig.serializer(), content)
         }.onFailure {
-            println("[WARN] Failed to parse config, using defaults: ${it.message}")
+            Logger.warnSync("Failed to parse config, using defaults: ${it.message}")
         }
     }
 
@@ -46,7 +47,7 @@ class ConfigStore(private val filePath: String) {
             // Atomic rename — POSIX guarantees this is atomic on the same filesystem
             platform.posix.rename(tmp, filePath)
         }.onFailure {
-            println("[ERROR] Failed to persist config: ${it.message}")
+            Logger.errorSync("Failed to persist config: ${it.message}")
         }
     }
 }

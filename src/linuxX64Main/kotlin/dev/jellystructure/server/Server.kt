@@ -2,6 +2,7 @@ package dev.jellystructure.server
 
 import dev.jellystructure.auth.JellyfinClient
 import dev.jellystructure.auth.SessionService
+import dev.jellystructure.log.Logger
 import dev.jellystructure.auth.installAuthPlugin
 import dev.jellystructure.config.ConfigStore
 import dev.jellystructure.jobs.WsBroadcaster
@@ -120,7 +121,7 @@ fun startServer(
         runBlocking { broadcaster.closeAll() }
         engine.stop(1_000L, 5_000L)
         appScope.cancel()
-        println("[INFO] Server stopped")
+        Logger.infoSync("Server stopped")
     }
 }
 
