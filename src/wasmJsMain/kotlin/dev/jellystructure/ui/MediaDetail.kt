@@ -331,6 +331,19 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
 
         <div id="detail-msg" style="display:none;margin-bottom:14px"></div>
         <div id="nfo-perm-banner" style="display:none;margin-bottom:14px"></div>
+        <div id="jf-lock-banner" style="display:${if (item.jellyfinLockData || item.jellyfinLockedFields.isNotEmpty()) "block" else "none"};margin-bottom:14px">
+          <div style="background:var(--bad-soft);border:1px solid var(--bad);border-radius:6px;padding:10px 14px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+            <span style="font-size:.9rem;color:var(--bad);font-weight:600;">⚠ Jellyfin field lock detected</span>
+            <span style="font-size:.85rem;flex:1;">${
+              buildString {
+                if (item.jellyfinLockData) append("This item's metadata is locked (lockData=true). ")
+                if (item.jellyfinLockedFields.isNotEmpty()) append("Locked fields: ${item.jellyfinLockedFields.joinToString(", ")}.")
+              }.esc()
+            }</span>
+            <button id="jf-lock-recheck-btn" class="btn sm ghost" style="font-size:.8rem;">Re-check ↻</button>
+            <span id="jf-lock-recheck-result" style="font-size:.8rem;color:var(--muted)"></span>
+          </div>
+        </div>
 
         <div class="seg" id="detail-tabs" style="margin-bottom:16px;">$tabBarHtml</div>
 
@@ -388,10 +401,6 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
                 $genresHtml
                 $directorHtml
                 $tagsChipsHtml
-                <!-- <div class="row center" style="margin-top:12px;padding:10px 12px;background:var(--fill-2);border-radius:6px;gap:10px;">
-                  <span class="toggle on" style="pointer-events:none;flex-shrink:0;"></span>
-                  <span style="font-size:.82rem;">lockdata=true — written to NFO so Jellyfin never overwrites these values</span>
-                </div> -->
                 <div class="field" style="margin-top:12px;">
                   <label>File path</label>
                   <div class="input mono" style="font-size:.82rem;word-break:break-all;">${item.path.esc()}</div>
@@ -469,6 +478,23 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
 
     document.getElementById("back-btn")?.addEventListener("click") {
         App.navigate("/library")
+    }
+
+    document.getElementById("jf-lock-recheck-btn")?.addEventListener("click") {
+        val resultEl = document.getElementById("jf-lock-recheck-result") as? HTMLElement ?: return@addEventListener
+        resultEl.textContent = "Checking…"
+        scope.launch {
+            val locks = MediaApi.jellyfinLocks(item.id)
+            val banner = document.getElementById("jf-lock-banner") as? HTMLElement
+            if (locks == null) {
+                resultEl.textContent = "Re-check failed."
+            } else if (!locks.lockData && locks.lockedFields.isEmpty()) {
+                resultEl.textContent = "No locks found."
+                banner?.style?.display = "none"
+            } else {
+                resultEl.textContent = "Still locked."
+            }
+        }
     }
 
     document.getElementById("track-order-btn")?.addEventListener("click") {

@@ -63,7 +63,7 @@ class JellyfinClient {
 
     suspend fun getItems(baseUrl: String, token: String): List<JellyfinItem> = runCatching {
         val url = baseUrl.trimEnd('/') +
-            "/Items?IncludeItemTypes=Movie,Series&Recursive=true&Fields=Path,ProviderIds,ProductionYear"
+            "/Items?IncludeItemTypes=Movie,Series&Recursive=true&Fields=Path,ProviderIds,ProductionYear,LockData,LockedFields"
         http.get(url) {
             header("Authorization", """$AUTH_HEADER, Token="$token"""")
         }.body<JellyfinItemsResponse>().items
@@ -71,6 +71,17 @@ class JellyfinClient {
     }.let { result ->
         if (result.isFailure) Logger.warn("Jellyfin getItems failed: ${result.exceptionOrNull()?.message}")
         result.getOrDefault(emptyList())
+    }
+
+    suspend fun getItem(baseUrl: String, token: String, jellyfinId: String): JellyfinItem? = runCatching {
+        val url = baseUrl.trimEnd('/') +
+            "/Items/$jellyfinId?Fields=LockData,LockedFields"
+        http.get(url) {
+            header("Authorization", """$AUTH_HEADER, Token="$token"""")
+        }.body<JellyfinItem>()
+    }.let { result ->
+        if (result.isFailure) Logger.warn("Jellyfin getItem failed: ${result.exceptionOrNull()?.message}")
+        result.getOrNull()
     }
 
     suspend fun refreshItem(baseUrl: String, token: String, jellyfinId: String, full: Boolean = false): Boolean = runCatching {

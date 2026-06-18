@@ -142,6 +142,8 @@ class Scanner(
             issueCount = issueCount,
             languageMix = false,
             scannedAt = epochSeconds(),
+            jellyfinLockData = jItem.lockData,
+            jellyfinLockedFields = jItem.lockedFields,
         )
     }
 
@@ -259,6 +261,8 @@ class Scanner(
                 issueCount = totalIssueCount,
                 languageMix = true,
                 scannedAt = epochSeconds(),
+                jellyfinLockData = jItem.lockData,
+                jellyfinLockedFields = jItem.lockedFields,
             )
         }
 
@@ -294,6 +298,8 @@ class Scanner(
             issueCount = totalIssueCount,
             languageMix = false,
             scannedAt = epochSeconds(),
+            jellyfinLockData = jItem.lockData,
+            jellyfinLockedFields = jItem.lockedFields,
         )
     }
 

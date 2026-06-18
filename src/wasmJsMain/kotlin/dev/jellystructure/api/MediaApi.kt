@@ -146,6 +146,13 @@ object MediaApi {
         httpClient.get("/api/media/$id").body<MediaItem>()
     }.getOrNull()
 
+    @Serializable
+    data class JellyfinLocksResponse(val lockData: Boolean, val lockedFields: List<String>)
+
+    suspend fun jellyfinLocks(id: String): JellyfinLocksResponse? = runCatching {
+        httpClient.get("/api/media/$id/jellyfin-locks").body<JellyfinLocksResponse>()
+    }.getOrNull()
+
     // Returns true if the scan was successfully started, false if already running or failed.
     suspend fun startScan(): Boolean = runCatching {
         val response = httpClient.post("/api/scan")

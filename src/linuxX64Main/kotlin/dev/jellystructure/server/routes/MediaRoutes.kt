@@ -50,6 +50,8 @@ import kotlinx.io.files.SystemFileSystem
 import kotlinx.io.readByteArray
 import kotlinx.serialization.Serializable
 
+@Serializable
+private data class JellyfinLocksResponse(val lockData: Boolean, val lockedFields: List<String>)
 
 fun Route.mediaRoutes(
     store: MediaStore,
@@ -579,6 +581,28 @@ fun Route.mediaRoutes(
             store.updateOne(updated)
             mediaHistory.record(id, "metadata_edit", "title=${updated.title}")
             call.respond(updated)
+        }
+
+        // GET /api/media/{id}/jellyfin-locks — live lock/field status from Jellyfin
+        get("/{id}/jellyfin-locks") {
+            val id = call.parameters["id"] ?: return@get call.respond(HttpStatusCode.BadRequest)
+            val item = store.resolve(id) ?: return@get call.respond(HttpStatusCode.NotFound)
+            val jid = item.jellyfinId
+            if (jid.isNullOrBlank()) {
+                call.respond(JellyfinLocksResponse(lockData = false, lockedFields = emptyList()))
+                return@get
+            }
+            val cfg = configStore.current
+            if (cfg.apiKeys.jellyfinUrl.isBlank() || cfg.apiKeys.jellyfinToken.isBlank()) {
+                call.respond(JellyfinLocksResponse(lockData = false, lockedFields = emptyList()))
+                return@get
+            }
+            val jItem = jellyfinClient.getItem(cfg.apiKeys.jellyfinUrl, cfg.apiKeys.jellyfinToken, jid)
+            val lockData = jItem?.lockData ?: false
+            val lockedFields = jItem?.lockedFields ?: emptyList()
+            val updated = item.copy(jellyfinLockData = lockData, jellyfinLockedFields = lockedFields)
+            store.updateOne(updated)
+            call.respond(JellyfinLocksResponse(lockData = lockData, lockedFields = lockedFields))
         }
 
         // GET /api/media/{id}/tmdb-languages — language codes TMDB has translations for

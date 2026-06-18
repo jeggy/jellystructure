@@ -92,7 +92,6 @@ object NfoWriter {
     private fun buildEpisodeXml(episode: Episode): String = buildString {
         appendLine("""<?xml version="1.0" encoding="utf-8" standalone="yes"?>""")
         appendLine("<episodedetails>")
-        // appendLine("  <lockdata>true</lockdata>")
         if (!episode.title.isNullOrBlank()) {
             appendLine("  <title>${episode.title.esc()}</title>")
         }
@@ -110,7 +109,6 @@ object NfoWriter {
     private fun buildMovieXml(item: MediaItem): String = buildString {
         appendLine("""<?xml version="1.0" encoding="utf-8" standalone="yes"?>""")
         appendLine("<movie>")
-        // appendLine("  <lockdata>true</lockdata>")
         appendLine("  <title>${item.title.esc()}</title>")
         if (!item.originalTitle.isNullOrBlank()) {
             appendLine("  <originaltitle>${item.originalTitle.esc()}</originaltitle>")
@@ -144,7 +142,6 @@ object NfoWriter {
     private fun buildTvShowXml(item: MediaItem): String = buildString {
         appendLine("""<?xml version="1.0" encoding="utf-8" standalone="yes"?>""")
         appendLine("<tvshow>")
-        // appendLine("  <lockdata>true</lockdata>")
         appendLine("  <title>${item.title.esc()}</title>")
         if (!item.originalTitle.isNullOrBlank()) {
             appendLine("  <originaltitle>${item.originalTitle.esc()}</originaltitle>")

@@ -72,7 +72,7 @@ Before `jellyfin_url` is configured, a one-time setup screen (`/setup`) is serve
   - Movies: `<movie>` → `movie.nfo` beside the movie file
   - Series: `<tvshow>` → `tvshow.nfo` in the series directory
   - Episodes: `<episodedetails>` → `{S01E03}.nfo` (or matching filename) beside each episode file
-- `<lockdata>true</lockdata>` instructs Jellyfin to never overwrite these files (currently commented out in writes — see STATUS)
+- NFOs are written **unlocked** — Jellystructure never writes `<lockdata>`. Jellyfin must be able to re-read them freely.
 - Written via kotlinx-io streaming (no full XML tree in RAM)
 - Atomic write: write to `.tmp` file then `rename()` to avoid partial reads by Jellyfin
 
