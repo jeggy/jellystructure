@@ -826,9 +826,11 @@ private suspend fun runScan(
             // Worker factory
             fun launchWorker() {
                 val wid = nextWorkerId.incrementAndGet()
+                // Increment before launch so the supervisor sees the new worker immediately,
+                // not after its coroutine has been scheduled and started.
+                scanTracker.activeWorkers.incrementAndGet()
                 launch(scanDispatcher + WorkerId(wid)) {
                     Logger.info("Worker starting")
-                    scanTracker.activeWorkers.incrementAndGet()
                     try {
                         for (jItem in channel) {
                             if (scanTracker.cancelRequested) break
