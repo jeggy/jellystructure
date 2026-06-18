@@ -101,6 +101,8 @@ data class TmdbTranslation(
 @Serializable
 data class TmdbTranslationData(
     val overview: String = "",
+    val title: String = "",
+    val name: String = "",
 )
 
 @Serializable
@@ -241,6 +243,31 @@ class TmdbClient(
         }
         if (result.isFailure) Logger.warn("TMDB translations failed tmdbId=$tmdbId: ${result.exceptionOrNull()?.message}")
         return result.getOrElse { emptyList() }
+    }
+
+    /** Returns a map of language code → localized title for all available languages. */
+    suspend fun getTranslatedTitles(tmdbId: Int, isMovie: Boolean): Map<String, String> {
+        val key = apiKey()
+        if (key.isBlank()) return emptyMap()
+        val path = if (isMovie) "movie/$tmdbId/translations" else "tv/$tmdbId/translations"
+        val result = runCatching {
+            val response = http.get("$baseUrl/$path") {
+                parameter("api_key", key)
+            }
+            if (response.status == HttpStatusCode.TooManyRequests) {
+                delay(3000)
+                return getTranslatedTitles(tmdbId, isMovie)
+            }
+            response.body<TmdbTranslationsResponse>().translations
+                .filter { it.languageCode.isNotBlank() }
+                .mapNotNull { t ->
+                    val localTitle = if (isMovie) t.data.title else t.data.name
+                    if (localTitle.isNotBlank()) t.languageCode to localTitle else null
+                }
+                .toMap()
+        }
+        if (result.isFailure) Logger.warn("TMDB translated titles failed tmdbId=$tmdbId: ${result.exceptionOrNull()?.message}")
+        return result.getOrElse { emptyMap() }
     }
 
     suspend fun getEpisodeDetails(seriesId: Int, season: Int, episode: Int, language: String? = null): TmdbEpisodeDetails? {

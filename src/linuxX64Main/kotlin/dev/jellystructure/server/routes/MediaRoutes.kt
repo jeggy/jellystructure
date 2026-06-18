@@ -583,8 +583,14 @@ fun Route.mediaRoutes(
                 val network: String? = null,
             )
             val req = call.receive<MetadataEditReq>()
+            val newTitle = req.title?.takeIf { it.isNotBlank() } ?: item.title
+            // If the user changed the title, record it in titlesByLang under the resolved language
+            // so the manual title remains searchable. Never remove other languages' entries.
+            val updatedTitlesByLang = if (req.title != null && req.title.isNotBlank() && item.resolvedLanguage != null) {
+                item.titlesByLang + mapOf(item.resolvedLanguage to newTitle)
+            } else item.titlesByLang
             val updated = item.copy(
-                title = req.title?.takeIf { it.isNotBlank() } ?: item.title,
+                title = newTitle,
                 overview = if (req.overview != null) req.overview else item.overview,
                 year = req.year ?: item.year,
                 originalTitle = if (req.originalTitle != null) req.originalTitle.ifBlank { null } else item.originalTitle,
@@ -592,6 +598,7 @@ fun Route.mediaRoutes(
                 director = if (req.director != null) req.director.ifBlank { null } else item.director,
                 studio = if (req.studio != null) req.studio.ifBlank { null } else item.studio,
                 network = if (req.network != null) req.network.ifBlank { null } else item.network,
+                titlesByLang = updatedTitlesByLang,
             )
             store.updateOne(updated)
             mediaHistory.record(id, "metadata_edit", "title=${updated.title}")

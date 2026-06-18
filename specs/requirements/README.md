@@ -45,7 +45,7 @@ See [`../tasks.md`](../tasks.md) for the active TODO breakdown.
 | 26 | ✓ Done | qBittorrent seeding guard — block mkvpropedit when file is actively seeded (FR-QB1) | [archive](archive/phase-26-qbittorrent-seeding-guard.md) |
 | 27 | ✓ Done | Merge Triage into Media Detail + floating Triage dock (FR-MT1) | [archive](archive/phase-27-merge-triage-into-media-detail.md) |
 | 28 | ✓ Done | URL-based tab & view-state navigation (FR-UN1) | [archive](archive/phase-28-url-based-tab-navigation.md) |
-| 29 | Planned | Multi-language library search — remember every title ever pulled (FR-ML1) | [spec](phase-29-multi-language-library-search.md) |
+| 29 | ✓ Done | Multi-language library search — remember every title ever pulled (FR-ML1) | [archive](archive/phase-29-multi-language-library-search.md) |
 
 ## Adding a new phase
 1. Create `phase-NN-short-name.md` in this directory using an existing planned spec as a template.

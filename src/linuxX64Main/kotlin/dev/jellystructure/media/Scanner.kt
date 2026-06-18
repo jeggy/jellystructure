@@ -148,6 +148,8 @@ class Scanner(
         }
 
         val primaryCompany = details?.productionCompanies?.firstOrNull()
+        val tmdbFinalId = details?.id ?: tmdbId
+        val titlesByLang = buildTitlesByLang(tmdbFinalId, isMovie = true, details?.title, details?.originalLanguage, details?.originalTitle)
         return MediaItem(
             id = slugify(title, year),
             title = details?.title ?: title,
@@ -156,7 +158,7 @@ class Scanner(
             kind = MediaKind.MOVIE,
             path = localPath,
             jellyfinId = jItem.id,
-            tmdbId = details?.id,
+            tmdbId = tmdbFinalId,
             originalLanguage = details?.originalLanguage?.takeIf { it.isNotBlank() },
             resolvedLanguage = resolvedLang,
             posterPath = details?.posterPath,
@@ -172,6 +174,7 @@ class Scanner(
             scannedAt = epochSeconds(),
             jellyfinLockData = jItem.lockData,
             jellyfinLockedFields = jItem.lockedFields,
+            titlesByLang = titlesByLang,
         )
     }
 
@@ -266,6 +269,7 @@ class Scanner(
             )
             val mixDetails = seriesTmdbId?.let { tmdb.getTvDetailsLocalized(it, mixPriority) }
             val mixNetwork = mixDetails?.networks?.firstOrNull()
+            val mixTitlesByLang = buildTitlesByLang(seriesTmdbId, isMovie = false, mixDetails?.name, mixDetails?.originalLanguage, mixDetails?.originalName)
             return MediaItem(
                 id = slugify(title, year),
                 title = mixDetails?.name ?: title,
@@ -291,6 +295,7 @@ class Scanner(
                 scannedAt = epochSeconds(),
                 jellyfinLockData = jItem.lockData,
                 jellyfinLockedFields = jItem.lockedFields,
+                titlesByLang = mixTitlesByLang,
             )
         }
 
@@ -303,6 +308,8 @@ class Scanner(
                 ?: langPriority.lastOrNull()
         }
 
+        val tvTmdbFinalId = details?.id ?: seriesTmdbId
+        val tvTitlesByLang = buildTitlesByLang(tvTmdbFinalId, isMovie = false, details?.name, details?.originalLanguage, details?.originalName)
         return MediaItem(
             id = slugify(title, year),
             title = details?.name ?: title,
@@ -311,7 +318,7 @@ class Scanner(
             kind = MediaKind.TV_SHOW,
             path = localPath,
             jellyfinId = jItem.id,
-            tmdbId = details?.id ?: seriesTmdbId,
+            tmdbId = tvTmdbFinalId,
             originalLanguage = details?.originalLanguage?.takeIf { it.isNotBlank() },
             resolvedLanguage = resolvedLang,
             posterPath = details?.posterPath,
@@ -328,6 +335,7 @@ class Scanner(
             scannedAt = epochSeconds(),
             jellyfinLockData = jItem.lockData,
             jellyfinLockedFields = jItem.lockedFields,
+            titlesByLang = tvTitlesByLang,
         )
     }
 
@@ -655,6 +663,29 @@ class Scanner(
 
     suspend fun translationLanguages(tmdbId: Int, isMovie: Boolean): List<String> =
         tmdb.getTranslationLanguages(tmdbId, isMovie)
+
+    /**
+     * Fetches all localized titles from TMDB and folds in the resolved-language title and
+     * originalLanguage→originalTitle. Returns an empty map if tmdbId is null.
+     */
+    private suspend fun buildTitlesByLang(
+        tmdbId: Int?,
+        isMovie: Boolean,
+        resolvedTitle: String?,
+        resolvedLang: String?,
+        originalTitle: String?,
+    ): Map<String, String> {
+        if (tmdbId == null) return emptyMap()
+        val base = tmdb.getTranslatedTitles(tmdbId, isMovie).toMutableMap()
+        if (!resolvedTitle.isNullOrBlank() && !resolvedLang.isNullOrBlank()) {
+            base[LanguageResolver.normalize(resolvedLang)] = resolvedTitle
+        }
+        if (!originalTitle.isNullOrBlank() && !resolvedLang.isNullOrBlank()) {
+            val normLang = LanguageResolver.normalize(resolvedLang)
+            if (!base.containsKey(normLang)) base[normLang] = originalTitle
+        }
+        return base
+    }
 
     @OptIn(ExperimentalForeignApi::class)
     private fun epochSeconds(): Long = platform.posix.time(null)
