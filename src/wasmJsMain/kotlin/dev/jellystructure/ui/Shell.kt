@@ -32,7 +32,7 @@ private var dockScanned = 0
 private var dockTotal = 0
 
 // Triage dock state
-private var triageDockItems: List<String> = emptyList() // mediaIds in attention order
+private var triageDockItems: List<dev.jellystructure.api.TriageItem> = emptyList()
 private var triageDockIndex: Int = 0
 
 private val ICONS = mapOf(
@@ -127,8 +127,7 @@ fun renderShell(user: UserProfile) {
         updateSidebarStatus(count?.total ?: 0)
         // Load triage dock items
         if ((count?.total ?: 0) > 0) {
-            val items = MediaApi.getTriageItems()
-            triageDockItems = items.map { it.mediaId }
+            triageDockItems = MediaApi.getTriageItems()
             triageDockIndex = 0
             updateTriageDock()
         }
@@ -236,7 +235,7 @@ private fun injectTriageDock(body: HTMLElement) {
         if (triageDockItems.isEmpty()) return@addEventListener
         triageDockIndex = (triageDockIndex - 1 + triageDockItems.size) % triageDockItems.size
         updateTriageDock()
-        App.navigate("/media/${triageDockItems[triageDockIndex]}")
+        navigateToTriageItem(triageDockItems[triageDockIndex])
     }
 
     el.querySelector("#triage-dock-next")?.addEventListener("click") { e ->
@@ -244,8 +243,13 @@ private fun injectTriageDock(body: HTMLElement) {
         if (triageDockItems.isEmpty()) return@addEventListener
         triageDockIndex = (triageDockIndex + 1) % triageDockItems.size
         updateTriageDock()
-        App.navigate("/media/${triageDockItems[triageDockIndex]}")
+        navigateToTriageItem(triageDockItems[triageDockIndex])
     }
+}
+
+private fun navigateToTriageItem(item: dev.jellystructure.api.TriageItem) {
+    val tab = if (item.kind == "tv") "episodes" else "overview"
+    dev.jellystructure.Router.navigate("/media/${item.mediaId}", mapOf("tab" to tab))
 }
 
 internal fun updateTriageDock() {
@@ -270,8 +274,7 @@ internal fun refreshTriageDockCount() {
             triageDockIndex = 0
             updateTriageDock()
         } else {
-            val items = MediaApi.getTriageItems()
-            triageDockItems = items.map { it.mediaId }
+            triageDockItems = MediaApi.getTriageItems()
             if (triageDockIndex >= triageDockItems.size) triageDockIndex = 0
             updateTriageDock()
         }
@@ -382,8 +385,8 @@ fun updateActiveNav(currentRoute: String) {
     }
     // Sync triage dock index when navigating to a media item
     if (currentRoute.startsWith("/media/")) {
-        val mediaId = currentRoute.removePrefix("/media/")
-        val idx = triageDockItems.indexOf(mediaId)
+        val mediaId = currentRoute.removePrefix("/media/").substringBefore('?')
+        val idx = triageDockItems.indexOfFirst { it.mediaId == mediaId }
         if (idx >= 0) triageDockIndex = idx
         updateTriageDock()
     }

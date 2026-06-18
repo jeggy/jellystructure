@@ -48,7 +48,7 @@ private data class ActivityEntryDto(
 @Serializable
 private data class ActivityLogPageDto(val entries: List<ActivityEntryDto>, val total: Int)
 
-fun renderActivity(container: Element, scope: CoroutineScope) {
+fun renderActivity(container: Element, scope: CoroutineScope, query: Map<String, String> = emptyMap()) {
     activityScope = scope
     activitySocket?.close()
     activitySocket = null

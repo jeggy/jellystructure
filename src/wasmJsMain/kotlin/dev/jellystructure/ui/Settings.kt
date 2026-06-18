@@ -22,7 +22,7 @@ import org.w3c.dom.HTMLInputElement
 import dev.jellystructure.observeSections
 import dev.jellystructure.scrollIntoViewSmooth
 
-fun renderSettings(container: Element, scope: CoroutineScope) {
+fun renderSettings(container: Element, scope: CoroutineScope, query: Map<String, String> = emptyMap()) {
     container.innerHTML = """
         <div class="pagebar">
           <h1>Settings</h1>
@@ -153,6 +153,13 @@ fun renderSettings(container: Element, scope: CoroutineScope) {
     }
 
     wireSettingsNav(container)
+
+    // Scroll to section from ?sect= query param
+    val sectParam = query["sect"]
+    if (sectParam != null) {
+        val target = document.getElementById(sectParam) ?: document.getElementById("sect-$sectParam")
+        target?.let { scrollIntoViewSmooth(it) }
+    }
 }
 
 private var overwriteNfo = false

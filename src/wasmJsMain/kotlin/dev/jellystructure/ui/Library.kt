@@ -91,7 +91,7 @@ private fun updateLibraryUrl() {
 
 // -- Entry point ----------------------------------------------------------
 
-fun renderLibrary(container: Element, scope: CoroutineScope) {
+fun renderLibrary(container: Element, scope: CoroutineScope, query: Map<String, String> = emptyMap()) {
     libScanSocket?.close()
     libScanSocket = null
     libScannedCount = 0
