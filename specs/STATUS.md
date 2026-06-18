@@ -7,16 +7,14 @@ _Last updated: 2026-06-18_
 
 ## Snapshot
 
-- **Phases 0–14: ✓ Done.** Core system complete: Jellyfin-driven discovery, ffprobe track data,
+- **Phases 0–15: ✓ Done.** Core system complete: Jellyfin-driven discovery, ffprobe track data,
   TMDB matching, NFO writing, artwork, per-file/per-episode language resolution, track editing,
   triage, live WebSocket scans, persistent/resumable scan state, theme picker, dirty-indicator diff
   popups, external links, language pickers, simplified series language UI, targeted single-item
-  sync, and **SQLite persistence via SQLDelight** (Phase 14 — all stores on SQLite; no JSON files).
-- **Phases 15–25: Planned.** See [`requirements/`](requirements/).
-- **Next up: Phase 15** — Fix library path matching for movies (FR-B1): movies fail to match a
-  library during scans (`[WARN] No matching library for '/media/movies/...'`) because the
-  `jellyfinPath` vs `localPath` prefix check fails when the two containers mount media at different
-  paths.
+  sync, SQLite persistence via SQLDelight (Phase 14), and **library path-match diagnostics**
+  (Phase 15 — augmented WARN log + `GET /api/config/path-check` + Settings UI path-check panel).
+- **Phases 16–25: Planned.** See [`requirements/`](requirements/).
+- **Next up: Phase 16** — Multi-worker scanner, dynamic scaling (FR-W1).
 
 ### Key cross-cutting findings (2026-06-18) — see [`requirements/_investigation-findings.md`](requirements/_investigation-findings.md)
 - **SQLite/SQLDelight now live.** All four stores (MediaStore, SessionService, ScanTracker,
@@ -30,15 +28,20 @@ _Last updated: 2026-06-18_
 
 ## Recent work (git)
 
+- **Phase 15 complete:** Library path-match diagnostics. Augmented `[WARN]` log now includes all
+  configured prefixes. New `GET /api/config/path-check` endpoint returns per-library
+  `{ name, jellyfinPath, localPath, matchPrefix, localExists }`. Settings page shows path-check
+  panel after "Test connections" (Jellyfin success) and after "Save"; library cards show live
+  "Match prefix:" row and a `<details>` help block.
 - **Phase 14 complete:** SQLite persistence via SQLDelight 2.0.2 + NativeSqliteDriver. Four
   stores reimplemented (MediaStore, SessionService, ScanTracker, MediaHistory). One-time JSON
   migration dropped — fresh installs only.
-- Commented out `<lockdata>` writes in NFO files. Decision made: lockdata is dropped for good.
-- Adjusted config file paths and improved Jellyfin API error logging.
 
 ## Known issues / open threads
 
-- **Library path matching** — the Phase 15 root cause; blocks movie scans on mismatched mounts.
+- **Library path matching** — Phase 15 adds diagnostics and UI; the actual path translation in
+  Scanner.kt already worked once `jellyfinPath` is set correctly. Operators use the path-check
+  panel to verify their mount configuration.
 - **`<lockdata>` removal** — Phase 22 drops it entirely (code cleanup) and adds Jellyfin lock
   *detection*. The constitution §"NFO Files" still mandates lockdata and must be corrected.
 - **Port free-check logic** — unresolved `TODO` in `Main.kt` (`checkPortFree` "doesn't work"); the

@@ -5,6 +5,7 @@ import dev.jellystructure.api.ApiKeys
 import dev.jellystructure.api.LanguageRules
 import dev.jellystructure.api.Behavior
 import dev.jellystructure.api.LibraryMapping
+import dev.jellystructure.api.LibraryPathDiag
 import dev.jellystructure.api.JellyfinLibrary
 import dev.jellystructure.api.ConfigApi
 import kotlinx.browser.document
@@ -55,6 +56,7 @@ fun renderSettings(container: Element, scope: CoroutineScope) {
                 <input id="tmdb-key" class="input" type="password" style="width:100%">
               </div>
               <div id="conn-result" style="display:none;margin-top:8px"></div>
+              <div id="path-check-result" style="display:none;margin-top:8px"></div>
             </div>
 
             <div class="card" id="sect-libraries">
@@ -62,7 +64,11 @@ fun renderSettings(container: Element, scope: CoroutineScope) {
                 <h3 style="font-size:1rem;margin:0">Library mapping</h3>
                 <button id="fetch-libraries" class="btn sm ghost">Fetch libraries</button>
               </div>
-              <p class="hint" style="margin:0 0 12px">Assign a local path for each Jellyfin library, or mark it as skip.</p>
+              <p class="hint" style="margin:0 0 8px">Assign a local path for each Jellyfin library, or mark it as skip.</p>
+              <details style="margin-bottom:12px;font-size:.82rem;color:var(--ink-soft)">
+                <summary style="cursor:pointer;user-select:none;color:var(--ink-soft)">Path mapping help</summary>
+                <p style="margin:6px 0 0;line-height:1.5">Jellyfin path is the path as Jellyfin sees the library root inside its container. Local path is the same location from Jellystructure's perspective. If both containers share an identical volume mount, these are the same value. If they differ, set both correctly — Jellyfin path is used to match scanned items, local path is used to access files.</p>
+              </details>
               <div id="library-mapping-list">
                 <span class="muted tiny">Run "Test connections" or click "Fetch libraries" to load.</span>
               </div>
@@ -185,6 +191,7 @@ private fun attachListeners(scope: CoroutineScope) {
             val config = readForm()
             val ok = ConfigApi.save(config)
             showSettingsMsg(if (ok) "Saved." else "Save failed.", ok)
+            if (ok) renderPathCheckResult(ConfigApi.pathCheck())
         }
     }
 
@@ -216,7 +223,10 @@ private fun attachListeners(scope: CoroutineScope) {
                 tmdbBadge.style.display = "inline"
                 tmdbBadge.innerHTML = if (result?.tmdb == true) """<span class="badge ok" style="font-size:.72rem">valid ✓</span>""" else """<span class="badge bad" style="font-size:.72rem">invalid ✗</span>"""
             }
-            if (result?.jellyfin == true) fetchAndRenderLibraries()
+            if (result?.jellyfin == true) {
+                fetchAndRenderLibraries()
+                renderPathCheckResult(ConfigApi.pathCheck())
+            }
         }
     }
 }
@@ -278,12 +288,16 @@ private fun renderLibraryList() {
             <input id="lib-path-$i" class="input" type="text" placeholder="/mnt/host/movies/"
               value="${lib.localPath}" style="flex:1;${if (skipped) "pointer-events:none" else ""}">
           </div>
-          <div style="display:flex;gap:6px;align-items:center">
+          <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px">
             <span style="font-size:.75rem;color:var(--ink-soft);width:80px;flex-shrink:0">Fallback lang</span>
             <input id="lib-fallback-$i" class="input" type="text" placeholder="(global default)"
               value="${lib.fallbackLanguage ?: ""}" maxlength="10"
               style="width:110px;${if (skipped) "pointer-events:none" else ""}">
             <span style="font-size:.72rem;color:var(--ink-soft)">overrides global fallback for this library</span>
+          </div>
+          <div style="display:flex;gap:6px;align-items:center;margin-top:2px">
+            <span style="font-size:.75rem;color:var(--ink-soft);width:80px;flex-shrink:0">Match prefix</span>
+            <code id="match-prefix-$i" style="font-size:.72rem;color:var(--ink-soft)">${lib.jellyfinPath.ifBlank { lib.localPath }}</code>
           </div>
         </div>
         """.trimIndent()
@@ -301,11 +315,15 @@ private fun renderLibraryList() {
         document.getElementById("lib-jellyfin-path-$i")?.addEventListener("input") {
             val value = (document.getElementById("lib-jellyfin-path-$i") as? HTMLInputElement)?.value?.trim() ?: ""
             libraryMappings[i] = libraryMappings[i].copy(jellyfinPath = value)
+            document.getElementById("match-prefix-$i")?.textContent = value.ifBlank { libraryMappings[i].localPath }
             refreshTomlPreview(readForm())
         }
         document.getElementById("lib-path-$i")?.addEventListener("input") {
             val value = (document.getElementById("lib-path-$i") as? HTMLInputElement)?.value?.trim() ?: ""
             libraryMappings[i] = libraryMappings[i].copy(localPath = value)
+            if (libraryMappings[i].jellyfinPath.isBlank()) {
+                document.getElementById("match-prefix-$i")?.textContent = value
+            }
             refreshTomlPreview(readForm())
         }
         document.getElementById("lib-fallback-$i")?.addEventListener("input") {
@@ -384,3 +402,31 @@ private fun setInputValue(id: String, value: String) {
 
 private fun getInputValue(id: String): String =
     (document.getElementById(id) as? HTMLInputElement)?.value?.trim() ?: ""
+
+private fun renderPathCheckResult(diags: List<LibraryPathDiag>?) {
+    val el = document.getElementById("path-check-result") as? HTMLElement ?: return
+    if (diags == null) { el.style.display = "none"; return }
+    el.style.display = "block"
+    el.innerHTML = buildString {
+        append("""<div style="font-size:.82rem;font-weight:600;margin-bottom:6px">Library path check</div>""")
+        if (diags.isEmpty()) {
+            append("""<span class="hint">No libraries configured.</span>""")
+            return@buildString
+        }
+        for (d in diags) {
+            append("""<div style="display:flex;align-items:flex-start;gap:8px;margin-bottom:6px;flex-wrap:wrap">""")
+            append("""<span style="font-size:.82rem;min-width:80px;flex-shrink:0">${d.name}</span>""")
+            append("""<code style="font-size:.72rem;color:var(--ink-soft);word-break:break-all">${d.matchPrefix.ifEmpty { "(none)" }}</code>""")
+            if (d.localExists) {
+                append("""<span class="badge ok" style="font-size:.72rem">Local path found ✓</span>""")
+            } else {
+                append("""<span class="badge bad" style="font-size:.72rem">Local path not found ✗</span>""")
+                append("""<span class="hint" style="align-self:center">Check that localPath is mounted correctly in the Jellystructure container</span>""")
+            }
+            if (d.jellyfinPath.isBlank()) {
+                append("""<span class="badge warn" style="font-size:.72rem">jellyfinPath not set — using localPath as match prefix</span>""")
+            }
+            append("</div>")
+        }
+    }
+}
