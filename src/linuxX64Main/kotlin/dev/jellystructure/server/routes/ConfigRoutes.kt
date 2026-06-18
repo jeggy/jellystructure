@@ -37,7 +37,7 @@ fun Route.configureConfigRoutes(configStore: ConfigStore, effectiveScanThreads: 
         call.respond(HttpStatusCode.NoContent)
     }
     get("/config/path-check") {
-        val diags = configStore.current.libraries.map { lib ->
+        val diags = configStore.current.libraries.filter { !it.skip }.map { lib ->
             val prefix = lib.jellyfinPath.ifBlank { lib.localPath }
             LibraryPathDiag(
                 name = lib.name,
