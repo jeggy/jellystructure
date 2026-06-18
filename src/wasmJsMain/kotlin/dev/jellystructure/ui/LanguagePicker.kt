@@ -160,12 +160,81 @@ private val LANGUAGES: List<LangEntry> = listOf(
     LangEntry("zu", "Zulu"),
 )
 
-/** Returns "Language name (code)" for known codes, or just the raw code. */
+// ISO 639-2 three-letter codes → display name (common codes seen in media files)
+private val LANGUAGES_3 = mapOf(
+    "afr" to "Afrikaans",
+    "alb" to "Albanian", "sqi" to "Albanian",
+    "amh" to "Amharic",
+    "ara" to "Arabic",
+    "arm" to "Armenian", "hye" to "Armenian",
+    "bos" to "Bosnian",
+    "bul" to "Bulgarian",
+    "cat" to "Catalan",
+    "chi" to "Chinese", "zho" to "Chinese",
+    "hrv" to "Croatian",
+    "ces" to "Czech", "cze" to "Czech",
+    "dan" to "Danish",
+    "dut" to "Dutch", "nld" to "Dutch",
+    "eng" to "English",
+    "est" to "Estonian",
+    "fao" to "Faroese",
+    "fin" to "Finnish",
+    "fre" to "French", "fra" to "French",
+    "geo" to "Georgian", "kat" to "Georgian",
+    "ger" to "German", "deu" to "German",
+    "gre" to "Greek", "ell" to "Greek",
+    "heb" to "Hebrew",
+    "hin" to "Hindi",
+    "hun" to "Hungarian",
+    "ice" to "Icelandic", "isl" to "Icelandic",
+    "ind" to "Indonesian",
+    "gle" to "Irish",
+    "ita" to "Italian",
+    "jpn" to "Japanese",
+    "kor" to "Korean",
+    "lat" to "Latin",
+    "lav" to "Latvian",
+    "lit" to "Lithuanian",
+    "mac" to "Macedonian", "mkd" to "Macedonian",
+    "may" to "Malay", "msa" to "Malay",
+    "mlt" to "Maltese",
+    "nob" to "Norwegian Bokmål",
+    "nno" to "Norwegian Nynorsk",
+    "nor" to "Norwegian",
+    "per" to "Persian", "fas" to "Persian",
+    "pol" to "Polish",
+    "por" to "Portuguese",
+    "rum" to "Romanian", "ron" to "Romanian",
+    "rus" to "Russian",
+    "srp" to "Serbian",
+    "slk" to "Slovak", "slo" to "Slovak",
+    "slv" to "Slovenian",
+    "spa" to "Spanish",
+    "swe" to "Swedish",
+    "tam" to "Tamil",
+    "tel" to "Telugu",
+    "tha" to "Thai",
+    "tur" to "Turkish",
+    "ukr" to "Ukrainian",
+    "und" to "Undetermined",
+    "vie" to "Vietnamese",
+    "wel" to "Welsh", "cym" to "Welsh",
+    "ben" to "Bengali",
+    "mar" to "Marathi",
+    "swa" to "Swahili",
+    "uzb" to "Uzbek",
+    "kaz" to "Kazakh",
+)
+
+/** Returns "Language name (code)" for known codes (2- or 3-letter), or just the raw code. */
 internal fun langDisplay(code: String): String {
     val c = code.trim().lowercase()
     if (c.isBlank()) return ""
-    val entry = LANGUAGES.find { it.code == c }
-    return if (entry != null) "${entry.name} (${entry.code})" else code
+    val twoLetter = LANGUAGES.find { it.code == c }
+    if (twoLetter != null) return "${twoLetter.name} ($c)"
+    val name3 = LANGUAGES_3[c]
+    if (name3 != null) return "$name3 ($c)"
+    return code
 }
 
 // Top-level single-expression helpers for Kotlin/WASM js() constraints
