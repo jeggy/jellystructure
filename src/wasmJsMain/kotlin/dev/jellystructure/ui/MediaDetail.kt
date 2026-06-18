@@ -360,7 +360,16 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
                 <h4 style="margin:0 0 8px;">Identity</h4>
                 <div class="field" style="margin:0 0 6px;">
                   <label>TMDB id</label>
-                  <div class="input">${item.tmdbId ?: "—"}</div>
+                  <div style="display:flex;gap:6px;align-items:center;">
+                    <input id="tmdb-id-input" type="number" class="input" min="1"
+                           value="${item.tmdbId ?: ""}" placeholder="—"
+                           style="width:120px;flex:none;">
+                    <button id="tmdb-id-save-btn" class="btn sm ghost">Save</button>
+                    <span id="tmdb-id-msg" class="tiny muted"></span>
+                  </div>
+                  <div style="margin-top:4px;">
+                    <a href="https://www.themoviedb.org/search?query=${encodeURIComponent("${item.title} ${item.year ?: ""}")}" target="_blank" rel="noopener" class="tiny muted">Search TMDB ↗</a>
+                  </div>
                 </div>
                 <div class="field" style="margin:0 0 6px;">
                   <label>Original language</label>
@@ -478,6 +487,31 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
 
     document.getElementById("back-btn")?.addEventListener("click") {
         App.navigate("/library")
+    }
+
+    document.getElementById("tmdb-id-save-btn")?.addEventListener("click") {
+        val input = document.getElementById("tmdb-id-input") as? HTMLInputElement ?: return@addEventListener
+        val msgEl = document.getElementById("tmdb-id-msg") as? HTMLElement
+        val raw = input.value.trim()
+        if (raw.isNotEmpty() && raw.toIntOrNull()?.let { it > 0 } != true) {
+            msgEl?.textContent = "Must be a positive integer."
+            return@addEventListener
+        }
+        val newId = raw.toIntOrNull()
+        msgEl?.textContent = "Saving…"
+        scope.launch {
+            val updated = MediaApi.setTmdbId(item.id, newId)
+            if (updated == null) {
+                msgEl?.textContent = "Save failed."
+            } else {
+                val config = ConfigApi.get()
+                val fallback = config?.config?.languageRules?.fallbackLanguage ?: "en"
+                val jellyfinUrl2 = config?.config?.apiKeys?.jellyfinUrl?.trimEnd('/') ?: ""
+                val tmdbLangs2 = if (updated.tmdbId != null) MediaApi.getTmdbLanguages(updated.id) else null
+                val jsTags2 = dev.jellystructure.api.MetadataApi.getAllJsTags() ?: emptyList()
+                renderDetailView(container, updated, scope, fallback, jellyfinUrl2, tmdbLangs2, jsTags = jsTags2)
+            }
+        }
     }
 
     document.getElementById("jf-lock-recheck-btn")?.addEventListener("click") {

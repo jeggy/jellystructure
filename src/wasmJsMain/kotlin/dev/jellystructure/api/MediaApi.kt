@@ -153,6 +153,13 @@ object MediaApi {
         httpClient.get("/api/media/$id/jellyfin-locks").body<JellyfinLocksResponse>()
     }.getOrNull()
 
+    suspend fun setTmdbId(id: String, tmdbId: Int?): MediaItem? = runCatching {
+        httpClient.patch("/api/media/$id/tmdb-id") {
+            contentType(ContentType.Application.Json)
+            setBody("""{"tmdbId":${tmdbId ?: "null"}}""")
+        }.body<MediaItem>()
+    }.getOrNull()
+
     // Returns true if the scan was successfully started, false if already running or failed.
     suspend fun startScan(): Boolean = runCatching {
         val response = httpClient.post("/api/scan")

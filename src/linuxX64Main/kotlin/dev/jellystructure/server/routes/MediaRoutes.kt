@@ -583,6 +583,18 @@ fun Route.mediaRoutes(
             call.respond(updated)
         }
 
+        // PATCH /api/media/{id}/tmdb-id — set or clear the TMDB id; does not trigger a resync
+        patch("/{id}/tmdb-id") {
+            val id = call.parameters["id"] ?: return@patch call.respond(HttpStatusCode.BadRequest)
+            val item = store.resolve(id) ?: return@patch call.respond(HttpStatusCode.NotFound)
+            @Serializable data class TmdbIdReq(val tmdbId: Int? = null)
+            val req = call.receive<TmdbIdReq>()
+            val updated = item.copy(tmdbId = req.tmdbId)
+            store.updateOne(updated)
+            mediaHistory.record(id, "set_tmdb_id", "tmdbId=${req.tmdbId}")
+            call.respond(updated)
+        }
+
         // GET /api/media/{id}/jellyfin-locks — live lock/field status from Jellyfin
         get("/{id}/jellyfin-locks") {
             val id = call.parameters["id"] ?: return@get call.respond(HttpStatusCode.BadRequest)

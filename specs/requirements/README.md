@@ -40,7 +40,7 @@ See [`../tasks.md`](../tasks.md) for the active TODO breakdown.
 | 21 | ✓ Done | Flag multiple default audio tracks in Triage (FR-DA1) | [archive](archive/phase-21-multiple-default-audio-triage.md) |
 | 22 | ✓ Done | Remove lockdata & detect Jellyfin field locks (FR-LK1) | [archive](archive/phase-22-remove-lockdata-detect-locks.md) |
 | 23 | ✓ Done | Remove the Language page (FR-RL1) | [archive](archive/phase-23-remove-language-page.md) |
-| 24 | Planned | Manage the TMDB ID field on Media Detail (FR-TI1) | [spec](phase-24-manage-tmdb-id.md) |
+| 24 | ✓ Done | Manage the TMDB ID field on Media Detail (FR-TI1) | [archive](archive/phase-24-manage-tmdb-id.md) |
 | 25 | Planned | Fix Sync button → "Re-pull from Jellyfin…" (FR-RJ1) | [spec](phase-25-repull-from-jellyfin.md) |
 | 26 | Planned | qBittorrent seeding guard — block mkvpropedit when file is actively seeded (FR-QB1) | [spec](phase-26-qbittorrent-seeding-guard.md) |
 | 27 | Planned | Merge Triage into Media Detail + floating Triage dock (FR-MT1) | [spec](phase-27-merge-triage-into-media-detail.md) |
