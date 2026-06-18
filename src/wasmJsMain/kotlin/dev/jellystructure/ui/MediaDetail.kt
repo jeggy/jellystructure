@@ -27,7 +27,7 @@ import org.w3c.dom.HTMLTextAreaElement
 private const val TMDB_IMG_LG = "https://image.tmdb.org/t/p/w500"
 private const val MONO_CODE_STYLE = "font-family:'JetBrains Mono',monospace;font-size:.78rem;"
 
-fun renderMediaDetail(container: Element, scope: CoroutineScope, mediaId: String) {
+fun renderMediaDetail(container: Element, scope: CoroutineScope, mediaId: String, initialTab: String? = null) {
     container.innerHTML = """<span class="muted" style="padding:24px;display:block;">Loading…</span>"""
     scope.launch {
         val item = MediaApi.get(mediaId)
@@ -40,7 +40,7 @@ fun renderMediaDetail(container: Element, scope: CoroutineScope, mediaId: String
         val jellyfinUrl = config?.config?.apiKeys?.jellyfinUrl?.trimEnd('/') ?: ""
         val tmdbLangs = if (item.tmdbId != null) MediaApi.getTmdbLanguages(item.id) else null
         val jsTags = dev.jellystructure.api.MetadataApi.getAllJsTags() ?: emptyList()
-        renderDetailView(container, item, scope, fallbackLang, jellyfinUrl, tmdbLangs, jsTags = jsTags)
+        renderDetailView(container, item, scope, fallbackLang, jellyfinUrl, tmdbLangs, jsTags = jsTags, initialTab = initialTab)
     }
 }
 
@@ -98,7 +98,7 @@ private fun buildResolverTrace(item: MediaItem, fallbackLang: String): String {
         </div>""".trimIndent()
 }
 
-private fun renderDetailView(container: Element, item: MediaItem, scope: CoroutineScope, fallbackLang: String = "en", jellyfinUrl: String = "", tmdbLangs: Set<String>? = null, jsTags: List<JsTag> = emptyList()) {
+private fun renderDetailView(container: Element, item: MediaItem, scope: CoroutineScope, fallbackLang: String = "en", jellyfinUrl: String = "", tmdbLangs: Set<String>? = null, jsTags: List<JsTag> = emptyList(), initialTab: String? = null) {
     val isTvShow = item.kind == MediaKind.TV_SHOW
 
     val posterHtml = if (item.posterPath != null) {
@@ -197,9 +197,10 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
         )
     }
     val tabIds = tabItems.map { it.first }
+    val activeTab = if (initialTab != null && tabIds.contains(initialTab)) initialTab else "overview"
 
     val tabBarHtml = tabItems.joinToString("") { (key, label) ->
-        val active = if (key == "overview") " active" else ""
+        val active = if (key == activeTab) " active" else ""
         """<span class="seg-item$active" data-tab="$key">$label</span>"""
     }
 
@@ -343,7 +344,7 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
 
         <div class="seg" id="detail-tabs" style="margin-bottom:16px;">$tabBarHtml</div>
 
-        <div id="tab-overview">
+        <div id="tab-overview" ${if (activeTab != "overview") """style="display:none;" """ else ""}>
           $embeddedTracksSummary
           <div class="row" style="align-items:flex-start;gap:22px;flex-wrap:wrap;">
             <div class="col" style="width:220px;flex:none;">
@@ -417,7 +418,7 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
         </div>
 
         ${if (!isTvShow) """
-        <div id="tab-tracks" style="display:none;">
+        <div id="tab-tracks" ${if (activeTab != "tracks") """style="display:none;" """ else ""}>
           <div class="card">
             <div class="row center" style="margin-bottom:10px;">
               <h4 style="margin:0;">Embedded tracks</h4>
@@ -428,9 +429,9 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
           </div>
         </div>""" else ""}
 
-        ${if (isTvShow) """<div id="tab-episodes" style="display:none;">$episodesTabHtml</div>""" else ""}
+        ${if (isTvShow) """<div id="tab-episodes" ${if (activeTab != "episodes") """style="display:none;" """ else ""}>${episodesTabHtml}</div>""" else ""}
 
-        <div id="tab-artwork" style="display:none;">
+        <div id="tab-artwork" ${if (activeTab != "artwork") """style="display:none;" """ else ""}>
           <div class="card" id="artwork-card">
             <div class="row center" style="margin-bottom:10px">
               <h4 style="margin:0">Artwork</h4>
@@ -460,7 +461,7 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
           </div>
         </div>
 
-        <div id="tab-nfo" style="display:none;">
+        <div id="tab-nfo" ${if (activeTab != "nfo") """style="display:none;" """ else ""}>
           <div class="card" id="nfo-card">
             <div class="row center" style="margin-bottom:10px;">
               <h4 style="margin:0">NFO (written to disk)</h4>
@@ -471,7 +472,7 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
           </div>
         </div>
 
-        <div id="tab-history" style="display:none;">
+        <div id="tab-history" ${if (activeTab != "history") """style="display:none;" """ else ""}>
           <div class="card" id="history-card">
             <h4 style="margin:0 0 12px;">Action history</h4>
             <div id="history-list"><span class="muted tiny">Loading…</span></div>
@@ -618,7 +619,7 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
         }
     }
 
-    // Tab switching
+    // Tab switching — updates URL so tabs are deep-linkable and Back/Forward work
     document.getElementById("detail-tabs")?.let { tabBar ->
         tabBar.querySelectorAll(".seg-item").let { segItems ->
             for (i in 0 until segItems.length) {
@@ -635,12 +636,16 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
                     }
                     if (tab == "history") scope.launch { loadHistory(item.id) }
                     if (tab == "artwork") scope.launch { loadArtworkStatus(item.id) }
+                    // Update URL — don't add history entry for overview (default), do for others
+                    val tabParam = if (tab == "overview") null else tab
+                    dev.jellystructure.Router.updateQuery(mapOf("tab" to tabParam), replace = false)
                 }
             }
         }
     }
 
     scope.launch { loadArtworkStatus(item.id) }
+    if (activeTab == "history") scope.launch { loadHistory(item.id) }
 
     // Inject diff styles once per document lifetime
     injectDiffStyles()

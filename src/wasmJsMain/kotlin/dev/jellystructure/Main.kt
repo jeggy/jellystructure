@@ -40,14 +40,11 @@ object App {
         }
 
         renderShell(user)
-        Router.init { route -> handleRoute(route) }
-        val current = Router.current()
+        Router.init { _ -> handleRoute() }
         if (window.location.hash.isEmpty()) {
-            // Came from a plain URL (e.g. /login with no hash) — set canonical hash so
-            // the address bar reflects the current route and URL checks work reliably.
-            Router.navigate(current) // fires hashchange → handleRoute via listener
+            Router.navigate("/dashboard")
         } else {
-            handleRoute(current)
+            handleRoute()
         }
     }
 
@@ -55,28 +52,27 @@ object App {
         Router.navigate(route)
     }
 
-    private fun handleRoute(route: String) {
+    private fun handleRoute() {
         val container = document.getElementById("page-content") ?: return
-        updateActiveNav(route)
+        val path = Router.currentPath()
+        val query = Router.currentQuery()
+        updateActiveNav(path)
         when {
-            route == "/" || route.isEmpty() || route == "/dashboard" -> renderDashboard(container, scope)
-            route.startsWith("/library") -> renderLibrary(container, scope)
-            route.startsWith("/media/") -> {
-                val id = route.removePrefix("/media/")
-                if (id.isNotEmpty()) renderMediaDetail(container, scope, id)
-                else renderLibrary(container, scope)
+            path == "/" || path.isEmpty() || path == "/dashboard" -> renderDashboard(container, scope)
+            path.startsWith("/library") -> renderLibrary(container, scope, query)
+            path.startsWith("/media/") -> {
+                val id = path.removePrefix("/media/").substringBefore('?')
+                if (id.isNotEmpty()) renderMediaDetail(container, scope, id, query["tab"])
+                else renderLibrary(container, scope, query)
             }
-            route == "/activity" -> renderActivity(container, scope)
-            route == "/settings" -> renderSettings(container, scope)
-            route.startsWith("/metadata") -> {
-                val tab = route.substringAfter("tab=", "").substringBefore("&")
-                renderMetadata(container, scope, tab.ifEmpty { "studios" })
-            }
-            route.startsWith("/track-order") -> {
-                val id = route.substringAfter("id=", "").substringBefore("&")
-                val ep = decodeURIComponent(route.substringAfter("ep=", "").substringBefore("&"))
-                if (id.isNotEmpty()) renderTrackOrder(container, scope, id, ep.ifEmpty { null })
-                else renderLibrary(container, scope)
+            path == "/activity" -> renderActivity(container, scope, query)
+            path == "/settings" -> renderSettings(container, scope, query)
+            path.startsWith("/metadata") -> renderMetadata(container, scope, query["tab"] ?: "studios")
+            path.startsWith("/track-order") -> {
+                val id = query["id"] ?: ""
+                val ep = query["ep"]?.let { decodeURIComponent(it) }
+                if (id.isNotEmpty()) renderTrackOrder(container, scope, id, ep)
+                else renderLibrary(container, scope, query)
             }
             else -> renderDashboard(container, scope)
         }
