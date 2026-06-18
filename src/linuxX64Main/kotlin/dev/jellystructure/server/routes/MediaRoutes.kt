@@ -31,6 +31,7 @@ import io.ktor.server.routing.patch
 import io.ktor.server.routing.post
 import io.ktor.server.routing.route
 import io.ktor.utils.io.readRemaining
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.channels.Channel
@@ -782,103 +783,107 @@ private suspend fun runScan(
     configStore: ConfigStore,
     jellyfinClient: JellyfinClient,
     scanDispatcher: CoroutineDispatcher,
-) = coroutineScope {
+) {
     val allItems = mutableListOf<MediaItem>()
     val allItemsMutex = Mutex()
     val succeeded = AtomicInt(0)
     val nextWorkerId = AtomicInt(0)
+
+    println("[INFO] Library scan started jobId=$jobId (skip=${skipIds.size})")
+    broadcaster.broadcast(JobEvent.Started(jobId, -1))
+
+    val jellyfinItems = scanner.fetchItems()
+    if (jellyfinItems == null) {
+        scanTracker.complete()
+        broadcaster.broadcast(JobEvent.Finished(jobId, 0, 0))
+        return
+    }
+    println("[INFO] Jellyfin returned ${jellyfinItems.size} items (${skipIds.size} will be skipped for resume)")
+
+    // coroutineScope suspends here until the producer, all workers, and the supervisor have ALL finished.
+    // Post-scan cleanup runs only after this block returns.
     try {
-        println("[INFO] Library scan started jobId=$jobId (skip=${skipIds.size})")
-        broadcaster.broadcast(JobEvent.Started(jobId, -1))
+        coroutineScope {
+            val channel = Channel<JellyfinItem>(Channel.UNLIMITED)
 
-        val jellyfinItems = scanner.fetchItems()
-        if (jellyfinItems == null) {
-            scanTracker.complete()
-            broadcaster.broadcast(JobEvent.Finished(jobId, 0, 0))
-            return@coroutineScope
-        }
-        println("[INFO] Jellyfin returned ${jellyfinItems.size} items (${skipIds.size} will be skipped for resume)")
+            scanTracker.targetWorkers.value = configStore.current.behavior.scanWorkers.coerceIn(1, 32)
 
-        val channel = Channel<JellyfinItem>(Channel.UNLIMITED)
-
-        // Initialise target from current config
-        scanTracker.targetWorkers.value = configStore.current.behavior.scanWorkers.coerceIn(1, 32)
-
-        // Producer: fills the channel, skipping already-processed IDs
-        launch {
-            for (jItem in jellyfinItems) {
-                if (scanTracker.cancelRequested) break
-                if (jItem.id in skipIds) {
-                    println("[INFO] Resume: skipping '${jItem.name}'")
-                    continue
-                }
-                channel.send(jItem)
-            }
-            channel.close()
-        }
-
-        // Worker factory
-        fun launchWorker() {
-            val wid = nextWorkerId.incrementAndGet()
-            launch(scanDispatcher) {
-                println("[INFO] Worker #$wid starting")
-                scanTracker.activeWorkers.incrementAndGet()
-                try {
-                    for (jItem in channel) {
-                        if (scanTracker.cancelRequested) break
-                        val item = try { scanner.scanItem(jItem) } catch (e: Exception) {
-                            println("[ERROR] Worker #$wid: scanItem failed for '${jItem.name}': ${e.message}")
-                            null
-                        }
-                        if (item != null) {
-                            allItemsMutex.withLock { allItems += item }
-                            store.addOrUpdate(item)
-                            jItem.id?.let { scanTracker.recordProcessed(it) }
-                            broadcaster.broadcast(JobEvent.ItemScanned(jobId, item))
-                            succeeded.incrementAndGet()
-                        }
-                        // Scale-down drain: exit if we are excess
-                        if (scanTracker.activeWorkers.value > scanTracker.targetWorkers.value) {
-                            println("[INFO] Worker #$wid draining (scale-down)")
-                            break
-                        }
+            // Producer: fills the channel, skipping already-processed IDs
+            launch {
+                for (jItem in jellyfinItems) {
+                    if (scanTracker.cancelRequested) break
+                    if (jItem.id in skipIds) {
+                        println("[INFO] Resume: skipping '${jItem.name}'")
+                        continue
                     }
-                } finally {
-                    scanTracker.activeWorkers.decrementAndGet()
-                    println("[INFO] Worker #$wid stopped")
+                    channel.send(jItem)
+                }
+                channel.close()
+            }
+
+            // Worker factory
+            fun launchWorker() {
+                val wid = nextWorkerId.incrementAndGet()
+                launch(scanDispatcher) {
+                    println("[INFO] Worker #$wid starting")
+                    scanTracker.activeWorkers.incrementAndGet()
+                    try {
+                        for (jItem in channel) {
+                            if (scanTracker.cancelRequested) break
+                            val item = try { scanner.scanItem(jItem) } catch (e: Exception) {
+                                println("[ERROR] Worker #$wid: scanItem failed for '${jItem.name}': ${e.message}")
+                                null
+                            }
+                            if (item != null) {
+                                allItemsMutex.withLock { allItems += item }
+                                store.addOrUpdate(item)
+                                jItem.id?.let { scanTracker.recordProcessed(it) }
+                                broadcaster.broadcast(JobEvent.ItemScanned(jobId, item))
+                                succeeded.incrementAndGet()
+                            }
+                            // Scale-down drain: exit if we are excess
+                            if (scanTracker.activeWorkers.value > scanTracker.targetWorkers.value) {
+                                println("[INFO] Worker #$wid draining (scale-down)")
+                                break
+                            }
+                        }
+                    } finally {
+                        scanTracker.activeWorkers.decrementAndGet()
+                        println("[INFO] Worker #$wid stopped")
+                    }
+                }
+            }
+
+            // Start initial workers
+            repeat(scanTracker.targetWorkers.value) { launchWorker() }
+
+            // Supervisor: polls for scale-up requests until all items are processed
+            launch {
+                while (!channel.isClosedForReceive || scanTracker.activeWorkers.value > 0) {
+                    delay(500)
+                    val newTarget = configStore.current.behavior.scanWorkers.coerceIn(1, 32)
+                    if (newTarget != scanTracker.targetWorkers.value) {
+                        println("[INFO] Scan workers: ${scanTracker.targetWorkers.value} → $newTarget")
+                        scanTracker.targetWorkers.value = newTarget
+                    }
+                    val active = scanTracker.activeWorkers.value
+                    val target = scanTracker.targetWorkers.value
+                    if (target > active && !channel.isClosedForReceive) {
+                        repeat(target - active) { launchWorker() }
+                    }
                 }
             }
         }
-
-        // Start initial workers
-        repeat(scanTracker.targetWorkers.value) { launchWorker() }
-
-        // Supervisor: polls for scale-up requests until all items are processed
-        launch {
-            while (!channel.isClosedForReceive || scanTracker.activeWorkers.value > 0) {
-                delay(500)
-                val newTarget = configStore.current.behavior.scanWorkers.coerceIn(1, 32)
-                if (newTarget != scanTracker.targetWorkers.value) {
-                    println("[INFO] Scan workers: ${scanTracker.targetWorkers.value} → $newTarget")
-                    scanTracker.targetWorkers.value = newTarget
-                }
-                val active = scanTracker.activeWorkers.value
-                val target = scanTracker.targetWorkers.value
-                if (target > active && !channel.isClosedForReceive) {
-                    repeat(target - active) { launchWorker() }
-                }
-            }
-        }
-
-        // coroutineScope waits for producer + all workers + supervisor
+    } catch (e: CancellationException) {
+        throw e
     } catch (e: Exception) {
         println("[ERROR] Scan failed: ${e.message}")
         scanTracker.cancel()
         broadcaster.broadcast(JobEvent.Finished(jobId, succeeded.value, 1))
-        return@coroutineScope
+        return
     }
 
-    // Reconcile DB: remove items no longer present in Jellyfin
+    // Post-scan cleanup — runs only after all workers have finished
     store.update(allItems)
     val cancelled = scanTracker.cancelRequested
     println("[INFO] Library scan ${if (cancelled) "cancelled" else "complete"} — ${succeeded.value} items")
