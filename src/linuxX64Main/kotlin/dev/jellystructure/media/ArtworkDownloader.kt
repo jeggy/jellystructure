@@ -73,28 +73,30 @@ class ArtworkDownloader {
         return ArtworkStatus(posterExists = posterOk, fanartExists = fanartOk, logoExists = logoExists)
     }
 
-    private fun deleteIfExists(path: String) {
+    private suspend fun deleteIfExists(path: String) {
         val p = Path(path)
-        if (SystemFileSystem.exists(p)) {
-            runCatching { SystemFileSystem.delete(p) }
-                .onSuccess { Logger.infoSync("Removed misplaced artwork: $path") }
-                .onFailure { Logger.warnSync("Could not remove misplaced artwork $path: ${it.message}") }
-        }
+        if (!SystemFileSystem.exists(p)) return
+        val result = runCatching { SystemFileSystem.delete(p) }
+        if (result.isSuccess) Logger.info("Removed misplaced artwork: $path")
+        else Logger.warn("Could not remove misplaced artwork $path: ${result.exceptionOrNull()?.message}")
     }
 
-    private suspend fun download(url: String, destPath: String): Boolean = runCatching {
-        val bytes = http.get(url).readRawBytes()
-        if (bytes.isEmpty()) return false
-        val tmp = "$destPath.tmp"
-        val sink = SystemFileSystem.sink(Path(tmp)).buffered()
-        sink.write(bytes, 0, bytes.size)
-        sink.flush()
-        sink.close()
-        platform.posix.rename(tmp, destPath)
-        Logger.info("Downloaded artwork: $destPath")
-        true
-    }.onFailure { Logger.warnSync("Failed to download $url: ${it.message}") }
-     .getOrDefault(false)
+    private suspend fun download(url: String, destPath: String): Boolean {
+        val result = runCatching {
+            val bytes = http.get(url).readRawBytes()
+            if (bytes.isEmpty()) return false
+            val tmp = "$destPath.tmp"
+            val sink = SystemFileSystem.sink(Path(tmp)).buffered()
+            sink.write(bytes, 0, bytes.size)
+            sink.flush()
+            sink.close()
+            platform.posix.rename(tmp, destPath)
+            Logger.info("Downloaded artwork: $destPath", "artwork")
+            true
+        }
+        if (result.isFailure) Logger.warn("Failed to download $url: ${result.exceptionOrNull()?.message}")
+        return result.getOrDefault(false)
+    }
 
     fun checkEpisodeStill(episode: Episode): EpisodeStillStatus {
         val destPath = episodeStillPath(episode)

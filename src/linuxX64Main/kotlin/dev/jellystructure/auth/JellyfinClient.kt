@@ -68,8 +68,10 @@ class JellyfinClient {
             header("Authorization", """$AUTH_HEADER, Token="$token"""")
         }.body<JellyfinItemsResponse>().items
             .filter { it.type == "Movie" || it.type == "Series" }
-    }.onFailure { Logger.warnSync("Jellyfin getItems failed: ${it.message}") }
-     .getOrDefault(emptyList())
+    }.let { result ->
+        if (result.isFailure) Logger.warn("Jellyfin getItems failed: ${result.exceptionOrNull()?.message}")
+        result.getOrDefault(emptyList())
+    }
 
     suspend fun refreshItem(baseUrl: String, token: String, jellyfinId: String, full: Boolean = false): Boolean = runCatching {
         val mode = if (full) "FullRefresh" else "ValidationOnly"

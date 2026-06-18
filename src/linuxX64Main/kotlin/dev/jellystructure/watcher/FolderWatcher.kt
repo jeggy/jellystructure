@@ -35,22 +35,22 @@ class FolderWatcher(
             val stable = newFiles.filter { isStable(it) }
             if (stable.isNotEmpty()) {
                 Logger.info("FolderWatcher: ${stable.size} stable new file(s) — triggering scan")
-                stable.forEach { Logger.infoSync("  $it") }
-                runCatching { onNewFilesDetected() }
-                    .onFailure { Logger.warnSync("FolderWatcher: scan trigger failed: ${it.message}") }
+                for (f in stable) Logger.info("  $f")
+                val triggerResult = runCatching { onNewFilesDetected() }
+                if (triggerResult.isFailure) Logger.warn("FolderWatcher: scan trigger failed: ${triggerResult.exceptionOrNull()?.message}")
             } else {
                 Logger.info("FolderWatcher: no stable new files after debounce (still copying?)")
             }
         }
     }
 
-    private fun initKnownFiles() {
+    private suspend fun initKnownFiles() {
         knownPaths.clear()
         collectAll(knownPaths)
-        Logger.infoSync("FolderWatcher: tracking ${knownPaths.size} existing video file(s)")
+        Logger.info("FolderWatcher: tracking ${knownPaths.size} existing video file(s)")
     }
 
-    private fun detectNewFiles(): List<String> {
+    private suspend fun detectNewFiles(): List<String> {
         val current = mutableSetOf<String>()
         collectAll(current)
         val new = current - knownPaths
@@ -60,19 +60,19 @@ class FolderWatcher(
         return new.toList().sorted()
     }
 
-    private fun collectAll(result: MutableSet<String>) {
+    private suspend fun collectAll(result: MutableSet<String>) {
         val libs = configStore.current.libraries.filter { !it.skip && it.localPath.isNotBlank() }
         for (lib in libs) {
             collectVideoFiles(lib.localPath, result)
         }
     }
 
-    private fun collectVideoFiles(dir: String, result: MutableSet<String>) {
+    private suspend fun collectVideoFiles(dir: String, result: MutableSet<String>) {
         val path = Path(dir)
         if (!SystemFileSystem.exists(path)) return
         val meta = SystemFileSystem.metadataOrNull(path) ?: return
         if (!meta.isDirectory) return
-        runCatching {
+        val scanResult = runCatching {
             for (entry in SystemFileSystem.list(path)) {
                 val entryMeta = SystemFileSystem.metadataOrNull(entry) ?: continue
                 val entryStr = entry.toString()
@@ -81,7 +81,8 @@ class FolderWatcher(
                     entryMeta.isRegularFile && isVideoFile(entryStr) -> result.add(entryStr)
                 }
             }
-        }.onFailure { Logger.warnSync("FolderWatcher: error reading $dir: ${it.message}") }
+        }
+        if (scanResult.isFailure) Logger.warn("FolderWatcher: error reading $dir: ${scanResult.exceptionOrNull()?.message}")
     }
 
     private fun isVideoFile(path: String) =

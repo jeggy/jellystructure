@@ -34,21 +34,24 @@ fun Route.authRoutes(
                 return@post
             }
 
-            val authResult = runCatching {
+            val authAttempt = runCatching {
                 jellyfinClient.authenticateByName(
                     config.apiKeys.jellyfinUrl,
                     creds.username,
                     creds.password,
                 )
-            }.getOrElse { e ->
-                Logger.infoSync("jellyfin: ${config.apiKeys.jellyfinUrl}")
-                Logger.warnSync("Jellyfin auth error: ${e.message}")
+            }
+            if (authAttempt.isFailure) {
+                val e = authAttempt.exceptionOrNull()
+                Logger.info("jellyfin: ${config.apiKeys.jellyfinUrl}")
+                Logger.warn("Jellyfin auth error: ${e?.message}")
                 call.respond(
                     HttpStatusCode.Unauthorized,
-                    mapOf("error" to (e.message ?: "Authentication failed")),
+                    mapOf("error" to (e?.message ?: "Authentication failed")),
                 )
                 return@post
             }
+            val authResult = authAttempt.getOrThrow()
 
             if (!authResult.user.policy.isAdministrator) {
                 call.respond(

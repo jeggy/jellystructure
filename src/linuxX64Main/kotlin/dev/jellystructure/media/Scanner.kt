@@ -37,7 +37,7 @@ class Scanner(
         }
         if (lib == null) {
             val prefixes = libraries.map { it.jellyfinPath.ifBlank { it.localPath } }
-            Logger.warn("No matching library for '$jellyfinPath' — configured prefixes: $prefixes")
+            Logger.warn("No matching library for '$jellyfinPath' — configured prefixes: $prefixes", "scan")
             return null
         }
         val localPath = if (lib.jellyfinPath.isNotBlank()) {
@@ -101,7 +101,7 @@ class Scanner(
         }
 
         val (title, year) = parseTitleYear(jItem.name)
-        Logger.info("Scanning movie: $title (${year ?: "?"})")
+        Logger.info("Scanning movie: $title (${year ?: "?"})", "scan")
 
         val tracks = FfprobeRunner.probe(localPath)
         val audioLangs = tracks.filter { it.kind == TrackKind.AUDIO }.map { it.language }
@@ -148,7 +148,7 @@ class Scanner(
         }
 
         val (title, year) = parseTitleYear(jItem.name)
-        Logger.info("Scanning series: $title (${year ?: "?"})")
+        Logger.info("Scanning series: $title (${year ?: "?"})", "scan")
 
         val episodeFiles = findEpisodeFiles(localPath)
         if (episodeFiles.isEmpty()) {

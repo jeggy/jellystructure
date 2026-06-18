@@ -16,19 +16,18 @@ class ConfigStore(private val filePath: String) {
 
     val current: AppConfig get() = _config
 
-    fun load() {
+    suspend fun load() {
         val path = Path(filePath)
         if (!SystemFileSystem.exists(path)) {
             persist()
-            Logger.infoSync("Created default config at $filePath")
+            Logger.info("Created default config at $filePath")
             return
         }
-        runCatching {
+        val result = runCatching {
             val content = SystemFileSystem.source(path).buffered().readString()
             _config = Toml.decodeFromString(AppConfig.serializer(), content)
-        }.onFailure {
-            Logger.warnSync("Failed to parse config, using defaults: ${it.message}")
         }
+        if (result.isFailure) Logger.warn("Failed to parse config, using defaults: ${result.exceptionOrNull()?.message}")
     }
 
     suspend fun update(config: AppConfig) = mutex.withLock {
@@ -36,9 +35,9 @@ class ConfigStore(private val filePath: String) {
         persist()
     }
 
-    private fun persist() {
+    private suspend fun persist() {
         val tmp = "$filePath.tmp"
-        runCatching {
+        val result = runCatching {
             val content = Toml.encodeToString(AppConfig.serializer(), _config)
             val sink = SystemFileSystem.sink(Path(tmp)).buffered()
             sink.writeString(content)
@@ -46,8 +45,7 @@ class ConfigStore(private val filePath: String) {
             sink.close()
             // Atomic rename — POSIX guarantees this is atomic on the same filesystem
             platform.posix.rename(tmp, filePath)
-        }.onFailure {
-            Logger.errorSync("Failed to persist config: ${it.message}")
         }
+        if (result.isFailure) Logger.error("Failed to persist config: ${result.exceptionOrNull()?.message}")
     }
 }

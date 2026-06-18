@@ -114,7 +114,7 @@ class TmdbClient(
     suspend fun searchMovie(title: String, year: Int?): TmdbSearchResult? {
         val key = apiKey()
         if (key.isBlank()) return null
-        return runCatching {
+        val result = runCatching {
             val response = http.get("$baseUrl/search/movie") {
                 parameter("api_key", key)
                 parameter("query", title)
@@ -125,8 +125,9 @@ class TmdbClient(
                 return searchMovie(title, year)
             }
             response.body<TmdbSearchResponse>().results.firstOrNull()
-        }.onFailure { Logger.warnSync("TMDB search failed for '$title': ${it.message}") }
-         .getOrNull()
+        }
+        if (result.isFailure) Logger.warn("TMDB search failed for '$title': ${result.exceptionOrNull()?.message}")
+        return result.getOrNull()
     }
 
     suspend fun getMovieDetails(tmdbId: Int, language: String? = null): TmdbMovieDetails? {
@@ -134,7 +135,7 @@ class TmdbClient(
         if (language == null) detailsCache[cacheKey]?.let { return it }
         val key = apiKey()
         if (key.isBlank()) return null
-        return runCatching {
+        val result = runCatching {
             val response = http.get("$baseUrl/movie/$tmdbId") {
                 parameter("api_key", key)
                 if (!language.isNullOrBlank()) parameter("language", language)
@@ -146,8 +147,9 @@ class TmdbClient(
             val details = response.body<TmdbMovieDetails>()
             if (language == null) detailsCache[cacheKey] = details
             details
-        }.onFailure { Logger.warnSync("TMDB details failed for id=$tmdbId lang=$language: ${it.message}") }
-         .getOrNull()
+        }
+        if (result.isFailure) Logger.warn("TMDB details failed for id=$tmdbId lang=$language: ${result.exceptionOrNull()?.message}")
+        return result.getOrNull()
     }
 
     // Try each language in priority order; use the first that has a non-empty overview.
@@ -162,7 +164,7 @@ class TmdbClient(
     suspend fun searchTv(title: String, year: Int?): TmdbTvSearchResult? {
         val key = apiKey()
         if (key.isBlank()) return null
-        return runCatching {
+        val result = runCatching {
             val response = http.get("$baseUrl/search/tv") {
                 parameter("api_key", key)
                 parameter("query", title)
@@ -173,14 +175,15 @@ class TmdbClient(
                 return searchTv(title, year)
             }
             response.body<TmdbTvSearchResponse>().results.firstOrNull()
-        }.onFailure { Logger.warnSync("TMDB TV search failed for '$title': ${it.message}") }
-         .getOrNull()
+        }
+        if (result.isFailure) Logger.warn("TMDB TV search failed for '$title': ${result.exceptionOrNull()?.message}")
+        return result.getOrNull()
     }
 
     suspend fun getTvDetails(tmdbId: Int, language: String? = null): TmdbTvDetails? {
         val key = apiKey()
         if (key.isBlank()) return null
-        return runCatching {
+        val result = runCatching {
             val response = http.get("$baseUrl/tv/$tmdbId") {
                 parameter("api_key", key)
                 if (!language.isNullOrBlank()) parameter("language", language)
@@ -190,8 +193,9 @@ class TmdbClient(
                 return getTvDetails(tmdbId, language)
             }
             response.body<TmdbTvDetails>()
-        }.onFailure { Logger.warnSync("TMDB TV details failed for id=$tmdbId lang=$language: ${it.message}") }
-         .getOrNull()
+        }
+        if (result.isFailure) Logger.warn("TMDB TV details failed for id=$tmdbId lang=$language: ${result.exceptionOrNull()?.message}")
+        return result.getOrNull()
     }
 
     suspend fun getTvDetailsLocalized(tmdbId: Int, languages: List<String>): TmdbTvDetails? {
@@ -206,7 +210,7 @@ class TmdbClient(
         val key = apiKey()
         if (key.isBlank()) return emptyList()
         val path = if (isMovie) "movie/$tmdbId/translations" else "tv/$tmdbId/translations"
-        return runCatching {
+        val result = runCatching {
             val response = http.get("$baseUrl/$path") {
                 parameter("api_key", key)
             }
@@ -218,14 +222,15 @@ class TmdbClient(
                 .filter { it.languageCode.isNotBlank() && it.data.overview.isNotBlank() }
                 .map { it.languageCode }
                 .distinct()
-        }.onFailure { Logger.warnSync("TMDB translations failed tmdbId=$tmdbId: ${it.message}") }
-         .getOrElse { emptyList() }
+        }
+        if (result.isFailure) Logger.warn("TMDB translations failed tmdbId=$tmdbId: ${result.exceptionOrNull()?.message}")
+        return result.getOrElse { emptyList() }
     }
 
     suspend fun getEpisodeDetails(seriesId: Int, season: Int, episode: Int, language: String? = null): TmdbEpisodeDetails? {
         val key = apiKey()
         if (key.isBlank()) return null
-        return runCatching {
+        val result = runCatching {
             val response = http.get("$baseUrl/tv/$seriesId/season/$season/episode/$episode") {
                 parameter("api_key", key)
                 if (!language.isNullOrBlank()) parameter("language", language)
@@ -236,7 +241,8 @@ class TmdbClient(
             }
             if (response.status.value == 404) return null
             response.body<TmdbEpisodeDetails>()
-        }.onFailure { Logger.warnSync("TMDB episode details failed for series=$seriesId s${season}e${episode} lang=$language: ${it.message}") }
-         .getOrNull()
+        }
+        if (result.isFailure) Logger.warn("TMDB episode details failed for series=$seriesId s${season}e${episode} lang=$language: ${result.exceptionOrNull()?.message}")
+        return result.getOrNull()
     }
 }

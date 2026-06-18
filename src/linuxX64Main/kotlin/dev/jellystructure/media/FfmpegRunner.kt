@@ -21,7 +21,7 @@ object FfmpegRunner {
 
     // Remux file setting the default flag for one track of the given type.
     // sameTypeIndices must be in ascending order (as returned by ffprobe).
-    fun setDefault(filePath: String, defaultStreamIndex: Int, sameTypeIndices: List<Int>, kind: TrackKind): Boolean {
+    suspend fun setDefault(filePath: String, defaultStreamIndex: Int, sameTypeIndices: List<Int>, kind: TrackKind): Boolean {
         val typeStr = typeChar(kind)
         val tmp = tmpPath(filePath)
         val escaped = filePath.replace("'", "'\\''")
@@ -43,7 +43,7 @@ object FfmpegRunner {
     }
 
     // Remux file rewriting the language metadata tag on one stream (by absolute stream index).
-    fun setLanguage(filePath: String, streamIndex: Int, language: String): Boolean {
+    suspend fun setLanguage(filePath: String, streamIndex: Int, language: String): Boolean {
         val tmp = tmpPath(filePath)
         val escaped = filePath.replace("'", "'\\''")
         val escapedTmp = tmp.replace("'", "'\\''")
@@ -60,7 +60,7 @@ object FfmpegRunner {
     }
 
     // Remux file removing a single track (by absolute stream index).
-    fun removeTrack(filePath: String, streamIndex: Int): Boolean {
+    suspend fun removeTrack(filePath: String, streamIndex: Int): Boolean {
         val tmp = tmpPath(filePath)
         val escaped = filePath.replace("'", "'\\''")
         val escapedTmp = tmp.replace("'", "'\\''")
@@ -77,7 +77,7 @@ object FfmpegRunner {
     // Remux file reordering tracks of a given type. orderedIndices gives the desired physical order
     // (absolute stream indices). Video and the opposite type are mapped first/last unchanged.
     // Pass the opposite type char: "a" when reordering subtitles, "s" when reordering audio.
-    fun reorderTracks(filePath: String, kind: TrackKind, orderedIndices: List<Int>): Boolean {
+    suspend fun reorderTracks(filePath: String, kind: TrackKind, orderedIndices: List<Int>): Boolean {
         val tmp = tmpPath(filePath)
         val escaped = filePath.replace("'", "'\\''")
         val escapedTmp = tmp.replace("'", "'\\''")
@@ -141,15 +141,15 @@ object FfmpegRunner {
     }
 
     @OptIn(ExperimentalForeignApi::class)
-    private fun runCommand(cmd: String): Boolean {
-        Logger.infoSync("ffmpeg: $cmd")
+    private suspend fun runCommand(cmd: String): Boolean {
+        Logger.info("ffmpeg: $cmd", "track")
         return memScoped {
             val pipe = popen(cmd, "r") ?: return false
             val sb = StringBuilder()
             val buf = allocArray<ByteVar>(4096)
             while (fgets(buf, 4096, pipe) != null) sb.append(buf.toKString())
             val rc = pclose(pipe)
-            if (rc != 0) Logger.warnSync("ffmpeg exit $rc: $sb")
+            if (rc != 0) Logger.warn("ffmpeg exit $rc: $sb", "track")
             rc == 0
         }
     }

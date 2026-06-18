@@ -38,12 +38,12 @@ class ScanTracker(private val db: JellystructureDb) {
     val processedIdsSnapshot: Set<String>
         get() = db.scanStateQueries.getProcessedIds(_jobId).executeAsList().toSet()
 
-    fun load() {
+    suspend fun load() {
         val row = db.scanStateQueries.getState().executeAsOneOrNull() ?: return
         _jobId = row.job_id
         _startedAt = row.started_at
         if (row.status == "RUNNING") {
-            Logger.infoSync("ScanTracker: previous scan was interrupted — marking as CANCELLED")
+            Logger.info("ScanTracker: previous scan was interrupted — marking as CANCELLED")
             _status = "CANCELLED"
             db.scanStateQueries.upsertState(
                 status = "CANCELLED",

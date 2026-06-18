@@ -20,4 +20,7 @@ sealed class JobEvent {
 
     @Serializable @SerialName("finished")
     data class Finished(val jobId: String, val succeeded: Int, val failed: Int) : JobEvent()
+
+    @Serializable @SerialName("log_line")
+    data class LogLine(val level: String, val category: String, val message: String, val mediaId: String? = null) : JobEvent()
 }

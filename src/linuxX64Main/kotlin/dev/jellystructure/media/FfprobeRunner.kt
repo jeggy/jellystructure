@@ -51,7 +51,7 @@ object FfprobeRunner {
             Logger.warn("ffprobe returned no output for: $filePath")
             return emptyList()
         }
-        return runCatching {
+        val result = runCatching {
             val probe = json.decodeFromString(FfprobeOutput.serializer(), output)
             val typeCounters = mutableMapOf<String, Int>()
             probe.streams.map { stream ->
@@ -83,10 +83,9 @@ object FfprobeRunner {
                     forced = stream.disposition.forced != 0,
                 )
             }
-        }.getOrElse { e ->
-            Logger.warnSync("Failed to parse ffprobe output for $filePath: ${e.message}")
-            emptyList()
         }
+        if (result.isFailure) Logger.warn("Failed to parse ffprobe output for $filePath: ${result.exceptionOrNull()?.message}")
+        return result.getOrElse { emptyList() }
     }
 
     @OptIn(ExperimentalForeignApi::class)

@@ -1,5 +1,6 @@
 package dev.jellystructure.log
 
+import dev.jellystructure.media.ActivityLog
 import kotlin.coroutines.AbstractCoroutineContextElement
 import kotlin.coroutines.CoroutineContext
 import kotlinx.coroutines.currentCoroutineContext
@@ -10,24 +11,30 @@ class WorkerId(val id: Int) : AbstractCoroutineContextElement(WorkerId) {
 }
 
 /**
- * Static logger wrapping println. The coroutine-aware functions prefix every line with `[W#id]`
- * when a [WorkerId] is present on the coroutine context (i.e. when called from inside a scan worker).
+ * Single logging entry point for the entire backend.
  *
- * Use [info]/[warn]/[error] from suspend code; they pick up the worker ID automatically.
- * Use [infoSync]/[warnSync]/[errorSync] from non-suspend code (main(), signal handlers, setup,
- * synchronous stores) — these never carry a worker ID.
+ * Outputs to stdout, the in-process activity store, and (via the store) the WS `log_line` event.
+ * Wire up [activityLog] once at startup via Main.kt; until then only stdout is active.
+ *
+ * All methods are suspend — callers that sit in non-suspend contexts (main(), shutdown lambdas)
+ * should use plain [println] instead; those messages appear before the server is up anyway.
+ *
+ * Pass [category] at call sites where the event belongs to a specific domain:
+ * "scan", "nfo", "artwork", "track". Defaults to "system".
  */
 object Logger {
-    suspend fun info(msg: String) = emit("INFO", currentCoroutineContext()[WorkerId]?.id, msg)
-    suspend fun warn(msg: String) = emit("WARN", currentCoroutineContext()[WorkerId]?.id, msg)
-    suspend fun error(msg: String) = emit("ERROR", currentCoroutineContext()[WorkerId]?.id, msg)
+    var activityLog: ActivityLog? = null
 
-    fun infoSync(msg: String) = emit("INFO", null, msg)
-    fun warnSync(msg: String) = emit("WARN", null, msg)
-    fun errorSync(msg: String) = emit("ERROR", null, msg)
+    suspend fun info(msg: String, category: String = "system", mediaId: String? = null) =
+        emit("INFO", currentCoroutineContext()[WorkerId]?.id, category, msg, mediaId)
+    suspend fun warn(msg: String, category: String = "system", mediaId: String? = null) =
+        emit("WARN", currentCoroutineContext()[WorkerId]?.id, category, msg, mediaId)
+    suspend fun error(msg: String, category: String = "system", mediaId: String? = null) =
+        emit("ERROR", currentCoroutineContext()[WorkerId]?.id, category, msg, mediaId)
 
-    private fun emit(level: String, workerId: Int?, msg: String) {
+    private suspend fun emit(level: String, workerId: Int?, category: String, msg: String, mediaId: String?) {
         val prefix = if (workerId != null) "[W#$workerId] " else ""
         println("[$level] $prefix$msg")
+        activityLog?.log(level, category, "$prefix$msg", mediaId)
     }
 }

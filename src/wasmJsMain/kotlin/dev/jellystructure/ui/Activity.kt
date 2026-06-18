@@ -1,14 +1,24 @@
 package dev.jellystructure.ui
 
 import dev.jellystructure.api.MediaApi
+import dev.jellystructure.api.httpClient
+import io.ktor.client.call.body
+import io.ktor.client.request.delete
+import io.ktor.client.request.get
+import io.ktor.client.request.parameter
 import kotlinx.browser.document
+import kotlinx.browser.localStorage
 import kotlinx.browser.window
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.serialization.Serializable
 import org.w3c.dom.Element
 import org.w3c.dom.HTMLElement
+import org.w3c.dom.HTMLInputElement
 import org.w3c.dom.WebSocket
 import org.w3c.dom.events.Event
+import org.w3c.dom.events.MouseEvent
 
 private fun currentTimeString(): String = js("new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false})")
 
@@ -21,6 +31,22 @@ private var jobDoneCount = 0
 private var jobFailCount = 0
 private var activityCurrentTitle: String? = null
 private var activityCurrentPoster: String? = null
+private var scanRunning = false
+private var activeLogCategory: String = ""
+private var errorsOnlyFilter: Boolean = false
+
+@Serializable
+private data class ActivityEntryDto(
+    val id: Int,
+    val ts: Long,
+    val level: String,
+    val category: String,
+    val message: String,
+    val mediaId: String? = null,
+)
+
+@Serializable
+private data class ActivityLogPageDto(val entries: List<ActivityEntryDto>, val total: Int)
 
 fun renderActivity(container: Element, scope: CoroutineScope) {
     activityScope = scope
@@ -31,17 +57,20 @@ fun renderActivity(container: Element, scope: CoroutineScope) {
     jobFailCount = 0
     activityCurrentTitle = null
     activityCurrentPoster = null
+    scanRunning = false
+    activeLogCategory = ""
+    errorsOnlyFilter = false
 
     container.innerHTML = """
         <div class="pagebar">
           <h1>Activity</h1>
           <span id="act-crumb" style="display:none" class="crumb"></span>
           <span class="spacer"></span>
+          <span id="workers-chip" class="chip" style="display:none"></span>
           <span id="ws-status" class="badge">Connecting…</span>
           <button id="act-cancel-btn" class="btn sm ghost" style="display:none">Pause</button>
-          <button id="clear-btn" class="btn sm ghost">Clear</button>
         </div>
-        <p class="page-sub">The full console for the job also shown in the ambient dock. Everything streams over WebSocket — no polling, no page reloads. Errors drop into <a href="#/triage">Triage</a> and the run keeps going.</p>
+        <p class="page-sub">Full activity log: scan events, NFO writes, artwork downloads, and track operations. Streams live over WebSocket; history is loaded from disk on page open.</p>
 
         <div id="overall-card" class="card" style="display:none;margin-bottom:14px">
           <div class="row center">
@@ -53,7 +82,7 @@ fun renderActivity(container: Element, scope: CoroutineScope) {
           <div id="act-chips" style="display:flex;gap:10px;flex-wrap:wrap;margin-top:10px"></div>
         </div>
 
-        <div id="act-columns" class="row" style="display:none;align-items:stretch;gap:14px">
+        <div id="act-columns" class="row" style="display:none;align-items:stretch;gap:14px;margin-bottom:14px">
           <div class="card fill" id="now-card">
             <div class="row center">
               <h4 style="margin:0">Now processing</h4>
@@ -61,11 +90,6 @@ fun renderActivity(container: Element, scope: CoroutineScope) {
               <span class="mono tiny" id="now-filename" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:220px"></span>
             </div>
             <hr class="dash" style="margin:10px 0">
-            <div id="now-status-row" class="row center" style="gap:8px;display:none">
-              <span id="now-tool-badge" class="badge warn">processing</span>
-            </div>
-            <div class="bar" id="now-bar-wrap" style="margin-top:8px;display:none"><i id="now-bar" style="width:0%"></i></div>
-            <hr class="dash" style="margin:12px 0">
             <div class="row" style="gap:10px;align-items:flex-start">
               <div class="imgslot" id="now-poster" style="width:60px;height:88px;flex:none;background:var(--fill-3);border-radius:6px;overflow:hidden;display:flex;align-items:center;justify-content:center">
                 <span class="tiny muted">poster</span>
@@ -75,37 +99,147 @@ fun renderActivity(container: Element, scope: CoroutineScope) {
               </div>
             </div>
           </div>
-
-          <div class="card" style="width:420px;min-width:280px;flex:none">
-            <div class="row center">
-              <h4 style="margin:0">Live log</h4>
-              <span class="spacer"></span>
-              <span class="chip" style="font-size:.65rem" id="log-ws-chip"><span class="dot ok"></span> ws connected</span>
-            </div>
-            <div class="log" id="activity-console" style="max-height:360px;margin-top:8px">
-              <div class="muted tiny">Waiting for job events…</div>
-            </div>
-            <div class="tiny muted center-x" style="margin-top:8px">streaming live</div>
-          </div>
         </div>
 
-        <div id="act-idle" class="card" style="margin-top:16px">
+        <div id="act-idle" class="card" style="margin-bottom:14px;display:none">
           <div class="muted tiny">No job is currently running. Start a scan from the Dashboard or Library.</div>
         </div>
-    """.trimIndent()
 
-    container.querySelector("#clear-btn")?.addEventListener("click") {
-        val console = container.querySelector("#activity-console")
-        console?.innerHTML = """<div class="muted tiny">Console cleared.</div>"""
-        jobItemCount = 0; jobDoneCount = 0; jobFailCount = 0
-        updateActivityChips(container)
-    }
+        <div class="card" id="log-section">
+          <div class="row center" style="margin-bottom:10px">
+            <h4 style="margin:0">Log</h4>
+            <span class="spacer"></span>
+            <button id="clear-log-btn" class="btn sm ghost">Clear log</button>
+          </div>
+          <div id="log-filter-bar" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">
+            <button data-cat="" class="chip act">All</button>
+            <button data-cat="scan" class="chip">Scan</button>
+            <button data-cat="nfo" class="chip">NFO</button>
+            <button data-cat="artwork" class="chip">Artwork</button>
+            <button data-cat="track" class="chip">Tracks</button>
+            <button data-cat="system" class="chip">System</button>
+            <label class="chip" style="cursor:pointer;display:flex;align-items:center;gap:4px"><input type="checkbox" id="errors-only-toggle" style="margin:0"> Errors only</label>
+          </div>
+          <div class="log" id="activity-console" style="height:420px;min-height:80px;max-height:none">
+            <div class="muted tiny">Loading activity log…</div>
+          </div>
+          <div id="log-resize-handle" style="height:12px;cursor:ns-resize;display:flex;align-items:center;justify-content:flex-end;margin:2px -16px -16px;padding:0 6px;border-radius:0 0 10px 10px;opacity:.35;transition:opacity .15s">
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor"><path d="M11 3.5a.5.5 0 0 0-.5-.5h-7a.5.5 0 0 0 0 1h7a.5.5 0 0 0 .5-.5zm0 5a.5.5 0 0 0-.5-.5h-7a.5.5 0 0 0 0 1h7a.5.5 0 0 0 .5-.5z"/></svg>
+          </div>
+        </div>
+    """.trimIndent()
 
     container.querySelector("#act-cancel-btn")?.addEventListener("click") {
         scope.launch { MediaApi.cancelScan() }
     }
 
+    container.querySelector("#clear-log-btn")?.addEventListener("click") {
+        if (window.confirm("Clear the entire activity log?")) {
+            scope.launch {
+                runCatching { httpClient.delete("/api/activity/log") }
+                val console = container.querySelector("#activity-console")
+                console?.innerHTML = """<div class="muted tiny">Log cleared.</div>"""
+            }
+        }
+    }
+
+    container.querySelector("#errors-only-toggle")?.addEventListener("change") { ev ->
+        errorsOnlyFilter = (ev.target as? HTMLInputElement)?.checked ?: false
+        reapplyFilter(container)
+    }
+
+    val filterBtns = container.querySelectorAll("#log-filter-bar button[data-cat]")
+    for (i in 0 until filterBtns.length) {
+        val btn = filterBtns.item(i) as? HTMLElement ?: continue
+        btn.addEventListener("click") { _ ->
+            activeLogCategory = btn.getAttribute("data-cat") ?: ""
+            for (j in 0 until filterBtns.length) {
+                val b = filterBtns.item(j) as? HTMLElement ?: continue
+                if (b.getAttribute("data-cat") == activeLogCategory) b.classList.add("act")
+                else b.classList.remove("act")
+            }
+            reapplyFilter(container)
+        }
+    }
+
     connectWebSocket(container)
+    scope.launch { loadLogHistory(container) }
+    hideJobUI(container)
+    wireLogResize(container)
+}
+
+private fun wireLogResize(container: Element) {
+    val console = container.querySelector("#activity-console") as? HTMLElement ?: return
+    val handle = container.querySelector("#log-resize-handle") as? HTMLElement ?: return
+
+    localStorage.getItem("activity-log-height")?.toIntOrNull()?.let { h ->
+        console.style.height = "${h}px"
+    }
+
+    var dragging = false
+    var startY = 0.0
+    var startH = 0.0
+
+    handle.addEventListener("mouseenter") { (handle as HTMLElement).style.opacity = "0.8" }
+    handle.addEventListener("mouseleave") { if (!dragging) (handle as HTMLElement).style.opacity = "0.4" }
+
+    handle.addEventListener("mousedown") { ev ->
+        val me = ev as? MouseEvent ?: return@addEventListener
+        dragging = true
+        startY = me.clientY.toDouble()
+        startH = console.clientHeight.toDouble()
+        ev.preventDefault()
+    }
+
+    window.addEventListener("mousemove") { ev ->
+        if (!dragging) return@addEventListener
+        val me = ev as? MouseEvent ?: return@addEventListener
+        val dy = me.clientY.toDouble() - startY
+        val newH = (startH + dy).coerceAtLeast(80.0)
+        console.style.height = "${newH.toInt()}px"
+    }
+
+    window.addEventListener("mouseup") { _: Event ->
+        if (!dragging) return@addEventListener
+        dragging = false
+        (handle as HTMLElement).style.opacity = "0.4"
+        val h = console.clientHeight
+        if (h > 0) localStorage.setItem("activity-log-height", h.toString())
+    }
+}
+
+private fun reapplyFilter(container: Element) {
+    val console = container.querySelector("#activity-console") ?: return
+    val allLines = console.querySelectorAll("[data-cat]")
+    for (i in 0 until allLines.length) {
+        val line = allLines.item(i) as? HTMLElement ?: continue
+        val cat = line.getAttribute("data-cat") ?: ""
+        val lvl = line.getAttribute("data-level") ?: ""
+        val catOk = activeLogCategory.isEmpty() || cat == activeLogCategory
+        val lvlOk = !errorsOnlyFilter || lvl == "error" || lvl == "warn"
+        line.style.display = if (catOk && lvlOk) "" else "none"
+    }
+}
+
+private suspend fun loadLogHistory(container: Element) {
+    runCatching {
+        val page: ActivityLogPageDto = httpClient.get("/api/activity/log") {
+            parameter("pageSize", "200")
+        }.body()
+        val console = container.querySelector("#activity-console") ?: return
+        if (page.entries.isEmpty()) {
+            console.innerHTML = """<div class="muted tiny">No activity entries yet.</div>"""
+            return
+        }
+        console.innerHTML = ""
+        page.entries.forEach { entry ->
+            appendLogEntry(container, entry.level, entry.category, entry.message, fromHistory = true)
+        }
+        (console as? HTMLElement)?.let { it.scrollTop = it.scrollHeight.toDouble() }
+    }.onFailure {
+        val console = container.querySelector("#activity-console")
+        console?.innerHTML = """<div class="muted tiny">Could not load log history.</div>"""
+    }
 }
 
 private fun connectWebSocket(container: Element) {
@@ -126,7 +260,7 @@ private fun connectWebSocket(container: Element) {
             it.textContent = "○ disconnected"
             it.className = "badge"
         }
-        appendLine(container, "system", "WebSocket disconnected.")
+        appendLogEntry(container, "warn", "system", "WebSocket disconnected.")
     }
 
     ws.onerror = { _: Event ->
@@ -134,18 +268,17 @@ private fun connectWebSocket(container: Element) {
             it.textContent = "✗ error"
             it.className = "badge bad"
         }
-        appendLine(container, "error", "WebSocket error — check server logs.")
+        appendLogEntry(container, "error", "system", "WebSocket error — check server logs.")
     }
 
     ws.onmessage = { ev ->
-        val text = ev.data.toString()
-        handleEvent(container, text)
+        handleEvent(container, ev.data.toString())
     }
 }
 
 private fun handleEvent(container: Element, raw: String) {
     val type = extractJsonField(raw, "type") ?: run {
-        appendLine(container, "raw", raw)
+        appendLogEntry(container, "info", "system", raw)
         return
     }
     when (type) {
@@ -153,11 +286,13 @@ private fun handleEvent(container: Element, raw: String) {
             val jobId = extractJsonField(raw, "jobId") ?: "?"
             val total = extractJsonField(raw, "total") ?: "?"
             jobItemCount = 0; jobDoneCount = 0; jobFailCount = 0
-            showJobUI(container, jobId)
+            scanRunning = true
+            showJobUI(container)
             (container.querySelector("#act-cancel-btn") as? HTMLElement)?.style?.display = ""
             (container.querySelector("#act-crumb") as? HTMLElement)?.let { it.textContent = "Scanning"; it.style.display = "" }
             updateActivityChips(container)
-            appendLine(container, "started", "▶ Job $jobId started${if (total != "-1") " — $total files" else ""}")
+            appendLogEntry(container, "info", "scan", "▶ Job $jobId started${if (total != "-1") " — $total files" else ""}")
+            activityScope?.launch { pollWorkers(container) }
         }
         "progress" -> {
             val file = extractJsonField(raw, "file") ?: "?"
@@ -165,7 +300,6 @@ private fun handleEvent(container: Element, raw: String) {
             val total = extractJsonField(raw, "total") ?: "?"
             val shortName = file.substringAfterLast('/')
             updateNowFilename(container, shortName)
-            appendLine(container, "progress", "  [$current/$total] $shortName")
         }
         "item_scanned" -> {
             jobItemCount++
@@ -177,7 +311,6 @@ private fun handleEvent(container: Element, raw: String) {
             updateNowCard(container, title, poster, path)
             updateOvLabel(container)
             updateActivityChips(container)
-            appendLine(container, "scanned", title ?: path?.substringAfterLast('/') ?: "item scanned")
         }
         "file_done" -> {
             val file = extractJsonField(raw, "file") ?: "?"
@@ -185,30 +318,49 @@ private fun handleEvent(container: Element, raw: String) {
             val msg = extractJsonField(raw, "msg")
             val icon = if (ok == "true") "✓" else "✗"
             val detail = if (msg != null) " — $msg" else ""
-            val lineKind = if (ok == "true") "ok" else "bad"
+            val level = if (ok == "true") "info" else "error"
             if (ok == "true") jobDoneCount++ else jobFailCount++
             updateActivityChips(container)
-            appendLine(container, lineKind, "$icon ${file.substringAfterLast('/')}$detail")
+            appendLogEntry(container, level, "scan", "$icon ${file.substringAfterLast('/')}$detail")
         }
         "finished" -> {
             val jobId = extractJsonField(raw, "jobId") ?: "?"
             val succeeded = extractJsonField(raw, "succeeded") ?: "?"
             val failed = extractJsonField(raw, "failed") ?: "?"
+            scanRunning = false
             hideJobUI(container)
             (container.querySelector("#act-cancel-btn") as? HTMLElement)?.style?.display = "none"
             (container.querySelector("#act-crumb") as? HTMLElement)?.style?.display = "none"
-            appendLine(container, "finished", "■ Job $jobId done — $succeeded succeeded, $failed failed")
-            appendLine(container, "separator", "─".repeat(60))
+            (container.querySelector("#workers-chip") as? HTMLElement)?.style?.display = "none"
+            appendLogEntry(container, "info", "scan", "■ Job $jobId done — $succeeded succeeded, $failed failed")
         }
-        else -> appendLine(container, "raw", raw)
+        "log_line" -> {
+            val level = extractJsonField(raw, "level") ?: "info"
+            val category = extractJsonField(raw, "category") ?: "system"
+            val message = extractJsonField(raw, "message") ?: ""
+            appendLogEntry(container, level, category, message)
+        }
+        else -> appendLogEntry(container, "info", "system", raw)
     }
 }
 
-private fun showJobUI(container: Element, jobId: String) {
+private suspend fun pollWorkers(container: Element) {
+    while (scanRunning) {
+        val status = MediaApi.scanStatus()
+        if (status != null) {
+            (container.querySelector("#workers-chip") as? HTMLElement)?.let {
+                it.textContent = "Workers: ${status.activeWorkers}/${status.configuredWorkers}"
+                it.style.display = ""
+            }
+        }
+        delay(2000)
+    }
+}
+
+private fun showJobUI(container: Element) {
     (container.querySelector("#overall-card") as? HTMLElement)?.style?.display = "block"
     (container.querySelector("#act-columns") as? HTMLElement)?.style?.display = "flex"
     (container.querySelector("#act-idle") as? HTMLElement)?.style?.display = "none"
-    (container.querySelector("#ov-bar") as? HTMLElement)?.setAttribute("style", "width:0%")
 }
 
 private fun hideJobUI(container: Element) {
@@ -226,7 +378,6 @@ private fun updateNowCard(container: Element, title: String?, poster: String?, p
     val displayName = title ?: path?.substringAfterLast('/') ?: "Unknown"
     updateNowFilename(container, displayName)
 
-    // Update poster
     val posterEl = container.querySelector("#now-poster") as? HTMLElement
     if (posterEl != null) {
         val posterUrl = when {
@@ -242,7 +393,6 @@ private fun updateNowCard(container: Element, title: String?, poster: String?, p
         }
     }
 
-    // Update ops checklist
     val opsEl = container.querySelector("#now-ops") as? HTMLElement
     if (opsEl != null) {
         opsEl.innerHTML = buildString {
@@ -275,28 +425,35 @@ private fun updateActivityChips(container: Element) {
     }
 }
 
-private fun appendLine(container: Element, kind: String, text: String) {
+private fun appendLogEntry(container: Element, level: String, category: String, text: String, fromHistory: Boolean = false) {
     val console = container.querySelector("#activity-console") ?: return
     console.querySelector(".muted")?.remove()
 
     val ts = currentTimeString()
-    val colorStyle = when (kind) {
-        "started"   -> "color:var(--hi)"
-        "finished"  -> "color:var(--warn,#f59e0b)"
-        "error", "bad" -> "color:var(--bad)"
-        "ok"        -> "color:var(--ok)"
-        "separator" -> "opacity:.25"
-        "system"    -> "opacity:.4"
-        else        -> ""
+    val catLabel = when (category) {
+        "scan" -> "<span class='chip' style='font-size:.6rem;padding:0 4px'>scan</span> "
+        "nfo" -> "<span class='chip' style='font-size:.6rem;padding:0 4px;background:var(--fill-2)'>nfo</span> "
+        "artwork" -> "<span class='chip' style='font-size:.6rem;padding:0 4px;background:var(--fill-2)'>art</span> "
+        "track" -> "<span class='chip' style='font-size:.6rem;padding:0 4px;background:var(--fill-2)'>track</span> "
+        else -> ""
+    }
+    val colorStyle = when {
+        level == "error" -> "color:var(--bad)"
+        level == "warn" -> "color:var(--warn,#f59e0b)"
+        text.startsWith("▶") -> "color:var(--hi)"
+        text.startsWith("■") -> "color:var(--warn,#f59e0b)"
+        else -> ""
     }
 
     val div = document.createElement("div")
-    if (kind == "separator") {
-        div.setAttribute("style", "opacity:.25;white-space:pre")
-        div.textContent = text
-    } else {
-        div.innerHTML = """<span class="ts">$ts</span> <span style="$colorStyle">${text.escapeHtml()}</span>"""
-    }
+    div.setAttribute("data-cat", category)
+    div.setAttribute("data-level", level)
+    div.innerHTML = """<span class="ts">$ts</span> $catLabel<span style="$colorStyle">${text.escapeHtml()}</span>"""
+
+    val catOk = activeLogCategory.isEmpty() || category == activeLogCategory
+    val lvlOk = !errorsOnlyFilter || level == "error" || level == "warn"
+    if (!catOk || !lvlOk) (div as? HTMLElement)?.style?.display = "none"
+
     console.appendChild(div)
     (console as? HTMLElement)?.let { it.scrollTop = it.scrollHeight.toDouble() }
 }
@@ -323,7 +480,6 @@ private fun extractJsonField(json: String, field: String): String? {
     }
 }
 
-/** Extracts a field nested inside an object field, e.g. extractNestedField(raw, "item", "title") */
 private fun extractNestedField(json: String, outerKey: String, innerKey: String): String? {
     val outerStart = json.indexOf("\"$outerKey\":")
     if (outerStart < 0) return null
