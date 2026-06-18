@@ -65,6 +65,34 @@ class Scanner(
         return jellyfinClient.getItems(baseUrl, token)
     }
 
+    /**
+     * Re-fetches a single item from Jellyfin by its Jellyfin ID, re-runs the full scan pipeline
+     * (ffprobe + TMDB), and returns the refreshed MediaItem. JS tags from the existing item are
+     * preserved. Returns null if the item cannot be found in Jellyfin or config is missing.
+     */
+    suspend fun rescanFromJellyfin(existing: MediaItem): MediaItem? {
+        val config = configStore.current
+        val baseUrl = config.apiKeys.jellyfinUrl
+        val token = config.apiKeys.jellyfinToken
+        if (baseUrl.isBlank() || token.isBlank()) {
+            Logger.warn("Jellyfin URL or token not configured — cannot re-pull")
+            return null
+        }
+        val jid = existing.jellyfinId
+        if (jid.isNullOrBlank()) {
+            Logger.warn("Item '${existing.id}' has no Jellyfin ID — cannot re-pull")
+            return null
+        }
+        val jItem = jellyfinClient.getItem(baseUrl, token, jid)
+        if (jItem == null) {
+            Logger.warn("Jellyfin returned null for item id=$jid")
+            return null
+        }
+        val fresh = scanItem(jItem) ?: return null
+        // Tags are entirely user-managed; scanItem() produces none — restore them verbatim.
+        return fresh.copy(tags = existing.tags)
+    }
+
     /** Sequential single-worker scan — used by FolderWatcher auto-scans. */
     suspend fun scan(
         tracker: ScanTracker? = null,

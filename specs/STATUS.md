@@ -8,7 +8,7 @@ _Last updated: 2026-06-18_
 
 ## Current focus
 
-**Next up: Phase 25** — Fix Sync button → "Re-pull from Jellyfin…" (FR-RJ1).
+**Next up: Phase 26** — qBittorrent seeding guard (FR-QB1).
 
 See [`requirements/README.md`](requirements/README.md) for the full phase index.
 
