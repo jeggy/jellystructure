@@ -7,6 +7,7 @@ import dev.jellystructure.media.FfprobeRunner
 import dev.jellystructure.media.MediaHistory
 import dev.jellystructure.media.MediaStore
 import dev.jellystructure.media.MkvpropeditRunner
+import dev.jellystructure.model.Episode
 import dev.jellystructure.model.MediaItem
 import dev.jellystructure.model.MediaKind
 import dev.jellystructure.model.TrackKind
@@ -36,12 +37,16 @@ data class CascadeMismatch(
 )
 
 @Serializable
+data class MultiDefaultIssue(val defaultSpecifiers: List<String>)
+
+@Serializable
 data class EpisodeTriageItem(
     val filename: String,
     val episodeCode: String,
     val title: String? = null,
     val untaggedTracks: List<TriageTrack>,
     val missingOverview: Boolean,
+    val multiDefault: MultiDefaultIssue? = null,
 )
 
 @Serializable
@@ -58,10 +63,11 @@ data class TriageItem(
     val episodeIssues: List<EpisodeTriageItem> = emptyList(),
     val resolvedLanguage: String? = null,
     val languageMix: Boolean = false,
+    val multiDefault: MultiDefaultIssue? = null,
 )
 
 @Serializable
-data class TriageCount(val untagged: Int, val mismatch: Int, val total: Int)
+data class TriageCount(val untagged: Int, val mismatch: Int, val multiDefault: Int = 0, val total: Int)
 
 @Serializable
 private data class AssignLanguageRequest(val language: String)
@@ -80,7 +86,11 @@ fun Route.triageRoutes(store: MediaStore, jellyfinClient: JellyfinClient, config
                 }
             }
             val mismatch = all.count { it.detectCascadeMismatch() != null }
-            call.respond(TriageCount(untagged = untagged, mismatch = mismatch, total = untagged + mismatch))
+            val multiDefault = all.count { item ->
+                if (item.kind == MediaKind.TV_SHOW) item.episodes.any { it.detectMultiDefaultAudio() != null }
+                else item.detectMultiDefaultAudio() != null
+            }
+            call.respond(TriageCount(untagged = untagged, mismatch = mismatch, multiDefault = multiDefault, total = untagged + mismatch + multiDefault))
         }
 
         get {
@@ -206,7 +216,8 @@ private fun MediaItem.toTriageItem(): TriageItem? {
                 .filter { (it.kind == TrackKind.AUDIO || it.kind == TrackKind.SUBTITLE) && it.language == null }
                 .map { t -> TriageTrack(specifier = t.specifier, streamIndex = t.streamIndex, kind = t.kind.name.lowercase(), codec = t.codec, title = t.title) }
             val missingOverview = ep.overview.isNullOrBlank()
-            if (untagged.isEmpty() && !missingOverview) return@mapNotNull null
+            val multiDefault = ep.detectMultiDefaultAudio()
+            if (untagged.isEmpty() && !missingOverview && multiDefault == null) return@mapNotNull null
             val code = if (ep.seasonNumber != null && ep.episodeNumber != null) {
                 "S${ep.seasonNumber.toString().padStart(2, '0')}E${ep.episodeNumber.toString().padStart(2, '0')}"
             } else ep.filename.substringBeforeLast('.')
@@ -216,6 +227,7 @@ private fun MediaItem.toTriageItem(): TriageItem? {
                 title = ep.title,
                 untaggedTracks = untagged,
                 missingOverview = missingOverview,
+                multiDefault = multiDefault,
             )
         }
         if (epIssues.isEmpty()) return null
@@ -245,7 +257,8 @@ private fun MediaItem.toTriageItem(): TriageItem? {
             )
         }
     val mismatch = detectCascadeMismatch()
-    if (untagged.isEmpty() && mismatch == null) return null
+    val multiDefault = detectMultiDefaultAudio()
+    if (untagged.isEmpty() && mismatch == null && multiDefault == null) return null
     return TriageItem(
         mediaId = id,
         title = title,
@@ -256,7 +269,20 @@ private fun MediaItem.toTriageItem(): TriageItem? {
         originalLanguage = originalLanguage,
         untaggedTracks = untagged,
         cascadeMismatch = mismatch,
+        multiDefault = multiDefault,
     )
+}
+
+private fun MediaItem.detectMultiDefaultAudio(): MultiDefaultIssue? {
+    val defaults = tracks.filter { it.kind == TrackKind.AUDIO && it.default }
+    if (defaults.size < 2) return null
+    return MultiDefaultIssue(defaultSpecifiers = defaults.map { it.specifier })
+}
+
+private fun Episode.detectMultiDefaultAudio(): MultiDefaultIssue? {
+    val defaults = tracks.filter { it.kind == TrackKind.AUDIO && it.default }
+    if (defaults.size < 2) return null
+    return MultiDefaultIssue(defaultSpecifiers = defaults.map { it.specifier })
 }
 
 private fun MediaItem.detectCascadeMismatch(): CascadeMismatch? {
