@@ -233,6 +233,8 @@ private fun attachListeners(scope: CoroutineScope) {
 
     document.getElementById("save-settings")?.addEventListener("click") {
         scope.launch {
+            libraryMappings = (libraryMappings.filter { !it.skip } + libraryMappings.filter { it.skip }).toMutableList()
+            renderLibraryList()
             val config = readForm()
             val ok = ConfigApi.save(config)
             showSettingsMsg(if (ok) "Saved." else "Save failed.", ok)
@@ -318,6 +320,45 @@ private suspend fun fetchAndRenderLibraries() {
     refreshTomlPreview(readForm())
 }
 
+private fun buildLibraryCardHtml(i: Int, lib: LibraryMapping): String {
+    val skipped = lib.skip
+    val typeLabel = lib.collectionType.ifEmpty { "?" }
+    return """
+    <div style="border:1.5px solid var(--border);border-radius:6px;padding:10px 12px;margin-bottom:10px;${if (skipped) "opacity:.5" else ""}">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+        <strong style="font-size:.9rem;flex:1">${lib.name}</strong>
+        <span class="badge" style="font-size:.72rem;padding:1px 7px;background:var(--fill-2)">$typeLabel</span>
+        <span id="lib-path-status-$i"></span>
+        <label style="display:flex;align-items:center;gap:5px;font-size:.82rem;cursor:pointer">
+          <input type="checkbox" id="lib-skip-$i" ${if (skipped) "checked" else ""}>
+          Skip
+        </label>
+      </div>
+      <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px">
+        <span style="font-size:.75rem;color:var(--ink-soft);width:80px;flex-shrink:0">Jellyfin path</span>
+        <input id="lib-jellyfin-path-$i" class="input" type="text" placeholder="/media/movies/"
+          value="${lib.jellyfinPath}" style="flex:1;${if (skipped) "pointer-events:none" else ""}">
+      </div>
+      <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px">
+        <span style="font-size:.75rem;color:var(--ink-soft);width:80px;flex-shrink:0">Local path</span>
+        <input id="lib-path-$i" class="input" type="text" placeholder="/mnt/host/movies/"
+          value="${lib.localPath}" style="flex:1;${if (skipped) "pointer-events:none" else ""}">
+      </div>
+      <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px">
+        <span style="font-size:.75rem;color:var(--ink-soft);width:80px;flex-shrink:0">Fallback lang</span>
+        <input id="lib-fallback-$i" class="input" type="text" placeholder="(global default)"
+          value="${lib.fallbackLanguage ?: ""}" maxlength="10"
+          style="width:110px;${if (skipped) "pointer-events:none" else ""}">
+        <span style="font-size:.72rem;color:var(--ink-soft)">overrides global fallback for this library</span>
+      </div>
+      <div style="display:flex;gap:6px;align-items:center;margin-top:2px">
+        <span style="font-size:.75rem;color:var(--ink-soft);width:80px;flex-shrink:0">Match prefix</span>
+        <code id="match-prefix-$i" style="font-size:.72rem;color:var(--ink-soft)">${lib.jellyfinPath.ifBlank { lib.localPath }}</code>
+      </div>
+    </div>
+    """.trimIndent()
+}
+
 private fun renderLibraryList() {
     val listEl = document.getElementById("library-mapping-list") as? HTMLElement ?: return
     if (libraryMappings.isEmpty()) {
@@ -325,44 +366,14 @@ private fun renderLibraryList() {
         return
     }
 
-    listEl.innerHTML = libraryMappings.mapIndexed { i, lib ->
-        val skipped = lib.skip
-        val typeLabel = lib.collectionType.ifEmpty { "?" }
-        """
-        <div style="border:1.5px solid var(--border);border-radius:6px;padding:10px 12px;margin-bottom:10px;${if (skipped) "opacity:.5" else ""}">
-          <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
-            <strong style="font-size:.9rem;flex:1">${lib.name}</strong>
-            <span class="badge" style="font-size:.72rem;padding:1px 7px;background:var(--fill-2)">$typeLabel</span>
-            <span id="lib-path-status-$i"></span>
-            <label style="display:flex;align-items:center;gap:5px;font-size:.82rem;cursor:pointer">
-              <input type="checkbox" id="lib-skip-$i" ${if (skipped) "checked" else ""}>
-              Skip
-            </label>
-          </div>
-          <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px">
-            <span style="font-size:.75rem;color:var(--ink-soft);width:80px;flex-shrink:0">Jellyfin path</span>
-            <input id="lib-jellyfin-path-$i" class="input" type="text" placeholder="/media/movies/"
-              value="${lib.jellyfinPath}" style="flex:1;${if (skipped) "pointer-events:none" else ""}">
-          </div>
-          <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px">
-            <span style="font-size:.75rem;color:var(--ink-soft);width:80px;flex-shrink:0">Local path</span>
-            <input id="lib-path-$i" class="input" type="text" placeholder="/mnt/host/movies/"
-              value="${lib.localPath}" style="flex:1;${if (skipped) "pointer-events:none" else ""}">
-          </div>
-          <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px">
-            <span style="font-size:.75rem;color:var(--ink-soft);width:80px;flex-shrink:0">Fallback lang</span>
-            <input id="lib-fallback-$i" class="input" type="text" placeholder="(global default)"
-              value="${lib.fallbackLanguage ?: ""}" maxlength="10"
-              style="width:110px;${if (skipped) "pointer-events:none" else ""}">
-            <span style="font-size:.72rem;color:var(--ink-soft)">overrides global fallback for this library</span>
-          </div>
-          <div style="display:flex;gap:6px;align-items:center;margin-top:2px">
-            <span style="font-size:.75rem;color:var(--ink-soft);width:80px;flex-shrink:0">Match prefix</span>
-            <code id="match-prefix-$i" style="font-size:.72rem;color:var(--ink-soft)">${lib.jellyfinPath.ifBlank { lib.localPath }}</code>
-          </div>
-        </div>
-        """.trimIndent()
-    }.joinToString("")
+    val activeCards = libraryMappings.mapIndexedNotNull { i, lib -> if (!lib.skip) buildLibraryCardHtml(i, lib) else null }.joinToString("")
+    val skippedEntries = libraryMappings.mapIndexedNotNull { i, lib -> if (lib.skip) Pair(i, lib) else null }
+    val skippedCards = if (skippedEntries.isEmpty()) "" else buildString {
+        append("""<details style="margin-top:4px"><summary style="cursor:pointer;font-size:.82rem;color:var(--ink-soft);user-select:none;padding:4px 2px">Skipped libraries (${skippedEntries.size})</summary><div style="margin-top:8px">""")
+        for ((i, lib) in skippedEntries) append(buildLibraryCardHtml(i, lib))
+        append("</div></details>")
+    }
+    listEl.innerHTML = activeCards + skippedCards
 
     // Attach change listeners after DOM is built
     libraryMappings.forEachIndexed { i, _ ->
