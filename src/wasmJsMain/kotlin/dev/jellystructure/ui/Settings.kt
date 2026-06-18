@@ -9,12 +9,18 @@ import dev.jellystructure.api.LibraryMapping
 import dev.jellystructure.api.LibraryPathDiag
 import dev.jellystructure.api.JellyfinLibrary
 import dev.jellystructure.api.ConfigApi
+import dev.jellystructure.api.httpClient
+import io.ktor.client.request.delete
+import io.ktor.http.HttpStatusCode
 import kotlinx.browser.document
+import kotlinx.browser.window
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import org.w3c.dom.Element
 import org.w3c.dom.HTMLElement
 import org.w3c.dom.HTMLInputElement
+import dev.jellystructure.observeSections
+import dev.jellystructure.scrollIntoViewSmooth
 
 fun renderSettings(container: Element, scope: CoroutineScope) {
     container.innerHTML = """
@@ -31,12 +37,11 @@ fun renderSettings(container: Element, scope: CoroutineScope) {
 
           <nav style="width:160px;flex-shrink:0;position:sticky;top:16px;">
             <div style="display:flex;flex-direction:column;gap:2px;">
-              <a href="#sect-connections" class="settings-nav-item" style="padding:5px 8px;border-radius:5px;font-size:.85rem;text-decoration:none;color:var(--ink-soft);">Connections</a>
-              <a href="#sect-libraries" class="settings-nav-item" style="padding:5px 8px;border-radius:5px;font-size:.85rem;text-decoration:none;color:var(--ink-soft);">Library mapping</a>
-              <a href="#sect-language" class="settings-nav-item" style="padding:5px 8px;border-radius:5px;font-size:.85rem;text-decoration:none;color:var(--ink-soft);">Language</a>
-              <a href="#sect-behaviour" class="settings-nav-item" style="padding:5px 8px;border-radius:5px;font-size:.85rem;text-decoration:none;color:var(--ink-soft);">Behaviour</a>
-              <a href="#sect-scanning" class="settings-nav-item" style="padding:5px 8px;border-radius:5px;font-size:.85rem;text-decoration:none;color:var(--ink-soft);">Scanning</a>
-              <a href="#sect-advanced" class="settings-nav-item" style="padding:5px 8px;border-radius:5px;font-size:.85rem;text-decoration:none;color:var(--ink-soft);">Advanced</a>
+              <button data-sect="sect-connections" class="settings-nav-item" style="background:none;border:none;text-align:left;padding:5px 8px;border-radius:5px;font-size:.85rem;cursor:pointer;color:var(--ink-soft);">Connections</button>
+              <button data-sect="sect-libraries" class="settings-nav-item" style="background:none;border:none;text-align:left;padding:5px 8px;border-radius:5px;font-size:.85rem;cursor:pointer;color:var(--ink-soft);">Library mapping</button>
+              <button data-sect="sect-scanning" class="settings-nav-item" style="background:none;border:none;text-align:left;padding:5px 8px;border-radius:5px;font-size:.85rem;cursor:pointer;color:var(--ink-soft);">Scanning</button>
+              <button data-sect="sect-metadata" class="settings-nav-item" style="background:none;border:none;text-align:left;padding:5px 8px;border-radius:5px;font-size:.85rem;cursor:pointer;color:var(--ink-soft);">Metadata</button>
+              <button data-sect="sect-advanced" class="settings-nav-item" style="background:none;border:none;text-align:left;padding:5px 8px;border-radius:5px;font-size:.85rem;cursor:pointer;color:var(--ink-soft);">Advanced</button>
             </div>
           </nav>
 
@@ -76,17 +81,35 @@ fun renderSettings(container: Element, scope: CoroutineScope) {
               </div>
             </div>
 
-            <div class="card" id="sect-language">
-              <h3 style="font-size:1rem;margin:0 0 14px">Language</h3>
+            <div class="card" id="sect-scanning">
+              <h3 style="font-size:1rem;margin:0 0 14px">Scanning</h3>
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+                <div>
+                  <span style="font-size:.9rem">Watch library folders for new files</span>
+                  <div class="hint" style="margin-top:2px">Polls every 30s; triggers a scan when stable new video files are detected</div>
+                </div>
+                <span id="watch-enabled-toggle" class="toggle" style="cursor:pointer;flex-shrink:0;margin-left:12px"></span>
+              </div>
               <div class="field">
+                <label>Scan workers</label>
+                <input id="scan-workers" class="input" type="number" min="1" max="32" style="width:90px">
+                <span class="hint">Number of items processed concurrently. Changing this during a scan takes effect immediately.</span>
+              </div>
+              <div class="field">
+                <label>Scan thread pool size</label>
+                <input id="scan-threads" class="input" type="number" min="1" max="32" style="width:90px">
+                <span class="hint">Thread pool the workers run on. <strong>Requires an application restart.</strong></span>
+              </div>
+              <div id="scan-threads-restart-banner" style="display:none;margin-top:10px;padding:8px 12px;border-radius:6px;background:var(--warn-fill,#7c5100);color:var(--warn-ink,#fff);font-size:.83rem"></div>
+            </div>
+
+            <div class="card" id="sect-metadata">
+              <h3 style="font-size:1rem;margin:0 0 14px">Metadata</h3>
+              <div class="field" style="margin-bottom:14px">
                 <label>Fallback language</label>
                 <input id="fallback-language" class="input" type="text" placeholder="en" style="width:100%">
                 <span class="hint">BCP-47 code used when TMDB has no result in any of the file's track languages</span>
               </div>
-            </div>
-
-            <div class="card" id="sect-behaviour">
-              <h3 style="font-size:1rem;margin:0 0 14px">Behaviour</h3>
               <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
                 <span style="font-size:.9rem">Overwrite existing NFO fields</span>
                 <span id="overwrite-nfo-toggle" class="toggle" style="cursor:pointer"></span>
@@ -94,13 +117,6 @@ fun renderSettings(container: Element, scope: CoroutineScope) {
               <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
                 <span style="font-size:.9rem">Fetch artwork automatically</span>
                 <span id="fetch-images-toggle" class="toggle" style="cursor:pointer"></span>
-              </div>
-              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
-                <div>
-                  <span style="font-size:.9rem">Watch library folders for new files</span>
-                  <div class="hint" style="margin-top:2px">Polls every 30s; triggers a scan when stable new video files are detected</div>
-                </div>
-                <span id="watch-enabled-toggle" class="toggle" style="cursor:pointer;flex-shrink:0;margin-left:12px"></span>
               </div>
               <div style="display:flex;align-items:center;justify-content:space-between">
                 <div>
@@ -111,24 +127,14 @@ fun renderSettings(container: Element, scope: CoroutineScope) {
               </div>
             </div>
 
-            <div class="card" id="sect-scanning">
-              <h3 style="font-size:1rem;margin:0 0 14px">Scanning</h3>
-              <div class="field">
-                <label>Scan workers</label>
-                <input id="scan-workers" class="input" type="number" min="1" max="32" style="width:90px">
-                <span class="hint">Number of items processed concurrently. Changing this during a scan takes effect immediately — more workers start at once; fewer drain after finishing their current item.</span>
-              </div>
-              <div class="field">
-                <label>Scan thread pool size</label>
-                <input id="scan-threads" class="input" type="number" min="1" max="32" style="width:90px">
-                <span class="hint">Thread pool the workers run on. <strong>Requires an application restart.</strong></span>
-              </div>
-              <div id="scan-threads-restart-banner" style="display:none;margin-top:10px;padding:8px 12px;border-radius:6px;background:var(--warn-fill,#7c5100);color:var(--warn-ink,#fff);font-size:.83rem"></div>
-            </div>
-
             <div class="card" id="sect-advanced">
               <h3 style="font-size:1rem;margin:0 0 10px">Advanced</h3>
-              <p class="hint" style="margin:0">Advanced configuration options will appear here in a future release.</p>
+              <div style="border:1px solid var(--bad);border-radius:8px;padding:14px 16px">
+                <div style="font-size:.9rem;font-weight:600;color:var(--bad);margin-bottom:4px">Danger zone</div>
+                <p class="hint" style="margin:0 0 12px">Permanently deletes all scanned media data and resets scan state. Your media files and NFOs on disk are not touched. You will need to run a full scan afterwards.</p>
+                <button id="clear-all-data-btn" class="btn sm" style="background:var(--bad);color:#fff;border-color:var(--bad)">Clear all scanned data</button>
+                <span id="clear-all-msg" class="tiny muted" style="margin-left:10px;display:none"></span>
+              </div>
             </div>
 
           </div>
@@ -146,6 +152,8 @@ fun renderSettings(container: Element, scope: CoroutineScope) {
         installLanguagePickerById("fallback-language")
         attachListeners(scope)
     }
+
+    wireSettingsNav(container)
 }
 
 private var overwriteNfo = false
@@ -235,6 +243,21 @@ private fun attachListeners(scope: CoroutineScope) {
 
     document.getElementById("fetch-libraries")?.addEventListener("click") {
         scope.launch { fetchAndRenderLibraries() }
+    }
+
+    document.getElementById("clear-all-data-btn")?.addEventListener("click") {
+        if (window.confirm("This will permanently delete all scanned media data and reset scan state. Your files on disk are not touched. Continue?")) {
+            scope.launch {
+                val msgEl = document.getElementById("clear-all-msg") as? HTMLElement
+                val btn = document.getElementById("clear-all-data-btn") as? HTMLElement
+                btn?.setAttribute("disabled", "")
+                msgEl?.let { it.style.display = "inline"; it.textContent = "Clearing…" }
+                val resp = runCatching { httpClient.delete("/api/media/all") }.getOrNull()
+                val ok = resp?.status == HttpStatusCode.NoContent
+                msgEl?.textContent = if (ok) "Done — run a scan to repopulate." else "Failed — check server logs."
+                btn?.removeAttribute("disabled")
+            }
+        }
     }
 
     document.getElementById("test-connections")?.addEventListener("click") {
@@ -454,6 +477,29 @@ private fun updateRestartBanner() {
             "Pending: $scanThreads thread${if (scanThreads != 1) "s" else ""}"
     } else {
         banner.style.display = "none"
+    }
+}
+
+private fun wireSettingsNav(container: Element) {
+    val navBtns = container.querySelectorAll(".settings-nav-item[data-sect]")
+    for (i in 0 until navBtns.length) {
+        val btn = navBtns.item(i) as? HTMLElement ?: continue
+        btn.addEventListener("click") { _ ->
+            val sectId = btn.getAttribute("data-sect") ?: return@addEventListener
+            val target = document.getElementById(sectId) ?: return@addEventListener
+            scrollIntoViewSmooth(target)
+        }
+    }
+
+    // Highlight the nav item whose section is visible at the top of the viewport
+    val sections = "sect-connections,sect-libraries,sect-scanning,sect-metadata,sect-advanced"
+    observeSections(sections, "-10% 0px -80% 0px") { visibleId ->
+        for (k in 0 until navBtns.length) {
+            val b = navBtns.item(k) as? HTMLElement ?: continue
+            val active = b.getAttribute("data-sect") == visibleId
+            b.style.color = if (active) "var(--ink)" else "var(--ink-soft)"
+            b.style.fontWeight = if (active) "600" else ""
+        }
     }
 }
 
