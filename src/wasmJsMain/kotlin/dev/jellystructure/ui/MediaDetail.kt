@@ -374,10 +374,10 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
                 $genresHtml
                 $directorHtml
                 $tagsChipsHtml
-                <div class="row center" style="margin-top:12px;padding:10px 12px;background:var(--fill-2);border-radius:6px;gap:10px;">
+                <!-- <div class="row center" style="margin-top:12px;padding:10px 12px;background:var(--fill-2);border-radius:6px;gap:10px;">
                   <span class="toggle on" style="pointer-events:none;flex-shrink:0;"></span>
                   <span style="font-size:.82rem;">lockdata=true — written to NFO so Jellyfin never overwrites these values</span>
-                </div>
+                </div> -->
                 <div class="field" style="margin-top:12px;">
                   <label>File path</label>
                   <div class="input mono" style="font-size:.82rem;word-break:break-all;">${item.path.esc()}</div>

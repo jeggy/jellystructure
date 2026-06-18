@@ -40,6 +40,7 @@ fun Route.authRoutes(
                     creds.password,
                 )
             }.getOrElse { e ->
+                println("jellyfin: ${config.apiKeys.jellyfinUrl}")
                 println("[WARN] Jellyfin auth error: ${e.message}")
                 call.respond(
                     HttpStatusCode.Unauthorized,

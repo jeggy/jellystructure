@@ -17,9 +17,13 @@ local.properties
 # Node / Webpack (WASM frontend)
 node_modules/
 
+# Tests
+tests/test-results
+tests/playwright-report
+
 # Project-specific
 config/config.toml
-/media/
+data
 
 # OS
 .DS_Store

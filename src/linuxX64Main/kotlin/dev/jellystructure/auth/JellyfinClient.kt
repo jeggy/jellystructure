@@ -76,7 +76,7 @@ class JellyfinClient {
         val url = baseUrl.trimEnd('/') +
             "/Items/$jellyfinId/Refresh?MetadataRefreshMode=$mode&ImageRefreshMode=$mode$extra"
         val response = http.post(url) {
-            header("Authorization", """$AUTH_HEADER, Token="$token"""")
+            header("Authorization", """$AUTH_HEADER "$token"""")
         }
         println("[INFO] Jellyfin item refresh $jellyfinId (${if (full) "full/recursive" else "validation"}): ${response.status.value}")
         response.status.value in 200..299
