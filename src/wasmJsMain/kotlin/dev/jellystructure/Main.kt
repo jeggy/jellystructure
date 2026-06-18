@@ -7,11 +7,9 @@ import dev.jellystructure.ui.renderLibrary
 import dev.jellystructure.ui.renderLogin
 import dev.jellystructure.ui.renderMediaDetail
 import dev.jellystructure.ui.renderMetadata
-import dev.jellystructure.ui.renderSeriesTriage
 import dev.jellystructure.ui.renderSetup
 import dev.jellystructure.ui.renderSettings
 import dev.jellystructure.ui.renderShell
-import dev.jellystructure.ui.renderTriage
 import dev.jellystructure.ui.renderTrackOrder
 import dev.jellystructure.ui.updateActiveNav
 import kotlinx.browser.document
@@ -67,18 +65,6 @@ object App {
                 val id = route.removePrefix("/media/")
                 if (id.isNotEmpty()) renderMediaDetail(container, scope, id)
                 else renderLibrary(container, scope)
-            }
-            route == "/triage"   -> renderTriage(container, scope)
-            route.startsWith("/triage/series/") -> {
-                val id = route.removePrefix("/triage/series/")
-                if (id.isNotEmpty()) renderSeriesTriage(container, scope, id)
-                else renderTriage(container, scope)
-            }
-            route.startsWith("/series-triage") -> {
-                // Legacy / support for ?id= form
-                val id = route.substringAfter("id=", "").substringBefore("&")
-                if (id.isNotEmpty()) renderSeriesTriage(container, scope, id)
-                else renderTriage(container, scope)
             }
             route == "/activity" -> renderActivity(container, scope)
             route == "/settings" -> renderSettings(container, scope)

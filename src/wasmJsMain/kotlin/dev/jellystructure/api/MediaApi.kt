@@ -62,6 +62,30 @@ data class NfoWritableResult(val writable: Boolean, val path: String, val error:
 data class TriageCount(val untagged: Int, val mismatch: Int, val total: Int)
 
 @Serializable
+data class TriageTrack(val specifier: String, val streamIndex: Int, val kind: String, val codec: String, val title: String? = null)
+
+@Serializable
+data class CascadeMismatch(val resolvedLanguage: String, val expectedDefaultSpecifier: String, val actualDefaultLang: String? = null)
+
+@Serializable
+data class MultiDefaultIssue(val defaultSpecifiers: List<String>)
+
+@Serializable
+data class EpisodeTriageItem(
+    val filename: String, val episodeCode: String, val title: String? = null,
+    val untaggedTracks: List<TriageTrack>, val missingOverview: Boolean, val multiDefault: MultiDefaultIssue? = null,
+)
+
+@Serializable
+data class TriageItem(
+    val mediaId: String, val title: String, val year: Int? = null, val path: String,
+    val kind: String = "movie", val posterPath: String? = null, val originalLanguage: String? = null,
+    val untaggedTracks: List<TriageTrack>, val cascadeMismatch: CascadeMismatch? = null,
+    val episodeIssues: List<EpisodeTriageItem> = emptyList(), val resolvedLanguage: String? = null,
+    val languageMix: Boolean = false, val multiDefault: MultiDefaultIssue? = null,
+)
+
+@Serializable
 data class HistoryEntry(
     val id: String,
     val mediaId: String,
@@ -313,6 +337,10 @@ object MediaApi {
     suspend fun getTriageCount(): TriageCount? = runCatching {
         httpClient.get("/api/triage/count").body<TriageCount>()
     }.getOrNull()
+
+    suspend fun getTriageItems(): List<TriageItem> = runCatching {
+        httpClient.get("/api/triage").body<List<TriageItem>>()
+    }.getOrDefault(emptyList())
 
     suspend fun getHistory(id: String): List<HistoryEntry> = runCatching {
         httpClient.get("/api/media/$id/history").body<List<HistoryEntry>>()

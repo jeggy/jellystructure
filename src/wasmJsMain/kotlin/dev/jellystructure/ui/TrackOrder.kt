@@ -48,7 +48,7 @@ private fun renderTrackOrderView(container: Element, item: MediaItem, scope: Cor
     val untaggedWarning = if (allEditable.any { it.language == null }) {
         """<div class="card" style="border-left:3px solid var(--warn,#f59e0b);padding:12px 16px;margin-bottom:14px;">
              <strong>Untagged track detected</strong> — tracks without a language tag cannot be placed by the cascade.
-             Tag them in <a href="#" id="go-triage" style="color:inherit;text-decoration:underline;">Triage</a> first to include them in ordering.
+             Tag them via the Episodes tab on the media detail page first to include them in ordering.
            </div>"""
     } else ""
 
@@ -183,11 +183,6 @@ private fun renderTrackOrderView(container: Element, item: MediaItem, scope: Cor
 
     document.getElementById("back-btn")?.addEventListener("click") {
         App.navigate("/media/${item.jellyfinId ?: item.id}")
-    }
-
-    document.getElementById("go-triage")?.addEventListener("click") { e ->
-        e.preventDefault()
-        App.navigate("/triage")
     }
 
     // Segment switcher: Audio / Subtitles

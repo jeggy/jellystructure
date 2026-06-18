@@ -54,7 +54,7 @@ private fun buildResolverTrace(item: MediaItem, fallbackLang: String): String {
         val spec = t.specifier.esc()
         when {
             t.language.isNullOrBlank() ->
-                """<div class="muted">$spec <span style="font-size:.85em">??</span> untagged → skipped (see triage)</div>"""
+                """<div class="muted">$spec <span style="font-size:.85em">??</span> untagged → skipped</div>"""
             t.language == resolved && !winnerFound -> {
                 winnerFound = true
                 """<div>$spec <span class="lang">${t.language.esc()}</span>? <span style="color:var(--ok)">✓ TMDB result → winner</span></div>"""
@@ -247,12 +247,8 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
                      <span class="tiny muted">$count</span>
                    </div>"""
             }
-            val triageLink = if (hasUntagged)
-                """<div class="tiny" style="margin-top:5px;"><a href="#/triage/series/${item.id}">Fix untagged →</a></div>"""
-            else ""
-            """<div class="tiny muted" style="margin-bottom:8px;">${epCount} episode${if (epCount != 1) "s" else ""} · $totalTracks tracks total</div>
-               $barsHtml
-               $triageLink"""
+            """<div class="tiny muted" style="margin-bottom:8px;">${epCount} episode${if (epCount != 1) "s" else ""} · $totalTracks tracks total${if (hasUntagged) " · <span class='badge bad' style='font-size:.7rem;'>untagged — use Episodes tab</span>" else ""}</div>
+               $barsHtml"""
         } else {
             """<div class="tiny muted" style="margin-bottom:8px;">No episode data yet.</div>"""
         }
@@ -606,10 +602,11 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
         }
     }
 
-    // Wire up episode row toggles, still uploads, and season sync buttons
+    // Wire up episode row toggles, still uploads, editing, and season sync buttons
     if (isTvShow) {
         wireEpisodeToggles()
         wireEpisodeStillUploads(scope)
+        wireEpisodeEditing(item, container, scope)
         val seasonSyncBtns = document.querySelectorAll(".season-sync-btn")
         for (i in 0 until seasonSyncBtns.length) {
             val btn = seasonSyncBtns.item(i) as? HTMLElement ?: continue
@@ -917,7 +914,7 @@ private fun buildEpisodesTab(item: MediaItem): String {
         if (totalUntagged > 0) append("""<span class="badge bad">$totalUntagged untagged track${if (totalUntagged != 1) "s" else ""}</span>""")
         if (missingStill > 0) append("""<span class="badge warn">$missingStill missing still${if (missingStill != 1) "s" else ""}</span>""")
         if (missingOverview > 0) append("""<span class="badge">$missingOverview missing overview${if (missingOverview != 1) "s" else ""}</span>""")
-        if (totalUntagged > 0) append("""<a href="#/triage" class="btn sm ghost" style="font-size:.75rem;">Fix all in triage →</a>""")
+        if (totalUntagged > 0) append("""<span class="tiny muted">Expand each episode row below to assign languages.</span>""")
         append("</div>")
     }
 
@@ -950,30 +947,40 @@ private fun buildEpisodeRow(ep: Episode, season: Int?, idx: Int, mediaId: String
         """<span class="badge bad" style="font-size:.7rem;">${ep.issueCount} untagged</span>"""
     else ""
 
-    val trackTableRows = (audioTracks + subTracks).joinToString("") { t ->
-        val langCell = if (t.language != null)
-            """<span class="lang">${t.language.esc()}</span>"""
-        else
-            """<span class="badge bad" style="font-size:.7rem;">none</span>"""
-        val rowClass = if (t.language == null) """ class="attn"""" else ""
-        """<tr$rowClass>
-             <td class="num">${t.specifier.esc()}</td>
-             <td>${t.kind.name.lowercase()}</td>
-             <td>$langCell</td>
-             <td>${t.title?.esc() ?: """<span class="muted">—</span>"""}</td>
-             <td class="num">${t.codec.esc()}</td>
-             <td>${if (t.default) """<span class="badge ok">default</span>""" else "—"}</td>
-             <td>${if (t.forced) "yes" else "—"}</td>
-           </tr>"""
-    }
-
-    val hasOverview = !ep.overview.isNullOrBlank()
-    val titleDisplay = if (!ep.title.isNullOrBlank()) ep.title.esc() else ""
     val encodedFilename = encodeURIComponent(ep.filename)
     val trackOrderHref = "/track-order?id=$mediaId&ep=${encodedFilename.esc()}"
-
     val bodyId = "ep-body-s${season ?: 0}-$idx"
     val toggleId = "ep-toggle-s${season ?: 0}-$idx"
+
+    val editRows = (audioTracks + subTracks).joinToString("") { t ->
+        val langBadge = if (t.language != null)
+            """<span class="lang" style="font-size:.75rem;">${t.language.esc()}</span>"""
+        else
+            """<span class="badge bad" style="font-size:.7rem;">none</span>"""
+        val defaultBadge = if (t.default)
+            """<span class="badge ok" style="font-size:.7rem;">default</span>"""
+        else
+            """<button class="btn sm ghost ep-set-default-btn" style="font-size:.7rem;padding:2px 6px;"
+                 data-media-id="$mediaId" data-ep-filename="${ep.filename.esc()}" data-specifier="${t.specifier.esc()}">set default ★</button>"""
+        val quickLangs = if (t.language == null) """
+            <div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:4px;">
+              <button class="btn sm ghost ep-lang-quick-btn" data-media-id="$mediaId" data-ep-filename="${ep.filename.esc()}" data-specifier="${t.specifier.esc()}" data-lang="dan" style="font-size:.7rem;padding:2px 6px;">dan</button>
+              <button class="btn sm ghost ep-lang-quick-btn" data-media-id="$mediaId" data-ep-filename="${ep.filename.esc()}" data-specifier="${t.specifier.esc()}" data-lang="eng" style="font-size:.7rem;padding:2px 6px;">eng</button>
+              <input class="input ep-lang-other-input" type="text" maxlength="8" placeholder="other…"
+                     style="width:70px;font-size:.7rem;padding:2px 5px;"
+                     data-media-id="$mediaId" data-ep-filename="${ep.filename.esc()}" data-specifier="${t.specifier.esc()}">
+              <span class="ep-lang-result tiny muted" data-specifier="${t.specifier.esc()}"></span>
+            </div>""" else ""
+        """<div style="display:flex;align-items:center;gap:8px;padding:4px 0;border-bottom:1px solid var(--line);flex-wrap:wrap;">
+             <span class="num mono" style="font-size:.75rem;min-width:48px;">${t.specifier.esc()}</span>
+             <span class="muted tiny">${t.kind.name.lowercase()}</span>
+             $langBadge
+             <span class="muted tiny">${t.codec.esc()}</span>
+             ${if (t.title != null) """<span class="muted tiny">${t.title.esc()}</span>""" else ""}
+             $defaultBadge
+             $quickLangs
+           </div>"""
+    }
 
     val stillThumb = if (!ep.stillPath.isNullOrBlank()) {
         """<div style="width:72px;height:40px;flex-shrink:0;border-radius:3px;overflow:hidden;background:var(--fill-3);">
@@ -991,18 +998,30 @@ private fun buildEpisodeRow(ep: Episode, season: Int?, idx: Int, mediaId: String
                style="display:flex;align-items:center;gap:10px;padding:9px 12px;cursor:pointer;">
             $stillThumb
             <span class="num" style="min-width:64px;font-size:.82rem;">${epCode.esc()}</span>
-            ${if (titleDisplay.isNotEmpty()) """<span style="font-size:.85rem;font-weight:500;flex:none;max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="$titleDisplay">$titleDisplay</span>""" else ""}
+            ${if (!ep.title.isNullOrBlank()) """<span style="font-size:.85rem;font-weight:500;flex:none;max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${ep.title.esc()}">${ep.title.esc()}</span>""" else ""}
             <div style="display:flex;gap:4px;flex-wrap:wrap;flex:1;">$trackChips</div>
             $issueBadge
             <span class="ep-chev" style="color:var(--ink-soft);font-size:.9rem;margin-left:4px;">›</span>
           </div>
           <div id="$bodyId" style="display:none;padding:0 12px 12px;">
-            ${if (hasOverview) """<p style="font-size:.82rem;color:var(--ink-soft);margin:8px 0;">${ep.overview!!.esc()}</p>""" else ""}
-            ${if (trackTableRows.isNotEmpty()) """
-            <table class="wf-table" style="margin:0 0 6px;">
-              <tr><th>#</th><th>Kind</th><th>Lang</th><th>Title</th><th>Codec</th><th>Default</th><th>Forced</th></tr>
-              $trackTableRows
-            </table>""" else """<span class="muted tiny">No audio/subtitle tracks.</span>"""}
+            <div style="margin:8px 0 10px;display:flex;flex-direction:column;gap:6px;">
+              <div class="field" style="margin:0;">
+                <label style="font-size:.75rem;">Title</label>
+                <input class="input ep-title-input" type="text" value="${ep.title?.esc() ?: ""}"
+                       data-ep-filename="${ep.filename.esc()}" style="width:100%;font-size:.85rem;">
+              </div>
+              <div class="field" style="margin:0;">
+                <label style="font-size:.75rem;">Overview</label>
+                <textarea class="input ep-overview-input" rows="3" data-ep-filename="${ep.filename.esc()}"
+                          style="width:100%;resize:vertical;font-size:.82rem;">${ep.overview?.esc() ?: ""}</textarea>
+              </div>
+              <div style="display:flex;gap:8px;align-items:center;">
+                <button class="btn sm primary ep-save-btn" data-media-id="$mediaId" data-ep-filename="${ep.filename.esc()}" style="font-size:.8rem;">Save episode</button>
+                <button class="btn sm ghost ep-fetch-still-btn" data-media-id="$mediaId" data-ep-filename="${ep.filename.esc()}" style="font-size:.8rem;">Fetch still</button>
+                <span class="ep-save-msg tiny muted" data-ep-filename="${ep.filename.esc()}"></span>
+              </div>
+            </div>
+            ${if (editRows.isNotEmpty()) """<div style="margin-bottom:8px;">$editRows</div>""" else ""}
             <div class="row center" style="margin-top:6px;gap:8px;">
               <div class="muted tiny" style="flex:1;font-family:monospace;">${ep.filename.esc()}</div>
               <button class="btn sm ghost ep-still-upload-btn" style="font-size:.72rem;"
@@ -1206,6 +1225,135 @@ private fun wireEpisodeStillUploads(scope: CoroutineScope) {
                 scope.launch {
                     delay(2000)
                     showDetailMsg("Still upload submitted.", true)
+                }
+            }
+        }
+    }
+}
+
+private fun wireEpisodeEditing(item: MediaItem, container: Element, scope: CoroutineScope) {
+    // Save episode metadata (title + overview)
+    document.querySelectorAll(".ep-save-btn").let { btns ->
+        for (i in 0 until btns.length) {
+            val btn = btns.item(i) as? HTMLElement ?: continue
+            val mediaId = btn.getAttribute("data-media-id") ?: continue
+            val epFilename = btn.getAttribute("data-ep-filename") ?: continue
+            btn.addEventListener("click") {
+                val msgEl = document.querySelector(".ep-save-msg[data-ep-filename='$epFilename']") as? HTMLElement
+                val titleInput = document.querySelector(".ep-title-input[data-ep-filename='$epFilename']") as? HTMLInputElement
+                val overviewInput = document.querySelector(".ep-overview-input[data-ep-filename='$epFilename']") as? HTMLTextAreaElement
+                val title = titleInput?.value?.trim()
+                val overview = overviewInput?.value?.trim()
+                btn.setAttribute("disabled", "true")
+                msgEl?.textContent = "Saving…"
+                scope.launch {
+                    val ok = MediaApi.setEpisodeMetadata(mediaId, epFilename, title?.ifEmpty { null }, overview?.ifEmpty { null })
+                    if (ok) {
+                        msgEl?.textContent = "Saved ✓"
+                    } else {
+                        msgEl?.textContent = "Failed"
+                    }
+                    btn.removeAttribute("disabled")
+                }
+            }
+        }
+    }
+
+    // Fetch still from TMDB
+    document.querySelectorAll(".ep-fetch-still-btn").let { btns ->
+        for (i in 0 until btns.length) {
+            val btn = btns.item(i) as? HTMLElement ?: continue
+            val mediaId = btn.getAttribute("data-media-id") ?: continue
+            btn.addEventListener("click") {
+                btn.setAttribute("disabled", "true")
+                btn.textContent = "Fetching…"
+                scope.launch {
+                    val result = MediaApi.fetchEpisodeStills(mediaId)
+                    if (result != null) {
+                        renderMediaDetail(container, scope, mediaId)
+                    } else {
+                        btn.textContent = "Fetch still"
+                        btn.removeAttribute("disabled")
+                        showDetailMsg("Fetch still failed.", false)
+                    }
+                }
+            }
+        }
+    }
+
+    // Set default track for episode
+    document.querySelectorAll(".ep-set-default-btn").let { btns ->
+        for (i in 0 until btns.length) {
+            val btn = btns.item(i) as? HTMLElement ?: continue
+            val mediaId = btn.getAttribute("data-media-id") ?: continue
+            val epFilename = btn.getAttribute("data-ep-filename") ?: continue
+            val specifier = btn.getAttribute("data-specifier") ?: continue
+            btn.addEventListener("click") {
+                btn.setAttribute("disabled", "true")
+                btn.textContent = "…"
+                scope.launch {
+                    val err = MediaApi.setEpisodeDefaultTrack(mediaId, epFilename, specifier)
+                    if (err == null) {
+                        renderMediaDetail(container, scope, mediaId)
+                    } else {
+                        btn.textContent = "set default ★"
+                        btn.removeAttribute("disabled")
+                        showDetailMsg("Failed: $err", false)
+                    }
+                }
+            }
+        }
+    }
+
+    // Quick language assignment for episode tracks
+    document.querySelectorAll(".ep-lang-quick-btn").let { btns ->
+        for (i in 0 until btns.length) {
+            val btn = btns.item(i) as? HTMLElement ?: continue
+            val mediaId = btn.getAttribute("data-media-id") ?: continue
+            val epFilename = btn.getAttribute("data-ep-filename") ?: continue
+            val specifier = btn.getAttribute("data-specifier") ?: continue
+            val lang = btn.getAttribute("data-lang") ?: continue
+            btn.addEventListener("click") {
+                val resultEl = document.querySelector(".ep-lang-result[data-specifier='$specifier']") as? HTMLElement
+                resultEl?.textContent = "…"
+                btn.setAttribute("disabled", "true")
+                scope.launch {
+                    val err = MediaApi.setEpisodeTrackLanguage(mediaId, epFilename, specifier, lang)
+                    if (err == null) {
+                        renderMediaDetail(container, scope, mediaId)
+                    } else {
+                        resultEl?.textContent = "✗ $err"
+                        btn.removeAttribute("disabled")
+                    }
+                }
+            }
+        }
+    }
+
+    // Free-text language assignment for episode tracks
+    document.querySelectorAll(".ep-lang-other-input").let { inputs ->
+        for (i in 0 until inputs.length) {
+            val input = inputs.item(i) as? HTMLInputElement ?: continue
+            val mediaId = input.getAttribute("data-media-id") ?: continue
+            val epFilename = input.getAttribute("data-ep-filename") ?: continue
+            val specifier = input.getAttribute("data-specifier") ?: continue
+            input.addEventListener("keydown") { e ->
+                val ke = e as? org.w3c.dom.events.KeyboardEvent ?: return@addEventListener
+                if (ke.key == "Enter") {
+                    val lang = input.value.trim()
+                    if (lang.isEmpty()) return@addEventListener
+                    val resultEl = document.querySelector(".ep-lang-result[data-specifier='$specifier']") as? HTMLElement
+                    resultEl?.textContent = "…"
+                    input.setAttribute("disabled", "true")
+                    scope.launch {
+                        val err = MediaApi.setEpisodeTrackLanguage(mediaId, epFilename, specifier, lang)
+                        if (err == null) {
+                            renderMediaDetail(container, scope, mediaId)
+                        } else {
+                            resultEl?.textContent = "✗ $err"
+                            input.removeAttribute("disabled")
+                        }
+                    }
                 }
             }
         }
