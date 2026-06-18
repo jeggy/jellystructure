@@ -1,19 +1,28 @@
-# CONSTITUTION.md
+# Constitution
 
-This document defines the non-negotiable architectural decisions, core principles, and design constraints for **jellystructure**. All development — human or AI-assisted — must adhere to these rules. If a decision conflicts with this document, the document wins unless it is formally updated here first.
+This document defines the non-negotiable architectural decisions, core principles, and design
+constraints for **jellystructure**. All development — human or AI-assisted — must adhere to these
+rules. If a decision conflicts with this document, the document wins unless it is formally updated
+here first.
+
+This is the **source of truth** for architecture. [`plan.md`](plan.md) describes *how* the system is
+built today; this document describes what must always be true.
 
 ---
 
 ## Vision
 
-jellystructure is a self-hosted web system that **fully replaces Jellyfin's built-in metadata scraper**. Once this system is running, users should never need to use "Refresh Metadata" inside Jellyfin. The system owns:
+jellystructure is a self-hosted web system that **fully replaces Jellyfin's built-in metadata
+scraper**. Once this system is running, users should never need to use "Refresh Metadata" inside
+Jellyfin. The system owns:
 
 - NFO files (Kodi/Jellyfin-compatible XML): `movie.nfo`, `tvshow.nfo`, `episodedetails.nfo`
 - All image assets (posters, backdrops, logos, per-episode stills)
 - Media file track ordering (audio and subtitle default flags)
 - Config management (editable from the web UI)
 
-The metadata language is driven by the actual audio tracks present in each file — not a global default — using a language-resolution algorithm backed by TMDB.
+The metadata language is driven by the actual audio tracks present in each file — not a global
+default — using a language-resolution algorithm backed by TMDB.
 
 ---
 
@@ -27,7 +36,7 @@ These choices are fixed. Do not introduce alternatives without updating this doc
 - File I/O: **kotlinx-io** (`org.jetbrains.kotlinx:kotlinx-io-core`) — `java.io` and `java.nio` do not exist in Kotlin Native; kotlinx-io is the JetBrains-maintained KMP I/O library
 - Config: **ktoml + kotlinx.serialization** — TOML format, `@Serializable` data classes, no runtime reflection
 - Local DB: **SQLDelight with native SQLite driver** — sessions, scan cache, audit log, triage issues
-- Subprocess: **Kotlin Native process API** via Kommand or equivalent — wraps `ffmpeg`, `ffprobe`, `mkvpropedit`
+- Subprocess: **Kotlin Native process API** — wraps `ffmpeg`, `ffprobe`, `mkvpropedit`
 - Real-time: **Ktor WebSockets** — push status updates from backend to frontend; no HTTP polling
 
 ### Frontend — Kotlin WASM
@@ -63,7 +72,7 @@ Before `jellyfin_url` is configured, a one-time setup screen (`/setup`) is serve
   - Movies: `<movie>` → `movie.nfo` beside the movie file
   - Series: `<tvshow>` → `tvshow.nfo` in the series directory
   - Episodes: `<episodedetails>` → `{S01E03}.nfo` (or matching filename) beside each episode file
-- **Always include `<lockdata>true</lockdata>`** — this instructs Jellyfin to never overwrite these files
+- `<lockdata>true</lockdata>` instructs Jellyfin to never overwrite these files (currently commented out in writes — see STATUS)
 - Written via kotlinx-io streaming (no full XML tree in RAM)
 - Atomic write: write to `.tmp` file then `rename()` to avoid partial reads by Jellyfin
 
@@ -80,7 +89,9 @@ This is the core domain logic. It determines which language is used when fetchin
 4. If no language from the file's tracks yields a TMDB result, fall back to the single global `fallback_language` (default `en`); per-library overrides take precedence over the global default
 5. Track default flags and ordering are **never changed automatically** — they are changed only via explicit manual action in the UI
 
-**For TV series**: language resolution runs **per episode** on that episode's own audio tracks. The series (`tvshow.nfo`) uses the **majority** of its episodes' resolved languages. Mixed-language series surface a distribution view and an override; no writes are blocked by a mix.
+**For TV series**: language resolution runs **per episode** on that episode's own audio tracks. The
+series (`tvshow.nfo`) uses the **majority** of its episodes' resolved languages. Mixed-language
+series surface a distribution view and an override; no writes are blocked by a mix.
 
 ### Subprocess Hierarchy
 Choose the **least destructive tool** sufficient for the operation:
@@ -91,9 +102,8 @@ Choose the **least destructive tool** sufficient for the operation:
 | Remove/reorder tracks, fix incompatible containers | `ffmpeg -c copy` | Remux without re-encoding; use only when mkvpropedit is insufficient |
 | Re-encode | `ffmpeg` (full) | Last resort only; never triggered automatically |
 
-`ffprobe` output is always parsed as JSON (`-print_format json -show_streams`).
-
-FFmpeg/mkvpropedit stdout+stderr is streamed to the frontend via WebSocket during long operations.
+`ffprobe` output is always parsed as JSON (`-print_format json -show_streams`). FFmpeg/mkvpropedit
+stdout+stderr is streamed to the frontend via WebSocket during long operations.
 
 ### Series and Episode Management
 - **Discovery**: Jellyfin API is the source of truth for series existence; episodes are discovered by filesystem walk within the series directory (no reliance on `GET /Shows/{id}/Episodes` for file discovery, since Jellyfin may not have probed all episodes)
@@ -102,7 +112,8 @@ FFmpeg/mkvpropedit stdout+stderr is streamed to the frontend via WebSocket durin
 - **Track editing**: every episode supports the same track default and language editing as a movie, from the episode's own file
 
 ### Jellyfin API Integration
-After completing metadata or file modifications, the system calls Jellyfin's REST API to trigger a refresh — the user never has to do this manually:
+After completing metadata or file modifications, the system calls Jellyfin's REST API to trigger a
+refresh — the user never has to do this manually:
 - `POST /Items/{itemId}/Refresh` with `MetadataRefreshMode=FullRefresh`
 - HTTP 204 response is forwarded to the frontend over WebSocket as a completion event
 
@@ -121,7 +132,8 @@ fallback_language = "en"
 [behavior]
 overwrite_nfo = false
 fetch_images = true
-watch_folders = false
+watch_enabled = false
+tell_jellyfin = true   # call Jellyfin refresh after writes
 
 [[libraries]]
 jellyfin_id = "abc123"
@@ -133,7 +145,11 @@ skip = false
 fallback_language = ""             # empty = inherit global
 ```
 
-Library paths are **not static**. They are auto-discovered from the Jellyfin API (`GET /Library/VirtualFolders`) after a successful connection test and stored as `[[libraries]]` TOML array entries. There is no static `[paths]` section. The operator assigns the local mount path per library; all other fields come from Jellyfin. Config is readable and writable from the web UI; changes are posted as JSON to Ktor, converted to TOML, and written to `/config/config.toml`.
+Library paths are **not static**. They are auto-discovered from the Jellyfin API
+(`GET /Library/VirtualFolders`) after a successful connection test and stored as `[[libraries]]`
+TOML array entries. There is no static `[paths]` section. The operator assigns the local mount path
+per library; all other fields come from Jellyfin. Config is readable and writable from the web UI;
+changes are posted as JSON to Ktor, converted to TOML, and written to `/config/config.toml`.
 
 ---
 
@@ -142,8 +158,22 @@ Library paths are **not static**. They are auto-discovered from the Jellyfin API
 - The frontend establishes a WebSocket connection on load
 - All long-running backend operations (scans, downloads, ffmpeg jobs) emit granular JSON progress events over this connection
 - The frontend updates specific DOM nodes reactively — no full page reloads
-- UI state changes (e.g. a job starting) are reflected immediately, before the backend confirms
+- **The frontend renders server-pushed state only** — no derived or optimistic local state. (Desync from local accumulation was a past bug.) The ambient scan dock's counter is seeded from `GET /api/scan/status`, not accumulated purely from WS events.
 - On each `ItemScanned` event during a scan, the Library grid appends/updates the item without waiting for scan completion
+
+---
+
+## Visual System (Aurora direction)
+
+The `design/app/` directory contains HTML/CSS mockups that are the **visual target** for the
+Kotlin/WASM frontend. They use a custom CSS-variable system in `wf.css` (tokens + components) and
+`app.css` (shell). Tokens map to Tailwind on implementation — the real frontend uses **Tailwind
+CSS**; mockups are the visual spec, they are not served directly.
+
+- Dark-primary with light toggle; persisted in `localStorage` as `js-theme` (`light` / `dark` / `system`)
+- Jellyfin-style purple→blue gradient accent
+- Type: Space Grotesk (display) · Sora (UI) · JetBrains Mono (code/IDs)
+- Color tokens of note: `--ok` (green, resolved/success), `--warn` (amber, dirty/mixed), `--bad` (red, error/destructive)
 
 ---
 
@@ -161,21 +191,15 @@ A setup script (`scripts/build-fixtures.sh`) downloads and prepares test media b
 - **Sintel**: `fra` injected as wrong default audio (must be repaired to `eng`)
 - **Big Buck Bunny**: 2 untagged audio tracks (→ triage queue)
 - **Tears of Steel**: split into 3 episode files under a fake series directory (→ series episode tab)
-- **Babel Fish**: mixed-language series fixture (→ language mix badge, NFO blocked)
-- Post-test validation runs `ffprobe` and asserts the correct track is now flagged as default
+- **Babel Fish**: mixed-language series fixture (→ language mix badge)
 
 ---
 
-## Development Phases
+## Key Invariants (do not break)
 
-| Phase | Status | Focus |
-|---|---|---|
-| 0 | ✓ Done | Scaffolding — Gradle KMP, Docker Compose, native binary + WASM bundle |
-| 1 | ✓ Done | Config, DB, auth (Jellyfin sign-in, session cookie, admin gate), library mapping |
-| 2 | ✓ Done | Jellyfin-driven discovery, ffprobe track data, TMDB match, Library + Media Detail UI |
-| 3 | ✓ Done | NFO write (movie + tvshow), artwork download, language resolver, cascade settings UI |
-| 4 | ✓ Done | Track editing (mkvpropedit/ffmpeg), triage queue, live WebSocket scan, Jellyfin refresh |
-| 5 | ✓ Done | Folder watcher, Playwright E2E tests, fixture builder, series episode tab |
-| 6 | ✓ Done | Per-episode TMDB metadata, episodedetails.nfo, episode stills, per-episode track editing |
-
-Phases are sequential. Do not begin a phase until the prior phase's core deliverables are working end-to-end.
+1. **Track flags are never changed automatically** — only via explicit user action in the UI.
+2. **Language resolution is per-file** — audio tracks in physical index order, first TMDB hit wins.
+3. **NFO writes are atomic** — `.tmp` + `rename()`.
+4. **Frontend renders server-pushed state only** — no derived/optimistic state.
+5. **No Compose for Web** — DOM manipulation only via `kotlinx.browser`.
+6. **Jellystructure tags survive re-syncs** — on sync/repull, tags defined in `js_tags` are always preserved (see Phase 18).
