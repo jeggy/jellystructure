@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en" data-skin="aurora">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ravilo — Smart TV</title>
+<link rel="stylesheet" href="ravilo.css">
+</head>
+<body>
+<div id="viewport">
+  <div id="stage" data-screen-label="Ravilo Home"></div>
+</div>
+
+<!-- preview chrome — NOT part of the shipped app -->
+<div id="chrome">
+  <div class="remote-help">
+    <kbd>↑</kbd><kbd>↓</kbd><kbd>←</kbd><kbd>→</kbd> move
+    <span class="sep">·</span> <kbd>↵</kbd> select <span class="sep">·</span> <kbd>esc</kbd> back
+  </div>
+  <div class="skinpick" id="skinpick">
+    <b>SKIN</b>
+    <button data-skin="aurora" class="on">Aurora</button>
+    <button data-skin="midnight">Midnight</button>
+    <button data-skin="noir">Noir</button>
+  </div>
+</div>
+
+<script src="ravilo-data.js"></script>
+<script src="ravilo-app.js"></script>
+<script>
+  const params = new URLSearchParams(location.search);
+  const skin = params.get('skin') || 'aurora';
+  const interactive = params.get('static') !== '1';
+  document.documentElement.setAttribute('data-skin', skin);
+  if (params.get('chrome') === '0') document.getElementById('chrome').remove();
+
+  const stage = document.getElementById('stage');
+  window.fitStage(stage);
+  mountRavilo(stage, { interactive });
+
+  // live skin switcher (preview control)
+  const pick = document.getElementById('skinpick');
+  if (pick) {
+    pick.querySelectorAll('button').forEach(x => x.classList.toggle('on', x.dataset.skin === skin));
+    pick.addEventListener('click', e => {
+      const b = e.target.closest('button'); if (!b) return;
+      document.documentElement.setAttribute('data-skin', b.dataset.skin);
+      pick.querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b));
+    });
+  }
+</script>
+</body>
+</html>

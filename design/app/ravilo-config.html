@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Jellystructure — Ravilo TV</title>
+<link rel="stylesheet" href="wf.css">
+<link rel="stylesheet" href="app.css">
+<style>
+  .ravilo-mark { width: 32px; height: 32px; display: inline-block; vertical-align: middle; filter: drop-shadow(0 0 10px rgba(123,110,240,.5)); }
+  /* draggable config list rows */
+  .cfg-row { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--radius-s); background: var(--fill-2); }
+  .cfg-row + .cfg-row { margin-top: 9px; }
+  .cfg-row.off { opacity: .5; }
+  .grab { cursor: grab; color: var(--ink-dim); font-size: 1rem; flex: none; letter-spacing: -2px; }
+  .cfg-row .nm { font-weight: 600; }
+  .cfg-row .src { font-size: .76rem; color: var(--ink-soft); }
+  .swatch-sm { width: 30px; height: 30px; border-radius: 8px; flex: none; box-shadow: inset 0 0 0 1px rgba(255,255,255,.12); }
+  .studio-wm { width: 64px; height: 38px; border-radius: 8px; display: flex; align-items: center; justify-content: center; color: #fff; font-family: 'Space Grotesk',sans-serif; font-weight: 800; font-size: .9rem; flex: none; }
+  .hero-thumb { width: 92px; height: 52px; border-radius: 8px; flex: none; position: relative; overflow: hidden; }
+  .hero-thumb .t { position: absolute; left: 8px; bottom: 6px; font-family: 'Space Grotesk',sans-serif; font-weight: 700; font-size: .72rem; color: #fff; text-shadow: 0 1px 4px rgba(0,0,0,.6); }
+  .seg-pill { display: inline-flex; gap: 3px; padding: 3px; border-radius: 9px; background: var(--fill-3); border: 1px solid var(--line); }
+  .seg-pill button { border: none; background: transparent; color: var(--ink-soft); font-family: 'Sora',sans-serif; font-size: .82rem; font-weight: 600; padding: 6px 12px; border-radius: 7px; cursor: pointer; }
+  .seg-pill button.on { background: var(--hi-soft); color: var(--acc-ink); box-shadow: inset 0 0 0 1px rgba(123,110,240,.3); }
+</style>
+</head>
+<body class="wf-body app-body">
+
+<main class="app-main2 wide" data-page="ravilo" data-no-dock data-screen-label="Ravilo config">
+  <div class="pagebar">
+    <h1><svg class="ravilo-mark" viewBox="0 0 100 100" aria-hidden="true"><defs><linearGradient id="ravJelly" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#7b6ef0"/><stop offset="1" stop-color="#3fb6f5"/></linearGradient></defs><path d="M22 52 C22 24 78 24 78 52 C66 45 59 45 50 49 C41 45 34 45 22 52 Z" fill="url(#ravJelly)"/><g stroke="url(#ravJelly)" stroke-width="4.5" stroke-linecap="round" fill="none"><path d="M33 51 q-5 12 1 20 q5 8 0 14" opacity=".9"/><path d="M44 52 q-4 13 1 21 q4 9 0 13" opacity=".72"/><path d="M56 52 q4 13 -1 21 q-4 9 0 13" opacity=".72"/><path d="M67 51 q5 12 -1 20 q-5 8 0 14" opacity=".9"/></g></svg> Ravilo TV</h1>
+    <span class="badge info">app config</span>
+    <span class="spacer"></span>
+    <a class="btn sm ghost" href="../ravilo/Ravilo TV.html" target="_blank" rel="noopener">Open Ravilo ↗</a>
+    <span class="badge ok">saved · synced</span>
+    <span class="btn primary">Save</span>
+  </div>
+  <p class="page-sub">Lay out the Ravilo home screen your viewers see on their TVs. Ravilo connects only to Jellystructure — it authenticates against Jellyfin through us and pulls all media from Jellyfin, but browsing, search and this layout are served by the Jellystructure API.</p>
+
+  <!-- per-user sync banner -->
+  <div class="note blue" style="margin-bottom:18px;display:flex;gap:12px;align-items:center;">
+    <span class="badge info" style="flex:none;">per Jellyfin user</span>
+    <div class="tiny" style="flex:1;">This layout is stored against the selected Jellyfin user, so every TV they sign into shows the same thing. Changes here sync to all their devices instantly.</div>
+    <span class="select" style="width:auto;min-width:170px;"><span>Editing: Eyð Restorff</span></span>
+  </div>
+
+  <div class="row" style="align-items:flex-start;">
+    <!-- section nav -->
+    <div class="card flat" id="set-nav" style="width:166px;flex:none;padding:8px;position:sticky;top:24px;">
+      <div class="navitem active" data-goto="sect-hero">Hero carousel</div>
+      <div class="navitem" data-goto="sect-studios">Channels</div>
+      <div class="navitem" data-goto="sect-rows">Content rows</div>
+      <div class="navitem" data-goto="sect-behaviour">Behaviour</div>
+    </div>
+
+    <div class="col fill">
+      <!-- HERO -->
+      <div class="card set-section" id="sect-hero">
+        <div class="row center"><h3 style="font-size:1.05rem;margin:0;">Hero carousel</h3><span class="badge info" style="margin-left:8px;">1–10 items</span><span class="spacer"></span><span class="btn sm ghost">＋ Add featured</span></div>
+        <p class="tiny muted" style="margin:6px 0 14px;">The top banner. Drag to reorder; the carousel auto-advances on the TV. These are pulled from your Jellyfin library by title.</p>
+
+        <div id="herolist">
+          <div class="cfg-row"><span class="grab">⠿</span><div class="hero-thumb" style="background:linear-gradient(145deg,hsl(265 48% 36%),hsl(310 52% 14%));"><span class="t">Nordvest</span></div><div style="flex:1;"><div class="nm">Nordvest <span class="badge" style="font-size:.6rem;">New Season</span></div><div class="src">Series · Kringvarp · 2023</div></div><span class="muted tiny">show</span><span class="toggle on"></span><span class="btn sm ghost rm">✕</span></div>
+          <div class="cfg-row"><span class="grab">⠿</span><div class="hero-thumb" style="background:linear-gradient(145deg,hsl(28 48% 38%),hsl(60 52% 15%));"><span class="t">Cosmos…</span></div><div style="flex:1;"><div class="nm">Cosmos Laundromat <span class="badge" style="font-size:.6rem;">4K</span></div><div class="src">Film · 2015</div></div><span class="muted tiny">show</span><span class="toggle on"></span><span class="btn sm ghost rm">✕</span></div>
+          <div class="cfg-row"><span class="grab">⠿</span><div class="hero-thumb" style="background:linear-gradient(145deg,hsl(190 48% 34%),hsl(220 52% 14%));"><span class="t">Havets…</span></div><div style="flex:1;"><div class="nm">Havets Hjarta</div><div class="src">Series · Dansk TV · 2022</div></div><span class="muted tiny">show</span><span class="toggle on"></span><span class="btn sm ghost rm">✕</span></div>
+          <div class="cfg-row"><span class="grab">⠿</span><div class="hero-thumb" style="background:linear-gradient(145deg,hsl(345 48% 36%),hsl(15 52% 14%));"><span class="t">Hraðar…</span></div><div style="flex:1;"><div class="nm">Hraðar Ljós <span class="badge" style="font-size:.6rem;">Premiere</span></div><div class="src">Film · 2024</div></div><span class="muted tiny">show</span><span class="toggle on"></span><span class="btn sm ghost rm">✕</span></div>
+        </div>
+
+        <hr class="dash" style="margin:16px 0;">
+        <div class="row center" style="gap:18px;flex-wrap:wrap;">
+          <div class="field" style="margin:0;flex:1;min-width:240px;">
+            <label>Hero height <span class="mono" id="hero-h-val">56%</span> of screen</label>
+            <input type="range" min="30" max="70" value="56" id="hero-h" style="width:100%;accent-color:var(--hi);">
+            <span class="hint">How much of the TV screen the banner fills (30–70%).</span>
+          </div>
+          <div class="field" style="margin:0;width:200px;"><label>Auto-advance</label><span class="select"><span>Every 6 seconds</span></span></div>
+        </div>
+      </div>
+
+      <!-- STUDIOS / CHANNELS -->
+      <div class="card set-section" id="sect-studios">
+        <div class="row center"><h3 style="font-size:1.05rem;margin:0;">Channels &amp; collections</h3><span class="spacer"></span><span class="btn sm ghost">＋ Add channel</span></div>
+        <p class="tiny muted" style="margin:6px 0 14px;">The Disney+-style logo row under the hero. Each opens a view with the <b>same content rows below</b>, filtered to that channel. Map each to a Jellyfin studio, network, genre or tag.</p>
+
+        <div id="studiolist">
+          <div class="cfg-row"><span class="grab">⠿</span><div class="studio-wm" style="background:linear-gradient(135deg,#3b2a78,#15102e);">HBO</div><div style="flex:1;"><div class="nm">HBO</div><div class="src">filter: network = “HBO”</div></div><span class="seg-pill"><button class="on">Logo</button><button>Text</button></span><span class="toggle on"></span><span class="btn sm ghost rm">✕</span></div>
+          <div class="cfg-row"><span class="grab">⠿</span><div class="studio-wm" style="background:linear-gradient(135deg,#e3122b,#7d0a1a);">TV2</div><div style="flex:1;"><div class="nm">TV 2</div><div class="src">filter: network = “TV 2”</div></div><span class="seg-pill"><button class="on">Logo</button><button>Text</button></span><span class="toggle on"></span><span class="btn sm ghost rm">✕</span></div>
+          <div class="cfg-row"><span class="grab">⠿</span><div class="studio-wm" style="background:linear-gradient(135deg,#0a93a6,#063d47);">KvF</div><div style="flex:1;"><div class="nm">Kringvarp</div><div class="src">filter: network = “Kringvarp”</div></div><span class="seg-pill"><button class="on">Logo</button><button>Text</button></span><span class="toggle on"></span><span class="btn sm ghost rm">✕</span></div>
+          <div class="cfg-row"><span class="grab">⠿</span><div class="studio-wm" style="background:linear-gradient(135deg,#1455d8,#0a2766);">DR</div><div style="flex:1;"><div class="nm">DR</div><div class="src">filter: network = “DR”</div></div><span class="seg-pill"><button class="on">Logo</button><button>Text</button></span><span class="toggle on"></span><span class="btn sm ghost rm">✕</span></div>
+          <div class="cfg-row"><span class="grab">⠿</span><div class="studio-wm" style="background:linear-gradient(135deg,#c8102e,#1a1a1a);">DK</div><div style="flex:1;"><div class="nm">Dansk TV <span class="badge info" style="font-size:.6rem;">category</span></div><div class="src">filter: tag = “dansk-tv”</div></div><span class="seg-pill"><button>Logo</button><button class="on">Text</button></span><span class="toggle on"></span><span class="btn sm ghost rm">✕</span></div>
+        </div>
+      </div>
+
+      <!-- ROWS -->
+      <div class="card set-section" id="sect-rows">
+        <div class="row center"><h3 style="font-size:1.05rem;margin:0;">Content rows</h3><span class="badge info" style="margin-left:8px;">5–20 rows</span><span class="spacer"></span><span class="btn sm ghost">＋ Add row</span></div>
+        <p class="tiny muted" style="margin:6px 0 14px;">The vertical stack on Home. This <b>same set</b> is reused inside every channel view, scoped to that channel.</p>
+
+        <!-- merge toggle -->
+        <div class="box flat" style="background:var(--hi-soft);border-color:rgba(123,110,240,.3);margin-bottom:14px;">
+          <div class="row center" style="gap:12px;">
+            <div style="flex:1;"><b>Merge “Newly Added” movies &amp; series into one row</b><div class="tiny muted">Off = two rows like Jellyfin (Newly Added Movies, Newly Added Series). On = a single combined “Newly Added”.</div></div>
+            <span class="toggle" id="merge-tog"></span>
+          </div>
+        </div>
+
+        <div id="rowlist">
+          <div class="cfg-row"><span class="grab">⠿</span><span class="badge ok" style="flex:none;">system</span><div style="flex:1;"><div class="nm">Continue Watching</div><div class="src">Continue + Next Up, merged</div></div><span class="muted tiny">show</span><span class="toggle on"></span></div>
+          <div class="cfg-row" data-newly="split"><span class="grab">⠿</span><span class="badge ok" style="flex:none;">system</span><div style="flex:1;"><div class="nm">Newly Added Movies</div><div class="src">kind = movie · sort newest</div></div><span class="muted tiny">show</span><span class="toggle on"></span></div>
+          <div class="cfg-row" data-newly="split"><span class="grab">⠿</span><span class="badge ok" style="flex:none;">system</span><div style="flex:1;"><div class="nm">Newly Added Series</div><div class="src">kind = series · sort newest</div></div><span class="muted tiny">show</span><span class="toggle on"></span></div>
+          <div class="cfg-row" data-newly="merged" style="display:none;"><span class="grab">⠿</span><span class="badge ok" style="flex:none;">system</span><div style="flex:1;"><div class="nm">Newly Added</div><div class="src">movies + series combined · sort newest</div></div><span class="muted tiny">show</span><span class="toggle on"></span></div>
+          <div class="cfg-row"><span class="grab">⠿</span><span class="badge info" style="flex:none;">genre</span><div style="flex:1;"><div class="nm">Nordic Noir</div><div class="src">tag = “nordic-noir”</div></div><span class="muted tiny">show</span><span class="toggle on"></span><span class="btn sm ghost rm">✕</span></div>
+          <div class="cfg-row"><span class="grab">⠿</span><span class="badge info" style="flex:none;">genre</span><div style="flex:1;"><div class="nm">Drama</div><div class="src">genre = “Drama”</div></div><span class="muted tiny">show</span><span class="toggle on"></span><span class="btn sm ghost rm">✕</span></div>
+          <div class="cfg-row"><span class="grab">⠿</span><span class="badge info" style="flex:none;">genre</span><div style="flex:1;"><div class="nm">Action &amp; Adventure</div><div class="src">genre = “Action”, “Adventure”</div></div><span class="muted tiny">show</span><span class="toggle on"></span><span class="btn sm ghost rm">✕</span></div>
+          <div class="cfg-row"><span class="grab">⠿</span><span class="badge info" style="flex:none;">genre</span><div style="flex:1;"><div class="nm">Sci-Fi &amp; Fantasy</div><div class="src">genre = “Sci-Fi”, “Fantasy”</div></div><span class="muted tiny">show</span><span class="toggle on"></span><span class="btn sm ghost rm">✕</span></div>
+          <div class="cfg-row off"><span class="grab">⠿</span><span class="badge info" style="flex:none;">genre</span><div style="flex:1;"><div class="nm">Documentary</div><div class="src">genre = “Documentary”</div></div><span class="muted tiny">hidden</span><span class="toggle"></span><span class="btn sm ghost rm">✕</span></div>
+          <div class="cfg-row"><span class="grab">⠿</span><span class="badge info" style="flex:none;">genre</span><div style="flex:1;"><div class="nm">Family</div><div class="src">genre = “Family”, “Kids”</div></div><span class="muted tiny">show</span><span class="toggle on"></span><span class="btn sm ghost rm">✕</span></div>
+        </div>
+      </div>
+
+      <!-- BEHAVIOUR -->
+      <div class="card set-section" id="sect-behaviour">
+        <h3 style="font-size:1.05rem;margin:0 0 10px;">Behaviour</h3>
+        <div class="field" style="max-width:300px;"><label>Default skin on new devices</label><span class="select"><span>Aurora</span></span><span class="hint">Viewers can still change it on their TV.</span></div>
+        <hr class="dash" style="margin:10px 0;">
+        <div class="row center" style="padding:6px 0;"><div><b>Show progress bars on Continue Watching</b></div><span class="spacer"></span><span class="toggle on"></span></div>
+        <hr class="dash" style="margin:6px 0;">
+        <div class="row center" style="padding:6px 0;"><div><b>Tile shape</b><div class="tiny muted">Posters portrait, continue-watching landscape.</div></div><span class="spacer"></span><span class="seg-pill"><button class="on">Recommended</button><button>All portrait</button><button>All landscape</button></span></div>
+      </div>
+    </div>
+
+    <!-- live preview -->
+    <div class="card" style="width:300px;flex:none;position:sticky;top:24px;padding:12px;">
+      <div class="row center" style="margin:2px 4px 10px;"><h4 style="margin:0;">Live preview</h4><span class="spacer"></span><span class="badge ok" style="font-size:.6rem;">synced</span></div>
+      <div style="border-radius:12px;overflow:hidden;border:1px solid var(--line);background:#000;aspect-ratio:16/9;position:relative;">
+        <iframe src="../ravilo/Ravilo TV.html?chrome=0&static=1" title="Ravilo preview" scrolling="no" style="position:absolute;top:0;left:0;width:1920px;height:1080px;transform:scale(0.1448);transform-origin:top left;border:0;"></iframe>
+      </div>
+      <a class="btn sm fill" href="../ravilo/Ravilo TV.html" target="_blank" rel="noopener" style="justify-content:center;margin-top:10px;">Open full Ravilo ↗</a>
+      <a class="btn sm ghost fill" href="../ravilo/Ravilo Directions.html" target="_blank" rel="noopener" style="justify-content:center;margin-top:8px;">Compare skins ↗</a>
+      <div class="tiny muted center-x" style="margin-top:10px;">Reflects this user's layout</div>
+    </div>
+  </div>
+</main>
+
+<script src="app-shell.js"></script>
+<script>
+(function () {
+  const nav = document.querySelectorAll('#set-nav .navitem[data-goto]');
+  nav.forEach(n => n.addEventListener('click', () => { const el = document.getElementById(n.dataset.goto); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' }); }));
+  const map = {}; nav.forEach(n => map[n.dataset.goto] = n);
+  const obs = new IntersectionObserver(es => es.forEach(e => { if (e.isIntersecting) { nav.forEach(x => x.classList.remove('active')); map[e.target.id] && map[e.target.id].classList.add('active'); } }), { rootMargin: '-35% 0px -55% 0px' });
+  document.querySelectorAll('.set-section').forEach(s => obs.observe(s));
+
+  // toggles
+  document.querySelectorAll('.toggle').forEach(t => t.addEventListener('click', () => {
+    if (t.id === 'merge-tog') return; // handled below
+    t.classList.toggle('on');
+    const row = t.closest('.cfg-row'); if (row) { row.classList.toggle('off', !t.classList.contains('on')); const lbl = row.querySelector('.muted.tiny'); if (lbl) lbl.textContent = t.classList.contains('on') ? 'show' : 'hidden'; }
+  }));
+
+  // hero height slider
+  const h = document.getElementById('hero-h'), hv = document.getElementById('hero-h-val');
+  h.addEventListener('input', () => hv.textContent = h.value + '%');
+
+  // merge newly-added toggle
+  const mt = document.getElementById('merge-tog');
+  mt.addEventListener('click', () => {
+    mt.classList.toggle('on');
+    const on = mt.classList.contains('on');
+    document.querySelectorAll('[data-newly="split"]').forEach(r => r.style.display = on ? 'none' : '');
+    document.querySelectorAll('[data-newly="merged"]').forEach(r => r.style.display = on ? '' : 'none');
+  });
+
+  // segmented pills
+  document.querySelectorAll('.seg-pill').forEach(seg => seg.addEventListener('click', e => {
+    const b = e.target.closest('button'); if (!b) return;
+    seg.querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b));
+  }));
+
+  // remove rows
+  document.querySelectorAll('.rm').forEach(b => b.addEventListener('click', () => b.closest('.cfg-row').remove()));
+})();
+</script>
+</body>
+</html>

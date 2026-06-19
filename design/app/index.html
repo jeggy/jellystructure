@@ -9,7 +9,7 @@
 </head>
 <body class="wf-body app-body">
 
-<main class="app-main2 wide" data-page="dashboard" data-screen-label="Dashboard">
+<main class="app-main2 wide" data-page="dashboard" data-scan data-screen-label="Dashboard">
   <div class="pagebar">
     <h1>Dashboard</h1>
     <span class="spacer"></span>
@@ -21,21 +21,22 @@
   <div class="statgrid">
     <div class="stat"><div class="k">Movies</div><div class="v">1,842</div></div>
     <div class="stat"><div class="k">TV episodes</div><div class="v">9,531</div></div>
-    <a class="stat alert" href="triage.html" style="text-decoration:none;"><div class="k">Tracks needing attention</div><div class="v">214</div></a>
+    <a class="stat alert" href="library.html" style="text-decoration:none;"><div class="k">Items needing attention</div><div class="v">214</div></a>
     <div class="stat"><div class="k">NFO coverage</div><div class="v">96%</div></div>
   </div>
 
   <div class="row" style="margin-top:18px;align-items:stretch;">
     <div class="card fill">
-      <div class="row center"><h3 style="margin:0;font-size:1.1rem;">Needs your attention</h3><span class="spacer"></span><span class="badge bad">214 tracks</span><a class="btn sm" href="triage.html">Open triage →</a></div>
+      <div class="row center"><h3 style="margin:0;font-size:1.1rem;">Needs your attention</h3><span class="spacer"></span><span class="badge bad">214 items</span><a class="btn sm" href="library.html">Browse all →</a></div>
+      <div class="tiny muted" style="margin:6px 0 0;">Step through every flagged item from the floating dock, bottom-right — it opens each one's detail page where you fix it.</div>
       <hr class="dash" style="margin:11px 0;">
       <table class="wf-table">
-        <tr><td><a href="media.html" style="color:var(--ink);font-weight:700;">Tears of Steel (2012)</a></td><td><span class="badge bad">audio · no language</span></td><td class="muted tiny num">0:a:1</td><td><a class="btn sm" href="triage.html">Fix</a></td></tr>
-        <tr><td><a href="media.html" style="color:var(--ink);font-weight:700;">Sintel (2010)</a></td><td><span class="badge bad">audio · no language</span></td><td class="muted tiny num">0:a:2</td><td><a class="btn sm" href="triage.html">Fix</a></td></tr>
-        <tr><td>Cosmos Laundromat (2015)</td><td><span class="badge bad">subtitle · no language</span></td><td class="muted tiny num">0:s:0</td><td><a class="btn sm" href="triage.html">Fix</a></td></tr>
-        <tr><td>The Expanse (2015)</td><td><span class="badge warn">language mix · writes blocked</span></td><td class="muted tiny">5 episodes sampled</td><td><a class="btn sm" href="media.html">Review</a></td></tr>
+        <tr><td><a href="media.html" style="color:var(--ink);font-weight:700;">Big Buck Bunny (2008)</a></td><td><span class="badge bad">2 untagged audio</span></td><td class="muted tiny num">0:a:1, 0:a:2</td><td><a class="btn sm" href="media.html">Open</a></td></tr>
+        <tr><td><a href="media.html" style="color:var(--ink);font-weight:700;">Sintel (2010)</a></td><td><span class="badge warn">default ≠ resolved</span></td><td class="muted tiny num">0:a:1 fr</td><td><a class="btn sm" href="media.html">Open</a></td></tr>
+        <tr><td><a href="series.html" style="color:var(--ink);font-weight:700;">Nordvest (2023)</a></td><td><span class="badge bad">S01E02 · missing still + overview</span></td><td class="muted tiny">episode</td><td><a class="btn sm" href="series.html">Open</a></td></tr>
+        <tr><td><a href="series.html" style="color:var(--ink);font-weight:700;">Babel Fish (2021)</a></td><td><span class="badge warn">language mix</span></td><td class="muted tiny">distribution shown · writes not blocked</td><td><a class="btn sm" href="series.html">Review</a></td></tr>
       </table>
-      <div class="tiny muted" style="margin-top:8px;"><a href="triage.html">…210 more in triage →</a></div>
+      <div class="tiny muted" style="margin-top:8px;"><a href="library.html">…210 more — filter Library by “Needs attention” →</a></div>
     </div>
 
     <div class="col" style="width:320px;">
@@ -43,7 +44,7 @@
         <h3 style="margin:0 0 8px;font-size:1.05rem;">Recently processed</h3>
         <div class="tiny" style="line-height:2;">
           <div class="row center"><span class="dot ok"></span> Caminandes 3 · NFO + artwork</div>
-          <div class="row center"><span class="dot ok"></span> Sintel · metadata in <span class="lang">da</span></div>
+          <div class="row center"><span class="dot ok"></span> Sintel · metadata in <span class="lang">en</span></div>
           <div class="row center"><span class="dot bad"></span> Wing It! · no TMDB match → triage</div>
         </div>
       </div>

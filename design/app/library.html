@@ -6,43 +6,133 @@
 <title>Jellystructure — Library</title>
 <link rel="stylesheet" href="wf.css">
 <link rel="stylesheet" href="app.css">
+<style>
+  .filterbar { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; margin-bottom: 14px; }
+  .fchip { cursor: pointer; }
+  .fchip.on { background: var(--hi); color: #fff; border-color: transparent; }
+  .searchwrap { position: relative; }
+  .search-note { position: absolute; top: 44px; left: 0; width: 320px; z-index: 30; display: none;
+    font-size: .8rem; line-height: 1.5; padding: 11px 13px; }
+  .searchwrap.show .search-note { display: block; }
+  /* audio-track filter popover */
+  .pop { position: relative; }
+  .pop-panel { position: absolute; top: 40px; right: 0; width: 320px; z-index: 40; display: none; padding: 14px; }
+  .pop.open .pop-panel { display: block; }
+  .pop-panel .field { margin-bottom: 12px; }
+  .activefilters { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
+  .activefilters:empty { display: none; }
+  .fxchip { background: var(--hi-soft); border-color: rgba(123,110,240,.4); color: var(--acc-ink); }
+  .fxchip .rm { cursor: pointer; }
+</style>
 </head>
 <body class="wf-body app-body">
 
-<main class="app-main2 wide" data-page="library" data-screen-label="Library">
+<main class="app-main2 wide" data-page="library" data-scan data-screen-label="Library">
   <div class="pagebar">
     <h1>Library</h1>
     <span class="spacer"></span>
-    <span class="input ph" style="width:220px;">⌕ search title…</span>
-    <span class="seg"><span class="on">Movies</span><span>TV</span></span>
+    <span class="searchwrap" id="searchwrap">
+      <input class="input" id="lib-search" placeholder="⌕ search title…" style="width:240px;" autocomplete="off">
+      <div class="card note blue search-note">Search matches <b>every title this item has ever had</b> — each language pulled from TMDB plus the original title. A show pulled once in Danish stays findable by its Danish name even after re-resolving.</div>
+    </span>
+    <span class="seg" id="kindseg"><span class="on" data-kind="movies">Movies</span><span data-kind="tv">TV</span></span>
   </div>
-  <p class="page-sub">Everything Jellystructure manages. A red corner means at least one untagged track; an orange one means a mixed-language series — click any title to open its detail page.</p>
+  <p class="page-sub">Everything Jellystructure manages. A red corner means at least one untagged track or a multiple-default-audio file; an amber one means a mixed-language series (writes are never blocked) — click any title to open its detail page.</p>
 
-  <div class="row center" style="margin-bottom:16px;gap:10px;">
+  <div class="filterbar">
     <span class="muted tiny">filter:</span>
-    <span class="chip" style="background:var(--hi);">All 1,842</span>
-    <a class="chip" href="triage.html">Needs attention 38</a>
-    <span class="chip">Missing artwork 12</span>
+    <span class="chip fchip on" data-filter="all">All 1,842</span>
+    <span class="chip fchip" data-filter="attention">Needs attention 38</span>
+    <span class="chip fchip" data-filter="missing_artwork">Missing artwork 12</span>
+
+    <!-- Audio-track filter popover (Phase 20) -->
+    <span class="pop" id="audiopop">
+      <span class="chip fchip" id="audiopop-btn">Audio track ▾</span>
+      <div class="card pop-panel">
+        <div class="field">
+          <label>Track title contains</label>
+          <span class="select"><span>Any title</span></span>
+          <span class="hint">finds “Synstolkning”, “Commentary”, “SDH” …</span>
+        </div>
+        <div class="field"><label>Audio language</label><span class="select"><span>Any language</span></span></div>
+        <div class="field"><label>Codec</label><span class="select"><span>Any codec</span></span></div>
+        <label class="row center" style="gap:8px;cursor:pointer;font-size:.85rem;"><span class="toggle" id="untagged-tog"></span> Untagged audio only</label>
+        <hr class="dash" style="margin:12px 0;">
+        <div class="row" style="gap:8px;"><span class="btn sm ghost" id="audio-clear">Clear</span><span class="spacer"></span><span class="btn sm primary" id="audio-apply">Apply</span></div>
+      </div>
+    </span>
+
     <span class="spacer" style="flex:1"></span>
-    <span class="muted tiny">sort: recently added ▾</span>
+    <span class="select" style="width:auto;min-width:180px;"><span>sort: recently added</span></span>
   </div>
 
-  <div class="poster-grid">
-    <a class="poster" href="media.html"><div class="imgslot"><div class="x"></div><span>poster</span></div><div class="ttl">Sintel</div><div class="yr">2010 · <span class="badge bad" style="font-size:.62rem;">1 issue</span></div></a>
-    <a class="poster" href="media.html"><div class="imgslot"><div class="x"></div><span>poster</span></div><div class="ttl">Tears of Steel</div><div class="yr">2012 · <span class="badge bad" style="font-size:.62rem;">2 issues</span></div></a>
-    <a class="poster" href="media.html"><div class="imgslot"><div class="x"></div><span>poster</span></div><div class="ttl">Big Buck Bunny</div><div class="yr">2008 · <span class="badge warn" style="font-size:.62rem;">default</span></div></a>
-    <a class="poster" href="media.html"><div class="imgslot"><div class="x"></div><span>poster</span></div><div class="ttl">Cosmos Laundromat</div><div class="yr">2015 · <span class="badge bad" style="font-size:.62rem;">1 issue</span></div></a>
-    <a class="poster" href="media.html"><div class="imgslot"><div class="x"></div><span>poster</span></div><div class="ttl">Caminandes 3</div><div class="yr">2016 · <span class="badge ok" style="font-size:.62rem;">ok</span></div></a>
-    <a class="poster" href="media.html"><div class="imgslot"><div class="x"></div><span>poster</span></div><div class="ttl">Spring</div><div class="yr">2019 · <span class="badge ok" style="font-size:.62rem;">ok</span></div></a>
-    <a class="poster" href="media.html"><div class="imgslot"><div class="x"></div><span>poster</span></div><div class="ttl">Agent 327</div><div class="yr">2017 · <span class="badge ok" style="font-size:.62rem;">ok</span></div></a>
-    <a class="poster" href="media.html"><div class="imgslot"><div class="x"></div><span>poster</span></div><div class="ttl">Glass Half</div><div class="yr">2015 · <span class="badge warn" style="font-size:.62rem;">remux</span></div></a>
-    <a class="poster" href="media.html"><div class="imgslot"><div class="x"></div><span>poster</span></div><div class="ttl">Wing It!</div><div class="yr">2023 · <span class="badge bad" style="font-size:.62rem;">no match</span></div></a>
-    <a class="poster" href="media.html"><div class="imgslot"><div class="x"></div><span>poster</span></div><div class="ttl">Hero</div><div class="yr">2018 · <span class="badge ok" style="font-size:.62rem;">ok</span></div></a>
+  <!-- active audio-track filters (removable) -->
+  <div class="activefilters" id="activefilters"></div>
+
+  <!-- MOVIES grid -->
+  <div class="poster-grid" id="grid-movies">
+    <a class="poster" href="media.html"><div class="imgslot"><span>poster</span></div><div class="ttl">Sintel</div><div class="yr">2010 · <span class="badge warn" style="font-size:.62rem;">wrong default</span></div></a>
+    <a class="poster" href="media.html"><div class="imgslot"><span>poster</span></div><div class="ttl">Big Buck Bunny</div><div class="yr">2008 · <span class="badge bad" style="font-size:.62rem;">2 untagged</span></div></a>
+    <a class="poster" href="media.html"><div class="imgslot"><span>poster</span></div><div class="ttl">Tears of Steel</div><div class="yr">2012 · <span class="badge ok" style="font-size:.62rem;">ok</span></div></a>
+    <a class="poster" href="media.html"><div class="imgslot"><span>poster</span></div><div class="ttl">Cosmos Laundromat</div><div class="yr">2015 · <span class="badge bad" style="font-size:.62rem;">1 untagged</span></div></a>
+    <a class="poster" href="media.html"><div class="imgslot"><span>poster</span></div><div class="ttl">Caminandes 3</div><div class="yr">2016 · <span class="badge ok" style="font-size:.62rem;">ok</span></div></a>
+    <a class="poster" href="media.html"><div class="imgslot"><span>poster</span></div><div class="ttl">Spring</div><div class="yr">2019 · <span class="badge ok" style="font-size:.62rem;">ok</span></div></a>
+    <a class="poster" href="media.html"><div class="imgslot"><span>poster</span></div><div class="ttl">Agent 327</div><div class="yr">2017 · <span class="badge ok" style="font-size:.62rem;">ok</span></div></a>
+    <a class="poster" href="media.html"><div class="imgslot"><span>poster</span></div><div class="ttl">Glass Half</div><div class="yr">2015 · <span class="badge warn" style="font-size:.62rem;">remux</span></div></a>
+    <a class="poster" href="media.html"><div class="imgslot"><span>poster</span></div><div class="ttl">Wing It!</div><div class="yr">2023 · <span class="badge bad" style="font-size:.62rem;">no match</span></div></a>
+    <a class="poster" href="media.html"><div class="imgslot"><span>poster</span></div><div class="ttl">Hero</div><div class="yr">2018 · <span class="badge ok" style="font-size:.62rem;">ok</span></div></a>
   </div>
 
-  <div class="row center" style="margin-top:18px;"><span class="muted tiny">Showing 1–10 of 1,842</span><span class="spacer" style="flex:1"></span><span class="btn sm ghost">‹ prev</span><span class="btn sm">next ›</span></div>
+  <!-- TV grid -->
+  <div class="poster-grid" id="grid-tv" style="display:none;">
+    <a class="poster" href="series.html"><div class="imgslot"><span>poster</span></div><div class="ttl">Nordvest</div><div class="yr">2023 · <span class="badge bad" style="font-size:.62rem;">4 eps attention</span></div></a>
+    <a class="poster" href="series.html"><div class="imgslot"><span>poster</span></div><div class="ttl">Babel Fish</div><div class="yr">2021 · <span class="badge warn" style="font-size:.62rem;">language mix</span></div></a>
+    <a class="poster" href="series.html"><div class="imgslot"><span>poster</span></div><div class="ttl">The Expanse</div><div class="yr">2015 · <span class="badge ok" style="font-size:.62rem;">ok</span></div></a>
+    <a class="poster" href="series.html"><div class="imgslot"><span>poster</span></div><div class="ttl">Sol Levante</div><div class="yr">2020 · <span class="badge ok" style="font-size:.62rem;">ok</span></div></a>
+  </div>
+
+  <div class="row center" style="margin-top:18px;"><span class="muted tiny" id="pagecount">Showing 1–10 of 1,842</span><span class="spacer" style="flex:1"></span><span class="btn sm ghost">‹ prev</span><span class="btn sm">next ›</span></div>
 </main>
 
 <script src="app-shell.js"></script>
+<script>
+(function () {
+  /* kind toggle (Movies / TV) */
+  const kindseg = document.getElementById('kindseg');
+  const gm = document.getElementById('grid-movies'), gt = document.getElementById('grid-tv');
+  const pc = document.getElementById('pagecount');
+  kindseg.addEventListener('click', e => {
+    const s = e.target.closest('[data-kind]'); if (!s) return;
+    [...kindseg.children].forEach(x => x.classList.toggle('on', x === s));
+    const tv = s.dataset.kind === 'tv';
+    gm.style.display = tv ? 'none' : ''; gt.style.display = tv ? '' : 'none';
+    pc.textContent = tv ? 'Showing 1–4 of 312' : 'Showing 1–10 of 1,842';
+  });
+
+  /* filter chips */
+  document.querySelectorAll('.filterbar .fchip[data-filter]').forEach(c => c.addEventListener('click', () => {
+    document.querySelectorAll('.filterbar .fchip[data-filter]').forEach(x => x.classList.toggle('on', x === c));
+  }));
+
+  /* search note */
+  const sw = document.getElementById('searchwrap'), si = document.getElementById('lib-search');
+  si.addEventListener('focus', () => sw.classList.add('show'));
+  si.addEventListener('blur', () => setTimeout(() => sw.classList.remove('show'), 150));
+
+  /* audio-track popover */
+  const pop = document.getElementById('audiopop');
+  document.getElementById('audiopop-btn').addEventListener('click', e => { e.stopPropagation(); pop.classList.toggle('open'); });
+  document.addEventListener('click', e => { if (!e.target.closest('#audiopop')) pop.classList.remove('open'); });
+  document.getElementById('untagged-tog').addEventListener('click', e => { e.stopPropagation(); e.currentTarget.classList.toggle('on'); });
+  const active = document.getElementById('activefilters');
+  document.getElementById('audio-apply').addEventListener('click', () => {
+    pop.classList.remove('open');
+    active.innerHTML = '<span class="chip fxchip">title: “Synstolkning” <span class="rm">✕</span></span><span class="chip fxchip">audio: Danish (dan) <span class="rm">✕</span></span>';
+    pc.textContent = 'Showing 1–4 of 4 · audio-track filter active';
+  });
+  document.getElementById('audio-clear').addEventListener('click', () => { active.innerHTML = ''; pop.classList.remove('open'); pc.textContent = 'Showing 1–10 of 1,842'; });
+  active.addEventListener('click', e => { if (e.target.classList.contains('rm')) { e.target.closest('.fxchip').remove(); if (!active.children.length) pc.textContent = 'Showing 1–10 of 1,842'; } });
+})();
+</script>
 </body>
 </html>
