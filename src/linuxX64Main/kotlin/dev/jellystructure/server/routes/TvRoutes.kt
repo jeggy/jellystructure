@@ -2,9 +2,11 @@ package dev.jellystructure.server.routes
 
 import dev.jellystructure.auth.DeviceKey
 import dev.jellystructure.auth.JellyfinClient
+import dev.jellystructure.auth.SessionKey
 import dev.jellystructure.auth.SessionService
 import dev.jellystructure.config.ConfigStore
 import dev.jellystructure.shared.tv.MarkRequest
+import dev.jellystructure.shared.tv.RaviloConfig
 import dev.jellystructure.shared.tv.PairingChallenge
 import dev.jellystructure.shared.tv.PairResult
 import dev.jellystructure.shared.tv.PlaybackProgressRequest
@@ -242,6 +244,23 @@ fun Route.tvRoutes(
     get("/tv/config") {
         val device = call.attributes[DeviceKey]
         call.respond(raviloConfigService.getConfig(device.jellyfinUserId))
+    }
+
+    // Admin config endpoints — authenticated by session cookie (jellystructure admin login)
+    get("/tv/admin/config") {
+        val session = runCatching { call.attributes[SessionKey] }.getOrNull()
+            ?: run { call.respond(HttpStatusCode.Unauthorized, mapOf("error" to "Not logged in")); return@get }
+        val userId = call.request.queryParameters["userId"] ?: session.jellyfinUserId
+        call.respond(raviloConfigService.getConfig(userId))
+    }
+
+    put("/tv/admin/config") {
+        val session = runCatching { call.attributes[SessionKey] }.getOrNull()
+            ?: run { call.respond(HttpStatusCode.Unauthorized, mapOf("error" to "Not logged in")); return@put }
+        val userId = call.request.queryParameters["userId"] ?: session.jellyfinUserId
+        val config = call.receive<RaviloConfig>()
+        raviloConfigService.save(userId, config)
+        call.respond(mapOf("status" to "ok"))
     }
 
     put("/tv/settings") {
