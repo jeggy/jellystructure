@@ -10,6 +10,12 @@
   function mountRavilo(stage, opts) {
     opts = opts || {};
     const interactive = opts.interactive !== false;
+    // set the interface language from the active user (set in Jellystructure) before building chrome
+    try {
+      const uid = localStorage.getItem('js-ravilo-user');
+      const u = (R.profiles || []).find(p => p.id === uid);
+      if (u && window.setRaviloLang) window.setRaviloLang(u.lang || 'en');
+    } catch (e) {}
     let view = { type: 'home', studio: null };
     let heroIdx = 0, heroTimer = null;
 
@@ -30,15 +36,15 @@
         <span class="wm">Ravilo</span>
       </div>
       <div class="topnav focus-row">
-        <div class="navitem foc cur" data-nav="home">Home</div>
-        <div class="navitem foc" data-nav="movies">Movies</div>
-        <div class="navitem foc" data-nav="series">Series</div>
-        <div class="navitem foc" data-nav="mylist">My List</div>
+        <div class="navitem foc cur" data-nav="home">${t('nav_home')}</div>
+        <div class="navitem foc" data-nav="movies">${t('nav_movies')}</div>
+        <div class="navitem foc" data-nav="series">${t('nav_series')}</div>
+        <div class="navitem foc" data-nav="mylist">${t('nav_mylist')}</div>
       </div>
       <div class="right">
-        <div class="search-ic foc" data-nav="search">⌕</div>
+        <div class="search-ic foc" data-nav="search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><line x1="16.5" y1="16.5" x2="21" y2="21"></line></svg></div>
         <div class="clock"></div>
-        <div class="avatar">ER</div>
+        <div class="avatar foc" data-nav="profile" id="rv-avatar">ER</div>
       </div>`;
     stage.appendChild(appbar);
 
@@ -51,15 +57,15 @@
     const overlay = el('div', 'overlay');
     overlay.innerHTML = `<div class="sheet"><div class="art"><div class="grad"></div></div>
       <div class="info"><h2></h2><div class="m"></div><p></p>
-      <div class="acts"><div class="btn primary foc" data-ov="play"><span class="ic">▶</span> Play</div>
-      <div class="btn ghost foc" data-ov="list"><span class="ic">＋</span> My List</div>
-      <div class="btn ghost foc" data-ov="close">Close</div></div></div></div>`;
+      <div class="acts"><div class="btn primary foc" data-ov="play"><span class="ic">▶</span> ${t('play')}</div>
+      <div class="btn ghost foc" data-ov="list"><span class="ic">＋</span> ${t('add_list')}</div>
+      <div class="btn ghost foc" data-ov="close">${t('close')}</div></div></div></div>`;
     stage.appendChild(overlay);
 
     function clock() {
       const d = new Date();
       const c = appbar.querySelector('.clock');
-      if (c) c.textContent = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      if (c) c.textContent = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
     }
     clock(); setInterval(clock, 10000);
 
@@ -82,9 +88,9 @@
       const body0 = hero.querySelector('.hero-slide.on .hero-body');
       const actions = el('div', 'hero-actions focus-row');
       actions.innerHTML = `
-        <div class="btn primary foc" data-act="play"><span class="ic">▶</span> Play</div>
-        <div class="btn ghost foc" data-act="info"><span class="ic">ⓘ</span> More Info</div>
-        <div class="btn ghost foc" data-act="list"><span class="ic">＋</span> My List</div>`;
+        <div class="btn primary foc" data-act="play"><span class="ic">▶</span> ${t('play')}</div>
+        <div class="btn ghost foc" data-act="info"><span class="ic">ⓘ</span> ${t('more_info')}</div>
+        <div class="btn ghost foc" data-act="list"><span class="ic">＋</span> ${t('add_list')}</div>`;
       body0.appendChild(actions);
 
       const dots = el('div', 'hero-dots');
@@ -121,9 +127,14 @@
       }
       return t;
     }
+    // localize system row titles by id; genre rows keep their content title
+    function rowTitle(rc) {
+      const map = { 'continue': 'row_continue', 'new-movies': 'row_new_movies', 'new-series': 'row_new_series', 'new-all': 'row_newly_added' };
+      return map[rc.id] ? t(map[rc.id]) : rc.title;
+    }
     function contentRow(rowCfg) {
       const r = el('div', 'crow');
-      r.innerHTML = `<div class="crow-head"><h2>${rowCfg.title}</h2>${rowCfg.cfg ? `<span class="cfg">${rowCfg.cfg}</span>` : ''}<span class="more">See all ›</span></div>`;
+      r.innerHTML = `<div class="crow-head"><h2>${rowTitle(rowCfg)}</h2>${rowCfg.cfg ? `<span class="cfg">${rowCfg.cfg}</span>` : ''}<span class="more">${t('see_all')} ›</span></div>`;
       const track = el('div', 'track focus-row');
       rowCfg.items.forEach(it => track.appendChild(tile(it, rowCfg.kind)));
       r.appendChild(track);
@@ -131,7 +142,7 @@
     }
     function studioRail() {
       const r = el('div', 'rail');
-      r.innerHTML = `<div class="rail-head"><h2>Channels &amp; Collections</h2><span class="more">Configured in Jellystructure</span></div>`;
+      r.innerHTML = `<div class="rail-head"><h2>${t('channels')}</h2><span class="more">${t('channels_sub')}</span></div>`;
       const track = el('div', 'track focus-row');
       R.studios.forEach(s => {
         const c = el('div', 'studio foc');
@@ -166,8 +177,8 @@
       scroll.innerHTML = '';
       const head = el('div', 'cathead');
       head.innerHTML = `<div class="logo" style="background:${s.bg}">${s.wm}</div>
-        <div><div class="back">‹ Home &nbsp;·&nbsp; Channel</div><h1>${s.name}</h1>
-        <div class="sub">The same rows you love, filtered to ${s.name}. Continue watching, newly added, and every genre — scoped to this channel.</div></div>`;
+        <div><div class="back">‹ ${t('back_home')} &nbsp;·&nbsp; ${t('channel')}</div><h1>${s.name}</h1>
+        <div class="sub">${t('channel_sub', { name: s.name })}</div></div>`;
       scroll.appendChild(head);
       // a focus row of just nothing for the header; start rows below
       rowSet().forEach(rc => {
@@ -229,11 +240,11 @@
 
       let playLabel, upNote = '';
       if (isSeries) {
-        if (prog.watched === 0 && !rEp.pct) playLabel = 'Play · E1';
-        else if (rEp.pct > 0 && rEp.pct < 100) { playLabel = `Resume · E${rEp.n}`; upNote = `Resume S${season + 1} · E${rEp.n} “${rEp.title}” · ${minsLeft(rEp)} min left`; }
-        else { playLabel = `Play · E${rEp.n}`; upNote = `Up next · S${season + 1} · E${rEp.n} “${rEp.title}”`; }
+        if (prog.watched === 0 && !rEp.pct) playLabel = t('play') + ' · E1';
+        else if (rEp.pct > 0 && rEp.pct < 100) { playLabel = t('resume') + ` · E${rEp.n}`; upNote = `Resume S${season + 1} · E${rEp.n} “${rEp.title}” · ${minsLeft(rEp)} min left`; }
+        else { playLabel = t('play') + ` · E${rEp.n}`; upNote = `Up next · S${season + 1} · E${rEp.n} “${rEp.title}”`; }
       } else {
-        playLabel = (item.pct > 0 && item.pct < 100) ? `Resume · ${minsLeft(item)} min left` : 'Play';
+        playLabel = (item.pct > 0 && item.pct < 100) ? t('resume') + ` · ${minsLeft(item)} min left` : t('play');
       }
 
       const dhero = el('div', 'dhero');
@@ -246,8 +257,8 @@
           ${upNote ? `<div class="dnext"><span class="dnext-dot"></span>${upNote}</div>` : ''}
           <div class="dactions focus-row">
             <div class="btn primary foc" data-play="1"><span class="ic">▶</span> ${playLabel}</div>
-            <div class="btn ghost foc" data-trailer="1"><span class="ic">▷</span> Trailer</div>
-            <div class="btn ghost foc" data-list="1"><span class="ic">＋</span> My List</div>
+            <div class="btn ghost foc" data-trailer="1"><span class="ic">▷</span> ${t('trailer')}</div>
+            <div class="btn ghost foc" data-list="1"><span class="ic">＋</span> ${t('add_list')}</div>
           </div>
         </div>`;
       d.appendChild(dhero);
@@ -280,7 +291,7 @@
       d.appendChild(castRow);
 
       const rel = el('div', 'crow');
-      rel.innerHTML = `<div class="crow-head"><h2>More Like This</h2></div>`;
+      rel.innerHTML = `<div class="crow-head"><h2>${t('more_like_this')}</h2></div>`;
       const rtrack = el('div', 'track focus-row');
       R.relatedFor(item).forEach(it => rtrack.appendChild(tile(it, 'poster')));
       rel.appendChild(rtrack);
@@ -446,6 +457,7 @@
         else if (f.dataset.nav === 'movies') go({ type: 'grid', kind: 'film', title: 'Movies', nav: 'movies' });
         else if (f.dataset.nav === 'series') go({ type: 'grid', kind: 'series', title: 'Series', nav: 'series' });
         else if (f.dataset.nav === 'mylist') go({ type: 'grid', kind: 'mylist', title: 'My List', nav: 'mylist' });
+        else if (f.dataset.nav === 'profile') openProfiles('switch');
         return;
       }
       if (f._genre) {
@@ -528,12 +540,94 @@
       function focusElOverlay(f) { overlay.querySelectorAll('.foc').forEach(e => e.classList.remove('focused')); f.classList.add('focused'); }
     }
 
-    // ---- boot ----
-    go({ type: 'home' });
-    setTimeout(() => focusRowByIndex(0), 40); // start on studio rail-ish (row 0 = nav); nudge to nav Home
-    cur = { r: 0, c: 0 }; focusEl(items(rows()[0])[0]);
+    // ---- multi-user profiles (login + fast switching; tokens cached client-side) ----
+    const PKEY = 'js-ravilo-user';            // current user id (persisted on the TV)
+    const profiles = (R.profiles || []).slice();
+    const prof = el('div', 'profiles');
+    prof.style.display = 'none';
+    stage.appendChild(prof);
+    let pIdx = 0, pMode = 'gate', pTiles = [];
 
-    return { go, setSkin: () => {} };
+    function currentUser() {
+      let id = null; try { id = localStorage.getItem(PKEY); } catch (e) {}
+      return profiles.find(p => p.id === id) || null;
+    }
+    function applyUser(p) {
+      try { localStorage.setItem(PKEY, p.id); } catch (e) {}
+      if (window.setRaviloLang) window.setRaviloLang(p.lang || 'en');
+      relabelChrome();
+      const av = document.getElementById('rv-avatar');
+      if (av) { av.textContent = p.initials; av.style.background = p.color; }
+    }
+    // re-label the persistent app-bar nav after a language switch (screens re-localize via go())
+    function relabelChrome() {
+      const map = { home: 'nav_home', movies: 'nav_movies', series: 'nav_series', mylist: 'nav_mylist' };
+      appbar.querySelectorAll('.navitem').forEach(n => { const k = map[n.dataset.nav]; if (k) n.textContent = t(k); });
+    }
+    function renderProfiles() {
+      const signed = profiles.filter(p => p.signedIn);
+      prof.className = 'profiles' + (pMode === 'switch' ? ' switch' : '');
+      prof.innerHTML =
+        '<h2>' + (pMode === 'switch' ? t('switch_profile') : t('whos_watching')) + '</h2>' +
+        '<div class="grid">' +
+          signed.map(p => '<div class="prof foc" data-pid="' + p.id + '"><div class="pic" style="background:' + p.color + '"><div class="sheen"></div>' + p.initials + (p.kid ? '<span class="badge-k">' + t('kids') + '</span>' : '') + '</div><div class="nm">' + p.name + '</div>' + (p.isAdmin ? '<div class="tag">' + t('admin') + '</div>' : '') + '</div>').join('') +
+          '<div class="prof foc" data-pid="__add"><div class="pic add">＋</div><div class="nm">' + t('add_user') + '</div></div>' +
+        '</div>' +
+        (pMode === 'switch' ? '<div class="ft"><span class="btn ghost foc" data-pid="__close">' + t('cancel') + '</span></div>' : '<div class="ft"><span class="tiny" style="color:var(--ink-dim);font-size:15px;">' + t('profiles_hint') + '</span></div>');
+      pTiles = [...prof.querySelectorAll('.foc')];
+      pIdx = Math.min(pIdx, pTiles.length - 1);
+      paintP();
+    }
+    function paintP() { pTiles.forEach((el, i) => el.classList.toggle('focused', i === pIdx)); }
+    function openProfiles(mode) {
+      pMode = mode || 'gate'; pIdx = 0; renderProfiles(); prof.style.display = 'flex';
+    }
+    function closeProfiles() { prof.style.display = 'none'; }
+    function pickProfile(pid) {
+      if (pid === '__close') { closeProfiles(); return; }
+      if (pid === '__add') { openSignin(); return; }
+      const p = profiles.find(x => x.id === pid); if (!p) return;
+      applyUser(p); closeProfiles();
+      go({ type: 'home' }); setTimeout(() => focusRC(0, 0), 30);
+      flash(t('signed_in_as', { name: p.name }));
+    }
+    // sign-in: pairing-code flow (matches the Ravilo pairing model — no password typed on the TV)
+    function openSignin() {
+      pMode = 'signin';
+      prof.className = 'profiles switch';
+      const code = Math.random().toString(36).slice(2, 8).toUpperCase();
+      prof.innerHTML =
+        '<div class="signin-panel"><h3>' + t('add_title') + '</h3>' +
+        '<div class="sub">' + t('add_sub') + '</div>' +
+        '<div class="pair-code">' + code + '</div>' +
+        '<div class="row center" style="gap:14px;justify-content:flex-end;display:flex;"><span class="btn ghost foc" data-pid="__close">' + t('back') + '</span><span class="btn primary foc" data-pid="__waiting">' + t('waiting') + '</span></div></div>';
+      pTiles = [...prof.querySelectorAll('.foc')]; pIdx = 0; paintP();
+    }
+    // capture-phase key handling so the gate/switcher owns input while open
+    window.addEventListener('keydown', e => {
+      if (prof.style.display === 'none') return;
+      const k = e.key;
+      if (!['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','Enter',' ','Backspace','Escape'].includes(k)) return;
+      e.preventDefault(); e.stopImmediatePropagation();
+      if (k === 'Backspace' || k === 'Escape') { if (pMode === 'switch' || pMode === 'signin') closeProfiles(); return; }
+      if (k === 'Enter' || k === ' ') { const t = pTiles[pIdx]; if (t) pickProfile(t.dataset.pid); return; }
+      // grid is a single wrapping row of tiles → left/right (and up/down) step through
+      if (k === 'ArrowRight' || k === 'ArrowDown') pIdx = Math.min(pTiles.length - 1, pIdx + 1);
+      else if (k === 'ArrowLeft' || k === 'ArrowUp') pIdx = Math.max(0, pIdx - 1);
+      paintP();
+    }, true);
+    prof.addEventListener('click', e => { const t = e.target.closest('.foc'); if (t) pickProfile(t.dataset.pid); });
+    window.__raviloProfiles = { open: openProfiles };
+
+    // ---- boot ----
+    const startUser = currentUser();
+    go({ type: 'home' });
+    if (startUser) applyUser(startUser);
+    setTimeout(() => focusRowByIndex(0), 40);
+    cur = { r: 0, c: 0 }; focusEl(items(rows()[0])[0]);
+    if (!startUser && interactive) openProfiles('gate');   // first run → "Who's watching?"
+
+    return { go, setSkin: () => {}, openProfiles };
   }
 
   window.mountRavilo = mountRavilo;
