@@ -252,6 +252,14 @@ data class PlaybackProgressRequest(
     @SerialName("session_id") val sessionId: String,
     @SerialName("item_id") val itemId: String,
     @SerialName("position_ms") val positionMs: Long,
+    @SerialName("is_paused") val isPaused: Boolean = false,
+)
+
+@Serializable
+data class PlaybackStopRequest(
+    @SerialName("session_id") val sessionId: String,
+    @SerialName("item_id") val itemId: String,
+    @SerialName("position_ms") val positionMs: Long,
 )
 
 @Serializable

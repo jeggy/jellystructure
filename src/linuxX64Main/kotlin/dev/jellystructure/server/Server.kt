@@ -30,6 +30,7 @@ import dev.jellystructure.torrent.SeedingGuard
 import dev.jellystructure.tv.BrowseService
 import dev.jellystructure.tv.DetailService
 import dev.jellystructure.tv.HomeFeedService
+import dev.jellystructure.tv.PlaybackService
 import dev.jellystructure.tv.RaviloConfigService
 import dev.jellystructure.tv.RaviloDeviceService
 import io.ktor.http.ContentType
@@ -79,6 +80,7 @@ fun startServer(
     homeFeedService: HomeFeedService,
     browseService: BrowseService,
     detailService: DetailService,
+    playbackService: PlaybackService,
     jellyfinClient: JellyfinClient,
     mediaStore: MediaStore,
     scanner: Scanner,
@@ -158,7 +160,7 @@ fun startServer(
                 triageRoutes(mediaStore, jellyfinClient, configStore, mediaHistory, seedingGuard)
                 metadataRoutes(mediaStore, jsTagStore, logoDownloader)
                 trackRoutes(mediaStore, configStore, jellyfinClient, mediaHistory, seedingGuard)
-                tvRoutes(deviceService, raviloConfigService, homeFeedService, browseService, detailService, sessionService, jellyfinClient, configStore)
+                tvRoutes(deviceService, raviloConfigService, homeFeedService, browseService, detailService, playbackService, sessionService, jellyfinClient, configStore)
             }
 
             webSocket("/ws") {

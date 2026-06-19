@@ -5,6 +5,7 @@ import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.engine.curl.Curl
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
+import io.ktor.client.request.delete
 import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.post
@@ -134,6 +135,61 @@ class JellyfinClient {
         if (result.isFailure) Logger.warn("Jellyfin getResumeItems failed: ${result.exceptionOrNull()?.message}")
         result.getOrDefault(emptyList())
     }
+
+    suspend fun startPlaybackSession(
+        baseUrl: String,
+        userToken: String,
+        jellyfinId: String,
+        positionTicks: Long,
+        mediaSourceId: String,
+    ) = runCatching {
+        http.post(baseUrl.trimEnd('/') + "/Sessions/Playing") {
+            header("Authorization", """$AUTH_HEADER, Token="$userToken"""")
+            contentType(ContentType.Application.Json)
+            setBody("""{"ItemId":"$jellyfinId","StartPositionTicks":$positionTicks,"MediaSourceId":"$mediaSourceId","CanSeek":true}""")
+        }
+    }.let { if (it.isFailure) Logger.warn("Jellyfin startPlaybackSession failed: ${it.exceptionOrNull()?.message}") }
+
+    suspend fun reportPlaybackProgress(
+        baseUrl: String,
+        userToken: String,
+        jellyfinId: String,
+        positionTicks: Long,
+        isPaused: Boolean,
+        mediaSourceId: String,
+    ) = runCatching {
+        http.post(baseUrl.trimEnd('/') + "/Sessions/Playing/Progress") {
+            header("Authorization", """$AUTH_HEADER, Token="$userToken"""")
+            contentType(ContentType.Application.Json)
+            setBody("""{"ItemId":"$jellyfinId","PositionTicks":$positionTicks,"IsPaused":$isPaused,"MediaSourceId":"$mediaSourceId","EventName":"timeupdate"}""")
+        }
+    }.let { if (it.isFailure) Logger.warn("Jellyfin reportPlaybackProgress failed: ${it.exceptionOrNull()?.message}") }
+
+    suspend fun stopPlaybackSession(
+        baseUrl: String,
+        userToken: String,
+        jellyfinId: String,
+        positionTicks: Long,
+        mediaSourceId: String,
+    ) = runCatching {
+        http.post(baseUrl.trimEnd('/') + "/Sessions/Playing/Stopped") {
+            header("Authorization", """$AUTH_HEADER, Token="$userToken"""")
+            contentType(ContentType.Application.Json)
+            setBody("""{"ItemId":"$jellyfinId","PositionTicks":$positionTicks,"MediaSourceId":"$mediaSourceId"}""")
+        }
+    }.let { if (it.isFailure) Logger.warn("Jellyfin stopPlaybackSession failed: ${it.exceptionOrNull()?.message}") }
+
+    suspend fun markPlayed(baseUrl: String, userToken: String, userId: String, jellyfinId: String) = runCatching {
+        http.post(baseUrl.trimEnd('/') + "/Users/$userId/PlayedItems/$jellyfinId") {
+            header("Authorization", """$AUTH_HEADER, Token="$userToken"""")
+        }
+    }.let { if (it.isFailure) Logger.warn("Jellyfin markPlayed failed: ${it.exceptionOrNull()?.message}") }
+
+    suspend fun markUnplayed(baseUrl: String, userToken: String, userId: String, jellyfinId: String) = runCatching {
+        http.delete(baseUrl.trimEnd('/') + "/Users/$userId/PlayedItems/$jellyfinId") {
+            header("Authorization", """$AUTH_HEADER, Token="$userToken"""")
+        }
+    }.let { if (it.isFailure) Logger.warn("Jellyfin markUnplayed failed: ${it.exceptionOrNull()?.message}") }
 
     suspend fun getItemDetail(
         baseUrl: String,

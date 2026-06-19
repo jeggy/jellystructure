@@ -4,14 +4,19 @@ import dev.jellystructure.auth.DeviceKey
 import dev.jellystructure.auth.JellyfinClient
 import dev.jellystructure.auth.SessionService
 import dev.jellystructure.config.ConfigStore
+import dev.jellystructure.shared.tv.MarkRequest
 import dev.jellystructure.shared.tv.PairingChallenge
 import dev.jellystructure.shared.tv.PairResult
+import dev.jellystructure.shared.tv.PlaybackProgressRequest
+import dev.jellystructure.shared.tv.PlaybackStartRequest
+import dev.jellystructure.shared.tv.PlaybackStopRequest
 import dev.jellystructure.shared.tv.Skin
 import dev.jellystructure.shared.tv.TileShape
 import dev.jellystructure.shared.tv.TvSession
 import dev.jellystructure.tv.BrowseService
 import dev.jellystructure.tv.DetailService
 import dev.jellystructure.tv.HomeFeedService
+import dev.jellystructure.tv.PlaybackService
 import dev.jellystructure.tv.RaviloConfigService
 import dev.jellystructure.tv.RaviloDeviceService
 import io.ktor.http.HttpStatusCode
@@ -48,6 +53,7 @@ fun Route.tvRoutes(
     homeFeedService: HomeFeedService,
     browseService: BrowseService,
     detailService: DetailService,
+    playbackService: PlaybackService,
     sessionService: SessionService,
     jellyfinClient: JellyfinClient,
     configStore: ConfigStore,
@@ -200,6 +206,36 @@ fun Route.tvRoutes(
     get("/tv/facets") {
         val kind = call.request.queryParameters["kind"]
         call.respond(browseService.facets(kind))
+    }
+
+    // ── Playback ─────────────────────────────────────────────────────────────
+    post("/tv/playback/start") {
+        val device = call.attributes[DeviceKey]
+        val req = call.receive<PlaybackStartRequest>()
+        val ticket = playbackService.startPlayback(device, req.itemId, req.capabilities)
+        if (ticket == null) call.respond(HttpStatusCode.NotFound, mapOf("error" to "Item not found"))
+        else call.respond(ticket)
+    }
+
+    post("/tv/playback/progress") {
+        val device = call.attributes[DeviceKey]
+        val req = call.receive<PlaybackProgressRequest>()
+        playbackService.reportProgress(device, req.itemId, req.positionMs, req.isPaused)
+        call.respond(mapOf("status" to "ok"))
+    }
+
+    post("/tv/playback/stop") {
+        val device = call.attributes[DeviceKey]
+        val req = call.receive<PlaybackStopRequest>()
+        playbackService.stopPlayback(device, req.itemId, req.positionMs)
+        call.respond(mapOf("status" to "ok"))
+    }
+
+    post("/tv/mark") {
+        val device = call.attributes[DeviceKey]
+        val req = call.receive<MarkRequest>()
+        playbackService.mark(device, req.itemId, req.watched)
+        call.respond(mapOf("status" to "ok"))
     }
 
     // ── Per-user config ──────────────────────────────────────────────────────
