@@ -2,6 +2,7 @@ package dev.jellystructure.server.routes
 
 import dev.jellystructure.auth.JellyfinClient
 import dev.jellystructure.config.ConfigStore
+import dev.jellystructure.server.routes.fireWebhook
 import dev.jellystructure.media.FfmpegRunner
 import dev.jellystructure.media.FfprobeRunner
 import dev.jellystructure.media.MediaHistory
@@ -131,6 +132,8 @@ fun Route.trackRoutes(store: MediaStore, configStore: ConfigStore, jellyfinClien
             if (!ok) {
                 val tool = if (ext == "mkv") "mkvpropedit" else "ffmpeg"
                 call.respond(HttpStatusCode.InternalServerError, mapOf("error" to "$tool failed"))
+                val cfg = configStore.current
+                if (cfg.behavior.notifyOnWriteFailed) fireWebhook(cfg, """{"event":"write_failed","mediaId":"$id","tool":"$tool","action":"set_default"}""")
                 return@post
             }
 
@@ -225,6 +228,8 @@ fun Route.trackRoutes(store: MediaStore, configStore: ConfigStore, jellyfinClien
             if (!ok) {
                 val tool = if (ext == "mkv") "mkvpropedit" else "ffmpeg"
                 call.respond(HttpStatusCode.InternalServerError, mapOf("error" to "$tool failed"))
+                val cfg = configStore.current
+                if (cfg.behavior.notifyOnWriteFailed) fireWebhook(cfg, """{"event":"write_failed","mediaId":"$id","tool":"$tool","action":"set_language"}""")
                 return@post
             }
 
