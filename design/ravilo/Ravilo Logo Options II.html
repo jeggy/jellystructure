@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ravilo — Logo options II (iconographic)</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Sora:wght@400;500;600;700&display=swap');
+  :root{
+    --bg:#0a0c13; --panel:#141826; --panel-2:#10131e;
+    --ink:#f3f4fb; --ink-soft:#aeb4cb; --ink-dim:#6b7290; --line:rgba(255,255,255,.09);
+    --p1:#7b6ef0; --p2:#3fb6f5; --glow:rgba(123,110,240,.5);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:radial-gradient(1200px 700px at 70% -10%, #15182a, var(--bg)) fixed; color:var(--ink); font-family:'Sora',sans-serif; padding:56px 40px 90px;}
+  .head{max-width:1180px;margin:0 auto 40px}
+  .head h1{font-family:'Space Grotesk',sans-serif;font-size:34px;letter-spacing:-1px;font-weight:700;display:flex;align-items:center;gap:13px}
+  .head p{color:var(--ink-soft);font-size:16px;margin-top:10px;max-width:76ch;line-height:1.6}
+  .head .hint{display:inline-block;margin-top:14px;font-size:13.5px;color:var(--ink-dim);border:1px solid var(--line);border-radius:20px;padding:6px 14px}
+
+  .grid{max-width:1180px;margin:0 auto;display:grid;grid-template-columns:repeat(2,1fr);gap:22px}
+  .card{background:linear-gradient(180deg,var(--panel),var(--panel-2));border:1px solid var(--line);border-radius:20px;padding:24px 24px 26px;}
+  .card .meta{display:flex;align-items:baseline;gap:10px;margin-bottom:20px}
+  .card .meta .no{font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:15px;color:#0a0c13;background:linear-gradient(120deg,var(--p1),var(--p2));width:30px;height:30px;border-radius:8px;display:flex;align-items:center;justify-content:center}
+  .card .meta h2{font-family:'Space Grotesk',sans-serif;font-size:20px;font-weight:600;letter-spacing:-.3px}
+  .card .meta .d{color:var(--ink-dim);font-size:13.5px;margin-left:auto}
+
+  .stage{display:flex;align-items:center;gap:26px}
+  .wide{flex:1;min-width:0;height:128px;border-radius:14px;background:#07090f;border:1px solid var(--line);display:flex;align-items:center;justify-content:center}
+  .lock{display:flex;align-items:center;gap:16px}
+  .wm{font-family:'Space Grotesk',sans-serif;font-weight:700;letter-spacing:-1.5px;font-size:42px;color:var(--ink);line-height:1}
+  .sq-wrap{display:flex;gap:14px;align-items:center}
+  .icon-tile{width:104px;height:104px;border-radius:24px;display:flex;align-items:center;justify-content:center;position:relative;overflow:hidden;background:#0b0e17;border:1px solid var(--line)}
+  .icon-tile.glow{box-shadow:0 0 26px var(--glow)}
+  .icon-tile.light{width:60px;height:60px;border-radius:14px;background:#eef0f6;border:none}
+  .col{display:flex;flex-direction:column;align-items:center}
+  .cap{font-size:12px;color:var(--ink-dim);text-align:center;margin-top:9px;letter-spacing:.4px}
+  .footnote{max-width:1180px;margin:30px auto 0;color:var(--ink-dim);font-size:13.5px;text-align:center}
+  svg{display:block}
+</style>
+</head>
+<body>
+
+<!-- shared gradient + symbol marks -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <linearGradient id="rg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#7b6ef0"/><stop offset="1" stop-color="#3fb6f5"/></linearGradient>
+
+    <symbol id="mkTV" viewBox="0 0 100 100">
+      <rect x="12" y="20" width="76" height="50" rx="11" fill="none" stroke="url(#rg)" stroke-width="6"/>
+      <path d="M43 35 L43 55 L61 45 Z" fill="url(#rg)"/>
+      <path d="M50 70 L50 80 M36 82 L64 82" stroke="url(#rg)" stroke-width="6" stroke-linecap="round" fill="none"/>
+    </symbol>
+
+    <symbol id="mkPlay" viewBox="0 0 100 100">
+      <circle cx="50" cy="50" r="40" fill="url(#rg)"/>
+      <path d="M41 32 L41 68 L71 50 Z" fill="#fff"/>
+    </symbol>
+
+    <symbol id="mkAurora" viewBox="0 0 100 100">
+      <path d="M12 72 C28 40 40 40 50 54 C60 68 72 66 88 36" fill="none" stroke="url(#rg)" stroke-width="8" stroke-linecap="round"/>
+      <path d="M14 82 C30 56 42 54 52 66 C62 78 74 74 88 52" fill="none" stroke="url(#rg)" stroke-width="7" stroke-linecap="round" opacity=".55"/>
+      <path d="M18 58 C30 34 42 34 50 44" fill="none" stroke="url(#rg)" stroke-width="6" stroke-linecap="round" opacity=".34"/>
+    </symbol>
+
+    <symbol id="mkJelly" viewBox="0 0 100 100">
+      <path d="M22 52 C22 24 78 24 78 52 C66 45 59 45 50 49 C41 45 34 45 22 52 Z" fill="url(#rg)"/>
+      <g stroke="url(#rg)" stroke-width="4.5" stroke-linecap="round" fill="none">
+        <path d="M33 51 q-5 12 1 20 q5 8 0 14" opacity=".9"/>
+        <path d="M44 52 q-4 13 1 21 q4 9 0 13" opacity=".72"/>
+        <path d="M56 52 q4 13 -1 21 q-4 9 0 13" opacity=".72"/>
+        <path d="M67 51 q5 12 -1 20 q-5 8 0 14" opacity=".9"/>
+      </g>
+    </symbol>
+
+    <symbol id="mkSignal" viewBox="0 0 100 100">
+      <path d="M26 32 L26 68 L57 50 Z" fill="url(#rg)"/>
+      <path d="M66 36 A18 18 0 0 1 66 64" fill="none" stroke="url(#rg)" stroke-width="6" stroke-linecap="round"/>
+      <path d="M76 27 A30 30 0 0 1 76 73" fill="none" stroke="url(#rg)" stroke-width="6" stroke-linecap="round" opacity=".5"/>
+    </symbol>
+
+    <symbol id="mkStack" viewBox="0 0 100 100">
+      <rect x="40" y="28" width="44" height="48" rx="8" fill="url(#rg)" opacity=".3"/>
+      <rect x="30" y="24" width="44" height="52" rx="9" fill="url(#rg)" opacity=".58"/>
+      <rect x="16" y="20" width="48" height="58" rx="10" fill="url(#rg)"/>
+      <path d="M33 38 L33 60 L51 49 Z" fill="#fff"/>
+    </symbol>
+  </defs>
+</svg>
+
+<div class="head">
+  <h1><span style="width:34px;height:34px;border-radius:9px;background:linear-gradient(120deg,var(--p1),var(--p2))"></span> Ravilo — logo options II</h1>
+  <p>Iconographic directions this time — TV / screen, play, broadcast, stacked posters, and a Jellyfin-spirited jellyfish (original mark, not Jellyfin's). Each has a <b>wide lockup</b> + <b>square app icon</b> + small test. These continue the set, numbered 7–12.</p>
+  <span class="hint">Aurora gradient · vector marks · pairs with the Space Grotesk wordmark</span>
+</div>
+
+<div class="grid">
+
+  <!-- 7 TV -->
+  <div class="card">
+    <div class="meta"><span class="no">7</span><h2>Smart TV</h2><span class="d">literal, on-device</span></div>
+    <div class="stage">
+      <div class="wide"><div class="lock"><svg width="66" height="66"><use href="#mkTV"/></svg><span class="wm">Ravilo</span></div></div>
+      <div class="sq-wrap">
+        <div class="col"><div class="icon-tile glow"><svg width="68" height="68"><use href="#mkTV"/></svg></div><div class="cap">app icon</div></div>
+        <div class="col"><div class="icon-tile light"><svg width="40" height="40"><use href="#mkTV"/></svg></div><div class="cap">small</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 8 PLAY ORB -->
+  <div class="card">
+    <div class="meta"><span class="no">8</span><h2>Play orb</h2><span class="d">unmistakably “watch”</span></div>
+    <div class="stage">
+      <div class="wide"><div class="lock"><svg width="62" height="62"><use href="#mkPlay"/></svg><span class="wm">Ravilo</span></div></div>
+      <div class="sq-wrap">
+        <div class="col"><div class="icon-tile glow"><svg width="72" height="72"><use href="#mkPlay"/></svg></div><div class="cap">app icon</div></div>
+        <div class="col"><div class="icon-tile light"><svg width="42" height="42"><use href="#mkPlay"/></svg></div><div class="cap">small</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 9 AURORA -->
+  <div class="card">
+    <div class="meta"><span class="no">9</span><h2>Aurora ribbon</h2><span class="d">Nordic, ties to the skin name</span></div>
+    <div class="stage">
+      <div class="wide"><div class="lock"><svg width="66" height="66"><use href="#mkAurora"/></svg><span class="wm">Ravilo</span></div></div>
+      <div class="sq-wrap">
+        <div class="col"><div class="icon-tile glow"><svg width="70" height="70"><use href="#mkAurora"/></svg></div><div class="cap">app icon</div></div>
+        <div class="col"><div class="icon-tile light"><svg width="42" height="42"><use href="#mkAurora"/></svg></div><div class="cap">small</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 10 JELLYFISH -->
+  <div class="card">
+    <div class="meta"><span class="no">10</span><h2>Jellyfish</h2><span class="d">Jellyfin-inspired (original)</span></div>
+    <div class="stage">
+      <div class="wide"><div class="lock"><svg width="62" height="62"><use href="#mkJelly"/></svg><span class="wm">Ravilo</span></div></div>
+      <div class="sq-wrap">
+        <div class="col"><div class="icon-tile glow"><svg width="70" height="70"><use href="#mkJelly"/></svg></div><div class="cap">app icon</div></div>
+        <div class="col"><div class="icon-tile light"><svg width="42" height="42"><use href="#mkJelly"/></svg></div><div class="cap">small</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 11 SIGNAL -->
+  <div class="card">
+    <div class="meta"><span class="no">11</span><h2>Broadcast signal</h2><span class="d">play + streaming arcs</span></div>
+    <div class="stage">
+      <div class="wide"><div class="lock"><svg width="64" height="64"><use href="#mkSignal"/></svg><span class="wm">Ravilo</span></div></div>
+      <div class="sq-wrap">
+        <div class="col"><div class="icon-tile glow"><svg width="70" height="70"><use href="#mkSignal"/></svg></div><div class="cap">app icon</div></div>
+        <div class="col"><div class="icon-tile light"><svg width="42" height="42"><use href="#mkSignal"/></svg></div><div class="cap">small</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 12 STACK -->
+  <div class="card">
+    <div class="meta"><span class="no">12</span><h2>Poster stack</h2><span class="d">the carousel, as a mark</span></div>
+    <div class="stage">
+      <div class="wide"><div class="lock"><svg width="64" height="64"><use href="#mkStack"/></svg><span class="wm">Ravilo</span></div></div>
+      <div class="sq-wrap">
+        <div class="col"><div class="icon-tile glow"><svg width="70" height="70"><use href="#mkStack"/></svg></div><div class="cap">app icon</div></div>
+        <div class="col"><div class="icon-tile light"><svg width="42" height="42"><use href="#mkStack"/></svg></div><div class="cap">small</div></div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<div class="footnote">Options 1–6 (letterforms) live in <b>Ravilo Logo Options.html</b>. Pick any number across both — or pair a mark here with a wordmark from there.</div>
+
+</body>
+</html>

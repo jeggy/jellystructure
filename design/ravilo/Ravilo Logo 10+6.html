@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ravilo — Jellyfish + underline wordmark</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Sora:wght@400;500;600;700&display=swap');
+  :root{ --bg:#0a0c13; --panel:#141826; --panel-2:#10131e; --ink:#f3f4fb; --ink-soft:#aeb4cb; --ink-dim:#6b7290;
+    --line:rgba(255,255,255,.09); --p1:#7b6ef0; --p2:#3fb6f5; --glow:rgba(123,110,240,.5); }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:radial-gradient(1200px 700px at 70% -10%, #15182a, var(--bg)) fixed; color:var(--ink); font-family:'Sora',sans-serif; padding:56px 40px 90px;}
+  .wrap{max-width:1080px;margin:0 auto}
+  h1{font-family:'Space Grotesk',sans-serif;font-size:32px;letter-spacing:-1px;font-weight:700}
+  .sub{color:var(--ink-soft);font-size:15.5px;margin-top:8px;max-width:70ch;line-height:1.6}
+  .row{display:flex;gap:22px;flex-wrap:wrap;margin-top:30px}
+  .card{background:linear-gradient(180deg,var(--panel),var(--panel-2));border:1px solid var(--line);border-radius:20px;padding:30px;flex:1;min-width:300px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px}
+  .card .tag{font-size:12.5px;color:var(--ink-dim);letter-spacing:.5px}
+  .grad-text{background:linear-gradient(120deg,var(--p1),var(--p2));-webkit-background-clip:text;background-clip:text;color:transparent}
+  svg{display:block}
+
+  /* lockup */
+  .lock{display:flex;align-items:center;gap:18px}
+  .word{display:flex;flex-direction:column;gap:9px}
+  .wm{font-family:'Space Grotesk',sans-serif;font-weight:700;letter-spacing:-1.6px;font-size:52px;line-height:1;color:var(--ink)}
+  .u{height:6px;border-radius:5px;background:linear-gradient(90deg,var(--p1),var(--p2))}
+
+  .tile{width:118px;height:118px;border-radius:27px;background:#0b0e17;border:1px solid var(--line);display:flex;align-items:center;justify-content:center;box-shadow:0 0 30px var(--glow)}
+  .tile.light{background:#eef0f6;box-shadow:none}
+  .tile.fill{background:linear-gradient(125deg,#15182a,#0b0e17)}
+
+  /* app-bar mock */
+  .bar{margin-top:22px;background:#07090f;border:1px solid var(--line);border-radius:16px;height:96px;display:flex;align-items:center;gap:34px;padding:0 34px}
+  .bar .nav{display:flex;gap:8px;margin-left:14px}
+  .bar .nav span{font-size:18px;color:var(--ink-soft);padding:8px 16px;border-radius:10px}
+  .bar .nav span.cur{color:#0a0c13;background:#fff;font-weight:600}
+  .bar .sp{flex:1}
+  .bar .av{width:38px;height:38px;border-radius:50%;background:linear-gradient(120deg,var(--p1),var(--p2));display:flex;align-items:center;justify-content:center;font-weight:700;font-size:15px;color:#fff}
+  .label{font-size:12.5px;color:var(--ink-dim);margin-top:10px;text-align:center}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+  <linearGradient id="rg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#7b6ef0"/><stop offset="1" stop-color="#3fb6f5"/></linearGradient>
+  <symbol id="mkJelly" viewBox="0 0 100 100">
+    <path d="M22 52 C22 24 78 24 78 52 C66 45 59 45 50 49 C41 45 34 45 22 52 Z" fill="url(#rg)"/>
+    <g stroke="url(#rg)" stroke-width="4.5" stroke-linecap="round" fill="none">
+      <path d="M33 51 q-5 12 1 20 q5 8 0 14" opacity=".9"/>
+      <path d="M44 52 q-4 13 1 21 q4 9 0 13" opacity=".72"/>
+      <path d="M56 52 q4 13 -1 21 q-4 9 0 13" opacity=".72"/>
+      <path d="M67 51 q5 12 -1 20 q-5 8 0 14" opacity=".9"/>
+    </g>
+  </symbol>
+</defs></svg>
+
+<div class="wrap">
+  <h1>Jellyfish + underline wordmark</h1>
+  <p class="sub">Mark 10 (jellyfish) paired with wordmark 6 — the gradient “o” and a motion underline. The mark carries the square app icon; the full lockup carries the app bar &amp; marketing.</p>
+
+  <div class="row">
+    <div class="card">
+      <span class="tag">PRIMARY LOCKUP · horizontal</span>
+      <div class="lock">
+        <svg width="86" height="86"><use href="#mkJelly"/></svg>
+        <div class="word"><span class="wm">Ravil<span class="grad-text">o</span></span><span class="u" style="width:210px"></span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="row">
+    <div class="card">
+      <span class="tag">APP ICON · dark</span>
+      <div class="tile"><svg width="78" height="78"><use href="#mkJelly"/></svg></div>
+      <div class="label">launcher tile</div>
+    </div>
+    <div class="card">
+      <span class="tag">APP ICON · gradient field</span>
+      <div class="tile fill"><svg width="78" height="78"><use href="#mkJelly"/></svg></div>
+      <div class="label">alt background</div>
+    </div>
+    <div class="card">
+      <span class="tag">APP ICON · light</span>
+      <div class="tile light"><svg width="74" height="74"><use href="#mkJelly"/></svg></div>
+      <div class="label">light surfaces</div>
+    </div>
+    <div class="card">
+      <span class="tag">STACKED · vertical lockup</span>
+      <div class="word" style="align-items:center;gap:12px">
+        <svg width="70" height="70"><use href="#mkJelly"/></svg>
+        <span class="wm" style="font-size:40px">Ravil<span class="grad-text">o</span></span>
+        <span class="u" style="width:150px"></span>
+      </div>
+    </div>
+  </div>
+
+  <div class="bar">
+    <div class="lock">
+      <svg width="46" height="46"><use href="#mkJelly"/></svg>
+      <div class="word"><span class="wm" style="font-size:30px">Ravil<span class="grad-text">o</span></span><span class="u" style="width:118px;height:4px"></span></div>
+    </div>
+    <div class="nav"><span class="cur">Home</span><span>Movies</span><span>Series</span><span>My List</span></div>
+    <div class="sp"></div>
+    <div class="av">ER</div>
+  </div>
+  <div class="label">in context — Ravilo app bar</div>
+</div>
+</body>
+</html>

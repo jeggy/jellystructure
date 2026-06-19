@@ -6,6 +6,10 @@
 <title>Jellystructure — Activity</title>
 <link rel="stylesheet" href="wf.css">
 <link rel="stylesheet" href="app.css">
+<style>
+  .fchip { cursor: pointer; }
+  .fchip.on { background: var(--hi); color: #fff; border-color: transparent; }
+</style>
 </head>
 <body class="wf-body app-body">
 
@@ -18,7 +22,23 @@
     <span class="btn sm">Pause</span>
     <span class="btn sm bad">Stop</span>
   </div>
-  <p class="page-sub">The full console for the job that's also shown in the ambient dock. Everything streams over WebSocket — no polling, no page reloads. Errors drop into <a href="triage.html">Triage</a> and the run keeps going.</p>
+  <p class="page-sub">The full console for the job that's also shown in the ambient dock. Everything streams over WebSocket — no polling, no page reloads. Items with problems are flagged for attention and the run keeps going.</p>
+
+  <div class="card" style="margin-bottom:14px;">
+    <div class="row center" style="flex-wrap:wrap;gap:8px;">
+      <span class="muted tiny">filter:</span>
+      <span class="chip fchip on">All</span>
+      <span class="chip fchip">Scan</span>
+      <span class="chip fchip">NFO</span>
+      <span class="chip fchip">Artwork</span>
+      <span class="chip fchip">Tracks</span>
+      <span class="chip fchip">Jellyfin</span>
+      <span class="spacer"></span>
+      <label class="row center" style="gap:7px;cursor:pointer;font-size:.82rem;"><span class="toggle" id="errtog"></span> Errors only</label>
+      <span class="chip"><span class="dot ok"></span> 4 workers</span>
+      <span class="btn sm ghost">Clear log</span>
+    </div>
+  </div>
 
   <div class="card" style="margin-bottom:14px;">
     <div class="row center"><b>Overall</b><span class="spacer"></span><span class="mono tiny" id="ov">88 / 142 files · ~2m left</span></div>
@@ -28,7 +48,7 @@
       <span class="chip warn" style="background:var(--hi-soft);">2 remuxing…</span>
       <span class="chip">12 NFO written</span>
       <span class="chip">9 artwork fetched</span>
-      <span class="chip bad" style="background:var(--bad-soft);">3 → triage</span>
+      <span class="chip bad" style="background:var(--bad-soft);">3 → attention</span>
     </div>
   </div>
 
@@ -44,7 +64,7 @@
         <div class="imgslot" style="width:60px;height:88px;flex:none;"><span>poster</span></div>
         <div class="tiny" style="line-height:1.85;">
           <div><span style="color:var(--ok)">✓</span> TMDB matched · original = <span class="lang">en</span></div>
-          <!-- <div><span style="color:var(--ok)">✓</span> NFO written · lockdata</div> -->
+          <div><span style="color:var(--ok)">✓</span> NFO written · unlocked</div>
           <div><span style="color:#b9912a">⟳</span> remuxing to set default = <span class="lang">da</span></div>
           <div class="muted">→ then POST Jellyfin refresh</div>
         </div>
@@ -61,7 +81,7 @@
         <div><span class="ts">14:03:04</span> Glass Half <span class="warnc">⟳ remux 44%</span></div>
         <div><span class="ts">14:03:05</span> Big Buck Bunny <span class="okc">✓ default=da</span></div>
         <div><span class="ts">14:03:06</span> Wing It! <span class="badc">✗ TMDB no match</span></div>
-        <div><span class="ts">14:03:06</span> Wing It! <span class="muted">→ queued for triage</span></div>
+        <div><span class="ts">14:03:06</span> Wing It! <span class="muted">→ flagged for attention</span></div>
       </div>
       <div class="tiny muted center-x" style="margin-top:8px;">streaming live</div>
     </div>
@@ -93,6 +113,11 @@
     fb.style.width = f.toFixed(0) + '%';
     ff.textContent = 'frame=' + frame + ' fps=611 time=00:0' + (1 + Math.floor(f / 40)) + ':' + String(Math.floor(f) % 60).padStart(2, '0') + ' speed=4.1x';
   }, 700);
+  // filter chips + errors-only toggle
+  document.querySelectorAll('.fchip').forEach(c => c.addEventListener('click', () => {
+    document.querySelectorAll('.fchip').forEach(x => x.classList.toggle('on', x === c));
+  }));
+  document.getElementById('errtog').addEventListener('click', e => e.currentTarget.classList.toggle('on'));
 })();
 </script>
 </body>

@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Jellystructure — Metadata</title>
+<link rel="stylesheet" href="wf.css">
+<link rel="stylesheet" href="app.css">
+<style>
+  .meta-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 14px; }
+  .meta-card { display: flex; align-items: center; gap: 13px; padding: 14px 15px; cursor: pointer; text-decoration: none; color: var(--ink);
+    background: var(--card-bg); -webkit-backdrop-filter: var(--blur); backdrop-filter: var(--blur); border: var(--card-bd); border-radius: var(--radius); box-shadow: var(--shadow-s); transition: transform .15s ease, box-shadow .2s ease, outline-color .2s ease; outline: 1px solid transparent; }
+  .meta-card:hover { transform: translateY(-2px); box-shadow: var(--shadow); outline-color: var(--hi); text-decoration: none; }
+  .meta-logo { width: 54px; height: 54px; flex: none; border-radius: 10px; display: flex; align-items: center; justify-content: center;
+    background: var(--fill-3); font-family: 'JetBrains Mono', monospace; font-size: .6rem; color: var(--ink-soft); text-align: center; padding: 4px; }
+  .meta-card .nm { font-weight: 600; }
+  .genre-chip { font-size: .9rem; padding: 8px 14px; }
+  .tag-card { display: flex; align-items: center; gap: 12px; padding: 13px 15px; cursor: pointer; }
+  .tag-dot-lg { width: 14px; height: 14px; border-radius: 50%; flex: none; }
+  .modal-back { position: fixed; inset: 0; z-index: 120; background: rgba(8,10,16,.66); -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px); display: none; align-items: center; justify-content: center; padding: 20px; }
+  .modal-back.open { display: flex; }
+  .modal { width: 460px; max-width: 100%; background: var(--fill); border: 1px solid var(--line-2); border-radius: var(--radius); box-shadow: var(--shadow); padding: 20px 22px; }
+  .modal h3 { margin: 0 0 14px; } .modal .x { float: right; cursor: pointer; color: var(--ink-soft); }
+  .swatches { display: flex; gap: 8px; flex-wrap: wrap; }
+  .swatch { width: 28px; height: 28px; border-radius: 8px; cursor: pointer; border: 2px solid transparent; }
+  .swatch.on { border-color: var(--ink); }
+</style>
+</head>
+<body class="wf-body app-body">
+
+<main class="app-main2 wide" data-page="metadata" data-screen-label="Metadata">
+  <div class="pagebar">
+    <h1>Metadata</h1>
+    <span class="spacer"></span>
+    <span class="select" style="width:auto;min-width:150px;"><span>sort: Most items</span></span>
+  </div>
+  <p class="page-sub">Browse the library by studio, network, genre and tag. Studios &amp; networks pull their logos from TMDB; tags you define here survive metadata re-syncs.</p>
+
+  <div class="tabs2" id="tabbar">
+    <span class="on" data-tab="studios">Studios</span>
+    <span data-tab="networks">Networks</span>
+    <span data-tab="genres">Genres</span>
+    <span data-tab="tags">Tags</span>
+  </div>
+
+  <!-- STUDIOS -->
+  <div class="tabpanel" data-panel="studios">
+    <div class="row center" style="margin-bottom:14px;"><span class="muted tiny">42 studios</span><span class="spacer"></span><span class="btn sm ghost">Fetch missing logos</span></div>
+    <div class="meta-grid">
+      <a class="meta-card" href="library.html"><span class="meta-logo">logo</span><span><span class="nm">Blender Foundation</span><br><span class="tiny muted">14 items</span></span></a>
+      <a class="meta-card" href="library.html"><span class="meta-logo">logo</span><span><span class="nm">Pixar</span><br><span class="tiny muted">9 items</span></span></a>
+      <a class="meta-card" href="library.html"><span class="meta-logo">logo</span><span><span class="nm">A24</span><br><span class="tiny muted">7 items</span></span></a>
+      <a class="meta-card" href="library.html"><span class="meta-logo" style="background:var(--bad-soft);color:var(--bad);">no logo</span><span><span class="nm">Studio Ghibli</span><br><span class="tiny muted">6 items</span></span></a>
+      <a class="meta-card" href="library.html"><span class="meta-logo">logo</span><span><span class="nm">Warner Bros.</span><br><span class="tiny muted">5 items</span></span></a>
+      <a class="meta-card" href="library.html"><span class="meta-logo">logo</span><span><span class="nm">Aardman</span><br><span class="tiny muted">4 items</span></span></a>
+    </div>
+  </div>
+
+  <!-- NETWORKS -->
+  <div class="tabpanel" data-panel="networks" style="display:none;">
+    <div class="row center" style="margin-bottom:14px;"><span class="muted tiny">TV only · 18 networks</span><span class="spacer"></span><span class="btn sm ghost">Fetch missing logos</span></div>
+    <div class="note blue" style="margin-bottom:14px;">TMDB has no network search, so only networks whose logo was captured at scan time can show artwork — the rest fall back to their name.</div>
+    <div class="meta-grid">
+      <a class="meta-card" href="library.html"><span class="meta-logo">logo</span><span><span class="nm">HBO</span><br><span class="tiny muted">8 items</span></span></a>
+      <a class="meta-card" href="library.html"><span class="meta-logo">logo</span><span><span class="nm">Netflix</span><br><span class="tiny muted">6 items</span></span></a>
+      <a class="meta-card" href="library.html"><span class="meta-logo" style="background:var(--bad-soft);color:var(--bad);">no logo</span><span><span class="nm">Kringvarp</span><br><span class="tiny muted">1 item</span></span></a>
+      <a class="meta-card" href="library.html"><span class="meta-logo">logo</span><span><span class="nm">SyFy</span><br><span class="tiny muted">3 items</span></span></a>
+    </div>
+  </div>
+
+  <!-- GENRES -->
+  <div class="tabpanel" data-panel="genres" style="display:none;">
+    <div class="row center" style="margin-bottom:14px;"><span class="muted tiny">23 genres</span></div>
+    <div class="pill-row">
+      <a class="chip genre-chip" href="library.html">Animation <span class="badge info" style="margin-left:4px;">312</span></a>
+      <a class="chip genre-chip" href="library.html">Drama <span class="badge info" style="margin-left:4px;">288</span></a>
+      <a class="chip genre-chip" href="library.html">Fantasy <span class="badge info" style="margin-left:4px;">141</span></a>
+      <a class="chip genre-chip" href="library.html">Thriller <span class="badge info" style="margin-left:4px;">119</span></a>
+      <a class="chip genre-chip" href="library.html">Crime <span class="badge info" style="margin-left:4px;">96</span></a>
+      <a class="chip genre-chip" href="library.html">Sci-Fi <span class="badge info" style="margin-left:4px;">88</span></a>
+      <a class="chip genre-chip" href="library.html">Short <span class="badge info" style="margin-left:4px;">61</span></a>
+      <a class="chip genre-chip" href="library.html">Documentary <span class="badge info" style="margin-left:4px;">44</span></a>
+    </div>
+  </div>
+
+  <!-- TAGS -->
+  <div class="tabpanel" data-panel="tags" style="display:none;">
+    <div class="note blue" style="margin-bottom:18px;">Jellystructure tags are structured labels you define here with a color and description. They survive metadata re-syncs — when pulling fresh data from TMDB, Jellystructure tags on an item are always preserved. All other tags (below) come from TMDB or were added manually and may be overwritten on resync.</div>
+
+    <div class="row center" style="margin-bottom:12px;"><h3 style="margin:0;font-size:1.15rem;">Jellystructure tags</h3><span class="spacer"></span><span class="btn sm primary" id="new-tag">＋ New tag</span></div>
+    <div class="meta-grid" style="grid-template-columns:repeat(auto-fill,minmax(260px,1fr));">
+      <div class="card tag-card"><span class="tag-dot-lg" style="background:#7b6ef0;"></span><span style="flex:1;"><span class="nm" style="font-weight:600;">open movie</span><br><span class="tiny muted">Blender open-content releases</span></span><span class="badge info">14</span></div>
+      <div class="card tag-card"><span class="tag-dot-lg" style="background:#2dd49a;"></span><span style="flex:1;"><span class="nm" style="font-weight:600;">blender</span><br><span class="tiny muted">Made with Blender</span></span><span class="badge info">12</span></div>
+      <div class="card tag-card"><span class="tag-dot-lg" style="background:#f5b542;"></span><span style="flex:1;"><span class="nm" style="font-weight:600;">4k remaster</span><br><span class="tiny muted">Re-scanned 4K master on disk</span></span><span class="badge info">5</span></div>
+      <div class="card tag-card"><span class="tag-dot-lg" style="background:#3fb6f5;"></span><span style="flex:1;"><span class="nm" style="font-weight:600;">nordic noir</span><br><span class="tiny muted">Scandinavian crime drama</span></span><span class="badge info">3</span></div>
+    </div>
+
+    <h3 style="margin:24px 0 10px;font-size:1.05rem;">And the rest <span class="tiny muted" style="font-weight:400;">— from TMDB / manual, may change on resync</span></h3>
+    <div class="pill-row">
+      <span class="chip">short film <span class="muted">61</span></span>
+      <span class="chip">cgi <span class="muted">38</span></span>
+      <span class="chip">dragon <span class="muted">9</span></span>
+      <span class="chip">post-apocalyptic <span class="muted">14</span></span>
+      <span class="chip">based on game <span class="muted">7</span></span>
+      <span class="chip">silent <span class="muted">5</span></span>
+      <span class="chip">crime drama <span class="muted">22</span></span>
+    </div>
+  </div>
+</main>
+
+<!-- New tag modal -->
+<div class="modal-back" id="tag-modal">
+  <div class="modal">
+    <span class="x" id="tag-x">✕</span>
+    <h3>New Jellystructure tag</h3>
+    <div class="field"><label>Name</label><input class="input" placeholder="e.g. director's cut"></div>
+    <div class="field"><label>Color</label>
+      <div class="swatches">
+        <span class="swatch on" style="background:#7b6ef0;"></span><span class="swatch" style="background:#2dd49a;"></span>
+        <span class="swatch" style="background:#f5b542;"></span><span class="swatch" style="background:#3fb6f5;"></span>
+        <span class="swatch" style="background:#ff6f61;"></span><span class="swatch" style="background:#b15cd0;"></span>
+        <span class="swatch" style="background:#6b7280;"></span><span class="swatch" style="background:#e0639a;"></span>
+      </div>
+    </div>
+    <div class="field"><label>Description</label><input class="input" placeholder="What this tag means"></div>
+    <div class="row" style="justify-content:flex-end;gap:8px;margin-top:6px;"><span class="btn ghost" id="tag-cancel">Cancel</span><span class="btn primary" id="tag-create">Create tag</span></div>
+  </div>
+</div>
+
+<script src="app-shell.js"></script>
+<script>
+(function () {
+  const tabbar = document.getElementById('tabbar');
+  const panels = document.querySelectorAll('.tabpanel');
+  function showTab(name) {
+    if (![...tabbar.children].some(t => t.dataset.tab === name)) name = 'studios';
+    [...tabbar.children].forEach(t => t.classList.toggle('on', t.dataset.tab === name));
+    panels.forEach(p => { p.style.display = p.dataset.panel === name ? '' : 'none'; });
+  }
+  tabbar.addEventListener('click', e => { const t = e.target.closest('[data-tab]'); if (t) location.hash = 'tab=' + t.dataset.tab; });
+  function fromHash() { const m = /tab=([a-z]+)/.exec(location.hash || ''); showTab(m ? m[1] : 'studios'); }
+  window.addEventListener('hashchange', fromHash); fromHash();
+
+  const tm = document.getElementById('tag-modal');
+  document.getElementById('new-tag').addEventListener('click', () => tm.classList.add('open'));
+  document.getElementById('tag-x').addEventListener('click', () => tm.classList.remove('open'));
+  document.getElementById('tag-cancel').addEventListener('click', () => tm.classList.remove('open'));
+  document.getElementById('tag-create').addEventListener('click', () => tm.classList.remove('open'));
+  tm.addEventListener('click', e => { if (e.target === tm) tm.classList.remove('open'); });
+  document.querySelectorAll('.swatch').forEach(s => s.addEventListener('click', () => { document.querySelectorAll('.swatch').forEach(x => x.classList.remove('on')); s.classList.add('on'); }));
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') tm.classList.remove('open'); });
+})();
+</script>
+</body>
+</html>

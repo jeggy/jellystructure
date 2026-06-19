@@ -43,7 +43,20 @@
 <body class="wf-body">
 
 <div class="doc">
-  <p style="font-family:'Caveat',cursive;font-size:1.4rem;color:var(--bad);transform:rotate(-1deg);margin:0 0 4px;">requirements &amp; delivery plan · v0.2 · draft</p>
+  <div class="callbox" style="border-color:var(--warn);background:var(--warn-soft);">
+    <b>⚠ Superseded by <span class="mono">specs/</span> (repo, ref main).</b> The project moved to
+    <b>spec-driven development</b>; this v0.2 wireframe is kept for history only. The live source of
+    truth is <span class="mono">specs/constitution.md</span> (rules), <span class="mono">specs/requirements/README.md</span>
+    (phase index, currently <b>phases 0–29 complete</b>), and <span class="mono">specs/plan.md</span> (architecture).
+    Notable shifts since this doc: <b>Triage is no longer a page</b> — all editing happens on
+    movie/series detail with a floating Triage <em>navigation</em> dock (Phase 27); the <b>Language page
+    was removed</b> (Phase 23, fallback now in Settings → Metadata); <b>NFOs are written unlocked</b> —
+    no <span class="mono">&lt;lockdata&gt;</span> — and Jellyfin-side field locks are detected instead
+    (Phase 22); a new <b>Metadata page</b> (Studios/Networks/Genres/Tags, Phase 19); editable TMDB id
+    (Phase 24); "Re-pull from Jellyfin" (Phase 25); mixed-language series are <b>never blocked</b> from
+    writes. See <span class="mono">CLAUDE.md</span> for the full mapping.
+  </div>
+  <p style="font-family:'Caveat',cursive;font-size:1.4rem;color:var(--bad);transform:rotate(-1deg);margin:0 0 4px;">requirements &amp; delivery plan · v0.2 · superseded by specs/</p>
   <h1>Jellystructure</h1>
   <p class="lead">A self-hosted, Docker-deployed web system that fully replaces Jellyfin's built-in metadata scraper — owning NFO files, artwork, and the media containers themselves (audio/subtitle track order), driven by a language-cascade rule and updated live in the browser.</p>
 

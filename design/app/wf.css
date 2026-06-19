@@ -149,13 +149,9 @@ hr.dash { border: none; border-top: 1px solid var(--line); margin: 18px 0; }
 .btn.primary:hover { filter: brightness(1.07); box-shadow: 0 8px 24px rgba(123,110,240,.5); }
 .btn.bad { background: var(--bad); color: #fff; border-color: transparent; }
 .btn.bad:hover { box-shadow: 0 0 0 3px var(--bad-soft); border-color: transparent; }
-/* Ghost: outline style — visible border, muted text, no fill. Clearly a button without visual weight. */
-.btn.ghost { background: transparent; border-color: var(--line-2); color: var(--ink-soft); }
-.btn.ghost:hover { background: var(--fill-3); color: var(--ink); border-color: var(--hi); box-shadow: 0 0 0 3px var(--hi-soft); }
+.btn.ghost { background: transparent; border-color: transparent; color: var(--ink-soft); }
+.btn.ghost:hover { background: var(--fill-3); color: var(--ink); box-shadow: none; }
 .btn.sm { padding: 5px 11px; font-size: .8rem; }
-/* Light mode: bump border contrast on default + ghost buttons so they don't disappear against near-white cards */
-[data-theme="light"] .btn:not(.primary):not(.bad) { border-color: rgba(20,22,32,.26); }
-[data-theme="light"] .btn:not(.primary):not(.bad):hover { border-color: var(--hi); }
 
 /* ---------- inputs ---------- */
 .field { display: flex; flex-direction: column; gap: 5px; margin-bottom: 14px; }

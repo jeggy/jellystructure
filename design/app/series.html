@@ -7,7 +7,6 @@
 <link rel="stylesheet" href="wf.css">
 <link rel="stylesheet" href="app.css">
 <style>
-  /* episode rows */
   .ep { border: 1px solid var(--line); border-radius: var(--radius-s); background: var(--fill-2); overflow: hidden; transition: border-color .2s ease; }
   .ep + .ep { margin-top: 10px; }
   .ep.attn { border-color: rgba(255,111,97,.35); }
@@ -26,6 +25,21 @@
   .ep-body .grid2 { display: grid; grid-template-columns: 260px 1fr; gap: 16px; align-items: start; }
   @media (max-width: 1100px) { .ep-body .grid2 { grid-template-columns: 1fr; } }
   .seasonbar { display: flex; align-items: center; gap: 12px; padding: 4px 2px 14px; flex-wrap: wrap; }
+  .lang-dist .barline { display: flex; align-items: center; gap: 8px; margin: 6px 0; font-size: .76rem; }
+  .lang-dist .track { flex: 1; height: 8px; border-radius: 20px; background: var(--fill-3); overflow: hidden; }
+  .lang-dist .track > i { display: block; height: 100%; background: var(--fill-3); }
+  .lang-dist .barline.win .track > i { background: var(--grad); }
+  /* inline track fix rows */
+  .trk { border: 1px solid var(--line); border-radius: var(--radius-s); background: var(--fill); padding: 9px 11px; }
+  .trk + .trk { margin-top: 7px; }
+  .trk.untagged { background: var(--bad-soft); border-color: var(--bad); }
+  .trk-main { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .langpick { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 9px; }
+  .langpick .btn.sm { padding: 4px 10px; }
+  .modal-back { position: fixed; inset: 0; z-index: 120; background: rgba(8,10,16,.66); -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px); display: none; align-items: center; justify-content: center; padding: 20px; }
+  .modal-back.open { display: flex; }
+  .modal { width: 520px; max-width: 100%; background: var(--fill); border: 1px solid var(--line-2); border-radius: var(--radius); box-shadow: var(--shadow); padding: 20px 22px; }
+  .modal h3 { margin: 0 0 12px; } .modal .x { float: right; cursor: pointer; color: var(--ink-soft); }
 </style>
 </head>
 <body class="wf-body app-body">
@@ -38,82 +52,95 @@
 
   <div class="pagebar">
     <h1>Nordvest <span class="muted">(2023)</span></h1>
-    <span class="badge ok">NFO locked</span>
     <span class="badge bad">4 episodes need attention</span>
     <span class="spacer"></span>
-    <a class="btn" href="series-triage.html">Open Series triage →</a>
+    <a class="btn sm ghost" href="#" target="_blank" rel="noopener">Jellyfin ↗</a>
+    <a class="btn sm ghost" href="https://www.themoviedb.org/tv/210041" target="_blank" rel="noopener">TMDB ↗</a>
+    <span class="btn sm ghost" id="repull-jf-btn">Re-pull from Jellyfin…</span>
+    <span class="btn sm ghost">Re-pull from TMDB</span>
     <span class="btn primary">Save → disk</span>
     <span class="btn">Save &amp; tell Jellyfin ↻</span>
   </div>
 
-  <div class="tabs2">
-    <span>Overview</span>
-    <span class="on">Seasons &amp; episodes</span>
-    <span>Artwork</span>
-    <span>NFO (raw)</span>
-    <span>History</span>
+  <div class="tabs2" id="tabbar">
+    <span data-tab="overview">Overview</span>
+    <span class="on" data-tab="episodes">Seasons &amp; episodes</span>
+    <span data-tab="artwork">Artwork</span>
+    <span data-tab="nfo">NFO (raw)</span>
+    <span data-tab="history">History</span>
   </div>
 
   <div class="row" style="align-items:flex-start;">
-    <!-- LEFT RAIL -->
+    <!-- LEFT RAIL (series-level context, persists across tabs) -->
     <div class="col" style="width:250px;flex:none;">
       <div class="card">
         <h4 style="margin:0 0 8px;">Series artwork</h4>
         <div class="imgslot" style="height:250px;margin-bottom:8px;"><span>poster.jpg<br>(drop / fetch)</span></div>
         <div class="row" style="gap:8px;">
-          <div class="imgslot fill" style="height:54px;"><span>backdrop</span></div>
+          <div class="imgslot fill" style="height:54px;"><span>fanart</span></div>
           <div class="imgslot fill" style="height:54px;"><span style="background:var(--bad-soft);border-color:var(--bad);color:var(--bad);">logo · missing</span></div>
         </div>
         <div class="pill-row" style="margin-top:10px;"><span class="btn sm">Fetch all</span><span class="btn sm ghost">Upload</span></div>
-        <div class="tiny muted" style="margin-top:8px;">2 of 3 series assets present</div>
       </div>
 
       <div class="card">
-        <h4 style="margin:0 0 6px;">Identity</h4>
-        <div class="field" style="margin:0 0 8px;"><label>TMDB id</label><div class="input">tv/210041</div></div>
-        <div class="row center tiny" style="gap:7px;"><span class="muted">match</span><span class="badge ok">exact</span></div>
+        <h4 style="margin:0 0 8px;">Identity</h4>
+        <div class="field" style="margin:0 0 8px;"><label>TMDB id</label>
+          <div class="row" style="gap:7px;"><input class="input" type="number" value="210041" style="flex:1;min-width:0;"><span class="btn sm">Save</span></div>
+        </div>
+        <div class="row center tiny" style="gap:7px;justify-content:space-between;"><span><span class="muted">match</span> <span class="badge ok">exact</span></span><a href="https://www.themoviedb.org/search?query=Nordvest" target="_blank" rel="noopener" class="tiny">Search TMDB ↗</a></div>
       </div>
 
-      <div class="override">
-        <div class="row center"><h4 style="margin:0;white-space:nowrap;">Series language</h4><span class="spacer"></span><span class="badge info">majority</span></div>
-        <div class="tiny" style="margin-top:8px;">
-          Each episode resolves its own fetch language. The series NFO uses the language most episodes share.
+      <!-- Simplified series-language card (Phase 12) -->
+      <div class="override lang-dist">
+        <div class="row center"><h4 style="margin:0;white-space:nowrap;">Series language</h4><span class="spacer"></span><span class="badge ok">Uniform</span></div>
+        <div class="tiny muted" style="margin-top:4px;">8 episodes · 19 tracks total</div>
+        <div style="margin-top:10px;">
+          <div class="barline win"><span class="lang" style="width:24px;">fo</span><span class="track"><i style="width:88%"></i></span><span class="mono muted">7</span></div>
+          <div class="barline"><span class="lang" style="width:24px;">da</span><span class="track"><i style="width:12%"></i></span><span class="mono muted">1</span></div>
         </div>
-        <div class="box flat" style="margin-top:10px;background:var(--bg-2);">
-          <div class="mono tiny" style="line-height:2;">
-            <div><span class="okc">fo</span> ······ 7 / 8 episodes ✓ winner</div>
-            <div class="muted">da ······ 1 / 8 (S01E04)</div>
-          </div>
-          <hr class="dash" style="margin:9px 0;">
-          <div class="row center"><span class="tiny">tvshow.nfo language</span><span class="spacer"></span><span class="badge ok lang">fo</span></div>
+        <hr class="dash" style="margin:12px 0;">
+        <div class="field" style="margin:0;"><label>NFO language</label>
+          <div class="row" style="gap:7px;"><span class="select" style="flex:1;"><span><span class="lang">fo</span> Faroese (fo)</span></span><span class="btn sm">Save</span></div>
         </div>
-        <div class="tiny muted" style="margin-top:8px;"><a href="series-triage.html">Review &amp; override →</a></div>
+        <div class="tiny muted" style="margin-top:8px;">Used for TMDB metadata and tvshow.nfo writes. Does not affect audio tracks.</div>
       </div>
     </div>
 
-    <!-- MAIN -->
+    <!-- MAIN COLUMN -->
     <div class="col fill">
-      <!-- series metadata -->
-      <div class="card">
-        <div class="row"><div class="field fill"><label>Series title</label><div class="input">Nordvest</div></div><div class="field" style="width:110px;"><label>Year</label><div class="input">2023</div></div></div>
-        <div class="field"><label>Plot</label><div class="input" style="min-height:60px;align-items:flex-start;">In a fog-bound Faroese fishing town, a detective returns home to a death that reopens a buried family secret.</div></div>
-        <div class="row">
-          <div class="field fill"><label>Genres</label><div class="pill-row"><span class="chip">Crime ✕</span><span class="chip">Drama ✕</span><span class="chip">Thriller ✕</span><span class="chip ghost">＋</span></div></div>
-          <div class="field" style="width:180px;"><label>Network</label><div class="input">Kringvarp</div></div>
+
+      <!-- OVERVIEW PANEL -->
+      <div class="tabpanel" data-panel="overview" style="display:none;">
+        <div class="card">
+          <h4 style="margin:0 0 12px;">Series metadata <span class="tiny muted">· tvshow.nfo</span></h4>
+          <div class="row"><div class="field fill"><label>Series title</label><input class="input" value="Nordvest"></div><div class="field" style="width:110px;"><label>Year</label><input class="input" value="2023"></div></div>
+          <div class="field"><label>Plot</label><textarea class="input" rows="3" style="resize:vertical;line-height:1.5;">In a fog-bound Faroese fishing town, a detective returns home to a death that reopens a buried family secret.</textarea></div>
+          <div class="row">
+            <div class="field fill"><label>Genres</label><div class="pill-row"><span class="chip">Crime ✕</span><span class="chip">Drama ✕</span><span class="chip">Thriller ✕</span><span class="chip ghost">＋</span></div></div>
+            <div class="field" style="width:180px;"><label>Network</label><input class="input" value="Kringvarp"></div>
+          </div>
+        </div>
+        <div class="card" id="tags-section">
+          <div class="row center"><h4 style="margin:0;">Tags</h4><span class="spacer"></span><span class="tiny muted"><a href="metadata.html">manage tags →</a></span></div>
+          <hr class="dash" style="margin:10px 0;">
+          <div class="pill-row"><span class="chip"><span class="tag-dot" style="width:8px;height:8px;border-radius:50%;display:inline-block;background:#3fb6f5;"></span> nordic noir <span class="rm" style="cursor:pointer;">✕</span></span><span class="chip">crime drama <span class="rm" style="cursor:pointer;">✕</span></span><span class="chip ghost">＋ add</span></div>
         </div>
       </div>
 
-      <!-- seasons & episodes -->
+      <!-- SEASONS & EPISODES PANEL -->
+      <div class="tabpanel" data-panel="episodes">
       <div class="card">
         <div class="row center"><h4 style="margin:0;white-space:nowrap;">Season 1</h4><span class="chip">8 episodes</span><span class="spacer"></span><span class="seg"><span class="on">Season 1</span><span>Season 2</span></span></div>
         <hr class="dash" style="margin:12px 0;">
         <div class="seasonbar">
           <span class="muted tiny">episode-level:</span>
           <span class="chip"><span class="dot bad"></span> 2 untagged tracks</span>
+          <span class="chip"><span class="dot bad"></span> 1 multiple-default</span>
           <span class="chip"><span class="dot warn"></span> 1 missing still</span>
           <span class="chip"><span class="dot warn"></span> 2 missing overview</span>
           <span class="spacer" style="flex:1"></span>
-          <a class="btn sm" href="series-triage.html">Fix all in triage →</a>
+          <span class="btn sm ghost" id="expand-issues">Expand all issues</span>
         </div>
 
         <div id="eplist">
@@ -129,11 +156,11 @@
             </div>
             <div class="ep-body">
               <div class="grid2">
-                <div class="imgslot" style="height:150px;"><span>still / thumb<br>(drop / fetch)</span></div>
+                <div class="imgslot" style="height:150px;"><span>still / thumb</span></div>
                 <div class="col" style="gap:10px;">
-                  <div class="field" style="margin:0;"><label>Episode title</label><div class="input">Hvalvík</div></div>
-                  <div class="field" style="margin:0;"><label>Overview</label><div class="input" style="min-height:54px;align-items:flex-start;">Detective Eyð Restorff steps off the ferry into a town that would rather forget her.</div></div>
-                  <div class="row center" style="gap:8px;"><span class="muted tiny">tracks:</span><span class="chip mono">fo · eac3 ★</span><span class="chip mono">da · aac</span><span class="chip mono">da · srt</span><span class="spacer"></span><a class="btn sm ghost" href="series-triage.html">Edit tracks ↗</a></div>
+                  <div class="field" style="margin:0;"><label>Episode title</label><input class="input" value="Hvalvík"></div>
+                  <div class="field" style="margin:0;"><label>Overview</label><textarea class="input" rows="2" style="resize:vertical;">Detective Eyð Restorff steps off the ferry into a town that would rather forget her.</textarea></div>
+                  <div class="row center" style="gap:8px;"><span class="muted tiny">tracks:</span><span class="chip mono">fo · eac3 ★</span><span class="chip mono">da · aac</span><span class="chip mono">da · srt</span><span class="spacer"></span><span class="btn sm ghost ep-edit-tracks">Edit tracks</span></div>
                 </div>
               </div>
             </div>
@@ -151,11 +178,11 @@
             </div>
             <div class="ep-body">
               <div class="grid2">
-                <div class="imgslot" style="height:150px;"><span style="background:var(--bad-soft);border-color:var(--bad);color:var(--bad);">still · missing<br>(fetch / upload)</span></div>
+                <div class="imgslot" style="height:150px;"><span style="background:var(--bad-soft);border-color:var(--bad);color:var(--bad);">still · missing</span></div>
                 <div class="col" style="gap:10px;">
-                  <div class="field" style="margin:0;"><label>Episode title</label><div class="input">Bóndin</div></div>
-                  <div class="field" style="margin:0;"><label>Overview</label><div class="input ph" style="min-height:54px;align-items:flex-start;background:var(--bad-soft);border-color:var(--bad);">No overview — fetch from TMDB or write one…</div></div>
-                  <div class="row center" style="gap:8px;flex-wrap:wrap;"><span class="btn sm">Fetch from TMDB</span><span class="btn sm ghost">Upload still</span><span class="spacer"></span><a class="btn sm" href="series-triage.html">Fix in triage →</a></div>
+                  <div class="field" style="margin:0;"><label>Episode title</label><input class="input" value="Bóndin"></div>
+                  <div class="field" style="margin:0;"><label>Overview</label><textarea class="input" rows="2" placeholder="No overview — fetch from TMDB or write one…" style="resize:vertical;background:var(--bad-soft);border-color:var(--bad);"></textarea></div>
+                  <div class="row center" style="gap:8px;flex-wrap:wrap;"><span class="btn sm">Fetch still + overview from TMDB</span><span class="btn sm ghost">Upload still</span><span class="spacer"></span><span class="btn sm primary">Save episode</span></div>
                 </div>
               </div>
             </div>
@@ -175,8 +202,11 @@
               <div class="grid2">
                 <div class="imgslot" style="height:150px;"><span>still / thumb</span></div>
                 <div class="col" style="gap:10px;">
-                  <div class="field" style="margin:0;"><label>Overview</label><div class="input" style="min-height:54px;align-items:flex-start;">A whale hunt on the black beach surfaces a body that has been in the water far too long.</div></div>
-                  <div class="box flat row center" style="background:var(--bad-soft);border-color:var(--bad);gap:8px;"><span class="num">0:a:1</span><span class="badge bad">no language</span><span class="muted tiny mono">ac3 · "commentary"</span><span class="spacer"></span><a class="btn sm" href="series-triage.html">Tag in triage →</a></div>
+                  <div class="field" style="margin:0;"><label>Overview</label><textarea class="input" rows="2" style="resize:vertical;">A whale hunt on the black beach surfaces a body that has been in the water far too long.</textarea></div>
+                  <div class="trk untagged">
+                    <div class="trk-main"><span class="num" style="width:48px;">0:a:1</span><span class="badge bad">no language</span><span class="muted tiny mono">ac3 · "commentary"</span></div>
+                    <div class="langpick"><span class="muted tiny" style="margin-right:2px;">assign:</span><span class="btn sm">fo</span><span class="btn sm">da</span><span class="btn sm">en</span><span class="btn sm">is</span><span class="btn sm ghost">other…</span></div>
+                  </div>
                 </div>
               </div>
             </div>
@@ -196,7 +226,7 @@
               <div class="grid2">
                 <div class="imgslot" style="height:150px;"><span>still / thumb</span></div>
                 <div class="col" style="gap:10px;">
-                  <div class="field" style="margin:0;"><label>Overview</label><div class="input" style="min-height:54px;align-items:flex-start;">A Copenhagen prosecutor arrives; the case — and the language in the room — shifts south.</div></div>
+                  <div class="field" style="margin:0;"><label>Overview</label><textarea class="input" rows="2" style="resize:vertical;">A Copenhagen prosecutor arrives; the case — and the language in the room — shifts south.</textarea></div>
                   <div class="note blue" style="margin:0;">This episode's tracks lead with <span class="lang">da</span>, so it fetches its own metadata in Danish — independent of the series language <span class="lang">fo</span>.</div>
                 </div>
               </div>
@@ -217,19 +247,19 @@
               <div class="grid2">
                 <div class="imgslot" style="height:150px;"><span>still / thumb</span></div>
                 <div class="col" style="gap:10px;">
-                  <div class="field" style="margin:0;"><label>Overview</label><div class="input" style="min-height:54px;align-items:flex-start;">Eyð follows the money upriver to a salmon farm that everyone in town depends on.</div></div>
+                  <div class="field" style="margin:0;"><label>Overview</label><textarea class="input" rows="2" style="resize:vertical;">Eyð follows the money upriver to a salmon farm that everyone in town depends on.</textarea></div>
                 </div>
               </div>
             </div>
           </div>
 
-          <!-- E06 untagged subtitle -->
+          <!-- E06 multiple default audio (Phase 21) -->
           <div class="ep attn" data-ep="S01E06">
             <div class="ep-row">
               <div class="imgslot ep-thumb"><span style="font-size:.52rem;">still</span></div>
               <div class="ep-meta">
                 <div class="t"><span class="num">S01E06</span> Náttúra <span class="lang" style="font-size:.7rem;">fo</span></div>
-                <div class="s">59 min · <span class="ep-flags"><span class="badge bad">1 untagged subtitle</span></span></div>
+                <div class="s">59 min · <span class="ep-flags"><span class="badge bad">multiple default audio</span></span></div>
               </div>
               <span class="ep-chev">›</span>
             </div>
@@ -237,8 +267,15 @@
               <div class="grid2">
                 <div class="imgslot" style="height:150px;"><span>still / thumb</span></div>
                 <div class="col" style="gap:10px;">
-                  <div class="field" style="margin:0;"><label>Overview</label><div class="input" style="min-height:54px;align-items:flex-start;">A storm strands the island and the suspect list narrows to the people Eyð grew up with.</div></div>
-                  <div class="box flat row center" style="background:var(--bad-soft);border-color:var(--bad);gap:8px;"><span class="num">0:s:0</span><span class="badge bad">no language</span><span class="muted tiny mono">srt · "forced?"</span><span class="spacer"></span><a class="btn sm" href="series-triage.html">Tag in triage →</a></div>
+                  <div class="note red" style="margin:0;">
+                    <b>Multiple default audio tracks.</b>
+                    <div class="tiny" style="margin-top:4px;">A file should have exactly one default audio track. Pick the one to keep — the others will be cleared (manual, <span class="mono">mkvpropedit</span>).</div>
+                  </div>
+                  <div data-multidef>
+                    <div class="trk isdef"><div class="trk-main"><input type="radio" name="def-e06" checked><span class="num" style="width:48px;">0:a:0</span><span class="lang">fo</span><span class="muted tiny mono">eac3 · 5.1</span><span class="badge warn">★ default</span></div></div>
+                    <div class="trk isdef"><div class="trk-main"><input type="radio" name="def-e06"><span class="num" style="width:48px;">0:a:1</span><span class="lang">da</span><span class="muted tiny mono">aac · stereo</span><span class="badge warn">★ default</span></div></div>
+                  </div>
+                  <div class="row center" style="gap:8px;"><span class="spacer"></span><span class="btn sm primary">Keep selected as the only default</span></div>
                 </div>
               </div>
             </div>
@@ -258,7 +295,7 @@
               <div class="grid2">
                 <div class="imgslot" style="height:150px;"><span>still / thumb</span></div>
                 <div class="col" style="gap:10px;">
-                  <div class="field" style="margin:0;"><label>Overview</label><div class="input" style="min-height:54px;align-items:flex-start;">The secret her father carried to sea finally washes back to the harbour wall.</div></div>
+                  <div class="field" style="margin:0;"><label>Overview</label><textarea class="input" rows="2" style="resize:vertical;">The secret her father carried to sea finally washes back to the harbour wall.</textarea></div>
                 </div>
               </div>
             </div>
@@ -278,30 +315,112 @@
               <div class="grid2">
                 <div class="imgslot" style="height:150px;"><span>still / thumb</span></div>
                 <div class="col" style="gap:10px;">
-                  <div class="field" style="margin:0;"><label>Episode title</label><div class="input">Endi</div></div>
-                  <div class="field" style="margin:0;"><label>Overview</label><div class="input ph" style="min-height:54px;align-items:flex-start;background:var(--bad-soft);border-color:var(--bad);">No overview — fetch from TMDB or write one…</div></div>
-                  <div class="row center" style="gap:8px;"><span class="btn sm">Fetch from TMDB</span><span class="spacer"></span><a class="btn sm" href="series-triage.html">Fix in triage →</a></div>
+                  <div class="field" style="margin:0;"><label>Episode title</label><input class="input" value="Endi"></div>
+                  <div class="field" style="margin:0;"><label>Overview</label><textarea class="input" rows="2" placeholder="No overview — fetch from TMDB or write one…" style="resize:vertical;background:var(--bad-soft);border-color:var(--bad);"></textarea></div>
+                  <div class="row center" style="gap:8px;"><span class="btn sm">Fetch from TMDB</span><span class="spacer"></span><span class="btn sm primary">Save episode</span></div>
                 </div>
               </div>
             </div>
           </div>
         </div>
       </div>
-
-      <div class="row center box flat" style="background:var(--ok-soft);border-color:var(--ok);">
-        <span class="badge ok">lockdata</span><span class="tiny">tvshow.nfo and every episodedetails.nfo are locked so Jellyfin never overwrites managed metadata.</span>
-        <span class="spacer"></span><span class="toggle on"></span>
       </div>
+
+      <!-- ARTWORK PANEL -->
+      <div class="tabpanel" data-panel="artwork" style="display:none;">
+        <div class="card">
+          <div class="row center"><h4 style="margin:0;">Series artwork</h4><span class="spacer"></span><span class="pill-row"><span class="btn sm">Fetch all from TMDB</span><span class="btn sm ghost">Upload</span></span></div>
+          <hr class="dash" style="margin:12px 0;">
+          <div class="row" style="gap:18px;flex-wrap:wrap;">
+            <div class="col" style="gap:8px;"><div class="imgslot" style="width:150px;height:222px;"><span>poster.jpg</span></div><span class="tiny muted center-x">poster</span></div>
+            <div class="col" style="gap:8px;"><div class="imgslot" style="width:340px;height:191px;"><span>fanart.jpg</span></div><span class="tiny muted center-x">fanart</span></div>
+            <div class="col" style="gap:8px;"><div class="imgslot" style="width:220px;height:191px;"><span style="background:var(--bad-soft);border-color:var(--bad);color:var(--bad);">clearlogo.png · missing</span></div><span class="tiny muted center-x">logo</span></div>
+          </div>
+          <div class="tiny muted" style="margin-top:14px;">Per-episode stills are managed inline on each episode under <b>Seasons &amp; episodes</b>. Each is written as <span class="mono">{episode}-thumb.jpg</span>.</div>
+        </div>
+      </div>
+
+      <!-- NFO PANEL -->
+      <div class="tabpanel" data-panel="nfo" style="display:none;">
+        <div class="card">
+          <div class="row center"><h4 style="margin:0;">tvshow.nfo</h4><span class="spacer"></span><span class="badge ok">unlocked</span></div>
+          <hr class="dash" style="margin:12px 0;">
+          <div class="log" style="max-height:340px;">
+<span class="muted">&lt;?xml version="1.0" encoding="UTF-8"?&gt;</span>
+&lt;tvshow&gt;
+  &lt;title&gt;Nordvest&lt;/title&gt;
+  &lt;year&gt;2023&lt;/year&gt;
+  &lt;studio&gt;Kringvarp&lt;/studio&gt;
+  &lt;uniqueid type="tmdb"&gt;210041&lt;/uniqueid&gt;
+  <span class="muted">&lt;!-- episodedetails.nfo written beside each episode file --&gt;</span>
+&lt;/tvshow&gt;
+          </div>
+        </div>
+      </div>
+
+      <!-- HISTORY PANEL -->
+      <div class="tabpanel" data-panel="history" style="display:none;">
+        <div class="card">
+          <h4 style="margin:0 0 12px;">History</h4>
+          <table class="wf-table">
+            <tr><th>When</th><th>Action</th><th>Detail</th></tr>
+            <tr><td class="muted tiny">2026-06-18 08:02</td><td><span class="badge info">scan</span></td><td class="tiny">8 episodes probed · majority <span class="lang">fo</span> (7/8) · series resolved <span class="lang">fo</span></td></tr>
+            <tr><td class="muted tiny">2026-06-18 08:02</td><td><span class="badge ok">nfo</span></td><td class="tiny">Wrote tvshow.nfo + 8 episodedetails.nfo (unlocked)</td></tr>
+          </table>
+        </div>
+      </div>
+
     </div>
   </div>
 </main>
 
+<!-- Re-pull from Jellyfin modal -->
+<div class="modal-back" id="repull-modal">
+  <div class="modal">
+    <span class="x" id="repull-x">✕</span>
+    <h3>Re-pull from Jellyfin</h3>
+    <p class="muted" style="line-height:1.6;">Re-fetches this series' name, file path, provider IDs and each episode's tracks from Jellyfin, then re-resolves language and TMDB metadata. Use this when the show moved, was renamed, or its Jellyfin match changed.</p>
+    <div class="row" style="justify-content:flex-end;gap:8px;margin-top:8px;"><span class="btn ghost" id="repull-cancel">Cancel</span><span class="btn primary" id="repull-go">Re-pull</span></div>
+  </div>
+</div>
+
 <script src="app-shell.js"></script>
 <script>
 (function () {
-  document.querySelectorAll('.ep-row').forEach(row => {
-    row.addEventListener('click', () => row.closest('.ep').classList.toggle('open'));
-  });
+  /* URL-addressable tabs (Phase 28) */
+  const tabbar = document.getElementById('tabbar');
+  const panels = document.querySelectorAll('.tabpanel');
+  function showTab(name) {
+    if (![...tabbar.children].some(t => t.dataset.tab === name)) name = 'episodes';
+    [...tabbar.children].forEach(t => t.classList.toggle('on', t.dataset.tab === name));
+    panels.forEach(p => { p.style.display = p.dataset.panel === name ? '' : 'none'; });
+  }
+  tabbar.addEventListener('click', e => { const t = e.target.closest('[data-tab]'); if (t) location.hash = 'tab=' + t.dataset.tab; });
+  function fromHash() { const m = /tab=([a-z]+)/.exec(location.hash || ''); showTab(m ? m[1] : 'episodes'); }
+  window.addEventListener('hashchange', fromHash); fromHash();
+
+  /* episode expand/collapse */
+  document.querySelectorAll('.ep-row').forEach(row => row.addEventListener('click', () => row.closest('.ep').classList.toggle('open')));
+  document.getElementById('expand-issues').addEventListener('click', () => document.querySelectorAll('.ep.attn').forEach(e => e.classList.add('open')));
+
+  /* re-pull modal */
+  const rm = document.getElementById('repull-modal');
+  document.getElementById('repull-jf-btn').addEventListener('click', () => rm.classList.add('open'));
+  document.getElementById('repull-x').addEventListener('click', () => rm.classList.remove('open'));
+  document.getElementById('repull-cancel').addEventListener('click', () => rm.classList.remove('open'));
+  rm.addEventListener('click', e => { if (e.target === rm) rm.classList.remove('open'); });
+  document.getElementById('repull-go').addEventListener('click', e => { e.target.textContent = 'Re-pulling…'; setTimeout(() => { e.target.textContent = 'Re-pull'; rm.classList.remove('open'); }, 1000); });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') rm.classList.remove('open'); });
+
+  /* multi-default radio → keep one default */
+  document.querySelectorAll('[data-multidef]').forEach(box => box.addEventListener('change', () => {
+    box.querySelectorAll('.trk').forEach(t => {
+      const on = t.querySelector('input').checked;
+      t.classList.toggle('isdef', on);
+      const badge = t.querySelector('.badge');
+      badge.className = on ? 'badge warn' : 'badge'; badge.textContent = on ? '★ default' : 'cleared';
+    });
+  }));
 })();
 </script>
 </body>

@@ -1,0 +1,550 @@
+/* Ravilo app engine — render + hero carousel + D-pad focus + viewport scaling.
+   mountRavilo(stage, { interactive }) where stage is the 1920×1080 element. */
+(function () {
+  const R = window.RAVILO;
+
+  function el(tag, cls, html) { const e = document.createElement(tag); if (cls) e.className = cls; if (html != null) e.innerHTML = html; return e; }
+  function artFill(item) { return item.image ? `<img class="tile-img" src="${item.image}" alt="">` : `<div class="grad" style="background:${item.grad}"></div><div class="tt">${item.title}</div>`; }
+  function artGrad(item) { return `<div class="grad" style="background:${item.grad}"></div><div class="tt">${item.title}</div>`; }
+
+  function mountRavilo(stage, opts) {
+    opts = opts || {};
+    const interactive = opts.interactive !== false;
+    let view = { type: 'home', studio: null };
+    let heroIdx = 0, heroTimer = null;
+
+    // ---- app bar ----
+    const appbar = el('div', 'appbar');
+    appbar.innerHTML = `
+      <div class="brand">
+        <svg class="mark" viewBox="0 0 100 100" aria-hidden="true">
+          <defs><linearGradient id="ravJelly" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="var(--accent)"/><stop offset="1" stop-color="var(--accent-2)"/></linearGradient></defs>
+          <path d="M22 52 C22 24 78 24 78 52 C66 45 59 45 50 49 C41 45 34 45 22 52 Z" fill="url(#ravJelly)"/>
+          <g stroke="url(#ravJelly)" stroke-width="4.5" stroke-linecap="round" fill="none">
+            <path d="M33 51 q-5 12 1 20 q5 8 0 14" opacity=".9"/>
+            <path d="M44 52 q-4 13 1 21 q4 9 0 13" opacity=".72"/>
+            <path d="M56 52 q4 13 -1 21 q-4 9 0 13" opacity=".72"/>
+            <path d="M67 51 q5 12 -1 20 q-5 8 0 14" opacity=".9"/>
+          </g>
+        </svg>
+        <span class="wm">Ravilo</span>
+      </div>
+      <div class="topnav focus-row">
+        <div class="navitem foc cur" data-nav="home">Home</div>
+        <div class="navitem foc" data-nav="movies">Movies</div>
+        <div class="navitem foc" data-nav="series">Series</div>
+        <div class="navitem foc" data-nav="mylist">My List</div>
+      </div>
+      <div class="right">
+        <div class="search-ic foc" data-nav="search">⌕</div>
+        <div class="clock"></div>
+        <div class="avatar">ER</div>
+      </div>`;
+    stage.appendChild(appbar);
+
+    const screen = el('div', 'screen');
+    const scroll = el('div', 'screen-scroll');
+    screen.appendChild(scroll);
+    stage.appendChild(screen);
+
+    // ---- detail overlay ----
+    const overlay = el('div', 'overlay');
+    overlay.innerHTML = `<div class="sheet"><div class="art"><div class="grad"></div></div>
+      <div class="info"><h2></h2><div class="m"></div><p></p>
+      <div class="acts"><div class="btn primary foc" data-ov="play"><span class="ic">▶</span> Play</div>
+      <div class="btn ghost foc" data-ov="list"><span class="ic">＋</span> My List</div>
+      <div class="btn ghost foc" data-ov="close">Close</div></div></div></div>`;
+    stage.appendChild(overlay);
+
+    function clock() {
+      const d = new Date();
+      const c = appbar.querySelector('.clock');
+      if (c) c.textContent = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    }
+    clock(); setInterval(clock, 10000);
+
+    /* ---------------- HERO ---------------- */
+    function buildHero() {
+      const hero = el('div', 'hero');
+      hero.style.height = '56%';
+      R.hero.forEach((it, i) => {
+        const s = el('div', 'hero-slide' + (i === 0 ? ' on' : ''));
+        s.innerHTML = `
+          <div class="hero-bg">${it.backdrop ? `<img class="hero-backdrop" src="${it.backdrop}" alt="">` : `<div class="grad" style="position:absolute;inset:0;background:${it.grad}"></div><div class="hero-noise"></div>`}<div class="hero-scrim"></div></div>
+          <div class="hero-body">
+            <div class="hero-kicker"><span>${it.tagline}</span><span class="n">${it.kind === 'series' ? 'Series' : 'Film'}</span></div>
+            ${it.logo ? `<img class="hero-logo" src="${it.logo}" alt="${it.title}">` : `<div class="hero-title">${it.title}</div>`}
+            <div class="hero-meta"><span class="tag">${it.badge}</span><span>${it.year}</span><span>${it.genre}</span><span class="rt">${it.rating}+</span></div>
+            <div class="hero-syn">${it.syn}</div>
+          </div>`;
+        hero.appendChild(s);
+      });
+      const body0 = hero.querySelector('.hero-slide.on .hero-body');
+      const actions = el('div', 'hero-actions focus-row');
+      actions.innerHTML = `
+        <div class="btn primary foc" data-act="play"><span class="ic">▶</span> Play</div>
+        <div class="btn ghost foc" data-act="info"><span class="ic">ⓘ</span> More Info</div>
+        <div class="btn ghost foc" data-act="list"><span class="ic">＋</span> My List</div>`;
+      body0.appendChild(actions);
+
+      const dots = el('div', 'hero-dots');
+      R.hero.forEach((_, i) => { const d = el('div', 'd' + (i === 0 ? ' on' : '')); d.dataset.dot = i; dots.appendChild(d); });
+      hero.appendChild(dots);
+      return hero;
+    }
+    function setHero(i) {
+      const hero = scroll.querySelector('.hero'); if (!hero) return;
+      const slides = hero.querySelectorAll('.hero-slide');
+      heroIdx = (i + slides.length) % slides.length;
+      slides.forEach((s, k) => s.classList.toggle('on', k === heroIdx));
+      hero.querySelectorAll('.hero-dots .d').forEach((d, k) => d.classList.toggle('on', k === heroIdx));
+      // move the actions row into the visible slide
+      const actions = hero.querySelector('.hero-actions');
+      if (actions) hero.querySelectorAll('.hero-slide')[heroIdx].querySelector('.hero-body').appendChild(actions);
+    }
+    function startHero() { stopHero(); if (interactive) heroTimer = setInterval(() => setHero(heroIdx + 1), 6500); }
+    function stopHero() { if (heroTimer) clearInterval(heroTimer); heroTimer = null; }
+
+    /* ---------------- ROWS ---------------- */
+    function tile(item, kind) {
+      const t = el('div', 'tile ' + (kind === 'land' ? 'land' : 'poster') + ' foc');
+      t._item = item;
+      if (kind === 'land') {
+        t.innerHTML = `<div class="art">${item.image ? `<img class="tile-img" src="${item.image}" alt="">` : `<div class="grad" style="background:${item.grad}"></div>`}
+          <div class="meta-ep">${item.ep || ''}</div>
+          <div class="play"><span>▶</span></div>
+          <div class="pbar"><i style="width:${item.pct || 0}%"></i></div></div>
+          <div class="label">${item.title}</div><div class="sub">${item.next ? 'Next up' : (item.genre || '')}</div>`;
+      } else {
+        t.innerHTML = `<div class="art">${artFill(item)}${item.badge ? `<div class="badge">${item.badge}</div>` : ''}</div>
+          <div class="label">${item.title}</div><div class="sub">${item.year} · ${item.genre}</div>`;
+      }
+      return t;
+    }
+    function contentRow(rowCfg) {
+      const r = el('div', 'crow');
+      r.innerHTML = `<div class="crow-head"><h2>${rowCfg.title}</h2>${rowCfg.cfg ? `<span class="cfg">${rowCfg.cfg}</span>` : ''}<span class="more">See all ›</span></div>`;
+      const track = el('div', 'track focus-row');
+      rowCfg.items.forEach(it => track.appendChild(tile(it, rowCfg.kind)));
+      r.appendChild(track);
+      return r;
+    }
+    function studioRail() {
+      const r = el('div', 'rail');
+      r.innerHTML = `<div class="rail-head"><h2>Channels &amp; Collections</h2><span class="more">Configured in Jellystructure</span></div>`;
+      const track = el('div', 'track focus-row');
+      R.studios.forEach(s => {
+        const c = el('div', 'studio foc');
+        c._studio = s;
+        c.style.background = s.bg;
+        c.innerHTML = `<div class="sheen"></div><div class="wm">${s.wm}</div>`;
+        track.appendChild(c);
+      });
+      r.appendChild(track);
+      return r;
+    }
+
+    function rowSet() {
+      // same row set everywhere; merged-newly-added is one config alternative
+      return R.rows;
+    }
+
+    /* ---------------- VIEWS ---------------- */
+    function renderHome() {
+      stopHero();
+      scroll.innerHTML = '';
+      scroll.appendChild(buildHero());
+      scroll.appendChild(studioRail());
+      rowSet().forEach(rc => scroll.appendChild(contentRow(rc)));
+      scroll.appendChild(el('div', 'screen-end'));
+      setHero(0); startHero();
+      appbar.querySelectorAll('.navitem').forEach(n => n.classList.toggle('cur', n.dataset.nav === 'home'));
+    }
+    function renderCategory(studioId) {
+      stopHero();
+      const s = R.studios.find(x => x.id === studioId) || R.studios[0];
+      scroll.innerHTML = '';
+      const head = el('div', 'cathead');
+      head.innerHTML = `<div class="logo" style="background:${s.bg}">${s.wm}</div>
+        <div><div class="back">‹ Home &nbsp;·&nbsp; Channel</div><h1>${s.name}</h1>
+        <div class="sub">The same rows you love, filtered to ${s.name}. Continue watching, newly added, and every genre — scoped to this channel.</div></div>`;
+      scroll.appendChild(head);
+      // a focus row of just nothing for the header; start rows below
+      rowSet().forEach(rc => {
+        // scope: shuffle items deterministically so it reads as "filtered"
+        const scoped = { ...rc, items: rc.items.slice().sort((a, b) => (a.title.length % 3) - (b.title.length % 3)) };
+        scroll.appendChild(contentRow(scoped));
+      });
+      scroll.appendChild(el('div', 'screen-end'));
+      appbar.querySelectorAll('.navitem').forEach(n => n.classList.remove('cur'));
+    }
+
+    /* ---------------- DETAIL PAGE ---------------- */
+    function detailBg(it) {
+      return it.backdrop
+        ? `<img class="hero-backdrop" src="${it.backdrop}" alt="">`
+        : `<div class="grad" style="position:absolute;inset:0;background:${it.grad}"></div><div class="hero-noise"></div>`;
+    }
+    function detailTitle(it) {
+      return it.logo ? `<img class="dhero-logo" src="${it.logo}" alt="${it.title}">` : `<div class="dhero-title">${it.title}</div>`;
+    }
+    function episodeCard(e, st) {
+      st = st || {};
+      const cls = 'ep-card foc' + (st.watched ? ' watched' : '') + (st.inprogress ? ' inprogress' : '') + (st.upnext ? ' upnext' : '');
+      const t = el('div', cls); t._ep = e;
+      t.innerHTML = `<div class="ep-still"><div class="grad" style="background:${e.grad}"></div>
+        <span class="ep-num">${e.n}</span><span class="ep-dur">${e.dur}</span>
+        ${st.upnext ? '<span class="ep-ribbon">UP NEXT</span>' : ''}
+        ${st.watched ? '<span class="ep-check">✓</span>' : ''}
+        <div class="play"><span>▶</span></div>
+        ${(st.inprogress || st.watched) ? `<div class="ep-prog"><i style="width:${st.watched ? 100 : e.pct}%"></i></div>` : ''}</div>
+        <div class="ep-info"><div class="ep-t">${e.n}. ${e.title}${st.watched ? ' <span class="ep-tag">Watched</span>' : ''}</div><div class="ep-d">${e.desc}</div></div>`;
+      return t;
+    }
+    function seriesProgress(eps) {
+      let watched = 0;
+      eps.forEach(e => { if (e.pct >= 100) watched++; });
+      let idx = eps.findIndex(e => e.pct > 0 && e.pct < 100);
+      if (idx < 0) idx = eps.findIndex(e => !e.pct);
+      if (idx < 0) idx = eps.length - 1;
+      return { watched, idx };
+    }
+    function minsLeft(e) { const d = parseInt(e.dur) || 50; return Math.max(1, Math.round(d * (1 - (e.pct || 0) / 100))); }
+    function castCircle(c) {
+      const t = el('div', 'cast foc'); t._cast = c;
+      t.innerHTML = `<div class="cast-av" style="background:${R.grad(c.n)}">${R.initials(c.n)}</div>
+        <div class="cast-n">${c.n}</div><div class="cast-r">${c.r}</div>`;
+      return t;
+    }
+    function renderDetail(item) {
+      stopHero();
+      scroll.innerHTML = '';
+      const isSeries = item.kind === 'series';
+      const seasons = isSeries ? R.seasonsFor(item) : 0;
+      const season = view.season || 0;
+      const eps = isSeries ? R.episodesFor(item, season) : [];
+      const prog = isSeries ? seriesProgress(eps) : null;
+      const rEp = isSeries ? eps[prog.idx] : null;
+      const d = el('div', 'detail');
+
+      let playLabel, upNote = '';
+      if (isSeries) {
+        if (prog.watched === 0 && !rEp.pct) playLabel = 'Play · E1';
+        else if (rEp.pct > 0 && rEp.pct < 100) { playLabel = `Resume · E${rEp.n}`; upNote = `Resume S${season + 1} · E${rEp.n} “${rEp.title}” · ${minsLeft(rEp)} min left`; }
+        else { playLabel = `Play · E${rEp.n}`; upNote = `Up next · S${season + 1} · E${rEp.n} “${rEp.title}”`; }
+      } else {
+        playLabel = (item.pct > 0 && item.pct < 100) ? `Resume · ${minsLeft(item)} min left` : 'Play';
+      }
+
+      const dhero = el('div', 'dhero');
+      dhero.innerHTML = `<div class="hero-bg">${detailBg(item)}<div class="hero-scrim"></div></div>
+        <div class="dhero-body">
+          <div class="hero-kicker"><span>${item.tagline || (isSeries ? 'Series' : 'Film')}</span><span class="n">${isSeries ? seasons + ' Season' + (seasons > 1 ? 's' : '') : (item.year || '')}</span></div>
+          ${detailTitle(item)}
+          <div class="hero-meta"><span class="tag">${item.badge || 'HD'}</span><span>${item.year}</span><span>${item.genre}</span><span class="rt">${item.rating}+</span></div>
+          <div class="hero-syn">${item.syn || 'A standout from your Ravilo library — streamed from Jellyfin, organised by Jellystructure.'}</div>
+          ${upNote ? `<div class="dnext"><span class="dnext-dot"></span>${upNote}</div>` : ''}
+          <div class="dactions focus-row">
+            <div class="btn primary foc" data-play="1"><span class="ic">▶</span> ${playLabel}</div>
+            <div class="btn ghost foc" data-trailer="1"><span class="ic">▷</span> Trailer</div>
+            <div class="btn ghost foc" data-list="1"><span class="ic">＋</span> My List</div>
+          </div>
+        </div>`;
+      d.appendChild(dhero);
+
+      if (isSeries) {
+        const pctWatched = Math.round(prog.watched / eps.length * 100);
+        const sec = el('div', 'dsec');
+        sec.innerHTML = `<div class="dsec-head"><h2>Episodes</h2>
+          <span class="dsec-sub">${prog.watched} of ${eps.length} watched</span>
+          <span class="seasonbar"><i style="width:${pctWatched}%"></i></span></div>`;
+        const pills = el('div', 'seasonpills focus-row');
+        for (let i = 0; i < seasons; i++) { const p = el('div', 'spill foc' + (i === season ? ' cur' : '')); p._season = i; p.textContent = 'Season ' + (i + 1); pills.appendChild(p); }
+        sec.appendChild(pills);
+        d.appendChild(sec);
+        const epRow = el('div', 'crow eprow');
+        const track = el('div', 'track focus-row');
+        track.dataset.def = prog.idx;
+        eps.forEach((e, i) => track.appendChild(episodeCard(e, {
+          watched: e.pct >= 100, inprogress: e.pct > 0 && e.pct < 100, upnext: i === prog.idx,
+        })));
+        epRow.appendChild(track);
+        d.appendChild(epRow);
+      }
+
+      const castRow = el('div', 'crow');
+      castRow.innerHTML = `<div class="crow-head"><h2>Cast &amp; Crew</h2></div>`;
+      const ctrack = el('div', 'track focus-row');
+      R.castFor(item).forEach(c => ctrack.appendChild(castCircle(c)));
+      castRow.appendChild(ctrack);
+      d.appendChild(castRow);
+
+      const rel = el('div', 'crow');
+      rel.innerHTML = `<div class="crow-head"><h2>More Like This</h2></div>`;
+      const rtrack = el('div', 'track focus-row');
+      R.relatedFor(item).forEach(it => rtrack.appendChild(tile(it, 'poster')));
+      rel.appendChild(rtrack);
+      d.appendChild(rel);
+
+      d.appendChild(el('div', 'screen-end'));
+      scroll.appendChild(d);
+      appbar.querySelectorAll('.navitem').forEach(n => n.classList.remove('cur'));
+    }
+
+    /* ---------------- BROWSE GRID + SEARCH ---------------- */
+    let _catalog = null;
+    function catalog() {
+      if (_catalog) return _catalog;
+      const seen = {}, out = [];
+      const push = it => { if (it && it.title && !seen[it.title]) { seen[it.title] = 1; out.push(it); } };
+      R.hero.forEach(push);
+      R.rows.forEach(r => r.items.forEach(push));
+      return _catalog = out;
+    }
+    function buildGridRows(grid, items) {
+      grid.innerHTML = '';
+      if (!items.length) { grid.innerHTML = '<div class="empty">No titles found.</div>'; return; }
+      const per = 6;
+      for (let i = 0; i < items.length; i += per) {
+        const row = el('div', 'grid-row focus-row');
+        items.slice(i, i + per).forEach(it => row.appendChild(tile(it, 'poster')));
+        grid.appendChild(row);
+      }
+    }
+    function renderGrid(v) {
+      stopHero(); scroll.innerHTML = '';
+      const c = catalog();
+      const items = v.kind === 'mylist' ? c.slice(0, 14) : c.filter(it => it.kind === v.kind);
+      v._all = items;
+      const wrap = el('div', 'gridscreen');
+      wrap.innerHTML = `<div class="gridhead"><h1>${v.title}</h1><span class="gridcount">${items.length} titles</span></div>`;
+      if (v.kind !== 'mylist') {
+        const fr = el('div', 'gridfilter focus-row');
+        ['All', 'Drama', 'Crime', 'Sci-Fi', 'Comedy', 'Family'].forEach((g, i) => { const ch = el('div', 'gchip foc' + (i === 0 ? ' cur' : '')); ch._genre = g; ch.textContent = g; fr.appendChild(ch); });
+        wrap.appendChild(fr);
+      }
+      const grid = el('div', 'pgrid'); buildGridRows(grid, items); wrap.appendChild(grid);
+      wrap.appendChild(el('div', 'screen-end'));
+      scroll.appendChild(wrap);
+      appbar.querySelectorAll('.navitem').forEach(n => n.classList.toggle('cur', n.dataset.nav === v.nav));
+    }
+    function searchFilter(q) { const c = catalog(); if (!q.trim()) return c.slice(0, 18); const l = q.toLowerCase(); return c.filter(it => it.title.toLowerCase().includes(l)); }
+    function renderSearch(v) {
+      stopHero(); scroll.innerHTML = '';
+      v.query = v.query || '';
+      const wrap = el('div', 'searchscreen');
+      wrap.innerHTML = `<div class="searchbar"><span class="sic">⌕</span><span class="sq">${v.query ? esc(v.query) : '<i>Search movies &amp; series…</i>'}</span></div>`;
+      const kb = el('div', 'keyboard');
+      ['ABCDEFGHIJ', 'KLMNOPQRST', 'UVWXYZ0123', '456789'].forEach(rk => {
+        const kr = el('div', 'kbd-row focus-row');
+        rk.split('').forEach(ch => { const k = el('div', 'key foc'); k._key = ch; k.textContent = ch; kr.appendChild(k); });
+        kb.appendChild(kr);
+      });
+      const kr2 = el('div', 'kbd-row focus-row');
+      [['space', 'Space'], ['del', '⌫ Delete'], ['clear', 'Clear']].forEach(([a, l]) => { const k = el('div', 'key wide foc'); k._key = a; k.textContent = l; kr2.appendChild(k); });
+      kb.appendChild(kr2);
+      wrap.appendChild(kb);
+      wrap.appendChild(el('div', 'gridhead small', `<h2 class="sres-h">${v.query ? 'Results' : 'Suggestions'}</h2>`));
+      const res = el('div', 'pgrid sresults'); buildGridRows(res, searchFilter(v.query)); wrap.appendChild(res);
+      wrap.appendChild(el('div', 'screen-end'));
+      scroll.appendChild(wrap);
+      appbar.querySelectorAll('.navitem').forEach(n => n.classList.toggle('cur', n.dataset.nav === 'search'));
+    }
+    function esc(s) { return s.replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c])); }
+
+    function go(v) {
+      view = v;
+      if (v.type === 'home') renderHome();
+      else if (v.type === 'category') renderCategory(v.studio);
+      else if (v.type === 'movie' || v.type === 'series') renderDetail(v.item);
+      else if (v.type === 'grid') renderGrid(v);
+      else if (v.type === 'search') renderSearch(v);
+      scroll.scrollTop = 0;
+      setTimeout(() => {
+        if (v.type === 'home') focusRowByIndex(0);
+        else if (v.type === 'category') focusRowByIndex(firstContentRowIndex());
+        else focusRC(1, 0); // detail / grid / search → first focusable row
+      }, 30);
+    }
+
+    /* ---------------- FOCUS ENGINE ---------------- */
+    let cur = { r: 0, c: 0 };
+    function rows() { return [appbar, ...scroll.querySelectorAll('.focus-row')]; }
+    function items(row) { return row ? [...row.querySelectorAll('.foc')] : []; }
+    function firstContentRowIndex() { const all = rows(); for (let i = 1; i < all.length; i++) if (all[i].closest('.crow') || all[i].closest('.rail')) return i; return 1; }
+
+    function clearFocus() { stage.querySelectorAll('.foc.focused').forEach(e => e.classList.remove('focused')); stage.querySelectorAll('.crow.active,.rail.active').forEach(e => e.classList.remove('active')); }
+    function focusEl(node) {
+      clearFocus(); if (!node) return;
+      node.classList.add('focused');
+      const cr = node.closest('.crow') || node.closest('.rail'); if (cr) cr.classList.add('active');
+      // horizontal: keep tile in view
+      const track = node.closest('.track');
+      if (track) { const target = node.offsetLeft - 64; track.scrollTo({ left: Math.max(0, target), behavior: 'smooth' }); }
+      // vertical: keep row comfortably in view
+      const rowWrap = node.closest('.crow') || node.closest('.rail') || node.closest('.hero') || node.closest('.dhero') || node.closest('.dsec') || node.closest('.cathead') || node.closest('.grid-row') || node.closest('.gridfilter') || node.closest('.kbd-row') || node.closest('.sresults');
+      const inAppbar = !!node.closest('.appbar');
+      if (inAppbar) scroll.scrollTo({ top: 0, behavior: 'smooth' });
+      else if (rowWrap && (rowWrap.classList.contains('hero') || rowWrap.classList.contains('dhero'))) scroll.scrollTo({ top: 0, behavior: 'smooth' });
+      else if (rowWrap) {
+        const top = rowWrap.offsetTop - 150;
+        scroll.scrollTo({ top: Math.max(0, top), behavior: 'smooth' });
+      }
+    }
+    function focusRowByIndex(ri) {
+      const all = rows(); ri = Math.max(0, Math.min(all.length - 1, ri));
+      const its = items(all[ri]);
+      if (!its.length) { return; }
+      cur.r = ri; cur.c = Math.min(cur.c, its.length - 1);
+      focusEl(its[cur.c]);
+    }
+    function focusRC(r, c) {
+      const all = rows(); if (!all[r]) return;
+      const its = items(all[r]); if (!its.length) return;
+      cur = { r, c: Math.max(0, Math.min(c, its.length - 1)) };
+      focusEl(its[cur.c]);
+    }
+    function move(dr, dc) {
+      if (overlay.classList.contains('on')) { moveOverlay(dc); return; }
+      const all = rows();
+      if (dr) {
+        let ni = cur.r + dr;
+        while (ni > 0 && ni < all.length - 1 && !items(all[ni]).length) ni += dr;
+        ni = Math.max(0, Math.min(all.length - 1, ni));
+        if (!items(all[ni]).length) return;
+        cur.r = ni;
+        const fr = all[cur.r]; const its = items(fr);
+        if (fr.dataset && fr.dataset.def != null && !fr.dataset.seen) { cur.c = Math.min(+fr.dataset.def, its.length - 1); fr.dataset.seen = '1'; }
+        else cur.c = Math.min(cur.c, its.length - 1);
+        focusEl(its[cur.c]);
+      } else if (dc) {
+        const its = items(all[cur.r]); if (!its.length) return;
+        // hero: left/right cycles the carousel instead of moving (only 1 logical col block)
+        cur.c = Math.max(0, Math.min(its.length - 1, cur.c + dc));
+        focusEl(its[cur.c]);
+      }
+    }
+    function moveOverlay(dc) {
+      if (!dc) return;
+      const its = [...overlay.querySelectorAll('.foc')];
+      let i = its.findIndex(e => e.classList.contains('focused'));
+      i = Math.max(0, Math.min(its.length - 1, i + dc));
+      its.forEach(e => e.classList.remove('focused')); its[i].classList.add('focused');
+    }
+
+    function activate() {
+      if (overlay.classList.contains('on')) {
+        const f0 = overlay.querySelector('.foc.focused');
+        if (f0 && f0.dataset.ov === 'play') { closeOverlay(); flash('▶ Launching playback…'); } else closeOverlay();
+        return;
+      }
+      const all = rows(); const f = items(all[cur.r])[cur.c]; if (!f) return;
+      const toDetail = (it) => go({ type: it.kind === 'series' ? 'series' : 'movie', item: it, from: view });
+      if (f.dataset.nav) {
+        if (f.dataset.nav === 'home') go({ type: 'home' });
+        else if (f.dataset.nav === 'search') go({ type: 'search', query: '' });
+        else if (f.dataset.nav === 'movies') go({ type: 'grid', kind: 'film', title: 'Movies', nav: 'movies' });
+        else if (f.dataset.nav === 'series') go({ type: 'grid', kind: 'series', title: 'Series', nav: 'series' });
+        else if (f.dataset.nav === 'mylist') go({ type: 'grid', kind: 'mylist', title: 'My List', nav: 'mylist' });
+        return;
+      }
+      if (f._genre) {
+        const wrap = scroll.querySelector('.gridscreen'); const grid = wrap.querySelector('.pgrid');
+        const base = view._all || [];
+        const items = f._genre === 'All' ? base : base.filter(it => (it.genre || '').toLowerCase().includes(f._genre.toLowerCase()));
+        buildGridRows(grid, items);
+        wrap.querySelector('.gridcount').textContent = items.length + ' titles';
+        scroll.querySelectorAll('.gchip').forEach(x => x.classList.toggle('cur', x === f));
+        return;
+      }
+      if (f._key) {
+        if (f._key === 'del') view.query = view.query.slice(0, -1);
+        else if (f._key === 'clear') view.query = '';
+        else if (f._key === 'space') view.query += ' ';
+        else view.query += f._key;
+        scroll.querySelector('.sq').innerHTML = view.query ? esc(view.query) : '<i>Search movies &amp; series…</i>';
+        scroll.querySelector('.sres-h').textContent = view.query.trim() ? 'Results' : 'Suggestions';
+        buildGridRows(scroll.querySelector('.sresults'), searchFilter(view.query));
+        return;
+      }
+      if (f.dataset.act) { const it = R.hero[heroIdx]; if (f.dataset.act === 'info') toDetail(it); else flash((f.dataset.act === 'play' ? '▶ Playing ' : '＋ Added ') + it.title); return; }
+      if (f.dataset.play) { flash('▶ Playing ' + view.item.title); return; }
+      if (f.dataset.trailer) { flash('▷ Trailer · ' + view.item.title); return; }
+      if (f.dataset.list) { flash('＋ Added ' + view.item.title + ' to My List'); return; }
+      if (f._season != null) {
+        if (f._season !== (view.season || 0)) { view.season = f._season; renderDetail(view.item); setTimeout(() => focusRC(2, f._season), 20); }
+        return;
+      }
+      if (f._ep) { flash('▶ Playing ' + view.item.title + ' · E' + f._ep.n + ' “' + f._ep.title + '”'); return; }
+      if (f._cast) { flash(f._cast.n + ' · ' + f._cast.r); return; }
+      if (f._studio) { go({ type: 'category', studio: f._studio.id }); return; }
+      if (f._item) { toDetail(f._item); return; }
+    }
+    function back() {
+      if (overlay.classList.contains('on')) { closeOverlay(); return; }
+      if (view.type === 'movie' || view.type === 'series') { go(view.from || { type: 'home' }); return; }
+      if (view.type !== 'home') go({ type: 'home' });
+    }
+    function cap(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
+
+    /* ---- overlay ---- */
+    function openOverlay(item) {
+      overlay.querySelector('.art .grad').style.background = item.grad;
+      overlay.querySelector('h2').textContent = item.title;
+      overlay.querySelector('.m').innerHTML = `<span class="rt" style="border:1px solid var(--line);padding:2px 8px;border-radius:6px">${item.rating}+</span><span>${item.year}</span><span>${item.genre}</span><span>${item.kind === 'series' ? 'Series' : 'Film'}</span>`;
+      overlay.querySelector('p').textContent = item.syn || 'A standout from your Ravilo library — pulled live from Jellyfin, organised by Jellystructure.';
+      overlay.querySelectorAll('.foc').forEach(e => e.classList.remove('focused'));
+      overlay.querySelector('[data-ov="play"]').classList.add('focused');
+      overlay.classList.add('on'); stopHero();
+    }
+    function closeOverlay() { overlay.classList.remove('on'); if (view.type === 'home') startHero(); }
+
+    /* ---- toast ---- */
+    function flash(msg) {
+      let t = stage.querySelector('.rv-toast');
+      if (!t) { t = el('div', 'rv-toast'); t.style.cssText = 'position:absolute;left:50%;bottom:60px;transform:translateX(-50%);background:rgba(10,12,19,.92);backdrop-filter:blur(10px);border:1px solid var(--line);color:var(--ink);font-size:20px;font-weight:600;padding:16px 28px;border-radius:14px;z-index:90;box-shadow:0 18px 50px rgba(0,0,0,.5);transition:opacity .25s;'; stage.appendChild(t); }
+      t.textContent = msg; t.style.opacity = '1'; clearTimeout(t._h); t._h = setTimeout(() => t.style.opacity = '0', 1700);
+    }
+
+    /* ---- input ---- */
+    if (interactive) {
+      window.addEventListener('keydown', e => {
+        const k = e.key;
+        if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Enter', 'Backspace', 'Escape', ' '].includes(k)) e.preventDefault();
+        if (k === 'ArrowUp') move(-1, 0);
+        else if (k === 'ArrowDown') move(1, 0);
+        else if (k === 'ArrowLeft') move(0, -1);
+        else if (k === 'ArrowRight') move(0, 1);
+        else if (k === 'Enter' || k === ' ') activate();
+        else if (k === 'Backspace' || k === 'Escape') back();
+      });
+      // pointer fallbacks
+      stage.addEventListener('click', e => {
+        const dot = e.target.closest('.hero-dots .d'); if (dot) { setHero(+dot.dataset.dot); return; }
+        const f = e.target.closest('.foc'); if (!f) { if (e.target.closest('.overlay') && !e.target.closest('.sheet')) closeOverlay(); return; }
+        const all = rows(); for (let r = 0; r < all.length; r++) { const c = items(all[r]).indexOf(f); if (c >= 0) { cur = { r, c }; break; } }
+        if (f.closest('.overlay')) { focusElOverlay(f); activate(); } else { focusEl(f); activate(); }
+      });
+      function focusElOverlay(f) { overlay.querySelectorAll('.foc').forEach(e => e.classList.remove('focused')); f.classList.add('focused'); }
+    }
+
+    // ---- boot ----
+    go({ type: 'home' });
+    setTimeout(() => focusRowByIndex(0), 40); // start on studio rail-ish (row 0 = nav); nudge to nav Home
+    cur = { r: 0, c: 0 }; focusEl(items(rows()[0])[0]);
+
+    return { go, setSkin: () => {} };
+  }
+
+  window.mountRavilo = mountRavilo;
+
+  /* ---- viewport scaling (shared) ---- */
+  window.fitStage = function (stage) {
+    function fit() {
+      const vw = window.innerWidth, vh = window.innerHeight;
+      const s = Math.min(vw / 1920, vh / 1080);
+      stage.style.transform = `translate(-50%,-50%) scale(${s})`;
+    }
+    fit(); window.addEventListener('resize', fit); return fit;
+  };
+})();

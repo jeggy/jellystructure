@@ -6,82 +6,195 @@
 <title>Jellystructure — Settings</title>
 <link rel="stylesheet" href="wf.css">
 <link rel="stylesheet" href="app.css">
+<style>
+  .danger { border: 1px solid var(--bad); background: var(--bad-soft); border-radius: var(--radius); padding: 16px 18px; }
+  .restart-note { font-size: .68rem; color: var(--warn); font-weight: 600; }
+  .set-section { scroll-margin-top: 80px; }
+  .mini-toggle { width: 36px; height: 20px; border: 1px solid var(--line-2); border-radius: 20px; background: var(--fill-3); position: relative; cursor: pointer; flex: none; display:inline-block; transition: background .2s; }
+  .mini-toggle::after { content: ''; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: var(--ink-soft); transition: left .2s, background .2s; }
+  .mini-toggle.on { background: var(--grad); border-color: transparent; }
+  .mini-toggle.on::after { left: auto; right: 2px; background: #fff; }
+  /* sticky action bar */
+  #set-pagebar { position: sticky; top: 0; z-index: 60; background: var(--bg); padding-top: 12px; padding-bottom: 12px; margin-bottom: 4px; border-bottom: 1px solid var(--line); }
+  /* top Test-connections button turns danger when a check fails */
+  #test-conn-top.has-fail { background: var(--bad); border-color: transparent; color: #fff; }
+  #test-conn-top.has-fail .tc-count { background: rgba(255,255,255,.25); border-radius: 20px; padding: 0 7px; margin-left: 7px; font-weight: 700; }
+  /* left-nav section failure badge */
+  #set-nav .navitem { display: flex; align-items: center; gap: 8px; }
+  .nav-badge { margin-left: auto; display: none; align-items: center; gap: 4px; min-width: 18px; height: 18px; padding: 0 6px;
+    border-radius: 9px; background: var(--bad); color: #fff; font-size: .66rem; font-weight: 700; justify-content: center; }
+  .nav-badge.show { display: inline-flex; }
+  /* inline check chip shown next to whatever it verifies */
+  .chk { display: inline-flex; align-items: center; gap: 6px; font-size: .74rem; }
+  .chk .dot { width: 8px; height: 8px; }
+  .chk.pending { opacity: .5; }
+</style>
 </head>
 <body class="wf-body app-body">
 
 <main class="app-main2 wide" data-page="settings" data-screen-label="Settings">
-  <div class="pagebar">
+  <div class="pagebar" id="set-pagebar">
     <h1>Settings</h1>
     <span class="badge ok">saved · 14:03</span>
     <span class="spacer"></span>
-    <span class="btn sm">Test connections</span>
+    <span class="btn sm" id="test-conn-top">Test connections<span class="tc-count"></span></span>
     <span class="btn primary">Save</span>
   </div>
   <p class="page-sub">Everything here lives in <span class="mono">config.toml</span> on the mounted config volume, so it survives container restarts. Changes save live.</p>
 
   <div class="row" style="align-items:flex-start;">
-    <!-- section nav -->
-    <div class="card flat" style="width:172px;flex:none;padding:8px;">
-      <div class="navitem active" style="border-radius:var(--radius-s);">Connections</div>
-      <div class="navitem">Library mapping</div>
-      <div class="navitem">Behaviour</div>
-      <a class="navitem" href="language.html">Language →</a>
-      <div class="navitem">Advanced</div>
+    <!-- section nav (smooth-scroll, IntersectionObserver highlights active) -->
+    <div class="card flat" id="set-nav" style="width:172px;flex:none;padding:8px;position:sticky;top:88px;">
+      <div class="navitem active" data-goto="sect-connections">Connections<span class="nav-badge" data-badge="sect-connections">!</span></div>
+      <div class="navitem" data-goto="sect-library">Library mapping<span class="nav-badge" data-badge="sect-library">!</span></div>
+      <div class="navitem" data-goto="sect-scanning">Scanning<span class="nav-badge" data-badge="sect-scanning">!</span></div>
+      <div class="navitem" data-goto="sect-metadata">Metadata<span class="nav-badge" data-badge="sect-metadata">!</span></div>
+      <div class="navitem" data-goto="sect-seeding">Cross-seed safety<span class="nav-badge" data-badge="sect-seeding">!</span></div>
+      <div class="navitem" data-goto="sect-notifications">Notifications</div>
+      <div class="navitem" data-goto="sect-advanced">Advanced</div>
     </div>
 
     <div class="col fill">
-      <div class="card">
+      <!-- CONNECTIONS -->
+      <div class="card set-section" id="sect-connections">
         <h3 style="font-size:1.05rem;margin:0 0 4px;">Connections</h3>
-        <div class="field"><label>TMDB API key (v3)</label><div class="input">••••••••••••••3f9a <span class="badge ok" style="margin-left:auto;">valid ✓</span></div><span class="hint">Fetches metadata, artwork and original_language.</span></div>
+        <div class="field"><label>TMDB API key (v3)</label><div class="input">••••••••••••••3f9a <span class="chk" id="chk-tmdb" style="margin-left:auto;"><span class="dot ok"></span><span class="badge ok">valid · 39/40 req</span></span></div><span class="hint">Fetches metadata, artwork and original_language.</span></div>
         <div class="row">
           <div class="field fill"><label>Jellyfin URL</label><div class="input">http://jellyfin:8096</div><span class="hint">Same Docker network → no reverse proxy needed.</span></div>
-          <div class="field fill"><label>Jellyfin API token</label><div class="input">••••••••••••••a1c <span class="badge ok" style="margin-left:auto;">204 ✓</span></div><span class="hint">Used to POST /Items/{id}/Refresh.</span></div>
+          <div class="field fill"><label>Jellyfin machine token</label><div class="input">••••••••••••••a1c <span class="chk" id="chk-jellyfin" style="margin-left:auto;"><span class="dot ok"></span><span class="badge ok">204 · 38ms</span></span></div><span class="hint">Background-job token for POST /Items/{id}/Refresh.</span></div>
         </div>
       </div>
 
-      <div class="card">
+      <!-- LIBRARY MAPPING -->
+      <div class="card set-section" id="sect-library">
         <div class="row center"><h3 style="font-size:1.05rem;margin:0;">Library mapping</h3><span class="badge info" style="margin-left:8px;">from Jellyfin</span><span class="spacer"></span><span class="btn sm">↻ Re-discover</span></div>
-        <div class="tiny muted" style="margin:8px 0 14px;">Libraries come from the Jellyfin API — never a filesystem walk. Map each to a local path Jellystructure can read/write, set an optional language fallback, or skip it.</div>
+        <div class="tiny muted" style="margin:8px 0 14px;">Libraries come from the Jellyfin API (<span class="mono">GET /Library/VirtualFolders</span>) — never a filesystem walk. Map each to a local path Jellystructure can read/write, set an optional language fallback, or skip it.</div>
 
         <div class="col" style="gap:11px;">
           <div class="box flat" style="padding:13px 15px;">
             <div class="row center" style="gap:9px;"><b>Movies</b><span class="badge info">movies</span><span class="spacer"></span><span class="muted tiny">skip</span><span class="toggle"></span></div>
             <div class="row" style="margin-top:11px;gap:12px;flex-wrap:wrap;">
-              <div class="field fill" style="margin:0;min-width:190px;"><label>jellyfin_path</label><div class="input mono">/movies</div></div>
-              <div class="field fill" style="margin:0;min-width:190px;"><label>local_path</label><div class="input mono">/media/movies</div></div>
-              <div class="field" style="margin:0;width:130px;"><label>fallback</label><span class="select"><span class="lang">en</span></span></div>
+              <div class="field fill" style="margin:0;min-width:190px;"><label>jellyfin_path</label><div class="input mono">/media/movies</div></div>
+              <div class="field fill" style="margin:0;min-width:190px;"><label>local_path</label><div class="input mono">/mnt/media/movies</div></div>
+              <div class="field" style="margin:0;width:130px;"><label>fallback</label><span class="select"><span><span class="lang">en</span> English</span></span></div>
             </div>
+            <div class="row center" style="margin-top:9px;gap:7px;"><span class="badge ok">match prefix ✓</span><span class="tiny muted mono">/media/movies → /mnt/media/movies · 1,842 items resolved</span><span class="spacer"></span><span class="btn sm ghost lib-scan">Scan</span><span class="btn sm ghost lib-push">Push to Jellyfin</span></div>
           </div>
           <div class="box flat" style="padding:13px 15px;">
             <div class="row center" style="gap:9px;"><b>TV Shows</b><span class="badge info">tvshows</span><span class="spacer"></span><span class="muted tiny">skip</span><span class="toggle"></span></div>
             <div class="row" style="margin-top:11px;gap:12px;flex-wrap:wrap;">
-              <div class="field fill" style="margin:0;min-width:190px;"><label>jellyfin_path</label><div class="input mono">/tv</div></div>
-              <div class="field fill" style="margin:0;min-width:190px;"><label>local_path</label><div class="input mono">/media/tv</div></div>
-              <div class="field" style="margin:0;width:130px;"><label>fallback</label><span class="select"><span class="lang">da</span></span></div>
+              <div class="field fill" style="margin:0;min-width:190px;"><label>jellyfin_path</label><div class="input mono">/media/tv</div></div>
+              <div class="field fill" style="margin:0;min-width:190px;"><label>local_path</label><div class="input mono">/mnt/media/tv</div></div>
+              <div class="field" style="margin:0;width:130px;"><label>fallback</label><span class="select"><span><span class="lang">da</span> Danish</span></span></div>
             </div>
+            <div class="row center" style="margin-top:9px;gap:7px;"><span class="badge ok">match prefix ✓</span><span class="tiny muted mono">/media/tv → /mnt/media/tv · 312 items resolved</span><span class="spacer"></span><span class="btn sm ghost lib-scan">Scan</span><span class="btn sm ghost lib-push">Push to Jellyfin</span></div>
           </div>
           <div class="box flat" style="padding:13px 15px;opacity:.6;">
             <div class="row center" style="gap:9px;"><b>4K Movies</b><span class="badge info">movies</span><span class="chip" style="font-size:.64rem;">skipped</span><span class="spacer"></span><span class="muted tiny">skip</span><span class="toggle on"></span></div>
           </div>
         </div>
-
-        <div class="row center box flat" style="margin-top:12px;background:var(--ok-soft);border-color:rgba(45,212,154,.4);"><span class="badge ok">mounted rw</span><span class="tiny">Read/write OK · POSIX uid/gid 1000:1000 preserved.</span></div>
       </div>
 
-      <div class="card">
-        <h3 style="font-size:1.05rem;margin:0 0 4px;">Behaviour</h3>
-        <div class="row center" style="padding:6px 0;"><div><b>Overwrite existing NFO</b><div class="tiny muted">Replace local NFO on re-scan (locked fields kept).</div></div><span class="spacer"></span><span class="toggle"></span></div>
+      <!-- SCANNING (new — Phase 16) -->
+      <div class="card set-section" id="sect-scanning">
+        <div class="row center" style="margin-bottom:10px;"><h3 style="font-size:1.05rem;margin:0;">Scanning</h3><span class="spacer"></span><span class="muted tiny">media tooling:</span><span class="chk" id="chk-tools"><span class="dot ok"></span><span class="badge ok">ffmpeg · ffprobe · mkvpropedit</span></span></div>
+        <div class="row center" style="padding:6px 0;"><div><b>Watch library folders</b><div class="tiny muted">Process new media automatically as it appears (inotify).</div></div><span class="spacer"></span><span class="toggle on"></span></div>
+        <hr class="dash" style="margin:8px 0;">
+        <div class="row" style="gap:16px;flex-wrap:wrap;">
+          <div class="field" style="margin:0;width:180px;"><label>Scan workers</label><div class="input">4</div><span class="hint">Concurrent items processed. Live scale-up/down.</span></div>
+          <div class="field" style="margin:0;width:200px;"><label>Scan thread pool <span class="restart-note">· restart required</span></label><div class="input">8</div><span class="hint">ffprobe/ffmpeg subprocess pool size.</span></div>
+        </div>
+        <hr class="dash" style="margin:12px 0;">
+        <div class="row center" style="padding:2px 0;"><div><b>Scheduled rescan</b><div class="tiny muted">Run a full library scan automatically on a schedule.</div></div><span class="spacer"></span><span class="toggle on"></span></div>
+        <div class="row" style="gap:16px;flex-wrap:wrap;margin-top:8px;">
+          <div class="field" style="margin:0;width:160px;"><label>Frequency</label><span class="select"><span>Daily</span></span></div>
+          <div class="field" style="margin:0;width:120px;"><label>At</label><div class="input">03:00</div></div>
+          <div class="field fill" style="margin:0;min-width:160px;"><label>Cron <span class="muted">(advanced)</span></label><div class="input mono">0 3 * * *</div></div>
+        </div>
+        <div class="tiny muted" style="margin-top:8px;">Next run <b>tonight 03:00</b> · last full scan completed 14:02 today.</div>
+      </div>
+
+      <!-- METADATA (replaces Language + Behaviour) -->
+      <div class="card set-section" id="sect-metadata">
+        <h3 style="font-size:1.05rem;margin:0 0 10px;">Metadata</h3>
+        <div class="field" style="max-width:280px;"><label>Global fallback language</label><span class="select"><span><span class="lang">en</span> English (en)</span></span><span class="hint">Used when no audio-track language returns a TMDB result. Per-library fallbacks override this.</span></div>
+        <hr class="dash" style="margin:10px 0;">
+        <div class="row center" style="padding:6px 0;"><div><b>Overwrite existing NFO fields</b><div class="tiny muted">Replace local NFO values on re-scan.</div></div><span class="spacer"></span><span class="toggle"></span></div>
         <hr class="dash" style="margin:6px 0;">
-        <div class="row center" style="padding:6px 0;"><div><b>Download artwork</b><div class="tiny muted">Fetch poster / backdrop / logo from TMDB.</div></div><span class="spacer"></span><span class="toggle on"></span></div>
+        <div class="row center" style="padding:6px 0;"><div><b>Fetch artwork automatically</b><div class="tiny muted">Download poster / fanart / logo / stills from TMDB.</div></div><span class="spacer"></span><span class="chk" id="chk-disk" style="margin-right:12px;"><span class="dot ok"></span><span class="badge ok">cache 41 GB free</span></span><span class="toggle on"></span></div>
         <hr class="dash" style="margin:6px 0;">
-        <div class="row center" style="padding:6px 0;"><div><b>Auto-tell Jellyfin to refresh</b><div class="tiny muted">POST refresh after each batch completes.</div></div><span class="spacer"></span><span class="toggle on"></span></div>
-        <hr class="dash" style="margin:6px 0;">
-        <div class="row center" style="padding:6px 0;"><div><b>Watch folders for new files</b><div class="tiny muted">Process new media automatically as it appears.</div></div><span class="spacer"></span><span class="toggle on"></span></div>
+        <div class="row center" style="padding:6px 0;"><div><b>Auto-tell Jellyfin to refresh</b><div class="tiny muted">POST /Items/{id}/Refresh after writes.</div></div><span class="spacer"></span><span class="toggle on"></span></div>
+      </div>
+
+      <!-- CROSS-SEED SAFETY / qBITTORRENT (Phase 26 — now configurable) -->
+      <div class="card set-section" id="sect-seeding">
+        <div class="row center"><h3 style="font-size:1.05rem;margin:0;">Cross-seed safety</h3><span class="badge info" style="margin-left:8px;">qBittorrent</span><span class="spacer"></span><span class="muted tiny">enable guard</span><span class="toggle" id="seed-enable"></span></div>
+        <div class="tiny muted" style="margin:8px 0 0;">When enabled, Jellystructure checks qBittorrent before any <span class="mono">mkvpropedit</span>/<span class="mono">ffmpeg</span> edit and <b>blocks writes to a file that is currently being seeded</b>, so torrent hashes (and cross-seeds) don't break. <b>Leave this off and there is no guard</b> — cross-seed safety is simply not part of media management, and all track/NFO edits proceed without checking qBittorrent.</div>
+
+        <!-- empty state, shown when disabled -->
+        <div id="seed-off" class="box flat" style="margin-top:14px;background:var(--bg-2);text-align:center;padding:22px;">
+          <div class="tiny" style="color:var(--ink-soft);">⛨ Seeding guard <b>off</b> — edits are never blocked. Turn it on to connect qBittorrent and protect seeded files.</div>
+        </div>
+
+        <!-- config, shown when enabled -->
+        <div id="seed-on" style="display:none;">
+          <hr class="dash" style="margin:14px 0;">
+          <div class="row" style="gap:12px;flex-wrap:wrap;">
+            <div class="field fill" style="margin:0;min-width:220px;"><label>qBittorrent Web UI URL</label><div class="input mono">http://gluetun-seeder:8085</div><span class="hint">Reachable from the Jellystructure container.</span></div>
+          </div>
+          <div class="row" style="gap:12px;flex-wrap:wrap;">
+            <div class="field fill" style="margin:0;min-width:180px;"><label>Username</label><div class="input">admin</div></div>
+            <div class="field fill" style="margin:0;min-width:180px;"><label>Password</label><div class="input">••••••••</div></div>
+          </div>
+          <div class="row center" id="seed-status" style="gap:9px;margin:4px 0 14px;"><span class="dot warn"></span><span class="tiny muted">Not verified yet — use <b>Test connections</b> at the top of the page.</span></div>
+
+          <div class="row center"><h4 style="margin:0;">Path mappings</h4><span class="spacer"></span><span class="btn sm ghost" id="seed-add-path">+ Add mapping</span></div>
+          <div class="tiny muted" style="margin:6px 0 10px;">Map the paths Jellystructure sees to the paths qBittorrent reports, so a media file can be matched to its torrent. Longest match wins.</div>
+          <div class="col" id="seed-paths" style="gap:9px;">
+            <div class="box flat row center" style="gap:10px;padding:10px 12px;">
+              <div class="field fill" style="margin:0;min-width:150px;"><label>local (Jellystructure)</label><div class="input mono">/mnt/media/movies</div></div>
+              <span class="muted">→</span>
+              <div class="field fill" style="margin:0;min-width:150px;"><label>remote (qBittorrent)</label><div class="input mono">/media/movies</div></div>
+              <span class="btn sm ghost" style="align-self:flex-end;">✕</span>
+            </div>
+            <div class="box flat row center" style="gap:10px;padding:10px 12px;">
+              <div class="field fill" style="margin:0;min-width:150px;"><label>local (Jellystructure)</label><div class="input mono">/mnt/media/tv</div></div>
+              <span class="muted">→</span>
+              <div class="field fill" style="margin:0;min-width:150px;"><label>remote (qBittorrent)</label><div class="input mono">/media/tv</div></div>
+              <span class="btn sm ghost" style="align-self:flex-end;">✕</span>
+            </div>
+          </div>
+          <div class="note" style="margin-top:14px;background:var(--warn-soft);border-color:rgba(245,181,66,.4);"><span class="tiny"><b>Fail-closed:</b> if the guard is enabled but qBittorrent is unreachable, edits are <b>blocked</b> (rather than risking a seeded file) until it responds or you disable the guard.</span></div>
+        </div>
+      </div>
+
+      <!-- NOTIFICATIONS (Phase 36) -->
+      <div class="card set-section" id="sect-notifications">
+        <h3 style="font-size:1.05rem;margin:0 0 10px;">Notifications</h3>
+        <div class="tiny muted" style="margin-bottom:12px;">Get pinged when a background scan finishes, an item can't be matched, or a write fails. Posts a JSON payload to any webhook (Discord, Slack, ntfy, Gotify…).</div>
+        <div class="field"><label>Webhook URL</label><div class="input mono">https://ntfy.sh/my-jellystructure</div></div>
+        <div class="row center" style="margin:2px 0 8px;"><span class="muted tiny">notify on:</span></div>
+        <div class="pill-row" style="margin-bottom:12px;">
+          <label class="chip notif" style="cursor:pointer;gap:8px;"><span class="mini-toggle on"></span> Scan finished</label>
+          <label class="chip notif" style="cursor:pointer;gap:8px;"><span class="mini-toggle on"></span> No TMDB match</label>
+          <label class="chip notif" style="cursor:pointer;gap:8px;"><span class="mini-toggle on"></span> Write / mkvpropedit failed</label>
+          <label class="chip notif" style="cursor:pointer;gap:8px;"><span class="mini-toggle"></span> Drift detected</label>
+        </div>
+        <span class="btn sm" id="test-webhook">Send test notification</span>
+      </div>
+
+      <!-- ADVANCED -->
+      <div class="card set-section" id="sect-advanced">
+        <h3 style="font-size:1.05rem;margin:0 0 10px;">Advanced</h3>
+        <div class="danger">
+          <div class="row center"><b style="color:var(--bad);">Danger zone</b></div>
+          <div class="row center" style="margin-top:10px;gap:12px;"><div><b>Clear all scanned data</b><div class="tiny muted">Wipes the media store and scan state. Does not touch your files or NFOs on disk.</div></div><span class="spacer"></span><span class="btn sm bad" id="clear-data">Clear all scanned data</span></div>
+        </div>
       </div>
     </div>
 
     <!-- live toml -->
-    <div class="card" style="width:280px;flex:none;">
+    <div class="card" style="width:280px;flex:none;position:sticky;top:88px;">
       <h4 style="margin:0 0 8px;">Live config.toml</h4>
       <div class="log" style="max-height:none;">
         <div class="muted">[api_keys]</div>
@@ -95,25 +208,28 @@
         <div class="muted">[behavior]</div>
         <div>overwrite_nfo = <span class="badc">false</span></div>
         <div>fetch_images = <span class="okc">true</span></div>
+        <div>watch_enabled = <span class="okc">true</span></div>
         <div>tell_jellyfin = <span class="okc">true</span></div>
-        <div>watch_folders = <span class="okc">true</span></div>
+        <div>scan_workers = 4</div>
+        <div>scan_threads = 8</div>
+        <div>scan_schedule = "0 3 * * *"</div>
+        <div>&nbsp;</div>
+        <div class="muted">[notifications]</div>
+        <div>webhook_url = "https://ntfy.sh/…"</div>
+        <div>on_scan_done = <span class="okc">true</span></div>
+        <div>on_no_match = <span class="okc">true</span></div>
+        <div>on_error = <span class="okc">true</span></div>
         <div>&nbsp;</div>
         <div class="muted">[[libraries]]</div>
-        <div>jellyfin_id = "a1b2…"</div>
         <div>name = "Movies"</div>
         <div>collection_type = "movies"</div>
-        <div>jellyfin_path = "/movies"</div>
-        <div>local_path = "/media/movies"</div>
+        <div>jellyfin_path = "/media/movies"</div>
+        <div>local_path = "/mnt/media/movies"</div>
         <div>skip = <span class="badc">false</span></div>
         <div>&nbsp;</div>
-        <div class="muted">[[libraries]]</div>
-        <div>jellyfin_id = "c3d4…"</div>
-        <div>name = "TV Shows"</div>
-        <div>collection_type = "tvshows"</div>
-        <div>jellyfin_path = "/tv"</div>
-        <div>local_path = "/media/tv"</div>
-        <div>fallback_language = "da"</div>
-        <div>skip = <span class="badc">false</span></div>
+        <div class="muted"># omitted when guard is off</div>
+        <div class="muted">[qbittorrent]</div>
+        <div>enabled = <span class="badc">false</span></div>
       </div>
       <div class="tiny muted center-x" style="margin-top:8px;">updates as you type</div>
     </div>
@@ -121,5 +237,89 @@
 </main>
 
 <script src="app-shell.js"></script>
+<script>
+(function () {
+  const nav = document.querySelectorAll('.navitem[data-goto]');
+  nav.forEach(n => n.addEventListener('click', () => {
+    const el = document.getElementById(n.dataset.goto);
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }));
+  // IntersectionObserver highlights the section in view
+  const map = {};
+  nav.forEach(n => map[n.dataset.goto] = n);
+  const obs = new IntersectionObserver(entries => {
+    entries.forEach(e => { if (e.isIntersecting) { nav.forEach(x => x.classList.remove('active')); map[e.target.id]?.classList.add('active'); } });
+  }, { rootMargin: '-40% 0px -55% 0px' });
+  document.querySelectorAll('.set-section').forEach(s => obs.observe(s));
+
+  document.querySelectorAll('.toggle').forEach(t => t.addEventListener('click', () => t.classList.toggle('on')));
+
+  // ---- distributed health checks: update each chip where it lives, then bubble
+  //      failures up to the left-nav badges + the top "Test connections" button ----
+  function setChip(id, cls, txt) {
+    const c = document.getElementById(id); if (!c) return;
+    c.classList.remove('pending');
+    c.querySelector('.dot').className = 'dot ' + cls;
+    const b = c.querySelector('.badge'); b.className = 'badge ' + (cls || ''); b.textContent = txt;
+  }
+  function runHealthCheck(scrollToFail) {
+    const guardOn = document.getElementById('seed-enable').classList.contains('on');
+    // demo statuses — Jellyfin/TMDB/tools/disk/paths healthy; qBittorrent fails when the guard is on
+    setChip('chk-tmdb', 'ok', 'valid · 39/40 req');
+    setChip('chk-jellyfin', 'ok', '204 · 38ms');
+    setChip('chk-tools', 'ok', 'ffmpeg · ffprobe · mkvpropedit');
+    setChip('chk-disk', 'ok', 'cache 41 GB free');
+
+    const fails = {}; // sectionId -> count
+    const seedStatus = document.getElementById('seed-status');
+    if (guardOn) {
+      // unreachable qBittorrent → a failure in the Cross-seed safety section
+      fails['sect-seeding'] = 1;
+      if (seedStatus) seedStatus.innerHTML = '<span class="dot bad"></span><span class="tiny" style="color:var(--bad)">Unreachable at http://gluetun-seeder:8085 — guard is fail-closed, so edits are blocked until it responds.</span>';
+    } else if (seedStatus) {
+      seedStatus.innerHTML = '<span class="dot warn"></span><span class="tiny muted">Not verified yet — use <b>Test connections</b> at the top of the page.</span>';
+    }
+
+    // nav badges
+    document.querySelectorAll('.nav-badge').forEach(b => {
+      const n = fails[b.dataset.badge] || 0;
+      b.textContent = n; b.classList.toggle('show', n > 0);
+    });
+    // top button danger state
+    const total = Object.values(fails).reduce((a, n) => a + n, 0);
+    const btn = document.getElementById('test-conn-top');
+    btn.classList.toggle('has-fail', total > 0);
+    btn.querySelector('.tc-count').textContent = total > 0 ? total : '';
+    btn.firstChild.textContent = total > 0 ? 'Test connections — issues found' : 'Test connections';
+
+    if (scrollToFail && total > 0) {
+      const first = Object.keys(fails)[0];
+      document.getElementById(first).scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+    return total;
+  }
+  document.getElementById('test-conn-top').addEventListener('click', () => { runHealthCheck(true); });
+  // notifications mini-toggles + test
+  document.querySelectorAll('#sect-notifications label.notif').forEach(l => l.addEventListener('click', () => l.querySelector('.mini-toggle').classList.toggle('on')));
+  function toast(msg){ const t=document.createElement('div'); t.className='toast'; t.textContent=msg; document.body.appendChild(t); setTimeout(()=>t.remove(),1800); }
+  document.getElementById('test-webhook').addEventListener('click', () => toast('Test notification sent to webhook'));
+  document.querySelectorAll('.lib-scan').forEach(b => b.addEventListener('click', () => toast('Scanning this library…')));
+  document.querySelectorAll('.lib-push').forEach(b => b.addEventListener('click', () => toast('Writing NFOs + telling Jellyfin to refresh…')));
+  // cross-seed safety: master toggle reveals config, test connection
+  const seedEnable = document.getElementById('seed-enable');
+  seedEnable.addEventListener('click', () => {
+    const on = seedEnable.classList.contains('on');
+    document.getElementById('seed-on').style.display = on ? '' : 'none';
+    document.getElementById('seed-off').style.display = on ? 'none' : '';
+    runHealthCheck(false); // re-evaluate so the nav badge + button reflect the new state
+  });
+  document.getElementById('seed-add-path').addEventListener('click', () => toast('Add a path mapping'));
+  document.getElementById('clear-data').addEventListener('click', () => {
+    if (confirm('Clear all scanned data? This wipes the media store and scan state. Your files and NFOs on disk are not touched.')) {
+      const t = document.createElement('div'); t.className = 'toast'; t.textContent = 'Scanned data cleared'; document.body.appendChild(t); setTimeout(() => t.remove(), 1800);
+    }
+  });
+})();
+</script>
 </body>
 </html>

@@ -61,21 +61,19 @@
 }
 .app-side .status .row { display: flex; align-items: center; gap: 8px; color: var(--ink-soft); }
 
-/* theme toggle (light/dark) */
-.switcher { margin-top: 10px; display: flex; flex-direction: column; gap: 8px; }
-.switcher .sw-row { display: flex; align-items: center; gap: 8px; }
-.switcher .theme-btn {
-  width: 100%; height: 38px; border: 1px solid var(--line-2); border-radius: var(--radius-s);
-  background: var(--fill-2); color: var(--ink-soft); cursor: pointer; display: inline-flex;
-  align-items: center; justify-content: center; gap: 9px; flex: 1;
-  font-family: 'Sora', sans-serif; font-size: .86rem; font-weight: 600;
-  transition: color .2s, border-color .2s, background .2s;
+/* three-way theme picker (Light / Dark / System) */
+.theme-seg {
+  margin-top: 12px; display: flex; gap: 3px; padding: 3px;
+  border: 1px solid var(--line-2); border-radius: var(--radius-s); background: var(--fill-2);
 }
-.switcher .theme-btn:hover { color: var(--ink); border-color: var(--hi); background: var(--fill-3); }
-.switcher .theme-btn svg { width: 17px; height: 17px; }
-
-/* ---------- main column wrapper (flex column: topbar above content) ---------- */
-.app-main-col { display: flex; flex-direction: column; min-width: 0; }
+.theme-seg button {
+  flex: 1; height: 28px; border: none; border-radius: 7px; cursor: pointer;
+  background: transparent; color: var(--ink-soft);
+  font-family: 'Sora', sans-serif; font-size: .76rem; font-weight: 600;
+  transition: color .18s ease, background .18s ease;
+}
+.theme-seg button:hover { color: var(--ink); }
+.theme-seg button.on { background: var(--hi-soft); color: var(--acc-ink); box-shadow: inset 0 0 0 1px rgba(123,110,240,.3); }
 
 /* ---------- main ---------- */
 .app-main2 { padding: 32px 38px 140px; max-width: 1240px; }
@@ -125,6 +123,15 @@
 
 .dock-log { position: fixed; right: 24px; bottom: 160px; width: 360px; z-index: 79; display: none; }
 .dock-log.open { display: block; }
+
+/* ---------- floating triage (needs-attention) dock ---------- */
+.triage-dock::before { background: var(--bad); opacity: 1; }
+.triage-dock.stacked { bottom: 212px; }   /* sit above the scan dock when both show */
+.triage-dock .ico-attn { width: 20px; height: 20px; flex: none; display: inline-flex; color: var(--bad); }
+.triage-dock .ico-attn svg { width: 100%; height: 100%; }
+.triage-dock .td-title { font-family: 'Space Grotesk', sans-serif; font-weight: 600; font-size: 1.02rem; }
+.triage-dock .td-item { padding: 2px 0 0; }
+.triage-dock .btn.sm { padding: 6px 10px; }
 
 /* ---------- dashboard stats ---------- */
 .statgrid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
@@ -181,6 +188,31 @@
 }
 
 .kicker2 { font-family: 'Space Grotesk', sans-serif; font-size: .9rem; color: var(--acc-ink); font-weight: 600; }
+
+/* ---------- command palette (⌘K) ---------- */
+.cmdk-pill {
+  display: flex; align-items: center; gap: 8px; width: 100%; margin: 0 0 8px; cursor: pointer;
+  padding: 8px 11px; border: 1px solid var(--line-2); border-radius: var(--radius-s);
+  background: var(--fill-2); color: var(--ink-soft); font-family: 'Sora', sans-serif; font-size: .85rem;
+}
+.cmdk-pill:hover { border-color: var(--hi); color: var(--ink); }
+.cmdk-pill .kbd { margin-left: auto; }
+#cmd-palette { position: fixed; inset: 0; z-index: 130; display: none; justify-content: center; align-items: flex-start;
+  background: rgba(8,10,16,.55); -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px); padding-top: 12vh; }
+#cmd-palette.open { display: flex; }
+#cmd-palette .cmdp-box { width: 560px; max-width: 92vw; background: var(--fill); border: 1px solid var(--line-2);
+  border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden; }
+#cmdp-input { width: 100%; border: none; background: transparent; color: var(--ink); font-family: 'Sora',sans-serif;
+  font-size: 1.05rem; padding: 16px 18px; border-bottom: 1px solid var(--line); outline: none; box-sizing: border-box; }
+#cmdp-list { max-height: 52vh; overflow: auto; padding: 6px; }
+.cmdp-item { display: flex; align-items: center; gap: 11px; padding: 9px 12px; border-radius: var(--radius-s); cursor: pointer; }
+.cmdp-item.sel, .cmdp-item:hover { background: var(--hi-soft); }
+.cmdp-ico { width: 17px; height: 17px; color: var(--ink-soft); flex: none; display: inline-flex; }
+.cmdp-ico svg { width: 100%; height: 100%; }
+.cmdp-label { flex: 1; font-size: .92rem; }
+.cmdp-sub { color: var(--ink-soft); font-size: .8rem; }
+.cmdp-kind { font-size: .66rem; text-transform: uppercase; letter-spacing: .05em; color: var(--ink-soft); flex: none; }
+.cmdp-empty { padding: 16px; text-align: center; color: var(--ink-soft); font-size: .9rem; }
 
 @media (max-width: 980px) {
   /* show the mobile chrome */
