@@ -115,6 +115,42 @@ class JellyfinClient {
         }
         response.status.value in 200..299
     }.getOrDefault(false)
+
+    suspend fun getResumeItems(
+        baseUrl: String,
+        userToken: String,
+        userId: String,
+        limit: Int = 20,
+    ): List<JellyfinPlayItem> = runCatching {
+        val url = baseUrl.trimEnd('/') +
+            "/Users/$userId/Items?Filters=IsResumable&Recursive=true" +
+            "&IncludeItemTypes=Movie,Episode&Limit=$limit" +
+            "&SortBy=DatePlayed&SortOrder=Descending" +
+            "&Fields=UserData,SeriesId,SeriesName,SeasonId,IndexNumber,ParentIndexNumber"
+        http.get(url) {
+            header("Authorization", """$AUTH_HEADER, Token="$userToken"""")
+        }.body<JellyfinPlayItemsResponse>().items
+    }.let { result ->
+        if (result.isFailure) Logger.warn("Jellyfin getResumeItems failed: ${result.exceptionOrNull()?.message}")
+        result.getOrDefault(emptyList())
+    }
+
+    suspend fun getNextUp(
+        baseUrl: String,
+        userToken: String,
+        userId: String,
+        limit: Int = 20,
+    ): List<JellyfinPlayItem> = runCatching {
+        val url = baseUrl.trimEnd('/') +
+            "/Shows/NextUp?UserId=$userId&Limit=$limit" +
+            "&Fields=UserData,SeriesId,SeriesName,SeasonId,IndexNumber,ParentIndexNumber"
+        http.get(url) {
+            header("Authorization", """$AUTH_HEADER, Token="$userToken"""")
+        }.body<JellyfinPlayItemsResponse>().items
+    }.let { result ->
+        if (result.isFailure) Logger.warn("Jellyfin getNextUp failed: ${result.exceptionOrNull()?.message}")
+        result.getOrDefault(emptyList())
+    }
 }
 
 private fun String.jsonEscape(): String =

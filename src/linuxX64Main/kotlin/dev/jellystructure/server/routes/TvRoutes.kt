@@ -9,6 +9,7 @@ import dev.jellystructure.shared.tv.PairResult
 import dev.jellystructure.shared.tv.Skin
 import dev.jellystructure.shared.tv.TileShape
 import dev.jellystructure.shared.tv.TvSession
+import dev.jellystructure.tv.HomeFeedService
 import dev.jellystructure.tv.RaviloConfigService
 import dev.jellystructure.tv.RaviloDeviceService
 import io.ktor.http.HttpStatusCode
@@ -42,6 +43,7 @@ private data class ViewerSettingsRequest(
 fun Route.tvRoutes(
     deviceService: RaviloDeviceService,
     raviloConfigService: RaviloConfigService,
+    homeFeedService: HomeFeedService,
     sessionService: SessionService,
     jellyfinClient: JellyfinClient,
     configStore: ConfigStore,
@@ -137,6 +139,21 @@ fun Route.tvRoutes(
             deviceService.unpair(device.deviceToken)
             call.respond(mapOf("status" to "unpaired"))
         }
+    }
+
+    // ── Home feed ────────────────────────────────────────────────────────────
+    get("/tv/home") {
+        val device = call.attributes[DeviceKey]
+        call.respond(homeFeedService.getHomeFeed(device))
+    }
+
+    get("/tv/channel/{id}") {
+        val device = call.attributes[DeviceKey]
+        val channelId = call.parameters["id"] ?: run {
+            call.respond(HttpStatusCode.BadRequest, mapOf("error" to "Missing channel id"))
+            return@get
+        }
+        call.respond(homeFeedService.getChannelFeed(device, channelId))
     }
 
     // ── Per-user config ──────────────────────────────────────────────────────
