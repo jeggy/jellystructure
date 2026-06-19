@@ -97,6 +97,7 @@
 .pagebar { display: flex; align-items: center; gap: 13px; margin-bottom: 8px; flex-wrap: wrap; }
 .pagebar h1 { font-size: 2rem; margin: 0; }
 .pagebar .spacer { flex: 1; }
+#set-pagebar { position: sticky; top: 0; z-index: 60; background: var(--bg); padding-top: 12px; padding-bottom: 12px; margin-bottom: 4px; border-bottom: 1px solid var(--line); }
 .crumb { font-size: .85rem; color: var(--ink-soft); }
 .crumb a { color: var(--ink-soft); }
 .page-sub { color: var(--ink-soft); max-width: 78ch; margin: 2px 0 26px; font-size: .98rem; line-height: 1.6; }

@@ -180,6 +180,7 @@ changes are posted as JSON to Ktor, converted to TOML, and written to `/config/c
 - **The frontend renders server-pushed state only** — no derived or optimistic local state. (Desync from local accumulation was a past bug.) The ambient scan dock's counter is seeded from `GET /api/scan/status`, not accumulated purely from WS events.
 - On each `ItemScanned` event during a scan, the Library grid appends/updates the item without waiting for scan completion
 - **Tab navigation within a detail page uses `replaceState`** (`Router.updateQuery(..., replace = true)`). The URL updates silently — no `hashchange` fires, no page re-render occurs. Only the tab panel toggles in the DOM. Back/Forward navigate between pages, not between tabs. Deep-linking and refresh still reconstruct the correct tab from the URL.
+- **Settings pagebar is sticky** (`id="set-pagebar"`, `position: sticky; top: 0; z-index: 60`) so Save and Test Connections are always reachable. The left section-nav sticks below it (`position: sticky; top: 88px`, where 88 px is the pagebar height).
 
 ---
 
