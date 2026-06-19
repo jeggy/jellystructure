@@ -18,7 +18,11 @@ data class MetadataEntry(
     val count: Int,
     val tmdbId: Int? = null,
     val logoPath: String? = null,
+    val hasLogo: Boolean = false,
 )
+
+@Serializable
+data class BatchLogoResult(val fetched: Int, val skipped: Int, val failed: Int)
 
 @Serializable
 data class JsTag(
@@ -86,4 +90,11 @@ object MetadataApi {
     suspend fun deleteTag(name: String): Boolean = runCatching {
         httpClient.delete("/api/tags/${encodeURIComponent(name)}").status == HttpStatusCode.NoContent
     }.getOrElse { false }
+
+    suspend fun fetchLogoBatch(kind: String): BatchLogoResult? = runCatching {
+        httpClient.post("/api/metadata/$kind/artwork/batch").body<BatchLogoResult>()
+    }.getOrNull()
+
+    fun logoUrl(kind: String, name: String): String =
+        "/api/metadata/$kind/${encodeURIComponent(name)}/artwork"
 }

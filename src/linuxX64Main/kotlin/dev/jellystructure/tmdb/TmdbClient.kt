@@ -55,6 +55,11 @@ data class TmdbCompany(
 )
 
 @Serializable
+data class TmdbCompanySearchResponse(
+    val results: List<TmdbCompany> = emptyList(),
+)
+
+@Serializable
 data class TmdbTvSearchResponse(
     val results: List<TmdbTvSearchResult> = emptyList(),
 )
@@ -268,6 +273,24 @@ class TmdbClient(
         }
         if (result.isFailure) Logger.warn("TMDB translated titles failed tmdbId=$tmdbId: ${result.exceptionOrNull()?.message}")
         return result.getOrElse { emptyMap() }
+    }
+
+    suspend fun searchCompany(name: String): TmdbCompany? {
+        val key = apiKey()
+        if (key.isBlank()) return null
+        val result = runCatching {
+            val response = http.get("$baseUrl/search/company") {
+                parameter("api_key", key)
+                parameter("query", name)
+            }
+            if (response.status == HttpStatusCode.TooManyRequests) {
+                delay(3000)
+                return searchCompany(name)
+            }
+            response.body<TmdbCompanySearchResponse>().results.firstOrNull()
+        }
+        if (result.isFailure) Logger.warn("TMDB company search failed for '$name': ${result.exceptionOrNull()?.message}")
+        return result.getOrNull()
     }
 
     suspend fun getEpisodeDetails(seriesId: Int, season: Int, episode: Int, language: String? = null): TmdbEpisodeDetails? {

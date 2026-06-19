@@ -21,6 +21,7 @@ import dev.jellystructure.server.routes.mediaRoutes
 import dev.jellystructure.server.routes.setupRoutes
 import dev.jellystructure.server.routes.trackRoutes
 import dev.jellystructure.media.JsTagStore
+import dev.jellystructure.media.LogoDownloader
 import dev.jellystructure.server.routes.metadataRoutes
 import dev.jellystructure.server.routes.triageRoutes
 import dev.jellystructure.torrent.SeedingGuard
@@ -72,6 +73,7 @@ fun startServer(
     effectiveScanThreads: Int,
     jsTagStore: JsTagStore,
     seedingGuard: SeedingGuard,
+    logoDownloader: LogoDownloader,
 ): suspend () -> Unit {
     val appScope = CoroutineScope(SupervisorJob())
     val engine = embeddedServer(CIO, port = port) {
@@ -102,7 +104,7 @@ fun startServer(
                 mediaRoutes(mediaStore, scanner, artworkDownloader, appScope, scanTracker, broadcaster, jellyfinClient, configStore, mediaHistory, scanDispatcher, seedingGuard)
                 activityRoutes(activityLog)
                 triageRoutes(mediaStore, jellyfinClient, configStore, mediaHistory, seedingGuard)
-                metadataRoutes(mediaStore, jsTagStore)
+                metadataRoutes(mediaStore, jsTagStore, logoDownloader)
                 trackRoutes(mediaStore, configStore, jellyfinClient, mediaHistory, seedingGuard)
             }
 

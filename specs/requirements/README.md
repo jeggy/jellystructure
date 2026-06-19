@@ -47,7 +47,7 @@ See [`../tasks.md`](../tasks.md) for the active TODO breakdown.
 | 28 | ✓ Done | URL-based tab & view-state navigation (FR-UN1) | [archive](archive/phase-28-url-based-tab-navigation.md) |
 | 29 | ✓ Done | Multi-language library search — remember every title ever pulled (FR-ML1) | [archive](archive/phase-29-multi-language-library-search.md) |
 | 30 | ✓ Done | Library multi-axis filters — studio/network/genre/tags dropdowns + meta-facets (FR-LMF1) | [archive](archive/phase-30-library-multi-axis-filters.md) |
-| 31 | □ Planned | Studio & network logo artwork — fetch/cache/serve + batch (FR-SNA1) | [phase-31](phase-31-studio-network-artwork.md) |
+| 31 | ✓ Done | Studio & network logo artwork — fetch/cache/serve + batch (FR-SNA1) | [archive](archive/phase-31-studio-network-artwork.md) |
 | 32 | □ Planned | In-app TMDB match picker — search & pick the right match (FR-TM1) | [phase-32](phase-32-tmdb-match-picker.md) |
 | 33 | □ Planned | Jellyfin ⇄ NFO drift detection + re-assert (FR-DR1) | [phase-33](phase-33-jellyfin-nfo-drift.md) |
 | 34 | □ Planned | Undo / revert from history (FR-UR1) | [phase-34](phase-34-undo-revert-history.md) |
