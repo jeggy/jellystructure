@@ -260,6 +260,19 @@ data class MarkRequest(
     val watched: Boolean,
 )
 
+// ─── Browse facets ────────────────────────────────────────────────────────────
+
+@Serializable
+data class FacetItem(val name: String, val count: Int)
+
+@Serializable
+data class BrowseFacets(
+    val genres: List<FacetItem> = emptyList(),
+    val studios: List<FacetItem> = emptyList(),
+    val networks: List<FacetItem> = emptyList(),
+    val tags: List<FacetItem> = emptyList(),
+)
+
 // ─── Errors ───────────────────────────────────────────────────────────────────
 
 sealed class TvApiError(message: String, cause: Throwable? = null) : Exception(message, cause) {

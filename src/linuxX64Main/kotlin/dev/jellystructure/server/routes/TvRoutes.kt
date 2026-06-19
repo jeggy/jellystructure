@@ -9,6 +9,7 @@ import dev.jellystructure.shared.tv.PairResult
 import dev.jellystructure.shared.tv.Skin
 import dev.jellystructure.shared.tv.TileShape
 import dev.jellystructure.shared.tv.TvSession
+import dev.jellystructure.tv.BrowseService
 import dev.jellystructure.tv.HomeFeedService
 import dev.jellystructure.tv.RaviloConfigService
 import dev.jellystructure.tv.RaviloDeviceService
@@ -44,6 +45,7 @@ fun Route.tvRoutes(
     deviceService: RaviloDeviceService,
     raviloConfigService: RaviloConfigService,
     homeFeedService: HomeFeedService,
+    browseService: BrowseService,
     sessionService: SessionService,
     jellyfinClient: JellyfinClient,
     configStore: ConfigStore,
@@ -154,6 +156,31 @@ fun Route.tvRoutes(
             return@get
         }
         call.respond(homeFeedService.getChannelFeed(device, channelId))
+    }
+
+    // ── Browse, search, facets ───────────────────────────────────────────────
+    get("/tv/browse") {
+        val device = call.attributes[DeviceKey]
+        val kind     = call.request.queryParameters["kind"]
+        val sort     = call.request.queryParameters["sort"]
+        val page     = call.request.queryParameters["page"]?.toIntOrNull() ?: 1
+        val pageSize = call.request.queryParameters["pageSize"]?.toIntOrNull() ?: 40
+        val genres   = call.request.queryParameters.getAll("genre")   ?: emptyList()
+        val studios  = call.request.queryParameters.getAll("studio")  ?: emptyList()
+        val networks = call.request.queryParameters.getAll("network") ?: emptyList()
+        val tags     = call.request.queryParameters.getAll("tag")     ?: emptyList()
+        call.respond(browseService.browse(device, kind, genres, studios, networks, tags, sort, page, pageSize))
+    }
+
+    get("/tv/search") {
+        val device = call.attributes[DeviceKey]
+        val query = call.request.queryParameters["q"] ?: ""
+        call.respond(browseService.search(device, query))
+    }
+
+    get("/tv/facets") {
+        val kind = call.request.queryParameters["kind"]
+        call.respond(browseService.facets(kind))
     }
 
     // ── Per-user config ──────────────────────────────────────────────────────

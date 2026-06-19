@@ -135,6 +135,22 @@ class JellyfinClient {
         result.getOrDefault(emptyList())
     }
 
+    suspend fun getFavoriteItemIds(
+        baseUrl: String,
+        userToken: String,
+        userId: String,
+    ): Set<String> = runCatching {
+        val url = baseUrl.trimEnd('/') +
+            "/Users/$userId/Items?Filters=IsFavorite&Recursive=true" +
+            "&IncludeItemTypes=Movie,Series&Fields=Id&Limit=500"
+        http.get(url) {
+            header("Authorization", """$AUTH_HEADER, Token="$userToken"""")
+        }.body<JellyfinItemsResponse>().items.map { it.id }.toSet()
+    }.let { result ->
+        if (result.isFailure) Logger.warn("Jellyfin getFavoriteItemIds failed: ${result.exceptionOrNull()?.message}")
+        result.getOrDefault(emptySet())
+    }
+
     suspend fun getNextUp(
         baseUrl: String,
         userToken: String,
