@@ -2,16 +2,108 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="theme-color" content="#0d0d1a">
     <title>Ravilo</title>
     <style>
         *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-        html, body { width: 100%; height: 100%; background: #0d0d1a; overflow: hidden; }
-        canvas#ComposeTarget { display: block; width: 100%; height: 100%; }
+        html, body {
+            width: 100%; height: 100%;
+            background: #0d0d1a;
+            overflow: hidden;
+            /* Prevent text selection on TV-style navigation */
+            user-select: none;
+            -webkit-user-select: none;
+        }
+        canvas#ComposeTarget {
+            display: block;
+            width: 100%; height: 100%;
+            /* Compose canvas on top; video element sits behind at z-index: 0 */
+            position: relative;
+            z-index: 1;
+            /* Prevent browser from stealing pointer events */
+            touch-action: none;
+        }
+        /* Fullscreen button (shown only when fullscreen API is available) */
+        #fs-btn {
+            display: none;
+            position: fixed; bottom: 16px; right: 16px; z-index: 100;
+            background: rgba(0,0,0,.5); border: 1px solid rgba(255,255,255,.2);
+            color: #fff; padding: 6px 12px; border-radius: 6px; font-size: 13px;
+            cursor: pointer;
+        }
+        #fs-btn:hover { background: rgba(255,255,255,.15); }
     </style>
 </head>
 <body>
-    <canvas id="ComposeTarget"></canvas>
+    <canvas id="ComposeTarget" tabindex="0"></canvas>
+    <button id="fs-btn" title="Toggle fullscreen">⛶ Fullscreen</button>
+
+    <script>
+        // Fullscreen toggle (F key or button)
+        var fsBtn = document.getElementById('fs-btn');
+        if (document.fullscreenEnabled || document.webkitFullscreenEnabled) {
+            fsBtn.style.display = 'block';
+            function toggleFs() {
+                if (document.fullscreenElement || document.webkitFullscreenElement) {
+                    (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+                } else {
+                    var el = document.documentElement;
+                    (el.requestFullscreen || el.webkitRequestFullscreen).call(el);
+                }
+            }
+            fsBtn.onclick = toggleFs;
+            document.addEventListener('keydown', function(e) {
+                if (e.key === 'f' || e.key === 'F') toggleFs();
+            });
+        }
+
+        // Ensure canvas receives focus immediately for keyboard events
+        window.addEventListener('load', function() {
+            var canvas = document.getElementById('ComposeTarget');
+            if (canvas) canvas.focus();
+        });
+
+        // Gamepad polling — re-fires gamepad axis/button presses as keyboard events
+        // so the Compose focus engine handles them identically to hardware D-pad
+        (function() {
+            var AXES = {0: 'ArrowLeft', 1: 'ArrowLeft', 2: 'ArrowRight', 3: 'ArrowRight'};
+            var BUTTONS = {0: 'Enter', 1: 'Escape', 12: 'ArrowUp', 13: 'ArrowDown', 14: 'ArrowLeft', 15: 'ArrowRight'};
+            var THRESHOLD = 0.5;
+            var prevAxes = {}, prevButtons = {};
+
+            function fireKey(key) {
+                var canvas = document.getElementById('ComposeTarget');
+                if (!canvas) return;
+                ['keydown', 'keyup'].forEach(function(t) {
+                    canvas.dispatchEvent(new KeyboardEvent(t, {key: key, bubbles: true}));
+                });
+            }
+
+            function poll() {
+                var pads = navigator.getGamepads ? navigator.getGamepads() : [];
+                for (var i = 0; i < pads.length; i++) {
+                    var gp = pads[i];
+                    if (!gp) continue;
+                    gp.axes.forEach(function(v, ai) {
+                        var key = ai < 2 ? (v < -THRESHOLD ? 'ArrowLeft' : v > THRESHOLD ? 'ArrowRight' : null)
+                                         : (v < -THRESHOLD ? 'ArrowUp'   : v > THRESHOLD ? 'ArrowDown'  : null);
+                        if (key && prevAxes[ai] !== key) fireKey(key);
+                        prevAxes[ai] = key;
+                    });
+                    gp.buttons.forEach(function(btn, bi) {
+                        var key = BUTTONS[bi];
+                        var pressed = btn.pressed;
+                        if (key && pressed && !prevButtons[bi]) fireKey(key);
+                        prevButtons[bi] = pressed;
+                    });
+                }
+                requestAnimationFrame(poll);
+            }
+            window.addEventListener('gamepadconnected', function() { poll(); });
+        })();
+    </script>
+
     <script src="ravilo.js"></script>
 </body>
 </html>

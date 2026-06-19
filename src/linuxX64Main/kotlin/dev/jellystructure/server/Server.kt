@@ -91,6 +91,7 @@ fun startServer(
     activityLog: ActivityLog,
     broadcaster: WsBroadcaster,
     frontendDir: String,
+    raviloWebDir: String? = null,
     port: Int,
     scanDispatcher: CoroutineDispatcher,
     effectiveScanThreads: Int,
@@ -174,7 +175,15 @@ fun startServer(
                 }
             }
 
-            // SPA: serve Wasm frontend for all non-API paths
+            // Ravilo web app — serve under /tv/** (separate bundle, different entry HTML)
+            if (raviloWebDir != null) {
+                get("/tv/{...}") {
+                    val path = call.request.path().removePrefix("/tv")
+                    call.serveFrontendFile(raviloWebDir, path)
+                }
+            }
+
+            // Admin SPA: serve Wasm frontend for all non-API, non-TV paths
             get("{...}") {
                 call.serveFrontendFile(frontendDir, call.request.path())
             }

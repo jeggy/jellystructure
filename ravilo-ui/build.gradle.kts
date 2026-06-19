@@ -43,6 +43,19 @@ kotlin {
                 implementation(libs.compose.ui)
                 implementation(libs.compose.material3)
                 implementation(libs.kotlinx.datetime)
+                implementation(libs.ktor.client.core)
+                implementation(libs.ktor.client.content.negotiation)
+                implementation(libs.ktor.serialization.kotlinx.json)
+            }
+        }
+        val androidMain by getting {
+            dependencies {
+                implementation(libs.ktor.client.android)
+            }
+        }
+        val wasmJsMain by getting {
+            dependencies {
+                implementation(libs.ktor.client.js)
             }
         }
     }
