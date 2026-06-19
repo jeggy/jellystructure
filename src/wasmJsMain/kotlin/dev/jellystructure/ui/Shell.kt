@@ -117,6 +117,8 @@ fun renderShell(user: UserProfile) {
     injectCommandPalette(body)
     wireGlobalKeyBindings()
 
+    document.getElementById("cmd-search-pill")?.addEventListener("click") { showPalette() }
+
     MainScope().launch {
         // Triage badge count + dock
         val count = MediaApi.getTriageCount()
@@ -557,6 +559,7 @@ private fun shellHtml(user: UserProfile, savedPref: String = "system"): String {
         <div class="shell">
           <aside class="app-side">
             <div class="logo"><span class="glyph"></span> Jellystructure</div>
+            <button class="cmdk-pill" id="cmd-search-pill"><span>⌕ Search…</span><span class="kbd">⌘K</span></button>
             $navHtml
             <div class="grow"></div>
             <div class="status">
