@@ -47,6 +47,13 @@ src/
       MkvpropeditRunner.kt  — header-only edits for .mkv files
       ArtworkDownloader.kt  — download poster/fanart/logo/stills from TMDB
       ScanTracker.kt        — running/cancelled/count state for active scan
+      JsTagStore.kt         — JSON CRUD for Jellystructure tag definitions (Phase 19)
+      ActivityLog.kt        — persistent audit/activity log (Phase 17)
+    log/Logger.kt           — unified stdout + ActivityLog logger
+    db/Database.kt          — SQLDelight native SQLite driver wiring
+    torrent/
+      QBittorrentClient.kt  — qBittorrent Web API client (Phase 26)
+      SeedingGuard.kt       — blocks mkvpropedit on actively-seeded files (fail-closed)
     nfo/NfoWriter.kt        — write movie.nfo / tvshow.nfo / episodedetails.nfo
     jobs/WsBroadcaster.kt   — fan-out JobEvent JSON to all WebSocket sessions
     server/
@@ -54,12 +61,14 @@ src/
       routes/
         AuthRoutes.kt       — POST /api/auth/login, /api/auth/logout, /api/auth/me
         SetupRoutes.kt      — GET /api/setup/status, POST /api/setup/connect
-        ConfigRoutes.kt     — GET/PATCH /api/config, POST /api/config/test-connection
+        ConfigRoutes.kt     — GET/PUT /api/config, GET /api/config/path-check
         JellyfinRoutes.kt   — GET /api/jellyfin/libraries
-        MediaRoutes.kt      — /api/media/** (list, detail, scan, nfo, artwork, tracks, episodes)
-        TrackRoutes.kt      — /api/tracks/** (plan, set-default, set-language for movies)
-        TriageRoutes.kt     — GET /api/triage, POST /api/triage/:id/assign-language
-        LanguageRoutes.kt   — GET/PATCH /api/language/settings
+        MediaRoutes.kt      — /api/media/** (list, meta-facets, track-facets, detail, nfo, artwork,
+                              episodes, scan, stats, batch, tmdb-id, repull, repull-jellyfin, jellyfin-locks)
+        TrackRoutes.kt      — /api/media/{id}/tracks/** (plan, default, language, reorder, delete, jellyfin-refresh)
+        TriageRoutes.kt     — GET /api/triage, /count, /{id}/suggest, POST language-assign (movie + episode)
+        MetadataRoutes.kt   — GET /api/metadata/{studios,networks,genres,tags}; /api/tags CRUD (Phase 19)
+        ActivityRoutes.kt   — GET/DELETE /api/activity/log — paged, category/level filters (Phase 17)
     watcher/FolderWatcher.kt — inotify-based folder watcher (when watch_enabled = true)
     tmdb/TmdbClient.kt      — TMDB v3 REST calls (search, movie details, TV details, episodes)
 
@@ -72,20 +81,20 @@ src/
       ApiClient.kt          — shared fetch wrapper (JSON, credentials)
       AuthApi.kt            — login/logout/me calls
       ConfigApi.kt          — config read/write, connection test
-      MediaApi.kt           — media list, detail, scan, nfo, artwork, tracks, triage count
+      MediaApi.kt           — media list, detail, scan, nfo, artwork, tracks, triage list/count, facets
+      MetadataApi.kt        — metadata aggregates + JS-tag CRUD
     ui/
-      Shell.kt              — sidebar nav, theme toggle, ambient scan dock, WS connection
+      Shell.kt              — sidebar nav, three-way theme picker, ambient scan dock + floating Triage dock, WS
       Login.kt              — /login — Jellyfin admin sign-in form
       Setup.kt              — /setup — first-run Jellyfin URL + token entry
       Dashboard.kt          — /dashboard — stats cards, recent activity, batch actions
-      Library.kt            — /library — paginated media grid, filter/sort/search
-      MediaDetail.kt        — /media/:id — full detail: metadata, tracks, artwork, NFO, resolver trace
-      Triage.kt             — /triage — untagged track queue (movies)
-      SeriesTriage.kt       — /triage/series/:id — multi-step series triage flow
-      TrackOrder.kt         — /track-order — manual track default/order editor
-      Language.kt           — /language — language resolver settings + live preview
-      Settings.kt           — /settings — library mapping, API keys, behavior flags
-      Activity.kt           — /activity — real-time scan console + operation audit log
+      Library.kt            — /library — media grid; multi-axis filters (studio/network/genre/tags + audio-track) + search/sort, URL-addressable
+      MediaDetail.kt        — /media/:id — single editing surface (metadata, tracks, artwork, NFO, resolver trace, lock banner, ?tab=)
+      Metadata.kt           — /metadata — Studios · Networks · Genres · Tags (?tab=)
+      TrackOrder.kt         — /track-order — manual track default/reorder editor; before/after diff
+      LanguagePicker.kt     — reusable searchable language-code picker component (Phase 11)
+      Settings.kt           — /settings — Connections · Library mapping · Scanning · Metadata · Advanced
+      Activity.kt           — /activity — real-time scan console + audit log (filters + workers)
 ```
 
 ---
@@ -112,12 +121,19 @@ data class MediaItem(
     val tags: List<String>,
     val director: String?,
     val studio: String?,
+    val studioTmdbId: Int?,          // Phase 19 — captured at scan for logo lookup
+    val studioLogoPath: String?,
     val network: String?,
+    val networkTmdbId: Int?,
+    val networkLogoPath: String?,
     val tracks: List<Track>,         // movie: all tracks; TV: tracks of first episode
     val episodes: List<Episode>,     // TV only; empty on list responses
     val issueCount: Int,             // untagged audio/subtitle tracks
     val languageMix: Boolean,        // true = audio lang sets differ across episodes
     val scannedAt: Long,
+    val jellyfinLockData: Boolean = false,               // Phase 22 — Jellyfin-side lock state
+    val jellyfinLockedFields: List<String> = emptyList(),
+    val titlesByLang: Map<String, String> = emptyMap(),  // Phase 29 — every title ever seen, per language code
 )
 ```
 
@@ -172,21 +188,25 @@ data class Episode(
 ### Config
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/config` | Full `AppConfig` as JSON |
-| PATCH | `/config` | Partial update; writes to `config.toml` |
-| POST | `/config/test-connection` | Test Jellyfin + TMDB connectivity |
+| GET | `/config` | Full `AppConfig` as JSON (plus `effectiveScanThreads`) |
+| PUT | `/config` | Replace the full `AppConfig`; writes to `config.toml` |
 | GET | `/config/path-check` | Per-library path diagnostics (Phase 15) |
 
 ### Jellyfin
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | `/jellyfin/libraries` | Discover libraries from Jellyfin API |
-| POST | `/jellyfin/refresh` | Trigger Jellyfin library refresh |
+
+> Per-item Jellyfin refresh is `POST /media/{id}/jellyfin-refresh`; batch refresh is
+> `POST /media/batch/jellyfin-push`. There is no library-wide `/jellyfin/refresh` route.
 
 ### Media
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/media` | Paginated list (`kind`, `filter`, `search`, `sort`, `page`, `pageSize`, `studio`, `network`, `genre`); episodes stripped |
+| GET | `/media` | Paginated list. Filters (combinable, AND across categories): `kind`, `filter` (`attention`\|`missing_artwork`), `search` (matches `title` + `originalTitle` + all `titlesByLang`), `sort`, `page`, `pageSize`; **multi-value (comma-separated)** `studios`, `networks`, `genres`, `tags`; audio-track filters `audioLang`, `trackTitle`, `audioCodec`, `untaggedAudio`. Episodes stripped from list items. |
+| GET | `/media/meta-facets` | Distinct studios / networks / genres / tags + item counts (powers the Library filter dropdowns) |
+| GET | `/media/track-facets` | Distinct audio languages / codecs / track-titles + counts (Phase 20) |
+| DELETE | `/media/all` | Wipe media store + scan state (Phase 18 danger zone); 409 while a scan runs |
 | GET | `/media/{id}` | Full item including episodes |
 | GET | `/media/{id}/history` | Audit log for item |
 | GET | `/media/{id}/nfo` | Raw NFO XML |
@@ -195,8 +215,13 @@ data class Episode(
 | POST | `/media/{id}/artwork` | Fetch artwork from TMDB |
 | POST | `/media/{id}/artwork/upload` | Multipart upload (poster/fanart/logo) |
 | PATCH | `/media/{id}/metadata` | Edit title, overview, year, tags, director, studio, network |
+| PATCH | `/media/{id}/tmdb-id` | Set/clear the TMDB id; does not auto-fetch (Phase 24) |
 | PATCH | `/media/{id}/language` | Override resolved language |
+| GET | `/media/{id}/nfo/writable` | Write-access / "Diagnose" check for the item's directory |
+| GET | `/media/{id}/jellyfin-locks` | Live `{lockData, lockedFields}` from Jellyfin (Phase 22 re-check) |
+| GET | `/media/{id}/tmdb-languages` | Language codes TMDB has translations for (per item) |
 | POST | `/media/{id}/repull` | Re-fetch TMDB metadata without re-probing |
+| POST | `/media/{id}/repull-jellyfin` | Re-discover the item from Jellyfin + full rescan (Phase 25) |
 | POST | `/media/{id}/sync` | Targeted full rescan (Phase 13) |
 | POST | `/media/{id}/seasons/{seasonNumber}/sync` | Targeted season rescan (Phase 13) |
 | GET | `/media/{id}/episodes/stills` | Check still existence per episode |
@@ -214,34 +239,57 @@ data class Episode(
 | GET | `/stats` | Movie/TV/episode counts, issue count, NFO coverage % |
 | GET | `/activity/recent` | Recent audit log entries |
 | POST | `/media/batch/artwork` | Fetch missing artwork for all items |
+| POST | `/media/batch/jellyfin-push` | Write every item's NFO + trigger a Jellyfin refresh for each |
 
-### Tracks (movies)
+### Tracks (movie tracks under the media item; episode tracks under `/media/{id}/episodes/{epFilename}/tracks/*`)
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/tracks/{id}/plan` | Preview mkvpropedit/ffmpeg command |
-| POST | `/tracks/{id}/default` | Set default track |
-| POST | `/tracks/{id}/language` | Set track language |
+| GET | `/media/{id}/tracks/plan?specifier=a:0` | Dry-run: returns the mkvpropedit/ffmpeg command without executing |
+| POST | `/media/{id}/tracks/default` | Set a track as default for its type (clears siblings) |
+| POST | `/media/{id}/tracks/language` | Write a language tag to one track |
+| POST | `/media/{id}/tracks/reorder` | Reorder tracks of a type (ffmpeg `-c copy` remux) |
+| DELETE | `/media/{id}/tracks/{specifier}` | Remove a track (ffmpeg `-c copy` remux) |
+| POST | `/media/{id}/jellyfin-refresh` | Trigger Jellyfin to reload this item |
 
-### Triage
+> All five mkvpropedit/ffmpeg call sites run the qBittorrent `SeedingGuard` first (Phase 26): a
+> seeded file yields **409** (`Blocked`) or **503** (`Unreachable`); unconfigured guard passes through.
+
+### Triage (data source for the floating Triage dock — Phase 27; triage is no longer a page)
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/triage` | Items with untagged tracks |
-| GET | `/triage/count` | `{total: N}` for sidebar badge |
-| POST | `/triage/{id}/assign-language` | Assign language to untagged track(s) |
+| GET | `/triage` | Items needing attention (untagged tracks, cascade mismatch, multiple-default audio, or episode issues) as `TriageItem`s |
+| GET | `/triage/count` | `{untagged, mismatch, multiDefault, total}` for the sidebar badge + dock |
+| GET | `/triage/{id}/suggest` | TMDB language suggestions for an untagged item |
+| POST | `/triage/{id}/tracks/{specifier}/language` | Assign a language to one movie track |
+| POST | `/triage/{id}/episodes/{epFilename}/tracks/{specifier}/language` | Assign a language to one episode track |
 
-### Language Settings
+### Metadata & Tags (Phase 19)
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/language/settings` | Current `fallback_language` |
-| PATCH | `/language/settings` | Update `fallback_language` |
+| GET | `/metadata/studios?sort=name\|count` | `[{name, count, tmdbId?, logoPath?}]` |
+| GET | `/metadata/networks?sort=…` | Same shape; TV only |
+| GET | `/metadata/genres?sort=…` | `[{name, count}]` |
+| GET | `/metadata/tags?sort=…` | `{jsTags:[{name,color,description,count}], otherTags:[{name,count}]}` |
+| GET | `/tags` | All JS-tag definitions |
+| POST | `/tags` | Create a JS tag (`{name,color,description}`); 409 if it exists |
+| PATCH | `/tags/{name}` | Update color / description |
+| DELETE | `/tags/{name}` | Delete the tag definition (does not strip it from items) |
+
+> The global **fallback language** is edited via `PUT /config` (Settings → Metadata). The standalone
+> `/api/language/settings` routes and the Language page were removed in Phase 23.
+
+### Activity (Phase 17)
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/activity/log?page&pageSize&category&level` | Paged audit log with category + level filters |
+| DELETE | `/activity/log` | Clear the log |
 
 ### WebSocket
 | Path | Description |
 |------|-------------|
 | `/ws` | Bidirectional; backend pushes `JobEvent` JSON; client sends nothing |
 
-> Planned routes for active phases (`/api/activity/log`, `/api/metadata/*`, `/api/tags/*`,
-> `DELETE /api/media/all`) are specified in [`requirements/`](requirements/).
+> A `GET /api/health` liveness route (`{status:"ok"}`) also sits under `/api`.
 
 ---
 
@@ -252,14 +300,16 @@ data class Episode(
 | `/login` | `Login.kt` | Jellyfin admin credentials sign-in |
 | `/setup` | `Setup.kt` | First-run Jellyfin URL + machine token; disappears once configured |
 | `/dashboard` | `Dashboard.kt` | Stats cards, recent activity, scan trigger, batch action chips |
-| `/library` | `Library.kt` | Paginated media grid with filter/sort/search |
-| `/media/:id` | `MediaDetail.kt` | Full item: metadata, tracks, artwork, NFO preview, resolver trace |
-| `/triage` | `Triage.kt` | Untagged track queue for movies |
-| `/triage/series/:id` | `SeriesTriage.kt` | Multi-step series triage (series-level → per-episode) |
-| `/track-order` | `TrackOrder.kt` | Manual track default/reorder editor; shows before/after diff |
-| `/language` | `Language.kt` | Language resolver settings + live in-WASM preview |
-| `/settings` | `Settings.kt` | Library mapping, API keys, behavior flags |
-| `/activity` | `Activity.kt` | Real-time scan console + full operation audit log |
+| `/library` | `Library.kt` | Media grid; multi-axis filters (studio/network/genre/tags + audio-track), search, sort — all URL-addressable |
+| `/media/:id` | `MediaDetail.kt` | Single editing surface: metadata (dirty + diff), tracks, artwork, NFO, lock banner, history; tabs via `?tab=` |
+| `/metadata` | `Metadata.kt` | Studios · Networks · Genres · Tags (`?tab=`) |
+| `/track-order` | `TrackOrder.kt` | Manual track default/reorder editor; before/after diff (still linked from media detail) |
+| `/settings` | `Settings.kt` | Connections · Library mapping · Scanning · Metadata · Advanced (`?sect=`) |
+| `/activity` | `Activity.kt` | Real-time scan console + audit log (category/level filters, workers chip) |
+
+> **Triage is not a page** (Phase 27). Editing happens on media detail; a floating **Triage dock**
+> (navigation-only) steps through items needing attention. Removed: `/triage`, `/triage/series/:id`,
+> `/language`.
 
 ---
 
@@ -275,8 +325,9 @@ All events are JSON; `type` field is the discriminator:
 {"type":"finished",    "jobId":"scan-1234", "succeeded":42, "failed":0}
 ```
 
-The Shell renders an **ambient dock** that appears when a scan is running and hides on the Activity
-page (which has its own full console view). A `log_line` event type is planned in Phase 17.
+The Shell renders an **ambient scan dock** (appears while a scan runs) and a **floating Triage dock**
+(navigation-only — steps through items needing attention, Phase 27); both live on `document.body` and
+persist across route changes. A `log_line` event type streams activity-log lines to the console (Phase 17).
 
 ---
 

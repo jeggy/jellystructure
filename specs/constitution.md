@@ -134,6 +134,8 @@ overwrite_nfo = false
 fetch_images = true
 watch_enabled = false
 tell_jellyfin = true   # call Jellyfin refresh after writes
+scan_workers = 1       # concurrent items processed (live scale-up/down) — Phase 16
+scan_threads = 4       # ffprobe/ffmpeg subprocess pool size (restart required) — Phase 16
 
 [[libraries]]
 jellyfin_id = "abc123"
@@ -143,7 +145,24 @@ jellyfin_path = "/media/movies"    # path as Jellyfin sees it
 local_path = "/mnt/media/movies"   # path as Jellystructure sees it
 skip = false
 fallback_language = ""             # empty = inherit global
+
+# Optional — qBittorrent seeding guard (Phase 26). When absent or `enabled = false`, the guard is
+# disabled and cross-seed safety is **not part of media management** — edits proceed without
+# checking qBittorrent. Configurable from Settings → Cross-seed safety (Phase 26 revision).
+[qbittorrent]
+enabled = true
+url = "http://gluetun-seeder:8085"
+username = "admin"
+password = ""
+enabled = true
+
+[[qbittorrent.path_mappings]]
+local = "/mnt/media/movies"        # path Jellystructure sees
+remote = "/media/movies"           # path qBittorrent sees (longest match wins)
 ```
+
+Config is read with `GET /api/config` and replaced wholesale with `PUT /api/config` (the UI sends the
+full `AppConfig` as JSON; Ktor converts it to TOML and writes `/config/config.toml`).
 
 Library paths are **not static**. They are auto-discovered from the Jellyfin API
 (`GET /Library/VirtualFolders`) after a successful connection test and stored as `[[libraries]]`
