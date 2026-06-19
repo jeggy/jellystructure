@@ -197,11 +197,11 @@
 
   /* ---- command palette (⌘K) + attention-queue keyboard nav (Phase 38) ---- */
   const palette = document.createElement('div');
-  palette.id = 'cmd-palette';
+  palette.id = 'cmd-palette-overlay';
   palette.innerHTML =
     '<div class="cmdp-box">' +
-      '<input id="cmdp-input" placeholder="Search pages, items, actions…  (Esc to close)" autocomplete="off">' +
-      '<div id="cmdp-list"></div>' +
+      '<input id="cmd-palette-input" placeholder="Search pages, items, actions…  (Esc to close)" autocomplete="off">' +
+      '<div id="cmd-palette-list"></div>' +
     '</div>';
   document.body.appendChild(palette);
 
@@ -211,8 +211,8 @@
     { label: 'Re-pull artwork (all)', kind: 'Action', href: 'index.html', icon: I.dashboard },
     ...ATTN.map(a => ({ label: a.title, kind: 'Needs attention', sub: a.sub, href: a.href, icon: I.attn })),
   ];
-  const cmdInput = palette.querySelector('#cmdp-input');
-  const cmdList = palette.querySelector('#cmdp-list');
+  const cmdInput = palette.querySelector('#cmd-palette-input');
+  const cmdList = palette.querySelector('#cmd-palette-list');
   let cmdSel = 0, cmdFiltered = cmds;
   function renderCmds() {
     const q = cmdInput.value.toLowerCase();

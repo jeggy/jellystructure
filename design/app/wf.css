@@ -35,6 +35,7 @@
   --fill-3:  #1c1f29;
   --ink:     #eef0f7;
   --ink-soft:#959bb0;
+  --ink-dim: rgba(238,240,247,.35);
   --line:    rgba(255,255,255,.08);
   --line-2:  rgba(255,255,255,.14);
 
@@ -58,6 +59,7 @@
   --fill-3:  #eceff6;
   --ink:     #181a22;
   --ink-soft:#5d6378;
+  --ink-dim: rgba(15,17,26,.25);
   --line:    rgba(20,22,32,.10);
   --line-2:  rgba(20,22,32,.16);
   --acc-ink: #6240cf;

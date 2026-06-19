@@ -197,14 +197,14 @@
 }
 .cmdk-pill:hover { border-color: var(--hi); color: var(--ink); }
 .cmdk-pill .kbd { margin-left: auto; }
-#cmd-palette { position: fixed; inset: 0; z-index: 130; display: none; justify-content: center; align-items: flex-start;
+#cmd-palette-overlay { position: fixed; inset: 0; z-index: 130; display: none; justify-content: center; align-items: flex-start;
   background: rgba(8,10,16,.55); -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px); padding-top: 12vh; }
-#cmd-palette.open { display: flex; }
-#cmd-palette .cmdp-box { width: 560px; max-width: 92vw; background: var(--fill); border: 1px solid var(--line-2);
+#cmd-palette-overlay.open { display: flex; }
+#cmd-palette-overlay .cmdp-box { width: 560px; max-width: 92vw; background: var(--fill); border: 1px solid var(--line-2);
   border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden; }
-#cmdp-input { width: 100%; border: none; background: transparent; color: var(--ink); font-family: 'Sora',sans-serif;
+#cmd-palette-input { width: 100%; border: none; background: transparent; color: var(--ink); font-family: 'Sora',sans-serif;
   font-size: 1.05rem; padding: 16px 18px; border-bottom: 1px solid var(--line); outline: none; box-sizing: border-box; }
-#cmdp-list { max-height: 52vh; overflow: auto; padding: 6px; }
+#cmd-palette-list { max-height: 52vh; overflow: auto; padding: 6px; }
 .cmdp-item { display: flex; align-items: center; gap: 11px; padding: 9px 12px; border-radius: var(--radius-s); cursor: pointer; }
 .cmdp-item.sel, .cmdp-item:hover { background: var(--hi-soft); }
 .cmdp-ico { width: 17px; height: 17px; color: var(--ink-soft); flex: none; display: inline-flex; }
