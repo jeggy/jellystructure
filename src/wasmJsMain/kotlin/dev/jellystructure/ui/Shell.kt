@@ -52,6 +52,7 @@ private val NAV: List<NavEntry> = listOf(
     NavLink("/metadata", "Metadata", "metadata"),
     NavLink("/activity", "Activity", "activity"),
     NavGroup("Setup"),
+    NavLink("/ravilo", "Ravilo TV", "language"),
     NavLink("/settings", "Settings", "settings"),
 )
 

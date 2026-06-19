@@ -8,6 +8,7 @@ import dev.jellystructure.ui.renderLogin
 import dev.jellystructure.ui.renderMediaDetail
 import dev.jellystructure.ui.renderMetadata
 import dev.jellystructure.ui.renderSetup
+import dev.jellystructure.ui.renderRaviloConfig
 import dev.jellystructure.ui.renderSettings
 import dev.jellystructure.ui.renderShell
 import dev.jellystructure.ui.updateActiveNav
@@ -65,6 +66,7 @@ object App {
                 else renderLibrary(container, scope, query)
             }
             path == "/activity" -> renderActivity(container, scope, query)
+            path == "/ravilo"   -> renderRaviloConfig(container, scope)
             path == "/settings" -> renderSettings(container, scope, query)
             path.startsWith("/metadata") -> renderMetadata(container, scope, query["tab"] ?: "studios")
             else -> renderDashboard(container, scope)
