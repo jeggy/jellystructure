@@ -19,6 +19,10 @@ expect object TokenStore {
 @Composable
 fun RaviloRoot() {
     val baseUrl = raviloBaseUrl()
-    val apiClient = createTvApiClient(baseUrl, TokenStore::get)
+    // Active token comes from MultiTokenStore so it switches per profile without recreating the client
+    val apiClient = createTvApiClient(baseUrl) {
+        dev.jellystructure.ravilo.ui.screens.MultiTokenStore.getActive()?.deviceToken
+            ?: TokenStore.get()
+    }
     RaviloApp(apiClient = apiClient)
 }

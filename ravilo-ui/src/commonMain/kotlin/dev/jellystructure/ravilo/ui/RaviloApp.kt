@@ -12,12 +12,16 @@ import dev.jellystructure.ravilo.ui.screens.ChannelScreen
 import dev.jellystructure.ravilo.ui.screens.ChannelStore
 import dev.jellystructure.ravilo.ui.screens.HomeScreen
 import dev.jellystructure.ravilo.ui.screens.HomeStore
+import dev.jellystructure.ravilo.ui.screens.LocalSession
 import dev.jellystructure.ravilo.ui.screens.MovieDetailScreen
 import dev.jellystructure.ravilo.ui.screens.MovieDetailStore
+import dev.jellystructure.ravilo.ui.screens.MultiTokenStore
 import dev.jellystructure.ravilo.ui.screens.PairingScreen
 import dev.jellystructure.ravilo.ui.screens.PairingStore
 import dev.jellystructure.ravilo.ui.screens.PlayerScreen
 import dev.jellystructure.ravilo.ui.screens.PlayerStore
+import dev.jellystructure.ravilo.ui.screens.ProfilePickerScreen
+import dev.jellystructure.ravilo.ui.screens.ProfilePickerStore
 import dev.jellystructure.ravilo.ui.screens.SearchScreen
 import dev.jellystructure.ravilo.ui.screens.SearchStore
 import dev.jellystructure.ravilo.ui.screens.SeriesDetailScreen
@@ -34,6 +38,7 @@ import dev.jellystructure.shared.tv.TvApiClient
 
 private sealed class Dest {
     data object Pairing : Dest()
+    data object ProfilePicker : Dest()
     data class Home(val displayName: String) : Dest()
     data class ChannelView(val channel: Channel, val displayName: String) : Dest()
     data class Browse(val kind: BrowseKind, val displayName: String) : Dest()
@@ -55,7 +60,19 @@ private sealed class Dest {
 @Composable
 fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "") {
     RaviloTheme {
-        var stack by remember { mutableStateOf(listOf<Dest>(Dest.Pairing)) }
+        // Determine starting screen based on cached sessions
+        val initialDest = remember {
+            val sessions = MultiTokenStore.getAll()
+            when {
+                sessions.isEmpty() -> Dest.Pairing
+                sessions.size == 1 -> {
+                    MultiTokenStore.setActive(sessions.first().userId)
+                    Dest.Home(sessions.first().displayName)
+                }
+                else -> Dest.ProfilePicker
+            }
+        }
+        var stack by remember { mutableStateOf(listOf<Dest>(initialDest)) }
 
         fun push(dest: Dest) { stack = stack + dest }
         fun pop() { if (stack.size > 1) stack = stack.dropLast(1) }
@@ -63,9 +80,19 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "") {
         val dest = stack.last()
 
         when (dest) {
+            is Dest.ProfilePicker -> {
+                val store = remember { ProfilePickerStore(apiClient) }
+                ProfilePickerScreen(
+                    store = store,
+                    apiClient = apiClient,
+                    onProfileSelected = { session -> push(Dest.Home(session.displayName)) },
+                )
+            }
+
             is Dest.Pairing -> {
                 val store = remember { PairingStore(apiClient) }
                 PairingScreen(store = store, onPaired = {
+                    // After first pairing, cache the token in MultiTokenStore is handled in PairingStore
                     push(Dest.Home(displayName = ""))
                 })
             }

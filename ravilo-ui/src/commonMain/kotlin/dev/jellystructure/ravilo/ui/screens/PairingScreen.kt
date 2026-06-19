@@ -24,6 +24,9 @@ import dev.jellystructure.ravilo.ui.theme.RaviloTheme
 import dev.jellystructure.shared.tv.PairingChallenge
 import dev.jellystructure.shared.tv.TvApiClient
 import kotlinx.datetime.Clock
+import dev.jellystructure.ravilo.ui.TokenStore
+import dev.jellystructure.ravilo.ui.screens.LocalSession
+import dev.jellystructure.ravilo.ui.screens.MultiTokenStore
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -74,6 +77,14 @@ class PairingStore(private val apiClient: TvApiClient) {
             }
             val result = runCatching { apiClient.pollPairing(pollToken) }.getOrElse { null }
             if (result != null) {
+                // Persist token so the session survives app restart
+                TokenStore.set(result.deviceToken)
+                MultiTokenStore.add(LocalSession(
+                    userId = result.session.userId,
+                    displayName = result.session.displayName,
+                    deviceToken = result.deviceToken,
+                    isAdmin = result.session.isAdmin,
+                ))
                 _state.value = PairingState.Approved(result.session.displayName)
                 return
             }

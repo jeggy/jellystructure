@@ -25,6 +25,7 @@ import io.ktor.http.HttpStatusCode
 import io.ktor.server.request.receive
 import io.ktor.server.response.respond
 import io.ktor.server.routing.Route
+import io.ktor.server.routing.delete
 import io.ktor.server.routing.get
 import io.ktor.server.routing.post
 import io.ktor.server.routing.put
@@ -33,7 +34,11 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 @Serializable
-private data class PollRequest(@SerialName("poll_token") val pollToken: String)
+private data class PollRequest(
+    @SerialName("poll_token") val pollToken: String,
+    @SerialName("device_id") val deviceId: String? = null,
+)
+
 
 @Serializable
 private data class ApproveRequest(
@@ -72,7 +77,7 @@ fun Route.tvRoutes(
 
         post("/poll") {
             val req = call.receive<PollRequest>()
-            val result = deviceService.pollPairing(req.pollToken)
+            val result = deviceService.pollPairing(req.pollToken, req.deviceId)
             if (result == null) {
                 call.respond(HttpStatusCode.Accepted, mapOf("status" to "pending"))
                 return@post
@@ -151,6 +156,24 @@ fun Route.tvRoutes(
             deviceService.unpair(device.deviceToken)
             call.respond(mapOf("status" to "unpaired"))
         }
+    }
+
+    // ── Multi-user sessions ──────────────────────────────────────────────────
+    get("/tv/sessions") {
+        val device = call.attributes[DeviceKey]
+        val sessions = deviceService.listSessions(device.deviceId).map { d ->
+            TvSession(d.deviceId, d.jellyfinUserId, d.jellyfinUsername, d.isAdmin)
+        }
+        call.respond(sessions)
+    }
+
+    delete("/tv/sessions/{userId}") {
+        val device = call.attributes[DeviceKey]
+        val userId = call.parameters["userId"] ?: run {
+            call.respond(HttpStatusCode.BadRequest, mapOf("error" to "userId required")); return@delete
+        }
+        deviceService.removeSession(device.deviceId, userId)
+        call.respond(mapOf("status" to "removed"))
     }
 
     // ── Home feed ────────────────────────────────────────────────────────────

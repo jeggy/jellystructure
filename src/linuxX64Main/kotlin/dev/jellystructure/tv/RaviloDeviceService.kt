@@ -62,8 +62,9 @@ class RaviloDeviceService(private val db: JellystructureDb) {
         return db.raviloPairingQueries.getByCode(code, now).executeAsOneOrNull()?.approved == 1L
     }
 
-    /** Returns (DeviceData, deviceToken) once the challenge is approved, null while pending. */
-    fun pollPairing(pollToken: String): Pair<DeviceData, String>? {
+    /** Returns (DeviceData, deviceToken) once the challenge is approved, null while pending.
+     *  [existingDeviceId] lets an already-paired device add a second user without changing its id. */
+    fun pollPairing(pollToken: String, existingDeviceId: String? = null): Pair<DeviceData, String>? {
         val row = db.raviloPairingQueries.getByPollToken(pollToken, nowMs()).executeAsOneOrNull()
             ?: return null
         if (row.approved == 0L) return null
@@ -71,7 +72,7 @@ class RaviloDeviceService(private val db: JellystructureDb) {
         val username = row.jellyfin_username ?: return null
         val userToken = row.jellyfin_user_token ?: return null
 
-        val deviceId = generateSecureToken()
+        val deviceId = existingDeviceId ?: generateSecureToken()
         val deviceToken = generateSecureToken()
         val now = nowMs()
         db.raviloDeviceQueries.insertDevice(
@@ -115,6 +116,24 @@ class RaviloDeviceService(private val db: JellystructureDb) {
 
     fun unpair(deviceToken: String) {
         db.raviloDeviceQueries.deleteByToken(deviceToken)
+    }
+
+    /** Lists all users currently signed in on [deviceId]. */
+    fun listSessions(deviceId: String): List<DeviceData> =
+        db.raviloDeviceQueries.getByDevice(deviceId).executeAsList().map { row ->
+            DeviceData(
+                deviceId = row.device_id,
+                deviceToken = row.device_token,
+                jellyfinUserId = row.jellyfin_user_id,
+                jellyfinUsername = row.jellyfin_username,
+                jellyfinUserToken = row.jellyfin_user_token,
+                isAdmin = row.is_admin == 1L,
+            )
+        }
+
+    /** Removes a specific user's session from [deviceId] without affecting others. */
+    fun removeSession(deviceId: String, jellyfinUserId: String) {
+        db.raviloDeviceQueries.deleteByDeviceAndUser(device_id = deviceId, jellyfin_user_id = jellyfinUserId)
     }
 
     @OptIn(ExperimentalForeignApi::class)

@@ -49,6 +49,31 @@ class TvApiClient(
         }.assertSuccess()
     }
 
+    /** R18: poll with optional device_id so a second pairing reuses the existing device slot. */
+    suspend fun pollPairingWithDevice(pollToken: String, deviceId: String?): PairResult? {
+        val body = if (deviceId != null)
+            """{"poll_token":${pollToken.jsonStr()},"device_id":${deviceId.jsonStr()}}"""
+        else
+            """{"poll_token":${pollToken.jsonStr()}}"""
+        val r = client.post("$baseUrl/api/tv/pair/poll") { jsonBody(body) }
+        if (r.status == io.ktor.http.HttpStatusCode.Accepted) return null
+        r.assertSuccess()
+        return json.decodeFromString<PairResult>(r.bodyAsText())
+    }
+
+    /** R18: list all signed-in users on this device. */
+    suspend fun getSessions(): List<TvSession> {
+        val r = client.get("$baseUrl/api/tv/sessions") { auth() }
+        r.assertSuccess()
+        return json.decodeFromString<List<TvSession>>(r.bodyAsText())
+    }
+
+    /** R18: remove one user's session from this device. */
+    suspend fun removeSession(userId: String) {
+        val r = client.delete("$baseUrl/api/tv/sessions/$userId") { auth() }
+        r.assertSuccess()
+    }
+
     // ─── Feed ────────────────────────────────────────────────────────────────
 
     suspend fun getHome(): HomeFeed {

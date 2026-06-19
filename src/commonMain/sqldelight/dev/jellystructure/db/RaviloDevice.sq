@@ -1,5 +1,6 @@
+-- One row per (device, user) pair; one device may have multiple signed-in users (R18).
 CREATE TABLE ravilo_device (
-    device_id TEXT NOT NULL PRIMARY KEY,
+    device_id TEXT NOT NULL,
     jellyfin_user_id TEXT NOT NULL,
     jellyfin_username TEXT NOT NULL,
     jellyfin_user_token TEXT NOT NULL,
@@ -7,18 +8,28 @@ CREATE TABLE ravilo_device (
     device_token TEXT NOT NULL UNIQUE,
     display_name TEXT NOT NULL DEFAULT '',
     created_at INTEGER NOT NULL,
-    last_seen INTEGER NOT NULL
+    last_seen INTEGER NOT NULL,
+    PRIMARY KEY (device_id, jellyfin_user_id)
 );
 
 insertDevice:
-INSERT INTO ravilo_device(device_id, jellyfin_user_id, jellyfin_username, jellyfin_user_token, is_admin, device_token, display_name, created_at, last_seen)
+INSERT OR REPLACE INTO ravilo_device(device_id, jellyfin_user_id, jellyfin_username, jellyfin_user_token, is_admin, device_token, display_name, created_at, last_seen)
 VALUES (:device_id, :jellyfin_user_id, :jellyfin_username, :jellyfin_user_token, :is_admin, :device_token, :display_name, :created_at, :last_seen);
 
 getByToken:
 SELECT * FROM ravilo_device WHERE device_token = :device_token;
+
+getByDevice:
+SELECT * FROM ravilo_device WHERE device_id = :device_id ORDER BY last_seen DESC;
+
+getByDeviceAndUser:
+SELECT * FROM ravilo_device WHERE device_id = :device_id AND jellyfin_user_id = :jellyfin_user_id;
 
 updateLastSeen:
 UPDATE ravilo_device SET last_seen = :last_seen WHERE device_token = :device_token;
 
 deleteByToken:
 DELETE FROM ravilo_device WHERE device_token = :device_token;
+
+deleteByDeviceAndUser:
+DELETE FROM ravilo_device WHERE device_id = :device_id AND jellyfin_user_id = :jellyfin_user_id;
