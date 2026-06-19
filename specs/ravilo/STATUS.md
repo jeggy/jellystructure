@@ -12,8 +12,8 @@ _Last updated: 2026-06-19_
 
 ## Current focus
 
-**Specs drafted; nothing implemented yet.** The full phase set R01–R17 is planned (see
-[`requirements/README.md`](requirements/README.md)). Recommended start order:
+**R01, R02, R03 done.** R04 is next (per-user RaviloConfig store). See
+[`requirements/README.md`](requirements/README.md) for the full phase index.
 
 1. **R01** `:shared` (DTOs + `TvApiClient`) → **R02** Compose-MP scaffolding (Android TV + web canvas,
    one shared focus screen).
