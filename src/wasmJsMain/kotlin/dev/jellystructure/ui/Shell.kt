@@ -113,6 +113,8 @@ fun renderShell(user: UserProfile) {
     // Inject ambient dock and triage dock into body
     injectDock(body as HTMLElement)
     injectTriageDock(body)
+    injectCommandPalette(body)
+    wireGlobalKeyBindings()
 
     MainScope().launch {
         // Triage badge count + dock
@@ -156,6 +158,147 @@ fun renderShell(user: UserProfile) {
         // Always connect dock WS to catch scans started from any page
         connectDockSocket()
     }
+}
+
+private data class PaletteCmd(val label: String, val detail: String = "", val action: () -> Unit)
+
+private fun buildPaletteCommands(): List<PaletteCmd> = listOf(
+    PaletteCmd("Go to Library", "Browse all media") { App.navigate("/library") },
+    PaletteCmd("Go to Settings", "Connections, scan & metadata options") { App.navigate("/settings") },
+    PaletteCmd("Go to Activity", "Scan log and workers") { App.navigate("/activity") },
+    PaletteCmd("Go to Metadata", "Studios, networks, genres & tags") { App.navigate("/metadata") },
+    PaletteCmd("Go to Triage queue", "Items needing attention") { App.navigate("/triage") },
+    PaletteCmd("Go to Dashboard", "Overview and stats") { App.navigate("/") },
+    PaletteCmd("Start full scan", "Re-scan all Jellyfin items") {
+        MainScope().launch { MediaApi.startScan() }
+    },
+    PaletteCmd("Triage: next item", "n key") {
+        if (triageDockItems.isNotEmpty()) {
+            triageDockIndex = (triageDockIndex + 1) % triageDockItems.size
+            updateTriageDock()
+            navigateToTriageItem(triageDockItems[triageDockIndex])
+        }
+    },
+    PaletteCmd("Triage: previous item", "p key") {
+        if (triageDockItems.isNotEmpty()) {
+            triageDockIndex = (triageDockIndex - 1 + triageDockItems.size) % triageDockItems.size
+            updateTriageDock()
+            navigateToTriageItem(triageDockItems[triageDockIndex])
+        }
+    },
+)
+
+private fun injectCommandPalette(body: HTMLElement) {
+    val overlay = document.createElement("div") as HTMLElement
+    overlay.id = "cmd-palette-overlay"
+    overlay.setAttribute("style", "display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9000;align-items:flex-start;justify-content:center;padding-top:100px;")
+    overlay.innerHTML = """
+        <div style="background:var(--fill);border:1px solid var(--line-2);border-radius:var(--radius);width:100%;max-width:540px;box-shadow:var(--shadow);overflow:hidden;">
+          <div style="display:flex;align-items:center;gap:8px;padding:12px 16px;border-bottom:1px solid var(--line);">
+            <span style="color:var(--ink-soft);font-size:.9rem;">⌘</span>
+            <input id="cmd-palette-input" autocomplete="off" spellcheck="false" placeholder="Search commands…"
+              style="flex:1;border:none;outline:none;background:transparent;font-size:.95rem;color:var(--ink);">
+          </div>
+          <div id="cmd-palette-list" style="max-height:320px;overflow-y:auto;padding:6px 0;"></div>
+        </div>"""
+    body.appendChild(overlay)
+
+    overlay.addEventListener("click") { e ->
+        if ((e.target as? HTMLElement) == overlay) hidePalette()
+    }
+}
+
+private fun hidePalette() {
+    val overlay = document.getElementById("cmd-palette-overlay") as? HTMLElement ?: return
+    overlay.style.display = "none"
+    (document.getElementById("cmd-palette-input") as? HTMLInputElement)?.value = ""
+}
+
+private fun showPalette() {
+    val overlay = document.getElementById("cmd-palette-overlay") as? HTMLElement ?: return
+    overlay.style.display = "flex"
+    val input = document.getElementById("cmd-palette-input") as? HTMLInputElement ?: return
+    input.focus()
+    renderPaletteList("")
+    input.oninput = { renderPaletteList(input.value); null }
+    input.onkeydown = { e ->
+        val key = (e as? org.w3c.dom.events.KeyboardEvent)?.key
+        if (key == "Escape") hidePalette()
+        if (key == "Enter") {
+            val first = document.querySelector("#cmd-palette-list .palette-cmd") as? HTMLElement
+            first?.click()
+        }
+        null
+    }
+}
+
+private fun renderPaletteList(query: String) {
+    val listEl = document.getElementById("cmd-palette-list") as? HTMLElement ?: return
+    val cmds = buildPaletteCommands()
+    val filtered = if (query.isBlank()) cmds else cmds.filter {
+        it.label.contains(query, ignoreCase = true) || it.detail.contains(query, ignoreCase = true)
+    }
+    if (filtered.isEmpty()) {
+        listEl.innerHTML = """<div style="padding:12px 16px;color:var(--ink-soft);font-size:.88rem;">No commands match</div>"""
+        return
+    }
+    listEl.innerHTML = filtered.joinToString("") { cmd ->
+        """<div class="palette-cmd" style="display:flex;flex-direction:column;padding:8px 16px;cursor:pointer;gap:1px;"
+               onmouseover="this.style.background='var(--fill-2)'" onmouseout="this.style.background=''">
+             <span style="font-size:.9rem;font-weight:500;">${cmd.label.esc()}</span>
+             ${if (cmd.detail.isNotBlank()) """<span style="font-size:.78rem;color:var(--ink-soft);">${cmd.detail.esc()}</span>""" else ""}
+           </div>"""
+    }
+    val rows = listEl.querySelectorAll(".palette-cmd")
+    filtered.forEachIndexed { i, cmd ->
+        (rows.item(i) as? HTMLElement)?.addEventListener("click") {
+            hidePalette()
+            cmd.action()
+        }
+    }
+}
+
+private fun wireGlobalKeyBindings() {
+    document.addEventListener("keydown") { e ->
+        val kev = e as? org.w3c.dom.events.KeyboardEvent ?: return@addEventListener
+        val target = e.target as? HTMLElement
+        val inInput = target?.tagName in setOf("INPUT", "TEXTAREA") || target?.isContentEditable == true
+        // ⌘K / Ctrl+K — open command palette
+        if (kev.key == "k" && (kev.ctrlKey || kev.metaKey)) {
+            e.preventDefault()
+            val overlay = document.getElementById("cmd-palette-overlay") as? HTMLElement
+            if (overlay?.style?.display == "none" || overlay?.style?.display == "") showPalette() else hidePalette()
+            return@addEventListener
+        }
+        if (inInput) return@addEventListener
+        // Triage dock keyboard shortcuts
+        when (kev.key) {
+            "n" -> {
+                if (triageDockItems.isNotEmpty()) {
+                    triageDockIndex = (triageDockIndex + 1) % triageDockItems.size
+                    updateTriageDock()
+                    navigateToTriageItem(triageDockItems[triageDockIndex])
+                }
+            }
+            "p" -> {
+                if (triageDockItems.isNotEmpty()) {
+                    triageDockIndex = (triageDockIndex - 1 + triageDockItems.size) % triageDockItems.size
+                    updateTriageDock()
+                    navigateToTriageItem(triageDockItems[triageDockIndex])
+                }
+            }
+            "o" -> {
+                if (triageDockItems.isNotEmpty()) {
+                    navigateToTriageItem(triageDockItems[triageDockIndex])
+                }
+            }
+        }
+    }
+}
+
+private fun navigateToTriageItem(item: dev.jellystructure.api.TriageItem) {
+    val tab = if (item.kind == "tv") "episodes" else "overview"
+    dev.jellystructure.Router.navigate("/media/${item.mediaId}", mapOf("tab" to tab))
 }
 
 private fun injectDock(body: HTMLElement) {
@@ -245,11 +388,6 @@ private fun injectTriageDock(body: HTMLElement) {
         updateTriageDock()
         navigateToTriageItem(triageDockItems[triageDockIndex])
     }
-}
-
-private fun navigateToTriageItem(item: dev.jellystructure.api.TriageItem) {
-    val tab = if (item.kind == "tv") "episodes" else "overview"
-    dev.jellystructure.Router.navigate("/media/${item.mediaId}", mapOf("tab" to tab))
 }
 
 internal fun updateTriageDock() {
