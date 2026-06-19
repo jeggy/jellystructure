@@ -8,21 +8,51 @@ Ravilo is a sibling product **inside the jellystructure repo** — an Android TV
 canvas) streaming front-end built from one **Compose Multiplatform** codebase, talking only to the
 jellystructure backend.
 
-_Last updated: 2026-06-19_
+_Last updated: 2026-06-20_
 
 ## Current focus
 
-**R01–R19 all done.** App is running end-to-end on Android TV.
+**R01–R19 all done.** App running end-to-end on real Android TV hardware; first hardware-testing
+pass completed and the following gaps/bugs found and fixed:
 
-Recent completions (this session):
-- **R15 additions** — Server URL setup screen (first-run, native Android TV keyboard via `TextField`),
-  Android manifest `INTERNET` permission + `usesCleartextTraffic`, "Change server" escape hatch on
-  pairing error/expired states (focusable Retry + Change server buttons).
-- **R16 addition** — "Pair a TV" card on the jellystructure Ravilo config page (`POST
-  /api/tv/pair/approve` via browser session; code input + Pair button + inline feedback).
+### Session 2026-06-20 — hardware-test fixes
 
-Next steps (post-R19, no spec yet):
-- End-to-end pairing verification with a real jellystructure instance
+**Navigation / focus (R09/R10/R12/R13 gaps):**
+- **AppBar is now D-pad focusable.** Nav items (Home / Movies / Series / My List / Search) each have
+  `dpadFocusable`; D-pad UP from the hero carousel enters the bar, LEFT/RIGHT steps between items,
+  OK navigates to the corresponding screen. `onNavSelect` wired in `RaviloApp` to push
+  `Dest.Browse(BrowseKind.MOVIES/SERIES/MY_LIST)` or `Dest.Search`.
+- **HeroCarousel** gained an `onUp` callback so pressing UP from the hero reaches the AppBar.
+- **SearchScreen / OnScreenKeyboard** now requests focus on its first key on mount (was: keyboard
+  rendered but no key focused so D-pad had nowhere to go). Also fixed per-key `focused` state that
+  was stuck `true` after first focus — now derived from grid-level `focusRow/focusCol`.
+- **MovieDetailScreen / SeriesDetailScreen** guard DOWN from the Play row against empty
+  cast/episodes/related lists so focus is no longer silently lost.
+
+**Android TV keyboard / IME (R15 gap):**
+- `ServerSetupScreen` `TextField` now calls `LocalSoftwareKeyboardController.show()` on
+  `onFocusChanged` so the native IME fires with a properly-populated `EditorInfo` (was: `inputType=NULL`,
+  keyboard appeared and immediately hid).
+- `android:windowSoftInputMode="adjustPan"` added to `<activity>` so the layout does not reflow
+  when the IME appears (layout reflow was causing an immediate `HIDE_UNSPECIFIED_WINDOW` hide).
+
+**Image loading (deferred from R09 "Player/image real impls — later"):**
+- Coil 3 (`coil-compose` + `coil-network-ktor3`) added as `commonMain` dependency.
+- The `expect/actual` `RemoteImage` stubs replaced with a real `AsyncImage` (Coil 3 is KMP-native;
+  no per-platform actual needed). Posters, backdrops, cast circles, channel logos, episode stills
+  all load from Jellyfin.
+
+**Screen transitions (polish):**
+- `AnimatedContent` (200 ms fadeIn / 150 ms fadeOut) wraps the `when(dest)` dispatch in
+  `RaviloApp` so screen pushes/pops crossfade rather than hard-cutting.
+
+**ravilo-web build (R17 gap):**
+- `ravilo-web/webpack.config.d/skiko.js` — `NormalModuleReplacementPlugin` redirects
+  `'./skiko.mjs'` imports to the Skiko npm package dir (was: `Module not found` compile error);
+  `devServer.static` entry ensures `skiko.wasm` is served at runtime.
+
+### Next steps (no spec yet)
+- End-to-end playback verification with a real Jellyfin + jellystructure instance
 - R14 player bring-up testing (ExoPlayer/Media3 on real hardware)
 - Performance & polish pass before any public release
 
