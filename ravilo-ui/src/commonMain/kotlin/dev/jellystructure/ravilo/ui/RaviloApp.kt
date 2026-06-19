@@ -1,5 +1,10 @@
 package dev.jellystructure.ravilo.ui
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -101,7 +106,13 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
 
         val dest = stack.last()
 
-        when (dest) {
+        AnimatedContent(
+            targetState = dest,
+            transitionSpec = {
+                fadeIn(tween(200)) togetherWith fadeOut(tween(150))
+            },
+            contentKey = { it::class },
+        ) { dest -> when (dest) {
             is Dest.ProfilePicker -> {
                 val store = remember { ProfilePickerStore(apiClient) }
                 ProfilePickerScreen(
@@ -130,6 +141,15 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                 val store = remember { HomeStore(apiClient) }
                 HomeScreen(
                     store = store,
+                    onNavSelect = { idx ->
+                        when (idx) {
+                            1 -> push(Dest.Browse(BrowseKind.MOVIES, dest.displayName))
+                            2 -> push(Dest.Browse(BrowseKind.SERIES, dest.displayName))
+                            3 -> push(Dest.Browse(BrowseKind.MY_LIST, dest.displayName))
+                            4 -> push(Dest.Search(dest.displayName))
+                            else -> {} // 0 = already home
+                        }
+                    },
                     onItemSelect = { card ->
                         when {
                             card.kind == MediaKind.SERIES -> push(Dest.SeriesDetail(card.id, dest.displayName))
@@ -137,7 +157,7 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                         }
                     },
                     onChannelSelect = { ch -> push(Dest.ChannelView(ch, dest.displayName)) },
-                    onSeeAll = { kind -> push(Dest.Browse(BrowseKind.ALL, dest.displayName)) },
+                    onSeeAll = { push(Dest.Browse(BrowseKind.ALL, dest.displayName)) },
                 )
             }
 
@@ -241,7 +261,7 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                     onBack = { pop() },
                 )
             }
-        }
+        } } // when / AnimatedContent
     } // WithLocale
     } // RaviloTheme
 }

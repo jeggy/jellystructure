@@ -85,7 +85,8 @@ private fun HomeLoaded(
     // Focus section index: 0 = hero, 1 = channel rail, 2+ = content rows
     var focusSection by remember { mutableIntStateOf(0) }
 
-    // Hero focus
+    // AppBar entry + hero focus
+    val navBarFR = remember { FocusRequester() }
     val heroFR = remember { FocusRequester() }
 
     // Channel rail
@@ -119,6 +120,7 @@ private fun HomeLoaded(
                     items = feed.heroes.map { it.item },
                     focusRequester = heroFR,
                     onSelect = { onItemSelect(it) },
+                    onUp = { navBarFR.requestFocus() },
                     onDown = {
                         focusSection = if (feed.channels.isNotEmpty()) 1 else 2
                     },
@@ -198,7 +200,12 @@ private fun HomeLoaded(
     }
 
     // AppBar overlay (rendered on top so it's transparent over the hero)
-    AppBar(activeNav = activeNav, onNavSelect = onNavSelect)
+    AppBar(
+        activeNav = activeNav,
+        onNavSelect = onNavSelect,
+        navFR = navBarFR,
+        onDown = { heroFR.requestFocus() },
+    )
 }
 
 @Composable

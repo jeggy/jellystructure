@@ -42,6 +42,7 @@ fun HeroCarousel(
     items: List<MediaCard>,
     focusRequester: FocusRequester,
     onSelect: (MediaCard) -> Unit = {},
+    onUp: (() -> Unit)? = null,
     onDown: (() -> Unit)? = null,
 ) {
     val colors = RaviloTheme.colors
@@ -61,6 +62,7 @@ fun HeroCarousel(
                 onFocused = { isFocused = 1 },
                 onLeft  = { if (activeIndex > 0) activeIndex-- },
                 onRight = { if (activeIndex < items.lastIndex) activeIndex++ },
+                onUp    = onUp,
                 onDown  = onDown,
                 onSelect = { onSelect(active) },
             ),
