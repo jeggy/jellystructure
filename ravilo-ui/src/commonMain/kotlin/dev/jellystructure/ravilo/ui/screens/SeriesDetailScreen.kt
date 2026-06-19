@@ -163,8 +163,11 @@ private fun SeriesDetailLoaded(
                     style = ButtonStyle.PRIMARY,
                     onRight = { myListFR.requestFocus() },
                     onDown = {
-                        if (detail.seasons.size > 1) seasonFRs[focusedSeasonIdx].requestFocus()
-                        else episodeFR.requestFocus()
+                        when {
+                            detail.seasons.size > 1 -> seasonFRs[focusedSeasonIdx].requestFocus()
+                            episodes.isNotEmpty()   -> episodeFR.requestFocus()
+                            detail.related.isNotEmpty() -> relatedFR.requestFocus()
+                        }
                     },
                     onSelect = {
                         val epId = resumeEpId ?: episodes.firstOrNull()?.id
@@ -177,8 +180,11 @@ private fun SeriesDetailLoaded(
                     style = ButtonStyle.GHOST,
                     onLeft = { playFR.requestFocus() },
                     onDown = {
-                        if (detail.seasons.size > 1) seasonFRs[focusedSeasonIdx].requestFocus()
-                        else episodeFR.requestFocus()
+                        when {
+                            detail.seasons.size > 1 -> seasonFRs[focusedSeasonIdx].requestFocus()
+                            episodes.isNotEmpty()   -> episodeFR.requestFocus()
+                            detail.related.isNotEmpty() -> relatedFR.requestFocus()
+                        }
                     },
                 )
             }

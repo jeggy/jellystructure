@@ -1,5 +1,7 @@
 package dev.jellystructure.ravilo.ui.components
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -7,34 +9,53 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import dev.jellystructure.ravilo.ui.focus.dpadFocusable
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
 import kotlinx.coroutines.delay
 import kotlinx.datetime.Clock
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
 
+/**
+ * navFR — entry-point FocusRequester; callers focus this to bring focus into the bar.
+ *          It is used as the first nav item's focusRequester so that requesting it
+ *          directly lands on the first item.
+ * onDown — called when D-pad DOWN is pressed from any nav item; typically returns
+ *           focus to the screen's hero/content area.
+ */
 @Composable
 fun AppBar(
     navItems: List<String> = listOf("Home", "Movies", "Series", "My List", "Search"),
     activeNav: Int = 0,
     onNavSelect: (Int) -> Unit = {},
+    navFR: FocusRequester = remember { FocusRequester() },
+    onDown: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val colors = RaviloTheme.colors
+
+    // First item uses navFR directly so callers can focus the bar with one requester.
+    val otherFRs = remember(navItems.size) { List(maxOf(navItems.size - 1, 0)) { FocusRequester() } }
+    val allFRs: List<FocusRequester> = remember(navFR, otherFRs) { listOf(navFR) + otherFRs }
+    var focusedIdx by remember { mutableIntStateOf(-1) }
 
     Box(
         modifier = modifier
@@ -52,7 +73,6 @@ fun AppBar(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(32.dp),
         ) {
-            // Brand wordmark
             Text(
                 text = "Ravilo",
                 color = colors.accent,
@@ -60,18 +80,38 @@ fun AppBar(
                 fontWeight = FontWeight.Bold,
                 letterSpacing = 2.sp,
             )
-            // Nav items
+
             navItems.forEachIndexed { i, label ->
+                val isFocused = focusedIdx == i
+                val textColor by animateColorAsState(
+                    targetValue = if (isFocused || i == activeNav) colors.text else colors.textSecondary,
+                    animationSpec = tween(120),
+                )
                 Text(
                     text = label,
-                    color = if (i == activeNav) colors.text else colors.textSecondary,
+                    color = textColor,
                     fontSize = 15.sp,
-                    fontWeight = if (i == activeNav) FontWeight.SemiBold else FontWeight.Normal,
+                    fontWeight = if (isFocused || i == activeNav) FontWeight.SemiBold else FontWeight.Normal,
+                    modifier = Modifier
+                        .onFocusChanged { focusedIdx = if (it.isFocused) i else if (focusedIdx == i) -1 else focusedIdx }
+                        .then(
+                            if (isFocused) Modifier.background(
+                                colors.surfaceVariant.copy(alpha = 0.55f), RoundedCornerShape(6.dp)
+                            ) else Modifier
+                        )
+                        .padding(horizontal = 10.dp, vertical = 4.dp)
+                        .dpadFocusable(
+                            focusRequester = allFRs[i],
+                            onFocused = { focusedIdx = i },
+                            onLeft   = { if (i > 0) allFRs[i - 1].requestFocus() },
+                            onRight  = { if (i < navItems.lastIndex) allFRs[i + 1].requestFocus() },
+                            onDown   = onDown,
+                            onSelect = { onNavSelect(i) },
+                        ),
                 )
             }
-            // Spacer
+
             Box(modifier = Modifier.weight(1f))
-            // 24-hour clock
             ClockDisplay()
         }
     }

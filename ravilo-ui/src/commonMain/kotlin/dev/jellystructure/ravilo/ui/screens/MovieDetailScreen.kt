@@ -137,7 +137,12 @@ private fun MovieDetailLoaded(
                     label = playLabel,
                     focusRequester = playFR,
                     style = ButtonStyle.PRIMARY,
-                    onDown = { if (detail.cast.isNotEmpty()) castFR.requestFocus() else relatedFR.requestFocus() },
+                    onDown = {
+                        when {
+                            detail.cast.isNotEmpty()    -> castFR.requestFocus()
+                            detail.related.isNotEmpty() -> relatedFR.requestFocus()
+                        }
+                    },
                     onRight = { myListFR.requestFocus() },
                     onSelect = { onPlay(detail.card) },
                 )
@@ -146,7 +151,12 @@ private fun MovieDetailLoaded(
                     focusRequester = myListFR,
                     style = ButtonStyle.GHOST,
                     onLeft = { playFR.requestFocus() },
-                    onDown = { if (detail.cast.isNotEmpty()) castFR.requestFocus() else relatedFR.requestFocus() },
+                    onDown = {
+                        when {
+                            detail.cast.isNotEmpty()    -> castFR.requestFocus()
+                            detail.related.isNotEmpty() -> relatedFR.requestFocus()
+                        }
+                    },
                 )
             }
         }

@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -19,6 +20,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -43,9 +45,13 @@ fun OnScreenKeyboard(
     var focusRow by remember { mutableIntStateOf(0) }
     var focusCol by remember { mutableIntStateOf(0) }
 
-    // Build a 2-D FocusRequester grid
     val grid = remember {
         ROWS.map { row -> List(row.size) { FocusRequester() } }
+    }
+
+    // Focus the first key immediately so the keyboard is usable on entry
+    LaunchedEffect(Unit) {
+        grid[0][0].requestFocus()
     }
 
     Column(
@@ -56,7 +62,8 @@ fun OnScreenKeyboard(
         ROWS.forEachIndexed { r, keys ->
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 keys.forEachIndexed { c, key ->
-                    var focused by remember { mutableStateOf(false) }
+                    // Derive focus from grid-level state so it resets when focus moves away
+                    val focused = focusRow == r && focusCol == c
 
                     Box(
                         modifier = Modifier
@@ -69,9 +76,10 @@ fun OnScreenKeyboard(
                                 if (focused) Modifier.border(2.dp, colors.focusRing, RoundedCornerShape(6.dp))
                                 else Modifier
                             )
+                            .onFocusChanged { if (it.isFocused) { focusRow = r; focusCol = c } }
                             .dpadFocusable(
                                 focusRequester = grid[r][c],
-                                onFocused = { focused = true; focusRow = r; focusCol = c },
+                                onFocused = {},
                                 onLeft  = { if (c > 0) grid[r][c - 1].requestFocus() },
                                 onRight = { if (c < keys.lastIndex) grid[r][c + 1].requestFocus() },
                                 onUp    = {
