@@ -440,6 +440,10 @@ object MediaApi {
         response.status.value in 200..299
     }.getOrDefault(false)
 
+    suspend fun getDrift(id: String): List<DriftField> = runCatching {
+        httpClient.get("/api/media/$id/drift").body<List<DriftField>>()
+    }.getOrDefault(emptyList())
+
     suspend fun tmdbSearch(id: String, query: String, year: Int? = null): List<TmdbMatchResult> = runCatching {
         httpClient.get("/api/media/$id/tmdb-search") {
             parameter("q", query)
@@ -447,6 +451,9 @@ object MediaApi {
         }.body<List<TmdbMatchResult>>()
     }.getOrDefault(emptyList())
 }
+
+@Serializable
+data class DriftField(val field: String, val inJellyfin: String, val inDb: String)
 
 @Serializable
 data class TmdbMatchResult(
