@@ -92,11 +92,13 @@ private fun loadTab(container: Element, scope: CoroutineScope, tab: String, sort
         when (tab) {
             "studios" -> {
                 val entries = MetadataApi.getStudios(sort)
-                content.innerHTML = if (entries == null) errorHtml() else renderEntryGrid(entries, "studio", "/library?studios=")
+                content.innerHTML = if (entries == null) errorHtml() else renderLogoGrid(entries, "studios", "/library?studios=")
+                if (entries != null) wireLogoFetch(container, scope, "studios")
             }
             "networks" -> {
                 val entries = MetadataApi.getNetworks(sort)
-                content.innerHTML = if (entries == null) errorHtml() else renderEntryGrid(entries, "network", "/library?networks=")
+                content.innerHTML = if (entries == null) errorHtml() else renderLogoGrid(entries, "networks", "/library?networks=")
+                if (entries != null) wireLogoFetch(container, scope, "networks")
             }
             "genres" -> {
                 val entries = MetadataApi.getGenres(sort)
@@ -111,15 +113,23 @@ private fun loadTab(container: Element, scope: CoroutineScope, tab: String, sort
     }
 }
 
-private fun renderEntryGrid(entries: List<MetadataEntry>, kind: String, linkPrefix: String): String {
-    if (entries.isEmpty()) return """<p class="muted tiny">No ${kind}s found. Run a scan to populate.</p>"""
+private fun renderLogoGrid(entries: List<MetadataEntry>, kind: String, linkPrefix: String): String {
+    val singularKind = if (kind == "studios") "studio" else "network"
+    if (entries.isEmpty()) return """<p class="muted tiny">No ${singularKind}s found. Run a scan to populate.</p>"""
+    val hasAny = entries.any { it.hasLogo }
+    val missingCount = entries.count { !it.hasLogo }
     return buildString {
-        append("""<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:16px">""")
+        append("""<div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">""")
+        append("""<span class="muted tiny">${entries.size} ${singularKind}s · $missingCount without logo</span>""")
+        append("""<span style="flex:1"></span>""")
+        append("""<button id="fetch-logos-btn" class="btn sm ghost" ${if (missingCount == 0) "disabled" else ""}>Fetch missing logos</button>""")
+        append("""<span id="fetch-logos-status" style="font-size:.8rem;color:var(--ink-soft)"></span>""")
+        append("</div>")
+        append("""<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:16px" data-logo-kind="$kind">""")
         for (e in entries) {
             val encoded = dev.jellystructure.encodeURIComponent(e.name)
-            val logoHtml = if (e.logoPath != null) {
-                val url = "https://image.tmdb.org/t/p/w300${e.logoPath}"
-                """<img src="$url" alt="${e.name}" style="max-width:80%;max-height:52px;object-fit:contain" loading="lazy">"""
+            val logoHtml = if (e.hasLogo) {
+                """<img src="/api/metadata/$kind/$encoded/artwork" alt="${e.name}" style="max-width:80%;max-height:52px;object-fit:contain" loading="lazy">"""
             } else {
                 """<span style="font-size:.78rem;font-weight:700;letter-spacing:.03em;text-align:center;color:var(--ink-soft);padding:0 4px;line-height:1.3">${e.name}</span>"""
             }
@@ -133,6 +143,27 @@ private fun renderEntryGrid(entries: List<MetadataEntry>, kind: String, linkPref
         }
         append("</div>")
         append("""<p id="metadata-filter-empty" class="muted tiny" style="display:none;margin-top:16px">No matches.</p>""")
+    }
+}
+
+private fun wireLogoFetch(container: Element, scope: CoroutineScope, kind: String) {
+    val content = container.querySelector("#metadata-content") as? HTMLElement ?: return
+    val btn = content.querySelector("#fetch-logos-btn") as? HTMLElement ?: return
+    val statusEl = content.querySelector("#fetch-logos-status") as? HTMLElement ?: return
+    btn.addEventListener("click") { _ ->
+        btn.setAttribute("disabled", "")
+        statusEl.textContent = "Fetching…"
+        scope.launch {
+            val result = MetadataApi.fetchLogoBatch(kind)
+            if (result != null) {
+                statusEl.textContent = "Done: ${result.fetched} fetched, ${result.skipped} already cached, ${result.failed} failed"
+                val sort = (container.querySelector("#metadata-sort") as? HTMLInputElement)?.value ?: "count"
+                loadTab(container, scope, kind, sort)
+            } else {
+                statusEl.textContent = "Failed — check server connection."
+                btn.removeAttribute("disabled")
+            }
+        }
     }
 }
 

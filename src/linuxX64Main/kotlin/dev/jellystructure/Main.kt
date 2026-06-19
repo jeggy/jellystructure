@@ -10,6 +10,7 @@ import dev.jellystructure.jobs.WsBroadcaster
 import dev.jellystructure.log.Logger
 import dev.jellystructure.media.ActivityLog
 import dev.jellystructure.media.ArtworkDownloader
+import dev.jellystructure.media.LogoDownloader
 import dev.jellystructure.media.MediaHistory
 import dev.jellystructure.media.MediaStore
 import dev.jellystructure.media.Scanner
@@ -113,13 +114,15 @@ fun main() = runBlocking {
     Logger.info("Serving frontend from $frontendDir")
 
     val mediaHistory = MediaHistory(db)
-    val jsTagStore = dev.jellystructure.media.JsTagStore(dbFile.substringBeforeLast('/') + "/js-tags.json")
+    val dataDir = dbFile.substringBeforeLast('/')
+    val jsTagStore = dev.jellystructure.media.JsTagStore("$dataDir/js-tags.json")
     jsTagStore.load()
+    val logoDownloader = LogoDownloader(dataDir, tmdbClient)
     val seedingGuard = SeedingGuard(QBittorrentClient())
     val shutdown = startServer(
         configStore, sessionService, jellyfinClient, mediaStore, scanner,
         artworkDownloader, scanTracker, folderWatcher, mediaHistory, activityLog, broadcaster,
-        frontendDir, port, scanDispatcher, effectiveScanThreads, jsTagStore, seedingGuard,
+        frontendDir, port, scanDispatcher, effectiveScanThreads, jsTagStore, seedingGuard, logoDownloader,
     )
 
     while (shutdownRequested.value == 0) {

@@ -8,16 +8,14 @@ _Last updated: 2026-06-18_
 
 ## Current focus
 
-**Planned backlog 31–39** — a batch of operator-ergonomics + trust features, each with a spec and an
+**Planned backlog 32–40** — a batch of operator-ergonomics + trust features, each with a spec and an
 approved design mockup in `design/app/`:
-- **31** studio/network logo artwork · **32** in-app TMDB match picker · **33** Jellyfin⇄NFO drift
-  detection · **34** undo/revert from history · **35** system health panel (real test-connections) ·
-  **36** per-library scan/push + scheduled scans + notifications · **37** surface the qBittorrent guard ·
-  **38** command palette ⌘K + attention-queue keyboard nav · **39** subtitle management ·
-  **40** configure qBittorrent in Settings (revises Phase 26 — guard is now opt-in via UI; when off,
-  cross-seed safety is not part of media management).
+- **32** in-app TMDB match picker · **33** Jellyfin⇄NFO drift detection · **34** undo/revert from
+  history · **35** system health panel (real test-connections) · **36** per-library scan/push +
+  scheduled scans + notifications · **37** surface the qBittorrent guard · **38** command palette ⌘K +
+  attention-queue keyboard nav · **39** subtitle management · **40** configure qBittorrent in Settings.
 
-Phases 0–30 complete. See [`requirements/README.md`](requirements/README.md) for the full index.
+Phases 0–31 complete. See [`requirements/README.md`](requirements/README.md) for the full index.
 
 ## Sibling product — Ravilo (Android TV + Web)
 
