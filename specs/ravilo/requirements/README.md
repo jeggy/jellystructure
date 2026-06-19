@@ -25,7 +25,7 @@ truth** for which Ravilo phases exist and whether each is done or planned. Ravil
 | R09 | ✓ Done | `:ravilo-ui` — **design system + focus engine** (Aurora/Midnight/Noir, components, shared D-pad/pointer model) + app bar | [R09](phase-R09-design-system-focus-engine.md) |
 | R10 | ✓ Done | `:ravilo-ui` — **Home** (hero carousel, channel rail, content rows) wired to `GET /api/tv/home` | [R10](phase-R10-home-screen.md) |
 | R11 | ✓ Done | `:ravilo-ui` — **Channel view + browse grids** (Movies/Series/My List, filters) | [R11](phase-R11-channel-and-browse-grids.md) |
-| R12 | □ Planned | `:ravilo-ui` — **Search** (on-screen keyboard + live results) | [R12](phase-R12-search-screen.md) |
+| R12 | ✓ Done | `:ravilo-ui` — **Search** (on-screen keyboard + live results) | [R12](phase-R12-search-screen.md) |
 | R13 | □ Planned | `:ravilo-ui` — **Movie & Series detail** (season picker, episode rail, watched/up-next/resume) | [R13](phase-R13-detail-screens.md) |
 | R14 | □ Planned | Player — `RaviloPlayer` `actual`s: **forked `jellyfin-androidtv` engine** (Android, in `:ravilo-player`, GPL) / browser video (web); resume, progress, binge next-up | [R14](phase-R14-player.md) |
 | R15 | □ Planned | On-device **Settings** + first-run **pairing UX** (skin picker, playback prefs; writes via `PUT /api/tv/settings`) | [R15](phase-R15-ondevice-settings-pairing.md) |
