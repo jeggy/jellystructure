@@ -641,7 +641,7 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
                         val panel = document.getElementById("tab-$id") as? HTMLElement
                         panel?.style?.display = if (id == tab) "block" else "none"
                     }
-                    if (tab == "history") scope.launch { loadHistory(item.id) }
+                    if (tab == "history") scope.launch { loadHistory(item.id, container, scope) }
                     if (tab == "artwork") scope.launch { loadArtworkStatus(item.id) }
                     // Update URL — don't add history entry for overview (default), do for others
                     val tabParam = if (tab == "overview") null else tab
@@ -653,7 +653,7 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
 
     scope.launch { loadArtworkStatus(item.id) }
     scope.launch { loadDrift(item.id) }
-    if (activeTab == "history") scope.launch { loadHistory(item.id) }
+    if (activeTab == "history") scope.launch { loadHistory(item.id, container, scope) }
 
     // Inject diff styles once per document lifetime
     injectDiffStyles()
@@ -1470,7 +1470,7 @@ private fun wireEpisodeEditing(item: MediaItem, container: Element, scope: Corou
     }
 }
 
-private suspend fun loadHistory(id: String) {
+private suspend fun loadHistory(id: String, container: Element? = null, scope: CoroutineScope? = null) {
     val listEl = document.getElementById("history-list") as? HTMLElement ?: return
     val entries = MediaApi.getHistory(id)
     if (entries.isEmpty()) {
@@ -1483,15 +1483,44 @@ private suspend fun loadHistory(id: String) {
             "artwork_fetch" -> "Artwork downloaded"
             "set_default" -> "Track default changed"
             "assign_language" -> "Language assigned"
+            "metadata_edit" -> "Metadata edited"
+            "set_tmdb_id" -> "TMDB ID changed"
+            "language_override" -> "Language override"
+            "revert" -> "Reverted"
             else -> entry.action
         }
-        """<div style="display:flex;gap:10px;padding:6px 0;border-bottom:1px solid var(--border);">
-             <span class="muted tiny" style="width:160px;flex-shrink:0;padding-top:1px;">${formatTimestamp(entry.timestamp.toDouble() * 1000.0)}</span>
-             <div>
+        val revertBtn = if (entry.revertable) {
+            """<button class="btn sm ghost history-revert-btn" data-entry-id="${entry.id.esc()}" style="font-size:.72rem;margin-left:8px;">Revert</button>"""
+        } else ""
+        """<div style="display:flex;gap:10px;padding:6px 0;border-bottom:1px solid var(--border);align-items:center;">
+             <span class="muted tiny" style="width:160px;flex-shrink:0;">${formatTimestamp(entry.timestamp.toDouble() * 1000.0)}</span>
+             <div style="flex:1;">
                <span class="chip" style="font-size:.72rem;">$actionLabel</span>
                <span class="muted tiny" style="margin-left:6px;">${entry.detail.esc()}</span>
              </div>
+             $revertBtn
            </div>"""
+    }
+    // Wire revert buttons if container + scope are available
+    if (container != null && scope != null) {
+        val btns = listEl.querySelectorAll(".history-revert-btn")
+        for (i in 0 until btns.length) {
+            val btn = btns.item(i) as? HTMLElement ?: continue
+            val entryId = btn.getAttribute("data-entry-id") ?: continue
+            btn.addEventListener("click") {
+                btn.setAttribute("disabled", "true")
+                btn.textContent = "Reverting…"
+                scope.launch {
+                    val updated = MediaApi.revertHistoryEntry(id, entryId)
+                    if (updated != null) {
+                        renderMediaDetail(container, scope, id, initialTab = "history")
+                    } else {
+                        btn.removeAttribute("disabled")
+                        btn.textContent = "Failed"
+                    }
+                }
+            }
+        }
     }
 }
 
