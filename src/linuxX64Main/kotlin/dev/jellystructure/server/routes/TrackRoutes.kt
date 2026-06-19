@@ -150,6 +150,48 @@ fun Route.trackRoutes(store: MediaStore, configStore: ConfigStore, jellyfinClien
             call.respond(mapOf("ok" to true))
         }
 
+        // POST /api/media/{id}/tracks/forced — toggle forced flag on a subtitle track (MKV only)
+        post("/tracks/forced") {
+            val id = call.parameters["id"]
+                ?: return@post call.respond(HttpStatusCode.BadRequest)
+            val item = store.resolve(id)
+                ?: return@post call.respond(HttpStatusCode.NotFound)
+
+            @Serializable data class SetForcedRequest(val specifier: String, val forced: Boolean)
+            val req = call.receive<SetForcedRequest>()
+            val targetTrack = item.tracks.firstOrNull { it.specifier == req.specifier }
+                ?: return@post call.respond(HttpStatusCode.NotFound, mapOf("error" to "track not found"))
+            if (targetTrack.kind != TrackKind.SUBTITLE) {
+                call.respond(HttpStatusCode.BadRequest, mapOf("error" to "forced flag only applies to subtitle tracks"))
+                return@post
+            }
+            val ext = item.path.substringAfterLast('.').lowercase()
+            if (ext != "mkv") {
+                call.respond(HttpStatusCode.BadRequest, mapOf("error" to "forced flag editing requires MKV container"))
+                return@post
+            }
+
+            when (val guard = seedingGuard.check(item.path, configStore.current)) {
+                is SeedingCheckResult.Blocked -> { call.respond(HttpStatusCode.Conflict, mapOf("error" to "File is seeded by '${guard.torrentName}'")); return@post }
+                is SeedingCheckResult.Unreachable -> { call.respond(HttpStatusCode.ServiceUnavailable, mapOf("error" to "qBittorrent unreachable: ${guard.reason}")); return@post }
+                else -> Unit
+            }
+
+            val sameType = item.tracks.filter { it.kind == TrackKind.SUBTITLE }
+            val forcedIdx = if (req.forced) targetTrack.streamIndex else -1
+            val ok = MkvpropeditRunner.setForced(item.path, forcedIdx, sameType.map { it.streamIndex })
+            if (!ok) {
+                call.respond(HttpStatusCode.InternalServerError, mapOf("error" to "mkvpropedit failed"))
+                return@post
+            }
+            val newTracks = FfprobeRunner.probe(item.path)
+            val newIssueCount = newTracks.count { (it.kind == TrackKind.AUDIO || it.kind == TrackKind.SUBTITLE) && it.language == null }
+            val updated = item.copy(tracks = newTracks, issueCount = newIssueCount)
+            store.updateOne(updated)
+            mediaHistory.record(id, "set_forced", "specifier=${req.specifier} forced=${req.forced}")
+            call.respond(mapOf("ok" to true))
+        }
+
         // POST /api/media/{id}/tracks/language — write a language tag to a single track
         post("/tracks/language") {
             val id = call.parameters["id"]

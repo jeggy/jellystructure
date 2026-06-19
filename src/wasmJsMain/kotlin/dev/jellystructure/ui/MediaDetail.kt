@@ -276,7 +276,7 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
            </div>"""
     } else ""
 
-    val tracksHtml = if (!isTvShow) buildTracksTable(item.tracks) else ""
+    val tracksHtml = if (!isTvShow) buildTracksTable(item.tracks, item.id, item.path) else ""
 
     // Embedded tracks summary for the overview tab (movies only — condensed read-only view)
     val embeddedTracksSummary = if (!isTvShow && item.tracks.any { it.kind == TrackKind.AUDIO || it.kind == TrackKind.SUBTITLE }) {
@@ -645,7 +645,11 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
                     }
                     if (tab == "history") scope.launch { loadHistory(item.id, container, scope) }
                     if (tab == "artwork") scope.launch { loadArtworkStatus(item.id) }
-                    if (tab == "tracks") scope.launch { loadSeedingStatus(item.id) }
+                    if (tab == "tracks") {
+                        scope.launch { loadSeedingStatus(item.id) }
+                        val tracksPanel = document.getElementById("tab-tracks") as? HTMLElement
+                        if (tracksPanel != null) wireForcedToggles(tracksPanel, item.id, scope)
+                    }
                     // Update URL — don't add history entry for overview (default), do for others
                     val tabParam = if (tab == "overview") null else tab
                     dev.jellystructure.Router.updateQuery(mapOf("tab" to tabParam), replace = false)
@@ -656,7 +660,11 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
 
     scope.launch { loadArtworkStatus(item.id) }
     scope.launch { loadDrift(item.id) }
-    if (activeTab == "tracks" && !isTvShow) scope.launch { loadSeedingStatus(item.id) }
+    if (activeTab == "tracks" && !isTvShow) {
+        scope.launch { loadSeedingStatus(item.id) }
+        val tracksPanel = document.getElementById("tab-tracks") as? HTMLElement
+        if (tracksPanel != null) wireForcedToggles(tracksPanel, item.id, scope)
+    }
     if (activeTab == "history") scope.launch { loadHistory(item.id, container, scope) }
 
     // Inject diff styles once per document lifetime
@@ -1762,9 +1770,10 @@ private fun showDetailMsg(msg: String, ok: Boolean) {
 
 private fun formatTimestamp(epochMs: Double): String = js("new Date(epochMs).toLocaleString()")
 
-private fun buildTracksTable(tracks: List<Track>): String {
+private fun buildTracksTable(tracks: List<Track>, mediaId: String = "", filePath: String = ""): String {
     val displayed = tracks.filter { it.kind != TrackKind.VIDEO && it.kind != TrackKind.DATA }
     if (displayed.isEmpty()) return """<span class="muted tiny">No audio or subtitle tracks found.</span>"""
+    val isMkv = filePath.endsWith(".mkv", ignoreCase = true)
 
     val rows = displayed.joinToString("") { track ->
         val langCell = if (track.language != null) {
@@ -1775,6 +1784,14 @@ private fun buildTracksTable(tracks: List<Track>): String {
         val defaultCell = if (track.default) """<span class="badge ok">default</span>""" else "—"
         val rowClass = if (track.language == null) """ class="attn"""" else ""
         val titleCell = track.title?.esc() ?: """<span class="muted">—</span>"""
+        val forcedCell = if (track.kind == TrackKind.SUBTITLE && isMkv && mediaId.isNotBlank()) {
+            val activeClass = if (track.forced) " ok" else ""
+            val label = if (track.forced) "forced" else "not forced"
+            """<button class="badge$activeClass" style="cursor:pointer;background:none;border:1px solid var(--line);font-size:.7rem;padding:1px 6px;"
+                 data-forced-toggle="${track.specifier.esc()}" data-forced="${track.forced}">$label</button>"""
+        } else {
+            if (track.forced) "yes" else "—"
+        }
         """<tr$rowClass>
              <td class="num">${track.specifier}</td>
              <td>${track.kind.name.lowercase()}</td>
@@ -1782,7 +1799,7 @@ private fun buildTracksTable(tracks: List<Track>): String {
              <td>$titleCell</td>
              <td class="num">${track.codec}</td>
              <td>$defaultCell</td>
-             <td>${if (track.forced) "yes" else "—"}</td>
+             <td>$forcedCell</td>
            </tr>"""
     }
 
@@ -1791,6 +1808,25 @@ private fun buildTracksTable(tracks: List<Track>): String {
           <tr><th>#</th><th>Kind</th><th>Lang</th><th>Title</th><th>Codec</th><th>Default</th><th>Forced</th></tr>
           $rows
         </table>"""
+}
+
+internal fun wireForcedToggles(container: HTMLElement, mediaId: String, scope: CoroutineScope) {
+    container.querySelectorAll("[data-forced-toggle]").asList().forEach { node ->
+        val btn = node as? HTMLElement ?: return@forEach
+        btn.addEventListener("click") {
+            val spec = btn.getAttribute("data-forced-toggle") ?: return@addEventListener
+            val current = btn.getAttribute("data-forced") == "true"
+            val next = !current
+            scope.launch {
+                val ok = MediaApi.setForcedFlag(mediaId, spec, next)
+                if (ok) {
+                    btn.setAttribute("data-forced", "$next")
+                    btn.textContent = if (next) "forced" else "not forced"
+                    if (next) btn.classList.add("ok") else btn.classList.remove("ok")
+                }
+            }
+        }
+    }
 }
 
 // ── Diff styles ──────────────────────────────────────────────────────────────

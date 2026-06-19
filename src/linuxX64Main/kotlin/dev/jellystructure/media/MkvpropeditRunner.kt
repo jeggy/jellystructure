@@ -20,6 +20,16 @@ object MkvpropeditRunner {
         return runCommand(cmd)
     }
 
+    suspend fun setForced(filePath: String, forcedStreamIndex: Int, sameTypeIndices: List<Int>): Boolean {
+        val escaped = filePath.replace("'", "'\\''")
+        val parts = sameTypeIndices.map { idx ->
+            val flag = if (idx == forcedStreamIndex) 1 else 0
+            "--edit ${trackArg(idx)} --set flag-forced=$flag"
+        }.joinToString(" ")
+        val cmd = "mkvpropedit '$escaped' $parts"
+        return runCommand(cmd)
+    }
+
     suspend fun setDefault(filePath: String, defaultStreamIndex: Int, sameTypeIndices: List<Int>): Boolean {
         val escaped = filePath.replace("'", "'\\''")
         val parts = sameTypeIndices.map { idx ->

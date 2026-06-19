@@ -79,6 +79,12 @@ private fun renderTrackOrderView(container: Element, item: MediaItem, scope: Cor
                  data-specifier="${t.specifier.esc()}" data-current="">Tag</button>"""
         }
         val defaultAction = if (isMkv) """<button class="btn sm ghost set-default-btn" data-specifier="${t.specifier.esc()}" data-id="${item.id.esc()}">Set default</button>""" else "—"
+        val forcedCell = if (isMkv && t.kind == TrackKind.SUBTITLE) {
+            val activeClass = if (t.forced) " ok" else ""
+            val label = if (t.forced) "forced" else "not forced"
+            """<button class="badge$activeClass" style="cursor:pointer;background:none;border:1px solid var(--line);font-size:.68rem;padding:1px 6px;"
+                 data-forced-toggle="${t.specifier.esc()}" data-forced="${t.forced}" data-id="${item.id.esc()}">$label</button>"""
+        } else if (t.forced) "yes" else "—"
         return """<tr data-specifier="${t.specifier.esc()}">
                     <td class="num">${t.specifier.esc()}</td>
                     <td>$kind</td>
@@ -87,6 +93,7 @@ private fun renderTrackOrderView(container: Element, item: MediaItem, scope: Cor
                     <td>${t.title?.esc() ?: """<span class="muted">—</span>"""}</td>
                     <td>$defaultBadge</td>
                     <td>$defaultAction</td>
+                    <td>$forcedCell</td>
                   </tr>
                   <tr class="lang-edit-row" data-for="${t.specifier.esc()}" style="display:none;">
                     <td colspan="7" style="padding:6px 12px 10px;background:var(--bg-2,#1a1a2e);">
@@ -149,7 +156,7 @@ private fun renderTrackOrderView(container: Element, item: MediaItem, scope: Cor
           <h4 style="margin:0 0 12px;">Subtitle Tracks</h4>
           ${if (subTracks.isEmpty()) """<span class="muted tiny">No subtitle tracks found.</span>""" else """
           <table class="wf-table">
-            <tr><th>#</th><th>Kind</th><th>Lang</th><th>Codec</th><th>Title</th><th>Default</th><th>Action</th></tr>
+            <tr><th>#</th><th>Kind</th><th>Lang</th><th>Codec</th><th>Title</th><th>Default</th><th>Action</th><th>Forced</th></tr>
             $subRows
           </table>"""}
         </div>
@@ -311,6 +318,10 @@ private fun renderTrackOrderView(container: Element, item: MediaItem, scope: Cor
         }
     }
 
+    // Forced flag toggles for subtitle tracks (MKV only)
+    val trackContainer = container as? HTMLElement
+    if (trackContainer != null) wireForcedToggles(trackContainer, item.id, scope)
+
     document.getElementById("apply-btn")?.addEventListener("click") {
         val spec = pendingSpecifier ?: return@addEventListener
         val applyBtn = document.getElementById("apply-btn") as? HTMLElement
@@ -371,11 +382,17 @@ private fun renderEpisodeTrackOrderView(container: Element, item: MediaItem, ep:
         val langCell = if (t.language != null) """<span class="lang">${t.language.esc()}</span>"""
                        else """<span class="badge bad" style="font-size:.68rem;">untagged</span>"""
         val defaultAction = if (isMkv) """<button class="btn sm ghost ep-set-default-btn" data-specifier="${t.specifier.esc()}">Set default</button>""" else "—"
+        val forcedCell = if (isMkv && t.kind == TrackKind.SUBTITLE) {
+            val activeClass = if (t.forced) " ok" else ""
+            val label = if (t.forced) "forced" else "not forced"
+            """<button class="badge$activeClass" style="cursor:pointer;background:none;border:1px solid var(--line);font-size:.68rem;padding:1px 6px;"
+                 data-forced-toggle="${t.specifier.esc()}" data-forced="${t.forced}" data-id="${item.id.esc()}">$label</button>"""
+        } else if (t.forced) "yes" else "—"
         return """<tr data-specifier="${t.specifier.esc()}">
                     <td class="num">${t.specifier.esc()}</td><td>$kind</td><td>$langCell</td>
                     <td class="num">${t.codec.esc()}</td>
                     <td>${t.title?.esc() ?: """<span class="muted">—</span>"""}</td>
-                    <td>$defaultBadge</td><td>$defaultAction</td>
+                    <td>$defaultBadge</td><td>$defaultAction</td><td>$forcedCell</td>
                   </tr>"""
     }
 
@@ -399,7 +416,7 @@ private fun renderEpisodeTrackOrderView(container: Element, item: MediaItem, ep:
         <div class="card">
           <h4 style="margin:0 0 12px;">Subtitle Tracks</h4>
           ${if (subTracks.isEmpty()) """<span class="muted tiny">No subtitle tracks found.</span>""" else """
-          <table class="wf-table"><tr><th>#</th><th>Kind</th><th>Lang</th><th>Codec</th><th>Title</th><th>Default</th><th>Action</th></tr>$subRows</table>"""}
+          <table class="wf-table"><tr><th>#</th><th>Kind</th><th>Lang</th><th>Codec</th><th>Title</th><th>Default</th><th>Action</th><th>Forced</th></tr>$subRows</table>"""}
         </div>
         <div class="card" id="ep-plan-card" style="display:none;">
           <div class="row center" style="margin-bottom:10px;">
@@ -439,6 +456,10 @@ private fun renderEpisodeTrackOrderView(container: Element, item: MediaItem, ep:
             }
         }
     }
+
+    // Forced flag toggles for episode subtitle tracks (MKV only)
+    val epContainer = container as? HTMLElement
+    if (epContainer != null) wireForcedToggles(epContainer, item.id, scope)
 
     document.getElementById("ep-apply-btn")?.addEventListener("click") {
         val spec = pendingSpecifier ?: return@addEventListener
