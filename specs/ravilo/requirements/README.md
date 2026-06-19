@@ -20,7 +20,7 @@ truth** for which Ravilo phases exist and whether each is done or planned. Ravil
 | R04 | ✓ Done | Backend — per-Jellyfin-user **RaviloConfig store** (server-owned, synced across devices) + `GET /api/tv/config` | [R04](phase-R04-per-user-config-store.md) |
 | R05 | ✓ Done | Backend — **home feed** composition (hero, channels, rows incl. merged Continue+NextUp & Newly-Added) | [R05](phase-R05-home-feed-api.md) |
 | R06 | ✓ Done | Backend — **browse + multi-language search** + channel-scoped feeds (reuse Phase 29/30) | [R06](phase-R06-browse-search-api.md) |
-| R07 | □ Planned | Backend — **detail** API (movie/series, seasons/episodes, watched-state/resume, cast, related) | [R07](phase-R07-detail-watched-state-api.md) |
+| R07 | ✓ Done | Backend — **detail** API (movie/series, seasons/episodes, watched-state/resume, cast, related) | [R07](phase-R07-detail-watched-state-api.md) |
 | R08 | □ Planned | Backend — **playback brokering + progress reporting** (StreamTicket, heartbeats, mark played/next-up) | [R08](phase-R08-playback-brokering-reporting.md) |
 | R09 | □ Planned | `:ravilo-ui` — **design system + focus engine** (Aurora/Midnight/Noir, components, shared D-pad/pointer model) + app bar | [R09](phase-R09-design-system-focus-engine.md) |
 | R10 | □ Planned | `:ravilo-ui` — **Home** (hero carousel, channel rail, content rows) wired to `GET /api/tv/home` | [R10](phase-R10-home-screen.md) |
