@@ -14,6 +14,7 @@ import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
 import org.w3c.dom.HTMLElement
+import org.w3c.dom.HTMLInputElement
 import org.w3c.dom.WebSocket
 import org.w3c.dom.events.Event
 
@@ -220,15 +221,16 @@ private fun showPalette() {
     val input = document.getElementById("cmd-palette-input") as? HTMLInputElement ?: return
     input.focus()
     renderPaletteList("")
-    input.oninput = { renderPaletteList(input.value); null }
-    input.onkeydown = { e ->
+    input.addEventListener("input") {
+        renderPaletteList((document.getElementById("cmd-palette-input") as? HTMLInputElement)?.value ?: "")
+    }
+    input.addEventListener("keydown") { e ->
         val key = (e as? org.w3c.dom.events.KeyboardEvent)?.key
         if (key == "Escape") hidePalette()
         if (key == "Enter") {
             val first = document.querySelector("#cmd-palette-list .palette-cmd") as? HTMLElement
             first?.click()
         }
-        null
     }
 }
 
