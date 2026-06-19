@@ -1,12 +1,9 @@
 package dev.jellystructure.ravilo.ui.screens
 
 import dev.jellystructure.ravilo.ui.RaviloAppContext
-import kotlinx.serialization.encodeToString
-import kotlinx.serialization.decodeFromString
-import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.Json
+import org.json.JSONArray
+import org.json.JSONObject
 
-@Serializable
 private data class StoredSession(
     val userId: String,
     val displayName: String,
@@ -14,19 +11,37 @@ private data class StoredSession(
     val isAdmin: Boolean,
 )
 
-private val json = Json { ignoreUnknownKeys = true }
-
 actual object MultiTokenStore {
     private val prefs get() = RaviloAppContext.get()
         .getSharedPreferences("ravilo_sessions", android.content.Context.MODE_PRIVATE)
 
     private fun loadAll(): List<StoredSession> {
         val raw = prefs.getString("sessions", null) ?: return emptyList()
-        return runCatching { json.decodeFromString<List<StoredSession>>(raw) }.getOrDefault(emptyList())
+        return runCatching {
+            val arr = JSONArray(raw)
+            (0 until arr.length()).map { i ->
+                val o = arr.getJSONObject(i)
+                StoredSession(
+                    userId       = o.getString("userId"),
+                    displayName  = o.getString("displayName"),
+                    deviceToken  = o.getString("deviceToken"),
+                    isAdmin      = o.optBoolean("isAdmin", false),
+                )
+            }
+        }.getOrDefault(emptyList())
     }
 
     private fun saveAll(list: List<StoredSession>) {
-        prefs.edit().putString("sessions", json.encodeToString(list)).apply()
+        val arr = JSONArray()
+        list.forEach { s ->
+            arr.put(JSONObject().apply {
+                put("userId",      s.userId)
+                put("displayName", s.displayName)
+                put("deviceToken", s.deviceToken)
+                put("isAdmin",     s.isAdmin)
+            })
+        }
+        prefs.edit().putString("sessions", arr.toString()).apply()
     }
 
     actual fun getAll(): List<LocalSession> = loadAll().map { it.toLocal() }

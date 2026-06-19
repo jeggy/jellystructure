@@ -37,6 +37,10 @@ stored **per Jellyfin user and synced to all their devices**.
    /api/tv/config`. Open-Ravilo / compare-skins links.
 6. Reuse jellystructure facets (Phase 30) to populate channel/row filter pickers (studios/networks/
    genres/tags).
+7. A **"Pair a TV"** card at the top of the page (nav item and section `sect-pair`): a 6-character
+   code input + **Pair** button that calls `POST /api/tv/pair/approve {code}` using the existing
+   browser session cookie. Enter key on the input is equivalent to clicking Pair. Success/error
+   feedback shown inline. This is the web-side completion of the R03 pairing flow.
 
 ## Invariants
 - Writes the **same per-user store** the TV reads (R04); a save **syncs to all the user's devices**.

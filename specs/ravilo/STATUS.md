@@ -12,19 +12,19 @@ _Last updated: 2026-06-19_
 
 ## Current focus
 
-**R01–R04 done; building R05 (home feed) next.**
+**R01–R19 all done.** App is running end-to-end on Android TV.
 
-Completed:
-- **R01** `:shared` module — all `/api/tv` DTOs + `TvApiClient`
-- **R02** Compose MP scaffolding — `:ravilo-ui`/`:ravilo-android`/`:ravilo-web` with focus scaffold
-- **R03** Device pairing auth — `/api/tv/pair/**`, `ravilo_device` + `ravilo_pairing` tables, `RaviloDeviceService`
-- **R04** Per-user config store — `ravilo_config` table, `RaviloConfigService`, `GET /api/tv/config`, `PUT /api/tv/settings`
+Recent completions (this session):
+- **R15 additions** — Server URL setup screen (first-run, native Android TV keyboard via `TextField`),
+  Android manifest `INTERNET` permission + `usesCleartextTraffic`, "Change server" escape hatch on
+  pairing error/expired states (focusable Retry + Change server buttons).
+- **R16 addition** — "Pair a TV" card on the jellystructure Ravilo config page (`POST
+  /api/tv/pair/approve` via browser session; code input + Pair button + inline feedback).
 
-Next:
-1. **R05** Home feed composition (hero + channels + rows from library)
-2. **R06** Browse + search APIs
-3. **R07** Detail APIs (movie/series, watched state)
-4. **R08** Playback brokering + progress reporting
+Next steps (post-R19, no spec yet):
+- End-to-end pairing verification with a real jellystructure instance
+- R14 player bring-up testing (ExoPlayer/Media3 on real hardware)
+- Performance & polish pass before any public release
 
 ## Foundational decisions locked (constitution)
 
@@ -65,6 +65,7 @@ Next:
 - **Licensing (resolved):** the whole repo is **GPL-3.0** (root `LICENSE`). Remaining task at
   fork-vendoring time (R14): preserve `jellyfin-androidtv` copyright/license notices (e.g. a
   `:ravilo-player` NOTICE) and confirm its GPL-2.0-only-vs-or-later terms.
-- **Pairing approval UX (R03/R15):** web-session approval vs phone-credentials form — pick the primary
-  path.
+- **Pairing approval UX (R03/R15/R16): resolved.** Web-session approval is the primary path — the
+  "Pair a TV" card on the Ravilo config page calls `POST /api/tv/pair/approve` with the browser cookie.
+  Phone-credentials fallback exists on the backend but has no dedicated UI.
 - **Compose-MP web a11y (R17):** canvas accessibility is best-effort; validate against real ATs early.
