@@ -772,6 +772,11 @@ fun Route.mediaRoutes(
                 if (jfTmdb != dbTmdb) add(DriftField("tmdbId", jfTmdb, dbTmdb))
             }
             call.respond(drifts)
+            if (drifts.isNotEmpty()) {
+                val cfg = configStore.current
+                if (cfg.behavior.notifyOnDrift)
+                    fireWebhook(cfg, """{"event":"drift_detected","mediaId":"$id","fields":${drifts.size}}""")
+            }
         }
 
         // POST /api/media/{id}/repull-jellyfin — re-fetch item from Jellyfin + full rescan
@@ -1158,16 +1163,23 @@ internal suspend fun runScan(
         if (cfg.apiKeys.jellyfinUrl.isNotBlank() && cfg.apiKeys.jellyfinToken.isNotBlank()) {
             jellyfinClient.triggerLibraryRefresh(cfg.apiKeys.jellyfinUrl, cfg.apiKeys.jellyfinToken)
         }
-        val webhook = cfg.behavior.notificationsWebhook
-        if (webhook.isNotBlank()) {
-            runCatching {
-                val payload = """{"event":"scan_complete","jobId":"$jobId","items":${succeeded.value}}"""
-                @OptIn(ExperimentalForeignApi::class)
-                runCatching { posixSystem("""curl -sf --max-time 10 -X POST -H 'Content-Type: application/json' -d '$payload' '$webhook' &""") }
-            }
-            Logger.info("Webhook notification sent to $webhook", "scan")
+        if (cfg.behavior.notifyOnScanDone)
+            fireWebhook(cfg, """{"event":"scan_complete","jobId":"$jobId","items":${succeeded.value}}""")
+        if (cfg.behavior.notifyOnNoMatch) {
+            val unmatched = allItems.count { it.tmdbId == null }
+            if (unmatched > 0)
+                fireWebhook(cfg, """{"event":"no_tmdb_match","jobId":"$jobId","unmatched":$unmatched}""")
         }
     } else {
         broadcaster.broadcast(JobEvent.Finished(jobId, succeeded.value, 0))
     }
+}
+
+@OptIn(ExperimentalForeignApi::class)
+internal fun fireWebhook(cfg: dev.jellystructure.config.AppConfig, payload: String) {
+    val url = cfg.behavior.notificationsWebhook
+    if (url.isBlank()) return
+    val safePayload = payload.replace("'", "\\'")
+    runCatching { posixSystem("""curl -sf --max-time 10 -X POST -H 'Content-Type: application/json' -d '$safePayload' '$url' &""") }
+    Logger.info("Webhook fired: $payload", "notify")
 }
