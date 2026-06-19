@@ -77,4 +77,7 @@ Removed: `triage.html`, `series-triage.html` (Phase 27), `language.html` (Phase 
 **Ravilo** is a Compose Multiplatform streaming client (Android TV + browser/WASM canvas) for
 jellystructure-managed libraries. It adds a `/api/tv/**` namespace to the jellystructure backend
 and a shared `:shared` KMP module (DTOs + `TvApiClient`). Control plane = jellystructure;
-data/video = Jellyfin directly. Phases R01–R17 fully planned; see `design/specs/ravilo/`.
+data/video = Jellyfin directly. The **Android player engine is forked from `jellyfin-androidtv`**
+(Media3 + FFmpeg decoders), isolated in an Android-only **`:ravilo-player`** module — this makes the
+**Android client GPL** (web bundle + backend/admin unaffected). Phases R01–R17 fully planned; see
+`specs/ravilo/`.

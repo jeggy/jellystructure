@@ -25,10 +25,17 @@ _Last updated: 2026-06-19_
 
 - **Control plane = jellystructure only; data plane = Jellyfin directly.** The client "logs into" only
   jellystructure (pairing); video/images stream from Jellyfin via brokered, scoped tokens.
-- **Compose Multiplatform, two targets:** Android TV (Media3) + Web/WASM **canvas** (browser video).
+- **Compose Multiplatform, two targets:** Android TV + Web/WASM **canvas** (browser video).
   Maximise sharing — screens/theme/components/focus/state live once in `:ravilo-ui`. The
   jellystructure "no Compose for Web" rule is scoped to the **admin** frontend; the two WASM bundles
   (admin DOM, Ravilo canvas) coexist.
+- **Android player engine forked from `jellyfin-androidtv` (GPL).** Rather than a from-scratch Media3
+  integration, the Android `actual RaviloPlayer` forks Jellyfin's `playback/*` engine (Media3 +
+  `media3-ffmpeg-decoder` for DTS/TrueHD/AC3/…), contained in a new Android-only **`:ravilo-player`**
+  module. This makes the **Android client GPL**; the fork's direct-to-Jellyfin stream/progress seams
+  are re-pointed through `/api/tv/**`. **Web** uses the **browser-native** stack (DOM `<video>` +
+  `hls.js` + JASSUB), **not** a `jellyfin-web` fork (GPL TS/JS, no decoder gain). The **whole repo is
+  licensed GPL-3.0** (root `LICENSE`). _(Decided 2026-06-19.)_
 - **DTOs defined once** in `:shared`; reused by backend + admin frontend + both Ravilo clients.
 - **Config is server-owned, per Jellyfin user, synced** across all a user's devices.
 - **The TV renders server-composed layout & server-pushed state**; **Ravilo never mutates the
@@ -44,7 +51,15 @@ _Last updated: 2026-06-19_
 ## Open threads
 
 - **Stream brokering details (R08):** confirm how the per-user Jellyfin token is obtained/refreshed
-  server-side from the paired session, and direct-play-vs-HLS selection policy.
+  server-side from the paired session. _(Direct-play-vs-HLS policy now decided: client sends
+  `ClientCapabilities`, jellystructure resolves via Jellyfin `PlaybackInfo`.)_
+- **Player fork bring-up (R14):** vendor `jellyfin-androidtv` `playback/*` into `:ravilo-player`;
+  rewire its stream-resolution + progress-report seams to `/api/tv/**`; confirm upstream's exact
+  **GPL-2.0-only-vs-or-later** terms; decide how to **track upstream** changes (subtree/submodule/
+  manual vendor + version pin).
+- **Licensing (resolved):** the whole repo is **GPL-3.0** (root `LICENSE`). Remaining task at
+  fork-vendoring time (R14): preserve `jellyfin-androidtv` copyright/license notices (e.g. a
+  `:ravilo-player` NOTICE) and confirm its GPL-2.0-only-vs-or-later terms.
 - **Pairing approval UX (R03/R15):** web-session approval vs phone-credentials form — pick the primary
   path.
 - **Compose-MP web a11y (R17):** canvas accessibility is best-effort; validate against real ATs early.
