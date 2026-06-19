@@ -4,15 +4,13 @@ Living record of where work currently stands. Update whenever a phase completes 
 The **[requirements/README.md](requirements/README.md)** is the single source of truth for which phases
 exist and their done/planned status. This file tracks _current focus_, recent context, and open issues.
 
-_Last updated: 2026-06-18_
+_Last updated: 2026-06-19_
 
 ## Current focus
 
-**All phases complete** — a batch of operator-ergonomics + trust features, each with a spec and an
-approved design mockup in `design/app/`:
-All planned phases (0–40) complete. No further backlog.
+**All jellystructure phases complete** — phases 0–42 done. No further backlog.
 
-Phases 0–40 complete. See [`requirements/README.md`](requirements/README.md) for the full index.
+Phases 0–42 complete. See [`requirements/README.md`](requirements/README.md) for the full index.
 
 ## Sibling product — Ravilo (Android TV + Web)
 
@@ -20,9 +18,10 @@ Phases 0–40 complete. See [`requirements/README.md`](requirements/README.md) f
 (Android TV **and** browser/WASM canvas, one shared codebase) for jellystructure-managed libraries.
 It adds a **`/api/tv/**`** namespace + a per-Jellyfin-user config store to *this* backend and a shared
 **`:shared`** KMP module (DTOs + Ktor client) that the admin frontend reuses too. Control plane =
-jellystructure only; data plane (video/images) = Jellyfin directly. Phases **R01–R17** are planned —
+jellystructure only; data plane (video/images) = Jellyfin directly. Phases **R03–R17** planned,
+**R01–R02 done** —
 see [`ravilo/STATUS.md`](ravilo/STATUS.md) and [`ravilo/requirements/README.md`](ravilo/requirements/README.md).
-None implemented yet. The jellystructure admin frontend stays DOM/Tailwind; Ravilo's web build is a
+The jellystructure admin frontend stays DOM/Tailwind; Ravilo's web build is a
 **separate** canvas bundle (the "no Compose for Web" rule is scoped to the admin app).
 
 ## Key cross-cutting findings — see [`requirements/_investigation-findings.md`](requirements/_investigation-findings.md)
@@ -37,6 +36,11 @@ None implemented yet. The jellystructure admin frontend stays DOM/Tailwind; Ravi
 
 ## Recent work (git)
 
+- **Phase 41+42 complete (2026-06-19):** Unified track editor on Media Detail (merges old `/track-order`
+  page into Tracks tab), per-episode track editor modal. `TrackOrder.kt` deleted; `TrackEditor.kt` added
+  (model-driven `TrkModel` list, drag-and-drop reorder, language picker, default/forced toggles, staged
+  changes panel, command preview). Episode backend routes for `setForced` + `reorderTracks` added to
+  `MediaRoutes.kt`. Ravilo R01 (`:shared` module) + R02 (Compose MP scaffolding) marked done.
 - **Spec sync (2026-06-18):** brought `plan.md` + `constitution.md` in line with the source after a
   code-vs-spec audit. `plan.md` now documents the real `GET /api/media` filter set (multi-value
   `studios`/`networks`/`genres`/**`tags`** + audio-track filters), `meta-facets`/`track-facets`,
