@@ -11,9 +11,8 @@ opens the command palette. CSS class `.cmdk-pill` is in `app.css` (full-width, b
 background, hover highlights with `--hi` border). This button is the primary entry point for
 users who haven't memorised the keyboard shortcut.
 
-**Implementation gap:** `Shell.kt` `initShell()` does not inject this button. It should be
-created and inserted immediately after the sidebar logo element (`.app-logo` or equivalent),
-before `injectCommandPalette()` is called.
+In `shellHtml()` the button is rendered as static HTML (`id="cmd-search-pill"`) directly after
+the `.logo` div. `renderShell()` wires its click handler after `injectCommandPalette()` is set up.
 
 ### Command palette (Ctrl+K / ⌘K)
 Overlay that opens on Ctrl+K (or Cmd+K), or by clicking the sidebar search pill. Contains a
