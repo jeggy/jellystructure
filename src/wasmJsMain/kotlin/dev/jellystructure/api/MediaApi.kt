@@ -92,6 +92,8 @@ data class HistoryEntry(
     val timestamp: Long,
     val action: String,
     val detail: String,
+    val revertable: Boolean = false,
+    val beforeSnapshot: String = "",
 )
 
 @Serializable
@@ -439,6 +441,10 @@ object MediaApi {
         val response = httpClient.post("/api/media/batch/jellyfin-push")
         response.status.value in 200..299
     }.getOrDefault(false)
+
+    suspend fun revertHistoryEntry(id: String, entryId: String): MediaItem? = runCatching {
+        httpClient.post("/api/media/$id/history/$entryId/revert").body<MediaItem>()
+    }.getOrNull()
 
     suspend fun getDrift(id: String): List<DriftField> = runCatching {
         httpClient.get("/api/media/$id/drift").body<List<DriftField>>()

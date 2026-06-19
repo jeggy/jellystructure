@@ -3,18 +3,23 @@ CREATE TABLE media_history (
     media_id TEXT NOT NULL,
     ts INTEGER NOT NULL,
     action TEXT NOT NULL,
-    detail TEXT NOT NULL
+    detail TEXT NOT NULL,
+    revertable INTEGER NOT NULL DEFAULT 0,
+    before_snapshot TEXT NOT NULL DEFAULT ''
 );
 
 CREATE INDEX media_history_media_id ON media_history(media_id);
 CREATE INDEX media_history_ts ON media_history(ts);
 
 insert:
-INSERT INTO media_history(media_id, ts, action, detail)
-VALUES (:media_id, :ts, :action, :detail);
+INSERT INTO media_history(media_id, ts, action, detail, revertable, before_snapshot)
+VALUES (:media_id, :ts, :action, :detail, :revertable, :before_snapshot);
 
 forItem:
 SELECT * FROM media_history WHERE media_id = :media_id ORDER BY ts DESC;
+
+findById:
+SELECT * FROM media_history WHERE id = :id LIMIT 1;
 
 recent:
 SELECT * FROM media_history ORDER BY ts DESC LIMIT :limit;

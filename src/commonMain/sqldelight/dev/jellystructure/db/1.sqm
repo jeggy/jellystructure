@@ -1,0 +1,2 @@
+ALTER TABLE media_history ADD COLUMN revertable INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE media_history ADD COLUMN before_snapshot TEXT NOT NULL DEFAULT '';

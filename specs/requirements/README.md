@@ -50,7 +50,7 @@ See [`../tasks.md`](../tasks.md) for the active TODO breakdown.
 | 31 | ✓ Done | Studio & network logo artwork — fetch/cache/serve + batch (FR-SNA1) | [archive](archive/phase-31-studio-network-artwork.md) |
 | 32 | ✓ Done | In-app TMDB match picker — search & pick the right match (FR-TM1) | [archive](archive/phase-32-tmdb-match-picker.md) |
 | 33 | ✓ Done | Jellyfin ⇄ NFO drift detection + re-assert (FR-DR1) | [archive](archive/phase-33-jellyfin-nfo-drift.md) |
-| 34 | □ Planned | Undo / revert from history (FR-UR1) | [phase-34](phase-34-undo-revert-history.md) |
+| 34 | ✓ Done | Undo / revert from history (FR-UR1) | [archive](archive/phase-34-undo-revert-history.md) |
 | 35 | □ Planned | System health panel — real test-connections + tool/disk checks (FR-HC1) | [phase-35](phase-35-system-health-panel.md) |
 | 36 | □ Planned | Operator controls — per-library scan/push, scheduled scans, notifications (FR-OC1) | [phase-36](phase-36-operator-controls.md) |
 | 37 | □ Planned | Surface the qBittorrent seeding guard (FR-QS1) | [phase-37](phase-37-surface-qbittorrent-guard.md) |

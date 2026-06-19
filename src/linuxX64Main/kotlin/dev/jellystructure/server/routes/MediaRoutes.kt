@@ -51,6 +51,8 @@ import kotlinx.io.readByteArray
 import dev.jellystructure.torrent.SeedingCheckResult
 import dev.jellystructure.torrent.SeedingGuard
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 
 @Serializable
 private data class JellyfinLocksResponse(val lockData: Boolean, val lockedFields: List<String>)
@@ -152,6 +154,45 @@ fun Route.mediaRoutes(
                 val id = call.parameters["id"]
                     ?: return@get call.respond(HttpStatusCode.BadRequest)
                 call.respond(mediaHistory.forItem(id))
+            }
+
+            // POST /api/media/{id}/history/{entryId}/revert — restore state captured in before_snapshot
+            post("/history/{entryId}/revert") {
+                val id = call.parameters["id"] ?: return@post call.respond(HttpStatusCode.BadRequest)
+                val entryId = call.parameters["entryId"]?.toLongOrNull()
+                    ?: return@post call.respond(HttpStatusCode.BadRequest)
+                val item = store.resolve(id) ?: return@post call.respond(HttpStatusCode.NotFound)
+                val entry = mediaHistory.findById(entryId)
+                    ?: return@post call.respond(HttpStatusCode.NotFound)
+                if (!entry.revertable || entry.beforeSnapshot.isBlank()) {
+                    call.respond(HttpStatusCode.BadRequest, mapOf("error" to "entry not revertable"))
+                    return@post
+                }
+                val json = Json { ignoreUnknownKeys = true }
+                val reverted: dev.jellystructure.model.MediaItem = when (entry.action) {
+                    "set_tmdb_id" -> {
+                        @Serializable data class TmdbSnap(val tmdbId: Int? = null)
+                        val snap = runCatching { json.decodeFromString<TmdbSnap>(entry.beforeSnapshot) }.getOrNull()
+                            ?: return@post call.respond(HttpStatusCode.UnprocessableEntity, mapOf("error" to "corrupt snapshot"))
+                        item.copy(tmdbId = snap.tmdbId)
+                    }
+                    "metadata_edit" -> {
+                        @Serializable data class MetaSnap(val title: String, val overview: String? = null, val year: Int? = null, val originalTitle: String? = null, val director: String? = null, val studio: String? = null, val network: String? = null, val tags: List<String> = emptyList())
+                        val snap = runCatching { json.decodeFromString<MetaSnap>(entry.beforeSnapshot) }.getOrNull()
+                            ?: return@post call.respond(HttpStatusCode.UnprocessableEntity, mapOf("error" to "corrupt snapshot"))
+                        item.copy(title = snap.title, overview = snap.overview, year = snap.year, originalTitle = snap.originalTitle, director = snap.director, studio = snap.studio, network = snap.network, tags = snap.tags)
+                    }
+                    "language_override" -> {
+                        @Serializable data class LangSnap(val language: String? = null)
+                        val snap = runCatching { json.decodeFromString<LangSnap>(entry.beforeSnapshot) }.getOrNull()
+                            ?: return@post call.respond(HttpStatusCode.UnprocessableEntity, mapOf("error" to "corrupt snapshot"))
+                        item.copy(resolvedLanguage = snap.language?.ifBlank { null })
+                    }
+                    else -> return@post call.respond(HttpStatusCode.BadRequest, mapOf("error" to "unknown action type"))
+                }
+                store.updateOne(reverted)
+                mediaHistory.record(id, "revert", "reverted entry $entryId (${entry.action})")
+                call.respond(reverted)
             }
 
             route("/nfo") {
@@ -559,9 +600,10 @@ fun Route.mediaRoutes(
                 call.respond(HttpStatusCode.BadRequest, mapOf("error" to "invalid language code"))
                 return@patch
             }
+            val snapshot = """{"language":"${item.resolvedLanguage?.replace("\"", "\\\"") ?: ""}"}"""
             val updated = item.copy(resolvedLanguage = lang)
             store.updateOne(updated)
-            mediaHistory.record(id, "language_override", lang)
+            mediaHistory.record(id, "language_override", lang, revertable = true, beforeSnapshot = snapshot)
             call.respond(updated)
         }
 
@@ -600,8 +642,10 @@ fun Route.mediaRoutes(
                 network = if (req.network != null) req.network.ifBlank { null } else item.network,
                 titlesByLang = updatedTitlesByLang,
             )
+            @Serializable data class MetaSnap(val title: String, val overview: String?, val year: Int?, val originalTitle: String?, val director: String?, val studio: String?, val network: String?, val tags: List<String>)
+            val snap = MetaSnap(item.title, item.overview, item.year, item.originalTitle, item.director, item.studio, item.network, item.tags)
             store.updateOne(updated)
-            mediaHistory.record(id, "metadata_edit", "title=${updated.title}")
+            mediaHistory.record(id, "metadata_edit", "title=${updated.title}", revertable = true, beforeSnapshot = Json.encodeToString(snap))
             call.respond(updated)
         }
 
@@ -611,9 +655,10 @@ fun Route.mediaRoutes(
             val item = store.resolve(id) ?: return@patch call.respond(HttpStatusCode.NotFound)
             @Serializable data class TmdbIdReq(val tmdbId: Int? = null)
             val req = call.receive<TmdbIdReq>()
+            val tmdbSnap = """{"tmdbId":${item.tmdbId ?: "null"}}"""
             val updated = item.copy(tmdbId = req.tmdbId)
             store.updateOne(updated)
-            mediaHistory.record(id, "set_tmdb_id", "tmdbId=${req.tmdbId}")
+            mediaHistory.record(id, "set_tmdb_id", "tmdbId=${req.tmdbId}", revertable = true, beforeSnapshot = tmdbSnap)
             call.respond(updated)
         }
 
