@@ -15,6 +15,7 @@ import dev.jellystructure.media.MediaHistory
 import dev.jellystructure.media.MediaStore
 import dev.jellystructure.media.Scanner
 import dev.jellystructure.media.ScanTracker
+import dev.jellystructure.server.routes.runScan
 import dev.jellystructure.server.startServer
 import dev.jellystructure.tmdb.TmdbClient
 import dev.jellystructure.watcher.FolderWatcher
@@ -124,6 +125,26 @@ fun main() = runBlocking {
         artworkDownloader, scanTracker, folderWatcher, mediaHistory, activityLog, broadcaster,
         frontendDir, port, scanDispatcher, effectiveScanThreads, jsTagStore, seedingGuard, logoDownloader,
     )
+
+    // Scheduled scan — fires every scan_interval_hours hours (0 = disabled)
+    rootScope.launch {
+        while (shutdownRequested.value == 0) {
+            val intervalHours = configStore.current.behavior.scanIntervalHours
+            if (intervalHours > 0) {
+                delay(intervalHours * 3_600_000L)
+                if (shutdownRequested.value != 0) break
+                if (!scanTracker.running) {
+                    Logger.info("Scheduled scan starting (interval=${intervalHours}h)")
+                    val jobId = scanTracker.startNew()
+                    runScan(jobId, emptySet(), mediaStore, scanner, scanTracker, broadcaster, configStore, jellyfinClient, scanDispatcher)
+                } else {
+                    Logger.info("Scheduled scan skipped — a scan is already running")
+                }
+            } else {
+                delay(60_000L)
+            }
+        }
+    }
 
     while (shutdownRequested.value == 0) {
         delay(1_000L)

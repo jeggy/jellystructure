@@ -32,6 +32,8 @@ data class Behavior(
     @SerialName("tell_jellyfin") val tellJellyfin: Boolean = true,
     @SerialName("scan_workers") val scanWorkers: Int = 1,
     @SerialName("scan_threads") val scanThreads: Int = 4,
+    @SerialName("scan_interval_hours") val scanIntervalHours: Int = 0,
+    @SerialName("notifications_webhook") val notificationsWebhook: String = "",
 )
 
 @Serializable

@@ -52,7 +52,7 @@ See [`../tasks.md`](../tasks.md) for the active TODO breakdown.
 | 33 | ✓ Done | Jellyfin ⇄ NFO drift detection + re-assert (FR-DR1) | [archive](archive/phase-33-jellyfin-nfo-drift.md) |
 | 34 | ✓ Done | Undo / revert from history (FR-UR1) | [archive](archive/phase-34-undo-revert-history.md) |
 | 35 | ✓ Done | System health panel — real test-connections + tool/disk checks (FR-HC1) | [archive](archive/phase-35-system-health-panel.md) |
-| 36 | □ Planned | Operator controls — per-library scan/push, scheduled scans, notifications (FR-OC1) | [phase-36](phase-36-operator-controls.md) |
+| 36 | ✓ Done | Operator controls — per-library scan/push, scheduled scans, notifications (FR-OC1) | [archive](archive/phase-36-operator-controls.md) |
 | 37 | □ Planned | Surface the qBittorrent seeding guard (FR-QS1) | [phase-37](phase-37-surface-qbittorrent-guard.md) |
 | 38 | □ Planned | Command palette ⌘K + attention-queue keyboard nav (FR-KB1) | [phase-38](phase-38-command-palette-keyboard-nav.md) |
 | 39 | □ Planned | Subtitle management — fetch missing, forced flag, default parity (FR-SUB1) | [phase-39](phase-39-subtitle-management.md) |
