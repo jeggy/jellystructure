@@ -119,11 +119,13 @@ fun main() = runBlocking {
     val jsTagStore = dev.jellystructure.media.JsTagStore("$dataDir/js-tags.json")
     jsTagStore.load()
     val logoDownloader = LogoDownloader(dataDir, tmdbClient)
-    val seedingGuard = SeedingGuard(QBittorrentClient())
+    val qbClient = QBittorrentClient()
+    val seedingGuard = SeedingGuard(qbClient)
     val shutdown = startServer(
         configStore, sessionService, jellyfinClient, mediaStore, scanner,
         artworkDownloader, scanTracker, folderWatcher, mediaHistory, activityLog, broadcaster,
         frontendDir, port, scanDispatcher, effectiveScanThreads, jsTagStore, seedingGuard, logoDownloader,
+        qbClient,
     )
 
     // Scheduled scan — fires every scan_interval_hours hours (0 = disabled)
