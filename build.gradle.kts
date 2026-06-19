@@ -7,6 +7,10 @@ plugins {
     alias(libs.plugins.kotlin.multiplatform)
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.sqldelight)
+    // AGP declared here (apply=false) so its classes are on the shared classpath
+    // before KGP's AgpWithBuiltInKotlinAppliedCheck fires in :ravilo-ui/:ravilo-android.
+    alias(libs.plugins.android.library) apply false
+    alias(libs.plugins.android.application) apply false
 }
 
 

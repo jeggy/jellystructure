@@ -1,8 +1,7 @@
 plugins {
     alias(libs.plugins.android.application)
-    alias(libs.plugins.kotlin.android)
+    kotlin("android")
     alias(libs.plugins.kotlin.plugin.compose)
-    alias(libs.plugins.compose.multiplatform)
 }
 
 android {
@@ -28,12 +27,14 @@ android {
         targetCompatibility = JavaVersion.VERSION_11
     }
 
-    kotlinOptions {
-        jvmTarget = "11"
-    }
-
     buildFeatures {
         compose = true
+    }
+}
+
+tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
+    compilerOptions {
+        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_11)
     }
 }
 
@@ -41,4 +42,8 @@ dependencies {
     implementation(projects.raviloUi)
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.leanback)
+    implementation(libs.compose.runtime)
+    implementation(libs.compose.ui)
+    implementation(libs.compose.material3)
+    implementation(libs.compose.foundation)
 }
