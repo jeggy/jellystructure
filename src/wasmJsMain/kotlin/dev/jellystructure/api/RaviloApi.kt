@@ -21,6 +21,7 @@ data class AdminRaviloConfig(
     @SerialName("allow_skin_override") val allowSkinOverride: Boolean = true,
     @SerialName("show_continue_progress") val showContinueProgress: Boolean = true,
     @SerialName("tile_shape") val tileShape: String = "POSTER",
+    @SerialName("ui_language") val uiLanguage: String = "en",
 )
 
 @Serializable

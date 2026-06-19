@@ -28,11 +28,16 @@ import dev.jellystructure.ravilo.ui.screens.SeriesDetailScreen
 import dev.jellystructure.ravilo.ui.screens.SeriesDetailStore
 import dev.jellystructure.ravilo.ui.screens.SettingsScreen
 import dev.jellystructure.ravilo.ui.screens.SettingsStore
+import dev.jellystructure.ravilo.ui.i18n.WithLocale
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
 import dev.jellystructure.shared.tv.Channel
 import dev.jellystructure.shared.tv.MediaCard
 import dev.jellystructure.shared.tv.MediaKind
 import dev.jellystructure.shared.tv.TvApiClient
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 
 // ─── Navigation destinations ──────────────────────────────────────────────────
 
@@ -59,7 +64,19 @@ private sealed class Dest {
 
 @Composable
 fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "") {
+    var lang by remember { mutableStateOf("en") }
+
+    // Fetch the active user's language setting from their config
+    val langScope = remember { CoroutineScope(SupervisorJob() + Dispatchers.Default) }
+
+    fun refreshLang() {
+        langScope.launch {
+            lang = runCatching { apiClient.getConfig().uiLanguage }.getOrDefault("en")
+        }
+    }
+
     RaviloTheme {
+    WithLocale(lang) {
         // Determine starting screen based on cached sessions
         val initialDest = remember {
             val sessions = MultiTokenStore.getAll()
@@ -74,6 +91,11 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "") {
         }
         var stack by remember { mutableStateOf(listOf<Dest>(initialDest)) }
 
+        // Load lang when already on Home (single-session fast path)
+        if (initialDest is Dest.Home) {
+            androidx.compose.runtime.LaunchedEffect(Unit) { refreshLang() }
+        }
+
         fun push(dest: Dest) { stack = stack + dest }
         fun pop() { if (stack.size > 1) stack = stack.dropLast(1) }
 
@@ -85,14 +107,17 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "") {
                 ProfilePickerScreen(
                     store = store,
                     apiClient = apiClient,
-                    onProfileSelected = { session -> push(Dest.Home(session.displayName)) },
+                    onProfileSelected = { session ->
+                        refreshLang()
+                        push(Dest.Home(session.displayName))
+                    },
                 )
             }
 
             is Dest.Pairing -> {
                 val store = remember { PairingStore(apiClient) }
                 PairingScreen(store = store, onPaired = {
-                    // After first pairing, cache the token in MultiTokenStore is handled in PairingStore
+                    refreshLang()
                     push(Dest.Home(displayName = ""))
                 })
             }
@@ -213,5 +238,6 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "") {
                 )
             }
         }
-    }
+    } // WithLocale
+    } // RaviloTheme
 }

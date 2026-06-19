@@ -237,6 +237,7 @@ data class RaviloConfig(
     @SerialName("allow_skin_override") val allowSkinOverride: Boolean = true,
     @SerialName("show_continue_progress") val showContinueProgress: Boolean = true,
     @SerialName("tile_shape") val tileShape: TileShape = TileShape.POSTER,
+    @SerialName("ui_language") val uiLanguage: String = "en",
 )
 
 // ─── Request bodies ───────────────────────────────────────────────────────────
