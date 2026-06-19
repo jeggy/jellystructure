@@ -8,13 +8,13 @@ _Last updated: 2026-06-18_
 
 ## Current focus
 
-**Planned backlog 35–40** — a batch of operator-ergonomics + trust features, each with a spec and an
+**Planned backlog 36–40** — a batch of operator-ergonomics + trust features, each with a spec and an
 approved design mockup in `design/app/`:
-- **35** system health panel · **36** per-library scan/push + scheduled scans + notifications ·
-  **37** surface the qBittorrent guard · **38** command palette ⌘K + attention-queue keyboard nav ·
-  **39** subtitle management · **40** configure qBittorrent in Settings.
+- **36** per-library scan/push + scheduled scans + notifications · **37** surface the qBittorrent
+  guard · **38** command palette ⌘K + attention-queue keyboard nav · **39** subtitle management ·
+  **40** configure qBittorrent in Settings.
 
-Phases 0–34 complete. See [`requirements/README.md`](requirements/README.md) for the full index.
+Phases 0–35 complete. See [`requirements/README.md`](requirements/README.md) for the full index.
 
 ## Sibling product — Ravilo (Android TV + Web)
 

@@ -267,30 +267,39 @@ private fun attachListeners(scope: CoroutineScope) {
     }
 
     document.getElementById("test-connections")?.addEventListener("click") {
+        val el = document.getElementById("conn-result") as? HTMLElement ?: return@addEventListener
+        el.style.display = "block"
+        el.innerHTML = """<span class="muted tiny">Running health checks…</span>"""
         scope.launch {
-            val result = ConfigApi.testConnections()
-            val el = document.getElementById("conn-result") as? HTMLElement ?: return@launch
+            val report = ConfigApi.getHealthFull()
             el.style.display = "block"
-            el.innerHTML = buildString {
-                append("""<span class="badge ${if (result?.jellyfin == true) "ok" else "bad"}" style="margin-right:6px">""")
-                append(if (result?.jellyfin == true) "Jellyfin ✓" else "Jellyfin ✗")
-                append("</span>")
-                append("""<span class="badge ${if (result?.tmdb == true) "ok" else "bad"}">""")
-                append(if (result?.tmdb == true) "TMDB ✓" else "TMDB ✗")
-                append("</span>")
+            if (report == null) {
+                el.innerHTML = """<span class="badge bad">Health check failed — server unreachable</span>"""
+                return@launch
             }
+            el.innerHTML = report.checks.joinToString("") { check ->
+                val cls = if (check.ok) "ok" else "bad"
+                val icon = if (check.ok) "✓" else "✗"
+                """<div style="display:flex;align-items:center;gap:8px;padding:4px 0;">
+                     <span class="badge $cls" style="min-width:80px;text-align:center;">$icon</span>
+                     <span style="font-weight:600;font-size:.85rem;">${check.name.esc()}</span>
+                     <span class="muted tiny">${check.detail.esc()}</span>
+                   </div>"""
+            }
+            val jellyfinOk = report.checks.find { it.name == "Jellyfin" }?.ok == true
             // Update per-field inline badges
             val jfBadge = document.getElementById("jf-token-badge") as? HTMLElement
             if (jfBadge != null) {
                 jfBadge.style.display = "inline"
-                jfBadge.innerHTML = if (result?.jellyfin == true) """<span class="badge ok" style="font-size:.72rem">valid ✓</span>""" else """<span class="badge bad" style="font-size:.72rem">invalid ✗</span>"""
+                jfBadge.innerHTML = if (jellyfinOk) """<span class="badge ok" style="font-size:.72rem">valid ✓</span>""" else """<span class="badge bad" style="font-size:.72rem">invalid ✗</span>"""
             }
+            val tmdbOk = report.checks.find { it.name == "TMDB API key" }?.ok == true
             val tmdbBadge = document.getElementById("tmdb-key-badge") as? HTMLElement
             if (tmdbBadge != null) {
                 tmdbBadge.style.display = "inline"
-                tmdbBadge.innerHTML = if (result?.tmdb == true) """<span class="badge ok" style="font-size:.72rem">valid ✓</span>""" else """<span class="badge bad" style="font-size:.72rem">invalid ✗</span>"""
+                tmdbBadge.innerHTML = if (tmdbOk) """<span class="badge ok" style="font-size:.72rem">valid ✓</span>""" else """<span class="badge bad" style="font-size:.72rem">invalid ✗</span>"""
             }
-            if (result?.jellyfin == true) {
+            if (jellyfinOk) {
                 fetchAndRenderLibraries()
                 renderPathCheckInline(ConfigApi.pathCheck())
             }

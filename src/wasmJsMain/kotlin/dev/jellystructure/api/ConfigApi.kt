@@ -102,4 +102,14 @@ object ConfigApi {
     suspend fun pathCheck(): List<LibraryPathDiag>? = runCatching {
         httpClient.get("/api/config/path-check").body<List<LibraryPathDiag>>()
     }.getOrNull()
+
+    suspend fun getHealthFull(): HealthReport? = runCatching {
+        httpClient.get("/api/health/full").body<HealthReport>()
+    }.getOrNull()
 }
+
+@Serializable
+data class HealthCheck(val name: String, val ok: Boolean, val detail: String)
+
+@Serializable
+data class HealthReport(val checks: List<HealthCheck>)
