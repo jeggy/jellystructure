@@ -137,8 +137,7 @@ fun main() = runBlocking {
     val shutdown = startServer(
         configStore, sessionService, raviloDeviceService, raviloConfigService, homeFeedService, browseService, detailService, playbackService, jellyfinClient, mediaStore, scanner,
         artworkDownloader, scanTracker, folderWatcher, mediaHistory, activityLog, broadcaster,
-        frontendDir, port, scanDispatcher, effectiveScanThreads, jsTagStore, seedingGuard, logoDownloader,
-        qbClient,
+        frontendDir, port = port, scanDispatcher = scanDispatcher, effectiveScanThreads = effectiveScanThreads, jsTagStore = jsTagStore, seedingGuard = seedingGuard, logoDownloader = logoDownloader, qbClient = qbClient,
     )
 
     // Scheduled scan — fires every scan_interval_hours hours (0 = disabled)
