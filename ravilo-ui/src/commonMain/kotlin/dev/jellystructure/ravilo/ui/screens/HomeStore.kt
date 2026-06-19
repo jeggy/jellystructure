@@ -1,0 +1,35 @@
+package dev.jellystructure.ravilo.ui.screens
+
+import dev.jellystructure.shared.tv.HomeFeed
+import dev.jellystructure.shared.tv.TvApiClient
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
+
+sealed class HomeState {
+    data object Loading : HomeState()
+    data class Loaded(val feed: HomeFeed) : HomeState()
+    data class Error(val message: String) : HomeState()
+}
+
+class HomeStore(private val apiClient: TvApiClient) {
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private val _state = MutableStateFlow<HomeState>(HomeState.Loading)
+    val state: StateFlow<HomeState> = _state.asStateFlow()
+
+    init { load() }
+
+    fun load() {
+        _state.value = HomeState.Loading
+        scope.launch {
+            _state.value = runCatching { HomeState.Loaded(apiClient.getHome()) }
+                .getOrElse { HomeState.Error(it.message ?: "Unknown error") }
+        }
+    }
+
+    fun refresh() = load()
+}
