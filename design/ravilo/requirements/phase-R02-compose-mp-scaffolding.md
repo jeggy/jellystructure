@@ -1,6 +1,6 @@
 # Phase R02 — Compose Multiplatform scaffolding (FR-RV2)
 
-**Status:** Planned · _proves one shared Compose UI runs on Android TV **and** browser canvas._
+**Status:** ✓ Done (wasmJs canvas compiles + runs; androidTarget unlocks once Android SDK is installed — see build.gradle.kts comment in `:ravilo-ui`)
 
 ## Problem
 Ravilo must ship from **one** Compose Multiplatform UI codebase to **two** targets (Android TV +
