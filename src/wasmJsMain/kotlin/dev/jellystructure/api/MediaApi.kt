@@ -447,6 +447,10 @@ object MediaApi {
         response.status.value in 200..299
     }.getOrDefault(false)
 
+    suspend fun getSeedingStatus(id: String): SeedingStatus? = runCatching {
+        httpClient.get("/api/media/$id/seeding").body<SeedingStatus>()
+    }.getOrNull()
+
     suspend fun revertHistoryEntry(id: String, entryId: String): MediaItem? = runCatching {
         httpClient.post("/api/media/$id/history/$entryId/revert").body<MediaItem>()
     }.getOrNull()
@@ -462,6 +466,9 @@ object MediaApi {
         }.body<List<TmdbMatchResult>>()
     }.getOrDefault(emptyList())
 }
+
+@Serializable
+data class SeedingStatus(val status: String, val torrentName: String? = null, val detail: String? = null)
 
 @Serializable
 data class DriftField(val field: String, val inJellyfin: String, val inDb: String)

@@ -724,6 +724,22 @@ fun Route.mediaRoutes(
             call.respond(langs)
         }
 
+        // GET /api/media/{id}/seeding — check if the item's file is currently seeded in qBittorrent
+        get("/{id}/seeding") {
+            val id = call.parameters["id"] ?: return@get call.respond(HttpStatusCode.BadRequest)
+            val item = store.resolve(id) ?: return@get call.respond(HttpStatusCode.NotFound)
+            val path = if (item.kind == dev.jellystructure.model.MediaKind.MOVIE) item.path else item.path
+            val result = seedingGuard.check(path, configStore.current)
+            @Serializable data class SeedingStatus(val status: String, val torrentName: String? = null, val detail: String? = null)
+            val response = when (result) {
+                is SeedingCheckResult.Unconfigured -> SeedingStatus("unconfigured")
+                is SeedingCheckResult.Allowed -> SeedingStatus("allowed")
+                is SeedingCheckResult.Blocked -> SeedingStatus("blocked", result.torrentName)
+                is SeedingCheckResult.Unreachable -> SeedingStatus("unreachable", detail = result.reason)
+            }
+            call.respond(response)
+        }
+
         // GET /api/media/{id}/drift — compare live Jellyfin metadata vs stored DB state
         get("/{id}/drift") {
             val id = call.parameters["id"] ?: return@get call.respond(HttpStatusCode.BadRequest)

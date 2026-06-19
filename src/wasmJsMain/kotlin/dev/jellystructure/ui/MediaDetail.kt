@@ -10,6 +10,7 @@ import dev.jellystructure.api.HistoryEntry
 import dev.jellystructure.api.JsTag
 import dev.jellystructure.api.MediaApi
 import dev.jellystructure.api.DriftField
+import dev.jellystructure.api.SeedingStatus
 import dev.jellystructure.api.TmdbMatchResult
 import dev.jellystructure.model.Episode
 import dev.jellystructure.model.MediaItem
@@ -422,6 +423,7 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
 
         ${if (!isTvShow) """
         <div id="tab-tracks" ${if (activeTab != "tracks") """style="display:none;" """ else ""}>
+          <div id="seeding-guard-banner" style="display:none;margin-bottom:10px;"></div>
           <div class="card">
             <div class="row center" style="margin-bottom:10px;">
               <h4 style="margin:0;">Embedded tracks</h4>
@@ -643,6 +645,7 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
                     }
                     if (tab == "history") scope.launch { loadHistory(item.id, container, scope) }
                     if (tab == "artwork") scope.launch { loadArtworkStatus(item.id) }
+                    if (tab == "tracks") scope.launch { loadSeedingStatus(item.id) }
                     // Update URL — don't add history entry for overview (default), do for others
                     val tabParam = if (tab == "overview") null else tab
                     dev.jellystructure.Router.updateQuery(mapOf("tab" to tabParam), replace = false)
@@ -653,6 +656,7 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
 
     scope.launch { loadArtworkStatus(item.id) }
     scope.launch { loadDrift(item.id) }
+    if (activeTab == "tracks" && !isTvShow) scope.launch { loadSeedingStatus(item.id) }
     if (activeTab == "history") scope.launch { loadHistory(item.id, container, scope) }
 
     // Inject diff styles once per document lifetime
@@ -1542,6 +1546,28 @@ private suspend fun handleRepull(item: MediaItem, container: Element, scope: Cor
         renderDetailView(container, updated, scope, fallbackLang, jellyfinUrl, tmdbLangs)
     } else {
         showDetailMsg("Re-pull failed — no TMDB match found.", false)
+    }
+}
+
+private suspend fun loadSeedingStatus(id: String) {
+    val banner = document.getElementById("seeding-guard-banner") as? HTMLElement ?: return
+    val status = MediaApi.getSeedingStatus(id) ?: return
+    when (status.status) {
+        "blocked" -> {
+            banner.innerHTML = """<div style="background:var(--bad-soft);border:1px solid var(--bad);border-radius:6px;padding:8px 14px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+              <span style="color:var(--bad);font-weight:600;font-size:.88rem;">🔒 Seeding guard active</span>
+              <span class="tiny">This file is currently being seeded by qBittorrent (<b>${(status.torrentName ?: "").esc()}</b>). Track edits are blocked to protect the torrent.</span>
+            </div>"""
+            banner.style.display = "block"
+        }
+        "unreachable" -> {
+            banner.innerHTML = """<div style="background:var(--warn-soft,#2d220b);border:1px solid var(--warn,#b8860b);border-radius:6px;padding:8px 14px;display:flex;align-items:center;gap:10px;">
+              <span style="color:var(--warn,#f59e0b);font-weight:600;font-size:.88rem;">⚠ qBittorrent unreachable</span>
+              <span class="tiny">${(status.detail ?: "").esc()} — proceeding with track edits at your own risk.</span>
+            </div>"""
+            banner.style.display = "block"
+        }
+        else -> banner.style.display = "none"
     }
 }
 
