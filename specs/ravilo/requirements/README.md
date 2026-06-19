@@ -14,8 +14,8 @@ truth** for which Ravilo phases exist and whether each is done or planned. Ravil
 
 | Phase | Status | Focus | Spec |
 |-------|--------|-------|------|
-| R01 | ✓ Done | `:shared` KMP module — DTOs + Ktor `TvApiClient` (once, for backend + both clients) | [R01](archive/phase-R01-shared-module.md) |
-| R02 | ✓ Done | Compose Multiplatform scaffolding — `:ravilo-ui` + `:ravilo-android` + `:ravilo-web`, one "hello focus" screen on both targets | [R02](archive/phase-R02-compose-mp-scaffolding.md) |
+| R01 | □ Planned | `:shared` KMP module — DTOs + Ktor `TvApiClient` (once, for backend + both clients) | [R01](phase-R01-shared-module.md) |
+| R02 | □ Planned | Compose Multiplatform scaffolding — `:ravilo-ui` + `:ravilo-android` + `:ravilo-web`, one "hello focus" screen on both targets | [R02](phase-R02-compose-mp-scaffolding.md) |
 | R03 | □ Planned | Backend — `/api/tv/**` namespace + TV **device pairing** auth (code flow, non-admin users, device sessions) | [R03](phase-R03-device-pairing-auth.md) |
 | R04 | □ Planned | Backend — per-Jellyfin-user **RaviloConfig store** (server-owned, synced across devices) + `GET /api/tv/config` | [R04](phase-R04-per-user-config-store.md) |
 | R05 | □ Planned | Backend — **home feed** composition (hero, channels, rows incl. merged Continue+NextUp & Newly-Added) | [R05](phase-R05-home-feed-api.md) |
@@ -31,6 +31,8 @@ truth** for which Ravilo phases exist and whether each is done or planned. Ravil
 | R15 | □ Planned | On-device **Settings** + first-run **pairing UX** (skin picker, playback prefs; writes via `PUT /api/tv/settings`) | [R15](phase-R15-ondevice-settings-pairing.md) |
 | R16 | □ Planned | jellystructure web — **Ravilo config screen** backed by the R04 store (hero/channels/rows/merge/skin, per user) | [R16](phase-R16-jellystructure-config-screen.md) |
 | R17 | □ Planned | **Web target hardening** + packaging — `:ravilo-web` canvas a11y/input, both bundles served, E2E across TV + web | [R17](phase-R17-web-target-packaging.md) |
+| R18 | □ Planned | **Multi-user profiles & fast switching** — several Jellyfin users per TV, cached tokens, "Who's watching?" + avatar switcher (FR-RV18) | [R18](phase-R18-multi-user-profiles.md) |
+| R19 | □ Planned | **Interface localization** (en / da / fo), per Jellyfin user, set in Jellystructure (FR-RV19) | [R19](phase-R19-localization.md) |
 
 ## Suggested sequencing
 - **Foundation:** R01 → R02 → R03 → R04 (module + scaffold + auth + config store).

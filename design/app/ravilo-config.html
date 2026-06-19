@@ -51,9 +51,7 @@
       <div class="navitem" data-goto="sect-studios">Channels</div>
       <div class="navitem" data-goto="sect-rows">Content rows</div>
       <div class="navitem" data-goto="sect-behaviour">Behaviour</div>
-    </div>
-
-    <div class="col fill">
+    </div>    <div class="col fill">
       <!-- HERO -->
       <div class="card set-section" id="sect-hero">
         <div class="row center"><h3 style="font-size:1.05rem;margin:0;">Hero carousel</h3><span class="badge info" style="margin-left:8px;">1–10 items</span><span class="spacer"></span><span class="btn sm ghost">＋ Add featured</span></div>
@@ -121,6 +119,12 @@
       <!-- BEHAVIOUR -->
       <div class="card set-section" id="sect-behaviour">
         <h3 style="font-size:1.05rem;margin:0 0 10px;">Behaviour</h3>
+        <div class="field" style="max-width:340px;"><label>Interface language <span class="badge info" style="margin-left:4px;">this user</span></label>
+          <span class="select" id="ui-lang"><span><span class="lang">fo</span> Faroese (Føroyskt)</span> <span class="muted" style="font-size:.7rem;">▾</span></span>
+          <span class="hint">The language Ravilo's menus &amp; buttons appear in for <b>Eyð Restorff</b> — syncs to all their devices. Media titles &amp; descriptions stay in their own metadata language.</span>
+          <div id="ui-lang-menu" class="card" style="display:none;position:absolute;z-index:30;width:300px;padding:6px;box-shadow:var(--shadow);margin-top:4px;"></div>
+        </div>
+        <hr class="dash" style="margin:10px 0;">
         <div class="field" style="max-width:300px;"><label>Default skin on new devices</label><span class="select"><span>Aurora</span></span><span class="hint">Viewers can still change it on their TV.</span></div>
         <hr class="dash" style="margin:10px 0;">
         <div class="row center" style="padding:6px 0;"><div><b>Show progress bars on Continue Watching</b></div><span class="spacer"></span><span class="toggle on"></span></div>
@@ -179,6 +183,32 @@
 
   // remove rows
   document.querySelectorAll('.rm').forEach(b => b.addEventListener('click', () => b.closest('.cfg-row').remove()));
+
+  // per-user interface language picker (R19) — the value Jellystructure stores as uiLanguage
+  const UI_LANGS = [
+    { code: 'en', name: 'English',  endo: 'English' },
+    { code: 'da', name: 'Danish',   endo: 'Dansk' },
+    { code: 'fo', name: 'Faroese',  endo: 'Føroyskt' },
+  ];
+  const langSel = document.getElementById('ui-lang');
+  const langMenu = document.getElementById('ui-lang-menu');
+  function setLang(l) {
+    langSel.querySelector('span').innerHTML = '<span class="lang">' + l.code + '</span> ' + l.name + ' (' + l.endo + ')';
+  }
+  langSel.addEventListener('click', e => {
+    e.stopPropagation();
+    if (langMenu.style.display === 'block') { langMenu.style.display = 'none'; return; }
+    langMenu.innerHTML = UI_LANGS.map(l =>
+      '<div class="navitem" data-code="' + l.code + '"><span class="l" style="display:flex;align-items:center;gap:10px;"><span class="lang">' + l.code + '</span> ' + l.name + ' <span class="muted tiny">' + l.endo + '</span></span></div>'
+    ).join('');
+    langMenu.style.display = 'block';
+  });
+  langMenu.addEventListener('click', e => {
+    const it = e.target.closest('[data-code]'); if (!it) return;
+    setLang(UI_LANGS.find(l => l.code === it.dataset.code));
+    langMenu.style.display = 'none';
+  });
+  document.addEventListener('click', e => { if (!e.target.closest('#sect-behaviour .field')) langMenu.style.display = 'none'; });
 })();
 </script>
 </body>

@@ -145,5 +145,14 @@
     return pool[key].slice(0, 9).map((t, i) => T(t, 2014 + i, item.kind === 'series' ? 'Series' : 'Drama', ['7', '12', '16'][i % 3], item.kind));
   }
 
-  window.RAVILO = { studios, hero, rows, mergedNew, grad, initials, episodesFor, seasonsFor, castFor, relatedFor };
+  // Ravilo users on this TV — each is a Jellyfin user with a cached device token (per the
+  // pairing model). The client keeps several so switching is instant. "isAdmin" mirrors Jellyfin.
+  const profiles = [
+    { id: 'eyd',    name: 'Eyð',    initials: 'ER', color: 'linear-gradient(145deg,#7b6ef0,#3fb6f5)', signedIn: true,  isAdmin: true,  kid: false, lang: 'fo' },
+    { id: 'olivar', name: 'Olivar', initials: 'OL', color: 'linear-gradient(145deg,#19d6c6,#2a8cf0)', signedIn: true,  isAdmin: false, kid: false, lang: 'en' },
+    { id: 'marjun', name: 'Marjun', initials: 'MJ', color: 'linear-gradient(145deg,#f5b542,#e0792f)', signedIn: true,  isAdmin: false, kid: false, lang: 'da' },
+    { id: 'kids',   name: 'Kids',   initials: '★',  color: 'linear-gradient(145deg,#e0639a,#b15cd0)', signedIn: true,  isAdmin: false, kid: true,  lang: 'fo' },
+  ];
+
+  window.RAVILO = { studios, hero, rows, mergedNew, profiles, grad, initials, episodesFor, seasonsFor, castFor, relatedFor };
 })();

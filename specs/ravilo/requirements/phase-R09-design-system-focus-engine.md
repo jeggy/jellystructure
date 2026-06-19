@@ -33,7 +33,8 @@ alike. The HTML prototype in `design/ravilo/` is the visual target.
 ### Components
 7. Focusable building blocks: `Tile` (poster + landscape variants, badge, progress bar), `ContentRow`
    (titled, lazy, horizontally scrolling), `HeroBanner`/`HeroCarousel`, `ChannelCard` (logo/text),
-   `AppBar` (brand + top nav + search affordance + clock/avatar), `Button` (primary/ghost),
+   `AppBar` (brand + top nav + search affordance + clock/avatar — the clock is **24-hour** time, e.g.
+   `14:25`, never 12-hour/AM-PM), `Button` (primary/ghost),
    `EpisodeCard`, `SeasonPicker`, `CastCircle`, `OnScreenKeyboard`. All focus-aware, all skinned.
 
 ## Invariants
