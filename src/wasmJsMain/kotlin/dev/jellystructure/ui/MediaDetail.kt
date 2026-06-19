@@ -643,16 +643,20 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
                         val panel = document.getElementById("tab-$id") as? HTMLElement
                         panel?.style?.display = if (id == tab) "block" else "none"
                     }
-                    if (tab == "history") scope.launch { loadHistory(item.id, container, scope) }
+                    if (tab == "history") {
+                        document.getElementById("history-list")?.innerHTML =
+                            """<span class="muted tiny">Loading…</span>"""
+                        scope.launch { loadHistory(item.id, container, scope) }
+                    }
                     if (tab == "artwork") scope.launch { loadArtworkStatus(item.id) }
                     if (tab == "tracks") {
                         scope.launch { loadSeedingStatus(item.id) }
                         val tracksPanel = document.getElementById("tab-tracks") as? HTMLElement
                         if (tracksPanel != null) wireForcedToggles(tracksPanel, item.id, scope)
                     }
-                    // Update URL — don't add history entry for overview (default), do for others
+                    // Update URL silently via replaceState — no hashchange fired, no page re-render
                     val tabParam = if (tab == "overview") null else tab
-                    dev.jellystructure.Router.updateQuery(mapOf("tab" to tabParam), replace = false)
+                    dev.jellystructure.Router.updateQuery(mapOf("tab" to tabParam), replace = true)
                 }
             }
         }

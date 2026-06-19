@@ -1,6 +1,6 @@
 # Phase 28 — URL-based tab & view-state navigation (FR-UN1)
 
-**Status:** Planned
+**Status:** ✓ Done
 
 ## Problem
 Top-level pages have their own URLs, but **sub-state within a page does not**. Switching to the
@@ -52,9 +52,11 @@ view to be fully reconstructable from the URL** everywhere — open a URL and la
    unknown. Navigating directly to `#/media/elfie?tab=artwork` shows the Artwork tab immediately
    (including its lazy load — artwork status / history fetch fire for the initial tab, not only on
    click).
-5. Clicking a tab updates the URL via `navigate(..., replace = false)` so Back returns to the previous
-   tab. Switching tabs must not reload the whole page — update the URL and toggle panels (the renderer
-   already has the panels in the DOM).
+5. Clicking a tab updates the URL via `navigate(..., replace = true)` (replaceState) so the address
+   bar stays in sync without firing `hashchange` and without adding a history entry. Switching tabs
+   must not reload the whole page — only the tab panel toggles in the DOM. Back/Forward navigate
+   between pages, not between tabs within a page (standard tab UX). Deep-linking and refresh still
+   reconstruct the correct tab via the URL.
 
 ### C. Apply the pattern to the other stateful pages
 6. **Library**: reflect `kind`, `filter`, `sort`, `search`, `page` in the query string. On load, restore
@@ -69,8 +71,10 @@ view to be fully reconstructable from the URL** everywhere — open a URL and la
    (e.g. open straight to `episodes`) using the same `?tab=` convention.
 
 ### D. Behaviour guarantees
-10. Browser **Back/Forward** traverse tab/section/filter changes intuitively (discrete actions add
-    history; continuous typing does not flood it).
+10. Browser **Back/Forward** traverse page-level navigation (library → detail → back to library).
+    Tab switches within a page use `replaceState` and do not add history entries — this is correct
+    tab UX (users expect Back to leave the page, not cycle through tabs). Filter/section changes on
+    Library/Settings that warrant history entries still use `replace = false`.
 11. Deep-linking is **idempotent**: rendering from a URL produces the same view as clicking to it, and
     re-serialising that view yields the same URL (no drift).
 12. Unknown/[]invalid sub-state values fall back to the page default rather than erroring or blanking.
