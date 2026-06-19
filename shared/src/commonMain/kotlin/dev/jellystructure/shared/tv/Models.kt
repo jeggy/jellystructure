@@ -205,6 +205,14 @@ data class HeroConfig(
 @Serializable
 data class ChannelConfig(
     val id: String,
+    val name: String = "",
+    val style: ChannelStyle = ChannelStyle.TEXT,
+    @SerialName("brand_color") val brandColor: String? = null,
+    @SerialName("logo_url") val logoUrl: String? = null,
+    @SerialName("filter_network") val filterNetwork: String? = null,
+    @SerialName("filter_studio") val filterStudio: String? = null,
+    @SerialName("filter_genre") val filterGenre: String? = null,
+    @SerialName("filter_tag") val filterTag: String? = null,
     val enabled: Boolean = true,
     val order: Int = 0,
 )
@@ -216,6 +224,7 @@ data class RowConfig(
     val title: String? = null,
     val enabled: Boolean = true,
     val order: Int = 0,
+    @SerialName("media_kind") val mediaKind: String? = null, // "MOVIE", "SERIES", or null = all
 )
 
 @Serializable

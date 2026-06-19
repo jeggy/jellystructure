@@ -21,13 +21,13 @@ import kotlinx.cinterop.ptr
 private val json = Json { ignoreUnknownKeys = true }
 
 private val DEFAULT_ROWS = listOf(
-    RowConfig(id = "continue",      kind = RowKind.CONTINUE,     title = "Continue Watching",   enabled = true, order = 0),
-    RowConfig(id = "newly-movies",  kind = RowKind.NEWLY_ADDED,  title = "Newly Added Movies",  enabled = true, order = 1),
-    RowConfig(id = "newly-series",  kind = RowKind.NEWLY_ADDED,  title = "Newly Added Series",  enabled = true, order = 2),
-    RowConfig(id = "genre-drama",   kind = RowKind.GENRE,        title = "Drama",               enabled = true, order = 3),
-    RowConfig(id = "genre-action",  kind = RowKind.GENRE,        title = "Action & Adventure",  enabled = true, order = 4),
-    RowConfig(id = "genre-scifi",   kind = RowKind.GENRE,        title = "Sci-Fi & Fantasy",    enabled = true, order = 5),
-    RowConfig(id = "genre-comedy",  kind = RowKind.GENRE,        title = "Comedy",              enabled = true, order = 6),
+    RowConfig(id = "continue",     kind = RowKind.CONTINUE,    title = "Continue Watching",  enabled = true, order = 0),
+    RowConfig(id = "newly-movies", kind = RowKind.NEWLY_ADDED, title = "Newly Added Movies", enabled = true, order = 1, mediaKind = "MOVIE"),
+    RowConfig(id = "newly-series", kind = RowKind.NEWLY_ADDED, title = "Newly Added Series", enabled = true, order = 2, mediaKind = "SERIES"),
+    RowConfig(id = "genre-drama",  kind = RowKind.GENRE,       title = "Drama",              enabled = true, order = 3),
+    RowConfig(id = "genre-action", kind = RowKind.GENRE,       title = "Action & Adventure", enabled = true, order = 4),
+    RowConfig(id = "genre-scifi",  kind = RowKind.GENRE,       title = "Sci-Fi & Fantasy",   enabled = true, order = 5),
+    RowConfig(id = "genre-comedy", kind = RowKind.GENRE,       title = "Comedy",             enabled = true, order = 6),
 )
 
 private val DEFAULT_CONFIG = RaviloConfig(

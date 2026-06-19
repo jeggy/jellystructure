@@ -17,6 +17,7 @@ import dev.jellystructure.media.Scanner
 import dev.jellystructure.media.ScanTracker
 import dev.jellystructure.server.routes.runScan
 import dev.jellystructure.server.startServer
+import dev.jellystructure.tv.HomeFeedService
 import dev.jellystructure.tv.RaviloConfigService
 import dev.jellystructure.tv.RaviloDeviceService
 import dev.jellystructure.tmdb.TmdbClient
@@ -119,6 +120,7 @@ fun main() = runBlocking {
 
     val raviloDeviceService = RaviloDeviceService(db)
     val raviloConfigService = RaviloConfigService(db)
+    val homeFeedService = HomeFeedService(mediaStore, raviloConfigService, jellyfinClient, configStore)
     val mediaHistory = MediaHistory(db)
     val dataDir = dbFile.substringBeforeLast('/')
     val jsTagStore = dev.jellystructure.media.JsTagStore("$dataDir/js-tags.json")
@@ -127,7 +129,7 @@ fun main() = runBlocking {
     val qbClient = QBittorrentClient()
     val seedingGuard = SeedingGuard(qbClient)
     val shutdown = startServer(
-        configStore, sessionService, raviloDeviceService, raviloConfigService, jellyfinClient, mediaStore, scanner,
+        configStore, sessionService, raviloDeviceService, raviloConfigService, homeFeedService, jellyfinClient, mediaStore, scanner,
         artworkDownloader, scanTracker, folderWatcher, mediaHistory, activityLog, broadcaster,
         frontendDir, port, scanDispatcher, effectiveScanThreads, jsTagStore, seedingGuard, logoDownloader,
         qbClient,
