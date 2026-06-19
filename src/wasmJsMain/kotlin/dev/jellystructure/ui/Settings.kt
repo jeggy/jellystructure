@@ -181,6 +181,14 @@ fun renderSettings(container: Element, scope: CoroutineScope, query: Map<String,
                   <label>qBittorrent URL</label>
                   <input id="qb-url" class="input" type="url" placeholder="http://localhost:8080" style="width:100%">
                 </div>
+                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+                  <div>
+                    <span style="font-size:.9rem">No authentication</span>
+                    <div class="hint" style="margin-top:2px">Skip login — for instances with auth disabled or localhost bypass</div>
+                  </div>
+                  <span id="qb-no-auth-toggle" class="toggle" style="cursor:pointer;flex-shrink:0;margin-left:12px"></span>
+                </div>
+                <div id="qb-credential-fields">
                 <div class="field">
                   <label>Username</label>
                   <input id="qb-username" class="input" type="text" style="width:100%">
@@ -189,6 +197,7 @@ fun renderSettings(container: Element, scope: CoroutineScope, query: Map<String,
                   <label>Password</label>
                   <input id="qb-password" class="input" type="password" placeholder="(unchanged)" style="width:100%">
                   <span class="hint">Leave blank to keep the stored password</span>
+                </div>
                 </div>
                 <div style="margin-bottom:12px">
                   <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
@@ -274,6 +283,7 @@ private var scanThreads = 4
 private var effectiveScanThreads = 4
 private var libraryMappings: MutableList<LibraryMapping> = mutableListOf()
 private var qbEnabled = false
+private var qbNoAuth = false
 private var qbPathMappings: MutableList<QBittorrentPathMapping> = mutableListOf()
 private var notifScanDone = true
 private var notifNoMatch = false
@@ -310,14 +320,18 @@ private fun populateForm(response: ConfigResponse) {
 
     val qb = config.qbittorrent
     qbEnabled = qb?.enabled ?: false
+    qbNoAuth = qb?.noAuth ?: false
     qbPathMappings = (qb?.pathMappings ?: emptyList()).toMutableList()
     updateToggle("qb-enabled-toggle", qbEnabled)
+    updateToggle("qb-no-auth-toggle", qbNoAuth)
     if (qb != null) {
         setInputValue("qb-url", qb.url)
         setInputValue("qb-username", qb.username)
     }
     val qbFields = document.getElementById("qb-fields") as? HTMLElement
     qbFields?.style?.display = if (qbEnabled) "block" else "none"
+    val qbCredFields = document.getElementById("qb-credential-fields") as? HTMLElement
+    qbCredFields?.style?.display = if (qbNoAuth) "none" else "block"
     renderQbPathMappings()
 
     notifScanDone = config.behavior.notifyOnScanDone
@@ -398,6 +412,13 @@ private fun attachListeners(scope: CoroutineScope) {
         updateToggle("qb-enabled-toggle", qbEnabled)
         val qbFields = document.getElementById("qb-fields") as? HTMLElement
         qbFields?.style?.display = if (qbEnabled) "block" else "none"
+        refreshTomlPreview(readForm())
+    }
+    document.getElementById("qb-no-auth-toggle")?.addEventListener("click") {
+        qbNoAuth = !qbNoAuth
+        updateToggle("qb-no-auth-toggle", qbNoAuth)
+        val qbCredFields = document.getElementById("qb-credential-fields") as? HTMLElement
+        qbCredFields?.style?.display = if (qbNoAuth) "none" else "block"
         refreshTomlPreview(readForm())
     }
     listOf("qb-url", "qb-username", "qb-password").forEach { id ->
@@ -734,8 +755,9 @@ private fun readForm(): AppConfig = AppConfig(
     qbittorrent = if (qbEnabled) QBittorrentConfig(
         enabled = true,
         url = getInputValue("qb-url"),
-        username = getInputValue("qb-username"),
-        password = getInputValue("qb-password").ifBlank { "##KEEP##" },
+        noAuth = qbNoAuth,
+        username = if (qbNoAuth) "" else getInputValue("qb-username"),
+        password = if (qbNoAuth) "" else getInputValue("qb-password").ifBlank { "##KEEP##" },
         pathMappings = qbPathMappings.toList(),
     ) else null,
 )
@@ -787,9 +809,12 @@ private fun buildToml(c: AppConfig): String = buildString {
         appendLine()
         appendLine("[qbittorrent]")
         appendLine("""url = "${qb.url}"""")
-        appendLine("""username = "${qb.username}"""")
-        appendLine("""password = "***"""")
         appendLine("enabled = ${qb.enabled}")
+        appendLine("no_auth = ${qb.noAuth}")
+        if (!qb.noAuth) {
+            appendLine("""username = "${qb.username}"""")
+            appendLine("""password = "***"""")
+        }
         for (m in qb.pathMappings) {
             appendLine()
             appendLine("[[qbittorrent.path_mappings]]")

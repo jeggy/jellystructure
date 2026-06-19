@@ -152,9 +152,9 @@ fallback_language = ""             # empty = inherit global
 [qbittorrent]
 enabled = true
 url = "http://gluetun-seeder:8085"
-username = "admin"
-password = ""
-enabled = true
+no_auth = false          # set true when qBittorrent has auth disabled / localhost-bypass
+username = "admin"       # ignored when no_auth = true
+password = ""            # ignored when no_auth = true
 
 [[qbittorrent.path_mappings]]
 local = "/mnt/media/movies"        # path Jellystructure sees
