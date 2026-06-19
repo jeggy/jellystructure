@@ -1176,7 +1176,7 @@ internal suspend fun runScan(
 }
 
 @OptIn(ExperimentalForeignApi::class)
-internal fun fireWebhook(cfg: dev.jellystructure.config.AppConfig, payload: String) {
+internal suspend fun fireWebhook(cfg: dev.jellystructure.config.AppConfig, payload: String) {
     val url = cfg.behavior.notificationsWebhook
     if (url.isBlank()) return
     val safePayload = payload.replace("'", "\\'")
