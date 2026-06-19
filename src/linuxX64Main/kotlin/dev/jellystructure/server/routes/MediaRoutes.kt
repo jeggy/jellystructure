@@ -34,7 +34,9 @@ import io.ktor.server.routing.patch
 import io.ktor.server.routing.post
 import io.ktor.server.routing.route
 import io.ktor.utils.io.readRemaining
+import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.coroutines.CancellationException
+import platform.posix.system as posixSystem
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.channels.Channel
@@ -860,9 +862,10 @@ fun Route.mediaRoutes(
             call.respond(HttpStatusCode.Conflict, mapOf("error" to "scan already running"))
             return@post
         }
+        val libraryId = call.request.queryParameters["library"]?.takeIf { it.isNotBlank() }
         val jobId = scanTracker.startNew()
-        appScope.launch { runScan(jobId, emptySet(), store, scanner, scanTracker, broadcaster, configStore, jellyfinClient, scanDispatcher) }
-        call.respond(HttpStatusCode.Accepted, mapOf("status" to "started"))
+        appScope.launch { runScan(jobId, emptySet(), store, scanner, scanTracker, broadcaster, configStore, jellyfinClient, scanDispatcher, libraryId) }
+        call.respond(HttpStatusCode.Accepted, mapOf("status" to "started", "library" to (libraryId ?: "all")))
     }
 
     post("/scan/resume") {
@@ -1015,7 +1018,7 @@ private suspend fun pushToJellyfin(
     }
 }
 
-private suspend fun runScan(
+internal suspend fun runScan(
     jobId: String,
     skipIds: Set<String>,
     store: MediaStore,
@@ -1025,16 +1028,17 @@ private suspend fun runScan(
     configStore: ConfigStore,
     jellyfinClient: JellyfinClient,
     scanDispatcher: CoroutineDispatcher,
+    libraryJellyfinId: String? = null,
 ) {
     val allItems = mutableListOf<MediaItem>()
     val allItemsMutex = Mutex()
     val succeeded = AtomicInt(0)
     val nextWorkerId = AtomicInt(0)
 
-    Logger.info("Library scan started jobId=$jobId (skip=${skipIds.size})", "scan")
+    Logger.info("Library scan started jobId=$jobId (skip=${skipIds.size}${if (libraryJellyfinId != null) " library=$libraryJellyfinId" else ""})", "scan")
     broadcaster.broadcast(JobEvent.Started(jobId, -1))
 
-    val jellyfinItems = scanner.fetchItems()
+    val jellyfinItems = if (libraryJellyfinId != null) scanner.fetchItemsForLibrary(libraryJellyfinId) else scanner.fetchItems()
     if (jellyfinItems == null) {
         scanTracker.complete()
         broadcaster.broadcast(JobEvent.Finished(jobId, 0, 0))
@@ -1137,6 +1141,15 @@ private suspend fun runScan(
         val cfg = configStore.current
         if (cfg.apiKeys.jellyfinUrl.isNotBlank() && cfg.apiKeys.jellyfinToken.isNotBlank()) {
             jellyfinClient.triggerLibraryRefresh(cfg.apiKeys.jellyfinUrl, cfg.apiKeys.jellyfinToken)
+        }
+        val webhook = cfg.behavior.notificationsWebhook
+        if (webhook.isNotBlank()) {
+            runCatching {
+                val payload = """{"event":"scan_complete","jobId":"$jobId","items":${succeeded.value}}"""
+                @OptIn(ExperimentalForeignApi::class)
+                runCatching { posixSystem("""curl -sf --max-time 10 -X POST -H 'Content-Type: application/json' -d '$payload' '$webhook' &""") }
+            }
+            Logger.info("Webhook notification sent to $webhook", "scan")
         }
     } else {
         broadcaster.broadcast(JobEvent.Finished(jobId, succeeded.value, 0))

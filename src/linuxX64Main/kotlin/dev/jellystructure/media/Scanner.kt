@@ -54,6 +54,17 @@ class Scanner(
     }
 
     /** Fetches all Jellyfin items. Returns null if URL/token not configured. */
+    suspend fun fetchItemsForLibrary(libraryJellyfinId: String): List<JellyfinItem>? {
+        val config = configStore.current
+        val baseUrl = config.apiKeys.jellyfinUrl
+        val token = config.apiKeys.jellyfinToken
+        if (baseUrl.isBlank() || token.isBlank()) {
+            Logger.warn("Jellyfin URL or token not configured — skipping scan")
+            return null
+        }
+        return jellyfinClient.getItemsByParent(baseUrl, token, libraryJellyfinId)
+    }
+
     suspend fun fetchItems(): List<JellyfinItem>? {
         val config = configStore.current
         val baseUrl = config.apiKeys.jellyfinUrl

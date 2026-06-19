@@ -192,6 +192,11 @@ object MediaApi {
     }.getOrNull()
 
     // Returns true if the scan was successfully started, false if already running or failed.
+    suspend fun startLibraryScan(jellyfinLibraryId: String): Boolean = runCatching {
+        val response = httpClient.post("/api/scan?library=${encodeURIComponent(jellyfinLibraryId)}")
+        response.status.value == 202
+    }.getOrDefault(false)
+
     suspend fun startScan(): Boolean = runCatching {
         val response = httpClient.post("/api/scan")
         response.status == HttpStatusCode.Accepted

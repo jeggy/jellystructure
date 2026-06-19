@@ -73,6 +73,18 @@ class JellyfinClient {
         result.getOrDefault(emptyList())
     }
 
+    suspend fun getItemsByParent(baseUrl: String, token: String, parentId: String): List<JellyfinItem> = runCatching {
+        val url = baseUrl.trimEnd('/') +
+            "/Items?ParentId=$parentId&IncludeItemTypes=Movie,Series&Recursive=true&Fields=Path,ProviderIds,ProductionYear,LockData,LockedFields"
+        http.get(url) {
+            header("Authorization", """$AUTH_HEADER, Token="$token"""")
+        }.body<JellyfinItemsResponse>().items
+            .filter { it.type == "Movie" || it.type == "Series" }
+    }.let { result ->
+        if (result.isFailure) Logger.warn("Jellyfin getItemsByParent failed: ${result.exceptionOrNull()?.message}")
+        result.getOrDefault(emptyList())
+    }
+
     suspend fun getItem(baseUrl: String, token: String, jellyfinId: String): JellyfinItem? = runCatching {
         val url = baseUrl.trimEnd('/') +
             "/Items/$jellyfinId?Fields=Path,ProviderIds,ProductionYear,LockData,LockedFields"
