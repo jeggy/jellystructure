@@ -23,5 +23,14 @@ fun createDatabase(dbFile: String): JellystructureDb {
         },
         extendedConfig = DatabaseConfiguration.Extended(basePath = parentDir.ifEmpty { null }),
     )
-    return JellystructureDb(NativeSqliteDriver(config))
+    val driver = NativeSqliteDriver(config)
+    // Defensive: if the DB was created before user_version tracking was in place,
+    // Schema.create() ran as a no-op (CREATE TABLE IF NOT EXISTS) and the ALTER TABLE
+    // in 1.sqm was never applied. Probe for the v2 columns and add them if missing.
+    runCatching { driver.execute(null, "SELECT revertable FROM media_history LIMIT 1", 0) }
+        .onFailure {
+            driver.execute(null, "ALTER TABLE media_history ADD COLUMN revertable INTEGER NOT NULL DEFAULT 0", 0)
+            driver.execute(null, "ALTER TABLE media_history ADD COLUMN before_snapshot TEXT NOT NULL DEFAULT ''", 0)
+        }
+    return JellystructureDb(driver)
 }
