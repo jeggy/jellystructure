@@ -266,6 +266,7 @@ private fun renderRows(container: Element) {
 
 private val SKINS = listOf("AURORA", "MIDNIGHT", "NOIR")
 private val TILE_SHAPES = listOf("POSTER", "THUMB", "SQUARE")
+private val LANGS = listOf("en" to "English", "da" to "Dansk", "fo" to "Føroyskt")
 
 private fun renderBehaviour(container: Element) {
     val sect = container.querySelector("#sect-behaviour") ?: return
@@ -279,10 +280,18 @@ private fun renderBehaviour(container: Element) {
     }
     val overrideChecked = if (currentConfig.allowSkinOverride) " checked" else ""
     val progressChecked = if (currentConfig.showContinueProgress) " checked" else ""
+    val langOptions = LANGS.joinToString("") { (code, label) ->
+        val sel = if (code == currentConfig.uiLanguage) " selected" else ""
+        """<option value="$code"$sel>$label</option>"""
+    }
     sect.innerHTML = """
         <div class="card" style="padding:18px 20px;margin-bottom:18px">
           <div style="font-weight:600;margin-bottom:14px">Behaviour</div>
           <div style="display:grid;gap:14px">
+            <label style="display:flex;align-items:center;justify-content:space-between;gap:12px">
+              <span style="font-size:.9rem">Interface language</span>
+              <select id="beh-lang" class="input" style="width:140px;font-size:.85rem">$langOptions</select>
+            </label>
             <label style="display:flex;align-items:center;justify-content:space-between;gap:12px">
               <span style="font-size:.9rem">Default skin</span>
               <select id="beh-skin" class="input" style="width:140px;font-size:.85rem">$skinOptions</select>
@@ -344,6 +353,7 @@ private fun collectConfig(container: Element) {
         )
     }
     val mergeNewlyAdded = (container.querySelector("#merge-newly-added") as? HTMLInputElement)?.checked ?: false
+    val uiLanguage   = (container.querySelector("#beh-lang")          as? HTMLSelectElement)?.value ?: "en"
     val defaultSkin  = (container.querySelector("#beh-skin")          as? HTMLSelectElement)?.value ?: "AURORA"
     val tileShape    = (container.querySelector("#beh-tile")          as? HTMLSelectElement)?.value ?: "POSTER"
     val allowOverride= (container.querySelector("#beh-skin-override") as? HTMLInputElement)?.checked ?: true
@@ -353,6 +363,7 @@ private fun collectConfig(container: Element) {
         channels = channels,
         rows = rows,
         mergeNewlyAdded = mergeNewlyAdded,
+        uiLanguage = uiLanguage,
         defaultSkin = defaultSkin,
         tileShape = tileShape,
         allowSkinOverride = allowOverride,
