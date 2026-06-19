@@ -105,7 +105,7 @@ private fun HomeLoaded(
     // Save focus on section change
     LaunchedEffect(focusSection) {
         saveFocusAt(FOCUS_KEY, focusSection, 0)
-        if (focusSection > 0) listState.animateScrollToItem((focusSection - 1).coerceAtLeast(0))
+        if (focusSection > 0) listState.scrollToItem((focusSection - 1).coerceAtLeast(0))
     }
 
     LazyColumn(
@@ -136,6 +136,7 @@ private fun HomeLoaded(
                     title = "Channels",
                     items = feed.channels,
                     focusedIndex = channelRow.focused,
+                    itemKey = { ch -> ch.id },
                 ) { i, ch ->
                     ChannelCard(
                         name = ch.name,
@@ -157,7 +158,7 @@ private fun HomeLoaded(
         }
 
         // Content rows
-        items(feed.rows.size) { ri ->
+        items(feed.rows.size, key = { ri -> feed.rows[ri].id }) { ri ->
             val row: Row = feed.rows[ri]
             val rowFocus = rowFocusStates[ri]
 
@@ -166,6 +167,7 @@ private fun HomeLoaded(
                 title = row.title,
                 items = row.items,
                 focusedIndex = rowFocus.focused,
+                itemKey = { card -> card.id },
             ) { ci, card ->
                 val isLandscape = row.kind == RowKind.CONTINUE
                 Tile(

@@ -76,8 +76,8 @@ fun PlayerScreen(
         }
     }
 
-    // Poll position
-    LaunchedEffect(isPlaying) {
+    // Poll position — key is Unit so the loop isn't restarted on every play/pause
+    LaunchedEffect(Unit) {
         while (true) {
             delay(500)
             positionMs = player.positionMs
@@ -180,6 +180,9 @@ private fun PlayerChrome(
     onBack: () -> Unit,
 ) {
     val colors = RaviloTheme.colors
+    val chromeBg = remember { Brush.verticalGradient(listOf(Color.Transparent, Color(0xCC000000))) }
+    val seekBgColor = remember { Color.White.copy(alpha = 0.3f) }
+    val timeColor = remember { Color.White.copy(alpha = 0.8f) }
 
     // Bottom gradient + controls
     Box(modifier = Modifier.fillMaxSize()) {
@@ -189,7 +192,7 @@ private fun PlayerChrome(
                 .fillMaxWidth()
                 .height(200.dp)
                 .align(Alignment.BottomCenter)
-                .background(Brush.verticalGradient(listOf(Color.Transparent, Color(0xCC000000))))
+                .background(chromeBg)
         )
 
         Column(
@@ -203,14 +206,15 @@ private fun PlayerChrome(
             Spacer(Modifier.height(8.dp))
             // Seek bar
             val pct = if (durationMs > 0) positionMs.toFloat() / durationMs else 0f
-            Box(modifier = Modifier.fillMaxWidth().height(4.dp).background(Color.White.copy(alpha = 0.3f), RoundedCornerShape(2.dp))) {
-                if (pct > 0f) Box(modifier = Modifier.fillMaxWidth(pct).height(4.dp).background(colors.accent, RoundedCornerShape(2.dp)))
+            val seekBarShape = remember { RoundedCornerShape(2.dp) }
+            Box(modifier = Modifier.fillMaxWidth().height(4.dp).background(seekBgColor, seekBarShape)) {
+                if (pct > 0f) Box(modifier = Modifier.fillMaxWidth(pct).height(4.dp).background(colors.accent, seekBarShape))
             }
             Spacer(Modifier.height(4.dp))
             // Time
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text(positionMs.toTimeStr(), color = Color.White.copy(alpha = 0.8f), fontSize = 12.sp)
-                if (durationMs > 0) Text(durationMs.toTimeStr(), color = Color.White.copy(alpha = 0.8f), fontSize = 12.sp)
+                Text(positionMs.toTimeStr(), color = timeColor, fontSize = 12.sp)
+                if (durationMs > 0) Text(durationMs.toTimeStr(), color = timeColor, fontSize = 12.sp)
             }
             Spacer(Modifier.height(16.dp))
             // Controls
@@ -222,10 +226,9 @@ private fun PlayerChrome(
                 Text("+10s", color = Color.White, fontSize = 14.sp)
                 if (nearEnd && nextEpLabel != null) {
                     Spacer(Modifier.width(24.dp))
-                    val fr = remember { FocusRequester() }
                     RaviloButton(
                         label = "Next · $nextEpLabel",
-                        focusRequester = fr,
+                        focusRequester = nextEpFR,
                         onSelect = onNextEp,
                     )
                 }

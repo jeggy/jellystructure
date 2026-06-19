@@ -78,6 +78,13 @@ private fun SeriesDetailLoaded(
     onRelatedSelect: (MediaCard) -> Unit,
 ) {
     val colors = RaviloTheme.colors
+    val backdropGradient = remember(colors.background) {
+        Brush.verticalGradient(
+            0f to Color.Transparent,
+            0.5f to colors.background.copy(alpha = 0.5f),
+            1f to colors.background,
+        )
+    }
     val scrollState = rememberScrollState()
 
     var selectedSeasonIdx by remember { mutableIntStateOf(0) }
@@ -113,19 +120,13 @@ private fun SeriesDetailLoaded(
             } else {
                 Box(modifier = Modifier.matchParentSize().background(colors.surfaceVariant))
             }
-            Box(
-                modifier = Modifier.matchParentSize().background(
-                    Brush.verticalGradient(
-                        0f to Color.Transparent,
-                        0.5f to colors.background.copy(alpha = 0.5f),
-                        1f to colors.background,
-                    )
-                )
-            )
+            Box(modifier = Modifier.matchParentSize().background(backdropGradient))
             Column(modifier = Modifier.align(Alignment.BottomStart).padding(40.dp, 40.dp)) {
                 Text(detail.card.title, color = colors.text, fontSize = 36.sp, fontWeight = FontWeight.Bold)
                 Spacer(Modifier.height(8.dp))
-                val meta = listOfNotNull(detail.card.year?.toString(), detail.card.genre).joinToString(" · ")
+                val meta = remember(detail.card.year, detail.card.genre) {
+                    listOfNotNull(detail.card.year?.toString(), detail.card.genre).joinToString(" · ")
+                }
                 if (meta.isNotEmpty()) Text(meta, color = colors.textSecondary, fontSize = 14.sp)
                 Spacer(Modifier.height(6.dp))
                 // Watched overview
@@ -219,7 +220,7 @@ private fun SeriesDetailLoaded(
                 contentPadding = PaddingValues(horizontal = 40.dp),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                items(episodes.size) { i ->
+                items(episodes.size, key = { i -> episodes[i].id }) { i ->
                     val ep = episodes[i]
                     val isResumeEp = ep.id == detail.progress.resumeEpisodeId
                     EpisodeCard(
@@ -251,7 +252,7 @@ private fun SeriesDetailLoaded(
                 contentPadding = PaddingValues(horizontal = 40.dp),
                 horizontalArrangement = Arrangement.spacedBy(16.dp),
             ) {
-                items(detail.cast.size) { i -> CastCircle(detail.cast[i]) }
+                items(detail.cast.size, key = { i -> detail.cast[i].id }) { i -> CastCircle(detail.cast[i]) }
             }
         }
 
@@ -265,7 +266,7 @@ private fun SeriesDetailLoaded(
                 contentPadding = PaddingValues(horizontal = 40.dp),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                items(detail.related.size) { i ->
+                items(detail.related.size, key = { i -> detail.related[i].id }) { i ->
                     val card = detail.related[i]
                     Tile(
                         title = card.title,

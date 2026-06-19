@@ -4,6 +4,7 @@ import dev.jellystructure.shared.tv.HomeFeed
 import dev.jellystructure.shared.tv.TvApiClient
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -20,12 +21,14 @@ class HomeStore(private val apiClient: TvApiClient) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val _state = MutableStateFlow<HomeState>(HomeState.Loading)
     val state: StateFlow<HomeState> = _state.asStateFlow()
+    private var loadJob: Job? = null
 
     init { load() }
 
     fun load() {
+        loadJob?.cancel()
         _state.value = HomeState.Loading
-        scope.launch {
+        loadJob = scope.launch {
             _state.value = runCatching { HomeState.Loaded(apiClient.getHome()) }
                 .getOrElse { HomeState.Error(it.message ?: "Unknown error") }
         }

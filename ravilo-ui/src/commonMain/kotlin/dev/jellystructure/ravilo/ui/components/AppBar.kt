@@ -51,6 +51,12 @@ fun AppBar(
     modifier: Modifier = Modifier,
 ) {
     val colors = RaviloTheme.colors
+    val barGradient = remember(colors.background) {
+        Brush.verticalGradient(
+            0f to colors.background.copy(alpha = 0.95f),
+            1f to colors.background.copy(alpha = 0f),
+        )
+    }
 
     // First item uses navFR directly so callers can focus the bar with one requester.
     val otherFRs = remember(navItems.size) { List(maxOf(navItems.size - 1, 0)) { FocusRequester() } }
@@ -61,12 +67,7 @@ fun AppBar(
         modifier = modifier
             .fillMaxWidth()
             .height(64.dp)
-            .background(
-                Brush.verticalGradient(
-                    0f to colors.background.copy(alpha = 0.95f),
-                    1f to colors.background.copy(alpha = 0f),
-                )
-            ),
+            .background(barGradient),
     ) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 40.dp),

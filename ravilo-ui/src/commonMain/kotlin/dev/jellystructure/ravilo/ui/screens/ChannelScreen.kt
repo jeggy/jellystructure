@@ -36,6 +36,7 @@ import dev.jellystructure.shared.tv.RowKind
 import dev.jellystructure.shared.tv.TvApiClient
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -46,10 +47,12 @@ class ChannelStore(private val apiClient: TvApiClient) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val _state = MutableStateFlow<HomeState>(HomeState.Loading)
     val state: StateFlow<HomeState> = _state.asStateFlow()
+    private var loadJob: Job? = null
 
     fun load(channelId: String) {
+        loadJob?.cancel()
         _state.value = HomeState.Loading
-        scope.launch {
+        loadJob = scope.launch {
             _state.value = runCatching { HomeState.Loaded(apiClient.getChannel(channelId)) }
                 .getOrElse { HomeState.Error(it.message ?: "Unknown error") }
         }
@@ -108,7 +111,7 @@ private fun ChannelRows(rows: List<Row>, onItemSelect: (MediaCard) -> Unit) {
     LazyColumn(
         contentPadding = PaddingValues(bottom = 40.dp),
     ) {
-        items(rows.size) { ri ->
+        items(rows.size, key = { ri -> rows[ri].id }) { ri ->
             val row = rows[ri]
             val rowFocus = rowFocusStates[ri]
             Spacer(Modifier.height(28.dp))
@@ -116,6 +119,7 @@ private fun ChannelRows(rows: List<Row>, onItemSelect: (MediaCard) -> Unit) {
                 title = row.title,
                 items = row.items,
                 focusedIndex = rowFocus.focused,
+                itemKey = { card -> card.id },
             ) { ci, card ->
                 val isLandscape = row.kind == RowKind.CONTINUE
                 Tile(

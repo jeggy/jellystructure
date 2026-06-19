@@ -11,6 +11,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
 sealed class PlayerSessionState {
@@ -73,7 +74,7 @@ class PlayerStore(private val apiClient: TvApiClient) {
     ) {
         progressJob?.cancel()
         progressJob = scope.launch {
-            while (true) {
+            while (isActive) {
                 delay(PROGRESS_INTERVAL_MS)
                 runCatching {
                     apiClient.reportProgress(sessionId, itemId, positionProvider())

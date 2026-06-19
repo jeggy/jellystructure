@@ -46,8 +46,10 @@ fun ChannelCard(
     val colors = RaviloTheme.colors
     var focused by remember { mutableStateOf(false) }
     val scale by animateFloatAsState(if (focused) 1.05f else 1f, label = "channelScale")
-
-    val accentColor = if (brandColor != null) androidx.compose.ui.graphics.Color(brandColor) else colors.accent
+    val cardShape = remember { RoundedCornerShape(10.dp) }
+    val accentColor = remember(brandColor, colors.accent) {
+        if (brandColor != null) androidx.compose.ui.graphics.Color(brandColor) else colors.accent
+    }
 
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -56,15 +58,16 @@ fun ChannelCard(
         Box(
             modifier = Modifier
                 .size(120.dp, 70.dp)
-                .clip(RoundedCornerShape(10.dp))
+                .clip(cardShape)
                 .background(colors.surfaceVariant)
                 .then(
-                    if (focused) Modifier.border(2.dp, accentColor, RoundedCornerShape(10.dp))
+                    if (focused) Modifier.border(2.dp, accentColor, cardShape)
                     else Modifier
                 )
                 .dpadFocusable(
                     focusRequester = focusRequester,
                     onFocused = { focused = true; onFocused() },
+                    onBlurred = { focused = false },
                     onLeft = onLeft, onRight = onRight, onUp = onUp, onDown = onDown, onSelect = onSelect,
                 ),
             contentAlignment = Alignment.Center,
