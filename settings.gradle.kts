@@ -1,5 +1,7 @@
 rootProject.name = "jellystructure"
 
+include(":shared")
+
 pluginManagement {
     repositories {
         gradlePluginPortal()
