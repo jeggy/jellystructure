@@ -9,11 +9,16 @@ import dev.jellystructure.api.LibraryMapping
 import dev.jellystructure.api.LibraryPathDiag
 import dev.jellystructure.api.JellyfinLibrary
 import dev.jellystructure.api.ConfigApi
+import dev.jellystructure.api.MediaApi
 import dev.jellystructure.api.QBittorrentConfig
 import dev.jellystructure.api.QBittorrentPathMapping
 import dev.jellystructure.api.httpClient
 import io.ktor.client.request.delete
+import io.ktor.client.request.post
+import io.ktor.client.request.setBody
+import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
+import io.ktor.http.contentType
 import kotlinx.browser.document
 import kotlinx.browser.window
 import kotlinx.coroutines.CoroutineScope
@@ -21,6 +26,7 @@ import kotlinx.coroutines.launch
 import org.w3c.dom.Element
 import org.w3c.dom.HTMLElement
 import org.w3c.dom.HTMLInputElement
+import org.w3c.dom.HTMLSelectElement
 import dev.jellystructure.observeSections
 import dev.jellystructure.scrollIntoViewSmooth
 
@@ -45,6 +51,7 @@ fun renderSettings(container: Element, scope: CoroutineScope, query: Map<String,
               <button data-sect="sect-metadata" class="settings-nav-item" style="background:none;border:none;text-align:left;padding:5px 8px;border-radius:5px;font-size:.85rem;cursor:pointer;color:var(--ink-soft);">Metadata</button>
               <button data-sect="sect-advanced" class="settings-nav-item" style="background:none;border:none;text-align:left;padding:5px 8px;border-radius:5px;font-size:.85rem;cursor:pointer;color:var(--ink-soft);">Advanced</button>
               <button data-sect="sect-crossseed" class="settings-nav-item" style="background:none;border:none;text-align:left;padding:5px 8px;border-radius:5px;font-size:.85rem;cursor:pointer;color:var(--ink-soft);">Cross-seed safety</button>
+              <button data-sect="sect-notifications" class="settings-nav-item" style="background:none;border:none;text-align:left;padding:5px 8px;border-radius:5px;font-size:.85rem;cursor:pointer;color:var(--ink-soft);">Notifications</button>
             </div>
           </nav>
 
@@ -84,7 +91,10 @@ fun renderSettings(container: Element, scope: CoroutineScope, query: Map<String,
             </div>
 
             <div class="card" id="sect-scanning">
-              <h3 style="font-size:1rem;margin:0 0 14px">Scanning</h3>
+              <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;flex-wrap:wrap">
+                <h3 style="font-size:1rem;margin:0">Scanning</h3>
+                <span id="tool-status-chip" style="font-size:.75rem;color:var(--ink-soft)"></span>
+              </div>
               <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
                 <div>
                   <span style="font-size:.9rem">Watch library folders for new files</span>
@@ -103,6 +113,21 @@ fun renderSettings(container: Element, scope: CoroutineScope, query: Map<String,
                 <span class="hint">Thread pool the workers run on. <strong>Requires an application restart.</strong></span>
               </div>
               <div id="scan-threads-restart-banner" style="display:none;margin-top:10px;padding:8px 12px;border-radius:6px;background:var(--warn-fill,#7c5100);color:var(--warn-ink,#fff);font-size:.83rem"></div>
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-top:12px">
+                <div>
+                  <span style="font-size:.9rem">Scheduled rescan</span>
+                  <div class="hint" style="margin-top:2px">Automatically re-scan on a fixed interval</div>
+                </div>
+                <span id="scheduled-rescan-toggle" class="toggle" style="cursor:pointer;flex-shrink:0;margin-left:12px"></span>
+              </div>
+              <div id="scheduled-rescan-fields" style="display:none;margin-top:10px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+                <select id="rescan-frequency" class="input" style="width:auto">
+                  <option value="daily">Daily</option>
+                  <option value="weekly">Weekly</option>
+                </select>
+                <span class="hint" style="margin:0">at</span>
+                <input id="rescan-time" class="input" type="time" value="03:00" style="width:auto">
+              </div>
             </div>
 
             <div class="card" id="sect-metadata">
@@ -181,6 +206,39 @@ fun renderSettings(container: Element, scope: CoroutineScope, query: Map<String,
               </div>
             </div>
 
+            <div class="card" id="sect-notifications">
+              <h3 style="font-size:1rem;margin:0 0 14px">Notifications</h3>
+              <div class="field">
+                <label>Webhook URL</label>
+                <input id="notif-webhook" class="input" type="url" placeholder="https://…/webhook" style="width:100%">
+                <span class="hint">POST with JSON body; leave blank to disable webhooks</span>
+              </div>
+              <div style="margin-bottom:12px">
+                <button id="notif-test-btn" class="btn sm ghost">Send test notification</button>
+                <span id="notif-test-result" class="tiny muted" style="margin-left:8px"></span>
+              </div>
+              <div style="font-size:.83rem;font-weight:500;margin-bottom:8px;color:var(--ink-soft)">Fire for…</div>
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+                <span style="font-size:.9rem">Scan finished</span>
+                <span id="notif-scan-done-toggle" class="toggle" style="cursor:pointer"></span>
+              </div>
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+                <div>
+                  <span style="font-size:.9rem">No TMDB match found</span>
+                  <div class="hint" style="margin-top:2px">Fires once per scan if any items remain unmatched</div>
+                </div>
+                <span id="notif-no-match-toggle" class="toggle" style="cursor:pointer;flex-shrink:0;margin-left:12px"></span>
+              </div>
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+                <span style="font-size:.9rem">Track write failed</span>
+                <span id="notif-write-failed-toggle" class="toggle" style="cursor:pointer"></span>
+              </div>
+              <div style="display:flex;align-items:center;justify-content:space-between">
+                <span style="font-size:.9rem">Drift detected</span>
+                <span id="notif-drift-toggle" class="toggle" style="cursor:pointer"></span>
+              </div>
+            </div>
+
           </div>
 
           <div class="card" style="width:300px;flex-shrink:0">
@@ -217,6 +275,12 @@ private var effectiveScanThreads = 4
 private var libraryMappings: MutableList<LibraryMapping> = mutableListOf()
 private var qbEnabled = false
 private var qbPathMappings: MutableList<QBittorrentPathMapping> = mutableListOf()
+private var notifScanDone = true
+private var notifNoMatch = false
+private var notifWriteFailed = true
+private var notifDrift = false
+private var scheduledRescanEnabled = false
+private var settingsScope: CoroutineScope? = null
 
 private fun populateForm(response: ConfigResponse) {
     val config = response.config
@@ -256,10 +320,42 @@ private fun populateForm(response: ConfigResponse) {
     qbFields?.style?.display = if (qbEnabled) "block" else "none"
     renderQbPathMappings()
 
+    notifScanDone = config.behavior.notifyOnScanDone
+    notifNoMatch = config.behavior.notifyOnNoMatch
+    notifWriteFailed = config.behavior.notifyOnWriteFailed
+    notifDrift = config.behavior.notifyOnDrift
+    setInputValue("notif-webhook", config.behavior.notificationsWebhook)
+    updateToggle("notif-scan-done-toggle", notifScanDone)
+    updateToggle("notif-no-match-toggle", notifNoMatch)
+    updateToggle("notif-write-failed-toggle", notifWriteFailed)
+    updateToggle("notif-drift-toggle", notifDrift)
+
+    scheduledRescanEnabled = config.behavior.scanIntervalHours > 0
+    updateToggle("scheduled-rescan-toggle", scheduledRescanEnabled)
+    val rescanFields = document.getElementById("scheduled-rescan-fields") as? HTMLElement
+    rescanFields?.style?.display = if (scheduledRescanEnabled) "flex" else "none"
+    if (config.behavior.scanIntervalHours >= 168) {
+        (document.getElementById("rescan-frequency") as? HTMLSelectElement)?.value = "weekly"
+    }
+
     refreshTomlPreview(config)
 }
 
+private suspend fun populateToolChips() {
+    val chipEl = document.getElementById("tool-status-chip") as? HTMLElement ?: return
+    val report = ConfigApi.getHealthFull() ?: return
+    val tools = listOf("ffmpeg", "ffprobe", "mkvpropedit")
+    val chips = tools.map { name ->
+        val check = report.checks.find { it.name == name }
+        val cls = if (check?.ok == true) "ok" else "bad"
+        """<span class="badge $cls" style="font-size:.72rem;margin-right:4px">$name</span>"""
+    }.joinToString("")
+    chipEl.innerHTML = chips
+}
+
 private fun attachListeners(scope: CoroutineScope) {
+    settingsScope = scope
+    scope.launch { populateToolChips() }
     document.getElementById("overwrite-nfo-toggle")?.addEventListener("click") {
         overwriteNfo = !overwriteNfo
         updateToggle("overwrite-nfo-toggle", overwriteNfo)
@@ -328,6 +424,54 @@ private fun attachListeners(scope: CoroutineScope) {
         qbPathMappings.add(QBittorrentPathMapping())
         renderQbPathMappings()
         refreshTomlPreview(readForm())
+    }
+
+    document.getElementById("notif-scan-done-toggle")?.addEventListener("click") {
+        notifScanDone = !notifScanDone
+        updateToggle("notif-scan-done-toggle", notifScanDone)
+        refreshTomlPreview(readForm())
+    }
+    document.getElementById("notif-no-match-toggle")?.addEventListener("click") {
+        notifNoMatch = !notifNoMatch
+        updateToggle("notif-no-match-toggle", notifNoMatch)
+        refreshTomlPreview(readForm())
+    }
+    document.getElementById("notif-write-failed-toggle")?.addEventListener("click") {
+        notifWriteFailed = !notifWriteFailed
+        updateToggle("notif-write-failed-toggle", notifWriteFailed)
+        refreshTomlPreview(readForm())
+    }
+    document.getElementById("notif-drift-toggle")?.addEventListener("click") {
+        notifDrift = !notifDrift
+        updateToggle("notif-drift-toggle", notifDrift)
+        refreshTomlPreview(readForm())
+    }
+    document.getElementById("notif-webhook")?.addEventListener("input") { refreshTomlPreview(readForm()) }
+    document.getElementById("notif-test-btn")?.addEventListener("click") {
+        scope.launch {
+            val resultEl = document.getElementById("notif-test-result") as? HTMLElement ?: return@launch
+            resultEl.textContent = "Sending…"
+            val webhookUrl = getInputValue("notif-webhook")
+            if (webhookUrl.isBlank()) { resultEl.textContent = "No URL set."; return@launch }
+            val ok = runCatching {
+                httpClient.post(webhookUrl) {
+                    contentType(ContentType.Application.Json)
+                    setBody("""{"event":"test","source":"jellystructure"}""")
+                }.status.value in 200..299
+            }.getOrDefault(false)
+            resultEl.innerHTML = if (ok) """<span class="badge ok">Delivered</span>""" else """<span class="badge bad">Failed</span>"""
+        }
+    }
+
+    document.getElementById("scheduled-rescan-toggle")?.addEventListener("click") {
+        scheduledRescanEnabled = !scheduledRescanEnabled
+        updateToggle("scheduled-rescan-toggle", scheduledRescanEnabled)
+        val rescanFields = document.getElementById("scheduled-rescan-fields") as? HTMLElement
+        rescanFields?.style?.display = if (scheduledRescanEnabled) "flex" else "none"
+        refreshTomlPreview(readForm())
+    }
+    listOf("rescan-frequency", "rescan-time").forEach { id ->
+        document.getElementById(id)?.addEventListener("change") { refreshTomlPreview(readForm()) }
     }
 
     document.getElementById("save-settings")?.addEventListener("click") {
@@ -461,6 +605,12 @@ private fun buildLibraryCardHtml(i: Int, lib: LibraryMapping): String {
         <span style="font-size:.75rem;color:var(--ink-soft);width:80px;flex-shrink:0">Match prefix</span>
         <code id="match-prefix-$i" style="font-size:.72rem;color:var(--ink-soft)">${lib.jellyfinPath.ifBlank { lib.localPath }}</code>
       </div>
+      ${if (!skipped) """
+      <div style="display:flex;gap:6px;margin-top:8px;padding-top:8px;border-top:1px solid var(--border)">
+        <button class="btn sm ghost lib-scan-btn" data-lib-id="${lib.jellyfinId}" data-lib-idx="$i">Scan</button>
+        <button class="btn sm ghost lib-push-btn" data-lib-idx="$i">Push all to Jellyfin</button>
+        <span id="lib-action-result-$i" class="tiny muted"></span>
+      </div>""" else ""}
     </div>
     """.trimIndent()
 }
@@ -510,6 +660,43 @@ private fun renderLibraryList() {
             refreshTomlPreview(readForm())
         }
         installLanguagePickerById("lib-fallback-$i")
+        val scope = settingsScope ?: return@forEachIndexed
+        val lib = libraryMappings[i]
+        if (!lib.skip) {
+            document.getElementById("lib-scan-btn")?.let { } // no-op; use querySelectorAll below
+        }
+    }
+    // Wire scan/push buttons
+    listEl.querySelectorAll(".lib-scan-btn").asList().forEach { el ->
+        val btn = el as? HTMLElement ?: return@forEach
+        val jellyfinId = btn.getAttribute("data-lib-id") ?: return@forEach
+        val idx = btn.getAttribute("data-lib-idx")?.toIntOrNull() ?: return@forEach
+        btn.addEventListener("click") {
+            val scope = settingsScope ?: return@addEventListener
+            scope.launch {
+                val resultEl = document.getElementById("lib-action-result-$idx") as? HTMLElement ?: return@launch
+                btn.setAttribute("disabled", "")
+                resultEl.textContent = "Starting scan…"
+                val ok = runCatching { MediaApi.startLibraryScan(jellyfinId) }.getOrDefault(false)
+                resultEl.innerHTML = if (ok) """<span class="badge ok">Scan started</span>""" else """<span class="badge bad">Failed</span>"""
+                btn.removeAttribute("disabled")
+            }
+        }
+    }
+    listEl.querySelectorAll(".lib-push-btn").asList().forEach { el ->
+        val btn = el as? HTMLElement ?: return@forEach
+        val idx = btn.getAttribute("data-lib-idx")?.toIntOrNull() ?: return@forEach
+        btn.addEventListener("click") {
+            val scope = settingsScope ?: return@addEventListener
+            scope.launch {
+                val resultEl = document.getElementById("lib-action-result-$idx") as? HTMLElement ?: return@launch
+                btn.setAttribute("disabled", "")
+                resultEl.textContent = "Pushing…"
+                val ok = runCatching { MediaApi.batchJellyfinPush() }.getOrDefault(false)
+                resultEl.innerHTML = if (ok) """<span class="badge ok">Push queued</span>""" else """<span class="badge bad">Failed</span>"""
+                btn.removeAttribute("disabled")
+            }
+        }
     }
 }
 
@@ -529,6 +716,15 @@ private fun readForm(): AppConfig = AppConfig(
         tellJellyfin = tellJellyfin,
         scanWorkers = scanWorkers,
         scanThreads = scanThreads,
+        scanIntervalHours = if (scheduledRescanEnabled) {
+            val freq = (document.getElementById("rescan-frequency") as? HTMLSelectElement)?.value ?: "daily"
+            if (freq == "weekly") 168 else 24
+        } else 0,
+        notificationsWebhook = getInputValue("notif-webhook"),
+        notifyOnScanDone = notifScanDone,
+        notifyOnNoMatch = notifNoMatch,
+        notifyOnWriteFailed = notifWriteFailed,
+        notifyOnDrift = notifDrift,
     ),
     libraries = libraryMappings.toList(),
     qbittorrent = if (qbEnabled) QBittorrentConfig(
@@ -561,6 +757,16 @@ private fun buildToml(c: AppConfig): String = buildString {
     appendLine("tell_jellyfin = ${c.behavior.tellJellyfin}")
     appendLine("scan_workers = ${c.behavior.scanWorkers}")
     appendLine("scan_threads = ${c.behavior.scanThreads}")
+    if (c.behavior.scanIntervalHours > 0) appendLine("scan_interval_hours = ${c.behavior.scanIntervalHours}")
+    if (c.behavior.notificationsWebhook.isNotBlank()) {
+        appendLine()
+        appendLine("[notifications]")
+        appendLine("""webhook = "${c.behavior.notificationsWebhook}"""")
+        appendLine("notify_on_scan_done = ${c.behavior.notifyOnScanDone}")
+        appendLine("notify_on_no_match = ${c.behavior.notifyOnNoMatch}")
+        appendLine("notify_on_write_failed = ${c.behavior.notifyOnWriteFailed}")
+        appendLine("notify_on_drift = ${c.behavior.notifyOnDrift}")
+    }
     for (lib in c.libraries) {
         appendLine()
         appendLine("[[libraries]]")
@@ -631,7 +837,7 @@ private fun wireSettingsNav(container: Element) {
     }
 
     // Highlight the nav item whose section is visible at the top of the viewport
-    val sections = "sect-connections,sect-libraries,sect-scanning,sect-metadata,sect-advanced,sect-crossseed"
+    val sections = "sect-connections,sect-libraries,sect-scanning,sect-metadata,sect-advanced,sect-crossseed,sect-notifications"
     observeSections(sections, "-10% 0px -80% 0px") { visibleId ->
         for (k in 0 until navBtns.length) {
             val b = navBtns.item(k) as? HTMLElement ?: continue
