@@ -55,7 +55,7 @@ See [`../tasks.md`](../tasks.md) for the active TODO breakdown.
 | 36 | ✓ Done | Operator controls — per-library scan/push, scheduled scans, notifications (FR-OC1) | [archive](archive/phase-36-operator-controls.md) |
 | 37 | ✓ Done | Surface the qBittorrent seeding guard (FR-QS1) | [archive](archive/phase-37-surface-qbittorrent-guard.md) |
 | 38 | ✓ Done | Command palette ⌘K + attention-queue keyboard nav (FR-KB1) | [archive](archive/phase-38-command-palette-keyboard-nav.md) |
-| 39 | □ Planned | Subtitle management — fetch missing, forced flag, default parity (FR-SUB1) | [phase-39](phase-39-subtitle-management.md) |
+| 39 | ✓ Done | Subtitle management — forced flag toggle on subtitle tracks, MKV only (FR-SUB1) | [archive](archive/phase-39-subtitle-management.md) |
 | 40 | □ Planned | Configure qBittorrent in Settings — guard opt-in; off ⇒ no cross-seed safety (FR-QC1) | [phase-40](phase-40-configure-qbittorrent-settings.md) |
 
 ## Adding a new phase

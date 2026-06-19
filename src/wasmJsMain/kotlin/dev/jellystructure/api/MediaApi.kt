@@ -447,6 +447,14 @@ object MediaApi {
         response.status.value in 200..299
     }.getOrDefault(false)
 
+    suspend fun setForcedFlag(id: String, specifier: String, forced: Boolean): Boolean = runCatching {
+        val response = httpClient.post("/api/media/$id/tracks/forced") {
+            contentType(ContentType.Application.Json)
+            setBody("""{"specifier":"$specifier","forced":$forced}""")
+        }
+        response.status.value in 200..299
+    }.getOrDefault(false)
+
     suspend fun getSeedingStatus(id: String): SeedingStatus? = runCatching {
         httpClient.get("/api/media/$id/seeding").body<SeedingStatus>()
     }.getOrNull()
