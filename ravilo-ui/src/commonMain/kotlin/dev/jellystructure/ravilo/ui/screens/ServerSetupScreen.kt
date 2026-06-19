@@ -25,7 +25,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -48,6 +50,7 @@ fun ServerSetupScreen(onUrlSaved: (String) -> Unit) {
     val httpFR = remember { FocusRequester() }
     val httpsFR = remember { FocusRequester() }
     val connectFR = remember { FocusRequester() }
+    val keyboardController = LocalSoftwareKeyboardController.current
 
     Box(
         modifier = Modifier.fillMaxSize().background(colors.background),
@@ -89,7 +92,9 @@ fun ServerSetupScreen(onUrlSaved: (String) -> Unit) {
             TextField(
                 value = host,
                 onValueChange = { host = it },
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .onFocusChanged { if (it.isFocused) keyboardController?.show() },
                 singleLine = true,
                 label = { Text("Server address") },
                 placeholder = { Text("192.168.1.1:8097") },
