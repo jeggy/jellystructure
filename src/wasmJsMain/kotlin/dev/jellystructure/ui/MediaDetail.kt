@@ -9,6 +9,7 @@ import dev.jellystructure.api.ConfigApi
 import dev.jellystructure.api.HistoryEntry
 import dev.jellystructure.api.JsTag
 import dev.jellystructure.api.MediaApi
+import dev.jellystructure.api.TmdbMatchResult
 import dev.jellystructure.model.Episode
 import dev.jellystructure.model.MediaItem
 import dev.jellystructure.model.MediaKind
@@ -364,8 +365,8 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
                     <button id="tmdb-id-save-btn" class="btn sm ghost">Save</button>
                     <span id="tmdb-id-msg" class="tiny muted"></span>
                   </div>
-                  <div style="margin-top:4px;">
-                    <a href="https://www.themoviedb.org/search?query=${encodeURIComponent("${item.title} ${item.year ?: ""}")}" target="_blank" rel="noopener" class="tiny muted">Search TMDB ↗</a>
+                  <div style="margin-top:6px;">
+                    <button id="find-tmdb-match-btn" class="btn sm ghost" style="font-size:.8rem;">Find / fix match…</button>
                   </div>
                 </div>
                 <div class="field" style="margin:0 0 6px;">
@@ -509,6 +510,10 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
                 renderDetailView(container, updated, scope, fallback, jellyfinUrl2, tmdbLangs2, jsTags = jsTags2)
             }
         }
+    }
+
+    document.getElementById("find-tmdb-match-btn")?.addEventListener("click") {
+        showTmdbMatchModal(item, container, scope, fallbackLang, jellyfinUrl, tmdbLangs)
     }
 
     document.getElementById("jf-lock-recheck-btn")?.addEventListener("click") {
@@ -1094,6 +1099,103 @@ private fun showSyncModal(item: MediaItem, container: Element, scope: CoroutineS
 
     document.getElementById("sync-opt-series")?.addEventListener("click") { doSync("series") }
     document.getElementById("sync-opt-episodes")?.addEventListener("click") { doSync("episodes") }
+}
+
+private fun showTmdbMatchModal(
+    item: MediaItem,
+    container: Element,
+    scope: CoroutineScope,
+    fallbackLang: String,
+    jellyfinUrl: String,
+    tmdbLangs: Set<String>?,
+) {
+    document.getElementById("tmdb-match-modal-overlay")?.remove()
+    val overlay = document.createElement("div") as HTMLElement
+    overlay.id = "tmdb-match-modal-overlay"
+    overlay.setAttribute("style", "position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:8000;display:flex;align-items:center;justify-content:center;")
+    overlay.innerHTML = """
+        <div style="background:var(--fill);border:1px solid var(--line-2);border-radius:var(--radius);padding:24px;max-width:560px;width:92%;box-shadow:var(--shadow);display:flex;flex-direction:column;gap:14px;">
+          <div style="display:flex;align-items:center;gap:10px;">
+            <h4 style="margin:0;flex:1;">Find / fix TMDB match</h4>
+            <button id="tmdb-match-close" class="btn sm ghost">✕</button>
+          </div>
+          <div style="display:flex;gap:8px;">
+            <input id="tmdb-match-query" class="input" style="flex:1;" value="${item.title.esc()}" placeholder="Search query…">
+            <button id="tmdb-match-search" class="btn sm ghost">Search</button>
+          </div>
+          <div id="tmdb-match-results" style="display:flex;flex-direction:column;gap:8px;max-height:360px;overflow-y:auto;min-height:40px;">
+            <span class="muted tiny">Enter a query and press Search.</span>
+          </div>
+        </div>"""
+    document.body?.appendChild(overlay)
+
+    fun closeModal() { overlay.remove() }
+    overlay.addEventListener("click") { e -> if ((e.target as? HTMLElement) == overlay) closeModal() }
+    document.getElementById("tmdb-match-close")?.addEventListener("click") { closeModal() }
+
+    fun renderResults(results: List<TmdbMatchResult>) {
+        val resultsEl = document.getElementById("tmdb-match-results") as? HTMLElement ?: return
+        if (results.isEmpty()) { resultsEl.innerHTML = """<span class="muted tiny">No results found.</span>"""; return }
+        resultsEl.innerHTML = results.joinToString("") { r ->
+            val yearText = if (r.year.isNotBlank()) " (${r.year.esc()})" else ""
+            val overview = if (r.overview.isNotBlank()) """<div class="tiny muted" style="margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${r.overview.esc()}</div>""" else ""
+            val current = if (item.tmdbId == r.id) """ <span class="badge ok" style="font-size:.7rem;">current</span>""" else ""
+            """<div class="tmdb-match-row" data-id="${r.id}" style="display:flex;align-items:center;gap:10px;padding:8px 10px;border:1px solid var(--line-2);border-radius:var(--radius-s);cursor:pointer;">
+                 ${if (r.posterPath != null) """<img src="https://image.tmdb.org/t/p/w92${r.posterPath.esc()}" style="width:36px;height:54px;object-fit:cover;border-radius:3px;flex-shrink:0;">""" else """<div style="width:36px;height:54px;background:var(--fill-2);border-radius:3px;flex-shrink:0;"></div>"""}
+                 <div style="flex:1;min-width:0;">
+                   <div style="font-weight:600;font-size:.88rem;">${r.title.esc()}$yearText$current</div>
+                   $overview
+                   <div class="mono tiny muted">TMDB #${r.id}</div>
+                 </div>
+                 <button class="btn sm ghost" style="flex-shrink:0;font-size:.8rem;">Select</button>
+               </div>"""
+        }
+        val rows = resultsEl.querySelectorAll(".tmdb-match-row")
+        for (i in 0 until rows.length) {
+            val row = rows.item(i) as? HTMLElement ?: continue
+            val tmdbId = row.getAttribute("data-id")?.toIntOrNull() ?: continue
+            row.addEventListener("click") {
+                val statusEl = document.getElementById("tmdb-match-results") as? HTMLElement
+                statusEl?.innerHTML = """<span class="muted tiny">Saving…</span>"""
+                scope.launch {
+                    val updated = MediaApi.setTmdbId(item.id, tmdbId)
+                    if (updated != null) {
+                        closeModal()
+                        val config = ConfigApi.get()
+                        val fb = config?.config?.languageRules?.fallbackLanguage ?: fallbackLang
+                        val jfUrl = config?.config?.apiKeys?.jellyfinUrl?.trimEnd('/') ?: jellyfinUrl
+                        val langs = MediaApi.getTmdbLanguages(updated.id)
+                        val jsTags = dev.jellystructure.api.MetadataApi.getAllJsTags() ?: emptyList()
+                        renderDetailView(container, updated, scope, fb, jfUrl, langs, jsTags = jsTags)
+                    } else {
+                        statusEl?.innerHTML = """<span style="color:var(--bad);" class="tiny">Save failed — try again.</span>"""
+                        renderResults(results)
+                    }
+                }
+            }
+        }
+    }
+
+    fun doSearch() {
+        val q = (document.getElementById("tmdb-match-query") as? HTMLInputElement)?.value?.trim() ?: return
+        if (q.isBlank()) return
+        val resultsEl = document.getElementById("tmdb-match-results") as? HTMLElement
+        resultsEl?.innerHTML = """<span class="muted tiny">Searching…</span>"""
+        scope.launch {
+            val results = MediaApi.tmdbSearch(item.id, q)
+            renderResults(results)
+        }
+    }
+
+    document.getElementById("tmdb-match-search")?.addEventListener("click") { doSearch() }
+    (document.getElementById("tmdb-match-query") as? HTMLInputElement)?.addEventListener("keydown") { e ->
+        if ((e as? org.w3c.dom.events.KeyboardEvent)?.key == "Enter") doSearch()
+    }
+    // Auto-search on open
+    scope.launch {
+        val results = MediaApi.tmdbSearch(item.id, item.title, item.year)
+        renderResults(results)
+    }
 }
 
 private fun showSeasonSyncModal(item: MediaItem, seasonNumber: Int, container: Element, scope: CoroutineScope) {

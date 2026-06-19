@@ -639,6 +639,29 @@ fun Route.mediaRoutes(
             call.respond(JellyfinLocksResponse(lockData = lockData, lockedFields = lockedFields))
         }
 
+        // GET /api/media/{id}/tmdb-search?q=&year= — search TMDB for alternative matches
+        get("/{id}/tmdb-search") {
+            val id = call.parameters["id"]
+                ?: return@get call.respond(HttpStatusCode.BadRequest)
+            val item = store.resolve(id)
+                ?: return@get call.respond(HttpStatusCode.NotFound)
+            val q = call.request.queryParameters["q"]?.takeIf { it.isNotBlank() }
+                ?: item.title
+            val year = call.request.queryParameters["year"]?.toIntOrNull()
+            @Serializable data class TmdbMatch(val id: Int, val title: String, val year: String, val posterPath: String? = null, val overview: String = "")
+            if (item.kind == MediaKind.MOVIE) {
+                val results = scanner.searchMovieTmdb(q, year).map { r ->
+                    TmdbMatch(r.id, r.title, r.releaseDate.take(4), r.posterPath, r.overview)
+                }
+                call.respond(results)
+            } else {
+                val results = scanner.searchTvTmdb(q, year).map { r ->
+                    TmdbMatch(r.id, r.name, r.firstAirDate.take(4))
+                }
+                call.respond(results)
+            }
+        }
+
         // GET /api/media/{id}/tmdb-languages — language codes TMDB has translations for
         get("/{id}/tmdb-languages") {
             val id = call.parameters["id"]
