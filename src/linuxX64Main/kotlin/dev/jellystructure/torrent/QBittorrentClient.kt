@@ -34,12 +34,16 @@ class QBittorrentClient {
         }
     }
 
+    // Returns SID cookie value, or "" when auth is disabled (qBittorrent returns 204 No Content).
     suspend fun login(config: QBittorrentConfig): String {
+        if (config.noAuth) return ""
         val url = config.url.trimEnd('/') + "/api/v2/auth/login"
         val response = http.post(url) {
             contentType(ContentType.Application.FormUrlEncoded)
             setBody("username=${config.username}&password=${config.password}")
         }
+        // 204 means auth is disabled or bypassed on this qBittorrent instance
+        if (response.status == HttpStatusCode.NoContent) return ""
         if (response.status != HttpStatusCode.OK) {
             throw IllegalStateException("qBittorrent login failed: HTTP ${response.status.value}")
         }
@@ -59,7 +63,7 @@ class QBittorrentClient {
     suspend fun getTorrents(config: QBittorrentConfig, sid: String): List<QBTorrent> {
         val url = config.url.trimEnd('/') + "/api/v2/torrents/info?filter=all"
         val response = http.get(url) {
-            header("Cookie", "SID=$sid")
+            if (sid.isNotBlank()) header("Cookie", "SID=$sid")
         }
         if (response.status != HttpStatusCode.OK) {
             throw IllegalStateException("qBittorrent getTorrents failed: HTTP ${response.status.value}")

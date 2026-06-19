@@ -1,6 +1,21 @@
 # Design Audit & Gap Fix
 
-**Status:** Planned
+**Status:** Done (phases A–F implemented and committed)
+
+## Post-implementation fixes
+
+**QB-1 — qBittorrent 204 / no-auth mode** _(post phase-F bug fix)_
+- `QBittorrentClient.login()` was throwing on HTTP 204 No Content, which qBittorrent returns
+  when authentication is disabled or localhost-bypass is active. 204 is now treated as success
+  (returns `""` SID). `getTorrents()` omits `Cookie` header when SID is blank.
+- `QBittorrentConfig` gains `no_auth: Boolean = false` (`@SerialName("no_auth")`).
+  When `true`, login is skipped entirely (fast path for auth-disabled instances).
+- Settings.kt Cross-seed safety section gains a "No authentication" toggle
+  (`qb-no-auth-toggle`) that hides username/password fields. `readForm()` sets `noAuth`,
+  clears credentials; `buildToml()` omits `username`/`password` when `no_auth = true`.
+- Phase 40 archive spec updated to document no-auth mode and 204 behaviour.
+
+---
 
 All 40 jellystructure phases are implemented. This spec closes the remaining gaps between the
 HTML design mockups (`design/app/`) and the Kotlin WASM frontend (`src/wasmJsMain/…/ui/`).
