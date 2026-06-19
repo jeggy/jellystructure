@@ -15,10 +15,14 @@ jellystructure must **broker** a playback ticket (Jellyfin URL + scoped token + 
 ## Requirements
 
 ### Stream brokering
-1. `POST /api/tv/playback/start {itemId}` → a **`StreamTicket`**: Jellyfin **base URL**, a **scoped,
-   short-lived access token**, the resolved **stream URL** (direct-play container **or** an HLS URL),
-   the **start position** (resume point from R07), and `expiresAt`. The device streams from Jellyfin
-   with this; **jellystructure is not in the byte path**.
+1. `POST /api/tv/playback/start {itemId, capabilities}` → a **`StreamTicket`**. The device sends its
+   **`ClientCapabilities`** (containers/codecs/channels it can decode — for Android, what the forked
+   **`:ravilo-player`** engine + its FFmpeg decoders support; R14). jellystructure builds a Jellyfin
+   **device profile** from those capabilities, calls Jellyfin's **`PlaybackInfo`**, and returns the
+   ticket: Jellyfin **base URL**, a **scoped, short-lived access token**, the resolved **stream URL**
+   (direct-play container **or** an HLS URL), the **start position** (resume point from R07),
+   **subtitle/trickplay** info, and `expiresAt`. The device streams from Jellyfin with this;
+   **jellystructure is not in the byte path**.
 2. The ticket's token is minted/scoped for that user+item and **refreshable**; the device never does
    Jellyfin sign-in and never receives the user's password.
 

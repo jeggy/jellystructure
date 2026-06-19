@@ -20,15 +20,22 @@ app. Plus end-to-end coverage across both Ravilo targets.
    items, labels on tiles/buttons), acknowledging the canvas tradeoff documented in the constitution.
 3. Sensible behavior on resize / non-16:9 windows (the 10-foot layout scales/letterboxes gracefully).
 
+### Browser-native player overlay
+4. The browser `<video>` element (R14) is **not** drawn on the skiko canvas — it is a real DOM node
+   layered with the canvas. Harden: correct **positioning/resize** of the video under the player
+   chrome, **fullscreen** handling, **focus/key passthrough** (the focus engine still drives transport
+   controls; the canvas doesn't swallow needed events), and clean teardown on exit. `hls.js`/JASSUB
+   load **lazily**, only once playback starts.
+
 ### Performance & packaging
-4. Acceptable wasm bundle size + startup (lazy where possible); smooth row scrolling/focus on web.
-5. Serve **`:ravilo-web`** as its **own** static app with its own entry HTML, **separate** from the
+5. Acceptable wasm bundle size + startup (lazy where possible); smooth row scrolling/focus on web.
+6. Serve **`:ravilo-web`** as its **own** static app with its own entry HTML, **separate** from the
    jellystructure admin bundle — both hostable by the backend or any static host; neither imports the
    other.
-6. Android packaging: AAB for Android TV, leanback banner/metadata correct, installable on Google TV.
+7. Android packaging: AAB for Android TV, leanback banner/metadata correct, installable on Google TV.
 
 ### Tests
-7. End-to-end smoke tests across **both** targets for the core flows: pair → home → open series →
+8. End-to-end smoke tests across **both** targets for the core flows: pair → home → open series →
    resume/next episode → search. Reuse the Playwright-in-Docker approach for the web target; an
    instrumented/emulator path for Android TV.
 
