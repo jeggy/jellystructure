@@ -33,9 +33,47 @@
   .trk { border: 1px solid var(--line); border-radius: var(--radius-s); background: var(--fill); padding: 9px 11px; }
   .trk + .trk { margin-top: 7px; }
   .trk.untagged { background: var(--bad-soft); border-color: var(--bad); }
+  .trk.isdef { border-color: rgba(245,181,66,.45); box-shadow: inset 3px 0 0 var(--warn); }
+  .trk.dragging { opacity: .4; }
+  .trk.drop-before { box-shadow: 0 -3px 0 var(--hi); }
+  .trk.drop-after { box-shadow: 0 3px 0 var(--hi); }
   .trk-main { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
   .langpick { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 9px; }
   .langpick .btn.sm { padding: 4px 10px; }
+  /* episode track-editor modal (same merged editor as media.html, scoped to one episode) */
+  .modal-back { position: fixed; inset: 0; z-index: 130; background: rgba(8,10,16,.66); -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px); display: none; align-items: center; justify-content: center; padding: 24px; }
+  .modal-back.open { display: flex; }
+  .te-modal { width: 760px; max-width: 100%; max-height: 90vh; overflow-y: auto; background: var(--fill); border: 1px solid var(--line-2); border-radius: var(--radius); box-shadow: var(--shadow); padding: 22px 24px; }
+  .te-modal h3 { margin: 0; }
+  .te-modal .x { cursor: pointer; color: var(--ink-soft); font-size: 1.1rem; }
+  .te-grip { cursor: grab; color: var(--ink-dim); font-size: 1.05rem; letter-spacing: -2px; user-select: none; }
+  .te-ord { display: inline-flex; flex-direction: column; gap: 3px; }
+  .te-ord .ord-btn { width: 26px; height: 15px; display: inline-flex; align-items: center; justify-content: center; font-size: .58rem; border: 1px solid var(--line-2); border-radius: 5px; background: var(--fill-3); color: var(--ink-soft); cursor: pointer; }
+  .te-ord .ord-btn:hover { background: var(--hi-soft); color: var(--hi); border-color: var(--hi); }
+  .te-ord .ord-btn[disabled] { opacity: .3; pointer-events: none; }
+  .te-pos { font-family: 'JetBrains Mono', monospace; font-weight: 600; min-width: 16px; text-align: center; }
+  .lang-pickwrap { cursor: pointer; display: inline-flex; align-items: center; gap: 3px; padding: 2px 5px; border-radius: 6px; }
+  .lang-pickwrap:hover { background: var(--hi-soft); }
+  .mini-toggle { width: 38px; height: 21px; border: 1px solid var(--line-2); border-radius: 20px; background: var(--fill-3); position: relative; cursor: pointer; flex: none; transition: background .2s; }
+  .mini-toggle::after { content: ''; position: absolute; top: 2px; left: 2px; width: 15px; height: 15px; border-radius: 50%; background: var(--ink-soft); transition: left .2s, background .2s; }
+  .mini-toggle.on { background: var(--grad); border-color: transparent; }
+  .mini-toggle.on::after { left: auto; right: 2px; background: #fff; }
+  .cmd-block { background: var(--bg-2); border: 1px solid var(--line); border-radius: var(--radius-s); padding: 12px 14px; font-family: 'JetBrains Mono', monospace; font-size: .76rem; line-height: 1.7; overflow-x: auto; white-space: pre; color: var(--ink-soft); }
+  .cmd-block .flag { color: var(--acc-ink); }
+  .staged-op { display: flex; align-items: center; gap: 10px; padding: 6px 0; border-bottom: 1px dashed var(--line); font-size: .84rem; }
+  .staged-op:last-child { border-bottom: none; }
+  .staged-op .op-ic { width: 22px; height: 22px; flex: none; border-radius: 6px; display: inline-flex; align-items: center; justify-content: center; font-size: .7rem; background: var(--hi-soft); color: var(--acc-ink); }
+  .langmenu { position: absolute; z-index: 150; width: 264px; background: var(--fill); border: 1px solid var(--line-2); border-radius: var(--radius-s); box-shadow: var(--shadow); overflow: hidden; }
+  .langmenu .lm-search { display: flex; align-items: center; gap: 8px; padding: 9px 11px; border-bottom: 1px solid var(--line); }
+  .langmenu .lm-search input { flex: 1; border: none; background: transparent; color: var(--ink); font-family: 'Sora', sans-serif; font-size: .88rem; outline: none; }
+  .langmenu .lm-list { max-height: 240px; overflow-y: auto; padding: 5px; }
+  .langmenu .lm-opt { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 8px; cursor: pointer; }
+  .langmenu .lm-opt:hover, .langmenu .lm-opt.active { background: var(--hi-soft); }
+  .langmenu .lm-opt.cur { box-shadow: inset 0 0 0 1px var(--hi); }
+  .langmenu .lm-opt .lm-name { font-size: .9rem; color: var(--ink); }
+  .langmenu .lm-opt .lm-endo { font-size: .76rem; color: var(--ink-dim); }
+  .langmenu .lm-opt .lm-code { margin-left: auto; font-family: 'JetBrains Mono', monospace; font-size: .72rem; color: var(--ink-soft); background: var(--fill-3); padding: 1px 7px; border-radius: 5px; }
+  .langmenu .lm-empty { padding: 14px; text-align: center; color: var(--ink-dim); font-size: .82rem; }
   .modal-back { position: fixed; inset: 0; z-index: 120; background: rgba(8,10,16,.66); -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px); display: none; align-items: center; justify-content: center; padding: 20px; }
   .modal-back.open { display: flex; }
   .modal { width: 520px; max-width: 100%; background: var(--fill); border: 1px solid var(--line-2); border-radius: var(--radius); box-shadow: var(--shadow); padding: 20px 22px; }
@@ -160,7 +198,7 @@
                 <div class="col" style="gap:10px;">
                   <div class="field" style="margin:0;"><label>Episode title</label><input class="input" value="Hvalvík"></div>
                   <div class="field" style="margin:0;"><label>Overview</label><textarea class="input" rows="2" style="resize:vertical;">Detective Eyð Restorff steps off the ferry into a town that would rather forget her.</textarea></div>
-                  <div class="row center" style="gap:8px;"><span class="muted tiny">tracks:</span><span class="chip mono">fo · eac3 ★</span><span class="chip mono">da · aac</span><span class="chip mono">da · srt</span><span class="spacer"></span><span class="btn sm ghost ep-edit-tracks">Edit tracks</span></div>
+                  <div class="row center" style="gap:8px;"><span class="muted tiny">tracks:</span><span class="chip mono">fo · eac3 ★</span><span class="chip mono">da · aac</span><span class="chip mono">da · srt</span><span class="spacer"></span><span class="btn sm ghost ep-tracks" data-ep="S01E01">Edit tracks &amp; order →</span></div>
                 </div>
               </div>
             </div>
@@ -203,10 +241,7 @@
                 <div class="imgslot" style="height:150px;"><span>still / thumb</span></div>
                 <div class="col" style="gap:10px;">
                   <div class="field" style="margin:0;"><label>Overview</label><textarea class="input" rows="2" style="resize:vertical;">A whale hunt on the black beach surfaces a body that has been in the water far too long.</textarea></div>
-                  <div class="trk untagged">
-                    <div class="trk-main"><span class="num" style="width:48px;">0:a:1</span><span class="badge bad">no language</span><span class="muted tiny mono">ac3 · "commentary"</span></div>
-                    <div class="langpick"><span class="muted tiny" style="margin-right:2px;">assign:</span><span class="btn sm">fo</span><span class="btn sm">da</span><span class="btn sm">en</span><span class="btn sm">is</span><span class="btn sm ghost">other…</span></div>
-                  </div>
+                  <div class="row center" style="gap:8px;flex-wrap:wrap;"><span class="muted tiny">tracks:</span><span class="chip mono">fo · eac3 ★</span><span class="chip mono" style="background:var(--bad-soft);border-color:var(--bad);color:var(--bad);">?? · ac3 “commentary”</span><span class="spacer"></span><span class="badge bad">1 untagged</span><span class="btn sm ep-tracks" data-ep="S01E03">Fix tracks &amp; order →</span></div>
                 </div>
               </div>
             </div>
@@ -269,13 +304,9 @@
                 <div class="col" style="gap:10px;">
                   <div class="note red" style="margin:0;">
                     <b>Multiple default audio tracks.</b>
-                    <div class="tiny" style="margin-top:4px;">A file should have exactly one default audio track. Pick the one to keep — the others will be cleared (manual, <span class="mono">mkvpropedit</span>).</div>
+                    <div class="tiny" style="margin-top:4px;">A file should have exactly one default audio track. Open the editor to pick the one to keep — the others are cleared (manual, <span class="mono">mkvpropedit</span>).</div>
                   </div>
-                  <div data-multidef>
-                    <div class="trk isdef"><div class="trk-main"><input type="radio" name="def-e06" checked><span class="num" style="width:48px;">0:a:0</span><span class="lang">fo</span><span class="muted tiny mono">eac3 · 5.1</span><span class="badge warn">★ default</span></div></div>
-                    <div class="trk isdef"><div class="trk-main"><input type="radio" name="def-e06"><span class="num" style="width:48px;">0:a:1</span><span class="lang">da</span><span class="muted tiny mono">aac · stereo</span><span class="badge warn">★ default</span></div></div>
-                  </div>
-                  <div class="row center" style="gap:8px;"><span class="spacer"></span><span class="btn sm primary">Keep selected as the only default</span></div>
+                  <div class="row center" style="gap:8px;"><span class="muted tiny">tracks:</span><span class="chip mono" style="background:var(--bad-soft);border-color:var(--bad);color:var(--bad);">fo ★ + da ★</span><span class="spacer"></span><span class="btn sm ep-tracks" data-ep="S01E06">Fix tracks &amp; order →</span></div>
                 </div>
               </div>
             </div>
@@ -384,6 +415,34 @@
   </div>
 </div>
 
+<!-- Episode track & order editor (same merged editor as the movie page, scoped to one episode) -->
+<div class="modal-back" id="te-modal">
+  <div class="te-modal">
+    <div class="row center" style="margin-bottom:4px;">
+      <h3 id="te-title">Tracks &amp; order</h3>
+      <span class="badge info" id="te-ep" style="margin-left:8px;">S01E01</span>
+      <span class="spacer"></span>
+      <span class="seg" id="te-seg"><span class="on" data-tk="audio">Audio</span><span data-tk="subs">Subtitles</span></span>
+      <span class="x" id="te-x" style="margin-left:14px;">✕</span>
+    </div>
+    <div class="mono tiny muted" id="te-file" style="margin-bottom:12px;"></div>
+
+    <div id="te-list"></div>
+    <div class="note blue" id="te-explain" style="margin-top:12px;"></div>
+
+    <!-- staged changes -->
+    <div id="te-staged" style="display:none;margin-top:16px;">
+      <hr class="dash" style="margin:0 0 12px;">
+      <div class="row center"><b style="font-size:.95rem;">Staged changes</b><span class="badge" id="te-count" style="margin-left:6px;">0</span><span class="spacer"></span></div>
+      <div id="te-ops" style="margin:8px 0;"></div>
+      <div class="tiny muted" style="margin-bottom:6px;">Exact command — runs only on Apply:</div>
+      <div class="cmd-block" id="te-cmd"></div>
+      <div class="row center" style="margin-top:12px;gap:10px;flex-wrap:wrap;"><span id="te-cost"></span><span class="spacer" style="flex:1"></span><span class="btn ghost" id="te-discard">Discard</span><span class="btn primary" id="te-apply">Apply to file</span></div>
+    </div>
+    <div id="te-clean" class="tiny muted" style="margin-top:14px;">Reorder by dragging the grip or ▲▼ · click a language to change it · ★ sets the default. Everything is manual and only touches the file on Apply.</div>
+  </div>
+</div>
+
 <script src="app-shell.js"></script>
 <script>
 (function () {
@@ -410,17 +469,199 @@
   document.getElementById('repull-cancel').addEventListener('click', () => rm.classList.remove('open'));
   rm.addEventListener('click', e => { if (e.target === rm) rm.classList.remove('open'); });
   document.getElementById('repull-go').addEventListener('click', e => { e.target.textContent = 'Re-pulling…'; setTimeout(() => { e.target.textContent = 'Re-pull'; rm.classList.remove('open'); }, 1000); });
-  document.addEventListener('keydown', e => { if (e.key === 'Escape') rm.classList.remove('open'); });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') { rm.classList.remove('open'); document.getElementById('te-modal').classList.remove('open'); } });
 
-  /* multi-default radio → keep one default */
-  document.querySelectorAll('[data-multidef]').forEach(box => box.addEventListener('change', () => {
-    box.querySelectorAll('.trk').forEach(t => {
-      const on = t.querySelector('input').checked;
-      t.classList.toggle('isdef', on);
-      const badge = t.querySelector('.badge');
-      badge.className = on ? 'badge warn' : 'badge'; badge.textContent = on ? '★ default' : 'cleared';
+  /* ---- episode track & order editor (same merged editor as the movie page) ---- */
+  window.RAVILO_LANGS = window.RAVILO_LANGS || [
+    { code:'fo', name:'Faroese',   endo:'Føroyskt' },
+    { code:'da', name:'Danish',    endo:'Dansk' },
+    { code:'en', name:'English',   endo:'English' },
+    { code:'is', name:'Icelandic', endo:'Íslenska' },
+    { code:'no', name:'Norwegian', endo:'Norsk' },
+    { code:'sv', name:'Swedish',   endo:'Svenska' },
+    { code:'fi', name:'Finnish',   endo:'Suomi' },
+    { code:'de', name:'German',    endo:'Deutsch' },
+    { code:'fr', name:'French',    endo:'Français' },
+    { code:'es', name:'Spanish',   endo:'Español' },
+    { code:'nl', name:'Dutch',     endo:'Nederlands' },
+    { code:'it', name:'Italian',   endo:'Italiano' },
+    { code:'pl', name:'Polish',    endo:'Polski' },
+    { code:'ru', name:'Russian',   endo:'Русский' },
+    { code:'ja', name:'Japanese',  endo:'日本語' },
+    { code:'zh', name:'Chinese',   endo:'中文' },
+  ];
+  window.openLangMenu = window.openLangMenu || function (anchor, current, onPick) {
+    document.querySelectorAll('.langmenu').forEach(m => m.remove());
+    const data = window.RAVILO_LANGS;
+    const menu = document.createElement('div'); menu.className = 'langmenu';
+    menu.innerHTML = '<div class="lm-search"><span class="muted">⌕</span><input type="text" placeholder="Search language…" autocomplete="off"></div><div class="lm-list"></div>';
+    document.body.appendChild(menu);
+    const r = anchor.getBoundingClientRect();
+    menu.style.top = (window.scrollY + r.bottom + 6) + 'px';
+    menu.style.left = (window.scrollX + Math.min(r.left, window.innerWidth - 280)) + 'px';
+    const search = menu.querySelector('input'), listEl = menu.querySelector('.lm-list');
+    let active = 0, filtered = data.slice();
+    function draw() { listEl.innerHTML = filtered.length ? filtered.map((l,i) => '<div class="lm-opt'+(i===active?' active':'')+(l.code===current?' cur':'')+'" data-code="'+l.code+'"><span class="lm-name">'+l.name+'</span><span class="lm-endo">'+l.endo+'</span><span class="lm-code">'+l.code+'</span></div>').join('') : '<div class="lm-empty">No language matches</div>'; }
+    function filter() { const q = search.value.trim().toLowerCase(); filtered = data.filter(l => !q || l.name.toLowerCase().includes(q) || l.endo.toLowerCase().includes(q) || l.code.includes(q)); active = 0; draw(); }
+    function choose(c) { if (c) onPick(c); close(); }
+    function close() { menu.remove(); document.removeEventListener('click', outside, true); }
+    function outside(e) { if (!menu.contains(e.target) && e.target !== anchor && !anchor.contains(e.target)) close(); }
+    search.addEventListener('input', filter);
+    search.addEventListener('keydown', e => {
+      if (e.key==='ArrowDown') { active=Math.min(filtered.length-1,active+1); draw(); e.preventDefault(); }
+      else if (e.key==='ArrowUp') { active=Math.max(0,active-1); draw(); e.preventDefault(); }
+      else if (e.key==='Enter') { if (filtered[active]) choose(filtered[active].code); e.preventDefault(); }
+      else if (e.key==='Escape') { close(); e.preventDefault(); }
     });
-  }));
+    listEl.addEventListener('click', e => { const o = e.target.closest('.lm-opt'); if (o) choose(o.dataset.code); });
+    draw(); setTimeout(() => { document.addEventListener('click', outside, true); search.focus(); }, 0);
+  };
+  (function episodeTrackEditor() {
+    const LANGS = window.RAVILO_LANGS.map(l => l.code);
+    const NAME = Object.fromEntries(window.RAVILO_LANGS.map(l => [l.code, l.name]).concat([['', 'untagged']]));
+    // per-episode track datasets (audio + subs). resolved = metadata language for the cascade hint.
+    const DATA = {
+      S01E01: { file:'Nordvest - S01E01.mkv', resolved:'fo', audio:[
+          {sp:'0:a:0',lang:'fo',codec:'eac3 · 5.1',title:'',def:true},
+          {sp:'0:a:1',lang:'da',codec:'aac · stereo',title:'',def:false} ], subs:[
+          {sp:'0:s:0',lang:'da',codec:'srt',title:'',def:true,forced:false} ] },
+      S01E03: { file:'Nordvest - S01E03.mkv', resolved:'fo', audio:[
+          {sp:'0:a:0',lang:'fo',codec:'eac3 · 5.1',title:'',def:true},
+          {sp:'0:a:1',lang:'',codec:'ac3',title:'commentary',def:false} ], subs:[
+          {sp:'0:s:0',lang:'fo',codec:'srt',title:'',def:true,forced:false} ] },
+      S01E06: { file:'Nordvest - S01E06.mkv', resolved:'fo', audio:[
+          {sp:'0:a:0',lang:'fo',codec:'eac3 · 5.1',title:'',def:true},
+          {sp:'0:a:1',lang:'da',codec:'aac · stereo',title:'',def:true} ], subs:[
+          {sp:'0:s:0',lang:'fo',codec:'srt',title:'',def:false,forced:true} ] },
+    };
+    function fallback(ep) { return { file:'Nordvest - ' + ep + '.mkv', resolved:'fo', audio:[
+      {sp:'0:a:0',lang:'fo',codec:'eac3 · 5.1',title:'',def:true},
+      {sp:'0:a:1',lang:'da',codec:'aac · stereo',title:'',def:false} ], subs:[
+      {sp:'0:s:0',lang:'da',codec:'srt',title:'',def:true,forced:false} ] }; }
+
+    const modal = document.getElementById('te-modal');
+    const listEl = document.getElementById('te-list');
+    const seg = document.getElementById('te-seg');
+    const explain = document.getElementById('te-explain');
+    let model, orig, kind, file, resolved, epId;
+
+    function open(ep) {
+      const src = DATA[ep] || fallback(ep);
+      file = src.file; resolved = src.resolved; epId = ep;
+      model = { audio: JSON.parse(JSON.stringify(src.audio)), subs: JSON.parse(JSON.stringify(src.subs)) };
+      orig = JSON.parse(JSON.stringify(model));
+      kind = 'audio';
+      [...seg.children].forEach(x => x.classList.toggle('on', x.dataset.tk === 'audio'));
+      document.getElementById('te-ep').textContent = ep;
+      document.getElementById('te-file').textContent = file;
+      render(); modal.classList.add('open');
+    }
+    function close() { modal.classList.remove('open'); }
+
+    function render() {
+      const arr = model[kind];
+      listEl.innerHTML = arr.map((t,i) => {
+        const untag = !t.lang;
+        const dCount = arr.filter(x=>x.def).length;
+        const star = (t.def && dCount===1) ? '<span class="badge warn">★ default</span>'
+          : '<span class="btn sm '+(t.def?'':'ghost')+'" data-act="default" data-i="'+i+'">'+(t.def?'★ keep this one':'set default ★')+'</span>';
+        const forced = kind==='subs' ? '<label class="row center tiny" style="gap:6px;cursor:pointer;"><span class="mini-toggle'+(t.forced?' on':'')+'" data-act="forced" data-i="'+i+'"></span> forced</label>' : '';
+        const lang = untag ? '<span class="lang-pickwrap" data-act="lang" data-i="'+i+'"><span class="badge bad">no language</span> <span class="muted" style="font-size:.7rem;">▾</span></span>'
+          : '<span class="lang-pickwrap" data-act="lang" data-i="'+i+'"><span class="lang">'+t.lang+'</span> <span class="muted tiny">'+(NAME[t.lang]||'')+'</span> <span class="muted" style="font-size:.7rem;">▾</span></span>';
+        const picker = '';
+        return '<div class="trk'+(t.def?' isdef':'')+(untag?' untagged':'')+'" draggable="true" data-i="'+i+'">'+
+          '<div class="trk-main"><span class="te-grip">⠿</span>'+
+          '<span class="te-ord"><span class="ord-btn" data-act="up" data-i="'+i+'"'+(i===0?' disabled':'')+'>▲</span><span class="ord-btn" data-act="down" data-i="'+i+'"'+(i===arr.length-1?' disabled':'')+'>▼</span></span>'+
+          '<span class="te-pos">'+(i+1)+'</span><span class="num" style="width:48px;">'+t.sp+'</span>'+lang+
+          '<span class="muted tiny mono">'+t.codec+(t.title?' · "'+t.title+'"':'')+'</span>'+
+          '<span class="spacer"></span>'+forced+star+'</div>'+picker+'</div>';
+      }).join('');
+      // cascade hint for audio default ≠ resolved
+      const def = model.audio.find(t=>t.def);
+      const dCount = model.audio.filter(t=>t.def).length;
+      if (kind==='audio' && dCount>1)
+        explain.innerHTML = '<span class="tiny"><b style="color:var(--bad)">Multiple default audio tracks.</b> A file should have exactly one — ★ the one to keep; the others are cleared.</span>';
+      else if (kind==='audio' && def && def.lang && def.lang!==resolved)
+        explain.innerHTML = '<span class="tiny"><b style="color:var(--warn)">Default ≠ resolved.</b> Default audio is <span class="lang">'+def.lang+'</span> but metadata resolves to <span class="lang">'+resolved+'</span> — viewers read '+NAME[resolved]+' while hearing '+NAME[def.lang]+'.</span>';
+      else if (kind==='audio')
+        explain.innerHTML = '<span class="tiny"><b>▲▼ Order</b> sets the index (drives metadata language, first match wins). <b>★ Default</b> is what the player auto-selects — independent of order.</span>';
+      else
+        explain.innerHTML = '<span class="tiny"><b>★ Default</b> is the auto-shown subtitle. <b>Forced</b> is a separate flag — only foreign-dialogue lines; a track can be forced without being default.</span>';
+      diff();
+    }
+
+    listEl.addEventListener('click', e => {
+      const el = e.target.closest('[data-act]'); if (!el) return;
+      const i = +el.dataset.i, arr = model[kind], act = el.dataset.act;
+      if (act==='up' && i>0) { [arr[i-1],arr[i]]=[arr[i],arr[i-1]]; render(); }
+      else if (act==='down' && i<arr.length-1) { [arr[i+1],arr[i]]=[arr[i],arr[i+1]]; render(); }
+      else if (act==='default') { arr.forEach((t,k)=>t.def=(k===i)); render(); }
+      else if (act==='forced') { arr[i].forced=!arr[i].forced; render(); }
+      else if (act==='lang') {
+        const anchor = el.closest('.lang-pickwrap') || el;
+        window.openLangMenu(anchor, arr[i].lang, code => { arr[i].lang=code; render(); });
+      }
+    });
+
+    // drag reorder
+    let dragI = null;
+    listEl.addEventListener('dragstart', e => { const r=e.target.closest('.trk'); if(!r)return; dragI=+r.dataset.i; r.classList.add('dragging'); });
+    listEl.addEventListener('dragend', () => { dragI=null; listEl.querySelectorAll('.trk').forEach(r=>r.classList.remove('dragging','drop-before','drop-after')); });
+    listEl.addEventListener('dragover', e => { e.preventDefault(); const r=e.target.closest('.trk'); if(!r||dragI===null)return; const o=+r.dataset.i; listEl.querySelectorAll('.trk').forEach(x=>x.classList.remove('drop-before','drop-after')); if(o!==dragI) r.classList.add(o<dragI?'drop-before':'drop-after'); });
+    listEl.addEventListener('drop', e => { e.preventDefault(); const r=e.target.closest('.trk'); if(!r||dragI===null)return; const to=+r.dataset.i, arr=model[kind]; if(to===dragI)return; const [m]=arr.splice(dragI,1); arr.splice(to,0,m); render(); });
+
+    seg.addEventListener('click', e => { const s=e.target.closest('[data-tk]'); if(!s)return; [...seg.children].forEach(x=>x.classList.toggle('on',x===s)); kind=s.dataset.tk==='subs'?'subs':'audio'; render(); });
+
+    // diff → staged ops + command + cost
+    const stagedEl = document.getElementById('te-staged'), cleanEl = document.getElementById('te-clean');
+    function tname(sp){ const m=/0:([as]):(\d+)/.exec(sp); return 'track:'+m[1]+(+m[2]+1); }
+    function diff() {
+      const ops = []; let reorder = false;
+      ['audio','subs'].forEach(k => {
+        const o=orig[k], n=model[k];
+        if (n.some((t,i)=>o[i].sp!==t.sp)) { reorder=true; ops.push({ic:'⇅',text:(k==='audio'?'Audio':'Subtitle')+' order → '+n.map(t=>t.sp.split(':').pop()).join(', ')}); }
+        n.forEach(t => { const ob=o.find(x=>x.sp===t.sp); if(!ob)return;
+          if (ob.lang!==t.lang) ops.push({ic:'🏷',text:t.sp+' language → '+(t.lang||'untagged')});
+          if (ob.def!==t.def && t.def) ops.push({ic:'★',text:t.sp+' default '+k});
+          if (k==='subs' && ob.forced!==t.forced) ops.push({ic:'⮕',text:t.sp+' forced '+(t.forced?'on':'off')}); });
+      });
+      document.getElementById('te-count').textContent = ops.length;
+      stagedEl.style.display = ops.length ? '' : 'none';
+      cleanEl.style.display = ops.length ? 'none' : '';
+      if (!ops.length) return;
+      document.getElementById('te-ops').innerHTML = ops.map(o=>'<div class="staged-op"><span class="op-ic">'+o.ic+'</span><span>'+o.text+'</span></div>').join('');
+      const lines = []; const parts = [];
+      ['audio','subs'].forEach(k => model[k].forEach(t => { const ob=orig[k].find(x=>x.sp===t.sp); if(!ob)return;
+        if (ob.lang!==t.lang && t.lang) parts.push('  --edit '+tname(t.sp)+' --set language='+t.lang);
+        if (ob.def!==t.def) parts.push('  --edit '+tname(t.sp)+' --set flag-default='+(t.def?1:0));
+        if (k==='subs' && ob.forced!==t.forced) parts.push('  --edit '+tname(t.sp)+' --set flag-forced='+(t.forced?1:0)); }));
+      if (parts.length) lines.push('mkvpropedit "'+file+'" \\\n'+parts.join(' \\\n'));
+      if (reorder) { if(lines.length) lines.push(''); const maps=model.audio.concat(model.subs).map(t=>'-map '+t.sp).join(' '); lines.push('ffmpeg -i "'+file+'" \\\n  '+maps+' -map 0:v -c copy \\\n  "'+file+'.reordered.mkv"  # -c copy = no re-encode'); }
+      document.getElementById('te-cmd').innerHTML = lines.join('\n').replace(/(--edit|--set|-map|-c copy|-i)/g,'<span class="flag">$1</span>');
+      document.getElementById('te-cost').innerHTML = reorder
+        ? '<span class="badge warn">⚠ remux</span> <span class="tiny muted">reordering needs an ffmpeg -c copy remux (no re-encode, rewrites the file)</span>'
+        : '<span class="badge ok">instant</span> <span class="tiny muted">mkvpropedit edits flags in place · ~40ms · no re-encode</span>';
+    }
+
+    function toast(msg){ const t=document.createElement('div'); t.className='toast'; t.textContent=msg; document.body.appendChild(t); setTimeout(()=>t.remove(),1700); }
+    function reset(){ ['audio','subs'].forEach(k=>model[k]=JSON.parse(JSON.stringify(orig[k]))); render(); }
+    document.getElementById('te-discard').addEventListener('click', reset);
+    document.getElementById('te-apply').addEventListener('click', () => { ['audio','subs'].forEach(k=>orig[k]=JSON.parse(JSON.stringify(model[k]))); render(); toast('Applied to '+file+' ✓'); });
+    document.getElementById('te-x').addEventListener('click', close);
+    modal.addEventListener('click', e => { if (e.target===modal) close(); });
+
+    // ensure every episode has an editor affordance, then wire them all
+    document.querySelectorAll('.ep[data-ep]').forEach(ep => {
+      const id = ep.dataset.ep;
+      if (ep.querySelector('.ep-tracks')) return;
+      const col = ep.querySelector('.ep-body .col'); if (!col) return;
+      const row = document.createElement('div');
+      row.className = 'row center'; row.style.gap = '8px';
+      row.innerHTML = '<span class="muted tiny">tracks:</span><span class="chip mono">audio · subs</span><span class="spacer"></span><span class="btn sm ghost ep-tracks" data-ep="' + id + '">Edit tracks &amp; order →</span>';
+      col.appendChild(row);
+    });
+    document.querySelectorAll('.ep-tracks').forEach(b => b.addEventListener('click', e => { e.stopPropagation(); open(b.dataset.ep); }));
+  })();
 })();
 </script>
 </body>
