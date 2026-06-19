@@ -276,7 +276,7 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
            </div>"""
     } else ""
 
-    val tracksHtml = if (!isTvShow) buildTracksTable(item.tracks, item.id, item.path) else ""
+    val tracksHtml = if (!isTvShow) buildUnifiedTrackEditorShell("trk", item.path) else ""
 
     // Embedded tracks summary for the overview tab (movies only — condensed read-only view)
     val embeddedTracksSummary = if (!isTvShow && item.tracks.any { it.kind == TrackKind.AUDIO || it.kind == TrackKind.SUBTITLE }) {
@@ -298,7 +298,6 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
                <h4 style="margin:0;font-size:.9rem;">Embedded tracks</h4>
                <span class="spacer"></span>
                $summaryBadge
-               <a href="#/track-order?id=${item.id}" class="btn sm ghost" style="font-size:.72rem;margin-left:8px;">Open track editor ↗</a>
              </div>
              <div style="display:flex;flex-wrap:wrap;gap:5px;">$trackChips</div>
            </div>"""
@@ -324,7 +323,6 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
           $tmdbLinkHtml
           <button id="repull-jellyfin-btn" class="btn sm ghost">Re-pull from Jellyfin…</button>
           <button id="repull-btn" class="btn sm ghost">Re-pull from TMDB</button>
-          ${if (!isTvShow) """<button id="track-order-btn" class="btn sm ghost">Track order →</button>""" else ""}
           <button id="write-nfo-btn" class="btn ghost" ${if (nfoDisabled) """disabled title="${nfoDisabledReason.esc()}"""" else ""}>Save → disk</button>
           <button id="write-nfo-refresh-btn" class="btn primary" ${if (nfoDisabled) """disabled title="${nfoDisabledReason.esc()}"""" else ""}>Save &amp; tell Jellyfin ↻</button>
         </div>
@@ -423,15 +421,7 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
 
         ${if (!isTvShow) """
         <div id="tab-tracks" ${if (activeTab != "tracks") """style="display:none;" """ else ""}>
-          <div id="seeding-guard-banner" style="display:none;margin-bottom:10px;"></div>
-          <div class="card">
-            <div class="row center" style="margin-bottom:10px;">
-              <h4 style="margin:0;">Embedded tracks</h4>
-              <span class="spacer"></span>
-              $issueBadge
-            </div>
-            $tracksHtml
-          </div>
+          $tracksHtml
         </div>""" else ""}
 
         ${if (isTvShow) """<div id="tab-episodes" ${if (activeTab != "episodes") """style="display:none;" """ else ""}>${episodesTabHtml}</div>""" else ""}
@@ -535,10 +525,6 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
                 resultEl.textContent = "Still locked."
             }
         }
-    }
-
-    document.getElementById("track-order-btn")?.addEventListener("click") {
-        App.navigate("/track-order?id=${item.id}")
     }
 
     document.getElementById("repull-btn")?.addEventListener("click") {
@@ -649,10 +635,9 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
                         scope.launch { loadHistory(item.id, container, scope) }
                     }
                     if (tab == "artwork") scope.launch { loadArtworkStatus(item.id) }
-                    if (tab == "tracks") {
+                    if (tab == "tracks" && !isTvShow) {
                         scope.launch { loadSeedingStatus(item.id) }
-                        val tracksPanel = document.getElementById("tab-tracks") as? HTMLElement
-                        if (tracksPanel != null) wireForcedToggles(tracksPanel, item.id, scope)
+                        wireUnifiedTrackEditor("trk", item.tracks, item.id, null, scope, item.resolvedLanguage, item.path)
                     }
                     // Update URL silently via replaceState — no hashchange fired, no page re-render
                     val tabParam = if (tab == "overview") null else tab
@@ -666,13 +651,13 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
     scope.launch { loadDrift(item.id) }
     if (activeTab == "tracks" && !isTvShow) {
         scope.launch { loadSeedingStatus(item.id) }
-        val tracksPanel = document.getElementById("tab-tracks") as? HTMLElement
-        if (tracksPanel != null) wireForcedToggles(tracksPanel, item.id, scope)
+        wireUnifiedTrackEditor("trk", item.tracks, item.id, null, scope, item.resolvedLanguage, item.path)
     }
     if (activeTab == "history") scope.launch { loadHistory(item.id, container, scope) }
 
-    // Inject diff styles once per document lifetime
+    // Inject styles once per document lifetime
     injectDiffStyles()
+    injectTrackEditorStyles()
 
     // Inline metadata editing — per-field dirty indicators + diff triggers
     val editableIds = listOf("edit-title", "edit-year", "edit-original-title", "edit-overview", "edit-director", "edit-studio")
@@ -977,7 +962,6 @@ private fun buildEpisodeRow(ep: Episode, season: Int?, idx: Int, mediaId: String
     else ""
 
     val encodedFilename = encodeURIComponent(ep.filename)
-    val trackOrderHref = "/track-order?id=$mediaId&ep=${encodedFilename.esc()}"
     val bodyId = "ep-body-s${season ?: 0}-$idx"
     val toggleId = "ep-toggle-s${season ?: 0}-$idx"
 
@@ -1055,7 +1039,8 @@ private fun buildEpisodeRow(ep: Episode, season: Int?, idx: Int, mediaId: String
               <div class="muted tiny" style="flex:1;font-family:monospace;">${ep.filename.esc()}</div>
               <button class="btn sm ghost ep-still-upload-btn" style="font-size:.72rem;"
                 data-form-id="still-form-$bodyId">Upload still</button>
-              <a href="#$trackOrderHref" class="btn sm ghost" style="font-size:.72rem;">Track order →</a>
+              <button class="btn sm ghost ep-trk-btn" style="font-size:.72rem;"
+                data-media-id="$mediaId" data-ep-filename="${ep.filename.esc()}">Edit tracks &amp; order →</button>
             </div>
             <form id="still-form-$bodyId" method="post"
                   action="/api/media/$mediaId/episodes/${encodedFilename.esc()}/still/upload"
@@ -1484,6 +1469,76 @@ private fun wireEpisodeEditing(item: MediaItem, container: Element, scope: Corou
             }
         }
     }
+
+    // Episode track editor modal
+    document.querySelectorAll(".ep-trk-btn").let { btns ->
+        for (i in 0 until btns.length) {
+            val btn = btns.item(i) as? HTMLElement ?: continue
+            val epFilename = btn.getAttribute("data-ep-filename") ?: continue
+            val ep = item.episodes.find { it.filename == epFilename } ?: continue
+            btn.addEventListener("click") { _ ->
+                openEpisodeTrackModal(ep, item.id, scope)
+            }
+        }
+    }
+}
+
+private fun openEpisodeTrackModal(ep: dev.jellystructure.model.Episode, mediaId: String, scope: CoroutineScope) {
+    document.getElementById("te-modal-back")?.remove()
+    injectTrackEditorStyles()
+
+    val epCode = if (ep.seasonNumber != null && ep.episodeNumber != null)
+        "S${ep.seasonNumber.toString().padStart(2, '0')}E${ep.episodeNumber.toString().padStart(2, '0')}"
+    else ep.filename.substringBeforeLast('.')
+
+    val backdrop = document.createElement("div") as HTMLElement
+    backdrop.id = "te-modal-back"
+    backdrop.setAttribute("style", "position:fixed;inset:0;z-index:130;background:rgba(8,10,16,.66);-webkit-backdrop-filter:blur(3px);backdrop-filter:blur(3px);display:flex;align-items:center;justify-content:center;padding:24px;")
+    backdrop.innerHTML = """
+        <div style="width:760px;max-width:100%;max-height:90vh;overflow-y:auto;background:var(--fill);border:1px solid var(--line-2);border-radius:var(--radius);box-shadow:var(--shadow);padding:22px 24px;">
+          <div class="row center" style="margin-bottom:4px;">
+            <h3 style="margin:0;">Tracks &amp; order</h3>
+            <span class="badge info" style="margin-left:8px;">${epCode.esc()}</span>
+            <span class="spacer"></span>
+            <span class="seg" id="te-seg"><span class="on" data-tk="audio">Audio</span><span data-tk="subs">Subtitles</span></span>
+            <span id="te-x" style="cursor:pointer;color:var(--ink-soft);font-size:1.1rem;margin-left:14px;">✕</span>
+          </div>
+          <div class="mono tiny muted" id="te-file" style="margin-bottom:12px;">${ep.filename.esc()}</div>
+          <div id="te-list"></div>
+          <div class="note blue" id="te-explain" style="margin-top:12px;"></div>
+          <div id="te-staged" style="display:none;margin-top:16px;">
+            <hr class="dash" style="margin:0 0 12px;">
+            <div class="row center"><b style="font-size:.95rem;">Staged changes</b><span class="badge" id="te-count" style="margin-left:6px;">0</span><span class="spacer"></span></div>
+            <div id="te-ops" style="margin:8px 0;"></div>
+            <div class="tiny muted" style="margin-bottom:6px;">Exact command — runs only on Apply:</div>
+            <div class="cmd-block" id="te-cmd" style="background:var(--bg-2);border:1px solid var(--line);border-radius:var(--radius-s);padding:12px 14px;font-family:'JetBrains Mono',monospace;font-size:.78rem;line-height:1.7;overflow-x:auto;white-space:pre;color:var(--ink-soft);"></div>
+            <div class="row center" style="margin-top:12px;gap:10px;flex-wrap:wrap;">
+              <span id="te-cost" style="display:inline-flex;align-items:center;gap:6px;"></span>
+              <span class="spacer" style="flex:1;"></span>
+              <span class="btn ghost" id="te-discard">Discard</span>
+              <span class="btn primary" id="te-apply">Apply to file</span>
+            </div>
+            <div id="te-apply-msg" class="tiny" style="display:none;margin-top:8px;"></div>
+          </div>
+          <div class="tiny muted" style="margin-top:14px;">Reorder by dragging the grip or ▲▼ · click a language to change it · ★ sets the default. Only touches the file on Apply.</div>
+          <span id="te-col-mid" style="display:none;"></span>
+          <div id="te-cascade" style="display:none;"></div>
+          <span id="te-cascade-def" style="display:none;"></span>
+          <span id="te-cascade-fix" style="display:none;"></span>
+          <span id="te-guard" style="display:none;"></span>
+          <span id="te-discard-2" style="display:none;"></span>
+        </div>
+    """.trimIndent()
+    document.body?.appendChild(backdrop)
+
+    fun close() { document.getElementById("te-modal-back")?.remove() }
+    document.getElementById("te-x")?.addEventListener("click") { _ -> close() }
+    backdrop.addEventListener("click") { e -> if (e.target === backdrop) close() }
+    document.addEventListener("keydown") { e ->
+        if ((e as? org.w3c.dom.events.KeyboardEvent)?.key == "Escape") close()
+    }
+
+    wireUnifiedTrackEditor("te", ep.tracks, mediaId, ep.filename, scope, ep.resolvedLanguage, ep.path)
 }
 
 private suspend fun loadHistory(id: String, container: Element? = null, scope: CoroutineScope? = null) {
@@ -1562,24 +1617,18 @@ private suspend fun handleRepull(item: MediaItem, container: Element, scope: Cor
 }
 
 private suspend fun loadSeedingStatus(id: String) {
-    val banner = document.getElementById("seeding-guard-banner") as? HTMLElement ?: return
+    val chip = document.getElementById("trk-guard") as? HTMLElement ?: return
     val status = MediaApi.getSeedingStatus(id) ?: return
     when (status.status) {
         "blocked" -> {
-            banner.innerHTML = """<div style="background:var(--bad-soft);border:1px solid var(--bad);border-radius:6px;padding:8px 14px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
-              <span style="color:var(--bad);font-weight:600;font-size:.88rem;">🔒 Seeding guard active</span>
-              <span class="tiny">This file is currently being seeded by qBittorrent (<b>${(status.torrentName ?: "").esc()}</b>). Track edits are blocked to protect the torrent.</span>
-            </div>"""
-            banner.style.display = "block"
+            chip.title = "qBittorrent seeding guard active — file is being seeded by '${(status.torrentName ?: "").esc()}'. Track edits are blocked to protect the torrent hash."
+            chip.style.display = ""
         }
         "unreachable" -> {
-            banner.innerHTML = """<div style="background:var(--warn-soft,#2d220b);border:1px solid var(--warn,#b8860b);border-radius:6px;padding:8px 14px;display:flex;align-items:center;gap:10px;">
-              <span style="color:var(--warn,#f59e0b);font-weight:600;font-size:.88rem;">⚠ qBittorrent unreachable</span>
-              <span class="tiny">${(status.detail ?: "").esc()} — proceeding with track edits at your own risk.</span>
-            </div>"""
-            banner.style.display = "block"
+            chip.title = "qBittorrent unreachable: ${(status.detail ?: "").esc()} — track edits proceed at your own risk."
+            chip.style.display = ""
         }
-        else -> banner.style.display = "none"
+        else -> chip.style.display = "none"
     }
 }
 
@@ -1774,66 +1823,6 @@ private fun showDetailMsg(msg: String, ok: Boolean) {
 
 private fun formatTimestamp(epochMs: Double): String = js("new Date(epochMs).toLocaleString()")
 
-private fun buildTracksTable(tracks: List<Track>, mediaId: String = "", filePath: String = ""): String {
-    val displayed = tracks.filter { it.kind != TrackKind.VIDEO && it.kind != TrackKind.DATA }
-    if (displayed.isEmpty()) return """<span class="muted tiny">No audio or subtitle tracks found.</span>"""
-    val isMkv = filePath.endsWith(".mkv", ignoreCase = true)
-
-    val rows = displayed.joinToString("") { track ->
-        val langCell = if (track.language != null) {
-            """<span class="lang">${track.language.esc()}</span>"""
-        } else {
-            """<span class="badge bad" style="font-size:.7rem;">none</span>"""
-        }
-        val defaultCell = if (track.default) """<span class="badge ok">default</span>""" else "—"
-        val rowClass = if (track.language == null) """ class="attn"""" else ""
-        val titleCell = track.title?.esc() ?: """<span class="muted">—</span>"""
-        val forcedCell = if (track.kind == TrackKind.SUBTITLE && isMkv && mediaId.isNotBlank()) {
-            val activeClass = if (track.forced) " ok" else ""
-            val label = if (track.forced) "forced" else "not forced"
-            """<button class="badge$activeClass" style="cursor:pointer;background:none;border:1px solid var(--line);font-size:.7rem;padding:1px 6px;"
-                 data-forced-toggle="${track.specifier.esc()}" data-forced="${track.forced}">$label</button>"""
-        } else {
-            if (track.forced) "yes" else "—"
-        }
-        """<tr$rowClass>
-             <td class="num">${track.specifier}</td>
-             <td>${track.kind.name.lowercase()}</td>
-             <td>$langCell</td>
-             <td>$titleCell</td>
-             <td class="num">${track.codec}</td>
-             <td>$defaultCell</td>
-             <td>$forcedCell</td>
-           </tr>"""
-    }
-
-    return """
-        <table class="wf-table">
-          <tr><th>#</th><th>Kind</th><th>Lang</th><th>Title</th><th>Codec</th><th>Default</th><th>Forced</th></tr>
-          $rows
-        </table>"""
-}
-
-internal fun wireForcedToggles(container: HTMLElement, mediaId: String, scope: CoroutineScope) {
-    container.querySelectorAll("[data-forced-toggle]").let { nodes ->
-        for (i in 0 until nodes.length) {
-            val btn = nodes.item(i) as? HTMLElement ?: continue
-            btn.addEventListener("click") {
-                val spec = btn.getAttribute("data-forced-toggle") ?: return@addEventListener
-                val current = btn.getAttribute("data-forced") == "true"
-                val next = !current
-                scope.launch {
-                    val ok = MediaApi.setForcedFlag(mediaId, spec, next)
-                    if (ok) {
-                        btn.setAttribute("data-forced", "$next")
-                        btn.textContent = if (next) "forced" else "not forced"
-                        if (next) btn.classList.add("ok") else btn.classList.remove("ok")
-                    }
-                }
-            }
-        }
-    }
-}
 
 // ── Diff styles ──────────────────────────────────────────────────────────────
 

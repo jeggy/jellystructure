@@ -447,6 +447,25 @@ object MediaApi {
         response.status.value in 200..299
     }.getOrDefault(false)
 
+    suspend fun setEpisodeForcedFlag(mediaId: String, epFilename: String, specifier: String, forced: Boolean): Boolean = runCatching {
+        val encoded = encodeURIComponent(epFilename)
+        val response = httpClient.post("/api/media/$mediaId/episodes/$encoded/tracks/forced") {
+            contentType(ContentType.Application.Json)
+            setBody("""{"specifier":"${specifier.replace("\"", "")}","forced":$forced}""")
+        }
+        response.status.value in 200..299
+    }.getOrDefault(false)
+
+    suspend fun reorderEpisodeTracks(mediaId: String, epFilename: String, kind: String, order: List<String>): Boolean = runCatching {
+        val encoded = encodeURIComponent(epFilename)
+        val orderJson = order.joinToString(",") { "\"${it.replace("\"", "")}\"" }
+        val response = httpClient.post("/api/media/$mediaId/episodes/$encoded/tracks/reorder") {
+            setBody("""{"kind":"$kind","order":[$orderJson]}""")
+            contentType(ContentType.Application.Json)
+        }
+        response.status.value in 200..299
+    }.getOrDefault(false)
+
     suspend fun setForcedFlag(id: String, specifier: String, forced: Boolean): Boolean = runCatching {
         val response = httpClient.post("/api/media/$id/tracks/forced") {
             contentType(ContentType.Application.Json)

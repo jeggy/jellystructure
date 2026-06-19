@@ -226,6 +226,9 @@ private val LANGUAGES_3 = mapOf(
     "kaz" to "Kazakh",
 )
 
+/** Returns (code, name) pairs for all known 2-letter languages. */
+internal fun getLanguages(): List<Pair<String, String>> = LANGUAGES.map { it.code to it.name }
+
 /** Returns "Language name (code)" for known codes (2- or 3-letter), or just the raw code. */
 internal fun langDisplay(code: String): String {
     val c = code.trim().lowercase()
