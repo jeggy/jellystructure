@@ -439,4 +439,20 @@ object MediaApi {
         val response = httpClient.post("/api/media/batch/jellyfin-push")
         response.status.value in 200..299
     }.getOrDefault(false)
+
+    suspend fun tmdbSearch(id: String, query: String, year: Int? = null): List<TmdbMatchResult> = runCatching {
+        httpClient.get("/api/media/$id/tmdb-search") {
+            parameter("q", query)
+            if (year != null) parameter("year", year)
+        }.body<List<TmdbMatchResult>>()
+    }.getOrDefault(emptyList())
 }
+
+@Serializable
+data class TmdbMatchResult(
+    val id: Int,
+    val title: String,
+    val year: String,
+    val posterPath: String? = null,
+    val overview: String = "",
+)

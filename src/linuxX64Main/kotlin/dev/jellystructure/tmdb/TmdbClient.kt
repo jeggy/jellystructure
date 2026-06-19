@@ -275,6 +275,44 @@ class TmdbClient(
         return result.getOrElse { emptyMap() }
     }
 
+    suspend fun searchMovieAll(query: String, year: Int?): List<TmdbSearchResult> {
+        val key = apiKey()
+        if (key.isBlank()) return emptyList()
+        val result = runCatching {
+            val response = http.get("$baseUrl/search/movie") {
+                parameter("api_key", key)
+                parameter("query", query)
+                if (year != null) parameter("year", year)
+            }
+            if (response.status == HttpStatusCode.TooManyRequests) {
+                delay(3000)
+                return searchMovieAll(query, year)
+            }
+            response.body<TmdbSearchResponse>().results.take(10)
+        }
+        if (result.isFailure) Logger.warn("TMDB movie search failed for '$query': ${result.exceptionOrNull()?.message}")
+        return result.getOrElse { emptyList() }
+    }
+
+    suspend fun searchTvAll(query: String, year: Int?): List<TmdbTvSearchResult> {
+        val key = apiKey()
+        if (key.isBlank()) return emptyList()
+        val result = runCatching {
+            val response = http.get("$baseUrl/search/tv") {
+                parameter("api_key", key)
+                parameter("query", query)
+                if (year != null) parameter("first_air_date_year", year)
+            }
+            if (response.status == HttpStatusCode.TooManyRequests) {
+                delay(3000)
+                return searchTvAll(query, year)
+            }
+            response.body<TmdbTvSearchResponse>().results.take(10)
+        }
+        if (result.isFailure) Logger.warn("TMDB TV search failed for '$query': ${result.exceptionOrNull()?.message}")
+        return result.getOrElse { emptyList() }
+    }
+
     suspend fun searchCompany(name: String): TmdbCompany? {
         val key = apiKey()
         if (key.isBlank()) return null

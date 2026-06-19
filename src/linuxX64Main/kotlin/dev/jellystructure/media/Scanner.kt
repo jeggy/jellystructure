@@ -664,6 +664,12 @@ class Scanner(
     suspend fun translationLanguages(tmdbId: Int, isMovie: Boolean): List<String> =
         tmdb.getTranslationLanguages(tmdbId, isMovie)
 
+    suspend fun searchMovieTmdb(query: String, year: Int?) =
+        tmdb.searchMovieAll(query, year)
+
+    suspend fun searchTvTmdb(query: String, year: Int?) =
+        tmdb.searchTvAll(query, year)
+
     /**
      * Fetches all localized titles from TMDB and folds in the resolved-language title and
      * originalLanguage→originalTitle. Returns an empty map if tmdbId is null.
