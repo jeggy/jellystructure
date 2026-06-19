@@ -9,13 +9,22 @@ import io.ktor.server.response.respond
 import io.ktor.util.AttributeKey
 
 val SessionKey = AttributeKey<SessionData>("JsSession")
+val DeviceKey = AttributeKey<DeviceData>("RaviloDevice")
 
 private val OPEN_API_PATHS = listOf(
     "/api/auth/login",
     "/api/setup",
+    "/api/tv/pair/start",
+    "/api/tv/pair/poll",
+    // /api/tv/pair/approve is open at the plugin level; the route handler checks for
+    // a valid cookie session or direct Jellyfin credentials itself.
+    "/api/tv/pair/approve",
 )
 
-fun Application.installAuthPlugin(sessionService: SessionService) {
+fun Application.installAuthPlugin(
+    sessionService: SessionService,
+    validateDeviceToken: ((String) -> DeviceData?)? = null,
+) {
     intercept(ApplicationCallPipeline.Plugins) {
         val path = call.request.path()
 
@@ -29,6 +38,26 @@ fun Application.installAuthPlugin(sessionService: SessionService) {
             return@intercept
         }
 
+        // /api/tv/** (excluding open paths above): must carry a device token.
+        if (path.startsWith("/api/tv/") && validateDeviceToken != null) {
+            val bearer = call.request.headers["Authorization"]
+                ?.takeIf { it.startsWith("Bearer ") }
+                ?.removePrefix("Bearer ")
+                ?: call.request.headers["X-Ravilo-Device"]
+
+            val device = bearer?.let { validateDeviceToken(it) }
+            if (device != null) {
+                call.attributes.put(DeviceKey, device)
+                proceed()
+                return@intercept
+            }
+
+            call.respond(HttpStatusCode.Unauthorized, mapOf("error" to "Invalid or missing device token"))
+            finish()
+            return@intercept
+        }
+
+        // All other /api/** routes: require cookie session.
         val token = call.request.cookies["js_session"]
         val session = token?.let { sessionService.validate(it) }
 
