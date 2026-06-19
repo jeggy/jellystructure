@@ -46,6 +46,14 @@ fun HeroCarousel(
     onDown: (() -> Unit)? = null,
 ) {
     val colors = RaviloTheme.colors
+    val vignetteGradient = remember(colors.overlay, colors.background) {
+        Brush.verticalGradient(
+            0f to Color.Transparent,
+            0.4f to colors.overlay.copy(alpha = 0.4f),
+            1f to colors.background,
+        )
+    }
+    val dotInactiveColor = remember(colors.textSecondary) { colors.textSecondary.copy(alpha = 0.4f) }
     var activeIndex by remember { mutableIntStateOf(0) }
     var isFocused by remember { mutableIntStateOf(0) } // shadow of focus for styling
 
@@ -84,15 +92,7 @@ fun HeroCarousel(
         }
 
         // Gradient vignette
-        Box(
-            modifier = Modifier.fillMaxSize().background(
-                Brush.verticalGradient(
-                    0f to Color.Transparent,
-                    0.4f to colors.overlay.copy(alpha = 0.4f),
-                    1f to colors.background,
-                )
-            )
-        )
+        Box(modifier = Modifier.fillMaxSize().background(vignetteGradient))
 
         Column(
             modifier = Modifier.align(Alignment.BottomStart).padding(40.dp, 40.dp),
@@ -122,7 +122,7 @@ fun HeroCarousel(
                         modifier = Modifier
                             .size(if (i == activeIndex) 20.dp else 6.dp, 6.dp)
                             .clip(CircleShape)
-                            .background(if (i == activeIndex) colors.accent else colors.textSecondary.copy(alpha = 0.4f)),
+                            .background(if (i == activeIndex) colors.accent else dotInactiveColor),
                     )
                 }
             }

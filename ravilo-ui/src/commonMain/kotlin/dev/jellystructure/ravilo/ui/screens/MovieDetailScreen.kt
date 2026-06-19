@@ -74,6 +74,13 @@ private fun MovieDetailLoaded(
     onRelatedSelect: (MediaCard) -> Unit,
 ) {
     val colors = RaviloTheme.colors
+    val backdropGradient = remember(colors.background) {
+        Brush.verticalGradient(
+            0f to Color.Transparent,
+            0.5f to colors.background.copy(alpha = 0.5f),
+            1f to colors.background,
+        )
+    }
     val scrollState = rememberScrollState()
 
     val playFR = remember { FocusRequester() }
@@ -96,26 +103,20 @@ private fun MovieDetailLoaded(
             } else {
                 Box(modifier = Modifier.matchParentSize().background(colors.surfaceVariant))
             }
-            Box(
-                modifier = Modifier.matchParentSize().background(
-                    Brush.verticalGradient(
-                        0f to Color.Transparent,
-                        0.5f to colors.background.copy(alpha = 0.5f),
-                        1f to colors.background,
-                    )
-                )
-            )
+            Box(modifier = Modifier.matchParentSize().background(backdropGradient))
             Column(
                 modifier = Modifier.align(Alignment.BottomStart).padding(40.dp, 40.dp),
             ) {
                 Text(detail.card.title, color = colors.text, fontSize = 36.sp, fontWeight = FontWeight.Bold)
                 Spacer(Modifier.height(8.dp))
-                val meta = listOfNotNull(
-                    detail.card.year?.toString(),
-                    if (detail.runtime > 0) "${detail.runtime} min" else null,
-                    detail.card.genre,
-                    detail.card.rating,
-                ).joinToString(" · ")
+                val meta = remember(detail.card.year, detail.runtime, detail.card.genre, detail.card.rating) {
+                    listOfNotNull(
+                        detail.card.year?.toString(),
+                        if (detail.runtime > 0) "${detail.runtime} min" else null,
+                        detail.card.genre,
+                        detail.card.rating,
+                    ).joinToString(" · ")
+                }
                 if (meta.isNotEmpty()) Text(meta, color = colors.textSecondary, fontSize = 14.sp)
             }
         }
@@ -171,7 +172,7 @@ private fun MovieDetailLoaded(
                 contentPadding = PaddingValues(horizontal = 40.dp),
                 horizontalArrangement = Arrangement.spacedBy(16.dp),
             ) {
-                items(detail.cast.size) { i -> CastCircle(detail.cast[i]) }
+                items(detail.cast.size, key = { i -> detail.cast[i].id }) { i -> CastCircle(detail.cast[i]) }
             }
         }
 
@@ -185,7 +186,7 @@ private fun MovieDetailLoaded(
                 contentPadding = PaddingValues(horizontal = 40.dp),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                items(detail.related.size) { i ->
+                items(detail.related.size, key = { i -> detail.related[i].id }) { i ->
                     val card = detail.related[i]
                     Tile(
                         title = card.title,

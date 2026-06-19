@@ -40,7 +40,8 @@ fun RaviloButton(
     val colors = RaviloTheme.colors
     var focused by remember { mutableStateOf(false) }
     val scale by animateFloatAsState(if (focused) 1.04f else 1f, label = "buttonScale")
-    val shape = RoundedCornerShape(8.dp)
+    val shape = remember { RoundedCornerShape(8.dp) }
+    val ghostBorderColor = remember(colors.textSecondary) { colors.textSecondary.copy(alpha = 0.4f) }
 
     Box(
         modifier = Modifier
@@ -55,12 +56,13 @@ fun RaviloButton(
                     focused ->
                         Modifier.border(2.dp, colors.accent, shape)
                     else ->
-                        Modifier.border(1.dp, colors.textSecondary.copy(alpha = 0.4f), shape)
+                        Modifier.border(1.dp, ghostBorderColor, shape)
                 }
             )
             .dpadFocusable(
                 focusRequester = focusRequester,
                 onFocused = { focused = true; onFocused() },
+                onBlurred = { focused = false },
                 onLeft = onLeft, onRight = onRight, onUp = onUp, onDown = onDown, onSelect = onSelect,
             )
             .padding(horizontal = 24.dp, vertical = 12.dp),

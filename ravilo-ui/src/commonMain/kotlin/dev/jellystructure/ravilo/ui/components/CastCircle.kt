@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -24,6 +25,7 @@ import dev.jellystructure.shared.tv.Person
 @Composable
 fun CastCircle(person: Person) {
     val colors = RaviloTheme.colors
+    val roleColor = remember(colors.textSecondary) { colors.textSecondary.copy(alpha = 0.6f) }
 
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Box(
@@ -59,7 +61,7 @@ fun CastCircle(person: Person) {
         if (role != null) {
             Text(
                 text = role,
-                color = colors.textSecondary.copy(alpha = 0.6f),
+                color = roleColor,
                 fontSize = 10.sp,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,

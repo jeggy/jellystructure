@@ -182,7 +182,7 @@ fun SearchScreen(
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalArrangement = Arrangement.spacedBy(20.dp),
             ) {
-                items(items.size) { i ->
+                items(items.size, key = { i -> items[i].id }) { i ->
                     val card = items[i]
                     val col = i % GRID_COLS_SEARCH
                     Tile(

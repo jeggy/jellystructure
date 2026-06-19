@@ -42,6 +42,8 @@ fun OnScreenKeyboard(
     modifier: Modifier = Modifier,
 ) {
     val colors = RaviloTheme.colors
+    val keyShape = remember { RoundedCornerShape(6.dp) }
+    val containerShape = remember { RoundedCornerShape(12.dp) }
     var focusRow by remember { mutableIntStateOf(0) }
     var focusCol by remember { mutableIntStateOf(0) }
 
@@ -55,7 +57,7 @@ fun OnScreenKeyboard(
     }
 
     Column(
-        modifier = modifier.background(colors.surface, RoundedCornerShape(12.dp)).padding(16.dp),
+        modifier = modifier.background(colors.surface, containerShape).padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
@@ -70,10 +72,10 @@ fun OnScreenKeyboard(
                             .size(if (key == "⌫" || key == "⎵") 60.dp else 44.dp, 44.dp)
                             .background(
                                 if (focused) colors.accent else colors.surfaceVariant,
-                                RoundedCornerShape(6.dp),
+                                keyShape,
                             )
                             .then(
-                                if (focused) Modifier.border(2.dp, colors.focusRing, RoundedCornerShape(6.dp))
+                                if (focused) Modifier.border(2.dp, colors.focusRing, keyShape)
                                 else Modifier
                             )
                             .onFocusChanged { if (it.isFocused) { focusRow = r; focusCol = c } }

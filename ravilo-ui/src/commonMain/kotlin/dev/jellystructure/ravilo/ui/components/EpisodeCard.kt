@@ -46,20 +46,23 @@ fun EpisodeCard(
     val colors = RaviloTheme.colors
     var focused by remember { mutableStateOf(false) }
     val scale by animateFloatAsState(if (focused) 1.03f else 1f, label = "epScale")
+    val cardShape = remember { RoundedCornerShape(10.dp) }
+    val thumbShape = remember { RoundedCornerShape(6.dp) }
 
     Row(
         modifier = Modifier
             .scale(scale)
             .width(320.dp)
-            .clip(RoundedCornerShape(10.dp))
+            .clip(cardShape)
             .background(colors.surface)
             .then(
-                if (focused) Modifier.border(2.dp, colors.focusRing, RoundedCornerShape(10.dp))
+                if (focused) Modifier.border(2.dp, colors.focusRing, cardShape)
                 else Modifier
             )
             .dpadFocusable(
                 focusRequester = focusRequester,
                 onFocused = { focused = true; onFocused() },
+                onBlurred = { focused = false },
                 onLeft = onLeft, onRight = onRight, onUp = onUp, onDown = onDown, onSelect = onSelect,
             )
             .padding(10.dp),
@@ -70,7 +73,7 @@ fun EpisodeCard(
             modifier = Modifier
                 .width(120.dp)
                 .height(68.dp)
-                .clip(RoundedCornerShape(6.dp))
+                .clip(thumbShape)
                 .background(colors.surfaceVariant),
         ) {
             val stillUrl = episode.stillUrl

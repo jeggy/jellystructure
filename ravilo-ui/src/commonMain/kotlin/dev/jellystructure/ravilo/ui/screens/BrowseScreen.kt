@@ -42,6 +42,7 @@ import dev.jellystructure.shared.tv.SearchResults
 import dev.jellystructure.shared.tv.TvApiClient
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -62,6 +63,7 @@ class BrowseStore(private val apiClient: TvApiClient) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val _state = MutableStateFlow<BrowseState>(BrowseState.Loading)
     val state: StateFlow<BrowseState> = _state.asStateFlow()
+    private var loadJob: Job? = null
 
     var activeKind: BrowseKind = BrowseKind.ALL
         private set
@@ -69,9 +71,10 @@ class BrowseStore(private val apiClient: TvApiClient) {
         private set
 
     fun load(kind: BrowseKind = activeKind, genre: String? = activeGenre) {
+        loadJob?.cancel()
         activeKind = kind; activeGenre = genre
         _state.value = BrowseState.Loading
-        scope.launch {
+        loadJob = scope.launch {
             _state.value = runCatching {
                 val results = apiClient.browse(kind = kind.apiKey, page = 1)
                 val facets = apiClient.getFacets(kind = kind.apiKey)
@@ -150,13 +153,14 @@ private fun GenreChips(
     val colors = RaviloTheme.colors
     val chips = listOf(null) + genres.map { it.name } // null = All
     val chipFRs = remember(chips.size) { List(chips.size) { FocusRequester() } }
+    val chipShape = remember { RoundedCornerShape(20.dp) }
     var focusedChip by remember { mutableIntStateOf(0) }
 
     LazyRow(
         contentPadding = PaddingValues(horizontal = 40.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        items(chips.size) { i ->
+        items(chips.size, key = { i -> chips[i] ?: "all" }) { i ->
             val label = chips[i] ?: "All"
             val isActive = chips[i] == activeGenre
             var focused by remember { mutableStateOf(false) }
@@ -165,15 +169,16 @@ private fun GenreChips(
                 modifier = Modifier
                     .background(
                         if (isActive) colors.accent else colors.surfaceVariant,
-                        RoundedCornerShape(20.dp),
+                        chipShape,
                     )
                     .then(
-                        if (focused && !isActive) Modifier.border(2.dp, colors.focusRing, RoundedCornerShape(20.dp))
+                        if (focused && !isActive) Modifier.border(2.dp, colors.focusRing, chipShape)
                         else Modifier
                     )
                     .dpadFocusable(
                         focusRequester = chipFRs[i],
                         onFocused = { focused = true; focusedChip = i },
+                        onBlurred = { focused = false },
                         onLeft  = { if (i > 0) chipFRs[i - 1].requestFocus() },
                         onRight = { if (i < chips.lastIndex) chipFRs[i + 1].requestFocus() },
                         onSelect = { onSelect(chips[i]) },
@@ -206,7 +211,7 @@ private fun BrowseGrid(items: List<MediaCard>, onItemSelect: (MediaCard) -> Unit
     var focusedIdx by remember { mutableIntStateOf(0) }
 
     LaunchedEffect(focusedIdx) {
-        gridState.animateScrollToItem(focusedIdx.coerceAtLeast(0))
+        gridState.scrollToItem(focusedIdx.coerceAtLeast(0))
     }
 
     LazyVerticalGrid(
@@ -216,7 +221,7 @@ private fun BrowseGrid(items: List<MediaCard>, onItemSelect: (MediaCard) -> Unit
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalArrangement = Arrangement.spacedBy(20.dp),
     ) {
-        items(items.size) { i ->
+        items(items.size, key = { i -> items[i].id }) { i ->
             val card = items[i]
             val row = i / GRID_COLS
             val col = i % GRID_COLS

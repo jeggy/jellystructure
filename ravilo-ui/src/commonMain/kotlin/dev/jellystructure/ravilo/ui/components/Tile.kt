@@ -58,6 +58,7 @@ fun Tile(
     val colors = RaviloTheme.colors
     var focused by remember { mutableStateOf(false) }
     val scale by animateFloatAsState(if (focused) 1.06f else 1f, label = "tileScale")
+    val tileShape = remember { RoundedCornerShape(10.dp) }
 
     val (w, h) = if (variant == TileVariant.POSTER) POSTER_W to POSTER_H else LANDSCAPE_W to LANDSCAPE_H
 
@@ -70,14 +71,15 @@ fun Tile(
             modifier = Modifier
                 .width(w)
                 .height(h)
-                .clip(RoundedCornerShape(10.dp))
+                .clip(tileShape)
                 .then(
-                    if (focused) Modifier.border(2.dp, colors.focusRing, RoundedCornerShape(10.dp))
+                    if (focused) Modifier.border(2.dp, colors.focusRing, tileShape)
                     else Modifier
                 )
                 .dpadFocusable(
                     focusRequester = focusRequester,
                     onFocused = { focused = true; onFocused() },
+                    onBlurred = { focused = false },
                     onLeft = onLeft, onRight = onRight, onUp = onUp, onDown = onDown, onSelect = onSelect,
                 ),
         ) {

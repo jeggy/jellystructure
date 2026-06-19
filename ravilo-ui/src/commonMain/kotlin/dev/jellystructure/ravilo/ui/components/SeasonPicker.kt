@@ -36,12 +36,13 @@ fun SeasonPicker(
     onDown: (() -> Unit)? = null,
 ) {
     val colors = RaviloTheme.colors
+    val pillShape = remember { RoundedCornerShape(20.dp) }
 
     LazyRow(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         contentPadding = PaddingValues(horizontal = 40.dp),
     ) {
-        items(seasons.size) { i ->
+        items(seasons.size, key = { i -> seasons[i].index }) { i ->
             val isSelected = i == selectedIndex
             var focused by remember { mutableStateOf(false) }
 
@@ -49,15 +50,16 @@ fun SeasonPicker(
                 modifier = Modifier
                     .background(
                         if (isSelected) colors.accent else colors.surfaceVariant,
-                        RoundedCornerShape(20.dp),
+                        pillShape,
                     )
                     .then(
-                        if (focused && !isSelected) Modifier.border(2.dp, colors.focusRing, RoundedCornerShape(20.dp))
+                        if (focused && !isSelected) Modifier.border(2.dp, colors.focusRing, pillShape)
                         else Modifier
                     )
                     .dpadFocusable(
                         focusRequester = focusRequesters[i],
                         onFocused = { focused = true },
+                        onBlurred = { focused = false },
                         onLeft  = { onLeft(i) },
                         onRight = { onRight(i) },
                         onDown  = onDown,

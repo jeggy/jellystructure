@@ -14,6 +14,7 @@ import androidx.compose.ui.input.key.type
 fun Modifier.dpadFocusable(
     focusRequester: FocusRequester,
     onFocused: () -> Unit = {},
+    onBlurred: () -> Unit = {},
     onLeft: (() -> Unit)? = null,
     onRight: (() -> Unit)? = null,
     onUp: (() -> Unit)? = null,
@@ -34,5 +35,5 @@ fun Modifier.dpadFocusable(
         }
     }
     .focusRequester(focusRequester)
-    .onFocusChanged { if (it.isFocused) onFocused() }
+    .onFocusChanged { if (it.isFocused) onFocused() else onBlurred() }
     .focusable()

@@ -8,12 +8,13 @@ Ravilo is a sibling product **inside the jellystructure repo** — an Android TV
 canvas) streaming front-end built from one **Compose Multiplatform** codebase, talking only to the
 jellystructure backend.
 
-_Last updated: 2026-06-20_
+_Last updated: 2026-06-19_
 
 ## Current focus
 
-**R01–R19 all done.** App running end-to-end on real Android TV hardware; first hardware-testing
-pass completed and the following gaps/bugs found and fixed:
+**R01–R20 all done.** App running end-to-end on real Android TV hardware; performance overhaul
+applied and deployed to the stue TV (2026-06-19). First hardware-testing pass completed and all
+gaps resolved:
 
 ### Session 2026-06-20 — hardware-test fixes
 
@@ -51,10 +52,46 @@ pass completed and the following gaps/bugs found and fixed:
   `'./skiko.mjs'` imports to the Skiko npm package dir (was: `Module not found` compile error);
   `devServer.static` entry ensures `skiko.wasm` is served at runtime.
 
+### Session 2026-06-19 — performance & correctness overhaul (R20)
+
+**Focus / D-pad freeze (R20 root cause):**
+- **Focus-state latch bug fixed.** `dpadFocusable` now has an `onBlurred` callback; all focusable
+  components (`Tile`, `ChannelCard`, `RaviloButton`, `EpisodeCard`, `SeasonPicker` pill,
+  `BrowseGrid` chip) reset `focused = false` on blur. Previously `focused` was only ever set to
+  `true`, causing every navigated-through tile to stay highlighted and recompose on each subsequent
+  D-pad event — the root cause of the 3–5 press freeze.
+
+**Store coroutine hygiene:**
+- `HomeStore`, `MovieDetailStore`, `SeriesDetailStore`, `BrowseStore`, `ChannelStore` all track a
+  `loadJob` and cancel it before starting a new one. Rapid back-navigation no longer produces
+  parallel in-flight requests or a race that overwrites a newer result with a stale one.
+- `PlayerStore.startHeartbeat` uses `while (isActive)` so the loop exits immediately on scope
+  cancellation.
+
+**Allocation hot-paths memoized:**
+- All `Brush.verticalGradient`, `Color.copy(alpha=…)`, and `RoundedCornerShape(Xdp)` calls in
+  composable bodies wrapped in `remember { }` with appropriate keys. Eliminates per-frame Skia
+  shader rebuilds and GC pressure that were contributing to frame drops during navigation.
+
+**Lazy list key stability:**
+- `StaticContentRow` gained an optional `itemKey` parameter. All `LazyColumn`, `LazyRow`, and
+  `LazyVerticalGrid` `items(…)` calls across all screens now supply a `key = { … }` lambda
+  using stable model IDs, preventing unnecessary full-row recomposition when list contents change.
+
+**Scroll fighting navigation fixed:**
+- All `animateScrollToItem` calls driven by `LaunchedEffect` replaced with `scrollToItem`.
+  The animated variant was visually fighting D-pad movement by scrolling the list back to a
+  computed position while the user navigated away.
+
+**Compose rule violations fixed:**
+- `PlayerChrome`: removed `val fr = remember { FocusRequester() }` inside a conditional block;
+  uses the hoisted `nextEpFR` parameter instead.
+- `PlayerScreen`: polling loop key changed from `LaunchedEffect(isPlaying)` to
+  `LaunchedEffect(Unit)` so play/pause no longer restarts the position-polling coroutine.
+
 ### Next steps (no spec yet)
 - End-to-end playback verification with a real Jellyfin + jellystructure instance
 - R14 player bring-up testing (ExoPlayer/Media3 on real hardware)
-- Performance & polish pass before any public release
 
 ## Foundational decisions locked (constitution)
 

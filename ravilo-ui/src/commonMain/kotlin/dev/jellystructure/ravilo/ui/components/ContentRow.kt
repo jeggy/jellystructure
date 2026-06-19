@@ -40,7 +40,7 @@ fun ContentRow(
     val listState = rememberLazyListState()
 
     LaunchedEffect(focusedIndex) {
-        listState.animateScrollToItem(focusedIndex.coerceAtLeast(0))
+        listState.scrollToItem(focusedIndex.coerceAtLeast(0))
     }
 
     Column(modifier = modifier.fillMaxWidth()) {
@@ -78,13 +78,14 @@ fun <T> StaticContentRow(
     items: List<T>,
     focusedIndex: Int,
     modifier: Modifier = Modifier,
+    itemKey: ((T) -> Any)? = null,
     itemContent: @Composable (index: Int, item: T) -> Unit,
 ) {
     val colors = RaviloTheme.colors
     val listState = rememberLazyListState()
 
     LaunchedEffect(focusedIndex) {
-        if (items.isNotEmpty()) listState.animateScrollToItem(focusedIndex.coerceIn(0, items.lastIndex))
+        if (items.isNotEmpty()) listState.scrollToItem(focusedIndex.coerceIn(0, items.lastIndex))
     }
 
     Column(modifier = modifier.fillMaxWidth()) {
@@ -103,7 +104,9 @@ fun <T> StaticContentRow(
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             contentPadding = PaddingValues(horizontal = 40.dp),
         ) {
-            items(items.size) { i -> itemContent(i, items[i]) }
+            items(items.size, key = if (itemKey != null) { i -> itemKey(items[i]) } else null) { i ->
+                itemContent(i, items[i])
+            }
         }
     }
 }
