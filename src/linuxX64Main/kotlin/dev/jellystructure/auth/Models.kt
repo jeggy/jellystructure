@@ -97,3 +97,27 @@ data class JellyfinPlayItem(
 data class JellyfinPlayItemsResponse(
     @SerialName("Items") val items: List<JellyfinPlayItem> = emptyList(),
 )
+
+@Serializable
+data class JellyfinItemDetail(
+    @SerialName("Id") val id: String,
+    @SerialName("Name") val name: String,
+    @SerialName("RunTimeTicks") val runTimeTicks: Long? = null,
+    @SerialName("UserData") val userData: JellyfinUserData? = null,
+)
+
+@Serializable
+data class JellyfinEpisodeItem(
+    @SerialName("Id") val id: String,
+    @SerialName("Name") val name: String,
+    @SerialName("IndexNumber") val indexNumber: Int? = null,
+    @SerialName("ParentIndexNumber") val parentIndexNumber: Int? = null,
+    @SerialName("RunTimeTicks") val runTimeTicks: Long? = null,
+    @SerialName("UserData") val userData: JellyfinUserData? = null,
+    @SerialName("SeasonName") val seasonName: String? = null,
+)
+
+@Serializable
+data class JellyfinEpisodesResponse(
+    @SerialName("Items") val items: List<JellyfinEpisodeItem> = emptyList(),
+)

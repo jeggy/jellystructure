@@ -10,6 +10,7 @@ import dev.jellystructure.shared.tv.Skin
 import dev.jellystructure.shared.tv.TileShape
 import dev.jellystructure.shared.tv.TvSession
 import dev.jellystructure.tv.BrowseService
+import dev.jellystructure.tv.DetailService
 import dev.jellystructure.tv.HomeFeedService
 import dev.jellystructure.tv.RaviloConfigService
 import dev.jellystructure.tv.RaviloDeviceService
@@ -46,6 +47,7 @@ fun Route.tvRoutes(
     raviloConfigService: RaviloConfigService,
     homeFeedService: HomeFeedService,
     browseService: BrowseService,
+    detailService: DetailService,
     sessionService: SessionService,
     jellyfinClient: JellyfinClient,
     configStore: ConfigStore,
@@ -156,6 +158,23 @@ fun Route.tvRoutes(
             return@get
         }
         call.respond(homeFeedService.getChannelFeed(device, channelId))
+    }
+
+    // ── Detail ───────────────────────────────────────────────────────────────
+    get("/tv/movie/{id}") {
+        val device = call.attributes[DeviceKey]
+        val id = call.parameters["id"] ?: run { call.respond(HttpStatusCode.BadRequest); return@get }
+        val detail = detailService.getMovieDetail(device, id)
+        if (detail == null) call.respond(HttpStatusCode.NotFound, mapOf("error" to "Movie not found"))
+        else call.respond(detail)
+    }
+
+    get("/tv/series/{id}") {
+        val device = call.attributes[DeviceKey]
+        val id = call.parameters["id"] ?: run { call.respond(HttpStatusCode.BadRequest); return@get }
+        val detail = detailService.getSeriesDetail(device, id)
+        if (detail == null) call.respond(HttpStatusCode.NotFound, mapOf("error" to "Series not found"))
+        else call.respond(detail)
     }
 
     // ── Browse, search, facets ───────────────────────────────────────────────

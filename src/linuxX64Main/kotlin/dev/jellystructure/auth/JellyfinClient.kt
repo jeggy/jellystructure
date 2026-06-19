@@ -135,6 +135,39 @@ class JellyfinClient {
         result.getOrDefault(emptyList())
     }
 
+    suspend fun getItemDetail(
+        baseUrl: String,
+        userToken: String,
+        userId: String,
+        jellyfinId: String,
+    ): JellyfinItemDetail? = runCatching {
+        val url = baseUrl.trimEnd('/') +
+            "/Users/$userId/Items/$jellyfinId?Fields=UserData,RunTimeTicks"
+        http.get(url) {
+            header("Authorization", """$AUTH_HEADER, Token="$userToken"""")
+        }.body<JellyfinItemDetail>()
+    }.let { result ->
+        if (result.isFailure) Logger.warn("Jellyfin getItemDetail failed: ${result.exceptionOrNull()?.message}")
+        result.getOrNull()
+    }
+
+    suspend fun getSeriesEpisodes(
+        baseUrl: String,
+        userToken: String,
+        userId: String,
+        seriesId: String,
+    ): List<JellyfinEpisodeItem> = runCatching {
+        val url = baseUrl.trimEnd('/') +
+            "/Shows/$seriesId/Episodes?UserId=$userId" +
+            "&Fields=UserData,RunTimeTicks,SeasonName"
+        http.get(url) {
+            header("Authorization", """$AUTH_HEADER, Token="$userToken"""")
+        }.body<JellyfinEpisodesResponse>().items
+    }.let { result ->
+        if (result.isFailure) Logger.warn("Jellyfin getSeriesEpisodes failed: ${result.exceptionOrNull()?.message}")
+        result.getOrDefault(emptyList())
+    }
+
     suspend fun getFavoriteItemIds(
         baseUrl: String,
         userToken: String,
