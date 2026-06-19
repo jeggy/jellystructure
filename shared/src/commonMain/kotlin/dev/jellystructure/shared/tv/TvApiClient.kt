@@ -91,6 +91,15 @@ class TvApiClient(
         return json.decodeFromString<SearchResults>(r.bodyAsText())
     }
 
+    suspend fun getFacets(kind: String? = null): BrowseFacets {
+        val r = client.get("$baseUrl/api/tv/facets") {
+            auth()
+            if (kind != null) parameter("kind", kind)
+        }
+        r.assertSuccess()
+        return json.decodeFromString<BrowseFacets>(r.bodyAsText())
+    }
+
     // ─── Detail ──────────────────────────────────────────────────────────────
 
     suspend fun getMovie(id: String): MovieDetail {
