@@ -45,3 +45,18 @@
 4. Remove the standalone "Language" nav section (its content moved to Metadata above).
 5. The per-library `fallbackLanguage` inputs use the language picker component (Phase 11).
 6. `readForm()` in `Settings.kt` is updated to include `scanWorkers` and `scanThreads` from the new Scanning section.
+
+### Sticky page bar and left nav
+7. The settings pagebar (title "Settings" · "Test connections" button · "Save" button) must be
+   **sticky at the top of the viewport** (`position: sticky; top: 0; z-index: 60`) so the Save
+   and Test buttons are always reachable without scrolling. In HTML: `id="set-pagebar"` on the
+   pagebar div; CSS rule targets `#set-pagebar`. A `border-bottom` separates it from the content
+   area while scrolling.
+8. The left section-nav card must stick **below the pagebar** (`position: sticky; top: 88px`),
+   where `88px` is the measured height of the sticky pagebar. This keeps the section navigation
+   visible while scrolling through long sections.
+
+   **Implementation note (gap):** `Settings.kt` currently renders `<div class="pagebar">` without
+   `id="set-pagebar"`, so the sticky CSS selector does not apply. Add `id="set-pagebar"` to the
+   pagebar div. The left nav inline style already sets `position:sticky` but uses `top:16px` —
+   update to `top:88px` to align below the sticky pagebar.

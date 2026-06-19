@@ -32,7 +32,7 @@ import dev.jellystructure.scrollIntoViewSmooth
 
 fun renderSettings(container: Element, scope: CoroutineScope, query: Map<String, String> = emptyMap()) {
     container.innerHTML = """
-        <div class="pagebar">
+        <div class="pagebar" id="set-pagebar">
           <h1>Settings</h1>
           <span class="spacer"></span>
           <button id="test-connections" class="btn sm ghost">Test connections</button>
@@ -43,7 +43,7 @@ fun renderSettings(container: Element, scope: CoroutineScope, query: Map<String,
 
         <div class="row" style="align-items:flex-start;gap:22px;flex-wrap:wrap">
 
-          <nav style="width:160px;flex-shrink:0;position:sticky;top:16px;">
+          <nav style="width:160px;flex-shrink:0;position:sticky;top:88px;">
             <div style="display:flex;flex-direction:column;gap:2px;">
               <button data-sect="sect-connections" class="settings-nav-item" style="background:none;border:none;text-align:left;padding:5px 8px;border-radius:5px;font-size:.85rem;cursor:pointer;color:var(--ink-soft);">Connections</button>
               <button data-sect="sect-libraries" class="settings-nav-item" style="background:none;border:none;text-align:left;padding:5px 8px;border-radius:5px;font-size:.85rem;cursor:pointer;color:var(--ink-soft);">Library mapping</button>
