@@ -46,8 +46,10 @@ The repo is at **phase 29 complete**. The old top-level `CONSTITUTION.md` and th
   Scanning (workers/threads) · Metadata (fallback language, NFO/artwork/refresh
   toggles) · Advanced (danger zone "Clear all scanned data").
 - **Movie detail** (`media.html`) and **Series detail** (`series.html`) — the **single
-  editing surface** for everything (Phase 27). **Track editor** (`track-order.html`)
-  stays as a linked sub-page. **Login** (`login.html`).
+  editing surface** for everything (Phase 27). Track/subtitle **language, order, default &
+  forced** are all managed inline on the media detail **Tracks & order** tab (movie) and via a
+  per-episode editor modal (series) — the old standalone `track-order.html` page is **removed**
+  (merged in). **Login** (`login.html`).
 
 ## Key spec changes folded into the mockups (this sync)
 - **Phase 27 — Triage is no longer a page.** `triage.html` / `series-triage.html`

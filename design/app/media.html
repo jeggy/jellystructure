@@ -18,19 +18,55 @@
   #tags-section.dirty { outline: 2px solid var(--warn); outline-offset: 4px; border-radius: var(--radius-s); }
   .tag-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex: none; }
 
-  /* track row editor (relocated from the old triage page) */
-  .trk { border: 1px solid var(--line); border-radius: var(--radius-s); background: var(--fill-2); padding: 10px 12px; }
+  /* ===== unified track editor (merged from the old track-order page) ===== */
+  .trk-cols { display: grid; grid-template-columns: 30px 30px 58px 1fr auto; gap: 12px; align-items: center;
+    padding: 0 12px 8px; font-size: .68rem; text-transform: uppercase; letter-spacing: .06em; color: var(--ink-dim); font-weight: 600; }
+  .trk { border: 1px solid var(--line); border-radius: var(--radius-s); background: var(--fill-2); padding: 10px 12px; transition: border-color .15s, box-shadow .15s, opacity .15s, transform .12s; }
   .trk + .trk { margin-top: 8px; }
   .trk.untagged { background: var(--bad-soft); border-color: var(--bad); }
-  .trk.isdef { border-color: rgba(245,181,66,.45); }
-  .trk-main { display: flex; align-items: center; gap: 11px; flex-wrap: wrap; }
-  .ord { display: flex; flex-direction: column; gap: 2px; }
-  .ord-btn { width: 20px; height: 14px; display: inline-flex; align-items: center; justify-content: center;
-    font-size: .58rem; border: 1px solid var(--line-2); border-radius: 4px; background: var(--fill-3);
-    color: var(--ink-soft); cursor: pointer; }
+  .trk.isdef { border-color: rgba(245,181,66,.45); box-shadow: inset 3px 0 0 var(--warn); }
+  .trk.dragging { opacity: .4; }
+  .trk.drop-before { box-shadow: 0 -3px 0 var(--hi); }
+  .trk.drop-after { box-shadow: 0 3px 0 var(--hi); }
+  .trk-main { display: grid; grid-template-columns: 30px 30px 58px 1fr auto; gap: 12px; align-items: center; }
+  .grip { cursor: grab; color: var(--ink-dim); font-size: 1.05rem; line-height: 1; text-align: center; user-select: none; letter-spacing: -2px; }
+  .grip:active { cursor: grabbing; }
+  .ord { display: flex; flex-direction: column; gap: 3px; }
+  .ord-btn { width: 26px; height: 16px; display: inline-flex; align-items: center; justify-content: center;
+    font-size: .6rem; border: 1px solid var(--line-2); border-radius: 5px; background: var(--fill-3);
+    color: var(--ink-soft); cursor: pointer; transition: all .12s; }
   .ord-btn:hover { background: var(--hi-soft); color: var(--hi); border-color: var(--hi); }
-  .langpick { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
+  .ord-btn[disabled] { opacity: .3; pointer-events: none; }
+  .trk .pos { font-family: 'JetBrains Mono', monospace; font-size: .9rem; font-weight: 600; color: var(--ink); text-align: center; }
+  .trk-mid { display: flex; align-items: center; gap: 11px; flex-wrap: wrap; min-width: 0; }
+  .trk-right { display: flex; align-items: center; gap: 8px; justify-content: flex-end; }
+  .lang-pickwrap { cursor: pointer; display: inline-flex; align-items: center; gap: 3px; padding: 2px 4px; border-radius: 6px; transition: background .12s; }
+  .lang-pickwrap:hover { background: var(--hi-soft); }
+  .langpick { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; padding-left: 72px; }
   .langpick .btn.sm { padding: 4px 10px; }
+  /* searchable language picker (Phase 11 component) */
+  .langmenu { position: absolute; z-index: 140; width: 264px; background: var(--fill); border: 1px solid var(--line-2);
+    border-radius: var(--radius-s); box-shadow: var(--shadow); overflow: hidden; }
+  .langmenu .lm-search { display: flex; align-items: center; gap: 8px; padding: 9px 11px; border-bottom: 1px solid var(--line); }
+  .langmenu .lm-search input { flex: 1; border: none; background: transparent; color: var(--ink); font-family: 'Sora', sans-serif; font-size: .88rem; outline: none; }
+  .langmenu .lm-list { max-height: 248px; overflow-y: auto; padding: 5px; }
+  .langmenu .lm-opt { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 8px; cursor: pointer; }
+  .langmenu .lm-opt:hover, .langmenu .lm-opt.active { background: var(--hi-soft); }
+  .langmenu .lm-opt.cur { box-shadow: inset 0 0 0 1px var(--hi); }
+  .langmenu .lm-opt .lm-name { font-size: .9rem; color: var(--ink); }
+  .langmenu .lm-opt .lm-endo { font-size: .76rem; color: var(--ink-dim); }
+  .langmenu .lm-opt .lm-code { margin-left: auto; font-family: 'JetBrains Mono', monospace; font-size: .72rem; color: var(--ink-soft); background: var(--fill-3); padding: 1px 7px; border-radius: 5px; }
+  .langmenu .lm-empty { padding: 14px; text-align: center; color: var(--ink-dim); font-size: .82rem; }
+  .star-btn { cursor: pointer; }
+  /* staged-changes panel */
+  #staged-card { display: none; border-color: var(--hi); box-shadow: 0 0 0 1px var(--hi-soft); }
+  #staged-card.show { display: block; }
+  .staged-op { display: flex; align-items: center; gap: 10px; padding: 7px 0; border-bottom: 1px dashed var(--line); font-size: .86rem; }
+  .staged-op:last-child { border-bottom: none; }
+  .staged-op .op-ic { width: 22px; height: 22px; flex: none; border-radius: 6px; display: inline-flex; align-items: center; justify-content: center; font-size: .7rem; background: var(--hi-soft); color: var(--acc-ink); }
+  .cmd-block { background: var(--bg-2); border: 1px solid var(--line); border-radius: var(--radius-s); padding: 12px 14px; font-family: 'JetBrains Mono', monospace; font-size: .78rem; line-height: 1.7; overflow-x: auto; white-space: pre; color: var(--ink-soft); }
+  .cmd-block .flag { color: var(--acc-ink); }
+  .cost-chip { display: inline-flex; align-items: center; gap: 6px; }
 
   /* diff modal */
   .modal-back { position: fixed; inset: 0; z-index: 120; background: rgba(8,10,16,.66);
@@ -220,10 +256,10 @@
   <div class="tabpanel" data-panel="tracks" style="display:none;">
     <div class="row" style="align-items:flex-start;">
       <div class="col fill">
-        <!-- cascade-mismatch alert (Sintel fixture: fra wrongly default, resolved = en) -->
-        <div class="note" style="background:var(--warn-soft);border-color:rgba(245,181,66,.4);display:flex;gap:11px;align-items:flex-start;">
+        <!-- cascade-mismatch alert (audio only; shown by the engine when default ≠ resolved) -->
+        <div class="note" id="cascade-alert" style="background:var(--warn-soft);border-color:rgba(245,181,66,.4);display:flex;gap:11px;align-items:flex-start;">
           <span class="badge warn" style="flex:none;">Default ≠ resolved</span>
-          <div class="tiny" style="line-height:1.6;">The default audio track is <span class="lang">fr</span> (French) but metadata resolves to <span class="lang">en</span>. Viewers would <b>read English</b> descriptions while <b>hearing French</b>. Set <span class="lang">en</span> as default below to align them — applied manually with <span class="mono">mkvpropedit</span>.</div>
+          <div class="tiny" style="line-height:1.6;">The default audio track is <b id="cascade-def"><span class="lang">fr</span> (French)</b> but metadata resolves to <span class="lang">en</span>. Viewers would <b>read English</b> descriptions while <b>hearing French</b>. <span class="btn sm" id="cascade-fix" style="margin-left:4px;">Make <span class="lang" style="margin:0 3px;">en</span> default</span></div>
         </div>
 
         <div class="card">
@@ -231,106 +267,36 @@
             <span class="seg" id="trk-seg" style="margin-left:12px;"><span class="on" data-tk="audio">Audio</span><span data-tk="subs">Subtitles</span></span>
             <span class="spacer"></span>
             <span class="chip seeded" id="guard-chip" title="qBittorrent seeding guard is active — edits to a file currently being seeded are blocked so torrent hashes don't break.">⛨ guard active</span>
-            <a class="btn sm ghost" href="track-order.html">Full reorder editor ↗</a>
+            <span class="mono tiny muted" id="trk-file">Sintel (2010).mkv</span>
           </div>
           <hr class="dash" style="margin:12px 0;">
 
-          <!-- audio tracks -->
-          <div id="trklist">
-            <div class="trk">
-              <div class="trk-main">
-                <span class="ord"><span class="ord-btn">▲</span><span class="ord-btn">▼</span></span>
-                <span class="num" style="width:24px;text-align:center;">1</span>
-                <span class="num" style="width:48px;">0:a:0</span>
-                <span class="lang-pickwrap" data-trk="a0"><span class="lang" style="cursor:pointer;">en</span> <span class="muted" style="font-size:.7rem;">▾</span></span>
-                <span class="muted tiny mono">vorbis · stereo</span>
-                <span class="spacer"></span>
-                <span class="btn sm ghost" data-setdefault="a0">set default ★</span>
-              </div>
-            </div>
-            <div class="trk isdef">
-              <div class="trk-main">
-                <span class="ord"><span class="ord-btn">▲</span><span class="ord-btn">▼</span></span>
-                <span class="num" style="width:24px;text-align:center;">2</span>
-                <span class="num" style="width:48px;">0:a:1</span>
-                <span class="lang-pickwrap" data-trk="a1"><span class="lang" style="cursor:pointer;">fr</span> <span class="muted" style="font-size:.7rem;">▾</span></span>
-                <span class="muted tiny mono">ac3 · 5.1 · "Français"</span>
-                <span class="spacer"></span>
-                <span class="badge warn">★ default</span>
-              </div>
-            </div>
-            <div class="trk untagged">
-              <div class="trk-main">
-                <span class="ord"><span class="ord-btn">▲</span><span class="ord-btn">▼</span></span>
-                <span class="num" style="width:24px;text-align:center;">3</span>
-                <span class="num" style="width:48px;">0:a:2</span>
-                <span class="badge bad">no language</span>
-                <span class="muted tiny mono">ac3 · "commentary"</span>
-                <span class="spacer"></span>
-              </div>
-              <div class="langpick">
-                <span class="muted tiny" style="margin-right:2px;">assign:</span>
-                <span class="btn sm">en</span><span class="btn sm">fr</span><span class="btn sm">de</span><span class="btn sm">es</span><span class="btn sm ghost">other…</span>
-              </div>
-            </div>
-          </div>
+          <!-- column headers -->
+          <div class="trk-cols" id="trk-cols"><span></span><span>#</span><span>track</span><span id="col-mid">language &amp; codec</span><span style="text-align:right;">default</span></div>
 
-          <!-- subtitle tracks (Phase 39) — shown when Subtitles tab active -->
-          <div id="subs-list" style="display:none;">
-            <div class="row center" style="margin-bottom:10px;gap:8px;flex-wrap:wrap;">
-              <span class="muted tiny">Default &amp; forced flags are manual (mkvpropedit). Forced is its own flag, distinct from default.</span>
-              <span class="spacer"></span>
-              <span class="btn sm" id="fetch-subs">Fetch missing subtitles ▾</span>
-            </div>
-            <div class="trk isdef">
-              <div class="trk-main">
-                <span class="num" style="width:24px;text-align:center;">1</span>
-                <span class="num" style="width:48px;">0:s:0</span>
-                <span class="lang-pickwrap" data-trk="s0"><span class="lang" style="cursor:pointer;">en</span> <span class="muted" style="font-size:.7rem;">▾</span></span>
-                <span class="muted tiny mono">srt · "English"</span>
-                <span class="spacer"></span>
-                <label class="row center tiny" style="gap:6px;"><span class="mini-toggle" data-flag="forced"></span> forced</label>
-                <span class="badge warn">★ default</span>
-              </div>
-            </div>
-            <div class="trk">
-              <div class="trk-main">
-                <span class="num" style="width:24px;text-align:center;">2</span>
-                <span class="num" style="width:48px;">0:s:1</span>
-                <span class="lang-pickwrap" data-trk="s1"><span class="lang" style="cursor:pointer;">en</span> <span class="muted" style="font-size:.7rem;">▾</span></span>
-                <span class="muted tiny mono">srt · "SDH"</span>
-                <span class="spacer"></span>
-                <label class="row center tiny" style="gap:6px;"><span class="mini-toggle" data-flag="forced"></span> forced</label>
-                <span class="btn sm ghost" data-setdefault="s1">set default ★</span>
-              </div>
-            </div>
-            <div class="trk untagged">
-              <div class="trk-main">
-                <span class="num" style="width:24px;text-align:center;">3</span>
-                <span class="num" style="width:48px;">0:s:2</span>
-                <span class="badge bad">no language</span>
-                <span class="muted tiny mono">subrip</span>
-                <span class="spacer"></span>
-                <label class="row center tiny" style="gap:6px;"><span class="mini-toggle on" data-flag="forced"></span> forced</label>
-              </div>
-              <div class="langpick">
-                <span class="muted tiny" style="margin-right:2px;">assign:</span>
-                <span class="btn sm">en</span><span class="btn sm">fr</span><span class="btn sm">de</span><span class="btn sm">es</span><span class="btn sm ghost">other…</span>
-              </div>
-            </div>
-            <div class="note blue" style="margin-top:14px;"><span class="tiny">“Fetch missing subtitles” pulls from your configured provider for the item's resolved language (<span class="lang">en</span>). A <b>forced</b> track shows only foreign-dialogue lines; it is flagged separately from the <b>default</b> subtitle.</span></div>
-          </div>
+          <!-- model-driven rows -->
+          <div id="track-list"></div>
 
-          <!-- the order vs default explainer -->
-          <div class="note blue" style="margin-top:14px;">
-            <div style="display:grid;grid-template-columns:auto 1fr;gap:7px 12px;align-items:baseline;">
-              <b style="white-space:nowrap;">▲▼ Order</b>
-              <span class="tiny">The track's index in the file. Jellystructure reads audio tracks <b>top-down</b> to decide the <b>metadata language</b> (first match wins); players also fall back to the first track.</span>
-              <b style="white-space:nowrap;">★ Default</b>
-              <span class="tiny">The track the player <b>auto-selects on playback</b>. Independent of order, and changing it <b>never</b> affects the metadata language.</span>
-            </div>
+          <!-- contextual explainer (swapped per audio/subs) -->
+          <div class="note blue" id="trk-explain" style="margin-top:14px;"></div>
+          <div class="tiny muted" style="margin-top:10px;">Reorder by dragging the grip or the ▲▼ buttons · click a language to change it · ★ sets the default. Everything is <b>manual</b> and only touches the file when you press <b>Apply</b>.</div>
+        </div>
+
+        <!-- staged changes (appears when there are unsaved edits) -->
+        <div class="card" id="staged-card">
+          <div class="row center"><h4 style="margin:0;">Staged changes <span class="badge" id="staged-count" style="margin-left:6px;">0</span></h4><span class="spacer"></span><span class="btn sm ghost" id="staged-discard">Discard all</span></div>
+          <hr class="dash" style="margin:10px 0;">
+          <div id="staged-ops"></div>
+          <div style="margin-top:14px;">
+            <div class="tiny muted" style="margin-bottom:6px;">Exact command — runs only on Apply:</div>
+            <div class="cmd-block" id="cmd-preview"></div>
           </div>
-          <div class="tiny muted" style="margin-top:10px;">Order &amp; the default flag are <b>manual</b> — written with <span class="mono">mkvpropedit</span> on your command. Nothing is changed automatically.</div>
+          <div class="row center" style="margin-top:14px;gap:10px;flex-wrap:wrap;">
+            <span class="cost-chip" id="cost-chip"></span>
+            <span class="spacer" style="flex:1"></span>
+            <span class="btn ghost" id="staged-discard-2">Discard</span>
+            <span class="btn primary" id="staged-apply">Apply to file</span>
+          </div>
         </div>
       </div>
     </div>
@@ -550,24 +516,261 @@
   tagMenu.addEventListener('click', e => { const it = e.target.closest('[data-add]'); if (it) { addTag(it.dataset.add); tagInput.value=''; tagMenu.style.display='none'; } });
   document.addEventListener('click', e => { if (!e.target.closest('#tags-section')) tagMenu.style.display='none'; });
 
-  /* ---- track editor: language pick + set default ---- */
-  document.querySelectorAll('.lang-pickwrap').forEach(w => w.addEventListener('click', () => {
-    let pick = w.parentElement.parentElement.querySelector('.langpick');
-    if (pick) { pick.remove(); return; }
-    pick = document.createElement('div'); pick.className = 'langpick';
-    pick.innerHTML = '<span class="muted tiny" style="margin-right:2px;">change to:</span>' + ['en','fr','de','es'].map(l => '<span class="btn sm">'+l+'</span>').join('') + '<span class="btn sm ghost">other…</span>';
-    w.closest('.trk').appendChild(pick);
-  }));
-  document.querySelectorAll('[data-setdefault]').forEach(b => b.addEventListener('click', () => {
-    const list = b.closest('#trklist, #subs-list') || document;
-    list.querySelectorAll('.trk').forEach(t => {
-      t.classList.remove('isdef');
-      const badge = t.querySelector('.badge.warn'); if (badge) { const sd = document.createElement('span'); sd.className='btn sm ghost'; sd.textContent='set default ★'; sd.dataset.setdefault='x'; badge.replaceWith(sd); }
+  /* ---- shared searchable language picker (Phase 11 component) ---- */
+  window.RAVILO_LANGS = window.RAVILO_LANGS || [
+    { code:'en', name:'English',   endo:'English' },
+    { code:'fr', name:'French',    endo:'Français' },
+    { code:'de', name:'German',    endo:'Deutsch' },
+    { code:'es', name:'Spanish',   endo:'Español' },
+    { code:'da', name:'Danish',    endo:'Dansk' },
+    { code:'fo', name:'Faroese',   endo:'Føroyskt' },
+    { code:'is', name:'Icelandic', endo:'Íslenska' },
+    { code:'no', name:'Norwegian', endo:'Norsk' },
+    { code:'sv', name:'Swedish',   endo:'Svenska' },
+    { code:'fi', name:'Finnish',   endo:'Suomi' },
+    { code:'nl', name:'Dutch',     endo:'Nederlands' },
+    { code:'it', name:'Italian',   endo:'Italiano' },
+    { code:'pt', name:'Portuguese',endo:'Português' },
+    { code:'pl', name:'Polish',    endo:'Polski' },
+    { code:'ru', name:'Russian',   endo:'Русский' },
+    { code:'ja', name:'Japanese',  endo:'日本語' },
+    { code:'ko', name:'Korean',    endo:'한국어' },
+    { code:'zh', name:'Chinese',   endo:'中文' },
+    { code:'ar', name:'Arabic',    endo:'العربية' },
+    { code:'hi', name:'Hindi',     endo:'हिन्दी' },
+  ];
+  // openLangMenu(anchorEl, currentCode, onPick) — beautiful searchable dropdown, full display names.
+  window.openLangMenu = function (anchor, current, onPick) {
+    document.querySelectorAll('.langmenu').forEach(m => m.remove());
+    const data = window.RAVILO_LANGS;
+    const menu = document.createElement('div');
+    menu.className = 'langmenu';
+    menu.innerHTML = '<div class="lm-search"><span class="muted">⌕</span><input type="text" placeholder="Search language…" autocomplete="off"></div><div class="lm-list"></div>';
+    document.body.appendChild(menu);
+    const r = anchor.getBoundingClientRect();
+    menu.style.top = (window.scrollY + r.bottom + 6) + 'px';
+    menu.style.left = (window.scrollX + Math.min(r.left, window.innerWidth - 280)) + 'px';
+    const search = menu.querySelector('input'), listEl = menu.querySelector('.lm-list');
+    let active = 0, filtered = data.slice();
+    function draw() {
+      listEl.innerHTML = filtered.length ? filtered.map((l, i) =>
+        '<div class="lm-opt' + (i===active?' active':'') + (l.code===current?' cur':'') + '" data-code="' + l.code + '">' +
+        '<span class="lm-name">' + l.name + '</span><span class="lm-endo">' + l.endo + '</span>' +
+        '<span class="lm-code">' + l.code + '</span></div>').join('')
+        : '<div class="lm-empty">No language matches</div>';
+    }
+    function filter() {
+      const q = search.value.trim().toLowerCase();
+      filtered = data.filter(l => !q || l.name.toLowerCase().includes(q) || l.endo.toLowerCase().includes(q) || l.code.includes(q));
+      active = 0; draw();
+    }
+    function choose(code) { if (code) onPick(code); close(); }
+    function close() { menu.remove(); document.removeEventListener('click', outside, true); }
+    function outside(e) { if (!menu.contains(e.target) && e.target !== anchor && !anchor.contains(e.target)) close(); }
+    search.addEventListener('input', filter);
+    search.addEventListener('keydown', e => {
+      if (e.key === 'ArrowDown') { active = Math.min(filtered.length-1, active+1); draw(); e.preventDefault(); }
+      else if (e.key === 'ArrowUp') { active = Math.max(0, active-1); draw(); e.preventDefault(); }
+      else if (e.key === 'Enter') { if (filtered[active]) choose(filtered[active].code); e.preventDefault(); }
+      else if (e.key === 'Escape') { close(); e.preventDefault(); }
     });
-    const trk = b.closest('.trk'); trk.classList.add('isdef');
-    const nb = document.createElement('span'); nb.className='badge warn'; nb.textContent='★ default'; b.replaceWith(nb);
-    toast('Default set — mkvpropedit will apply on save');
-  }));
+    listEl.addEventListener('click', e => { const o = e.target.closest('.lm-opt'); if (o) choose(o.dataset.code); });
+    draw(); setTimeout(() => { document.addEventListener('click', outside, true); search.focus(); }, 0);
+  };
+
+  /* ---- unified track & order editor (movie) ---- */
+  (function trackEditor() {
+    const FILE = 'Sintel (2010).mkv';
+    const CONTAINER = 'mkv';                 // mkv → mkvpropedit for flags; reorder always needs remux
+    const RESOLVED = 'en';                   // resolved metadata language (audio cascade target)
+    const LANGS = (window.RAVILO_LANGS || []).map(l => l.code);   // codes, full data in LANGDATA
+    const LANGDATA = window.RAVILO_LANGS || [];
+    const LANGNAME = Object.fromEntries(LANGDATA.map(l => [l.code, l.name]).concat([['', 'untagged']]));
+    // working model (clone of original); each track: {sp, lang, codec, title, def, forced}
+    const model = {
+      audio: [
+        { sp:'0:a:0', lang:'en', codec:'vorbis · stereo', title:'', def:false },
+        { sp:'0:a:1', lang:'fr', codec:'ac3 · 5.1', title:'Français', def:true },
+        { sp:'0:a:2', lang:'',   codec:'ac3', title:'commentary', def:false },
+      ],
+      subs: [
+        { sp:'0:s:0', lang:'en', codec:'srt', title:'English', def:true,  forced:false },
+        { sp:'0:s:1', lang:'en', codec:'srt', title:'SDH', def:false, forced:false },
+        { sp:'0:s:2', lang:'',   codec:'subrip', title:'', def:false, forced:true },
+      ],
+    };
+    const orig = JSON.parse(JSON.stringify(model));
+    let kind = 'audio';
+
+    const list = document.getElementById('track-list');
+    const colMid = document.getElementById('col-mid');
+    const explain = document.getElementById('trk-explain');
+    const seg = document.getElementById('trk-seg');
+
+    const AUDIO_EXPLAIN = '<div style="display:grid;grid-template-columns:auto 1fr;gap:7px 12px;align-items:baseline;">' +
+      '<b style="white-space:nowrap;">▲▼ Order</b><span class="tiny">The track\'s index in the file. Jellystructure reads audio tracks <b>top-down</b> to decide the <b>metadata language</b> (first match wins); players also fall back to the first track.</span>' +
+      '<b style="white-space:nowrap;">★ Default</b><span class="tiny">The track the player <b>auto-selects on playback</b>. Independent of order, and changing it <b>never</b> affects the metadata language.</span></div>';
+    const SUBS_EXPLAIN = '<div style="display:grid;grid-template-columns:auto 1fr;gap:7px 12px;align-items:baseline;">' +
+      '<b style="white-space:nowrap;">★ Default</b><span class="tiny">The subtitle shown automatically when subtitles are on.</span>' +
+      '<b style="white-space:nowrap;">⮕ Forced</b><span class="tiny">A <b>separate</b> flag — shows only foreign-dialogue lines over a known-language audio. A track can be forced without being default.</span></div>';
+
+    function rows() { return model[kind]; }
+
+    function render() {
+      const arr = rows();
+      colMid.textContent = kind === 'audio' ? 'language & codec' : 'language, codec & forced';
+      list.innerHTML = arr.map((t, i) => {
+        const untag = !t.lang;
+        const cls = 'trk' + (t.def ? ' isdef' : '') + (untag ? ' untagged' : '');
+        const dCount = arr.filter(x => x.def).length;
+        const star = (t.def && dCount === 1)
+          ? '<span class="badge warn">★ default</span>'
+          : '<span class="btn sm ' + (t.def ? '' : 'ghost') + ' star-btn" data-act="default" data-i="' + i + '">' + (t.def ? '★ keep this one' : 'set default ★') + '</span>';
+        const forced = kind === 'subs'
+          ? '<label class="row center tiny" style="gap:6px;cursor:pointer;"><span class="mini-toggle' + (t.forced ? ' on' : '') + '" data-act="forced" data-i="' + i + '"></span> forced</label>'
+          : '';
+        const langCell = untag
+          ? '<span class="lang-pickwrap" data-act="lang" data-i="' + i + '"><span class="badge bad">no language</span> <span class="muted" style="font-size:.7rem;">▾</span></span>'
+          : '<span class="lang-pickwrap" data-act="lang" data-i="' + i + '"><span class="lang">' + t.lang + '</span> <span class="muted tiny">' + (LANGNAME[t.lang] || '') + '</span> <span class="muted" style="font-size:.7rem;">▾</span></span>';
+        const meta = '<span class="muted tiny mono">' + t.codec + (t.title ? ' · "' + t.title + '"' : '') + '</span>';
+        const picker = '';
+        return '<div class="trk ' + cls.replace('trk','').trim() + '" draggable="true" data-i="' + i + '">' +
+          '<div class="trk-main">' +
+            '<span class="grip" title="Drag to reorder">⠿</span>' +
+            '<span class="ord"><span class="ord-btn" data-act="up" data-i="' + i + '"' + (i===0?' disabled':'') + '>▲</span>' +
+              '<span class="ord-btn" data-act="down" data-i="' + i + '"' + (i===arr.length-1?' disabled':'') + '>▼</span></span>' +
+            '<span class="pos">' + (i+1) + '</span>' +
+            '<span class="trk-mid"><span class="num" style="width:48px;">' + t.sp + '</span>' + langCell + meta + '</span>' +
+            '<span class="trk-right">' + forced + star + '</span>' +
+          '</div>' + picker + '</div>';
+      }).join('');
+      explain.innerHTML = kind === 'audio' ? AUDIO_EXPLAIN : SUBS_EXPLAIN;
+      cascade();
+      diff();
+    }
+
+    // cascade alert: audio default lang ≠ resolved metadata language
+    const cAlert = document.getElementById('cascade-alert');
+    const cDef = document.getElementById('cascade-def');
+    function cascade() {
+      const def = model.audio.find(t => t.def);
+      const show = kind === 'audio' && def && def.lang && def.lang !== RESOLVED;
+      cAlert.style.display = show ? 'flex' : 'none';
+      if (show) cDef.innerHTML = '<span class="lang">' + def.lang + '</span> (' + LANGNAME[def.lang] + ')';
+    }
+    document.getElementById('cascade-fix').addEventListener('click', () => {
+      const t = model.audio.find(x => x.lang === RESOLVED) || model.audio[0];
+      model.audio.forEach(x => x.def = (x === t)); render(); toast('Default audio → ' + RESOLVED);
+    });
+
+    // ---- interactions (event-delegated) ----
+    list.addEventListener('click', e => {
+      const el = e.target.closest('[data-act]'); if (!el) return;
+      const i = +el.dataset.i, arr = rows();
+      const act = el.dataset.act;
+      if (act === 'up' && i > 0) { [arr[i-1], arr[i]] = [arr[i], arr[i-1]]; render(); }
+      else if (act === 'down' && i < arr.length-1) { [arr[i+1], arr[i]] = [arr[i], arr[i+1]]; render(); }
+      else if (act === 'default') { arr.forEach((t,k) => t.def = (k===i)); render(); }
+      else if (act === 'forced') { arr[i].forced = !arr[i].forced; render(); }
+      else if (act === 'lang') {
+        const anchor = el.closest('.lang-pickwrap') || el;
+        window.openLangMenu(anchor, arr[i].lang, code => { arr[i].lang = code; render(); toast(arr[i].sp + ' → ' + code + ' (' + (LANGNAME[code]||code) + ')'); });
+      }
+    });
+
+    // ---- drag reorder ----
+    let dragI = null;
+    list.addEventListener('dragstart', e => { const r = e.target.closest('.trk'); if (!r) return; dragI = +r.dataset.i; r.classList.add('dragging'); });
+    list.addEventListener('dragend', () => { dragI = null; list.querySelectorAll('.trk').forEach(r => r.classList.remove('dragging','drop-before','drop-after')); });
+    list.addEventListener('dragover', e => {
+      e.preventDefault(); const r = e.target.closest('.trk'); if (!r || dragI===null) return;
+      const over = +r.dataset.i; list.querySelectorAll('.trk').forEach(x => x.classList.remove('drop-before','drop-after'));
+      if (over !== dragI) r.classList.add(over < dragI ? 'drop-before' : 'drop-after');
+    });
+    list.addEventListener('drop', e => {
+      e.preventDefault(); const r = e.target.closest('.trk'); if (!r || dragI===null) return;
+      const to = +r.dataset.i, arr = rows(); if (to === dragI) return;
+      const [m] = arr.splice(dragI, 1); arr.splice(to, 0, m); render();
+    });
+
+    // ---- segmented Audio / Subtitles ----
+    seg.addEventListener('click', e => {
+      const s = e.target.closest('[data-tk]'); if (!s) return;
+      [...seg.children].forEach(x => x.classList.toggle('on', x === s));
+      kind = s.dataset.tk === 'subs' ? 'subs' : 'audio'; render();
+    });
+
+    // ---- diff → staged ops + command + cost ----
+    const card = document.getElementById('staged-card');
+    const opsEl = document.getElementById('staged-ops');
+    const cntEl = document.getElementById('staged-count');
+    const cmdEl = document.getElementById('cmd-preview');
+    const costEl = document.getElementById('cost-chip');
+
+    function diffKind(k) {
+      const o = orig[k], n = model[k], ops = [];
+      // reorder?
+      const reordered = n.some((t, i) => o[i].sp !== t.sp);
+      if (reordered) ops.push({ ic:'⇅', kind:'reorder', text:(k==='audio'?'Audio':'Subtitle') + ' order → ' + n.map(t => t.sp.split(':').pop()).join(', ') });
+      // per-track flag/lang changes (match by sp)
+      n.forEach(t => {
+        const ob = o.find(x => x.sp === t.sp); if (!ob) return;
+        if (ob.lang !== t.lang) ops.push({ ic:'🏷', kind:'lang', sp:t.sp, text:t.sp + ' language → ' + (t.lang ? t.lang + ' (' + LANGNAME[t.lang] + ')' : 'untagged') });
+        if (ob.def !== t.def && t.def) ops.push({ ic:'★', kind:'flag', sp:t.sp, text:t.sp + ' set as default ' + k });
+        if (k==='subs' && ob.forced !== t.forced) ops.push({ ic:'⮕', kind:'flag', sp:t.sp, text:t.sp + ' forced ' + (t.forced ? 'on' : 'off') });
+      });
+      return { ops, reordered };
+    }
+
+    function diff() {
+      const a = diffKind('audio'), s = diffKind('subs');
+      const ops = [...a.ops, ...s.ops];
+      const anyReorder = a.reordered || s.reordered;
+      cntEl.textContent = ops.length;
+      card.classList.toggle('show', ops.length > 0);
+      if (!ops.length) return;
+      opsEl.innerHTML = ops.map(o => '<div class="staged-op"><span class="op-ic">' + o.ic + '</span><span>' + o.text + '</span></div>').join('');
+
+      // command preview: flag/lang edits → mkvpropedit (instant); reorder → ffmpeg -c copy remux
+      const lines = [];
+      const flagOps = ops.filter(o => o.kind === 'flag' || o.kind === 'lang');
+      if (flagOps.length) {
+        lines.push('mkvpropedit "' + FILE + '" \\');
+        const parts = [];
+        ['audio','subs'].forEach(k => {
+          model[k].forEach(t => {
+            const ob = orig[k].find(x => x.sp === t.sp); if (!ob) return;
+            const m = /0:([as]):(\d+)/.exec(t.sp);            // mkvpropedit wants 1-based, type-relative
+            const tname = 'track:' + m[1] + (parseInt(m[2], 10) + 1);
+            if (ob.lang !== t.lang && t.lang) parts.push('  --edit ' + tname + ' --set language=' + t.lang);
+            if (ob.def !== t.def) parts.push('  --edit ' + tname + ' --set flag-default=' + (t.def?1:0));
+            if (k==='subs' && ob.forced !== t.forced) parts.push('  --edit ' + tname + ' --set flag-forced=' + (t.forced?1:0));
+          });
+        });
+        lines.push(parts.join(' \\\n'));
+      }
+      if (anyReorder) {
+        if (lines.length) lines.push('');
+        const maps = model.audio.concat(model.subs).map(t => '-map ' + t.sp).join(' ');
+        lines.push('ffmpeg -i "' + FILE + '" \\\n  ' + maps + ' -map 0:v -c copy \\\n  "' + FILE + '.reordered.mkv"  # -c copy = no re-encode');
+      }
+      cmdEl.innerHTML = lines.join('\n').replace(/(--edit|--set|-map|-c copy|-i)/g, '<span class="flag">$1</span>');
+
+      // cost
+      if (anyReorder) costEl.innerHTML = '<span class="badge warn">⚠ remux</span><span class="tiny muted">reordering streams needs an <b>ffmpeg -c copy</b> remux (no re-encode, but rewrites the file — minutes on large files)</span>';
+      else costEl.innerHTML = '<span class="badge ok">instant</span><span class="tiny muted"><b>mkvpropedit</b> edits flags in place · ~40ms · no re-encode · perms kept</span>';
+    }
+
+    function reset() { ['audio','subs'].forEach(k => model[k] = JSON.parse(JSON.stringify(orig[k]))); render(); }
+    document.getElementById('staged-discard').addEventListener('click', reset);
+    document.getElementById('staged-discard-2').addEventListener('click', reset);
+    document.getElementById('staged-apply').addEventListener('click', () => {
+      ['audio','subs'].forEach(k => orig[k] = JSON.parse(JSON.stringify(model[k])));
+      render(); toast('Applied to ' + FILE + ' ✓');
+    });
+
+    render();
+  })();
 
   /* ---- TMDB match picker (Phase 32) ---- */
   const tmdbModal = document.getElementById('tmdb-modal');
@@ -596,18 +799,6 @@
   document.querySelectorAll('.revert-btn').forEach(b => b.addEventListener('click', () => {
     if (confirm('Revert this change? The previous value is restored and re-written to the NFO.')) toast('Reverted — previous value restored');
   }));
-
-  /* ---- subtitle / audio track-kind toggle + forced flags (Phase 39) ---- */
-  const trkSeg = document.getElementById('trk-seg');
-  if (trkSeg) trkSeg.addEventListener('click', e => {
-    const s = e.target.closest('[data-tk]'); if (!s) return;
-    [...trkSeg.children].forEach(x => x.classList.toggle('on', x === s));
-    const subs = s.dataset.tk === 'subs';
-    document.getElementById('trklist').style.display = subs ? 'none' : '';
-    document.getElementById('subs-list').style.display = subs ? '' : 'none';
-  });
-  document.querySelectorAll('.mini-toggle').forEach(t => t.addEventListener('click', () => { t.classList.toggle('on'); toast('Forced flag ' + (t.classList.contains('on') ? 'set' : 'cleared') + ' — mkvpropedit on save'); }));
-  const fs = document.getElementById('fetch-subs'); if (fs) fs.addEventListener('click', () => toast('Fetching English subtitles from provider…'));
 
   /* ---- qBittorrent guard chip (Phase 37) ---- */
   const gc = document.getElementById('guard-chip'); if (gc) gc.addEventListener('click', () => toast('Seeding guard active — edits to a file being seeded return 409 and are blocked'));

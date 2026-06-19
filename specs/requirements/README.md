@@ -57,6 +57,8 @@ See [`../tasks.md`](../tasks.md) for the active TODO breakdown.
 | 38 | ✓ Done | Command palette ⌘K + attention-queue keyboard nav (FR-KB1) | [archive](archive/phase-38-command-palette-keyboard-nav.md) |
 | 39 | ✓ Done | Subtitle management — forced flag toggle on subtitle tracks, MKV only (FR-SUB1) | [archive](archive/phase-39-subtitle-management.md) |
 | 40 | ✓ Done | Configure qBittorrent in Settings — guard opt-in; off ⇒ no cross-seed safety (FR-QC1) | [archive](archive/phase-40-configure-qbittorrent-settings.md) |
+| 41 | □ Planned | Merge track-order page into Media Detail "Tracks & order" tab — unified movie editor + warnings (FR-TO1) | [phase-41](phase-41-merge-track-order-into-detail.md) |
+| 42 | □ Planned | Per-episode track & order editor on Series detail — same editor in a modal (FR-TO2) | [phase-42](phase-42-series-episode-track-editor.md) |
 
 ## Adding a new phase
 1. Create `phase-NN-short-name.md` in this directory using an existing planned spec as a template.
