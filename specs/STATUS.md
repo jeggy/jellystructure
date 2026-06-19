@@ -8,39 +8,65 @@ _Last updated: 2026-06-18_
 
 ## Current focus
 
-All planned phases (14–29) complete. No active work item.
+**Planned backlog 31–39** — a batch of operator-ergonomics + trust features, each with a spec and an
+approved design mockup in `design/app/`:
+- **31** studio/network logo artwork · **32** in-app TMDB match picker · **33** Jellyfin⇄NFO drift
+  detection · **34** undo/revert from history · **35** system health panel (real test-connections) ·
+  **36** per-library scan/push + scheduled scans + notifications · **37** surface the qBittorrent guard ·
+  **38** command palette ⌘K + attention-queue keyboard nav · **39** subtitle management ·
+  **40** configure qBittorrent in Settings (revises Phase 26 — guard is now opt-in via UI; when off,
+  cross-seed safety is not part of media management).
 
-See [`requirements/README.md`](requirements/README.md) for the full phase index.
+Phases 0–30 complete. See [`requirements/README.md`](requirements/README.md) for the full index.
+
+## Sibling product — Ravilo (Android TV + Web)
+
+**Ravilo** specs now live under [`ravilo/`](ravilo/) — a Compose Multiplatform streaming front-end
+(Android TV **and** browser/WASM canvas, one shared codebase) for jellystructure-managed libraries.
+It adds a **`/api/tv/**`** namespace + a per-Jellyfin-user config store to *this* backend and a shared
+**`:shared`** KMP module (DTOs + Ktor client) that the admin frontend reuses too. Control plane =
+jellystructure only; data plane (video/images) = Jellyfin directly. Phases **R01–R17** are planned —
+see [`ravilo/STATUS.md`](ravilo/STATUS.md) and [`ravilo/requirements/README.md`](ravilo/requirements/README.md).
+None implemented yet. The jellystructure admin frontend stays DOM/Tailwind; Ravilo's web build is a
+**separate** canvas bundle (the "no Compose for Web" rule is scoped to the admin app).
 
 ## Key cross-cutting findings — see [`requirements/_investigation-findings.md`](requirements/_investigation-findings.md)
 
 - **SQLite/SQLDelight live.** All four stores (MediaStore, SessionService, ScanTracker, MediaHistory)
   run against a real SQLite DB (`DB_FILE` env, default `./data/jellystructure.db`). No migration from
   legacy JSON — new installs start fresh.
-- **`studio`/`network` are never populated from TMDB** — prerequisite work for the Metadata page (Phase 19).
+- **`studio`/`network` are populated from TMDB** at scan time (Phase 19 P1), incl. `tmdbId`/`logoPath`
+  (P2) — but those logo paths are not yet downloaded/served (Phase 31).
 - **TMDB has no network search** — network logos must be captured from TV details at scan time.
-- **Frontend router exact-matches routes** — query-param navigation needs router work (Phase 28).
-- **The "Sync ↻" button fetches TMDB, not Jellyfin** — Phase 25 introduces real Jellyfin re-pull.
+- **The "Sync ↻" button fetched TMDB, not Jellyfin** — Phase 25 added the real Jellyfin re-pull.
 
 ## Recent work (git)
 
+- **Spec sync (2026-06-18):** brought `plan.md` + `constitution.md` in line with the source after a
+  code-vs-spec audit. `plan.md` now documents the real `GET /api/media` filter set (multi-value
+  `studios`/`networks`/`genres`/**`tags`** + audio-track filters), `meta-facets`/`track-facets`,
+  `DELETE /media/all`, `nfo/writable`, `jellyfin-locks`, `tmdb-languages`, `tmdb-id`,
+  `repull-jellyfin`, `batch/jellyfin-push`, `/health`, the corrected `/media/{id}/tracks/*` +
+  `reorder`/`delete`/`jellyfin-refresh` routes, the real triage routes, and the expanded `MediaItem`
+  model. `constitution.md` config shape gained `scan_workers`/`scan_threads` + the `[qbittorrent]`
+  section. Added **Phase 30** (Library multi-axis filters — retroactive) and **Phase 31** (planned).
+- **Phase 29 complete:** Multi-language library search — `titlesByLang` (merge-only), search across
+  every title ever pulled + original title.
+- **Phase 27 complete:** Triage merged into media detail; triage is now a floating navigation dock.
 - **Phase 19 complete:** Studios/Networks/Genres/Tags metadata page — TMDB studio/network fields
   populated at scan time; JsTagStore (JSON CRUD); `/api/metadata/*` + `/api/tags` routes; Metadata.kt
   UI with tabbed glassmorphism cards, client-side filter, sort; Jellyfin ID-based media URLs.
-- **Phase 18 complete:** Settings page cleanup — nav links changed from `<a href="#sect-…">` to
-  smooth-scroll buttons with IntersectionObserver highlight; sections reorganised (Scanning, Metadata,
-  Advanced danger zone with "Clear all scanned data"); `DELETE /api/media/all` backend endpoint.
-- **Phase 17 complete:** Activity log backend + live runners. Unified Logger (stdout + ActivityLog
-  delegation), `log_line` WS broadcast, `GET/DELETE /api/activity/log`, persistent JSON snapshot,
-  frontend filter bar, workers chip, runBlocking main, all `*Sync` Logger variants removed.
-- **Phase 16 complete:** Multi-worker scanner. `scan_workers` / `scan_threads` config, Channel-based
-  producer/consumer, `limitedParallelism` dispatcher, live scale-up/down, Settings Scanning section.
-- **Phase 15 complete:** Library path-match diagnostics. `GET /api/config/path-check`, Settings
-  path-check panel, per-library "Match prefix" row.
-- **Phase 14 complete:** SQLite persistence via SQLDelight 2.0.2 + NativeSqliteDriver.
+- **Phase 17 complete:** Activity log backend — Logger, `log_line` WS broadcast,
+  `GET/DELETE /api/activity/log`, frontend filter bar + workers chip.
+- **Phase 16 complete:** Multi-worker scanner — `scan_workers`/`scan_threads`, Channel-based
+  producer/consumer, live scale-up/down.
 
 ## Known issues / open threads
 
+- **Reverse-drift resolved in specs:** `plan.md` previously claimed `PATCH /config`,
+  `POST /config/test-connection`, and `POST /jellyfin/refresh` — none exist in source (it's `PUT
+  /config`, no test-connection route, and per-item `/media/{id}/jellyfin-refresh`). The spec now
+  matches source. If a Test-connections action is still wanted in Settings, it needs a real endpoint.
 - **Port free-check logic** — unresolved `TODO` in `Main.kt` (`checkPortFree` "doesn't work");
   suggestion: catch the bind exception instead.
 

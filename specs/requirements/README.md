@@ -46,8 +46,28 @@ See [`../tasks.md`](../tasks.md) for the active TODO breakdown.
 | 27 | ✓ Done | Merge Triage into Media Detail + floating Triage dock (FR-MT1) | [archive](archive/phase-27-merge-triage-into-media-detail.md) |
 | 28 | ✓ Done | URL-based tab & view-state navigation (FR-UN1) | [archive](archive/phase-28-url-based-tab-navigation.md) |
 | 29 | ✓ Done | Multi-language library search — remember every title ever pulled (FR-ML1) | [archive](archive/phase-29-multi-language-library-search.md) |
+| 30 | ✓ Done | Library multi-axis filters — studio/network/genre/tags dropdowns + meta-facets (FR-LMF1) | [archive](archive/phase-30-library-multi-axis-filters.md) |
+| 31 | □ Planned | Studio & network logo artwork — fetch/cache/serve + batch (FR-SNA1) | [phase-31](phase-31-studio-network-artwork.md) |
+| 32 | □ Planned | In-app TMDB match picker — search & pick the right match (FR-TM1) | [phase-32](phase-32-tmdb-match-picker.md) |
+| 33 | □ Planned | Jellyfin ⇄ NFO drift detection + re-assert (FR-DR1) | [phase-33](phase-33-jellyfin-nfo-drift.md) |
+| 34 | □ Planned | Undo / revert from history (FR-UR1) | [phase-34](phase-34-undo-revert-history.md) |
+| 35 | □ Planned | System health panel — real test-connections + tool/disk checks (FR-HC1) | [phase-35](phase-35-system-health-panel.md) |
+| 36 | □ Planned | Operator controls — per-library scan/push, scheduled scans, notifications (FR-OC1) | [phase-36](phase-36-operator-controls.md) |
+| 37 | □ Planned | Surface the qBittorrent seeding guard (FR-QS1) | [phase-37](phase-37-surface-qbittorrent-guard.md) |
+| 38 | □ Planned | Command palette ⌘K + attention-queue keyboard nav (FR-KB1) | [phase-38](phase-38-command-palette-keyboard-nav.md) |
+| 39 | □ Planned | Subtitle management — fetch missing, forced flag, default parity (FR-SUB1) | [phase-39](phase-39-subtitle-management.md) |
+| 40 | □ Planned | Configure qBittorrent in Settings — guard opt-in; off ⇒ no cross-seed safety (FR-QC1) | [phase-40](phase-40-configure-qbittorrent-settings.md) |
 
 ## Adding a new phase
 1. Create `phase-NN-short-name.md` in this directory using an existing planned spec as a template.
 2. Add a row to the table above.
 3. On completion: move the file to `archive/`, flip status to `✓ Done`, update STATUS.md focus line.
+
+## Sibling product — Ravilo (Android TV + Web)
+**Ravilo** — the Compose Multiplatform streaming front-end (Android TV + browser/WASM canvas) for
+jellystructure-managed libraries — lives in [`../ravilo/`](../ravilo/) with its own
+[`constitution.md`](../ravilo/constitution.md), [`plan.md`](../ravilo/plan.md), and phase index
+([`requirements/README.md`](../ravilo/requirements/README.md), phases **R01–R17**). Its backend work
+adds a **`/api/tv/**`** namespace to *this* server and a shared **`:shared`** KMP module (DTOs +
+client) reused by the admin frontend too — but Ravilo phases are tracked separately under
+`../ravilo/`, not in the table above.
