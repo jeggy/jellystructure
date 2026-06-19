@@ -37,6 +37,9 @@ kotlinx-datetime = { module = "org.jetbrains.kotlinx:kotlinx-datetime", version.
 sqldelight-native-driver = { module = "app.cash.sqldelight:native-driver", version.ref = "sqldelight" }
 androidx-leanback = { module = "androidx.leanback:leanback", version = "1.2.0" }
 androidx-activity-compose = { module = "androidx.activity:activity-compose", version = "1.9.3" }
+androidx-media3-exoplayer = { module = "androidx.media3:media3-exoplayer", version = "1.7.1" }
+androidx-media3-exoplayer-hls = { module = "androidx.media3:media3-exoplayer-hls", version = "1.7.1" }
+androidx-media3-ui = { module = "androidx.media3:media3-ui", version = "1.7.1" }
 
 [plugins]
 kotlin-multiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin" }

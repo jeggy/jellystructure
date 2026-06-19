@@ -27,7 +27,7 @@ truth** for which Ravilo phases exist and whether each is done or planned. Ravil
 | R11 | ✓ Done | `:ravilo-ui` — **Channel view + browse grids** (Movies/Series/My List, filters) | [R11](phase-R11-channel-and-browse-grids.md) |
 | R12 | ✓ Done | `:ravilo-ui` — **Search** (on-screen keyboard + live results) | [R12](phase-R12-search-screen.md) |
 | R13 | ✓ Done | `:ravilo-ui` — **Movie & Series detail** (season picker, episode rail, watched/up-next/resume) | [R13](phase-R13-detail-screens.md) |
-| R14 | □ Planned | Player — `RaviloPlayer` `actual`s: **forked `jellyfin-androidtv` engine** (Android, in `:ravilo-player`, GPL) / browser video (web); resume, progress, binge next-up | [R14](phase-R14-player.md) |
+| R14 | ✓ Done | Player — `RaviloPlayer` `actual`s: ExoPlayer/Media3 (Android) / browser `<video>` (web); shared chrome; resume, progress heartbeats, binge next-up | [R14](phase-R14-player.md) |
 | R15 | □ Planned | On-device **Settings** + first-run **pairing UX** (skin picker, playback prefs; writes via `PUT /api/tv/settings`) | [R15](phase-R15-ondevice-settings-pairing.md) |
 | R16 | □ Planned | jellystructure web — **Ravilo config screen** backed by the R04 store (hero/channels/rows/merge/skin, per user) | [R16](phase-R16-jellystructure-config-screen.md) |
 | R17 | □ Planned | **Web target hardening** + packaging — `:ravilo-web` canvas a11y/input, both bundles served, E2E across TV + web | [R17](phase-R17-web-target-packaging.md) |
