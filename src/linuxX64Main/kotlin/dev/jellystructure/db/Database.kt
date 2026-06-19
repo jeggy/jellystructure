@@ -19,18 +19,29 @@ fun createDatabase(dbFile: String): JellystructureDb {
             wrapConnection(conn) { JellystructureDb.Schema.create(it) }
         },
         upgrade = { conn, old, new ->
-            wrapConnection(conn) { JellystructureDb.Schema.migrate(it, old.toLong(), new.toLong()) }
+            wrapConnection(conn) { driver ->
+                val startVersion: Long
+                if (old <= 1) {
+                    // DBs at user_version 0 or 1 may already have revertable/before_snapshot from
+                    // a prior patch applied outside SQLDelight. migrateInternal triggers 1.sqm for
+                    // any oldVersion <= 1, so apply it defensively and skip to startVersion=2.
+                    // runCatching absorbs "duplicate column" if the column already exists.
+                    runCatching {
+                        driver.execute(null, "ALTER TABLE media_history ADD COLUMN revertable INTEGER NOT NULL DEFAULT 0", 0)
+                    }
+                    runCatching {
+                        driver.execute(null, "ALTER TABLE media_history ADD COLUMN before_snapshot TEXT NOT NULL DEFAULT ''", 0)
+                    }
+                    startVersion = 2L
+                } else {
+                    startVersion = old.toLong()
+                }
+                if (startVersion < new.toLong()) {
+                    JellystructureDb.Schema.migrate(driver, startVersion, new.toLong())
+                }
+            }
         },
         extendedConfig = DatabaseConfiguration.Extended(basePath = parentDir.ifEmpty { null }),
     )
-    val driver = NativeSqliteDriver(config)
-    // Defensive: if the DB was created before user_version tracking was in place,
-    // Schema.create() ran as a no-op (CREATE TABLE IF NOT EXISTS) and the ALTER TABLE
-    // in 1.sqm was never applied. Probe for the v2 columns and add them if missing.
-    runCatching { driver.execute(null, "SELECT revertable FROM media_history LIMIT 1", 0) }
-        .onFailure {
-            driver.execute(null, "ALTER TABLE media_history ADD COLUMN revertable INTEGER NOT NULL DEFAULT 0", 0)
-            driver.execute(null, "ALTER TABLE media_history ADD COLUMN before_snapshot TEXT NOT NULL DEFAULT ''", 0)
-        }
-    return JellystructureDb(driver)
+    return JellystructureDb(NativeSqliteDriver(config))
 }
