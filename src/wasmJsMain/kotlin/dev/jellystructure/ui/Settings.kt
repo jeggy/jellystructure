@@ -667,34 +667,38 @@ private fun renderLibraryList() {
         }
     }
     // Wire scan/push buttons
-    listEl.querySelectorAll(".lib-scan-btn").asList().forEach { el ->
-        val btn = el as? HTMLElement ?: return@forEach
-        val jellyfinId = btn.getAttribute("data-lib-id") ?: return@forEach
-        val idx = btn.getAttribute("data-lib-idx")?.toIntOrNull() ?: return@forEach
-        btn.addEventListener("click") {
-            val scope = settingsScope ?: return@addEventListener
-            scope.launch {
-                val resultEl = document.getElementById("lib-action-result-$idx") as? HTMLElement ?: return@launch
-                btn.setAttribute("disabled", "")
-                resultEl.textContent = "Starting scan…"
-                val ok = runCatching { MediaApi.startLibraryScan(jellyfinId) }.getOrDefault(false)
-                resultEl.innerHTML = if (ok) """<span class="badge ok">Scan started</span>""" else """<span class="badge bad">Failed</span>"""
-                btn.removeAttribute("disabled")
+    listEl.querySelectorAll(".lib-scan-btn").let { nodes ->
+        for (i in 0 until nodes.length) {
+            val btn = nodes.item(i) as? HTMLElement ?: continue
+            val jellyfinId = btn.getAttribute("data-lib-id") ?: continue
+            val idx = btn.getAttribute("data-lib-idx")?.toIntOrNull() ?: continue
+            btn.addEventListener("click") {
+                val scope = settingsScope ?: return@addEventListener
+                scope.launch {
+                    val resultEl = document.getElementById("lib-action-result-$idx") as? HTMLElement ?: return@launch
+                    btn.setAttribute("disabled", "")
+                    resultEl.textContent = "Starting scan…"
+                    val ok = runCatching { MediaApi.startLibraryScan(jellyfinId) }.getOrDefault(false)
+                    resultEl.innerHTML = if (ok) """<span class="badge ok">Scan started</span>""" else """<span class="badge bad">Failed</span>"""
+                    btn.removeAttribute("disabled")
+                }
             }
         }
     }
-    listEl.querySelectorAll(".lib-push-btn").asList().forEach { el ->
-        val btn = el as? HTMLElement ?: return@forEach
-        val idx = btn.getAttribute("data-lib-idx")?.toIntOrNull() ?: return@forEach
-        btn.addEventListener("click") {
-            val scope = settingsScope ?: return@addEventListener
-            scope.launch {
-                val resultEl = document.getElementById("lib-action-result-$idx") as? HTMLElement ?: return@launch
-                btn.setAttribute("disabled", "")
-                resultEl.textContent = "Pushing…"
-                val ok = runCatching { MediaApi.batchJellyfinPush() }.getOrDefault(false)
-                resultEl.innerHTML = if (ok) """<span class="badge ok">Push queued</span>""" else """<span class="badge bad">Failed</span>"""
-                btn.removeAttribute("disabled")
+    listEl.querySelectorAll(".lib-push-btn").let { nodes ->
+        for (i in 0 until nodes.length) {
+            val btn = nodes.item(i) as? HTMLElement ?: continue
+            val idx = btn.getAttribute("data-lib-idx")?.toIntOrNull() ?: continue
+            btn.addEventListener("click") {
+                val scope = settingsScope ?: return@addEventListener
+                scope.launch {
+                    val resultEl = document.getElementById("lib-action-result-$idx") as? HTMLElement ?: return@launch
+                    btn.setAttribute("disabled", "")
+                    resultEl.textContent = "Pushing…"
+                    val ok = runCatching { MediaApi.batchJellyfinPush() }.getOrDefault(false)
+                    resultEl.innerHTML = if (ok) """<span class="badge ok">Push queued</span>""" else """<span class="badge bad">Failed</span>"""
+                    btn.removeAttribute("disabled")
+                }
             }
         }
     }
@@ -862,30 +866,36 @@ private fun renderQbPathMappings() {
              <button class="btn sm ghost qb-remove-mapping" data-idx="$i" style="flex-shrink:0;">✕</button>
            </div>"""
     }.joinToString("")
-    container.querySelectorAll(".qb-local,.qb-remote").asList().forEachIndexed { _, node ->
-        (node as? HTMLInputElement)?.addEventListener("input") {
-            syncQbMappingsFromDom()
-            refreshTomlPreview(readForm())
+    container.querySelectorAll(".qb-local,.qb-remote").let { nodes ->
+        for (i in 0 until nodes.length) {
+            (nodes.item(i) as? HTMLInputElement)?.addEventListener("input") {
+                syncQbMappingsFromDom()
+                refreshTomlPreview(readForm())
+            }
         }
     }
-    container.querySelectorAll(".qb-remove-mapping").asList().forEach { node ->
-        val btn = node as? HTMLElement ?: return@forEach
-        btn.addEventListener("click") {
-            val idx = btn.getAttribute("data-idx")?.toIntOrNull() ?: return@addEventListener
-            qbPathMappings.removeAt(idx)
-            renderQbPathMappings()
-            refreshTomlPreview(readForm())
+    container.querySelectorAll(".qb-remove-mapping").let { nodes ->
+        for (i in 0 until nodes.length) {
+            val btn = nodes.item(i) as? HTMLElement ?: continue
+            btn.addEventListener("click") {
+                val idx = btn.getAttribute("data-idx")?.toIntOrNull() ?: return@addEventListener
+                qbPathMappings.removeAt(idx)
+                renderQbPathMappings()
+                refreshTomlPreview(readForm())
+            }
         }
     }
 }
 
 private fun syncQbMappingsFromDom() {
     val container = document.getElementById("qb-path-mappings") as? HTMLElement ?: return
-    container.querySelectorAll("[data-qb-mapping]").asList().forEachIndexed { i, row ->
-        val el = row as? HTMLElement ?: return@forEachIndexed
-        val local = (el.querySelector(".qb-local") as? HTMLInputElement)?.value ?: ""
-        val remote = (el.querySelector(".qb-remote") as? HTMLInputElement)?.value ?: ""
-        if (i < qbPathMappings.size) qbPathMappings[i] = QBittorrentPathMapping(local, remote)
+    container.querySelectorAll("[data-qb-mapping]").let { nodes ->
+        for (i in 0 until nodes.length) {
+            val el = nodes.item(i) as? HTMLElement ?: continue
+            val local = (el.querySelector(".qb-local") as? HTMLInputElement)?.value ?: ""
+            val remote = (el.querySelector(".qb-remote") as? HTMLInputElement)?.value ?: ""
+            if (i < qbPathMappings.size) qbPathMappings[i] = QBittorrentPathMapping(local, remote)
+        }
     }
 }
 

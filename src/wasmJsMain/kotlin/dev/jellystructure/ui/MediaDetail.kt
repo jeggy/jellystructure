@@ -1811,18 +1811,20 @@ private fun buildTracksTable(tracks: List<Track>, mediaId: String = "", filePath
 }
 
 internal fun wireForcedToggles(container: HTMLElement, mediaId: String, scope: CoroutineScope) {
-    container.querySelectorAll("[data-forced-toggle]").asList().forEach { node ->
-        val btn = node as? HTMLElement ?: return@forEach
-        btn.addEventListener("click") {
-            val spec = btn.getAttribute("data-forced-toggle") ?: return@addEventListener
-            val current = btn.getAttribute("data-forced") == "true"
-            val next = !current
-            scope.launch {
-                val ok = MediaApi.setForcedFlag(mediaId, spec, next)
-                if (ok) {
-                    btn.setAttribute("data-forced", "$next")
-                    btn.textContent = if (next) "forced" else "not forced"
-                    if (next) btn.classList.add("ok") else btn.classList.remove("ok")
+    container.querySelectorAll("[data-forced-toggle]").let { nodes ->
+        for (i in 0 until nodes.length) {
+            val btn = nodes.item(i) as? HTMLElement ?: continue
+            btn.addEventListener("click") {
+                val spec = btn.getAttribute("data-forced-toggle") ?: return@addEventListener
+                val current = btn.getAttribute("data-forced") == "true"
+                val next = !current
+                scope.launch {
+                    val ok = MediaApi.setForcedFlag(mediaId, spec, next)
+                    if (ok) {
+                        btn.setAttribute("data-forced", "$next")
+                        btn.textContent = if (next) "forced" else "not forced"
+                        if (next) btn.classList.add("ok") else btn.classList.remove("ok")
+                    }
                 }
             }
         }
