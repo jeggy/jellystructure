@@ -677,6 +677,40 @@ fun Route.mediaRoutes(
             call.respond(langs)
         }
 
+        // GET /api/media/{id}/drift — compare live Jellyfin metadata vs stored DB state
+        get("/{id}/drift") {
+            val id = call.parameters["id"] ?: return@get call.respond(HttpStatusCode.BadRequest)
+            val item = store.resolve(id) ?: return@get call.respond(HttpStatusCode.NotFound)
+            val jid = item.jellyfinId
+            if (jid.isNullOrBlank()) {
+                call.respond(emptyList<Map<String, String>>())
+                return@get
+            }
+            val cfg = configStore.current
+            if (cfg.apiKeys.jellyfinUrl.isBlank() || cfg.apiKeys.jellyfinToken.isBlank()) {
+                call.respond(emptyList<Map<String, String>>())
+                return@get
+            }
+            val jItem = jellyfinClient.getItem(cfg.apiKeys.jellyfinUrl, cfg.apiKeys.jellyfinToken, jid)
+            if (jItem == null) {
+                call.respond(HttpStatusCode.NotFound, mapOf("error" to "item not found in Jellyfin"))
+                return@get
+            }
+            @Serializable data class DriftField(val field: String, val inJellyfin: String, val inDb: String)
+            val drifts = buildList<DriftField> {
+                val jfTitle = jItem.name
+                val dbTitle = item.title
+                if (jfTitle != dbTitle) add(DriftField("title", jfTitle, dbTitle))
+                val jfYear = jItem.year?.toString() ?: ""
+                val dbYear = item.year?.toString() ?: ""
+                if (jfYear != dbYear) add(DriftField("year", jfYear, dbYear))
+                val jfTmdb = jItem.providerIds?.tmdb ?: ""
+                val dbTmdb = item.tmdbId?.toString() ?: ""
+                if (jfTmdb != dbTmdb) add(DriftField("tmdbId", jfTmdb, dbTmdb))
+            }
+            call.respond(drifts)
+        }
+
         // POST /api/media/{id}/repull-jellyfin — re-fetch item from Jellyfin + full rescan
         post("/{id}/repull-jellyfin") {
             val id = call.parameters["id"] ?: return@post call.respond(HttpStatusCode.BadRequest)

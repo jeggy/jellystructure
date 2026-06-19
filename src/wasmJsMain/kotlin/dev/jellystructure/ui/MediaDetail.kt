@@ -9,6 +9,7 @@ import dev.jellystructure.api.ConfigApi
 import dev.jellystructure.api.HistoryEntry
 import dev.jellystructure.api.JsTag
 import dev.jellystructure.api.MediaApi
+import dev.jellystructure.api.DriftField
 import dev.jellystructure.api.TmdbMatchResult
 import dev.jellystructure.model.Episode
 import dev.jellystructure.model.MediaItem
@@ -329,6 +330,7 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
 
         <div id="detail-msg" style="display:none;margin-bottom:14px"></div>
         <div id="nfo-perm-banner" style="display:none;margin-bottom:14px"></div>
+        <div id="drift-banner" style="display:none;margin-bottom:14px"></div>
         <div id="jf-lock-banner" style="display:${if (item.jellyfinLockData || item.jellyfinLockedFields.isNotEmpty()) "block" else "none"};margin-bottom:14px">
           <div style="background:var(--bad-soft);border:1px solid var(--bad);border-radius:6px;padding:10px 14px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
             <span style="font-size:.9rem;color:var(--bad);font-weight:600;">⚠ Jellyfin field lock detected</span>
@@ -650,6 +652,7 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
     }
 
     scope.launch { loadArtworkStatus(item.id) }
+    scope.launch { loadDrift(item.id) }
     if (activeTab == "history") scope.launch { loadHistory(item.id) }
 
     // Inject diff styles once per document lifetime
@@ -1511,6 +1514,25 @@ private suspend fun handleRepull(item: MediaItem, container: Element, scope: Cor
     } else {
         showDetailMsg("Re-pull failed — no TMDB match found.", false)
     }
+}
+
+private suspend fun loadDrift(id: String) {
+    val drifts = MediaApi.getDrift(id)
+    val banner = document.getElementById("drift-banner") as? HTMLElement ?: return
+    if (drifts.isEmpty()) { banner.style.display = "none"; return }
+    val fieldNames = mapOf("title" to "Title", "year" to "Year", "tmdbId" to "TMDB ID")
+    val rows = drifts.joinToString("") { d ->
+        val label = fieldNames[d.field] ?: d.field
+        val jf = d.inJellyfin.ifBlank { "—" }
+        val db = d.inDb.ifBlank { "—" }
+        """<span style="font-size:.85rem;"><b>${label.esc()}</b>: Jellyfin="${jf.esc()}" · DB="${db.esc()}"</span>"""
+    }
+    banner.innerHTML = """<div style="background:var(--warn-soft,#2d220b);border:1px solid var(--warn,#b8860b);border-radius:6px;padding:10px 14px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+      <span style="font-size:.9rem;color:var(--warn,#f59e0b);font-weight:600;">⚠ Jellyfin drift detected</span>
+      <span style="flex:1;display:flex;flex-direction:column;gap:3px;">$rows</span>
+      <span class="tiny muted" style="font-size:.8rem;">Use "Re-pull from Jellyfin…" to absorb Jellyfin's version.</span>
+    </div>"""
+    banner.style.display = "block"
 }
 
 private suspend fun loadArtworkStatus(id: String) {
