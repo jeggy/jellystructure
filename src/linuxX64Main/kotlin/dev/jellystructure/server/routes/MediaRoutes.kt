@@ -560,6 +560,89 @@ fun Route.mediaRoutes(
                     call.respond(mapOf("language" to req.language))
                 }
 
+                // POST /api/media/{id}/episodes/{epFilename}/tracks/forced — forced flag (MKV only)
+                post("/tracks/forced") {
+                    val id = call.parameters["id"]
+                        ?: return@post call.respond(HttpStatusCode.BadRequest)
+                    val epFilename = call.parameters["epFilename"]
+                        ?: return@post call.respond(HttpStatusCode.BadRequest)
+                    val item = store.resolve(id)
+                        ?: return@post call.respond(HttpStatusCode.NotFound)
+                    val epIdx = item.episodes.indexOfFirst { it.filename == epFilename }
+                    if (epIdx < 0) return@post call.respond(HttpStatusCode.NotFound, mapOf("error" to "episode not found"))
+                    val ep = item.episodes[epIdx]
+
+                    @Serializable data class ForcedReq(val specifier: String, val forced: Boolean)
+                    val req = call.receive<ForcedReq>()
+                    val targetTrack = ep.tracks.firstOrNull { it.specifier == req.specifier }
+                        ?: return@post call.respond(HttpStatusCode.NotFound, mapOf("error" to "track not found"))
+                    if (targetTrack.kind != TrackKind.SUBTITLE)
+                        return@post call.respond(HttpStatusCode.BadRequest, mapOf("error" to "forced flag only applies to subtitle tracks"))
+                    val ext = ep.path.substringAfterLast('.').lowercase()
+                    if (ext != "mkv")
+                        return@post call.respond(HttpStatusCode.BadRequest, mapOf("error" to "forced flag editing requires MKV container"))
+
+                    when (val guard = seedingGuard.check(ep.path, configStore.current)) {
+                        is SeedingCheckResult.Blocked -> { call.respond(HttpStatusCode.Conflict, mapOf("error" to "File is seeded by '${guard.torrentName}'")); return@post }
+                        is SeedingCheckResult.Unreachable -> { call.respond(HttpStatusCode.ServiceUnavailable, mapOf("error" to "qBittorrent unreachable: ${guard.reason}")); return@post }
+                        else -> Unit
+                    }
+
+                    val sameType = ep.tracks.filter { it.kind == TrackKind.SUBTITLE }
+                    val forcedIdx = if (req.forced) targetTrack.streamIndex else -1
+                    val ok = MkvpropeditRunner.setForced(ep.path, forcedIdx, sameType.map { it.streamIndex })
+                    if (!ok) { call.respond(HttpStatusCode.InternalServerError, mapOf("error" to "mkvpropedit failed")); return@post }
+
+                    val newTracks = FfprobeRunner.probe(ep.path)
+                    val newIssue = newTracks.count { (it.kind == TrackKind.AUDIO || it.kind == TrackKind.SUBTITLE) && it.language == null }
+                    val updatedEpisodes = item.episodes.toMutableList()
+                    updatedEpisodes[epIdx] = ep.copy(tracks = newTracks, issueCount = newIssue)
+                    store.updateOne(item.copy(episodes = updatedEpisodes))
+                    mediaHistory.record(id, "set_forced", "ep=${ep.filename} specifier=${req.specifier} forced=${req.forced}")
+                    call.respond(mapOf("ok" to true))
+                }
+
+                // POST /api/media/{id}/episodes/{epFilename}/tracks/reorder — reorder tracks (ffmpeg remux)
+                post("/tracks/reorder") {
+                    val id = call.parameters["id"]
+                        ?: return@post call.respond(HttpStatusCode.BadRequest)
+                    val epFilename = call.parameters["epFilename"]
+                        ?: return@post call.respond(HttpStatusCode.BadRequest)
+                    val item = store.resolve(id)
+                        ?: return@post call.respond(HttpStatusCode.NotFound)
+                    val epIdx = item.episodes.indexOfFirst { it.filename == epFilename }
+                    if (epIdx < 0) return@post call.respond(HttpStatusCode.NotFound, mapOf("error" to "episode not found"))
+                    val ep = item.episodes[epIdx]
+
+                    @Serializable data class ReorderReq(val kind: String, val order: List<String>)
+                    val req = call.receive<ReorderReq>()
+                    val kind = when (req.kind.lowercase()) {
+                        "audio" -> TrackKind.AUDIO
+                        "subtitle" -> TrackKind.SUBTITLE
+                        else -> return@post call.respond(HttpStatusCode.BadRequest, mapOf("error" to "kind must be audio or subtitle"))
+                    }
+                    val orderedTracks = req.order.mapNotNull { spec -> ep.tracks.firstOrNull { it.specifier == spec } }
+                    if (orderedTracks.size != req.order.size)
+                        return@post call.respond(HttpStatusCode.BadRequest, mapOf("error" to "one or more specifiers not found"))
+
+                    when (val guard = seedingGuard.check(ep.path, configStore.current)) {
+                        is SeedingCheckResult.Blocked -> { call.respond(HttpStatusCode.Conflict, mapOf("error" to "File is seeded by '${guard.torrentName}'")); return@post }
+                        is SeedingCheckResult.Unreachable -> { call.respond(HttpStatusCode.ServiceUnavailable, mapOf("error" to "qBittorrent unreachable: ${guard.reason}")); return@post }
+                        else -> Unit
+                    }
+
+                    val ok = FfmpegRunner.reorderTracks(ep.path, kind, orderedTracks.map { it.streamIndex })
+                    if (!ok) { call.respond(HttpStatusCode.InternalServerError, mapOf("error" to "ffmpeg remux failed")); return@post }
+
+                    val newTracks = FfprobeRunner.probe(ep.path)
+                    val newIssue = newTracks.count { (it.kind == TrackKind.AUDIO || it.kind == TrackKind.SUBTITLE) && it.language == null }
+                    val updatedEpisodes = item.episodes.toMutableList()
+                    updatedEpisodes[epIdx] = ep.copy(tracks = newTracks, issueCount = newIssue)
+                    store.updateOne(item.copy(episodes = updatedEpisodes))
+                    mediaHistory.record(id, "reorder_tracks", "ep=${ep.filename} kind=${req.kind} order=${req.order.joinToString(",")}")
+                    call.respond(mapOf("ok" to true))
+                }
+
                 // PATCH /api/media/{id}/episodes/{epFilename}/metadata — edit episode title/overview
                 patch("/metadata") {
                     val id = call.parameters["id"]

@@ -10,7 +10,6 @@ import dev.jellystructure.ui.renderMetadata
 import dev.jellystructure.ui.renderSetup
 import dev.jellystructure.ui.renderSettings
 import dev.jellystructure.ui.renderShell
-import dev.jellystructure.ui.renderTrackOrder
 import dev.jellystructure.ui.updateActiveNav
 import kotlinx.browser.document
 import kotlinx.browser.window
@@ -68,12 +67,6 @@ object App {
             path == "/activity" -> renderActivity(container, scope, query)
             path == "/settings" -> renderSettings(container, scope, query)
             path.startsWith("/metadata") -> renderMetadata(container, scope, query["tab"] ?: "studios")
-            path.startsWith("/track-order") -> {
-                val id = query["id"] ?: ""
-                val ep = query["ep"]?.let { decodeURIComponent(it) }
-                if (id.isNotEmpty()) renderTrackOrder(container, scope, id, ep)
-                else renderLibrary(container, scope, query)
-            }
             else -> renderDashboard(container, scope)
         }
     }
