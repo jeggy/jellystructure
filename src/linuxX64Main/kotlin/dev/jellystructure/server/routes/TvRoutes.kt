@@ -6,18 +6,24 @@ import dev.jellystructure.auth.SessionService
 import dev.jellystructure.config.ConfigStore
 import dev.jellystructure.shared.tv.PairingChallenge
 import dev.jellystructure.shared.tv.PairResult
+import dev.jellystructure.shared.tv.Skin
+import dev.jellystructure.shared.tv.TileShape
 import dev.jellystructure.shared.tv.TvSession
+import dev.jellystructure.tv.RaviloConfigService
 import dev.jellystructure.tv.RaviloDeviceService
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.request.receive
 import io.ktor.server.response.respond
 import io.ktor.server.routing.Route
+import io.ktor.server.routing.get
 import io.ktor.server.routing.post
+import io.ktor.server.routing.put
 import io.ktor.server.routing.route
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 @Serializable
-private data class PollRequest(@kotlinx.serialization.SerialName("poll_token") val pollToken: String)
+private data class PollRequest(@SerialName("poll_token") val pollToken: String)
 
 @Serializable
 private data class ApproveRequest(
@@ -26,8 +32,16 @@ private data class ApproveRequest(
     val password: String? = null,
 )
 
+@Serializable
+private data class ViewerSettingsRequest(
+    val skin: Skin? = null,
+    @SerialName("show_continue_progress") val showContinueProgress: Boolean? = null,
+    @SerialName("tile_shape") val tileShape: TileShape? = null,
+)
+
 fun Route.tvRoutes(
     deviceService: RaviloDeviceService,
+    raviloConfigService: RaviloConfigService,
     sessionService: SessionService,
     jellyfinClient: JellyfinClient,
     configStore: ConfigStore,
@@ -123,5 +137,23 @@ fun Route.tvRoutes(
             deviceService.unpair(device.deviceToken)
             call.respond(mapOf("status" to "unpaired"))
         }
+    }
+
+    // ── Per-user config ──────────────────────────────────────────────────────
+    get("/tv/config") {
+        val device = call.attributes[DeviceKey]
+        call.respond(raviloConfigService.getConfig(device.jellyfinUserId))
+    }
+
+    put("/tv/settings") {
+        val device = call.attributes[DeviceKey]
+        val req = call.receive<ViewerSettingsRequest>()
+        raviloConfigService.applyViewerSettings(
+            userId = device.jellyfinUserId,
+            skin = req.skin,
+            showContinueProgress = req.showContinueProgress,
+            tileShape = req.tileShape,
+        )
+        call.respond(mapOf("status" to "ok"))
     }
 }

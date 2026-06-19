@@ -12,14 +12,19 @@ _Last updated: 2026-06-19_
 
 ## Current focus
 
-**Specs drafted; nothing implemented yet.** The full phase set R01–R17 is planned (see
-[`requirements/README.md`](requirements/README.md)). Recommended start order:
+**R01–R04 done; building R05 (home feed) next.**
 
-1. **R01** `:shared` (DTOs + `TvApiClient`) → **R02** Compose-MP scaffolding (Android TV + web canvas,
-   one shared focus screen).
-2. **R03** device pairing auth + `/api/tv/**` → **R04** per-user config store.
-3. Backend data **R05–R08**; client UI **R09** (design system/focus) then **R10–R15**; **R16** web
-   config screen; **R17** web hardening.
+Completed:
+- **R01** `:shared` module — all `/api/tv` DTOs + `TvApiClient`
+- **R02** Compose MP scaffolding — `:ravilo-ui`/`:ravilo-android`/`:ravilo-web` with focus scaffold
+- **R03** Device pairing auth — `/api/tv/pair/**`, `ravilo_device` + `ravilo_pairing` tables, `RaviloDeviceService`
+- **R04** Per-user config store — `ravilo_config` table, `RaviloConfigService`, `GET /api/tv/config`, `PUT /api/tv/settings`
+
+Next:
+1. **R05** Home feed composition (hero + channels + rows from library)
+2. **R06** Browse + search APIs
+3. **R07** Detail APIs (movie/series, watched state)
+4. **R08** Playback brokering + progress reporting
 
 ## Foundational decisions locked (constitution)
 

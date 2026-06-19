@@ -1,0 +1,15 @@
+CREATE TABLE ravilo_config (
+    user_id TEXT NOT NULL PRIMARY KEY,
+    json TEXT NOT NULL,
+    updated_at INTEGER NOT NULL
+);
+
+upsert:
+INSERT OR REPLACE INTO ravilo_config(user_id, json, updated_at)
+VALUES (:user_id, :json, :updated_at);
+
+getByUser:
+SELECT json FROM ravilo_config WHERE user_id = :user_id;
+
+deleteByUser:
+DELETE FROM ravilo_config WHERE user_id = :user_id;

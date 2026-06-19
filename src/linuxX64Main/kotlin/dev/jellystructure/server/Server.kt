@@ -27,6 +27,7 @@ import dev.jellystructure.server.routes.triageRoutes
 import dev.jellystructure.server.routes.tvRoutes
 import dev.jellystructure.torrent.QBittorrentClient
 import dev.jellystructure.torrent.SeedingGuard
+import dev.jellystructure.tv.RaviloConfigService
 import dev.jellystructure.tv.RaviloDeviceService
 import io.ktor.http.ContentType
 import io.ktor.http.HttpMethod
@@ -71,6 +72,7 @@ fun startServer(
     configStore: ConfigStore,
     sessionService: SessionService,
     deviceService: RaviloDeviceService,
+    raviloConfigService: RaviloConfigService,
     jellyfinClient: JellyfinClient,
     mediaStore: MediaStore,
     scanner: Scanner,
@@ -150,7 +152,7 @@ fun startServer(
                 triageRoutes(mediaStore, jellyfinClient, configStore, mediaHistory, seedingGuard)
                 metadataRoutes(mediaStore, jsTagStore, logoDownloader)
                 trackRoutes(mediaStore, configStore, jellyfinClient, mediaHistory, seedingGuard)
-                tvRoutes(deviceService, sessionService, jellyfinClient, configStore)
+                tvRoutes(deviceService, raviloConfigService, sessionService, jellyfinClient, configStore)
             }
 
             webSocket("/ws") {

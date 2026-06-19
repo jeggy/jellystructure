@@ -1,0 +1,5 @@
+CREATE TABLE ravilo_config (
+    user_id TEXT NOT NULL PRIMARY KEY,
+    json TEXT NOT NULL,
+    updated_at INTEGER NOT NULL
+);
