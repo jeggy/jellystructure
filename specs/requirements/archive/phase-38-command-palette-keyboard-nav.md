@@ -4,8 +4,20 @@
 
 ## Features
 
+### Sidebar search pill
+A `<button class="cmdk-pill">` injected directly below the sidebar logo acts as a persistent
+discoverability affordance. Label: `⌕ Search…` with a `⌘K` kbd hint flush-right. Clicking it
+opens the command palette. CSS class `.cmdk-pill` is in `app.css` (full-width, border, fill-2
+background, hover highlights with `--hi` border). This button is the primary entry point for
+users who haven't memorised the keyboard shortcut.
+
+**Implementation gap:** `Shell.kt` `initShell()` does not inject this button. It should be
+created and inserted immediately after the sidebar logo element (`.app-logo` or equivalent),
+before `injectCommandPalette()` is called.
+
 ### Command palette (Ctrl+K / ⌘K)
-Overlay that opens on Ctrl+K (or Cmd+K). Contains a fuzzy-filter input and a list of commands:
+Overlay that opens on Ctrl+K (or Cmd+K), or by clicking the sidebar search pill. Contains a
+fuzzy-filter input and a list of commands:
 - Quick navigation: Library, Settings, Activity, Metadata, Triage queue, Dashboard
 - "Start full scan"
 - "Triage: next item" / "Triage: previous item" (also showing shortcut keys)
