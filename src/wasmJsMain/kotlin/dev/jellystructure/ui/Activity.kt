@@ -34,6 +34,7 @@ private var activityCurrentPoster: String? = null
 private var scanRunning = false
 private var activeLogCategory: String = ""
 private var errorsOnlyFilter: Boolean = false
+private var lastToolCommand: String? = null
 
 @Serializable
 private data class ActivityEntryDto(
@@ -338,6 +339,10 @@ private fun handleEvent(container: Element, raw: String) {
             val level = extractJsonField(raw, "level") ?: "info"
             val category = extractJsonField(raw, "category") ?: "system"
             val message = extractJsonField(raw, "message") ?: ""
+            if (category == "track" && (message.startsWith("ffmpeg:") || message.startsWith("mkvpropedit:"))) {
+                lastToolCommand = message
+                refreshNowOps(container)
+            }
             appendLogEntry(container, level, category, message)
         }
         else -> appendLogEntry(container, "info", "system", raw)
@@ -399,7 +404,21 @@ private fun updateNowCard(container: Element, title: String?, poster: String?, p
             if (title != null) append("""<div><b>$title</b></div>""")
             if (path != null) append("""<div class="muted mono" style="font-size:.7rem">${path.substringAfterLast('/')}</div>""")
             append("""<div style="margin-top:6px;color:var(--hi)">⟳ processing…</div>""")
+            val cmd = lastToolCommand
+            if (cmd != null) append("""<pre class="log" style="font-size:.68rem;margin-top:4px;white-space:pre-wrap;word-break:break-all">${cmd.escapeHtml()}</pre>""")
         }
+    }
+}
+
+private fun refreshNowOps(container: Element) {
+    val opsEl = container.querySelector("#now-ops") as? HTMLElement ?: return
+    val existing = opsEl.innerHTML
+    val cmdHtml = """<pre class="log" style="font-size:.68rem;margin-top:4px;white-space:pre-wrap;word-break:break-all">${lastToolCommand?.escapeHtml() ?: ""}</pre>"""
+    val preIdx = existing.indexOf("<pre")
+    if (preIdx >= 0) {
+        opsEl.innerHTML = existing.substring(0, preIdx) + cmdHtml
+    } else {
+        opsEl.innerHTML = existing + cmdHtml
     }
 }
 
@@ -409,6 +428,7 @@ private fun resetNowCard(container: Element) {
     (container.querySelector("#now-ops") as? HTMLElement)?.innerHTML = """<div class="muted">Waiting for next item…</div>"""
     activityCurrentTitle = null
     activityCurrentPoster = null
+    lastToolCommand = null
 }
 
 private fun updateOvLabel(container: Element) {
