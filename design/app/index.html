@@ -27,8 +27,8 @@
 
   <div class="row" style="margin-top:18px;align-items:stretch;">
     <div class="card fill">
-      <div class="row center"><h3 style="margin:0;font-size:1.1rem;">Needs your attention</h3><span class="spacer"></span><span class="badge bad">214 items</span><a class="btn sm" href="library.html">Browse all →</a></div>
-      <div class="tiny muted" style="margin:6px 0 0;">Step through every flagged item from the floating dock, bottom-right — it opens each one's detail page where you fix it.</div>
+      <div class="row center"><h3 style="margin:0;font-size:1.1rem;">Needs your attention</h3><span class="spacer"></span><span class="badge bad">214 items</span><button class="btn sm" id="reopen-dock">Show attention dock</button><a class="btn sm" href="library.html">Browse all →</a></div>
+      <div class="tiny muted" style="margin:6px 0 0;">Step through every flagged item from the floating dock, bottom-right — it opens each one's detail page where you fix it. Closed it? <b>Show attention dock</b> brings it back.</div>
       <hr class="dash" style="margin:11px 0;">
       <table class="wf-table">
         <tr><td><a href="media.html" style="color:var(--ink);font-weight:700;">Big Buck Bunny (2008)</a></td><td><span class="badge bad">2 untagged audio</span></td><td class="muted tiny num">0:a:1, 0:a:2</td><td><a class="btn sm" href="media.html">Open</a></td></tr>
@@ -54,9 +54,6 @@
           <a class="chip" href="track-order.html">Set track defaults</a>
           <span class="chip">Re-pull artwork</span>
           <span class="chip">Tell Jellyfin to refresh</span>
-          <span class="chip">View items needing attention</span>
-          <span class="chip">Sync NFOs to Jellyfin</span>
-          <span class="chip">Jellyfin library scan</span>
         </div>
         <div class="tiny muted" style="margin-top:10px;">A job is running — watch it in the dock, bottom-right, or on <a href="activity.html">Activity</a>.</div>
       </div>
@@ -65,5 +62,11 @@
 </main>
 
 <script src="app-shell.js"></script>
+<script>
+  // Reopen the floating "Needs attention" dock (app-shell.js exposes openAttentionDock)
+  document.getElementById('reopen-dock').addEventListener('click', function () {
+    if (window.openAttentionDock) window.openAttentionDock();
+  });
+</script>
 </body>
 </html>

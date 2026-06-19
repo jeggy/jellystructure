@@ -97,11 +97,21 @@
 .pagebar { display: flex; align-items: center; gap: 13px; margin-bottom: 8px; flex-wrap: wrap; }
 .pagebar h1 { font-size: 2rem; margin: 0; }
 .pagebar .spacer { flex: 1; }
-#set-pagebar { position: sticky; top: 0; z-index: 60; background: var(--bg); padding-top: 12px; padding-bottom: 12px; margin-bottom: 4px; border-bottom: 1px solid var(--line); }
 .crumb { font-size: .85rem; color: var(--ink-soft); }
 .crumb a { color: var(--ink-soft); }
 .page-sub { color: var(--ink-soft); max-width: 78ch; margin: 2px 0 26px; font-size: .98rem; line-height: 1.6; }
 .backrow { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+
+/* ---------- floating dock stack (bottom-right) ---------- */
+/* Both the scan dock and the needs-attention dock live in this flex column so
+   they always stack with a consistent gap, regardless of collapsed/expanded
+   or hidden state (no hardcoded offsets to drift). */
+#dock-stack {
+  position: fixed; right: 24px; bottom: 24px; z-index: 80;
+  display: flex; flex-direction: column-reverse; align-items: flex-end; gap: 14px;
+  pointer-events: none;
+}
+#dock-stack > .dock { position: static; right: auto; bottom: auto; pointer-events: auto; }
 
 /* ---------- ambient scan dock ---------- */
 .dock {
@@ -120,6 +130,9 @@
 .dock .dock-body { padding: 0 15px 15px; }
 .dock .mono { color: var(--ink-soft); }
 .dock.collapsed .dock-body { display: none; }
+.dock.dock-hidden { display: none; }
+.dock .dock-head .dock-close { background: transparent; cursor: pointer; opacity: .65; transition: opacity .15s, color .15s; }
+.dock .dock-head .dock-close:hover { opacity: 1; color: var(--bad); }
 .dock a { color: var(--acc-ink); }
 
 .dock-log { position: fixed; right: 24px; bottom: 160px; width: 360px; z-index: 79; display: none; }
@@ -127,7 +140,6 @@
 
 /* ---------- floating triage (needs-attention) dock ---------- */
 .triage-dock::before { background: var(--bad); opacity: 1; }
-.triage-dock.stacked { bottom: 212px; }   /* sit above the scan dock when both show */
 .triage-dock .ico-attn { width: 20px; height: 20px; flex: none; display: inline-flex; color: var(--bad); }
 .triage-dock .ico-attn svg { width: 100%; height: 100%; }
 .triage-dock .td-title { font-family: 'Space Grotesk', sans-serif; font-weight: 600; font-size: 1.02rem; }
@@ -198,14 +210,14 @@
 }
 .cmdk-pill:hover { border-color: var(--hi); color: var(--ink); }
 .cmdk-pill .kbd { margin-left: auto; }
-#cmd-palette-overlay { position: fixed; inset: 0; z-index: 130; display: none; justify-content: center; align-items: flex-start;
+#cmd-palette { position: fixed; inset: 0; z-index: 130; display: none; justify-content: center; align-items: flex-start;
   background: rgba(8,10,16,.55); -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px); padding-top: 12vh; }
-#cmd-palette-overlay.open { display: flex; }
-#cmd-palette-overlay .cmdp-box { width: 560px; max-width: 92vw; background: var(--fill); border: 1px solid var(--line-2);
+#cmd-palette.open { display: flex; }
+#cmd-palette .cmdp-box { width: 560px; max-width: 92vw; background: var(--fill); border: 1px solid var(--line-2);
   border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden; }
-#cmd-palette-input { width: 100%; border: none; background: transparent; color: var(--ink); font-family: 'Sora',sans-serif;
+#cmdp-input { width: 100%; border: none; background: transparent; color: var(--ink); font-family: 'Sora',sans-serif;
   font-size: 1.05rem; padding: 16px 18px; border-bottom: 1px solid var(--line); outline: none; box-sizing: border-box; }
-#cmd-palette-list { max-height: 52vh; overflow: auto; padding: 6px; }
+#cmdp-list { max-height: 52vh; overflow: auto; padding: 6px; }
 .cmdp-item { display: flex; align-items: center; gap: 11px; padding: 9px 12px; border-radius: var(--radius-s); cursor: pointer; }
 .cmdp-item.sel, .cmdp-item:hover { background: var(--hi-soft); }
 .cmdp-ico { width: 17px; height: 17px; color: var(--ink-soft); flex: none; display: inline-flex; }

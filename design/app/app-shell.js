@@ -125,6 +125,14 @@
   /* ---- docks ---- */
   const noDock = main && main.hasAttribute('data-no-dock');
 
+  // Both docks live in one bottom-right flex stack so they reflow cleanly when
+  // either is collapsed or hidden (no hardcoded offsets).
+  function dockStack() {
+    let s = document.getElementById('dock-stack');
+    if (!s) { s = document.createElement('div'); s.id = 'dock-stack'; document.body.appendChild(s); }
+    return s;
+  }
+
   // Ambient scan dock — only on pages that opt in with data-scan (demo of an active scan).
   if (main && main.hasAttribute('data-scan') && !noDock && current !== 'activity') {
     const dock = document.createElement('div');
@@ -146,7 +154,7 @@
           '<a href="activity.html" class="tiny">console ↗</a>' +
         '</div>' +
       '</div>';
-    document.body.appendChild(dock);
+    dockStack().appendChild(dock);
     dock.querySelector('.toggle-dock').addEventListener('click', (e) => {
       e.stopPropagation();
       dock.classList.toggle('collapsed');
@@ -160,13 +168,14 @@
     let idx = 0;
     const scanShown = main && main.hasAttribute('data-scan');
     const dock = document.createElement('div');
-    dock.className = 'dock triage-dock' + (scanShown ? ' stacked' : '');
+    dock.className = 'dock triage-dock';
     dock.innerHTML =
       '<div class="dock-head">' +
         '<span class="ico-attn">' + I.attn + '</span><b>Needs attention</b>' +
         '<span class="spacer"></span>' +
         '<span class="tiny mono" id="td-pos"></span>' +
-        '<span class="kbd toggle-dock">⌄</span>' +
+        '<span class="kbd toggle-dock" title="Collapse">⌄</span>' +
+        '<span class="kbd dock-close" title="Close" aria-label="Close">✕</span>' +
       '</div>' +
       '<div class="dock-body">' +
         '<div class="td-item"><div class="td-title" id="td-title"></div><div class="tiny muted" id="td-sub"></div></div>' +
@@ -176,7 +185,7 @@
           '<button class="btn sm ghost" id="td-next">Next ›</button>' +
         '</div>' +
       '</div>';
-    document.body.appendChild(dock);
+    dockStack().appendChild(dock);
     const $ = id => dock.querySelector(id);
     function paint() {
       const it = ATTN[idx];
@@ -192,16 +201,34 @@
       dock.classList.toggle('collapsed');
       e.target.textContent = dock.classList.contains('collapsed') ? '⌃' : '⌄';
     });
+
+    // Close (hide) the dock + remember it across pages; reopenable from the Dashboard.
+    const CLOSED_KEY = 'js-attn-dock-closed';
+    function setClosed(closed) {
+      dock.classList.toggle('dock-hidden', closed);
+      try { localStorage.setItem(CLOSED_KEY, closed ? '1' : '0'); } catch (e) {}
+    }
+    dock.querySelector('.dock-close').addEventListener('click', (e) => {
+      e.stopPropagation();
+      setClosed(true);
+    });
+    // honor a previously-closed state
+    let startClosed = false;
+    try { startClosed = localStorage.getItem(CLOSED_KEY) === '1'; } catch (e) {}
+    if (startClosed) dock.classList.add('dock-hidden');
+    // expose a reopener for the Dashboard (and anywhere else)
+    window.openAttentionDock = function () { setClosed(false); dock.classList.remove('collapsed'); dock.querySelector('.toggle-dock').textContent = '⌄'; };
+
     paint();
   }
 
   /* ---- command palette (⌘K) + attention-queue keyboard nav (Phase 38) ---- */
   const palette = document.createElement('div');
-  palette.id = 'cmd-palette-overlay';
+  palette.id = 'cmd-palette';
   palette.innerHTML =
     '<div class="cmdp-box">' +
-      '<input id="cmd-palette-input" placeholder="Search pages, items, actions…  (Esc to close)" autocomplete="off">' +
-      '<div id="cmd-palette-list"></div>' +
+      '<input id="cmdp-input" placeholder="Search pages, items, actions…  (Esc to close)" autocomplete="off">' +
+      '<div id="cmdp-list"></div>' +
     '</div>';
   document.body.appendChild(palette);
 
@@ -211,8 +238,8 @@
     { label: 'Re-pull artwork (all)', kind: 'Action', href: 'index.html', icon: I.dashboard },
     ...ATTN.map(a => ({ label: a.title, kind: 'Needs attention', sub: a.sub, href: a.href, icon: I.attn })),
   ];
-  const cmdInput = palette.querySelector('#cmd-palette-input');
-  const cmdList = palette.querySelector('#cmd-palette-list');
+  const cmdInput = palette.querySelector('#cmdp-input');
+  const cmdList = palette.querySelector('#cmdp-list');
   let cmdSel = 0, cmdFiltered = cmds;
   function renderCmds() {
     const q = cmdInput.value.toLowerCase();
