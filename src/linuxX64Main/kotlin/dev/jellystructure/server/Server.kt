@@ -44,6 +44,11 @@ import io.ktor.server.routing.routing
 import io.ktor.server.websocket.WebSockets
 import io.ktor.server.websocket.webSocket
 import io.ktor.websocket.Frame
+import kotlinx.cinterop.ByteVar
+import kotlinx.cinterop.ExperimentalForeignApi
+import kotlinx.cinterop.allocArray
+import kotlinx.cinterop.memScoped
+import kotlinx.cinterop.toKString
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
@@ -54,6 +59,10 @@ import kotlinx.io.buffered
 import kotlinx.io.files.Path
 import kotlinx.io.files.SystemFileSystem
 import kotlinx.io.readByteArray
+import kotlinx.serialization.Serializable
+import platform.posix.fgets
+import platform.posix.pclose
+import platform.posix.popen
 
 fun startServer(
     configStore: ConfigStore,
@@ -97,6 +106,36 @@ fun startServer(
                     call.respondText("""{"status":"ok"}""", ContentType.Application.Json)
                 }
 
+                get("/health/full") {
+                    @Serializable data class HealthCheck(val name: String, val ok: Boolean, val detail: String)
+                    val checks = mutableListOf<HealthCheck>()
+                    val cfg = configStore.current
+                    // Jellyfin connectivity
+                    val jfOk = if (cfg.apiKeys.jellyfinUrl.isNotBlank() && cfg.apiKeys.jellyfinToken.isNotBlank()) {
+                        runCatching { jellyfinClient.testConnection(cfg.apiKeys.jellyfinUrl, cfg.apiKeys.jellyfinToken) }.getOrDefault(false)
+                    } else false
+                    checks.add(HealthCheck("Jellyfin", jfOk, if (cfg.apiKeys.jellyfinUrl.isBlank()) "URL not configured" else if (jfOk) "Connected to ${cfg.apiKeys.jellyfinUrl}" else "Connection failed"))
+                    // TMDB key
+                    val tmdbKey = cfg.apiKeys.tmdbV3Key
+                    val tmdbOk = if (tmdbKey.isNotBlank()) {
+                        val result = runShell("curl -sf --max-time 5 'https://api.themoviedb.org/3/configuration?api_key=${tmdbKey.replace("'", "")}'")
+                        result != null && !result.contains("\"status_code\":7") && !result.contains("\"status_code\":3")
+                    } else false
+                    checks.add(HealthCheck("TMDB API key", tmdbOk, if (tmdbKey.isBlank()) "Key not configured" else if (tmdbOk) "Valid" else "Invalid or unreachable"))
+                    // Disk space
+                    val dfOut = runShell("df -BM . 2>/dev/null | tail -1")
+                    val freeMb = dfOut?.trim()?.split(Regex("\\s+"))?.getOrNull(3)?.trimEnd('M')?.toLongOrNull()
+                    val diskOk = freeMb != null && freeMb > 1024
+                    checks.add(HealthCheck("Disk space", diskOk, if (freeMb != null) "${freeMb} MB free" else "Unknown"))
+                    // mkvpropedit
+                    val mkv = runShell("which mkvpropedit 2>/dev/null")?.trim()
+                    checks.add(HealthCheck("mkvpropedit", !mkv.isNullOrBlank(), if (!mkv.isNullOrBlank()) mkv else "not found in PATH"))
+                    // ffprobe
+                    val ffp = runShell("which ffprobe 2>/dev/null")?.trim()
+                    checks.add(HealthCheck("ffprobe", !ffp.isNullOrBlank(), if (!ffp.isNullOrBlank()) ffp else "not found in PATH"))
+                    call.respond(mapOf("checks" to checks))
+                }
+
                 authRoutes(sessionService, jellyfinClient, configStore)
                 configureConfigRoutes(configStore, effectiveScanThreads)
                 setupRoutes(configStore, jellyfinClient)
@@ -132,6 +171,19 @@ fun startServer(
         appScope.cancel()
         Logger.info("Server stopped")
     }
+}
+
+@OptIn(ExperimentalForeignApi::class)
+private fun runShell(command: String): String? = memScoped {
+    val pipe = popen(command, "r") ?: return null
+    val result = StringBuilder()
+    val buffer = allocArray<ByteVar>(4096)
+    try {
+        while (fgets(buffer, 4096, pipe) != null) result.append(buffer.toKString())
+    } finally {
+        pclose(pipe)
+    }
+    result.toString().takeIf { it.isNotBlank() }
 }
 
 private suspend fun io.ktor.server.application.ApplicationCall.serveFrontendFile(
