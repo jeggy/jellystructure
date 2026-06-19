@@ -12,11 +12,27 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 @Serializable
+data class QBittorrentPathMapping(
+    val local: String = "",
+    val remote: String = "",
+)
+
+@Serializable
+data class QBittorrentConfig(
+    val url: String = "",
+    val username: String = "",
+    val password: String = "",
+    val enabled: Boolean = false,
+    @SerialName("path_mappings") val pathMappings: List<QBittorrentPathMapping> = emptyList(),
+)
+
+@Serializable
 data class AppConfig(
     @SerialName("api_keys") val apiKeys: ApiKeys = ApiKeys(),
     @SerialName("language_rules") val languageRules: LanguageRules = LanguageRules(),
     val behavior: Behavior = Behavior(),
     val libraries: List<LibraryMapping> = emptyList(),
+    val qbittorrent: QBittorrentConfig? = null,
 )
 
 @Serializable
@@ -108,6 +124,13 @@ object ConfigApi {
     suspend fun getHealthFull(): HealthReport? = runCatching {
         httpClient.get("/api/health/full").body<HealthReport>()
     }.getOrNull()
+
+    suspend fun testQBittorrent(url: String, username: String, password: String): QBittorrentTestResult? = runCatching {
+        httpClient.post("/api/config/test-qbittorrent") {
+            contentType(ContentType.Application.Json)
+            setBody("""{"url":"${url.replace("\"","\\\"")}","username":"${username.replace("\"","\\\"")}","password":"${password.replace("\"","\\\"")}"}""")
+        }.body<QBittorrentTestResult>()
+    }.getOrNull()
 }
 
 @Serializable
@@ -115,3 +138,6 @@ data class HealthCheck(val name: String, val ok: Boolean, val detail: String)
 
 @Serializable
 data class HealthReport(val checks: List<HealthCheck>)
+
+@Serializable
+data class QBittorrentTestResult(val ok: Boolean, val detail: String, val torrentCount: Int? = null)

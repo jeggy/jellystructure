@@ -41,7 +41,7 @@ data class QBittorrentConfig(
     val url: String = "",
     val username: String = "",
     val password: String = "",
-    val enabled: Boolean = true,
+    val enabled: Boolean = false,
     @SerialName("path_mappings") val pathMappings: List<QBittorrentPathMapping> = emptyList(),
 )
 

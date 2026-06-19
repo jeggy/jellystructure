@@ -9,6 +9,8 @@ import dev.jellystructure.api.LibraryMapping
 import dev.jellystructure.api.LibraryPathDiag
 import dev.jellystructure.api.JellyfinLibrary
 import dev.jellystructure.api.ConfigApi
+import dev.jellystructure.api.QBittorrentConfig
+import dev.jellystructure.api.QBittorrentPathMapping
 import dev.jellystructure.api.httpClient
 import io.ktor.client.request.delete
 import io.ktor.http.HttpStatusCode
@@ -42,6 +44,7 @@ fun renderSettings(container: Element, scope: CoroutineScope, query: Map<String,
               <button data-sect="sect-scanning" class="settings-nav-item" style="background:none;border:none;text-align:left;padding:5px 8px;border-radius:5px;font-size:.85rem;cursor:pointer;color:var(--ink-soft);">Scanning</button>
               <button data-sect="sect-metadata" class="settings-nav-item" style="background:none;border:none;text-align:left;padding:5px 8px;border-radius:5px;font-size:.85rem;cursor:pointer;color:var(--ink-soft);">Metadata</button>
               <button data-sect="sect-advanced" class="settings-nav-item" style="background:none;border:none;text-align:left;padding:5px 8px;border-radius:5px;font-size:.85rem;cursor:pointer;color:var(--ink-soft);">Advanced</button>
+              <button data-sect="sect-crossseed" class="settings-nav-item" style="background:none;border:none;text-align:left;padding:5px 8px;border-radius:5px;font-size:.85rem;cursor:pointer;color:var(--ink-soft);">Cross-seed safety</button>
             </div>
           </nav>
 
@@ -136,6 +139,48 @@ fun renderSettings(container: Element, scope: CoroutineScope, query: Map<String,
               </div>
             </div>
 
+            <div class="card" id="sect-crossseed">
+              <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+                <h3 style="font-size:1rem;margin:0">Cross-seed safety</h3>
+                <span class="badge" style="font-size:.7rem;background:var(--fill-2)">qBittorrent</span>
+              </div>
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+                <div>
+                  <span style="font-size:.9rem;font-weight:500">Enable seeding guard</span>
+                  <div class="hint" style="margin-top:2px">When off, no edit is ever blocked on qBittorrent's account</div>
+                </div>
+                <span id="qb-enabled-toggle" class="toggle" style="cursor:pointer;flex-shrink:0;margin-left:12px"></span>
+              </div>
+              <div id="qb-fields" style="display:none">
+                <div class="field">
+                  <label>qBittorrent URL</label>
+                  <input id="qb-url" class="input" type="url" placeholder="http://localhost:8080" style="width:100%">
+                </div>
+                <div class="field">
+                  <label>Username</label>
+                  <input id="qb-username" class="input" type="text" style="width:100%">
+                </div>
+                <div class="field">
+                  <label>Password</label>
+                  <input id="qb-password" class="input" type="password" placeholder="(unchanged)" style="width:100%">
+                  <span class="hint">Leave blank to keep the stored password</span>
+                </div>
+                <div style="margin-bottom:12px">
+                  <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+                    <button id="qb-test-btn" class="btn sm ghost">Test connection</button>
+                    <span id="qb-test-result" class="tiny muted"></span>
+                  </div>
+                </div>
+                <div>
+                  <div style="font-size:.85rem;font-weight:500;margin-bottom:6px">Path mappings <span class="muted tiny">(longest match wins)</span></div>
+                  <p class="hint" style="margin:0 0 8px">Map local paths to the paths qBittorrent sees. Leave empty if paths are identical.</p>
+                  <div id="qb-path-mappings"></div>
+                  <button id="qb-add-mapping" class="btn sm ghost" style="margin-top:6px">+ Add mapping</button>
+                </div>
+                <div class="hint" style="margin-top:12px;color:var(--warn)">When enabled but unreachable, edits are blocked until qBittorrent responds or the guard is disabled.</div>
+              </div>
+            </div>
+
           </div>
 
           <div class="card" style="width:300px;flex-shrink:0">
@@ -170,6 +215,8 @@ private var scanWorkers = 1
 private var scanThreads = 4
 private var effectiveScanThreads = 4
 private var libraryMappings: MutableList<LibraryMapping> = mutableListOf()
+private var qbEnabled = false
+private var qbPathMappings: MutableList<QBittorrentPathMapping> = mutableListOf()
 
 private fun populateForm(response: ConfigResponse) {
     val config = response.config
@@ -196,6 +243,18 @@ private fun populateForm(response: ConfigResponse) {
 
     libraryMappings = config.libraries.toMutableList()
     if (libraryMappings.isNotEmpty()) renderLibraryList()
+
+    val qb = config.qbittorrent
+    qbEnabled = qb?.enabled ?: false
+    qbPathMappings = (qb?.pathMappings ?: emptyList()).toMutableList()
+    updateToggle("qb-enabled-toggle", qbEnabled)
+    if (qb != null) {
+        setInputValue("qb-url", qb.url)
+        setInputValue("qb-username", qb.username)
+    }
+    val qbFields = document.getElementById("qb-fields") as? HTMLElement
+    qbFields?.style?.display = if (qbEnabled) "block" else "none"
+    renderQbPathMappings()
 
     refreshTomlPreview(config)
 }
@@ -235,6 +294,39 @@ private fun attachListeners(scope: CoroutineScope) {
     document.getElementById("scan-threads")?.addEventListener("input") {
         scanThreads = (document.getElementById("scan-threads") as? HTMLInputElement)?.value?.toIntOrNull()?.coerceIn(1, 32) ?: 4
         updateRestartBanner()
+        refreshTomlPreview(readForm())
+    }
+
+    document.getElementById("qb-enabled-toggle")?.addEventListener("click") {
+        qbEnabled = !qbEnabled
+        updateToggle("qb-enabled-toggle", qbEnabled)
+        val qbFields = document.getElementById("qb-fields") as? HTMLElement
+        qbFields?.style?.display = if (qbEnabled) "block" else "none"
+        refreshTomlPreview(readForm())
+    }
+    listOf("qb-url", "qb-username", "qb-password").forEach { id ->
+        document.getElementById(id)?.addEventListener("input") { refreshTomlPreview(readForm()) }
+    }
+    document.getElementById("qb-test-btn")?.addEventListener("click") {
+        scope.launch {
+            val resultEl = document.getElementById("qb-test-result") as? HTMLElement ?: return@launch
+            resultEl.textContent = "Testing…"
+            val url = getInputValue("qb-url")
+            val username = getInputValue("qb-username")
+            val password = getInputValue("qb-password")
+            val r = ConfigApi.testQBittorrent(url, username, password)
+            if (r == null) {
+                resultEl.innerHTML = """<span class="badge bad">Request failed</span>"""
+            } else if (r.ok) {
+                resultEl.innerHTML = """<span class="badge ok">Connected — ${r.torrentCount ?: 0} torrents</span>"""
+            } else {
+                resultEl.innerHTML = """<span class="badge bad">${r.detail.esc()}</span>"""
+            }
+        }
+    }
+    document.getElementById("qb-add-mapping")?.addEventListener("click") {
+        qbPathMappings.add(QBittorrentPathMapping())
+        renderQbPathMappings()
         refreshTomlPreview(readForm())
     }
 
@@ -439,6 +531,13 @@ private fun readForm(): AppConfig = AppConfig(
         scanThreads = scanThreads,
     ),
     libraries = libraryMappings.toList(),
+    qbittorrent = if (qbEnabled) QBittorrentConfig(
+        enabled = true,
+        url = getInputValue("qb-url"),
+        username = getInputValue("qb-username"),
+        password = getInputValue("qb-password").ifBlank { "##KEEP##" },
+        pathMappings = qbPathMappings.toList(),
+    ) else null,
 )
 
 private fun refreshTomlPreview(config: AppConfig) {
@@ -472,6 +571,21 @@ private fun buildToml(c: AppConfig): String = buildString {
         appendLine("""local_path = "${lib.localPath}"""")
         appendLine("skip = ${lib.skip}")
         if (!lib.fallbackLanguage.isNullOrBlank()) appendLine("""fallback_language = "${lib.fallbackLanguage}"""")
+    }
+    val qb = c.qbittorrent
+    if (qb != null) {
+        appendLine()
+        appendLine("[qbittorrent]")
+        appendLine("""url = "${qb.url}"""")
+        appendLine("""username = "${qb.username}"""")
+        appendLine("""password = "***"""")
+        appendLine("enabled = ${qb.enabled}")
+        for (m in qb.pathMappings) {
+            appendLine()
+            appendLine("[[qbittorrent.path_mappings]]")
+            appendLine("""local = "${m.local}"""")
+            appendLine("""remote = "${m.remote}"""")
+        }
     }
 }
 
@@ -517,7 +631,7 @@ private fun wireSettingsNav(container: Element) {
     }
 
     // Highlight the nav item whose section is visible at the top of the viewport
-    val sections = "sect-connections,sect-libraries,sect-scanning,sect-metadata,sect-advanced"
+    val sections = "sect-connections,sect-libraries,sect-scanning,sect-metadata,sect-advanced,sect-crossseed"
     observeSections(sections, "-10% 0px -80% 0px") { visibleId ->
         for (k in 0 until navBtns.length) {
             val b = navBtns.item(k) as? HTMLElement ?: continue
@@ -525,6 +639,47 @@ private fun wireSettingsNav(container: Element) {
             b.style.color = if (active) "var(--ink)" else "var(--ink-soft)"
             b.style.fontWeight = if (active) "600" else ""
         }
+    }
+}
+
+private fun renderQbPathMappings() {
+    val container = document.getElementById("qb-path-mappings") as? HTMLElement ?: return
+    if (qbPathMappings.isEmpty()) {
+        container.innerHTML = """<span class="muted tiny">No mappings — paths are passed through unchanged.</span>"""
+        return
+    }
+    container.innerHTML = qbPathMappings.mapIndexed { i, m ->
+        """<div style="display:flex;gap:6px;align-items:center;margin-bottom:6px;" data-qb-mapping="$i">
+             <input class="input qb-local" style="flex:1;font-size:.82rem;" placeholder="local path" value="${m.local.esc()}">
+             <span class="muted tiny">→</span>
+             <input class="input qb-remote" style="flex:1;font-size:.82rem;" placeholder="remote path" value="${m.remote.esc()}">
+             <button class="btn sm ghost qb-remove-mapping" data-idx="$i" style="flex-shrink:0;">✕</button>
+           </div>"""
+    }.joinToString("")
+    container.querySelectorAll(".qb-local,.qb-remote").asList().forEachIndexed { _, node ->
+        (node as? HTMLInputElement)?.addEventListener("input") {
+            syncQbMappingsFromDom()
+            refreshTomlPreview(readForm())
+        }
+    }
+    container.querySelectorAll(".qb-remove-mapping").asList().forEach { node ->
+        val btn = node as? HTMLElement ?: return@forEach
+        btn.addEventListener("click") {
+            val idx = btn.getAttribute("data-idx")?.toIntOrNull() ?: return@addEventListener
+            qbPathMappings.removeAt(idx)
+            renderQbPathMappings()
+            refreshTomlPreview(readForm())
+        }
+    }
+}
+
+private fun syncQbMappingsFromDom() {
+    val container = document.getElementById("qb-path-mappings") as? HTMLElement ?: return
+    container.querySelectorAll("[data-qb-mapping]").asList().forEachIndexed { i, row ->
+        val el = row as? HTMLElement ?: return@forEachIndexed
+        val local = (el.querySelector(".qb-local") as? HTMLInputElement)?.value ?: ""
+        val remote = (el.querySelector(".qb-remote") as? HTMLInputElement)?.value ?: ""
+        if (i < qbPathMappings.size) qbPathMappings[i] = QBittorrentPathMapping(local, remote)
     }
 }
 

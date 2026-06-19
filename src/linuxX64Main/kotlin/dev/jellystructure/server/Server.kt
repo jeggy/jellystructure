@@ -24,6 +24,7 @@ import dev.jellystructure.media.JsTagStore
 import dev.jellystructure.media.LogoDownloader
 import dev.jellystructure.server.routes.metadataRoutes
 import dev.jellystructure.server.routes.triageRoutes
+import dev.jellystructure.torrent.QBittorrentClient
 import dev.jellystructure.torrent.SeedingGuard
 import io.ktor.http.ContentType
 import io.ktor.http.HttpMethod
@@ -83,6 +84,7 @@ fun startServer(
     jsTagStore: JsTagStore,
     seedingGuard: SeedingGuard,
     logoDownloader: LogoDownloader,
+    qbClient: QBittorrentClient? = null,
 ): suspend () -> Unit {
     val appScope = CoroutineScope(SupervisorJob())
     val engine = embeddedServer(CIO, port = port) {
@@ -137,7 +139,7 @@ fun startServer(
                 }
 
                 authRoutes(sessionService, jellyfinClient, configStore)
-                configureConfigRoutes(configStore, effectiveScanThreads)
+                configureConfigRoutes(configStore, effectiveScanThreads, qbClient)
                 setupRoutes(configStore, jellyfinClient)
                 jellyfinRoutes(configStore, jellyfinClient)
                 mediaRoutes(mediaStore, scanner, artworkDownloader, appScope, scanTracker, broadcaster, jellyfinClient, configStore, mediaHistory, scanDispatcher, seedingGuard)
