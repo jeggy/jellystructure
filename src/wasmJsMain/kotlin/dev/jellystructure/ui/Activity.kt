@@ -15,7 +15,6 @@ import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
 import org.w3c.dom.Element
 import org.w3c.dom.HTMLElement
-import org.w3c.dom.HTMLInputElement
 import org.w3c.dom.WebSocket
 import org.w3c.dom.events.Event
 import org.w3c.dom.events.MouseEvent
@@ -67,7 +66,6 @@ fun renderActivity(container: Element, scope: CoroutineScope, query: Map<String,
           <h1>Activity</h1>
           <span id="act-crumb" style="display:none" class="crumb"></span>
           <span class="spacer"></span>
-          <span id="workers-chip" class="chip" style="display:none"></span>
           <span id="ws-status" class="badge">Connecting…</span>
           <button id="act-cancel-btn" class="btn sm ghost" style="display:none">Pause</button>
         </div>
@@ -119,7 +117,9 @@ fun renderActivity(container: Element, scope: CoroutineScope, query: Map<String,
             <button data-cat="artwork" class="chip">Artwork</button>
             <button data-cat="track" class="chip">Tracks</button>
             <button data-cat="system" class="chip">System</button>
-            <label class="chip" style="cursor:pointer;display:flex;align-items:center;gap:4px"><input type="checkbox" id="errors-only-toggle" style="margin:0"> Errors only</label>
+            <span style="flex:1"></span>
+            <label style="display:flex;align-items:center;gap:7px;cursor:pointer;font-size:.82rem"><span class="toggle" id="errors-only-toggle"></span> Errors only</label>
+            <span id="workers-chip" class="chip" style="display:none"></span>
           </div>
           <div class="log" id="activity-console" style="height:420px;min-height:80px;max-height:none">
             <div class="muted tiny">Loading activity log…</div>
@@ -144,8 +144,10 @@ fun renderActivity(container: Element, scope: CoroutineScope, query: Map<String,
         }
     }
 
-    container.querySelector("#errors-only-toggle")?.addEventListener("change") { ev ->
-        errorsOnlyFilter = (ev.target as? HTMLInputElement)?.checked ?: false
+    container.querySelector("#errors-only-toggle")?.addEventListener("click") { ev ->
+        val toggle = ev.currentTarget as? HTMLElement ?: return@addEventListener
+        errorsOnlyFilter = !errorsOnlyFilter
+        if (errorsOnlyFilter) toggle.classList.add("on") else toggle.classList.remove("on")
         reapplyFilter(container)
     }
 

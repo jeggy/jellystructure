@@ -35,35 +35,39 @@ fun renderDashboard(container: Element, scope: CoroutineScope) {
         <div class="statgrid">
           <div class="stat"><div class="k">Movies</div><div class="v" id="stat-movies">—</div></div>
           <div class="stat"><div class="k">TV episodes</div><div class="v" id="stat-tv">—</div></div>
-          <div class="stat alert" style="cursor:pointer" id="stat-issues-cell"><div class="k">Tracks needing attention</div><div class="v" id="stat-issues">—</div></div>
+          <div class="stat alert" style="cursor:pointer" id="stat-issues-cell"><div class="k">Items needing attention</div><div class="v" id="stat-issues">—</div></div>
           <div class="stat"><div class="k">NFO coverage</div><div class="v" id="stat-nfo">—%</div></div>
         </div>
 
-        <div id="attention-queue" style="display:none;margin-top:18px">
-          <div class="row center" style="margin-bottom:10px;gap:8px">
-            <h3 style="margin:0;font-size:1rem">Needs attention</h3>
-            <span class="spacer"></span>
-            <button id="dash-triage" class="btn sm ghost">View in library →</button>
-          </div>
-          <div id="attention-list"></div>
-        </div>
-
-        <div class="row" style="margin-top:18px;gap:18px;flex-wrap:wrap;align-items:flex-start;">
-          <div class="card fill" style="min-width:240px">
-            <h3 style="font-size:1rem;margin:0 0 12px">Quick actions</h3>
-            <div class="pill-row" style="display:flex;gap:8px;flex-wrap:wrap;">
-              <button id="qa-triage" class="chip">View items needing attention</button>
-              <button id="qa-track-order" class="chip">Set track defaults</button>
-              <button id="qa-artwork" class="chip">Re-pull artwork</button>
-              <button id="qa-jf-push" class="chip">Sync NFOs to Jellyfin</button>
-              <button id="qa-jf-refresh" class="chip">Jellyfin library scan</button>
-              <button id="qa-activity" class="chip">View activity</button>
+        <div class="row" style="margin-top:18px;align-items:stretch;gap:18px;flex-wrap:wrap">
+          <div class="card fill" id="attention-queue" style="min-width:0">
+            <div class="row center" style="gap:8px">
+              <h3 style="margin:0;font-size:1.1rem">Needs your attention</h3>
+              <span class="spacer"></span>
+              <span class="badge bad" id="attention-count" style="display:none"></span>
+              <button id="dash-triage" class="btn sm">Browse all →</button>
             </div>
-            <div id="qa-feedback" style="margin-top:10px;min-height:20px"></div>
+            <div class="tiny muted" style="margin:6px 0 0">Step through every flagged item from the floating dock, bottom-right — it opens each one's detail page where you fix it.</div>
+            <hr class="dash" style="margin:11px 0">
+            <div id="attention-list"><span class="muted tiny">Loading…</span></div>
           </div>
-          <div class="card" style="min-width:240px;flex:1">
-            <h3 style="font-size:1rem;margin:0 0 12px">Recently processed</h3>
-            <div id="recent-list"><span class="muted tiny">Loading…</span></div>
+          <div class="col" style="width:320px;flex:none;gap:14px">
+            <div class="card">
+              <h3 style="margin:0 0 8px;font-size:1.05rem">Recently processed</h3>
+              <div id="recent-list" class="tiny" style="line-height:2"><span class="muted">Loading…</span></div>
+            </div>
+            <div class="card">
+              <h3 style="font-size:1rem;margin:0 0 12px">Quick actions</h3>
+              <div class="pill-row" style="display:flex;gap:8px;flex-wrap:wrap">
+                <button id="qa-triage" class="chip">View items needing attention</button>
+                <button id="qa-track-order" class="chip">Set track defaults</button>
+                <button id="qa-artwork" class="chip">Re-pull artwork</button>
+                <button id="qa-jf-push" class="chip">Sync NFOs to Jellyfin</button>
+                <button id="qa-jf-refresh" class="chip">Jellyfin library scan</button>
+                <button id="qa-activity" class="chip">View activity</button>
+              </div>
+              <div id="qa-feedback" style="margin-top:10px;min-height:20px"></div>
+            </div>
           </div>
         </div>
     """.trimIndent()
@@ -131,14 +135,16 @@ fun renderDashboard(container: Element, scope: CoroutineScope) {
 
 private suspend fun loadAttentionQueue() {
     val page = MediaApi.list(filter = "attention", pageSize = 8) ?: return
-    val queueEl = document.getElementById("attention-queue") as? HTMLElement ?: return
     val listEl = document.getElementById("attention-list") as? HTMLElement ?: return
     if (page.total == 0) {
-        queueEl.style.display = "none"
+        listEl.innerHTML = """<div class="muted tiny">No items need attention — everything looks good.</div>"""
         return
     }
-    queueEl.style.display = "block"
-    listEl.innerHTML = page.items.joinToString("") { item ->
+    (document.getElementById("attention-count") as? HTMLElement)?.let {
+        it.textContent = "${page.total} items"
+        it.style.display = ""
+    }
+    val rows = page.items.joinToString("") { item ->
         val badge = when {
             item.languageMix ->
                 """<span class="badge warn" style="font-size:.7rem">language mix</span>"""
@@ -148,15 +154,17 @@ private suspend fun loadAttentionQueue() {
         }
         val year = item.year?.let { " ($it)" } ?: ""
         val kind = item.kind.name.lowercase().replace('_', ' ')
-        """<div class="row center" style="padding:7px 0;border-bottom:1px solid var(--border);gap:8px;cursor:pointer"
-              data-nav="/media/${item.jellyfinId ?: item.id}">
-             <span style="flex:1;font-size:.9rem">${item.title.esc()}$year</span>
-             <span class="muted tiny">$kind</span>
-             $badge
-           </div>"""
+        val nav = "/media/${item.jellyfinId ?: item.id}"
+        """<tr data-nav="$nav" style="cursor:pointer">
+             <td style="font-weight:700">${item.title.esc()}$year</td>
+             <td>$badge</td>
+             <td class="muted tiny">$kind</td>
+             <td><button class="btn sm" data-nav="$nav">Open</button></td>
+           </tr>"""
     }
+    listEl.innerHTML = """<table class="wf-table"><tbody>$rows</tbody></table>"""
     if (page.total > 8) {
-        listEl.innerHTML += """<div class="muted tiny" style="padding-top:6px">Showing 8 of ${page.total} items — <span style="cursor:pointer;text-decoration:underline" id="dash-see-all">see all in library</span></div>"""
+        listEl.innerHTML += """<div class="tiny muted" style="margin-top:8px"><a id="dash-see-all" style="cursor:pointer;text-decoration:underline">…${page.total - 8} more — filter Library by "Needs attention" →</a></div>"""
         document.getElementById("dash-see-all")?.addEventListener("click") { App.navigate("/library") }
     }
     listEl.querySelectorAll("[data-nav]").let { nodes ->
@@ -180,15 +188,15 @@ private suspend fun loadRecentActivity() {
     val entries = MediaApi.getRecentActivity()
     val el = document.getElementById("recent-list") as? HTMLElement ?: return
     if (entries.isEmpty()) {
-        el.innerHTML = """<span class="muted tiny">No activity yet — run a scan to get started.</span>"""
+        el.innerHTML = """<span class="muted">No activity yet — run a scan to get started.</span>"""
         return
     }
-    el.innerHTML = entries.take(8).joinToString("") { entry ->
-        val actionLabel = entry.action.replace('_', ' ')
-        """<div style="display:flex;align-items:baseline;gap:6px;padding:4px 0;border-bottom:1px solid var(--border);">
-             <span style="font-size:.82rem;flex:1">${entry.detail.take(54).esc()}</span>
-             <span class="badge" style="font-size:.65rem;flex-shrink:0">$actionLabel</span>
-           </div>"""
+    el.innerHTML = entries.take(6).joinToString("") { entry ->
+        val bad = entry.action.contains("fail", ignoreCase = true) ||
+                  entry.action.contains("error", ignoreCase = true) ||
+                  entry.action.contains("no_match", ignoreCase = true)
+        val dot = if (bad) "bad" else "ok"
+        """<div class="row center" style="gap:6px"><span class="dot $dot"></span> ${entry.detail.take(52).esc()}</div>"""
     }
 }
 
