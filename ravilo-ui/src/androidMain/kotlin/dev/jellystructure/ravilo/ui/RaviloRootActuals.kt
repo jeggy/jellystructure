@@ -17,18 +17,17 @@ actual fun createTvApiClient(baseUrl: String, deviceTokenProvider: () -> String?
     return TvApiClient(httpClient, baseUrl, deviceTokenProvider)
 }
 
-actual fun raviloBaseUrl(): String {
-    val prefs = RaviloAppContext.get()
-        .getSharedPreferences("ravilo_prefs", android.content.Context.MODE_PRIVATE)
-    return prefs.getString("base_url", "http://192.168.1.1:8097") ?: "http://192.168.1.1:8097"
+private fun prefs() = RaviloAppContext.get()
+    .getSharedPreferences("ravilo_prefs", android.content.Context.MODE_PRIVATE)
+
+actual fun raviloBaseUrl(): String = prefs().getString("base_url", "") ?: ""
+
+actual fun saveBaseUrl(url: String) {
+    prefs().edit().putString("base_url", url).apply()
 }
 
 actual object TokenStore {
-    private val prefs: SharedPreferences
-        get() = RaviloAppContext.get()
-            .getSharedPreferences("ravilo_prefs", android.content.Context.MODE_PRIVATE)
-
-    actual fun get(): String? = prefs.getString("device_token", null)
-    actual fun set(token: String) { prefs.edit().putString("device_token", token).apply() }
-    actual fun clear() { prefs.edit().remove("device_token").apply() }
+    actual fun get(): String? = prefs().getString("device_token", null)
+    actual fun set(token: String) { prefs().edit().putString("device_token", token).apply() }
+    actual fun clear() { prefs().edit().remove("device_token").apply() }
 }

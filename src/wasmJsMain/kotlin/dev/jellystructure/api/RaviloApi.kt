@@ -2,10 +2,12 @@ package dev.jellystructure.api
 
 import io.ktor.client.call.body
 import io.ktor.client.request.get
+import io.ktor.client.request.post
 import io.ktor.client.request.put
 import io.ktor.client.request.setBody
 import io.ktor.http.ContentType
 import io.ktor.http.contentType
+import io.ktor.http.isSuccess
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
@@ -66,4 +68,14 @@ object RaviloApi {
             setBody(config)
         }
     }
+
+    suspend fun approvePairing(code: String) {
+        val r = httpClient.post("/api/tv/pair/approve") {
+            contentType(ContentType.Application.Json)
+            setBody("""{"code":${code.jsonQuote()}}""")
+        }
+        if (!r.status.isSuccess()) throw Exception(r.body<String>())
+    }
 }
+
+private fun String.jsonQuote() = "\"${replace("\\", "\\\\").replace("\"", "\\\"")}\""

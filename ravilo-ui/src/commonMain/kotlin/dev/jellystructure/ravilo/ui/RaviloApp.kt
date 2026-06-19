@@ -63,7 +63,7 @@ private sealed class Dest {
 // ─── Root composable ──────────────────────────────────────────────────────────
 
 @Composable
-fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "") {
+fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeServer: () -> Unit = {}) {
     var lang by remember { mutableStateOf("en") }
 
     // Fetch the active user's language setting from their config
@@ -116,10 +116,14 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "") {
 
             is Dest.Pairing -> {
                 val store = remember { PairingStore(apiClient) }
-                PairingScreen(store = store, onPaired = {
-                    refreshLang()
-                    push(Dest.Home(displayName = ""))
-                })
+                PairingScreen(
+                    store = store,
+                    onPaired = {
+                        refreshLang()
+                        push(Dest.Home(displayName = ""))
+                    },
+                    onChangeServer = onChangeServer,
+                )
             }
 
             is Dest.Home -> {

@@ -14,12 +14,17 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import dev.jellystructure.ravilo.ui.focus.dpadFocusable
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
 import dev.jellystructure.shared.tv.PairingChallenge
 import dev.jellystructure.shared.tv.TvApiClient
@@ -97,6 +102,7 @@ class PairingStore(private val apiClient: TvApiClient) {
 fun PairingScreen(
     store: PairingStore,
     onPaired: () -> Unit,
+    onChangeServer: () -> Unit = {},
 ) {
     val colors = RaviloTheme.colors
     val state by store.state.collectAsState()
@@ -151,15 +157,48 @@ fun PairingScreen(
                 }
                 is PairingState.Expired -> {
                     Text("Code expired.", color = colors.badgeNew, fontSize = 16.sp)
-                    Spacer(Modifier.height(16.dp))
-                    Text("Tap any key to try again.", color = colors.textSecondary, fontSize = 14.sp)
+                    Spacer(Modifier.height(24.dp))
+                    PairingActionButton(label = "Try again", onSelect = { store.retry() })
+                    Spacer(Modifier.height(12.dp))
+                    PairingActionButton(label = "Change server", onSelect = onChangeServer)
                 }
                 is PairingState.Errored -> {
-                    Text("Error: ${s.message}", color = colors.textSecondary, fontSize = 14.sp)
-                    Spacer(Modifier.height(16.dp))
-                    Text("Tap any key to retry.", color = colors.textSecondary, fontSize = 14.sp)
+                    Text("Error: ${s.message}", color = colors.textSecondary, fontSize = 14.sp, textAlign = TextAlign.Center)
+                    Spacer(Modifier.height(24.dp))
+                    PairingActionButton(label = "Retry", onSelect = { store.retry() })
+                    Spacer(Modifier.height(12.dp))
+                    PairingActionButton(label = "Change server", onSelect = onChangeServer)
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun PairingActionButton(label: String, onSelect: () -> Unit) {
+    val colors = RaviloTheme.colors
+    val fr = remember { FocusRequester() }
+    var focused by remember { mutableStateOf(false) }
+    Box(
+        modifier = Modifier
+            .background(
+                if (focused) colors.accent else colors.surfaceVariant,
+                RoundedCornerShape(8.dp),
+            )
+            .then(if (focused) Modifier.border(2.dp, colors.focusRing, RoundedCornerShape(8.dp)) else Modifier)
+            .dpadFocusable(
+                focusRequester = fr,
+                onFocused = { focused = true },
+                onSelect = onSelect,
+            )
+            .padding(horizontal = 32.dp, vertical = 12.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            label,
+            color = if (focused) colors.onAccent else colors.text,
+            fontSize = 15.sp,
+            fontWeight = FontWeight.SemiBold,
+        )
     }
 }

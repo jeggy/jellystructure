@@ -25,6 +25,8 @@ private fun jsClearToken(): Unit = js("localStorage.removeItem('ravilo_token')")
 
 actual fun raviloBaseUrl(): String = jsOrigin()
 
+actual fun saveBaseUrl(url: String) { /* web always uses window.location.origin */ }
+
 actual object TokenStore {
     actual fun get(): String? = jsGetToken()
     actual fun set(token: String) = jsSetToken(token)

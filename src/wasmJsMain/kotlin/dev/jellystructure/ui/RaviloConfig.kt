@@ -37,7 +37,7 @@ fun renderRaviloConfig(container: Element, scope: CoroutineScope) {
 private fun renderFull(container: Element, scope: CoroutineScope) {
     container.innerHTML = buildShell()
     wireShell(container, scope)
-    renderSections(container)
+    renderSections(container, scope)
 }
 
 private fun buildLoadingShell() = """
@@ -73,6 +73,7 @@ private fun buildShell(): String {
     <div class="row" style="align-items:flex-start;gap:22px;flex-wrap:wrap">
       <nav style="width:150px;flex-shrink:0;position:sticky;top:88px">
         <div style="display:flex;flex-direction:column;gap:2px">
+          <button data-rav-sect="sect-pair"     class="rav-nav-item">Pair a TV</button>
           <button data-rav-sect="sect-heroes"   class="rav-nav-item">Heroes</button>
           <button data-rav-sect="sect-channels" class="rav-nav-item">Channels</button>
           <button data-rav-sect="sect-rows"     class="rav-nav-item">Rows</button>
@@ -80,6 +81,7 @@ private fun buildShell(): String {
         </div>
       </nav>
       <div class="col fill" style="min-width:280px" id="rav-sections">
+        <div id="sect-pair"></div>
         <div id="sect-heroes"></div>
         <div id="sect-channels"></div>
         <div id="sect-rows"></div>
@@ -96,7 +98,7 @@ private fun wireShell(container: Element, scope: CoroutineScope) {
         currentUserId = sel.value
         scope.launch {
             currentConfig = runCatching { RaviloApi.getConfig(currentUserId) }.getOrDefault(AdminRaviloConfig())
-            renderSections(container)
+            renderSections(container, scope)
         }
     }
 
@@ -124,11 +126,60 @@ private fun wireShell(container: Element, scope: CoroutineScope) {
     }
 }
 
-private fun renderSections(container: Element) {
+private fun renderSections(container: Element, scope: CoroutineScope) {
+    renderPair(container, scope)
     renderHeroes(container)
     renderChannels(container)
     renderRows(container)
     renderBehaviour(container)
+}
+
+// ── Pair a TV ─────────────────────────────────────────────────────────────────
+
+private fun renderPair(container: Element, scope: CoroutineScope) {
+    val sect = container.querySelector("#sect-pair") ?: return
+    sect.innerHTML = """
+        <div class="card" style="padding:18px 20px;margin-bottom:18px">
+          <div style="font-weight:600;margin-bottom:6px">Pair a TV</div>
+          <p style="font-size:.82rem;color:var(--ink-soft);margin-bottom:14px">
+            Enter the 6-character code shown on your Ravilo TV app to link it to your account.
+          </p>
+          <div class="row" style="gap:8px;align-items:center">
+            <input id="pair-code" class="input" style="width:160px;letter-spacing:.15em;text-transform:uppercase"
+              maxlength="6" placeholder="ABC123" autocomplete="off" spellcheck="false">
+            <button id="pair-btn" class="btn primary">Pair</button>
+            <span id="pair-msg" style="font-size:.85rem"></span>
+          </div>
+        </div>
+    """.trimIndent()
+
+    val codeInput = sect.querySelector("#pair-code") as? HTMLInputElement ?: return
+    val pairBtn   = sect.querySelector("#pair-btn")  as? HTMLElement ?: return
+    val pairMsg   = sect.querySelector("#pair-msg")  as? HTMLElement ?: return
+
+    fun submit() {
+        val code = codeInput.value.trim().uppercase()
+        if (code.length != 6) { pairMsg.textContent = "Enter the full 6-character code."; return }
+        pairMsg.textContent = "Pairing…"
+        scope.launch {
+            runCatching { RaviloApi.approvePairing(code) }.fold(
+                onSuccess = {
+                    pairMsg.textContent = "✓ TV paired successfully!"
+                    pairMsg.setAttribute("style", "font-size:.85rem;color:var(--ok)")
+                    codeInput.value = ""
+                },
+                onFailure = {
+                    pairMsg.textContent = "Failed: ${it.message ?: "unknown error"}"
+                    pairMsg.setAttribute("style", "font-size:.85rem;color:var(--bad)")
+                },
+            )
+        }
+    }
+
+    pairBtn.addEventListener("click") { _ -> submit() }
+    codeInput.addEventListener("keydown") { ev ->
+        if ((ev as? org.w3c.dom.events.KeyboardEvent)?.key == "Enter") submit()
+    }
 }
 
 // ── Heroes ────────────────────────────────────────────────────────────────────
