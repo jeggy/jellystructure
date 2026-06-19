@@ -24,8 +24,10 @@ import dev.jellystructure.media.JsTagStore
 import dev.jellystructure.media.LogoDownloader
 import dev.jellystructure.server.routes.metadataRoutes
 import dev.jellystructure.server.routes.triageRoutes
+import dev.jellystructure.server.routes.tvRoutes
 import dev.jellystructure.torrent.QBittorrentClient
 import dev.jellystructure.torrent.SeedingGuard
+import dev.jellystructure.tv.RaviloDeviceService
 import io.ktor.http.ContentType
 import io.ktor.http.HttpMethod
 import io.ktor.http.HttpStatusCode
@@ -68,6 +70,7 @@ import platform.posix.popen
 fun startServer(
     configStore: ConfigStore,
     sessionService: SessionService,
+    deviceService: RaviloDeviceService,
     jellyfinClient: JellyfinClient,
     mediaStore: MediaStore,
     scanner: Scanner,
@@ -100,7 +103,7 @@ fun startServer(
             allowCredentials = true
         }
 
-        installAuthPlugin(sessionService)
+        installAuthPlugin(sessionService, validateDeviceToken = { deviceService.validateDeviceToken(it) })
 
         routing {
             route("/api") {
@@ -147,6 +150,7 @@ fun startServer(
                 triageRoutes(mediaStore, jellyfinClient, configStore, mediaHistory, seedingGuard)
                 metadataRoutes(mediaStore, jsTagStore, logoDownloader)
                 trackRoutes(mediaStore, configStore, jellyfinClient, mediaHistory, seedingGuard)
+                tvRoutes(deviceService, sessionService, jellyfinClient, configStore)
             }
 
             webSocket("/ws") {

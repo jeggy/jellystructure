@@ -1,0 +1,24 @@
+CREATE TABLE ravilo_device (
+    device_id TEXT NOT NULL PRIMARY KEY,
+    jellyfin_user_id TEXT NOT NULL,
+    jellyfin_username TEXT NOT NULL,
+    jellyfin_user_token TEXT NOT NULL,
+    is_admin INTEGER NOT NULL DEFAULT 0,
+    device_token TEXT NOT NULL UNIQUE,
+    display_name TEXT NOT NULL DEFAULT '',
+    created_at INTEGER NOT NULL,
+    last_seen INTEGER NOT NULL
+);
+
+CREATE TABLE ravilo_pairing (
+    pair_id TEXT NOT NULL PRIMARY KEY,
+    code TEXT NOT NULL UNIQUE,
+    poll_token TEXT NOT NULL UNIQUE,
+    jellyfin_user_id TEXT,
+    jellyfin_username TEXT,
+    jellyfin_user_token TEXT,
+    is_admin INTEGER NOT NULL DEFAULT 0,
+    approved INTEGER NOT NULL DEFAULT 0,
+    consumed INTEGER NOT NULL DEFAULT 0,
+    expires_at INTEGER NOT NULL
+);

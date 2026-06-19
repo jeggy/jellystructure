@@ -227,6 +227,7 @@ tasks.register("buildFrontend") {
         val linuxX64Main by getting {
             dependsOn(nativeMain)
             dependencies {
+                implementation(projects.shared)
                 implementation(libs.ktor.server.core)
                 implementation(libs.ktor.server.cio)
                 implementation(libs.ktor.server.websockets)

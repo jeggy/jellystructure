@@ -18,6 +18,15 @@ data class SessionData(
     val expiresAt: Long,
 )
 
+data class DeviceData(
+    val deviceId: String,
+    val deviceToken: String,
+    val jellyfinUserId: String,
+    val jellyfinUsername: String,
+    val jellyfinUserToken: String,
+    val isAdmin: Boolean,
+)
+
 @Serializable
 data class JellyfinPolicy(@SerialName("IsAdministrator") val isAdministrator: Boolean)
 
