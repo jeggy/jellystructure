@@ -148,6 +148,9 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                         refreshConfig()
                         push(Dest.Home(session.displayName))
                     },
+                    onSettings = {
+                        push(Dest.Settings(MultiTokenStore.getActive()?.displayName ?: ""))
+                    },
                 )
             }
 
@@ -170,6 +173,8 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                 val store = remember { HomeStore(apiClient) }
                 HomeScreen(
                     store = store,
+                    displayName = dest.displayName,
+                    onProfile = { push(Dest.ProfilePicker) },
                     onNavSelect = { idx ->
                         when (idx) {
                             1 -> push(Dest.Browse(BrowseKind.MOVIES, dest.displayName))

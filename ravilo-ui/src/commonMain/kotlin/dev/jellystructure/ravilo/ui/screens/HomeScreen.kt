@@ -49,10 +49,12 @@ enum class NavDestination { HOME, MOVIES, SERIES, MY_LIST, SEARCH }
 fun HomeScreen(
     store: HomeStore,
     activeNav: Int = 0,
+    displayName: String = "",
     onNavSelect: (Int) -> Unit = {},
     onItemSelect: (MediaCard) -> Unit = {},
     onChannelSelect: (Channel) -> Unit = {},
     onSeeAll: (String?) -> Unit = {},
+    onProfile: () -> Unit = {},
 ) {
     val colors = RaviloTheme.colors
     val state by store.state.collectAsState()
@@ -64,10 +66,12 @@ fun HomeScreen(
             is HomeState.Loaded  -> HomeLoaded(
                 feed = s.feed,
                 activeNav = activeNav,
+                displayName = displayName,
                 onNavSelect = onNavSelect,
                 onItemSelect = onItemSelect,
                 onChannelSelect = onChannelSelect,
                 onSeeAll = onSeeAll,
+                onProfile = onProfile,
             )
         }
     }
@@ -77,10 +81,12 @@ fun HomeScreen(
 private fun HomeLoaded(
     feed: dev.jellystructure.shared.tv.HomeFeed,
     activeNav: Int,
+    displayName: String,
     onNavSelect: (Int) -> Unit,
     onItemSelect: (MediaCard) -> Unit,
     onChannelSelect: (Channel) -> Unit,
     onSeeAll: (String?) -> Unit,
+    onProfile: () -> Unit,
 ) {
     val colors = RaviloTheme.colors
     val listState = rememberLazyListState()
@@ -227,11 +233,17 @@ private fun HomeLoaded(
     }
 
     // AppBar overlay (transparent gradient over hero)
+    val initials = remember(displayName) {
+        displayName.split(' ').filter { it.isNotBlank() }.take(2)
+            .joinToString("") { it.first().uppercase() }
+    }
     AppBar(
         activeNav = activeNav,
         onNavSelect = onNavSelect,
         navFR = navBarFR,
         onDown = { runCatching { heroFR.requestFocus() } },
+        userInitials = initials,
+        onProfile = onProfile,
     )
 }
 
