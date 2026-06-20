@@ -239,12 +239,18 @@ data class RaviloConfig(
     @SerialName("merge_newly_added") val mergeNewlyAdded: Boolean = false,
     @SerialName("default_skin") val defaultSkin: Skin = Skin.AURORA,
     @SerialName("allow_skin_override") val allowSkinOverride: Boolean = true,
+    // Per-viewer skin choice, kept separate from the operator's defaultSkin so an operator
+    // default change still reaches viewers who never picked a skin. Null = no override.
+    @SerialName("viewer_skin_override") val viewerSkinOverride: Skin? = null,
     @SerialName("show_continue_progress") val showContinueProgress: Boolean = true,
     @SerialName("tile_shape") val tileShape: TileShape = TileShape.POSTER,
     @SerialName("ui_language") val uiLanguage: String = "en",
     @SerialName("hero_height_pct") val heroHeightPct: Int = 56,       // % of screen the hero fills (30..70)
-    @SerialName("auto_advance_seconds") val autoAdvanceSeconds: Int = 6, // hero carousel interval; 0 = off
-)
+    @SerialName("auto_advance_seconds") val autoAdvanceSeconds: Int = 6, // hero carousel interval seconds; 0 = off (0..120)
+) {
+    /** The skin actually rendered: the viewer's override when allowed, else the operator default. */
+    fun effectiveSkin(): Skin = if (allowSkinOverride) (viewerSkinOverride ?: defaultSkin) else defaultSkin
+}
 
 // ─── Request bodies ───────────────────────────────────────────────────────────
 
@@ -256,7 +262,6 @@ data class PlaybackStartRequest(
 
 @Serializable
 data class PlaybackProgressRequest(
-    @SerialName("session_id") val sessionId: String,
     @SerialName("item_id") val itemId: String,
     @SerialName("position_ms") val positionMs: Long,
     @SerialName("is_paused") val isPaused: Boolean = false,
@@ -264,9 +269,16 @@ data class PlaybackProgressRequest(
 
 @Serializable
 data class PlaybackStopRequest(
-    @SerialName("session_id") val sessionId: String,
     @SerialName("item_id") val itemId: String,
     @SerialName("position_ms") val positionMs: Long,
+)
+
+/** On-device viewer-tweakable settings (PUT /api/tv/settings). All fields optional = unchanged. */
+@Serializable
+data class ViewerSettingsRequest(
+    val skin: Skin? = null,
+    @SerialName("show_continue_progress") val showContinueProgress: Boolean? = null,
+    @SerialName("tile_shape") val tileShape: TileShape? = null,
 )
 
 @Serializable

@@ -72,7 +72,7 @@ class RaviloConfigService(private val db: JellystructureDb) {
         channels = config.channels.mapIndexed { i, c -> c.copy(order = i) },
         rows = config.rows.mapIndexed { i, r -> r.copy(order = i) },
         heroHeightPct = config.heroHeightPct.coerceIn(30, 70),
-        autoAdvanceSeconds = config.autoAdvanceSeconds.coerceIn(0, 30),
+        autoAdvanceSeconds = config.autoAdvanceSeconds.coerceIn(0, 120),
     )
 
     /**
@@ -90,13 +90,17 @@ class RaviloConfigService(private val db: JellystructureDb) {
         return null
     }
 
-    /** Apply only the viewer-tweakable fields; layout (heroes/channels/rows) is operator-only. */
+    /**
+     * Apply only the viewer-tweakable fields; layout (heroes/channels/rows) is operator-only.
+     * A viewer's skin choice is stored in [RaviloConfig.viewerSkinOverride], never in defaultSkin,
+     * so a later operator change to the default still surfaces for viewers who never picked one.
+     */
     fun applyViewerSettings(userId: String, skin: Skin?, showContinueProgress: Boolean?, tileShape: TileShape?) {
         val current = getConfig(userId)
         save(
             userId = userId,
             config = current.copy(
-                defaultSkin = skin ?: current.defaultSkin,
+                viewerSkinOverride = skin ?: current.viewerSkinOverride,
                 showContinueProgress = showContinueProgress ?: current.showContinueProgress,
                 tileShape = tileShape ?: current.tileShape,
             ),

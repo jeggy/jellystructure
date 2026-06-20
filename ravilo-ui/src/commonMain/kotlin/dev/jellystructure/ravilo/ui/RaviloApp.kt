@@ -91,7 +91,7 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
         configScope.launch {
             runCatching { apiClient.getConfig() }.getOrNull()?.let { cfg ->
                 lang = cfg.uiLanguage
-                themeState.skin = cfg.defaultSkin
+                themeState.skin = cfg.effectiveSkin()
             }
         }
     }

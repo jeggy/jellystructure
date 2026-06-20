@@ -150,17 +150,17 @@ class TvApiClient(
         return json.decodeFromString<StreamTicket>(r.bodyAsText())
     }
 
-    suspend fun reportProgress(sessionId: String, itemId: String, positionMs: Long, isPaused: Boolean = false) {
+    suspend fun reportProgress(itemId: String, positionMs: Long, isPaused: Boolean = false) {
         client.post("$baseUrl/api/tv/playback/progress") {
             auth()
-            jsonBody(json.encodeToString(PlaybackProgressRequest(sessionId, itemId, positionMs, isPaused)))
+            jsonBody(json.encodeToString(PlaybackProgressRequest(itemId, positionMs, isPaused)))
         }.assertSuccess()
     }
 
-    suspend fun stopPlayback(sessionId: String, itemId: String, positionMs: Long) {
+    suspend fun stopPlayback(itemId: String, positionMs: Long) {
         client.post("$baseUrl/api/tv/playback/stop") {
             auth()
-            jsonBody(json.encodeToString(PlaybackProgressRequest(sessionId, itemId, positionMs)))
+            jsonBody(json.encodeToString(PlaybackStopRequest(itemId, positionMs)))
         }.assertSuccess()
     }
 
@@ -179,10 +179,19 @@ class TvApiClient(
         return json.decodeFromString<RaviloConfig>(r.bodyAsText())
     }
 
-    suspend fun putSettings(config: RaviloConfig) {
+    /**
+     * Persist the on-device viewer-tweakable settings. Posts a [ViewerSettingsRequest] (a small
+     * subset of [RaviloConfig]); any null field is left unchanged server-side. The full-config
+     * admin write lives behind the cookie-authed `/tv/admin/config` route, not here.
+     */
+    suspend fun putViewerSettings(
+        skin: Skin? = null,
+        showContinueProgress: Boolean? = null,
+        tileShape: TileShape? = null,
+    ) {
         client.put("$baseUrl/api/tv/settings") {
             auth()
-            jsonBody(json.encodeToString(config))
+            jsonBody(json.encodeToString(ViewerSettingsRequest(skin, showContinueProgress, tileShape)))
         }.assertSuccess()
     }
 
