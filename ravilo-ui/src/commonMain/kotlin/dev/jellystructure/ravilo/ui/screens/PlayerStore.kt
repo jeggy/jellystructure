@@ -30,7 +30,6 @@ class PlayerStore(private val apiClient: TvApiClient) {
 
     private var progressJob: Job? = null
     private var currentItemId: String? = null
-    private var sessionId: String = ""
 
     fun startSession(itemId: String, positionProvider: () -> Long, isPausedProvider: () -> Boolean) {
         currentItemId = itemId
@@ -46,7 +45,6 @@ class PlayerStore(private val apiClient: TvApiClient) {
                         maxAudioChannels = 8,
                     ),
                 )
-                sessionId = ticket.itemId + "_" + ticket.expiresAt
                 startHeartbeat(itemId, positionProvider, isPausedProvider)
                 PlayerSessionState.Ready(ticket)
             }.getOrElse { PlayerSessionState.Error(it.message ?: "Failed to start playback") }
@@ -57,7 +55,7 @@ class PlayerStore(private val apiClient: TvApiClient) {
         progressJob?.cancel()
         val itemId = currentItemId ?: return
         scope.launch {
-            runCatching { apiClient.stopPlayback(sessionId, itemId, positionMs) }
+            runCatching { apiClient.stopPlayback(itemId, positionMs) }
         }
         _state.value = PlayerSessionState.Idle
         currentItemId = null
@@ -77,7 +75,7 @@ class PlayerStore(private val apiClient: TvApiClient) {
             while (isActive) {
                 delay(PROGRESS_INTERVAL_MS)
                 runCatching {
-                    apiClient.reportProgress(sessionId, itemId, positionProvider(), isPausedProvider())
+                    apiClient.reportProgress(itemId, positionProvider(), isPausedProvider())
                 }
             }
         }

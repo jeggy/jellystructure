@@ -63,16 +63,16 @@ class SettingsStore(private val apiClient: TvApiClient) {
 
     fun saveSkin(skin: Skin) {
         val cur = (_state.value as? SettingsState.Loaded)?.config ?: return
-        val updated = cur.copy(defaultSkin = skin)
+        val updated = cur.copy(viewerSkinOverride = skin)
         _state.value = SettingsState.Loaded(updated)
-        scope.launch { runCatching { apiClient.putSettings(updated) } }
+        scope.launch { runCatching { apiClient.putViewerSettings(skin = skin) } }
     }
 
     fun saveShowContinueProgress(v: Boolean) {
         val cur = (_state.value as? SettingsState.Loaded)?.config ?: return
         val updated = cur.copy(showContinueProgress = v)
         _state.value = SettingsState.Loaded(updated)
-        scope.launch { runCatching { apiClient.putSettings(updated) } }
+        scope.launch { runCatching { apiClient.putViewerSettings(showContinueProgress = v) } }
     }
 }
 
@@ -126,7 +126,7 @@ private fun SettingsContent(
         val skinFRs = remember { Skin.entries.map { FocusRequester() } }
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Skin.entries.forEachIndexed { i, skin ->
-                val isActive = config.defaultSkin == skin
+                val isActive = config.effectiveSkin() == skin
                 var focused by remember { mutableStateOf(false) }
 
                 Box(
