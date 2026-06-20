@@ -3,20 +3,18 @@ package dev.jellystructure.ravilo.ui.screens
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -82,7 +80,7 @@ private fun HomeLoaded(
     onSeeAll: (String?) -> Unit,
 ) {
     val colors = RaviloTheme.colors
-    val listState = rememberLazyListState()
+    val scrollState = rememberScrollState()
 
     // Focus section index: 0 = hero, 1 = channel rail, 2+ = content rows
     var focusSection by remember { mutableIntStateOf(0) }
@@ -107,61 +105,58 @@ private fun HomeLoaded(
     // Save focus on section change
     LaunchedEffect(focusSection) {
         saveFocusAt(FOCUS_KEY, focusSection, 0)
-        if (focusSection > 0) listState.scrollToItem((focusSection - 1).coerceAtLeast(0))
     }
 
-    LazyColumn(
-        state = listState,
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(bottom = 40.dp),
+    // Regular Column + verticalScroll so ALL rows are always composed —
+    // LazyColumn leaves off-screen rows unattached, breaking FocusRequester.
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(scrollState)
+            .padding(bottom = 40.dp),
     ) {
         // Hero carousel — pass Hero list directly to preserve taglineKicker + badge
         if (feed.heroes.isNotEmpty()) {
-            item {
-                HeroCarousel(
-                    items = feed.heroes,
-                    focusRequester = heroFR,
-                    onSelect = { onItemSelect(it) },
-                    onUp = { navBarFR.requestFocus() },
-                    onDown = {
-                        focusSection = if (feed.channels.isNotEmpty()) 1 else 2
-                    },
-                )
-            }
+            HeroCarousel(
+                items = feed.heroes,
+                focusRequester = heroFR,
+                onSelect = { onItemSelect(it) },
+                onUp = { navBarFR.requestFocus() },
+                onDown = {
+                    focusSection = if (feed.channels.isNotEmpty()) 1 else 2
+                },
+            )
         }
 
         // Channel rail
         if (feed.channels.isNotEmpty()) {
-            item {
-                Spacer(Modifier.height(24.dp))
-                StaticContentRow(
-                    title = "Channels",
-                    items = feed.channels,
-                    focusedIndex = channelRow.focused,
-                    itemKey = { ch -> ch.id },
-                ) { i, ch ->
-                    ChannelCard(
-                        name = ch.name,
-                        logoUrl = ch.logoUrl,
-                        brandColor = ch.brandColor,
-                        focusRequester = channelRow.requesters[i],
-                        onFocused = { channelRow.focused = i; focusSection = 1 },
-                        onLeft  = { channelRow.moveLeft() },
-                        onRight = { channelRow.moveRight() },
-                        onUp    = { focusSection = 0; runCatching { heroFR.requestFocus() } },
-                        onDown  = {
-                            focusSection = 2
-                            if (rowFocusStates.isNotEmpty()) rowFocusStates[0].requestFocus()
-                        },
-                        onSelect = { onChannelSelect(ch) },
-                    )
-                }
+            Spacer(Modifier.height(24.dp))
+            StaticContentRow(
+                title = "Channels",
+                items = feed.channels,
+                focusedIndex = channelRow.focused,
+                itemKey = { ch -> ch.id },
+            ) { i, ch ->
+                ChannelCard(
+                    name = ch.name,
+                    logoUrl = ch.logoUrl,
+                    brandColor = ch.brandColor,
+                    focusRequester = channelRow.requesters[i],
+                    onFocused = { channelRow.focused = i; focusSection = 1 },
+                    onLeft  = { channelRow.moveLeft() },
+                    onRight = { channelRow.moveRight() },
+                    onUp    = { focusSection = 0; runCatching { heroFR.requestFocus() } },
+                    onDown  = {
+                        focusSection = 2
+                        if (rowFocusStates.isNotEmpty()) rowFocusStates[0].requestFocus()
+                    },
+                    onSelect = { onChannelSelect(ch) },
+                )
             }
         }
 
         // Content rows
-        items(feed.rows.size, key = { ri -> feed.rows[ri].id }) { ri ->
-            val row: Row = feed.rows[ri]
+        feed.rows.forEachIndexed { ri, row ->
             val rowFocus = rowFocusStates[ri]
 
             Spacer(Modifier.height(RaviloDimens.rowGap))
