@@ -1,6 +1,9 @@
 package dev.jellystructure.ravilo.ui.components
 
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
@@ -20,6 +23,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -45,7 +50,11 @@ fun ChannelCard(
 ) {
     val colors = RaviloTheme.colors
     var focused by remember { mutableStateOf(false) }
-    val scale by animateFloatAsState(if (focused) 1.05f else 1f, label = "channelScale")
+    val focusSpec = remember { spring<Float>(dampingRatio = 0.65f, stiffness = Spring.StiffnessMediumLow) }
+    val dpSpec = remember { spring<Dp>(dampingRatio = 0.65f, stiffness = Spring.StiffnessMediumLow) }
+    val scale by animateFloatAsState(if (focused) 1.08f else 1f, focusSpec, label = "channelScale")
+    val borderWidth by animateDpAsState(if (focused) 3.dp else 0.dp, dpSpec, label = "channelBorder")
+    val shadowElevation by animateDpAsState(if (focused) 18.dp else 0.dp, dpSpec, label = "channelShadow")
     val cardShape = remember { RoundedCornerShape(10.dp) }
     val accentColor = remember(brandColor, colors.accent) {
         if (brandColor != null) androidx.compose.ui.graphics.Color(brandColor) else colors.accent
@@ -58,12 +67,10 @@ fun ChannelCard(
         Box(
             modifier = Modifier
                 .size(120.dp, 70.dp)
+                .shadow(shadowElevation, cardShape, clip = false, ambientColor = accentColor, spotColor = accentColor)
                 .clip(cardShape)
                 .background(colors.surfaceVariant)
-                .then(
-                    if (focused) Modifier.border(2.dp, accentColor, cardShape)
-                    else Modifier
-                )
+                .border(borderWidth, accentColor, cardShape)
                 .dpadFocusable(
                     focusRequester = focusRequester,
                     onFocused = { focused = true; onFocused() },

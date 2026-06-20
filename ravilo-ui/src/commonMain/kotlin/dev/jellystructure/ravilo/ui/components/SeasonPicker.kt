@@ -1,5 +1,9 @@
 package dev.jellystructure.ravilo.ui.components
 
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -16,8 +20,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.jellystructure.ravilo.ui.focus.dpadFocusable
@@ -38,6 +44,9 @@ fun SeasonPicker(
     val colors = RaviloTheme.colors
     val pillShape = remember { RoundedCornerShape(20.dp) }
 
+    val focusSpec = remember { spring<Float>(dampingRatio = 0.65f, stiffness = Spring.StiffnessMediumLow) }
+    val dpSpec = remember { spring<Dp>(dampingRatio = 0.65f, stiffness = Spring.StiffnessMediumLow) }
+
     LazyRow(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         contentPadding = PaddingValues(horizontal = 40.dp),
@@ -45,17 +54,17 @@ fun SeasonPicker(
         items(seasons.size, key = { i -> seasons[i].index }) { i ->
             val isSelected = i == selectedIndex
             var focused by remember { mutableStateOf(false) }
+            val scale by animateFloatAsState(if (focused) 1.06f else 1f, focusSpec, label = "pillScale$i")
+            val borderWidth by animateDpAsState(if (focused && !isSelected) 2.dp else 0.dp, dpSpec, label = "pillBorder$i")
 
             Box(
                 modifier = Modifier
+                    .scale(scale)
                     .background(
                         if (isSelected) colors.accent else colors.surfaceVariant,
                         pillShape,
                     )
-                    .then(
-                        if (focused && !isSelected) Modifier.border(2.dp, colors.focusRing, pillShape)
-                        else Modifier
-                    )
+                    .border(borderWidth, colors.focusRing, pillShape)
                     .dpadFocusable(
                         focusRequester = focusRequesters[i],
                         onFocused = { focused = true },

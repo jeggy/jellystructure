@@ -1,6 +1,9 @@
 package dev.jellystructure.ravilo.ui.components
 
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
@@ -16,6 +19,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -39,13 +44,17 @@ fun RaviloButton(
 ) {
     val colors = RaviloTheme.colors
     var focused by remember { mutableStateOf(false) }
-    val scale by animateFloatAsState(if (focused) 1.04f else 1f, label = "buttonScale")
+    val focusSpec = remember { spring<Float>(dampingRatio = 0.65f, stiffness = Spring.StiffnessMediumLow) }
+    val dpSpec = remember { spring<Dp>(dampingRatio = 0.65f, stiffness = Spring.StiffnessMediumLow) }
+    val scale by animateFloatAsState(if (focused) 1.06f else 1f, focusSpec, label = "buttonScale")
+    val shadowElevation by animateDpAsState(if (focused) 16.dp else 0.dp, dpSpec, label = "buttonShadow")
     val shape = remember { RoundedCornerShape(8.dp) }
     val ghostBorderColor = remember(colors.textSecondary) { colors.textSecondary.copy(alpha = 0.4f) }
 
     Box(
         modifier = Modifier
             .scale(scale)
+            .shadow(shadowElevation, shape, clip = false, ambientColor = colors.focusRing, spotColor = colors.focusRing)
             .clip(shape)
             .then(
                 when {

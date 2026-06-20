@@ -1,6 +1,9 @@
 package dev.jellystructure.ravilo.ui.components
 
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
@@ -21,6 +24,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
@@ -57,7 +61,11 @@ fun Tile(
 ) {
     val colors = RaviloTheme.colors
     var focused by remember { mutableStateOf(false) }
-    val scale by animateFloatAsState(if (focused) 1.06f else 1f, label = "tileScale")
+    val focusSpec = remember { spring<Float>(dampingRatio = 0.65f, stiffness = Spring.StiffnessMediumLow) }
+    val dpSpec = remember { spring<Dp>(dampingRatio = 0.65f, stiffness = Spring.StiffnessMediumLow) }
+    val scale by animateFloatAsState(if (focused) 1.10f else 1f, focusSpec, label = "tileScale")
+    val borderWidth by animateDpAsState(if (focused) 3.dp else 0.dp, dpSpec, label = "tileBorder")
+    val shadowElevation by animateDpAsState(if (focused) 20.dp else 0.dp, dpSpec, label = "tileShadow")
     val tileShape = remember { RoundedCornerShape(10.dp) }
 
     val (w, h) = if (variant == TileVariant.POSTER) POSTER_W to POSTER_H else LANDSCAPE_W to LANDSCAPE_H
@@ -71,11 +79,9 @@ fun Tile(
             modifier = Modifier
                 .width(w)
                 .height(h)
+                .shadow(shadowElevation, tileShape, clip = false, ambientColor = colors.focusRing, spotColor = colors.focusRing)
                 .clip(tileShape)
-                .then(
-                    if (focused) Modifier.border(2.dp, colors.focusRing, tileShape)
-                    else Modifier
-                )
+                .border(borderWidth, colors.focusRing, tileShape)
                 .dpadFocusable(
                     focusRequester = focusRequester,
                     onFocused = { focused = true; onFocused() },
