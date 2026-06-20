@@ -29,17 +29,25 @@ class FocusGrid(rowCount: Int, colCounts: (row: Int) -> Int = { 1 }) {
     }
 
     fun move(dRow: Int, dCol: Int) {
+        if (rowCount == 0) return
         val newRow = (focusedRow + dRow).coerceIn(0, rowCount - 1)
-        val newCol = (focusedCol + dCol).coerceIn(0, grid[newRow].size - 1)
         focusedRow = newRow
-        focusedCol = newCol
+        focusedCol = clampCol(newRow, focusedCol + dCol)
         requestFocus()
     }
 
     fun moveTo(row: Int, col: Int) {
-        focusedRow = row.coerceIn(0, rowCount - 1)
-        focusedCol = col.coerceIn(0, grid[focusedRow].size - 1)
+        if (rowCount == 0) return
+        val newRow = row.coerceIn(0, rowCount - 1)
+        focusedRow = newRow
+        focusedCol = clampCol(newRow, col)
         requestFocus()
+    }
+
+    // coerceIn(0, size - 1) throws on an empty row (size - 1 == -1); pin an empty row's column to 0.
+    private fun clampCol(row: Int, col: Int): Int {
+        val size = grid[row].size
+        return if (size == 0) 0 else col.coerceIn(0, size - 1)
     }
 }
 
