@@ -8,89 +8,18 @@ Ravilo is a sibling product **inside the jellystructure repo** — an Android TV
 canvas) streaming front-end built from one **Compose Multiplatform** codebase, talking only to the
 jellystructure backend.
 
-_Last updated: 2026-06-20_
+_Last updated: 2026-06-19_
 
 ## Current focus
 
-**R01–R21 all done.** App running end-to-end on real Android TV hardware; deployed to stue TV
-(2026-06-20). Back navigation and focus polish applied.
+**Specs drafted; nothing implemented yet.** The full phase set R01–R17 is planned (see
+[`requirements/README.md`](requirements/README.md)). Recommended start order:
 
-### Session 2026-06-20 — hardware-test fixes
-
-**Navigation / focus (R09/R10/R12/R13 gaps):**
-- **AppBar is now D-pad focusable.** Nav items (Home / Movies / Series / My List / Search) each have
-  `dpadFocusable`; D-pad UP from the hero carousel enters the bar, LEFT/RIGHT steps between items,
-  OK navigates to the corresponding screen. `onNavSelect` wired in `RaviloApp` to push
-  `Dest.Browse(BrowseKind.MOVIES/SERIES/MY_LIST)` or `Dest.Search`.
-- **HeroCarousel** gained an `onUp` callback so pressing UP from the hero reaches the AppBar.
-- **SearchScreen / OnScreenKeyboard** now requests focus on its first key on mount (was: keyboard
-  rendered but no key focused so D-pad had nowhere to go). Also fixed per-key `focused` state that
-  was stuck `true` after first focus — now derived from grid-level `focusRow/focusCol`.
-- **MovieDetailScreen / SeriesDetailScreen** guard DOWN from the Play row against empty
-  cast/episodes/related lists so focus is no longer silently lost.
-
-**Android TV keyboard / IME (R15 gap):**
-- `ServerSetupScreen` `TextField` now calls `LocalSoftwareKeyboardController.show()` on
-  `onFocusChanged` so the native IME fires with a properly-populated `EditorInfo` (was: `inputType=NULL`,
-  keyboard appeared and immediately hid).
-- `android:windowSoftInputMode="adjustPan"` added to `<activity>` so the layout does not reflow
-  when the IME appears (layout reflow was causing an immediate `HIDE_UNSPECIFIED_WINDOW` hide).
-
-**Image loading (deferred from R09 "Player/image real impls — later"):**
-- Coil 3 (`coil-compose` + `coil-network-ktor3`) added as `commonMain` dependency.
-- The `expect/actual` `RemoteImage` stubs replaced with a real `AsyncImage` (Coil 3 is KMP-native;
-  no per-platform actual needed). Posters, backdrops, cast circles, channel logos, episode stills
-  all load from Jellyfin.
-
-**Screen transitions (polish):**
-- `AnimatedContent` (200 ms fadeIn / 150 ms fadeOut) wraps the `when(dest)` dispatch in
-  `RaviloApp` so screen pushes/pops crossfade rather than hard-cutting.
-
-**ravilo-web build (R17 gap):**
-- `ravilo-web/webpack.config.d/skiko.js` — `NormalModuleReplacementPlugin` redirects
-  `'./skiko.mjs'` imports to the Skiko npm package dir (was: `Module not found` compile error);
-  `devServer.static` entry ensures `skiko.wasm` is served at runtime.
-
-### Session 2026-06-19 — performance & correctness overhaul (R20)
-
-**Focus / D-pad freeze (R20 root cause):**
-- **Focus-state latch bug fixed.** `dpadFocusable` now has an `onBlurred` callback; all focusable
-  components (`Tile`, `ChannelCard`, `RaviloButton`, `EpisodeCard`, `SeasonPicker` pill,
-  `BrowseGrid` chip) reset `focused = false` on blur. Previously `focused` was only ever set to
-  `true`, causing every navigated-through tile to stay highlighted and recompose on each subsequent
-  D-pad event — the root cause of the 3–5 press freeze.
-
-**Store coroutine hygiene:**
-- `HomeStore`, `MovieDetailStore`, `SeriesDetailStore`, `BrowseStore`, `ChannelStore` all track a
-  `loadJob` and cancel it before starting a new one. Rapid back-navigation no longer produces
-  parallel in-flight requests or a race that overwrites a newer result with a stale one.
-- `PlayerStore.startHeartbeat` uses `while (isActive)` so the loop exits immediately on scope
-  cancellation.
-
-**Allocation hot-paths memoized:**
-- All `Brush.verticalGradient`, `Color.copy(alpha=…)`, and `RoundedCornerShape(Xdp)` calls in
-  composable bodies wrapped in `remember { }` with appropriate keys. Eliminates per-frame Skia
-  shader rebuilds and GC pressure that were contributing to frame drops during navigation.
-
-**Lazy list key stability:**
-- `StaticContentRow` gained an optional `itemKey` parameter. All `LazyColumn`, `LazyRow`, and
-  `LazyVerticalGrid` `items(…)` calls across all screens now supply a `key = { … }` lambda
-  using stable model IDs, preventing unnecessary full-row recomposition when list contents change.
-
-**Scroll fighting navigation fixed:**
-- All `animateScrollToItem` calls driven by `LaunchedEffect` replaced with `scrollToItem`.
-  The animated variant was visually fighting D-pad movement by scrolling the list back to a
-  computed position while the user navigated away.
-
-**Compose rule violations fixed:**
-- `PlayerChrome`: removed `val fr = remember { FocusRequester() }` inside a conditional block;
-  uses the hoisted `nextEpFR` parameter instead.
-- `PlayerScreen`: polling loop key changed from `LaunchedEffect(isPlaying)` to
-  `LaunchedEffect(Unit)` so play/pause no longer restarts the position-polling coroutine.
-
-### Next steps (no spec yet)
-- End-to-end playback verification with a real Jellyfin + jellystructure instance
-- R14 player bring-up testing (ExoPlayer/Media3 on real hardware)
+1. **R01** `:shared` (DTOs + `TvApiClient`) → **R02** Compose-MP scaffolding (Android TV + web canvas,
+   one shared focus screen).
+2. **R03** device pairing auth + `/api/tv/**` → **R04** per-user config store.
+3. Backend data **R05–R08**; client UI **R09** (design system/focus) then **R10–R15**; **R16** web
+   config screen; **R17** web hardening.
 
 ## Foundational decisions locked (constitution)
 
@@ -131,7 +60,6 @@ _Last updated: 2026-06-20_
 - **Licensing (resolved):** the whole repo is **GPL-3.0** (root `LICENSE`). Remaining task at
   fork-vendoring time (R14): preserve `jellyfin-androidtv` copyright/license notices (e.g. a
   `:ravilo-player` NOTICE) and confirm its GPL-2.0-only-vs-or-later terms.
-- **Pairing approval UX (R03/R15/R16): resolved.** Web-session approval is the primary path — the
-  "Pair a TV" card on the Ravilo config page calls `POST /api/tv/pair/approve` with the browser cookie.
-  Phone-credentials fallback exists on the backend but has no dedicated UI.
+- **Pairing approval UX (R03/R15):** web-session approval vs phone-credentials form — pick the primary
+  path.
 - **Compose-MP web a11y (R17):** canvas accessibility is best-effort; validate against real ATs early.

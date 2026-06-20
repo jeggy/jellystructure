@@ -37,7 +37,7 @@
     },
     fo: {
       nav_home: 'Heim', nav_movies: 'Filmar', nav_series: 'S\u00f8gur', nav_mylist: 'M\u00edn listi',
-      play: 'Spæl', resume: 'Hald fram', more_info: 'Meira', trailer: 'Sm\u00e1bi\u00f0',
+      play: 'Spæl', resume: 'Hald fram', more_info: 'Meira', trailer: 'Trailer',
       add_list: 'M\u00edn listi', close: 'Lat aftur', see_all: 'S\u00edgj \u00f8ll', next_episode: 'N\u00e6sti part',
       channels: 'R\u00e1sir & savn', channels_sub: 'Sett upp \u00ed Jellystructure',
       more_like_this: 'Meira sum hetta', back_home: 'Heim', channel: 'R\u00e1s',

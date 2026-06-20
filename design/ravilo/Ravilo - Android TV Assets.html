@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ravilo — Android TV Asset Pack</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Sora:wght@300;400;500;600&family=JetBrains+Mono:wght@500;600&display=swap');
+  :root{
+    --bg:#0a0c13; --bg-2:#0e111b; --ink:#f3f4fb; --ink-soft:#aeb4cb; --ink-dim:#6b7290;
+    --line:rgba(255,255,255,.09); --line-2:rgba(255,255,255,.16); --card:#12141f; --card-2:#161a28;
+    --p1:#7b6ef0; --p2:#3fb6f5; --grad:linear-gradient(120deg,#7b6ef0,#3fb6f5);
+    --glow:rgba(123,110,240,.45); --mono:'JetBrains Mono',monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:
+      radial-gradient(1100px 620px at 76% -8%, #161a2e, transparent 60%),
+      var(--bg);
+    background-attachment:fixed; color:var(--ink); font-family:'Sora',sans-serif;
+    padding:0 0 120px; -webkit-font-smoothing:antialiased;}
+
+  /* header */
+  .top{padding:64px 56px 0;max-width:1280px;margin:0 auto}
+  .brandrow{display:flex;align-items:center;gap:18px;margin-bottom:30px}
+  .brandrow .mk{width:62px;height:62px;filter:drop-shadow(0 0 22px var(--glow))}
+  .brandrow .wm{font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:42px;letter-spacing:-2px;line-height:1}
+  .brandrow .wm .o{background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent}
+  .brandrow .u{height:5px;width:122px;border-radius:3px;background:var(--grad);margin-top:9px}
+  .brandrow .col{display:flex;flex-direction:column}
+  .brandrow .tag{margin-left:auto;text-align:right}
+  .brandrow .tag b{font-family:'Space Grotesk';font-size:15px;font-weight:600;color:var(--ink-soft);letter-spacing:.3px}
+  .brandrow .tag span{display:block;font-size:13px;color:var(--ink-dim);margin-top:3px}
+  .lede{font-size:16.5px;line-height:1.6;color:var(--ink-soft);max-width:78ch;text-wrap:pretty}
+  .lede b{color:var(--ink);font-weight:600}
+  .chiprow{display:flex;flex-wrap:wrap;gap:9px;margin-top:22px}
+  .chip{font-size:12.5px;font-weight:500;color:var(--ink-soft);background:rgba(255,255,255,.05);
+    border:1px solid var(--line);border-radius:30px;padding:7px 15px}
+  .chip b{color:var(--ink);font-weight:600}
+  .chip .sw{display:inline-block;width:11px;height:11px;border-radius:3px;vertical-align:-1px;margin-right:6px}
+
+  /* section */
+  section{max-width:1280px;margin:0 auto;padding:0 56px}
+  .sec-h{display:flex;align-items:baseline;gap:14px;margin:64px 0 6px;padding-top:34px;border-top:1px solid var(--line)}
+  .sec-h .n{font-family:var(--mono);font-size:13px;font-weight:600;color:var(--p2)}
+  .sec-h h2{font-family:'Space Grotesk',sans-serif;font-size:26px;font-weight:600;letter-spacing:-.6px}
+  .sec-h .req{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--ink-dim)}
+  .sec-d{font-size:15px;color:var(--ink-soft);max-width:80ch;line-height:1.55;margin-bottom:30px;text-wrap:pretty}
+
+  .grid{display:flex;flex-wrap:wrap;gap:22px;align-items:flex-start}
+  .card{background:linear-gradient(180deg,var(--card),var(--card-2));border:1px solid var(--line);
+    border-radius:18px;padding:24px;display:flex;flex-direction:column;align-items:center;gap:16px}
+  .card .frame{display:flex;align-items:center;justify-content:center}
+  .card .lbl{text-align:center}
+  .card .lbl b{display:block;font-family:'Space Grotesk';font-size:14.5px;font-weight:600;color:var(--ink)}
+  .card .lbl span{display:block;font-family:var(--mono);font-size:12px;color:var(--ink-dim);margin-top:4px}
+
+  .checker{background:
+      linear-gradient(45deg,#1b1e2a 25%,transparent 25%,transparent 75%,#1b1e2a 75%),
+      linear-gradient(45deg,#1b1e2a 25%,#15171f 25%,#15171f 75%,#1b1e2a 75%);
+    background-size:18px 18px;background-position:0 0,9px 9px;}
+
+  /* adaptive masks */
+  .ada{position:relative;width:132px;height:132px;overflow:hidden;background-size:cover}
+  .ada .bg,.ada .fg{position:absolute;inset:0;width:100%;height:100%}
+  .mask-sq{border-radius:30px}
+  .mask-ci{border-radius:50%}
+  .mask-rs{border-radius:18px}
+  .mask-sk{border-radius:42% / 42%}
+
+  /* density row */
+  .dens{display:flex;align-items:flex-end;gap:26px;flex-wrap:wrap}
+  .dens .u2{display:flex;flex-direction:column;align-items:center;gap:11px}
+  .dens img{display:block;image-rendering:auto;border-radius:8px;box-shadow:0 8px 20px rgba(0,0,0,.4)}
+  .dens .u2 b{font-family:var(--mono);font-size:12px;color:var(--ink-soft)}
+  .dens .u2 span{font-size:11px;color:var(--ink-dim)}
+
+  /* banners */
+  .wide img{display:block;width:100%;height:auto;border-radius:14px;border:1px solid var(--line);box-shadow:0 16px 40px rgba(0,0,0,.45)}
+  .two{display:grid;grid-template-columns:1fr 1fr;gap:22px}
+  @media(max-width:880px){.two{grid-template-columns:1fr}}
+
+  /* manifest code */
+  .code{background:#070910;border:1px solid var(--line);border-radius:14px;padding:22px 24px;overflow-x:auto;
+    font-family:var(--mono);font-size:13px;line-height:1.7;color:#c7cce0}
+  .code .k{color:#7b6ef0}
+  .code .s{color:#3fb6f5}
+  .code .a{color:#9aa0bd}
+  .code .cm{color:#5b6178;font-style:italic}
+  .note{display:flex;gap:12px;background:rgba(123,110,240,.07);border:1px solid rgba(123,110,240,.22);
+    border-radius:13px;padding:16px 18px;margin-top:22px;font-size:14px;color:var(--ink-soft);line-height:1.55}
+  .note b{color:var(--ink)}
+  .note .i{flex:none;width:22px;height:22px;border-radius:50%;background:var(--grad);display:flex;align-items:center;
+    justify-content:center;font-weight:700;font-size:13px;color:#fff;margin-top:1px}
+
+  footer{max-width:1280px;margin:60px auto 0;padding:30px 56px 0;border-top:1px solid var(--line);
+    font-size:13px;color:var(--ink-dim);line-height:1.7}
+  footer b{color:var(--ink-soft)}
+  code{font-family:var(--mono);font-size:.92em;color:var(--p2);background:rgba(63,182,245,.08);padding:1px 6px;border-radius:5px}
+</style>
+</head>
+<body>
+
+<div class="top">
+  <div class="brandrow">
+    <img class="mk" src="assets/brand/ravilo-mark.svg" alt="Ravilo mark">
+    <div class="col">
+      <div class="wm">Ravilo</div>
+      <div class="u"></div>
+    </div>
+    <div class="tag">
+      <b>Android TV — Asset Pack</b>
+      <span>Phase R22 · brand mark “logo 10” · Aurora accent</span>
+    </div>
+  </div>
+  <p class="lede">Every branding asset an <b>Android TV APK / AAB</b> build needs, generated from the
+    finalized jellyfish mark and <b>Ravilo</b> wordmark. Adaptive launcher icon, the leanback TV
+    banner, the Android&nbsp;12+ splash logo, legacy density mipmaps, and Play Store graphics — one
+    app identity in the <b>Aurora</b> accent. Skins (Midnight / Noir) are in-app surfaces only; the
+    launcher icon and banner never change.</p>
+  <div class="chiprow">
+    <span class="chip"><span class="sw" style="background:#7b6ef0"></span><b>#7B6EF0</b> accent start</span>
+    <span class="chip"><span class="sw" style="background:#3fb6f5"></span><b>#3FB6F5</b> accent end</span>
+    <span class="chip"><span class="sw" style="background:#0a0c13;border:1px solid var(--line-2)"></span><b>#0A0C13</b> brand bg</span>
+    <span class="chip"><b>Space Grotesk</b> · wordmark</span>
+    <span class="chip">vector masters → all raster exports</span>
+  </div>
+</div>
+
+<!-- 1. MARK -->
+<section>
+  <div class="sec-h"><span class="n">01</span><h2>Brand mark &amp; lockup</h2><span class="req">assets/brand/*.svg</span></div>
+  <p class="sec-d">The authoritative vector source. The stylised jellyfish (“logo 10”, original — not
+    Jellyfin’s logo) carries the square icon; the horizontal lockup carries the banner and marketing.
+    Both tint with the Aurora gradient.</p>
+  <div class="grid">
+    <div class="card">
+      <div class="frame checker" style="width:160px;height:160px;border-radius:14px">
+        <img src="assets/brand/ravilo-mark.svg" style="width:104px;height:104px" alt="mark">
+      </div>
+      <div class="lbl"><b>Mark</b><span>ravilo-mark.svg</span></div>
+    </div>
+    <div class="card" style="flex:1;min-width:360px">
+      <div class="frame" style="width:100%;height:160px;background:var(--bg-2);border-radius:14px;border:1px solid var(--line)">
+        <img src="assets/brand/ravilo-lockup.svg" style="width:340px;height:auto" alt="lockup">
+      </div>
+      <div class="lbl"><b>Horizontal lockup</b><span>ravilo-lockup.svg · gradient “o” + motion underline</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- 2. ADAPTIVE ICON -->
+<section>
+  <div class="sec-h"><span class="n">02</span><h2>Adaptive launcher icon</h2><span class="req">mipmap-anydpi-v26/ · 108dp</span></div>
+  <p class="sec-d">Three layers at 432×432 (108dp @4×). The launcher composites foreground over
+    background and applies the device mask — the mark stays inside the 66dp safe zone so no shape
+    clips it. The monochrome layer powers Android&nbsp;13+ themed icons.</p>
+  <div class="grid" style="margin-bottom:26px">
+    <div class="card">
+      <div class="frame checker" style="border-radius:14px;padding:8px"><img class="ada mask-rs" src="assets/android/mipmap-anydpi-v26/ic_launcher_foreground.png" style="border-radius:14px" alt="fg"></div>
+      <div class="lbl"><b>Foreground</b><span>ic_launcher_foreground.png</span></div>
+    </div>
+    <div class="card">
+      <div class="frame" style="border-radius:14px"><img class="ada mask-rs" src="assets/android/mipmap-anydpi-v26/ic_launcher_background.png" alt="bg"></div>
+      <div class="lbl"><b>Background</b><span>ic_launcher_background.png</span></div>
+    </div>
+    <div class="card">
+      <div class="frame checker" style="border-radius:14px;padding:8px"><img class="ada mask-rs" src="assets/android/mipmap-anydpi-v26/ic_launcher_monochrome.png" style="border-radius:14px" alt="mono"></div>
+      <div class="lbl"><b>Monochrome</b><span>themed icons · API 33+</span></div>
+    </div>
+  </div>
+  <p class="sec-d" style="margin-bottom:18px">Composited under the launcher mask shapes:</p>
+  <div class="grid">
+    <div class="card">
+      <div class="ada mask-sk"><img class="bg" src="assets/android/mipmap-anydpi-v26/ic_launcher_background.png" alt=""><img class="fg" src="assets/android/mipmap-anydpi-v26/ic_launcher_foreground.png" alt=""></div>
+      <div class="lbl"><b>Squircle</b><span>Pixel / Google TV</span></div>
+    </div>
+    <div class="card">
+      <div class="ada mask-ci"><img class="bg" src="assets/android/mipmap-anydpi-v26/ic_launcher_background.png" alt=""><img class="fg" src="assets/android/mipmap-anydpi-v26/ic_launcher_foreground.png" alt=""></div>
+      <div class="lbl"><b>Circle</b><span>round icon</span></div>
+    </div>
+    <div class="card">
+      <div class="ada mask-sq"><img class="bg" src="assets/android/mipmap-anydpi-v26/ic_launcher_background.png" alt=""><img class="fg" src="assets/android/mipmap-anydpi-v26/ic_launcher_foreground.png" alt=""></div>
+      <div class="lbl"><b>Rounded square</b><span>most TV launchers</span></div>
+    </div>
+    <div class="card">
+      <div class="ada mask-rs"><img class="bg" src="assets/android/mipmap-anydpi-v26/ic_launcher_background.png" alt=""><img class="fg" src="assets/android/mipmap-anydpi-v26/ic_launcher_foreground.png" alt=""></div>
+      <div class="lbl"><b>Full bleed</b><span>no mask</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- 3. LEGACY MIPMAPS -->
+<section>
+  <div class="sec-h"><span class="n">03</span><h2>Legacy density mipmaps</h2><span class="req">mipmap-{m…xxxh}dpi/</span></div>
+  <p class="sec-d">Pre-API-26 fallback for <code>ic_launcher</code> + <code>ic_launcher_round</code>,
+    full-bleed on the brand field. Exported at every density bucket.</p>
+  <div class="card" style="align-items:flex-start;width:100%">
+    <div class="dens">
+      <div class="u2"><img src="assets/android/mipmap-mdpi/ic_launcher.png" width="48" height="48" alt=""><b>mdpi</b><span>48 px</span></div>
+      <div class="u2"><img src="assets/android/mipmap-hdpi/ic_launcher.png" width="72" height="72" alt=""><b>hdpi</b><span>72 px</span></div>
+      <div class="u2"><img src="assets/android/mipmap-xhdpi/ic_launcher.png" width="96" height="96" alt=""><b>xhdpi</b><span>96 px</span></div>
+      <div class="u2"><img src="assets/android/mipmap-xxhdpi/ic_launcher.png" width="144" height="144" alt=""><b>xxhdpi</b><span>144 px</span></div>
+      <div class="u2"><img src="assets/android/mipmap-xxxhdpi/ic_launcher.png" width="192" height="192" alt=""><b>xxxhdpi</b><span>192 px</span></div>
+      <div class="u2"><img src="assets/android/mipmap-xxxhdpi/ic_launcher_round.png" width="96" height="96" alt=""><b>round</b><span>all densities</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- 4. BANNER + SPLASH -->
+<section>
+  <div class="sec-h"><span class="n">04</span><h2>Leanback banner &amp; splash</h2><span class="req">drawable-xhdpi/ · drawable/</span></div>
+  <p class="sec-d">The <b>banner is the defining Android TV asset</b> — the home-row tile in the TV
+    launcher, required at 320×180 and wired via <code>android:banner</code>. The splash logo is the
+    padded mark shown on the Android&nbsp;12+ window splash over the brand background.</p>
+  <div class="two">
+    <div class="card" style="align-items:stretch">
+      <div class="wide"><img src="assets/android/drawable-xhdpi/banner.png" alt="banner"></div>
+      <div class="lbl"><b>Leanback launcher banner</b><span>banner.png · 320 × 180 · drawable-xhdpi</span></div>
+    </div>
+    <div class="card" style="align-items:stretch">
+      <div class="frame" style="height:100%;min-height:160px;border-radius:14px;background:#0a0c13;border:1px solid var(--line)">
+        <img src="assets/android/drawable/splash_logo.png" style="width:128px;height:128px" alt="splash">
+      </div>
+      <div class="lbl"><b>Splash logo</b><span>splash_logo.png · 432² transparent · bg #0A0C13</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- 5. STORE -->
+<section>
+  <div class="sec-h"><span class="n">05</span><h2>Play Store listing graphics</h2><span class="req">assets/store/</span></div>
+  <p class="sec-d">The Google Play assets a Google TV listing requires, all from the same master.</p>
+  <div class="grid" style="margin-bottom:22px">
+    <div class="card">
+      <div class="frame" style="border-radius:24px;overflow:hidden"><img src="assets/store/ic_launcher-512.png" width="180" height="180" style="display:block;border-radius:24px" alt="512"></div>
+      <div class="lbl"><b>Hi-res icon</b><span>512 × 512</span></div>
+    </div>
+    <div class="card" style="flex:1;min-width:360px;align-items:stretch">
+      <div class="wide"><img src="assets/store/feature-graphic-1024x500.png" alt="feature"></div>
+      <div class="lbl"><b>Feature graphic</b><span>1024 × 500</span></div>
+    </div>
+  </div>
+  <div class="card" style="align-items:stretch;width:100%">
+    <div class="wide"><img src="assets/store/tv-banner-1280x720.png" alt="tv banner"></div>
+    <div class="lbl"><b>Android TV banner</b><span>1280 × 720 · store listing</span></div>
+  </div>
+</section>
+
+<!-- 6. WIRING -->
+<section>
+  <div class="sec-h"><span class="n">06</span><h2>Packaging wiring</h2><span class="req">AndroidManifest.xml</span></div>
+  <p class="sec-d">How the resources bind into the leanback launcher + splash. Maps to the custom
+    CSS-variable tokens used in the mockups; on implementation these are Android resources.</p>
+  <div class="code"><span class="cm">&lt;!-- res/mipmap-anydpi-v26/ic_launcher.xml --&gt;</span>
+<span class="k">&lt;adaptive-icon</span> <span class="a">xmlns:android</span>=<span class="s">"…"</span><span class="k">&gt;</span>
+  <span class="k">&lt;background</span> <span class="a">android:drawable</span>=<span class="s">"@mipmap/ic_launcher_background"</span> <span class="k">/&gt;</span>
+  <span class="k">&lt;foreground</span> <span class="a">android:drawable</span>=<span class="s">"@mipmap/ic_launcher_foreground"</span> <span class="k">/&gt;</span>
+  <span class="k">&lt;monochrome</span> <span class="a">android:drawable</span>=<span class="s">"@mipmap/ic_launcher_monochrome"</span> <span class="k">/&gt;</span>
+<span class="k">&lt;/adaptive-icon&gt;</span>
+
+<span class="cm">&lt;!-- AndroidManifest.xml --&gt;</span>
+<span class="k">&lt;application</span>
+    <span class="a">android:icon</span>=<span class="s">"@mipmap/ic_launcher"</span>
+    <span class="a">android:roundIcon</span>=<span class="s">"@mipmap/ic_launcher_round"</span>
+    <span class="a">android:banner</span>=<span class="s">"@drawable/banner"</span>
+    <span class="a">android:theme</span>=<span class="s">"@style/Theme.Ravilo.Splash"</span><span class="k">&gt;</span>
+  <span class="k">&lt;activity</span> <span class="a">android:name</span>=<span class="s">".MainActivity"</span> <span class="a">android:banner</span>=<span class="s">"@drawable/banner"</span><span class="k">&gt;</span>
+    <span class="k">&lt;intent-filter&gt;</span>
+      <span class="k">&lt;action</span>   <span class="a">android:name</span>=<span class="s">"android.intent.action.MAIN"</span> <span class="k">/&gt;</span>
+      <span class="k">&lt;category</span> <span class="a">android:name</span>=<span class="s">"android.intent.category.LEANBACK_LAUNCHER"</span> <span class="k">/&gt;</span>
+    <span class="k">&lt;/intent-filter&gt;</span>
+  <span class="k">&lt;/activity&gt;</span>
+<span class="k">&lt;/application&gt;</span>
+
+<span class="cm">&lt;!-- res/values/themes.xml (androidx core-splashscreen) --&gt;</span>
+<span class="k">&lt;style</span> <span class="a">name</span>=<span class="s">"Theme.Ravilo.Splash"</span> <span class="a">parent</span>=<span class="s">"Theme.SplashScreen"</span><span class="k">&gt;</span>
+  <span class="k">&lt;item</span> <span class="a">name</span>=<span class="s">"windowSplashScreenBackground"</span><span class="k">&gt;</span>#0A0C13<span class="k">&lt;/item&gt;</span>
+  <span class="k">&lt;item</span> <span class="a">name</span>=<span class="s">"windowSplashScreenAnimatedIcon"</span><span class="k">&gt;</span>@drawable/splash_logo<span class="k">&lt;/item&gt;</span>
+  <span class="k">&lt;item</span> <span class="a">name</span>=<span class="s">"postSplashScreenTheme"</span><span class="k">&gt;</span>@style/Theme.Ravilo<span class="k">&lt;/item&gt;</span>
+<span class="k">&lt;/style&gt;</span></div>
+  <div class="note"><span class="i">!</span><div>The build also declares <b>leanback</b> support so the
+    APK installs on Google TV: <code>&lt;uses-feature android:name="android.software.leanback"
+    android:required="false"/&gt;</code> and <code>android.hardware.touchscreen required="false"</code>.
+    Asset production is design-side (this pack); the manifest + Gradle packaging land in
+    <code>:ravilo-android</code>.</div></div>
+</section>
+
+<footer>
+  <b>Ravilo — Android TV Asset Pack (R22).</b> Vector masters in <code>assets/brand/</code> are the
+  source of truth; all PNGs regenerate from them. Drop <code>assets/android/**</code> into the
+  module’s <code>res/</code> and <code>assets/store/**</code> into the Play Console listing.
+  Synced to <b>jellystructure@main</b> (R01–R21 done). The Gradle/Manifest packaging itself is
+  implemented in the repo — this pack supplies the artwork that build consumes.
+</footer>
+
+</body>
+</html>
