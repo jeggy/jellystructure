@@ -250,6 +250,7 @@ tasks.register("buildFrontend") {
         }
         val wasmJsMain by getting {
             dependencies {
+                implementation(projects.shared)
                 implementation(libs.kotlinx.browser)
                 implementation(libs.ktor.client.core)
                 implementation(libs.ktor.client.js)

@@ -1,5 +1,6 @@
 package dev.jellystructure.api
 
+import dev.jellystructure.shared.tv.RaviloConfig
 import io.ktor.client.call.body
 import io.ktor.client.request.get
 import io.ktor.client.request.post
@@ -11,43 +12,9 @@ import io.ktor.http.isSuccess
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
-// ─── Ravilo config DTOs (admin frontend mirror of shared/tv Models) ───────────
-
-@Serializable
-data class AdminRaviloConfig(
-    val heroes: List<AdminHeroConfig> = emptyList(),
-    val channels: List<AdminChannelConfig> = emptyList(),
-    val rows: List<AdminRowConfig> = emptyList(),
-    @SerialName("merge_newly_added") val mergeNewlyAdded: Boolean = false,
-    @SerialName("default_skin") val defaultSkin: String = "AURORA",
-    @SerialName("allow_skin_override") val allowSkinOverride: Boolean = true,
-    @SerialName("show_continue_progress") val showContinueProgress: Boolean = true,
-    @SerialName("tile_shape") val tileShape: String = "POSTER",
-    @SerialName("ui_language") val uiLanguage: String = "en",
-)
-
-@Serializable
-data class AdminHeroConfig(
-    @SerialName("item_id") val itemId: String = "",
-    @SerialName("item_title") val itemTitle: String = "",
-)
-
-@Serializable
-data class AdminChannelConfig(
-    val label: String = "",
-    val kind: String = "GENRE",
-    val filter: String = "",
-    @SerialName("logo_url") val logoUrl: String? = null,
-    val color: String? = null,
-)
-
-@Serializable
-data class AdminRowConfig(
-    val label: String = "",
-    val kind: String = "GENRE",
-    val filter: String = "",
-    val hidden: Boolean = false,
-)
+// The Ravilo layout DTOs are defined once in `:shared` (`dev.jellystructure.shared.tv`) and reused by
+// the backend, the TV client, and this admin frontend (Constitution Invariant 2). This file only
+// adds the admin-only transport types that are not part of the shared layout model.
 
 @Serializable
 data class JellyfinUser(
@@ -59,14 +26,15 @@ object RaviloApi {
     suspend fun getUsers(): List<JellyfinUser> =
         httpClient.get("/api/jellyfin/users").body()
 
-    suspend fun getConfig(userId: String): AdminRaviloConfig =
+    suspend fun getConfig(userId: String): RaviloConfig =
         httpClient.get("/api/tv/admin/config?userId=$userId").body()
 
-    suspend fun putConfig(userId: String, config: AdminRaviloConfig) {
-        httpClient.put("/api/tv/admin/config?userId=$userId") {
+    suspend fun putConfig(userId: String, config: RaviloConfig) {
+        val r = httpClient.put("/api/tv/admin/config?userId=$userId") {
             contentType(ContentType.Application.Json)
             setBody(config)
         }
+        if (!r.status.isSuccess()) throw Exception(r.body<String>())
     }
 
     suspend fun approvePairing(code: String) {
