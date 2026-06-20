@@ -31,7 +31,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.jellystructure.ravilo.ui.components.OnScreenKeyboard
 import dev.jellystructure.ravilo.ui.components.Tile
+import dev.jellystructure.ravilo.ui.theme.RaviloDimens
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
+import dev.jellystructure.ravilo.ui.theme.Sora
+import dev.jellystructure.ravilo.ui.theme.SpaceGrotesk
 import dev.jellystructure.shared.tv.MediaCard
 import dev.jellystructure.shared.tv.SearchResults
 import dev.jellystructure.shared.tv.TvApiClient
@@ -92,6 +95,8 @@ fun SearchScreen(
     onItemSelect: (MediaCard) -> Unit,
 ) {
     val colors = RaviloTheme.colors
+    val sora = Sora
+    val spaceGrotesk = SpaceGrotesk
     val state by store.state.collectAsState()
 
     var query by remember { mutableStateOf("") }
@@ -106,34 +111,48 @@ fun SearchScreen(
     var focusedGridIdx by remember { mutableIntStateOf(0) }
 
     Column(
-        modifier = Modifier.fillMaxSize().background(colors.background).padding(top = 32.dp),
+        modifier = Modifier
+            .fillMaxSize()
+            .background(colors.background)
+            .padding(top = 48.dp),
     ) {
-        // Search bar
+        // Header
         Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 40.dp),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = RaviloDimens.screenPadH),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text("Search", color = colors.text, fontSize = 28.sp, fontWeight = FontWeight.Bold)
+            Text(
+                "Search",
+                color = colors.text,
+                fontSize = 36.sp,
+                fontWeight = FontWeight.Bold,
+                fontFamily = spaceGrotesk,
+                letterSpacing = (-1).sp,
+            )
             Spacer(Modifier.weight(1f))
             if (query.isNotEmpty()) {
-                Text("Clear", color = colors.accent, fontSize = 14.sp)
+                Text("Clear", color = colors.accent, fontSize = 16.sp, fontFamily = sora)
             }
         }
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(12.dp))
+
+        // Search bar — 76dp min height
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 40.dp)
-                .background(colors.surfaceVariant, RoundedCornerShape(10.dp))
-                .padding(horizontal = 20.dp, vertical = 14.dp),
+                .padding(horizontal = RaviloDimens.screenPadH)
+                .height(76.dp)
+                .background(colors.surfaceVariant, RoundedCornerShape(14.dp))
+                .padding(horizontal = 24.dp),
+            contentAlignment = Alignment.CenterStart,
         ) {
             if (query.isEmpty()) {
-                Text("Start typing…", color = colors.textSecondary, fontSize = 16.sp)
+                Text("Start typing…", color = colors.textSecondary, fontSize = 20.sp, fontFamily = sora)
             } else {
-                Text(query + "█", color = colors.text, fontSize = 16.sp)
+                Text(query + "█", color = colors.text, fontSize = 20.sp, fontFamily = sora)
             }
         }
-        Spacer(Modifier.height(20.dp))
+        Spacer(Modifier.height(24.dp))
 
         // On-screen keyboard
         if (!inGrid) {
@@ -158,29 +177,33 @@ fun SearchScreen(
                 )
             }
         }
-        Spacer(Modifier.height(16.dp))
+        Spacer(Modifier.height(20.dp))
 
-        // Results
+        // Results label
         val label = when {
-            query.isEmpty() -> "Suggestions"
+            query.isEmpty()                              -> "Suggestions"
             items.isEmpty() && state is SearchState.Loaded -> "No results for \"$query\""
-            state is SearchState.Loading -> "Searching…"
-            else -> "${items.size} results"
+            state is SearchState.Loading                 -> "Searching…"
+            else                                         -> "${items.size} results"
         }
         Text(
             label,
             color = colors.textSecondary,
-            fontSize = 13.sp,
-            modifier = Modifier.padding(horizontal = 40.dp),
+            fontSize = 16.sp,
+            fontFamily = sora,
+            modifier = Modifier.padding(horizontal = RaviloDimens.screenPadH),
         )
-        Spacer(Modifier.height(10.dp))
+        Spacer(Modifier.height(12.dp))
 
         if (items.isNotEmpty()) {
             LazyVerticalGrid(
                 columns = GridCells.Fixed(GRID_COLS_SEARCH),
-                contentPadding = PaddingValues(horizontal = 40.dp, vertical = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                verticalArrangement = Arrangement.spacedBy(20.dp),
+                contentPadding = PaddingValues(
+                    horizontal = RaviloDimens.trackPadH,
+                    vertical = RaviloDimens.trackPadV,
+                ),
+                horizontalArrangement = Arrangement.spacedBy(RaviloDimens.itemSpacing),
+                verticalArrangement = Arrangement.spacedBy(RaviloDimens.rowGap),
             ) {
                 items(items.size, key = { i -> items[i].id }) { i ->
                     val card = items[i]

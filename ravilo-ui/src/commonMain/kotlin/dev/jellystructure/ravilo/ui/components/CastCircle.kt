@@ -1,6 +1,7 @@
 package dev.jellystructure.ravilo.ui.components
 
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -20,6 +21,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
@@ -30,6 +32,7 @@ import androidx.compose.ui.unit.sp
 import dev.jellystructure.ravilo.ui.focus.dpadFocusable
 import dev.jellystructure.ravilo.ui.seams.RemoteImage
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
+import dev.jellystructure.ravilo.ui.theme.Sora
 import dev.jellystructure.shared.tv.Person
 
 @Composable
@@ -43,10 +46,12 @@ fun CastCircle(
     onDown: (() -> Unit)? = null,
 ) {
     val colors = RaviloTheme.colors
-    val roleColor = remember(colors.textSecondary) { colors.textSecondary.copy(alpha = 0.6f) }
+    val sora = Sora
     var isFocused by remember { mutableStateOf(false) }
-    val circleScale by animateFloatAsState(if (isFocused) 1.12f else 1f)
-    val ringColor by animateColorAsState(if (isFocused) colors.accent else Color.Transparent)
+    val scale          by animateFloatAsState(if (isFocused) 1.12f else 1f, label = "castScale")
+    val shadowElev     by animateDpAsState(if (isFocused) 20.dp else 0.dp, label = "castShadow")
+    val ringColor      by animateColorAsState(if (isFocused) colors.focusRing else Color.Transparent, label = "castRing")
+    val borderWidth    by animateDpAsState(if (isFocused) 3.dp else 0.dp, label = "castBorder")
 
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -62,11 +67,12 @@ fun CastCircle(
     ) {
         Box(
             modifier = Modifier
-                .size(72.dp)
-                .scale(circleScale)
+                .size(80.dp)
+                .scale(scale)
+                .shadow(shadowElev, CircleShape, clip = false, ambientColor = colors.focusGlow, spotColor = colors.focusGlow)
                 .clip(CircleShape)
                 .background(colors.surfaceVariant)
-                .border(2.dp, ringColor, CircleShape),
+                .border(borderWidth, ringColor, CircleShape),
             contentAlignment = Alignment.Center,
         ) {
             val photoUrl = person.imageUrl
@@ -80,16 +86,18 @@ fun CastCircle(
                 Text(
                     text = person.name.take(1),
                     color = colors.textSecondary,
-                    fontSize = 24.sp,
+                    fontSize = 28.sp,
                     fontWeight = FontWeight.Bold,
+                    fontFamily = sora,
                 )
             }
         }
-        Spacer(Modifier.height(6.dp))
+        Spacer(Modifier.height(8.dp))
         Text(
             text = person.name,
             color = if (isFocused) colors.text else colors.textSecondary,
-            fontSize = 11.sp,
+            fontSize = 13.sp,
+            fontFamily = sora,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             textAlign = TextAlign.Center,
@@ -98,8 +106,9 @@ fun CastCircle(
         if (role != null) {
             Text(
                 text = role,
-                color = roleColor,
-                fontSize = 10.sp,
+                color = colors.textDim,
+                fontSize = 11.sp,
+                fontFamily = sora,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 textAlign = TextAlign.Center,
