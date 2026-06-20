@@ -123,7 +123,13 @@ private fun HomeLoaded(
                 onSelect = { onItemSelect(it) },
                 onUp = { navBarFR.requestFocus() },
                 onDown = {
-                    focusSection = if (feed.channels.isNotEmpty()) 1 else 2
+                    if (feed.channels.isNotEmpty()) {
+                        focusSection = 1
+                        channelRow.requestFocus()
+                    } else if (rowFocusStates.isNotEmpty()) {
+                        focusSection = 2
+                        rowFocusStates[0].requestFocus()
+                    }
                 },
             )
         }
