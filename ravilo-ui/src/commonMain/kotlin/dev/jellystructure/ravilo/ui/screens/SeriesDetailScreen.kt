@@ -99,6 +99,7 @@ private fun SeriesDetailLoaded(
     }
     var focusedSeasonIdx by remember { mutableIntStateOf(0) }
 
+    val castFR = remember(detail.cast.size) { FocusRow(maxOf(detail.cast.size, 1)) }
     val episodeFR = remember(episodes.size) { FocusRow(maxOf(episodes.size, 1)) }
     val relatedFR = remember(detail.related.size) { FocusRow(maxOf(detail.related.size, 1)) }
 
@@ -234,7 +235,10 @@ private fun SeriesDetailLoaded(
                             else playFR.requestFocus()
                         },
                         onDown  = {
-                            if (detail.cast.isNotEmpty() || detail.related.isNotEmpty()) relatedFR.requestFocus()
+                            when {
+                                detail.cast.isNotEmpty()    -> castFR.requestFocus()
+                                detail.related.isNotEmpty() -> relatedFR.requestFocus()
+                            }
                         },
                         onSelect = { onPlay(ep.id) },
                     )
@@ -252,7 +256,20 @@ private fun SeriesDetailLoaded(
                 contentPadding = PaddingValues(horizontal = 40.dp),
                 horizontalArrangement = Arrangement.spacedBy(16.dp),
             ) {
-                items(detail.cast.size, key = { i -> detail.cast[i].id }) { i -> CastCircle(detail.cast[i]) }
+                items(detail.cast.size, key = { i -> detail.cast[i].id }) { i ->
+                    CastCircle(
+                        person = detail.cast[i],
+                        focusRequester = castFR.requesters[i],
+                        onFocused = { castFR.focused = i },
+                        onLeft  = { castFR.moveLeft() },
+                        onRight = { castFR.moveRight() },
+                        onUp    = {
+                            if (episodes.isNotEmpty()) episodeFR.requestFocus()
+                            else playFR.requestFocus()
+                        },
+                        onDown  = { if (detail.related.isNotEmpty()) relatedFR.requestFocus() },
+                    )
+                }
             }
         }
 
@@ -276,8 +293,11 @@ private fun SeriesDetailLoaded(
                         onLeft  = { relatedFR.moveLeft() },
                         onRight = { relatedFR.moveRight() },
                         onUp    = {
-                            if (episodes.isNotEmpty()) episodeFR.requestFocus()
-                            else playFR.requestFocus()
+                            when {
+                                detail.cast.isNotEmpty()  -> castFR.requestFocus()
+                                episodes.isNotEmpty()     -> episodeFR.requestFocus()
+                                else                      -> playFR.requestFocus()
+                            }
                         },
                         onSelect = { onRelatedSelect(card) },
                     )
