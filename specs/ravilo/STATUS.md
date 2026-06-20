@@ -8,11 +8,11 @@ Ravilo is a sibling product **inside the jellystructure repo** — an Android TV
 canvas) streaming front-end built from one **Compose Multiplatform** codebase, talking only to the
 jellystructure backend.
 
-_Last updated: 2026-06-20_
+_Last updated: 2026-06-21_
 
 ## Current state
 
-**R01–R28 all done.** The app runs end-to-end on the stue TV (Sony BRAVIA XR-65X93K,
+**R01–R29 all done.** The app runs end-to-end on the stue TV (Sony BRAVIA XR-65X93K,
 `10.0.0.11`). Installed via `nc` + `adb_shell` from the HA container.
 
 ### What's working
@@ -24,6 +24,19 @@ _Last updated: 2026-06-20_
   Video renders via `TextureView` (`PlayerVideoSurface` expect/actual seam) so the Compose chrome
   overlays correctly.
 - Config editor at `/ravilo`: drag-reorder, show/hide, hero height, tile shape, live preview.
+
+### Recent fixes (2026-06-21 session — R29, contract review fixes)
+- **`playback/stop` always 400'd**: client encoded `PlaybackProgressRequest` vs the route's
+  `PlaybackStopRequest` — Jellyfin never saw the stop, exact resume position lost. Now sends the right
+  type.
+- **On-device viewer settings never saved**: `putSettings` PUT a whole `RaviloConfig` (with
+  `default_skin`) to a route expecting `ViewerSettingsRequest` (`skin`). Replaced with
+  `putViewerSettings(...)`; `ViewerSettingsRequest` promoted to `:shared`.
+- **Server JSON hardened** with `ignoreUnknownKeys = true` (matching the rest of the repo).
+- **Viewer skin override**: new `viewerSkinOverride` + `effectiveSkin()` so a viewer's pick no longer
+  overwrites the operator `defaultSkin`.
+- Removed the synthesized/ignored `session_id`; guarded `FocusGrid` against empty rows; widened
+  `autoAdvanceSeconds` clamp to `[0,120]`; reconciled the R26 spec and `:ravilo-player` deferral docs.
 
 ### Recent fixes (2026-06-20 session)
 - **Player UI scale**: all dp/sp values reduced ~30 % from initial implementation (was designed at

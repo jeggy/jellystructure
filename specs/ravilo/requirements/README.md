@@ -8,7 +8,8 @@ truth** for which Ravilo phases exist and whether each is done or planned. Ravil
   (module layout + API) before starting any phase.
 - Ravilo lives in the jellystructure repo; backend phases add `/api/tv/**` routes to the existing
   server, UI phases land in `:ravilo-ui` (shared Compose) with thin `:ravilo-android` / `:ravilo-web`
-  modules + an Android-only `:ravilo-player` (the forked `jellyfin-androidtv` engine; GPL — see R14).
+  modules. (The Android-only `:ravilo-player` fork of `jellyfin-androidtv` is **deferred** — R14 ships
+  direct ExoPlayer/Media3; see [`../STATUS.md`](../STATUS.md).)
 
 ## Phase index
 
@@ -42,6 +43,7 @@ truth** for which Ravilo phases exist and whether each is done or planned. Ravil
 | R26 | ✓ Done | **Config DTO unification** — drop parallel `Admin*` DTOs; `wasmJsMain` uses `:shared` `RaviloConfig` directly; backend validates IDs and clamps values | [R26](phase-R26-config-dto-unification.md) |
 | R27 | ✓ Done | **Layout model extensions** — `HeroConfig.enabled/order`, `heroHeightPct`, `autoAdvanceSeconds`; feed filters by enabled, sorts by order, passes layout params | [R27](phase-R27-layout-model-extensions.md) |
 | R28 | ✓ Done | **Config editor fidelity** — `/ravilo` rebuilt: drag-reorder, show/hide toggles, typed filters, system-row protection, hero height slider, tile-shape picker, live schematic preview | [R28](phase-R28-config-editor-fidelity.md) |
+| R29 | ✓ Done | **TV control-plane contract review fixes** — stop/settings request-type bugs, server `ignoreUnknownKeys`, shared `ViewerSettingsRequest`, `viewerSkinOverride`/`effectiveSkin`, `session_id` removal, FocusGrid empty-row guard, R26 clamp/UUID reconcile, `:ravilo-player` deferred doc sync | [R29](phase-R29-tv-contract-review-fixes.md) |
 
 ## Suggested sequencing
 - **Foundation:** R01 → R02 → R03 → R04 (module + scaffold + auth + config store).
