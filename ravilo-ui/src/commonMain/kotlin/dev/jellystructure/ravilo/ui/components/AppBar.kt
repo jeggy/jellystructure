@@ -3,12 +3,17 @@ package dev.jellystructure.ravilo.ui.components
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -52,11 +57,14 @@ fun AppBar(
     onNavSelect: (Int) -> Unit = {},
     navFR: FocusRequester = remember { FocusRequester() },
     onDown: () -> Unit = {},
+    userInitials: String = "",
+    onProfile: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val colors = RaviloTheme.colors
     val sora = Sora
     val spaceGrotesk = SpaceGrotesk
+    val avatarFR = remember { FocusRequester() }
     val barGradient = remember {
         Brush.verticalGradient(
             0f to Color(0x8C000000),
@@ -129,7 +137,10 @@ fun AppBar(
                             focusRequester = allFRs[i],
                             onFocused  = { focusedIdx = i },
                             onLeft     = { if (i > 0) allFRs[i - 1].requestFocus() },
-                            onRight    = { if (i < navItems.lastIndex) allFRs[i + 1].requestFocus() },
+                            onRight    = {
+                                if (i < navItems.lastIndex) allFRs[i + 1].requestFocus()
+                                else if (onProfile != null) avatarFR.requestFocus()
+                            },
                             onDown     = onDown,
                             onSelect   = { onNavSelect(i) },
                         ),
@@ -138,7 +149,52 @@ fun AppBar(
 
             Box(modifier = Modifier.weight(1f))
             ClockDisplay()
+            if (onProfile != null) {
+                Spacer(Modifier.width(20.dp))
+                ProfileAvatar(
+                    initials = userInitials.ifEmpty { "?" },
+                    focusRequester = avatarFR,
+                    onLeft = { allFRs.last().requestFocus() },
+                    onDown = onDown,
+                    onSelect = onProfile,
+                )
+            }
         }
+    }
+}
+
+@Composable
+private fun ProfileAvatar(
+    initials: String,
+    focusRequester: FocusRequester,
+    onLeft: () -> Unit,
+    onDown: () -> Unit,
+    onSelect: () -> Unit,
+) {
+    val colors = RaviloTheme.colors
+    var focused by remember { mutableStateOf(false) }
+    Box(
+        modifier = Modifier
+            .size(40.dp)
+            .background(if (focused) colors.accent else colors.surfaceVariant, CircleShape)
+            .then(if (focused) Modifier.border(2.dp, colors.focusRing, CircleShape) else Modifier)
+            .dpadFocusable(
+                focusRequester = focusRequester,
+                onFocused = { focused = true },
+                onBlurred = { focused = false },
+                onLeft = onLeft,
+                onDown = onDown,
+                onSelect = onSelect,
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = initials,
+            color = if (focused) colors.onAccent else colors.text,
+            fontSize = 14.sp,
+            fontWeight = FontWeight.Bold,
+            fontFamily = Sora,
+        )
     }
 }
 
