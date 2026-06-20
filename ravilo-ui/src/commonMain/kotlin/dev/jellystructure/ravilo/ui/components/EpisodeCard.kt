@@ -10,10 +10,13 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -23,24 +26,30 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.jellystructure.ravilo.ui.focus.dpadFocusable
 import dev.jellystructure.ravilo.ui.seams.RemoteImage
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
+import dev.jellystructure.ravilo.ui.theme.Sora
+import dev.jellystructure.ravilo.ui.theme.SpaceGrotesk
+import dev.jellystructure.ravilo.ui.theme.accentGradient
 import dev.jellystructure.shared.tv.Episode
 
 @Composable
 fun EpisodeCard(
     episode: Episode,
     focusRequester: FocusRequester,
+    isResumeEpisode: Boolean = false,
     onFocused: () -> Unit = {},
     onLeft: (() -> Unit)? = null,
     onRight: (() -> Unit)? = null,
@@ -49,22 +58,34 @@ fun EpisodeCard(
     onSelect: (() -> Unit)? = null,
 ) {
     val colors = RaviloTheme.colors
+    val sora = Sora
+    val spaceGrotesk = SpaceGrotesk
     var focused by remember { mutableStateOf(false) }
     val focusSpec = remember { spring<Float>(dampingRatio = 0.65f, stiffness = Spring.StiffnessMediumLow) }
-    val dpSpec = remember { spring<Dp>(dampingRatio = 0.65f, stiffness = Spring.StiffnessMediumLow) }
-    val scale by animateFloatAsState(if (focused) 1.06f else 1f, focusSpec, label = "epScale")
-    val borderWidth by animateDpAsState(if (focused) 3.dp else 0.dp, dpSpec, label = "epBorder")
-    val shadowElevation by animateDpAsState(if (focused) 16.dp else 0.dp, dpSpec, label = "epShadow")
-    val cardShape = remember { RoundedCornerShape(10.dp) }
-    val thumbShape = remember { RoundedCornerShape(6.dp) }
+    val dpSpec    = remember { spring<Dp>(dampingRatio = 0.65f, stiffness = Spring.StiffnessMediumLow) }
+    val scale           by animateFloatAsState(if (focused) 1.06f else 1f, focusSpec, label = "epScale")
+    val borderWidth     by animateDpAsState(if (focused) 3.dp else 0.dp, dpSpec, label = "epBorder")
+    val shadowElevation by animateDpAsState(if (focused) 20.dp else 0.dp, dpSpec, label = "epShadow")
+    val cardShape = remember { RoundedCornerShape(12.dp) }
 
-    Row(
+    val isWatched = episode.playback.watched
+    val pct = episode.playback.pct
+
+    val upNextGradient = remember(colors.accent, colors.accentSecondary) { colors.accentGradient }
+
+    Column(
         modifier = Modifier
+            .width(392.dp)
             .scale(scale)
-            .width(320.dp)
-            .shadow(shadowElevation, cardShape, clip = false, ambientColor = colors.focusRing, spotColor = colors.focusRing)
+            .shadow(
+                elevation = shadowElevation,
+                shape = cardShape,
+                clip = false,
+                ambientColor = colors.focusGlow,
+                spotColor = colors.focusGlow,
+            )
             .clip(cardShape)
-            .background(colors.surface)
+            .background(colors.card)
             .border(borderWidth, colors.focusRing, cardShape)
             .dpadFocusable(
                 focusRequester = focusRequester,
@@ -72,16 +93,14 @@ fun EpisodeCard(
                 onBlurred = { focused = false },
                 onLeft = onLeft, onRight = onRight, onUp = onUp, onDown = onDown, onSelect = onSelect,
             )
-            .padding(10.dp),
-        verticalAlignment = Alignment.CenterVertically,
+            .alpha(if (isWatched) 0.62f else 1f),
     ) {
-        // Still image
+        // Still — full-width 16:9
         Box(
             modifier = Modifier
-                .width(120.dp)
-                .height(68.dp)
-                .clip(thumbShape)
-                .background(colors.surfaceVariant),
+                .fillMaxWidth()
+                .aspectRatio(16f / 9f)
+                .background(colors.surface),
         ) {
             val stillUrl = episode.stillUrl
             if (stillUrl != null) {
@@ -91,33 +110,111 @@ fun EpisodeCard(
                     modifier = Modifier.matchParentSize(),
                 )
             }
-            // Progress bar
-            val pct = episode.playback.pct
-            if (pct > 0f && !episode.playback.watched) {
-                Box(modifier = Modifier.align(Alignment.BottomStart).fillMaxWidth().height(3.dp).background(colors.progressBg)) {
-                    Box(modifier = Modifier.fillMaxWidth(pct).height(3.dp).background(colors.progressFill))
+
+            // Episode number overlay (top-start)
+            Text(
+                text = "${episode.episodeNumber}",
+                color = Color.White.copy(alpha = 0.85f),
+                fontSize = 40.sp,
+                fontWeight = FontWeight.Bold,
+                fontFamily = spaceGrotesk,
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .padding(12.dp),
+            )
+
+            // Duration badge (top-end)
+            if (episode.runtime > 0) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(10.dp)
+                        .background(Color.Black.copy(alpha = 0.55f), RoundedCornerShape(4.dp))
+                        .padding(horizontal = 7.dp, vertical = 3.dp),
+                ) {
+                    Text(
+                        text = "${episode.runtime}m",
+                        color = Color.White,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        fontFamily = sora,
+                    )
+                }
+            }
+
+            // "Up Next" ribbon (bottom-start) if this is the resume episode
+            if (isResumeEpisode) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.BottomStart)
+                        .background(upNextGradient, RoundedCornerShape(topEnd = 8.dp))
+                        .padding(horizontal = 10.dp, vertical = 4.dp),
+                ) {
+                    Text(
+                        text = "UP NEXT",
+                        color = Color.White,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = sora,
+                        letterSpacing = 0.5.sp,
+                    )
+                }
+            }
+
+            // Watched circle (bottom-end)
+            if (isWatched) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(8.dp)
+                        .size(22.dp)
+                        .background(colors.badgeWatched, CircleShape),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text("✓", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                }
+            }
+
+            // Progress bar (bottom, full-width overlay)
+            if (pct > 0f && !isWatched) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.BottomStart)
+                        .fillMaxWidth()
+                        .height(4.dp)
+                        .background(colors.progressBg),
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth(pct)
+                            .height(4.dp)
+                            .background(colors.progressFill),
+                    )
                 }
             }
         }
 
-        Spacer(Modifier.width(12.dp))
-
-        Column(modifier = Modifier.weight(1f)) {
+        // Text area
+        Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp)) {
             Text(
                 text = "E${episode.episodeNumber} · ${episode.title}",
                 color = if (focused) colors.text else colors.textSecondary,
-                fontSize = 13.sp,
-                fontWeight = if (focused) FontWeight.SemiBold else FontWeight.Normal,
+                fontSize = 20.sp,
+                fontWeight = FontWeight.SemiBold,
+                fontFamily = sora,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            if (episode.runtime > 0) {
-                Spacer(Modifier.height(4.dp))
-                Text("${episode.runtime} min", color = colors.textSecondary, fontSize = 11.sp)
-            }
             episode.overview?.let { overview ->
                 Spacer(Modifier.height(4.dp))
-                Text(overview, color = colors.textSecondary, fontSize = 11.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Text(
+                    text = overview,
+                    color = colors.textDim,
+                    fontSize = 15.sp,
+                    fontFamily = sora,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
             }
         }
     }

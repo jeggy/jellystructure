@@ -32,6 +32,7 @@ import dev.jellystructure.ravilo.ui.components.Tile
 import dev.jellystructure.ravilo.ui.components.TileVariant
 import dev.jellystructure.ravilo.ui.focus.FocusRow
 import dev.jellystructure.ravilo.ui.focus.saveFocusAt
+import dev.jellystructure.ravilo.ui.theme.RaviloDimens
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
 import dev.jellystructure.shared.tv.Channel
 import dev.jellystructure.shared.tv.MediaCard
@@ -113,11 +114,11 @@ private fun HomeLoaded(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(bottom = 40.dp),
     ) {
-        // Hero carousel
+        // Hero carousel — pass Hero list directly to preserve taglineKicker + badge
         if (feed.heroes.isNotEmpty()) {
             item {
                 HeroCarousel(
-                    items = feed.heroes.map { it.item },
+                    items = feed.heroes,
                     focusRequester = heroFR,
                     onSelect = { onItemSelect(it) },
                     onUp = { navBarFR.requestFocus() },
@@ -141,7 +142,7 @@ private fun HomeLoaded(
                     ChannelCard(
                         name = ch.name,
                         logoUrl = ch.logoUrl,
-                        brandColor = null,
+                        brandColor = ch.brandColor,
                         focusRequester = channelRow.requesters[i],
                         onFocused = { channelRow.focused = i; focusSection = 1 },
                         onLeft  = { channelRow.moveLeft() },
@@ -162,7 +163,7 @@ private fun HomeLoaded(
             val row: Row = feed.rows[ri]
             val rowFocus = rowFocusStates[ri]
 
-            Spacer(Modifier.height(28.dp))
+            Spacer(Modifier.height(RaviloDimens.rowGap))
             StaticContentRow(
                 title = row.title,
                 items = row.items,
