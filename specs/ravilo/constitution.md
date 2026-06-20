@@ -79,8 +79,9 @@ in common code and run on both.
 - **Async/state:** kotlinx.coroutines + `StateFlow` reactive stores, shared in common. Screens render
   store state; no ad-hoc mutable view state for server-owned data.
 - **Networking:** the shared **Ktor client** over the control plane; the platform's native media stack
-  over the data plane. **Images:** an `expect`/`actual` image loader (Coil on Android, Compose MP
-  resource/`<img>`-backed painter on Web), pointed at Jellyfin image URLs.
+  over the data plane. **Images:** **Coil 3** (`coil-compose` + `coil-network-ktor3`) in
+  `commonMain` — Coil 3 is KMP-native (Android + wasmJs), so no `expect`/`actual` is needed;
+  `AsyncImage` fetches poster/backdrop/still/logo URLs directly from Jellyfin on both targets.
 
 ### Player engine & licensing — forked from `jellyfin-androidtv` (GPL)
 Ravilo's **Android** player is **not** a from-scratch Media3 integration. The official

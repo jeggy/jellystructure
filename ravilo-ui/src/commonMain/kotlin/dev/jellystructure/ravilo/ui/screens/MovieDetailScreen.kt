@@ -172,7 +172,17 @@ private fun MovieDetailLoaded(
                 contentPadding = PaddingValues(horizontal = 40.dp),
                 horizontalArrangement = Arrangement.spacedBy(16.dp),
             ) {
-                items(detail.cast.size, key = { i -> detail.cast[i].id }) { i -> CastCircle(detail.cast[i]) }
+                items(detail.cast.size, key = { i -> detail.cast[i].id }) { i ->
+                    CastCircle(
+                        person = detail.cast[i],
+                        focusRequester = castFR.requesters[i],
+                        onFocused = { castFR.focused = i },
+                        onLeft  = { castFR.moveLeft() },
+                        onRight = { castFR.moveRight() },
+                        onUp    = { playFR.requestFocus() },
+                        onDown  = { if (detail.related.isNotEmpty()) relatedFR.requestFocus() },
+                    )
+                }
             }
         }
 
@@ -195,7 +205,7 @@ private fun MovieDetailLoaded(
                         onFocused = { relatedFR.focused = i },
                         onLeft  = { relatedFR.moveLeft() },
                         onRight = { relatedFR.moveRight() },
-                        onUp    = { playFR.requestFocus() },
+                        onUp    = { if (detail.cast.isNotEmpty()) castFR.requestFocus() else playFR.requestFocus() },
                         onSelect = { onRelatedSelect(card) },
                     )
                 }
