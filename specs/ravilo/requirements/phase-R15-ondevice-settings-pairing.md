@@ -13,30 +13,12 @@ their devices**.
 
 ## Requirements
 
-### First-run server URL setup
-1. On first launch (no server URL saved in `SharedPreferences`), show a **server setup screen** before
-   any pairing attempt. The screen presents:
-   - A `http://` / `https://` scheme toggle (D-pad navigable).
-   - A standard `TextField` (Material3) whose focus triggers the **native Android TV system keyboard**.
-   - A **Connect** button (active only once a host is entered); pressing the keyboard's Go action is
-     equivalent.
-   - If the user types a full URL including scheme (e.g. `https://…`), the scheme is used as-is and
-     the toggle is ignored — no double-prefix.
-   - The resolved URL is persisted to `SharedPreferences` key `base_url`.
-2. The Android manifest must declare `<uses-permission android:name="android.permission.INTERNET" />`
-   and `android:usesCleartextTraffic="true"` on `<application>` (required for local-network HTTP).
-3. A **"Change server"** button appears on the pairing error and expired-code states, clearing
-   `base_url` from `SharedPreferences` and navigating back to the server setup screen so the user can
-   correct the address without reinstalling.
-
 ### First-run pairing
-4. On launch with a server URL set but no valid device token, show a **pairing screen**: the
-   human-readable **code** (from `pair/start`) + simple instructions ("On another device, open
-   jellystructure → Ravilo → Pair a TV, and enter this code"), polling `pair/poll` until approved,
-   then entering Home.
-5. Handle expiry (regenerate code), error, and a "signed in as <name>" confirmation. A **Sign out /
-   unpair** action elsewhere clears the device token and returns here. Error and expired states show
-   focusable **Retry** and **Change server** action buttons instead of passive text.
+1. On launch with no valid device token, show a **pairing screen**: the human-readable **code** (from
+   `pair/start`) + simple instructions ("On another device, open jellystructure → Ravilo → Pair a TV,
+   and enter this code"), polling `pair/poll` until approved, then entering Home.
+2. Handle expiry (regenerate code), error, and a "signed in as <name>" confirmation. A **Sign out /
+   unpair** action elsewhere clears the device token and returns here.
 
 ### Settings
 3. A focusable **Settings** screen with the **viewer-tweakable subset**: **skin** (Aurora / Midnight /
@@ -53,8 +35,6 @@ their devices**.
 - Viewer settings **sync via the server** (R04) across devices; not device-only (except an allowed
   local skin override).
 - Layout editing stays on the web (R16); on-device settings are a small subset.
-- The server URL and device token are persisted in `SharedPreferences` (`base_url`, `device_token`).
-  Clearing `base_url` always returns to the server setup screen on next launch/navigation.
 
 ## Out of scope
 - The full layout editor (R16); multi-user profile switching on one device (future).

@@ -1,0 +1,226 @@
+/* ============================================================
+   Ravilo — Android phone frontend (touch-first companion to the TV app)
+   Shares the Ravilo brand DNA + Aurora/Midnight/Noir skins; its own
+   mobile layout: bottom tabs, vertical scroll, sheet-style detail.
+   Visual spec only — maps to Compose Multiplatform on implementation.
+   ============================================================ */
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Sora:wght@300;400;500;600;700&family=JetBrains+Mono:wght@600;700&display=swap');
+
+/* ---- skin tokens (mirror the TV app) ---- */
+[data-skin="aurora"] {
+  --bg:#0a0c13; --bg-2:#0e111b; --ink:#f3f4fb; --ink-soft:#aeb4cb; --ink-dim:#6b7290;
+  --line:rgba(255,255,255,.09); --line-2:rgba(255,255,255,.16); --card:#161a28; --card-2:#1b2031;
+  --accent:#7b6ef0; --accent-2:#3fb6f5; --grad:linear-gradient(120deg,#7b6ef0,#3fb6f5);
+  --ring:#8e82ff; --ring-glow:rgba(123,110,240,.55); --chip:rgba(255,255,255,.10);
+  --good:#2dd49a; --tile-r:14px;
+  --scrim:linear-gradient(0deg, var(--bg) 4%, rgba(10,12,19,.7) 32%, rgba(10,12,19,.1) 62%, rgba(10,12,19,.5) 100%);
+}
+[data-skin="midnight"] {
+  --bg:#04101a; --bg-2:#07151f; --ink:#eafcff; --ink-soft:#9fc2cf; --ink-dim:#5a7d8a;
+  --line:rgba(160,230,255,.10); --line-2:rgba(160,230,255,.18); --card:#0a1c28; --card-2:#0e2533;
+  --accent:#19d6c6; --accent-2:#2a8cf0; --grad:linear-gradient(120deg,#19d6c6,#2a8cf0);
+  --ring:#28e6d6; --ring-glow:rgba(40,230,214,.5); --chip:rgba(160,230,255,.12);
+  --good:#2dd49a; --tile-r:16px;
+  --scrim:linear-gradient(0deg, var(--bg) 4%, rgba(4,16,26,.7) 32%, rgba(4,16,26,.1) 62%, rgba(4,16,26,.5) 100%);
+}
+[data-skin="noir"] {
+  --bg:#080807; --bg-2:#0d0c0a; --ink:#f7f3ea; --ink-soft:#c7bfae; --ink-dim:#807868;
+  --line:rgba(255,240,210,.10); --line-2:rgba(255,240,210,.18); --card:#16140f; --card-2:#1f1c15;
+  --accent:#f5b542; --accent-2:#e0792f; --grad:linear-gradient(120deg,#f5b542,#e0792f);
+  --ring:#ffcf6b; --ring-glow:rgba(245,181,66,.5); --chip:rgba(255,240,210,.10);
+  --good:#2dd49a; --tile-r:8px;
+  --scrim:linear-gradient(0deg, var(--bg) 4%, rgba(8,8,7,.72) 32%, rgba(8,8,7,.1) 62%, rgba(8,8,7,.5) 100%);
+}
+
+* { box-sizing:border-box; margin:0; padding:0; }
+
+/* ---- review canvas (NOT part of the app) ---- */
+.cv { min-height:100vh; background:#07080d; color:#e9ebf5; font-family:'Sora',sans-serif;
+  padding:0 0 120px; --ease:cubic-bezier(.22,.61,.36,1); }
+.cv-head { position:sticky; top:0; z-index:100; display:flex; align-items:center; gap:20px;
+  padding:20px 40px; background:rgba(7,8,13,.86); backdrop-filter:blur(16px);
+  border-bottom:1px solid rgba(255,255,255,.07); }
+.cv-head .logo { display:flex; align-items:center; gap:12px; font-family:'Space Grotesk',sans-serif;
+  font-weight:700; font-size:22px; letter-spacing:-.5px; }
+.cv-head .logo svg { width:34px; height:34px; }
+.cv-head .sub { font-size:14px; color:#7a8096; font-weight:500; }
+.cv-head .spacer { margin-left:auto; }
+.skinpick { display:flex; gap:5px; padding:5px; border-radius:13px; background:rgba(255,255,255,.05);
+  border:1px solid rgba(255,255,255,.10); }
+.skinpick b { align-self:center; font-size:11px; letter-spacing:1px; color:#6b7290; padding:0 8px; font-weight:700; }
+.skinpick button { border:0; background:transparent; color:#aeb4cb; font-family:'Sora',sans-serif;
+  font-size:13px; font-weight:600; padding:7px 16px; border-radius:9px; cursor:pointer; transition:all .16s; }
+.skinpick button:hover { color:#fff; }
+.skinpick button.on { background:#fff; color:#11131c; }
+
+.cv-sec { padding:46px 40px 0; }
+.cv-sec h2 { font-family:'Space Grotesk',sans-serif; font-size:15px; font-weight:600; letter-spacing:2px;
+  text-transform:uppercase; color:#6b7290; margin-bottom:4px; }
+.cv-sec .desc { font-size:14px; color:#565d75; max-width:680px; margin-bottom:26px; line-height:1.5; }
+.cv-rail { display:flex; gap:48px; flex-wrap:wrap; align-items:flex-start; }
+.cv-item { display:flex; flex-direction:column; gap:14px; }
+.cv-item .cap { font-size:13px; color:#8b91a8; font-weight:500; padding-left:4px; }
+.cv-item .cap b { color:#e9ebf5; font-weight:600; font-family:'Space Grotesk',sans-serif; }
+
+/* ============================================================
+   PHONE FRAME
+   ============================================================ */
+.phone { width:390px; height:844px; border-radius:46px; position:relative; flex:none;
+  background:var(--bg); border:11px solid #15171d;
+  box-shadow:0 2px 0 1px #2a2d36 inset, 0 40px 90px rgba(0,0,0,.55); overflow:hidden;
+  font-family:'Sora',sans-serif; }
+.phone.land { width:844px; height:390px; }
+.scr { position:absolute; inset:0; background:var(--bg); color:var(--ink); overflow:hidden;
+  display:flex; flex-direction:column; }
+
+/* status bar (overlays content) */
+.statusbar { position:absolute; top:0; left:0; right:0; height:50px; z-index:60;
+  display:flex; align-items:center; justify-content:space-between; padding:0 26px 0 30px;
+  color:#fff; font-size:15px; font-weight:600; pointer-events:none; }
+.statusbar .t { letter-spacing:.3px; font-variant-numeric:tabular-nums; }
+.statusbar .ic { display:flex; align-items:center; gap:7px; }
+.statusbar .ic svg { width:17px; height:17px; display:block; fill:#fff; }
+.notch { position:absolute; top:13px; left:50%; transform:translateX(-50%); width:18px; height:18px;
+  border-radius:50%; background:#000; z-index:61; box-shadow:0 0 0 2px rgba(0,0,0,.4); }
+.land .statusbar { height:42px; }
+.land .notch { display:none; }
+
+/* gesture pill */
+.gesture { position:absolute; bottom:8px; left:50%; transform:translateX(-50%); width:130px; height:5px;
+  border-radius:3px; background:var(--ink); opacity:.55; z-index:70; }
+
+/* generic scroll body */
+.body { position:absolute; inset:0; overflow:hidden; }
+.scroller { position:absolute; inset:0; overflow:hidden; }
+
+/* ---- bottom tab bar ---- */
+.tabbar { position:absolute; left:0; right:0; bottom:0; height:92px; z-index:55;
+  display:flex; align-items:flex-start; padding:12px 14px 0;
+  background:linear-gradient(0deg, var(--bg) 42%, rgba(10,12,19,0)); }
+.tabbar.solid { background:var(--bg-2); border-top:1px solid var(--line); align-items:center; padding-top:0; }
+.tab { flex:1; display:flex; flex-direction:column; align-items:center; gap:5px; color:var(--ink-dim);
+  font-size:11px; font-weight:600; letter-spacing:.2px; padding-top:6px; }
+.tab svg { width:25px; height:25px; fill:none; stroke:currentColor; stroke-width:2; }
+.tab.on { color:var(--ink); }
+.tab.on svg { stroke:var(--accent); }
+.tab.on .pavatar { box-shadow:0 0 0 2px var(--accent); }
+.pavatar { width:26px; height:26px; border-radius:50%; background:var(--grad); display:flex;
+  align-items:center; justify-content:center; font-size:11px; font-weight:700; color:#fff; }
+
+/* ---- top bar (home) ---- */
+.topbar { position:absolute; top:0; left:0; right:0; z-index:58; height:104px;
+  display:flex; align-items:flex-end; gap:14px; padding:0 20px 14px; }
+.topbar .brand { display:flex; align-items:center; gap:9px; font-family:'Space Grotesk',sans-serif;
+  font-weight:700; font-size:23px; letter-spacing:-.5px; color:var(--ink); }
+.topbar .brand svg { width:30px; height:30px; filter:drop-shadow(0 0 10px var(--ring-glow)); }
+.topbar .right { margin-left:auto; display:flex; align-items:center; gap:14px; }
+.iconbtn { width:40px; height:40px; border-radius:50%; display:flex; align-items:center; justify-content:center;
+  background:rgba(0,0,0,.28); -webkit-backdrop-filter:blur(8px); backdrop-filter:blur(8px); color:var(--ink); }
+.iconbtn svg { width:22px; height:22px; fill:none; stroke:currentColor; stroke-width:2; stroke-linecap:round; }
+.avatar-sm { width:40px; height:40px; border-radius:50%; background:var(--grad); display:flex;
+  align-items:center; justify-content:center; font-weight:700; font-size:15px; color:#fff; }
+
+/* ============================================================
+   SHARED COMPONENTS
+   ============================================================ */
+.btn { display:inline-flex; align-items:center; justify-content:center; gap:9px; height:50px; padding:0 22px;
+  border-radius:13px; font-family:'Sora',sans-serif; font-size:16px; font-weight:600; white-space:nowrap;
+  border:1.5px solid transparent; color:var(--ink); background:var(--chip); }
+.btn .ic { font-size:17px; line-height:1; }
+.btn.primary { background:#fff; color:#0a0c13; }
+.btn.ghost { background:rgba(255,255,255,.08); border-color:var(--line-2); }
+.btn.block { width:100%; }
+.btn.big { height:56px; font-size:17px; }
+
+.sec-h { display:flex; align-items:baseline; gap:10px; padding:0 20px 14px; }
+.sec-h h3 { font-family:'Space Grotesk',sans-serif; font-size:20px; font-weight:600; letter-spacing:-.4px; }
+.sec-h .more { margin-left:auto; font-size:13px; color:var(--ink-dim); font-weight:600; }
+
+/* horizontal rails */
+.rail { display:flex; gap:13px; padding:0 20px 6px; overflow-x:hidden; }
+.rail::-webkit-scrollbar { height:0; }
+
+/* poster tile */
+.poster { flex:none; width:122px; }
+.poster .art { aspect-ratio:2/3; border-radius:var(--tile-r); overflow:hidden; position:relative;
+  box-shadow:0 8px 20px rgba(0,0,0,.4); }
+.poster .art img { width:100%; height:100%; object-fit:cover; display:block; }
+.poster .art .grad { position:absolute; inset:0; }
+.poster .art .tt { position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+  padding:10px; text-align:center; font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:17px;
+  color:#fff; text-shadow:0 2px 10px rgba(0,0,0,.5); line-height:1.05; }
+.poster .badge { position:absolute; top:8px; left:8px; background:var(--grad); color:#fff; font-size:10px;
+  font-weight:700; padding:3px 7px; border-radius:6px; letter-spacing:.4px; }
+.poster .lab { font-size:13px; font-weight:500; color:var(--ink-soft); margin-top:8px; white-space:nowrap;
+  overflow:hidden; text-overflow:ellipsis; }
+.poster .meta { font-size:11px; color:var(--ink-dim); margin-top:1px; }
+
+/* ---- hero card (home) ---- */
+.hero { position:relative; height:520px; margin-bottom:6px; }
+.hero .bg { position:absolute; inset:0; }
+.hero .bg img { width:100%; height:100%; object-fit:cover; object-position:center 22%; }
+.hero .bg .grad { position:absolute; inset:0; }
+.hero .scrim { position:absolute; inset:0; background:var(--scrim); }
+.hero .body { position:absolute; left:0; right:0; bottom:0; padding:0 24px 8px; text-align:center;
+  display:flex; flex-direction:column; align-items:center; }
+.hero .kick { font-size:12px; font-weight:700; letter-spacing:2px; text-transform:uppercase;
+  color:var(--accent-2); margin-bottom:14px; }
+.hero .logo-img { max-width:84%; max-height:140px; object-fit:contain; filter:drop-shadow(0 6px 18px rgba(0,0,0,.5)); margin-bottom:6px; }
+.hero .htitle { font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:42px; line-height:.98;
+  letter-spacing:-1.5px; margin-bottom:14px; text-wrap:balance; }
+.hero .tags { display:flex; align-items:center; justify-content:center; gap:8px; flex-wrap:wrap;
+  font-size:13px; color:var(--ink-soft); margin-bottom:18px; }
+.hero .tags .dot { width:3px; height:3px; border-radius:50%; background:var(--ink-dim); }
+.hero .tags .rt { border:1px solid var(--line-2); border-radius:5px; padding:1px 6px; font-size:11px; }
+.hero .acts { display:flex; gap:10px; width:100%; }
+.hero .acts .btn { flex:1; }
+
+/* ---- channel rail (studios) ---- */
+.channel { flex:none; width:150px; height:84px; border-radius:15px; position:relative; overflow:hidden;
+  display:flex; align-items:center; justify-content:center; border:1px solid rgba(255,255,255,.07); }
+.channel .wm { font-family:'Space Grotesk',sans-serif; font-weight:800; font-size:23px; color:#fff;
+  letter-spacing:-.5px; z-index:2; }
+.channel .wm small { font-size:11px; font-weight:600; letter-spacing:1px; opacity:.85; }
+.channel .sheen { position:absolute; inset:0; background:radial-gradient(120% 120% at 80% 0%, rgba(255,255,255,.22), transparent 55%); }
+
+/* ---- continue watching (landscape) ---- */
+.cont { flex:none; width:240px; }
+.cont .art { aspect-ratio:16/9; border-radius:var(--tile-r); overflow:hidden; position:relative;
+  box-shadow:0 8px 20px rgba(0,0,0,.4); }
+.cont .art img { width:100%; height:100%; object-fit:cover; }
+.cont .art .grad { position:absolute; inset:0; }
+.cont .play { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; }
+.cont .play span { width:46px; height:46px; border-radius:50%; background:rgba(0,0,0,.5);
+  -webkit-backdrop-filter:blur(4px); backdrop-filter:blur(4px); border:2px solid rgba(255,255,255,.75);
+  display:flex; align-items:center; justify-content:center; font-size:18px; color:#fff; }
+.cont .pbar { position:absolute; left:12px; right:12px; bottom:10px; height:4px; border-radius:3px;
+  background:rgba(255,255,255,.3); }
+.cont .pbar i { display:block; height:100%; border-radius:3px; background:var(--accent); }
+.cont .epbadge { position:absolute; left:11px; bottom:20px; font-size:11px; color:#fff; font-weight:600;
+  text-shadow:0 1px 5px rgba(0,0,0,.7); }
+.cont .lab { font-size:13px; font-weight:500; color:var(--ink); margin-top:8px; }
+.cont .meta { font-size:11px; color:var(--ink-dim); margin-top:1px; }
+
+/* ---- browse grid ---- */
+.pagehead { padding:64px 20px 8px; }
+.pagehead h1 { font-family:'Space Grotesk',sans-serif; font-size:32px; letter-spacing:-1px; }
+.pagehead .count { font-size:13px; color:var(--ink-dim); margin-top:2px; }
+.chips { display:flex; gap:9px; padding:14px 20px 18px; overflow-x:hidden; }
+.chip { flex:none; padding:8px 17px; border-radius:30px; background:var(--chip); color:var(--ink-soft);
+  font-size:13px; font-weight:600; white-space:nowrap; border:1.5px solid transparent; }
+.chip.on { color:var(--ink); box-shadow:inset 0 0 0 1.5px var(--accent); background:transparent; }
+.grid3 { display:grid; grid-template-columns:repeat(3,1fr); gap:13px 12px; padding:0 20px; }
+.grid3 .poster { width:auto; }
+
+/* ---- search ---- */
+.searchwrap { padding:60px 20px 0; }
+.searchbar { display:flex; align-items:center; gap:12px; height:50px; padding:0 16px; border-radius:14px;
+  background:var(--card); border:1px solid var(--line); }
+.searchbar svg { width:21px; height:21px; fill:none; stroke:var(--ink-dim); stroke-width:2; flex:none; }
+.searchbar .q { font-size:16px; color:var(--ink); font-weight:500; }
+.searchbar .q .cur { display:inline-block; width:2px; height:19px; background:var(--accent); vertical-align:-3px;
+  margin-left:1px; animation:blink 1s step-end infinite; }
+@keyframes blink { 50% { opacity:0; } }
+.searchbar .q i { color:var(--ink-dim); font-style:normal; font-weight:400; }
+.search-h { font-family:'Space Grotesk',sans-serif; font-size:16px; font-weight:600; color:var(--ink-soft);
+  padding:24px 20px 14px; }
