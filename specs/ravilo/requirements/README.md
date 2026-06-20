@@ -34,6 +34,9 @@ truth** for which Ravilo phases exist and whether each is done or planned. Ravil
 | R18 | □ Planned | **Multi-user profiles & fast switching** — several Jellyfin users per TV, cached tokens, "Who's watching?" + avatar switcher (FR-RV18) | [R18](phase-R18-multi-user-profiles.md) |
 | R19 | □ Planned | **Interface localization** (en / da / fo), per Jellyfin user, set in Jellystructure (FR-RV19) | [R19](phase-R19-localization.md) |
 | R22 | ✓ Done | **Android TV APK packaging** — brand icon, adaptive launcher icon, splash screen, release signing config, R8 minification | [R22](phase-R22-android-apk-packaging.md) |
+| R23 | □ Planned | **Design system foundations** — bundle Sora + Space Grotesk fonts, correct all three skin color palettes (Noir warm-gold fix), add `accentSecondary`/`textDim`/`card`/`tileRadius` tokens, `RaviloDimensions` spacing constants | [R23](phase-R23-design-system-foundations.md) |
+| R24 | □ Planned | **Component upsizing & visual fidelity** — AppBar 92 dp/inverted focus, Hero 600 dp/72 sp/kicker/auto-advance/dual gradient, Tile full-size + fallback gradient, Channel card 268×150 dp + branded gradient, Episode card full-width still + overlays, row headers 29 sp SpaceGrotesk, button 60 dp | [R24](phase-R24-component-upsizing-visual-fidelity.md) |
+| R25 | □ Planned | **Polish: loading skeletons, focus glow fix, smooth scroll** — shimmer skeleton utility + Home/Detail/Browse/Search loading states, fix focus glow shadow (`focusGlow` not `focusRing`), `animateScrollToItem` on all LazyRows, season progress bar, search bar 76 dp, browse chip contrast | [R25](phase-R25-polish-loading-states.md) |
 
 ## Suggested sequencing
 - **Foundation:** R01 → R02 → R03 → R04 (module + scaffold + auth + config store).
