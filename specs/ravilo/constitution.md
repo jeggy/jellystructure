@@ -83,6 +83,13 @@ in common code and run on both.
   resource/`<img>`-backed painter on Web), pointed at Jellyfin image URLs.
 
 ### Player engine & licensing — forked from `jellyfin-androidtv` (GPL)
+> **Status: DEFERRED (not built).** R14 ships the Android player on **direct ExoPlayer/Media3**, which
+> covers all common formats; the `jellyfin-androidtv` fork and the `:ravilo-player` GPL-containment
+> module below are **not yet built** (see [`STATUS.md`](STATUS.md)). The section records the intended
+> architecture and the path back if exotic-codec (DTS/TrueHD/AC3) passthrough is later needed. Until
+> the fork lands, the repo is not forced to GPL **by a fork** (the license choice still stands on its
+> own).
+
 Ravilo's **Android** player is **not** a from-scratch Media3 integration. The official
 `jellyfin-androidtv` player is the best-tested playback stack in the ecosystem, so Ravilo **forks its
 `playback/*` modules** — `playback/core` (player + play-queue + media-session abstraction) and
@@ -251,7 +258,9 @@ Ravilo shares jellystructure's **brand DNA** but is its own TV skin:
    points.
 9. **Non-admin Jellyfin users are allowed** in Ravilo (it is a viewer app), unlike the admin web
    console.
-10. **Android player = forked `jellyfin-androidtv` engine, GPL-contained.** The Android `actual` is
-    built on the forked `playback/*` modules, isolated in **`:ravilo-player`**; this makes the
-    **Android client GPL** but does **not** infect `:ravilo-web` or the jellystructure backend/admin
-    frontend. The fork's direct-to-Jellyfin stream/progress paths are re-pointed through `/api/tv/**`.
+10. **Android player = direct ExoPlayer/Media3 (fork DEFERRED).** R14 ships the Android `actual` on
+    ExoPlayer/Media3 directly; the planned `jellyfin-androidtv` `playback/*` fork isolated in
+    **`:ravilo-player`** (the GPL-containment boundary) is **deferred and not built** — see
+    [`STATUS.md`](STATUS.md). All stream/progress paths route through `/api/tv/**`. The fork stays the
+    path back if DTS/TrueHD/AC3 passthrough is needed; the GPL-containment reasoning applies if/when it
+    lands.
