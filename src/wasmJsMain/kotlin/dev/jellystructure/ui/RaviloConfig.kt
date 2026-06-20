@@ -659,6 +659,8 @@ private fun collectConfig(container: Element) {
         mergeNewlyAdded = mergeNewlyAdded,
         defaultSkin = defaultSkin,
         allowSkinOverride = allowOverride,
+        // Operator-level layout only; preserve the viewer's own skin choice across admin saves.
+        viewerSkinOverride = currentConfig.viewerSkinOverride,
         showContinueProgress = showProgress,
         tileShape = tileShape,
         uiLanguage = uiLanguage,

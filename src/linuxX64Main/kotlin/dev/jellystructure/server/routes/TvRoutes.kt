@@ -12,9 +12,8 @@ import dev.jellystructure.shared.tv.PairResult
 import dev.jellystructure.shared.tv.PlaybackProgressRequest
 import dev.jellystructure.shared.tv.PlaybackStartRequest
 import dev.jellystructure.shared.tv.PlaybackStopRequest
-import dev.jellystructure.shared.tv.Skin
-import dev.jellystructure.shared.tv.TileShape
 import dev.jellystructure.shared.tv.TvSession
+import dev.jellystructure.shared.tv.ViewerSettingsRequest
 import dev.jellystructure.tv.BrowseService
 import dev.jellystructure.tv.DetailService
 import dev.jellystructure.tv.HomeFeedService
@@ -45,13 +44,6 @@ private data class ApproveRequest(
     val code: String,
     val username: String? = null,
     val password: String? = null,
-)
-
-@Serializable
-private data class ViewerSettingsRequest(
-    val skin: Skin? = null,
-    @SerialName("show_continue_progress") val showContinueProgress: Boolean? = null,
-    @SerialName("tile_shape") val tileShape: TileShape? = null,
 )
 
 fun Route.tvRoutes(
