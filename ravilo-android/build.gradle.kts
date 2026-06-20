@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     kotlin("android")
@@ -16,9 +18,39 @@ android {
         versionName = "1.0"
     }
 
+    signingConfigs {
+        // release config: reads from local.properties; falls back to the well-known debug key
+        // so `assembleRelease` works out-of-the-box for sideloading without manual keystore setup.
+        // To use a real keystore add these four lines to local.properties:
+        //   keystore.file=<absolute path to .keystore / .jks>
+        //   keystore.password=<store password>
+        //   keystore.alias=<key alias>
+        //   keystore.keyPassword=<key password>
+        create("release") {
+            val lp = Properties().also { p ->
+                rootProject.file("local.properties").takeIf { it.exists() }?.let { p.load(it.reader()) }
+            }
+            val ksFile = (lp["keystore.file"] as? String)?.let { file(it) }
+            storeFile     = ksFile ?: file("${System.getProperty("user.home")}/.android/debug.keystore")
+            storePassword = (lp["keystore.password"]    as? String) ?: "android"
+            keyAlias      = (lp["keystore.alias"]       as? String) ?: "androiddebugkey"
+            keyPassword   = (lp["keystore.keyPassword"] as? String) ?: "android"
+        }
+    }
+
     buildTypes {
+        debug {
+            applicationIdSuffix = ".debug"
+            versionNameSuffix   = "-debug"
+        }
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled    = true
+            isShrinkResources  = true
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro"
+            )
+            signingConfig = signingConfigs.getByName("release")
         }
     }
 
@@ -29,6 +61,15 @@ android {
 
     buildFeatures {
         compose = true
+    }
+
+    // Keep APK filename readable: ravilo-1.0-release.apk
+    applicationVariants.all {
+        val v = this
+        v.outputs.all {
+            val output = this as com.android.build.gradle.internal.api.BaseVariantOutputImpl
+            output.outputFileName = "ravilo-${v.versionName}-${v.buildType.name}.apk"
+        }
     }
 }
 
@@ -41,6 +82,7 @@ tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach 
 dependencies {
     implementation(projects.raviloUi)
     implementation(libs.androidx.activity.compose)
+    implementation(libs.androidx.core.splashscreen)
     implementation(libs.androidx.leanback)
     implementation(libs.androidx.media3.exoplayer)
     implementation(libs.androidx.media3.exoplayer.hls)

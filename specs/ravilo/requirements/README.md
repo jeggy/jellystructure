@@ -33,6 +33,7 @@ truth** for which Ravilo phases exist and whether each is done or planned. Ravil
 | R17 | □ Planned | **Web target hardening** + packaging — `:ravilo-web` canvas a11y/input, both bundles served, E2E across TV + web | [R17](phase-R17-web-target-packaging.md) |
 | R18 | □ Planned | **Multi-user profiles & fast switching** — several Jellyfin users per TV, cached tokens, "Who's watching?" + avatar switcher (FR-RV18) | [R18](phase-R18-multi-user-profiles.md) |
 | R19 | □ Planned | **Interface localization** (en / da / fo), per Jellyfin user, set in Jellystructure (FR-RV19) | [R19](phase-R19-localization.md) |
+| R22 | ✓ Done | **Android TV APK packaging** — brand icon, adaptive launcher icon, splash screen, release signing config, R8 minification | [R22](phase-R22-android-apk-packaging.md) |
 
 ## Suggested sequencing
 - **Foundation:** R01 → R02 → R03 → R04 (module + scaffold + auth + config store).
