@@ -35,6 +35,7 @@ import dev.jellystructure.ravilo.ui.components.Tile
 import dev.jellystructure.ravilo.ui.components.TileVariant
 import dev.jellystructure.ravilo.ui.focus.FocusRow
 import dev.jellystructure.ravilo.ui.focus.saveFocusAt
+import dev.jellystructure.ravilo.ui.i18n.str
 import dev.jellystructure.ravilo.ui.theme.RaviloDimens
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
 import dev.jellystructure.shared.tv.Channel
@@ -173,7 +174,7 @@ private fun HomeLoaded(
             item(key = "channels") {
                 Spacer(Modifier.height(24.dp))
                 StaticContentRow(
-                    title = "Channels",
+                    title = str("section.channels"),
                     items = feed.channels,
                     focusedIndex = channelRow.focused,
                     itemKey = { ch -> ch.id },
@@ -268,7 +269,7 @@ private fun HomeErrorState(message: String, onRetry: () -> Unit) {
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Spacer(Modifier.height(200.dp))
-        Text("Couldn't load home feed", color = colors.text, fontSize = 20.sp)
+        Text(str("error.generic"), color = colors.text, fontSize = 20.sp)
         Spacer(Modifier.height(12.dp))
         Text(message, color = colors.textSecondary, fontSize = 14.sp)
     }
