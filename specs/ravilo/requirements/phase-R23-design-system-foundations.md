@@ -57,8 +57,11 @@ every component.
    - **`JetBrains Mono`** — pairing PIN code only (use `androidx.compose.ui.text.font.GenericFontFamily`
      monospace as the fallback family; the system monospace on Android TV is close enough).
 
-4. Use `FontLoadingStrategy.Async` for both `FontFamily` declarations so the first composition
-   frame is not blocked. A brief flash of the system fallback on cold start is acceptable.
+4. No explicit `FontLoadingStrategy` annotation is needed. When using Compose Multiplatform
+   Resources (`Font(Res.font.xxx)`), the compose-resources library handles async font loading
+   internally. The `FontLoadingStrategy` parameter is only available on path-based `Font()`
+   overloads and does not exist on resource-based ones in CMP 1.8.x. The first composition
+   frame will fall back to the system font briefly; this is expected and acceptable on cold start.
 
 ### 2. Color token corrections
 
@@ -175,6 +178,13 @@ this is used by the NEW badge, Up Next ribbon, and any future gradient-tinted el
 val RaviloColors.accentGradient: Brush
     get() = Brush.linearGradient(listOf(accent, accentSecondary))
 ```
+
+`Brush.linearGradient` allocates a new object on every access. Callers using this inside a
+`Modifier.background(brush = ...)` are safe because Compose compares brushes structurally (via
+`equals()`), so no recomposition is triggered even though a new object is created. However,
+callers storing the brush in a `val` at call-site should wrap it in
+`remember(colors.accent, colors.accentSecondary) { colors.accentGradient }` to avoid GC pressure
+from per-frame allocations.
 
 ## Invariants
 

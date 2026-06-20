@@ -43,9 +43,11 @@ fun rememberShimmerBrush(): Brush {
         animationSpec = infiniteRepeatable(tween(1400, easing = LinearEasing)),
         label = "shimmerX",
     )
-    return remember(x) {
-        Brush.linearGradient(shimmerColors, start = Offset(x, 0f), end = Offset(x + 1200f, 0f))
-    }
+    // Do NOT wrap in remember(x) — x changes every frame so remember(x) cache-misses every
+    // frame, allocating a RememberObserver wrapper object on each call, which is more GC
+    // pressure than just creating the Brush directly. Brush.linearGradient is a cheap data
+    // object; the allocation cost is negligible compared to the wrapper overhead.
+    return Brush.linearGradient(shimmerColors, start = Offset(x, 0f), end = Offset(x + 1200f, 0f))
 }
 ```
 
@@ -100,21 +102,20 @@ Replace loading state in `MovieDetailScreen` / `SeriesDetailScreen` with:
 ```kotlin
 @Composable
 fun DetailLoadingShell() {
+    val colors = RaviloTheme.colors
     val brush = rememberShimmerBrush()
-    Column(Modifier.fillMaxSize().background(RaviloTheme.colors.background)) {
-        // hero band
-        ShimmerBox(width = Dp.Infinity /* fillMaxWidth */, height = 620.dp, radius = 0.dp, brush = brush)
+    Column(Modifier.fillMaxSize().background(colors.background)) {
+        // hero band — use fillMaxWidth directly; ShimmerBox takes a fixed width so can't represent
+        // a full-bleed hero. A plain Box is cleaner here:
+        Box(Modifier.fillMaxWidth().height(620.dp).background(brush))
         Spacer(Modifier.height(32.dp))
-        // cast row label + tiles
+        // cast row label
         ShimmerBox(200.dp, 29.dp, 6.dp, brush)
         Spacer(Modifier.height(12.dp))
         ShimmerRow(5, TileVariant.POSTER, brush)
     }
 }
 ```
-
-`ShimmerBox` with `Dp.Infinity` is not valid Compose — use `Modifier.fillMaxWidth().height(620.dp)`
-directly on a `Box` with `Modifier.background(brush)`.
 
 ### 5. Browse & search skeleton
 
@@ -183,19 +184,31 @@ The 38 % dim makes watched episodes visually recede without disappearing, matchi
 
 Currently all `LazyRow`s use `rememberLazyListState()` but never scroll to the focused item.
 The focus wiring in `FocusRow` / `dpadFocusable` calls `onFocused` with the column index.
-Each `ContentRow` should hold a `LazyListState` and a `LaunchedEffect`:
+Each `ContentRow` should hold a `LazyListState`, a focused-index state, and a focused-row flag:
 
 ```kotlin
 val listState = rememberLazyListState()
-val focusedIdx = remember { mutableIntStateOf(0) }
+val focusedIdx = remember { mutableIntStateOf(-1) }
+var rowHasFocus by remember { mutableStateOf(false) }
 
-LaunchedEffect(focusedIdx.intValue) {
-    listState.animateScrollToItem(
-        index = focusedIdx.intValue,
-        scrollOffset = -80,   // reveal partial neighbour on left
-    )
+// Only scroll when the row is actually focused — prevents spurious scrolls on first
+// composition (when focusedIdx is set to 0 before any user interaction).
+LaunchedEffect(focusedIdx.intValue, rowHasFocus) {
+    if (rowHasFocus && focusedIdx.intValue >= 0) {
+        listState.animateScrollToItem(
+            index = focusedIdx.intValue,
+            scrollOffset = -80,   // reveal partial neighbour on left
+        )
+    }
 }
 ```
+
+Update each tile's `onFocused` to set both: `focusedIdx.intValue = i; rowHasFocus = true`.
+Update the `onBlurred` or the row's `onDown`/`onUp` exit handlers to set `rowHasFocus = false`.
+
+**Why the guard?** `LaunchedEffect(focusedIdx.intValue)` without the flag fires immediately on
+first composition when `focusedIdx = 0`, causing the list to scroll to item 0 before any user
+has touched it. On a partially-off-screen row this snaps the scroll position unexpectedly.
 
 ### 11. Series season progress bar
 
