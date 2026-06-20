@@ -48,12 +48,12 @@ import dev.jellystructure.shared.tv.Hero
 import dev.jellystructure.shared.tv.MediaCard
 import kotlinx.coroutines.delay
 
-private const val AUTO_ADVANCE_MS = 7_000L
-
 @Composable
 fun HeroCarousel(
     items: List<Hero>,
     focusRequester: FocusRequester,
+    heightDp: Dp = 460.dp,
+    autoAdvanceSeconds: Int = 6,
     onSelect: (MediaCard) -> Unit = {},
     onUp: (() -> Unit)? = null,
     onDown: (() -> Unit)? = null,
@@ -84,17 +84,19 @@ fun HeroCarousel(
     if (items.isEmpty()) return
     val active = items[activeIndex]
 
-    // Auto-advance; resets when the user manually changes slide
-    LaunchedEffect(resetTick) {
-        delay(AUTO_ADVANCE_MS)
-        activeIndex = (activeIndex + 1) % items.size
-        resetTick++
+    // Auto-advance; resets when the user manually changes slide. 0 seconds = off.
+    if (autoAdvanceSeconds > 0 && items.size > 1) {
+        LaunchedEffect(resetTick, autoAdvanceSeconds) {
+            delay(autoAdvanceSeconds * 1_000L)
+            activeIndex = (activeIndex + 1) % items.size
+            resetTick++
+        }
     }
 
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(460.dp)
+            .height(heightDp)
             .dpadFocusable(
                 focusRequester = focusRequester,
                 onLeft   = {

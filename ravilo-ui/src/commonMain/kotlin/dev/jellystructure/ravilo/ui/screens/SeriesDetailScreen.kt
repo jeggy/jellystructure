@@ -122,7 +122,15 @@ private fun SeriesDetailLoaded(
     }
     val scrollState = rememberScrollState()
 
-    var selectedSeasonIdx by remember { mutableIntStateOf(0) }
+    // Default to the season that holds the resume episode, so Resume plays with the
+    // correct title/episode-rail context (not always season 0).
+    val initialSeasonIdx = remember(detail) {
+        val rid = detail.progress.resumeEpisodeId
+        if (rid != null)
+            detail.seasons.indexOfFirst { s -> s.episodes.any { it.id == rid } }.takeIf { it >= 0 } ?: 0
+        else 0
+    }
+    var selectedSeasonIdx by remember(detail) { mutableIntStateOf(initialSeasonIdx) }
     val currentSeason = detail.seasons.getOrNull(selectedSeasonIdx)
     val episodes: List<Episode> = currentSeason?.episodes ?: emptyList()
 
@@ -132,7 +140,7 @@ private fun SeriesDetailLoaded(
     val seasonFRs = remember(detail.seasons.size) {
         List(detail.seasons.size) { FocusRequester() }
     }
-    var focusedSeasonIdx by remember { mutableIntStateOf(0) }
+    var focusedSeasonIdx by remember(detail) { mutableIntStateOf(initialSeasonIdx) }
 
     val castFR = remember(detail.cast.size) { FocusRow(maxOf(detail.cast.size, 1)) }
     val episodeFR = remember(episodes.size) { FocusRow(maxOf(episodes.size, 1)) }
