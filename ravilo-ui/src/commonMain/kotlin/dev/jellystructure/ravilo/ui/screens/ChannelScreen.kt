@@ -26,6 +26,7 @@ import dev.jellystructure.ravilo.ui.components.StaticContentRow
 import dev.jellystructure.ravilo.ui.components.Tile
 import dev.jellystructure.ravilo.ui.components.TileVariant
 import dev.jellystructure.ravilo.ui.focus.FocusRow
+import dev.jellystructure.ravilo.ui.i18n.str
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
 import androidx.compose.runtime.collectAsState
 import dev.jellystructure.shared.tv.Channel
@@ -76,14 +77,14 @@ fun ChannelScreen(
         Column(modifier = Modifier.fillMaxSize()) {
             // Channel header
             Column(modifier = Modifier.padding(horizontal = 40.dp, vertical = 24.dp)) {
-                Text("‹ Home", color = colors.textSecondary, fontSize = 13.sp)
+                Text("‹ ${str("nav.home")}", color = colors.textSecondary, fontSize = 13.sp)
                 Spacer(Modifier.height(8.dp))
                 Text(channel.name, color = colors.text, fontSize = 32.sp, fontWeight = FontWeight.Bold)
             }
 
             when (val s = storeState) {
                 is HomeState.Loading -> Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
-                    Text("Loading…", color = colors.textSecondary, fontSize = 16.sp)
+                    Text(str("loading"), color = colors.textSecondary, fontSize = 16.sp)
                 }
                 is HomeState.Error -> Box(Modifier.weight(1f).padding(40.dp), contentAlignment = Alignment.Center) {
                     Text(s.message, color = colors.textSecondary, fontSize = 14.sp)

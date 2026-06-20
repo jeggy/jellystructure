@@ -62,6 +62,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.jellystructure.ravilo.ui.focus.dpadFocusable
+import dev.jellystructure.ravilo.ui.i18n.str
 import dev.jellystructure.ravilo.ui.seams.PlayerAudioTrack
 import dev.jellystructure.ravilo.ui.seams.PlayerLifecycleEffect
 import dev.jellystructure.ravilo.ui.seams.PlayerVideoSurface
@@ -427,7 +428,7 @@ fun PlayerScreen(
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 BufferingSpinner(colors)
                 Spacer(Modifier.height(48.dp))
-                Text("Loading stream…", color = Color.White.copy(0.7f), fontSize = 18.sp)
+                Text(str("loading"), color = Color.White.copy(0.7f), fontSize = 18.sp)
             }
         }
 
@@ -837,7 +838,7 @@ private fun BackButton(focused: Boolean) {
             Text("‹", color = if (focused) Color.Black else Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
         }
         Text(
-            text = "Back",
+            text = str("action.back"),
             color = Color.White.copy(alpha = 0.7f),
             fontSize = 14.sp,
             fontWeight = FontWeight.SemiBold,
@@ -910,7 +911,7 @@ private fun EpisodeChip(colors: RaviloColors) {
         ) {
             Text("↓", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
         }
-        Text("Episodes", color = Color.White.copy(0.7f), fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+        Text(str("detail.episodes"), color = Color.White.copy(0.7f), fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
     }
 }
 
@@ -1093,7 +1094,7 @@ private fun NextUpCard(
                         Spacer(Modifier.height(4.dp))
                     }
                     Text(
-                        text = "Episode",
+                        text = str("detail.episode"),
                         color = colors.text,
                         fontSize = 20.sp,
                         fontWeight = FontWeight.Bold,

@@ -37,6 +37,7 @@ import dev.jellystructure.ravilo.ui.components.DetailLoadingShell
 import dev.jellystructure.ravilo.ui.components.RaviloButton
 import dev.jellystructure.ravilo.ui.components.Tile
 import dev.jellystructure.ravilo.ui.focus.FocusRow
+import dev.jellystructure.ravilo.ui.i18n.str
 import dev.jellystructure.ravilo.ui.seams.RemoteImage
 import dev.jellystructure.ravilo.ui.theme.RaviloDimens
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
@@ -157,7 +158,7 @@ private fun MovieDetailLoaded(
                 val isResume = detail.playback.positionMs > 0 && !detail.playback.watched
                 val minsLeft = if (detail.playback.durationMs > 0)
                     ((detail.playback.durationMs - detail.playback.positionMs) / 60_000L).toInt() else 0
-                val playLabel = if (isResume) "Resume · ${minsLeft} min left" else "Play"
+                val playLabel = if (isResume) "${str("action.resume")} · ${minsLeft} min left" else str("action.play")
                 RaviloButton(
                     label = playLabel,
                     focusRequester = playFR,
@@ -172,7 +173,7 @@ private fun MovieDetailLoaded(
                     onSelect = { onPlay(detail.card) },
                 )
                 RaviloButton(
-                    label = "+ My List",
+                    label = "+ ${str("nav.my_list")}",
                     focusRequester = myListFR,
                     style = ButtonStyle.GHOST,
                     onLeft = { playFR.requestFocus() },
@@ -189,7 +190,7 @@ private fun MovieDetailLoaded(
         // Cast row
         if (detail.cast.isNotEmpty()) {
             Spacer(Modifier.height(RaviloDimens.rowGap))
-            Text("Cast", color = colors.text, fontSize = 22.sp, fontWeight = FontWeight.SemiBold,
+            Text(str("detail.cast"), color = colors.text, fontSize = 22.sp, fontWeight = FontWeight.SemiBold,
                 fontFamily = spaceGrotesk, letterSpacing = (-0.3).sp,
                 modifier = Modifier.padding(horizontal = RaviloDimens.sectionPadH))
             Spacer(Modifier.height(RaviloDimens.rowHeadPadB))
@@ -214,7 +215,7 @@ private fun MovieDetailLoaded(
         // More Like This
         if (detail.related.isNotEmpty()) {
             Spacer(Modifier.height(RaviloDimens.rowGap))
-            Text("More Like This", color = colors.text, fontSize = 22.sp, fontWeight = FontWeight.SemiBold,
+            Text(str("section.related"), color = colors.text, fontSize = 22.sp, fontWeight = FontWeight.SemiBold,
                 fontFamily = spaceGrotesk, letterSpacing = (-0.3).sp,
                 modifier = Modifier.padding(horizontal = RaviloDimens.sectionPadH))
             Spacer(Modifier.height(RaviloDimens.rowHeadPadB))

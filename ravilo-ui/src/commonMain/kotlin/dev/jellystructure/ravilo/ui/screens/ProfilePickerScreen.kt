@@ -29,6 +29,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.jellystructure.ravilo.ui.focus.dpadFocusable
+import dev.jellystructure.ravilo.ui.i18n.str
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
 import dev.jellystructure.shared.tv.TvApiClient
 import dev.jellystructure.shared.tv.TvSession
@@ -109,7 +110,7 @@ fun ProfilePickerScreen(
                 // at a cold-start gate with no active session it is hidden.
                 val showSettings = remember(s.sessions) { MultiTokenStore.getActive() != null }
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("Who's watching?", color = colors.text, fontSize = 28.sp, fontWeight = FontWeight.Bold)
+                    Text(str("profile.who"), color = colors.text, fontSize = 28.sp, fontWeight = FontWeight.Bold)
                     Spacer(Modifier.height(40.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(24.dp)) {
                         val extras = if (showSettings) 2 else 1   // Add user (+ Settings)
@@ -142,7 +143,7 @@ fun ProfilePickerScreen(
                         if (showSettings) {
                             ActionTile(
                                 glyph = "⚙",
-                                label = "Settings",
+                                label = str("nav.settings"),
                                 focusRequester = frs[settingsIdx],
                                 onLeft  = { frs[addIdx].requestFocus() },
                                 onSelect = onSettings,
@@ -174,7 +175,7 @@ fun ProfilePickerScreen(
                             .padding(horizontal = 28.dp, vertical = 12.dp),
                         contentAlignment = Alignment.Center,
                     ) {
-                        Text("Cancel", color = colors.textSecondary, fontSize = 14.sp)
+                        Text(str("profile.cancel"), color = colors.textSecondary, fontSize = 14.sp)
                     }
                 }
             }
@@ -218,7 +219,7 @@ private fun ProfileTile(
         Text(session.displayName, color = if (focused) colors.text else colors.textSecondary, fontSize = 14.sp)
         if (session.isAdmin) {
             Spacer(Modifier.height(4.dp))
-            Text("Admin", color = colors.accent, fontSize = 11.sp)
+            Text(str("profile.admin"), color = colors.accent, fontSize = 11.sp)
         }
     }
 }
@@ -231,7 +232,7 @@ private fun AddUserTile(
     onRight: () -> Unit = {},
 ) = ActionTile(
     glyph = "+",
-    label = "Add user",
+    label = str("profile.add_user"),
     focusRequester = focusRequester,
     onLeft = onLeft,
     onRight = onRight,

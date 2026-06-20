@@ -27,6 +27,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.jellystructure.ravilo.ui.focus.dpadFocusable
+import dev.jellystructure.ravilo.ui.i18n.str
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
 import dev.jellystructure.shared.tv.RaviloConfig
 import dev.jellystructure.shared.tv.Skin
@@ -88,13 +89,13 @@ fun SettingsScreen(
 
     Box(modifier = Modifier.fillMaxSize().background(colors.background)) {
         Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 80.dp, vertical = 40.dp)) {
-            Text("‹ Back", color = colors.textSecondary, fontSize = 13.sp)
+            Text("‹ ${str("action.back")}", color = colors.textSecondary, fontSize = 13.sp)
             Spacer(Modifier.height(8.dp))
-            Text("Settings", color = colors.text, fontSize = 32.sp, fontWeight = FontWeight.Bold)
+            Text(str("nav.settings"), color = colors.text, fontSize = 32.sp, fontWeight = FontWeight.Bold)
             Spacer(Modifier.height(40.dp))
 
             when (val s = state) {
-                is SettingsState.Loading -> Text("Loading…", color = colors.textSecondary, fontSize = 16.sp)
+                is SettingsState.Loading -> Text(str("loading"), color = colors.textSecondary, fontSize = 16.sp)
                 is SettingsState.Error   -> Text(s.message, color = colors.textSecondary, fontSize = 14.sp)
                 is SettingsState.Loaded  -> SettingsContent(
                     config = s.config,
@@ -176,7 +177,7 @@ private fun SettingsContent(
     // Account
     SectionHeader("Account")
     Spacer(Modifier.height(12.dp))
-    Text("Signed in as $displayName", color = colors.textSecondary, fontSize = 15.sp)
+    Text(str("profile.signed_in", mapOf("name" to displayName)), color = colors.textSecondary, fontSize = 15.sp)
     Spacer(Modifier.height(16.dp))
     val signOutFR = remember { FocusRequester() }
     var focused by remember { mutableStateOf(false) }
@@ -192,7 +193,7 @@ private fun SettingsContent(
             .padding(horizontal = 24.dp, vertical = 12.dp),
         contentAlignment = Alignment.Center,
     ) {
-        Text("Sign out / Unpair", color = colors.text, fontSize = 14.sp)
+        Text(str("profile.sign_out"), color = colors.text, fontSize = 14.sp)
     }
 }
 
@@ -228,7 +229,7 @@ private fun ToggleRow(
                 .background(if (checked) colors.accent else colors.surfaceVariant.copy(alpha = 0.5f), RoundedCornerShape(50))
                 .padding(horizontal = 12.dp, vertical = 4.dp),
         ) {
-            Text(if (checked) "On" else "Off", color = if (checked) colors.onAccent else colors.textSecondary, fontSize = 12.sp)
+            Text(if (checked) str("on") else str("off"), color = if (checked) colors.onAccent else colors.textSecondary, fontSize = 12.sp)
         }
     }
 }

@@ -34,6 +34,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.jellystructure.ravilo.ui.focus.dpadFocusable
+import dev.jellystructure.ravilo.ui.i18n.str
 import dev.jellystructure.ravilo.ui.theme.RaviloDimens
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
 import dev.jellystructure.ravilo.ui.theme.Sora
@@ -52,7 +53,7 @@ import kotlinx.datetime.toLocalDateTime
  */
 @Composable
 fun AppBar(
-    navItems: List<String> = listOf("Home", "Movies", "Series", "My List", "Search"),
+    navItems: List<String>? = null,
     activeNav: Int = 0,
     onNavSelect: (Int) -> Unit = {},
     navFR: FocusRequester = remember { FocusRequester() },
@@ -65,6 +66,9 @@ fun AppBar(
     val sora = Sora
     val spaceGrotesk = SpaceGrotesk
     val avatarFR = remember { FocusRequester() }
+    val items = navItems ?: listOf(
+        str("nav.home"), str("nav.movies"), str("nav.series"), str("nav.my_list"), str("nav.search"),
+    )
     val barGradient = remember {
         Brush.verticalGradient(
             0f to Color(0x8C000000),
@@ -72,7 +76,7 @@ fun AppBar(
         )
     }
 
-    val otherFRs = remember(navItems.size) { List(maxOf(navItems.size - 1, 0)) { FocusRequester() } }
+    val otherFRs = remember(items.size) { List(maxOf(items.size - 1, 0)) { FocusRequester() } }
     val allFRs: List<FocusRequester> = remember(navFR, otherFRs) { listOf(navFR) + otherFRs }
     var focusedIdx by remember { mutableIntStateOf(-1) }
 
@@ -100,7 +104,7 @@ fun AppBar(
                 letterSpacing = (-1).sp,
             )
 
-            navItems.forEachIndexed { i, label ->
+            items.forEachIndexed { i, label ->
                 val isFocused = focusedIdx == i
                 val isActive  = i == activeNav
 
@@ -138,7 +142,7 @@ fun AppBar(
                             onFocused  = { focusedIdx = i },
                             onLeft     = { if (i > 0) allFRs[i - 1].requestFocus() },
                             onRight    = {
-                                if (i < navItems.lastIndex) allFRs[i + 1].requestFocus()
+                                if (i < items.lastIndex) allFRs[i + 1].requestFocus()
                                 else if (onProfile != null) avatarFR.requestFocus()
                             },
                             onDown     = onDown,
