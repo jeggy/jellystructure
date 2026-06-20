@@ -27,6 +27,7 @@ import androidx.compose.ui.unit.sp
 import dev.jellystructure.ravilo.ui.components.AppBar
 import dev.jellystructure.ravilo.ui.components.ChannelCard
 import dev.jellystructure.ravilo.ui.components.HeroCarousel
+import dev.jellystructure.ravilo.ui.components.HomeLoadingShell
 import dev.jellystructure.ravilo.ui.components.StaticContentRow
 import dev.jellystructure.ravilo.ui.components.Tile
 import dev.jellystructure.ravilo.ui.components.TileVariant
@@ -211,13 +212,7 @@ private fun HomeLoaded(
     )
 }
 
-@Composable
-private fun HomeLoadingShell() {
-    val colors = RaviloTheme.colors
-    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Text("Loading…", color = colors.textSecondary, fontSize = 16.sp)
-    }
-}
+// HomeLoadingShell is imported from Shimmer.kt
 
 @Composable
 private fun HomeErrorState(message: String, onRetry: () -> Unit) {

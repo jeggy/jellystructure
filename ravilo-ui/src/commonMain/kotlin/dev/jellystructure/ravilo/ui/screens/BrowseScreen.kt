@@ -34,7 +34,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.jellystructure.ravilo.ui.components.Tile
 import dev.jellystructure.ravilo.ui.focus.dpadFocusable
+import dev.jellystructure.ravilo.ui.theme.RaviloDimens
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
+import dev.jellystructure.ravilo.ui.theme.Sora
+import dev.jellystructure.ravilo.ui.theme.SpaceGrotesk
 import dev.jellystructure.shared.tv.BrowseFacets
 import dev.jellystructure.shared.tv.FacetItem
 import dev.jellystructure.shared.tv.MediaCard
@@ -94,6 +97,7 @@ fun BrowseScreen(
     onItemSelect: (MediaCard) -> Unit,
 ) {
     val colors = RaviloTheme.colors
+    val spaceGrotesk = SpaceGrotesk
 
     LaunchedEffect(kind) { if (store.activeKind != kind) store.load(kind) }
 
@@ -101,16 +105,21 @@ fun BrowseScreen(
 
     Column(modifier = Modifier.fillMaxSize().background(colors.background)) {
         // Header
-        Column(modifier = Modifier.padding(horizontal = 40.dp, vertical = 24.dp)) {
-            Text("‹ Back", color = colors.textSecondary, fontSize = 13.sp)
-            Spacer(Modifier.height(8.dp))
+        Column(modifier = Modifier.padding(horizontal = RaviloDimens.screenPadH, vertical = 32.dp)) {
             val title = when (kind) {
                 BrowseKind.ALL -> "All"
                 BrowseKind.MOVIES -> "Movies"
                 BrowseKind.SERIES -> "Series"
                 BrowseKind.MY_LIST -> "My List"
             }
-            Text(title, color = colors.text, fontSize = 32.sp, fontWeight = FontWeight.Bold)
+            Text(
+                text = title,
+                color = colors.text,
+                fontSize = 42.sp,
+                fontWeight = FontWeight.Bold,
+                fontFamily = spaceGrotesk,
+                letterSpacing = (-1.5).sp,
+            )
         }
 
         when (val s = state) {
@@ -134,8 +143,8 @@ fun BrowseScreen(
                 Text(
                     "${s.results.items.size} titles",
                     color = colors.textSecondary,
-                    fontSize = 13.sp,
-                    modifier = Modifier.padding(horizontal = 40.dp),
+                    fontSize = 16.sp,
+                    modifier = Modifier.padding(horizontal = RaviloDimens.screenPadH),
                 )
                 Spacer(Modifier.height(12.dp))
                 BrowseGrid(items = s.results.items, onItemSelect = onItemSelect)
@@ -151,14 +160,15 @@ private fun GenreChips(
     onSelect: (String?) -> Unit,
 ) {
     val colors = RaviloTheme.colors
-    val chips = listOf(null) + genres.map { it.name } // null = All
+    val sora = Sora
+    val chips = listOf(null) + genres.map { it.name }
     val chipFRs = remember(chips.size) { List(chips.size) { FocusRequester() } }
-    val chipShape = remember { RoundedCornerShape(20.dp) }
+    val chipShape = remember { RoundedCornerShape(24.dp) }
     var focusedChip by remember { mutableIntStateOf(0) }
 
     LazyRow(
-        contentPadding = PaddingValues(horizontal = 40.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        contentPadding = PaddingValues(horizontal = RaviloDimens.trackPadH),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         items(chips.size, key = { i -> chips[i] ?: "all" }) { i ->
             val label = chips[i] ?: "All"
@@ -183,13 +193,14 @@ private fun GenreChips(
                         onRight = { if (i < chips.lastIndex) chipFRs[i + 1].requestFocus() },
                         onSelect = { onSelect(chips[i]) },
                     )
-                    .padding(horizontal = 16.dp, vertical = 6.dp),
+                    .padding(horizontal = 20.dp, vertical = 10.dp),
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
                     text = label,
                     color = if (isActive) colors.onAccent else if (focused) colors.text else colors.textSecondary,
-                    fontSize = 13.sp,
+                    fontSize = 17.sp,
+                    fontFamily = sora,
                     fontWeight = if (isActive || focused) FontWeight.SemiBold else FontWeight.Normal,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -217,9 +228,9 @@ private fun BrowseGrid(items: List<MediaCard>, onItemSelect: (MediaCard) -> Unit
     LazyVerticalGrid(
         columns = GridCells.Fixed(GRID_COLS),
         state = gridState,
-        contentPadding = PaddingValues(horizontal = 40.dp, vertical = 8.dp),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-        verticalArrangement = Arrangement.spacedBy(20.dp),
+        contentPadding = PaddingValues(horizontal = RaviloDimens.trackPadH, vertical = RaviloDimens.trackPadV),
+        horizontalArrangement = Arrangement.spacedBy(RaviloDimens.itemSpacing),
+        verticalArrangement = Arrangement.spacedBy(RaviloDimens.rowGap),
     ) {
         items(items.size, key = { i -> items[i].id }) { i ->
             val card = items[i]

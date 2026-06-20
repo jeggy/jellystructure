@@ -34,6 +34,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.jellystructure.ravilo.ui.components.ButtonStyle
 import dev.jellystructure.ravilo.ui.components.CastCircle
+import dev.jellystructure.ravilo.ui.components.DetailLoadingShell
 import dev.jellystructure.ravilo.ui.components.EpisodeCard
 import dev.jellystructure.ravilo.ui.components.RaviloButton
 import dev.jellystructure.ravilo.ui.components.SeasonPicker
@@ -61,9 +62,7 @@ fun SeriesDetailScreen(
 
     Box(modifier = Modifier.fillMaxSize().background(colors.background)) {
         when (val s = state) {
-            is SeriesDetailState.Loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text("Loading…", color = colors.textSecondary, fontSize = 16.sp)
-            }
+            is SeriesDetailState.Loading -> DetailLoadingShell()
             is SeriesDetailState.Error -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Text(s.message, color = colors.textSecondary, fontSize = 14.sp)
             }

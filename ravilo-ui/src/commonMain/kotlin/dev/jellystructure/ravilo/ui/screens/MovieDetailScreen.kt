@@ -33,6 +33,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.jellystructure.ravilo.ui.components.ButtonStyle
 import dev.jellystructure.ravilo.ui.components.CastCircle
+import dev.jellystructure.ravilo.ui.components.DetailLoadingShell
 import dev.jellystructure.ravilo.ui.components.RaviloButton
 import dev.jellystructure.ravilo.ui.components.Tile
 import dev.jellystructure.ravilo.ui.focus.FocusRow
@@ -57,9 +58,7 @@ fun MovieDetailScreen(
 
     Box(modifier = Modifier.fillMaxSize().background(colors.background)) {
         when (val s = state) {
-            is MovieDetailState.Loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text("Loading…", color = colors.textSecondary, fontSize = 16.sp)
-            }
+            is MovieDetailState.Loading -> DetailLoadingShell()
             is MovieDetailState.Error -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Text(s.message, color = colors.textSecondary, fontSize = 14.sp)
             }
