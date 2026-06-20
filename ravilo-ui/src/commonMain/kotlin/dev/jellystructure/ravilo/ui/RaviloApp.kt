@@ -43,6 +43,7 @@ import dev.jellystructure.ravilo.ui.screens.SettingsScreen
 import dev.jellystructure.ravilo.ui.screens.SettingsStore
 import dev.jellystructure.ravilo.ui.i18n.WithLocale
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
+import dev.jellystructure.ravilo.ui.theme.rememberRaviloTheme
 import dev.jellystructure.shared.tv.Channel
 import dev.jellystructure.shared.tv.MediaCard
 import dev.jellystructure.shared.tv.MediaKind
@@ -81,17 +82,21 @@ private sealed class Dest {
 @Composable
 fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeServer: () -> Unit = {}) {
     var lang by remember { mutableStateOf("en") }
+    val themeState = rememberRaviloTheme()
 
-    // Fetch the active user's language setting from their config
-    val langScope = remember { CoroutineScope(SupervisorJob() + Dispatchers.Default) }
+    // Fetch the active user's config and apply server-owned interface prefs (language + skin)
+    val configScope = remember { CoroutineScope(SupervisorJob() + Dispatchers.Default) }
 
-    fun refreshLang() {
-        langScope.launch {
-            lang = runCatching { apiClient.getConfig().uiLanguage }.getOrDefault("en")
+    fun refreshConfig() {
+        configScope.launch {
+            runCatching { apiClient.getConfig() }.getOrNull()?.let { cfg ->
+                lang = cfg.uiLanguage
+                themeState.skin = cfg.defaultSkin
+            }
         }
     }
 
-    RaviloTheme {
+    RaviloTheme(state = themeState) {
     WithLocale(lang) {
         // Determine starting screen based on cached sessions
         val initialDest = remember {
@@ -107,9 +112,9 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
         }
         var stack by remember { mutableStateOf(listOf<Dest>(initialDest)) }
 
-        // Load lang when already on Home (single-session fast path)
+        // Load config when already on Home (single-session fast path)
         if (initialDest is Dest.Home) {
-            androidx.compose.runtime.LaunchedEffect(Unit) { refreshLang() }
+            androidx.compose.runtime.LaunchedEffect(Unit) { refreshConfig() }
         }
 
         fun push(dest: Dest) { stack = stack + dest }
@@ -140,7 +145,7 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                     store = store,
                     apiClient = apiClient,
                     onProfileSelected = { session ->
-                        refreshLang()
+                        refreshConfig()
                         push(Dest.Home(session.displayName))
                     },
                 )
@@ -151,8 +156,11 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                 PairingScreen(
                     store = store,
                     onPaired = {
-                        refreshLang()
-                        push(Dest.Home(displayName = ""))
+                        refreshConfig()
+                        // Reset the stack so Back from Home doesn't return to pairing,
+                        // and carry the freshly-paired user's display name.
+                        val name = MultiTokenStore.getActive()?.displayName ?: ""
+                        stack = listOf(Dest.Home(name))
                     },
                     onChangeServer = onChangeServer,
                 )
@@ -306,6 +314,7 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                 SettingsScreen(
                     store = store,
                     displayName = dest.displayName,
+                    onSkinChange = { themeState.skin = it },
                     onSignOut = { stack = listOf(Dest.Pairing) },
                     onBack = { pop() },
                 )

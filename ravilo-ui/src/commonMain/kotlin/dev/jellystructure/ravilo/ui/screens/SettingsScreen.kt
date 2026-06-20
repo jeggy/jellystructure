@@ -81,6 +81,7 @@ fun SettingsScreen(
     displayName: String,
     onSignOut: () -> Unit,
     onBack: () -> Unit,
+    onSkinChange: (Skin) -> Unit = {},
 ) {
     val colors = RaviloTheme.colors
     val state by store.state.collectAsState()
@@ -100,6 +101,7 @@ fun SettingsScreen(
                     displayName = displayName,
                     store = store,
                     onSignOut = onSignOut,
+                    onSkinChange = onSkinChange,
                 )
             }
         }
@@ -112,6 +114,7 @@ private fun SettingsContent(
     displayName: String,
     store: SettingsStore,
     onSignOut: () -> Unit,
+    onSkinChange: (Skin) -> Unit,
 ) {
     val colors = RaviloTheme.colors
 
@@ -140,7 +143,7 @@ private fun SettingsContent(
                             onFocused = { focused = true },
                             onLeft  = { if (i > 0) skinFRs[i - 1].requestFocus() },
                             onRight = { if (i < Skin.entries.lastIndex) skinFRs[i + 1].requestFocus() },
-                            onSelect = { store.saveSkin(skin) },
+                            onSelect = { store.saveSkin(skin); onSkinChange(skin) },
                         )
                         .padding(horizontal = 24.dp, vertical = 12.dp),
                     contentAlignment = Alignment.Center,
