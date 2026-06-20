@@ -40,6 +40,7 @@ import dev.jellystructure.ravilo.ui.components.RaviloButton
 import dev.jellystructure.ravilo.ui.components.SeasonPicker
 import dev.jellystructure.ravilo.ui.components.Tile
 import dev.jellystructure.ravilo.ui.focus.FocusRow
+import dev.jellystructure.ravilo.ui.i18n.str
 import dev.jellystructure.ravilo.ui.seams.RemoteImage
 import dev.jellystructure.ravilo.ui.theme.RaviloDimens
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
@@ -223,8 +224,8 @@ private fun SeriesDetailLoaded(
             Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                 val resumeEpId = detail.progress.resumeEpisodeId
                 val playLabel = if (resumeEpId != null && detail.progress.watchedCount < detail.progress.totalCount)
-                    "Resume · ${detail.progress.resumeLabel ?: "E${resumeEpIdx + 1}"}"
-                else "Play · E1"
+                    "${str("action.resume")} · ${detail.progress.resumeLabel ?: "E${resumeEpIdx + 1}"}"
+                else "${str("action.play")} · E1"
                 RaviloButton(
                     label = playLabel,
                     focusRequester = playFR,
@@ -243,7 +244,7 @@ private fun SeriesDetailLoaded(
                     },
                 )
                 RaviloButton(
-                    label = "+ My List",
+                    label = "+ ${str("nav.my_list")}",
                     focusRequester = myListFR,
                     style = ButtonStyle.GHOST,
                     onLeft = { playFR.requestFocus() },
@@ -278,7 +279,7 @@ private fun SeriesDetailLoaded(
         // Episode rail
         if (episodes.isNotEmpty()) {
             Text(
-                "Episodes",
+                str("detail.episodes"),
                 color = colors.text, fontSize = 29.sp, fontWeight = FontWeight.SemiBold,
                 fontFamily = spaceGrotesk, letterSpacing = (-0.5).sp,
                 modifier = Modifier.padding(horizontal = RaviloDimens.sectionPadH),
@@ -316,7 +317,7 @@ private fun SeriesDetailLoaded(
         // Cast row
         if (detail.cast.isNotEmpty()) {
             Spacer(Modifier.height(RaviloDimens.rowGap))
-            Text("Cast", color = colors.text, fontSize = 29.sp, fontWeight = FontWeight.SemiBold,
+            Text(str("detail.cast"), color = colors.text, fontSize = 29.sp, fontWeight = FontWeight.SemiBold,
                 fontFamily = spaceGrotesk, letterSpacing = (-0.5).sp,
                 modifier = Modifier.padding(horizontal = RaviloDimens.sectionPadH))
             Spacer(Modifier.height(RaviloDimens.rowHeadPadB))
@@ -344,7 +345,7 @@ private fun SeriesDetailLoaded(
         // More Like This
         if (detail.related.isNotEmpty()) {
             Spacer(Modifier.height(RaviloDimens.rowGap))
-            Text("More Like This", color = colors.text, fontSize = 29.sp, fontWeight = FontWeight.SemiBold,
+            Text(str("section.related"), color = colors.text, fontSize = 29.sp, fontWeight = FontWeight.SemiBold,
                 fontFamily = spaceGrotesk, letterSpacing = (-0.5).sp,
                 modifier = Modifier.padding(horizontal = RaviloDimens.sectionPadH))
             Spacer(Modifier.height(RaviloDimens.rowHeadPadB))

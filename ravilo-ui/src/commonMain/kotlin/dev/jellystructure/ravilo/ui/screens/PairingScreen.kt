@@ -25,6 +25,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.jellystructure.ravilo.ui.focus.dpadFocusable
+import dev.jellystructure.ravilo.ui.i18n.str
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
 import dev.jellystructure.shared.tv.PairingChallenge
 import dev.jellystructure.shared.tv.TvApiClient
@@ -124,11 +125,11 @@ fun PairingScreen(
 
             when (val s = state) {
                 is PairingState.Starting -> {
-                    Text("Starting…", color = colors.textSecondary, fontSize = 16.sp)
+                    Text(str("loading"), color = colors.textSecondary, fontSize = 16.sp)
                 }
                 is PairingState.Waiting -> {
                     Text(
-                        "To pair this device, open jellystructure on another device,\ngo to Ravilo → Pair a TV, and enter this code:",
+                        str("pair.instructions"),
                         color = colors.textSecondary,
                         fontSize = 16.sp,
                         textAlign = TextAlign.Center,
@@ -150,20 +151,20 @@ fun PairingScreen(
                         )
                     }
                     Spacer(Modifier.height(24.dp))
-                    Text("Waiting for approval…", color = colors.textSecondary, fontSize = 14.sp)
+                    Text(str("pair.waiting"), color = colors.textSecondary, fontSize = 14.sp)
                 }
                 is PairingState.Approved -> {
-                    Text("✓ Signed in as ${s.displayName}", color = colors.badgeWatched, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
+                    Text("✓ ${str("pair.approved", mapOf("name" to s.displayName))}", color = colors.badgeWatched, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
                 }
                 is PairingState.Expired -> {
-                    Text("Code expired.", color = colors.badgeNew, fontSize = 16.sp)
+                    Text(str("pair.expired"), color = colors.badgeNew, fontSize = 16.sp)
                     Spacer(Modifier.height(24.dp))
                     PairingActionButton(label = "Try again", onSelect = { store.retry() })
                     Spacer(Modifier.height(12.dp))
                     PairingActionButton(label = "Change server", onSelect = onChangeServer)
                 }
                 is PairingState.Errored -> {
-                    Text("Error: ${s.message}", color = colors.textSecondary, fontSize = 14.sp, textAlign = TextAlign.Center)
+                    Text(str("pair.error", mapOf("message" to s.message)), color = colors.textSecondary, fontSize = 14.sp, textAlign = TextAlign.Center)
                     Spacer(Modifier.height(24.dp))
                     PairingActionButton(label = "Retry", onSelect = { store.retry() })
                     Spacer(Modifier.height(12.dp))

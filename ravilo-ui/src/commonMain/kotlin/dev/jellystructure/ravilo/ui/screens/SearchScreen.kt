@@ -31,6 +31,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.jellystructure.ravilo.ui.components.OnScreenKeyboard
 import dev.jellystructure.ravilo.ui.components.Tile
+import dev.jellystructure.ravilo.ui.i18n.str
 import dev.jellystructure.ravilo.ui.theme.RaviloDimens
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
 import dev.jellystructure.ravilo.ui.theme.Sora
@@ -122,7 +123,7 @@ fun SearchScreen(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                "Search",
+                str("nav.search"),
                 color = colors.text,
                 fontSize = 28.sp,
                 fontWeight = FontWeight.Bold,
@@ -147,7 +148,7 @@ fun SearchScreen(
             contentAlignment = Alignment.CenterStart,
         ) {
             if (query.isEmpty()) {
-                Text("Start typing…", color = colors.textSecondary, fontSize = 16.sp, fontFamily = sora)
+                Text(str("search.placeholder"), color = colors.textSecondary, fontSize = 16.sp, fontFamily = sora)
             } else {
                 Text(query + "█", color = colors.text, fontSize = 16.sp, fontFamily = sora)
             }
@@ -182,8 +183,8 @@ fun SearchScreen(
         // Results label
         val label = when {
             query.isEmpty()                              -> "Suggestions"
-            items.isEmpty() && state is SearchState.Loaded -> "No results for \"$query\""
-            state is SearchState.Loading                 -> "Searching…"
+            items.isEmpty() && state is SearchState.Loaded -> str("search.empty", mapOf("query" to query))
+            state is SearchState.Loading                 -> str("loading")
             else                                         -> "${items.size} results"
         }
         Text(

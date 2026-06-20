@@ -34,6 +34,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.jellystructure.ravilo.ui.components.Tile
 import dev.jellystructure.ravilo.ui.focus.dpadFocusable
+import dev.jellystructure.ravilo.ui.i18n.str
 import dev.jellystructure.ravilo.ui.theme.RaviloDimens
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
 import dev.jellystructure.ravilo.ui.theme.Sora
@@ -108,9 +109,9 @@ fun BrowseScreen(
         Column(modifier = Modifier.padding(horizontal = RaviloDimens.screenPadH, vertical = 32.dp)) {
             val title = when (kind) {
                 BrowseKind.ALL -> "All"
-                BrowseKind.MOVIES -> "Movies"
-                BrowseKind.SERIES -> "Series"
-                BrowseKind.MY_LIST -> "My List"
+                BrowseKind.MOVIES -> str("nav.movies")
+                BrowseKind.SERIES -> str("nav.series")
+                BrowseKind.MY_LIST -> str("nav.my_list")
             }
             Text(
                 text = title,
@@ -124,7 +125,7 @@ fun BrowseScreen(
 
         when (val s = state) {
             is BrowseState.Loading -> Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
-                Text("Loading…", color = colors.textSecondary, fontSize = 16.sp)
+                Text(str("loading"), color = colors.textSecondary, fontSize = 16.sp)
             }
             is BrowseState.Error -> Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
                 Text(s.message, color = colors.textSecondary, fontSize = 14.sp)
