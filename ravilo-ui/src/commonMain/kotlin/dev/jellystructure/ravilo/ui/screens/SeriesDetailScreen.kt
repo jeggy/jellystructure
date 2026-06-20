@@ -53,7 +53,7 @@ fun SeriesDetailScreen(
     itemId: String,
     store: SeriesDetailStore,
     onBack: () -> Unit,
-    onPlay: (episodeId: String) -> Unit,
+    onPlay: (EpisodePlayContext) -> Unit,
     onRelatedSelect: (MediaCard) -> Unit,
 ) {
     val colors = RaviloTheme.colors
@@ -67,15 +67,48 @@ fun SeriesDetailScreen(
                 Text(s.message, color = colors.textSecondary, fontSize = 14.sp)
             }
             is SeriesDetailState.Loaded -> SeriesDetailLoaded(s.detail, onBack, onPlay, onRelatedSelect)
+
         }
     }
+}
+
+private fun buildEpisodeContext(
+    detail: SeriesDetail,
+    seasonIdx: Int,
+    episodes: List<Episode>,
+    epId: String,
+): EpisodePlayContext {
+    val sNum = detail.seasons.getOrNull(seasonIdx)?.index ?: (seasonIdx + 1)
+    val epIdx = episodes.indexOfFirst { it.id == epId }.coerceAtLeast(0)
+    val ep    = episodes.getOrElse(epIdx) { episodes[0] }
+    val nextEp = episodes.getOrNull(epIdx + 1)
+    return EpisodePlayContext(
+        episodeId    = epId,
+        episodeTitle = ep.title,
+        kicker       = "S$sNum · E${ep.episodeNumber}",
+        nextEpId     = nextEp?.id,
+        nextEpLabel  = nextEp?.let { "S$sNum · E${it.episodeNumber}" },
+        episodes     = episodes.mapIndexed { i, e ->
+            PlayerEpisodeEntry(
+                id            = e.id,
+                n             = e.episodeNumber,
+                title         = e.title,
+                kicker        = "S$sNum · E${e.episodeNumber}",
+                durationLabel = if (e.runtime > 0) "${e.runtime}m" else "",
+                progressPct   = e.playback.pct,
+                watched       = e.playback.watched,
+                stillUrl      = e.stillUrl,
+            )
+        },
+        currentEpIndex = epIdx,
+    )
 }
 
 @Composable
 private fun SeriesDetailLoaded(
     detail: SeriesDetail,
     onBack: () -> Unit,
-    onPlay: (episodeId: String) -> Unit,
+    onPlay: (EpisodePlayContext) -> Unit,
     onRelatedSelect: (MediaCard) -> Unit,
 ) {
     val colors = RaviloTheme.colors
@@ -198,7 +231,7 @@ private fun SeriesDetailLoaded(
                     },
                     onSelect = {
                         val epId = resumeEpId ?: episodes.firstOrNull()?.id
-                        if (epId != null) onPlay(epId)
+                        if (epId != null) onPlay(buildEpisodeContext(detail, selectedSeasonIdx, episodes, epId))
                     },
                 )
                 RaviloButton(
@@ -266,7 +299,7 @@ private fun SeriesDetailLoaded(
                                 detail.related.isNotEmpty() -> relatedFR.requestFocus()
                             }
                         },
-                        onSelect = { onPlay(ep.id) },
+                        onSelect = { onPlay(buildEpisodeContext(detail, selectedSeasonIdx, episodes, ep.id)) },
                     )
                 }
             }

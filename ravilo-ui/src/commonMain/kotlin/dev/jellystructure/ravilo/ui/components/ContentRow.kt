@@ -1,5 +1,6 @@
 package dev.jellystructure.ravilo.ui.components
 
+import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -52,8 +53,20 @@ fun <T> StaticContentRow(
     var rowHasFocus by remember { mutableStateOf(false) }
 
     LaunchedEffect(focusedIndex) {
-        if (rowHasFocus && items.isNotEmpty()) {
-            listState.animateScrollToItem(focusedIndex.coerceIn(0, items.lastIndex))
+        if (!rowHasFocus || items.isEmpty()) return@LaunchedEffect
+        val idx = focusedIndex.coerceIn(0, items.lastIndex)
+        val info = listState.layoutInfo
+        val item = info.visibleItemsInfo.firstOrNull { it.index == idx }
+        when {
+            // Not composed yet — snap into view
+            item == null -> listState.scrollToItem(idx)
+            // Right edge cut off — scroll forward just enough
+            item.offset + item.size > info.viewportEndOffset ->
+                listState.animateScrollBy((item.offset + item.size - info.viewportEndOffset).toFloat())
+            // Left edge cut off — scroll backward just enough
+            item.offset < info.viewportStartOffset ->
+                listState.animateScrollBy((item.offset - info.viewportStartOffset).toFloat())
+            // Fully visible — no scroll needed
         }
     }
 
