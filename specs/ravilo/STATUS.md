@@ -129,3 +129,13 @@ a Jellyfin URL from scratch, and never writes Jellyfin user-data directly.
   "Pair a TV" card on the Ravilo config page calls `POST /api/tv/pair/approve` with the browser
   cookie. Phone-credentials fallback exists on the backend but has no dedicated UI.
 - **Compose-MP web a11y (R17):** canvas accessibility is best-effort; validate against real ATs early.
+- **Ravilo config editor (`/ravilo`) — R26/R27/R28 implemented (compiles; runtime verification
+  pending).** The admin frontend now binds directly to the shared `RaviloConfig` (the parallel
+  `Admin*` DTOs are gone): `:shared` is on the `wasmJsMain` classpath, channels/rows carry generated
+  `id`/`order`, and `PUT /tv/admin/config` validates ids and 400s on a bad body instead of 500.
+  R27 added `HeroConfig.enabled/order` + `RaviloConfig.heroHeightPct/autoAdvanceSeconds` (clamped in
+  `RaviloConfigService.normalize`, honoured in `HomeFeedService`). R28 rebuilt the editor (reorder,
+  show toggles, facet-backed channel/row filters, system-row protection, correct Newly-Added merge,
+  hero height + auto-advance, page chrome, schematic live preview, sidebar `tv` icon). **Still TODO:**
+  the TV client (`:ravilo-ui` `HeroCarousel`) consuming `heroHeightPct`/`autoAdvanceSeconds`; a real
+  Jellyfin item-search picker for heroes; end-to-end save/load verification against a live instance.

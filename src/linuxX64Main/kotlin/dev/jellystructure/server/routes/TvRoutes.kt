@@ -281,7 +281,12 @@ fun Route.tvRoutes(
         val session = runCatching { call.attributes[SessionKey] }.getOrNull()
             ?: run { call.respond(HttpStatusCode.Unauthorized, mapOf("error" to "Not logged in")); return@put }
         val userId = call.request.queryParameters["userId"] ?: session.jellyfinUserId
-        val config = call.receive<RaviloConfig>()
+        val config = runCatching { call.receive<RaviloConfig>() }.getOrElse {
+            call.respond(HttpStatusCode.BadRequest, mapOf("error" to "Invalid config: ${it.message}")); return@put
+        }
+        raviloConfigService.validate(config)?.let { err ->
+            call.respond(HttpStatusCode.BadRequest, mapOf("error" to err)); return@put
+        }
         raviloConfigService.save(userId, config)
         call.respond(mapOf("status" to "ok"))
     }

@@ -35,6 +35,8 @@ class HomeFeedService(
             heroes = buildHeroes(config, all, jellyfinBase, token),
             channels = buildChannels(config),
             rows = buildRows(config, device, all, jellyfinBase, token, channelFilter = null),
+            heroHeightPct = config.heroHeightPct,
+            autoAdvanceSeconds = config.autoAdvanceSeconds,
         )
     }
 
@@ -49,6 +51,8 @@ class HomeFeedService(
             heroes = buildHeroes(config, all, jellyfinBase, token),
             channels = buildChannels(config),
             rows = buildRows(config, device, all, jellyfinBase, token, channelFilter = channelCfg),
+            heroHeightPct = config.heroHeightPct,
+            autoAdvanceSeconds = config.autoAdvanceSeconds,
         )
     }
 
@@ -63,9 +67,12 @@ class HomeFeedService(
         val items: List<MediaItem> = if (config.heroes.isEmpty()) {
             all.sortedByDescending { it.scannedAt }.take(HERO_AUTO_COUNT)
         } else {
-            config.heroes.mapNotNull { hc ->
-                all.firstOrNull { it.jellyfinId == hc.itemId } ?: all.firstOrNull { it.id == hc.itemId }
-            }
+            config.heroes
+                .filter { it.enabled }
+                .sortedBy { it.order }
+                .mapNotNull { hc ->
+                    all.firstOrNull { it.jellyfinId == hc.itemId } ?: all.firstOrNull { it.id == hc.itemId }
+                }
         }
         return items.mapNotNull { item ->
             val jellyfinId = item.jellyfinId ?: return@mapNotNull null

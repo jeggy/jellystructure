@@ -44,6 +44,7 @@ private val ICONS = mapOf(
     "language"  to """<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/><path d="M2 12h20"/></svg>""",
     "metadata"  to """<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>""",
     "settings"  to """<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><line x1="3" y1="8" x2="10" y2="8"/><circle cx="12" cy="8" r="2"/><line x1="14" y1="8" x2="21" y2="8"/><line x1="3" y1="16" x2="7" y2="16"/><circle cx="9" cy="16" r="2"/><line x1="11" y1="16" x2="21" y2="16"/></svg>""",
+    "tv"        to """<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="13" rx="2"/><polyline points="8 21 12 18 16 21"/></svg>""",
 )
 
 private val NAV: List<NavEntry> = listOf(
@@ -52,7 +53,7 @@ private val NAV: List<NavEntry> = listOf(
     NavLink("/metadata", "Metadata", "metadata"),
     NavLink("/activity", "Activity", "activity"),
     NavGroup("Setup"),
-    NavLink("/ravilo", "Ravilo TV", "language"),
+    NavLink("/ravilo", "Ravilo TV", "tv"),
     NavLink("/settings", "Settings", "settings"),
 )
 

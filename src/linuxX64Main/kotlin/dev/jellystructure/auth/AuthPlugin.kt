@@ -38,8 +38,11 @@ fun Application.installAuthPlugin(
             return@intercept
         }
 
-        // /api/tv/** (excluding open paths above): must carry a device token.
-        if (path.startsWith("/api/tv/") && validateDeviceToken != null) {
+        // /api/tv/admin/** is the operator-facing config surface (jellystructure web app); it is
+        // authenticated by the admin cookie session, not a TV device token — fall through to the
+        // cookie-session branch below.
+        // /api/tv/** (excluding admin + the open paths above): must carry a device token.
+        if (path.startsWith("/api/tv/") && !path.startsWith("/api/tv/admin/") && validateDeviceToken != null) {
             val bearer = call.request.headers["Authorization"]
                 ?.takeIf { it.startsWith("Bearer ") }
                 ?.removePrefix("Bearer ")

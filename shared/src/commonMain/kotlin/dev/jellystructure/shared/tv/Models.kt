@@ -136,6 +136,8 @@ data class HomeFeed(
     val heroes: List<Hero>,
     val channels: List<Channel>,
     val rows: List<Row>,
+    @SerialName("hero_height_pct") val heroHeightPct: Int = 56,
+    @SerialName("auto_advance_seconds") val autoAdvanceSeconds: Int = 6,
 )
 
 // ─── Detail ───────────────────────────────────────────────────────────────────
@@ -199,6 +201,8 @@ data class SearchResults(
 @Serializable
 data class HeroConfig(
     @SerialName("item_id") val itemId: String,
+    val enabled: Boolean = true,
+    val order: Int = 0,
     val override: Boolean = false,
 )
 
@@ -238,6 +242,8 @@ data class RaviloConfig(
     @SerialName("show_continue_progress") val showContinueProgress: Boolean = true,
     @SerialName("tile_shape") val tileShape: TileShape = TileShape.POSTER,
     @SerialName("ui_language") val uiLanguage: String = "en",
+    @SerialName("hero_height_pct") val heroHeightPct: Int = 56,       // % of screen the hero fills (30..70)
+    @SerialName("auto_advance_seconds") val autoAdvanceSeconds: Int = 6, // hero carousel interval; 0 = off
 )
 
 // ─── Request bodies ───────────────────────────────────────────────────────────

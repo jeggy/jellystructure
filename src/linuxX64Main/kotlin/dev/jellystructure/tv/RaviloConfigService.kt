@@ -56,9 +56,38 @@ class RaviloConfigService(private val db: JellystructureDb) {
     fun save(userId: String, config: RaviloConfig) {
         db.raviloConfigQueries.upsert(
             user_id = userId,
-            json = json.encodeToString(config),
+            json = json.encodeToString(normalize(config)),
             updated_at = nowMs(),
         )
+    }
+
+    /**
+     * Clamp ranges and assign contiguous ordering before persisting, so the stored layout is always
+     * well-formed regardless of which surface wrote it. Idempotent. Drops heroes with a blank itemId.
+     */
+    fun normalize(config: RaviloConfig): RaviloConfig = config.copy(
+        heroes = config.heroes
+            .filter { it.itemId.isNotBlank() }
+            .mapIndexed { i, h -> h.copy(order = i) },
+        channels = config.channels.mapIndexed { i, c -> c.copy(order = i) },
+        rows = config.rows.mapIndexed { i, r -> r.copy(order = i) },
+        heroHeightPct = config.heroHeightPct.coerceIn(30, 70),
+        autoAdvanceSeconds = config.autoAdvanceSeconds.coerceIn(0, 30),
+    )
+
+    /**
+     * Validate an incoming admin-edited config before persisting. Returns an error message, or null
+     * if the config is sound. Channels and rows must carry unique, non-blank ids (the TV and the
+     * editor both key off them); an empty id would silently collide on the next edit.
+     */
+    fun validate(config: RaviloConfig): String? {
+        val channelIds = config.channels.map { it.id }
+        if (channelIds.any { it.isBlank() }) return "Every channel must have an id."
+        if (channelIds.size != channelIds.toSet().size) return "Channel ids must be unique."
+        val rowIds = config.rows.map { it.id }
+        if (rowIds.any { it.isBlank() }) return "Every row must have an id."
+        if (rowIds.size != rowIds.toSet().size) return "Row ids must be unique."
+        return null
     }
 
     /** Apply only the viewer-tweakable fields; layout (heroes/channels/rows) is operator-only. */
