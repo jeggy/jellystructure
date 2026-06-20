@@ -97,6 +97,7 @@ fun ProfilePickerScreen(
     store: ProfilePickerStore,
     apiClient: TvApiClient,
     onProfileSelected: (LocalSession) -> Unit,
+    onSettings: () -> Unit = {},
 ) {
     val colors = RaviloTheme.colors
     val state by store.state.collectAsState()
@@ -104,11 +105,19 @@ fun ProfilePickerScreen(
     Box(modifier = Modifier.fillMaxSize().background(colors.background), contentAlignment = Alignment.Center) {
         when (val s = state) {
             is ProfilePickerState.Picking -> {
+                // Settings is only offered once a user is active (it needs the active token);
+                // at a cold-start gate with no active session it is hidden.
+                val showSettings = remember(s.sessions) { MultiTokenStore.getActive() != null }
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text("Who's watching?", color = colors.text, fontSize = 28.sp, fontWeight = FontWeight.Bold)
                     Spacer(Modifier.height(40.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(24.dp)) {
-                        val frs = remember(s.sessions.size) { List(s.sessions.size + 1) { FocusRequester() } }
+                        val extras = if (showSettings) 2 else 1   // Add user (+ Settings)
+                        val frs = remember(s.sessions.size, showSettings) {
+                            List(s.sessions.size + extras) { FocusRequester() }
+                        }
+                        val addIdx = s.sessions.size
+                        val settingsIdx = addIdx + 1
                         LaunchedEffect(Unit) { runCatching { frs.firstOrNull()?.requestFocus() } }
 
                         s.sessions.forEachIndexed { i, session ->
@@ -123,29 +132,51 @@ fun ProfilePickerScreen(
 
                         // "Add user" tile
                         AddUserTile(
-                            focusRequester = frs[s.sessions.size],
+                            focusRequester = frs[addIdx],
                             onLeft  = { if (s.sessions.isNotEmpty()) frs[s.sessions.lastIndex].requestFocus() },
+                            onRight = { if (showSettings) frs[settingsIdx].requestFocus() },
                             onSelect = { store.showAddUser() },
                         )
+
+                        // "Settings" tile (only with an active session)
+                        if (showSettings) {
+                            ActionTile(
+                                glyph = "⚙",
+                                label = "Settings",
+                                focusRequester = frs[settingsIdx],
+                                onLeft  = { frs[addIdx].requestFocus() },
+                                onSelect = onSettings,
+                            )
+                        }
                     }
                 }
             }
 
             is ProfilePickerState.AddingUser -> {
-                // Reuse PairingScreen to add a second user, then cache the resulting token
-                val pairingStore = remember {
-                    PairingStoreWithCallback(apiClient) { result ->
-                        val session = LocalSession(
-                            userId = result.session.userId,
-                            displayName = result.session.displayName,
-                            deviceToken = result.deviceToken,
-                            isAdmin = result.session.isAdmin,
-                        )
-                        MultiTokenStore.add(session)
-                        store.cancelAdd()
+                // Reuse PairingScreen to add a user; PairingStore caches the token via
+                // MultiTokenStore, then we return to the picker (now showing the new user).
+                val pairingStore = remember { PairingStore(apiClient) }
+                val cancelFR = remember { FocusRequester() }
+                LaunchedEffect(Unit) { runCatching { cancelFR.requestFocus() } }
+                Box(Modifier.fillMaxSize()) {
+                    PairingScreen(store = pairingStore, onPaired = { store.cancelAdd() })
+                    // Always-focusable cancel so the flow is escapable (incl. Back at a cold-start gate)
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .padding(bottom = 48.dp)
+                            .background(colors.surfaceVariant, RoundedCornerShape(8.dp))
+                            .dpadFocusable(
+                                focusRequester = cancelFR,
+                                onSelect = { store.cancelAdd() },
+                                onBack = { store.cancelAdd() },
+                            )
+                            .padding(horizontal = 28.dp, vertical = 12.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text("Cancel", color = colors.textSecondary, fontSize = 14.sp)
                     }
                 }
-                PairingScreen(store = pairingStore.pairing, onPaired = {})
             }
         }
     }
@@ -167,6 +198,7 @@ private fun ProfileTile(
         modifier = Modifier.dpadFocusable(
             focusRequester = focusRequester,
             onFocused = { focused = true },
+            onBlurred = { focused = false },
             onLeft = onLeft,
             onRight = onRight,
             onSelect = onSelect,
@@ -196,6 +228,24 @@ private fun AddUserTile(
     focusRequester: FocusRequester,
     onLeft: () -> Unit,
     onSelect: () -> Unit,
+    onRight: () -> Unit = {},
+) = ActionTile(
+    glyph = "+",
+    label = "Add user",
+    focusRequester = focusRequester,
+    onLeft = onLeft,
+    onRight = onRight,
+    onSelect = onSelect,
+)
+
+@Composable
+private fun ActionTile(
+    glyph: String,
+    label: String,
+    focusRequester: FocusRequester,
+    onLeft: () -> Unit,
+    onSelect: () -> Unit,
+    onRight: () -> Unit = {},
 ) {
     val colors = RaviloTheme.colors
     var focused by remember { mutableStateOf(false) }
@@ -205,7 +255,9 @@ private fun AddUserTile(
         modifier = Modifier.dpadFocusable(
             focusRequester = focusRequester,
             onFocused = { focused = true },
+            onBlurred = { focused = false },
             onLeft = onLeft,
+            onRight = onRight,
             onSelect = onSelect,
         ),
     ) {
@@ -216,16 +268,9 @@ private fun AddUserTile(
                 .then(if (focused) Modifier.border(3.dp, colors.focusRing, CircleShape) else Modifier),
             contentAlignment = Alignment.Center,
         ) {
-            Text("+", color = if (focused) colors.text else colors.textSecondary, fontSize = 36.sp, fontWeight = FontWeight.Thin)
+            Text(glyph, color = if (focused) colors.text else colors.textSecondary, fontSize = 36.sp, fontWeight = FontWeight.Thin)
         }
         Spacer(Modifier.height(12.dp))
-        Text("Add user", color = if (focused) colors.text else colors.textSecondary, fontSize = 14.sp)
+        Text(label, color = if (focused) colors.text else colors.textSecondary, fontSize = 14.sp)
     }
-}
-
-// ─── PairingStoreWithCallback ─────────────────────────────────────────────────
-
-/** Wraps PairingStore to expose the PairResult on approval. */
-class PairingStoreWithCallback(apiClient: TvApiClient, val onApproved: (dev.jellystructure.shared.tv.PairResult) -> Unit) {
-    val pairing = PairingStore(apiClient)
 }
