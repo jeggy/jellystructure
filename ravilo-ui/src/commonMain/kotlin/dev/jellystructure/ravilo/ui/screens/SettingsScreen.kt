@@ -171,6 +171,8 @@ private fun SettingsContent(
         focusRequester = progressFR,
         onToggle = { store.saveShowContinueProgress(!config.showContinueProgress) },
     )
+    // Land focus on a stable control on entry; up/down reach skin and sign-out.
+    LaunchedEffect(Unit) { runCatching { progressFR.requestFocus() } }
 
     Spacer(Modifier.height(32.dp))
 

@@ -77,7 +77,7 @@ class PlayerStore(private val apiClient: TvApiClient) {
             while (isActive) {
                 delay(PROGRESS_INTERVAL_MS)
                 runCatching {
-                    apiClient.reportProgress(sessionId, itemId, positionProvider())
+                    apiClient.reportProgress(sessionId, itemId, positionProvider(), isPausedProvider())
                 }
             }
         }
