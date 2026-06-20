@@ -150,10 +150,10 @@ class TvApiClient(
         return json.decodeFromString<StreamTicket>(r.bodyAsText())
     }
 
-    suspend fun reportProgress(sessionId: String, itemId: String, positionMs: Long) {
+    suspend fun reportProgress(sessionId: String, itemId: String, positionMs: Long, isPaused: Boolean = false) {
         client.post("$baseUrl/api/tv/playback/progress") {
             auth()
-            jsonBody(json.encodeToString(PlaybackProgressRequest(sessionId, itemId, positionMs)))
+            jsonBody(json.encodeToString(PlaybackProgressRequest(sessionId, itemId, positionMs, isPaused)))
         }.assertSuccess()
     }
 
