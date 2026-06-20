@@ -37,6 +37,7 @@ import io.ktor.http.ContentType
 import io.ktor.http.HttpMethod
 import io.ktor.http.HttpStatusCode
 import io.ktor.serialization.kotlinx.json.json
+import kotlinx.serialization.json.Json
 import io.ktor.server.application.install
 import io.ktor.server.cio.CIO
 import io.ktor.server.engine.embeddedServer
@@ -102,7 +103,7 @@ fun startServer(
 ): suspend () -> Unit {
     val appScope = CoroutineScope(SupervisorJob())
     val engine = embeddedServer(CIO, port = port) {
-        install(ContentNegotiation) { json() }
+        install(ContentNegotiation) { json(Json { ignoreUnknownKeys = true }) }
         install(WebSockets)
         install(CORS) {
             anyHost()
