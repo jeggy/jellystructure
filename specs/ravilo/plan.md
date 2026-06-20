@@ -134,21 +134,6 @@ surface is untouched.)
 - Reuses existing jellystructure capabilities: meta-facets/filters (Phase 30), multi-language search
   (Phase 29), per-episode metadata & watched data sourced from Jellyfin.
 
-> **Playback data path — jellystructure provides; Jellyfin streams.**
-> 1. Client calls `POST /api/tv/playback/start {itemId, clientCapabilities}`.
-> 2. jellystructure calls Jellyfin `POST /Items/{id}/PlaybackInfo` server-side (using the stored
->    Jellyfin token for this user) and selects direct-play or HLS based on `clientCapabilities`.
-> 3. jellystructure returns a `StreamTicket` containing `{jellyfinBaseUrl, accessToken, hlsUrl?, container, …}`.
-> 4. The client passes `StreamTicket.hlsUrl` (or the direct-play URL) to ExoPlayer / browser `<video>`.
-> 5. **ExoPlayer / the browser fetches HLS segments directly from Jellyfin.** jellystructure sees
->    no video or audio bytes.
-> 6. During playback the client heartbeats to `POST /api/tv/playback/progress`; jellystructure
->    forwards each heartbeat to Jellyfin's `Sessions/{id}/Progress` API.
->
-> Same principle for images: `posterUrl`, `backdropUrl`, `stillUrl` in every DTO are Jellyfin image
-> API URLs. **Coil 3 fetches them directly from Jellyfin on the device** — jellystructure never
-> proxies image bytes.
-
 ---
 
 ## 4 · Per-user config store

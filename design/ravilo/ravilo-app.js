@@ -62,6 +62,87 @@
       <div class="btn ghost foc" data-ov="close">${t('close')}</div></div></div></div>`;
     stage.appendChild(overlay);
 
+    /* ---------------- PLAYER (R14) ----------------
+       Builds a player context from a library item and opens the shared chrome.
+       In production these fields come from POST /api/tv/playback/start (the
+       StreamTicket) + the detail payload; the engine streams bytes straight
+       from Jellyfin while progress flows back through /api/tv/playback/*. */
+    const BBB_FRAMES = ['assets/bbb-backdrop-opening.png', 'assets/bbb-backdrop-landscape.png', 'assets/bbb-backdrop-bunny.png', 'assets/bbb-backdrop-rodents.png'];
+    const SAMPLE_FO = 'Hann er farin. Báturin kom aldri aftur.';
+    function isBBB(item) { return item && item.title === 'Big Buck Bunny'; }
+    function tracksFor(item) {
+      if (isBBB(item)) return {
+        audio: [{ label: 'English', desc: 'Stereo · AAC' }, { label: "Director's Commentary", desc: 'Stereo · AAC' }],
+        subs: [{ label: 'Off', off: true }, { label: 'English' }, { label: 'Føroyskt', desc: 'Faroese' }, { label: 'Dansk' }],
+        audioDefault: 0, subsDefault: 0,
+      };
+      return {
+        audio: [{ label: 'Føroyskt', desc: '5.1 · AC-3' }, { label: 'English', desc: 'Stereo · AAC · dub' }],
+        subs: [{ label: 'Off', off: true }, { label: 'Føroyskt', desc: 'Full' }, { label: 'English' }, { label: 'Dansk', desc: 'Signs only', flag: 'Forced' }],
+        audioDefault: 0, subsDefault: 1,
+      };
+    }
+    function streamFor(item) {
+      if (isBBB(item)) return { mode: 'Direct Play', detail: 'MP4 · H.264 · 1080p' };
+      const hls = item.title.length % 5 === 0;
+      return hls ? { mode: 'HLS', detail: 'Transcode · H.264 · 720p', hls: true } : { mode: 'Direct Play', detail: 'HEVC · 1080p' };
+    }
+    function durFor(item) { return isBBB(item) ? 596 : (item.kind === 'series' ? 52 : 112) * 60; }
+    function movieCtx(item) {
+      const ts = tracksFor(item), dur = durFor(item);
+      const resume = (item.pct > 0 && item.pct < 100) ? Math.round(dur * item.pct / 100) : 0;
+      return {
+        type: 'film', kicker: item.tagline || 'Film', title: item.title,
+        sub2: `${item.year || ''} · ${item.genre || ''} · <b>${item.rating}+</b>`,
+        duration: dur, position: resume,
+        resumeNote: resume ? Math.round((dur - resume) / 60) + ' min left' : null,
+        frames: isBBB(item) ? BBB_FRAMES : null, grad: item.grad,
+        stream: streamFor(item), audio: ts.audio, subs: ts.subs, audioDefault: ts.audioDefault, subsDefault: ts.subsDefault,
+        sampleSub: isBBB(item) ? 'It’s going to be a beautiful day.' : SAMPLE_FO,
+        nextMeta: null, resolveNext: null,
+      };
+    }
+    function episodeCtx(seriesItem, season, eps, idx) {
+      const e = eps[idx], ts = tracksFor(seriesItem), dur = (parseInt(e.dur) || 50) * 60;
+      const resume = (e.pct > 0 && e.pct < 100) ? Math.round(dur * e.pct / 100) : 0;
+      const ni = idx + 1, hasNext = ni < eps.length;
+      return {
+        type: 'episode', kicker: seriesItem.title, title: e.title,
+        sub2: `S${season + 1}:E${e.n} · ${e.dur} · <b>${seriesItem.rating}+</b>`,
+        duration: dur, position: resume,
+        resumeNote: resume ? Math.round((dur - resume) / 60) + ' min left' : null,
+        frames: null, grad: e.grad,
+        stream: streamFor(seriesItem), audio: ts.audio, subs: ts.subs, audioDefault: ts.audioDefault, subsDefault: ts.subsDefault,
+        sampleSub: SAMPLE_FO,
+        nextMeta: hasNext ? { ep: `S${season + 1}:E${eps[ni].n}`, title: eps[ni].title, desc: eps[ni].desc, grad: eps[ni].grad } : null,
+        resolveNext: hasNext ? () => episodeCtx(seriesItem, season, eps, ni) : null,
+        seasonLabel: 'Season ' + (season + 1),
+        epIndex: idx,
+        episodes: eps.map(x => ({ n: x.n, title: x.title, dur: x.dur, grad: x.grad, pct: x.pct || 0, watched: (x.pct || 0) >= 100 })),
+        resolveEpisode: (i) => episodeCtx(seriesItem, season, eps, i),
+      };
+    }
+    function playItem(item, season) {
+      if (item.kind === 'series') {
+        season = season || 0;
+        const eps = R.episodesFor(item, season);
+        const prog = seriesProgress(eps);
+        openPlayer(episodeCtx(item, season, eps, prog.idx));
+      } else {
+        openPlayer(movieCtx(item));
+      }
+    }
+    function openPlayer(ctx) { stopHero(); player.open(ctx); }
+    const player = window.initRaviloPlayer(stage, {
+      flash,
+      restoreFocus: function (watched) {
+        if (view.type === 'home') startHero();
+        const all = rows(); const its = items(all[cur.r] || all[0]);
+        if (its[cur.c]) focusEl(its[cur.c]); else focusRowByIndex(0);
+        if (watched) flash('✓ Progress saved — jellystructure → Jellyfin');
+      },
+    });
+
     function clock() {
       const d = new Date();
       const c = appbar.querySelector('.clock');
@@ -446,7 +527,7 @@
     function activate() {
       if (overlay.classList.contains('on')) {
         const f0 = overlay.querySelector('.foc.focused');
-        if (f0 && f0.dataset.ov === 'play') { closeOverlay(); flash('▶ Launching playback…'); } else closeOverlay();
+        if (f0 && f0.dataset.ov === 'play') { const it = overlay._item; closeOverlay(); if (it) playItem(it); } else closeOverlay();
         return;
       }
       const all = rows(); const f = items(all[cur.r])[cur.c]; if (!f) return;
@@ -479,18 +560,18 @@
         buildGridRows(scroll.querySelector('.sresults'), searchFilter(view.query));
         return;
       }
-      if (f.dataset.act) { const it = R.hero[heroIdx]; if (f.dataset.act === 'info') toDetail(it); else flash((f.dataset.act === 'play' ? '▶ Playing ' : '＋ Added ') + it.title); return; }
-      if (f.dataset.play) { flash('▶ Playing ' + view.item.title); return; }
+      if (f.dataset.act) { const it = R.hero[heroIdx]; if (f.dataset.act === 'info') toDetail(it); else if (f.dataset.act === 'play') playItem(it); else flash('＋ Added ' + it.title); return; }
+      if (f.dataset.play) { playItem(view.item, view.season || 0); return; }
       if (f.dataset.trailer) { flash('▷ Trailer · ' + view.item.title); return; }
       if (f.dataset.list) { flash('＋ Added ' + view.item.title + ' to My List'); return; }
       if (f._season != null) {
         if (f._season !== (view.season || 0)) { view.season = f._season; renderDetail(view.item); setTimeout(() => focusRC(2, f._season), 20); }
         return;
       }
-      if (f._ep) { flash('▶ Playing ' + view.item.title + ' · E' + f._ep.n + ' “' + f._ep.title + '”'); return; }
+      if (f._ep) { const eps = R.episodesFor(view.item, view.season || 0); const idx = eps.findIndex(x => x.n === f._ep.n); openPlayer(episodeCtx(view.item, view.season || 0, eps, Math.max(0, idx))); return; }
       if (f._cast) { flash(f._cast.n + ' · ' + f._cast.r); return; }
       if (f._studio) { go({ type: 'category', studio: f._studio.id }); return; }
-      if (f._item) { toDetail(f._item); return; }
+      if (f._item) { if (f.classList.contains('land')) playItem(f._item, 0); else toDetail(f._item); return; }
     }
     function back() {
       if (overlay.classList.contains('on')) { closeOverlay(); return; }
@@ -501,6 +582,7 @@
 
     /* ---- overlay ---- */
     function openOverlay(item) {
+      overlay._item = item;
       overlay.querySelector('.art .grad').style.background = item.grad;
       overlay.querySelector('h2').textContent = item.title;
       overlay.querySelector('.m').innerHTML = `<span class="rt" style="border:1px solid var(--line);padding:2px 8px;border-radius:6px">${item.rating}+</span><span>${item.year}</span><span>${item.genre}</span><span>${item.kind === 'series' ? 'Series' : 'Film'}</span>`;
