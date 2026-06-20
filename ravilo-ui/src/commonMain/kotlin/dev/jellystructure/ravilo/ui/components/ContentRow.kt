@@ -73,10 +73,10 @@ fun <T> StaticContentRow(
                 Text(
                     text = title,
                     color = colors.text,
-                    fontSize = 29.sp,
+                    fontSize = 22.sp,
                     fontWeight = FontWeight.SemiBold,
                     fontFamily = spaceGrotesk,
-                    letterSpacing = (-0.5).sp,
+                    letterSpacing = (-0.3).sp,
                 )
                 if (seeAllLabel != null && onSeeAll != null) {
                     Text(

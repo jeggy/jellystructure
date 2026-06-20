@@ -124,10 +124,10 @@ fun SearchScreen(
             Text(
                 "Search",
                 color = colors.text,
-                fontSize = 36.sp,
+                fontSize = 28.sp,
                 fontWeight = FontWeight.Bold,
                 fontFamily = spaceGrotesk,
-                letterSpacing = (-1).sp,
+                letterSpacing = (-0.5).sp,
             )
             Spacer(Modifier.weight(1f))
             if (query.isNotEmpty()) {
@@ -141,15 +141,15 @@ fun SearchScreen(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = RaviloDimens.screenPadH)
-                .height(76.dp)
+                .height(60.dp)
                 .background(colors.surfaceVariant, RoundedCornerShape(14.dp))
                 .padding(horizontal = 24.dp),
             contentAlignment = Alignment.CenterStart,
         ) {
             if (query.isEmpty()) {
-                Text("Start typing…", color = colors.textSecondary, fontSize = 20.sp, fontFamily = sora)
+                Text("Start typing…", color = colors.textSecondary, fontSize = 16.sp, fontFamily = sora)
             } else {
-                Text(query + "█", color = colors.text, fontSize = 20.sp, fontFamily = sora)
+                Text(query + "█", color = colors.text, fontSize = 16.sp, fontFamily = sora)
             }
         }
         Spacer(Modifier.height(24.dp))
@@ -214,13 +214,13 @@ fun SearchScreen(
                         focusRequester = gridFRs[i],
                         progressPct = card.progressPct ?: 0f,
                         onFocused = { focusedGridIdx = i; inGrid = true },
-                        onLeft  = { if (col > 0) gridFRs[i - 1].requestFocus() else { inGrid = false } },
-                        onRight = { if (col < GRID_COLS_SEARCH - 1 && i < items.lastIndex) gridFRs[i + 1].requestFocus() },
+                        onLeft  = { if (col > 0) runCatching { gridFRs[i - 1].requestFocus() } else { inGrid = false } },
+                        onRight = { if (col < GRID_COLS_SEARCH - 1 && i < items.lastIndex) runCatching { gridFRs[i + 1].requestFocus() } },
                         onUp    = {
-                            if (i >= GRID_COLS_SEARCH) gridFRs[i - GRID_COLS_SEARCH].requestFocus()
+                            if (i >= GRID_COLS_SEARCH) runCatching { gridFRs[i - GRID_COLS_SEARCH].requestFocus() }
                             else { inGrid = false }
                         },
-                        onDown  = { if (i + GRID_COLS_SEARCH <= items.lastIndex) gridFRs[i + GRID_COLS_SEARCH].requestFocus() },
+                        onDown  = { if (i + GRID_COLS_SEARCH <= items.lastIndex) runCatching { gridFRs[i + GRID_COLS_SEARCH].requestFocus() } },
                         onSelect = { onItemSelect(card) },
                     )
                 }

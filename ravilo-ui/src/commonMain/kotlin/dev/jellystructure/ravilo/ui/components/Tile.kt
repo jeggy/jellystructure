@@ -43,10 +43,10 @@ import dev.jellystructure.ravilo.ui.theme.accentGradient
 
 enum class TileVariant { POSTER, LANDSCAPE }
 
-private val POSTER_W    = 210.dp
-private val POSTER_H    = 315.dp
-private val LANDSCAPE_W = 360.dp
-private val LANDSCAPE_H = 202.dp
+private val POSTER_W    = 155.dp
+private val POSTER_H    = 232.dp
+private val LANDSCAPE_W = 256.dp
+private val LANDSCAPE_H = 144.dp
 
 @Composable
 fun Tile(

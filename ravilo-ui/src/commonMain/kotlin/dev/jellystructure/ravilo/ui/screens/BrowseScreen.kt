@@ -115,10 +115,10 @@ fun BrowseScreen(
             Text(
                 text = title,
                 color = colors.text,
-                fontSize = 42.sp,
+                fontSize = 32.sp,
                 fontWeight = FontWeight.Bold,
                 fontFamily = spaceGrotesk,
-                letterSpacing = (-1.5).sp,
+                letterSpacing = (-1).sp,
             )
         }
 
@@ -163,7 +163,7 @@ private fun GenreChips(
     val sora = Sora
     val chips = listOf(null) + genres.map { it.name }
     val chipFRs = remember(chips.size) { List(chips.size) { FocusRequester() } }
-    val chipShape = remember { RoundedCornerShape(24.dp) }
+    val chipShape = remember { RoundedCornerShape(18.dp) }
     var focusedChip by remember { mutableIntStateOf(0) }
 
     LazyRow(
@@ -189,17 +189,17 @@ private fun GenreChips(
                         focusRequester = chipFRs[i],
                         onFocused = { focused = true; focusedChip = i },
                         onBlurred = { focused = false },
-                        onLeft  = { if (i > 0) chipFRs[i - 1].requestFocus() },
-                        onRight = { if (i < chips.lastIndex) chipFRs[i + 1].requestFocus() },
+                        onLeft  = { if (i > 0) runCatching { chipFRs[i - 1].requestFocus() } },
+                        onRight = { if (i < chips.lastIndex) runCatching { chipFRs[i + 1].requestFocus() } },
                         onSelect = { onSelect(chips[i]) },
                     )
-                    .padding(horizontal = 20.dp, vertical = 10.dp),
+                    .padding(horizontal = 14.dp, vertical = 8.dp),
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
                     text = label,
                     color = if (isActive) colors.onAccent else if (focused) colors.text else colors.textSecondary,
-                    fontSize = 17.sp,
+                    fontSize = 14.sp,
                     fontFamily = sora,
                     fontWeight = if (isActive || focused) FontWeight.SemiBold else FontWeight.Normal,
                     maxLines = 1,
@@ -243,10 +243,10 @@ private fun BrowseGrid(items: List<MediaCard>, onItemSelect: (MediaCard) -> Unit
                 focusRequester = focusRequesters[i],
                 progressPct = card.progressPct ?: 0f,
                 onFocused = { focusedIdx = i },
-                onLeft  = { if (col > 0) focusRequesters[i - 1].requestFocus() },
-                onRight = { if (col < GRID_COLS - 1 && i < items.lastIndex) focusRequesters[i + 1].requestFocus() },
-                onUp    = { if (i >= GRID_COLS) focusRequesters[i - GRID_COLS].requestFocus() },
-                onDown  = { if (i + GRID_COLS <= items.lastIndex) focusRequesters[i + GRID_COLS].requestFocus() },
+                onLeft  = { if (col > 0) runCatching { focusRequesters[i - 1].requestFocus() } },
+                onRight = { if (col < GRID_COLS - 1 && i < items.lastIndex) runCatching { focusRequesters[i + 1].requestFocus() } },
+                onUp    = { if (i >= GRID_COLS) runCatching { focusRequesters[i - GRID_COLS].requestFocus() } },
+                onDown  = { if (i + GRID_COLS <= items.lastIndex) runCatching { focusRequesters[i + GRID_COLS].requestFocus() } },
                 onSelect = { onItemSelect(card) },
             )
         }

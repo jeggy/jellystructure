@@ -71,7 +71,7 @@ fun AppBar(
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .height(92.dp)
+            .height(72.dp)
             .background(barGradient),
     ) {
         Row(
@@ -80,13 +80,13 @@ fun AppBar(
                 .padding(horizontal = RaviloDimens.screenPadH)
                 .matchParentSize(),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(38.dp),
+            horizontalArrangement = Arrangement.spacedBy(28.dp),
         ) {
             // Wordmark
             Text(
                 text = "Ravilo",
                 color = colors.accent,
-                fontSize = 31.sp,
+                fontSize = 24.sp,
                 fontWeight = FontWeight.Bold,
                 fontFamily = spaceGrotesk,
                 letterSpacing = (-1).sp,
@@ -114,7 +114,7 @@ fun AppBar(
                 Text(
                     text = label,
                     color = textColor,
-                    fontSize = 21.sp,
+                    fontSize = 16.sp,
                     fontWeight = if (isFocused || isActive) FontWeight.SemiBold else FontWeight.Normal,
                     fontFamily = sora,
                     modifier = Modifier
@@ -159,7 +159,7 @@ private fun ClockDisplay() {
     Text(
         text = timeStr,
         color = colors.textSecondary,
-        fontSize = 19.sp,
+        fontSize = 15.sp,
         fontFamily = sora,
         textAlign = TextAlign.End,
     )

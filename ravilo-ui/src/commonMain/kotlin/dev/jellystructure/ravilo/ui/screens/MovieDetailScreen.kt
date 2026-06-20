@@ -94,7 +94,7 @@ private fun MovieDetailLoaded(
 
     Column(modifier = Modifier.fillMaxSize().verticalScroll(scrollState)) {
         // Hero band
-        Box(modifier = Modifier.fillMaxWidth().height(620.dp)) {
+        Box(modifier = Modifier.fillMaxWidth().height(460.dp)) {
             val backdropUrl = detail.card.backdropUrl ?: detail.card.posterUrl
             if (backdropUrl != null) {
                 RemoteImage(
@@ -115,11 +115,11 @@ private fun MovieDetailLoaded(
                 Text(
                     text = detail.card.title,
                     color = colors.text,
-                    fontSize = 72.sp,
-                    lineHeight = 84.sp,
+                    fontSize = 46.sp,
+                    lineHeight = 54.sp,
                     fontWeight = FontWeight.Bold,
                     fontFamily = spaceGrotesk,
-                    letterSpacing = (-2).sp,
+                    letterSpacing = (-1).sp,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )
@@ -145,8 +145,8 @@ private fun MovieDetailLoaded(
                 Text(
                     text = it,
                     color = colors.textSecondary,
-                    fontSize = 20.sp,
-                    lineHeight = 30.sp,
+                    fontSize = 16.sp,
+                    lineHeight = 24.sp,
                     maxLines = 4,
                     overflow = TextOverflow.Ellipsis,
                 )
@@ -189,8 +189,8 @@ private fun MovieDetailLoaded(
         // Cast row
         if (detail.cast.isNotEmpty()) {
             Spacer(Modifier.height(RaviloDimens.rowGap))
-            Text("Cast", color = colors.text, fontSize = 29.sp, fontWeight = FontWeight.SemiBold,
-                fontFamily = spaceGrotesk, letterSpacing = (-0.5).sp,
+            Text("Cast", color = colors.text, fontSize = 22.sp, fontWeight = FontWeight.SemiBold,
+                fontFamily = spaceGrotesk, letterSpacing = (-0.3).sp,
                 modifier = Modifier.padding(horizontal = RaviloDimens.sectionPadH))
             Spacer(Modifier.height(RaviloDimens.rowHeadPadB))
             LazyRow(
@@ -214,8 +214,8 @@ private fun MovieDetailLoaded(
         // More Like This
         if (detail.related.isNotEmpty()) {
             Spacer(Modifier.height(RaviloDimens.rowGap))
-            Text("More Like This", color = colors.text, fontSize = 29.sp, fontWeight = FontWeight.SemiBold,
-                fontFamily = spaceGrotesk, letterSpacing = (-0.5).sp,
+            Text("More Like This", color = colors.text, fontSize = 22.sp, fontWeight = FontWeight.SemiBold,
+                fontFamily = spaceGrotesk, letterSpacing = (-0.3).sp,
                 modifier = Modifier.padding(horizontal = RaviloDimens.sectionPadH))
             Spacer(Modifier.height(RaviloDimens.rowHeadPadB))
             LazyRow(
