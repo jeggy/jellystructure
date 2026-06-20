@@ -5,11 +5,19 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.input.key.type
 import dev.jellystructure.ravilo.ui.screens.BrowseKind
 import dev.jellystructure.ravilo.ui.screens.BrowseScreen
 import dev.jellystructure.ravilo.ui.screens.BrowseStore
@@ -106,6 +114,16 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
 
         val dest = stack.last()
 
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .onKeyEvent { ev ->
+                    if (ev.type == KeyEventType.KeyDown &&
+                        (ev.key == Key.Back || ev.key == Key.Escape) &&
+                        stack.size > 1
+                    ) { pop(); true } else false
+                }
+        ) {
         AnimatedContent(
             targetState = dest,
             transitionSpec = {
@@ -262,6 +280,7 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                 )
             }
         } } // when / AnimatedContent
+        } // Box (back-intercept)
     } // WithLocale
     } // RaviloTheme
 }

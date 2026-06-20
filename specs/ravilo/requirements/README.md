@@ -34,6 +34,7 @@ truth** for which Ravilo phases exist and whether each is done or planned. Ravil
 | R18 | ✓ Done | **Multi-user profiles & fast switching** — several Jellyfin users per TV, cached tokens, "Who's watching?" + avatar switcher (FR-RV18) | [R18](phase-R18-multi-user-profiles.md) |
 | R19 | ✓ Done | **Interface localization** (en / da / fo), per Jellyfin user, set in Jellystructure (FR-RV19) | [R19](phase-R19-localization.md) |
 | R20 | ✓ Done | **Performance & correctness overhaul** — focus-latch fix, store job cancellation, allocation memoization, lazy-list keys, scroll behaviour, Compose rule violations (FR-RV20) | [R20](phase-R20-performance-overhaul.md) |
+| R21 | ✓ Done | **Back navigation & focus polish** — root back-intercept so Back never exits mid-stack; spring animations, 1.06–1.10× scale, animated 0→3dp ring, glow shadow on all focusable components (FR-RV21) | [R21](phase-R21-back-navigation-focus-polish.md) |
 
 ## Suggested sequencing
 - **Foundation:** R01 → R02 → R03 → R04 (module + scaffold + auth + config store).

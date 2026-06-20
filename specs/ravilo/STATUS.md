@@ -8,13 +8,12 @@ Ravilo is a sibling product **inside the jellystructure repo** — an Android TV
 canvas) streaming front-end built from one **Compose Multiplatform** codebase, talking only to the
 jellystructure backend.
 
-_Last updated: 2026-06-19_
+_Last updated: 2026-06-20_
 
 ## Current focus
 
-**R01–R20 all done.** App running end-to-end on real Android TV hardware; performance overhaul
-applied and deployed to the stue TV (2026-06-19). First hardware-testing pass completed and all
-gaps resolved:
+**R01–R21 all done.** App running end-to-end on real Android TV hardware; deployed to stue TV
+(2026-06-20). Back navigation and focus polish applied.
 
 ### Session 2026-06-20 — hardware-test fixes
 
