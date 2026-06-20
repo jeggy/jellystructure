@@ -37,7 +37,9 @@ import dev.jellystructure.ravilo.ui.components.RaviloButton
 import dev.jellystructure.ravilo.ui.components.Tile
 import dev.jellystructure.ravilo.ui.focus.FocusRow
 import dev.jellystructure.ravilo.ui.seams.RemoteImage
+import dev.jellystructure.ravilo.ui.theme.RaviloDimens
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
+import dev.jellystructure.ravilo.ui.theme.SpaceGrotesk
 import dev.jellystructure.shared.tv.MediaCard
 import dev.jellystructure.shared.tv.MovieDetail
 
@@ -74,10 +76,11 @@ private fun MovieDetailLoaded(
     onRelatedSelect: (MediaCard) -> Unit,
 ) {
     val colors = RaviloTheme.colors
+    val spaceGrotesk = SpaceGrotesk
     val backdropGradient = remember(colors.background) {
         Brush.verticalGradient(
             0f to Color.Transparent,
-            0.5f to colors.background.copy(alpha = 0.5f),
+            0.45f to colors.background.copy(alpha = 0.55f),
             1f to colors.background,
         )
     }
@@ -92,23 +95,36 @@ private fun MovieDetailLoaded(
 
     Column(modifier = Modifier.fillMaxSize().verticalScroll(scrollState)) {
         // Hero band
-        Box(modifier = Modifier.fillMaxWidth().height(420.dp)) {
+        Box(modifier = Modifier.fillMaxWidth().height(620.dp)) {
             val backdropUrl = detail.card.backdropUrl ?: detail.card.posterUrl
             if (backdropUrl != null) {
                 RemoteImage(
                     url = backdropUrl,
                     contentDescription = null,
                     modifier = Modifier.matchParentSize(),
+                    alignment = Alignment.TopCenter,
                 )
             } else {
                 Box(modifier = Modifier.matchParentSize().background(colors.surfaceVariant))
             }
             Box(modifier = Modifier.matchParentSize().background(backdropGradient))
             Column(
-                modifier = Modifier.align(Alignment.BottomStart).padding(40.dp, 40.dp),
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .padding(start = RaviloDimens.heroBodyStart, bottom = RaviloDimens.detailBodyBot, end = 40.dp),
             ) {
-                Text(detail.card.title, color = colors.text, fontSize = 36.sp, fontWeight = FontWeight.Bold)
-                Spacer(Modifier.height(8.dp))
+                Text(
+                    text = detail.card.title,
+                    color = colors.text,
+                    fontSize = 72.sp,
+                    lineHeight = 84.sp,
+                    fontWeight = FontWeight.Bold,
+                    fontFamily = spaceGrotesk,
+                    letterSpacing = (-2).sp,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Spacer(Modifier.height(12.dp))
                 val meta = remember(detail.card.year, detail.runtime, detail.card.genre, detail.card.rating) {
                     listOfNotNull(
                         detail.card.year?.toString(),
@@ -117,17 +133,26 @@ private fun MovieDetailLoaded(
                         detail.card.rating,
                     ).joinToString(" · ")
                 }
-                if (meta.isNotEmpty()) Text(meta, color = colors.textSecondary, fontSize = 14.sp)
+                if (meta.isNotEmpty()) {
+                    Text(meta, color = colors.textSecondary, fontSize = 18.sp)
+                }
             }
         }
 
-        Column(modifier = Modifier.padding(horizontal = 40.dp)) {
+        Column(modifier = Modifier.padding(horizontal = RaviloDimens.screenPadH)) {
             // Synopsis
             detail.synopsis?.let {
-                Spacer(Modifier.height(16.dp))
-                Text(it, color = colors.textSecondary, fontSize = 15.sp, maxLines = 4, overflow = TextOverflow.Ellipsis)
+                Spacer(Modifier.height(20.dp))
+                Text(
+                    text = it,
+                    color = colors.textSecondary,
+                    fontSize = 20.sp,
+                    lineHeight = 30.sp,
+                    maxLines = 4,
+                    overflow = TextOverflow.Ellipsis,
+                )
             }
-            Spacer(Modifier.height(24.dp))
+            Spacer(Modifier.height(28.dp))
             // Action buttons
             Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                 val isResume = detail.playback.positionMs > 0 && !detail.playback.watched
@@ -164,13 +189,14 @@ private fun MovieDetailLoaded(
 
         // Cast row
         if (detail.cast.isNotEmpty()) {
-            Spacer(Modifier.height(32.dp))
-            Text("Cast", color = colors.text, fontSize = 18.sp, fontWeight = FontWeight.SemiBold,
-                modifier = Modifier.padding(horizontal = 40.dp))
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(RaviloDimens.rowGap))
+            Text("Cast", color = colors.text, fontSize = 29.sp, fontWeight = FontWeight.SemiBold,
+                fontFamily = spaceGrotesk, letterSpacing = (-0.5).sp,
+                modifier = Modifier.padding(horizontal = RaviloDimens.sectionPadH))
+            Spacer(Modifier.height(RaviloDimens.rowHeadPadB))
             LazyRow(
-                contentPadding = PaddingValues(horizontal = 40.dp),
-                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                contentPadding = PaddingValues(horizontal = RaviloDimens.trackPadH, vertical = RaviloDimens.trackPadV),
+                horizontalArrangement = Arrangement.spacedBy(RaviloDimens.itemSpacing),
             ) {
                 items(detail.cast.size, key = { i -> detail.cast[i].id }) { i ->
                     CastCircle(
@@ -188,13 +214,14 @@ private fun MovieDetailLoaded(
 
         // More Like This
         if (detail.related.isNotEmpty()) {
-            Spacer(Modifier.height(32.dp))
-            Text("More Like This", color = colors.text, fontSize = 18.sp, fontWeight = FontWeight.SemiBold,
-                modifier = Modifier.padding(horizontal = 40.dp))
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(RaviloDimens.rowGap))
+            Text("More Like This", color = colors.text, fontSize = 29.sp, fontWeight = FontWeight.SemiBold,
+                fontFamily = spaceGrotesk, letterSpacing = (-0.5).sp,
+                modifier = Modifier.padding(horizontal = RaviloDimens.sectionPadH))
+            Spacer(Modifier.height(RaviloDimens.rowHeadPadB))
             LazyRow(
-                contentPadding = PaddingValues(horizontal = 40.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                contentPadding = PaddingValues(horizontal = RaviloDimens.trackPadH, vertical = RaviloDimens.trackPadV),
+                horizontalArrangement = Arrangement.spacedBy(RaviloDimens.itemSpacing),
             ) {
                 items(detail.related.size, key = { i -> detail.related[i].id }) { i ->
                     val card = detail.related[i]

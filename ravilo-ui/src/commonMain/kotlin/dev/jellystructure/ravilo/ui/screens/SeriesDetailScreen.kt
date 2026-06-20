@@ -40,7 +40,9 @@ import dev.jellystructure.ravilo.ui.components.SeasonPicker
 import dev.jellystructure.ravilo.ui.components.Tile
 import dev.jellystructure.ravilo.ui.focus.FocusRow
 import dev.jellystructure.ravilo.ui.seams.RemoteImage
+import dev.jellystructure.ravilo.ui.theme.RaviloDimens
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
+import dev.jellystructure.ravilo.ui.theme.SpaceGrotesk
 import dev.jellystructure.shared.tv.Episode
 import dev.jellystructure.shared.tv.MediaCard
 import dev.jellystructure.shared.tv.SeriesDetail
@@ -78,10 +80,11 @@ private fun SeriesDetailLoaded(
     onRelatedSelect: (MediaCard) -> Unit,
 ) {
     val colors = RaviloTheme.colors
+    val spaceGrotesk = SpaceGrotesk
     val backdropGradient = remember(colors.background) {
         Brush.verticalGradient(
             0f to Color.Transparent,
-            0.5f to colors.background.copy(alpha = 0.5f),
+            0.45f to colors.background.copy(alpha = 0.55f),
             1f to colors.background,
         )
     }
@@ -114,45 +117,68 @@ private fun SeriesDetailLoaded(
 
     Column(modifier = Modifier.fillMaxSize().verticalScroll(scrollState)) {
         // Hero band
-        Box(modifier = Modifier.fillMaxWidth().height(420.dp)) {
+        Box(modifier = Modifier.fillMaxWidth().height(620.dp)) {
             val backdropUrl = detail.card.backdropUrl ?: detail.card.posterUrl
             if (backdropUrl != null) {
-                RemoteImage(url = backdropUrl, contentDescription = null, modifier = Modifier.matchParentSize())
+                RemoteImage(
+                    url = backdropUrl,
+                    contentDescription = null,
+                    modifier = Modifier.matchParentSize(),
+                    alignment = Alignment.TopCenter,
+                )
             } else {
                 Box(modifier = Modifier.matchParentSize().background(colors.surfaceVariant))
             }
             Box(modifier = Modifier.matchParentSize().background(backdropGradient))
-            Column(modifier = Modifier.align(Alignment.BottomStart).padding(40.dp, 40.dp)) {
-                Text(detail.card.title, color = colors.text, fontSize = 36.sp, fontWeight = FontWeight.Bold)
-                Spacer(Modifier.height(8.dp))
+            Column(
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .padding(start = RaviloDimens.heroBodyStart, bottom = RaviloDimens.detailBodyBot, end = 40.dp),
+            ) {
+                Text(
+                    text = detail.card.title,
+                    color = colors.text,
+                    fontSize = 72.sp,
+                    lineHeight = 84.sp,
+                    fontWeight = FontWeight.Bold,
+                    fontFamily = spaceGrotesk,
+                    letterSpacing = (-2).sp,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Spacer(Modifier.height(12.dp))
                 val meta = remember(detail.card.year, detail.card.genre) {
                     listOfNotNull(detail.card.year?.toString(), detail.card.genre).joinToString(" · ")
                 }
-                if (meta.isNotEmpty()) Text(meta, color = colors.textSecondary, fontSize = 14.sp)
+                if (meta.isNotEmpty()) Text(meta, color = colors.textSecondary, fontSize = 18.sp)
                 Spacer(Modifier.height(6.dp))
-                // Watched overview
                 val p = detail.progress
                 if (p.totalCount > 0) {
                     Text(
                         "${p.watchedCount} of ${p.totalCount} episodes watched",
-                        color = colors.textSecondary, fontSize = 13.sp,
+                        color = colors.textDim, fontSize = 16.sp,
                     )
                 }
             }
         }
 
-        Column(modifier = Modifier.padding(horizontal = 40.dp)) {
-            // Synopsis
+        Column(modifier = Modifier.padding(horizontal = RaviloDimens.screenPadH)) {
             detail.synopsis?.let {
-                Spacer(Modifier.height(16.dp))
-                Text(it, color = colors.textSecondary, fontSize = 15.sp, maxLines = 4, overflow = TextOverflow.Ellipsis)
+                Spacer(Modifier.height(20.dp))
+                Text(
+                    text = it,
+                    color = colors.textSecondary,
+                    fontSize = 20.sp,
+                    lineHeight = 30.sp,
+                    maxLines = 4,
+                    overflow = TextOverflow.Ellipsis,
+                )
             }
             Spacer(Modifier.height(8.dp))
-            // Up Next label
             detail.progress.resumeLabel?.let {
-                Text(it, color = colors.accent, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                Text(it, color = colors.accent, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
             }
-            Spacer(Modifier.height(20.dp))
+            Spacer(Modifier.height(24.dp))
             // Action buttons
             Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                 val resumeEpId = detail.progress.resumeEpisodeId
@@ -213,20 +239,21 @@ private fun SeriesDetailLoaded(
         if (episodes.isNotEmpty()) {
             Text(
                 "Episodes",
-                color = colors.text, fontSize = 18.sp, fontWeight = FontWeight.SemiBold,
-                modifier = Modifier.padding(horizontal = 40.dp),
+                color = colors.text, fontSize = 29.sp, fontWeight = FontWeight.SemiBold,
+                fontFamily = spaceGrotesk, letterSpacing = (-0.5).sp,
+                modifier = Modifier.padding(horizontal = RaviloDimens.sectionPadH),
             )
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(RaviloDimens.rowHeadPadB))
             LazyRow(
-                contentPadding = PaddingValues(horizontal = 40.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                contentPadding = PaddingValues(horizontal = RaviloDimens.trackPadH, vertical = RaviloDimens.trackPadV),
+                horizontalArrangement = Arrangement.spacedBy(RaviloDimens.itemSpacing),
             ) {
                 items(episodes.size, key = { i -> episodes[i].id }) { i ->
                     val ep = episodes[i]
-                    val isResumeEp = ep.id == detail.progress.resumeEpisodeId
                     EpisodeCard(
                         episode = ep,
                         focusRequester = episodeFR.requesters[i],
+                        isResumeEpisode = ep.id == detail.progress.resumeEpisodeId,
                         onFocused = { episodeFR.focused = i },
                         onLeft  = { episodeFR.moveLeft() },
                         onRight = { episodeFR.moveRight() },
@@ -248,13 +275,14 @@ private fun SeriesDetailLoaded(
 
         // Cast row
         if (detail.cast.isNotEmpty()) {
-            Spacer(Modifier.height(32.dp))
-            Text("Cast", color = colors.text, fontSize = 18.sp, fontWeight = FontWeight.SemiBold,
-                modifier = Modifier.padding(horizontal = 40.dp))
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(RaviloDimens.rowGap))
+            Text("Cast", color = colors.text, fontSize = 29.sp, fontWeight = FontWeight.SemiBold,
+                fontFamily = spaceGrotesk, letterSpacing = (-0.5).sp,
+                modifier = Modifier.padding(horizontal = RaviloDimens.sectionPadH))
+            Spacer(Modifier.height(RaviloDimens.rowHeadPadB))
             LazyRow(
-                contentPadding = PaddingValues(horizontal = 40.dp),
-                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                contentPadding = PaddingValues(horizontal = RaviloDimens.trackPadH, vertical = RaviloDimens.trackPadV),
+                horizontalArrangement = Arrangement.spacedBy(RaviloDimens.itemSpacing),
             ) {
                 items(detail.cast.size, key = { i -> detail.cast[i].id }) { i ->
                     CastCircle(
@@ -275,13 +303,14 @@ private fun SeriesDetailLoaded(
 
         // More Like This
         if (detail.related.isNotEmpty()) {
-            Spacer(Modifier.height(32.dp))
-            Text("More Like This", color = colors.text, fontSize = 18.sp, fontWeight = FontWeight.SemiBold,
-                modifier = Modifier.padding(horizontal = 40.dp))
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(RaviloDimens.rowGap))
+            Text("More Like This", color = colors.text, fontSize = 29.sp, fontWeight = FontWeight.SemiBold,
+                fontFamily = spaceGrotesk, letterSpacing = (-0.5).sp,
+                modifier = Modifier.padding(horizontal = RaviloDimens.sectionPadH))
+            Spacer(Modifier.height(RaviloDimens.rowHeadPadB))
             LazyRow(
-                contentPadding = PaddingValues(horizontal = 40.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                contentPadding = PaddingValues(horizontal = RaviloDimens.trackPadH, vertical = RaviloDimens.trackPadV),
+                horizontalArrangement = Arrangement.spacedBy(RaviloDimens.itemSpacing),
             ) {
                 items(detail.related.size, key = { i -> detail.related[i].id }) { i ->
                     val card = detail.related[i]
