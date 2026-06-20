@@ -22,6 +22,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.jellystructure.ravilo.ui.components.AppBar
@@ -92,6 +94,13 @@ private fun HomeLoaded(
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
 
+    // Hero height as a % of the screen, per the user's config (R27); auto-advance interval too.
+    val density = LocalDensity.current
+    val containerH = LocalWindowInfo.current.containerSize.height
+    val heroHeight = if (containerH > 0)
+        with(density) { containerH.toDp() } * (feed.heroHeightPct.coerceIn(20, 80) / 100f)
+    else 460.dp
+
     // Focus section index: 0 = hero, 1 = channel rail, 2+ = content rows
     var focusSection by remember { mutableIntStateOf(0) }
 
@@ -142,6 +151,8 @@ private fun HomeLoaded(
                 HeroCarousel(
                     items = feed.heroes,
                     focusRequester = heroFR,
+                    heightDp = heroHeight,
+                    autoAdvanceSeconds = feed.autoAdvanceSeconds,
                     onSelect = { onItemSelect(it) },
                     onUp = { navBarFR.requestFocus() },
                     onDown = {
