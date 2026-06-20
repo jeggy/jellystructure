@@ -66,9 +66,12 @@ private sealed class Dest {
     data class Player(
         val itemId: String,
         val title: String,
-        val nextEpId: String?,
-        val nextEpLabel: String?,
+        val kicker: String? = null,
+        val nextEpId: String? = null,
+        val nextEpLabel: String? = null,
         val displayName: String,
+        val episodes: List<dev.jellystructure.ravilo.ui.screens.PlayerEpisodeEntry>? = null,
+        val currentEpIndex: Int = 0,
     ) : Dest()
     data class Settings(val displayName: String) : Dest()
 }
@@ -229,7 +232,7 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                     itemId = dest.itemId,
                     store = store,
                     onBack = { pop() },
-                    onPlay = { card -> push(Dest.Player(card.id, card.title, null, null, dest.displayName)) },
+                    onPlay = { card -> push(Dest.Player(card.id, card.title, displayName = dest.displayName)) },
                     onRelatedSelect = { card ->
                         when {
                             card.kind == MediaKind.SERIES -> push(Dest.SeriesDetail(card.id, dest.displayName))
@@ -245,7 +248,18 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                     itemId = dest.itemId,
                     store = store,
                     onBack = { pop() },
-                    onPlay = { epId -> push(Dest.Player(epId, "", null, null, dest.displayName)) },
+                    onPlay = { ctx ->
+                        push(Dest.Player(
+                            itemId        = ctx.episodeId,
+                            title         = ctx.episodeTitle,
+                            kicker        = ctx.kicker,
+                            nextEpId      = ctx.nextEpId,
+                            nextEpLabel   = ctx.nextEpLabel,
+                            displayName   = dest.displayName,
+                            episodes      = ctx.episodes,
+                            currentEpIndex = ctx.currentEpIndex,
+                        ))
+                    },
                     onRelatedSelect = { card ->
                         when {
                             card.kind == MediaKind.SERIES -> push(Dest.SeriesDetail(card.id, dest.displayName))
@@ -258,14 +272,31 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
             is Dest.Player -> {
                 val store = remember(dest.itemId) { PlayerStore(apiClient) }
                 PlayerScreen(
-                    itemId = dest.itemId,
-                    itemTitle = dest.title,
-                    nextEpisodeId = dest.nextEpId,
+                    itemId           = dest.itemId,
+                    itemTitle        = dest.title,
+                    itemKicker       = dest.kicker,
+                    nextEpisodeId    = dest.nextEpId,
                     nextEpisodeLabel = dest.nextEpLabel,
-                    store = store,
-                    onBack = { pop() },
-                    onNextEpisode = { nextId ->
-                        stack = stack.dropLast(1) + Dest.Player(nextId, "", null, null, dest.displayName)
+                    episodes         = dest.episodes,
+                    currentEpIndex   = dest.currentEpIndex,
+                    store            = store,
+                    onBack           = { pop() },
+                    onNavigateToEpisode = { nextId ->
+                        val eps = dest.episodes ?: return@PlayerScreen
+                        val newIdx = eps.indexOfFirst { it.id == nextId }
+                        if (newIdx < 0) return@PlayerScreen
+                        val newEp = eps[newIdx]
+                        val nextEp = eps.getOrNull(newIdx + 1)
+                        stack = stack.dropLast(1) + Dest.Player(
+                            itemId         = newEp.id,
+                            title          = newEp.title,
+                            kicker         = newEp.kicker,
+                            nextEpId       = nextEp?.id,
+                            nextEpLabel    = nextEp?.let { "${it.kicker} · ${it.title}" },
+                            displayName    = dest.displayName,
+                            episodes       = eps,
+                            currentEpIndex = newIdx,
+                        )
                     },
                 )
             }
