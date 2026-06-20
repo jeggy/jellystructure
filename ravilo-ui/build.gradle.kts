@@ -4,6 +4,7 @@ plugins {
     alias(libs.plugins.android.library)
     alias(libs.plugins.kotlin.multiplatform)
     alias(libs.plugins.kotlin.plugin.compose)
+    alias(libs.plugins.compose.multiplatform)
 }
 
 android {
@@ -42,6 +43,7 @@ kotlin {
                 implementation(libs.compose.foundation)
                 implementation(libs.compose.ui)
                 implementation(libs.compose.material3)
+                implementation(compose.components.resources)
                 implementation(libs.kotlinx.datetime)
                 implementation(libs.ktor.client.core)
                 implementation(libs.ktor.client.content.negotiation)
