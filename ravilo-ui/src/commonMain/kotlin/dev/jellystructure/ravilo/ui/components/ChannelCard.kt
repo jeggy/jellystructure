@@ -97,7 +97,7 @@ fun ChannelCard(
 
     Box(
         modifier = Modifier
-            .size(268.dp, 150.dp)
+            .size(186.dp, 104.dp)
             .scale(scale)
             .shadow(
                 elevation = shadowElevation,
@@ -124,7 +124,7 @@ fun ChannelCard(
         Text(
             text = name.take(8).uppercase(),
             color = Color.White.copy(alpha = 0.06f),
-            fontSize = 38.sp,
+            fontSize = 26.sp,
             fontWeight = FontWeight.Bold,
             fontFamily = spaceGrotesk,
             modifier = Modifier

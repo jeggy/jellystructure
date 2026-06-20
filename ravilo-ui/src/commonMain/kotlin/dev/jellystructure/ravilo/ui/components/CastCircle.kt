@@ -67,7 +67,7 @@ fun CastCircle(
     ) {
         Box(
             modifier = Modifier
-                .size(80.dp)
+                .size(72.dp)
                 .scale(scale)
                 .shadow(shadowElev, CircleShape, clip = false, ambientColor = colors.focusGlow, spotColor = colors.focusGlow)
                 .clip(CircleShape)
@@ -86,7 +86,7 @@ fun CastCircle(
                 Text(
                     text = person.name.take(1),
                     color = colors.textSecondary,
-                    fontSize = 28.sp,
+                    fontSize = 22.sp,
                     fontWeight = FontWeight.Bold,
                     fontFamily = sora,
                 )

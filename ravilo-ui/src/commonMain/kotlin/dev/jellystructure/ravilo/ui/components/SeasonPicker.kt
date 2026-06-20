@@ -85,13 +85,13 @@ fun SeasonPicker(
                         onDown  = onDown,
                         onSelect = { onSelect(i) },
                     )
-                    .padding(horizontal = 24.dp, vertical = 12.dp),
+                    .padding(horizontal = 18.dp, vertical = 8.dp),
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
                     text = seasons[i].name,
                     color = if (isSelected) colors.onAccent else if (focused) colors.text else colors.textSecondary,
-                    fontSize = 17.sp,
+                    fontSize = 14.sp,
                     fontWeight = if (isSelected || focused) FontWeight.SemiBold else FontWeight.Normal,
                     fontFamily = sora,
                 )

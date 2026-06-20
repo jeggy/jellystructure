@@ -94,7 +94,7 @@ fun HeroCarousel(
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(600.dp)
+            .height(460.dp)
             .dpadFocusable(
                 focusRequester = focusRequester,
                 onLeft   = {
@@ -154,11 +154,11 @@ fun HeroCarousel(
             Text(
                 text = active.item.title,
                 color = colors.text,
-                fontSize = 72.sp,
-                lineHeight = 84.sp,
+                fontSize = 46.sp,
+                lineHeight = 54.sp,
                 fontWeight = FontWeight.Bold,
                 fontFamily = spaceGrotesk,
-                letterSpacing = (-2).sp,
+                letterSpacing = (-1).sp,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )

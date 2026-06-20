@@ -56,7 +56,7 @@ fun RaviloButton(
     val shadowElevation by animateDpAsState(if (focused) 20.dp else 0.dp, dpSpec, label = "buttonShadow")
     // Lift: 4dp upward on focus (converted to px for graphicsLayer)
     val liftPx by animateFloatAsState(
-        targetValue = if (focused) with(density) { -4.dp.toPx() } else 0f,
+        targetValue = if (focused) with(density) { -3.dp.toPx() } else 0f,
         animationSpec = focusSpec,
         label = "buttonLift",
     )
@@ -87,8 +87,8 @@ fun RaviloButton(
                 onBlurred = { focused = false },
                 onLeft = onLeft, onRight = onRight, onUp = onUp, onDown = onDown, onSelect = onSelect,
             )
-            .heightIn(min = 60.dp)
-            .padding(horizontal = 30.dp, vertical = 12.dp),
+            .heightIn(min = 52.dp)
+            .padding(horizontal = 24.dp, vertical = 10.dp),
         contentAlignment = Alignment.Center,
     ) {
         Text(
@@ -98,7 +98,7 @@ fun RaviloButton(
                 focused -> colors.text
                 else -> colors.textSecondary
             },
-            fontSize = 21.sp,
+            fontSize = 16.sp,
             fontWeight = FontWeight.SemiBold,
             fontFamily = sora,
         )

@@ -75,7 +75,7 @@ fun EpisodeCard(
 
     Column(
         modifier = Modifier
-            .width(392.dp)
+            .width(320.dp)
             .scale(scale)
             .shadow(
                 elevation = shadowElevation,
@@ -115,7 +115,7 @@ fun EpisodeCard(
             Text(
                 text = "${episode.episodeNumber}",
                 color = Color.White.copy(alpha = 0.85f),
-                fontSize = 40.sp,
+                fontSize = 30.sp,
                 fontWeight = FontWeight.Bold,
                 fontFamily = spaceGrotesk,
                 modifier = Modifier
@@ -199,7 +199,7 @@ fun EpisodeCard(
             Text(
                 text = "E${episode.episodeNumber} · ${episode.title}",
                 color = if (focused) colors.text else colors.textSecondary,
-                fontSize = 20.sp,
+                fontSize = 17.sp,
                 fontWeight = FontWeight.SemiBold,
                 fontFamily = sora,
                 maxLines = 1,
@@ -210,7 +210,7 @@ fun EpisodeCard(
                 Text(
                     text = overview,
                     color = colors.textDim,
-                    fontSize = 15.sp,
+                    fontSize = 13.sp,
                     fontFamily = sora,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,

@@ -101,7 +101,7 @@ private fun HomeLoaded(
 
     // Restore focus on entry
     LaunchedEffect(Unit) {
-        if (focusSection == 0) heroFR.requestFocus()
+        if (focusSection == 0) runCatching { heroFR.requestFocus() }
     }
 
     // Save focus on section change
@@ -148,7 +148,7 @@ private fun HomeLoaded(
                         onFocused = { channelRow.focused = i; focusSection = 1 },
                         onLeft  = { channelRow.moveLeft() },
                         onRight = { channelRow.moveRight() },
-                        onUp    = { focusSection = 0; heroFR.requestFocus() },
+                        onUp    = { focusSection = 0; runCatching { heroFR.requestFocus() } },
                         onDown  = {
                             focusSection = 2
                             if (rowFocusStates.isNotEmpty()) rowFocusStates[0].requestFocus()
@@ -185,7 +185,7 @@ private fun HomeLoaded(
                         if (ri == 0) {
                             focusSection = if (feed.channels.isNotEmpty()) 1 else 0
                             if (feed.channels.isNotEmpty()) channelRow.requestFocus()
-                            else heroFR.requestFocus()
+                            else runCatching { heroFR.requestFocus() }
                         } else {
                             focusSection = ri + 1
                             rowFocusStates[ri - 1].requestFocus()
@@ -208,7 +208,7 @@ private fun HomeLoaded(
         activeNav = activeNav,
         onNavSelect = onNavSelect,
         navFR = navBarFR,
-        onDown = { heroFR.requestFocus() },
+        onDown = { runCatching { heroFR.requestFocus() } },
     )
 }
 
