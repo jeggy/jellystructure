@@ -63,6 +63,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.jellystructure.ravilo.ui.focus.dpadFocusable
 import dev.jellystructure.ravilo.ui.seams.PlayerAudioTrack
+import dev.jellystructure.ravilo.ui.seams.PlayerLifecycleEffect
 import dev.jellystructure.ravilo.ui.seams.PlayerVideoSurface
 import dev.jellystructure.ravilo.ui.seams.RaviloPlayer
 import dev.jellystructure.ravilo.ui.theme.RaviloColors
@@ -287,6 +288,9 @@ fun PlayerScreen(
         delay(550)
         pauseFlash = false
     }
+
+    // Pause/resume when activity goes to background (Home button) and returns
+    PlayerLifecycleEffect(player, wasPlaying = { isPlaying })
 
     // Cleanup on exit — stop the Jellyfin playback session and release the player engine
     DisposableEffect(Unit) {
