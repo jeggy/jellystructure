@@ -8,11 +8,11 @@ _Last updated: 2026-06-21_
 
 ## Current focus
 
-**Planned: Phases 41–46.** Phases 0–40 are complete (operator-ergonomics + trust features, each with
-a spec and an approved design mockup in `design/app/`). The active backlog:
+**Planned: Phases 43–46.** Phases 0–42 are complete (operator-ergonomics + trust features, each with
+a spec and an approved design mockup in `design/app/`). Phases **41 & 42** (unified track & order
+editor on movie Media Detail + the same editor in a per-episode modal on Series detail) landed in
+commit `85a7460`. The active backlog:
 
-- **41 / 42** — unified track & order editor on Media Detail (movie) + the same editor in a per-episode
-  modal on Series detail.
 - **43 — Library page rework** _(new)_: fix the Movies/TV segmented control (it renders `<button>`
   children that miss the `.seg span` CSS, so it looks broken) and bring the page back in line with
   `design/app/library.html`; **replace prev/next pagination with infinite, windowed (virtual)

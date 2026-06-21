@@ -1,7 +1,7 @@
 # Phase 42 — Per-episode track & order editor on Series detail (FR-TO2)
 
-**Status:** Planned · _series episodes get the **same** unified track editor as movies, in a
-per-episode modal, replacing the ad-hoc inline snippets._
+**Status:** ✓ Done (2026-06-21, commit `85a7460`) · _series episodes get the **same** unified track
+editor as movies, in a per-episode modal, replacing the ad-hoc inline snippets._
 
 > Builds directly on **[Phase 41](phase-41-merge-track-order-into-detail.md)**. The editor body,
 > warnings inventory, staged-changes panel, command/cost rules, and per-kind explainer copy are all
