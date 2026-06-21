@@ -1,6 +1,6 @@
 # Phase R05 — Home feed composition (FR-RV5)
 
-**Status:** Planned · _the server composes what the TV renders._
+**Status:** ✓ Done · _the server composes what the TV renders._
 
 ## Problem
 The Ravilo home screen (hero + channel rail + content rows) must be **composed server-side** from the

@@ -1,6 +1,6 @@
 # Phase R07 — Detail API: movie/series, episodes, watched-state (FR-RV7)
 
-**Status:** Planned · _the data behind the calm series experience._
+**Status:** ✓ Done · _the data behind the calm series experience._
 
 ## Problem
 Ravilo's detail screens — especially **series** — must make it obvious what you've watched and what's
