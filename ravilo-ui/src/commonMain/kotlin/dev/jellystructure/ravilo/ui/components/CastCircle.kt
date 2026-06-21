@@ -39,11 +39,6 @@ import dev.jellystructure.shared.tv.Person
 fun CastCircle(
     person: Person,
     focusRequester: FocusRequester? = null,
-    onFocused: () -> Unit = {},
-    onLeft: (() -> Unit)? = null,
-    onRight: (() -> Unit)? = null,
-    onUp: (() -> Unit)? = null,
-    onDown: (() -> Unit)? = null,
 ) {
     val colors = RaviloTheme.colors
     val sora = Sora
@@ -57,12 +52,8 @@ fun CastCircle(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier.dpadFocusable(
             focusRequester = focusRequester,
-            onFocused = { isFocused = true; onFocused() },
+            onFocused = { isFocused = true },
             onBlurred = { isFocused = false },
-            onLeft = onLeft,
-            onRight = onRight,
-            onUp = onUp,
-            onDown = onDown,
         ),
     ) {
         Box(

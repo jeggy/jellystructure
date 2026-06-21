@@ -57,11 +57,6 @@ fun ChannelCard(
     logoUrl: String?,
     brandColor: String?,
     focusRequester: FocusRequester? = null,
-    onFocused: () -> Unit = {},
-    onLeft: (() -> Unit)? = null,
-    onRight: (() -> Unit)? = null,
-    onUp: (() -> Unit)? = null,
-    onDown: (() -> Unit)? = null,
     onSelect: (() -> Unit)? = null,
 ) {
     val colors = RaviloTheme.colors
@@ -111,9 +106,9 @@ fun ChannelCard(
             .border(borderWidth, accentColor.copy(alpha = 0.7f), cardShape)
             .dpadFocusable(
                 focusRequester = focusRequester,
-                onFocused = { focused = true; onFocused() },
+                onFocused = { focused = true },
                 onBlurred = { focused = false },
-                onLeft = onLeft, onRight = onRight, onUp = onUp, onDown = onDown, onSelect = onSelect,
+                onSelect = onSelect,
             ),
         contentAlignment = Alignment.Center,
     ) {
