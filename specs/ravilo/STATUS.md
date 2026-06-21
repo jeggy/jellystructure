@@ -83,7 +83,8 @@ _Last updated: 2026-06-21_
 
 ## Open threads
 
-- **`:ravilo-player` engine fork (deferred from R14):** vendor `jellyfin-androidtv` `playback/*`
+- **`:ravilo-player` engine fork (deferred from R14; scoped in
+  [R31](requirements/phase-R31-player-engine-fork.md)):** vendor `jellyfin-androidtv` `playback/*`
   when DTS/TrueHD/AC3 passthrough is needed. Confirm upstream GPL-2.0-only-vs-or-later terms;
   preserve copyright notices in a `:ravilo-player/NOTICE` file. **Intent (confirmed):** Ravilo
   inherits jellyfin-androidtv's playback logic — automatic format/codec handling, **never** a
