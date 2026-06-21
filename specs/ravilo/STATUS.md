@@ -12,8 +12,9 @@ _Last updated: 2026-06-21_
 
 ## Current state
 
-**R01–R30 all done.** The app runs end-to-end on the stue TV (Sony BRAVIA XR-65X93K,
-`192.0.2.11`). Installed via `nc` + `adb_shell` from the HA container.
+**R01–R31 done** (R31's on-device exotic-codec playback not yet verified). The app runs end-to-end on
+the stue TV (Sony BRAVIA XR-65X93K, `192.0.2.11`). Installed via `nc` + `adb_shell` from the HA
+container.
 
 ### What's working
 - Full browsing: Home (hero + channel rail + content rows), Browse grids (Movies / Series / My List),
@@ -24,6 +25,13 @@ _Last updated: 2026-06-21_
   Video renders via `TextureView` (`PlayerVideoSurface` expect/actual seam) so the Compose chrome
   overlays correctly.
 - Config editor at `/ravilo`: drag-reorder, show/hide, hero height, tile shape, live preview.
+
+### Recent fixes (2026-06-21 session — R31, FFmpeg exotic-codec decoder)
+- Implemented R31 via the **decoder-dependency approach** (not a source vendor): new Android-only
+  **`:ravilo-player`** GPL-containment module bundling jellyfin's `media3-ffmpeg-decoder` + a
+  `DefaultRenderersFactory(PREFER)`, wired through `RaviloPlayerEngine` so `:ravilo-ui` / `:ravilo-web`
+  stay GPL-clean. App Media3 bumped 1.7.1 → 1.8.0 (no 1.7.x decoder build exists). Builds + packages
+  `libffmpegJNI.so` for all 4 ABIs (APK 18 → 21 MB); on-device DTS/TrueHD/AC3 verification pending.
 
 ### Recent fixes (2026-06-21 session — R30, native focus traversal)
 - Replaced the hand-rolled focus engine (`FocusGrid` / `FocusRow` + per-item `requestFocus`) with
@@ -83,14 +91,12 @@ _Last updated: 2026-06-21_
 
 ## Open threads
 
-- **`:ravilo-player` engine fork (deferred from R14; scoped in
-  [R31](requirements/phase-R31-player-engine-fork.md)):** vendor `jellyfin-androidtv` `playback/*`
-  when DTS/TrueHD/AC3 passthrough is needed. Confirm upstream GPL-2.0-only-vs-or-later terms;
-  preserve copyright notices in a `:ravilo-player/NOTICE` file. **Intent (confirmed):** Ravilo
-  inherits jellyfin-androidtv's playback logic — automatic format/codec handling, **never** a
-  user-facing "choose a player" control; Ravilo only adds chrome/UX on top. The current direct
-  ExoPlayer/Media3 `actual` already mirrors this for common formats; the fork closes the
-  exotic-codec gap.
+- **`:ravilo-player` FFmpeg decoder (R31 ✓ done; on-device test pending):** the GPL-contained
+  `:ravilo-player` module bundles jellyfin's `media3-ffmpeg-decoder` and the player prefers the FFmpeg
+  renderers, so DTS/TrueHD/AC3 decode automatically — never a user-facing "choose a player" control
+  (confirmed intent: Ravilo inherits jellyfin's automatic handling, adds only chrome/UX). **Remaining:**
+  verify a real exotic-codec file plays on the TV. Vendoring jellyfin-androidtv's `playback/*` source
+  stays the path only if its *format-selection* logic is later needed beyond the decoders.
 - **WASM subtitle switching (R14 gap):** `selectSubtitleTrack` on `RaviloPlayerWasm` is a no-op
   because `TextTrackList.item()` is not bridged in Kotlin/WASM DOM bindings. Fix path: `@JsFun`
   interop bridge or wait for upstream bindings update.
