@@ -1,6 +1,7 @@
 package dev.jellystructure.media
 
 import dev.jellystructure.log.Logger
+import dev.jellystructure.resolver.LanguageResolver
 import kotlinx.cinterop.ByteVar
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.allocArray
@@ -15,8 +16,13 @@ object MkvpropeditRunner {
     private fun trackArg(streamIndex: Int) = "track:@${streamIndex + 1}"
 
     suspend fun setLanguage(filePath: String, streamIndex: Int, language: String): Boolean {
+        // Matroska's legacy Language element is ISO 639-2; a 2-letter value is fragile. Write the
+        // 3-letter code and also the BCP-47 language-ietf tag so modern players + re-probe agree.
+        val iso3 = LanguageResolver.toIso6392(language) ?: return false
+        val bcp47 = LanguageResolver.normalize(language)
         val escaped = filePath.replace("'", "'\\''")
-        val cmd = "mkvpropedit '$escaped' --edit ${trackArg(streamIndex)} --set language=${language.replace("'", "")}"
+        val cmd = "mkvpropedit '$escaped' --edit ${trackArg(streamIndex)} " +
+            "--set language=${iso3.replace("'", "")} --set language-ietf=${bcp47.replace("'", "")}"
         return runCommand(cmd)
     }
 

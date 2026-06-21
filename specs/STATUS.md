@@ -8,26 +8,15 @@ _Last updated: 2026-06-21_
 
 ## Current focus
 
-**Planned: Phase 46.** Phases 0–45 are complete (operator-ergonomics + trust features, each with a
-spec and an approved design mockup in `design/app/`). Recently: **41 & 42** (unified track & order
-editor, commit `85a7460`); **43** (Library seg-control fidelity + infinite scroll); **44** (NFO raw
-viewer + two new read routes); **45** (track-editor language picker unified onto the shared `.lp-*`
-styled picker). The active backlog:
-- **44 — NFO raw viewer** _(new)_: the NFO raw tab is blank until a write happens and can't show
-  per-episode NFOs. Make it a **read-only viewer of the exact on-disk XML** with a **left tree
-  sidebar** (movie = `movie.nfo`; series = `tvshow.nfo` + per-season `episodedetails.nfo`). Adds
-  `GET /media/{id}/nfo/files` + a path-safe `GET /media/{id}/episodes/{filename}/nfo` read route.
-- **45 — Track-editor language picker** _(new)_: the searchable language menu in the Tracks & order
-  editor (movie tab + series episode modal) renders **unstyled** — it uses `.langmenu`/`.lm-*`
-  classes defined nowhere, while the working shared picker uses `.lp-*` + `injectPickerStyles()`.
-  Consolidate onto one styled, searchable picker; fix the current-selection highlight for 3-letter
-  codes. Same bug class as the Phase 43 Movies/TV switch.
-- **46 — Track language writes must persist** _(new)_: setting a track language reports success but
-  the tag never lands on MP4. The app writes **2-letter ISO-639-1** (`fo`) straight to the file, but
-  ffmpeg's MP4 `mdhd` needs **3-letter ISO-639-2** (`fao`) and writes `und` instead → re-probe reads
-  null → change "disappears." No 2→3 map exists (only `ISO2TO1` 3→2 for TMDB). Add a shared
-  bidirectional map + container-correct write, **verify-after-write**, and make the API response +
-  command preview report **what's on disk**, not the request.
+**All phases 0–46 complete; no planned backlog.** Operator-ergonomics + trust features, each with a
+spec and an approved design mockup in `design/app/`. The 2026-06-21 session landed **41 & 42** (unified
+track & order editor, commit `85a7460`), then **43** (Library seg-control fidelity + infinite scroll
+replacing the pager), **44** (NFO raw viewer — read-only on-disk XML with a per-file tree sidebar + two
+new read routes), **45** (track-editor language picker unified onto the shared `.lp-*` styled picker),
+and **46** (track-language writes persist — shared 2↔3-letter ISO map, container-correct write,
+verify-after-write, truthful API response + command preview).
+
+New work starts by adding a `phase-47-*.md` spec (see "Adding a new phase" in the requirements README).
 
 See [`requirements/README.md`](requirements/README.md) for the full index.
 
