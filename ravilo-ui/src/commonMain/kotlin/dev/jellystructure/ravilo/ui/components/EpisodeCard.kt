@@ -48,7 +48,7 @@ import dev.jellystructure.shared.tv.Episode
 @Composable
 fun EpisodeCard(
     episode: Episode,
-    focusRequester: FocusRequester,
+    focusRequester: FocusRequester? = null,
     isResumeEpisode: Boolean = false,
     onFocused: () -> Unit = {},
     onLeft: (() -> Unit)? = null,

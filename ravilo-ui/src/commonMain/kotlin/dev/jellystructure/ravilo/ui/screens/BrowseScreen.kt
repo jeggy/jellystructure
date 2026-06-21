@@ -14,20 +14,18 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRestorer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -163,11 +161,10 @@ private fun GenreChips(
     val colors = RaviloTheme.colors
     val sora = Sora
     val chips = listOf(null) + genres.map { it.name }
-    val chipFRs = remember(chips.size) { List(chips.size) { FocusRequester() } }
     val chipShape = remember { RoundedCornerShape(18.dp) }
-    var focusedChip by remember { mutableIntStateOf(0) }
 
     LazyRow(
+        modifier = Modifier.focusRestorer(),
         contentPadding = PaddingValues(horizontal = RaviloDimens.trackPadH),
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
@@ -187,11 +184,8 @@ private fun GenreChips(
                         else Modifier
                     )
                     .dpadFocusable(
-                        focusRequester = chipFRs[i],
-                        onFocused = { focused = true; focusedChip = i },
+                        onFocused = { focused = true },
                         onBlurred = { focused = false },
-                        onLeft  = { if (i > 0) runCatching { chipFRs[i - 1].requestFocus() } },
-                        onRight = { if (i < chips.lastIndex) runCatching { chipFRs[i + 1].requestFocus() } },
                         onSelect = { onSelect(chips[i]) },
                     )
                     .padding(horizontal = 14.dp, vertical = 8.dp),
@@ -215,39 +209,22 @@ private const val GRID_COLS = 6
 
 @Composable
 private fun BrowseGrid(items: List<MediaCard>, onItemSelect: (MediaCard) -> Unit) {
-    val colors = RaviloTheme.colors
-    val gridState = rememberLazyGridState()
-
-    // FocusRequesters: one per item
-    val focusRequesters = remember(items.size) { List(items.size) { FocusRequester() } }
-    var focusedIdx by remember { mutableIntStateOf(0) }
-
-    LaunchedEffect(focusedIdx) {
-        gridState.scrollToItem(focusedIdx.coerceAtLeast(0))
-    }
-
+    // Native 2-D focus traversal across the grid: the framework composes off-screen rows in the
+    // search direction and scrolls them into view; focusRestorer() returns focus to the last cell
+    // on re-entry. No per-item FocusRequester, no scroll-to-focused effect.
     LazyVerticalGrid(
         columns = GridCells.Fixed(GRID_COLS),
-        state = gridState,
+        modifier = Modifier.focusRestorer(),
         contentPadding = PaddingValues(horizontal = RaviloDimens.trackPadH, vertical = RaviloDimens.trackPadV),
         horizontalArrangement = Arrangement.spacedBy(RaviloDimens.itemSpacing),
         verticalArrangement = Arrangement.spacedBy(RaviloDimens.rowGap),
     ) {
         items(items.size, key = { i -> items[i].id }) { i ->
             val card = items[i]
-            val row = i / GRID_COLS
-            val col = i % GRID_COLS
-
             Tile(
                 title = card.title,
                 posterUrl = card.posterUrl,
-                focusRequester = focusRequesters[i],
                 progressPct = card.progressPct ?: 0f,
-                onFocused = { focusedIdx = i },
-                onLeft  = { if (col > 0) runCatching { focusRequesters[i - 1].requestFocus() } },
-                onRight = { if (col < GRID_COLS - 1 && i < items.lastIndex) runCatching { focusRequesters[i + 1].requestFocus() } },
-                onUp    = { if (i >= GRID_COLS) runCatching { focusRequesters[i - GRID_COLS].requestFocus() } },
-                onDown  = { if (i + GRID_COLS <= items.lastIndex) runCatching { focusRequesters[i + GRID_COLS].requestFocus() } },
                 onSelect = { onItemSelect(card) },
             )
         }

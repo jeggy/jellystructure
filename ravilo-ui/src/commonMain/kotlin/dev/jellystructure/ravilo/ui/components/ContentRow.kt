@@ -21,6 +21,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRestorer
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -40,8 +41,9 @@ import dev.jellystructure.ravilo.ui.theme.SpaceGrotesk
 fun <T> StaticContentRow(
     title: String?,
     items: List<T>,
-    focusedIndex: Int,
+    focusedIndex: Int = -1,
     modifier: Modifier = Modifier,
+    nativeFocus: Boolean = false,
     seeAllLabel: String? = null,
     onSeeAll: (() -> Unit)? = null,
     itemKey: ((T) -> Any)? = null,
@@ -52,8 +54,10 @@ fun <T> StaticContentRow(
     val listState = rememberLazyListState()
     var rowHasFocus by remember { mutableStateOf(false) }
 
+    // Manual scroll-to-focused only for the legacy (index-driven) path. With nativeFocus the
+    // framework brings the focused child into view itself, so this effect is skipped entirely.
     LaunchedEffect(focusedIndex) {
-        if (!rowHasFocus || items.isEmpty()) return@LaunchedEffect
+        if (nativeFocus || !rowHasFocus || items.isEmpty()) return@LaunchedEffect
         val idx = focusedIndex.coerceIn(0, items.lastIndex)
         val info = listState.layoutInfo
         val item = info.visibleItemsInfo.firstOrNull { it.index == idx }
@@ -104,6 +108,9 @@ fun <T> StaticContentRow(
         }
         LazyRow(
             state = listState,
+            // focusRestorer(): on re-entry, native focus lands back on the row's last-focused
+            // child (and composes/scrolls it into view) instead of snapping to index 0.
+            modifier = if (nativeFocus) Modifier.focusRestorer() else Modifier,
             horizontalArrangement = Arrangement.spacedBy(RaviloDimens.itemSpacing),
             contentPadding = PaddingValues(
                 horizontal = RaviloDimens.trackPadH,

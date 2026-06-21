@@ -20,12 +20,12 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRestorer
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
@@ -39,7 +39,6 @@ import dev.jellystructure.ravilo.ui.components.EpisodeCard
 import dev.jellystructure.ravilo.ui.components.RaviloButton
 import dev.jellystructure.ravilo.ui.components.SeasonPicker
 import dev.jellystructure.ravilo.ui.components.Tile
-import dev.jellystructure.ravilo.ui.focus.FocusRow
 import dev.jellystructure.ravilo.ui.i18n.str
 import dev.jellystructure.ravilo.ui.seams.RemoteImage
 import dev.jellystructure.ravilo.ui.theme.RaviloDimens
@@ -135,26 +134,15 @@ private fun SeriesDetailLoaded(
     val currentSeason = detail.seasons.getOrNull(selectedSeasonIdx)
     val episodes: List<Episode> = currentSeason?.episodes ?: emptyList()
 
+    // Entry focus only; movement between buttons, season picker, episode rail, cast and related
+    // is native spatial traversal within the non-lazy verticalScroll column.
     val playFR = remember { FocusRequester() }
-    val myListFR = remember { FocusRequester() }
-
-    val seasonFRs = remember(detail.seasons.size) {
-        List(detail.seasons.size) { FocusRequester() }
-    }
-    var focusedSeasonIdx by remember(detail) { mutableIntStateOf(initialSeasonIdx) }
-
-    val castFR = remember(detail.cast.size) { FocusRow(maxOf(detail.cast.size, 1)) }
-    val episodeFR = remember(episodes.size) { FocusRow(maxOf(episodes.size, 1)) }
-    val relatedFR = remember(detail.related.size) { FocusRow(maxOf(detail.related.size, 1)) }
 
     // Resume episode index in current season
     val resumeEpIdx = episodes.indexOfFirst { it.id == detail.progress.resumeEpisodeId }
         .takeIf { it >= 0 } ?: 0
 
-    LaunchedEffect(Unit) { playFR.requestFocus() }
-
-    // When season changes, reset episode focus
-    LaunchedEffect(selectedSeasonIdx) { episodeFR.focused = 0 }
+    LaunchedEffect(Unit) { runCatching { playFR.requestFocus() } }
 
     Column(modifier = Modifier.fillMaxSize().verticalScroll(scrollState)) {
         // Hero band
@@ -230,14 +218,6 @@ private fun SeriesDetailLoaded(
                     label = playLabel,
                     focusRequester = playFR,
                     style = ButtonStyle.PRIMARY,
-                    onRight = { myListFR.requestFocus() },
-                    onDown = {
-                        when {
-                            detail.seasons.size > 1 -> seasonFRs[focusedSeasonIdx].requestFocus()
-                            episodes.isNotEmpty()   -> episodeFR.requestFocus()
-                            detail.related.isNotEmpty() -> relatedFR.requestFocus()
-                        }
-                    },
                     onSelect = {
                         val epId = resumeEpId ?: episodes.firstOrNull()?.id
                         if (epId != null) onPlay(buildEpisodeContext(detail, selectedSeasonIdx, episodes, epId))
@@ -245,16 +225,7 @@ private fun SeriesDetailLoaded(
                 )
                 RaviloButton(
                     label = "+ ${str("nav.my_list")}",
-                    focusRequester = myListFR,
                     style = ButtonStyle.GHOST,
-                    onLeft = { playFR.requestFocus() },
-                    onDown = {
-                        when {
-                            detail.seasons.size > 1 -> seasonFRs[focusedSeasonIdx].requestFocus()
-                            episodes.isNotEmpty()   -> episodeFR.requestFocus()
-                            detail.related.isNotEmpty() -> relatedFR.requestFocus()
-                        }
-                    },
                 )
             }
         }
@@ -266,12 +237,7 @@ private fun SeriesDetailLoaded(
             SeasonPicker(
                 seasons = detail.seasons,
                 selectedIndex = selectedSeasonIdx,
-                focusedIndex = focusedSeasonIdx,
-                focusRequesters = seasonFRs,
                 onSelect = { selectedSeasonIdx = it },
-                onLeft  = { i -> if (i > 0) { focusedSeasonIdx = i - 1; seasonFRs[i - 1].requestFocus() } },
-                onRight = { i -> if (i < detail.seasons.lastIndex) { focusedSeasonIdx = i + 1; seasonFRs[i + 1].requestFocus() } },
-                onDown  = { episodeFR.requestFocus() },
             )
             Spacer(Modifier.height(16.dp))
         }
@@ -286,6 +252,7 @@ private fun SeriesDetailLoaded(
             )
             Spacer(Modifier.height(RaviloDimens.rowHeadPadB))
             LazyRow(
+                modifier = Modifier.focusRestorer(),
                 contentPadding = PaddingValues(horizontal = RaviloDimens.trackPadH, vertical = RaviloDimens.trackPadV),
                 horizontalArrangement = Arrangement.spacedBy(RaviloDimens.itemSpacing),
             ) {
@@ -293,21 +260,7 @@ private fun SeriesDetailLoaded(
                     val ep = episodes[i]
                     EpisodeCard(
                         episode = ep,
-                        focusRequester = episodeFR.requesters[i],
                         isResumeEpisode = ep.id == detail.progress.resumeEpisodeId,
-                        onFocused = { episodeFR.focused = i },
-                        onLeft  = { episodeFR.moveLeft() },
-                        onRight = { episodeFR.moveRight() },
-                        onUp    = {
-                            if (detail.seasons.size > 1) seasonFRs[focusedSeasonIdx].requestFocus()
-                            else playFR.requestFocus()
-                        },
-                        onDown  = {
-                            when {
-                                detail.cast.isNotEmpty()    -> castFR.requestFocus()
-                                detail.related.isNotEmpty() -> relatedFR.requestFocus()
-                            }
-                        },
                         onSelect = { onPlay(buildEpisodeContext(detail, selectedSeasonIdx, episodes, ep.id)) },
                     )
                 }
@@ -322,22 +275,12 @@ private fun SeriesDetailLoaded(
                 modifier = Modifier.padding(horizontal = RaviloDimens.sectionPadH))
             Spacer(Modifier.height(RaviloDimens.rowHeadPadB))
             LazyRow(
+                modifier = Modifier.focusRestorer(),
                 contentPadding = PaddingValues(horizontal = RaviloDimens.trackPadH, vertical = RaviloDimens.trackPadV),
                 horizontalArrangement = Arrangement.spacedBy(RaviloDimens.itemSpacing),
             ) {
                 items(detail.cast.size, key = { i -> detail.cast[i].id }) { i ->
-                    CastCircle(
-                        person = detail.cast[i],
-                        focusRequester = castFR.requesters[i],
-                        onFocused = { castFR.focused = i },
-                        onLeft  = { castFR.moveLeft() },
-                        onRight = { castFR.moveRight() },
-                        onUp    = {
-                            if (episodes.isNotEmpty()) episodeFR.requestFocus()
-                            else playFR.requestFocus()
-                        },
-                        onDown  = { if (detail.related.isNotEmpty()) relatedFR.requestFocus() },
-                    )
+                    CastCircle(person = detail.cast[i])
                 }
             }
         }
@@ -350,6 +293,7 @@ private fun SeriesDetailLoaded(
                 modifier = Modifier.padding(horizontal = RaviloDimens.sectionPadH))
             Spacer(Modifier.height(RaviloDimens.rowHeadPadB))
             LazyRow(
+                modifier = Modifier.focusRestorer(),
                 contentPadding = PaddingValues(horizontal = RaviloDimens.trackPadH, vertical = RaviloDimens.trackPadV),
                 horizontalArrangement = Arrangement.spacedBy(RaviloDimens.itemSpacing),
             ) {
@@ -358,17 +302,6 @@ private fun SeriesDetailLoaded(
                     Tile(
                         title = card.title,
                         posterUrl = card.posterUrl,
-                        focusRequester = relatedFR.requesters[i],
-                        onFocused = { relatedFR.focused = i },
-                        onLeft  = { relatedFR.moveLeft() },
-                        onRight = { relatedFR.moveRight() },
-                        onUp    = {
-                            when {
-                                detail.cast.isNotEmpty()  -> castFR.requestFocus()
-                                episodes.isNotEmpty()     -> episodeFR.requestFocus()
-                                else                      -> playFR.requestFocus()
-                            }
-                        },
                         onSelect = { onRelatedSelect(card) },
                     )
                 }
