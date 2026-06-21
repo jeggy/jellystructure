@@ -8,7 +8,7 @@ _Last updated: 2026-06-21_
 
 ## Current focus
 
-**Planned: Phases 41–44.** Phases 0–40 are complete (operator-ergonomics + trust features, each with
+**Planned: Phases 41–46.** Phases 0–40 are complete (operator-ergonomics + trust features, each with
 a spec and an approved design mockup in `design/app/`). The active backlog:
 
 - **41 / 42** — unified track & order editor on Media Detail (movie) + the same editor in a per-episode
@@ -22,6 +22,17 @@ a spec and an approved design mockup in `design/app/`). The active backlog:
   per-episode NFOs. Make it a **read-only viewer of the exact on-disk XML** with a **left tree
   sidebar** (movie = `movie.nfo`; series = `tvshow.nfo` + per-season `episodedetails.nfo`). Adds
   `GET /media/{id}/nfo/files` + a path-safe `GET /media/{id}/episodes/{filename}/nfo` read route.
+- **45 — Track-editor language picker** _(new)_: the searchable language menu in the Tracks & order
+  editor (movie tab + series episode modal) renders **unstyled** — it uses `.langmenu`/`.lm-*`
+  classes defined nowhere, while the working shared picker uses `.lp-*` + `injectPickerStyles()`.
+  Consolidate onto one styled, searchable picker; fix the current-selection highlight for 3-letter
+  codes. Same bug class as the Phase 43 Movies/TV switch.
+- **46 — Track language writes must persist** _(new)_: setting a track language reports success but
+  the tag never lands on MP4. The app writes **2-letter ISO-639-1** (`fo`) straight to the file, but
+  ffmpeg's MP4 `mdhd` needs **3-letter ISO-639-2** (`fao`) and writes `und` instead → re-probe reads
+  null → change "disappears." No 2→3 map exists (only `ISO2TO1` 3→2 for TMDB). Add a shared
+  bidirectional map + container-correct write, **verify-after-write**, and make the API response +
+  command preview report **what's on disk**, not the request.
 
 See [`requirements/README.md`](requirements/README.md) for the full index.
 
