@@ -1,0 +1,16 @@
+Ravilo — :ravilo-player module
+===============================
+
+This module links one GPL-3.0 component and is the GPL-containment boundary for Ravilo's
+Android build. Only :ravilo-android depends on this module; :ravilo-ui and :ravilo-web do not.
+
+Bundled GPL-3.0 component:
+
+  org.jellyfin.media3:media3-ffmpeg-decoder
+    Prebuilt AndroidX Media3 FFmpeg audio decoder extension (DTS / TrueHD / AC3 / E-AC3).
+    Upstream: https://github.com/jellyfin/jellyfin-androidx-media
+    License:  GPL-3.0-only (the bundled FFmpeg is built with GPL codecs)
+
+The whole jellystructure repository is licensed GPL-3.0 (see the root LICENSE), so combining this
+component into the Android application is license-compatible. Preserve this NOTICE and the upstream
+copyright/license when redistributing the APK.

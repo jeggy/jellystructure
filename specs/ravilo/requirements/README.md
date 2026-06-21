@@ -45,7 +45,7 @@ truth** for which Ravilo phases exist and whether each is done or planned. Ravil
 | R28 | ✓ Done | **Config editor fidelity** — `/ravilo` rebuilt: drag-reorder, show/hide toggles, typed filters, system-row protection, hero height slider, tile-shape picker, live schematic preview | [R28](phase-R28-config-editor-fidelity.md) |
 | R29 | ✓ Done | **TV control-plane contract review fixes** — stop/settings request-type bugs, server `ignoreUnknownKeys`, shared `ViewerSettingsRequest`, `viewerSkinOverride`/`effectiveSkin`, `session_id` removal, FocusGrid empty-row guard, R26 clamp/UUID reconcile, `:ravilo-player` deferred doc sync | [R29](phase-R29-tv-contract-review-fixes.md) |
 | R30 | ✓ Done | **Native focus traversal** — replace the manual `FocusEngine` (per-item `requestFocus`) with Compose focus search + `focusRestorer`; fixes held-key lag/stuck on lazy rows & grids; `FocusEngine.kt` deleted | [R30](phase-R30-native-focus-traversal.md) |
-| R31 | ◻ Planned | **`:ravilo-player` engine fork** (deferred) — vendor jellyfin-androidtv `playback/*` + FFmpeg decoders into an Android-only, GPL-contained module for DTS/TrueHD/AC3; build only when an exotic-codec file actually fails | [R31](phase-R31-player-engine-fork.md) |
+| R31 | ✓ Done | **`:ravilo-player` FFmpeg decoder** — jellyfin's `media3-ffmpeg-decoder` in an Android-only, GPL-contained module + renderers factory for DTS/TrueHD/AC3 (Media3 1.8.0); source-vendor fork skipped as redundant; on-device codec test pending | [R31](phase-R31-player-engine-fork.md) |
 
 ## Suggested sequencing
 - **Foundation:** R01 → R02 → R03 → R04 (module + scaffold + auth + config store).
