@@ -300,25 +300,51 @@ fun wireUnifiedTrackEditor(
             </div>"""
         }
 
-        // Command preview
+        // Command preview — reflect the tool that actually runs for this container and the resolved
+        // 3-letter code that gets written (Phase 46): mkvpropedit in place for MKV, an ffmpeg -c copy
+        // remux for MP4/other. Flag/language edits on a non-MKV file are a remux, not "instant".
         val fileName = filePath.substringAfterLast('/')
+        val isMkv = filePath.substringAfterLast('.').lowercase() == "mkv"
         val cmdLines = mutableListOf<String>()
-        val flagParts = mutableListOf<String>()
+        val mkvParts = mutableListOf<String>()
+        val ffMeta = mutableListOf<String>()
+        var hasFlagOps = false
         listOf(audioModel to origAudio, subsModel to origSubs).forEach { (cur, orig) ->
             cur.forEach { t ->
                 val ob = orig.find { it.sp == t.sp } ?: return@forEach
                 val m = Regex("0:([as]):(\\d+)").find(t.sp) ?: return@forEach
                 val typeChar = m.groupValues[1]
                 val idx = m.groupValues[2].toIntOrNull() ?: return@forEach
-                val tname = "track:${typeChar}${idx + 1}"
-                if (ob.lang != t.lang && !t.lang.isNullOrBlank()) flagParts += "  --edit $tname --set language=${t.lang}"
-                if (ob.def != t.def) flagParts += "  --edit $tname --set flag-default=${if (t.def) 1 else 0}"
-                if (t.kind == TrackKind.SUBTITLE && ob.forced != t.forced) flagParts += "  --edit $tname --set flag-forced=${if (t.forced) 1 else 0}"
+                val tname = "track:${typeChar}${idx + 1}"  // mkvpropedit: 1-based, type-relative
+                val sSpec = "$typeChar:$idx"                // ffmpeg output stream specifier, e.g. a:0
+                if (ob.lang != t.lang && !t.lang.isNullOrBlank()) {
+                    hasFlagOps = true
+                    val iso3 = LanguageResolver.toIso6392(t.lang!!) ?: t.lang!!
+                    val bcp = LanguageResolver.normalize(t.lang!!)
+                    mkvParts += "  --edit $tname --set language=$iso3 --set language-ietf=$bcp"
+                    ffMeta += "  -metadata:s:$sSpec language=$iso3"
+                }
+                if (ob.def != t.def) {
+                    hasFlagOps = true
+                    mkvParts += "  --edit $tname --set flag-default=${if (t.def) 1 else 0}"
+                    ffMeta += "  -disposition:s:$sSpec ${if (t.def) "default" else "0"}"
+                }
+                if (t.kind == TrackKind.SUBTITLE && ob.forced != t.forced) {
+                    hasFlagOps = true
+                    mkvParts += "  --edit $tname --set flag-forced=${if (t.forced) 1 else 0}"
+                    ffMeta += "  -disposition:s:$sSpec ${if (t.forced) "forced" else "0"}"
+                }
             }
         }
-        if (flagParts.isNotEmpty()) {
-            cmdLines += "mkvpropedit \"$fileName\" \\"
-            cmdLines += flagParts.joinToString(" \\\n")
+        if (hasFlagOps) {
+            if (isMkv) {
+                cmdLines += "mkvpropedit \"$fileName\" \\"
+                cmdLines += mkvParts.joinToString(" \\\n")
+            } else {
+                cmdLines += "ffmpeg -i \"$fileName\" -map 0 -c copy \\"
+                cmdLines += ffMeta.joinToString(" \\\n")
+                cmdLines += "  \"$fileName.fixed\"   # -c copy = remux, no re-encode"
+            }
         }
         if (anyReorder) {
             if (cmdLines.isNotEmpty()) cmdLines += ""
@@ -327,8 +353,9 @@ fun wireUnifiedTrackEditor(
         }
         cmdEl?.textContent = cmdLines.joinToString("\n")
 
-        if (anyReorder) {
-            costEl?.innerHTML = """<span class="badge warn">⚠ remux</span><span class="tiny muted" style="margin-left:6px;">reordering streams needs an <b>ffmpeg -c copy</b> remux (no re-encode, but rewrites the file)</span>"""
+        val needsRemux = anyReorder || (!isMkv && hasFlagOps)
+        if (needsRemux) {
+            costEl?.innerHTML = """<span class="badge warn">⚠ remux</span><span class="tiny muted" style="margin-left:6px;">this file needs an <b>ffmpeg -c copy</b> remux (no re-encode, but rewrites the file — minutes on large files)</span>"""
         } else {
             costEl?.innerHTML = """<span class="badge ok">instant</span><span class="tiny muted" style="margin-left:6px;"><b>mkvpropedit</b> edits flags in place · ~40 ms · no re-encode</span>"""
         }
@@ -405,22 +432,25 @@ fun wireUnifiedTrackEditor(
 
         var anyError: String? = null
 
-        // Language changes
+        // Language changes — adopt the re-probed on-disk code the server returns, not our 2-letter
+        // guess, so the committed baseline matches what a page reload (re-probe) will show (Phase 46).
         for (t in audioModel) {
             val ob = origAudio.find { it.sp == t.sp } ?: continue
             if (ob.lang != t.lang && !t.lang.isNullOrBlank()) {
-                val err = if (epFilename == null) MediaApi.setTrackLanguage(mediaId, t.sp, t.lang!!)
+                val res = if (epFilename == null) MediaApi.setTrackLanguage(mediaId, t.sp, t.lang!!)
                           else MediaApi.setEpisodeTrackLanguage(mediaId, epFilename, t.sp, t.lang!!)
-                if (err != null) { anyError = err; break }
+                if (res.error != null) { anyError = res.error; break }
+                if (res.language != null) t.lang = res.language
             }
         }
         if (anyError == null) {
             for (t in subsModel) {
                 val ob = origSubs.find { it.sp == t.sp } ?: continue
                 if (ob.lang != t.lang && !t.lang.isNullOrBlank()) {
-                    val err = if (epFilename == null) MediaApi.setTrackLanguage(mediaId, t.sp, t.lang!!)
+                    val res = if (epFilename == null) MediaApi.setTrackLanguage(mediaId, t.sp, t.lang!!)
                               else MediaApi.setEpisodeTrackLanguage(mediaId, epFilename, t.sp, t.lang!!)
-                    if (err != null) { anyError = err; break }
+                    if (res.error != null) { anyError = res.error; break }
+                    if (res.language != null) t.lang = res.language
                 }
             }
         }

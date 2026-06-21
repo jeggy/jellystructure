@@ -1439,11 +1439,11 @@ private fun wireEpisodeEditing(item: MediaItem, container: Element, scope: Corou
                 resultEl?.textContent = "…"
                 btn.setAttribute("disabled", "true")
                 scope.launch {
-                    val err = MediaApi.setEpisodeTrackLanguage(mediaId, epFilename, specifier, lang)
-                    if (err == null) {
+                    val res = MediaApi.setEpisodeTrackLanguage(mediaId, epFilename, specifier, lang)
+                    if (res.error == null) {
                         renderMediaDetail(container, scope, mediaId)
                     } else {
-                        resultEl?.textContent = "✗ $err"
+                        resultEl?.textContent = "✗ ${res.error}"
                         btn.removeAttribute("disabled")
                     }
                 }
@@ -1467,11 +1467,11 @@ private fun wireEpisodeEditing(item: MediaItem, container: Element, scope: Corou
                     resultEl?.textContent = "…"
                     input.setAttribute("disabled", "true")
                     scope.launch {
-                        val err = MediaApi.setEpisodeTrackLanguage(mediaId, epFilename, specifier, lang)
-                        if (err == null) {
+                        val res = MediaApi.setEpisodeTrackLanguage(mediaId, epFilename, specifier, lang)
+                        if (res.error == null) {
                             renderMediaDetail(container, scope, mediaId)
                         } else {
-                            resultEl?.textContent = "✗ $err"
+                            resultEl?.textContent = "✗ ${res.error}"
                             input.removeAttribute("disabled")
                         }
                     }
