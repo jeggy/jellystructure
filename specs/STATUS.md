@@ -4,15 +4,26 @@ Living record of where work currently stands. Update whenever a phase completes 
 The **[requirements/README.md](requirements/README.md)** is the single source of truth for which phases
 exist and their done/planned status. This file tracks _current focus_, recent context, and open issues.
 
-_Last updated: 2026-06-18_
+_Last updated: 2026-06-21_
 
 ## Current focus
 
-**All phases complete** — a batch of operator-ergonomics + trust features, each with a spec and an
-approved design mockup in `design/app/`:
-All planned phases (0–40) complete. No further backlog.
+**Planned: Phases 41–44.** Phases 0–40 are complete (operator-ergonomics + trust features, each with
+a spec and an approved design mockup in `design/app/`). The active backlog:
 
-Phases 0–40 complete. See [`requirements/README.md`](requirements/README.md) for the full index.
+- **41 / 42** — unified track & order editor on Media Detail (movie) + the same editor in a per-episode
+  modal on Series detail.
+- **43 — Library page rework** _(new)_: fix the Movies/TV segmented control (it renders `<button>`
+  children that miss the `.seg span` CSS, so it looks broken) and bring the page back in line with
+  `design/app/library.html`; **replace prev/next pagination with infinite, windowed (virtual)
+  scrolling** — the fixed page-of-20 over a dynamic-column grid makes a partial last row look like the
+  end of the library. Search stays the primary find path; scroll becomes the primary browse path.
+- **44 — NFO raw viewer** _(new)_: the NFO raw tab is blank until a write happens and can't show
+  per-episode NFOs. Make it a **read-only viewer of the exact on-disk XML** with a **left tree
+  sidebar** (movie = `movie.nfo`; series = `tvshow.nfo` + per-season `episodedetails.nfo`). Adds
+  `GET /media/{id}/nfo/files` + a path-safe `GET /media/{id}/episodes/{filename}/nfo` read route.
+
+See [`requirements/README.md`](requirements/README.md) for the full index.
 
 ## Sibling product — Ravilo (Android TV + Web)
 
