@@ -1,6 +1,6 @@
 # Phase R01 — `:shared` KMP module: DTOs + `TvApiClient` (FR-RV1)
 
-**Status:** Planned · _foundation; everything else depends on this._
+**Status:** ✓ Done · _foundation; everything else depends on this._
 
 ## Problem
 Ravilo (Android TV + Web) and the jellystructure backend must agree on the wire format for the

@@ -1,6 +1,6 @@
 # Phase R09 — Design system + focus engine (FR-RV9)
 
-**Status:** Planned · _the shared foundation every Ravilo screen is built on._
+**Status:** ✓ Done · _the shared foundation every Ravilo screen is built on._
 
 > **Superseded in part by [R30](phase-R30-native-focus-traversal.md):** the manual per-item focus
 > engine specified under §"Focus engine (shared)" (`FocusRequester` + `onKeyEvent` movement) was

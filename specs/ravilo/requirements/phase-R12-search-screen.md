@@ -1,6 +1,6 @@
 # Phase R12 — Search screen (FR-RV12)
 
-**Status:** Planned · _find anything, remote-first._
+**Status:** ✓ Done · _find anything, remote-first._
 
 ## Problem
 A 10-foot search needs an **on-screen keyboard** and **live results** — and it must match every title
