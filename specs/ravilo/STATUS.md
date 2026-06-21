@@ -12,7 +12,7 @@ _Last updated: 2026-06-21_
 
 ## Current state
 
-**R01–R29 all done.** The app runs end-to-end on the stue TV (Sony BRAVIA XR-65X93K,
+**R01–R30 all done.** The app runs end-to-end on the stue TV (Sony BRAVIA XR-65X93K,
 `10.0.0.11`). Installed via `nc` + `adb_shell` from the HA container.
 
 ### What's working
@@ -24,6 +24,18 @@ _Last updated: 2026-06-21_
   Video renders via `TextureView` (`PlayerVideoSurface` expect/actual seam) so the Compose chrome
   overlays correctly.
 - Config editor at `/ravilo`: drag-reorder, show/hide, hero height, tile shape, live preview.
+
+### Recent fixes (2026-06-21 session — R30, native focus traversal)
+- Replaced the hand-rolled focus engine (`FocusGrid` / `FocusRow` + per-item `requestFocus`) with
+  **native Compose focus traversal**: lazy items no longer consume direction keys, so the framework
+  moves focus, composes the off-screen item in the search direction, and scrolls it into view. Added
+  `Modifier.focusRestorer()` per `LazyRow` / grid. Fixes the held-key **lag / stuck focus** on Home
+  rows, the channel rail, and the Browse/Search grids. **`FocusEngine.kt` deleted** — so the R29
+  empty-row `FocusGrid` guard and the 2026-06-20 `StaticContentRow` `animateScrollBy` note (both
+  below) are now moot; that code is gone. Manual key handling is kept only for content actions (hero
+  paging, the Search keyboard↔grid edges); the Player rail's virtual-focus model and the non-lazy
+  keyboard / profile / settings screens are unchanged. See
+  [R30](requirements/phase-R30-native-focus-traversal.md).
 
 ### Recent fixes (2026-06-21 session — R29, contract review fixes)
 - **`playback/stop` always 400'd**: client encoded `PlaybackProgressRequest` vs the route's
@@ -73,7 +85,11 @@ _Last updated: 2026-06-21_
 
 - **`:ravilo-player` engine fork (deferred from R14):** vendor `jellyfin-androidtv` `playback/*`
   when DTS/TrueHD/AC3 passthrough is needed. Confirm upstream GPL-2.0-only-vs-or-later terms;
-  preserve copyright notices in a `:ravilo-player/NOTICE` file.
+  preserve copyright notices in a `:ravilo-player/NOTICE` file. **Intent (confirmed):** Ravilo
+  inherits jellyfin-androidtv's playback logic — automatic format/codec handling, **never** a
+  user-facing "choose a player" control; Ravilo only adds chrome/UX on top. The current direct
+  ExoPlayer/Media3 `actual` already mirrors this for common formats; the fork closes the
+  exotic-codec gap.
 - **WASM subtitle switching (R14 gap):** `selectSubtitleTrack` on `RaviloPlayerWasm` is a no-op
   because `TextTrackList.item()` is not bridged in Kotlin/WASM DOM bindings. Fix path: `@JsFun`
   interop bridge or wait for upstream bindings update.

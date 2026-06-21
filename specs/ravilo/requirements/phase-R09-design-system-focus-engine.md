@@ -2,6 +2,12 @@
 
 **Status:** Planned · _the shared foundation every Ravilo screen is built on._
 
+> **Superseded in part by [R30](phase-R30-native-focus-traversal.md):** the manual per-item focus
+> engine specified under §"Focus engine (shared)" (`FocusRequester` + `onKeyEvent` movement) was
+> replaced by **native Compose focus traversal** (`focusable` + `focusGroup` + `focusRestorer`). The
+> *goals* here — predictable left↔right / up↕down order, remembered focus, focused-row scroll-into-view
+> — still hold; only the mechanism changed.
+
 ## Problem
 Every Ravilo screen needs the same skinnable theme, the same focusable components, and one shared
 **D-pad/pointer focus engine** — written in common Compose so it runs on Android TV and browser canvas

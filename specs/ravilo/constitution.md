@@ -63,7 +63,9 @@ in common code and run on both.
 - **Compose Multiplatform** (`org.jetbrains.compose` / Compose MP) is the UI toolkit, **not**
   Android-only `androidx.tv:tv-material3`. tv-material3 is not multiplatform; shared screens are built
   on **Compose MP `foundation` + a custom Ravilo design system** (we own the components anyway) plus
-  Compose's multiplatform focus APIs (`focusable`, `FocusRequester`, `onKeyEvent`). The Android module
+  Compose's multiplatform focus APIs — native focus traversal (`focusable` + `focusGroup` +
+  `focusRestorer`), with `FocusRequester` / `onKeyEvent` reserved for entry points and content actions
+  (see R30). The Android module
   MAY add TV-specific niceties on top, but **no shared screen may depend on an Android-only Compose
   artifact.**
 - **Android TV target:** native Android app, `leanback` launcher category, TV banner, D-pad primary
