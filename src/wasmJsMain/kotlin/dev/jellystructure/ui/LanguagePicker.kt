@@ -440,7 +440,7 @@ fun refreshLanguagePicker(inputEl: HTMLInputElement) {
     }
 }
 
-private fun injectPickerStyles() {
+internal fun injectPickerStyles() {
     if (document.getElementById("lp-styles") != null) return
     val style = document.createElement("style") as? org.w3c.dom.HTMLStyleElement ?: return
     style.id = "lp-styles"
@@ -474,6 +474,8 @@ private fun injectPickerStyles() {
             background: var(--fill-3);
             color: var(--hi);
         }
+        .lp-opt.cur { font-weight: 600; }
+        .lp-opt.cur::after { content: " ✓"; color: var(--hi); }
     """.trimIndent()
     document.head?.appendChild(style)
 }

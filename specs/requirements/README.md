@@ -61,7 +61,7 @@ See [`../tasks.md`](../tasks.md) for the active TODO breakdown.
 | 42 | ✓ Done | Per-episode track & order editor on Series detail — same editor in a modal (FR-TO2) | [archive](archive/phase-42-series-episode-track-editor.md) |
 | 43 | ✓ Done | Library page: design fidelity (Movies/TV switch) + infinite virtual scroll replacing pagination (FR-LV1) | [archive](archive/phase-43-library-fidelity-infinite-scroll.md) |
 | 44 | ✓ Done | NFO raw viewer — read-only on-disk XML with a multi-file tree sidebar (FR-NR1) | [archive](archive/phase-44-nfo-raw-viewer-tree.md) |
-| 45 | □ Planned | Fix the track-editor language picker — unstyled `.langmenu` popup; unify on the shared styled picker (FR-LP1) | [phase-45](phase-45-track-editor-language-picker-css.md) |
+| 45 | ✓ Done | Fix the track-editor language picker — unstyled `.langmenu` popup; unify on the shared styled picker (FR-LP1) | [archive](archive/phase-45-track-editor-language-picker-css.md) |
 | 46 | □ Planned | Track language writes must persist — 2↔3-letter code mapping, verify-after-write, truthful response + preview (FR-TL1) | [phase-46](phase-46-track-language-write-persist.md) |
 
 ## Adding a new phase
