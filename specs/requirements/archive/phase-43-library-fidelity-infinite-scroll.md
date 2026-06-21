@@ -1,8 +1,17 @@
 # Phase 43 — Library page: design fidelity + infinite scroll (FR-LV1)
 
-**Status:** Planned · _brings the Library page up to the `design/app/library.html` visual target and
-replaces prev/next pagination with continuous infinite scroll, kept cheap via CSS + lazy images
-(a JS virtualiser only as a measured fallback)._
+**Status:** ✓ Done (2026-06-21) · _brings the Library page up to the `design/app/library.html` visual
+target and replaces prev/next pagination with continuous infinite scroll, kept cheap via CSS + lazy
+images (a JS virtualiser only as a measured fallback)._
+
+> **As built:** the kind switch now renders as `<span class="seg">` segments (All/Movies/TV) so it
+> picks up the `.seg span.on` styling. The pager (`#lib-pager`, `renderLibraryPager`, `page=` URL
+> param, `libPage`) is gone; `loadMore(scope, reset)` fetches fixed 60-item slices into `#poster-grid`,
+> driven by an `IntersectionObserver` on a `#lib-sentinel` (700px rootMargin) with a fill-loop
+> (`elemNearViewportBottom`) so short slices keep loading until the viewport is satisfied. Auto-fetch
+> pauses while a scan is running (live WS appends instead) and resets on filter/search/sort/kind change
+> and on scan finish. Cards use `loading="lazy"` + `.poster { content-visibility:auto;
+> contain-intrinsic-size:150px 300px }`; no JS windowing was needed. No backend change.
 
 ## Problem
 The Library page (`Library.kt`) has drifted from its design and has a paging model that misleads

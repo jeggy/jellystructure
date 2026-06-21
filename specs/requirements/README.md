@@ -59,7 +59,7 @@ See [`../tasks.md`](../tasks.md) for the active TODO breakdown.
 | 40 | ✓ Done | Configure qBittorrent in Settings — guard opt-in; off ⇒ no cross-seed safety (FR-QC1) | [archive](archive/phase-40-configure-qbittorrent-settings.md) |
 | 41 | ✓ Done | Merge track-order page into Media Detail "Tracks & order" tab — unified movie editor + warnings (FR-TO1) | [archive](archive/phase-41-merge-track-order-into-detail.md) |
 | 42 | ✓ Done | Per-episode track & order editor on Series detail — same editor in a modal (FR-TO2) | [archive](archive/phase-42-series-episode-track-editor.md) |
-| 43 | □ Planned | Library page: design fidelity (Movies/TV switch) + infinite virtual scroll replacing pagination (FR-LV1) | [phase-43](phase-43-library-fidelity-infinite-scroll.md) |
+| 43 | ✓ Done | Library page: design fidelity (Movies/TV switch) + infinite virtual scroll replacing pagination (FR-LV1) | [archive](archive/phase-43-library-fidelity-infinite-scroll.md) |
 | 44 | □ Planned | NFO raw viewer — read-only on-disk XML with a multi-file tree sidebar (FR-NR1) | [phase-44](phase-44-nfo-raw-viewer-tree.md) |
 | 45 | □ Planned | Fix the track-editor language picker — unstyled `.langmenu` popup; unify on the shared styled picker (FR-LP1) | [phase-45](phase-45-track-editor-language-picker-css.md) |
 | 46 | □ Planned | Track language writes must persist — 2↔3-letter code mapping, verify-after-write, truthful response + preview (FR-TL1) | [phase-46](phase-46-track-language-write-persist.md) |
