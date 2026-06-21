@@ -6,7 +6,9 @@ import dev.jellystructure.App
 import dev.jellystructure.api.MediaApi
 import dev.jellystructure.api.MetaFacets
 import dev.jellystructure.api.TrackFacets
+import dev.jellystructure.elemNearViewportBottom
 import dev.jellystructure.historyReplaceState
+import dev.jellystructure.observeSections
 import dev.jellystructure.jobs.JobEvent
 import dev.jellystructure.model.MediaItem
 import dev.jellystructure.model.MediaKind
@@ -27,7 +29,12 @@ private val scanJson = Json { classDiscriminator = "type"; ignoreUnknownKeys = t
 
 private const val TMDB_IMG = "https://image.tmdb.org/t/p/w342"
 
-private var libPage = 1
+private const val LIB_SLICE = 60  // items fetched per infinite-scroll slice
+private var libSlice = 0          // slices loaded so far for the current filter set; next fetch = libSlice + 1
+private var libLoadedCount = 0    // cards currently in the grid
+private var libTotal = 0
+private var libEndReached = false
+private var libLoading = false
 private var libKind: MediaKind? = null
 private var libFilter: String? = null
 private var libSearch: String? = null
@@ -54,7 +61,6 @@ private fun parseLibraryUrl() {
         ?.let { dev.jellystructure.decodeURIComponent(it) }
         ?.takeIf { it.isNotBlank() }
 
-    libPage          = param("page")?.toIntOrNull() ?: 1
     libKind          = param("kind")?.let { runCatching { MediaKind.valueOf(it) }.getOrNull() }
     libFilter        = param("filter")
     libSearch        = param("search")
@@ -75,7 +81,6 @@ private fun updateLibraryUrl() {
         libFilter?.let { add("filter=$it") }
         libSearch?.let { add("search=${dev.jellystructure.encodeURIComponent(it)}") }
         libSort?.let { add("sort=$it") }
-        if (libPage > 1) add("page=$libPage")
         if (libAudioLangs.isNotEmpty()) add("audioLang=${libAudioLangs.joinToString(",")}")
         libTrackTitle?.let { add("trackTitle=${dev.jellystructure.encodeURIComponent(it)}") }
         libAudioCodec?.let { add("audioCodec=$it") }
@@ -163,31 +168,38 @@ fun renderLibrary(container: Element, scope: CoroutineScope, query: Map<String, 
             <option value="title">title A–Z</option>
             <option value="year">year newest first</option>
           </select>
-          <div class="seg">
-            <button id="k-all">All</button>
-            <button id="k-movie">Movies</button>
-            <button id="k-tv">TV</button>
-          </div>
+          <span class="seg" id="kindseg">
+            <span id="k-all" class="on">All</span>
+            <span id="k-movie">Movies</span>
+            <span id="k-tv">TV</span>
+          </span>
           <span class="muted tiny" id="lib-total"></span>
         </div>
         <div id="active-chips" class="row center" style="display:none;margin-bottom:8px;gap:6px;flex-wrap:wrap;"></div>
 
         <div id="poster-grid" class="poster-grid"></div>
-        <div class="row center" style="margin-top:18px;" id="lib-pager"></div>
+        <div class="row center" style="margin-top:18px;justify-content:center;min-height:24px;" id="lib-loadmore"></div>
+        <div id="lib-sentinel" style="height:1px;"></div>
     """.trimIndent()
 
     syncFilterUiToState(scope)
     attachLibraryListeners(scope)
+
+    // Infinite scroll: a sentinel after the grid fetches the next slice as it nears the viewport.
+    // Auto-fetch is paused while a scan is running (items append live over the WebSocket instead).
+    observeSections("lib-sentinel", "700px 0px 700px 0px") { _ ->
+        if (libScanSocket == null) scope.launch { loadMore(scope, reset = false) }
+    }
 
     scope.launch {
         val status = MediaApi.scanStatus()
         if (status?.running == true) {
             libScannedCount = status.processedCount
             setScanRunning(true)
-            loadLibraryPage(scope)
+            loadMore(scope, reset = true)
             connectScanSocket(scope)
         } else {
-            loadLibraryPage(scope)
+            loadMore(scope, reset = true)
         }
     }
     scope.launch {
@@ -220,7 +232,7 @@ private fun syncFilterUiToState(scope: CoroutineScope) {
 // -- Event wiring ---------------------------------------------------------
 
 private fun attachLibraryListeners(scope: CoroutineScope) {
-    fun reload() { libPage = 1; scope.launch { loadLibraryPage(scope) } }
+    fun reload() { scope.launch { loadMore(scope, reset = true) } }
 
     document.getElementById("scan-btn")?.addEventListener("click") {
         scope.launch { triggerScan(scope) }
@@ -353,7 +365,7 @@ private fun updateActiveChips(scope: CoroutineScope? = null) {
                 }
             }
             updateActiveChips(scope)
-            if (scope != null) { libPage = 1; scope.launch { loadLibraryPage(scope) } }
+            if (scope != null) scope.launch { loadMore(scope, reset = true) }
         }
         container.appendChild(chip)
     }
@@ -375,7 +387,9 @@ private suspend fun triggerScan(scope: CoroutineScope) {
     setScanRunning(true)
     document.getElementById("poster-grid")?.innerHTML = ""
     document.getElementById("lib-total")?.textContent = ""
-    document.getElementById("lib-pager")?.innerHTML = ""
+    setLoadMore("")
+    // Reset the scroller so the post-scan reload starts a fresh sequence.
+    libSlice = 0; libLoadedCount = 0; libTotal = 0; libEndReached = false
     connectScanSocket(scope)
 }
 
@@ -402,7 +416,7 @@ private fun connectScanSocket(scope: CoroutineScope) {
                     banner?.style?.display = "block"
                     val n = event.succeeded
                     banner?.innerHTML = """<span class="badge ok">Scan complete — $n item${if (n != 1) "s" else ""} found.</span>"""
-                    scope.launch { loadLibraryPage(scope) }
+                    scope.launch { loadMore(scope, reset = true) }
                 }
                 else -> {}
             }
@@ -611,7 +625,7 @@ private fun buildAudioDropdown(
 }
 
 private fun populateAudioFilterPanel(facets: TrackFacets?, scope: CoroutineScope) {
-    fun reload() { libPage = 1; scope.launch { loadLibraryPage(scope) } }
+    fun reload() { scope.launch { loadMore(scope, reset = true) } }
     if (facets == null) return
 
     val labelStyle = """font-size:.72rem;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-soft);margin-bottom:6px"""
@@ -662,7 +676,7 @@ private fun populateAudioFilterPanel(facets: TrackFacets?, scope: CoroutineScope
 }
 
 private fun populateMetaFilterPanel(facets: MetaFacets?, scope: CoroutineScope) {
-    fun reload() { libPage = 1; scope.launch { loadLibraryPage(scope) } }
+    fun reload() { scope.launch { loadMore(scope, reset = true) } }
     if (facets == null) return
 
     val labelStyle = """font-size:.72rem;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-soft);margin-bottom:6px"""
@@ -735,33 +749,77 @@ private fun populateMetaFilterPanel(facets: MetaFacets?, scope: CoroutineScope) 
     updateActiveChips(scope)
 }
 
-// -- Grid & pager ---------------------------------------------------------
+// -- Grid & infinite scroll -----------------------------------------------
 
-private suspend fun loadLibraryPage(scope: CoroutineScope) {
-    updateLibraryUrl()
-
-    val grid = document.getElementById("poster-grid") ?: return
-    grid.innerHTML = """<span class="muted" style="padding:24px;display:block;">Loading…</span>"""
-
-    val page = MediaApi.list(
-        libKind, libFilter, libSearch, libSort, libPage, 20,
-        libStudios, libNetworks, libGenres,
-        libAudioLangs, libTrackTitle, libAudioCodec, libUntaggedAudio,
-        libTags,
-    )
-    if (page == null) {
-        grid.innerHTML = """<span class="muted" style="padding:24px;display:block;">Failed to load library.</span>"""
-        return
+/**
+ * Loads library slices into `#poster-grid`. With [reset] = true it clears the grid and starts a fresh
+ * sequence for the current filter/search/sort; otherwise it appends the next slice. After each slice
+ * it keeps fetching while the sentinel is still near the viewport, so a partial last row is never
+ * mistaken for the end. Re-entry is guarded by [libLoading]; the sentinel observer and explicit
+ * resets all funnel through here.
+ */
+private suspend fun loadMore(scope: CoroutineScope, reset: Boolean) {
+    if (libLoading) return
+    libLoading = true
+    val grid = document.getElementById("poster-grid")
+    if (reset) {
+        updateLibraryUrl()
+        libSlice = 0; libLoadedCount = 0; libTotal = 0; libEndReached = false
+        grid?.innerHTML = """<span class="muted" style="padding:24px;display:block;">Loading…</span>"""
+        setLoadMore("")
     }
+    try {
+        var firstSlice = reset
+        while (!libEndReached) {
+            if (!firstSlice) setLoadMore("""<span class="muted tiny">Loading more…</span>""")
+            val page = MediaApi.list(
+                libKind, libFilter, libSearch, libSort, libSlice + 1, LIB_SLICE,
+                libStudios, libNetworks, libGenres,
+                libAudioLangs, libTrackTitle, libAudioCodec, libUntaggedAudio,
+                libTags,
+            )
+            if (page == null) {
+                if (firstSlice) grid?.innerHTML =
+                    """<span class="muted" style="padding:24px;display:block;">Failed to load library.</span>"""
+                else setLoadMore("""<span class="muted tiny">Failed to load more — scroll to retry.</span>""")
+                return
+            }
 
-    document.getElementById("lib-total")?.textContent = "${page.total} item${if (page.total != 1) "s" else ""}"
+            libTotal = page.total
+            document.getElementById("lib-total")?.textContent =
+                "${page.total} item${if (page.total != 1) "s" else ""}"
 
-    grid.innerHTML = if (page.items.isEmpty()) {
-        """<span class="muted" style="padding:24px;display:block;">No items found.</span>"""
-    } else {
-        page.items.joinToString("") { posterCardHtml(it) }
+            if (firstSlice) {
+                if (page.items.isEmpty()) {
+                    grid?.innerHTML = """<span class="muted" style="padding:24px;display:block;">No items found.</span>"""
+                } else {
+                    grid?.innerHTML = page.items.joinToString("") { posterCardHtml(it) }
+                    bindPosterClicks(grid)
+                }
+            } else if (page.items.isNotEmpty()) {
+                appendPosterCards(grid, page.items)
+            }
+
+            libSlice++
+            libLoadedCount += page.items.size
+            libEndReached = page.items.isEmpty() || libLoadedCount >= page.total
+            firstSlice = false
+
+            // Stop once the viewport is satisfied; the sentinel observer resumes the sequence on scroll.
+            if (libEndReached || !elemNearViewportBottom("lib-sentinel", 700)) break
+        }
+        setLoadMore("")
+    } finally {
+        libLoading = false
     }
+}
 
+private fun setLoadMore(html: String) {
+    (document.getElementById("lib-loadmore") as? HTMLElement)?.innerHTML = html
+}
+
+private fun bindPosterClicks(grid: Element?) {
+    grid ?: return
     grid.querySelectorAll(".poster[data-id]").let { nodes ->
         for (i in 0 until nodes.length) {
             val el = nodes.item(i) as? HTMLElement ?: continue
@@ -769,8 +827,18 @@ private suspend fun loadLibraryPage(scope: CoroutineScope) {
             el.addEventListener("click") { App.navigate("/media/$id") }
         }
     }
+}
 
-    renderLibraryPager(page.total, page.page, page.pageSize, scope)
+private fun appendPosterCards(grid: Element?, items: List<MediaItem>) {
+    grid ?: return
+    val tmp = document.createElement("div")
+    tmp.innerHTML = items.joinToString("") { posterCardHtml(it) }
+    while (tmp.firstElementChild != null) {
+        val card = tmp.firstElementChild ?: break
+        val id = card.getAttribute("data-id")
+        grid.appendChild(card)
+        if (id != null) (card as? HTMLElement)?.addEventListener("click") { App.navigate("/media/$id") }
+    }
 }
 
 private fun posterCardHtml(item: MediaItem): String {
@@ -780,7 +848,7 @@ private fun posterCardHtml(item: MediaItem): String {
         else              -> """<span class="badge ok" style="font-size:.62rem;">ok</span>"""
     }
     val imgContent = if (item.posterPath != null) {
-        """<img src="$TMDB_IMG${item.posterPath}" alt="${item.title.esc()}"
+        """<img src="$TMDB_IMG${item.posterPath}" alt="${item.title.esc()}" loading="lazy"
              style="width:100%;height:100%;object-fit:cover;border-radius:4px 4px 0 0;">"""
     } else {
         """<div class="x"></div><span>${item.title.esc()}</span>"""
@@ -791,24 +859,6 @@ private fun posterCardHtml(item: MediaItem): String {
           <div class="ttl">${item.title.esc()}</div>
           <div class="yr">${item.year ?: "—"} · $badge</div>
         </div>"""
-}
-
-private fun renderLibraryPager(total: Int, page: Int, pageSize: Int, scope: CoroutineScope) {
-    val pager = document.getElementById("lib-pager") ?: return
-    val totalPages = if (pageSize > 0) (total + pageSize - 1) / pageSize else 1
-    if (totalPages <= 1) { pager.innerHTML = ""; return }
-    pager.innerHTML = """
-        <span class="muted tiny">Page $page of $totalPages</span>
-        <span class="spacer" style="flex:1"></span>
-        ${if (page > 1) """<button id="pg-prev" class="btn sm ghost">‹ prev</button>""" else ""}
-        ${if (page < totalPages) """<button id="pg-next" class="btn sm">next ›</button>""" else ""}
-    """.trimIndent()
-    document.getElementById("pg-prev")?.addEventListener("click") {
-        libPage--; scope.launch { loadLibraryPage(scope) }
-    }
-    document.getElementById("pg-next")?.addEventListener("click") {
-        libPage++; scope.launch { loadLibraryPage(scope) }
-    }
 }
 
 internal fun String.esc(): String =

@@ -35,7 +35,7 @@
       <input class="input" id="lib-search" placeholder="⌕ search title…" style="width:240px;" autocomplete="off">
       <div class="card note blue search-note">Search matches <b>every title this item has ever had</b> — each language pulled from TMDB plus the original title. A show pulled once in Danish stays findable by its Danish name even after re-resolving.</div>
     </span>
-    <span class="seg" id="kindseg"><span class="on" data-kind="movies">Movies</span><span data-kind="tv">TV</span></span>
+    <span class="seg" id="kindseg"><span class="on" data-kind="all">All</span><span data-kind="movies">Movies</span><span data-kind="tv">TV</span></span>
   </div>
   <p class="page-sub">Everything Jellystructure manages. A red corner means at least one untagged track or a multiple-default-audio file; an amber one means a mixed-language series (writes are never blocked) — click any title to open its detail page.</p>
 
@@ -92,7 +92,10 @@
     <a class="poster" href="series.html"><div class="imgslot"><span>poster</span></div><div class="ttl">Sol Levante</div><div class="yr">2020 · <span class="badge ok" style="font-size:.62rem;">ok</span></div></a>
   </div>
 
-  <div class="row center" style="margin-top:18px;"><span class="muted tiny" id="pagecount">Showing 1–10 of 1,842</span><span class="spacer" style="flex:1"></span><span class="btn sm ghost">‹ prev</span><span class="btn sm">next ›</span></div>
+  <!-- Infinite scroll: a loading row + an off-screen sentinel that fetches the next slice as it
+       nears the viewport. The total count stays in #lib-total (top bar); no prev/next pager. -->
+  <div class="row center" style="margin-top:18px;justify-content:center;min-height:24px;" id="lib-loadmore"><span class="muted tiny">Loading more…</span></div>
+  <div id="lib-sentinel" style="height:1px;"></div>
 </main>
 
 <script src="app-shell.js"></script>
