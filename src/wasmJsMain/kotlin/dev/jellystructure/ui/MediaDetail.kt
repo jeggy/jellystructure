@@ -15,6 +15,8 @@ import dev.jellystructure.api.TmdbMatchResult
 import dev.jellystructure.model.Episode
 import dev.jellystructure.model.MediaItem
 import dev.jellystructure.model.MediaKind
+import dev.jellystructure.model.NfoFileNode
+import dev.jellystructure.model.NfoFileTree
 import dev.jellystructure.model.Track
 import dev.jellystructure.model.TrackKind
 import kotlinx.browser.document
@@ -459,11 +461,17 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
         <div id="tab-nfo" ${if (activeTab != "nfo") """style="display:none;" """ else ""}>
           <div class="card" id="nfo-card">
             <div class="row center" style="margin-bottom:10px;">
-              <h4 style="margin:0">NFO (written to disk)</h4>
+              <h4 style="margin:0">NFO on disk</h4>
               <span class="spacer"></span>
-              <span class="muted tiny">Click "Save → NFO" to write and view here</span>
+              <span class="muted tiny">Read-only — NFO is generated from the other tabs and written on Save.</span>
             </div>
-            <pre class="log" id="nfo-raw" style="font-size:.73rem;line-height:1.5;max-height:420px;overflow:auto"></pre>
+            <div class="nfo-layout">
+              <div id="nfo-tree" class="nfo-tree"><span class="muted tiny">Loading…</span></div>
+              <div class="nfo-viewer">
+                <div class="mono tiny muted" id="nfo-path" style="margin-bottom:6px;word-break:break-all;"></div>
+                <pre class="log" id="nfo-raw" style="font-size:.73rem;line-height:1.5;max-height:480px;overflow:auto"></pre>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -639,6 +647,7 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
                         scope.launch { loadSeedingStatus(item.id) }
                         wireUnifiedTrackEditor("trk", item.tracks, item.id, null, scope, item.resolvedLanguage, item.path)
                     }
+                    if (tab == "nfo") scope.launch { loadNfoTab(item, scope) }
                     // Update URL silently via replaceState — no hashchange fired, no page re-render
                     val tabParam = if (tab == "overview") null else tab
                     dev.jellystructure.Router.updateQuery(mapOf("tab" to tabParam), replace = true)
@@ -654,6 +663,7 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
         wireUnifiedTrackEditor("trk", item.tracks, item.id, null, scope, item.resolvedLanguage, item.path)
     }
     if (activeTab == "history") scope.launch { loadHistory(item.id, container, scope) }
+    if (activeTab == "nfo") scope.launch { loadNfoTab(item, scope) }
 
     // Inject styles once per document lifetime
     injectDiffStyles()
@@ -1667,6 +1677,97 @@ private fun renderArtworkStatus(status: ArtworkStatus) {
         badge(status.logoExists, "clearlogo.png")
 }
 
+// ── NFO raw viewer (Phase 44) ───────────────────────────────────────────────────
+
+private const val NFO_EMPTY_FILE = "No NFO on disk yet — written when you Save on the metadata tab."
+
+/** Fetches the item's NFO file tree, renders the sidebar, and selects the first existing file. */
+private suspend fun loadNfoTab(item: MediaItem, scope: CoroutineScope) {
+    val treeEl = document.getElementById("nfo-tree") as? HTMLElement ?: return
+    val pathEl = document.getElementById("nfo-path") as? HTMLElement
+    val rawEl = document.getElementById("nfo-raw") as? HTMLElement
+    treeEl.innerHTML = """<span class="muted tiny">Loading…</span>"""
+    val tree = MediaApi.getNfoFiles(item.id)
+    if (tree == null) {
+        treeEl.innerHTML = """<span class="muted tiny">Failed to load NFO files.</span>"""
+        return
+    }
+    renderNfoTree(treeEl, tree, scope)
+    val firstEl = (treeEl.querySelector(".nfo-node:not(.missing)") ?: treeEl.querySelector(".nfo-node")) as? HTMLElement
+    if (firstEl != null) {
+        selectNfoElement(treeEl, firstEl, scope)
+    } else {
+        pathEl?.textContent = ""
+        rawEl?.textContent = NFO_EMPTY_FILE
+    }
+}
+
+private fun renderNfoTree(treeEl: HTMLElement, tree: NfoFileTree, scope: CoroutineScope) {
+    fun nodeHtml(n: NfoFileNode): String {
+        val missing = if (!n.exists) """ <span class="muted tiny">· not written</span>""" else ""
+        val cls = "nfo-node" + if (!n.exists) " missing" else ""
+        return """<div class="$cls" data-url="${n.readUrl.esc()}" data-path="${n.path.esc()}" data-exists="${n.exists}">${n.label.esc()}$missing</div>"""
+    }
+
+    treeEl.innerHTML = if (tree.kind == MediaKind.TV_SHOW) {
+        val sb = StringBuilder()
+        tree.files.firstOrNull()?.let { sb.append(nodeHtml(it)) }  // tvshow.nfo pinned at top
+        val seasons = LinkedHashMap<Int?, MutableList<NfoFileNode>>()
+        tree.files.drop(1).forEach { seasons.getOrPut(it.season) { mutableListOf() }.add(it) }
+        seasons.forEach { (season, eps) ->
+            val title = season?.let { "Season $it" } ?: "Other"
+            sb.append("""<div class="nfo-season"><div class="nfo-season-hd"><span class="nfo-caret">▾</span> ${title.esc()} <span class="muted tiny">(${eps.size})</span></div><div class="nfo-season-body">""")
+            eps.forEach { sb.append(nodeHtml(it)) }
+            sb.append("""</div></div>""")
+        }
+        sb.toString()
+    } else {
+        tree.files.joinToString("") { nodeHtml(it) }
+    }
+
+    // Collapsible season groups
+    treeEl.querySelectorAll(".nfo-season-hd").let { nodes ->
+        for (i in 0 until nodes.length) {
+            val hd = nodes.item(i) as? HTMLElement ?: continue
+            hd.addEventListener("click") {
+                val body = hd.nextElementSibling as? HTMLElement ?: return@addEventListener
+                val collapsed = body.style.display == "none"
+                body.style.display = if (collapsed) "block" else "none"
+                (hd.querySelector(".nfo-caret") as? HTMLElement)?.textContent = if (collapsed) "▾" else "▸"
+            }
+        }
+    }
+
+    // Node selection
+    treeEl.addEventListener("click") { e ->
+        val nodeEl = (e.target as? HTMLElement)?.closest(".nfo-node") as? HTMLElement ?: return@addEventListener
+        selectNfoElement(treeEl, nodeEl, scope)
+    }
+}
+
+private fun selectNfoElement(treeEl: HTMLElement, nodeEl: HTMLElement, scope: CoroutineScope) {
+    treeEl.querySelectorAll(".nfo-node").let { nodes ->
+        for (i in 0 until nodes.length) (nodes.item(i) as? HTMLElement)?.classList?.remove("sel")
+    }
+    nodeEl.classList.add("sel")
+
+    val url = nodeEl.getAttribute("data-url") ?: return
+    val exists = nodeEl.getAttribute("data-exists") == "true"
+    val path = nodeEl.getAttribute("data-path") ?: ""
+    val pathEl = document.getElementById("nfo-path") as? HTMLElement
+    val rawEl = document.getElementById("nfo-raw") as? HTMLElement
+    pathEl?.textContent = path
+    if (!exists) {
+        rawEl?.textContent = NFO_EMPTY_FILE
+        return
+    }
+    rawEl?.textContent = "Loading…"
+    scope.launch {
+        // textContent (never innerHTML): the XML displays literally and is never parsed as markup.
+        rawEl?.textContent = MediaApi.getNfoRaw(url) ?: "Could not read this file."
+    }
+}
+
 private suspend fun handleWriteNfo(id: String, refresh: Boolean = false) {
     val btn1 = document.getElementById("write-nfo-btn") as? HTMLElement
     val btn2 = document.getElementById("write-nfo-refresh-btn") as? HTMLElement
@@ -1676,10 +1777,8 @@ private suspend fun handleWriteNfo(id: String, refresh: Boolean = false) {
     val (result, error) = MediaApi.writeNfo(id)
 
     if (result != null) {
-        val raw = MediaApi.getNfo(id)
-        if (raw != null) {
-            (document.getElementById("nfo-raw") as? HTMLElement)?.textContent = raw
-        }
+        // The NFO raw tab re-fetches the on-disk files when activated (Phase 44), so no need to
+        // push the freshly-written XML into the viewer here.
         if (refresh) {
             btn2?.textContent = "Syncing artwork…"
             MediaApi.fetchArtwork(id)

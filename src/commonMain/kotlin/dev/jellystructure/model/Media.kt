@@ -76,3 +76,21 @@ data class MediaPage(
     val page: Int,
     val pageSize: Int,
 )
+
+/** One NFO file an item could have on disk (Phase 44 NFO raw viewer tree). */
+@Serializable
+data class NfoFileNode(
+    val label: String,        // "movie.nfo" / "tvshow.nfo" / "S01E03 — Title"
+    val readUrl: String,      // server-built read route; the client fetches this verbatim
+    val exists: Boolean,
+    val path: String,         // on-disk path, display only
+    val season: Int? = null,
+    val episode: Int? = null,
+)
+
+/** The full tree of NFO files for an item; series episodes are ordered by season/episode. */
+@Serializable
+data class NfoFileTree(
+    val kind: MediaKind,
+    val files: List<NfoFileNode>,
+)

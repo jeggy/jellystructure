@@ -4,6 +4,7 @@ import dev.jellystructure.encodeURIComponent
 import dev.jellystructure.model.MediaItem
 import dev.jellystructure.model.MediaKind
 import dev.jellystructure.model.MediaPage
+import dev.jellystructure.model.NfoFileTree
 import io.ktor.client.call.body
 import io.ktor.client.request.delete
 import io.ktor.client.request.get
@@ -222,6 +223,17 @@ object MediaApi {
 
     suspend fun getNfo(id: String): String? = runCatching {
         val response = httpClient.get("/api/media/$id/nfo")
+        if (response.status == HttpStatusCode.OK) response.body<String>() else null
+    }.getOrNull()
+
+    /** Phase 44 — the tree of NFO files for an item (movie.nfo / tvshow.nfo + per-episode). */
+    suspend fun getNfoFiles(id: String): NfoFileTree? = runCatching {
+        httpClient.get("/api/media/$id/nfo/files").body<NfoFileTree>()
+    }.getOrNull()
+
+    /** Fetch the exact on-disk bytes of one NFO file by its server-built read URL. 404 ⇒ null. */
+    suspend fun getNfoRaw(readUrl: String): String? = runCatching {
+        val response = httpClient.get(readUrl)
         if (response.status == HttpStatusCode.OK) response.body<String>() else null
     }.getOrNull()
 
