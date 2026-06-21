@@ -111,7 +111,6 @@ private fun ChannelRows(rows: List<Row>, onItemSelect: (MediaCard) -> Unit) {
             StaticContentRow(
                 title = row.title,
                 items = row.items,
-                nativeFocus = true,
                 itemKey = { card -> card.id },
             ) { _, card ->
                 val isLandscape = row.kind == RowKind.CONTINUE
