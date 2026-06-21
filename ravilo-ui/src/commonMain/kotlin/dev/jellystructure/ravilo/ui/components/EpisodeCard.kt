@@ -50,11 +50,6 @@ fun EpisodeCard(
     episode: Episode,
     focusRequester: FocusRequester? = null,
     isResumeEpisode: Boolean = false,
-    onFocused: () -> Unit = {},
-    onLeft: (() -> Unit)? = null,
-    onRight: (() -> Unit)? = null,
-    onUp: (() -> Unit)? = null,
-    onDown: (() -> Unit)? = null,
     onSelect: (() -> Unit)? = null,
 ) {
     val colors = RaviloTheme.colors
@@ -89,9 +84,9 @@ fun EpisodeCard(
             .border(borderWidth, colors.focusRing, cardShape)
             .dpadFocusable(
                 focusRequester = focusRequester,
-                onFocused = { focused = true; onFocused() },
+                onFocused = { focused = true },
                 onBlurred = { focused = false },
-                onLeft = onLeft, onRight = onRight, onUp = onUp, onDown = onDown, onSelect = onSelect,
+                onSelect = onSelect,
             )
             .alpha(if (isWatched) 0.62f else 1f),
     ) {

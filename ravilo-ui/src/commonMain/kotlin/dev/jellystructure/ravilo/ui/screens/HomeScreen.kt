@@ -106,9 +106,11 @@ private fun HomeLoaded(
     val heroFR   = remember { FocusRequester() }
     val columnFR = remember { FocusRequester() }
 
-    // Land focus somewhere sensible on entry.
+    // Land focus somewhere sensible on entry. With a hero, focus it; otherwise focus the app bar
+    // (always composed + focusable) so a hero-less feed never opens with nothing focused — Down
+    // then enters the content. Requesting focus on the LazyColumn container itself is unreliable.
     LaunchedEffect(Unit) {
-        runCatching { if (hasHero) heroFR.requestFocus() else columnFR.requestFocus() }
+        runCatching { if (hasHero) heroFR.requestFocus() else navBarFR.requestFocus() }
     }
 
     LazyColumn(
@@ -138,7 +140,6 @@ private fun HomeLoaded(
                 StaticContentRow(
                     title = str("section.channels"),
                     items = feed.channels,
-                    nativeFocus = true,
                     itemKey = { ch -> ch.id },
                 ) { _, ch ->
                     ChannelCard(
@@ -159,7 +160,6 @@ private fun HomeLoaded(
             StaticContentRow(
                 title = row.title,
                 items = row.items,
-                nativeFocus = true,
                 itemKey = { card -> card.id },
             ) { _, card ->
                 val isLandscape = row.kind == RowKind.CONTINUE

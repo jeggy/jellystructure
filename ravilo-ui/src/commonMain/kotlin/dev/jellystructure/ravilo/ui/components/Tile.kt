@@ -59,10 +59,6 @@ fun Tile(
     watched: Boolean = false,
     isNew: Boolean = false,
     onFocused: () -> Unit = {},
-    onLeft: (() -> Unit)? = null,
-    onRight: (() -> Unit)? = null,
-    onUp: (() -> Unit)? = null,
-    onDown: (() -> Unit)? = null,
     onSelect: (() -> Unit)? = null,
 ) {
     val colors = RaviloTheme.colors
@@ -95,7 +91,7 @@ fun Tile(
                     focusRequester = focusRequester,
                     onFocused = { focused = true; onFocused() },
                     onBlurred = { focused = false },
-                    onLeft = onLeft, onRight = onRight, onUp = onUp, onDown = onDown, onSelect = onSelect,
+                    onSelect = onSelect,
                 ),
         ) {
             if (posterUrl != null) {
