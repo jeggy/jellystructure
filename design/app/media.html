@@ -315,12 +315,16 @@
     </div>
   </div>
 
-  <!-- ================= NFO TAB ================= -->
+  <!-- ================= NFO TAB (Phase 44 — read-only on-disk viewer) ================= -->
   <div class="tabpanel" data-panel="nfo" style="display:none;">
     <div class="card">
-      <div class="row center"><h4 style="margin:0;">movie.nfo</h4><span class="spacer"></span><span class="badge ok">unlocked</span><span class="tiny muted">written atomically · .tmp → rename</span></div>
-      <hr class="dash" style="margin:12px 0;">
-      <div class="log" style="max-height:380px;">
+      <div class="row center" style="margin-bottom:10px;"><h4 style="margin:0;">NFO on disk</h4><span class="spacer"></span><span class="muted tiny">Read-only — NFO is generated from the other tabs and written on Save.</span></div>
+      <div class="nfo-layout">
+        <!-- A movie has a single movie.nfo; a series shows tvshow.nfo + a per-season episode tree -->
+        <div class="nfo-tree"><div class="nfo-node sel">movie.nfo</div></div>
+        <div class="nfo-viewer">
+          <div class="mono tiny muted" style="margin-bottom:6px;">/media/movies/Sintel (2010)/movie.nfo</div>
+          <div class="log" style="max-height:480px;">
 <span class="muted">&lt;?xml version="1.0" encoding="UTF-8"?&gt;</span>
 &lt;movie&gt;
   &lt;title&gt;Sintel&lt;/title&gt;
@@ -329,10 +333,11 @@
   &lt;genre&gt;Animation&lt;/genre&gt;
   &lt;genre&gt;Fantasy&lt;/genre&gt;
   &lt;tag&gt;open movie&lt;/tag&gt;
-  &lt;tag&gt;blender&lt;/tag&gt;
   &lt;uniqueid type="tmdb"&gt;45745&lt;/uniqueid&gt;
   <span class="muted">&lt;!-- no &lt;lockdata&gt; — NFO stays unlocked so Jellyfin re-reads it freely --&gt;</span>
 &lt;/movie&gt;
+          </div>
+        </div>
       </div>
     </div>
   </div>

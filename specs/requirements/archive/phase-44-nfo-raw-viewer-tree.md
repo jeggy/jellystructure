@@ -1,7 +1,16 @@
 # Phase 44 — NFO Raw viewer with multi-file tree sidebar (FR-NR1)
 
-**Status:** Planned · _the "NFO raw" tab on Media/Series detail becomes a read-only viewer of the
-exact on-disk NFO XML, with a left tree sidebar to pick among the multiple NFO files an item has._
+**Status:** ✓ Done (2026-06-21) · _the "NFO raw" tab on Media/Series detail becomes a read-only viewer
+of the exact on-disk NFO XML, with a left tree sidebar to pick among the multiple NFO files an item has._
+
+> **As built:** shared DTOs `NfoFileNode`/`NfoFileTree` (commonMain). Backend adds
+> `GET /api/media/{id}/nfo/files` (tree with server-built `readUrl`s, episode filename
+> `encodeURLPathPart`-encoded) and `GET /api/media/{id}/episodes/{epFilename}/nfo` (episode resolved by
+> filename ⇒ 404 on unknown/`..`); `NfoWriter` gains `nfoPath`/`episodeNfoPath`. Frontend `#tab-nfo`
+> is now a two-pane tree + read-only `<pre>` (injected via `textContent`), lazy-loaded on tab activate
+> (click + `#tab=nfo` deep link), auto-selecting the first existing file; series episodes group into
+> collapsible seasons. The post-write `#nfo-raw` push is removed (tab re-fetches on activate). No
+> writes from this tab. CSS in `app.css`; mockups updated.
 
 ## Problem
 The **NFO raw** tab on Media Detail shows **nothing**:

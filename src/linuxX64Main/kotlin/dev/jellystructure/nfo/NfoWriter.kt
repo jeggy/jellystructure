@@ -36,6 +36,26 @@ object NfoWriter {
         }
     }
 
+    /** On-disk path of the item-level NFO (movie.nfo / tvshow.nfo). Display only. */
+    fun nfoPath(item: MediaItem): String {
+        val dir = when (item.kind) {
+            MediaKind.MOVIE -> item.path.substringBeforeLast('/')
+            MediaKind.TV_SHOW -> item.path
+        }
+        val filename = when (item.kind) {
+            MediaKind.MOVIE -> "movie.nfo"
+            MediaKind.TV_SHOW -> "tvshow.nfo"
+        }
+        return "$dir/$filename"
+    }
+
+    /** On-disk path of an episode's `episodedetails.nfo` (basename.nfo next to the video). */
+    fun episodeNfoPath(episode: Episode): String {
+        val dir = episode.path.substringBeforeLast('/')
+        val baseName = episode.filename.substringBeforeLast('.')
+        return "$dir/$baseName.nfo"
+    }
+
     fun exists(item: MediaItem): Boolean {
         val dir = when (item.kind) {
             MediaKind.MOVIE -> item.path.substringBeforeLast('/')

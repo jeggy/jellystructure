@@ -15,12 +15,16 @@ import dev.jellystructure.media.MediaStore
 import dev.jellystructure.media.MkvpropeditRunner
 import dev.jellystructure.media.Scanner
 import dev.jellystructure.media.ScanTracker
+import dev.jellystructure.model.Episode
 import dev.jellystructure.model.MediaItem
 import dev.jellystructure.model.MediaKind
+import dev.jellystructure.model.NfoFileNode
+import dev.jellystructure.model.NfoFileTree
 import dev.jellystructure.model.TrackKind
 import dev.jellystructure.nfo.NfoWriter
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
+import io.ktor.http.encodeURLPathPart
 import io.ktor.http.content.PartData
 import io.ktor.http.content.forEachPart
 import io.ktor.server.request.receive
@@ -206,6 +210,35 @@ fun Route.mediaRoutes(
                     val raw = NfoWriter.readRaw(item)
                         ?: return@get call.respond(HttpStatusCode.NotFound)
                     call.respondText(raw, ContentType.Text.Xml)
+                }
+
+                // GET /api/media/{id}/nfo/files — the tree of NFO files this item could have, each with a
+                // server-built read URL. Reuses the loaded item + episode list (one stat per file).
+                get("/files") {
+                    val id = call.parameters["id"]
+                        ?: return@get call.respond(HttpStatusCode.BadRequest)
+                    val item = store.resolve(id)
+                        ?: return@get call.respond(HttpStatusCode.NotFound)
+                    val nodes = if (item.kind == MediaKind.TV_SHOW) {
+                        buildList {
+                            add(NfoFileNode("tvshow.nfo", "/api/media/$id/nfo", NfoWriter.exists(item), NfoWriter.nfoPath(item)))
+                            item.episodes
+                                .sortedWith(compareBy({ it.seasonNumber ?: Int.MAX_VALUE }, { it.episodeNumber ?: Int.MAX_VALUE }))
+                                .forEach { ep ->
+                                    add(NfoFileNode(
+                                        label = episodeNfoLabel(ep),
+                                        readUrl = "/api/media/$id/episodes/${ep.filename.encodeURLPathPart()}/nfo",
+                                        exists = NfoWriter.episodeNfoExists(ep),
+                                        path = NfoWriter.episodeNfoPath(ep),
+                                        season = ep.seasonNumber,
+                                        episode = ep.episodeNumber,
+                                    ))
+                                }
+                        }
+                    } else {
+                        listOf(NfoFileNode("movie.nfo", "/api/media/$id/nfo", NfoWriter.exists(item), NfoWriter.nfoPath(item)))
+                    }
+                    call.respond(NfoFileTree(item.kind, nodes))
                 }
 
                 post {
@@ -443,6 +476,22 @@ fun Route.mediaRoutes(
 
             // Episode track routes — {epFilename} identifies the episode by filename
             route("/{epFilename}") {
+                // GET /api/media/{id}/episodes/{epFilename}/nfo — exact on-disk episodedetails.nfo bytes.
+                // The episode is server-resolved by filename; an unknown/`..` name matches none ⇒ 404.
+                get("/nfo") {
+                    val id = call.parameters["id"]
+                        ?: return@get call.respond(HttpStatusCode.BadRequest)
+                    val epFilename = call.parameters["epFilename"]
+                        ?: return@get call.respond(HttpStatusCode.BadRequest)
+                    val item = store.resolve(id)
+                        ?: return@get call.respond(HttpStatusCode.NotFound)
+                    val ep = item.episodes.firstOrNull { it.filename == epFilename }
+                        ?: return@get call.respond(HttpStatusCode.NotFound)
+                    val raw = NfoWriter.readRawEpisode(ep)
+                        ?: return@get call.respond(HttpStatusCode.NotFound)
+                    call.respondText(raw, ContentType.Text.Xml)
+                }
+
                 // GET /api/media/{id}/episodes/{epFilename}/tracks/plan?specifier=...
                 get("/tracks/plan") {
                     val id = call.parameters["id"]
@@ -1265,4 +1314,14 @@ internal suspend fun fireWebhook(cfg: dev.jellystructure.config.AppConfig, paylo
     val safePayload = payload.replace("'", "\\'")
     runCatching { posixSystem("""curl -sf --max-time 10 -X POST -H 'Content-Type: application/json' -d '$safePayload' '$url' &""") }
     Logger.info("Webhook fired: $payload", "notify")
+}
+
+/** Tree label for an episode NFO node: "S01E03 — Title", falling back to the filename. */
+private fun episodeNfoLabel(ep: Episode): String {
+    fun pad2(n: Int) = if (n in 0..9) "0$n" else "$n"
+    val s = ep.seasonNumber
+    val e = ep.episodeNumber
+    val code = if (s != null && e != null) "S${pad2(s)}E${pad2(e)}" else null
+    val title = ep.title?.takeIf { it.isNotBlank() } ?: ep.filename
+    return if (code != null) "$code — $title" else title
 }
