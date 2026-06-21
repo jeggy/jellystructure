@@ -5,6 +5,7 @@ package dev.jellystructure.ui
 import dev.jellystructure.api.MediaApi
 import dev.jellystructure.model.Track
 import dev.jellystructure.model.TrackKind
+import dev.jellystructure.resolver.LanguageResolver
 import kotlinx.browser.document
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
@@ -55,44 +56,48 @@ internal fun closeTrkLangMenu() {
 internal fun openTrkLangMenu(anchor: HTMLElement, currentCode: String?, onPick: (String) -> Unit) {
     ensureTrkMenuDocumentListener()
     closeTrkLangMenu()
+    injectPickerStyles()  // reuse the shared searchable-picker styling (.lp-*) — no bespoke menu CSS
 
+    // ffprobe languages are often 3-letter (fao/eng); the option list is 2-letter — normalize so the
+    // current-selection marker highlights the right row (Phase 45 C). Independent of the Phase 46 writes.
+    val current = currentCode?.let { LanguageResolver.normalize(it.trim().lowercase()) }
     val langs = getLanguages()
+
     val menu = document.createElement("div") as HTMLElement
-    menu.className = "langmenu"
-    menu.innerHTML = """
-        <div class="lm-search"><span class="muted">⌕</span><input type="text" placeholder="Search language…" autocomplete="off" class="trk-lm-input"></div>
-        <div class="lm-list"></div>
-    """.trimIndent()
+    menu.className = "lp-dropdown"
+    val searchInput = document.createElement("input") as HTMLInputElement
+    searchInput.type = "text"
+    searchInput.className = "lp-search"
+    searchInput.placeholder = "Search language…"
+    searchInput.setAttribute("autocomplete", "off")
+    val listEl = document.createElement("div") as HTMLElement
+    listEl.className = "lp-list"
+    menu.appendChild(searchInput)
+    menu.appendChild(listEl)
     document.body?.appendChild(menu)
     trkLangMenuEl = menu
 
     // Stop clicks inside the menu from closing it via the document listener
     menu.addEventListener("click") { it.stopPropagation() }
 
+    // Body-mounted + position:fixed so the menu is never clipped by the episode modal's overflow.
     val bottom = trkRectBottom(anchor)
     val left = trkRectLeft(anchor)
     val winW = trkWinInnerWidth()
-    menu.style.setProperty("position", "fixed")
-    menu.style.setProperty("top", "${bottom + 4}px")
-    menu.style.setProperty("left", "${minOf(left, winW - 268)}px")
-    menu.style.setProperty("z-index", "9999")
-    menu.style.setProperty("width", "264px")
-
-    val searchInput = menu.querySelector(".trk-lm-input") as? HTMLInputElement ?: return
-    val listEl = menu.querySelector(".lm-list") as? HTMLElement ?: return
+    menu.style.setProperty("top", "${bottom + 3}px")
+    menu.style.setProperty("left", "${minOf(left, winW - 248)}px")
+    menu.style.setProperty("width", "240px")
 
     var filtered = langs
     var activeIdx = 0
 
     fun draw() {
         listEl.innerHTML = if (filtered.isEmpty()) {
-            """<div class="lm-empty">No language matches</div>"""
+            """<div class="lp-opt" style="opacity:.6;cursor:default;">No language matches</div>"""
         } else {
             filtered.mapIndexed { i, (code, name) ->
-                """<div class="lm-opt${if (i == activeIdx) " active" else ""}${if (code == currentCode) " cur" else ""}" data-code="$code">
-                  <span class="lm-name">$name</span>
-                  <span class="lm-code">$code</span>
-                </div>"""
+                val cls = "lp-opt" + (if (i == activeIdx) " active" else "") + (if (code == current) " cur" else "")
+                """<div class="$cls" data-code="$code">${name.esc()} (${code.esc()})</div>"""
             }.joinToString("")
         }
     }
@@ -121,7 +126,7 @@ internal fun openTrkLangMenu(anchor: HTMLElement, currentCode: String?, onPick: 
         }
     }
     listEl.addEventListener("click") { e ->
-        val opt = (e.target as? HTMLElement)?.closest(".lm-opt") as? HTMLElement ?: return@addEventListener
+        val opt = (e.target as? HTMLElement)?.closest(".lp-opt") as? HTMLElement ?: return@addEventListener
         val code = opt.getAttribute("data-code") ?: return@addEventListener
         choose(code)
     }

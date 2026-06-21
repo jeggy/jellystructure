@@ -1,8 +1,15 @@
 # Phase 45 — Fix the track-editor language picker (unstyled popup) (FR-LP1)
 
-**Status:** Planned · _the searchable language menu used by the "Tracks & order" editor (movie tab +
-series per-episode modal) renders **completely unstyled** — give it the same styled, searchable picker
-used everywhere else._
+**Status:** ✓ Done (2026-06-21) · _the searchable language menu used by the "Tracks & order" editor
+(movie tab + series per-episode modal) renders **completely unstyled** — give it the same styled,
+searchable picker used everywhere else._
+
+> **As built (route a):** `openTrkLangMenu` now emits the shared `.lp-dropdown`/`.lp-search`/`.lp-list`/
+> `.lp-opt` structure and calls `injectPickerStyles()` (made `internal`); the dead `.langmenu`/`.lm-*`
+> markup is gone. Body-mounted `position:fixed` so it isn't clipped by the episode modal. Behaviour
+> unchanged (type-to-filter on name/code, ↑↓/Enter/Esc, `onPick` stages). Current-selection marker now
+> compares `LanguageResolver.normalize(currentCode)` so 3-letter ffprobe codes (`fao`/`eng`) highlight
+> the right 2-letter row; added a `.lp-opt.cur` ✓ marker.
 
 ## Problem
 On Media Detail, the **Tracks & order** tab (movie) and the **per-episode track editor modal**
