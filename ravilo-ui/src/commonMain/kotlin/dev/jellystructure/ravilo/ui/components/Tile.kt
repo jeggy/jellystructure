@@ -52,7 +52,7 @@ private val LANDSCAPE_H = 144.dp
 fun Tile(
     title: String,
     posterUrl: String?,
-    focusRequester: FocusRequester,
+    focusRequester: FocusRequester? = null,
     variant: TileVariant = TileVariant.POSTER,
     subtitle: String? = null,
     progressPct: Float = 0f,

@@ -15,13 +15,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.unit.dp
@@ -33,8 +31,6 @@ import dev.jellystructure.ravilo.ui.components.HomeLoadingShell
 import dev.jellystructure.ravilo.ui.components.StaticContentRow
 import dev.jellystructure.ravilo.ui.components.Tile
 import dev.jellystructure.ravilo.ui.components.TileVariant
-import dev.jellystructure.ravilo.ui.focus.FocusRow
-import dev.jellystructure.ravilo.ui.focus.saveFocusAt
 import dev.jellystructure.ravilo.ui.i18n.str
 import dev.jellystructure.ravilo.ui.theme.RaviloDimens
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
@@ -42,9 +38,6 @@ import dev.jellystructure.shared.tv.Channel
 import dev.jellystructure.shared.tv.MediaCard
 import dev.jellystructure.shared.tv.Row
 import dev.jellystructure.shared.tv.RowKind
-import kotlinx.coroutines.launch
-
-private const val FOCUS_KEY = "home"
 
 enum class NavDestination { HOME, MOVIES, SERIES, MY_LIST, SEARCH }
 
@@ -93,7 +86,6 @@ private fun HomeLoaded(
 ) {
     val colors = RaviloTheme.colors
     val listState = rememberLazyListState()
-    val scope = rememberCoroutineScope()
 
     // Hero height as a % of the screen, per the user's config (R27); auto-advance interval too.
     val density = LocalDensity.current
@@ -102,48 +94,26 @@ private fun HomeLoaded(
         with(density) { containerH.toDp() } * (feed.heroHeightPct.coerceIn(20, 80) / 100f)
     else 460.dp
 
-    // Focus section index: 0 = hero, 1 = channel rail, 2+ = content rows
-    var focusSection by remember { mutableIntStateOf(0) }
-
-    // AppBar entry + hero focus
-    val navBarFR = remember { FocusRequester() }
-    val heroFR   = remember { FocusRequester() }
-
-    // Channel rail
-    val channelRow = remember(feed.channels.size) { FocusRow(maxOf(feed.channels.size, 1)) }
-
-    // Content row focus columns (one FocusRow per row)
-    val rowFocusStates = remember(feed.rows.size) {
-        feed.rows.map { row -> FocusRow(maxOf(row.items.size, 1)) }
-    }
-
-    // LazyColumn item indices:
-    //   0         → hero (if present)
-    //   hasHero   → channel rail (if present)
-    //   headerCnt + ri → content row ri
     val hasHero     = feed.heroes.isNotEmpty()
     val hasChannels = feed.channels.isNotEmpty()
-    val headerCount = (if (hasHero) 1 else 0) + (if (hasChannels) 1 else 0)
 
-    // Scroll-then-focus helpers — scroll brings the target into the composition,
-    // then the FocusRequester is guaranteed to be attached.
-    fun focusRowAfterScroll(ri: Int) = scope.launch {
-        listState.scrollToItem((headerCount + ri).coerceAtLeast(0))
-        rowFocusStates[ri].requestFocus()
-    }
+    // Native focus traversal handles movement between rows, within a row, and hero↔first row.
+    // Only the app-bar overlay needs explicit bridges (it is not a spatial neighbour of the
+    // content): heroFR receives down-from-app-bar, navBarFR receives up-from-hero. columnFR is
+    // the entry point when there is no hero. All three are single, always-composed requesters —
+    // never one-per-item across a lazy list (that was the source of the stuck/lag behaviour).
+    val navBarFR = remember { FocusRequester() }
+    val heroFR   = remember { FocusRequester() }
+    val columnFR = remember { FocusRequester() }
 
-    // Restore focus on entry
+    // Land focus somewhere sensible on entry.
     LaunchedEffect(Unit) {
-        if (focusSection == 0) runCatching { heroFR.requestFocus() }
-    }
-
-    LaunchedEffect(focusSection) {
-        saveFocusAt(FOCUS_KEY, focusSection, 0)
+        runCatching { if (hasHero) heroFR.requestFocus() else columnFR.requestFocus() }
     }
 
     LazyColumn(
         state = listState,
-        modifier = Modifier.fillMaxSize(),
+        modifier = Modifier.fillMaxSize().focusRequester(columnFR),
         contentPadding = PaddingValues(bottom = 40.dp),
     ) {
         // Hero carousel
@@ -156,15 +126,7 @@ private fun HomeLoaded(
                     autoAdvanceSeconds = feed.autoAdvanceSeconds,
                     onSelect = { onItemSelect(it) },
                     onUp = { navBarFR.requestFocus() },
-                    onDown = {
-                        if (hasChannels) {
-                            focusSection = 1
-                            channelRow.requestFocus()
-                        } else if (rowFocusStates.isNotEmpty()) {
-                            focusSection = 2
-                            focusRowAfterScroll(0)
-                        }
-                    },
+                    // onDown omitted → native focus search moves down into the channel rail / first row.
                 )
             }
         }
@@ -176,24 +138,13 @@ private fun HomeLoaded(
                 StaticContentRow(
                     title = str("section.channels"),
                     items = feed.channels,
-                    focusedIndex = channelRow.focused,
+                    nativeFocus = true,
                     itemKey = { ch -> ch.id },
-                ) { i, ch ->
+                ) { _, ch ->
                     ChannelCard(
                         name = ch.name,
                         logoUrl = ch.logoUrl,
                         brandColor = ch.brandColor,
-                        focusRequester = channelRow.requesters[i],
-                        onFocused = { channelRow.focused = i; focusSection = 1 },
-                        onLeft   = { channelRow.moveLeft() },
-                        onRight  = { channelRow.moveRight() },
-                        onUp     = { focusSection = 0; runCatching { heroFR.requestFocus() } },
-                        onDown   = {
-                            if (rowFocusStates.isNotEmpty()) {
-                                focusSection = 2
-                                focusRowAfterScroll(0)
-                            }
-                        },
                         onSelect = { onChannelSelect(ch) },
                     )
                 }
@@ -203,41 +154,20 @@ private fun HomeLoaded(
         // Content rows
         items(feed.rows.size, key = { ri -> feed.rows[ri].id }) { ri ->
             val row: Row = feed.rows[ri]
-            val rowFocus = rowFocusStates[ri]
 
             Spacer(Modifier.height(RaviloDimens.rowGap))
             StaticContentRow(
                 title = row.title,
                 items = row.items,
-                focusedIndex = rowFocus.focused,
+                nativeFocus = true,
                 itemKey = { card -> card.id },
-            ) { ci, card ->
+            ) { _, card ->
                 val isLandscape = row.kind == RowKind.CONTINUE
                 Tile(
                     title = card.title,
                     posterUrl = if (isLandscape) card.backdropUrl ?: card.posterUrl else card.posterUrl,
-                    focusRequester = rowFocus.requesters[ci],
                     variant = if (isLandscape) TileVariant.LANDSCAPE else TileVariant.POSTER,
                     progressPct = card.progressPct ?: 0f,
-                    onFocused = { rowFocus.focused = ci; focusSection = ri + 2 },
-                    onLeft  = { rowFocus.moveLeft() },
-                    onRight = { rowFocus.moveRight() },
-                    onUp = {
-                        if (ri == 0) {
-                            focusSection = if (hasChannels) 1 else 0
-                            if (hasChannels) channelRow.requestFocus()
-                            else runCatching { heroFR.requestFocus() }
-                        } else {
-                            focusSection = ri + 1
-                            focusRowAfterScroll(ri - 1)
-                        }
-                    },
-                    onDown = {
-                        if (ri < rowFocusStates.lastIndex) {
-                            focusSection = ri + 3
-                            focusRowAfterScroll(ri + 1)
-                        }
-                    },
                     onSelect = { onItemSelect(card) },
                 )
             }
@@ -253,7 +183,7 @@ private fun HomeLoaded(
         activeNav = activeNav,
         onNavSelect = onNavSelect,
         navFR = navBarFR,
-        onDown = { runCatching { heroFR.requestFocus() } },
+        onDown = { runCatching { if (hasHero) heroFR.requestFocus() else columnFR.requestFocus() } },
         userInitials = initials,
         onProfile = onProfile,
     )

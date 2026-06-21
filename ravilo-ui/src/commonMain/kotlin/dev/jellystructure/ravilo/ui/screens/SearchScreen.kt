@@ -26,6 +26,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.focusRestorer
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -108,7 +115,10 @@ fun SearchScreen(
         else -> emptyList()
     }
 
-    val gridFRs = remember(items.size) { List(maxOf(items.size, 1)) { FocusRequester() } }
+    // Single entry requester for the grid; native traversal handles cell-to-cell movement.
+    // focusedGridIdx is tracked (cheaply) only so the edge-exit handler knows when the user is
+    // on the top row / first column and should drop back to the keyboard.
+    val gridFR = remember { FocusRequester() }
     var focusedGridIdx by remember { mutableIntStateOf(0) }
 
     Column(
@@ -172,7 +182,7 @@ fun SearchScreen(
                     onDone = {
                         if (items.isNotEmpty()) {
                             inGrid = true
-                            gridFRs[0].requestFocus()
+                            gridFR.requestFocus()
                         }
                     },
                 )
@@ -199,6 +209,22 @@ fun SearchScreen(
         if (items.isNotEmpty()) {
             LazyVerticalGrid(
                 columns = GridCells.Fixed(GRID_COLS_SEARCH),
+                modifier = Modifier
+                    .focusRequester(gridFR)
+                    .focusRestorer()
+                    // Native traversal moves between cells; intercept only the top-edge (Up) and
+                    // left-edge (Left) cases to drop focus back to the keyboard, which re-appears
+                    // and auto-focuses its first key.
+                    .onPreviewKeyEvent { ev ->
+                        if (ev.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                        when (ev.key) {
+                            Key.DirectionUp ->
+                                if (focusedGridIdx < GRID_COLS_SEARCH) { inGrid = false; true } else false
+                            Key.DirectionLeft ->
+                                if (focusedGridIdx % GRID_COLS_SEARCH == 0) { inGrid = false; true } else false
+                            else -> false
+                        }
+                    },
                 contentPadding = PaddingValues(
                     horizontal = RaviloDimens.trackPadH,
                     vertical = RaviloDimens.trackPadV,
@@ -208,20 +234,11 @@ fun SearchScreen(
             ) {
                 items(items.size, key = { i -> items[i].id }) { i ->
                     val card = items[i]
-                    val col = i % GRID_COLS_SEARCH
                     Tile(
                         title = card.title,
                         posterUrl = card.posterUrl,
-                        focusRequester = gridFRs[i],
                         progressPct = card.progressPct ?: 0f,
                         onFocused = { focusedGridIdx = i; inGrid = true },
-                        onLeft  = { if (col > 0) runCatching { gridFRs[i - 1].requestFocus() } else { inGrid = false } },
-                        onRight = { if (col < GRID_COLS_SEARCH - 1 && i < items.lastIndex) runCatching { gridFRs[i + 1].requestFocus() } },
-                        onUp    = {
-                            if (i >= GRID_COLS_SEARCH) runCatching { gridFRs[i - GRID_COLS_SEARCH].requestFocus() }
-                            else { inGrid = false }
-                        },
-                        onDown  = { if (i + GRID_COLS_SEARCH <= items.lastIndex) runCatching { gridFRs[i + GRID_COLS_SEARCH].requestFocus() } },
                         onSelect = { onItemSelect(card) },
                     )
                 }

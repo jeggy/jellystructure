@@ -13,10 +13,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -25,7 +22,6 @@ import androidx.compose.ui.unit.sp
 import dev.jellystructure.ravilo.ui.components.StaticContentRow
 import dev.jellystructure.ravilo.ui.components.Tile
 import dev.jellystructure.ravilo.ui.components.TileVariant
-import dev.jellystructure.ravilo.ui.focus.FocusRow
 import dev.jellystructure.ravilo.ui.i18n.str
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
 import androidx.compose.runtime.collectAsState
@@ -106,34 +102,24 @@ fun ChannelScreen(
 
 @Composable
 private fun ChannelRows(rows: List<Row>, onItemSelect: (MediaCard) -> Unit) {
-    val rowFocusStates = remember(rows.size) { rows.map { FocusRow(maxOf(it.items.size, 1)) } }
-    var focusedRowIdx by remember { mutableIntStateOf(0) }
-
     LazyColumn(
         contentPadding = PaddingValues(bottom = 40.dp),
     ) {
         items(rows.size, key = { ri -> rows[ri].id }) { ri ->
             val row = rows[ri]
-            val rowFocus = rowFocusStates[ri]
             Spacer(Modifier.height(28.dp))
             StaticContentRow(
                 title = row.title,
                 items = row.items,
-                focusedIndex = rowFocus.focused,
+                nativeFocus = true,
                 itemKey = { card -> card.id },
-            ) { ci, card ->
+            ) { _, card ->
                 val isLandscape = row.kind == RowKind.CONTINUE
                 Tile(
                     title = card.title,
                     posterUrl = if (isLandscape) card.backdropUrl ?: card.posterUrl else card.posterUrl,
-                    focusRequester = rowFocus.requesters[ci],
                     variant = if (isLandscape) TileVariant.LANDSCAPE else TileVariant.POSTER,
                     progressPct = card.progressPct ?: 0f,
-                    onFocused = { rowFocus.focused = ci; focusedRowIdx = ri },
-                    onLeft  = { rowFocus.moveLeft() },
-                    onRight = { rowFocus.moveRight() },
-                    onUp    = { if (ri > 0) { focusedRowIdx = ri - 1; rowFocusStates[ri - 1].requestFocus() } },
-                    onDown  = { if (ri < rowFocusStates.lastIndex) { focusedRowIdx = ri + 1; rowFocusStates[ri + 1].requestFocus() } },
                     onSelect = { onItemSelect(card) },
                 )
             }

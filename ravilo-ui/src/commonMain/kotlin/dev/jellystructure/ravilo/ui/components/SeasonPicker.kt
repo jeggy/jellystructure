@@ -22,7 +22,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRestorer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -37,12 +37,8 @@ import dev.jellystructure.shared.tv.Season
 fun SeasonPicker(
     seasons: List<Season>,
     selectedIndex: Int,
-    focusedIndex: Int,
-    focusRequesters: List<FocusRequester>,
     onSelect: (Int) -> Unit,
-    onLeft: (Int) -> Unit,
-    onRight: (Int) -> Unit,
-    onDown: (() -> Unit)? = null,
+    modifier: Modifier = Modifier,
 ) {
     val colors = RaviloTheme.colors
     val sora = Sora
@@ -51,6 +47,7 @@ fun SeasonPicker(
     val dpSpec    = remember { spring<Dp>(dampingRatio = 0.65f, stiffness = Spring.StiffnessMediumLow) }
 
     LazyRow(
+        modifier = modifier.focusRestorer(),
         horizontalArrangement = Arrangement.spacedBy(10.dp),
         contentPadding = PaddingValues(horizontal = RaviloDimens.trackPadH),
     ) {
@@ -77,12 +74,8 @@ fun SeasonPicker(
                     )
                     .border(borderWidth, colors.focusRing, pillShape)
                     .dpadFocusable(
-                        focusRequester = focusRequesters[i],
                         onFocused = { focused = true },
                         onBlurred = { focused = false },
-                        onLeft  = { onLeft(i) },
-                        onRight = { onRight(i) },
-                        onDown  = onDown,
                         onSelect = { onSelect(i) },
                     )
                     .padding(horizontal = 18.dp, vertical = 8.dp),

@@ -37,7 +37,7 @@ enum class ButtonStyle { PRIMARY, GHOST }
 @Composable
 fun RaviloButton(
     label: String,
-    focusRequester: FocusRequester,
+    focusRequester: FocusRequester? = null,
     style: ButtonStyle = ButtonStyle.PRIMARY,
     onFocused: () -> Unit = {},
     onLeft: (() -> Unit)? = null,

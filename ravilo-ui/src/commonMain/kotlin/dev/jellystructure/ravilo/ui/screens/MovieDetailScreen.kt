@@ -20,11 +20,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRestorer
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
@@ -36,7 +36,6 @@ import dev.jellystructure.ravilo.ui.components.CastCircle
 import dev.jellystructure.ravilo.ui.components.DetailLoadingShell
 import dev.jellystructure.ravilo.ui.components.RaviloButton
 import dev.jellystructure.ravilo.ui.components.Tile
-import dev.jellystructure.ravilo.ui.focus.FocusRow
 import dev.jellystructure.ravilo.ui.i18n.str
 import dev.jellystructure.ravilo.ui.seams.RemoteImage
 import dev.jellystructure.ravilo.ui.theme.RaviloDimens
@@ -86,12 +85,11 @@ private fun MovieDetailLoaded(
     }
     val scrollState = rememberScrollState()
 
+    // Entry focus only; all movement (buttons ↔ cast ↔ related) is native spatial traversal
+    // within the non-lazy verticalScroll column.
     val playFR = remember { FocusRequester() }
-    val myListFR = remember { FocusRequester() }
-    val castFR = remember(detail.cast.size) { FocusRow(maxOf(detail.cast.size, 1)) }
-    val relatedFR = remember(detail.related.size) { FocusRow(maxOf(detail.related.size, 1)) }
 
-    LaunchedEffect(Unit) { playFR.requestFocus() }
+    LaunchedEffect(Unit) { runCatching { playFR.requestFocus() } }
 
     Column(modifier = Modifier.fillMaxSize().verticalScroll(scrollState)) {
         // Hero band
@@ -163,26 +161,11 @@ private fun MovieDetailLoaded(
                     label = playLabel,
                     focusRequester = playFR,
                     style = ButtonStyle.PRIMARY,
-                    onDown = {
-                        when {
-                            detail.cast.isNotEmpty()    -> castFR.requestFocus()
-                            detail.related.isNotEmpty() -> relatedFR.requestFocus()
-                        }
-                    },
-                    onRight = { myListFR.requestFocus() },
                     onSelect = { onPlay(detail.card) },
                 )
                 RaviloButton(
                     label = "+ ${str("nav.my_list")}",
-                    focusRequester = myListFR,
                     style = ButtonStyle.GHOST,
-                    onLeft = { playFR.requestFocus() },
-                    onDown = {
-                        when {
-                            detail.cast.isNotEmpty()    -> castFR.requestFocus()
-                            detail.related.isNotEmpty() -> relatedFR.requestFocus()
-                        }
-                    },
                 )
             }
         }
@@ -195,19 +178,12 @@ private fun MovieDetailLoaded(
                 modifier = Modifier.padding(horizontal = RaviloDimens.sectionPadH))
             Spacer(Modifier.height(RaviloDimens.rowHeadPadB))
             LazyRow(
+                modifier = Modifier.focusRestorer(),
                 contentPadding = PaddingValues(horizontal = RaviloDimens.trackPadH, vertical = RaviloDimens.trackPadV),
                 horizontalArrangement = Arrangement.spacedBy(RaviloDimens.itemSpacing),
             ) {
                 items(detail.cast.size, key = { i -> detail.cast[i].id }) { i ->
-                    CastCircle(
-                        person = detail.cast[i],
-                        focusRequester = castFR.requesters[i],
-                        onFocused = { castFR.focused = i },
-                        onLeft  = { castFR.moveLeft() },
-                        onRight = { castFR.moveRight() },
-                        onUp    = { playFR.requestFocus() },
-                        onDown  = { if (detail.related.isNotEmpty()) relatedFR.requestFocus() },
-                    )
+                    CastCircle(person = detail.cast[i])
                 }
             }
         }
@@ -220,6 +196,7 @@ private fun MovieDetailLoaded(
                 modifier = Modifier.padding(horizontal = RaviloDimens.sectionPadH))
             Spacer(Modifier.height(RaviloDimens.rowHeadPadB))
             LazyRow(
+                modifier = Modifier.focusRestorer(),
                 contentPadding = PaddingValues(horizontal = RaviloDimens.trackPadH, vertical = RaviloDimens.trackPadV),
                 horizontalArrangement = Arrangement.spacedBy(RaviloDimens.itemSpacing),
             ) {
@@ -228,11 +205,6 @@ private fun MovieDetailLoaded(
                     Tile(
                         title = card.title,
                         posterUrl = card.posterUrl,
-                        focusRequester = relatedFR.requesters[i],
-                        onFocused = { relatedFR.focused = i },
-                        onLeft  = { relatedFR.moveLeft() },
-                        onRight = { relatedFR.moveRight() },
-                        onUp    = { if (detail.cast.isNotEmpty()) castFR.requestFocus() else playFR.requestFocus() },
                         onSelect = { onRelatedSelect(card) },
                     )
                 }

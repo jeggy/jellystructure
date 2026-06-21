@@ -56,7 +56,7 @@ fun ChannelCard(
     name: String,
     logoUrl: String?,
     brandColor: String?,
-    focusRequester: FocusRequester,
+    focusRequester: FocusRequester? = null,
     onFocused: () -> Unit = {},
     onLeft: (() -> Unit)? = null,
     onRight: (() -> Unit)? = null,
