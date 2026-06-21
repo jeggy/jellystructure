@@ -157,9 +157,12 @@ surface is untouched.)
 
 - **Theme/skins:** `RaviloTheme` exposing tokens (colors, type scale, spacing, radii, focus
   treatment) for Aurora / Midnight / Noir; switched by a `StateFlow`.
-- **Focus engine:** a shared, testable focus/navigation model over Compose's multiplatform
-  `Modifier.focusable` + `FocusRequester` + `onKeyEvent`; platforms feed it D-pad (Android) or
-  arrow/pointer (Web) events. One row/column model used by every screen.
+- **Focus & navigation:** native Compose focus traversal — items are `Modifier.focusable`; rows/grids
+  are `LazyRow` / `LazyColumn` / `LazyVerticalGrid` with `Modifier.focusRestorer()`. The framework
+  moves focus on D-pad (Android) / arrow keys (Web) and scrolls the focused child into view.
+  `FocusRequester` + `onKeyEvent` are reserved for entry points, non-spatial bridges, and content
+  actions (hero paging, Search keyboard↔grid) — never one-per-item. (Superseded the hand-rolled
+  `FocusEngine`; see [R30](requirements/phase-R30-native-focus-traversal.md).)
 - **Components:** `Tile` (poster/landscape), `HeroCarousel`, `ChannelCard`, `ContentRow`,
   `EpisodeCard`, `SeasonPicker`, `CastCircle`, `OnScreenKeyboard`, `AppBar`, focusable `Button`.
 - **Screens** (all common): Pairing, Home, Channel, Browse grid (Movies/Series/My List), Search,
