@@ -38,7 +38,7 @@ import dev.jellystructure.shared.tv.Person
 @Composable
 fun CastCircle(
     person: Person,
-    focusRequester: FocusRequester,
+    focusRequester: FocusRequester? = null,
     onFocused: () -> Unit = {},
     onLeft: (() -> Unit)? = null,
     onRight: (() -> Unit)? = null,

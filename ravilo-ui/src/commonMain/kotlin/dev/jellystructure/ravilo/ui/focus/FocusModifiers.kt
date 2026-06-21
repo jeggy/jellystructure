@@ -11,8 +11,21 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.type
 
+/**
+ * D-pad focus helper.
+ *
+ * Directional callbacks (`onLeft`/`onRight`/`onUp`/`onDown`) are **opt-in overrides**: when a
+ * callback is supplied the matching key is *consumed*, which suppresses Compose's native focus
+ * search. For items inside a lazy list/grid leave them `null` — returning `false` lets the
+ * framework move focus (it composes off-screen items in the search direction and scrolls them
+ * into view, which a per-item `requestFocus()` cannot do reliably). Reserve the callbacks for
+ * genuine *content actions* (e.g. carousel paging) or jumps the spatial search can't make.
+ *
+ * `focusRequester` is optional — only needed for an explicit entry point or a non-spatial bridge,
+ * never one-per-item across a lazy list.
+ */
 fun Modifier.dpadFocusable(
-    focusRequester: FocusRequester,
+    focusRequester: FocusRequester? = null,
     onFocused: () -> Unit = {},
     onBlurred: () -> Unit = {},
     onLeft: (() -> Unit)? = null,
@@ -34,6 +47,6 @@ fun Modifier.dpadFocusable(
             else -> false
         }
     }
-    .focusRequester(focusRequester)
+    .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
     .onFocusChanged { if (it.isFocused) onFocused() else onBlurred() }
     .focusable()

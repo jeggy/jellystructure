@@ -94,6 +94,9 @@ fun OnScreenKeyboard(
                                     if (r < ROWS.lastIndex) {
                                         val targetC = c.coerceIn(0, ROWS[r + 1].lastIndex)
                                         grid[r + 1][targetC].requestFocus()
+                                    } else {
+                                        // Down off the bottom row hands focus to the results grid.
+                                        onDone()
                                     }
                                 },
                                 onSelect = {
