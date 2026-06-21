@@ -1,6 +1,6 @@
 # Phase R03 — `/api/tv/**` + TV device pairing auth (FR-RV3)
 
-**Status:** Planned · _the control-plane entry point; gates every other `/api/tv` route._
+**Status:** ✓ Done · _the control-plane entry point; gates every other `/api/tv` route._
 
 ## Problem
 Ravilo authenticates against **jellystructure only** (control plane), and a TV has no good way to type

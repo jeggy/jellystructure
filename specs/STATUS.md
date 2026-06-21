@@ -26,10 +26,12 @@ See [`requirements/README.md`](requirements/README.md) for the full index.
 (Android TV **and** browser/WASM canvas, one shared codebase) for jellystructure-managed libraries.
 It adds a **`/api/tv/**`** namespace + a per-Jellyfin-user config store to *this* backend and a shared
 **`:shared`** KMP module (DTOs + Ktor client) that the admin frontend reuses too. Control plane =
-jellystructure only; data plane (video/images) = Jellyfin directly. Phases **R01–R17** are planned —
-see [`ravilo/STATUS.md`](ravilo/STATUS.md) and [`ravilo/requirements/README.md`](ravilo/requirements/README.md).
-None implemented yet. The jellystructure admin frontend stays DOM/Tailwind; Ravilo's web build is a
-**separate** canvas bundle (the "no Compose for Web" rule is scoped to the admin app).
+jellystructure only; data plane (video/images) = Jellyfin directly. Phases **R01–R30** are done
+(Android TV + browser/WASM canvas, running on the stue TV); **R31** (the `:ravilo-player` engine
+fork) is scoped but **deferred** — see [`ravilo/STATUS.md`](ravilo/STATUS.md) and
+[`ravilo/requirements/README.md`](ravilo/requirements/README.md). The jellystructure admin frontend
+stays DOM/Tailwind; Ravilo's web build is a **separate** canvas bundle (the "no Compose for Web" rule
+is scoped to the admin app).
 
 ## Key cross-cutting findings — see [`requirements/_investigation-findings.md`](requirements/_investigation-findings.md)
 
