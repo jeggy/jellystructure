@@ -1,8 +1,21 @@
 # Phase R31 — `:ravilo-player` engine fork (FR-RV31)
 
-**Status:** ◻ Planned (deferred) · _scoping only — do not build until an exotic-codec file actually
-fails to play. See [`../STATUS.md`](../STATUS.md) open threads and
-[[ravilo-player-fork-decision]]._
+**Status:** ✓ Done — codec support implemented via the **decoder-dependency approach** (2026-06-21).
+On-device exotic-codec playback is not yet verified. The literal source-vendor fork described below
+was judged redundant and **not** done.
+
+## Implemented (2026-06-21)
+- New Android-only **`:ravilo-player`** module — the GPL-containment boundary; only `:ravilo-android`
+  links it — bundling `org.jellyfin.media3:media3-ffmpeg-decoder` (GPL-3.0, Maven Central) + a
+  `DefaultRenderersFactory(EXTENSION_RENDERER_MODE_PREFER)` (`RaviloRenderers`).
+- App **Media3 bumped 1.7.1 → 1.8.0** (no 1.7.x build of the decoder exists).
+- Wired via `RaviloPlayerEngine.renderersFactoryProvider` (set in `MainActivity`) so `:ravilo-ui` and
+  `:ravilo-web` stay GPL-clean; `RaviloPlayerAndroid` falls back to default renderers when unset.
+- `NOTICE` records the GPL component + containment. Builds + packages `libffmpegJNI.so` for all 4 ABIs
+  (APK 18 → 21 MB). **Remaining:** verify a real DTS/TrueHD/AC3 file plays (needs a deploy + test file).
+
+The scoping plan below records the original intent; the source-vendor fork remains the path only if
+jellyfin's *format-selection* logic is later needed beyond the decoders themselves.
 
 ## Problem
 R14 ships the Android player on **direct ExoPlayer/Media3**, which covers all common formats. The one

@@ -15,13 +15,17 @@ import dev.jellystructure.shared.tv.SubTrack
 /**
  * Android actual backed by ExoPlayer/Media3.
  *
- * This is the seam that will be replaced by the forked jellyfin-androidtv playback engine
- * (`:ravilo-player` module) at R14 full bring-up. Until then, ExoPlayer covers direct-play
- * and HLS URLs; the forked engine adds DTS/TrueHD/AC3 decode via media3-ffmpeg-decoder.
+ * Exotic-codec support (DTS/TrueHD/AC3/E-AC3) comes from the FFmpeg extension decoders supplied by
+ * the GPL-contained `:ravilo-player` module via [RaviloPlayerEngine.renderersFactoryProvider] (R31).
+ * When the provider is unset (e.g. tests), this falls back to ExoPlayer's default renderers.
  */
 actual class RaviloPlayer actual constructor() {
     private val ctx: Context get() = RaviloAppContext.get()
-    private val exo: ExoPlayer by lazy { ExoPlayer.Builder(ctx).build() }
+    private val exo: ExoPlayer by lazy {
+        val builder = ExoPlayer.Builder(ctx)
+        RaviloPlayerEngine.renderersFactoryProvider?.invoke(ctx)?.let { builder.setRenderersFactory(it) }
+        builder.build()
+    }
 
     actual fun load(streamUrl: String, startPositionMs: Long, subtitles: List<SubTrack>) {
         val subConfigs = subtitles.mapNotNull { sub ->

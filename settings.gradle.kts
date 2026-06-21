@@ -18,6 +18,7 @@ val hasAndroidSdk: Boolean = run {
     }
 }
 if (hasAndroidSdk) {
+    include(":ravilo-player")
     include(":ravilo-android")
 }
 
