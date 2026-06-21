@@ -167,7 +167,10 @@
 
 /* ---------- library poster grid ---------- */
 .poster-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 20px; }
-.poster { cursor: pointer; text-decoration: none; color: var(--ink); display: flex; flex-direction: column; gap: 8px; }
+.poster { cursor: pointer; text-decoration: none; color: var(--ink); display: flex; flex-direction: column; gap: 8px;
+  /* Skip layout/paint for off-screen cards so the library stays smooth at thousands of items
+     (find-in-page still works, unlike a JS virtualiser). Reserved size ≈ a card's natural height. */
+  content-visibility: auto; contain-intrinsic-size: 150px 300px; }
 .poster .imgslot { height: 224px; transition: transform .2s ease, box-shadow .25s ease, outline-color .2s ease;
   outline: 2px solid transparent; outline-offset: 2px; }
 .poster:hover { text-decoration: none; }

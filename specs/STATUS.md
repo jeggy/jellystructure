@@ -8,16 +8,10 @@ _Last updated: 2026-06-21_
 
 ## Current focus
 
-**Planned: Phases 43–46.** Phases 0–42 are complete (operator-ergonomics + trust features, each with
+**Planned: Phases 44–46.** Phases 0–43 are complete (operator-ergonomics + trust features, each with
 a spec and an approved design mockup in `design/app/`). Phases **41 & 42** (unified track & order
-editor on movie Media Detail + the same editor in a per-episode modal on Series detail) landed in
-commit `85a7460`. The active backlog:
-
-- **43 — Library page rework** _(new)_: fix the Movies/TV segmented control (it renders `<button>`
-  children that miss the `.seg span` CSS, so it looks broken) and bring the page back in line with
-  `design/app/library.html`; **replace prev/next pagination with infinite, windowed (virtual)
-  scrolling** — the fixed page-of-20 over a dynamic-column grid makes a partial last row look like the
-  end of the library. Search stays the primary find path; scroll becomes the primary browse path.
+editor) landed in commit `85a7460`; **43** (Library seg-control fidelity + infinite scroll replacing
+the pager) is done. The active backlog:
 - **44 — NFO raw viewer** _(new)_: the NFO raw tab is blank until a write happens and can't show
   per-episode NFOs. Make it a **read-only viewer of the exact on-disk XML** with a **left tree
   sidebar** (movie = `movie.nfo`; series = `tvshow.nfo` + per-season `episodedetails.nfo`). Adds
