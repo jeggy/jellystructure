@@ -1,8 +1,21 @@
 # Phase 46 — Track language writes must actually persist (FR-TL1)
 
-**Status:** Planned · _setting a track's audio/subtitle language reports success but the tag is never
-written for MP4 (and is fragile for MKV); the previewed command is wrong; the API reports the
-requested value instead of what's on disk._
+**Status:** ✓ Done (2026-06-21) · _setting a track's audio/subtitle language reports success but the
+tag is never written for MP4 (and is fragile for MKV); the previewed command is wrong; the API reports
+the requested value instead of what's on disk._
+
+> **As built:** `LanguageResolver` (commonMain) gains a fresh `ISO1TO2` 2→3 map covering **all 148**
+> picker codes (verified: no gaps/dupes) + `toIso6392()`; `normalize()` now also inverts it so the
+> verify check is ISO 639-2 B/T-agnostic. Runners convert at the boundary: `FfmpegRunner.setLanguage`
+> writes the 3-letter code (no more `und`), `MkvpropeditRunner.setLanguage` writes `language` (3-letter)
+> **and** `language-ietf` (BCP-47); both fail if a code has no mapping. Both editor routes (movie +
+> episode) pre-check the mapping (400), **verify after re-probe** (compare via `normalize`) and respond
+> the **probed** language via `LangWriteResponse(ok, language)` — failed writes return 500 with an
+> actionable message, never false success. `MediaApi.setTrackLanguage`/`setEpisodeTrackLanguage` now
+> return `TrackLangResult(error, language)`; `TrackEditor.applyChanges` **adopts the re-probed code**
+> into the staged model before committing the baseline. The command preview is container- and
+> code-aware (mkvpropedit for MKV with 3-letter + language-ietf; ffmpeg `-c copy` remux for MP4/other),
+> and the cost badge marks non-MKV flag edits as a remux. TriageRoutes inherits the runner fix.
 
 ## Problem
 Setting a track's language from the **Tracks & order** editor (movie or series episode) **silently

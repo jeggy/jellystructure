@@ -2,6 +2,7 @@ package dev.jellystructure.media
 
 import dev.jellystructure.log.Logger
 import dev.jellystructure.model.TrackKind
+import dev.jellystructure.resolver.LanguageResolver
 import kotlinx.cinterop.ByteVar
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.allocArray
@@ -44,10 +45,13 @@ object FfmpegRunner {
 
     // Remux file rewriting the language metadata tag on one stream (by absolute stream index).
     suspend fun setLanguage(filePath: String, streamIndex: Int, language: String): Boolean {
+        // MP4's mdhd box needs a 3-letter ISO 639-2 code; a 2-letter value makes ffmpeg write `und`,
+        // which re-probes as untagged. Convert first; fail (don't write a guess) if there's no mapping.
+        val iso3 = LanguageResolver.toIso6392(language) ?: return false
         val tmp = tmpPath(filePath)
         val escaped = filePath.replace("'", "'\\''")
         val escapedTmp = tmp.replace("'", "'\\''")
-        val cleanLang = language.replace("'", "").replace("\"", "").take(10)
+        val cleanLang = iso3.replace("'", "").replace("\"", "").take(10)
 
         val core = "ffmpeg -y -i '$escaped' -map 0 -c copy -metadata:s:$streamIndex language=$cleanLang '$escapedTmp' 2>&1 && mv '$escapedTmp' '$escaped'"
         val cmd = withOwnershipPreservation(escaped, core)

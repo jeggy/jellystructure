@@ -8,6 +8,7 @@ import dev.jellystructure.media.FfprobeRunner
 import dev.jellystructure.media.MediaHistory
 import dev.jellystructure.media.MediaStore
 import dev.jellystructure.media.MkvpropeditRunner
+import dev.jellystructure.resolver.LanguageResolver
 import dev.jellystructure.model.MediaKind
 import dev.jellystructure.model.TrackKind
 import dev.jellystructure.torrent.SeedingCheckResult
@@ -27,6 +28,10 @@ private data class SetDefaultRequest(val specifier: String)
 
 @Serializable
 private data class SetLanguageRequest(val specifier: String, val language: String)
+
+/** Response for a track-language write — reports the re-probed (on-disk) language, not the request. */
+@Serializable
+data class LangWriteResponse(val ok: Boolean = true, val language: String? = null)
 
 @Serializable
 data class TrackSnap(
@@ -207,6 +212,10 @@ fun Route.trackRoutes(store: MediaStore, configStore: ConfigStore, jellyfinClien
                 call.respond(HttpStatusCode.BadRequest, mapOf("error" to "invalid language code"))
                 return@post
             }
+            if (LanguageResolver.toIso6392(req.language) == null) {
+                call.respond(HttpStatusCode.BadRequest, mapOf("error" to "no ISO-639-2 mapping for '${req.language}'"))
+                return@post
+            }
 
             val targetTrack = item.tracks.firstOrNull { it.specifier == req.specifier }
                 ?: return@post call.respond(HttpStatusCode.NotFound, mapOf("error" to "track not found"))
@@ -233,19 +242,31 @@ fun Route.trackRoutes(store: MediaStore, configStore: ConfigStore, jellyfinClien
                 return@post
             }
 
+            // Re-probe and store disk truth, then verify the tag actually persisted (ffmpeg can exit 0
+            // having written `und`). Compare via normalize() so the check is ISO 639-2 B/T-agnostic.
             val newTracks = FfprobeRunner.probe(item.path)
             val newIssueCount = newTracks.count {
                 (it.kind == TrackKind.AUDIO || it.kind == TrackKind.SUBTITLE) && it.language == null
             }
             store.updateOne(item.copy(tracks = newTracks, issueCount = newIssueCount))
-            mediaHistory.record(id, "set_language", "specifier=${req.specifier} language=${req.language}")
+
+            val probed = newTracks.firstOrNull { it.specifier == req.specifier }?.language
+            val persisted = probed != null && LanguageResolver.normalize(probed) == LanguageResolver.normalize(req.language)
+            if (!persisted) {
+                mediaHistory.record(id, "set_language", "specifier=${req.specifier} FAILED to persist (on disk: ${probed ?: "none"})")
+                val cfgF = configStore.current
+                if (cfgF.behavior.notifyOnWriteFailed) fireWebhook(cfgF, """{"event":"write_failed","mediaId":"$id","tool":"${if (ext == "mkv") "mkvpropedit" else "ffmpeg"}","action":"set_language"}""")
+                call.respond(HttpStatusCode.InternalServerError, mapOf("error" to "the language tag did not persist (file shows '${probed ?: "none"}') — the container may not support per-stream language, or the code has no ISO-639-2 mapping"))
+                return@post
+            }
+            mediaHistory.record(id, "set_language", "specifier=${req.specifier} language=$probed")
 
             val cfg = configStore.current
             if (!item.jellyfinId.isNullOrBlank() && cfg.apiKeys.jellyfinUrl.isNotBlank()) {
                 jellyfinClient.refreshItem(cfg.apiKeys.jellyfinUrl, cfg.apiKeys.jellyfinToken, item.jellyfinId)
             }
 
-            call.respond(mapOf("ok" to true))
+            call.respond(LangWriteResponse(ok = true, language = probed))
         }
 
         // DELETE /api/media/{id}/tracks/{specifier} — remove a track from the file (ffmpeg remux)

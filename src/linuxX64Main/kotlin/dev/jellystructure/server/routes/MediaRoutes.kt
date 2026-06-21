@@ -21,6 +21,7 @@ import dev.jellystructure.model.MediaKind
 import dev.jellystructure.model.NfoFileNode
 import dev.jellystructure.model.NfoFileTree
 import dev.jellystructure.model.TrackKind
+import dev.jellystructure.resolver.LanguageResolver
 import dev.jellystructure.nfo.NfoWriter
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
@@ -583,6 +584,10 @@ fun Route.mediaRoutes(
                         call.respond(HttpStatusCode.BadRequest, mapOf("error" to "invalid language code"))
                         return@post
                     }
+                    if (LanguageResolver.toIso6392(req.language) == null) {
+                        call.respond(HttpStatusCode.BadRequest, mapOf("error" to "no ISO-639-2 mapping for '${req.language}'"))
+                        return@post
+                    }
                     val targetTrack = ep.tracks.firstOrNull { it.specifier == req.specifier }
                         ?: return@post call.respond(HttpStatusCode.NotFound, mapOf("error" to "track not found"))
                     val ext = ep.path.substringAfterLast('.').lowercase()
@@ -596,7 +601,7 @@ fun Route.mediaRoutes(
                     val ok = if (ext == "mkv") MkvpropeditRunner.setLanguage(ep.path, targetTrack.streamIndex, req.language)
                              else FfmpegRunner.setLanguage(ep.path, targetTrack.streamIndex, req.language)
 
-                    if (!ok) { call.respond(HttpStatusCode.InternalServerError, mapOf("error" to "tool failed")); return@post }
+                    if (!ok) { call.respond(HttpStatusCode.InternalServerError, mapOf("error" to "${if (ext == "mkv") "mkvpropedit" else "ffmpeg"} failed")); return@post }
 
                     val newTracks = FfprobeRunner.probe(ep.path)
                     val newIssue = newTracks.count { (it.kind == TrackKind.AUDIO || it.kind == TrackKind.SUBTITLE) && it.language == null }
@@ -605,8 +610,17 @@ fun Route.mediaRoutes(
                     // Keep item.tracks in sync with the first episode's tracks so repull language resolution is correct
                     val updatedItemTracks = if (epIdx == 0) newTracks else item.tracks
                     store.updateOne(item.copy(episodes = updatedEpisodes, tracks = updatedItemTracks))
-                    mediaHistory.record(id, "set_language", "ep=${ep.filename} specifier=${req.specifier} lang=${req.language}")
-                    call.respond(mapOf("language" to req.language))
+
+                    // Verify the tag actually persisted (B/T-agnostic); report disk truth, not the request.
+                    val probed = newTracks.firstOrNull { it.specifier == req.specifier }?.language
+                    val persisted = probed != null && LanguageResolver.normalize(probed) == LanguageResolver.normalize(req.language)
+                    if (!persisted) {
+                        mediaHistory.record(id, "set_language", "ep=${ep.filename} specifier=${req.specifier} FAILED to persist (on disk: ${probed ?: "none"})")
+                        call.respond(HttpStatusCode.InternalServerError, mapOf("error" to "the language tag did not persist (file shows '${probed ?: "none"}') — the container may not support per-stream language"))
+                        return@post
+                    }
+                    mediaHistory.record(id, "set_language", "ep=${ep.filename} specifier=${req.specifier} language=$probed")
+                    call.respond(LangWriteResponse(ok = true, language = probed))
                 }
 
                 // POST /api/media/{id}/episodes/{epFilename}/tracks/forced — forced flag (MKV only)
