@@ -22,6 +22,7 @@ import androidx.compose.ui.unit.sp
 import dev.jellystructure.ravilo.ui.components.StaticContentRow
 import dev.jellystructure.ravilo.ui.components.Tile
 import dev.jellystructure.ravilo.ui.components.TileVariant
+import dev.jellystructure.ravilo.ui.components.toTileVariant
 import dev.jellystructure.ravilo.ui.i18n.str
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
 import androidx.compose.runtime.collectAsState
@@ -89,10 +90,10 @@ fun ChannelScreen(
                     val nonEmpty = s.feed.rows.filter { it.items.isNotEmpty() }
                     if (nonEmpty.isEmpty()) {
                         Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
-                            Text("Nothing in this channel yet.", color = colors.textSecondary, fontSize = 16.sp)
+                            Text(str("browse.empty_channel"), color = colors.textSecondary, fontSize = 16.sp)
                         }
                     } else {
-                        ChannelRows(rows = nonEmpty, onItemSelect = onItemSelect)
+                        ChannelRows(rows = nonEmpty, tileShape = s.feed.tileShape, onItemSelect = onItemSelect)
                     }
                 }
             }
@@ -101,7 +102,7 @@ fun ChannelScreen(
 }
 
 @Composable
-private fun ChannelRows(rows: List<Row>, onItemSelect: (MediaCard) -> Unit) {
+private fun ChannelRows(rows: List<Row>, tileShape: dev.jellystructure.shared.tv.TileShape, onItemSelect: (MediaCard) -> Unit) {
     LazyColumn(
         contentPadding = PaddingValues(bottom = 40.dp),
     ) {
@@ -113,11 +114,11 @@ private fun ChannelRows(rows: List<Row>, onItemSelect: (MediaCard) -> Unit) {
                 items = row.items,
                 itemKey = { card -> card.id },
             ) { _, card ->
-                val isLandscape = row.kind == RowKind.CONTINUE
+                val variant = if (row.kind == RowKind.CONTINUE) TileVariant.LANDSCAPE else tileShape.toTileVariant()
                 Tile(
                     title = card.title,
-                    posterUrl = if (isLandscape) card.backdropUrl ?: card.posterUrl else card.posterUrl,
-                    variant = if (isLandscape) TileVariant.LANDSCAPE else TileVariant.POSTER,
+                    posterUrl = if (variant == TileVariant.LANDSCAPE) card.backdropUrl ?: card.posterUrl else card.posterUrl,
+                    variant = variant,
                     progressPct = card.progressPct ?: 0f,
                     onSelect = { onItemSelect(card) },
                 )

@@ -19,6 +19,7 @@ data class EpisodePlayContext(
     val kicker: String?,
     val nextEpId: String?,
     val nextEpLabel: String?,
+    val nextEpTitle: String?,
     val episodes: List<PlayerEpisodeEntry>,
     val currentEpIndex: Int,
 )

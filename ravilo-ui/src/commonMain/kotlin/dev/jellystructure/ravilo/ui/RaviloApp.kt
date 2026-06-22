@@ -70,6 +70,7 @@ private sealed class Dest {
         val kicker: String? = null,
         val nextEpId: String? = null,
         val nextEpLabel: String? = null,
+        val nextEpTitle: String? = null,
         val displayName: String,
         val episodes: List<dev.jellystructure.ravilo.ui.screens.PlayerEpisodeEntry>? = null,
         val currentEpIndex: Int = 0,
@@ -190,6 +191,14 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                             else -> push(Dest.MovieDetail(card.id, dest.displayName))
                         }
                     },
+                    onItemPlay = { card ->
+                        when {
+                            // A series needs episode-resolution (resume point + rail) that only the
+                            // detail screen has, so Play opens it; a movie plays directly.
+                            card.kind == MediaKind.SERIES -> push(Dest.SeriesDetail(card.id, dest.displayName))
+                            else -> push(Dest.Player(card.id, card.title, displayName = dest.displayName))
+                        }
+                    },
                     onChannelSelect = { ch -> push(Dest.ChannelView(ch, dest.displayName)) },
                     onSeeAll = { push(Dest.Browse(BrowseKind.ALL, dest.displayName)) },
                 )
@@ -268,6 +277,7 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                             kicker        = ctx.kicker,
                             nextEpId      = ctx.nextEpId,
                             nextEpLabel   = ctx.nextEpLabel,
+                            nextEpTitle   = ctx.nextEpTitle,
                             displayName   = dest.displayName,
                             episodes      = ctx.episodes,
                             currentEpIndex = ctx.currentEpIndex,
@@ -290,6 +300,7 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                     itemKicker       = dest.kicker,
                     nextEpisodeId    = dest.nextEpId,
                     nextEpisodeLabel = dest.nextEpLabel,
+                    nextEpisodeTitle = dest.nextEpTitle,
                     episodes         = dest.episodes,
                     currentEpIndex   = dest.currentEpIndex,
                     store            = store,
@@ -305,7 +316,8 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                             title          = newEp.title,
                             kicker         = newEp.kicker,
                             nextEpId       = nextEp?.id,
-                            nextEpLabel    = nextEp?.let { "${it.kicker} · ${it.title}" },
+                            nextEpLabel    = nextEp?.kicker,
+                            nextEpTitle    = nextEp?.title,
                             displayName    = dest.displayName,
                             episodes       = eps,
                             currentEpIndex = newIdx,
