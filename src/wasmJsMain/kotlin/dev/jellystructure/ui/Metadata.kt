@@ -72,6 +72,8 @@ private fun wireMetadataTabs(container: Element, scope: CoroutineScope, activeTa
             // Clear filter on tab switch
             (container.querySelector("#metadata-filter") as? HTMLInputElement)?.value = ""
             val sort = (container.querySelector("#metadata-sort") as? HTMLInputElement)?.value ?: "count"
+            // Phase 28 — reflect the active tab in the URL so it is deep-linkable / Back-Forward works.
+            dev.jellystructure.Router.updateQuery(mapOf("tab" to tab), replace = true)
             loadTab(container, scope, tab, sort)
         }
     }
@@ -119,6 +121,9 @@ private fun renderLogoGrid(entries: List<MetadataEntry>, kind: String, linkPrefi
     val hasAny = entries.any { it.hasLogo }
     val missingCount = entries.count { !it.hasLogo }
     return buildString {
+        if (kind == "networks") {
+            append("""<p class="hint" style="margin:0 0 14px">TMDB has no network search endpoint — networks are discovered only from the items already scanned. Logos are matched by network name; some may not resolve.</p>""")
+        }
         append("""<div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">""")
         append("""<span class="muted tiny">${entries.size} ${singularKind}s · $missingCount without logo</span>""")
         append("""<span style="flex:1"></span>""")
@@ -188,10 +193,16 @@ private fun renderTagsTab(data: TagsResponse): String = buildString {
     } else {
         append("""<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:20px">""")
         for (tag in data.jsTags) {
-            append("""<button class="js-tag-card" data-name="${tag.name}" data-filter-name="${tag.name.lowercase()}" style="display:inline-flex;align-items:center;gap:8px;background:var(--card-bg);border:var(--card-bd);border-radius:99px;padding:7px 14px;cursor:pointer;font-size:.85rem;box-shadow:var(--shadow-s);transition:border-color .12s,box-shadow .12s" onmouseover="this.style.borderColor='var(--hi)';this.style.boxShadow='var(--shadow)'" onmouseout="this.style.borderColor='';this.style.boxShadow='var(--shadow-s)'">""")
+            val radius = if (tag.description.isNotBlank()) "12px" else "99px"
+            append("""<button class="js-tag-card" data-name="${tag.name}" data-filter-name="${tag.name.lowercase()}" style="display:inline-flex;align-items:center;gap:9px;background:var(--card-bg);border:var(--card-bd);border-radius:$radius;padding:8px 14px;cursor:pointer;font-size:.85rem;box-shadow:var(--shadow-s);transition:border-color .12s,box-shadow .12s;text-align:left" onmouseover="this.style.borderColor='var(--hi)';this.style.boxShadow='var(--shadow)'" onmouseout="this.style.borderColor='';this.style.boxShadow='var(--shadow-s)'">""")
             append("""<span style="width:10px;height:10px;border-radius:50%;background:${tag.color};flex-shrink:0;display:inline-block;box-shadow:0 0 0 2px ${tag.color}33"></span>""")
+            append("""<span style="display:flex;flex-direction:column;gap:1px">""")
             append("""<span style="color:var(--ink);font-weight:500">${tag.name}</span>""")
-            append("""<span style="font-size:.72rem;color:var(--ink-soft);background:var(--fill-3);border-radius:99px;padding:1px 7px;border:1px solid var(--line)">${tag.count}</span>""")
+            if (tag.description.isNotBlank()) {
+                append("""<span style="font-size:.72rem;color:var(--ink-soft);max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${tag.description}</span>""")
+            }
+            append("</span>")
+            append("""<span style="font-size:.72rem;color:var(--ink-soft);background:var(--fill-3);border-radius:99px;padding:1px 7px;border:1px solid var(--line);flex-shrink:0">${tag.count}</span>""")
             append("</button>")
         }
         append("</div>")
