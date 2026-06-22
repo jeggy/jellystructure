@@ -2497,7 +2497,7 @@ private fun showHeroBuilder(item: MediaItem, scope: CoroutineScope) {
         val badgeOpts = listOf("", "New Season", "4K", "Top 10", "Premiere").joinToString("") { """<option value="$it">${if (it.isEmpty()) "None" else it}</option>""" }
         val backdrop = if (item.backdropPath != null) "https://image.tmdb.org/t/p/w780${item.backdropPath}" else ""
         overlay.innerHTML = """
-            <div style="background:var(--bg-1,#15151c);border:1px solid var(--line,#333);border-radius:16px;padding:18px;width:min(560px,100%);">
+            <div style="background:var(--fill);color:var(--ink);border:1px solid var(--line);border-radius:16px;padding:18px;width:min(560px,100%);box-shadow:var(--shadow);">
               <h3 style="margin:0 0 4px;">★ Feature in Ravilo</h3>
               <div class="tiny muted" style="margin-bottom:12px;">Featuring <b>${item.title.esc()}</b> · title locked</div>
               <div style="position:relative;border-radius:12px;overflow:hidden;aspect-ratio:16/9;background:#0008 ${if (backdrop.isNotEmpty()) "url('$backdrop') center/cover" else ""};margin-bottom:14px;">
