@@ -112,12 +112,18 @@ fun startServer(
         install(ContentNegotiation) { json(Json { ignoreUnknownKeys = true }) }
         install(WebSockets)
         install(CORS) {
+            // Fully permissive: the Ravilo web client may be served from a different origin than
+            // the backend (e.g. a dev server), so allow any origin, method, header and content type.
             anyHost()
-            allowHeader("Content-Type")
-            allowHeader("Cookie")
+            allowHeaders { true }              // includes Authorization (Bearer device token), Content-Type, Cookie…
+            allowNonSimpleContentTypes = true  // application/json request bodies
+            allowMethod(HttpMethod.Get)
+            allowMethod(HttpMethod.Head)
+            allowMethod(HttpMethod.Post)
             allowMethod(HttpMethod.Put)
             allowMethod(HttpMethod.Delete)
-            allowMethod(HttpMethod.Post)
+            allowMethod(HttpMethod.Patch)
+            allowMethod(HttpMethod.Options)
             allowCredentials = true
         }
 
