@@ -384,8 +384,15 @@ fun Route.mediaRoutes(
                         part.release()
                     }
 
-                    if (type !in setOf("poster", "fanart", "logo")) {
-                        call.respond(HttpStatusCode.BadRequest, mapOf("error" to "type must be poster, fanart, or logo"))
+                    val filename = when (type) {
+                        "poster" -> "poster.jpg"
+                        "fanart", "backdrop" -> "fanart.jpg"
+                        "logo", "clearlogo" -> "clearlogo.png"
+                        "banner" -> "banner.jpg"
+                        else -> ""
+                    }
+                    if (filename.isEmpty()) {
+                        call.respond(HttpStatusCode.BadRequest, mapOf("error" to "type must be poster, backdrop, clearlogo, or banner"))
                         return@post
                     }
                     val bytes = fileBytes
@@ -394,12 +401,7 @@ fun Route.mediaRoutes(
                         return@post
                     }
 
-                    val dir = item.path.substringBeforeLast('/')
-                    val filename = when (type) {
-                        "poster" -> "poster.jpg"
-                        "fanart" -> "fanart.jpg"
-                        else -> "clearlogo.png"
-                    }
+                    val dir = item.kind.let { if (it == MediaKind.TV_SHOW) item.path else item.path.substringBeforeLast('/') }
                     val destPath = "$dir/$filename"
                     val tmpPath = "$destPath.tmp"
                     val sink = SystemFileSystem.sink(Path(tmpPath)).buffered()
