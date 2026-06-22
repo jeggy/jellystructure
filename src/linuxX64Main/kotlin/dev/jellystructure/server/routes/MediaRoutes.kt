@@ -1332,13 +1332,18 @@ fun Route.mediaRoutes(
 }
 
 /** Write NFO files, sync artwork, and do a full recursive Jellyfin refresh. */
+/**
+ * Writes NFO + artwork and asks Jellyfin to re-read the item. Returns whether the targeted per-item
+ * refresh succeeded (or was not applicable: no jellyfinId / no Jellyfin config) so callers can report
+ * an honest result instead of implying a refresh that didn't run (Phase 50).
+ */
 private suspend fun pushToJellyfin(
     item: MediaItem,
     artwork: ArtworkDownloader,
     configStore: ConfigStore,
     jellyfinClient: JellyfinClient,
     appScope: CoroutineScope,
-) {
+): Boolean {
     NfoWriter.write(item)
         .onSuccess { path ->
             Logger.info("pushToJellyfin: wrote NFO $path")
@@ -1357,11 +1362,12 @@ private suspend fun pushToJellyfin(
     appScope.launch { artwork.fetch(item) }
 
     val cfg = configStore.current
-    if (cfg.apiKeys.jellyfinUrl.isBlank() || cfg.apiKeys.jellyfinToken.isBlank()) return
+    if (cfg.apiKeys.jellyfinUrl.isBlank() || cfg.apiKeys.jellyfinToken.isBlank()) return true
 
+    var refreshOk = true
     if (!item.jellyfinId.isNullOrBlank()) {
-        val ok = jellyfinClient.refreshItem(cfg.apiKeys.jellyfinUrl, cfg.apiKeys.jellyfinToken, item.jellyfinId, full = true)
-        if (!ok) Logger.warn("pushToJellyfin: Jellyfin refresh failed for '${item.id}' (jellyfinId=${item.jellyfinId})")
+        refreshOk = jellyfinClient.refreshItem(cfg.apiKeys.jellyfinUrl, cfg.apiKeys.jellyfinToken, item.jellyfinId, full = true)
+        if (!refreshOk) Logger.warn("pushToJellyfin: Jellyfin refresh failed for '${item.id}' (jellyfinId=${item.jellyfinId})")
     } else {
         Logger.warn("pushToJellyfin: no jellyfinId for '${item.id}' — skipping per-item Jellyfin refresh")
     }
@@ -1372,6 +1378,7 @@ private suspend fun pushToJellyfin(
         jellyfinClient.triggerLibraryRefresh(cfg.apiKeys.jellyfinUrl, cfg.apiKeys.jellyfinToken)
         Logger.info("pushToJellyfin: triggered library scan to pick up tvshow.nfo for '${item.id}'")
     }
+    return refreshOk
 }
 
 internal suspend fun runScan(
