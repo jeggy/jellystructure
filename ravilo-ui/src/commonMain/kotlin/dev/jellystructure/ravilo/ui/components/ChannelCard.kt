@@ -20,11 +20,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -119,28 +119,34 @@ fun ChannelCard(
         )
     }
 
+    // Focusable at a FIXED layout size; the focus scale is a draw-only graphicsLayer on the inner box,
+    // so the lazy list's focused-bounds tracking never chases the scale animation → no viewport jump (R42).
     Box(
         modifier = Modifier
             .size(186.dp, 104.dp)
-            .scale(scale)
-            .shadow(
-                elevation = shadowElevation,
-                shape = cardShape,
-                clip = false,
-                ambientColor = glowColor,
-                spotColor = glowColor,
-            )
-            .clip(cardShape)
-            .background(cardGradient)
-            .border(borderWidth, accentColor.copy(alpha = 0.7f), cardShape)
             .dpadFocusable(
                 focusRequester = focusRequester,
                 onFocused = { focused = true },
                 onBlurred = { focused = false },
                 onSelect = onSelect,
             ),
-        contentAlignment = Alignment.Center,
     ) {
+        Box(
+            modifier = Modifier
+                .matchParentSize()
+                .graphicsLayer { scaleX = scale; scaleY = scale }
+                .shadow(
+                    elevation = shadowElevation,
+                    shape = cardShape,
+                    clip = false,
+                    ambientColor = glowColor,
+                    spotColor = glowColor,
+                )
+                .clip(cardShape)
+                .background(cardGradient)
+                .border(borderWidth, accentColor.copy(alpha = 0.7f), cardShape),
+            contentAlignment = Alignment.Center,
+        ) {
         // Sheen
         Box(modifier = Modifier.fillMaxSize().background(sheenGradient))
 
@@ -175,6 +181,7 @@ fun ChannelCard(
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.padding(12.dp),
             )
+        }
         }
     }
 }

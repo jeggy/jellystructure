@@ -17,6 +17,23 @@ jumps. Causes found:
    (`Column(Modifier.width(w).scale(scale))` / `.size(...).scale(scale)`). `Modifier.scale` is draw-only
    so it shouldn't change measured size, but combined with (1)/(2) the screen still shifts.
 
+## Update (2026-06-23) — actual root cause + fix
+The first pass added an edge-based `BringIntoViewSpec` to the rows, but the jump persisted: Compose's
+**default** `BringIntoViewSpec` is *already* edge-based, so that change was a no-op. The real cause is the
+**focus scale itself**. `dpadFocusable` uses `focusable()`, and a lazy list keeps the focused descendant
+visible by **tracking its bounds** (`onFocusedBoundsChanged`). The scale is a `graphicsLayer` transform,
+so the focused tile's reported bounds **grow as the 1.0→1.10 spring animates**, and the list scrolls every
+frame to follow them → the viewport drifts in lock-step with the animation ("jumps as it makes these
+animations").
+
+**Fix (shipped):** decouple the scale from the focusable's bounds — keep the **focusable Box at a fixed
+layout size** (`width×height`) and apply the scale to an **inner draw-only `graphicsLayer` child** that
+carries the shadow/clip/border/content. The focused bounds the scroll system observes are now constant, so
+nothing chases the animation; the tile still visually pops (the inner layer overflows, `clip = false`).
+Applied to `Tile.kt` and `ChannelCard.kt`. The edge-based spec on `ContentRow` is kept (harmless,
+guarantees no re-centring). The label text no longer scales with the poster (acceptable — the artwork pop
+is the focus cue).
+
 ## Goal
 The focus scale animates smoothly with **no viewport movement** when the focused tile is already visible;
 rows scroll only when the focused tile is actually off-screen, and then smoothly.
