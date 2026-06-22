@@ -89,6 +89,18 @@ private data class ArtworkCandidatesResponse(
 @Serializable
 private data class SaveCandidateRequest(val asset: String = "", val source: String)
 
+// Wire shape for GET /api/media/{id}/episodes/stills — mirrors the frontend's EpisodeStillStatus.
+@Serializable
+private data class EpisodeStillStatusDto(val filename: String, val stillExists: Boolean, val stillPath: String)
+
+// Wire shape for the batch fire-and-forget endpoints ("…started", item count).
+@Serializable
+private data class BatchStartedResponse(val status: String, val total: Int)
+
+// Wire shape for GET /api/media/{id}/seasons — mirrors the frontend's SeasonStatus.
+@Serializable
+private data class SeasonStatusDto(val season: Int, val posterExists: Boolean)
+
 private fun mapCandidates(images: List<TmdbImage>, onDiskSource: String?): List<ArtworkCandidate> =
     images.map { img ->
         ArtworkCandidate(
@@ -490,7 +502,7 @@ fun Route.mediaRoutes(
                 val id = call.parameters["id"] ?: return@get call.respond(HttpStatusCode.BadRequest)
                 val item = store.resolve(id) ?: return@get call.respond(HttpStatusCode.NotFound)
                 val seasons = item.episodes.mapNotNull { it.seasonNumber }.distinct().sorted()
-                call.respond(seasons.map { mapOf("season" to it, "posterExists" to artwork.checkSeasonPoster(item, it)) })
+                call.respond(seasons.map { SeasonStatusDto(it, artwork.checkSeasonPoster(item, it)) })
             }
 
             // GET /api/media/{id}/seasons/{season}/poster/candidates
@@ -532,7 +544,7 @@ fun Route.mediaRoutes(
                     ?: return@get call.respond(HttpStatusCode.NotFound)
                 val statuses = item.episodes.map { ep ->
                     val status = artwork.checkEpisodeStill(ep)
-                    mapOf("filename" to ep.filename, "stillExists" to status.stillExists, "stillPath" to status.stillPath)
+                    EpisodeStillStatusDto(ep.filename, status.stillExists, status.stillPath)
                 }
                 call.respond(statuses)
             }
@@ -1276,7 +1288,7 @@ fun Route.mediaRoutes(
                 }
             }
         }
-        call.respond(HttpStatusCode.Accepted, mapOf("status" to "artwork fetch started", "total" to items.size))
+        call.respond(HttpStatusCode.Accepted, BatchStartedResponse("artwork fetch started", items.size))
     }
 
     // POST /api/media/batch/jellyfin-push — write NFOs for all items and refresh each in Jellyfin
@@ -1287,7 +1299,7 @@ fun Route.mediaRoutes(
             return@post
         }
         val items = store.allItems()
-        call.respond(HttpStatusCode.Accepted, mapOf("status" to "push started", "total" to items.size))
+        call.respond(HttpStatusCode.Accepted, BatchStartedResponse("push started", items.size))
         appScope.launch {
             var nfoOk = 0
             var nfoFail = 0

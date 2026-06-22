@@ -74,6 +74,9 @@ data class TriageCount(val untagged: Int, val mismatch: Int, val multiDefault: I
 @Serializable
 private data class AssignLanguageRequest(val language: String)
 
+@Serializable
+private data class AssignLanguageResponse(val ok: Boolean, val language: String)
+
 fun Route.triageRoutes(store: MediaStore, jellyfinClient: JellyfinClient, configStore: ConfigStore, mediaHistory: MediaHistory, seedingGuard: SeedingGuard) {
     route("/triage") {
         get("/count") {
@@ -165,7 +168,7 @@ fun Route.triageRoutes(store: MediaStore, jellyfinClient: JellyfinClient, config
                 jellyfinClient.refreshItem(cfg.apiKeys.jellyfinUrl, cfg.apiKeys.jellyfinToken, item.jellyfinId)
             }
 
-            call.respond(mapOf("ok" to true, "language" to lang))
+            call.respond(AssignLanguageResponse(ok = true, language = lang))
         }
 
         post("/{mediaId}/tracks/{specifier}/language") {
@@ -220,7 +223,7 @@ fun Route.triageRoutes(store: MediaStore, jellyfinClient: JellyfinClient, config
                 jellyfinClient.refreshItem(cfg.apiKeys.jellyfinUrl, cfg.apiKeys.jellyfinToken, item.jellyfinId)
             }
 
-            call.respond(mapOf("ok" to true, "language" to lang))
+            call.respond(AssignLanguageResponse(ok = true, language = lang))
         }
     }
 }
