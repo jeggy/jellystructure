@@ -56,6 +56,9 @@ data class ArtworkCandidatesResponse(
 data class SeasonStatus(val season: Int, val posterExists: Boolean = false)
 
 @Serializable
+data class EpisodeStillStatus(val filename: String, val stillExists: Boolean = false, val stillPath: String = "")
+
+@Serializable
 data class TrackSnap(
     val specifier: String,
     val language: String?,
@@ -322,6 +325,10 @@ object MediaApi {
             setBody("""{"source":${jsonStr(source)}}""")
         }.status == HttpStatusCode.OK
     }.getOrDefault(false)
+
+    suspend fun getEpisodeStillStatuses(id: String): List<EpisodeStillStatus>? = runCatching {
+        httpClient.get("/api/media/$id/episodes/stills").body<List<EpisodeStillStatus>>()
+    }.getOrNull()
 
     suspend fun getTrackPlan(id: String, specifier: String): TrackPlan? = runCatching {
         httpClient.get("/api/media/$id/tracks/plan") {
