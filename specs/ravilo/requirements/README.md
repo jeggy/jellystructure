@@ -47,7 +47,7 @@ truth** for which Ravilo phases exist and whether each is done or planned. Ravil
 | R30 | ✓ Done | **Native focus traversal** — replace the manual `FocusEngine` (per-item `requestFocus`) with Compose focus search + `focusRestorer`; fixes held-key lag/stuck on lazy rows & grids; `FocusEngine.kt` deleted | [R30](phase-R30-native-focus-traversal.md) |
 | R31 | ✓ Done | **`:ravilo-player` FFmpeg decoder** — jellyfin's `media3-ffmpeg-decoder` in an Android-only, GPL-contained module + renderers factory for DTS/TrueHD/AC3 (Media3 1.8.0); source-vendor fork skipped as redundant; on-device codec test pending | [R31](phase-R31-player-engine-fork.md) |
 | R32 | ✓ Done | **Unified filter workbench + hero builder + Library round-trip** — one shared condition-stack builder for Content rows, Channels & the Library; audio-track + hero-item as universal facets; Save-filter-as-Channel/Row + "Feature in Ravilo" on Movie/Series detail | [R32](phase-R32-unified-filter-workbench.md) |
-| R33 | □ Planned | **Live config push** — per-user WebSocket (`/api/tv/events`); a config write (`RaviloConfigService.save`) pushes `config_changed` to that user's connected TVs, which silently re-pull the feed/config so channel/hero-height/tile-shape/row/skin edits appear in ~1s with no reload | [R33](phase-R33-live-config-push.md) |
+| R33 | ✓ Done | **Live config push** — per-user WebSocket (`/api/tv/events`); a config write (`RaviloConfigService.save`) pushes `config_changed` to that user's connected TVs, which silently re-pull the feed/config so channel/hero-height/tile-shape/row/skin edits appear in ~1s with no reload | [R33](phase-R33-live-config-push.md) |
 
 ## Suggested sequencing
 - **Foundation:** R01 → R02 → R03 → R04 (module + scaffold + auth + config store).

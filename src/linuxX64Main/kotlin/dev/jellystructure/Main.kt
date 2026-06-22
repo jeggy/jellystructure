@@ -122,7 +122,8 @@ fun main() = runBlocking {
     Logger.info("Serving frontend from $frontendDir")
 
     val raviloDeviceService = RaviloDeviceService(db)
-    val raviloConfigService = RaviloConfigService(db)
+    val tvEventBus = dev.jellystructure.tv.TvEventBus(rootScope)
+    val raviloConfigService = RaviloConfigService(db, tvEventBus)
     val homeFeedService = HomeFeedService(mediaStore, raviloConfigService, jellyfinClient, configStore)
     val browseService = BrowseService(mediaStore, jellyfinClient, configStore)
     val detailService = DetailService(mediaStore, jellyfinClient, configStore)
@@ -137,7 +138,7 @@ fun main() = runBlocking {
     val shutdown = startServer(
         configStore, sessionService, raviloDeviceService, raviloConfigService, homeFeedService, browseService, detailService, playbackService, jellyfinClient, mediaStore, scanner,
         artworkDownloader, tmdbClient, scanTracker, folderWatcher, mediaHistory, activityLog, broadcaster,
-        frontendDir, port = port, scanDispatcher = scanDispatcher, effectiveScanThreads = effectiveScanThreads, jsTagStore = jsTagStore, seedingGuard = seedingGuard, logoDownloader = logoDownloader, qbClient = qbClient,
+        frontendDir, port = port, scanDispatcher = scanDispatcher, effectiveScanThreads = effectiveScanThreads, jsTagStore = jsTagStore, seedingGuard = seedingGuard, logoDownloader = logoDownloader, qbClient = qbClient, tvEventBus = tvEventBus,
     )
 
     // Scheduled scan — fires every scan_interval_hours hours (0 = disabled)

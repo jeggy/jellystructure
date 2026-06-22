@@ -1,9 +1,11 @@
 package dev.jellystructure.shared.tv
 
 import io.ktor.client.*
+import io.ktor.client.plugins.websocket.*
 import io.ktor.client.request.*
 import io.ktor.client.statement.*
 import io.ktor.http.*
+import io.ktor.websocket.*
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
@@ -194,6 +196,29 @@ class TvApiClient(
             auth()
             jsonBody(json.encodeToString(ViewerSettingsRequest(skin, showContinueProgress, autoplayNext, tileShape)))
         }.assertSuccess()
+    }
+
+    // ─── Live events (R33) ───────────────────────────────────────────────────
+
+    /**
+     * Opens the `/api/tv/events` WebSocket and streams [TvEvent]s until the socket closes (then
+     * returns; the caller is responsible for reconnect/backoff). [onOpen] fires once the socket is
+     * established — use it to trigger a full refresh so changes missed while disconnected are caught.
+     * The device token is passed as a query param because browsers can't set a WS handshake header.
+     * Requires the `WebSockets` client plugin to be installed on [client].
+     */
+    suspend fun connectEvents(onOpen: suspend () -> Unit = {}, onEvent: suspend (TvEvent) -> Unit) {
+        val token = deviceToken() ?: return
+        val wsUrl = baseUrl.replaceFirst("http", "ws").trimEnd('/') +
+            "/api/tv/events?token=" + token.encodeURLParameter()
+        client.webSocket(wsUrl) {
+            onOpen()
+            for (frame in incoming) {
+                if (frame is Frame.Text) {
+                    runCatching { json.decodeFromString<TvEvent>(frame.readText()) }.getOrNull()?.let { onEvent(it) }
+                }
+            }
+        }
     }
 
     // ─── Helpers ─────────────────────────────────────────────────────────────
