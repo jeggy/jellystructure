@@ -388,6 +388,7 @@ object MediaApi {
         year: Int? = null,
         originalTitle: String? = null,
         tags: List<String>? = null,
+        genres: List<String>? = null,
         director: String? = null,
         studio: String? = null,
         network: String? = null,
@@ -398,6 +399,7 @@ object MediaApi {
             if (year != null) add(""""year":$year""")
             if (originalTitle != null) add(""""originalTitle":"${originalTitle.replace("\"", "\\\"")}"""")
             if (tags != null) add(""""tags":[${tags.joinToString(",") { "\"${it.replace("\"", "\\\"")}\"" }}]""")
+            if (genres != null) add(""""genres":[${genres.joinToString(",") { "\"${it.replace("\"", "\\\"")}\"" }}]""")
             if (director != null) add(""""director":"${director.replace("\"", "\\\"")}"""")
             if (studio != null) add(""""studio":"${studio.replace("\"", "\\\"")}"""")
             if (network != null) add(""""network":"${network.replace("\"", "\\\"")}"""")

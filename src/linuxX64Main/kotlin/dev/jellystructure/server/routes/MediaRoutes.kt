@@ -228,10 +228,10 @@ fun Route.mediaRoutes(
                         item.copy(tmdbId = snap.tmdbId)
                     }
                     "metadata_edit" -> {
-                        @Serializable data class MetaSnap(val title: String, val overview: String? = null, val year: Int? = null, val originalTitle: String? = null, val director: String? = null, val studio: String? = null, val network: String? = null, val tags: List<String> = emptyList())
+                        @Serializable data class MetaSnap(val title: String, val overview: String? = null, val year: Int? = null, val originalTitle: String? = null, val director: String? = null, val studio: String? = null, val network: String? = null, val tags: List<String> = emptyList(), val genres: List<String> = emptyList())
                         val snap = runCatching { json.decodeFromString<MetaSnap>(entry.beforeSnapshot) }.getOrNull()
                             ?: return@post call.respond(HttpStatusCode.UnprocessableEntity, mapOf("error" to "corrupt snapshot"))
-                        item.copy(title = snap.title, overview = snap.overview, year = snap.year, originalTitle = snap.originalTitle, director = snap.director, studio = snap.studio, network = snap.network, tags = snap.tags)
+                        item.copy(title = snap.title, overview = snap.overview, year = snap.year, originalTitle = snap.originalTitle, director = snap.director, studio = snap.studio, network = snap.network, tags = snap.tags, genres = if (snap.genres.isNotEmpty()) snap.genres else item.genres)
                     }
                     "language_override" -> {
                         @Serializable data class LangSnap(val language: String? = null)
@@ -943,6 +943,7 @@ fun Route.mediaRoutes(
                 val year: Int? = null,
                 val originalTitle: String? = null,
                 val tags: List<String>? = null,
+                val genres: List<String>? = null,
                 val director: String? = null,
                 val studio: String? = null,
                 val network: String? = null,
@@ -960,13 +961,14 @@ fun Route.mediaRoutes(
                 year = req.year ?: item.year,
                 originalTitle = if (req.originalTitle != null) req.originalTitle.ifBlank { null } else item.originalTitle,
                 tags = req.tags ?: item.tags,
+                genres = req.genres ?: item.genres,
                 director = if (req.director != null) req.director.ifBlank { null } else item.director,
                 studio = if (req.studio != null) req.studio.ifBlank { null } else item.studio,
                 network = if (req.network != null) req.network.ifBlank { null } else item.network,
                 titlesByLang = updatedTitlesByLang,
             )
-            @Serializable data class MetaSnap(val title: String, val overview: String?, val year: Int?, val originalTitle: String?, val director: String?, val studio: String?, val network: String?, val tags: List<String>)
-            val snap = MetaSnap(item.title, item.overview, item.year, item.originalTitle, item.director, item.studio, item.network, item.tags)
+            @Serializable data class MetaSnap(val title: String, val overview: String?, val year: Int?, val originalTitle: String?, val director: String?, val studio: String?, val network: String?, val tags: List<String>, val genres: List<String> = emptyList())
+            val snap = MetaSnap(item.title, item.overview, item.year, item.originalTitle, item.director, item.studio, item.network, item.tags, item.genres)
             store.updateOne(updated)
             mediaHistory.record(id, "metadata_edit", "title=${updated.title}", revertable = true, beforeSnapshot = Json.encodeToString(snap))
             call.respond(updated)
