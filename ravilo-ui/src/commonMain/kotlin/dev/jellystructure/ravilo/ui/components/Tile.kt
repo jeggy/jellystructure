@@ -41,12 +41,21 @@ import dev.jellystructure.ravilo.ui.theme.RaviloTheme
 import dev.jellystructure.ravilo.ui.theme.Sora
 import dev.jellystructure.ravilo.ui.theme.accentGradient
 
-enum class TileVariant { POSTER, LANDSCAPE }
+enum class TileVariant { POSTER, LANDSCAPE, SQUARE }
+
+/** Map the operator's configured tile shape (R32 §F) to a tile variant. */
+fun dev.jellystructure.shared.tv.TileShape.toTileVariant(): TileVariant = when (this) {
+    dev.jellystructure.shared.tv.TileShape.LANDSCAPE -> TileVariant.LANDSCAPE
+    dev.jellystructure.shared.tv.TileShape.SQUARE -> TileVariant.SQUARE
+    else -> TileVariant.POSTER
+}
 
 private val POSTER_W    = 155.dp
 private val POSTER_H    = 232.dp
 private val LANDSCAPE_W = 256.dp
 private val LANDSCAPE_H = 144.dp
+private val SQUARE_W    = 180.dp
+private val SQUARE_H    = 180.dp
 
 @Composable
 fun Tile(
@@ -71,7 +80,11 @@ fun Tile(
     val shadowElevation by animateDpAsState(if (focused) 24.dp else 0.dp, dpSpec, label = "tileShadow")
     val tileShape = remember(colors.tileRadius) { RoundedCornerShape(colors.tileRadius) }
 
-    val (w, h) = if (variant == TileVariant.POSTER) POSTER_W to POSTER_H else LANDSCAPE_W to LANDSCAPE_H
+    val (w, h) = when (variant) {
+        TileVariant.POSTER -> POSTER_W to POSTER_H
+        TileVariant.LANDSCAPE -> LANDSCAPE_W to LANDSCAPE_H
+        TileVariant.SQUARE -> SQUARE_W to SQUARE_H
+    }
 
     Column(modifier = Modifier.width(w).scale(scale)) {
         Box(
