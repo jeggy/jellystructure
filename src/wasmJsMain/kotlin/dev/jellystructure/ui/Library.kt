@@ -183,6 +183,9 @@ fun renderLibrary(container: Element, scope: CoroutineScope, query: Map<String, 
           </span>
           <span class="muted tiny" id="lib-total"></span>
         </div>
+        <div id="lib-search-note" class="note blue" style="margin:0 0 8px;padding:7px 12px;font-size:.8rem;line-height:1.5;">
+          Search matches <b>every title this item has ever had</b> — each language pulled from TMDB plus the original title, so a show pulled once in Danish stays findable by its Danish name even after re-resolving.
+        </div>
         <div id="active-chips" class="row center" style="display:none;margin-bottom:8px;gap:6px;flex-wrap:wrap;"></div>
 
         <div id="poster-grid" class="poster-grid"></div>
