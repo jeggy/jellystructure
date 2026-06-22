@@ -12,16 +12,18 @@ _Last updated: 2026-06-22_
 
 ## Current focus
 
-**Phases R01–R35 + R37 complete; [R36 — Channel-button editor](requirements/phase-R36-channel-button-editor.md)
-is the active phase (mock landed 2026-06-22).** R36 moves the channel-button look entirely into the editor popup:
-the redundant inline **Logo / Text** row toggle is removed; **Logo** now means a real **image asset** —
-pick a previously uploaded brand logo or upload a PNG/SVG (stored server-side, referenced as the
-channel's `logoUrl`), with the name-initials box kept only as a no-asset fallback; **Text** is a label
-input. The **brand fill** gains a **＋ custom** swatch beside the five presets opening a **solid /
-gradient** builder (From/To + angle), so `brandColor` becomes a CSS color **or** `linear-gradient(…)`
-(R26 validation extended to accept both). Every editable config row (Channels/Content rows/Hero) gains a
-visible **pencil edit** affordance + a "Click a channel to edit it." hint so the popup is discoverable.
-Mirrored in `design/app/ravilo-config.html` + `design/app/ravilo-builders.{js,css}`; revises R32 §C2.
+**Phases R01–R37 complete.** [R36 — Channel-button editor](requirements/phase-R36-channel-button-editor.md)
+**is complete (2026-06-22).** The channel-button look is configured only in the editor popup: the inline
+Logo/Text + color cluster is gone; each config row shows a live chip + a **✎ Edit** pencil. In the popup,
+**Logo** means a real **image asset** — pick a prior upload or upload a PNG/SVG (stored server-side under
+`<dataDir>/channel-logos`, served at `/api/tv/channel-logos/<file>`, referenced as `logoUrl`); **Text**
+shows the channel name; the **brand fill** has the five presets + a **＋ custom** **solid/gradient** builder
+(From/To + angle), so `brandColor` is a CSS color **or** `linear-gradient(…)`. Backend:
+`RaviloConfigService.normalize` sanitises `brandColor` (R26 — solid or single gradient, else clamp); the TV
+`ChannelCard.parseBrandFill` renders a gradient brandColor; new admin endpoints
+`GET/POST /api/tv/admin/channel-logos` (upload/list) + a public serve route. Mirrors the design in
+`design/app/ravilo-config.html` + `design/app/ravilo-builders.{js,css}`; revises R32 §C2. All targets build;
+backend routes runtime-verified (admin 401 / public-serve 404).
 
 **[R37 — Brand-mark centering + asset-pack regeneration](requirements/phase-R37-brand-mark-centering.md)
 is complete (2026-06-22).** The master `ravilo-mark.svg` is reframed to `viewBox 12 20 76 76` (**paths

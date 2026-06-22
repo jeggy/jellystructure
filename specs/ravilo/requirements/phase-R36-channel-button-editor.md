@@ -1,6 +1,6 @@
 # Phase R36 — Channel-button editor: logo asset upload, custom brand color/gradient, discoverable edit
 
-**Status:** Planned · _the channel-button look (logo image **or** text + brand fill) is configured only
+**Status:** ✓ Done · _the channel-button look (logo image **or** text + brand fill) is configured only
 in the editor popup; logos are real uploaded/pickable image assets; the brand fill can be a preset, a
 custom solid, or a gradient; and every config row exposes a visible "edit" affordance so the popup is
 discoverable._
