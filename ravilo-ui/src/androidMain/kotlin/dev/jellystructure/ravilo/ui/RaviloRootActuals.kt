@@ -2,17 +2,20 @@ package dev.jellystructure.ravilo.ui
 
 import android.content.SharedPreferences
 import io.ktor.client.HttpClient
-import io.ktor.client.engine.android.Android
+import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
+import io.ktor.client.plugins.websocket.WebSockets
 import io.ktor.serialization.kotlinx.json.json
 import kotlinx.serialization.json.Json
 import dev.jellystructure.shared.tv.TvApiClient
 
 actual fun createTvApiClient(baseUrl: String, deviceTokenProvider: () -> String?): TvApiClient {
-    val httpClient = HttpClient(Android) {
+    // CIO engine: supports the WebSocket client used for live config push (R33); Android engine does not.
+    val httpClient = HttpClient(CIO) {
         install(ContentNegotiation) {
             json(Json { ignoreUnknownKeys = true; isLenient = true })
         }
+        install(WebSockets)
     }
     return TvApiClient(httpClient, baseUrl, deviceTokenProvider)
 }
