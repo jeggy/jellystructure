@@ -8,7 +8,8 @@
 <link rel="stylesheet" href="app.css">
 <link rel="stylesheet" href="ravilo-builders.css">
 <style>
-  .ravilo-mark { width: 32px; height: 32px; display: inline-block; vertical-align: middle; filter: drop-shadow(0 0 10px rgba(123,110,240,.5)); }
+  .pagebar h1 { display: inline-flex; align-items: center; gap: .34em; white-space: nowrap; }
+  .ravilo-mark { width: 1.12em; height: 1.12em; flex: none; vertical-align: middle; filter: drop-shadow(0 0 10px rgba(123,110,240,.5)); }
   /* draggable config list rows */
   .cfg-row { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--radius-s); background: var(--fill-2); }
   .cfg-row + .cfg-row { margin-top: 9px; }
@@ -29,7 +30,7 @@
 
 <main class="app-main2 wide" data-page="ravilo" data-no-dock data-screen-label="Ravilo config">
   <div class="pagebar">
-    <h1><svg class="ravilo-mark" viewBox="0 0 100 100" aria-hidden="true"><defs><linearGradient id="ravJelly" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#7b6ef0"/><stop offset="1" stop-color="#3fb6f5"/></linearGradient></defs><path d="M22 52 C22 24 78 24 78 52 C66 45 59 45 50 49 C41 45 34 45 22 52 Z" fill="url(#ravJelly)"/><g stroke="url(#ravJelly)" stroke-width="4.5" stroke-linecap="round" fill="none"><path d="M33 51 q-5 12 1 20 q5 8 0 14" opacity=".9"/><path d="M44 52 q-4 13 1 21 q4 9 0 13" opacity=".72"/><path d="M56 52 q4 13 -1 21 q-4 9 0 13" opacity=".72"/><path d="M67 51 q5 12 -1 20 q-5 8 0 14" opacity=".9"/></g></svg> Ravilo TV</h1>
+    <h1><svg class="ravilo-mark" viewBox="12 20 76 76" aria-hidden="true"><defs><linearGradient id="ravJelly" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#7b6ef0"/><stop offset="1" stop-color="#3fb6f5"/></linearGradient></defs><path d="M22 52 C22 24 78 24 78 52 C66 45 59 45 50 49 C41 45 34 45 22 52 Z" fill="url(#ravJelly)"/><g stroke="url(#ravJelly)" stroke-width="4.5" stroke-linecap="round" fill="none"><path d="M33 51 q-5 12 1 20 q5 8 0 14" opacity=".9"/><path d="M44 52 q-4 13 1 21 q4 9 0 13" opacity=".72"/><path d="M56 52 q4 13 -1 21 q-4 9 0 13" opacity=".72"/><path d="M67 51 q5 12 -1 20 q-5 8 0 14" opacity=".9"/></g></svg> Ravilo TV</h1>
     <span class="badge info">app config</span>
     <span class="spacer"></span>
     <a class="btn sm ghost" href="../ravilo/Ravilo TV.html" target="_blank" rel="noopener">Open Ravilo ↗</a>
@@ -79,14 +80,14 @@
       <!-- STUDIOS / CHANNELS -->
       <div class="card set-section" id="sect-studios">
         <div class="row center"><h3 style="font-size:1.05rem;margin:0;">Channels &amp; collections</h3><span class="spacer"></span><span class="btn sm ghost">＋ Add channel</span></div>
-        <p class="tiny muted" style="margin:6px 0 14px;">The Disney+-style logo row under the hero. Each opens a view with the <b>same content rows below</b>, filtered to that channel. Map each to a Jellyfin studio, network, genre or tag.</p>
+        <p class="tiny muted" style="margin:6px 0 14px;">The Disney+-style logo row under the hero. Each opens a view with the <b>same content rows below</b>, filtered to that channel. Map each to a Jellyfin studio, network, genre or tag. <b>Click a channel to edit it.</b></p>
 
         <div id="studiolist">
-          <div class="cfg-row"><span class="grab">⠿</span><div class="studio-wm" style="background:linear-gradient(135deg,#3b2a78,#15102e);">HBO</div><div style="flex:1;"><div class="nm">HBO</div><div class="src">filter: network = “HBO”</div></div><span class="seg-pill"><button class="on">Logo</button><button>Text</button></span><span class="toggle on"></span><span class="btn sm ghost rm">✕</span></div>
-          <div class="cfg-row"><span class="grab">⠿</span><div class="studio-wm" style="background:linear-gradient(135deg,#e3122b,#7d0a1a);">TV2</div><div style="flex:1;"><div class="nm">TV 2</div><div class="src">filter: network = “TV 2”</div></div><span class="seg-pill"><button class="on">Logo</button><button>Text</button></span><span class="toggle on"></span><span class="btn sm ghost rm">✕</span></div>
-          <div class="cfg-row"><span class="grab">⠿</span><div class="studio-wm" style="background:linear-gradient(135deg,#0a93a6,#063d47);">KvF</div><div style="flex:1;"><div class="nm">Kringvarp</div><div class="src">filter: network = “Kringvarp”</div></div><span class="seg-pill"><button class="on">Logo</button><button>Text</button></span><span class="toggle on"></span><span class="btn sm ghost rm">✕</span></div>
-          <div class="cfg-row"><span class="grab">⠿</span><div class="studio-wm" style="background:linear-gradient(135deg,#1455d8,#0a2766);">DR</div><div style="flex:1;"><div class="nm">DR</div><div class="src">filter: network = “DR”</div></div><span class="seg-pill"><button class="on">Logo</button><button>Text</button></span><span class="toggle on"></span><span class="btn sm ghost rm">✕</span></div>
-          <div class="cfg-row"><span class="grab">⠿</span><div class="studio-wm" style="background:linear-gradient(135deg,#c8102e,#1a1a1a);">DK</div><div style="flex:1;"><div class="nm">Dansk TV <span class="badge info" style="font-size:.6rem;">category</span></div><div class="src">filter: tag = “dansk-tv”</div></div><span class="seg-pill"><button>Logo</button><button class="on">Text</button></span><span class="toggle on"></span><span class="btn sm ghost rm">✕</span></div>
+          <div class="cfg-row"><span class="grab">⠿</span><div class="studio-wm" style="background:linear-gradient(135deg,#3b2a78,#15102e);">HBO</div><div style="flex:1;"><div class="nm">HBO</div><div class="src">filter: network = “HBO”</div></div><span class="toggle on"></span><span class="btn sm ghost rm">✕</span></div>
+          <div class="cfg-row"><span class="grab">⠿</span><div class="studio-wm" style="background:linear-gradient(135deg,#e3122b,#7d0a1a);">TV2</div><div style="flex:1;"><div class="nm">TV 2</div><div class="src">filter: network = “TV 2”</div></div><span class="toggle on"></span><span class="btn sm ghost rm">✕</span></div>
+          <div class="cfg-row"><span class="grab">⠿</span><div class="studio-wm" style="background:linear-gradient(135deg,#0a93a6,#063d47);">KvF</div><div style="flex:1;"><div class="nm">Kringvarp</div><div class="src">filter: network = “Kringvarp”</div></div><span class="toggle on"></span><span class="btn sm ghost rm">✕</span></div>
+          <div class="cfg-row"><span class="grab">⠿</span><div class="studio-wm" style="background:linear-gradient(135deg,#1455d8,#0a2766);">DR</div><div style="flex:1;"><div class="nm">DR</div><div class="src">filter: network = “DR”</div></div><span class="toggle on"></span><span class="btn sm ghost rm">✕</span></div>
+          <div class="cfg-row"><span class="grab">⠿</span><div class="studio-wm" style="background:linear-gradient(135deg,#c8102e,#1a1a1a);">DK</div><div style="flex:1;"><div class="nm">Dansk TV <span class="badge info" style="font-size:.6rem;">category</span></div><div class="src">filter: tag = “dansk-tv”</div></div><span class="toggle on"></span><span class="btn sm ghost rm">✕</span></div>
         </div>
       </div>
 

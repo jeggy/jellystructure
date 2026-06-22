@@ -8,17 +8,13 @@ _Last updated: 2026-06-22_
 
 ## Current focus
 
-**Phases 0–47 complete.** [Phase 47 — Artwork manager](requirements/archive/phase-47-artwork-manager.md)
-shipped the full artwork-editing surface on Movie & Series detail: a left **asset rail**
-(Poster/Backdrop/Clearlogo/Banner) with on-disk status, an inline **TMDB candidate gallery** with
-resolved-language-first filtering and a **never-empty fallback** (**no-language `xx` is its own bucket,
-distinct from "All"**), Prefer textless/with-text, hi-res + vote/resolution sort, click-to-stage +
-**Save to disk**, drag-drop/upload/Paste-URL, and series **season-poster** + **per-episode-still**
-management with a "Fetch all missing" batch. Backend: `TmdbClient` image endpoints + candidate/save
-routes on `MediaRoutes`; reuses the Phase 31/32 fetch/cache infra (no new pipeline).
+**Phases 0–46 complete.** Next up is **[Phase 47 — Artwork manager](requirements/phase-47-artwork-manager.md)**
+(Planned): a full artwork-editing surface on Movie & Series detail — asset rail + inline TMDB gallery,
+resolved-language-first candidate filtering with a never-empty fallback (**no-language `xx` is its own
+bucket, distinct from "All"**), drag-drop/upload/URL replace, and series season-poster + per-episode-still
+management. Builds on Phase 31 (artwork fetch/cache) + Phase 32 (TMDB match picker). Approved design
+mockups in `design/app/media.html` + `design/app/series.html`.
 
-No further admin phases are queued. The next cross-product work is Ravilo **R32** (unified filter
-workbench + Library round-trip) — see [`ravilo/STATUS.md`](ravilo/STATUS.md).
 See [`requirements/README.md`](requirements/README.md) for the full index.
 
 ## Sibling product — Ravilo (Android TV + Web)
@@ -27,8 +23,8 @@ See [`requirements/README.md`](requirements/README.md) for the full index.
 (Android TV **and** browser/WASM canvas, one shared codebase) for jellystructure-managed libraries.
 It adds a **`/api/tv/**`** namespace + a per-Jellyfin-user config store to *this* backend and a shared
 **`:shared`** KMP module (DTOs + Ktor client) that the admin frontend reuses too. Control plane =
-jellystructure only; data plane (video/images) = Jellyfin directly. Phases **R01–R32** are complete
-(R32 = the shared filter workbench + Library round-trip) — see
+jellystructure only; data plane (video/images) = Jellyfin directly. Phases **R01–R31** are complete and
+**R32** (the shared filter workbench + Library round-trip) is planned — see
 [`ravilo/STATUS.md`](ravilo/STATUS.md) and [`ravilo/requirements/README.md`](ravilo/requirements/README.md).
 The jellystructure admin frontend stays DOM/Tailwind; Ravilo's web build is a
 **separate** canvas bundle (the "no Compose for Web" rule is scoped to the admin app).
@@ -66,15 +62,6 @@ The jellystructure admin frontend stays DOM/Tailwind; Ravilo's web build is a
 
 ## Known issues / open threads
 
-- **Design fidelity audit (2026-06-22):** a full design-mockup ↔ implementation review is captured in
-  [`requirements/design-fidelity-audit.md`](requirements/design-fidelity-audit.md). It lists **P0
-  defects** (incl. R32 config-screen condition round-trip loss, the hero-height/auto-advance/tile-shape
-  §F propagation, the Activity overall-bar, and stale `/triage` palette refs), **P1** spec-fidelity gaps
-  (config-screen workbench-first, Ravilo TV hero actions + R19 localization, admin detail/Library/Metadata/
-  Settings/Shell), and **P2** decisions (NFO-drift direction → resolved to re-assert). **Mostly
-  implemented (2026-06-22)** — all P0 + most P1/P2 landed; a short deferred list (Library popover
-  removal, cron scheduled-scan, trickplay, trailer/codec-pill/kids-badge) remains in the spec's
-  Resolution section.
 - **Reverse-drift resolved in specs:** `plan.md` previously claimed `PATCH /config`,
   `POST /config/test-connection`, and `POST /jellyfin/refresh` — none exist in source (it's `PUT
   /config`, no test-connection route, and per-item `/media/{id}/jellyfin-refresh`). The spec now

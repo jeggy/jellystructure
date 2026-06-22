@@ -171,6 +171,36 @@
      ============================================================ */
   const CH_COLORS = ['linear-gradient(135deg,#3b2a78,#15102e)','linear-gradient(135deg,#e3122b,#7d0a1a)','linear-gradient(135deg,#0a93a6,#063d47)','linear-gradient(135deg,#1455d8,#0a2766)','linear-gradient(135deg,#c8102e,#1a1a1a)'];
 
+  // Channel-button logo assets (the user's brand-logo library) + render helper.
+  const PRESET_LOGOS = [
+    { id:'hbo', label:'HBO' }, { id:'tv2', label:'TV 2' }, { id:'kvf', label:'KvF' },
+    { id:'dr', label:'DR' }, { id:'nrk', label:'NRK' }, { id:'viaplay', label:'Viaplay' }
+  ];
+  function logoAsset(label){
+    const svg = "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 220 88'><text x='110' y='59' text-anchor='middle' font-family='Space Grotesk, Sora, sans-serif' font-weight='800' font-size='44' letter-spacing='-1' fill='#ffffff'>" + label + "</text></svg>";
+    return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+  }
+  function customCss(cg){ return cg.type === 'solid' ? cg.c1 : 'linear-gradient(' + cg.angle + 'deg, ' + cg.c1 + ', ' + cg.c2 + ')'; }
+  function chLogoSrc(state){
+    if (!state || !state.chLogo) return null;
+    if (state.chLogo.type === 'upload') return state.chLogo.src;
+    const p = PRESET_LOGOS.find(l => l.id === state.chLogo.id);
+    return p ? logoAsset(p.label) : null;
+  }
+  // Build the channel button (the .studio-wm chip) for a given state: image when Logo, text when Text.
+  function channelWM(state, title, opts){
+    opts = opts || {};
+    const cls = opts.cls || 'studio-wm';
+    const base = 'background:' + (state.chColor || CH_COLORS[0]) + ';' + (opts.style || '');
+    if (state.chStyle === 'logo'){
+      const src = chLogoSrc(state);
+      if (src) return '<div class="' + cls + '" style="' + base + '"><img class="cf-wm-img" src="' + src + '" alt=""></div>';
+      return '<div class="' + cls + '" style="' + base + '">' + (title || '').slice(0,3).toUpperCase() + '</div>';
+    }
+    const t = state.chText || title || 'Channel';
+    return '<div class="' + cls + '" style="' + base + 'font-size:' + (opts.font || '.62rem') + ';">' + t.slice(0,12) + '</div>';
+  }
+
   function openFilter(opts) {
     opts = opts || {};
     const isChannel = opts.mode === 'channel';
@@ -178,7 +208,7 @@
     const state = opts.state || {
       match: 'all', include: 'all',
       conditions: [ { facet: 'genre', op: 'isAny', values: [] } ],
-      title: '', chStyle: 'logo', chColor: CH_COLORS[0]
+      title: '', chStyle: 'logo', chColor: CH_COLORS[0], chText: '', chLogo: null, customGrad: null
     };
     if (!state.conditions.length) state.conditions.push({ facet:'genre', op:'isAny', values:[] });
 
@@ -194,6 +224,8 @@
     function render() {
       const matches = evaluate(state);
       const titleVal = state.title || autoTitle();
+      const isCustom = isChannel && state.chColor && CH_COLORS.indexOf(state.chColor) === -1;
+      const cg = state.customGrad || { type: 'gradient', c1: '#7b6ef0', c2: '#3fb6f5', angle: 135 };
       node.innerHTML = `
         <div class="cf-modal-head">
           <span class="cf-grab">⠿</span>
@@ -229,11 +261,34 @@
             <hr class="dash" style="margin:16px 0;">
             <span class="cf-eyebrow">Channel button</span>
             <div class="row center" style="gap:14px;margin-top:11px;flex-wrap:wrap;">
-              <div><div class="tiny muted" style="margin-bottom:6px;">Style</div>
+              <div><div class="tiny muted" style="margin-bottom:6px;">Display</div>
                 <span class="seg cf-style"><span class="${state.chStyle==='logo'?'on':''}" data-st="logo">Logo</span><span class="${state.chStyle==='text'?'on':''}" data-st="text">Text</span></span></div>
               <div><div class="tiny muted" style="margin-bottom:6px;">Brand color</div>
-                <div class="row" style="gap:7px;" id="cf-colors">${CH_COLORS.map(c => `<span class="cf-sw ${c===state.chColor?'on':''}" data-color="${c}" style="background:${c};"></span>`).join('')}</div></div>
-            </div>` : ''}
+                <div class="row" style="gap:7px;flex-wrap:wrap;" id="cf-colors">${CH_COLORS.map(c => `<span class="cf-sw ${c===state.chColor?'on':''}" data-color="${c}" style="background:${c};"></span>`).join('')}<span class="cf-sw cf-sw-custom ${isCustom?'on':''}" data-customsw title="Custom color or gradient" style="${isCustom?`background:${state.chColor};`:''}">${isCustom?'':'+'}</span></div></div>
+            </div>
+            <div class="cf-gradbuilder" style="display:${isCustom?'block':'none'};">
+              <div class="row center" style="gap:9px;margin-bottom:11px;">
+                <span class="cf-eyebrow">Custom</span>
+                <span class="seg cf-gradmode"><span class="${cg.type==='solid'?'on':''}" data-gm="solid">Solid</span><span class="${cg.type==='gradient'?'on':''}" data-gm="gradient">Gradient</span></span>
+              </div>
+              <div class="row center" style="gap:16px;flex-wrap:wrap;">
+                <label class="cf-cfield"><span class="tiny muted">${cg.type==='gradient'?'From':'Color'}</span><input type="color" class="cf-c1" value="${cg.c1}"></label>
+                <label class="cf-cfield cf-c2field" style="display:${cg.type==='gradient'?'':'none'};"><span class="tiny muted">To</span><input type="color" class="cf-c2" value="${cg.c2}"></label>
+                <label class="cf-cfield cf-anglefield" style="display:${cg.type==='gradient'?'':'none'};flex:1;min-width:150px;"><span class="tiny muted">Angle <b class="cf-angle-val">${cg.angle}\u00b0</b></span><input type="range" min="0" max="360" step="5" class="cf-angle" value="${cg.angle}"></label>
+              </div>
+            </div>
+            ${state.chStyle==='logo' ? `
+              <div class="tiny muted" style="margin:12px 0 8px;">Pick a logo asset or upload your own — a transparent PNG or SVG sits cleanly on the brand color.</div>
+              <div class="cf-logogrid">
+                ${PRESET_LOGOS.map(l => `<button class="cf-logotile ${state.chLogo&&state.chLogo.type==='preset'&&state.chLogo.id===l.id?'on':''}" data-logo="${l.id}" title="${l.label}"><img src="${logoAsset(l.label)}" alt="${l.label}"></button>`).join('')}
+                ${state.chLogo&&state.chLogo.type==='upload' ? `<button class="cf-logotile on" data-logo="__current" title="${(state.chLogo.label||'uploaded').replace(/"/g,'&quot;')}"><img src="${state.chLogo.src}" alt="uploaded"></button>` : ''}
+                <button class="cf-logotile cf-logoupload" data-upload><span class="cf-up-i">⤒</span><span class="tiny">Upload</span></button>
+              </div>
+              <input type="file" accept="image/png,image/svg+xml,image/*" class="cf-logofile" style="display:none;">
+            ` : `
+              <div class="tiny muted" style="margin:12px 0 8px;">Type the label shown on the channel button.</div>
+              <input class="input cf-chtext" value="${(state.chText||'').replace(/"/g,'&quot;')}" placeholder="${(state.title||autoTitle()).replace(/"/g,'&quot;')}" style="max-width:300px;">
+            `}` : ''}
 
             <div class="note blue" style="margin-top:16px;display:flex;gap:10px;align-items:center;padding:10px 12px;">
               <span class="badge info" style="flex:none;">${isLibrary ? 'one filter' : 'reusable'}</span>
@@ -251,7 +306,7 @@
               ${matches.slice(0,12).map(m => `<div class="cf-mp" title="${m.title} · ${m.year}" style="background:${grad(m.title)};"><span class="t">${m.title}</span></div>`).join('') || '<div class="tiny muted" style="grid-column:1/-1;padding:18px 4px;">No titles match — loosen a condition.</div>'}
             </div>
             ${matches.length>12 ? `<div class="tiny muted" style="margin-top:8px;">+${matches.length-12} more</div>` : ''}
-            ${isChannel ? `<div class="studio-wm cf-chprev" style="width:100%;height:46px;margin-top:14px;font-size:1.1rem;background:${state.chColor};">${(state.title||'Channel').slice(0,10)}</div><div class="tiny muted center-x" style="margin-top:8px;">channel button preview</div>` : ''}
+            ${isChannel ? `${channelWM(state, state.title||autoTitle(), {cls:'studio-wm cf-chprev', style:'width:100%;height:46px;margin-top:14px;', font:'1.05rem'})}<div class="tiny muted center-x" style="margin-top:8px;">channel button preview</div>` : ''}
             ${isLibrary ? '' : `<a href="library.html" class="tiny" style="display:block;margin-top:14px;color:var(--acc-ink);">Open these ${matches.length} in Library ↗</a>`}
           </div>
         </div>
@@ -291,9 +346,29 @@
       node.querySelectorAll('[data-x]').forEach(b => b.onclick = closeModal);
       node.querySelectorAll('.cf-match span').forEach(s => s.onclick = () => { state.match = s.dataset.m; render(); });
       node.querySelectorAll('.cf-include span').forEach(s => s.onclick = () => { state.include = s.dataset.inc; render(); });
-      const ti = node.querySelector('.cf-title'); if (ti) ti.oninput = () => { state.title = ti.value; const p = node.querySelector('.cf-chprev'); if (p) p.textContent = (ti.value||'Channel').slice(0,10); };
+      function refreshChPrev(){ const box = node.querySelector('.cf-chprev'); if (box){ const fresh = el(channelWM(state, state.title||autoTitle(), {cls:'studio-wm cf-chprev', style:'width:100%;height:46px;margin-top:14px;', font:'1.05rem'})); box.replaceWith(fresh); } }
+      const ti = node.querySelector('.cf-title'); if (ti) ti.oninput = () => { state.title = ti.value; const ct0 = node.querySelector('.cf-chtext'); if (ct0) ct0.placeholder = ti.value || autoTitle(); refreshChPrev(); };
       node.querySelectorAll('.cf-style span').forEach(s => s.onclick = () => { state.chStyle = s.dataset.st; render(); });
-      node.querySelectorAll('.cf-sw').forEach(s => s.onclick = () => { state.chColor = s.dataset.color; render(); });
+      node.querySelectorAll('.cf-sw[data-color]').forEach(s => s.onclick = () => { state.chColor = s.dataset.color; render(); });
+      const customSw = node.querySelector('[data-customsw]');
+      if (customSw) customSw.onclick = () => { if (!state.customGrad) state.customGrad = { type:'gradient', c1:'#7b6ef0', c2:'#3fb6f5', angle:135 }; state.chColor = customCss(state.customGrad); render(); };
+      node.querySelectorAll('.cf-gradmode span').forEach(s => s.onclick = () => { if (!state.customGrad) state.customGrad = { type:'gradient', c1:'#7b6ef0', c2:'#3fb6f5', angle:135 }; state.customGrad.type = s.dataset.gm; state.chColor = customCss(state.customGrad); render(); });
+      function applyCustom(){ state.chColor = customCss(state.customGrad); const sw = node.querySelector('[data-customsw]'); if (sw){ sw.style.background = state.chColor; sw.textContent = ''; sw.classList.add('on'); } node.querySelectorAll('.cf-sw[data-color]').forEach(x => x.classList.remove('on')); refreshChPrev(); }
+      const c1i = node.querySelector('.cf-c1'); if (c1i) c1i.oninput = () => { state.customGrad.c1 = c1i.value; applyCustom(); };
+      const c2i = node.querySelector('.cf-c2'); if (c2i) c2i.oninput = () => { state.customGrad.c2 = c2i.value; applyCustom(); };
+      const angi = node.querySelector('.cf-angle'); if (angi) angi.oninput = () => { state.customGrad.angle = +angi.value; const v = node.querySelector('.cf-angle-val'); if (v) v.textContent = angi.value + '\u00b0'; applyCustom(); };
+      const ct = node.querySelector('.cf-chtext'); if (ct) ct.oninput = () => { state.chText = ct.value; refreshChPrev(); };
+      node.querySelectorAll('[data-logo]').forEach(b => b.onclick = () => {
+        if (b.dataset.logo === '__current') return;
+        state.chLogo = { type:'preset', id: b.dataset.logo };
+        node.querySelectorAll('[data-logo]').forEach(x => x.classList.toggle('on', x===b));
+        refreshChPrev();
+      });
+      const upBtn = node.querySelector('[data-upload]'); const upFile = node.querySelector('.cf-logofile');
+      if (upBtn && upFile){
+        upBtn.onclick = () => upFile.click();
+        upFile.onchange = () => { const f = upFile.files && upFile.files[0]; if (!f) return; const rd = new FileReader(); rd.onload = () => { state.chLogo = { type:'upload', src: rd.result, label: f.name }; render(); }; rd.readAsDataURL(f); };
+      }
       node.querySelector('[data-add]').onclick = () => { state.conditions.push({ facet:'genre', op:'isAny', values:[] }); render(); };
 
       node.querySelectorAll('[data-rmcond]').forEach(b => b.onclick = () => { state.conditions.splice(+b.dataset.rmcond,1); render(); });
@@ -356,15 +431,12 @@
       if (opts.editRow) {
         opts.editRow.querySelector('.nm').firstChild.textContent = title + ' ';
         opts.editRow.querySelector('.src').textContent = summary;
+        if (isChannel) { const wmEl = opts.editRow.querySelector('.studio-wm'); if (wmEl) wmEl.outerHTML = channelWM(state, title); }
         opts.editRow._cfState = state;
       } else if (isChannel) {
-        const wm = state.chStyle==='logo'
-          ? `<div class="studio-wm" style="background:${state.chColor};">${title.slice(0,3).toUpperCase()}</div>`
-          : `<div class="studio-wm" style="background:${state.chColor};font-size:.62rem;">${title.slice(0,8)}</div>`;
         const row = el(`<div class="cfg-row cf-new">
-          <span class="grab">⠿</span>${wm}
+          <span class="grab">⠿</span>${channelWM(state, title)}
           <div style="flex:1;"><div class="nm">${title} <span class="badge info" style="font-size:.6rem;">${matches.length} titles</span></div><div class="src">${summary}</div></div>
-          <span class="seg-pill"><button class="${state.chStyle==='logo'?'on':''}">Logo</button><button class="${state.chStyle==='text'?'on':''}">Text</button></span>
           <span class="toggle on"></span><span class="btn sm ghost rm">✕</span></div>`);
         row._cfState = state; row.dataset.kind = 'channel';
         document.getElementById('studiolist').appendChild(row); bindRow(row, true);
@@ -531,6 +603,17 @@
         const lbl = row.querySelector('.muted.tiny'); if (lbl) lbl.textContent = tog.classList.contains('on') ? 'show' : 'hidden';
       };
       const seg = row.querySelector('.seg-pill'); if (seg) seg.onclick = e => { const b = e.target.closest('button'); if (b) { e.stopPropagation(); seg.querySelectorAll('button').forEach(x => x.classList.toggle('on', x===b)); } };
+    }
+    // visible edit affordance — makes the editor popup discoverable
+    if (!row.querySelector('.edit-ic')) {
+      const eic = document.createElement('span');
+      eic.className = 'edit-ic'; eic.title = 'Edit';
+      eic.innerHTML = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>';
+      eic.onclick = e => { e.stopPropagation(); editRow(row); };
+      const tog = row.querySelector('.toggle');
+      if (tog) row.insertBefore(eic, tog);
+      else if (row.querySelector('.rm')) row.insertBefore(eic, row.querySelector('.rm'));
+      else row.appendChild(eic);
     }
     // edit by clicking the body (both new + existing rows)
     const body = row.querySelector('.nm') && row.querySelector('.nm').parentElement;
