@@ -49,6 +49,8 @@ class ChannelStore(private val apiClient: TvApiClient) {
     private var currentId: String? = null
 
     fun load(channelId: String) {
+        // R40: re-entry with the same channel keeps the cached feed and refreshes silently (no flash).
+        if (currentId == channelId && _state.value is HomeState.Loaded) { refresh(silent = true); return }
         currentId = channelId
         loadJob?.cancel()
         _state.value = HomeState.Loading

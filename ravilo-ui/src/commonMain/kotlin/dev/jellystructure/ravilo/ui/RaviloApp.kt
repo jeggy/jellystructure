@@ -154,6 +154,13 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
         }
         var stack by remember { mutableStateOf(listOf<Dest>(initialDest)) }
 
+        // R40: retain screen stores across navigation so Back renders the cached screen instantly
+        // (no Loading flash); each store refreshes silently on re-entry. Keyed by destination identity.
+        val storeRegistry = remember { mutableMapOf<String, Any>() }
+        @Suppress("UNCHECKED_CAST")
+        fun <T : Any> keptStore(key: String, create: () -> T): T =
+            storeRegistry.getOrPut(key) { create() } as T
+
         // Load config when already on Home (single-session fast path)
         if (initialDest is Dest.Home) {
             androidx.compose.runtime.LaunchedEffect(Unit) { refreshConfig() }
@@ -215,7 +222,7 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
             }
 
             is Dest.Home -> {
-                val store = remember { HomeStore(apiClient) }
+                val store = keptStore("home:${dest.displayName}") { HomeStore(apiClient) }
                 HomeScreen(
                     store = store,
                     displayName = dest.displayName,
@@ -249,7 +256,7 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
             }
 
             is Dest.ChannelView -> {
-                val store = remember(dest.channel.id) { ChannelStore(apiClient) }
+                val store = keptStore("channel:${dest.displayName}:${dest.channel.id}") { ChannelStore(apiClient) }
                 ChannelScreen(
                     channel = dest.channel,
                     store = store,
@@ -264,7 +271,7 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
             }
 
             is Dest.Browse -> {
-                val store = remember(dest.kind) { BrowseStore(apiClient) }
+                val store = keptStore("browse:${dest.displayName}:${dest.kind}") { BrowseStore(apiClient) }
                 BrowseScreen(
                     kind = dest.kind,
                     store = store,
@@ -279,7 +286,7 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
             }
 
             is Dest.Search -> {
-                val store = remember { SearchStore(apiClient) }
+                val store = keptStore("search:${dest.displayName}") { SearchStore(apiClient) }
                 SearchScreen(
                     store = store,
                     onBack = { pop() },
@@ -293,7 +300,7 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
             }
 
             is Dest.MovieDetail -> {
-                val store = remember(dest.itemId) { MovieDetailStore(apiClient) }
+                val store = keptStore("movie:${dest.displayName}:${dest.itemId}") { MovieDetailStore(apiClient) }
                 MovieDetailScreen(
                     itemId = dest.itemId,
                     store = store,
@@ -309,7 +316,7 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
             }
 
             is Dest.SeriesDetail -> {
-                val store = remember(dest.itemId) { SeriesDetailStore(apiClient) }
+                val store = keptStore("series:${dest.displayName}:${dest.itemId}") { SeriesDetailStore(apiClient) }
                 SeriesDetailScreen(
                     itemId = dest.itemId,
                     store = store,
