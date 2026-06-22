@@ -89,7 +89,11 @@ fun HeroCarousel(
     val myListFR   = remember { FocusRequester() }
 
     if (items.isEmpty()) return
-    val active = items[activeIndex]
+    // The heroes list can change size under us (R33 live config push). Never index past its end —
+    // coerce on read (guards the frame before the effect runs) and snap a now-stale cursor back to
+    // the start so the dots / auto-advance stay consistent.
+    LaunchedEffect(items.size) { if (activeIndex > items.lastIndex) { activeIndex = 0; resetTick++ } }
+    val active = items[activeIndex.coerceIn(0, items.lastIndex)]
 
     // Auto-advance; resets when the user manually changes slide. 0 seconds = off.
     if (autoAdvanceSeconds > 0 && items.size > 1) {
