@@ -101,6 +101,17 @@ private fun buildShell(): String {
         """<option value="${u.id}"$sel>${u.displayName.htmlEsc()}</option>"""
     }
     return """
+    <style>
+      /* Sticky section nav (anchored side menu) — mirrors wf.css .navitem, with button-chrome reset. */
+      .rav-nav-item {
+        display:block; width:100%; text-align:left; background:none; border:none; cursor:pointer;
+        font-family:inherit; font-size:.9rem; font-weight:500; color:var(--ink-soft);
+        padding:9px 11px; border-radius:var(--radius-s);
+        transition:background .15s ease, color .15s ease;
+      }
+      .rav-nav-item:hover { background:var(--fill-3); color:var(--ink); }
+      .rav-nav-item.active { background:var(--hi-soft); color:var(--acc-ink); font-weight:600; }
+    </style>
     ${datalistsHtml()}
     <div class="pagebar">
       <h1>$RAVILO_MARK Ravilo TV</h1>
@@ -175,6 +186,8 @@ private fun wireShell(container: Element, scope: CoroutineScope) {
             val btn = btns.item(i) as? HTMLElement ?: continue
             val sectId = btn.getAttribute("data-rav-sect") ?: continue
             btn.addEventListener("click") { _ ->
+                for (j in 0 until btns.length) (btns.item(j) as? HTMLElement)?.classList?.remove("active")
+                btn.classList.add("active")
                 container.querySelector("#$sectId")?.let { scrollIntoViewSmooth(it) }
             }
         }
