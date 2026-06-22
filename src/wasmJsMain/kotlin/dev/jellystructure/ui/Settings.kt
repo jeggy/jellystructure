@@ -35,7 +35,7 @@ fun renderSettings(container: Element, scope: CoroutineScope, query: Map<String,
         <div class="pagebar" id="set-pagebar">
           <h1>Settings</h1>
           <span class="spacer"></span>
-          <button id="test-connections" class="btn sm ghost">Test connections</button>
+          <button id="test-connections" class="btn sm ghost"><span id="test-conn-label">Test connections</span><span id="test-conn-count" style="display:none;margin-left:6px;background:var(--bad);color:#fff;border-radius:99px;padding:0 7px;font-size:.72rem;font-weight:600"></span></button>
           <button id="save-settings" class="btn primary">Save</button>
         </div>
         <p class="page-sub">Configuration is persisted to <code>config.toml</code> on the server.</p>
@@ -45,13 +45,13 @@ fun renderSettings(container: Element, scope: CoroutineScope, query: Map<String,
 
           <nav style="width:160px;flex-shrink:0;position:sticky;top:88px;">
             <div style="display:flex;flex-direction:column;gap:2px;">
-              <button data-sect="sect-connections" class="settings-nav-item" style="background:none;border:none;text-align:left;padding:5px 8px;border-radius:5px;font-size:.85rem;cursor:pointer;color:var(--ink-soft);">Connections</button>
-              <button data-sect="sect-libraries" class="settings-nav-item" style="background:none;border:none;text-align:left;padding:5px 8px;border-radius:5px;font-size:.85rem;cursor:pointer;color:var(--ink-soft);">Library mapping</button>
-              <button data-sect="sect-scanning" class="settings-nav-item" style="background:none;border:none;text-align:left;padding:5px 8px;border-radius:5px;font-size:.85rem;cursor:pointer;color:var(--ink-soft);">Scanning</button>
-              <button data-sect="sect-metadata" class="settings-nav-item" style="background:none;border:none;text-align:left;padding:5px 8px;border-radius:5px;font-size:.85rem;cursor:pointer;color:var(--ink-soft);">Metadata</button>
-              <button data-sect="sect-advanced" class="settings-nav-item" style="background:none;border:none;text-align:left;padding:5px 8px;border-radius:5px;font-size:.85rem;cursor:pointer;color:var(--ink-soft);">Advanced</button>
-              <button data-sect="sect-crossseed" class="settings-nav-item" style="background:none;border:none;text-align:left;padding:5px 8px;border-radius:5px;font-size:.85rem;cursor:pointer;color:var(--ink-soft);">Cross-seed safety</button>
-              <button data-sect="sect-notifications" class="settings-nav-item" style="background:none;border:none;text-align:left;padding:5px 8px;border-radius:5px;font-size:.85rem;cursor:pointer;color:var(--ink-soft);">Notifications</button>
+              ${settingsNavItemHtml("sect-connections", "Connections")}
+              ${settingsNavItemHtml("sect-libraries", "Library mapping")}
+              ${settingsNavItemHtml("sect-scanning", "Scanning")}
+              ${settingsNavItemHtml("sect-metadata", "Metadata")}
+              ${settingsNavItemHtml("sect-crossseed", "Cross-seed safety")}
+              ${settingsNavItemHtml("sect-notifications", "Notifications")}
+              ${settingsNavItemHtml("sect-advanced", "Advanced")}
             </div>
           </nav>
 
@@ -154,16 +154,6 @@ fun renderSettings(container: Element, scope: CoroutineScope, query: Map<String,
               </div>
             </div>
 
-            <div class="card" id="sect-advanced">
-              <h3 style="font-size:1rem;margin:0 0 10px">Advanced</h3>
-              <div style="border:1px solid var(--bad);border-radius:8px;padding:14px 16px">
-                <div style="font-size:.9rem;font-weight:600;color:var(--bad);margin-bottom:4px">Danger zone</div>
-                <p class="hint" style="margin:0 0 12px">Permanently deletes all scanned media data and resets scan state. Your media files and NFOs on disk are not touched. You will need to run a full scan afterwards.</p>
-                <button id="clear-all-data-btn" class="btn sm" style="background:var(--bad);color:#fff;border-color:var(--bad)">Clear all scanned data</button>
-                <span id="clear-all-msg" class="tiny muted" style="margin-left:10px;display:none"></span>
-              </div>
-            </div>
-
             <div class="card" id="sect-crossseed">
               <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
                 <h3 style="font-size:1rem;margin:0">Cross-seed safety</h3>
@@ -248,6 +238,16 @@ fun renderSettings(container: Element, scope: CoroutineScope, query: Map<String,
               </div>
             </div>
 
+            <div class="card" id="sect-advanced">
+              <h3 style="font-size:1rem;margin:0 0 10px">Advanced</h3>
+              <div style="border:1px solid var(--bad);border-radius:8px;padding:14px 16px">
+                <div style="font-size:.9rem;font-weight:600;color:var(--bad);margin-bottom:4px">Danger zone</div>
+                <p class="hint" style="margin:0 0 12px">Permanently deletes all scanned media data and resets scan state. Your media files and NFOs on disk are not touched. You will need to run a full scan afterwards.</p>
+                <button id="clear-all-data-btn" class="btn sm" style="background:var(--bad);color:#fff;border-color:var(--bad)">Clear all scanned data</button>
+                <span id="clear-all-msg" class="tiny muted" style="margin-left:10px;display:none"></span>
+              </div>
+            </div>
+
           </div>
 
           <div class="card" style="width:300px;flex-shrink:0">
@@ -271,6 +271,53 @@ fun renderSettings(container: Element, scope: CoroutineScope, query: Map<String,
     if (sectParam != null) {
         val target = document.getElementById(sectParam) ?: document.getElementById("sect-$sectParam")
         target?.let { scrollIntoViewSmooth(it) }
+    }
+}
+
+/** Left-nav button with a hidden failure badge (Phase: health-check bubbling). */
+private fun settingsNavItemHtml(sectId: String, label: String): String =
+    """<button data-sect="$sectId" class="settings-nav-item" style="display:flex;align-items:center;gap:6px;background:none;border:none;text-align:left;padding:5px 8px;border-radius:5px;font-size:.85rem;cursor:pointer;color:var(--ink-soft);"><span style="flex:1">$label</span><span class="nav-badge" data-badge="$sectId" style="display:none;background:var(--bad);color:#fff;border-radius:99px;padding:0 6px;font-size:.7rem;font-weight:600;flex-shrink:0"></span></button>"""
+
+// Maps a HealthCheck.name to the settings section that owns it, for failure bubbling.
+private val HEALTH_CHECK_SECTION = mapOf(
+    "Jellyfin" to "sect-connections",
+    "TMDB API key" to "sect-connections",
+    "Disk space" to "sect-scanning",
+    "mkvpropedit" to "sect-scanning",
+    "ffprobe" to "sect-scanning",
+)
+
+private fun applyHealthFailures(failsBySection: Map<String, Int>) {
+    // Per-section nav badges
+    document.querySelectorAll(".nav-badge").let { nodes ->
+        for (i in 0 until nodes.length) {
+            val badge = nodes.item(i) as? HTMLElement ?: continue
+            val sect = badge.getAttribute("data-badge") ?: continue
+            val n = failsBySection[sect] ?: 0
+            if (n > 0) { badge.textContent = n.toString(); badge.style.display = "inline-block" }
+            else badge.style.display = "none"
+        }
+    }
+    // Top "Test connections" button danger state + count
+    val total = failsBySection.values.sum()
+    val btn = document.getElementById("test-connections") as? HTMLElement
+    val label = document.getElementById("test-conn-label") as? HTMLElement
+    val countEl = document.getElementById("test-conn-count") as? HTMLElement
+    if (total > 0) {
+        label?.textContent = "Test connections — issues found"
+        countEl?.let { it.textContent = total.toString(); it.style.display = "inline-block" }
+        btn?.style?.setProperty("border-color", "var(--bad)")
+        btn?.style?.setProperty("color", "var(--bad)")
+    } else {
+        label?.textContent = "Test connections"
+        countEl?.style?.display = "none"
+        btn?.style?.removeProperty("border-color")
+        btn?.style?.removeProperty("color")
+    }
+    // Scroll to the first failing section
+    if (total > 0) {
+        val firstSect = failsBySection.entries.firstOrNull { it.value > 0 }?.key
+        firstSect?.let { document.getElementById(it)?.let { el -> scrollIntoViewSmooth(el) } }
     }
 }
 
@@ -543,6 +590,14 @@ private fun attachListeners(scope: CoroutineScope) {
                      <span class="muted tiny">${check.detail.esc()}</span>
                    </div>"""
             }
+            // Bubble failures up to the per-section nav badges + the top button (scroll to first failure)
+            val failsBySection = mutableMapOf<String, Int>()
+            report.checks.filter { !it.ok }.forEach { check ->
+                val sect = HEALTH_CHECK_SECTION[check.name] ?: return@forEach
+                failsBySection[sect] = (failsBySection[sect] ?: 0) + 1
+            }
+            applyHealthFailures(failsBySection)
+
             val jellyfinOk = report.checks.find { it.name == "Jellyfin" }?.ok == true
             // Update per-field inline badges
             val jfBadge = document.getElementById("jf-token-badge") as? HTMLElement
