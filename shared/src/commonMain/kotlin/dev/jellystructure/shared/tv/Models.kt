@@ -10,6 +10,8 @@ enum class RowKind { CONTINUE, NEWLY_ADDED, GENRE, CUSTOM }
 enum class ChannelStyle { LOGO, TEXT }
 enum class TileShape { POSTER, LANDSCAPE }
 enum class Skin { AURORA, MIDNIGHT, NOIR }
+/** Join mode for a condition stack (R32 workbench). */
+enum class MatchMode { ALL, ANY }
 
 // ─── Pairing ──────────────────────────────────────────────────────────────────
 
@@ -204,6 +206,22 @@ data class HeroConfig(
     val enabled: Boolean = true,
     val order: Int = 0,
     val override: Boolean = false,
+    // R32 hero-item dressing (optional; null/absent ⇒ defaults).
+    val badge: String? = null,
+    val tagline: String? = null,
+    @SerialName("clearlogo_overlay") val clearlogoOverlay: Boolean = true,
+)
+
+/**
+ * One filter condition (R32 workbench). `facet` is one of: studio, network, genre, tag,
+ * audio_language, audio_codec, track_title, hero_item. `op` is is_any_of | is_none_of for list
+ * facets, or contains | not_contains for track_title.
+ */
+@Serializable
+data class Condition(
+    val facet: String,
+    val op: String = "is_any_of",
+    val values: List<String> = emptyList(),
 )
 
 @Serializable
@@ -213,10 +231,13 @@ data class ChannelConfig(
     val style: ChannelStyle = ChannelStyle.TEXT,
     @SerialName("brand_color") val brandColor: String? = null,
     @SerialName("logo_url") val logoUrl: String? = null,
+    // Legacy single typed filters — superseded by `conditions` when that is non-empty.
     @SerialName("filter_network") val filterNetwork: String? = null,
     @SerialName("filter_studio") val filterStudio: String? = null,
     @SerialName("filter_genre") val filterGenre: String? = null,
     @SerialName("filter_tag") val filterTag: String? = null,
+    val match: MatchMode = MatchMode.ALL,
+    val conditions: List<Condition> = emptyList(),
     val enabled: Boolean = true,
     val order: Int = 0,
 )
@@ -229,6 +250,8 @@ data class RowConfig(
     val enabled: Boolean = true,
     val order: Int = 0,
     @SerialName("media_kind") val mediaKind: String? = null, // "MOVIE", "SERIES", or null = all
+    val match: MatchMode = MatchMode.ALL,
+    val conditions: List<Condition> = emptyList(),
 )
 
 @Serializable
@@ -245,8 +268,8 @@ data class RaviloConfig(
     @SerialName("show_continue_progress") val showContinueProgress: Boolean = true,
     @SerialName("tile_shape") val tileShape: TileShape = TileShape.POSTER,
     @SerialName("ui_language") val uiLanguage: String = "en",
-    @SerialName("hero_height_pct") val heroHeightPct: Int = 56,       // % of screen the hero fills (30..70)
-    @SerialName("auto_advance_seconds") val autoAdvanceSeconds: Int = 6, // hero carousel interval seconds; 0 = off (0..120)
+    @SerialName("hero_height_pct") val heroHeightPct: Int = 56,       // % of screen the hero fills (30..100)
+    @SerialName("auto_advance_seconds") val autoAdvanceSeconds: Int = 7, // hero carousel interval seconds; 0 = off (0..120)
 ) {
     /** The skin actually rendered: the viewer's override when allowed, else the operator default. */
     fun effectiveSkin(): Skin = if (allowSkinOverride) (viewerSkinOverride ?: defaultSkin) else defaultSkin
