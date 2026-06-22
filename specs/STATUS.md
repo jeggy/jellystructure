@@ -8,13 +8,17 @@ _Last updated: 2026-06-22_
 
 ## Current focus
 
-**Phases 0–46 complete.** Next up is **[Phase 47 — Artwork manager](requirements/phase-47-artwork-manager.md)**
-(Planned): a full artwork-editing surface on Movie & Series detail — asset rail + inline TMDB gallery,
-resolved-language-first candidate filtering with a never-empty fallback (**no-language `xx` is its own
-bucket, distinct from "All"**), drag-drop/upload/URL replace, and series season-poster + per-episode-still
-management. Builds on Phase 31 (artwork fetch/cache) + Phase 32 (TMDB match picker). Approved design
-mockups in `design/app/media.html` + `design/app/series.html`.
+**Phases 0–47 complete.** [Phase 47 — Artwork manager](requirements/archive/phase-47-artwork-manager.md)
+shipped the full artwork-editing surface on Movie & Series detail: a left **asset rail**
+(Poster/Backdrop/Clearlogo/Banner) with on-disk status, an inline **TMDB candidate gallery** with
+resolved-language-first filtering and a **never-empty fallback** (**no-language `xx` is its own bucket,
+distinct from "All"**), Prefer textless/with-text, hi-res + vote/resolution sort, click-to-stage +
+**Save to disk**, drag-drop/upload/Paste-URL, and series **season-poster** + **per-episode-still**
+management with a "Fetch all missing" batch. Backend: `TmdbClient` image endpoints + candidate/save
+routes on `MediaRoutes`; reuses the Phase 31/32 fetch/cache infra (no new pipeline).
 
+No further admin phases are queued. The next cross-product work is Ravilo **R32** (unified filter
+workbench + Library round-trip) — see [`ravilo/STATUS.md`](ravilo/STATUS.md).
 See [`requirements/README.md`](requirements/README.md) for the full index.
 
 ## Sibling product — Ravilo (Android TV + Web)
