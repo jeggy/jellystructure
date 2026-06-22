@@ -12,13 +12,13 @@ _Last updated: 2026-06-22_
 
 ## Current focus
 
-**Planned next (from 2026-06-22 on-device feedback) — specs in `requirements/`:** R38 launcher-icon
-optical centering (mark reads low in the Apps overview) · R39 channel logo fills the button (cover, not
-contain) · R40 instant back navigation (cache screen state, no reload skeleton) · R41 TV subtitle tracks
-(always-zero bug — source from Jellyfin PlaybackInfo, fix URL + selection) · R42 focus-animation viewport
-jump (stop bring-into-view re-centring + reserve scale space). Investigated 2026-06-22; not yet implemented.
-
-**Phases R01–R37 complete.** [R36 — Channel-button editor](requirements/phase-R36-channel-button-editor.md)
+**Phases R01–R42 complete.** From 2026-06-22 on-device feedback: **R38** launcher-icon optical centering
+(the top-heavy mark read low — composite with an upward offset, icon pack regenerated), **R39** channel
+logo fills the button (cover + clipped corners on TV + admin + mockup), **R40** instant back navigation
+(retain screen stores in an app-root registry + idempotent load — no reload skeleton), **R41** TV subtitle
+tracks (picker now reads player-discovered tracks like audio + backend sources external subs from Jellyfin
+`MediaStreams` — fixes the always-zero, episodes included), **R42** focus-animation viewport jump
+(edge-based `BringIntoViewSpec` so visible tiles aren't re-centred). All compile; APK redeployed to stue TV. [R36 — Channel-button editor](requirements/phase-R36-channel-button-editor.md)
 **is complete (2026-06-22).** The channel-button look is configured only in the editor popup: the inline
 Logo/Text + color cluster is gone; each config row shows a live chip + a **✎ Edit** pencil. In the popup,
 **Logo** means a real **image asset** — pick a prior upload or upload a PNG/SVG (stored server-side under

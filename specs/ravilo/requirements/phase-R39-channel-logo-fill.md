@@ -1,6 +1,6 @@
 # Phase R39 — Channel logo fills the button (cover, not contain)
 
-**Status:** Planned · _an uploaded channel logo should fill the entire channel-button box edge-to-edge
+**Status:** ✓ Done · _an uploaded channel logo should fill the entire channel-button box edge-to-edge
 (cover), clipped by the box's rounded corners — not be contained/centred with padding. Consistent across
 the TV app, the admin preview popup, the admin row chip, and the design mockup._
 

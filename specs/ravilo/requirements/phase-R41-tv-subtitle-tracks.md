@@ -1,6 +1,6 @@
 # Phase R41 — TV subtitle tracks (always-zero bug)
 
-**Status:** Planned · _the player's Audio & Subs picker always shows zero subtitles. Source subtitles
+**Status:** ✓ Done · _the player's Audio & Subs picker always shows zero subtitles. Source subtitles
 reliably from Jellyfin, fix the malformed subtitle URL, and make subtitle selection actually work._
 
 ## Problem
