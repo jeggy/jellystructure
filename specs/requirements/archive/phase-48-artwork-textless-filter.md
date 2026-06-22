@@ -1,8 +1,8 @@
 # Phase 48 — Artwork manager: make the Textless / With-text filter work (FR-AM2)
 
-**Status:** Planned · _the artwork gallery's "Textless / With text" pills don't filter — they only
-re-sort, and within a single-language bucket that sort is a no-op, so the pills appear dead. Unify the
-language + textless/with-text controls into one real, single-select filter on TMDB's `iso_639_1`._
+**Status:** ✓ Done · _the artwork gallery's "Textless / With text" pills didn't filter — they only
+re-sorted, a no-op within a single-language bucket, so the pills appeared dead. Unified the language +
+textless/with-text controls into one real, single-select filter on TMDB's `iso_639_1` (Approach A)._
 
 > Follow-up to **[Phase 47 — Artwork manager](archive/phase-47-artwork-manager.md)**. No backend/TMDB
 > change — the candidate DTO already carries the language field. UI behaviour only, on the Movie/Series
@@ -81,5 +81,8 @@ language clears the prefer). This fixes the bug with less restructuring but keep
 ## Design reference
 `src/wasmJsMain/.../ui/MediaDetail.kt`: `filteredCandidates()` (~L2054), the chip row + counts
 (~L2082–2092), the Textless/With-text pills (~L2144–2147), the chip wiring (~L2164–2176), the
-`artLang`/`artPrefer` state (~L1901–1902) and the default ladder (~L2045–2049). Mockups:
-`design/app/media.html` + `design/app/series.html` Artwork tab. (No code is changed by this spec.)
+the default ladder. **Implemented (Approach A):** `artLang` now holds the unified selection
+(`""`=All · `"textless"`=lang null · `"withtext"`=lang≠null · else a code); `artPrefer` and the prefer
+pills/sort are removed; chips `All · Textless · With text · <langs>` are each a real filter in
+`filteredCandidates()`; default ladder resolves to resolved-lang → `textless` → All; new `artFilterLabel`
+for the explainer. The `design/app/media.html` mockup was synced to the same single-select model.

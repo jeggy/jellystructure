@@ -1907,8 +1907,8 @@ private var artScope: CoroutineScope? = null
 private var artTargets: List<ArtTarget> = emptyList()
 private var artSel = 0
 private var artResp: ArtworkCandidatesResponse? = null
-private var artLang = ""        // "" = All · "xx" = no-language · else a language code
-private var artPrefer = ""      // "" · "textless" · "withtext"
+private var artLang = ""        // unified language/text filter (Phase 48):
+                                // "" = All · "textless" = no text · "withtext" = any language · else a language code
 private var artHiRes = false
 private var artSort = "vote"    // vote | res
 private var artStaged: String? = null   // staged source: a TMDB file_path or a full URL
@@ -1923,6 +1923,14 @@ private fun fmt1(d: Double): String = ((d * 10).toInt() / 10.0).toString()
 private fun langLabel(code: String?): String = when {
     code == null || code == "xx" -> "No language"
     else -> code.uppercase()
+}
+
+/** Readable label for the unified artwork language/text filter (Phase 48). */
+private fun artFilterLabel(sel: String): String = when (sel) {
+    "" -> "all languages"
+    "textless" -> "textless"
+    "withtext" -> "with-text (any language)"
+    else -> sel.uppercase()
 }
 
 private suspend fun loadArtworkTab(item: MediaItem, scope: CoroutineScope) {
@@ -2047,13 +2055,13 @@ private suspend fun selectArtTarget(i: Int) {
     val t = artTargets.getOrNull(i) ?: return
     gallery.innerHTML = """<span class="muted tiny">Loading candidates…</span>"""
     artResp = galleryFetch(t)
-    artStaged = null; artStagedThumb = null; artPrefer = ""; artHiRes = false; artSort = "vote"
-    // Resolved-first, never-empty fallback: resolved lang → no-language → All.
+    artStaged = null; artStagedThumb = null; artHiRes = false; artSort = "vote"
+    // Resolved-first, never-empty fallback: resolved lang → textless → All.
     val cands = artResp?.candidates ?: emptyList()
     val resolved = artResp?.resolvedLanguage
     artLang = when {
         resolved != null && cands.any { it.lang == resolved } -> resolved
-        cands.any { it.lang == null } -> "xx"
+        cands.any { it.lang == null } -> "textless"
         else -> ""
     }
     renderArtGallery()
@@ -2062,21 +2070,17 @@ private suspend fun selectArtTarget(i: Int) {
 
 private fun filteredCandidates(): List<ArtworkCandidate> {
     val all = artResp?.candidates ?: emptyList()
-    var list = when (artLang) {
+    // Phase 48: one single-select filter on iso_639_1 (textless = lang null, withtext = any language).
+    val list0 = when (artLang) {
         "" -> all
-        "xx" -> all.filter { it.lang == null }
+        "textless" -> all.filter { it.lang == null }
+        "withtext" -> all.filter { it.lang != null }
         else -> all.filter { it.lang == artLang }
     }
-    if (artHiRes) list = list.filter { it.width >= 1000 || it.height >= 1000 }
+    val list = if (artHiRes) list0.filter { it.width >= 1000 || it.height >= 1000 } else list0
     val byVote = compareByDescending<ArtworkCandidate> { it.voteAverage }.thenByDescending { it.width }
     val byRes = compareByDescending<ArtworkCandidate> { it.width }.thenByDescending { it.voteAverage }
-    var sorted = list.sortedWith(if (artSort == "res") byRes else byVote)
-    sorted = when (artPrefer) {
-        "textless" -> sorted.sortedByDescending { it.lang == null }
-        "withtext" -> sorted.sortedByDescending { it.lang != null }
-        else -> sorted
-    }
-    return sorted
+    return list.sortedWith(if (artSort == "res") byRes else byVote)
 }
 
 private fun renderArtGallery() {
@@ -2087,9 +2091,10 @@ private fun renderArtGallery() {
     val all = resp.candidates
     val resolved = resp.resolvedLanguage
 
-    // Language chips: All, No language, then per-language with counts (only langs that exist).
+    // Phase 48: one single-select filter on iso_639_1 — All · Textless · With text · <languages>.
     val langCounts = all.groupingBy { it.lang ?: "xx" }.eachCount()
     val noLangCount = langCounts["xx"] ?: 0
+    val withTextCount = all.size - noLangCount
     fun chip(code: String, label: String, count: Int?): String {
         val active = artLang == code
         val c = if (count != null) " <span class=\"tiny muted\">$count</span>" else ""
@@ -2097,7 +2102,8 @@ private fun renderArtGallery() {
     }
     val langChips = StringBuilder()
     langChips.append(chip("", "All", all.size))
-    if (noLangCount > 0) langChips.append(chip("xx", "No language", noLangCount))
+    if (noLangCount > 0) langChips.append(chip("textless", "Textless", noLangCount))
+    if (withTextCount > 0) langChips.append(chip("withtext", "With text", withTextCount))
     langCounts.keys.filter { it != "xx" }.sorted().forEach { langChips.append(chip(it, it.uppercase(), langCounts[it])) }
 
     val shown = filteredCandidates()
@@ -2107,8 +2113,8 @@ private fun renderArtGallery() {
     val fellBack = resolved != null && artLang != resolved && all.none { it.lang == resolved } && all.isNotEmpty()
     val explainer = when {
         all.isEmpty() -> "TMDB has no ${t.label.lowercase()} candidates for this title."
-        fellBack -> """No ${if (resolved != null) resolved.uppercase() + " " else ""}${t.label.lowercase()} on TMDB. Falling back to ${langLabel(if (artLang.isEmpty()) null else artLang)} (${shown.size}).${if (hidden > 0) " <a class=\"art-showall\">$hidden other-language candidate(s) hidden — show all →</a>" else ""}"""
-        else -> """Showing ${langLabel(if (artLang.isEmpty()) "all" else artLang).let { if (artLang.isEmpty()) "all languages" else it }} (${shown.size}).${if (hidden > 0) " <a class=\"art-showall\">$hidden hidden — show all →</a>" else ""}"""
+        fellBack -> """No ${if (resolved != null) resolved.uppercase() + " " else ""}${t.label.lowercase()} on TMDB. Falling back to ${artFilterLabel(artLang)} (${shown.size}).${if (hidden > 0) " <a class=\"art-showall\">$hidden other candidate(s) hidden — show all →</a>" else ""}"""
+        else -> """Showing ${artFilterLabel(artLang)} (${shown.size}).${if (hidden > 0) " <a class=\"art-showall\">$hidden hidden — show all →</a>" else ""}"""
     }
 
     val cards = if (shown.isEmpty()) {
@@ -2150,10 +2156,6 @@ private fun renderArtGallery() {
       <div class="art-filterbar">
         <div class="art-chips">$langChips</div>
         <span class="spacer"></span>
-        <span class="art-prefer">
-          <span class="art-chip${if (artPrefer == "textless") " on" else ""}" data-prefer="textless">Textless</span>
-          <span class="art-chip${if (artPrefer == "withtext") " on" else ""}" data-prefer="withtext">With text</span>
-        </span>
         <label class="art-hires"><input type="checkbox" id="art-hires" ${if (artHiRes) "checked" else ""}> Hi-res</label>
         <span class="seg art-sort">
           <span class="${if (artSort == "vote") "on" else ""}" data-sort="vote">Vote ★</span>
@@ -2174,16 +2176,6 @@ private fun wireArtGallery() {
         for (i in 0 until els.length) {
             val el = els.item(i) as? HTMLElement ?: continue
             el.addEventListener("click") { artLang = el.getAttribute("data-lang") ?: ""; renderArtGallery(); wireArtGallery() }
-        }
-    }
-    document.querySelectorAll("#art-gallery .art-chip[data-prefer]").let { els ->
-        for (i in 0 until els.length) {
-            val el = els.item(i) as? HTMLElement ?: continue
-            el.addEventListener("click") {
-                val p = el.getAttribute("data-prefer") ?: ""
-                artPrefer = if (artPrefer == p) "" else p
-                renderArtGallery(); wireArtGallery()
-            }
         }
     }
     document.querySelectorAll("#art-gallery .art-sort span").let { els ->
