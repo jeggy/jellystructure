@@ -90,7 +90,7 @@ fun ChannelScreen(
                     val nonEmpty = s.feed.rows.filter { it.items.isNotEmpty() }
                     if (nonEmpty.isEmpty()) {
                         Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
-                            Text("Nothing in this channel yet.", color = colors.textSecondary, fontSize = 16.sp)
+                            Text(str("browse.empty_channel"), color = colors.textSecondary, fontSize = 16.sp)
                         }
                     } else {
                         ChannelRows(rows = nonEmpty, tileShape = s.feed.tileShape, onItemSelect = onItemSelect)
