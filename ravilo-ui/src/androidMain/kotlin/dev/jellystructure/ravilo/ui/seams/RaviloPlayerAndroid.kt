@@ -9,6 +9,7 @@ import androidx.media3.common.MimeTypes
 import androidx.media3.common.Player
 import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.session.MediaSession
 import dev.jellystructure.ravilo.ui.RaviloAppContext
 import dev.jellystructure.shared.tv.SubTrack
 
@@ -26,6 +27,15 @@ actual class RaviloPlayer actual constructor() {
         RaviloPlayerEngine.renderersFactoryProvider?.invoke(ctx)?.let { builder.setRenderersFactory(it) }
         builder.build()
     }
+
+    // R44: a MediaSession bound to the player so the OS routes hardware transport keys (Play/Pause/
+    // Stop/FF/Rew/Next/Prev) to us and external controllers (Assistant/Bluetooth/Now-Playing) work.
+    // ExoPlayer maps the standard session commands to play/pause/seek; the shared chrome stays the
+    // source of truth for position polling.
+    private val mediaSessionLazy: Lazy<MediaSession> = lazy {
+        MediaSession.Builder(ctx, exo).setId("ravilo-player").build()
+    }
+    private val mediaSession: MediaSession by mediaSessionLazy
 
     actual fun load(streamUrl: String, startPositionMs: Long, subtitles: List<SubTrack>) {
         val subConfigs = subtitles.mapNotNull { sub ->
@@ -55,6 +65,7 @@ actual class RaviloPlayer actual constructor() {
         exo.setMediaItem(mediaItem)
         exo.seekTo(startPositionMs)
         exo.prepare()
+        mediaSession // touch the lazy session so it's active for the OS while this item plays (R44)
     }
 
     fun setVideoTextureView(tv: TextureView) { exo.setVideoTextureView(tv) }
@@ -105,7 +116,10 @@ actual class RaviloPlayer actual constructor() {
         }
     }
 
-    actual fun release() { exo.release() }
+    actual fun release() {
+        if (mediaSessionLazy.isInitialized()) mediaSession.release()
+        exo.release()
+    }
 
     actual val positionMs: Long get() = exo.currentPosition.coerceAtLeast(0)
     actual val durationMs: Long get() = exo.duration.let { if (it == C.TIME_UNSET) 0L else it.coerceAtLeast(0) }

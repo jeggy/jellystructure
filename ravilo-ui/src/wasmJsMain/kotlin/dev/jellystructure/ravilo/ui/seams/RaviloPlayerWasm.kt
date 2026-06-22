@@ -1,3 +1,5 @@
+@file:OptIn(kotlin.js.ExperimentalWasmJsInterop::class)
+
 package dev.jellystructure.ravilo.ui.seams
 
 import dev.jellystructure.shared.tv.SubTrack
@@ -27,6 +29,8 @@ actual class RaviloPlayer actual constructor() {
         }
         video.src = streamUrl
         video.currentTime = startPositionMs / 1000.0
+        // R44: route browser/OS media keys to the <video> via the Media Session API.
+        wireMediaSession(video)
         subtitles.forEach { sub ->
             val url = sub.url ?: return@forEach
             val trackEl = document.createElement("track")
@@ -72,3 +76,27 @@ actual class RaviloPlayer actual constructor() {
             PlayerSubtitleTrack(i, s.label ?: s.language ?: "Track ${i + 1}", s.language, s.forced, s.isDefault)
         }
 }
+
+/**
+ * R44: wire the browser Media Session API so OS / keyboard media-transport keys drive the <video>.
+ * Handlers operate on the element directly (no WASM↔JS callback bridge); the shared chrome reflects
+ * the new state on its next poll. Wrapped in try/catch — `mediaSession` is absent on some browsers.
+ */
+private fun wireMediaSession(video: HTMLVideoElement): Unit = js(
+    """{
+        if (typeof navigator !== 'undefined' && navigator.mediaSession) {
+            var ms = navigator.mediaSession;
+            try {
+                ms.setActionHandler('play', function () { video.play(); });
+                ms.setActionHandler('pause', function () { video.pause(); });
+                ms.setActionHandler('seekforward', function () {
+                    var d = video.duration; video.currentTime = Math.min(isFinite(d) ? d : 1e9, video.currentTime + 30);
+                });
+                ms.setActionHandler('seekbackward', function () {
+                    video.currentTime = Math.max(0, video.currentTime - 10);
+                });
+                ms.setActionHandler('stop', function () { video.pause(); });
+            } catch (e) {}
+        }
+    }"""
+)

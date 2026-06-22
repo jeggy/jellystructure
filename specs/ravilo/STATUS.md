@@ -12,11 +12,14 @@ _Last updated: 2026-06-23_
 
 ## Current focus
 
-**Phases R01–R43 complete. R44–R46 planned** — three items from on-device feedback (2026-06-23):
-**[R44](requirements/phase-R44-media-transport-keys.md)** wire the remote's physical
-Play/Pause/Stop/FF/Rew/Next/Prev keys (currently inert — only on-screen transport works) to the
-player via `Key.Media*` handling + a Media3 `MediaSession` on Android + `navigator.mediaSession` on
-web; **[R45](requirements/phase-R45-entry-scroll-focus-restore.md)** fix entry scroll/focus so a
+**Phases R01–R44 complete. R45–R46 planned.**
+**[R44](requirements/phase-R44-media-transport-keys.md) is complete (2026-06-23)** — the remote's
+physical Play/Pause/Stop/FF/Rew/Next/Prev keys were inert; now `dpadFocusable` maps + consumes
+`Key.Media*` (+ `Spacebar`) and PlayerScreen routes them to `togglePlay`/`skip`/`advanceNext`/restart/
+exit regardless of focus or chrome state, a Media3 `MediaSession` binds to the Android ExoPlayer (OS +
+external controllers; no double-toggle because Compose consumes the focused key), and web wires
+`navigator.mediaSession`. Remaining on-device items:
+**[R45](requirements/phase-R45-entry-scroll-focus-restore.md)** fix entry scroll/focus so a
 focused top action re-frames the hero at the top instead of auto-scrolling to a mid-page Play/Resume
 button (`playFR.requestFocus()` bring-into-view), and restore a content row's left inset after you
 scroll in and back; **[R46](requirements/phase-R46-track-label-metadata.md)** show Jellyfin's rich

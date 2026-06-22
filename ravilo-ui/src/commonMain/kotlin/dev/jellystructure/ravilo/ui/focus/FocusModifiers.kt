@@ -14,6 +14,12 @@ import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.pointerInput
 
 /**
+ * Physical remote / keyboard media-transport keys (R44). Distinct from D-pad/OK so the player can
+ * react to them no matter which on-screen control is focused, even with the chrome hidden.
+ */
+enum class MediaKey { PLAY_PAUSE, PLAY, PAUSE, STOP, FAST_FORWARD, REWIND, NEXT, PREVIOUS }
+
+/**
  * D-pad focus helper.
  *
  * Directional callbacks (`onLeft`/`onRight`/`onUp`/`onDown`) are **opt-in overrides**: when a
@@ -40,9 +46,26 @@ fun Modifier.dpadFocusable(
     onDown: (() -> Unit)? = null,
     onSelect: (() -> Unit)? = null,
     onBack: (() -> Unit)? = null,
+    onMediaKey: ((MediaKey) -> Unit)? = null,
 ): Modifier = this
     .onKeyEvent { ev ->
         if (ev.type != KeyEventType.KeyDown) return@onKeyEvent false
+        // Media-transport keys are global content actions, not focus moves — handle them first and
+        // independently of which child is focused (R44).
+        if (onMediaKey != null) {
+            val mk = when (ev.key) {
+                Key.MediaPlayPause, Key.Spacebar -> MediaKey.PLAY_PAUSE
+                Key.MediaPlay                    -> MediaKey.PLAY
+                Key.MediaPause                   -> MediaKey.PAUSE
+                Key.MediaStop                    -> MediaKey.STOP
+                Key.MediaFastForward             -> MediaKey.FAST_FORWARD
+                Key.MediaRewind                  -> MediaKey.REWIND
+                Key.MediaNext                    -> MediaKey.NEXT
+                Key.MediaPrevious                -> MediaKey.PREVIOUS
+                else                             -> null
+            }
+            if (mk != null) { onMediaKey(mk); return@onKeyEvent true }
+        }
         when (ev.key) {
             Key.DirectionLeft  -> onLeft?.invoke()?.let { true } ?: false
             Key.DirectionRight -> onRight?.invoke()?.let { true } ?: false
