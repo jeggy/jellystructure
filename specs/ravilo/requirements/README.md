@@ -57,6 +57,7 @@ truth** for which Ravilo phases exist and whether each is done or planned. Ravil
 | R40 | ✓ Done | **Instant back navigation** — Back re-shows a loading skeleton because `AnimatedContent` disposes the screen + its store; retain store state/cache so re-entry is instant with silent background refresh (Home/Channel/Browse/Detail/Search) | [R40](phase-R40-instant-back-navigation.md) |
 | R41 | ✓ Done | **TV subtitle tracks (always-zero bug)** — source subtitles from Jellyfin `PlaybackInfo`, fix the malformed (duplicated-id) subtitle URL, and make subtitle selection actually work (`TrackSelectionOverride` / external config); picker lists embedded + external | [R41](phase-R41-tv-subtitle-tracks.md) |
 | R42 | ✓ Done | **Fix focus-animation viewport jump** — stop bring-into-view re-centring already-visible tiles, reserve scale-overflow space (`trackPadV`), keep the scale draw-only; smooth focus with no screen jump | [R42](phase-R42-focus-animation-viewport-jump.md) |
+| R43 | ✓ Done | **Focus-navigation smoothness** — after R42 the jump was gone but moving focus still felt laggy: the focus shadow/border read animated values as modifier params (recomposition every frame) and the spring was soft. Run the whole focus animation in the draw phase (scale + shadow in `graphicsLayer{}`, ring in `drawWithCache`) → no per-frame recomposition, plus a snappier `StiffnessMedium` spring. Follow-up to R42 | [R43](phase-R43-focus-navigation-smoothness.md) |
 
 ## Suggested sequencing
 - **Foundation:** R01 → R02 → R03 → R04 (module + scaffold + auth + config store).
