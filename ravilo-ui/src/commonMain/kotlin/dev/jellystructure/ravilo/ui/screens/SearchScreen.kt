@@ -142,7 +142,7 @@ fun SearchScreen(
             )
             Spacer(Modifier.weight(1f))
             if (query.isNotEmpty()) {
-                Text("Clear", color = colors.accent, fontSize = 16.sp, fontFamily = sora)
+                Text(str("search.clear"), color = colors.accent, fontSize = 16.sp, fontFamily = sora)
             }
         }
         Spacer(Modifier.height(12.dp))
@@ -192,10 +192,10 @@ fun SearchScreen(
 
         // Results label
         val label = when {
-            query.isEmpty()                              -> "Suggestions"
+            query.isEmpty()                              -> str("search.suggestions_label")
             items.isEmpty() && state is SearchState.Loaded -> str("search.empty", mapOf("query" to query))
             state is SearchState.Loading                 -> str("loading")
-            else                                         -> "${items.size} results"
+            else                                         -> str("search.results", mapOf("count" to items.size.toString()))
         }
         Text(
             label,

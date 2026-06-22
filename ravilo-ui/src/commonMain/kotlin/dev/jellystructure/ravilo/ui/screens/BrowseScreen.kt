@@ -106,7 +106,7 @@ fun BrowseScreen(
         // Header
         Column(modifier = Modifier.padding(horizontal = RaviloDimens.screenPadH, vertical = 32.dp)) {
             val title = when (kind) {
-                BrowseKind.ALL -> "All"
+                BrowseKind.ALL -> str("browse.all")
                 BrowseKind.MOVIES -> str("nav.movies")
                 BrowseKind.SERIES -> str("nav.series")
                 BrowseKind.MY_LIST -> str("nav.my_list")
@@ -140,7 +140,7 @@ fun BrowseScreen(
                 }
                 // Count + grid
                 Text(
-                    "${s.results.items.size} titles",
+                    str("browse.titles", mapOf("count" to s.results.items.size.toString())),
                     color = colors.textSecondary,
                     fontSize = 16.sp,
                     modifier = Modifier.padding(horizontal = RaviloDimens.screenPadH),
@@ -169,7 +169,7 @@ private fun GenreChips(
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         items(chips.size, key = { i -> chips[i] ?: "all" }) { i ->
-            val label = chips[i] ?: "All"
+            val label = chips[i] ?: str("browse.all")
             val isActive = chips[i] == activeGenre
             var focused by remember { mutableStateOf(false) }
 
