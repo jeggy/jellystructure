@@ -1,6 +1,6 @@
 # Phase R38 — Launcher-icon optical centering
 
-**Status:** Planned · _the regenerated app icon centers the jellyfish **geometrically**, but the glyph is
+**Status:** ✓ Done · _the regenerated app icon centers the jellyfish **geometrically**, but the glyph is
 top-heavy (dome) with a thin trailing tail (tentacles), so it reads as sitting low in the Android TV
 Apps overview. Nudge the mark up to its **optical** centre and regenerate the icon pack._
 
