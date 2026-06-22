@@ -46,6 +46,15 @@ android {
         release {
             isMinifyEnabled    = true
             isShrinkResources  = true
+            // Opt-in dev convenience: `-Pravilo.releaseAsDebugId` suffixes the release id with
+            // `.debug` so a release (non-debuggable, R8) build installs as an in-place update over
+            // the paired debug app — lets you A/B the *real* on-device performance without
+            // re-pairing (R43 perf work showed the debug build, not the animation, was the lag).
+            // Off by default so production release builds keep the clean application id.
+            if (project.hasProperty("ravilo.releaseAsDebugId")) {
+                applicationIdSuffix = ".debug"
+                versionNameSuffix   = "-rel"
+            }
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
