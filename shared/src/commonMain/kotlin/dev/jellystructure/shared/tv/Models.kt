@@ -8,7 +8,7 @@ import kotlinx.serialization.Serializable
 enum class MediaKind { MOVIE, SERIES }
 enum class RowKind { CONTINUE, NEWLY_ADDED, GENRE, CUSTOM }
 enum class ChannelStyle { LOGO, TEXT }
-enum class TileShape { POSTER, LANDSCAPE }
+enum class TileShape { POSTER, LANDSCAPE, SQUARE }
 enum class Skin { AURORA, MIDNIGHT, NOIR }
 /** Join mode for a condition stack (R32 workbench). */
 enum class MatchMode { ALL, ANY }
@@ -139,7 +139,8 @@ data class HomeFeed(
     val channels: List<Channel>,
     val rows: List<Row>,
     @SerialName("hero_height_pct") val heroHeightPct: Int = 56,
-    @SerialName("auto_advance_seconds") val autoAdvanceSeconds: Int = 6,
+    @SerialName("auto_advance_seconds") val autoAdvanceSeconds: Int = 7,
+    @SerialName("tile_shape") val tileShape: TileShape = TileShape.POSTER,
 )
 
 // ─── Detail ───────────────────────────────────────────────────────────────────
