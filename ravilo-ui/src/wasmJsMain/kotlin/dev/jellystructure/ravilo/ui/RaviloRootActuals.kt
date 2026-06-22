@@ -24,10 +24,20 @@ private fun jsOrigin(): String = js("window.location.origin")
 private fun jsGetToken(): String? = js("localStorage.getItem('ravilo_token')")
 private fun jsSetToken(token: String): Unit = js("localStorage.setItem('ravilo_token', token)")
 private fun jsClearToken(): Unit = js("localStorage.removeItem('ravilo_token')")
+private fun jsGetBaseUrl(): String? = js("localStorage.getItem('ravilo_base_url')")
+private fun jsSetBaseUrl(url: String): Unit = js("localStorage.setItem('ravilo_base_url', url)")
+private fun jsClearBaseUrl(): Unit = js("localStorage.removeItem('ravilo_base_url')")
 
-actual fun raviloBaseUrl(): String = jsOrigin()
+// A persisted server override (set via "Change server") wins over the page origin. When the app is
+// served by the backend itself, no override is stored and we fall back to the origin. Persisting is
+// required because the session token is also persisted — without it a reload would point a cached
+// session at the page origin (e.g. a dev server) instead of the paired backend.
+actual fun raviloBaseUrl(): String = jsGetBaseUrl()?.takeIf { it.isNotBlank() } ?: jsOrigin()
 
-actual fun saveBaseUrl(url: String) { /* web always uses window.location.origin */ }
+actual fun saveBaseUrl(url: String) {
+    val trimmed = url.trim().trimEnd('/')
+    if (trimmed.isEmpty()) jsClearBaseUrl() else jsSetBaseUrl(trimmed)
+}
 
 actual object TokenStore {
     actual fun get(): String? = jsGetToken()
