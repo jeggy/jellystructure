@@ -36,19 +36,44 @@ import dev.jellystructure.ravilo.ui.seams.RemoteImage
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
 import dev.jellystructure.ravilo.ui.theme.SpaceGrotesk
 
-private fun parseBrandColor(hex: String?): Color? {
-    if (hex == null) return null
+private class BrandFill(val colors: List<Color>)
+
+private fun parseSolidColor(s: String): Color? {
+    val stripped = s.trim().removePrefix("#")
+    val hex = when (stripped.length) {
+        3 -> buildString { stripped.forEach { append(it).append(it) } } // #abc -> aabbcc
+        6, 8 -> stripped
+        else -> return null
+    }
     return try {
-        val stripped = hex.trimStart('#')
-        val argb = when (stripped.length) {
-            6 -> (0xFF000000L or stripped.toLong(16)).toULong().toLong()
-            8 -> stripped.toLong(16)
+        val argb = when (hex.length) {
+            6 -> (0xFF000000L or hex.toLong(16)).toULong().toLong()
+            8 -> hex.toLong(16)
             else -> return null
         }
         Color(argb)
     } catch (_: NumberFormatException) {
         null
     }
+}
+
+/**
+ * Parse a channel `brandColor` CSS fill into ordered stop colors. Accepts a solid hex
+ * (`#rgb`/`#rrggbb`/`#rrggbbaa`) or a single `linear-gradient(<deg>, <c1>, <c2>)`; the angle token is
+ * ignored (the card uses a fixed diagonal). Returns null for anything unparseable so the caller falls
+ * back to the theme accent.
+ */
+private fun parseBrandFill(brandColor: String?): BrandFill? {
+    val t = brandColor?.trim() ?: return null
+    if (t.startsWith("linear-gradient", ignoreCase = true)) {
+        val inner = t.substringAfter('(').substringBeforeLast(')')
+        val colors = inner.split(',')
+            .map { it.trim() }
+            .filter { it.isNotEmpty() && !it.endsWith("deg") && !it.startsWith("to ") }
+            .mapNotNull { parseSolidColor(it) }
+        return if (colors.isNotEmpty()) BrandFill(colors) else null
+    }
+    return parseSolidColor(t)?.let { BrandFill(listOf(it)) }
 }
 
 @Composable
@@ -69,14 +94,18 @@ fun ChannelCard(
     val shadowElevation by animateDpAsState(if (focused) 22.dp else 0.dp, dpSpec, label = "channelShadow")
 
     val cardShape = remember { RoundedCornerShape(18.dp) }
-    val brandColorParsed = remember(brandColor) { parseBrandColor(brandColor) }
-    val accentColor = brandColorParsed ?: colors.accent
+    val brandFill   = remember(brandColor) { parseBrandFill(brandColor) }
+    val accentColor = brandFill?.colors?.firstOrNull() ?: colors.accent
     val glowColor   = remember(accentColor) { accentColor.copy(alpha = 0.55f) }
 
-    // Diagonal branded gradient using Float.POSITIVE_INFINITY for density-independent diagonal
-    val cardGradient = remember(accentColor, colors.card) {
+    // Channel-button background. A gradient brandColor (e.g. "linear-gradient(135deg,#3b2a78,#15102e)")
+    // renders its own stops; a solid keeps the subtle accent→card wash. Diagonal via POSITIVE_INFINITY
+    // (density-independent); the authored angle is approximated to the card diagonal.
+    val cardGradient = remember(brandFill, accentColor, colors.card) {
+        val stops = if (brandFill != null && brandFill.colors.size >= 2) brandFill.colors
+                    else listOf(accentColor.copy(alpha = 0.28f), colors.card)
         Brush.linearGradient(
-            colors = listOf(accentColor.copy(alpha = 0.28f), colors.card),
+            colors = stops,
             start = androidx.compose.ui.geometry.Offset(0f, 0f),
             end = androidx.compose.ui.geometry.Offset(Float.POSITIVE_INFINITY, Float.POSITIVE_INFINITY),
         )
