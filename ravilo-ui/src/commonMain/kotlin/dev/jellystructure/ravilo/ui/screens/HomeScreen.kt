@@ -31,6 +31,7 @@ import dev.jellystructure.ravilo.ui.components.HomeLoadingShell
 import dev.jellystructure.ravilo.ui.components.StaticContentRow
 import dev.jellystructure.ravilo.ui.components.Tile
 import dev.jellystructure.ravilo.ui.components.TileVariant
+import dev.jellystructure.ravilo.ui.components.toTileVariant
 import dev.jellystructure.ravilo.ui.i18n.str
 import dev.jellystructure.ravilo.ui.theme.RaviloDimens
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
@@ -91,7 +92,7 @@ private fun HomeLoaded(
     val density = LocalDensity.current
     val containerH = LocalWindowInfo.current.containerSize.height
     val heroHeight = if (containerH > 0)
-        with(density) { containerH.toDp() } * (feed.heroHeightPct.coerceIn(20, 80) / 100f)
+        with(density) { containerH.toDp() } * (feed.heroHeightPct.coerceIn(30, 100) / 100f)
     else 460.dp
 
     val hasHero     = feed.heroes.isNotEmpty()
@@ -162,11 +163,13 @@ private fun HomeLoaded(
                 items = row.items,
                 itemKey = { card -> card.id },
             ) { _, card ->
-                val isLandscape = row.kind == RowKind.CONTINUE
+                // Continue Watching is always landscape (resume thumbnails); other rows follow the
+                // operator's configured tile shape (R32 §F: poster / landscape / square).
+                val variant = if (row.kind == RowKind.CONTINUE) TileVariant.LANDSCAPE else feed.tileShape.toTileVariant()
                 Tile(
                     title = card.title,
-                    posterUrl = if (isLandscape) card.backdropUrl ?: card.posterUrl else card.posterUrl,
-                    variant = if (isLandscape) TileVariant.LANDSCAPE else TileVariant.POSTER,
+                    posterUrl = if (variant == TileVariant.LANDSCAPE) card.backdropUrl ?: card.posterUrl else card.posterUrl,
+                    variant = variant,
                     progressPct = card.progressPct ?: 0f,
                     onSelect = { onItemSelect(card) },
                 )
