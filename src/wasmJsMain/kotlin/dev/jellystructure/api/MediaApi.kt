@@ -167,6 +167,8 @@ object MediaApi {
         audioCodec: String? = null,
         untaggedAudio: Boolean = false,
         tags: List<String> = emptyList(),
+        heroItem: String? = null,
+        viewer: String? = null,
     ): MediaPage? = runCatching {
         httpClient.get("/api/media") {
             if (kind != null) parameter("kind", kind.name)
@@ -183,6 +185,8 @@ object MediaApi {
             if (!audioCodec.isNullOrBlank()) parameter("audioCodec", audioCodec)
             if (untaggedAudio) parameter("untaggedAudio", "true")
             if (tags.isNotEmpty()) parameter("tags", tags.joinToString(","))
+            if (!heroItem.isNullOrBlank()) parameter("heroItem", heroItem)
+            if (!viewer.isNullOrBlank()) parameter("viewer", viewer)
         }.body<MediaPage>()
     }.getOrNull()
 

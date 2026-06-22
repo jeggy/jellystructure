@@ -6,6 +6,8 @@ import dev.jellystructure.api.RaviloApi
 import dev.jellystructure.scrollIntoViewSmooth
 import dev.jellystructure.shared.tv.ChannelConfig
 import dev.jellystructure.shared.tv.ChannelStyle
+import dev.jellystructure.shared.tv.Condition
+import dev.jellystructure.shared.tv.MatchMode
 import dev.jellystructure.shared.tv.HeroConfig
 import dev.jellystructure.shared.tv.RaviloConfig
 import dev.jellystructure.shared.tv.RowConfig
@@ -26,6 +28,7 @@ import org.w3c.dom.HTMLSelectElement
 
 private var currentUserId: String = ""
 private var currentConfig: RaviloConfig = RaviloConfig()
+private var rcScope: CoroutineScope? = null
 private var users: List<JellyfinUser> = emptyList()
 private var facets: Map<String, List<String>> = emptyMap() // "NETWORK"/"STUDIO"/"GENRE"/"TAG" -> values
 
@@ -34,10 +37,15 @@ private val AUTO_ADVANCE_OPTIONS = listOf(0 to "Off", 4 to "4 s", 6 to "6 s", 8 
 
 private fun genId(prefix: String) = "$prefix-${Random.nextInt(100_000, 999_999)}"
 
+private fun wbMode(match: String) = if (match == "ANY") MatchMode.ANY else MatchMode.ALL
+private fun wbConds(conds: List<WbCond>): List<Condition> =
+    conds.filter { it.values.isNotEmpty() || it.facet == "track_title" }.map { Condition(it.facet, it.op, it.values.toList()) }
+
 // The jellyfish brand mark (matches design/app/ravilo-config.html).
 private const val RAVILO_MARK = """<svg viewBox="0 0 100 100" aria-hidden="true" style="width:30px;height:30px;vertical-align:middle;filter:drop-shadow(0 0 8px rgba(123,110,240,.5))"><defs><linearGradient id="ravJelly" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#7b6ef0"/><stop offset="1" stop-color="#3fb6f5"/></linearGradient></defs><path d="M22 52 C22 24 78 24 78 52 C66 45 59 45 50 49 C41 45 34 45 22 52 Z" fill="url(#ravJelly)"/><g stroke="url(#ravJelly)" stroke-width="4.5" stroke-linecap="round" fill="none"><path d="M33 51 q-5 12 1 20 q5 8 0 14" opacity=".9"/><path d="M44 52 q-4 13 1 21 q4 9 0 13" opacity=".72"/><path d="M56 52 q4 13 -1 21 q-4 9 0 13" opacity=".72"/><path d="M67 51 q5 12 -1 20 q-5 8 0 14" opacity=".9"/></g></svg>"""
 
 fun renderRaviloConfig(container: Element, scope: CoroutineScope) {
+    rcScope = scope
     container.innerHTML = buildLoadingShell()
     scope.launch {
         users = runCatching { RaviloApi.getUsers() }.getOrDefault(emptyList())
@@ -370,10 +378,22 @@ private fun renderChannels(container: Element) {
           </p>
           $rows
           <button id="ch-add" class="btn sm ghost" style="margin-top:6px">+ Add channel</button>
+          <button id="ch-workbench" class="btn sm ghost" style="margin-top:6px">⚙ Build with workbench</button>
         </div>
     """.trimIndent()
     sect.querySelector("#ch-add")?.addEventListener("click") { _ ->
         structural(container, { currentConfig = currentConfig.copy(channels = currentConfig.channels + ChannelConfig(id = genId("ch"))) }, ::renderChannels)
+    }
+    sect.querySelector("#ch-workbench")?.addEventListener("click") { _ ->
+        val scope = rcScope ?: return@addEventListener
+        openWorkbench(scope, "New channel — condition workbench", viewer = currentUserId, applyLabel = "Create channel",
+            onApply = { match, _, conds ->
+                val label = conds.firstOrNull { it.values.isNotEmpty() }?.values?.firstOrNull() ?: "Channel"
+                structural(container, {
+                    currentConfig = currentConfig.copy(channels = currentConfig.channels +
+                        ChannelConfig(id = genId("ch"), name = label, match = wbMode(match), conditions = wbConds(conds)))
+                }, ::renderChannels)
+            })
     }
     wireReorder(container, sect, "ch",
         get = { currentConfig.channels }, set = { currentConfig = currentConfig.copy(channels = it) }, ::renderChannels)
@@ -438,10 +458,23 @@ private fun renderRows(container: Element) {
           </div>
           $rows
           <button id="row-add" class="btn sm ghost" style="margin-top:6px">+ Add row</button>
+          <button id="row-workbench" class="btn sm ghost" style="margin-top:6px">⚙ Build with workbench</button>
         </div>
     """.trimIndent()
     sect.querySelector("#row-add")?.addEventListener("click") { _ ->
         structural(container, { currentConfig = currentConfig.copy(rows = currentConfig.rows + RowConfig(id = genId("row"), kind = RowKind.GENRE)) }, ::renderRows)
+    }
+    sect.querySelector("#row-workbench")?.addEventListener("click") { _ ->
+        val scope = rcScope ?: return@addEventListener
+        openWorkbench(scope, "New content row — condition workbench", viewer = currentUserId, applyLabel = "Create row",
+            onApply = { match, include, conds ->
+                val label = conds.firstOrNull { it.values.isNotEmpty() }?.values?.firstOrNull() ?: "Custom row"
+                val mediaKind = when (include) { "movies" -> "MOVIE"; "series" -> "SERIES"; else -> null }
+                structural(container, {
+                    currentConfig = currentConfig.copy(rows = currentConfig.rows +
+                        RowConfig(id = genId("row"), kind = RowKind.CUSTOM, title = label, mediaKind = mediaKind, match = wbMode(match), conditions = wbConds(conds)))
+                }, ::renderRows)
+            })
     }
     wireReorder(container, sect, "row",
         get = { currentConfig.rows }, set = { currentConfig = currentConfig.copy(rows = it) }, ::renderRows)
