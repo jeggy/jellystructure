@@ -8,11 +8,17 @@ Ravilo is a sibling product **inside the jellystructure repo** — an Android TV
 canvas) streaming front-end built from one **Compose Multiplatform** codebase, talking only to the
 jellystructure backend.
 
-_Last updated: 2026-06-22_
+_Last updated: 2026-06-23_
 
 ## Current focus
 
-**Phases R01–R42 complete.** From 2026-06-22 on-device feedback: **R38** launcher-icon optical centering
+**Phases R01–R43 complete.** **R43** (2026-06-23) — focus-navigation smoothness: after R42 removed the
+jump, moving focus still felt laggy because the focus shadow/border read animated values as modifier
+parameters (recomposition every frame) and the spring was soft. The whole focus animation now runs in the
+**draw phase** (scale + shadow in `graphicsLayer{}`, ring in `drawWithCache`) so a focus move recomposes
+once, not per frame, with a snappier `StiffnessMedium` spring (`Tile.kt` + `ChannelCard.kt`).
+`LazyLayoutCacheWindow` neighbour-prefetch is deferred (needs Compose ≥1.9; repo is on CMP 1.8.1). From
+2026-06-22 on-device feedback: **R38** launcher-icon optical centering
 (the top-heavy mark read low — composite with an upward offset, icon pack regenerated), **R39** channel
 logo fills the button (cover + clipped corners on TV + admin + mockup), **R40** instant back navigation
 (retain screen stores in an app-root registry + idempotent load — no reload skeleton), **R41** TV subtitle

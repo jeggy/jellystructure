@@ -5,7 +5,6 @@ import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -19,11 +18,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -87,11 +89,12 @@ fun ChannelCard(
     val colors = RaviloTheme.colors
     val spaceGrotesk = SpaceGrotesk
     var focused by remember { mutableStateOf(false) }
-    val focusSpec = remember { spring<Float>(dampingRatio = 0.65f, stiffness = Spring.StiffnessMediumLow) }
-    val dpSpec    = remember { spring<Dp>(dampingRatio = 0.65f, stiffness = Spring.StiffnessMediumLow) }
-    val scale          by animateFloatAsState(if (focused) 1.08f else 1f, focusSpec, label = "channelScale")
-    val borderWidth    by animateDpAsState(if (focused) 3.dp else 0.dp, dpSpec, label = "channelBorder")
-    val shadowElevation by animateDpAsState(if (focused) 22.dp else 0.dp, dpSpec, label = "channelShadow")
+    // Snappier focus feel (R43).
+    val focusSpec = remember { spring<Float>(dampingRatio = 0.8f, stiffness = Spring.StiffnessMedium) }
+    val dpSpec    = remember { spring<Dp>(dampingRatio = 0.8f, stiffness = Spring.StiffnessMedium) }
+    val scale         by animateFloatAsState(if (focused) 1.08f else 1f, focusSpec, label = "channelScale")
+    val ringWidth     by animateDpAsState(if (focused) 3.dp else 0.dp, dpSpec, label = "channelBorder")
+    val glowElevation by animateDpAsState(if (focused) 22.dp else 0.dp, dpSpec, label = "channelShadow")
 
     val cardShape = remember { RoundedCornerShape(18.dp) }
     val brandFill   = remember(brandColor) { parseBrandFill(brandColor) }
@@ -134,17 +137,31 @@ fun ChannelCard(
         Box(
             modifier = Modifier
                 .matchParentSize()
-                .graphicsLayer { scaleX = scale; scaleY = scale }
-                .shadow(
-                    elevation = shadowElevation,
-                    shape = cardShape,
-                    clip = false,
-                    ambientColor = glowColor,
-                    spotColor = glowColor,
-                )
-                .clip(cardShape)
+                // R43: focus animation runs entirely in the draw phase (scale + shadow in graphicsLayer,
+                // ring in drawWithCache) — no per-frame recomposition.
+                .graphicsLayer {
+                    scaleX = scale; scaleY = scale
+                    this.shadowElevation = glowElevation.toPx()
+                    shape = cardShape
+                    clip = true
+                    ambientShadowColor = glowColor
+                    spotShadowColor = glowColor
+                }
                 .background(cardGradient)
-                .border(borderWidth, accentColor.copy(alpha = 0.7f), cardShape),
+                .drawWithCache {
+                    val radius = CornerRadius(18.dp.toPx())
+                    onDrawWithContent {
+                        drawContent()
+                        val bw = ringWidth.toPx()
+                        if (bw > 0f) drawRoundRect(
+                            color = accentColor.copy(alpha = 0.7f),
+                            cornerRadius = radius,
+                            style = Stroke(width = bw),
+                            topLeft = Offset(bw / 2f, bw / 2f),
+                            size = Size(size.width - bw, size.height - bw),
+                        )
+                    }
+                },
             contentAlignment = Alignment.Center,
         ) {
         // Sheen
