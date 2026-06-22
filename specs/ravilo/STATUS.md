@@ -24,7 +24,15 @@ Library offers **⚙ Add filter** + **Save filter as… Channel / Content row** 
 Movie/Series detail gained **★ Feature in Ravilo…** (locked-title hero builder + viewer picker writing
 `HeroConfig`). Hero height clamp is now 30–100% with a 7s auto-advance default (R32 §F).
 
-No Ravilo phases are queued. Note the workbench preview reports an honest **≈** count when a stack uses
+Next up is **[R33 — Live config push](requirements/phase-R33-live-config-push.md)** (Planned): a per-user
+WebSocket (`/api/tv/events`, device-token auth via query param for browsers) so a config write
+(`RaviloConfigService.save`, covering both the admin editor and viewer settings) pushes a `config_changed`
+signal to that user's connected TVs, which **silently re-pull** the authoritative feed/config — channel
+adds, hero-height/tile-shape/auto-advance, row reorders and skin changes appear in ~1s with no reload, no
+flicker, and no loss of scroll/focus. Pull-only today; Ktor WebSockets is already installed and the config
+write is a single hook point. Renders server-pushed state only (constitution). **Spec only — not implemented.**
+
+Note the workbench preview reports an honest **≈** count when a stack uses
 none-of / not-contains / Match-ANY (those are evaluated on the TV by `ConditionEvaluator`, not by the
 positive-only `/api/media` count).
 
