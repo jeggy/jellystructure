@@ -70,3 +70,34 @@
 /* freshly added rows pulse once */
 @keyframes cfNew { from { background: var(--hi-soft); } to { } }
 .cfg-row.cf-new { animation: cfNew 1.1s ease; }
+
+/* channel-button logo picker (in the channel popup) */
+.cf-logogrid { display: flex; flex-wrap: wrap; gap: 8px; }
+.cf-logotile { width: 84px; height: 50px; padding: 7px 9px; border-radius: 10px; cursor: pointer;
+  border: 1px solid var(--line-2); background: var(--fill-3);
+  display: flex; align-items: center; justify-content: center; overflow: hidden; transition: border-color .12s, box-shadow .12s; }
+.cf-logotile:hover { border-color: var(--line-3, var(--ink-dim)); }
+.cf-logotile img { max-width: 100%; max-height: 100%; object-fit: contain; }
+.cf-logotile.on { border-color: rgba(123,110,240,.95); box-shadow: 0 0 0 2px rgba(123,110,240,.35); }
+.cf-logoupload { flex-direction: column; gap: 1px; color: var(--ink-soft); font-weight: 600; }
+.cf-logoupload .cf-up-i { font-size: 1.15rem; line-height: 1; }
+.cf-logoupload:hover { color: var(--ink); }
+/* logo image inside the channel chip / preview */
+.studio-wm .cf-wm-img { max-width: 84%; max-height: 68%; object-fit: contain; }
+
+/* custom color / gradient builder */
+.cf-sw-custom { display: flex; align-items: center; justify-content: center; color: var(--ink-soft);
+  font-weight: 700; font-size: 1rem; line-height: 1; background: var(--fill-3); box-shadow: none; border: 2px dashed var(--line-2); }
+.cf-sw-custom.on { border-style: solid; }
+.cf-gradbuilder { margin-top: 12px; padding: 13px 14px; border: 1px solid var(--line-2); border-radius: 11px; background: var(--fill-2); }
+.cf-cfield { display: flex; flex-direction: column; gap: 6px; }
+.cf-cfield input[type=color] { width: 48px; height: 30px; padding: 0; border: 1px solid var(--line-2); border-radius: 7px; background: none; cursor: pointer; }
+.cf-cfield input[type=color]::-webkit-color-swatch-wrapper { padding: 2px; }
+.cf-cfield input[type=color]::-webkit-color-swatch { border: none; border-radius: 5px; }
+.cf-cfield input[type=range] { width: 100%; accent-color: #7b6ef0; }
+
+/* row edit affordance — signals each row opens the editor popup */
+.edit-ic { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px;
+  border-radius: 8px; color: var(--ink-dim); cursor: pointer; transition: background .12s, color .12s; }
+.edit-ic:hover { background: var(--fill-3); color: var(--acc-ink); }
+.cfg-row:hover .edit-ic { color: var(--ink-soft); }

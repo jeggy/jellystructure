@@ -48,15 +48,6 @@
   --card-bd:  1px solid var(--line);
   --blur:     blur(16px) saturate(125%);
   --ambient:  1;   /* aurora glows on */
-
-  /* aliases for code that references alternate token names — kept theme-adaptive by aliasing the
-     canonical tokens above, so they resolve correctly in both light and dark (no per-theme override). */
-  --surface:   var(--fill);
-  --border:    var(--line);
-  --muted:     var(--ink-soft);
-  --warn-fill: color-mix(in srgb, var(--warn) 22%, transparent);
-  --warn-ink:  var(--warn);
-  --font-display: 'Space Grotesk', 'Sora', sans-serif;
 }
 
 /* ---------- LIGHT THEME ---------- */

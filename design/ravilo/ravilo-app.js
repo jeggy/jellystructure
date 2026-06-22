@@ -23,7 +23,7 @@
     const appbar = el('div', 'appbar');
     appbar.innerHTML = `
       <div class="brand">
-        <svg class="mark" viewBox="0 0 100 100" aria-hidden="true">
+        <svg class="mark" viewBox="12 20 76 76" aria-hidden="true">
           <defs><linearGradient id="ravJelly" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="var(--accent)"/><stop offset="1" stop-color="var(--accent-2)"/></linearGradient></defs>
           <path d="M22 52 C22 24 78 24 78 52 C66 45 59 45 50 49 C41 45 34 45 22 52 Z" fill="url(#ravJelly)"/>
           <g stroke="url(#ravJelly)" stroke-width="4.5" stroke-linecap="round" fill="none">
