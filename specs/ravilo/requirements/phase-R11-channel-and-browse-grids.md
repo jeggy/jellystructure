@@ -1,6 +1,6 @@
 # Phase R11 — Channel view + browse grids (FR-RV11)
 
-**Status:** ✓ Done · _scoped channels and the everything-grids._
+**Status:** Planned · _scoped channels and the everything-grids._
 
 ## Problem
 From Home, selecting a channel (HBO, Dansk TV, …) should open a view with the **same rows scoped** to

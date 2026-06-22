@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ravilo — create-flow directions (filters & hero items)</title>
+<link rel="stylesheet" href="wf.css">
+<link rel="stylesheet" href="app.css">
+<style>
+  /* ===== create-flow exploration specific ===== */
+  .cf-panel { border: 1px solid rgba(123,110,240,.45); border-radius: var(--radius);
+    background: linear-gradient(180deg, rgba(123,110,240,.07), rgba(123,110,240,.02)); box-shadow: 0 18px 50px rgba(0,0,0,.4); overflow: hidden; }
+  .cf-panel-head { display: flex; align-items: center; gap: 10px; padding: 14px 16px; border-bottom: 1px solid var(--line); background: var(--fill-2); }
+  .cf-grab { color: var(--ink-dim); letter-spacing: -2px; font-size: 1rem; cursor: grab; }
+
+  /* mini poster / tile preview */
+  .mp { border-radius: 7px; position: relative; overflow: hidden; flex: none; box-shadow: 0 4px 12px rgba(0,0,0,.4); }
+  .mp .t { position: absolute; left: 6px; right: 6px; bottom: 5px; font-family: 'Space Grotesk',sans-serif; font-weight: 700;
+    font-size: .6rem; line-height: 1.05; color: #fff; text-shadow: 0 1px 4px rgba(0,0,0,.7); }
+  .mp .bdg { position: absolute; top: 5px; left: 5px; font-size: .5rem; font-weight: 700; letter-spacing: .03em;
+    background: rgba(0,0,0,.6); color: #fff; padding: 1px 5px; border-radius: 4px; backdrop-filter: blur(2px); }
+
+  /* facet builder bits */
+  .facet-sel { display: inline-flex; align-items: center; gap: 7px; padding: 7px 11px; border-radius: 8px;
+    background: var(--fill-2); border: 1px solid var(--line-2); font-size: .86rem; font-weight: 600; cursor: pointer; }
+  .facet-sel .k { color: var(--ink-soft); font-weight: 500; }
+  .vchip { display: inline-flex; align-items: center; gap: 6px; padding: 5px 9px; border-radius: 7px;
+    background: var(--hi-soft); border: 1px solid rgba(123,110,240,.4); color: var(--acc-ink); font-size: .82rem; font-weight: 600; }
+  .vchip .x { cursor: pointer; opacity: .6; }
+  .vchip.add { background: transparent; border-style: dashed; border-color: var(--line-2); color: var(--ink-soft); cursor: pointer; }
+  .opt-chip { padding: 5px 10px; border-radius: 7px; border: 1px solid var(--line-2); background: var(--fill-2);
+    font-size: .82rem; font-weight: 600; color: var(--ink-soft); cursor: pointer; }
+  .opt-chip.on { background: var(--hi-soft); border-color: rgba(123,110,240,.45); color: var(--acc-ink); }
+
+  /* condition row (advanced) */
+  .cond-row { display: flex; align-items: center; gap: 9px; padding: 10px 11px; border: 1px solid var(--line);
+    border-radius: 9px; background: var(--fill-2); flex-wrap: wrap; }
+  .cond-join { font-family: 'JetBrains Mono',monospace; font-size: .7rem; font-weight: 700; letter-spacing: .08em;
+    color: var(--acc-ink); padding: 2px 8px; }
+
+  /* match count pill */
+  .matchcount { display: inline-flex; align-items: baseline; gap: 8px; }
+  .matchcount .n { font-family: 'Space Grotesk',sans-serif; font-weight: 700; font-size: 1.7rem; color: var(--ok); line-height: 1; }
+  .matchcount .l { font-size: .82rem; color: var(--ink-soft); }
+
+  /* hero live preview */
+  .hero-prev { aspect-ratio: 16/9; border-radius: 12px; overflow: hidden; position: relative; border: 1px solid var(--line); }
+  .hero-prev .grad { position: absolute; inset: 0; }
+  .hero-prev .scrim { position: absolute; inset: 0; background: linear-gradient(90deg, rgba(0,0,0,.82) 0%, rgba(0,0,0,.45) 42%, transparent 70%),
+    linear-gradient(0deg, rgba(0,0,0,.6), transparent 50%); }
+  .hero-prev .body { position: absolute; left: 7%; bottom: 12%; max-width: 56%; }
+
+  /* swatch */
+  .sw { width: 26px; height: 26px; border-radius: 7px; cursor: pointer; box-shadow: inset 0 0 0 1px rgba(255,255,255,.14); border: 2px solid transparent; }
+  .sw.on { border-color: #fff; box-shadow: inset 0 0 0 1px rgba(255,255,255,.14), 0 0 0 2px var(--hi); }
+
+  .eyebrow { font-size: .68rem; text-transform: uppercase; letter-spacing: .08em; color: var(--ink-soft); font-weight: 700; }
+  .libfx { background: var(--hi-soft); border-color: rgba(123,110,240,.4); color: var(--acc-ink); }
+  .save-as-hero { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 8px; background: linear-gradient(0deg, rgba(7,9,14,.86), rgba(7,9,14,.5)); }
+</style>
+</head>
+<body class="wf-body app-body" style="margin:0;">
+<div id="root"></div>
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+<script type="text/babel" src="design-canvas.jsx"></script>
+<script type="text/babel" src="ravilo-createflows.jsx"></script>
+</body>
+</html>

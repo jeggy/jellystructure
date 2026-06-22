@@ -166,25 +166,8 @@
 .stat.alert:hover { box-shadow: 0 10px 30px rgba(255,111,97,.18); }
 
 /* ---------- library poster grid ---------- */
-/* NFO raw viewer (Phase 44) — tree sidebar + read-only XML pane */
-.nfo-layout { display: grid; grid-template-columns: 250px 1fr; gap: 14px; align-items: start; }
-.nfo-tree { max-height: 520px; overflow: auto; border: 1px solid var(--line); border-radius: var(--radius-s); padding: 8px; background: var(--fill-2); }
-.nfo-node { padding: 5px 9px; border-radius: 6px; cursor: pointer; font-size: .8rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.nfo-node:hover { background: var(--fill-3); }
-.nfo-node.sel { background: var(--hi-soft); color: var(--acc-ink); font-weight: 600; }
-.nfo-node.missing { color: var(--ink-dim); }
-.nfo-season-hd { padding: 6px; margin-top: 4px; font-size: .78rem; font-weight: 600; cursor: pointer; color: var(--ink-soft); user-select: none; }
-.nfo-season-hd:hover { color: var(--ink); }
-.nfo-caret { display: inline-block; width: 12px; }
-.nfo-season-body { padding-left: 10px; }
-.nfo-viewer { min-width: 0; }
-@media (max-width: 720px) { .nfo-layout { grid-template-columns: 1fr; } }
-
 .poster-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 20px; }
-.poster { cursor: pointer; text-decoration: none; color: var(--ink); display: flex; flex-direction: column; gap: 8px;
-  /* Skip layout/paint for off-screen cards so the library stays smooth at thousands of items
-     (find-in-page still works, unlike a JS virtualiser). Reserved size ≈ a card's natural height. */
-  content-visibility: auto; contain-intrinsic-size: 150px 300px; }
+.poster { cursor: pointer; text-decoration: none; color: var(--ink); display: flex; flex-direction: column; gap: 8px; }
 .poster .imgslot { height: 224px; transition: transform .2s ease, box-shadow .25s ease, outline-color .2s ease;
   outline: 2px solid transparent; outline-offset: 2px; }
 .poster:hover { text-decoration: none; }

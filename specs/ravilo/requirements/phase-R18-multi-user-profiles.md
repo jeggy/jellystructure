@@ -1,6 +1,6 @@
 # Phase R18 — Multi-user profiles & fast switching (FR-RV18)
 
-**Status:** ✓ Done · _several Jellyfin users signed in on one TV, with instant switching._
+**Status:** Planned · _several Jellyfin users signed in on one TV, with instant switching._
 
 > Extends **[R03](phase-R03-device-pairing-auth.md)** (device pairing) and the on-device settings of
 > **[R15](phase-R15-ondevice-settings-pairing.md)**. Where R03 pairs *one* user to a device, R18 lets
