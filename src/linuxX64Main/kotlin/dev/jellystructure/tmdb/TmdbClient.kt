@@ -120,6 +120,24 @@ data class TmdbEpisodeDetails(
     @SerialName("still_path") val stillPath: String? = null,
 )
 
+// --- Phase 47: TMDB images API (candidate galleries) ---
+@Serializable
+data class TmdbImagesResponse(
+    val posters: List<TmdbImage> = emptyList(),
+    val backdrops: List<TmdbImage> = emptyList(),
+    val logos: List<TmdbImage> = emptyList(),
+    val stills: List<TmdbImage> = emptyList(),
+)
+
+@Serializable
+data class TmdbImage(
+    @SerialName("file_path") val filePath: String,
+    @SerialName("iso_639_1") val languageCode: String? = null, // null = textless / no-language
+    @SerialName("vote_average") val voteAverage: Double = 0.0,
+    val width: Int = 0,
+    val height: Int = 0,
+)
+
 class TmdbClient(
     private val configStore: ConfigStore,
     private val baseUrl: String = "https://api.themoviedb.org/3",
@@ -349,4 +367,31 @@ class TmdbClient(
         if (result.isFailure) Logger.warn("TMDB episode details failed for series=$seriesId s${season}e${episode} lang=$language: ${result.exceptionOrNull()?.message}")
         return result.getOrNull()
     }
+
+    // --- Phase 47: image candidate galleries. No `language` param so TMDB returns every
+    // available image across all languages, including textless (iso_639_1 = null). ---
+    private suspend fun getImages(path: String): TmdbImagesResponse? {
+        val key = apiKey()
+        if (key.isBlank()) return null
+        val result = runCatching {
+            val response = http.get("$baseUrl/$path/images") {
+                parameter("api_key", key)
+            }
+            if (response.status == HttpStatusCode.TooManyRequests) {
+                delay(3000)
+                return getImages(path)
+            }
+            if (response.status.value == 404) return null
+            response.body<TmdbImagesResponse>()
+        }
+        if (result.isFailure) Logger.warn("TMDB images failed for $path: ${result.exceptionOrNull()?.message}")
+        return result.getOrNull()
+    }
+
+    suspend fun getMovieImages(tmdbId: Int): TmdbImagesResponse? = getImages("movie/$tmdbId")
+    suspend fun getTvImages(tmdbId: Int): TmdbImagesResponse? = getImages("tv/$tmdbId")
+    suspend fun getSeasonImages(seriesId: Int, season: Int): TmdbImagesResponse? =
+        getImages("tv/$seriesId/season/$season")
+    suspend fun getEpisodeImages(seriesId: Int, season: Int, episode: Int): TmdbImagesResponse? =
+        getImages("tv/$seriesId/season/$season/episode/$episode")
 }

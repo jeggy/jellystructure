@@ -23,6 +23,8 @@ import dev.jellystructure.model.NfoFileTree
 import dev.jellystructure.model.TrackKind
 import dev.jellystructure.resolver.LanguageResolver
 import dev.jellystructure.nfo.NfoWriter
+import dev.jellystructure.tmdb.TmdbClient
+import dev.jellystructure.tmdb.TmdbImage
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.encodeURLPathPart
@@ -64,10 +66,45 @@ import kotlinx.serialization.json.Json
 @Serializable
 private data class JellyfinLocksResponse(val lockData: Boolean, val lockedFields: List<String>)
 
+// --- Phase 47: artwork candidate gallery DTOs ---
+@Serializable
+private data class ArtworkCandidate(
+    val filePath: String,
+    val lang: String?,       // null = no-language / textless (surfaced as "xx" in the UI)
+    val voteAverage: Double,
+    val width: Int,
+    val height: Int,
+    val onDisk: Boolean,     // best-effort: matches the file_path captured at scan time
+)
+
+@Serializable
+private data class ArtworkCandidatesResponse(
+    val asset: String,
+    val onDiskExists: Boolean,
+    val resolvedLanguage: String?,
+    val candidates: List<ArtworkCandidate>,
+)
+
+@Serializable
+private data class SaveCandidateRequest(val asset: String = "", val source: String)
+
+private fun mapCandidates(images: List<TmdbImage>, onDiskSource: String?): List<ArtworkCandidate> =
+    images.map { img ->
+        ArtworkCandidate(
+            filePath = img.filePath,
+            lang = img.languageCode,
+            voteAverage = img.voteAverage,
+            width = img.width,
+            height = img.height,
+            onDisk = onDiskSource != null && img.filePath == onDiskSource,
+        )
+    }
+
 fun Route.mediaRoutes(
     store: MediaStore,
     scanner: Scanner,
     artwork: ArtworkDownloader,
+    tmdbClient: TmdbClient,
     appScope: CoroutineScope,
     scanTracker: ScanTracker,
     broadcaster: WsBroadcaster,
@@ -347,8 +384,15 @@ fun Route.mediaRoutes(
                         part.release()
                     }
 
-                    if (type !in setOf("poster", "fanart", "logo")) {
-                        call.respond(HttpStatusCode.BadRequest, mapOf("error" to "type must be poster, fanart, or logo"))
+                    val filename = when (type) {
+                        "poster" -> "poster.jpg"
+                        "fanart", "backdrop" -> "fanart.jpg"
+                        "logo", "clearlogo" -> "clearlogo.png"
+                        "banner" -> "banner.jpg"
+                        else -> ""
+                    }
+                    if (filename.isEmpty()) {
+                        call.respond(HttpStatusCode.BadRequest, mapOf("error" to "type must be poster, backdrop, clearlogo, or banner"))
                         return@post
                     }
                     val bytes = fileBytes
@@ -357,12 +401,7 @@ fun Route.mediaRoutes(
                         return@post
                     }
 
-                    val dir = item.path.substringBeforeLast('/')
-                    val filename = when (type) {
-                        "poster" -> "poster.jpg"
-                        "fanart" -> "fanart.jpg"
-                        else -> "clearlogo.png"
-                    }
+                    val dir = item.kind.let { if (it == MediaKind.TV_SHOW) item.path else item.path.substringBeforeLast('/') }
                     val destPath = "$dir/$filename"
                     val tmpPath = "$destPath.tmp"
                     val sink = SystemFileSystem.sink(Path(tmpPath)).buffered()
@@ -380,6 +419,99 @@ fun Route.mediaRoutes(
 
                     call.respond(artwork.check(item))
                 }
+
+                // GET /api/media/{id}/artwork/candidates?asset=poster|backdrop|clearlogo|banner
+                // — full TMDB candidate list (every language incl. textless) for the gallery.
+                get("/candidates") {
+                    val id = call.parameters["id"]
+                        ?: return@get call.respond(HttpStatusCode.BadRequest)
+                    val asset = call.request.queryParameters["asset"] ?: "poster"
+                    val item = store.resolve(id)
+                        ?: return@get call.respond(HttpStatusCode.NotFound)
+                    val status = artwork.check(item)
+                    val onDiskExists = when (asset) {
+                        "poster" -> status.posterExists
+                        "backdrop" -> status.fanartExists
+                        "clearlogo" -> status.logoExists
+                        "banner" -> artwork.assetPath(item, asset)?.let { SystemFileSystem.exists(Path(it)) } ?: false
+                        else -> false
+                    }
+                    val images = item.tmdbId?.let { tid ->
+                        if (item.kind == MediaKind.MOVIE) tmdbClient.getMovieImages(tid) else tmdbClient.getTvImages(tid)
+                    }
+                    val list = when (asset) {
+                        "poster" -> images?.posters
+                        "backdrop" -> images?.backdrops
+                        "clearlogo" -> images?.logos
+                        else -> null  // banner: TMDB has no banner type — upload / URL only
+                    } ?: emptyList()
+                    val onDiskSource = when (asset) {
+                        "poster" -> item.posterPath
+                        "backdrop" -> item.backdropPath
+                        else -> null
+                    }
+                    call.respond(ArtworkCandidatesResponse(asset, onDiskExists, item.resolvedLanguage, mapCandidates(list, onDiskSource)))
+                }
+
+                // POST /api/media/{id}/artwork/candidates/save  { asset, source }
+                // — source is a TMDB file_path ("/abc.jpg") or a full http(s) URL.
+                post("/candidates/save") {
+                    val id = call.parameters["id"]
+                        ?: return@post call.respond(HttpStatusCode.BadRequest)
+                    val item = store.resolve(id)
+                        ?: return@post call.respond(HttpStatusCode.NotFound)
+                    val req = call.receive<SaveCandidateRequest>()
+                    if (req.source.isBlank() || artwork.assetPath(item, req.asset) == null) {
+                        return@post call.respond(HttpStatusCode.BadRequest, mapOf("error" to "invalid asset or source"))
+                    }
+                    val ok = artwork.saveAsset(item, req.asset, req.source)
+                    if (!ok) return@post call.respond(HttpStatusCode.BadGateway, mapOf("error" to "download failed"))
+                    mediaHistory.record(id, "artwork_save", "asset=${req.asset}")
+                    val cfg = configStore.current
+                    if (!item.jellyfinId.isNullOrBlank() && cfg.apiKeys.jellyfinUrl.isNotBlank()) {
+                        jellyfinClient.refreshItem(cfg.apiKeys.jellyfinUrl, cfg.apiKeys.jellyfinToken, item.jellyfinId)
+                    }
+                    call.respond(artwork.check(item))
+                }
+            }
+        }
+
+        // Season-poster sub-routes (Phase 47) — series only
+        route("/{id}/seasons") {
+            // GET /api/media/{id}/seasons — distinct seasons + poster-on-disk status
+            get {
+                val id = call.parameters["id"] ?: return@get call.respond(HttpStatusCode.BadRequest)
+                val item = store.resolve(id) ?: return@get call.respond(HttpStatusCode.NotFound)
+                val seasons = item.episodes.mapNotNull { it.seasonNumber }.distinct().sorted()
+                call.respond(seasons.map { mapOf("season" to it, "posterExists" to artwork.checkSeasonPoster(item, it)) })
+            }
+
+            // GET /api/media/{id}/seasons/{season}/poster/candidates
+            get("/{season}/poster/candidates") {
+                val id = call.parameters["id"] ?: return@get call.respond(HttpStatusCode.BadRequest)
+                val season = call.parameters["season"]?.toIntOrNull()
+                    ?: return@get call.respond(HttpStatusCode.BadRequest)
+                val item = store.resolve(id) ?: return@get call.respond(HttpStatusCode.NotFound)
+                val images = item.tmdbId?.let { tmdbClient.getSeasonImages(it, season) }
+                call.respond(ArtworkCandidatesResponse("poster", artwork.checkSeasonPoster(item, season), item.resolvedLanguage, mapCandidates(images?.posters ?: emptyList(), null)))
+            }
+
+            // POST /api/media/{id}/seasons/{season}/poster/save  { source }
+            post("/{season}/poster/save") {
+                val id = call.parameters["id"] ?: return@post call.respond(HttpStatusCode.BadRequest)
+                val season = call.parameters["season"]?.toIntOrNull()
+                    ?: return@post call.respond(HttpStatusCode.BadRequest)
+                val item = store.resolve(id) ?: return@post call.respond(HttpStatusCode.NotFound)
+                val req = call.receive<SaveCandidateRequest>()
+                if (req.source.isBlank()) return@post call.respond(HttpStatusCode.BadRequest, mapOf("error" to "source required"))
+                val ok = artwork.saveSeasonPoster(item, season, req.source)
+                if (!ok) return@post call.respond(HttpStatusCode.BadGateway, mapOf("error" to "download failed"))
+                mediaHistory.record(id, "season_poster_save", "season=$season")
+                val cfg = configStore.current
+                if (!item.jellyfinId.isNullOrBlank() && cfg.apiKeys.jellyfinUrl.isNotBlank()) {
+                    jellyfinClient.refreshItem(cfg.apiKeys.jellyfinUrl, cfg.apiKeys.jellyfinToken, item.jellyfinId)
+                }
+                call.respond(mapOf("ok" to true))
             }
         }
 
@@ -491,6 +623,42 @@ fun Route.mediaRoutes(
                     val raw = NfoWriter.readRawEpisode(ep)
                         ?: return@get call.respond(HttpStatusCode.NotFound)
                     call.respondText(raw, ContentType.Text.Xml)
+                }
+
+                // GET /api/media/{id}/episodes/{epFilename}/still/candidates — TMDB still
+                // candidates for one episode (Phase 47). Episodes resolve their own language.
+                get("/still/candidates") {
+                    val id = call.parameters["id"] ?: return@get call.respond(HttpStatusCode.BadRequest)
+                    val epFilename = call.parameters["epFilename"] ?: return@get call.respond(HttpStatusCode.BadRequest)
+                    val item = store.resolve(id) ?: return@get call.respond(HttpStatusCode.NotFound)
+                    val ep = item.episodes.firstOrNull { it.filename == epFilename }
+                        ?: return@get call.respond(HttpStatusCode.NotFound)
+                    val tid = item.tmdbId
+                    val s = ep.seasonNumber
+                    val e = ep.episodeNumber
+                    val images = if (tid != null && s != null && e != null)
+                        tmdbClient.getEpisodeImages(tid, s, e) else null
+                    val onDisk = artwork.checkEpisodeStill(ep).stillExists
+                    call.respond(ArtworkCandidatesResponse("still", onDisk, ep.resolvedLanguage, mapCandidates(images?.stills ?: emptyList(), ep.stillPath)))
+                }
+
+                // POST /api/media/{id}/episodes/{epFilename}/still/save  { source }
+                post("/still/save") {
+                    val id = call.parameters["id"] ?: return@post call.respond(HttpStatusCode.BadRequest)
+                    val epFilename = call.parameters["epFilename"] ?: return@post call.respond(HttpStatusCode.BadRequest)
+                    val item = store.resolve(id) ?: return@post call.respond(HttpStatusCode.NotFound)
+                    val ep = item.episodes.firstOrNull { it.filename == epFilename }
+                        ?: return@post call.respond(HttpStatusCode.NotFound)
+                    val req = call.receive<SaveCandidateRequest>()
+                    if (req.source.isBlank()) return@post call.respond(HttpStatusCode.BadRequest, mapOf("error" to "source required"))
+                    val ok = artwork.saveEpisodeStill(ep, req.source)
+                    if (!ok) return@post call.respond(HttpStatusCode.BadGateway, mapOf("error" to "download failed"))
+                    mediaHistory.record(id, "episode_still_save", "ep=$epFilename")
+                    val cfg = configStore.current
+                    if (!item.jellyfinId.isNullOrBlank() && cfg.apiKeys.jellyfinUrl.isNotBlank()) {
+                        jellyfinClient.refreshItem(cfg.apiKeys.jellyfinUrl, cfg.apiKeys.jellyfinToken, item.jellyfinId)
+                    }
+                    call.respond(mapOf("ok" to true))
                 }
 
                 // GET /api/media/{id}/episodes/{epFilename}/tracks/plan?specifier=...

@@ -8,6 +8,7 @@ import dev.jellystructure.auth.installAuthPlugin
 import dev.jellystructure.config.ConfigStore
 import dev.jellystructure.jobs.WsBroadcaster
 import dev.jellystructure.media.ArtworkDownloader
+import dev.jellystructure.tmdb.TmdbClient
 import dev.jellystructure.media.MediaHistory
 import dev.jellystructure.media.MediaStore
 import dev.jellystructure.media.Scanner
@@ -86,6 +87,7 @@ fun startServer(
     mediaStore: MediaStore,
     scanner: Scanner,
     artworkDownloader: ArtworkDownloader,
+    tmdbClient: TmdbClient,
     scanTracker: ScanTracker,
     folderWatcher: FolderWatcher,
     mediaHistory: MediaHistory,
@@ -157,7 +159,7 @@ fun startServer(
                 configureConfigRoutes(configStore, effectiveScanThreads, qbClient)
                 setupRoutes(configStore, jellyfinClient)
                 jellyfinRoutes(configStore, jellyfinClient)
-                mediaRoutes(mediaStore, scanner, artworkDownloader, appScope, scanTracker, broadcaster, jellyfinClient, configStore, mediaHistory, scanDispatcher, seedingGuard)
+                mediaRoutes(mediaStore, scanner, artworkDownloader, tmdbClient, appScope, scanTracker, broadcaster, jellyfinClient, configStore, mediaHistory, scanDispatcher, seedingGuard)
                 activityRoutes(activityLog)
                 triageRoutes(mediaStore, jellyfinClient, configStore, mediaHistory, seedingGuard)
                 metadataRoutes(mediaStore, jsTagStore, logoDownloader)

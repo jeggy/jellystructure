@@ -136,7 +136,7 @@ fun main() = runBlocking {
     val seedingGuard = SeedingGuard(qbClient)
     val shutdown = startServer(
         configStore, sessionService, raviloDeviceService, raviloConfigService, homeFeedService, browseService, detailService, playbackService, jellyfinClient, mediaStore, scanner,
-        artworkDownloader, scanTracker, folderWatcher, mediaHistory, activityLog, broadcaster,
+        artworkDownloader, tmdbClient, scanTracker, folderWatcher, mediaHistory, activityLog, broadcaster,
         frontendDir, port = port, scanDispatcher = scanDispatcher, effectiveScanThreads = effectiveScanThreads, jsTagStore = jsTagStore, seedingGuard = seedingGuard, logoDownloader = logoDownloader, qbClient = qbClient,
     )
 
