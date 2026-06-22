@@ -363,39 +363,45 @@ private fun ChannelConfig.kindAndValue(): Pair<String, String> = when {
     else                  -> "GENRE"   to ""
 }
 
+// R36: the channel-button chip rendered on each config row + in the live preview, from the channel's
+// style/brandColor/logoUrl (brandColor may be a solid color or a CSS linear-gradient).
+private fun channelChipHtml(c: ChannelConfig): String {
+    val fill = c.brandColor?.takeIf { it.isNotBlank() } ?: "linear-gradient(135deg,#3b2a78,#15102e)"
+    val inner = if (c.style == ChannelStyle.LOGO && !c.logoUrl.isNullOrBlank()) {
+        """<img src="${c.logoUrl!!.htmlEsc()}" alt="" style="max-width:78%;max-height:62%;object-fit:contain">"""
+    } else {
+        (if (c.style == ChannelStyle.LOGO) c.name.take(3).uppercase() else c.name.take(10).ifEmpty { "Ch" }).htmlEsc()
+    }
+    return """<div style="background:$fill;width:84px;height:34px;border-radius:8px;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:.7rem;overflow:hidden;flex:none">$inner</div>"""
+}
+
+// Seed the popup's condition stack from a legacy single-typed channel so editing preserves its filter.
+private fun legacyToConds(c: ChannelConfig): List<WbCond> {
+    val (kind, value) = c.kindAndValue()
+    if (value.isBlank()) return emptyList()
+    return listOf(WbCond(kind.lowercase(), "is_any_of", mutableListOf(value)))
+}
+
 private fun renderChannels(container: Element) {
     val sect = container.querySelector("#sect-channels") ?: return
     val last = currentConfig.channels.lastIndex
     val rows = currentConfig.channels.mapIndexed { i, c ->
-        val styleOptions = ChannelStyle.entries.joinToString("") { s ->
-            val sel = if (s == c.style) " selected" else ""
-            """<option value="${s.name}"$sel>${s.name.lowercase().replaceFirstChar { it.uppercase() }}</option>"""
-        }
         val showChecked = if (c.enabled) " checked" else ""
-        val color = c.brandColor?.takeIf { it.startsWith("#") } ?: "#7b6ef0"
-        // R32: a condition-built channel shows a read-only summary + Edit (reopens the workbench);
-        // legacy single-typed channels keep the inline kind/value editor.
-        val filterCell = if (c.conditions.isNotEmpty()) {
-            """<span class="badge ok" style="white-space:nowrap">${c.conditions.size} condition(s) · match ${c.match.name}</span>
-               <button class="btn sm ghost" data-ch-edit="$i">Edit filter</button>
-               <span class="spacer" style="flex:1"></span>"""
+        val summary = if (c.conditions.isNotEmpty()) {
+            "${c.conditions.size} condition(s) · ${c.match.name}"
         } else {
             val (kind, value) = c.kindAndValue()
-            val kindOptions = CHANNEL_KINDS.joinToString("") { k ->
-                val sel = if (k == kind) " selected" else ""
-                """<option value="$k"$sel>${k.lowercase().replaceFirstChar { it.uppercase() }}</option>"""
-            }
-            """<select class="input" style="width:100px" data-ch-kind="$i">$kindOptions</select>
-               <input class="input fill" style="min-width:120px" placeholder="Filter value" value="${value.htmlEsc()}" data-ch-filter="$i" list="facet-${kind.lowercase()}">"""
+            if (value.isNotBlank()) "${kind.lowercase().replaceFirstChar { it.uppercase() }}: $value" else "No filter yet"
         }
         """
-        <div class="cfg-row" style="display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap">
+        <div class="cfg-row" style="display:flex;align-items:center;gap:9px;margin-bottom:8px;flex-wrap:wrap">
           ${reorderButtons("ch", i, last)}
           <input type="hidden" data-ch-id="$i" value="${c.id.htmlEsc()}">
-          <input class="input" style="width:130px" placeholder="Name" value="${c.name.htmlEsc()}" data-ch-name="$i">
-          $filterCell
-          <select class="input" style="width:80px" data-ch-style="$i">$styleOptions</select>
-          <input type="color" data-ch-color="$i" value="$color" title="Brand color" style="width:34px;height:30px;padding:0;border:none;background:none">
+          ${channelChipHtml(c)}
+          <input class="input" style="width:140px" placeholder="Name" value="${c.name.htmlEsc()}" data-ch-name="$i">
+          <span class="badge" style="white-space:nowrap">${summary.htmlEsc()}</span>
+          <span class="spacer" style="flex:1"></span>
+          <button class="btn sm ghost" data-ch-edit="$i" title="Edit channel button + filter">✎ Edit</button>
           <label style="display:flex;align-items:center;gap:5px;font-size:.8rem;white-space:nowrap"><input type="checkbox" data-ch-enabled="$i"$showChecked> Show</label>
           <button class="btn sm ghost" data-ch-del="$i">✕</button>
         </div>
@@ -405,7 +411,7 @@ private fun renderChannels(container: Element) {
         <div class="card" style="padding:18px 20px;margin-bottom:18px">
           <div style="font-weight:600;margin-bottom:10px">Channels &amp; collections</div>
           <p style="font-size:.82rem;color:var(--ink-soft);margin-bottom:14px">
-            The logo row under the hero. Each maps to one Jellyfin filter (network, studio, genre, or tag) and opens a channel-scoped view.
+            The logo row under the hero. <b>Click ✎ Edit on a channel</b> to set its filter, choose Logo or Text, pick or upload a brand logo, and set the brand fill (solid or gradient).
           </p>
           $rows
           <button id="ch-add" class="btn sm ghost" style="margin-top:6px">+ Add channel</button>
@@ -438,12 +444,27 @@ private fun renderChannels(container: Element) {
         sect.querySelector("[data-ch-edit='$i']")?.addEventListener("click") { _ ->
             val scope = rcScope ?: return@addEventListener
             val c = currentConfig.channels.getOrNull(i) ?: return@addEventListener
+            val seed = if (c.conditions.isNotEmpty()) wbCondsFrom(c.conditions) else legacyToConds(c)
             openWorkbench(scope, "Edit channel — ${c.name.ifBlank { "channel" }}", viewer = currentUserId,
-                initialMatch = c.match.name, initialConds = wbCondsFrom(c.conditions), applyLabel = "Update channel",
-                onApply = { match, _, conds ->
+                initialMatch = c.match.name, initialConds = seed, applyLabel = "Save channel",
+                channelMode = true,
+                initialStyle = c.style.name.lowercase(),
+                initialBrandColor = c.brandColor ?: "",
+                initialLogoUrl = c.logoUrl,
+                channelName = c.name,
+                onApply = { _, _, _ -> },
+                onSaveChannel = { style, color, logo, match, _, conds ->
                     structural(container, {
                         val list = currentConfig.channels.toMutableList()
-                        list[i] = list[i].copy(match = wbMode(match), conditions = wbConds(conds))
+                        val cur = list[i]
+                        val realConds = conds.filter { it.values.isNotEmpty() || it.facet == "track_title" }
+                        list[i] = cur.copy(
+                            style = if (style == "TEXT") ChannelStyle.TEXT else ChannelStyle.LOGO,
+                            brandColor = color.ifBlank { null },
+                            logoUrl = logo,
+                            match = if (realConds.isNotEmpty()) wbMode(match) else cur.match,
+                            conditions = if (realConds.isNotEmpty()) wbConds(conds) else cur.conditions,
+                        )
                         currentConfig = currentConfig.copy(channels = list)
                     }, ::renderChannels)
                 })
@@ -680,7 +701,7 @@ private fun renderPreview(container: Element) {
         if (channels.isNotEmpty()) {
             append("""<div style="display:flex;gap:4px;padding:6px 8px;overflow:hidden">""")
             channels.take(5).forEach { c ->
-                val bg = (c.brandColor?.takeIf { it.startsWith("#") } ?: "#1b2031")
+                val bg = c.brandColor?.takeIf { it.isNotBlank() } ?: "#1b2031"
                 append("""<span style="background:$bg;color:#fff;font-size:.52rem;padding:2px 6px;border-radius:5px;white-space:nowrap">${c.name.ifBlank { "Channel" }.htmlEsc()}</span>""")
             }
             append("</div>")
@@ -711,26 +732,15 @@ private fun collectConfig(container: Element) {
     }
     // Channels — overlay DOM edits onto the existing entries (render order == currentConfig order),
     // so workbench-built `match`/`conditions` survive a collect (R32; was dropped — see P0-1).
+    // Channel name + Show are edited inline; style / brandColor / logoUrl / conditions are set via the
+    // channel-button popup (R36) directly into currentConfig, so they ride along on `existing`.
     val channels = currentConfig.channels.mapIndexed { i, existing ->
         fun q(attr: String) = container.querySelector("[$attr='$i']")
-        val name    = (q("data-ch-name") as? HTMLInputElement)?.value?.trim() ?: existing.name
-        val enabled = (q("data-ch-enabled") as? HTMLInputElement)?.checked ?: existing.enabled
-        val style   = runCatching { ChannelStyle.valueOf((q("data-ch-style") as? HTMLSelectElement)?.value ?: existing.style.name) }.getOrDefault(existing.style)
-        val color   = (q("data-ch-color") as? HTMLInputElement)?.value?.trim()?.takeIf { it.isNotEmpty() } ?: existing.brandColor
-        if (existing.conditions.isNotEmpty()) {
-            existing.copy(name = name, style = style, brandColor = color, enabled = enabled, order = i)
-        } else {
-            val kind  = (q("data-ch-kind") as? HTMLSelectElement)?.value ?: "GENRE"
-            val value = (q("data-ch-filter") as? HTMLInputElement)?.value?.trim()?.takeIf { it.isNotEmpty() }
-            existing.copy(
-                name = name, style = style, brandColor = color,
-                filterNetwork = if (kind == "NETWORK") value else null,
-                filterStudio  = if (kind == "STUDIO")  value else null,
-                filterGenre   = if (kind == "GENRE")   value else null,
-                filterTag     = if (kind == "TAG")     value else null,
-                enabled = enabled, order = i,
-            )
-        }
+        existing.copy(
+            name = (q("data-ch-name") as? HTMLInputElement)?.value?.trim() ?: existing.name,
+            enabled = (q("data-ch-enabled") as? HTMLInputElement)?.checked ?: existing.enabled,
+            order = i,
+        )
     }
     // Rows — same overlay approach; CUSTOM rows' conditions/match are preserved.
     val rows = currentConfig.rows.mapIndexed { i, existing ->
