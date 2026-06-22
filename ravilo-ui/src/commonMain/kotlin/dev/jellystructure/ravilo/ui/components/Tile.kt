@@ -5,7 +5,6 @@ import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -24,11 +23,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -73,11 +75,12 @@ fun Tile(
     val colors = RaviloTheme.colors
     val sora = Sora
     var focused by remember { mutableStateOf(false) }
-    val focusSpec = remember { spring<Float>(dampingRatio = 0.65f, stiffness = Spring.StiffnessMediumLow) }
-    val dpSpec    = remember { spring<Dp>(dampingRatio = 0.65f, stiffness = Spring.StiffnessMediumLow) }
-    val scale          by animateFloatAsState(if (focused) 1.10f else 1f, focusSpec, label = "tileScale")
-    val borderWidth    by animateDpAsState(if (focused) 3.dp else 0.dp, dpSpec, label = "tileBorder")
-    val shadowElevation by animateDpAsState(if (focused) 24.dp else 0.dp, dpSpec, label = "tileShadow")
+    // Snappier focus feel (R43): StiffnessMedium settles fast; soft StiffnessMediumLow read laggy.
+    val focusSpec = remember { spring<Float>(dampingRatio = 0.8f, stiffness = Spring.StiffnessMedium) }
+    val dpSpec    = remember { spring<Dp>(dampingRatio = 0.8f, stiffness = Spring.StiffnessMedium) }
+    val scale         by animateFloatAsState(if (focused) 1.10f else 1f, focusSpec, label = "tileScale")
+    val ringWidth     by animateDpAsState(if (focused) 3.dp else 0.dp, dpSpec, label = "tileBorder")
+    val glowElevation by animateDpAsState(if (focused) 24.dp else 0.dp, dpSpec, label = "tileShadow")
     val tileShape = remember(colors.tileRadius) { RoundedCornerShape(colors.tileRadius) }
 
     // Operator-configured content size (R: ui_density) scales every grid/row tile uniformly.
@@ -106,16 +109,31 @@ fun Tile(
             Box(
                 modifier = Modifier
                     .matchParentSize()
-                    .graphicsLayer { scaleX = scale; scaleY = scale }
-                    .shadow(
-                        elevation = shadowElevation,
-                        shape = tileShape,
-                        clip = false,
-                        ambientColor = colors.focusGlow,
-                        spotColor = colors.focusGlow,
-                    )
-                    .clip(tileShape)
-                    .border(borderWidth, colors.focusRing, tileShape),
+                    // R43: the whole focus animation runs in the draw phase — scale + shadow in the
+                    // graphicsLayer lambda, the ring in drawWithCache — so no animated value is read at
+                    // composition and the tile never recomposes per frame while focusing.
+                    .graphicsLayer {
+                        scaleX = scale; scaleY = scale
+                        this.shadowElevation = glowElevation.toPx()
+                        shape = tileShape
+                        clip = true
+                        ambientShadowColor = colors.focusGlow
+                        spotShadowColor = colors.focusGlow
+                    }
+                    .drawWithCache {
+                        val radius = CornerRadius(colors.tileRadius.toPx())
+                        onDrawWithContent {
+                            drawContent()
+                            val bw = ringWidth.toPx()
+                            if (bw > 0f) drawRoundRect(
+                                color = colors.focusRing,
+                                cornerRadius = radius,
+                                style = Stroke(width = bw),
+                                topLeft = Offset(bw / 2f, bw / 2f),
+                                size = Size(size.width - bw, size.height - bw),
+                            )
+                        }
+                    },
             ) {
             if (posterUrl != null) {
                 RemoteImage(
