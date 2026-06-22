@@ -127,4 +127,43 @@ class ArtworkDownloader {
         MediaKind.MOVIE -> item.path.substringBeforeLast('/')
         MediaKind.TV_SHOW -> item.path  // item.path IS the series directory
     }
+
+    // --- Phase 47: write a specific chosen candidate (TMDB file_path or full URL) ---
+
+    /** Filename on disk for each rail asset, per the constitution. */
+    private fun assetFilename(asset: String): String? = when (asset) {
+        "poster" -> "poster.jpg"
+        "backdrop" -> "fanart.jpg"
+        "clearlogo" -> "clearlogo.png"
+        "banner" -> "banner.jpg"
+        else -> null
+    }
+
+    fun assetPath(item: MediaItem, asset: String): String? =
+        assetFilename(asset)?.let { "${mediaDir(item)}/$it" }
+
+    /** `source` is either a TMDB file_path (leading "/") or a full http(s) URL. */
+    suspend fun saveAsset(item: MediaItem, asset: String, source: String): Boolean {
+        val dest = assetPath(item, asset) ?: return false
+        return download(toUrl(source), dest)
+    }
+
+    /** Jellyfin local naming for a season poster at the series root. */
+    private fun seasonPosterPath(item: MediaItem, season: Int): String {
+        val name = if (season == 0) "season-specials-poster.jpg"
+        else "season${season.toString().padStart(2, '0')}-poster.jpg"
+        return "${mediaDir(item)}/$name"
+    }
+
+    fun checkSeasonPoster(item: MediaItem, season: Int): Boolean =
+        SystemFileSystem.exists(Path(seasonPosterPath(item, season)))
+
+    suspend fun saveSeasonPoster(item: MediaItem, season: Int, source: String): Boolean =
+        download(toUrl(source), seasonPosterPath(item, season))
+
+    suspend fun saveEpisodeStill(episode: Episode, source: String): Boolean =
+        download(toUrl(source), episodeStillPath(episode))
+
+    private fun toUrl(source: String): String =
+        if (source.startsWith("http://") || source.startsWith("https://")) source else "$TMDB_ORIGINAL$source"
 }
