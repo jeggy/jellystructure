@@ -4,11 +4,20 @@ Living record of where work currently stands. Update whenever a phase completes 
 The **[requirements/README.md](requirements/README.md)** is the single source of truth for which phases
 exist and their done/planned status. This file tracks _current focus_, recent context, and open issues.
 
-_Last updated: 2026-06-22_
+_Last updated: 2026-06-23_
 
 ## Current focus
 
-**Phases 0–49 complete — the admin app is feature-complete; no planned admin phases remain.** Phase 47 (artwork manager) shipped: the
+**Phases 0–49 complete. [Phase 50](requirements/phase-50-jellyfin-refresh-auth-fix.md) planned** —
+a single-item Jellyfin refresh/re-pull bug surfaced from on-device logs: `JellyfinClient.refreshItem`
+builds a **malformed `Authorization` header** (missing `, Token=`) → **401** on every targeted item
+refresh (breaking `pushToJellyfin`, batch push, and the artwork/track/triage refreshes), and
+`getItem` hits the unreliable non-user-scoped `/Items/{id}` endpoint with **no response validator**,
+so a non-2xx `text/plain` body throws `NoTransformationFoundException` (**400**). Phase 50 fixes the
+header (factored into one helper), re-fetches via the proven `/Items?Ids=` list shape, validates
+status before deserializing, and stops reporting a refresh that 401'd as success (FR-JR1).
+
+Phase 47 (artwork manager) shipped: the
 full artwork-editing surface on Movie & Series detail — asset rail + inline TMDB gallery,
 resolved-language-first candidate filtering with a never-empty fallback (**no-language `xx` is its own
 bucket, distinct from "All"**), drag-drop/upload/URL replace, and series season-poster +
@@ -28,8 +37,8 @@ overlapped the language chips. Unified them into **one single-select filter** on
 `artPrefer` sort; default ladder resolves resolved-lang → textless → All. `design/app/media.html` mockup
 synced to the same model.
 
-No planned admin phases remain. Other active development is on the **Ravilo** side — see
-[`ravilo/STATUS.md`](ravilo/STATUS.md).
+Phase 50 is the only open admin phase (a bug fix). Other active development is on the **Ravilo**
+side — see [`ravilo/STATUS.md`](ravilo/STATUS.md).
 
 See [`requirements/README.md`](requirements/README.md) for the full index.
 

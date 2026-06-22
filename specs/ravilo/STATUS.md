@@ -12,6 +12,18 @@ _Last updated: 2026-06-23_
 
 ## Current focus
 
+**Phases R01–R43 complete. R44–R46 planned** — three items from on-device feedback (2026-06-23):
+**[R44](requirements/phase-R44-media-transport-keys.md)** wire the remote's physical
+Play/Pause/Stop/FF/Rew/Next/Prev keys (currently inert — only on-screen transport works) to the
+player via `Key.Media*` handling + a Media3 `MediaSession` on Android + `navigator.mediaSession` on
+web; **[R45](requirements/phase-R45-entry-scroll-focus-restore.md)** fix entry scroll/focus so a
+focused top action re-frames the hero at the top instead of auto-scrolling to a mid-page Play/Resume
+button (`playFR.requestFocus()` bring-into-view), and restore a content row's left inset after you
+scroll in and back; **[R46](requirements/phase-R46-track-label-metadata.md)** show Jellyfin's rich
+audio/subtitle `DisplayTitle` (e.g. "Synstolkning") in the picker instead of bare language codes by
+adding an `AudioTrack` list to the `StreamTicket`. Sequencing: R44 → R46 → R45 (player keys, then
+labels, then scroll polish), with the backend Phase 50 refresh fix landing first.
+
 **Phases R01–R43 complete.** **R43** (2026-06-23) — focus-navigation smoothness: after R42 removed the
 jump, moving focus still felt laggy because the focus shadow/border read animated values as modifier
 parameters (recomposition every frame) and the spring was soft. The whole focus animation now runs in the
