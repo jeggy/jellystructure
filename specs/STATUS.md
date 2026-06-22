@@ -8,12 +8,15 @@ _Last updated: 2026-06-22_
 
 ## Current focus
 
-**Phases 0–46 complete.** Next up is **[Phase 47 — Artwork manager](requirements/phase-47-artwork-manager.md)**
-(Planned): a full artwork-editing surface on Movie & Series detail — asset rail + inline TMDB gallery,
+**Phases 0–47 complete — the admin app is feature-complete.** Phase 47 (artwork manager) shipped: the
+full artwork-editing surface on Movie & Series detail — asset rail + inline TMDB gallery,
 resolved-language-first candidate filtering with a never-empty fallback (**no-language `xx` is its own
-bucket, distinct from "All"**), drag-drop/upload/URL replace, and series season-poster + per-episode-still
-management. Builds on Phase 31 (artwork fetch/cache) + Phase 32 (TMDB match picker). Approved design
-mockups in `design/app/media.html` + `design/app/series.html`.
+bucket, distinct from "All"**), drag-drop/upload/URL replace, and series season-poster +
+per-episode-still management (`MediaDetail.kt` artwork tab + `MediaRoutes.kt` / `TmdbClient.kt`
+candidate-gallery routes). Built on Phase 31 (artwork fetch/cache) + Phase 32 (TMDB match picker).
+
+No admin phase is currently in flight. Active development is on the **Ravilo** side — see
+[`ravilo/STATUS.md`](ravilo/STATUS.md) for its current focus.
 
 See [`requirements/README.md`](requirements/README.md) for the full index.
 
@@ -23,9 +26,9 @@ See [`requirements/README.md`](requirements/README.md) for the full index.
 (Android TV **and** browser/WASM canvas, one shared codebase) for jellystructure-managed libraries.
 It adds a **`/api/tv/**`** namespace + a per-Jellyfin-user config store to *this* backend and a shared
 **`:shared`** KMP module (DTOs + Ktor client) that the admin frontend reuses too. Control plane =
-jellystructure only; data plane (video/images) = Jellyfin directly. Phases **R01–R31** are complete and
-**R32** (the shared filter workbench + Library round-trip) is planned — see
-[`ravilo/STATUS.md`](ravilo/STATUS.md) and [`ravilo/requirements/README.md`](ravilo/requirements/README.md).
+jellystructure only; data plane (video/images) = Jellyfin directly. Ravilo's phase state is tracked
+separately — see [`ravilo/STATUS.md`](ravilo/STATUS.md) and
+[`ravilo/requirements/README.md`](ravilo/requirements/README.md).
 The jellystructure admin frontend stays DOM/Tailwind; Ravilo's web build is a
 **separate** canvas bundle (the "no Compose for Web" rule is scoped to the admin app).
 

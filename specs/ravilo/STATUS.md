@@ -83,13 +83,15 @@ positive-only `/api/media` count).
   Maximise sharing — screens/theme/components/focus/state live once in `:ravilo-ui`. The
   jellystructure "no Compose for Web" rule is scoped to the **admin** frontend; the two WASM bundles
   (admin DOM, Ravilo canvas) coexist.
-- **Android player engine forked from `jellyfin-androidtv` (GPL).** Rather than a from-scratch Media3
-  integration, the Android `actual RaviloPlayer` forks Jellyfin's `playback/*` engine (Media3 +
-  `media3-ffmpeg-decoder` for DTS/TrueHD/AC3/…), contained in a new Android-only **`:ravilo-player`**
-  module. This makes the **Android client GPL**; the fork's direct-to-Jellyfin stream/progress seams
-  are re-pointed through `/api/tv/**`. **Web** uses the **browser-native** stack (DOM `<video>` +
-  `hls.js` + JASSUB), **not** a `jellyfin-web` fork (GPL TS/JS, no decoder gain). The **whole repo is
-  licensed GPL-3.0** (root `LICENSE`). _(Decided 2026-06-19.)_
+- **Android player = Media3/ExoPlayer + Jellyfin's prebuilt FFmpeg decoder (GPL).** The Android
+  `actual RaviloPlayer` (in `:ravilo-ui` `androidMain`) is a direct Media3/ExoPlayer integration;
+  Jellyfin's prebuilt **`media3-ffmpeg-decoder`** (DTS/TrueHD/AC3/…) is added via a `RenderersFactory`
+  in the Android-only **`:ravilo-player`** module — the GPL containment boundary (only `:ravilo-android`
+  links it). A **source fork** of `jellyfin-androidtv`'s `playback/*` was evaluated and **skipped as
+  redundant** (R31). This makes the **Android client GPL**; stream resolution + progress reporting route
+  through `/api/tv/**`. **Web** uses the **browser-native** stack (DOM `<video>` + `hls.js` + JASSUB),
+  **not** a `jellyfin-web` fork (GPL TS/JS, no decoder gain). The **whole repo is licensed GPL-3.0**
+  (root `LICENSE`). _(Decided 2026-06-19; source fork skipped R31.)_
 - **DTOs defined once** in `:shared`; reused by backend + admin frontend + both Ravilo clients.
 - **Config is server-owned, per Jellyfin user, synced** across all a user's devices.
 - **The TV renders server-composed layout & server-pushed state**; **Ravilo never mutates the
@@ -107,13 +109,19 @@ positive-only `/api/media` count).
 - **Stream brokering details (R08):** confirm how the per-user Jellyfin token is obtained/refreshed
   server-side from the paired session. _(Direct-play-vs-HLS policy now decided: client sends
   `ClientCapabilities`, jellystructure resolves via Jellyfin `PlaybackInfo`.)_
-- **Player fork bring-up (R14):** vendor `jellyfin-androidtv` `playback/*` into `:ravilo-player`;
-  rewire its stream-resolution + progress-report seams to `/api/tv/**`; confirm upstream's exact
-  **GPL-2.0-only-vs-or-later** terms; decide how to **track upstream** changes (subtree/submodule/
-  manual vendor + version pin).
-- **Licensing (resolved):** the whole repo is **GPL-3.0** (root `LICENSE`). Remaining task at
-  fork-vendoring time (R14): preserve `jellyfin-androidtv` copyright/license notices (e.g. a
-  `:ravilo-player` NOTICE) and confirm its GPL-2.0-only-vs-or-later terms.
+- **Player engine (resolved, R31):** Android uses direct Media3/ExoPlayer + Jellyfin's prebuilt
+  `media3-ffmpeg-decoder` (Media3 1.8.0) in the GPL-contained `:ravilo-player` module; the
+  `jellyfin-androidtv` `playback/*` **source fork was skipped as redundant**. Remaining: an on-device
+  codec test (DTS/TrueHD/AC3) on real TV hardware.
+- **Licensing (resolved):** the whole repo is **GPL-3.0** (root `LICENSE`); the `:ravilo-player`
+  `NOTICE` preserves the decoder's upstream attribution.
+- **Admin↔code sync (SYNC-AUDIT-2026-06) — open decisions:** §3.1 bring the R32 guided hero builder
+  to the admin config editor, or accept the current inline hero-input row? §3.2 add a "Pair a TV"
+  section to `design/app/ravilo-config.html`, or keep it code-only by intent? §5.2/§5.3 are optional
+  code-adoption polish (detail pagebar dropdown menus + `.tabs2` tab classes) — no spec needed.
+- **Next sync audit should be TV/player-first:** the 2026-06 audit diffed admin screens only and did
+  **not** pixel-diff the Compose TV screens or examine the player; schedule a TV+player-focused pass
+  (R34/R35 reshaped TV sizing).
 - **Pairing approval UX (R03/R15):** web-session approval vs phone-credentials form — pick the primary
   path.
 - **Compose-MP web a11y (R17):** canvas accessibility is best-effort; validate against real ATs early.

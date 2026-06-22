@@ -108,7 +108,7 @@ stdout+stderr is streamed to the frontend via WebSocket during long operations.
 ### Series and Episode Management
 - **Discovery**: Jellyfin API is the source of truth for series existence; episodes are discovered by filesystem walk within the series directory (no reliance on `GET /Shows/{id}/Episodes` for file discovery, since Jellyfin may not have probed all episodes)
 - **Per-episode**: each episode has its own resolved language, TMDB episode metadata (title, overview, still), and episodedetails.nfo
-- **Triage**: Series Triage is a multi-step flow — step 1 is series-level (metadata, artwork, language majority); each subsequent step is an episode needing attention (untagged tracks, missing still/overview)
+- **Triage**: Triage is **not a page** (Phase 27). Items needing attention (untagged tracks, multiple-default audio, missing still/overview) are stepped through by a floating, navigation-only **Triage dock** that opens each item's **detail page**; all editing — including series-level metadata/artwork/language and per-episode fixes — happens on media/series detail, not a separate Triage flow
 - **Track editing**: every episode supports the same track default and language editing as a movie, from the episode's own file
 
 ### Jellyfin API Integration

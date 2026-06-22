@@ -35,8 +35,8 @@ shared screen rendering identically on both targets with working focus — to de
 ### `expect`/`actual` seams (stubs)
 7. Declare `expect` **`RaviloPlayer`** and **`ImageLoader`** in `:ravilo-ui`; provide trivial `actual`
    stubs in each platform module (real impls in R14 / image phases). Just enough to compile + render a
-   placeholder. _(At R14 the Android `RaviloPlayer` `actual` moves into a new Android-only
-   `:ravilo-player` module — the forked `jellyfin-androidtv` engine, GPL-contained.)_
+   placeholder. _(The real Android `RaviloPlayer` `actual` lands in R14 as a direct Media3/ExoPlayer
+   integration; the Android-only `:ravilo-player` module adds Jellyfin's GPL FFmpeg decoder in R31.)_
 
 ## Invariants
 - **No shared screen depends on an Android-only Compose artifact.** tv-material3, if used at all, is

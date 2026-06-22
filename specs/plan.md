@@ -91,7 +91,6 @@ src/
       Library.kt            — /library — media grid; multi-axis filters (studio/network/genre/tags + audio-track) + search/sort, URL-addressable
       MediaDetail.kt        — /media/:id — single editing surface (metadata, tracks, artwork, NFO, resolver trace, lock banner, ?tab=)
       Metadata.kt           — /metadata — Studios · Networks · Genres · Tags (?tab=)
-      TrackOrder.kt         — /track-order — manual track default/reorder editor; before/after diff
       LanguagePicker.kt     — reusable searchable language-code picker component (Phase 11)
       Settings.kt           — /settings — Connections · Library mapping · Scanning · Metadata · Advanced
       Activity.kt           — /activity — real-time scan console + audit log (filters + workers)
@@ -301,15 +300,14 @@ data class Episode(
 | `/setup` | `Setup.kt` | First-run Jellyfin URL + machine token; disappears once configured |
 | `/dashboard` | `Dashboard.kt` | Stats cards, recent activity, scan trigger, batch action chips |
 | `/library` | `Library.kt` | Media grid; multi-axis filters (studio/network/genre/tags + audio-track), search, sort — all URL-addressable |
-| `/media/:id` | `MediaDetail.kt` | Single editing surface: metadata (dirty + diff), tracks, artwork, NFO, lock banner, history; tabs via `?tab=` |
+| `/media/:id` | `MediaDetail.kt` | Single editing surface: metadata (dirty + diff), **tracks & order** (Phase 41 — was `/track-order`), artwork, NFO, lock banner, history; tabs via `?tab=` |
 | `/metadata` | `Metadata.kt` | Studios · Networks · Genres · Tags (`?tab=`) |
-| `/track-order` | `TrackOrder.kt` | Manual track default/reorder editor; before/after diff (still linked from media detail) |
 | `/settings` | `Settings.kt` | Connections · Library mapping · Scanning · Metadata · Advanced (`?sect=`) |
 | `/activity` | `Activity.kt` | Real-time scan console + audit log (category/level filters, workers chip) |
 
 > **Triage is not a page** (Phase 27). Editing happens on media detail; a floating **Triage dock**
 > (navigation-only) steps through items needing attention. Removed: `/triage`, `/triage/series/:id`,
-> `/language`.
+> `/language`, `/track-order` (merged into MediaDetail's "Tracks & order" tab, Phase 41).
 
 ---
 
@@ -342,7 +340,7 @@ persist across route changes. A `log_line` event type streams activity-log lines
 7. Emit `ItemScanned` WS event per item; frontend appends/updates grid in real-time
 8. On scan complete: call Jellyfin library refresh
 
-Scan state persistence and the resume checkpoint (`scan-state.json`) are specified in Phase 7
-(see [`requirements/archive/phase-07-persistent-scan-state.md`](requirements/archive/phase-07-persistent-scan-state.md)).
-Note: the persistence mechanism is moving to SQLite in
-[`requirements/phase-14-persistence-sqlite.md`](requirements/phase-14-persistence-sqlite.md).
+Scan state persistence and the resume checkpoint were introduced in Phase 7
+(see [`requirements/archive/phase-07-persistent-scan-state.md`](requirements/archive/phase-07-persistent-scan-state.md))
+and now live in **SQLite** (`scan_state` / `scan_processed` tables) since Phase 14
+(see [`requirements/archive/phase-14-persistence-sqlite.md`](requirements/archive/phase-14-persistence-sqlite.md)).
