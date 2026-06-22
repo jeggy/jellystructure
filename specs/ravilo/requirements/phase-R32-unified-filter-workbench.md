@@ -1,6 +1,6 @@
 # Phase R32 — Unified filter workbench + hero builder + Library round-trip
 
-**Status:** Planned · _one shared filter builder powers Content rows, Channels (Ravilo config) **and**
+**Status:** ✓ Done · _one shared filter builder powers Content rows, Channels (Ravilo config) **and**
 the jellystructure Library page; a guided hero-item builder; and a Library→Ravilo round-trip that
 saves a filter as a Channel/Content row or features a title in a viewer's hero carousel._
 
