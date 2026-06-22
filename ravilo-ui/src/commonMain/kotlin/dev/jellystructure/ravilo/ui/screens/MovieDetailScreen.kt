@@ -104,7 +104,7 @@ private fun MovieDetailLoaded(
                     url = backdropUrl,
                     contentDescription = null,
                     modifier = Modifier.matchParentSize(),
-                    alignment = Alignment.TopCenter,
+                    alignment = RaviloDimens.heroBackdropAlignment,
                 )
             } else {
                 Box(modifier = Modifier.matchParentSize().background(colors.surfaceVariant))

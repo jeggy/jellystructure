@@ -53,14 +53,14 @@ fun RaviloButton(
     val focusSpec = remember { spring<Float>(dampingRatio = 0.65f, stiffness = Spring.StiffnessMediumLow) }
     val dpSpec    = remember { spring<Dp>(dampingRatio = 0.65f, stiffness = Spring.StiffnessMediumLow) }
     val scale           by animateFloatAsState(if (focused) 1.06f else 1f, focusSpec, label = "buttonScale")
-    val shadowElevation by animateDpAsState(if (focused) 20.dp else 0.dp, dpSpec, label = "buttonShadow")
+    val shadowElevation by animateDpAsState(if (focused) 16.dp else 0.dp, dpSpec, label = "buttonShadow")
     // Lift: 4dp upward on focus (converted to px for graphicsLayer)
     val liftPx by animateFloatAsState(
         targetValue = if (focused) with(density) { -3.dp.toPx() } else 0f,
         animationSpec = focusSpec,
         label = "buttonLift",
     )
-    val shape = remember { RoundedCornerShape(12.dp) }
+    val shape = remember { RoundedCornerShape(10.dp) }
     val ghostBorderColor = remember(colors.textSecondary) { colors.textSecondary.copy(alpha = 0.4f) }
 
     Box(
@@ -87,8 +87,8 @@ fun RaviloButton(
                 onBlurred = { focused = false },
                 onLeft = onLeft, onRight = onRight, onUp = onUp, onDown = onDown, onSelect = onSelect,
             )
-            .heightIn(min = 52.dp)
-            .padding(horizontal = 24.dp, vertical = 10.dp),
+            .heightIn(min = 44.dp)
+            .padding(horizontal = 18.dp, vertical = 8.dp),
         contentAlignment = Alignment.Center,
     ) {
         Text(
@@ -98,7 +98,7 @@ fun RaviloButton(
                 focused -> colors.text
                 else -> colors.textSecondary
             },
-            fontSize = 16.sp,
+            fontSize = 15.sp,
             fontWeight = FontWeight.SemiBold,
             fontFamily = sora,
         )

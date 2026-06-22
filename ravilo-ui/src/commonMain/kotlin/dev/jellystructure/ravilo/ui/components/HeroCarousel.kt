@@ -119,7 +119,7 @@ fun HeroCarousel(
                 url = url,
                 contentDescription = null,
                 modifier = Modifier.fillMaxSize(),
-                alignment = Alignment.TopCenter,
+                alignment = RaviloDimens.heroBackdropAlignment,
             )
         }
 
@@ -143,23 +143,23 @@ fun HeroCarousel(
                 Text(
                     text = kicker.uppercase(),
                     color = colors.accentSecondary,
-                    fontSize = 13.sp,
+                    fontSize = 14.sp,
                     fontWeight = FontWeight.SemiBold,
                     fontFamily = sora,
-                    letterSpacing = 2.sp,
+                    letterSpacing = 1.5.sp,
                 )
-                Spacer(Modifier.height(10.dp))
+                Spacer(Modifier.height(8.dp))
             }
 
             // Title
             Text(
                 text = active.item.title,
                 color = colors.text,
-                fontSize = 46.sp,
-                lineHeight = 54.sp,
+                fontSize = 34.sp,
+                lineHeight = 40.sp,
                 fontWeight = FontWeight.Bold,
                 fontFamily = spaceGrotesk,
-                letterSpacing = (-1).sp,
+                letterSpacing = (-0.5).sp,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
@@ -170,11 +170,11 @@ fun HeroCarousel(
                 active.item.rating,
             ).joinToString(" · ")
             if (meta.isNotEmpty()) {
-                Spacer(Modifier.height(12.dp))
+                Spacer(Modifier.height(8.dp))
                 Text(
                     text = meta,
                     color = colors.textDim,
-                    fontSize = 17.sp,
+                    fontSize = 15.sp,
                     fontFamily = sora,
                 )
             }
@@ -182,12 +182,12 @@ fun HeroCarousel(
             // Synopsis — overview from the hero item (server-provided)
             val synopsis = active.synopsis
             if (!synopsis.isNullOrBlank()) {
-                Spacer(Modifier.height(14.dp))
+                Spacer(Modifier.height(10.dp))
                 Text(
                     text = synopsis,
                     color = colors.textSecondary,
-                    fontSize = 15.sp,
-                    lineHeight = 22.sp,
+                    fontSize = 14.sp,
+                    lineHeight = 20.sp,
                     fontFamily = sora,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
@@ -195,10 +195,10 @@ fun HeroCarousel(
                 )
             }
 
-            Spacer(Modifier.height(22.dp))
+            Spacer(Modifier.height(18.dp))
 
             // Action buttons: Play · More Info · + My List
-            Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 RaviloButton(
                     label = "▶  ${str("action.play")}",
                     focusRequester = focusRequester,
@@ -228,13 +228,13 @@ fun HeroCarousel(
                 )
             }
 
-            Spacer(Modifier.height(22.dp))
+            Spacer(Modifier.height(18.dp))
 
             // Animated page dots
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 items.forEachIndexed { i, _ ->
                     val dotWidth: Dp by animateDpAsState(
-                        targetValue = if (i == activeIndex) 28.dp else 6.dp,
+                        targetValue = if (i == activeIndex) 24.dp else 6.dp,
                         animationSpec = tween(300),
                         label = "dot$i",
                     )

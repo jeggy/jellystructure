@@ -53,7 +53,7 @@ fun <T> StaticContentRow(
                 Text(
                     text = title,
                     color = colors.text,
-                    fontSize = 22.sp,
+                    fontSize = 18.sp,
                     fontWeight = FontWeight.SemiBold,
                     fontFamily = spaceGrotesk,
                     letterSpacing = (-0.3).sp,
@@ -62,7 +62,7 @@ fun <T> StaticContentRow(
                     Text(
                         text = seeAllLabel,
                         color = colors.accent,
-                        fontSize = 17.sp,
+                        fontSize = 15.sp,
                         fontWeight = FontWeight.Medium,
                     )
                 }

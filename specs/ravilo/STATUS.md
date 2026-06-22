@@ -8,13 +8,21 @@ Ravilo is a sibling product **inside the jellystructure repo** — an Android TV
 canvas) streaming front-end built from one **Compose Multiplatform** codebase, talking only to the
 jellystructure backend.
 
-_Last updated: 2026-06-19_
-
 _Last updated: 2026-06-22_
 
 ## Current focus
 
-**Phases R01–R34 complete.** [R34 — TV detail layout + content size](requirements/phase-R34-detail-layout-content-size.md)
+**Phases R01–R35 complete.** [R35 — Home-screen TV sizing + hero framing](requirements/phase-R35-home-screen-tv-sizing.md)
+brings the **Home hero carousel and content-row headers** down to the same TV-tuned scale R34 set for the
+detail screens (hero title 46→34sp, meta→15, synopsis→14, row headers 22→18), shrinks the shared
+**`RaviloButton`** chrome **globally** (height 52→44dp, padding 24/10→18/8, corner 12→10, label 16→15sp —
+so home and detail buttons match), and re-frames the **hero backdrop crop** to `center 26%` via a shared
+`RaviloDimens.heroBackdropAlignment = BiasAlignment(0f, -0.48f)` across all three heroes (Home/Movie/Series),
+replacing the old `TopCenter` that pushed subjects under the AppBar. These are **fixed-tuned** constants:
+config-driven values (`heroHeightPct`, `autoAdvanceSeconds`, `tileShape`, `uiDensity`/`LocalTileScale`) are
+untouched. The `design/ravilo/` mockup was mirrored and R35 supersedes R24's home Hero numbers.
+
+[R34 — TV detail layout + content size](requirements/phase-R34-detail-layout-content-size.md)
 reworked Movie/Series detail to a **full-bleed viewport hero** (title/meta/synopsis/Play overlaid in the
 lower third) so the page opens at the top instead of auto-scrolling and stranding the screen, with TV-tuned
 detail sizing; and added a per-user **`uiDensity`** (Compact/Cozy/Comfortable) that scales the grid tiles
