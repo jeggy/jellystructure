@@ -14,14 +14,19 @@ _Last updated: 2026-06-22_
 
 ## Current focus
 
-**Phases R01–R31 complete.** Next up is **[R32 — Unified filter workbench + hero builder + Library
-round-trip](requirements/phase-R32-unified-filter-workbench.md)** (Planned): one shared condition-stack
-builder powers Content rows, Channels **and** the jellystructure Library page; **audio-track and hero-item
-become universal facets** (extending the Phase-30 axes, served by the feed/`/api/media` filter); a guided
-hero-item builder; a Library round-trip (**Save filter as… Channel / Content row**); and a **"★ Feature in
-Ravilo"** action on Movie/Series detail (locked-title hero builder + viewer picker). Revises the filter
-parts of R16/R28; folds in the Phase-20 audio-track filter. Approved mockups in `design/app/ravilo-config.html`,
-`design/app/library.html` + `design/app/media.html` (shared builder: `design/app/ravilo-builders.js`).
+**Phases R01–R32 complete.** [R32 — Unified filter workbench + hero builder + Library
+round-trip](requirements/phase-R32-unified-filter-workbench.md) shipped: a shared condition-stack
+builder (`ui/Workbench.kt`) powers Content rows, Channels **and** the jellystructure Library page;
+**audio-track and hero_item are universal facets** (the feed evaluator `ConditionEvaluator` + a
+`heroItem`/`viewer` predicate on `/api/media`); `ChannelConfig`/`RowConfig` gained `match` + a
+`conditions` stack (additive — legacy single typed filters still honoured when no stack is set); the
+Library offers **⚙ Add filter** + **Save filter as… Channel / Content row** (viewer picker), and
+Movie/Series detail gained **★ Feature in Ravilo…** (locked-title hero builder + viewer picker writing
+`HeroConfig`). Hero height clamp is now 30–100% with a 7s auto-advance default (R32 §F).
+
+No Ravilo phases are queued. Note the workbench preview reports an honest **≈** count when a stack uses
+none-of / not-contains / Match-ANY (those are evaluated on the TV by `ConditionEvaluator`, not by the
+positive-only `/api/media` count).
 
 ## Foundational decisions locked (constitution)
 

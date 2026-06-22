@@ -27,8 +27,8 @@ See [`requirements/README.md`](requirements/README.md) for the full index.
 (Android TV **and** browser/WASM canvas, one shared codebase) for jellystructure-managed libraries.
 It adds a **`/api/tv/**`** namespace + a per-Jellyfin-user config store to *this* backend and a shared
 **`:shared`** KMP module (DTOs + Ktor client) that the admin frontend reuses too. Control plane =
-jellystructure only; data plane (video/images) = Jellyfin directly. Phases **R01–R31** are complete and
-**R32** (the shared filter workbench + Library round-trip) is planned — see
+jellystructure only; data plane (video/images) = Jellyfin directly. Phases **R01–R32** are complete
+(R32 = the shared filter workbench + Library round-trip) — see
 [`ravilo/STATUS.md`](ravilo/STATUS.md) and [`ravilo/requirements/README.md`](ravilo/requirements/README.md).
 The jellystructure admin frontend stays DOM/Tailwind; Ravilo's web build is a
 **separate** canvas bundle (the "no Compose for Web" rule is scoped to the admin app).

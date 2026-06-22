@@ -71,7 +71,7 @@ class RaviloConfigService(private val db: JellystructureDb) {
             .mapIndexed { i, h -> h.copy(order = i) },
         channels = config.channels.mapIndexed { i, c -> c.copy(order = i) },
         rows = config.rows.mapIndexed { i, r -> r.copy(order = i) },
-        heroHeightPct = config.heroHeightPct.coerceIn(30, 70),
+        heroHeightPct = config.heroHeightPct.coerceIn(30, 100),
         autoAdvanceSeconds = config.autoAdvanceSeconds.coerceIn(0, 120),
     )
 
