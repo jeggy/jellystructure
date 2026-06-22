@@ -187,11 +187,12 @@ class TvApiClient(
     suspend fun putViewerSettings(
         skin: Skin? = null,
         showContinueProgress: Boolean? = null,
+        autoplayNext: Boolean? = null,
         tileShape: TileShape? = null,
     ) {
         client.put("$baseUrl/api/tv/settings") {
             auth()
-            jsonBody(json.encodeToString(ViewerSettingsRequest(skin, showContinueProgress, tileShape)))
+            jsonBody(json.encodeToString(ViewerSettingsRequest(skin, showContinueProgress, autoplayNext, tileShape)))
         }.assertSuccess()
     }
 
