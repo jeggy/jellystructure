@@ -4,14 +4,19 @@ package dev.jellystructure.ui
 
 import dev.jellystructure.api.MediaApi
 import dev.jellystructure.api.MetaFacets
+import dev.jellystructure.api.RaviloApi
 import dev.jellystructure.api.TrackFacets
 import dev.jellystructure.model.MediaKind
+import dev.jellystructure.shared.tv.ChannelLogo
+import kotlin.js.JsString
 import kotlinx.browser.document
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import org.w3c.dom.HTMLElement
 import org.w3c.dom.HTMLInputElement
 import org.w3c.dom.HTMLSelectElement
+import org.w3c.files.File
+import org.w3c.files.FileReader
 
 // ── R32 unified filter workbench ────────────────────────────────────────────────
 // One shared condition-stack builder for the Library, Ravilo Channels and Content rows.
@@ -48,6 +53,27 @@ private var wbShowSaveAs = false
 private var wbTitle = ""
 private var wbApplyLabel = "Apply"
 
+// R36 channel-button section (shown only when editing a channel).
+private var wbChannelMode = false
+private var wbChStyle = "logo"            // "logo" | "text"
+private var wbChColor = ""                // CSS fill: a preset gradient, a solid hex, or a custom gradient
+private var wbChName = ""                 // channel name (for the preview / initials)
+private var wbLogoUrl: String? = null
+private var wbLogos: List<ChannelLogo> = emptyList()
+private var wbOnSaveChannel: ((String, String, String?, String, String, List<WbCond>) -> Unit)? = null
+private var wbCustomType = "gradient"     // custom builder: "solid" | "gradient"
+private var wbCustomC1 = "#7b6ef0"
+private var wbCustomC2 = "#3fb6f5"
+private var wbCustomAngle = 135
+
+private val WB_CH_PRESETS = listOf(
+    "linear-gradient(135deg,#3b2a78,#15102e)",
+    "linear-gradient(135deg,#e3122b,#7d0a1a)",
+    "linear-gradient(135deg,#0a93a6,#063d47)",
+    "linear-gradient(135deg,#1455d8,#0a2766)",
+    "linear-gradient(135deg,#c8102e,#1a1a1a)",
+)
+
 /**
  * Open the workbench modal.
  * @param onApply     called with (match, include, conditions) when the user applies the filter.
@@ -64,6 +90,14 @@ fun openWorkbench(
     applyLabel: String = "Apply",
     onApply: (String, String, List<WbCond>) -> Unit,
     onSaveAs: ((String, String, String, List<WbCond>) -> Unit)? = null,
+    // R36: when channelMode, the modal also edits the channel button; onSaveChannel receives
+    // (style "LOGO"|"TEXT", brandColor, logoUrl, match, include, conditions).
+    channelMode: Boolean = false,
+    initialStyle: String = "logo",
+    initialBrandColor: String = "",
+    initialLogoUrl: String? = null,
+    channelName: String = "",
+    onSaveChannel: ((String, String, String?, String, String, List<WbCond>) -> Unit)? = null,
 ) {
     wbScope = scope
     wbTitle = title
@@ -76,6 +110,24 @@ fun openWorkbench(
     wbOnApply = onApply
     wbOnSave = onSaveAs
     wbShowSaveAs = onSaveAs != null
+    wbChannelMode = channelMode
+    wbChStyle = if (initialStyle.equals("text", ignoreCase = true)) "text" else "logo"
+    wbChColor = initialBrandColor
+    wbLogoUrl = initialLogoUrl
+    wbChName = channelName
+    wbOnSaveChannel = onSaveChannel
+    if (wbChColor.isNotEmpty() && wbChColor !in WB_CH_PRESETS) {  // seed the custom builder from an existing value
+        if (wbChColor.startsWith("linear-gradient")) {
+            wbCustomType = "gradient"
+            val inner = wbChColor.substringAfter('(').substringBeforeLast(')').split(',').map { it.trim() }
+            wbCustomAngle = inner.firstOrNull { it.endsWith("deg") }?.removeSuffix("deg")?.toIntOrNull() ?: 135
+            val cols = inner.filter { it.startsWith("#") }
+            wbCustomC1 = cols.getOrNull(0) ?: "#7b6ef0"
+            wbCustomC2 = cols.getOrNull(1) ?: "#3fb6f5"
+        } else {
+            wbCustomType = "solid"; wbCustomC1 = wbChColor
+        }
+    }
     injectWorkbenchStyles()
 
     val existing = document.getElementById("wb-overlay")
@@ -101,6 +153,7 @@ fun openWorkbench(
           </div>
           <div class="wb-body" id="wb-conds"></div>
           <button id="wb-add" class="btn sm ghost">+ Add condition</button>
+          <div id="wb-channel"></div>
           <div class="wb-count" id="wb-count"><span class="muted tiny">Computing…</span></div>
           <div class="wb-preview" id="wb-preview"></div>
           <div class="wb-foot">
@@ -119,6 +172,11 @@ fun openWorkbench(
         wbRenderConds()
         wbWireChrome()
         wbRefreshPreview()
+        if (wbChannelMode) {
+            if (wbChColor.isEmpty()) wbChColor = WB_CH_PRESETS[0]
+            wbLogos = runCatching { RaviloApi.listChannelLogos() }.getOrDefault(emptyList())
+            wbRenderChannel()
+        }
     }
 }
 
@@ -177,7 +235,14 @@ private fun wbWireChrome() {
     document.getElementById("wb-close")?.addEventListener("click") { closeWorkbench() }
     document.getElementById("wb-cancel")?.addEventListener("click") { closeWorkbench() }
     document.getElementById("wb-apply")?.addEventListener("click") {
-        wbOnApply?.invoke(wbMatch, wbInclude, wbConds); closeWorkbench()
+        if (wbChannelMode) {
+            val style = if (wbChStyle == "text") "TEXT" else "LOGO"
+            val logo = if (wbChStyle == "logo") wbLogoUrl else null
+            wbOnSaveChannel?.invoke(style, wbChColor, logo, wbMatch, wbInclude, wbConds)
+        } else {
+            wbOnApply?.invoke(wbMatch, wbInclude, wbConds)
+        }
+        closeWorkbench()
     }
     document.getElementById("wb-save-channel")?.addEventListener("click") { wbOnSave?.invoke("channel", wbMatch, wbInclude, wbConds); closeWorkbench() }
     document.getElementById("wb-save-row")?.addEventListener("click") { wbOnSave?.invoke("row", wbMatch, wbInclude, wbConds); closeWorkbench() }
@@ -280,6 +345,107 @@ private fun wbRefreshPreview() {
     }
 }
 
+private fun wbCustomCss(): String =
+    if (wbCustomType == "solid") wbCustomC1 else "linear-gradient(${wbCustomAngle}deg, $wbCustomC1, $wbCustomC2)"
+
+private fun wbChannelChip(): String {
+    val fill = wbChColor.ifEmpty { WB_CH_PRESETS[0] }
+    val inner = if (wbChStyle == "logo" && !wbLogoUrl.isNullOrBlank()) {
+        """<img src="${wbLogoUrl!!.esc()}" alt="">"""
+    } else {
+        (if (wbChStyle == "logo") wbChName.take(3).uppercase() else wbChName.take(12).ifEmpty { "Channel" }).esc()
+    }
+    return """<div class="wbc-chip" style="background:$fill;">$inner</div>"""
+}
+
+private fun wbRenderChannel() {
+    val host = document.getElementById("wb-channel") as? HTMLElement ?: return
+    if (!wbChannelMode) { host.innerHTML = ""; return }
+    val isCustom = wbChColor.isNotEmpty() && wbChColor !in WB_CH_PRESETS
+    val presetSw = WB_CH_PRESETS.joinToString("") { c ->
+        """<span class="wbc-sw${if (c == wbChColor) " on" else ""}" data-color="${c.esc()}" style="background:$c;"></span>"""
+    }
+    val customSw = """<span class="wbc-sw wbc-custom${if (isCustom) " on" else ""}" data-customsw title="Custom color or gradient" style="${if (isCustom) "background:${wbChColor.esc()};" else ""}">${if (isCustom) "" else "+"}</span>"""
+    val builder = if (isCustom) """
+      <div class="wbc-grad">
+        <span class="seg wbc-gradmode"><span class="${if (wbCustomType == "solid") "on" else ""}" data-gm="solid">Solid</span><span class="${if (wbCustomType == "gradient") "on" else ""}" data-gm="gradient">Gradient</span></span>
+        <label class="wbc-cf"><span class="tiny muted">${if (wbCustomType == "gradient") "From" else "Color"}</span><input type="color" class="wbc-c1" value="$wbCustomC1"></label>
+        <label class="wbc-cf" style="${if (wbCustomType == "gradient") "" else "display:none;"}"><span class="tiny muted">To</span><input type="color" class="wbc-c2" value="$wbCustomC2"></label>
+        <label class="wbc-cf" style="flex:1;min-width:150px;${if (wbCustomType == "gradient") "" else "display:none;"}"><span class="tiny muted">Angle <b class="wbc-angv">$wbCustomAngle°</b></span><input type="range" min="0" max="360" step="5" class="wbc-ang" value="$wbCustomAngle"></label>
+      </div>""" else ""
+    val logoOrText = if (wbChStyle == "logo") {
+        val tiles = wbLogos.joinToString("") { lg ->
+            """<button class="wbc-tile${if (lg.url == wbLogoUrl) " on" else ""}" data-logo="${lg.url.esc()}" title="${lg.label.esc()}"><img src="${lg.url.esc()}" alt=""></button>"""
+        }
+        """<div class="tiny muted" style="margin:12px 0 7px;">Pick a logo or upload your own — a transparent PNG/SVG sits cleanly on the brand fill.</div>
+           <div class="wbc-grid">$tiles<button class="wbc-tile wbc-up" data-upload><span style="font-size:1.25rem;">⤒</span><span class="tiny">Upload</span></button></div>
+           <input type="file" accept="image/png,image/svg+xml,image/*" class="wbc-file" style="display:none;">"""
+    } else {
+        """<div class="tiny muted" style="margin:12px 0 2px;">Text mode shows the channel name on the button.</div>"""
+    }
+    host.innerHTML = """
+      <hr class="wbc-hr">
+      <div class="wbc-flex">
+        <div><div class="wbc-lbl">Display</div><span class="seg wbc-style"><span class="${if (wbChStyle == "logo") "on" else ""}" data-st="logo">Logo</span><span class="${if (wbChStyle == "text") "on" else ""}" data-st="text">Text</span></span></div>
+        <div><div class="wbc-lbl">Brand fill</div><div class="wbc-sws">$presetSw$customSw</div></div>
+        <div style="margin-left:auto;text-align:center;"><div class="wbc-lbl">Preview</div>${wbChannelChip()}</div>
+      </div>
+      $builder
+      $logoOrText
+    """.trimIndent()
+    wbWireChannel()
+}
+
+private fun wbLiveUpdateChip() {
+    (document.querySelector("#wb-channel .wbc-chip") as? HTMLElement)
+        ?.setAttribute("style", "background:${wbChColor.ifEmpty { WB_CH_PRESETS[0] }};")
+    (document.querySelector("#wb-channel .wbc-custom") as? HTMLElement)?.let {
+        it.setAttribute("style", "background:$wbChColor;"); it.textContent = ""; it.classList.add("on")
+    }
+    val els = document.querySelectorAll("#wb-channel .wbc-sw[data-color]")
+    for (i in 0 until els.length) (els.item(i) as? HTMLElement)?.classList?.remove("on")
+}
+
+private fun wbWireChannel() {
+    fun each(sel: String, fn: (HTMLElement) -> Unit) {
+        val els = document.querySelectorAll(sel)
+        for (i in 0 until els.length) (els.item(i) as? HTMLElement)?.let(fn)
+    }
+    each("#wb-channel .wbc-style span") { el -> el.addEventListener("click") { wbChStyle = el.getAttribute("data-st") ?: "logo"; wbRenderChannel() } }
+    each("#wb-channel .wbc-sw[data-color]") { el -> el.addEventListener("click") { wbChColor = el.getAttribute("data-color") ?: ""; wbRenderChannel() } }
+    (document.querySelector("#wb-channel [data-customsw]") as? HTMLElement)?.addEventListener("click") { wbChColor = wbCustomCss(); wbRenderChannel() }
+    each("#wb-channel .wbc-gradmode span") { el -> el.addEventListener("click") { wbCustomType = el.getAttribute("data-gm") ?: "gradient"; wbChColor = wbCustomCss(); wbRenderChannel() } }
+    (document.querySelector("#wb-channel .wbc-c1") as? HTMLInputElement)?.let { inp -> inp.addEventListener("input") { wbCustomC1 = inp.value; wbChColor = wbCustomCss(); wbLiveUpdateChip() } }
+    (document.querySelector("#wb-channel .wbc-c2") as? HTMLInputElement)?.let { inp -> inp.addEventListener("input") { wbCustomC2 = inp.value; wbChColor = wbCustomCss(); wbLiveUpdateChip() } }
+    (document.querySelector("#wb-channel .wbc-ang") as? HTMLInputElement)?.let { inp ->
+        inp.addEventListener("input") {
+            wbCustomAngle = inp.value.toIntOrNull() ?: 135
+            (document.querySelector("#wb-channel .wbc-angv") as? HTMLElement)?.textContent = "$wbCustomAngle°"
+            wbChColor = wbCustomCss(); wbLiveUpdateChip()
+        }
+    }
+    each("#wb-channel .wbc-tile[data-logo]") { el -> el.addEventListener("click") { wbLogoUrl = el.getAttribute("data-logo"); wbRenderChannel() } }
+    val fileInput = document.querySelector("#wb-channel .wbc-file") as? HTMLInputElement
+    (document.querySelector("#wb-channel [data-upload]") as? HTMLElement)?.addEventListener("click") { fileInput?.click() }
+    fileInput?.let { inp ->
+        inp.addEventListener("change") {
+            val file: File = inp.files?.item(0) ?: return@addEventListener
+            val reader = FileReader()
+            reader.onload = { _ ->
+                val dataUrl = (reader.result as? JsString)?.toString() ?: ""
+                if (dataUrl.isNotEmpty()) wbScope?.launch {
+                    runCatching { RaviloApi.uploadChannelLogo(file.name, dataUrl) }.onSuccess { logo ->
+                        wbLogos = listOf(logo) + wbLogos.filter { it.url != logo.url }
+                        wbLogoUrl = logo.url
+                        wbRenderChannel()
+                    }
+                }
+            }
+            reader.readAsDataURL(file)
+        }
+    }
+}
+
 private fun closeWorkbench() {
     document.getElementById("wb-overlay")?.let { it.parentElement?.removeChild(it) }
 }
@@ -305,6 +471,23 @@ private fun injectWorkbenchStyles() {
         .wb-pcard img { width:100%; height:100%; object-fit:cover; }
         .wb-noimg { width:100%; height:100%; display:flex; align-items:center; justify-content:center; font-weight:700; color:var(--ink-soft); }
         .wb-foot { display:flex; gap:8px; align-items:center; }
+        .wbc-hr { border:none; border-top:1px dashed var(--line); margin:16px 0; }
+        .wbc-flex { display:flex; align-items:flex-start; gap:18px; flex-wrap:wrap; }
+        .wbc-lbl { font-size:.72rem; color:var(--ink-soft); margin-bottom:6px; }
+        .wbc-sws { display:flex; gap:7px; flex-wrap:wrap; align-items:center; }
+        .wbc-sw { width:26px; height:26px; border-radius:8px; cursor:pointer; border:2px solid transparent; box-sizing:border-box; }
+        .wbc-sw.on { border-color:var(--ink); box-shadow:0 0 0 2px var(--fill); }
+        .wbc-custom { display:flex; align-items:center; justify-content:center; color:var(--ink-soft); font-size:1.1rem; background:var(--fill-3); }
+        .wbc-chip { width:120px; height:46px; border-radius:10px; display:flex; align-items:center; justify-content:center; color:#fff; font-weight:700; font-size:.78rem; overflow:hidden; }
+        .wbc-chip img { max-width:80%; max-height:64%; object-fit:contain; }
+        .wbc-grad { display:flex; align-items:center; gap:14px; flex-wrap:wrap; margin-top:12px; }
+        .wbc-cf { display:flex; flex-direction:column; gap:3px; }
+        .wbc-cf input[type=color] { width:46px; height:30px; border:none; background:none; padding:0; cursor:pointer; }
+        .wbc-cf input[type=range] { width:100%; }
+        .wbc-grid { display:flex; gap:9px; flex-wrap:wrap; }
+        .wbc-tile { width:74px; height:46px; border-radius:9px; border:1px solid var(--line-2); background:var(--fill-2); cursor:pointer; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px; overflow:hidden; color:var(--ink-soft); }
+        .wbc-tile.on { border-color:var(--hi); box-shadow:0 0 0 2px var(--hi); }
+        .wbc-tile img { max-width:84%; max-height:70%; object-fit:contain; }
     """.trimIndent()
     document.head?.appendChild(style)
 }
