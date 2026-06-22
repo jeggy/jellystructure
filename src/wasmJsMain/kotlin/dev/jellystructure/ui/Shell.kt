@@ -35,6 +35,32 @@ private var dockTotal = 0
 // Triage dock state
 private var triageDockItems: List<dev.jellystructure.api.TriageItem> = emptyList()
 private var triageDockIndex: Int = 0
+private const val TRIAGE_DOCK_CLOSED_KEY = "js-attn-dock-closed"
+private var triageDockHidden: Boolean = false
+
+/** One-line "what's wrong" summary for the current triage item, mirroring the design dock sub-line. */
+private fun triageSubline(item: dev.jellystructure.api.TriageItem): String {
+    val parts = mutableListOf<String>()
+    val untagged = item.untaggedTracks.size
+    if (untagged > 0) parts += "$untagged untagged audio track${if (untagged != 1) "s" else ""}"
+    item.cascadeMismatch?.let {
+        val actual = it.actualDefaultLang ?: "?"
+        parts += "wrong default audio ($actual → ${it.resolvedLanguage})"
+    }
+    if (item.multiDefault != null) parts += "multiple default audio"
+    if (item.languageMix) parts += "mixed-language series"
+    val epIssues = item.episodeIssues
+    if (epIssues.isNotEmpty()) {
+        val first = epIssues.first()
+        val epParts = mutableListOf<String>()
+        if (first.untaggedTracks.isNotEmpty()) epParts += "untagged tracks"
+        if (first.multiDefault != null) epParts += "multiple default audio"
+        if (first.missingOverview) epParts += "missing overview"
+        val more = if (epIssues.size > 1) " (+${epIssues.size - 1} more)" else ""
+        parts += "${first.episodeCode} · ${epParts.joinToString(", ").ifEmpty { "needs attention" }}$more"
+    }
+    return parts.joinToString(" · ").ifEmpty { "needs attention" }
+}
 
 private val ICONS = mapOf(
     "dashboard" to """<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg>""",
@@ -50,11 +76,12 @@ private val ICONS = mapOf(
 private val NAV: List<NavEntry> = listOf(
     NavLink("/dashboard", "Dashboard", "dashboard"),
     NavLink("/library", "Library", "library"),
-    NavLink("/metadata", "Metadata", "metadata"),
     NavLink("/activity", "Activity", "activity"),
     NavGroup("Setup"),
-    NavLink("/ravilo", "Ravilo TV", "tv"),
+    NavLink("/metadata", "Metadata", "metadata"),
     NavLink("/settings", "Settings", "settings"),
+    NavGroup("Apps"),
+    NavLink("/ravilo", "Ravilo TV", "tv"),
 )
 
 fun renderShell(user: UserProfile) {
@@ -114,6 +141,7 @@ fun renderShell(user: UserProfile) {
     }
 
     // Inject ambient dock and triage dock into body
+    triageDockHidden = window.localStorage.getItem(TRIAGE_DOCK_CLOSED_KEY) == "1"
     injectDock(body as HTMLElement)
     injectTriageDock(body)
     injectCommandPalette(body)
@@ -122,14 +150,9 @@ fun renderShell(user: UserProfile) {
     document.getElementById("cmd-search-pill")?.addEventListener("click") { showPalette() }
 
     MainScope().launch {
-        // Triage badge count + dock
+        // Triage count → sidebar status dots + the floating Triage dock (Phase 27; there is no
+        // Triage page or nav badge any more — the dock is the surface).
         val count = MediaApi.getTriageCount()
-        val badge = document.getElementById("triage-count-badge") as? HTMLElement
-        if (badge != null && count != null && count.total > 0) {
-            badge.textContent = count.total.toString()
-        } else {
-            badge?.remove()
-        }
         // Sidebar status dots
         updateSidebarStatus(count?.total ?: 0)
         // Load triage dock items
@@ -172,7 +195,13 @@ private fun buildPaletteCommands(): List<PaletteCmd> = listOf(
     PaletteCmd("Go to Settings", "Connections, scan & metadata options") { App.navigate("/settings") },
     PaletteCmd("Go to Activity", "Scan log and workers") { App.navigate("/activity") },
     PaletteCmd("Go to Metadata", "Studios, networks, genres & tags") { App.navigate("/metadata") },
-    PaletteCmd("Go to Triage queue", "Items needing attention") { App.navigate("/triage") },
+    PaletteCmd("Triage: first item", "Items needing attention") {
+        if (triageDockItems.isNotEmpty()) {
+            triageDockIndex = 0
+            updateTriageDock()
+            navigateToTriageItem(triageDockItems[0])
+        }
+    },
     PaletteCmd("Go to Dashboard", "Overview and stats") { App.navigate("/") },
     PaletteCmd("Start full scan", "Re-scan all Jellyfin items") {
         MainScope().launch { MediaApi.startScan() }
@@ -355,20 +384,38 @@ private fun injectTriageDock(body: HTMLElement) {
     el.innerHTML = """
         <div class="dock-head" id="triage-dock-head">
           <span class="dot warn" style="background:var(--warn,#f59e0b);"></span>
-          <b id="triage-dock-title">Triage</b>
+          <b>Needs attention</b>
           <span class="spacer"></span>
           <span class="tiny mono" id="triage-dock-pos"></span>
-          <span class="kbd toggle-dock" id="triage-dock-toggle" style="cursor:pointer;padding:0 4px">⌄</span>
+          <span class="kbd toggle-dock" id="triage-dock-toggle" style="cursor:pointer;padding:0 4px" title="Collapse">⌄</span>
+          <span class="kbd" id="triage-dock-close" style="cursor:pointer;padding:0 4px" title="Hide">✕</span>
         </div>
         <div class="dock-body">
-          <div class="row center" style="gap:6px;margin-top:4px;">
-            <button class="btn sm ghost" id="triage-dock-prev" style="font-size:.75rem;padding:2px 8px;">← Prev</button>
-            <span class="spacer"></span>
-            <button class="btn sm primary" id="triage-dock-next" style="font-size:.75rem;padding:2px 8px;">Next →</button>
+          <div style="margin-top:2px;">
+            <div id="triage-dock-title" style="font-size:.86rem;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></div>
+            <div id="triage-dock-sub" class="tiny muted" style="margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></div>
+          </div>
+          <div class="row center" style="gap:6px;margin-top:10px;">
+            <button class="btn sm ghost" id="triage-dock-prev" style="font-size:.75rem;padding:2px 8px;">‹ Prev</button>
+            <button class="btn sm primary" id="triage-dock-open" style="font-size:.75rem;padding:2px 8px;flex:1;justify-content:center;">Open &amp; fix →</button>
+            <button class="btn sm ghost" id="triage-dock-next" style="font-size:.75rem;padding:2px 8px;">Next ›</button>
           </div>
         </div>
     """.trimIndent()
     body.appendChild(el)
+
+    el.querySelector("#triage-dock-close")?.addEventListener("click") { e ->
+        e.stopPropagation()
+        triageDockHidden = true
+        window.localStorage.setItem(TRIAGE_DOCK_CLOSED_KEY, "1")
+        el.style.display = "none"
+    }
+
+    el.querySelector("#triage-dock-open")?.addEventListener("click") { e ->
+        e.stopPropagation()
+        if (triageDockItems.isEmpty()) return@addEventListener
+        navigateToTriageItem(triageDockItems[triageDockIndex])
+    }
 
     el.querySelector("#triage-dock-toggle")?.addEventListener("click") { e ->
         e.stopPropagation()
@@ -402,10 +449,14 @@ internal fun updateTriageDock() {
         el.style.display = "none"
         return
     }
+    if (triageDockHidden) { el.style.display = "none"; return }
     el.style.display = ""
     val total = triageDockItems.size
     val pos = triageDockIndex + 1
-    (document.getElementById("triage-dock-title") as? HTMLElement)?.textContent = "$total need attention"
+    val item = triageDockItems.getOrNull(triageDockIndex)
+    (document.getElementById("triage-dock-title") as? HTMLElement)?.textContent = item?.title ?: "—"
+    (document.getElementById("triage-dock-sub") as? HTMLElement)?.textContent =
+        item?.let { triageSubline(it) } ?: ""
     (document.getElementById("triage-dock-pos") as? HTMLElement)?.textContent = "$pos / $total"
 }
 

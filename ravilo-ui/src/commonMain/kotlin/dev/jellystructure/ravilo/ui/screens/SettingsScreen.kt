@@ -74,6 +74,13 @@ class SettingsStore(private val apiClient: TvApiClient) {
         _state.value = SettingsState.Loaded(updated)
         scope.launch { runCatching { apiClient.putViewerSettings(showContinueProgress = v) } }
     }
+
+    fun saveAutoplayNext(v: Boolean) {
+        val cur = (_state.value as? SettingsState.Loaded)?.config ?: return
+        val updated = cur.copy(autoplayNext = v)
+        _state.value = SettingsState.Loaded(updated)
+        scope.launch { runCatching { apiClient.putViewerSettings(autoplayNext = v) } }
+    }
 }
 
 @Composable
@@ -121,7 +128,7 @@ private fun SettingsContent(
 
     // Skin section
     if (config.allowSkinOverride) {
-        SectionHeader("Appearance")
+        SectionHeader(str("settings.appearance"))
         Spacer(Modifier.height(12.dp))
         val skinFRs = remember { Skin.entries.map { FocusRequester() } }
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -162,14 +169,21 @@ private fun SettingsContent(
     }
 
     // Playback prefs
-    SectionHeader("Playback")
+    SectionHeader(str("settings.playback"))
     Spacer(Modifier.height(12.dp))
     val progressFR = remember { FocusRequester() }
     ToggleRow(
-        label = "Show progress on Continue Watching",
+        label = str("settings.show_progress"),
         checked = config.showContinueProgress,
         focusRequester = progressFR,
         onToggle = { store.saveShowContinueProgress(!config.showContinueProgress) },
+    )
+    Spacer(Modifier.height(12.dp))
+    ToggleRow(
+        label = str("settings.autoplay_next"),
+        checked = config.autoplayNext,
+        focusRequester = remember { FocusRequester() },
+        onToggle = { store.saveAutoplayNext(!config.autoplayNext) },
     )
     // Land focus on a stable control on entry; up/down reach skin and sign-out.
     LaunchedEffect(Unit) { runCatching { progressFR.requestFocus() } }
@@ -177,7 +191,7 @@ private fun SettingsContent(
     Spacer(Modifier.height(32.dp))
 
     // Account
-    SectionHeader("Account")
+    SectionHeader(str("settings.account"))
     Spacer(Modifier.height(12.dp))
     Text(str("profile.signed_in", mapOf("name" to displayName)), color = colors.textSecondary, fontSize = 15.sp)
     Spacer(Modifier.height(16.dp))

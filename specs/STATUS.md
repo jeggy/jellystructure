@@ -71,7 +71,10 @@ The jellystructure admin frontend stays DOM/Tailwind; Ravilo's web build is a
   defects** (incl. R32 config-screen condition round-trip loss, the hero-height/auto-advance/tile-shape
   §F propagation, the Activity overall-bar, and stale `/triage` palette refs), **P1** spec-fidelity gaps
   (config-screen workbench-first, Ravilo TV hero actions + R19 localization, admin detail/Library/Metadata/
-  Settings/Shell), and **P2** decisions (NFO-drift direction). Not yet implemented.
+  Settings/Shell), and **P2** decisions (NFO-drift direction → resolved to re-assert). **Mostly
+  implemented (2026-06-22)** — all P0 + most P1/P2 landed; a short deferred list (Library popover
+  removal, cron scheduled-scan, trickplay, trailer/codec-pill/kids-badge) remains in the spec's
+  Resolution section.
 - **Reverse-drift resolved in specs:** `plan.md` previously claimed `PATCH /config`,
   `POST /config/test-connection`, and `POST /jellyfin/refresh` — none exist in source (it's `PUT
   /config`, no test-connection route, and per-item `/media/{id}/jellyfin-refresh`). The spec now

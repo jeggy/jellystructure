@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -37,7 +38,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import dev.jellystructure.ravilo.ui.focus.dpadFocusable
+import dev.jellystructure.ravilo.ui.i18n.str
 import dev.jellystructure.ravilo.ui.seams.RemoteImage
 import dev.jellystructure.ravilo.ui.theme.RaviloDimens
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
@@ -54,9 +55,10 @@ fun HeroCarousel(
     focusRequester: FocusRequester,
     heightDp: Dp = 460.dp,
     autoAdvanceSeconds: Int = 6,
-    onSelect: (MediaCard) -> Unit = {},
+    onPlay: (MediaCard) -> Unit = {},
+    onMoreInfo: (MediaCard) -> Unit = {},
+    onMyList: (MediaCard) -> Unit = {},
     onUp: (() -> Unit)? = null,
-    onDown: (() -> Unit)? = null,
 ) {
     val colors = RaviloTheme.colors
     val sora = Sora
@@ -81,6 +83,11 @@ fun HeroCarousel(
     var activeIndex by remember { mutableIntStateOf(0) }
     var resetTick   by remember { mutableIntStateOf(0) }
 
+    // Action-button focus requesters. The Play button is the hero's entry point (the passed-in
+    // focusRequester); Left/Right move between buttons and page the carousel at the row edges.
+    val moreInfoFR = remember { FocusRequester() }
+    val myListFR   = remember { FocusRequester() }
+
     if (items.isEmpty()) return
     val active = items[activeIndex]
 
@@ -96,19 +103,7 @@ fun HeroCarousel(
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(heightDp)
-            .dpadFocusable(
-                focusRequester = focusRequester,
-                onLeft   = {
-                    if (activeIndex > 0) { activeIndex--; resetTick++ }
-                },
-                onRight  = {
-                    if (activeIndex < items.lastIndex) { activeIndex++; resetTick++ }
-                },
-                onUp     = onUp,
-                onDown   = onDown,
-                onSelect = { onSelect(active.item) },
-            ),
+            .height(heightDp),
     ) {
         // Backdrop image, crossfades between slides
         AnimatedContent(
@@ -180,7 +175,56 @@ fun HeroCarousel(
                 )
             }
 
-            Spacer(Modifier.height(28.dp))
+            // Synopsis — overview from the hero item (server-provided)
+            val synopsis = active.synopsis
+            if (!synopsis.isNullOrBlank()) {
+                Spacer(Modifier.height(14.dp))
+                Text(
+                    text = synopsis,
+                    color = colors.textSecondary,
+                    fontSize = 15.sp,
+                    lineHeight = 22.sp,
+                    fontFamily = sora,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.width(560.dp),
+                )
+            }
+
+            Spacer(Modifier.height(22.dp))
+
+            // Action buttons: Play · More Info · + My List
+            Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                RaviloButton(
+                    label = "▶  ${str("action.play")}",
+                    focusRequester = focusRequester,
+                    style = ButtonStyle.PRIMARY,
+                    onLeft  = { if (activeIndex > 0) { activeIndex--; resetTick++ } },
+                    onRight = { moreInfoFR.requestFocus() },
+                    onUp    = onUp,
+                    onSelect = { onPlay(active.item) },
+                )
+                RaviloButton(
+                    label = str("action.more_info"),
+                    focusRequester = moreInfoFR,
+                    style = ButtonStyle.GHOST,
+                    onLeft  = { focusRequester.requestFocus() },
+                    onRight = { myListFR.requestFocus() },
+                    onUp    = onUp,
+                    onSelect = { onMoreInfo(active.item) },
+                )
+                RaviloButton(
+                    label = "+ ${str("nav.my_list")}",
+                    focusRequester = myListFR,
+                    style = ButtonStyle.GHOST,
+                    onLeft  = { moreInfoFR.requestFocus() },
+                    onRight = { if (activeIndex < items.lastIndex) { activeIndex++; resetTick++ } },
+                    onUp    = onUp,
+                    onSelect = { onMyList(active.item) },
+                )
+            }
+
+            Spacer(Modifier.height(22.dp))
 
             // Animated page dots
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
