@@ -1,6 +1,6 @@
 # Phase R40 — Instant back navigation (screen-state caching)
 
-**Status:** Planned · _pressing Back shows a loading skeleton instead of the screen we just came from.
+**Status:** ✓ Done · _pressing Back shows a loading skeleton instead of the screen we just came from.
 Cache screen state so Back is instant; refresh silently in the background._
 
 ## Problem

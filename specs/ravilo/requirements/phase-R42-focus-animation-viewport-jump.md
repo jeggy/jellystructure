@@ -1,6 +1,6 @@
 # Phase R42 — Fix focus-animation viewport jump
 
-**Status:** Planned · _navigating between tiles plays the focus scale animation but the whole screen
+**Status:** ✓ Done · _navigating between tiles plays the focus scale animation but the whole screen
 jumps. Stop the bring-into-view from re-centring already-visible tiles, reserve space for the scale, and
 keep the scale draw-only._
 
