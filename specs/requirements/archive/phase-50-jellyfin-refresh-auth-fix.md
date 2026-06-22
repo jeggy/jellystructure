@@ -1,6 +1,12 @@
 # Phase 50 — Fix Jellyfin item-refresh auth + single-item fetch (FR-JR1)
 
-**Status:** Planned
+**Status:** ✓ Done (2026-06-23) — `JellyfinClient` now routes every authenticated call through one
+`jellyfinAuth(token)` helper (the malformed `refreshItem` header that 401'd is gone); a
+`bodyOrNull<T>()` helper deserializes only on a 2xx response (logs status + body snippet and returns
+null on non-2xx, so a `text/plain` error no longer throws `NoTransformationFoundException`); and
+`getItem` fetches via the proven `/Items?Ids=` list shape instead of the unreliable
+`/Items/{id}` route. `pushToJellyfin` returns the refresh outcome so callers don't imply a refresh
+that didn't run. Backend (`compileKotlinLinuxX64`) builds.
 
 ## Problem
 Refreshing / re-pulling a single item from Jellyfin on the detail page fails. The backend logs
