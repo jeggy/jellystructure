@@ -49,6 +49,7 @@ fun HomeScreen(
     displayName: String = "",
     onNavSelect: (Int) -> Unit = {},
     onItemSelect: (MediaCard) -> Unit = {},
+    onItemPlay: (MediaCard) -> Unit = {},
     onChannelSelect: (Channel) -> Unit = {},
     onSeeAll: (String?) -> Unit = {},
     onProfile: () -> Unit = {},
@@ -66,6 +67,7 @@ fun HomeScreen(
                 displayName = displayName,
                 onNavSelect = onNavSelect,
                 onItemSelect = onItemSelect,
+                onItemPlay = onItemPlay,
                 onChannelSelect = onChannelSelect,
                 onSeeAll = onSeeAll,
                 onProfile = onProfile,
@@ -81,6 +83,7 @@ private fun HomeLoaded(
     displayName: String,
     onNavSelect: (Int) -> Unit,
     onItemSelect: (MediaCard) -> Unit,
+    onItemPlay: (MediaCard) -> Unit,
     onChannelSelect: (Channel) -> Unit,
     onSeeAll: (String?) -> Unit,
     onProfile: () -> Unit,
@@ -127,9 +130,12 @@ private fun HomeLoaded(
                     focusRequester = heroFR,
                     heightDp = heroHeight,
                     autoAdvanceSeconds = feed.autoAdvanceSeconds,
-                    onSelect = { onItemSelect(it) },
+                    onPlay = { onItemPlay(it) },
+                    onMoreInfo = { onItemSelect(it) },
+                    // My List has no backend toggle yet (matches the detail screens' placeholder button).
+                    onMyList = {},
                     onUp = { navBarFR.requestFocus() },
-                    // onDown omitted → native focus search moves down into the channel rail / first row.
+                    // Down omitted → native focus search moves into the channel rail / first row.
                 )
             }
         }
