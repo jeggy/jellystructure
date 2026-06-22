@@ -15,8 +15,11 @@ bucket, distinct from "All"**), drag-drop/upload/URL replace, and series season-
 per-episode-still management (`MediaDetail.kt` artwork tab + `MediaRoutes.kt` / `TmdbClient.kt`
 candidate-gallery routes). Built on Phase 31 (artwork fetch/cache) + Phase 32 (TMDB match picker).
 
-No admin phase is currently in flight. Active development is on the **Ravilo** side — see
-[`ravilo/STATUS.md`](ravilo/STATUS.md) for its current focus.
+**Planned: [Phase 48](requirements/phase-48-artwork-textless-filter.md)** — the artwork gallery's
+Textless / With-text pills don't work (they only re-sort, a no-op within a language bucket, and overlap
+the language chips); unify both into one real single-select filter on TMDB `iso_639_1`. Investigated
+2026-06-22; spec written, not yet implemented. Other active development is on the **Ravilo** side — see
+[`ravilo/STATUS.md`](ravilo/STATUS.md).
 
 See [`requirements/README.md`](requirements/README.md) for the full index.
 
