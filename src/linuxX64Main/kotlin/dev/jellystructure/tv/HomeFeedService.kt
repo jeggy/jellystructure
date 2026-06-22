@@ -37,6 +37,7 @@ class HomeFeedService(
             rows = buildRows(config, device, all, jellyfinBase, token, channelFilter = null),
             heroHeightPct = config.heroHeightPct,
             autoAdvanceSeconds = config.autoAdvanceSeconds,
+            tileShape = config.tileShape,
         )
     }
 
@@ -54,6 +55,7 @@ class HomeFeedService(
             rows = buildRows(config, device, all, jellyfinBase, token, channelFilter = channelCfg),
             heroHeightPct = config.heroHeightPct,
             autoAdvanceSeconds = config.autoAdvanceSeconds,
+            tileShape = config.tileShape,
         )
     }
 
@@ -83,6 +85,7 @@ class HomeFeedService(
                 backdropUrl = "$jellyfinBase/Items/$jellyfinId/Images/Backdrop/0?api_key=$token",
                 logoUrl = null,
                 badge = null,
+                synopsis = item.overview,
             )
         }
     }

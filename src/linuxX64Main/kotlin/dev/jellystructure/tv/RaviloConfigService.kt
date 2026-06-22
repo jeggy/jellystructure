@@ -95,13 +95,14 @@ class RaviloConfigService(private val db: JellystructureDb) {
      * A viewer's skin choice is stored in [RaviloConfig.viewerSkinOverride], never in defaultSkin,
      * so a later operator change to the default still surfaces for viewers who never picked one.
      */
-    fun applyViewerSettings(userId: String, skin: Skin?, showContinueProgress: Boolean?, tileShape: TileShape?) {
+    fun applyViewerSettings(userId: String, skin: Skin?, showContinueProgress: Boolean?, autoplayNext: Boolean?, tileShape: TileShape?) {
         val current = getConfig(userId)
         save(
             userId = userId,
             config = current.copy(
                 viewerSkinOverride = skin ?: current.viewerSkinOverride,
                 showContinueProgress = showContinueProgress ?: current.showContinueProgress,
+                autoplayNext = autoplayNext ?: current.autoplayNext,
                 tileShape = tileShape ?: current.tileShape,
             ),
         )

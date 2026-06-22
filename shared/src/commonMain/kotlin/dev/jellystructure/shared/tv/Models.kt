@@ -8,7 +8,7 @@ import kotlinx.serialization.Serializable
 enum class MediaKind { MOVIE, SERIES }
 enum class RowKind { CONTINUE, NEWLY_ADDED, GENRE, CUSTOM }
 enum class ChannelStyle { LOGO, TEXT }
-enum class TileShape { POSTER, LANDSCAPE }
+enum class TileShape { POSTER, LANDSCAPE, SQUARE }
 enum class Skin { AURORA, MIDNIGHT, NOIR }
 /** Join mode for a condition stack (R32 workbench). */
 enum class MatchMode { ALL, ANY }
@@ -114,6 +114,7 @@ data class Hero(
     @SerialName("backdrop_url") val backdropUrl: String,
     @SerialName("logo_url") val logoUrl: String?,
     val badge: String?,
+    val synopsis: String? = null,
 )
 
 @Serializable
@@ -139,7 +140,8 @@ data class HomeFeed(
     val channels: List<Channel>,
     val rows: List<Row>,
     @SerialName("hero_height_pct") val heroHeightPct: Int = 56,
-    @SerialName("auto_advance_seconds") val autoAdvanceSeconds: Int = 6,
+    @SerialName("auto_advance_seconds") val autoAdvanceSeconds: Int = 7,
+    @SerialName("tile_shape") val tileShape: TileShape = TileShape.POSTER,
 )
 
 // ─── Detail ───────────────────────────────────────────────────────────────────
@@ -266,6 +268,7 @@ data class RaviloConfig(
     // default change still reaches viewers who never picked a skin. Null = no override.
     @SerialName("viewer_skin_override") val viewerSkinOverride: Skin? = null,
     @SerialName("show_continue_progress") val showContinueProgress: Boolean = true,
+    @SerialName("autoplay_next") val autoplayNext: Boolean = true,
     @SerialName("tile_shape") val tileShape: TileShape = TileShape.POSTER,
     @SerialName("ui_language") val uiLanguage: String = "en",
     @SerialName("hero_height_pct") val heroHeightPct: Int = 56,       // % of screen the hero fills (30..100)
@@ -301,6 +304,7 @@ data class PlaybackStopRequest(
 data class ViewerSettingsRequest(
     val skin: Skin? = null,
     @SerialName("show_continue_progress") val showContinueProgress: Boolean? = null,
+    @SerialName("autoplay_next") val autoplayNext: Boolean? = null,
     @SerialName("tile_shape") val tileShape: TileShape? = null,
 )
 

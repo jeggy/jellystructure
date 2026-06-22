@@ -126,14 +126,19 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
            </div>"""
     } else ""
 
-    val genresHtml = if (item.genres.isNotEmpty()) {
-        """<div class="field">
-             <label>Genres</label>
-             <div style="display:flex;flex-wrap:wrap;gap:5px">
-               ${item.genres.joinToString("") { """<span class="chip">${it.esc()}</span>""" }}
+    fun genreChipHtml(genre: String): String =
+        """<span class="chip" style="display:inline-flex;align-items:center;">${genre.esc()} <span class="genre-rm" data-genre="${genre.esc()}" style="cursor:pointer;margin-left:4px;color:var(--bad);">✕</span></span>"""
+    val genresHtml = """<div class="field" id="genres-section">
+             <label>Genres <button class="diff-trigger" id="diff-genres">≠</button></label>
+             <div id="genres-chips" style="display:flex;flex-wrap:wrap;gap:5px;align-items:center;">
+               ${item.genres.joinToString("") { genreChipHtml(it) }}
+               <span id="genre-add-chip" class="chip ghost" style="cursor:pointer;">＋ add</span>
+             </div>
+             <div id="genre-add-row" style="display:none;gap:6px;margin-top:6px;">
+               <input id="genre-input" class="input" type="text" placeholder="genre…" maxlength="40" style="width:160px;" autocomplete="off">
+               <button id="genre-add-btn" class="btn sm ghost">Add</button>
              </div>
            </div>"""
-    } else ""
 
     val directorHtml = """<div class="field">
       <label>${if (item.kind == MediaKind.TV_SHOW) "Network" else "Director"} <button class="diff-trigger" id="diff-edit-director">≠</button></label>
@@ -320,44 +325,9 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
         """<a href="https://www.themoviedb.org/$tmdbPath/${item.tmdbId}$langParam" target="_blank" rel="noopener" class="btn sm ghost">TMDB ↗</a>"""
     } else ""
 
-    container.innerHTML = """
-        <div class="pagebar">
-          <button id="back-btn" class="btn sm ghost">‹ Library</button>
-          <h2>${item.title.esc()} <span class="muted">${if (item.year != null) "(${item.year})" else ""}</span></h2>
-          ${if (item.tmdbId != null) """<span class="badge ok">TMDB matched</span>""" else """<span class="badge warn">No TMDB match</span>"""}
-          $resolvedLangBadge
-          <span class="spacer"></span>
-          ${if (jellyfinUrl.isNotBlank() && item.jellyfinId != null) """<a href="$jellyfinUrl/web/index.html#!/details?id=${item.jellyfinId}" target="_blank" rel="noopener" class="btn sm ghost">Jellyfin ↗</a>""" else ""}
-          $tmdbLinkHtml
-          <button id="feature-ravilo-btn" class="btn sm ghost">★ Feature in Ravilo…</button>
-          <button id="repull-jellyfin-btn" class="btn sm ghost">Re-pull from Jellyfin…</button>
-          <button id="repull-btn" class="btn sm ghost">Re-pull from TMDB</button>
-          <button id="write-nfo-btn" class="btn ghost" ${if (nfoDisabled) """disabled title="${nfoDisabledReason.esc()}"""" else ""}>Save → disk</button>
-          <button id="write-nfo-refresh-btn" class="btn primary" ${if (nfoDisabled) """disabled title="${nfoDisabledReason.esc()}"""" else ""}>Save &amp; tell Jellyfin ↻</button>
-        </div>
-
-        <div id="detail-msg" style="display:none;margin-bottom:14px"></div>
-        <div id="nfo-perm-banner" style="display:none;margin-bottom:14px"></div>
-        <div id="drift-banner" style="display:none;margin-bottom:14px"></div>
-        <div id="jf-lock-banner" style="display:${if (item.jellyfinLockData || item.jellyfinLockedFields.isNotEmpty()) "block" else "none"};margin-bottom:14px">
-          <div style="background:var(--bad-soft);border:1px solid var(--bad);border-radius:6px;padding:10px 14px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
-            <span style="font-size:.9rem;color:var(--bad);font-weight:600;">⚠ Jellyfin field lock detected</span>
-            <span style="font-size:.85rem;flex:1;">${
-              buildString {
-                if (item.jellyfinLockData) append("This item's metadata is locked (lockData=true). ")
-                if (item.jellyfinLockedFields.isNotEmpty()) append("Locked fields: ${item.jellyfinLockedFields.joinToString(", ")}.")
-              }.esc()
-            }</span>
-            <button id="jf-lock-recheck-btn" class="btn sm ghost" style="font-size:.8rem;">Re-check ↻</button>
-            <span id="jf-lock-recheck-result" style="font-size:.8rem;color:var(--muted)"></span>
-          </div>
-        </div>
-
-        <div class="seg" id="detail-tabs" style="margin-bottom:16px;">$tabBarHtml</div>
-
-        <div id="tab-overview" ${if (activeTab != "overview") """style="display:none;" """ else ""}>
-          $embeddedTracksSummary
-          <div class="row" style="align-items:flex-start;gap:22px;flex-wrap:wrap;">
+    // Left-rail cards (poster / series-language / identity). For TV shows these are lifted out of
+    // the overview panel so they persist across every tab (design series.html).
+    val leftRailHtml = """
             <div class="col" style="width:220px;flex:none;">
               <div class="card">
                 <h4 style="margin:0 0 10px;">Poster</h4>
@@ -388,7 +358,10 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
                   <div class="input">${item.kind.name.lowercase().replace('_', ' ')}</div>
                 </div>
               </div>
-            </div>
+            </div>"""
+
+    // The right-hand "Metadata" editing column shown on the overview tab.
+    val overviewMainHtml = """
             <div class="col fill">
               <div class="card">
                 <div class="row center" style="margin-bottom:10px;">
@@ -424,8 +397,27 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
                 </div>
               </div>
               $resolverTraceHtml
-            </div>
-          </div>
+            </div>"""
+
+    // The overview panel body differs by layout: movies keep the left rail inside it; TV shows
+    // render only the editing column because the rail lives outside (persists across tabs).
+    val overviewPanelInner = if (isTvShow) {
+        """$embeddedTracksSummary
+          $overviewMainHtml"""
+    } else {
+        """$embeddedTracksSummary
+          <div class="row" style="align-items:flex-start;gap:22px;flex-wrap:wrap;">
+            $leftRailHtml
+            $overviewMainHtml
+          </div>"""
+    }
+
+    // The tab bar + all tab panels.
+    val tabsAndPanelsHtml = """
+        <div class="seg" id="detail-tabs" style="margin-bottom:16px;">$tabBarHtml</div>
+
+        <div id="tab-overview" ${if (activeTab != "overview") """style="display:none;" """ else ""}>
+          $overviewPanelInner
         </div>
 
         ${if (!isTvShow) """
@@ -470,7 +462,54 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
             <h4 style="margin:0 0 12px;">Action history</h4>
             <div id="history-list"><span class="muted tiny">Loading…</span></div>
           </div>
+        </div>"""
+
+    // For TV shows the rail sits beside the tabs and persists; movies keep the classic single column.
+    val bodyHtml = if (isTvShow) {
+        """<div class="row" style="align-items:flex-start;gap:22px;flex-wrap:wrap;">
+             $leftRailHtml
+             <div class="col fill" style="min-width:320px;">
+               $tabsAndPanelsHtml
+             </div>
+           </div>"""
+    } else {
+        tabsAndPanelsHtml
+    }
+
+    container.innerHTML = """
+        <div class="pagebar">
+          <button id="back-btn" class="btn sm ghost">‹ Library</button>
+          <h2>${item.title.esc()} <span class="muted">${if (item.year != null) "(${item.year})" else ""}</span></h2>
+          ${if (item.tmdbId != null) """<span class="badge ok">TMDB matched</span>""" else """<span class="badge warn">No TMDB match</span>"""}
+          $resolvedLangBadge
+          <span class="spacer"></span>
+          ${if (jellyfinUrl.isNotBlank() && item.jellyfinId != null) """<a href="$jellyfinUrl/web/index.html#!/details?id=${item.jellyfinId}" target="_blank" rel="noopener" class="btn sm ghost">Jellyfin ↗</a>""" else ""}
+          $tmdbLinkHtml
+          <button id="feature-ravilo-btn" class="btn sm ghost">★ Feature in Ravilo…</button>
+          <button id="repull-jellyfin-btn" class="btn sm ghost">Re-pull from Jellyfin…</button>
+          <button id="repull-btn" class="btn sm ghost">Re-pull from TMDB</button>
+          <button id="write-nfo-btn" class="btn ghost" ${if (nfoDisabled) """disabled title="${nfoDisabledReason.esc()}"""" else ""}>Save → disk</button>
+          <button id="write-nfo-refresh-btn" class="btn primary" ${if (nfoDisabled) """disabled title="${nfoDisabledReason.esc()}"""" else ""}>Save &amp; tell Jellyfin ↻</button>
         </div>
+
+        <div id="detail-msg" style="display:none;margin-bottom:14px"></div>
+        <div id="nfo-perm-banner" style="display:none;margin-bottom:14px"></div>
+        <div id="drift-banner" style="display:none;margin-bottom:14px"></div>
+        <div id="jf-lock-banner" style="display:${if (item.jellyfinLockData || item.jellyfinLockedFields.isNotEmpty()) "block" else "none"};margin-bottom:14px">
+          <div style="background:var(--bad-soft);border:1px solid var(--bad);border-radius:6px;padding:10px 14px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+            <span style="font-size:.9rem;color:var(--bad);font-weight:600;">⚠ Jellyfin field lock detected</span>
+            <span style="font-size:.85rem;flex:1;">${
+              buildString {
+                if (item.jellyfinLockData) append("This item's metadata is locked (lockData=true). ")
+                if (item.jellyfinLockedFields.isNotEmpty()) append("Locked fields: ${item.jellyfinLockedFields.joinToString(", ")}.")
+              }.esc()
+            }</span>
+            <button id="jf-lock-recheck-btn" class="btn sm ghost" style="font-size:.8rem;">Re-check ↻</button>
+            <span id="jf-lock-recheck-result" style="font-size:.8rem;color:var(--muted)"></span>
+          </div>
+        </div>
+
+        $bodyHtml
     """.trimIndent()
 
     installLanguagePickerById("lang-override-input", tmdbLangs)
@@ -567,6 +606,7 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
     // Wire up episode row toggles, still uploads, editing, and season sync buttons
     if (isTvShow) {
         wireEpisodeToggles()
+        wireSeasonSelector()
         wireEpisodeStillUploads(scope)
         wireEpisodeEditing(item, container, scope)
         val seasonSyncBtns = document.querySelectorAll(".season-sync-btn")
@@ -615,7 +655,7 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
     }
 
     if (activeTab == "artwork") scope.launch { loadArtworkTab(item, scope) }
-    scope.launch { loadDrift(item.id) }
+    scope.launch { loadDrift(item.id, scope) }
     if (activeTab == "tracks" && !isTvShow) {
         scope.launch { loadSeedingStatus(item.id) }
         wireUnifiedTrackEditor("trk", item.tracks, item.id, null, scope, item.resolvedLanguage, item.path)
@@ -634,12 +674,20 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
             ?: (document.getElementById(id) as? HTMLTextAreaElement)?.value ?: ""
     }
     val origTags = item.tags.toSet()
+    val origGenres = item.genres
 
     fun currentTagSet(): Set<String> {
         val chips = document.getElementById("tags-chips")?.querySelectorAll(".tag-rm") ?: return emptySet()
         return (0 until chips.length)
             .mapNotNull { (chips.item(it) as? HTMLElement)?.getAttribute("data-tag") }
             .filter { it.isNotBlank() }.toSet()
+    }
+
+    fun currentGenreList(): List<String> {
+        val chips = document.getElementById("genres-chips")?.querySelectorAll(".genre-rm") ?: return emptyList()
+        return (0 until chips.length)
+            .mapNotNull { (chips.item(it) as? HTMLElement)?.getAttribute("data-genre") }
+            .filter { it.isNotBlank() }
     }
 
     fun setFieldDirty(fieldEl: HTMLElement?, triggerEl: HTMLElement?, dirty: Boolean) {
@@ -664,6 +712,9 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
         val tagsDirty = currentTagSet() != origTags
         if (tagsDirty) anyDirty = true
         setFieldDirty(document.getElementById("tags-section") as? HTMLElement, document.getElementById("diff-tags") as? HTMLElement, tagsDirty)
+        val genresDirty = currentGenreList() != origGenres
+        if (genresDirty) anyDirty = true
+        (document.getElementById("diff-genres") as? HTMLElement)?.style?.display = if (genresDirty) "inline-flex" else "none"
         (document.getElementById("save-metadata-btn") as? HTMLElement)?.style?.display = if (anyDirty) "inline-flex" else "none"
     }
     editableIds.forEach { id ->
@@ -708,6 +759,10 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
         val tagsVal = if (tagChips != null) {
             (0 until tagChips.length).mapNotNull { (tagChips.item(it) as? HTMLElement)?.getAttribute("data-tag") }.filter { it.isNotBlank() }
         } else null
+        val genreChips = document.getElementById("genres-chips")?.querySelectorAll(".genre-rm")
+        val genresVal = if (genreChips != null) {
+            (0 until genreChips.length).mapNotNull { (genreChips.item(it) as? HTMLElement)?.getAttribute("data-genre") }.filter { it.isNotBlank() }
+        } else null
         val msg = document.getElementById("save-metadata-msg") as? HTMLElement
         msg?.textContent = "Saving…"
         scope.launch {
@@ -718,6 +773,7 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
                 year = year,
                 originalTitle = originalTitle,
                 tags = tagsVal,
+                genres = genresVal,
                 director = if (item.kind != MediaKind.TV_SHOW) directorVal else null,
                 studio = studioVal,
                 network = if (item.kind == MediaKind.TV_SHOW) directorVal else null,
@@ -814,6 +870,52 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
         }
     }
 
+    // ── Genres editor (Phase 33 / design media.html, series.html) ──────────────
+    fun wireGenreRemove(rm: HTMLElement) {
+        rm.addEventListener("click") { rm.parentElement?.remove(); checkDirty() }
+    }
+    fun addGenreChip(genre: String) {
+        val chipsEl = document.getElementById("genres-chips") as? HTMLElement ?: return
+        val addChip = document.getElementById("genre-add-chip")
+        val existing = chipsEl.querySelectorAll(".genre-rm")
+        for (i in 0 until existing.length) {
+            if ((existing.item(i) as? HTMLElement)?.getAttribute("data-genre")?.equals(genre, ignoreCase = true) == true) return
+        }
+        val tmp = document.createElement("span") as HTMLElement
+        tmp.innerHTML = genreChipHtml(genre)
+        val chip = tmp.firstElementChild ?: return
+        if (addChip != null) chipsEl.insertBefore(chip, addChip) else chipsEl.appendChild(chip)
+        (chip.querySelector(".genre-rm") as? HTMLElement)?.let { wireGenreRemove(it) }
+        checkDirty()
+    }
+    document.querySelectorAll("#genres-chips .genre-rm").let { nodes ->
+        for (i in 0 until nodes.length) (nodes.item(i) as? HTMLElement)?.let { wireGenreRemove(it) }
+    }
+    document.getElementById("genre-add-chip")?.addEventListener("click") {
+        val row = document.getElementById("genre-add-row") as? HTMLElement ?: return@addEventListener
+        row.style.display = if (row.style.display == "none") "flex" else "none"
+        if (row.style.display == "flex") (document.getElementById("genre-input") as? HTMLInputElement)?.focus()
+    }
+    document.getElementById("genre-add-btn")?.addEventListener("click") {
+        val input = document.getElementById("genre-input") as? HTMLInputElement ?: return@addEventListener
+        val g = input.value.trim()
+        if (g.isNotBlank()) addGenreChip(g)
+        input.value = ""
+    }
+    (document.getElementById("genre-input") as? HTMLInputElement)?.addEventListener("keydown") { e ->
+        val ke = e as? org.w3c.dom.events.KeyboardEvent ?: return@addEventListener
+        if (ke.key == "Enter") {
+            ke.preventDefault()
+            val input = document.getElementById("genre-input") as? HTMLInputElement ?: return@addEventListener
+            val g = input.value.trim()
+            if (g.isNotBlank()) addGenreChip(g)
+            input.value = ""
+        }
+    }
+    document.getElementById("diff-genres")?.addEventListener("click") {
+        showTagsDiffPopup(origGenres.sorted(), currentGenreList().sorted(), label = "Genres")
+    }
+
     // Proactive write-permission check — runs in background after DOM is ready
     scope.launch {
         val result = MediaApi.checkNfoWritable(item.id)
@@ -865,8 +967,22 @@ private fun buildEpisodesTab(item: MediaItem): String {
 
     // Group episodes by season
     val bySeason = item.episodes.groupBy { it.seasonNumber }
-    val seasonBlocks = bySeason.toList()
-        .sortedBy { it.first ?: 999 }
+    val sortedSeasons = bySeason.toList().sortedBy { it.first ?: 999 }
+    val seasonKeys = sortedSeasons.map { it.first }
+    val firstSeasonKey = seasonKeys.firstOrNull()
+    fun seasonSelKey(season: Int?): String = season?.toString() ?: "none"
+
+    // Segmented selector — shows one season at a time (design series.html). Hidden when ≤ 1 season.
+    val seasonSelectorHtml = if (seasonKeys.size > 1) {
+        val segs = seasonKeys.joinToString("") { s ->
+            val label = if (s != null) "Season $s" else "Unsorted"
+            val on = if (s == firstSeasonKey) " class=\"on\"" else ""
+            """<span$on data-season-sel="${seasonSelKey(s)}">${label.esc()}</span>"""
+        }
+        """<div class="seg" id="ep-season-seg" style="margin-bottom:14px;flex-wrap:wrap;">$segs</div>"""
+    } else ""
+
+    val seasonBlocks = sortedSeasons
         .joinToString("") { (season, eps) ->
             val seasonLabel = if (season != null) "Season $season" else "Unsorted"
             val seasonIssues = eps.sumOf { it.issueCount }
@@ -875,7 +991,8 @@ private fun buildEpisodesTab(item: MediaItem): String {
             else ""
             val rows = eps.mapIndexed { idx, ep -> buildEpisodeRow(ep, season, idx, item.id) }.joinToString("")
             val seasonAttr = if (season != null) """data-season="$season"""" else ""
-            """<div style="margin-bottom:20px;">
+            val hidden = if (seasonKeys.size > 1 && season != firstSeasonKey) "display:none;" else ""
+            """<div class="ep-season-block" data-season-block="${seasonSelKey(season)}" style="margin-bottom:20px;$hidden">
                  <div class="row center" style="margin-bottom:8px;">
                    <h4 style="margin:0;">${seasonLabel.esc()}</h4>
                    <span class="chip" style="margin-left:8px;font-size:.75rem;">${eps.size} ep</span>
@@ -905,7 +1022,10 @@ private fun buildEpisodesTab(item: MediaItem): String {
           $seasonSummary
           <div class="row" style="align-items:flex-start;gap:16px;flex-wrap:wrap;">
             $votingCard
-            <div class="col fill">$seasonBlocks</div>
+            <div class="col fill">
+              $seasonSelectorHtml
+              $seasonBlocks
+            </div>
           </div>
         </div>"""
 }
@@ -927,6 +1047,18 @@ private fun buildEpisodeRow(ep: Episode, season: Int?, idx: Int, mediaId: String
 
     val issueBadge = if (ep.issueCount > 0)
         """<span class="badge bad" style="font-size:.7rem;">${ep.issueCount} untagged</span>"""
+    else ""
+
+    // Phase 21 — flag episodes with more than one default audio track.
+    val multiDefaultAudio = ep.tracks.count { it.kind == TrackKind.AUDIO && it.default } > 1
+    val multiDefaultBadge = if (multiDefaultAudio)
+        """<span class="badge bad" style="font-size:.7rem;">multiple default audio</span>"""
+    else ""
+    val multiDefaultNote = if (multiDefaultAudio)
+        """<div class="note red" style="margin:0 0 10px;background:var(--bad-soft);border:1px solid var(--bad);border-radius:var(--radius-s);padding:9px 12px;">
+             <b style="color:var(--bad);">Multiple default audio tracks.</b>
+             <div class="tiny" style="margin-top:4px;line-height:1.5;">A file should have exactly one default audio track. Open the track editor to pick the one to keep — the others are cleared (<span class="mono">mkvpropedit</span>).</div>
+           </div>"""
     else ""
 
     val encodedFilename = encodeURIComponent(ep.filename)
@@ -981,10 +1113,12 @@ private fun buildEpisodeRow(ep: Episode, season: Int?, idx: Int, mediaId: String
             <span class="num" style="min-width:64px;font-size:.82rem;">${epCode.esc()}</span>
             ${if (!ep.title.isNullOrBlank()) """<span style="font-size:.85rem;font-weight:500;flex:none;max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${ep.title.esc()}">${ep.title.esc()}</span>""" else ""}
             <div style="display:flex;gap:4px;flex-wrap:wrap;flex:1;">$trackChips</div>
+            $multiDefaultBadge
             $issueBadge
             <span class="ep-chev" style="color:var(--ink-soft);font-size:.9rem;margin-left:4px;">›</span>
           </div>
           <div id="$bodyId" style="display:none;padding:0 12px 12px;">
+            $multiDefaultNote
             <div style="margin:8px 0 10px;display:flex;flex-direction:column;gap:6px;">
               <div class="field" style="margin:0;">
                 <label style="font-size:.75rem;">Title</label>
@@ -1279,6 +1413,26 @@ private fun wireEpisodeToggles() {
                     body.style.display = "none"
                     chev?.textContent = "›"
                 }
+            }
+        }
+    }
+}
+
+private fun wireSeasonSelector() {
+    val seg = document.getElementById("ep-season-seg") as? HTMLElement ?: return
+    val segItems = seg.querySelectorAll("[data-season-sel]")
+    for (i in 0 until segItems.length) {
+        val segItem = segItems.item(i) as? HTMLElement ?: continue
+        segItem.addEventListener("click") {
+            val sel = segItem.getAttribute("data-season-sel") ?: return@addEventListener
+            for (j in 0 until segItems.length) {
+                (segItems.item(j) as? HTMLElement)?.className = ""
+            }
+            segItem.className = "on"
+            val blocks = document.querySelectorAll(".ep-season-block")
+            for (k in 0 until blocks.length) {
+                val block = blocks.item(k) as? HTMLElement ?: continue
+                block.style.display = if (block.getAttribute("data-season-block") == sel) "" else "none"
             }
         }
     }
@@ -1600,23 +1754,98 @@ private suspend fun loadSeedingStatus(id: String) {
     }
 }
 
-private suspend fun loadDrift(id: String) {
+private val DRIFT_FIELD_NAMES = mapOf(
+    "title" to "Title", "year" to "Year", "tmdbId" to "TMDB ID",
+    "overview" to "Overview", "genres" to "Genres", "studio" to "Studio", "network" to "Network",
+)
+
+private suspend fun loadDrift(id: String, scope: CoroutineScope) {
     val drifts = MediaApi.getDrift(id)
     val banner = document.getElementById("drift-banner") as? HTMLElement ?: return
     if (drifts.isEmpty()) { banner.style.display = "none"; return }
-    val fieldNames = mapOf("title" to "Title", "year" to "Year", "tmdbId" to "TMDB ID")
-    val rows = drifts.joinToString("") { d ->
-        val label = fieldNames[d.field] ?: d.field
-        val jf = d.inJellyfin.ifBlank { "—" }
-        val db = d.inDb.ifBlank { "—" }
-        """<span style="font-size:.85rem;"><b>${label.esc()}</b>: Jellyfin="${jf.esc()}" · DB="${db.esc()}"</span>"""
-    }
-    banner.innerHTML = """<div style="background:var(--warn-soft,#2d220b);border:1px solid var(--warn,#b8860b);border-radius:6px;padding:10px 14px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
-      <span style="font-size:.9rem;color:var(--warn,#f59e0b);font-weight:600;">⚠ Jellyfin drift detected</span>
-      <span style="flex:1;display:flex;flex-direction:column;gap:3px;">$rows</span>
-      <span class="tiny muted" style="font-size:.8rem;">Use "Re-pull from Jellyfin…" to absorb Jellyfin's version.</span>
+    val n = drifts.size
+    // Jellystructure is the source of truth (Phase 33 / P2-1): re-assert the NFO back to Jellyfin.
+    banner.innerHTML = """<div style="background:var(--warn-soft,#2d220b);border:1px solid var(--warn,#b8860b);border-radius:6px;padding:10px 14px;display:flex;align-items:flex-start;gap:12px;flex-wrap:wrap;">
+      <span class="badge warn" style="flex:none;margin-top:1px;">⇄ Drift detected</span>
+      <div style="flex:1;min-width:200px;">
+        <b style="font-size:.9rem;">Jellyfin's metadata no longer matches the NFO Jellystructure wrote.</b>
+        <div class="tiny muted" style="margin-top:5px;line-height:1.6;">Someone edited this item in Jellyfin (or another tool touched the NFO). <b>$n field${if (n != 1) "s" else ""}</b> differ from your last write — Jellystructure is the source of truth, so re-assert to restore it.</div>
+        <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;">
+          <button id="drift-review-btn" class="btn sm ghost">Review differences</button>
+          <button id="drift-reassert-btn" class="btn sm">Re-assert NFO → Jellyfin</button>
+        </div>
+      </div>
+      <span id="drift-dismiss-btn" class="x" style="cursor:pointer;color:var(--ink-soft);">✕</span>
     </div>"""
     banner.style.display = "block"
+
+    document.getElementById("drift-dismiss-btn")?.addEventListener("click") { banner.style.display = "none" }
+    document.getElementById("drift-review-btn")?.addEventListener("click") { showDriftModal(id, drifts, scope) }
+    document.getElementById("drift-reassert-btn")?.addEventListener("click") {
+        scope.launch { reassertDrift(id) }
+    }
+}
+
+/** Re-asserts the NFO Jellystructure holds (source of truth) back onto disk + tells Jellyfin to refresh. */
+private suspend fun reassertDrift(id: String) {
+    val banner = document.getElementById("drift-banner") as? HTMLElement
+    document.getElementById("drift-modal-overlay")?.remove()
+    showDetailMsg("Re-asserting NFO → Jellyfin…", true)
+    val (result, error) = MediaApi.writeNfo(id)
+    if (result == null) {
+        showNfoWriteError(error ?: "NFO write failed.")
+        return
+    }
+    MediaApi.jellyfinRefresh(id)
+    banner?.style?.display = "none"
+    showDetailMsg("NFO re-asserted — Jellyfin refresh requested ✓", true)
+}
+
+private fun showDriftModal(id: String, drifts: List<DriftField>, scope: CoroutineScope) {
+    document.getElementById("drift-modal-overlay")?.remove()
+    val rows = drifts.joinToString("") { d ->
+        val label = DRIFT_FIELD_NAMES[d.field] ?: d.field
+        val jf = d.inJellyfin.ifBlank { "—" }
+        val db = d.inDb.ifBlank { "—" }
+        """<div style="display:flex;gap:10px;align-items:center;padding:9px 0;border-bottom:1px solid var(--line);">
+             <div style="flex:1;min-width:0;">
+               <div class="tiny muted">${label.esc()}</div>
+               <div class="tiny"><b>NFO:</b> ${db.esc()}</div>
+               <div class="tiny"><b>Jellyfin:</b> ${jf.esc()}</div>
+             </div>
+             <button class="btn sm drift-field-reassert" data-field="${d.field.esc()}">Re-assert</button>
+           </div>"""
+    }
+    val overlay = document.createElement("div") as HTMLElement
+    overlay.id = "drift-modal-overlay"
+    overlay.setAttribute("style", "position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:8000;display:flex;align-items:center;justify-content:center;padding:16px;")
+    overlay.innerHTML = """
+        <div style="background:var(--fill);border:1px solid var(--line-2);border-radius:var(--radius);padding:24px;max-width:560px;width:100%;box-shadow:var(--shadow);max-height:82vh;overflow-y:auto;">
+          <div class="row center" style="margin-bottom:6px;">
+            <h3 style="margin:0;flex:1;">Jellyfin ⇄ NFO differences</h3>
+            <button id="drift-modal-close" class="btn sm ghost" style="padding:2px 8px;">✕</button>
+          </div>
+          <p class="tiny muted" style="margin:0 0 10px;">Jellystructure is the source of truth. <b>Re-assert</b> writes the NFO back to disk and tells Jellyfin to refresh. To take Jellyfin's values instead, use <b>Re-pull from Jellyfin…</b> in the page bar.</p>
+          $rows
+          <div class="row" style="justify-content:flex-end;gap:8px;margin-top:14px;align-items:center;">
+            <span id="drift-modal-status" class="tiny muted" style="flex:1;"></span>
+            <button id="drift-modal-close-2" class="btn ghost">Close</button>
+            <button id="drift-reassert-all-btn" class="btn primary">Re-assert all → Jellyfin</button>
+          </div>
+        </div>"""
+    document.body?.appendChild(overlay)
+
+    fun close() { overlay.remove() }
+    overlay.addEventListener("click") { e -> if ((e.target as? HTMLElement)?.id == "drift-modal-overlay") close() }
+    document.getElementById("drift-modal-close")?.addEventListener("click") { close() }
+    document.getElementById("drift-modal-close-2")?.addEventListener("click") { close() }
+    // Per-field and global re-assert both write the (wholesale) NFO from the source-of-truth DB state.
+    document.getElementById("drift-reassert-all-btn")?.addEventListener("click") { scope.launch { reassertDrift(id) } }
+    overlay.querySelectorAll(".drift-field-reassert").let { nodes ->
+        for (i in 0 until nodes.length) {
+            (nodes.item(i) as? HTMLElement)?.addEventListener("click") { scope.launch { reassertDrift(id) } }
+        }
+    }
 }
 
 // ── Artwork manager (Phase 47) ──────────────────────────────────────────────────
@@ -2425,7 +2654,7 @@ private fun showDiffPopup(label: String, original: String, current: String, isNu
     """.trimIndent())
 }
 
-private fun showTagsDiffPopup(origTags: List<String>, currentTags: List<String>) {
+private fun showTagsDiffPopup(origTags: List<String>, currentTags: List<String>, label: String = "Tags") {
     document.getElementById("diff-modal-overlay")?.remove()
     val origSet = origTags.toSet(); val curSet = currentTags.toSet()
     val removed = origTags.filter { it !in curSet }
@@ -2440,7 +2669,7 @@ private fun showTagsDiffPopup(origTags: List<String>, currentTags: List<String>)
         .joinToString(" ").ifBlank { """<span class="muted tiny">no tags</span>""" }
     renderDiffOverlay("""
         <div class="row center" style="margin-bottom:2px;">
-          <strong style="font-size:.95rem;">Tags — changes</strong>
+          <strong style="font-size:.95rem;">$label — changes</strong>
           <span class="spacer"></span>
           <button id="diff-modal-close" class="btn sm ghost" style="padding:2px 8px;">✕</button>
         </div>

@@ -290,6 +290,7 @@ fun Route.tvRoutes(
             userId = device.jellyfinUserId,
             skin = req.skin,
             showContinueProgress = req.showContinueProgress,
+            autoplayNext = req.autoplayNext,
             tileShape = req.tileShape,
         )
         call.respond(mapOf("status" to "ok"))

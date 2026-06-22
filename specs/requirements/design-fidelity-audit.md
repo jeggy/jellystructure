@@ -1,6 +1,7 @@
 # Design Fidelity Audit & Fix (2026-06-22)
 
-**Status:** Planned — fixes not yet implemented.
+**Status:** ✓ Mostly implemented (2026-06-22). All **P0** + most **P1/P2** items landed; a short
+deferred list remains (see **Resolution** at the bottom).
 
 Cross-cutting audit of discrepancies between the HTML/CSS **design mockups** (`design/app/`,
 `design/ravilo/`) and the **shipped product** (admin Kotlin/WASM `src/wasmJsMain/…/ui/`, backend
@@ -171,3 +172,37 @@ files, or update the mockups to match if the code order is preferred.
 3. **P1-2** (Ravilo TV: hero actions + R19 localization pass + R14/R15 player/settings gaps).
 4. **P1-3 / P1-4** (admin detail + Library/Metadata/Settings/Shell) — group per file.
 5. Resolve **P2-1** (drift direction) before building the P1-3 drift modal.
+
+---
+
+## Resolution (2026-06-22)
+
+**Done:**
+- **P0-1..P0-4** — config-screen condition round-trip preserved (read-only + Edit for condition
+  channels/CUSTOM rows), hero badge/tagline/clearlogo editable inline; hero height 30–100% and
+  auto-advance 7s across all surfaces; `TileShape.SQUARE` added and threaded through `HomeFeed` →
+  HomeScreen/ChannelScreen so the tile-shape setting is finally honoured on the TV.
+- **P0-5** — Activity overall bar driven from real per-file progress. **P0-6** — stale `/triage`
+  palette command + dead count-badge removed.
+- **P1-1** — config workbench-first edit path + hero dressing fields (see P0-1).
+- **P1-3** — editable genres (✕/＋ + dirty/diff + metadata PATCH); season selector on Episodes;
+  series left-rail lifted out of the tab so it persists; drift re-asserts NFO→Jellyfin (**resolves
+  P2-1**) with a per-field review modal; multiple-default-audio warning surfaced.
+- **P1-4 (partial)** — Metadata tab hash + tag descriptions + networks note; Settings health-failure
+  bubbling into nav badges + danger top-button + scroll-to-fail; Shell triage dock now shows
+  title + "what's wrong" sub-line + "Open & fix" + close/hide. Library got the multi-language
+  search note. **P2-2** — Settings/Shell section + nav order aligned.
+- **P1-2** — Ravilo hero Play/More Info/+My List + synopsis (R10); R19 localization sweep (player /
+  search / browse / settings strings + ~20 new en/da/fo keys); autoplay-next-episode toggle (R15);
+  player episode-rail still images + real next-up title.
+
+**Deferred (tracked here, not done):**
+- **Library popover removal** — the standalone Studio/Network/Genre/Tags/Audio popovers still ship
+  alongside the workbench `⚙ Add filter`. Routing all filtering through the workbench (and deleting
+  the popovers) is the remaining R32 Library step; left in place to avoid removing working filters.
+- **Settings cron scheduled-scan** — still interval-hours (`scanIntervalHours`); cron string needs an
+  `AppConfig` + `Main.kt` scheduler change (backend).
+- **Player trickplay thumbnails** — needs backend trickplay image support (a `trickplay_url` field now
+  exists on `StreamTicket` but is unpopulated/unused).
+- **Detail Trailer button, stream-pill codec/resolution, "Kids" profile badge, channel-header brand
+  logo + subtitle** — no backing data/fields yet; skipped rather than stubbed.
