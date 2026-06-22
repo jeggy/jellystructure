@@ -8,14 +8,15 @@ _Last updated: 2026-06-23_
 
 ## Current focus
 
-**Phases 0–49 complete. [Phase 50](requirements/phase-50-jellyfin-refresh-auth-fix.md) planned** —
-a single-item Jellyfin refresh/re-pull bug surfaced from on-device logs: `JellyfinClient.refreshItem`
-builds a **malformed `Authorization` header** (missing `, Token=`) → **401** on every targeted item
-refresh (breaking `pushToJellyfin`, batch push, and the artwork/track/triage refreshes), and
-`getItem` hits the unreliable non-user-scoped `/Items/{id}` endpoint with **no response validator**,
-so a non-2xx `text/plain` body throws `NoTransformationFoundException` (**400**). Phase 50 fixes the
-header (factored into one helper), re-fetches via the proven `/Items?Ids=` list shape, validates
-status before deserializing, and stops reporting a refresh that 401'd as success (FR-JR1).
+**Phases 0–50 complete.** [Phase 50](requirements/archive/phase-50-jellyfin-refresh-auth-fix.md)
+(2026-06-23) fixed a single-item Jellyfin refresh/re-pull bug surfaced from on-device logs:
+`JellyfinClient.refreshItem` built a **malformed `Authorization` header** (missing `, Token=`) →
+**401** on every targeted item refresh (broke `pushToJellyfin`, batch push, and the artwork/track/
+triage refreshes), and `getItem` hit the unreliable non-user-scoped `/Items/{id}` endpoint with **no
+response validator**, so a non-2xx `text/plain` body threw `NoTransformationFoundException` (**400**).
+Now every authenticated call goes through one `jellyfinAuth(token)` helper, a `bodyOrNull<T>()` helper
+deserializes only on 2xx (logs + returns null otherwise), `getItem` re-fetches via the proven
+`/Items?Ids=` list shape, and `pushToJellyfin` returns the refresh outcome (FR-JR1).
 
 Phase 47 (artwork manager) shipped: the
 full artwork-editing surface on Movie & Series detail — asset rail + inline TMDB gallery,
@@ -37,8 +38,8 @@ overlapped the language chips. Unified them into **one single-select filter** on
 `artPrefer` sort; default ladder resolves resolved-lang → textless → All. `design/app/media.html` mockup
 synced to the same model.
 
-Phase 50 is the only open admin phase (a bug fix). Other active development is on the **Ravilo**
-side — see [`ravilo/STATUS.md`](ravilo/STATUS.md).
+No planned admin phases remain. Other active development is on the **Ravilo** side — see
+[`ravilo/STATUS.md`](ravilo/STATUS.md).
 
 See [`requirements/README.md`](requirements/README.md) for the full index.
 
