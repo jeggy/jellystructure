@@ -112,6 +112,11 @@ fun renderSettings(container: Element, scope: CoroutineScope, query: Map<String,
                 <input id="scan-threads" class="input" type="number" min="1" max="32" style="width:90px">
                 <span class="hint">Thread pool the workers run on. <strong>Requires an application restart.</strong></span>
               </div>
+              <div class="field">
+                <label>Episode probe cap per series</label>
+                <input id="scan-episode-cap" class="input" type="number" min="0" max="100000" style="width:90px">
+                <span class="hint"><strong>0 = unlimited</strong> — probe every episode. Set a positive number to sample only that many files per series on a full scan (very large libraries). The on-demand "Re-scan all episodes" button always probes everything.</span>
+              </div>
               <div id="scan-threads-restart-banner" style="display:none;margin-top:10px;padding:8px 12px;border-radius:6px;background:var(--warn-fill,#7c5100);color:var(--warn-ink,#fff);font-size:.83rem"></div>
               <div style="display:flex;align-items:center;justify-content:space-between;margin-top:12px">
                 <div>
@@ -327,6 +332,7 @@ private var watchEnabled = false
 private var tellJellyfin = true
 private var scanWorkers = 1
 private var scanThreads = 4
+private var scanEpisodeCap = 0
 private var effectiveScanThreads = 4
 private var libraryMappings: MutableList<LibraryMapping> = mutableListOf()
 private var qbEnabled = false
@@ -354,12 +360,14 @@ private fun populateForm(response: ConfigResponse) {
     tellJellyfin = config.behavior.tellJellyfin
     scanWorkers = config.behavior.scanWorkers
     scanThreads = config.behavior.scanThreads
+    scanEpisodeCap = config.behavior.scanEpisodeCap
     updateToggle("overwrite-nfo-toggle", overwriteNfo)
     updateToggle("fetch-images-toggle", fetchImages)
     updateToggle("watch-enabled-toggle", watchEnabled)
     updateToggle("tell-jellyfin-toggle", tellJellyfin)
     setInputValue("scan-workers", scanWorkers.toString())
     setInputValue("scan-threads", scanThreads.toString())
+    setInputValue("scan-episode-cap", scanEpisodeCap.toString())
     updateRestartBanner()
 
     libraryMappings = config.libraries.toMutableList()
@@ -451,6 +459,10 @@ private fun attachListeners(scope: CoroutineScope) {
     document.getElementById("scan-threads")?.addEventListener("input") {
         scanThreads = (document.getElementById("scan-threads") as? HTMLInputElement)?.value?.toIntOrNull()?.coerceIn(1, 32) ?: 4
         updateRestartBanner()
+        refreshTomlPreview(readForm())
+    }
+    document.getElementById("scan-episode-cap")?.addEventListener("input") {
+        scanEpisodeCap = (document.getElementById("scan-episode-cap") as? HTMLInputElement)?.value?.toIntOrNull()?.coerceAtLeast(0) ?: 0
         refreshTomlPreview(readForm())
     }
 
@@ -796,6 +808,7 @@ private fun readForm(): AppConfig = AppConfig(
         tellJellyfin = tellJellyfin,
         scanWorkers = scanWorkers,
         scanThreads = scanThreads,
+        scanEpisodeCap = scanEpisodeCap,
         scanIntervalHours = if (scheduledRescanEnabled) {
             val freq = (document.getElementById("rescan-frequency") as? HTMLSelectElement)?.value ?: "daily"
             if (freq == "weekly") 168 else 24
