@@ -32,6 +32,7 @@ import dev.jellystructure.tv.BrowseService
 import dev.jellystructure.tv.DetailService
 import dev.jellystructure.tv.HomeFeedService
 import dev.jellystructure.tv.PlaybackService
+import dev.jellystructure.tv.ChannelLogoStore
 import dev.jellystructure.tv.RaviloConfigService
 import dev.jellystructure.tv.RaviloDeviceService
 import dev.jellystructure.tv.TvEventBus
@@ -82,6 +83,7 @@ fun startServer(
     sessionService: SessionService,
     deviceService: RaviloDeviceService,
     raviloConfigService: RaviloConfigService,
+    channelLogoStore: ChannelLogoStore,
     homeFeedService: HomeFeedService,
     browseService: BrowseService,
     detailService: DetailService,
@@ -174,7 +176,7 @@ fun startServer(
                 triageRoutes(mediaStore, jellyfinClient, configStore, mediaHistory, seedingGuard)
                 metadataRoutes(mediaStore, jsTagStore, logoDownloader)
                 trackRoutes(mediaStore, configStore, jellyfinClient, mediaHistory, seedingGuard)
-                tvRoutes(deviceService, raviloConfigService, homeFeedService, browseService, detailService, playbackService, sessionService, jellyfinClient, configStore)
+                tvRoutes(deviceService, raviloConfigService, homeFeedService, browseService, detailService, playbackService, sessionService, jellyfinClient, configStore, channelLogoStore)
             }
 
             webSocket("/ws") {

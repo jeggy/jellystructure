@@ -133,10 +133,11 @@ fun main() = runBlocking {
     val jsTagStore = dev.jellystructure.media.JsTagStore("$dataDir/js-tags.json")
     jsTagStore.load()
     val logoDownloader = LogoDownloader(dataDir, tmdbClient)
+    val channelLogoStore = dev.jellystructure.tv.ChannelLogoStore(dataDir)
     val qbClient = QBittorrentClient()
     val seedingGuard = SeedingGuard(qbClient)
     val shutdown = startServer(
-        configStore, sessionService, raviloDeviceService, raviloConfigService, homeFeedService, browseService, detailService, playbackService, jellyfinClient, mediaStore, scanner,
+        configStore, sessionService, raviloDeviceService, raviloConfigService, channelLogoStore, homeFeedService, browseService, detailService, playbackService, jellyfinClient, mediaStore, scanner,
         artworkDownloader, tmdbClient, scanTracker, folderWatcher, mediaHistory, activityLog, broadcaster,
         frontendDir, port = port, scanDispatcher = scanDispatcher, effectiveScanThreads = effectiveScanThreads, jsTagStore = jsTagStore, seedingGuard = seedingGuard, logoDownloader = logoDownloader, qbClient = qbClient, tvEventBus = tvEventBus,
     )

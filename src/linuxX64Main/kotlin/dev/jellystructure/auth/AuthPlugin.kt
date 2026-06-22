@@ -22,6 +22,9 @@ private val OPEN_API_PATHS = listOf(
     // /api/tv/events is the live-config WebSocket (R33); browsers can't send a bearer header on the
     // handshake, so the route validates a device token from the query string itself.
     "/api/tv/events",
+    // /api/tv/channel-logos/<file> serves channel-button brand logos (R36); not sensitive, and the TV
+    // <img>/Coil loader can't attach a device token. Admin upload/list stays at /api/tv/admin/...
+    "/api/tv/channel-logos/",
 )
 
 fun Application.installAuthPlugin(

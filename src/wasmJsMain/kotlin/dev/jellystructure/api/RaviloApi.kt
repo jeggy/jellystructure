@@ -1,5 +1,7 @@
 package dev.jellystructure.api
 
+import dev.jellystructure.shared.tv.ChannelLogo
+import dev.jellystructure.shared.tv.ChannelLogoUpload
 import dev.jellystructure.shared.tv.RaviloConfig
 import io.ktor.client.call.body
 import io.ktor.client.request.get
@@ -35,6 +37,18 @@ object RaviloApi {
             setBody(config)
         }
         if (!r.status.isSuccess()) throw Exception(r.body<String>())
+    }
+
+    suspend fun listChannelLogos(): List<ChannelLogo> =
+        httpClient.get("/api/tv/admin/channel-logos").body()
+
+    suspend fun uploadChannelLogo(filename: String, dataBase64: String): ChannelLogo {
+        val r = httpClient.post("/api/tv/admin/channel-logos") {
+            contentType(ContentType.Application.Json)
+            setBody(ChannelLogoUpload(filename, dataBase64))
+        }
+        if (!r.status.isSuccess()) throw Exception(r.body<String>())
+        return r.body()
     }
 
     suspend fun approvePairing(code: String) {
