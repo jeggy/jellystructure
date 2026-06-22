@@ -1,6 +1,14 @@
 # Phase R44 — Media transport keys (Play / Pause / Stop / FF / Rew / Next / Prev)
 
-**Status:** Planned · _the remote's dedicated transport buttons do nothing; wire them to the player._
+**Status:** ✓ Done (2026-06-23) · _wired on all three layers._ `dpadFocusable` gained a `MediaKey`
+enum + `onMediaKey` handler that maps `Key.MediaPlayPause/Play/Pause/Stop/FastForward/Rewind/Next/
+Previous` (+ `Spacebar`) and consumes them; PlayerScreen routes them to `togglePlay`/`skip`/
+`advanceNext`/restart/exit regardless of which control is focused or whether the chrome is shown.
+Android binds a Media3 `MediaSession` to the ExoPlayer (created on `load`, released on `release`) so
+the OS delivers hardware transport keys and external controllers work — and because Compose consumes
+the key when the player is focused, the session path doesn't double-toggle. Web registers
+`navigator.mediaSession` play/pause/seek/stop handlers on the `<video>`. `:ravilo-ui`
+(android + wasmJs) compiles and `:ravilo-android:assembleDebug` builds.
 
 ## Problem
 Pressing the physical **Pause** / **Play (resume)** buttons (and the other media-transport keys) on
