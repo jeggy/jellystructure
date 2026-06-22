@@ -1,6 +1,7 @@
 package dev.jellystructure.ravilo.ui.focus
 
 import androidx.compose.foundation.focusable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -10,6 +11,7 @@ import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.pointer.pointerInput
 
 /**
  * D-pad focus helper.
@@ -23,6 +25,10 @@ import androidx.compose.ui.input.key.type
  *
  * `focusRequester` is optional — only needed for an explicit entry point or a non-spatial bridge,
  * never one-per-item across a lazy list.
+ *
+ * Pointer support: when `onSelect` is supplied a tap (mouse click / touch) also fires it and pulls
+ * focus to the item, so the same surface works on pointer platforms (web/desktop) as on a D-pad.
+ * Pointer taps and key events are distinct input sources, so this never double-fires `onSelect`.
  */
 fun Modifier.dpadFocusable(
     focusRequester: FocusRequester? = null,
@@ -50,3 +56,13 @@ fun Modifier.dpadFocusable(
     .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
     .onFocusChanged { if (it.isFocused) onFocused() else onBlurred() }
     .focusable()
+    .then(
+        if (onSelect != null) Modifier.pointerInput(onSelect, focusRequester) {
+            detectTapGestures(onTap = {
+                // Pull focus so the focus ring follows the pointer and subsequent
+                // D-pad/keyboard navigation continues from the tapped item.
+                focusRequester?.let { runCatching { it.requestFocus() } }
+                onSelect()
+            })
+        } else Modifier
+    )
