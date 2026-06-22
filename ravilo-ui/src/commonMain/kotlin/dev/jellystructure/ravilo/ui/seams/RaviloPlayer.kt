@@ -3,6 +3,13 @@ package dev.jellystructure.ravilo.ui.seams
 import dev.jellystructure.shared.tv.SubTrack
 
 data class PlayerAudioTrack(val index: Int, val label: String, val language: String?)
+data class PlayerSubtitleTrack(
+    val index: Int,
+    val label: String,
+    val language: String?,
+    val forced: Boolean = false,
+    val isDefault: Boolean = false,
+)
 
 /**
  * Platform-specific video player seam.
@@ -22,8 +29,8 @@ expect class RaviloPlayer() {
     /** Select an audio track by its index in [audioTracks]. */
     fun selectAudioTrack(index: Int)
 
-    /** Enable a subtitle track by its URL (from SubTrack.url), or null to disable all subtitles. */
-    fun selectSubtitleTrack(subtitleUrl: String?)
+    /** Select a subtitle track by its index in [subtitleTracks], or -1 to disable subtitles. */
+    fun selectSubtitleTrack(index: Int)
 
     fun release()
 
@@ -35,4 +42,7 @@ expect class RaviloPlayer() {
 
     /** Audio track list, discovered from the stream after load. May be empty until media is ready. */
     val audioTracks: List<PlayerAudioTrack>
+
+    /** Subtitle track list, discovered from the stream after load (embedded + sideloaded externals). */
+    val subtitleTracks: List<PlayerSubtitleTrack>
 }

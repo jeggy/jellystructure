@@ -47,10 +47,10 @@ actual class RaviloPlayer actual constructor() {
         // Browser manages audio track selection; multi-audio streams require hls.js API
     }
 
-    actual fun selectSubtitleTrack(subtitleUrl: String?) {
+    actual fun selectSubtitleTrack(index: Int) {
         // TextTrackList item-by-index access is not bridged in Kotlin/WASM DOM bindings.
-        // Subtitle track switching deferred to a future JS-interop bridge; the <track default>
-        // attribute set in load() handles the initial selection.
+        // Subtitle switching is deferred to a future JS-interop bridge; the <track default>
+        // attribute set in load() handles the initial selection. (index -1 = off.)
     }
 
     actual fun release() { runCatching { document.body?.removeChild(video) } }
@@ -67,4 +67,8 @@ actual class RaviloPlayer actual constructor() {
     actual val isPlaying: Boolean get() = !video.paused && !video.ended
     actual val isEnded: Boolean get() = video.ended
     actual val audioTracks: List<PlayerAudioTrack> get() = emptyList()
+    actual val subtitleTracks: List<PlayerSubtitleTrack> get() =
+        loadedSubtitles.mapIndexed { i, s ->
+            PlayerSubtitleTrack(i, s.label ?: s.language ?: "Track ${i + 1}", s.language, s.forced, s.isDefault)
+        }
 }
