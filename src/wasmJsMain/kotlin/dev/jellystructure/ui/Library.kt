@@ -5,7 +5,13 @@ package dev.jellystructure.ui
 import dev.jellystructure.App
 import dev.jellystructure.api.MediaApi
 import dev.jellystructure.api.MetaFacets
+import dev.jellystructure.api.RaviloApi
 import dev.jellystructure.api.TrackFacets
+import dev.jellystructure.shared.tv.ChannelConfig
+import dev.jellystructure.shared.tv.Condition
+import dev.jellystructure.shared.tv.MatchMode
+import dev.jellystructure.shared.tv.RowConfig
+import dev.jellystructure.shared.tv.RowKind
 import dev.jellystructure.elemNearViewportBottom
 import dev.jellystructure.historyReplaceState
 import dev.jellystructure.observeSections
@@ -162,6 +168,8 @@ fun renderLibrary(container: Element, scope: CoroutineScope, query: Map<String, 
               </label>
             </div>
           </div>
+          <button id="lib-workbench" class="chip">⚙ Add filter</button>
+          <button id="lib-saveas" class="chip">★ Save filter as…</button>
           <span class="spacer" style="flex:1"></span>
           <select id="lib-sort" class="input" style="width:auto;font-size:.83rem;">
             <option value="">recently added ▾</option>
@@ -184,6 +192,7 @@ fun renderLibrary(container: Element, scope: CoroutineScope, query: Map<String, 
 
     syncFilterUiToState(scope)
     attachLibraryListeners(scope)
+    wireLibraryWorkbench(scope)
 
     // Infinite scroll: a sentinel after the grid fetches the next slice as it nears the viewport.
     // Auto-fetch is paused while a scan is running (items append live over the WebSocket instead).
@@ -863,3 +872,106 @@ private fun posterCardHtml(item: MediaItem): String {
 
 internal fun String.esc(): String =
     replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;")
+
+// ── R32: Library ↔ workbench round-trip ─────────────────────────────────────────
+
+private fun libConditionsFromState(): List<WbCond> = buildList {
+    if (libStudios.isNotEmpty()) add(WbCond("studio", "is_any_of", libStudios.toMutableList()))
+    if (libNetworks.isNotEmpty()) add(WbCond("network", "is_any_of", libNetworks.toMutableList()))
+    if (libGenres.isNotEmpty()) add(WbCond("genre", "is_any_of", libGenres.toMutableList()))
+    if (libTags.isNotEmpty()) add(WbCond("tag", "is_any_of", libTags.toMutableList()))
+    val al = libAudioLangs + if (libUntaggedAudio) listOf("untagged") else emptyList()
+    if (al.isNotEmpty()) add(WbCond("audio_language", "is_any_of", al.toMutableList()))
+    libAudioCodec?.let { add(WbCond("audio_codec", "is_any_of", mutableListOf(it))) }
+    libTrackTitle?.let { add(WbCond("track_title", "contains", mutableListOf(it))) }
+}
+
+private fun libInclude(): String = when (libKind) {
+    MediaKind.MOVIE -> "movies"; MediaKind.TV_SHOW -> "series"; else -> "all"
+}
+
+private fun wireLibraryWorkbench(scope: CoroutineScope) {
+    fun open(title: String) = openWorkbench(
+        scope = scope, title = title, viewer = null,
+        initialMatch = "ALL", initialInclude = libInclude(), initialConds = libConditionsFromState(),
+        applyLabel = "Apply to Library",
+        onApply = { _, include, conds -> applyWorkbenchToLibrary(include, conds) },
+        onSaveAs = { target, match, include, conds -> pickViewerThen(scope) { uid, name -> scope.launch { saveFilterToViewer(uid, name, target, match, include, conds) } } },
+    )
+    document.getElementById("lib-workbench")?.addEventListener("click") { open("Library filter") }
+    document.getElementById("lib-saveas")?.addEventListener("click") { open("Save filter as…") }
+}
+
+/** Only the is_any_of / contains subset maps to the Library's URL filter; that is what the grid serves. */
+private fun applyWorkbenchToLibrary(include: String, conds: List<WbCond>) {
+    fun vals(f: String) = conds.filter { it.facet == f && it.op == "is_any_of" }.flatMap { it.values }.distinct()
+    val params = buildList {
+        when (include) { "movies" -> add("kind=MOVIE"); "series" -> add("kind=TV_SHOW") }
+        vals("studio").takeIf { it.isNotEmpty() }?.let { add("studios=${it.joinToString(",") { v -> dev.jellystructure.encodeURIComponent(v) }}") }
+        vals("network").takeIf { it.isNotEmpty() }?.let { add("networks=${it.joinToString(",") { v -> dev.jellystructure.encodeURIComponent(v) }}") }
+        vals("genre").takeIf { it.isNotEmpty() }?.let { add("genres=${it.joinToString(",") { v -> dev.jellystructure.encodeURIComponent(v) }}") }
+        vals("tag").takeIf { it.isNotEmpty() }?.let { add("tags=${it.joinToString(",") { v -> dev.jellystructure.encodeURIComponent(v) }}") }
+        val al = vals("audio_language")
+        al.filter { it != "untagged" }.takeIf { it.isNotEmpty() }?.let { add("audioLang=${it.joinToString(",")}") }
+        if (al.contains("untagged")) add("untaggedAudio=true")
+        vals("audio_codec").firstOrNull()?.let { add("audioCodec=$it") }
+        conds.firstOrNull { it.facet == "track_title" && it.op == "contains" }?.values?.firstOrNull()?.let { add("trackTitle=${dev.jellystructure.encodeURIComponent(it)}") }
+    }
+    App.navigate(if (params.isEmpty()) "/library" else "/library?${params.joinToString("&")}")
+}
+
+private fun wbToConditions(conds: List<WbCond>): List<Condition> =
+    conds.filter { it.values.isNotEmpty() || it.facet == "track_title" }.map { Condition(it.facet, it.op, it.values.toList()) }
+
+private suspend fun saveFilterToViewer(userId: String, name: String, target: String, match: String, include: String, conds: List<WbCond>) {
+    val cfg = runCatching { RaviloApi.getConfig(userId) }.getOrNull() ?: return
+    val mode = if (match == "ANY") MatchMode.ANY else MatchMode.ALL
+    val conditions = wbToConditions(conds)
+    val label = conds.firstOrNull { it.values.isNotEmpty() }?.values?.firstOrNull() ?: "Custom filter"
+    val mediaKind = when (include) { "movies" -> "MOVIE"; "series" -> "SERIES"; else -> null }
+    val newCfg = if (target == "channel") {
+        cfg.copy(channels = cfg.channels + ChannelConfig(id = "ch-${(0..999999).random()}", name = label, match = mode, conditions = conditions))
+    } else {
+        cfg.copy(rows = cfg.rows + RowConfig(id = "row-${(0..999999).random()}", kind = RowKind.CUSTOM, title = label, mediaKind = mediaKind, match = mode, conditions = conditions))
+    }
+    val ok = runCatching { RaviloApi.putConfig(userId, newCfg); true }.getOrDefault(false)
+    libToast(if (ok) "Saved ${if (target == "channel") "channel" else "content row"} to ${name}'s layout." else "Save failed.")
+}
+
+private fun libToast(msg: String) {
+    val banner = document.getElementById("scan-banner") as? HTMLElement ?: return
+    banner.style.display = "block"
+    banner.innerHTML = """<span class="badge ok">$msg</span>"""
+}
+
+/** Minimal viewer picker modal (radio list of Jellyfin users). */
+private fun pickViewerThen(scope: CoroutineScope, onPick: (String, String) -> Unit) {
+    scope.launch {
+        val users = runCatching { RaviloApi.getUsers() }.getOrDefault(emptyList())
+        if (users.isEmpty()) { libToast("No Jellyfin users available."); return@launch }
+        val existing = document.getElementById("viewer-pick-overlay")
+        existing?.parentElement?.removeChild(existing)
+        val overlay = document.createElement("div") as HTMLElement
+        overlay.id = "viewer-pick-overlay"
+        overlay.setAttribute("style", "position:fixed;inset:0;background:#000a;display:flex;align-items:center;justify-content:center;z-index:1100;")
+        val rows = users.joinToString("") { u ->
+            """<label style="display:flex;gap:8px;align-items:center;padding:7px 4px;cursor:pointer;"><input type="radio" name="vp" value="${u.id}" data-name="${u.displayName.esc()}"> ${u.displayName.esc()}</label>"""
+        }
+        overlay.innerHTML = """
+            <div style="background:var(--bg-1,#15151c);border:1px solid var(--line,#333);border-radius:14px;padding:18px;min-width:280px;">
+              <h3 style="margin:0 0 10px;">For which viewer?</h3>
+              <div style="max-height:300px;overflow:auto;">$rows</div>
+              <div class="row center" style="margin-top:14px;gap:8px;justify-content:flex-end;">
+                <button id="vp-cancel" class="btn sm ghost">Cancel</button>
+                <button id="vp-ok" class="btn sm">Save</button>
+              </div>
+            </div>"""
+        document.body?.appendChild(overlay)
+        document.getElementById("vp-cancel")?.addEventListener("click") { overlay.parentElement?.removeChild(overlay) }
+        document.getElementById("vp-ok")?.addEventListener("click") {
+            val sel = document.querySelector("#viewer-pick-overlay input[name=vp]:checked") as? HTMLInputElement
+            if (sel != null) { onPick(sel.value, sel.getAttribute("data-name") ?: sel.value) }
+            overlay.parentElement?.removeChild(overlay)
+        }
+    }
+}
