@@ -41,7 +41,10 @@ private val DEFAULT_CONFIG = RaviloConfig(
     tileShape = TileShape.POSTER,
 )
 
-class RaviloConfigService(private val db: JellystructureDb) {
+class RaviloConfigService(
+    private val db: JellystructureDb,
+    private val eventBus: TvEventBus? = null,
+) {
 
     fun getConfig(userId: String): RaviloConfig {
         val stored = db.raviloConfigQueries.getByUser(userId).executeAsOneOrNull()
@@ -59,6 +62,8 @@ class RaviloConfigService(private val db: JellystructureDb) {
             json = json.encodeToString(normalize(config)),
             updated_at = nowMs(),
         )
+        // R33: push a live signal to this user's connected TVs so they re-pull immediately.
+        eventBus?.notifyConfigChanged(userId)
     }
 
     /**

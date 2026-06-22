@@ -1,6 +1,6 @@
 # Phase R33 — Live config push: instant Ravilo layout updates on the TV
 
-**Status:** Planned · _when a viewer's RaviloConfig changes (operator edit in the Jellystructure config
+**Status:** ✓ Done (2026-06-22) · _when a viewer's RaviloConfig changes (operator edit in the Jellystructure config
 screen, or the viewer's own on-device settings), every connected TV/web client signed in as that user
 reflects the change within ~1s — no manual reload — while still rendering only server-composed state._
 
@@ -112,6 +112,24 @@ authoritative-pull model; revisit only if round-trip latency is visibly poor.
 - **Reordering / hiding rows** and **skin** changes reflect live.
 - Only the **targeted user's** devices update.
 - **Disconnect → reconnect** re-syncs to the latest layout.
+
+## Implemented (2026-06-22)
+- Backend: `TvEventBus` (per-user, keyed by `jellyfinUserId`); `webSocket("/api/tv/events")` in
+  `Server.kt` with device-token auth from the `?token=` query (exempted in `AuthPlugin.OPEN_API_PATHS`);
+  `RaviloConfigService.save` emits `config_changed` (monotonic `rev`) — covers admin edits + viewer
+  settings. Wired via `Main.kt` (`TvEventBus(rootScope)` → `RaviloConfigService` + `startServer`).
+- Shared: `TvEvent` DTO; `TvApiClient.connectEvents(onOpen, onEvent)` (ws/wss URL from `baseUrl` +
+  token query); `ktor-client-websockets` added. Android engine switched **Android → CIO** (the Android
+  engine has no WS support); web stays on the Js engine; both install the `WebSockets` client plugin.
+- Client: `HomeStore`/`ChannelStore`/`SettingsStore` gained `refresh(silent=true)` (swap-in-place, no
+  Loading flash). `RaviloApp` owns a `MutableSharedFlow` fed by a reconnect-with-backoff WS loop keyed
+  on the active user (re-subscribes on profile switch; emits on connect for a full resync); the app
+  collects it for `refreshConfig()` (skin/lang) and provides it via `LocalLiveConfig` so the **visible**
+  layout screen (Home / Channel / Settings) silently refreshes. Background scopes → navigation is never
+  blocked; whichever of those screens is on top reflects the change.
+
+**Deferred:** §E3 degrade-to-poll (`GET /api/tv/config/rev`) — the WS + reconnect covers the normal
+case; add only if a proxy blocks the upgrade. §F payload-in-event optimization — not needed yet.
 
 ## Design reference / implementation pointers
 - Backend: emit at `RaviloConfigService.save`; new `TvEventBus` (mirror `jobs/WsBroadcaster`, keyed by

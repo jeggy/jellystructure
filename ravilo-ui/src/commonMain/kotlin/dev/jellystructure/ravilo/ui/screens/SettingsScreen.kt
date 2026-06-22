@@ -61,6 +61,14 @@ class SettingsStore(private val apiClient: TvApiClient) {
         }
     }
 
+    /** R33 live refresh: re-pull config in place (no Loading flash) when the layout changes elsewhere. */
+    fun refresh(silent: Boolean = true) {
+        if (!silent) { load(); return }
+        scope.launch {
+            runCatching { apiClient.getConfig() }.getOrNull()?.let { _state.value = SettingsState.Loaded(it) }
+        }
+    }
+
     fun saveSkin(skin: Skin) {
         val cur = (_state.value as? SettingsState.Loaded)?.config ?: return
         val updated = cur.copy(viewerSkinOverride = skin)
@@ -93,6 +101,10 @@ fun SettingsScreen(
 ) {
     val colors = RaviloTheme.colors
     val state by store.state.collectAsState()
+
+    // R33: silently re-pull settings when the user's config changes elsewhere.
+    val live = dev.jellystructure.ravilo.ui.LocalLiveConfig.current
+    LaunchedEffect(live) { live?.collect { store.refresh(silent = true) } }
 
     Box(modifier = Modifier.fillMaxSize().background(colors.background)) {
         Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 80.dp, vertical = 40.dp)) {
