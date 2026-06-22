@@ -122,14 +122,9 @@ fun renderShell(user: UserProfile) {
     document.getElementById("cmd-search-pill")?.addEventListener("click") { showPalette() }
 
     MainScope().launch {
-        // Triage badge count + dock
+        // Triage count → sidebar status dots + the floating Triage dock (Phase 27; there is no
+        // Triage page or nav badge any more — the dock is the surface).
         val count = MediaApi.getTriageCount()
-        val badge = document.getElementById("triage-count-badge") as? HTMLElement
-        if (badge != null && count != null && count.total > 0) {
-            badge.textContent = count.total.toString()
-        } else {
-            badge?.remove()
-        }
         // Sidebar status dots
         updateSidebarStatus(count?.total ?: 0)
         // Load triage dock items
@@ -172,7 +167,13 @@ private fun buildPaletteCommands(): List<PaletteCmd> = listOf(
     PaletteCmd("Go to Settings", "Connections, scan & metadata options") { App.navigate("/settings") },
     PaletteCmd("Go to Activity", "Scan log and workers") { App.navigate("/activity") },
     PaletteCmd("Go to Metadata", "Studios, networks, genres & tags") { App.navigate("/metadata") },
-    PaletteCmd("Go to Triage queue", "Items needing attention") { App.navigate("/triage") },
+    PaletteCmd("Triage: first item", "Items needing attention") {
+        if (triageDockItems.isNotEmpty()) {
+            triageDockIndex = 0
+            updateTriageDock()
+            navigateToTriageItem(triageDockItems[0])
+        }
+    },
     PaletteCmd("Go to Dashboard", "Overview and stats") { App.navigate("/") },
     PaletteCmd("Start full scan", "Re-scan all Jellyfin items") {
         MainScope().launch { MediaApi.startScan() }
