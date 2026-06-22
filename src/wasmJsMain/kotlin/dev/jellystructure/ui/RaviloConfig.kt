@@ -14,6 +14,7 @@ import dev.jellystructure.shared.tv.RowConfig
 import dev.jellystructure.shared.tv.RowKind
 import dev.jellystructure.shared.tv.Skin
 import dev.jellystructure.shared.tv.TileShape
+import dev.jellystructure.shared.tv.UiDensity
 import kotlinx.browser.window
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
@@ -587,6 +588,7 @@ private fun <T> wireReorder(
 // ── Behaviour ─────────────────────────────────────────────────────────────────
 
 private val TILE_SHAPE_LABELS = mapOf(TileShape.POSTER to "Standard poster", TileShape.LANDSCAPE to "Wide landscape", TileShape.SQUARE to "Square")
+private val DENSITY_LABELS = mapOf(UiDensity.COMPACT to "Compact (smaller)", UiDensity.COZY to "Cozy", UiDensity.COMFORTABLE to "Comfortable (default)")
 private val LANGS = listOf("en" to "English", "da" to "Dansk", "fo" to "Føroyskt")
 
 private fun renderBehaviour(container: Element) {
@@ -598,6 +600,10 @@ private fun renderBehaviour(container: Element) {
     val tileOptions = TileShape.entries.joinToString("") { s ->
         val sel = if (s == currentConfig.tileShape) " selected" else ""
         """<option value="${s.name}"$sel>${TILE_SHAPE_LABELS[s] ?: s.name}</option>"""
+    }
+    val densityOptions = UiDensity.entries.joinToString("") { d ->
+        val sel = if (d == currentConfig.uiDensity) " selected" else ""
+        """<option value="${d.name}"$sel>${DENSITY_LABELS[d] ?: d.name}</option>"""
     }
     val overrideChecked = if (currentConfig.allowSkinOverride) " checked" else ""
     val progressChecked = if (currentConfig.showContinueProgress) " checked" else ""
@@ -620,6 +626,10 @@ private fun renderBehaviour(container: Element) {
             <label style="display:flex;align-items:center;justify-content:space-between;gap:12px">
               <span style="font-size:.9rem">Tile shape</span>
               <select id="beh-tile" class="input" style="width:180px;font-size:.85rem">$tileOptions</select>
+            </label>
+            <label style="display:flex;align-items:center;justify-content:space-between;gap:12px">
+              <span style="font-size:.9rem">Content size <span class="tiny muted">· grid/row tiles on the TV</span></span>
+              <select id="beh-density" class="input" style="width:180px;font-size:.85rem">$densityOptions</select>
             </label>
             <label style="display:flex;align-items:center;gap:10px;font-size:.9rem">
               <input type="checkbox" id="beh-skin-override"$overrideChecked>
@@ -744,6 +754,8 @@ private fun collectConfig(container: Element) {
         .getOrDefault(Skin.AURORA)
     val tileShape    = runCatching { TileShape.valueOf((container.querySelector("#beh-tile") as? HTMLSelectElement)?.value ?: "POSTER") }
         .getOrDefault(TileShape.POSTER)
+    val uiDensity    = runCatching { UiDensity.valueOf((container.querySelector("#beh-density") as? HTMLSelectElement)?.value ?: "COMFORTABLE") }
+        .getOrDefault(UiDensity.COMFORTABLE)
     val allowOverride = (container.querySelector("#beh-skin-override") as? HTMLInputElement)?.checked ?: true
     val showProgress  = (container.querySelector("#beh-progress") as? HTMLInputElement)?.checked ?: true
     currentConfig = RaviloConfig(
@@ -757,6 +769,7 @@ private fun collectConfig(container: Element) {
         viewerSkinOverride = currentConfig.viewerSkinOverride,
         showContinueProgress = showProgress,
         tileShape = tileShape,
+        uiDensity = uiDensity,
         uiLanguage = uiLanguage,
         heroHeightPct = heroHeight,
         autoAdvanceSeconds = autoAdvance,

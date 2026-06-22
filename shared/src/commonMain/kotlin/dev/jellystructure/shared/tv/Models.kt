@@ -13,6 +13,16 @@ enum class Skin { AURORA, MIDNIGHT, NOIR }
 /** Join mode for a condition stack (R32 workbench). */
 enum class MatchMode { ALL, ANY }
 
+/** Operator-set content size for the TV grids/rows. COMFORTABLE = current sizing. */
+enum class UiDensity { COMPACT, COZY, COMFORTABLE }
+
+/** Multiplier applied to tile dimensions on the TV for the chosen density. */
+fun UiDensity.tileScale(): Float = when (this) {
+    UiDensity.COMPACT -> 0.82f
+    UiDensity.COZY -> 0.91f
+    UiDensity.COMFORTABLE -> 1f
+}
+
 // ─── Pairing ──────────────────────────────────────────────────────────────────
 
 @Serializable
@@ -280,6 +290,7 @@ data class RaviloConfig(
     @SerialName("show_continue_progress") val showContinueProgress: Boolean = true,
     @SerialName("autoplay_next") val autoplayNext: Boolean = true,
     @SerialName("tile_shape") val tileShape: TileShape = TileShape.POSTER,
+    @SerialName("ui_density") val uiDensity: UiDensity = UiDensity.COMFORTABLE,
     @SerialName("ui_language") val uiLanguage: String = "en",
     @SerialName("hero_height_pct") val heroHeightPct: Int = 56,       // % of screen the hero fills (30..100)
     @SerialName("auto_advance_seconds") val autoAdvanceSeconds: Int = 7, // hero carousel interval seconds; 0 = off (0..120)

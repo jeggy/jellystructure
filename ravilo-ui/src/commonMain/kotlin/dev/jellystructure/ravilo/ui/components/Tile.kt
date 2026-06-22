@@ -80,11 +80,13 @@ fun Tile(
     val shadowElevation by animateDpAsState(if (focused) 24.dp else 0.dp, dpSpec, label = "tileShadow")
     val tileShape = remember(colors.tileRadius) { RoundedCornerShape(colors.tileRadius) }
 
+    // Operator-configured content size (R: ui_density) scales every grid/row tile uniformly.
+    val tileScale = dev.jellystructure.ravilo.ui.LocalTileScale.current
     val (w, h) = when (variant) {
         TileVariant.POSTER -> POSTER_W to POSTER_H
         TileVariant.LANDSCAPE -> LANDSCAPE_W to LANDSCAPE_H
         TileVariant.SQUARE -> SQUARE_W to SQUARE_H
-    }
+    }.let { (bw, bh) -> bw * tileScale to bh * tileScale }
 
     Column(modifier = Modifier.width(w).scale(scale)) {
         Box(
