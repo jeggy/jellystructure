@@ -264,6 +264,17 @@ data class ChannelConfig(
     val order: Int = 0,
 )
 
+/** A server-owned channel-button logo asset (R36 §F), served at `/api/tv/channel-logos/<file>`. */
+@Serializable
+data class ChannelLogo(val url: String, val label: String)
+
+/** Upload payload for a channel logo: original filename + base64 file bytes (data-URL prefix tolerated). */
+@Serializable
+data class ChannelLogoUpload(
+    val filename: String,
+    @SerialName("data_base64") val dataBase64: String,
+)
+
 @Serializable
 data class RowConfig(
     val id: String,
