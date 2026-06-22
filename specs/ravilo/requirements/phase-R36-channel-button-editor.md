@@ -91,6 +91,19 @@ gradient. Make every editable config row visibly **click-to-edit**.
    0–360°; colors are validated hex/rgb.
 3. Channel **`style`/`logoUrl`/`brandColor`** are written through the per-user `RaviloConfig` store
    (R04/R26) and pushed live (R33) like every other config edit.
+4. **TV rendering (`ravilo-ui` `ChannelCard`):** the channel-button background must render a
+   **gradient** `brandColor`, not only a solid. `parseBrandColor` today handles **hex only**
+   (`#rrggbb`/`#aarrggbb`) and returns null for anything else, so an authored `linear-gradient(…)` would
+   silently fall back to the accent. Extend it to parse a single `linear-gradient(<deg>, <c1>, <c2>)`
+   into a Compose `Brush.linearGradient`; keep the solid-hex path. The existing `logoUrl` →
+   `RemoteImage` path already works (logo images render today) — only the editor never sets `logoUrl`.
+
+### G. Editor architecture (admin `RaviloConfig.kt`)
+1. The current admin editor styles the channel button **inline on the row** — a `data-ch-style`
+   Logo/Text `<select>`, an `<input type="color">` (**solid only**; gradients are dropped via
+   `brandColor?.takeIf { it.startsWith("#") }`), and **no logo upload at all** (`logoUrl` is never set).
+   "Edit filter" only reopens the workbench for **conditions**. This phase replaces that inline cluster
+   with the **popup** channel-button section (§A–§D) and the per-row **pencil edit** affordance (§E).
 
 ## Invariants
 - The channel-button look (Display + logo asset/text + brand fill) is configured **only in the editor
