@@ -31,4 +31,5 @@ data
 
 # Config
 config/*
-!config/config.example.toml
+!config/config.example.toml.claude/
+.claude/
