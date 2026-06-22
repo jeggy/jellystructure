@@ -289,21 +289,21 @@ private fun injectWorkbenchStyles() {
     val style = document.createElement("style") as? org.w3c.dom.HTMLStyleElement ?: return
     style.id = "wb-styles"
     style.textContent = """
-        .wb-overlay { position:fixed; inset:0; background:#000a; display:flex; align-items:flex-start; justify-content:center; z-index:1000; overflow:auto; padding:40px 16px; }
-        .wb-modal { background:var(--bg-1,#15151c); border:1px solid var(--line,#333); border-radius:16px; width:min(860px,100%); padding:18px; }
+        .wb-overlay { position:fixed; inset:0; background:rgba(0,0,0,.55); display:flex; align-items:flex-start; justify-content:center; z-index:1000; overflow:auto; padding:40px 16px; }
+        .wb-modal { background:var(--fill); color:var(--ink); border:1px solid var(--line); box-shadow:var(--shadow); border-radius:16px; width:min(860px,100%); padding:18px; }
         .wb-head { display:flex; align-items:center; gap:6px; margin-bottom:14px; }
-        .wb-cond { border:1px solid var(--line,#333); border-radius:11px; padding:10px; margin-bottom:9px; }
+        .wb-cond { border:1px solid var(--line); border-radius:11px; padding:10px; margin-bottom:9px; background:var(--fill-2); }
         .wb-cond-head { display:flex; align-items:center; gap:8px; margin-bottom:8px; }
-        .wb-join { font-size:.72rem; font-weight:700; opacity:.7; min-width:38px; }
+        .wb-join { font-size:.72rem; font-weight:700; color:var(--ink-soft); min-width:38px; }
         .wb-facet, .wb-op { padding:4px 8px; }
         .wb-vchips { display:flex; flex-wrap:wrap; gap:6px; max-height:120px; overflow:auto; }
-        .wb-vchip { padding:3px 9px; border-radius:18px; border:1px solid var(--line,#333); cursor:pointer; font-size:.76rem; }
-        .wb-vchip.on { background:var(--hi,#7c5cff); border-color:transparent; color:#fff; }
-        .wb-count { margin:12px 0 8px; font-size:.9rem; }
+        .wb-vchip { padding:3px 9px; border-radius:18px; border:1px solid var(--line-2); background:var(--fill-2); color:var(--ink); cursor:pointer; font-size:.76rem; }
+        .wb-vchip.on { background:var(--hi); border-color:transparent; color:#fff; }
+        .wb-count { margin:12px 0 8px; font-size:.9rem; color:var(--ink); }
         .wb-preview { display:grid; grid-template-columns:repeat(auto-fill,minmax(70px,1fr)); gap:7px; max-height:240px; overflow:auto; margin-bottom:14px; }
-        .wb-pcard { aspect-ratio:2/3; border-radius:7px; overflow:hidden; background:#0006; }
+        .wb-pcard { aspect-ratio:2/3; border-radius:7px; overflow:hidden; background:var(--fill-3); }
         .wb-pcard img { width:100%; height:100%; object-fit:cover; }
-        .wb-noimg { width:100%; height:100%; display:flex; align-items:center; justify-content:center; font-weight:700; opacity:.5; }
+        .wb-noimg { width:100%; height:100%; display:flex; align-items:center; justify-content:center; font-weight:700; color:var(--ink-soft); }
         .wb-foot { display:flex; gap:8px; align-items:center; }
     """.trimIndent()
     document.head?.appendChild(style)
