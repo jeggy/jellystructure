@@ -47,6 +47,7 @@ kotlin {
                 implementation(libs.kotlinx.datetime)
                 implementation(libs.ktor.client.core)
                 implementation(libs.ktor.client.content.negotiation)
+                implementation(libs.ktor.client.websockets)
                 implementation(libs.ktor.serialization.kotlinx.json)
                 implementation(libs.coil.compose)
                 implementation(libs.coil.network.ktor)
@@ -54,7 +55,7 @@ kotlin {
         }
         val androidMain by getting {
             dependencies {
-                implementation(libs.ktor.client.android)
+                implementation(libs.ktor.client.cio) // CIO supports WebSockets (the Android engine does not)
                 implementation(libs.androidx.media3.exoplayer)
                 implementation(libs.androidx.media3.exoplayer.hls)
             }

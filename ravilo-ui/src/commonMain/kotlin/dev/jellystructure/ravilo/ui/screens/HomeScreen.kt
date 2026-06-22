@@ -57,6 +57,10 @@ fun HomeScreen(
     val colors = RaviloTheme.colors
     val state by store.state.collectAsState()
 
+    // R33: silently re-pull the home feed when this user's layout changes elsewhere.
+    val live = dev.jellystructure.ravilo.ui.LocalLiveConfig.current
+    LaunchedEffect(live) { live?.collect { store.refresh(silent = true) } }
+
     Box(modifier = Modifier.fillMaxSize().background(colors.background)) {
         when (val s = state) {
             is HomeState.Loading -> HomeLoadingShell()

@@ -46,13 +46,25 @@ class ChannelStore(private val apiClient: TvApiClient) {
     private val _state = MutableStateFlow<HomeState>(HomeState.Loading)
     val state: StateFlow<HomeState> = _state.asStateFlow()
     private var loadJob: Job? = null
+    private var currentId: String? = null
 
     fun load(channelId: String) {
+        currentId = channelId
         loadJob?.cancel()
         _state.value = HomeState.Loading
         loadJob = scope.launch {
             _state.value = runCatching { HomeState.Loaded(apiClient.getChannel(channelId)) }
                 .getOrElse { HomeState.Error(it.message ?: "Unknown error") }
+        }
+    }
+
+    /** R33 live refresh: re-pull the channel feed in place (no Loading flash). */
+    fun refresh(silent: Boolean = false) {
+        val id = currentId ?: return
+        if (!silent) { load(id); return }
+        loadJob?.cancel()
+        loadJob = scope.launch {
+            runCatching { apiClient.getChannel(id) }.getOrNull()?.let { _state.value = HomeState.Loaded(it) }
         }
     }
 }
@@ -67,6 +79,10 @@ fun ChannelScreen(
     val colors = RaviloTheme.colors
 
     LaunchedEffect(channel.id) { store.load(channel.id) }
+
+    // R33: silently re-pull this channel when the user's layout changes elsewhere.
+    val live = dev.jellystructure.ravilo.ui.LocalLiveConfig.current
+    LaunchedEffect(live) { live?.collect { store.refresh(silent = true) } }
 
     val storeState by store.state.collectAsState()
 

@@ -19,6 +19,9 @@ private val OPEN_API_PATHS = listOf(
     // /api/tv/pair/approve is open at the plugin level; the route handler checks for
     // a valid cookie session or direct Jellyfin credentials itself.
     "/api/tv/pair/approve",
+    // /api/tv/events is the live-config WebSocket (R33); browsers can't send a bearer header on the
+    // handshake, so the route validates a device token from the query string itself.
+    "/api/tv/events",
 )
 
 fun Application.installAuthPlugin(

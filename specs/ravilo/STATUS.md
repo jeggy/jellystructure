@@ -14,7 +14,7 @@ _Last updated: 2026-06-22_
 
 ## Current focus
 
-**Phases R01–R32 complete.** [R32 — Unified filter workbench + hero builder + Library
+**Phases R01–R33 complete.** [R32 — Unified filter workbench + hero builder + Library
 round-trip](requirements/phase-R32-unified-filter-workbench.md) shipped: a shared condition-stack
 builder (`ui/Workbench.kt`) powers Content rows, Channels **and** the jellystructure Library page;
 **audio-track and hero_item are universal facets** (the feed evaluator `ConditionEvaluator` + a
@@ -24,13 +24,16 @@ Library offers **⚙ Add filter** + **Save filter as… Channel / Content row** 
 Movie/Series detail gained **★ Feature in Ravilo…** (locked-title hero builder + viewer picker writing
 `HeroConfig`). Hero height clamp is now 30–100% with a 7s auto-advance default (R32 §F).
 
-Next up is **[R33 — Live config push](requirements/phase-R33-live-config-push.md)** (Planned): a per-user
+**[R33 — Live config push](requirements/phase-R33-live-config-push.md) is complete (2026-06-22).** A per-user
 WebSocket (`/api/tv/events`, device-token auth via query param for browsers) so a config write
 (`RaviloConfigService.save`, covering both the admin editor and viewer settings) pushes a `config_changed`
 signal to that user's connected TVs, which **silently re-pull** the authoritative feed/config — channel
 adds, hero-height/tile-shape/auto-advance, row reorders and skin changes appear in ~1s with no reload, no
-flicker, and no loss of scroll/focus. Pull-only today; Ktor WebSockets is already installed and the config
-write is a single hook point. Renders server-pushed state only (constitution). **Spec only — not implemented.**
+flicker, and no loss of scroll/focus. The WS reconnects with backoff and does a full resync on (re)connect;
+whichever layout screen (Home/Channel/Settings) is on top reflects the change, and refreshes run on
+background scopes so navigation is never blocked. Renders server-pushed state only (constitution). The
+Android Ktor engine moved Android→CIO (the Android engine has no WS support). Degrade-to-poll (§E3) and
+the payload-in-event optimization (§F) are deferred.
 
 Note the workbench preview reports an honest **≈** count when a stack uses
 none-of / not-contains / Match-ANY (those are evaluated on the TV by `ConditionEvaluator`, not by the

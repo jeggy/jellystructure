@@ -200,6 +200,16 @@ data class SearchResults(
     val items: List<MediaCard>,
 )
 
+// ─── Live events (R33) ──────────────────────────────────────────────────────────
+
+/**
+ * Pushed over the `/api/tv/events` WebSocket to a user's connected devices. `type` is currently
+ * always `config_changed`; `rev` is a monotonic counter the client uses to dedupe/skip redundant
+ * refreshes. The event is a signal only — the client re-pulls the authoritative feed/config.
+ */
+@Serializable
+data class TvEvent(val type: String, val rev: Long = 0)
+
 // ─── Config ───────────────────────────────────────────────────────────────────
 
 @Serializable
