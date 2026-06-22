@@ -34,6 +34,7 @@ import dev.jellystructure.tv.HomeFeedService
 import dev.jellystructure.tv.PlaybackService
 import dev.jellystructure.tv.RaviloConfigService
 import dev.jellystructure.tv.RaviloDeviceService
+import dev.jellystructure.tv.TvEventBus
 import io.ktor.http.ContentType
 import io.ktor.http.HttpMethod
 import io.ktor.http.HttpStatusCode
@@ -53,7 +54,9 @@ import io.ktor.server.routing.route
 import io.ktor.server.routing.routing
 import io.ktor.server.websocket.WebSockets
 import io.ktor.server.websocket.webSocket
+import io.ktor.websocket.CloseReason
 import io.ktor.websocket.Frame
+import io.ktor.websocket.close
 import kotlinx.cinterop.ByteVar
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.allocArray
@@ -102,6 +105,7 @@ fun startServer(
     seedingGuard: SeedingGuard,
     logoDownloader: LogoDownloader,
     qbClient: QBittorrentClient? = null,
+    tvEventBus: TvEventBus,
 ): suspend () -> Unit {
     val appScope = CoroutineScope(SupervisorJob())
     val engine = embeddedServer(CIO, port = port) {
@@ -175,6 +179,26 @@ fun startServer(
                     }
                 } finally {
                     broadcaster.unregister(this)
+                }
+            }
+
+            // R33 — per-user live config push. Device token comes via query param (browsers can't set
+            // a handshake header); this path is exempt from the bearer-gate AuthPlugin and validates here.
+            webSocket("/api/tv/events") {
+                val token = call.request.queryParameters["token"]?.takeIf { it.isNotBlank() }
+                    ?: call.request.headers["Authorization"]?.removePrefix("Bearer ")?.takeIf { it.isNotBlank() }
+                val device = token?.let { deviceService.validateDeviceToken(it) }
+                if (device == null) {
+                    close(CloseReason(CloseReason.Codes.VIOLATED_POLICY, "Invalid or missing device token"))
+                    return@webSocket
+                }
+                tvEventBus.register(device.jellyfinUserId, this)
+                try {
+                    for (frame in incoming) {
+                        if (frame is Frame.Close) break
+                    }
+                } finally {
+                    tvEventBus.unregister(device.jellyfinUserId, this)
                 }
             }
 
