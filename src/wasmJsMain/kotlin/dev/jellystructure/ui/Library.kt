@@ -961,7 +961,7 @@ private fun pickViewerThen(scope: CoroutineScope, onPick: (String, String) -> Un
             """<label style="display:flex;gap:8px;align-items:center;padding:7px 4px;cursor:pointer;"><input type="radio" name="vp" value="${u.id}" data-name="${u.displayName.esc()}"> ${u.displayName.esc()}</label>"""
         }
         overlay.innerHTML = """
-            <div style="background:var(--bg-1,#15151c);border:1px solid var(--line,#333);border-radius:14px;padding:18px;min-width:280px;">
+            <div style="background:var(--fill);color:var(--ink);border:1px solid var(--line);border-radius:14px;padding:18px;min-width:280px;box-shadow:var(--shadow);">
               <h3 style="margin:0 0 10px;">For which viewer?</h3>
               <div style="max-height:300px;overflow:auto;">$rows</div>
               <div class="row center" style="margin-top:14px;gap:8px;justify-content:flex-end;">
