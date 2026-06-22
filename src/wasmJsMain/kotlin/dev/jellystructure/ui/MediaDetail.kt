@@ -1630,6 +1630,7 @@ private class ArtTarget(
 )
 
 private var artId = ""
+private var artItem: MediaItem? = null
 private var artScope: CoroutineScope? = null
 private var artTargets: List<ArtTarget> = emptyList()
 private var artSel = 0
@@ -1655,49 +1656,95 @@ private fun langLabel(code: String?): String = when {
 private suspend fun loadArtworkTab(item: MediaItem, scope: CoroutineScope) {
     injectArtworkStyles()
     artId = item.id
+    artItem = item
     artScope = scope
-    artTargets = artworkTargetsFor(item)
+    artTargets = buildArtTargets(item)
     if (artTargets.isEmpty()) return
-    // Rail status dots for the series/movie-level assets.
-    val status = MediaApi.getArtworkStatus(item.id)
-    if (status != null) for (t in artTargets) t.onDisk = when (t.asset) {
-        "poster" -> status.posterExists
-        "backdrop" -> status.fanartExists
-        "clearlogo" -> status.logoExists
-        else -> t.onDisk
-    }
     artSel = 0
     renderArtRail()
     wireArtRail()
     selectArtTarget(0)
 }
 
-/** Movie/series item-level assets. Season + episode targets are appended by the series view. */
-private fun artworkTargetsFor(item: MediaItem): List<ArtTarget> = listOf(
-    ArtTarget("poster", "Poster", "2 / 3"),
-    ArtTarget("backdrop", "Backdrop", "16 / 9"),
-    ArtTarget("clearlogo", "Clearlogo", "16 / 9"),
-    ArtTarget("banner", "Banner", "5.4 / 1"),
-)
+/** Item-level assets, plus (for series) per-season posters and per-episode stills. */
+private suspend fun buildArtTargets(item: MediaItem): List<ArtTarget> {
+    val targets = mutableListOf(
+        ArtTarget("poster", "Poster", "2 / 3"),
+        ArtTarget("backdrop", "Backdrop", "16 / 9"),
+        ArtTarget("clearlogo", "Clearlogo", "16 / 9"),
+        ArtTarget("banner", "Banner", "5.4 / 1"),
+    )
+    val status = MediaApi.getArtworkStatus(item.id)
+    if (status != null) for (t in targets) t.onDisk = when (t.asset) {
+        "poster" -> status.posterExists
+        "backdrop" -> status.fanartExists
+        "clearlogo" -> status.logoExists
+        else -> t.onDisk
+    }
+    if (item.kind == MediaKind.TV_SHOW) {
+        MediaApi.getSeasons(item.id)?.forEach { s ->
+            val label = if (s.season == 0) "Specials" else "Season ${s.season}"
+            targets.add(ArtTarget("poster", label, "2 / 3", kind = "season", season = s.season, onDisk = s.posterExists))
+        }
+        val stillStatus = MediaApi.getEpisodeStillStatuses(item.id)?.associate { it.filename to it.stillExists } ?: emptyMap()
+        item.episodes.forEach { ep ->
+            val s = ep.seasonNumber
+            val e = ep.episodeNumber
+            val code = if (s != null && e != null) "S${s.toString().padStart(2, '0')}E${e.toString().padStart(2, '0')}" else ep.filename
+            val label = if (!ep.title.isNullOrBlank()) "$code · ${ep.title}" else code
+            targets.add(ArtTarget("still", label, "16 / 9", kind = "episode", epFilename = ep.filename, onDisk = stillStatus[ep.filename] ?: false))
+        }
+    }
+    return targets
+}
 
 private fun renderArtRail() {
     val rail = document.getElementById("art-rail") as? HTMLElement ?: return
-    val rows = artTargets.mapIndexed { i, t ->
+    val item = artItem
+    val sb = StringBuilder()
+    // Head — batch actions + language policy note (series).
+    sb.append("""<div class="art-rail-head"><b>Assets</b></div>""")
+    if (item?.kind == MediaKind.TV_SHOW) {
+        val mix = if (item.languageMix) """<span class="badge warn">Mixed languages</span>""" else """<span class="badge ok">Uniform language</span>"""
+        sb.append("""<div class="art-rail-note tiny muted">$mix<div style="margin-top:4px;">Stills fetched in each episode's own language, then no-language.</div></div>""")
+        sb.append("""<button id="art-fetch-missing" class="btn sm ghost" style="width:100%;margin-bottom:8px;">Fetch all missing</button>""")
+    }
+    var lastKind = ""
+    artTargets.forEachIndexed { i, t ->
+        if (t.kind != lastKind) {
+            val header = when (t.kind) {
+                "season" -> "Season posters"
+                "episode" -> "Episode stills"
+                else -> "Item artwork"
+            }
+            sb.append("""<div class="art-rail-group">$header</div>""")
+            lastKind = t.kind
+        }
         val dot = if (t.onDisk) "ok" else "bad"
         val sub = when (t.kind) {
-            "season" -> "Season poster"
-            "episode" -> "Episode still"
+            "season" -> if (t.onDisk) "on disk" else "missing"
+            "episode" -> if (t.onDisk) "still on disk" else "no still"
             else -> "${t.aspect.replace(" ", "")} · ${if (t.onDisk) "on disk" else "missing"}"
         }
-        """<div class="art-rail-row${if (i == artSel) " sel" else ""}" data-i="$i">
+        sb.append("""<div class="art-rail-row${if (i == artSel) " sel" else ""}" data-i="$i">
               <span class="dot $dot"></span>
               <div><div class="art-rail-label">${t.label.esc()}</div><div class="tiny muted">$sub</div></div>
-           </div>"""
-    }.joinToString("")
-    rail.innerHTML = """<div class="art-rail-head"><b>Assets</b></div>$rows"""
+           </div>""")
+    }
+    rail.innerHTML = sb.toString()
 }
 
 private fun wireArtRail() {
+    document.getElementById("art-fetch-missing")?.addEventListener("click") {
+        val scope = artScope ?: return@addEventListener
+        val btn = document.getElementById("art-fetch-missing") as? HTMLElement
+        btn?.setAttribute("disabled", "true"); btn?.textContent = "Fetching…"
+        scope.launch {
+            MediaApi.fetchArtwork(artId)
+            showDetailMsg("Fetched missing artwork + stills.", true)
+            artItem?.let { loadArtworkTab(it, scope) }
+        }
+    }
     document.querySelectorAll("#art-rail .art-rail-row").let { rows ->
         for (i in 0 until rows.length) {
             val row = rows.item(i) as? HTMLElement ?: continue
@@ -1945,6 +1992,9 @@ private fun injectArtworkStyles() {
         .art-mgr { display:grid; grid-template-columns: 240px 1fr; gap:14px; align-items:start; }
         @media (max-width:760px){ .art-mgr{ grid-template-columns:1fr; } }
         .art-rail-head { font-size:.85rem; margin-bottom:8px; opacity:.8; }
+        .art-rail-note { margin-bottom:8px; }
+        .art-rail-group { font-size:.7rem; text-transform:uppercase; letter-spacing:.05em; opacity:.55; margin:10px 0 4px; }
+        .art-rail { max-height:560px; overflow:auto; }
         .art-rail-row { display:flex; gap:9px; align-items:center; padding:8px; border-radius:9px; cursor:pointer; }
         .art-rail-row:hover { background:color-mix(in srgb, var(--hi,#7c5cff) 9%, transparent); }
         .art-rail-row.sel { background:color-mix(in srgb, var(--hi,#7c5cff) 16%, transparent); }
