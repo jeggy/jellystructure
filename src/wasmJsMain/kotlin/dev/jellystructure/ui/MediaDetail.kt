@@ -34,6 +34,7 @@ import org.w3c.dom.HTMLFormElement
 import org.w3c.dom.HTMLInputElement
 import org.w3c.dom.HTMLSelectElement
 import org.w3c.dom.HTMLTextAreaElement
+import org.w3c.dom.events.KeyboardEvent
 
 private const val TMDB_IMG_LG = "https://image.tmdb.org/t/p/w500"
 private const val MONO_CODE_STYLE = "font-family:'JetBrains Mono',monospace;font-size:.78rem;"
@@ -318,12 +319,15 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
     val resolverTraceHtml = buildResolverTrace(item, fallbackLang)
     val episodesTabHtml = if (isTvShow) buildEpisodesTab(item) else ""
 
-    val tmdbLinkHtml = if (item.tmdbId != null) {
+    // Detail topbar external links (design media.html: grouped into an "External links ▾" menu).
+    val tmdbUrl: String? = if (item.tmdbId != null) {
         val tmdbPath = if (item.kind == MediaKind.TV_SHOW) "tv" else "movie"
         val lang = item.resolvedLanguage
         val langParam = if (!lang.isNullOrBlank()) "?language=$lang" else ""
-        """<a href="https://www.themoviedb.org/$tmdbPath/${item.tmdbId}$langParam" target="_blank" rel="noopener" class="btn sm ghost">TMDB ↗</a>"""
-    } else ""
+        "https://www.themoviedb.org/$tmdbPath/${item.tmdbId}$langParam"
+    } else null
+    val jellyfinItemUrl: String? =
+        if (jellyfinUrl.isNotBlank() && item.jellyfinId != null) "$jellyfinUrl/web/index.html#!/details?id=${item.jellyfinId}" else null
 
     // Left-rail cards (poster / series-language / identity). For TV shows these are lifted out of
     // the overview panel so they persist across every tab (design series.html).
@@ -483,13 +487,31 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
           ${if (item.tmdbId != null) """<span class="badge ok">TMDB matched</span>""" else """<span class="badge warn">No TMDB match</span>"""}
           $resolvedLangBadge
           <span class="spacer"></span>
-          ${if (jellyfinUrl.isNotBlank() && item.jellyfinId != null) """<a href="$jellyfinUrl/web/index.html#!/details?id=${item.jellyfinId}" target="_blank" rel="noopener" class="btn sm ghost">Jellyfin ↗</a>""" else ""}
-          $tmdbLinkHtml
           <button id="feature-ravilo-btn" class="btn sm ghost">★ Feature in Ravilo…</button>
-          <button id="repull-jellyfin-btn" class="btn sm ghost">Re-pull from Jellyfin…</button>
-          <button id="repull-btn" class="btn sm ghost">Re-pull from TMDB</button>
-          <button id="write-nfo-btn" class="btn ghost" ${if (nfoDisabled) """disabled title="${nfoDisabledReason.esc()}"""" else ""}>Save → disk</button>
-          <button id="write-nfo-refresh-btn" class="btn primary" ${if (nfoDisabled) """disabled title="${nfoDisabledReason.esc()}"""" else ""}>Save &amp; tell Jellyfin ↻</button>
+          ${if (jellyfinItemUrl != null || tmdbUrl != null) """
+          <span class="menu-wrap" id="links-menu">
+            <span class="btn sm ghost menu-btn">External links <span class="caret">▾</span></span>
+            <div class="menu">
+              ${if (jellyfinItemUrl != null) """<a class="menu-item" href="$jellyfinItemUrl" target="_blank" rel="noopener"><span class="mi-ic">↗</span><span>Open in Jellyfin<span class="mi-sub">Library item in the Jellyfin web UI</span></span></a>""" else ""}
+              ${if (tmdbUrl != null) """<a class="menu-item" href="$tmdbUrl" target="_blank" rel="noopener"><span class="mi-ic">↗</span><span>View on TMDB<span class="mi-sub">themoviedb.org</span></span></a>""" else ""}
+            </div>
+          </span>""" else ""}
+          <span class="menu-wrap" id="repull-menu">
+            <span class="btn sm ghost menu-btn">Re-pull <span class="caret">▾</span></span>
+            <div class="menu">
+              <div class="menu-item" id="repull-jellyfin-btn"><span class="mi-ic">⟲</span><span>From Jellyfin…<span class="mi-sub">Re-discover name, path, IDs &amp; tracks</span></span></div>
+              <div class="menu-item" id="repull-btn"><span class="mi-ic">⟲</span><span>From TMDB<span class="mi-sub">Re-fetch metadata &amp; artwork</span></span></div>
+            </div>
+          </span>
+          ${if (nfoDisabled) """<button id="write-nfo-refresh-btn" class="btn primary" disabled title="${nfoDisabledReason.esc()}">Save &amp; sync to Jellyfin ↻</button>""" else """
+          <span class="split" id="save-split">
+            <button class="btn primary" id="write-nfo-refresh-btn">Save &amp; sync to Jellyfin ↻</button>
+            <span class="btn primary split-caret menu-btn"><span class="caret">▾</span></span>
+            <div class="menu">
+              <div class="menu-item" id="write-nfo-refresh-btn-2"><span class="mi-ic">↻</span><span>Save &amp; sync to Jellyfin<span class="mi-sub">Write NFO &amp; artwork, then trigger a Jellyfin refresh</span></span></div>
+              <div class="menu-item" id="write-nfo-btn"><span class="mi-ic">↓</span><span>Save → disk<span class="mi-sub">Write NFO &amp; artwork only — no Jellyfin refresh</span></span></div>
+            </div>
+          </span>"""}
         </div>
 
         <div id="detail-msg" style="display:none;margin-bottom:14px"></div>
@@ -600,6 +622,10 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
     document.getElementById("write-nfo-refresh-btn")?.addEventListener("click") {
         scope.launch { handleWriteNfo(item.id, refresh = true) }
     }
+    document.getElementById("write-nfo-refresh-btn-2")?.addEventListener("click") {
+        scope.launch { handleWriteNfo(item.id, refresh = true) }
+    }
+    wirePagebarMenus()
 
     // Artwork tab (Phase 47) is built lazily by loadArtworkTab() on first show / tab switch.
 
@@ -2354,11 +2380,44 @@ private fun selectNfoElement(treeEl: HTMLElement, nodeEl: HTMLElement, scope: Co
     }
 }
 
+/** Toggle the detail topbar dropdown/split menus (design media.html): a `.menu-btn` opens its menu;
+ *  clicking a `.menu-item`, outside, or Esc closes. Buttons are re-wired each render; the document-level
+ *  outside-click + Esc handlers are installed once. */
+private var pagebarMenuGlobalWired = false
+private fun wirePagebarMenus() {
+    val wraps = document.querySelectorAll(".menu-wrap, .split")
+    for (i in 0 until wraps.length) {
+        val w = wraps.item(i) as? HTMLElement ?: continue
+        (w.querySelector(".menu-btn") as? HTMLElement)?.addEventListener("click") { ev ->
+            ev.stopPropagation()
+            val wasOpen = w.classList.contains("open")
+            closeAllPagebarMenus()
+            if (!wasOpen) w.classList.add("open")
+        }
+        val items = w.querySelectorAll(".menu-item")
+        for (j in 0 until items.length) (items.item(j) as? HTMLElement)?.addEventListener("click") { closeAllPagebarMenus() }
+    }
+    if (!pagebarMenuGlobalWired) {
+        pagebarMenuGlobalWired = true
+        document.addEventListener("click") { ev ->
+            if ((ev.target as? Element)?.closest(".menu-wrap, .split") == null) closeAllPagebarMenus()
+        }
+        document.addEventListener("keydown") { ev ->
+            if ((ev as? KeyboardEvent)?.key == "Escape") closeAllPagebarMenus()
+        }
+    }
+}
+
+private fun closeAllPagebarMenus() {
+    val open = document.querySelectorAll(".menu-wrap.open, .split.open")
+    for (i in 0 until open.length) (open.item(i) as? HTMLElement)?.classList?.remove("open")
+}
+
 private suspend fun handleWriteNfo(id: String, refresh: Boolean = false) {
-    val btn1 = document.getElementById("write-nfo-btn") as? HTMLElement
-    val btn2 = document.getElementById("write-nfo-refresh-btn") as? HTMLElement
-    btn1?.setAttribute("disabled", "true"); btn1?.textContent = "Writing…"
-    btn2?.setAttribute("disabled", "true"); btn2?.textContent = "Writing…"
+    // The Save split's primary face shows progress; "Save → disk" is now a menu item (a div), so we
+    // only drive the primary button's state here.
+    val face = document.getElementById("write-nfo-refresh-btn") as? HTMLElement
+    face?.setAttribute("disabled", "true"); face?.textContent = "Writing…"
 
     val (result, error) = MediaApi.writeNfo(id)
 
@@ -2366,9 +2425,9 @@ private suspend fun handleWriteNfo(id: String, refresh: Boolean = false) {
         // The NFO raw tab re-fetches the on-disk files when activated (Phase 44), so no need to
         // push the freshly-written XML into the viewer here.
         if (refresh) {
-            btn2?.textContent = "Syncing artwork…"
+            face?.textContent = "Syncing artwork…"
             MediaApi.fetchArtwork(id)
-            btn2?.textContent = "Notifying Jellyfin…"
+            face?.textContent = "Notifying Jellyfin…"
             MediaApi.jellyfinRefresh(id)
             showDetailMsg("NFO written, artwork synced, Jellyfin notified ✓", true)
         } else {
@@ -2378,8 +2437,7 @@ private suspend fun handleWriteNfo(id: String, refresh: Boolean = false) {
         showNfoWriteError(error ?: "NFO write failed.")
     }
 
-    btn1?.removeAttribute("disabled"); btn1?.textContent = "Save → disk"
-    btn2?.removeAttribute("disabled"); btn2?.textContent = "Save & tell Jellyfin ↻"
+    face?.removeAttribute("disabled"); face?.textContent = "Save & sync to Jellyfin ↻"
 }
 
 private fun permCopyBlock(command: String, comment: String? = null): String {
