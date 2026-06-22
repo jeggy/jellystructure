@@ -8,7 +8,7 @@ _Last updated: 2026-06-22_
 
 ## Current focus
 
-**Phases 0–49 complete (except Phase 48, planned) — the admin app is feature-complete.** Phase 47 (artwork manager) shipped: the
+**Phases 0–49 complete — the admin app is feature-complete; no planned admin phases remain.** Phase 47 (artwork manager) shipped: the
 full artwork-editing surface on Movie & Series detail — asset rail + inline TMDB gallery,
 resolved-language-first candidate filtering with a never-empty fallback (**no-language `xx` is its own
 bucket, distinct from "All"**), drag-drop/upload/URL replace, and series season-poster +
@@ -21,10 +21,15 @@ spread of 100. Made the cap configurable (`scan_episode_cap`, default **0 = unli
 probe every episode, and wired an on-demand uncapped **Re-scan all episodes** button on the Series detail
 (via the existing `syncSeriesEpisodes` `/sync` path).
 
-**Planned: [Phase 48](requirements/phase-48-artwork-textless-filter.md)** — the artwork gallery's
-Textless / With-text pills don't work (they only re-sort, a no-op within a language bucket, and overlap
-the language chips); unify both into one real single-select filter on TMDB `iso_639_1`. Spec written, not
-yet implemented. Other active development is on the **Ravilo** side — see [`ravilo/STATUS.md`](ravilo/STATUS.md).
+**[Phase 48](requirements/archive/phase-48-artwork-textless-filter.md) complete (2026-06-23):** the
+artwork gallery's Textless / With-text pills only re-sorted (a no-op within a language bucket) and
+overlapped the language chips. Unified them into **one single-select filter** on TMDB `iso_639_1` —
+`All · Textless · With text · <languages>`, each a real filter in `filteredCandidates()`; removed the
+`artPrefer` sort; default ladder resolves resolved-lang → textless → All. `design/app/media.html` mockup
+synced to the same model.
+
+No planned admin phases remain. Other active development is on the **Ravilo** side — see
+[`ravilo/STATUS.md`](ravilo/STATUS.md).
 
 See [`requirements/README.md`](requirements/README.md) for the full index.
 
