@@ -64,6 +64,7 @@ import androidx.compose.ui.unit.sp
 import dev.jellystructure.ravilo.ui.focus.dpadFocusable
 import dev.jellystructure.ravilo.ui.i18n.str
 import dev.jellystructure.ravilo.ui.seams.PlayerAudioTrack
+import dev.jellystructure.ravilo.ui.seams.PlayerSubtitleTrack
 import dev.jellystructure.ravilo.ui.seams.PlayerLifecycleEffect
 import dev.jellystructure.ravilo.ui.seams.PlayerVideoSurface
 import dev.jellystructure.ravilo.ui.seams.RaviloPlayer
@@ -125,6 +126,7 @@ fun PlayerScreen(
     var bufferedMs   by remember { mutableLongStateOf(0L) }
     var isPlaying    by remember { mutableStateOf(false) }
     var audioTracks  by remember { mutableStateOf<List<PlayerAudioTrack>>(emptyList()) }
+    var subtitleTracks by remember { mutableStateOf<List<PlayerSubtitleTrack>>(emptyList()) }
 
     // Chrome visibility — bumping chromeRevision restarts the auto-hide timer
     var chromeVisible  by remember { mutableStateOf(true) }
@@ -157,11 +159,8 @@ fun PlayerScreen(
     var pauseFlash by remember { mutableStateOf(false) }
     var pauseFlashIsPlay by remember { mutableStateOf(true) }
 
-    // Subtitle options derived from the stream ticket
-    val subtitleTracks: List<SubTrack?> = remember(sessionState) {
-        val subs = (sessionState as? PlayerSessionState.Ready)?.ticket?.subtitles ?: emptyList()
-        listOf(null) + subs   // null = "Off"
-    }
+    // Subtitle options = "Off" + tracks discovered from the player (embedded + sideloaded externals).
+    val subOptions: List<PlayerSubtitleTrack?> = remember(subtitleTracks) { listOf(null) + subtitleTracks }
 
     // ─── Helper functions ───────────────────────────────────────────────────
 
@@ -211,9 +210,9 @@ fun PlayerScreen(
             selectedAudio = pickerIdx
             player.selectAudioTrack(pickerIdx)
         } else {
-            val sub = subtitleTracks.getOrNull(pickerIdx)
-            selectedSub = if (sub == null) -1 else pickerIdx - 1
-            player.selectSubtitleTrack(sub?.url)
+            val subIdx = pickerIdx - 1   // option 0 = Off
+            selectedSub = subIdx
+            player.selectSubtitleTrack(subIdx)
         }
         pickerOpen = false
         wake()
@@ -248,6 +247,7 @@ fun PlayerScreen(
             bufferedMs  = player.bufferedMs
             isPlaying   = player.isPlaying
             audioTracks = player.audioTracks
+            subtitleTracks = player.subtitleTracks
 
             // Near-end → show next-up card
             if (nextEpisodeId != null && durationMs > 0 && !nextUpVisible && !player.isEnded) {
@@ -339,7 +339,7 @@ fun PlayerScreen(
                         epRailOpen -> episodes?.let { focusedEpIdx = (focusedEpIdx + 1).coerceAtMost(it.size - 1) }
                         pickerOpen -> {
                             pickerTab = 1
-                            pickerIdx = if (selectedSub < 0) 0 else (selectedSub + 1).coerceAtMost(subtitleTracks.lastIndex)
+                            pickerIdx = if (selectedSub < 0) 0 else (selectedSub + 1).coerceAtMost(subOptions.lastIndex)
                         }
                         focus == PlFocus.SEEK_BAR -> {
                             if (!scrubbing) { scrubbing = true; scrubPos = positionMs }
@@ -368,7 +368,7 @@ fun PlayerScreen(
                         nextUpVisible -> {}
                         epRailOpen -> {}
                         pickerOpen -> {
-                            val size = if (pickerTab == 0) audioTracks.size.coerceAtLeast(1) else subtitleTracks.size
+                            val size = if (pickerTab == 0) audioTracks.size.coerceAtLeast(1) else subOptions.size
                             if (pickerIdx < size - 1) pickerIdx++
                         }
                         focus == PlFocus.SEEK_BAR -> {
@@ -394,7 +394,7 @@ fun PlayerScreen(
                         focus == PlFocus.TRACKS    -> {
                             pickerOpen = true
                             pickerIdx = if (pickerTab == 0) selectedAudio
-                                        else (selectedSub + 1).coerceIn(0, subtitleTracks.lastIndex)
+                                        else (selectedSub + 1).coerceIn(0, subOptions.lastIndex)
                         }
                         focus == PlFocus.NEXT_EP   -> advanceNext()
                         focus == PlFocus.BACK      -> onBack()
@@ -496,7 +496,7 @@ fun PlayerScreen(
                 pickerTab     = pickerTab,
                 pickerIdx     = pickerIdx,
                 audioTracks   = audioTracks,
-                subtitleTracks = subtitleTracks,
+                subtitleTracks = subOptions,
                 selectedAudio = selectedAudio,
                 selectedSub   = selectedSub,
             )
@@ -926,7 +926,7 @@ private fun TrackPicker(
     pickerTab: Int,
     pickerIdx: Int,
     audioTracks: List<PlayerAudioTrack>,
-    subtitleTracks: List<SubTrack?>,
+    subtitleTracks: List<PlayerSubtitleTrack?>,
     selectedAudio: Int,
     selectedSub: Int,
 ) {
@@ -954,7 +954,7 @@ private fun TrackPicker(
             } else {
                 subtitleTracks.mapIndexed { i, sub ->
                     if (sub == null) Triple(str("off"), null, null)
-                    else Triple(sub.label ?: sub.language ?: "Track $i", sub.language, if (sub.forced) "FORCED" else if (sub.isDefault) "DEFAULT" else null)
+                    else Triple(sub.label, sub.language, if (sub.forced) "FORCED" else if (sub.isDefault) "DEFAULT" else null)
                 }
             }
             val selectedInTab = if (pickerTab == 0) selectedAudio else selectedSub + 1

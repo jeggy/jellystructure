@@ -104,6 +104,21 @@ data class JellyfinItemDetail(
     @SerialName("Name") val name: String,
     @SerialName("RunTimeTicks") val runTimeTicks: Long? = null,
     @SerialName("UserData") val userData: JellyfinUserData? = null,
+    @SerialName("MediaStreams") val mediaStreams: List<JellyfinMediaStream> = emptyList(),
+)
+
+@Serializable
+data class JellyfinMediaStream(
+    @SerialName("Type") val type: String = "",
+    @SerialName("Index") val index: Int = -1,
+    @SerialName("Codec") val codec: String? = null,
+    @SerialName("Language") val language: String? = null,
+    @SerialName("DisplayTitle") val displayTitle: String? = null,
+    @SerialName("Title") val title: String? = null,
+    @SerialName("IsForced") val isForced: Boolean = false,
+    @SerialName("IsDefault") val isDefault: Boolean = false,
+    @SerialName("IsExternal") val isExternal: Boolean = false,
+    @SerialName("IsTextSubtitleStream") val isTextSubtitleStream: Boolean = false,
 )
 
 @Serializable

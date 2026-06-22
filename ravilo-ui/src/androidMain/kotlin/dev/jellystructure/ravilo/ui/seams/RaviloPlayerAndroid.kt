@@ -81,11 +81,28 @@ actual class RaviloPlayer actual constructor() {
         }
     }
 
-    actual fun selectSubtitleTrack(subtitleUrl: String?) {
-        exo.trackSelectionParameters = exo.trackSelectionParameters
-            .buildUpon()
-            .setIgnoredTextSelectionFlags(if (subtitleUrl == null) C.SELECTION_FLAG_DEFAULT else 0)
-            .build()
+    actual fun selectSubtitleTrack(index: Int) {
+        if (index < 0) {
+            exo.trackSelectionParameters = exo.trackSelectionParameters.buildUpon()
+                .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
+                .build()
+            return
+        }
+        val tracks = exo.currentTracks
+        var textIdx = 0
+        for (i in 0 until tracks.groups.size) {
+            val group = tracks.groups[i]
+            if (group.type == C.TRACK_TYPE_TEXT) {
+                if (textIdx == index) {
+                    exo.trackSelectionParameters = exo.trackSelectionParameters.buildUpon()
+                        .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
+                        .setOverrideForType(TrackSelectionOverride(group.mediaTrackGroup, 0))
+                        .build()
+                    return
+                }
+                textIdx++
+            }
+        }
     }
 
     actual fun release() { exo.release() }
@@ -107,6 +124,25 @@ actual class RaviloPlayer actual constructor() {
                     val format = group.mediaTrackGroup.getFormat(0)
                     val label = format.label ?: format.language?.uppercase() ?: "Track ${idx + 1}"
                     result += PlayerAudioTrack(idx, label, format.language)
+                    idx++
+                }
+            }
+            return result
+        }
+
+    actual val subtitleTracks: List<PlayerSubtitleTrack>
+        get() {
+            val result = mutableListOf<PlayerSubtitleTrack>()
+            val tracks = exo.currentTracks
+            var idx = 0
+            for (i in 0 until tracks.groups.size) {
+                val group = tracks.groups[i]
+                if (group.type == C.TRACK_TYPE_TEXT) {
+                    val format = group.mediaTrackGroup.getFormat(0)
+                    val label = format.label ?: format.language?.uppercase() ?: "Track ${idx + 1}"
+                    val forced = (format.selectionFlags and C.SELECTION_FLAG_FORCED) != 0
+                    val def = (format.selectionFlags and C.SELECTION_FLAG_DEFAULT) != 0
+                    result += PlayerSubtitleTrack(idx, label, format.language, forced, def)
                     idx++
                 }
             }
