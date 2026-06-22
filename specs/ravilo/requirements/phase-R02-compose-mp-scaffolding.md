@@ -1,6 +1,6 @@
 # Phase R02 — Compose Multiplatform scaffolding (FR-RV2)
 
-**Status:** ✓ Done · _proves one shared Compose UI runs on Android TV **and** browser canvas._
+**Status:** Planned · _proves one shared Compose UI runs on Android TV **and** browser canvas._
 
 ## Problem
 Ravilo must ship from **one** Compose Multiplatform UI codebase to **two** targets (Android TV +

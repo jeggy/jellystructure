@@ -1,6 +1,6 @@
 # Phase R19 — Interface localization (en / da / fo), per-user (FR-RV19)
 
-**Status:** ✓ Done · _the Ravilo UI language follows the Jellyfin user, set in Jellystructure._
+**Status:** Planned · _the Ravilo UI language follows the Jellyfin user, set in Jellystructure._
 
 > Builds on **[R04](phase-R04-per-user-config-store.md)** (per-user config) and
 > **[R18](phase-R18-multi-user-profiles.md)** (multi-user). The locale is a per-user setting, so a

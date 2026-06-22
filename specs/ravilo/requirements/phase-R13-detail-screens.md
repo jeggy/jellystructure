@@ -1,6 +1,6 @@
 # Phase R13 — Movie & Series detail screens (FR-RV13)
 
-**Status:** ✓ Done · _the calm series experience; the heart of Ravilo._
+**Status:** Planned · _the calm series experience; the heart of Ravilo._
 
 ## Problem
 Build the **movie** and **series** detail screens. The series screen is the priority: it must make

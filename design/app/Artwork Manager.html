@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en" data-dir="aurora">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Jellystructure — Artwork manager · directions</title>
+<link rel="stylesheet" href="wf.css">
+<link rel="stylesheet" href="app.css">
+<style>
+  /* ============ artwork-manager specific ============ */
+  /* abstract "poster art" fill — placeholder for a real downloaded image */
+  .art-fill {
+    position: absolute; inset: 0;
+    background:
+      radial-gradient(120% 90% at 28% 8%, rgba(177,92,208,.55), transparent 56%),
+      radial-gradient(120% 95% at 82% 96%, rgba(0,164,220,.5), transparent 56%),
+      radial-gradient(80% 60% at 60% 50%, rgba(123,110,240,.32), transparent 60%),
+      linear-gradient(160deg, #1b1f2e, #0d0f17);
+  }
+  .art-fill.flat { background: linear-gradient(160deg, #1b1f2e, #0d0f17); }
+  .checker {
+    background-color: #14161f;
+    background-image:
+      linear-gradient(45deg, #232733 25%, transparent 25%),
+      linear-gradient(-45deg, #232733 25%, transparent 25%),
+      linear-gradient(45deg, transparent 75%, #232733 75%),
+      linear-gradient(-45deg, transparent 75%, #232733 75%);
+    background-size: 16px 16px;
+    background-position: 0 0, 0 8px, 8px -8px, -8px 0;
+  }
+  /* a clearlogo placeholder rendered as a stylised wordmark (transparent art) */
+  .logomark {
+    font-family: 'Space Grotesk', sans-serif; font-weight: 700; letter-spacing: .14em;
+    text-transform: uppercase; color: #fff; line-height: 1;
+    text-shadow: 0 2px 14px rgba(0,0,0,.6); display: flex; align-items: center; justify-content: center;
+    height: 100%; width: 100%; position: relative; z-index: 1;
+  }
+
+  /* candidate card */
+  .art-cand {
+    position: relative; border-radius: 9px; overflow: hidden; cursor: pointer; flex: none;
+    border: 1px solid var(--line); outline: 2px solid transparent; outline-offset: 2px;
+    transition: transform .16s ease, box-shadow .2s ease, outline-color .16s ease;
+  }
+  .art-cand:hover { transform: translateY(-4px) scale(1.03); box-shadow: 0 16px 34px rgba(0,0,0,.55); outline-color: var(--hi); z-index: 4; }
+  .art-cand.current { outline-color: var(--ok); }
+  .art-cand.sel { outline-color: var(--hi); box-shadow: 0 0 0 2px var(--hi-soft), 0 16px 34px rgba(0,0,0,.5); }
+  .art-cand .tagrow { position: absolute; top: 6px; left: 6px; right: 6px; display: flex; justify-content: space-between; align-items: flex-start; z-index: 3; gap: 5px; }
+  .art-cand .meta {
+    position: absolute; left: 0; right: 0; bottom: 0; padding: 16px 8px 7px; z-index: 3;
+    display: flex; justify-content: space-between; align-items: center; gap: 6px;
+    font-family: 'JetBrains Mono', monospace; font-size: .62rem; color: #e3e6f0;
+    background: linear-gradient(0deg, rgba(0,0,0,.88), transparent);
+  }
+  .art-cand .ribbon {
+    position: absolute; top: 0; right: 0; z-index: 4; background: var(--ok); color: #04140d;
+    font-size: .56rem; font-weight: 700; letter-spacing: .05em; padding: 3px 8px; border-bottom-left-radius: 9px;
+  }
+  .lpill {
+    font-family: 'JetBrains Mono', monospace; font-size: .58rem; font-weight: 600; text-transform: uppercase; letter-spacing: .03em;
+    background: rgba(0,0,0,.62); border: 1px solid rgba(255,255,255,.2); color: #fff; padding: 2px 6px; border-radius: 5px; backdrop-filter: blur(2px);
+  }
+  .lpill.tl { background: rgba(45,212,154,.9); color: #04140d; border-color: transparent; }
+  .vote {
+    font-family: 'JetBrains Mono', monospace; font-size: .58rem; font-weight: 600;
+    background: rgba(0,0,0,.62); border: 1px solid rgba(255,255,255,.2); color: #ffd75e; padding: 2px 6px; border-radius: 5px; backdrop-filter: blur(2px);
+  }
+
+  /* filter status explainer line */
+  .filterline { font-size: .8rem; color: var(--ink-soft); line-height: 1.55; display: flex; gap: 8px; align-items: flex-start; }
+  .filterline b { color: var(--ink); font-weight: 600; }
+  .filterline .ic { color: var(--info); flex: none; margin-top: 1px; }
+  .filterline .lang { color: var(--acc-ink); }
+
+  /* language filter chips (extends .chip) */
+  .lchip { cursor: pointer; }
+  .lchip .n { opacity: .55; font-family: 'JetBrains Mono', monospace; font-size: .66rem; margin-left: 3px; }
+  .lchip.on { background: var(--hi-soft); border-color: rgba(123,110,240,.5); color: var(--acc-ink); }
+  .lchip.on.tl { background: var(--ok-soft); border-color: rgba(45,212,154,.5); color: var(--ok); }
+  .lchip.off { opacity: .62; }
+
+  /* dropzone */
+  .dropz {
+    border: 1.5px dashed var(--line-2); border-radius: 12px; padding: 13px 15px;
+    display: flex; align-items: center; gap: 13px; color: var(--ink-soft); font-size: .85rem;
+    transition: border-color .2s ease, background .2s ease;
+  }
+  .dropz:hover { border-color: var(--hi); background: var(--hi-soft); color: var(--ink); }
+  .dropz .di { width: 34px; height: 34px; flex: none; border-radius: 9px; background: var(--fill-3); display: flex; align-items: center; justify-content: center; font-size: 1.1rem; color: var(--acc-ink); }
+
+  /* asset rail */
+  .rail-item { display: flex; gap: 12px; align-items: center; padding: 9px 10px; border-radius: 10px; cursor: pointer; border: 1px solid transparent; transition: background .15s ease, border-color .15s ease; }
+  .rail-item:hover { background: var(--fill-3); }
+  .rail-item.active { background: var(--hi-soft); border-color: rgba(123,110,240,.35); }
+  .rail-item .th { flex: none; border-radius: 6px; overflow: hidden; position: relative; border: 1px solid var(--line); }
+  .rail-item .nm { font-weight: 600; font-size: .9rem; }
+  .rail-item .sub { font-size: .72rem; color: var(--ink-soft); font-family: 'JetBrains Mono', monospace; margin-top: 2px; }
+
+  /* language fallback ladder */
+  .ladder { display: flex; flex-direction: column; }
+  .ladder-step { display: flex; gap: 13px; align-items: flex-start; padding: 11px 0; position: relative; }
+  .ladder-step:not(:last-child)::after { content: ''; position: absolute; left: 14px; top: 32px; bottom: -3px; width: 2px; background: var(--line-2); }
+  .ladder-num { width: 30px; height: 30px; border-radius: 50%; flex: none; display: flex; align-items: center; justify-content: center;
+    font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: .82rem; background: var(--fill-3); color: var(--ink-soft); border: 1px solid var(--line-2); z-index: 1; }
+  .ladder-step.skip { opacity: .48; }
+  .ladder-step.use .ladder-num { background: var(--ok); color: #04140d; border-color: transparent; box-shadow: 0 0 0 4px var(--ok-soft); }
+  .ladder-lab { font-weight: 600; font-size: .92rem; display: flex; align-items: center; gap: 8px; }
+  .ladder-sub { font-size: .78rem; color: var(--ink-soft); margin-top: 3px; line-height: 1.5; }
+
+  /* modal overlay inside an artboard */
+  .ov-back { position: absolute; inset: 0; z-index: 20; background: rgba(7,9,14,.62); -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px); display: flex; align-items: center; justify-content: center; padding: 26px; }
+  .ov-modal { width: 100%; max-width: 880px; max-height: 100%; background: var(--fill); border: 1px solid var(--line-2); border-radius: var(--radius); box-shadow: var(--shadow); display: flex; flex-direction: column; overflow: hidden; }
+
+  /* small section eyebrow */
+  .eyebrow { font-size: .7rem; text-transform: uppercase; letter-spacing: .1em; color: var(--ink-soft); font-weight: 600; }
+  .statusdot { display:inline-flex; align-items:center; gap:6px; font-size:.74rem; font-weight:600; }
+</style>
+</head>
+<body class="wf-body app-body" style="margin:0;">
+<div id="root"></div>
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+<script type="text/babel" src="design-canvas.jsx"></script>
+<script type="text/babel" src="artwork-artboards.jsx"></script>
+</body>
+</html>

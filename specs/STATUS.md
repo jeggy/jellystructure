@@ -4,19 +4,16 @@ Living record of where work currently stands. Update whenever a phase completes 
 The **[requirements/README.md](requirements/README.md)** is the single source of truth for which phases
 exist and their done/planned status. This file tracks _current focus_, recent context, and open issues.
 
-_Last updated: 2026-06-21_
+_Last updated: 2026-06-22_
 
 ## Current focus
 
-**All phases 0–46 complete; no planned backlog.** Operator-ergonomics + trust features, each with a
-spec and an approved design mockup in `design/app/`. The 2026-06-21 session landed **41 & 42** (unified
-track & order editor, commit `85a7460`), then **43** (Library seg-control fidelity + infinite scroll
-replacing the pager), **44** (NFO raw viewer — read-only on-disk XML with a per-file tree sidebar + two
-new read routes), **45** (track-editor language picker unified onto the shared `.lp-*` styled picker),
-and **46** (track-language writes persist — shared 2↔3-letter ISO map, container-correct write,
-verify-after-write, truthful API response + command preview).
-
-New work starts by adding a `phase-47-*.md` spec (see "Adding a new phase" in the requirements README).
+**Phases 0–46 complete.** Next up is **[Phase 47 — Artwork manager](requirements/phase-47-artwork-manager.md)**
+(Planned): a full artwork-editing surface on Movie & Series detail — asset rail + inline TMDB gallery,
+resolved-language-first candidate filtering with a never-empty fallback (**no-language `xx` is its own
+bucket, distinct from "All"**), drag-drop/upload/URL replace, and series season-poster + per-episode-still
+management. Builds on Phase 31 (artwork fetch/cache) + Phase 32 (TMDB match picker). Approved design
+mockups in `design/app/media.html` + `design/app/series.html`.
 
 See [`requirements/README.md`](requirements/README.md) for the full index.
 
@@ -26,12 +23,11 @@ See [`requirements/README.md`](requirements/README.md) for the full index.
 (Android TV **and** browser/WASM canvas, one shared codebase) for jellystructure-managed libraries.
 It adds a **`/api/tv/**`** namespace + a per-Jellyfin-user config store to *this* backend and a shared
 **`:shared`** KMP module (DTOs + Ktor client) that the admin frontend reuses too. Control plane =
-jellystructure only; data plane (video/images) = Jellyfin directly. Phases **R01–R30** are done
-(Android TV + browser/WASM canvas, running on the stue TV); **R31** (the `:ravilo-player` engine
-fork) is scoped but **deferred** — see [`ravilo/STATUS.md`](ravilo/STATUS.md) and
-[`ravilo/requirements/README.md`](ravilo/requirements/README.md). The jellystructure admin frontend
-stays DOM/Tailwind; Ravilo's web build is a **separate** canvas bundle (the "no Compose for Web" rule
-is scoped to the admin app).
+jellystructure only; data plane (video/images) = Jellyfin directly. Phases **R01–R31** are complete and
+**R32** (the shared filter workbench + Library round-trip) is planned — see
+[`ravilo/STATUS.md`](ravilo/STATUS.md) and [`ravilo/requirements/README.md`](ravilo/requirements/README.md).
+The jellystructure admin frontend stays DOM/Tailwind; Ravilo's web build is a
+**separate** canvas bundle (the "no Compose for Web" rule is scoped to the admin app).
 
 ## Key cross-cutting findings — see [`requirements/_investigation-findings.md`](requirements/_investigation-findings.md)
 

@@ -28,14 +28,13 @@ jellystructure/                      # existing repo
 │        + expect RaviloPlayer, expect ImageLoader
 │        targets: androidTarget, wasmJs
 │
-├─ ravilo-player/                   # DEFERRED — not built (see STATUS.md). Was: Android-only fork of
-│                                   #   jellyfin-androidtv playback/* (GPL containment boundary). R14
-│                                   #   ships direct ExoPlayer/Media3 instead; revisit only if exotic
-│                                   #   codec (DTS/TrueHD/AC3) passthrough is needed.
+├─ ravilo-player/                   # NEW :ravilo-player — Android-only; FORKED jellyfin-androidtv (GPL)
+│   └─ src/androidMain/…            #   playback/core + playback/media3 (+ FFmpeg decoders) fork →
+│                                   #   the Android `actual RaviloPlayer`; GPL CONTAINMENT BOUNDARY;
+│                                   #   control-plane seams re-pointed at /api/tv/**
 │
 ├─ ravilo-android/                  # NEW :ravilo-android — Android TV app
-│   └─ src/androidMain/…            #   Activity/leanback entry, Coil actual, D-pad glue; direct
-│                                   #   ExoPlayer/Media3 (no :ravilo-player — deferred)
+│   └─ src/androidMain/…            #   Activity/leanback entry, Coil actual, D-pad glue; deps :ravilo-player
 │
 ├─ ravilo-web/                      # NEW :ravilo-web — Compose MP for Web (wasmJs, canvas)
 │   └─ src/wasmJsMain/…             #   canvas entry, browser-video actual, key/pointer glue (no fork)
@@ -49,14 +48,12 @@ jellystructure/                      # existing repo
 
 - **`:shared`** is depended on by the backend, the admin frontend, `:ravilo-ui`. DTOs once, everywhere.
 - **`:ravilo-ui`** is depended on by `:ravilo-android` and `:ravilo-web`; it holds essentially all UI.
-- **`:ravilo-player`** (Android-only) was planned as a **forked `jellyfin-androidtv` `playback/*`
-  engine** acting as a **GPL containment boundary**. It is **DEFERRED and not built** (see
-  [`STATUS.md`](STATUS.md)): R14 ships the Android `actual RaviloPlayer` on **direct ExoPlayer/Media3**
-  inside `:ravilo-android`, which covers all common formats. The fork remains the path back if
-  DTS/TrueHD/AC3 passthrough is needed — revisit the GPL boundary then.
+- **`:ravilo-player`** (Android-only) holds the **forked `jellyfin-androidtv` `playback/*` engine** +
+  the Android `actual RaviloPlayer`. It is the **GPL containment boundary**: only `:ravilo-android`
+  links it, so the Android app is GPL while `:ravilo-web` and the backend/admin frontend stay
+  unaffected. See the constitution's "Player engine & licensing".
 - Platform modules are thin: an entry point + the `actual` implementations of `RaviloPlayer` and the
-  image loader + input wiring (Android's `RaviloPlayer` `actual` uses ExoPlayer/Media3 directly; the
-  deferred `:ravilo-player` fork would slot in here).
+  image loader + input wiring (Android's `RaviloPlayer` `actual` delegates to `:ravilo-player`).
   **Target: ≥90% of Ravilo's UI lines live in `:ravilo-ui` common.**
 
 ### Build
@@ -157,12 +154,9 @@ surface is untouched.)
 
 - **Theme/skins:** `RaviloTheme` exposing tokens (colors, type scale, spacing, radii, focus
   treatment) for Aurora / Midnight / Noir; switched by a `StateFlow`.
-- **Focus & navigation:** native Compose focus traversal — items are `Modifier.focusable`; rows/grids
-  are `LazyRow` / `LazyColumn` / `LazyVerticalGrid` with `Modifier.focusRestorer()`. The framework
-  moves focus on D-pad (Android) / arrow keys (Web) and scrolls the focused child into view.
-  `FocusRequester` + `onKeyEvent` are reserved for entry points, non-spatial bridges, and content
-  actions (hero paging, Search keyboard↔grid) — never one-per-item. (Superseded the hand-rolled
-  `FocusEngine`; see [R30](requirements/phase-R30-native-focus-traversal.md).)
+- **Focus engine:** a shared, testable focus/navigation model over Compose's multiplatform
+  `Modifier.focusable` + `FocusRequester` + `onKeyEvent`; platforms feed it D-pad (Android) or
+  arrow/pointer (Web) events. One row/column model used by every screen.
 - **Components:** `Tile` (poster/landscape), `HeroCarousel`, `ChannelCard`, `ContentRow`,
   `EpisodeCard`, `SeasonPicker`, `CastCircle`, `OnScreenKeyboard`, `AppBar`, focusable `Button`.
 - **Screens** (all common): Pairing, Home, Channel, Browse grid (Movies/Series/My List), Search,
@@ -173,14 +167,15 @@ surface is untouched.)
 
 ## 6 · Platform modules
 
-- **`:ravilo-android`** — `LeanbackActivity` hosting the Compose root; `actual RaviloPlayer` uses
-  **direct ExoPlayer/Media3** (fed the `StreamTicket`, progress routed to `/api/tv/**`); `actual
-  ImageLoader` = Coil; D-pad key events → focus engine; TV banner + `leanback` manifest;
-  Now-Playing/Channels integration optional later.
-- **`:ravilo-player`** — **DEFERRED, not built** (see [`STATUS.md`](STATUS.md)). Was planned as an
-  Android-only GPL module vendoring `jellyfin-androidtv` `playback/core` + `playback/media3` (+
-  `media3-ffmpeg-decoder`) with control-plane seams re-pointed at `/api/tv/**`, as the GPL containment
-  boundary. Superseded for now by direct ExoPlayer/Media3 in `:ravilo-android`.
+- **`:ravilo-android`** — `LeanbackActivity` hosting the Compose root; `actual RaviloPlayer` delegates
+  to **`:ravilo-player`** (the forked `jellyfin-androidtv` engine: Media3/ExoPlayer + FFmpeg decoders,
+  fed the `StreamTicket`, progress routed to `/api/tv/**`); `actual ImageLoader` = Coil; D-pad key
+  events → focus engine; TV banner + `leanback` manifest; Now-Playing/Channels integration optional
+  later.
+- **`:ravilo-player`** — Android-only GPL module: the vendored `jellyfin-androidtv` `playback/core` +
+  `playback/media3` (+ `media3-ffmpeg-decoder`) with its control-plane seams (stream resolution,
+  progress reporting) re-pointed at jellystructure `/api/tv/**`. Exposes the Android `RaviloPlayer`
+  `actual`. **Nothing else in the repo links it** (GPL containment).
 - **`:ravilo-web`** — Compose MP for Web (wasmJs, canvas) entry; `actual RaviloPlayer` = a
   browser-native DOM `<video>` element bridged to Compose (positioned with the skiko canvas), with
   **`hls.js`** for HLS and **JASSUB/libass** for ASS/SSA subtitles — **not** a `jellyfin-web` fork
@@ -199,8 +194,7 @@ surface is untouched.)
    capabilities and returns a **`StreamTicket`**: Jellyfin base URL + a scoped access token + the
    resolved stream URL (direct-play container or an HLS URL) + start position + subtitle/trickplay info.
 3. The platform player streams **directly from Jellyfin** using the ticket. jellystructure is not in
-   the byte path. (Web uses browser video; Android uses direct ExoPlayer/Media3 — the `:ravilo-player`
-   fork is deferred.)
+   the byte path. (Web uses browser video; Android uses the forked `:ravilo-player` engine.)
 4. The client sends `playback/progress` heartbeats (and `playback/stop` at the end); jellystructure
    relays them to Jellyfin's playback-state API, so watched/resume/next-up stay correct everywhere.
 5. On series, finishing an episode lets the server advance the **next-up** pointer; the detail screen

@@ -1,6 +1,6 @@
 # Phase R16 — jellystructure web: Ravilo config screen (FR-RV16)
 
-**Status:** ✓ Done · _the admin/user surface that drives the per-user TV layout._
+**Status:** Planned · _the admin/user surface that drives the per-user TV layout._
 
 ## Problem
 The per-user `RaviloConfig` (R04) needs a real editing surface in the **jellystructure web app** — the

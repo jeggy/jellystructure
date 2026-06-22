@@ -8,8 +8,8 @@ truth** for which Ravilo phases exist and whether each is done or planned. Ravil
   (module layout + API) before starting any phase.
 - Ravilo lives in the jellystructure repo; backend phases add `/api/tv/**` routes to the existing
   server, UI phases land in `:ravilo-ui` (shared Compose) with thin `:ravilo-android` / `:ravilo-web`
-  modules. (The Android-only `:ravilo-player` fork of `jellyfin-androidtv` is **deferred** — R14 ships
-  direct ExoPlayer/Media3; see [`../STATUS.md`](../STATUS.md).)
+  modules. R14 ships direct ExoPlayer/Media3; the Android-only `:ravilo-player` FFmpeg decoder module
+  (DTS/TrueHD/AC3) landed in R31.
 
 ## Phase index
 
@@ -46,6 +46,7 @@ truth** for which Ravilo phases exist and whether each is done or planned. Ravil
 | R29 | ✓ Done | **TV control-plane contract review fixes** — stop/settings request-type bugs, server `ignoreUnknownKeys`, shared `ViewerSettingsRequest`, `viewerSkinOverride`/`effectiveSkin`, `session_id` removal, FocusGrid empty-row guard, R26 clamp/UUID reconcile, `:ravilo-player` deferred doc sync | [R29](phase-R29-tv-contract-review-fixes.md) |
 | R30 | ✓ Done | **Native focus traversal** — replace the manual `FocusEngine` (per-item `requestFocus`) with Compose focus search + `focusRestorer`; fixes held-key lag/stuck on lazy rows & grids; `FocusEngine.kt` deleted | [R30](phase-R30-native-focus-traversal.md) |
 | R31 | ✓ Done | **`:ravilo-player` FFmpeg decoder** — jellyfin's `media3-ffmpeg-decoder` in an Android-only, GPL-contained module + renderers factory for DTS/TrueHD/AC3 (Media3 1.8.0); source-vendor fork skipped as redundant; on-device codec test pending | [R31](phase-R31-player-engine-fork.md) |
+| R32 | □ Planned | **Unified filter workbench + hero builder + Library round-trip** — one shared condition-stack builder for Content rows, Channels & the Library; audio-track + hero-item as universal facets; Save-filter-as-Channel/Row + "Feature in Ravilo" on Movie/Series detail | [R32](phase-R32-unified-filter-workbench.md) |
 
 ## Suggested sequencing
 - **Foundation:** R01 → R02 → R03 → R04 (module + scaffold + auth + config store).

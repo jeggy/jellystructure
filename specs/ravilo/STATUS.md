@@ -8,97 +8,60 @@ Ravilo is a sibling product **inside the jellystructure repo** — an Android TV
 canvas) streaming front-end built from one **Compose Multiplatform** codebase, talking only to the
 jellystructure backend.
 
-_Last updated: 2026-06-21_
+_Last updated: 2026-06-19_
 
-## Current state
+_Last updated: 2026-06-22_
 
-**R01–R31 done** (R31's on-device exotic-codec playback not yet verified). The app runs end-to-end on
-the stue TV (Sony BRAVIA XR-65X93K, `10.0.0.11`). Installed via `nc` + `adb_shell` from the HA
-container.
+## Current focus
 
-### What's working
-- Full browsing: Home (hero + channel rail + content rows), Browse grids (Movies / Series / My List),
-  Search with on-screen keyboard, Movie detail, Series detail (seasons + episodes).
-- Multi-user profiles ("Who's watching?"), device pairing, localized UI (en / da / fo).
-- **Player (R14):** direct-play + HLS via ExoPlayer/Media3; player chrome with seek bar, skip
-  ±10 s/30 s, Audio & Subtitles picker, next-up countdown card, in-player episode rail for series.
-  Video renders via `TextureView` (`PlayerVideoSurface` expect/actual seam) so the Compose chrome
-  overlays correctly.
-- Config editor at `/ravilo`: drag-reorder, show/hide, hero height, tile shape, live preview.
-
-### Recent fixes (2026-06-21 session — R31, FFmpeg exotic-codec decoder)
-- Implemented R31 via the **decoder-dependency approach** (not a source vendor): new Android-only
-  **`:ravilo-player`** GPL-containment module bundling jellyfin's `media3-ffmpeg-decoder` + a
-  `DefaultRenderersFactory(PREFER)`, wired through `RaviloPlayerEngine` so `:ravilo-ui` / `:ravilo-web`
-  stay GPL-clean. App Media3 bumped 1.7.1 → 1.8.0 (no 1.7.x decoder build exists). Builds + packages
-  `libffmpegJNI.so` for all 4 ABIs (APK 18 → 21 MB); on-device DTS/TrueHD/AC3 verification pending.
-
-### Recent fixes (2026-06-21 session — R30, native focus traversal)
-- Replaced the hand-rolled focus engine (`FocusGrid` / `FocusRow` + per-item `requestFocus`) with
-  **native Compose focus traversal**: lazy items no longer consume direction keys, so the framework
-  moves focus, composes the off-screen item in the search direction, and scrolls it into view. Added
-  `Modifier.focusRestorer()` per `LazyRow` / grid. Fixes the held-key **lag / stuck focus** on Home
-  rows, the channel rail, and the Browse/Search grids. **`FocusEngine.kt` deleted** — so the R29
-  empty-row `FocusGrid` guard and the 2026-06-20 `StaticContentRow` `animateScrollBy` note (both
-  below) are now moot; that code is gone. Manual key handling is kept only for content actions (hero
-  paging, the Search keyboard↔grid edges); the Player rail's virtual-focus model and the non-lazy
-  keyboard / profile / settings screens are unchanged. See
-  [R30](requirements/phase-R30-native-focus-traversal.md).
-
-### Recent fixes (2026-06-21 session — R29, contract review fixes)
-- **`playback/stop` always 400'd**: client encoded `PlaybackProgressRequest` vs the route's
-  `PlaybackStopRequest` — Jellyfin never saw the stop, exact resume position lost. Now sends the right
-  type.
-- **On-device viewer settings never saved**: `putSettings` PUT a whole `RaviloConfig` (with
-  `default_skin`) to a route expecting `ViewerSettingsRequest` (`skin`). Replaced with
-  `putViewerSettings(...)`; `ViewerSettingsRequest` promoted to `:shared`.
-- **Server JSON hardened** with `ignoreUnknownKeys = true` (matching the rest of the repo).
-- **Viewer skin override**: new `viewerSkinOverride` + `effectiveSkin()` so a viewer's pick no longer
-  overwrites the operator `defaultSkin`.
-- Removed the synthesized/ignored `session_id`; guarded `FocusGrid` against empty rows; widened
-  `autoAdvanceSeconds` clamp to `[0,120]`; reconciled the R26 spec and `:ravilo-player` deferral docs.
-
-### Recent fixes (2026-06-20 session)
-- **Player UI scale**: all dp/sp values reduced ~30 % from initial implementation (was designed at
-  CSS-px scale; Android TV renders at xhdpi density, making everything too large).
-- **Home screen horizontal scroll**: `StaticContentRow` `LazyRow` switched from
-  `animateScrollToItem(focusedIndex)` (which jumped every tile to position 0) to
-  `animateScrollBy(minimalOffset)` — now scrolls only enough to reveal the newly-focused tile's edge.
+**Phases R01–R31 complete.** Next up is **[R32 — Unified filter workbench + hero builder + Library
+round-trip](requirements/phase-R32-unified-filter-workbench.md)** (Planned): one shared condition-stack
+builder powers Content rows, Channels **and** the jellystructure Library page; **audio-track and hero-item
+become universal facets** (extending the Phase-30 axes, served by the feed/`/api/media` filter); a guided
+hero-item builder; a Library round-trip (**Save filter as… Channel / Content row**); and a **"★ Feature in
+Ravilo"** action on Movie/Series detail (locked-title hero builder + viewer picker). Revises the filter
+parts of R16/R28; folds in the Phase-20 audio-track filter. Approved mockups in `design/app/ravilo-config.html`,
+`design/app/library.html` + `design/app/media.html` (shared builder: `design/app/ravilo-builders.js`).
 
 ## Foundational decisions locked (constitution)
 
-- **Control plane = jellystructure only; data plane = Jellyfin directly.** The client "logs into"
-  only jellystructure (pairing); video/images stream from Jellyfin via brokered, scoped tokens.
+- **Control plane = jellystructure only; data plane = Jellyfin directly.** The client "logs into" only
+  jellystructure (pairing); video/images stream from Jellyfin via brokered, scoped tokens.
 - **Compose Multiplatform, two targets:** Android TV + Web/WASM **canvas** (browser video).
   Maximise sharing — screens/theme/components/focus/state live once in `:ravilo-ui`. The
   jellystructure "no Compose for Web" rule is scoped to the **admin** frontend; the two WASM bundles
   (admin DOM, Ravilo canvas) coexist.
-- **Android player: direct ExoPlayer/Media3 for now.** The originally planned fork of
-  `jellyfin-androidtv` `playback/*` into `:ravilo-player` (for DTS/TrueHD/AC3/E-AC3 via
-  `media3-ffmpeg-decoder`) is **deferred**. The current `RaviloPlayerAndroid` uses ExoPlayer
-  directly and covers all common formats. The fork remains the path if exotic codec support is
-  needed later.
+- **Android player engine forked from `jellyfin-androidtv` (GPL).** Rather than a from-scratch Media3
+  integration, the Android `actual RaviloPlayer` forks Jellyfin's `playback/*` engine (Media3 +
+  `media3-ffmpeg-decoder` for DTS/TrueHD/AC3/…), contained in a new Android-only **`:ravilo-player`**
+  module. This makes the **Android client GPL**; the fork's direct-to-Jellyfin stream/progress seams
+  are re-pointed through `/api/tv/**`. **Web** uses the **browser-native** stack (DOM `<video>` +
+  `hls.js` + JASSUB), **not** a `jellyfin-web` fork (GPL TS/JS, no decoder gain). The **whole repo is
+  licensed GPL-3.0** (root `LICENSE`). _(Decided 2026-06-19.)_
 - **DTOs defined once** in `:shared`; reused by backend + admin frontend + both Ravilo clients.
 - **Config is server-owned, per Jellyfin user, synced** across all a user's devices.
 - **The TV renders server-composed layout & server-pushed state**; **Ravilo never mutates the
-  library** (only playback progress, played/unplayed, per-user settings). **Non-admin** Jellyfin
-  users are allowed.
+  library** (only playback progress, played/unplayed, per-user settings). **Non-admin** Jellyfin users
+  are allowed.
 
 ## Design reference
 
-- Visual target: `design/ravilo/` (`Ravilo TV.html`, `ravilo.css`, `ravilo-player.css`).
-- Per-user config surface: `design/ravilo/ravilo-app.js` (drives R16/R26-R28).
+- Visual target: the prototype in `design/ravilo/` (`Ravilo TV.html`, `ravilo.css`) — Aurora/Midnight/
+  Noir skins, jellyfish brand, hero/channel-rail/rows, movie+series detail with watched/resume, search.
+- The per-user config surface is mocked in `design/app/ravilo-config.html` (drives R16).
 
 ## Open threads
 
-- **`:ravilo-player` FFmpeg decoder (R31 ✓ done; on-device test pending):** the GPL-contained
-  `:ravilo-player` module bundles jellyfin's `media3-ffmpeg-decoder` and the player prefers the FFmpeg
-  renderers, so DTS/TrueHD/AC3 decode automatically — never a user-facing "choose a player" control
-  (confirmed intent: Ravilo inherits jellyfin's automatic handling, adds only chrome/UX). **Remaining:**
-  verify a real exotic-codec file plays on the TV. Vendoring jellyfin-androidtv's `playback/*` source
-  stays the path only if its *format-selection* logic is later needed beyond the decoders.
-- **WASM subtitle switching (R14 gap):** `selectSubtitleTrack` on `RaviloPlayerWasm` is a no-op
-  because `TextTrackList.item()` is not bridged in Kotlin/WASM DOM bindings. Fix path: `@JsFun`
-  interop bridge or wait for upstream bindings update.
-- **Soveværelse TV (`10.0.0.12`):** same ADB key authorized. Deploy separately when needed —
-  not targeted during development sessions.
+- **Stream brokering details (R08):** confirm how the per-user Jellyfin token is obtained/refreshed
+  server-side from the paired session. _(Direct-play-vs-HLS policy now decided: client sends
+  `ClientCapabilities`, jellystructure resolves via Jellyfin `PlaybackInfo`.)_
+- **Player fork bring-up (R14):** vendor `jellyfin-androidtv` `playback/*` into `:ravilo-player`;
+  rewire its stream-resolution + progress-report seams to `/api/tv/**`; confirm upstream's exact
+  **GPL-2.0-only-vs-or-later** terms; decide how to **track upstream** changes (subtree/submodule/
+  manual vendor + version pin).
+- **Licensing (resolved):** the whole repo is **GPL-3.0** (root `LICENSE`). Remaining task at
+  fork-vendoring time (R14): preserve `jellyfin-androidtv` copyright/license notices (e.g. a
+  `:ravilo-player` NOTICE) and confirm its GPL-2.0-only-vs-or-later terms.
+- **Pairing approval UX (R03/R15):** web-session approval vs phone-credentials form — pick the primary
+  path.
+- **Compose-MP web a11y (R17):** canvas accessibility is best-effort; validate against real ATs early.

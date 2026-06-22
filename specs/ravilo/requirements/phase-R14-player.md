@@ -1,6 +1,6 @@
 # Phase R14 — Player: `RaviloPlayer` expect/actual (FR-RV14)
 
-**Status:** ✓ Done (2026-06-20)
+**Status:** Planned · _play the bytes, from Jellyfin, report progress to jellystructure._
 
 ## Problem
 Ravilo must play media **directly from Jellyfin** (data plane) on both targets, with one shared player
@@ -65,52 +65,3 @@ UI/chrome, resume, and progress reporting — while the byte stream never transi
 - Offline/downloads; PiP.
 - Adopting the rest of `jellyfin-androidtv` (UI, navigation, settings) — **only** the `playback/*`
   engine is forked; everything else is Ravilo's own Compose code.
-
-## As built (2026-06-20)
-
-The `:ravilo-player` fork was deferred. The Android `actual` uses **ExoPlayer/Media3 directly**
-inside `:ravilo-ui` `androidMain`, sufficient for direct-play + HLS. The `media3-ffmpeg-decoder`
-extension (for DTS/TrueHD/AC3) and the full `jellyfin-androidtv` playback engine fork remain
-future work — tracked here when needed.
-
-### Seams
-- **`expect class RaviloPlayer`** (`commonMain/seams/`): `load(streamUrl, startPositionMs,
-  subtitles)`, `play/pause/seekTo/release`, `selectAudioTrack(index)`,
-  `selectSubtitleTrack(url?)`, read-only vals `positionMs / durationMs / bufferedMs /
-  isPlaying / isEnded / audioTracks`.
-- **`expect fun PlayerVideoSurface(player, modifier)`** (`commonMain/seams/`): Android actual
-  creates a `TextureView` via `AndroidView` and calls `exo.setVideoTextureView()` so video
-  renders into the Compose surface (no punch-through). WASM actual is a no-op `Box`; the
-  `<video>` element is fixed-positioned behind the skiko canvas via CSS.
-- **Android actual** (`androidMain`): `ExoPlayer.Builder` + `Media3`; subtitle tracks via
-  `MediaItem.SubtitleConfiguration` (VTT/SRT/ASS MIME detection); audio selection via
-  `TrackSelectionOverride`; buffered position from `exo.bufferedPosition`.
-- **WASM actual** (`wasmJsMain`): DOM `<video>` with `<track>` children for subtitles.
-  `bufferedMs` from `video.buffered.end(length-1)`. `selectSubtitleTrack` is a no-op stub
-  (Kotlin/WASM DOM bindings lack `TextTrackList.item()`; the `<track default>` attribute
-  handles initial selection).
-
-### Chrome (`PlayerScreen.kt`, `commonMain`)
-- Auto-hiding overlay (3.6 s idle timer via `chromeRevision` + `LaunchedEffect`).
-- **Seek bar** (Canvas): background track + buffered fill + accent-gradient played fill +
-  scrub ghost line + animated handle; left/right on the focused bar scrubs by ~1.2% of
-  duration per press.
-- **Transport controls**: skip −10 s / +30 s pills, play/pause circle (54 dp), Audio & Subs
-  picker button, optional Next Episode button.
-- **Track picker popup**: Audio / Subtitles tabs with radio-button option list; left/right
-  on the D-pad switches tabs.
-- **Next-up card** with 8 s countdown ring (Canvas arc); auto-advances on zero; "Watch
-  credits" stays-through button.
-- **Episode rail** (series only): slides up from the bottom, `LazyRow` of episode cards
-  with progress bars and NOW PLAYING badge.
-- **Pause flash**: brief centered icon flash on play/pause toggle.
-- **`EpisodePlayContext`** + **`PlayerEpisodeEntry`** data classes thread the full episode
-  list from `SeriesDetailScreen` through `Dest.Player` so the rail and next-ep navigation
-  work without an extra API call.
-
-### Navigation
-`onNavigateToEpisode` in `RaviloApp` replaces the top of the back stack with a new
-`Dest.Player` targeting the selected episode, preserving the episode list reference.
-`SeriesDetailScreen.buildEpisodeContext()` constructs the context (kicker, next-ep pointer,
-full episode list, current index) from the already-loaded `SeriesDetail` at both the
-Play/Resume button and per-episode card tap sites.
