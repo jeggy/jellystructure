@@ -88,6 +88,7 @@ private fun buildEpisodeContext(
         kicker       = "S$sNum · E${ep.episodeNumber}",
         nextEpId     = nextEp?.id,
         nextEpLabel  = nextEp?.let { "S$sNum · E${it.episodeNumber}" },
+        nextEpTitle  = nextEp?.title,
         episodes     = episodes.mapIndexed { i, e ->
             PlayerEpisodeEntry(
                 id            = e.id,

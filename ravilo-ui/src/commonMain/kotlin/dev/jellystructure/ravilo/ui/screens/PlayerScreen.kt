@@ -67,6 +67,7 @@ import dev.jellystructure.ravilo.ui.seams.PlayerAudioTrack
 import dev.jellystructure.ravilo.ui.seams.PlayerLifecycleEffect
 import dev.jellystructure.ravilo.ui.seams.PlayerVideoSurface
 import dev.jellystructure.ravilo.ui.seams.RaviloPlayer
+import dev.jellystructure.ravilo.ui.seams.RemoteImage
 import dev.jellystructure.ravilo.ui.theme.RaviloColors
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
 import dev.jellystructure.ravilo.ui.theme.SpaceGrotesk
@@ -106,6 +107,7 @@ fun PlayerScreen(
     itemKicker: String? = null,
     nextEpisodeId: String? = null,
     nextEpisodeLabel: String? = null,
+    nextEpisodeTitle: String? = null,
     episodes: List<PlayerEpisodeEntry>? = null,
     currentEpIndex: Int = 0,
     store: PlayerStore,
@@ -510,6 +512,7 @@ fun PlayerScreen(
             NextUpCard(
                 colors         = colors,
                 nextEpLabel    = nextEpisodeLabel,
+                nextEpTitle    = nextEpisodeTitle,
                 countdown      = countdown,
                 nuFocus        = nuFocus,
             )
@@ -635,8 +638,8 @@ private fun PlayerChrome(
                 PlayPauseButton(isPlaying = isPlaying, focused = focus == PlFocus.PLAY)
                 SkipButton(label = "+30s", focused = focus == PlFocus.SKIP_FWD)
                 Spacer(Modifier.weight(1f))
-                TrackButton(label = "Audio & Subs", focused = focus == PlFocus.TRACKS)
-                if (hasNextEp) TrackButton(label = "▶▶ Next", focused = focus == PlFocus.NEXT_EP)
+                TrackButton(label = str("player.audio_subs"), focused = focus == PlFocus.TRACKS)
+                if (hasNextEp) TrackButton(label = "▶▶ ${str("player.next")}", focused = focus == PlFocus.NEXT_EP)
             }
 
             // Episode chip (series, only when rail/picker/nextup are closed)
@@ -939,8 +942,8 @@ private fun TrackPicker(
         Column {
             // Tabs
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                PickerTab("Audio", pickerTab == 0)
-                PickerTab("Subtitles", pickerTab == 1)
+                PickerTab(str("player.tab_audio"), pickerTab == 0)
+                PickerTab(str("player.tab_subtitles"), pickerTab == 1)
             }
             Spacer(Modifier.height(14.dp))
 
@@ -950,7 +953,7 @@ private fun TrackPicker(
                 effectiveAudio.map { Triple(it.label, it.language, null) }
             } else {
                 subtitleTracks.mapIndexed { i, sub ->
-                    if (sub == null) Triple("Off", null, null)
+                    if (sub == null) Triple(str("off"), null, null)
                     else Triple(sub.label ?: sub.language ?: "Track $i", sub.language, if (sub.forced) "FORCED" else if (sub.isDefault) "DEFAULT" else null)
                 }
             }
@@ -1053,6 +1056,7 @@ private fun PickerOption(
 private fun NextUpCard(
     colors: RaviloColors,
     nextEpLabel: String?,
+    nextEpTitle: String?,
     countdown: Int,
     nuFocus: NuFocus,
 ) {
@@ -1067,7 +1071,7 @@ private fun NextUpCard(
     ) {
         Column {
             Text(
-                text = "UP NEXT",
+                text = str("player.up_next"),
                 color = colors.accentSecondary,
                 fontSize = 11.sp,
                 fontWeight = FontWeight.Bold,
@@ -1094,22 +1098,23 @@ private fun NextUpCard(
                         Spacer(Modifier.height(4.dp))
                     }
                     Text(
-                        text = str("detail.episode"),
+                        text = nextEpTitle ?: str("detail.episode"),
                         color = colors.text,
                         fontSize = 20.sp,
                         fontWeight = FontWeight.Bold,
                         fontFamily = SpaceGrotesk,
+                        maxLines = 1,
                     )
                     Spacer(Modifier.height(14.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         NuButton(
-                            label = "▶  Play  in ${countdown}s",
+                            label = "▶  ${str("player.play_in", mapOf("secs" to countdown.toString()))}",
                             focused = nuFocus == NuFocus.PLAY,
                             isPrimary = true,
                             colors = colors,
                         )
                         NuButton(
-                            label = "Watch credits",
+                            label = str("player.watch_credits"),
                             focused = nuFocus == NuFocus.STAY,
                             isPrimary = false,
                             colors = colors,
@@ -1207,7 +1212,7 @@ private fun EpisodeRail(
             ) {
                 Text(seasonLabel, color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold, fontFamily = SpaceGrotesk)
                 Text(
-                    "← → switch  ·  ↵ play  ·  ↑ back",
+                    str("player.rail_hint"),
                     color = Color.White.copy(0.45f),
                     fontSize = 12.sp,
                 )
@@ -1254,6 +1259,16 @@ private fun EpisodeRailCard(
                     shape = RoundedCornerShape(9.dp),
                 ),
         ) {
+            // Still image (falls back to the flat box colour when absent)
+            ep.stillUrl?.let { url ->
+                RemoteImage(
+                    url = url,
+                    contentDescription = null,
+                    modifier = Modifier.matchParentSize(),
+                )
+                // Dark scrim so the episode number / badge / progress stay legible
+                Box(Modifier.matchParentSize().background(Color.Black.copy(alpha = 0.28f)))
+            }
             // Episode number
             Text(
                 text = ep.n.toString(),
@@ -1273,7 +1288,7 @@ private fun EpisodeRailCard(
                         .background(colors.accentGradient)
                         .padding(horizontal = 7.dp, vertical = 3.dp),
                 ) {
-                    Text("NOW PLAYING", color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.5.sp)
+                    Text(str("player.now_playing"), color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.5.sp)
                 }
             }
             // Progress bar
