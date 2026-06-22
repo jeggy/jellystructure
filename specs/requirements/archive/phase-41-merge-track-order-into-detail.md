@@ -1,6 +1,6 @@
 # Phase 41 — Unified track & order editor on Media Detail (movie) (FR-TO1)
 
-**Status:** Planned · _removes the standalone `#/track-order` page; the movie Media Detail
+**Status:** ✓ Done · _removes the standalone `#/track-order` page; the movie Media Detail
 "Tracks & order" tab becomes the single, complete track editor._
 
 > Series episodes get the **same** editor via a per-episode modal — specified separately in
