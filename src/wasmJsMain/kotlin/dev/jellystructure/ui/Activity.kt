@@ -291,6 +291,7 @@ private fun handleEvent(container: Element, raw: String) {
             jobItemCount = 0; jobDoneCount = 0; jobFailCount = 0
             scanRunning = true
             showJobUI(container)
+            (container.querySelector("#ov-bar") as? HTMLElement)?.style?.width = "0%"
             (container.querySelector("#act-cancel-btn") as? HTMLElement)?.style?.display = ""
             (container.querySelector("#act-crumb") as? HTMLElement)?.let { it.textContent = "Scanning"; it.style.display = "" }
             updateActivityChips(container)
@@ -303,6 +304,13 @@ private fun handleEvent(container: Element, raw: String) {
             val total = extractJsonField(raw, "total") ?: "?"
             val shortName = file.substringAfterLast('/')
             updateNowFilename(container, shortName)
+            // Overall scan total is unknown (items are discovered), so drive the bar from the
+            // current item's real per-file progress (P0-5 — it was hardcoded to 0%).
+            val cur = current.toIntOrNull(); val tot = total.toIntOrNull()
+            if (cur != null && tot != null && tot > 0) {
+                val pct = (cur * 100 / tot).coerceIn(0, 100)
+                (container.querySelector("#ov-bar") as? HTMLElement)?.style?.width = "$pct%"
+            }
         }
         "item_scanned" -> {
             jobItemCount++
