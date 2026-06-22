@@ -34,5 +34,15 @@ class HomeStore(private val apiClient: TvApiClient) {
         }
     }
 
-    fun refresh() = load()
+    /**
+     * [silent] = true keeps the current Loaded feed on screen and swaps in the new one when it
+     * arrives (no Loading flash, scroll/focus preserved) — used for R33 live config push.
+     */
+    fun refresh(silent: Boolean = false) {
+        if (!silent) { load(); return }
+        loadJob?.cancel()
+        loadJob = scope.launch {
+            runCatching { apiClient.getHome() }.getOrNull()?.let { _state.value = HomeState.Loaded(it) }
+        }
+    }
 }

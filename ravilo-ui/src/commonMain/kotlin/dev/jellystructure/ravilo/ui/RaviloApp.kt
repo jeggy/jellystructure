@@ -8,10 +8,13 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
@@ -51,7 +54,16 @@ import dev.jellystructure.shared.tv.TvApiClient
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.launch
+
+/**
+ * R33 live-config signal. The active session's WebSocket emits here on every `config_changed` (and on
+ * (re)connect); the visible layout screen (Home/Channel/Settings) collects it for a silent refresh.
+ */
+val LocalLiveConfig = staticCompositionLocalOf<SharedFlow<Long>?> { null }
 
 // ─── Navigation destinations ──────────────────────────────────────────────────
 
@@ -97,6 +109,29 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
         }
     }
 
+    // R33 — live config push. One WebSocket per active user; on connect (and on every change) we
+    // re-pull config (skin/lang) and signal the visible screen to silently refresh. Reconnect with
+    // backoff; the (re)connect emit catches anything missed while disconnected. The collect + the
+    // socket run on background scopes, so navigation is never blocked.
+    val liveConfig = remember { MutableSharedFlow<Long>(replay = 0, extraBufferCapacity = 16) }
+    var activeUserId by remember { mutableStateOf(MultiTokenStore.getActive()?.userId) }
+
+    LaunchedEffect(Unit) { liveConfig.collect { refreshConfig() } }
+    LaunchedEffect(activeUserId) {
+        if (activeUserId == null) return@LaunchedEffect
+        var backoff = 1000L
+        while (true) {
+            runCatching {
+                apiClient.connectEvents(
+                    onOpen = { backoff = 1000L; liveConfig.emit(0L) },
+                    onEvent = { liveConfig.emit(it.rev) },
+                )
+            }
+            delay(backoff)
+            backoff = (backoff * 2).coerceAtMost(15_000L)
+        }
+    }
+
     RaviloTheme(state = themeState) {
     WithLocale(lang) {
         // Determine starting screen based on cached sessions
@@ -123,6 +158,7 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
 
         val dest = stack.last()
 
+        CompositionLocalProvider(LocalLiveConfig provides liveConfig) {
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -146,6 +182,7 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                     store = store,
                     apiClient = apiClient,
                     onProfileSelected = { session ->
+                        activeUserId = session.userId
                         refreshConfig()
                         push(Dest.Home(session.displayName))
                     },
@@ -160,6 +197,7 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                 PairingScreen(
                     store = store,
                     onPaired = {
+                        activeUserId = MultiTokenStore.getActive()?.userId
                         refreshConfig()
                         // Reset the stack so Back from Home doesn't return to pairing,
                         // and carry the freshly-paired user's display name.
@@ -338,6 +376,7 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
             }
         } } // when / AnimatedContent
         } // Box (back-intercept)
+        } // CompositionLocalProvider (live config)
     } // WithLocale
     } // RaviloTheme
 }
