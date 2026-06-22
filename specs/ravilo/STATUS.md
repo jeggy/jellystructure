@@ -12,8 +12,8 @@ _Last updated: 2026-06-22_
 
 ## Current focus
 
-**Phases R01–R35 complete; [R36 — Channel-button editor](requirements/phase-R36-channel-button-editor.md)
-is planned (mock landed 2026-06-22).** R36 moves the channel-button look entirely into the editor popup:
+**Phases R01–R35 + R37 complete; [R36 — Channel-button editor](requirements/phase-R36-channel-button-editor.md)
+is the active phase (mock landed 2026-06-22).** R36 moves the channel-button look entirely into the editor popup:
 the redundant inline **Logo / Text** row toggle is removed; **Logo** now means a real **image asset** —
 pick a previously uploaded brand logo or upload a PNG/SVG (stored server-side, referenced as the
 channel's `logoUrl`), with the name-initials box kept only as a no-asset fallback; **Text** is a label
@@ -24,15 +24,15 @@ visible **pencil edit** affordance + a "Click a channel to edit it." hint so the
 Mirrored in `design/app/ravilo-config.html` + `design/app/ravilo-builders.{js,css}`; revises R32 §C2.
 
 **[R37 — Brand-mark centering + asset-pack regeneration](requirements/phase-R37-brand-mark-centering.md)
-is planned (mock landed 2026-06-22).** The jellyfish art only filled a small, low region of its
-`0 0 100 100` viewBox, so the adaptive icon, monochrome, splash, every mipmap density, the store 512/
-feature/TV-banner graphics **and** the in-app inline copies all rendered the mark undersized and shifted
-up (the Ravilo config-page header showed it floating high beside "Ravilo TV"). Fix: reframe the
-**master** `ravilo-mark.svg` viewBox to `12 20 76 76` (**paths untouched** — same shape), regenerate the
-entire `design/ravilo/assets/**` pack from the master (R22's "regenerable from SVG masters" rule),
-update the four inline marks (app bar, config header, Library save-filter menu, create-flows) to the new
-viewBox, and flex-align the config header's mark at an `em` size so it tracks the wordmark cap-height.
-Framing-only, no redesign; follow-up to R22.
+is complete (2026-06-22).** The master `ravilo-mark.svg` is reframed to `viewBox 12 20 76 76` (**paths
+untouched** — same shape). The entire `design/ravilo/assets/**` pack **and** the shipping
+`ravilo-android/src/main/res/**` icons were regenerated from it — adaptive foreground/monochrome,
+legacy mipmaps + round at every density, splash, store 512, the leanback banner, and the feature/
+TV-banner graphics (lockup + "CINEMATIC STREAMING FOR JELLYFIN" kicker in Space Grotesk). All four
+in-app inline marks use the recentred frame; the config-page header (`RaviloConfig.kt`) now flex-aligns
+the mark at an `em` size so it tracks the "Ravilo TV" cap-height instead of floating high. The marks were
+rendered with headless Chromium (faithful gradient) and composited over the unchanged brand field;
+framing-only, no redesign. Follow-up to R22.
 
 **Phases R01–R35 complete.** [R35 — Home-screen TV sizing + hero framing](requirements/phase-R35-home-screen-tv-sizing.md)
 brings the **Home hero carousel and content-row headers** down to the same TV-tuned scale R34 set for the

@@ -1,6 +1,6 @@
 # Phase R37 — Brand-mark centering + asset-pack regeneration
 
-**Status:** Planned · _the jellyfish brand mark was small and sat high inside its own viewBox, so every
+**Status:** ✓ Done · _the jellyfish brand mark was small and sat high inside its own viewBox, so every
 launcher/store raster and every in-app inline copy inherited an off-centre, undersized glyph. Recentre
 the **master SVG** (paths unchanged) and regenerate the whole asset pack from it; fix the in-app inline
 marks and the config-header alignment._
