@@ -83,7 +83,7 @@
 .cf-logoupload .cf-up-i { font-size: 1.15rem; line-height: 1; }
 .cf-logoupload:hover { color: var(--ink); }
 /* logo image inside the channel chip / preview */
-.studio-wm .cf-wm-img { max-width: 84%; max-height: 68%; object-fit: contain; }
+.studio-wm .cf-wm-img { width: 100%; height: 100%; object-fit: cover; }
 
 /* custom color / gradient builder */
 .cf-sw-custom { display: flex; align-items: center; justify-content: center; color: var(--ink-soft);

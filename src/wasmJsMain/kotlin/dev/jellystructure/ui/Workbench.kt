@@ -479,7 +479,7 @@ private fun injectWorkbenchStyles() {
         .wbc-sw.on { border-color:var(--ink); box-shadow:0 0 0 2px var(--fill); }
         .wbc-custom { display:flex; align-items:center; justify-content:center; color:var(--ink-soft); font-size:1.1rem; background:var(--fill-3); }
         .wbc-chip { width:120px; height:46px; border-radius:10px; display:flex; align-items:center; justify-content:center; color:#fff; font-weight:700; font-size:.78rem; overflow:hidden; }
-        .wbc-chip img { max-width:80%; max-height:64%; object-fit:contain; }
+        .wbc-chip img { width:100%; height:100%; object-fit:cover; }
         .wbc-grad { display:flex; align-items:center; gap:14px; flex-wrap:wrap; margin-top:12px; }
         .wbc-cf { display:flex; flex-direction:column; gap:3px; }
         .wbc-cf input[type=color] { width:46px; height:30px; border:none; background:none; padding:0; cursor:pointer; }

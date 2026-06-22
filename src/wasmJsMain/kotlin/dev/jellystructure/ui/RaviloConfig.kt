@@ -368,7 +368,7 @@ private fun ChannelConfig.kindAndValue(): Pair<String, String> = when {
 private fun channelChipHtml(c: ChannelConfig): String {
     val fill = c.brandColor?.takeIf { it.isNotBlank() } ?: "linear-gradient(135deg,#3b2a78,#15102e)"
     val inner = if (c.style == ChannelStyle.LOGO && !c.logoUrl.isNullOrBlank()) {
-        """<img src="${c.logoUrl!!.htmlEsc()}" alt="" style="max-width:78%;max-height:62%;object-fit:contain">"""
+        """<img src="${c.logoUrl!!.htmlEsc()}" alt="" style="width:100%;height:100%;object-fit:cover">"""
     } else {
         (if (c.style == ChannelStyle.LOGO) c.name.take(3).uppercase() else c.name.take(10).ifEmpty { "Ch" }).htmlEsc()
     }

@@ -157,10 +157,12 @@ fun ChannelCard(
         )
 
         if (logoUrl != null) {
+            // R39: the logo fills the whole button (ContentScale.Crop), clipped by the card's rounded
+            // corners — no padding/letterboxing. A transparent logo shows the brand fill behind it.
             RemoteImage(
                 url = logoUrl,
                 contentDescription = name,
-                modifier = Modifier.fillMaxSize().padding(24.dp),
+                modifier = Modifier.fillMaxSize(),
             )
         } else {
             Text(
