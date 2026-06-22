@@ -19,10 +19,10 @@ tools (ref `main`):
 **Ravilo (the TV companion app) has its OWN spec tree** at `specs/ravilo/` — read it
 for anything in `ravilo/` or the `ravilo-config.html` editor:
 - `specs/ravilo/constitution.md` · `specs/ravilo/plan.md` · `specs/ravilo/STATUS.md`
-- `specs/ravilo/requirements/` (phases R01–R32 done; R32 = unified filter workbench).
+- `specs/ravilo/requirements/` (phases R01–R31 done; R32 unified filter workbench planned).
 
-The admin app is at **phase 47 complete** (artwork manager); Ravilo at **R32
-complete** (unified filter workbench). The old
+The admin app is at **phase 46 complete** (Phase 47 artwork manager planned); Ravilo at **R31
+complete** (R32 planned). The old
 top-level `CONSTITUTION.md` and `wireframes/Requirements & Phases.html` are
 **superseded** by `specs/`.
 

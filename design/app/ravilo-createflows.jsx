@@ -17,7 +17,7 @@ function Frame({ children, pad = 24 }) {
 }
 
 const RAV = (
-  <svg viewBox="0 0 100 100" style={{ width: 22, height: 22, verticalAlign: 'middle', filter: 'drop-shadow(0 0 8px rgba(123,110,240,.5))' }} aria-hidden="true">
+  <svg viewBox="12 20 76 76" style={{ width: 22, height: 22, verticalAlign: 'middle', filter: 'drop-shadow(0 0 8px rgba(123,110,240,.5))' }} aria-hidden="true">
     <defs><linearGradient id="cfj" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor="#7b6ef0" /><stop offset="1" stopColor="#3fb6f5" /></linearGradient></defs>
     <path d="M22 52 C22 24 78 24 78 52 C66 45 59 45 50 49 C41 45 34 45 22 52 Z" fill="url(#cfj)" />
     <g stroke="url(#cfj)" strokeWidth="4.5" strokeLinecap="round" fill="none"><path d="M33 51 q-5 12 1 20 q5 8 0 14" opacity=".9" /><path d="M44 52 q-4 13 1 21 q4 9 0 13" opacity=".72" /><path d="M56 52 q4 13 -1 21 q-4 9 0 13" opacity=".72" /><path d="M67 51 q5 12 -1 20 q-5 8 0 14" opacity=".9" /></g>
