@@ -8,18 +8,23 @@ _Last updated: 2026-06-22_
 
 ## Current focus
 
-**Phases 0–47 complete — the admin app is feature-complete.** Phase 47 (artwork manager) shipped: the
+**Phases 0–49 complete (except Phase 48, planned) — the admin app is feature-complete.** Phase 47 (artwork manager) shipped: the
 full artwork-editing surface on Movie & Series detail — asset rail + inline TMDB gallery,
 resolved-language-first candidate filtering with a never-empty fallback (**no-language `xx` is its own
 bucket, distinct from "All"**), drag-drop/upload/URL replace, and series season-poster +
 per-episode-still management (`MediaDetail.kt` artwork tab + `MediaRoutes.kt` / `TmdbClient.kt`
 candidate-gallery routes). Built on Phase 31 (artwork fetch/cache) + Phase 32 (TMDB match picker).
 
+**[Phase 49](requirements/archive/phase-49-full-episode-coverage.md) complete (2026-06-22):** large
+series (e.g. ~260-episode shows) were missing episodes everywhere because the scan capped probing at a
+spread of 100. Made the cap configurable (`scan_episode_cap`, default **0 = unlimited**) so full scans
+probe every episode, and wired an on-demand uncapped **Re-scan all episodes** button on the Series detail
+(via the existing `syncSeriesEpisodes` `/sync` path).
+
 **Planned: [Phase 48](requirements/phase-48-artwork-textless-filter.md)** — the artwork gallery's
 Textless / With-text pills don't work (they only re-sort, a no-op within a language bucket, and overlap
-the language chips); unify both into one real single-select filter on TMDB `iso_639_1`. Investigated
-2026-06-22; spec written, not yet implemented. Other active development is on the **Ravilo** side — see
-[`ravilo/STATUS.md`](ravilo/STATUS.md).
+the language chips); unify both into one real single-select filter on TMDB `iso_639_1`. Spec written, not
+yet implemented. Other active development is on the **Ravilo** side — see [`ravilo/STATUS.md`](ravilo/STATUS.md).
 
 See [`requirements/README.md`](requirements/README.md) for the full index.
 
