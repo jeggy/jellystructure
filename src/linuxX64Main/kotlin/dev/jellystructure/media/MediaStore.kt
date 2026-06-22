@@ -47,6 +47,8 @@ class MediaStore(private val db: JellystructureDb) {
         audioCodec: String? = null,
         untaggedAudio: Boolean = false,
         tags: List<String> = emptyList(),
+        heroIds: Set<String> = emptySet(),
+        heroMode: String? = null,   // "featured" | "not_featured" — membership in a viewer's hero carousel
     ): MediaPage {
         // Attention filter is applied in-memory so multi-default items (issueCount=0) are included.
         val filterMissingArtwork = if (filter == "missing_artwork") 1L else 0L
@@ -88,6 +90,12 @@ class MediaStore(private val db: JellystructureDb) {
             if (tags.isNotEmpty()) {
                 result = result.filter { item ->
                     tags.any { tag -> item.tags.any { it.equals(tag, ignoreCase = true) } }
+                }
+            }
+            if (heroMode != null) {
+                result = result.filter { item ->
+                    val featured = (item.jellyfinId != null && heroIds.contains(item.jellyfinId)) || heroIds.contains(item.id)
+                    if (heroMode == "not_featured") !featured else featured
                 }
             }
             result

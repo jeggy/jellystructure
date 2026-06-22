@@ -25,6 +25,7 @@ import dev.jellystructure.resolver.LanguageResolver
 import dev.jellystructure.nfo.NfoWriter
 import dev.jellystructure.tmdb.TmdbClient
 import dev.jellystructure.tmdb.TmdbImage
+import dev.jellystructure.tv.RaviloConfigService
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.encodeURLPathPart
@@ -113,6 +114,7 @@ fun Route.mediaRoutes(
     mediaHistory: MediaHistory,
     scanDispatcher: CoroutineDispatcher,
     seedingGuard: SeedingGuard,
+    raviloConfigService: RaviloConfigService,
 ) {
     route("/media") {
         get {
@@ -137,7 +139,12 @@ fun Route.mediaRoutes(
             val untaggedAudio = call.request.queryParameters["untaggedAudio"] == "true"
             val tags = call.request.queryParameters["tags"]
                 ?.split(",")?.map { it.trim() }?.filter { it.isNotBlank() } ?: emptyList()
-            val result = store.list(kind, filter, search, sort, pageNum, pageSize, studios, networks, genres, audioLangs, trackTitle, audioCodec, untaggedAudio, tags)
+            // R32 hero-item facet: filter by membership in a viewer's hero carousel.
+            val heroMode = call.request.queryParameters["heroItem"]?.takeIf { it == "featured" || it == "not_featured" }
+            val viewer = call.request.queryParameters["viewer"]?.takeIf { it.isNotBlank() }
+            val heroIds = if (heroMode != null && viewer != null)
+                raviloConfigService.getConfig(viewer).heroes.map { it.itemId }.toSet() else emptySet()
+            val result = store.list(kind, filter, search, sort, pageNum, pageSize, studios, networks, genres, audioLangs, trackTitle, audioCodec, untaggedAudio, tags, heroIds, heroMode)
             // Strip episode data from list responses — full episode list is on the individual item endpoint
             val stripped = result.copy(items = result.items.map { it.copy(episodes = emptyList()) })
             call.respond(stripped)

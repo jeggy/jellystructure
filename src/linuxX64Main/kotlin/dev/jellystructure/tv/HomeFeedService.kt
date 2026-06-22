@@ -44,7 +44,8 @@ class HomeFeedService(
         val config = configService.getConfig(device.jellyfinUserId)
         val channelCfg = config.channels.find { it.id == channelId }
             ?: return HomeFeed(emptyList(), emptyList(), emptyList())
-        val all = mediaStore.allItems().filter { it.matchesChannel(channelCfg) }
+        val heroIds = config.heroes.map { it.itemId }.toSet()
+        val all = mediaStore.allItems().filter { it.matchesChannel(channelCfg, heroIds) }
         val jellyfinBase = configStore.current.apiKeys.jellyfinUrl.trimEnd('/')
         val token = device.jellyfinUserToken
         return HomeFeed(
@@ -153,7 +154,19 @@ class HomeFeedService(
                 }
 
                 RowKind.CUSTOM -> {
-                    // Custom rows are operator-defined; no standard composition for now.
+                    // R32: a custom row is a saved condition stack.
+                    val heroIds = config.heroes.map { it.itemId }.toSet()
+                    val matched = all.filter { ConditionEvaluator.matches(it, rowCfg.match, rowCfg.conditions, heroIds) }
+                    val filtered = when (rowCfg.mediaKind) {
+                        "MOVIE"  -> matched.filter { it.kind == MediaKind.MOVIE }
+                        "SERIES" -> matched.filter { it.kind == MediaKind.TV_SHOW }
+                        else     -> matched
+                    }
+                    val cards = filtered
+                        .sortedByDescending { it.scannedAt }
+                        .take(ROW_ITEM_LIMIT)
+                        .mapNotNull { it.toMediaCardOrNull(jellyfinBase, token) }
+                    if (cards.isNotEmpty()) result.add(Row(rowCfg.id, rowCfg.title ?: "Custom", RowKind.CUSTOM, cards))
                 }
             }
         }
@@ -245,7 +258,9 @@ class HomeFeedService(
         )
     }
 
-    private fun MediaItem.matchesChannel(ch: ChannelConfig): Boolean {
+    private fun MediaItem.matchesChannel(ch: ChannelConfig, heroIds: Set<String>): Boolean {
+        // R32: a condition stack supersedes the legacy single typed filters.
+        if (ch.conditions.isNotEmpty()) return ConditionEvaluator.matches(this, ch.match, ch.conditions, heroIds)
         if (ch.filterNetwork != null && network.equals(ch.filterNetwork, ignoreCase = true)) return true
         if (ch.filterStudio  != null && studio.equals(ch.filterStudio,  ignoreCase = true)) return true
         if (ch.filterGenre   != null && genres.any { it.equals(ch.filterGenre, ignoreCase = true) }) return true
