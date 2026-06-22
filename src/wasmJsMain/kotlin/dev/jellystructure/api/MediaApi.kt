@@ -33,6 +33,28 @@ data class ArtworkStatus(
     val logoExists: Boolean = false,
 )
 
+// --- Phase 47: artwork candidate gallery ---
+@Serializable
+data class ArtworkCandidate(
+    val filePath: String,
+    val lang: String? = null,   // null = no-language / textless (UI bucket "xx")
+    val voteAverage: Double = 0.0,
+    val width: Int = 0,
+    val height: Int = 0,
+    val onDisk: Boolean = false,
+)
+
+@Serializable
+data class ArtworkCandidatesResponse(
+    val asset: String = "",
+    val onDiskExists: Boolean = false,
+    val resolvedLanguage: String? = null,
+    val candidates: List<ArtworkCandidate> = emptyList(),
+)
+
+@Serializable
+data class SeasonStatus(val season: Int, val posterExists: Boolean = false)
+
 @Serializable
 data class TrackSnap(
     val specifier: String,
@@ -260,6 +282,46 @@ object MediaApi {
         val response = httpClient.post("/api/media/$id/artwork")
         if (response.status == HttpStatusCode.OK) response.body<ArtworkStatus>() else null
     }.getOrNull()
+
+    private fun jsonStr(s: String) = "\"" + s.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
+
+    suspend fun getArtworkCandidates(id: String, asset: String): ArtworkCandidatesResponse? = runCatching {
+        httpClient.get("/api/media/$id/artwork/candidates") { parameter("asset", asset) }.body<ArtworkCandidatesResponse>()
+    }.getOrNull()
+
+    suspend fun saveArtworkCandidate(id: String, asset: String, source: String): ArtworkStatus? = runCatching {
+        val response = httpClient.post("/api/media/$id/artwork/candidates/save") {
+            contentType(ContentType.Application.Json)
+            setBody("""{"asset":${jsonStr(asset)},"source":${jsonStr(source)}}""")
+        }
+        if (response.status == HttpStatusCode.OK) response.body<ArtworkStatus>() else null
+    }.getOrNull()
+
+    suspend fun getSeasons(id: String): List<SeasonStatus>? = runCatching {
+        httpClient.get("/api/media/$id/seasons").body<List<SeasonStatus>>()
+    }.getOrNull()
+
+    suspend fun getSeasonPosterCandidates(id: String, season: Int): ArtworkCandidatesResponse? = runCatching {
+        httpClient.get("/api/media/$id/seasons/$season/poster/candidates").body<ArtworkCandidatesResponse>()
+    }.getOrNull()
+
+    suspend fun saveSeasonPoster(id: String, season: Int, source: String): Boolean = runCatching {
+        httpClient.post("/api/media/$id/seasons/$season/poster/save") {
+            contentType(ContentType.Application.Json)
+            setBody("""{"source":${jsonStr(source)}}""")
+        }.status == HttpStatusCode.OK
+    }.getOrDefault(false)
+
+    suspend fun getEpisodeStillCandidates(id: String, epFilename: String): ArtworkCandidatesResponse? = runCatching {
+        httpClient.get("/api/media/$id/episodes/${encodeURIComponent(epFilename)}/still/candidates").body<ArtworkCandidatesResponse>()
+    }.getOrNull()
+
+    suspend fun saveEpisodeStill(id: String, epFilename: String, source: String): Boolean = runCatching {
+        httpClient.post("/api/media/$id/episodes/${encodeURIComponent(epFilename)}/still/save") {
+            contentType(ContentType.Application.Json)
+            setBody("""{"source":${jsonStr(source)}}""")
+        }.status == HttpStatusCode.OK
+    }.getOrDefault(false)
 
     suspend fun getTrackPlan(id: String, specifier: String): TrackPlan? = runCatching {
         httpClient.get("/api/media/$id/tracks/plan") {

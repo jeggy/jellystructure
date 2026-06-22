@@ -5,6 +5,8 @@ package dev.jellystructure.ui
 import dev.jellystructure.App
 import dev.jellystructure.encodeURIComponent
 import dev.jellystructure.api.ArtworkStatus
+import dev.jellystructure.api.ArtworkCandidate
+import dev.jellystructure.api.ArtworkCandidatesResponse
 import dev.jellystructure.api.ConfigApi
 import dev.jellystructure.api.HistoryEntry
 import dev.jellystructure.api.JsTag
@@ -19,6 +21,7 @@ import dev.jellystructure.model.NfoFileNode
 import dev.jellystructure.model.NfoFileTree
 import dev.jellystructure.model.Track
 import dev.jellystructure.model.TrackKind
+import kotlin.js.JsAny
 import kotlinx.browser.document
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
@@ -429,33 +432,16 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
         ${if (isTvShow) """<div id="tab-episodes" ${if (activeTab != "episodes") """style="display:none;" """ else ""}>${episodesTabHtml}</div>""" else ""}
 
         <div id="tab-artwork" ${if (activeTab != "artwork") """style="display:none;" """ else ""}>
-          <div class="card" id="artwork-card">
-            <div class="row center" style="margin-bottom:10px">
-              <h4 style="margin:0">Artwork</h4>
-              <span class="spacer"></span>
-              <button id="upload-poster-btn" class="btn sm ghost">Upload poster</button>
-              <button id="upload-fanart-btn" class="btn sm ghost">Upload fanart</button>
-              <button id="upload-logo-btn" class="btn sm ghost">Upload logo</button>
-              <button id="fetch-artwork-btn" class="btn sm ghost">Download from TMDB</button>
-            </div>
-            <div id="artwork-status"><span class="muted tiny">Checking…</span></div>
-            <iframe id="upload-frame" name="upload-frame" style="display:none"></iframe>
-            <form id="poster-form" method="post" action="/api/media/${item.id}/artwork/upload"
-                  enctype="multipart/form-data" target="upload-frame" style="display:none">
-              <input type="hidden" name="type" value="poster">
-              <input type="file" id="poster-file" name="file" accept="image/jpeg,image/jpg,image/png">
-            </form>
-            <form id="fanart-form" method="post" action="/api/media/${item.id}/artwork/upload"
-                  enctype="multipart/form-data" target="upload-frame" style="display:none">
-              <input type="hidden" name="type" value="fanart">
-              <input type="file" id="fanart-file" name="file" accept="image/jpeg,image/jpg,image/png">
-            </form>
-            <form id="logo-form" method="post" action="/api/media/${item.id}/artwork/upload"
-                  enctype="multipart/form-data" target="upload-frame" style="display:none">
-              <input type="hidden" name="type" value="logo">
-              <input type="file" id="logo-file" name="file" accept="image/png,image/jpeg">
-            </form>
+          <div class="art-mgr">
+            <div class="card art-rail" id="art-rail"><span class="muted tiny">Loading…</span></div>
+            <div class="card art-gallery" id="art-gallery"><span class="muted tiny">Select an asset on the left.</span></div>
           </div>
+          <iframe id="upload-frame" name="upload-frame" style="display:none"></iframe>
+          <form id="art-upload-form" method="post" action="/api/media/${item.id}/artwork/upload"
+                enctype="multipart/form-data" target="upload-frame" style="display:none">
+            <input type="hidden" name="type" id="art-upload-type" value="poster">
+            <input type="file" id="art-upload-file" name="file" accept="image/jpeg,image/jpg,image/png,image/webp">
+          </form>
         </div>
 
         <div id="tab-nfo" ${if (activeTab != "nfo") """style="display:none;" """ else ""}>
@@ -568,43 +554,7 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
         scope.launch { handleWriteNfo(item.id, refresh = true) }
     }
 
-    document.getElementById("fetch-artwork-btn")?.addEventListener("click") {
-        scope.launch { handleFetchArtwork(item.id) }
-    }
-
-    document.getElementById("upload-poster-btn")?.addEventListener("click") {
-        (document.getElementById("poster-file") as? HTMLInputElement)?.click()
-    }
-    document.getElementById("upload-fanart-btn")?.addEventListener("click") {
-        (document.getElementById("fanart-file") as? HTMLInputElement)?.click()
-    }
-    document.getElementById("upload-logo-btn")?.addEventListener("click") {
-        (document.getElementById("logo-file") as? HTMLInputElement)?.click()
-    }
-    document.getElementById("poster-file")?.addEventListener("change") {
-        (document.getElementById("poster-form") as? HTMLFormElement)?.submit()
-        scope.launch {
-            delay(2000)
-            loadArtworkStatus(item.id)
-            showDetailMsg("Poster upload submitted.", true)
-        }
-    }
-    document.getElementById("fanart-file")?.addEventListener("change") {
-        (document.getElementById("fanart-form") as? HTMLFormElement)?.submit()
-        scope.launch {
-            delay(2000)
-            loadArtworkStatus(item.id)
-            showDetailMsg("Fanart upload submitted.", true)
-        }
-    }
-    document.getElementById("logo-file")?.addEventListener("change") {
-        (document.getElementById("logo-form") as? HTMLFormElement)?.submit()
-        scope.launch {
-            delay(2000)
-            loadArtworkStatus(item.id)
-            showDetailMsg("Logo upload submitted.", true)
-        }
-    }
+    // Artwork tab (Phase 47) is built lazily by loadArtworkTab() on first show / tab switch.
 
     // Wire up episode row toggles, still uploads, editing, and season sync buttons
     if (isTvShow) {
@@ -642,7 +592,7 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
                             """<span class="muted tiny">Loading…</span>"""
                         scope.launch { loadHistory(item.id, container, scope) }
                     }
-                    if (tab == "artwork") scope.launch { loadArtworkStatus(item.id) }
+                    if (tab == "artwork") scope.launch { loadArtworkTab(item, scope) }
                     if (tab == "tracks" && !isTvShow) {
                         scope.launch { loadSeedingStatus(item.id) }
                         wireUnifiedTrackEditor("trk", item.tracks, item.id, null, scope, item.resolvedLanguage, item.path)
@@ -656,7 +606,7 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
         }
     }
 
-    scope.launch { loadArtworkStatus(item.id) }
+    if (activeTab == "artwork") scope.launch { loadArtworkTab(item, scope) }
     scope.launch { loadDrift(item.id) }
     if (activeTab == "tracks" && !isTvShow) {
         scope.launch { loadSeedingStatus(item.id) }
@@ -1661,20 +1611,369 @@ private suspend fun loadDrift(id: String) {
     banner.style.display = "block"
 }
 
-private suspend fun loadArtworkStatus(id: String) {
-    val status = MediaApi.getArtworkStatus(id) ?: return
-    renderArtworkStatus(status)
+// ── Artwork manager (Phase 47) ──────────────────────────────────────────────────
+// Asset rail + inline TMDB candidate gallery with resolved-first language fallback
+// (no-language `xx` distinct from All), Prefer textless/with-text, hi-res/sort,
+// stage + Save to disk, dropzone / Upload / Paste-URL. Generalised so the series
+// season-poster + episode-still targets (added on the series detail) reuse it.
+
+private const val TMDB_IMG_THUMB = "https://image.tmdb.org/t/p/w342"
+
+private class ArtTarget(
+    val asset: String,          // poster | backdrop | clearlogo | banner — also the upload "type"
+    val label: String,
+    val aspect: String,         // CSS aspect-ratio for cards/slots
+    val kind: String = "asset", // asset | season | episode
+    val season: Int = -1,
+    val epFilename: String = "",
+    var onDisk: Boolean = false,
+)
+
+private var artId = ""
+private var artScope: CoroutineScope? = null
+private var artTargets: List<ArtTarget> = emptyList()
+private var artSel = 0
+private var artResp: ArtworkCandidatesResponse? = null
+private var artLang = ""        // "" = All · "xx" = no-language · else a language code
+private var artPrefer = ""      // "" · "textless" · "withtext"
+private var artHiRes = false
+private var artSort = "vote"    // vote | res
+private var artStaged: String? = null   // staged source: a TMDB file_path or a full URL
+private var artStagedThumb: String? = null
+
+/** Build a multipart upload via the browser FormData + fetch (drag-drop / file pick). */
+private fun jsUpload(url: String, type: String, file: JsAny): Unit =
+    js("{ const fd = new FormData(); fd.append('type', type); fd.append('file', file); fetch(url, { method:'POST', body: fd, credentials:'same-origin' }); }")
+
+private fun fmt1(d: Double): String = ((d * 10).toInt() / 10.0).toString()
+
+private fun langLabel(code: String?): String = when {
+    code == null || code == "xx" -> "No language"
+    else -> code.uppercase()
 }
 
-private fun renderArtworkStatus(status: ArtworkStatus) {
-    val el = document.getElementById("artwork-status") as? HTMLElement ?: return
-    fun badge(exists: Boolean, label: String) =
-        """<span class="badge ${if (exists) "ok" else "bad"}" style="margin-right:6px">$label ${if (exists) "✓" else "missing"}</span>"""
-    val count = listOf(status.posterExists, status.fanartExists, status.logoExists).count { it }
-    el.innerHTML = """<span class="muted tiny" style="margin-right:10px;">$count of 3 assets</span>""" +
-        badge(status.posterExists, "poster.jpg") +
-        badge(status.fanartExists, "fanart.jpg") +
-        badge(status.logoExists, "clearlogo.png")
+private suspend fun loadArtworkTab(item: MediaItem, scope: CoroutineScope) {
+    injectArtworkStyles()
+    artId = item.id
+    artScope = scope
+    artTargets = artworkTargetsFor(item)
+    if (artTargets.isEmpty()) return
+    // Rail status dots for the series/movie-level assets.
+    val status = MediaApi.getArtworkStatus(item.id)
+    if (status != null) for (t in artTargets) t.onDisk = when (t.asset) {
+        "poster" -> status.posterExists
+        "backdrop" -> status.fanartExists
+        "clearlogo" -> status.logoExists
+        else -> t.onDisk
+    }
+    artSel = 0
+    renderArtRail()
+    wireArtRail()
+    selectArtTarget(0)
+}
+
+/** Movie/series item-level assets. Season + episode targets are appended by the series view. */
+private fun artworkTargetsFor(item: MediaItem): List<ArtTarget> = listOf(
+    ArtTarget("poster", "Poster", "2 / 3"),
+    ArtTarget("backdrop", "Backdrop", "16 / 9"),
+    ArtTarget("clearlogo", "Clearlogo", "16 / 9"),
+    ArtTarget("banner", "Banner", "5.4 / 1"),
+)
+
+private fun renderArtRail() {
+    val rail = document.getElementById("art-rail") as? HTMLElement ?: return
+    val rows = artTargets.mapIndexed { i, t ->
+        val dot = if (t.onDisk) "ok" else "bad"
+        val sub = when (t.kind) {
+            "season" -> "Season poster"
+            "episode" -> "Episode still"
+            else -> "${t.aspect.replace(" ", "")} · ${if (t.onDisk) "on disk" else "missing"}"
+        }
+        """<div class="art-rail-row${if (i == artSel) " sel" else ""}" data-i="$i">
+              <span class="dot $dot"></span>
+              <div><div class="art-rail-label">${t.label.esc()}</div><div class="tiny muted">$sub</div></div>
+           </div>"""
+    }.joinToString("")
+    rail.innerHTML = """<div class="art-rail-head"><b>Assets</b></div>$rows"""
+}
+
+private fun wireArtRail() {
+    document.querySelectorAll("#art-rail .art-rail-row").let { rows ->
+        for (i in 0 until rows.length) {
+            val row = rows.item(i) as? HTMLElement ?: continue
+            row.addEventListener("click") {
+                val idx = row.getAttribute("data-i")?.toIntOrNull() ?: return@addEventListener
+                artSel = idx
+                renderArtRail(); wireArtRail()
+                artScope?.launch { selectArtTarget(idx) }
+            }
+        }
+    }
+}
+
+private suspend fun galleryFetch(t: ArtTarget): ArtworkCandidatesResponse? = when (t.kind) {
+    "season" -> MediaApi.getSeasonPosterCandidates(artId, t.season)
+    "episode" -> MediaApi.getEpisodeStillCandidates(artId, t.epFilename)
+    else -> MediaApi.getArtworkCandidates(artId, t.asset)
+}
+
+private suspend fun gallerySave(t: ArtTarget, source: String): Boolean = when (t.kind) {
+    "season" -> MediaApi.saveSeasonPoster(artId, t.season, source)
+    "episode" -> MediaApi.saveEpisodeStill(artId, t.epFilename, source)
+    else -> MediaApi.saveArtworkCandidate(artId, t.asset, source) != null
+}
+
+private suspend fun selectArtTarget(i: Int) {
+    val gallery = document.getElementById("art-gallery") as? HTMLElement ?: return
+    val t = artTargets.getOrNull(i) ?: return
+    gallery.innerHTML = """<span class="muted tiny">Loading candidates…</span>"""
+    artResp = galleryFetch(t)
+    artStaged = null; artStagedThumb = null; artPrefer = ""; artHiRes = false; artSort = "vote"
+    // Resolved-first, never-empty fallback: resolved lang → no-language → All.
+    val cands = artResp?.candidates ?: emptyList()
+    val resolved = artResp?.resolvedLanguage
+    artLang = when {
+        resolved != null && cands.any { it.lang == resolved } -> resolved
+        cands.any { it.lang == null } -> "xx"
+        else -> ""
+    }
+    renderArtGallery()
+    wireArtGallery()
+}
+
+private fun filteredCandidates(): List<ArtworkCandidate> {
+    val all = artResp?.candidates ?: emptyList()
+    var list = when (artLang) {
+        "" -> all
+        "xx" -> all.filter { it.lang == null }
+        else -> all.filter { it.lang == artLang }
+    }
+    if (artHiRes) list = list.filter { it.width >= 1000 || it.height >= 1000 }
+    val byVote = compareByDescending<ArtworkCandidate> { it.voteAverage }.thenByDescending { it.width }
+    val byRes = compareByDescending<ArtworkCandidate> { it.width }.thenByDescending { it.voteAverage }
+    var sorted = list.sortedWith(if (artSort == "res") byRes else byVote)
+    sorted = when (artPrefer) {
+        "textless" -> sorted.sortedByDescending { it.lang == null }
+        "withtext" -> sorted.sortedByDescending { it.lang != null }
+        else -> sorted
+    }
+    return sorted
+}
+
+private fun renderArtGallery() {
+    val gallery = document.getElementById("art-gallery") as? HTMLElement ?: return
+    val t = artTargets.getOrNull(artSel) ?: return
+    val resp = artResp
+    if (resp == null) { gallery.innerHTML = """<span class="muted tiny">Failed to load candidates.</span>"""; return }
+    val all = resp.candidates
+    val resolved = resp.resolvedLanguage
+
+    // Language chips: All, No language, then per-language with counts (only langs that exist).
+    val langCounts = all.groupingBy { it.lang ?: "xx" }.eachCount()
+    val noLangCount = langCounts["xx"] ?: 0
+    fun chip(code: String, label: String, count: Int?): String {
+        val active = artLang == code
+        val c = if (count != null) " <span class=\"tiny muted\">$count</span>" else ""
+        return """<span class="art-chip${if (active) " on" else ""}" data-lang="$code">${label.esc()}$c</span>"""
+    }
+    val langChips = StringBuilder()
+    langChips.append(chip("", "All", all.size))
+    if (noLangCount > 0) langChips.append(chip("xx", "No language", noLangCount))
+    langCounts.keys.filter { it != "xx" }.sorted().forEach { langChips.append(chip(it, it.uppercase(), langCounts[it])) }
+
+    val shown = filteredCandidates()
+    val hidden = all.size - shown.size
+
+    // Explainer line — amber when a fallback is in effect (resolved language had none).
+    val fellBack = resolved != null && artLang != resolved && all.none { it.lang == resolved } && all.isNotEmpty()
+    val explainer = when {
+        all.isEmpty() -> "TMDB has no ${t.label.lowercase()} candidates for this title."
+        fellBack -> """No ${if (resolved != null) resolved.uppercase() + " " else ""}${t.label.lowercase()} on TMDB. Falling back to ${langLabel(if (artLang.isEmpty()) null else artLang)} (${shown.size}).${if (hidden > 0) " <a class=\"art-showall\">$hidden other-language candidate(s) hidden — show all →</a>" else ""}"""
+        else -> """Showing ${langLabel(if (artLang.isEmpty()) "all" else artLang).let { if (artLang.isEmpty()) "all languages" else it }} (${shown.size}).${if (hidden > 0) " <a class=\"art-showall\">$hidden hidden — show all →</a>" else ""}"""
+    }
+
+    val cards = if (shown.isEmpty()) {
+        """<div class="muted tiny" style="padding:18px 0;">No candidates for this filter.</div>"""
+    } else shown.joinToString("") { c ->
+        val onDisk = c.onDisk
+        val staged = artStaged == c.filePath
+        val cls = "art-card" + (if (onDisk) " ondisk" else "") + (if (staged) " staged" else "")
+        """<div class="$cls" data-path="${c.filePath.esc()}" style="aspect-ratio:${t.aspect};">
+              <img src="$TMDB_IMG_THUMB${c.filePath}" loading="lazy" alt="">
+              ${if (onDisk) """<span class="art-ribbon">ON DISK</span>""" else ""}
+              <div class="art-card-meta">
+                <span class="art-pill">${langLabel(c.lang)}</span>
+                <span class="art-pill">★ ${fmt1(c.voteAverage)}</span>
+                <span class="art-pill">${c.width}×${c.height}</span>
+              </div>
+           </div>"""
+    }
+
+    val footer = if (artStaged != null) {
+        """<div class="art-foot">
+              <img src="${artStagedThumb ?: (TMDB_IMG_THUMB + artStaged)}" class="art-foot-thumb" alt="">
+              <span class="tiny">Staged — not yet written to disk.</span>
+              <span class="spacer"></span>
+              <button id="art-discard" class="btn sm ghost">Discard</button>
+              <button id="art-save" class="btn sm">Save to disk</button>
+           </div>"""
+    } else ""
+
+    val canUpload = t.kind == "asset" || t.kind == "episode"
+    gallery.innerHTML = """
+      <div class="row center" style="margin-bottom:8px;">
+        <h4 style="margin:0;">${t.label.esc()} <span class="tiny muted">· ${all.size} TMDB candidate(s)</span></h4>
+        <span class="spacer"></span>
+        ${if (canUpload) """<button id="art-upload-btn" class="btn sm ghost">Upload</button>""" else ""}
+        <button id="art-url-btn" class="btn sm ghost">Paste URL</button>
+      </div>
+      <div class="art-explain ${if (fellBack) "warn" else ""}">$explainer</div>
+      <div class="art-filterbar">
+        <div class="art-chips">$langChips</div>
+        <span class="spacer"></span>
+        <span class="art-prefer">
+          <span class="art-chip${if (artPrefer == "textless") " on" else ""}" data-prefer="textless">Textless</span>
+          <span class="art-chip${if (artPrefer == "withtext") " on" else ""}" data-prefer="withtext">With text</span>
+        </span>
+        <label class="art-hires"><input type="checkbox" id="art-hires" ${if (artHiRes) "checked" else ""}> Hi-res</label>
+        <span class="seg art-sort">
+          <span class="${if (artSort == "vote") "on" else ""}" data-sort="vote">Vote ★</span>
+          <span class="${if (artSort == "res") "on" else ""}" data-sort="res">Resolution</span>
+        </span>
+      </div>
+      <div class="art-dropzone" id="art-dropzone">Drag an image here, or use Upload / Paste URL</div>
+      <div class="art-grid">$cards</div>
+      $footer
+    """.trimIndent()
+}
+
+private fun wireArtGallery() {
+    val scope = artScope ?: return
+    val t = artTargets.getOrNull(artSel) ?: return
+
+    document.querySelectorAll("#art-gallery .art-chip[data-lang]").let { els ->
+        for (i in 0 until els.length) {
+            val el = els.item(i) as? HTMLElement ?: continue
+            el.addEventListener("click") { artLang = el.getAttribute("data-lang") ?: ""; renderArtGallery(); wireArtGallery() }
+        }
+    }
+    document.querySelectorAll("#art-gallery .art-chip[data-prefer]").let { els ->
+        for (i in 0 until els.length) {
+            val el = els.item(i) as? HTMLElement ?: continue
+            el.addEventListener("click") {
+                val p = el.getAttribute("data-prefer") ?: ""
+                artPrefer = if (artPrefer == p) "" else p
+                renderArtGallery(); wireArtGallery()
+            }
+        }
+    }
+    document.querySelectorAll("#art-gallery .art-sort span").let { els ->
+        for (i in 0 until els.length) {
+            val el = els.item(i) as? HTMLElement ?: continue
+            el.addEventListener("click") { artSort = el.getAttribute("data-sort") ?: "vote"; renderArtGallery(); wireArtGallery() }
+        }
+    }
+    (document.getElementById("art-hires") as? HTMLInputElement)?.addEventListener("change") {
+        artHiRes = (document.getElementById("art-hires") as? HTMLInputElement)?.checked ?: false
+        renderArtGallery(); wireArtGallery()
+    }
+    (document.querySelector("#art-gallery .art-showall") as? HTMLElement)?.addEventListener("click") {
+        artLang = ""; renderArtGallery(); wireArtGallery()
+    }
+    document.querySelectorAll("#art-gallery .art-card").let { els ->
+        for (i in 0 until els.length) {
+            val el = els.item(i) as? HTMLElement ?: continue
+            el.addEventListener("click") {
+                val path = el.getAttribute("data-path") ?: return@addEventListener
+                artStaged = if (artStaged == path) null else path
+                artStagedThumb = null
+                renderArtGallery(); wireArtGallery()
+            }
+        }
+    }
+    document.getElementById("art-discard")?.addEventListener("click") {
+        artStaged = null; artStagedThumb = null; renderArtGallery(); wireArtGallery()
+    }
+    document.getElementById("art-save")?.addEventListener("click") {
+        val source = artStaged ?: return@addEventListener
+        val btn = document.getElementById("art-save") as? HTMLElement
+        btn?.setAttribute("disabled", "true"); btn?.textContent = "Saving…"
+        scope.launch {
+            val ok = gallerySave(t, source)
+            showDetailMsg(if (ok) "${t.label} saved to disk." else "Save failed.", ok)
+            if (ok) { t.onDisk = true; renderArtRail(); wireArtRail(); selectArtTarget(artSel) }
+            else { btn?.removeAttribute("disabled"); btn?.textContent = "Save to disk" }
+        }
+    }
+    document.getElementById("art-url-btn")?.addEventListener("click") {
+        val url = kotlinx.browser.window.prompt("Image URL (https://…)")?.trim()
+        if (!url.isNullOrBlank()) { artStaged = url; artStagedThumb = url; renderArtGallery(); wireArtGallery() }
+    }
+    // Upload (asset / episode kinds): drive the hidden multipart form for asset, FormData for episode.
+    val uploadUrl = if (t.kind == "episode")
+        "/api/media/$artId/episodes/${encodeURIComponent(t.epFilename)}/still/upload"
+    else "/api/media/$artId/artwork/upload"
+    document.getElementById("art-upload-btn")?.addEventListener("click") {
+        (document.getElementById("art-upload-file") as? HTMLInputElement)?.let { input ->
+            (document.getElementById("art-upload-type") as? HTMLInputElement)?.value = t.asset
+            input.click()
+        }
+    }
+    (document.getElementById("art-upload-file") as? HTMLInputElement)?.addEventListener("change") {
+        val input = document.getElementById("art-upload-file") as? HTMLInputElement ?: return@addEventListener
+        val file = input.files?.item(0) ?: return@addEventListener
+        jsUpload(uploadUrl, t.asset, file)
+        scope.launch { delay(2200); showDetailMsg("Upload submitted.", true); t.onDisk = true; renderArtRail(); wireArtRail(); selectArtTarget(artSel) }
+    }
+    val dz = document.getElementById("art-dropzone") as? HTMLElement
+    dz?.addEventListener("click") { (document.getElementById("art-upload-btn") as? HTMLElement)?.click() }
+    dz?.addEventListener("dragover") { e -> e.preventDefault(); dz.classList.add("over") }
+    dz?.addEventListener("dragleave") { dz.classList.remove("over") }
+    dz?.addEventListener("drop") { e ->
+        e.preventDefault(); dz.classList.remove("over")
+        val file = (e as? org.w3c.dom.DragEvent)?.dataTransfer?.files?.item(0) ?: return@addEventListener
+        jsUpload(uploadUrl, t.asset, file)
+        scope.launch { delay(2200); showDetailMsg("Upload submitted.", true); t.onDisk = true; renderArtRail(); wireArtRail(); selectArtTarget(artSel) }
+    }
+}
+
+private fun injectArtworkStyles() {
+    if (document.getElementById("art-mgr-styles") != null) return
+    val style = document.createElement("style") as? org.w3c.dom.HTMLStyleElement ?: return
+    style.id = "art-mgr-styles"
+    style.textContent = """
+        .art-mgr { display:grid; grid-template-columns: 240px 1fr; gap:14px; align-items:start; }
+        @media (max-width:760px){ .art-mgr{ grid-template-columns:1fr; } }
+        .art-rail-head { font-size:.85rem; margin-bottom:8px; opacity:.8; }
+        .art-rail-row { display:flex; gap:9px; align-items:center; padding:8px; border-radius:9px; cursor:pointer; }
+        .art-rail-row:hover { background:color-mix(in srgb, var(--hi,#7c5cff) 9%, transparent); }
+        .art-rail-row.sel { background:color-mix(in srgb, var(--hi,#7c5cff) 16%, transparent); }
+        .art-rail-label { font-weight:600; font-size:.9rem; }
+        .art-rail-row .dot { width:9px; height:9px; border-radius:50%; flex:none; }
+        .art-rail-row .dot.ok { background:var(--ok,#22c55e); } .art-rail-row .dot.bad { background:var(--bad,#ef4444); }
+        .art-explain { font-size:.8rem; opacity:.85; margin-bottom:10px; }
+        .art-explain.warn { color:var(--warn,#f59e0b); opacity:1; }
+        .art-explain .art-showall { cursor:pointer; text-decoration:underline; }
+        .art-filterbar { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:10px; }
+        .art-chips { display:flex; flex-wrap:wrap; gap:6px; }
+        .art-chip { padding:3px 9px; border-radius:20px; border:1px solid var(--line,#333); cursor:pointer; font-size:.78rem; }
+        .art-chip.on { background:var(--hi,#7c5cff); border-color:transparent; color:#fff; }
+        .art-hires { font-size:.78rem; display:flex; gap:4px; align-items:center; }
+        .art-sort { font-size:.76rem; }
+        .art-dropzone { border:1.5px dashed var(--line,#444); border-radius:11px; padding:12px; text-align:center; font-size:.78rem; opacity:.7; margin-bottom:12px; cursor:pointer; }
+        .art-dropzone.over { border-color:var(--hi,#7c5cff); opacity:1; }
+        .art-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(120px,1fr)); gap:11px; }
+        .art-card { position:relative; border-radius:10px; overflow:hidden; cursor:pointer; border:2px solid transparent; background:#0006; }
+        .art-card img { width:100%; height:100%; object-fit:cover; display:block; }
+        .art-card.ondisk { border-color:var(--ok,#22c55e); }
+        .art-card.staged { border-color:var(--hi,#7c5cff); box-shadow:0 0 0 3px color-mix(in srgb,var(--hi,#7c5cff) 35%, transparent); }
+        .art-ribbon { position:absolute; top:6px; left:6px; background:var(--ok,#22c55e); color:#04210f; font-size:.62rem; font-weight:700; padding:1px 6px; border-radius:5px; }
+        .art-card-meta { position:absolute; bottom:0; left:0; right:0; display:flex; gap:4px; flex-wrap:wrap; padding:5px; background:linear-gradient(transparent, #000b); }
+        .art-pill { font-size:.6rem; background:#000a; padding:1px 5px; border-radius:5px; }
+        .art-foot { display:flex; gap:10px; align-items:center; margin-top:14px; padding-top:12px; border-top:1px solid var(--line,#333); }
+        .art-foot-thumb { height:46px; border-radius:6px; }
+    """.trimIndent()
+    document.head?.appendChild(style)
 }
 
 // ── NFO raw viewer (Phase 44) ───────────────────────────────────────────────────
@@ -1896,22 +2195,6 @@ private fun showNfoPermBanner(message: String, path: String) {
           ${buildNfoPermFixHtml(path)}
         </div>
     """.trimIndent()
-}
-
-private suspend fun handleFetchArtwork(id: String) {
-    val btn = document.getElementById("fetch-artwork-btn") as? HTMLElement
-    btn?.setAttribute("disabled", "true")
-    btn?.textContent = "Downloading…"
-
-    val status = MediaApi.fetchArtwork(id)
-    if (status != null) renderArtworkStatus(status)
-    showDetailMsg(
-        if (status != null) "Artwork download complete." else "Artwork download failed.",
-        status != null,
-    )
-
-    btn?.removeAttribute("disabled")
-    btn?.textContent = "Download from TMDB"
 }
 
 private fun showDetailMsg(msg: String, ok: Boolean) {
