@@ -51,6 +51,7 @@ import dev.jellystructure.shared.tv.Channel
 import dev.jellystructure.shared.tv.MediaCard
 import dev.jellystructure.shared.tv.MediaKind
 import dev.jellystructure.shared.tv.TvApiClient
+import dev.jellystructure.shared.tv.tileScale
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -64,6 +65,9 @@ import kotlinx.coroutines.launch
  * (re)connect); the visible layout screen (Home/Channel/Settings) collects it for a silent refresh.
  */
 val LocalLiveConfig = staticCompositionLocalOf<SharedFlow<Long>?> { null }
+
+/** Tile-size multiplier from the active user's `RaviloConfig.uiDensity`; read by [dev.jellystructure.ravilo.ui.components.Tile]. */
+val LocalTileScale = staticCompositionLocalOf { 1f }
 
 // ─── Navigation destinations ──────────────────────────────────────────────────
 
@@ -95,6 +99,7 @@ private sealed class Dest {
 @Composable
 fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeServer: () -> Unit = {}) {
     var lang by remember { mutableStateOf("en") }
+    var tileScale by remember { mutableStateOf(1f) }
     val themeState = rememberRaviloTheme()
 
     // Fetch the active user's config and apply server-owned interface prefs (language + skin)
@@ -105,6 +110,7 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
             runCatching { apiClient.getConfig() }.getOrNull()?.let { cfg ->
                 lang = cfg.uiLanguage
                 themeState.skin = cfg.effectiveSkin()
+                tileScale = cfg.uiDensity.tileScale()
             }
         }
     }
@@ -158,7 +164,7 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
 
         val dest = stack.last()
 
-        CompositionLocalProvider(LocalLiveConfig provides liveConfig) {
+        CompositionLocalProvider(LocalLiveConfig provides liveConfig, LocalTileScale provides tileScale) {
         Box(
             modifier = Modifier
                 .fillMaxSize()
