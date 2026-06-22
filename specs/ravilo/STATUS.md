@@ -14,7 +14,13 @@ _Last updated: 2026-06-22_
 
 ## Current focus
 
-**Phases R01–R33 complete.** [R32 — Unified filter workbench + hero builder + Library
+**Phases R01–R34 complete.** [R34 — TV detail layout + content size](requirements/phase-R34-detail-layout-content-size.md)
+reworked Movie/Series detail to a **full-bleed viewport hero** (title/meta/synopsis/Play overlaid in the
+lower third) so the page opens at the top instead of auto-scrolling and stranding the screen, with TV-tuned
+detail sizing; and added a per-user **`uiDensity`** (Compact/Cozy/Comfortable) that scales the grid tiles
+on Home/Channel/Browse, edited in the config Behaviour section and applied **live** via R33.
+
+[R32 — Unified filter workbench + hero builder + Library
 round-trip](requirements/phase-R32-unified-filter-workbench.md) shipped: a shared condition-stack
 builder (`ui/Workbench.kt`) powers Content rows, Channels **and** the jellystructure Library page;
 **audio-track and hero_item are universal facets** (the feed evaluator `ConditionEvaluator` + a
