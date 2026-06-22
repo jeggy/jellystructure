@@ -48,6 +48,7 @@ truth** for which Ravilo phases exist and whether each is done or planned. Ravil
 | R31 | ✓ Done | **`:ravilo-player` FFmpeg decoder** — jellyfin's `media3-ffmpeg-decoder` in an Android-only, GPL-contained module + renderers factory for DTS/TrueHD/AC3 (Media3 1.8.0); source-vendor fork skipped as redundant; on-device codec test pending | [R31](phase-R31-player-engine-fork.md) |
 | R32 | ✓ Done | **Unified filter workbench + hero builder + Library round-trip** — one shared condition-stack builder for Content rows, Channels & the Library; audio-track + hero-item as universal facets; Save-filter-as-Channel/Row + "Feature in Ravilo" on Movie/Series detail | [R32](phase-R32-unified-filter-workbench.md) |
 | R33 | ✓ Done | **Live config push** — per-user WebSocket (`/api/tv/events`); a config write (`RaviloConfigService.save`) pushes `config_changed` to that user's connected TVs, which silently re-pull the feed/config so channel/hero-height/tile-shape/row/skin edits appear in ~1s with no reload | [R33](phase-R33-live-config-push.md) |
+| R34 | ✓ Done | **TV detail layout + content size** — full-bleed viewport hero on Movie/Series detail (opens at top, no entry-scroll that strands the screen) + TV-tuned detail sizing; per-user `uiDensity` (Compact/Cozy/Comfortable) scales the grid tiles, edited in the config screen, applied live via R33 | [R34](phase-R34-detail-layout-content-size.md) |
 
 ## Suggested sequencing
 - **Foundation:** R01 → R02 → R03 → R04 (module + scaffold + auth + config store).
