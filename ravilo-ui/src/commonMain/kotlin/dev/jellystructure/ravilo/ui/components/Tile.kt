@@ -25,11 +25,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -88,20 +88,14 @@ fun Tile(
         TileVariant.SQUARE -> SQUARE_W to SQUARE_H
     }.let { (bw, bh) -> bw * tileScale to bh * tileScale }
 
-    Column(modifier = Modifier.width(w).scale(scale)) {
+    Column(modifier = Modifier.width(w)) {
+        // Focusable at a FIXED layout size; the focus scale is a draw-only graphicsLayer on the inner
+        // box, so the lazy list's focused-bounds tracking never chases the scale animation → no viewport
+        // jump while focusing (R42).
         Box(
             modifier = Modifier
                 .width(w)
                 .height(h)
-                .shadow(
-                    elevation = shadowElevation,
-                    shape = tileShape,
-                    clip = false,
-                    ambientColor = colors.focusGlow,
-                    spotColor = colors.focusGlow,
-                )
-                .clip(tileShape)
-                .border(borderWidth, colors.focusRing, tileShape)
                 .dpadFocusable(
                     focusRequester = focusRequester,
                     onFocused = { focused = true; onFocused() },
@@ -109,6 +103,20 @@ fun Tile(
                     onSelect = onSelect,
                 ),
         ) {
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .graphicsLayer { scaleX = scale; scaleY = scale }
+                    .shadow(
+                        elevation = shadowElevation,
+                        shape = tileShape,
+                        clip = false,
+                        ambientColor = colors.focusGlow,
+                        spotColor = colors.focusGlow,
+                    )
+                    .clip(tileShape)
+                    .border(borderWidth, colors.focusRing, tileShape),
+            ) {
             if (posterUrl != null) {
                 RemoteImage(
                     url = posterUrl,
@@ -193,6 +201,7 @@ fun Tile(
                         letterSpacing = 0.5.sp,
                     )
                 }
+            }
             }
         }
 
