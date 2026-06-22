@@ -85,6 +85,7 @@ class HomeFeedService(
                 backdropUrl = "$jellyfinBase/Items/$jellyfinId/Images/Backdrop/0?api_key=$token",
                 logoUrl = null,
                 badge = null,
+                synopsis = item.overview,
             )
         }
     }
