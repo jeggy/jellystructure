@@ -136,6 +136,7 @@ watch_enabled = false
 tell_jellyfin = true   # call Jellyfin refresh after writes
 scan_workers = 1       # concurrent items processed (live scale-up/down) — Phase 16
 scan_threads = 4       # ffprobe/ffmpeg subprocess pool size (restart required) — Phase 16
+scan_episode_cap = 0   # 0 = unlimited; cap episodes ffprobe'd per series on a full scan — Phase 49
 
 [[libraries]]
 jellyfin_id = "abc123"

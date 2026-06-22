@@ -644,6 +644,10 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
                 showSeasonSyncModal(item, season, container, scope)
             }
         }
+        // Phase 49: on-demand uncapped re-probe of every episode file on disk.
+        document.getElementById("rescan-episodes-btn")?.addEventListener("click") {
+            showSyncModal(item, container, scope)
+        }
     }
 
     // Tab switching — updates URL so tabs are deep-linkable and Back/Forward work
@@ -953,7 +957,7 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
 
 private fun buildEpisodesTab(item: MediaItem): String {
     if (item.episodes.isEmpty()) {
-        return """<div class="card"><span class="muted tiny">No episode data available — run a scan to populate.</span></div>"""
+        return """<div class="card"><span class="muted tiny">No episode data available — run a scan to populate.</span> <button id="rescan-episodes-btn" class="btn sm ghost" style="margin-left:8px;">Re-scan all episodes ↻</button></div>"""
     }
 
     // Compute language voting across all episodes
@@ -1045,6 +1049,11 @@ private fun buildEpisodesTab(item: MediaItem): String {
 
     return """
         <div>
+          <div class="row center" style="margin-bottom:12px;">
+            <span class="tiny muted">${item.episodes.size} episode(s) stored</span>
+            <span class="spacer"></span>
+            <button id="rescan-episodes-btn" class="btn sm ghost" title="Re-probe every episode file on disk (uncapped)">Re-scan all episodes ↻</button>
+          </div>
           $seasonSummary
           <div class="row" style="align-items:flex-start;gap:16px;flex-wrap:wrap;">
             $votingCard

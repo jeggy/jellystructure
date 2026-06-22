@@ -204,10 +204,12 @@ class Scanner(
             return null
         }
 
-        // Probe all episodes (cap at 100 for very large series)
-        val filesToProbe = if (episodeFiles.size > 100) {
-            Logger.info("Series has ${episodeFiles.size} episodes — probing a spread of 100")
-            selectSamples(episodeFiles, 100)
+        // Probe every episode by default; only sample when an operator sets a positive
+        // scan_episode_cap (Phase 49). A targeted per-item sync always probes all.
+        val cap = configStore.current.behavior.scanEpisodeCap
+        val filesToProbe = if (cap in 1 until episodeFiles.size) {
+            Logger.info("Series has ${episodeFiles.size} episodes — scan_episode_cap=$cap, probing a spread of $cap")
+            selectSamples(episodeFiles, cap)
         } else {
             episodeFiles
         }
