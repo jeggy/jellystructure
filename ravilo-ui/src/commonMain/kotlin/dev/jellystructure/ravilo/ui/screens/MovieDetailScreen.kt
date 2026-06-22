@@ -23,6 +23,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRestorer
 import androidx.compose.ui.graphics.Brush
@@ -84,16 +86,18 @@ private fun MovieDetailLoaded(
         )
     }
     val scrollState = rememberScrollState()
+    val density = LocalDensity.current
+    val containerH = LocalWindowInfo.current.containerSize.height
+    // Full-bleed hero fills the first screenful so the first focusable (Play) is already on-screen —
+    // the page opens at the top with no auto-scroll; Down from the actions scrolls into cast/related.
+    val heroHeight = if (containerH > 0) with(density) { containerH.toDp() } else 540.dp
 
-    // Entry focus only; all movement (buttons ↔ cast ↔ related) is native spatial traversal
-    // within the non-lazy verticalScroll column.
     val playFR = remember { FocusRequester() }
-
     LaunchedEffect(Unit) { runCatching { playFR.requestFocus() } }
 
     Column(modifier = Modifier.fillMaxSize().verticalScroll(scrollState)) {
-        // Hero band
-        Box(modifier = Modifier.fillMaxWidth().height(460.dp)) {
+        // Full-bleed hero: title · meta · synopsis · actions overlaid in the lower third.
+        Box(modifier = Modifier.fillMaxWidth().height(heroHeight)) {
             val backdropUrl = detail.card.backdropUrl ?: detail.card.posterUrl
             if (backdropUrl != null) {
                 RemoteImage(
@@ -109,20 +113,20 @@ private fun MovieDetailLoaded(
             Column(
                 modifier = Modifier
                     .align(Alignment.BottomStart)
-                    .padding(start = RaviloDimens.heroBodyStart, bottom = RaviloDimens.detailBodyBot, end = 40.dp),
+                    .fillMaxWidth(0.6f)
+                    .padding(start = RaviloDimens.heroBodyStart, bottom = 44.dp, end = 24.dp),
             ) {
                 Text(
                     text = detail.card.title,
                     color = colors.text,
-                    fontSize = 46.sp,
-                    lineHeight = 54.sp,
+                    fontSize = 34.sp,
+                    lineHeight = 40.sp,
                     fontWeight = FontWeight.Bold,
                     fontFamily = spaceGrotesk,
-                    letterSpacing = (-1).sp,
+                    letterSpacing = (-0.5).sp,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )
-                Spacer(Modifier.height(12.dp))
                 val meta = remember(detail.card.year, detail.runtime, detail.card.genre, detail.card.rating) {
                     listOfNotNull(
                         detail.card.year?.toString(),
@@ -132,48 +136,44 @@ private fun MovieDetailLoaded(
                     ).joinToString(" · ")
                 }
                 if (meta.isNotEmpty()) {
-                    Text(meta, color = colors.textSecondary, fontSize = 18.sp)
+                    Spacer(Modifier.height(8.dp))
+                    Text(meta, color = colors.textSecondary, fontSize = 15.sp)
                 }
-            }
-        }
-
-        Column(modifier = Modifier.padding(horizontal = RaviloDimens.screenPadH)) {
-            // Synopsis
-            detail.synopsis?.let {
-                Spacer(Modifier.height(20.dp))
-                Text(
-                    text = it,
-                    color = colors.textSecondary,
-                    fontSize = 16.sp,
-                    lineHeight = 24.sp,
-                    maxLines = 4,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-            Spacer(Modifier.height(28.dp))
-            // Action buttons
-            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                val isResume = detail.playback.positionMs > 0 && !detail.playback.watched
-                val minsLeft = if (detail.playback.durationMs > 0)
-                    ((detail.playback.durationMs - detail.playback.positionMs) / 60_000L).toInt() else 0
-                val playLabel = if (isResume) "${str("action.resume")} · ${minsLeft} min left" else str("action.play")
-                RaviloButton(
-                    label = playLabel,
-                    focusRequester = playFR,
-                    style = ButtonStyle.PRIMARY,
-                    onSelect = { onPlay(detail.card) },
-                )
-                RaviloButton(
-                    label = "+ ${str("nav.my_list")}",
-                    style = ButtonStyle.GHOST,
-                )
+                detail.synopsis?.let {
+                    Spacer(Modifier.height(10.dp))
+                    Text(
+                        text = it,
+                        color = colors.textSecondary,
+                        fontSize = 14.sp,
+                        lineHeight = 20.sp,
+                        maxLines = 3,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                Spacer(Modifier.height(18.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    val isResume = detail.playback.positionMs > 0 && !detail.playback.watched
+                    val minsLeft = if (detail.playback.durationMs > 0)
+                        ((detail.playback.durationMs - detail.playback.positionMs) / 60_000L).toInt() else 0
+                    val playLabel = if (isResume) "${str("action.resume")} · ${minsLeft} min left" else str("action.play")
+                    RaviloButton(
+                        label = playLabel,
+                        focusRequester = playFR,
+                        style = ButtonStyle.PRIMARY,
+                        onSelect = { onPlay(detail.card) },
+                    )
+                    RaviloButton(
+                        label = "+ ${str("nav.my_list")}",
+                        style = ButtonStyle.GHOST,
+                    )
+                }
             }
         }
 
         // Cast row
         if (detail.cast.isNotEmpty()) {
             Spacer(Modifier.height(RaviloDimens.rowGap))
-            Text(str("detail.cast"), color = colors.text, fontSize = 22.sp, fontWeight = FontWeight.SemiBold,
+            Text(str("detail.cast"), color = colors.text, fontSize = 18.sp, fontWeight = FontWeight.SemiBold,
                 fontFamily = spaceGrotesk, letterSpacing = (-0.3).sp,
                 modifier = Modifier.padding(horizontal = RaviloDimens.sectionPadH))
             Spacer(Modifier.height(RaviloDimens.rowHeadPadB))
@@ -191,7 +191,7 @@ private fun MovieDetailLoaded(
         // More Like This
         if (detail.related.isNotEmpty()) {
             Spacer(Modifier.height(RaviloDimens.rowGap))
-            Text(str("section.related"), color = colors.text, fontSize = 22.sp, fontWeight = FontWeight.SemiBold,
+            Text(str("section.related"), color = colors.text, fontSize = 18.sp, fontWeight = FontWeight.SemiBold,
                 fontFamily = spaceGrotesk, letterSpacing = (-0.3).sp,
                 modifier = Modifier.padding(horizontal = RaviloDimens.sectionPadH))
             Spacer(Modifier.height(RaviloDimens.rowHeadPadB))

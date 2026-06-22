@@ -24,6 +24,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRestorer
 import androidx.compose.ui.graphics.Brush
@@ -122,6 +124,10 @@ private fun SeriesDetailLoaded(
         )
     }
     val scrollState = rememberScrollState()
+    val density = LocalDensity.current
+    val containerH = LocalWindowInfo.current.containerSize.height
+    // Full-bleed hero fills the first screenful so the first focusable (Play) is on-screen — no jump.
+    val heroHeight = if (containerH > 0) with(density) { containerH.toDp() } else 540.dp
 
     // Default to the season that holds the resume episode, so Resume plays with the
     // correct title/episode-rail context (not always season 0).
@@ -146,8 +152,8 @@ private fun SeriesDetailLoaded(
     LaunchedEffect(Unit) { runCatching { playFR.requestFocus() } }
 
     Column(modifier = Modifier.fillMaxSize().verticalScroll(scrollState)) {
-        // Hero band
-        Box(modifier = Modifier.fillMaxWidth().height(460.dp)) {
+        // Full-bleed hero: title · meta · progress · synopsis · resume · actions overlaid in the lower third.
+        Box(modifier = Modifier.fillMaxWidth().height(heroHeight)) {
             val backdropUrl = detail.card.backdropUrl ?: detail.card.posterUrl
             if (backdropUrl != null) {
                 RemoteImage(
@@ -163,71 +169,70 @@ private fun SeriesDetailLoaded(
             Column(
                 modifier = Modifier
                     .align(Alignment.BottomStart)
-                    .padding(start = RaviloDimens.heroBodyStart, bottom = RaviloDimens.detailBodyBot, end = 40.dp),
+                    .fillMaxWidth(0.6f)
+                    .padding(start = RaviloDimens.heroBodyStart, bottom = 44.dp, end = 24.dp),
             ) {
                 Text(
                     text = detail.card.title,
                     color = colors.text,
-                    fontSize = 46.sp,
-                    lineHeight = 54.sp,
+                    fontSize = 34.sp,
+                    lineHeight = 40.sp,
                     fontWeight = FontWeight.Bold,
                     fontFamily = spaceGrotesk,
-                    letterSpacing = (-1).sp,
+                    letterSpacing = (-0.5).sp,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )
-                Spacer(Modifier.height(12.dp))
                 val meta = remember(detail.card.year, detail.card.genre) {
                     listOfNotNull(detail.card.year?.toString(), detail.card.genre).joinToString(" · ")
                 }
-                if (meta.isNotEmpty()) Text(meta, color = colors.textSecondary, fontSize = 18.sp)
-                Spacer(Modifier.height(6.dp))
+                if (meta.isNotEmpty()) {
+                    Spacer(Modifier.height(8.dp))
+                    Text(meta, color = colors.textSecondary, fontSize = 15.sp)
+                }
                 val p = detail.progress
                 if (p.totalCount > 0) {
+                    Spacer(Modifier.height(4.dp))
                     Text(
                         "${p.watchedCount} of ${p.totalCount} episodes watched",
-                        color = colors.textDim, fontSize = 16.sp,
+                        color = colors.textDim, fontSize = 13.sp,
                     )
                 }
-            }
-        }
-
-        Column(modifier = Modifier.padding(horizontal = RaviloDimens.screenPadH)) {
-            detail.synopsis?.let {
-                Spacer(Modifier.height(20.dp))
-                Text(
-                    text = it,
-                    color = colors.textSecondary,
-                    fontSize = 16.sp,
-                    lineHeight = 24.sp,
-                    maxLines = 4,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-            Spacer(Modifier.height(8.dp))
-            detail.progress.resumeLabel?.let {
-                Text(it, color = colors.accent, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
-            }
-            Spacer(Modifier.height(24.dp))
-            // Action buttons
-            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                val resumeEpId = detail.progress.resumeEpisodeId
-                val playLabel = if (resumeEpId != null && detail.progress.watchedCount < detail.progress.totalCount)
-                    "${str("action.resume")} · ${detail.progress.resumeLabel ?: "E${resumeEpIdx + 1}"}"
-                else "${str("action.play")} · E1"
-                RaviloButton(
-                    label = playLabel,
-                    focusRequester = playFR,
-                    style = ButtonStyle.PRIMARY,
-                    onSelect = {
-                        val epId = resumeEpId ?: episodes.firstOrNull()?.id
-                        if (epId != null) onPlay(buildEpisodeContext(detail, selectedSeasonIdx, episodes, epId))
-                    },
-                )
-                RaviloButton(
-                    label = "+ ${str("nav.my_list")}",
-                    style = ButtonStyle.GHOST,
-                )
+                detail.synopsis?.let {
+                    Spacer(Modifier.height(10.dp))
+                    Text(
+                        text = it,
+                        color = colors.textSecondary,
+                        fontSize = 14.sp,
+                        lineHeight = 20.sp,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                detail.progress.resumeLabel?.let {
+                    Spacer(Modifier.height(8.dp))
+                    Text(it, color = colors.accent, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                }
+                Spacer(Modifier.height(18.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    val resumeEpId = detail.progress.resumeEpisodeId
+                    val playLabel = if (resumeEpId != null && detail.progress.watchedCount < detail.progress.totalCount)
+                        "${str("action.resume")} · ${detail.progress.resumeLabel ?: "E${resumeEpIdx + 1}"}"
+                    else "${str("action.play")} · E1"
+                    RaviloButton(
+                        label = playLabel,
+                        focusRequester = playFR,
+                        style = ButtonStyle.PRIMARY,
+                        onSelect = {
+                            val epId = resumeEpId ?: episodes.firstOrNull()?.id
+                            if (epId != null) onPlay(buildEpisodeContext(detail, selectedSeasonIdx, episodes, epId))
+                        },
+                    )
+                    RaviloButton(
+                        label = "+ ${str("nav.my_list")}",
+                        style = ButtonStyle.GHOST,
+                    )
+                }
             }
         }
 
@@ -247,7 +252,7 @@ private fun SeriesDetailLoaded(
         if (episodes.isNotEmpty()) {
             Text(
                 str("detail.episodes"),
-                color = colors.text, fontSize = 29.sp, fontWeight = FontWeight.SemiBold,
+                color = colors.text, fontSize = 18.sp, fontWeight = FontWeight.SemiBold,
                 fontFamily = spaceGrotesk, letterSpacing = (-0.5).sp,
                 modifier = Modifier.padding(horizontal = RaviloDimens.sectionPadH),
             )
@@ -271,7 +276,7 @@ private fun SeriesDetailLoaded(
         // Cast row
         if (detail.cast.isNotEmpty()) {
             Spacer(Modifier.height(RaviloDimens.rowGap))
-            Text(str("detail.cast"), color = colors.text, fontSize = 29.sp, fontWeight = FontWeight.SemiBold,
+            Text(str("detail.cast"), color = colors.text, fontSize = 18.sp, fontWeight = FontWeight.SemiBold,
                 fontFamily = spaceGrotesk, letterSpacing = (-0.5).sp,
                 modifier = Modifier.padding(horizontal = RaviloDimens.sectionPadH))
             Spacer(Modifier.height(RaviloDimens.rowHeadPadB))
@@ -289,7 +294,7 @@ private fun SeriesDetailLoaded(
         // More Like This
         if (detail.related.isNotEmpty()) {
             Spacer(Modifier.height(RaviloDimens.rowGap))
-            Text(str("section.related"), color = colors.text, fontSize = 29.sp, fontWeight = FontWeight.SemiBold,
+            Text(str("section.related"), color = colors.text, fontSize = 18.sp, fontWeight = FontWeight.SemiBold,
                 fontFamily = spaceGrotesk, letterSpacing = (-0.5).sp,
                 modifier = Modifier.padding(horizontal = RaviloDimens.sectionPadH))
             Spacer(Modifier.height(RaviloDimens.rowHeadPadB))
