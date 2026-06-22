@@ -6,6 +6,7 @@
 <title>Jellystructure — Ravilo TV</title>
 <link rel="stylesheet" href="wf.css">
 <link rel="stylesheet" href="app.css">
+<link rel="stylesheet" href="ravilo-builders.css">
 <style>
   .ravilo-mark { width: 32px; height: 32px; display: inline-block; vertical-align: middle; filter: drop-shadow(0 0 10px rgba(123,110,240,.5)); }
   /* draggable config list rows */
@@ -68,10 +69,10 @@
         <div class="row center" style="gap:18px;flex-wrap:wrap;">
           <div class="field" style="margin:0;flex:1;min-width:240px;">
             <label>Hero height <span class="mono" id="hero-h-val">56%</span> of screen</label>
-            <input type="range" min="30" max="70" value="56" id="hero-h" style="width:100%;accent-color:var(--hi);">
-            <span class="hint">How much of the TV screen the banner fills (30–70%).</span>
+            <input type="range" min="30" max="100" value="56" id="hero-h" style="width:100%;accent-color:var(--hi);">
+            <span class="hint">How much of the TV screen the banner fills (30–100%).</span>
           </div>
-          <div class="field" style="margin:0;width:200px;"><label>Auto-advance</label><span class="select"><span>Every 6 seconds</span></span></div>
+          <div class="field" style="margin:0;width:200px;"><label>Auto-advance</label><span class="select"><span>Every 7 seconds</span></span></div>
         </div>
       </div>
 
@@ -129,7 +130,7 @@
         <hr class="dash" style="margin:10px 0;">
         <div class="row center" style="padding:6px 0;"><div><b>Show progress bars on Continue Watching</b></div><span class="spacer"></span><span class="toggle on"></span></div>
         <hr class="dash" style="margin:6px 0;">
-        <div class="row center" style="padding:6px 0;"><div><b>Tile shape</b><div class="tiny muted">Posters portrait, continue-watching landscape.</div></div><span class="spacer"></span><span class="seg-pill"><button class="on">Recommended</button><button>All portrait</button><button>All landscape</button></span></div>
+        <div class="row center" style="padding:6px 0;"><div><b>Tile shape</b><div class="tiny muted">How rows render on the TV. Continue Watching stays landscape.</div></div><span class="spacer"></span><span class="seg-pill"><button class="on">Standard poster</button><button>Wide landscape</button><button>Square</button></span></div>
       </div>
     </div>
 
@@ -146,7 +147,10 @@
   </div>
 </main>
 
+<div id="cf-modal-root"></div>
+
 <script src="app-shell.js"></script>
+<script src="ravilo-builders.js"></script>
 <script>
 (function () {
   const nav = document.querySelectorAll('#set-nav .navitem[data-goto]');

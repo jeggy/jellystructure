@@ -16,8 +16,15 @@ tools (ref `main`):
 - `specs/STATUS.md` — where work currently stands; read first each session.
 - `CLAUDE.md` (repo root) — quick orientation + key invariants.
 
-The repo is at **phase 29 complete**. The old top-level `CONSTITUTION.md` and the
-`wireframes/Requirements & Phases.html` doc are **superseded** by `specs/`.
+**Ravilo (the TV companion app) has its OWN spec tree** at `specs/ravilo/` — read it
+for anything in `ravilo/` or the `ravilo-config.html` editor:
+- `specs/ravilo/constitution.md` · `specs/ravilo/plan.md` · `specs/ravilo/STATUS.md`
+- `specs/ravilo/requirements/` (phases R01–R31 done; R32 unified filter workbench planned).
+
+The admin app is at **phase 46 complete** (Phase 47 artwork manager planned); Ravilo at **R31
+complete** (R32 planned). The old
+top-level `CONSTITUTION.md` and `wireframes/Requirements & Phases.html` are
+**superseded** by `specs/`.
 
 ## Design constraints to respect
 - `design/app/` mockups are **the visual target for the Kotlin/WASM frontend**.
@@ -79,6 +86,27 @@ The repo is at **phase 29 complete**. The old top-level `CONSTITUTION.md` and th
   distribution bars, NFO-language picker. Episodes resolve their own language; the
   series uses the **majority**; mixed series surface a distribution + override and are
   **never** blocked from writes.
+
+## Ravilo companion app + shared filter builder (this project)
+- `ravilo-config.html` is the **Jellystructure-side editor** for a viewer's TV layout
+  (spec: Ravilo **R16**) — Hero carousel, Channels, Content rows, Behaviour, per-user
+  banner, live `Ravilo TV.html` preview iframe.
+- **One shared workbench builder** powers filters everywhere: `app/ravilo-builders.js`
+  (+ `ravilo-builders.css`). It exposes `window.RaviloBuilders` ({ openFilter, openHero,
+  evaluate, grad, TITLES, FACETS }) and is loaded by **both** `ravilo-config.html` and
+  `library.html`. AND/ANY condition stack, live match counts, result preview.
+- **Filter facets = the Phase-30 set only: Studio · Network · Genre · Tag** (R16
+  invariant: *reuse Phase-30 facets, no parallel taxonomy*). Do NOT add Year/Rating or
+  other axes the `/api/media` filter can't serve.
+- **Library ↔ Ravilo round-trip:** Library's `⚙ Add filter` opens the same builder;
+  `Save filter as… → Channel / Content row` (viewer-targeted) and a per-poster
+  `★ Save as hero item` push into the per-user layout.
+- Layout params follow R27/R28: **hero height 30–100%**, **auto-advance default 7s**,
+  tile shapes **Standard poster / Wide landscape / Square**.
+- **Artwork manager** lives on the Movie detail **Artwork tab** (`media.html`) — asset
+  rail + inline TMDB gallery; language defaults to the title's resolved language then
+  falls back, and TMDB **no-language (`xx`) is its own bucket, distinct from "All"**.
+  (Aligns with Phase 31 logo cache / Phase 32 TMDB match picker.)
 
 ## Config shape
 `[[libraries]]` are auto-discovered from the Jellyfin API (no static `[paths]`).

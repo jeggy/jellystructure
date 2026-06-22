@@ -1,6 +1,6 @@
 # Phase R10 — Home screen (FR-RV10)
 
-**Status:** ✓ Done · _the front door, rendering the server-composed feed._
+**Status:** Planned · _the front door, rendering the server-composed feed._
 
 ## Problem
 Build the Ravilo **Home** — hero carousel, channel/collections rail, and the stack of content rows —

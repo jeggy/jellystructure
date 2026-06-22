@@ -1,6 +1,6 @@
 # Phase R15 — On-device settings + first-run pairing UX (FR-RV15)
 
-**Status:** ✓ Done · _how a device gets signed in, and the few things a viewer can tweak on-device._
+**Status:** Planned · _how a device gets signed in, and the few things a viewer can tweak on-device._
 
 ## Problem
 A fresh Ravilo device needs a friendly, keyboard-free **pairing** experience, and the viewer needs a

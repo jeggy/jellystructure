@@ -6,6 +6,7 @@
 <title>Jellystructure — Sintel (2010)</title>
 <link rel="stylesheet" href="wf.css">
 <link rel="stylesheet" href="app.css">
+<link rel="stylesheet" href="ravilo-builders.css">
 <style>
   /* dirty-field indicator (Phase 9) */
   .field.dirty .input, .field.dirty textarea.input { border-color: var(--warn); border-left-width: 3px; background: var(--warn-soft); }
@@ -98,6 +99,71 @@
   .mini-toggle.on { background: var(--grad); border-color: transparent; }
   .mini-toggle.on::after { left: auto; right: 2px; background: #fff; }
   .revert-btn { font-size: .72rem; }
+
+  /* ===== Artwork manager (Phase 40 — asset rail + inline gallery) ===== */
+  .aw-fill { position:absolute; inset:0; background:
+    radial-gradient(120% 90% at 28% 8%, rgba(177,92,208,.55), transparent 56%),
+    radial-gradient(120% 95% at 82% 96%, rgba(0,164,220,.5), transparent 56%),
+    radial-gradient(80% 60% at 60% 50%, rgba(123,110,240,.32), transparent 60%),
+    linear-gradient(160deg, #1b1f2e, #0d0f17); }
+  .aw-checker { background-color:#14161f; background-image:
+    linear-gradient(45deg,#232733 25%,transparent 25%), linear-gradient(-45deg,#232733 25%,transparent 25%),
+    linear-gradient(45deg,transparent 75%,#232733 75%), linear-gradient(-45deg,transparent 75%,#232733 75%);
+    background-size:16px 16px; background-position:0 0,0 8px,8px -8px,-8px 0; }
+  .aw-logomark { font-family:'Space Grotesk',sans-serif; font-weight:700; letter-spacing:.14em; text-transform:uppercase;
+    color:#fff; line-height:1; text-shadow:0 2px 14px rgba(0,0,0,.6); display:flex; align-items:center; justify-content:center;
+    height:100%; width:100%; position:relative; z-index:1; }
+  .aw-cand { position:relative; border-radius:9px; overflow:hidden; cursor:pointer; border:1px solid var(--line);
+    outline:2px solid transparent; outline-offset:2px; transition:transform .16s ease, box-shadow .2s ease, outline-color .16s ease; }
+  .aw-cand:hover { transform:translateY(-4px) scale(1.03); box-shadow:0 16px 34px rgba(0,0,0,.55); outline-color:var(--hi); z-index:4; }
+  .aw-cand.current { outline-color:var(--ok); }
+  .aw-cand.sel { outline-color:var(--hi); box-shadow:0 0 0 2px var(--hi-soft), 0 16px 34px rgba(0,0,0,.5); }
+  .aw-tagrow { position:absolute; top:6px; left:6px; right:6px; display:flex; justify-content:space-between; align-items:flex-start; z-index:3; gap:5px; }
+  .aw-meta { position:absolute; left:0; right:0; bottom:0; padding:16px 8px 7px; z-index:3; display:flex; justify-content:space-between;
+    align-items:center; gap:6px; font-family:'JetBrains Mono',monospace; font-size:.62rem; color:#e3e6f0; background:linear-gradient(0deg, rgba(0,0,0,.88), transparent); }
+  .aw-ribbon { position:absolute; top:0; right:0; z-index:4; background:var(--ok); color:#04140d; font-size:.56rem; font-weight:700;
+    letter-spacing:.05em; padding:3px 8px; border-bottom-left-radius:9px; }
+  .aw-lpill { font-family:'JetBrains Mono',monospace; font-size:.58rem; font-weight:600; text-transform:uppercase; letter-spacing:.03em;
+    background:rgba(0,0,0,.62); border:1px solid rgba(255,255,255,.2); color:#fff; padding:2px 6px; border-radius:5px; }
+  .aw-lpill.tl { background:rgba(45,212,154,.9); color:#04140d; border-color:transparent; }
+  .aw-vote { font-family:'JetBrains Mono',monospace; font-size:.58rem; font-weight:600; background:rgba(0,0,0,.62);
+    border:1px solid rgba(255,255,255,.2); color:#ffd75e; padding:2px 6px; border-radius:5px; }
+  .aw-filterline { font-size:.8rem; color:var(--ink-soft); line-height:1.55; display:flex; gap:8px; align-items:flex-start; }
+  .aw-filterline b { color:var(--ink); font-weight:600; }
+  .aw-filterline .ic { color:var(--info); flex:none; margin-top:1px; }
+  .lchip { cursor:pointer; }
+  .lchip .n { opacity:.55; font-family:'JetBrains Mono',monospace; font-size:.66rem; margin-left:3px; }
+  .lchip.on { background:var(--hi-soft); border-color:rgba(123,110,240,.5); color:var(--acc-ink); }
+  .lchip.on.tl { background:var(--ok-soft); border-color:rgba(45,212,154,.5); color:var(--ok); }
+  .lchip.off { opacity:.6; }
+  .dropz { border:1.5px dashed var(--line-2); border-radius:12px; padding:13px 15px; display:flex; align-items:center; gap:13px;
+    color:var(--ink-soft); font-size:.85rem; transition:border-color .2s ease, background .2s ease; }
+  .dropz.drag, .dropz:hover { border-color:var(--hi); background:var(--hi-soft); color:var(--ink); }
+  .dropz .di { width:34px; height:34px; flex:none; border-radius:9px; background:var(--fill-3); display:flex; align-items:center; justify-content:center; font-size:1.1rem; color:var(--acc-ink); }
+  .aw-rail-item { display:flex; gap:12px; align-items:center; padding:9px 10px; border-radius:10px; cursor:pointer; border:1px solid transparent; transition:background .15s ease, border-color .15s ease; }
+  .aw-rail-item:hover { background:var(--fill-3); }
+  .aw-rail-item.active { background:var(--hi-soft); border-color:rgba(123,110,240,.35); }
+  .aw-rail-item .th { flex:none; border-radius:6px; overflow:hidden; position:relative; border:1px solid var(--line); }
+  .aw-rail-item .nm { font-weight:600; font-size:.9rem; }
+  .aw-rail-item .sub { font-size:.72rem; color:var(--ink-soft); font-family:'JetBrains Mono',monospace; margin-top:2px; }
+  .aw-eyebrow { font-size:.66rem; text-transform:uppercase; letter-spacing:.06em; color:var(--ink-soft); font-weight:600; }
+
+  /* ===== pagebar dropdown menus + split save button ===== */
+  .menu-wrap, .split { position: relative; display: inline-flex; }
+  .menu-btn { cursor: pointer; }
+  .caret { font-size: .7rem; opacity: .7; }
+  .menu { position: absolute; top: calc(100% + 6px); right: 0; min-width: 224px; z-index: 60; padding: 6px;
+    background: var(--fill); border: 1px solid var(--line-2); border-radius: 12px;
+    box-shadow: 0 18px 50px rgba(0,0,0,.45); display: none; }
+  .menu-wrap.open > .menu, .split.open > .menu { display: block; }
+  .menu-item { display: flex; align-items: flex-start; gap: 9px; padding: 8px 10px; border-radius: 8px;
+    font-size: .86rem; font-weight: 600; color: var(--ink); cursor: pointer; white-space: nowrap; text-decoration: none; }
+  .menu-item:hover { background: var(--fill-3); }
+  .menu-item .mi-ic { width: 16px; text-align: center; opacity: .7; flex: none; }
+  .menu-item .mi-sub { display: block; font-size: .72rem; color: var(--ink-soft); font-weight: 400; margin-top: 1px; }
+  /* split button: primary action welded to a caret */
+  .split .btn.primary:first-child { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+  .split .split-caret { border-top-left-radius: 0; border-bottom-left-radius: 0; margin-left: 1px; padding-left: 9px; padding-right: 10px; }
 </style>
 </head>
 <body class="wf-body app-body">
@@ -112,12 +178,31 @@
     <h1>Sintel <span class="muted">(2010)</span></h1>
     <span class="badge ok" id="match-badge">TMDB matched</span>
     <span class="spacer"></span>
-    <a class="btn sm ghost" href="#" target="_blank" rel="noopener">Jellyfin ↗</a>
-    <a class="btn sm ghost" href="https://www.themoviedb.org/movie/45745" target="_blank" rel="noopener">TMDB ↗</a>
-    <span class="btn sm ghost" id="repull-jf-btn">Re-pull from Jellyfin…</span>
-    <span class="btn sm ghost">Re-pull from TMDB</span>
-    <span class="btn primary">Save → disk</span>
-    <span class="btn">Save &amp; tell Jellyfin ↻</span>
+    <!-- External links (Jellyfin / TMDB) -->
+    <span class="menu-wrap" id="links-menu">
+      <span class="btn sm ghost menu-btn">External links <span class="caret">▾</span></span>
+      <div class="menu">
+        <a class="menu-item" href="#" target="_blank" rel="noopener"><span class="mi-ic">↗</span><span>Open in Jellyfin<span class="mi-sub">Library item in the Jellyfin web UI</span></span></a>
+        <a class="menu-item" href="https://www.themoviedb.org/movie/45745" target="_blank" rel="noopener"><span class="mi-ic">↗</span><span>View on TMDB<span class="mi-sub">themoviedb.org/movie/45745</span></span></a>
+      </div>
+    </span>
+    <!-- Re-pull (Jellyfin / TMDB) -->
+    <span class="menu-wrap" id="repull-menu">
+      <span class="btn sm ghost menu-btn">Re-pull <span class="caret">▾</span></span>
+      <div class="menu">
+        <div class="menu-item" id="repull-jf-btn"><span class="mi-ic">⟲</span><span>From Jellyfin…<span class="mi-sub">Re-discover name, path, IDs &amp; tracks</span></span></div>
+        <div class="menu-item" id="repull-tmdb-btn"><span class="mi-ic">⟲</span><span>From TMDB<span class="mi-sub">Re-fetch metadata &amp; artwork</span></span></div>
+      </div>
+    </span>
+    <!-- Save (split button) — sync-to-Jellyfin is the default action -->
+    <span class="split" id="save-split">
+      <span class="btn primary" id="save-tell">Save &amp; sync to Jellyfin ↻</span>
+      <span class="btn primary split-caret menu-btn"><span class="caret">▾</span></span>
+      <div class="menu">
+        <div class="menu-item" id="save-tell-2"><span class="mi-ic">↻</span><span>Save &amp; sync to Jellyfin<span class="mi-sub">Write NFO &amp; artwork, then trigger a Jellyfin refresh</span></span></div>
+        <div class="menu-item" id="save-disk"><span class="mi-ic">↓</span><span>Save → disk<span class="mi-sub">Write NFO &amp; artwork only — no Jellyfin refresh</span></span></div>
+      </div>
+    </span>
   </div>
 
   <!-- Jellyfin field-lock banner (Phase 22) -->
@@ -192,6 +277,12 @@
         <div class="pill-row" style="margin-top:9px;"><span class="btn sm fill" id="find-match-btn" style="justify-content:center;">Find / fix match…</span></div>
       </div>
 
+      <!-- Ravilo TV — feature this title in a viewer's hero carousel -->
+      <div class="card">
+        <div class="row center"><h4 style="margin:0;">Ravilo TV</h4><span class="spacer"></span><span class="badge info">layout</span></div>
+        <div class="tiny muted" style="margin:8px 0 10px;line-height:1.5;">Feature this title in a viewer's <b>hero carousel</b> on their TV home screen.</div>
+        <div class="pill-row"><span class="btn sm fill" id="feature-hero" style="justify-content:center;">★ Feature in hero carousel…</span></div>
+      </div>
       <!-- Resolved metadata language (read-only trace) -->
       <div class="override">
         <div class="row center"><h4 style="margin:0;">Resolved metadata language</h4><span class="spacer"></span><span class="badge info">automatic</span></div>
@@ -302,29 +393,48 @@
     </div>
   </div>
 
-  <!-- ================= ARTWORK TAB ================= -->
+  <!-- ================= ARTWORK TAB (Phase 40 — asset rail + inline gallery) ================= -->
   <div class="tabpanel" data-panel="artwork" style="display:none;">
-    <div class="card">
-      <div class="row center"><h4 style="margin:0;">Artwork</h4><span class="spacer"></span><span class="pill-row"><span class="btn sm">Fetch all from TMDB</span><span class="btn sm ghost">Upload</span></span></div>
-      <hr class="dash" style="margin:12px 0;">
-      <div class="row" style="gap:18px;flex-wrap:wrap;">
-        <div class="col" style="gap:8px;"><div class="imgslot" style="width:150px;height:222px;"><span>poster.jpg</span></div><span class="tiny muted center-x">poster · 2:3</span></div>
-        <div class="col" style="gap:8px;"><div class="imgslot" style="width:340px;height:191px;"><span>fanart.jpg</span></div><span class="tiny muted center-x">fanart · 16:9</span></div>
-        <div class="col" style="gap:8px;"><div class="imgslot" style="width:220px;height:191px;"><span style="background:var(--bad-soft);border-color:var(--bad);color:var(--bad);">clearlogo.png · missing</span></div><span class="tiny muted center-x">logo · transparent png</span></div>
+    <div class="row" style="align-items:flex-start;gap:18px;">
+      <!-- ASSET RAIL -->
+      <div class="col" style="width:272px;flex:none;">
+        <div class="card" style="padding:14px;">
+          <div class="row center" style="margin-bottom:2px;"><h4 style="margin:0;">Assets</h4><span class="spacer"></span><span class="badge warn" id="aw-missing">1 missing</span></div>
+          <hr class="dash" style="margin:10px 0;">
+          <div id="aw-rail" style="display:flex;flex-direction:column;gap:3px;"></div>
+          <div class="pill-row" style="margin-top:13px;"><span class="btn sm primary fill" id="aw-fetch-all" style="justify-content:center;">Fetch all missing</span></div>
+          <div class="tiny muted" style="margin-top:9px;line-height:1.5;">Written beside the movie file as <span class="mono">poster.jpg</span>, <span class="mono">fanart.jpg</span>, <span class="mono">clearlogo.png</span>.</div>
+        </div>
+      </div>
+
+      <!-- INLINE GALLERY for the selected asset -->
+      <div class="col fill">
+        <div class="card" style="padding:16px;">
+          <div class="row center" id="aw-gallery-head"></div>
+
+          <div class="dropz" id="aw-dropz" style="margin-top:13px;">
+            <span class="di">⤓</span>
+            <div style="flex:1;"><b style="color:var(--ink);">Drag an image here</b> to replace <span id="aw-dz-name">the poster</span> <span class="muted">— or</span></div>
+            <span class="btn sm" id="aw-upload">Upload</span>
+            <span class="btn sm ghost" id="aw-paste">Paste URL</span>
+            <input type="file" accept="image/*" id="aw-file" style="display:none;">
+          </div>
+
+          <div class="row center" id="aw-filterbar" style="margin-top:16px;gap:14px;flex-wrap:wrap;align-items:flex-end;"></div>
+          <div id="aw-explain-wrap" style="margin-top:12px;"></div>
+          <div id="aw-grid" style="margin-top:16px;"></div>
+          <div class="tiny muted" id="aw-foot" style="margin-top:13px;line-height:1.6;"></div>
+        </div>
       </div>
     </div>
   </div>
 
-  <!-- ================= NFO TAB (Phase 44 — read-only on-disk viewer) ================= -->
+  <!-- ================= NFO TAB ================= -->
   <div class="tabpanel" data-panel="nfo" style="display:none;">
     <div class="card">
-      <div class="row center" style="margin-bottom:10px;"><h4 style="margin:0;">NFO on disk</h4><span class="spacer"></span><span class="muted tiny">Read-only — NFO is generated from the other tabs and written on Save.</span></div>
-      <div class="nfo-layout">
-        <!-- A movie has a single movie.nfo; a series shows tvshow.nfo + a per-season episode tree -->
-        <div class="nfo-tree"><div class="nfo-node sel">movie.nfo</div></div>
-        <div class="nfo-viewer">
-          <div class="mono tiny muted" style="margin-bottom:6px;">/media/movies/Sintel (2010)/movie.nfo</div>
-          <div class="log" style="max-height:480px;">
+      <div class="row center"><h4 style="margin:0;">movie.nfo</h4><span class="spacer"></span><span class="badge ok">unlocked</span><span class="tiny muted">written atomically · .tmp → rename</span></div>
+      <hr class="dash" style="margin:12px 0;">
+      <div class="log" style="max-height:380px;">
 <span class="muted">&lt;?xml version="1.0" encoding="UTF-8"?&gt;</span>
 &lt;movie&gt;
   &lt;title&gt;Sintel&lt;/title&gt;
@@ -333,11 +443,10 @@
   &lt;genre&gt;Animation&lt;/genre&gt;
   &lt;genre&gt;Fantasy&lt;/genre&gt;
   &lt;tag&gt;open movie&lt;/tag&gt;
+  &lt;tag&gt;blender&lt;/tag&gt;
   &lt;uniqueid type="tmdb"&gt;45745&lt;/uniqueid&gt;
   <span class="muted">&lt;!-- no &lt;lockdata&gt; — NFO stays unlocked so Jellyfin re-reads it freely --&gt;</span>
 &lt;/movie&gt;
-          </div>
-        </div>
       </div>
     </div>
   </div>
@@ -440,6 +549,26 @@
   const closeRm = () => rm.classList.remove('open');
   document.getElementById('repull-jf-btn').addEventListener('click', openRm);
   document.getElementById('repull-x').addEventListener('click', closeRm);
+
+  /* ---- pagebar dropdown menus (External links · Re-pull · Save split) ---- */
+  (function () {
+    const wraps = document.querySelectorAll('.menu-wrap, .split');
+    function closeAll() { document.querySelectorAll('.menu-wrap.open, .split.open').forEach(o => o.classList.remove('open')); }
+    wraps.forEach(w => {
+      const btn = w.querySelector('.menu-btn');
+      if (btn) btn.addEventListener('click', e => { e.stopPropagation(); const open = w.classList.contains('open'); closeAll(); if (!open) w.classList.add('open'); });
+      w.querySelectorAll('.menu-item, a.menu-item').forEach(it => it.addEventListener('click', () => closeAll()));
+    });
+    document.addEventListener('click', e => { if (!e.target.closest('.menu-wrap, .split')) closeAll(); });
+    document.addEventListener('keydown', e => { if (e.key === 'Escape') closeAll(); });
+  })();
+  /* save + re-pull-from-TMDB actions */
+  const doSaveDisk = () => toast('Saved → disk · NFO + artwork written');
+  const doSaveSync = () => toast('Saved & synced to Jellyfin — refresh triggered ↻');
+  document.getElementById('save-tell').addEventListener('click', doSaveSync);    // primary face (default)
+  document.getElementById('save-tell-2').addEventListener('click', doSaveSync);  // menu · default
+  document.getElementById('save-disk').addEventListener('click', doSaveDisk);    // menu · disk only
+  document.getElementById('repull-tmdb-btn').addEventListener('click', () => toast('Re-pulling metadata & artwork from TMDB…'));
   document.getElementById('repull-cancel').addEventListener('click', closeRm);
   rm.addEventListener('click', e => { if (e.target === rm) closeRm(); });
   document.getElementById('repull-go').addEventListener('click', e => { e.target.textContent = 'Re-pulling…'; setTimeout(() => { e.target.textContent = 'Re-pull'; closeRm(); }, 1000); });
@@ -808,12 +937,245 @@
   /* ---- qBittorrent guard chip (Phase 37) ---- */
   const gc = document.getElementById('guard-chip'); if (gc) gc.addEventListener('click', () => toast('Seeding guard active — edits to a file being seeded return 409 and are blocked'));
 
+  /* ---- Artwork manager (Phase 40 — asset rail + inline gallery) ---- */
+  (function artwork(){
+    const railEl = document.getElementById('aw-rail');
+    if (!railEl) return;
+    const RES = 'en';                                   // this title's resolved metadata language
+    const LN = { en:'English', de:'German', fr:'French', ja:'日本語', es:'Spanish', it:'Italian', xx:'No language' };
+    let _i = 0;
+    function C(lang, vote, w, h, hue, current){ return { lang, vote, w, h, res:w+'×'+h, hue, current:!!current, _i:_i++ }; }
+
+    // assets + TMDB candidates. lang 'xx' = TMDB "no language" (textless) — a real bucket, distinct from "All".
+    const A = {
+      poster:{ key:'poster', label:'Poster', ratio:'2:3', file:'poster.jpg', kind:'portrait', status:'ok', railHue:0,
+        sub:'2:3 · en · 2000×3000', disk:{ lang:'en', res:'2000×3000' },
+        cands:[ C('en',8.4,2000,3000,0,true), C('en',8.1,1400,2100,20), C('en',7.7,1000,1500,300), C('en',6.8,2000,3000,240), C('en',6.5,1000,1500,50),
+          C('xx',7.9,2000,3000,200), C('xx',7.6,2000,3000,150), C('xx',7.0,1400,2100,90), C('xx',6.1,680,1000,170),
+          C('de',7.8,2000,3000,280), C('de',7.2,1400,2100,320), C('de',6.4,1000,1500,110),
+          C('fr',7.3,1400,2100,340), C('fr',6.7,1000,1500,30), C('ja',7.1,1000,1500,60) ] },
+      fanart:{ key:'fanart', label:'Backdrop', ratio:'16:9', file:'fanart.jpg', kind:'land', status:'ok', railHue:200,
+        sub:'16:9 · textless · 3840×2160', disk:{ lang:'xx', res:'3840×2160' },
+        cands:[ C('xx',8.6,3840,2160,200,true), C('xx',8.2,1920,1080,230), C('xx',7.5,1920,1080,160), C('xx',6.7,1920,1080,60),
+          C('en',7.9,3840,2160,280), C('en',7.1,1280,720,320), C('de',6.9,1920,1080,20) ] },
+      clearlogo:{ key:'clearlogo', label:'Clearlogo', ratio:'transparent', file:'clearlogo.png', kind:'logo', status:'bad', railHue:0,
+        sub:'transparent · missing', disk:null,
+        cands:[ C('xx',8.3,800,310,0), C('xx',7.8,500,200,0), C('xx',7.1,400,155,0),
+          C('de',8.0,800,310,0), C('de',7.4,600,240,0), C('fr',6.9,500,200,0), C('ja',6.5,500,200,0) ] },   // note: no 'en'
+      banner:{ key:'banner', label:'Banner', ratio:'5.4:1', file:'banner.jpg', kind:'banner', status:'warn', railHue:300,
+        sub:'5.4:1 · low-res 1000×185', disk:{ lang:'en', res:'1000×185', lowres:true },
+        cands:[ C('en',7.4,1000,185,300,true), C('en',7.0,1500,278,330), C('xx',6.8,1500,278,210), C('xx',6.2,1000,185,180) ] },
+    };
+    const ORDER = ['poster','fanart','clearlogo','banner'];
+    let cur = 'poster';
+
+    // ---- per-asset filter state (lazy) ----
+    const state = {};
+    function counts(a){ const m = {}; a.cands.forEach(c => m[c.lang] = (m[c.lang]||0)+1); return m; }
+    function langOrder(a){ const m = counts(a); return Object.keys(m).sort((x,y) => {
+      if (x===RES) return -1; if (y===RES) return 1; if (x==='xx') return -1; if (y==='xx') return 1; return m[y]-m[x]; }); }
+    function initState(a){
+      const m = counts(a), set = new Set(); let mode;
+      if (m[RES]) { set.add(RES); if (m.xx) set.add('xx'); mode='resolved'; }
+      else if (m.xx) { set.add('xx'); mode='fallback-xx'; }
+      else { Object.keys(m).forEach(l => set.add(l)); mode='fallback-any'; }
+      return { active:set, prefer:null, hiRes:false, sort:'vote', mode, staged:null };
+    }
+    function st(a){ return state[a.key] || (state[a.key] = initState(a)); }
+
+    // ---- rail ----
+    const RDIM = { poster:[30,45], fanart:[48,27], clearlogo:[48,27], banner:[48,18] };
+    function railThumb(a){
+      const d = RDIM[a.key]; let inner;
+      if (a.localUrl) inner = '<img src="'+a.localUrl+'" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;">';
+      else if (a.kind==='logo' && a.status==='bad') inner = '<div class="aw-checker" style="position:absolute;inset:0;"></div>';
+      else inner = '<div class="aw-fill" style="filter:hue-rotate('+a.railHue+'deg);"></div>';
+      return '<div class="th" style="width:'+d[0]+'px;height:'+d[1]+'px;">'+inner+'</div>';
+    }
+    function drawRail(){
+      railEl.innerHTML = ORDER.map(k => { const a = A[k];
+        return '<div class="aw-rail-item'+(k===cur?' active':'')+'" data-asset="'+k+'">'
+          + railThumb(a)
+          + '<div style="flex:1;min-width:0;"><div class="nm">'+a.label+'</div><div class="sub">'+a.sub+'</div></div>'
+          + '<span class="dot '+a.status+'"></span></div>'; }).join('');
+      const miss = ORDER.filter(k => A[k].status==='bad').length;
+      const mb = document.getElementById('aw-missing');
+      mb.textContent = miss ? miss+' missing' : 'complete';
+      mb.className = 'badge '+(miss?'warn':'ok');
+    }
+    railEl.addEventListener('click', e => { const it = e.target.closest('[data-asset]'); if (!it) return; cur = it.dataset.asset; drawAll(); });
+
+    // ---- gallery ----
+    const head = document.getElementById('aw-gallery-head');
+    const bar = document.getElementById('aw-filterbar');
+    const explainWrap = document.getElementById('aw-explain-wrap');
+    const grid = document.getElementById('aw-grid');
+    const foot = document.getElementById('aw-foot');
+    const dzName = document.getElementById('aw-dz-name');
+    const GDIM = { portrait:[124,186], land:[220,124], logo:[196,92], banner:[300,56] };
+
+    function filtered(a){
+      const s = st(a); let list = a.cands.filter(c => s.active.has(c.lang));
+      if (s.hiRes) { const mx = Math.max.apply(null, a.cands.map(c => c.w)); list = list.filter(c => c.w >= 0.5*mx); }
+      list.sort((x,y) => s.sort==='res' ? (y.w*y.h - x.w*x.h) : (y.vote - x.vote));
+      if (s.prefer==='textless') list.sort((x,y) => (y.lang==='xx') - (x.lang==='xx'));   // stable: push no-language first
+      else if (s.prefer==='text') list.sort((x,y) => (x.lang==='xx') - (y.lang==='xx'));    // stable: push text art first
+      return list;
+    }
+
+    function drawHead(){
+      const a = A[cur]; let badge;
+      if (a.status==='ok') badge = '<span class="badge ok" style="margin-left:8px;">on disk · '+(a.disk.lang==='xx'?'no-language':a.disk.lang)+' · '+a.disk.res+'</span>';
+      else if (a.status==='warn') badge = '<span class="badge warn" style="margin-left:8px;">on disk · low-res '+a.disk.res+'</span>';
+      else badge = '<span class="badge bad" style="margin-left:8px;">not on disk</span>';
+      head.innerHTML = '<h4 style="margin:0;">'+a.label+' <span class="muted" style="font-weight:400;">· '+a.ratio+'</span></h4>'+badge
+        + '<span class="spacer"></span><span class="mono tiny muted">'+a.cands.length+' candidates on TMDB</span>';
+      dzName.textContent = 'the '+a.label.toLowerCase();
+    }
+
+    function drawBar(){
+      const a = A[cur], s = st(a), m = counts(a);
+      const chips = langOrder(a).map(l => {
+        const tl = l==='xx', on = s.active.has(l);
+        return '<span class="chip lchip'+(on?' on':' off')+(tl?' tl':'')+'" data-lang="'+l+'" title="'+(tl?'TMDB no-language / textless art':LN[l]||l)+'">'
+          + (tl?'No language':(LN[l]||l)) + '<span class="n">'+m[l]+'</span></span>';
+      }).join('');
+      const allOn = langOrder(a).every(l => s.active.has(l));
+      const allChip = '<span class="chip lchip'+(allOn?' on':' off')+'" data-all="1" title="Every language including no-language">All<span class="n">'+a.cands.length+'</span></span>';
+      bar.innerHTML =
+        '<div style="flex:1;min-width:0;"><span class="aw-eyebrow">Language</span><div class="pill-row" style="margin-top:6px;">'+chips+allChip+'</div></div>'
+        + '<div><span class="aw-eyebrow">Prefer</span><div class="pill-row" style="margin-top:6px;"><span class="chip lchip'+(s.prefer==='textless'?' on tl':' off')+'" data-pref="textless" title="Sort TMDB no-language (textless) art first — cleanest for posters & logos">Textless</span><span class="chip lchip'+(s.prefer==='text'?' on':' off')+'" data-pref="text" title="Sort art that has baked-in title text first">With text</span></div></div>'
+        + '<div><span class="aw-eyebrow">Quality</span><div class="pill-row" style="margin-top:6px;"><span class="chip lchip'+(s.hiRes?' on':' off')+'" data-hires="1" title="Hide the lower-resolution half">Hi-res only</span></div></div>'
+        + '<div><span class="aw-eyebrow">Sort</span><div class="seg" style="margin-top:6px;"><span class="'+(s.sort==='vote'?'on':'')+'" data-sort="vote">Vote ★</span><span class="'+(s.sort==='res'?'on':'')+'" data-sort="res">Resolution</span></div></div>';
+    }
+
+    function drawExplain(){
+      const a = A[cur], s = st(a);
+      const names = [...s.active].map(l => l==='xx' ? 'No-language' : (LN[l]||l));
+      const hidden = a.cands.filter(c => !s.active.has(c.lang)).length;
+      let warn = false, lead = '';
+      if (s.mode==='fallback-xx') { warn = true; lead = '<b>No '+LN[RES]+' '+a.label.toLowerCase()+' on TMDB.</b> Falling back to <b>No-language</b> art'+(a.kind==='logo'?' — the best choice for logos':'')+'. '; }
+      else if (s.mode==='fallback-any') { warn = true; lead = '<b>No '+LN[RES]+' or no-language '+a.label.toLowerCase()+'.</b> Showing every language. '; }
+      const body = lead
+        + 'Showing <b>'+names.join('</b> + <b>')+'</b>'
+        + (s.mode==='resolved' ? ' — matched to this title’s resolved language <span class="lang">en</span>'+(s.prefer==='textless'?', textless preferred':s.prefer==='text'?', with-text preferred':'') : '')
+        + '. ' + (hidden ? '<b>'+hidden+'</b> other-language candidate'+(hidden>1?'s':'')+' hidden.' : 'Nothing hidden.');
+      explainWrap.innerHTML = '<div style="padding:11px 13px;background:var('+(warn?'--warn-soft':'--info-soft')+');border:1px solid '+(warn?'rgba(245,181,66,.35)':'rgba(63,182,245,.3)')+';border-radius:10px;">'
+        + '<div class="aw-filterline"><span class="ic">ⓘ</span><span>'+body+' '+(hidden?'<a href="#" data-showall>Show all '+a.cands.length+' →</a>':'')+'</span></div></div>';
+    }
+
+    function cardHTML(c, a){
+      const tl = c.lang==='xx', d = GDIM[a.kind], s = st(a);
+      let bg;
+      if (a.kind==='logo') bg = '<div class="aw-checker" style="position:absolute;inset:0;"><div class="aw-logomark" style="font-size:'+(d[0]/9)+'px;">Sintel</div></div>';
+      else bg = '<div class="aw-fill" style="filter:hue-rotate('+c.hue+'deg);"></div>';
+      return '<div class="aw-cand'+(c.current?' current':'')+(s.staged===c._i?' sel':'')+'" data-pick="'+c._i+'" style="width:'+d[0]+'px;height:'+d[1]+'px;">'
+        + bg + (c.current?'<div class="aw-ribbon">ON DISK</div>':'')
+        + '<div class="aw-tagrow"><span class="aw-lpill'+(tl?' tl':'')+'">'+(tl?'no-lang':c.lang)+'</span><span class="aw-vote">★ '+c.vote.toFixed(1)+'</span></div>'
+        + '<div class="aw-meta"><span>'+c.res+'</span><span style="opacity:.65;">'+a.ratio+'</span></div></div>';
+    }
+
+    function drawGrid(){
+      const a = A[cur], list = filtered(a);
+      grid.style.display = 'flex'; grid.style.flexWrap = 'wrap'; grid.style.gap = '14px';
+      grid.innerHTML = list.length ? list.map(c => cardHTML(c, a)).join('')
+        : '<div class="tiny muted" style="padding:20px;">No candidates match these filters. <a href="#" data-showall>Reset to defaults →</a></div>';
+    }
+
+    function drawFoot(){
+      const a = A[cur], s = st(a);
+      if (s.staged != null) { const c = a.cands.find(x => x._i===s.staged);
+        foot.innerHTML = '<div class="row center" style="gap:10px;flex-wrap:wrap;"><span class="badge info">staged</span>'
+          + '<span class="tiny">'+(c.lang==='xx'?'no-language':LN[c.lang]||c.lang)+' · '+c.res+' → writes <span class="mono">'+a.file+'</span></span>'
+          + '<span class="spacer"></span><span class="btn sm ghost" data-discard>Discard</span><span class="btn sm primary" data-save>Save to disk</span></div>';
+      } else {
+        foot.innerHTML = 'Click a candidate to stage it · the <span style="color:var(--ok);font-weight:600;">green</span> outline is what’s on disk now · changes write on <b>Save to disk</b>.';
+      }
+    }
+
+    function drawGallery(){ drawHead(); drawBar(); drawExplain(); drawGrid(); drawFoot(); }
+    function drawAll(){ drawRail(); drawGallery(); }
+
+    // ---- interactions ----
+    bar.addEventListener('click', e => {
+      const a = A[cur], s = st(a);
+      const lang = e.target.closest('[data-lang]'), all = e.target.closest('[data-all]'),
+        pref = e.target.closest('[data-pref]'), hir = e.target.closest('[data-hires]'), sort = e.target.closest('[data-sort]');
+      if (lang) { const l = lang.dataset.lang; if (s.active.has(l)) { if (s.active.size > 1) s.active.delete(l); } else s.active.add(l); }
+      else if (all) { langOrder(a).forEach(l => s.active.add(l)); }
+      else if (pref) { const p = pref.dataset.pref; s.prefer = (s.prefer===p) ? null : p; }
+      else if (hir) { s.hiRes = !s.hiRes; }
+      else if (sort) { s.sort = sort.dataset.sort; }
+      else return;
+      drawBar(); drawExplain(); drawGrid();
+    });
+    explainWrap.addEventListener('click', e => { if (e.target.closest('[data-showall]')) { e.preventDefault();
+      const a = A[cur], s = st(a); langOrder(a).forEach(l => s.active.add(l)); s.hiRes = false; drawBar(); drawExplain(); drawGrid(); } });
+    grid.addEventListener('click', e => {
+      const card = e.target.closest('[data-pick]');
+      if (card) { const a = A[cur], s = st(a), i = +card.dataset.pick; s.staged = (s.staged===i) ? null : i; drawGrid(); drawFoot(); return; }
+      const sa = e.target.closest('[data-showall]'); if (sa) { e.preventDefault(); const a = A[cur]; state[a.key] = initState(a); drawGallery(); }
+    });
+    foot.addEventListener('click', e => {
+      const a = A[cur], s = st(a);
+      if (e.target.closest('[data-discard]')) { s.staged = null; drawGrid(); drawFoot(); }
+      else if (e.target.closest('[data-save]')) { const c = a.cands.find(x => x._i===s.staged);
+        a.cands.forEach(x => x.current = false); c.current = true; a.status = 'ok'; a.localUrl = null;
+        a.disk = { lang:c.lang, res:c.res }; a.sub = a.ratio+' · '+(c.lang==='xx'?'textless':c.lang)+' · '+c.res; s.staged = null;
+        drawAll(); toast(a.label+' saved → '+a.file); }
+    });
+
+    // ---- drag-drop · upload · paste URL ----
+    const dz = document.getElementById('aw-dropz'), fileIn = document.getElementById('aw-file');
+    function takeFile(f){ if (!f || !/^image\//.test(f.type)) return; const a = A[cur];
+      a.localUrl = URL.createObjectURL(f); a.status = 'ok'; a.disk = { lang:'local', res:'your upload' };
+      a.sub = a.ratio+' · uploaded · '+f.name; st(a).staged = null; drawAll(); toast('Replaced '+a.label.toLowerCase()+' with '+f.name); }
+    ['dragenter','dragover'].forEach(ev => dz.addEventListener(ev, e => { e.preventDefault(); dz.classList.add('drag'); }));
+    ['dragleave','drop'].forEach(ev => dz.addEventListener(ev, e => { e.preventDefault(); dz.classList.remove('drag'); }));
+    dz.addEventListener('drop', e => takeFile(e.dataTransfer.files && e.dataTransfer.files[0]));
+    document.getElementById('aw-upload').addEventListener('click', () => fileIn.click());
+    fileIn.addEventListener('change', () => takeFile(fileIn.files[0]));
+    document.getElementById('aw-paste').addEventListener('click', () => { const u = prompt('Paste an image URL for '+A[cur].label.toLowerCase()+':');
+      if (u) { const a = A[cur]; a.localUrl = u; a.status = 'ok'; a.disk = { lang:'url', res:'from URL' }; a.sub = a.ratio+' · from URL'; drawAll(); toast(A[cur].label+' set from URL'); } });
+    document.getElementById('aw-fetch-all').addEventListener('click', () => {
+      ORDER.forEach(k => { const a = A[k]; if (a.status==='bad') { const best = filtered(a)[0] || a.cands[0];
+        if (best) { a.cands.forEach(x => x.current = false); best.current = true; a.status = 'ok';
+          a.disk = { lang:best.lang, res:best.res }; a.sub = a.ratio+' · '+(best.lang==='xx'?'textless':best.lang)+' · '+best.res; } } });
+      drawAll(); toast('Fetched missing artwork from TMDB'); });
+
+    drawAll();
+  })();
+
   /* ---- toast helper ---- */
   function toast(msg) {
     const t = document.createElement('div'); t.className = 'toast'; t.textContent = msg;
     document.body.appendChild(t); setTimeout(() => t.remove(), 1800);
   }
+  window.__toast = toast;
 })();
+</script>
+
+<!-- Feature-in-hero uses the shared Ravilo builder -->
+<div id="cf-modal-root"></div>
+<script src="ravilo-builders.js"></script>
+<script>
+  (function () {
+    const btn = document.getElementById('feature-hero');
+    if (!btn || !window.RaviloBuilders) return;
+    btn.addEventListener('click', () => {
+      window.RaviloBuilders.openHero({
+        lockTitle: true,
+        viewerPicker: true,
+        headTitle: 'Feature in hero carousel',
+        saveLabel: 'Feature for viewer',
+        state: {
+          pick: { title: 'Sintel', year: 2010, kind: 'movie', genres: ['Fantasy', 'Adventure'], network: 'Blender' },
+          badge: 'None', tagline: 'Featured Film', backdrop: 0, useLogo: true, viewer: 'Eyð Restorff'
+        },
+        onSave: ({ pick, state }) => (window.__toast || alert)('Featured “' + pick.title + '” in ' + (state.viewer || 'the viewer') + '’s hero carousel')
+      });
+    });
+  })();
 </script>
 </body>
 </html>
