@@ -58,6 +58,7 @@ kotlin {
                 implementation(libs.ktor.client.cio) // CIO supports WebSockets (the Android engine does not)
                 implementation(libs.androidx.media3.exoplayer)
                 implementation(libs.androidx.media3.exoplayer.hls)
+                implementation(libs.androidx.media3.session) // R44: MediaSession for hardware transport keys
             }
         }
         val wasmJsMain by getting {

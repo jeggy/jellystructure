@@ -61,6 +61,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import dev.jellystructure.ravilo.ui.focus.MediaKey
 import dev.jellystructure.ravilo.ui.focus.dpadFocusable
 import dev.jellystructure.ravilo.ui.i18n.str
 import dev.jellystructure.ravilo.ui.seams.PlayerAudioTrack
@@ -408,6 +409,20 @@ fun PlayerScreen(
                         nextUpVisible -> stayThrough()
                         scrubbing     -> { scrubbing = false; wake() }
                         else          -> onBack()
+                    }
+                },
+                // R44: physical remote / keyboard transport keys → playback actions, regardless of
+                // which on-screen control is focused and even when the chrome is hidden.
+                onMediaKey = { mk ->
+                    when (mk) {
+                        MediaKey.PLAY_PAUSE   -> togglePlay()
+                        MediaKey.PLAY         -> if (!isPlaying) togglePlay() else wake()
+                        MediaKey.PAUSE        -> if (isPlaying) togglePlay() else wake()
+                        MediaKey.FAST_FORWARD -> skip(SKIP_FWD_MS)
+                        MediaKey.REWIND       -> skip(-SKIP_BACK_MS)
+                        MediaKey.NEXT         -> if (nextEpisodeId != null) advanceNext() else wake()
+                        MediaKey.PREVIOUS     -> { player.seekTo(0); positionMs = 0; wake() }
+                        MediaKey.STOP         -> onBack()
                     }
                 },
             )
