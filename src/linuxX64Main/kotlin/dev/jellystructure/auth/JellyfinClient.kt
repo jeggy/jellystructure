@@ -204,7 +204,7 @@ class JellyfinClient {
         jellyfinId: String,
     ): JellyfinItemDetail? = runCatching {
         val url = baseUrl.trimEnd('/') +
-            "/Users/$userId/Items/$jellyfinId?Fields=UserData,RunTimeTicks"
+            "/Users/$userId/Items/$jellyfinId?Fields=UserData,RunTimeTicks,MediaStreams"
         http.get(url) {
             header("Authorization", """$AUTH_HEADER, Token="$userToken"""")
         }.body<JellyfinItemDetail>()

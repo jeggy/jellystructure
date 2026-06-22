@@ -3,8 +3,8 @@ package dev.jellystructure.tv
 import dev.jellystructure.auth.DeviceData
 import dev.jellystructure.auth.JellyfinClient
 import dev.jellystructure.config.ConfigStore
+import dev.jellystructure.auth.JellyfinItemDetail
 import dev.jellystructure.media.MediaStore
-import dev.jellystructure.model.TrackKind
 import dev.jellystructure.shared.tv.ClientCapabilities
 import dev.jellystructure.shared.tv.StreamTicket
 import dev.jellystructure.shared.tv.SubTrack
@@ -48,8 +48,9 @@ class PlaybackService(
         // Start a Jellyfin playback session so the server tracks Now Playing + resume
         jellyfinClient.startPlaybackSession(jellyfinBase, token, jellyfinId, startPositionTicks, jellyfinId)
 
-        // Build subtitle list from MediaStore (we know the tracks from mkvpropedit scanning)
-        val subtitles = buildSubtracks(jellyfinId, jellyfinBase, token)
+        // Build the external-subtitle list from Jellyfin's MediaStreams for THIS playable item
+        // (works for movies + episodes; embedded subs are discovered in-container by the player).
+        val subtitles = buildSubtracks(itemDetail, jellyfinId, jellyfinBase, token)
 
         // Direct-play stream URL — the player fetches bytes straight from Jellyfin
         val streamUrl = "$jellyfinBase/Videos/$jellyfinId/stream?Static=true&MediaSourceId=$jellyfinId&api_key=$token"
@@ -95,22 +96,31 @@ class PlaybackService(
 
     // ─── Helpers ──────────────────────────────────────────────────────────────
 
-    private fun buildSubtracks(jellyfinId: String, jellyfinBase: String, token: String): List<SubTrack> {
-        val item = mediaStore.allItems().firstOrNull { it.jellyfinId == jellyfinId } ?: return emptyList()
-        val tracks = if (item.episodes.isNotEmpty()) item.episodes.flatMap { it.tracks } else item.tracks
-        return tracks
-            .filter { it.kind == TrackKind.SUBTITLE }
-            .mapIndexed { idx, t ->
+    private fun buildSubtracks(
+        itemDetail: JellyfinItemDetail?,
+        jellyfinId: String,
+        jellyfinBase: String,
+        token: String,
+    ): List<SubTrack> {
+        val streams = itemDetail?.mediaStreams ?: return emptyList()
+        return streams
+            .filter { it.type.equals("Subtitle", ignoreCase = true) && it.isExternal &&
+                (it.isTextSubtitleStream || isTextSubCodec(it.codec)) }
+            .map { s ->
                 SubTrack(
-                    index = t.streamIndex,
-                    language = t.language,
-                    label = t.title,
-                    forced = t.forced,
-                    isDefault = t.default,
-                    url = "$jellyfinBase/Videos/$jellyfinId/$jellyfinId/Subtitles/${t.streamIndex}/0/Stream.ass?api_key=$token",
+                    index = s.index,
+                    language = s.language,
+                    label = s.displayTitle ?: s.title,
+                    forced = s.isForced,
+                    isDefault = s.isDefault,
+                    // Jellyfin extracts/serves the text sub as WebVTT for the player.
+                    url = "$jellyfinBase/Videos/$jellyfinId/$jellyfinId/Subtitles/${s.index}/0/Stream.vtt?api_key=$token",
                 )
             }
     }
+
+    private fun isTextSubCodec(c: String?): Boolean =
+        (c?.lowercase()) in setOf("subrip", "srt", "ass", "ssa", "webvtt", "vtt", "mov_text", "text")
 }
 
 @OptIn(ExperimentalForeignApi::class)
