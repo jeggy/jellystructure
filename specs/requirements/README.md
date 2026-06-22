@@ -63,7 +63,7 @@ See [`../tasks.md`](../tasks.md) for the active TODO breakdown.
 | 44 | ✓ Done | NFO raw viewer — read-only on-disk XML with a multi-file tree sidebar (FR-NR1) | [archive](archive/phase-44-nfo-raw-viewer-tree.md) |
 | 45 | ✓ Done | Fix the track-editor language picker — unstyled `.langmenu` popup; unify on the shared styled picker (FR-LP1) | [archive](archive/phase-45-track-editor-language-picker-css.md) |
 | 46 | ✓ Done | Track language writes must persist — 2↔3-letter code mapping, verify-after-write, truthful response + preview (FR-TL1) | [archive](archive/phase-46-track-language-write-persist.md) |
-| 47 | □ Planned | Artwork manager on Movie & Series detail — asset rail + inline TMDB gallery, resolved-language fallback (no-language ≠ All), drag-drop/upload/URL, season posters + episode stills (FR-AM1) | [phase-47](phase-47-artwork-manager.md) |
+| 47 | ✓ Done | Artwork manager on Movie & Series detail — asset rail + inline TMDB gallery, resolved-language fallback (no-language ≠ All), drag-drop/upload/URL, season posters + episode stills (FR-AM1) | [archive](archive/phase-47-artwork-manager.md) |
 
 ## Adding a new phase
 1. Create `phase-NN-short-name.md` in this directory using an existing planned spec as a template.
