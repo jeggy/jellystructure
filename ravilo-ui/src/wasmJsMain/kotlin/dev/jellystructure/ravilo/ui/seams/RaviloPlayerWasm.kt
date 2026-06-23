@@ -2,6 +2,7 @@
 
 package dev.jellystructure.ravilo.ui.seams
 
+import dev.jellystructure.shared.tv.AudioTrack
 import dev.jellystructure.shared.tv.SubTrack
 import kotlinx.browser.document
 import org.w3c.dom.HTMLVideoElement
@@ -20,9 +21,11 @@ actual class RaviloPlayer actual constructor() {
     }
 
     private var loadedSubtitles: List<SubTrack> = emptyList()
+    private var loadedAudio: List<AudioTrack> = emptyList()
 
-    actual fun load(streamUrl: String, startPositionMs: Long, subtitles: List<SubTrack>) {
+    actual fun load(streamUrl: String, startPositionMs: Long, subtitles: List<SubTrack>, audio: List<AudioTrack>) {
         loadedSubtitles = subtitles
+        loadedAudio = audio
         // Remove existing <track> children
         while (video.childElementCount > 0) {
             video.firstChild?.let { video.removeChild(it) }
@@ -70,10 +73,17 @@ actual class RaviloPlayer actual constructor() {
     }
     actual val isPlaying: Boolean get() = !video.paused && !video.ended
     actual val isEnded: Boolean get() = video.ended
-    actual val audioTracks: List<PlayerAudioTrack> get() = emptyList()
+    // R46: the browser doesn't expose rich embedded-audio metadata, so surface the server-derived
+    // labels for the picker. (Switching multi-audio still needs an hls.js bridge — display only.)
+    actual val audioTracks: List<PlayerAudioTrack> get() =
+        loadedAudio.mapIndexed { i, a ->
+            val label = a.label?.takeIf { it.isNotBlank() } ?: languageName(a.language) ?: a.language ?: "Track ${i + 1}"
+            PlayerAudioTrack(i, label, a.language)
+        }
     actual val subtitleTracks: List<PlayerSubtitleTrack> get() =
         loadedSubtitles.mapIndexed { i, s ->
-            PlayerSubtitleTrack(i, s.label ?: s.language ?: "Track ${i + 1}", s.language, s.forced, s.isDefault)
+            val label = s.label ?: languageName(s.language) ?: s.language ?: "Track ${i + 1}"
+            PlayerSubtitleTrack(i, label, s.language, s.forced, s.isDefault)
         }
 }
 

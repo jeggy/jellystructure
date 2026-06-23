@@ -5,6 +5,7 @@ import dev.jellystructure.auth.JellyfinClient
 import dev.jellystructure.config.ConfigStore
 import dev.jellystructure.auth.JellyfinItemDetail
 import dev.jellystructure.media.MediaStore
+import dev.jellystructure.shared.tv.AudioTrack
 import dev.jellystructure.shared.tv.ClientCapabilities
 import dev.jellystructure.shared.tv.StreamTicket
 import dev.jellystructure.shared.tv.SubTrack
@@ -52,6 +53,11 @@ class PlaybackService(
         // (works for movies + episodes; embedded subs are discovered in-container by the player).
         val subtitles = buildSubtracks(itemDetail, jellyfinId, jellyfinBase, token)
 
+        // Audio-track metadata (R46): the player labels embedded audio from the container, which often
+        // lacks a track title — so carry Jellyfin's rich DisplayTitle (e.g. "Synstolkning") through the
+        // ticket. Order matches the container's audio-stream order so the player can map by index.
+        val audio = buildAudioTracks(itemDetail)
+
         // Direct-play stream URL — the player fetches bytes straight from Jellyfin
         val streamUrl = "$jellyfinBase/Videos/$jellyfinId/stream?Static=true&MediaSourceId=$jellyfinId&api_key=$token"
 
@@ -64,6 +70,7 @@ class PlaybackService(
             hlsUrl = streamUrl, // direct-play URL; clients use this regardless of hlsUrl vs directPlay
             startPositionMs = startPositionMs,
             subtitles = subtitles,
+            audio = audio,
             trickplayUrl = null,
             expiresAt = nowMs() + TICKET_TTL_MS,
         )
@@ -115,6 +122,27 @@ class PlaybackService(
                     isDefault = s.isDefault,
                     // Jellyfin extracts/serves the text sub as WebVTT for the player.
                     url = "$jellyfinBase/Videos/$jellyfinId/$jellyfinId/Subtitles/${s.index}/0/Stream.vtt?api_key=$token",
+                )
+            }
+    }
+
+    private fun buildAudioTracks(itemDetail: JellyfinItemDetail?): List<AudioTrack> {
+        val streams = itemDetail?.mediaStreams ?: return emptyList()
+        return streams
+            .filter { it.type.equals("Audio", ignoreCase = true) }
+            .map { s ->
+                AudioTrack(
+                    index = s.index,
+                    language = s.language,
+                    // DisplayTitle is the fullest human string Jellyfin composes (lang + title +
+                    // codec + layout, e.g. "Dansk - Synstolkning - Dolby Digital - 5.1"); fall back
+                    // to the raw Title, then to a composed language+codec, then language alone.
+                    label = s.displayTitle?.takeIf { it.isNotBlank() }
+                        ?: s.title?.takeIf { it.isNotBlank() }
+                        ?: listOfNotNull(s.language, s.codec?.uppercase()).joinToString(" · ").ifBlank { null },
+                    codec = s.codec,
+                    channels = s.channels,
+                    isDefault = s.isDefault,
                 )
             }
     }
