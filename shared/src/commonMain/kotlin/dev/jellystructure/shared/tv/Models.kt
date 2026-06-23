@@ -68,6 +68,22 @@ data class SubTrack(
     val url: String?,
 )
 
+/**
+ * Per-audio-track metadata from Jellyfin's MediaStreams (R46), so the player picker can show the
+ * human-readable title (e.g. "Synstolkning") instead of a bare language code. `label` is Jellyfin's
+ * `DisplayTitle ?: Title`. Order matches the container's audio-stream order (used to map to the
+ * player's enumerated audio tracks).
+ */
+@Serializable
+data class AudioTrack(
+    val index: Int,
+    val language: String?,
+    val label: String?,
+    val codec: String? = null,
+    val channels: Int? = null,
+    @SerialName("is_default") val isDefault: Boolean = false,
+)
+
 @Serializable
 data class StreamTicket(
     @SerialName("jellyfin_base_url") val jellyfinBaseUrl: String,
@@ -78,6 +94,7 @@ data class StreamTicket(
     @SerialName("hls_url") val hlsUrl: String?,
     @SerialName("start_position_ms") val startPositionMs: Long = 0,
     val subtitles: List<SubTrack> = emptyList(),
+    val audio: List<AudioTrack> = emptyList(),
     @SerialName("trickplay_url") val trickplayUrl: String? = null,
     @SerialName("expires_at") val expiresAt: Long,
 )

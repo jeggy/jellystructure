@@ -70,6 +70,7 @@ import dev.jellystructure.ravilo.ui.seams.PlayerLifecycleEffect
 import dev.jellystructure.ravilo.ui.seams.PlayerVideoSurface
 import dev.jellystructure.ravilo.ui.seams.RaviloPlayer
 import dev.jellystructure.ravilo.ui.seams.RemoteImage
+import dev.jellystructure.ravilo.ui.seams.languageName
 import dev.jellystructure.ravilo.ui.theme.RaviloColors
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
 import dev.jellystructure.ravilo.ui.theme.SpaceGrotesk
@@ -233,7 +234,7 @@ fun PlayerScreen(
         val s = sessionState as? PlayerSessionState.Ready ?: return@LaunchedEffect
         val streamUrl = s.ticket.hlsUrl
             ?: "${s.ticket.jellyfinBaseUrl}/Videos/${s.ticket.itemId}/stream.${s.ticket.container}?api_key=${s.ticket.accessToken}"
-        player.load(streamUrl, s.ticket.startPositionMs, s.ticket.subtitles)
+        player.load(streamUrl, s.ticket.startPositionMs, s.ticket.subtitles, s.ticket.audio)
         player.play()
         isPlaying = true
         wake()
@@ -965,11 +966,12 @@ private fun TrackPicker(
             // Options
             val effectiveAudio = if (audioTracks.isEmpty()) listOf(PlayerAudioTrack(0, "Default", null)) else audioTracks
             val items: List<Triple<String, String?, String?>> = if (pickerTab == 0) {
-                effectiveAudio.map { Triple(it.label, it.language, null) }
+                // Secondary line: humanized language, hidden when the label already starts with it.
+                effectiveAudio.map { Triple(it.label, langLine(it.language, it.label), null) }
             } else {
                 subtitleTracks.mapIndexed { i, sub ->
                     if (sub == null) Triple(str("off"), null, null)
-                    else Triple(sub.label, sub.language, if (sub.forced) "FORCED" else if (sub.isDefault) "DEFAULT" else null)
+                    else Triple(sub.label, langLine(sub.language, sub.label), if (sub.forced) "FORCED" else if (sub.isDefault) "DEFAULT" else null)
                 }
             }
             val selectedInTab = if (pickerTab == 0) selectedAudio else selectedSub + 1
@@ -1369,3 +1371,14 @@ private fun Long.toTimestamp(): String {
 }
 
 private fun Int.pad2() = toString().padStart(2, '0')
+
+/**
+ * Secondary picker line: the humanized language (R46), or null when the primary [label] already
+ * conveys it (Jellyfin's DisplayTitle usually leads with the language) so we don't show it twice.
+ */
+private fun langLine(language: String?, label: String): String? {
+    val name = languageName(language) ?: language?.takeIf { it.isNotBlank() } ?: return null
+    val shown = label.contains(name, ignoreCase = true) ||
+        (language != null && label.contains(language, ignoreCase = true))
+    return if (shown) null else name
+}

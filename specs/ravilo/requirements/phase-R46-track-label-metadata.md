@@ -1,7 +1,17 @@
 # Phase R46 — Human-readable audio/subtitle labels in the player picker
 
-**Status:** Planned · _the Audio/Subtitles picker shows bare codes; surface Jellyfin's rich track
-titles (e.g. "Synstolkning") that the metadata already carries._
+**Status:** ✓ Done (2026-06-23) · The `StreamTicket` now carries an `audio: List<AudioTrack>`
+populated by `PlaybackService` from Jellyfin's `MediaStreams` (label = `DisplayTitle ?: Title ?:
+lang·codec`); `RaviloPlayer.load` takes the audio metadata and the Android `audioTracks` getter
+prefers the server label (mapped by audio-stream order) over the container `Format.label`, then a
+**humanized** language name, then the raw code. A shared `languageName()` util also upgrades the
+bare-code fallback for subtitles, and the web actual surfaces the server audio labels (display-only).
+The picker's secondary line shows the humanized language unless the primary label already conveys it.
+Backend + `:ravilo-ui` (android + wasmJs) compile.
+
+_Partial:_ embedded-subtitle titles still come from the container (R41 externals already use
+`DisplayTitle`); sourcing embedded-sub `DisplayTitle` from the backend via the same mechanism is a
+small follow-up, not the reported issue (audio).
 
 ## Problem
 In the Ravilo player's **Audio** and **Subtitles** picker, options show only a code — typically an

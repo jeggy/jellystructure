@@ -11,6 +11,7 @@ import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.session.MediaSession
 import dev.jellystructure.ravilo.ui.RaviloAppContext
+import dev.jellystructure.shared.tv.AudioTrack
 import dev.jellystructure.shared.tv.SubTrack
 
 /**
@@ -37,7 +38,11 @@ actual class RaviloPlayer actual constructor() {
     }
     private val mediaSession: MediaSession by mediaSessionLazy
 
-    actual fun load(streamUrl: String, startPositionMs: Long, subtitles: List<SubTrack>) {
+    // R46: server-derived audio metadata (Jellyfin DisplayTitle, in container audio-stream order).
+    private var audioMeta: List<AudioTrack> = emptyList()
+
+    actual fun load(streamUrl: String, startPositionMs: Long, subtitles: List<SubTrack>, audio: List<AudioTrack>) {
+        audioMeta = audio
         val subConfigs = subtitles.mapNotNull { sub ->
             val url = sub.url ?: return@mapNotNull null
             val mime = when {
@@ -136,8 +141,16 @@ actual class RaviloPlayer actual constructor() {
                 val group = tracks.groups[i]
                 if (group.type == C.TRACK_TYPE_AUDIO) {
                     val format = group.mediaTrackGroup.getFormat(0)
-                    val label = format.label ?: format.language?.uppercase() ?: "Track ${idx + 1}"
-                    result += PlayerAudioTrack(idx, label, format.language)
+                    // Prefer the server-derived label (Jellyfin DisplayTitle), mapped by audio-stream
+                    // order; fall back to the container track name, then a humanized language, then
+                    // the raw code (R46). If stream counts differ, the container label still applies.
+                    val meta = audioMeta.getOrNull(idx)
+                    val label = meta?.label?.takeIf { it.isNotBlank() }
+                        ?: format.label
+                        ?: languageName(format.language)
+                        ?: format.language?.uppercase()
+                        ?: "Track ${idx + 1}"
+                    result += PlayerAudioTrack(idx, label, meta?.language ?: format.language)
                     idx++
                 }
             }
@@ -153,7 +166,7 @@ actual class RaviloPlayer actual constructor() {
                 val group = tracks.groups[i]
                 if (group.type == C.TRACK_TYPE_TEXT) {
                     val format = group.mediaTrackGroup.getFormat(0)
-                    val label = format.label ?: format.language?.uppercase() ?: "Track ${idx + 1}"
+                    val label = format.label ?: languageName(format.language) ?: format.language?.uppercase() ?: "Track ${idx + 1}"
                     val forced = (format.selectionFlags and C.SELECTION_FLAG_FORCED) != 0
                     val def = (format.selectionFlags and C.SELECTION_FLAG_DEFAULT) != 0
                     result += PlayerSubtitleTrack(idx, label, format.language, forced, def)
