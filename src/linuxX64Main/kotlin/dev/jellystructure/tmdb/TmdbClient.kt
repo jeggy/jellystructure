@@ -149,6 +149,9 @@ data class TmdbMovieKeywordsResponse(val keywords: List<TmdbKeyword> = emptyList
 @Serializable
 data class TmdbTvKeywordsResponse(val results: List<TmdbKeyword> = emptyList())
 
+@Serializable
+data class TmdbExternalIds(@SerialName("tvdb_id") val tvdbId: Int? = null)
+
 class TmdbClient(
     private val configStore: ConfigStore,
     private val baseUrl: String = "https://api.themoviedb.org/3",
@@ -248,6 +251,17 @@ class TmdbClient(
         }
         if (result.isFailure) Logger.warn("TMDB TV details failed for id=$tmdbId lang=$language: ${result.exceptionOrNull()?.message}")
         return result.getOrNull()
+    }
+
+    /** Phase 56 — bridge a TMDB tv id to its TheTVDB id (Sonarr is keyed by tvdbId, not tmdbId). */
+    suspend fun getTvTvdbId(tmdbId: Int): Int? {
+        val key = apiKey()
+        if (key.isBlank()) return null
+        return runCatching {
+            val response = http.get("$baseUrl/tv/$tmdbId/external_ids") { parameter("api_key", key) }
+            if (response.status != HttpStatusCode.OK) return null
+            response.body<TmdbExternalIds>().tvdbId
+        }.getOrNull()
     }
 
     suspend fun getTvDetailsLocalized(tmdbId: Int, languages: List<String>): TmdbTvDetails? {
