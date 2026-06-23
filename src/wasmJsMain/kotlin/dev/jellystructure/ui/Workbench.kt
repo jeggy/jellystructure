@@ -191,6 +191,9 @@ private fun wbValuesFor(facet: String): List<String> = when (facet) {
     else -> emptyList()
 }
 
+// JS-tag colour for a tag value (null = normal tag). Drives the dotted/grouped tag picker.
+private fun wbTagColor(v: String): String? = wbMeta?.tags?.firstOrNull { it.value == v }?.color
+
 private fun wbRenderConds() {
     val host = document.getElementById("wb-conds") as? HTMLElement ?: return
     val facetOpts = WB_GROUPS.joinToString("") { (group, facets) ->
@@ -200,6 +203,18 @@ private fun wbRenderConds() {
         val opOpts = opsFor(c.facet).joinToString("") { (v, l) -> "<option value=\"$v\"${if (c.op == v) " selected" else ""}>${l.esc()}</option>" }
         val valEditor = if (c.facet == "track_title") {
             """<input class="input wb-text" data-i="$i" placeholder="e.g. Commentary, SDH, Synstolkning" value="${(c.values.firstOrNull() ?: "").esc()}">"""
+        } else if (c.facet == "tag") {
+            // Group Jellystructure tags (those with a colour) first + dotted, then plain tags.
+            fun tagChip(v: String): String {
+                val color = wbTagColor(v)
+                val dot = if (color != null) """<span class="tag-dot" style="background:$color"></span>""" else ""
+                return """<span class="wb-vchip${if (c.values.contains(v)) " on" else ""}" data-i="$i" data-v="${v.esc()}">$dot${v.esc()}</span>"""
+            }
+            val (js, other) = wbValuesFor("tag").take(80).partition { wbTagColor(it) != null }
+            buildString {
+                if (js.isNotEmpty()) append("""<div class="wb-vgroup">Jellystructure tags</div><div class="wb-vchips">${js.joinToString("") { tagChip(it) }}</div>""")
+                if (other.isNotEmpty()) append("""<div class="wb-vgroup">Other tags</div><div class="wb-vchips">${other.joinToString("") { tagChip(it) }}</div>""")
+            }
         } else {
             val chips = wbValuesFor(c.facet).take(80).joinToString("") { v ->
                 val on = c.values.contains(v)
@@ -463,8 +478,10 @@ private fun injectWorkbenchStyles() {
         .wb-join { font-size:.72rem; font-weight:700; color:var(--ink-soft); min-width:38px; }
         .wb-facet, .wb-op { padding:4px 8px; }
         .wb-vchips { display:flex; flex-wrap:wrap; gap:6px; max-height:120px; overflow:auto; }
-        .wb-vchip { padding:3px 9px; border-radius:18px; border:1px solid var(--line-2); background:var(--fill-2); color:var(--ink); cursor:pointer; font-size:.76rem; }
+        .wb-vchip { display:inline-flex; align-items:center; gap:6px; padding:3px 9px; border-radius:18px; border:1px solid var(--line-2); background:var(--fill-2); color:var(--ink); cursor:pointer; font-size:.76rem; }
         .wb-vchip.on { background:var(--hi); border-color:transparent; color:#fff; }
+        .wb-vgroup { width:100%; font-size:.66rem; text-transform:uppercase; letter-spacing:.06em; color:var(--ink-soft); margin:6px 0 2px; }
+        .wb-vgroup:first-child { margin-top:0; }
         .wb-count { margin:12px 0 8px; font-size:.9rem; color:var(--ink); }
         .wb-preview { display:grid; grid-template-columns:repeat(auto-fill,minmax(70px,1fr)); gap:7px; max-height:240px; overflow:auto; margin-bottom:14px; }
         .wb-pcard { aspect-ratio:2/3; border-radius:7px; overflow:hidden; background:var(--fill-3); }
