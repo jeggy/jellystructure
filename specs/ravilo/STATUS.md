@@ -35,7 +35,7 @@ ingestion — see [`../STATUS.md`](../STATUS.md)); the Ravilo side is three plan
   socket.
 - **[R49](requirements/phase-R49-tv-discover-screen.md)** — the TV experience: gated Top 10 tab, ranked
   rows with rich status indicators, a **separate** DiscoverDetailScreen (no playback/seasons) with a
-  status-driven Request/Watch-Now button + trailer.
+  status-driven Request/Watch-Now button (trailers out of scope for now).
 - **[R50](requirements/phase-R50-config-editor-discover.md)** — the `/ravilo` config editor section to
   pick, per user, which charts appear (drag-reorder/toggle), gated on Radarr.
 

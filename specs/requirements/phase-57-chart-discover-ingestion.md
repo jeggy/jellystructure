@@ -6,9 +6,22 @@
 ## Goal
 
 Ingest third-party "Top 10"-style popularity charts so Ravilo (R48/R49) can show a **Discover / Top
-10** surface. First provider is **Netflix, scraped via Tudum**; the design must keep room for **other
-vendors later**, so everything goes through a provider abstraction and a normalized model — no
+10** surface. First provider is **Netflix's official Tudum data feeds**; the design must keep room for
+**other vendors later**, so everything goes through a provider abstraction and a normalized model — no
 Netflix/Tudum specifics leak past the ingestion layer.
+
+### Source of truth: 3 stable TSV feeds (not HTML scraping)
+Netflix publishes its engagement charts as **downloadable TSV files** with a schema unchanged since
+2021 — our **5 lists are slices of 3 files**, not 5 scrapes:
+- `all-weeks-countries.tsv` — per-country weekly **rank** (no views). Source for `mov-<region>` +
+  `tv-<region>` (filter `country_iso2` + `category` = Films/TV).
+- `all-weeks-global.tsv` — global weekly **hours viewed + views**, split Films (English) / Films
+  (Non-English) / TV. Source for `mov-global` + `noneng`.
+- `most-popular.tsv` — all-time **first-91-day views**. Source for `alltime`.
+
+So `fetch()` is a TSV download + parse + filter, not a DOM scrape — robust to site redesigns. Record the
+real feed URLs in the provider. **Gate refresh on the `week` column changing** (the files update weekly;
+a daily poll of an unchanged week is wasted work — compare the latest `week` to what we ingested).
 
 This phase is **ingestion + normalization + library/TMDB matching only**. The TV-facing API, per-user
 list selection, and the request action live in R48; the request *pipeline* is Phase 56.
@@ -36,9 +49,12 @@ interface ChartProvider {
 |---------|-------|----------|--------|-------|
 | `mov-<region>` | `country` | `film` | `rank` | Top 10 Movies in &lt;country&gt; — **rank only, no views** |
 | `tv-<region>` | `country` | `series` | `rank` | Top 10 TV Shows in &lt;country&gt; — same DK filter, category=TV (free second row) |
-| `mov-global` | `global` | `film` | `views` | Global Top 10 Movies — **real hours viewed + view counts** |
-| `noneng` | `global` | `film` | `views` | Top 10 Non-English Films (global English/non-English split) |
+| `mov-global` | `global` | `film` | `views` | Global Top 10 Movies — **English** films; real hours viewed + view counts |
+| `noneng` | `global` | `film` | `views` | Top 10 **Non-English** Films (the global feed's English/non-English split) |
 | `alltime` | `alltime` | `film` | `views91` | Most Popular of all time — ranked by first-91-day views |
+
+(`tv-global` is **deliberately omitted** — the country TV row covers the user's locale; a global TV row
+can be added later as another slice of `all-weeks-global.tsv` if wanted.)
 
 **Hard caveats (encode in the model, surface in UI):**
 - **Country feeds are ranking-only.** No hours/views for a country — so a country `ChartEntry` carries
@@ -60,26 +76,37 @@ single snapshot can't give:
 data class ChartEntry(
   val listId: String, val rank: Int,
   val title: String, val year: Int?, val kind: MediaKind,
-  val tmdbId: Int?,          // resolved at ingest via TMDB search (Phase 2 matcher)
+  val tmdbId: Int?,          // resolved at ingest via TMDB title(+kind) search; null if unresolved
+  val tmdbConfidence: Float, // match score; low scores flagged for the admin match-picker
   val itemId: String?,       // set when the title is already in the Jellyfin library → status=available
   val weeksOnChart: Int, val trend: Trend, val isNew: Boolean,
   val views: String?,        // null for country scope
-  val backdropPath: String?, val overview: String?, val trailerKey: String?,
+  val backdropPath: String?, val overview: String?,
 )
 ```
-- **Library match:** at ingest, each entry is matched (by tmdbId, then title+year) against the media
-  store; a hit sets `itemId` → the entry is `available`. Misses are request candidates (status comes
-  from Phase 56 at read time, not stored here).
-- **TMDB enrich:** backdrop, overview, and a trailer key (`/movie/{id}/videos`) are pulled so R49's
-  detail page + trailer work without a second round-trip.
+- **TMDB resolution is title-search, not id/year lookup.** The TSV carries only `show_title` (+ week +
+  rank/views) — **no tmdbId and no year**, so year cannot be a *matching input* (it's only known *after*
+  resolution). Resolve by **title + kind** search and take the best hit, storing a `tmdbConfidence`.
+- **Mismatch recovery (reuse Phase 32).** Foreign/ambiguous titles will mis-resolve; a wrong hit
+  otherwise shows the wrong poster/overview and **re-asserts on every refresh**. So: low-confidence
+  matches are surfaced to the admin via the **Phase 32 TMDB match-picker**, and a **persisted override
+  map** `chart_override(provider, title → tmdbId)` is applied first on every ingest and **survives
+  re-ingest** (an admin correction sticks). Unresolved entries still appear (rank + title) but aren't
+  requestable until matched.
+- **Library match:** after TMDB resolution, each entry is matched against the media store (by tmdbId);
+  a hit sets `itemId` → the entry is `available`. Misses are request candidates (live status comes from
+  Phase 56 at read time, not stored here).
+- **TMDB enrich:** backdrop + overview are pulled so R49's detail page works without a second
+  round-trip. (No trailer key — trailers are out of scope for now.)
 
 ## Ingestion job
 
-- `ChartIngestService.refresh(region)` — scheduled (default every 24 h; charts update ~weekly but
-  daily is cheap) + on-demand. For each enabled provider × `availableLists(region)`: `fetch` →
-  normalize → TMDB-resolve → library-match → upsert `chart_entry` + append `chart_history`.
+- `ChartIngestService.refresh(region)` — scheduled (default daily, but **only re-parses when the feed's
+  `week` advances** — weekly data) + on-demand. For each enabled provider: download the relevant TSV(s)
+  once, slice into `availableLists(region)`, normalize → apply override map → TMDB-resolve (record
+  confidence) → library-match → upsert `chart_entry` + append `chart_history`.
 - Region(s) come from config; matching/enrich reuse existing TMDB client + media store.
-- Failures are per-list and non-fatal (a vendor layout change degrades one row, not the feature);
+- Failures are per-list and non-fatal (a parse error in one slice degrades that row, not the feature);
   logged to the Phase 17 activity log.
 
 ### Config (additive)
