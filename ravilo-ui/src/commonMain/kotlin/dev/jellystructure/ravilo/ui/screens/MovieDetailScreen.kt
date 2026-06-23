@@ -21,12 +21,15 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRestorer
+import androidx.compose.ui.focus.onFocusChanged
+import kotlinx.coroutines.launch
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
@@ -86,10 +89,12 @@ private fun MovieDetailLoaded(
         )
     }
     val scrollState = rememberScrollState()
+    val scope = rememberCoroutineScope()
     val density = LocalDensity.current
     val containerH = LocalWindowInfo.current.containerSize.height
-    // Full-bleed hero fills the first screenful so the first focusable (Play) is already on-screen —
-    // the page opens at the top with no auto-scroll; Down from the actions scrolls into cast/related.
+    // Full-bleed hero fills the first screenful so the first focusable (Play) is already on-screen.
+    // Whenever the actions row holds focus — on entry and when focus returns up from cast/related —
+    // snap the page to the top so the full hero re-frames instead of stranding mid-scroll (R45).
     val heroHeight = if (containerH > 0) with(density) { containerH.toDp() } else 540.dp
 
     val playFR = remember { FocusRequester() }
@@ -151,7 +156,12 @@ private fun MovieDetailLoaded(
                     )
                 }
                 Spacer(Modifier.height(18.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Row(
+                    modifier = Modifier.onFocusChanged {
+                        if (it.hasFocus) scope.launch { scrollState.animateScrollTo(0) }
+                    },
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
                     val isResume = detail.playback.positionMs > 0 && !detail.playback.watched
                     val minsLeft = if (detail.playback.durationMs > 0)
                         ((detail.playback.durationMs - detail.playback.positionMs) / 60_000L).toInt() else 0
