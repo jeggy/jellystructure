@@ -57,6 +57,17 @@ class JellyfinClient {
         response.status.value in 200..299
     }.getOrDefault(false)
 
+    /**
+     * True if [token] is a Jellyfin access token that can still act as [userId]. Used to detect a
+     * stale **paired** TV user token (Jellyfin 401s it) so the TV can fall back to the long-lived
+     * server token. `/Users/{userId}` is an authenticated endpoint — public `/System/Info/Public`
+     * would 200 even for an invalid token, so it can't be used here.
+     */
+    suspend fun isTokenValid(baseUrl: String, token: String, userId: String): Boolean = runCatching {
+        if (token.isBlank()) return false
+        http.get(baseUrl.trimEnd('/') + "/Users/$userId") { jellyfinAuth(token) }.status.isSuccess()
+    }.getOrDefault(false)
+
     suspend fun getUsers(baseUrl: String, token: String): List<JellyfinUser> = runCatching {
         http.get(baseUrl.trimEnd('/') + "/Users") { jellyfinAuth(token) }
             .bodyOrNull<List<JellyfinUser>>("getUsers").orEmpty()
