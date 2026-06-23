@@ -322,10 +322,24 @@ data class RaviloConfig(
     @SerialName("ui_language") val uiLanguage: String = "en",
     @SerialName("hero_height_pct") val heroHeightPct: Int = 56,       // % of screen the hero fills (30..100)
     @SerialName("auto_advance_seconds") val autoAdvanceSeconds: Int = 7, // hero carousel interval seconds; 0 = off (0..120)
+    val discover: DiscoverConfig = DiscoverConfig(),                   // R48 — Top 10 / Discover tab
 ) {
     /** The skin actually rendered: the viewer's override when allowed, else the operator default. */
     fun effectiveSkin(): Skin = if (allowSkinOverride) (viewerSkinOverride ?: defaultSkin) else defaultSkin
 }
+
+/**
+ * R48 — per-user Discover/Top-10 selection (server-owned, synced). `canRequest` gates whether a
+ * non-admin may spend disk/bandwidth (admins always may). `lists` are ordered ChartListSpec ids.
+ */
+@Serializable
+data class DiscoverConfig(
+    val enabled: Boolean = false,
+    @SerialName("can_request") val canRequest: Boolean = false,
+    val source: String = "netflix",
+    val region: String = "DK",
+    val lists: List<String> = emptyList(),
+)
 
 // ─── Request bodies ───────────────────────────────────────────────────────────
 
