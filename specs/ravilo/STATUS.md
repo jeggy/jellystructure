@@ -12,7 +12,21 @@ _Last updated: 2026-06-23_
 
 ## Current focus
 
-**Phases R01–R46 complete.** The 2026-06-23 on-device batch (R44–R46) is done; latest is
+**Phases R01–R46 complete.** _On-device follow-up (2026-06-23), after deploying R44–R46 to stue TV:_
+playback was a black screen + empty home feed because the **paired Jellyfin user token had gone stale
+(401)** — `getSeriesEpisodes` returned empty, so `DetailService` fell back to `id = jfEp?.id ?:
+ep.path`, sending the episode **file path** as the playback id (`/Items//mnt/series/…mkv` →
+CURLE_URL_MALFORMAT), and the audio/sub metadata (R46/R41) was starved because it all comes from the
+failing `getItemDetail`. Fixed with a **server-token fallback** (`JellyfinClient.isTokenValid` +
+`tvToken()` across Playback/Detail/HomeFeed/Browse): use the paired user token when Jellyfin still
+accepts it, else the long-lived server token (userId stays in each URL, so per-user data is correct).
+Also a **R45 follow-up**: the first pass only snapped to top *after* focus, so the reveal-scroll was
+still visible — added a shared edge `BringIntoViewSpec` (`focus/BringIntoView.kt`) on the Home
+LazyColumn + both detail Columns so focusing an already-visible Play/Resume is a no-op. Release APK
+deployed in-place to stue TV; **the backend must be restarted (`runBackend`) for the token/audio/Phase-50
+fixes to take effect — the native `[be]` does not hot-reload.**
+
+The 2026-06-23 on-device batch (R44–R46) is done; latest is
 **[R45](requirements/phase-R45-entry-scroll-focus-restore.md)** — "top action focused ⇒ top of
 page": the Movie/Series detail actions row and the Home hero snap the scroll to the top via
 `onFocusChanged` on entry and whenever focus returns up to Play/Resume/the hero (so the full hero
