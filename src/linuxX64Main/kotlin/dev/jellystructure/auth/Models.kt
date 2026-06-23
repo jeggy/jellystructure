@@ -115,6 +115,7 @@ data class JellyfinMediaStream(
     @SerialName("Language") val language: String? = null,
     @SerialName("DisplayTitle") val displayTitle: String? = null,
     @SerialName("Title") val title: String? = null,
+    @SerialName("Channels") val channels: Int? = null,
     @SerialName("IsForced") val isForced: Boolean = false,
     @SerialName("IsDefault") val isDefault: Boolean = false,
     @SerialName("IsExternal") val isExternal: Boolean = false,
