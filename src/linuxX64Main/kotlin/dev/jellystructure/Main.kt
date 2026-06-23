@@ -3,6 +3,8 @@ package dev.jellystructure
 import dev.jellystructure.auth.JellyfinClient
 import dev.jellystructure.auth.SessionService
 import dev.jellystructure.config.ConfigStore
+import dev.jellystructure.arr.ArrClient
+import dev.jellystructure.arr.ArrRescanService
 import dev.jellystructure.torrent.QBittorrentClient
 import dev.jellystructure.torrent.SeedingGuard
 import dev.jellystructure.db.createDatabase
@@ -136,10 +138,12 @@ fun main() = runBlocking {
     val channelLogoStore = dev.jellystructure.tv.ChannelLogoStore(dataDir)
     val qbClient = QBittorrentClient()
     val seedingGuard = SeedingGuard(qbClient)
+    val arrClient = ArrClient()
+    val arrRescan = ArrRescanService(configStore, arrClient, rootScope)
     val shutdown = startServer(
         configStore, sessionService, raviloDeviceService, raviloConfigService, channelLogoStore, homeFeedService, browseService, detailService, playbackService, jellyfinClient, mediaStore, scanner,
         artworkDownloader, tmdbClient, scanTracker, folderWatcher, mediaHistory, activityLog, broadcaster,
-        frontendDir, port = port, scanDispatcher = scanDispatcher, effectiveScanThreads = effectiveScanThreads, jsTagStore = jsTagStore, seedingGuard = seedingGuard, logoDownloader = logoDownloader, qbClient = qbClient, tvEventBus = tvEventBus,
+        frontendDir, port = port, scanDispatcher = scanDispatcher, effectiveScanThreads = effectiveScanThreads, jsTagStore = jsTagStore, seedingGuard = seedingGuard, logoDownloader = logoDownloader, qbClient = qbClient, arrClient = arrClient, arrRescan = arrRescan, tvEventBus = tvEventBus,
     )
 
     // Scheduled scan — fires every scan_interval_hours hours (0 = disabled)

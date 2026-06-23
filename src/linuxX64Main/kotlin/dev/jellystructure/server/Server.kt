@@ -26,6 +26,9 @@ import dev.jellystructure.media.LogoDownloader
 import dev.jellystructure.server.routes.metadataRoutes
 import dev.jellystructure.server.routes.triageRoutes
 import dev.jellystructure.server.routes.tvRoutes
+import dev.jellystructure.arr.ArrClient
+import dev.jellystructure.arr.ArrPing
+import dev.jellystructure.arr.ArrRescanService
 import dev.jellystructure.torrent.QBittorrentClient
 import dev.jellystructure.torrent.SeedingGuard
 import dev.jellystructure.tv.BrowseService
@@ -107,6 +110,8 @@ fun startServer(
     seedingGuard: SeedingGuard,
     logoDownloader: LogoDownloader,
     qbClient: QBittorrentClient? = null,
+    arrClient: ArrClient? = null,
+    arrRescan: ArrRescanService? = null,
     tvEventBus: TvEventBus,
 ): suspend () -> Unit {
     val appScope = CoroutineScope(SupervisorJob())
@@ -164,18 +169,28 @@ fun startServer(
                     // ffprobe
                     val ffp = runShell("which ffprobe 2>/dev/null")?.trim()
                     checks.add(HealthCheck("ffprobe", !ffp.isNullOrBlank(), if (!ffp.isNullOrBlank()) ffp else "not found in PATH"))
+                    // Radarr / Sonarr (Phase 54) — probed only when enabled; an unreachable *arr is a
+                    // non-fatal warning (it never fail-closes anything, unlike the qBittorrent guard).
+                    cfg.radarr?.takeIf { it.enabled }?.let { r ->
+                        val p = if (arrClient != null && r.url.isNotBlank()) arrClient.ping(r.url, r.apiKey) else ArrPing(false, "URL not configured")
+                        checks.add(HealthCheck("Radarr", p.ok, if (p.ok) "Connected" + (p.version?.let { " · v$it" } ?: "") else p.detail))
+                    }
+                    cfg.sonarr?.takeIf { it.enabled }?.let { s ->
+                        val p = if (arrClient != null && s.url.isNotBlank()) arrClient.ping(s.url, s.apiKey) else ArrPing(false, "URL not configured")
+                        checks.add(HealthCheck("Sonarr", p.ok, if (p.ok) "Connected" + (p.version?.let { " · v$it" } ?: "") else p.detail))
+                    }
                     call.respond(mapOf("checks" to checks))
                 }
 
                 authRoutes(sessionService, jellyfinClient, configStore)
-                configureConfigRoutes(configStore, effectiveScanThreads, qbClient)
+                configureConfigRoutes(configStore, effectiveScanThreads, qbClient, arrClient)
                 setupRoutes(configStore, jellyfinClient)
                 jellyfinRoutes(configStore, jellyfinClient)
-                mediaRoutes(mediaStore, scanner, artworkDownloader, tmdbClient, appScope, scanTracker, broadcaster, jellyfinClient, configStore, mediaHistory, scanDispatcher, seedingGuard, raviloConfigService)
+                mediaRoutes(mediaStore, scanner, artworkDownloader, tmdbClient, appScope, scanTracker, broadcaster, jellyfinClient, configStore, mediaHistory, scanDispatcher, seedingGuard, raviloConfigService, arrRescan)
                 activityRoutes(activityLog)
                 triageRoutes(mediaStore, jellyfinClient, configStore, mediaHistory, seedingGuard)
                 metadataRoutes(mediaStore, jsTagStore, logoDownloader)
-                trackRoutes(mediaStore, configStore, jellyfinClient, mediaHistory, seedingGuard)
+                trackRoutes(mediaStore, configStore, jellyfinClient, mediaHistory, seedingGuard, arrRescan)
                 tvRoutes(deviceService, raviloConfigService, homeFeedService, browseService, detailService, playbackService, sessionService, jellyfinClient, configStore, channelLogoStore)
             }
 
