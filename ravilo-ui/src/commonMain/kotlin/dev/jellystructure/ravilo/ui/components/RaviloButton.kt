@@ -18,9 +18,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.scale
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalDensity
@@ -53,22 +50,39 @@ fun RaviloButton(
     val focusSpec = remember { spring<Float>(dampingRatio = 0.65f, stiffness = Spring.StiffnessMediumLow) }
     val dpSpec    = remember { spring<Dp>(dampingRatio = 0.65f, stiffness = Spring.StiffnessMediumLow) }
     val scale           by animateFloatAsState(if (focused) 1.06f else 1f, focusSpec, label = "buttonScale")
-    val shadowElevation by animateDpAsState(if (focused) 16.dp else 0.dp, dpSpec, label = "buttonShadow")
+    val glowElevation   by animateDpAsState(if (focused) 16.dp else 0.dp, dpSpec, label = "buttonShadow")
     // Lift: 4dp upward on focus (converted to px for graphicsLayer)
     val liftPx by animateFloatAsState(
         targetValue = if (focused) with(density) { -3.dp.toPx() } else 0f,
         animationSpec = focusSpec,
         label = "buttonLift",
     )
-    val shape = remember { RoundedCornerShape(10.dp) }
+    val buttonShape = remember { RoundedCornerShape(10.dp) }
     val ghostBorderColor = remember(colors.textSecondary) { colors.textSecondary.copy(alpha = 0.4f) }
 
+    // Focusable outer keeps a constant layout size; the scale, lift and glow run draw-only on the inner
+    // layer so the actions row never chases the focus animation → no viewport jump (R42/R43, now on the
+    // detail/hero buttons too).
+    Box(
+        modifier = Modifier.dpadFocusable(
+            focusRequester = focusRequester,
+            onFocused = { focused = true; onFocused() },
+            onBlurred = { focused = false },
+            onLeft = onLeft, onRight = onRight, onUp = onUp, onDown = onDown, onSelect = onSelect,
+        ),
+        contentAlignment = Alignment.Center,
+    ) {
     Box(
         modifier = Modifier
-            .scale(scale)
-            .graphicsLayer { translationY = liftPx }
-            .shadow(shadowElevation, shape, clip = false, ambientColor = colors.focusGlow, spotColor = colors.focusGlow)
-            .clip(shape)
+            .graphicsLayer {
+                scaleX = scale; scaleY = scale
+                translationY = liftPx
+                shadowElevation = glowElevation.toPx()
+                shape = buttonShape
+                clip = true
+                ambientShadowColor = colors.focusGlow
+                spotShadowColor = colors.focusGlow
+            }
             .then(
                 when {
                     focused && style == ButtonStyle.PRIMARY ->
@@ -76,16 +90,10 @@ fun RaviloButton(
                     !focused && style == ButtonStyle.PRIMARY ->
                         Modifier.background(colors.accentDim)
                     focused ->
-                        Modifier.border(2.dp, colors.accent, shape)
+                        Modifier.border(2.dp, colors.accent, buttonShape)
                     else ->
-                        Modifier.border(1.dp, ghostBorderColor, shape)
+                        Modifier.border(1.dp, ghostBorderColor, buttonShape)
                 }
-            )
-            .dpadFocusable(
-                focusRequester = focusRequester,
-                onFocused = { focused = true; onFocused() },
-                onBlurred = { focused = false },
-                onLeft = onLeft, onRight = onRight, onUp = onUp, onDown = onDown, onSelect = onSelect,
             )
             .heightIn(min = 44.dp)
             .padding(horizontal = 18.dp, vertical = 8.dp),
@@ -102,5 +110,6 @@ fun RaviloButton(
             fontWeight = FontWeight.SemiBold,
             fontFamily = sora,
         )
+    }
     }
 }
