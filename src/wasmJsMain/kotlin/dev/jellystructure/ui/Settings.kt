@@ -305,7 +305,12 @@ private fun arrBoxHtml(kind: String, label: String, kindBadge: String, urlPlaceh
                 </div>
                 <div id="$kind-on" style="display:none;margin-top:12px">
                   <div class="field"><label>$label URL</label><input id="$kind-url" class="input" type="url" placeholder="$urlPlaceholder" style="width:100%"></div>
-                  <div class="field"><label>API key <span id="$kind-key-badge" style="display:none;margin-left:8px"></span></label><input id="$kind-key" class="input" type="password" placeholder="(unchanged)" style="width:100%"><span class="hint">$label → Settings → General → API Key. Leave blank to keep the stored key.</span></div>
+                  <div class="field"><label>API key <span id="$kind-key-badge" style="display:none;margin-left:8px"></span></label>
+                    <div style="display:flex;gap:8px;align-items:center">
+                      <input id="$kind-key" class="input" type="password" style="flex:1;min-width:0">
+                      <button id="$kind-key-reveal" type="button" class="btn sm ghost" style="flex:none">Show</button>
+                    </div>
+                    <span class="hint">$label → Settings → General → API Key. The saved key is pre-filled — clear it to remove.</span></div>
                   <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
                     <button id="$kind-test-btn" class="btn sm ghost">Test connection</button>
                     <span id="chk-$kind" class="tiny muted"></span>
@@ -443,7 +448,7 @@ private fun populateForm(response: ConfigResponse) {
     radarrRescan = radarr?.rescanAfterWrite ?: true
     updateToggle("radarr-enabled-toggle", radarrEnabled)
     updateToggle("radarr-rescan-toggle", radarrRescan)
-    if (radarr != null) setInputValue("radarr-url", radarr.url)
+    if (radarr != null) { setInputValue("radarr-url", radarr.url); setInputValue("radarr-key", radarr.apiKey) }
     setArrKeyBadge("radarr", (radarr?.apiKey ?: "").isNotBlank())
     (document.getElementById("radarr-on") as? HTMLElement)?.style?.display = if (radarrEnabled) "block" else "none"
     val sonarr = config.sonarr
@@ -451,7 +456,7 @@ private fun populateForm(response: ConfigResponse) {
     sonarrRescan = sonarr?.rescanAfterWrite ?: true
     updateToggle("sonarr-enabled-toggle", sonarrEnabled)
     updateToggle("sonarr-rescan-toggle", sonarrRescan)
-    if (sonarr != null) setInputValue("sonarr-url", sonarr.url)
+    if (sonarr != null) { setInputValue("sonarr-url", sonarr.url); setInputValue("sonarr-key", sonarr.apiKey) }
     setArrKeyBadge("sonarr", (sonarr?.apiKey ?: "").isNotBlank())
     (document.getElementById("sonarr-on") as? HTMLElement)?.style?.display = if (sonarrEnabled) "block" else "none"
 
@@ -1029,6 +1034,12 @@ private fun wireArr(scope: CoroutineScope, kind: String) {
     }
     document.getElementById("$kind-import-btn")?.addEventListener("click") {
         scope.launch { importArrRoots(kind) }
+    }
+    document.getElementById("$kind-key-reveal")?.addEventListener("click") {
+        val inp = document.getElementById("$kind-key") as? HTMLInputElement ?: return@addEventListener
+        val btn = document.getElementById("$kind-key-reveal") as? HTMLElement
+        if (inp.type == "password") { inp.type = "text"; btn?.textContent = "Hide" }
+        else { inp.type = "password"; btn?.textContent = "Show" }
     }
 }
 
