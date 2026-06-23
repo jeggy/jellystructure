@@ -30,7 +30,7 @@ class HomeFeedService(
         val config = configService.getConfig(device.jellyfinUserId)
         val all = mediaStore.allItems()
         val jellyfinBase = configStore.current.apiKeys.jellyfinUrl.trimEnd('/')
-        val token = device.jellyfinUserToken
+        val token = jellyfinClient.tvToken(jellyfinBase, device, configStore.current.apiKeys.jellyfinToken)
         return HomeFeed(
             heroes = buildHeroes(config, all, jellyfinBase, token),
             channels = buildChannels(config),
@@ -48,7 +48,7 @@ class HomeFeedService(
         val heroIds = config.heroes.map { it.itemId }.toSet()
         val all = mediaStore.allItems().filter { it.matchesChannel(channelCfg, heroIds) }
         val jellyfinBase = configStore.current.apiKeys.jellyfinUrl.trimEnd('/')
-        val token = device.jellyfinUserToken
+        val token = jellyfinClient.tvToken(jellyfinBase, device, configStore.current.apiKeys.jellyfinToken)
         return HomeFeed(
             heroes = buildHeroes(config, all, jellyfinBase, token),
             channels = buildChannels(config),

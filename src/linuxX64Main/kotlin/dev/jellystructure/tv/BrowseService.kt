@@ -32,7 +32,7 @@ class BrowseService(
         pageSize: Int = DEFAULT_PAGE_SIZE,
     ): SearchResults {
         val jellyfinBase = configStore.current.apiKeys.jellyfinUrl.trimEnd('/')
-        val token = device.jellyfinUserToken
+        val token = jellyfinClient.tvToken(jellyfinBase, device, configStore.current.apiKeys.jellyfinToken)
 
         val mediaKind = when (kind) {
             "movie"  -> MediaKind.MOVIE
@@ -70,9 +70,9 @@ class BrowseService(
     }
 
     /** Multi-language search: matches title, originalTitle, and every titlesByLang value. */
-    fun search(device: DeviceData, query: String): SearchResults {
+    suspend fun search(device: DeviceData, query: String): SearchResults {
         val jellyfinBase = configStore.current.apiKeys.jellyfinUrl.trimEnd('/')
-        val token = device.jellyfinUserToken
+        val token = jellyfinClient.tvToken(jellyfinBase, device, configStore.current.apiKeys.jellyfinToken)
 
         if (query.isBlank()) {
             val suggestions = mediaStore.allItems()
