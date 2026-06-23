@@ -18,7 +18,7 @@
   .cfg-row .nm { font-weight: 600; }
   .cfg-row .src { font-size: .76rem; color: var(--ink-soft); }
   .swatch-sm { width: 30px; height: 30px; border-radius: 8px; flex: none; box-shadow: inset 0 0 0 1px rgba(255,255,255,.12); }
-  .studio-wm { width: 64px; height: 38px; border-radius: 8px; overflow: hidden; display: flex; align-items: center; justify-content: center; color: #fff; font-family: 'Space Grotesk',sans-serif; font-weight: 800; font-size: .9rem; flex: none; }
+  .studio-wm { width: 64px; height: 38px; border-radius: 8px; display: flex; align-items: center; justify-content: center; color: #fff; font-family: 'Space Grotesk',sans-serif; font-weight: 800; font-size: .9rem; flex: none; }
   .hero-thumb { width: 92px; height: 52px; border-radius: 8px; flex: none; position: relative; overflow: hidden; }
   .hero-thumb .t { position: absolute; left: 8px; bottom: 6px; font-family: 'Space Grotesk',sans-serif; font-weight: 700; font-size: .72rem; color: #fff; text-shadow: 0 1px 4px rgba(0,0,0,.6); }
   .seg-pill { display: inline-flex; gap: 3px; padding: 3px; border-radius: 9px; background: var(--fill-3); border: 1px solid var(--line); }
@@ -52,6 +52,7 @@
       <div class="navitem active" data-goto="sect-hero">Hero carousel</div>
       <div class="navitem" data-goto="sect-studios">Channels</div>
       <div class="navitem" data-goto="sect-rows">Content rows</div>
+      <div class="navitem" data-goto="sect-top10">Top 10</div>
       <div class="navitem" data-goto="sect-behaviour">Behaviour</div>
     </div>    <div class="col fill">
       <!-- HERO -->
@@ -87,7 +88,7 @@
           <div class="cfg-row"><span class="grab">⠿</span><div class="studio-wm" style="background:linear-gradient(135deg,#e3122b,#7d0a1a);">TV2</div><div style="flex:1;"><div class="nm">TV 2</div><div class="src">filter: network = “TV 2”</div></div><span class="toggle on"></span><span class="btn sm ghost rm">✕</span></div>
           <div class="cfg-row"><span class="grab">⠿</span><div class="studio-wm" style="background:linear-gradient(135deg,#0a93a6,#063d47);">KvF</div><div style="flex:1;"><div class="nm">Kringvarp</div><div class="src">filter: network = “Kringvarp”</div></div><span class="toggle on"></span><span class="btn sm ghost rm">✕</span></div>
           <div class="cfg-row"><span class="grab">⠿</span><div class="studio-wm" style="background:linear-gradient(135deg,#1455d8,#0a2766);">DR</div><div style="flex:1;"><div class="nm">DR</div><div class="src">filter: network = “DR”</div></div><span class="toggle on"></span><span class="btn sm ghost rm">✕</span></div>
-          <div class="cfg-row"><span class="grab">⠿</span><div class="studio-wm" style="background:linear-gradient(135deg,#c8102e,#1a1a1a);">DK</div><div style="flex:1;"><div class="nm">Dansk TV <span class="badge info" style="font-size:.6rem;">category</span></div><div class="src">filter: tag = “dansk-tv”</div></div><span class="toggle on"></span><span class="btn sm ghost rm">✕</span></div>
+          <div class="cfg-row"><span class="grab">⠿</span><div class="studio-wm" style="background:linear-gradient(135deg,#c8102e,#1a1a1a);"><img src="../ravilo/assets/brand/dansk-tv-logo.svg" alt="Dansk TV" style="max-width:84%;max-height:66%;object-fit:contain;"></div><div style="flex:1;"><div class="nm">Dansk TV <span class="badge info" style="font-size:.6rem;">category</span></div><div class="src">filter: tag = “dansk-tv”</div></div><span class="toggle on"></span><span class="btn sm ghost rm">✕</span></div>
         </div>
       </div>
 
@@ -115,6 +116,31 @@
           <div class="cfg-row"><span class="grab">⠿</span><span class="badge info" style="flex:none;">genre</span><div style="flex:1;"><div class="nm">Sci-Fi &amp; Fantasy</div><div class="src">genre = “Sci-Fi”, “Fantasy”</div></div><span class="muted tiny">show</span><span class="toggle on"></span><span class="btn sm ghost rm">✕</span></div>
           <div class="cfg-row off"><span class="grab">⠿</span><span class="badge info" style="flex:none;">genre</span><div style="flex:1;"><div class="nm">Documentary</div><div class="src">genre = “Documentary”</div></div><span class="muted tiny">hidden</span><span class="toggle"></span><span class="btn sm ghost rm">✕</span></div>
           <div class="cfg-row"><span class="grab">⠿</span><span class="badge info" style="flex:none;">genre</span><div style="flex:1;"><div class="nm">Family</div><div class="src">genre = “Family”, “Kids”</div></div><span class="muted tiny">show</span><span class="toggle on"></span><span class="btn sm ghost rm">✕</span></div>
+        </div>
+      </div>
+
+      <!-- TOP 10 / DISCOVER -->
+      <div class="card set-section" id="sect-top10">
+        <div class="row center"><h3 style="font-size:1.05rem;margin:0;">Top 10</h3><span class="badge info" style="margin-left:8px;">Radarr</span><span class="spacer"></span><span class="muted tiny">show this tab</span><span class="toggle on" id="top10-enable"></span></div>
+        <p class="tiny muted" style="margin:6px 0 0;">Adds a <b>Top 10</b> tab on this user's TV with trending charts from a third-party source. Each entry shows whether it's already in your library, currently being fetched, or requestable — a <b>Request</b> then grabs it through <b>Radarr</b> and Jellystructure organises it. Requires Radarr to be connected in <a href="settings.html?tab=downloads">Settings → Download tools</a>.</p>
+
+        <!-- enabled body -->
+        <div id="top10-body" style="margin-top:16px;">
+          <div class="row center" style="gap:18px;flex-wrap:wrap;">
+            <div class="field" style="margin:0;width:240px;"><label>Source</label><span class="select"><span>Netflix · via Tudum</span></span><span class="hint">More sources (Disney+, Max) coming soon.</span></div>
+            <div class="field" style="margin:0;width:200px;"><label>Country</label><span class="select"><span>🇩🇰 Denmark</span></span><span class="hint">Sets the country charts.</span></div>
+          </div>
+          <hr class="dash" style="margin:14px 0;">
+          <div class="row center"><h4 style="margin:0;">Lists shown to this user</h4><span class="spacer"></span><span class="tiny muted">drag to reorder</span></div>
+          <p class="tiny muted" style="margin:6px 0 12px;">Pick which charts appear, and in what order, on this user's Top 10 tab.</p>
+          <div id="top10list">
+            <div class="cfg-row"><span class="grab">⠿</span><span class="badge info" style="flex:none;">movies</span><div style="flex:1;"><div class="nm">Top 10 Movies in Denmark</div><div class="src">Netflix · country · rank only (no view counts)</div></div><span class="muted tiny">show</span><span class="toggle on"></span></div>
+            <div class="cfg-row"><span class="grab">⠿</span><span class="badge info" style="flex:none;">series</span><div style="flex:1;"><div class="nm">Top 10 TV Shows in Denmark</div><div class="src">Netflix · country · rank only (no view counts)</div></div><span class="muted tiny">show</span><span class="toggle on"></span></div>
+            <div class="cfg-row"><span class="grab">⠿</span><span class="badge info" style="flex:none;">movies</span><div style="flex:1;"><div class="nm">Global Top 10 Movies</div><div class="src">Netflix · global · hours viewed</div></div><span class="muted tiny">show</span><span class="toggle on"></span></div>
+            <div class="cfg-row"><span class="grab">⠿</span><span class="badge info" style="flex:none;">movies</span><div style="flex:1;"><div class="nm">Top 10 Non-English Films</div><div class="src">Netflix · global · hours viewed</div></div><span class="muted tiny">show</span><span class="toggle on"></span></div>
+            <div class="cfg-row"><span class="grab">⠿</span><span class="badge info" style="flex:none;">movies</span><div style="flex:1;"><div class="nm">Most Popular of All Time</div><div class="src">Netflix · all-time · first-91-day views</div></div><span class="muted tiny">show</span><span class="toggle on"></span></div>
+          </div>
+          <div class="note" style="margin-top:14px;"><span class="tiny"><b>Note:</b> country charts are <b>ranking only</b> — they carry no hours/views. Global &amp; all-time lists include real viewership numbers.</span></div>
         </div>
       </div>
 
@@ -162,10 +188,17 @@
 
   // toggles
   document.querySelectorAll('.toggle').forEach(t => t.addEventListener('click', () => {
-    if (t.id === 'merge-tog') return; // handled below
+    if (t.id === 'merge-tog' || t.id === 'top10-enable') return; // handled below
     t.classList.toggle('on');
     const row = t.closest('.cfg-row'); if (row) { row.classList.toggle('off', !t.classList.contains('on')); const lbl = row.querySelector('.muted.tiny'); if (lbl) lbl.textContent = t.classList.contains('on') ? 'show' : 'hidden'; }
   }));
+
+  // Top 10 master enable reveals/hides its body
+  const t10 = document.getElementById('top10-enable'), t10body = document.getElementById('top10-body');
+  if (t10) t10.addEventListener('click', () => {
+    t10.classList.toggle('on');
+    t10body.style.display = t10.classList.contains('on') ? '' : 'none';
+  });
 
   // hero height slider
   const h = document.getElementById('hero-h'), hv = document.getElementById('hero-h-val');

@@ -975,12 +975,11 @@
     function langOrder(a){ const m = counts(a); return Object.keys(m).sort((x,y) => {
       if (x===RES) return -1; if (y===RES) return 1; if (x==='xx') return -1; if (y==='xx') return 1; return m[y]-m[x]; }); }
     function initState(a){
-      // Phase 48: single-select language/text filter — resolved → textless → All.
-      const m = counts(a); let lang, mode;
-      if (m[RES]) { lang = RES; mode='resolved'; }
-      else if (m.xx) { lang = 'textless'; mode='fallback-xx'; }
-      else { lang = ''; mode='fallback-any'; }
-      return { lang, hiRes:false, sort:'vote', mode, staged:null };
+      const m = counts(a), set = new Set(); let mode;
+      if (m[RES]) { set.add(RES); if (m.xx) set.add('xx'); mode='resolved'; }
+      else if (m.xx) { set.add('xx'); mode='fallback-xx'; }
+      else { Object.keys(m).forEach(l => set.add(l)); mode='fallback-any'; }
+      return { active:set, prefer:null, hiRes:false, sort:'vote', mode, staged:null };
     }
     function st(a){ return state[a.key] || (state[a.key] = initState(a)); }
 
@@ -1015,11 +1014,12 @@
     const dzName = document.getElementById('aw-dz-name');
     const GDIM = { portrait:[124,186], land:[220,124], logo:[196,92], banner:[300,56] };
 
-    function langMatch(c, sel){ return sel==='' ? true : sel==='textless' ? c.lang==='xx' : sel==='withtext' ? c.lang!=='xx' : c.lang===sel; }
     function filtered(a){
-      const s = st(a); let list = a.cands.filter(c => langMatch(c, s.lang));
+      const s = st(a); let list = a.cands.filter(c => s.active.has(c.lang));
       if (s.hiRes) { const mx = Math.max.apply(null, a.cands.map(c => c.w)); list = list.filter(c => c.w >= 0.5*mx); }
       list.sort((x,y) => s.sort==='res' ? (y.w*y.h - x.w*x.h) : (y.vote - x.vote));
+      if (s.prefer==='textless') list.sort((x,y) => (y.lang==='xx') - (x.lang==='xx'));   // stable: push no-language first
+      else if (s.prefer==='text') list.sort((x,y) => (x.lang==='xx') - (y.lang==='xx'));    // stable: push text art first
       return list;
     }
 
@@ -1035,30 +1035,31 @@
 
     function drawBar(){
       const a = A[cur], s = st(a), m = counts(a);
-      const noLang = m.xx||0, withText = a.cands.length - noLang;
-      const chip = (code,label,n,extra) => '<span class="chip lchip'+(s.lang===code?' on':' off')+(extra||'')+'" data-lang="'+code+'">'+label+'<span class="n">'+n+'</span></span>';
-      // Phase 48: one single-select filter — All · Textless · With text · <languages>.
-      let chips = chip('','All',a.cands.length);
-      if (noLang) chips += chip('textless','Textless',noLang,' tl');
-      if (withText) chips += chip('withtext','With text',withText);
-      langOrder(a).filter(l => l!=='xx').forEach(l => { chips += chip(l, (LN[l]||l), m[l]); });
+      const chips = langOrder(a).map(l => {
+        const tl = l==='xx', on = s.active.has(l);
+        return '<span class="chip lchip'+(on?' on':' off')+(tl?' tl':'')+'" data-lang="'+l+'" title="'+(tl?'TMDB no-language / textless art':LN[l]||l)+'">'
+          + (tl?'No language':(LN[l]||l)) + '<span class="n">'+m[l]+'</span></span>';
+      }).join('');
+      const allOn = langOrder(a).every(l => s.active.has(l));
+      const allChip = '<span class="chip lchip'+(allOn?' on':' off')+'" data-all="1" title="Every language including no-language">All<span class="n">'+a.cands.length+'</span></span>';
       bar.innerHTML =
-        '<div style="flex:1;min-width:0;"><span class="aw-eyebrow">Language</span><div class="pill-row" style="margin-top:6px;">'+chips+'</div></div>'
+        '<div style="flex:1;min-width:0;"><span class="aw-eyebrow">Language</span><div class="pill-row" style="margin-top:6px;">'+chips+allChip+'</div></div>'
+        + '<div><span class="aw-eyebrow">Prefer</span><div class="pill-row" style="margin-top:6px;"><span class="chip lchip'+(s.prefer==='textless'?' on tl':' off')+'" data-pref="textless" title="Sort TMDB no-language (textless) art first — cleanest for posters & logos">Textless</span><span class="chip lchip'+(s.prefer==='text'?' on':' off')+'" data-pref="text" title="Sort art that has baked-in title text first">With text</span></div></div>'
         + '<div><span class="aw-eyebrow">Quality</span><div class="pill-row" style="margin-top:6px;"><span class="chip lchip'+(s.hiRes?' on':' off')+'" data-hires="1" title="Hide the lower-resolution half">Hi-res only</span></div></div>'
         + '<div><span class="aw-eyebrow">Sort</span><div class="seg" style="margin-top:6px;"><span class="'+(s.sort==='vote'?'on':'')+'" data-sort="vote">Vote ★</span><span class="'+(s.sort==='res'?'on':'')+'" data-sort="res">Resolution</span></div></div>';
     }
 
     function drawExplain(){
       const a = A[cur], s = st(a);
-      const label = s.lang===''?'all languages':s.lang==='textless'?'textless':s.lang==='withtext'?'with-text (any language)':(LN[s.lang]||s.lang);
-      const hidden = a.cands.filter(c => !langMatch(c, s.lang)).length;
+      const names = [...s.active].map(l => l==='xx' ? 'No-language' : (LN[l]||l));
+      const hidden = a.cands.filter(c => !s.active.has(c.lang)).length;
       let warn = false, lead = '';
-      if (s.mode==='fallback-xx') { warn = true; lead = '<b>No '+LN[RES]+' '+a.label.toLowerCase()+' on TMDB.</b> Falling back to <b>Textless</b> art'+(a.kind==='logo'?' — the best choice for logos':'')+'. '; }
-      else if (s.mode==='fallback-any') { warn = true; lead = '<b>No '+LN[RES]+' or textless '+a.label.toLowerCase()+'.</b> Showing every language. '; }
+      if (s.mode==='fallback-xx') { warn = true; lead = '<b>No '+LN[RES]+' '+a.label.toLowerCase()+' on TMDB.</b> Falling back to <b>No-language</b> art'+(a.kind==='logo'?' — the best choice for logos':'')+'. '; }
+      else if (s.mode==='fallback-any') { warn = true; lead = '<b>No '+LN[RES]+' or no-language '+a.label.toLowerCase()+'.</b> Showing every language. '; }
       const body = lead
-        + 'Showing <b>'+label+'</b>'
-        + (s.mode==='resolved' && s.lang===RES ? ' — matched to this title’s resolved language <span class="lang">en</span>' : '')
-        + '. ' + (hidden ? '<b>'+hidden+'</b> other candidate'+(hidden>1?'s':'')+' hidden.' : 'Nothing hidden.');
+        + 'Showing <b>'+names.join('</b> + <b>')+'</b>'
+        + (s.mode==='resolved' ? ' — matched to this title’s resolved language <span class="lang">en</span>'+(s.prefer==='textless'?', textless preferred':s.prefer==='text'?', with-text preferred':'') : '')
+        + '. ' + (hidden ? '<b>'+hidden+'</b> other-language candidate'+(hidden>1?'s':'')+' hidden.' : 'Nothing hidden.');
       explainWrap.innerHTML = '<div style="padding:11px 13px;background:var('+(warn?'--warn-soft':'--info-soft')+');border:1px solid '+(warn?'rgba(245,181,66,.35)':'rgba(63,182,245,.3)')+';border-radius:10px;">'
         + '<div class="aw-filterline"><span class="ic">ⓘ</span><span>'+body+' '+(hidden?'<a href="#" data-showall>Show all '+a.cands.length+' →</a>':'')+'</span></div></div>';
     }
@@ -1098,15 +1099,18 @@
     // ---- interactions ----
     bar.addEventListener('click', e => {
       const a = A[cur], s = st(a);
-      const lang = e.target.closest('[data-lang]'), hir = e.target.closest('[data-hires]'), sort = e.target.closest('[data-sort]');
-      if (lang) { s.lang = lang.dataset.lang; }
+      const lang = e.target.closest('[data-lang]'), all = e.target.closest('[data-all]'),
+        pref = e.target.closest('[data-pref]'), hir = e.target.closest('[data-hires]'), sort = e.target.closest('[data-sort]');
+      if (lang) { const l = lang.dataset.lang; if (s.active.has(l)) { if (s.active.size > 1) s.active.delete(l); } else s.active.add(l); }
+      else if (all) { langOrder(a).forEach(l => s.active.add(l)); }
+      else if (pref) { const p = pref.dataset.pref; s.prefer = (s.prefer===p) ? null : p; }
       else if (hir) { s.hiRes = !s.hiRes; }
       else if (sort) { s.sort = sort.dataset.sort; }
       else return;
       drawBar(); drawExplain(); drawGrid();
     });
     explainWrap.addEventListener('click', e => { if (e.target.closest('[data-showall]')) { e.preventDefault();
-      const a = A[cur], s = st(a); s.lang = ''; s.hiRes = false; drawBar(); drawExplain(); drawGrid(); } });
+      const a = A[cur], s = st(a); langOrder(a).forEach(l => s.active.add(l)); s.hiRes = false; drawBar(); drawExplain(); drawGrid(); } });
     grid.addEventListener('click', e => {
       const card = e.target.closest('[data-pick]');
       if (card) { const a = A[cur], s = st(a), i = +card.dataset.pick; s.staged = (s.staged===i) ? null : i; drawGrid(); drawFoot(); return; }

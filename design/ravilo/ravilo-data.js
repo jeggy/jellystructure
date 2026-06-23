@@ -18,7 +18,7 @@
     { id: 'kringvarp',name: 'Kringvarp', wm: 'KvF',        bg: 'linear-gradient(135deg,#0a93a6,#063d47)' },
     { id: 'dr',       name: 'DR',        wm: 'DR',         bg: 'linear-gradient(135deg,#1455d8,#0a2766)' },
     { id: 'viaplay',  name: 'Viaplay',   wm: 'viaplay',    bg: 'linear-gradient(135deg,#ff2e5b,#8a0f2c)' },
-    { id: 'dansktv',  name: 'Dansk TV',  wm: 'Dansk<small>TV</small>', bg: 'linear-gradient(135deg,#c8102e,#1a1a1a)' },
+    { id: 'dansktv',  name: 'Dansk TV',  wm: 'Dansk<small>TV</small>', logo: 'assets/brand/dansk-tv-logo.svg', bg: 'linear-gradient(135deg,#c8102e,#1a1a1a)' },
     { id: 'nordisk',  name: 'Nordisk Film', wm: 'NF',      bg: 'linear-gradient(135deg,#2b6f5d,#10342b)' },
   ];
 
@@ -148,11 +148,107 @@
   // Ravilo users on this TV — each is a Jellyfin user with a cached device token (per the
   // pairing model). The client keeps several so switching is instant. "isAdmin" mirrors Jellyfin.
   const profiles = [
-    { id: 'eyd',    name: 'Eyð',    initials: 'ER', color: 'linear-gradient(145deg,#7b6ef0,#3fb6f5)', signedIn: true,  isAdmin: true,  kid: false, lang: 'fo' },
-    { id: 'olivar', name: 'Olivar', initials: 'OL', color: 'linear-gradient(145deg,#19d6c6,#2a8cf0)', signedIn: true,  isAdmin: false, kid: false, lang: 'en' },
-    { id: 'marjun', name: 'Marjun', initials: 'MJ', color: 'linear-gradient(145deg,#f5b542,#e0792f)', signedIn: true,  isAdmin: false, kid: false, lang: 'da' },
-    { id: 'kids',   name: 'Kids',   initials: '★',  color: 'linear-gradient(145deg,#e0639a,#b15cd0)', signedIn: true,  isAdmin: false, kid: true,  lang: 'fo' },
+    { id: 'eyd',    name: 'Eyð',    initials: 'ER', color: 'linear-gradient(145deg,#7b6ef0,#3fb6f5)', signedIn: true,  isAdmin: true,  kid: false, lang: 'fo', discover: { enabled: true, lists: ['mov-dk', 'tv-dk', 'mov-global', 'noneng', 'alltime'] } },
+    { id: 'olivar', name: 'Olivar', initials: 'OL', color: 'linear-gradient(145deg,#19d6c6,#2a8cf0)', signedIn: true,  isAdmin: false, kid: false, lang: 'en', discover: { enabled: true, lists: ['mov-global', 'noneng', 'alltime'] } },
+    { id: 'marjun', name: 'Marjun', initials: 'MJ', color: 'linear-gradient(145deg,#f5b542,#e0792f)', signedIn: true,  isAdmin: false, kid: false, lang: 'da', discover: { enabled: false, lists: [] } },
+    { id: 'kids',   name: 'Kids',   initials: '★',  color: 'linear-gradient(145deg,#e0639a,#b15cd0)', signedIn: true,  isAdmin: false, kid: true,  lang: 'fo', discover: { enabled: false, lists: [] } },
   ];
 
-  window.RAVILO = { studios, hero, rows, mergedNew, profiles, grad, initials, episodesFor, seasonsFor, castFor, relatedFor };
+  // ---------- Discover / Top 10 (Phase 54 + Ravilo) ----------
+  // Pulled from a third-party chart vendor (Netflix via Tudum today; others later) for the
+  // user's configured country. Gated by: Radarr enabled in Jellystructure (config.radarr) AND
+  // a per-user boolean (profile.discover). Country feeds are rank-only (no hours/views); global
+  // & all-time feeds carry real viewership. Each entry's status drives the fetch affordance:
+  //   available  → already in the Jellyfin library (Watch Now)
+  //   fetching   → Radarr is grabbing it now (progress %)
+  //   none       → not in library — the user can request a fetch via Radarr
+  const config = { radarr: true, region: 'DK', regionName: 'Denmark' };
+
+  const sources = [
+    { id: 'netflix', name: 'Netflix', via: 'Tudum', wm: 'N', accent: '#e50914', enabled: true },
+    { id: 'disney',  name: 'Disney+', via: 'soon',  wm: 'D+',  accent: '#1f7cf2', enabled: false },
+    { id: 'max',     name: 'Max',     via: 'soon',  wm: 'MAX', accent: '#8a44e6', enabled: false },
+  ];
+
+  function D(title, year, genre, rating, kind, o) {
+    o = o || {};
+    return Object.assign(T(title, year, genre, rating, kind), {
+      status: o.status || 'none', progress: o.progress || 0,
+      weeks: o.weeks != null ? o.weeks : 1, trend: o.trend || 'same',
+      views: o.views || null, syn: o.syn || '', source: o.source || 'netflix',
+    });
+  }
+  // attach rank by position
+  function ranked(items) { items.forEach((it, i) => it.rank = i + 1); return items; }
+
+  const discoverLists = [
+    { id: 'mov-dk', title: 'Top 10 Movies in Denmark', scope: 'country', category: 'film', metric: 'rank',
+      note: 'Ranking only — the country feed has no view counts', items: ranked([
+        D('Carry-On', 2024, 'Thriller', '16', 'film', { status: 'fetching', progress: 47, weeks: 2, trend: 'up', syn: 'A young TSA officer is blackmailed by a mysterious traveller into letting a dangerous package slip onto a Christmas Eve flight.' }),
+        D('Hraðar Ljós', 2024, 'Thriller', '16', 'film', { status: 'available', weeks: 4, trend: 'same', syn: 'A night-shift paramedic in Tórshavn races a ticking clock when a routine call turns into something far darker.' }),
+        D('Saltvatn', 2023, 'Drama', '12', 'film', { status: 'none', weeks: 1, trend: 'new', syn: 'A widowed lighthouse keeper takes in a stranded sailor as winter storms close the only road home.' }),
+        D('Vargtid', 2022, 'Action', '16', 'film', { status: 'none', weeks: 3, trend: 'down', syn: 'A disgraced ranger hunts the wolf pack blamed for a boy’s disappearance — and the men who set them loose.' }),
+        D('Cosmos Laundromat', 2015, 'Sci-Fi', '12', 'film', { status: 'available', weeks: 6, trend: 'same' }),
+        D('Nordlys Protocol', 2023, 'Action', '16', 'film', { status: 'none', weeks: 2, trend: 'up' }),
+        D('Den Sidste Vinter', 2021, 'Drama', '12', 'film', { status: 'fetching', progress: 12, weeks: 1, trend: 'new' }),
+        D('Granat', 2020, 'Action', '16', 'film', { status: 'none', weeks: 5, trend: 'down' }),
+        D('Drift 7', 2022, 'Sci-Fi', '12', 'film', { status: 'none', weeks: 2, trend: 'same' }),
+        D('Stormkast', 2019, 'Action', '12', 'film', { status: 'none', weeks: 1, trend: 'new' }),
+      ]) },
+    { id: 'tv-dk', title: 'Top 10 TV Shows in Denmark', scope: 'country', category: 'series', metric: 'rank',
+      note: 'Ranking only — the country feed has no view counts', items: ranked([
+        D('Nordvest', 2023, 'Crime', '16', 'series', { status: 'available', weeks: 7, trend: 'same', syn: 'In a fog-bound Faroese fishing town, a detective returns home to a death that reopens a buried family secret.' }),
+        D('Arvur', 2023, 'Drama', '16', 'series', { status: 'none', weeks: 2, trend: 'up', syn: 'When the family patriarch dies, three siblings discover the inheritance is a debt none of them can pay.' }),
+        D('Havets Hjarta', 2022, 'Drama', '12', 'series', { status: 'available', weeks: 3, trend: 'down' }),
+        D('Glasberget', 2024, 'Drama', '16', 'series', { status: 'none', weeks: 1, trend: 'new' }),
+        D('Mýrin', 2021, 'Crime', '16', 'series', { status: 'fetching', progress: 63, weeks: 4, trend: 'same' }),
+        D('Brúgvin', 2022, 'Crime', '16', 'series', { status: 'none', weeks: 2, trend: 'up' }),
+        D('Det Tavse Hus', 2023, 'Drama', '12', 'series', { status: 'none', weeks: 5, trend: 'down' }),
+        D('Kalkverket', 2020, 'Crime', '16', 'series', { status: 'none', weeks: 1, trend: 'new' }),
+        D('Tórshavn 1918', 2021, 'Drama', '12', 'series', { status: 'none', weeks: 3, trend: 'same' }),
+        D('Frostbarn', 2024, 'Crime', '16', 'series', { status: 'none', weeks: 1, trend: 'new' }),
+      ]) },
+    { id: 'mov-global', title: 'Global Top 10 Movies', scope: 'global', category: 'film', metric: 'views',
+      note: 'Global feed — real hours viewed this week', items: ranked([
+        D('Blue Warrant', 2021, 'Action · Comedy', '12', 'film', { status: 'none', weeks: 2, trend: 'up', views: '47.1M', syn: 'An Interpol agent and the world’s most-wanted art thief are forced into an uneasy alliance to catch an even greater rival.' }),
+        D('JRock Ghost Chasers', 2025, 'Animation', '7', 'film', { status: 'fetching', progress: 28, weeks: 1, trend: 'new', views: '41.7M', syn: 'A chart-topping K-pop trio moonlights as a demon-slaying squad protecting their fans from the underworld.' }),
+        D('Carry-On', 2024, 'Thriller', '16', 'film', { status: 'fetching', progress: 47, weeks: 2, trend: 'same', views: '33.0M' }),
+        D('The Gray Man', 2022, 'Action', '16', 'film', { status: 'none', weeks: 3, trend: 'down', views: '28.5M' }),
+        D('Damsel', 2024, 'Fantasy', '12', 'film', { status: 'none', weeks: 2, trend: 'same', views: '24.2M' }),
+        D('Leave the World Behind', 2023, 'Thriller', '16', 'film', { status: 'none', weeks: 1, trend: 'new', views: '21.9M' }),
+        D('The Adam Project', 2022, 'Sci-Fi', '12', 'film', { status: 'available', weeks: 4, trend: 'down', views: '19.4M' }),
+        D('Don’t Look Up', 2021, 'Comedy', '16', 'film', { status: 'none', weeks: 2, trend: 'same', views: '17.6M' }),
+        D('Glass Onion', 2022, 'Mystery', '12', 'film', { status: 'none', weeks: 3, trend: 'up', views: '15.1M' }),
+        D('Bird Box', 2018, 'Thriller', '16', 'film', { status: 'none', weeks: 1, trend: 'new', views: '13.8M' }),
+      ]) },
+    { id: 'noneng', title: 'Top 10 Non-English Films', scope: 'global', category: 'film', metric: 'views',
+      note: 'Global feed — surfaces foreign-language hits', items: ranked([
+        D('Troll', 2022, 'Action · Fantasy', '12', 'film', { status: 'none', weeks: 2, trend: 'up', views: '23.0M', syn: 'Deep in a Norwegian mountain, an ancient creature awakens and marches on Oslo — and only a rogue palaeontologist believes the legends.' }),
+        D('Society of the Snow', 2023, 'Drama', '16', 'film', { status: 'none', weeks: 1, trend: 'new', views: '20.4M', syn: 'The survivors of a 1972 Andes plane crash endure 72 days in the high cordillera, bound by an impossible pact to stay alive.' }),
+        D('Lost Bullet', 2020, 'Action', '16', 'film', { status: 'none', weeks: 3, trend: 'same', views: '14.7M' }),
+        D('Athena', 2022, 'Drama', '16', 'film', { status: 'none', weeks: 2, trend: 'down', views: '12.3M' }),
+        D('The Platform', 2019, 'Sci-Fi · Horror', '18', 'film', { status: 'available', weeks: 4, trend: 'same', views: '11.0M' }),
+        D('Wild is the Wind', 2022, 'Crime', '16', 'film', { status: 'none', weeks: 1, trend: 'new', views: '9.6M' }),
+        D('Blood Red Sky', 2021, 'Horror', '18', 'film', { status: 'none', weeks: 2, trend: 'up', views: '8.9M' }),
+        D('Through My Window', 2022, 'Romance', '16', 'film', { status: 'none', weeks: 3, trend: 'down', views: '7.4M' }),
+        D('A Classic Horror Story', 2021, 'Horror', '18', 'film', { status: 'none', weeks: 1, trend: 'new', views: '6.2M' }),
+        D('Below Zero', 2021, 'Thriller', '16', 'film', { status: 'none', weeks: 2, trend: 'same', views: '5.5M' }),
+      ]) },
+    { id: 'alltime', title: 'Most Popular of All Time', scope: 'alltime', category: 'film', metric: 'views91',
+      note: 'Ranked by views in the first 91 days', items: ranked([
+        D('Blue Warrant', 2021, 'Action · Comedy', '12', 'film', { status: 'none', weeks: 91, trend: 'same', views: '230.9M', syn: 'An Interpol agent and the world’s most-wanted art thief are forced into an uneasy alliance to catch an even greater rival.' }),
+        D('Carry-On', 2024, 'Thriller', '16', 'film', { status: 'fetching', progress: 47, weeks: 64, trend: 'same', views: '172.0M' }),
+        D('Don’t Look Up', 2021, 'Comedy', '16', 'film', { status: 'none', weeks: 91, trend: 'same', views: '171.4M' }),
+        D('Bird Box', 2018, 'Thriller', '16', 'film', { status: 'none', weeks: 91, trend: 'same', views: '157.4M' }),
+        D('Glass Onion', 2022, 'Mystery', '12', 'film', { status: 'none', weeks: 91, trend: 'same', views: '152.0M' }),
+        D('The Gray Man', 2022, 'Action', '16', 'film', { status: 'none', weeks: 91, trend: 'same', views: '139.3M' }),
+        D('The Adam Project', 2022, 'Sci-Fi', '12', 'film', { status: 'available', weeks: 91, trend: 'same', views: '128.2M' }),
+        D('Leave the World Behind', 2023, 'Thriller', '16', 'film', { status: 'none', weeks: 91, trend: 'same', views: '121.4M' }),
+        D('Society of the Snow', 2023, 'Drama', '16', 'film', { status: 'none', weeks: 91, trend: 'same', views: '98.5M' }),
+        D('Damsel', 2024, 'Fantasy', '12', 'film', { status: 'none', weeks: 91, trend: 'same', views: '94.1M' }),
+      ]) },
+  ];
+  const discover = { config, sources, lists: discoverLists };
+
+  window.RAVILO = { studios, hero, rows, mergedNew, profiles, discover, grad, initials, episodesFor, seasonsFor, castFor, relatedFor };
 })();
