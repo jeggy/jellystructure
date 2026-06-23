@@ -1,0 +1,63 @@
+-- Phase 57 — ingested chart entries, weekly history (for trends) and admin TMDB overrides.
+CREATE TABLE chart_entry (
+    list_id TEXT NOT NULL,
+    rank INTEGER NOT NULL,
+    week TEXT NOT NULL DEFAULT '',
+    title TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    year INTEGER,
+    tmdb_id INTEGER,
+    tmdb_confidence REAL NOT NULL DEFAULT 0,
+    item_id TEXT,
+    weeks_on_chart INTEGER NOT NULL DEFAULT 0,
+    trend TEXT NOT NULL DEFAULT 'SAME',
+    is_new INTEGER NOT NULL DEFAULT 0,
+    views TEXT,
+    backdrop_path TEXT,
+    overview TEXT,
+    updated_at INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (list_id, rank)
+);
+
+CREATE TABLE chart_history (
+    list_id TEXT NOT NULL,
+    item_key TEXT NOT NULL,   -- title (lowercased) — stable across weeks for trend tracking
+    week TEXT NOT NULL,
+    rank INTEGER NOT NULL,
+    views TEXT,
+    PRIMARY KEY (list_id, item_key, week)
+);
+
+CREATE TABLE chart_override (
+    provider TEXT NOT NULL,
+    title TEXT NOT NULL,      -- lowercased
+    kind TEXT NOT NULL,      -- 'MOVIE' | 'SERIES'
+    tmdb_id INTEGER NOT NULL,
+    PRIMARY KEY (provider, title, kind)
+);
+
+entriesForList:
+SELECT * FROM chart_entry WHERE list_id = :list_id ORDER BY rank;
+
+listWeek:
+SELECT week FROM chart_entry WHERE list_id = :list_id LIMIT 1;
+
+deleteList:
+DELETE FROM chart_entry WHERE list_id = :list_id;
+
+insertEntry:
+INSERT OR REPLACE INTO chart_entry(list_id, rank, week, title, kind, year, tmdb_id, tmdb_confidence, item_id, weeks_on_chart, trend, is_new, views, backdrop_path, overview, updated_at)
+VALUES (:list_id, :rank, :week, :title, :kind, :year, :tmdb_id, :tmdb_confidence, :item_id, :weeks_on_chart, :trend, :is_new, :views, :backdrop_path, :overview, :updated_at);
+
+insertHistory:
+INSERT OR REPLACE INTO chart_history(list_id, item_key, week, rank, views)
+VALUES (:list_id, :item_key, :week, :rank, :views);
+
+priorRank:
+SELECT rank FROM chart_history WHERE list_id = :list_id AND item_key = :item_key AND week < :week ORDER BY week DESC LIMIT 1;
+
+getOverride:
+SELECT tmdb_id FROM chart_override WHERE provider = :provider AND title = :title AND kind = :kind LIMIT 1;
+
+setOverride:
+INSERT OR REPLACE INTO chart_override(provider, title, kind, tmdb_id) VALUES (:provider, :title, :kind, :tmdb_id);
