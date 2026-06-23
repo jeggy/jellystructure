@@ -21,6 +21,7 @@ and is editable in the config screen, R50):
 ```kotlin
 data class DiscoverConfig(
   val enabled: Boolean = false,         // user opt-in (tab visibility)
+  val canRequest: Boolean = false,      // may this (non-admin) user spend disk/bandwidth to request? admins always may
   val source: String = "netflix",       // ChartProvider id (Phase 57 registry)
   val region: String = "DK",
   val lists: List<String> = emptyList(), // ordered ChartListSpec ids the user sees
@@ -29,9 +30,11 @@ data class DiscoverConfig(
 ```
 
 **Tab gating (server-decided, not client-guessed):** the Discover tab is offered only when
-`config.acquisition/radarr enabled` (Phase 54/56) **AND** `discover.enabled` **AND**
-`discover.lists.isNotEmpty()`. The home/config payload carries a `discoverAvailable: Boolean` so the TV
-shows/hides the tab without its own rule duplication.
+`discover.enabled` **AND** `discover.lists.isNotEmpty()` **AND** *the \*arr that serves the user's
+selected lists is enabled* — i.e. Radarr for movie lists, Sonarr for TV lists (Phase 54/56). A
+Sonarr-only household whose user selected only `tv-DK` is **not** gated off; a movie-only list needs
+Radarr. The home/config payload carries a `discoverAvailable: Boolean` (computed from this rule) so the
+TV shows/hides the tab without duplicating the logic.
 
 ## Endpoints (`/api/tv/**`, device-session auth from R03)
 
@@ -40,15 +43,21 @@ shows/hides the tab without its own rule duplication.
   status) merged in. Country lists return rank-only entries (no `views`); global/all-time include
   views.
 - `GET /api/tv/discover/item/{listId}/{rank}` (or by `tmdb:<id>`) — the detail payload for one entry:
-  backdrop, overview, trailer key, rank/weeks/trend/views, cast (reuse R07 where the title resolves to
+  backdrop, overview, rank/weeks/trend/views, cast (reuse R07 where the title resolves to
   a library/TMDB id), and the live `acquisition` status. This is a **separate payload** from the
-  library detail (R07) — Discover detail has no playback/seasons, it has request + trailer.
+  library detail (R07) — Discover detail has no playback/seasons; it has request only. (Trailers are out
+  of scope for now.)
 - `POST /api/tv/discover/request` `{listId, rank}` or `{mediaKind, tmdbId}` → calls
   `AcquisitionService.request(..., requestedBy = user)` (Phase 56) and returns the new status record.
-  Idempotent (re-request of an in-flight title returns the existing record).
-- Status updates stream over the existing **R33 `/api/tv/events`** WS as `acquisition_changed` — the TV
-  updates the tile/detail indicator live (requested → queued → downloading% → importing → available)
-  with no client polling.
+  Idempotent (re-request of an in-flight title returns the existing record; re-posting a `failed` one
+  retries). **Authorized** per Phase 56's permission rule — admins always, non-admins only if
+  `discover.canRequest`; the payload carries `canRequest` so the TV can disable the button up front.
+  (No TV cancel route — cancel is admin-only, from the admin app.)
+- Status updates stream over the existing **R33 `/api/tv/events`** WS as the **payload-bearing**
+  `acquisition_changed` event defined in Phase 56 (the updated record inline — *not* a rev-signal that
+  forces a full re-pull, and progress throttled to ≥5%/≥3 s). The TV patches the matching tile/detail
+  indicator in place as it moves requested → queued → downloading% → importing → available
+  (server-pushed state; the client never derives progress).
 
 ## Status mapping for the client
 

@@ -17,6 +17,9 @@ Placed in the config screen nav after **Content rows**, before **Behaviour**.
 
 - **Master enable toggle** ("show this tab") → writes `discover.enabled` for the edited user. When off,
   the body collapses and the TV hides the tab (R48 gating).
+- **"Allow this user to request downloads" toggle** → writes `discover.canRequest` (Phase 56
+  permission). Off = the user browses charts and sees statuses but the Request button is disabled
+  (admins can always request regardless). Hidden/forced-on for admin users.
 - **Gating note + link:** the tab also requires Radarr connected — link to
   `Settings → Download tools` (Phase 54/55). If Radarr is not enabled globally, show an inline warning
   that the tab won't appear regardless of this toggle.

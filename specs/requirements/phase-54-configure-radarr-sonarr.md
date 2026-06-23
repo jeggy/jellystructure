@@ -19,6 +19,14 @@ Jellyfin — **Radarr** (movies) and **Sonarr** (series) — so Jellystructure c
 2. **Nudge the right *arr to rescan a single title** after Jellystructure writes NFOs or
    edits tracks, so the *arr's own library view stays in sync with what we changed on disk.
 
+> **What rescan actually refreshes (be honest about scope):** Radarr/Sonarr are TMDB-backed and
+> **ignore our NFOs** for their own metadata, so a rescan does *not* pull title/overview edits into the
+> \*arr. Where it earns its keep is **MediaInfo** (audio/subtitle languages, codecs) after an in-place
+> `mkvpropedit` track edit and when files are added/removed. Implementation note: an in-place header
+> edit changes mtime but the \*arr's change-detection may still skip it — verify `RescanMovie`/
+> `RescanSeries` actually re-probes MediaInfo (fall back to a refresh command if not), else the rescan
+> is a no-op except on file add/remove.
+
 This is **strictly opt-in** and **read + rescan only**. Jellystructure never adds, grabs,
 upgrades, renames, or deletes anything through Radarr/Sonarr. It is the metadata/track
 manager; the *arr stack stays the acquisition manager. Both integrations are independent —
@@ -29,7 +37,10 @@ an operator can enable one, both, or neither.
 - **No acquisition.** Never call `POST /api/v3/movie` / `/series`, `/command {MoviesSearch}`,
   `/release`, `/queue`, or any add/grab/delete endpoint. Reads + `Rescan*` only.
 - **No parallel taxonomy.** Root folders feed the existing `[[libraries]]` model; they do
-  not introduce a new "quality profile"/"root folder" concept into Jellystructure's data.
+  not introduce a new "quality profile"/"root folder" concept into Jellystructure's data. (Phase 56,
+  when it *requests* a brand-new title, does add an explicit per-\*arr `default_root_folder` +
+  `quality_profile` under `[acquisition]` — those are **add parameters the \*arr API demands**, distinct
+  from this phase's read-only root-folder *import*; they don't change the `[[libraries]]` model here.)
 - **No always-on coupling.** With both apps disabled (the default), nothing about scanning,
   writing, or refreshing changes — exactly as today.
 

@@ -446,16 +446,3 @@ body { font-family: 'Sora', sans-serif; }
 .ddt-stat .v { font-family: 'Space Grotesk', sans-serif; font-size: 38px; font-weight: 700; letter-spacing: -1px; color: var(--ink); }
 .ddt-stat .v.ddt-trend { font-size: 28px; }
 .ddt-foot { margin-top: 22px; font-size: 16px; color: var(--ink-dim); }
-
-/* ---------- trailer overlay ---------- */
-.trailerov { position: absolute; inset: 0; z-index: 88; background: #000; opacity: 0; pointer-events: none; transition: opacity .35s var(--ease); }
-.trailerov.on { opacity: 1; pointer-events: auto; }
-.trailerov .tr-bg { position: absolute; inset: 0; filter: saturate(1.05); transform: scale(1.04); }
-.trailerov .tr-scrim { position: absolute; inset: 0; background: radial-gradient(120% 90% at 30% 20%, rgba(0,0,0,.2), rgba(0,0,0,.75)); }
-.trailerov .tr-body { position: absolute; left: 64px; bottom: 70px; right: 64px; z-index: 2; }
-.trailerov .tr-kick { font-size: 18px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; color: var(--accent-2); margin-bottom: 12px; }
-.trailerov .tr-title { font-family: 'Space Grotesk', sans-serif; font-size: 62px; font-weight: 700; letter-spacing: -1.5px; margin-bottom: 24px; }
-.trailerov .tr-bar { height: 6px; border-radius: 6px; background: rgba(255,255,255,.22); overflow: hidden; max-width: 1100px; }
-.trailerov .tr-bar > i { display: block; height: 100%; width: 0; background: var(--accent); }
-.trailerov .tr-hint { margin-top: 16px; font-size: 16px; color: var(--ink-soft); }
-.trailerov .tr-hint b { color: var(--ink); }
