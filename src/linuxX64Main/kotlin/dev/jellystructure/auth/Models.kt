@@ -66,6 +66,7 @@ data class JellyfinItem(
     @SerialName("Type") val type: String,
     @SerialName("LockData") val lockData: Boolean = false,
     @SerialName("LockedFields") val lockedFields: List<String> = emptyList(),
+    @SerialName("Tags") val tags: List<String> = emptyList(),
 )
 
 @Serializable

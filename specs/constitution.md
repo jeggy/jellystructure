@@ -224,4 +224,8 @@ A setup script (`scripts/build-fixtures.sh`) downloads and prepares test media b
 3. **NFO writes are atomic** — `.tmp` + `rename()`.
 4. **Frontend renders server-pushed state only** — no derived/optimistic state.
 5. **No Compose for Web** — DOM manipulation only via `kotlinx.browser`.
-6. **Jellystructure tags survive re-syncs** — on sync/repull, tags defined in `js_tags` are always preserved (see Phase 19).
+6. **Tag lifecycle — JS tags always survive** — non-JS tags are sourced externally; tags defined in
+   `js_tags` (`JsTagStore.nameSet()`) are always preserved on every path. **Full scan**: `item.tags` =
+   Jellyfin `Tags` + existing JS tags (Jellyfin authoritative for non-JS). **Re-pull from TMDB**: TMDB
+   **keywords** + existing JS tags (drops stale Jellyfin-only tags). **Re-pull from Jellyfin**: Jellyfin
+   `Tags` ∪ everything existing (additive). See Phase 19 §15 + Phase 51.

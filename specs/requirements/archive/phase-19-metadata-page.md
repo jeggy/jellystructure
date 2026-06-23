@@ -113,6 +113,11 @@ Networks tabs have any data:**
     - Result: JS-defined tags always survive; non-JS tags follow TMDB (or clear if TMDB returns none).
     - TMDB v3 details don't currently return tags, so today this preserves only JS tags — the merge is
       future-proof.
+    - **Implemented in [Phase 51](phase-51-tag-population-lifecycle.md) (2026-06-23):** the merge is now
+      live. `tmdbSourcedTags` is sourced from TMDB **keywords** (`/movie|tv/{id}/keywords`); full scans
+      additionally populate non-JS tags from Jellyfin's `Tags` field; and `…/repull-jellyfin` **unions**
+      (Jellyfin `Tags` ∪ existing) rather than replacing. JS-defined tags survive all paths, incl. full
+      re-scans (the previous behaviour wiped them).
 
 ## Suggested split (optional)
 This phase is large. The plan may split it into **18a** (Studios/Networks/Genres incl. P1/P2 + artwork)
