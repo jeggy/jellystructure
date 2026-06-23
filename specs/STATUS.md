@@ -8,7 +8,17 @@ _Last updated: 2026-06-23_
 
 ## Current focus
 
-**Phases 0–52 complete.** [Phase 52](requirements/archive/phase-52-tag-ux-design-sync.md)
+**Phases 0–52 complete; [Phase 53](requirements/phase-53-scanner-data-quality.md) planned** (next).
+Phase 53 (filed 2026-06-23) collects scanner data-quality fixes found in a post-DB-reset full-sync
+review (296 scanned vs 303 in Jellyfin): full-scan `year` is null on 295/296 (resolve from TMDB
+release date / Jellyfin `ProductionYear`, not just the item name); `slugify` produces empty/colliding
+ids that **silently drop items** (non-Latin titles → `""`, dup titles collide — The Bad Guys + an
+Idiocracy dup were lost) → fall back to `jellyfinId`; the `SxxExx` season regex caps at 2 digits so
+year-as-season (`S2025E01`, Operation X) fails; the scan should surface a skipped/unmatched-items
+report (4 LiveTV recordings + file-not-found are dropped silently today); plus minor items
+(untagged-audio→`en` honesty, `nb`/`no`, zero-track episodes).
+
+[Phase 52](requirements/archive/phase-52-tag-ux-design-sync.md)
 (2026-06-23) brought tag UX in line with the design and surfaced the JS/normal distinction in filters:
 the media-detail tags section is now its own card matching `design/app/media.html` (manage-tags link,
 dashed rule, dotted JS chips, outline dirty ring), and the filter workbench + Library tag pickers dot
@@ -57,7 +67,7 @@ overlapped the language chips. Unified them into **one single-select filter** on
 `artPrefer` sort; default ladder resolves resolved-lang → textless → All. `design/app/media.html` mockup
 synced to the same model.
 
-No planned admin phases remain. Other active development is on the **Ravilo** side — see
+**Phase 53** (scanner data-quality) is the one planned admin phase. Other active development is on the **Ravilo** side — see
 [`ravilo/STATUS.md`](ravilo/STATUS.md).
 
 See [`requirements/README.md`](requirements/README.md) for the full index.
