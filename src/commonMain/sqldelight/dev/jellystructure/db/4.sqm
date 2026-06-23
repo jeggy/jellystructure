@@ -1,0 +1,34 @@
+-- Phase 56 — add the acquisition tables to existing databases (v4 -> v5).
+CREATE TABLE acquisition (
+    item_key TEXT NOT NULL PRIMARY KEY,
+    media_kind TEXT NOT NULL,
+    title TEXT NOT NULL DEFAULT '',
+    tmdb_id INTEGER,
+    arr_id INTEGER,
+    arr_kind TEXT NOT NULL DEFAULT '',
+    item_id TEXT,
+    status TEXT NOT NULL,
+    progress INTEGER NOT NULL DEFAULT 0,
+    queue_position INTEGER,
+    flags TEXT NOT NULL DEFAULT '',
+    episodes_total INTEGER NOT NULL DEFAULT 0,
+    episodes_done INTEGER NOT NULL DEFAULT 0,
+    first_available INTEGER NOT NULL DEFAULT 0,
+    reason TEXT,
+    requested_by TEXT,
+    requested_at INTEGER NOT NULL DEFAULT 0,
+    updated_at INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE acquisition_episode (
+    parent_key TEXT NOT NULL,
+    season INTEGER NOT NULL,
+    episode INTEGER NOT NULL,
+    status TEXT NOT NULL,
+    progress INTEGER NOT NULL DEFAULT 0,
+    download_id TEXT,
+    PRIMARY KEY (parent_key, season, episode)
+);
+
+CREATE INDEX acquisition_status ON acquisition(status);
+CREATE INDEX acquisition_episode_parent ON acquisition_episode(parent_key);

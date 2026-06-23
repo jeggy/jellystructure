@@ -12,6 +12,21 @@ data class AppConfig(
     val qbittorrent: QBittorrentConfig? = null,
     val radarr: ArrConfig? = null,
     val sonarr: ArrConfig? = null,
+    val acquisition: AcquisitionConfig? = null,
+)
+
+// Phase 56 — acquisition engine settings. Absent or enabled=false ⇒ no requests/polling.
+// Flat keys (not [acquisition.radarr] sub-tables) to keep ktoml serialization trivial.
+@Serializable
+data class AcquisitionConfig(
+    val enabled: Boolean = false,
+    @SerialName("poll_seconds") val pollSeconds: Int = 10,
+    @SerialName("radarr_root_folder") val radarrRootFolder: String = "",
+    @SerialName("radarr_quality_profile") val radarrQualityProfile: String = "",
+    @SerialName("sonarr_root_folder") val sonarrRootFolder: String = "",
+    @SerialName("sonarr_quality_profile") val sonarrQualityProfile: String = "",
+    @SerialName("sonarr_monitor") val sonarrMonitor: String = "all", // all|future|firstSeason|latestSeason|pilot
+    @SerialName("sonarr_season_folder") val sonarrSeasonFolder: Boolean = true,
 )
 
 // Phase 54 — Radarr/Sonarr connection (movies / series). Opt-in, read + rescan only.

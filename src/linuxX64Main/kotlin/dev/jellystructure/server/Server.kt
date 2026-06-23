@@ -26,9 +26,11 @@ import dev.jellystructure.media.LogoDownloader
 import dev.jellystructure.server.routes.metadataRoutes
 import dev.jellystructure.server.routes.triageRoutes
 import dev.jellystructure.server.routes.tvRoutes
+import dev.jellystructure.arr.AcquisitionService
 import dev.jellystructure.arr.ArrClient
 import dev.jellystructure.arr.ArrPing
 import dev.jellystructure.arr.ArrRescanService
+import dev.jellystructure.server.routes.acquisitionRoutes
 import dev.jellystructure.torrent.QBittorrentClient
 import dev.jellystructure.torrent.SeedingGuard
 import dev.jellystructure.tv.BrowseService
@@ -112,6 +114,7 @@ fun startServer(
     qbClient: QBittorrentClient? = null,
     arrClient: ArrClient? = null,
     arrRescan: ArrRescanService? = null,
+    acquisitionService: AcquisitionService? = null,
     tvEventBus: TvEventBus,
 ): suspend () -> Unit {
     val appScope = CoroutineScope(SupervisorJob())
@@ -191,6 +194,7 @@ fun startServer(
                 triageRoutes(mediaStore, jellyfinClient, configStore, mediaHistory, seedingGuard)
                 metadataRoutes(mediaStore, jsTagStore, logoDownloader)
                 trackRoutes(mediaStore, configStore, jellyfinClient, mediaHistory, seedingGuard, arrRescan)
+                acquisitionService?.let { acquisitionRoutes(it) }
                 tvRoutes(deviceService, raviloConfigService, homeFeedService, browseService, detailService, playbackService, sessionService, jellyfinClient, configStore, channelLogoStore)
             }
 

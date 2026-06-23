@@ -1,0 +1,66 @@
+-- Phase 56 — acquisition records (one per requested title; series roll up their episodes).
+CREATE TABLE acquisition (
+    item_key TEXT NOT NULL PRIMARY KEY,   -- JS item id, else 'tmdb:<id>'
+    media_kind TEXT NOT NULL,             -- 'MOVIE' | 'SERIES'
+    title TEXT NOT NULL DEFAULT '',
+    tmdb_id INTEGER,
+    arr_id INTEGER,                       -- Radarr movieId / Sonarr seriesId
+    arr_kind TEXT NOT NULL DEFAULT '',    -- 'radarr' | 'sonarr'
+    item_id TEXT,                         -- resolved Jellystructure library id once AVAILABLE
+    status TEXT NOT NULL,                 -- AcquisitionStatus name
+    progress INTEGER NOT NULL DEFAULT 0,
+    queue_position INTEGER,
+    flags TEXT NOT NULL DEFAULT '',       -- csv subset of: stalled,metadata
+    episodes_total INTEGER NOT NULL DEFAULT 0,
+    episodes_done INTEGER NOT NULL DEFAULT 0,
+    first_available INTEGER NOT NULL DEFAULT 0,
+    reason TEXT,
+    requested_by TEXT,
+    requested_at INTEGER NOT NULL DEFAULT 0,
+    updated_at INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE acquisition_episode (
+    parent_key TEXT NOT NULL,
+    season INTEGER NOT NULL,
+    episode INTEGER NOT NULL,
+    status TEXT NOT NULL,
+    progress INTEGER NOT NULL DEFAULT 0,
+    download_id TEXT,
+    PRIMARY KEY (parent_key, season, episode)
+);
+
+CREATE INDEX acquisition_status ON acquisition(status);
+CREATE INDEX acquisition_episode_parent ON acquisition_episode(parent_key);
+
+upsert:
+INSERT OR REPLACE INTO acquisition(item_key, media_kind, title, tmdb_id, arr_id, arr_kind, item_id, status, progress, queue_position, flags, episodes_total, episodes_done, first_available, reason, requested_by, requested_at, updated_at)
+VALUES (:item_key, :media_kind, :title, :tmdb_id, :arr_id, :arr_kind, :item_id, :status, :progress, :queue_position, :flags, :episodes_total, :episodes_done, :first_available, :reason, :requested_by, :requested_at, :updated_at);
+
+getByKey:
+SELECT * FROM acquisition WHERE item_key = :item_key LIMIT 1;
+
+getByKeys:
+SELECT * FROM acquisition WHERE item_key IN :keys;
+
+getByTmdb:
+SELECT * FROM acquisition WHERE tmdb_id = :tmdb_id LIMIT 1;
+
+all:
+SELECT * FROM acquisition;
+
+active:
+SELECT * FROM acquisition WHERE status NOT IN ('AVAILABLE', 'FAILED', 'NOT_REQUESTED');
+
+deleteByKey:
+DELETE FROM acquisition WHERE item_key = :item_key;
+
+upsertEpisode:
+INSERT OR REPLACE INTO acquisition_episode(parent_key, season, episode, status, progress, download_id)
+VALUES (:parent_key, :season, :episode, :status, :progress, :download_id);
+
+episodesForParent:
+SELECT * FROM acquisition_episode WHERE parent_key = :parent_key ORDER BY season, episode;
+
+deleteEpisodesForParent:
+DELETE FROM acquisition_episode WHERE parent_key = :parent_key;

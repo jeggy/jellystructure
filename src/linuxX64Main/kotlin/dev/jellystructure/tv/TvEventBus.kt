@@ -40,4 +40,18 @@ class TvEventBus(private val scope: CoroutineScope) {
             for (s in targets) runCatching { s.send(Frame.Text(msg)) }
         }
     }
+
+    /**
+     * Phase 56 — push an acquisition status change to **all** connected devices (acquisition is global,
+     * not per-user). Unlike config_changed this is **payload-bearing** (the record inline) so the TV
+     * patches the matching tile in place without a re-pull. Non-blocking.
+     */
+    fun notifyAcquisitionChanged(recordJson: String) {
+        scope.launch {
+            val targets = mutex.withLock { sessions.values.flatten() }
+            if (targets.isEmpty()) return@launch
+            val msg = """{"type":"acquisition_changed","record":$recordJson}"""
+            for (s in targets) runCatching { s.send(Frame.Text(msg)) }
+        }
+    }
 }
