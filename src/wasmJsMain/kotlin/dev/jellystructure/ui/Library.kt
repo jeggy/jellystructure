@@ -575,7 +575,7 @@ private fun buildAudioDropdown(
             listEl.appendChild(clearRow)
         }
 
-        filtered.forEach { item ->
+        fun appendRow(item: dev.jellystructure.api.TrackFacetItem) {
             val row = document.createElement("div") as HTMLElement
             val isSel = item.value in getSelected()
             row.setAttribute("style", "padding:8px 12px;font-size:.82rem;cursor:pointer;display:flex;align-items:center;gap:9px;${if (isSel) "background:var(--hi-soft);" else ""}")
@@ -585,6 +585,14 @@ private fun buildAudioDropdown(
                 cb.type = "checkbox"; cb.checked = isSel
                 cb.setAttribute("style", "flex-shrink:0;accent-color:var(--hi);width:14px;height:14px;pointer-events:none")
                 row.appendChild(cb)
+            }
+
+            // Jellystructure tags carry a colour → dot it (same convention as the detail page).
+            item.color?.let { c ->
+                val dot = document.createElement("span") as HTMLElement
+                dot.className = "tag-dot"
+                dot.setAttribute("style", "background:$c")
+                row.appendChild(dot)
             }
 
             val nameSpan = document.createElement("span") as HTMLElement
@@ -606,6 +614,24 @@ private fun buildAudioDropdown(
                 else renderList(searchInput.value)
             }
             listEl.appendChild(row)
+        }
+
+        fun appendGroupLabel(text: String) {
+            val lbl = document.createElement("div") as HTMLElement
+            lbl.textContent = text
+            lbl.setAttribute("style", "padding:7px 12px 3px;font-size:.64rem;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-soft)")
+            listEl.appendChild(lbl)
+        }
+
+        // Group Jellystructure tags (those with a colour) above the rest — but only when both kinds
+        // are present. Non-tag facets carry no colour, so they render as one flat list (unchanged).
+        val jsItems = filtered.filter { it.color != null }
+        val otherItems = filtered.filter { it.color == null }
+        if (jsItems.isNotEmpty() && otherItems.isNotEmpty()) {
+            appendGroupLabel("Jellystructure tags"); jsItems.forEach { appendRow(it) }
+            appendGroupLabel("Other tags"); otherItems.forEach { appendRow(it) }
+        } else {
+            filtered.forEach { appendRow(it) }
         }
         if (filtered.isEmpty()) {
             val empty = document.createElement("div") as HTMLElement

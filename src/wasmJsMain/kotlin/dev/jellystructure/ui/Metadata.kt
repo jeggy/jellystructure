@@ -191,19 +191,18 @@ private fun renderTagsTab(data: TagsResponse): String = buildString {
     if (data.jsTags.isEmpty()) {
         append("""<p class="muted tiny" style="margin-bottom:20px">No tags defined yet.</p>""")
     } else {
-        append("""<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:20px">""")
+        append("""<div style="display:flex;flex-wrap:wrap;gap:12px;margin-bottom:20px">""")
         for (tag in data.jsTags) {
-            val radius = if (tag.description.isNotBlank()) "12px" else "99px"
-            append("""<button class="js-tag-card" data-name="${tag.name}" data-filter-name="${tag.name.lowercase()}" style="display:inline-flex;align-items:center;gap:9px;background:var(--card-bg);border:var(--card-bd);border-radius:$radius;padding:8px 14px;cursor:pointer;font-size:.85rem;box-shadow:var(--shadow-s);transition:border-color .12s,box-shadow .12s;text-align:left" onmouseover="this.style.borderColor='var(--hi)';this.style.boxShadow='var(--shadow)'" onmouseout="this.style.borderColor='';this.style.boxShadow='var(--shadow-s)'">""")
-            append("""<span style="width:10px;height:10px;border-radius:50%;background:${tag.color};flex-shrink:0;display:inline-block;box-shadow:0 0 0 2px ${tag.color}33"></span>""")
-            append("""<span style="display:flex;flex-direction:column;gap:1px">""")
-            append("""<span style="color:var(--ink);font-weight:500">${tag.name}</span>""")
+            append("""<div class="card tag-card js-tag-card" data-name="${tag.name}" data-filter-name="${tag.name.lowercase()}" style="min-width:220px;transition:border-color .12s,box-shadow .12s" onmouseover="this.style.borderColor='var(--hi)';this.style.boxShadow='var(--shadow)'" onmouseout="this.style.borderColor='';this.style.boxShadow='var(--shadow-s)'">""")
+            append("""<span class="tag-dot-lg" style="background:${tag.color};box-shadow:0 0 0 2px ${tag.color}33"></span>""")
+            append("""<span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:1px">""")
+            append("""<span style="color:var(--ink);font-weight:600">${tag.name}</span>""")
             if (tag.description.isNotBlank()) {
-                append("""<span style="font-size:.72rem;color:var(--ink-soft);max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${tag.description}</span>""")
+                append("""<span class="tiny muted" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:200px">${tag.description}</span>""")
             }
             append("</span>")
-            append("""<span style="font-size:.72rem;color:var(--ink-soft);background:var(--fill-3);border-radius:99px;padding:1px 7px;border:1px solid var(--line);flex-shrink:0">${tag.count}</span>""")
-            append("</button>")
+            append("""<span class="badge info" style="flex-shrink:0">${tag.count}</span>""")
+            append("</div>")
         }
         append("</div>")
     }
@@ -242,7 +241,7 @@ private fun showTagModal(content: HTMLElement, scope: CoroutineScope, editName: 
     val title = if (isNew) "New tag" else "Edit tag"
     modal.style.display = "flex"
     val swatches = PRESET_COLORS.joinToString("") { color ->
-        """<span class="color-swatch" data-color="$color" style="display:inline-block;width:22px;height:22px;border-radius:50%;background:$color;cursor:pointer;border:2px solid transparent;margin:2px" title="$color"></span>"""
+        """<span class="swatch color-swatch" data-color="$color" style="background:$color" title="$color"></span>"""
     }
     modal.innerHTML = """
         <div style="background:var(--surface);border-radius:10px;padding:24px;width:340px;max-width:calc(100vw - 32px);box-shadow:0 8px 32px rgba(0,0,0,.25)">
@@ -253,7 +252,7 @@ private fun showTagModal(content: HTMLElement, scope: CoroutineScope, editName: 
           </div>
           <div class="field">
             <label>Color</label>
-            <div id="color-swatches">$swatches</div>
+            <div id="color-swatches" class="swatches">$swatches</div>
             <input id="modal-tag-color" type="hidden" value="#6b7280">
           </div>
           <div class="field">
@@ -275,7 +274,7 @@ private fun showTagModal(content: HTMLElement, scope: CoroutineScope, editName: 
         (modal.querySelector("#modal-tag-color") as? HTMLInputElement)?.value = color
         for (i in 0 until swatchEls.length) {
             val s = swatchEls.item(i) as? HTMLElement ?: continue
-            s.style.border = if (s.getAttribute("data-color") == color) "2px solid var(--ink)" else "2px solid transparent"
+            s.classList.toggle("on", s.getAttribute("data-color") == color)
         }
     }
     selectSwatch("#6b7280")

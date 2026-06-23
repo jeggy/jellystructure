@@ -28,9 +28,10 @@ top-level `CONSTITUTION.md` and `wireframes/Requirements & Phases.html` are
 
 ## Design constraints to respect
 - `design/app/` mockups are **the visual target for the Kotlin/WASM frontend**.
-- Real frontend styling is **Tailwind CSS** (classes scanned from Kotlin source at
-  build time). Our mockups use a custom CSS-variable system in `wf.css`/`app.css`
-  — treat them as the *visual* spec; tokens map to Tailwind on implementation.
+- Real frontend styling **ships `design/app/wf.css` + `app.css` verbatim** — the Gradle
+  `syncDesignAssets` task copies them into the dist and `index.html` links them. There is
+  **no Tailwind pipeline**; the mockup CSS *is* the production CSS, so new component classes
+  go into `wf.css` (the mockups' per-page `<style>` blocks do not reach the app).
 - Frontend is **DOM-based** (kotlinx.browser) — no Canvas, no Compose for Web.
 - **Frontend renders server-pushed state only** — no derived/optimistic state.
 

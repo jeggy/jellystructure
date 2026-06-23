@@ -163,7 +163,7 @@ fun Route.mediaRoutes(
         }
 
         get("/meta-facets") {
-            @Serializable data class FacetItem(val value: String, val count: Int)
+            @Serializable data class FacetItem(val value: String, val count: Int, val color: String? = null)
             @Serializable data class MetaFacetsResponse(
                 val studios: List<FacetItem>,
                 val networks: List<FacetItem>,
@@ -175,7 +175,7 @@ fun Route.mediaRoutes(
                 studios  = f.studios.map  { FacetItem(it.value, it.count) },
                 networks = f.networks.map { FacetItem(it.value, it.count) },
                 genres   = f.genres.map   { FacetItem(it.value, it.count) },
-                tags     = f.tags.map     { FacetItem(it.value, it.count) },
+                tags     = f.tags.map     { FacetItem(it.value, it.count, it.color) },
             ))
         }
 

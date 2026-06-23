@@ -9,7 +9,7 @@ and the runtime flows. For the non-negotiable rules behind these choices, see
 ## Tech Stack (summary)
 
 - **Backend** — Kotlin Native (`linuxX64`, `linuxArm64`), single native binary, Ktor CIO server, kotlinx-io, ktoml, SQLDelight + native SQLite, Ktor WebSockets.
-- **Frontend** — Kotlin WASM (`wasmJs`, WasmGC), `kotlinx.browser` DOM manipulation, Tailwind via Webpack/PostCSS, hash routing, `StateFlow`.
+- **Frontend** — Kotlin WASM (`wasmJs`, WasmGC), `kotlinx.browser` DOM manipulation, `design/app/wf.css` + `app.css` shipped verbatim via the `syncDesignAssets` Gradle task (no Tailwind/PostCSS), hash routing, `StateFlow`.
 - **Infra** — Docker Compose; config TOML at `/config/config.toml`; media volume at `/media`.
 
 ### Build commands
