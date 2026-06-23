@@ -13,6 +13,16 @@ data class AppConfig(
     val radarr: ArrConfig? = null,
     val sonarr: ArrConfig? = null,
     val acquisition: AcquisitionConfig? = null,
+    val discover: DiscoverFeedConfig? = null,
+)
+
+// Phase 57 — chart/Discover feed ingestion. Absent or enabled=false ⇒ no ingestion.
+@Serializable
+data class DiscoverFeedConfig(
+    val enabled: Boolean = false,
+    val providers: List<String> = listOf("netflix"),
+    val regions: List<String> = listOf("DK"),
+    @SerialName("refresh_hours") val refreshHours: Int = 24,
 )
 
 // Phase 56 — acquisition engine settings. Absent or enabled=false ⇒ no requests/polling.

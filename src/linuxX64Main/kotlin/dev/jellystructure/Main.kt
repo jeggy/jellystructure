@@ -7,6 +7,10 @@ import dev.jellystructure.arr.AcquisitionService
 import dev.jellystructure.arr.AcquisitionStore
 import dev.jellystructure.arr.ArrClient
 import dev.jellystructure.arr.ArrRescanService
+import dev.jellystructure.chart.ChartIngestService
+import dev.jellystructure.chart.ChartRegistry
+import dev.jellystructure.chart.ChartStore
+import dev.jellystructure.chart.NetflixTudumProvider
 import dev.jellystructure.torrent.QBittorrentClient
 import dev.jellystructure.torrent.SeedingGuard
 import dev.jellystructure.db.createDatabase
@@ -145,10 +149,13 @@ fun main() = runBlocking {
     val acquisitionStore = AcquisitionStore(db)
     val acquisitionService = AcquisitionService(configStore, arrClient, tmdbClient, acquisitionStore, mediaStore, tvEventBus, rootScope)
     acquisitionService.startReconciler()
+    val chartStore = ChartStore(db)
+    val chartRegistry = ChartRegistry(listOf(NetflixTudumProvider()))
+    val chartIngest = ChartIngestService(configStore, chartRegistry, tmdbClient, chartStore, mediaStore)
     val shutdown = startServer(
         configStore, sessionService, raviloDeviceService, raviloConfigService, channelLogoStore, homeFeedService, browseService, detailService, playbackService, jellyfinClient, mediaStore, scanner,
         artworkDownloader, tmdbClient, scanTracker, folderWatcher, mediaHistory, activityLog, broadcaster,
-        frontendDir, port = port, scanDispatcher = scanDispatcher, effectiveScanThreads = effectiveScanThreads, jsTagStore = jsTagStore, seedingGuard = seedingGuard, logoDownloader = logoDownloader, qbClient = qbClient, arrClient = arrClient, arrRescan = arrRescan, acquisitionService = acquisitionService, tvEventBus = tvEventBus,
+        frontendDir, port = port, scanDispatcher = scanDispatcher, effectiveScanThreads = effectiveScanThreads, jsTagStore = jsTagStore, seedingGuard = seedingGuard, logoDownloader = logoDownloader, qbClient = qbClient, arrClient = arrClient, arrRescan = arrRescan, acquisitionService = acquisitionService, chartRegistry = chartRegistry, chartStore = chartStore, chartIngest = chartIngest, tvEventBus = tvEventBus,
     )
 
     // Scheduled scan — fires every scan_interval_hours hours (0 = disabled)
@@ -168,6 +175,17 @@ fun main() = runBlocking {
             } else {
                 delay(60_000L)
             }
+        }
+    }
+
+    // Scheduled chart ingest (Phase 57) — refresh every refresh_hours (default 24), week-gated.
+    rootScope.launch {
+        while (shutdownRequested.value == 0) {
+            val d = configStore.current.discover
+            if (d != null && d.enabled) {
+                for (region in d.regions) runCatching { chartIngest.refresh(region) }
+            }
+            delay((configStore.current.discover?.refreshHours ?: 24).coerceAtLeast(1) * 3_600_000L)
         }
     }
 
