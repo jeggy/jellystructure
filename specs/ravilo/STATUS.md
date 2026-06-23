@@ -12,7 +12,16 @@ _Last updated: 2026-06-23_
 
 ## Current focus
 
-**Phases R01–R46 complete.** _On-device follow-up (2026-06-23), after deploying R44–R46 to stue TV:_
+**Phases R01–R47 complete.** [R47](requirements/phase-R47-detail-focusable-draw-only-scale.md)
+(2026-06-23) finished the R42 viewport-jump fix on the **detail screens**: R42 made the focus scale
+draw-only "only on Tile/ChannelCard", so navigating Movie/Series detail still jumped — `EpisodeCard`,
+`SeasonPicker` pills and `RaviloButton` applied `.scale` (and the button lift) as an **ancestor** of
+`.dpadFocusable`, so the focused bounds grew with the spring and the scroll chased them. Moved scale +
+glow + lift into an inner `graphicsLayer` with the focusable on a fixed-size outer; `CastCircle` already
+scaled a descendant (unchanged). `:ravilo-ui` (android + wasmJs) compiles; `:ravilo-android:assembleDebug`
+builds. _Verify on-device:_ season picker / episode rail / action buttons no longer jump.
+
+_On-device follow-up (2026-06-23), after deploying R44–R46 to stue TV:_
 playback was a black screen + empty home feed because the **paired Jellyfin user token had gone stale
 (401)** — `getSeriesEpisodes` returned empty, so `DetailService` fell back to `id = jfEp?.id ?:
 ep.path`, sending the episode **file path** as the playback id (`/Items//mnt/series/…mkv` →
