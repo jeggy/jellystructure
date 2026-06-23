@@ -1496,6 +1496,25 @@ internal suspend fun runScan(
 
     // Post-scan cleanup — runs only after all workers have finished
     store.update(allItems)
+
+    // Phase 53-D: report Jellyfin items that were returned but produced no stored item, with reasons,
+    // so silent drops (file-not-found, unmatched library, …) are visible — not just a buried per-item warn.
+    val scannedJfIds = allItems.mapNotNull { it.jellyfinId }.toSet()
+    val skipped = jellyfinItems.filter { it.id !in scannedJfIds && it.id !in skipIds }
+    if (skipped.isNotEmpty()) {
+        val reasons = skipped.associateWith { scanner.classifySkip(it) }
+        val byReason = reasons.values.groupingBy { it }.eachCount().entries
+            .sortedByDescending { it.value }.joinToString(", ") { "${it.key}=${it.value}" }
+        Logger.info("Scan summary: ${allItems.size} stored, ${skipped.size} skipped ($byReason)", "scan")
+        // Expected skips (out-of-scope content) vs unexpected (something the operator likely wants fixed).
+        val expected = setOf("no-matching-library", "unsupported-type", "no-path")
+        val unexpected = reasons.filterValues { it !in expected }
+        if (unexpected.isNotEmpty()) {
+            Logger.warn("Scan: ${unexpected.size} item(s) unexpectedly skipped:", "scan")
+            unexpected.forEach { (j, r) -> Logger.warn("  • '${j.name}' [${j.path ?: "no path"}] — $r", "scan") }
+        }
+    }
+
     val cancelled = scanTracker.cancelRequested
     Logger.info("Library scan ${if (cancelled) "cancelled" else "complete"} — ${succeeded.value} items", "scan")
     if (!cancelled) {

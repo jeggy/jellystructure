@@ -26,7 +26,21 @@ class MediaStore(private val db: JellystructureDb, private val jsTagStore: JsTag
         Logger.info("MediaStore: DB has $count media items")
     }
 
-    suspend fun update(newItems: List<MediaItem>) {
+    // Two scanned items can produce the same id (e.g. same title+year, or a duplicate in Jellyfin).
+    // Upsert is by id, so without this the second silently overwrites the first. Append a short, stable
+    // jellyfinId token to every member of a colliding id-group — deterministic (depends only on the set
+    // + each item's jellyfinId, never scan order) so ids stay stable across re-scans (Phase 53-B).
+    private fun disambiguateIds(items: List<MediaItem>): List<MediaItem> {
+        val counts = items.groupingBy { it.id }.eachCount()
+        return items.map { item ->
+            val jid = item.jellyfinId
+            if ((counts[item.id] ?: 0) > 1 && jid != null) item.copy(id = "${item.id}-${jid.take(8)}")
+            else item
+        }
+    }
+
+    suspend fun update(rawItems: List<MediaItem>) {
+        val newItems = disambiguateIds(rawItems)
         // Snapshot existing titlesByLang before deleting so a full rescan never erases
         // languages pulled in earlier scans.
         val existing: Map<String, MediaItem> = allItems().associateBy { it.id }
