@@ -39,6 +39,7 @@
         <div class="navitem foc cur" data-nav="home">${t('nav_home')}</div>
         <div class="navitem foc" data-nav="movies">${t('nav_movies')}</div>
         <div class="navitem foc" data-nav="series">${t('nav_series')}</div>
+        <div class="navitem foc" data-nav="top10" id="rv-nav-top10" style="display:none">${t('nav_top10')}</div>
         <div class="navitem foc" data-nav="mylist">${t('nav_mylist')}</div>
       </div>
       <div class="right">
@@ -229,7 +230,8 @@
         const c = el('div', 'studio foc');
         c._studio = s;
         c.style.background = s.bg;
-        c.innerHTML = `<div class="sheen"></div><div class="wm">${s.wm}</div>`;
+        const mark = s.logo ? `<img class="logo-img" src="${s.logo}" alt="${s.name}">` : `<div class="wm">${s.wm}</div>`;
+        c.innerHTML = `<div class="sheen"></div>${mark}`;
         track.appendChild(c);
       });
       r.appendChild(track);
@@ -257,7 +259,7 @@
       const s = R.studios.find(x => x.id === studioId) || R.studios[0];
       scroll.innerHTML = '';
       const head = el('div', 'cathead');
-      head.innerHTML = `<div class="logo" style="background:${s.bg}">${s.wm}</div>
+      head.innerHTML = `<div class="logo" style="background:${s.bg}">${s.logo ? `<img class="logo-img" src="${s.logo}" alt="${s.name}">` : s.wm}</div>
         <div><div class="back">‹ ${t('back_home')} &nbsp;·&nbsp; ${t('channel')}</div><h1>${s.name}</h1>
         <div class="sub">${t('channel_sub', { name: s.name })}</div></div>`;
       scroll.appendChild(head);
@@ -383,6 +385,137 @@
       appbar.querySelectorAll('.navitem').forEach(n => n.classList.remove('cur'));
     }
 
+    /* ---------------- DISCOVER / TOP 10 (separate from library detail) ---------------- */
+    function listsForUser() {
+      const u = currentUser(); const sel = (u && u.discover && u.discover.lists) || [];
+      const byId = {}; (R.discover.lists || []).forEach(l => byId[l.id] = l);
+      return sel.map(id => byId[id]).filter(Boolean);
+    }
+    function activeSource() { return (R.discover.sources || []).find(s => s.enabled) || R.discover.sources[0]; }
+    function trendBadge(it) {
+      if (it.trend === 'new') return `<span class="rtrend new">${t('new_this_week')}</span>`;
+      if (it.trend === 'up') return `<span class="rtrend up">▲</span>`;
+      if (it.trend === 'down') return `<span class="rtrend down">▼</span>`;
+      return `<span class="rtrend same">=</span>`;
+    }
+    function statusMark(it) {
+      if (it.status === 'available') return `<span class="rstat avail" title="In Library">✓</span>`;
+      if (it.status === 'fetching') return `<span class="rstat fetch" title="Fetching"><span class="spin"></span><span class="pct">${it.progress || 0}%</span></span>`;
+      return '';
+    }
+    function rankTile(it, list) {
+      const tl = el('div', 'rtile foc'); tl._ditem = it; tl._dlist = list;
+      const sub = list.metric === 'rank'
+        ? t('weeks_on', { n: it.weeks })
+        : (it.views ? t('views_week', { v: it.views }) : t('weeks_on', { n: it.weeks }));
+      tl.innerHTML = `
+        <div class="rtop">
+          <div class="rnum">${it.rank}</div>
+          <div class="rposter"><div class="art">${artGrad(it)}${statusMark(it)}</div></div>
+        </div>
+        <div class="label">${it.title}</div>
+        <div class="sub">${sub} ${trendBadge(it)}</div>`;
+      return tl;
+    }
+    function discoverRow(list) {
+      const r = el('div', 'crow drow');
+      r.innerHTML = `<div class="crow-head"><h2>${list.title}</h2><span class="cfg">${list.scope === 'country' ? R.discover.config.region : (list.scope === 'alltime' ? 'All-time' : 'Global')}</span><span class="more">${list.note || ''}</span></div>`;
+      const track = el('div', 'track focus-row');
+      list.items.forEach(it => track.appendChild(rankTile(it, list)));
+      r.appendChild(track);
+      return r;
+    }
+    function renderDiscover() {
+      stopHero(); scroll.innerHTML = '';
+      const src = activeSource();
+      const region = R.discover.config.regionName || R.discover.config.region;
+      const wrap = el('div', 'discoverscreen');
+      const head = el('div', 'dischead');
+      head.innerHTML = `<div class="dischead-row"><h1>${t('nav_top10')}</h1><span class="disc-sub">${t('top10_sub', { region })}</span></div>`;
+      const srcRow = el('div', 'srcpick focus-row');
+      (R.discover.sources || []).forEach(s => {
+        const c = el('div', 'srcchip foc' + (s.enabled ? (s.id === src.id ? ' cur' : '') : ' off')); c._src = s;
+        c.innerHTML = `<span class="srcwm" style="background:${s.accent}">${s.wm}</span><span class="srcnm">${s.name}</span><span class="srcvia">${s.enabled ? t('via_source', { src: s.via }) : 'soon'}</span>`;
+        srcRow.appendChild(c);
+      });
+      head.appendChild(srcRow);
+      wrap.appendChild(head);
+      const lists = listsForUser();
+      lists.forEach(l => wrap.appendChild(discoverRow(l)));
+      wrap.appendChild(el('div', 'screen-end'));
+      scroll.appendChild(wrap);
+      appbar.querySelectorAll('.navitem').forEach(n => n.classList.toggle('cur', n.dataset.nav === 'top10'));
+    }
+
+    function requestFetch(it) {
+      it.status = 'fetching'; it.progress = 1;
+      flash('＋ ' + it.title + ' · ' + t('requested_via'));
+      renderDiscoverDetail(it, view.list);
+      setTimeout(() => focusRC(1, 0), 20);
+    }
+    function discoverActions(it) {
+      let primary;
+      if (it.status === 'available') primary = `<div class="btn primary foc" data-dact="watch"><span class="ic">▶</span> ${t('watch_now')}</div>`;
+      else if (it.status === 'fetching') primary = `<div class="btn fetching foc" data-dact="progress"><span class="spin"></span> ${t('fetching')} · ${it.progress || 0}%</div>`;
+      else primary = `<div class="btn primary foc" data-dact="request"><span class="ic">＋</span> ${t('request_fetch')}</div>`;
+      return `<div class="ddt-actions focus-row">
+        ${primary}
+        <div class="btn ghost foc" data-dact="trailer"><span class="ic">▷</span> ${t('trailer')}</div>
+        <div class="btn ghost foc" data-dact="list"><span class="ic">＋</span> ${t('add_list')}</div>
+      </div>`;
+    }
+    function renderDiscoverDetail(it, list) {
+      stopHero(); scroll.innerHTML = '';
+      const src = activeSource();
+      const region = R.discover.config.regionName || R.discover.config.region;
+      const isCountry = list && list.scope === 'country';
+      const statusLine = it.status === 'available'
+        ? `<span class="ddt-state avail">✓ ${t('in_library')}</span>`
+        : it.status === 'fetching'
+          ? `<span class="ddt-state fetch"><span class="spin"></span> ${t('fetching')} · ${it.progress || 0}%</span>`
+          : `<span class="ddt-state none">${t('not_in_library')}</span>`;
+      const d = el('div', 'ddt');
+      d.innerHTML = `
+        <div class="ddt-hero">
+          <div class="ddt-bg"><div class="grad" style="position:absolute;inset:0;background:${it.grad}"></div><div class="hero-noise"></div><div class="ddt-scrim"></div></div>
+          <div class="ddt-body">
+            <div class="ddt-kicker"><span class="ddt-srcwm" style="background:${src.accent}">${src.wm}</span>${src.name} ${t('via_source', { src: src.via })}<span class="ddt-rank">${t('rank_in', { n: it.rank, region })}</span></div>
+            <div class="ddt-title">${it.title}</div>
+            <div class="hero-meta"><span class="tag">${it.rating}+</span><span>${it.year}</span><span>${it.genre}</span><span>${it.kind === 'series' ? 'Series' : 'Film'}</span>${statusLine}</div>
+            <div class="hero-syn">${it.syn || 'Trending on ' + src.name + ' right now. Not yet in your Jellyfin library — request it and Radarr will grab it, then Jellystructure organises it automatically.'}</div>
+            ${discoverActions(it)}
+          </div>
+        </div>
+        <div class="ddt-why">
+          <h2>${t('why_trending')}</h2>
+          <div class="ddt-stats">
+            <div class="ddt-stat"><div class="k">${t('rank_in', { n: it.rank, region: isCountry ? region : (list.scope === 'alltime' ? 'all-time' : 'global') })}</div><div class="v">#${it.rank}</div></div>
+            <div class="ddt-stat"><div class="k">${list && list.metric === 'rank' ? 'On chart' : 'Views'}</div><div class="v">${list && list.metric === 'rank' ? t('weeks_on', { n: it.weeks }) : (it.views ? it.views : '—')}</div></div>
+            <div class="ddt-stat"><div class="k">Trend</div><div class="v ddt-trend">${trendBadge(it)}</div></div>
+          </div>
+          ${isCountry ? `<div class="ddt-foot">Country charts are ranking only — no view counts. Source: ${src.name} via ${src.via}.</div>` : `<div class="ddt-foot">Source: ${src.name} via ${src.via}.</div>`}
+        </div>
+        <div class="screen-end"></div>`;
+      scroll.appendChild(d);
+      appbar.querySelectorAll('.navitem').forEach(n => n.classList.remove('cur'));
+    }
+
+    /* ---- trailer overlay (lightweight; real build streams the TMDB/YouTube trailer) ---- */
+    const trailerOv = el('div', 'trailerov');
+    trailerOv.innerHTML = `<div class="tr-bg"></div><div class="tr-scrim"></div>
+      <div class="tr-body"><div class="tr-kick">▷ ${t('trailer')}</div><div class="tr-title"></div>
+      <div class="tr-bar"><i></i></div><div class="tr-hint">Press <b>esc</b> to close</div></div>`;
+    stage.appendChild(trailerOv);
+    let trailerOpen = false;
+    function openTrailer(it) {
+      trailerOv.querySelector('.tr-bg').style.background = it.grad;
+      trailerOv.querySelector('.tr-title').textContent = it.title;
+      const bar = trailerOv.querySelector('.tr-bar > i'); bar.style.transition = 'none'; bar.style.width = '0%';
+      trailerOv.classList.add('on'); trailerOpen = true; stopHero();
+      requestAnimationFrame(() => { bar.style.transition = 'width 30s linear'; bar.style.width = '100%'; });
+    }
+    function closeTrailer() { trailerOv.classList.remove('on'); trailerOpen = false; }
+
     /* ---------------- BROWSE GRID + SEARCH ---------------- */
     let _catalog = null;
     function catalog() {
@@ -449,13 +582,15 @@
       if (v.type === 'home') renderHome();
       else if (v.type === 'category') renderCategory(v.studio);
       else if (v.type === 'movie' || v.type === 'series') renderDetail(v.item);
+      else if (v.type === 'discover') renderDiscover();
+      else if (v.type === 'discoverDetail') renderDiscoverDetail(v.item, v.list);
       else if (v.type === 'grid') renderGrid(v);
       else if (v.type === 'search') renderSearch(v);
       scroll.scrollTop = 0;
       setTimeout(() => {
         if (v.type === 'home') focusRowByIndex(0);
-        else if (v.type === 'category') focusRowByIndex(firstContentRowIndex());
-        else focusRC(1, 0); // detail / grid / search → first focusable row
+        else if (v.type === 'category' || v.type === 'discover') focusRowByIndex(firstContentRowIndex());
+        else focusRC(1, 0); // detail / discoverDetail / grid / search → first focusable row
       }, 30);
     }
 
@@ -497,6 +632,7 @@
       focusEl(its[cur.c]);
     }
     function move(dr, dc) {
+      if (trailerOpen) return;
       if (overlay.classList.contains('on')) { moveOverlay(dc); return; }
       const all = rows();
       if (dr) {
@@ -525,6 +661,7 @@
     }
 
     function activate() {
+      if (trailerOpen) { closeTrailer(); return; }
       if (overlay.classList.contains('on')) {
         const f0 = overlay.querySelector('.foc.focused');
         if (f0 && f0.dataset.ov === 'play') { const it = overlay._item; closeOverlay(); if (it) playItem(it); } else closeOverlay();
@@ -537,6 +674,7 @@
         else if (f.dataset.nav === 'search') go({ type: 'search', query: '' });
         else if (f.dataset.nav === 'movies') go({ type: 'grid', kind: 'film', title: 'Movies', nav: 'movies' });
         else if (f.dataset.nav === 'series') go({ type: 'grid', kind: 'series', title: 'Series', nav: 'series' });
+        else if (f.dataset.nav === 'top10') go({ type: 'discover' });
         else if (f.dataset.nav === 'mylist') go({ type: 'grid', kind: 'mylist', title: 'My List', nav: 'mylist' });
         else if (f.dataset.nav === 'profile') openProfiles('switch');
         return;
@@ -570,11 +708,24 @@
       }
       if (f._ep) { const eps = R.episodesFor(view.item, view.season || 0); const idx = eps.findIndex(x => x.n === f._ep.n); openPlayer(episodeCtx(view.item, view.season || 0, eps, Math.max(0, idx))); return; }
       if (f._cast) { flash(f._cast.n + ' · ' + f._cast.r); return; }
+      if (f._src) { if (f._src.enabled) { renderDiscover(); setTimeout(() => focusRowByIndex(firstContentRowIndex()), 20); } else flash(f._src.name + ' · coming soon'); return; }
+      if (f._ditem) { go({ type: 'discoverDetail', item: f._ditem, list: f._dlist, from: { type: 'discover' } }); return; }
+      if (f.dataset.dact) {
+        const it = view.item;
+        if (f.dataset.dact === 'watch') playItem(it);
+        else if (f.dataset.dact === 'request') requestFetch(it);
+        else if (f.dataset.dact === 'trailer') openTrailer(it);
+        else if (f.dataset.dact === 'progress') flash(t('fetching') + ' · ' + (it.progress || 0) + '% · Radarr');
+        else if (f.dataset.dact === 'list') flash('＋ ' + it.title);
+        return;
+      }
       if (f._studio) { go({ type: 'category', studio: f._studio.id }); return; }
       if (f._item) { if (f.classList.contains('land')) playItem(f._item, 0); else toDetail(f._item); return; }
     }
     function back() {
+      if (trailerOpen) { closeTrailer(); return; }
       if (overlay.classList.contains('on')) { closeOverlay(); return; }
+      if (view.type === 'discoverDetail') { go(view.from || { type: 'discover' }); return; }
       if (view.type === 'movie' || view.type === 'series') { go(view.from || { type: 'home' }); return; }
       if (view.type !== 'home') go({ type: 'home' });
     }
@@ -638,13 +789,23 @@
       try { localStorage.setItem(PKEY, p.id); } catch (e) {}
       if (window.setRaviloLang) window.setRaviloLang(p.lang || 'en');
       relabelChrome();
+      updateDiscoverNav();
       const av = document.getElementById('rv-avatar');
       if (av) { av.textContent = p.initials; av.style.background = p.color; }
     }
     // re-label the persistent app-bar nav after a language switch (screens re-localize via go())
     function relabelChrome() {
-      const map = { home: 'nav_home', movies: 'nav_movies', series: 'nav_series', mylist: 'nav_mylist' };
+      const map = { home: 'nav_home', movies: 'nav_movies', series: 'nav_series', top10: 'nav_top10', mylist: 'nav_mylist' };
       appbar.querySelectorAll('.navitem').forEach(n => { const k = map[n.dataset.nav]; if (k) n.textContent = t(k); });
+    }
+    // Top 10 tab is gated: Radarr enabled in Jellystructure AND the user's per-user discover config.
+    function discoverEnabled() {
+      const u = currentUser();
+      return !!(R.discover && R.discover.config && R.discover.config.radarr && u && u.discover && u.discover.enabled && (u.discover.lists || []).length);
+    }
+    function updateDiscoverNav() {
+      const el = document.getElementById('rv-nav-top10');
+      if (el) el.style.display = discoverEnabled() ? '' : 'none';
     }
     function renderProfiles() {
       const signed = profiles.filter(p => p.signedIn);

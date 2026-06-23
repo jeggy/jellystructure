@@ -67,14 +67,14 @@ in common code and run on both.
   MAY add TV-specific niceties on top, but **no shared screen may depend on an Android-only Compose
   artifact.**
 - **Android TV target:** native Android app, `leanback` launcher category, TV banner, D-pad primary
-  input. Playback uses **AndroidX Media3 / ExoPlayer + Jellyfin's prebuilt FFmpeg audio decoder** — see
-  "Player engine & licensing" below.
+  input. Playback uses the **player engine forked from `jellyfin-androidtv`** (Media3/ExoPlayer +
+  Jellyfin's FFmpeg software decoders) — see "Player engine & licensing" below.
 - **Web/WASM target:** **Compose Multiplatform for Web (wasmJs)**, which is **canvas-based** (Skia via
   skiko). This is an accepted, deliberate tradeoff for Ravilo — see "Two WASM apps coexist" below.
   Playback uses the browser's media stack (HTML5 `<video>` / HLS) behind the shared player interface.
 - **Player:** a shared `expect`/`actual` **`RaviloPlayer`** interface. The `actual` on **Android** is
-  a direct **Media3/ExoPlayer** integration plus Jellyfin's GPL FFmpeg decoder (see next subsection);
-  the `actual` on **Web** is browser video (HTML5 `<video>`/MSE). The shared player *chrome* (overlay,
+  built on the **playback engine forked from `jellyfin-androidtv`** (GPL — see next subsection); the
+  `actual` on **Web** is browser video (HTML5 `<video>`/MSE). The shared player *chrome* (overlay,
   controls, focus) lives once in `:ravilo-ui`; only the engine is platform-specific.
 - **Async/state:** kotlinx.coroutines + `StateFlow` reactive stores, shared in common. Screens render
   store state; no ad-hoc mutable view state for server-owned data.
@@ -82,33 +82,36 @@ in common code and run on both.
   over the data plane. **Images:** an `expect`/`actual` image loader (Coil on Android, Compose MP
   resource/`<img>`-backed painter on Web), pointed at Jellyfin image URLs.
 
-### Player engine & licensing — Media3/ExoPlayer + Jellyfin's prebuilt FFmpeg decoder
-Ravilo's **Android** player is a **direct AndroidX Media3 / ExoPlayer integration** (the `actual
-RaviloPlayer` in `:ravilo-ui` `androidMain`), wrapped with Ravilo's own Compose chrome. Stock ExoPlayer
-cannot decode some audio common in libraries (DTS / TrueHD / AC3 / E-AC3), so Ravilo adds **Jellyfin's
-prebuilt FFmpeg audio-decoder extension** — the published Maven artifact
-**`org.jellyfin.media3:media3-ffmpeg-decoder`** (version-matched to Media3) — via a custom
-`RenderersFactory`. **Ravilo does not fork `jellyfin-androidtv`'s source** (`playback/*`): a source
-vendor was evaluated and **skipped as redundant** (R31) — the prebuilt artifact gives the same codec
-coverage at far lower maintenance cost.
+### Player engine & licensing — forked from `jellyfin-androidtv` (GPL)
+Ravilo's **Android** player is **not** a from-scratch Media3 integration. The official
+`jellyfin-androidtv` player is the best-tested playback stack in the ecosystem, so Ravilo **forks its
+`playback/*` modules** — `playback/core` (player + play-queue + media-session abstraction) and
+`playback/media3` (Media3/ExoPlayer backend) **including the `org.jellyfin.media3:media3-ffmpeg-decoder`**
+software decoders so DTS/TrueHD/AC3/E-AC3 and other audio that stock ExoPlayer can't handle still play
+— plus their subtitle (ASS/SSA/PGS), trickplay, and audio-passthrough handling, wrapped with Ravilo's
+own Compose chrome.
 
-- **The GPL decoder is isolated in an Android-only `:ravilo-player` module** — the **GPL containment
-  boundary**. It contributes only the FFmpeg `RenderersFactory`; only `:ravilo-android` links it, and
-  `:ravilo-ui` / `:ravilo-web` never do.
-- **License consequence:** the FFmpeg decoder is **GPL-3.0-only** (its bundled FFmpeg is built with GPL
-  codecs), so the Android client is GPL. The project licenses the **whole repository under GPL-3.0**
-  (root `LICENSE`) — the simplest posture, and everything here is Jellyfin-adjacent (itself GPL) anyway.
-  (The web bundle, backend, and admin frontend don't link the decoder, so they aren't *forced* to GPL
-  by it — but the project chooses one license for all.) The `:ravilo-player` **`NOTICE`** preserves the
-  decoder's upstream copyright/license attribution.
-- **Control plane:** stream resolution and progress reporting always route through jellystructure
-  `/api/tv/**` (a `StreamTicket` in, progress/stop out) — see R08/R14. The Media3 engine decodes/renders
-  only; jellystructure remains the only API Ravilo "logs into" (Invariant 1).
+- **The fork is isolated in an Android-only `:ravilo-player` module** — the **GPL containment
+  boundary**. Only `:ravilo-android` links it; `:ravilo-ui` and `:ravilo-web` never do.
+- **License consequence:** `jellyfin-androidtv` is **GPL-2.0** and the FFmpeg decoder is **GPL-3.0**,
+  so the Android client is GPL regardless. The project licenses the **whole repository under GPL-3.0**
+  (root `LICENSE`) — the simplest posture, and everything here is Jellyfin-adjacent (itself GPL)
+  anyway. (The web bundle, backend, and admin frontend are not *forced* to GPL by the fork — they
+  don't link it — but the project chooses one license for all.) When vendoring, **preserve upstream
+  copyright/license notices** for the `playback/*` code and confirm `jellyfin-androidtv`'s exact
+  **GPL-2.0-only-vs-or-later** terms: GPL-3.0 may incorporate GPL-2.0-**or-later** code, but
+  GPL-2.0-**only** would force the repo to GPL-2.0 instead (and then conflict with the GPL-3.0 decoder).
+- **Control-plane override of the fork:** upstream `playback/jellyfin` talks to Jellyfin **directly**
+  for stream resolution and progress reporting. Ravilo **replaces those seams** so they route through
+  jellystructure `/api/tv/**` (a `StreamTicket` in, progress/stop out) — see R08/R14. The fork supplies
+  the **engine** (decode/render only); jellystructure remains the only API Ravilo "logs into"
+  (Invariant 1).
 - **Web** keeps the **browser media stack** behind the same `RaviloPlayer` interface — a DOM
   `<video>` element bridged from Kotlin/WASM, with **`hls.js`** (HLS) and **JASSUB/libass** (ASS/SSA
   subtitles), using the **same server-side `ClientCapabilities`→`PlaybackInfo` resolution** as Android.
   We **do not fork `jellyfin-web`**: it is GPL TS/JS, and the browser decodes the bytes regardless, so
-  a fork buys no decoder advantage at high bridging cost — its `htmlVideoPlayer` is a **reference** only.
+  a fork buys no decoder advantage at high bridging cost — its `htmlVideoPlayer` is a **reference**
+  only. The Android `playback/*` fork is Android-only and never crosses to web.
 
 ### Two WASM apps coexist in the repo (read carefully)
 The repository now produces **two distinct WebAssembly bundles**, and they must not be conflated:
@@ -248,9 +251,7 @@ Ravilo shares jellystructure's **brand DNA** but is its own TV skin:
    points.
 9. **Non-admin Jellyfin users are allowed** in Ravilo (it is a viewer app), unlike the admin web
    console.
-10. **Android player = Media3/ExoPlayer + Jellyfin's prebuilt FFmpeg decoder, GPL-contained.** The
-    Android `actual` (in `:ravilo-ui` `androidMain`) is a direct Media3/ExoPlayer integration; the GPL
-    `media3-ffmpeg-decoder` artifact (DTS/TrueHD/AC3/E-AC3) is isolated in **`:ravilo-player`** — the
-    only module that links it — making the **Android client GPL** but **not** infecting `:ravilo-web`
-    or the jellystructure backend/admin frontend. Stream/progress paths route through `/api/tv/**`.
-    No `jellyfin-androidtv` source fork (skipped as redundant, R31).
+10. **Android player = forked `jellyfin-androidtv` engine, GPL-contained.** The Android `actual` is
+    built on the forked `playback/*` modules, isolated in **`:ravilo-player`**; this makes the
+    **Android client GPL** but does **not** infect `:ravilo-web` or the jellystructure backend/admin
+    frontend. The fork's direct-to-Jellyfin stream/progress paths are re-pointed through `/api/tv/**`.

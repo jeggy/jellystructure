@@ -4,6 +4,10 @@
 (function () {
   const STR = {
     en: {
+      nav_top10: 'Top 10', request_fetch: 'Request', requesting: 'Requesting…', fetching: 'Fetching', in_library: 'In Library',
+      watch_now: 'Watch Now', not_in_library: 'Not in your library yet', requested_via: 'Requested · Radarr is fetching it',
+      top10_sub: 'Trending now · {region}', weeks_on: '{n} wks on chart', new_this_week: 'New this week',
+      why_trending: 'Why it’s trending', rank_in: '#{n} in {region}', views_week: '{v} this week', via_source: 'via {src}',
       nav_home: 'Home', nav_movies: 'Movies', nav_series: 'Series', nav_mylist: 'My List',
       play: 'Play', resume: 'Resume', more_info: 'More Info', trailer: 'Trailer',
       add_list: 'My List', close: 'Close', see_all: 'See all', next_episode: 'Next episode',
@@ -20,6 +24,10 @@
       waiting: 'Waiting for approval…', search_ph: 'Search…', signed_in_as: 'Signed in as {name}',
     },
     da: {
+      nav_top10: 'Top 10', request_fetch: 'Anmod', requesting: 'Anmoder…', fetching: 'Henter', in_library: 'I biblioteket',
+      watch_now: 'Se nu', not_in_library: 'Ikke i dit bibliotek endnu', requested_via: 'Anmodet · Radarr henter den',
+      top10_sub: 'Populært nu · {region}', weeks_on: '{n} uger på listen', new_this_week: 'Ny i denne uge',
+      why_trending: 'Hvorfor den er populær', rank_in: '#{n} i {region}', views_week: '{v} i denne uge', via_source: 'via {src}',
       nav_home: 'Hjem', nav_movies: 'Film', nav_series: 'Serier', nav_mylist: 'Min liste',
       play: 'Afspil', resume: 'Forts\u00e6t', more_info: 'Mere info', trailer: 'Trailer',
       add_list: 'Min liste', close: 'Luk', see_all: 'Se alle', next_episode: 'N\u00e6ste afsnit',
@@ -36,6 +44,10 @@
       waiting: 'Venter p\u00e5 godkendelse…', search_ph: 'S\u00f8g…', signed_in_as: 'Logget ind som {name}',
     },
     fo: {
+      nav_top10: 'Top 10', request_fetch: 'Bið', requesting: 'Biður…', fetching: 'Heintar', in_library: 'Í savninum',
+      watch_now: 'Sígj nú', not_in_library: 'Ikki í savninum enn', requested_via: 'Biðið · Radarr heintar hana',
+      top10_sub: 'Vinsælt nú · {region}', weeks_on: '{n} vikur á listanum', new_this_week: 'Nýtt hesa viku',
+      why_trending: 'Hví tað er vinsælt', rank_in: '#{n} í {region}', views_week: '{v} hesa viku', via_source: 'via {src}',
       nav_home: 'Heim', nav_movies: 'Filmar', nav_series: 'S\u00f8gur', nav_mylist: 'M\u00edn listi',
       play: 'Spæl', resume: 'Hald fram', more_info: 'Meira', trailer: 'Trailer',
       add_list: 'M\u00edn listi', close: 'Lat aftur', see_all: 'S\u00edgj \u00f8ll', next_episode: 'N\u00e6sti part',

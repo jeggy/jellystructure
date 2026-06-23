@@ -28,6 +28,9 @@
   .chk { display: inline-flex; align-items: center; gap: 6px; font-size: .74rem; }
   .chk .dot { width: 8px; height: 8px; }
   .chk.pending { opacity: .5; }
+  /* tabbed layout — one panel visible at a time, #tab= addressable */
+  .set-section[data-tab] { display: none; }
+  .set-section[data-tab].tab-show { display: block; }
 </style>
 </head>
 <body class="wf-body app-body">
@@ -43,20 +46,19 @@
   <p class="page-sub">Everything here lives in <span class="mono">config.toml</span> on the mounted config volume, so it survives container restarts. Changes save live.</p>
 
   <div class="row" style="align-items:flex-start;">
-    <!-- section nav (smooth-scroll, IntersectionObserver highlights active) -->
+    <!-- tab rail — switches panels, #tab= addressable (Phase 28) -->
     <div class="card flat" id="set-nav" style="width:172px;flex:none;padding:8px;position:sticky;top:88px;">
-      <div class="navitem active" data-goto="sect-connections">Connections<span class="nav-badge" data-badge="sect-connections">!</span></div>
-      <div class="navitem" data-goto="sect-library">Library mapping<span class="nav-badge" data-badge="sect-library">!</span></div>
-      <div class="navitem" data-goto="sect-scanning">Scanning<span class="nav-badge" data-badge="sect-scanning">!</span></div>
-      <div class="navitem" data-goto="sect-metadata">Metadata<span class="nav-badge" data-badge="sect-metadata">!</span></div>
-      <div class="navitem" data-goto="sect-seeding">Cross-seed safety<span class="nav-badge" data-badge="sect-seeding">!</span></div>
-      <div class="navitem" data-goto="sect-notifications">Notifications</div>
-      <div class="navitem" data-goto="sect-advanced">Advanced</div>
+      <div class="navitem active" data-tab="connections">Connections<span class="nav-badge" data-badge="connections">!</span></div>
+      <div class="navitem" data-tab="libraries">Libraries<span class="nav-badge" data-badge="libraries">!</span></div>
+      <div class="navitem" data-tab="metadata">Metadata<span class="nav-badge" data-badge="metadata">!</span></div>
+      <div class="navitem" data-tab="downloads">Download tools<span class="nav-badge" data-badge="downloads">!</span></div>
+      <div class="navitem" data-tab="notifications">Notifications</div>
+      <div class="navitem" data-tab="advanced">Advanced</div>
     </div>
 
     <div class="col fill">
       <!-- CONNECTIONS -->
-      <div class="card set-section" id="sect-connections">
+      <div class="card set-section" id="sect-connections" data-tab="connections">
         <h3 style="font-size:1.05rem;margin:0 0 4px;">Connections</h3>
         <div class="field"><label>TMDB API key (v3)</label><div class="input">••••••••••••••3f9a <span class="chk" id="chk-tmdb" style="margin-left:auto;"><span class="dot ok"></span><span class="badge ok">valid · 39/40 req</span></span></div><span class="hint">Fetches metadata, artwork and original_language.</span></div>
         <div class="row">
@@ -65,8 +67,62 @@
         </div>
       </div>
 
+      <!-- RADARR / SONARR -->
+      <div class="card set-section" id="sect-arr" data-tab="downloads">
+        <div class="row center"><h3 style="font-size:1.05rem;margin:0;">Radarr / Sonarr</h3><span class="badge info" style="margin-left:8px;">*arr stack</span></div>
+        <div class="tiny muted" style="margin:8px 0 0;">Optional. If you run Radarr (movies) and/or Sonarr (series), Jellystructure can read their <span class="mono">root folders</span> to map libraries automatically and <b>nudge each app to rescan a title</b> after it writes NFOs or renames tracks — so the *arr's own library stays in sync. Jellystructure never grabs or deletes; it only reads root folders and triggers rescans.</div>
+
+        <!-- RADARR -->
+        <div class="box flat" style="padding:14px 15px;margin-top:14px;">
+          <div class="row center" style="gap:9px;"><b>Radarr</b><span class="badge info">movies</span><span class="spacer"></span><span class="muted tiny">enable</span><span class="toggle on" id="radarr-enable"></span></div>
+          <div id="radarr-on" style="margin-top:12px;">
+            <div class="row" style="gap:12px;flex-wrap:wrap;">
+              <div class="field fill" style="margin:0;min-width:220px;"><label>Radarr URL</label><div class="input mono">http://radarr:7878</div><span class="hint">Reachable from the Jellystructure container.</span></div>
+              <div class="field fill" style="margin:0;min-width:200px;"><label>API key</label><div class="input">••••••••••••••b72e <span class="chk" id="chk-radarr" style="margin-left:auto;"><span class="dot ok"></span><span class="badge ok">v5 · 22ms</span></span></div><span class="hint">Settings → General → API Key in Radarr.</span></div>
+            </div>
+            <div class="row center" style="gap:9px;margin-top:4px;"><span class="badge ok">2 root folders</span><span class="tiny muted mono">/movies · /movies-4k</span><span class="spacer"></span><span class="btn sm ghost arr-import">Import root folders → libraries</span></div>
+            <hr class="dash" style="margin:12px 0;">
+            <div class="row center" style="padding:2px 0;"><div><b>Rescan in Radarr after writes</b><div class="tiny muted">POST <span class="mono">/api/v3/command {RescanMovie}</span> for the affected title after an edit.</div></div><span class="spacer"></span><span class="toggle on"></span></div>
+          </div>
+        </div>
+
+        <!-- SONARR -->
+        <div class="box flat" style="padding:14px 15px;margin-top:11px;">
+          <div class="row center" style="gap:9px;"><b>Sonarr</b><span class="badge info">tvshows</span><span class="spacer"></span><span class="muted tiny">enable</span><span class="toggle on" id="sonarr-enable"></span></div>
+          <div id="sonarr-on" style="margin-top:12px;">
+            <div class="row" style="gap:12px;flex-wrap:wrap;">
+              <div class="field fill" style="margin:0;min-width:220px;"><label>Sonarr URL</label><div class="input mono">http://sonarr:8989</div><span class="hint">Reachable from the Jellystructure container.</span></div>
+              <div class="field fill" style="margin:0;min-width:200px;"><label>API key</label><div class="input">••••••••••••••9d41 <span class="chk" id="chk-sonarr" style="margin-left:auto;"><span class="dot ok"></span><span class="badge ok">v3 · 31ms</span></span></div><span class="hint">Settings → General → API Key in Sonarr.</span></div>
+            </div>
+            <div class="row center" style="gap:9px;margin-top:4px;"><span class="badge ok">1 root folder</span><span class="tiny muted mono">/tv</span><span class="spacer"></span><span class="btn sm ghost arr-import">Import root folders → libraries</span></div>
+            <hr class="dash" style="margin:12px 0;">
+            <div class="row center" style="padding:2px 0;"><div><b>Rescan in Sonarr after writes</b><div class="tiny muted">POST <span class="mono">/api/v3/command {RescanSeries}</span> for the affected series after an edit.</div></div><span class="spacer"></span><span class="toggle on"></span></div>
+          </div>
+        </div>
+        <div class="note" style="margin-top:14px;"><span class="tiny">Root-folder paths are matched against <b>Library mapping</b> below using the same longest-prefix rule, so a title resolved by Jellystructure lines up with the *arr that manages it.</span></div>
+      </div>
+
+      <!-- SCANNING (new — Phase 16) -->
+      <div class="card set-section" id="sect-scanning" data-tab="libraries">
+        <div class="row center" style="margin-bottom:10px;"><h3 style="font-size:1.05rem;margin:0;">Scanning</h3><span class="spacer"></span><span class="muted tiny">media tooling:</span><span class="chk" id="chk-tools"><span class="dot ok"></span><span class="badge ok">ffmpeg · ffprobe · mkvpropedit</span></span></div>
+        <div class="row center" style="padding:6px 0;"><div><b>Watch library folders</b><div class="tiny muted">Process new media automatically as it appears (inotify).</div></div><span class="spacer"></span><span class="toggle on"></span></div>
+        <hr class="dash" style="margin:8px 0;">
+        <div class="row" style="gap:16px;flex-wrap:wrap;">
+          <div class="field" style="margin:0;width:180px;"><label>Scan workers</label><div class="input">4</div><span class="hint">Concurrent items processed. Live scale-up/down.</span></div>
+          <div class="field" style="margin:0;width:200px;"><label>Scan thread pool <span class="restart-note">· restart required</span></label><div class="input">8</div><span class="hint">ffprobe/ffmpeg subprocess pool size.</span></div>
+        </div>
+        <hr class="dash" style="margin:12px 0;">
+        <div class="row center" style="padding:2px 0;"><div><b>Scheduled rescan</b><div class="tiny muted">Run a full library scan automatically on a schedule.</div></div><span class="spacer"></span><span class="toggle on"></span></div>
+        <div class="row" style="gap:16px;flex-wrap:wrap;margin-top:8px;">
+          <div class="field" style="margin:0;width:160px;"><label>Frequency</label><span class="select"><span>Daily</span></span></div>
+          <div class="field" style="margin:0;width:120px;"><label>At</label><div class="input">03:00</div></div>
+          <div class="field fill" style="margin:0;min-width:160px;"><label>Cron <span class="muted">(advanced)</span></label><div class="input mono">0 3 * * *</div></div>
+        </div>
+        <div class="tiny muted" style="margin-top:8px;">Next run <b>tonight 03:00</b> · last full scan completed 14:02 today.</div>
+      </div>
+
       <!-- LIBRARY MAPPING -->
-      <div class="card set-section" id="sect-library">
+      <div class="card set-section" id="sect-library" data-tab="libraries">
         <div class="row center"><h3 style="font-size:1.05rem;margin:0;">Library mapping</h3><span class="badge info" style="margin-left:8px;">from Jellyfin</span><span class="spacer"></span><span class="btn sm">↻ Re-discover</span></div>
         <div class="tiny muted" style="margin:8px 0 14px;">Libraries come from the Jellyfin API (<span class="mono">GET /Library/VirtualFolders</span>) — never a filesystem walk. Map each to a local path Jellystructure can read/write, set an optional language fallback, or skip it.</div>
 
@@ -95,27 +151,8 @@
         </div>
       </div>
 
-      <!-- SCANNING (new — Phase 16) -->
-      <div class="card set-section" id="sect-scanning">
-        <div class="row center" style="margin-bottom:10px;"><h3 style="font-size:1.05rem;margin:0;">Scanning</h3><span class="spacer"></span><span class="muted tiny">media tooling:</span><span class="chk" id="chk-tools"><span class="dot ok"></span><span class="badge ok">ffmpeg · ffprobe · mkvpropedit</span></span></div>
-        <div class="row center" style="padding:6px 0;"><div><b>Watch library folders</b><div class="tiny muted">Process new media automatically as it appears (inotify).</div></div><span class="spacer"></span><span class="toggle on"></span></div>
-        <hr class="dash" style="margin:8px 0;">
-        <div class="row" style="gap:16px;flex-wrap:wrap;">
-          <div class="field" style="margin:0;width:180px;"><label>Scan workers</label><div class="input">4</div><span class="hint">Concurrent items processed. Live scale-up/down.</span></div>
-          <div class="field" style="margin:0;width:200px;"><label>Scan thread pool <span class="restart-note">· restart required</span></label><div class="input">8</div><span class="hint">ffprobe/ffmpeg subprocess pool size.</span></div>
-        </div>
-        <hr class="dash" style="margin:12px 0;">
-        <div class="row center" style="padding:2px 0;"><div><b>Scheduled rescan</b><div class="tiny muted">Run a full library scan automatically on a schedule.</div></div><span class="spacer"></span><span class="toggle on"></span></div>
-        <div class="row" style="gap:16px;flex-wrap:wrap;margin-top:8px;">
-          <div class="field" style="margin:0;width:160px;"><label>Frequency</label><span class="select"><span>Daily</span></span></div>
-          <div class="field" style="margin:0;width:120px;"><label>At</label><div class="input">03:00</div></div>
-          <div class="field fill" style="margin:0;min-width:160px;"><label>Cron <span class="muted">(advanced)</span></label><div class="input mono">0 3 * * *</div></div>
-        </div>
-        <div class="tiny muted" style="margin-top:8px;">Next run <b>tonight 03:00</b> · last full scan completed 14:02 today.</div>
-      </div>
-
       <!-- METADATA (replaces Language + Behaviour) -->
-      <div class="card set-section" id="sect-metadata">
+      <div class="card set-section" id="sect-metadata" data-tab="metadata">
         <h3 style="font-size:1.05rem;margin:0 0 10px;">Metadata</h3>
         <div class="field" style="max-width:280px;"><label>Global fallback language</label><span class="select"><span><span class="lang">en</span> English (en)</span></span><span class="hint">Used when no audio-track language returns a TMDB result. Per-library fallbacks override this.</span></div>
         <hr class="dash" style="margin:10px 0;">
@@ -127,7 +164,7 @@
       </div>
 
       <!-- CROSS-SEED SAFETY / qBITTORRENT (Phase 26 — now configurable) -->
-      <div class="card set-section" id="sect-seeding">
+      <div class="card set-section" id="sect-seeding" data-tab="downloads">
         <div class="row center"><h3 style="font-size:1.05rem;margin:0;">Cross-seed safety</h3><span class="badge info" style="margin-left:8px;">qBittorrent</span><span class="spacer"></span><span class="muted tiny">enable guard</span><span class="toggle" id="seed-enable"></span></div>
         <div class="tiny muted" style="margin:8px 0 0;">When enabled, Jellystructure checks qBittorrent before any <span class="mono">mkvpropedit</span>/<span class="mono">ffmpeg</span> edit and <b>blocks writes to a file that is currently being seeded</b>, so torrent hashes (and cross-seeds) don't break. <b>Leave this off and there is no guard</b> — cross-seed safety is simply not part of media management, and all track/NFO edits proceed without checking qBittorrent.</div>
 
@@ -169,7 +206,7 @@
       </div>
 
       <!-- NOTIFICATIONS (Phase 36) -->
-      <div class="card set-section" id="sect-notifications">
+      <div class="card set-section" id="sect-notifications" data-tab="notifications">
         <h3 style="font-size:1.05rem;margin:0 0 10px;">Notifications</h3>
         <div class="tiny muted" style="margin-bottom:12px;">Get pinged when a background scan finishes, an item can't be matched, or a write fails. Posts a JSON payload to any webhook (Discord, Slack, ntfy, Gotify…).</div>
         <div class="field"><label>Webhook URL</label><div class="input mono">https://ntfy.sh/my-jellystructure</div></div>
@@ -184,7 +221,7 @@
       </div>
 
       <!-- ADVANCED -->
-      <div class="card set-section" id="sect-advanced">
+      <div class="card set-section" id="sect-advanced" data-tab="advanced">
         <h3 style="font-size:1.05rem;margin:0 0 10px;">Advanced</h3>
         <div class="danger">
           <div class="row center"><b style="color:var(--bad);">Danger zone</b></div>
@@ -201,6 +238,18 @@
         <div>tmdb_v3_key = "•••3f9a"</div>
         <div>jellyfin_url = "http://jellyfin:8096"</div>
         <div>jellyfin_token = "•••a1c"</div>
+        <div>&nbsp;</div>
+        <div class="muted">[radarr]</div>
+        <div>enabled = <span class="okc">true</span></div>
+        <div>url = "http://radarr:7878"</div>
+        <div>api_key = "•••b72e"</div>
+        <div>rescan_after_write = <span class="okc">true</span></div>
+        <div>&nbsp;</div>
+        <div class="muted">[sonarr]</div>
+        <div>enabled = <span class="okc">true</span></div>
+        <div>url = "http://sonarr:8989"</div>
+        <div>api_key = "•••9d41"</div>
+        <div>rescan_after_write = <span class="okc">true</span></div>
         <div>&nbsp;</div>
         <div class="muted">[language_rules]</div>
         <div>fallback_language = "en"</div>
@@ -239,18 +288,25 @@
 <script src="app-shell.js"></script>
 <script>
 (function () {
-  const nav = document.querySelectorAll('.navitem[data-goto]');
-  nav.forEach(n => n.addEventListener('click', () => {
-    const el = document.getElementById(n.dataset.goto);
-    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  }));
-  // IntersectionObserver highlights the section in view
-  const map = {};
-  nav.forEach(n => map[n.dataset.goto] = n);
-  const obs = new IntersectionObserver(entries => {
-    entries.forEach(e => { if (e.isIntersecting) { nav.forEach(x => x.classList.remove('active')); map[e.target.id]?.classList.add('active'); } });
-  }, { rootMargin: '-40% 0px -55% 0px' });
-  document.querySelectorAll('.set-section').forEach(s => obs.observe(s));
+  const tabs = document.querySelectorAll('.navitem[data-tab]');
+  const sectionTab = {
+    'sect-connections': 'connections', 'sect-arr': 'downloads',
+    'sect-library': 'libraries', 'sect-scanning': 'libraries',
+    'sect-metadata': 'metadata', 'sect-seeding': 'downloads',
+    'sect-notifications': 'notifications', 'sect-advanced': 'advanced'
+  };
+  const names = [...tabs].map(t => t.dataset.tab);
+  // URL-addressable tabs via ?tab= + replaceState (Phase 28 Router contract — no hashchange,
+  // tabs only toggle the DOM panel; refresh/deep-link reconstruct the right tab).
+  function showTab(name) {
+    if (!names.includes(name)) name = 'connections';
+    tabs.forEach(t => t.classList.toggle('active', t.dataset.tab === name));
+    document.querySelectorAll('.set-section[data-tab]').forEach(s => s.classList.toggle('tab-show', s.dataset.tab === name));
+    const u = new URL(location.href);
+    if (u.searchParams.get('tab') !== name) { u.searchParams.set('tab', name); history.replaceState(null, '', u); }
+  }
+  tabs.forEach(t => t.addEventListener('click', () => showTab(t.dataset.tab)));
+  showTab(new URLSearchParams(location.search).get('tab'));
 
   document.querySelectorAll('.toggle').forEach(t => t.addEventListener('click', () => t.classList.toggle('on')));
 
@@ -269,6 +325,8 @@
     setChip('chk-jellyfin', 'ok', '204 · 38ms');
     setChip('chk-tools', 'ok', 'ffmpeg · ffprobe · mkvpropedit');
     setChip('chk-disk', 'ok', 'cache 41 GB free');
+    if (document.getElementById('radarr-enable').classList.contains('on')) setChip('chk-radarr', 'ok', 'v5 · 22ms');
+    if (document.getElementById('sonarr-enable').classList.contains('on')) setChip('chk-sonarr', 'ok', 'v3 · 31ms');
 
     const fails = {}; // sectionId -> count
     const seedStatus = document.getElementById('seed-status');
@@ -280,9 +338,11 @@
       seedStatus.innerHTML = '<span class="dot warn"></span><span class="tiny muted">Not verified yet — use <b>Test connections</b> at the top of the page.</span>';
     }
 
-    // nav badges
+    // nav badges — aggregate section failures up to their parent tab
+    const tabFails = {};
+    Object.keys(fails).forEach(sec => { const tb = sectionTab[sec]; tabFails[tb] = (tabFails[tb] || 0) + fails[sec]; });
     document.querySelectorAll('.nav-badge').forEach(b => {
-      const n = fails[b.dataset.badge] || 0;
+      const n = tabFails[b.dataset.badge] || 0;
       b.textContent = n; b.classList.toggle('show', n > 0);
     });
     // top button danger state
@@ -294,7 +354,7 @@
 
     if (scrollToFail && total > 0) {
       const first = Object.keys(fails)[0];
-      document.getElementById(first).scrollIntoView({ behavior: 'smooth', block: 'center' });
+      showTab(sectionTab[first]);
     }
     return total;
   }
@@ -314,6 +374,12 @@
     runHealthCheck(false); // re-evaluate so the nav badge + button reflect the new state
   });
   document.getElementById('seed-add-path').addEventListener('click', () => toast('Add a path mapping'));
+  // radarr / sonarr enable toggles reveal their config
+  [['radarr-enable','radarr-on'],['sonarr-enable','sonarr-on']].forEach(([t,c]) => {
+    const tog = document.getElementById(t);
+    tog.addEventListener('click', () => { document.getElementById(c).style.display = tog.classList.contains('on') ? '' : 'none'; });
+  });
+  document.querySelectorAll('.arr-import').forEach(b => b.addEventListener('click', () => toast('Imported root folders as library mappings')));
   document.getElementById('clear-data').addEventListener('click', () => {
     if (confirm('Clear all scanned data? This wipes the media store and scan state. Your files and NFOs on disk are not touched.')) {
       const t = document.createElement('div'); t.className = 'toast'; t.textContent = 'Scanned data cleared'; document.body.appendChild(t); setTimeout(() => t.remove(), 1800);

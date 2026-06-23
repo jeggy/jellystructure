@@ -198,20 +198,6 @@ hr.dash { border: none; border-top: 1px solid var(--line); margin: 18px 0; }
 /* accent-filled chips (markup uses inline background:var(--hi)) need light ink */
 .chip[style*="--hi)"]:not([style*="soft"]) { color: #fff; border-color: transparent; }
 
-/* ---------- tags (Jellystructure-tag dots, cards, swatches) ---------- */
-/* dot colour comes from inline style="background:#hex"; presence of a dot == JS tag (survives re-sync) */
-.tag-dot    { width: 8px;  height: 8px;  border-radius: 50%; display: inline-block; flex: none; }
-.tag-dot-lg { width: 14px; height: 14px; border-radius: 50%; display: inline-block; flex: none; }
-.rm { cursor: pointer; color: var(--bad); margin-left: 2px; }
-/* media-detail Tags card unsaved-change ring */
-#tags-section.dirty { outline: 2px solid var(--warn); outline-offset: 4px; border-radius: var(--radius-s); }
-/* metadata Tags-tab cards */
-.tag-card { display: flex; align-items: center; gap: 12px; padding: 13px 15px; cursor: pointer; }
-/* colour-swatch picker (new/edit JS tag modal) */
-.swatches { display: flex; gap: 8px; flex-wrap: wrap; }
-.swatch { width: 28px; height: 28px; border-radius: 8px; cursor: pointer; border: 2px solid transparent; }
-.swatch.on { border-color: var(--ink); }
-
 .badge { display: inline-flex; align-items:center; gap:5px; font-size: .72rem; font-weight: 600;
   padding: 3px 9px; border-radius: 7px; border:1px solid transparent; white-space: nowrap; }
 .badge.bad { background: var(--bad-soft); border-color: rgba(255,111,97,.4); color: var(--bad); }

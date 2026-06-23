@@ -21,6 +21,24 @@ glow + lift into an inner `graphicsLayer` with the focusable on a fixed-size out
 scaled a descendant (unchanged). `:ravilo-ui` (android + wasmJs) compiles; `:ravilo-android:assembleDebug`
 builds. _Verify on-device:_ season picker / episode rail / action buttons no longer jump.
 
+## Newly planned — Discover / Top 10 (2026-06-23)
+
+A new TV surface: a **Top 10** tab driven by third-party popularity charts (Netflix via Tudum first),
+where titles not in the library can be **requested** and fetched through Radarr/Sonarr, with a **live,
+multi-stage status indicator** (requested → queued → downloading% → importing → available). Backend
+engine + chart ingestion are jellystructure phases (**56** acquisition pipeline, **57** chart
+ingestion — see [`../STATUS.md`](../STATUS.md)); the Ravilo side is three planned phases:
+
+- **[R48](requirements/phase-R48-discover-api.md)** — `/api/tv/discover` API: a `discover` block on the
+  per-user `RaviloConfig` (enabled/source/region/ordered lists), composition of charts + acquisition
+  status, server-decided `discoverAvailable` gating, and live `acquisition_changed` over the R33 events
+  socket.
+- **[R49](requirements/phase-R49-tv-discover-screen.md)** — the TV experience: gated Top 10 tab, ranked
+  rows with rich status indicators, a **separate** DiscoverDetailScreen (no playback/seasons) with a
+  status-driven Request/Watch-Now button + trailer.
+- **[R50](requirements/phase-R50-config-editor-discover.md)** — the `/ravilo` config editor section to
+  pick, per user, which charts appear (drag-reorder/toggle), gated on Radarr.
+
 _On-device follow-up (2026-06-23), after deploying R44–R46 to stue TV:_
 playback was a black screen + empty home feed because the **paired Jellyfin user token had gone stale
 (401)** — `getSeriesEpisodes` returned empty, so `DetailService` fell back to `id = jfEp?.id ?:

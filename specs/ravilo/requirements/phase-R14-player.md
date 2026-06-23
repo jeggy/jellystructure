@@ -52,11 +52,10 @@ UI/chrome, resume, and progress reporting — while the byte stream never transi
 ## Invariants
 - **Data plane = Jellyfin directly**; control/report = jellystructure (`/api/tv/**`). Bytes never
   transit jellystructure (unless the constitution's opt-in relay is enabled).
-- **GPL-contained decoder:** the Android engine is direct Media3/ExoPlayer; Jellyfin's prebuilt
-  `media3-ffmpeg-decoder` lives in the Android-only `:ravilo-player` module — this makes the **Android
-  app GPL** but does not infect web/backend. (A source-vendor fork of `jellyfin-androidtv` was skipped
-  as redundant — see R31.)
-- **The player never calls Jellyfin's control plane:** its stream-resolution + progress-report seams are
+- **Engine forked, GPL-contained:** the Android engine is the forked `jellyfin-androidtv` playback
+  stack in `:ravilo-player` — this makes the **Android app GPL** but does not infect web/backend.
+  Track upstream `jellyfin-androidtv` playback changes when re-syncing the fork.
+- **The fork never calls Jellyfin's control plane:** its stream-resolution + progress-report seams are
   rewired to `/api/tv/**`. The only Jellyfin traffic from the device is the **byte stream** (data plane).
 - One shared player **chrome**; the engine is the only platform-specific part (`actual`).
 - Progress/played writes go through jellystructure → Jellyfin, never client→Jellyfin.
