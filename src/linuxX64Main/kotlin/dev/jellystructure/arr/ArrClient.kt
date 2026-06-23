@@ -64,7 +64,10 @@ class ArrClient {
             header("X-Api-Key", apiKey)
             parameter("tmdbId", tmdbId)
         }.body()
-        (movies.firstOrNull { it.tmdbId == tmdbId } ?: movies.firstOrNull())?.id
+        // Radarr honours ?tmdbId= (verified live: 1 hit for a present movie, 0 for absent), but we still
+        // match exactly — never fall back to "first movie", so a server that ignored the filter and
+        // returned the whole library could never make us rescan the wrong title.
+        movies.firstOrNull { it.tmdbId == tmdbId }?.id
     }.getOrNull()
 
     /**
