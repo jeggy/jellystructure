@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 236 84" role="img" aria-label="Dansk TV">
+  <defs>
+    <linearGradient id="dsq" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ffffff"></stop>
+      <stop offset="1" stop-color="#e7ecff"></stop>
+    </linearGradient>
+    <mask id="dplay">
+      <rect x="2" y="10" width="64" height="64" rx="20" fill="#fff"></rect>
+      <path d="M28 28 L28 56 L52 42 Z" fill="#000"></path>
+    </mask>
+  </defs>
+  
+  <rect x="2" y="10" width="64" height="64" rx="20" fill="url(#dsq)" mask="url(#dplay)"></rect>
+  
+  <text x="84" y="54" font-family="&#39;Helvetica Neue&#39;, Arial, sans-serif" font-weight="800" font-size="34" letter-spacing="-1.5" fill="#ffffff">dansk<tspan fill="#ffffff" fill-opacity=".66">tv</tspan></text>
+</svg>

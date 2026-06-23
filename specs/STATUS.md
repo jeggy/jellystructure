@@ -71,6 +71,43 @@ synced to the same model.
 No planned admin phases remain. Other active development is on the **Ravilo** side — see
 [`ravilo/STATUS.md`](ravilo/STATUS.md).
 
+## Newly planned (admin) — 2026-06-23
+
+Two admin phases were drafted from a Settings design pass and are **planned, not yet built**
+(mockups in `design/app/settings.html`):
+
+- **[Phase 54](requirements/phase-54-configure-radarr-sonarr.md) — Configure Radarr & Sonarr**
+  (FR-AR1). Opt-in `[radarr]`/`[sonarr]` config sections (default **off**), mirroring the
+  Phase 40 qBittorrent opt-in pattern: read each app's **root folders** to import as
+  `[[libraries]]`, and fire a best-effort `RescanMovie`/`RescanSeries` after a Jellystructure
+  write. **Read + rescan only** — no acquisition/mutation, never blocks a write; api-key masked
+  with the `##KEEP##` sentinel like the qBittorrent password.
+- **[Phase 55](requirements/phase-55-settings-tabbed-navigation.md) — Settings as
+  URL-addressable tabs** (FR-ST1). The growing Settings page (now incl. Radarr/Sonarr) becomes
+  6 `?tab=` panels via the Phase 28 `replaceState` Router (Connections · Libraries · Metadata ·
+  Download tools · Notifications · Advanced); the scroll-spy is dropped and health-check
+  failures aggregate to per-tab badges + switch-to-tab.
+
+## Newly planned — Radarr/Sonarr acquisition + Discover (2026-06-23)
+
+A second design pass turned "request a title we don't have, and show its download progress" into a
+small spec set. The status indicator is deliberately **more than a percentage** — a request can be
+`requested` (not yet handed to a download client), `queued` (in the client queue), `downloading`
+(% with `stalled`/`metadata` flags), `importing`, then `available`.
+
+- **[Phase 56](requirements/phase-56-arr-acquisition-pipeline.md) — \*arr acquisition pipeline +
+  status state machine** (FR-AQ1). The engine: add+search via Radarr/Sonarr, a reconciler that
+  merges the \*arr **queue** (source of truth) with optional qBittorrent enrichment into one shared
+  `AcquisitionStatus` enum, persisted, with `acquisition_changed` WS events. Request + track only;
+  builds on Phase 54.
+- **[Phase 57](requirements/phase-57-chart-discover-ingestion.md) — Chart/Discover feed ingestion**
+  (FR-CH1). A vendor-abstracted `ChartProvider` (Netflix via Tudum first) + normalized `ChartEntry`;
+  country movies/TV (rank-only), global, non-English, all-time (views); weekly history → trend
+  badges; TMDB-resolve + library-match at ingest.
+- Ravilo-side surfacing is tracked under Ravilo: **R48** (`/api/tv/discover` + per-user config + live
+  status), **R49** (TV Top 10 tab/detail/request), **R50** (config-editor list selection). See
+  [`ravilo/STATUS.md`](ravilo/STATUS.md).
+
 See [`requirements/README.md`](requirements/README.md) for the full index.
 
 ## Sibling product — Ravilo (Android TV + Web)
