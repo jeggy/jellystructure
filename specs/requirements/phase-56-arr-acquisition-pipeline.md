@@ -35,7 +35,14 @@ record carries the status plus stage-specific detail.
 | `downloading` | Actively downloading | `progress` (0–100), `sizeLeft`, `eta`, `downloadRate`, `flags`: `metadata` (resolving magnet/metadata), `stalled` (no peers/0 B/s) | yes |
 | `importing` | Download complete; \*arr is importing/renaming into the library root folder | `importStartedAt` | no (treat as ~100) |
 | `available` | Present in the Jellyfin library (resolved by Jellystructure) | `itemId` | n/a |
-| `failed` | Search found nothing, grab/import failed, or stalled past the timeout | `reason`, `retryable` | no |
+| `failed` | Search found nothing, or the **\*arr dropped/errored** the item (grab/import failure) | `reason`, `retryable` | no |
+
+**`stalled` is a flag, never a terminal state.** A torrent with no peers is still in the \*arr queue and
+the \*arr is still trying — so it stays `downloading` + `stalled` (informational), not `failed`. We only
+reach `failed` when the **\*arr itself** removes the item from its queue or marks it errored/warning
+(`trackedDownloadStatus = error`). This keeps the "\*arr queue is source of truth" + "forward-only"
+invariants consistent (a stalled item that resumes simply clears the flag — no illegal `failed →
+downloading` bounce).
 
 Notes:
 - `requested` vs `queued` is exactly the distinction the operator asked for: **requested = not yet at
@@ -48,18 +55,40 @@ Notes:
 
 ### State transitions
 ```
-not_requested ──request──▶ requested ──grabbed──▶ queued ──starts──▶ downloading ──complete──▶ importing ──imported──▶ available
-                   │                                   │                  │                        │
-                   └──no release / error──▶ failed ◀───┴── stalled-timeout/grab fail ─────────────┘
+not_requested ──request──▶ requested ──grabbed──▶ queued ──starts──▶ downloading ⇄ (stalled flag) ──complete──▶ importing ──imported──▶ available
+                   │                                                       │
+                   └── no release found ──▶ failed ◀── *arr drops/errors the item ──┘
 ```
 `available` can also be reached directly (full scan finds the file). `failed` is terminal until a new
-request (retry). Status only ever moves forward except `failed → requested` on retry.
+request (retry). Status only ever moves **forward** except `failed → requested` on retry; the `stalled`
+flag toggles on/off within `downloading` and is **not** a transition.
+
+### Series are episode-aggregates (not movie-shaped)
+A movie is one file → one record. A **series request is N episodes**, each at its own stage, so a single
+`AcquisitionStatus` can't say "3 of 10 imported." Model it as:
+- The `acquisition` row for a series is a **parent** carrying `episodes_total`, `episodes_done`
+  (imported/available), and a **roll-up** status = the **least-advanced monitored episode** (so a series
+  reads `downloading · 3/10` while episode 4 is grabbing). Per-episode detail lives in a child table
+  `acquisition_episode(parent_id, season, episode, status, progress, download_id)` populated from the
+  Sonarr queue (which is per-episode).
+- A convenience flag `firstAvailable` flips when the **first** monitored episode resolves into the
+  library, so the TV can offer "Watch Now (E1)" before the whole season finishes.
+- The roll-up `progress` (when `downloading`) is `episodes_done / episodes_total`-weighted, not a single
+  torrent %.
+
+**Sonarr add is not symmetric with Radarr.** `POST /api/v3/series` requires a **monitor scope** and a
+`seasons[].monitored[]` array — you must say *what* to fetch (whole series / latest season / first
+season / pilot). That policy is config (`[acquisition.sonarr].monitor`, below), defaulting to a sane
+scope, and is sent on add. Radarr's `POST /api/v3/movie` is the simple single-file case.
 
 ## Backend
 
 ### Data model — `AcquisitionStore` (SQLDelight, alongside Phase 14 stores)
-`acquisition(item_key, media_kind, title, tmdb_id, arr_id, arr_kind, download_id, status, progress,
-queue_position, flags, reason, requested_by, requested_at, updated_at)`.
+`acquisition(item_key, media_kind, title, tmdb_id, tmdb_confidence, arr_id, arr_kind, download_id,
+status, progress, queue_position, flags, episodes_total, episodes_done, first_available, reason,
+requested_by, requested_at, updated_at)`, plus a child
+`acquisition_episode(parent_id, season, episode, status, progress, download_id)` for series (the Sonarr
+queue is per-episode; the parent rolls up — see "Series are episode-aggregates").
 - `item_key` = the Jellystructure item id when known, else `tmdb:<id>` (a request can predate the
   library item existing). Reconciled to the real `itemId` when the scan imports it.
 - Idempotent: re-requesting an in-flight title is a no-op that returns the existing record.
@@ -68,9 +97,19 @@ queue_position, flags, reason, requested_by, requested_at, updated_at)`.
 - `request(mediaKind, tmdbId/title, requestedBy)`:
   1. Resolve which *arr (movies→Radarr, series→Sonarr) and confirm it's `enabled` (else `failed:
      no_arr`).
-  2. `POST /api/v3/movie` (or `/series`) with the configured root folder + quality profile + a
-     `searchForMovie/Series` command (add **and** search). Store `arr_id`, set `requested`.
-  3. Never called for titles already `available`.
+  2. Resolve the **add parameters** the API requires explicitly (there is no "use default" sentinel in
+     an \*arr add payload):
+     - `rootFolderPath` ← `[acquisition.<arr>].root_folder`, or — if blank — the \*arr's sole root
+       folder (`GET /api/v3/rootfolder`); error `failed: no_root` if blank **and** the \*arr has more
+       than one root.
+     - `qualityProfileId` ← resolve `[acquisition.<arr>].quality_profile` (a **name**) against
+       `GET /api/v3/qualityprofile`; blank → the \*arr's first/default profile id.
+     - **Sonarr only:** `monitor` + `seasons[].monitored[]` from `[acquisition.sonarr].monitor`;
+       `seasonFolder` from config.
+  3. `POST /api/v3/movie` (Radarr) or `POST /api/v3/series` (Sonarr) with those params + a
+     `MoviesSearch`/`SeriesSearch` (or per-season search) command (add **and** search). Store `arr_id`
+     (+ `episodes_total` for series), set `requested`.
+  4. Never called for titles already `available`.
 - `poll()` — a scheduled reconciler (default every ~10 s while any record is non-terminal; idle
   otherwise):
   1. `GET /api/v3/queue` from each enabled *arr → per record derive `queued` / `downloading`
@@ -83,29 +122,56 @@ queue_position, flags, reason, requested_by, requested_at, updated_at)`.
   3. On `trackedDownloadState` reaching imported / the file appearing under a mapped root → trigger the
      existing scan for that path; when the scan resolves the item, set `available` + reconcile
      `item_key → itemId`.
-  4. Emit a status-changed event (below) whenever a record's status/progress/flags change.
-- A **timeout/stall policy**: `downloading` with the `stalled` flag for longer than
-  `acq_stall_timeout` (config, default 30 min) → `failed: stalled` (retryable). Configurable.
+  4. Emit a status-changed event (below) on a **meaningful** change (see throttling).
+- **No stall→fail timeout.** A stalled item stays `downloading + stalled` indefinitely (the \*arr is
+  still trying); `failed` comes only from the \*arr dropping/erroring the item (per the status table).
+  An admin can cancel a request explicitly (which removes it from the \*arr); we never auto-fail a
+  still-queued torrent.
 
 ### Config (constitution §Configuration Shape, additive)
 ```toml
 [acquisition]
-enabled = true            # master; also implicitly requires [radarr]/[sonarr] enabled
-poll_seconds = 10         # reconciler cadence while requests are in-flight
-stall_timeout_minutes = 30
-default_quality_profile = ""   # blank = the *arr's default profile
+enabled = false           # master opt-in — OFF by default (consistent with every other section);
+                          # also requires the relevant [radarr]/[sonarr] section enabled
+poll_seconds = 10         # reconciler cadence while requests are in-flight (idle otherwise)
+
+[acquisition.radarr]
+root_folder = ""          # rootFolderPath for new movie adds; blank = the sole Radarr root (else error)
+quality_profile = ""      # profile NAME, resolved to qualityProfileId via GET /qualityprofile; blank = default
+
+[acquisition.sonarr]
+root_folder = ""
+quality_profile = ""
+monitor = "all"           # Sonarr add monitor scope: all | future | firstSeason | latestSeason | pilot
+season_folder = true
 ```
 
 ### API + events
-- `POST /api/acquisition/request` `{mediaKind, tmdbId}` → `{status record}`.
+- `POST /api/acquisition/request` `{mediaKind, tmdbId}` → `{status record}`. Re-posting a `failed`
+  record is the **retry** path (`failed → requested`).
+- `POST /api/acquisition/cancel` `{itemKey}` → removes the request from the \*arr (and its download
+  client) and deletes/zeroes the record back to `not_requested`. The only mutation we make beyond add.
 - `GET /api/acquisition?keys=…` → status records (batch; for hydrating any list).
 - `GET /api/acquisition/{itemKey}` → one record.
-- WS: `acquisition_changed` broadcast (admin WS + the R33 per-user `/api/tv/events`) with the updated
-  record, so indicators move **live** with no polling from the client. (Frontend renders server-pushed
-  state only — constitution invariant.)
+- **Who may request (permission):** requesting spends disk + bandwidth, so it is a privileged action.
+  Default policy: **admins always; non-admin users only if their per-user config grants it**
+  (`discover.canRequest`, R48) — kids profiles never. A view-only user sees statuses and `not_requested`
+  but the Request button is disabled with a "ask the owner" hint. (Cancel = admin only.)
+- WS: `acquisition_changed`. **This carries the updated record inline** — it is *not* the R33 rev-signal
+  pattern (a bare `{type, rev}` that forces a full re-pull). Re-pulling the whole
+  `GET /api/tv/discover` on every progress tick would be a firehose; instead the message is
+  `{type:"acquisition_changed", record:{itemKey, status, progress, flags, episodesDone, episodesTotal, …}}`
+  and the client patches the matching tile/detail in place. (Still server-pushed state — the client
+  never derives progress locally.) The R33 socket is extended with this typed, payload-bearing event
+  alongside its existing rev-signals.
+- **Throttle:** emit on every **stage change** (status/flags/episode-count) immediately, but coalesce
+  pure `progress` movement to **≥5% delta or ≥3 s** per record, so a continuously-moving % doesn't
+  flood every one of the user's TVs.
 
 ## Non-goals / invariants
-- **Request + track only.** No `MoviesSearch` upgrades, no `/queue` deletes, no library deletes.
+- **Request + track only.** The only writes to an \*arr are **add (+ the one search on add)** and an
+  explicit **cancel**. No automatic *upgrade* re-grabs of already-acquired items, no quality
+  cutoff-met searches, no library deletes.
 - **\*arr queue is source of truth**; qBittorrent is optional enrichment (never required for status).
 - **Status never blocks anything** — this is informational acquisition, independent of the Phase 26/40
   seeding *guard* (which is the only fail-closed path).

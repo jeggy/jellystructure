@@ -460,7 +460,6 @@
       else primary = `<div class="btn primary foc" data-dact="request"><span class="ic">＋</span> ${t('request_fetch')}</div>`;
       return `<div class="ddt-actions focus-row">
         ${primary}
-        <div class="btn ghost foc" data-dact="trailer"><span class="ic">▷</span> ${t('trailer')}</div>
         <div class="btn ghost foc" data-dact="list"><span class="ic">＋</span> ${t('add_list')}</div>
       </div>`;
     }
@@ -499,22 +498,6 @@
       scroll.appendChild(d);
       appbar.querySelectorAll('.navitem').forEach(n => n.classList.remove('cur'));
     }
-
-    /* ---- trailer overlay (lightweight; real build streams the TMDB/YouTube trailer) ---- */
-    const trailerOv = el('div', 'trailerov');
-    trailerOv.innerHTML = `<div class="tr-bg"></div><div class="tr-scrim"></div>
-      <div class="tr-body"><div class="tr-kick">▷ ${t('trailer')}</div><div class="tr-title"></div>
-      <div class="tr-bar"><i></i></div><div class="tr-hint">Press <b>esc</b> to close</div></div>`;
-    stage.appendChild(trailerOv);
-    let trailerOpen = false;
-    function openTrailer(it) {
-      trailerOv.querySelector('.tr-bg').style.background = it.grad;
-      trailerOv.querySelector('.tr-title').textContent = it.title;
-      const bar = trailerOv.querySelector('.tr-bar > i'); bar.style.transition = 'none'; bar.style.width = '0%';
-      trailerOv.classList.add('on'); trailerOpen = true; stopHero();
-      requestAnimationFrame(() => { bar.style.transition = 'width 30s linear'; bar.style.width = '100%'; });
-    }
-    function closeTrailer() { trailerOv.classList.remove('on'); trailerOpen = false; }
 
     /* ---------------- BROWSE GRID + SEARCH ---------------- */
     let _catalog = null;
@@ -632,7 +615,6 @@
       focusEl(its[cur.c]);
     }
     function move(dr, dc) {
-      if (trailerOpen) return;
       if (overlay.classList.contains('on')) { moveOverlay(dc); return; }
       const all = rows();
       if (dr) {
@@ -661,7 +643,6 @@
     }
 
     function activate() {
-      if (trailerOpen) { closeTrailer(); return; }
       if (overlay.classList.contains('on')) {
         const f0 = overlay.querySelector('.foc.focused');
         if (f0 && f0.dataset.ov === 'play') { const it = overlay._item; closeOverlay(); if (it) playItem(it); } else closeOverlay();
@@ -714,7 +695,6 @@
         const it = view.item;
         if (f.dataset.dact === 'watch') playItem(it);
         else if (f.dataset.dact === 'request') requestFetch(it);
-        else if (f.dataset.dact === 'trailer') openTrailer(it);
         else if (f.dataset.dact === 'progress') flash(t('fetching') + ' · ' + (it.progress || 0) + '% · Radarr');
         else if (f.dataset.dact === 'list') flash('＋ ' + it.title);
         return;
@@ -723,7 +703,6 @@
       if (f._item) { if (f.classList.contains('land')) playItem(f._item, 0); else toDetail(f._item); return; }
     }
     function back() {
-      if (trailerOpen) { closeTrailer(); return; }
       if (overlay.classList.contains('on')) { closeOverlay(); return; }
       if (view.type === 'discoverDetail') { go(view.from || { type: 'discover' }); return; }
       if (view.type === 'movie' || view.type === 'series') { go(view.from || { type: 'home' }); return; }

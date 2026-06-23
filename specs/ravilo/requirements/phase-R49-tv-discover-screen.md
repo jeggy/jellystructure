@@ -7,7 +7,8 @@
 
 Build the **Top 10 / Discover** experience in `:ravilo-ui`: a gated top-nav tab of ranked chart rows
 with rich acquisition indicators, a **dedicated detail screen** (separate from the R13 library detail),
-a **Request** action wired to R48, and a trailer view — all D-pad-native and live-updating.
+a **Request** action wired to R48 — all D-pad-native and live-updating. (Trailers are out of scope for
+now.)
 
 ## Tab (gated)
 - A `Top 10` item in the app bar, shown only when `GET /api/tv/discover` returns
@@ -36,6 +37,10 @@ a **Request** action wired to R48, and a trailer view — all D-pad-native and l
   Indicators update **live** from the R33 `acquisition_changed` event — a tile can go pending →
   queued → 12% → 47% → importing → ✓ without a reload.
 
+- **Series tiles show the episode aggregate** (Phase 56 roll-up): a downloading series reads
+  “Fetching · 3/10” (episodes done / total), not a single torrent %; `firstAvailable` lets the tile/detail
+  offer “Watch Now · E1” while later episodes are still fetching.
+
 ## Dedicated detail screen (NOT the R13 library detail)
 A separate composable/route (`DiscoverDetailScreen`) — the library detail's playback/seasons model
 doesn't apply here. Layout mirrors the library detail's *look* but its content/actions differ:
@@ -48,13 +53,9 @@ doesn't apply here. Layout mirrors the library detail's *look* but its content/a
     stage ("Fetching · 47%", "In queue", "Requested", "Importing…");
   - `not_requested`/`failed` → **Request** (calls `POST /api/tv/discover/request`; optimistic UI is
     **not** used — the button reflects the server's pushed status), failed offers retry.
-  - Secondary: **Trailer** + **My List**.
+  - Secondary: **My List**.
 - A **"Why it's trending"** panel: rank, weeks-on-chart (country) or views (global/all-time), trend.
   Country detail notes "ranking only — no view counts".
-
-## Trailer
-A lightweight trailer view (the detail's `trailerKey` from R48 → ExoPlayer/`<video>` per R14's
-expect/actual, or a YouTube-style embed on web). Back/Esc closes. Reuse R14 transport where natural.
 
 ## Implementation notes
 - Reuse R09 focus model, R42/R43/R47 draw-only focus scale for the ranked tiles and detail buttons (no
@@ -65,7 +66,7 @@ expect/actual, or a YouTube-style embed on web). Back/Esc closes. Reuse R14 tran
   `not_in_library`, `weeks_on`, `why_trending`, …) for en/da/fo.
 
 ## Mockup
-`design/ravilo/Ravilo TV.html` + `ravilo-app.js` (`renderDiscover`, `rankTile`, `renderDiscoverDetail`,
-trailer overlay) + `ravilo.css` (`.rtile`/`.rnum`/`.rstat`/`.ddt-*`/`.trailerov`) is the visual target.
+`design/ravilo/Ravilo TV.html` + `ravilo-app.js` (`renderDiscover`, `rankTile`, `renderDiscoverDetail`)
++ `ravilo.css` (`.rtile`/`.rnum`/`.rstat`/`.ddt-*`) is the visual target.
 Note: the mockup currently models a reduced status set (`available`/`fetching`/`none`); this phase
 renders the full R48/Phase-56 enum (`requested`/`queued`/`downloading`+flags/`importing`).
