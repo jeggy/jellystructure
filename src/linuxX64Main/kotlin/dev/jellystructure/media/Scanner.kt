@@ -23,7 +23,17 @@ class Scanner(
     private val configStore: ConfigStore,
     private val tmdb: TmdbClient,
     private val jellyfinClient: JellyfinClient,
+    private val jsTagStore: JsTagStore,
 ) {
+    /**
+     * TMDB re-pull tag rule (Phase 19 §15): TMDB keywords become the non-JS tags, and any
+     * Jellystructure-defined tags on the item always survive. Jellyfin-sourced tags that are
+     * neither are dropped — TMDB is authoritative for non-JS tags on a TMDB re-pull.
+     */
+    private fun mergeRepullTags(tmdbTags: List<String>, existing: MediaItem): List<String> {
+        val jsNames = jsTagStore.nameSet()
+        return (tmdbTags + existing.tags.filter { it in jsNames }).distinct()
+    }
     /** Processes a single Jellyfin item end-to-end. Used by the worker pool and the sequential scan. */
     suspend fun scanItem(jItem: JellyfinItem): MediaItem? {
         val config = configStore.current
@@ -100,8 +110,9 @@ class Scanner(
             return null
         }
         val fresh = scanItem(jItem) ?: return null
-        // Tags are entirely user-managed; scanItem() produces none — restore them verbatim.
-        return fresh.copy(tags = existing.tags)
+        // Sync-from-Jellyfin merges additively: union Jellyfin's current tags with everything the
+        // item already had (TMDB-sourced + Jellystructure-defined tags all survive).
+        return fresh.copy(tags = (fresh.tags + existing.tags).distinct())
     }
 
     /** Sequential single-worker scan — used by FolderWatcher auto-scans. */
@@ -185,6 +196,7 @@ class Scanner(
             scannedAt = epochSeconds(),
             jellyfinLockData = jItem.lockData,
             jellyfinLockedFields = jItem.lockedFields,
+            tags = jItem.tags,
             titlesByLang = titlesByLang,
         )
     }
@@ -308,6 +320,7 @@ class Scanner(
                 scannedAt = epochSeconds(),
                 jellyfinLockData = jItem.lockData,
                 jellyfinLockedFields = jItem.lockedFields,
+                tags = jItem.tags,
                 titlesByLang = mixTitlesByLang,
             )
         }
@@ -348,6 +361,7 @@ class Scanner(
             scannedAt = epochSeconds(),
             jellyfinLockData = jItem.lockData,
             jellyfinLockedFields = jItem.lockedFields,
+            tags = jItem.tags,
             titlesByLang = tvTitlesByLang,
         )
     }
@@ -379,6 +393,7 @@ class Scanner(
             ?: langPriority.lastOrNull()
         val issueCount = tracks.count { (it.kind == TrackKind.AUDIO || it.kind == TrackKind.SUBTITLE) && it.language == null }
         val primaryCompany = details.productionCompanies.firstOrNull()
+        val tmdbTags = tmdb.getMovieKeywords(details.id)
         return item.copy(
             title = details.title,
             originalTitle = details.originalTitle.takeIf { it.isNotBlank() },
@@ -394,6 +409,7 @@ class Scanner(
             studioLogoPath = primaryCompany?.logoPath,
             tracks = tracks,
             issueCount = issueCount,
+            tags = mergeRepullTags(tmdbTags, item),
             scannedAt = epochSeconds(),
         )
     }
@@ -471,6 +487,7 @@ class Scanner(
             details
         }
         val syncNetwork = updatedDetails?.networks?.firstOrNull()
+        val tmdbTags = (updatedDetails?.id ?: seriesTmdbId)?.let { tmdb.getTvKeywords(it) } ?: emptyList()
         return item.copy(
             title = updatedDetails?.name ?: item.title,
             originalTitle = updatedDetails?.originalName?.takeIf { it.isNotBlank() } ?: item.originalTitle,
@@ -488,6 +505,7 @@ class Scanner(
             episodes = sortedEpisodes,
             issueCount = totalIssueCount,
             languageMix = languageMix,
+            tags = mergeRepullTags(tmdbTags, item),
             scannedAt = epochSeconds(),
         )
     }
@@ -566,6 +584,7 @@ class Scanner(
                     details.overview.isNotBlank() && lang != fallback
                 } ?: langPriority.lastOrNull()
                 val rescanCompany = details.productionCompanies.firstOrNull()
+                val rescanTmdbTags = tmdb.getMovieKeywords(details.id)
                 item.copy(
                     title = details.title,
                     originalTitle = details.originalTitle.takeIf { it.isNotBlank() },
@@ -579,6 +598,7 @@ class Scanner(
                     studio = rescanCompany?.name,
                     studioTmdbId = rescanCompany?.id,
                     studioLogoPath = rescanCompany?.logoPath,
+                    tags = mergeRepullTags(rescanTmdbTags, item),
                 )
             }
             MediaKind.TV_SHOW -> {
@@ -608,6 +628,7 @@ class Scanner(
                     } else ep
                 }
                 val rescanNetwork = details.networks.firstOrNull()
+                val rescanTmdbTags = tmdb.getTvKeywords(details.id)
                 item.copy(
                     title = details.name,
                     originalTitle = details.originalName.takeIf { it.isNotBlank() },
@@ -621,6 +642,7 @@ class Scanner(
                     network = rescanNetwork?.name ?: item.network,
                     networkTmdbId = rescanNetwork?.id ?: item.networkTmdbId,
                     networkLogoPath = rescanNetwork?.logoPath ?: item.networkLogoPath,
+                    tags = mergeRepullTags(rescanTmdbTags, item),
                     episodes = updatedEpisodes,
                 )
             }

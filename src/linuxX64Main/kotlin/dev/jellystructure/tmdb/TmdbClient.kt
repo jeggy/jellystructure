@@ -138,6 +138,17 @@ data class TmdbImage(
     val height: Int = 0,
 )
 
+// --- Keywords (used as the non-JS tag source on TMDB re-pull). Movie and TV use different
+// field names for the same shape: movies nest under `keywords`, TV under `results`. ---
+@Serializable
+data class TmdbKeyword(val id: Int, val name: String)
+
+@Serializable
+data class TmdbMovieKeywordsResponse(val keywords: List<TmdbKeyword> = emptyList())
+
+@Serializable
+data class TmdbTvKeywordsResponse(val results: List<TmdbKeyword> = emptyList())
+
 class TmdbClient(
     private val configStore: ConfigStore,
     private val baseUrl: String = "https://api.themoviedb.org/3",
@@ -390,6 +401,39 @@ class TmdbClient(
 
     suspend fun getMovieImages(tmdbId: Int): TmdbImagesResponse? = getImages("movie/$tmdbId")
     suspend fun getTvImages(tmdbId: Int): TmdbImagesResponse? = getImages("tv/$tmdbId")
+
+    // --- TMDB keywords → non-JS tags. Not language-localized; returns canonical names. ---
+    suspend fun getMovieKeywords(tmdbId: Int): List<String> {
+        val key = apiKey()
+        if (key.isBlank()) return emptyList()
+        val result = runCatching {
+            val response = http.get("$baseUrl/movie/$tmdbId/keywords") { parameter("api_key", key) }
+            if (response.status == HttpStatusCode.TooManyRequests) {
+                delay(3000)
+                return getMovieKeywords(tmdbId)
+            }
+            if (response.status.value == 404) return emptyList()
+            response.body<TmdbMovieKeywordsResponse>().keywords.map { it.name }
+        }
+        if (result.isFailure) Logger.warn("TMDB movie keywords failed for id=$tmdbId: ${result.exceptionOrNull()?.message}")
+        return result.getOrDefault(emptyList())
+    }
+
+    suspend fun getTvKeywords(tmdbId: Int): List<String> {
+        val key = apiKey()
+        if (key.isBlank()) return emptyList()
+        val result = runCatching {
+            val response = http.get("$baseUrl/tv/$tmdbId/keywords") { parameter("api_key", key) }
+            if (response.status == HttpStatusCode.TooManyRequests) {
+                delay(3000)
+                return getTvKeywords(tmdbId)
+            }
+            if (response.status.value == 404) return emptyList()
+            response.body<TmdbTvKeywordsResponse>().results.map { it.name }
+        }
+        if (result.isFailure) Logger.warn("TMDB tv keywords failed for id=$tmdbId: ${result.exceptionOrNull()?.message}")
+        return result.getOrDefault(emptyList())
+    }
     suspend fun getSeasonImages(seriesId: Int, season: Int): TmdbImagesResponse? =
         getImages("tv/$seriesId/season/$season")
     suspend fun getEpisodeImages(seriesId: Int, season: Int, episode: Int): TmdbImagesResponse? =

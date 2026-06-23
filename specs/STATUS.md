@@ -8,7 +8,16 @@ _Last updated: 2026-06-23_
 
 ## Current focus
 
-**Phases 0–50 complete.** [Phase 50](requirements/archive/phase-50-jellyfin-refresh-auth-fix.md)
+**Phases 0–51 complete.** [Phase 51](requirements/archive/phase-51-tag-population-lifecycle.md)
+(2026-06-23) fixed tag population end-to-end: item tags were never read from Jellyfin (the `Tags` field
+was unrequested, `JellyfinItem` had no slot, and the scanner left `tags=[]`), and the Phase 19 §15
+tag-merge was never implemented — a full re-scan even **wiped JS tags**. Now the scan reads Jellyfin
+`Tags`, TMDB **keywords** (`/movie|tv/{id}/keywords`) are the `tmdbSourcedTags`, and the three-way
+lifecycle holds: **full scan** = Jellyfin `Tags` + JS · **re-pull from TMDB** = keywords + JS (drops
+stale Jellyfin-only) · **re-pull from Jellyfin** = union. JS-defined tags survive every path (constitution
+invariant #6), preserved in both `MediaStore.addOrUpdate` and the post-scan `update()` (FR-TG1).
+
+[Phase 50](requirements/archive/phase-50-jellyfin-refresh-auth-fix.md)
 (2026-06-23) fixed a single-item Jellyfin refresh/re-pull bug surfaced from on-device logs:
 `JellyfinClient.refreshItem` built a **malformed `Authorization` header** (missing `, Token=`) →
 **401** on every targeted item refresh (broke `pushToJellyfin`, batch push, and the artwork/track/
