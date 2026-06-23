@@ -1,7 +1,14 @@
 # Phase R45 — Entry scroll + focus restore (frame the hero, keep row insets)
 
-**Status:** Planned · _screens open scrolled to a mid-page button and never re-frame the hero; rows
-lose their left inset after you scroll into them and back. Make "top focus = top of page" hold._
+**Status:** ✓ Done (2026-06-23) · "top action focused ⇒ top of page" now holds. The Movie/Series
+detail actions `Row` and the Home hero carry `onFocusChanged { if (hasFocus) animateScroll…(0) }`, so
+on entry and whenever focus returns up to Play/Resume/the hero the page snaps to the top and the full
+hero re-frames (instead of the bottom-aligned button's bring-into-view stranding it mid-scroll). The
+content-row `BringIntoViewSpec` now reveals a **start-clipped** tile at the row's `trackPadH` left
+inset (`leading - insetPx`) rather than flush to the edge, so returning to the first item restores
+the original padding — fully-visible tiles still never move (R42/R43 preserved). `:ravilo-ui`
+(android + wasmJs) compiles; `:ravilo-android:assembleDebug` builds. _Verify on-device:_ the
+snap-to-top feel and the entry settle.
 
 ## Problem
 Across Home and the detail screens, returning focus to the top-most action **does not restore the

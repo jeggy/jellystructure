@@ -21,6 +21,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -28,6 +29,8 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRestorer
+import androidx.compose.ui.focus.onFocusChanged
+import kotlinx.coroutines.launch
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
@@ -124,9 +127,12 @@ private fun SeriesDetailLoaded(
         )
     }
     val scrollState = rememberScrollState()
+    val scope = rememberCoroutineScope()
     val density = LocalDensity.current
     val containerH = LocalWindowInfo.current.containerSize.height
-    // Full-bleed hero fills the first screenful so the first focusable (Play) is on-screen — no jump.
+    // Full-bleed hero fills the first screenful. Whenever the actions row holds focus — on entry and
+    // when focus returns up from the season picker / episode rail — snap the page to the top so the
+    // full hero re-frames instead of stranding at the Resume button (R45).
     val heroHeight = if (containerH > 0) with(density) { containerH.toDp() } else 540.dp
 
     // Default to the season that holds the resume episode, so Resume plays with the
@@ -214,7 +220,12 @@ private fun SeriesDetailLoaded(
                     Text(it, color = colors.accent, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
                 }
                 Spacer(Modifier.height(18.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Row(
+                    modifier = Modifier.onFocusChanged {
+                        if (it.hasFocus) scope.launch { scrollState.animateScrollTo(0) }
+                    },
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
                     val resumeEpId = detail.progress.resumeEpisodeId
                     val playLabel = if (resumeEpId != null && detail.progress.watchedCount < detail.progress.totalCount)
                         "${str("action.resume")} · ${detail.progress.resumeLabel ?: "E${resumeEpIdx + 1}"}"

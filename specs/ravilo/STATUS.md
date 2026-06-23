@@ -12,7 +12,14 @@ _Last updated: 2026-06-23_
 
 ## Current focus
 
-**Phases R01–R44 + R46 complete. R45 planned.**
+**Phases R01–R46 complete.** The 2026-06-23 on-device batch (R44–R46) is done; latest is
+**[R45](requirements/phase-R45-entry-scroll-focus-restore.md)** — "top action focused ⇒ top of
+page": the Movie/Series detail actions row and the Home hero snap the scroll to the top via
+`onFocusChanged` on entry and whenever focus returns up to Play/Resume/the hero (so the full hero
+re-frames instead of the bottom-aligned button's bring-into-view stranding it), and the content-row
+`BringIntoViewSpec` reveals a start-clipped tile at the row's `trackPadH` left inset so returning to
+item 0 restores its padding (fully-visible tiles still never move — R42/R43 intact).
+
 **[R44](requirements/phase-R44-media-transport-keys.md)** (2026-06-23) — the remote's physical
 Play/Pause/Stop/FF/Rew/Next/Prev keys were inert; now `dpadFocusable` maps + consumes `Key.Media*`
 (+ `Spacebar`), PlayerScreen routes them to `togglePlay`/`skip`/`advanceNext`/restart/exit regardless
