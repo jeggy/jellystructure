@@ -27,10 +27,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.scale
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -60,7 +58,7 @@ fun EpisodeCard(
     val dpSpec    = remember { spring<Dp>(dampingRatio = 0.65f, stiffness = Spring.StiffnessMediumLow) }
     val scale           by animateFloatAsState(if (focused) 1.06f else 1f, focusSpec, label = "epScale")
     val borderWidth     by animateDpAsState(if (focused) 3.dp else 0.dp, dpSpec, label = "epBorder")
-    val shadowElevation by animateDpAsState(if (focused) 20.dp else 0.dp, dpSpec, label = "epShadow")
+    val glowElevation   by animateDpAsState(if (focused) 20.dp else 0.dp, dpSpec, label = "epShadow")
     val cardShape = remember { RoundedCornerShape(12.dp) }
 
     val isWatched = episode.playback.watched
@@ -68,26 +66,32 @@ fun EpisodeCard(
 
     val upNextGradient = remember(colors.accent, colors.accentSecondary) { colors.accentGradient }
 
-    Column(
+    // Focusable at a FIXED layout size; the focus scale + glow run draw-only on the inner layer so the
+    // episode rail's focused-bounds tracking never chases the scale animation → no viewport jump (R42/R43,
+    // previously only on Tile/ChannelCard — now applied to the detail rails).
+    Box(
         modifier = Modifier
             .width(320.dp)
-            .scale(scale)
-            .shadow(
-                elevation = shadowElevation,
-                shape = cardShape,
-                clip = false,
-                ambientColor = colors.focusGlow,
-                spotColor = colors.focusGlow,
-            )
-            .clip(cardShape)
-            .background(colors.card)
-            .border(borderWidth, colors.focusRing, cardShape)
             .dpadFocusable(
                 focusRequester = focusRequester,
                 onFocused = { focused = true },
                 onBlurred = { focused = false },
                 onSelect = onSelect,
-            )
+            ),
+    ) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .graphicsLayer {
+                scaleX = scale; scaleY = scale
+                shadowElevation = glowElevation.toPx()
+                shape = cardShape
+                clip = true
+                ambientShadowColor = colors.focusGlow
+                spotShadowColor = colors.focusGlow
+            }
+            .background(colors.card)
+            .border(borderWidth, colors.focusRing, cardShape)
             .alpha(if (isWatched) 0.62f else 1f),
     ) {
         // Still — full-width 16:9
@@ -212,5 +216,6 @@ fun EpisodeCard(
                 )
             }
         }
+    }
     }
 }

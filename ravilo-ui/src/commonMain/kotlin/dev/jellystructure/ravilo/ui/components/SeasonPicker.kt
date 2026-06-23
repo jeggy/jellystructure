@@ -20,9 +20,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.scale
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.focusRestorer
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -56,28 +55,33 @@ fun SeasonPicker(
             var focused by remember { mutableStateOf(false) }
             val scale        by animateFloatAsState(if (focused) 1.06f else 1f, focusSpec, label = "pillScale$i")
             val borderWidth  by animateDpAsState(if (focused && !isSelected) 2.dp else 0.dp, dpSpec, label = "pillBorder$i")
-            val shadowElevation by animateDpAsState(if (focused) 14.dp else 0.dp, dpSpec, label = "pillShadow$i")
+            val glowElevation by animateDpAsState(if (focused) 14.dp else 0.dp, dpSpec, label = "pillShadow$i")
 
+            // Focusable outer keeps a constant layout size; the scale + glow run draw-only on the inner
+            // layer so the season picker never chases the focus animation → no viewport jump (R42/R43).
+            Box(
+                modifier = Modifier.dpadFocusable(
+                    onFocused = { focused = true },
+                    onBlurred = { focused = false },
+                    onSelect = { onSelect(i) },
+                ),
+                contentAlignment = Alignment.Center,
+            ) {
             Box(
                 modifier = Modifier
-                    .scale(scale)
-                    .shadow(
-                        elevation = shadowElevation,
-                        shape = pillShape,
-                        clip = false,
-                        ambientColor = colors.focusGlow,
-                        spotColor = colors.focusGlow,
-                    )
+                    .graphicsLayer {
+                        scaleX = scale; scaleY = scale
+                        shadowElevation = glowElevation.toPx()
+                        shape = pillShape
+                        clip = false
+                        ambientShadowColor = colors.focusGlow
+                        spotShadowColor = colors.focusGlow
+                    }
                     .background(
                         if (isSelected) colors.accent else colors.surfaceVariant,
                         pillShape,
                     )
                     .border(borderWidth, colors.focusRing, pillShape)
-                    .dpadFocusable(
-                        onFocused = { focused = true },
-                        onBlurred = { focused = false },
-                        onSelect = { onSelect(i) },
-                    )
                     .padding(horizontal = 18.dp, vertical = 8.dp),
                 contentAlignment = Alignment.Center,
             ) {
@@ -88,6 +92,7 @@ fun SeasonPicker(
                     fontWeight = if (isSelected || focused) FontWeight.SemiBold else FontWeight.Normal,
                     fontFamily = sora,
                 )
+            }
             }
         }
     }
