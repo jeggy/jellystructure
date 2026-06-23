@@ -39,7 +39,7 @@ class PlaybackService(
         @Suppress("UNUSED_PARAMETER") capabilities: ClientCapabilities,
     ): StreamTicket? {
         val jellyfinBase = configStore.current.apiKeys.jellyfinUrl.trimEnd('/')
-        val token = device.jellyfinUserToken
+        val token = jellyfinClient.tvToken(jellyfinBase, device, configStore.current.apiKeys.jellyfinToken)
 
         // Resolve resume position from Jellyfin user-data
         val itemDetail = jellyfinClient.getItemDetail(jellyfinBase, token, device.jellyfinUserId, jellyfinId)
@@ -78,26 +78,29 @@ class PlaybackService(
 
     suspend fun reportProgress(device: DeviceData, jellyfinId: String, positionMs: Long, isPaused: Boolean) {
         val jellyfinBase = configStore.current.apiKeys.jellyfinUrl.trimEnd('/')
+        val token = jellyfinClient.tvToken(jellyfinBase, device, configStore.current.apiKeys.jellyfinToken)
         jellyfinClient.reportPlaybackProgress(
-            jellyfinBase, device.jellyfinUserToken, jellyfinId,
+            jellyfinBase, token, jellyfinId,
             positionMs * TICKS_PER_MS, isPaused, jellyfinId,
         )
     }
 
     suspend fun stopPlayback(device: DeviceData, jellyfinId: String, positionMs: Long) {
         val jellyfinBase = configStore.current.apiKeys.jellyfinUrl.trimEnd('/')
+        val token = jellyfinClient.tvToken(jellyfinBase, device, configStore.current.apiKeys.jellyfinToken)
         jellyfinClient.stopPlaybackSession(
-            jellyfinBase, device.jellyfinUserToken, jellyfinId,
+            jellyfinBase, token, jellyfinId,
             positionMs * TICKS_PER_MS, jellyfinId,
         )
     }
 
     suspend fun mark(device: DeviceData, jellyfinId: String, watched: Boolean) {
         val jellyfinBase = configStore.current.apiKeys.jellyfinUrl.trimEnd('/')
+        val token = jellyfinClient.tvToken(jellyfinBase, device, configStore.current.apiKeys.jellyfinToken)
         if (watched) {
-            jellyfinClient.markPlayed(jellyfinBase, device.jellyfinUserToken, device.jellyfinUserId, jellyfinId)
+            jellyfinClient.markPlayed(jellyfinBase, token, device.jellyfinUserId, jellyfinId)
         } else {
-            jellyfinClient.markUnplayed(jellyfinBase, device.jellyfinUserToken, device.jellyfinUserId, jellyfinId)
+            jellyfinClient.markUnplayed(jellyfinBase, token, device.jellyfinUserId, jellyfinId)
         }
     }
 
@@ -150,6 +153,23 @@ class PlaybackService(
     private fun isTextSubCodec(c: String?): Boolean =
         (c?.lowercase()) in setOf("subrip", "srt", "ass", "ssa", "webvtt", "vtt", "mov_text", "text")
 }
+
+/**
+ * The token the TV should use for Jellyfin reads/streaming: the paired user token when Jellyfin still
+ * accepts it, else the long-lived **server** token. A stale paired token (captured at pairing, later
+ * invalidated by Jellyfin) otherwise 401s every call — empty home feed, episodes falling back to a
+ * file-path id, malformed stream URLs, black screen. The user's `userId` stays in each request URL,
+ * so per-user data (resume/watched/next-up) is still correct under the server token.
+ */
+internal suspend fun JellyfinClient.tvToken(baseUrl: String, device: DeviceData, serverToken: String): String =
+    if (isTokenValid(baseUrl, device.jellyfinUserToken, device.jellyfinUserId)) {
+        device.jellyfinUserToken
+    } else {
+        dev.jellystructure.log.Logger.warn(
+            "TV: paired user token rejected by Jellyfin (401) for user ${device.jellyfinUserId}; using server token"
+        )
+        serverToken
+    }
 
 @OptIn(ExperimentalForeignApi::class)
 private fun nowMs(): Long = memScoped {

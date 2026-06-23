@@ -28,7 +28,7 @@ class DetailService(
     suspend fun getMovieDetail(device: DeviceData, jellyfinId: String): MovieDetail? {
         val item = mediaStore.allItems().firstOrNull { it.jellyfinId == jellyfinId } ?: return null
         val jellyfinBase = configStore.current.apiKeys.jellyfinUrl.trimEnd('/')
-        val token = device.jellyfinUserToken
+        val token = jellyfinClient.tvToken(jellyfinBase, device, configStore.current.apiKeys.jellyfinToken)
 
         val jfDetail = jellyfinClient.getItemDetail(jellyfinBase, token, device.jellyfinUserId, jellyfinId)
         val userData = jfDetail?.userData
@@ -47,7 +47,7 @@ class DetailService(
     suspend fun getSeriesDetail(device: DeviceData, jellyfinId: String): SeriesDetail? {
         val item = mediaStore.allItems().firstOrNull { it.jellyfinId == jellyfinId } ?: return null
         val jellyfinBase = configStore.current.apiKeys.jellyfinUrl.trimEnd('/')
-        val token = device.jellyfinUserToken
+        val token = jellyfinClient.tvToken(jellyfinBase, device, configStore.current.apiKeys.jellyfinToken)
 
         val jfEpisodes = jellyfinClient.getSeriesEpisodes(
             jellyfinBase, token, device.jellyfinUserId, jellyfinId
