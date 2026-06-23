@@ -1,6 +1,8 @@
 package dev.jellystructure.ravilo.ui.screens
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.LocalBringIntoViewSpec
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -10,6 +12,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -33,6 +36,7 @@ import dev.jellystructure.ravilo.ui.components.HeroCarousel
 import dev.jellystructure.ravilo.ui.components.HomeLoadingShell
 import dev.jellystructure.ravilo.ui.components.StaticContentRow
 import dev.jellystructure.ravilo.ui.components.Tile
+import dev.jellystructure.ravilo.ui.focus.EdgeBringIntoViewSpec
 import dev.jellystructure.ravilo.ui.components.TileVariant
 import dev.jellystructure.ravilo.ui.components.toTileVariant
 import dev.jellystructure.ravilo.ui.i18n.str
@@ -125,6 +129,8 @@ private fun HomeLoaded(
         runCatching { if (hasHero) heroFR.requestFocus() else navBarFR.requestFocus() }
     }
 
+    @OptIn(ExperimentalFoundationApi::class)
+    CompositionLocalProvider(LocalBringIntoViewSpec provides EdgeBringIntoViewSpec) {
     LazyColumn(
         state = listState,
         modifier = Modifier.fillMaxSize().focusRequester(columnFR),
@@ -198,6 +204,7 @@ private fun HomeLoaded(
                 )
             }
         }
+    }
     }
 
     // AppBar overlay (transparent gradient over hero)

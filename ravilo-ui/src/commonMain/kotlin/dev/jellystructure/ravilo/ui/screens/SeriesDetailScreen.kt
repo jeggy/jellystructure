@@ -1,6 +1,8 @@
 package dev.jellystructure.ravilo.ui.screens
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.LocalBringIntoViewSpec
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -20,6 +22,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -44,6 +47,7 @@ import dev.jellystructure.ravilo.ui.components.EpisodeCard
 import dev.jellystructure.ravilo.ui.components.RaviloButton
 import dev.jellystructure.ravilo.ui.components.SeasonPicker
 import dev.jellystructure.ravilo.ui.components.Tile
+import dev.jellystructure.ravilo.ui.focus.EdgeBringIntoViewSpec
 import dev.jellystructure.ravilo.ui.i18n.str
 import dev.jellystructure.ravilo.ui.seams.RemoteImage
 import dev.jellystructure.ravilo.ui.theme.RaviloDimens
@@ -157,6 +161,8 @@ private fun SeriesDetailLoaded(
 
     LaunchedEffect(Unit) { runCatching { playFR.requestFocus() } }
 
+    @OptIn(ExperimentalFoundationApi::class)
+    CompositionLocalProvider(LocalBringIntoViewSpec provides EdgeBringIntoViewSpec) {
     Column(modifier = Modifier.fillMaxSize().verticalScroll(scrollState)) {
         // Full-bleed hero: title · meta · progress · synopsis · resume · actions overlaid in the lower third.
         Box(modifier = Modifier.fillMaxWidth().height(heroHeight)) {
@@ -325,5 +331,6 @@ private fun SeriesDetailLoaded(
             }
         }
         Spacer(Modifier.height(48.dp))
+    }
     }
 }
