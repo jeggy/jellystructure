@@ -8,15 +8,16 @@ _Last updated: 2026-06-23_
 
 ## Current focus
 
-**Phases 0–52 complete; [Phase 53](requirements/phase-53-scanner-data-quality.md) planned** (next).
-Phase 53 (filed 2026-06-23) collects scanner data-quality fixes found in a post-DB-reset full-sync
-review (296 scanned vs 303 in Jellyfin): full-scan `year` is null on 295/296 (resolve from TMDB
-release date / Jellyfin `ProductionYear`, not just the item name); `slugify` produces empty/colliding
-ids that **silently drop items** (non-Latin titles → `""`, dup titles collide — The Rascals + an
-Dumbtopia dup were lost) → fall back to `jellyfinId`; the `SxxExx` season regex caps at 2 digits so
-year-as-season (`S2025E01`, Mission Z) fails; the scan should surface a skipped/unmatched-items
-report (4 LiveTV recordings + file-not-found are dropped silently today); plus minor items
-(untagged-audio→`en` honesty, `nb`/`no`, zero-track episodes).
+**Phases 0–53 complete.** [Phase 53](requirements/archive/phase-53-scanner-data-quality.md)
+(2026-06-23) fixed scanner data-quality issues found in a post-DB-reset full-sync review (296 scanned
+vs 303 in Jellyfin): full-scan `year` was null on 295/296 — now `searchYear = name ?? Jellyfin
+`ProductionYear`` drives the TMDB search + slug and the stored year prefers TMDB
+(`releaseDate`/`firstAirDate`); `slugify` produced empty/colliding ids that **silently dropped items**
+(non-Latin titles → `""` — The Rascals + an Dumbtopia dup were lost) → new `itemId` falls back to
+`jf-<jellyfinId>` and `MediaStore.disambiguateIds` de-dupes same-id collisions deterministically; the
+`SxxExx` season regex was widened to 4 digits (`S2025E01`/Mission Z parses, numbers only — TMDB has
+no year-seasons); and the scan now logs a **skip summary** (`N stored, M skipped (reason=count…)` +
+per-item warns for unexpected drops) so silent skips are visible. Builds; verify by re-syncing the DB.
 
 [Phase 52](requirements/archive/phase-52-tag-ux-design-sync.md)
 (2026-06-23) brought tag UX in line with the design and surfaced the JS/normal distinction in filters:
@@ -67,7 +68,7 @@ overlapped the language chips. Unified them into **one single-select filter** on
 `artPrefer` sort; default ladder resolves resolved-lang → textless → All. `design/app/media.html` mockup
 synced to the same model.
 
-**Phase 53** (scanner data-quality) is the one planned admin phase. Other active development is on the **Ravilo** side — see
+No planned admin phases remain. Other active development is on the **Ravilo** side — see
 [`ravilo/STATUS.md`](ravilo/STATUS.md).
 
 See [`requirements/README.md`](requirements/README.md) for the full index.

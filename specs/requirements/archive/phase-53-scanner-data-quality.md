@@ -1,7 +1,27 @@
 # Phase 53 — Scanner data-quality fixes (FR-SQ1)
 
-**Status:** Planned · _filed 2026-06-23 from a post-reset full-sync data review (296 scanned items vs 303
-in Jellyfin)._
+**Status:** ✓ Done (2026-06-23) · `:compileKotlinLinuxX64` builds. _Verify by re-syncing the reset DB:_
+years populate, The Rascals (`शरारती लोग`) + both Dumbtopia now appear, Mission Z episodes get numbers,
+and the activity log shows a "Scan summary: N stored, M skipped (…)" line. _Filed from a post-reset
+full-sync data review (296 scanned items vs 303 in Jellyfin)._
+
+## Implementation
+- **A** — `scanMovie`/`scanSeries` now split year: `searchYear = name ?? jItem.year` (Jellyfin
+  `ProductionYear`) drives the TMDB search + slug; the stored `year` prefers TMDB
+  (`releaseDate`/`firstAirDate`) then `searchYear`. All three return paths.
+- **B** — new `Scanner.itemId(title, year, jellyfinId)` = slug, else `jf-<jellyfinId>` (kills the
+  empty-slug collapse) — applies to full **and** auto scans. `MediaStore.disambiguateIds` appends a
+  short stable `jellyfinId` token to every member of a colliding id-group in `update()` (deterministic,
+  order-independent). _Residual:_ same-id collisions are only de-duped on the full-scan `update()` path,
+  not the incremental auto-scan `addOrUpdate` (rare; empty-slug — the actual data loss — is fixed on both).
+- **C** — `SEASON_EP_RE` season group `\d{1,2}` → `\d{1,4}` (S2025E01 parses; year-as-season still won't
+  match a TMDB season — numbers only, as caveated).
+- **D** — `runScan` computes `skipped = jellyfin items − stored − resume-skips`, classifies each via
+  `Scanner.classifySkip`, logs `Scan summary: … skipped (reason=count…)` + per-item warns for
+  **unexpected** reasons (file/dir-not-found, no-episode-files). Activity-log only for now; a Dashboard
+  count is a follow-up.
+- **E** — `scanSeries` warns when ffprobe returns no tracks for an episode. Untagged→`en` and `nb`/`no`
+  left as-is (by-design / cosmetic).
 
 ## Problem
 A fresh DB reset + full sync surfaced several scan-correctness issues. Some produce wrong/empty data on

@@ -16,7 +16,8 @@ import kotlinx.io.files.Path
 import kotlinx.io.files.SystemFileSystem
 
 private val TITLE_YEAR_RE = Regex("""^(.+?)\s+\((\d{4})\)\s*$""")
-private val SEASON_EP_RE = Regex("""[Ss](\d{1,2})[Ee](\d{1,3})""")
+// Season allows up to 4 digits so year-as-season numbering (e.g. S2025E01) parses (Phase 53-C).
+private val SEASON_EP_RE = Regex("""[Ss](\d{1,4})[Ee](\d{1,3})""")
 private val VIDEO_EXTENSIONS = setOf("mkv", "mp4", "avi", "mov", "m4v", "webm", "ts", "m2ts")
 
 class Scanner(
@@ -150,15 +151,18 @@ class Scanner(
             return null
         }
 
-        val (title, year) = parseTitleYear(jItem.name)
-        Logger.info("Scanning movie: $title (${year ?: "?"})", "scan")
+        val (title, parsedYear) = parseTitleYear(jItem.name)
+        // Search/id year: name-parsed, else Jellyfin's ProductionYear. Stable + match-independent
+        // (TMDB's year isn't known until after the lookup), so it's safe for the search + the slug (Phase 53-A).
+        val searchYear = parsedYear ?: jItem.year
+        Logger.info("Scanning movie: $title (${searchYear ?: "?"})", "scan")
 
         val tracks = FfprobeRunner.probe(localPath)
         val audioLangs = tracks.filter { it.kind == TrackKind.AUDIO }.map { it.language }
         val langPriority = LanguageResolver.priorityList(audioLangs, fallback)
 
         val tmdbId = jItem.providerIds?.tmdb?.toIntOrNull()
-            ?: tmdb.searchMovie(title, year)?.id
+            ?: tmdb.searchMovie(title, searchYear)?.id
         val details = tmdbId?.let { tmdb.getMovieDetailsLocalized(it, langPriority) }
         val resolvedLang = details?.let {
             langPriority.firstOrNull { lang -> it.overview.isNotBlank() && lang != fallback }
@@ -171,12 +175,14 @@ class Scanner(
 
         val primaryCompany = details?.productionCompanies?.firstOrNull()
         val tmdbFinalId = details?.id ?: tmdbId
+        // Stored/display year prefers TMDB's release year, then the search year.
+        val storedYear = details?.releaseDate?.take(4)?.toIntOrNull() ?: searchYear
         val titlesByLang = buildTitlesByLang(tmdbFinalId, isMovie = true, details?.title, details?.originalLanguage, details?.originalTitle)
         return MediaItem(
-            id = slugify(title, year),
+            id = itemId(title, searchYear, jItem.id),
             title = details?.title ?: title,
             originalTitle = details?.originalTitle?.takeIf { it.isNotBlank() },
-            year = year,
+            year = storedYear,
             kind = MediaKind.MOVIE,
             path = localPath,
             jellyfinId = jItem.id,
@@ -207,8 +213,10 @@ class Scanner(
             return null
         }
 
-        val (title, year) = parseTitleYear(jItem.name)
-        Logger.info("Scanning series: $title (${year ?: "?"})", "scan")
+        val (title, parsedYear) = parseTitleYear(jItem.name)
+        // Search/id year: name-parsed, else Jellyfin's ProductionYear (Phase 53-A).
+        val searchYear = parsedYear ?: jItem.year
+        Logger.info("Scanning series: $title (${searchYear ?: "?"})", "scan")
 
         val episodeFiles = findEpisodeFiles(localPath)
         if (episodeFiles.isEmpty()) {
@@ -229,11 +237,12 @@ class Scanner(
         // Resolve TMDB series ID once upfront so it can be reused for both
         // per-episode detail fetching and the series-level metadata fetch below.
         val seriesTmdbId = jItem.providerIds?.tmdb?.toIntOrNull()
-            ?: tmdb.searchTv(title, year)?.id
+            ?: tmdb.searchTv(title, searchYear)?.id
 
         val episodes = mutableListOf<Episode>()
         for (file in filesToProbe) {
             val tracks = FfprobeRunner.probe(file)
+            if (tracks.isEmpty()) Logger.warn("ffprobe returned no tracks for episode: $file", "scan")  // Phase 53-E
             val epIssueCount = tracks.count {
                 (it.kind == TrackKind.AUDIO || it.kind == TrackKind.SUBTITLE) && it.language == null
             }
@@ -295,11 +304,12 @@ class Scanner(
             val mixDetails = seriesTmdbId?.let { tmdb.getTvDetailsLocalized(it, mixPriority) }
             val mixNetwork = mixDetails?.networks?.firstOrNull()
             val mixTitlesByLang = buildTitlesByLang(seriesTmdbId, isMovie = false, mixDetails?.name, mixDetails?.originalLanguage, mixDetails?.originalName)
+            val mixStoredYear = mixDetails?.firstAirDate?.take(4)?.toIntOrNull() ?: searchYear
             return MediaItem(
-                id = slugify(title, year),
+                id = itemId(title, searchYear, jItem.id),
                 title = mixDetails?.name ?: title,
                 originalTitle = mixDetails?.originalName?.takeIf { it.isNotBlank() },
-                year = year,
+                year = mixStoredYear,
                 kind = MediaKind.TV_SHOW,
                 path = localPath,
                 jellyfinId = jItem.id,
@@ -336,11 +346,12 @@ class Scanner(
 
         val tvTmdbFinalId = details?.id ?: seriesTmdbId
         val tvTitlesByLang = buildTitlesByLang(tvTmdbFinalId, isMovie = false, details?.name, details?.originalLanguage, details?.originalName)
+        val tvStoredYear = details?.firstAirDate?.take(4)?.toIntOrNull() ?: searchYear
         return MediaItem(
-            id = slugify(title, year),
+            id = itemId(title, searchYear, jItem.id),
             title = details?.name ?: title,
             originalTitle = details?.originalName?.takeIf { it.isNotBlank() },
-            year = year,
+            year = tvStoredYear,
             kind = MediaKind.TV_SHOW,
             path = localPath,
             jellyfinId = jItem.id,
@@ -698,6 +709,37 @@ class Scanner(
         return base.lowercase()
             .replace(Regex("[^a-z0-9]+"), "-")
             .trim('-')
+    }
+
+    /**
+     * Stable, non-empty item id. Uses the human slug when the title yields one, else a Jellyfin-id
+     * fallback — non-Latin titles (CJK, Devanagari, …) slug to "" and would otherwise all collapse to
+     * the same empty id and silently overwrite each other (Phase 53-B). Deterministic per item (depends
+     * only on title/year/jellyfinId, never scan order). Detail URLs use jellyfinId, and
+     * `MediaStore.resolve()` accepts it, so the fallback id is invisible to navigation.
+     */
+    private fun itemId(title: String, year: Int?, jellyfinId: String): String =
+        slugify(title, year).ifBlank { "jf-$jellyfinId" }
+
+    /**
+     * Why `scanItem` would skip this Jellyfin item, for the post-scan skip report (Phase 53-D). Cheap:
+     * mirrors the early returns of scanItem/scanMovie/scanSeries without probing or hitting TMDB.
+     */
+    fun classifySkip(jItem: JellyfinItem): String {
+        if (jItem.type != "Movie" && jItem.type != "Series") return "unsupported-type"
+        val config = configStore.current
+        val libraries = config.libraries.filter { !it.skip && it.localPath.isNotBlank() }
+        val jellyfinPath = jItem.path ?: return "no-path"
+        val lib = libraries.firstOrNull { lib ->
+            val prefix = lib.jellyfinPath.ifBlank { lib.localPath }
+            prefix.isNotBlank() && jellyfinPath.startsWith(prefix)
+        } ?: return "no-matching-library"
+        val localPath = if (lib.jellyfinPath.isNotBlank())
+            jellyfinPath.replaceFirst(lib.jellyfinPath, lib.localPath) else jellyfinPath
+        if (!SystemFileSystem.exists(Path(localPath)))
+            return if (jItem.type == "Movie") "file-not-found" else "dir-not-found"
+        if (jItem.type == "Series" && findEpisodeFiles(localPath).isEmpty()) return "no-episode-files"
+        return "other"
     }
 
     suspend fun translationLanguages(tmdbId: Int, isMovie: Boolean): List<String> =
