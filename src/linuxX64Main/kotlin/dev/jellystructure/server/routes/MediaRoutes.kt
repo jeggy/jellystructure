@@ -1,5 +1,6 @@
 package dev.jellystructure.server.routes
 
+import dev.jellystructure.arr.ArrRescanService
 import dev.jellystructure.auth.JellyfinClient
 import dev.jellystructure.auth.JellyfinItem
 import dev.jellystructure.config.ConfigStore
@@ -127,6 +128,7 @@ fun Route.mediaRoutes(
     scanDispatcher: CoroutineDispatcher,
     seedingGuard: SeedingGuard,
     raviloConfigService: RaviloConfigService,
+    arrRescan: ArrRescanService? = null,
 ) {
     route("/media") {
         get {
@@ -750,6 +752,7 @@ fun Route.mediaRoutes(
                     updatedEpisodes[epIdx] = ep.copy(tracks = newTracks, issueCount = newIssue)
                     store.updateOne(item.copy(episodes = updatedEpisodes))
                     mediaHistory.record(id, "set_default", "ep=${ep.filename} specifier=${req.specifier}")
+                    arrRescan?.nudge(item)  // Phase 54 — refresh Sonarr MediaInfo after an episode track edit
                     call.respond(mapOf("ok" to true))
                 }
 
@@ -807,6 +810,7 @@ fun Route.mediaRoutes(
                         return@post
                     }
                     mediaHistory.record(id, "set_language", "ep=${ep.filename} specifier=${req.specifier} language=$probed")
+                    arrRescan?.nudge(item)  // Phase 54 — refresh Sonarr MediaInfo after an episode track edit
                     call.respond(LangWriteResponse(ok = true, language = probed))
                 }
 
@@ -849,6 +853,7 @@ fun Route.mediaRoutes(
                     updatedEpisodes[epIdx] = ep.copy(tracks = newTracks, issueCount = newIssue)
                     store.updateOne(item.copy(episodes = updatedEpisodes))
                     mediaHistory.record(id, "set_forced", "ep=${ep.filename} specifier=${req.specifier} forced=${req.forced}")
+                    arrRescan?.nudge(item)  // Phase 54 — refresh Sonarr MediaInfo after an episode track edit
                     call.respond(mapOf("ok" to true))
                 }
 
@@ -1134,7 +1139,7 @@ fun Route.mediaRoutes(
             store.updateOne(updated)
             broadcaster.broadcast(JobEvent.ItemScanned("repull-jellyfin-$id", updated))
             mediaHistory.record(id, "repull_jellyfin", "jellyfinId=${item.jellyfinId}")
-            pushToJellyfin(updated, artwork, configStore, jellyfinClient, appScope)
+            pushToJellyfin(updated, artwork, configStore, jellyfinClient, appScope, arrRescan)
             call.respond(updated)
         }
 
@@ -1162,7 +1167,7 @@ fun Route.mediaRoutes(
             store.updateOne(updated)
             broadcaster.broadcast(JobEvent.ItemScanned("sync-$id", updated))
             mediaHistory.record(id, "sync", "kind=${item.kind.name.lowercase()} scope=${req.scope}")
-            pushToJellyfin(updated, artwork, configStore, jellyfinClient, appScope)
+            pushToJellyfin(updated, artwork, configStore, jellyfinClient, appScope, arrRescan)
             call.respond(updated)
         }
 
@@ -1186,7 +1191,7 @@ fun Route.mediaRoutes(
             store.updateOne(updatedItem)
             broadcaster.broadcast(JobEvent.ItemScanned("sync-$id-s$seasonNumber", updatedItem))
             mediaHistory.record(id, "season_sync", "season=$seasonNumber scope=${req.scope} synced=$synced")
-            pushToJellyfin(updatedItem, artwork, configStore, jellyfinClient, appScope)
+            pushToJellyfin(updatedItem, artwork, configStore, jellyfinClient, appScope, arrRescan)
             call.respond(mapOf("synced" to synced))
         }
 
@@ -1207,7 +1212,7 @@ fun Route.mediaRoutes(
 
                 store.updateOne(updated)
                 Logger.info("Re-pulled TMDB for '$id': title='${updated.title}' tmdbId=${updated.tmdbId} episodes=${updated.episodes.size}")
-                pushToJellyfin(updated, artwork, configStore, jellyfinClient, appScope)
+                pushToJellyfin(updated, artwork, configStore, jellyfinClient, appScope, arrRescan)
                 call.respond(updated)
             }
         }
@@ -1343,6 +1348,7 @@ private suspend fun pushToJellyfin(
     configStore: ConfigStore,
     jellyfinClient: JellyfinClient,
     appScope: CoroutineScope,
+    arrRescan: ArrRescanService? = null,
 ): Boolean {
     NfoWriter.write(item)
         .onSuccess { path ->
@@ -1378,6 +1384,9 @@ private suspend fun pushToJellyfin(
         jellyfinClient.triggerLibraryRefresh(cfg.apiKeys.jellyfinUrl, cfg.apiKeys.jellyfinToken)
         Logger.info("pushToJellyfin: triggered library scan to pick up tvshow.nfo for '${item.id}'")
     }
+    // Phase 54 — nudge Radarr/Sonarr to rescan this title (best-effort, non-blocking; independent of
+    // the Jellyfin refresh above). No-op unless the matching *arr is enabled with rescan_after_write.
+    arrRescan?.nudge(item)
     return refreshOk
 }
 

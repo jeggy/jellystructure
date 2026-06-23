@@ -10,6 +10,7 @@ import dev.jellystructure.api.LibraryPathDiag
 import dev.jellystructure.api.JellyfinLibrary
 import dev.jellystructure.api.ConfigApi
 import dev.jellystructure.api.MediaApi
+import dev.jellystructure.api.ArrConfig
 import dev.jellystructure.api.QBittorrentConfig
 import dev.jellystructure.api.QBittorrentPathMapping
 import dev.jellystructure.api.httpClient
@@ -50,6 +51,7 @@ fun renderSettings(container: Element, scope: CoroutineScope, query: Map<String,
               ${settingsNavItemHtml("sect-scanning", "Scanning")}
               ${settingsNavItemHtml("sect-metadata", "Metadata")}
               ${settingsNavItemHtml("sect-crossseed", "Cross-seed safety")}
+              ${settingsNavItemHtml("sect-arr", "Download tools")}
               ${settingsNavItemHtml("sect-notifications", "Notifications")}
               ${settingsNavItemHtml("sect-advanced", "Advanced")}
             </div>
@@ -210,6 +212,17 @@ fun renderSettings(container: Element, scope: CoroutineScope, query: Map<String,
               </div>
             </div>
 
+            <div class="card" id="sect-arr">
+              <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
+                <h3 style="font-size:1rem;margin:0">Download tools</h3>
+                <span class="badge" style="font-size:.7rem;background:var(--fill-2)">Radarr · Sonarr</span>
+              </div>
+              <p class="hint" style="margin:0 0 14px">Connect Radarr/Sonarr so Jellystructure can import their root folders as library mappings and nudge a rescan after editing a title. <strong>Read + rescan only</strong> — it never adds, grabs, or deletes.</p>
+              ${arrBoxHtml("radarr", "Radarr", "movies", "http://radarr:7878")}
+              ${arrBoxHtml("sonarr", "Sonarr", "tvshows", "http://sonarr:8989")}
+              <div class="hint" style="margin-top:2px">Root-folder paths reconcile with <strong>Library mapping</strong> by longest prefix.</div>
+            </div>
+
             <div class="card" id="sect-notifications">
               <h3 style="font-size:1rem;margin:0 0 14px">Notifications</h3>
               <div class="field">
@@ -280,6 +293,35 @@ fun renderSettings(container: Element, scope: CoroutineScope, query: Map<String,
 }
 
 /** Left-nav button with a hidden failure badge (Phase: health-check bubbling). */
+// Phase 54 — one Radarr/Sonarr box (enable toggle + URL + masked key + test chip + import + rescan).
+private fun arrBoxHtml(kind: String, label: String, kindBadge: String, urlPlaceholder: String): String = """
+              <div class="box" style="border:1px solid var(--line);border-radius:8px;padding:14px 16px;margin-bottom:14px">
+                <div style="display:flex;align-items:center;justify-content:space-between">
+                  <div style="display:flex;align-items:center;gap:8px">
+                    <span style="font-size:.92rem;font-weight:600">$label</span>
+                    <span class="badge" style="font-size:.68rem;background:var(--fill-2)">$kindBadge</span>
+                  </div>
+                  <span id="$kind-enabled-toggle" class="toggle" style="cursor:pointer;flex-shrink:0;margin-left:12px"></span>
+                </div>
+                <div id="$kind-on" style="display:none;margin-top:12px">
+                  <div class="field"><label>$label URL</label><input id="$kind-url" class="input" type="url" placeholder="$urlPlaceholder" style="width:100%"></div>
+                  <div class="field"><label>API key</label><input id="$kind-key" class="input" type="password" placeholder="(unchanged)" style="width:100%"><span class="hint">$label → Settings → General → API Key. Leave blank to keep the stored key.</span></div>
+                  <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+                    <button id="$kind-test-btn" class="btn sm ghost">Test connection</button>
+                    <span id="chk-$kind" class="tiny muted"></span>
+                  </div>
+                  <div style="margin-bottom:10px">
+                    <button id="$kind-import-btn" class="btn sm ghost arr-import">Import root folders → libraries</button>
+                    <div id="$kind-roots" class="tiny muted" style="margin-top:6px"></div>
+                  </div>
+                  <div style="display:flex;align-items:center;justify-content:space-between">
+                    <div><span style="font-size:.9rem">Rescan in $label after writes</span><div class="hint" style="margin-top:2px">Refreshes $label's MediaInfo after a track edit (best-effort)</div></div>
+                    <span id="$kind-rescan-toggle" class="toggle" style="cursor:pointer;flex-shrink:0;margin-left:12px"></span>
+                  </div>
+                </div>
+              </div>
+"""
+
 private fun settingsNavItemHtml(sectId: String, label: String): String =
     """<button data-sect="$sectId" class="settings-nav-item" style="display:flex;align-items:center;gap:6px;background:none;border:none;text-align:left;padding:5px 8px;border-radius:5px;font-size:.85rem;cursor:pointer;color:var(--ink-soft);"><span style="flex:1">$label</span><span class="nav-badge" data-badge="$sectId" style="display:none;background:var(--bad);color:#fff;border-radius:99px;padding:0 6px;font-size:.7rem;font-weight:600;flex-shrink:0"></span></button>"""
 
@@ -290,6 +332,8 @@ private val HEALTH_CHECK_SECTION = mapOf(
     "Disk space" to "sect-scanning",
     "mkvpropedit" to "sect-scanning",
     "ffprobe" to "sect-scanning",
+    "Radarr" to "sect-arr",
+    "Sonarr" to "sect-arr",
 )
 
 private fun applyHealthFailures(failsBySection: Map<String, Int>) {
@@ -338,6 +382,10 @@ private var libraryMappings: MutableList<LibraryMapping> = mutableListOf()
 private var qbEnabled = false
 private var qbNoAuth = false
 private var qbPathMappings: MutableList<QBittorrentPathMapping> = mutableListOf()
+private var radarrEnabled = false
+private var radarrRescan = true
+private var sonarrEnabled = false
+private var sonarrRescan = true
 private var notifScanDone = true
 private var notifNoMatch = false
 private var notifWriteFailed = true
@@ -388,6 +436,22 @@ private fun populateForm(response: ConfigResponse) {
     val qbCredFields = document.getElementById("qb-credential-fields") as? HTMLElement
     qbCredFields?.style?.display = if (qbNoAuth) "none" else "block"
     renderQbPathMappings()
+
+    // Phase 54 — Radarr / Sonarr (API key left blank; "(unchanged)" placeholder, ##KEEP## on save)
+    val radarr = config.radarr
+    radarrEnabled = radarr?.enabled ?: false
+    radarrRescan = radarr?.rescanAfterWrite ?: true
+    updateToggle("radarr-enabled-toggle", radarrEnabled)
+    updateToggle("radarr-rescan-toggle", radarrRescan)
+    if (radarr != null) setInputValue("radarr-url", radarr.url)
+    (document.getElementById("radarr-on") as? HTMLElement)?.style?.display = if (radarrEnabled) "block" else "none"
+    val sonarr = config.sonarr
+    sonarrEnabled = sonarr?.enabled ?: false
+    sonarrRescan = sonarr?.rescanAfterWrite ?: true
+    updateToggle("sonarr-enabled-toggle", sonarrEnabled)
+    updateToggle("sonarr-rescan-toggle", sonarrRescan)
+    if (sonarr != null) setInputValue("sonarr-url", sonarr.url)
+    (document.getElementById("sonarr-on") as? HTMLElement)?.style?.display = if (sonarrEnabled) "block" else "none"
 
     notifScanDone = config.behavior.notifyOnScanDone
     notifNoMatch = config.behavior.notifyOnNoMatch
@@ -505,6 +569,9 @@ private fun attachListeners(scope: CoroutineScope) {
         renderQbPathMappings()
         refreshTomlPreview(readForm())
     }
+
+    wireArr(scope, "radarr")
+    wireArr(scope, "sonarr")
 
     document.getElementById("notif-scan-done-toggle")?.addEventListener("click") {
         notifScanDone = !notifScanDone
@@ -828,6 +895,18 @@ private fun readForm(): AppConfig = AppConfig(
         password = if (qbNoAuth) "" else getInputValue("qb-password").ifBlank { "##KEEP##" },
         pathMappings = qbPathMappings.toList(),
     ) else null,
+    radarr = if (radarrEnabled) ArrConfig(
+        enabled = true,
+        url = getInputValue("radarr-url"),
+        apiKey = getInputValue("radarr-key").ifBlank { "##KEEP##" },
+        rescanAfterWrite = radarrRescan,
+    ) else null,
+    sonarr = if (sonarrEnabled) ArrConfig(
+        enabled = true,
+        url = getInputValue("sonarr-url"),
+        apiKey = getInputValue("sonarr-key").ifBlank { "##KEEP##" },
+        rescanAfterWrite = sonarrRescan,
+    ) else null,
 )
 
 private fun refreshTomlPreview(config: AppConfig) {
@@ -890,6 +969,87 @@ private fun buildToml(c: AppConfig): String = buildString {
             appendLine("""remote = "${m.remote}"""")
         }
     }
+    c.radarr?.let { r ->
+        appendLine()
+        appendLine("[radarr]")
+        appendLine("enabled = ${r.enabled}")
+        appendLine("""url = "${r.url}"""")
+        appendLine("""api_key = "***"""")
+        appendLine("rescan_after_write = ${r.rescanAfterWrite}")
+    }
+    c.sonarr?.let { s ->
+        appendLine()
+        appendLine("[sonarr]")
+        appendLine("enabled = ${s.enabled}")
+        appendLine("""url = "${s.url}"""")
+        appendLine("""api_key = "***"""")
+        appendLine("rescan_after_write = ${s.rescanAfterWrite}")
+    }
+}
+
+// Phase 54 — wire one Radarr/Sonarr box (enable + rescan toggles, inputs, test, import root folders).
+private fun wireArr(scope: CoroutineScope, kind: String) {
+    document.getElementById("$kind-enabled-toggle")?.addEventListener("click") {
+        val newVal = !(if (kind == "radarr") radarrEnabled else sonarrEnabled)
+        if (kind == "radarr") radarrEnabled = newVal else sonarrEnabled = newVal
+        updateToggle("$kind-enabled-toggle", newVal)
+        (document.getElementById("$kind-on") as? HTMLElement)?.style?.display = if (newVal) "block" else "none"
+        refreshTomlPreview(readForm())
+    }
+    document.getElementById("$kind-rescan-toggle")?.addEventListener("click") {
+        val newVal = !(if (kind == "radarr") radarrRescan else sonarrRescan)
+        if (kind == "radarr") radarrRescan = newVal else sonarrRescan = newVal
+        updateToggle("$kind-rescan-toggle", newVal)
+        refreshTomlPreview(readForm())
+    }
+    listOf("$kind-url", "$kind-key").forEach { id ->
+        document.getElementById(id)?.addEventListener("input") { refreshTomlPreview(readForm()) }
+    }
+    document.getElementById("$kind-test-btn")?.addEventListener("click") {
+        scope.launch {
+            val el = document.getElementById("chk-$kind") as? HTMLElement ?: return@launch
+            el.textContent = "Testing…"
+            val r = if (kind == "radarr") ConfigApi.testRadarr(getInputValue("$kind-url"), getInputValue("$kind-key"))
+                    else ConfigApi.testSonarr(getInputValue("$kind-url"), getInputValue("$kind-key"))
+            when {
+                r == null -> el.innerHTML = """<span class="badge bad">Request failed</span>"""
+                r.ok -> { el.innerHTML = """<span class="badge ok">${r.detail.esc()}</span>"""; renderArrRoots(kind, r.rootFolders ?: emptyList()) }
+                else -> el.innerHTML = """<span class="badge bad">${r.detail.esc()}</span>"""
+            }
+        }
+    }
+    document.getElementById("$kind-import-btn")?.addEventListener("click") {
+        scope.launch { importArrRoots(kind) }
+    }
+}
+
+private fun renderArrRoots(kind: String, roots: List<String>) {
+    val el = document.getElementById("$kind-roots") as? HTMLElement ?: return
+    el.innerHTML = if (roots.isEmpty()) "" else "Root folders: " + roots.joinToString(", ") { """<code>${it.esc()}</code>""" }
+}
+
+/** Fetch the *arr's root folders (saved creds) and pre-fill blank local paths of matching-type libraries. */
+private suspend fun importArrRoots(kind: String) {
+    val rootsEl = document.getElementById("$kind-roots") as? HTMLElement ?: return
+    rootsEl.textContent = "Fetching root folders…"
+    val roots = ConfigApi.getArrRootFolders(kind)
+    if (roots.isEmpty()) { rootsEl.innerHTML = """<span class="badge bad">No root folders — save &amp; test the connection first</span>"""; return }
+    renderArrRoots(kind, roots)
+    val wantMovies = kind == "radarr"
+    var filled = 0
+    libraryMappings = libraryMappings.map { lib ->
+        val isMovie = lib.collectionType.contains("movie", ignoreCase = true)
+        val isTv = lib.collectionType.contains("tv", ignoreCase = true) || lib.collectionType.contains("show", ignoreCase = true)
+        val matchesKind = if (wantMovies) isMovie else isTv
+        if (matchesKind && lib.localPath.isBlank()) {
+            val best = roots.firstOrNull { it.contains(lib.name, ignoreCase = true) } ?: roots.first()
+            filled++
+            lib.copy(localPath = best)
+        } else lib
+    }.toMutableList()
+    if (libraryMappings.isNotEmpty()) renderLibraryList()
+    refreshTomlPreview(readForm())
+    if (filled > 0) rootsEl.innerHTML += """ <span class="badge ok">Pre-filled $filled librar${if (filled == 1) "y" else "ies"}</span>"""
 }
 
 private fun showSettingsMsg(msg: String, ok: Boolean) {

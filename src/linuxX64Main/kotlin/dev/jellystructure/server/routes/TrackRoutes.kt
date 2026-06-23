@@ -9,6 +9,7 @@ import dev.jellystructure.media.MediaHistory
 import dev.jellystructure.media.MediaStore
 import dev.jellystructure.media.MkvpropeditRunner
 import dev.jellystructure.resolver.LanguageResolver
+import dev.jellystructure.arr.ArrRescanService
 import dev.jellystructure.model.MediaKind
 import dev.jellystructure.model.TrackKind
 import dev.jellystructure.torrent.SeedingCheckResult
@@ -53,7 +54,7 @@ data class TrackPlan(
     val after: List<TrackSnap> = emptyList(),
 )
 
-fun Route.trackRoutes(store: MediaStore, configStore: ConfigStore, jellyfinClient: JellyfinClient, mediaHistory: MediaHistory, seedingGuard: SeedingGuard) {
+fun Route.trackRoutes(store: MediaStore, configStore: ConfigStore, jellyfinClient: JellyfinClient, mediaHistory: MediaHistory, seedingGuard: SeedingGuard, arrRescan: ArrRescanService? = null) {
     route("/media/{id}") {
         // GET /api/media/{id}/tracks/plan?specifier=a:0 — dry-run: returns command without executing
         get("/tracks/plan") {
@@ -154,6 +155,7 @@ fun Route.trackRoutes(store: MediaStore, configStore: ConfigStore, jellyfinClien
             if (!item.jellyfinId.isNullOrBlank() && cfg.apiKeys.jellyfinUrl.isNotBlank()) {
                 jellyfinClient.refreshItem(cfg.apiKeys.jellyfinUrl, cfg.apiKeys.jellyfinToken, item.jellyfinId)
             }
+            arrRescan?.nudge(item)  // Phase 54 — refresh the *arr's MediaInfo after a track edit (best-effort)
 
             call.respond(mapOf("ok" to true))
         }
@@ -197,6 +199,7 @@ fun Route.trackRoutes(store: MediaStore, configStore: ConfigStore, jellyfinClien
             val updated = item.copy(tracks = newTracks, issueCount = newIssueCount)
             store.updateOne(updated)
             mediaHistory.record(id, "set_forced", "specifier=${req.specifier} forced=${req.forced}")
+            arrRescan?.nudge(item)  // Phase 54 — refresh the *arr's MediaInfo after a track edit (best-effort)
             call.respond(mapOf("ok" to true))
         }
 
@@ -265,6 +268,7 @@ fun Route.trackRoutes(store: MediaStore, configStore: ConfigStore, jellyfinClien
             if (!item.jellyfinId.isNullOrBlank() && cfg.apiKeys.jellyfinUrl.isNotBlank()) {
                 jellyfinClient.refreshItem(cfg.apiKeys.jellyfinUrl, cfg.apiKeys.jellyfinToken, item.jellyfinId)
             }
+            arrRescan?.nudge(item)  // Phase 54 — refresh the *arr's MediaInfo after a track edit (best-effort)
 
             call.respond(LangWriteResponse(ok = true, language = probed))
         }
@@ -297,6 +301,7 @@ fun Route.trackRoutes(store: MediaStore, configStore: ConfigStore, jellyfinClien
             if (!item.jellyfinId.isNullOrBlank() && cfg.apiKeys.jellyfinUrl.isNotBlank()) {
                 jellyfinClient.refreshItem(cfg.apiKeys.jellyfinUrl, cfg.apiKeys.jellyfinToken, item.jellyfinId)
             }
+            arrRescan?.nudge(item)  // Phase 54 — refresh the *arr's MediaInfo after a track edit (best-effort)
             call.respond(mapOf("ok" to true))
         }
 
@@ -338,6 +343,7 @@ fun Route.trackRoutes(store: MediaStore, configStore: ConfigStore, jellyfinClien
             if (!item.jellyfinId.isNullOrBlank() && cfg.apiKeys.jellyfinUrl.isNotBlank()) {
                 jellyfinClient.refreshItem(cfg.apiKeys.jellyfinUrl, cfg.apiKeys.jellyfinToken, item.jellyfinId)
             }
+            arrRescan?.nudge(item)  // Phase 54 — refresh the *arr's MediaInfo after a track edit (best-effort)
             call.respond(mapOf("ok" to true))
         }
 

@@ -1,5 +1,6 @@
 package dev.jellystructure.server.routes
 
+import dev.jellystructure.arr.ArrClient
 import dev.jellystructure.config.AppConfig
 import dev.jellystructure.config.ConfigStore
 import dev.jellystructure.config.QBittorrentConfig
@@ -44,17 +45,43 @@ data class TestQBittorrentResult(
     val torrentCount: Int? = null,
 )
 
-fun Route.configureConfigRoutes(configStore: ConfigStore, effectiveScanThreads: Int, qbClient: QBittorrentClient? = null) {
+@Serializable
+private data class TestArrRequest(
+    val url: String,
+    val apiKey: String,
+)
+
+@Serializable
+data class ArrTestResult(
+    val ok: Boolean,
+    val detail: String,
+    val version: String? = null,
+    val rootFolders: List<String>? = null,
+)
+
+fun Route.configureConfigRoutes(
+    configStore: ConfigStore,
+    effectiveScanThreads: Int,
+    qbClient: QBittorrentClient? = null,
+    arrClient: ArrClient? = null,
+) {
     get("/config") {
         call.respond(ConfigResponse(configStore.current, effectiveScanThreads))
     }
     put("/config") {
         val received = call.receive<AppConfig>()
-        // If password sentinel is present, keep the stored password
-        val config = if (received.qbittorrent?.password == "##KEEP##") {
-            val stored = configStore.current.qbittorrent?.password ?: ""
-            received.copy(qbittorrent = received.qbittorrent.copy(password = stored))
-        } else received
+        val stored = configStore.current
+        // Blank secrets arrive as the "##KEEP##" sentinel — preserve the stored value rather than wipe it.
+        var config = received
+        if (received.qbittorrent?.password == "##KEEP##") {
+            config = config.copy(qbittorrent = received.qbittorrent.copy(password = stored.qbittorrent?.password ?: ""))
+        }
+        if (received.radarr?.apiKey == "##KEEP##") {
+            config = config.copy(radarr = received.radarr.copy(apiKey = stored.radarr?.apiKey ?: ""))
+        }
+        if (received.sonarr?.apiKey == "##KEEP##") {
+            config = config.copy(sonarr = received.sonarr.copy(apiKey = stored.sonarr?.apiKey ?: ""))
+        }
         configStore.update(config)
         call.respond(HttpStatusCode.NoContent)
     }
@@ -73,6 +100,29 @@ fun Route.configureConfigRoutes(configStore: ConfigStore, effectiveScanThreads: 
             TestQBittorrentResult(false, e.message ?: "Unknown error")
         }
         call.respond(result)
+    }
+    // Phase 54 — Radarr/Sonarr connection test (temporary creds, never persisted). The v3 API is
+    // identical, so both endpoints share one handler.
+    suspend fun testArr(req: TestArrRequest): ArrTestResult {
+        if (arrClient == null) return ArrTestResult(false, "*arr client not available")
+        if (req.url.isBlank()) return ArrTestResult(false, "URL not configured")
+        val ping = arrClient.ping(req.url, req.apiKey)
+        if (!ping.ok) return ArrTestResult(false, ping.detail)
+        val roots = runCatching { arrClient.rootFolders(req.url, req.apiKey) }.getOrDefault(emptyList())
+        return ArrTestResult(true, "Connected" + (ping.version?.let { " · v$it" } ?: ""), ping.version, roots)
+    }
+    post("/config/test-radarr") { call.respond(testArr(call.receive())) }
+    post("/config/test-sonarr") { call.respond(testArr(call.receive())) }
+    // Import root folders → pre-fill [[libraries]] local paths (uses the stored, saved creds).
+    get("/config/radarr/root-folders") {
+        val r = configStore.current.radarr
+        if (arrClient == null || r == null || r.url.isBlank()) { call.respond(emptyList<String>()); return@get }
+        call.respond(runCatching { arrClient.rootFolders(r.url, r.apiKey) }.getOrDefault(emptyList()))
+    }
+    get("/config/sonarr/root-folders") {
+        val s = configStore.current.sonarr
+        if (arrClient == null || s == null || s.url.isBlank()) { call.respond(emptyList<String>()); return@get }
+        call.respond(runCatching { arrClient.rootFolders(s.url, s.apiKey) }.getOrDefault(emptyList()))
     }
     get("/config/path-check") {
         val diags = configStore.current.libraries.filter { !it.skip }.map { lib ->

@@ -10,6 +10,18 @@ data class AppConfig(
     val behavior: Behavior = Behavior(),
     val libraries: List<LibraryMapping> = emptyList(),
     val qbittorrent: QBittorrentConfig? = null,
+    val radarr: ArrConfig? = null,
+    val sonarr: ArrConfig? = null,
+)
+
+// Phase 54 — Radarr/Sonarr connection (movies / series). Opt-in, read + rescan only.
+// Absent or enabled=false ⇒ that integration is completely inert.
+@Serializable
+data class ArrConfig(
+    val enabled: Boolean = false,
+    val url: String = "",
+    @SerialName("api_key") val apiKey: String = "",
+    @SerialName("rescan_after_write") val rescanAfterWrite: Boolean = true,
 )
 
 @Serializable
