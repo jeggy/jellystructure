@@ -305,7 +305,7 @@ private fun arrBoxHtml(kind: String, label: String, kindBadge: String, urlPlaceh
                 </div>
                 <div id="$kind-on" style="display:none;margin-top:12px">
                   <div class="field"><label>$label URL</label><input id="$kind-url" class="input" type="url" placeholder="$urlPlaceholder" style="width:100%"></div>
-                  <div class="field"><label>API key</label><input id="$kind-key" class="input" type="password" placeholder="(unchanged)" style="width:100%"><span class="hint">$label → Settings → General → API Key. Leave blank to keep the stored key.</span></div>
+                  <div class="field"><label>API key <span id="$kind-key-badge" style="display:none;margin-left:8px"></span></label><input id="$kind-key" class="input" type="password" placeholder="(unchanged)" style="width:100%"><span class="hint">$label → Settings → General → API Key. Leave blank to keep the stored key.</span></div>
                   <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
                     <button id="$kind-test-btn" class="btn sm ghost">Test connection</button>
                     <span id="chk-$kind" class="tiny muted"></span>
@@ -444,6 +444,7 @@ private fun populateForm(response: ConfigResponse) {
     updateToggle("radarr-enabled-toggle", radarrEnabled)
     updateToggle("radarr-rescan-toggle", radarrRescan)
     if (radarr != null) setInputValue("radarr-url", radarr.url)
+    setArrKeyBadge("radarr", (radarr?.apiKey ?: "").isNotBlank())
     (document.getElementById("radarr-on") as? HTMLElement)?.style?.display = if (radarrEnabled) "block" else "none"
     val sonarr = config.sonarr
     sonarrEnabled = sonarr?.enabled ?: false
@@ -451,6 +452,7 @@ private fun populateForm(response: ConfigResponse) {
     updateToggle("sonarr-enabled-toggle", sonarrEnabled)
     updateToggle("sonarr-rescan-toggle", sonarrRescan)
     if (sonarr != null) setInputValue("sonarr-url", sonarr.url)
+    setArrKeyBadge("sonarr", (sonarr?.apiKey ?: "").isNotBlank())
     (document.getElementById("sonarr-on") as? HTMLElement)?.style?.display = if (sonarrEnabled) "block" else "none"
 
     notifScanDone = config.behavior.notifyOnScanDone
@@ -690,6 +692,9 @@ private fun attachListeners(scope: CoroutineScope) {
                 tmdbBadge.style.display = "inline"
                 tmdbBadge.innerHTML = if (tmdbOk) """<span class="badge ok" style="font-size:.72rem">valid ✓</span>""" else """<span class="badge bad" style="font-size:.72rem">invalid ✗</span>"""
             }
+            // Phase 54 — Radarr/Sonarr probes (present only when enabled) drive the key badge
+            report.checks.find { it.name == "Radarr" }?.let { setArrKeyBadgeResult("radarr", it.ok) }
+            report.checks.find { it.name == "Sonarr" }?.let { setArrKeyBadgeResult("sonarr", it.ok) }
             if (jellyfinOk) {
                 fetchAndRenderLibraries()
                 renderPathCheckInline(ConfigApi.pathCheck())
@@ -1008,6 +1013,10 @@ private fun wireArr(scope: CoroutineScope, kind: String) {
     document.getElementById("$kind-test-btn")?.addEventListener("click") {
         scope.launch {
             val el = document.getElementById("chk-$kind") as? HTMLElement ?: return@launch
+            if (getInputValue("$kind-key").isBlank()) {
+                el.innerHTML = """<span class="badge" style="font-size:.72rem">Key hidden — Save, then use “Test connections” (top) to verify the stored key</span>"""
+                return@launch
+            }
             el.textContent = "Testing…"
             val r = if (kind == "radarr") ConfigApi.testRadarr(getInputValue("$kind-url"), getInputValue("$kind-key"))
                     else ConfigApi.testSonarr(getInputValue("$kind-url"), getInputValue("$kind-key"))
@@ -1021,6 +1030,20 @@ private fun wireArr(scope: CoroutineScope, kind: String) {
     document.getElementById("$kind-import-btn")?.addEventListener("click") {
         scope.launch { importArrRoots(kind) }
     }
+}
+
+// "stored ✓" on load when a key is on file (the field stays masked/blank); "valid/invalid" after a test.
+private fun setArrKeyBadge(kind: String, stored: Boolean) {
+    val b = document.getElementById("$kind-key-badge") as? HTMLElement ?: return
+    if (stored) { b.style.display = "inline"; b.innerHTML = """<span class="badge ok" style="font-size:.72rem">stored ✓</span>""" }
+    else { b.style.display = "none"; b.innerHTML = "" }
+}
+
+private fun setArrKeyBadgeResult(kind: String, ok: Boolean) {
+    val b = document.getElementById("$kind-key-badge") as? HTMLElement ?: return
+    b.style.display = "inline"
+    b.innerHTML = if (ok) """<span class="badge ok" style="font-size:.72rem">valid ✓</span>"""
+                  else """<span class="badge bad" style="font-size:.72rem">invalid ✗</span>"""
 }
 
 private fun renderArrRoots(kind: String, roots: List<String>) {
