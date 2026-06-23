@@ -28,12 +28,22 @@ data class QBittorrentConfig(
 )
 
 @Serializable
+data class ArrConfig(
+    val enabled: Boolean = false,
+    val url: String = "",
+    @SerialName("api_key") val apiKey: String = "",
+    @SerialName("rescan_after_write") val rescanAfterWrite: Boolean = true,
+)
+
+@Serializable
 data class AppConfig(
     @SerialName("api_keys") val apiKeys: ApiKeys = ApiKeys(),
     @SerialName("language_rules") val languageRules: LanguageRules = LanguageRules(),
     val behavior: Behavior = Behavior(),
     val libraries: List<LibraryMapping> = emptyList(),
     val qbittorrent: QBittorrentConfig? = null,
+    val radarr: ArrConfig? = null,
+    val sonarr: ArrConfig? = null,
 )
 
 @Serializable
@@ -137,6 +147,20 @@ object ConfigApi {
             setBody("""{"url":"${url.replace("\"","\\\"")}","username":"${username.replace("\"","\\\"")}","password":"${password.replace("\"","\\\"")}"}""")
         }.body<QBittorrentTestResult>()
     }.getOrNull()
+
+    suspend fun testRadarr(url: String, apiKey: String): ArrTestResult? = testArr("radarr", url, apiKey)
+    suspend fun testSonarr(url: String, apiKey: String): ArrTestResult? = testArr("sonarr", url, apiKey)
+    private suspend fun testArr(kind: String, url: String, apiKey: String): ArrTestResult? = runCatching {
+        httpClient.post("/api/config/test-$kind") {
+            contentType(ContentType.Application.Json)
+            setBody("""{"url":"${url.replace("\"","\\\"")}","apiKey":"${apiKey.replace("\"","\\\"")}"}""")
+        }.body<ArrTestResult>()
+    }.getOrNull()
+
+    /** kind = "radarr" | "sonarr". Uses the saved creds on the server. */
+    suspend fun getArrRootFolders(kind: String): List<String> = runCatching {
+        httpClient.get("/api/config/$kind/root-folders").body<List<String>>()
+    }.getOrDefault(emptyList())
 }
 
 @Serializable
@@ -147,3 +171,11 @@ data class HealthReport(val checks: List<HealthCheck>)
 
 @Serializable
 data class QBittorrentTestResult(val ok: Boolean, val detail: String, val torrentCount: Int? = null)
+
+@Serializable
+data class ArrTestResult(
+    val ok: Boolean,
+    val detail: String,
+    val version: String? = null,
+    val rootFolders: List<String>? = null,
+)
