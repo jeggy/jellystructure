@@ -2,6 +2,7 @@ package dev.jellystructure.api
 
 import dev.jellystructure.shared.tv.ChannelLogo
 import dev.jellystructure.shared.tv.ChannelLogoUpload
+import dev.jellystructure.shared.tv.ChartListSpec
 import dev.jellystructure.shared.tv.RaviloConfig
 import io.ktor.client.call.body
 import io.ktor.client.request.get
@@ -30,6 +31,10 @@ object RaviloApi {
 
     suspend fun getConfig(userId: String): RaviloConfig =
         httpClient.get("/api/tv/admin/config?userId=$userId").body()
+
+    /** R50 — available chart lists for the Top 10 editor (Phase 57). */
+    suspend fun getDiscoverLists(region: String): List<ChartListSpec> =
+        httpClient.get("/api/discover/lists?region=$region").body()
 
     suspend fun putConfig(userId: String, config: RaviloConfig) {
         val r = httpClient.put("/api/tv/admin/config?userId=$userId") {

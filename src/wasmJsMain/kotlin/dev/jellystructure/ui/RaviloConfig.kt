@@ -6,6 +6,7 @@ import dev.jellystructure.api.RaviloApi
 import dev.jellystructure.scrollIntoViewSmooth
 import dev.jellystructure.shared.tv.ChannelConfig
 import dev.jellystructure.shared.tv.ChannelStyle
+import dev.jellystructure.shared.tv.ChartListSpec
 import dev.jellystructure.shared.tv.Condition
 import dev.jellystructure.shared.tv.MatchMode
 import dev.jellystructure.shared.tv.HeroConfig
@@ -30,6 +31,10 @@ import org.w3c.dom.HTMLSelectElement
 private var currentUserId: String = ""
 private var currentConfig: RaviloConfig = RaviloConfig()
 private var rcScope: CoroutineScope? = null
+private var discoverSpecs: List<ChartListSpec> = emptyList()  // R50 — available charts for the edited region
+
+private val DISCOVER_SOURCES = listOf(Triple("netflix", "Netflix · via Tudum", false), Triple("disney", "Disney+", true), Triple("max", "Max", true))
+private val DISCOVER_REGIONS = listOf("DK" to "Denmark", "NO" to "Norway", "SE" to "Sweden", "FI" to "Finland", "IS" to "Iceland", "GB" to "United Kingdom", "US" to "United States", "DE" to "Germany", "FR" to "France")
 private var users: List<JellyfinUser> = emptyList()
 private var facets: Map<String, List<String>> = emptyMap() // "NETWORK"/"STUDIO"/"GENRE"/"TAG" -> values
 
@@ -59,6 +64,7 @@ fun renderRaviloConfig(container: Element, scope: CoroutineScope) {
         if (currentUserId.isEmpty()) currentUserId = users.first().id
         facets = loadFacets()
         currentConfig = runCatching { RaviloApi.getConfig(currentUserId) }.getOrDefault(RaviloConfig())
+        discoverSpecs = runCatching { RaviloApi.getDiscoverLists(currentConfig.discover.region) }.getOrDefault(emptyList())
         renderFull(container, scope)
     }
 }
@@ -139,6 +145,7 @@ private fun buildShell(): String {
           <button data-rav-sect="sect-heroes"   class="rav-nav-item">Hero carousel</button>
           <button data-rav-sect="sect-channels" class="rav-nav-item">Channels</button>
           <button data-rav-sect="sect-rows"     class="rav-nav-item">Content rows</button>
+          <button data-rav-sect="sect-discover" class="rav-nav-item">Top 10</button>
           <button data-rav-sect="sect-behaviour"class="rav-nav-item">Behaviour</button>
         </div>
       </nav>
@@ -147,6 +154,7 @@ private fun buildShell(): String {
         <div id="sect-heroes"></div>
         <div id="sect-channels"></div>
         <div id="sect-rows"></div>
+        <div id="sect-discover"></div>
         <div id="sect-behaviour"></div>
       </div>
       <div class="card" style="width:280px;flex:none;position:sticky;top:88px;padding:12px">
@@ -165,6 +173,7 @@ private fun wireShell(container: Element, scope: CoroutineScope) {
         currentUserId = sel.value
         scope.launch {
             currentConfig = runCatching { RaviloApi.getConfig(currentUserId) }.getOrDefault(RaviloConfig())
+            discoverSpecs = runCatching { RaviloApi.getDiscoverLists(currentConfig.discover.region) }.getOrDefault(emptyList())
             renderSections(container, scope)
         }
     }
@@ -225,6 +234,7 @@ private fun renderSections(container: Element, scope: CoroutineScope) {
     renderHeroes(container)
     renderChannels(container)
     renderRows(container)
+    renderDiscover(container)
     renderBehaviour(container)
     renderPreview(container)
 }
@@ -579,6 +589,111 @@ private fun renderRows(container: Element) {
 
 // ── Reorder helpers ─────────────────────────────────────────────────────────────
 
+// ── Top 10 / Discover (R50) ─────────────────────────────────────────────────────
+
+private fun renderDiscover(container: Element) {
+    val sect = container.querySelector("#sect-discover") ?: return
+    val d = currentConfig.discover
+    val enabledChecked = if (d.enabled) " checked" else ""
+    val canReqChecked = if (d.canRequest) " checked" else ""
+    val sourceOptions = DISCOVER_SOURCES.joinToString("") { (id, label, soon) ->
+        val sel = if (id == d.source) " selected" else ""
+        val dis = if (soon) " disabled" else ""
+        """<option value="$id"$sel$dis>$label${if (soon) " (soon)" else ""}</option>"""
+    }
+    val regionOptions = DISCOVER_REGIONS.joinToString("") { (code, label) ->
+        val sel = if (code == d.region) " selected" else ""
+        """<option value="$code"$sel>$label</option>"""
+    }
+    val last = d.lists.lastIndex
+    val selectedRows = d.lists.mapIndexed { i, id ->
+        val spec = discoverSpecs.firstOrNull { it.id == id }
+        val title = spec?.title ?: id
+        val rankOnly = spec?.scope == "country"
+        val sub = (spec?.let { "${it.scope} · ${it.metric}" } ?: "") + if (rankOnly) " · rank only (no view counts)" else ""
+        """
+        <div class="cfg-row" style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+          ${reorderButtons("t10", i, last)}
+          <div style="flex:1">
+            <div style="font-size:.9rem">${title.htmlEsc()}</div>
+            <div class="tiny muted">${sub.htmlEsc()}</div>
+          </div>
+          <button class="btn sm ghost" data-t10-del="$i">✕</button>
+        </div>
+        """.trimIndent()
+    }.joinToString("")
+    val addable = discoverSpecs.filter { it.id !in d.lists }
+    val addSelect = if (addable.isNotEmpty())
+        """<select id="t10-add" class="input" style="margin-top:6px;font-size:.85rem"><option value="">+ Add list…</option>${addable.joinToString("") { """<option value="${it.id}">${it.title.htmlEsc()}</option>""" }}</select>"""
+    else """<p class="tiny muted" style="margin-top:6px">All available charts for this country are added.</p>"""
+    sect.innerHTML = """
+        <div class="card" style="padding:18px 20px;margin-bottom:18px">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+            <div style="font-weight:600">Top 10</div>
+            <span class="badge info" style="font-size:.6rem">Discover</span>
+            <span style="flex:1"></span>
+            <label style="display:flex;align-items:center;gap:6px;font-size:.85rem"><input type="checkbox" id="top10-enable"$enabledChecked> show this tab</label>
+          </div>
+          <p style="font-size:.82rem;color:var(--ink-soft);margin-bottom:12px">
+            Requires the *arr serving the selected lists (movies → Radarr, TV → Sonarr) connected in
+            <a href="settings.html?tab=downloads">Settings → Download tools</a> — otherwise the tab won't appear.
+          </p>
+          <div id="top10-body" style="display:grid;gap:12px">
+            <label style="display:flex;align-items:center;gap:10px;font-size:.9rem">
+              <input type="checkbox" id="top10-canrequest"$canReqChecked>
+              Allow this user to request downloads <span class="tiny muted">(admins always can)</span>
+            </label>
+            <label style="display:flex;align-items:center;justify-content:space-between;gap:12px">
+              <span style="font-size:.9rem">Source</span>
+              <select id="top10-source" class="input" style="width:200px;font-size:.85rem">$sourceOptions</select>
+            </label>
+            <label style="display:flex;align-items:center;justify-content:space-between;gap:12px">
+              <span style="font-size:.9rem">Country</span>
+              <select id="top10-region" class="input" style="width:200px;font-size:.85rem">$regionOptions</select>
+            </label>
+            <div>
+              <div style="font-size:.85rem;font-weight:500;margin-bottom:6px">Lists shown to this user <span class="tiny muted">(order with ↑↓)</span></div>
+              $selectedRows
+              $addSelect
+            </div>
+            <p class="tiny muted">Country charts are <b>ranking only</b> (no view counts); global &amp; all-time carry real viewership.</p>
+          </div>
+        </div>
+    """.trimIndent()
+    wireReorder(container, sect, "t10",
+        get = { currentConfig.discover.lists },
+        set = { currentConfig = currentConfig.copy(discover = currentConfig.discover.copy(lists = it)) },
+        ::renderDiscover)
+    for (i in d.lists.indices) {
+        sect.querySelector("[data-t10-del='$i']")?.addEventListener("click") { _ ->
+            structural(container, {
+                val l = currentConfig.discover.lists.toMutableList(); l.removeAt(i)
+                currentConfig = currentConfig.copy(discover = currentConfig.discover.copy(lists = l))
+            }, ::renderDiscover)
+        }
+    }
+    (sect.querySelector("#t10-add") as? HTMLSelectElement)?.let { add ->
+        add.addEventListener("change") { _ ->
+            val v = add.value
+            if (v.isNotBlank()) structural(container, {
+                currentConfig = currentConfig.copy(discover = currentConfig.discover.copy(lists = currentConfig.discover.lists + v))
+            }, ::renderDiscover)
+        }
+    }
+    (sect.querySelector("#top10-region") as? HTMLSelectElement)?.let { reg ->
+        reg.addEventListener("change") { _ ->
+            collectConfig(container) // capture the new region (+ other edits)
+            val scope = rcScope ?: return@addEventListener
+            scope.launch {
+                discoverSpecs = runCatching { RaviloApi.getDiscoverLists(currentConfig.discover.region) }.getOrDefault(discoverSpecs)
+                val valid = discoverSpecs.map { it.id }.toSet()
+                currentConfig = currentConfig.copy(discover = currentConfig.discover.copy(lists = currentConfig.discover.lists.filter { it in valid }))
+                renderDiscover(container); renderPreview(container)
+            }
+        }
+    }
+}
+
 private fun reorderButtons(prefix: String, i: Int, last: Int): String {
     val upDis = if (i == 0) " disabled" else ""
     val dnDis = if (i == last) " disabled" else ""
@@ -768,6 +883,13 @@ private fun collectConfig(container: Element) {
         .getOrDefault(UiDensity.COMFORTABLE)
     val allowOverride = (container.querySelector("#beh-skin-override") as? HTMLInputElement)?.checked ?: true
     val showProgress  = (container.querySelector("#beh-progress") as? HTMLInputElement)?.checked ?: true
+    // Discover (R50) — toggles/selects from the DOM; the ordered `lists` are managed structurally.
+    val discover = currentConfig.discover.copy(
+        enabled    = (container.querySelector("#top10-enable") as? HTMLInputElement)?.checked ?: currentConfig.discover.enabled,
+        canRequest = (container.querySelector("#top10-canrequest") as? HTMLInputElement)?.checked ?: currentConfig.discover.canRequest,
+        source     = (container.querySelector("#top10-source") as? HTMLSelectElement)?.value ?: currentConfig.discover.source,
+        region     = (container.querySelector("#top10-region") as? HTMLSelectElement)?.value ?: currentConfig.discover.region,
+    )
     currentConfig = RaviloConfig(
         heroes = heroes,
         channels = channels,
@@ -783,6 +905,7 @@ private fun collectConfig(container: Element) {
         uiLanguage = uiLanguage,
         heroHeightPct = heroHeight,
         autoAdvanceSeconds = autoAdvance,
+        discover = discover,
     )
 }
 
