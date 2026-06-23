@@ -90,8 +90,9 @@ data class ChartEntry(
 - **Mismatch recovery (reuse Phase 32).** Foreign/ambiguous titles will mis-resolve; a wrong hit
   otherwise shows the wrong poster/overview and **re-asserts on every refresh**. So: low-confidence
   matches are surfaced to the admin via the **Phase 32 TMDB match-picker**, and a **persisted override
-  map** `chart_override(provider, title → tmdbId)` is applied first on every ingest and **survives
-  re-ingest** (an admin correction sticks). Unresolved entries still appear (rank + title) but aren't
+  map** `chart_override(provider, title, kind → tmdbId)` (keyed on `kind` too, so a movie and a series
+  sharing a title don't collide) is applied first on every ingest and **survives re-ingest** (an admin
+  correction sticks). Unresolved entries still appear (rank + title) but aren't
   requestable until matched.
 - **Library match:** after TMDB resolution, each entry is matched against the media store (by tmdbId);
   a hit sets `itemId` → the entry is `available`. Misses are request candidates (live status comes from
