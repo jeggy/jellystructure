@@ -16,10 +16,13 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
+import kotlinx.coroutines.launch
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.unit.dp
@@ -94,6 +97,7 @@ private fun HomeLoaded(
 ) {
     val colors = RaviloTheme.colors
     val listState = rememberLazyListState()
+    val scope = rememberCoroutineScope()
 
     // Hero height as a % of the screen, per the user's config (R27); auto-advance interval too.
     val density = LocalDensity.current
@@ -129,18 +133,27 @@ private fun HomeLoaded(
         // Hero carousel
         if (hasHero) {
             item(key = "hero") {
-                HeroCarousel(
-                    items = feed.heroes,
-                    focusRequester = heroFR,
-                    heightDp = heroHeight,
-                    autoAdvanceSeconds = feed.autoAdvanceSeconds,
-                    onPlay = { onItemPlay(it) },
-                    onMoreInfo = { onItemSelect(it) },
-                    // My List has no backend toggle yet (matches the detail screens' placeholder button).
-                    onMyList = {},
-                    onUp = { navBarFR.requestFocus() },
-                    // Down omitted → native focus search moves into the channel rail / first row.
-                )
+                // R45: whenever the hero holds focus — on launch and when focus returns up from a
+                // content row — snap the list to the top so the full hero re-frames (the buttons sit
+                // low in the hero, so a bare bring-into-view would otherwise strand it mid-scroll).
+                Box(
+                    modifier = Modifier.onFocusChanged {
+                        if (it.hasFocus) scope.launch { listState.animateScrollToItem(0) }
+                    }
+                ) {
+                    HeroCarousel(
+                        items = feed.heroes,
+                        focusRequester = heroFR,
+                        heightDp = heroHeight,
+                        autoAdvanceSeconds = feed.autoAdvanceSeconds,
+                        onPlay = { onItemPlay(it) },
+                        onMoreInfo = { onItemSelect(it) },
+                        // My List has no backend toggle yet (matches the detail screens' placeholder button).
+                        onMyList = {},
+                        onUp = { navBarFR.requestFocus() },
+                        // Down omitted → native focus search moves into the channel rail / first row.
+                    )
+                }
             }
         }
 
