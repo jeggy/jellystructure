@@ -10,8 +10,16 @@ import dev.jellystructure.nfo.NfoWriter
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
 
-class MediaStore(private val db: JellystructureDb) {
+class MediaStore(private val db: JellystructureDb, private val jsTagStore: JsTagStore) {
     private val json = Json { ignoreUnknownKeys = true }
+
+    // Jellystructure-defined tags (those in the JS-tag store) always survive a re-scan, which
+    // otherwise replaces an item's tags with the fresh Jellyfin set (constitution invariant #6).
+    private fun preserveJsTags(fresh: MediaItem, existing: MediaItem?): MediaItem {
+        val keptJs = existing?.tags?.filter { it in jsTagStore.nameSet() } ?: return fresh
+        if (keptJs.isEmpty()) return fresh
+        return fresh.copy(tags = (fresh.tags + keptJs).distinct())
+    }
 
     suspend fun load() {
         val count = db.mediaQueries.count().executeAsOne()
@@ -21,12 +29,14 @@ class MediaStore(private val db: JellystructureDb) {
     suspend fun update(newItems: List<MediaItem>) {
         // Snapshot existing titlesByLang before deleting so a full rescan never erases
         // languages pulled in earlier scans.
-        val existingTitles: Map<String, Map<String, String>> = allItems().associate { it.id to it.titlesByLang }
+        val existing: Map<String, MediaItem> = allItems().associateBy { it.id }
         db.transaction {
             db.mediaQueries.deleteAll()
             newItems.forEach { item ->
-                val old = existingTitles[item.id]
-                val merged = if (!old.isNullOrEmpty()) item.copy(titlesByLang = old + item.titlesByLang) else item
+                val old = existing[item.id]
+                var merged = preserveJsTags(item, old)
+                val oldTitles = old?.titlesByLang
+                if (!oldTitles.isNullOrEmpty()) merged = merged.copy(titlesByLang = oldTitles + item.titlesByLang)
                 upsertItem(merged)
             }
         }
@@ -127,9 +137,10 @@ class MediaStore(private val db: JellystructureDb) {
 
     suspend fun addOrUpdate(item: MediaItem) {
         val existing = get(item.id)
-        val merged = if (existing != null && existing.titlesByLang.isNotEmpty()) {
-            item.copy(titlesByLang = existing.titlesByLang + item.titlesByLang)
-        } else item
+        var merged = preserveJsTags(item, existing)
+        if (existing != null && existing.titlesByLang.isNotEmpty()) {
+            merged = merged.copy(titlesByLang = existing.titlesByLang + item.titlesByLang)
+        }
         upsertItem(merged)
     }
 
