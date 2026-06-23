@@ -67,12 +67,21 @@ flag toggles on/off within `downloading` and is **not** a transition.
 A movie is one file → one record. A **series request is N episodes**, each at its own stage, so a single
 `AcquisitionStatus` can't say "3 of 10 imported." Model it as:
 - The `acquisition` row for a series is a **parent** carrying `episodes_total`, `episodes_done`
-  (imported/available), and a **roll-up** status = the **least-advanced monitored episode** (so a series
-  reads `downloading · 3/10` while episode 4 is grabbing). Per-episode detail lives in a child table
-  `acquisition_episode(parent_id, season, episode, status, progress, download_id)` populated from the
-  Sonarr queue (which is per-episode).
+  (imported/available), and a **roll-up** status = the **least-advanced *active* monitored episode** (so a
+  series reads `downloading · 3/10` while episode 4 is grabbing). Per-episode detail lives in a child
+  table `acquisition_episode(parent_id, season, episode, status, progress, download_id)` populated from
+  the Sonarr queue (which is per-episode).
+  - **`episodes_total` = currently-aired monitored episodes** (not future/unaired), recomputed each poll
+    — otherwise an ongoing show under `monitor = all` would never reach `episodes_done == episodes_total`.
+  - **A single permanently-missing episode must not fail the series.** The roll-up ignores per-episode
+    `failed` when computing the headline: if ≥1 monitored episode is `available` the parent reads
+    `available` (the `episodes_done/total` sub-count surfaces the gap); the parent only reads `failed`
+    when **no** episode could be obtained at all. A stuck/missing episode is a detail-level note, never
+    the series headline.
 - A convenience flag `firstAvailable` flips when the **first** monitored episode resolves into the
-  library, so the TV can offer "Watch Now (E1)" before the whole season finishes.
+  library, so the TV can offer to start the earliest available episode (labelled by its real
+  season/episode, not a hardcoded "E1" — the monitor scope may begin mid-series) before the season
+  finishes.
 - The roll-up `progress` (when `downloading`) is `episodes_done / episodes_total`-weighted, not a single
   torrent %.
 
@@ -149,8 +158,14 @@ season_folder = true
 ### API + events
 - `POST /api/acquisition/request` `{mediaKind, tmdbId}` → `{status record}`. Re-posting a `failed`
   record is the **retry** path (`failed → requested`).
-- `POST /api/acquisition/cancel` `{itemKey}` → removes the request from the \*arr (and its download
-  client) and deletes/zeroes the record back to `not_requested`. The only mutation we make beyond add.
+- `POST /api/acquisition/cancel` `{itemKey}` → cancels an **in-flight** request. The only mutation we
+  make beyond add. A queue-item delete **alone is not enough** — the title is still added + monitored, so
+  the \*arr just re-grabs on the next search. Cancel must therefore **remove or unmonitor the added
+  entity**: Radarr `DELETE /api/v3/movie/{id}` (or unmonitor it); Sonarr unmonitor the requested
+  episodes/series — plus `DELETE /api/v3/queue/{id}?removeFromClient=true` for any active download.
+  **It never deletes library files** (Jellystructure never deletes the library): already-imported
+  (`available`/`firstAvailable`) episodes stay. Cancel only stops what is still in flight — the record
+  drops to `not_requested` if nothing imported yet, or to `available` if some episodes already landed.
 - `GET /api/acquisition?keys=…` → status records (batch; for hydrating any list).
 - `GET /api/acquisition/{itemKey}` → one record.
 - **Who may request (permission):** requesting spends disk + bandwidth, so it is a privileged action.
