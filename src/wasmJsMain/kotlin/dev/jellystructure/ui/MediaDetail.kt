@@ -154,23 +154,25 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
     val jsTagMap = jsTags.associateBy { it.name }
     fun tagChipHtml(tag: String): String {
         val jt = jsTagMap[tag]
-        val dot = if (jt != null) """<span style="width:8px;height:8px;border-radius:50%;background:${jt.color};flex-shrink:0;display:inline-block;margin-right:3px;vertical-align:middle"></span>""" else ""
-        return """<span class="chip" style="cursor:default;display:inline-flex;align-items:center;">$dot${tag.esc()} <span class="tag-rm" data-tag="${tag.esc()}" style="cursor:pointer;margin-left:4px;color:var(--bad);">✕</span></span>"""
+        val dot = if (jt != null) """<span class="tag-dot" style="background:${jt.color};"></span>""" else ""
+        return """<span class="chip tag-chip" style="cursor:default;">$dot${tag.esc()} <span class="rm tag-rm" data-tag="${tag.esc()}">✕</span></span>"""
     }
     val tagSuggestions = jsTags.joinToString("") { jt ->
-        """<div class="tag-suggest-item" data-tag="${jt.name.esc()}" style="display:flex;align-items:center;gap:7px;padding:5px 10px;cursor:pointer;font-size:.85rem;border-radius:4px" onmouseover="this.style.background='var(--fill-2)'" onmouseout="this.style.background=''"><span style="width:10px;height:10px;border-radius:50%;background:${jt.color};flex-shrink:0;display:inline-block"></span>${jt.name.esc()}</div>"""
+        """<div class="tag-suggest-item" data-tag="${jt.name.esc()}" style="display:flex;align-items:center;gap:7px;padding:5px 10px;cursor:pointer;font-size:.85rem;border-radius:6px" onmouseover="this.style.background='var(--fill-2)'" onmouseout="this.style.background=''"><span class="tag-dot" style="background:${jt.color};"></span>${jt.name.esc()}</div>"""
     }
-    val tagsChipsHtml = """<div class="field" id="tags-section">
-      <label>Tags <span class="muted tiny">(written to NFO &lt;tag&gt;)</span> <button class="diff-trigger" id="diff-tags">≠</button></label>
-      <div id="tags-chips" style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:6px;">
+    val tagsChipsHtml = """<div class="card" id="tags-section">
+      <div class="row center"><h4 style="margin:0;">Tags</h4><span class="spacer"></span><span class="tiny muted">written to NFO &lt;tag&gt; · <a href="#/metadata?tab=tags">manage tags →</a> <button class="diff-trigger" id="diff-tags">≠</button></span></div>
+      <hr class="dash" style="margin:10px 0;">
+      <div id="tags-chips" class="pill-row" style="margin-bottom:10px;">
         ${currentTags.joinToString("") { tagChipHtml(it) }}
       </div>
-      <div style="display:flex;gap:6px;position:relative;flex-wrap:wrap">
+      <div class="row center" style="gap:8px;position:relative;flex-wrap:wrap;">
         <div style="position:relative">
-          <input id="tag-input" class="input" type="text" placeholder="add tag…" maxlength="40" style="width:160px;" autocomplete="off">
-          <div id="tag-dropdown" style="display:none;position:absolute;top:calc(100% + 2px);left:0;z-index:50;background:var(--surface);border:1px solid var(--border);border-radius:6px;box-shadow:0 4px 16px rgba(0,0,0,.15);min-width:160px;padding:4px 0">$tagSuggestions</div>
+          <input id="tag-input" class="input" type="text" placeholder="＋ add a tag…" maxlength="40" style="max-width:260px;" autocomplete="off">
+          <div id="tag-dropdown" class="card" style="display:none;position:absolute;top:calc(100% + 4px);left:0;z-index:50;width:240px;padding:6px;box-shadow:var(--shadow);">$tagSuggestions</div>
         </div>
         <button id="tag-add-btn" class="btn sm ghost">Add</button>
+        <span class="tiny muted">Jellystructure tags (dotted) survive re-syncs.</span>
       </div>
     </div>"""
 
@@ -394,12 +396,12 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
                 </div>
                 $genresHtml
                 $directorHtml
-                $tagsChipsHtml
                 <div class="field" style="margin-top:12px;">
                   <label>File path</label>
                   <div class="input mono" style="font-size:.82rem;word-break:break-all;">${item.path.esc()}</div>
                 </div>
               </div>
+              $tagsChipsHtml
               $resolverTraceHtml
             </div>"""
 
@@ -741,7 +743,10 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
         }
         val tagsDirty = currentTagSet() != origTags
         if (tagsDirty) anyDirty = true
-        setFieldDirty(document.getElementById("tags-section") as? HTMLElement, document.getElementById("diff-tags") as? HTMLElement, tagsDirty)
+        // Tags live in their own card — toggle the outline-ring `dirty` class (not the text-field
+        // `field-dirty` border-left) and show/hide the diff (≠) trigger.
+        (document.getElementById("tags-section") as? HTMLElement)?.classList?.toggle("dirty", tagsDirty)
+        (document.getElementById("diff-tags") as? HTMLElement)?.style?.display = if (tagsDirty) "inline-flex" else "none"
         val genresDirty = currentGenreList() != origGenres
         if (genresDirty) anyDirty = true
         (document.getElementById("diff-genres") as? HTMLElement)?.style?.display = if (genresDirty) "inline-flex" else "none"

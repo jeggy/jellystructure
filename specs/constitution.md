@@ -43,7 +43,10 @@ These choices are fixed. Do not introduce alternatives without updating this doc
 - Compiled to WebAssembly (WasmGC)
 - DOM interaction via **kotlinx.browser** — direct manipulation of the browser's native HTML tree
 - **No Compose Multiplatform for Web** — canvas-based rendering is explicitly rejected (breaks accessibility, SEO, and CSS integration)
-- Styling: **Tailwind CSS** via Webpack + PostCSS in the Gradle build pipeline; class names in Kotlin source are scanned at build time
+- Styling: the **`design/app/wf.css` + `app.css`** CSS-variable system (tokens + components), copied
+  **verbatim** into the build by the Gradle `syncDesignAssets` task and linked from `index.html`. There
+  is **no Tailwind / PostCSS pipeline** — the mockup CSS *is* the production CSS (so new component
+  classes are added to `wf.css`)
 - State: **kotlinx.coroutines StateFlow** — reactive stores; WS pushes into flows; no client-side router library
 
 ### Infrastructure
@@ -189,8 +192,9 @@ changes are posted as JSON to Ktor, converted to TOML, and written to `/config/c
 
 The `design/app/` directory contains HTML/CSS mockups that are the **visual target** for the
 Kotlin/WASM frontend. They use a custom CSS-variable system in `wf.css` (tokens + components) and
-`app.css` (shell). Tokens map to Tailwind on implementation — the real frontend uses **Tailwind
-CSS**; mockups are the visual spec, they are not served directly.
+`app.css` (shell). The real frontend **ships `wf.css` + `app.css` verbatim** — the Gradle
+`syncDesignAssets` task copies them into the dist and `index.html` links them. There is **no Tailwind
+pipeline**; the mockup CSS is the production CSS. The mockup `.html` files themselves are not served.
 
 - Dark-primary with light toggle; persisted in `localStorage` as `js-theme` (`light` / `dark` / `system`)
 - Jellyfin-style purple→blue gradient accent

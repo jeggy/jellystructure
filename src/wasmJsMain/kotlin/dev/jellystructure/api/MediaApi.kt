@@ -123,7 +123,7 @@ data class HistoryEntry(
 )
 
 @Serializable
-data class TrackFacetItem(val value: String, val count: Int)
+data class TrackFacetItem(val value: String, val count: Int, val color: String? = null)
 
 @Serializable
 data class TrackFacets(

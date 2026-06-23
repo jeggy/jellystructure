@@ -8,7 +8,17 @@ _Last updated: 2026-06-23_
 
 ## Current focus
 
-**Phases 0–51 complete.** [Phase 51](requirements/archive/phase-51-tag-population-lifecycle.md)
+**Phases 0–52 complete.** [Phase 52](requirements/archive/phase-52-tag-ux-design-sync.md)
+(2026-06-23) brought tag UX in line with the design and surfaced the JS/normal distinction in filters:
+the media-detail tags section is now its own card matching `design/app/media.html` (manage-tags link,
+dashed rule, dotted JS chips, outline dirty ring), and the filter workbench + Library tag pickers dot
+and group Jellystructure tags above the rest (the tag facet is color-enriched server-side via
+`jsTagStore`; `tags=` OR-filtering is unchanged). The Metadata Tags tab moved onto the shared
+`.tag-card`/`.swatch` classes too. Along the way, corrected a stale architecture note: the admin app is
+**not** Tailwind — it ships `design/app/wf.css` + `app.css` **verbatim** via the `syncDesignAssets`
+Gradle task, so new component classes are added to `wf.css` (FR-TG2).
+
+[Phase 51](requirements/archive/phase-51-tag-population-lifecycle.md)
 (2026-06-23) fixed tag population end-to-end: item tags were never read from Jellyfin (the `Tags` field
 was unrequested, `JellyfinItem` had no slot, and the scanner left `tags=[]`), and the Phase 19 §15
 tag-merge was never implemented — a full re-scan even **wiped JS tags**. Now the scan reads Jellyfin
@@ -61,7 +71,7 @@ It adds a **`/api/tv/**`** namespace + a per-Jellyfin-user config store to *this
 jellystructure only; data plane (video/images) = Jellyfin directly. Ravilo's phase state is tracked
 separately — see [`ravilo/STATUS.md`](ravilo/STATUS.md) and
 [`ravilo/requirements/README.md`](ravilo/requirements/README.md).
-The jellystructure admin frontend stays DOM/Tailwind; Ravilo's web build is a
+The jellystructure admin frontend stays DOM + the shipped `wf.css`/`app.css` (no Tailwind); Ravilo's web build is a
 **separate** canvas bundle (the "no Compose for Web" rule is scoped to the admin app).
 
 ## Key cross-cutting findings — see [`requirements/_investigation-findings.md`](requirements/_investigation-findings.md)

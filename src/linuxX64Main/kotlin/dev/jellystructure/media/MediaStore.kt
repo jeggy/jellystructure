@@ -209,11 +209,17 @@ class MediaStore(private val db: JellystructureDb, private val jsTagStore: JsTag
             item.genres.forEach { g -> genreCounts[g] = (genreCounts[g] ?: 0) + 1 }
             item.tags.forEach   { t -> tagCounts[t]   = (tagCounts[t]   ?: 0) + 1 }
         }
+        // JS-tag color by name (lowercased — list() OR-filters tags case-insensitively, so a tag
+        // defined "Open Movie" must still color an item tagged "open movie"). Presence of a color
+        // marks a Jellystructure tag; JS tags sort first so the filter picker can group them.
+        val tagColors = jsTagStore.all().associate { it.name.lowercase() to it.color }
         return MetaFacets(
             studios  = studioCounts.entries.sortedByDescending { it.value }.map { TrackFacetItem(it.key, it.value) },
             networks = networkCounts.entries.sortedByDescending { it.value }.map { TrackFacetItem(it.key, it.value) },
             genres   = genreCounts.entries.sortedByDescending { it.value }.map { TrackFacetItem(it.key, it.value) },
-            tags     = tagCounts.entries.sortedByDescending { it.value }.map { TrackFacetItem(it.key, it.value) },
+            tags     = tagCounts.entries
+                .map { TrackFacetItem(it.key, it.value, tagColors[it.key.lowercase()]) }
+                .sortedWith(compareBy({ it.color == null }, { -it.count })),
         )
     }
 
@@ -236,7 +242,7 @@ class MediaStore(private val db: JellystructureDb, private val jsTagStore: JsTag
     }
 }
 
-data class TrackFacetItem(val value: String, val count: Int)
+data class TrackFacetItem(val value: String, val count: Int, val color: String? = null)
 data class TrackFacets(
     val audioLanguages: List<TrackFacetItem>,
     val audioCodecs: List<TrackFacetItem>,
