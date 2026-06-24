@@ -82,6 +82,10 @@ fun Route.configureConfigRoutes(
         if (received.sonarr?.apiKey == "##KEEP##") {
             config = config.copy(sonarr = received.sonarr.copy(apiKey = stored.sonarr?.apiKey ?: ""))
         }
+        // The frontend AppConfig model omits acquisition and discover (config-file-only sections,
+        // not exposed in the Settings UI). Preserve the stored values so a Settings save never wipes them.
+        if (config.acquisition == null) config = config.copy(acquisition = stored.acquisition)
+        if (config.discover    == null) config = config.copy(discover    = stored.discover)
         configStore.update(config)
         call.respond(HttpStatusCode.NoContent)
     }
