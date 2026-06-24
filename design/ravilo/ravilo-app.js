@@ -396,10 +396,24 @@
       if (it.trend === 'down') return `<span class="rtrend down">▼</span>`;
       return `<span class="rtrend same">=</span>`;
     }
+    function fetchShort(it) {
+      if (it.kind === 'series' && it.epsTotal != null) { let s = (it.epsDone || 0) + '/' + it.epsTotal; if (it.stalled) s += ' · ' + t('stalled'); return s; }
+      let s = (it.progress || 0) + '%'; if (it.stalled) s += ' · ' + t('stalled'); else if (it.metadata) s += ' · ' + t('starting'); return s;
+    }
+    function fetchLong(it) {
+      if (it.kind === 'series' && it.epsTotal != null) { let s = t('fetching') + ' · ' + (it.epsDone || 0) + '/' + it.epsTotal; if (it.stalled) s += ' · ' + t('stalled'); return s; }
+      let s = t('fetching') + ' · ' + (it.progress || 0) + '%'; if (it.stalled) s += ' · ' + t('stalled'); else if (it.metadata) s += ' · ' + t('starting'); return s;
+    }
     function statusMark(it) {
-      if (it.status === 'available') return `<span class="rstat avail" title="In Library">✓</span>`;
-      if (it.status === 'fetching') return `<span class="rstat fetch" title="Fetching"><span class="spin"></span><span class="pct">${it.progress || 0}%</span></span>`;
-      return '';
+      switch (it.status) {
+        case 'available':   return `<span class="rstat avail" title="In Library">✓</span>`;
+        case 'requested':   return `<span class="rstat req"><span class="dot"></span>${t('requested')}</span>`;
+        case 'queued':      return `<span class="rstat queue">${t('in_queue')}${it.queuePos ? ' · #' + it.queuePos : ''}</span>`;
+        case 'downloading': return `<span class="rstat fetch"><span class="spin"></span><span class="pct">${fetchShort(it)}</span></span>`;
+        case 'importing':   return `<span class="rstat importing"><span class="spin"></span>${t('importing')}</span>`;
+        case 'failed':      return `<span class="rstat failed">${t('failed')}</span>`;
+        default: return '';
+      }
     }
     function rankTile(it, list) {
       const tl = el('div', 'rtile foc'); tl._ditem = it; tl._dlist = list;
@@ -446,18 +460,87 @@
     }
 
     function requestFetch(it) {
-      it.status = 'fetching'; it.progress = 1;
+      it.status = 'requested'; it.progress = 0; it.queuePos = 3;
+      userReq.add(it);
       flash('＋ ' + it.title + ' · ' + t('requested_via'));
       renderDiscoverDetail(it, view.list);
       setTimeout(() => focusRC(1, 0), 20);
+      ensureDiscTicker();
+    }
+    function discTerminal(it) { return it.status === 'available' || it.status === 'failed' || it.status === 'not_requested'; }
+    function advanceItem(it) {
+      switch (it.status) {
+        case 'requested': it.status = 'queued'; it.queuePos = it.queuePos || 3; return true;
+        case 'queued': if (it.queuePos > 1) { it.queuePos--; return true; } it.status = 'downloading'; it.metadata = true; it.progress = 0; return true;
+        case 'downloading':
+          if (it.metadata) { it.metadata = false; return true; }
+          if (it.stalled) { if (Math.random() < 0.45) { it.stalled = false; return true; } return false; }
+          if (it.kind === 'series' && it.epsTotal != null) {
+            if (it.epsDone < it.epsTotal) { it.epsDone++; it.firstAvailable = it.epsDone >= 1; if (it.epsDone >= it.epsTotal) it.status = 'importing'; return true; }
+            return false;
+          }
+          it.progress = Math.min(100, (it.progress || 0) + 8 + Math.floor(Math.random() * 13));
+          if (it.progress >= 100) it.status = 'importing';
+          return true;
+        case 'importing': it.status = 'available'; return true;
+        default: return false;
+      }
+    }
+    function patchDiscoverItem(it) {
+      scroll.querySelectorAll('.rtile').forEach(tl => {
+        if (tl._ditem !== it) return;
+        const art = tl.querySelector('.rposter .art'); if (!art) return;
+        const old = art.querySelector('.rstat'); if (old) old.remove();
+        const tmp = document.createElement('div'); tmp.innerHTML = statusMark(it);
+        if (tmp.firstElementChild) art.appendChild(tmp.firstElementChild);
+      });
+      if (view.type === 'discoverDetail' && view.item === it) {
+        const sl = scroll.querySelector('.ddt-body .ddt-state');
+        if (sl) { const tmp = document.createElement('div'); tmp.innerHTML = discoverStatusLine(it); if (tmp.firstElementChild) sl.replaceWith(tmp.firstElementChild); }
+        const acts = scroll.querySelector('.ddt-actions');
+        if (acts) { const tmp = document.createElement('div'); tmp.innerHTML = discoverActions(it); if (tmp.firstElementChild) { acts.replaceWith(tmp.firstElementChild); const f = scroll.querySelector('.ddt-actions .foc'); if (f) focusEl(f); } }
+      }
+    }
+    let discTicker = null;
+    const userReq = new Set();   // only titles the viewer requests this session animate live;
+                                 // seeded items stay put as static status exemplars.
+    function ensureDiscTicker() {
+      if (!interactive || discTicker) return;
+      discTicker = setInterval(() => {
+        let any = false;
+        userReq.forEach(it => {
+          if (discTerminal(it)) { userReq.delete(it); return; }
+          any = true;
+          if (advanceItem(it)) patchDiscoverItem(it);
+        });
+        if (!any) { clearInterval(discTicker); discTicker = null; }
+      }, 1500);
+    }
+    function discoverStatusLine(it) {
+      switch (it.status) {
+        case 'available':   return `<span class="ddt-state avail">✓ ${t('in_library')}</span>`;
+        case 'downloading': return `<span class="ddt-state fetch"><span class="spin"></span> ${fetchLong(it)}</span>`;
+        case 'queued':      return `<span class="ddt-state fetch">${t('in_queue')}${it.queuePos ? ' · #' + it.queuePos : ''}</span>`;
+        case 'requested':   return `<span class="ddt-state fetch"><span class="dot"></span> ${t('requested')}</span>`;
+        case 'importing':   return `<span class="ddt-state fetch"><span class="spin"></span> ${t('importing')}</span>`;
+        case 'failed':      return `<span class="ddt-state failed">${t('failed')}</span>`;
+        default: return `<span class="ddt-state none">${t('not_in_library')}</span>`;
+      }
     }
     function discoverActions(it) {
       let primary;
       if (it.status === 'available') primary = `<div class="btn primary foc" data-dact="watch"><span class="ic">▶</span> ${t('watch_now')}</div>`;
-      else if (it.status === 'fetching') primary = `<div class="btn fetching foc" data-dact="progress"><span class="spin"></span> ${t('fetching')} · ${it.progress || 0}%</div>`;
+      else if (it.status === 'downloading' && it.kind === 'series' && it.firstAvailable) primary = `<div class="btn primary foc" data-dact="watch"><span class="ic">▶</span> ${t('watch_e1')}</div>`;
+      else if (it.status === 'downloading') primary = `<div class="btn fetching foc" data-dact="progress"><span class="spin"></span> ${fetchLong(it)}</div>`;
+      else if (it.status === 'queued') primary = `<div class="btn fetching foc" data-dact="progress">${t('in_queue')}${it.queuePos ? ' · #' + it.queuePos : ''}</div>`;
+      else if (it.status === 'requested') primary = `<div class="btn fetching foc" data-dact="progress"><span class="dot"></span> ${t('requested')}</div>`;
+      else if (it.status === 'importing') primary = `<div class="btn fetching foc" data-dact="progress"><span class="spin"></span> ${t('importing')}</div>`;
+      else if (it.status === 'failed') primary = `<div class="btn primary foc" data-dact="request"><span class="ic">↻</span> ${t('retry_fetch')}</div>`;
       else primary = `<div class="btn primary foc" data-dact="request"><span class="ic">＋</span> ${t('request_fetch')}</div>`;
+      const prog = (it.status === 'downloading' && it.kind === 'series' && it.firstAvailable)
+        ? `<div class="btn fetching foc" data-dact="progress"><span class="spin"></span> ${fetchLong(it)}</div>` : '';
       return `<div class="ddt-actions focus-row">
-        ${primary}
+        ${primary}${prog}
         <div class="btn ghost foc" data-dact="list"><span class="ic">＋</span> ${t('add_list')}</div>
       </div>`;
     }
@@ -466,11 +549,7 @@
       const src = activeSource();
       const region = R.discover.config.regionName || R.discover.config.region;
       const isCountry = list && list.scope === 'country';
-      const statusLine = it.status === 'available'
-        ? `<span class="ddt-state avail">✓ ${t('in_library')}</span>`
-        : it.status === 'fetching'
-          ? `<span class="ddt-state fetch"><span class="spin"></span> ${t('fetching')} · ${it.progress || 0}%</span>`
-          : `<span class="ddt-state none">${t('not_in_library')}</span>`;
+      const statusLine = discoverStatusLine(it);
       const d = el('div', 'ddt');
       d.innerHTML = `
         <div class="ddt-hero">
@@ -694,7 +773,7 @@
         const it = view.item;
         if (f.dataset.dact === 'watch') playItem(it);
         else if (f.dataset.dact === 'request') requestFetch(it);
-        else if (f.dataset.dact === 'progress') flash(t('fetching') + ' · ' + (it.progress || 0) + '% · Radarr');
+        else if (f.dataset.dact === 'progress') flash(fetchLong(it) + ' · Radarr');
         else if (f.dataset.dact === 'list') flash('＋ ' + it.title);
         return;
       }

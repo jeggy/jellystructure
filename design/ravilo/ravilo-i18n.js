@@ -6,6 +6,7 @@
     en: {
       nav_top10: 'Top 10', request_fetch: 'Request', requesting: 'Requesting…', fetching: 'Fetching', in_library: 'In Library',
       watch_now: 'Watch Now', not_in_library: 'Not in your library yet', requested_via: 'Requested · Radarr is fetching it',
+      in_queue: 'In queue', importing: 'Importing…', requested: 'Requested', failed: 'Failed', stalled: 'stalled', starting: 'starting', retry_fetch: 'Retry', watch_e1: 'Watch Now · E1',
       top10_sub: 'Trending now · {region}', weeks_on: '{n} wks on chart', new_this_week: 'New this week',
       why_trending: 'Why it’s trending', rank_in: '#{n} in {region}', views_week: '{v} this week', via_source: 'via {src}',
       nav_home: 'Home', nav_movies: 'Movies', nav_series: 'Series', nav_mylist: 'My List',
@@ -26,6 +27,7 @@
     da: {
       nav_top10: 'Top 10', request_fetch: 'Anmod', requesting: 'Anmoder…', fetching: 'Henter', in_library: 'I biblioteket',
       watch_now: 'Se nu', not_in_library: 'Ikke i dit bibliotek endnu', requested_via: 'Anmodet · Radarr henter den',
+      in_queue: 'I kø', importing: 'Importerer…', requested: 'Anmodet', failed: 'Mislykkedes', stalled: 'i stå', starting: 'starter', retry_fetch: 'Prøv igen', watch_e1: 'Se nu · E1',
       top10_sub: 'Populært nu · {region}', weeks_on: '{n} uger på listen', new_this_week: 'Ny i denne uge',
       why_trending: 'Hvorfor den er populær', rank_in: '#{n} i {region}', views_week: '{v} i denne uge', via_source: 'via {src}',
       nav_home: 'Hjem', nav_movies: 'Film', nav_series: 'Serier', nav_mylist: 'Min liste',
@@ -46,6 +48,7 @@
     fo: {
       nav_top10: 'Top 10', request_fetch: 'Bið', requesting: 'Biður…', fetching: 'Heintar', in_library: 'Í savninum',
       watch_now: 'Sígj nú', not_in_library: 'Ikki í savninum enn', requested_via: 'Biðið · Radarr heintar hana',
+      in_queue: 'Í bíðiraði', importing: 'Innflyti…', requested: 'Biðið', failed: 'Miseydnaðist', stalled: 'steðgað', starting: 'byrjar', retry_fetch: 'Royn aftur', watch_e1: 'Sígj nú · E1',
       top10_sub: 'Vinsælt nú · {region}', weeks_on: '{n} vikur á listanum', new_this_week: 'Nýtt hesa viku',
       why_trending: 'Hví tað er vinsælt', rank_in: '#{n} í {region}', views_week: '{v} hesa viku', via_source: 'via {src}',
       nav_home: 'Heim', nav_movies: 'Filmar', nav_series: 'S\u00f8gur', nav_mylist: 'M\u00edn listi',
