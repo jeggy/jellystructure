@@ -1436,25 +1436,14 @@ private fun renderRows(container: Element) {
         else ""
         val rowOpacity = if (isMergedOut) "opacity:0.45;" else ""
 
-        val kindOptions = RowKind.entries.joinToString("") { k ->
-            val sel = if (k == r.kind) " selected" else ""
-            """<option value="${k.name}"$sel>${k.name.lowercase().replace('_', ' ').replaceFirstChar { it.uppercase() }}</option>"""
-        }
-        val mediaOptions = MEDIA_KINDS.joinToString("") { (code, label) ->
-            val sel = if (code == (r.mediaKind ?: "")) " selected" else ""
-            """<option value="$code"$sel>$label</option>"""
-        }
         val showChecked = if (r.enabled) " checked" else ""
-        val genreList = if (r.kind == RowKind.GENRE) """ list="facet-genre"""" else ""
         val delBtn = if (system) "" else """<button class="btn sm ghost" data-row-del="$i">✕</button>"""
-        val bodyCell = if (r.conditions.isNotEmpty()) {
+        val bodyCell = if (system) "" else if (r.conditions.isNotEmpty()) {
             """<span class="badge ok" style="white-space:nowrap">${r.conditions.size} condition(s) · match ${r.match.name}</span>
-               <button class="btn sm ghost" data-row-edit="$i">Edit filter</button>
-               <select class="input" style="width:90px" data-row-media="$i">$mediaOptions</select>
-               <span class="spacer" style="flex:1"></span>"""
+               <button class="btn sm ghost" data-row-edit="$i">Edit filter</button>"""
         } else {
-            """<select class="input" style="width:140px" data-row-kind="$i">$kindOptions</select>
-               <select class="input" style="width:90px" data-row-media="$i">$mediaOptions</select>"""
+            """<span class="muted tiny" style="white-space:nowrap">No filter — shows all media</span>
+               <button class="btn sm ghost" data-row-edit="$i">Edit filter</button>"""
         }
         """
         <div class="cfg-row" draggable="true" data-row-i="$i" style="display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap;${rowOpacity}transition:opacity .2s">
@@ -1462,7 +1451,7 @@ private fun renderRows(container: Element) {
           $badge
           $mergedNote
           <input type="hidden" data-row-id="$i" value="${r.id.htmlEsc()}">
-          <input class="input" style="width:150px" placeholder="Title" value="${(r.title ?: "").htmlEsc()}" data-row-title="$i"$genreList>
+          <input class="input" style="width:150px" placeholder="Title" value="${(r.title ?: "").htmlEsc()}" data-row-title="$i">
           $bodyCell
           <label style="display:flex;align-items:center;gap:5px;font-size:.8rem;white-space:nowrap"><input type="checkbox" data-row-enabled="$i"$showChecked> Show</label>
           $delBtn
@@ -1491,7 +1480,6 @@ private fun renderRows(container: Element) {
           $mergedChip
           <div id="row-list">$rows</div>
           <button id="row-add" class="btn sm ghost" style="margin-top:6px">+ Add row</button>
-          <button id="row-workbench" class="btn sm ghost" style="margin-top:6px">⚙ Build with workbench</button>
         </div>
     """.trimIndent()
     // R66: live re-render when merge toggle changes so badge dimming and chip update instantly
@@ -1500,11 +1488,8 @@ private fun renderRows(container: Element) {
         structural(container, { currentConfig = currentConfig.copy(mergeNewlyAdded = checked) }, ::renderRows)
     }
     sect.querySelector("#row-add")?.addEventListener("click") { _ ->
-        structural(container, { currentConfig = currentConfig.copy(rows = currentConfig.rows + RowConfig(id = genId("row"), kind = RowKind.GENRE)) }, ::renderRows)
-    }
-    sect.querySelector("#row-workbench")?.addEventListener("click") { _ ->
         val scope = rcScope ?: return@addEventListener
-        openWorkbench(scope, "New content row — condition workbench", viewer = currentUserId, applyLabel = "Create row",
+        openWorkbench(scope, "New content row", viewer = currentUserId, applyLabel = "Add row",
             onApply = { match, include, conds ->
                 val label = conds.firstOrNull { it.values.isNotEmpty() }?.values?.firstOrNull() ?: "Custom row"
                 val mediaKind = when (include) { "movies" -> "MOVIE"; "series" -> "SERIES"; else -> null }
@@ -1533,7 +1518,7 @@ private fun renderRows(container: Element) {
                     val mediaKind = when (inc) { "movies" -> "MOVIE"; "series" -> "SERIES"; else -> null }
                     structural(container, {
                         val list = currentConfig.rows.toMutableList()
-                        list[i] = list[i].copy(match = wbMode(match), conditions = wbConds(conds), mediaKind = mediaKind)
+                        list[i] = list[i].copy(kind = RowKind.CUSTOM, match = wbMode(match), conditions = wbConds(conds), mediaKind = mediaKind)
                         currentConfig = currentConfig.copy(rows = list)
                     }, ::renderRows)
                 })
@@ -1826,19 +1811,12 @@ private fun collectConfig(container: Element) {
             order = i,
         )
     }
-    // Rows — same overlay approach; CUSTOM rows' conditions/match are preserved.
     val rows = currentConfig.rows.mapIndexed { i, existing ->
         fun q(attr: String) = container.querySelector("[$attr='$i']")
         val titleEl = q("data-row-title") as? HTMLInputElement
         val title   = if (titleEl != null) titleEl.value.trim().ifEmpty { null } else existing.title
         val enabled = (q("data-row-enabled") as? HTMLInputElement)?.checked ?: existing.enabled
-        if (existing.conditions.isNotEmpty()) {
-            existing.copy(title = title, enabled = enabled, order = i)
-        } else {
-            val kind  = runCatching { RowKind.valueOf((q("data-row-kind") as? HTMLSelectElement)?.value ?: existing.kind.name) }.getOrDefault(existing.kind)
-            val media = (q("data-row-media") as? HTMLSelectElement)?.value?.takeIf { it.isNotEmpty() }
-            existing.copy(kind = kind, title = title, enabled = enabled, order = i, mediaKind = media)
-        }
+        existing.copy(title = title, enabled = enabled, order = i)
     }
     val mergeNewlyAdded = (container.querySelector("#merge-newly-added") as? HTMLInputElement)?.checked ?: currentConfig.mergeNewlyAdded
     val heroHeight   = (container.querySelector("#hero-height") as? HTMLInputElement)?.value?.toIntOrNull() ?: 56
