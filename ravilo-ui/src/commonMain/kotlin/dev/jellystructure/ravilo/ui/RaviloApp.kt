@@ -82,6 +82,9 @@ val LocalTileScale = staticCompositionLocalOf { 1f }
 /** R61 — server base URL (e.g. `http://192.168.1.100:8080`); used to resolve relative logo/image URLs. */
 val LocalServerBaseUrl = staticCompositionLocalOf { "" }
 
+/** R65 — active user's Jellyfin avatar URL; null if the user has no profile picture. */
+val LocalUserAvatarUrl = staticCompositionLocalOf<String?> { null }
+
 // ─── Navigation destinations ──────────────────────────────────────────────────
 
 private sealed class Dest {
@@ -137,6 +140,7 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
     val liveConfig = remember { MutableSharedFlow<Long>(replay = 0, extraBufferCapacity = 16) }
     val liveAcquisition = remember { MutableSharedFlow<AcquisitionRecord>(replay = 0, extraBufferCapacity = 32) }
     var activeUserId by remember { mutableStateOf(MultiTokenStore.getActive()?.userId) }
+    var activeAvatarUrl by remember { mutableStateOf(MultiTokenStore.getActive()?.avatarUrl) }
 
     LaunchedEffect(Unit) { liveConfig.collect { refreshConfig() } }
     LaunchedEffect(activeUserId) {
@@ -196,7 +200,7 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
 
         val dest = stack.last()
 
-        CompositionLocalProvider(LocalLiveConfig provides liveConfig, LocalLiveAcquisition provides liveAcquisition, LocalTileScale provides tileScale, LocalServerBaseUrl provides apiClient.baseUrl) {
+        CompositionLocalProvider(LocalLiveConfig provides liveConfig, LocalLiveAcquisition provides liveAcquisition, LocalTileScale provides tileScale, LocalServerBaseUrl provides apiClient.baseUrl, LocalUserAvatarUrl provides activeAvatarUrl) {
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -221,6 +225,7 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                     apiClient = apiClient,
                     onProfileSelected = { session ->
                         activeUserId = session.userId
+                        activeAvatarUrl = session.avatarUrl
                         refreshConfig()
                         push(Dest.Home(session.displayName))
                     },
@@ -235,7 +240,9 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                 PairingScreen(
                     store = store,
                     onPaired = {
-                        activeUserId = MultiTokenStore.getActive()?.userId
+                        val active = MultiTokenStore.getActive()
+                        activeUserId = active?.userId
+                        activeAvatarUrl = active?.avatarUrl
                         refreshConfig()
                         // Reset the stack so Back from Home doesn't return to pairing,
                         // and carry the freshly-paired user's display name.

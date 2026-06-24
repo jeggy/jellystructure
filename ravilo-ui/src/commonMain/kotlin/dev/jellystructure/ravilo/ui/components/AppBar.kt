@@ -8,12 +8,14 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -35,8 +37,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import dev.jellystructure.ravilo.ui.LocalUserAvatarUrl
 import dev.jellystructure.ravilo.ui.focus.dpadFocusable
 import dev.jellystructure.ravilo.ui.i18n.str
+import dev.jellystructure.ravilo.ui.seams.RemoteImage
 import dev.jellystructure.ravilo.ui.theme.RaviloDimens
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
 import dev.jellystructure.ravilo.ui.theme.Sora
@@ -207,6 +211,7 @@ private fun ProfileAvatar(
 ) {
     val colors = RaviloTheme.colors
     var focused by remember { mutableStateOf(false) }
+    val avatarUrl = LocalUserAvatarUrl.current
     Box(
         modifier = Modifier
             .size(40.dp)
@@ -222,13 +227,17 @@ private fun ProfileAvatar(
             ),
         contentAlignment = Alignment.Center,
     ) {
-        Text(
-            text = initials,
-            color = if (focused) colors.onAccent else colors.text,
-            fontSize = 14.sp,
-            fontWeight = FontWeight.Bold,
-            fontFamily = Sora,
-        )
+        if (avatarUrl != null) {
+            RemoteImage(avatarUrl, null, Modifier.fillMaxSize().clip(CircleShape))
+        } else {
+            Text(
+                text = initials,
+                color = if (focused) colors.onAccent else colors.text,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Bold,
+                fontFamily = Sora,
+            )
+        }
     }
 }
 

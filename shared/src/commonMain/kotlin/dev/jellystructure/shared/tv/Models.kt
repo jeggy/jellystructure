@@ -38,6 +38,7 @@ data class TvSession(
     @SerialName("user_id") val userId: String,
     @SerialName("display_name") val displayName: String,
     @SerialName("is_admin") val isAdmin: Boolean,
+    @SerialName("avatar_url") val avatarUrl: String? = null,
 )
 
 /** Returned by `POST /api/tv/pair/poll` when the challenge has been approved. */
