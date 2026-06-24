@@ -175,10 +175,9 @@ private fun HomeLoaded(
                         focusRequester = heroFR,
                         heightDp = heroHeight,
                         autoAdvanceSeconds = feed.autoAdvanceSeconds,
-                        onPlay = { onItemPlay(it) },
-                        onMoreInfo = { onItemSelect(it) },
-                        // My List has no backend toggle yet (matches the detail screens' placeholder button).
-                        onMyList = {},
+                        // R53: button-less — the whole hero opens detail (movie + series alike); the detail
+                        // screen owns Play/resume. Left/Right pages the carousel inside HeroCarousel.
+                        onOpenDetail = { onItemSelect(it) },
                         onUp = { navBarFR.requestFocus() },
                         // Down omitted → native focus search moves into the channel rail / first row.
                     )

@@ -169,6 +169,10 @@ body { font-family: 'Sora', sans-serif; }
 .hero-meta .rt { border: 1px solid var(--line); padding: 2px 8px; border-radius: 6px; font-size: 15px; }
 .hero-syn { font-size: 22px; line-height: 1.45; color: var(--ink-soft); margin-bottom: 30px; text-wrap: pretty; }
 .hero-actions { display: flex; align-items: center; gap: 16px; }
+/* R53: button-less hero — a focusable hit area over the whole hero; subtle inset ring on focus. */
+.hero-hit { position: absolute; inset: 0; z-index: 2; }
+.hero-cta { position: absolute; inset: 18px; border-radius: 16px; border: 3px solid transparent; transition: border-color .15s var(--ease); }
+.hero-cta.focused { border-color: var(--ring); }
 
 .btn {
   display: inline-flex; align-items: center; gap: 12px; height: 60px; padding: 0 30px; border-radius: 12px;
