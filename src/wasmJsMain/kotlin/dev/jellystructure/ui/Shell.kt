@@ -10,7 +10,9 @@ import dev.jellystructure.api.UserProfile
 import dev.jellystructure.jobs.JobEvent
 import kotlinx.browser.document
 import kotlinx.browser.window
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.MainScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
 import org.w3c.dom.HTMLElement
@@ -189,6 +191,7 @@ fun renderShell(user: UserProfile) {
 }
 
 private data class PaletteCmd(val label: String, val detail: String = "", val action: () -> Unit)
+private var paletteSearchJob: Job? = null
 
 private fun buildPaletteCommands(): List<PaletteCmd> = listOf(
     PaletteCmd("Go to Library", "Browse all media") { App.navigate("/library") },
@@ -258,37 +261,104 @@ private fun showPalette() {
         renderPaletteList((document.getElementById("cmd-palette-input") as? HTMLInputElement)?.value ?: "")
     }
     input.addEventListener("keydown") { e ->
-        val key = (e as? org.w3c.dom.events.KeyboardEvent)?.key
-        if (key == "Escape") hidePalette()
-        if (key == "Enter") {
-            val first = document.querySelector("#cmd-palette-list .palette-cmd") as? HTMLElement
-            first?.click()
+        val kev = (e as? org.w3c.dom.events.KeyboardEvent) ?: return@addEventListener
+        when (kev.key) {
+            "Escape" -> hidePalette()
+            "Enter" -> {
+                val sel = document.querySelector("#cmd-palette-list .cmdp-item.sel") as? HTMLElement
+                    ?: document.querySelector("#cmd-palette-list .cmdp-item") as? HTMLElement
+                sel?.click()
+            }
+            "ArrowDown", "ArrowUp" -> {
+                kev.preventDefault()
+                val items = document.querySelectorAll("#cmd-palette-list .cmdp-item")
+                if (items.length == 0) return@addEventListener
+                val curEl = document.querySelector("#cmd-palette-list .cmdp-item.sel")
+                curEl?.classList?.remove("sel")
+                val curIdx = if (curEl != null) (0 until items.length).indexOfFirst { items.item(it) == curEl } else -1
+                val nextIdx = when {
+                    kev.key == "ArrowDown" -> if (curIdx < 0) 0 else (curIdx + 1) % items.length
+                    curIdx < 0 -> items.length - 1
+                    else -> (curIdx - 1 + items.length) % items.length
+                }
+                (items.item(nextIdx) as? HTMLElement)?.classList?.add("sel")
+            }
         }
     }
 }
 
 private fun renderPaletteList(query: String) {
     val listEl = document.getElementById("cmd-palette-list") as? HTMLElement ?: return
+
+    paletteSearchJob?.cancel()
+    paletteSearchJob = null
+
     val cmds = buildPaletteCommands()
     val filtered = if (query.isBlank()) cmds else cmds.filter {
         it.label.contains(query, ignoreCase = true) || it.detail.contains(query, ignoreCase = true)
     }
-    if (filtered.isEmpty()) {
-        listEl.innerHTML = """<div style="padding:12px 16px;color:var(--ink-soft);font-size:.88rem;">No commands match</div>"""
-        return
+
+    val sectionHd = """<div style="padding:4px 12px 2px;font-size:.65rem;text-transform:uppercase;letter-spacing:.07em;color:var(--ink-soft);font-weight:600;">"""
+
+    val cmdsHtml = buildString {
+        if (filtered.isNotEmpty()) {
+            if (query.length >= 2) append("${sectionHd}Commands</div>")
+            filtered.forEachIndexed { i, cmd ->
+                append("""<div class="cmdp-item" data-ci="$i">""")
+                append("""<span class="cmdp-ico">→</span>""")
+                append("""<span style="flex:1;min-width:0;"><span class="cmdp-label">${cmd.label.esc()}</span>""")
+                if (cmd.detail.isNotBlank()) append("""<br><span class="cmdp-sub">${cmd.detail.esc()}</span>""")
+                append("""</span></div>""")
+            }
+        } else if (query.isNotBlank() && query.length < 2) {
+            append("""<div class="cmdp-empty">Keep typing…</div>""")
+        } else if (query.isNotBlank()) {
+            append("""<div class="cmdp-empty">No commands match</div>""")
+        }
+        if (query.length >= 2) {
+            append("""<div id="cmd-palette-media"><div class="cmdp-empty" style="padding:8px 16px;">Searching library…</div></div>""")
+        }
     }
-    listEl.innerHTML = filtered.joinToString("") { cmd ->
-        """<div class="palette-cmd" style="display:flex;flex-direction:column;padding:8px 16px;cursor:pointer;gap:1px;"
-               onmouseover="this.style.background='var(--fill-2)'" onmouseout="this.style.background=''">
-             <span style="font-size:.9rem;font-weight:500;">${cmd.label.esc()}</span>
-             ${if (cmd.detail.isNotBlank()) """<span style="font-size:.78rem;color:var(--ink-soft);">${cmd.detail.esc()}</span>""" else ""}
-           </div>"""
+
+    listEl.innerHTML = cmdsHtml
+
+    // Wire command item clicks
+    val cmdItems = listEl.querySelectorAll(".cmdp-item[data-ci]")
+    for (i in 0 until cmdItems.length) {
+        val el = cmdItems.item(i) as? HTMLElement ?: continue
+        val idx = el.getAttribute("data-ci")?.toIntOrNull() ?: continue
+        el.addEventListener("click") { hidePalette(); filtered.getOrNull(idx)?.action?.invoke() }
     }
-    val rows = listEl.querySelectorAll(".palette-cmd")
-    filtered.forEachIndexed { i, cmd ->
-        (rows.item(i) as? HTMLElement)?.addEventListener("click") {
-            hidePalette()
-            cmd.action()
+
+    if (query.length < 2) return
+
+    // Debounced media search
+    paletteSearchJob = MainScope().launch {
+        delay(200)
+        val mediaSection = document.getElementById("cmd-palette-media") as? HTMLElement ?: return@launch
+        val items = MediaApi.list(search = query, pageSize = 6)?.items ?: emptyList()
+        if (items.isEmpty()) {
+            mediaSection.innerHTML = """<div class="cmdp-empty" style="padding:8px 16px;">No titles found</div>"""
+            return@launch
+        }
+        val sep = if (filtered.isNotEmpty()) """<hr style="border:none;border-top:1px solid var(--line);margin:4px 0 0;">""" else ""
+        mediaSection.innerHTML = sep + "${sectionHd}Library</div>" + items.joinToString("") { item ->
+            val isTv = item.kind == dev.jellystructure.model.MediaKind.TV_SHOW
+            val kindLabel = if (isTv) "TV" else "MOVIE"
+            val yearStr = if (item.year != null) " (${item.year})" else ""
+            val ico = if (isTv) "📺" else "🎬"
+            """<div class="cmdp-item" data-mid="${item.id.esc()}">
+               <span class="cmdp-ico">$ico</span>
+               <span style="flex:1;min-width:0;"><span class="cmdp-label">${item.title.esc()}$yearStr</span></span>
+               <span class="cmdp-kind">$kindLabel</span>
+             </div>"""
+        }
+        // Wire media item clicks
+        val mediaItems = mediaSection.querySelectorAll(".cmdp-item[data-mid]")
+        for (i in 0 until mediaItems.length) {
+            val el = mediaItems.item(i) as? HTMLElement ?: continue
+            val mid = el.getAttribute("data-mid") ?: continue
+            el.addEventListener("click") { hidePalette(); App.navigate("/media/$mid") }
         }
     }
 }
