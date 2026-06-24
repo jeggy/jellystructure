@@ -23,6 +23,13 @@ from a TV-UI review, **not yet built**:
 - **[R53](requirements/phase-R53-tv-hero-buttonless.md)** (FR-RH1) — remove the 3 hero buttons; the
   **whole hero is clickable → detail**, Left/Right pages (cyclic); move page **dots to the right**
   (matches the design's already-right `.hero-dots`).
+- **[R54](requirements/phase-R54-tv-focus-reveal-label.md)** (FR-RF1) — focusing a tile only reveals the
+  **poster**, clipping its label; make the focus/bring-into-view target the **whole tile** (poster +
+  title/subtitle) so it scrolls a bit further, keeping the draw-only scale on the poster (R42).
+- **[R55](requirements/phase-R55-tv-back-scrolls-to-top.md)** (FR-RBK1) — Back on content pages
+  (Home/Browse/Channel/Search/Discover) **scrolls to top** first, only popping/exiting when already at
+  top (harder to close the app by accident); **media item pages excluded**; move focus to a top target
+  so bring-into-view doesn't yank the scroll back down.
 
 **Phases R01–R50 complete.** R48–R50 (Discover / Top 10: `/api/tv/discover` API + per-user
 `DiscoverConfig`, the Compose Top 10 screen + dedicated detail with live acquisition status, and the
