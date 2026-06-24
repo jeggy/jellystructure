@@ -1,6 +1,7 @@
 package dev.jellystructure.ravilo.ui.screens
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -11,7 +12,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -75,36 +78,44 @@ private fun DetailContent(
     val scrim = remember(colors.background) {
         Brush.verticalGradient(0f to Color.Transparent, 0.55f to colors.background.copy(alpha = 0.85f), 1f to colors.background)
     }
+    val scrollState = rememberScrollState()
 
     Box(Modifier.fillMaxSize()) {
-        // Full-bleed backdrop + scrim
-        Box(Modifier.fillMaxWidth().height(420.dp)) {
+        // Fixed full-bleed backdrop at top
+        Box(Modifier.fillMaxWidth().height(380.dp)) {
             tmdbImg(e.backdropPath)?.let { RemoteImage(it, e.title, Modifier.fillMaxSize()) }
             Box(Modifier.matchParentSize().background(scrim))
         }
 
-        Column(Modifier.fillMaxSize().padding(horizontal = RaviloDimens.sectionPadH).padding(top = 220.dp)) {
+        // Scrollable content overlay — D-pad DOWN from button reaches WhyTrending
+        Column(
+            Modifier
+                .fillMaxSize()
+                .verticalScroll(scrollState)
+                .padding(horizontal = RaviloDimens.sectionPadH)
+                .padding(top = 200.dp, bottom = 48.dp),
+        ) {
             // kicker: source + rank chip
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("${detail.sourceLabel} via ${detail.attribution}", color = colors.accent, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                Text("${detail.sourceLabel} via ${detail.attribution}", color = colors.accent, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                 Spacer(Modifier.width(10.dp))
                 Text(
                     "#${e.rank} in ${e.listId.substringAfterLast('-').uppercase()}",
-                    color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
+                    color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.SemiBold,
                     modifier = Modifier.background(colors.accent.copy(alpha = 0.9f), RoundedCornerShape(6.dp)).padding(horizontal = 8.dp, vertical = 2.dp),
                 )
             }
             Spacer(Modifier.height(8.dp))
-            Text(e.title, color = colors.text, fontSize = 40.sp, fontWeight = FontWeight.Bold, fontFamily = SpaceGrotesk)
+            Text(e.title, color = colors.text, fontSize = 28.sp, fontWeight = FontWeight.Bold, fontFamily = SpaceGrotesk)
             Spacer(Modifier.height(6.dp))
             Text(
                 listOfNotNull(e.year?.toString(), if (e.kind == MediaKind.SERIES) "Series" else "Movie").joinToString("  ·  "),
-                color = colors.textSecondary, fontSize = 15.sp,
+                color = colors.textSecondary, fontSize = 14.sp,
             )
             // live status line
             discoverStatusLabel(a)?.let {
                 Spacer(Modifier.height(6.dp))
-                Text(it, color = discoverStatusColor(a.status, colors.accent), fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                Text(it, color = discoverStatusColor(a.status, colors.accent), fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
             }
             a.reason?.takeIf { a.status == AcquisitionStatus.FAILED }?.let {
                 Spacer(Modifier.height(2.dp))
@@ -112,7 +123,7 @@ private fun DetailContent(
             }
             Spacer(Modifier.height(14.dp))
             e.overview?.takeIf { it.isNotBlank() }?.let {
-                Text(it, color = colors.textSecondary, fontSize = 15.sp, modifier = Modifier.fillMaxWidth(0.62f))
+                Text(it, color = colors.textSecondary, fontSize = 14.sp, modifier = Modifier.fillMaxWidth(0.66f))
                 Spacer(Modifier.height(18.dp))
             }
 
@@ -121,6 +132,7 @@ private fun DetailContent(
 
             Spacer(Modifier.height(22.dp))
             WhyTrending(detail)
+            Spacer(Modifier.height(8.dp))
         }
     }
 }
@@ -169,15 +181,21 @@ private fun WhyTrending(detail: DiscoverDetail) {
         add(trend)
     }
     Column(
-        Modifier.background(colors.surface.copy(alpha = 0.6f), RoundedCornerShape(12.dp)).padding(16.dp),
+        Modifier
+            .fillMaxWidth(0.5f)
+            .background(colors.surface.copy(alpha = 0.6f), RoundedCornerShape(12.dp))
+            .focusable()
+            .padding(14.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        Text("Why it's trending", color = colors.text, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+        Text("Why it's trending", color = colors.text, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
         Row(horizontalArrangement = Arrangement.spacedBy(18.dp)) {
-            lines.forEach { Text(it, color = colors.textSecondary, fontSize = 14.sp) }
+            lines.forEach { Text(it, color = colors.textSecondary, fontSize = 13.sp) }
         }
         if (e.views == null) {
-            Text("Country charts are ranking only — no view counts.", color = colors.textSecondary.copy(alpha = 0.7f), fontSize = 12.sp)
+            Text("Country charts are ranking only — no view counts.", color = colors.textSecondary.copy(alpha = 0.7f), fontSize = 11.sp)
+        } else {
+            Text("Views are Netflix hours watched in the chart week.", color = colors.textSecondary.copy(alpha = 0.7f), fontSize = 11.sp)
         }
     }
 }

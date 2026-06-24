@@ -10,6 +10,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -168,6 +170,8 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
             }
         }
         var stack by remember { mutableStateOf(listOf<Dest>(initialDest)) }
+        // Top-level: track whether the Top 10 tab is available; set from HomeStore, propagated to all screens.
+        var discoverAvailable by remember { mutableStateOf(false) }
 
         // R58: first-ever launch — initialDest called setActive() after activeUserId was already
         // initialized to null; sync the value so the WS LaunchedEffect fires and self-heals.
@@ -244,6 +248,8 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
 
             is Dest.Home -> {
                 val store = keptStore("home:${dest.displayName}") { HomeStore(apiClient) }
+                val da by store.discoverAvailable.collectAsState()
+                SideEffect { discoverAvailable = da }
                 HomeScreen(
                     store = store,
                     displayName = dest.displayName,
@@ -298,14 +304,16 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                     kind = dest.kind,
                     store = store,
                     displayName = dest.displayName,
+                    discoverAvailable = discoverAvailable,
                     onBack = { pop() },
                     onNavSelect = { idx ->
                         when (idx) {
                             0 -> { stack = listOf(Dest.Home(dest.displayName)) }
                             1 -> { stack = stack.dropLast(1) + Dest.Browse(BrowseKind.MOVIES, dest.displayName) }
                             2 -> { stack = stack.dropLast(1) + Dest.Browse(BrowseKind.SERIES, dest.displayName) }
-                            3 -> { stack = stack.dropLast(1) + Dest.Browse(BrowseKind.MY_LIST, dest.displayName) }
-                            4 -> push(Dest.Discover(dest.displayName))
+                            3 -> if (discoverAvailable) push(Dest.Discover(dest.displayName))
+                                 else { stack = stack.dropLast(1) + Dest.Browse(BrowseKind.MY_LIST, dest.displayName) }
+                            4 -> { stack = stack.dropLast(1) + Dest.Browse(BrowseKind.MY_LIST, dest.displayName) }
                             else -> {}
                         }
                     },

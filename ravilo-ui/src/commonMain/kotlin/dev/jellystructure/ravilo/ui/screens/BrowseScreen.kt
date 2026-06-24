@@ -104,6 +104,7 @@ fun BrowseScreen(
     onItemSelect: (MediaCard) -> Unit,
     onProfile: (() -> Unit)? = null,
     onSearch: (() -> Unit)? = null,
+    discoverAvailable: Boolean = false,
 ) {
     val colors = RaviloTheme.colors
     val spaceGrotesk = SpaceGrotesk
@@ -121,10 +122,15 @@ fun BrowseScreen(
     val navBarFR = remember { FocusRequester() }
     LaunchedEffect(Unit) { runCatching { navBarFR.requestFocus() } }
 
+    val navItems = buildList {
+        add(str("nav.home")); add(str("nav.movies")); add(str("nav.series"))
+        if (discoverAvailable) add("Top 10")
+        add(str("nav.my_list"))
+    }
     val activeNav = when (kind) {
         BrowseKind.MOVIES -> 1
         BrowseKind.SERIES -> 2
-        BrowseKind.MY_LIST -> 3
+        BrowseKind.MY_LIST -> if (discoverAvailable) 4 else 3
         BrowseKind.ALL -> 0
     }
 
@@ -179,6 +185,7 @@ fun BrowseScreen(
         }
 
         AppBar(
+            navItems = navItems,
             activeNav = activeNav,
             onNavSelect = onNavSelect,
             navFR = navBarFR,
