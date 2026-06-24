@@ -37,6 +37,7 @@ import dev.jellystructure.ravilo.ui.focus.dpadFocusable
 import dev.jellystructure.ravilo.ui.seams.RemoteImage
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
 import dev.jellystructure.ravilo.ui.theme.SpaceGrotesk
+import dev.jellystructure.shared.tv.ChannelButtonPadding
 
 private class BrandFill(val colors: List<Color>)
 
@@ -83,6 +84,7 @@ fun ChannelCard(
     name: String,
     logoUrl: String?,
     brandColor: String?,
+    logoPadding: ChannelButtonPadding? = null,
     focusRequester: FocusRequester? = null,
     onSelect: (() -> Unit)? = null,
 ) {
@@ -180,12 +182,19 @@ fun ChannelCard(
         )
 
         if (logoUrl != null) {
-            // R39: the logo fills the whole button (ContentScale.Crop), clipped by the card's rounded
-            // corners — no padding/letterboxing. A transparent logo shows the brand fill behind it.
+            val logoPad = logoPadding
             RemoteImage(
                 url = logoUrl,
                 contentDescription = name,
-                modifier = Modifier.fillMaxSize(),
+                modifier = if (logoPad != null)
+                    Modifier.fillMaxSize().padding(
+                        start = logoPad.left.dp,
+                        top = logoPad.top.dp,
+                        end = logoPad.right.dp,
+                        bottom = logoPad.bottom.dp,
+                    )
+                else
+                    Modifier.fillMaxSize(),
             )
         } else {
             Text(

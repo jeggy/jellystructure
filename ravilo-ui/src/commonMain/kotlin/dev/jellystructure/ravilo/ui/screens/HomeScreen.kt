@@ -204,6 +204,7 @@ private fun HomeLoaded(
                         name = ch.name,
                         logoUrl = resolvedLogoUrl,
                         brandColor = ch.brandColor,
+                        logoPadding = if (ch.style == dev.jellystructure.shared.tv.ChannelStyle.LOGO) ch.paddingLogo else ch.paddingText,
                         onSelect = { onChannelSelect(ch) },
                     )
                 }
