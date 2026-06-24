@@ -21,9 +21,12 @@ import dev.jellystructure.shared.tv.RowKind
 import dev.jellystructure.shared.tv.Skin
 import dev.jellystructure.shared.tv.TileShape
 import dev.jellystructure.shared.tv.UiDensity
+import kotlin.js.JsString
 import kotlinx.browser.document
 import kotlinx.browser.window
 import dev.jellystructure.api.MediaApi
+import org.w3c.files.File
+import org.w3c.files.FileReader
 import dev.jellystructure.model.MediaItem
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -917,9 +920,15 @@ private fun openChannelEditorPage(container: Element, scope: CoroutineScope, idx
                 <label class="tiny muted">Name</label>
                 <input id="ch-ed-name" class="input" value="${c.name.htmlEsc()}" placeholder="Channel name" style="width:100%;margin-top:4px">
               </div>
-              <div style="margin-top:10px">
-                <label class="tiny muted">Logo URL (for Logo style)</label>
-                <input id="ch-ed-logo" class="input" value="${(c.logoUrl ?: "").htmlEsc()}" placeholder="https://…" style="width:100%;margin-top:4px">
+              <div style="margin-top:10px" id="ch-logo-section">
+                <label class="tiny muted">Logo (for Logo style)</label>
+                ${(c.logoUrl ?: "").let { ls -> if (ls.isNotBlank()) """<div style="margin:6px 0 8px;height:44px;display:flex;align-items:center;justify-content:center;background:var(--fill-2);border-radius:8px;overflow:hidden;padding:4px"><img id="ch-logo-preview-img" src="${ls.htmlEsc()}" alt="" style="max-height:36px;max-width:140px;object-fit:contain"></div>""" else """<div id="ch-logo-preview-img" style="display:none"></div>""" }}
+                <div style="display:flex;gap:6px;margin-top:6px;align-items:center">
+                  <input id="ch-ed-logo" class="input" style="flex:1;font-size:.8rem" value="${(c.logoUrl ?: "").htmlEsc()}" placeholder="https://… or upload below">
+                  <button id="ch-logo-upload-btn" class="btn" title="Upload image file" style="flex:none;padding:0 10px;height:34px;font-size:.8rem">⬆ Upload</button>
+                  <input type="file" id="ch-logo-file" accept="image/png,image/svg+xml,image/jpeg,image/webp" style="display:none">
+                </div>
+                <div id="ch-logo-library" style="margin-top:8px"></div>
               </div>
               <div style="margin-top:14px">
                 <label class="tiny muted">Brand fill</label>
@@ -1036,6 +1045,66 @@ private fun openChannelEditorPage(container: Element, scope: CoroutineScope, idx
             updateColorPreview(preset)
             Regex("#[0-9a-fA-F]{3,8}").find(preset)?.value?.let { nativeInput?.value = it }
         }
+    }
+
+    // Logo upload + library
+    fun setLogoUrl(url: String) {
+        (container.querySelector("#ch-ed-logo") as? HTMLInputElement)?.value = url
+        val previewEl = container.querySelector("#ch-logo-preview-img") as? HTMLElement
+        if (previewEl != null) {
+            if (url.isNotBlank()) {
+                previewEl.setAttribute("src", url)
+                previewEl.setAttribute("style", "max-height:36px;max-width:140px;object-fit:contain")
+                previewEl.parentElement?.setAttribute("style", "margin:6px 0 8px;height:44px;display:flex;align-items:center;justify-content:center;background:var(--fill-2);border-radius:8px;overflow:hidden;padding:4px")
+            } else {
+                previewEl.setAttribute("style", "display:none")
+            }
+        }
+    }
+    fun renderLogoLibrary(logos: List<dev.jellystructure.shared.tv.ChannelLogo>, currentUrl: String) {
+        val lib = container.querySelector("#ch-logo-library") as? HTMLElement ?: return
+        if (logos.isEmpty()) { lib.innerHTML = ""; return }
+        lib.innerHTML = """<div class="tiny muted" style="margin-bottom:6px">Uploaded logos — click to use</div><div style="display:flex;gap:6px;flex-wrap:wrap">""" +
+            logos.joinToString("") { logo ->
+                val ring = if (logo.url == currentUrl) "outline:2px solid var(--hi);outline-offset:1px;" else ""
+                """<button data-logo-pick="${logo.url.htmlEsc()}" title="${logo.label.htmlEsc()}" style="width:60px;height:36px;border:1px solid var(--line);border-radius:7px;background:var(--fill-2);cursor:pointer;overflow:hidden;display:flex;align-items:center;justify-content:center;padding:3px;$ring"><img src="${logo.url.htmlEsc()}" alt="${logo.label.htmlEsc()}" style="max-width:100%;max-height:100%;object-fit:contain"></button>"""
+            } + "</div>"
+        lib.querySelectorAll("[data-logo-pick]").let { nodes ->
+            for (i in 0 until nodes.length) {
+                val btn = nodes.item(i) as? HTMLElement ?: continue
+                val url = btn.getAttribute("data-logo-pick") ?: continue
+                btn.addEventListener("click") { _ ->
+                    setLogoUrl(url)
+                    renderLogoLibrary(logos, url)
+                }
+            }
+        }
+    }
+    val fileInput = container.querySelector("#ch-logo-file") as? HTMLInputElement
+    container.querySelector("#ch-logo-upload-btn")?.addEventListener("click") { _ -> fileInput?.click() }
+    fileInput?.addEventListener("change") { _ ->
+        val file: org.w3c.files.File = fileInput.files?.item(0) ?: return@addEventListener
+        val reader = org.w3c.files.FileReader()
+        reader.onload = { _ ->
+            val dataUrl = (reader.result as? JsString)?.toString() ?: ""
+            if (dataUrl.isNotEmpty()) scope.launch {
+                runCatching { RaviloApi.uploadChannelLogo(file.name, dataUrl) }.onSuccess { logo ->
+                    setLogoUrl(logo.url)
+                    val logos = runCatching { RaviloApi.listChannelLogos() }.getOrDefault(emptyList())
+                    renderLogoLibrary(logos, logo.url)
+                }.onFailure {
+                    (container.querySelector("#ch-ed-msg") as? HTMLElement)?.let { msg ->
+                        msg.innerHTML = """<div class="alert-bad">Upload failed: ${it.message?.htmlEsc()}</div>"""
+                        msg.setAttribute("style", "display:block;margin-bottom:12px")
+                    }
+                }
+            }
+        }
+        reader.readAsDataURL(file)
+    }
+    scope.launch {
+        val logos = runCatching { RaviloApi.listChannelLogos() }.getOrDefault(emptyList())
+        renderLogoLibrary(logos, c.logoUrl ?: "")
     }
 
     // Hero enable toggle
