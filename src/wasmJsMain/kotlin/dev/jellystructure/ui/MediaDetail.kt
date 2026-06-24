@@ -2672,7 +2672,8 @@ private fun showHeroBuilder(item: MediaItem, scope: CoroutineScope) {
         val overlay = document.createElement("div") as HTMLElement
         overlay.id = "hero-builder-overlay"
         overlay.setAttribute("style", "position:fixed;inset:0;background:#000a;display:flex;align-items:center;justify-content:center;z-index:1100;padding:20px;")
-        val userOpts = users.joinToString("") { """<option value="${it.id}">${it.displayName.esc()}</option>""" }
+        val userOpts = """<option value="__global__">🌐 Global (all users)</option>""" +
+            users.joinToString("") { """<option value="${it.id}">${it.displayName.esc()}</option>""" }
         val badgeOpts = listOf("", "New Season", "4K", "Top 10", "Premiere").joinToString("") { """<option value="$it">${if (it.isEmpty()) "None" else it}</option>""" }
         val backdrop = if (item.backdropPath != null) "https://image.tmdb.org/t/p/w780${item.backdropPath}" else ""
         overlay.innerHTML = """
@@ -2710,12 +2711,15 @@ private fun showHeroBuilder(item: MediaItem, scope: CoroutineScope) {
             val tag = (document.getElementById("hb-tag") as? HTMLInputElement)?.value?.ifEmpty { null }
             val logo = (document.getElementById("hb-logo") as? HTMLInputElement)?.checked ?: true
             overlay.parentElement?.removeChild(overlay)
+            val isGlobal = uid == "__global__"
             scope.launch {
-                val cfg = runCatching { RaviloApi.getConfig(uid) }.getOrNull()
-                if (cfg == null) { showDetailMsg("Could not load viewer config.", false); return@launch }
+                val cfg = if (isGlobal) runCatching { RaviloApi.getConfigWithMeta(scope = "global") }.getOrNull()?.config
+                          else runCatching { RaviloApi.getConfig(uid) }.getOrNull()
+                if (cfg == null) { showDetailMsg("Could not load config.", false); return@launch }
                 val itemId = item.jellyfinId ?: item.id
                 val newCfg = cfg.copy(heroes = cfg.heroes.filter { it.itemId != itemId } + HeroConfig(itemId = itemId, badge = badge, tagline = tag, clearlogoOverlay = logo))
-                val ok = runCatching { RaviloApi.putConfig(uid, newCfg); true }.getOrDefault(false)
+                val ok = if (isGlobal) runCatching { RaviloApi.putGlobalConfig(newCfg); true }.getOrDefault(false)
+                         else runCatching { RaviloApi.putConfig(uid, newCfg); true }.getOrDefault(false)
                 showDetailMsg(if (ok) "Featured in Ravilo carousel." else "Save failed.", ok)
             }
         }
