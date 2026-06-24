@@ -219,8 +219,8 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
     val activeTab = if (initialTab != null && tabIds.contains(initialTab)) initialTab else "overview"
 
     val tabBarHtml = tabItems.joinToString("") { (key, label) ->
-        val active = if (key == activeTab) " active" else ""
-        """<span class="seg-item$active" data-tab="$key">$label</span>"""
+        val cls = if (key == activeTab) """ class="on"""" else ""
+        """<span$cls data-tab="$key">$label</span>"""
     }
 
     // Combined series-language card for the left rail — replaces both the old seriesLangCard
@@ -405,22 +405,17 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
               $resolverTraceHtml
             </div>"""
 
-    // The overview panel body differs by layout: movies keep the left rail inside it; TV shows
-    // render only the editing column because the rail lives outside (persists across tabs).
-    val overviewPanelInner = if (isTvShow) {
-        """$embeddedTracksSummary
-          $overviewMainHtml"""
-    } else {
-        """$embeddedTracksSummary
+    // Both movies and TV shows keep the left rail inside the overview panel so other tabs
+    // (Tracks / Episodes / Artwork / NFO / History) are full-width.
+    val overviewPanelInner = """$embeddedTracksSummary
           <div class="row" style="align-items:flex-start;gap:22px;flex-wrap:wrap;">
             $leftRailHtml
             $overviewMainHtml
           </div>"""
-    }
 
     // The tab bar + all tab panels.
     val tabsAndPanelsHtml = """
-        <div class="seg" id="detail-tabs" style="margin-bottom:16px;">$tabBarHtml</div>
+        <div class="tabs2" id="detail-tabs">$tabBarHtml</div>
 
         <div id="tab-overview" ${if (activeTab != "overview") """style="display:none;" """ else ""}>
           $overviewPanelInner
@@ -470,17 +465,8 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
           </div>
         </div>"""
 
-    // For TV shows the rail sits beside the tabs and persists; movies keep the classic single column.
-    val bodyHtml = if (isTvShow) {
-        """<div class="row" style="align-items:flex-start;gap:22px;flex-wrap:wrap;">
-             $leftRailHtml
-             <div class="col fill" style="min-width:320px;">
-               $tabsAndPanelsHtml
-             </div>
-           </div>"""
-    } else {
-        tabsAndPanelsHtml
-    }
+    // Tabs at top level; left rail is inside the overview panel — other tabs are full-width.
+    val bodyHtml = tabsAndPanelsHtml
 
     container.innerHTML = """
         <div class="pagebar">
@@ -654,15 +640,15 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
 
     // Tab switching — updates URL so tabs are deep-linkable and Back/Forward work
     document.getElementById("detail-tabs")?.let { tabBar ->
-        tabBar.querySelectorAll(".seg-item").let { segItems ->
+        tabBar.querySelectorAll("span[data-tab]").let { segItems ->
             for (i in 0 until segItems.length) {
                 val segItem = segItems.item(i) as? HTMLElement ?: continue
                 segItem.addEventListener("click") {
                     val tab = segItem.getAttribute("data-tab") ?: return@addEventListener
                     for (j in 0 until segItems.length) {
-                        (segItems.item(j) as? HTMLElement)?.className = "seg-item"
+                        (segItems.item(j) as? HTMLElement)?.className = ""
                     }
-                    segItem.className = "seg-item active"
+                    segItem.className = "on"
                     tabIds.forEach { id ->
                         val panel = document.getElementById("tab-$id") as? HTMLElement
                         panel?.style?.display = if (id == tab) "block" else "none"
