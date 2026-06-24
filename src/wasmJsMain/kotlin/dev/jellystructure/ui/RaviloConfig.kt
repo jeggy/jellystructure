@@ -100,7 +100,7 @@ private fun renderEmptyState(container: Element, scope: CoroutineScope) {
           <div class="tiny" style="flex:1">Choose a user to edit their Ravilo home layout.</div>
           <select id="rav-user-pick" class="input" style="width:auto;min-width:180px;font-size:.85rem">$userOptions</select>
         </div>
-        <div style="display:flex;flex-direction:column;align-items:center;gap:12px;padding:48px 16px;color:var(--ink-soft)">
+        <div id="rav-empty-body" style="display:flex;flex-direction:column;align-items:center;gap:12px;padding:48px 16px;color:var(--ink-soft)">
           <span style="font-size:2rem;opacity:.35">📺</span>
           <span style="font-size:.95rem">Select a Jellyfin user to start editing their Ravilo layout.</span>
         </div>
@@ -110,6 +110,10 @@ private fun renderEmptyState(container: Element, scope: CoroutineScope) {
         val picked = sel.value
         if (picked.isBlank()) return@addEventListener
         currentUserId = picked
+        val userName = users.find { it.id == picked }?.displayName ?: picked
+        (sel as? HTMLElement)?.setAttribute("disabled", "disabled")
+        (container.querySelector("#rav-empty-body") as? HTMLElement)?.innerHTML =
+            """<p class="page-sub" style="color:var(--ink-soft)">Loading ${userName.htmlEsc()}…</p>"""
         scope.launch {
             facets = loadFacets()
             currentConfig = runCatching { RaviloApi.getConfig(currentUserId) }.getOrDefault(RaviloConfig())
@@ -207,6 +211,8 @@ private fun wireShell(container: Element, scope: CoroutineScope) {
     container.querySelector("#rav-user-pick")?.addEventListener("change") { _ ->
         val sel = container.querySelector("#rav-user-pick") as? HTMLSelectElement ?: return@addEventListener
         currentUserId = sel.value
+        (container.querySelector("#rav-sections") as? HTMLElement)?.innerHTML =
+            """<p class="page-sub" style="color:var(--ink-soft);padding:24px 0">Loading…</p>"""
         scope.launch {
             currentConfig = runCatching { RaviloApi.getConfig(currentUserId) }.getOrDefault(RaviloConfig())
             discoverSpecs = runCatching { RaviloApi.getDiscoverLists(currentConfig.discover.region) }.getOrDefault(emptyList())
