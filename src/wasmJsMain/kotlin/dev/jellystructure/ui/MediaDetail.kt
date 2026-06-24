@@ -1902,8 +1902,8 @@ private var artLang = ""        // unified language/text filter (Phase 48):
                                 // "" = All · "textless" = no text · "withtext" = any language · else a language code
 private var artHiRes = false
 private var artSort = "vote"    // vote | res
-private var artStaged: String? = null   // staged source: a TMDB file_path or a full URL
-private var artStagedThumb: String? = null
+private var lbCandidates: List<dev.jellystructure.api.ArtworkCandidate> = emptyList()
+private var lbIdx = 0
 
 /** Build a multipart upload via the browser FormData + fetch (drag-drop / file pick). */
 private fun jsUpload(url: String, type: String, file: JsAny): Unit =
@@ -2061,7 +2061,7 @@ private suspend fun selectArtTarget(i: Int) {
     val t = artTargets.getOrNull(i) ?: return
     gallery.innerHTML = """<span class="muted tiny">Loading candidates…</span>"""
     artResp = galleryFetch(t)
-    artStaged = null; artStagedThumb = null; artHiRes = false; artSort = "vote"
+    artHiRes = false; artSort = "vote"
     // Resolved-first, never-empty fallback: resolved lang → textless → All.
     val cands = artResp?.candidates ?: emptyList()
     val resolved = artResp?.resolvedLanguage
@@ -2125,30 +2125,24 @@ private fun renderArtGallery() {
 
     val cards = if (shown.isEmpty()) {
         """<div class="muted tiny" style="padding:18px 0;">No candidates for this filter.</div>"""
-    } else shown.joinToString("") { c ->
-        val onDisk = c.onDisk
-        val staged = artStaged == c.filePath
-        val cls = "art-card" + (if (onDisk) " ondisk" else "") + (if (staged) " staged" else "")
-        """<div class="$cls" data-path="${c.filePath.esc()}" style="aspect-ratio:${t.aspect};">
-              <img src="$TMDB_IMG_THUMB${c.filePath}" loading="lazy" alt="">
-              ${if (onDisk) """<span class="art-ribbon">ON DISK</span>""" else ""}
-              <div class="art-card-meta">
-                <span class="art-pill">${langLabel(c.lang)}</span>
-                <span class="art-pill">★ ${fmt1(c.voteAverage)}</span>
-                <span class="art-pill">${c.width}×${c.height}</span>
-              </div>
-           </div>"""
+    } else {
+        lbCandidates = shown
+        shown.mapIndexed { idx, c ->
+            val onDisk = c.onDisk
+            val cls = "art-card" + (if (onDisk) " ondisk" else "")
+            """<div class="$cls" data-path="${c.filePath.esc()}" data-lbidx="$idx" style="aspect-ratio:${t.aspect};">
+                  <img src="$TMDB_IMG_THUMB${c.filePath}" loading="lazy" alt="">
+                  ${if (onDisk) """<span class="art-ribbon">ON DISK</span>""" else ""}
+                  <button class="art-zoom" data-lbidx="$idx" title="Zoom">⤢</button>
+                  <div class="art-card-meta">
+                    <span class="art-pill">${langLabel(c.lang)}</span>
+                    <span class="art-pill">★ ${fmt1(c.voteAverage)}</span>
+                    <span class="art-pill">${c.width}×${c.height}</span>
+                  </div>
+               </div>"""
+        }.joinToString("")
     }
-
-    val footer = if (artStaged != null) {
-        """<div class="art-foot">
-              <img src="${artStagedThumb ?: (TMDB_IMG_THUMB + artStaged)}" class="art-foot-thumb" alt="">
-              <span class="tiny">Staged — not yet written to disk.</span>
-              <span class="spacer"></span>
-              <button id="art-discard" class="btn sm ghost">Discard</button>
-              <button id="art-save" class="btn sm">Save to disk</button>
-           </div>"""
-    } else ""
+    val footer = ""
 
     val canUpload = t.kind == "asset" || t.kind == "episode"
     gallery.innerHTML = """
@@ -2197,44 +2191,59 @@ private fun wireArtGallery() {
     (document.querySelector("#art-gallery .art-showall") as? HTMLElement)?.addEventListener("click") {
         artLang = ""; renderArtGallery(); wireArtGallery()
     }
+    // Card click → write-through save immediately
     document.querySelectorAll("#art-gallery .art-card").let { els ->
         for (i in 0 until els.length) {
             val el = els.item(i) as? HTMLElement ?: continue
-            el.addEventListener("click") {
+            el.addEventListener("click") { ev ->
+                // Don't trigger if the zoom button was clicked
+                if ((ev.target as? HTMLElement)?.classList?.contains("art-zoom") == true) return@addEventListener
                 val path = el.getAttribute("data-path") ?: return@addEventListener
-                artStaged = if (artStaged == path) null else path
-                artStagedThumb = null
-                renderArtGallery(); wireArtGallery()
+                scope.launch {
+                    el.style.opacity = "0.6"
+                    showDetailMsg("Saving ${t.label}…", true)
+                    val ok = gallerySave(t, path)
+                    el.style.opacity = ""
+                    if (ok) {
+                        showDetailMsg("${t.label} saved to disk.", true)
+                        t.onDisk = true; renderArtRail(); wireArtRail(); selectArtTarget(artSel)
+                    } else {
+                        val perm = MediaApi.checkNfoWritable(artId)
+                        if (perm != null && !perm.writable) {
+                            showNfoPermBanner(perm.error ?: "write permission check failed", perm.path)
+                        } else {
+                            showDetailMsg("Save failed.", false)
+                        }
+                    }
+                }
             }
         }
     }
-    document.getElementById("art-discard")?.addEventListener("click") {
-        artStaged = null; artStagedThumb = null; renderArtGallery(); wireArtGallery()
-    }
-    document.getElementById("art-save")?.addEventListener("click") {
-        val source = artStaged ?: return@addEventListener
-        val btn = document.getElementById("art-save") as? HTMLElement
-        btn?.setAttribute("disabled", "true"); btn?.textContent = "Saving…"
-        scope.launch {
-            val ok = gallerySave(t, source)
-            if (ok) {
-                showDetailMsg("${t.label} saved to disk.", true)
-                t.onDisk = true; renderArtRail(); wireArtRail(); selectArtTarget(artSel)
-            } else {
-                // Check if the failure is a permission issue and show the banner if so
-                val perm = MediaApi.checkNfoWritable(artId)
-                if (perm != null && !perm.writable) {
-                    showNfoPermBanner(perm.error ?: "write permission check failed", perm.path)
-                } else {
-                    showDetailMsg("Save failed.", false)
-                }
-                btn?.removeAttribute("disabled"); btn?.textContent = "Save to disk"
+    // Zoom button → open lightbox
+    document.querySelectorAll("#art-gallery .art-zoom").let { els ->
+        for (i in 0 until els.length) {
+            val btn = els.item(i) as? HTMLElement ?: continue
+            btn.addEventListener("click") { ev ->
+                ev.stopPropagation()
+                val idx = btn.getAttribute("data-lbidx")?.toIntOrNull() ?: 0
+                openArtLightbox(idx, t, scope, artId)
             }
         }
     }
     document.getElementById("art-url-btn")?.addEventListener("click") {
         val url = kotlinx.browser.window.prompt("Image URL (https://…)")?.trim()
-        if (!url.isNullOrBlank()) { artStaged = url; artStagedThumb = url; renderArtGallery(); wireArtGallery() }
+        if (!url.isNullOrBlank()) {
+            scope.launch {
+                showDetailMsg("Saving ${t.label}…", true)
+                val ok = gallerySave(t, url)
+                if (ok) {
+                    showDetailMsg("${t.label} saved to disk.", true)
+                    t.onDisk = true; renderArtRail(); wireArtRail(); selectArtTarget(artSel)
+                } else {
+                    showDetailMsg("Save failed.", false)
+                }
+            }
+        }
     }
     // Upload (asset / episode kinds): drive the hidden multipart form for asset, FormData for episode.
     val uploadUrl = if (t.kind == "episode")
@@ -2263,6 +2272,100 @@ private fun wireArtGallery() {
         scope.launch { delay(2200); showDetailMsg("Upload submitted.", true); t.onDisk = true; renderArtRail(); wireArtRail(); selectArtTarget(artSel) }
     }
 }
+
+private fun openArtLightbox(startIdx: Int, t: ArtTarget, scope: CoroutineScope, artId: String) {
+    lbIdx = startIdx.coerceIn(0, (lbCandidates.size - 1).coerceAtLeast(0))
+
+    val existing = document.getElementById("art-lightbox")
+    if (existing != null) { existing.remove() }
+
+    val overlay = document.createElement("div") as HTMLElement
+    overlay.id = "art-lightbox"
+    overlay.innerHTML = buildLightboxHtml(t)
+    document.body?.appendChild(overlay)
+
+    fun update() {
+        val c = lbCandidates.getOrNull(lbIdx) ?: return
+        val imgEl = document.getElementById("lb-img") as? HTMLElement
+        val infoEl = document.getElementById("lb-info") as? HTMLElement
+        val countEl = document.getElementById("lb-count") as? HTMLElement
+        val imgSrc = "$TMDB_IMG_LG${c.filePath}"
+        imgEl?.setAttribute("src", imgSrc)
+        infoEl?.innerHTML = """
+            <span class="art-pill">${langLabel(c.lang)}</span>
+            <span class="art-pill">★ ${fmt1(c.voteAverage)}</span>
+            <span class="art-pill">${c.width}×${c.height}</span>
+            ${if (c.onDisk) """<span class="art-pill" style="background:var(--ok,#22c55e);color:#04210f;">ON DISK</span>""" else ""}
+        """.trimIndent()
+        countEl?.textContent = "${lbIdx + 1} / ${lbCandidates.size}"
+        document.getElementById("lb-use")?.removeAttribute("disabled")
+    }
+    update()
+
+    overlay.addEventListener("click") { ev ->
+        val target = ev.target as? HTMLElement ?: return@addEventListener
+        when {
+            target.id == "art-lightbox" || target.closest("#lb-close") != null -> overlay.remove()
+            target.closest("#lb-prev") != null -> {
+                lbIdx = if (lbIdx > 0) lbIdx - 1 else lbCandidates.lastIndex; update()
+            }
+            target.closest("#lb-next") != null -> {
+                lbIdx = if (lbIdx < lbCandidates.lastIndex) lbIdx + 1 else 0; update()
+            }
+            target.closest("#lb-use") != null -> {
+                val c = lbCandidates.getOrNull(lbIdx) ?: return@addEventListener
+                val btn = document.getElementById("lb-use") as? HTMLElement
+                btn?.setAttribute("disabled", "true"); btn?.textContent = "Saving…"
+                scope.launch {
+                    val ok = gallerySave(t, c.filePath)
+                    if (ok) {
+                        overlay.remove()
+                        showDetailMsg("${t.label} saved to disk.", true)
+                        t.onDisk = true; renderArtRail(); wireArtRail(); selectArtTarget(artSel)
+                    } else {
+                        val perm = MediaApi.checkNfoWritable(artId)
+                        if (perm != null && !perm.writable) {
+                            showNfoPermBanner(perm.error ?: "write permission check failed", perm.path)
+                        } else {
+                            showDetailMsg("Save failed.", false)
+                        }
+                        btn?.removeAttribute("disabled"); btn?.textContent = "Use this artwork"
+                    }
+                }
+            }
+        }
+    }
+
+    overlay.setAttribute("tabindex", "-1")
+    overlay.focus()
+    overlay.addEventListener("keydown") { ev ->
+        val key = (ev as? KeyboardEvent)?.key ?: return@addEventListener
+        when (key) {
+            "Escape" -> overlay.remove()
+            "ArrowLeft" -> { lbIdx = if (lbIdx > 0) lbIdx - 1 else lbCandidates.lastIndex; update() }
+            "ArrowRight" -> { lbIdx = if (lbIdx < lbCandidates.lastIndex) lbIdx + 1 else 0; update() }
+        }
+    }
+}
+
+private fun buildLightboxHtml(t: ArtTarget): String = """
+    <div id="lb-panel">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">
+        <span id="lb-count" class="tiny muted"></span>
+        <span class="spacer"></span>
+        <button id="lb-close" class="btn sm ghost">✕ Close</button>
+      </div>
+      <div style="position:relative;display:flex;align-items:center;justify-content:center;gap:12px;">
+        <button id="lb-prev" class="btn sm ghost" style="flex:none;">‹</button>
+        <img id="lb-img" src="" alt="" style="max-width:70vw;max-height:72vh;border-radius:10px;object-fit:contain;display:block;">
+        <button id="lb-next" class="btn sm ghost" style="flex:none;">›</button>
+      </div>
+      <div id="lb-info" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:12px;"></div>
+      <div style="margin-top:14px;display:flex;gap:10px;justify-content:flex-end;">
+        <button id="lb-use" class="btn">Use this artwork</button>
+      </div>
+    </div>
+""".trimIndent()
 
 private fun injectArtworkStyles() {
     if (document.getElementById("art-mgr-styles") != null) return
@@ -2293,15 +2396,16 @@ private fun injectArtworkStyles() {
         .art-dropzone { border:1.5px dashed var(--line,#444); border-radius:11px; padding:12px; text-align:center; font-size:.78rem; opacity:.7; margin-bottom:12px; cursor:pointer; }
         .art-dropzone.over { border-color:var(--hi,#7c5cff); opacity:1; }
         .art-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(120px,1fr)); gap:11px; }
-        .art-card { position:relative; border-radius:10px; overflow:hidden; cursor:pointer; border:2px solid transparent; background:#0006; }
+        .art-card { position:relative; border-radius:10px; overflow:hidden; cursor:pointer; border:2px solid transparent; background:#0006; transition:opacity .15s; }
         .art-card img { width:100%; height:100%; object-fit:cover; display:block; }
         .art-card.ondisk { border-color:var(--ok,#22c55e); }
-        .art-card.staged { border-color:var(--hi,#7c5cff); box-shadow:0 0 0 3px color-mix(in srgb,var(--hi,#7c5cff) 35%, transparent); }
+        .art-card:hover .art-zoom { opacity:1; }
+        .art-zoom { position:absolute; top:5px; right:5px; background:#000b; color:#fff; border:none; border-radius:5px; padding:2px 5px; font-size:.72rem; cursor:pointer; opacity:0; transition:opacity .15s; line-height:1.3; }
         .art-ribbon { position:absolute; top:6px; left:6px; background:var(--ok,#22c55e); color:#04210f; font-size:.62rem; font-weight:700; padding:1px 6px; border-radius:5px; }
         .art-card-meta { position:absolute; bottom:0; left:0; right:0; display:flex; gap:4px; flex-wrap:wrap; padding:5px; background:linear-gradient(transparent, #000b); }
         .art-pill { font-size:.6rem; background:#000a; padding:1px 5px; border-radius:5px; }
-        .art-foot { display:flex; gap:10px; align-items:center; margin-top:14px; padding-top:12px; border-top:1px solid var(--line,#333); }
-        .art-foot-thumb { height:46px; border-radius:6px; }
+        #art-lightbox { position:fixed; inset:0; background:#000c; display:flex; align-items:center; justify-content:center; z-index:9999; outline:none; }
+        #lb-panel { background:var(--fill,#1a1a2e); border-radius:14px; padding:24px; max-width:90vw; max-height:92vh; overflow:auto; }
     """.trimIndent()
     document.head?.appendChild(style)
 }
@@ -2618,7 +2722,7 @@ private fun showHeroBuilder(item: MediaItem, scope: CoroutineScope) {
     }
 }
 
-private fun showDetailMsg(msg: String, ok: Boolean) {
+internal fun showDetailMsg(msg: String, ok: Boolean) {
     val el = document.getElementById("detail-msg") as? HTMLElement ?: return
     el.style.display = "block"
     el.innerHTML = """<span class="badge ${if (ok) "ok" else "bad"}">$msg</span>"""
