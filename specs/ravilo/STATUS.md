@@ -8,7 +8,7 @@ Ravilo is a sibling product **inside the jellystructure repo** — an Android TV
 canvas) streaming front-end built from one **Compose Multiplatform** codebase, talking only to the
 jellystructure backend.
 
-_Last updated: 2026-06-23_
+_Last updated: 2026-06-24_
 
 ## Current focus
 
@@ -205,6 +205,15 @@ positive-only `/api/media` count).
 - Visual target: the prototype in `design/ravilo/` (`Ravilo TV.html`, `ravilo.css`) — Aurora/Midnight/
   Noir skins, jellyfish brand, hero/channel-rail/rows, movie+series detail with watched/resume, search.
 - The per-user config surface is mocked in `design/app/ravilo-config.html` (drives R16).
+
+## Newly planned (2026-06-24)
+
+- **[R56](requirements/phase-R56-tv-hero-no-focus-border.md) — Hero carousel: remove
+  focus border** (FR-RHB1). R53 added an inset ring (`border(3.dp, colors.focusRing,
+  RoundedCornerShape(14.dp))`) as the hero's focus indicator. Remove it entirely —
+  the hero remains focusable/selectable/navigable but has no visible focus treatment.
+  Constitution gains an explicit exception for full-bleed hero surfaces. Small change
+  to `HeroCarousel.kt` + `ravilo.css`.
 
 ## Open threads
 
