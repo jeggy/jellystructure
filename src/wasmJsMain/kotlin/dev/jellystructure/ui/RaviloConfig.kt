@@ -3,6 +3,9 @@ package dev.jellystructure.ui
 import dev.jellystructure.api.JellyfinUser
 import dev.jellystructure.api.MetadataApi
 import dev.jellystructure.api.RaviloApi
+import dev.jellystructure.Router
+import dev.jellystructure.historyPushState
+import dev.jellystructure.historyReplaceState
 import dev.jellystructure.scrollIntoViewSmooth
 import dev.jellystructure.shared.tv.ChannelButtonPadding
 import dev.jellystructure.shared.tv.ChannelConfig
@@ -43,6 +46,8 @@ private var currentScopeIsGlobal: Boolean = true
 private var currentHasOverride: Boolean = false
 private var currentConfig: RaviloConfig = RaviloConfig()
 private var rcScope: CoroutineScope? = null
+private var rcContainerRef: Element? = null
+private var popstateWired = false
 private var discoverSpecs: List<ChartListSpec> = emptyList()  // R50 — available charts for the edited region
 
 private val DISCOVER_SOURCES = listOf(Triple("netflix", "Netflix · via Tudum", false), Triple("disney", "Disney+", true), Triple("max", "Max", true))
@@ -66,6 +71,7 @@ private const val RAVILO_MARK = """<svg viewBox="12 20 76 76" aria-hidden="true"
 
 fun renderRaviloConfig(container: Element, scope: CoroutineScope) {
     rcScope = scope
+    rcContainerRef = container
     container.innerHTML = buildLoadingShell()
     scope.launch {
         users = runCatching { RaviloApi.getUsers() }.getOrDefault(emptyList())
@@ -79,8 +85,28 @@ fun renderRaviloConfig(container: Element, scope: CoroutineScope) {
         val resp = runCatching { RaviloApi.getConfigWithMeta(scope = "global") }.getOrNull()
         currentConfig = resp?.config ?: RaviloConfig()
         discoverSpecs = runCatching { RaviloApi.getDiscoverLists(currentConfig.discover.region) }.getOrDefault(emptyList())
-        renderFull(container, scope)
+        if (!popstateWired) {
+            popstateWired = true
+            window.addEventListener("popstate") { _ ->
+                val c = rcContainerRef ?: return@addEventListener
+                val s = rcScope ?: return@addEventListener
+                handleRaviloRoute(c, s)
+            }
+        }
+        handleRaviloRoute(container, scope)
     }
+}
+
+private fun handleRaviloRoute(container: Element, scope: CoroutineScope) {
+    val channelId = Router.currentQuery()["channel"]
+    if (!channelId.isNullOrBlank()) {
+        val idx = currentConfig.channels.indexOfFirst { it.id == channelId }
+        if (idx >= 0) {
+            openChannelEditorPage(container, scope, idx, currentConfig.channels[idx])
+            return
+        }
+    }
+    renderFull(container, scope)
 }
 
 private suspend fun loadFacets(): Map<String, List<String>> = runCatching {
@@ -837,6 +863,7 @@ private fun renderChannels(container: Element) {
 // ── Channel editor page (R53) ─────────────────────────────────────────────────
 
 private fun openChannelEditorPage(container: Element, scope: CoroutineScope, idx: Int, c: ChannelConfig) {
+    historyPushState("#/ravilo?channel=${c.id}")
     val seed = if (c.conditions.isNotEmpty()) wbCondsFrom(c.conditions) else legacyToConds(c)
     val styleChecked = { s: String -> if ((if (c.style == ChannelStyle.LOGO) "logo" else "text") == s) " checked" else "" }
     val advOpts = AUTO_ADVANCE_OPTIONS.joinToString("") { (v, l) ->
@@ -916,8 +943,11 @@ private fun openChannelEditorPage(container: Element, scope: CoroutineScope, idx
             </div>
 
             <div class="card" style="padding:18px 20px">
-              <b>Content filter</b>
-              <div style="margin-top:10px" id="ch-ed-wb-host"></div>
+              <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+                <b>Content filter</b>
+                <button id="ch-ed-filter-edit" class="btn sm ghost" style="margin-left:auto">⚙ Edit filter</button>
+              </div>
+              <div id="ch-ed-filter-summary"></div>
             </div>
           </div>
 
@@ -948,13 +978,9 @@ private fun openChannelEditorPage(container: Element, scope: CoroutineScope, idx
         </div>
     """.trimIndent()
 
-    // Wire back / cancel
-    val onBack = {
-        currentConfig = currentConfig  // unchanged
-        renderFull(container, scope)
-    }
-    container.querySelector("#ch-ed-back")?.addEventListener("click") { _ -> onBack() }
-    container.querySelector("#ch-ed-cancel")?.addEventListener("click") { _ -> onBack() }
+    // Wire back / cancel — history.back() pops the pushState entry and fires popstate → handleRaviloRoute → renderFull
+    container.querySelector("#ch-ed-back")?.addEventListener("click") { _ -> window.history.back() }
+    container.querySelector("#ch-ed-cancel")?.addEventListener("click") { _ -> window.history.back() }
 
     // Hero enable toggle
     container.querySelector("#ch-hero-enabled")?.addEventListener("change") { _ ->
@@ -1019,11 +1045,27 @@ private fun openChannelEditorPage(container: Element, scope: CoroutineScope, idx
             paddingText = paddingText,
         )
         currentConfig = currentConfig.copy(channels = list)
+        historyReplaceState("#/ravilo")
         renderFull(container, scope)
     }
 
-    // Inline filter workbench host
-    injectWorkbenchInline(container.querySelector("#ch-ed-wb-host") as? HTMLElement ?: return, scope, seed, c.match.name, currentUserId)
+    // Filter summary + workbench popup
+    renderFilterSummary(container, idx)
+    container.querySelector("#ch-ed-filter-edit")?.addEventListener("click") { _ ->
+        val ch = currentConfig.channels.getOrNull(idx) ?: return@addEventListener
+        val initSeed = if (ch.conditions.isNotEmpty()) wbCondsFrom(ch.conditions) else legacyToConds(ch)
+        openWorkbench(scope, "Filter — ${ch.name.ifBlank { "Channel" }}", viewer = currentUserId,
+            initialMatch = ch.match.name,
+            initialConds = initSeed,
+            applyLabel = "Apply filter",
+            onApply = { match, _, conds ->
+                val list = currentConfig.channels.toMutableList()
+                list[idx] = list[idx].copy(match = wbMode(match), conditions = wbConds(conds))
+                currentConfig = currentConfig.copy(channels = list)
+                renderFilterSummary(container, idx)
+            }
+        )
+    }
 }
 
 /** Minimal hero-items editor overlay (reuses the existing hero section approach). */
@@ -1088,6 +1130,26 @@ private fun openHeroEditorOverlay(
         }
     }
     rewire()
+}
+
+private fun renderFilterSummary(container: Element, channelIdx: Int) {
+    val host = container.querySelector("#ch-ed-filter-summary") as? HTMLElement ?: return
+    val ch = currentConfig.channels.getOrNull(channelIdx)
+    if (ch == null) { host.innerHTML = ""; return }
+    val conds = ch.conditions
+    host.innerHTML = if (conds.isEmpty()) {
+        """<span class="tiny muted">No filter — shows all content</span>"""
+    } else {
+        val matchLabel = if (ch.match == MatchMode.ANY) "ANY" else "ALL"
+        val pills = conds.joinToString("") { cond ->
+            val facetLabel = cond.facet.replaceFirstChar { it.uppercase() }
+            val valStr = cond.values.take(3).joinToString(", ").let {
+                if (cond.values.size > 3) "$it +${cond.values.size - 3}" else it
+            }.ifBlank { "…" }
+            """<span class="badge" style="margin-right:4px;margin-bottom:4px">${facetLabel.htmlEsc()}: ${valStr.htmlEsc()}</span>"""
+        }
+        """<div style="font-size:.8rem;color:var(--ink-soft);margin-bottom:6px">Match <b>$matchLabel</b> of:</div><div>$pills</div>"""
+    }
 }
 
 /** Inline filter workbench — renders condition rows directly into [host] without a modal. */
