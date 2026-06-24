@@ -167,13 +167,11 @@
           </div>`;
         hero.appendChild(s);
       });
-      const body0 = hero.querySelector('.hero-slide.on .hero-body');
-      const actions = el('div', 'hero-actions focus-row');
-      actions.innerHTML = `
-        <div class="btn primary foc" data-act="play"><span class="ic">▶</span> ${t('play')}</div>
-        <div class="btn ghost foc" data-act="info"><span class="ic">ⓘ</span> ${t('more_info')}</div>
-        <div class="btn ghost foc" data-act="list"><span class="ic">＋</span> ${t('add_list')}</div>`;
-      body0.appendChild(actions);
+      // R53: button-less hero — one focusable hit area covers the whole hero; select opens detail,
+      // Left/Right pages the carousel. (Buttons removed; the detail screen owns Play/resume.)
+      const hit = el('div', 'hero-hit focus-row');
+      hit.innerHTML = `<div class="hero-cta foc" data-hero="1"></div>`;
+      hero.appendChild(hit);
 
       const dots = el('div', 'hero-dots');
       R.hero.forEach((_, i) => { const d = el('div', 'd' + (i === 0 ? ' on' : '')); d.dataset.dot = i; dots.appendChild(d); });
@@ -186,9 +184,6 @@
       heroIdx = (i + slides.length) % slides.length;
       slides.forEach((s, k) => s.classList.toggle('on', k === heroIdx));
       hero.querySelectorAll('.hero-dots .d').forEach((d, k) => d.classList.toggle('on', k === heroIdx));
-      // move the actions row into the visible slide
-      const actions = hero.querySelector('.hero-actions');
-      if (actions) hero.querySelectorAll('.hero-slide')[heroIdx].querySelector('.hero-body').appendChild(actions);
     }
     function startHero() { stopHero(); if (interactive) heroTimer = setInterval(() => setHero(heroIdx + 1), 6500); }
     function stopHero() { if (heroTimer) clearInterval(heroTimer); heroTimer = null; }
@@ -629,7 +624,8 @@
         focusEl(its[cur.c]);
       } else if (dc) {
         const its = items(all[cur.r]); if (!its.length) return;
-        // hero: left/right cycles the carousel instead of moving (only 1 logical col block)
+        // R53: on the hero, left/right pages the carousel (one focusable, no columns).
+        if (its[0].dataset.hero) { setHero(heroIdx + dc); return; }
         cur.c = Math.max(0, Math.min(its.length - 1, cur.c + dc));
         focusEl(its[cur.c]);
       }
@@ -679,7 +675,7 @@
         buildGridRows(scroll.querySelector('.sresults'), searchFilter(view.query));
         return;
       }
-      if (f.dataset.act) { const it = R.hero[heroIdx]; if (f.dataset.act === 'info') toDetail(it); else if (f.dataset.act === 'play') playItem(it); else flash('＋ Added ' + it.title); return; }
+      if (f.dataset.hero) { toDetail(R.hero[heroIdx]); return; } // R53: whole hero → detail
       if (f.dataset.play) { playItem(view.item, view.season || 0); return; }
       if (f.dataset.trailer) { flash('▷ Trailer · ' + view.item.title); return; }
       if (f.dataset.list) { flash('＋ Added ' + view.item.title + ' to My List'); return; }
