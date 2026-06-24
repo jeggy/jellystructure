@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -140,6 +141,25 @@ fun HeroCarousel(
                     end    = 40.dp,
                 ),
         ) {
+            // Operator badge — "New Season", "4K", "Top 10", etc.
+            val badge = active.badge
+            if (!badge.isNullOrBlank()) {
+                Box(
+                    modifier = Modifier
+                        .background(colors.accentGradient, RoundedCornerShape(5.dp))
+                        .padding(horizontal = 10.dp, vertical = 4.dp),
+                ) {
+                    Text(
+                        text = badge.uppercase(),
+                        color = Color.White,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = sora,
+                        letterSpacing = 0.8.sp,
+                    )
+                }
+                Spacer(Modifier.height(10.dp))
+            }
             // Kicker — tagline from Hero or genre fallback
             val kicker = active.taglineKicker ?: active.item.genre
             if (!kicker.isNullOrEmpty()) {

@@ -67,27 +67,37 @@ class HomeFeedService(
         jellyfinBase: String,
         token: String,
     ): List<Hero> {
-        val items: List<MediaItem> = if (config.heroes.isEmpty()) {
-            all.sortedByDescending { it.scannedAt }.take(HERO_AUTO_COUNT)
-        } else {
-            config.heroes
-                .filter { it.enabled }
-                .sortedBy { it.order }
-                .mapNotNull { hc ->
-                    all.firstOrNull { it.jellyfinId == hc.itemId } ?: all.firstOrNull { it.id == hc.itemId }
-                }
+        // Auto mode: pick the most-recently-scanned items with no dressing.
+        if (config.heroes.isEmpty()) {
+            return all.sortedByDescending { it.scannedAt }.take(HERO_AUTO_COUNT).mapNotNull { item ->
+                val jellyfinId = item.jellyfinId ?: return@mapNotNull null
+                Hero(
+                    item = item.toMediaCard(jellyfinBase, token),
+                    taglineKicker = null,
+                    backdropUrl = "$jellyfinBase/Items/$jellyfinId/Images/Backdrop/0?api_key=$token",
+                    logoUrl = null,
+                    badge = null,
+                    synopsis = item.overview,
+                )
+            }
         }
-        return items.mapNotNull { item ->
-            val jellyfinId = item.jellyfinId ?: return@mapNotNull null
-            Hero(
-                item = item.toMediaCard(jellyfinBase, token),
-                taglineKicker = null,
-                backdropUrl = "$jellyfinBase/Items/$jellyfinId/Images/Backdrop/0?api_key=$token",
-                logoUrl = null,
-                badge = null,
-                synopsis = item.overview,
-            )
-        }
+        // Curated mode: keep the HeroConfig alongside the resolved MediaItem so badge/tagline survive.
+        return config.heroes
+            .filter { it.enabled }
+            .sortedBy { it.order }
+            .mapNotNull { hc ->
+                val item = all.firstOrNull { it.jellyfinId == hc.itemId } ?: all.firstOrNull { it.id == hc.itemId }
+                    ?: return@mapNotNull null
+                val jellyfinId = item.jellyfinId ?: return@mapNotNull null
+                Hero(
+                    item = item.toMediaCard(jellyfinBase, token),
+                    taglineKicker = hc.tagline,
+                    backdropUrl = "$jellyfinBase/Items/$jellyfinId/Images/Backdrop/0?api_key=$token",
+                    logoUrl = null,
+                    badge = hc.badge,
+                    synopsis = item.overview,
+                )
+            }
     }
 
     // ─── Channels ─────────────────────────────────────────────────────────────
