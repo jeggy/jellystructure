@@ -457,10 +457,10 @@ private fun renderHeroes(container: Element) {
         val rowCls = if (h.enabled) "" else " off"
         val shortTitle = title.take(12) + if (title.length > 12) "…" else ""
         """
-        <div class="cfg-row$rowCls" style="gap:12px">
-          ${reorderButtons("hero", i, last)}
-          <div class="hero-thumb" style="$thumbStyle;width:92px;height:52px;border-radius:8px;flex:none;position:relative;overflow:hidden">
-            <span style="position:absolute;left:7px;bottom:5px;font-family:var(--font-display,'Space Grotesk',sans-serif);font-weight:700;font-size:.68rem;color:#fff;text-shadow:0 1px 4px rgba(0,0,0,.7)">${shortTitle.htmlEsc()}</span>
+        <div class="cfg-row$rowCls" draggable="true" data-hero-i="$i">
+          <span class="drag-handle" style="cursor:grab;user-select:none;flex-shrink:0">⠿</span>
+          <div class="hero-thumb" style="$thumbStyle">
+            <span class="t">${shortTitle.htmlEsc()}</span>
           </div>
           <div style="flex:1;min-width:0">
             <div class="nm" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${title.htmlEsc()} $badgeHtml</div>
@@ -512,8 +512,46 @@ private fun renderHeroes(container: Element) {
         </div>
     """.trimIndent()
     sect.querySelector("#hero-add")?.addEventListener("click") { _ -> openHeroAddPicker(container) }
-    wireReorder(container, sect, "hero",
-        get = { currentConfig.heroes }, set = { currentConfig = currentConfig.copy(heroes = it) }, ::renderHeroes)
+    // Drag-and-drop reorder
+    val heroList = sect.querySelector("#herolist") as? HTMLElement
+    if (heroList != null) {
+        var dragFromIdx = -1
+        fun clearHeroDragHighlights() {
+            val nl = heroList.querySelectorAll("[data-hero-i]")
+            for (j in 0 until nl.length) {
+                (nl.item(j) as? HTMLElement)?.classList?.remove("dragging", "drop-before", "drop-after")
+            }
+        }
+        heroList.addEventListener("dragstart") { e ->
+            val row = (e.target as? HTMLElement)?.closest("[data-hero-i]") as? HTMLElement ?: return@addEventListener
+            dragFromIdx = row.getAttribute("data-hero-i")?.toIntOrNull() ?: -1
+            row.classList.add("dragging")
+        }
+        heroList.addEventListener("dragend") { _ ->
+            dragFromIdx = -1
+            clearHeroDragHighlights()
+        }
+        heroList.addEventListener("dragover") { e ->
+            e.preventDefault()
+            val row = (e.target as? HTMLElement)?.closest("[data-hero-i]") as? HTMLElement ?: return@addEventListener
+            val toIdx = row.getAttribute("data-hero-i")?.toIntOrNull() ?: return@addEventListener
+            clearHeroDragHighlights()
+            if (toIdx != dragFromIdx) row.classList.add(if (toIdx < dragFromIdx) "drop-before" else "drop-after")
+        }
+        heroList.addEventListener("drop") { e ->
+            e.preventDefault()
+            val row = (e.target as? HTMLElement)?.closest("[data-hero-i]") as? HTMLElement ?: return@addEventListener
+            val toIdx = row.getAttribute("data-hero-i")?.toIntOrNull() ?: return@addEventListener
+            val fromIdx = dragFromIdx
+            dragFromIdx = -1
+            if (fromIdx < 0 || fromIdx == toIdx) return@addEventListener
+            val list = currentConfig.heroes.toMutableList()
+            val item = list.removeAt(fromIdx)
+            list.add(toIdx, item)
+            currentConfig = currentConfig.copy(heroes = list)
+            renderHeroes(container)
+        }
+    }
     sect.querySelector("#hero-height")?.addEventListener("input") { _ ->
         val v = (sect.querySelector("#hero-height") as? HTMLInputElement)?.value?.toIntOrNull() ?: return@addEventListener
         currentConfig = currentConfig.copy(heroHeightPct = v)
