@@ -252,8 +252,8 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                         when (idx) {
                             1 -> push(Dest.Browse(BrowseKind.MOVIES, dest.displayName))
                             2 -> push(Dest.Browse(BrowseKind.SERIES, dest.displayName))
-                            3 -> push(Dest.Browse(BrowseKind.MY_LIST, dest.displayName))
-                            4 -> push(Dest.Discover(dest.displayName)) // gated Top 10 tab (R49); R52: index 4 (Search left the nav)
+                            3 -> push(Dest.Discover(dest.displayName)) // Top 10 (index 3); My List at 4
+                            4 -> push(Dest.Browse(BrowseKind.MY_LIST, dest.displayName))
                             else -> {} // 0 = already home
                         }
                     },
@@ -344,8 +344,8 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                             0 -> { stack = listOf(Dest.Home(dest.displayName)) }
                             1 -> push(Dest.Browse(BrowseKind.MOVIES, dest.displayName))
                             2 -> push(Dest.Browse(BrowseKind.SERIES, dest.displayName))
-                            3 -> push(Dest.Browse(BrowseKind.MY_LIST, dest.displayName))
-                            else -> {} // 4 = already on Top 10 (R52: Search left the nav)
+                            4 -> push(Dest.Browse(BrowseKind.MY_LIST, dest.displayName))
+                            else -> {} // 3 = already on Top 10; 0 = go home handled above
                         }
                     },
                     onEntrySelect = { listId, rank -> push(Dest.DiscoverItem(listId, rank, dest.displayName)) },

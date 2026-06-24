@@ -55,7 +55,7 @@ import kotlinx.coroutines.launch
 
 /** Index of the Top 10 nav item in the app bar (after home/movies/series/my_list; Search is the
  *  right-cluster icon now, R52). */
-const val DISCOVER_NAV_INDEX = 4
+const val DISCOVER_NAV_INDEX = 3
 
 @Composable
 fun DiscoverScreen(
@@ -69,7 +69,7 @@ fun DiscoverScreen(
     val colors = RaviloTheme.colors
     val state by store.state.collectAsState()
     val navItems = listOf(
-        str("nav.home"), str("nav.movies"), str("nav.series"), str("nav.my_list"), "Top 10",
+        str("nav.home"), str("nav.movies"), str("nav.series"), "Top 10", str("nav.my_list"),
     )
 
     // R33 live config refresh + payload-bearing acquisition patching (Phase 56).
