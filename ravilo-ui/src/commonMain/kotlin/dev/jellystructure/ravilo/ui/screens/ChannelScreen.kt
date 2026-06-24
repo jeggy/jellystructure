@@ -9,13 +9,17 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -23,6 +27,7 @@ import dev.jellystructure.ravilo.ui.components.StaticContentRow
 import dev.jellystructure.ravilo.ui.components.Tile
 import dev.jellystructure.ravilo.ui.components.TileVariant
 import dev.jellystructure.ravilo.ui.components.toTileVariant
+import dev.jellystructure.ravilo.ui.focus.backToTopOnBack
 import dev.jellystructure.ravilo.ui.i18n.str
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
 import androidx.compose.runtime.collectAsState
@@ -88,7 +93,26 @@ fun ChannelScreen(
 
     val storeState by store.state.collectAsState()
 
-    Box(modifier = Modifier.fillMaxSize().background(colors.background)) {
+    // R55: Back scrolls a scrolled channel to the top (refocusing the first tile once it's back in view,
+    // so bring-into-view doesn't yank it back) before falling through to RaviloApp's pop.
+    val listState = rememberLazyListState()
+    val scope = rememberCoroutineScope()
+    val firstTileFR = remember { FocusRequester() }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(colors.background)
+            .backToTopOnBack(
+                atTop = { listState.firstVisibleItemIndex == 0 && listState.firstVisibleItemScrollOffset == 0 },
+                onBackToTop = {
+                    scope.launch {
+                        runCatching { listState.animateScrollToItem(0) }
+                        runCatching { firstTileFR.requestFocus() }
+                    }
+                },
+            ),
+    ) {
         Column(modifier = Modifier.fillMaxSize()) {
             // Channel header
             Column(modifier = Modifier.padding(horizontal = 40.dp, vertical = 24.dp)) {
@@ -111,7 +135,13 @@ fun ChannelScreen(
                             Text(str("browse.empty_channel"), color = colors.textSecondary, fontSize = 16.sp)
                         }
                     } else {
-                        ChannelRows(rows = nonEmpty, tileShape = s.feed.tileShape, onItemSelect = onItemSelect)
+                        ChannelRows(
+                            rows = nonEmpty,
+                            tileShape = s.feed.tileShape,
+                            listState = listState,
+                            firstTileFR = firstTileFR,
+                            onItemSelect = onItemSelect,
+                        )
                     }
                 }
             }
@@ -120,8 +150,15 @@ fun ChannelScreen(
 }
 
 @Composable
-private fun ChannelRows(rows: List<Row>, tileShape: dev.jellystructure.shared.tv.TileShape, onItemSelect: (MediaCard) -> Unit) {
+private fun ChannelRows(
+    rows: List<Row>,
+    tileShape: dev.jellystructure.shared.tv.TileShape,
+    listState: LazyListState,
+    firstTileFR: FocusRequester,
+    onItemSelect: (MediaCard) -> Unit,
+) {
     LazyColumn(
+        state = listState,
         contentPadding = PaddingValues(bottom = 40.dp),
     ) {
         items(rows.size, key = { ri -> rows[ri].id }) { ri ->
@@ -131,13 +168,15 @@ private fun ChannelRows(rows: List<Row>, tileShape: dev.jellystructure.shared.tv
                 title = row.title,
                 items = row.items,
                 itemKey = { card -> card.id },
-            ) { _, card ->
+            ) { idx, card ->
                 val variant = if (row.kind == RowKind.CONTINUE) TileVariant.LANDSCAPE else tileShape.toTileVariant()
                 Tile(
                     title = card.title,
                     posterUrl = if (variant == TileVariant.LANDSCAPE) card.backdropUrl ?: card.posterUrl else card.posterUrl,
                     variant = variant,
                     progressPct = card.progressPct ?: 0f,
+                    // R55: the first row's first tile is the back-to-top focus landing target.
+                    focusRequester = if (ri == 0 && idx == 0) firstTileFR else null,
                     onSelect = { onItemSelect(card) },
                 )
             }

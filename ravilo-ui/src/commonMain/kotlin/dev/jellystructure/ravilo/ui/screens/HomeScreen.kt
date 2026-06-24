@@ -37,6 +37,7 @@ import dev.jellystructure.ravilo.ui.components.HomeLoadingShell
 import dev.jellystructure.ravilo.ui.components.StaticContentRow
 import dev.jellystructure.ravilo.ui.components.Tile
 import dev.jellystructure.ravilo.ui.focus.EdgeBringIntoViewSpec
+import dev.jellystructure.ravilo.ui.focus.backToTopOnBack
 import dev.jellystructure.ravilo.ui.components.TileVariant
 import dev.jellystructure.ravilo.ui.components.toTileVariant
 import dev.jellystructure.ravilo.ui.i18n.str
@@ -132,6 +133,22 @@ private fun HomeLoaded(
         runCatching { if (hasHero) heroFR.requestFocus() else navBarFR.requestFocus() }
     }
 
+    // R55: Back scrolls a scrolled feed to the top (refocusing the hero / app bar so bring-into-view
+    // doesn't yank it back) before falling through to RaviloApp's pop/exit — harder to close by accident.
+    Box(
+        modifier = Modifier.fillMaxSize().backToTopOnBack(
+            atTop = { listState.firstVisibleItemIndex == 0 && listState.firstVisibleItemScrollOffset == 0 },
+            onBackToTop = {
+                // Scroll to the top first, THEN focus the hero — when scrolled down the hero (item 0) is
+                // disposed, so requesting its focus only works once it's back in view. The app bar
+                // (an always-composed overlay) is the fallback when there is no hero.
+                scope.launch {
+                    runCatching { listState.animateScrollToItem(0) }
+                    runCatching { (if (hasHero) heroFR else navBarFR).requestFocus() }
+                }
+            },
+        ),
+    ) {
     @OptIn(ExperimentalFoundationApi::class)
     CompositionLocalProvider(LocalBringIntoViewSpec provides EdgeBringIntoViewSpec) {
     LazyColumn(
@@ -228,6 +245,7 @@ private fun HomeLoaded(
         userInitials = initials,
         onProfile = onProfile,
     )
+    }
 }
 
 // HomeLoadingShell is imported from Shimmer.kt
