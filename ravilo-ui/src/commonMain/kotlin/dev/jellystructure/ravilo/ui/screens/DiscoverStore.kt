@@ -20,6 +20,8 @@ sealed class DiscoverState {
 
 /** R49 — Top 10 / Discover store. Loads the composed feed and patches tiles live on acquisition events. */
 class DiscoverStore(private val apiClient: TvApiClient) {
+    /** Row index (0-based within data.rows) of the last tapped entry — used to restore scroll position on Back. */
+    var lastSelectedRowIndex: Int = -1
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val _state = MutableStateFlow<DiscoverState>(DiscoverState.Loading)
     val state: StateFlow<DiscoverState> = _state.asStateFlow()

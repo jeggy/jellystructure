@@ -22,9 +22,12 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -85,13 +88,14 @@ fun DiscoverScreen(
                 Spacer(Modifier.height(200.dp)); Text("Top 10 unavailable", color = colors.text, fontSize = 20.sp)
                 Spacer(Modifier.height(8.dp)); Text(s.message, color = colors.textSecondary, fontSize = 14.sp)
             }
-            is DiscoverState.Loaded -> DiscoverLoaded(s.data, displayName, DISCOVER_NAV_INDEX, navItems, onNavSelect, onEntrySelect, onProfile, onSearch)
+            is DiscoverState.Loaded -> DiscoverLoaded(store, s.data, displayName, DISCOVER_NAV_INDEX, navItems, onNavSelect, onEntrySelect, onProfile, onSearch)
         }
     }
 }
 
 @Composable
 private fun DiscoverLoaded(
+    store: DiscoverStore,
     data: DiscoverResponse,
     displayName: String,
     activeNav: Int,
@@ -107,13 +111,20 @@ private fun DiscoverLoaded(
     val navBarFR = remember { FocusRequester() }
     val columnFR = remember { FocusRequester() }
 
-    LaunchedEffect(Unit) { runCatching { navBarFR.requestFocus() } }
+    // Restore scroll to last-selected row on Back-return from detail.
+    LaunchedEffect(Unit) {
+        val idx = store.lastSelectedRowIndex
+        if (idx >= 0) {
+            listState.scrollToItem((idx + 1).coerceAtLeast(0)) // +1 for header item
+        }
+        runCatching { navBarFR.requestFocus() }
+    }
 
-    // R55: Back scrolls a scrolled chart to the top (refocusing the app bar so bring-into-view doesn't
-    // yank it back) before falling through to RaviloApp's pop/exit.
+    // Two-stage Back: first Back focuses AppBar (and scrolls to top); second Back (from AppBar) pops.
+    var navBarFocused by remember { mutableStateOf(false) }
     Box(
         modifier = Modifier.fillMaxSize().backToTopOnBack(
-            atTop = { listState.firstVisibleItemIndex == 0 && listState.firstVisibleItemScrollOffset == 0 },
+            atTop = { navBarFocused },
             onBackToTop = {
                 runCatching { navBarFR.requestFocus() }
                 scope.launch { listState.scrollToItem(0) }
@@ -130,10 +141,10 @@ private fun DiscoverLoaded(
         ) {
             item(key = "discover-head") {
                 Column(Modifier.padding(horizontal = RaviloDimens.sectionPadH, vertical = 8.dp)) {
-                    Text("Top 10", color = colors.text, fontSize = 30.sp, fontWeight = FontWeight.Bold, fontFamily = SpaceGrotesk)
+                    Text("Top 10", color = colors.text, fontSize = 22.sp, fontWeight = FontWeight.Bold, fontFamily = SpaceGrotesk)
                     Text(
                         "Trending now · ${data.region}  ·  ${data.source.replaceFirstChar { it.uppercase() }} via Tudum",
-                        color = colors.textSecondary, fontSize = 14.sp,
+                        color = colors.textSecondary, fontSize = 13.sp,
                     )
                 }
             }
@@ -145,7 +156,10 @@ private fun DiscoverLoaded(
                     items = row.entries,
                     itemKey = { e -> "${row.spec.id}:${e.entry.rank}" },
                 ) { _, e ->
-                    RankTile(e) { onEntrySelect(row.spec.id, e.entry.rank) }
+                    RankTile(e) {
+                        store.lastSelectedRowIndex = ri
+                        onEntrySelect(row.spec.id, e.entry.rank)
+                    }
                 }
             }
         }
@@ -157,17 +171,19 @@ private fun DiscoverLoaded(
     val appBarScrolled by remember { derivedStateOf {
         listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 0
     } }
-    AppBar(
-        navItems = navItems,
-        activeNav = activeNav,
-        onNavSelect = onNavSelect,
-        navFR = navBarFR,
-        onDown = { runCatching { columnFR.requestFocus() } },
-        userInitials = initials,
-        onProfile = onProfile,
-        onSearch = onSearch,
-        scrolled = appBarScrolled,
-    )
+    Box(Modifier.onFocusChanged { navBarFocused = it.hasFocus }) {
+        AppBar(
+            navItems = navItems,
+            activeNav = activeNav,
+            onNavSelect = onNavSelect,
+            navFR = navBarFR,
+            onDown = { runCatching { columnFR.requestFocus() } },
+            userInitials = initials,
+            onProfile = onProfile,
+            onSearch = onSearch,
+            scrolled = appBarScrolled,
+        )
+    }
     }
 }
 
@@ -181,8 +197,8 @@ private fun RankTile(e: DiscoverEntry, onSelect: () -> Unit) {
             color = colors.textSecondary.copy(alpha = 0.5f),
             fontFamily = SpaceGrotesk,
             fontWeight = FontWeight.Bold,
-            fontSize = 92.sp,
-            modifier = Modifier.widthIn(min = 64.dp).padding(end = 2.dp),
+            fontSize = 56.sp,
+            modifier = Modifier.widthIn(min = 48.dp).padding(end = 2.dp),
         )
         Box {
             Tile(
@@ -220,8 +236,8 @@ internal fun tmdbImg(path: String?): String? =
 internal fun chartSubline(e: ChartEntry): String {
     val trend = when (e.trend) { Trend.UP -> " ▲"; Trend.DOWN -> " ▼"; Trend.NEW -> " · NEW"; Trend.SAME -> "" }
     val base = when {
-        e.views != null -> "${e.views} views"
-        e.weeksOnChart > 0 -> "${e.weeksOnChart} wk on chart"
+        e.views != null -> "${e.views} views (Netflix)"
+        e.weeksOnChart > 0 -> "${e.weeksOnChart} ${if (e.weeksOnChart == 1) "week" else "weeks"} on chart"
         else -> ""
     }
     return (base + trend).trim()
