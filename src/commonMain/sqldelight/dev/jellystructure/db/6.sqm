@@ -1,0 +1,2 @@
+-- R49 follow-up — portrait poster path for the ranked Top 10 tiles (v6 -> v7).
+ALTER TABLE chart_entry ADD COLUMN poster_path TEXT;
