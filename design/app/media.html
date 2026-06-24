@@ -59,14 +59,6 @@
   .langmenu .lm-opt .lm-code { margin-left: auto; font-family: 'JetBrains Mono', monospace; font-size: .72rem; color: var(--ink-soft); background: var(--fill-3); padding: 1px 7px; border-radius: 5px; }
   .langmenu .lm-empty { padding: 14px; text-align: center; color: var(--ink-dim); font-size: .82rem; }
   .star-btn { cursor: pointer; }
-  /* staged-changes panel */
-  #staged-card { display: none; border-color: var(--hi); box-shadow: 0 0 0 1px var(--hi-soft); }
-  #staged-card.show { display: block; }
-  .staged-op { display: flex; align-items: center; gap: 10px; padding: 7px 0; border-bottom: 1px dashed var(--line); font-size: .86rem; }
-  .staged-op:last-child { border-bottom: none; }
-  .staged-op .op-ic { width: 22px; height: 22px; flex: none; border-radius: 6px; display: inline-flex; align-items: center; justify-content: center; font-size: .7rem; background: var(--hi-soft); color: var(--acc-ink); }
-  .cmd-block { background: var(--bg-2); border: 1px solid var(--line); border-radius: var(--radius-s); padding: 12px 14px; font-family: 'JetBrains Mono', monospace; font-size: .78rem; line-height: 1.7; overflow-x: auto; white-space: pre; color: var(--ink-soft); }
-  .cmd-block .flag { color: var(--acc-ink); }
   .cost-chip { display: inline-flex; align-items: center; gap: 6px; }
 
   /* diff modal */
@@ -136,6 +128,39 @@
   .lchip.on { background:var(--hi-soft); border-color:rgba(123,110,240,.5); color:var(--acc-ink); }
   .lchip.on.tl { background:var(--ok-soft); border-color:rgba(45,212,154,.5); color:var(--ok); }
   .lchip.off { opacity:.6; }
+
+  /* zoom affordance on each candidate + lightbox (Phase 47 — larger preview) */
+  .aw-zoom { position:absolute; z-index:5; top:50%; left:50%; transform:translate(-50%,-50%) scale(.8);
+    width:40px; height:40px; border-radius:50%; border:1px solid rgba(255,255,255,.32);
+    background:rgba(10,12,18,.66); color:#fff; font-size:1.05rem; cursor:pointer; opacity:0;
+    display:flex; align-items:center; justify-content:center; transition:opacity .14s ease, transform .14s ease, background .14s ease;
+    -webkit-backdrop-filter:blur(3px); backdrop-filter:blur(3px); }
+  .aw-cand:hover .aw-zoom { opacity:1; transform:translate(-50%,-50%) scale(1); }
+  .aw-zoom:hover { background:var(--hi); border-color:var(--hi); }
+
+  .aw-lb { position:fixed; inset:0; z-index:130; display:none; align-items:center; justify-content:center;
+    background:rgba(7,8,12,.86); -webkit-backdrop-filter:blur(10px); backdrop-filter:blur(10px); animation:awlbIn .16s ease; }
+  .aw-lb.open { display:flex; }
+  @keyframes awlbIn { from { opacity:0; } to { opacity:1; } }
+  .aw-lb-stage { display:flex; gap:30px; align-items:center; max-width:92vw; }
+  .aw-lb-artwrap { flex:none; }
+  .aw-lb-art { position:relative; border-radius:14px; overflow:hidden; border:1px solid rgba(255,255,255,.12);
+    box-shadow:0 40px 100px rgba(0,0,0,.7); max-width:62vw; max-height:80vh; }
+  .aw-lb-panel { width:262px; flex:none; color:var(--ink); }
+  .aw-lb-arrow { position:absolute; top:50%; transform:translateY(-50%); width:54px; height:54px; border-radius:50%;
+    border:1px solid rgba(255,255,255,.16); background:rgba(20,22,30,.72); color:#fff; font-size:1.7rem; line-height:1;
+    cursor:pointer; display:flex; align-items:center; justify-content:center; transition:background .14s ease, border-color .14s ease; }
+  .aw-lb-arrow:hover { background:var(--hi); border-color:var(--hi); }
+  .aw-lb-arrow.prev { left:30px; } .aw-lb-arrow.next { right:30px; }
+  .aw-lb-arrow[disabled] { opacity:.22; cursor:default; pointer-events:none; }
+  .aw-lb-x { position:absolute; top:24px; right:28px; width:42px; height:42px; border-radius:50%;
+    border:1px solid rgba(255,255,255,.16); background:rgba(20,22,30,.72); color:#fff; font-size:1rem; cursor:pointer;
+    display:flex; align-items:center; justify-content:center; transition:background .14s ease, border-color .14s ease; }
+  .aw-lb-x:hover { background:var(--bad); border-color:var(--bad); }
+  .aw-lb-counter { position:absolute; bottom:24px; left:50%; transform:translateX(-50%); font-family:'JetBrains Mono',monospace;
+    font-size:.72rem; color:var(--ink-soft); background:rgba(20,22,30,.72); border:1px solid var(--line); padding:5px 13px; border-radius:999px; }
+  .aw-lb-spec { display:flex; justify-content:space-between; align-items:center; padding:7px 0; border-top:1px solid var(--line); }
+  .aw-lb-spec .v { font-family:'JetBrains Mono',monospace; font-size:.74rem; }
   .dropz { border:1.5px dashed var(--line-2); border-radius:12px; padding:13px 15px; display:flex; align-items:center; gap:13px;
     color:var(--ink-soft); font-size:.85rem; transition:border-color .2s ease, background .2s ease; }
   .dropz.drag, .dropz:hover { border-color:var(--hi); background:var(--hi-soft); color:var(--ink); }
@@ -280,8 +305,8 @@
       <!-- Ravilo TV — feature this title in a viewer's hero carousel -->
       <div class="card">
         <div class="row center"><h4 style="margin:0;">Ravilo TV</h4><span class="spacer"></span><span class="badge info">layout</span></div>
-        <div class="tiny muted" style="margin:8px 0 10px;line-height:1.5;">Feature this title in a viewer's <b>hero carousel</b> on their TV home screen.</div>
-        <div class="pill-row"><span class="btn sm fill" id="feature-hero" style="justify-content:center;">★ Feature in hero carousel…</span></div>
+        <div class="tiny muted" style="margin:8px 0 10px;line-height:1.5;">Add this title to a viewer's <b>hero carousel</b> on their TV home screen.</div>
+        <div class="pill-row"><span class="btn sm fill" id="feature-hero" style="justify-content:center;">★ Add to hero carousel…</span></div>
       </div>
       <!-- Resolved metadata language (read-only trace) -->
       <div class="override">
@@ -373,21 +398,11 @@
           <div class="tiny muted" style="margin-top:10px;">Reorder by dragging the grip or the ▲▼ buttons · click a language to change it · ★ sets the default. Everything is <b>manual</b> and only touches the file when you press <b>Apply</b>.</div>
         </div>
 
-        <!-- staged changes (appears when there are unsaved edits) -->
-        <div class="card" id="staged-card">
-          <div class="row center"><h4 style="margin:0;">Staged changes <span class="badge" id="staged-count" style="margin-left:6px;">0</span></h4><span class="spacer"></span><span class="btn sm ghost" id="staged-discard">Discard all</span></div>
+        <!-- write-through note: track edits are written to disk immediately -->
+        <div class="card" id="trk-writethru">
+          <div class="row center" style="gap:10px;"><span class="op-ic" style="width:22px;height:22px;flex:none;border-radius:6px;display:inline-flex;align-items:center;justify-content:center;font-size:.7rem;background:var(--ok-soft);color:var(--ok);">✓</span><span class="tiny">Track edits are <b>written to disk immediately</b>.</span></div>
           <hr class="dash" style="margin:10px 0;">
-          <div id="staged-ops"></div>
-          <div style="margin-top:14px;">
-            <div class="tiny muted" style="margin-bottom:6px;">Exact command — runs only on Apply:</div>
-            <div class="cmd-block" id="cmd-preview"></div>
-          </div>
-          <div class="row center" style="margin-top:14px;gap:10px;flex-wrap:wrap;">
-            <span class="cost-chip" id="cost-chip"></span>
-            <span class="spacer" style="flex:1"></span>
-            <span class="btn ghost" id="staged-discard-2">Discard</span>
-            <span class="btn primary" id="staged-apply">Apply to file</span>
-          </div>
+          <div class="tiny muted" style="line-height:1.6;">Flag &amp; language changes use <b>mkvpropedit</b> in place (~40ms, no re-encode). Re-ordering streams needs an <b>ffmpeg -c copy</b> remux (no re-encode, but rewrites the file). Press <b>Save &amp; sync to Jellyfin</b> to push now — otherwise Jellyfin picks the changes up on its next scan.</div>
         </div>
       </div>
     </div>
@@ -427,6 +442,18 @@
         </div>
       </div>
     </div>
+  </div>
+
+  <!-- ARTWORK LIGHTBOX (Phase 47 — larger preview) -->
+  <div class="aw-lb" id="aw-lb" aria-hidden="true">
+    <button class="aw-lb-x" id="aw-lb-x" title="Close (Esc)">✕</button>
+    <button class="aw-lb-arrow prev" id="aw-lb-prev" title="Previous (←)">‹</button>
+    <div class="aw-lb-stage">
+      <div class="aw-lb-artwrap"><div class="aw-lb-art" id="aw-lb-art"></div></div>
+      <div class="aw-lb-panel" id="aw-lb-panel"></div>
+    </div>
+    <button class="aw-lb-arrow next" id="aw-lb-next" title="Next (→)">›</button>
+    <div class="aw-lb-counter" id="aw-lb-counter"></div>
   </div>
 
   <!-- ================= NFO TAB ================= -->
@@ -749,6 +776,8 @@
       '<b style="white-space:nowrap;">⮕ Forced</b><span class="tiny">A <b>separate</b> flag — shows only foreign-dialogue lines over a known-language audio. A track can be forced without being default.</span></div>';
 
     function rows() { return model[kind]; }
+    const kindName = () => kind === 'audio' ? 'Audio' : 'Subtitle';
+    const ordMsg = () => kindName() + ' order written · ffmpeg remux (no re-encode)';
 
     function render() {
       const arr = rows();
@@ -794,7 +823,7 @@
     }
     document.getElementById('cascade-fix').addEventListener('click', () => {
       const t = model.audio.find(x => x.lang === RESOLVED) || model.audio[0];
-      model.audio.forEach(x => x.def = (x === t)); render(); toast('Default audio → ' + RESOLVED);
+      model.audio.forEach(x => x.def = (x === t)); render(); toast('Default audio → ' + RESOLVED + ' written · ~40ms');
     });
 
     // ---- interactions (event-delegated) ----
@@ -802,13 +831,13 @@
       const el = e.target.closest('[data-act]'); if (!el) return;
       const i = +el.dataset.i, arr = rows();
       const act = el.dataset.act;
-      if (act === 'up' && i > 0) { [arr[i-1], arr[i]] = [arr[i], arr[i-1]]; render(); }
-      else if (act === 'down' && i < arr.length-1) { [arr[i+1], arr[i]] = [arr[i], arr[i+1]]; render(); }
-      else if (act === 'default') { arr.forEach((t,k) => t.def = (k===i)); render(); }
-      else if (act === 'forced') { arr[i].forced = !arr[i].forced; render(); }
+      if (act === 'up' && i > 0) { [arr[i-1], arr[i]] = [arr[i], arr[i-1]]; render(); toast(ordMsg()); }
+      else if (act === 'down' && i < arr.length-1) { [arr[i+1], arr[i]] = [arr[i], arr[i+1]]; render(); toast(ordMsg()); }
+      else if (act === 'default') { arr.forEach((t,k) => t.def = (k===i)); render(); toast(kindName() + ' default → ' + arr[i].sp + ' written · ~40ms'); }
+      else if (act === 'forced') { arr[i].forced = !arr[i].forced; render(); toast(arr[i].sp + ' forced ' + (arr[i].forced ? 'on' : 'off') + ' written · ~40ms'); }
       else if (act === 'lang') {
         const anchor = el.closest('.lang-pickwrap') || el;
-        window.openLangMenu(anchor, arr[i].lang, code => { arr[i].lang = code; render(); toast(arr[i].sp + ' → ' + code + ' (' + (LANGNAME[code]||code) + ')'); });
+        window.openLangMenu(anchor, arr[i].lang, code => { arr[i].lang = code; render(); toast(arr[i].sp + ' → ' + code + ' (' + (LANGNAME[code]||code) + ') written · ~40ms'); });
       }
     });
 
@@ -824,7 +853,7 @@
     list.addEventListener('drop', e => {
       e.preventDefault(); const r = e.target.closest('.trk'); if (!r || dragI===null) return;
       const to = +r.dataset.i, arr = rows(); if (to === dragI) return;
-      const [m] = arr.splice(dragI, 1); arr.splice(to, 0, m); render();
+      const [m] = arr.splice(dragI, 1); arr.splice(to, 0, m); render(); toast(ordMsg());
     });
 
     // ---- segmented Audio / Subtitles ----
@@ -834,74 +863,9 @@
       kind = s.dataset.tk === 'subs' ? 'subs' : 'audio'; render();
     });
 
-    // ---- diff → staged ops + command + cost ----
-    const card = document.getElementById('staged-card');
-    const opsEl = document.getElementById('staged-ops');
-    const cntEl = document.getElementById('staged-count');
-    const cmdEl = document.getElementById('cmd-preview');
-    const costEl = document.getElementById('cost-chip');
-
-    function diffKind(k) {
-      const o = orig[k], n = model[k], ops = [];
-      // reorder?
-      const reordered = n.some((t, i) => o[i].sp !== t.sp);
-      if (reordered) ops.push({ ic:'⇅', kind:'reorder', text:(k==='audio'?'Audio':'Subtitle') + ' order → ' + n.map(t => t.sp.split(':').pop()).join(', ') });
-      // per-track flag/lang changes (match by sp)
-      n.forEach(t => {
-        const ob = o.find(x => x.sp === t.sp); if (!ob) return;
-        if (ob.lang !== t.lang) ops.push({ ic:'🏷', kind:'lang', sp:t.sp, text:t.sp + ' language → ' + (t.lang ? t.lang + ' (' + LANGNAME[t.lang] + ')' : 'untagged') });
-        if (ob.def !== t.def && t.def) ops.push({ ic:'★', kind:'flag', sp:t.sp, text:t.sp + ' set as default ' + k });
-        if (k==='subs' && ob.forced !== t.forced) ops.push({ ic:'⮕', kind:'flag', sp:t.sp, text:t.sp + ' forced ' + (t.forced ? 'on' : 'off') });
-      });
-      return { ops, reordered };
-    }
-
-    function diff() {
-      const a = diffKind('audio'), s = diffKind('subs');
-      const ops = [...a.ops, ...s.ops];
-      const anyReorder = a.reordered || s.reordered;
-      cntEl.textContent = ops.length;
-      card.classList.toggle('show', ops.length > 0);
-      if (!ops.length) return;
-      opsEl.innerHTML = ops.map(o => '<div class="staged-op"><span class="op-ic">' + o.ic + '</span><span>' + o.text + '</span></div>').join('');
-
-      // command preview: flag/lang edits → mkvpropedit (instant); reorder → ffmpeg -c copy remux
-      const lines = [];
-      const flagOps = ops.filter(o => o.kind === 'flag' || o.kind === 'lang');
-      if (flagOps.length) {
-        lines.push('mkvpropedit "' + FILE + '" \\');
-        const parts = [];
-        ['audio','subs'].forEach(k => {
-          model[k].forEach(t => {
-            const ob = orig[k].find(x => x.sp === t.sp); if (!ob) return;
-            const m = /0:([as]):(\d+)/.exec(t.sp);            // mkvpropedit wants 1-based, type-relative
-            const tname = 'track:' + m[1] + (parseInt(m[2], 10) + 1);
-            if (ob.lang !== t.lang && t.lang) parts.push('  --edit ' + tname + ' --set language=' + t.lang);
-            if (ob.def !== t.def) parts.push('  --edit ' + tname + ' --set flag-default=' + (t.def?1:0));
-            if (k==='subs' && ob.forced !== t.forced) parts.push('  --edit ' + tname + ' --set flag-forced=' + (t.forced?1:0));
-          });
-        });
-        lines.push(parts.join(' \\\n'));
-      }
-      if (anyReorder) {
-        if (lines.length) lines.push('');
-        const maps = model.audio.concat(model.subs).map(t => '-map ' + t.sp).join(' ');
-        lines.push('ffmpeg -i "' + FILE + '" \\\n  ' + maps + ' -map 0:v -c copy \\\n  "' + FILE + '.reordered.mkv"  # -c copy = no re-encode');
-      }
-      cmdEl.innerHTML = lines.join('\n').replace(/(--edit|--set|-map|-c copy|-i)/g, '<span class="flag">$1</span>');
-
-      // cost
-      if (anyReorder) costEl.innerHTML = '<span class="badge warn">⚠ remux</span><span class="tiny muted">reordering streams needs an <b>ffmpeg -c copy</b> remux (no re-encode, but rewrites the file — minutes on large files)</span>';
-      else costEl.innerHTML = '<span class="badge ok">instant</span><span class="tiny muted"><b>mkvpropedit</b> edits flags in place · ~40ms · no re-encode · perms kept</span>';
-    }
-
-    function reset() { ['audio','subs'].forEach(k => model[k] = JSON.parse(JSON.stringify(orig[k]))); render(); }
-    document.getElementById('staged-discard').addEventListener('click', reset);
-    document.getElementById('staged-discard-2').addEventListener('click', reset);
-    document.getElementById('staged-apply').addEventListener('click', () => {
-      ['audio','subs'].forEach(k => orig[k] = JSON.parse(JSON.stringify(model[k])));
-      render(); toast('Applied to ' + FILE + ' ✓');
-    });
+    // ---- write-through: edits commit to disk immediately (no staging) ----
+    // model is the on-disk truth; this keeps orig in sync so nothing is ever "pending".
+    function diff() { ['audio','subs'].forEach(k => orig[k] = JSON.parse(JSON.stringify(model[k]))); }
 
     render();
   })();
@@ -979,7 +943,7 @@
       if (m[RES]) { set.add(RES); if (m.xx) set.add('xx'); mode='resolved'; }
       else if (m.xx) { set.add('xx'); mode='fallback-xx'; }
       else { Object.keys(m).forEach(l => set.add(l)); mode='fallback-any'; }
-      return { active:set, prefer:null, hiRes:false, sort:'vote', mode, staged:null };
+      return { active:set, prefer:null, hiRes:false, sort:'vote', mode };
     }
     function st(a){ return state[a.key] || (state[a.key] = initState(a)); }
 
@@ -1065,12 +1029,13 @@
     }
 
     function cardHTML(c, a){
-      const tl = c.lang==='xx', d = GDIM[a.kind], s = st(a);
+      const tl = c.lang==='xx', d = GDIM[a.kind];
       let bg;
       if (a.kind==='logo') bg = '<div class="aw-checker" style="position:absolute;inset:0;"><div class="aw-logomark" style="font-size:'+(d[0]/9)+'px;">Sintel</div></div>';
       else bg = '<div class="aw-fill" style="filter:hue-rotate('+c.hue+'deg);"></div>';
-      return '<div class="aw-cand'+(c.current?' current':'')+(s.staged===c._i?' sel':'')+'" data-pick="'+c._i+'" style="width:'+d[0]+'px;height:'+d[1]+'px;">'
+      return '<div class="aw-cand'+(c.current?' current':'')+'" data-pick="'+c._i+'" style="width:'+d[0]+'px;height:'+d[1]+'px;">'
         + bg + (c.current?'<div class="aw-ribbon">ON DISK</div>':'')
+        + '<button class="aw-zoom" data-zoom title="View larger">⤢</button>'
         + '<div class="aw-tagrow"><span class="aw-lpill'+(tl?' tl':'')+'">'+(tl?'no-lang':c.lang)+'</span><span class="aw-vote">★ '+c.vote.toFixed(1)+'</span></div>'
         + '<div class="aw-meta"><span>'+c.res+'</span><span style="opacity:.65;">'+a.ratio+'</span></div></div>';
     }
@@ -1083,18 +1048,56 @@
     }
 
     function drawFoot(){
-      const a = A[cur], s = st(a);
-      if (s.staged != null) { const c = a.cands.find(x => x._i===s.staged);
-        foot.innerHTML = '<div class="row center" style="gap:10px;flex-wrap:wrap;"><span class="badge info">staged</span>'
-          + '<span class="tiny">'+(c.lang==='xx'?'no-language':LN[c.lang]||c.lang)+' · '+c.res+' → writes <span class="mono">'+a.file+'</span></span>'
-          + '<span class="spacer"></span><span class="btn sm ghost" data-discard>Discard</span><span class="btn sm primary" data-save>Save to disk</span></div>';
-      } else {
-        foot.innerHTML = 'Click a candidate to stage it · the <span style="color:var(--ok);font-weight:600;">green</span> outline is what’s on disk now · changes write on <b>Save to disk</b>.';
-      }
+      foot.innerHTML = 'Click any candidate to write it to disk as <span class="mono">'+A[cur].file+'</span> · hover and click <b>⤢</b> to view it large · the <span style="color:var(--ok);font-weight:600;">green</span> outline is what’s on disk now. Changes are written immediately; press <b>Save &amp; sync to Jellyfin</b> to push now, or Jellyfin will pick them up on its next scan.';
     }
 
     function drawGallery(){ drawHead(); drawBar(); drawExplain(); drawGrid(); drawFoot(); }
     function drawAll(){ drawRail(); drawGallery(); }
+
+    // commit a candidate to disk (shared by grid click + lightbox)
+    function saveCand(a, c){ a.cands.forEach(x => x.current = false); c.current = true; a.status = 'ok'; a.localUrl = null;
+      a.disk = { lang:c.lang, res:c.res }; a.sub = a.ratio+' · '+(c.lang==='xx'?'textless':c.lang)+' · '+c.res;
+      drawAll(); toast(a.label+' written → '+a.file); }
+
+    // ---- lightbox (larger preview) ----
+    const lb = document.getElementById('aw-lb'), lbArt = document.getElementById('aw-lb-art'),
+      lbPanel = document.getElementById('aw-lb-panel'), lbPrev = document.getElementById('aw-lb-prev'),
+      lbNext = document.getElementById('aw-lb-next'), lbCounter = document.getElementById('aw-lb-counter');
+    let lbList = [], lbIdx = 0;
+    const LBDIM = { portrait:[348,522], land:[660,372], logo:[560,263], banner:[792,148] };
+    function lbArtHTML(c, a){ const d = LBDIM[a.kind]; let bg;
+      if (a.kind==='logo') bg = '<div class="aw-checker" style="position:absolute;inset:0;"><div class="aw-logomark" style="font-size:'+(d[0]/9)+'px;">Sintel</div></div>';
+      else bg = '<div class="aw-fill" style="filter:hue-rotate('+c.hue+'deg);"></div>';
+      lbArt.style.width = d[0]+'px'; lbArt.style.height = d[1]+'px';
+      return bg + (c.current?'<div class="aw-ribbon">ON DISK</div>':''); }
+    function spec(k,v){ return '<div class="aw-lb-spec"><span class="tiny muted">'+k+'</span><span class="v">'+v+'</span></div>'; }
+    function renderLB(){ const a = A[cur], c = lbList[lbIdx]; if (!c) return;
+      lbArt.innerHTML = lbArtHTML(c, a);
+      const tl = c.lang==='xx';
+      lbPanel.innerHTML = '<div class="aw-eyebrow">'+a.label+' · '+a.ratio+'</div>'
+        + '<div class="row center" style="gap:8px;margin:11px 0 6px;"><span class="aw-lpill'+(tl?' tl':'')+'" style="font-size:.72rem;">'+(tl?'no-language':(LN[c.lang]||c.lang))+'</span><span class="aw-vote" style="font-size:.72rem;">★ '+c.vote.toFixed(1)+'</span></div>'
+        + spec('Resolution', c.res) + spec('Aspect', a.ratio)
+        + spec('Language', tl?'No-language (textless)':(LN[c.lang]||c.lang))
+        + spec('TMDB votes', c.vote.toFixed(1)+' ★')
+        + '<div style="margin-top:16px;">' + (c.current
+            ? '<div class="badge ok" style="width:100%;justify-content:center;padding:9px 0;">✓ Currently on disk</div>'
+            : '<span class="btn sm primary fill" id="aw-lb-save" style="justify-content:center;">Use this artwork</span>')
+        + '</div>'
+        + '<div class="tiny muted" style="margin-top:12px;line-height:1.5;">Writes <span class="mono">'+a.file+'</span> to disk immediately. ‹ › to browse · Esc to go back.</div>';
+      lbCounter.textContent = (lbIdx+1)+' / '+lbList.length;
+      lbPrev.disabled = lbIdx<=0; lbNext.disabled = lbIdx>=lbList.length-1;
+      const vb = document.getElementById('aw-lb-save');
+      if (vb) vb.onclick = () => { saveCand(a, c); closeLB(); }; }
+    function openLBByPick(i){ const a = A[cur]; lbList = filtered(a); lbIdx = Math.max(0, lbList.findIndex(c => c._i===i));
+      lb.classList.add('open'); lb.setAttribute('aria-hidden','false'); renderLB(); }
+    function closeLB(){ lb.classList.remove('open'); lb.setAttribute('aria-hidden','true'); }
+    function stepLB(d){ const n = lbIdx+d; if (n>=0 && n<lbList.length){ lbIdx = n; renderLB(); } }
+    lbPrev.addEventListener('click', () => stepLB(-1));
+    lbNext.addEventListener('click', () => stepLB(1));
+    document.getElementById('aw-lb-x').addEventListener('click', closeLB);
+    lb.addEventListener('click', e => { if (e.target===lb) closeLB(); });
+    document.addEventListener('keydown', e => { if (!lb.classList.contains('open')) return;
+      if (e.key==='Escape') closeLB(); else if (e.key==='ArrowLeft') stepLB(-1); else if (e.key==='ArrowRight') stepLB(1); });
 
     // ---- interactions ----
     bar.addEventListener('click', e => {
@@ -1112,24 +1115,18 @@
     explainWrap.addEventListener('click', e => { if (e.target.closest('[data-showall]')) { e.preventDefault();
       const a = A[cur], s = st(a); langOrder(a).forEach(l => s.active.add(l)); s.hiRes = false; drawBar(); drawExplain(); drawGrid(); } });
     grid.addEventListener('click', e => {
+      const zoom = e.target.closest('[data-zoom]');
+      if (zoom) { const z = zoom.closest('[data-pick]'); openLBByPick(+z.dataset.pick); return; }
       const card = e.target.closest('[data-pick]');
-      if (card) { const a = A[cur], s = st(a), i = +card.dataset.pick; s.staged = (s.staged===i) ? null : i; drawGrid(); drawFoot(); return; }
+      if (card) { const a = A[cur], c = a.cands.find(x => x._i === +card.dataset.pick); if (c && !c.current) saveCand(a, c); return; }
       const sa = e.target.closest('[data-showall]'); if (sa) { e.preventDefault(); const a = A[cur]; state[a.key] = initState(a); drawGallery(); }
-    });
-    foot.addEventListener('click', e => {
-      const a = A[cur], s = st(a);
-      if (e.target.closest('[data-discard]')) { s.staged = null; drawGrid(); drawFoot(); }
-      else if (e.target.closest('[data-save]')) { const c = a.cands.find(x => x._i===s.staged);
-        a.cands.forEach(x => x.current = false); c.current = true; a.status = 'ok'; a.localUrl = null;
-        a.disk = { lang:c.lang, res:c.res }; a.sub = a.ratio+' · '+(c.lang==='xx'?'textless':c.lang)+' · '+c.res; s.staged = null;
-        drawAll(); toast(a.label+' saved → '+a.file); }
     });
 
     // ---- drag-drop · upload · paste URL ----
     const dz = document.getElementById('aw-dropz'), fileIn = document.getElementById('aw-file');
     function takeFile(f){ if (!f || !/^image\//.test(f.type)) return; const a = A[cur];
       a.localUrl = URL.createObjectURL(f); a.status = 'ok'; a.disk = { lang:'local', res:'your upload' };
-      a.sub = a.ratio+' · uploaded · '+f.name; st(a).staged = null; drawAll(); toast('Replaced '+a.label.toLowerCase()+' with '+f.name); }
+      a.sub = a.ratio+' · uploaded · '+f.name; drawAll(); toast('Replaced '+a.label.toLowerCase()+' with '+f.name); }
     ['dragenter','dragover'].forEach(ev => dz.addEventListener(ev, e => { e.preventDefault(); dz.classList.add('drag'); }));
     ['dragleave','drop'].forEach(ev => dz.addEventListener(ev, e => { e.preventDefault(); dz.classList.remove('drag'); }));
     dz.addEventListener('drop', e => takeFile(e.dataTransfer.files && e.dataTransfer.files[0]));
@@ -1166,13 +1163,13 @@
       window.RaviloBuilders.openHero({
         lockTitle: true,
         viewerPicker: true,
-        headTitle: 'Feature in hero carousel',
-        saveLabel: 'Feature for viewer',
+        headTitle: 'Add to hero carousel',
+        saveLabel: 'Add to hero carousel',
         state: {
           pick: { title: 'Sintel', year: 2010, kind: 'movie', genres: ['Fantasy', 'Adventure'], network: 'Blender' },
-          badge: 'None', tagline: 'Featured Film', backdrop: 0, useLogo: true, viewer: 'Eyð Restorff'
+          badge: 'None', tagline: '', backdrop: 0, useLogo: true, viewer: 'Eyð Restorff'
         },
-        onSave: ({ pick, state }) => (window.__toast || alert)('Featured “' + pick.title + '” in ' + (state.viewer || 'the viewer') + '’s hero carousel')
+        onSave: ({ pick, state }) => (window.__toast || alert)('Added “' + pick.title + '” to ' + (state.viewer || 'the viewer') + '’s hero carousel')
       });
     });
   })();
