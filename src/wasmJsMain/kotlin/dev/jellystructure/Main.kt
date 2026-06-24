@@ -66,7 +66,7 @@ object App {
                 else renderLibrary(container, scope, query)
             }
             path == "/activity" -> renderActivity(container, scope, query)
-            path == "/ravilo"   -> renderRaviloConfig(container, scope)
+            path.startsWith("/ravilo") -> renderRaviloConfig(container, scope)
             path == "/settings" -> renderSettings(container, scope, query)
             path.startsWith("/metadata") -> renderMetadata(container, scope, query["tab"] ?: "studios")
             else -> renderDashboard(container, scope)

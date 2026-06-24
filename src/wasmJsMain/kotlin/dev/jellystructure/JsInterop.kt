@@ -4,6 +4,7 @@ package dev.jellystructure
 
 internal fun encodeURIComponent(value: String): String = js("encodeURIComponent(value)")
 internal fun historyReplaceState(hash: String): Unit = js("window.history.replaceState(null,'',hash)")
+internal fun historyPushState(hash: String): Unit = js("window.history.pushState(null,'',hash)")
 internal fun decodeURIComponent(value: String): String = js("decodeURIComponent(value)")
 
 internal fun prefersDark(): Boolean = js("window.matchMedia('(prefers-color-scheme: dark)').matches")
