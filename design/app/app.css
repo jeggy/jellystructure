@@ -20,15 +20,9 @@
   font-family: 'Space Grotesk', sans-serif; font-weight: 600; font-size: 1.18rem;
   padding: 4px 8px 18px; display: flex; align-items: center; gap: 11px; letter-spacing: -.01em;
 }
-.app-side .logo .glyph {
-  width: 30px; height: 30px; border-radius: 9px; flex: none;
-  background: var(--grad); position: relative;
-  box-shadow: 0 4px 14px rgba(123,110,240,.45);
-}
-.app-side .logo .glyph::after {
-  content: ''; position: absolute; inset: 7px; border-radius: 4px;
-  border: 2px solid rgba(255,255,255,.92); border-right-color: transparent; border-bottom-color: transparent;
-  transform: rotate(45deg);
+.app-side .logo .brand-mark {
+  width: 30px; height: 30px; flex: none; border-radius: 9px;
+  filter: drop-shadow(0 4px 14px rgba(123,110,240,.45));
 }
 
 .app-side a.nav {
@@ -91,8 +85,7 @@
 .app-topbar .burger svg { width: 20px; height: 20px; }
 .app-topbar .burger:active { background: var(--hi-soft); border-color: var(--hi); }
 .app-topbar .tb-logo { font-family: 'Space Grotesk', sans-serif; font-weight: 600; font-size: 1.05rem; display: flex; align-items: center; gap: 9px; }
-.app-topbar .tb-logo .glyph { width: 24px; height: 24px; border-radius: 7px; background: var(--grad); flex: none; box-shadow: 0 3px 10px rgba(123,110,240,.42); position: relative; }
-.app-topbar .tb-logo .glyph::after { content: ''; position: absolute; inset: 6px; border-radius: 3px; border: 2px solid rgba(255,255,255,.92); border-right-color: transparent; border-bottom-color: transparent; transform: rotate(45deg); }
+.app-topbar .tb-logo .brand-mark { width: 24px; height: 24px; flex: none; border-radius: 7px; filter: drop-shadow(0 3px 10px rgba(123,110,240,.42)); }
 
 .pagebar { display: flex; align-items: center; gap: 13px; margin-bottom: 8px; flex-wrap: wrap; }
 .pagebar h1 { font-size: 2rem; margin: 0; }
@@ -101,27 +94,6 @@
 .crumb a { color: var(--ink-soft); }
 .page-sub { color: var(--ink-soft); max-width: 78ch; margin: 2px 0 26px; font-size: .98rem; line-height: 1.6; }
 .backrow { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
-
-/* ---------- pagebar dropdown menus + split save button ---------- */
-.menu-wrap, .split { position: relative; display: inline-flex; }
-.menu-btn { cursor: pointer; }
-.caret { font-size: .7rem; opacity: .7; }
-.menu {
-  position: absolute; top: calc(100% + 6px); right: 0; min-width: 224px; z-index: 60;
-  padding: 6px; background: var(--fill); border: 1px solid var(--line-2);
-  border-radius: 12px; box-shadow: 0 18px 50px rgba(0,0,0,.45); display: none;
-}
-.menu-wrap.open > .menu, .split.open > .menu { display: block; }
-.menu-item {
-  display: flex; align-items: flex-start; gap: 9px; padding: 8px 10px;
-  border-radius: 8px; font-size: .86rem; font-weight: 600; color: var(--ink);
-  cursor: pointer; white-space: nowrap; text-decoration: none;
-}
-.menu-item:hover { background: var(--fill-3); }
-.menu-item .mi-ic { width: 16px; text-align: center; opacity: .7; flex: none; }
-.menu-item .mi-sub { display: block; font-size: .72rem; color: var(--ink-soft); font-weight: 400; margin-top: 1px; }
-.split .btn.primary:first-child { border-top-right-radius: 0; border-bottom-right-radius: 0; }
-.split .split-caret { border-top-left-radius: 0; border-bottom-left-radius: 0; margin-left: 1px; padding-left: 9px; padding-right: 10px; }
 
 /* ---------- floating dock stack (bottom-right) ---------- */
 /* Both the scan dock and the needs-attention dock live in this flex column so

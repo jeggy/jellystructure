@@ -92,27 +92,12 @@
     <h1>Nordvest <span class="muted">(2023)</span></h1>
     <span class="badge bad">4 episodes need attention</span>
     <span class="spacer"></span>
-    <span class="menu-wrap" id="links-menu">
-      <span class="btn sm ghost menu-btn">External links <span class="caret">▾</span></span>
-      <div class="menu">
-        <a class="menu-item" href="#" target="_blank" rel="noopener"><span class="mi-ic">↗</span><span>Open in Jellyfin<span class="mi-sub">Library item in the Jellyfin web UI</span></span></a>
-        <a class="menu-item" href="https://www.themoviedb.org/tv/210041" target="_blank" rel="noopener"><span class="mi-ic">↗</span><span>View on TMDB<span class="mi-sub">themoviedb.org/tv/210041</span></span></a>
-      </div>
-    </span>
-    <span class="menu-wrap" id="repull-menu">
-      <span class="btn sm ghost menu-btn">Re-pull <span class="caret">▾</span></span>
-      <div class="menu">
-        <div class="menu-item" id="repull-jf-btn"><span class="mi-ic">⟲</span><span>From Jellyfin…<span class="mi-sub">Re-discover name, path, IDs &amp; tracks</span></span></div>
-        <div class="menu-item"><span class="mi-ic">⟲</span><span>From TMDB<span class="mi-sub">Re-fetch metadata &amp; artwork</span></span></div>
-      </div>
-    </span>
-    <span class="split" id="save-split">
-      <span class="btn primary" id="save-tell">Save &amp; sync to Jellyfin ↻</span>
-      <span class="btn primary split-caret menu-btn"><span class="caret">▾</span></span>
-      <div class="menu">
-        <div class="menu-item"><span class="mi-ic">↓</span><span>Save → disk<span class="mi-sub">Write NFO &amp; artwork only — no Jellyfin refresh</span></span></div>
-      </div>
-    </span>
+    <a class="btn sm ghost" href="#" target="_blank" rel="noopener">Jellyfin ↗</a>
+    <a class="btn sm ghost" href="https://www.themoviedb.org/tv/210041" target="_blank" rel="noopener">TMDB ↗</a>
+    <span class="btn sm ghost" id="repull-jf-btn">Re-pull from Jellyfin…</span>
+    <span class="btn sm ghost">Re-pull from TMDB</span>
+    <span class="btn primary">Save → disk</span>
+    <span class="btn">Save &amp; tell Jellyfin ↻</span>
   </div>
 
   <div class="tabs2" id="tabbar">
@@ -123,10 +108,9 @@
     <span data-tab="history">History</span>
   </div>
 
-  <!-- OVERVIEW PANEL (left rail only on this tab; other tabs are full-width) -->
-  <div class="tabpanel" data-panel="overview" style="display:none;">
-    <div class="row" style="align-items:flex-start;gap:22px;">
-      <div class="col" style="width:220px;flex:none;">
+  <div class="row" style="align-items:flex-start;">
+    <!-- LEFT RAIL (series-level context, persists across tabs) -->
+    <div class="col" style="width:250px;flex:none;">
       <div class="card">
         <h4 style="margin:0 0 8px;">Series artwork</h4>
         <div class="imgslot" style="height:250px;margin-bottom:8px;overflow:hidden;padding:0;position:relative;background:linear-gradient(160deg,#1f3a52 0%,#142838 45%,#0a141d 100%);">
@@ -167,7 +151,11 @@
       </div>
     </div>
 
-      <div class="col fill">
+    <!-- MAIN COLUMN -->
+    <div class="col fill">
+
+      <!-- OVERVIEW PANEL -->
+      <div class="tabpanel" data-panel="overview" style="display:none;">
         <div class="card">
           <h4 style="margin:0 0 12px;">Series metadata <span class="tiny muted">· tvshow.nfo</span></h4>
           <div class="row"><div class="field fill"><label>Series title</label><input class="input" value="Nordvest"></div><div class="field" style="width:110px;"><label>Year</label><input class="input" value="2023"></div></div>
@@ -182,11 +170,9 @@
           <hr class="dash" style="margin:10px 0;">
           <div class="pill-row"><span class="chip"><span class="tag-dot" style="width:8px;height:8px;border-radius:50%;display:inline-block;background:#3fb6f5;"></span> nordic noir <span class="rm" style="cursor:pointer;">✕</span></span><span class="chip">crime drama <span class="rm" style="cursor:pointer;">✕</span></span><span class="chip ghost">＋ add</span></div>
         </div>
-      </div><!-- col fill -->
-    </div><!-- row -->
-  </div><!-- overview panel -->
+      </div>
 
-  <!-- SEASONS & EPISODES PANEL -->
+      <!-- SEASONS & EPISODES PANEL -->
       <div class="tabpanel" data-panel="episodes">
       <div class="card">
         <div class="row center"><h4 style="margin:0;white-space:nowrap;">Season 1</h4><span class="chip">8 episodes</span><span class="spacer"></span><span class="seg"><span class="on">Season 1</span><span>Season 2</span></span></div>
@@ -421,6 +407,8 @@
         </div>
       </div>
 
+    </div>
+  </div>
 </main>
 
 <!-- Re-pull from Jellyfin modal -->

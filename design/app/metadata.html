@@ -15,10 +15,15 @@
     background: var(--fill-3); font-family: 'JetBrains Mono', monospace; font-size: .6rem; color: var(--ink-soft); text-align: center; padding: 4px; }
   .meta-card .nm { font-weight: 600; }
   .genre-chip { font-size: .9rem; padding: 8px 14px; }
+  .tag-card { display: flex; align-items: center; gap: 12px; padding: 13px 15px; cursor: pointer; }
+  .tag-dot-lg { width: 14px; height: 14px; border-radius: 50%; flex: none; }
   .modal-back { position: fixed; inset: 0; z-index: 120; background: rgba(8,10,16,.66); -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px); display: none; align-items: center; justify-content: center; padding: 20px; }
   .modal-back.open { display: flex; }
   .modal { width: 460px; max-width: 100%; background: var(--fill); border: 1px solid var(--line-2); border-radius: var(--radius); box-shadow: var(--shadow); padding: 20px 22px; }
   .modal h3 { margin: 0 0 14px; } .modal .x { float: right; cursor: pointer; color: var(--ink-soft); }
+  .swatches { display: flex; gap: 8px; flex-wrap: wrap; }
+  .swatch { width: 28px; height: 28px; border-radius: 8px; cursor: pointer; border: 2px solid transparent; }
+  .swatch.on { border-color: var(--ink); }
 </style>
 </head>
 <body class="wf-body app-body">
