@@ -127,7 +127,10 @@ fun startServer(
     val appScope = CoroutineScope(SupervisorJob())
     val engine = embeddedServer(CIO, port = port) {
         install(ContentNegotiation) { json(Json { ignoreUnknownKeys = true }) }
-        install(WebSockets)
+        install(WebSockets) {
+            pingPeriodMillis = 30_000L
+            timeoutMillis = 15_000L
+        }
         install(CORS) {
             // Fully permissive: the Ravilo web client may be served from a different origin than
             // the backend (e.g. a dev server), so allow any origin, method, header and content type.
