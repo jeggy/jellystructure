@@ -181,8 +181,14 @@
 
   function D(title, year, genre, rating, kind, o) {
     o = o || {};
+    let status = o.status || 'not_requested';
+    if (status === 'none') status = 'not_requested';
+    if (status === 'fetching') status = 'downloading';
     return Object.assign(T(title, year, genre, rating, kind), {
-      status: o.status || 'none', progress: o.progress || 0,
+      status, progress: o.progress || 0,
+      queuePos: o.queuePos || null, stalled: !!o.stalled, metadata: !!o.metadata,
+      epsDone: o.epsDone != null ? o.epsDone : null, epsTotal: o.epsTotal != null ? o.epsTotal : null,
+      firstAvailable: !!o.firstAvailable,
       weeks: o.weeks != null ? o.weeks : 1, trend: o.trend || 'same',
       views: o.views || null, syn: o.syn || '', source: o.source || 'netflix',
     });
@@ -195,13 +201,13 @@
       note: 'Ranking only — the country feed has no view counts', items: ranked([
         D('Carry-On', 2024, 'Thriller', '16', 'film', { status: 'fetching', progress: 47, weeks: 2, trend: 'up', syn: 'A young TSA officer is blackmailed by a mysterious traveller into letting a dangerous package slip onto a Christmas Eve flight.' }),
         D('Hraðar Ljós', 2024, 'Thriller', '16', 'film', { status: 'available', weeks: 4, trend: 'same', syn: 'A night-shift paramedic in Tórshavn races a ticking clock when a routine call turns into something far darker.' }),
-        D('Saltvatn', 2023, 'Drama', '12', 'film', { status: 'none', weeks: 1, trend: 'new', syn: 'A widowed lighthouse keeper takes in a stranded sailor as winter storms close the only road home.' }),
-        D('Vargtid', 2022, 'Action', '16', 'film', { status: 'none', weeks: 3, trend: 'down', syn: 'A disgraced ranger hunts the wolf pack blamed for a boy’s disappearance — and the men who set them loose.' }),
+        D('Saltvatn', 2023, 'Drama', '12', 'film', { status: 'requested', weeks: 1, trend: 'new', syn: 'A widowed lighthouse keeper takes in a stranded sailor as winter storms close the only road home.' }),
+        D('Vargtid', 2022, 'Action', '16', 'film', { status: 'queued', queuePos: 3, weeks: 3, trend: 'down', syn: 'A disgraced ranger hunts the wolf pack blamed for a boy’s disappearance — and the men who set them loose.' }),
         D('Cosmos Laundromat', 2015, 'Sci-Fi', '12', 'film', { status: 'available', weeks: 6, trend: 'same' }),
-        D('Nordlys Protocol', 2023, 'Action', '16', 'film', { status: 'none', weeks: 2, trend: 'up' }),
-        D('Den Sidste Vinter', 2021, 'Drama', '12', 'film', { status: 'fetching', progress: 12, weeks: 1, trend: 'new' }),
+        D('Nordlys Protocol', 2023, 'Action', '16', 'film', { status: 'failed', weeks: 2, trend: 'up' }),
+        D('Den Sidste Vinter', 2021, 'Drama', '12', 'film', { status: 'downloading', progress: 12, metadata: true, weeks: 1, trend: 'new' }),
         D('Granat', 2020, 'Action', '16', 'film', { status: 'none', weeks: 5, trend: 'down' }),
-        D('Drift 7', 2022, 'Sci-Fi', '12', 'film', { status: 'none', weeks: 2, trend: 'same' }),
+        D('Drift 7', 2022, 'Sci-Fi', '12', 'film', { status: 'importing', weeks: 2, trend: 'same' }),
         D('Stormkast', 2019, 'Action', '12', 'film', { status: 'none', weeks: 1, trend: 'new' }),
       ]) },
     { id: 'tv-dk', title: 'Top 10 TV Shows in Denmark', scope: 'country', category: 'series', metric: 'rank',
@@ -210,8 +216,8 @@
         D('Arvur', 2023, 'Drama', '16', 'series', { status: 'none', weeks: 2, trend: 'up', syn: 'When the family patriarch dies, three siblings discover the inheritance is a debt none of them can pay.' }),
         D('Havets Hjarta', 2022, 'Drama', '12', 'series', { status: 'available', weeks: 3, trend: 'down' }),
         D('Glasberget', 2024, 'Drama', '16', 'series', { status: 'none', weeks: 1, trend: 'new' }),
-        D('Mýrin', 2021, 'Crime', '16', 'series', { status: 'fetching', progress: 63, weeks: 4, trend: 'same' }),
-        D('Brúgvin', 2022, 'Crime', '16', 'series', { status: 'none', weeks: 2, trend: 'up' }),
+        D('Mýrin', 2021, 'Crime', '16', 'series', { status: 'downloading', epsDone: 3, epsTotal: 10, firstAvailable: true, weeks: 4, trend: 'same' }),
+        D('Brúgvin', 2022, 'Crime', '16', 'series', { status: 'downloading', epsDone: 0, epsTotal: 8, stalled: true, weeks: 2, trend: 'up' }),
         D('Det Tavse Hus', 2023, 'Drama', '12', 'series', { status: 'none', weeks: 5, trend: 'down' }),
         D('Kalkverket', 2020, 'Crime', '16', 'series', { status: 'none', weeks: 1, trend: 'new' }),
         D('Tórshavn 1918', 2021, 'Drama', '12', 'series', { status: 'none', weeks: 3, trend: 'same' }),
