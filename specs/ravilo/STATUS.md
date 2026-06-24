@@ -12,24 +12,25 @@ _Last updated: 2026-06-23_
 
 ## Current focus
 
-**Newly planned — TV app-bar + hero polish (specs only, 2026-06-24).** Three Ravilo phases written
-from a TV-UI review, **not yet built**:
-- **[R51](requirements/phase-R51-tv-brand-mark-logo.md)** (FR-RB1) — replace the plain accent "Ravilo"
-  text with the brand lockup: gradient jellyfish **mark** (skin-tinted via `accentGradient`, from
-  `assets/brand/ravilo-mark.svg`) + **ink** wordmark.
-- **[R52](requirements/phase-R52-tv-compact-appbar.md)** (FR-RN1) — compact the app bar so all 5 tabs
-  fit; move **Search** from a nav tab to a right-side **icon** (beside clock + avatar); smaller nav
-  text/padding/gap + focus-chain update. Touches `AppBar` + every screen's `navItems`/`onNavSelect`.
-- **[R53](requirements/phase-R53-tv-hero-buttonless.md)** (FR-RH1) — remove the 3 hero buttons; the
-  **whole hero is clickable → detail**, Left/Right pages (cyclic); move page **dots to the right**
-  (matches the design's already-right `.hero-dots`).
-- **[R54](requirements/phase-R54-tv-focus-reveal-label.md)** (FR-RF1) — focusing a tile only reveals the
-  **poster**, clipping its label; make the focus/bring-into-view target the **whole tile** (poster +
-  title/subtitle) so it scrolls a bit further, keeping the draw-only scale on the poster (R42).
-- **[R55](requirements/phase-R55-tv-back-scrolls-to-top.md)** (FR-RBK1) — Back on content pages
-  (Home/Browse/Channel/Search/Discover) **scrolls to top** first, only popping/exiting when already at
-  top (harder to close the app by accident); **media item pages excluded**; move focus to a top target
-  so bring-into-view doesn't yank the scroll back down.
+**TV app-bar + hero polish + focus/back UX (2026-06-24).** Five Ravilo phases from a TV-UI review;
+**R54–R55 built, R51–R53 still spec-only (not yet built):**
+- **[R51](requirements/phase-R51-tv-brand-mark-logo.md)** (FR-RB1) — ○ planned — replace the plain
+  accent "Ravilo" text with the brand lockup: gradient jellyfish **mark** (skin-tinted via
+  `accentGradient`, from `assets/brand/ravilo-mark.svg`) + **ink** wordmark.
+- **[R52](requirements/phase-R52-tv-compact-appbar.md)** (FR-RN1) — ○ planned — compact the app bar so
+  all 5 tabs fit; move **Search** from a nav tab to a right-side **icon** (beside clock + avatar);
+  smaller nav text/padding/gap + focus-chain update. Touches `AppBar` + every screen's
+  `navItems`/`onNavSelect`.
+- **[R53](requirements/phase-R53-tv-hero-buttonless.md)** (FR-RH1) — ○ planned — remove the 3 hero
+  buttons; the **whole hero is clickable → detail**, Left/Right pages (cyclic); move page **dots to the
+  right** (matches the design's already-right `.hero-dots`).
+- **[R54](requirements/phase-R54-tv-focus-reveal-label.md)** (FR-RF1) — ✅ done — `dpadFocusable` moved
+  from the poster `Box` to the outer tile `Column` in `Tile.kt`, so the bring-into-view target spans the
+  label; draw-only scale/ring stay on the poster (R42 preserved).
+- **[R55](requirements/phase-R55-tv-back-scrolls-to-top.md)** (FR-RBK1) — ✅ done — shared
+  `Modifier.backToTopOnBack` (`focus/BackToTop.kt`) on Home/Discover/Channel/Browse/Search: Back
+  **scrolls to top** + refocuses a top target when scrolled, and only pops/exits at the top (harder to
+  close the app by accident); detail + Player screens excluded.
 
 **Phases R01–R50 complete.** R48–R50 (Discover / Top 10: `/api/tv/discover` API + per-user
 `DiscoverConfig`, the Compose Top 10 screen + dedicated detail with live acquisition status, and the
