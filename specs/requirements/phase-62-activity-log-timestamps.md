@@ -1,6 +1,6 @@
 # Phase 62 — Activity log: use stored timestamps (FR-AT1)
 
-**Status:** Planned
+**Status:** ✅ Done
 
 ## Goal
 
