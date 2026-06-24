@@ -16,6 +16,15 @@ internal fun installSystemThemeWatcher(): Unit =
 internal fun scrollIntoViewSmooth(el: JsAny): Unit =
     js("el.scrollIntoView({behavior:'smooth',block:'start'})")
 
+// epochSecStr = epoch-seconds as decimal string; formats as HH:mm:ss same-day, or "MMM d, HH:mm" cross-day
+internal fun formatStoredTs(epochSecStr: String): String = js("""(function(){
+    var d=new Date(parseFloat(epochSecStr)*1000);
+    var n=new Date();
+    var same=d.getFullYear()===n.getFullYear()&&d.getMonth()===n.getMonth()&&d.getDate()===n.getDate();
+    var tOpts={hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false};
+    return same?d.toLocaleTimeString([],tOpts):d.toLocaleString([],{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit',hour12:false});
+})()""")
+
 // Observes elements whose ids are in the comma-separated `idsCsv` string; calls `onVisible(id)`
 // when one enters the viewport within the given rootMargin (CSS-style, e.g. "-10% 0px -80% 0px").
 // True when the element's top edge is within [marginPx] of the viewport bottom — used by the
