@@ -1,5 +1,9 @@
 package dev.jellystructure.ravilo.ui.screens
 
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.LocalBringIntoViewSpec
@@ -10,8 +14,9 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -31,22 +36,37 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.LineHeightStyle
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.jellystructure.ravilo.ui.LocalLiveAcquisition
 import dev.jellystructure.ravilo.ui.LocalLiveConfig
+import dev.jellystructure.ravilo.ui.LocalTileScale
 import dev.jellystructure.ravilo.ui.components.AppBar
 import dev.jellystructure.ravilo.ui.components.HomeLoadingShell
 import dev.jellystructure.ravilo.ui.components.StaticContentRow
-import dev.jellystructure.ravilo.ui.components.Tile
-import dev.jellystructure.ravilo.ui.components.TileVariant
+import dev.jellystructure.ravilo.ui.focus.dpadFocusable
+import dev.jellystructure.ravilo.ui.seams.RemoteImage
 import dev.jellystructure.ravilo.ui.focus.rememberEdgeBringIntoViewSpec
 import dev.jellystructure.ravilo.ui.focus.backToTopOnBack
 import dev.jellystructure.ravilo.ui.i18n.str
 import dev.jellystructure.ravilo.ui.theme.RaviloDimens
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
+import dev.jellystructure.ravilo.ui.theme.Sora
 import dev.jellystructure.ravilo.ui.theme.SpaceGrotesk
 import dev.jellystructure.shared.tv.AcquisitionRecord
 import dev.jellystructure.shared.tv.AcquisitionStatus
@@ -187,30 +207,142 @@ private fun DiscoverLoaded(
     }
 }
 
-/** A ranked Discover tile: large rank numeral + landscape art + live status pill + a trend/views sub-line. */
+// Ranked Top 10 tile geometry — a portrait poster with the giant numeral tucked behind it (R49 mockup
+// `.rtile`: poster 180px / numeral 168px). Sized down for TV and scaled by the operator density.
+private val RANK_POSTER_W = 150.dp
+private val RANK_POSTER_H = 225.dp
+
+/**
+ * A ranked Discover tile (R49 mockup `.rtile`): a giant **outlined** rank numeral with the portrait
+ * poster tucked over its right edge (Netflix Top-10 style), a live status pill on the art, and a
+ * compact title + trend/views sub-line. The numeral stroke turns accent on focus; the poster keeps the
+ * R42/R43 draw-only focus scale + ring (no viewport jump). Smaller text + portrait art make the row far
+ * more compact than the old landscape tile with a numeral in its own column.
+ */
 @Composable
 private fun RankTile(e: DiscoverEntry, onSelect: () -> Unit) {
     val colors = RaviloTheme.colors
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Text(
-            text = "${e.entry.rank}",
-            color = colors.textSecondary.copy(alpha = 0.5f),
-            fontFamily = SpaceGrotesk,
-            fontWeight = FontWeight.Bold,
-            fontSize = 56.sp,
-            modifier = Modifier.widthIn(min = 48.dp).padding(end = 2.dp),
-        )
-        Box {
-            Tile(
-                title = e.entry.title,
-                posterUrl = tmdbImg(e.entry.backdropPath),
-                variant = TileVariant.LANDSCAPE,
-                subtitle = chartSubline(e.entry),
-                onSelect = onSelect,
+    val tileScale = LocalTileScale.current
+    val w = RANK_POSTER_W * tileScale
+    val h = RANK_POSTER_H * tileScale
+    val overlap = 12.dp * tileScale   // how far the poster tucks over the numeral's right edge
+
+    var focused by remember { mutableStateOf(false) }
+    // Snappier focus feel, mirrors Tile (R43): draw-only scale/ring so the lazy list never chases it.
+    val focusSpec = remember { spring<Float>(dampingRatio = 0.8f, stiffness = Spring.StiffnessMedium) }
+    val dpSpec    = remember { spring<Dp>(dampingRatio = 0.8f, stiffness = Spring.StiffnessMedium) }
+    val scale         by animateFloatAsState(if (focused) 1.10f else 1f, focusSpec, label = "rankScale")
+    val ringWidth     by animateDpAsState(if (focused) 3.dp else 0.dp, dpSpec, label = "rankRing")
+    val glowElevation by animateDpAsState(if (focused) 24.dp else 0.dp, dpSpec, label = "rankShadow")
+    val tileShape = remember(colors.tileRadius) { RoundedCornerShape(colors.tileRadius) }
+    val numColor  = if (focused) colors.accent else colors.textDim
+    val numSize   = (140f * tileScale).sp
+    val strokePx  = with(LocalDensity.current) { (2.5.dp * tileScale).toPx() }
+    val labelW    = w + 48.dp
+
+    Column(
+        modifier = Modifier.dpadFocusable(
+            onFocused = { focused = true },
+            onBlurred = { focused = false },
+            onSelect = onSelect,
+        ),
+    ) {
+        Row(verticalAlignment = Alignment.Bottom) {
+            // Giant outlined numeral. Trim.Both hugs the glyph box so the bottom-aligned numeral sits
+            // flush with the poster's lower edge; the poster (drawn after) overlaps its right edge.
+            Text(
+                text = "${e.entry.rank}",
+                color = numColor,
+                fontFamily = SpaceGrotesk,
+                fontWeight = FontWeight.Bold,
+                fontSize = numSize,
+                lineHeight = numSize,
+                letterSpacing = (-4).sp,
+                // Nudge down ~one font-descent so the bottom-aligned digits hug the poster's lower
+                // edge (the mockup's `line-height: .74` crops into the descent for the same effect).
+                modifier = Modifier.offset(y = (numSize.value * 0.16f).dp),
+                style = TextStyle(
+                    drawStyle = Stroke(width = strokePx, join = StrokeJoin.Round),
+                    lineHeightStyle = LineHeightStyle(
+                        alignment = LineHeightStyle.Alignment.Bottom,
+                        trim = LineHeightStyle.Trim.Both,
+                    ),
+                ),
             )
-            discoverStatusLabel(e.acquisition)?.let { label ->
-                StatusPill(label, discoverStatusColor(e.acquisition.status, colors.accent), Modifier.align(Alignment.TopEnd).padding(8.dp))
+            Box(modifier = Modifier.offset(x = -overlap)) {
+                Box(
+                    modifier = Modifier
+                        .width(w)
+                        .height(h)
+                        .graphicsLayer {
+                            scaleX = scale; scaleY = scale
+                            this.shadowElevation = glowElevation.toPx()
+                            shape = tileShape
+                            clip = true
+                            ambientShadowColor = colors.focusGlow
+                            spotShadowColor = colors.focusGlow
+                        }
+                        .drawWithCache {
+                            val radius = CornerRadius(colors.tileRadius.toPx())
+                            onDrawWithContent {
+                                drawContent()
+                                val bw = ringWidth.toPx()
+                                if (bw > 0f) drawRoundRect(
+                                    color = colors.focusRing,
+                                    cornerRadius = radius,
+                                    style = Stroke(width = bw),
+                                    topLeft = Offset(bw / 2f, bw / 2f),
+                                    size = Size(size.width - bw, size.height - bw),
+                                )
+                            }
+                        },
+                ) {
+                    val posterUrl = tmdbPoster(e.entry.posterPath) ?: tmdbImg(e.entry.backdropPath)
+                    if (posterUrl != null) {
+                        RemoteImage(posterUrl, e.entry.title, Modifier.matchParentSize())
+                    } else {
+                        val hue = remember(e.entry.title) { (e.entry.title.hashCode().toLong() and 0xFFFFFFFFL) % 360L }
+                        val grad = remember(hue, colors.surface) {
+                            Brush.verticalGradient(listOf(Color.hsl(hue.toFloat(), 0.38f, 0.22f), colors.surface))
+                        }
+                        Box(Modifier.matchParentSize().background(grad), contentAlignment = Alignment.Center) {
+                            Text(
+                                text = e.entry.title.take(2).uppercase(),
+                                color = Color.White.copy(alpha = 0.7f),
+                                fontSize = 28.sp,
+                                fontWeight = FontWeight.Bold,
+                                fontFamily = Sora,
+                            )
+                        }
+                    }
+                }
+                discoverStatusLabel(e.acquisition)?.let { label ->
+                    StatusPill(label, discoverStatusColor(e.acquisition.status, colors.accent), Modifier.align(Alignment.TopEnd).padding(8.dp))
+                }
             }
+        }
+        Spacer(Modifier.height(10.dp))
+        Text(
+            text = e.entry.title,
+            color = if (focused) colors.text else colors.textSecondary,
+            fontFamily = Sora,
+            fontWeight = FontWeight.SemiBold,
+            fontSize = 15.sp,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.width(labelW),
+        )
+        val sub = chartSubline(e.entry)
+        if (sub.isNotEmpty()) {
+            Text(
+                text = sub,
+                color = colors.textDim,
+                fontFamily = Sora,
+                fontSize = 13.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.width(labelW),
+            )
         }
     }
 }
@@ -232,6 +364,10 @@ private fun StatusPill(label: String, color: Color, modifier: Modifier = Modifie
 
 internal fun tmdbImg(path: String?): String? =
     path?.takeIf { it.isNotBlank() }?.let { "https://image.tmdb.org/t/p/w780$it" }
+
+/** Portrait poster URL for the ranked Top 10 tiles (w500 fits the ~150dp poster well). */
+internal fun tmdbPoster(path: String?): String? =
+    path?.takeIf { it.isNotBlank() }?.let { "https://image.tmdb.org/t/p/w500$it" }
 
 internal fun chartSubline(e: ChartEntry): String {
     val trend = when (e.trend) { Trend.UP -> " ▲"; Trend.DOWN -> " ▼"; Trend.NEW -> " · NEW"; Trend.SAME -> "" }

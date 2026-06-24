@@ -39,5 +39,6 @@ data class ChartEntry(
     val isNew: Boolean = false,
     val views: String? = null,       // null for country scope
     val backdropPath: String? = null,
+    val posterPath: String? = null,  // portrait poster for the ranked Top 10 tiles (R49 mockup)
     val overview: String? = null,
 )

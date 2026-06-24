@@ -31,6 +31,7 @@ class ChartStore(private val db: JellystructureDb) {
                 is_new = if (e.isNew) 1L else 0L,
                 views = e.views,
                 backdrop_path = e.backdropPath,
+                poster_path = e.posterPath,
                 overview = e.overview,
                 updated_at = now,
             )
@@ -66,6 +67,7 @@ class ChartStore(private val db: JellystructureDb) {
         isNew = r.is_new != 0L,
         views = r.views,
         backdropPath = r.backdrop_path,
+        posterPath = r.poster_path,
         overview = r.overview,
     )
 }
