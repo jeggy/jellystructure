@@ -8,6 +8,8 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.gestures.BringIntoViewSpec
 import androidx.compose.foundation.gestures.LocalBringIntoViewSpec
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -16,15 +18,18 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.focusRestorer
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 import dev.jellystructure.ravilo.ui.theme.RaviloDimens
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
 import dev.jellystructure.ravilo.ui.theme.SpaceGrotesk
+import kotlinx.coroutines.launch
 
 /**
  * A titled horizontal rail: the caller supplies the item composables directly.
@@ -67,7 +72,15 @@ fun <T> StaticContentRow(
         }
     }
 
-    Column(modifier = modifier.fillMaxWidth()) {
+    // When any descendant gains focus, bring the *whole row* (title + tiles) into view so the
+    // vertical LazyColumn scrolls to show the row header, not just the focused tile.
+    @OptIn(ExperimentalFoundationApi::class)
+    val rowBIVR = remember { BringIntoViewRequester() }
+    val scope = rememberCoroutineScope()
+
+    Column(modifier = modifier.fillMaxWidth()
+        .bringIntoViewRequester(rowBIVR)
+        .onFocusChanged { if (it.hasFocus) scope.launch { rowBIVR.bringIntoView() } }) {
         if (title != null) {
             Row(
                 modifier = Modifier
