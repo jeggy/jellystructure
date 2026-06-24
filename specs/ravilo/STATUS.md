@@ -8,35 +8,11 @@ Ravilo is a sibling product **inside the jellystructure repo** — an Android TV
 canvas) streaming front-end built from one **Compose Multiplatform** codebase, talking only to the
 jellystructure backend.
 
-_Last updated: 2026-06-24_
+_Last updated: 2026-06-23_
 
 ## Current focus
 
-**TV app-bar + hero polish + focus/back UX (2026-06-24).** Five Ravilo phases from a TV-UI review —
-**all built (R51–R55):**
-- **[R51](requirements/phase-R51-tv-brand-mark-logo.md)** (FR-RB1) — ✅ done — `components/BrandMark.kt`
-  vector-draws the jellyfish **mark** (skin-tinted via `accentGradient`, from `ravilo-mark.svg`); the app
-  bar shows the mark + an **ink** wordmark.
-- **[R52](requirements/phase-R52-tv-compact-appbar.md)** (FR-RN1) — ✅ done — `AppBar` compacted
-  (60 dp / 15 sp / 12×6 / 18-gap); **Search** moved from a nav tab to a right-side drawn-magnifier
-  `SearchIcon` (search · clock · avatar). Nav lists + `RaviloApp` index maps remapped (Top 10 → 4,
-  `DISCOVER_NAV_INDEX = 4`); focus chain: last nav → search icon → avatar.
-- **[R53](requirements/phase-R53-tv-hero-buttonless.md)** (FR-RH1) — ✅ done — `HeroCarousel` is one
-  focusable surface (select → detail, Left/Right pages cyclically, subtle inset focus ring, no scale);
-  buttons removed; page **dots** moved bottom-right (active = accent pill). Design mockup synced.
-- **[R54](requirements/phase-R54-tv-focus-reveal-label.md)** (FR-RF1) — ✅ done — `dpadFocusable` moved
-  from the poster `Box` to the outer tile `Column` in `Tile.kt`, so the bring-into-view target spans the
-  label; draw-only scale/ring stay on the poster (R42 preserved).
-- **[R55](requirements/phase-R55-tv-back-scrolls-to-top.md)** (FR-RBK1) — ✅ done — shared
-  `Modifier.backToTopOnBack` (`focus/BackToTop.kt`) on Home/Discover/Channel/Browse/Search: Back
-  **scrolls to top** + refocuses a top target when scrolled, and only pops/exits at the top (harder to
-  close the app by accident); detail + Player screens excluded.
-
-**Phases R01–R50 complete.** R48–R50 (Discover / Top 10: `/api/tv/discover` API + per-user
-`DiscoverConfig`, the Compose Top 10 screen + dedicated detail with live acquisition status, and the
-`/ravilo` config-editor Top 10 section) landed 2026-06-24 — see "Done — Discover / Top 10" below
-(`:ravilo-ui` compiles android + wasmJs; on-device verification pending). Earlier:
-[R47](requirements/phase-R47-detail-focusable-draw-only-scale.md)
+**Phases R01–R47 complete.** [R47](requirements/phase-R47-detail-focusable-draw-only-scale.md)
 (2026-06-23) finished the R42 viewport-jump fix on the **detail screens**: R42 made the focus scale
 draw-only "only on Tile/ChannelCard", so navigating Movie/Series detail still jumped — `EpisodeCard`,
 `SeasonPicker` pills and `RaviloButton` applied `.scale` (and the button lift) as an **ancestor** of
@@ -45,13 +21,13 @@ glow + lift into an inner `graphicsLayer` with the focusable on a fixed-size out
 scaled a descendant (unchanged). `:ravilo-ui` (android + wasmJs) compiles; `:ravilo-android:assembleDebug`
 builds. _Verify on-device:_ season picker / episode rail / action buttons no longer jump.
 
-## Done — Discover / Top 10 (built 2026-06-24)
+## Newly planned — Discover / Top 10 (2026-06-23)
 
 A new TV surface: a **Top 10** tab driven by third-party popularity charts (Netflix via Tudum first),
 where titles not in the library can be **requested** and fetched through Radarr/Sonarr, with a **live,
 multi-stage status indicator** (requested → queued → downloading% → importing → available). Backend
 engine + chart ingestion are jellystructure phases (**56** acquisition pipeline, **57** chart
-ingestion — see [`../STATUS.md`](../STATUS.md)); the Ravilo side is three phases, now **built + committed**:
+ingestion — see [`../STATUS.md`](../STATUS.md)); the Ravilo side is three planned phases:
 
 - **[R48](requirements/phase-R48-discover-api.md)** — `/api/tv/discover` API: a `discover` block on the
   per-user `RaviloConfig` (enabled/source/region/ordered lists), composition of charts + acquisition
@@ -205,15 +181,6 @@ positive-only `/api/media` count).
 - Visual target: the prototype in `design/ravilo/` (`Ravilo TV.html`, `ravilo.css`) — Aurora/Midnight/
   Noir skins, jellyfish brand, hero/channel-rail/rows, movie+series detail with watched/resume, search.
 - The per-user config surface is mocked in `design/app/ravilo-config.html` (drives R16).
-
-## Newly planned (2026-06-24)
-
-- **[R56](requirements/phase-R56-tv-hero-no-focus-border.md) — Hero carousel: remove
-  focus border** (FR-RHB1). R53 added an inset ring (`border(3.dp, colors.focusRing,
-  RoundedCornerShape(14.dp))`) as the hero's focus indicator. Remove it entirely —
-  the hero remains focusable/selectable/navigable but has no visible focus treatment.
-  Constitution gains an explicit exception for full-bleed hero surfaces. Small change
-  to `HeroCarousel.kt` + `ravilo.css`.
 
 ## Open threads
 
