@@ -21,10 +21,12 @@ import dev.jellystructure.shared.tv.UiDensity
 import kotlinx.browser.document
 import kotlinx.browser.window
 import dev.jellystructure.api.MediaApi
+import dev.jellystructure.model.MediaItem
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlin.math.absoluteValue
 import kotlin.random.Random
 import org.w3c.dom.Element
 import org.w3c.dom.HTMLElement
@@ -394,104 +396,268 @@ private fun renderPair(container: Element, scope: CoroutineScope) {
 
 // ── Heroes ────────────────────────────────────────────────────────────────────
 
+private fun heroGradient(id: String): String {
+    val hue = id.fold(0) { acc, c -> acc * 31 + c.code }.absoluteValue % 360
+    return "linear-gradient(145deg,hsl($hue 48% 36%),hsl(${(hue + 45) % 360} 52% 14%))"
+}
+
 private fun renderHeroes(container: Element) {
     val sect = container.querySelector("#sect-heroes") ?: return
     val last = currentConfig.heroes.lastIndex
     val rows = currentConfig.heroes.mapIndexed { i, h ->
-        val showChecked = if (h.enabled) " checked" else ""
-        val logoChecked = if (h.clearlogoOverlay) " checked" else ""
+        val title = h.displayTitle ?: h.itemId.take(24)
+        val meta = h.displayMeta ?: ""
+        val bg = heroGradient(h.itemId.ifBlank { "$i" })
+        val thumbStyle = if (!h.displayBackdrop.isNullOrBlank())
+            "background:url('https://image.tmdb.org/t/p/w300${h.displayBackdrop}') center/cover,$bg"
+        else "background:$bg"
+        val badgeHtml = h.badge?.takeIf { it.isNotBlank() }?.let {
+            """<span class="badge" style="font-size:.6rem;vertical-align:middle">${it.htmlEsc()}</span>"""
+        } ?: ""
+        val tagHtml = h.tagline?.takeIf { it.isNotBlank() }?.let {
+            """<div class="tiny" style="color:var(--ink-soft);margin-top:1px;font-style:italic;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${it.htmlEsc()}</div>"""
+        } ?: ""
+        val toggleCls = if (h.enabled) " on" else ""
+        val rowCls = if (h.enabled) "" else " off"
+        val shortTitle = title.take(12) + if (title.length > 12) "…" else ""
         """
-        <div class="cfg-row" style="display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap">
+        <div class="cfg-row$rowCls" style="gap:12px">
           ${reorderButtons("hero", i, last)}
-          <div style="position:relative;flex-shrink:0">
-            <input class="input" style="width:220px" placeholder="Search title or paste ID…" value="${h.itemId.htmlEsc()}" data-hero-id="$i" autocomplete="off">
-            <div id="hero-drop-$i" style="display:none;position:absolute;top:calc(100% + 2px);left:0;width:280px;z-index:300;background:var(--card-bg,#1a1a2e);border:1px solid var(--line);border-radius:8px;overflow:hidden;box-shadow:0 4px 20px #0009"></div>
+          <div class="hero-thumb" style="$thumbStyle;width:92px;height:52px;border-radius:8px;flex:none;position:relative;overflow:hidden">
+            <span style="position:absolute;left:7px;bottom:5px;font-family:var(--font-display,'Space Grotesk',sans-serif);font-weight:700;font-size:.68rem;color:#fff;text-shadow:0 1px 4px rgba(0,0,0,.7)">${shortTitle.htmlEsc()}</span>
           </div>
-          <input class="input" style="width:110px" placeholder="Badge" value="${(h.badge ?: "").htmlEsc()}" data-hero-badge="$i" list="hero-badges">
-          <input class="input fill" style="min-width:140px" placeholder="Tagline / kicker" value="${(h.tagline ?: "").htmlEsc()}" data-hero-tagline="$i">
-          <label style="display:flex;align-items:center;gap:5px;font-size:.8rem;white-space:nowrap"><input type="checkbox" data-hero-logo="$i"$logoChecked> Logo</label>
-          <label style="display:flex;align-items:center;gap:5px;font-size:.8rem;white-space:nowrap"><input type="checkbox" data-hero-enabled="$i"$showChecked> Show</label>
-          <button class="btn sm ghost" data-hero-del="$i">✕</button>
+          <div style="flex:1;min-width:0">
+            <div class="nm" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${title.htmlEsc()} $badgeHtml</div>
+            <div class="src">${meta.htmlEsc()}</div>
+            $tagHtml
+          </div>
+          <button class="btn sm ghost" data-hero-edit="$i" title="Edit badge &amp; tagline" style="flex-shrink:0;padding:4px 8px">✎</button>
+          <span class="muted tiny" style="flex-shrink:0;font-size:.75rem">${if (h.enabled) "show" else "hidden"}</span>
+          <span class="toggle$toggleCls" data-hero-tog="$i" style="cursor:pointer;flex-shrink:0"></span>
+          <button class="btn sm ghost" data-hero-del="$i" style="flex-shrink:0">✕</button>
         </div>
         """.trimIndent()
-    }.joinToString("")
+    }.joinToString("\n")
     val autoOptions = AUTO_ADVANCE_OPTIONS.joinToString("") { (v, label) ->
         val sel = if (v == currentConfig.autoAdvanceSeconds) " selected" else ""
         """<option value="$v"$sel>$label</option>"""
     }
+    val emptyHint = if (currentConfig.heroes.isEmpty())
+        """<div class="tiny muted" style="padding:10px 2px">No hero items yet — click <b>+ Add hero item</b> to pin titles to the top banner.</div>"""
+    else ""
     sect.innerHTML = """
         <div class="card" style="padding:18px 20px;margin-bottom:18px">
-          <div style="font-weight:600;margin-bottom:10px">Hero carousel</div>
-          <p style="font-size:.82rem;color:var(--ink-soft);margin-bottom:14px">
-            Pinned items shown in the banner at the top of the home screen. Reorder with the arrows; the carousel auto-advances on the TV.
-            Tip: use <b>★ Feature in Ravilo…</b> on a movie/series detail page to add a hero by title with a live preview.
+          <div class="row center" style="margin-bottom:8px">
+            <div style="font-weight:600;font-size:1.02rem">Home hero carousel</div>
+            <span class="badge info" style="margin-left:8px;flex-shrink:0">1–10 items</span>
+            <span class="spacer"></span>
+            <button id="hero-add" class="btn sm ghost">+ Add hero item</button>
+          </div>
+          <p style="font-size:.82rem;color:var(--ink-soft);margin:0 0 14px">
+            The top banner on the Home page. Drag to reorder; the carousel auto-advances on the TV.
+            Each channel can have its own hero too — set it in the channel's editor.
           </p>
-          <datalist id="hero-badges"><option value="New Season"><option value="4K"><option value="Top 10"><option value="Premiere"></datalist>
-          $rows
-          <button id="hero-add" class="btn sm ghost" style="margin-top:6px">+ Add hero</button>
+          <div id="herolist" style="display:flex;flex-direction:column;gap:9px">
+            $rows
+            $emptyHint
+          </div>
           <hr class="dash" style="margin:16px 0">
           <div class="row" style="gap:24px;flex-wrap:wrap;align-items:flex-end">
             <div style="flex:1;min-width:220px">
               <label style="display:block;font-size:.85rem;margin-bottom:4px">Hero height <span class="mono" id="hero-height-val">${currentConfig.heroHeightPct}%</span> of screen</label>
-              <input type="range" id="hero-height" min="40" max="100" value="${currentConfig.heroHeightPct}" style="width:100%">
+              <input type="range" id="hero-height" min="40" max="100" value="${currentConfig.heroHeightPct}" style="width:100%;accent-color:var(--acc,#7b6ef0)">
+              <span style="font-size:.76rem;color:var(--ink-soft)">How much of the TV screen the banner fills (40–100%).</span>
             </div>
-            <div style="width:160px">
+            <div style="width:180px">
               <label style="display:block;font-size:.85rem;margin-bottom:4px">Auto-advance</label>
               <select id="auto-advance" class="input" style="width:100%;font-size:.85rem">$autoOptions</select>
             </div>
           </div>
         </div>
     """.trimIndent()
-    sect.querySelector("#hero-add")?.addEventListener("click") { _ ->
-        structural(container, { currentConfig = currentConfig.copy(heroes = currentConfig.heroes + HeroConfig(itemId = "")) }, ::renderHeroes)
-    }
+    sect.querySelector("#hero-add")?.addEventListener("click") { _ -> openHeroAddPicker(container) }
     wireReorder(container, sect, "hero",
         get = { currentConfig.heroes }, set = { currentConfig = currentConfig.copy(heroes = it) }, ::renderHeroes)
+    sect.querySelector("#hero-height")?.addEventListener("input") { _ ->
+        val v = (sect.querySelector("#hero-height") as? HTMLInputElement)?.value?.toIntOrNull() ?: return@addEventListener
+        currentConfig = currentConfig.copy(heroHeightPct = v)
+        (sect.querySelector("#hero-height-val") as? HTMLElement)?.textContent = "$v%"
+    }
+    sect.querySelector("#auto-advance")?.addEventListener("change") { _ ->
+        val v = (sect.querySelector("#auto-advance") as? HTMLSelectElement)?.value?.toIntOrNull() ?: return@addEventListener
+        currentConfig = currentConfig.copy(autoAdvanceSeconds = v)
+    }
     for (i in currentConfig.heroes.indices) {
         sect.querySelector("[data-hero-del='$i']")?.addEventListener("click") { _ ->
-            structural(container, {
-                val list = currentConfig.heroes.toMutableList(); list.removeAt(i)
-                currentConfig = currentConfig.copy(heroes = list)
-            }, ::renderHeroes)
+            val list = currentConfig.heroes.toMutableList(); list.removeAt(i)
+            currentConfig = currentConfig.copy(heroes = list)
+            renderHeroes(container)
         }
-        // Autocomplete: search-as-you-type on the hero ID input
-        val heroInp = sect.querySelector("[data-hero-id='$i']") as? HTMLInputElement ?: continue
-        val drop = sect.querySelector("#hero-drop-$i") as? HTMLElement ?: continue
-        var searchJob: Job? = null
-        heroInp.addEventListener("input") { _ ->
-            searchJob?.cancel()
-            val q = heroInp.value.trim()
-            if (q.length < 2) { drop.style.display = "none"; return@addEventListener }
-            searchJob = rcScope?.launch {
-                delay(250)
-                val results = MediaApi.list(search = q, pageSize = 6)?.items ?: return@launch
-                if (results.isEmpty()) { drop.style.display = "none"; return@launch }
-                drop.innerHTML = results.joinToString("") { item ->
-                    val pickId = item.jellyfinId ?: item.id
-                    val kindLabel = if (item.kind.name == "TV_SHOW") "Series" else "Movie"
-                    val yearStr = item.year?.let { " (${it})" } ?: ""
-                    """<div data-hero-pick="$pickId" style="padding:8px 12px;cursor:pointer;font-size:.82rem;display:flex;gap:8px;align-items:center;border-bottom:1px solid var(--line);transition:background .1s" onmouseover="this.style.background='var(--surface)'" onmouseout="this.style.background=''">
-                        <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${item.title.htmlEsc()}$yearStr</span>
-                        <span style="font-size:.68rem;background:var(--surface);border:1px solid var(--line);border-radius:4px;padding:1px 5px;flex-shrink:0">$kindLabel</span>
-                    </div>"""
-                }
-                drop.style.display = "block"
-                val nodeList = drop.querySelectorAll("[data-hero-pick]")
-                for (j in 0 until nodeList.length) {
-                    val el = nodeList.item(j) as? HTMLElement ?: continue
-                    el.addEventListener("mousedown") { ev ->
-                        (ev as? org.w3c.dom.events.MouseEvent)?.preventDefault()
-                        val pickId = el.getAttribute("data-hero-pick") ?: return@addEventListener
-                        heroInp.value = pickId
-                        drop.style.display = "none"
-                        collectConfig(container)
-                    }
-                }
+        sect.querySelector("[data-hero-tog='$i']")?.addEventListener("click") { _ ->
+            val list = currentConfig.heroes.toMutableList()
+            list[i] = list[i].copy(enabled = !list[i].enabled)
+            currentConfig = currentConfig.copy(heroes = list)
+            renderHeroes(container)
+        }
+        sect.querySelector("[data-hero-edit='$i']")?.addEventListener("click") { _ ->
+            openHeroEditModal(container, i)
+        }
+    }
+}
+
+private fun openHeroAddPicker(container: Element) {
+    val scope = rcScope ?: return
+    document.getElementById("hero-add-ov")?.remove()
+    val overlay = document.createElement("div") as HTMLElement
+    overlay.id = "hero-add-ov"
+    overlay.setAttribute("style", "position:fixed;inset:0;background:#000b;display:flex;align-items:center;justify-content:center;z-index:1200;padding:20px")
+    overlay.innerHTML = """
+        <div style="background:var(--fill);color:var(--ink);border:1px solid var(--line);border-radius:16px;padding:20px;width:min(520px,100%);box-shadow:var(--shadow);display:flex;flex-direction:column;gap:0;max-height:90vh">
+          <div style="font-weight:700;font-size:1.05rem;margin-bottom:12px">Add hero item</div>
+          <input id="hero-pick-q" class="input" style="width:100%;margin-bottom:10px" placeholder="Search your library…" autocomplete="off">
+          <div id="hero-pick-results" style="flex:1;overflow-y:auto;min-height:80px;max-height:260px;display:flex;flex-direction:column;gap:4px"></div>
+          <div id="hero-pick-form" style="display:none;border-top:1px solid var(--line);margin-top:14px;padding-top:14px">
+            <div class="tiny muted" style="margin-bottom:10px">Optional — add a badge or tagline for this hero:</div>
+            <div class="row" style="gap:10px;flex-wrap:wrap;align-items:center">
+              <select id="hero-pick-badge" class="input" style="width:148px;font-size:.85rem">
+                <option value="">No badge</option>
+                <option>New Season</option><option>4K</option><option>Top 10</option><option>Premiere</option>
+              </select>
+              <input id="hero-pick-tag" class="input" style="flex:1;min-width:140px" placeholder="Tagline / kicker…">
+              <label style="display:flex;gap:6px;align-items:center;font-size:.82rem;white-space:nowrap;flex-shrink:0"><input type="checkbox" id="hero-pick-logo" checked> Logo overlay</label>
+            </div>
+          </div>
+          <div class="row" style="gap:8px;justify-content:flex-end;margin-top:14px;flex-shrink:0">
+            <button id="hero-pick-cancel" class="btn sm ghost">Cancel</button>
+            <button id="hero-pick-add" class="btn sm" disabled style="opacity:.45">Add to carousel</button>
+          </div>
+        </div>
+    """.trimIndent()
+    document.body?.appendChild(overlay)
+
+    var selectedItem: MediaItem? = null
+    val addBtn = overlay.querySelector("#hero-pick-add") as? HTMLElement
+    val form = overlay.querySelector("#hero-pick-form") as? HTMLElement
+    val resultsDiv = overlay.querySelector("#hero-pick-results") as? HTMLElement
+    val qInput = overlay.querySelector("#hero-pick-q") as? HTMLInputElement
+
+    fun showResults(items: List<MediaItem>) {
+        val content = if (items.isEmpty())
+            """<div class="tiny muted" style="padding:10px 2px">No results found.</div>"""
+        else items.joinToString("") { item ->
+            val bg = heroGradient(item.jellyfinId ?: item.id)
+            val thumbStyle = if (!item.backdropPath.isNullOrBlank())
+                "background:url('https://image.tmdb.org/t/p/w300${item.backdropPath}') center/cover,$bg"
+            else "background:$bg"
+            val kindStr = if (item.kind.name == "TV_SHOW") "Series" else "Film"
+            val metaParts = listOfNotNull(kindStr, item.network ?: item.studio, item.year?.toString())
+            val meta = metaParts.joinToString(" · ")
+            val pickId = item.jellyfinId ?: item.id
+            val short = item.title.take(10) + if (item.title.length > 10) "…" else ""
+            """<div data-pick-jid="${pickId.htmlEsc()}" class="cfg-row" style="padding:10px 12px;cursor:pointer;gap:10px;flex-shrink:0;transition:background .1s">
+                 <div style="$thumbStyle;width:76px;height:44px;border-radius:6px;flex:none;position:relative;overflow:hidden">
+                   <span style="position:absolute;left:5px;bottom:4px;font-weight:700;font-size:.62rem;color:#fff;text-shadow:0 1px 3px rgba(0,0,0,.8)">${short.htmlEsc()}</span>
+                 </div>
+                 <div style="flex:1;min-width:0">
+                   <div class="nm" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${item.title.htmlEsc()}</div>
+                   <div class="src">${meta.htmlEsc()}</div>
+                 </div>
+               </div>"""
+        }
+        resultsDiv?.innerHTML = content
+        val nodeList = resultsDiv?.querySelectorAll("[data-pick-jid]") ?: return
+        for (j in 0 until nodeList.length) {
+            val el = nodeList.item(j) as? HTMLElement ?: continue
+            val pickId = el.getAttribute("data-pick-jid") ?: continue
+            val item = items.firstOrNull { (it.jellyfinId ?: it.id) == pickId } ?: continue
+            el.addEventListener("click") { _ ->
+                // Clear previously selected highlight
+                val all = resultsDiv?.querySelectorAll("[data-pick-jid]")
+                val n = all?.length ?: 0
+                for (k in 0 until n) (all?.item(k) as? HTMLElement)?.setAttribute("style", "padding:10px 12px;cursor:pointer;gap:10px;flex-shrink:0;transition:background .1s")
+                el.setAttribute("style", "padding:10px 12px;cursor:pointer;gap:10px;flex-shrink:0;background:var(--hi-soft);border-color:var(--hi)")
+                selectedItem = item
+                addBtn?.removeAttribute("disabled")
+                addBtn?.setAttribute("style", "")
+                form?.style?.display = "block"
             }
         }
-        heroInp.addEventListener("blur") { _ ->
-            rcScope?.launch { delay(150); drop.style.display = "none" }
+    }
+
+    scope.launch {
+        val recent = MediaApi.list(pageSize = 8)?.items ?: emptyList()
+        showResults(recent)
+    }
+    var searchJob: Job? = null
+    qInput?.addEventListener("input") { _ ->
+        searchJob?.cancel()
+        val q = qInput.value.trim()
+        searchJob = scope.launch {
+            delay(250)
+            val results = if (q.length >= 2) MediaApi.list(search = q, pageSize = 8)?.items ?: emptyList()
+                          else MediaApi.list(pageSize = 8)?.items ?: emptyList()
+            showResults(results)
+            selectedItem = null
+            addBtn?.setAttribute("disabled", ""); addBtn?.setAttribute("style", "opacity:.45")
+            form?.style?.display = "none"
         }
+    }
+    overlay.querySelector("#hero-pick-cancel")?.addEventListener("click") { _ -> overlay.remove() }
+    addBtn?.addEventListener("click") { _ ->
+        val item = selectedItem ?: return@addEventListener
+        val badge = (overlay.querySelector("#hero-pick-badge") as? HTMLSelectElement)?.value?.ifEmpty { null }
+        val tag = (overlay.querySelector("#hero-pick-tag") as? HTMLInputElement)?.value?.ifEmpty { null }
+        val logo = (overlay.querySelector("#hero-pick-logo") as? HTMLInputElement)?.checked ?: true
+        val itemId = item.jellyfinId ?: item.id
+        val kindStr = if (item.kind.name == "TV_SHOW") "Series" else "Film"
+        val meta = listOfNotNull(kindStr, item.network ?: item.studio, item.year?.toString()).joinToString(" · ")
+        val newHero = HeroConfig(itemId = itemId, enabled = true, badge = badge, tagline = tag,
+            clearlogoOverlay = logo, displayTitle = item.title, displayMeta = meta, displayBackdrop = item.backdropPath)
+        val list = currentConfig.heroes.toMutableList()
+        val existing = list.indexOfFirst { it.itemId == itemId }
+        if (existing >= 0) list[existing] = newHero else list.add(newHero)
+        currentConfig = currentConfig.copy(heroes = list)
+        overlay.remove()
+        renderHeroes(container)
+    }
+    qInput?.focus()
+}
+
+private fun openHeroEditModal(container: Element, idx: Int) {
+    val h = currentConfig.heroes.getOrNull(idx) ?: return
+    document.getElementById("hero-edit-ov")?.remove()
+    val overlay = document.createElement("div") as HTMLElement
+    overlay.id = "hero-edit-ov"
+    overlay.setAttribute("style", "position:fixed;inset:0;background:#000b;display:flex;align-items:center;justify-content:center;z-index:1200;padding:20px")
+    val badgeOpts = listOf("", "New Season", "4K", "Top 10", "Premiere").joinToString("") { v ->
+        val sel = if ((h.badge ?: "") == v) " selected" else ""
+        """<option value="$v"$sel>${if (v.isEmpty()) "No badge" else v.htmlEsc()}</option>"""
+    }
+    val logoChecked = if (h.clearlogoOverlay) " checked" else ""
+    val title = h.displayTitle ?: h.itemId
+    overlay.innerHTML = """
+        <div style="background:var(--fill);color:var(--ink);border:1px solid var(--line);border-radius:16px;padding:20px;width:min(420px,100%);box-shadow:var(--shadow)">
+          <div style="font-weight:700;margin-bottom:14px">Edit — ${title.htmlEsc()}</div>
+          <div class="field"><label>Badge</label><select id="heo-badge" class="input">$badgeOpts</select></div>
+          <div class="field"><label>Tagline / kicker</label><input id="heo-tag" class="input" placeholder="e.g. The saga concludes" value="${(h.tagline ?: "").htmlEsc()}"></div>
+          <label style="display:flex;gap:7px;align-items:center;margin-bottom:16px;font-size:.85rem"><input type="checkbox" id="heo-logo"$logoChecked> Clearlogo overlay (text-title fallback)</label>
+          <div class="row" style="gap:8px;justify-content:flex-end">
+            <button id="heo-cancel" class="btn sm ghost">Cancel</button>
+            <button id="heo-save" class="btn sm">Save</button>
+          </div>
+        </div>
+    """.trimIndent()
+    document.body?.appendChild(overlay)
+    overlay.querySelector("#heo-cancel")?.addEventListener("click") { _ -> overlay.remove() }
+    overlay.querySelector("#heo-save")?.addEventListener("click") { _ ->
+        val badge = (overlay.querySelector("#heo-badge") as? HTMLSelectElement)?.value?.ifEmpty { null }
+        val tag = (overlay.querySelector("#heo-tag") as? HTMLInputElement)?.value?.ifEmpty { null }
+        val logo = (overlay.querySelector("#heo-logo") as? HTMLInputElement)?.checked ?: true
+        val list = currentConfig.heroes.toMutableList()
+        list[idx] = list[idx].copy(badge = badge, tagline = tag, clearlogoOverlay = logo)
+        currentConfig = currentConfig.copy(heroes = list)
+        overlay.remove()
+        renderHeroes(container)
     }
 }
 
@@ -1254,20 +1420,9 @@ private fun renderPreview(container: Element) {
 // ── Collect current form state into the shared RaviloConfig ────────────────────
 
 private fun collectConfig(container: Element) {
-    // Heroes — overlay DOM edits onto existing entries (preserves `override` + dressing fields).
-    val heroes = currentConfig.heroes.mapIndexed { i, existing ->
-        fun q(attr: String) = container.querySelector("[$attr='$i']")
-        val badgeEl = q("data-hero-badge") as? HTMLInputElement
-        val tagEl = q("data-hero-tagline") as? HTMLInputElement
-        existing.copy(
-            itemId  = (q("data-hero-id") as? HTMLInputElement)?.value?.trim() ?: existing.itemId,
-            enabled = (q("data-hero-enabled") as? HTMLInputElement)?.checked ?: existing.enabled,
-            order   = i,
-            badge   = if (badgeEl != null) badgeEl.value.trim().ifEmpty { null } else existing.badge,
-            tagline = if (tagEl != null) tagEl.value.trim().ifEmpty { null } else existing.tagline,
-            clearlogoOverlay = (q("data-hero-logo") as? HTMLInputElement)?.checked ?: existing.clearlogoOverlay,
-        )
-    }
+    // Heroes are managed fully in-memory — each add/remove/toggle/edit updates currentConfig.heroes
+    // directly, so no DOM collection is needed here.
+    val heroes = currentConfig.heroes.mapIndexed { i, h -> h.copy(order = i) }
     // Channels — overlay DOM edits onto the existing entries (render order == currentConfig order),
     // so workbench-built `match`/`conditions` survive a collect (R32; was dropped — see P0-1).
     // Channel name + Show are edited inline; style / brandColor / logoUrl / conditions are set via the

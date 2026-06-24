@@ -250,6 +250,11 @@ data class HeroConfig(
     val badge: String? = null,
     val tagline: String? = null,
     @SerialName("clearlogo_overlay") val clearlogoOverlay: Boolean = true,
+    // Admin display hints — stored so the editor renders without extra lookups.
+    // The TV backend resolves the item from itemId alone and ignores these.
+    @SerialName("display_title") val displayTitle: String? = null,
+    @SerialName("display_meta") val displayMeta: String? = null,
+    @SerialName("display_backdrop") val displayBackdrop: String? = null,
 )
 
 /**
