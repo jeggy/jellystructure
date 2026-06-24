@@ -1068,7 +1068,7 @@ private fun openChannelEditorPage(container: Element, scope: CoroutineScope, idx
     }
 }
 
-/** Minimal hero-items editor overlay (reuses the existing hero section approach). */
+/** Rich hero-items editor overlay: thumbnail rows + DnD reorder + search picker for adding. */
 private fun openHeroEditorOverlay(
     container: Element,
     scope: CoroutineScope,
@@ -1076,60 +1076,174 @@ private fun openHeroEditorOverlay(
     title: String,
     onSave: (List<HeroConfig>) -> Unit,
 ) {
-    val existing = document.getElementById("hero-ov") as? HTMLElement
-    existing?.remove()
+    document.getElementById("hero-ov")?.remove()
     val ov = document.createElement("div") as HTMLElement
     ov.id = "hero-ov"
     ov.style.cssText = "position:fixed;inset:0;background:#000a;display:flex;align-items:center;justify-content:center;z-index:9000"
     var editItems = heroItems.toMutableList()
+
+    fun rowHtml(i: Int, h: HeroConfig): String {
+        val bg = heroGradient(h.itemId)
+        val thumbStyle = if (!h.displayBackdrop.isNullOrBlank())
+            "background:url('https://image.tmdb.org/t/p/w300${h.displayBackdrop}') center/cover,$bg"
+        else "background:$bg"
+        val displayTitle = h.displayTitle?.ifBlank { null } ?: h.itemId.take(14)
+        val displayMeta = h.displayMeta ?: ""
+        val shortTitle = displayTitle.take(8) + if (displayTitle.length > 8) "…" else ""
+        return """
+            <div class="cfg-row" draggable="true" data-hov-i="$i" style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+              <span class="drag-handle" style="cursor:grab;user-select:none;flex-shrink:0">⠿</span>
+              <div style="${thumbStyle};width:76px;height:44px;border-radius:6px;flex:none;position:relative;overflow:hidden">
+                <span style="position:absolute;left:5px;bottom:4px;font-weight:700;font-size:.62rem;color:#fff;text-shadow:0 1px 3px rgba(0,0,0,.8)">${shortTitle.htmlEsc()}</span>
+              </div>
+              <div style="flex:1;min-width:0">
+                <div class="nm" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${displayTitle.htmlEsc()}</div>
+                <div class="src">${displayMeta.htmlEsc()}</div>
+              </div>
+              <button class="btn sm ghost" data-hov-del="$i">✕</button>
+            </div>
+        """.trimIndent()
+    }
+
     fun buildHtml(): String = """
         <div style="background:var(--fill);border-radius:14px;padding:24px;max-width:500px;width:100%;max-height:85vh;overflow:auto">
           <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px">
             <b>${title.htmlEsc()}</b><span class="spacer"></span>
             <button id="hero-ov-close" class="btn sm ghost">✕</button>
           </div>
-          <div id="hero-ov-items">
-            ${editItems.mapIndexed { i, h ->
-                """<div class="row" style="gap:8px;margin-bottom:8px;align-items:center">
-                    <input class="input" placeholder="Item ID" value="${h.itemId.htmlEsc()}" data-hov-id="$i" style="flex:1">
-                    <button class="btn sm ghost" data-hov-del="$i">✕</button>
-                   </div>"""
-            }.joinToString("")}
+          <div id="hero-ov-list">
+            ${if (editItems.isEmpty()) """<p class="tiny muted" style="padding:4px 0 12px">No items yet — click Add to pick from your library.</p>"""
+              else editItems.mapIndexed { i, h -> rowHtml(i, h) }.joinToString("")}
           </div>
-          <button id="hero-ov-add" class="btn sm ghost" style="margin-bottom:14px">+ Add item</button>
+          <button id="hero-ov-add" class="btn sm ghost" style="margin-bottom:16px">⊕ Add item</button>
           <div style="display:flex;justify-content:flex-end;gap:8px">
             <button id="hero-ov-cancel" class="btn sm ghost">Cancel</button>
             <button id="hero-ov-save" class="btn primary">Save hero items</button>
           </div>
         </div>
     """.trimIndent()
-    ov.innerHTML = buildHtml()
-    document.body?.appendChild(ov)
 
     fun rewire() {
         ov.querySelector("#hero-ov-close")?.addEventListener("click") { _ -> ov.remove() }
         ov.querySelector("#hero-ov-cancel")?.addEventListener("click") { _ -> ov.remove() }
-        ov.querySelector("#hero-ov-add")?.addEventListener("click") { _ ->
-            editItems.add(HeroConfig(itemId = "")); ov.innerHTML = buildHtml(); rewire()
-        }
         ov.querySelector("#hero-ov-save")?.addEventListener("click") { _ ->
-            val items = ov.querySelectorAll("[data-hov-id]")
-            for (j in 0 until items.length) {
-                val inp = items.item(j) as? HTMLInputElement ?: continue
-                val jj = inp.getAttribute("data-hov-id")?.toIntOrNull() ?: continue
-                if (jj < editItems.size) editItems[jj] = editItems[jj].copy(itemId = inp.value.trim())
+            onSave(editItems.toList()); ov.remove()
+        }
+        ov.querySelector("#hero-ov-add")?.addEventListener("click") { _ ->
+            openItemSearchPicker(scope) { picked ->
+                val kindStr = if (picked.kind.name == "TV_SHOW") "Series" else "Film"
+                val meta = listOfNotNull(kindStr, picked.network ?: picked.studio, picked.year?.toString()).joinToString(" · ")
+                val itemId = picked.jellyfinId ?: picked.id
+                if (editItems.none { it.itemId == itemId }) {
+                    editItems.add(HeroConfig(itemId = itemId, enabled = true,
+                        displayTitle = picked.title, displayMeta = meta, displayBackdrop = picked.backdropPath))
+                }
+                ov.innerHTML = buildHtml(); rewire()
             }
-            editItems = editItems.filter { it.itemId.isNotBlank() }.toMutableList()
-            onSave(editItems)
-            ov.remove()
         }
         for (j in editItems.indices) {
             ov.querySelector("[data-hov-del='$j']")?.addEventListener("click") { _ ->
                 editItems.removeAt(j); ov.innerHTML = buildHtml(); rewire()
             }
         }
+        val listEl = ov.querySelector("#hero-ov-list") as? HTMLElement ?: return
+        var dragFrom = -1
+        fun clearH() {
+            val nl = listEl.querySelectorAll("[data-hov-i]")
+            for (j in 0 until nl.length) (nl.item(j) as? HTMLElement)?.classList?.remove("dragging", "drop-before", "drop-after")
+        }
+        listEl.addEventListener("dragstart") { e ->
+            val row = (e.target as? HTMLElement)?.closest("[data-hov-i]") as? HTMLElement ?: return@addEventListener
+            dragFrom = row.getAttribute("data-hov-i")?.toIntOrNull() ?: -1; row.classList.add("dragging")
+        }
+        listEl.addEventListener("dragend") { _ -> dragFrom = -1; clearH() }
+        listEl.addEventListener("dragover") { e ->
+            e.preventDefault()
+            val row = (e.target as? HTMLElement)?.closest("[data-hov-i]") as? HTMLElement ?: return@addEventListener
+            val toIdx = row.getAttribute("data-hov-i")?.toIntOrNull() ?: return@addEventListener
+            clearH()
+            if (toIdx != dragFrom) row.classList.add(if (toIdx < dragFrom) "drop-before" else "drop-after")
+        }
+        listEl.addEventListener("drop") { e ->
+            e.preventDefault()
+            val row = (e.target as? HTMLElement)?.closest("[data-hov-i]") as? HTMLElement ?: return@addEventListener
+            val toIdx = row.getAttribute("data-hov-i")?.toIntOrNull() ?: return@addEventListener
+            val fromIdx = dragFrom; dragFrom = -1
+            if (fromIdx < 0 || fromIdx == toIdx) return@addEventListener
+            val item = editItems.removeAt(fromIdx); editItems.add(toIdx, item)
+            ov.innerHTML = buildHtml(); rewire()
+        }
     }
+
+    ov.innerHTML = buildHtml()
+    document.body?.appendChild(ov)
     rewire()
+}
+
+/** Search-and-select overlay for picking a single media item from the library. */
+private fun openItemSearchPicker(scope: CoroutineScope, onPick: (MediaItem) -> Unit) {
+    document.getElementById("item-pick-ov")?.remove()
+    val overlay = document.createElement("div") as HTMLElement
+    overlay.id = "item-pick-ov"
+    overlay.setAttribute("style", "position:fixed;inset:0;background:#000b;display:flex;align-items:center;justify-content:center;z-index:9500;padding:20px")
+    overlay.innerHTML = """
+        <div style="background:var(--fill);color:var(--ink);border:1px solid var(--line);border-radius:16px;padding:20px;width:min(520px,100%);box-shadow:var(--shadow);display:flex;flex-direction:column;gap:0;max-height:80vh">
+          <div style="font-weight:700;font-size:1.05rem;margin-bottom:12px">Pick an item</div>
+          <input id="item-pick-q" class="input" style="width:100%;margin-bottom:10px" placeholder="Search your library…" autocomplete="off">
+          <div id="item-pick-results" style="flex:1;overflow-y:auto;min-height:80px;max-height:320px;display:flex;flex-direction:column;gap:4px"></div>
+          <div style="display:flex;justify-content:flex-end;margin-top:14px;flex-shrink:0">
+            <button id="item-pick-cancel" class="btn sm ghost">Cancel</button>
+          </div>
+        </div>
+    """.trimIndent()
+    document.body?.appendChild(overlay)
+
+    val resultsDiv = overlay.querySelector("#item-pick-results") as? HTMLElement
+    val qInput = overlay.querySelector("#item-pick-q") as? HTMLInputElement
+
+    fun showResults(items: List<MediaItem>) {
+        resultsDiv?.innerHTML = if (items.isEmpty())
+            """<div class="tiny muted" style="padding:10px 2px">No results found.</div>"""
+        else items.joinToString("") { item ->
+            val bg = heroGradient(item.jellyfinId ?: item.id)
+            val thumbStyle = if (!item.backdropPath.isNullOrBlank())
+                "background:url('https://image.tmdb.org/t/p/w300${item.backdropPath}') center/cover,$bg"
+            else "background:$bg"
+            val kindStr = if (item.kind.name == "TV_SHOW") "Series" else "Film"
+            val meta = listOfNotNull(kindStr, item.network ?: item.studio, item.year?.toString()).joinToString(" · ")
+            val pickId = item.jellyfinId ?: item.id
+            val short = item.title.take(10) + if (item.title.length > 10) "…" else ""
+            """<div data-ipick-jid="${pickId.htmlEsc()}" class="cfg-row" style="padding:10px 12px;cursor:pointer;gap:10px;flex-shrink:0;transition:background .1s">
+                 <div style="$thumbStyle;width:76px;height:44px;border-radius:6px;flex:none;position:relative;overflow:hidden">
+                   <span style="position:absolute;left:5px;bottom:4px;font-weight:700;font-size:.62rem;color:#fff;text-shadow:0 1px 3px rgba(0,0,0,.8)">${short.htmlEsc()}</span>
+                 </div>
+                 <div style="flex:1;min-width:0">
+                   <div class="nm" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${item.title.htmlEsc()}</div>
+                   <div class="src">${meta.htmlEsc()}</div>
+                 </div>
+               </div>"""
+        }
+        val nodeList = resultsDiv?.querySelectorAll("[data-ipick-jid]") ?: return
+        for (j in 0 until nodeList.length) {
+            val el = nodeList.item(j) as? HTMLElement ?: continue
+            val pickId = el.getAttribute("data-ipick-jid") ?: continue
+            val item = items.firstOrNull { (it.jellyfinId ?: it.id) == pickId } ?: continue
+            el.addEventListener("click") { _ -> overlay.remove(); onPick(item) }
+        }
+    }
+
+    scope.launch { showResults(MediaApi.list(pageSize = 8)?.items ?: emptyList()) }
+    var searchJob: Job? = null
+    qInput?.addEventListener("input") { _ ->
+        searchJob?.cancel()
+        val q = qInput.value.trim()
+        searchJob = scope.launch {
+            delay(250)
+            showResults(if (q.length >= 2) MediaApi.list(search = q, pageSize = 8)?.items ?: emptyList()
+                        else MediaApi.list(pageSize = 8)?.items ?: emptyList())
+        }
+    }
+    overlay.querySelector("#item-pick-cancel")?.addEventListener("click") { _ -> overlay.remove() }
 }
 
 private fun renderFilterSummary(container: Element, channelIdx: Int) {
