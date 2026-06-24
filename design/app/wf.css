@@ -306,6 +306,10 @@ hr.dash { border: none; border-top: 1px solid var(--line); margin: 18px 0; }
 .navitem.active { background: var(--hi-soft); color: var(--acc-ink); font-weight: 600; }
 .group-label { font-size: .68rem; text-transform: uppercase; letter-spacing: .14em; color: var(--ink-soft); padding: 13px 11px 5px; font-weight: 600; }
 
+/* Settings URL-addressable tabs (Phase 55) — one panel visible at a time */
+.set-section[data-tab] { display: none; }
+.set-section[data-tab].tab-show { display: block; }
+
 /* numbered step badge (Language Settings) */
 .step-n { width: 28px; height: 28px; border-radius: 8px; background: var(--hi-soft); color: var(--acc-ink);
   font-weight: 700; font-family: 'Space Grotesk', sans-serif; display: inline-flex; align-items: center; justify-content: center;
