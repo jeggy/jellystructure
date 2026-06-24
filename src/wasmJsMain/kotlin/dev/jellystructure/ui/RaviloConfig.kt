@@ -380,7 +380,7 @@ private fun renderHeroes(container: Element) {
           <div class="row" style="gap:24px;flex-wrap:wrap;align-items:flex-end">
             <div style="flex:1;min-width:220px">
               <label style="display:block;font-size:.85rem;margin-bottom:4px">Hero height <span class="mono" id="hero-height-val">${currentConfig.heroHeightPct}%</span> of screen</label>
-              <input type="range" id="hero-height" min="30" max="100" value="${currentConfig.heroHeightPct}" style="width:100%">
+              <input type="range" id="hero-height" min="40" max="100" value="${currentConfig.heroHeightPct}" style="width:100%">
             </div>
             <div style="width:160px">
               <label style="display:block;font-size:.85rem;margin-bottom:4px">Auto-advance</label>
@@ -849,7 +849,7 @@ private fun renderPreview(container: Element) {
     val host = container.querySelector("#rav-preview") ?: return
     val cfg = currentConfig
     val heroLabel = cfg.heroes.firstOrNull { it.enabled }?.itemId?.takeIf { it.isNotBlank() } ?: "Hero"
-    val heroPct = cfg.heroHeightPct.coerceIn(30, 100)
+    val heroPct = cfg.heroHeightPct.coerceIn(40, 100)
     val channels = cfg.channels.filter { it.enabled }
     val rowTitles = previewRowTitles(cfg)
     host.innerHTML = buildString {

@@ -163,18 +163,25 @@ fun renderShell(user: UserProfile) {
             triageDockIndex = 0
             updateTriageDock()
         }
-        // Connection status (non-blocking, best effort)
-        try {
-            val conn = ConfigApi.testConnections()
-            if (conn != null) {
-                (document.getElementById("status-jf") as? HTMLElement)?.apply {
-                    innerHTML = """<span class="dot ${if (conn.jellyfin) "ok" else "bad"}"></span> Jellyfin ${if (conn.jellyfin) "online" else "offline"}"""
-                }
-                (document.getElementById("status-tmdb") as? HTMLElement)?.apply {
-                    innerHTML = """<span class="dot ${if (conn.tmdb) "ok" else "bad"}"></span> TMDB key ${if (conn.tmdb) "OK" else "invalid"}"""
-                }
+        // Connection status — retry up to 3 times (5 s apart) to survive a brief cold-start delay
+        launch {
+            var delayMs = 5_000L
+            repeat(4) { attempt ->
+                try {
+                    val conn = ConfigApi.testConnections()
+                    if (conn != null) {
+                        (document.getElementById("status-jf") as? HTMLElement)?.apply {
+                            innerHTML = """<span class="dot ${if (conn.jellyfin) "ok" else "bad"}"></span> Jellyfin ${if (conn.jellyfin) "online" else "offline"}"""
+                        }
+                        (document.getElementById("status-tmdb") as? HTMLElement)?.apply {
+                            innerHTML = """<span class="dot ${if (conn.tmdb) "ok" else "bad"}"></span> TMDB key ${if (conn.tmdb) "OK" else "invalid"}"""
+                        }
+                        if (conn.jellyfin) return@launch
+                    }
+                } catch (_: Exception) {}
+                if (attempt < 3) delay(delayMs)
             }
-        } catch (_: Exception) {}
+        }
 
         // Reflect backend scan state — dock count comes from server, not just WS events
         val status = MediaApi.scanStatus()

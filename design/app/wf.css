@@ -315,3 +315,10 @@ hr.dash { border: none; border-top: 1px solid var(--line); margin: 18px 0; }
   font-weight: 700; font-family: 'Space Grotesk', sans-serif; display: inline-flex; align-items: center; justify-content: center;
   flex: none; font-size: .95rem; }
 .step-n.alt { background: var(--fill-3); color: var(--ink-soft); }
+
+/* Tags metadata page — tag cards + color picker swatches */
+.tag-card { display: flex; align-items: center; gap: 12px; padding: 13px 15px; cursor: pointer; }
+.tag-dot-lg { width: 14px; height: 14px; border-radius: 50%; flex: none; }
+.swatches { display: flex; gap: 8px; flex-wrap: wrap; }
+.swatch { width: 28px; height: 28px; border-radius: 8px; cursor: pointer; border: 2px solid transparent; transition: border-color .12s; }
+.swatch.on { border-color: var(--ink); box-shadow: 0 0 0 1px var(--ink); }
