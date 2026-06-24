@@ -32,6 +32,24 @@
     ravilo:    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><rect x="3" y="4.5" width="18" height="12.5" rx="2"/><path d="M10 8.5l4.5 2.75L10 14z" fill="currentColor" stroke="none"/><line x1="8.5" y1="20" x2="15.5" y2="20" stroke-linecap="round"/></svg>'
   };
 
+  /* ---- brand mark: “Quartet Play” (structure tile with the open slot as a play) ---- */
+  let _bm = 0;
+  function BRAND(size) {
+    const id = 'jsg-' + (++_bm);
+    return '<svg class="brand-mark" width="' + size + '" height="' + size + '" viewBox="0 0 100 100" aria-hidden="true">' +
+      '<defs><linearGradient id="' + id + '" x1="0" y1="0" x2="1" y2="1">' +
+        '<stop offset="0" stop-color="#b15cd0"/><stop offset=".52" stop-color="#7b6ef0"/><stop offset="1" stop-color="#00a4dc"/>' +
+      '</linearGradient></defs>' +
+      '<rect width="100" height="100" rx="23" fill="url(#' + id + ')"/>' +
+      '<g transform="translate(18 18) scale(.64)" fill="#fff">' +
+        '<rect x="10" y="10" width="35" height="35" rx="9"/>' +
+        '<rect x="55" y="10" width="35" height="35" rx="9" opacity=".5"/>' +
+        '<rect x="10" y="55" width="35" height="35" rx="9" opacity=".5"/>' +
+        '<rect x="55" y="55" width="35" height="35" rx="9" fill="none" stroke="#fff" stroke-width="6"/>' +
+        '<path d="M68 64 L84 72.5 L68 81 Z"/>' +
+      '</g></svg>';
+  }
+
   const NAV = [
     { href: 'index.html',    label: 'Dashboard', icon: 'dashboard', page: 'dashboard' },
     { href: 'library.html',  label: 'Library',   icon: 'library',   page: 'library'   },
@@ -62,7 +80,7 @@
   const side = document.createElement('aside');
   side.className = 'app-side';
   side.innerHTML =
-    '<div class="logo"><span class="glyph"></span> Jellystructure</div>' +
+    '<div class="logo">' + BRAND(30) + ' Jellystructure</div>' +
     NAV.map(item => {
       if (item.group) return '<div class="group-label">' + item.group + '</div>';
       const active = (item.href === here) || (item.page === current) ? ' active' : '';
@@ -91,7 +109,7 @@
   topbar.className = 'app-topbar';
   topbar.innerHTML =
     '<button class="burger" id="navburger" aria-label="Open menu" aria-expanded="false">' + I.menu + '</button>' +
-    '<span class="tb-logo"><span class="glyph"></span> Jellystructure</span>';
+    '<span class="tb-logo">' + BRAND(24) + ' Jellystructure</span>';
   document.body.insertBefore(topbar, document.body.firstChild);
 
   const backdrop = document.createElement('div');

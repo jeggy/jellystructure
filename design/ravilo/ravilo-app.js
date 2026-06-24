@@ -153,7 +153,7 @@
 
     /* ---------------- HERO ---------------- */
     function buildHero() {
-      const hero = el('div', 'hero');
+      const hero = el('div', 'hero focus-row');
       hero.style.height = '56%';
       R.hero.forEach((it, i) => {
         const s = el('div', 'hero-slide' + (i === 0 ? ' on' : ''));
@@ -167,15 +167,12 @@
           </div>`;
         hero.appendChild(s);
       });
-      // R53: button-less hero — one focusable hit area covers the whole hero; select opens detail,
-      // Left/Right pages the carousel. (Buttons removed; the detail screen owns Play/resume.)
-      const hit = el('div', 'hero-hit focus-row');
-      hit.innerHTML = `<div class="hero-cta foc" data-hero="1"></div>`;
-      hero.appendChild(hit);
-
       const dots = el('div', 'hero-dots');
       R.hero.forEach((_, i) => { const d = el('div', 'd' + (i === 0 ? ' on' : '')); d.dataset.dot = i; dots.appendChild(d); });
       hero.appendChild(dots);
+      // whole hero is one focusable target → select opens detail; ←/→ cycle the carousel
+      const hit = el('div', 'hero-hit foc'); hit.dataset.hero = '1';
+      hero.appendChild(hit);
       return hero;
     }
     function setHero(i) {
@@ -624,8 +621,8 @@
         focusEl(its[cur.c]);
       } else if (dc) {
         const its = items(all[cur.r]); if (!its.length) return;
-        // R53: on the hero, left/right pages the carousel (one focusable, no columns).
-        if (its[0].dataset.hero) { setHero(heroIdx + dc); return; }
+        // hero is a single focus target: left/right cycles the carousel instead of moving
+        if (its[cur.c] && its[cur.c].dataset.hero) { setHero(heroIdx + dc); startHero(); return; }
         cur.c = Math.max(0, Math.min(its.length - 1, cur.c + dc));
         focusEl(its[cur.c]);
       }
@@ -675,7 +672,7 @@
         buildGridRows(scroll.querySelector('.sresults'), searchFilter(view.query));
         return;
       }
-      if (f.dataset.hero) { toDetail(R.hero[heroIdx]); return; } // R53: whole hero → detail
+      if (f.dataset.hero) { toDetail(R.hero[heroIdx]); return; }
       if (f.dataset.play) { playItem(view.item, view.season || 0); return; }
       if (f.dataset.trailer) { flash('▷ Trailer · ' + view.item.title); return; }
       if (f.dataset.list) { flash('＋ Added ' + view.item.title + ' to My List'); return; }

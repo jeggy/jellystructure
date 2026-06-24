@@ -4,16 +4,11 @@ Living record of where work currently stands. Update whenever a phase completes 
 The **[requirements/README.md](requirements/README.md)** is the single source of truth for which phases
 exist and their done/planned status. This file tracks _current focus_, recent context, and open issues.
 
-_Last updated: 2026-06-24_
+_Last updated: 2026-06-23_
 
 ## Current focus
 
-**Phases 0–58 complete.** Phases 54–58 landed 2026-06-24 — Radarr/Sonarr connection (54),
-acquisition pipeline + `AcquisitionStatus` state machine (56), chart/Tudum Discover ingestion (57),
-Settings URL-addressable tabs (55), and the dark "Soft Charcoal" wf.css palette (58). The two
-"Newly planned" sections below are now **built + committed** (kept for context). Builds across all
-targets; runtime end-to-end test of the acquisition flow still pending. Earlier:
-[Phase 53](requirements/archive/phase-53-scanner-data-quality.md)
+**Phases 0–53 complete.** [Phase 53](requirements/archive/phase-53-scanner-data-quality.md)
 (2026-06-23) fixed scanner data-quality issues found in a post-DB-reset full-sync review (296 scanned
 vs 303 in Jellyfin): full-scan `year` was null on 295/296 — now `searchYear = name ?? Jellyfin
 `ProductionYear`` drives the TMDB search + slug and the stored year prefers TMDB
@@ -73,47 +68,12 @@ overlapped the language chips. Unified them into **one single-select filter** on
 `artPrefer` sort; default ladder resolves resolved-lang → textless → All. `design/app/media.html` mockup
 synced to the same model.
 
-Five new admin phases + one Ravilo phase planned (2026-06-24):
-
-- **[Phase 61](requirements/phase-61-cmdpalette-media-search.md) — ⌘K media search**
-  (FR-KM1). The palette only searches 9 hardcoded nav commands. Backend
-  `GET /api/media?search=` is fully implemented; `MediaApi.list(search=...)` is wired.
-  Add async media results below commands when query ≥ 2 chars (up to 6 items), adopt
-  the existing unused `.cmdp-item` CSS classes, extend keyboard nav to cover both
-  sections.
-- **[Phase 62](requirements/phase-62-activity-log-timestamps.md) — Activity log
-  stored timestamps** (FR-AT1). `appendLogEntry()` always calls `currentTimeString()`
-  (browser clock), discarding `entry.ts`. Fix: add `ts: Long?` param; format stored
-  epoch-seconds for historical entries; keep current-time for live WS events.
-- **[Phase 63](requirements/phase-63-ravilo-config-no-default-user.md) — Ravilo config
-  no default user** (FR-RC1). Config editor auto-selects `users.first()` and renders all
-  sections immediately. Remove auto-select; show "select a user" empty state until
-  the picker is used; dropdown starts on a disabled placeholder option.
-- **Ravilo R56** — Hero carousel focus border removed. See [ravilo/STATUS.md](ravilo/STATUS.md).
-
-Two earlier admin phases (already committed):
-
-
-- **[Phase 59](requirements/phase-59-restore-pagebar-menu-css.md) — Restore pagebar menu
-  CSS** (FR-MB1). The CSS for `.menu-wrap`/`.split`/`.menu`/`.menu-item` etc. was
-  accidentally removed from `app.css` in two "updated designs" commits (`84a8c3a`,
-  `43ed143`). The live detail-page pagebar buttons (External links, Re-pull, Save & sync)
-  are now unstyled — the design mockup still looks fine because it has an inline `<style>`
-  copy. Fix: add the ~16-line block back to `app.css`; remove the redundant inline copy
-  from `media.html`.
-- **[Phase 60](requirements/phase-60-series-detail-tabs-layout.md) — Series detail tabs
-  layout** (FR-TD1). The series detail page has a persistent left rail (poster + identity +
-  language card) that stays visible on every tab. Restructure to match movie layout: left
-  rail inside the overview tabpanel only; Episodes/Artwork/NFO/History tabs become
-  full-width. Also syncs `series.html` mockup and fixes the `.seg`/`.active` → `.tabs2`/`.on`
-  tab-strip style mismatch.
-
-Other active development is on the **Ravilo** side — see
+No planned admin phases remain. Other active development is on the **Ravilo** side — see
 [`ravilo/STATUS.md`](ravilo/STATUS.md).
 
-## Done (admin) — Settings tabs + Radarr/Sonarr connection (built 2026-06-24)
+## Newly planned (admin) — 2026-06-23
 
-Two admin phases drafted from a Settings design pass, now **built + committed**
+Two admin phases were drafted from a Settings design pass and are **planned, not yet built**
 (mockups in `design/app/settings.html`):
 
 - **[Phase 54](requirements/phase-54-configure-radarr-sonarr.md) — Configure Radarr & Sonarr**
@@ -128,7 +88,7 @@ Two admin phases drafted from a Settings design pass, now **built + committed**
   Download tools · Notifications · Advanced); the scroll-spy is dropped and health-check
   failures aggregate to per-tab badges + switch-to-tab.
 
-## Done — Radarr/Sonarr acquisition + Discover (built 2026-06-24)
+## Newly planned — Radarr/Sonarr acquisition + Discover (2026-06-23)
 
 A second design pass turned "request a title we don't have, and show its download progress" into a
 small spec set. The status indicator is deliberately **more than a percentage** — a request can be

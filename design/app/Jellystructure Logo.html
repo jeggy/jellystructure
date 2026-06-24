@@ -1,0 +1,359 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Jellystructure — Logo Exploration</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --acc-a:#b15cd0; --acc-b:#00a4dc; --indigo:#7b6ef0;
+    --ink:#dde1ec; --ink-soft:#9aa0b4; --ink-dim:rgba(221,225,236,.45);
+    --bg:#16181f; --fill:#262a37; --line:rgba(255,255,255,.10);
+  }
+  html,body{height:100%;}
+  body{margin:0; background:var(--bg); color:var(--ink); font-family:'Space Grotesk',sans-serif;}
+  #root{height:100vh;}
+
+  /* wordmark */
+  .wm{font-family:'Space Grotesk',sans-serif; font-weight:600; letter-spacing:-.02em; white-space:nowrap; color:var(--ink);}
+  .wm .grad{ background:linear-gradient(122deg,var(--acc-a),var(--indigo) 52%,var(--acc-b));
+    -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent; }
+
+  .icon-shadow{ filter:drop-shadow(0 10px 26px rgba(123,110,240,.42)); }
+
+  /* presentation helpers inside artboards */
+  .pad{ width:100%; height:100%; display:flex; box-sizing:border-box; background:var(--bg); }
+  .center{ align-items:center; justify-content:center; }
+  .col{ flex-direction:column; gap:26px; }
+  .caption{ font-family:'JetBrains Mono',monospace; font-size:12px; font-weight:500; color:var(--ink-soft); letter-spacing:.04em; }
+  .rec{ display:inline-flex; align-items:center; gap:6px; font-family:'JetBrains Mono',monospace; font-size:11px; font-weight:500;
+    color:#c6bcfb; background:rgba(123,110,240,.16); border:1px solid rgba(123,110,240,.3); padding:3px 9px; border-radius:999px; letter-spacing:.04em; }
+  .swatch-bg-light{ background:#eef0f6; color:#181a22; }
+  .tile-row{ display:flex; align-items:flex-end; gap:20px; }
+  .lbl{ font-family:'JetBrains Mono',monospace; font-size:10px; color:var(--ink-dim); margin-top:8px; text-align:center; }
+  .grp{ display:flex; flex-direction:column; align-items:center; }
+</style>
+<template id="__bundler_thumbnail">
+  <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+    <rect width="100" height="100" rx="24" fill="#16181f"/>
+    <rect x="20" y="20" width="26" height="26" rx="7" fill="#b15cd0"/>
+    <rect x="54" y="20" width="26" height="26" rx="7" fill="#7b6ef0" opacity=".6"/>
+    <rect x="20" y="54" width="26" height="26" rx="7" fill="#7b6ef0" opacity=".6"/>
+    <rect x="54" y="54" width="26" height="26" rx="7" fill="none" stroke="#00a4dc" stroke-width="4"/>
+  </svg>
+</template>
+</head>
+<body>
+<div id="root"></div>
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script type="text/babel" src="design-canvas.jsx"></script>
+<script type="text/babel">
+const { useId } = React;
+
+/* ---- the six structure glyphs, drawn on a 100×100 grid ---- */
+function Glyph({ variant, fill }) {
+  const f = fill, sw = 6;
+  switch (variant) {
+    case 'quartet': return (<g>
+      <rect x="10" y="10" width="35" height="35" rx="9" fill={f}/>
+      <rect x="55" y="10" width="35" height="35" rx="9" fill={f} opacity=".5"/>
+      <rect x="10" y="55" width="35" height="35" rx="9" fill={f} opacity=".5"/>
+      <rect x="55" y="55" width="35" height="35" rx="9" fill="none" stroke={f} strokeWidth={sw}/>
+    </g>);
+    case 'cascade': return (<g>
+      <rect x="26" y="16" width="48" height="17" rx="6" fill={f} opacity=".4"/>
+      <rect x="19" y="41" width="62" height="17" rx="6" fill={f} opacity=".7"/>
+      <rect x="12" y="66" width="76" height="17" rx="6" fill={f}/>
+    </g>);
+    case 'bracket': return (<g fill="none" stroke={f} strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round">
+      <path d="M34 14 H18 a4 4 0 0 0 -4 4 V34"/>
+      <path d="M66 86 H82 a4 4 0 0 0 4 -4 V66"/>
+      <rect x="37" y="37" width="26" height="26" rx="6" fill={f} stroke="none"/>
+    </g>);
+    case 'jblock': return (<g>
+      <rect x="54" y="12" width="24" height="24" rx="6" fill={f}/>
+      <rect x="54" y="40" width="24" height="24" rx="6" fill={f} opacity=".7"/>
+      <rect x="54" y="68" width="24" height="20" rx="6" fill={f} opacity=".5"/>
+      <rect x="22" y="64" width="24" height="24" rx="6" fill={f}/>
+    </g>);
+    case 'playframe': return (<g>
+      <rect x="13" y="13" width="74" height="74" rx="18" fill="none" stroke={f} strokeWidth={sw}/>
+      <path d="M42 36 L66 50 L42 64 Z" fill={f} strokeLinejoin="round"/>
+    </g>);
+    case 'lattice': return (<g fill={f}>
+      <rect x="34" y="12" width="9" height="76" rx="4.5"/>
+      <rect x="57" y="12" width="9" height="76" rx="4.5"/>
+      <rect x="12" y="34" width="76" height="9" rx="4.5"/>
+      <rect x="12" y="57" width="76" height="9" rx="4.5"/>
+    </g>);
+    /* ---- Playframe × structure hybrids ---- */
+    case 'quartetPlay': return (<g>
+      <rect x="10" y="10" width="35" height="35" rx="9" fill={f}/>
+      <rect x="55" y="10" width="35" height="35" rx="9" fill={f} opacity=".5"/>
+      <rect x="10" y="55" width="35" height="35" rx="9" fill={f} opacity=".5"/>
+      <rect x="55" y="55" width="35" height="35" rx="9" fill="none" stroke={f} strokeWidth={sw}/>
+      <path d="M68 64 L84 72.5 L68 81 Z" fill={f} strokeLinejoin="round"/>
+    </g>);
+    case 'frameGrid': return (<g>
+      <rect x="13" y="13" width="74" height="74" rx="18" fill="none" stroke={f} strokeWidth={sw}/>
+      <rect x="29" y="29" width="18" height="18" rx="5" fill={f}/>
+      <rect x="53" y="29" width="18" height="18" rx="5" fill={f} opacity=".55"/>
+      <rect x="29" y="53" width="18" height="18" rx="5" fill={f} opacity=".55"/>
+      <path d="M57 56 L74 62 L57 68 Z" fill={f} strokeLinejoin="round"/>
+    </g>);
+    case 'jPlay': return (<g>
+      <rect x="56" y="14" width="22" height="50" rx="10" fill={f}/>
+      <rect x="30" y="56" width="26" height="22" rx="9" fill={f} opacity=".7"/>
+      <path d="M24 20 L47 32 L24 44 Z" fill={f} strokeLinejoin="round"/>
+    </g>);
+    case 'cornerPlay': return (<g>
+      <rect x="11" y="11" width="20" height="20" rx="6" fill={f}/>
+      <rect x="69" y="11" width="20" height="20" rx="6" fill={f} opacity=".55"/>
+      <rect x="11" y="69" width="20" height="20" rx="6" fill={f} opacity=".55"/>
+      <rect x="69" y="69" width="20" height="20" rx="6" fill={f}/>
+      <path d="M40 33 L68 50 L40 67 Z" fill={f} strokeLinejoin="round"/>
+    </g>);
+    /* ---- second wave of hybrids ---- */
+    case 'barPlay': return (<g fill={f}>
+      <rect x="28" y="17" width="16" height="11" rx="5"/>
+      <rect x="28" y="31" width="32" height="11" rx="5" opacity=".8"/>
+      <rect x="28" y="45" width="46" height="11" rx="5"/>
+      <rect x="28" y="59" width="32" height="11" rx="5" opacity=".8"/>
+      <rect x="28" y="73" width="16" height="11" rx="5"/>
+    </g>);
+    case 'layerPlay': return (<g>
+      <path d="M34 24 L70 50 L34 76 Z" fill="none" stroke={f} strokeWidth="4" strokeLinejoin="round" opacity=".32" transform="translate(12 8)"/>
+      <path d="M34 24 L70 50 L34 76 Z" fill="none" stroke={f} strokeWidth="4" strokeLinejoin="round" opacity=".6" transform="translate(6 4)"/>
+      <path d="M34 24 L70 50 L34 76 Z" fill={f} strokeLinejoin="round"/>
+    </g>);
+    case 'splitPlay': return (<g>
+      <rect x="13" y="13" width="74" height="74" rx="18" fill="none" stroke={f} strokeWidth={sw}/>
+      <rect x="26" y="30" width="16" height="16" rx="5" fill={f}/>
+      <rect x="26" y="52" width="16" height="16" rx="5" fill={f} opacity=".6"/>
+      <rect x="47" y="24" width="3" height="52" rx="1.5" fill={f} opacity=".4"/>
+      <path d="M57 38 L74 50 L57 62 Z" fill={f} strokeLinejoin="round"/>
+    </g>);
+    case 'bracketPlay': return (<g>
+      <path d="M32 16 H18 a4 4 0 0 0 -4 4 V34" fill="none" stroke={f} strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+      <path d="M68 84 H82 a4 4 0 0 0 4 -4 V66" fill="none" stroke={f} strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+      <path d="M42 36 L66 50 L42 64 Z" fill={f} strokeLinejoin="round"/>
+    </g>);
+    case 'tileTri': return (<g>
+      <rect x="16" y="18" width="26" height="26" rx="7" fill={f}/>
+      <rect x="16" y="56" width="26" height="26" rx="7" fill={f} opacity=".55"/>
+      <rect x="54" y="37" width="26" height="26" rx="7" fill={f}/>
+    </g>);
+    default: return null;
+  }
+}
+
+/* gradient-filled standalone mark (transparent bg) */
+function Mark({ variant, size = 88 }) {
+  const id = useId().replace(/:/g, '');
+  return (
+    <svg width={size} height={size} viewBox="0 0 100 100">
+      <defs>
+        <linearGradient id={id} x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stopColor="var(--acc-a)"/>
+          <stop offset=".52" stopColor="var(--indigo)"/>
+          <stop offset="1" stopColor="var(--acc-b)"/>
+        </linearGradient>
+      </defs>
+      <Glyph variant={variant} fill={`url(#${id})`} />
+    </svg>
+  );
+}
+
+/* app-icon: gradient rounded-square tile with the white glyph inside */
+function IconTile({ variant, size = 120, radius }) {
+  const id = useId().replace(/:/g, '');
+  const r = radius != null ? radius : size * 0.225;
+  const ins = size * 0.18, gs = (size - ins * 2) / 100;
+  return (
+    <svg className="icon-shadow" width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+      <defs>
+        <linearGradient id={id} x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stopColor="var(--acc-a)"/>
+          <stop offset=".52" stopColor="var(--indigo)"/>
+          <stop offset="1" stopColor="var(--acc-b)"/>
+        </linearGradient>
+      </defs>
+      <rect x="0" y="0" width={size} height={size} rx={r} fill={`url(#${id})`}/>
+      <g transform={`translate(${ins} ${ins}) scale(${gs})`}>
+        <Glyph variant={variant} fill="#fff" />
+      </g>
+    </svg>
+  );
+}
+
+function Wordmark({ size = 30, mono }) {
+  return (
+    <span className="wm" style={{ fontSize: size }}>
+      {mono ? 'Jellystructure' : <><span className="grad">Jelly</span>structure</>}
+    </span>
+  );
+}
+
+const HYBRIDS2 = [
+  { id: 'barPlay',     name: 'Bar Play',     note: 'A play built from stacked rows — the library, literally forming the triangle.', rec: true },
+  { id: 'layerPlay',   name: 'Layer Play',   note: 'A play with structured depth — stacked editions behind one control.' },
+  { id: 'splitPlay',   name: 'Split Frame',  note: 'The app itself: a structured rail beside a media frame with play.' },
+  { id: 'bracketPlay', name: 'Bracket Play', note: 'Structure brackets cradling the play — minimal, refines today’s glyph.' },
+  { id: 'tileTri',     name: 'Tri-Tile',     note: 'Three modular tiles cluster into a play — most abstract of the set.' },
+];
+
+const HYBRIDS = [
+  { id: 'quartetPlay', name: 'Quartet Play', note: 'The open slot in the 2×2 becomes the play — structure that resolves into playback.', rec: true },
+  { id: 'cornerPlay',  name: 'Corner Frame', note: 'Four modular tiles anchor the frame; a bold play sits at the center.' },
+  { id: 'frameGrid',   name: 'Frame Grid',  note: 'A media frame holding a tidy 2×2 — one cell is the play control.' },
+  { id: 'jPlay',       name: 'J-Play',      note: 'A blocky “J” spine with the counter opening into a play triangle.' },
+];
+
+const DIRS = [
+  { id: 'quartet',   name: 'Quartet',   note: 'Library as a 2×2 of tiles — one slot open, ready to be organized.', rec: true },
+  { id: 'lattice',   name: 'Lattice',   note: 'A clean # grid — the scaffold that holds the library together.' },
+  { id: 'cascade',   name: 'Cascade',   note: 'Stacked, aligned rows — sprawl sorted into order.' },
+  { id: 'bracket',   name: 'Bracket',   note: 'Structure brackets framing a single item (refines today’s glyph).' },
+  { id: 'jblock',    name: 'J-Block',   note: 'A “J” monogram assembled from modular blocks.' },
+  { id: 'playframe', name: 'Playframe', note: 'A media frame with play — leans into the streaming side.' },
+];
+
+function DirCard({ d }) {
+  return (
+    <div className="pad col" style={{ padding: 36, justifyContent: 'space-between' }}>
+      <div className="tile-row">
+        <IconTile variant={d.id} size={132} />
+        <div style={{ display:'flex', flexDirection:'column', gap:18, paddingBottom:6 }}>
+          <Mark variant={d.id} size={64} />
+          <Wordmark size={34} />
+        </div>
+      </div>
+      <div style={{ display:'flex', alignItems:'center', gap:14 }}>
+        <IconTile variant={d.id} size={40} radius={9} />
+        <div style={{ flex:1 }}>
+          <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:6 }}>
+            <span style={{ fontWeight:600, fontSize:17 }}>{d.name}</span>
+            {d.rec && <span className="rec">★ recommended</span>}
+          </div>
+          <div className="caption" style={{ lineHeight:1.5, color:'var(--ink-soft)', whiteSpace:'normal' }}>{d.note}</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function App() {
+  return (
+    <DesignCanvas>
+      <DCSection id="hybrids2" title="More hybrids — second wave" subtitle="Five fresh play × structure crossings">
+        {HYBRIDS2.map(d => (
+          <DCArtboard key={d.id} id={d.id} label={d.name + (d.rec ? '  ★' : '')} width={460} height={300}>
+            <DirCard d={d} />
+          </DCArtboard>
+        ))}
+      </DCSection>
+
+      <DCSection id="hybrids" title="Playframe × structure — hybrids" subtitle="Keeps the player/play feel of Playframe, fused with Quartet &amp; J-Block structure">
+        {HYBRIDS.map(d => (
+          <DCArtboard key={d.id} id={d.id} label={d.name + (d.rec ? '  ★' : '')} width={460} height={300}>
+            <DirCard d={d} />
+          </DCArtboard>
+        ))}
+      </DCSection>
+
+      <DCSection id="dirs" title="Logo directions" subtitle="Six structure-led marks on the Aurora gradient · click any to focus">
+        {DIRS.map(d => (
+          <DCArtboard key={d.id} id={d.id} label={d.name + (d.rec ? '  ★' : '')} width={460} height={300}>
+            <DirCard d={d} />
+          </DCArtboard>
+        ))}
+      </DCSection>
+
+      <DCSection id="assets" title="Quartet Play — asset set" subtitle="The chosen mark across the contexts the app needs">
+        <DCArtboard id="appicons" label="App icon · sizes" width={460} height={300}>
+          <div className="pad center" style={{ gap:34 }}>
+            <div className="grp"><IconTile variant="quartetPlay" size={150} /><div className="lbl">512 / 256</div></div>
+            <div className="grp"><IconTile variant="quartetPlay" size={84} radius={19} /><div className="lbl">128</div></div>
+            <div className="grp"><IconTile variant="quartetPlay" size={48} radius={11} /><div className="lbl">64</div></div>
+          </div>
+        </DCArtboard>
+
+        <DCArtboard id="favicon" label="Favicon · small sizes" width={300} height={300}>
+          <div className="pad center" style={{ gap:30 }}>
+            <div className="grp"><IconTile variant="quartetPlay" size={64} radius={14} /><div className="lbl">32px</div></div>
+            <div className="grp"><IconTile variant="quartetPlay" size={32} radius={7} /><div className="lbl">16px</div></div>
+          </div>
+        </DCArtboard>
+
+        <DCArtboard id="mono" label="Monochrome / single-color" width={460} height={300}>
+          <div className="pad center" style={{ gap:40 }}>
+            <div className="grp">
+              <svg width="96" height="96" viewBox="0 0 100 100"><rect width="100" height="100" rx="23" fill="#dde1ec"/><g transform="translate(18 18) scale(.64)"><Glyph variant="quartetPlay" fill="#16181f"/></g></svg>
+              <div className="lbl">on light</div>
+            </div>
+            <div className="grp">
+              <svg width="96" height="96" viewBox="0 0 100 100"><rect width="100" height="100" rx="23" fill="none" stroke="#dde1ec" strokeWidth="3"/><g transform="translate(18 18) scale(.64)"><Glyph variant="quartetPlay" fill="#dde1ec"/></g></svg>
+              <div className="lbl">knockout</div>
+            </div>
+            <div className="grp">
+              <svg width="96" height="96" viewBox="0 0 100 100"><g transform="translate(6 6) scale(.88)"><Glyph variant="quartetPlay" fill="#9aa0b4"/></g></svg>
+              <div className="lbl">glyph only</div>
+            </div>
+          </div>
+        </DCArtboard>
+
+        <DCArtboard id="lockup-dark" label="Lockup · dark" width="460" height="150">
+          <div className="pad center" style={{ gap:18 }}>
+            <Mark variant="quartetPlay" size={54} />
+            <Wordmark size={40} />
+          </div>
+        </DCArtboard>
+
+        <DCArtboard id="lockup-light" label="Lockup · light" width="460" height="150">
+          <div className="pad center swatch-bg-light" style={{ gap:18 }}>
+            <Mark variant="quartetPlay" size={54} />
+            <span className="wm" style={{ fontSize:40, color:'#181a22' }}><span className="grad">Jelly</span>structure</span>
+          </div>
+        </DCArtboard>
+
+        <DCArtboard id="login" label="Login screen mark" width="460" height="320">
+          <div className="pad col center" style={{ gap:22 }}>
+            <IconTile variant="quartetPlay" size={96} />
+            <div style={{ textAlign:'center' }}>
+              <Wordmark size={32} />
+              <div className="caption" style={{ marginTop:10, color:'var(--ink-soft)' }}>Structure for your Jellyfin library</div>
+            </div>
+          </div>
+        </DCArtboard>
+
+        <DCArtboard id="og" label="Social / OG share image (1200×630)" width="600" height="315">
+          <div className="pad" style={{ flexDirection:'column', justifyContent:'space-between', padding:'48px 54px',
+            background:'radial-gradient(620px 300px at 88% -8%, rgba(177,92,208,.22), transparent 60%), radial-gradient(560px 320px at 8% 120%, rgba(0,164,220,.18), transparent 60%), #16181f' }}>
+            <div style={{ display:'flex', alignItems:'center', gap:16 }}>
+              <IconTile variant="quartetPlay" size={56} radius={13} />
+              <Wordmark size={28} />
+            </div>
+            <div>
+              <div style={{ fontSize:46, fontWeight:700, letterSpacing:'-.02em', lineHeight:1.04, maxWidth:480 }}>
+                Bring <span className="wm grad" style={{ fontSize:46 }}>structure</span> to your media library.
+              </div>
+              <div className="caption" style={{ marginTop:16, fontSize:14, color:'var(--ink-soft)' }}>
+                Languages · tracks · artwork · metadata — organized, synced to Jellyfin.
+              </div>
+            </div>
+          </div>
+        </DCArtboard>
+      </DCSection>
+    </DesignCanvas>
+  );
+}
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>
