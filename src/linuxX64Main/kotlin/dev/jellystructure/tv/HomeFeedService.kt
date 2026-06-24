@@ -143,6 +143,8 @@ class HomeFeedService(
                     logoUrl = ch.logoUrl,
                     style = ch.style,
                     brandColor = ch.brandColor,
+                    paddingLogo = ch.paddingLogo,
+                    paddingText = ch.paddingText,
                 )
             }
 
