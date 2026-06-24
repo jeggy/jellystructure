@@ -20,6 +20,9 @@ import kotlinx.cinterop.ptr
 
 private val json = Json { ignoreUnknownKeys = true }
 
+/** R51 sentinel key for the global (all-users) layout. Not a real Jellyfin user id. */
+const val GLOBAL_USER_ID = "__global__"
+
 private val DEFAULT_ROWS = listOf(
     RowConfig(id = "continue",     kind = RowKind.CONTINUE,    title = "Continue Watching",  enabled = true, order = 0),
     RowConfig(id = "newly-movies", kind = RowKind.NEWLY_ADDED, title = "Newly Added Movies", enabled = true, order = 1, mediaKind = "MOVIE"),
@@ -46,14 +49,38 @@ class RaviloConfigService(
     private val eventBus: TvEventBus? = null,
 ) {
 
+    /**
+     * R51: resolve config for a viewer.
+     * - If the user has their own record → use it (full override).
+     * - Otherwise fall through to the global record (`__global__`).
+     * - If neither exists, seed and return the global default.
+     */
     fun getConfig(userId: String): RaviloConfig {
-        val stored = db.raviloConfigQueries.getByUser(userId).executeAsOneOrNull()
+        if (userId != GLOBAL_USER_ID) {
+            val userStored = db.raviloConfigQueries.getByUser(userId).executeAsOneOrNull()
+            if (userStored != null) {
+                return runCatching { json.decodeFromString<RaviloConfig>(userStored) }.getOrDefault(getGlobalConfig())
+            }
+        }
+        return getGlobalConfig()
+    }
+
+    fun getGlobalConfig(): RaviloConfig {
+        val stored = db.raviloConfigQueries.getByUser(GLOBAL_USER_ID).executeAsOneOrNull()
         if (stored != null) {
             return runCatching { json.decodeFromString<RaviloConfig>(stored) }.getOrDefault(DEFAULT_CONFIG)
         }
-        // First access: persist defaults so any surface can read/update them.
-        save(userId, DEFAULT_CONFIG)
+        save(GLOBAL_USER_ID, DEFAULT_CONFIG)
         return DEFAULT_CONFIG
+    }
+
+    fun hasCustomConfig(userId: String): Boolean =
+        userId != GLOBAL_USER_ID && db.raviloConfigQueries.getByUser(userId).executeAsOneOrNull() != null
+
+    fun removeCustomConfig(userId: String) {
+        if (userId == GLOBAL_USER_ID) return
+        db.raviloConfigQueries.deleteByUser(userId)
+        eventBus?.notifyConfigChanged(userId)
     }
 
     fun save(userId: String, config: RaviloConfig) {
@@ -62,8 +89,12 @@ class RaviloConfigService(
             json = json.encodeToString(normalize(config)),
             updated_at = nowMs(),
         )
-        // R33: push a live signal to this user's connected TVs so they re-pull immediately.
-        eventBus?.notifyConfigChanged(userId)
+        // R33/R51: a global write notifies all users on the global layout; a per-user write notifies just them.
+        if (userId == GLOBAL_USER_ID) {
+            eventBus?.notifyGlobalConfigChanged()
+        } else {
+            eventBus?.notifyConfigChanged(userId)
+        }
     }
 
     /**
@@ -74,9 +105,23 @@ class RaviloConfigService(
         heroes = config.heroes
             .filter { it.itemId.isNotBlank() }
             .mapIndexed { i, h -> h.copy(order = i) },
-        channels = config.channels.mapIndexed { i, c -> c.copy(order = i, brandColor = sanitizeBrandColor(c.brandColor)) },
+        channels = config.channels.mapIndexed { i, c ->
+            c.copy(
+                order = i,
+                brandColor = sanitizeBrandColor(c.brandColor),
+                pageHero = c.pageHero?.let { h ->
+                    h.copy(
+                        items = h.items.filter { it.itemId.isNotBlank() }.mapIndexed { j, item -> item.copy(order = j) },
+                        heroHeightPct = h.heroHeightPct.coerceIn(40, 100),
+                        autoAdvanceSeconds = h.autoAdvanceSeconds.coerceIn(0, 120),
+                    )
+                },
+                paddingLogo = c.paddingLogo?.let { p -> p.copy(top = p.top.coerceIn(0,40), right = p.right.coerceIn(0,40), bottom = p.bottom.coerceIn(0,40), left = p.left.coerceIn(0,40)) },
+                paddingText = c.paddingText?.let { p -> p.copy(top = p.top.coerceIn(0,40), right = p.right.coerceIn(0,40), bottom = p.bottom.coerceIn(0,40), left = p.left.coerceIn(0,40)) },
+            )
+        },
         rows = config.rows.mapIndexed { i, r -> r.copy(order = i) },
-        heroHeightPct = config.heroHeightPct.coerceIn(30, 100),
+        heroHeightPct = config.heroHeightPct.coerceIn(40, 100),
         autoAdvanceSeconds = config.autoAdvanceSeconds.coerceIn(0, 120),
     )
 

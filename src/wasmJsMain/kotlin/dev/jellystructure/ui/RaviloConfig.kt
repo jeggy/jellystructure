@@ -4,8 +4,10 @@ import dev.jellystructure.api.JellyfinUser
 import dev.jellystructure.api.MetadataApi
 import dev.jellystructure.api.RaviloApi
 import dev.jellystructure.scrollIntoViewSmooth
+import dev.jellystructure.shared.tv.ChannelButtonPadding
 import dev.jellystructure.shared.tv.ChannelConfig
 import dev.jellystructure.shared.tv.ChannelStyle
+import dev.jellystructure.shared.tv.PageHeroConfig
 import dev.jellystructure.shared.tv.ChartListSpec
 import dev.jellystructure.shared.tv.Condition
 import dev.jellystructure.shared.tv.MatchMode
@@ -16,6 +18,7 @@ import dev.jellystructure.shared.tv.RowKind
 import dev.jellystructure.shared.tv.Skin
 import dev.jellystructure.shared.tv.TileShape
 import dev.jellystructure.shared.tv.UiDensity
+import kotlinx.browser.document
 import kotlinx.browser.window
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
@@ -28,7 +31,11 @@ import org.w3c.dom.HTMLSelectElement
 // The editor binds directly to the shared `RaviloConfig` (Constitution Invariant 2): the bytes this
 // screen PUTs are the same bytes the TV reads via `GET /api/tv/config`.
 
-private var currentUserId: String = ""
+private const val GLOBAL_SCOPE = "__global__"
+
+private var currentUserId: String = GLOBAL_SCOPE   // R51: default to global scope
+private var currentScopeIsGlobal: Boolean = true
+private var currentHasOverride: Boolean = false
 private var currentConfig: RaviloConfig = RaviloConfig()
 private var rcScope: CoroutineScope? = null
 private var discoverSpecs: List<ChartListSpec> = emptyList()  // R50 — available charts for the edited region
@@ -61,12 +68,11 @@ fun renderRaviloConfig(container: Element, scope: CoroutineScope) {
             container.innerHTML = buildErrorShell("Could not load Jellyfin users — check your connection in Settings.")
             return@launch
         }
-        if (currentUserId.isEmpty()) {
-            renderEmptyState(container, scope)
-            return@launch
-        }
         facets = loadFacets()
-        currentConfig = runCatching { RaviloApi.getConfig(currentUserId) }.getOrDefault(RaviloConfig())
+        // R51: always start in global scope
+        currentUserId = GLOBAL_SCOPE; currentScopeIsGlobal = true; currentHasOverride = false
+        val resp = runCatching { RaviloApi.getConfigWithMeta(scope = "global") }.getOrNull()
+        currentConfig = resp?.config ?: RaviloConfig()
         discoverSpecs = runCatching { RaviloApi.getDiscoverLists(currentConfig.discover.region) }.getOrDefault(emptyList())
         renderFull(container, scope)
     }
@@ -85,42 +91,6 @@ private fun renderFull(container: Element, scope: CoroutineScope) {
     container.innerHTML = buildShell()
     wireShell(container, scope)
     renderSections(container, scope)
-}
-
-private fun renderEmptyState(container: Element, scope: CoroutineScope) {
-    val userOptions = """<option value="" disabled selected>Select a user…</option>""" +
-        users.joinToString("") { u -> """<option value="${u.id}">${u.displayName.htmlEsc()}</option>""" }
-    container.innerHTML = """
-        <div class="pagebar">
-          <h1 style="display:flex;align-items:center;gap:.4em">$RAVILO_MARK Ravilo TV</h1>
-          <span class="badge info">app config</span>
-        </div>
-        <div class="note blue" style="margin-bottom:18px;display:flex;gap:12px;align-items:center">
-          <span class="badge info" style="flex:none">per Jellyfin user</span>
-          <div class="tiny" style="flex:1">Choose a user to edit their Ravilo home layout.</div>
-          <select id="rav-user-pick" class="input" style="width:auto;min-width:180px;font-size:.85rem">$userOptions</select>
-        </div>
-        <div id="rav-empty-body" style="display:flex;flex-direction:column;align-items:center;gap:12px;padding:48px 16px;color:var(--ink-soft)">
-          <span style="font-size:2rem;opacity:.35">📺</span>
-          <span style="font-size:.95rem">Select a Jellyfin user to start editing their Ravilo layout.</span>
-        </div>
-    """.trimIndent()
-    container.querySelector("#rav-user-pick")?.addEventListener("change") { _ ->
-        val sel = container.querySelector("#rav-user-pick") as? org.w3c.dom.HTMLSelectElement ?: return@addEventListener
-        val picked = sel.value
-        if (picked.isBlank()) return@addEventListener
-        currentUserId = picked
-        val userName = users.find { it.id == picked }?.displayName ?: picked
-        (sel as? HTMLElement)?.setAttribute("disabled", "disabled")
-        (container.querySelector("#rav-empty-body") as? HTMLElement)?.innerHTML =
-            """<p class="page-sub" style="color:var(--ink-soft)">Loading ${userName.htmlEsc()}…</p>"""
-        scope.launch {
-            facets = loadFacets()
-            currentConfig = runCatching { RaviloApi.getConfig(currentUserId) }.getOrDefault(RaviloConfig())
-            discoverSpecs = runCatching { RaviloApi.getDiscoverLists(currentConfig.discover.region) }.getOrDefault(emptyList())
-            renderFull(container, scope)
-        }
-    }
 }
 
 private fun buildLoadingShell() = """
@@ -142,11 +112,6 @@ private fun datalistsHtml(): String = buildString {
 }
 
 private fun buildShell(): String {
-    val userOptions = users.joinToString("") { u ->
-        val sel = if (u.id == currentUserId) " selected" else ""
-        """<option value="${u.id}"$sel>${u.displayName.htmlEsc()}</option>"""
-    }
-    // no placeholder in buildShell — currentUserId is guaranteed non-empty here
     return """
     <style>
       /* Sticky section nav (anchored side menu) — mirrors wf.css .navitem, with button-chrome reset. */
@@ -171,11 +136,36 @@ private fun buildShell(): String {
       Lay out the Ravilo home screen your viewers see on their TVs. Ravilo connects only to
       Jellystructure — browsing, search and this layout are served by us; media streams from Jellyfin.
     </p>
-    <div class="note blue" style="margin-bottom:18px;display:flex;gap:12px;align-items:center">
-      <span class="badge info" style="flex:none">per Jellyfin user</span>
-      <div class="tiny" style="flex:1">Stored against the selected Jellyfin user, so every TV they sign into shows the same thing. Changes sync to all their devices.</div>
-      <select id="rav-user-pick" class="input" style="width:auto;min-width:180px;font-size:.85rem">$userOptions</select>
+    <!-- R51 scope switcher -->
+    <div class="note blue" style="margin-bottom:18px;display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+      <div style="display:flex;gap:6px;flex:none">
+        <button id="rav-scope-global" class="btn sm${if (currentScopeIsGlobal) " primary" else " ghost"}">🌐 Global · all users</button>
+        <button id="rav-scope-user"   class="btn sm${if (!currentScopeIsGlobal) " primary" else " ghost"}">👤 A specific user</button>
+      </div>
+      ${if (!currentScopeIsGlobal) {
+          val selOpts = users.joinToString("") { u ->
+              val sel = if (u.id == currentUserId) " selected" else ""
+              """<option value="${u.id}"$sel>${u.displayName.htmlEsc()}</option>"""
+          }
+          """<select id="rav-user-pick" class="input" style="width:auto;min-width:180px;font-size:.85rem">$selOpts</select>"""
+      } else ""}
+      <div class="tiny" id="rav-scope-hint" style="flex:1;color:var(--ink-soft)">
+        ${if (currentScopeIsGlobal) "Default layout for all users. Any user without a custom layout sees this."
+          else if (currentHasOverride) "Custom layout — overrides the global for this user only. <b>Global changes won't reach them.</b>"
+          else "This user uses the global layout."}
+      </div>
+      ${if (!currentScopeIsGlobal && currentHasOverride) """<button id="rav-remove-override" class="btn sm ghost" style="color:var(--bad)">Remove custom layout</button>""" else ""}
     </div>
+    ${if (!currentScopeIsGlobal && !currentHasOverride) """
+    <div class="card" id="rav-lock-card" style="margin-bottom:18px;padding:18px 20px;display:flex;align-items:center;gap:14px;">
+      <span style="font-size:1.4rem">🔒</span>
+      <div class="col" style="flex:1">
+        <b>${users.find { it.id == currentUserId }?.displayName?.htmlEsc() ?: currentUserId} uses the global layout</b>
+        <div class="tiny muted">Create a custom layout to give them their own personalised Ravilo home.</div>
+      </div>
+      <button id="rav-create-override" class="btn">Create custom layout</button>
+    </div>
+    """ else ""}
     <div id="rav-msg" style="display:none;margin-bottom:12px"></div>
 
     <div class="row" style="align-items:flex-start;gap:22px;flex-wrap:wrap">
@@ -206,26 +196,83 @@ private fun buildShell(): String {
     """.trimIndent()
 }
 
+private fun reloadScopeIntoSections(container: Element, scope: CoroutineScope) {
+    (container.querySelector("#rav-sections") as? HTMLElement)?.innerHTML =
+        """<p class="page-sub" style="color:var(--ink-soft);padding:24px 0">Loading…</p>"""
+    scope.launch {
+        val resp = runCatching {
+            if (currentScopeIsGlobal) RaviloApi.getConfigWithMeta(scope = "global")
+            else RaviloApi.getConfigWithMeta(userId = currentUserId)
+        }.getOrNull()
+        currentConfig = resp?.config ?: RaviloConfig()
+        currentHasOverride = resp?.hasOverride ?: false
+        discoverSpecs = runCatching { RaviloApi.getDiscoverLists(currentConfig.discover.region) }.getOrDefault(emptyList())
+        renderFull(container, scope)
+    }
+}
+
 private fun wireShell(container: Element, scope: CoroutineScope) {
-    // User picker
+    // R51 scope switcher — global
+    container.querySelector("#rav-scope-global")?.addEventListener("click") { _ ->
+        if (currentScopeIsGlobal) return@addEventListener
+        currentScopeIsGlobal = true; currentUserId = GLOBAL_SCOPE; currentHasOverride = false
+        reloadScopeIntoSections(container, scope)
+    }
+
+    // R51 scope switcher — specific user
+    container.querySelector("#rav-scope-user")?.addEventListener("click") { _ ->
+        if (!currentScopeIsGlobal) return@addEventListener
+        currentScopeIsGlobal = false
+        val firstUser = users.firstOrNull()?.id ?: return@addEventListener
+        if (currentUserId == GLOBAL_SCOPE) currentUserId = firstUser
+        reloadScopeIntoSections(container, scope)
+    }
+
+    // User picker (only present when scope = specific user)
     container.querySelector("#rav-user-pick")?.addEventListener("change") { _ ->
         val sel = container.querySelector("#rav-user-pick") as? HTMLSelectElement ?: return@addEventListener
-        currentUserId = sel.value
-        (container.querySelector("#rav-sections") as? HTMLElement)?.innerHTML =
-            """<p class="page-sub" style="color:var(--ink-soft);padding:24px 0">Loading…</p>"""
+        currentUserId = sel.value; currentScopeIsGlobal = false
+        reloadScopeIntoSections(container, scope)
+    }
+
+    // Create custom layout — copy global into user record
+    container.querySelector("#rav-create-override")?.addEventListener("click") { _ ->
+        val uId = currentUserId
         scope.launch {
-            currentConfig = runCatching { RaviloApi.getConfig(currentUserId) }.getOrDefault(RaviloConfig())
-            discoverSpecs = runCatching { RaviloApi.getDiscoverLists(currentConfig.discover.region) }.getOrDefault(emptyList())
-            renderSections(container, scope)
+            val global = runCatching { RaviloApi.getConfigWithMeta(scope = "global") }.getOrNull()?.config ?: RaviloConfig()
+            runCatching { RaviloApi.putConfig(uId, global) }
+            currentHasOverride = true
+            renderFull(container, scope)
+        }
+    }
+
+    // Remove custom layout
+    container.querySelector("#rav-remove-override")?.addEventListener("click") { _ ->
+        val uId = currentUserId
+        scope.launch {
+            val msg = container.querySelector("#rav-msg") as? HTMLElement ?: return@launch
+            runCatching { RaviloApi.removeUserConfig(uId) }.fold(
+                onSuccess = {
+                    currentHasOverride = false
+                    val resp = runCatching { RaviloApi.getConfigWithMeta(scope = "global") }.getOrNull()
+                    currentConfig = resp?.config ?: RaviloConfig()
+                    renderFull(container, scope)
+                },
+                onFailure = { showMsg(msg, "Failed: ${it.message}", ok = false) },
+            )
         }
     }
 
     // Save
     container.querySelector("#rav-save")?.addEventListener("click") { _ ->
+        if (!currentScopeIsGlobal && !currentHasOverride) return@addEventListener  // lock state
         collectConfig(container)
         scope.launch {
             val msg = container.querySelector("#rav-msg") as? HTMLElement ?: return@launch
-            runCatching { RaviloApi.putConfig(currentUserId, currentConfig) }.fold(
+            runCatching {
+                if (currentScopeIsGlobal) RaviloApi.putGlobalConfig(currentConfig)
+                else RaviloApi.putConfig(currentUserId, currentConfig)
+            }.fold(
                 onSuccess = { showMsg(msg, "Saved.", ok = true) },
                 onFailure = { showMsg(msg, "Save failed: ${it.message}", ok = false) },
             )
@@ -496,32 +543,322 @@ private fun renderChannels(container: Element) {
         sect.querySelector("[data-ch-edit='$i']")?.addEventListener("click") { _ ->
             val scope = rcScope ?: return@addEventListener
             val c = currentConfig.channels.getOrNull(i) ?: return@addEventListener
-            val seed = if (c.conditions.isNotEmpty()) wbCondsFrom(c.conditions) else legacyToConds(c)
-            openWorkbench(scope, "Edit channel — ${c.name.ifBlank { "channel" }}", viewer = currentUserId,
-                initialMatch = c.match.name, initialConds = seed, applyLabel = "Save channel",
-                channelMode = true,
-                initialStyle = c.style.name.lowercase(),
-                initialBrandColor = c.brandColor ?: "",
-                initialLogoUrl = c.logoUrl,
-                channelName = c.name,
-                onApply = { _, _, _ -> },
-                onSaveChannel = { style, color, logo, match, _, conds ->
-                    structural(container, {
-                        val list = currentConfig.channels.toMutableList()
-                        val cur = list[i]
-                        val realConds = conds.filter { it.values.isNotEmpty() || it.facet == "track_title" }
-                        list[i] = cur.copy(
-                            style = if (style == "TEXT") ChannelStyle.TEXT else ChannelStyle.LOGO,
-                            brandColor = color.ifBlank { null },
-                            logoUrl = logo,
-                            match = if (realConds.isNotEmpty()) wbMode(match) else cur.match,
-                            conditions = if (realConds.isNotEmpty()) wbConds(conds) else cur.conditions,
-                        )
-                        currentConfig = currentConfig.copy(channels = list)
-                    }, ::renderChannels)
-                })
+            openChannelEditorPage(container, scope, i, c)
         }
     }
+}
+
+// ── Channel editor page (R53) ─────────────────────────────────────────────────
+
+private fun openChannelEditorPage(container: Element, scope: CoroutineScope, idx: Int, c: ChannelConfig) {
+    val seed = if (c.conditions.isNotEmpty()) wbCondsFrom(c.conditions) else legacyToConds(c)
+    val styleChecked = { s: String -> if ((if (c.style == ChannelStyle.LOGO) "logo" else "text") == s) " checked" else "" }
+    val advOpts = AUTO_ADVANCE_OPTIONS.joinToString("") { (v, l) ->
+        val s = if (v == (c.pageHero?.autoAdvanceSeconds ?: 7)) " selected" else ""
+        """<option value="$v"$s>$l</option>"""
+    }
+    val pHero = c.pageHero
+    val heroEnabled = pHero?.enabled == true
+    val heroHeightVal = pHero?.heroHeightPct ?: 56
+    val heroItemCount = pHero?.items?.size ?: 0
+    val padLogo = c.paddingLogo
+    val padText = c.paddingText
+
+    container.innerHTML = """
+        <div class="pagebar" style="margin-bottom:18px">
+          <button id="ch-ed-back" class="btn sm ghost">‹ Back to layout</button>
+          <h2 style="margin:0;flex:1;text-align:center">${(if (c.name.isBlank()) "Channel" else c.name).htmlEsc()}</h2>
+          <button id="ch-ed-cancel" class="btn sm ghost">Cancel</button>
+          <button id="ch-ed-save" class="btn primary">Save changes</button>
+        </div>
+        <div id="ch-ed-msg" style="display:none;margin-bottom:12px"></div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:18px;flex-wrap:wrap">
+
+          <!-- Left: Button + Filter -->
+          <div>
+            <div class="card" style="padding:18px 20px;margin-bottom:14px">
+              <b>Channel button</b>
+              <div style="margin-top:12px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+                <label><input type="radio" name="ch-ed-style" value="logo"${styleChecked("logo")}> Logo</label>
+                <label><input type="radio" name="ch-ed-style" value="text"${styleChecked("text")}> Text</label>
+              </div>
+              <div style="margin-top:10px">
+                <label class="tiny muted">Name</label>
+                <input id="ch-ed-name" class="input" value="${c.name.htmlEsc()}" placeholder="Channel name" style="width:100%;margin-top:4px">
+              </div>
+              <div style="margin-top:10px">
+                <label class="tiny muted">Logo URL (for Logo style)</label>
+                <input id="ch-ed-logo" class="input" value="${(c.logoUrl ?: "").htmlEsc()}" placeholder="https://…" style="width:100%;margin-top:4px">
+              </div>
+              <div style="margin-top:10px">
+                <label class="tiny muted">Brand fill (hex or linear-gradient(…))</label>
+                <input id="ch-ed-color" class="input" value="${(c.brandColor ?: "").htmlEsc()}" placeholder="#1a1a2e" style="width:100%;margin-top:4px">
+              </div>
+
+              <!-- R53 padding per display mode -->
+              <details style="margin-top:14px">
+                <summary class="tiny" style="cursor:pointer;user-select:none">
+                  Padding
+                  ${if (padLogo != null && (padLogo.top + padLogo.right + padLogo.bottom + padLogo.left) > 0)
+                      """<span class="badge" style="font-size:.6rem">${padLogo.top}/${padLogo.right}/${padLogo.bottom}/${padLogo.left} logo</span>"""
+                  else ""}
+                  ${if (padText != null && (padText.top + padText.right + padText.bottom + padText.left) > 0)
+                      """<span class="badge" style="font-size:.6rem">${padText.top}/${padText.right}/${padText.bottom}/${padText.left} text</span>"""
+                  else ""}
+                </summary>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px">
+                  <div>
+                    <div class="tiny muted" style="margin-bottom:4px">Logo mode (px)</div>
+                    <div style="display:flex;gap:5px;flex-wrap:wrap">
+                      ${listOf("T" to "pad-logo-top", "R" to "pad-logo-right", "B" to "pad-logo-bottom", "L" to "pad-logo-left").joinToString("") { (lbl, id) ->
+                          val cur = when(lbl) { "T" -> padLogo?.top ?: 0; "R" -> padLogo?.right ?: 0; "B" -> padLogo?.bottom ?: 0; else -> padLogo?.left ?: 0 }
+                          """<label class="tiny" style="display:flex;flex-direction:column;align-items:center;gap:2px">$lbl<input id="$id" type="number" class="input" style="width:48px" min="0" max="40" value="$cur"></label>"""
+                      }}
+                    </div>
+                  </div>
+                  <div>
+                    <div class="tiny muted" style="margin-bottom:4px">Text mode (px)</div>
+                    <div style="display:flex;gap:5px;flex-wrap:wrap">
+                      ${listOf("T" to "pad-text-top", "R" to "pad-text-right", "B" to "pad-text-bottom", "L" to "pad-text-left").joinToString("") { (lbl, id) ->
+                          val cur = when(lbl) { "T" -> padText?.top ?: 0; "R" -> padText?.right ?: 0; "B" -> padText?.bottom ?: 0; else -> padText?.left ?: 0 }
+                          """<label class="tiny" style="display:flex;flex-direction:column;align-items:center;gap:2px">$lbl<input id="$id" type="number" class="input" style="width:48px" min="0" max="40" value="$cur"></label>"""
+                      }}
+                    </div>
+                  </div>
+                </div>
+              </details>
+            </div>
+
+            <div class="card" style="padding:18px 20px">
+              <b>Content filter</b>
+              <div style="margin-top:10px" id="ch-ed-wb-host"></div>
+            </div>
+          </div>
+
+          <!-- Right: Page hero (R52) -->
+          <div>
+            <div class="card" style="padding:18px 20px">
+              <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
+                <b>Page hero</b>
+                <label style="display:flex;align-items:center;gap:5px;font-size:.82rem;margin-left:auto">
+                  <input type="checkbox" id="ch-hero-enabled"${if (heroEnabled) " checked" else ""}> Enabled
+                </label>
+              </div>
+              <div id="ch-hero-body" style="${if (!heroEnabled) "opacity:.45;pointer-events:none;" else ""}">
+                <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+                  <label class="tiny muted">Height</label>
+                  <input id="ch-hero-height" type="range" min="40" max="100" value="$heroHeightVal" style="flex:1">
+                  <span id="ch-hero-height-val" class="tiny">$heroHeightVal%</span>
+                </div>
+                <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+                  <label class="tiny muted">Auto-advance</label>
+                  <select id="ch-hero-advance" class="input" style="width:auto">$advOpts</select>
+                </div>
+                <div style="font-size:.82rem;color:var(--ink-soft);margin-bottom:8px">Hero items: <b id="ch-hero-count">$heroItemCount</b></div>
+                <button id="ch-hero-edit" class="btn sm ghost">✎ Edit hero items</button>
+              </div>
+            </div>
+          </div>
+        </div>
+    """.trimIndent()
+
+    // Wire back / cancel
+    val onBack = {
+        currentConfig = currentConfig  // unchanged
+        renderFull(container, scope)
+    }
+    container.querySelector("#ch-ed-back")?.addEventListener("click") { _ -> onBack() }
+    container.querySelector("#ch-ed-cancel")?.addEventListener("click") { _ -> onBack() }
+
+    // Hero enable toggle
+    container.querySelector("#ch-hero-enabled")?.addEventListener("change") { _ ->
+        val cb = container.querySelector("#ch-hero-enabled") as? org.w3c.dom.HTMLInputElement ?: return@addEventListener
+        val body = container.querySelector("#ch-hero-body") as? HTMLElement ?: return@addEventListener
+        body.style.opacity = if (cb.checked) "1" else ".45"
+        body.setAttribute("style", "transition:opacity .15s;opacity:${if (cb.checked) "1" else ".45"};${if (!cb.checked) "pointer-events:none;" else ""}")
+    }
+
+    // Hero height slider
+    container.querySelector("#ch-hero-height")?.addEventListener("input") { _ ->
+        val h = (container.querySelector("#ch-hero-height") as? HTMLInputElement)?.value ?: return@addEventListener
+        (container.querySelector("#ch-hero-height-val") as? HTMLElement)?.textContent = "$h%"
+    }
+
+    // Edit hero items — open the same hero-item workbench used by the home hero
+    container.querySelector("#ch-hero-edit")?.addEventListener("click") { _ ->
+        val ch = currentConfig.channels.getOrNull(idx) ?: return@addEventListener
+        val heroItems = ch.pageHero?.items ?: emptyList()
+        openHeroEditorOverlay(container, scope, heroItems, title = "Page hero — ${ch.name.ifBlank { "channel" }}") { updatedItems ->
+            val list = currentConfig.channels.toMutableList()
+            val cur = list[idx]
+            list[idx] = cur.copy(pageHero = (cur.pageHero ?: PageHeroConfig()).copy(items = updatedItems))
+            currentConfig = currentConfig.copy(channels = list)
+            val countEl = container.querySelector("#ch-hero-count") as? HTMLElement
+            countEl?.textContent = "${updatedItems.size}"
+        }
+    }
+
+    // Save changes
+    container.querySelector("#ch-ed-save")?.addEventListener("click") { _ ->
+        val name = (container.querySelector("#ch-ed-name") as? HTMLInputElement)?.value?.trim() ?: c.name
+        val logo = (container.querySelector("#ch-ed-logo") as? HTMLInputElement)?.value?.trim()?.ifBlank { null }
+        val color = (container.querySelector("#ch-ed-color") as? HTMLInputElement)?.value?.trim()?.ifBlank { null }
+        val styleVal = (container.querySelector("input[name='ch-ed-style']:checked") as? HTMLInputElement)?.value ?: "logo"
+        val heroEn = (container.querySelector("#ch-hero-enabled") as? org.w3c.dom.HTMLInputElement)?.checked ?: false
+        val heroH = (container.querySelector("#ch-hero-height") as? HTMLInputElement)?.value?.toIntOrNull() ?: 56
+        val heroAdv = (container.querySelector("#ch-hero-advance") as? HTMLSelectElement)?.value?.toIntOrNull() ?: 7
+        fun padOf(t: String, r: String, b: String, l: String): ChannelButtonPadding? {
+            val top = (container.querySelector("#$t") as? HTMLInputElement)?.value?.toIntOrNull() ?: 0
+            val right = (container.querySelector("#$r") as? HTMLInputElement)?.value?.toIntOrNull() ?: 0
+            val btm = (container.querySelector("#$b") as? HTMLInputElement)?.value?.toIntOrNull() ?: 0
+            val left = (container.querySelector("#$l") as? HTMLInputElement)?.value?.toIntOrNull() ?: 0
+            return if (top + right + btm + left > 0) ChannelButtonPadding(top, right, btm, left) else null
+        }
+        val paddingLogo = padOf("pad-logo-top", "pad-logo-right", "pad-logo-bottom", "pad-logo-left")
+        val paddingText = padOf("pad-text-top", "pad-text-right", "pad-text-bottom", "pad-text-left")
+
+        val list = currentConfig.channels.toMutableList()
+        val cur = list[idx]
+        list[idx] = cur.copy(
+            name = name,
+            style = if (styleVal == "TEXT") ChannelStyle.TEXT else ChannelStyle.LOGO,
+            brandColor = color,
+            logoUrl = logo,
+            pageHero = (cur.pageHero ?: PageHeroConfig()).copy(
+                enabled = heroEn,
+                heroHeightPct = heroH,
+                autoAdvanceSeconds = heroAdv,
+            ),
+            paddingLogo = paddingLogo,
+            paddingText = paddingText,
+        )
+        currentConfig = currentConfig.copy(channels = list)
+        renderFull(container, scope)
+    }
+
+    // Inline filter workbench host
+    injectWorkbenchInline(container.querySelector("#ch-ed-wb-host") as? HTMLElement ?: return, scope, seed, c.match.name, currentUserId)
+}
+
+/** Minimal hero-items editor overlay (reuses the existing hero section approach). */
+private fun openHeroEditorOverlay(
+    container: Element,
+    scope: CoroutineScope,
+    heroItems: List<HeroConfig>,
+    title: String,
+    onSave: (List<HeroConfig>) -> Unit,
+) {
+    val existing = document.getElementById("hero-ov") as? HTMLElement
+    existing?.remove()
+    val ov = document.createElement("div") as HTMLElement
+    ov.id = "hero-ov"
+    ov.style.cssText = "position:fixed;inset:0;background:#000a;display:flex;align-items:center;justify-content:center;z-index:9000"
+    var editItems = heroItems.toMutableList()
+    fun buildHtml(): String = """
+        <div style="background:var(--fill);border-radius:14px;padding:24px;max-width:500px;width:100%;max-height:85vh;overflow:auto">
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px">
+            <b>${title.htmlEsc()}</b><span class="spacer"></span>
+            <button id="hero-ov-close" class="btn sm ghost">✕</button>
+          </div>
+          <div id="hero-ov-items">
+            ${editItems.mapIndexed { i, h ->
+                """<div class="row" style="gap:8px;margin-bottom:8px;align-items:center">
+                    <input class="input" placeholder="Item ID" value="${h.itemId.htmlEsc()}" data-hov-id="$i" style="flex:1">
+                    <button class="btn sm ghost" data-hov-del="$i">✕</button>
+                   </div>"""
+            }.joinToString("")}
+          </div>
+          <button id="hero-ov-add" class="btn sm ghost" style="margin-bottom:14px">+ Add item</button>
+          <div style="display:flex;justify-content:flex-end;gap:8px">
+            <button id="hero-ov-cancel" class="btn sm ghost">Cancel</button>
+            <button id="hero-ov-save" class="btn primary">Save hero items</button>
+          </div>
+        </div>
+    """.trimIndent()
+    ov.innerHTML = buildHtml()
+    document.body?.appendChild(ov)
+
+    fun rewire() {
+        ov.querySelector("#hero-ov-close")?.addEventListener("click") { _ -> ov.remove() }
+        ov.querySelector("#hero-ov-cancel")?.addEventListener("click") { _ -> ov.remove() }
+        ov.querySelector("#hero-ov-add")?.addEventListener("click") { _ ->
+            editItems.add(HeroConfig(itemId = "")); ov.innerHTML = buildHtml(); rewire()
+        }
+        ov.querySelector("#hero-ov-save")?.addEventListener("click") { _ ->
+            val items = ov.querySelectorAll("[data-hov-id]")
+            for (j in 0 until items.length) {
+                val inp = items.item(j) as? HTMLInputElement ?: continue
+                val jj = inp.getAttribute("data-hov-id")?.toIntOrNull() ?: continue
+                if (jj < editItems.size) editItems[jj] = editItems[jj].copy(itemId = inp.value.trim())
+            }
+            editItems = editItems.filter { it.itemId.isNotBlank() }.toMutableList()
+            onSave(editItems)
+            ov.remove()
+        }
+        for (j in editItems.indices) {
+            ov.querySelector("[data-hov-del='$j']")?.addEventListener("click") { _ ->
+                editItems.removeAt(j); ov.innerHTML = buildHtml(); rewire()
+            }
+        }
+    }
+    rewire()
+}
+
+/** Inline filter workbench — renders condition rows directly into [host] without a modal. */
+private fun injectWorkbenchInline(host: HTMLElement, scope: CoroutineScope, initConds: List<WbCond>, initMatch: String, viewer: String?) {
+    var conds = initConds.map { WbCond(it.facet, it.op, it.values.toMutableList()) }.toMutableList()
+    if (conds.isEmpty()) conds.add(WbCond("studio", "is_any_of"))
+    var match = initMatch
+
+    fun buildHtml(): String = """
+        <div>
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+            <span class="tiny muted">Match</span>
+            <select id="wb-inline-match" class="input" style="width:auto;font-size:.8rem">
+              <option value="ALL"${if (match == "ALL") " selected" else ""}>All conditions</option>
+              <option value="ANY"${if (match == "ANY") " selected" else ""}>Any condition</option>
+            </select>
+          </div>
+          ${conds.mapIndexed { i, cond ->
+              val facetOpts = listOf("studio","network","genre","tag").joinToString("") { f ->
+                  """<option value="$f"${if (f == cond.facet) " selected" else ""}>${f.replaceFirstChar{it.uppercase()}}</option>"""
+              }
+              val valList = facets[cond.facet.uppercase()]?.joinToString(",") ?: ""
+              """<div style="display:flex;gap:5px;align-items:center;margin-bottom:5px;flex-wrap:wrap">
+                  <select class="input" style="width:90px;font-size:.78rem" data-wbi-facet="$i">$facetOpts</select>
+                  <input class="input" style="flex:1;font-size:.78rem" placeholder="value" value="${cond.values.joinToString(", ").htmlEsc()}" data-wbi-val="$i" list="facet-${cond.facet.lowercase()}">
+                  <button class="btn sm ghost" data-wbi-del="$i">✕</button>
+                 </div>"""
+          }.joinToString("")}
+          <button id="wb-inline-add" class="btn sm ghost" style="margin-top:4px;font-size:.78rem">+ Add condition</button>
+        </div>
+    """.trimIndent()
+
+    fun rewire() {
+        host.querySelector("#wb-inline-match")?.addEventListener("change") { _ ->
+            match = (host.querySelector("#wb-inline-match") as? HTMLSelectElement)?.value ?: match
+        }
+        host.querySelector("#wb-inline-add")?.addEventListener("click") { _ ->
+            conds.add(WbCond("studio", "is_any_of")); host.innerHTML = buildHtml(); rewire()
+        }
+        for (j in conds.indices) {
+            host.querySelector("[data-wbi-del='$j']")?.addEventListener("click") { _ ->
+                conds.removeAt(j); host.innerHTML = buildHtml(); rewire()
+            }
+            host.querySelector("[data-wbi-facet='$j']")?.addEventListener("change") { _ ->
+                val f = (host.querySelector("[data-wbi-facet='$j']") as? HTMLSelectElement)?.value ?: return@addEventListener
+                conds[j].facet = f
+            }
+            host.querySelector("[data-wbi-val='$j']")?.addEventListener("change") { _ ->
+                val v = (host.querySelector("[data-wbi-val='$j']") as? HTMLInputElement)?.value ?: return@addEventListener
+                conds[j].values.clear()
+                conds[j].values.addAll(v.split(",").map { it.trim() }.filter { it.isNotBlank() })
+            }
+        }
+    }
+
+    host.innerHTML = buildHtml()
+    rewire()
 }
 
 // ── Rows ──────────────────────────────────────────────────────────────────────
