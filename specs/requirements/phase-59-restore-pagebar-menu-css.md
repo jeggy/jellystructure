@@ -1,6 +1,6 @@
 # Phase 59 — Restore pagebar menu/split-button CSS (FR-MB1)
 
-**Status:** Planned
+**Status:** ✅ Done
 
 ## Goal
 
