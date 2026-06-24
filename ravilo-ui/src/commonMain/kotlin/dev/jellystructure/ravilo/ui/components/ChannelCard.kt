@@ -33,6 +33,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.layout.ContentScale
 import dev.jellystructure.ravilo.ui.focus.dpadFocusable
 import dev.jellystructure.ravilo.ui.seams.RemoteImage
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
@@ -186,6 +187,7 @@ fun ChannelCard(
             RemoteImage(
                 url = logoUrl,
                 contentDescription = name,
+                contentScale = ContentScale.Fit,
                 modifier = if (logoPad != null)
                     Modifier.fillMaxSize().padding(
                         start = logoPad.left.dp,
