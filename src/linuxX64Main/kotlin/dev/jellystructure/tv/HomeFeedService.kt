@@ -83,7 +83,7 @@ class HomeFeedService(
                     item = item.toMediaCard(jellyfinBase, token),
                     taglineKicker = null,
                     backdropUrl = "$jellyfinBase/Items/$jellyfinId/Images/Backdrop/0?api_key=$token",
-                    logoUrl = null,
+                    logoUrl = "$jellyfinBase/Items/$jellyfinId/Images/Logo?api_key=$token",
                     badge = null,
                     synopsis = item.overview,
                 )
@@ -101,7 +101,7 @@ class HomeFeedService(
                     item = item.toMediaCard(jellyfinBase, token),
                     taglineKicker = hc.tagline,
                     backdropUrl = "$jellyfinBase/Items/$jellyfinId/Images/Backdrop/0?api_key=$token",
-                    logoUrl = null,
+                    logoUrl = if (hc.clearlogoOverlay) "$jellyfinBase/Items/$jellyfinId/Images/Logo?api_key=$token" else null,
                     badge = hc.badge,
                     synopsis = item.overview,
                 )
@@ -124,7 +124,7 @@ class HomeFeedService(
                 item = item.toMediaCard(jellyfinBase, token),
                 taglineKicker = hc.tagline,
                 backdropUrl = "$jellyfinBase/Items/$jellyfinId/Images/Backdrop/0?api_key=$token",
-                logoUrl = null,
+                logoUrl = if (hc.clearlogoOverlay) "$jellyfinBase/Items/$jellyfinId/Images/Logo?api_key=$token" else null,
                 badge = hc.badge,
                 synopsis = item.overview,
             )
@@ -170,8 +170,8 @@ class HomeFeedService(
                 }
 
                 RowKind.NEWLY_ADDED -> {
-                    if (config.mergeNewlyAdded && rowCfg.mediaKind != null) {
-                        // When merged, skip the individual movie/series rows; a merged row will be added once
+                    if (config.mergeNewlyAdded) {
+                        // When merged, ALL NEWLY_ADDED rows are skipped; a single merged row is injected below
                         continue
                     }
                     val filtered = when (rowCfg.mediaKind) {
@@ -216,18 +216,23 @@ class HomeFeedService(
             }
         }
 
-        // If mergeNewlyAdded is on and no merged row was emitted, inject one
+        // If mergeNewlyAdded is on, inject one merged NEWLY_ADDED row at the config position
         if (config.mergeNewlyAdded) {
             val mergedCards = all
                 .sortedByDescending { it.scannedAt }
                 .take(ROW_ITEM_LIMIT)
                 .mapNotNull { it.toMediaCardOrNull(jellyfinBase, token) }
             if (mergedCards.isNotEmpty()) {
-                val insertAt = enabledRows.indexOfFirst { it.kind == RowKind.NEWLY_ADDED }
-                    .takeIf { it >= 0 }?.let { idx ->
-                        // insert after continue row if it exists, at the newly-added position
-                        result.indexOfFirst { r -> enabledRows.getOrNull(idx - 1)?.id == r.id } + 1
-                    } ?: result.size
+                // Find where in the config the first NEWLY_ADDED row was and insert the merged
+                // row at that logical position — after whichever result row came just before it.
+                val firstIdx = enabledRows.indexOfFirst { it.kind == RowKind.NEWLY_ADDED }
+                val insertAt = if (firstIdx <= 0) {
+                    0 // no predecessor; place before all rows (or at 0 if firstIdx == -1 = no NEWLY_ADDED configured)
+                } else {
+                    val predecessorId = enabledRows[firstIdx - 1].id
+                    val pos = result.indexOfFirst { it.id == predecessorId }
+                    if (pos < 0) result.size else pos + 1
+                }
                 result.add(insertAt.coerceIn(0, result.size), Row("newly-added", "Newly Added", RowKind.NEWLY_ADDED, mergedCards))
             }
         }

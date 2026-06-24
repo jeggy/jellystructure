@@ -226,6 +226,7 @@ private fun HomeLoaded(
                 val variant = if (row.kind == RowKind.CONTINUE) TileVariant.LANDSCAPE else feed.tileShape.toTileVariant()
                 Tile(
                     title = card.title,
+                    subtitle = card.nextUpLabel,
                     posterUrl = if (variant == TileVariant.LANDSCAPE) card.backdropUrl ?: card.posterUrl else card.posterUrl,
                     variant = variant,
                     progressPct = card.progressPct ?: 0f,

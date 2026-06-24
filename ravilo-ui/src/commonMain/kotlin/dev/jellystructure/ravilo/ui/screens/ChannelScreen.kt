@@ -1,8 +1,9 @@
 package dev.jellystructure.ravilo.ui.screens
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.LocalBringIntoViewSpec
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -13,6 +14,7 @@ import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -20,17 +22,23 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import dev.jellystructure.ravilo.ui.LocalServerBaseUrl
+import dev.jellystructure.ravilo.ui.components.HeroCarousel
 import dev.jellystructure.ravilo.ui.components.StaticContentRow
 import dev.jellystructure.ravilo.ui.components.Tile
 import dev.jellystructure.ravilo.ui.components.TileVariant
 import dev.jellystructure.ravilo.ui.components.toTileVariant
 import dev.jellystructure.ravilo.ui.focus.backToTopOnBack
+import dev.jellystructure.ravilo.ui.focus.rememberEdgeBringIntoViewSpec
 import dev.jellystructure.ravilo.ui.i18n.str
+import dev.jellystructure.ravilo.ui.theme.RaviloDimens
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
-import androidx.compose.runtime.collectAsState
 import dev.jellystructure.shared.tv.Channel
 import dev.jellystructure.shared.tv.HomeFeed
 import dev.jellystructure.shared.tv.MediaCard
@@ -45,6 +53,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import androidx.compose.runtime.collectAsState
 
 class ChannelStore(private val apiClient: TvApiClient) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -93,10 +102,12 @@ fun ChannelScreen(
 
     val storeState by store.state.collectAsState()
 
-    // R55: Back scrolls a scrolled channel to the top (refocusing the first tile once it's back in view,
-    // so bring-into-view doesn't yank it back) before falling through to RaviloApp's pop.
+    val density = LocalDensity.current
+    val containerH = LocalWindowInfo.current.containerSize.height
+
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
+    val heroFR     = remember { FocusRequester() }
     val firstTileFR = remember { FocusRequester() }
 
     Box(
@@ -108,79 +119,102 @@ fun ChannelScreen(
                 onBackToTop = {
                     scope.launch {
                         runCatching { listState.animateScrollToItem(0) }
-                        runCatching { firstTileFR.requestFocus() }
+                        runCatching { heroFR.requestFocus() }
                     }
                 },
             ),
     ) {
-        Column(modifier = Modifier.fillMaxSize()) {
-            // Channel header
-            Column(modifier = Modifier.padding(horizontal = 40.dp, vertical = 24.dp)) {
-                Text("‹ ${str("nav.home")}", color = colors.textSecondary, fontSize = 13.sp)
-                Spacer(Modifier.height(8.dp))
-                Text(channel.name, color = colors.text, fontSize = 32.sp, fontWeight = FontWeight.Bold)
+        when (val s = storeState) {
+            is HomeState.Loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Text(str("loading"), color = colors.textSecondary, fontSize = 16.sp)
             }
+            is HomeState.Error -> Box(Modifier.fillMaxSize().padding(40.dp), contentAlignment = Alignment.Center) {
+                Text(s.message, color = colors.textSecondary, fontSize = 14.sp)
+            }
+            is HomeState.Loaded -> {
+                val hasHero = s.feed.heroes.isNotEmpty()
+                val nonEmpty = s.feed.rows.filter { it.items.isNotEmpty() }
+                if (!hasHero && nonEmpty.isEmpty()) {
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Text(str("browse.empty_channel"), color = colors.textSecondary, fontSize = 16.sp)
+                    }
+                } else {
+                    val heroHeight = if (containerH > 0)
+                        with(density) { containerH.toDp() } * (s.feed.heroHeightPct.coerceIn(40, 100) / 100f)
+                    else 460.dp
 
-            when (val s = storeState) {
-                is HomeState.Loading -> Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
-                    Text(str("loading"), color = colors.textSecondary, fontSize = 16.sp)
-                }
-                is HomeState.Error -> Box(Modifier.weight(1f).padding(40.dp), contentAlignment = Alignment.Center) {
-                    Text(s.message, color = colors.textSecondary, fontSize = 14.sp)
-                }
-                is HomeState.Loaded -> {
-                    val nonEmpty = s.feed.rows.filter { it.items.isNotEmpty() }
-                    if (nonEmpty.isEmpty()) {
-                        Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
-                            Text(str("browse.empty_channel"), color = colors.textSecondary, fontSize = 16.sp)
+                    LaunchedEffect(hasHero) {
+                        runCatching { if (hasHero) heroFR.requestFocus() else firstTileFR.requestFocus() }
+                    }
+
+                    @Suppress("OPT_IN_USAGE")
+                    val edgeBringIntoViewSpec = rememberEdgeBringIntoViewSpec(peekDp = 80.dp)
+                    @OptIn(ExperimentalFoundationApi::class)
+                    CompositionLocalProvider(LocalBringIntoViewSpec provides edgeBringIntoViewSpec) {
+                        LazyColumn(
+                            state = listState,
+                            modifier = Modifier.fillMaxSize().focusRequester(firstTileFR),
+                            contentPadding = PaddingValues(bottom = 40.dp),
+                        ) {
+                            // Channel header
+                            item(key = "header") {
+                                Spacer(Modifier.height(if (hasHero) 0.dp else 24.dp))
+                                if (!hasHero) {
+                                    androidx.compose.foundation.layout.Column(
+                                        modifier = Modifier.padding(horizontal = 40.dp, vertical = 0.dp)
+                                    ) {
+                                        Text("‹ ${str("nav.home")}", color = colors.textSecondary, fontSize = 13.sp)
+                                        Spacer(Modifier.height(8.dp))
+                                        Text(channel.name, color = colors.text, fontSize = 32.sp,
+                                            fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
+                                        Spacer(Modifier.height(16.dp))
+                                    }
+                                }
+                            }
+
+                            // Hero carousel (R52: per-channel page hero)
+                            if (hasHero) {
+                                item(key = "hero") {
+                                    Box(modifier = Modifier.onFocusChanged {
+                                        if (it.hasFocus) scope.launch { listState.scrollToItem(0) }
+                                    }) {
+                                        HeroCarousel(
+                                            items = s.feed.heroes,
+                                            focusRequester = heroFR,
+                                            heightDp = heroHeight,
+                                            autoAdvanceSeconds = s.feed.autoAdvanceSeconds,
+                                            onOpenDetail = { onItemSelect(it) },
+                                        )
+                                    }
+                                }
+                            }
+
+                            // Content rows
+                            items(nonEmpty.size, key = { ri -> nonEmpty[ri].id }) { ri ->
+                                val row = nonEmpty[ri]
+                                Spacer(Modifier.height(RaviloDimens.rowGap))
+                                StaticContentRow(
+                                    title = row.title,
+                                    items = row.items,
+                                    itemKey = { card -> card.id },
+                                ) { idx, card ->
+                                    val variant = if (row.kind == RowKind.CONTINUE) TileVariant.LANDSCAPE
+                                                  else s.feed.tileShape.toTileVariant()
+                                    Tile(
+                                        title = card.title,
+                                        subtitle = card.nextUpLabel,
+                                        posterUrl = if (variant == TileVariant.LANDSCAPE) card.backdropUrl ?: card.posterUrl else card.posterUrl,
+                                        variant = variant,
+                                        progressPct = card.progressPct ?: 0f,
+                                        focusRequester = if (!hasHero && ri == 0 && idx == 0) firstTileFR else null,
+                                        onSelect = { onItemSelect(card) },
+                                    )
+                                }
+                            }
                         }
-                    } else {
-                        ChannelRows(
-                            rows = nonEmpty,
-                            tileShape = s.feed.tileShape,
-                            listState = listState,
-                            firstTileFR = firstTileFR,
-                            onItemSelect = onItemSelect,
-                        )
                     }
                 }
             }
         }
     }
 }
-
-@Composable
-private fun ChannelRows(
-    rows: List<Row>,
-    tileShape: dev.jellystructure.shared.tv.TileShape,
-    listState: LazyListState,
-    firstTileFR: FocusRequester,
-    onItemSelect: (MediaCard) -> Unit,
-) {
-    LazyColumn(
-        state = listState,
-        contentPadding = PaddingValues(bottom = 40.dp),
-    ) {
-        items(rows.size, key = { ri -> rows[ri].id }) { ri ->
-            val row = rows[ri]
-            Spacer(Modifier.height(28.dp))
-            StaticContentRow(
-                title = row.title,
-                items = row.items,
-                itemKey = { card -> card.id },
-            ) { idx, card ->
-                val variant = if (row.kind == RowKind.CONTINUE) TileVariant.LANDSCAPE else tileShape.toTileVariant()
-                Tile(
-                    title = card.title,
-                    posterUrl = if (variant == TileVariant.LANDSCAPE) card.backdropUrl ?: card.posterUrl else card.posterUrl,
-                    variant = variant,
-                    progressPct = card.progressPct ?: 0f,
-                    // R55: the first row's first tile is the back-to-top focus landing target.
-                    focusRequester = if (ri == 0 && idx == 0) firstTileFR else null,
-                    onSelect = { onItemSelect(card) },
-                )
-            }
-        }
-    }
-}
-

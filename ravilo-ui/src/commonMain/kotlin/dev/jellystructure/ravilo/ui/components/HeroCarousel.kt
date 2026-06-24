@@ -34,6 +34,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -55,7 +56,7 @@ fun HeroCarousel(
     items: List<Hero>,
     focusRequester: FocusRequester,
     heightDp: Dp = 460.dp,
-    autoAdvanceSeconds: Int = 6,
+    autoAdvanceSeconds: Int = 7,
     onOpenDetail: (MediaCard) -> Unit = {},
     onUp: (() -> Unit)? = null,
 ) {
@@ -174,18 +175,29 @@ fun HeroCarousel(
                 Spacer(Modifier.height(8.dp))
             }
 
-            // Title
-            Text(
-                text = active.item.title,
-                color = colors.text,
-                fontSize = 34.sp,
-                lineHeight = 40.sp,
-                fontWeight = FontWeight.Bold,
-                fontFamily = spaceGrotesk,
-                letterSpacing = (-0.5).sp,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
+            // Title — clearlogo image when available, text title as fallback
+            val logoUrl = active.logoUrl
+            if (logoUrl != null) {
+                RemoteImage(
+                    url = logoUrl,
+                    contentDescription = active.item.title,
+                    modifier = Modifier.height(80.dp).width(300.dp),
+                    alignment = Alignment.BottomStart,
+                    contentScale = ContentScale.Fit,
+                )
+            } else {
+                Text(
+                    text = active.item.title,
+                    color = colors.text,
+                    fontSize = 34.sp,
+                    lineHeight = 40.sp,
+                    fontWeight = FontWeight.Bold,
+                    fontFamily = spaceGrotesk,
+                    letterSpacing = (-0.5).sp,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
 
             // Meta: year · rating
             val meta = listOfNotNull(
