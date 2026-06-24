@@ -39,9 +39,7 @@ now.)
 
 - **Series tiles show the episode aggregate** (Phase 56 roll-up): a downloading series reads
   “Fetching · 3/10” (episodes done / total), not a single torrent %; `firstAvailable` lets the tile/detail
-  offer to start the **earliest available episode** while later episodes are still fetching — label it by
-  its real season/episode (e.g. “Watch · S1E1” / “Watch · S5E1”), never a hardcoded “E1”, since the
-  monitor scope may begin mid-series.
+  offer “Watch Now · E1” while later episodes are still fetching.
 
 ## Dedicated detail screen (NOT the R13 library detail)
 A separate composable/route (`DiscoverDetailScreen`) — the library detail's playback/seasons model
@@ -50,10 +48,7 @@ doesn't apply here. Layout mirrors the library detail's *look* but its content/a
 - Title, meta (rating/year/genre/kind), a status line reflecting the live `acquisition` status.
 - Overview/synopsis.
 - **Primary action is status-driven:**
-  - `available` → for a **movie**, **Watch Now** (resolve to library item, hand to R08 playback); for a
-    **series**, **Go to series** (deep-link into the R13 library series detail — the proper
-    seasons/episodes surface — rather than blind-playing one episode, since this Discover detail has no
-    seasons model). A `firstAvailable`-but-incomplete series offers **Watch · <first ep>** alongside it;
+  - `available` → **Watch Now** (resolve to library item, hand to R08 playback);
   - `downloading`/`queued`/`requested`/`importing` → a **disabled/progress** button showing the live
     stage ("Fetching · 47%", "In queue", "Requested", "Importing…");
   - `not_requested`/`failed` → **Request** (calls `POST /api/tv/discover/request`; optimistic UI is

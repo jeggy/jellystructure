@@ -17,7 +17,7 @@
   --grad:  linear-gradient(122deg, var(--acc-a) 0%, #7b6ef0 48%, var(--acc-b) 100%);
   --hi:        #7b6ef0;        /* unified solid accent */
   --hi-soft:   rgba(123,110,240,.16);
-  --acc-ink:   #c3b7fb;        /* accent text on tinted bg (dark) */
+  --acc-ink:   #c6bcfb;        /* accent text on tinted bg (dark) */
 
   /* semantic status */
   --bad:  #ff6f61;  --bad-soft:  rgba(255,111,97,.15);
@@ -25,17 +25,18 @@
   --info: #3fb6f5;  --info-soft: rgba(63,182,245,.15);
   --warn: #f5b542;  --warn-soft: rgba(245,181,66,.15);
 
-  /* surfaces — DARK (default) */
-  --bg:      #0b0c12;
-  --bg-2:    #0e1018;
+  /* surfaces — DARK (default) · "Soft Charcoal" comfort palette:
+     lifted floor (no near-black glare) + dimmed ink + lighter card surfaces */
+  --bg:      #16181f;
+  --bg-2:    #1a1d25;
   --paper:   var(--bg);
   --paper-2: var(--bg-2);
-  --fill:    #15171f;
-  --fill-2:  #101219;
-  --fill-3:  #1c1f29;
-  --ink:     #eef0f7;
-  --ink-soft:#959bb0;
-  --ink-dim: rgba(238, 240, 247, 0.35);
+  --fill:    #262a37;
+  --fill-2:  #20242f;
+  --fill-3:  #2f3441;
+  --ink:     #dde1ec;
+  --ink-soft:#9aa0b4;
+  --ink-dim: rgba(221, 225, 236, 0.32);
   --line:    rgba(255,255,255,.08);
   --line-2:  rgba(255,255,255,.14);
 
@@ -44,7 +45,7 @@
   --radius-s: 10px;
   --shadow:   0 10px 34px rgba(0,0,0,.42);
   --shadow-s: 0 4px 16px rgba(0,0,0,.32);
-  --card-bg:  rgba(28,31,43,.62);
+  --card-bg:  rgba(46,51,66,.74);
   --card-bd:  1px solid var(--line);
   --blur:     blur(16px) saturate(125%);
   --ambient:  1;   /* aurora glows on */
