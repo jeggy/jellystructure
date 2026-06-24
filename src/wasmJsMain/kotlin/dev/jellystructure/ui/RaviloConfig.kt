@@ -349,12 +349,6 @@ private fun wireShell(container: Element, scope: CoroutineScope) {
     }
     sections?.addEventListener("change") { ev ->
         val t = ev.target
-        // Switch the value input's facet suggestions when a channel/row kind changes.
-        if (t is HTMLSelectElement && t.hasAttribute("data-ch-kind")) {
-            val idx = t.getAttribute("data-ch-kind")
-            (container.querySelector("[data-ch-filter='$idx']") as? HTMLInputElement)
-                ?.setAttribute("list", "facet-${t.value.lowercase()}")
-        }
         if (t is HTMLSelectElement && t.hasAttribute("data-row-kind")) {
             val idx = t.getAttribute("data-row-kind")
             val title = container.querySelector("[data-row-title='$idx']") as? HTMLInputElement
@@ -1158,14 +1152,16 @@ private fun openChannelEditorPage(container: Element, scope: CoroutineScope, idx
         val cur = list[idx]
         list[idx] = cur.copy(
             name = name,
-            style = if (styleVal == "TEXT") ChannelStyle.TEXT else ChannelStyle.LOGO,
+            style = if (styleVal == "text") ChannelStyle.TEXT else ChannelStyle.LOGO,
             brandColor = color,
             logoUrl = logo,
-            pageHero = (cur.pageHero ?: PageHeroConfig()).copy(
-                enabled = heroEn,
-                heroHeightPct = heroH,
-                autoAdvanceSeconds = heroAdv,
-            ),
+            pageHero = if (heroEn || cur.pageHero?.items?.isNotEmpty() == true)
+                (cur.pageHero ?: PageHeroConfig()).copy(
+                    enabled = heroEn,
+                    heroHeightPct = heroH,
+                    autoAdvanceSeconds = heroAdv,
+                )
+            else cur.pageHero,
             paddingLogo = paddingLogo,
             paddingText = paddingText,
         )
@@ -1392,62 +1388,6 @@ private fun renderFilterSummary(container: Element, channelIdx: Int) {
 }
 
 /** Inline filter workbench — renders condition rows directly into [host] without a modal. */
-private fun injectWorkbenchInline(host: HTMLElement, scope: CoroutineScope, initConds: List<WbCond>, initMatch: String, viewer: String?) {
-    var conds = initConds.map { WbCond(it.facet, it.op, it.values.toMutableList()) }.toMutableList()
-    if (conds.isEmpty()) conds.add(WbCond("studio", "is_any_of"))
-    var match = initMatch
-
-    fun buildHtml(): String = """
-        <div>
-          <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
-            <span class="tiny muted">Match</span>
-            <select id="wb-inline-match" class="input" style="width:auto;font-size:.8rem">
-              <option value="ALL"${if (match == "ALL") " selected" else ""}>All conditions</option>
-              <option value="ANY"${if (match == "ANY") " selected" else ""}>Any condition</option>
-            </select>
-          </div>
-          ${conds.mapIndexed { i, cond ->
-              val facetOpts = listOf("studio","network","genre","tag").joinToString("") { f ->
-                  """<option value="$f"${if (f == cond.facet) " selected" else ""}>${f.replaceFirstChar{it.uppercase()}}</option>"""
-              }
-              val valList = facets[cond.facet.uppercase()]?.joinToString(",") ?: ""
-              """<div style="display:flex;gap:5px;align-items:center;margin-bottom:5px;flex-wrap:wrap">
-                  <select class="input" style="width:90px;font-size:.78rem" data-wbi-facet="$i">$facetOpts</select>
-                  <input class="input" style="flex:1;font-size:.78rem" placeholder="value" value="${cond.values.joinToString(", ").htmlEsc()}" data-wbi-val="$i" list="facet-${cond.facet.lowercase()}">
-                  <button class="btn sm ghost" data-wbi-del="$i">✕</button>
-                 </div>"""
-          }.joinToString("")}
-          <button id="wb-inline-add" class="btn sm ghost" style="margin-top:4px;font-size:.78rem">+ Add condition</button>
-        </div>
-    """.trimIndent()
-
-    fun rewire() {
-        host.querySelector("#wb-inline-match")?.addEventListener("change") { _ ->
-            match = (host.querySelector("#wb-inline-match") as? HTMLSelectElement)?.value ?: match
-        }
-        host.querySelector("#wb-inline-add")?.addEventListener("click") { _ ->
-            conds.add(WbCond("studio", "is_any_of")); host.innerHTML = buildHtml(); rewire()
-        }
-        for (j in conds.indices) {
-            host.querySelector("[data-wbi-del='$j']")?.addEventListener("click") { _ ->
-                conds.removeAt(j); host.innerHTML = buildHtml(); rewire()
-            }
-            host.querySelector("[data-wbi-facet='$j']")?.addEventListener("change") { _ ->
-                val f = (host.querySelector("[data-wbi-facet='$j']") as? HTMLSelectElement)?.value ?: return@addEventListener
-                conds[j].facet = f
-            }
-            host.querySelector("[data-wbi-val='$j']")?.addEventListener("change") { _ ->
-                val v = (host.querySelector("[data-wbi-val='$j']") as? HTMLInputElement)?.value ?: return@addEventListener
-                conds[j].values.clear()
-                conds[j].values.addAll(v.split(",").map { it.trim() }.filter { it.isNotBlank() })
-            }
-        }
-    }
-
-    host.innerHTML = buildHtml()
-    rewire()
-}
-
 // ── Rows ──────────────────────────────────────────────────────────────────────
 
 private val MEDIA_KINDS = listOf("" to "All", "MOVIE" to "Movies", "SERIES" to "Series")

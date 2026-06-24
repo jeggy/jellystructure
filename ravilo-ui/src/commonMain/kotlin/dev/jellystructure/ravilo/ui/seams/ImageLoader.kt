@@ -12,12 +12,13 @@ fun RemoteImage(
     contentDescription: String?,
     modifier: Modifier,
     alignment: Alignment = Alignment.Center,
+    contentScale: ContentScale = ContentScale.Crop,
 ) {
     AsyncImage(
         model = url,
         contentDescription = contentDescription,
         modifier = modifier,
-        contentScale = ContentScale.Crop,
+        contentScale = contentScale,
         alignment = alignment,
     )
 }
