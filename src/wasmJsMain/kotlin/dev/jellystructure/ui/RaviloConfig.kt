@@ -61,7 +61,10 @@ fun renderRaviloConfig(container: Element, scope: CoroutineScope) {
             container.innerHTML = buildErrorShell("Could not load Jellyfin users — check your connection in Settings.")
             return@launch
         }
-        if (currentUserId.isEmpty()) currentUserId = users.first().id
+        if (currentUserId.isEmpty()) {
+            renderEmptyState(container, scope)
+            return@launch
+        }
         facets = loadFacets()
         currentConfig = runCatching { RaviloApi.getConfig(currentUserId) }.getOrDefault(RaviloConfig())
         discoverSpecs = runCatching { RaviloApi.getDiscoverLists(currentConfig.discover.region) }.getOrDefault(emptyList())
@@ -82,6 +85,38 @@ private fun renderFull(container: Element, scope: CoroutineScope) {
     container.innerHTML = buildShell()
     wireShell(container, scope)
     renderSections(container, scope)
+}
+
+private fun renderEmptyState(container: Element, scope: CoroutineScope) {
+    val userOptions = """<option value="" disabled selected>Select a user…</option>""" +
+        users.joinToString("") { u -> """<option value="${u.id}">${u.displayName.htmlEsc()}</option>""" }
+    container.innerHTML = """
+        <div class="pagebar">
+          <h1 style="display:flex;align-items:center;gap:.4em">$RAVILO_MARK Ravilo TV</h1>
+          <span class="badge info">app config</span>
+        </div>
+        <div class="note blue" style="margin-bottom:18px;display:flex;gap:12px;align-items:center">
+          <span class="badge info" style="flex:none">per Jellyfin user</span>
+          <div class="tiny" style="flex:1">Choose a user to edit their Ravilo home layout.</div>
+          <select id="rav-user-pick" class="input" style="width:auto;min-width:180px;font-size:.85rem">$userOptions</select>
+        </div>
+        <div style="display:flex;flex-direction:column;align-items:center;gap:12px;padding:48px 16px;color:var(--ink-soft)">
+          <span style="font-size:2rem;opacity:.35">📺</span>
+          <span style="font-size:.95rem">Select a Jellyfin user to start editing their Ravilo layout.</span>
+        </div>
+    """.trimIndent()
+    container.querySelector("#rav-user-pick")?.addEventListener("change") { _ ->
+        val sel = container.querySelector("#rav-user-pick") as? org.w3c.dom.HTMLSelectElement ?: return@addEventListener
+        val picked = sel.value
+        if (picked.isBlank()) return@addEventListener
+        currentUserId = picked
+        scope.launch {
+            facets = loadFacets()
+            currentConfig = runCatching { RaviloApi.getConfig(currentUserId) }.getOrDefault(RaviloConfig())
+            discoverSpecs = runCatching { RaviloApi.getDiscoverLists(currentConfig.discover.region) }.getOrDefault(emptyList())
+            renderFull(container, scope)
+        }
+    }
 }
 
 private fun buildLoadingShell() = """
@@ -107,6 +142,7 @@ private fun buildShell(): String {
         val sel = if (u.id == currentUserId) " selected" else ""
         """<option value="${u.id}"$sel>${u.displayName.htmlEsc()}</option>"""
     }
+    // no placeholder in buildShell — currentUserId is guaranteed non-empty here
     return """
     <style>
       /* Sticky section nav (anchored side menu) — mirrors wf.css .navitem, with button-chrome reset. */
