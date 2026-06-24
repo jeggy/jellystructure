@@ -86,7 +86,7 @@
     return ['Main'];
   }
 
-  const HERO = new Set(['Wasteland Kings', 'Quantum Drift']);   // titles currently featured for the active viewer (demo)
+  const HERO = new Set(['Wasteland Kings', 'Quantum Drift']);   // titles currently in the active viewer's hero carousel (demo)
 
   const FACETS = {
     studio:  { label: 'Studio',  type: 'list', options: ['Blender','Kringvarp','DR','TV 2','HBO','Max Originals','Netflix','BBC'], get: t => [t.studio || t.network] },
@@ -96,7 +96,7 @@
     audioLang:  { label: 'Audio language', group: 'Audio track', type: 'list', options: ['English','Danish','Faroese','Spanish','Untagged'], get: audLangs },
     audioCodec: { label: 'Audio codec',    group: 'Audio track', type: 'list', options: ['E-AC-3','AC-3','DTS','AAC','TrueHD'], get: audCodecs },
     audioTitle: { label: 'Audio track title', group: 'Audio track', type: 'text', get: t => audTitles(t).join(' / ') },
-    hero:    { label: 'Hero item', group: 'Ravilo layout', type: 'list', options: ['Featured','Not featured'], get: t => [HERO.has(t.title) ? 'Featured' : 'Not featured'] },
+    hero:    { label: 'Hero item', group: 'Ravilo layout', type: 'list', options: ['In hero','Not in hero'], get: t => [HERO.has(t.title) ? 'In hero' : 'Not in hero'] },
   };
   const LIST_OPS = [ ['isAny','is any of'], ['isNot','is none of'] ];
   const NUM_OPS  = [ ['gte','is on or after'], ['lte','is before or in'], ['eq','is exactly'] ];
@@ -149,6 +149,18 @@
     back.addEventListener('mousedown', e => { if (e.target === back) closeModal(); });
     document.addEventListener('keydown', onEsc);
   }
+
+  // full-screen editor host (channels open as their own screen, not a popup) — so the
+  // hero-item picker can open as a normal modal popup on top of it.
+  const screenRoot = document.getElementById('cf-screen-root');
+  function onScreenEsc(e){ if (e.key === 'Escape' && root.style.display !== 'block') closeScreen(); }
+  function closeScreen(){ if (screenRoot) screenRoot.innerHTML = ''; document.body.classList.remove('cf-screen-on'); document.removeEventListener('keydown', onScreenEsc); window.scrollTo(0, 0); }
+  function openScreen(node){
+    if (!screenRoot) return openModal(node);
+    screenRoot.innerHTML = ''; screenRoot.appendChild(node);
+    document.body.classList.add('cf-screen-on'); window.scrollTo(0, 0);
+    document.addEventListener('keydown', onScreenEsc);
+  }
   function el(html){ const d = document.createElement('div'); d.innerHTML = html.trim(); return d.firstElementChild; }
 
   /* lightweight popover for picking facet values / numeric entry */
@@ -181,6 +193,14 @@
     return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
   }
   function customCss(cg){ return cg.type === 'solid' ? cg.c1 : 'linear-gradient(' + cg.angle + 'deg, ' + cg.c1 + ', ' + cg.c2 + ')'; }
+  // per-display padding (separate sets for logo image vs. text) → inline style
+  function chPadCss(state){
+    const mode = state.chStyle === 'text' ? 'text' : 'logo';
+    const p = (state.chPad && state.chPad[mode]) || {};
+    const t = p.t||0, r = p.r||0, b = p.b||0, l = p.l||0;
+    if (!(t||r||b||l)) return '';
+    return 'box-sizing:border-box;padding:' + t + 'px ' + r + 'px ' + b + 'px ' + l + 'px;';
+  }
   function chLogoSrc(state){
     if (!state || !state.chLogo) return null;
     if (state.chLogo.type === 'upload') return state.chLogo.src;
@@ -191,7 +211,7 @@
   function channelWM(state, title, opts){
     opts = opts || {};
     const cls = opts.cls || 'studio-wm';
-    const base = 'background:' + (state.chColor || CH_COLORS[0]) + ';' + (opts.style || '');
+    const base = 'background:' + (state.chColor || CH_COLORS[0]) + ';' + chPadCss(state) + (opts.style || '');
     if (state.chStyle === 'logo'){
       const src = chLogoSrc(state);
       if (src) return '<div class="' + cls + '" style="' + base + '"><img class="cf-wm-img" src="' + src + '" alt=""></div>';
@@ -205,14 +225,26 @@
     opts = opts || {};
     const isChannel = opts.mode === 'channel';
     const isLibrary = opts.mode === 'library';
+    const asScreen = isChannel;   // channels get a dedicated full screen
     const state = opts.state || {
       match: 'all', include: 'all',
       conditions: [ { facet: 'genre', op: 'isAny', values: [] } ],
-      title: '', chStyle: 'logo', chColor: CH_COLORS[0], chText: '', chLogo: null, customGrad: null
+      title: '', chStyle: 'logo', chColor: CH_COLORS[0], chText: '', chLogo: null, customGrad: null,
+      chPad: { logo: { t:0, r:0, b:0, l:0 }, text: { t:0, r:0, b:0, l:0 } },
+      hero: { on:false, items:[], height:48, advance:7 }
     };
     if (!state.conditions.length) state.conditions.push({ facet:'genre', op:'isAny', values:[] });
 
-    const node = el(`<div class="cf-modal" style="max-width:1000px;"></div>`);
+    // padding panel open/closed per display mode — defaults open only when already configured
+    const padOpen = {};
+    function isPadOpen(m){
+      if (padOpen[m] === undefined) { const p = (state.chPad && state.chPad[m]) || {}; padOpen[m] = !!(p.t||p.r||p.b||p.l); }
+      return padOpen[m];
+    }
+    function padSummary(m){ const p = (state.chPad && state.chPad[m]) || {}; return (p.t||p.r||p.b||p.l) ? `${p.t||0}/${p.r||0}/${p.b||0}/${p.l||0}` : ''; }
+
+    const node = el(`<div class="cf-modal${asScreen ? ' cf-screen' : ''}" style="max-width:${asScreen ? '1040px' : '1000px'};"></div>`);
+    function dismiss(){ asScreen ? closeScreen() : closeModal(); }
 
     function autoTitle() {
       const c = state.conditions.find(c => c.values.length);
@@ -225,8 +257,27 @@
       const matches = evaluate(state);
       const titleVal = state.title || autoTitle();
       const isCustom = isChannel && state.chColor && CH_COLORS.indexOf(state.chColor) === -1;
+      const hero = state.hero || {};
+      const heroOn = !!hero.on, heroItems = hero.items || [], heroH = hero.height || 48, heroAdv = hero.advance || 7;
       const cg = state.customGrad || { type: 'gradient', c1: '#7b6ef0', c2: '#3fb6f5', angle: 135 };
+      const PAD_SIDES = [['t','Top'],['r','Right'],['b','Bottom'],['l','Left']];
+      const padOf = m => (state.chPad && state.chPad[m]) || {};
+      const padFields = m => PAD_SIDES.map(([s,lbl]) => `<label class="cf-padfield"><span class="tiny muted">${lbl}</span><input type="number" min="0" max="40" class="input cf-pad" data-padmode="${m}" data-pad="${s}" value="${padOf(m)[s]||0}"></label>`).join('');
+      const PAD_ICON = '<svg width="13" height="13" viewBox="0 0 16 16" aria-hidden="true"><rect x="1.5" y="1.5" width="13" height="13" rx="2" fill="none" stroke="currentColor" stroke-width="1.3"/><rect x="5" y="5" width="6" height="6" rx="1" fill="currentColor"/></svg>';
+      const padPanel = (m, hint) => `<div class="cf-padwrap ${isPadOpen(m)?'open':''}">
+        <button type="button" class="cf-padtoggle" data-padtoggle="${m}" title="Button padding">${PAD_ICON}<span class="tiny">Padding</span>${padSummary(m)?`<span class="cf-padsum">${padSummary(m)}</span>`:''}<span class="cf-padcaret">▾</span></button>
+        <div class="cf-padbody"><div class="tiny muted" style="margin:10px 0 8px;">${hint}</div><div class="cf-padgrid">${padFields(m)}</div></div>
+      </div>`;
       node.innerHTML = `
+        ${asScreen ? `
+        <div class="cf-screen-head">
+          <span class="cf-back" data-x>‹ Back to layout</span>
+          <b style="font-size:1rem;">${opts.headTitle || ((opts.edit ? 'Edit' : 'New') + ' channel')}</b>
+          <span class="badge">⚙ Workbench</span>
+          <span class="spacer"></span>
+          <span class="btn sm ghost" data-x>Cancel</span>
+          <span class="btn sm primary" data-save>${opts.saveLabel || (opts.edit ? 'Save changes' : 'Add channel')}</span>
+        </div>` : `
         <div class="cf-modal-head">
           <span class="cf-grab">⠿</span>
           <b style="font-size:.98rem;">${opts.headTitle || ((opts.edit ? 'Edit' : 'New') + ' ' + (isChannel ? 'channel' : 'content row'))}</b>
@@ -234,7 +285,7 @@
           <span class="spacer"></span>
           <span class="tiny muted">esc to cancel</span>
           <span class="cf-x" data-x>✕</span>
-        </div>
+        </div>`}
         <div style="display:flex;align-items:stretch;">
           <div style="flex:1;padding:18px;min-width:0;">
             <div class="row center" style="gap:8px;">
@@ -285,10 +336,28 @@
                 <button class="cf-logotile cf-logoupload" data-upload><span class="cf-up-i">⤒</span><span class="tiny">Upload</span></button>
               </div>
               <input type="file" accept="image/png,image/svg+xml,image/*" class="cf-logofile" style="display:none;">
+              ${padPanel('logo', 'Inset the image inside the button (px).')}
             ` : `
               <div class="tiny muted" style="margin:12px 0 8px;">Type the label shown on the channel button.</div>
               <input class="input cf-chtext" value="${(state.chText||'').replace(/"/g,'&quot;')}" placeholder="${(state.title||autoTitle()).replace(/"/g,'&quot;')}" style="max-width:300px;">
+              ${padPanel('text', 'Inset the label inside the button (px).')}
             `}` : ''}
+
+            ${isChannel ? `
+            <hr class="dash" style="margin:16px 0;">
+            <div class="row center"><span class="cf-eyebrow">Page hero</span><span class="badge info" style="margin-left:8px;font-size:.58rem;">optional</span><span class="spacer"></span><span class="toggle ${heroOn?'on':''}" data-herotog></span></div>
+            <div class="tiny muted" style="margin:7px 0 0;">Show a hero carousel at the top of this channel’s page. Off = the page opens straight into the rows.</div>
+            ${heroOn ? `
+              <div class="cf-herobox">
+                <div class="cf-herolist">${heroItems.length ? heroItems.map((it,i)=>`<div class="cf-heroitem" data-hiedit="${i}"><span class="cf-heromini" style="background:${grad(it.pick.title+(it.backdrop||0))};"></span><span style="flex:1;min-width:0;">${it.pick.title}${it.badge&&it.badge!=='None'?` <span class="badge" style="font-size:.56rem;">${it.badge}</span>`:''}</span><button type="button" class="cf-herorm" data-herorm="${i}" title="Remove">✕</button></div>`).join('') : `<div class="tiny muted" style="padding:9px 2px;">No hero items yet — add one or more titles.</div>`}</div>
+                <button type="button" class="btn sm ghost" data-heroadd style="margin-top:9px;">＋ Add hero item</button>
+                <div class="row center" style="gap:18px;margin-top:14px;flex-wrap:wrap;">
+                  <label class="cf-cfield" style="flex:1;min-width:190px;"><span class="tiny muted">Hero height <b class="cf-heroh-val">${heroH}%</b></span><input type="range" min="40" max="100" value="${heroH}" class="cf-heroh" style="width:100%;accent-color:var(--hi);"></label>
+                  <label class="cf-cfield"><span class="tiny muted">Auto-advance</span><select class="input cf-heroadv" style="margin-top:4px;">${[5,7,9,12].map(s=>`<option value="${s}" ${heroAdv===s?'selected':''}>Every ${s}s</option>`).join('')}</select></label>
+                </div>
+              </div>
+            ` : ''}
+            ` : ''}
 
             <div class="note blue" style="margin-top:16px;display:flex;gap:10px;align-items:center;padding:10px 12px;">
               <span class="badge info" style="flex:none;">${isLibrary ? 'one filter' : 'reusable'}</span>
@@ -343,12 +412,51 @@
     }
 
     function wire() {
-      node.querySelectorAll('[data-x]').forEach(b => b.onclick = closeModal);
+      node.querySelectorAll('[data-x]').forEach(b => b.onclick = dismiss);
       node.querySelectorAll('.cf-match span').forEach(s => s.onclick = () => { state.match = s.dataset.m; render(); });
       node.querySelectorAll('.cf-include span').forEach(s => s.onclick = () => { state.include = s.dataset.inc; render(); });
       function refreshChPrev(){ const box = node.querySelector('.cf-chprev'); if (box){ const fresh = el(channelWM(state, state.title||autoTitle(), {cls:'studio-wm cf-chprev', style:'width:100%;height:46px;margin-top:14px;', font:'1.05rem'})); box.replaceWith(fresh); } }
       const ti = node.querySelector('.cf-title'); if (ti) ti.oninput = () => { state.title = ti.value; const ct0 = node.querySelector('.cf-chtext'); if (ct0) ct0.placeholder = ti.value || autoTitle(); refreshChPrev(); };
       node.querySelectorAll('.cf-style span').forEach(s => s.onclick = () => { state.chStyle = s.dataset.st; render(); });
+      node.querySelectorAll('.cf-pad').forEach(inp => inp.oninput = () => {
+        const m = inp.dataset.padmode, s = inp.dataset.pad;
+        let v = parseInt(inp.value, 10); if (isNaN(v)) v = 0; v = Math.max(0, Math.min(40, v));
+        state.chPad = state.chPad || { logo:{}, text:{} };
+        state.chPad[m] = state.chPad[m] || {};
+        state.chPad[m][s] = v;
+        const sum = node.querySelector(`.cf-padwrap.open .cf-padtoggle[data-padtoggle="${m}"] .cf-padsum`);
+        const sumStr = padSummary(m);
+        const tog = node.querySelector(`.cf-padtoggle[data-padtoggle="${m}"]`);
+        if (tog) { let el2 = tog.querySelector('.cf-padsum');
+          if (sumStr && !el2) { el2 = document.createElement('span'); el2.className = 'cf-padsum'; tog.insertBefore(el2, tog.querySelector('.cf-padcaret')); }
+          if (el2) { if (sumStr) el2.textContent = sumStr; else el2.remove(); } }
+        refreshChPrev();
+      });
+      node.querySelectorAll('[data-padtoggle]').forEach(b => b.onclick = () => {
+        const m = b.dataset.padtoggle, wrap = b.closest('.cf-padwrap');
+        const open = !wrap.classList.contains('open');
+        wrap.classList.toggle('open', open); padOpen[m] = open;
+      });
+      function ensureHero(){ state.hero = state.hero || { on:false, items:[], height:48, advance:7 }; return state.hero; }
+      const heroTog = node.querySelector('[data-herotog]');
+      if (heroTog) heroTog.onclick = () => { const h = ensureHero(); h.on = !h.on; render(); };
+      const heroAddBtn = node.querySelector('[data-heroadd]');
+      if (heroAddBtn) heroAddBtn.onclick = () => openHero({
+        headTitle: 'Add hero item', saveLabel: 'Add to hero carousel',
+        state: { pick: TITLES[0], badge: 'None', tagline: '', backdrop: 0, useLogo: true },
+        onSave: ({ state: hs }) => { ensureHero().items.push(hs); render(); }
+      });
+      node.querySelectorAll('[data-hiedit]').forEach(it => it.onclick = e => {
+        if (e.target.closest('[data-herorm]')) return;
+        const i = +it.dataset.hiedit, h = ensureHero();
+        openHero({ edit:true, headTitle:'Edit hero item', saveLabel:'Save hero item', state: h.items[i],
+          onSave: ({ state: hs }) => { h.items[i] = hs; render(); } });
+      });
+      node.querySelectorAll('[data-herorm]').forEach(b => b.onclick = e => { e.stopPropagation(); const h = ensureHero(); h.items.splice(+b.dataset.herorm, 1); render(); });
+      const heroHsl = node.querySelector('.cf-heroh');
+      if (heroHsl) heroHsl.oninput = () => { const h = ensureHero(); h.height = +heroHsl.value; const lbl = node.querySelector('.cf-heroh-val'); if (lbl) lbl.textContent = h.height + '%'; };
+      const heroAdvSel = node.querySelector('.cf-heroadv');
+      if (heroAdvSel) heroAdvSel.onchange = () => { ensureHero().advance = +heroAdvSel.value; };
       node.querySelectorAll('.cf-sw[data-color]').forEach(s => s.onclick = () => { state.chColor = s.dataset.color; render(); });
       const customSw = node.querySelector('[data-customsw]');
       if (customSw) customSw.onclick = () => { if (!state.customGrad) state.customGrad = { type:'gradient', c1:'#7b6ef0', c2:'#3fb6f5', angle:135 }; state.chColor = customCss(state.customGrad); render(); };
@@ -425,18 +533,19 @@
         const f = FACETS[c.facet];
         return f.label + ' ' + opLabel(c.facet,c.op) + ' ' + (f.type==='num' ? c.values[0] : '“'+c.values.join('”, “')+'”');
       }).join(state.match==='any'?'  OR  ':'  ·  ') || 'all titles';
+      const heroTag = isChannel && state.hero && state.hero.on ? '  ·  ⊳ hero' : '';
 
-      if (opts.onSave) { opts.onSave({ state, matches, title, summary, isChannel }); closeModal(); return; }
+      if (opts.onSave) { opts.onSave({ state, matches, title, summary, isChannel }); dismiss(); return; }
 
       if (opts.editRow) {
         opts.editRow.querySelector('.nm').firstChild.textContent = title + ' ';
-        opts.editRow.querySelector('.src').textContent = summary;
+        opts.editRow.querySelector('.src').textContent = summary + heroTag;
         if (isChannel) { const wmEl = opts.editRow.querySelector('.studio-wm'); if (wmEl) wmEl.outerHTML = channelWM(state, title); }
         opts.editRow._cfState = state;
       } else if (isChannel) {
         const row = el(`<div class="cfg-row cf-new">
           <span class="grab">⠿</span>${channelWM(state, title)}
-          <div style="flex:1;"><div class="nm">${title} <span class="badge info" style="font-size:.6rem;">${matches.length} titles</span></div><div class="src">${summary}</div></div>
+          <div style="flex:1;"><div class="nm">${title} <span class="badge info" style="font-size:.6rem;">${matches.length} titles</span></div><div class="src">${summary}${heroTag}</div></div>
           <span class="toggle on"></span><span class="btn sm ghost rm">✕</span></div>`);
         row._cfState = state; row.dataset.kind = 'channel';
         document.getElementById('studiolist').appendChild(row); bindRow(row, true);
@@ -448,11 +557,11 @@
         row._cfState = state; row.dataset.kind = 'row';
         document.getElementById('rowlist').appendChild(row); bindRow(row, true);
       }
-      closeModal();
+      dismiss();
       toast((opts.edit?'Updated ':'Added ') + (isChannel?'channel':'row') + ' · ' + matches.length + ' titles');
     }
 
-    openModal(node); render();
+    (asScreen ? openScreen : openModal)(node); render();
   }
 
   /* ============================================================
@@ -461,14 +570,14 @@
   const BADGES = ['New Season','4K','Top 10','Premiere','None'];
   function openHero(opts) {
     opts = opts || {};
-    const state = opts.state || { pick: TITLES[0], badge: '4K', tagline: 'Featured Film', backdrop: 0, useLogo: true };
+    const state = opts.state || { pick: TITLES[0], badge: '4K', tagline: '', backdrop: 0, useLogo: true };
     const node = el(`<div class="cf-modal" style="max-width:1040px;"></div>`);
     const VIEWERS = ['Eyð Restorff', 'Marjun í Dali', 'Hjalti Poulsen'];
 
     function render() {
       const p = state.pick;
       const step1 = opts.lockTitle ? `
-            <span class="cf-eyebrow">Featuring</span>
+            <span class="cf-eyebrow">Hero item</span>
             <div class="row center" style="gap:11px;margin-top:8px;padding:9px;border:1px solid var(--line-2);border-radius:10px;background:var(--fill-2);">
               <div class="cf-mp" style="width:34px;height:51px;background:${grad(p.title)};"></div>
               <div style="flex:1;min-width:0;"><div style="font-weight:600;">${p.title}</div><div class="tiny muted">${p.kind==='movie'?'Film':'Series'}${p.year?' · '+p.year:''}${p.genres&&p.genres.length?' · '+p.genres.slice(0,2).join(' · '):''}</div></div>
@@ -480,7 +589,7 @@
             <div class="tiny muted" style="margin:6px 2px 0;">Multi-language search — matches every title an item has ever had.</div>`;
       node.innerHTML = `
         <div class="cf-modal-head">
-          <span class="cf-grab">⠿</span><b style="font-size:.98rem;">${opts.headTitle || ((opts.edit?'Edit':'New') + ' featured item')}</b>
+          <span class="cf-grab">⠿</span><b style="font-size:.98rem;">${opts.headTitle || ((opts.edit?'Edit':'New') + ' hero item')}</b>
           <span class="spacer"></span><span class="tiny muted">esc to cancel</span><span class="cf-x" data-x>✕</span>
         </div>
         <div style="display:flex;">
@@ -536,7 +645,7 @@
             ? `<span class="tiny muted">For viewer</span><span class="select cf-viewer" style="min-width:150px;margin-left:8px;"><span>${state.viewer||VIEWERS[0]}</span> <span class="muted" style="font-size:.7rem;">▾</span></span>`
             : `<span class="tiny muted">Drag to reorder after adding.</span>`}
           <span class="spacer"></span><span class="btn sm ghost" data-x>Cancel</span>
-          <span class="btn sm primary" data-save>${opts.saveLabel || (opts.edit?'Save changes':'Add to carousel')}</span>
+          <span class="btn sm primary" data-save>${opts.saveLabel || (opts.edit?'Save changes':'Add to hero carousel')}</span>
         </div>`;
       renderResults('');
       wire();
@@ -655,7 +764,7 @@
       const nm = r.querySelector('.nm').textContent.trim().replace(/\s+(New Season|4K|Premiere|Top 10)$/,'');
       const found = TITLES.find(t => nm.startsWith(t.title.slice(0,6))) || TITLES[0];
       const badge = (r.querySelector('.badge') && r.querySelector('.badge').textContent.trim()) || 'None';
-      r._cfState = { pick: found, badge, tagline: found.kind==='movie'?'Featured Film':'Featured Series', backdrop:0, useLogo:true };
+      r._cfState = { pick: found, badge, tagline: '', backdrop:0, useLogo:true };
       bindRow(r);
     });
   }
@@ -667,7 +776,7 @@
       if (!sec) return null;
       return [...sec.querySelectorAll('.btn')].find(b => b.textContent.includes(label));
     };
-    const aHero = find('sect-hero', 'Add featured'); if (aHero) aHero.onclick = () => openHero();
+    const aHero = find('sect-hero', 'Add hero item'); if (aHero) aHero.onclick = () => openHero();
     const aCh = find('sect-studios', 'Add channel'); if (aCh) aCh.onclick = () => openFilter({ mode:'channel' });
     const aRow = find('sect-rows', 'Add row'); if (aRow) aRow.onclick = () => openFilter({ mode:'row' });
   }

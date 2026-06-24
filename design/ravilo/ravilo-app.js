@@ -152,10 +152,13 @@
     clock(); setInterval(clock, 10000);
 
     /* ---------------- HERO ---------------- */
-    function buildHero() {
+    function buildHero(items, heightPct) {
+      items = items || R.hero;
+      heroIdx = 0;
       const hero = el('div', 'hero focus-row');
-      hero.style.height = '56%';
-      R.hero.forEach((it, i) => {
+      hero._items = items;
+      hero.style.height = (heightPct || 56) + '%';
+      items.forEach((it, i) => {
         const s = el('div', 'hero-slide' + (i === 0 ? ' on' : ''));
         s.innerHTML = `
           <div class="hero-bg">${it.backdrop ? `<img class="hero-backdrop" src="${it.backdrop}" alt="">` : `<div class="grad" style="position:absolute;inset:0;background:${it.grad}"></div><div class="hero-noise"></div>`}<div class="hero-scrim"></div></div>
@@ -168,7 +171,7 @@
         hero.appendChild(s);
       });
       const dots = el('div', 'hero-dots');
-      R.hero.forEach((_, i) => { const d = el('div', 'd' + (i === 0 ? ' on' : '')); d.dataset.dot = i; dots.appendChild(d); });
+      items.forEach((_, i) => { const d = el('div', 'd' + (i === 0 ? ' on' : '')); d.dataset.dot = i; dots.appendChild(d); });
       hero.appendChild(dots);
       // whole hero is one focusable target → select opens detail; ←/→ cycle the carousel
       const hit = el('div', 'hero-hit foc'); hit.dataset.hero = '1';
@@ -250,7 +253,9 @@
       stopHero();
       const s = R.studios.find(x => x.id === studioId) || R.studios[0];
       scroll.innerHTML = '';
-      const head = el('div', 'cathead');
+      const hasHero = s.hero && s.hero.length;
+      if (hasHero) scroll.appendChild(buildHero(s.hero, s.heroHeight));
+      const head = el('div', 'cathead' + (hasHero ? ' with-hero' : ''));
       head.innerHTML = `<div class="logo" style="background:${s.bg}">${s.logo ? `<img class="logo-img" src="${s.logo}" alt="${s.name}">` : s.wm}</div>
         <div><div class="back">‹ ${t('back_home')} &nbsp;·&nbsp; ${t('channel')}</div><h1>${s.name}</h1>
         <div class="sub">${t('channel_sub', { name: s.name })}</div></div>`;
@@ -263,6 +268,7 @@
       });
       scroll.appendChild(el('div', 'screen-end'));
       appbar.querySelectorAll('.navitem').forEach(n => n.classList.remove('cur'));
+      if (hasHero) startHero();
     }
 
     /* ---------------- DETAIL PAGE ---------------- */
@@ -672,7 +678,7 @@
         buildGridRows(scroll.querySelector('.sresults'), searchFilter(view.query));
         return;
       }
-      if (f.dataset.hero) { toDetail(R.hero[heroIdx]); return; }
+      if (f.dataset.hero) { const he = f.closest('.hero'); toDetail((he && he._items ? he._items : R.hero)[heroIdx]); return; }
       if (f.dataset.play) { playItem(view.item, view.season || 0); return; }
       if (f.dataset.trailer) { flash('▷ Trailer · ' + view.item.title); return; }
       if (f.dataset.list) { flash('＋ Added ' + view.item.title + ' to My List'); return; }

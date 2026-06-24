@@ -13,7 +13,16 @@
 
   // studios / categories (the Disney+-style rail; configured in Jellystructure)
   const studios = [
-    { id: 'hbo',      name: 'HBO',       wm: 'HBO',        bg: 'linear-gradient(135deg,#3b2a78,#15102e)' },
+    { id: 'hbo',      name: 'HBO',       wm: 'HBO',        bg: 'linear-gradient(135deg,#3b2a78,#15102e)',
+      heroHeight: 48,
+      hero: [
+        { ...T('Iron Veil', 2021, 'Action · Sci-Fi', '16', 'film'), tagline: 'HBO Feature', badge: '4K',
+          syn: 'A decommissioned war machine hides in a border town, until the soldiers who built it come looking.' },
+        { ...T('Midnight Sun Patrol', 2022, 'Action · Crime', '16', 'series'), tagline: 'HBO Original', badge: 'New Season',
+          syn: 'Above the Arctic Circle, a small-town patrol works cases the daylight never lets them forget.' },
+        { ...T('Phantom Circuit', 2023, 'Thriller · Mystery', '16', 'film'), tagline: 'Featured', badge: 'Top 10',
+          syn: 'A hardware hacker traces a ghost signal through the city grid and finds someone is tracing her back.' },
+      ] },
     { id: 'tv2',      name: 'TV 2',      wm: 'TV<small>2</small>', bg: 'linear-gradient(135deg,#e3122b,#7d0a1a)' },
     { id: 'kringvarp',name: 'Kringvarp', wm: 'KvF',        bg: 'linear-gradient(135deg,#0a93a6,#063d47)' },
     { id: 'dr',       name: 'DR',        wm: 'DR',         bg: 'linear-gradient(135deg,#1455d8,#0a2766)' },
