@@ -1,6 +1,6 @@
 # Phase R66 — Rows config clarity: typed vs merged Newly Added (FR-RV-R1)
 
-**Status:** Planned
+**Status:** ✓ Done
 
 ## Problem
 
