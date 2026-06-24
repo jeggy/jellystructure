@@ -34,6 +34,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import dev.jellystructure.ravilo.ui.components.AppBar
 import dev.jellystructure.ravilo.ui.components.Tile
 import dev.jellystructure.ravilo.ui.focus.backToTopOnBack
 import dev.jellystructure.ravilo.ui.focus.dpadFocusable
@@ -97,8 +98,12 @@ class BrowseStore(private val apiClient: TvApiClient) {
 fun BrowseScreen(
     kind: BrowseKind,
     store: BrowseStore,
+    displayName: String,
     onBack: () -> Unit,
+    onNavSelect: (Int) -> Unit = {},
     onItemSelect: (MediaCard) -> Unit,
+    onProfile: (() -> Unit)? = null,
+    onSearch: (() -> Unit)? = null,
 ) {
     val colors = RaviloTheme.colors
     val spaceGrotesk = SpaceGrotesk
@@ -107,13 +112,23 @@ fun BrowseScreen(
 
     val state by store.state.collectAsState()
 
-    // R55: Back scrolls a scrolled grid to the top (refocusing the first cell once it's back in view, so
-    // bring-into-view doesn't yank it back) before falling through to RaviloApp's pop.
+    // R55: Back scrolls a scrolled grid to the top before falling through to RaviloApp's pop.
     val gridState = rememberLazyGridState()
     val scope = rememberCoroutineScope()
     val firstCellFR = remember { FocusRequester() }
 
-    Column(
+    // R60: NavBar focus — ensures Back fires through Compose (not Android finish()) and AppBar is visible
+    val navBarFR = remember { FocusRequester() }
+    LaunchedEffect(Unit) { runCatching { navBarFR.requestFocus() } }
+
+    val activeNav = when (kind) {
+        BrowseKind.MOVIES -> 1
+        BrowseKind.SERIES -> 2
+        BrowseKind.MY_LIST -> 3
+        BrowseKind.ALL -> 0
+    }
+
+    Box(
         modifier = Modifier
             .fillMaxSize()
             .background(colors.background)
@@ -127,57 +142,51 @@ fun BrowseScreen(
                 },
             ),
     ) {
-        // Header
-        Column(modifier = Modifier.padding(horizontal = RaviloDimens.screenPadH, vertical = 32.dp)) {
-            val title = when (kind) {
-                BrowseKind.ALL -> str("browse.all")
-                BrowseKind.MOVIES -> str("nav.movies")
-                BrowseKind.SERIES -> str("nav.series")
-                BrowseKind.MY_LIST -> str("nav.my_list")
+        Column(modifier = Modifier.fillMaxSize().padding(top = 84.dp)) {
+            when (val s = state) {
+                is BrowseState.Loading -> Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                    Text(str("loading"), color = colors.textSecondary, fontSize = 16.sp)
+                }
+                is BrowseState.Error -> Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                    Text(s.message, color = colors.textSecondary, fontSize = 14.sp)
+                }
+                is BrowseState.Loaded -> {
+                    // Genre chips (skip for My List)
+                    if (kind != BrowseKind.MY_LIST && s.facets.genres.isNotEmpty()) {
+                        GenreChips(
+                            genres = s.facets.genres,
+                            activeGenre = store.activeGenre,
+                            onSelect = { store.filterByGenre(it) },
+                        )
+                        Spacer(Modifier.height(16.dp))
+                    }
+                    // Count + grid
+                    Text(
+                        str("browse.titles", mapOf("count" to s.results.items.size.toString())),
+                        color = colors.textSecondary,
+                        fontSize = 16.sp,
+                        modifier = Modifier.padding(horizontal = RaviloDimens.screenPadH),
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    BrowseGrid(
+                        items = s.results.items,
+                        gridState = gridState,
+                        firstCellFR = firstCellFR,
+                        onItemSelect = onItemSelect,
+                    )
+                }
             }
-            Text(
-                text = title,
-                color = colors.text,
-                fontSize = 32.sp,
-                fontWeight = FontWeight.Bold,
-                fontFamily = spaceGrotesk,
-                letterSpacing = (-1).sp,
-            )
         }
 
-        when (val s = state) {
-            is BrowseState.Loading -> Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
-                Text(str("loading"), color = colors.textSecondary, fontSize = 16.sp)
-            }
-            is BrowseState.Error -> Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
-                Text(s.message, color = colors.textSecondary, fontSize = 14.sp)
-            }
-            is BrowseState.Loaded -> {
-                // Genre chips (skip for My List)
-                if (kind != BrowseKind.MY_LIST && s.facets.genres.isNotEmpty()) {
-                    GenreChips(
-                        genres = s.facets.genres,
-                        activeGenre = store.activeGenre,
-                        onSelect = { store.filterByGenre(it) },
-                    )
-                    Spacer(Modifier.height(16.dp))
-                }
-                // Count + grid
-                Text(
-                    str("browse.titles", mapOf("count" to s.results.items.size.toString())),
-                    color = colors.textSecondary,
-                    fontSize = 16.sp,
-                    modifier = Modifier.padding(horizontal = RaviloDimens.screenPadH),
-                )
-                Spacer(Modifier.height(12.dp))
-                BrowseGrid(
-                    items = s.results.items,
-                    gridState = gridState,
-                    firstCellFR = firstCellFR,
-                    onItemSelect = onItemSelect,
-                )
-            }
-        }
+        AppBar(
+            activeNav = activeNav,
+            onNavSelect = onNavSelect,
+            navFR = navBarFR,
+            onDown = { runCatching { firstCellFR.requestFocus() } },
+            userInitials = displayName.take(2).uppercase(),
+            onProfile = onProfile,
+            onSearch = onSearch,
+        )
     }
 }
 

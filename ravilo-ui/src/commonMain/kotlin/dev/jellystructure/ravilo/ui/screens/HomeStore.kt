@@ -6,6 +6,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -32,8 +33,20 @@ class HomeStore(private val apiClient: TvApiClient) {
         loadJob?.cancel()
         _state.value = HomeState.Loading
         loadJob = scope.launch {
-            _state.value = runCatching { HomeState.Loaded(apiClient.getHome()) }
-                .getOrElse { HomeState.Error(it.message ?: "Unknown error") }
+            // Retry up to 3 times (1 s, 2 s, 4 s) before emitting Error — survives cold-start
+            // network not-yet-warm and first-launch activeUserId race.
+            var lastErr = "Unknown error"
+            val delays = longArrayOf(1_000L, 2_000L, 4_000L)
+            for (i in 0..3) {
+                val result = runCatching { apiClient.getHome() }
+                if (result.isSuccess) {
+                    _state.value = HomeState.Loaded(result.getOrThrow())
+                    return@launch
+                }
+                lastErr = result.exceptionOrNull()?.message ?: "Unknown error"
+                if (i < 3) delay(delays[i])
+            }
+            _state.value = HomeState.Error(lastErr)
         }
         refreshDiscoverAvailable()
     }
