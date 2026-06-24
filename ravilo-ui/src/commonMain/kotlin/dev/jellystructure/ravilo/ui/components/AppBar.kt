@@ -2,17 +2,16 @@ package dev.jellystructure.ravilo.ui.components
 
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
@@ -27,8 +26,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -60,14 +62,17 @@ fun AppBar(
     onDown: () -> Unit = {},
     userInitials: String = "",
     onProfile: (() -> Unit)? = null,
+    onSearch: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val colors = RaviloTheme.colors
     val sora = Sora
     val spaceGrotesk = SpaceGrotesk
     val avatarFR = remember { FocusRequester() }
+    val searchFR = remember { FocusRequester() }
+    // R52: Search is no longer a nav tab — it lives as the magnifier icon in the right cluster.
     val items = navItems ?: listOf(
-        str("nav.home"), str("nav.movies"), str("nav.series"), str("nav.my_list"), str("nav.search"),
+        str("nav.home"), str("nav.movies"), str("nav.series"), str("nav.my_list"),
     )
     val barGradient = remember {
         Brush.verticalGradient(
@@ -83,7 +88,7 @@ fun AppBar(
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .height(72.dp)
+            .height(60.dp)               // R52: compacter bar (was 72)
             .background(barGradient),
     ) {
         Row(
@@ -92,18 +97,18 @@ fun AppBar(
                 .padding(horizontal = RaviloDimens.screenPadH)
                 .matchParentSize(),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(28.dp),
+            horizontalArrangement = Arrangement.spacedBy(18.dp),   // R52: denser (was 28)
         ) {
             // Brand lockup (R51): gradient jellyfish mark + ink wordmark (not accent-purple text).
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                BrandMark(size = 30.dp)
+                BrandMark(size = 26.dp)
                 Text(
                     text = "Ravilo",
                     color = colors.text,
-                    fontSize = 24.sp,
+                    fontSize = 22.sp,
                     fontWeight = FontWeight.Bold,
                     fontFamily = spaceGrotesk,
                     letterSpacing = (-1).sp,
@@ -132,7 +137,7 @@ fun AppBar(
                 Text(
                     text = label,
                     color = textColor,
-                    fontSize = 16.sp,
+                    fontSize = 15.sp,                                   // R52: compacter (was 16)
                     fontWeight = if (isFocused || isActive) FontWeight.SemiBold else FontWeight.Normal,
                     fontFamily = sora,
                     modifier = Modifier
@@ -142,13 +147,15 @@ fun AppBar(
                                          else focusedIdx
                         }
                         .background(bgColor, RoundedCornerShape(11.dp))
-                        .padding(horizontal = 14.dp, vertical = 6.dp)
+                        .padding(horizontal = 12.dp, vertical = 6.dp)  // R52: compacter (was 14×6)
                         .dpadFocusable(
                             focusRequester = allFRs[i],
                             onFocused  = { focusedIdx = i },
                             onLeft     = { if (i > 0) allFRs[i - 1].requestFocus() },
                             onRight    = {
+                                // R52: rightmost nav item → search icon → avatar.
                                 if (i < items.lastIndex) allFRs[i + 1].requestFocus()
+                                else if (onSearch != null) searchFR.requestFocus()
                                 else if (onProfile != null) avatarFR.requestFocus()
                             },
                             onDown     = onDown,
@@ -158,13 +165,22 @@ fun AppBar(
             }
 
             Box(modifier = Modifier.weight(1f))
+            // R52 right cluster: search icon · clock · avatar (gaps from the Row's spacedBy).
+            if (onSearch != null) {
+                SearchIcon(
+                    focusRequester = searchFR,
+                    onLeft = { allFRs.last().requestFocus() },
+                    onRight = { if (onProfile != null) avatarFR.requestFocus() },
+                    onDown = onDown,
+                    onSelect = onSearch,
+                )
+            }
             ClockDisplay()
             if (onProfile != null) {
-                Spacer(Modifier.width(20.dp))
                 ProfileAvatar(
                     initials = userInitials.ifEmpty { "?" },
                     focusRequester = avatarFR,
-                    onLeft = { allFRs.last().requestFocus() },
+                    onLeft = { if (onSearch != null) searchFR.requestFocus() else allFRs.last().requestFocus() },
                     onDown = onDown,
                     onSelect = onProfile,
                 )
@@ -205,6 +221,57 @@ private fun ProfileAvatar(
             fontWeight = FontWeight.Bold,
             fontFamily = Sora,
         )
+    }
+}
+
+/**
+ * R52 — the right-cluster search affordance: a 40 dp circle with a drawn magnifier glyph
+ * (`design/ravilo/ravilo.css` `.search-ic`: circle r7 + 16.5,16.5→21,21 handle). Inverts on focus like
+ * the avatar; `onSelect` opens the Search screen.
+ */
+@Composable
+private fun SearchIcon(
+    focusRequester: FocusRequester,
+    onLeft: () -> Unit,
+    onRight: () -> Unit,
+    onDown: () -> Unit,
+    onSelect: () -> Unit,
+) {
+    val colors = RaviloTheme.colors
+    var focused by remember { mutableStateOf(false) }
+    Box(
+        modifier = Modifier
+            .size(40.dp)
+            .background(if (focused) colors.accent else Color.Transparent, CircleShape)
+            .then(if (focused) Modifier.border(2.dp, colors.focusRing, CircleShape) else Modifier)
+            .dpadFocusable(
+                focusRequester = focusRequester,
+                onFocused = { focused = true },
+                onBlurred = { focused = false },
+                onLeft = onLeft,
+                onRight = onRight,
+                onDown = onDown,
+                onSelect = onSelect,
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
+        val glyph = if (focused) colors.onAccent else colors.text
+        Canvas(modifier = Modifier.size(22.dp)) {
+            val s = size.minDimension / 24f          // glyph authored in a 24×24 viewBox
+            drawCircle(
+                color = glyph,
+                radius = 7f * s,
+                center = Offset(11f * s, 11f * s),
+                style = Stroke(width = 2f * s, cap = StrokeCap.Round),
+            )
+            drawLine(
+                color = glyph,
+                start = Offset(16.5f * s, 16.5f * s),
+                end = Offset(21f * s, 21f * s),
+                strokeWidth = 2f * s,
+                cap = StrokeCap.Round,
+            )
+        }
     }
 }
 

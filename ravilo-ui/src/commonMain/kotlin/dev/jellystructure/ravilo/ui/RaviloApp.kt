@@ -244,11 +244,11 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                             1 -> push(Dest.Browse(BrowseKind.MOVIES, dest.displayName))
                             2 -> push(Dest.Browse(BrowseKind.SERIES, dest.displayName))
                             3 -> push(Dest.Browse(BrowseKind.MY_LIST, dest.displayName))
-                            4 -> push(Dest.Search(dest.displayName))
-                            5 -> push(Dest.Discover(dest.displayName)) // gated Top 10 tab (R49)
+                            4 -> push(Dest.Discover(dest.displayName)) // gated Top 10 tab (R49); R52: index 4 (Search left the nav)
                             else -> {} // 0 = already home
                         }
                     },
+                    onSearch = { push(Dest.Search(dest.displayName)) },
                     onItemSelect = { card ->
                         when {
                             card.kind == MediaKind.SERIES -> push(Dest.SeriesDetail(card.id, dest.displayName))
@@ -323,12 +323,12 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                             1 -> push(Dest.Browse(BrowseKind.MOVIES, dest.displayName))
                             2 -> push(Dest.Browse(BrowseKind.SERIES, dest.displayName))
                             3 -> push(Dest.Browse(BrowseKind.MY_LIST, dest.displayName))
-                            4 -> push(Dest.Search(dest.displayName))
-                            else -> {} // 5 = already on Top 10
+                            else -> {} // 4 = already on Top 10 (R52: Search left the nav)
                         }
                     },
                     onEntrySelect = { listId, rank -> push(Dest.DiscoverItem(listId, rank, dest.displayName)) },
                     onProfile = { push(Dest.ProfilePicker) },
+                    onSearch = { push(Dest.Search(dest.displayName)) },
                 )
             }
 
