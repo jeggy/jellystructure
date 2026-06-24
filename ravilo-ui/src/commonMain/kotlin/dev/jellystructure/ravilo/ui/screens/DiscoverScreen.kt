@@ -20,6 +20,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -153,6 +154,9 @@ private fun DiscoverLoaded(
     val initials = remember(displayName) {
         displayName.split(' ').filter { it.isNotBlank() }.take(2).joinToString("") { it.first().uppercase() }
     }
+    val appBarScrolled by remember { derivedStateOf {
+        listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 0
+    } }
     AppBar(
         navItems = navItems,
         activeNav = activeNav,
@@ -162,6 +166,7 @@ private fun DiscoverLoaded(
         userInitials = initials,
         onProfile = onProfile,
         onSearch = onSearch,
+        scrolled = appBarScrolled,
     )
     }
 }

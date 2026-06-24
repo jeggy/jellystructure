@@ -63,6 +63,7 @@ fun AppBar(
     userInitials: String = "",
     onProfile: (() -> Unit)? = null,
     onSearch: (() -> Unit)? = null,
+    scrolled: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     val colors = RaviloTheme.colors
@@ -80,6 +81,12 @@ fun AppBar(
             1f to Color.Transparent,
         )
     }
+    // R62: animate from transparent (hero mode) to solid surface (scrolled mode)
+    val solidBg by animateColorAsState(
+        targetValue = if (scrolled) colors.surface.copy(alpha = 0.95f) else Color.Transparent,
+        animationSpec = tween(180),
+        label = "appBarBg",
+    )
 
     val otherFRs = remember(items.size) { List(maxOf(items.size - 1, 0)) { FocusRequester() } }
     val allFRs: List<FocusRequester> = remember(navFR, otherFRs) { listOf(navFR) + otherFRs }
@@ -89,7 +96,8 @@ fun AppBar(
         modifier = modifier
             .fillMaxWidth()
             .height(60.dp)               // R52: compacter bar (was 72)
-            .background(barGradient),
+            .background(solidBg)         // R62: solid layer (transparent when at top)
+            .background(barGradient),    // gradient vignette on top
     ) {
         Row(
             modifier = Modifier

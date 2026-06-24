@@ -77,6 +77,9 @@ val LocalLiveAcquisition = staticCompositionLocalOf<SharedFlow<AcquisitionRecord
 /** Tile-size multiplier from the active user's `RaviloConfig.uiDensity`; read by [dev.jellystructure.ravilo.ui.components.Tile]. */
 val LocalTileScale = staticCompositionLocalOf { 1f }
 
+/** R61 — server base URL (e.g. `http://192.168.1.100:8080`); used to resolve relative logo/image URLs. */
+val LocalServerBaseUrl = staticCompositionLocalOf { "" }
+
 // ─── Navigation destinations ──────────────────────────────────────────────────
 
 private sealed class Dest {
@@ -166,6 +169,12 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
         }
         var stack by remember { mutableStateOf(listOf<Dest>(initialDest)) }
 
+        // R58: first-ever launch — initialDest called setActive() after activeUserId was already
+        // initialized to null; sync the value so the WS LaunchedEffect fires and self-heals.
+        LaunchedEffect(initialDest) {
+            if (activeUserId == null) activeUserId = MultiTokenStore.getActive()?.userId
+        }
+
         // R40: retain screen stores across navigation so Back renders the cached screen instantly
         // (no Loading flash); each store refreshes silently on re-entry. Keyed by destination identity.
         val storeRegistry = remember { mutableMapOf<String, Any>() }
@@ -183,13 +192,13 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
 
         val dest = stack.last()
 
-        CompositionLocalProvider(LocalLiveConfig provides liveConfig, LocalLiveAcquisition provides liveAcquisition, LocalTileScale provides tileScale) {
+        CompositionLocalProvider(LocalLiveConfig provides liveConfig, LocalLiveAcquisition provides liveAcquisition, LocalTileScale provides tileScale, LocalServerBaseUrl provides apiClient.baseUrl) {
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .onKeyEvent { ev ->
                     if (ev.type == KeyEventType.KeyDown &&
-                        (ev.key == Key.Back || ev.key == Key.Escape) &&
+                        (ev.key == Key.Back || ev.key == Key.Escape || ev.key == Key.Backspace) &&
                         stack.size > 1
                     ) { pop(); true } else false
                 }
@@ -288,13 +297,26 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                 BrowseScreen(
                     kind = dest.kind,
                     store = store,
+                    displayName = dest.displayName,
                     onBack = { pop() },
+                    onNavSelect = { idx ->
+                        when (idx) {
+                            0 -> { stack = listOf(Dest.Home(dest.displayName)) }
+                            1 -> { stack = stack.dropLast(1) + Dest.Browse(BrowseKind.MOVIES, dest.displayName) }
+                            2 -> { stack = stack.dropLast(1) + Dest.Browse(BrowseKind.SERIES, dest.displayName) }
+                            3 -> { stack = stack.dropLast(1) + Dest.Browse(BrowseKind.MY_LIST, dest.displayName) }
+                            4 -> push(Dest.Discover(dest.displayName))
+                            else -> {}
+                        }
+                    },
                     onItemSelect = { card ->
                         when {
                             card.kind == MediaKind.SERIES -> push(Dest.SeriesDetail(card.id, dest.displayName))
                             else -> push(Dest.MovieDetail(card.id, dest.displayName))
                         }
                     },
+                    onProfile = { push(Dest.ProfilePicker) },
+                    onSearch = { push(Dest.Search(dest.displayName)) },
                 )
             }
 

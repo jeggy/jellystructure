@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -40,6 +41,7 @@ import dev.jellystructure.ravilo.ui.focus.rememberEdgeBringIntoViewSpec
 import dev.jellystructure.ravilo.ui.focus.backToTopOnBack
 import dev.jellystructure.ravilo.ui.components.TileVariant
 import dev.jellystructure.ravilo.ui.components.toTileVariant
+import dev.jellystructure.ravilo.ui.LocalServerBaseUrl
 import dev.jellystructure.ravilo.ui.i18n.str
 import dev.jellystructure.ravilo.ui.theme.RaviloDimens
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
@@ -196,9 +198,11 @@ private fun HomeLoaded(
                     items = feed.channels,
                     itemKey = { ch -> ch.id },
                 ) { _, ch ->
+                    val baseUrl = LocalServerBaseUrl.current
+                    val resolvedLogoUrl = ch.logoUrl?.let { if (it.startsWith("/")) "$baseUrl$it" else it }
                     ChannelCard(
                         name = ch.name,
-                        logoUrl = ch.logoUrl,
+                        logoUrl = resolvedLogoUrl,
                         brandColor = ch.brandColor,
                         onSelect = { onChannelSelect(ch) },
                     )
@@ -241,6 +245,9 @@ private fun HomeLoaded(
         add(str("nav.home")); add(str("nav.movies")); add(str("nav.series")); add(str("nav.my_list"))
         if (discoverAvailable) add("Top 10") // R49 — gated tab
     }
+    val appBarScrolled by remember { derivedStateOf {
+        listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 0
+    } }
     AppBar(
         navItems = navItems,
         activeNav = activeNav,
@@ -250,6 +257,7 @@ private fun HomeLoaded(
         userInitials = initials,
         onProfile = onProfile,
         onSearch = onSearch,
+        scrolled = appBarScrolled,
     )
     }
 }
