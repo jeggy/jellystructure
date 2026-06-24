@@ -805,8 +805,8 @@ private fun renderChannels(container: Element) {
             if (value.isNotBlank()) "${kind.lowercase().replaceFirstChar { it.uppercase() }}: $value" else "No filter yet"
         }
         """
-        <div class="cfg-row" style="display:flex;align-items:center;gap:9px;margin-bottom:8px;flex-wrap:wrap">
-          ${reorderButtons("ch", i, last)}
+        <div class="cfg-row" draggable="true" data-ch-i="$i" style="display:flex;align-items:center;gap:9px;margin-bottom:8px;flex-wrap:wrap">
+          <span class="drag-handle" style="cursor:grab;user-select:none;flex-shrink:0">⠿</span>
           <input type="hidden" data-ch-id="$i" value="${c.id.htmlEsc()}">
           ${channelChipHtml(c)}
           <input class="input" style="width:140px" placeholder="Name" value="${c.name.htmlEsc()}" data-ch-name="$i">
@@ -824,7 +824,7 @@ private fun renderChannels(container: Element) {
           <p style="font-size:.82rem;color:var(--ink-soft);margin-bottom:14px">
             The logo row under the hero. <b>Click ✎ Edit on a channel</b> to set its filter, choose Logo or Text, pick or upload a brand logo, and set the brand fill (solid or gradient).
           </p>
-          $rows
+          <div id="ch-list">$rows</div>
           <button id="ch-add" class="btn sm ghost" style="margin-top:6px">+ Add channel</button>
           <button id="ch-workbench" class="btn sm ghost" style="margin-top:6px">⚙ Build with workbench</button>
         </div>
@@ -843,7 +843,7 @@ private fun renderChannels(container: Element) {
                 }, ::renderChannels)
             })
     }
-    wireReorder(container, sect, "ch",
+    wireDragReorder(container, sect, "ch", "ch-list",
         get = { currentConfig.channels }, set = { currentConfig = currentConfig.copy(channels = it) }, ::renderChannels)
     for (i in currentConfig.channels.indices) {
         sect.querySelector("[data-ch-del='$i']")?.addEventListener("click") { _ ->
@@ -1244,8 +1244,8 @@ private fun renderRows(container: Element) {
                <select class="input" style="width:90px" data-row-media="$i">$mediaOptions</select>"""
         }
         """
-        <div class="cfg-row" style="display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap">
-          ${reorderButtons("row", i, last)}
+        <div class="cfg-row" draggable="true" data-row-i="$i" style="display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap">
+          <span class="drag-handle" style="cursor:grab;user-select:none;flex-shrink:0">⠿</span>
           $badge
           <input type="hidden" data-row-id="$i" value="${r.id.htmlEsc()}">
           <input class="input" style="width:150px" placeholder="Title" value="${(r.title ?: "").htmlEsc()}" data-row-title="$i"$genreList>
@@ -1267,7 +1267,7 @@ private fun renderRows(container: Element) {
               <span><b>Merge “Newly Added” movies &amp; series into one row.</b> <span class="tiny muted">Off = two rows like Jellyfin; on = a single combined “Newly Added”.</span></span>
             </label>
           </div>
-          $rows
+          <div id="row-list">$rows</div>
           <button id="row-add" class="btn sm ghost" style="margin-top:6px">+ Add row</button>
           <button id="row-workbench" class="btn sm ghost" style="margin-top:6px">⚙ Build with workbench</button>
         </div>
@@ -1287,7 +1287,7 @@ private fun renderRows(container: Element) {
                 }, ::renderRows)
             })
     }
-    wireReorder(container, sect, "row",
+    wireDragReorder(container, sect, "row", "row-list",
         get = { currentConfig.rows }, set = { currentConfig = currentConfig.copy(rows = it) }, ::renderRows)
     for (i in currentConfig.rows.indices) {
         sect.querySelector("[data-row-del='$i']")?.addEventListener("click") { _ ->
@@ -1339,8 +1339,8 @@ private fun renderDiscover(container: Element) {
         val rankOnly = spec?.scope == "country"
         val sub = (spec?.let { "${it.scope} · ${it.metric}" } ?: "") + if (rankOnly) " · rank only (no view counts)" else ""
         """
-        <div class="cfg-row" style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
-          ${reorderButtons("t10", i, last)}
+        <div class="cfg-row" draggable="true" data-t10-i="$i" style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+          <span class="drag-handle" style="cursor:grab;user-select:none;flex-shrink:0">⠿</span>
           <div style="flex:1">
             <div style="font-size:.9rem">${title.htmlEsc()}</div>
             <div class="tiny muted">${sub.htmlEsc()}</div>
@@ -1379,15 +1379,15 @@ private fun renderDiscover(container: Element) {
               <select id="top10-region" class="input" style="width:200px;font-size:.85rem">$regionOptions</select>
             </label>
             <div>
-              <div style="font-size:.85rem;font-weight:500;margin-bottom:6px">Lists shown to this user <span class="tiny muted">(order with ↑↓)</span></div>
-              $selectedRows
+              <div style="font-size:.85rem;font-weight:500;margin-bottom:6px">Lists shown to this user</div>
+              <div id="t10-list">$selectedRows</div>
               $addSelect
             </div>
             <p class="tiny muted">Country charts are <b>ranking only</b> (no view counts); global &amp; all-time carry real viewership.</p>
           </div>
         </div>
     """.trimIndent()
-    wireReorder(container, sect, "t10",
+    wireDragReorder(container, sect, "t10", "t10-list",
         get = { currentConfig.discover.lists },
         set = { currentConfig = currentConfig.copy(discover = currentConfig.discover.copy(lists = it)) },
         ::renderDiscover)
@@ -1421,30 +1421,52 @@ private fun renderDiscover(container: Element) {
     }
 }
 
-private fun reorderButtons(prefix: String, i: Int, last: Int): String {
-    val upDis = if (i == 0) " disabled" else ""
-    val dnDis = if (i == last) " disabled" else ""
-    return """<span style="display:flex;flex-direction:column;gap:1px">
-        <button class="btn sm ghost" style="padding:0 6px;line-height:1.2" data-$prefix-up="$i"$upDis>↑</button>
-        <button class="btn sm ghost" style="padding:0 6px;line-height:1.2" data-$prefix-down="$i"$dnDis>↓</button>
-    </span>""".trimIndent()
-}
-
-private fun <T> wireReorder(
+private fun <T> wireDragReorder(
     container: Element,
     sect: Element,
     prefix: String,
+    listContainerId: String,
     get: () -> List<T>,
     set: (List<T>) -> Unit,
     rerender: (Element) -> Unit,
 ) {
-    for (i in get().indices) {
-        sect.querySelector("[data-$prefix-up='$i']")?.addEventListener("click") { _ ->
-            structural(container, { set(get().swapped(i, i - 1)) }, rerender)
+    val listEl = sect.querySelector("#$listContainerId") as? HTMLElement ?: return
+    var dragFromIdx = -1
+    fun clearHighlights() {
+        val nl = listEl.querySelectorAll("[data-$prefix-i]")
+        for (j in 0 until nl.length) {
+            (nl.item(j) as? HTMLElement)?.classList?.remove("dragging", "drop-before", "drop-after")
         }
-        sect.querySelector("[data-$prefix-down='$i']")?.addEventListener("click") { _ ->
-            structural(container, { set(get().swapped(i, i + 1)) }, rerender)
-        }
+    }
+    listEl.addEventListener("dragstart") { e ->
+        val row = (e.target as? HTMLElement)?.closest("[data-$prefix-i]") as? HTMLElement ?: return@addEventListener
+        dragFromIdx = row.getAttribute("data-$prefix-i")?.toIntOrNull() ?: -1
+        row.classList.add("dragging")
+    }
+    listEl.addEventListener("dragend") { _ ->
+        dragFromIdx = -1
+        clearHighlights()
+    }
+    listEl.addEventListener("dragover") { e ->
+        e.preventDefault()
+        val row = (e.target as? HTMLElement)?.closest("[data-$prefix-i]") as? HTMLElement ?: return@addEventListener
+        val toIdx = row.getAttribute("data-$prefix-i")?.toIntOrNull() ?: return@addEventListener
+        clearHighlights()
+        if (toIdx != dragFromIdx) row.classList.add(if (toIdx < dragFromIdx) "drop-before" else "drop-after")
+    }
+    listEl.addEventListener("drop") { e ->
+        e.preventDefault()
+        val row = (e.target as? HTMLElement)?.closest("[data-$prefix-i]") as? HTMLElement ?: return@addEventListener
+        val toIdx = row.getAttribute("data-$prefix-i")?.toIntOrNull() ?: return@addEventListener
+        val fromIdx = dragFromIdx
+        dragFromIdx = -1
+        if (fromIdx < 0 || fromIdx == toIdx) return@addEventListener
+        structural(container, {
+            val list = get().toMutableList()
+            val item = list.removeAt(fromIdx)
+            list.add(toIdx, item)
+            set(list)
+        }, rerender)
     }
 }
 
