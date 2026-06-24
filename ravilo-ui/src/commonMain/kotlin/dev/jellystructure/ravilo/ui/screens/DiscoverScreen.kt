@@ -22,6 +22,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
@@ -38,6 +39,7 @@ import dev.jellystructure.ravilo.ui.components.StaticContentRow
 import dev.jellystructure.ravilo.ui.components.Tile
 import dev.jellystructure.ravilo.ui.components.TileVariant
 import dev.jellystructure.ravilo.ui.focus.EdgeBringIntoViewSpec
+import dev.jellystructure.ravilo.ui.focus.backToTopOnBack
 import dev.jellystructure.ravilo.ui.i18n.str
 import dev.jellystructure.ravilo.ui.theme.RaviloDimens
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
@@ -48,6 +50,7 @@ import dev.jellystructure.shared.tv.ChartEntry
 import dev.jellystructure.shared.tv.DiscoverEntry
 import dev.jellystructure.shared.tv.DiscoverResponse
 import dev.jellystructure.shared.tv.Trend
+import kotlinx.coroutines.launch
 
 /** Index of the Top 10 nav item in the app bar (after home/movies/series/my_list/search). */
 const val DISCOVER_NAV_INDEX = 5
@@ -96,11 +99,23 @@ private fun DiscoverLoaded(
 ) {
     val colors = RaviloTheme.colors
     val listState = rememberLazyListState()
+    val scope = rememberCoroutineScope()
     val navBarFR = remember { FocusRequester() }
     val columnFR = remember { FocusRequester() }
 
     LaunchedEffect(Unit) { runCatching { navBarFR.requestFocus() } }
 
+    // R55: Back scrolls a scrolled chart to the top (refocusing the app bar so bring-into-view doesn't
+    // yank it back) before falling through to RaviloApp's pop/exit.
+    Box(
+        modifier = Modifier.fillMaxSize().backToTopOnBack(
+            atTop = { listState.firstVisibleItemIndex == 0 && listState.firstVisibleItemScrollOffset == 0 },
+            onBackToTop = {
+                runCatching { navBarFR.requestFocus() }
+                scope.launch { listState.animateScrollToItem(0) }
+            },
+        ),
+    ) {
     @OptIn(ExperimentalFoundationApi::class)
     CompositionLocalProvider(LocalBringIntoViewSpec provides EdgeBringIntoViewSpec) {
         LazyColumn(
@@ -143,6 +158,7 @@ private fun DiscoverLoaded(
         userInitials = initials,
         onProfile = onProfile,
     )
+    }
 }
 
 /** A ranked Discover tile: large rank numeral + landscape art + live status pill + a trend/views sub-line. */

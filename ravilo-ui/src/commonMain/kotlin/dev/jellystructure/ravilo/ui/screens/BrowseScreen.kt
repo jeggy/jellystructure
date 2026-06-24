@@ -13,7 +13,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -22,15 +24,18 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRestorer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.jellystructure.ravilo.ui.components.Tile
+import dev.jellystructure.ravilo.ui.focus.backToTopOnBack
 import dev.jellystructure.ravilo.ui.focus.dpadFocusable
 import dev.jellystructure.ravilo.ui.i18n.str
 import dev.jellystructure.ravilo.ui.theme.RaviloDimens
@@ -102,7 +107,26 @@ fun BrowseScreen(
 
     val state by store.state.collectAsState()
 
-    Column(modifier = Modifier.fillMaxSize().background(colors.background)) {
+    // R55: Back scrolls a scrolled grid to the top (refocusing the first cell once it's back in view, so
+    // bring-into-view doesn't yank it back) before falling through to RaviloApp's pop.
+    val gridState = rememberLazyGridState()
+    val scope = rememberCoroutineScope()
+    val firstCellFR = remember { FocusRequester() }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(colors.background)
+            .backToTopOnBack(
+                atTop = { gridState.firstVisibleItemIndex == 0 && gridState.firstVisibleItemScrollOffset == 0 },
+                onBackToTop = {
+                    scope.launch {
+                        runCatching { gridState.animateScrollToItem(0) }
+                        runCatching { firstCellFR.requestFocus() }
+                    }
+                },
+            ),
+    ) {
         // Header
         Column(modifier = Modifier.padding(horizontal = RaviloDimens.screenPadH, vertical = 32.dp)) {
             val title = when (kind) {
@@ -146,7 +170,12 @@ fun BrowseScreen(
                     modifier = Modifier.padding(horizontal = RaviloDimens.screenPadH),
                 )
                 Spacer(Modifier.height(12.dp))
-                BrowseGrid(items = s.results.items, onItemSelect = onItemSelect)
+                BrowseGrid(
+                    items = s.results.items,
+                    gridState = gridState,
+                    firstCellFR = firstCellFR,
+                    onItemSelect = onItemSelect,
+                )
             }
         }
     }
@@ -208,12 +237,19 @@ private fun GenreChips(
 private const val GRID_COLS = 6
 
 @Composable
-private fun BrowseGrid(items: List<MediaCard>, onItemSelect: (MediaCard) -> Unit) {
+private fun BrowseGrid(
+    items: List<MediaCard>,
+    gridState: LazyGridState,
+    firstCellFR: FocusRequester,
+    onItemSelect: (MediaCard) -> Unit,
+) {
     // Native 2-D focus traversal across the grid: the framework composes off-screen rows in the
     // search direction and scrolls them into view; focusRestorer() returns focus to the last cell
-    // on re-entry. No per-item FocusRequester, no scroll-to-focused effect.
+    // on re-entry. No per-item FocusRequester (except the single first-cell back-to-top target, R55),
+    // no scroll-to-focused effect.
     LazyVerticalGrid(
         columns = GridCells.Fixed(GRID_COLS),
+        state = gridState,
         modifier = Modifier.focusRestorer(),
         contentPadding = PaddingValues(horizontal = RaviloDimens.trackPadH, vertical = RaviloDimens.trackPadV),
         horizontalArrangement = Arrangement.spacedBy(RaviloDimens.itemSpacing),
@@ -225,6 +261,8 @@ private fun BrowseGrid(items: List<MediaCard>, onItemSelect: (MediaCard) -> Unit
                 title = card.title,
                 posterUrl = card.posterUrl,
                 progressPct = card.progressPct ?: 0f,
+                // R55: the first cell is the back-to-top focus landing target.
+                focusRequester = if (i == 0) firstCellFR else null,
                 onSelect = { onItemSelect(card) },
             )
         }

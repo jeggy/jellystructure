@@ -1,6 +1,8 @@
 # R54 — Ravilo TV: reveal the tile label when focusing down a row (FR-RF1)
 
-**Status:** Planned
+**Status:** ✅ Done — implemented the **primary** approach: `dpadFocusable` moved from the inner poster
+`Box` to the outer tile `Column` in `components/Tile.kt`, so the focus/bring-into-view target spans the
+label; the draw-only scale/ring stay on the poster (R42 preserved).
 **Depends on:** R10 (Home), R42/R45 (draw-only focus + edge bring-into-view)
 
 ## Goal

@@ -1,6 +1,10 @@
 # R55 — Ravilo TV: Back scrolls to top before leaving the page (FR-RBK1)
 
-**Status:** Planned
+**Status:** ✅ Done — shared `Modifier.backToTopOnBack(atTop, onBackToTop)` in `focus/BackToTop.kt`,
+applied to Home, Discover, Channel, Browse and Search. Each scrolls its list/grid to the top and moves
+focus to a top target (Home → hero/app bar, Discover → app bar, Channel/Browse → first item/cell via a
+single `FocusRequester`, Search → the keyboard) before falling through to `RaviloApp`'s pop/exit. Detail
+and Player screens are excluded.
 **Depends on:** R09 (focus/nav), R21 (Back navigation), R40 (store retention)
 
 ## Goal
