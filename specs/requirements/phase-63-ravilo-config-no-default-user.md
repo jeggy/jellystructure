@@ -1,6 +1,6 @@
 # Phase 63 — Ravilo config editor: no user selected by default (FR-RC1)
 
-**Status:** Planned
+**Status:** ✅ Done
 
 ## Goal
 
