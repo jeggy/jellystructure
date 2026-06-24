@@ -30,10 +30,11 @@ class ChartIngestService(
     private val mediaStore: MediaStore,
 ) {
     suspend fun refresh(region: String, force: Boolean = false) {
-        val cfg = configStore.current.discover ?: return
-        if (!cfg.enabled) return
+        val cfg = configStore.current.discover
+        if (cfg?.enabled == false) return // explicitly disabled; absent = opt-in by default
+        val providers = cfg?.providers ?: listOf("netflix")
         val libByTmdb = mediaStore.allItems().mapNotNull { i -> i.tmdbId?.let { it to i.id } }.toMap()
-        for (provider in registry.enabled(cfg.providers)) {
+        for (provider in registry.enabled(providers)) {
             for (spec in provider.availableLists(region)) {
                 runCatching {
                     val fetch = provider.fetch(spec)
