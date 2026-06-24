@@ -64,6 +64,13 @@ private data class ApproveRequest(
 )
 
 @Serializable
+private data class AdminConfigEnvelope(
+    val config: RaviloConfig,
+    val hasOverride: Boolean,
+    val isGlobal: Boolean,
+)
+
+@Serializable
 private data class TvDiscoverRequest(
     val listId: String? = null,
     val rank: Int? = null,
@@ -418,7 +425,7 @@ fun Route.tvRoutes(
         val config = if (userId == dev.jellystructure.tv.GLOBAL_USER_ID) raviloConfigService.getGlobalConfig()
                      else raviloConfigService.getConfig(userId)
         val hasOverride = raviloConfigService.hasCustomConfig(userId)
-        call.respond(mapOf("config" to config, "hasOverride" to hasOverride, "isGlobal" to (userId == dev.jellystructure.tv.GLOBAL_USER_ID)))
+        call.respond(AdminConfigEnvelope(config, hasOverride, userId == dev.jellystructure.tv.GLOBAL_USER_ID))
     }
 
     put("/tv/admin/config") {
