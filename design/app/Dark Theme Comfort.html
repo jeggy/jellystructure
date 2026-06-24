@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dark Theme Comfort — Exploration</title>
+<link rel="stylesheet" href="wf.css">
+<style>
+  /* ===== Comfort variants: each overrides surface + ink tokens on a wrapper.
+     CSS vars inherit, so the whole UI slice below restyles itself. ===== */
+
+  /* 0 · Current (baseline) — near-black #0b0c12, near-white ink */
+  .v-current {
+    --bg:#0b0c12; --bg-2:#0e1018; --fill:#15171f; --fill-2:#101219; --fill-3:#1c1f29;
+    --ink:#eef0f7; --ink-soft:#959bb0; --ink-dim:rgba(238,240,247,.35);
+    --line:rgba(255,255,255,.08); --line-2:rgba(255,255,255,.14);
+    --card-bg:rgba(28,31,43,.62); --acc-ink:#c3b7fb;
+    --amb-a:rgba(177,92,208,.16); --amb-b:rgba(0,164,220,.14); --amb-c:rgba(123,110,240,.10);
+  }
+
+  /* A · Soft Charcoal — lift the floor ~6 stops, dim ink to ~88% (kills glare).
+     Same cool hue family, just no longer a black hole. RECOMMENDED. */
+  .v-soft {
+    --bg:#16181f; --bg-2:#1a1d25; --fill:#1f222c; --fill-2:#1a1d26; --fill-3:#272b37;
+    --ink:#dde1ec; --ink-soft:#9aa0b4; --ink-dim:rgba(221,225,236,.32);
+    --line:rgba(255,255,255,.07); --line-2:rgba(255,255,255,.13);
+    --card-bg:rgba(33,37,49,.66); --acc-ink:#c6bcfb;
+    --amb-a:rgba(177,92,208,.12); --amb-b:rgba(0,164,220,.10); --amb-c:rgba(123,110,240,.08);
+  }
+
+  /* A2 · Soft Charcoal, lighter cards — same #16181f floor, but card-bg
+     and fills raised so panels lift off the background with more depth. */
+  .v-soft2 {
+    --bg:#16181f; --bg-2:#1a1d25; --fill:#262a37; --fill-2:#20242f; --fill-3:#2f3441;
+    --ink:#dde1ec; --ink-soft:#9aa0b4; --ink-dim:rgba(221,225,236,.32);
+    --line:rgba(255,255,255,.08); --line-2:rgba(255,255,255,.14);
+    --card-bg:rgba(46,51,66,.74); --acc-ink:#c6bcfb;
+    --amb-a:rgba(177,92,208,.12); --amb-b:rgba(0,164,220,.10); --amb-c:rgba(123,110,240,.08);
+  }
+
+  /* B · Warm Slate — warmer neutral charcoal, warm off-white ink.
+     Warmth reads as cozier / lower blue-light at night. */
+  .v-warm {
+    --bg:#1a1815; --bg-2:#1e1b17; --fill:#23201a; --fill-2:#1d1a15; --fill-3:#2b261e;
+    --ink:#e9e3d6; --ink-soft:#a89e8b; --ink-dim:rgba(233,227,214,.32);
+    --line:rgba(255,248,235,.07); --line-2:rgba(255,248,235,.13);
+    --card-bg:rgba(38,34,27,.66); --acc-ink:#cdbdf2;
+    --amb-a:rgba(208,140,92,.12); --amb-b:rgba(120,150,220,.08); --amb-c:rgba(123,110,240,.07);
+  }
+
+  /* C · Dim Neutral — pure neutral gray, lowest contrast, gentlest.
+     No hue cast; very calm, closest to a "paper at dusk" feel. */
+  .v-dim {
+    --bg:#1c1c20; --bg-2:#212126; --fill:#27272d; --fill-2:#202024; --fill-3:#2e2e35;
+    --ink:#d6d7dd; --ink-soft:#96979f; --ink-dim:rgba(214,215,221,.30);
+    --line:rgba(255,255,255,.07); --line-2:rgba(255,255,255,.12);
+    --card-bg:rgba(40,40,46,.66); --acc-ink:#c2bbf2;
+    --amb-a:rgba(150,140,180,.08); --amb-b:rgba(120,150,180,.07); --amb-c:rgba(123,110,240,.06);
+  }
+
+  /* the slice paints its own surface + a toned ambient glow so each
+     variant shows in context (background, glow, glass, ink all together) */
+  .slice {
+    position: relative; overflow: hidden;
+    background: var(--bg); color: var(--ink);
+    border-radius: 14px; padding: 22px;
+    width: 360px;
+    display: flex; flex-direction: column; gap: 16px;
+  }
+  .slice::before {
+    content:''; position:absolute; inset:0; pointer-events:none; z-index:0;
+    background:
+      radial-gradient(520px 360px at 10% -10%, var(--amb-a), transparent 60%),
+      radial-gradient(520px 420px at 110% 0%, var(--amb-b), transparent 55%),
+      radial-gradient(440px 380px at 50% 120%, var(--amb-c), transparent 60%);
+  }
+  .slice > * { position: relative; z-index: 1; }
+  .slice h3 { margin: 0; font-size: 1.15rem; }
+  .slice .sub { color: var(--ink-soft); font-size: .82rem; margin: 3px 0 0; }
+  .slice .lang { white-space: nowrap; }
+  .swatch-row { display:flex; gap:7px; }
+  .sw { width:30px; height:30px; border-radius:7px; border:1px solid var(--line-2); }
+
+  /* canvas host fills viewport */
+  html, body { height: 100%; }
+  body { margin: 0; }
+  #root { height: 100vh; }
+</style>
+<template id="__bundler_thumbnail">
+  <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+    <rect width="100" height="100" fill="#16181f"/>
+    <circle cx="50" cy="42" r="22" fill="#7b6ef0" opacity="0.9"/>
+    <rect x="30" y="72" width="40" height="7" rx="3.5" fill="#dde1ec"/>
+  </svg>
+</template>
+</head>
+<body>
+<div id="root"></div>
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script type="text/babel" src="design-canvas.jsx"></script>
+<script type="text/babel">
+const { useState } = React;
+
+// Representative slice of the real app UI — exercises bg, glass cards,
+// ink/ink-soft, accent, status badges/dots, inputs, buttons, table, console.
+function Slice({ variant }) {
+  return (
+    <div className={"slice " + variant}>
+      <div>
+        <h3>Ravilo — Hero carousel</h3>
+        <p className="sub">Per-user TV layout · live preview</p>
+      </div>
+
+      <div className="card" style={{padding:'14px', display:'flex', flexDirection:'column', gap:'11px'}}>
+        <div style={{display:'flex', justifyContent:'space-between', alignItems:'center'}}>
+          <strong style={{fontFamily:"'Space Grotesk',sans-serif"}}>Channels</strong>
+          <span className="badge ok">3 active</span>
+        </div>
+        <div className="wf-table" style={{display:'grid', gap:'8px', fontSize:'.86rem'}}>
+          <div style={{display:'flex', justifyContent:'space-between', alignItems:'center'}}>
+            <span style={{display:'flex',alignItems:'center',gap:'8px'}}><i className="dot ok"></i> A24 Picks</span>
+            <span className="lang" style={{color:'var(--ink-soft)'}}>EN · 24</span>
+          </div>
+          <div style={{display:'flex', justifyContent:'space-between', alignItems:'center'}}>
+            <span style={{display:'flex',alignItems:'center',gap:'8px'}}><i className="dot warn"></i> Mixed langs</span>
+            <span className="lang" style={{color:'var(--ink-soft)'}}>3 langs</span>
+          </div>
+          <div style={{display:'flex', justifyContent:'space-between', alignItems:'center'}}>
+            <span style={{display:'flex',alignItems:'center',gap:'8px'}}><i className="dot bad"></i> Needs poster</span>
+            <span className="lang" style={{color:'var(--ink-soft)'}}>—</span>
+          </div>
+        </div>
+      </div>
+
+      <div style={{display:'flex', gap:'7px', flexWrap:'wrap'}}>
+        <span className="chip" style={{background:'var(--hi)'}}>Studio</span>
+        <span className="chip">Genre</span>
+        <span className="chip ghost">+ add</span>
+      </div>
+
+      <div className="field">
+        <label>Auto-advance</label>
+        <div className="input"><input style={{all:'unset', flex:1, color:'var(--ink)'}} defaultValue="7s" /></div>
+      </div>
+
+      <div className="log">
+        <div><span className="ts">12:04:18</span> scan complete — <span className="okc">412 ok</span></div>
+        <div><span className="ts">12:04:19</span> <span className="warnc">2 mixed</span>, <span className="badc">1 missing</span></div>
+      </div>
+
+      <div style={{display:'flex', gap:'9px'}}>
+        <button className="btn primary">Save layout</button>
+        <button className="btn ghost">Preview</button>
+      </div>
+
+      <div className="swatch-row">
+        <div className="sw" style={{background:'var(--bg)'}} title="bg"></div>
+        <div className="sw" style={{background:'var(--fill)'}} title="fill"></div>
+        <div className="sw" style={{background:'var(--fill-3)'}} title="fill-3"></div>
+        <div className="sw" style={{background:'var(--ink)'}} title="ink"></div>
+        <div className="sw" style={{background:'var(--ink-soft)'}} title="ink-soft"></div>
+        <div className="sw" style={{background:'var(--hi)'}} title="accent"></div>
+      </div>
+    </div>
+  );
+}
+
+function App() {
+  return (
+    <DesignCanvas>
+      <DCSection id="comfort" title="Dark theme · comfort study" subtitle="Same UI, four surface palettes. Fix: lift the near-black floor + dim ink to cut glare.">
+        <DCArtboard id="cur" label="0 · Current — #0b0c12" width={404} height={620}><Slice variant="v-current" /></DCArtboard>
+        <DCArtboard id="soft" label="A · Soft Charcoal" width={404} height={620}><Slice variant="v-soft" /></DCArtboard>
+        <DCArtboard id="soft2" label="A2 · Soft Charcoal + lighter cards ★" width={404} height={620}><Slice variant="v-soft2" /></DCArtboard>
+        <DCArtboard id="warm" label="B · Warm Slate" width={404} height={620}><Slice variant="v-warm" /></DCArtboard>
+        <DCArtboard id="dim" label="C · Dim Neutral" width={404} height={620}><Slice variant="v-dim" /></DCArtboard>
+      </DCSection>
+    </DesignCanvas>
+  );
+}
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>
