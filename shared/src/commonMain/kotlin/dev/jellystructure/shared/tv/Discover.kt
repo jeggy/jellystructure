@@ -36,3 +36,7 @@ data class DiscoverDetail(
     val sourceLabel: String,
     val attribution: String,
 )
+
+/** Phase 56/R49 — the WS `acquisition_changed` payload envelope (record inline). */
+@Serializable
+data class AcquisitionChangedEnvelope(val type: String = "", val record: AcquisitionRecord)

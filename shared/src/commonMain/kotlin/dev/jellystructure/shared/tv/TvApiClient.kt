@@ -198,6 +198,28 @@ class TvApiClient(
         }.assertSuccess()
     }
 
+    // ─── Discover / Top 10 (R48) ─────────────────────────────────────────────
+
+    suspend fun getDiscover(): DiscoverResponse {
+        val r = client.get("$baseUrl/api/tv/discover") { auth() }
+        r.assertSuccess()
+        return json.decodeFromString(r.bodyAsText())
+    }
+
+    suspend fun getDiscoverItem(listId: String, rank: Int): DiscoverDetail {
+        val r = client.get("$baseUrl/api/tv/discover/item/$listId/$rank") { auth() }
+        r.assertSuccess()
+        return json.decodeFromString(r.bodyAsText())
+    }
+
+    suspend fun requestDiscover(listId: String, rank: Int): AcquisitionRecord {
+        val r = client.post("$baseUrl/api/tv/discover/request") {
+            auth(); jsonBody("""{"listId":${listId.jsonStr()},"rank":$rank}""")
+        }
+        r.assertSuccess()
+        return json.decodeFromString(r.bodyAsText())
+    }
+
     // ─── Live events (R33) ───────────────────────────────────────────────────
 
     /**
@@ -207,15 +229,25 @@ class TvApiClient(
      * The device token is passed as a query param because browsers can't set a WS handshake header.
      * Requires the `WebSockets` client plugin to be installed on [client].
      */
-    suspend fun connectEvents(onOpen: suspend () -> Unit = {}, onEvent: suspend (TvEvent) -> Unit) {
+    suspend fun connectEvents(
+        onOpen: suspend () -> Unit = {},
+        onEvent: suspend (TvEvent) -> Unit,
+        onAcquisition: suspend (AcquisitionRecord) -> Unit = {},
+    ) {
         val token = deviceToken() ?: return
         val wsUrl = baseUrl.replaceFirst("http", "ws").trimEnd('/') +
             "/api/tv/events?token=" + token.encodeURLParameter()
         client.webSocket(wsUrl) {
             onOpen()
             for (frame in incoming) {
-                if (frame is Frame.Text) {
-                    runCatching { json.decodeFromString<TvEvent>(frame.readText()) }.getOrNull()?.let { onEvent(it) }
+                if (frame !is Frame.Text) continue
+                val text = frame.readText()
+                val ev = runCatching { json.decodeFromString<TvEvent>(text) }.getOrNull() ?: continue
+                if (ev.type == "acquisition_changed") {
+                    // Payload-bearing (Phase 56): patch a tile in place, no re-pull.
+                    runCatching { json.decodeFromString<AcquisitionChangedEnvelope>(text).record }.getOrNull()?.let { onAcquisition(it) }
+                } else {
+                    onEvent(ev)
                 }
             }
         }

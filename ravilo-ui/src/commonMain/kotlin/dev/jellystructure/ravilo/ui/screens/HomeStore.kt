@@ -21,6 +21,9 @@ class HomeStore(private val apiClient: TvApiClient) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val _state = MutableStateFlow<HomeState>(HomeState.Loading)
     val state: StateFlow<HomeState> = _state.asStateFlow()
+    // R49 — server-decided Top 10 tab gating (Radarr/Sonarr + per-user opt-in + non-empty lists).
+    private val _discoverAvailable = MutableStateFlow(false)
+    val discoverAvailable: StateFlow<Boolean> = _discoverAvailable.asStateFlow()
     private var loadJob: Job? = null
 
     init { load() }
@@ -32,6 +35,11 @@ class HomeStore(private val apiClient: TvApiClient) {
             _state.value = runCatching { HomeState.Loaded(apiClient.getHome()) }
                 .getOrElse { HomeState.Error(it.message ?: "Unknown error") }
         }
+        refreshDiscoverAvailable()
+    }
+
+    private fun refreshDiscoverAvailable() {
+        scope.launch { _discoverAvailable.value = runCatching { apiClient.getDiscover().available }.getOrDefault(false) }
     }
 
     /**
@@ -44,5 +52,6 @@ class HomeStore(private val apiClient: TvApiClient) {
         loadJob = scope.launch {
             runCatching { apiClient.getHome() }.getOrNull()?.let { _state.value = HomeState.Loaded(it) }
         }
+        refreshDiscoverAvailable()
     }
 }
