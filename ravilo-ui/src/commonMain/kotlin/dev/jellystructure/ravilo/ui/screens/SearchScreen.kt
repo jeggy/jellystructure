@@ -15,6 +15,9 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -30,15 +33,18 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.focusRestorer
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import dev.jellystructure.ravilo.ui.components.OnScreenKeyboard
 import dev.jellystructure.ravilo.ui.components.Tile
 import dev.jellystructure.ravilo.ui.focus.backToTopOnBack
 import dev.jellystructure.ravilo.ui.i18n.str
@@ -118,22 +124,33 @@ fun SearchScreen(
         else -> emptyList()
     }
 
-    // Single entry requester for the grid; native traversal handles cell-to-cell movement.
-    // focusedGridIdx is tracked (cheaply) only so the edge-exit handler knows when the user is
-    // on the top row / first column and should drop back to the keyboard.
     val gridFR = remember { FocusRequester() }
+    val textFieldFR = remember { FocusRequester() }
     var focusedGridIdx by remember { mutableIntStateOf(0) }
     val gridState = rememberLazyGridState()
     val scope = rememberCoroutineScope()
+    val keyboardController = LocalSoftwareKeyboardController.current
+
+    // Auto-focus and open IME on screen entry
+    LaunchedEffect(Unit) {
+        textFieldFR.requestFocus()
+        keyboardController?.show()
+    }
+
+    // Return focus to the text field and re-open IME when leaving the results grid
+    LaunchedEffect(inGrid) {
+        if (!inGrid) {
+            textFieldFR.requestFocus()
+            keyboardController?.show()
+        }
+    }
 
     Column(
         modifier = Modifier
             .fillMaxSize()
             .background(colors.background)
             .padding(top = 48.dp)
-            // R55: Back drops out of the results grid to the keyboard (which auto-focuses) and scrolls the
-            // grid back to the top; on the keyboard it falls through to RaviloApp's pop. The keyboard is
-            // this page's "top", so being there counts as at-top.
+            // Back from results grid → text field + IME; Back from text field → pops screen.
             .backToTopOnBack(
                 atTop = { !inGrid },
                 onBackToTop = {
@@ -142,7 +159,6 @@ fun SearchScreen(
                 },
             ),
     ) {
-        // Header
         Row(
             modifier = Modifier.fillMaxWidth().padding(horizontal = RaviloDimens.screenPadH),
             verticalAlignment = Alignment.CenterVertically,
@@ -162,7 +178,7 @@ fun SearchScreen(
         }
         Spacer(Modifier.height(12.dp))
 
-        // Search bar — 76dp min height
+        // Native IME text field — the OS keyboard appears automatically on focus
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -172,40 +188,43 @@ fun SearchScreen(
                 .padding(horizontal = 24.dp),
             contentAlignment = Alignment.CenterStart,
         ) {
-            if (query.isEmpty()) {
-                Text(str("search.placeholder"), color = colors.textSecondary, fontSize = 16.sp, fontFamily = sora)
-            } else {
-                Text(query + "█", color = colors.text, fontSize = 16.sp, fontFamily = sora)
-            }
+            BasicTextField(
+                value = query,
+                onValueChange = { query = it; store.onQuery(it) },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .focusRequester(textFieldFR)
+                    // D-pad Down moves focus into the results grid and hides the IME
+                    .onPreviewKeyEvent { ev ->
+                        if (ev.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                        if (ev.key == Key.DirectionDown && items.isNotEmpty()) {
+                            inGrid = true
+                            scope.launch { runCatching { gridFR.requestFocus() } }
+                            keyboardController?.hide()
+                            true
+                        } else false
+                    },
+                textStyle = TextStyle(color = colors.text, fontSize = 16.sp, fontFamily = sora),
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                keyboardActions = KeyboardActions(onSearch = {
+                    if (items.isNotEmpty()) {
+                        inGrid = true
+                        scope.launch { runCatching { gridFR.requestFocus() } }
+                        keyboardController?.hide()
+                    }
+                }),
+                cursorBrush = SolidColor(colors.accent),
+                decorationBox = { innerTextField ->
+                    if (query.isEmpty()) {
+                        Text(str("search.placeholder"), color = colors.textSecondary, fontSize = 16.sp, fontFamily = sora)
+                    }
+                    innerTextField()
+                },
+            )
         }
         Spacer(Modifier.height(24.dp))
 
-        // On-screen keyboard
-        if (!inGrid) {
-            Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                OnScreenKeyboard(
-                    onChar = {
-                        query += it
-                        store.onQuery(query)
-                    },
-                    onDelete = {
-                        if (query.isNotEmpty()) {
-                            query = query.dropLast(1)
-                            store.onQuery(query)
-                        }
-                    },
-                    onDone = {
-                        if (items.isNotEmpty()) {
-                            inGrid = true
-                            gridFR.requestFocus()
-                        }
-                    },
-                )
-            }
-        }
-        Spacer(Modifier.height(20.dp))
-
-        // Results label
         val label = when {
             query.isEmpty()                              -> str("search.suggestions_label")
             items.isEmpty() && state is SearchState.Loaded -> str("search.empty", mapOf("query" to query))
@@ -229,8 +248,7 @@ fun SearchScreen(
                     .focusRequester(gridFR)
                     .focusRestorer()
                     // Native traversal moves between cells; intercept only the top-edge (Up) and
-                    // left-edge (Left) cases to drop focus back to the keyboard, which re-appears
-                    // and auto-focuses its first key.
+                    // left-edge (Left) exits to return focus to the text field, re-showing the IME.
                     .onPreviewKeyEvent { ev ->
                         if (ev.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
                         when (ev.key) {
