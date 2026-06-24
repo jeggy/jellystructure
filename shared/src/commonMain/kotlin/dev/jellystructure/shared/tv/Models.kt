@@ -264,6 +264,24 @@ data class Condition(
     val values: List<String> = emptyList(),
 )
 
+/** R53 — per-display-mode edge padding for the channel button (0..40 px each side). */
+@Serializable
+data class ChannelButtonPadding(
+    val top: Int = 0,
+    val right: Int = 0,
+    val bottom: Int = 0,
+    val left: Int = 0,
+)
+
+/** R52 — optional hero carousel for a channel/collection page (absent = no hero on that page). */
+@Serializable
+data class PageHeroConfig(
+    val enabled: Boolean = false,
+    val items: List<HeroConfig> = emptyList(),
+    @SerialName("hero_height_pct") val heroHeightPct: Int = 56,       // 40..100
+    @SerialName("auto_advance_seconds") val autoAdvanceSeconds: Int = 7,
+)
+
 @Serializable
 data class ChannelConfig(
     val id: String,
@@ -280,6 +298,11 @@ data class ChannelConfig(
     val conditions: List<Condition> = emptyList(),
     val enabled: Boolean = true,
     val order: Int = 0,
+    // R52 — optional per-page hero carousel (null = page has no hero).
+    @SerialName("page_hero") val pageHero: PageHeroConfig? = null,
+    // R53 — per-display-mode channel-button padding (null = no padding for that mode).
+    @SerialName("padding_logo") val paddingLogo: ChannelButtonPadding? = null,
+    @SerialName("padding_text") val paddingText: ChannelButtonPadding? = null,
 )
 
 /** A server-owned channel-button logo asset (R36 §F), served at `/api/tv/channel-logos/<file>`. */

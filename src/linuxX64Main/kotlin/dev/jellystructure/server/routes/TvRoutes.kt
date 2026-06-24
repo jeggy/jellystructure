@@ -406,17 +406,29 @@ fun Route.tvRoutes(
     }
 
     // Admin config endpoints — authenticated by session cookie (jellystructure admin login)
+    // R51: ?scope=global → global layout; ?userId=<id> → per-user override; default = session user.
     get("/tv/admin/config") {
         val session = runCatching { call.attributes[SessionKey] }.getOrNull()
             ?: run { call.respond(HttpStatusCode.Unauthorized, mapOf("error" to "Not logged in")); return@get }
-        val userId = call.request.queryParameters["userId"] ?: session.jellyfinUserId
-        call.respond(raviloConfigService.getConfig(userId))
+        val qScope = call.request.queryParameters["scope"]
+        val userId = when {
+            qScope == "global" -> dev.jellystructure.tv.GLOBAL_USER_ID
+            else -> call.request.queryParameters["userId"] ?: session.jellyfinUserId
+        }
+        val config = if (userId == dev.jellystructure.tv.GLOBAL_USER_ID) raviloConfigService.getGlobalConfig()
+                     else raviloConfigService.getConfig(userId)
+        val hasOverride = raviloConfigService.hasCustomConfig(userId)
+        call.respond(mapOf("config" to config, "hasOverride" to hasOverride, "isGlobal" to (userId == dev.jellystructure.tv.GLOBAL_USER_ID)))
     }
 
     put("/tv/admin/config") {
         val session = runCatching { call.attributes[SessionKey] }.getOrNull()
             ?: run { call.respond(HttpStatusCode.Unauthorized, mapOf("error" to "Not logged in")); return@put }
-        val userId = call.request.queryParameters["userId"] ?: session.jellyfinUserId
+        val qScope = call.request.queryParameters["scope"]
+        val userId = when {
+            qScope == "global" -> dev.jellystructure.tv.GLOBAL_USER_ID
+            else -> call.request.queryParameters["userId"] ?: session.jellyfinUserId
+        }
         val config = runCatching { call.receive<RaviloConfig>() }.getOrElse {
             call.respond(HttpStatusCode.BadRequest, mapOf("error" to "Invalid config: ${it.message}")); return@put
         }
@@ -424,6 +436,18 @@ fun Route.tvRoutes(
             call.respond(HttpStatusCode.BadRequest, mapOf("error" to err)); return@put
         }
         raviloConfigService.save(userId, config)
+        call.respond(mapOf("status" to "ok"))
+    }
+
+    delete("/tv/admin/config") {
+        val session = runCatching { call.attributes[SessionKey] }.getOrNull()
+            ?: run { call.respond(HttpStatusCode.Unauthorized, mapOf("error" to "Not logged in")); return@delete }
+        val userId = call.request.queryParameters["userId"]
+            ?: run { call.respond(HttpStatusCode.BadRequest, mapOf("error" to "userId required")); return@delete }
+        if (userId == dev.jellystructure.tv.GLOBAL_USER_ID) {
+            call.respond(HttpStatusCode.BadRequest, mapOf("error" to "Cannot delete the global config")); return@delete
+        }
+        raviloConfigService.removeCustomConfig(userId)
         call.respond(mapOf("status" to "ok"))
     }
 
