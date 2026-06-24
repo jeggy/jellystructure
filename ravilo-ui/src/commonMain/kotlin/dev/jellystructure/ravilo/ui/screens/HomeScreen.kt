@@ -63,6 +63,7 @@ fun HomeScreen(
 ) {
     val colors = RaviloTheme.colors
     val state by store.state.collectAsState()
+    val discoverAvailable by store.discoverAvailable.collectAsState()
 
     // R33: silently re-pull the home feed when this user's layout changes elsewhere.
     val live = dev.jellystructure.ravilo.ui.LocalLiveConfig.current
@@ -76,6 +77,7 @@ fun HomeScreen(
                 feed = s.feed,
                 activeNav = activeNav,
                 displayName = displayName,
+                discoverAvailable = discoverAvailable,
                 onNavSelect = onNavSelect,
                 onItemSelect = onItemSelect,
                 onItemPlay = onItemPlay,
@@ -92,6 +94,7 @@ private fun HomeLoaded(
     feed: dev.jellystructure.shared.tv.HomeFeed,
     activeNav: Int,
     displayName: String,
+    discoverAvailable: Boolean,
     onNavSelect: (Int) -> Unit,
     onItemSelect: (MediaCard) -> Unit,
     onItemPlay: (MediaCard) -> Unit,
@@ -212,7 +215,12 @@ private fun HomeLoaded(
         displayName.split(' ').filter { it.isNotBlank() }.take(2)
             .joinToString("") { it.first().uppercase() }
     }
+    val navItems = buildList {
+        add(str("nav.home")); add(str("nav.movies")); add(str("nav.series")); add(str("nav.my_list")); add(str("nav.search"))
+        if (discoverAvailable) add("Top 10") // R49 — gated tab
+    }
     AppBar(
+        navItems = navItems,
         activeNav = activeNav,
         onNavSelect = onNavSelect,
         navFR = navBarFR,
