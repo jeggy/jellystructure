@@ -40,6 +40,7 @@ data class TmdbMovieDetails(
     @SerialName("backdrop_path") val backdropPath: String? = null,
     val overview: String = "",
     @SerialName("release_date") val releaseDate: String = "",
+    val runtime: Int? = null,
     val genres: List<TmdbGenre> = emptyList(),
     @SerialName("production_companies") val productionCompanies: List<TmdbCompany> = emptyList(),
 )
@@ -81,8 +82,23 @@ data class TmdbTvDetails(
     @SerialName("backdrop_path") val backdropPath: String? = null,
     val overview: String = "",
     @SerialName("first_air_date") val firstAirDate: String = "",
+    @SerialName("episode_run_time") val episodeRunTime: List<Int> = emptyList(),
     val genres: List<TmdbGenre> = emptyList(),
     val networks: List<TmdbNetwork> = emptyList(),
+)
+
+@Serializable
+data class TmdbCastMember(
+    val id: Int,
+    val name: String = "",
+    val character: String = "",
+    val order: Int = 0,
+    @SerialName("profile_path") val profilePath: String? = null,
+)
+
+@Serializable
+data class TmdbCreditsResponse(
+    val cast: List<TmdbCastMember> = emptyList(),
 )
 
 @Serializable
@@ -262,6 +278,26 @@ class TmdbClient(
             if (response.status != HttpStatusCode.OK) return null
             response.body<TmdbExternalIds>().tvdbId
         }.getOrNull()
+    }
+
+    /** R63 — top-5 cast members for a movie (by `order`). Returns emptyList on any failure. */
+    suspend fun getMovieCredits(tmdbId: Int): List<TmdbCastMember> {
+        val key = apiKey(); if (key.isBlank()) return emptyList()
+        return runCatching {
+            val r = http.get("$baseUrl/movie/$tmdbId/credits") { parameter("api_key", key) }
+            if (r.status != HttpStatusCode.OK) return emptyList()
+            r.body<TmdbCreditsResponse>().cast.sortedBy { it.order }.take(5)
+        }.getOrElse { Logger.warn("TMDB movie credits failed tmdbId=$tmdbId: ${it.message}"); emptyList() }
+    }
+
+    /** R63 — top-5 cast members for a TV series (by `order`). Returns emptyList on any failure. */
+    suspend fun getTvCredits(tmdbId: Int): List<TmdbCastMember> {
+        val key = apiKey(); if (key.isBlank()) return emptyList()
+        return runCatching {
+            val r = http.get("$baseUrl/tv/$tmdbId/credits") { parameter("api_key", key) }
+            if (r.status != HttpStatusCode.OK) return emptyList()
+            r.body<TmdbCreditsResponse>().cast.sortedBy { it.order }.take(5)
+        }.getOrElse { Logger.warn("TMDB tv credits failed tmdbId=$tmdbId: ${it.message}"); emptyList() }
     }
 
     suspend fun getTvDetailsLocalized(tmdbId: Int, languages: List<String>): TmdbTvDetails? {
