@@ -7,6 +7,12 @@ private fun jsGet(key: String): String? = js("localStorage.getItem(key)")
 private fun jsSet(key: String, value: String): Unit = js("localStorage.setItem(key, value)")
 private fun jsRemove(key: String): Unit = js("localStorage.removeItem(key)")
 
+// Avatar URLs are stored separately per-user to avoid embedding URLs in the session JSON.
+private fun loadAvatar(userId: String): String? = jsGet("ravilo_avatar_$userId")
+private fun saveAvatar(userId: String, url: String?) {
+    if (url != null) jsSet("ravilo_avatar_$userId", url) else jsRemove("ravilo_avatar_$userId")
+}
+
 private fun loadRaw(): String? = jsGet("ravilo_sessions")
 private fun saveRaw(v: String) = jsSet("ravilo_sessions", v)
 private fun loadActiveId(): String? = jsGet("ravilo_active_user")
@@ -41,18 +47,21 @@ actual object MultiTokenStore {
     actual fun getAll(): List<LocalSession> {
         val raw = loadRaw() ?: return emptyList()
         return runCatching { parseAll(raw) }.getOrDefault(emptyList())
+            .map { it.copy(avatarUrl = loadAvatar(it.userId)) }
     }
 
     actual fun add(session: LocalSession) {
         val list = getAll().filter { it.userId != session.userId }.toMutableList()
         list.add(session)
-        saveRaw(encodeAll(list))
+        saveRaw(encodeAll(list.map { it.copy(avatarUrl = null) }))
+        saveAvatar(session.userId, session.avatarUrl)
         setActive(session.userId)
     }
 
     actual fun remove(userId: String) {
         val list = getAll().filter { it.userId != userId }
-        saveRaw(encodeAll(list))
+        saveRaw(encodeAll(list.map { it.copy(avatarUrl = null) }))
+        saveAvatar(userId, null)
         if (loadActiveId() == userId) saveActiveId(list.firstOrNull()?.userId)
     }
 
