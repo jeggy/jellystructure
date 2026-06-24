@@ -233,8 +233,16 @@ private fun SeriesDetailLoaded(
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     val resumeEpId = detail.progress.resumeEpisodeId
+                    // Season-aware "SxEy" for the button (no episode title — that shows above already).
+                    // Resolved from the full season list so it's correct regardless of the selected season.
+                    val resumeShort = resumeEpId?.let { rid ->
+                        val sIdx = detail.seasons.indexOfFirst { s -> s.episodes.any { it.id == rid } }
+                        val ep = detail.seasons.getOrNull(sIdx)?.episodes?.firstOrNull { it.id == rid }
+                        if (sIdx >= 0 && ep != null) "S${detail.seasons[sIdx].index}E${ep.episodeNumber}"
+                        else ep?.let { "E${it.episodeNumber}" }
+                    } ?: "E${resumeEpIdx + 1}"
                     val playLabel = if (resumeEpId != null && detail.progress.watchedCount < detail.progress.totalCount)
-                        "${str("action.resume")} · ${detail.progress.resumeLabel ?: "E${resumeEpIdx + 1}"}"
+                        "${str("action.resume")} · $resumeShort"
                     else "${str("action.play")} · E1"
                     RaviloButton(
                         label = playLabel,
