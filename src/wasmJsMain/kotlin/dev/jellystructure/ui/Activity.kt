@@ -236,7 +236,7 @@ private suspend fun loadLogHistory(container: Element) {
         }
         console.innerHTML = ""
         page.entries.forEach { entry ->
-            appendLogEntry(container, entry.level, entry.category, entry.message, fromHistory = true)
+            appendLogEntry(container, entry.level, entry.category, entry.message, ts = entry.ts)
         }
         (console as? HTMLElement)?.let { it.scrollTop = it.scrollHeight.toDouble() }
     }.onFailure {
@@ -455,11 +455,11 @@ private fun updateActivityChips(container: Element) {
     }
 }
 
-private fun appendLogEntry(container: Element, level: String, category: String, text: String, fromHistory: Boolean = false) {
+private fun appendLogEntry(container: Element, level: String, category: String, text: String, ts: Long? = null) {
     val console = container.querySelector("#activity-console") ?: return
     console.querySelector(".muted")?.remove()
 
-    val ts = currentTimeString()
+    val tsStr = if (ts != null) dev.jellystructure.formatStoredTs(ts.toString()) else currentTimeString()
     val catLabel = when (category) {
         "scan" -> "<span class='chip' style='font-size:.6rem;padding:0 4px'>scan</span> "
         "nfo" -> "<span class='chip' style='font-size:.6rem;padding:0 4px;background:var(--fill-2)'>nfo</span> "
@@ -478,7 +478,7 @@ private fun appendLogEntry(container: Element, level: String, category: String, 
     val div = document.createElement("div")
     div.setAttribute("data-cat", category)
     div.setAttribute("data-level", level)
-    div.innerHTML = """<span class="ts">$ts</span> $catLabel<span style="$colorStyle">${text.escapeHtml()}</span>"""
+    div.innerHTML = """<span class="ts">$tsStr</span> $catLabel<span style="$colorStyle">${text.escapeHtml()}</span>"""
 
     val catOk = activeLogCategory.isEmpty() || category == activeLogCategory
     val lvlOk = !errorsOnlyFilter || level == "error" || level == "warn"
