@@ -99,7 +99,9 @@ fun renderShell(user: UserProfile) {
     document.querySelectorAll(".app-side a").let { links ->
         for (i in 0 until links.length) {
             val a = links.item(i) as? HTMLElement ?: continue
-            val href = a.getAttribute("href") ?: continue
+            // Hrefs are hash routes (e.g. "#/settings") so middle/ctrl-click open the SPA
+            // route, not a server path. Strip the leading "#" for the in-app router.
+            val href = a.getAttribute("href")?.removePrefix("#") ?: continue
             a.addEventListener("click") { e ->
                 e.preventDefault()
                 document.body?.classList?.remove("nav-open")
@@ -680,7 +682,7 @@ private fun shellHtml(user: UserProfile, savedPref: String = "system"): String {
                     entry.count != null -> """<span class="count">${entry.count}</span>"""
                     else -> ""
                 }
-                """<a class="nav" href="${entry.href}"><span class="l"><span class="ico">${ICONS[entry.icon] ?: entry.icon}</span>${entry.label}</span>$countHtml</a>"""
+                """<a class="nav" href="#${entry.href}"><span class="l"><span class="ico">${ICONS[entry.icon] ?: entry.icon}</span>${entry.label}</span>$countHtml</a>"""
             }
         }
     }
