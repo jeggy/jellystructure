@@ -5,6 +5,7 @@ import dev.jellystructure.shared.tv.ChannelLogoUpload
 import dev.jellystructure.shared.tv.ChartListSpec
 import dev.jellystructure.shared.tv.RaviloConfig
 import io.ktor.client.call.body
+import io.ktor.client.request.delete
 import io.ktor.client.request.get
 import io.ktor.client.request.post
 import io.ktor.client.request.put
@@ -25,12 +26,34 @@ data class JellyfinUser(
     @SerialName("display_name") val displayName: String,
 )
 
+/** R51 — GET /tv/admin/config response envelope. */
+@Serializable
+data class AdminConfigResponse(
+    val config: RaviloConfig,
+    @SerialName("hasOverride") val hasOverride: Boolean = false,
+    @SerialName("isGlobal") val isGlobal: Boolean = false,
+)
+
 object RaviloApi {
     suspend fun getUsers(): List<JellyfinUser> =
         httpClient.get("/api/jellyfin/users").body()
 
     suspend fun getConfig(userId: String): RaviloConfig =
-        httpClient.get("/api/tv/admin/config?userId=$userId").body()
+        httpClient.get("/api/tv/admin/config?userId=$userId").body<AdminConfigResponse>().config
+
+    suspend fun getConfigWithMeta(scope: String? = null, userId: String? = null): AdminConfigResponse {
+        val q = when {
+            scope == "global" -> "?scope=global"
+            userId != null -> "?userId=$userId"
+            else -> ""
+        }
+        return httpClient.get("/api/tv/admin/config$q").body()
+    }
+
+    suspend fun removeUserConfig(userId: String) {
+        val r = httpClient.delete("/api/tv/admin/config?userId=$userId")
+        if (!r.status.isSuccess()) throw Exception(r.body<String>())
+    }
 
     /** R50 — available chart lists for the Top 10 editor (Phase 57). */
     suspend fun getDiscoverLists(region: String): List<ChartListSpec> =
@@ -38,6 +61,14 @@ object RaviloApi {
 
     suspend fun putConfig(userId: String, config: RaviloConfig) {
         val r = httpClient.put("/api/tv/admin/config?userId=$userId") {
+            contentType(ContentType.Application.Json)
+            setBody(config)
+        }
+        if (!r.status.isSuccess()) throw Exception(r.body<String>())
+    }
+
+    suspend fun putGlobalConfig(config: RaviloConfig) {
+        val r = httpClient.put("/api/tv/admin/config?scope=global") {
             contentType(ContentType.Application.Json)
             setBody(config)
         }

@@ -42,6 +42,20 @@ class TvEventBus(private val scope: CoroutineScope) {
     }
 
     /**
+     * R51 — a global config write reaches all connected devices that are on the global layout
+     * (i.e. don't have their own per-user config record). We broadcast to every session here;
+     * clients that have a per-user override will re-pull and ignore the global change at the server side.
+     */
+    fun notifyGlobalConfigChanged() {
+        scope.launch {
+            val (r, targets) = mutex.withLock { (++rev) to sessions.values.flatten() }
+            if (targets.isEmpty()) return@launch
+            val msg = """{"type":"config_changed","rev":$r}"""
+            for (s in targets) runCatching { s.send(Frame.Text(msg)) }
+        }
+    }
+
+    /**
      * Phase 56 — push an acquisition status change to **all** connected devices (acquisition is global,
      * not per-user). Unlike config_changed this is **payload-bearing** (the record inline) so the TV
      * patches the matching tile in place without a re-pull. Non-blocking.
