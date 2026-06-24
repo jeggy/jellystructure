@@ -73,7 +73,26 @@ overlapped the language chips. Unified them into **one single-select filter** on
 `artPrefer` sort; default ladder resolves resolved-lang → textless → All. `design/app/media.html` mockup
 synced to the same model.
 
-Two new admin phases planned (2026-06-24):
+Five new admin phases + one Ravilo phase planned (2026-06-24):
+
+- **[Phase 61](requirements/phase-61-cmdpalette-media-search.md) — ⌘K media search**
+  (FR-KM1). The palette only searches 9 hardcoded nav commands. Backend
+  `GET /api/media?search=` is fully implemented; `MediaApi.list(search=...)` is wired.
+  Add async media results below commands when query ≥ 2 chars (up to 6 items), adopt
+  the existing unused `.cmdp-item` CSS classes, extend keyboard nav to cover both
+  sections.
+- **[Phase 62](requirements/phase-62-activity-log-timestamps.md) — Activity log
+  stored timestamps** (FR-AT1). `appendLogEntry()` always calls `currentTimeString()`
+  (browser clock), discarding `entry.ts`. Fix: add `ts: Long?` param; format stored
+  epoch-seconds for historical entries; keep current-time for live WS events.
+- **[Phase 63](requirements/phase-63-ravilo-config-no-default-user.md) — Ravilo config
+  no default user** (FR-RC1). Config editor auto-selects `users.first()` and renders all
+  sections immediately. Remove auto-select; show "select a user" empty state until
+  the picker is used; dropdown starts on a disabled placeholder option.
+- **Ravilo R56** — Hero carousel focus border removed. See [ravilo/STATUS.md](ravilo/STATUS.md).
+
+Two earlier admin phases (already committed):
+
 
 - **[Phase 59](requirements/phase-59-restore-pagebar-menu-css.md) — Restore pagebar menu
   CSS** (FR-MB1). The CSS for `.menu-wrap`/`.split`/`.menu`/`.menu-item` etc. was
