@@ -152,6 +152,8 @@ data class Channel(
     @SerialName("logo_url") val logoUrl: String?,
     val style: ChannelStyle,
     @SerialName("brand_color") val brandColor: String?,
+    @SerialName("padding_logo") val paddingLogo: ChannelButtonPadding? = null,
+    @SerialName("padding_text") val paddingText: ChannelButtonPadding? = null,
 )
 
 @Serializable
