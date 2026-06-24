@@ -24,6 +24,7 @@
   .seg-pill { display: inline-flex; gap: 3px; padding: 3px; border-radius: 9px; background: var(--fill-3); border: 1px solid var(--line); }
   .seg-pill button { border: none; background: transparent; color: var(--ink-soft); font-family: 'Sora',sans-serif; font-size: .82rem; font-weight: 600; padding: 6px 12px; border-radius: 7px; cursor: pointer; }
   .seg-pill button.on { background: var(--hi-soft); color: var(--acc-ink); box-shadow: inset 0 0 0 1px rgba(123,110,240,.3); }
+  .scope-dim { opacity: .4; pointer-events: none; filter: saturate(.55); transition: opacity .2s ease; }
 </style>
 </head>
 <body class="wf-body app-body">
@@ -39,11 +40,22 @@
   </div>
   <p class="page-sub">Lay out the Ravilo home screen your viewers see on their TVs. Ravilo connects only to Jellystructure — it authenticates against Jellyfin through us and pulls all media from Jellyfin, but browsing, search and this layout are served by the Jellystructure API.</p>
 
-  <!-- per-user sync banner -->
-  <div class="note blue" style="margin-bottom:18px;display:flex;gap:12px;align-items:center;">
-    <span class="badge info" style="flex:none;">per Jellyfin user</span>
-    <div class="tiny" style="flex:1;">This layout is stored against the selected Jellyfin user, so every TV they sign into shows the same thing. Changes here sync to all their devices instantly.</div>
-    <span class="select" style="width:auto;min-width:170px;"><span>Editing: Eyð Restorff</span></span>
+  <!-- scope switcher: global by default, optional per-user override -->
+  <div class="card" id="scope-bar" style="margin-bottom:18px;padding:14px 16px;position:relative;">
+    <div class="row center" style="gap:14px;flex-wrap:wrap;">
+      <span class="cf-eyebrow" style="flex:none;">Editing</span>
+      <span class="seg-pill" id="scope-seg">
+        <button class="on" data-scope="global">Global · all users</button>
+        <button data-scope="user">A specific user</button>
+      </span>
+      <span class="select" id="scope-user-sel" style="display:none;width:auto;min-width:210px;cursor:pointer;"><span id="scope-user-label">Eyð Restorff</span> <span class="muted" style="font-size:.7rem;">▾</span></span>
+      <span class="spacer"></span>
+      <span class="badge ok" id="scope-badge">applies to everyone</span>
+    </div>
+    <div id="scope-user-menu" class="card" style="display:none;position:absolute;z-index:30;min-width:260px;padding:6px;box-shadow:var(--shadow);margin-top:6px;"></div>
+    <div id="scope-note" class="note blue" style="margin-top:12px;display:flex;gap:10px;align-items:center;">
+      <span class="tiny" style="flex:1;" id="scope-note-text">These settings are the <b>global layout</b> — every Jellyfin user who doesn’t have their own custom layout sees this.</span>
+    </div>
   </div>
 
   <div class="row" style="align-items:flex-start;">
@@ -54,11 +66,18 @@
       <div class="navitem" data-goto="sect-rows">Content rows</div>
       <div class="navitem" data-goto="sect-top10">Top 10</div>
       <div class="navitem" data-goto="sect-behaviour">Behaviour</div>
-    </div>    <div class="col fill">
+    </div>    <div class="col fill" id="config-col">
+      <!-- lock prompt: shown when a user without a custom layout is selected -->
+      <div class="card" id="scope-lock" style="display:none;margin-bottom:14px;border-color:var(--hi);background:var(--hi-soft);">
+        <div class="row center" style="gap:12px;">
+          <div style="flex:1;"><b id="scope-lock-title">This user uses the global layout</b><div class="tiny muted" id="scope-lock-sub">Create a custom layout to give them a different Ravilo home. It fully replaces the global one for this user — nothing is inherited.</div></div>
+          <span class="btn primary" id="scope-create">Create custom layout</span>
+        </div>
+      </div>
       <!-- HERO -->
       <div class="card set-section" id="sect-hero">
-        <div class="row center"><h3 style="font-size:1.05rem;margin:0;">Hero carousel</h3><span class="badge info" style="margin-left:8px;">1–10 items</span><span class="spacer"></span><span class="btn sm ghost">＋ Add featured</span></div>
-        <p class="tiny muted" style="margin:6px 0 14px;">The top banner. Drag to reorder; the carousel auto-advances on the TV. These are pulled from your Jellyfin library by title.</p>
+        <div class="row center"><h3 style="font-size:1.05rem;margin:0;">Home hero carousel</h3><span class="badge info" style="margin-left:8px;">1–10 items</span><span class="spacer"></span><span class="btn sm ghost">＋ Add hero item</span></div>
+        <p class="tiny muted" style="margin:6px 0 14px;">The top banner on the <b>Home</b> page. Drag to reorder; the carousel auto-advances on the TV. These are pulled from your Jellyfin library by title. <b>Each channel can have its own hero too</b> — set it in the channel’s editor.</p>
 
         <div id="herolist">
           <div class="cfg-row"><span class="grab">⠿</span><div class="hero-thumb" style="background:linear-gradient(145deg,hsl(265 48% 36%),hsl(310 52% 14%));"><span class="t">Nordvest</span></div><div style="flex:1;"><div class="nm">Nordvest <span class="badge" style="font-size:.6rem;">New Season</span></div><div class="src">Series · Kringvarp · 2023</div></div><span class="muted tiny">show</span><span class="toggle on"></span><span class="btn sm ghost rm">✕</span></div>
@@ -71,8 +90,8 @@
         <div class="row center" style="gap:18px;flex-wrap:wrap;">
           <div class="field" style="margin:0;flex:1;min-width:240px;">
             <label>Hero height <span class="mono" id="hero-h-val">56%</span> of screen</label>
-            <input type="range" min="30" max="100" value="56" id="hero-h" style="width:100%;accent-color:var(--hi);">
-            <span class="hint">How much of the TV screen the banner fills (30–100%).</span>
+            <input type="range" min="40" max="100" value="56" id="hero-h" style="width:100%;accent-color:var(--hi);">
+            <span class="hint">How much of the TV screen the banner fills (40–100%).</span>
           </div>
           <div class="field" style="margin:0;width:200px;"><label>Auto-advance</label><span class="select"><span>Every 7 seconds</span></span></div>
         </div>
@@ -81,7 +100,7 @@
       <!-- STUDIOS / CHANNELS -->
       <div class="card set-section" id="sect-studios">
         <div class="row center"><h3 style="font-size:1.05rem;margin:0;">Channels &amp; collections</h3><span class="spacer"></span><span class="btn sm ghost">＋ Add channel</span></div>
-        <p class="tiny muted" style="margin:6px 0 14px;">The Disney+-style logo row under the hero. Each opens a view with the <b>same content rows below</b>, filtered to that channel. Map each to a Jellyfin studio, network, genre or tag. <b>Click a channel to edit it.</b></p>
+        <p class="tiny muted" style="margin:6px 0 14px;">The Disney+-style logo row under the hero. Each opens a view with the <b>same content rows below</b>, filtered to that channel. Map each to a Jellyfin studio, network, genre or tag. Optionally give a channel its <b>own hero carousel</b>. <b>Click a channel to edit it.</b></p>
 
         <div id="studiolist">
           <div class="cfg-row"><span class="grab">⠿</span><div class="studio-wm" style="background:linear-gradient(135deg,#3b2a78,#15102e);">HBO</div><div style="flex:1;"><div class="nm">HBO</div><div class="src">filter: network = “HBO”</div></div><span class="toggle on"></span><span class="btn sm ghost rm">✕</span></div>
@@ -174,6 +193,7 @@
       <div class="tiny muted center-x" style="margin-top:10px;">Reflects this user's layout</div>
     </div>
   </div>
+  <div id="cf-screen-root"></div>
 </main>
 
 <div id="cf-modal-root"></div>
@@ -249,6 +269,80 @@
     langMenu.style.display = 'none';
   });
   document.addEventListener('click', e => { if (!e.target.closest('#sect-behaviour .field')) langMenu.style.display = 'none'; });
+
+  /* ---- scope switcher: global default + optional per-user FULL override ---- */
+  (function scopeCtl(){
+    const toast = (m) => (window.__toast ? window.__toast(m) : 0);
+    const USERS = [
+      { id:'eyd',    name:'Eyð Restorff',  custom:true  },
+      { id:'olivar', name:'Olivar Hansen', custom:false },
+      { id:'marjun', name:'Marjun í Dali', custom:false },
+      { id:'kids',   name:'Kids',          custom:true  },
+    ];
+    let scope = 'global';            // 'global' | 'user'
+    let userId = USERS[0].id;
+    const seg       = document.getElementById('scope-seg');
+    const userSel   = document.getElementById('scope-user-sel');
+    const userLabel = document.getElementById('scope-user-label');
+    const userMenu  = document.getElementById('scope-user-menu');
+    const badge     = document.getElementById('scope-badge');
+    const noteBox   = document.getElementById('scope-note');
+    const noteText  = document.getElementById('scope-note-text');
+    const lock      = document.getElementById('scope-lock');
+    const lockTitle = document.getElementById('scope-lock-title');
+    const lockSub   = document.getElementById('scope-lock-sub');
+    const createBtn = document.getElementById('scope-create');
+    const sections  = document.querySelectorAll('#config-col .set-section');
+    const langBadge = document.querySelector('#sect-behaviour .field label .badge');
+    const curUser = () => USERS.find(u => u.id === userId);
+
+    function render(){
+      const onUser = scope === 'user';
+      userSel.style.display = onUser ? '' : 'none';
+      seg.querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.scope === scope));
+      const u = curUser();
+      if (onUser) userLabel.textContent = u.name;
+
+      const locked = onUser && !u.custom;     // user has no custom layout yet → sections locked
+      sections.forEach(s => s.classList.toggle('scope-dim', locked));
+      lock.style.display = locked ? '' : 'none';
+      if (locked) {
+        lockTitle.textContent = u.name + ' uses the global layout';
+        lockSub.textContent = 'Create a custom layout to give ' + u.name + ' a different Ravilo home. It fully replaces the global one for them — nothing is inherited.';
+      }
+
+      const rmOld = noteBox.querySelector('#scope-remove'); if (rmOld) rmOld.remove();
+      if (!onUser) {
+        badge.className = 'badge ok'; badge.textContent = 'applies to everyone';
+        noteBox.className = 'note blue'; noteBox.style.cssText = 'margin-top:12px;display:flex;gap:10px;align-items:center;';
+        noteText.innerHTML = 'These settings are the <b>global layout</b> — every Jellyfin user who doesn’t have their own custom layout sees this.';
+      } else if (u.custom) {
+        badge.className = 'badge warn'; badge.textContent = 'custom layout';
+        noteBox.className = 'note'; noteBox.style.cssText = 'margin-top:12px;display:flex;gap:10px;align-items:center;border-color:rgba(245,181,66,.4);background:var(--warn-soft);';
+        noteText.innerHTML = '<b>' + u.name + '</b> has a <b>custom layout</b> that fully replaces the global one — global changes won’t reach them.';
+        const rm = document.createElement('span'); rm.id = 'scope-remove'; rm.className = 'btn sm ghost'; rm.style.flex = 'none'; rm.textContent = 'Remove custom layout';
+        rm.onclick = () => { u.custom = false; render(); toast(u.name + ' reset to the global layout'); };
+        noteBox.appendChild(rm);
+      } else {
+        badge.className = 'badge'; badge.textContent = 'using global';
+        noteBox.className = 'note blue'; noteBox.style.cssText = 'margin-top:12px;display:flex;gap:10px;align-items:center;';
+        noteText.innerHTML = '<b>' + u.name + '</b> currently uses the <b>global layout</b>. Create a custom one to override it just for them.';
+      }
+      if (langBadge) langBadge.textContent = onUser ? 'this user' : 'all users';
+    }
+
+    seg.querySelectorAll('button').forEach(b => b.onclick = () => { scope = b.dataset.scope; render(); });
+    userSel.onclick = e => { e.stopPropagation();
+      if (userMenu.style.display === 'block') { userMenu.style.display = 'none'; return; }
+      userMenu.innerHTML = USERS.map(u => '<div class="navitem" data-uid="' + u.id + '"><div style="display:flex;align-items:center;gap:10px;"><span style="flex:1;">' + u.name + '</span>' + (u.custom ? '<span class="badge warn" style="font-size:.58rem;">custom</span>' : '<span class="badge" style="font-size:.58rem;">global</span>') + '</div></div>').join('');
+      userMenu.style.display = 'block';
+    };
+    userMenu.onclick = e => { const it = e.target.closest('[data-uid]'); if (!it) return; userId = it.dataset.uid; userMenu.style.display = 'none'; render(); };
+    document.addEventListener('click', e => { if (!e.target.closest('#scope-user-sel') && !e.target.closest('#scope-user-menu')) userMenu.style.display = 'none'; });
+    createBtn.onclick = () => { const u = curUser(); u.custom = true; render(); toast('Created a custom layout for ' + u.name); };
+
+    render();
+  })();
 })();
 </script>
 </body>

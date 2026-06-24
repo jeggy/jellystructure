@@ -6,6 +6,16 @@
   -webkit-backdrop-filter: blur(5px); backdrop-filter: blur(5px); display: flex; align-items: center; justify-content: center; padding: 30px; }
 .cf-modal { width: 100%; max-height: calc(100vh - 60px); overflow: auto; background: var(--fill);
   border: 1px solid var(--line-2); border-radius: var(--radius); box-shadow: 0 40px 100px rgba(0,0,0,.6); }
+
+/* channel editor as its own in-app page (sidebar stays; config layout is hidden) */
+#cf-screen-root { display: none; }
+body.cf-screen-on #cf-screen-root { display: block; }
+body.cf-screen-on .app-main2 > :not(#cf-screen-root) { display: none; }
+.cf-modal.cf-screen { max-width: none; width: 100%; max-height: none; overflow: visible; margin: 0; box-shadow: none; }
+.cf-screen-head { display: flex; align-items: center; gap: 14px; padding: 14px 18px; border-bottom: 1px solid var(--line);
+  background: var(--fill-2); position: sticky; top: 0; z-index: 3; border-radius: var(--radius) var(--radius) 0 0; }
+.cf-back { cursor: pointer; color: var(--acc-ink); font-weight: 600; font-size: .9rem; }
+.cf-back:hover { text-decoration: underline; }
 .cf-modal-head { display: flex; align-items: center; gap: 10px; padding: 14px 16px; border-bottom: 1px solid var(--line);
   background: var(--fill-2); position: sticky; top: 0; z-index: 2; }
 .cf-grab { color: var(--ink-dim); letter-spacing: -2px; font-size: 1rem; cursor: grab; }
@@ -84,6 +94,35 @@
 .cf-logoupload:hover { color: var(--ink); }
 /* logo image inside the channel chip / preview */
 .studio-wm .cf-wm-img { max-width: 84%; max-height: 68%; object-fit: contain; }
+
+/* per-display padding controls (logo image / text) */
+.cf-padgrid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; max-width: 320px; }
+.cf-padfield { display: flex; flex-direction: column; gap: 4px; }
+.cf-padfield span { font-size: .68rem; }
+.cf-padfield input.cf-pad { width: 100%; padding: 6px 8px; text-align: center; }
+
+/* collapsible padding panel: small icon toggle → reveals the grid */
+.cf-padwrap { margin-top: 14px; }
+.cf-padtoggle { display: inline-flex; align-items: center; gap: 7px; padding: 5px 10px; border: 1px solid var(--line-2);
+  border-radius: 8px; background: var(--fill-2); color: var(--ink-soft); cursor: pointer; font: inherit; font-size: .76rem;
+  transition: background .15s ease, color .15s ease, border-color .15s ease; }
+.cf-padtoggle:hover { color: var(--ink); border-color: var(--hi); }
+.cf-padwrap.open .cf-padtoggle { color: var(--ink); border-color: var(--hi); }
+.cf-padtoggle svg { flex: none; }
+.cf-padsum { font-family: 'JetBrains Mono', monospace; font-size: .68rem; color: var(--acc-ink);
+  background: var(--hi-soft); border-radius: 5px; padding: 1px 6px; }
+.cf-padcaret { font-size: .7rem; transition: transform .15s ease; }
+.cf-padwrap.open .cf-padcaret { transform: rotate(180deg); }
+.cf-padbody { display: none; }
+.cf-padwrap.open .cf-padbody { display: block; }
+
+/* channel page-hero editor */
+.cf-herobox { margin-top: 12px; padding: 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--fill-2); }
+.cf-herolist { display: flex; flex-direction: column; gap: 6px; }
+.cf-heroitem { display: flex; align-items: center; gap: 10px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--fill-3); font-size: .82rem; }
+.cf-heromini { width: 30px; height: 18px; border-radius: 4px; flex: none; }
+.cf-herorm { border: none; background: transparent; color: var(--ink-dim); cursor: pointer; font-size: .8rem; padding: 2px 4px; line-height: 1; }
+.cf-herorm:hover { color: var(--bad); }
 
 /* custom color / gradient builder */
 .cf-sw-custom { display: flex; align-items: center; justify-content: center; color: var(--ink-soft);
