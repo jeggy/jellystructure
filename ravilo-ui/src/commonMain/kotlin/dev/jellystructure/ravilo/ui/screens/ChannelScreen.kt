@@ -16,6 +16,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -29,6 +30,7 @@ import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.jellystructure.ravilo.ui.LocalServerBaseUrl
+import dev.jellystructure.ravilo.ui.components.ChannelBar
 import dev.jellystructure.ravilo.ui.components.HeroCarousel
 import dev.jellystructure.ravilo.ui.components.StaticContentRow
 import dev.jellystructure.ravilo.ui.components.Tile
@@ -107,8 +109,16 @@ fun ChannelScreen(
 
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
-    val heroFR     = remember { FocusRequester() }
-    val firstTileFR = remember { FocusRequester() }
+    val channelBarFR = remember { FocusRequester() }
+    val heroFR       = remember { FocusRequester() }
+    val firstTileFR  = remember { FocusRequester() }
+    val barScrolled by remember { derivedStateOf {
+        listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 0
+    } }
+
+    // Give the bar initial focus so Back works even during the loading state;
+    // LaunchedEffect(hasHero) in the Loaded branch will re-route to hero/content.
+    LaunchedEffect(Unit) { runCatching { channelBarFR.requestFocus() } }
 
     Box(
         modifier = Modifier
@@ -119,7 +129,9 @@ fun ChannelScreen(
                 onBackToTop = {
                     scope.launch {
                         runCatching { listState.animateScrollToItem(0) }
+                        // heroFR throws if not attached (no hero configured) — fall back to bar
                         runCatching { heroFR.requestFocus() }
+                            .onFailure { runCatching { channelBarFR.requestFocus() } }
                     }
                 },
             ),
@@ -144,7 +156,7 @@ fun ChannelScreen(
                     else 460.dp
 
                     LaunchedEffect(hasHero) {
-                        runCatching { if (hasHero) heroFR.requestFocus() else firstTileFR.requestFocus() }
+                        runCatching { if (hasHero) heroFR.requestFocus() else channelBarFR.requestFocus() }
                     }
 
                     @Suppress("OPT_IN_USAGE")
@@ -154,24 +166,11 @@ fun ChannelScreen(
                         LazyColumn(
                             state = listState,
                             modifier = Modifier.fillMaxSize().focusRequester(firstTileFR),
-                            contentPadding = PaddingValues(bottom = 40.dp),
+                            contentPadding = PaddingValues(
+                                top = if (hasHero) 0.dp else 60.dp, // leave room for bar when no hero
+                                bottom = 40.dp,
+                            ),
                         ) {
-                            // Channel header
-                            item(key = "header") {
-                                Spacer(Modifier.height(if (hasHero) 0.dp else 24.dp))
-                                if (!hasHero) {
-                                    androidx.compose.foundation.layout.Column(
-                                        modifier = Modifier.padding(horizontal = 40.dp, vertical = 0.dp)
-                                    ) {
-                                        Text("‹ ${str("nav.home")}", color = colors.textSecondary, fontSize = 13.sp)
-                                        Spacer(Modifier.height(8.dp))
-                                        Text(channel.name, color = colors.text, fontSize = 32.sp,
-                                            fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
-                                        Spacer(Modifier.height(16.dp))
-                                    }
-                                }
-                            }
-
                             // Hero carousel (R52: per-channel page hero)
                             if (hasHero) {
                                 item(key = "hero") {
@@ -184,6 +183,7 @@ fun ChannelScreen(
                                             heightDp = heroHeight,
                                             autoAdvanceSeconds = s.feed.autoAdvanceSeconds,
                                             onOpenDetail = { onItemSelect(it) },
+                                            onUp = { runCatching { channelBarFR.requestFocus() } },
                                         )
                                     }
                                 }
@@ -214,7 +214,29 @@ fun ChannelScreen(
                         }
                     }
                 }
+
+                // ChannelBar — always-composed overlay (even during Loading/Error so back works)
+                ChannelBar(
+                    channelName = channel.name,
+                    navFR = channelBarFR,
+                    onBack = onBack,
+                    onDown = {
+                        runCatching { if (hasHero) heroFR.requestFocus() else firstTileFR.requestFocus() }
+                    },
+                    scrolled = barScrolled,
+                )
             }
+        }
+
+        // ChannelBar during Loading / Error states — allow back navigation
+        if (storeState !is HomeState.Loaded) {
+            ChannelBar(
+                channelName = channel.name,
+                navFR = channelBarFR,
+                onBack = onBack,
+                onDown = {},
+                scrolled = false,
+            )
         }
     }
 }

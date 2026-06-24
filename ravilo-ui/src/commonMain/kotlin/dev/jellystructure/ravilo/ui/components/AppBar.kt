@@ -201,6 +201,106 @@ fun AppBar(
     }
 }
 
+/**
+ * Lightweight bar for channel/collection pages: back button + channel name + clock.
+ * Mirrors AppBar's layout height, gradient, and scrolled-solid behaviour so pages feel consistent.
+ *
+ * [navFR] is the entry-point requester — route D-pad UP from the hero/content here.
+ * [onBack] is called when the back button is selected.
+ * [onDown] bridges focus back into the page content.
+ */
+@Composable
+fun ChannelBar(
+    channelName: String,
+    navFR: FocusRequester,
+    onBack: () -> Unit,
+    onDown: () -> Unit,
+    scrolled: Boolean = false,
+    modifier: Modifier = Modifier,
+) {
+    val colors = RaviloTheme.colors
+    val sora = Sora
+    val spaceGrotesk = SpaceGrotesk
+
+    val barGradient = remember {
+        Brush.verticalGradient(
+            0f to Color(0x8C000000),
+            1f to Color.Transparent,
+        )
+    }
+    val solidBg by animateColorAsState(
+        targetValue = if (scrolled) colors.surface.copy(alpha = 0.95f) else Color.Transparent,
+        animationSpec = tween(180),
+        label = "channelBarBg",
+    )
+
+    var backFocused by remember { mutableStateOf(false) }
+    val backBg by animateColorAsState(
+        targetValue = if (backFocused) colors.text else Color.Transparent,
+        animationSpec = tween(120),
+        label = "backBg",
+    )
+    val backTextColor by animateColorAsState(
+        targetValue = if (backFocused) colors.background else colors.textSecondary,
+        animationSpec = tween(120),
+        label = "backText",
+    )
+
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(60.dp)
+            .background(solidBg)
+            .background(barGradient),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = RaviloDimens.screenPadH)
+                .matchParentSize(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(18.dp),
+        ) {
+            // Back button — "‹ Home"
+            Text(
+                text = "‹ ${str("nav.home")}",
+                color = backTextColor,
+                fontSize = 15.sp,
+                fontWeight = if (backFocused) FontWeight.SemiBold else FontWeight.Normal,
+                fontFamily = sora,
+                modifier = Modifier
+                    .onFocusChanged { state ->
+                        backFocused = state.isFocused
+                    }
+                    .background(backBg, RoundedCornerShape(11.dp))
+                    .padding(horizontal = 12.dp, vertical = 6.dp)
+                    .dpadFocusable(
+                        focusRequester = navFR,
+                        onFocused = { backFocused = true },
+                        onBlurred = { backFocused = false },
+                        onDown    = onDown,
+                        onSelect  = onBack,
+                    ),
+            )
+
+            // Channel name — not focusable, just a label
+            Text(
+                text = channelName,
+                color = colors.text,
+                fontSize = 18.sp,
+                fontWeight = FontWeight.Bold,
+                fontFamily = spaceGrotesk,
+                letterSpacing = (-0.3).sp,
+                maxLines = 1,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+            )
+
+            Box(modifier = Modifier.weight(1f))
+            ClockDisplay()
+        }
+    }
+}
+
 @Composable
 private fun ProfileAvatar(
     initials: String,
