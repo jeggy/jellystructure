@@ -1,6 +1,6 @@
 # R56 — Ravilo TV: remove focus border from hero carousel (FR-RHB1)
 
-**Status:** Planned
+**Status:** ✅ Done
 
 **Depends on:** R53 (button-less hero — added the inset ring this phase removes)
 

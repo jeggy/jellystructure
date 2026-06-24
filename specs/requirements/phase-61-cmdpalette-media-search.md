@@ -1,6 +1,6 @@
 # Phase 61 — ⌘K command palette: media search results (FR-KM1)
 
-**Status:** Planned
+**Status:** ✅ Done
 
 ## Goal
 
