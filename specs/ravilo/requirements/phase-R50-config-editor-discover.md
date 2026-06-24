@@ -20,10 +20,9 @@ Placed in the config screen nav after **Content rows**, before **Behaviour**.
 - **"Allow this user to request downloads" toggle** → writes `discover.canRequest` (Phase 56
   permission). Off = the user browses charts and sees statuses but the Request button is disabled
   (admins can always request regardless). Hidden/forced-on for admin users.
-- **Gating note + link:** the tab also requires the \*arr that serves the user's **selected** lists to be
-  connected (R48 gating: Radarr for movie lists, Sonarr for TV lists — a TV-only selection needs only
-  Sonarr). Link to `Settings → Download tools` (Phase 54/55); if a required \*arr is not enabled globally,
-  show an inline warning **naming which one** (Radarr/Sonarr) so the tab won't silently fail to appear.
+- **Gating note + link:** the tab also requires Radarr connected — link to
+  `Settings → Download tools` (Phase 54/55). If Radarr is not enabled globally, show an inline warning
+  that the tab won't appear regardless of this toggle.
 - **Source** selector → `discover.source` (Netflix · via Tudum active; Disney+/Max shown "soon",
   disabled, matching the Phase 57 provider registry).
 - **Country** selector → `discover.region` (drives which country charts exist).
