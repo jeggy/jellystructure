@@ -241,9 +241,10 @@ private fun HomeLoaded(
             .joinToString("") { it.first().uppercase() }
     }
     val navItems = buildList {
-        // R52: Search left the nav (now the right-cluster icon). Home·Movies·Series·My List (+ Top 10).
-        add(str("nav.home")); add(str("nav.movies")); add(str("nav.series")); add(str("nav.my_list"))
-        if (discoverAvailable) add("Top 10") // R49 — gated tab
+        // R52: Search left the nav (now the right-cluster icon). Home·Movies·Series·Top 10·My List.
+        add(str("nav.home")); add(str("nav.movies")); add(str("nav.series"))
+        if (discoverAvailable) add("Top 10") // R49 — gated tab (index 3); My List shifts to 4
+        add(str("nav.my_list"))
     }
     val appBarScrolled by remember { derivedStateOf {
         listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 0
