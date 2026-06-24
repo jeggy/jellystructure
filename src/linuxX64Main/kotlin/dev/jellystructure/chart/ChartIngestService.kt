@@ -67,12 +67,13 @@ class ChartIngestService(
 
         var year: Int? = null
         var backdrop: String? = null
+        var poster: String? = null
         var overview: String? = null
         if (tmdbId != null) {
             if (kind == MediaKind.MOVIE) {
-                tmdb.getMovieDetails(tmdbId)?.let { year = it.releaseDate.take(4).toIntOrNull(); backdrop = it.backdropPath; overview = it.overview }
+                tmdb.getMovieDetails(tmdbId)?.let { year = it.releaseDate.take(4).toIntOrNull(); backdrop = it.backdropPath; poster = it.posterPath; overview = it.overview }
             } else {
-                tmdb.getTvDetails(tmdbId)?.let { year = it.firstAirDate.take(4).toIntOrNull(); backdrop = it.backdropPath; overview = it.overview }
+                tmdb.getTvDetails(tmdbId)?.let { year = it.firstAirDate.take(4).toIntOrNull(); backdrop = it.backdropPath; poster = it.posterPath; overview = it.overview }
             }
         }
 
@@ -99,6 +100,7 @@ class ChartIngestService(
             isNew = raw.isNew,
             views = raw.views,
             backdropPath = backdrop,
+            posterPath = poster,
             overview = overview,
         )
     }
