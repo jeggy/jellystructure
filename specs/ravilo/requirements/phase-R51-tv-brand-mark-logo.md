@@ -1,6 +1,8 @@
 # R51 — Ravilo TV: brand-mark logo in the app bar (FR-RB1)
 
-**Status:** Planned
+**Status:** ✅ Done — new `components/BrandMark.kt` vector-draws the jellyfish mark (dome + 4 tentacles,
+from `ravilo-mark.svg`) tinted with the skin's `accentGradient`; `AppBar` now shows the mark + an **ink**
+wordmark (was accent-purple text).
 **Depends on:** R09 (design system), R23/R37 (brand mark + fonts)
 
 ## Goal

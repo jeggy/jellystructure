@@ -14,9 +14,9 @@ _Last updated: 2026-06-23_
 
 **TV app-bar + hero polish + focus/back UX (2026-06-24).** Five Ravilo phases from a TV-UI review;
 **R54–R55 built, R51–R53 still spec-only (not yet built):**
-- **[R51](requirements/phase-R51-tv-brand-mark-logo.md)** (FR-RB1) — ○ planned — replace the plain
-  accent "Ravilo" text with the brand lockup: gradient jellyfish **mark** (skin-tinted via
-  `accentGradient`, from `assets/brand/ravilo-mark.svg`) + **ink** wordmark.
+- **[R51](requirements/phase-R51-tv-brand-mark-logo.md)** (FR-RB1) — ✅ done — `components/BrandMark.kt`
+  vector-draws the jellyfish **mark** (skin-tinted via `accentGradient`, from `ravilo-mark.svg`); the app
+  bar shows the mark + an **ink** wordmark.
 - **[R52](requirements/phase-R52-tv-compact-appbar.md)** (FR-RN1) — ○ planned — compact the app bar so
   all 5 tabs fit; move **Search** from a nav tab to a right-side **icon** (beside clock + avatar);
   smaller nav text/padding/gap + focus-chain update. Touches `AppBar` + every screen's
