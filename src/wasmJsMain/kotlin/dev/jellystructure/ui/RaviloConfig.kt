@@ -401,6 +401,42 @@ private fun heroGradient(id: String): String {
     return "linear-gradient(145deg,hsl($hue 48% 36%),hsl(${(hue + 45) % 360} 52% 14%))"
 }
 
+/** Resolve display hints for any hero items that predate the display-hint fields. One-shot. */
+private var heroHintsResolving = false
+private fun resolveHeroDisplayHints(container: Element) {
+    if (heroHintsResolving) return
+    if (currentConfig.heroes.none { it.displayTitle == null && it.itemId.isNotBlank() }) return
+    val scope = rcScope ?: return
+    heroHintsResolving = true
+    scope.launch {
+        try {
+            val all = mutableListOf<MediaItem>()
+            var page = 1
+            while (true) {
+                val result = MediaApi.list(pageSize = 100, page = page) ?: break
+                all.addAll(result.items)
+                if (all.size >= result.total || result.items.isEmpty()) break
+                page++
+            }
+            val byJfId = all.associateBy { it.jellyfinId ?: "" }.filterKeys { it.isNotBlank() }
+            val byId = all.associateBy { it.id }
+            val updated = currentConfig.heroes.map { h ->
+                if (h.displayTitle != null || h.itemId.isBlank()) return@map h
+                val item = byJfId[h.itemId] ?: byId[h.itemId] ?: return@map h
+                val kindStr = if (item.kind.name == "TV_SHOW") "Series" else "Film"
+                val meta = listOfNotNull(kindStr, item.network ?: item.studio, item.year?.toString()).joinToString(" · ")
+                h.copy(displayTitle = item.title, displayMeta = meta, displayBackdrop = item.backdropPath)
+            }
+            if (updated != currentConfig.heroes) {
+                currentConfig = currentConfig.copy(heroes = updated)
+                renderHeroes(container)
+            }
+        } finally {
+            heroHintsResolving = false
+        }
+    }
+}
+
 private fun renderHeroes(container: Element) {
     val sect = container.querySelector("#sect-heroes") ?: return
     val last = currentConfig.heroes.lastIndex
@@ -503,6 +539,8 @@ private fun renderHeroes(container: Element) {
             openHeroEditModal(container, i)
         }
     }
+    // Backfill display hints for heroes configured before hint fields were added.
+    resolveHeroDisplayHints(container)
 }
 
 private fun openHeroAddPicker(container: Element) {
