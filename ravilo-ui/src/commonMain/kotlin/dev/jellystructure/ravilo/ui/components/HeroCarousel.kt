@@ -20,13 +20,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -82,7 +80,6 @@ fun HeroCarousel(
 
     var activeIndex by remember { mutableIntStateOf(0) }
     var resetTick   by remember { mutableIntStateOf(0) }
-    var focused     by remember { mutableStateOf(false) }
 
     if (items.isEmpty()) return
     // The heroes list can change size under us (R33 live config push). Never index past its end —
@@ -109,8 +106,6 @@ fun HeroCarousel(
             // native focus search drops into the channel rail / first content row.
             .dpadFocusable(
                 focusRequester = focusRequester,
-                onFocused = { focused = true },
-                onBlurred = { focused = false },
                 onLeft  = { activeIndex = (activeIndex - 1 + items.size) % items.size; resetTick++ },
                 onRight = { activeIndex = (activeIndex + 1) % items.size; resetTick++ },
                 onUp    = onUp,
@@ -231,15 +226,5 @@ fun HeroCarousel(
             }
         }
 
-        // R53: subtle focus indication for the full-bleed hero — an inset ring, no scale (so no
-        // viewport jump), keeping exactly one visible focus target.
-        if (focused) {
-            Box(
-                modifier = Modifier
-                    .matchParentSize()
-                    .padding(6.dp)
-                    .border(3.dp, colors.focusRing, RoundedCornerShape(14.dp)),
-            )
-        }
     }
 }
