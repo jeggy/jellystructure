@@ -311,7 +311,8 @@ fun Route.tvRoutes(
         val cfg = configStore.current
         val specs = chartRegistry?.get(d.source)?.availableLists(d.region).orEmpty()
         val acqEnabled = cfg.acquisition?.enabled == true
-        val available = d.enabled && d.lists.isNotEmpty() && acqEnabled && d.lists.any { servable(it, cfg) }
+        // Tab shows when *arr is connected; acquisition engine only gates the request button, not browsing.
+        val available = d.enabled && d.lists.isNotEmpty() && d.lists.any { servable(it, cfg) }
         if (!available) {
             call.respond(DiscoverResponse(false, d.source, d.region, false)); return@get
         }
@@ -320,7 +321,7 @@ fun Route.tvRoutes(
             val entries = (chartStore?.entries(listId).orEmpty()).map { DiscoverEntry(it, acquisitionFor(it, acquisitionService)) }
             DiscoverRow(spec, entries)
         }
-        call.respond(DiscoverResponse(true, d.source, d.region, device.isAdmin || d.canRequest, rows))
+        call.respond(DiscoverResponse(true, d.source, d.region, acqEnabled && (device.isAdmin || d.canRequest), rows))
     }
 
     get("/tv/discover/item/{listId}/{rank}") {

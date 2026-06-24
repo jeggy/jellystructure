@@ -179,11 +179,13 @@ fun main() = runBlocking {
     }
 
     // Scheduled chart ingest (Phase 57) — refresh every refresh_hours (default 24), week-gated.
+    // Ingest runs by default even without an explicit [discover] block; set enabled=false to opt out.
     rootScope.launch {
         while (shutdownRequested.value == 0) {
             val d = configStore.current.discover
-            if (d != null && d.enabled) {
-                for (region in d.regions) runCatching { chartIngest.refresh(region) }
+            if (d?.enabled != false) {
+                val regions = d?.regions ?: listOf("DK")
+                for (region in regions) runCatching { chartIngest.refresh(region) }
             }
             delay((configStore.current.discover?.refreshHours ?: 24).coerceAtLeast(1) * 3_600_000L)
         }
