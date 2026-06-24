@@ -91,20 +91,24 @@ fun Tile(
         TileVariant.SQUARE -> SQUARE_W to SQUARE_H
     }.let { (bw, bh) -> bw * tileScale to bh * tileScale }
 
-    Column(modifier = Modifier.width(w)) {
-        // Focusable at a FIXED layout size; the focus scale is a draw-only graphicsLayer on the inner
-        // box, so the lazy list's focused-bounds tracking never chases the scale animation → no viewport
-        // jump while focusing (R42).
+    // R54: the focusable wraps the WHOLE tile (poster + label) so the vertical bring-into-view reveals
+    // the title/subtitle below the poster instead of clipping it. R42 still holds — the Column's layout
+    // size is fixed (the focus scale is a draw-only graphicsLayer on the inner poster box, so the lazy
+    // list's focused-bounds tracking never chases the scale animation → no viewport jump while focusing).
+    Column(
+        modifier = Modifier
+            .width(w)
+            .dpadFocusable(
+                focusRequester = focusRequester,
+                onFocused = { focused = true; onFocused() },
+                onBlurred = { focused = false },
+                onSelect = onSelect,
+            ),
+    ) {
         Box(
             modifier = Modifier
                 .width(w)
-                .height(h)
-                .dpadFocusable(
-                    focusRequester = focusRequester,
-                    onFocused = { focused = true; onFocused() },
-                    onBlurred = { focused = false },
-                    onSelect = onSelect,
-                ),
+                .height(h),
         ) {
             Box(
                 modifier = Modifier
