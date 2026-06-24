@@ -205,7 +205,7 @@ fun startServer(
                 if (chartRegistry != null && chartStore != null && chartIngest != null) {
                     chartRoutes(chartRegistry, chartStore, configStore, chartIngest)
                 }
-                tvRoutes(deviceService, raviloConfigService, homeFeedService, browseService, detailService, playbackService, sessionService, jellyfinClient, configStore, channelLogoStore, acquisitionService, chartStore, chartRegistry)
+                tvRoutes(deviceService, raviloConfigService, homeFeedService, browseService, detailService, playbackService, sessionService, jellyfinClient, configStore, channelLogoStore, acquisitionService, chartStore, chartRegistry, tmdbClient)
             }
 
             webSocket("/ws") {

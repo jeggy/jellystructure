@@ -5,14 +5,20 @@ import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
@@ -23,10 +29,13 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRestorer
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.jellystructure.ravilo.ui.LocalLiveAcquisition
@@ -35,10 +44,12 @@ import dev.jellystructure.ravilo.ui.components.RaviloButton
 import dev.jellystructure.ravilo.ui.seams.RemoteImage
 import dev.jellystructure.ravilo.ui.theme.RaviloDimens
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
+import dev.jellystructure.ravilo.ui.theme.Sora
 import dev.jellystructure.ravilo.ui.theme.SpaceGrotesk
 import dev.jellystructure.shared.tv.AcquisitionStatus
 import dev.jellystructure.shared.tv.DiscoverDetail
 import dev.jellystructure.shared.tv.MediaKind
+import dev.jellystructure.shared.tv.Person
 import dev.jellystructure.shared.tv.Trend
 
 @Composable
@@ -108,10 +119,32 @@ private fun DetailContent(
             Spacer(Modifier.height(8.dp))
             Text(e.title, color = colors.text, fontSize = 28.sp, fontWeight = FontWeight.Bold, fontFamily = SpaceGrotesk)
             Spacer(Modifier.height(6.dp))
+            // year · kind · runtime
+            val runtimeLabel = detail.runtime?.let { mins ->
+                val h = mins / 60; val m = mins % 60
+                val base = if (h > 0) "${h}h ${m}m" else "${m}m"
+                if (detail.isSeries) "$base / ep" else base
+            }
             Text(
-                listOfNotNull(e.year?.toString(), if (e.kind == MediaKind.SERIES) "Series" else "Movie").joinToString("  ·  "),
+                listOfNotNull(e.year?.toString(), if (e.kind == MediaKind.SERIES) "Series" else "Movie", runtimeLabel).joinToString("  ·  "),
                 color = colors.textSecondary, fontSize = 14.sp,
             )
+            // genre chips
+            if (detail.genres.isNotEmpty()) {
+                Spacer(Modifier.height(8.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    detail.genres.take(4).forEach { genre ->
+                        Text(
+                            genre,
+                            color = colors.textSecondary,
+                            fontSize = 11.sp,
+                            modifier = Modifier
+                                .background(colors.surfaceVariant, RoundedCornerShape(4.dp))
+                                .padding(horizontal = 8.dp, vertical = 3.dp),
+                        )
+                    }
+                }
+            }
             // live status line
             discoverStatusLabel(a)?.let {
                 Spacer(Modifier.height(6.dp))
@@ -132,6 +165,10 @@ private fun DetailContent(
 
             Spacer(Modifier.height(22.dp))
             WhyTrending(detail)
+            if (detail.cast.isNotEmpty()) {
+                Spacer(Modifier.height(20.dp))
+                CastSection(detail.cast)
+            }
             Spacer(Modifier.height(8.dp))
         }
     }
@@ -196,6 +233,53 @@ private fun WhyTrending(detail: DiscoverDetail) {
             Text("Country charts are ranking only — no view counts.", color = colors.textSecondary.copy(alpha = 0.7f), fontSize = 11.sp)
         } else {
             Text("Views are Netflix hours watched in the chart week.", color = colors.textSecondary.copy(alpha = 0.7f), fontSize = 11.sp)
+        }
+    }
+}
+
+@Composable
+private fun CastSection(cast: List<Person>) {
+    val colors = RaviloTheme.colors
+    Column {
+        Text("Cast", color = colors.textSecondary, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+        Spacer(Modifier.height(10.dp))
+        LazyRow(
+            modifier = Modifier.focusRestorer(),
+            state = rememberLazyListState(),
+            contentPadding = PaddingValues(horizontal = 0.dp),
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            items(cast.size, key = { i -> cast[i].id }) { i ->
+                val person = cast[i]
+                Column(
+                    modifier = Modifier.widthIn(max = 72.dp).focusable(),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    Box(
+                        modifier = Modifier.size(48.dp).clip(CircleShape)
+                            .background(colors.surfaceVariant),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        val imgUrl = person.imageUrl
+                    if (imgUrl != null) {
+                            RemoteImage(imgUrl, person.name, Modifier.fillMaxSize().clip(CircleShape))
+                        } else {
+                            Text(
+                                person.name.take(2).uppercase(),
+                                color = colors.textSecondary,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                fontFamily = Sora,
+                            )
+                        }
+                    }
+                    Spacer(Modifier.height(6.dp))
+                    Text(person.name, color = colors.text, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, fontFamily = Sora)
+                    person.role?.takeIf { it.isNotBlank() }?.let {
+                        Text(it, color = colors.textSecondary, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, fontFamily = Sora)
+                    }
+                }
+            }
         }
     }
 }

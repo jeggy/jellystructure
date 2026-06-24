@@ -15,6 +15,7 @@ import dev.jellystructure.shared.tv.DiscoverEntry
 import dev.jellystructure.shared.tv.DiscoverResponse
 import dev.jellystructure.shared.tv.DiscoverRow
 import dev.jellystructure.shared.tv.MediaKind
+import dev.jellystructure.shared.tv.Person
 import dev.jellystructure.shared.tv.ChannelLogoUpload
 import dev.jellystructure.shared.tv.MarkRequest
 import dev.jellystructure.shared.tv.RaviloConfig
@@ -98,6 +99,7 @@ fun Route.tvRoutes(
     acquisitionService: dev.jellystructure.arr.AcquisitionService? = null,
     chartStore: dev.jellystructure.chart.ChartStore? = null,
     chartRegistry: dev.jellystructure.chart.ChartRegistry? = null,
+    tmdbClient: dev.jellystructure.tmdb.TmdbClient? = null,
 ) {
     route("/tv/pair") {
         post("/start") {
@@ -332,12 +334,39 @@ fun Route.tvRoutes(
             ?: return@get call.respond(HttpStatusCode.NotFound)
         val d = raviloConfigService.getConfig(device.jellyfinUserId).discover
         val provider = chartRegistry?.get(d.source)
+        // R63 — fetch TMDB genres, runtime, cast when tmdbId is known
+        val isSeries = entry.kind == MediaKind.SERIES
+        val tmdbId = entry.tmdbId
+        val genres: List<String>
+        val runtime: Int?
+        val cast: List<Person>
+        if (tmdbId != null && tmdbClient != null) {
+            if (isSeries) {
+                val det = tmdbClient.getTvDetails(tmdbId)
+                val cred = tmdbClient.getTvCredits(tmdbId)
+                genres = det?.genres?.map { it.name } ?: emptyList()
+                runtime = det?.episodeRunTime?.firstOrNull()
+                cast = cred.map { m -> Person(m.id.toString(), m.name, m.character.takeIf { it.isNotBlank() }, m.profilePath?.let { "https://image.tmdb.org/t/p/w185$it" }) }
+            } else {
+                val det = tmdbClient.getMovieDetails(tmdbId)
+                val cred = tmdbClient.getMovieCredits(tmdbId)
+                genres = det?.genres?.map { it.name } ?: emptyList()
+                runtime = det?.runtime
+                cast = cred.map { m -> Person(m.id.toString(), m.name, m.character.takeIf { it.isNotBlank() }, m.profilePath?.let { "https://image.tmdb.org/t/p/w185$it" }) }
+            }
+        } else {
+            genres = emptyList(); runtime = null; cast = emptyList()
+        }
         call.respond(
             DiscoverDetail(
                 entry = entry,
                 acquisition = acquisitionFor(entry, acquisitionService),
                 sourceLabel = provider?.displayName ?: d.source,
                 attribution = provider?.attribution ?: "",
+                genres = genres,
+                runtime = runtime,
+                isSeries = isSeries,
+                cast = cast,
             )
         )
     }

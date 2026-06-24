@@ -35,6 +35,11 @@ data class DiscoverDetail(
     val acquisition: AcquisitionRecord,
     val sourceLabel: String,
     val attribution: String,
+    // R63 — TMDB enrichment; empty/null when tmdbId absent or TMDB call fails
+    val genres: List<String> = emptyList(),
+    val runtime: Int? = null,
+    val isSeries: Boolean = false,
+    val cast: List<Person> = emptyList(),
 )
 
 /** Phase 56/R49 — the WS `acquisition_changed` payload envelope (record inline). */
