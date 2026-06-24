@@ -678,7 +678,7 @@ private fun renderDiscover(container: Element) {
           </div>
           <p style="font-size:.82rem;color:var(--ink-soft);margin-bottom:12px">
             Requires the *arr serving the selected lists (movies → Radarr, TV → Sonarr) connected in
-            <a href="settings.html?tab=downloads">Settings → Download tools</a> — otherwise the tab won't appear.
+            <a href="#/settings?tab=downloads">Settings → Download tools</a> — otherwise the tab won't appear.
           </p>
           <div id="top10-body" style="display:grid;gap:12px">
             <label style="display:flex;align-items:center;gap:10px;font-size:.9rem">
