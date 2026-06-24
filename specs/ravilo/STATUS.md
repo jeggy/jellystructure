@@ -17,10 +17,10 @@ _Last updated: 2026-06-23_
 - **[R51](requirements/phase-R51-tv-brand-mark-logo.md)** (FR-RB1) — ✅ done — `components/BrandMark.kt`
   vector-draws the jellyfish **mark** (skin-tinted via `accentGradient`, from `ravilo-mark.svg`); the app
   bar shows the mark + an **ink** wordmark.
-- **[R52](requirements/phase-R52-tv-compact-appbar.md)** (FR-RN1) — ○ planned — compact the app bar so
-  all 5 tabs fit; move **Search** from a nav tab to a right-side **icon** (beside clock + avatar);
-  smaller nav text/padding/gap + focus-chain update. Touches `AppBar` + every screen's
-  `navItems`/`onNavSelect`.
+- **[R52](requirements/phase-R52-tv-compact-appbar.md)** (FR-RN1) — ✅ done — `AppBar` compacted
+  (60 dp / 15 sp / 12×6 / 18-gap); **Search** moved from a nav tab to a right-side drawn-magnifier
+  `SearchIcon` (search · clock · avatar). Nav lists + `RaviloApp` index maps remapped (Top 10 → 4,
+  `DISCOVER_NAV_INDEX = 4`); focus chain: last nav → search icon → avatar.
 - **[R53](requirements/phase-R53-tv-hero-buttonless.md)** (FR-RH1) — ○ planned — remove the 3 hero
   buttons; the **whole hero is clickable → detail**, Left/Right pages (cyclic); move page **dots to the
   right** (matches the design's already-right `.hero-dots`).

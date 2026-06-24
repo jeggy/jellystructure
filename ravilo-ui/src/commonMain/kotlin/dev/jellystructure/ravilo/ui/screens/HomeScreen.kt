@@ -61,6 +61,7 @@ fun HomeScreen(
     onChannelSelect: (Channel) -> Unit = {},
     onSeeAll: (String?) -> Unit = {},
     onProfile: () -> Unit = {},
+    onSearch: () -> Unit = {},
 ) {
     val colors = RaviloTheme.colors
     val state by store.state.collectAsState()
@@ -85,6 +86,7 @@ fun HomeScreen(
                 onChannelSelect = onChannelSelect,
                 onSeeAll = onSeeAll,
                 onProfile = onProfile,
+                onSearch = onSearch,
             )
         }
     }
@@ -102,6 +104,7 @@ private fun HomeLoaded(
     onChannelSelect: (Channel) -> Unit,
     onSeeAll: (String?) -> Unit,
     onProfile: () -> Unit,
+    onSearch: () -> Unit,
 ) {
     val colors = RaviloTheme.colors
     val listState = rememberLazyListState()
@@ -233,7 +236,8 @@ private fun HomeLoaded(
             .joinToString("") { it.first().uppercase() }
     }
     val navItems = buildList {
-        add(str("nav.home")); add(str("nav.movies")); add(str("nav.series")); add(str("nav.my_list")); add(str("nav.search"))
+        // R52: Search left the nav (now the right-cluster icon). Home·Movies·Series·My List (+ Top 10).
+        add(str("nav.home")); add(str("nav.movies")); add(str("nav.series")); add(str("nav.my_list"))
         if (discoverAvailable) add("Top 10") // R49 — gated tab
     }
     AppBar(
@@ -244,6 +248,7 @@ private fun HomeLoaded(
         onDown = { runCatching { if (hasHero) heroFR.requestFocus() else columnFR.requestFocus() } },
         userInitials = initials,
         onProfile = onProfile,
+        onSearch = onSearch,
     )
     }
 }
