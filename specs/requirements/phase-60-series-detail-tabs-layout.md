@@ -1,6 +1,6 @@
 # Phase 60 — Series detail: left-rail only on overview tab (FR-TD1)
 
-**Status:** Planned
+**Status:** ✅ Done
 
 ## Goal
 
