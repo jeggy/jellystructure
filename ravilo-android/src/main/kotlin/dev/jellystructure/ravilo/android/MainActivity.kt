@@ -8,9 +8,6 @@ import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
-import coil3.ImageLoader
-import coil3.SingletonImageLoader
-import coil3.svg.SvgDecoder
 import dev.jellystructure.ravilo.player.RaviloRenderers
 import dev.jellystructure.ravilo.ui.RaviloAppContext
 import dev.jellystructure.ravilo.ui.RaviloRoot
@@ -20,11 +17,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         installSplashScreen()
         super.onCreate(savedInstanceState)
-        RaviloAppContext.init(this)
-        // Register SVG decoder so Coil can render SVG channel logos.
-        SingletonImageLoader.setSafe { ctx ->
-            ImageLoader.Builder(ctx).components { add(SvgDecoder.Factory()) }.build()
-        }
+        RaviloAppContext.init(this) // also wires SvgDecoder via SingletonImageLoader
         // R31: route player renderers through the GPL-contained FFmpeg decoders (DTS/TrueHD/AC3).
         RaviloPlayerEngine.renderersFactoryProvider = { ctx -> RaviloRenderers.create(ctx) }
 
