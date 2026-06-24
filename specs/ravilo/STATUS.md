@@ -12,7 +12,11 @@ _Last updated: 2026-06-23_
 
 ## Current focus
 
-**Phases R01–R47 complete.** [R47](requirements/phase-R47-detail-focusable-draw-only-scale.md)
+**Phases R01–R50 complete.** R48–R50 (Discover / Top 10: `/api/tv/discover` API + per-user
+`DiscoverConfig`, the Compose Top 10 screen + dedicated detail with live acquisition status, and the
+`/ravilo` config-editor Top 10 section) landed 2026-06-24 — see "Done — Discover / Top 10" below
+(`:ravilo-ui` compiles android + wasmJs; on-device verification pending). Earlier:
+[R47](requirements/phase-R47-detail-focusable-draw-only-scale.md)
 (2026-06-23) finished the R42 viewport-jump fix on the **detail screens**: R42 made the focus scale
 draw-only "only on Tile/ChannelCard", so navigating Movie/Series detail still jumped — `EpisodeCard`,
 `SeasonPicker` pills and `RaviloButton` applied `.scale` (and the button lift) as an **ancestor** of
@@ -21,13 +25,13 @@ glow + lift into an inner `graphicsLayer` with the focusable on a fixed-size out
 scaled a descendant (unchanged). `:ravilo-ui` (android + wasmJs) compiles; `:ravilo-android:assembleDebug`
 builds. _Verify on-device:_ season picker / episode rail / action buttons no longer jump.
 
-## Newly planned — Discover / Top 10 (2026-06-23)
+## Done — Discover / Top 10 (built 2026-06-24)
 
 A new TV surface: a **Top 10** tab driven by third-party popularity charts (Netflix via Tudum first),
 where titles not in the library can be **requested** and fetched through Radarr/Sonarr, with a **live,
 multi-stage status indicator** (requested → queued → downloading% → importing → available). Backend
 engine + chart ingestion are jellystructure phases (**56** acquisition pipeline, **57** chart
-ingestion — see [`../STATUS.md`](../STATUS.md)); the Ravilo side is three planned phases:
+ingestion — see [`../STATUS.md`](../STATUS.md)); the Ravilo side is three phases, now **built + committed**:
 
 - **[R48](requirements/phase-R48-discover-api.md)** — `/api/tv/discover` API: a `discover` block on the
   per-user `RaviloConfig` (enabled/source/region/ordered lists), composition of charts + acquisition
