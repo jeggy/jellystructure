@@ -7,6 +7,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -19,6 +20,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -38,7 +40,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import dev.jellystructure.ravilo.ui.i18n.str
+import dev.jellystructure.ravilo.ui.focus.dpadFocusable
 import dev.jellystructure.ravilo.ui.seams.RemoteImage
 import dev.jellystructure.ravilo.ui.theme.RaviloDimens
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
@@ -55,9 +57,7 @@ fun HeroCarousel(
     focusRequester: FocusRequester,
     heightDp: Dp = 460.dp,
     autoAdvanceSeconds: Int = 6,
-    onPlay: (MediaCard) -> Unit = {},
-    onMoreInfo: (MediaCard) -> Unit = {},
-    onMyList: (MediaCard) -> Unit = {},
+    onOpenDetail: (MediaCard) -> Unit = {},
     onUp: (() -> Unit)? = null,
 ) {
     val colors = RaviloTheme.colors
@@ -82,11 +82,7 @@ fun HeroCarousel(
 
     var activeIndex by remember { mutableIntStateOf(0) }
     var resetTick   by remember { mutableIntStateOf(0) }
-
-    // Action-button focus requesters. The Play button is the hero's entry point (the passed-in
-    // focusRequester); Left/Right move between buttons and page the carousel at the row edges.
-    val moreInfoFR = remember { FocusRequester() }
-    val myListFR   = remember { FocusRequester() }
+    var focused     by remember { mutableStateOf(false) }
 
     if (items.isEmpty()) return
     // The heroes list can change size under us (R33 live config push). Never index past its end —
@@ -107,7 +103,19 @@ fun HeroCarousel(
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(heightDp),
+            .height(heightDp)
+            // R53: the whole hero is one focusable surface — select opens detail, Left/Right page the
+            // carousel (cyclic, since a full-bleed hero has no horizontal neighbour). onDown omitted so
+            // native focus search drops into the channel rail / first content row.
+            .dpadFocusable(
+                focusRequester = focusRequester,
+                onFocused = { focused = true },
+                onBlurred = { focused = false },
+                onLeft  = { activeIndex = (activeIndex - 1 + items.size) % items.size; resetTick++ },
+                onRight = { activeIndex = (activeIndex + 1) % items.size; resetTick++ },
+                onUp    = onUp,
+                onSelect = { onOpenDetail(active.item) },
+            ),
     ) {
         // Backdrop image, crossfades between slides
         AnimatedContent(
@@ -195,59 +203,43 @@ fun HeroCarousel(
                 )
             }
 
-            Spacer(Modifier.height(18.dp))
+            // R53: no action buttons — the whole hero opens detail; Left/Right pages the carousel.
+        }
 
-            // Action buttons: Play · More Info · + My List
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                RaviloButton(
-                    label = "▶  ${str("action.play")}",
-                    focusRequester = focusRequester,
-                    style = ButtonStyle.PRIMARY,
-                    onLeft  = { if (activeIndex > 0) { activeIndex--; resetTick++ } },
-                    onRight = { moreInfoFR.requestFocus() },
-                    onUp    = onUp,
-                    onSelect = { onPlay(active.item) },
-                )
-                RaviloButton(
-                    label = str("action.more_info"),
-                    focusRequester = moreInfoFR,
-                    style = ButtonStyle.GHOST,
-                    onLeft  = { focusRequester.requestFocus() },
-                    onRight = { myListFR.requestFocus() },
-                    onUp    = onUp,
-                    onSelect = { onMoreInfo(active.item) },
-                )
-                RaviloButton(
-                    label = "+ ${str("nav.my_list")}",
-                    focusRequester = myListFR,
-                    style = ButtonStyle.GHOST,
-                    onLeft  = { moreInfoFR.requestFocus() },
-                    onRight = { if (activeIndex < items.lastIndex) { activeIndex++; resetTick++ } },
-                    onUp    = onUp,
-                    onSelect = { onMyList(active.item) },
-                )
-            }
-
-            Spacer(Modifier.height(18.dp))
-
-            // Animated page dots
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        // R53: page dots moved to the bottom-right (design `.hero-dots`); active = accent pill.
+        if (items.size > 1) {
+            Row(
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(end = 48.dp, bottom = RaviloDimens.heroBodyBot),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
                 items.forEachIndexed { i, _ ->
                     val dotWidth: Dp by animateDpAsState(
-                        targetValue = if (i == activeIndex) 24.dp else 6.dp,
+                        targetValue = if (i == activeIndex) 28.dp else 8.dp,
                         animationSpec = tween(300),
                         label = "dot$i",
                     )
                     Box(
                         modifier = Modifier
-                            .size(dotWidth, 6.dp)
+                            .size(dotWidth, 8.dp)
                             .clip(CircleShape)
-                            .background(
-                                if (i == activeIndex) colors.accent else dotInactiveColor,
-                            ),
+                            .background(if (i == activeIndex) colors.accent else dotInactiveColor),
                     )
                 }
             }
+        }
+
+        // R53: subtle focus indication for the full-bleed hero — an inset ring, no scale (so no
+        // viewport jump), keeping exactly one visible focus target.
+        if (focused) {
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .padding(6.dp)
+                    .border(3.dp, colors.focusRing, RoundedCornerShape(14.dp)),
+            )
         }
     }
 }

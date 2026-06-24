@@ -12,8 +12,8 @@ _Last updated: 2026-06-23_
 
 ## Current focus
 
-**TV app-bar + hero polish + focus/back UX (2026-06-24).** Five Ravilo phases from a TV-UI review;
-**R54–R55 built, R51–R53 still spec-only (not yet built):**
+**TV app-bar + hero polish + focus/back UX (2026-06-24).** Five Ravilo phases from a TV-UI review —
+**all built (R51–R55):**
 - **[R51](requirements/phase-R51-tv-brand-mark-logo.md)** (FR-RB1) — ✅ done — `components/BrandMark.kt`
   vector-draws the jellyfish **mark** (skin-tinted via `accentGradient`, from `ravilo-mark.svg`); the app
   bar shows the mark + an **ink** wordmark.
@@ -21,9 +21,9 @@ _Last updated: 2026-06-23_
   (60 dp / 15 sp / 12×6 / 18-gap); **Search** moved from a nav tab to a right-side drawn-magnifier
   `SearchIcon` (search · clock · avatar). Nav lists + `RaviloApp` index maps remapped (Top 10 → 4,
   `DISCOVER_NAV_INDEX = 4`); focus chain: last nav → search icon → avatar.
-- **[R53](requirements/phase-R53-tv-hero-buttonless.md)** (FR-RH1) — ○ planned — remove the 3 hero
-  buttons; the **whole hero is clickable → detail**, Left/Right pages (cyclic); move page **dots to the
-  right** (matches the design's already-right `.hero-dots`).
+- **[R53](requirements/phase-R53-tv-hero-buttonless.md)** (FR-RH1) — ✅ done — `HeroCarousel` is one
+  focusable surface (select → detail, Left/Right pages cyclically, subtle inset focus ring, no scale);
+  buttons removed; page **dots** moved bottom-right (active = accent pill). Design mockup synced.
 - **[R54](requirements/phase-R54-tv-focus-reveal-label.md)** (FR-RF1) — ✅ done — `dpadFocusable` moved
   from the poster `Box` to the outer tile `Column` in `Tile.kt`, so the bring-into-view target spans the
   label; draw-only scale/ring stay on the poster (R42 preserved).

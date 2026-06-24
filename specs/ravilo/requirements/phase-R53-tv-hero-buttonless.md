@@ -1,6 +1,10 @@
 # R53 — Ravilo TV: button-less hero carousel (whole-card click → detail, dots on the right) (FR-RH1)
 
-**Status:** Planned
+**Status:** ✅ Done — `HeroCarousel` is now one focusable surface (`dpadFocusable` on the hero box):
+select → `onOpenDetail`, Left/Right page the carousel cyclically, Up → app bar, Down → content; the 3
+buttons + their callbacks are gone (`HomeScreen` passes `onOpenDetail = onItemSelect`). Page dots moved to
+a bottom-right overlay (active = accent pill). Full-bleed focus shown as a subtle inset ring (no scale).
+The design mockup (`ravilo-app.js`/`ravilo.css`) was synced to the button-less hero too.
 **Depends on:** R10 (Home / hero), R13 (detail), R42/R47 (draw-only focus), R45 (hero re-frame)
 
 ## Goal
@@ -55,5 +59,6 @@ hero (they currently sit below the now-removed buttons).
 ## Mockup
 
 `design/ravilo/Ravilo TV.html` + `ravilo.css` `.hero` / **`.hero-dots` (already right-aligned)** +
-`ravilo-app.js` `setHero`/dot handling. **Note:** the mockup still renders `.hero-actions` (buttons);
-this phase removes them — update the mockup to the button-less hero so design and app stay in sync.
+`ravilo-app.js` `setHero`/dot handling. **Done:** the mockup's `.hero-actions` buttons were removed and
+replaced with a focusable `.hero-hit`/`.hero-cta` whole-hero surface (`data-hero` → detail, Left/Right
+pages the carousel), so design and app match.
