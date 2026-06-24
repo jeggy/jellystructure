@@ -12,6 +12,18 @@ _Last updated: 2026-06-23_
 
 ## Current focus
 
+**Newly planned — TV app-bar + hero polish (specs only, 2026-06-24).** Three Ravilo phases written
+from a TV-UI review, **not yet built**:
+- **[R51](requirements/phase-R51-tv-brand-mark-logo.md)** (FR-RB1) — replace the plain accent "Ravilo"
+  text with the brand lockup: gradient jellyfish **mark** (skin-tinted via `accentGradient`, from
+  `assets/brand/ravilo-mark.svg`) + **ink** wordmark.
+- **[R52](requirements/phase-R52-tv-compact-appbar.md)** (FR-RN1) — compact the app bar so all 5 tabs
+  fit; move **Search** from a nav tab to a right-side **icon** (beside clock + avatar); smaller nav
+  text/padding/gap + focus-chain update. Touches `AppBar` + every screen's `navItems`/`onNavSelect`.
+- **[R53](requirements/phase-R53-tv-hero-buttonless.md)** (FR-RH1) — remove the 3 hero buttons; the
+  **whole hero is clickable → detail**, Left/Right pages (cyclic); move page **dots to the right**
+  (matches the design's already-right `.hero-dots`).
+
 **Phases R01–R50 complete.** R48–R50 (Discover / Top 10: `/api/tv/discover` API + per-user
 `DiscoverConfig`, the Compose Top 10 screen + dedicated detail with live acquisition status, and the
 `/ravilo` config-editor Top 10 section) landed 2026-06-24 — see "Done — Discover / Top 10" below
