@@ -38,7 +38,7 @@ import dev.jellystructure.ravilo.ui.components.HomeLoadingShell
 import dev.jellystructure.ravilo.ui.components.StaticContentRow
 import dev.jellystructure.ravilo.ui.components.Tile
 import dev.jellystructure.ravilo.ui.components.TileVariant
-import dev.jellystructure.ravilo.ui.focus.EdgeBringIntoViewSpec
+import dev.jellystructure.ravilo.ui.focus.rememberEdgeBringIntoViewSpec
 import dev.jellystructure.ravilo.ui.focus.backToTopOnBack
 import dev.jellystructure.ravilo.ui.i18n.str
 import dev.jellystructure.ravilo.ui.theme.RaviloDimens
@@ -115,12 +115,13 @@ private fun DiscoverLoaded(
             atTop = { listState.firstVisibleItemIndex == 0 && listState.firstVisibleItemScrollOffset == 0 },
             onBackToTop = {
                 runCatching { navBarFR.requestFocus() }
-                scope.launch { listState.animateScrollToItem(0) }
+                scope.launch { listState.scrollToItem(0) }
             },
         ),
     ) {
+    val edgeBringIntoViewSpec = rememberEdgeBringIntoViewSpec(peekDp = 80.dp)
     @OptIn(ExperimentalFoundationApi::class)
-    CompositionLocalProvider(LocalBringIntoViewSpec provides EdgeBringIntoViewSpec) {
+    CompositionLocalProvider(LocalBringIntoViewSpec provides edgeBringIntoViewSpec) {
         LazyColumn(
             state = listState,
             modifier = Modifier.fillMaxSize().focusRequester(columnFR),

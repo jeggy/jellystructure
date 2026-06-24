@@ -36,7 +36,7 @@ import dev.jellystructure.ravilo.ui.components.HeroCarousel
 import dev.jellystructure.ravilo.ui.components.HomeLoadingShell
 import dev.jellystructure.ravilo.ui.components.StaticContentRow
 import dev.jellystructure.ravilo.ui.components.Tile
-import dev.jellystructure.ravilo.ui.focus.EdgeBringIntoViewSpec
+import dev.jellystructure.ravilo.ui.focus.rememberEdgeBringIntoViewSpec
 import dev.jellystructure.ravilo.ui.focus.backToTopOnBack
 import dev.jellystructure.ravilo.ui.components.TileVariant
 import dev.jellystructure.ravilo.ui.components.toTileVariant
@@ -152,8 +152,10 @@ private fun HomeLoaded(
             },
         ),
     ) {
+    @Suppress("OPT_IN_USAGE")
+    val edgeBringIntoViewSpec = rememberEdgeBringIntoViewSpec(peekDp = 80.dp)
     @OptIn(ExperimentalFoundationApi::class)
-    CompositionLocalProvider(LocalBringIntoViewSpec provides EdgeBringIntoViewSpec) {
+    CompositionLocalProvider(LocalBringIntoViewSpec provides edgeBringIntoViewSpec) {
     LazyColumn(
         state = listState,
         modifier = Modifier.fillMaxSize().focusRequester(columnFR),
@@ -167,7 +169,7 @@ private fun HomeLoaded(
                 // low in the hero, so a bare bring-into-view would otherwise strand it mid-scroll).
                 Box(
                     modifier = Modifier.onFocusChanged {
-                        if (it.hasFocus) scope.launch { listState.animateScrollToItem(0) }
+                        if (it.hasFocus) scope.launch { listState.scrollToItem(0) }
                     }
                 ) {
                     HeroCarousel(
