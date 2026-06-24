@@ -52,8 +52,9 @@ import dev.jellystructure.shared.tv.DiscoverResponse
 import dev.jellystructure.shared.tv.Trend
 import kotlinx.coroutines.launch
 
-/** Index of the Top 10 nav item in the app bar (after home/movies/series/my_list/search). */
-const val DISCOVER_NAV_INDEX = 5
+/** Index of the Top 10 nav item in the app bar (after home/movies/series/my_list; Search is the
+ *  right-cluster icon now, R52). */
+const val DISCOVER_NAV_INDEX = 4
 
 @Composable
 fun DiscoverScreen(
@@ -62,11 +63,12 @@ fun DiscoverScreen(
     onNavSelect: (Int) -> Unit,
     onEntrySelect: (listId: String, rank: Int) -> Unit,
     onProfile: () -> Unit,
+    onSearch: () -> Unit,
 ) {
     val colors = RaviloTheme.colors
     val state by store.state.collectAsState()
     val navItems = listOf(
-        str("nav.home"), str("nav.movies"), str("nav.series"), str("nav.my_list"), str("nav.search"), "Top 10",
+        str("nav.home"), str("nav.movies"), str("nav.series"), str("nav.my_list"), "Top 10",
     )
 
     // R33 live config refresh + payload-bearing acquisition patching (Phase 56).
@@ -82,7 +84,7 @@ fun DiscoverScreen(
                 Spacer(Modifier.height(200.dp)); Text("Top 10 unavailable", color = colors.text, fontSize = 20.sp)
                 Spacer(Modifier.height(8.dp)); Text(s.message, color = colors.textSecondary, fontSize = 14.sp)
             }
-            is DiscoverState.Loaded -> DiscoverLoaded(s.data, displayName, DISCOVER_NAV_INDEX, navItems, onNavSelect, onEntrySelect, onProfile)
+            is DiscoverState.Loaded -> DiscoverLoaded(s.data, displayName, DISCOVER_NAV_INDEX, navItems, onNavSelect, onEntrySelect, onProfile, onSearch)
         }
     }
 }
@@ -96,6 +98,7 @@ private fun DiscoverLoaded(
     onNavSelect: (Int) -> Unit,
     onEntrySelect: (String, Int) -> Unit,
     onProfile: () -> Unit,
+    onSearch: () -> Unit,
 ) {
     val colors = RaviloTheme.colors
     val listState = rememberLazyListState()
@@ -157,6 +160,7 @@ private fun DiscoverLoaded(
         onDown = { runCatching { columnFR.requestFocus() } },
         userInitials = initials,
         onProfile = onProfile,
+        onSearch = onSearch,
     )
     }
 }

@@ -1,6 +1,10 @@
 # R52 — Ravilo TV: compact app bar + search-as-icon (FR-RN1)
 
-**Status:** Planned
+**Status:** ✅ Done — `AppBar` compacted (60 dp / 15 sp / 12×6 / 18-gap, mark 26 dp + 22 sp wordmark);
+Search dropped from the nav list (Home·Movies·Series·My List [+ Top 10]) and added as a drawn-magnifier
+`SearchIcon` in the right cluster (search · clock · avatar) with `onSearch` → the Search screen. Nav
+index maps in `RaviloApp` remapped (Top 10 now 4, `DISCOVER_NAV_INDEX = 4`), focus chain extended
+(last nav → search icon → avatar).
 **Depends on:** R51 (brand mark), R09 (app bar / focus), R12 (Search screen), R49 (Top 10 nav item)
 
 ## Goal
