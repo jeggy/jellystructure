@@ -94,15 +94,21 @@ fun AppBar(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(28.dp),
         ) {
-            // Wordmark
-            Text(
-                text = "Ravilo",
-                color = colors.accent,
-                fontSize = 24.sp,
-                fontWeight = FontWeight.Bold,
-                fontFamily = spaceGrotesk,
-                letterSpacing = (-1).sp,
-            )
+            // Brand lockup (R51): gradient jellyfish mark + ink wordmark (not accent-purple text).
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                BrandMark(size = 30.dp)
+                Text(
+                    text = "Ravilo",
+                    color = colors.text,
+                    fontSize = 24.sp,
+                    fontWeight = FontWeight.Bold,
+                    fontFamily = spaceGrotesk,
+                    letterSpacing = (-1).sp,
+                )
+            }
 
             items.forEachIndexed { i, label ->
                 val isFocused = focusedIdx == i
