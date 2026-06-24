@@ -1396,10 +1396,46 @@ private fun RowKind.isSystem() = this == RowKind.CONTINUE || this == RowKind.NEW
 
 private fun renderRows(container: Element) {
     val sect = container.querySelector("#sect-rows") ?: return
-    val mergeChecked = if (currentConfig.mergeNewlyAdded) " checked" else ""
-    val last = currentConfig.rows.lastIndex
+    val merging = currentConfig.mergeNewlyAdded
+    val mergeChecked = if (merging) " checked" else ""
+    val mergeStateLabel = if (merging) "combined into one row ✓" else "showing separately"
+
+    // Merged row preview chip — only visible when merge is on
+    val mergedChip = if (merging) """
+        <div style="display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:8px;background:rgba(255,180,0,.07);border:1px dashed rgba(255,180,0,.35);margin-bottom:12px">
+          <span style="font-size:.72rem;font-weight:600;color:var(--warn);flex:none">▶ On TV</span>
+          <span style="font-size:.85rem;font-weight:500">Newly Added</span>
+          <span style="font-size:.68rem;padding:2px 7px;border-radius:4px;background:rgba(255,180,0,.18);color:var(--warn);font-weight:600;flex:none">All media</span>
+          <span style="font-size:.75rem;color:var(--ink-soft)">Movies &amp; series mixed, sorted by date</span>
+        </div>
+    """.trimIndent() else ""
+
     val rows = currentConfig.rows.mapIndexed { i, r ->
         val system = r.kind.isSystem()
+        val isMergedOut = merging && r.kind == RowKind.NEWLY_ADDED
+
+        // R66: descriptive type badge for every row kind
+        val badge = when {
+            r.kind == RowKind.CONTINUE ->
+                """<span class="badge ok" style="flex:none;font-size:.6rem;white-space:nowrap">Continue watching</span>"""
+            r.kind == RowKind.NEWLY_ADDED && r.mediaKind == "MOVIE" ->
+                """<span style="flex:none;font-size:.68rem;padding:2px 7px;border-radius:4px;background:rgba(255,180,0,.15);color:var(--warn);font-weight:600;white-space:nowrap">Movies only</span>"""
+            r.kind == RowKind.NEWLY_ADDED && r.mediaKind == "SERIES" ->
+                """<span style="flex:none;font-size:.68rem;padding:2px 7px;border-radius:4px;background:rgba(255,180,0,.15);color:var(--warn);font-weight:600;white-space:nowrap">Series only</span>"""
+            r.kind == RowKind.NEWLY_ADDED ->
+                """<span style="flex:none;font-size:.68rem;padding:2px 7px;border-radius:4px;background:rgba(255,180,0,.15);color:var(--warn);font-weight:600;white-space:nowrap">All media</span>"""
+            r.kind == RowKind.GENRE ->
+                """<span class="badge info" style="flex:none;font-size:.6rem">Genre</span>"""
+            else ->
+                """<span class="badge info" style="flex:none;font-size:.6rem">Custom filter</span>"""
+        }
+
+        // R66: "Merged — not shown separately" note + dimming when merge is on
+        val mergedNote = if (isMergedOut)
+            """<span style="font-size:.72rem;color:var(--warn);white-space:nowrap;flex:none">↳ merged</span>"""
+        else ""
+        val rowOpacity = if (isMergedOut) "opacity:0.45;" else ""
+
         val kindOptions = RowKind.entries.joinToString("") { k ->
             val sel = if (k == r.kind) " selected" else ""
             """<option value="${k.name}"$sel>${k.name.lowercase().replace('_', ' ').replaceFirstChar { it.uppercase() }}</option>"""
@@ -1410,9 +1446,7 @@ private fun renderRows(container: Element) {
         }
         val showChecked = if (r.enabled) " checked" else ""
         val genreList = if (r.kind == RowKind.GENRE) """ list="facet-genre"""" else ""
-        val badge = if (system) """<span class="badge ok" style="flex:none;font-size:.6rem">system</span>""" else """<span class="badge info" style="flex:none;font-size:.6rem">${r.kind.name.lowercase()}</span>"""
         val delBtn = if (system) "" else """<button class="btn sm ghost" data-row-del="$i">✕</button>"""
-        // R32: a CUSTOM row built from a condition stack shows a read-only summary + Edit, no kind select.
         val bodyCell = if (r.conditions.isNotEmpty()) {
             """<span class="badge ok" style="white-space:nowrap">${r.conditions.size} condition(s) · match ${r.match.name}</span>
                <button class="btn sm ghost" data-row-edit="$i">Edit filter</button>
@@ -1423,9 +1457,10 @@ private fun renderRows(container: Element) {
                <select class="input" style="width:90px" data-row-media="$i">$mediaOptions</select>"""
         }
         """
-        <div class="cfg-row" draggable="true" data-row-i="$i" style="display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap">
+        <div class="cfg-row" draggable="true" data-row-i="$i" style="display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap;${rowOpacity}transition:opacity .2s">
           <span class="drag-handle" style="cursor:grab;user-select:none;flex-shrink:0">⠿</span>
           $badge
+          $mergedNote
           <input type="hidden" data-row-id="$i" value="${r.id.htmlEsc()}">
           <input class="input" style="width:150px" placeholder="Title" value="${(r.title ?: "").htmlEsc()}" data-row-title="$i"$genreList>
           $bodyCell
@@ -1434,23 +1469,36 @@ private fun renderRows(container: Element) {
         </div>
         """.trimIndent()
     }.joinToString("")
+
     sect.innerHTML = """
         <div class="card" style="padding:18px 20px;margin-bottom:18px">
           <div style="font-weight:600;margin-bottom:10px">Content rows</div>
           <p style="font-size:.82rem;color:var(--ink-soft);margin-bottom:14px">
             The vertical stack on Home. System rows (Continue Watching, Newly Added) can be hidden and reordered but not removed.
           </p>
-          <div class="box flat" style="background:var(--hi-soft);border:1px solid rgba(123,110,240,.3);border-radius:8px;padding:10px 12px;margin-bottom:14px">
-            <label style="display:flex;align-items:center;gap:10px;font-size:.9rem">
+          <div class="box flat" style="background:var(--hi-soft);border:1px solid rgba(255,180,0,.25);border-radius:8px;padding:12px 14px;margin-bottom:14px">
+            <label style="display:flex;align-items:center;gap:10px;font-size:.9rem;cursor:pointer">
               <input type="checkbox" id="merge-newly-added"$mergeChecked>
-              <span><b>Merge “Newly Added” movies &amp; series into one row.</b> <span class="tiny muted">Off = two rows like Jellyfin; on = a single combined “Newly Added”.</span></span>
+              <div>
+                <b>Merge newly added</b> <span style="font-size:.8rem;color:var(--ink-soft)">— $mergeStateLabel</span>
+                <div class="tiny muted" style="margin-top:3px;line-height:1.5">
+                  Show movies and series in one combined row instead of separate typed rows.<br>
+                  When on, the typed rows below are replaced by a single "Newly Added" row on the TV — all media sorted by date.
+                </div>
+              </div>
             </label>
           </div>
+          $mergedChip
           <div id="row-list">$rows</div>
           <button id="row-add" class="btn sm ghost" style="margin-top:6px">+ Add row</button>
           <button id="row-workbench" class="btn sm ghost" style="margin-top:6px">⚙ Build with workbench</button>
         </div>
     """.trimIndent()
+    // R66: live re-render when merge toggle changes so badge dimming and chip update instantly
+    sect.querySelector("#merge-newly-added")?.addEventListener("change") { _ ->
+        val checked = (sect.querySelector("#merge-newly-added") as? HTMLInputElement)?.checked ?: false
+        structural(container, { currentConfig = currentConfig.copy(mergeNewlyAdded = checked) }, ::renderRows)
+    }
     sect.querySelector("#row-add")?.addEventListener("click") { _ ->
         structural(container, { currentConfig = currentConfig.copy(rows = currentConfig.rows + RowConfig(id = genId("row"), kind = RowKind.GENRE)) }, ::renderRows)
     }
@@ -1710,9 +1758,13 @@ private fun renderBehaviour(container: Element) {
 
 // ── Live preview (schematic) ───────────────────────────────────────────────────
 
-private fun defaultRowTitle(kind: RowKind) = when (kind) {
+private fun defaultRowTitle(kind: RowKind, mediaKind: String? = null) = when (kind) {
     RowKind.CONTINUE    -> "Continue Watching"
-    RowKind.NEWLY_ADDED -> "Newly Added"
+    RowKind.NEWLY_ADDED -> when (mediaKind) {
+        "MOVIE"  -> "Movies — Newly Added"
+        "SERIES" -> "Series — Newly Added"
+        else     -> "Newly Added"
+    }
     RowKind.GENRE       -> "Genre"
     RowKind.CUSTOM      -> "Custom"
 }
@@ -1726,7 +1778,7 @@ private fun previewRowTitles(cfg: RaviloConfig): List<String> {
             if (!mergedAdded) { out.add("Newly Added"); mergedAdded = true }
             continue
         }
-        out.add(r.title?.takeIf { it.isNotBlank() } ?: defaultRowTitle(r.kind))
+        out.add(r.title?.takeIf { it.isNotBlank() } ?: defaultRowTitle(r.kind, r.mediaKind))
     }
     return out
 }
@@ -1788,7 +1840,7 @@ private fun collectConfig(container: Element) {
             existing.copy(kind = kind, title = title, enabled = enabled, order = i, mediaKind = media)
         }
     }
-    val mergeNewlyAdded = (container.querySelector("#merge-newly-added") as? HTMLInputElement)?.checked ?: false
+    val mergeNewlyAdded = (container.querySelector("#merge-newly-added") as? HTMLInputElement)?.checked ?: currentConfig.mergeNewlyAdded
     val heroHeight   = (container.querySelector("#hero-height") as? HTMLInputElement)?.value?.toIntOrNull() ?: 56
     val autoAdvance  = (container.querySelector("#auto-advance") as? HTMLSelectElement)?.value?.toIntOrNull() ?: 7
     val uiLanguage   = (container.querySelector("#beh-lang") as? HTMLSelectElement)?.value ?: "en"
