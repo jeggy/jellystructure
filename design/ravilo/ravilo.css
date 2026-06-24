@@ -411,6 +411,13 @@ body { font-family: 'Sora', sans-serif; }
 .rstat.avail { width: 30px; height: 30px; justify-content: center; background: var(--good); color: #06281c; box-shadow: 0 4px 12px rgba(0,0,0,.4); }
 .rstat.fetch { padding: 5px 10px; background: rgba(8,10,16,.82); color: #ffd27a; -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px); border: 1px solid rgba(255,210,122,.4); }
 .rstat.fetch .pct { font-variant-numeric: tabular-nums; }
+.rstat.req, .rstat.queue, .rstat.importing { padding: 5px 10px; background: rgba(8,10,16,.82); -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px); }
+.rstat.req { color: #cfd4e6; border: 1px solid var(--line); }
+.rstat.queue { color: #9ab6ff; border: 1px solid rgba(123,140,240,.42); }
+.rstat.importing { color: #7ad7b0; border: 1px solid rgba(45,212,154,.42); }
+.rstat.failed { padding: 5px 10px; background: rgba(40,12,16,.82); color: #ff8e8e; border: 1px solid rgba(255,90,90,.45); }
+.rstat .dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; animation: rpulse 1.4s ease-in-out infinite; }
+@keyframes rpulse { 0%, 100% { opacity: .35; } 50% { opacity: 1; } }
 
 /* trend badges */
 .rtrend { font-size: 14px; font-weight: 700; }
@@ -438,6 +445,8 @@ body { font-family: 'Sora', sans-serif; }
 .ddt-state.avail { color: var(--good); border: 1px solid rgba(45,212,154,.45); }
 .ddt-state.fetch { color: #ffd27a; border: 1px solid rgba(255,210,122,.4); }
 .ddt-state.none { color: var(--ink-soft); border: 1px solid var(--line); }
+.ddt-state.failed { color: #ff8e8e; border: 1px solid rgba(255,90,90,.45); }
+.ddt-state .dot { width: 9px; height: 9px; border-radius: 50%; background: currentColor; animation: rpulse 1.4s ease-in-out infinite; }
 .ddt-body .hero-syn { max-width: 760px; margin: 4px 0 26px; }
 .ddt-actions { display: flex; gap: 16px; }
 .btn.fetching { background: rgba(255,210,122,.14); border: 2px solid rgba(255,210,122,.4); color: #ffd27a; }

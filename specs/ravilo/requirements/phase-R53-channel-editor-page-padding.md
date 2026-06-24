@@ -1,6 +1,6 @@
 # Phase R53 — Channel editor as a dedicated page + channel-button padding (FR-RV-C1)
 
-**Status:** ✓ Done
+**Status:** ✓ Done · _design_
 
 > Authored from the design project. Revises **[R36](phase-R36-channel-button-editor.md)**
 > (the channel-button editor, which opened in a popup).
@@ -52,28 +52,3 @@ The channel button (Logo or Text, R36) gains per-display **padding**:
 `design/app/ravilo-config.html` (channel editor opens as a page),
 `design/app/ravilo-builders.js` + `design/app/ravilo-builders.css` (screen host, padding
 control, hero-item picker layering).
-
-## Implementation note — padding wiring fix
-
-Change B was not fully wired when the spec was first marked Done. The bug and fix:
-
-- `ChannelConfig` had `paddingLogo`/`paddingText` but the `Channel` **shared model**
-  (`shared/src/commonMain/kotlin/dev/jellystructure/shared/tv/Models.kt`) was missing
-  `padding_logo: ChannelButtonPadding?` and `padding_text: ChannelButtonPadding?` entirely,
-  so the TV never received padding values.
-- `HomeFeedService.buildChannels()` was not mapping `paddingLogo`/`paddingText` from
-  `ChannelConfig` into the serialized `Channel`.
-- `ChannelCard` was not reading or applying padding even where the field existed.
-
-The fix wired all three layers: added both fields to the `Channel` shared DTO, mapped them in
-`buildChannels()`, and applied `Modifier.padding(start, top, end, bottom)` to the logo
-`RemoteImage` in `ChannelCard`. Change B is now complete end-to-end.
-
-## Implementation note — editor URL + filter workbench
-
-- The channel editor page is reachable at **`#/ravilo?channel=<id>`** (or `?channel=new`),
-  set via `history.pushState`. The browser's native Back button pops back to the channel list.
-  `popstate` is wired on the page to re-render the correct view.
-- The channel content filter no longer uses an inline (broken) editor. The editor page shows a
-  read-only filter summary and an **"⚙ Edit filter"** button that opens the real `openWorkbench()`
-  modal (R32). On save the workbench writes back into the channel and the summary refreshes.
