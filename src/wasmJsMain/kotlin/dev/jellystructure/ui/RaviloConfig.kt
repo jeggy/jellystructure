@@ -57,6 +57,18 @@ private var facets: Map<String, List<String>> = emptyMap() // "NETWORK"/"STUDIO"
 
 private val CHANNEL_KINDS = listOf("NETWORK", "STUDIO", "GENRE", "TAG")
 private val AUTO_ADVANCE_OPTIONS = listOf(0 to "Off", 4 to "4 s", 6 to "6 s", 7 to "7 s", 8 to "8 s", 10 to "10 s")
+private val BRAND_COLOR_PRESETS = listOf(
+    "HBO"         to "linear-gradient(135deg,#3b2a78,#15102e)",
+    "Netflix"     to "linear-gradient(135deg,#e50914,#831010)",
+    "Disney+"     to "linear-gradient(135deg,#003399,#001a66)",
+    "Apple TV+"   to "linear-gradient(135deg,#1c1c1e,#000000)",
+    "TV 2"        to "linear-gradient(135deg,#e3122b,#7d0a1a)",
+    "DR"          to "linear-gradient(135deg,#1455d8,#0a2766)",
+    "Teal"        to "linear-gradient(135deg,#0a93a6,#063d47)",
+    "Amber"       to "linear-gradient(135deg,#f5a623,#8a620d)",
+    "Forest"      to "linear-gradient(135deg,#1a7a3e,#0d3d1e)",
+    "Dark"        to "linear-gradient(135deg,#1a1a2e,#0a0a14)",
+)
 
 private fun genId(prefix: String) = "$prefix-${Random.nextInt(100_000, 999_999)}"
 
@@ -876,6 +888,12 @@ private fun openChannelEditorPage(container: Element, scope: CoroutineScope, idx
     val heroItemCount = pHero?.items?.size ?: 0
     val padLogo = c.paddingLogo
     val padText = c.paddingText
+    val previewBg = c.brandColor?.takeIf { it.isNotBlank() } ?: "linear-gradient(135deg,#3b2a78,#15102e)"
+    val solidHex = c.brandColor?.let { Regex("#[0-9a-fA-F]{3,8}").find(it)?.value } ?: "#3b2a78"
+    val swatchHtml = BRAND_COLOR_PRESETS.joinToString("") { (name, grad) ->
+        val ring = if (c.brandColor == grad) "outline:2px solid var(--hi);outline-offset:2px;" else ""
+        """<button title="${name.htmlEsc()}" data-color-preset="${grad.htmlEsc()}" style="width:26px;height:26px;border-radius:6px;border:none;cursor:pointer;background:$grad;box-shadow:inset 0 0 0 1px rgba(255,255,255,.14);$ring"></button>"""
+    }
 
     container.innerHTML = """
         <div class="pagebar" style="margin-bottom:18px">
@@ -903,9 +921,14 @@ private fun openChannelEditorPage(container: Element, scope: CoroutineScope, idx
                 <label class="tiny muted">Logo URL (for Logo style)</label>
                 <input id="ch-ed-logo" class="input" value="${(c.logoUrl ?: "").htmlEsc()}" placeholder="https://…" style="width:100%;margin-top:4px">
               </div>
-              <div style="margin-top:10px">
-                <label class="tiny muted">Brand fill (hex or linear-gradient(…))</label>
-                <input id="ch-ed-color" class="input" value="${(c.brandColor ?: "").htmlEsc()}" placeholder="#1a1a2e" style="width:100%;margin-top:4px">
+              <div style="margin-top:14px">
+                <label class="tiny muted">Brand fill</label>
+                <div id="ch-color-preview" style="background:$previewBg;width:100%;height:38px;border-radius:8px;margin:6px 0 10px;display:flex;align-items:center;justify-content:center;color:#fff;font-family:var(--font-display,'Space Grotesk',sans-serif);font-weight:700;font-size:.82rem;overflow:hidden">${c.name.take(12).ifEmpty { "Channel" }.htmlEsc()}</div>
+                <div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:10px">$swatchHtml</div>
+                <div style="display:flex;gap:8px;align-items:center">
+                  <input type="color" id="ch-color-native" value="$solidHex" title="Custom colour" style="width:36px;height:36px;padding:2px;border:1px solid var(--line);border-radius:8px;cursor:pointer;background:transparent;flex:none">
+                  <input id="ch-ed-color" class="input" style="flex:1;font-size:.8rem" value="${(c.brandColor ?: "").htmlEsc()}" placeholder="#1a1a2e or linear-gradient(…)">
+                </div>
               </div>
 
               <!-- R53 padding per display mode -->
@@ -981,6 +1004,39 @@ private fun openChannelEditorPage(container: Element, scope: CoroutineScope, idx
     // Wire back / cancel — history.back() pops the pushState entry and fires popstate → handleRaviloRoute → renderFull
     container.querySelector("#ch-ed-back")?.addEventListener("click") { _ -> window.history.back() }
     container.querySelector("#ch-ed-cancel")?.addEventListener("click") { _ -> window.history.back() }
+
+    // Brand colour picker
+    val colorInput = container.querySelector("#ch-ed-color") as? HTMLInputElement
+    val nativeInput = container.querySelector("#ch-color-native") as? HTMLInputElement
+    fun updateColorPreview(color: String) {
+        val preview = container.querySelector("#ch-color-preview") as? HTMLElement ?: return
+        val bg = color.ifBlank { "linear-gradient(135deg,#3b2a78,#15102e)" }
+        preview.setAttribute("style", "background:$bg;width:100%;height:38px;border-radius:8px;margin:6px 0 10px;display:flex;align-items:center;justify-content:center;color:#fff;font-family:var(--font-display,'Space Grotesk',sans-serif);font-weight:700;font-size:.82rem;overflow:hidden")
+        preview.textContent = ((container.querySelector("#ch-ed-name") as? HTMLInputElement)?.value?.take(12) ?: c.name.take(12)).ifEmpty { "Channel" }
+    }
+    nativeInput?.addEventListener("input") { _ ->
+        val hex = nativeInput.value
+        colorInput?.value = hex
+        updateColorPreview(hex)
+    }
+    colorInput?.addEventListener("input") { _ ->
+        val v = colorInput.value
+        updateColorPreview(v)
+        Regex("#[0-9a-fA-F]{3,8}").find(v)?.value?.let { nativeInput?.value = it }
+    }
+    container.querySelector("#ch-ed-name")?.addEventListener("input") { _ ->
+        updateColorPreview(colorInput?.value ?: "")
+    }
+    val swatchNodes = container.querySelectorAll("[data-color-preset]")
+    for (si in 0 until swatchNodes.length) {
+        val sw = swatchNodes.item(si) as? HTMLElement ?: continue
+        val preset = sw.getAttribute("data-color-preset") ?: continue
+        sw.addEventListener("click") { _ ->
+            colorInput?.value = preset
+            updateColorPreview(preset)
+            Regex("#[0-9a-fA-F]{3,8}").find(preset)?.value?.let { nativeInput?.value = it }
+        }
+    }
 
     // Hero enable toggle
     container.querySelector("#ch-hero-enabled")?.addEventListener("change") { _ ->
