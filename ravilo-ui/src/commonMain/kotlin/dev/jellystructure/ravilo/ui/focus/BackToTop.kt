@@ -27,7 +27,7 @@ fun Modifier.backToTopOnBack(
     onBackToTop: () -> Unit,
 ): Modifier = this.onKeyEvent { ev ->
     if (ev.type != KeyEventType.KeyDown) return@onKeyEvent false
-    if (ev.key != Key.Back && ev.key != Key.Escape) return@onKeyEvent false
+    if (ev.key != Key.Back && ev.key != Key.Escape && ev.key != Key.Backspace) return@onKeyEvent false
     if (atTop()) return@onKeyEvent false        // already at top → let RaviloApp pop/exit
     onBackToTop()                               // scroll to top + move focus to a top target
     true                                        // consumed → no pop/exit
