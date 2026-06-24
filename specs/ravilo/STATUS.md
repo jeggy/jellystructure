@@ -8,7 +8,7 @@ Ravilo is a sibling product **inside the jellystructure repo** — an Android TV
 canvas) streaming front-end built from one **Compose Multiplatform** codebase, talking only to the
 jellystructure backend.
 
-_Last updated: 2026-06-23_
+_Last updated: 2026-06-25_
 
 ## Current focus
 
@@ -20,6 +20,41 @@ draw-only "only on Tile/ChannelCard", so navigating Movie/Series detail still ju
 glow + lift into an inner `graphicsLayer` with the focusable on a fixed-size outer; `CastCircle` already
 scaled a descendant (unchanged). `:ravilo-ui` (android + wasmJs) compiles; `:ravilo-android:assembleDebug`
 builds. _Verify on-device:_ season picker / episode rail / action buttons no longer jump.
+
+## Newly planned — subtitles actually render (2026-06-25)
+
+Investigation of "get subtitles working in the player" found that **R41/R46 never made a
+subtitle visible** — they wired *labelling* (R46) and *selection* (R41), but on Android TV
+**no cue is ever drawn** and most items show no usable tracks. Three gaps, captured as two
+planned phases:
+
+- **Gap A — nothing renders cues (primary blocker).** `PlayerVideoSurface.kt` (androidMain)
+  uses a bare `TextureView` (`exo.setVideoTextureView`); ExoPlayer draws video there but
+  emits subtitle **cues** to a separate `TextOutput`/`SubtitleView` that is wired to nothing
+  — there is no `SubtitleView` and no `onCues` listener in `:ravilo-ui` (`media3-ui` isn't
+  even a `:ravilo-ui` dependency). A selected, decoded subtitle has nowhere to draw.
+- **Gap B — embedded text subs never offered.** `PlaybackService.buildSubtracks()` filters
+  `it.isExternal`, so only sidecar `.srt`/`.ass` become VTT sideloads; muxed-in subs (the
+  common case) are excluded and left to unreliable in-container extraction.
+- **Gap C — image subs (PGS/VobSub/DVDSub) can't render on direct play.** Stock Media3 1.8.0
+  parses them but PGS is flaky; the R14 engine fork that would render them was skipped (R31).
+  The official Jellyfin Android TV client handles these via native VobSub/DVDSub (v0.19.0+) +
+  server **burn-in transcoding** for PGS, driven by `PlaybackInfo`/`DeviceProfile` — the
+  negotiation Ravilo stubbed out (`TODO(R14)` in `PlaybackService`).
+
+The Ravilo side is two planned phases:
+
+- **[R55](requirements/phase-R55-subtitle-rendering.md)** — fixes Gap A + B (the immediate,
+  low-risk fix): add a Media3 `SubtitleView` overlay fed by an `onCues` listener so text
+  cues draw, and drop the `isExternal` filter so embedded SRT/ASS/SSA sideload as Jellyfin
+  VTT. Android-only render fix; web already renders text subs via `<track>`.
+- **[R56](requirements/phase-R56-image-subtitles.md)** — image-subtitle parity (Gap C):
+  native in-container rendering where Media3 can + server burn-in transcode where it can't,
+  via real `PlaybackInfo`/`DeviceProfile` negotiation; subtitle selection re-requests a
+  transcoded stream when burn-in is needed.
+
+**Record correction:** the R41/R46 notes below read as if subtitles work; they only labelled
+and selected tracks. R55 is what makes a text subtitle render; R56 adds image subs.
 
 ## Newly planned — Discover / Top 10 (2026-06-23)
 
