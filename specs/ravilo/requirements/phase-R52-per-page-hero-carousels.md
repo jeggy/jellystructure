@@ -56,3 +56,14 @@ The feed serves the correct hero for the page being opened; absent/disabled → 
 `design/app/ravilo-config.html` (Home hero + channel **Page hero**),
 `design/app/ravilo-builders.js` (shared hero-item builder reused for channel heroes),
 `design/ravilo/` (Ravilo TV renders a channel hero — HBO is the wired example).
+
+## Implementation note — channel feed bug fix
+
+After the initial implementation, `getChannelFeed()` was calling `buildHeroes(config, filtered, …)`,
+which always used `config.heroes` (the global Home hero list) and then filtered it against the
+channel-scoped item subset — so channel page heroes were never shown.
+
+Fix: look up the channel's `pageHero.items` directly from the **full** (unfiltered) media store and
+call `buildHeroesFromList()` with that item list. `pageHero.heroHeightPct` and
+`pageHero.autoAdvanceSeconds` are also now passed through correctly for the channel feed, rather than
+falling back to the global defaults.

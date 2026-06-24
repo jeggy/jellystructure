@@ -1,9 +1,6 @@
 # Phase R36 — Channel-button editor: logo asset upload, custom brand color/gradient, discoverable edit
 
-**Status:** Planned · _the channel-button look (logo image **or** text + brand fill) is configured only
-in the editor popup; logos are real uploaded/pickable image assets; the brand fill can be a preset, a
-custom solid, or a gradient; and every config row exposes a visible "edit" affordance so the popup is
-discoverable._
+**Status:** ✓ Done
 
 > Revises **[R32](phase-R32-unified-filter-workbench.md) §C2** (the channel-button styling inside the
 > shared workbench) and the channel parts of **[R16](phase-R16-jellystructure-config-screen.md) §3** /
@@ -130,3 +127,30 @@ a channel to edit it." hint) and the shared builder `design/app/ravilo-builders.
 `ravilo-builders.css`): the channel popup's **Display: Logo / Text**, the **logo asset picker +
 Upload**, the **text-label input**, the **brand fill** presets + **＋ custom** solid/gradient builder,
 and the live channel-button preview. Rows for Content rows and Hero items show the same edit icon.
+
+## As built — divergences from the original plan
+
+- **Channel editor is a page, not a popup (R53).** By the time this phase was fully implemented,
+  the channel editor had been promoted to a dedicated in-app page (`#/ravilo?channel=<id>` via
+  `history.pushState` + `popstate`, browser Back returns to the list). The logo/colour picker and
+  hero items (R52) all live on that page. The spec's "popup" framing is superseded by R53.
+
+- **Brand fill builder (§D) — simpler than planned.** The elaborate From/To/Angle gradient builder
+  (Solid/Gradient segment, two colour pickers, angle slider) was not built. Instead the implementation
+  ships: **10 preset gradient swatches** (HBO, Netflix, Disney+, Apple TV+, TV 2, DR, Teal, Amber,
+  Forest, Dark) with active-ring selection; a **native `<input type="color">`** for a custom solid
+  hex (synced with a text field); and a **raw text field** for any hex or `linear-gradient(…)` value.
+  A live preview chip shows the channel name rendered in the current fill and updates as name/colour
+  change. The `brandColor` CSS-fill contract (solid or `linear-gradient`) is unchanged.
+
+- **Logo upload + library picker (§B / §F) — implemented as specified.** The editor shows a live
+  preview (44 px tall image), a URL text field, an "⬆ Upload" button (file picker → base64 →
+  `POST /api/tv/admin/channel-logos`), and a library grid of previously uploaded logos
+  (`GET /api/tv/admin/channel-logos`) as 60×36 thumbnail tiles with active ring.
+
+- **Discoverable edit affordance (§E).** The existing "Edit" button on each channel row serves this
+  role; no separate pencil icon was added.
+
+- **Workbench filter.** The inline editor for channel content filters (which was always broken) was
+  replaced with a read-only summary + "⚙ Edit filter" button that opens the real `openWorkbench()`
+  modal. The workbench itself is unchanged (R32).
