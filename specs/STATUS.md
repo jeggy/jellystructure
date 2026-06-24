@@ -4,7 +4,7 @@ Living record of where work currently stands. Update whenever a phase completes 
 The **[requirements/README.md](requirements/README.md)** is the single source of truth for which phases
 exist and their done/planned status. This file tracks _current focus_, recent context, and open issues.
 
-_Last updated: 2026-06-23_
+_Last updated: 2026-06-24_
 
 ## Current focus
 
@@ -73,7 +73,23 @@ overlapped the language chips. Unified them into **one single-select filter** on
 `artPrefer` sort; default ladder resolves resolved-lang → textless → All. `design/app/media.html` mockup
 synced to the same model.
 
-No planned admin phases remain. Other active development is on the **Ravilo** side — see
+Two new admin phases planned (2026-06-24):
+
+- **[Phase 59](requirements/phase-59-restore-pagebar-menu-css.md) — Restore pagebar menu
+  CSS** (FR-MB1). The CSS for `.menu-wrap`/`.split`/`.menu`/`.menu-item` etc. was
+  accidentally removed from `app.css` in two "updated designs" commits (`84a8c3a`,
+  `43ed143`). The live detail-page pagebar buttons (External links, Re-pull, Save & sync)
+  are now unstyled — the design mockup still looks fine because it has an inline `<style>`
+  copy. Fix: add the ~16-line block back to `app.css`; remove the redundant inline copy
+  from `media.html`.
+- **[Phase 60](requirements/phase-60-series-detail-tabs-layout.md) — Series detail tabs
+  layout** (FR-TD1). The series detail page has a persistent left rail (poster + identity +
+  language card) that stays visible on every tab. Restructure to match movie layout: left
+  rail inside the overview tabpanel only; Episodes/Artwork/NFO/History tabs become
+  full-width. Also syncs `series.html` mockup and fixes the `.seg`/`.active` → `.tabs2`/`.on`
+  tab-strip style mismatch.
+
+Other active development is on the **Ravilo** side — see
 [`ravilo/STATUS.md`](ravilo/STATUS.md).
 
 ## Done (admin) — Settings tabs + Radarr/Sonarr connection (built 2026-06-24)
