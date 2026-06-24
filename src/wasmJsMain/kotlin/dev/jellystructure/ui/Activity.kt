@@ -485,7 +485,12 @@ private fun appendLogEntry(container: Element, level: String, category: String, 
     if (!catOk || !lvlOk) (div as? HTMLElement)?.style?.display = "none"
 
     console.appendChild(div)
-    (console as? HTMLElement)?.let { it.scrollTop = it.scrollHeight.toDouble() }
+    // Auto-scroll only when the user is already pinned to the bottom (within 80 px).
+    // History loads use a separate explicit scroll-to-bottom after all entries are appended.
+    (console as? HTMLElement)?.let { el ->
+        val distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight
+        if (distanceFromBottom <= 80) el.scrollTop = el.scrollHeight.toDouble()
+    }
 }
 
 private fun String.escapeHtml(): String =

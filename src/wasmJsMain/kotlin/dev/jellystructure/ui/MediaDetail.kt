@@ -1929,6 +1929,11 @@ private suspend fun loadArtworkTab(item: MediaItem, scope: CoroutineScope) {
     artId = item.id
     artItem = item
     artScope = scope
+    // Proactive permission check — surfaces the same banner the NFO tab uses
+    val perm = MediaApi.checkNfoWritable(item.id)
+    if (perm != null && !perm.writable) {
+        showNfoPermBanner(perm.error ?: "write permission check failed", perm.path)
+    }
     artTargets = buildArtTargets(item)
     if (artTargets.isEmpty()) return
     artSel = 0
@@ -2011,9 +2016,19 @@ private fun wireArtRail() {
         val btn = document.getElementById("art-fetch-missing") as? HTMLElement
         btn?.setAttribute("disabled", "true"); btn?.textContent = "Fetching…"
         scope.launch {
-            MediaApi.fetchArtwork(artId)
-            showDetailMsg("Fetched missing artwork + stills.", true)
-            artItem?.let { loadArtworkTab(it, scope) }
+            val result = MediaApi.fetchArtwork(artId)
+            if (result != null) {
+                showDetailMsg("Fetched missing artwork + stills.", true)
+                artItem?.let { loadArtworkTab(it, scope) }
+            } else {
+                val perm = MediaApi.checkNfoWritable(artId)
+                if (perm != null && !perm.writable) {
+                    showNfoPermBanner(perm.error ?: "write permission check failed", perm.path)
+                } else {
+                    showDetailMsg("Fetch failed.", false)
+                }
+                btn?.removeAttribute("disabled"); btn?.textContent = "Fetch all missing"
+            }
         }
     }
     document.querySelectorAll("#art-rail .art-rail-row").let { rows ->
@@ -2202,9 +2217,19 @@ private fun wireArtGallery() {
         btn?.setAttribute("disabled", "true"); btn?.textContent = "Saving…"
         scope.launch {
             val ok = gallerySave(t, source)
-            showDetailMsg(if (ok) "${t.label} saved to disk." else "Save failed.", ok)
-            if (ok) { t.onDisk = true; renderArtRail(); wireArtRail(); selectArtTarget(artSel) }
-            else { btn?.removeAttribute("disabled"); btn?.textContent = "Save to disk" }
+            if (ok) {
+                showDetailMsg("${t.label} saved to disk.", true)
+                t.onDisk = true; renderArtRail(); wireArtRail(); selectArtTarget(artSel)
+            } else {
+                // Check if the failure is a permission issue and show the banner if so
+                val perm = MediaApi.checkNfoWritable(artId)
+                if (perm != null && !perm.writable) {
+                    showNfoPermBanner(perm.error ?: "write permission check failed", perm.path)
+                } else {
+                    showDetailMsg("Save failed.", false)
+                }
+                btn?.removeAttribute("disabled"); btn?.textContent = "Save to disk"
+            }
         }
     }
     document.getElementById("art-url-btn")?.addEventListener("click") {
@@ -2437,7 +2462,7 @@ private fun permCopyBlock(command: String, comment: String? = null): String {
     val display = if (comment != null) "${command.esc()}<span style='color:var(--ink-soft);'> # ${comment.esc()}</span>" else command.esc()
     return """<div style="display:flex;align-items:stretch;background:var(--fill-3);border:1px solid var(--line);border-radius:4px;overflow:hidden;margin:4px 0 2px;">
       <code style="flex:1;padding:7px 10px;$MONO_CODE_STYLE;white-space:pre-wrap;word-break:break-all;">$display</code>
-      <button data-copy="$attrSafe" onclick="navigator.clipboard.writeText(this.dataset.copy);var b=this;b.textContent='Copied!';setTimeout(function(){b.textContent='Copy'},1500);" style="padding:0 12px;background:var(--fill-2);border:none;border-left:1px solid var(--line);cursor:pointer;color:var(--ink-soft);font-size:.75rem;white-space:nowrap;flex-shrink:0;">Copy</button>
+      <button data-copy="$attrSafe" onclick="(function(t){try{navigator.clipboard.writeText(t)}catch(e){var a=document.createElement('textarea');a.value=t;a.style.position='fixed';a.style.opacity='0';document.body.appendChild(a);a.focus();a.select();try{document.execCommand('copy')}catch(_){}document.body.removeChild(a)}})(this.dataset.copy);var b=this;b.textContent='Copied!';setTimeout(function(){b.textContent='Copy'},1500);" style="padding:0 12px;background:var(--fill-2);border:none;border-left:1px solid var(--line);cursor:pointer;color:var(--ink-soft);font-size:.75rem;white-space:nowrap;flex-shrink:0;">Copy</button>
     </div>""".trimIndent()
 }
 

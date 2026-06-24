@@ -42,3 +42,15 @@ internal fun observeSections(idsCsv: String, rootMargin: String, onVisible: (Str
             if(el) obs.observe(el);
         });
     })()""")
+
+// Clipboard write with execCommand fallback for non-HTTPS (HTTP) contexts
+internal fun copyToClipboard(text: String): Unit = js("""(function(){
+    try { navigator.clipboard.writeText(text); }
+    catch(e) {
+        var ta=document.createElement('textarea');
+        ta.value=text; ta.style.position='fixed'; ta.style.opacity='0';
+        document.body.appendChild(ta); ta.focus(); ta.select();
+        try{ document.execCommand('copy'); }catch(_){}
+        document.body.removeChild(ta);
+    }
+})()""")
