@@ -1,6 +1,6 @@
 # Phase R53 — Channel editor as a dedicated page + channel-button padding (FR-RV-C1)
 
-**Status:** ✓ Done · _design_
+**Status:** ✓ Done
 
 > Authored from the design project. Revises **[R36](phase-R36-channel-button-editor.md)**
 > (the channel-button editor, which opened in a popup).
