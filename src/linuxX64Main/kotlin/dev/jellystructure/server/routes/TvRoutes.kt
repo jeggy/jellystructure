@@ -119,12 +119,14 @@ fun Route.tvRoutes(
                 return@post
             }
             val (device, deviceToken) = result
+            val baseUrl = configStore.current.apiKeys.jellyfinUrl.trimEnd('/')
             call.respond(PairResult(
                 session = TvSession(
                     deviceId = device.deviceId,
                     userId = device.jellyfinUserId,
                     displayName = device.jellyfinUsername,
                     isAdmin = device.isAdmin,
+                    avatarUrl = if (baseUrl.isNotBlank()) "$baseUrl/Users/${device.jellyfinUserId}/Images/Primary?api_key=${device.jellyfinUserToken}" else null,
                 ),
                 deviceToken = deviceToken,
             ))
@@ -197,8 +199,15 @@ fun Route.tvRoutes(
     // ── Multi-user sessions ──────────────────────────────────────────────────
     get("/tv/sessions") {
         val device = call.attributes[DeviceKey]
+        val baseUrl = configStore.current.apiKeys.jellyfinUrl.trimEnd('/')
         val sessions = deviceService.listSessions(device.deviceId).map { d ->
-            TvSession(d.deviceId, d.jellyfinUserId, d.jellyfinUsername, d.isAdmin)
+            TvSession(
+                deviceId = d.deviceId,
+                userId = d.jellyfinUserId,
+                displayName = d.jellyfinUsername,
+                isAdmin = d.isAdmin,
+                avatarUrl = if (baseUrl.isNotBlank()) "$baseUrl/Users/${d.jellyfinUserId}/Images/Primary?api_key=${d.jellyfinUserToken}" else null,
+            )
         }
         call.respond(sessions)
     }

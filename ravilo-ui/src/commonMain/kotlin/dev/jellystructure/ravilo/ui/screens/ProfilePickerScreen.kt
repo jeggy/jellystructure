@@ -8,12 +8,15 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
+import dev.jellystructure.ravilo.ui.seams.RemoteImage
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -52,6 +55,7 @@ data class LocalSession(
     val displayName: String,
     val deviceToken: String,
     val isAdmin: Boolean,
+    val avatarUrl: String? = null,
 )
 
 /** Platform-specific: persists multiple device tokens per device. */
@@ -206,6 +210,7 @@ private fun ProfileTile(
         ),
     ) {
         val initials = session.displayName.split(' ').take(2).joinToString("") { it.firstOrNull()?.uppercase() ?: "" }
+        val avatarUrl = session.avatarUrl
         Box(
             modifier = Modifier
                 .size(96.dp)
@@ -213,7 +218,11 @@ private fun ProfileTile(
                 .then(if (focused) Modifier.border(3.dp, colors.focusRing, CircleShape) else Modifier),
             contentAlignment = Alignment.Center,
         ) {
-            Text(initials.ifEmpty { "?" }, color = if (focused) colors.onAccent else colors.text, fontSize = 28.sp, fontWeight = FontWeight.Bold)
+            if (avatarUrl != null) {
+                RemoteImage(avatarUrl, session.displayName, Modifier.fillMaxWidth().clip(CircleShape))
+            } else {
+                Text(initials.ifEmpty { "?" }, color = if (focused) colors.onAccent else colors.text, fontSize = 28.sp, fontWeight = FontWeight.Bold)
+            }
         }
         Spacer(Modifier.height(12.dp))
         Text(session.displayName, color = if (focused) colors.text else colors.textSecondary, fontSize = 14.sp)
