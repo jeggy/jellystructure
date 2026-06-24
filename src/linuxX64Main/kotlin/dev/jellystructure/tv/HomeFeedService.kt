@@ -10,6 +10,7 @@ import dev.jellystructure.shared.tv.Channel
 import dev.jellystructure.shared.tv.ChannelConfig
 import dev.jellystructure.shared.tv.ChannelStyle
 import dev.jellystructure.shared.tv.Hero
+import dev.jellystructure.shared.tv.HeroConfig
 import dev.jellystructure.shared.tv.HomeFeed
 import dev.jellystructure.shared.tv.MediaCard
 import dev.jellystructure.shared.tv.RaviloConfig
@@ -45,16 +46,23 @@ class HomeFeedService(
         val config = configService.getConfig(device.jellyfinUserId)
         val channelCfg = config.channels.find { it.id == channelId }
             ?: return HomeFeed(emptyList(), emptyList(), emptyList())
+        val allItems = mediaStore.allItems()
         val heroIds = config.heroes.map { it.itemId }.toSet()
-        val all = mediaStore.allItems().filter { it.matchesChannel(channelCfg, heroIds) }
+        val filtered = allItems.filter { it.matchesChannel(channelCfg, heroIds) }
         val jellyfinBase = configStore.current.apiKeys.jellyfinUrl.trimEnd('/')
         val token = jellyfinClient.tvToken(jellyfinBase, device, configStore.current.apiKeys.jellyfinToken)
+        // Use channel's own page-hero if enabled; look up items from the full store (not channel-filtered).
+        val pageHero = channelCfg.pageHero
+        val heroes = if (pageHero?.enabled == true && pageHero.items.isNotEmpty())
+            buildHeroesFromList(pageHero.items, allItems, jellyfinBase, token)
+        else
+            emptyList()
         return HomeFeed(
-            heroes = buildHeroes(config, all, jellyfinBase, token),
+            heroes = heroes,
             channels = buildChannels(config),
-            rows = buildRows(config, device, all, jellyfinBase, token, channelFilter = channelCfg),
-            heroHeightPct = config.heroHeightPct,
-            autoAdvanceSeconds = config.autoAdvanceSeconds,
+            rows = buildRows(config, device, filtered, jellyfinBase, token, channelFilter = channelCfg),
+            heroHeightPct = if (pageHero?.enabled == true) pageHero.heroHeightPct else config.heroHeightPct,
+            autoAdvanceSeconds = if (pageHero?.enabled == true) pageHero.autoAdvanceSeconds else config.autoAdvanceSeconds,
             tileShape = config.tileShape,
         )
     }
@@ -99,6 +107,28 @@ class HomeFeedService(
                 )
             }
     }
+
+    private fun buildHeroesFromList(
+        heroConfigs: List<HeroConfig>,
+        all: List<MediaItem>,
+        jellyfinBase: String,
+        token: String,
+    ): List<Hero> = heroConfigs
+        .filter { it.enabled }
+        .sortedBy { it.order }
+        .mapNotNull { hc ->
+            val item = all.firstOrNull { it.jellyfinId == hc.itemId } ?: all.firstOrNull { it.id == hc.itemId }
+                ?: return@mapNotNull null
+            val jellyfinId = item.jellyfinId ?: return@mapNotNull null
+            Hero(
+                item = item.toMediaCard(jellyfinBase, token),
+                taglineKicker = hc.tagline,
+                backdropUrl = "$jellyfinBase/Items/$jellyfinId/Images/Backdrop/0?api_key=$token",
+                logoUrl = null,
+                badge = hc.badge,
+                synopsis = item.overview,
+            )
+        }
 
     // ─── Channels ─────────────────────────────────────────────────────────────
 
