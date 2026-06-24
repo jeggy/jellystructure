@@ -20,7 +20,10 @@ import dev.jellystructure.shared.tv.TileShape
 import dev.jellystructure.shared.tv.UiDensity
 import kotlinx.browser.document
 import kotlinx.browser.window
+import dev.jellystructure.api.MediaApi
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.random.Random
 import org.w3c.dom.Element
@@ -400,7 +403,10 @@ private fun renderHeroes(container: Element) {
         """
         <div class="cfg-row" style="display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap">
           ${reorderButtons("hero", i, last)}
-          <input class="input" style="width:150px" placeholder="Jellyfin item ID" value="${h.itemId.htmlEsc()}" data-hero-id="$i">
+          <div style="position:relative;flex-shrink:0">
+            <input class="input" style="width:220px" placeholder="Search title or paste ID…" value="${h.itemId.htmlEsc()}" data-hero-id="$i" autocomplete="off">
+            <div id="hero-drop-$i" style="display:none;position:absolute;top:calc(100% + 2px);left:0;width:280px;z-index:300;background:var(--card-bg,#1a1a2e);border:1px solid var(--line);border-radius:8px;overflow:hidden;box-shadow:0 4px 20px #0009"></div>
+          </div>
           <input class="input" style="width:110px" placeholder="Badge" value="${(h.badge ?: "").htmlEsc()}" data-hero-badge="$i" list="hero-badges">
           <input class="input fill" style="min-width:140px" placeholder="Tagline / kicker" value="${(h.tagline ?: "").htmlEsc()}" data-hero-tagline="$i">
           <label style="display:flex;align-items:center;gap:5px;font-size:.8rem;white-space:nowrap"><input type="checkbox" data-hero-logo="$i"$logoChecked> Logo</label>
@@ -447,6 +453,44 @@ private fun renderHeroes(container: Element) {
                 val list = currentConfig.heroes.toMutableList(); list.removeAt(i)
                 currentConfig = currentConfig.copy(heroes = list)
             }, ::renderHeroes)
+        }
+        // Autocomplete: search-as-you-type on the hero ID input
+        val heroInp = sect.querySelector("[data-hero-id='$i']") as? HTMLInputElement ?: continue
+        val drop = sect.querySelector("#hero-drop-$i") as? HTMLElement ?: continue
+        var searchJob: Job? = null
+        heroInp.addEventListener("input") { _ ->
+            searchJob?.cancel()
+            val q = heroInp.value.trim()
+            if (q.length < 2) { drop.style.display = "none"; return@addEventListener }
+            searchJob = rcScope?.launch {
+                delay(250)
+                val results = MediaApi.list(search = q, pageSize = 6)?.items ?: return@launch
+                if (results.isEmpty()) { drop.style.display = "none"; return@launch }
+                drop.innerHTML = results.joinToString("") { item ->
+                    val pickId = item.jellyfinId ?: item.id
+                    val kindLabel = if (item.kind.name == "TV_SHOW") "Series" else "Movie"
+                    val yearStr = item.year?.let { " (${it})" } ?: ""
+                    """<div data-hero-pick="$pickId" style="padding:8px 12px;cursor:pointer;font-size:.82rem;display:flex;gap:8px;align-items:center;border-bottom:1px solid var(--line);transition:background .1s" onmouseover="this.style.background='var(--surface)'" onmouseout="this.style.background=''">
+                        <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${item.title.htmlEsc()}$yearStr</span>
+                        <span style="font-size:.68rem;background:var(--surface);border:1px solid var(--line);border-radius:4px;padding:1px 5px;flex-shrink:0">$kindLabel</span>
+                    </div>"""
+                }
+                drop.style.display = "block"
+                val nodeList = drop.querySelectorAll("[data-hero-pick]")
+                for (j in 0 until nodeList.length) {
+                    val el = nodeList.item(j) as? HTMLElement ?: continue
+                    el.addEventListener("mousedown") { ev ->
+                        (ev as? org.w3c.dom.events.MouseEvent)?.preventDefault()
+                        val pickId = el.getAttribute("data-hero-pick") ?: return@addEventListener
+                        heroInp.value = pickId
+                        drop.style.display = "none"
+                        collectConfig(container)
+                    }
+                }
+            }
+        }
+        heroInp.addEventListener("blur") { _ ->
+            rcScope?.launch { delay(150); drop.style.display = "none" }
         }
     }
 }
