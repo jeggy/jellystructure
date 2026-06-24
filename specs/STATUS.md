@@ -8,7 +8,12 @@ _Last updated: 2026-06-23_
 
 ## Current focus
 
-**Phases 0–53 complete.** [Phase 53](requirements/archive/phase-53-scanner-data-quality.md)
+**Phases 0–58 complete.** Phases 54–58 landed 2026-06-24 — Radarr/Sonarr connection (54),
+acquisition pipeline + `AcquisitionStatus` state machine (56), chart/Tudum Discover ingestion (57),
+Settings URL-addressable tabs (55), and the dark "Soft Charcoal" wf.css palette (58). The two
+"Newly planned" sections below are now **built + committed** (kept for context). Builds across all
+targets; runtime end-to-end test of the acquisition flow still pending. Earlier:
+[Phase 53](requirements/archive/phase-53-scanner-data-quality.md)
 (2026-06-23) fixed scanner data-quality issues found in a post-DB-reset full-sync review (296 scanned
 vs 303 in Jellyfin): full-scan `year` was null on 295/296 — now `searchYear = name ?? Jellyfin
 `ProductionYear`` drives the TMDB search + slug and the stored year prefers TMDB
@@ -71,9 +76,9 @@ synced to the same model.
 No planned admin phases remain. Other active development is on the **Ravilo** side — see
 [`ravilo/STATUS.md`](ravilo/STATUS.md).
 
-## Newly planned (admin) — 2026-06-23
+## Done (admin) — Settings tabs + Radarr/Sonarr connection (built 2026-06-24)
 
-Two admin phases were drafted from a Settings design pass and are **planned, not yet built**
+Two admin phases drafted from a Settings design pass, now **built + committed**
 (mockups in `design/app/settings.html`):
 
 - **[Phase 54](requirements/phase-54-configure-radarr-sonarr.md) — Configure Radarr & Sonarr**
@@ -88,7 +93,7 @@ Two admin phases were drafted from a Settings design pass and are **planned, not
   Download tools · Notifications · Advanced); the scroll-spy is dropped and health-check
   failures aggregate to per-tab badges + switch-to-tab.
 
-## Newly planned — Radarr/Sonarr acquisition + Discover (2026-06-23)
+## Done — Radarr/Sonarr acquisition + Discover (built 2026-06-24)
 
 A second design pass turned "request a title we don't have, and show its download progress" into a
 small spec set. The status indicator is deliberately **more than a percentage** — a request can be
