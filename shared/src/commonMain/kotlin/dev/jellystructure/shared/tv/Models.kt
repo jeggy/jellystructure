@@ -320,7 +320,7 @@ data class RaviloConfig(
     @SerialName("tile_shape") val tileShape: TileShape = TileShape.POSTER,
     @SerialName("ui_density") val uiDensity: UiDensity = UiDensity.COMFORTABLE,
     @SerialName("ui_language") val uiLanguage: String = "en",
-    @SerialName("hero_height_pct") val heroHeightPct: Int = 56,       // % of screen the hero fills (30..100)
+    @SerialName("hero_height_pct") val heroHeightPct: Int = 56,       // % of screen the hero fills (40..100)
     @SerialName("auto_advance_seconds") val autoAdvanceSeconds: Int = 7, // hero carousel interval seconds; 0 = off (0..120)
     val discover: DiscoverConfig = DiscoverConfig(),                   // R48 — Top 10 / Discover tab
 ) {

@@ -193,7 +193,7 @@ private fun renderTagsTab(data: TagsResponse): String = buildString {
     } else {
         append("""<div style="display:flex;flex-wrap:wrap;gap:12px;margin-bottom:20px">""")
         for (tag in data.jsTags) {
-            append("""<div class="card tag-card js-tag-card" data-name="${tag.name}" data-filter-name="${tag.name.lowercase()}" style="min-width:220px;transition:border-color .12s,box-shadow .12s" onmouseover="this.style.borderColor='var(--hi)';this.style.boxShadow='var(--shadow)'" onmouseout="this.style.borderColor='';this.style.boxShadow='var(--shadow-s)'">""")
+            append("""<div class="card tag-card js-tag-card" data-name="${tag.name}" data-color="${tag.color}" data-desc="${tag.description.replace("\"", "&quot;")}" data-filter-name="${tag.name.lowercase()}" style="min-width:220px;transition:border-color .12s,box-shadow .12s" onmouseover="this.style.borderColor='var(--hi)';this.style.boxShadow='var(--shadow)'" onmouseout="this.style.borderColor='';this.style.boxShadow='var(--shadow-s)'">""")
             append("""<span class="tag-dot-lg" style="background:${tag.color};box-shadow:0 0 0 2px ${tag.color}33"></span>""")
             append("""<span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:1px">""")
             append("""<span style="color:var(--ink);font-weight:600">${tag.name}</span>""")
@@ -228,40 +228,49 @@ private fun wireTagsTab(content: HTMLElement, scope: CoroutineScope) {
         val card = cards.item(i) as? HTMLElement ?: continue
         card.addEventListener("click") { _ ->
             val name = card.getAttribute("data-name") ?: return@addEventListener
-            showTagModal(content, scope, name)
+            val color = card.getAttribute("data-color")
+            val desc = card.getAttribute("data-desc")
+            showTagModal(content, scope, name, color, desc)
         }
     }
 }
 
 private val PRESET_COLORS = listOf("#6b7280", "#ef4444", "#f97316", "#eab308", "#22c55e", "#3b82f6", "#8b5cf6", "#ec4899")
 
-private fun showTagModal(content: HTMLElement, scope: CoroutineScope, editName: String?) {
+private fun showTagModal(content: HTMLElement, scope: CoroutineScope, editName: String?, editColor: String? = null, editDesc: String? = null) {
     val modal = content.querySelector("#tag-modal") as? HTMLElement ?: return
     val isNew = editName == null
+    val initialColor = editColor?.takeIf { it.isNotBlank() } ?: "#6b7280"
+    val initialDesc = editDesc?.takeIf { it.isNotBlank() } ?: ""
     val title = if (isNew) "New tag" else "Edit tag"
     modal.style.display = "flex"
     val swatches = PRESET_COLORS.joinToString("") { color ->
         """<span class="swatch color-swatch" data-color="$color" style="background:$color" title="$color"></span>"""
     }
+    val libLink = if (!isNew) {
+        val enc = dev.jellystructure.encodeURIComponent(editName!!)
+        """<a href="#/library?tags=$enc" class="btn sm ghost" id="modal-lib-btn" style="margin-right:auto">View in library →</a>"""
+    } else ""
     modal.innerHTML = """
-        <div style="background:var(--surface);border-radius:10px;padding:24px;width:340px;max-width:calc(100vw - 32px);box-shadow:0 8px 32px rgba(0,0,0,.25)">
+        <div style="background:var(--card-bg);border-radius:10px;padding:24px;width:340px;max-width:calc(100vw - 32px);box-shadow:0 8px 32px rgba(0,0,0,.35);border:1px solid var(--line-2)">
           <h3 style="margin:0 0 16px;font-size:1rem">$title</h3>
           <div class="field">
             <label>Name</label>
-            <input id="modal-tag-name" class="input" type="text" placeholder="tag name" style="width:100%" ${if (!isNew) "value=\"$editName\" readonly" else ""}>
+            <input id="modal-tag-name" class="input" type="text" placeholder="tag name" style="width:100%" ${if (!isNew) "value=\"${editName!!.replace("\"", "&quot;")}\" readonly" else ""}>
           </div>
           <div class="field">
             <label>Color</label>
             <div id="color-swatches" class="swatches">$swatches</div>
-            <input id="modal-tag-color" type="hidden" value="#6b7280">
+            <input id="modal-tag-color" type="hidden" value="$initialColor">
           </div>
           <div class="field">
             <label>Description</label>
-            <input id="modal-tag-desc" class="input" type="text" placeholder="optional description" style="width:100%">
+            <input id="modal-tag-desc" class="input" type="text" placeholder="optional description" style="width:100%" value="${initialDesc.replace("\"", "&quot;")}">
           </div>
           <div id="modal-tag-error" class="badge bad" style="display:none;margin-bottom:10px"></div>
           <div style="display:flex;gap:8px;justify-content:flex-end;align-items:center">
-            ${if (!isNew) """<button id="modal-delete-btn" class="btn sm ghost" style="color:var(--bad);border-color:var(--bad);margin-right:auto">Delete</button>""" else ""}
+            ${if (!isNew) """<button id="modal-delete-btn" class="btn sm ghost" style="color:var(--bad);border-color:var(--bad)">Delete</button>""" else ""}
+            $libLink
             <button id="modal-cancel-btn" class="btn sm ghost">Cancel</button>
             <button id="modal-save-btn" class="btn sm primary">${if (isNew) "Create" else "Save"}</button>
           </div>
@@ -277,7 +286,15 @@ private fun showTagModal(content: HTMLElement, scope: CoroutineScope, editName: 
             s.classList.toggle("on", s.getAttribute("data-color") == color)
         }
     }
-    selectSwatch("#6b7280")
+    selectSwatch(initialColor)
+
+    // Wire "View in library" link — navigate via SPA router and close modal
+    modal.querySelector("#modal-lib-btn")?.addEventListener("click") { ev ->
+        ev.preventDefault()
+        modal.style.display = "none"
+        val href = (ev.target as? HTMLElement)?.getAttribute("href") ?: return@addEventListener
+        App.navigate(href)
+    }
     for (i in 0 until swatchEls.length) {
         val s = swatchEls.item(i) as? HTMLElement ?: continue
         s.addEventListener("click") { _ -> selectSwatch(s.getAttribute("data-color") ?: "#6b7280") }

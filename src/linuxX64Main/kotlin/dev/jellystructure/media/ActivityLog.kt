@@ -69,7 +69,7 @@ class ActivityLog(
             entries.filter { e ->
                 (category == null || e.category == category) &&
                 (level == null || e.level == level)
-            }.reversed()
+            }
         }
         val total = filtered.size
         val paged = filtered.drop((page - 1) * pageSize).take(pageSize)

@@ -114,7 +114,7 @@ private fun HomeLoaded(
     val density = LocalDensity.current
     val containerH = LocalWindowInfo.current.containerSize.height
     val heroHeight = if (containerH > 0)
-        with(density) { containerH.toDp() } * (feed.heroHeightPct.coerceIn(30, 100) / 100f)
+        with(density) { containerH.toDp() } * (feed.heroHeightPct.coerceIn(40, 100) / 100f)
     else 460.dp
 
     val hasHero     = feed.heroes.isNotEmpty()
