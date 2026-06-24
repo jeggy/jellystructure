@@ -28,8 +28,7 @@ import org.w3c.dom.Element
 import org.w3c.dom.HTMLElement
 import org.w3c.dom.HTMLInputElement
 import org.w3c.dom.HTMLSelectElement
-import dev.jellystructure.observeSections
-import dev.jellystructure.scrollIntoViewSmooth
+import dev.jellystructure.Router
 
 fun renderSettings(container: Element, scope: CoroutineScope, query: Map<String, String> = emptyMap()) {
     container.innerHTML = """
@@ -46,20 +45,18 @@ fun renderSettings(container: Element, scope: CoroutineScope, query: Map<String,
 
           <nav style="width:160px;flex-shrink:0;position:sticky;top:88px;">
             <div style="display:flex;flex-direction:column;gap:2px;">
-              ${settingsNavItemHtml("sect-connections", "Connections")}
-              ${settingsNavItemHtml("sect-libraries", "Library mapping")}
-              ${settingsNavItemHtml("sect-scanning", "Scanning")}
-              ${settingsNavItemHtml("sect-metadata", "Metadata")}
-              ${settingsNavItemHtml("sect-crossseed", "Cross-seed safety")}
-              ${settingsNavItemHtml("sect-arr", "Download tools")}
-              ${settingsNavItemHtml("sect-notifications", "Notifications")}
-              ${settingsNavItemHtml("sect-advanced", "Advanced")}
+              ${settingsNavItemHtml("connections", "Connections")}
+              ${settingsNavItemHtml("libraries", "Libraries")}
+              ${settingsNavItemHtml("metadata", "Metadata")}
+              ${settingsNavItemHtml("downloads", "Download tools")}
+              ${settingsNavItemHtml("notifications", "Notifications")}
+              ${settingsNavItemHtml("advanced", "Advanced")}
             </div>
           </nav>
 
           <div class="col fill" style="min-width:280px">
 
-            <div class="card" id="sect-connections">
+            <div class="card set-section" id="sect-connections" data-tab="connections">
               <h3 style="font-size:1rem;margin:0 0 14px">Connections</h3>
               <div class="field">
                 <label>Jellyfin URL</label>
@@ -77,7 +74,7 @@ fun renderSettings(container: Element, scope: CoroutineScope, query: Map<String,
               <div id="conn-result" style="display:none;margin-top:8px"></div>
             </div>
 
-            <div class="card" id="sect-libraries">
+            <div class="card set-section" id="sect-libraries" data-tab="libraries">
               <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
                 <h3 style="font-size:1rem;margin:0">Library mapping</h3>
                 <button id="fetch-libraries" class="btn sm ghost">Fetch libraries</button>
@@ -92,7 +89,7 @@ fun renderSettings(container: Element, scope: CoroutineScope, query: Map<String,
               </div>
             </div>
 
-            <div class="card" id="sect-scanning">
+            <div class="card set-section" id="sect-scanning" data-tab="libraries">
               <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;flex-wrap:wrap">
                 <h3 style="font-size:1rem;margin:0">Scanning</h3>
                 <span id="tool-status-chip" style="font-size:.75rem;color:var(--ink-soft)"></span>
@@ -137,7 +134,7 @@ fun renderSettings(container: Element, scope: CoroutineScope, query: Map<String,
               </div>
             </div>
 
-            <div class="card" id="sect-metadata">
+            <div class="card set-section" id="sect-metadata" data-tab="metadata">
               <h3 style="font-size:1rem;margin:0 0 14px">Metadata</h3>
               <div class="field" style="margin-bottom:14px">
                 <label>Fallback language</label>
@@ -161,7 +158,7 @@ fun renderSettings(container: Element, scope: CoroutineScope, query: Map<String,
               </div>
             </div>
 
-            <div class="card" id="sect-crossseed">
+            <div class="card set-section" id="sect-crossseed" data-tab="downloads">
               <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
                 <h3 style="font-size:1rem;margin:0">Cross-seed safety</h3>
                 <span class="badge" style="font-size:.7rem;background:var(--fill-2)">qBittorrent</span>
@@ -212,7 +209,7 @@ fun renderSettings(container: Element, scope: CoroutineScope, query: Map<String,
               </div>
             </div>
 
-            <div class="card" id="sect-arr">
+            <div class="card set-section" id="sect-arr" data-tab="downloads">
               <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
                 <h3 style="font-size:1rem;margin:0">Download tools</h3>
                 <span class="badge" style="font-size:.7rem;background:var(--fill-2)">Radarr · Sonarr</span>
@@ -223,7 +220,7 @@ fun renderSettings(container: Element, scope: CoroutineScope, query: Map<String,
               <div class="hint" style="margin-top:2px">Root-folder paths reconcile with <strong>Library mapping</strong> by longest prefix.</div>
             </div>
 
-            <div class="card" id="sect-notifications">
+            <div class="card set-section" id="sect-notifications" data-tab="notifications">
               <h3 style="font-size:1rem;margin:0 0 14px">Notifications</h3>
               <div class="field">
                 <label>Webhook URL</label>
@@ -256,7 +253,7 @@ fun renderSettings(container: Element, scope: CoroutineScope, query: Map<String,
               </div>
             </div>
 
-            <div class="card" id="sect-advanced">
+            <div class="card set-section" id="sect-advanced" data-tab="advanced">
               <h3 style="font-size:1rem;margin:0 0 10px">Advanced</h3>
               <div style="border:1px solid var(--bad);border-radius:8px;padding:14px 16px">
                 <div style="font-size:.9rem;font-weight:600;color:var(--bad);margin-bottom:4px">Danger zone</div>
@@ -282,14 +279,8 @@ fun renderSettings(container: Element, scope: CoroutineScope, query: Map<String,
         attachListeners(scope)
     }
 
-    wireSettingsNav(container)
-
-    // Scroll to section from ?sect= query param
-    val sectParam = query["sect"]
-    if (sectParam != null) {
-        val target = document.getElementById(sectParam) ?: document.getElementById("sect-$sectParam")
-        target?.let { scrollIntoViewSmooth(it) }
-    }
+    wireSettingsTabs(container)
+    showTab(query["tab"]) // Phase 55 — URL-addressable tab (?tab=…), defaults to connections
 }
 
 /** Left-nav button with a hidden failure badge (Phase: health-check bubbling). */
@@ -327,8 +318,8 @@ private fun arrBoxHtml(kind: String, label: String, kindBadge: String, urlPlaceh
               </div>
 """
 
-private fun settingsNavItemHtml(sectId: String, label: String): String =
-    """<button data-sect="$sectId" class="settings-nav-item" style="display:flex;align-items:center;gap:6px;background:none;border:none;text-align:left;padding:5px 8px;border-radius:5px;font-size:.85rem;cursor:pointer;color:var(--ink-soft);"><span style="flex:1">$label</span><span class="nav-badge" data-badge="$sectId" style="display:none;background:var(--bad);color:#fff;border-radius:99px;padding:0 6px;font-size:.7rem;font-weight:600;flex-shrink:0"></span></button>"""
+private fun settingsNavItemHtml(tab: String, label: String): String =
+    """<button data-tab="$tab" class="settings-nav-item" style="display:flex;align-items:center;gap:6px;background:none;border:none;text-align:left;padding:5px 8px;border-radius:5px;font-size:.85rem;cursor:pointer;color:var(--ink-soft);"><span style="flex:1">$label</span><span class="nav-badge" data-badge="$tab" style="display:none;background:var(--bad);color:#fff;border-radius:99px;padding:0 6px;font-size:.7rem;font-weight:600;flex-shrink:0"></span></button>"""
 
 // Maps a HealthCheck.name to the settings section that owns it, for failure bubbling.
 private val HEALTH_CHECK_SECTION = mapOf(
@@ -341,13 +332,33 @@ private val HEALTH_CHECK_SECTION = mapOf(
     "Sonarr" to "sect-arr",
 )
 
+// Phase 55 — which tab owns each settings section (for tab show/hide + health-badge bubbling).
+private val SECTION_TAB = mapOf(
+    "sect-connections" to "connections",
+    "sect-libraries" to "libraries",
+    "sect-scanning" to "libraries",
+    "sect-metadata" to "metadata",
+    "sect-crossseed" to "downloads",
+    "sect-arr" to "downloads",
+    "sect-notifications" to "notifications",
+    "sect-advanced" to "advanced",
+)
+private val SETTINGS_TABS = listOf("connections", "libraries", "metadata", "downloads", "notifications", "advanced")
+
 private fun applyHealthFailures(failsBySection: Map<String, Int>) {
-    // Per-section nav badges
+    // Phase 55 — bubble section failures up to their owning tab.
+    val failsByTab = mutableMapOf<String, Int>()
+    for ((sect, n) in failsBySection) {
+        if (n <= 0) continue
+        val tab = SECTION_TAB[sect] ?: continue
+        failsByTab[tab] = (failsByTab[tab] ?: 0) + n
+    }
+    // Per-tab nav badges
     document.querySelectorAll(".nav-badge").let { nodes ->
         for (i in 0 until nodes.length) {
             val badge = nodes.item(i) as? HTMLElement ?: continue
-            val sect = badge.getAttribute("data-badge") ?: continue
-            val n = failsBySection[sect] ?: 0
+            val tab = badge.getAttribute("data-badge") ?: continue
+            val n = failsByTab[tab] ?: 0
             if (n > 0) { badge.textContent = n.toString(); badge.style.display = "inline-block" }
             else badge.style.display = "none"
         }
@@ -368,10 +379,10 @@ private fun applyHealthFailures(failsBySection: Map<String, Int>) {
         btn?.style?.removeProperty("border-color")
         btn?.style?.removeProperty("color")
     }
-    // Scroll to the first failing section
+    // Phase 55 — switch to the first failing tab (was: smooth-scroll to the section).
     if (total > 0) {
         val firstSect = failsBySection.entries.firstOrNull { it.value > 0 }?.key
-        firstSect?.let { document.getElementById(it)?.let { el -> scrollIntoViewSmooth(el) } }
+        firstSect?.let { SECTION_TAB[it] }?.let { showTab(it) }
     }
 }
 
@@ -1116,26 +1127,33 @@ private fun updateRestartBanner() {
     }
 }
 
-private fun wireSettingsNav(container: Element) {
-    val navBtns = container.querySelectorAll(".settings-nav-item[data-sect]")
-    for (i in 0 until navBtns.length) {
-        val btn = navBtns.item(i) as? HTMLElement ?: continue
-        btn.addEventListener("click") { _ ->
-            val sectId = btn.getAttribute("data-sect") ?: return@addEventListener
-            val target = document.getElementById(sectId) ?: return@addEventListener
-            scrollIntoViewSmooth(target)
-        }
-    }
-
-    // Highlight the nav item whose section is visible at the top of the viewport
-    val sections = "sect-connections,sect-libraries,sect-scanning,sect-metadata,sect-advanced,sect-crossseed,sect-notifications"
-    observeSections(sections, "-10% 0px -80% 0px") { visibleId ->
-        for (k in 0 until navBtns.length) {
-            val b = navBtns.item(k) as? HTMLElement ?: continue
-            val active = b.getAttribute("data-sect") == visibleId
+// Phase 55 — one panel visible at a time, selected by the rail and addressable in the URL.
+private fun showTab(name: String?) {
+    val tab = name?.takeIf { it in SETTINGS_TABS } ?: "connections"
+    document.querySelectorAll(".settings-nav-item[data-tab]").let { nodes ->
+        for (i in 0 until nodes.length) {
+            val b = nodes.item(i) as? HTMLElement ?: continue
+            val active = b.getAttribute("data-tab") == tab
             b.style.color = if (active) "var(--ink)" else "var(--ink-soft)"
             b.style.fontWeight = if (active) "600" else ""
+            b.style.background = if (active) "var(--hi-soft)" else "transparent"
         }
+    }
+    document.querySelectorAll(".set-section[data-tab]").let { nodes ->
+        for (i in 0 until nodes.length) {
+            val s = nodes.item(i) as? HTMLElement ?: continue
+            if (s.getAttribute("data-tab") == tab) s.classList.add("tab-show") else s.classList.remove("tab-show")
+        }
+    }
+    // ?tab= via replaceState — same Router contract as detail/metadata tabs (Phase 28); no hashchange.
+    Router.updateQuery(mapOf("tab" to tab), replace = true)
+}
+
+private fun wireSettingsTabs(container: Element) {
+    val navBtns = container.querySelectorAll(".settings-nav-item[data-tab]")
+    for (i in 0 until navBtns.length) {
+        val btn = navBtns.item(i) as? HTMLElement ?: continue
+        btn.addEventListener("click") { _ -> btn.getAttribute("data-tab")?.let { showTab(it) } }
     }
 }
 
