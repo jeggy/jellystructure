@@ -11,6 +11,7 @@ import dev.jellystructure.log.WorkerId
 import dev.jellystructure.media.ArtworkDownloader
 import dev.jellystructure.media.FfmpegRunner
 import dev.jellystructure.media.FfprobeRunner
+import dev.jellystructure.media.LogoDownloader
 import dev.jellystructure.media.MediaHistory
 import dev.jellystructure.media.MediaStore
 import dev.jellystructure.media.MkvpropeditRunner
@@ -21,6 +22,7 @@ import dev.jellystructure.model.MediaItem
 import dev.jellystructure.model.MediaKind
 import dev.jellystructure.model.NfoFileNode
 import dev.jellystructure.model.NfoFileTree
+import dev.jellystructure.model.Person
 import dev.jellystructure.model.TrackKind
 import dev.jellystructure.resolver.LanguageResolver
 import dev.jellystructure.nfo.NfoWriter
@@ -35,6 +37,7 @@ import io.ktor.http.content.forEachPart
 import io.ktor.server.request.receive
 import io.ktor.server.request.receiveMultipart
 import io.ktor.server.response.respond
+import io.ktor.server.response.respondBytes
 import io.ktor.server.response.respondText
 import io.ktor.server.routing.Route
 import io.ktor.server.routing.delete
@@ -67,6 +70,14 @@ import kotlinx.serialization.json.Json
 
 @Serializable
 private data class JellyfinLocksResponse(val lockData: Boolean, val lockedFields: List<String>)
+
+@Serializable
+private data class PersonSearchResult(
+    val tmdbId: Int,
+    val name: String,
+    val profilePath: String? = null,
+    val knownForDepartment: String = "",
+)
 
 // --- Phase 47: artwork candidate gallery DTOs ---
 @Serializable
@@ -128,6 +139,7 @@ fun Route.mediaRoutes(
     scanDispatcher: CoroutineDispatcher,
     seedingGuard: SeedingGuard,
     raviloConfigService: RaviloConfigService,
+    logoDownloader: LogoDownloader,
     arrRescan: ArrRescanService? = null,
 ) {
     route("/media") {
@@ -1217,6 +1229,87 @@ fun Route.mediaRoutes(
                 pushToJellyfin(updated, artwork, configStore, jellyfinClient, appScope, arrRescan)
                 call.respond(updated)
             }
+        }
+
+        // Phase 75 — Cast & crew endpoints
+
+        // PATCH /api/media/{id}/cast — replace the cast list (write-through)
+        patch("/{id}/cast") {
+            val id = call.parameters["id"] ?: return@patch call.respond(HttpStatusCode.BadRequest)
+            val item = store.resolve(id) ?: return@patch call.respond(HttpStatusCode.NotFound)
+            val cast = runCatching { call.receive<List<Person>>() }.getOrElse {
+                return@patch call.respond(HttpStatusCode.BadRequest, mapOf("error" to "invalid cast payload"))
+            }
+            val updated = item.copy(cast = cast)
+            store.updateOne(updated)
+            broadcaster.broadcast(JobEvent.ItemScanned("cast-edit-$id", updated))
+            call.respond(updated)
+        }
+
+        // PATCH /api/media/{id}/crew — replace the crew list (write-through)
+        patch("/{id}/crew") {
+            val id = call.parameters["id"] ?: return@patch call.respond(HttpStatusCode.BadRequest)
+            val item = store.resolve(id) ?: return@patch call.respond(HttpStatusCode.NotFound)
+            val crew = runCatching { call.receive<List<Person>>() }.getOrElse {
+                return@patch call.respond(HttpStatusCode.BadRequest, mapOf("error" to "invalid crew payload"))
+            }
+            val updated = item.copy(crew = crew)
+            store.updateOne(updated)
+            broadcaster.broadcast(JobEvent.ItemScanned("crew-edit-$id", updated))
+            call.respond(updated)
+        }
+
+        // POST /api/media/{id}/cast/fetch — re-fetch cast+crew from TMDB, store, return updated item
+        post("/{id}/cast/fetch") {
+            val id = call.parameters["id"] ?: return@post call.respond(HttpStatusCode.BadRequest)
+            val item = store.resolve(id) ?: return@post call.respond(HttpStatusCode.NotFound)
+            val tmdbId = item.tmdbId
+            if (tmdbId == null) {
+                call.respond(HttpStatusCode.BadRequest, mapOf("error" to "item has no TMDB id"))
+                return@post
+            }
+            val (cast, crew) = scanner.fetchCredits(tmdbId, item.kind == MediaKind.MOVIE)
+            val updated = item.copy(cast = cast, crew = crew)
+            store.updateOne(updated)
+            broadcaster.broadcast(JobEvent.ItemScanned("cast-fetch-$id", updated))
+            call.respond(updated)
+        }
+    }
+
+    // GET /api/people/{tmdbId}/image — serve cached person photo (download on-demand)
+    route("/people") {
+        get("/{tmdbId}/image") {
+            val tmdbId = call.parameters["tmdbId"]?.toIntOrNull()
+                ?: return@get call.respond(HttpStatusCode.BadRequest)
+            // Serve from cache if present
+            val cached = logoDownloader.servePersonImage(tmdbId)
+            if (cached != null) {
+                call.respondBytes(cached, ContentType.Image.JPEG)
+                return@get
+            }
+            // Try to find the profilePath in the store to trigger a download
+            val allItems = store.allItems()
+            val profilePath = allItems.flatMap { it.cast + it.crew }
+                .firstOrNull { it.tmdbId == tmdbId }?.profilePath
+            if (profilePath != null) {
+                logoDownloader.fetchPersonImage(tmdbId, profilePath)
+                val bytes = logoDownloader.servePersonImage(tmdbId)
+                if (bytes != null) {
+                    call.respondBytes(bytes, ContentType.Image.JPEG)
+                    return@get
+                }
+            }
+            call.respond(HttpStatusCode.NotFound)
+        }
+
+        // GET /api/people/search?q= — search TMDB for people
+        get("/search") {
+            val q = call.request.queryParameters["q"]?.takeIf { it.isNotBlank() }
+                ?: return@get call.respond(HttpStatusCode.BadRequest, mapOf("error" to "q required"))
+            val results = tmdbClient.searchPeople(q).map { p ->
+                PersonSearchResult(p.id, p.name, p.profilePath, p.knownForDepartment)
+            }
+            call.respond(results)
         }
     }
 

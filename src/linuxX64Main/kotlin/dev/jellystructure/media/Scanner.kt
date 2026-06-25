@@ -7,6 +7,7 @@ import dev.jellystructure.log.Logger
 import dev.jellystructure.model.Episode
 import dev.jellystructure.model.MediaItem
 import dev.jellystructure.model.MediaKind
+import dev.jellystructure.model.Person
 import dev.jellystructure.model.TrackKind
 import dev.jellystructure.resolver.LanguageResolver
 import dev.jellystructure.tmdb.TmdbClient
@@ -178,6 +179,7 @@ class Scanner(
         // Stored/display year prefers TMDB's release year, then the search year.
         val storedYear = details?.releaseDate?.take(4)?.toIntOrNull() ?: searchYear
         val titlesByLang = buildTitlesByLang(tmdbFinalId, isMovie = true, details?.title, details?.originalLanguage, details?.originalTitle)
+        val (cast, crew) = tmdbFinalId?.let { fetchCredits(it, isMovie = true) } ?: Pair(emptyList(), emptyList())
         return MediaItem(
             id = itemId(title, searchYear, jItem.id),
             title = details?.title ?: title,
@@ -204,6 +206,8 @@ class Scanner(
             jellyfinLockedFields = jItem.lockedFields,
             tags = jItem.tags,
             titlesByLang = titlesByLang,
+            cast = cast,
+            crew = crew,
         )
     }
 
@@ -305,6 +309,7 @@ class Scanner(
             val mixNetwork = mixDetails?.networks?.firstOrNull()
             val mixTitlesByLang = buildTitlesByLang(seriesTmdbId, isMovie = false, mixDetails?.name, mixDetails?.originalLanguage, mixDetails?.originalName)
             val mixStoredYear = mixDetails?.firstAirDate?.take(4)?.toIntOrNull() ?: searchYear
+            val (mixCast, mixCrew) = seriesTmdbId?.let { fetchCredits(it, isMovie = false) } ?: Pair(emptyList(), emptyList())
             return MediaItem(
                 id = itemId(title, searchYear, jItem.id),
                 title = mixDetails?.name ?: title,
@@ -332,6 +337,8 @@ class Scanner(
                 jellyfinLockedFields = jItem.lockedFields,
                 tags = jItem.tags,
                 titlesByLang = mixTitlesByLang,
+                cast = mixCast,
+                crew = mixCrew,
             )
         }
 
@@ -347,6 +354,7 @@ class Scanner(
         val tvTmdbFinalId = details?.id ?: seriesTmdbId
         val tvTitlesByLang = buildTitlesByLang(tvTmdbFinalId, isMovie = false, details?.name, details?.originalLanguage, details?.originalName)
         val tvStoredYear = details?.firstAirDate?.take(4)?.toIntOrNull() ?: searchYear
+        val (tvCast, tvCrew) = tvTmdbFinalId?.let { fetchCredits(it, isMovie = false) } ?: Pair(emptyList(), emptyList())
         return MediaItem(
             id = itemId(title, searchYear, jItem.id),
             title = details?.name ?: title,
@@ -374,6 +382,8 @@ class Scanner(
             jellyfinLockedFields = jItem.lockedFields,
             tags = jItem.tags,
             titlesByLang = tvTitlesByLang,
+            cast = tvCast,
+            crew = tvCrew,
         )
     }
 
@@ -740,6 +750,36 @@ class Scanner(
             return if (jItem.type == "Movie") "file-not-found" else "dir-not-found"
         if (jItem.type == "Series" && findEpisodeFiles(localPath).isEmpty()) return "no-episode-files"
         return "other"
+    }
+
+    /** Phase 75 — fetch full cast + crew from TMDB and map to Person model. */
+    suspend fun fetchCredits(tmdbId: Int, isMovie: Boolean): Pair<List<Person>, List<Person>> {
+        val response = if (isMovie) tmdb.getMovieFullCredits(tmdbId) else tmdb.getTvFullCredits(tmdbId)
+        val cast = response.cast.sortedBy { it.order }.map { m ->
+            Person(
+                tmdbId = m.id,
+                name = m.name,
+                profilePath = m.profilePath,
+                character = m.character.takeIf { it.isNotBlank() },
+                order = m.order,
+                type = "Actor",
+            )
+        }
+        val crew = response.crew
+            .distinctBy { Pair(it.id, it.job) }
+            .sortedWith(compareBy({ it.department }, { it.name }))
+            .map { m ->
+                Person(
+                    tmdbId = m.id,
+                    name = m.name,
+                    profilePath = m.profilePath,
+                    job = m.job.takeIf { it.isNotBlank() },
+                    department = m.department.takeIf { it.isNotBlank() },
+                    order = 0,
+                    type = "Director".takeIf { m.department.lowercase() == "directing" } ?: "Writer".takeIf { m.department.lowercase() == "writing" } ?: m.department,
+                )
+            }
+        return Pair(cast, crew)
     }
 
     suspend fun translationLanguages(tmdbId: Int, isMovie: Boolean): List<String> =

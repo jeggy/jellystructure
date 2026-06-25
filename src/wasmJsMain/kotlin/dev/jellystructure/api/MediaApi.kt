@@ -5,6 +5,7 @@ import dev.jellystructure.model.MediaItem
 import dev.jellystructure.model.MediaKind
 import dev.jellystructure.model.MediaPage
 import dev.jellystructure.model.NfoFileTree
+import dev.jellystructure.model.Person
 import io.ktor.client.call.body
 import io.ktor.client.request.delete
 import io.ktor.client.request.get
@@ -592,7 +593,39 @@ object MediaApi {
             if (year != null) parameter("year", year)
         }.body<List<TmdbMatchResult>>()
     }.getOrDefault(emptyList())
+
+    suspend fun patchCast(id: String, cast: List<Person>): MediaItem? = runCatching {
+        httpClient.patch("/api/media/$id/cast") {
+            contentType(ContentType.Application.Json)
+            setBody(cast)
+        }.body<MediaItem>()
+    }.getOrNull()
+
+    suspend fun patchCrew(id: String, crew: List<Person>): MediaItem? = runCatching {
+        httpClient.patch("/api/media/$id/crew") {
+            contentType(ContentType.Application.Json)
+            setBody(crew)
+        }.body<MediaItem>()
+    }.getOrNull()
+
+    suspend fun fetchCastFromTmdb(id: String): MediaItem? = runCatching {
+        httpClient.post("/api/media/$id/cast/fetch").body<MediaItem>()
+    }.getOrNull()
+
+    suspend fun searchPeople(query: String): List<PersonSearchResult> = runCatching {
+        httpClient.get("/api/people/search") {
+            parameter("q", query)
+        }.body<List<PersonSearchResult>>()
+    }.getOrDefault(emptyList())
 }
+
+@Serializable
+data class PersonSearchResult(
+    val tmdbId: Int,
+    val name: String,
+    val profilePath: String? = null,
+    val knownForDepartment: String = "",
+)
 
 @Serializable
 data class SeedingStatus(val status: String, val torrentName: String? = null, val detail: String? = null)

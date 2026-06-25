@@ -4,18 +4,19 @@ import dev.jellystructure.log.Logger
 import dev.jellystructure.model.Episode
 import dev.jellystructure.model.MediaItem
 import dev.jellystructure.model.MediaKind
+import dev.jellystructure.model.Person
 import kotlinx.io.buffered
 import kotlinx.io.files.Path
 import kotlinx.io.files.SystemFileSystem
 import kotlinx.io.writeString
 
 object NfoWriter {
-    fun buildXml(item: MediaItem): String = when (item.kind) {
-        MediaKind.MOVIE -> buildMovieXml(item)
-        MediaKind.TV_SHOW -> buildTvShowXml(item)
+    fun buildXml(item: MediaItem, serverUrl: String? = null): String = when (item.kind) {
+        MediaKind.MOVIE -> buildMovieXml(item, serverUrl)
+        MediaKind.TV_SHOW -> buildTvShowXml(item, serverUrl)
     }
 
-    suspend fun write(item: MediaItem): Result<String> {
+    suspend fun write(item: MediaItem, serverUrl: String? = null): Result<String> {
         return runCatching {
             val dir = when (item.kind) {
                 MediaKind.MOVIE -> item.path.substringBeforeLast('/')
@@ -29,7 +30,7 @@ object NfoWriter {
             Logger.info("NfoWriter.write: id='${item.id}' kind=${item.kind} item.path='${item.path}' nfoPath='$nfoPath'")
             val dirExists = SystemFileSystem.exists(Path(dir))
             Logger.info("NfoWriter.write: dir exists=$dirExists")
-            val xml = buildXml(item)
+            val xml = buildXml(item, serverUrl)
             writeAtomically(nfoPath, xml)
             Logger.info("Wrote NFO: $nfoPath", "nfo")
             nfoPath
@@ -126,7 +127,7 @@ object NfoWriter {
         appendLine("</episodedetails>")
     }
 
-    private fun buildMovieXml(item: MediaItem): String = buildString {
+    private fun buildMovieXml(item: MediaItem, serverUrl: String? = null): String = buildString {
         appendLine("""<?xml version="1.0" encoding="utf-8" standalone="yes"?>""")
         appendLine("<movie>")
         appendLine("  <title>${item.title.esc()}</title>")
@@ -153,13 +154,29 @@ object NfoWriter {
         if (!item.director.isNullOrBlank()) {
             appendLine("  <director>${item.director.esc()}</director>")
         }
+        for (p in item.crew.filter { it.department?.lowercase() == "directing" && it.job?.lowercase() == "director" }) {
+            appendLine("  <director>${p.name.esc()}</director>")
+        }
+        for (p in item.crew.filter { it.department?.lowercase() == "writing" }) {
+            appendLine("  <writer>${p.name.esc()}</writer>")
+        }
         if (!item.studio.isNullOrBlank()) {
             appendLine("  <studio>${item.studio.esc()}</studio>")
+        }
+        for (p in item.cast.sortedBy { it.order }) {
+            appendLine("  <actor>")
+            appendLine("    <name>${p.name.esc()}</name>")
+            val roleText = p.role?.takeIf { it.isNotBlank() } ?: p.character?.takeIf { it.isNotBlank() }
+            if (!roleText.isNullOrBlank()) appendLine("    <role>${roleText.esc()}</role>")
+            appendLine("    <order>${p.order}</order>")
+            appendLine("    <type>${p.type.esc()}</type>")
+            if (serverUrl != null && p.tmdbId != 0) appendLine("    <thumb>${serverUrl}/api/people/${p.tmdbId}/image</thumb>")
+            appendLine("  </actor>")
         }
         appendLine("</movie>")
     }
 
-    private fun buildTvShowXml(item: MediaItem): String = buildString {
+    private fun buildTvShowXml(item: MediaItem, serverUrl: String? = null): String = buildString {
         appendLine("""<?xml version="1.0" encoding="utf-8" standalone="yes"?>""")
         appendLine("<tvshow>")
         appendLine("  <title>${item.title.esc()}</title>")
@@ -188,6 +205,22 @@ object NfoWriter {
         }
         if (!item.network.isNullOrBlank()) {
             appendLine("  <tvstudio>${item.network.esc()}</tvstudio>")
+        }
+        for (p in item.crew.filter { it.department?.lowercase() == "directing" && it.job?.lowercase() == "director" }) {
+            appendLine("  <director>${p.name.esc()}</director>")
+        }
+        for (p in item.crew.filter { it.department?.lowercase() == "writing" }) {
+            appendLine("  <writer>${p.name.esc()}</writer>")
+        }
+        for (p in item.cast.sortedBy { it.order }) {
+            appendLine("  <actor>")
+            appendLine("    <name>${p.name.esc()}</name>")
+            val roleText = p.role?.takeIf { it.isNotBlank() } ?: p.character?.takeIf { it.isNotBlank() }
+            if (!roleText.isNullOrBlank()) appendLine("    <role>${roleText.esc()}</role>")
+            appendLine("    <order>${p.order}</order>")
+            appendLine("    <type>${p.type.esc()}</type>")
+            if (serverUrl != null && p.tmdbId != 0) appendLine("    <thumb>${serverUrl}/api/people/${p.tmdbId}/image</thumb>")
+            appendLine("  </actor>")
         }
         appendLine("</tvshow>")
     }
