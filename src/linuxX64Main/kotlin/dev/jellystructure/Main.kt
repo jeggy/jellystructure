@@ -44,6 +44,7 @@ import kotlinx.cinterop.staticCFunction
 import kotlinx.cinterop.toKString
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -91,7 +92,12 @@ fun main() = runBlocking {
     jsTagStore.load()
     val mediaStore = MediaStore(db, jsTagStore)
     mediaStore.load()
-    val rootScope = CoroutineScope(SupervisorJob())
+    // Catch exceptions escaping fire-and-forget coroutines so one failure can't abort the whole
+    // Kotlin/Native process (unhandled → SIGABRT/134); log and keep running. See Server.appScope.
+    val rootScope = CoroutineScope(SupervisorJob() + CoroutineExceptionHandler { _, e ->
+        println("[ERROR] Uncaught background coroutine exception (server kept alive): ${e.message}")
+        println(e.stackTraceToString())
+    })
     val broadcaster = WsBroadcaster()
     val activityLogFile = env("ACTIVITY_LOG_FILE", dbFile.substringBeforeLast('/') + "/activity-log.json")
     val activityLog = ActivityLog(activityLogFile, broadcaster, rootScope)
