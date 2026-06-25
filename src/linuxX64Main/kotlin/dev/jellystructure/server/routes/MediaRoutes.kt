@@ -320,11 +320,11 @@ fun Route.mediaRoutes(
                     NfoWriter.write(item)
                         .onSuccess { path ->
                             mediaHistory.record(id, "nfo_write", path)
-                            // For TV shows, also write episodedetails.nfo for each episode
+                            // For TV shows, also write episodedetails.nfo for each episode (Phase 76: pass main cast)
                             if (item.kind == MediaKind.TV_SHOW) {
                                 var epWritten = 0
                                 for (ep in item.episodes) {
-                                    NfoWriter.writeEpisode(ep)
+                                    NfoWriter.writeEpisode(ep, item.cast)
                                         .onSuccess { epWritten++ }
                                         .onFailure { Logger.warn("Episode NFO write failed for ${ep.filename}: ${it.message}") }
                                 }
@@ -589,7 +589,7 @@ fun Route.mediaRoutes(
                 var written = 0
                 var failed = 0
                 for (ep in item.episodes) {
-                    NfoWriter.writeEpisode(ep)
+                    NfoWriter.writeEpisode(ep, item.cast)
                         .onSuccess { written++ }
                         .onFailure { failed++ }
                 }
@@ -1274,6 +1274,61 @@ fun Route.mediaRoutes(
             broadcaster.broadcast(JobEvent.ItemScanned("cast-fetch-$id", updated))
             call.respond(updated)
         }
+
+        // Phase 76: PATCH /api/media/{id}/episodes/{filename}/cast — update episode guest stars
+        patch("/{id}/episodes/{filename}/cast") {
+            val id = call.parameters["id"] ?: return@patch call.respond(HttpStatusCode.BadRequest)
+            val filename = call.parameters["filename"] ?: return@patch call.respond(HttpStatusCode.BadRequest)
+            val item = store.resolve(id) ?: return@patch call.respond(HttpStatusCode.NotFound)
+            val guests = runCatching { call.receive<List<Person>>() }.getOrElse {
+                return@patch call.respond(HttpStatusCode.BadRequest, mapOf("error" to "invalid cast payload"))
+            }
+            val updated = item.copy(episodes = item.episodes.map { ep ->
+                if (ep.filename == filename) ep.copy(guestStars = guests) else ep
+            })
+            store.updateOne(updated)
+            broadcaster.broadcast(JobEvent.ItemScanned("ep-cast-edit-$id", updated))
+            call.respond(updated)
+        }
+
+        // Phase 76: PATCH /api/media/{id}/episodes/{filename}/crew — update episode crew
+        patch("/{id}/episodes/{filename}/crew") {
+            val id = call.parameters["id"] ?: return@patch call.respond(HttpStatusCode.BadRequest)
+            val filename = call.parameters["filename"] ?: return@patch call.respond(HttpStatusCode.BadRequest)
+            val item = store.resolve(id) ?: return@patch call.respond(HttpStatusCode.NotFound)
+            val crew = runCatching { call.receive<List<Person>>() }.getOrElse {
+                return@patch call.respond(HttpStatusCode.BadRequest, mapOf("error" to "invalid crew payload"))
+            }
+            val updated = item.copy(episodes = item.episodes.map { ep ->
+                if (ep.filename == filename) ep.copy(crew = crew) else ep
+            })
+            store.updateOne(updated)
+            broadcaster.broadcast(JobEvent.ItemScanned("ep-crew-edit-$id", updated))
+            call.respond(updated)
+        }
+
+        // Phase 76: POST /api/media/{id}/episodes/{filename}/cast/fetch — fetch episode guest stars + crew from TMDB
+        post("/{id}/episodes/{filename}/cast/fetch") {
+            val id = call.parameters["id"] ?: return@post call.respond(HttpStatusCode.BadRequest)
+            val filename = call.parameters["filename"] ?: return@post call.respond(HttpStatusCode.BadRequest)
+            val item = store.resolve(id) ?: return@post call.respond(HttpStatusCode.NotFound)
+            val ep = item.episodes.firstOrNull { it.filename == filename }
+                ?: return@post call.respond(HttpStatusCode.NotFound, mapOf("error" to "episode not found"))
+            val tmdbId = item.tmdbId
+            val season = ep.seasonNumber
+            val epNum = ep.episodeNumber
+            if (tmdbId == null || season == null || epNum == null) {
+                call.respond(HttpStatusCode.BadRequest, mapOf("error" to "missing TMDB id or season/episode number"))
+                return@post
+            }
+            val (guests, crew) = scanner.fetchEpisodeCredits(tmdbId, season, epNum)
+            val updated = item.copy(episodes = item.episodes.map { e ->
+                if (e.filename == filename) e.copy(guestStars = guests, crew = crew) else e
+            })
+            store.updateOne(updated)
+            broadcaster.broadcast(JobEvent.ItemScanned("ep-cast-fetch-$id", updated))
+            call.respond(updated)
+        }
     }
 
     // GET /api/people/{tmdbId}/image — serve cached person photo (download on-demand)
@@ -1287,9 +1342,9 @@ fun Route.mediaRoutes(
                 call.respondBytes(cached, ContentType.Image.JPEG)
                 return@get
             }
-            // Try to find the profilePath in the store to trigger a download
+            // Try to find the profilePath in the store to trigger a download (Phase 76: also search episode guest stars)
             val allItems = store.allItems()
-            val profilePath = allItems.flatMap { it.cast + it.crew }
+            val profilePath = allItems.flatMap { it.cast + it.crew + it.episodes.flatMap { ep -> ep.guestStars + ep.crew } }
                 .firstOrNull { it.tmdbId == tmdbId }?.profilePath
             if (profilePath != null) {
                 logoDownloader.fetchPersonImage(tmdbId, profilePath)
@@ -1412,7 +1467,7 @@ fun Route.mediaRoutes(
                         nfoOk++
                         if (item.kind == MediaKind.TV_SHOW) {
                             for (ep in item.episodes) {
-                                NfoWriter.writeEpisode(ep)
+                                NfoWriter.writeEpisode(ep, item.cast)
                                     .onFailure { Logger.warn("batch-push: episode NFO failed for ${ep.filename}: ${it.message}") }
                             }
                         }
@@ -1451,7 +1506,7 @@ private suspend fun pushToJellyfin(
             if (item.kind == MediaKind.TV_SHOW) {
                 var epWritten = 0
                 for (ep in item.episodes) {
-                    NfoWriter.writeEpisode(ep)
+                    NfoWriter.writeEpisode(ep, item.cast)
                         .onSuccess { epWritten++ }
                         .onFailure { Logger.warn("pushToJellyfin: episode NFO failed for ${ep.filename}: ${it.message}") }
                 }

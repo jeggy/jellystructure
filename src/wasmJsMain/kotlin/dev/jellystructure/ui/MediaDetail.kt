@@ -431,28 +431,7 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
         ${if (isTvShow) """<div id="tab-episodes" ${if (activeTab != "episodes") """style="display:none;" """ else ""}>${episodesTabHtml}</div>""" else ""}
 
         <div id="tab-cast" ${if (activeTab != "cast") """style="display:none;" """ else ""}>
-          <div class="card" style="margin-bottom:16px;">
-            <div class="row center" style="margin-bottom:14px;">
-              <h4 style="margin:0;">Cast &amp; crew</h4>
-              <span class="spacer"></span>
-              <button class="btn sm ghost" id="cast-fetch-btn">↻ Fetch from TMDB</button>
-            </div>
-            <h5 style="margin:0 0 10px;color:var(--fg-2);font-size:.8rem;letter-spacing:.06em;text-transform:uppercase;">Cast</h5>
-            <div class="cast-grid" id="cast-grid">
-              ${renderCastGridHtml(item.cast)}
-            </div>
-            <div style="margin-top:14px;display:flex;gap:8px;align-items:center;">
-              <button class="btn sm ghost" id="add-cast-btn">＋ Add person</button>
-            </div>
-            <hr class="dash" style="margin:18px 0;">
-            <h5 style="margin:0 0 10px;color:var(--fg-2);font-size:.8rem;letter-spacing:.06em;text-transform:uppercase;">Crew</h5>
-            <div id="crew-list">
-              ${renderCrewHtml(item.crew)}
-            </div>
-            <div style="margin-top:14px;">
-              <button class="btn sm ghost" id="add-crew-btn">＋ Add crew member</button>
-            </div>
-          </div>
+          ${if (isTvShow) renderSeriesCastTabHtml(item) else renderMovieCastTabHtml(item)}
         </div>
 
         <div id="tab-artwork" ${if (activeTab != "artwork") """style="display:none;" """ else ""}>
@@ -2959,33 +2938,237 @@ private fun renderDiffOverlay(bodyHtml: String) {
 
 // --- Phase 75: Cast & crew tab ---
 
-private fun renderCastGridHtml(cast: List<Person>): String {
-    if (cast.isEmpty()) return """<span class="muted tiny">No cast — click "Fetch from TMDB" to populate.</span>"""
-    return cast.joinToString("") { p ->
-        val imgSrc = "/api/people/${p.tmdbId}/image"
-        val charLabel = (p.role?.takeIf { it.isNotBlank() } ?: p.character?.takeIf { it.isNotBlank() }) ?: "—"
-        """<div class="person" data-person-id="${p.tmdbId}">
-             <div class="person-av"><img src="$imgSrc" alt="" onerror="this.style.display='none'"></div>
-             <div class="person-name">${p.name.esc()}</div>
-             <div class="person-role muted">${charLabel.esc()}</div>
-             <button class="btn sm ghost prow-rm" data-tmdb-id="${p.tmdbId}" style="margin-top:4px;font-size:.7rem;">✕</button>
-           </div>"""
+private fun renderMovieCastTabHtml(item: MediaItem): String = buildString {
+    append("""<div class="card" style="margin-bottom:16px;"><div class="row center" style="margin-bottom:14px;"><h4 style="margin:0;">Cast &amp; crew</h4><span class="spacer"></span><button class="btn sm ghost" id="cast-fetch-btn">↻ Fetch from TMDB</button></div>""")
+    append("""<h5 style="margin:0 0 10px;color:var(--fg-2);font-size:.8rem;letter-spacing:.06em;text-transform:uppercase;">Cast</h5>""")
+    append("""<div class="cast-grid" id="cast-grid">${renderCastGridHtml(item.cast)}</div>""")
+    append("""<div style="margin-top:14px;display:flex;gap:8px;align-items:center;"><button class="btn sm ghost" id="add-cast-btn">＋ Add person</button></div>""")
+    append("""<hr class="dash" style="margin:18px 0;">""")
+    append("""<h5 style="margin:0 0 10px;color:var(--fg-2);font-size:.8rem;letter-spacing:.06em;text-transform:uppercase;">Crew</h5>""")
+    append("""<div id="crew-list">${renderCrewHtml(item.crew)}</div>""")
+    append("""<div style="margin-top:14px;"><button class="btn sm ghost" id="add-crew-btn">＋ Add crew member</button></div></div>""")
+}
+
+private fun renderSeriesCastTabHtml(item: MediaItem): String = buildString {
+    append("""<div class="row center" style="margin-bottom:14px;gap:10px;flex-wrap:wrap;">""")
+    append("""<h4 style="margin:0;">Cast &amp; crew</h4>""")
+    append("""<div class="seg-pill" id="cast-scope"><button data-scope="series" class="on">Series</button><button data-scope="season">Season</button><button data-scope="episode">Episode</button></div>""")
+    append("""<span class="spacer"></span>""")
+    append("""<button class="btn sm ghost" id="cast-fetch-btn">↻ Fetch from TMDB</button>""")
+    append("""</div>""")
+    append("""<div id="cast-body">${renderSeriesScopeHtml(item)}</div>""")
+}
+
+private fun renderSeriesScopeHtml(item: MediaItem): String = buildString {
+    val totalEps = item.cast.sumOf { it.episodeCount }.let { if (it == 0) "" else "" }
+    append("""<div class="card" style="margin-bottom:16px;">""")
+    append("""<div class="row center"><h4 style="margin:0;">Cast</h4><span class="badge info" style="margin-left:7px;">${item.cast.size}</span><span class="spacer"></span><span class="tiny muted">drag to reorder · written to tvshow.nfo</span></div>""")
+    append("""<hr class="dash" style="margin:10px 0 14px;">""")
+    append("""<div class="cast-grid" id="cast-grid">${renderCastGridHtml(item.cast, showEpBadge = true)}</div>""")
+    append("""<div style="margin-top:14px;"><button class="btn sm ghost" id="add-cast-btn">＋ Add cast</button></div>""")
+    append("""</div>""")
+    append("""<div class="note blue" style="display:flex;gap:10px;align-items:flex-start;padding:11px 13px;margin-bottom:16px;border-radius:var(--radius-s);background:var(--hi-soft);border:1px solid rgba(99,179,237,.18);">""")
+    append("""<span style="flex:none;">ⓘ</span><div class="tiny" style="line-height:1.55;"><b>Main cast comes straight from TMDB.</b> It's <code>aggregate_credits</code> in TMDB's billing order; the <code>▸ N eps</code> badge is each role's total episode count. Written to <code>tvshow.nfo</code> and inherited by every episode. Manual edits are preserved across re-fetches.</div>""")
+    append("""</div>""")
+    append("""<div class="card">""")
+    append("""<div class="row center"><h4 style="margin:0;">Crew</h4><span class="badge info" style="margin-left:7px;">${item.crew.size}</span><span class="spacer"></span><button class="btn sm ghost" id="add-crew-btn">＋ Add crew</button></div>""")
+    append("""<hr class="dash" style="margin:10px 0 14px;">""")
+    append("""<div id="crew-list">${renderCrewHtml(item.crew)}</div>""")
+    append("""</div>""")
+}
+
+private fun renderSeasonMatrixHtml(item: MediaItem, matrixView: String): String = buildString {
+    val seasons = item.episodes.mapNotNull { it.seasonNumber }.distinct().sorted()
+    if (seasons.isEmpty()) {
+        append("""<div class="muted tiny">No episodes available.</div>""")
+        return@buildString
     }
+    val selSeason = matrixView.toIntOrNull() ?: 0
+    // Build guest name index
+    data class GuestKey(val name: String, val role: String?)
+    val allGuests = mutableListOf<GuestKey>()
+    for (ep in item.episodes) {
+        for (g in ep.guestStars) {
+            val key = GuestKey(g.name, g.character ?: g.role)
+            if (allGuests.none { it.name == g.name }) allGuests.add(key)
+        }
+    }
+
+    // Scope sub-picker
+    append("""<div class="seg-pill" id="matrix-view" style="margin-bottom:14px;">""")
+    append("""<button data-mview="all" class="${if (matrixView == "all") "on" else ""}">All seasons</button>""")
+    for (s in seasons) {
+        append("""<button data-mview="$s" class="${if (matrixView == s.toString()) "on" else ""}">S${s.toString().padStart(2, '0')}</button>""")
+    }
+    append("""</div>""")
+
+    append("""<div style="overflow-x:auto;"><table class="matrix"><thead><tr><th class="name" style="text-align:left;">Actor</th>""")
+    if (selSeason == 0) {
+        // All seasons view: columns = S1, S2, ..., Total
+        for (s in seasons) append("""<th>S${s.toString().padStart(2, '0')}</th>""")
+        append("""<th>Total</th>""")
+        append("""</tr></thead><tbody>""")
+        // Main cast rows
+        for (p in item.cast) {
+            append("""<tr><td class="name">${p.name.esc()} <span class="r">· ${(p.character ?: p.role ?: "").esc()}</span></td>""")
+            var total = 0
+            for (s in seasons) {
+                val presence = p.episodePresence[s.toString()]
+                val count = if (presence.isNullOrEmpty() && p.episodePresence.isEmpty()) {
+                    // episodePresence empty = appears in all eps
+                    item.episodes.count { it.seasonNumber == s }
+                } else {
+                    presence?.size ?: 0
+                }
+                total += count
+                val cls = if (count > 0) "on" else "off"
+                append("""<td><span class="ndot $cls">${if (count > 0) count.toString() else "·"}</span></td>""")
+            }
+            append("""<td class="mono muted">$total</td></tr>""")
+        }
+        // Guest rows
+        for (gk in allGuests) {
+            append("""<tr><td class="name">${gk.name.esc()} <span class="r">· ${(gk.role ?: "guest").esc()}</span></td>""")
+            var total = 0
+            for (s in seasons) {
+                val count = item.episodes.count { ep -> ep.seasonNumber == s && ep.guestStars.any { it.name == gk.name } }
+                total += count
+                val cls = if (count > 0) "g" else "off"
+                append("""<td><span class="ndot $cls">${if (count > 0) count.toString() else "·"}</span></td>""")
+            }
+            append("""<td class="mono muted">$total</td></tr>""")
+        }
+    } else {
+        // Single season: columns = E1, E2, ...
+        val seasonEps = item.episodes.filter { it.seasonNumber == selSeason }.sortedBy { it.episodeNumber ?: 0 }
+        for (ep in seasonEps) append("""<th>E${ep.episodeNumber}</th>""")
+        append("""</tr></thead><tbody>""")
+        for ((pi, p) in item.cast.withIndex()) {
+            append("""<tr><td class="name">${p.name.esc()} <span class="r">· ${(p.character ?: p.role ?: "").esc()}</span></td>""")
+            for (ep in seasonEps) {
+                val en = ep.episodeNumber ?: 0
+                val sn = selSeason.toString()
+                val present = p.episodePresence.isEmpty() || p.episodePresence[sn]?.contains(en) == true
+                val cls = if (present) "on" else "off"
+                append("""<td class="cell" data-cell="main:$pi:$selSeason:$en"><span class="dot $cls"></span></td>""")
+            }
+            append("""</tr>""")
+        }
+        for (gk in allGuests) {
+            append("""<tr><td class="name">${gk.name.esc()} <span class="r">· ${(gk.role ?: "guest").esc()} (guest)</span></td>""")
+            for (ep in seasonEps) {
+                val on = ep.guestStars.any { it.name == gk.name }
+                val cls = if (on) "g" else "off"
+                val encoded = gk.name.esc()
+                append("""<td class="cell" data-cell="guest:${encoded}:$selSeason:${ep.episodeNumber}"><span class="dot $cls"></span></td>""")
+            }
+            append("""</tr>""")
+        }
+    }
+    append("""</tbody></table></div>""")
+    append("""<div class="mlegend"><span><span class="dot on"></span>recurring</span><span><span class="dot g"></span>guest star</span>${if (selSeason == 0) "<span>number = episodes in that season</span>" else "<span><span class=\"dot off\"></span>not in episode</span>"}</div>""")
+}
+
+private fun renderEpisodeScopeHtml(item: MediaItem, selSeason: Int, selEp: Int): String = buildString {
+    val seasons = item.episodes.mapNotNull { it.seasonNumber }.distinct().sorted()
+    val curSeason = selSeason.takeIf { it > 0 } ?: seasons.firstOrNull() ?: 1
+    val seasonEps = item.episodes.filter { it.seasonNumber == curSeason }.sortedBy { it.episodeNumber ?: 0 }
+    val curEp = selEp.takeIf { it > 0 } ?: seasonEps.firstOrNull()?.episodeNumber ?: 1
+    val ep = seasonEps.firstOrNull { it.episodeNumber == curEp } ?: seasonEps.firstOrNull()
+
+    // Season + episode picker
+    append("""<div class="row center" style="gap:10px;margin-bottom:14px;flex-wrap:wrap;">""")
+    append("""<div class="seg-pill" id="ep-season-pick">""")
+    for (s in seasons) append("""<button data-epseason="$s" class="${if (s == curSeason) "on" else ""}">S${s.toString().padStart(2, '0')}</button>""")
+    append("""</div>""")
+    append("""<div class="eppick" id="ep-num-pick">""")
+    for (e in seasonEps) append("""<button data-epnum="${e.episodeNumber}" class="${if (e.episodeNumber == curEp) "on" else ""}">E${e.episodeNumber}</button>""")
+    append("""</div>""")
+    if (ep != null) {
+        append("""<span class="spacer"></span><button class="btn sm ghost" data-ep-cast-fetch="${ep.filename}">↻ Fetch this episode</button>""")
+    }
+    append("""</div>""")
+
+    if (ep == null) {
+        append("""<div class="muted tiny">No episodes in this season.</div>""")
+        return@buildString
+    }
+
+    // Inherited main cast
+    val sn = curSeason.toString()
+    val presentMainCast = item.cast.filter { p ->
+        p.episodePresence.isEmpty() || p.episodePresence[sn]?.contains(curEp) == true
+    }
+    append("""<div class="card" style="margin-bottom:16px;">""")
+    append("""<div class="row center"><h4 style="margin:0;">Main cast</h4><span class="tiny muted" style="margin-left:8px;">inherited from series</span><span class="spacer"></span><span class="tiny muted">tvshow.nfo → episode</span></div>""")
+    append("""<hr class="dash" style="margin:10px 0 14px;">""")
+    append("""<div class="cast-grid">${presentMainCast.joinToString("") { p -> renderPersonCardHtml(p, inherited = true) }}</div>""")
+    if (presentMainCast.isEmpty()) append("""<div class="muted tiny">No main-cast members tagged for this episode — toggle them in the Season matrix.</div>""")
+    append("""<div class="tiny muted" style="margin-top:9px;font-size:.72rem;">Inherited members are read-only — edit them on the <b>Series</b> scope.</div>""")
+    append("""</div>""")
+
+    // Guest stars
+    append("""<div class="card" style="margin-bottom:16px;">""")
+    append("""<div class="row center"><h4 style="margin:0;">Guest stars</h4><span class="tiny muted" style="margin-left:8px;">this episode only</span><span class="spacer"></span><span class="tiny muted">episodedetails.nfo</span></div>""")
+    append("""<hr class="dash" style="margin:10px 0 14px;">""")
+    append("""<div class="cast-grid" id="ep-guest-grid">""")
+    ep.guestStars.forEachIndexed { i, g -> append(renderPersonCardHtml(g, guest = true, removeAttr = "data-rm-guest=\"$i\"")) }
+    append("""<div class="person add" id="guest-add">＋ Add guest star</div>""")
+    append("""</div></div>""")
+
+    // Episode crew
+    append("""<div class="card">""")
+    append("""<div class="row center"><h4 style="margin:0;">Episode crew</h4><span class="spacer"></span><span class="tiny muted">episodedetails.nfo · &lt;director&gt;/&lt;writer&gt;</span></div>""")
+    append("""<hr class="dash" style="margin:10px 0 14px;">""")
+    append("""<div id="ep-crew-list">${renderCrewHtml(ep.crew)}</div>""")
+    append("""<div style="margin-top:10px;"><button class="btn sm ghost" id="epcrew-add">＋ Add crew</button></div>""")
+    append("""</div>""")
+}
+
+private fun renderPersonCardHtml(p: Person, showEpBadge: Boolean = false, inherited: Boolean = false, guest: Boolean = false, removeAttr: String = ""): String = buildString {
+    val PAL = listOf("#7b6ef0","#2dd49a","#f5b542","#3fb6f5","#e36588","#5b8def","#19d6c6","#b15cd0")
+    val colorIndex = p.name.fold(0) { acc, c -> acc + c.code } % PAL.size
+    val color = PAL[colorIndex]
+    val initials = p.name.split(" ").filter { it.isNotBlank() }.take(2).joinToString("") { it.first().uppercaseChar().toString() }
+    val imgSrc = if (!p.profilePath.isNullOrBlank()) "/api/people/${p.tmdbId}/image" else ""
+    val inh = if (inherited) " inh" else ""
+    val drag = if (!inherited && !guest) """ draggable="true"""" else ""
+    append("""<div class="person$inh"$drag>""")
+    if (showEpBadge && p.episodeCount > 0) append("""<span class="epb">▸ ${p.episodeCount} eps</span>""")
+    if (inherited) append("""<span class="tag">⤓ inherited</span>""")
+    if (guest) append("""<span class="gtag">guest</span>""")
+    if (removeAttr.isNotBlank()) append("""<button class="prm" $removeAttr>✕</button>""")
+    else if (!inherited) append("""<button class="prm" data-rm-cast="${p.tmdbId}">✕</button>""")
+    if (imgSrc.isNotBlank()) {
+        append("""<div class="ph" style="background:$color;"><img src="$imgSrc" alt="" style="width:100%;height:100%;object-fit:cover;" onerror="this.parentElement.style.background='$color';this.remove();this.parentElement.textContent='$initials';"></div>""")
+    } else {
+        append("""<div class="ph" style="background:$color;color:#fff;">$initials</div>""")
+    }
+    val charOrRole = (p.character ?: p.role)?.takeIf { it.isNotBlank() } ?: ""
+    append("""<div class="pbody"><div class="pname">${p.name.esc()}</div><div class="prole">${charOrRole.esc().ifEmpty { """<span class="muted">＋ role</span>""" }}</div></div>""")
+    append("""</div>""")
+}
+
+private fun renderCastGridHtml(cast: List<Person>, showEpBadge: Boolean = false): String {
+    if (cast.isEmpty()) return """<span class="muted tiny">No cast — click "Fetch from TMDB" to populate.</span>"""
+    return cast.joinToString("") { p -> renderPersonCardHtml(p, showEpBadge = showEpBadge) }
 }
 
 private fun renderCrewHtml(crew: List<Person>): String {
     if (crew.isEmpty()) return """<span class="muted tiny">No crew — click "Fetch from TMDB" to populate.</span>"""
+    val PAL = listOf("#7b6ef0","#2dd49a","#f5b542","#3fb6f5","#e36588","#5b8def","#19d6c6","#b15cd0")
     val byDept = crew.groupBy { it.department?.takeIf { it.isNotBlank() } ?: "Other" }
     return byDept.entries.joinToString("") { (dept, members) ->
         val rows = members.joinToString("") { p ->
-            val imgSrc = "/api/people/${p.tmdbId}/image"
+            val ci = p.name.fold(0) { acc, c -> acc + c.code } % PAL.size
+            val av = p.name.split(" ").filter { it.isNotBlank() }.take(2).joinToString("") { it.first().uppercaseChar().toString() }
             """<div class="crew-row" data-person-id="${p.tmdbId}">
-                 <div class="crew-av"><img src="$imgSrc" alt="" onerror="this.style.display='none'"></div>
+                 <span class="crew-av" style="background:${PAL[ci]};">$av</span>
                  <div style="flex:1;min-width:0;">
                    <div class="crew-name">${p.name.esc()}</div>
-                   <div class="crew-job muted">${(p.job ?: "").esc()}</div>
+                   <div class="crew-job">${(p.job ?: "").esc()}</div>
                  </div>
-                 <button class="btn sm ghost prow-rm-crew" data-tmdb-id="${p.tmdbId}" data-job="${(p.job ?: "").esc()}" style="font-size:.7rem;">✕</button>
+                 <span class="crew-rm prow-rm-crew" data-tmdb-id="${p.tmdbId}" data-job="${(p.job ?: "").esc()}">✕</span>
                </div>"""
         }
         """<div class="crew-dept">${dept.esc()}</div>$rows"""
@@ -2995,17 +3178,45 @@ private fun renderCrewHtml(crew: List<Person>): String {
 private fun wireCastTab(item: MediaItem, container: Element, scope: CoroutineScope) {
     val mutableCast = item.cast.toMutableList()
     val mutableCrew = item.crew.toMutableList()
-
-    fun refreshCastGrid() {
-        document.getElementById("cast-grid")?.innerHTML = renderCastGridHtml(mutableCast)
-        wireRemoveButtons(mutableCast, mutableCrew, item.id, container, scope)
+    if (item.kind == MediaKind.TV_SHOW) {
+        wireSeriesCastTab(item, mutableCast, mutableCrew, scope)
+    } else {
+        wireMovieCastTab(item, mutableCast, mutableCrew, scope)
     }
-    fun refreshCrewList() {
-        document.getElementById("crew-list")?.innerHTML = renderCrewHtml(mutableCrew)
-        wireRemoveButtons(mutableCast, mutableCrew, item.id, container, scope)
-    }
+}
 
-    wireRemoveButtons(mutableCast, mutableCrew, item.id, container, scope)
+private fun wireMovieCastTab(item: MediaItem, mutableCast: MutableList<Person>, mutableCrew: MutableList<Person>, scope: CoroutineScope) {
+    fun wireCastRemove() {
+        document.querySelectorAll(".prm[data-rm-cast]").let { btns ->
+            for (i in 0 until btns.length) {
+                val btn = btns.item(i) as? HTMLElement ?: continue
+                val tmdbId = btn.getAttribute("data-rm-cast")?.toIntOrNull() ?: continue
+                btn.addEventListener("click") {
+                    mutableCast.removeAll { it.tmdbId == tmdbId }
+                    scope.launch { MediaApi.patchCast(item.id, mutableCast) }
+                    document.getElementById("cast-grid")?.innerHTML = renderCastGridHtml(mutableCast)
+                    wireCastRemove()
+                }
+            }
+        }
+    }
+    fun wireCrewRemove() {
+        document.querySelectorAll(".prow-rm-crew").let { btns ->
+            for (i in 0 until btns.length) {
+                val btn = btns.item(i) as? HTMLElement ?: continue
+                val tmdbId = btn.getAttribute("data-tmdb-id")?.toIntOrNull() ?: continue
+                val job = btn.getAttribute("data-job") ?: ""
+                btn.addEventListener("click") {
+                    mutableCrew.removeAll { it.tmdbId == tmdbId && it.job == job }
+                    scope.launch { MediaApi.patchCrew(item.id, mutableCrew) }
+                    document.getElementById("crew-list")?.innerHTML = renderCrewHtml(mutableCrew)
+                    wireCrewRemove()
+                }
+            }
+        }
+    }
+    wireCastRemove()
+    wireCrewRemove()
 
     document.getElementById("cast-fetch-btn")?.addEventListener("click") {
         scope.launch {
@@ -3014,63 +3225,183 @@ private fun wireCastTab(item: MediaItem, container: Element, scope: CoroutineSco
             document.getElementById("crew-list")?.innerHTML = renderCrewHtml(updated.crew)
             mutableCast.clear(); mutableCast.addAll(updated.cast)
             mutableCrew.clear(); mutableCrew.addAll(updated.crew)
-            wireRemoveButtons(mutableCast, mutableCrew, item.id, container, scope)
+            wireCastRemove(); wireCrewRemove()
         }
     }
-
     document.getElementById("add-cast-btn")?.addEventListener("click") {
         showPersonSearchModal(scope, isCrew = false) { result ->
             if (mutableCast.none { it.tmdbId == result.tmdbId }) {
-                mutableCast.add(Person(
-                    tmdbId = result.tmdbId, name = result.name,
-                    profilePath = result.profilePath, order = mutableCast.size, type = "Actor"
-                ))
+                mutableCast.add(Person(tmdbId = result.tmdbId, name = result.name, profilePath = result.profilePath, order = mutableCast.size, type = "Actor"))
                 scope.launch { MediaApi.patchCast(item.id, mutableCast) }
-                refreshCastGrid()
+                document.getElementById("cast-grid")?.innerHTML = renderCastGridHtml(mutableCast)
+                wireCastRemove()
             }
         }
     }
-
     document.getElementById("add-crew-btn")?.addEventListener("click") {
         showPersonSearchModal(scope, isCrew = true) { result ->
             if (mutableCrew.none { it.tmdbId == result.tmdbId }) {
-                mutableCrew.add(Person(
-                    tmdbId = result.tmdbId, name = result.name,
-                    profilePath = result.profilePath, department = result.knownForDepartment, type = "Director"
-                ))
+                mutableCrew.add(Person(tmdbId = result.tmdbId, name = result.name, profilePath = result.profilePath, department = result.knownForDepartment, type = "Director"))
                 scope.launch { MediaApi.patchCrew(item.id, mutableCrew) }
-                refreshCrewList()
+                document.getElementById("crew-list")?.innerHTML = renderCrewHtml(mutableCrew)
+                wireCrewRemove()
             }
         }
     }
 }
 
-private fun wireRemoveButtons(mutableCast: MutableList<Person>, mutableCrew: MutableList<Person>, mediaId: String, container: Element, scope: CoroutineScope) {
-    document.querySelectorAll(".prow-rm").let { btns ->
-        for (i in 0 until btns.length) {
-            val btn = btns.item(i) as? HTMLElement ?: continue
-            val tmdbId = btn.getAttribute("data-tmdb-id")?.toIntOrNull() ?: continue
-            btn.addEventListener("click") {
-                mutableCast.removeAll { it.tmdbId == tmdbId }
-                scope.launch { MediaApi.patchCast(mediaId, mutableCast) }
-                document.getElementById("cast-grid")?.innerHTML = renderCastGridHtml(mutableCast)
-                wireRemoveButtons(mutableCast, mutableCrew, mediaId, container, scope)
+private fun wireSeriesCastTab(item: MediaItem, mutableCast: MutableList<Person>, mutableCrew: MutableList<Person>, scope: CoroutineScope) {
+    var castScope = "series"
+    var matrixView = "all"
+    var selSeason = item.episodes.mapNotNull { it.seasonNumber }.minOrNull() ?: 1
+    var selEp = item.episodes.filter { it.seasonNumber == selSeason }.mapNotNull { it.episodeNumber }.minOrNull() ?: 1
+    val mutableGuests = mutableListOf<Person>()
+    val mutableEpCrew = mutableListOf<Person>()
+
+    fun currentEp() = item.episodes.firstOrNull { it.seasonNumber == selSeason && it.episodeNumber == selEp }
+    fun syncEpState() {
+        val ep = currentEp()
+        mutableGuests.clear(); if (ep != null) mutableGuests.addAll(ep.guestStars)
+        mutableEpCrew.clear(); if (ep != null) mutableEpCrew.addAll(ep.crew)
+    }
+
+    fun refreshBody() {
+        val bodyEl = document.getElementById("cast-body") as? HTMLElement ?: return
+        bodyEl.innerHTML = when (castScope) {
+            "series" -> renderSeriesScopeHtml(item.copy(cast = mutableCast, crew = mutableCrew))
+            "season" -> """<div class="card">${renderSeasonMatrixHtml(item, matrixView)}</div>"""
+            else -> renderEpisodeScopeHtml(item, selSeason, selEp)
+        }
+    }
+
+    // Scope switcher (outside cast-body, persists across re-renders)
+    document.getElementById("cast-scope")?.addEventListener("click") { e ->
+        val btn = (e.target as? HTMLElement)?.closest("[data-scope]") as? HTMLElement ?: return@addEventListener
+        val s = btn.getAttribute("data-scope") ?: return@addEventListener
+        castScope = s
+        document.getElementById("cast-scope")?.querySelectorAll("button")?.let { btns ->
+            for (i in 0 until btns.length) {
+                val b = btns.item(i) as? HTMLElement ?: continue
+                b.classList.toggle("on", b.getAttribute("data-scope") == castScope)
+            }
+        }
+        if (castScope == "episode") syncEpState()
+        refreshBody()
+    }
+
+    // Fetch from TMDB (outside cast-body, persists)
+    document.getElementById("cast-fetch-btn")?.addEventListener("click") {
+        scope.launch {
+            val updated = MediaApi.fetchCastFromTmdb(item.id) ?: return@launch
+            mutableCast.clear(); mutableCast.addAll(updated.cast)
+            mutableCrew.clear(); mutableCrew.addAll(updated.crew)
+            refreshBody()
+        }
+    }
+
+    // Event delegation on cast-body — handles all dynamic clicks
+    val castBody = document.getElementById("cast-body") as? HTMLElement
+    castBody?.addEventListener("click") { e ->
+        val target = e.target as? HTMLElement ?: return@addEventListener
+
+        // Cast remove (series scope)
+        target.closest(".prm[data-rm-cast]")?.let { el ->
+            val tmdbId = (el as HTMLElement).getAttribute("data-rm-cast")?.toIntOrNull() ?: return@let
+            mutableCast.removeAll { it.tmdbId == tmdbId }
+            scope.launch { MediaApi.patchCast(item.id, mutableCast) }
+            refreshBody()
+        }
+        // Crew remove (series scope)
+        target.closest(".prow-rm-crew")?.let { el ->
+            el as HTMLElement
+            val tmdbId = el.getAttribute("data-tmdb-id")?.toIntOrNull() ?: return@let
+            val job = el.getAttribute("data-job") ?: ""
+            mutableCrew.removeAll { it.tmdbId == tmdbId && it.job == job }
+            scope.launch { MediaApi.patchCrew(item.id, mutableCrew) }
+            refreshBody()
+        }
+        // Guest remove (episode scope)
+        target.closest("[data-rm-guest]")?.let { el ->
+            val idx = (el as HTMLElement).getAttribute("data-rm-guest")?.toIntOrNull() ?: return@let
+            if (idx < mutableGuests.size) {
+                mutableGuests.removeAt(idx)
+                val ep = currentEp() ?: return@let
+                scope.launch { MediaApi.patchEpisodeCast(item.id, ep.filename, mutableGuests) }
+                refreshBody()
+            }
+        }
+        // Episode fetch
+        target.closest("[data-ep-cast-fetch]")?.let { el ->
+            val filename = (el as HTMLElement).getAttribute("data-ep-cast-fetch") ?: return@let
+            scope.launch {
+                val updated = MediaApi.fetchEpisodeCastFromTmdb(item.id, filename) ?: return@launch
+                val ep = updated.episodes.firstOrNull { it.filename == filename } ?: return@launch
+                mutableGuests.clear(); mutableGuests.addAll(ep.guestStars)
+                mutableEpCrew.clear(); mutableEpCrew.addAll(ep.crew)
+                refreshBody()
+            }
+        }
+        // Episode season picker
+        target.closest("[data-epseason]")?.let { el ->
+            selSeason = (el as HTMLElement).getAttribute("data-epseason")?.toIntOrNull() ?: return@let
+            selEp = item.episodes.filter { it.seasonNumber == selSeason }.mapNotNull { it.episodeNumber }.minOrNull() ?: 1
+            syncEpState()
+            refreshBody()
+        }
+        // Episode number picker
+        target.closest("[data-epnum]")?.let { el ->
+            selEp = (el as HTMLElement).getAttribute("data-epnum")?.toIntOrNull() ?: return@let
+            syncEpState()
+            refreshBody()
+        }
+        // Matrix view picker
+        target.closest("[data-mview]")?.let { el ->
+            matrixView = (el as HTMLElement).getAttribute("data-mview") ?: return@let
+            refreshBody()
+        }
+        // Add cast (series scope)
+        if (target.closest("#mc-add") != null || target.closest("#add-cast-btn") != null) {
+            showPersonSearchModal(scope, isCrew = false) { result ->
+                if (mutableCast.none { it.tmdbId == result.tmdbId }) {
+                    mutableCast.add(Person(tmdbId = result.tmdbId, name = result.name, profilePath = result.profilePath, order = mutableCast.size, type = "Actor"))
+                    scope.launch { MediaApi.patchCast(item.id, mutableCast) }
+                    refreshBody()
+                }
+            }
+        }
+        // Add crew (series scope)
+        if (target.closest("#crew-add") != null || target.closest("#add-crew-btn") != null) {
+            showPersonSearchModal(scope, isCrew = true) { result ->
+                if (mutableCrew.none { it.tmdbId == result.tmdbId }) {
+                    mutableCrew.add(Person(tmdbId = result.tmdbId, name = result.name, profilePath = result.profilePath, department = result.knownForDepartment, type = "Director"))
+                    scope.launch { MediaApi.patchCrew(item.id, mutableCrew) }
+                    refreshBody()
+                }
+            }
+        }
+        // Add guest star (episode scope)
+        if (target.closest("#guest-add") != null) {
+            showPersonSearchModal(scope, isCrew = false) { result ->
+                if (mutableGuests.none { it.tmdbId == result.tmdbId }) {
+                    mutableGuests.add(Person(tmdbId = result.tmdbId, name = result.name, profilePath = result.profilePath, type = "Actor"))
+                    val ep = currentEp() ?: return@showPersonSearchModal
+                    scope.launch { MediaApi.patchEpisodeCast(item.id, ep.filename, mutableGuests) }
+                    refreshBody()
+                }
+            }
+        }
+        // Add episode crew
+        if (target.closest("#epcrew-add") != null) {
+            showPersonSearchModal(scope, isCrew = true) { result ->
+                mutableEpCrew.add(Person(tmdbId = result.tmdbId, name = result.name, profilePath = result.profilePath, department = result.knownForDepartment, type = "Director"))
+                val ep = currentEp() ?: return@showPersonSearchModal
+                scope.launch { MediaApi.patchEpisodeCrew(item.id, ep.filename, mutableEpCrew) }
+                refreshBody()
             }
         }
     }
-    document.querySelectorAll(".prow-rm-crew").let { btns ->
-        for (i in 0 until btns.length) {
-            val btn = btns.item(i) as? HTMLElement ?: continue
-            val tmdbId = btn.getAttribute("data-tmdb-id")?.toIntOrNull() ?: continue
-            val job = btn.getAttribute("data-job") ?: ""
-            btn.addEventListener("click") {
-                mutableCrew.removeAll { it.tmdbId == tmdbId && it.job == job }
-                scope.launch { MediaApi.patchCrew(mediaId, mutableCrew) }
-                document.getElementById("crew-list")?.innerHTML = renderCrewHtml(mutableCrew)
-                wireRemoveButtons(mutableCast, mutableCrew, mediaId, container, scope)
-            }
-        }
-    }
+
+    refreshBody()
 }
 
 private fun showPersonSearchModal(scope: CoroutineScope, isCrew: Boolean, onSelect: (PersonSearchResult) -> Unit) {

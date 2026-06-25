@@ -85,11 +85,11 @@ object NfoWriter {
         }.getOrNull()
     }
 
-    suspend fun writeEpisode(episode: Episode): Result<String> = runCatching {
+    suspend fun writeEpisode(episode: Episode, inheritedCast: List<Person> = emptyList()): Result<String> = runCatching {
         val dir = episode.path.substringBeforeLast('/')
         val baseName = episode.filename.substringBeforeLast('.')
         val nfoPath = "$dir/$baseName.nfo"
-        writeAtomically(nfoPath, buildEpisodeXml(episode))
+        writeAtomically(nfoPath, buildEpisodeXml(episode, inheritedCast))
         Logger.info("Wrote episode NFO: $nfoPath", "nfo")
         nfoPath
     }
@@ -110,7 +110,7 @@ object NfoWriter {
         }.getOrNull()
     }
 
-    private fun buildEpisodeXml(episode: Episode): String = buildString {
+    private fun buildEpisodeXml(episode: Episode, inheritedCast: List<Person> = emptyList()): String = buildString {
         appendLine("""<?xml version="1.0" encoding="utf-8" standalone="yes"?>""")
         appendLine("<episodedetails>")
         if (!episode.title.isNullOrBlank()) {
@@ -123,6 +123,32 @@ object NfoWriter {
         }
         if (episode.tmdbEpisodeId != null) {
             appendLine("""  <uniqueid type="tmdb">${episode.tmdbEpisodeId}</uniqueid>""")
+        }
+        // Phase 76: episode crew — director/writer tags
+        for (p in episode.crew) {
+            when (p.type) {
+                "Director" -> appendLine("  <director>${p.name.esc()}</director>")
+                "Writer" -> appendLine("  <credits>${p.name.esc()}</credits>")
+            }
+        }
+        // Phase 76: inherited main cast filtered to this episode + guest stars
+        val sn = episode.seasonNumber?.toString()
+        val en = episode.episodeNumber
+        val presentMainCast = inheritedCast.filter { p ->
+            p.episodePresence.isEmpty() ||
+                (sn != null && en != null && p.episodePresence[sn]?.contains(en) == true)
+        }
+        val allActors = presentMainCast + episode.guestStars
+        for ((order, p) in allActors.withIndex()) {
+            appendLine("  <actor>")
+            appendLine("    <name>${p.name.esc()}</name>")
+            val charOrRole = (p.character ?: p.role)?.takeIf { it.isNotBlank() }
+            if (charOrRole != null) appendLine("    <role>${charOrRole.esc()}</role>")
+            appendLine("    <order>$order</order>")
+            if (!p.profilePath.isNullOrBlank()) {
+                appendLine("    <thumb>/api/people/${p.tmdbId}/image</thumb>")
+            }
+            appendLine("  </actor>")
         }
         appendLine("</episodedetails>")
     }
