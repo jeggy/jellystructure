@@ -1,6 +1,6 @@
 # Phase R60 — Channel content-rows UX fixes (FR-RV-R2, FR-RV-R3)
 
-**Status:** Planned
+**Status:** ✓ Done
 
 > Fixes two UX bugs introduced in **[R59](phase-R59-per-channel-content-rows.md)** (per-channel
 > content rows). No model changes; frontend-only.
