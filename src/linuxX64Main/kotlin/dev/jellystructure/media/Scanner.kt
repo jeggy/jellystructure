@@ -623,6 +623,7 @@ class Scanner(
                 val rescanCompany = details.productionCompanies.firstOrNull()
                 val rescanTmdbTags = tmdb.getMovieKeywords(details.id)
                 val rescanMovieExtIds = tmdb.getExternalIds(details.id, isMovie = true)
+                val (rescanCast, rescanCrew) = fetchCredits(details.id, isMovie = true)
                 item.copy(
                     title = details.title,
                     originalTitle = details.originalTitle.takeIf { it.isNotBlank() },
@@ -639,6 +640,8 @@ class Scanner(
                     studioLogoPath = rescanCompany?.logoPath,
                     tags = mergeRepullTags(rescanTmdbTags, item),
                     imdbId = rescanMovieExtIds?.imdbId?.takeIf { it.isNotBlank() } ?: item.imdbId,
+                    cast = rescanCast,
+                    crew = rescanCrew,
                 )
             }
             MediaKind.TV_SHOW -> {
@@ -670,6 +673,7 @@ class Scanner(
                 val rescanNetwork = details.networks.firstOrNull()
                 val rescanTmdbTags = tmdb.getTvKeywords(details.id)
                 val rescanTvExtIds = tmdb.getExternalIds(details.id, isMovie = false)
+                val (rescanTvCast, rescanTvCrew) = fetchCredits(details.id, isMovie = false)
                 item.copy(
                     title = details.name,
                     originalTitle = details.originalName.takeIf { it.isNotBlank() },
@@ -688,6 +692,8 @@ class Scanner(
                     episodes = updatedEpisodes,
                     imdbId = rescanTvExtIds?.imdbId?.takeIf { it.isNotBlank() } ?: item.imdbId,
                     tvdbId = rescanTvExtIds?.tvdbId ?: item.tvdbId,
+                    cast = rescanTvCast,
+                    crew = rescanTvCrew,
                 )
             }
         }
