@@ -1,7 +1,5 @@
 # Phase 30 — Library Multi-Axis Filters (studio / network / genre / tags) (FR-LMF1)
 
-records the as-built behaviour so the specs match the source._
-
 ## Problem
 Phase 19 added the **Metadata** page (Studios / Networks / Genres / Tags) and deep-links from there
 into the Library (`/library?studio=…`). Phase 20 added the **audio-track** filter. But the Library

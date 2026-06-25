@@ -1,6 +1,5 @@
 # Phase R12 — Search screen (FR-RV12)
 
-
 ## Problem
 A 10-foot search needs an **on-screen keyboard** and **live results** — and it must match every title
 an item has ever had (a show pulled once in Danish is findable by its Danish name). Works on TV D-pad

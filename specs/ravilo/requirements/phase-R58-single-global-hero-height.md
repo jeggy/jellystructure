@@ -1,6 +1,5 @@
 # Phase R58 — Single global hero height + auto-advance (drop per-channel hero settings) (FR-RV-H2)
 
-
 > Authored from the design project. Revises **[R52](phase-R52-per-page-hero-carousels.md)**
 > (which gave each channel hero its own height + auto-advance) and
 > **[R27](phase-R27-layout-model-extensions.md)**.

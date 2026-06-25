@@ -1,6 +1,5 @@
 # Phase R08 — Playback brokering + progress reporting (FR-RV8)
 
-
 ## Problem
 Ravilo plays media **directly from Jellyfin** (data plane) but must never hold Jellyfin as its API.
 jellystructure must **broker** a playback ticket (Jellyfin URL + scoped token + start position) and

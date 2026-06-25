@@ -1,6 +1,5 @@
 # Phase 39 — Subtitle Management (FR-SUB1)
 
-
 ## Features
 
 ### Forced flag editing (MKV only)

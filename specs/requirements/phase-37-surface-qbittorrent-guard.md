@@ -1,6 +1,5 @@
 # Phase 37 — Surface the qBittorrent Seeding Guard (FR-QS1)
 
-
 ## Problem
 Phase 26 added the seeding guard that blocks mkvpropedit/ffmpeg, but operators had no way to see
 whether a file was currently seeded before attempting a track edit. The block arrived as an error

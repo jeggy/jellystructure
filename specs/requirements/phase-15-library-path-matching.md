@@ -1,6 +1,5 @@
 # Phase 15 — Fix Library Path Matching for Movies (FR-B1)
 
-
 ## Problem
 Movies are not matched to any library during scans. Logs show:
 `[WARN] No matching library for '/media/movies/...'`.

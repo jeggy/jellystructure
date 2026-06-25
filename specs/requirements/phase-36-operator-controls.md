@@ -1,6 +1,5 @@
 # Phase 36 — Operator Controls (FR-OC1)
 
-
 ## Features
 
 ### Per-library scan

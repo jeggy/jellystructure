@@ -1,6 +1,5 @@
 # Phase R29 — TV control-plane contract review fixes (FR-RV29)
 
-
 ## Problem
 A focused review of the "R01–R28 done" Ravilo surface found regressions/gaps against done phases —
 two of them user-visible and silently swallowed by `runCatching`, plus contract drift and a latent

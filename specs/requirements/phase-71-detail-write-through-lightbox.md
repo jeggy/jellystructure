@@ -1,6 +1,5 @@
 # Phase 71 — Detail-page write-through editing + artwork lightbox (FR-DE1)
 
-
 > Authored from the design project. Slot into the phase index where it fits; the FR code
 > (FR-DE1) is the stable reference.
 

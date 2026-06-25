@@ -1,6 +1,5 @@
 # Phase R01 — `:shared` KMP module: DTOs + `TvApiClient` (FR-RV1)
 
-
 ## Problem
 Ravilo (Android TV + Web) and the jellystructure backend must agree on the wire format for the
 `/api/tv/**` API. Defining DTOs three times (server, web client, TV client) guarantees drift. We need

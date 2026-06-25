@@ -1,6 +1,5 @@
 # Phase 10 — External Links on Media Detail (FR-X1)
 
-
 ## Problem
 The media detail page has no direct links to the source systems. Users have to manually navigate to
 Jellyfin or TMDB to cross-reference.

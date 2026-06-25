@@ -1,8 +1,5 @@
 # Phase R32 — Unified filter workbench + hero builder + Library round-trip
 
-the jellystructure Library page; a guided hero-item builder; and a Library→Ravilo round-trip that
-saves a filter as a Channel/Content row or features a title in a viewer's hero carousel._
-
 > Revises the filter parts of **[R16](phase-R16-jellystructure-config-screen.md)** and the typed
 > filters of **[R28](phase-R28-config-editor-fidelity.md)**: custom Channel/Content-row filters are
 > now built with a **condition-stack workbench** instead of single typed dropdowns. Layout params from

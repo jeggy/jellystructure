@@ -1,6 +1,5 @@
 # Phase R59 — Per-channel content rows (inherit Home by default, overridable) (FR-RV-R1)
 
-
 > Authored from the design project. Extends **[R52](phase-R52-per-page-hero-carousels.md)** /
 > **[R32](phase-R32-unified-filter-workbench.md)** and the channel editor of
 > **[R53](phase-R53-channel-editor-page-padding.md)**.

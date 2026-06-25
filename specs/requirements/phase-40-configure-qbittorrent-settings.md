@@ -1,6 +1,5 @@
 # Phase 40 — Configure qBittorrent in Settings (FR-QC1)
 
-
 ## Changes from the "config-only, no UI" Phase 26 decision
 
 Phase 26 kept qBittorrent config-only (TOML only). This phase adds a full Settings UI section so

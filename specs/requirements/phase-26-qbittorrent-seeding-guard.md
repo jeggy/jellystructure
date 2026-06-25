@@ -1,6 +1,5 @@
 # Phase 26 — qBittorrent Seeding Guard (FR-QB1)
 
-
 ## Problem
 
 jellystructure will eventually run `mkvpropedit` automatically to set audio/subtitle default flags and

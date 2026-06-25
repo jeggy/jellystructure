@@ -1,6 +1,5 @@
 # Phase 28 — URL-based tab & view-state navigation (FR-UN1)
 
-
 ## Problem
 Top-level pages have their own URLs, but **sub-state within a page does not**. Switching to the
 "Artwork" tab on a media detail page, filtering the Library, or jumping to a Settings section leaves the

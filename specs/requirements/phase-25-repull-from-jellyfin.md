@@ -1,6 +1,5 @@
 # Phase 25 — Fix the Sync Button → "Re-pull from Jellyfin…" (FR-RJ1)
 
-
 ## Problem
 The Media Detail **"Sync ↻"** button is misleading. It looks like it re-discovers the item from
 Jellyfin, but it actually re-probes the local file and re-fetches **TMDB**. We want a button that

@@ -1,6 +1,5 @@
 # Phase R21 — Back navigation + focus polish (FR-RV21)
 
-
 ## Problem
 D-pad Back exited the app instead of navigating to the previous screen. Focus transitions between
 tiles felt sluggish and lacked TV-appropriate animation character.

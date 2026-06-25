@@ -1,6 +1,5 @@
 # Phase 16 — Multi-Worker Scanner with Dynamic Scaling (FR-W1)
 
-
 ## Problem
 The scanner processes items sequentially. Large libraries are slow. We want a configurable number of
 concurrent scan workers (coroutines), **default 1**, changeable from Settings — and the change must

@@ -1,6 +1,5 @@
 # Phase R17 — Web target hardening + packaging (FR-RV17)
 
-
 ## Problem
 The Compose-MP **web (canvas)** target has tradeoffs that need explicit attention before release —
 input, accessibility, performance, and how the bundle is served alongside the jellystructure admin

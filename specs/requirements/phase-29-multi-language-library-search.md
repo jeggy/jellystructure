@@ -1,6 +1,5 @@
 # Phase 29 — Multi-language library search (FR-ML1)
 
-
 ## Problem
 Library search only matches the **one** current title — `media.title`, the title in whichever language
 the per-file resolver landed on. If a show resolved to its Danish title, searching its English name

@@ -1,6 +1,5 @@
 # Phase R16 — jellystructure web: Ravilo config screen (FR-RV16)
 
-
 ## Problem
 The per-user `RaviloConfig` (R04) needs a real editing surface in the **jellystructure web app** — the
 screen mocked in `design/app/ravilo-config.html`. It must let a user arrange their Ravilo home: hero

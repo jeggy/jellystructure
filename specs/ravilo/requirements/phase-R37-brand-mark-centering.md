@@ -1,9 +1,5 @@
 # Phase R37 — Brand-mark centering + asset-pack regeneration
 
-launcher/store raster and every in-app inline copy inherited an off-centre, undersized glyph. Recentre
-the **master SVG** (paths unchanged) and regenerate the whole asset pack from it; fix the in-app inline
-marks and the config-header alignment._
-
 > A correctness follow-up to **[R22](phase-R22-apk-packaging.md)** (TV banner, adaptive icon, splash)
 > and the brand mark in [`../constitution.md`](../constitution.md) §Brand. No new product surface — it
 > makes the existing brand assets correct and consistent. Source-of-truth rule from R22 holds: **all

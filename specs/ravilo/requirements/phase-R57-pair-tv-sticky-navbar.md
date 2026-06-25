@@ -1,6 +1,5 @@
 # Phase R57 — Ravilo config: Pair-a-TV action + sticky action navbar (FR-RV-P1)
 
-
 > Authored from the design project (`design/app/ravilo-config.html`). Resolves the
 > **SYNC-AUDIT §3.2** open thread ("add a *Pair a TV* section, or keep it code-only?") and
 > surfaces the R03/R15 pairing handshake on the admin side.

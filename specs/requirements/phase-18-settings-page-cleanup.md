@@ -1,6 +1,5 @@
 # Phase 18 — Settings Page Cleanup (FR-C1)
 
-
 ## Problem
 1. The sidebar nav links in Settings use `href="#sect-xxx"` anchor links. The app Router intercepts all `hashchange` events and tries to render pages, causing broken navigation.
 2. The section structure is flat and missing logical groupings for new settings (scan workers, thread pool from Phase 16).

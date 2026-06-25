@@ -1,6 +1,5 @@
 # Phase R03 — `/api/tv/**` + TV device pairing auth (FR-RV3)
 
-
 ## Problem
 Ravilo authenticates against **jellystructure only** (control plane), and a TV has no good way to type
 a password. We need a **pairing-code flow** that signs a device in as a Jellyfin user via

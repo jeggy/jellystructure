@@ -1,6 +1,5 @@
 # Phase R10 — Home screen (FR-RV10)
 
-
 ## Problem
 Build the Ravilo **Home** — hero carousel, channel/collections rail, and the stack of content rows —
 wired to `GET /api/tv/home`, rendering the **server-composed** `HomeFeed` with full focus navigation,
