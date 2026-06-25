@@ -230,6 +230,7 @@ private fun HomeLoaded(
                     posterUrl = if (variant == TileVariant.LANDSCAPE) card.backdropUrl ?: card.posterUrl else card.posterUrl,
                     variant = variant,
                     progressPct = card.progressPct ?: 0f,
+                    watched = card.watched,
                     onSelect = { onItemSelect(card) },
                 )
             }

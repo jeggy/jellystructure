@@ -206,6 +206,7 @@ fun ChannelScreen(
                                         posterUrl = if (variant == TileVariant.LANDSCAPE) card.backdropUrl ?: card.posterUrl else card.posterUrl,
                                         variant = variant,
                                         progressPct = card.progressPct ?: 0f,
+                                        watched = card.watched,
                                         focusRequester = if (!hasHero && ri == 0 && idx == 0) firstTileFR else null,
                                         onSelect = { onItemSelect(card) },
                                     )

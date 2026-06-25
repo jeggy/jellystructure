@@ -171,10 +171,11 @@ private fun buildShell(): String {
       .rav-nav-item.active { background:var(--hi-soft); color:var(--acc-ink); font-weight:600; }
     </style>
     ${datalistsHtml()}
-    <div class="pagebar">
+    <div class="pagebar" style="position:sticky;top:0;z-index:50;background:var(--bg);border-bottom:1px solid var(--line);margin-bottom:18px">
       <h1 style="display:flex;align-items:center;gap:.4em">$RAVILO_MARK Ravilo TV</h1>
       <span class="badge info">app config</span>
       <span class="spacer"></span>
+      <button id="pair-tv-btn" class="btn sm"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:5px;vertical-align:-2px"><rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg>Pair a TV</button>
       <span class="badge ok" id="rav-synced">saved · synced</span>
       <button id="rav-save" class="btn primary">Save</button>
     </div>
@@ -217,7 +218,6 @@ private fun buildShell(): String {
     <div class="row" style="align-items:flex-start;gap:22px;flex-wrap:wrap">
       <nav style="width:150px;flex-shrink:0;position:sticky;top:88px">
         <div style="display:flex;flex-direction:column;gap:2px">
-          <button data-rav-sect="sect-pair"     class="rav-nav-item">Pair a TV</button>
           <button data-rav-sect="sect-heroes"   class="rav-nav-item">Hero carousel</button>
           <button data-rav-sect="sect-channels" class="rav-nav-item">Channels</button>
           <button data-rav-sect="sect-rows"     class="rav-nav-item">Content rows</button>
@@ -356,6 +356,15 @@ private fun wireShell(container: Element, scope: CoroutineScope) {
         }
         collectConfig(container); renderPreview(container)
     }
+    sections?.addEventListener("click") { ev ->
+        val t = ev.target as? HTMLElement ?: return@addEventListener
+        if (!t.hasAttribute("data-tile-shape")) return@addEventListener
+        val pill = container.querySelector("#beh-tile-pill") ?: return@addEventListener
+        val btns = pill.querySelectorAll("button")
+        for (k in 0 until btns.length) (btns.item(k) as? HTMLElement)?.classList?.remove("on")
+        t.classList.add("on")
+        collectConfig(container); renderPreview(container)
+    }
 }
 
 private fun renderSections(container: Element, scope: CoroutineScope) {
@@ -381,51 +390,104 @@ private fun <T> List<T>.swapped(i: Int, j: Int): List<T> {
     val m = toMutableList(); val t = m[i]; m[i] = m[j]; m[j] = t; return m
 }
 
-// ── Pair a TV ─────────────────────────────────────────────────────────────────
+// ── Pair a TV (modal, opened from sticky pagebar button) ──────────────────────
 
 private fun renderPair(container: Element, scope: CoroutineScope) {
-    val sect = container.querySelector("#sect-pair") ?: return
-    sect.innerHTML = """
-        <div class="card" style="padding:18px 20px;margin-bottom:18px">
-          <div style="font-weight:600;margin-bottom:6px">Pair a TV</div>
-          <p style="font-size:.82rem;color:var(--ink-soft);margin-bottom:14px">
-            Enter the 6-character code shown on your Ravilo TV app to link it to your account.
-          </p>
-          <div class="row" style="gap:8px;align-items:center">
-            <input id="pair-code" class="input" style="width:160px;letter-spacing:.15em;text-transform:uppercase"
-              maxlength="6" placeholder="ABC123" autocomplete="off" spellcheck="false">
-            <button id="pair-btn" class="btn primary">Pair</button>
-            <span id="pair-msg" style="font-size:.85rem"></span>
+    document.getElementById("pair-back")?.let { it.parentElement?.removeChild(it) }
+    container.querySelector("#sect-pair")?.let { (it as? HTMLElement)?.style?.display = "none" }
+
+    val userOptions = if (users.isEmpty()) {
+        """<option value="">No users found</option>"""
+    } else {
+        users.joinToString("") { u -> """<option value="${u.id.htmlEsc()}">${u.displayName.htmlEsc()}</option>""" }
+    }
+
+    val modal = document.createElement("div") as HTMLElement
+    modal.id = "pair-back"
+    modal.className = "pair-back"
+    modal.innerHTML = """
+        <div class="card pair-modal">
+          <div class="row center" style="gap:11px;margin-bottom:4px">
+            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8M12 17v4"/>
+            </svg>
+            <h3 style="margin:0">Pair a TV</h3>
+            <span class="spacer"></span><span class="x" id="pair-x">&#x2715;</span>
+          </div>
+          <p class="tiny muted" style="line-height:1.55;margin:4px 0 16px">On the TV, open <b>Ravilo &#x2192; Add user</b>. Choose which Jellyfin user this TV signs in as, then enter the 6-character code shown on screen.</p>
+          <div class="field" style="margin-bottom:15px">
+            <label>Sign in as</label>
+            <select id="pair-user-sel" class="input" style="width:100%">$userOptions</select>
+          </div>
+          <div class="field" style="margin-bottom:0">
+            <label>Pairing code</label>
+            <div class="code-inputs" id="pair-code-inputs">
+              <input maxlength="1" data-ci="0" autocomplete="off" aria-label="code 1" spellcheck="false">
+              <input maxlength="1" data-ci="1" autocomplete="off" aria-label="code 2" spellcheck="false">
+              <input maxlength="1" data-ci="2" autocomplete="off" aria-label="code 3" spellcheck="false">
+              <input maxlength="1" data-ci="3" autocomplete="off" aria-label="code 4" spellcheck="false">
+              <input maxlength="1" data-ci="4" autocomplete="off" aria-label="code 5" spellcheck="false">
+              <input maxlength="1" data-ci="5" autocomplete="off" aria-label="code 6" spellcheck="false">
+            </div>
+          </div>
+          <div class="tiny muted" style="margin-top:9px">The code expires after a few minutes.</div>
+          <div id="pair-result" style="margin-top:10px;font-size:.85rem;display:none"></div>
+          <div class="row" style="justify-content:flex-end;gap:8px;margin-top:18px">
+            <button class="btn ghost" id="pair-cancel">Cancel</button>
+            <button class="btn primary" id="pair-go" disabled>Pair TV</button>
           </div>
         </div>
     """.trimIndent()
+    document.body?.appendChild(modal)
 
-    val codeInput = sect.querySelector("#pair-code") as? HTMLInputElement ?: return
-    val pairBtn   = sect.querySelector("#pair-btn")  as? HTMLElement ?: return
-    val pairMsg   = sect.querySelector("#pair-msg")  as? HTMLElement ?: return
+    fun closeModal() { modal.classList.remove("open") }
+    container.querySelector("#pair-tv-btn")?.addEventListener("click") { _ -> modal.classList.add("open") }
+    modal.querySelector("#pair-x")?.addEventListener("click") { _ -> closeModal() }
+    modal.querySelector("#pair-cancel")?.addEventListener("click") { _ -> closeModal() }
+    modal.addEventListener("click") { ev -> if (ev.target == modal) closeModal() }
 
-    fun submit() {
-        val code = codeInput.value.trim().uppercase()
-        if (code.length != 6) { pairMsg.textContent = "Enter the full 6-character code."; return }
-        pairMsg.textContent = "Pairing…"
+    val codeInputs = modal.querySelectorAll("#pair-code-inputs input")
+    val pairGoBtn = modal.querySelector("#pair-go") as? HTMLElement
+    val resultEl = modal.querySelector("#pair-result") as? HTMLElement
+
+    fun getCode(): String = buildString {
+        for (k in 0 until codeInputs.length) append((codeInputs.item(k) as? HTMLInputElement)?.value?.uppercase() ?: "")
+    }
+    fun updatePairBtn() {
+        if (getCode().length == 6) pairGoBtn?.removeAttribute("disabled")
+        else pairGoBtn?.setAttribute("disabled", "true")
+    }
+    for (k in 0 until codeInputs.length) {
+        val inp = codeInputs.item(k) as? HTMLInputElement ?: continue
+        inp.addEventListener("input") { _ ->
+            inp.value = inp.value.uppercase().take(1)
+            if (inp.value.isNotEmpty() && k < codeInputs.length - 1) (codeInputs.item(k + 1) as? HTMLInputElement)?.focus()
+            updatePairBtn()
+        }
+        inp.addEventListener("keydown") { ev ->
+            if ((ev as? org.w3c.dom.events.KeyboardEvent)?.key == "Backspace" && inp.value.isEmpty() && k > 0)
+                (codeInputs.item(k - 1) as? HTMLInputElement)?.focus()
+        }
+    }
+    pairGoBtn?.addEventListener("click") { _ ->
+        val code = getCode(); if (code.length != 6) return@addEventListener
+        pairGoBtn.setAttribute("disabled", "true")
+        resultEl?.textContent = "Pairing…"; resultEl?.style?.display = "block"
         scope.launch {
             runCatching { RaviloApi.approvePairing(code) }.fold(
                 onSuccess = {
-                    pairMsg.textContent = "✓ TV paired successfully!"
-                    pairMsg.setAttribute("style", "font-size:.85rem;color:var(--ok)")
-                    codeInput.value = ""
+                    resultEl?.textContent = "✓ TV paired successfully!"
+                    resultEl?.setAttribute("style", "margin-top:10px;font-size:.85rem;color:var(--ok);display:block")
+                    for (k in 0 until codeInputs.length) (codeInputs.item(k) as? HTMLInputElement)?.value = ""
+                    pairGoBtn.setAttribute("disabled", "true")
                 },
-                onFailure = {
-                    pairMsg.textContent = "Failed: ${it.message ?: "unknown error"}"
-                    pairMsg.setAttribute("style", "font-size:.85rem;color:var(--bad)")
+                onFailure = { err ->
+                    resultEl?.textContent = "Failed: ${err.message ?: "unknown error"}"
+                    resultEl?.setAttribute("style", "margin-top:10px;font-size:.85rem;color:var(--bad);display:block")
+                    pairGoBtn.removeAttribute("disabled")
                 },
             )
         }
-    }
-
-    pairBtn.addEventListener("click") { _ -> submit() }
-    codeInput.addEventListener("keydown") { ev ->
-        if ((ev as? org.w3c.dom.events.KeyboardEvent)?.key == "Enter") submit()
     }
 }
 
@@ -1394,95 +1456,83 @@ private val MEDIA_KINDS = listOf("" to "All", "MOVIE" to "Movies", "SERIES" to "
 
 private fun RowKind.isSystem() = this == RowKind.CONTINUE || this == RowKind.NEWLY_ADDED
 
+private fun systemRowSource(r: RowConfig): String = when {
+    r.kind == RowKind.CONTINUE                                     -> "Continue + Next Up, merged"
+    r.kind == RowKind.NEWLY_ADDED && r.mediaKind == "MOVIE"       -> "kind = movie · sort newest"
+    r.kind == RowKind.NEWLY_ADDED && r.mediaKind == "SERIES"      -> "kind = series · sort newest"
+    r.kind == RowKind.NEWLY_ADDED                                  -> "movies + series combined · sort newest"
+    else -> ""
+}
+
+private val SYSTEM_ROW_DEFAULTS = listOf(
+    RowConfig(id = "continue",     kind = RowKind.CONTINUE,    title = "Continue Watching",    enabled = true, order = 0),
+    RowConfig(id = "newly-movies", kind = RowKind.NEWLY_ADDED, title = "Movies — Newly Added", enabled = true, order = 1, mediaKind = "MOVIE"),
+    RowConfig(id = "newly-series", kind = RowKind.NEWLY_ADDED, title = "Series — Newly Added",  enabled = true, order = 2, mediaKind = "SERIES"),
+)
+
+private fun normalizedRows(rows: List<RowConfig>): List<RowConfig> {
+    val existingIds = rows.map { it.id }.toSet()
+    val missing = SYSTEM_ROW_DEFAULTS.filter { it.id !in existingIds }
+    if (missing.isEmpty()) return rows
+    return (missing + rows).mapIndexed { i, r -> r.copy(order = i) }
+}
+
 private fun renderRows(container: Element) {
     val sect = container.querySelector("#sect-rows") ?: return
     val merging = currentConfig.mergeNewlyAdded
     val mergeChecked = if (merging) " checked" else ""
-    val mergeStateLabel = if (merging) "combined into one row ✓" else "showing separately"
 
-    // Merged row preview chip — only visible when merge is on
-    val mergedChip = if (merging) """
-        <div style="display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:8px;background:rgba(255,180,0,.07);border:1px dashed rgba(255,180,0,.35);margin-bottom:12px">
-          <span style="font-size:.72rem;font-weight:600;color:var(--warn);flex:none">▶ On TV</span>
-          <span style="font-size:.85rem;font-weight:500">Newly Added</span>
-          <span style="font-size:.68rem;padding:2px 7px;border-radius:4px;background:rgba(255,180,0,.18);color:var(--warn);font-weight:600;flex:none">All media</span>
-          <span style="font-size:.75rem;color:var(--ink-soft)">Movies &amp; series mixed, sorted by date</span>
-        </div>
-    """.trimIndent() else ""
+    val normalRows = normalizedRows(currentConfig.rows)
+    if (normalRows.size != currentConfig.rows.size) currentConfig = currentConfig.copy(rows = normalRows)
 
     val rows = currentConfig.rows.mapIndexed { i, r ->
         val system = r.kind.isSystem()
         val isMergedOut = merging && r.kind == RowKind.NEWLY_ADDED
-
-        // R66: descriptive type badge for every row kind
-        val badge = when {
-            r.kind == RowKind.CONTINUE ->
-                """<span class="badge ok" style="flex:none;font-size:.6rem;white-space:nowrap">Continue watching</span>"""
-            r.kind == RowKind.NEWLY_ADDED && r.mediaKind == "MOVIE" ->
-                """<span style="flex:none;font-size:.68rem;padding:2px 7px;border-radius:4px;background:rgba(255,180,0,.15);color:var(--warn);font-weight:600;white-space:nowrap">Movies only</span>"""
-            r.kind == RowKind.NEWLY_ADDED && r.mediaKind == "SERIES" ->
-                """<span style="flex:none;font-size:.68rem;padding:2px 7px;border-radius:4px;background:rgba(255,180,0,.15);color:var(--warn);font-weight:600;white-space:nowrap">Series only</span>"""
-            r.kind == RowKind.NEWLY_ADDED ->
-                """<span style="flex:none;font-size:.68rem;padding:2px 7px;border-radius:4px;background:rgba(255,180,0,.15);color:var(--warn);font-weight:600;white-space:nowrap">All media</span>"""
-            r.kind == RowKind.GENRE ->
-                """<span class="badge info" style="flex:none;font-size:.6rem">Genre</span>"""
-            else ->
-                """<span class="badge info" style="flex:none;font-size:.6rem">Custom filter</span>"""
-        }
-
-        // R66: "Merged — not shown separately" note + dimming when merge is on
-        val mergedNote = if (isMergedOut)
-            """<span style="font-size:.72rem;color:var(--warn);white-space:nowrap;flex:none">↳ merged</span>"""
-        else ""
         val rowOpacity = if (isMergedOut) "opacity:0.45;" else ""
-
         val showChecked = if (r.enabled) " checked" else ""
-        val delBtn = if (system) "" else """<button class="btn sm ghost" data-row-del="$i">✕</button>"""
-        val bodyCell = if (system) "" else if (r.conditions.isNotEmpty()) {
-            """<span class="badge ok" style="white-space:nowrap">${r.conditions.size} condition(s) · match ${r.match.name}</span>
-               <button class="btn sm ghost" data-row-edit="$i">Edit filter</button>"""
+        val showLabel = if (r.enabled) "show" else "hidden"
+        val toggleHtml = """<label style="display:flex;align-items:center;gap:4px;font-size:.8rem;white-space:nowrap;margin-left:auto;cursor:pointer"><span class="muted tiny">$showLabel</span><span class="toggle${if (r.enabled) " on" else ""}" data-row-toggle="$i" style="margin-left:4px"></span><input type="checkbox" data-row-enabled="$i"$showChecked style="display:none"></label>"""
+
+        if (system) {
+            val srcLine = systemRowSource(r)
+            val name = r.title?.takeIf { it.isNotBlank() } ?: defaultRowTitle(r.kind, r.mediaKind)
+            """<div class="cfg-row" draggable="true" data-row-i="$i" style="${rowOpacity}transition:opacity .2s"><span class="grab" style="cursor:grab;user-select:none;flex-shrink:0">&#x2807;</span><span class="badge ok" style="flex:none;font-size:.65rem">system</span><div style="flex:1;min-width:0"><div class="nm">${name.htmlEsc()}</div>${if (srcLine.isNotEmpty()) """<div class="src">${srcLine.htmlEsc()}</div>""" else ""}</div>$toggleHtml</div>"""
         } else {
-            """<span class="muted tiny" style="white-space:nowrap">No filter — shows all media</span>
-               <button class="btn sm ghost" data-row-edit="$i">Edit filter</button>"""
+            val badgeLabel = if (r.kind == RowKind.GENRE) "genre" else "filter"
+            val condSrc = if (r.conditions.isNotEmpty()) "${r.conditions.size} condition(s) · match ${r.match.name.lowercase()}" else "No filter — shows all media"
+            val name = r.title?.takeIf { it.isNotBlank() } ?: "Custom row"
+            """<div class="cfg-row" draggable="true" data-row-i="$i" style="${rowOpacity}transition:opacity .2s"><span class="grab" style="cursor:grab;user-select:none;flex-shrink:0">&#x2807;</span><span class="badge info" style="flex:none;font-size:.65rem">$badgeLabel</span><div style="flex:1;min-width:0"><input class="input" style="width:100%;max-width:200px;font-size:.84rem;padding:3px 8px;height:auto" placeholder="Row title" value="${name.htmlEsc()}" data-row-title="$i"><div class="src" style="margin-top:3px">${condSrc.htmlEsc()}</div></div><button class="btn sm ghost" data-row-edit="$i" style="white-space:nowrap">Edit filter</button>$toggleHtml<button class="btn sm ghost" data-row-del="$i" style="color:var(--bad)">&#x2715;</button></div>"""
         }
-        """
-        <div class="cfg-row" draggable="true" data-row-i="$i" style="display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap;${rowOpacity}transition:opacity .2s">
-          <span class="drag-handle" style="cursor:grab;user-select:none;flex-shrink:0">⠿</span>
-          $badge
-          $mergedNote
-          <input type="hidden" data-row-id="$i" value="${r.id.htmlEsc()}">
-          <input class="input" style="width:150px" placeholder="Title" value="${(r.title ?: "").htmlEsc()}" data-row-title="$i">
-          $bodyCell
-          <label style="display:flex;align-items:center;gap:5px;font-size:.8rem;white-space:nowrap"><input type="checkbox" data-row-enabled="$i"$showChecked> Show</label>
-          $delBtn
-        </div>
-        """.trimIndent()
     }.joinToString("")
 
     sect.innerHTML = """
         <div class="card" style="padding:18px 20px;margin-bottom:18px">
           <div style="font-weight:600;margin-bottom:10px">Content rows</div>
-          <p style="font-size:.82rem;color:var(--ink-soft);margin-bottom:14px">
-            The vertical stack on Home. System rows (Continue Watching, Newly Added) can be hidden and reordered but not removed.
-          </p>
+          <p style="font-size:.82rem;color:var(--ink-soft);margin-bottom:14px">The vertical stack on Home. System rows can be hidden and reordered but not removed.</p>
           <div class="box flat" style="background:var(--hi-soft);border:1px solid rgba(255,180,0,.25);border-radius:8px;padding:12px 14px;margin-bottom:14px">
             <label style="display:flex;align-items:center;gap:10px;font-size:.9rem;cursor:pointer">
               <input type="checkbox" id="merge-newly-added"$mergeChecked>
-              <div>
-                <b>Merge newly added</b> <span style="font-size:.8rem;color:var(--ink-soft)">— $mergeStateLabel</span>
-                <div class="tiny muted" style="margin-top:3px;line-height:1.5">
-                  Show movies and series in one combined row instead of separate typed rows.<br>
-                  When on, the typed rows below are replaced by a single "Newly Added" row on the TV — all media sorted by date.
-                </div>
-              </div>
+              <div><b>Merge newly added</b> <span style="font-size:.8rem;color:var(--ink-soft)">&mdash; ${if (merging) "combined into one row" else "showing separately"}</span>
+                <div class="tiny muted" style="margin-top:3px">Show movies and series in one combined row instead of separate typed rows.</div></div>
             </label>
           </div>
-          $mergedChip
           <div id="row-list">$rows</div>
           <button id="row-add" class="btn sm ghost" style="margin-top:6px">+ Add row</button>
         </div>
     """.trimIndent()
-    // R66: live re-render when merge toggle changes so badge dimming and chip update instantly
+
+    sect.querySelectorAll("[data-row-toggle]").let { toggles ->
+        for (k in 0 until toggles.length) {
+            val tog = toggles.item(k) as? HTMLElement ?: continue
+            val idx = tog.getAttribute("data-row-toggle") ?: continue
+            tog.addEventListener("click") { _ ->
+                val cb = sect.querySelector("[data-row-enabled='$idx']") as? HTMLInputElement ?: return@addEventListener
+                cb.checked = !cb.checked; tog.classList.toggle("on", cb.checked)
+                val lbl = tog.previousElementSibling as? HTMLElement; lbl?.textContent = if (cb.checked) "show" else "hidden"
+                collectConfig(container); renderPreview(container)
+            }
+        }
+    }
     sect.querySelector("#merge-newly-added")?.addEventListener("change") { _ ->
         val checked = (sect.querySelector("#merge-newly-added") as? HTMLInputElement)?.checked ?: false
         structural(container, { currentConfig = currentConfig.copy(mergeNewlyAdded = checked) }, ::renderRows)
@@ -1694,9 +1744,9 @@ private fun renderBehaviour(container: Element) {
         val sel = if (s == currentConfig.defaultSkin) " selected" else ""
         """<option value="${s.name}"$sel>${s.name.lowercase().replaceFirstChar { it.uppercase() }}</option>"""
     }
-    val tileOptions = TileShape.entries.joinToString("") { s ->
-        val sel = if (s == currentConfig.tileShape) " selected" else ""
-        """<option value="${s.name}"$sel>${TILE_SHAPE_LABELS[s] ?: s.name}</option>"""
+    val tileButtons = TileShape.entries.joinToString("") { s ->
+        val onAttr = if (s == currentConfig.tileShape) " class=\"on\"" else ""
+        """<button data-tile-shape="${s.name}"$onAttr>${TILE_SHAPE_LABELS[s] ?: s.name}</button>"""
     }
     val densityOptions = UiDensity.entries.joinToString("") { d ->
         val sel = if (d == currentConfig.uiDensity) " selected" else ""
@@ -1720,10 +1770,10 @@ private fun renderBehaviour(container: Element) {
               <span style="font-size:.9rem">Default skin</span>
               <select id="beh-skin" class="input" style="width:160px;font-size:.85rem">$skinOptions</select>
             </label>
-            <label style="display:flex;align-items:center;justify-content:space-between;gap:12px">
-              <span style="font-size:.9rem">Tile shape</span>
-              <select id="beh-tile" class="input" style="width:180px;font-size:.85rem">$tileOptions</select>
-            </label>
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:12px">
+              <div><span style="font-size:.9rem">Tile shape</span><div class="tiny muted">How rows render on the TV. Continue Watching stays landscape.</div></div>
+              <span class="seg-pill" id="beh-tile-pill">$tileButtons</span>
+            </div>
             <label style="display:flex;align-items:center;justify-content:space-between;gap:12px">
               <span style="font-size:.9rem">Content size <span class="tiny muted">· grid/row tiles on the TV</span></span>
               <select id="beh-density" class="input" style="width:180px;font-size:.85rem">$densityOptions</select>
@@ -1824,8 +1874,15 @@ private fun collectConfig(container: Element) {
     val uiLanguage   = (container.querySelector("#beh-lang") as? HTMLSelectElement)?.value ?: "en"
     val defaultSkin  = runCatching { Skin.valueOf((container.querySelector("#beh-skin") as? HTMLSelectElement)?.value ?: "AURORA") }
         .getOrDefault(Skin.AURORA)
-    val tileShape    = runCatching { TileShape.valueOf((container.querySelector("#beh-tile") as? HTMLSelectElement)?.value ?: "POSTER") }
-        .getOrDefault(TileShape.POSTER)
+    val tileShape = run {
+        val btns = container.querySelectorAll("[data-tile-shape]")
+        var shapeName = "POSTER"
+        for (k in 0 until btns.length) {
+            val btn = btns.item(k) as? HTMLElement ?: continue
+            if (btn.classList.contains("on")) { shapeName = btn.getAttribute("data-tile-shape") ?: "POSTER"; break }
+        }
+        runCatching { TileShape.valueOf(shapeName) }.getOrDefault(TileShape.POSTER)
+    }
     val uiDensity    = runCatching { UiDensity.valueOf((container.querySelector("#beh-density") as? HTMLSelectElement)?.value ?: "COMFORTABLE") }
         .getOrDefault(UiDensity.COMFORTABLE)
     val allowOverride = (container.querySelector("#beh-skin-override") as? HTMLInputElement)?.checked ?: true

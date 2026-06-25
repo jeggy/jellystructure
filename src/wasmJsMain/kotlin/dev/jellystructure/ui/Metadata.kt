@@ -39,6 +39,7 @@ private fun buildMetadataShell(activeTab: String): String {
           </select>
         </div>
         <div class="tabs2" id="metadata-tabs">$tabs</div>
+        <p class="page-sub">Browse the library by studio, network, genre and tag. Studios &amp; networks pull their logos from TMDB; tags you define here survive metadata re-syncs.</p>
         <div id="metadata-content"></div>
     """.trimIndent()
 }
@@ -134,15 +135,15 @@ private fun renderLogoGrid(entries: List<MetadataEntry>, kind: String, linkPrefi
         for (e in entries) {
             val encoded = dev.jellystructure.encodeURIComponent(e.name)
             val logoHtml = if (e.hasLogo) {
-                """<img src="/api/metadata/$kind/$encoded/artwork" alt="${e.name}" style="max-width:80%;max-height:52px;object-fit:contain" loading="lazy">"""
+                """<img src="/api/metadata/$kind/$encoded/artwork" alt="${e.name}" style="max-width:90%;max-height:46px;object-fit:contain" loading="lazy">"""
             } else {
-                """<span style="font-size:.78rem;font-weight:700;letter-spacing:.03em;text-align:center;color:var(--ink-soft);padding:0 4px;line-height:1.3">${e.name}</span>"""
+                """<span style="font-size:.72rem;font-weight:600;color:var(--ink-soft);text-align:center;padding:2px 4px;line-height:1.3">${e.name}</span>"""
             }
-            append("""<a href="#$linkPrefix$encoded" data-filter-name="${e.name.lowercase()}" style="display:flex;flex-direction:column;text-decoration:none;border-radius:var(--radius-s);overflow:hidden;background:var(--card-bg);border:var(--card-bd);box-shadow:var(--shadow-s);transition:transform .15s,box-shadow .15s,border-color .15s" onmouseover="this.style.transform='translateY(-3px)';this.style.boxShadow='var(--shadow)';this.style.borderColor='var(--hi)'" onmouseout="this.style.transform='';this.style.boxShadow='var(--shadow-s)';this.style.borderColor=''">""")
-            append("""<div style="height:80px;display:flex;align-items:center;justify-content:center;background:rgba(160,152,255,.42);border-bottom:1px solid rgba(160,152,255,.25)">$logoHtml</div>""")
-            append("""<div style="padding:10px 12px;display:flex;align-items:center;justify-content:space-between;gap:6px">""")
-            append("""<span style="font-size:.82rem;font-weight:600;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1">${e.name}</span>""")
-            append("""<span style="font-size:.72rem;color:var(--ink-soft);flex-shrink:0;background:var(--fill-3);border-radius:99px;padding:2px 8px;border:1px solid var(--line)">${e.count}</span>""")
+            append("""<a href="#$linkPrefix$encoded" data-filter-name="${e.name.lowercase()}" style="display:flex;align-items:center;gap:13px;padding:14px 15px;text-decoration:none;border-radius:var(--radius-s);background:var(--card-bg);border:var(--card-bd);box-shadow:var(--shadow-s);color:var(--ink);transition:transform .15s,box-shadow .15s,border-color .15s" onmouseover="this.style.transform='translateY(-2px)';this.style.boxShadow='var(--shadow)';this.style.borderColor='var(--hi)'" onmouseout="this.style.transform='';this.style.boxShadow='var(--shadow-s)';this.style.borderColor=''">""")
+            append("""<div style="width:54px;height:54px;flex:none;border-radius:10px;display:flex;align-items:center;justify-content:center;background:rgba(160,152,255,.42);overflow:hidden">$logoHtml</div>""")
+            append("""<div>""")
+            append("""<span style="font-size:.9rem;font-weight:600;display:block">${e.name}</span>""")
+            append("""<span class="tiny muted">${e.count} items</span>""")
             append("</div>")
             append("</a>")
         }
