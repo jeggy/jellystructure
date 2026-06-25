@@ -177,6 +177,61 @@ data class TmdbImage(
     val height: Int = 0,
 )
 
+// --- Phase 76: aggregate_credits for TV series (returns total_episode_count per actor) ---
+@Serializable
+data class TmdbAggregateRole(
+    val character: String = "",
+    @SerialName("episode_count") val episodeCount: Int = 0,
+)
+
+@Serializable
+data class TmdbAggregateCastMember(
+    val id: Int,
+    val name: String = "",
+    @SerialName("profile_path") val profilePath: String? = null,
+    val order: Int = 0,
+    @SerialName("total_episode_count") val totalEpisodeCount: Int = 0,
+    val roles: List<TmdbAggregateRole> = emptyList(),
+)
+
+@Serializable
+data class TmdbAggregateJob(
+    val job: String = "",
+    @SerialName("episode_count") val episodeCount: Int = 0,
+)
+
+@Serializable
+data class TmdbAggregateCrewMember(
+    val id: Int,
+    val name: String = "",
+    @SerialName("profile_path") val profilePath: String? = null,
+    val department: String = "",
+    val jobs: List<TmdbAggregateJob> = emptyList(),
+    @SerialName("total_episode_count") val totalEpisodeCount: Int = 0,
+)
+
+@Serializable
+data class TmdbAggregateCreditsResponse(
+    val cast: List<TmdbAggregateCastMember> = emptyList(),
+    val crew: List<TmdbAggregateCrewMember> = emptyList(),
+)
+
+// --- Phase 76: per-episode credits (guest stars + crew from episode endpoint) ---
+@Serializable
+data class TmdbEpisodeCastMember(
+    val id: Int,
+    val name: String = "",
+    val character: String = "",
+    val order: Int = 0,
+    @SerialName("profile_path") val profilePath: String? = null,
+)
+
+@Serializable
+data class TmdbEpisodeCreditsResponse(
+    @SerialName("guest_stars") val guestStars: List<TmdbEpisodeCastMember> = emptyList(),
+    val crew: List<TmdbCrewMember> = emptyList(),
+)
+
 // --- Keywords (used as the non-JS tag source on TMDB re-pull). Movie and TV use different
 // field names for the same shape: movies nest under `keywords`, TV under `results`. ---
 @Serializable
@@ -347,6 +402,26 @@ class TmdbClient(
             if (r.status != HttpStatusCode.OK) return TmdbCreditsResponse()
             r.body<TmdbCreditsResponse>()
         }.getOrElse { Logger.warn("TMDB tv full credits failed tmdbId=$tmdbId: ${it.message}"); TmdbCreditsResponse() }
+    }
+
+    /** Phase 76 — aggregate_credits for a TV series (includes total_episode_count per cast member). */
+    suspend fun getTvAggregateCredits(tmdbId: Int): TmdbAggregateCreditsResponse {
+        val key = apiKey(); if (key.isBlank()) return TmdbAggregateCreditsResponse()
+        return runCatching {
+            val r = http.get("$baseUrl/tv/$tmdbId/aggregate_credits") { parameter("api_key", key) }
+            if (r.status != HttpStatusCode.OK) return TmdbAggregateCreditsResponse()
+            r.body<TmdbAggregateCreditsResponse>()
+        }.getOrElse { Logger.warn("TMDB aggregate_credits failed tmdbId=$tmdbId: ${it.message}"); TmdbAggregateCreditsResponse() }
+    }
+
+    /** Phase 76 — per-episode credits (guest stars + crew). */
+    suspend fun getEpisodeCredits(seriesId: Int, season: Int, episode: Int): TmdbEpisodeCreditsResponse {
+        val key = apiKey(); if (key.isBlank()) return TmdbEpisodeCreditsResponse()
+        return runCatching {
+            val r = http.get("$baseUrl/tv/$seriesId/season/$season/episode/$episode/credits") { parameter("api_key", key) }
+            if (r.status != HttpStatusCode.OK) return TmdbEpisodeCreditsResponse()
+            r.body<TmdbEpisodeCreditsResponse>()
+        }.getOrElse { Logger.warn("TMDB episode credits failed s${season}e${episode} series=$seriesId: ${it.message}"); TmdbEpisodeCreditsResponse() }
     }
 
     /** Phase 75 — search TMDB for people by name. */
