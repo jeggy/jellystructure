@@ -131,12 +131,20 @@ object NfoWriter {
                 "Writer" -> appendLine("  <credits>${p.name.esc()}</credits>")
             }
         }
-        // Phase 76: inherited main cast filtered to this episode + guest stars
+        // Phase 80: inherit main cast by real season presence. An explicit per-episode override wins;
+        // otherwise a season member (TMDB seasonEpisodeCounts) is written to every episode of that season.
+        // Items with no presence data yet (pre-Phase-80, not re-pulled) inherit all (back-compat).
         val sn = episode.seasonNumber?.toString()
         val en = episode.episodeNumber
         val presentMainCast = inheritedCast.filter { p ->
-            p.episodePresence.isEmpty() ||
-                (sn != null && en != null && p.episodePresence[sn]?.contains(en) == true)
+            if (sn == null || en == null) return@filter true
+            val override = p.episodePresence[sn]
+            when {
+                override != null -> override.contains(en)
+                p.seasonEpisodeCounts.containsKey(sn) -> true
+                p.seasonEpisodeCounts.isEmpty() && p.episodePresence.isEmpty() -> true
+                else -> false
+            }
         }
         val allActors = presentMainCast + episode.guestStars
         for ((order, p) in allActors.withIndex()) {
