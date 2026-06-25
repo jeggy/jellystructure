@@ -4,11 +4,13 @@ Living record of where work currently stands. Update whenever a phase completes 
 The **[requirements/README.md](requirements/README.md)** is the single source of truth for which phases
 exist and their done/planned status. This file tracks _current focus_, recent context, and open issues.
 
-_Last updated: 2026-06-23_
+_Last updated: 2026-06-25_
 
 ## Current focus
 
-**Phases 0–53 complete.** [Phase 53](requirements/archive/phase-53-scanner-data-quality.md)
+**Phases 0–58 + 70–71 complete. Phase 72 planned.** Design-diff audit (2026-06-25) found and fixed several reopened phases: Phase 36 (cron field in Settings), Phase 42 (season picker prev/next+dropdown + Expand all issues + per-episode lang badge), Phase 70 (Login SVG mark + connection row + footer). All builds pass.
+
+Previously: [Phase 53](requirements/archive/phase-53-scanner-data-quality.md)
 (2026-06-23) fixed scanner data-quality issues found in a post-DB-reset full-sync review (296 scanned
 vs 303 in Jellyfin): full-scan `year` was null on 295/296 — now `searchYear = name ?? Jellyfin
 `ProductionYear`` drives the TMDB search + slug and the stored year prefers TMDB
@@ -68,8 +70,18 @@ overlapped the language chips. Unified them into **one single-select filter** on
 `artPrefer` sort; default ladder resolves resolved-lang → textless → All. `design/app/media.html` mockup
 synced to the same model.
 
-No planned admin phases remain. Other active development is on the **Ravilo** side — see
-[`ravilo/STATUS.md`](ravilo/STATUS.md).
+**Planned — [Phase 72](requirements/phase-72-canonical-language-equivalence.md) (FR-LC1, drafted
+2026-06-25):** a live bug report — a single-audio-track (`eng`) movie shows a **false "Default ≠
+resolved"** cascade warning. Root cause: language codes exist in three spellings (ffprobe track tags
+= ISO 639-2 /B-or-/T `eng`/`deu`; resolved language = ISO 639-1 `en`/`de`; picker = 639-1) and the
+cascade check (and the backend triage mismatch, and other sites) compare them with raw `==`/`!=` —
+`"eng" != "en"` → true, so the warning mis-fires on nearly every tagged movie. Fix: one
+`LanguageResolver.sameLanguage()` (commonMain, B/T- and 639-1/2-agnostic) routed through **every**
+language equality decision; make `normalize()` **total** over the picker set (both B and T forms, +a
+totality test) so no language is missed; normalise before display (`langShortName`); and keep
+**untagged** tracks first-class (never a mismatch, never coerced, always triageable). Comparison- and
+display-only — on-disk/NFO write forms stay on the Phase 46 boundary. Other active development is on
+the **Ravilo** side — see [`ravilo/STATUS.md`](ravilo/STATUS.md).
 
 ## Design-fidelity audit — reopened phases (2026-06-25)
 

@@ -8,11 +8,13 @@ Ravilo is a sibling product **inside the jellystructure repo** — an Android TV
 canvas) streaming front-end built from one **Compose Multiplatform** codebase, talking only to the
 jellystructure backend.
 
-_Last updated: 2026-06-23_
+_Last updated: 2026-06-25_
 
 ## Current focus
 
-**Phases R01–R47 complete.** [R47](requirements/phase-R47-detail-focusable-draw-only-scale.md)
+**Phases R01–R50 complete. Design-diff audit (2026-06-25) closed all reopened phases: R24 (MediaCard.watched wired to Tile()), R28 (tile-shape seg-pill), R54 (rows UI with system badge + source description + stale-config repair), R57 (sticky pagebar + Pair-a-TV modal with user picker + 6-field code input). All builds pass.**
+
+Previously: **Phases R01–R47 complete.** [R47](requirements/phase-R47-detail-focusable-draw-only-scale.md)
 (2026-06-23) finished the R42 viewport-jump fix on the **detail screens**: R42 made the focus scale
 draw-only "only on Tile/ChannelCard", so navigating Movie/Series detail still jumped — `EpisodeCard`,
 `SeasonPicker` pills and `RaviloButton` applied `.scale` (and the button lift) as an **ancestor** of

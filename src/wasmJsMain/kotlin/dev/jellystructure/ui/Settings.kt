@@ -131,6 +131,10 @@ fun renderSettings(container: Element, scope: CoroutineScope, query: Map<String,
                 </select>
                 <span class="hint" style="margin:0">at</span>
                 <input id="rescan-time" class="input" type="time" value="03:00" style="width:auto">
+              <div class="field" style="margin:0;min-width:160px;">
+                <label style="font-size:.85rem;">Cron <span class="muted">(advanced)</span></label>
+                <input id="rescan-cron" class="input mono" style="width:160px;font-size:.82rem;" placeholder="0 3 * * *" readonly title="Computed from Frequency and At fields above">
+              </div>
               </div>
             </div>
 
@@ -628,16 +632,28 @@ private fun attachListeners(scope: CoroutineScope) {
         }
     }
 
+    fun updateCronPreview() {
+        val freq = (document.getElementById("rescan-frequency") as? org.w3c.dom.HTMLSelectElement)?.value ?: "daily"
+        val time = (document.getElementById("rescan-time") as? org.w3c.dom.HTMLInputElement)?.value ?: "03:00"
+        val parts = time.split(":")
+        val h = parts.getOrNull(0)?.trimStart('0')?.takeIf { it.isNotEmpty() } ?: "0"
+        val m = parts.getOrNull(1)?.trimStart('0')?.takeIf { it.isNotEmpty() } ?: "0"
+        val dayOfWeek = if (freq == "weekly") "0" else "*"
+        val cronStr = "$m $h * * $dayOfWeek"
+        (document.getElementById("rescan-cron") as? org.w3c.dom.HTMLInputElement)?.value = cronStr
+    }
     document.getElementById("scheduled-rescan-toggle")?.addEventListener("click") {
         scheduledRescanEnabled = !scheduledRescanEnabled
         updateToggle("scheduled-rescan-toggle", scheduledRescanEnabled)
         val rescanFields = document.getElementById("scheduled-rescan-fields") as? HTMLElement
         rescanFields?.style?.display = if (scheduledRescanEnabled) "flex" else "none"
+        if (scheduledRescanEnabled) updateCronPreview()
         refreshTomlPreview(readForm())
     }
     listOf("rescan-frequency", "rescan-time").forEach { id ->
-        document.getElementById(id)?.addEventListener("change") { refreshTomlPreview(readForm()) }
+        document.getElementById(id)?.addEventListener("change") { updateCronPreview(); refreshTomlPreview(readForm()) }
     }
+    updateCronPreview()
 
     document.getElementById("save-settings")?.addEventListener("click") {
         scope.launch {

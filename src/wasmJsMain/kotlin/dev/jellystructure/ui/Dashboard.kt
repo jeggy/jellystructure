@@ -1,6 +1,7 @@
 package dev.jellystructure.ui
 
 import dev.jellystructure.App
+import dev.jellystructure.callOpenAttentionDock
 import dev.jellystructure.api.MediaApi
 import dev.jellystructure.jobs.JobEvent
 import kotlinx.browser.document
@@ -45,9 +46,10 @@ fun renderDashboard(container: Element, scope: CoroutineScope) {
               <h3 style="margin:0;font-size:1.1rem">Needs your attention</h3>
               <span class="spacer"></span>
               <span class="badge bad" id="attention-count" style="display:none"></span>
+              <button id="reopen-dock" class="btn sm">Show attention dock</button>
               <button id="dash-triage" class="btn sm">Browse all →</button>
             </div>
-            <div class="tiny muted" style="margin:6px 0 0">Step through every flagged item from the floating dock, bottom-right — it opens each one's detail page where you fix it.</div>
+            <div class="tiny muted" style="margin:6px 0 0">Step through every flagged item from the floating dock, bottom-right — it opens each one's detail page where you fix it. Closed it? <b>Show attention dock</b> brings it back.</div>
             <hr class="dash" style="margin:11px 0">
             <div id="attention-list"><span class="muted tiny">Loading…</span></div>
           </div>
@@ -80,6 +82,7 @@ fun renderDashboard(container: Element, scope: CoroutineScope) {
     }
     document.getElementById("dash-triage")?.addEventListener("click") { App.navigate("/library") }
     document.getElementById("stat-issues-cell")?.addEventListener("click") { App.navigate("/library") }
+    document.getElementById("reopen-dock")?.addEventListener("click") { callOpenAttentionDock() }
     document.getElementById("qa-triage")?.addEventListener("click") { App.navigate("/library") }
     document.getElementById("qa-track-order")?.addEventListener("click") { App.navigate("/library") }
     document.getElementById("qa-activity")?.addEventListener("click") { App.navigate("/activity") }

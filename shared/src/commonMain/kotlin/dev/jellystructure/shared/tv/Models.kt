@@ -123,6 +123,7 @@ data class MediaCard(
     @SerialName("progress_pct") val progressPct: Float? = null,
     @SerialName("next_up_label") val nextUpLabel: String? = null,
     val badge: String? = null,
+    val watched: Boolean = false,
 )
 
 @Serializable

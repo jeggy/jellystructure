@@ -221,6 +221,7 @@ private fun MovieDetailLoaded(
                     Tile(
                         title = card.title,
                         posterUrl = card.posterUrl,
+                        watched = card.watched,
                         onSelect = { onRelatedSelect(card) },
                     )
                 }
