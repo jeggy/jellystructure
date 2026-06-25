@@ -21,6 +21,19 @@ data class Track(
 )
 
 @Serializable
+data class Person(
+    val tmdbId: Int,
+    val name: String,
+    val profilePath: String? = null,
+    val character: String? = null,
+    val role: String? = null,
+    val job: String? = null,
+    val department: String? = null,
+    val order: Int = 0,
+    val type: String = "Actor",
+)
+
+@Serializable
 data class Episode(
     val filename: String,
     val path: String,
@@ -33,6 +46,7 @@ data class Episode(
     val overview: String? = null,
     val stillPath: String? = null,
     val tmdbEpisodeId: Int? = null,
+    val cast: List<Person> = emptyList(),
 )
 
 @Serializable
@@ -67,6 +81,8 @@ data class MediaItem(
     val jellyfinLockData: Boolean = false,
     val jellyfinLockedFields: List<String> = emptyList(),
     val titlesByLang: Map<String, String> = emptyMap(),
+    val cast: List<Person> = emptyList(),
+    val crew: List<Person> = emptyList(),
 )
 
 @Serializable

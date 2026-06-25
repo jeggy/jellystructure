@@ -97,8 +97,31 @@ data class TmdbCastMember(
 )
 
 @Serializable
+data class TmdbCrewMember(
+    val id: Int,
+    val name: String = "",
+    val job: String = "",
+    val department: String = "",
+    @SerialName("profile_path") val profilePath: String? = null,
+)
+
+@Serializable
 data class TmdbCreditsResponse(
     val cast: List<TmdbCastMember> = emptyList(),
+    val crew: List<TmdbCrewMember> = emptyList(),
+)
+
+@Serializable
+data class TmdbPersonSearchResult(
+    val id: Int,
+    val name: String = "",
+    @SerialName("profile_path") val profilePath: String? = null,
+    @SerialName("known_for_department") val knownForDepartment: String = "",
+)
+
+@Serializable
+data class TmdbPersonSearchResponse(
+    val results: List<TmdbPersonSearchResult> = emptyList(),
 )
 
 @Serializable
@@ -298,6 +321,39 @@ class TmdbClient(
             if (r.status != HttpStatusCode.OK) return emptyList()
             r.body<TmdbCreditsResponse>().cast.sortedBy { it.order }.take(5)
         }.getOrElse { Logger.warn("TMDB tv credits failed tmdbId=$tmdbId: ${it.message}"); emptyList() }
+    }
+
+    /** Phase 75 — full cast + crew for a movie. */
+    suspend fun getMovieFullCredits(tmdbId: Int): TmdbCreditsResponse {
+        val key = apiKey(); if (key.isBlank()) return TmdbCreditsResponse()
+        return runCatching {
+            val r = http.get("$baseUrl/movie/$tmdbId/credits") { parameter("api_key", key) }
+            if (r.status != HttpStatusCode.OK) return TmdbCreditsResponse()
+            r.body<TmdbCreditsResponse>()
+        }.getOrElse { Logger.warn("TMDB movie full credits failed tmdbId=$tmdbId: ${it.message}"); TmdbCreditsResponse() }
+    }
+
+    /** Phase 75 — full cast + crew for a TV series. */
+    suspend fun getTvFullCredits(tmdbId: Int): TmdbCreditsResponse {
+        val key = apiKey(); if (key.isBlank()) return TmdbCreditsResponse()
+        return runCatching {
+            val r = http.get("$baseUrl/tv/$tmdbId/credits") { parameter("api_key", key) }
+            if (r.status != HttpStatusCode.OK) return TmdbCreditsResponse()
+            r.body<TmdbCreditsResponse>()
+        }.getOrElse { Logger.warn("TMDB tv full credits failed tmdbId=$tmdbId: ${it.message}"); TmdbCreditsResponse() }
+    }
+
+    /** Phase 75 — search TMDB for people by name. */
+    suspend fun searchPeople(query: String): List<TmdbPersonSearchResult> {
+        val key = apiKey(); if (key.isBlank()) return emptyList()
+        return runCatching {
+            val r = http.get("$baseUrl/search/person") {
+                parameter("api_key", key)
+                parameter("query", query)
+            }
+            if (r.status != HttpStatusCode.OK) return emptyList()
+            r.body<TmdbPersonSearchResponse>().results.take(10)
+        }.getOrElse { Logger.warn("TMDB person search failed '$query': ${it.message}"); emptyList() }
     }
 
     suspend fun getTvDetailsLocalized(tmdbId: Int, languages: List<String>): TmdbTvDetails? {

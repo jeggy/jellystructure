@@ -11,6 +11,7 @@ import dev.jellystructure.api.ConfigApi
 import dev.jellystructure.api.HistoryEntry
 import dev.jellystructure.api.JsTag
 import dev.jellystructure.api.MediaApi
+import dev.jellystructure.api.PersonSearchResult
 import dev.jellystructure.api.RaviloApi
 import dev.jellystructure.api.DriftField
 import dev.jellystructure.shared.tv.HeroConfig
@@ -21,6 +22,7 @@ import dev.jellystructure.model.MediaItem
 import dev.jellystructure.model.MediaKind
 import dev.jellystructure.model.NfoFileNode
 import dev.jellystructure.model.NfoFileTree
+import dev.jellystructure.model.Person
 import dev.jellystructure.model.Track
 import dev.jellystructure.model.TrackKind
 import kotlin.js.JsAny
@@ -199,6 +201,7 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
         listOf(
             "overview" to "Overview",
             "episodes" to "Seasons &amp; episodes",
+            "cast" to "Cast &amp; crew",
             "artwork" to "Artwork",
             "nfo" to "NFO raw",
             "history" to "History",
@@ -207,6 +210,7 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
         listOf(
             "overview" to "Overview",
             "tracks" to "Tracks &amp; order",
+            "cast" to "Cast &amp; crew",
             "artwork" to "Artwork",
             "nfo" to "NFO raw",
             "history" to "History",
@@ -424,6 +428,31 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
         </div>""" else ""}
 
         ${if (isTvShow) """<div id="tab-episodes" ${if (activeTab != "episodes") """style="display:none;" """ else ""}>${episodesTabHtml}</div>""" else ""}
+
+        <div id="tab-cast" ${if (activeTab != "cast") """style="display:none;" """ else ""}>
+          <div class="card" style="margin-bottom:16px;">
+            <div class="row center" style="margin-bottom:14px;">
+              <h4 style="margin:0;">Cast &amp; crew</h4>
+              <span class="spacer"></span>
+              <button class="btn sm ghost" id="cast-fetch-btn">↻ Fetch from TMDB</button>
+            </div>
+            <h5 style="margin:0 0 10px;color:var(--fg-2);font-size:.8rem;letter-spacing:.06em;text-transform:uppercase;">Cast</h5>
+            <div class="cast-grid" id="cast-grid">
+              ${renderCastGridHtml(item.cast)}
+            </div>
+            <div style="margin-top:14px;display:flex;gap:8px;align-items:center;">
+              <button class="btn sm ghost" id="add-cast-btn">＋ Add person</button>
+            </div>
+            <hr class="dash" style="margin:18px 0;">
+            <h5 style="margin:0 0 10px;color:var(--fg-2);font-size:.8rem;letter-spacing:.06em;text-transform:uppercase;">Crew</h5>
+            <div id="crew-list">
+              ${renderCrewHtml(item.crew)}
+            </div>
+            <div style="margin-top:14px;">
+              <button class="btn sm ghost" id="add-crew-btn">＋ Add crew member</button>
+            </div>
+          </div>
+        </div>
 
         <div id="tab-artwork" ${if (activeTab != "artwork") """style="display:none;" """ else ""}>
           <div class="art-mgr">
@@ -655,6 +684,7 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
                         wireUnifiedTrackEditor("trk", item.tracks, item.id, null, scope, item.resolvedLanguage, item.path)
                     }
                     if (tab == "nfo") scope.launch { loadNfoTab(item, scope) }
+                    if (tab == "cast") wireCastTab(item, container, scope)
                     // Update URL silently via replaceState — no hashchange fired, no page re-render
                     val tabParam = if (tab == "overview") null else tab
                     dev.jellystructure.Router.updateQuery(mapOf("tab" to tabParam), replace = true)
@@ -671,6 +701,7 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
     }
     if (activeTab == "history") scope.launch { loadHistory(item.id, container, scope) }
     if (activeTab == "nfo") scope.launch { loadNfoTab(item, scope) }
+    if (activeTab == "cast") wireCastTab(item, container, scope)
 
     // Inject styles once per document lifetime
     injectDiffStyles()
@@ -2917,4 +2948,170 @@ private fun renderDiffOverlay(bodyHtml: String) {
         if ((e.target as? HTMLElement)?.id == "diff-modal-overlay") overlay.remove()
     }
     document.getElementById("diff-modal-close")?.addEventListener("click") { overlay.remove() }
+}
+
+// --- Phase 75: Cast & crew tab ---
+
+private fun renderCastGridHtml(cast: List<Person>): String {
+    if (cast.isEmpty()) return """<span class="muted tiny">No cast — click "Fetch from TMDB" to populate.</span>"""
+    return cast.joinToString("") { p ->
+        val imgSrc = "/api/people/${p.tmdbId}/image"
+        val charLabel = (p.role?.takeIf { it.isNotBlank() } ?: p.character?.takeIf { it.isNotBlank() }) ?: "—"
+        """<div class="person" data-person-id="${p.tmdbId}">
+             <div class="person-av"><img src="$imgSrc" alt="" onerror="this.style.display='none'"></div>
+             <div class="person-name">${p.name.esc()}</div>
+             <div class="person-role muted">${charLabel.esc()}</div>
+             <button class="btn sm ghost prow-rm" data-tmdb-id="${p.tmdbId}" style="margin-top:4px;font-size:.7rem;">✕</button>
+           </div>"""
+    }
+}
+
+private fun renderCrewHtml(crew: List<Person>): String {
+    if (crew.isEmpty()) return """<span class="muted tiny">No crew — click "Fetch from TMDB" to populate.</span>"""
+    val byDept = crew.groupBy { it.department?.takeIf { it.isNotBlank() } ?: "Other" }
+    return byDept.entries.joinToString("") { (dept, members) ->
+        val rows = members.joinToString("") { p ->
+            val imgSrc = "/api/people/${p.tmdbId}/image"
+            """<div class="crew-row" data-person-id="${p.tmdbId}">
+                 <div class="crew-av"><img src="$imgSrc" alt="" onerror="this.style.display='none'"></div>
+                 <div style="flex:1;min-width:0;">
+                   <div class="crew-name">${p.name.esc()}</div>
+                   <div class="crew-job muted">${(p.job ?: "").esc()}</div>
+                 </div>
+                 <button class="btn sm ghost prow-rm-crew" data-tmdb-id="${p.tmdbId}" data-job="${(p.job ?: "").esc()}" style="font-size:.7rem;">✕</button>
+               </div>"""
+        }
+        """<div class="crew-dept">${dept.esc()}</div>$rows"""
+    }
+}
+
+private fun wireCastTab(item: MediaItem, container: Element, scope: CoroutineScope) {
+    val mutableCast = item.cast.toMutableList()
+    val mutableCrew = item.crew.toMutableList()
+
+    fun refreshCastGrid() {
+        document.getElementById("cast-grid")?.innerHTML = renderCastGridHtml(mutableCast)
+        wireRemoveButtons(mutableCast, mutableCrew, item.id, container, scope)
+    }
+    fun refreshCrewList() {
+        document.getElementById("crew-list")?.innerHTML = renderCrewHtml(mutableCrew)
+        wireRemoveButtons(mutableCast, mutableCrew, item.id, container, scope)
+    }
+
+    wireRemoveButtons(mutableCast, mutableCrew, item.id, container, scope)
+
+    document.getElementById("cast-fetch-btn")?.addEventListener("click") {
+        scope.launch {
+            val updated = MediaApi.fetchCastFromTmdb(item.id) ?: return@launch
+            document.getElementById("cast-grid")?.innerHTML = renderCastGridHtml(updated.cast)
+            document.getElementById("crew-list")?.innerHTML = renderCrewHtml(updated.crew)
+            mutableCast.clear(); mutableCast.addAll(updated.cast)
+            mutableCrew.clear(); mutableCrew.addAll(updated.crew)
+            wireRemoveButtons(mutableCast, mutableCrew, item.id, container, scope)
+        }
+    }
+
+    document.getElementById("add-cast-btn")?.addEventListener("click") {
+        showPersonSearchModal(scope, isCrew = false) { result ->
+            if (mutableCast.none { it.tmdbId == result.tmdbId }) {
+                mutableCast.add(Person(
+                    tmdbId = result.tmdbId, name = result.name,
+                    profilePath = result.profilePath, order = mutableCast.size, type = "Actor"
+                ))
+                scope.launch { MediaApi.patchCast(item.id, mutableCast) }
+                refreshCastGrid()
+            }
+        }
+    }
+
+    document.getElementById("add-crew-btn")?.addEventListener("click") {
+        showPersonSearchModal(scope, isCrew = true) { result ->
+            if (mutableCrew.none { it.tmdbId == result.tmdbId }) {
+                mutableCrew.add(Person(
+                    tmdbId = result.tmdbId, name = result.name,
+                    profilePath = result.profilePath, department = result.knownForDepartment, type = "Director"
+                ))
+                scope.launch { MediaApi.patchCrew(item.id, mutableCrew) }
+                refreshCrewList()
+            }
+        }
+    }
+}
+
+private fun wireRemoveButtons(mutableCast: MutableList<Person>, mutableCrew: MutableList<Person>, mediaId: String, container: Element, scope: CoroutineScope) {
+    document.querySelectorAll(".prow-rm").let { btns ->
+        for (i in 0 until btns.length) {
+            val btn = btns.item(i) as? HTMLElement ?: continue
+            val tmdbId = btn.getAttribute("data-tmdb-id")?.toIntOrNull() ?: continue
+            btn.addEventListener("click") {
+                mutableCast.removeAll { it.tmdbId == tmdbId }
+                scope.launch { MediaApi.patchCast(mediaId, mutableCast) }
+                document.getElementById("cast-grid")?.innerHTML = renderCastGridHtml(mutableCast)
+                wireRemoveButtons(mutableCast, mutableCrew, mediaId, container, scope)
+            }
+        }
+    }
+    document.querySelectorAll(".prow-rm-crew").let { btns ->
+        for (i in 0 until btns.length) {
+            val btn = btns.item(i) as? HTMLElement ?: continue
+            val tmdbId = btn.getAttribute("data-tmdb-id")?.toIntOrNull() ?: continue
+            val job = btn.getAttribute("data-job") ?: ""
+            btn.addEventListener("click") {
+                mutableCrew.removeAll { it.tmdbId == tmdbId && it.job == job }
+                scope.launch { MediaApi.patchCrew(mediaId, mutableCrew) }
+                document.getElementById("crew-list")?.innerHTML = renderCrewHtml(mutableCrew)
+                wireRemoveButtons(mutableCast, mutableCrew, mediaId, container, scope)
+            }
+        }
+    }
+}
+
+private fun showPersonSearchModal(scope: CoroutineScope, isCrew: Boolean, onSelect: (PersonSearchResult) -> Unit) {
+    val existing = document.getElementById("person-modal-overlay")
+    existing?.remove()
+    val overlay = document.createElement("div") as? HTMLElement ?: return
+    overlay.id = "person-modal-overlay"
+    overlay.className = "diff-modal-overlay"
+    overlay.innerHTML = """
+        <div class="diff-modal" style="max-width:480px;">
+          <div class="row center" style="margin-bottom:14px;">
+            <h4 style="margin:0;">Search person</h4>
+            <span class="spacer"></span>
+            <button id="person-modal-close" class="btn sm ghost">✕</button>
+          </div>
+          <input id="person-search-input" class="input" type="text" placeholder="Search TMDB for a person…" style="width:100%;margin-bottom:10px;">
+          <div id="person-search-results" style="max-height:320px;overflow:auto;"></div>
+        </div>"""
+    document.body?.appendChild(overlay)
+    overlay.addEventListener("click") { e ->
+        if ((e.target as? HTMLElement)?.id == "person-modal-overlay") overlay.remove()
+    }
+    document.getElementById("person-modal-close")?.addEventListener("click") { overlay.remove() }
+    val searchInput = document.getElementById("person-search-input") as? HTMLInputElement
+    searchInput?.focus()
+    searchInput?.addEventListener("input") {
+        val q = searchInput.value.trim()
+        if (q.length < 2) return@addEventListener
+        scope.launch {
+            val results = MediaApi.searchPeople(q)
+            val resultsEl = document.getElementById("person-search-results") as? HTMLElement ?: return@launch
+            resultsEl.innerHTML = results.joinToString("") { r ->
+                val dept = if (r.knownForDepartment.isNotBlank()) " · ${r.knownForDepartment.esc()}" else ""
+                """<div class="menu-item person-result" data-tmdb-id="${r.tmdbId}" style="cursor:pointer;padding:8px 10px;border-radius:7px;">
+                     ${r.name.esc()}$dept
+                   </div>"""
+            }
+            resultsEl.querySelectorAll(".person-result").let { items ->
+                for (i in 0 until items.length) {
+                    val el = items.item(i) as? HTMLElement ?: continue
+                    val tmdbId = el.getAttribute("data-tmdb-id")?.toIntOrNull() ?: continue
+                    el.addEventListener("click") {
+                        val r = results.firstOrNull { it.tmdbId == tmdbId } ?: return@addEventListener
+                        overlay.remove()
+                        onSelect(r)
+                    }
+                }
+            }
+        }
+    }
 }
