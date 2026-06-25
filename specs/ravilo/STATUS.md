@@ -12,18 +12,22 @@ _Last updated: 2026-06-25_
 
 ## Current focus
 
-**Phases R01–R59 complete (code verified 2026-06-25); R60 is the only open phase.** An audit
-reconciled the README markers against the codebase after a design-sync reverted them to a stale
-snapshot. Verified **implemented in code**: R48–R50 (Discover/Top 10 API + TV screen + config editor),
-R51–R53 (global config + per-page heroes + channel-editor page), R55–R56 (subtitle rendering +
-image-sub parity — commits `470a5d5`/`9020555`), R57–R59 (Pair-a-TV + single global hero height +
-per-channel rows — commit `449ca1c`). All now corrected to ✓ Done.
+**Phases R01–R61 ALL complete (2026-06-25).** An audit reconciled the README markers against the
+codebase after a design-sync reverted them to a stale snapshot; everything verified implemented and
+corrected to ✓ Done.
 
-**R60 — Android phone (mobile) target (FR-RV-M1) — the one genuinely-unbuilt phase.** Design/mockup
-done (`design/ravilo/Ravilo Mobile.html`); **code pending** — there is no `:ravilo-phone` module yet.
-It needs only a thin entry module (manifest `leanback required=false`, standard LAUNCHER, portrait,
-status-bars-visible Activity) reusing `:ravilo-ui`/`:ravilo-player` unchanged, plus responsive
-`Dimens`. Status correctly stays **"✓ Done · design"** until the module lands.
+**R60 — Android phone (mobile) target (FR-RV-M1) — DONE (functional thin module).** New
+**`:ravilo-phone`** Gradle module mirroring `:ravilo-android`: portrait, touch, standard `LAUNCHER`
+(no leanback), system bars visible, applicationId `dev.jellystructure.ravilo.phone` (installs
+alongside the TV build). Reuses `:ravilo-ui` + `:ravilo-player` **unchanged** — touch already works
+(`dpadFocusable` attaches tap gestures). Platform `Theme.Material.NoActionBar` base (no AppCompat
+dep). `:ravilo-phone:assembleDebug` builds an APK; TV module unaffected. _Follow-up (not blocking):_
+portrait/touch polish via responsive `RaviloDimens` — the app currently reflows with TV-tuned sizing.
+_On-device testing: user handles (no auto-deploy)._
+
+**R61 — Home rows reduced to Continue + Newly Added (FR-RV-RD1) — DONE.** `DEFAULT_ROWS` +
+`SYSTEM_ROW_DEFAULTS` trimmed from 3 to 2 (merged newly-added). Existing configs surface ✕ delete
+buttons on the old split rows via `normalizedRows()` auto-insert of `newly-all`.
 
 Earlier detail below (through R47):
 
