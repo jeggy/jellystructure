@@ -30,12 +30,20 @@ actual class RaviloPlayer actual constructor() {
         while (video.childElementCount > 0) {
             video.firstChild?.let { video.removeChild(it) }
         }
-        video.src = streamUrl
+        // R17: lazy-load hls.js for HLS streams (the R56 transcode / burn-in TranscodingUrl is an
+        // .m3u8, which non-Safari browsers can't play natively). Direct-play URLs set video.src.
+        attachSource(video, streamUrl)
         video.currentTime = startPositionMs / 1000.0
         // R44: route browser/OS media keys to the <video> via the Media Session API.
         wireMediaSession(video)
         subtitles.forEach { sub ->
             val url = sub.url ?: return@forEach
+            // R17: native .ass/.ssa subs render with JASSUB (libass) for full styling; the rest are
+            // delivered as VTT and use a plain <track>. JASSUB is lazy-loaded only when first needed.
+            if (url.endsWith(".ass", ignoreCase = true) || url.endsWith(".ssa", ignoreCase = true)) {
+                if (sub.isDefault) mountAss(video, url)
+                return@forEach
+            }
             val trackEl = document.createElement("track")
             trackEl.setAttribute("src", url)
             trackEl.setAttribute("kind", if (sub.forced) "forced" else "subtitles")
@@ -60,7 +68,10 @@ actual class RaviloPlayer actual constructor() {
         // attribute set in load() handles the initial selection. (index -1 = off.)
     }
 
-    actual fun release() { runCatching { document.body?.removeChild(video) } }
+    actual fun release() {
+        runCatching { destroyOverlays(video) } // R17: tear down any hls.js / JASSUB instance
+        runCatching { document.body?.removeChild(video) }
+    }
 
     actual val positionMs: Long get() = (video.currentTime * 1000).toLong()
     actual val durationMs: Long get() {
@@ -108,5 +119,77 @@ private fun wireMediaSession(video: HTMLVideoElement): Unit = js(
                 ms.setActionHandler('stop', function () { video.pause(); });
             } catch (e) {}
         }
+    }"""
+)
+
+/**
+ * R17 — set the video source, lazy-loading hls.js the first time an HLS (.m3u8) stream is played
+ * (the R56 transcode / burn-in TranscodingUrl). Safari plays HLS natively; everything else uses
+ * hls.js, fetched from a CDN only on demand. Direct-play URLs just set `video.src`.
+ */
+private fun attachSource(video: HTMLVideoElement, url: String): Unit = js(
+    """{
+        function native(){ video.src = url; }
+        if (url.indexOf('.m3u8') === -1) { native(); return; }
+        if (video.canPlayType && video.canPlayType('application/vnd.apple.mpegurl')) { native(); return; }
+        function attach(){
+            try {
+                if (window.Hls && window.Hls.isSupported()) {
+                    if (video._hls) { try { video._hls.destroy(); } catch(e){} }
+                    var hls = new window.Hls(); video._hls = hls;
+                    hls.loadSource(url); hls.attachMedia(video);
+                } else { native(); }
+            } catch(e) { native(); }
+        }
+        if (window.Hls) { attach(); return; }
+        if (!window.__hlsLoading) {
+            window.__hlsLoading = true;
+            var s = document.createElement('script');
+            s.src = 'https://cdn.jsdelivr.net/npm/hls.js@1.5.13/dist/hls.min.js';
+            s.onload = attach; s.onerror = native;
+            document.head.appendChild(s);
+        } else {
+            var iv = setInterval(function(){ if (window.Hls){ clearInterval(iv); attach(); } }, 100);
+            setTimeout(function(){ clearInterval(iv); }, 8000);
+        }
+    }"""
+)
+
+/**
+ * R17 — render an .ass/.ssa subtitle with JASSUB (libass in WASM), lazy-loaded on first use so the
+ * worker + wasm aren't fetched unless a styled subtitle is actually selected.
+ */
+private fun mountAss(video: HTMLVideoElement, url: String): Unit = js(
+    """{
+        function go(){
+            try {
+                if (video._jassub) { try { video._jassub.destroy(); } catch(e){} video._jassub = null; }
+                video._jassub = new window.JASSUB({
+                    video: video,
+                    subUrl: url,
+                    workerUrl: 'https://cdn.jsdelivr.net/npm/jassub@1.7.0/dist/jassub-worker.js',
+                    wasmUrl: 'https://cdn.jsdelivr.net/npm/jassub@1.7.0/dist/jassub-worker.wasm'
+                });
+            } catch(e) {}
+        }
+        if (window.JASSUB) { go(); return; }
+        if (!window.__jassubLoading) {
+            window.__jassubLoading = true;
+            var s = document.createElement('script');
+            s.src = 'https://cdn.jsdelivr.net/npm/jassub@1.7.0/dist/jassub.umd.js';
+            s.onload = go;
+            document.head.appendChild(s);
+        } else {
+            var iv = setInterval(function(){ if (window.JASSUB){ clearInterval(iv); go(); } }, 100);
+            setTimeout(function(){ clearInterval(iv); }, 8000);
+        }
+    }"""
+)
+
+/** R17 — destroy any hls.js / JASSUB instance attached to the element (called on release). */
+private fun destroyOverlays(video: HTMLVideoElement): Unit = js(
+    """{
+        if (video._hls) { try { video._hls.destroy(); } catch(e){} video._hls = null; }
+        if (video._jassub) { try { video._jassub.destroy(); } catch(e){} video._jassub = null; }
     }"""
 )
