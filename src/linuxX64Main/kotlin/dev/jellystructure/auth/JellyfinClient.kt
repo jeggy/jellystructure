@@ -116,12 +116,15 @@ class JellyfinClient {
     }
 
     suspend fun refreshItem(baseUrl: String, token: String, jellyfinId: String, full: Boolean = false): Boolean = runCatching {
-        val mode = if (full) "FullRefresh" else "ValidationOnly"
-        val extra = if (full) "&Recursive=true&ReplaceAllMetadata=true" else ""
+        // "Default" mode reads from disk providers (NFO first) without forcing a TMDB internet re-scrape.
+        // "FullRefresh + ReplaceAllMetadata=true" was used previously but caused Jellyfin to re-download
+        // from TMDB and then write its own NFO back over ours, discarding every field we had set.
+        val mode = if (full) "Default" else "ValidationOnly"
+        val extra = if (full) "&ReplaceAllMetadata=true" else ""
         val url = baseUrl.trimEnd('/') +
             "/Items/$jellyfinId/Refresh?MetadataRefreshMode=$mode&ImageRefreshMode=$mode$extra"
         val response = http.post(url) { jellyfinAuth(token) }
-        Logger.info("Jellyfin item refresh $jellyfinId (${if (full) "full/recursive" else "validation"}): ${response.status.value}")
+        Logger.info("Jellyfin item refresh $jellyfinId (${if (full) "nfo-sync" else "validation"}): ${response.status.value}")
         response.status.value in 200..299
     }.getOrDefault(false)
 
