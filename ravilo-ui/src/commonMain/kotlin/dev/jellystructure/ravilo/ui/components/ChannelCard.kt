@@ -99,7 +99,7 @@ fun ChannelCard(
     val ringWidth     by animateDpAsState(if (focused) 3.dp else 0.dp, dpSpec, label = "channelBorder")
     val glowElevation by animateDpAsState(if (focused) 22.dp else 0.dp, dpSpec, label = "channelShadow")
 
-    val cardShape = remember { RoundedCornerShape(18.dp) }
+    val cardShape = remember { RoundedCornerShape(13.dp) }
     val brandFill   = remember(brandColor) { parseBrandFill(brandColor) }
     val accentColor = brandFill?.colors?.firstOrNull() ?: colors.accent
     val glowColor   = remember(accentColor) { accentColor.copy(alpha = 0.55f) }
@@ -129,7 +129,7 @@ fun ChannelCard(
     // so the lazy list's focused-bounds tracking never chases the scale animation → no viewport jump (R42).
     Box(
         modifier = Modifier
-            .size(186.dp, 104.dp)
+            .size(224.dp, 94.dp)
             .dpadFocusable(
                 focusRequester = focusRequester,
                 onFocused = { focused = true },
@@ -152,7 +152,7 @@ fun ChannelCard(
                 }
                 .background(cardGradient)
                 .drawWithCache {
-                    val radius = CornerRadius(18.dp.toPx())
+                    val radius = CornerRadius(13.dp.toPx())
                     onDrawWithContent {
                         drawContent()
                         val bw = ringWidth.toPx()
@@ -174,7 +174,7 @@ fun ChannelCard(
         Text(
             text = name.take(8).uppercase(),
             color = Color.White.copy(alpha = 0.06f),
-            fontSize = 26.sp,
+            fontSize = 29.sp,
             fontWeight = FontWeight.Bold,
             fontFamily = spaceGrotesk,
             modifier = Modifier
