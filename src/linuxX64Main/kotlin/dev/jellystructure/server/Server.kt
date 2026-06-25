@@ -73,6 +73,7 @@ import kotlinx.cinterop.allocArray
 import kotlinx.cinterop.memScoped
 import kotlinx.cinterop.toKString
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
@@ -125,7 +126,14 @@ fun startServer(
     chartIngest: ChartIngestService? = null,
     tvEventBus: TvEventBus,
 ): suspend () -> Unit {
-    val appScope = CoroutineScope(SupervisorJob())
+    // Fire-and-forget work (scans, NFO/artwork pushes, image fetches) runs as appScope.launch{}.
+    // On Kotlin/Native an exception escaping a launched coroutine reaches the global handler and
+    // ABORTS the whole process (SIGABRT/134). A SupervisorJob keeps siblings alive, but only a
+    // CoroutineExceptionHandler stops the abort: log it and keep the server running.
+    val appScope = CoroutineScope(SupervisorJob() + CoroutineExceptionHandler { _, e ->
+        println("[ERROR] Uncaught background coroutine exception (server kept alive): ${e.message}")
+        println(e.stackTraceToString())
+    })
     val engine = embeddedServer(CIO, port = port) {
         install(ContentNegotiation) { json(Json { ignoreUnknownKeys = true }) }
         install(WebSockets) {
