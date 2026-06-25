@@ -185,9 +185,6 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
             """<span class="badge ok">all tracks tagged</span>"""
     }
 
-    val resolvedLangBadge = if (!item.resolvedLanguage.isNullOrBlank()) {
-        """<span class="badge" title="TMDB fetch language resolved from track order">lang: ${item.resolvedLanguage.esc()}</span>"""
-    } else ""
 
     val nfoDisabled = item.tmdbId == null || (item.languageMix && item.resolvedLanguage.isNullOrBlank())
     val nfoDisabledReason = when {
@@ -473,9 +470,7 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
           <button id="back-btn" class="btn sm ghost">‹ Library</button>
           <h2>${item.title.esc()} <span class="muted">${if (item.year != null) "(${item.year})" else ""}</span></h2>
           ${if (item.tmdbId != null) """<span class="badge ok">TMDB matched</span>""" else """<span class="badge warn">No TMDB match</span>"""}
-          $resolvedLangBadge
           <span class="spacer"></span>
-          <button id="feature-ravilo-btn" class="btn sm ghost">★ Feature in Ravilo…</button>
           ${if (jellyfinItemUrl != null || tmdbUrl != null) """
           <span class="menu-wrap" id="links-menu">
             <span class="btn sm ghost menu-btn">External links <span class="caret">▾</span></span>
@@ -580,10 +575,6 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
 
     document.getElementById("repull-jellyfin-btn")?.addEventListener("click") {
         showRepullJellyfinModal(item, container, scope)
-    }
-
-    document.getElementById("feature-ravilo-btn")?.addEventListener("click") {
-        showHeroBuilder(item, scope)
     }
 
     document.getElementById("lang-override-btn")?.addEventListener("click") {
@@ -2663,68 +2654,6 @@ private fun showNfoPermBanner(message: String, path: String) {
     """.trimIndent()
 }
 
-// ── R32: Feature in Ravilo (hero builder with locked title + viewer picker) ─────
-private fun showHeroBuilder(item: MediaItem, scope: CoroutineScope) {
-    scope.launch {
-        val users = runCatching { RaviloApi.getUsers() }.getOrDefault(emptyList())
-        if (users.isEmpty()) { showDetailMsg("No Jellyfin users available.", false); return@launch }
-        document.getElementById("hero-builder-overlay")?.let { it.parentElement?.removeChild(it) }
-        val overlay = document.createElement("div") as HTMLElement
-        overlay.id = "hero-builder-overlay"
-        overlay.setAttribute("style", "position:fixed;inset:0;background:#000a;display:flex;align-items:center;justify-content:center;z-index:1100;padding:20px;")
-        val userOpts = """<option value="__global__">🌐 Global (all users)</option>""" +
-            users.joinToString("") { """<option value="${it.id}">${it.displayName.esc()}</option>""" }
-        val badgeOpts = listOf("", "New Season", "4K", "Top 10", "Premiere").joinToString("") { """<option value="$it">${if (it.isEmpty()) "None" else it}</option>""" }
-        val backdrop = if (item.backdropPath != null) "https://image.tmdb.org/t/p/w780${item.backdropPath}" else ""
-        overlay.innerHTML = """
-            <div style="background:var(--fill);color:var(--ink);border:1px solid var(--line);border-radius:16px;padding:18px;width:min(560px,100%);box-shadow:var(--shadow);">
-              <h3 style="margin:0 0 4px;">★ Feature in Ravilo</h3>
-              <div class="tiny muted" style="margin-bottom:12px;">Featuring <b>${item.title.esc()}</b> · title locked</div>
-              <div style="position:relative;border-radius:12px;overflow:hidden;aspect-ratio:16/9;background:#0008 ${if (backdrop.isNotEmpty()) "url('$backdrop') center/cover" else ""};margin-bottom:14px;">
-                <div style="position:absolute;left:16px;bottom:14px;right:16px;">
-                  <div id="hb-badge-prev" class="badge ok" style="display:none;margin-bottom:6px;"></div>
-                  <div style="font-family:var(--font-display,inherit);font-size:1.6rem;font-weight:700;text-shadow:0 2px 8px #000;">${item.title.esc()}</div>
-                  <div id="hb-tag-prev" class="tiny" style="text-shadow:0 1px 4px #000;"></div>
-                </div>
-              </div>
-              <div class="field"><label>For viewer</label><select id="hb-viewer" class="input">$userOpts</select></div>
-              <div class="field"><label>Badge</label><select id="hb-badge" class="input">$badgeOpts</select></div>
-              <div class="field"><label>Tagline / kicker</label><input id="hb-tag" class="input" placeholder="e.g. The saga concludes"></div>
-              <label style="display:flex;gap:7px;align-items:center;margin:6px 0 14px;font-size:.85rem;"><input type="checkbox" id="hb-logo" checked> Clearlogo overlay (text-title fallback)</label>
-              <div class="row center" style="gap:8px;justify-content:flex-end;">
-                <button id="hb-cancel" class="btn sm ghost">Cancel</button>
-                <button id="hb-save" class="btn sm">Add to hero carousel</button>
-              </div>
-            </div>""".trimIndent()
-        document.body?.appendChild(overlay)
-        fun refreshPrev() {
-            val b = (document.getElementById("hb-badge") as? HTMLSelectElement)?.value ?: ""
-            (document.getElementById("hb-badge-prev") as? HTMLElement)?.let { it.style.display = if (b.isEmpty()) "none" else "inline-block"; it.textContent = b }
-            (document.getElementById("hb-tag-prev") as? HTMLElement)?.textContent = (document.getElementById("hb-tag") as? HTMLInputElement)?.value ?: ""
-        }
-        document.getElementById("hb-badge")?.addEventListener("change") { refreshPrev() }
-        document.getElementById("hb-tag")?.addEventListener("input") { refreshPrev() }
-        document.getElementById("hb-cancel")?.addEventListener("click") { overlay.parentElement?.removeChild(overlay) }
-        document.getElementById("hb-save")?.addEventListener("click") {
-            val uid = (document.getElementById("hb-viewer") as? HTMLSelectElement)?.value ?: return@addEventListener
-            val badge = (document.getElementById("hb-badge") as? HTMLSelectElement)?.value?.ifEmpty { null }
-            val tag = (document.getElementById("hb-tag") as? HTMLInputElement)?.value?.ifEmpty { null }
-            val logo = (document.getElementById("hb-logo") as? HTMLInputElement)?.checked ?: true
-            overlay.parentElement?.removeChild(overlay)
-            val isGlobal = uid == "__global__"
-            scope.launch {
-                val cfg = if (isGlobal) runCatching { RaviloApi.getConfigWithMeta(scope = "global") }.getOrNull()?.config
-                          else runCatching { RaviloApi.getConfig(uid) }.getOrNull()
-                if (cfg == null) { showDetailMsg("Could not load config.", false); return@launch }
-                val itemId = item.jellyfinId ?: item.id
-                val newCfg = cfg.copy(heroes = cfg.heroes.filter { it.itemId != itemId } + HeroConfig(itemId = itemId, badge = badge, tagline = tag, clearlogoOverlay = logo))
-                val ok = if (isGlobal) runCatching { RaviloApi.putGlobalConfig(newCfg); true }.getOrDefault(false)
-                         else runCatching { RaviloApi.putConfig(uid, newCfg); true }.getOrDefault(false)
-                showDetailMsg(if (ok) "Featured in Ravilo carousel." else "Save failed.", ok)
-            }
-        }
-    }
-}
 
 internal fun showDetailMsg(msg: String, ok: Boolean) {
     val el = document.getElementById("detail-msg") as? HTMLElement ?: return
