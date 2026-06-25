@@ -383,34 +383,3 @@ hr.dash { border: none; border-top: 1px solid var(--line); margin: 18px 0; }
 .code-inputs input { width: 46px; height: 56px; text-align: center; font-family: 'JetBrains Mono', monospace; font-size: 1.5rem;
   font-weight: 600; text-transform: uppercase; border: 1px solid var(--line-2); border-radius: 10px; background: var(--bg-2); color: var(--ink); }
 .code-inputs input:focus { outline: none; border-color: var(--hi); box-shadow: 0 0 0 3px var(--hi-soft); }
-
-/* ===== Phase 75: Cast & crew ===== */
-.cast-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(146px, 1fr)); gap: 14px; }
-.person { position: relative; background: var(--fill-2); border: 1px solid var(--line); border-radius: var(--radius-s); overflow: hidden; cursor: grab; }
-.person.dragging { opacity: .4; }
-.person .ph { aspect-ratio: 2/3; display: flex; align-items: center; justify-content: center; font-size: 1.7rem; font-weight: 600; letter-spacing: .03em; }
-.person .pbody { padding: 9px 10px 11px; }
-.person .pname { font-weight: 600; font-size: .9rem; line-height: 1.25; }
-.person .prole { font-size: .8rem; color: var(--ink-soft); margin-top: 2px; cursor: text; min-height: 1.1em; }
-.person .prole:hover { color: var(--ink); }
-.person .prm { position: absolute; top: 6px; right: 6px; width: 22px; height: 22px; border-radius: 50%; background: rgba(8,10,16,.72); color: #fff; border: none; cursor: pointer; opacity: 0; display: flex; align-items: center; justify-content: center; font-size: .7rem; transition: opacity .15s; }
-.person:hover .prm { opacity: 1; }
-.person .prm:hover { background: var(--bad); }
-.person .pord { position: absolute; top: 6px; left: 6px; background: rgba(8,10,16,.72); color: #fff; font-size: .62rem; font-family: 'JetBrains Mono',monospace; padding: 1px 6px; border-radius: 5px; z-index: 1; }
-.person.add { display: flex; align-items: center; justify-content: center; min-height: 130px; border-style: dashed; color: var(--ink-soft); cursor: pointer; font-size: .85rem; }
-.person.add:hover { color: var(--ink); border-color: var(--hi); }
-.person-av { aspect-ratio: 2/3; background: var(--fill-2); display: flex; align-items: center; justify-content: center; overflow: hidden; }
-.person-av img { width: 100%; height: 100%; object-fit: cover; }
-.person-name { font-weight: 600; font-size: .88rem; padding: 6px 8px 2px; }
-.person-role { font-size: .78rem; padding: 0 8px 8px; }
-.crew-dept { margin-bottom: 15px; } .crew-dept:last-child { margin-bottom: 0; }
-.crew-dept .crew-dept-label { margin: 0 0 6px; font-size: .72rem; text-transform: uppercase; letter-spacing: .06em; color: var(--ink-soft); font-weight: 600; }
-.crew-row, .prow { display: flex; align-items: center; gap: 11px; }
-.crew-row { padding: 7px 0; border-bottom: 1px dashed var(--line); }
-.crew-row:last-child { border-bottom: none; }
-.crew-av { width: 34px; height: 34px; flex: none; border-radius: 50%; overflow: hidden; background: var(--fill-2); display: flex; align-items: center; justify-content: center; }
-.crew-av img { width: 100%; height: 100%; object-fit: cover; }
-.crew-name { font-weight: 600; font-size: .88rem; }
-.crew-job { font-size: .8rem; color: var(--ink-soft); }
-.prow { padding: 7px 9px; border-radius: 8px; cursor: pointer; }
-.prow:hover { background: var(--fill-2); }
