@@ -272,6 +272,7 @@ fun SearchScreen(
                         title = card.title,
                         posterUrl = card.posterUrl,
                         progressPct = card.progressPct ?: 0f,
+                        watched = card.watched,
                         onFocused = { focusedGridIdx = i; inGrid = true },
                         onSelect = { onItemSelect(card) },
                     )

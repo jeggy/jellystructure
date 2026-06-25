@@ -44,6 +44,9 @@ internal fun observeSections(idsCsv: String, rootMargin: String, onVisible: (Str
         });
     })()""")
 
+internal fun callOpenAttentionDock(): Unit =
+    js("if(typeof window.openAttentionDock === 'function') window.openAttentionDock()")
+
 // Clipboard write with execCommand fallback for non-HTTPS (HTTP) contexts
 internal fun copyToClipboard(text: String): Unit = js("""(function(){
     try { navigator.clipboard.writeText(text); }

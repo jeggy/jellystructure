@@ -984,15 +984,42 @@ private fun buildEpisodesTab(item: MediaItem): String {
     val firstSeasonKey = seasonKeys.firstOrNull()
     fun seasonSelKey(season: Int?): String = season?.toString() ?: "none"
 
-    // Segmented selector — shows one season at a time (design series.html). Hidden when ≤ 1 season.
+    // Season head with prev/next buttons and searchable dropdown (design series-simpsons.html).
     val seasonSelectorHtml = if (seasonKeys.size > 1) {
-        val segs = seasonKeys.joinToString("") { s ->
-            val label = if (s != null) "Season $s" else "Unsorted"
-            val on = if (s == firstSeasonKey) " class=\"on\"" else ""
-            """<span$on data-season-sel="${seasonSelKey(s)}">${label.esc()}</span>"""
+        val firstLabel = if (firstSeasonKey != null) "Season $firstSeasonKey" else "Unsorted"
+        val firstEpCount = sortedSeasons.firstOrNull()?.second?.size ?: 0
+        val firstEpWord = if (firstEpCount == 1) "episode" else "episodes"
+        val menuItems = seasonKeys.joinToString("") { s ->
+            val lbl = if (s != null) "Season $s" else "Unsorted"
+            val ec = sortedSeasons.find { it.first == s }?.second?.size ?: 0
+            val issues = sortedSeasons.find { it.first == s }?.second?.sumOf { it.issueCount } ?: 0
+            val curCls = if (s == firstSeasonKey) " cur" else ""
+            val attDot = if (issues > 0) """<span class="att"></span>""" else ""
+            """<div class="sp-opt$curCls" data-season-sel="${seasonSelKey(s)}"><span class="nm">${lbl.esc()}</span><span class="ec">$ec ep${if (ec != 1) "s" else ""}</span>$attDot</div>"""
         }
-        """<div class="seg" id="ep-season-seg" style="margin-bottom:14px;flex-wrap:wrap;">$segs</div>"""
-    } else ""
+        """<div class="season-head">
+             <h4 style="margin:0;white-space:nowrap;" id="season-title">${firstLabel.esc()}</h4>
+             <span class="sp-step" id="sp-prev" title="Previous season" disabled>&#x2039;</span>
+             <span style="position:relative;">
+               <span class="sp-btn" id="sp-btn">${firstLabel.esc()} <span class="cnt" id="sp-btn-cnt">$firstEpCount $firstEpWord</span> <span class="muted" style="font-size:.7rem;">&#x25BE;</span></span>
+               <span class="sp-menu" id="sp-menu">
+                 <span class="sp-search"><span class="muted">&#x2315;</span><input type="text" id="sp-q" placeholder="Jump to season&#x2026;" autocomplete="off" inputmode="numeric"></span>
+                 <span class="sp-list" id="sp-list">$menuItems</span>
+               </span>
+             </span>
+             <span class="sp-step" id="sp-next" title="Next season">&#x203A;</span>
+             <span class="spacer" style="flex:1"></span>
+             <span class="btn sm ghost" id="expand-issues">Expand all issues</span>
+           </div>
+           <hr class="dash" style="margin:12px 0;">"""
+    } else {
+        // Single season: just show the Expand all issues button
+        """<div class="season-head">
+             <span class="spacer" style="flex:1"></span>
+             <span class="btn sm ghost" id="expand-issues">Expand all issues</span>
+           </div>
+           <hr class="dash" style="margin:12px 0;">"""
+    }
 
     val seasonBlocks = sortedSeasons
         .joinToString("") { (season, eps) ->
@@ -1129,6 +1156,7 @@ private fun buildEpisodeRow(ep: Episode, season: Int?, idx: Int, mediaId: String
             $stillThumb
             <span class="num" style="min-width:64px;font-size:.82rem;">${epCode.esc()}</span>
             ${if (!ep.title.isNullOrBlank()) """<span style="font-size:.85rem;font-weight:500;flex:none;max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${ep.title.esc()}">${ep.title.esc()}</span>""" else ""}
+            ${if (!ep.resolvedLanguage.isNullOrBlank()) """<span class="lang" style="font-size:.72rem;flex:none;">${ep.resolvedLanguage.esc()}</span>""" else ""}
             <div style="display:flex;gap:4px;flex-wrap:wrap;flex:1;">$trackChips</div>
             $multiDefaultBadge
             $issueBadge
@@ -1436,21 +1464,104 @@ private fun wireEpisodeToggles() {
 }
 
 private fun wireSeasonSelector() {
-    val seg = document.getElementById("ep-season-seg") as? HTMLElement ?: return
-    val segItems = seg.querySelectorAll("[data-season-sel]")
-    for (i in 0 until segItems.length) {
-        val segItem = segItems.item(i) as? HTMLElement ?: continue
-        segItem.addEventListener("click") {
-            val sel = segItem.getAttribute("data-season-sel") ?: return@addEventListener
-            for (j in 0 until segItems.length) {
-                (segItems.item(j) as? HTMLElement)?.className = ""
+    // Season picker: prev/next step buttons + dropdown with search.
+    val spMenu = document.getElementById("sp-menu") as? HTMLElement ?: return
+    val spBtn = document.getElementById("sp-btn") as? HTMLElement ?: return
+    val spList = document.getElementById("sp-list") as? HTMLElement ?: return
+    val spSearch = document.getElementById("sp-q") as? HTMLInputElement
+    val spPrev = document.getElementById("sp-prev") as? HTMLElement
+    val spNext = document.getElementById("sp-next") as? HTMLElement
+    val expandIssues = document.getElementById("expand-issues") as? HTMLElement
+
+    fun allOpts(): List<HTMLElement> {
+        val nl = spList.querySelectorAll("[data-season-sel]")
+        return (0 until nl.length).mapNotNull { nl.item(it) as? HTMLElement }
+    }
+
+    fun currentSel(): String? {
+        return allOpts().firstOrNull { it.classList.contains("cur") }?.getAttribute("data-season-sel")
+    }
+
+    fun showSeason(sel: String) {
+        // Update option highlights
+        val opts = allOpts()
+        opts.forEach { it.classList.remove("cur") }
+        val chosen = opts.firstOrNull { it.getAttribute("data-season-sel") == sel }
+        chosen?.classList?.add("cur")
+        // Update label + episode count in the button
+        val chosenName = (chosen?.querySelector(".nm") as? HTMLElement)?.textContent ?: "Season"
+        val chosenEc = (chosen?.querySelector(".ec") as? HTMLElement)?.textContent ?: ""
+        document.getElementById("season-title")?.textContent = chosenName
+        (spBtn.querySelector("#sp-btn-cnt") as? HTMLElement)?.textContent = chosenEc
+        spBtn.firstChild?.let { if (it.nodeType == 3.toShort()) it.nodeValue = "$chosenName " }
+        // Prev/next disabled state
+        val selIdx = opts.indexOfFirst { it.getAttribute("data-season-sel") == sel }
+        spPrev?.let { if (selIdx <= 0) it.setAttribute("disabled", "") else it.removeAttribute("disabled") }
+        spNext?.let { if (selIdx >= opts.size - 1) it.setAttribute("disabled", "") else it.removeAttribute("disabled") }
+        // Show/hide season blocks
+        val blocks = document.querySelectorAll(".ep-season-block")
+        for (k in 0 until blocks.length) {
+            val block = blocks.item(k) as? HTMLElement ?: continue
+            block.style.display = if (block.getAttribute("data-season-block") == sel) "" else "none"
+        }
+        spMenu.classList.remove("open")
+    }
+
+    spBtn.addEventListener("click") { _ ->
+        spMenu.classList.toggle("open")
+        if (spMenu.classList.contains("open")) {
+            spSearch?.focus()
+            spSearch?.value = ""
+            allOpts().forEach { (it as? HTMLElement)?.style?.display = "" }
+        }
+    }
+
+    spSearch?.addEventListener("input") { _ ->
+        val q = spSearch.value.trim().lowercase()
+        allOpts().forEach { opt ->
+            val nm = (opt.querySelector(".nm") as? HTMLElement)?.textContent?.lowercase() ?: ""
+            opt.style.display = if (q.isEmpty() || nm.contains(q)) "" else "none"
+        }
+    }
+
+    allOpts().forEach { opt ->
+        opt.addEventListener("click") { _ ->
+            val sel = opt.getAttribute("data-season-sel") ?: return@addEventListener
+            showSeason(sel)
+        }
+    }
+
+    spPrev?.addEventListener("click") { _ ->
+        val opts = allOpts()
+        val idx = opts.indexOfFirst { it.classList.contains("cur") }
+        if (idx > 0) showSeason(opts[idx - 1].getAttribute("data-season-sel") ?: return@addEventListener)
+    }
+
+    spNext?.addEventListener("click") { _ ->
+        val opts = allOpts()
+        val idx = opts.indexOfFirst { it.classList.contains("cur") }
+        if (idx < opts.size - 1) showSeason(opts[idx + 1].getAttribute("data-season-sel") ?: return@addEventListener)
+    }
+
+    // Close menu on outside click
+    document.addEventListener("click") { ev ->
+        if (spMenu.classList.contains("open")) {
+            val target = ev.target as? HTMLElement
+            if (target != spBtn && !spBtn.contains(target) && target != spMenu && !spMenu.contains(target)) {
+                spMenu.classList.remove("open")
             }
-            segItem.className = "on"
-            val blocks = document.querySelectorAll(".ep-season-block")
-            for (k in 0 until blocks.length) {
-                val block = blocks.item(k) as? HTMLElement ?: continue
-                block.style.display = if (block.getAttribute("data-season-block") == sel) "" else "none"
-            }
+        }
+    }
+
+    // Expand all issues button
+    expandIssues?.addEventListener("click") { _ ->
+        val issueEps = document.querySelectorAll(".ep-toggle-row")
+        for (k in 0 until issueEps.length) {
+            val toggle = issueEps.item(k) as? HTMLElement ?: continue
+            val bodyId = toggle.getAttribute("data-body") ?: continue
+            val body = document.getElementById(bodyId) as? HTMLElement ?: continue
+            val hasBadge = toggle.querySelector(".badge.bad") != null
+            if (hasBadge && body.style.display == "none") toggle.click()
         }
     }
 }

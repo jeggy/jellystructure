@@ -277,6 +277,7 @@ private fun BrowseGrid(
                 title = card.title,
                 posterUrl = card.posterUrl,
                 progressPct = card.progressPct ?: 0f,
+                watched = card.watched,
                 // R55: the first cell is the back-to-top focus landing target.
                 focusRequester = if (i == 0) firstCellFR else null,
                 onSelect = { onItemSelect(card) },
