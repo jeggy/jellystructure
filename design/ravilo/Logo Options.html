@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="design_doc_mode" content="canvas">
+<title>Ravilo Logo — Recolor Options</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
+<style>
+  body{ margin:0; font-family:'Space Grotesk',sans-serif; }
+  .frame{ position:absolute; background:#0f1117; border:1px solid #232634; border-radius:24px; padding:30px; color:#eef0f7; box-shadow:0 30px 80px rgba(0,0,0,.45); }
+  .hd{ font-size:22px; font-weight:700; letter-spacing:-.01em; }
+  .sub{ font-family:'JetBrains Mono',monospace; font-size:12px; color:#9aa0b4; margin-top:6px; }
+  .chips{ display:flex; gap:10px; margin-top:18px; flex-wrap:wrap; }
+  .chip{ display:flex; align-items:center; gap:8px; font-family:'JetBrains Mono',monospace; font-size:12px; color:#cfd4e6; background:#171a26; border:1px solid #232634; border-radius:999px; padding:5px 11px; }
+  .sw{ width:13px; height:13px; border-radius:4px; }
+  .grid{ display:flex; gap:26px; margin-top:8px; }
+  .opt{ display:flex; flex-direction:column; align-items:center; gap:14px; }
+  .opt img{ width:190px; height:190px; border-radius:42px; display:block; box-shadow:0 18px 44px rgba(0,0,0,.5); }
+  .opt .nm{ font-weight:600; font-size:16px; }
+  .opt .ds{ font-size:12.5px; color:#9aa0b4; text-align:center; max-width:200px; line-height:1.5; }
+  .pill{ font-family:'JetBrains Mono',monospace; font-size:11px; color:#c6bcfb; background:rgba(123,110,240,.16); border:1px solid rgba(123,110,240,.3); padding:2px 9px; border-radius:999px; }
+  .rec{ color:#7ad7b0; background:rgba(45,212,154,.14); border-color:rgba(45,212,154,.3); }
+</style>
+<template id="__bundler_thumbnail" data-bg-color="#000B25">
+  <svg viewBox="0 0 1200 800" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <linearGradient id="tg" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0" stop-color="#AA5CC3"/>
+        <stop offset="1" stop-color="#00A4DC"/>
+      </linearGradient>
+    </defs>
+    <rect width="1200" height="800" fill="#000B25"/>
+    <rect x="430" y="230" width="340" height="340" rx="86" fill="url(#tg)"/>
+    <circle cx="600" cy="380" r="78" fill="#000B25" opacity="0.28"/>
+    <path d="M540 470 q12 46 60 46 q48 0 60 -46" stroke="#000B25" stroke-width="20" fill="none" stroke-linecap="round" opacity="0.28"/>
+  </svg>
+</template>
+</head>
+<body>
+  <div class="frame" style="left:60px; top:60px; width:1020px;">
+    <div class="hd">Ravilo logo — recolor options</div>
+    <div class="sub">same jellyfish mark · Jellyfin-inspired palette</div>
+    <div class="chips">
+      <span class="chip"><span class="sw" style="background:#AA5CC3;"></span>#AA5CC3 gradient start</span>
+      <span class="chip"><span class="sw" style="background:#00A4DC;"></span>#00A4DC gradient end</span>
+      <span class="chip"><span class="sw" style="background:#000B25; border:1px solid #2a3550;"></span>#000B25 background</span>
+    </div>
+    <div class="grid" style="margin-top:26px;">
+      <div class="opt">
+        <img src="../scraps/opt-A.png" alt="Option A">
+        <div class="nm">A · Flat</div>
+        <div class="ds">Pure <b>#000B25</b>, no depth. The literal spec — flattest, most minimal.</div>
+      </div>
+      <div class="opt">
+        <img src="../scraps/opt-B.png" alt="Option B">
+        <div class="nm">B · Radial depth <span class="pill rec">recommended</span></div>
+        <div class="ds">Subtle navy lift toward the centre fading to <b>#000B25</b> — matches the current premium look.</div>
+      </div>
+      <div class="opt">
+        <img src="../scraps/opt-C.png" alt="Option C">
+        <div class="nm">C · Aura glow</div>
+        <div class="ds">A soft purple→blue glow behind the mark on flat navy — more vivid, brand-forward.</div>
+      </div>
+      <div class="opt">
+        <img src="../scraps/opt-D.png" alt="Option D">
+        <div class="nm">D · Lit mark</div>
+        <div class="ds">Flat navy with a faint outer glow on the mark itself — crisp, “backlit” feel.</div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
