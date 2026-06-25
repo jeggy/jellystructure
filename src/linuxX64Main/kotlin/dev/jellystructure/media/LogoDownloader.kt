@@ -80,6 +80,23 @@ class LogoDownloader(
         return LogoBatchResult(fetched, skipped, failed)
     }
 
+    private fun personImageFile(tmdbId: Int) = "$dataDir/artwork/people/$tmdbId.jpg"
+
+    fun hasPersonImage(tmdbId: Int) = SystemFileSystem.exists(Path(personImageFile(tmdbId)))
+
+    fun servePersonImage(tmdbId: Int): ByteArray? {
+        val path = Path(personImageFile(tmdbId))
+        return if (SystemFileSystem.exists(path)) SystemFileSystem.source(path).buffered().readByteArray() else null
+    }
+
+    suspend fun fetchPersonImage(tmdbId: Int, profilePath: String?): Boolean {
+        if (profilePath.isNullOrBlank()) return false
+        ensureDir("people")
+        val destPath = personImageFile(tmdbId)
+        if (SystemFileSystem.exists(Path(destPath))) return true
+        return download("https://image.tmdb.org/t/p/w185$profilePath", destPath)
+    }
+
     @OptIn(ExperimentalForeignApi::class)
     private suspend fun download(url: String, destPath: String): Boolean {
         val result = runCatching {
