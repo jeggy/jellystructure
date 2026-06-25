@@ -921,6 +921,7 @@ fun Route.mediaRoutes(
                     val updatedItem = item.copy(episodes = updatedEpisodes)
                     store.updateOne(updatedItem)
                     mediaHistory.record(id, "episode_meta_edit", "ep=${ep.filename}")
+                    appScope.launch { pushToJellyfin(updatedItem, artwork, configStore, jellyfinClient, appScope, arrRescan) }
                     call.respond(updatedEp)
                 }
             }
@@ -988,6 +989,7 @@ fun Route.mediaRoutes(
             val snap = MetaSnap(item.title, item.overview, item.year, item.originalTitle, item.director, item.studio, item.network, item.tags, item.genres)
             store.updateOne(updated)
             mediaHistory.record(id, "metadata_edit", "title=${updated.title}", revertable = true, beforeSnapshot = Json.encodeToString(snap))
+            appScope.launch { pushToJellyfin(updated, artwork, configStore, jellyfinClient, appScope, arrRescan) }
             call.respond(updated)
         }
 

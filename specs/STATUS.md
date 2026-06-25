@@ -8,7 +8,7 @@ _Last updated: 2026-06-25_
 
 ## Current focus
 
-**Phases 0–58 + 70–71 complete. Phase 72 planned.** Design-diff audit (2026-06-25) found and fixed several reopened phases: Phase 36 (cron field in Settings), Phase 42 (season picker prev/next+dropdown + Expand all issues + per-episode lang badge), Phase 70 (Login SVG mark + connection row + footer). All builds pass.
+**Phases 0–58 + 70–73 complete. Phase 72 planned.** Phase 73 (2026-06-25): `PATCH /api/media/{id}/metadata` and `/episodes/{ep}/metadata` never called `pushToJellyfin` — all curated metadata (title, overview, tags, genres, studio) was DB-only and invisible to Jellyfin after every Save. Both handlers now launch `pushToJellyfin` on the app scope after `store.updateOne` (non-blocking). Design-diff audit (2026-06-25) found and fixed several reopened phases: Phase 36 (cron field in Settings), Phase 42 (season picker prev/next+dropdown + Expand all issues + per-episode lang badge), Phase 70 (Login SVG mark + connection row + footer). All builds pass.
 
 Previously: [Phase 53](requirements/archive/phase-53-scanner-data-quality.md)
 (2026-06-23) fixed scanner data-quality issues found in a post-DB-reset full-sync review (296 scanned
