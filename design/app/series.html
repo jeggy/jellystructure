@@ -104,6 +104,7 @@
     <span data-tab="overview">Overview</span>
     <span class="on" data-tab="episodes">Seasons &amp; episodes</span>
     <span data-tab="artwork">Artwork</span>
+    <span data-tab="cast">Cast &amp; crew</span>
     <span data-tab="nfo">NFO (raw)</span>
     <span data-tab="history">History</span>
   </div>
@@ -377,6 +378,34 @@
         </div>
       </div>
 
+      <!-- CAST & CREW PANEL -->
+      <div class="tabpanel" data-panel="cast" style="display:none;">
+        <div class="row center" style="margin-bottom:14px;gap:12px;flex-wrap:wrap;">
+          <div>
+            <h4 style="margin:0 0 3px;">Cast &amp; crew</h4>
+            <div class="tiny muted">Series-level · from TMDB · saved to library as you edit · <b>Save</b> writes the NFO ↗</div>
+          </div>
+          <span class="spacer"></span>
+          <span class="btn sm" id="cast-fetch">↻ Fetch from TMDB</span>
+        </div>
+        <div class="note blue" style="display:flex;gap:10px;align-items:flex-start;padding:11px 13px;margin-bottom:16px;">
+          <span style="flex:none;">ℹ</span>
+          <div class="tiny" style="line-height:1.55;">
+            Person photos come from TMDB. Jellystructure <b>caches</b> each profile image and writes its URL into the NFO <span class="mono">&lt;actor&gt;&lt;thumb&gt;</span> — Jellyfin downloads the photo from there into its own people store. Series cast goes in <span class="mono">tvshow.nfo</span>; per-episode guest stars are written to each <span class="mono">episodedetails.nfo</span>.
+          </div>
+        </div>
+        <div class="card" style="margin-bottom:16px;">
+          <div class="row center"><h4 style="margin:0;">Cast</h4><span class="badge info" id="cast-count" style="margin-left:7px;">0</span><span class="spacer"></span><span class="tiny muted">drag to reorder · order is written to &lt;actor&gt;&lt;order&gt;</span></div>
+          <hr class="dash" style="margin:10px 0 14px;">
+          <div class="cast-grid" id="cast-grid"></div>
+        </div>
+        <div class="card">
+          <div class="row center"><h4 style="margin:0;">Crew</h4><span class="badge info" id="crew-count" style="margin-left:7px;">0</span><span class="spacer"></span><span class="btn sm ghost" id="crew-add">＋ Add crew</span></div>
+          <hr class="dash" style="margin:10px 0 14px;">
+          <div id="crew-list"></div>
+        </div>
+      </div>
+
       <!-- NFO PANEL -->
       <div class="tabpanel" data-panel="nfo" style="display:none;">
         <div class="card">
@@ -446,6 +475,22 @@
       <div class="row center" style="margin-top:12px;gap:10px;flex-wrap:wrap;"><span id="te-cost"></span><span class="spacer" style="flex:1"></span><span class="btn ghost" id="te-discard">Discard</span><span class="btn primary" id="te-apply">Apply to file</span></div>
     </div>
     <div id="te-clean" class="tiny muted" style="margin-top:14px;">Reorder by dragging the grip or ▲▼ · click a language to change it · ★ sets the default. Everything is manual and only touches the file on Apply.</div>
+  </div>
+</div>
+
+<!-- Add person (TMDB search) — Phase 75 -->
+<div class="modal-back" id="person-modal">
+  <div class="modal" style="width:520px;">
+    <span class="x" id="person-x">✕</span>
+    <h3 id="person-title">Add cast</h3>
+    <div class="row" id="person-extra" style="gap:8px;margin:8px 0 10px;display:none;">
+      <select class="input" id="person-dept" style="flex:1;">
+        <option>Directing</option><option>Writing</option><option>Production</option><option>Sound</option><option>Art</option><option>Camera</option><option>Editing</option><option>Costume &amp; Make-Up</option><option>Crew</option>
+      </select>
+      <input class="input" id="person-job" placeholder="Job (e.g. Director)" style="flex:1;">
+    </div>
+    <input class="input" id="person-search" placeholder="Search people on TMDB…" autocomplete="off" style="margin:6px 0 12px;">
+    <div id="person-results" class="col" style="gap:4px;max-height:320px;overflow:auto;"></div>
   </div>
 </div>
 
@@ -668,6 +713,116 @@
     });
     document.querySelectorAll('.ep-tracks').forEach(b => b.addEventListener('click', e => { e.stopPropagation(); open(b.dataset.ep); }));
   })();
+})();
+</script>
+<script>
+/* ---- Cast & crew (Phase 75) — series-level; write-through to DB; Save → NFO ---- */
+(function () {
+  const PAL = ['#7b6ef0','#2dd49a','#f5b542','#3fb6f5','#e36588','#5b8def','#19d6c6','#b15cd0'];
+  const colorFor = n => PAL[[...n].reduce((a,c)=>a+c.charCodeAt(0),0) % PAL.length];
+  const initials = n => n.split(/\s+/).filter(Boolean).map(s=>s[0]).slice(0,2).join('').toUpperCase();
+  const grad = n => 'linear-gradient(150deg,'+colorFor(n)+',rgba(0,0,0,.42))';
+  const esc = s => s.replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+  const q = id => document.getElementById(id);
+  function toast(msg){ const t=document.createElement('div'); t.className='toast'; t.textContent=msg; document.body.appendChild(t); setTimeout(()=>t.remove(),1800); }
+
+  let cast = [
+    { name:'Sofie Gråbøl', role:'Hanne Vinter' },
+    { name:'Lars Mikkelsen', role:'Detective Holm' },
+    { name:'Trine Dyrholm', role:'Eva Lund' },
+  ];
+  let crew = [
+    { dept:'Directing', job:'Director', name:'Tobias Lindholm' },
+    { dept:'Writing', job:'Writer', name:'Tobias Lindholm' },
+    { dept:'Production', job:'Producer', name:'Birgitte Hald' },
+    { dept:'Sound', job:'Composer', name:'Mikkel Maltha' },
+    { dept:'Camera', job:'Cinematographer', name:'Magnus Nordenhof Jønck' },
+  ];
+  const grid = q('cast-grid'), crewList = q('crew-list');
+  if (!grid) return;
+
+  function renderCast(){
+    q('cast-count').textContent = cast.length;
+    grid.innerHTML = cast.map((p,i) =>
+      `<div class="person" draggable="true" data-i="${i}">
+        <span class="pord">#${i+1}</span>
+        <button class="prm" data-rm="${i}" title="Remove">✕</button>
+        <div class="ph" style="background:${grad(p.name)};color:#fff;">${initials(p.name)}</div>
+        <div class="pbody"><div class="pname">${esc(p.name)}</div><div class="prole" data-role="${i}">${p.role ? esc(p.role) : '<span class="muted">＋ role</span>'}</div></div>
+      </div>`
+    ).join('') + `<div class="person add" id="cast-add">＋ Add cast</div>`;
+  }
+  function renderCrew(){
+    q('crew-count').textContent = crew.length;
+    const byDept = {};
+    crew.forEach((c,i) => { (byDept[c.dept] = byDept[c.dept] || []).push(Object.assign({i}, c)); });
+    crewList.innerHTML = Object.keys(byDept).map(d =>
+      `<div class="crew-dept"><h5>${esc(d)}</h5>` + byDept[d].map(c =>
+        `<div class="crew-row">
+          <span class="crew-av" style="background:${grad(c.name)};">${initials(c.name)}</span>
+          <div><div class="crew-name">${esc(c.name)}</div><div class="crew-job">${esc(c.job)}</div></div>
+          <span class="crew-rm" data-crewrm="${c.i}" title="Remove">✕</span>
+        </div>`).join('') + `</div>`
+    ).join('') || '<div class="tiny muted">No crew yet — add one.</div>';
+  }
+
+  grid.addEventListener('click', e => {
+    const rm = e.target.closest('[data-rm]');
+    if (rm) { const i = +rm.dataset.rm, n = cast[i].name; cast.splice(i,1); renderCast(); toast(n + ' removed from cast'); return; }
+    if (e.target.closest('#cast-add')) { openPerson('cast'); return; }
+    const role = e.target.closest('[data-role]');
+    if (role) editRole(+role.dataset.role, role);
+  });
+  function editRole(i, el){
+    const cur = cast[i].role || '';
+    el.innerHTML = `<input class="prole-input input" value="${esc(cur).replace(/"/g,'&quot;')}" placeholder="Character">`;
+    const inp = el.querySelector('input'); inp.focus(); inp.select();
+    let done = false;
+    const commit = () => { if (done) return; done = true; cast[i].role = inp.value.trim(); renderCast(); if (cast[i].role) toast(cast[i].name + ' · role saved to library'); };
+    inp.addEventListener('blur', commit);
+    inp.addEventListener('keydown', ev => { if (ev.key==='Enter') inp.blur(); else if (ev.key==='Escape') { done = true; renderCast(); } });
+  }
+  let dragI = null;
+  grid.addEventListener('dragstart', e => { const p = e.target.closest('.person'); if (!p || p.id==='cast-add') return; dragI = +p.dataset.i; p.classList.add('dragging'); });
+  grid.addEventListener('dragend', e => { const p = e.target.closest('.person'); if (p) p.classList.remove('dragging'); });
+  grid.addEventListener('dragover', e => e.preventDefault());
+  grid.addEventListener('drop', e => {
+    e.preventDefault();
+    const p = e.target.closest('.person'); if (!p || dragI===null) return;
+    const to = p.id==='cast-add' ? cast.length-1 : +p.dataset.i;
+    if (to===dragI) { dragI = null; return; }
+    const [m] = cast.splice(dragI,1); cast.splice(to,0,m); dragI = null; renderCast(); toast('Cast order saved to library');
+  });
+
+  crewList.addEventListener('click', e => {
+    const rm = e.target.closest('[data-crewrm]');
+    if (rm) { const i = +rm.dataset.crewrm, n = crew[i].name; crew.splice(i,1); renderCrew(); toast(n + ' removed from crew'); }
+  });
+  q('crew-add').addEventListener('click', () => openPerson('crew'));
+  q('cast-fetch').addEventListener('click', () => toast('Fetched ' + cast.length + ' cast · ' + crew.length + ' crew from TMDB'));
+
+  const POOL = ['Sofie Gråbøl','Lars Mikkelsen','Trine Dyrholm','Tobias Lindholm','Birgitte Hald','Mikkel Maltha','Magnus Nordenhof Jønck','Pilou Asbæk','Nikolaj Lie Kaas','Paprika Steen','Mads Mikkelsen','Connie Nielsen'];
+  const pm = q('person-modal'), presults = q('person-results'), psearch = q('person-search'), pextra = q('person-extra');
+  let pmode = 'cast';
+  function openPerson(mode){ pmode = mode; q('person-title').textContent = mode==='cast' ? 'Add cast' : 'Add crew member'; pextra.style.display = mode==='crew' ? 'flex' : 'none'; psearch.value=''; drawResults(''); pm.classList.add('open'); setTimeout(()=>psearch.focus(),30); }
+  function closePerson(){ pm.classList.remove('open'); }
+  function drawResults(query){
+    const list = POOL.filter(n => n.toLowerCase().includes(query.toLowerCase())).slice(0,8);
+    presults.innerHTML = list.map(n => `<div class="prow" data-add="${esc(n).replace(/"/g,'&quot;')}"><span class="crew-av" style="background:${grad(n)};">${initials(n)}</span><span class="crew-name">${esc(n)}</span><span style="flex:1;"></span><span class="btn sm">Add</span></div>`).join('') || '<div class="tiny muted" style="padding:8px;">No matches — type a name.</div>';
+  }
+  psearch.addEventListener('input', () => drawResults(psearch.value));
+  presults.addEventListener('click', e => {
+    const row = e.target.closest('[data-add]'); if (!row) return;
+    const name = row.dataset.add;
+    if (pmode==='cast') { cast.push({ name, role:'' }); renderCast(); toast(name + ' added to cast'); }
+    else { const dept = q('person-dept').value, job = q('person-job').value.trim() || 'Crew'; crew.push({ dept, job, name }); renderCrew(); toast(name + ' added · ' + job); }
+    closePerson();
+  });
+  q('person-x').addEventListener('click', closePerson);
+  pm.addEventListener('click', e => { if (e.target===pm) closePerson(); });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape' && pm.classList.contains('open')) closePerson(); });
+
+  renderCast(); renderCrew();
 })();
 </script>
 </body>
