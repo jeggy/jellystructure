@@ -1,6 +1,5 @@
 # Phase 33 — Jellyfin ⇄ NFO Drift Detection (FR-DR1)
 
-
 ## Problem
 After initial scan, Jellyfin's metadata can diverge from what jellystructure stored — e.g. an admin
 edits the title or year directly in Jellyfin, or a third-party importer changes the TMDB match.

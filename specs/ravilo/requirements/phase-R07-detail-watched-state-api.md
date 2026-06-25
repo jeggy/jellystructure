@@ -1,6 +1,5 @@
 # Phase R07 — Detail API: movie/series, episodes, watched-state (FR-RV7)
 
-
 ## Problem
 Ravilo's detail screens — especially **series** — must make it obvious what you've watched and what's
 next. The backend must serve a movie/series detail payload that includes seasons/episodes, **per-item

@@ -1,8 +1,5 @@
 # Phase 47 — Artwork manager on Movie & Series detail (FR-AM1)
 
-TMDB gallery, language-aware candidate filtering with a never-empty fallback, drag-drop/upload/URL
-replace, and series season-poster + per-episode-still management._
-
 > Builds on **[Phase 31](archive/phase-31-studio-network-artwork.md)** (fetch/cache/serve artwork) and
 > **[Phase 32](archive/phase-32-tmdb-match-picker.md)** (in-app TMDB picker) and the Phase 3 artwork
 > downloader. This phase specifies the **per-item artwork editing UX** that sits on the detail-page

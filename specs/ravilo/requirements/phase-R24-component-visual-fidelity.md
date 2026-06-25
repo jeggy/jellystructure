@@ -1,6 +1,5 @@
 # Phase R24 — Component upsizing & visual fidelity (FR-RV24)
 
-
 ## What was built
 
 All core UI components resized to match the design prototype and feel correct at TV viewing distance.

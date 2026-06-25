@@ -1,6 +1,5 @@
 # Phase R54 — Rows config simplification: workbench-only custom rows
 
-
 ## Problem
 
 The Content Rows section in the Ravilo Config editor is confusing in two ways:

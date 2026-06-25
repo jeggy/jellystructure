@@ -1,6 +1,5 @@
 # Phase 27 — Merge Triage into Media Detail + floating Triage dock (FR-MT1)
 
-
 ## Problem
 There are two places that edit the same media: the dedicated **triage pages** and the **media detail
 page**. The triage pages (`/triage/series/{id}` and the global `/triage` queue) carry the rich editing

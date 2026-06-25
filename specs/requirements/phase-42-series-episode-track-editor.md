@@ -1,7 +1,5 @@
 # Phase 42 — Per-episode track & order editor on Series detail (FR-TO2)
 
-per-episode modal, replacing the ad-hoc inline snippets._
-
 > Builds directly on **[Phase 41](phase-41-merge-track-order-into-detail.md)**. The editor body,
 > warnings inventory, staged-changes panel, command/cost rules, and per-kind explainer copy are all
 > defined there and **reused verbatim** — this phase specifies the **series-side framing** (where it

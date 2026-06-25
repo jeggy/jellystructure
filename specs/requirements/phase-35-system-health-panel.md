@@ -1,6 +1,5 @@
 # Phase 35 — System Health Panel (FR-HC1)
 
-
 ## Problem
 Settings had a "Test connections" button that only checked Jellyfin + TMDB (a stub route
 `/api/connections/test` that no longer matched the real code). Operators had no visibility into

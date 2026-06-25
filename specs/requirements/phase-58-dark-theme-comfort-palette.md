@@ -1,6 +1,5 @@
 # Phase 58 — Dark-theme comfort palette: "Soft Charcoal" (FR-DK1)
 
-
 ## Goal
 
 The default dark theme used a near-black floor (`--bg: #0b0c12`) under near-white ink

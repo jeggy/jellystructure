@@ -1,6 +1,5 @@
 # Phase 11 — Language Pickers (FR-L1)
 
-
 ## Problem
 All language inputs are free-text fields. Users must know the exact BCP-47/ISO 639 code. There is no
 discovery, autocomplete, or validation.

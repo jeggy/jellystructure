@@ -1,6 +1,5 @@
 # Phase 32 — In-app TMDB Match Picker (FR-TM1)
 
-
 ## Problem
 When jellystructure scans a movie or series it picks the first TMDB hit. If that match is wrong the
 operator has to look up the correct ID on themoviedb.org and paste it manually. There is no way to

@@ -1,6 +1,5 @@
 # Phase 54 — Configure Radarr & Sonarr in Settings (FR-AR1)
 
-
 > **Scope:** this is the **connection layer** only — credentials, root-folder import, and
 > rescan-after-write. *Requesting* titles we don't have and tracking their download lifecycle is
 > **[Phase 56](phase-56-arr-acquisition-pipeline.md)** (the acquisition pipeline + status state

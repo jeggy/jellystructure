@@ -1,6 +1,5 @@
 # Phase R14 — Player: `RaviloPlayer` expect/actual (FR-RV14)
 
-
 ## Problem
 Ravilo must play media **directly from Jellyfin** (data plane) on both targets, with one shared player
 UI/chrome, resume, and progress reporting — while the byte stream never transits jellystructure.

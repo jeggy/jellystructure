@@ -1,6 +1,5 @@
 # Phase 31 — Studio & Network Logo Artwork (FR-SNA1)
 
-
 ## Problem
 Phase 19 §5 specified TMDB **logo artwork** for studios and networks (fetch, cache, serve, plus a
 batch "fetch all missing"), and the Metadata page already renders the UI for it — logo tiles, a

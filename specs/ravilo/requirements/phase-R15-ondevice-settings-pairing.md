@@ -1,6 +1,5 @@
 # Phase R15 — On-device settings + first-run pairing UX (FR-RV15)
 
-
 ## Problem
 A fresh Ravilo device needs a friendly, keyboard-free **pairing** experience, and the viewer needs a
 small **settings** surface (skin, playback prefs) that writes back to the server so it **syncs across

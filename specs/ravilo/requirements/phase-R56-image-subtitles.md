@@ -1,7 +1,5 @@
 # Phase R56 — Image-based subtitle parity (PGS/VobSub/DVDSub) (FR-RV-S2)
 
-player can, server burn-in where it can't — via real PlaybackInfo negotiation._
-
 ## Problem
 Image-based subtitles — **PGS** (Blu-ray), **VobSub/DVDSub** (DVD) — are common in movie
 rips and **never display** on Ravilo. They can't be converted to WebVTT (they're bitmaps),

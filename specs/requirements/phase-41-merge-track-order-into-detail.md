@@ -1,7 +1,5 @@
 # Phase 41 — Unified track & order editor on Media Detail (movie) (FR-TO1)
 
-"Tracks & order" tab becomes the single, complete track editor._
-
 > Series episodes get the **same** editor via a per-episode modal — specified separately in
 > **[Phase 42](phase-42-series-episode-track-editor.md)**, which reuses everything defined here.
 

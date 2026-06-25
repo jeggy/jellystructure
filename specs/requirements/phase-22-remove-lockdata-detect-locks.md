@@ -1,6 +1,5 @@
 # Phase 22 — Remove lockdata & Detect Jellyfin Field Locks (FR-LK1)
 
-
 ## Problem
 Two related things:
 1. The project originally mandated `<lockdata>true</lockdata>` in NFO files. That requirement is

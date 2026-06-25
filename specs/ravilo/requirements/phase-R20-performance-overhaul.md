@@ -1,6 +1,5 @@
 # Phase R20 — Performance & correctness overhaul (FR-RV20)
 
-
 ## Problem
 First real hardware test on the stue TV (Sony BRAVIA XR) exposed three classes of bug: a D-pad freeze
 caused by accumulated focus state, store coroutine leaks, and allocation hot-paths causing excessive

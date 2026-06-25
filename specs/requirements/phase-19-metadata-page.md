@@ -1,6 +1,5 @@
 # Phase 19 — Studios, Networks, Genres & Tags (FR-M1)
 
-
 ## Problem
 There's no way to browse media by studio, network, genre, or tag. The Media Detail tags section needs
 polish (dropdown of known tags, colored dots). There's no structured tag system.

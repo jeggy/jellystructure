@@ -1,6 +1,5 @@
 # Phase 9 — Per-Field Dirty Indicators + Diff Popup (FR-D2)
 
-
 ## Problem
 On the Media Detail page, when the user edits metadata fields the only feedback is a "Save changes"
 button that appears at the top of the card. There is no indication of *which* fields changed, and no

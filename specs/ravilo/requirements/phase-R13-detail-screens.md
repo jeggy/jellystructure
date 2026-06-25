@@ -1,6 +1,5 @@
 # Phase R13 — Movie & Series detail screens (FR-RV13)
 
-
 ## Problem
 Build the **movie** and **series** detail screens. The series screen is the priority: it must make
 **watched vs unwatched obvious**, surface the **resume/next episode** as the default action, let you

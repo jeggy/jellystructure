@@ -1,6 +1,5 @@
 # Phase 75 — Cast & crew: TMDB people, detail-page editor, NFO sync + person images (FR-CC1)
 
-
 > Authored from the design project (`design/app/media.html`, `design/app/series.html`).
 > Builds on the write-through model of
 > **[Phase 74](archive/phase-74-metadata-write-through.md)** and the artwork/logo image-cache

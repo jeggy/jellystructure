@@ -1,6 +1,5 @@
 # Phase R02 — Compose Multiplatform scaffolding (FR-RV2)
 
-
 ## Problem
 Ravilo must ship from **one** Compose Multiplatform UI codebase to **two** targets (Android TV +
 Web/WASM canvas). Before building screens we need the module skeleton, the build wiring, and a single

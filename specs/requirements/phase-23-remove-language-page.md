@@ -1,6 +1,5 @@
 # Phase 23 — Remove the Language Page (FR-RL1)
 
-
 ## Problem
 The sidebar has a **Language** page that brings almost no value. Its only real control (the global
 fallback language) already lives — or will live — in Settings. Remove the page and its nav entry

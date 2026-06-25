@@ -1,8 +1,5 @@
 # Phase R33 — Live config push: instant Ravilo layout updates on the TV
 
-screen, or the viewer's own on-device settings), every connected TV/web client signed in as that user
-reflects the change within ~1s — no manual reload — while still rendering only server-composed state._
-
 > Builds on the per-user config store **[R04](phase-R04-per-user-config-store.md)** /
 > **[R26](phase-R26-config-dto-unification.md)**, the home-feed composition
 > **[R05](phase-R05-home-feed-api.md)**, the device-pairing auth **[R03](phase-R03-device-pairing-auth.md)**,

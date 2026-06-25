@@ -1,6 +1,5 @@
 # Phase R52 — Per-page hero carousels + hero naming (FR-RV-H1)
 
-
 > Authored from the design project. Revises **[R27](phase-R27-layout-model-extensions.md)**
 > (single per-user hero) and the hero builder of
 > **[R32](phase-R32-unified-filter-workbench.md)**.

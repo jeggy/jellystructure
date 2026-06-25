@@ -1,6 +1,5 @@
 # Phase 14 — Persistence Layer: SQLite / SQLDelight (FR-P1)
 
-
 ## Problem
 The constitution mandates "**SQLDelight with native SQLite driver** — sessions, scan cache, audit
 log, triage issues," but **none of it is wired**. There are no `.sq` files and no SQLite dependency.

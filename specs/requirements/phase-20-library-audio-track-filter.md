@@ -1,6 +1,5 @@
 # Phase 20 — Library Audio-Track Filter (FR-LF1)
 
-
 ## Problem
 Some media files carry audio tracks that are easy to overlook but annoying to manage — e.g. a Danish
 audio-description track that Jellyfin displays as
