@@ -4,6 +4,7 @@ import dev.jellystructure.auth.DeviceData
 import dev.jellystructure.auth.JellyfinClient
 import dev.jellystructure.config.ConfigStore
 import dev.jellystructure.auth.JellyfinItemDetail
+import dev.jellystructure.log.Logger
 import dev.jellystructure.media.MediaStore
 import dev.jellystructure.shared.tv.AudioTrack
 import dev.jellystructure.shared.tv.ClientCapabilities
@@ -29,9 +30,9 @@ class PlaybackService(
      * Resolves a stream ticket for [jellyfinId]. Starts a Jellyfin playback session and
      * returns all the data the Ravilo player needs to stream directly from Jellyfin.
      *
-     * TODO(R14): call Jellyfin PlaybackInfo with device profile for proper codec negotiation.
-     *            For now we use a direct-play URL; the forked `:ravilo-player` engine handles
-     *            most containers the Jellyfin library holds.
+     * R56: delivery is negotiated via Jellyfin PlaybackInfo with a DeviceProfile — Jellyfin decides
+     * direct-play vs a server TranscodingUrl (e.g. for a burned-in image subtitle). Falls back to a
+     * direct-play URL if PlaybackInfo is unavailable.
      */
     suspend fun startPlayback(
         device: DeviceData,
@@ -58,16 +59,29 @@ class PlaybackService(
         // ticket. Order matches the container's audio-stream order so the player can map by index.
         val audio = buildAudioTracks(itemDetail)
 
-        // Direct-play stream URL — the player fetches bytes straight from Jellyfin
-        val streamUrl = "$jellyfinBase/Videos/$jellyfinId/stream?Static=true&MediaSourceId=$jellyfinId&api_key=$token"
+        // R56: negotiate delivery via PlaybackInfo + DeviceProfile. Jellyfin tells us whether the item
+        // can direct-play; if not, it hands back a TranscodingUrl. Fall back to a direct-play URL.
+        val source = jellyfinClient.getPlaybackInfo(jellyfinBase, token, device.jellyfinUserId, jellyfinId)
+            ?.mediaSources?.firstOrNull()
+        val needsTranscode = source != null && !source.supportsDirectPlay && source.transcodingUrl != null
+        Logger.info(
+            "PlaybackInfo: item=$jellyfinId directPlay=${source?.supportsDirectPlay} transcode=$needsTranscode",
+            "tv",
+        )
+        val streamUrl = if (needsTranscode) {
+            val tu = source!!.transcodingUrl!!
+            if (tu.startsWith("http")) tu else "$jellyfinBase$tu"
+        } else {
+            "$jellyfinBase/Videos/$jellyfinId/stream?Static=true&MediaSourceId=$jellyfinId&api_key=$token"
+        }
 
         return StreamTicket(
             jellyfinBaseUrl = jellyfinBase,
             accessToken = token,
             itemId = jellyfinId,
             container = "mkv", // conservative; Jellyfin transcodes if needed
-            directPlay = true,
-            hlsUrl = streamUrl, // direct-play URL; clients use this regardless of hlsUrl vs directPlay
+            directPlay = !needsTranscode,
+            hlsUrl = streamUrl, // direct-play URL or a Jellyfin TranscodingUrl per PlaybackInfo
             startPositionMs = startPositionMs,
             subtitles = subtitles,
             audio = audio,
@@ -165,9 +179,13 @@ class PlaybackService(
         val itemDetail = jellyfinClient.getItemDetail(jellyfinBase, token, device.jellyfinUserId, jellyfinId)
         val subtitles = buildSubtracks(itemDetail, jellyfinId, jellyfinBase, token)
         val audio = buildAudioTracks(itemDetail)
-        // Jellyfin HLS transcode URL with subtitle burn-in; Jellyfin encodes the PGS bitmap into
-        // the video stream server-side (CPU-heavy; only used for the encode path).
-        val transcodingUrl = "$jellyfinBase/Videos/$jellyfinId/master.m3u8" +
+        // R56: ask Jellyfin (PlaybackInfo + DeviceProfile, with the sub index for Encode burn-in) for the
+        // real TranscodingUrl; fall back to a hand-built HLS burn-in URL if PlaybackInfo is unavailable.
+        val negotiated = jellyfinClient.getPlaybackInfo(jellyfinBase, token, device.jellyfinUserId, jellyfinId, subtitleStreamIndex)
+            ?.mediaSources?.firstOrNull()?.transcodingUrl
+            ?.let { if (it.startsWith("http")) it else "$jellyfinBase$it" }
+        Logger.info("PlaybackInfo(burn-in): item=$jellyfinId sub=$subtitleStreamIndex negotiated=${negotiated != null}", "tv")
+        val transcodingUrl = negotiated ?: ("$jellyfinBase/Videos/$jellyfinId/master.m3u8" +
             "?DeviceId=jellystructure-ravilo" +
             "&MediaSourceId=$jellyfinId" +
             "&VideoCodec=h264" +
@@ -175,7 +193,7 @@ class PlaybackService(
             "&MaxWidth=1920&MaxHeight=1080" +
             "&SubtitleMethod=Encode" +
             "&SubtitleStreamIndex=$subtitleStreamIndex" +
-            "&api_key=$token"
+            "&api_key=$token")
         return StreamTicket(
             jellyfinBaseUrl = jellyfinBase,
             accessToken = token,

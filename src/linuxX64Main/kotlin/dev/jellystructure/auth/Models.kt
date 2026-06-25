@@ -132,6 +132,27 @@ data class JellyfinMediaStream(
     @SerialName("IsDefault") val isDefault: Boolean = false,
     @SerialName("IsExternal") val isExternal: Boolean = false,
     @SerialName("IsTextSubtitleStream") val isTextSubtitleStream: Boolean = false,
+    // R56: per-stream delivery negotiated by PlaybackInfo (Embed | External | Hls | Encode).
+    @SerialName("DeliveryMethod") val deliveryMethod: String? = null,
+    @SerialName("DeliveryUrl") val deliveryUrl: String? = null,
+)
+
+// R56: Jellyfin PlaybackInfo response (POST /Items/{id}/PlaybackInfo with a DeviceProfile).
+@Serializable
+data class JellyfinPlaybackInfoResponse(
+    @SerialName("MediaSources") val mediaSources: List<JellyfinMediaSourceInfo> = emptyList(),
+    @SerialName("PlaySessionId") val playSessionId: String? = null,
+)
+
+@Serializable
+data class JellyfinMediaSourceInfo(
+    @SerialName("Id") val id: String? = null,
+    @SerialName("Container") val container: String? = null,
+    @SerialName("SupportsDirectPlay") val supportsDirectPlay: Boolean = false,
+    @SerialName("SupportsDirectStream") val supportsDirectStream: Boolean = false,
+    @SerialName("SupportsTranscoding") val supportsTranscoding: Boolean = false,
+    @SerialName("TranscodingUrl") val transcodingUrl: String? = null,
+    @SerialName("MediaStreams") val mediaStreams: List<JellyfinMediaStream> = emptyList(),
 )
 
 @Serializable
