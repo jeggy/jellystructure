@@ -20,6 +20,7 @@ val hasAndroidSdk: Boolean = run {
 if (hasAndroidSdk) {
     include(":ravilo-player")
     include(":ravilo-android")
+    include(":ravilo-phone") // R60 — Android phone (mobile) target
 }
 
 pluginManagement {
