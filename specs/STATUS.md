@@ -4,11 +4,17 @@ Living record of where work currently stands. Update whenever a phase completes 
 The **[requirements/README.md](requirements/README.md)** is the single source of truth for which phases
 exist and their done/planned status. This file tracks _current focus_, recent context, and open issues.
 
-_Last updated: 2026-06-23_
+_Last updated: 2026-06-25_
 
 ## Current focus
 
-**Phases 0–53 complete.** [Phase 53](requirements/archive/phase-53-scanner-data-quality.md)
+**Phases 0–77 complete.** [Phase 77](requirements/archive/phase-77-external-ids-nfo.md)
+(external IDs in NFO) and [Phase 76](requirements/archive/phase-76-scope-aware-season-episode-cast.md)
+(scope-aware season/episode cast) are the most recent completions. [Phase 72](requirements/archive/phase-72-canonical-language-equivalence.md)
+(canonical language-code equivalence FR-LC1) fixed the `eng`→`en` false "Default ≠ resolved" cascade.
+No planned admin phases remain.
+
+**[Phase 53](requirements/archive/phase-53-scanner-data-quality.md)**
 (2026-06-23) fixed scanner data-quality issues found in a post-DB-reset full-sync review (296 scanned
 vs 303 in Jellyfin): full-scan `year` was null on 295/296 — now `searchYear = name ?? Jellyfin
 `ProductionYear`` drives the TMDB search + slug and the stored year prefers TMDB
