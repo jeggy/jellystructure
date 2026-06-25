@@ -500,14 +500,20 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
           <h2>${item.title.esc()} <span class="muted">${if (item.year != null) "(${item.year})" else ""}</span></h2>
           ${if (item.tmdbId != null) """<span class="badge ok">TMDB matched</span>""" else """<span class="badge warn">No TMDB match</span>"""}
           <span class="spacer"></span>
-          ${if (jellyfinItemUrl != null || tmdbUrl != null) """
+          ${run {
+              val imdbUrl = item.imdbId?.takeIf { it.isNotBlank() }?.let { "https://www.imdb.com/title/$it/" }
+              val tvdbUrl = if (item.kind == MediaKind.TV_SHOW) item.tvdbId?.let { "https://www.thetvdb.com/?id=$it&tab=series" } else null
+              if (jellyfinItemUrl != null || tmdbUrl != null || imdbUrl != null || tvdbUrl != null) """
           <span class="menu-wrap" id="links-menu">
             <span class="btn sm ghost menu-btn">External links <span class="caret">▾</span></span>
             <div class="menu">
               ${if (jellyfinItemUrl != null) """<a class="menu-item" href="$jellyfinItemUrl" target="_blank" rel="noopener"><span class="mi-ic">↗</span><span>Open in Jellyfin<span class="mi-sub">Library item in the Jellyfin web UI</span></span></a>""" else ""}
               ${if (tmdbUrl != null) """<a class="menu-item" href="$tmdbUrl" target="_blank" rel="noopener"><span class="mi-ic">↗</span><span>View on TMDB<span class="mi-sub">themoviedb.org</span></span></a>""" else ""}
+              ${if (imdbUrl != null) """<a class="menu-item" href="$imdbUrl" target="_blank" rel="noopener"><span class="mi-ic">↗</span><span>View on IMDb<span class="mi-sub">imdb.com</span></span></a>""" else ""}
+              ${if (tvdbUrl != null) """<a class="menu-item" href="$tvdbUrl" target="_blank" rel="noopener"><span class="mi-ic">↗</span><span>View on TheTVDB<span class="mi-sub">thetvdb.com</span></span></a>""" else ""}
             </div>
-          </span>""" else ""}
+          </span>""" else ""
+          }}
           <span class="menu-wrap" id="repull-menu">
             <span class="btn sm ghost menu-btn">Re-pull <span class="caret">▾</span></span>
             <div class="menu">

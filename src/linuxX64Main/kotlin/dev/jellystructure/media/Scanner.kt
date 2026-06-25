@@ -180,6 +180,7 @@ class Scanner(
         val storedYear = details?.releaseDate?.take(4)?.toIntOrNull() ?: searchYear
         val titlesByLang = buildTitlesByLang(tmdbFinalId, isMovie = true, details?.title, details?.originalLanguage, details?.originalTitle)
         val (cast, crew) = tmdbFinalId?.let { fetchCredits(it, isMovie = true) } ?: Pair(emptyList(), emptyList())
+        val extIds = tmdbFinalId?.let { tmdb.getExternalIds(it, isMovie = true) }
         return MediaItem(
             id = itemId(title, searchYear, jItem.id),
             title = details?.title ?: title,
@@ -208,6 +209,7 @@ class Scanner(
             titlesByLang = titlesByLang,
             cast = cast,
             crew = crew,
+            imdbId = extIds?.imdbId?.takeIf { it.isNotBlank() },
         )
     }
 
@@ -310,6 +312,7 @@ class Scanner(
             val mixTitlesByLang = buildTitlesByLang(seriesTmdbId, isMovie = false, mixDetails?.name, mixDetails?.originalLanguage, mixDetails?.originalName)
             val mixStoredYear = mixDetails?.firstAirDate?.take(4)?.toIntOrNull() ?: searchYear
             val (mixCast, mixCrew) = seriesTmdbId?.let { fetchCredits(it, isMovie = false) } ?: Pair(emptyList(), emptyList())
+            val mixExtIds = seriesTmdbId?.let { tmdb.getExternalIds(it, isMovie = false) }
             return MediaItem(
                 id = itemId(title, searchYear, jItem.id),
                 title = mixDetails?.name ?: title,
@@ -339,6 +342,8 @@ class Scanner(
                 titlesByLang = mixTitlesByLang,
                 cast = mixCast,
                 crew = mixCrew,
+                imdbId = mixExtIds?.imdbId?.takeIf { it.isNotBlank() },
+                tvdbId = mixExtIds?.tvdbId,
             )
         }
 
@@ -355,6 +360,7 @@ class Scanner(
         val tvTitlesByLang = buildTitlesByLang(tvTmdbFinalId, isMovie = false, details?.name, details?.originalLanguage, details?.originalName)
         val tvStoredYear = details?.firstAirDate?.take(4)?.toIntOrNull() ?: searchYear
         val (tvCast, tvCrew) = tvTmdbFinalId?.let { fetchCredits(it, isMovie = false) } ?: Pair(emptyList(), emptyList())
+        val tvExtIds = tvTmdbFinalId?.let { tmdb.getExternalIds(it, isMovie = false) }
         return MediaItem(
             id = itemId(title, searchYear, jItem.id),
             title = details?.name ?: title,
@@ -384,6 +390,8 @@ class Scanner(
             titlesByLang = tvTitlesByLang,
             cast = tvCast,
             crew = tvCrew,
+            imdbId = tvExtIds?.imdbId?.takeIf { it.isNotBlank() },
+            tvdbId = tvExtIds?.tvdbId,
         )
     }
 
@@ -415,6 +423,7 @@ class Scanner(
         val issueCount = tracks.count { (it.kind == TrackKind.AUDIO || it.kind == TrackKind.SUBTITLE) && it.language == null }
         val primaryCompany = details.productionCompanies.firstOrNull()
         val tmdbTags = tmdb.getMovieKeywords(details.id)
+        val syncExtIds = tmdb.getExternalIds(details.id, isMovie = true)
         return item.copy(
             title = details.title,
             originalTitle = details.originalTitle.takeIf { it.isNotBlank() },
@@ -433,6 +442,7 @@ class Scanner(
             issueCount = issueCount,
             tags = mergeRepullTags(tmdbTags, item),
             scannedAt = epochSeconds(),
+            imdbId = syncExtIds?.imdbId?.takeIf { it.isNotBlank() } ?: item.imdbId,
         )
     }
 
@@ -509,11 +519,13 @@ class Scanner(
             details
         }
         val syncNetwork = updatedDetails?.networks?.firstOrNull()
-        val tmdbTags = (updatedDetails?.id ?: seriesTmdbId)?.let { tmdb.getTvKeywords(it) } ?: emptyList()
+        val syncSeriesFinalId = updatedDetails?.id ?: seriesTmdbId
+        val tmdbTags = syncSeriesFinalId?.let { tmdb.getTvKeywords(it) } ?: emptyList()
+        val syncSeriesExtIds = syncSeriesFinalId?.let { tmdb.getExternalIds(it, isMovie = false) }
         return item.copy(
             title = updatedDetails?.name ?: item.title,
             originalTitle = updatedDetails?.originalName?.takeIf { it.isNotBlank() } ?: item.originalTitle,
-            tmdbId = updatedDetails?.id ?: seriesTmdbId,
+            tmdbId = syncSeriesFinalId,
             year = updatedDetails?.firstAirDate?.take(4)?.toIntOrNull() ?: item.year,
             originalLanguage = updatedDetails?.originalLanguage?.takeIf { it.isNotBlank() } ?: item.originalLanguage,
             resolvedLanguage = resolvedLang,
@@ -530,6 +542,8 @@ class Scanner(
             languageMix = languageMix,
             tags = mergeRepullTags(tmdbTags, item),
             scannedAt = epochSeconds(),
+            imdbId = syncSeriesExtIds?.imdbId?.takeIf { it.isNotBlank() } ?: item.imdbId,
+            tvdbId = syncSeriesExtIds?.tvdbId ?: item.tvdbId,
         )
     }
 
@@ -608,6 +622,7 @@ class Scanner(
                 } ?: langPriority.lastOrNull()
                 val rescanCompany = details.productionCompanies.firstOrNull()
                 val rescanTmdbTags = tmdb.getMovieKeywords(details.id)
+                val rescanMovieExtIds = tmdb.getExternalIds(details.id, isMovie = true)
                 item.copy(
                     title = details.title,
                     originalTitle = details.originalTitle.takeIf { it.isNotBlank() },
@@ -623,6 +638,7 @@ class Scanner(
                     studioTmdbId = rescanCompany?.id,
                     studioLogoPath = rescanCompany?.logoPath,
                     tags = mergeRepullTags(rescanTmdbTags, item),
+                    imdbId = rescanMovieExtIds?.imdbId?.takeIf { it.isNotBlank() } ?: item.imdbId,
                 )
             }
             MediaKind.TV_SHOW -> {
@@ -653,6 +669,7 @@ class Scanner(
                 }
                 val rescanNetwork = details.networks.firstOrNull()
                 val rescanTmdbTags = tmdb.getTvKeywords(details.id)
+                val rescanTvExtIds = tmdb.getExternalIds(details.id, isMovie = false)
                 item.copy(
                     title = details.name,
                     originalTitle = details.originalName.takeIf { it.isNotBlank() },
@@ -669,6 +686,8 @@ class Scanner(
                     networkLogoPath = rescanNetwork?.logoPath ?: item.networkLogoPath,
                     tags = mergeRepullTags(rescanTmdbTags, item),
                     episodes = updatedEpisodes,
+                    imdbId = rescanTvExtIds?.imdbId?.takeIf { it.isNotBlank() } ?: item.imdbId,
+                    tvdbId = rescanTvExtIds?.tvdbId ?: item.tvdbId,
                 )
             }
         }
