@@ -31,6 +31,15 @@ data class Person(
     val department: String? = null,
     val order: Int = 0,
     val type: String = "Actor",
+    /** Total episode count from TMDB aggregate_credits (Phase 76). */
+    val episodeCount: Int = 0,
+    /**
+     * Phase 76: per-season episode presence for main cast.
+     * Key = season number (as string), value = list of episode numbers this person appears in.
+     * Empty = "not tracked / present in all episodes" (initial aggregate_credits state).
+     * Populated by user toggles in the season presence matrix.
+     */
+    val episodePresence: Map<String, List<Int>> = emptyMap(),
 )
 
 @Serializable
@@ -46,7 +55,10 @@ data class Episode(
     val overview: String? = null,
     val stillPath: String? = null,
     val tmdbEpisodeId: Int? = null,
-    val cast: List<Person> = emptyList(),
+    /** Phase 76: episode-specific guest stars (from TMDB episode credits). */
+    val guestStars: List<Person> = emptyList(),
+    /** Phase 76: episode-specific crew (director, writer, etc.). */
+    val crew: List<Person> = emptyList(),
 )
 
 @Serializable

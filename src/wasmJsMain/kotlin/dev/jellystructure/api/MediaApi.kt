@@ -612,6 +612,27 @@ object MediaApi {
         httpClient.post("/api/media/$id/cast/fetch").body<MediaItem>()
     }.getOrNull()
 
+    suspend fun patchEpisodeCast(id: String, filename: String, guests: List<Person>): MediaItem? = runCatching {
+        val encoded = encodeURIComponent(filename)
+        httpClient.patch("/api/media/$id/episodes/$encoded/cast") {
+            contentType(ContentType.Application.Json)
+            setBody(guests)
+        }.body<MediaItem>()
+    }.getOrNull()
+
+    suspend fun patchEpisodeCrew(id: String, filename: String, crew: List<Person>): MediaItem? = runCatching {
+        val encoded = encodeURIComponent(filename)
+        httpClient.patch("/api/media/$id/episodes/$encoded/crew") {
+            contentType(ContentType.Application.Json)
+            setBody(crew)
+        }.body<MediaItem>()
+    }.getOrNull()
+
+    suspend fun fetchEpisodeCastFromTmdb(id: String, filename: String): MediaItem? = runCatching {
+        val encoded = encodeURIComponent(filename)
+        httpClient.post("/api/media/$id/episodes/$encoded/cast/fetch").body<MediaItem>()
+    }.getOrNull()
+
     suspend fun searchPeople(query: String): List<PersonSearchResult> = runCatching {
         httpClient.get("/api/people/search") {
             parameter("q", query)

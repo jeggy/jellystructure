@@ -265,6 +265,11 @@ class Scanner(
                 } ?: tmdb.getEpisodeDetails(seriesTmdbId, seasonNum, epNum)
             } else null
 
+            // Phase 76: fetch guest stars + episode crew from TMDB
+            val (epGuests, epCrew) = if (seriesTmdbId != null && seasonNum != null && epNum != null) {
+                fetchEpisodeCredits(seriesTmdbId, seasonNum, epNum)
+            } else Pair(emptyList(), emptyList())
+
             episodes += Episode(
                 filename = file.substringAfterLast('/'),
                 path = file,
@@ -277,6 +282,8 @@ class Scanner(
                 overview = epDetails?.overview?.takeIf { it.isNotBlank() },
                 stillPath = epDetails?.stillPath,
                 tmdbEpisodeId = epDetails?.id,
+                guestStars = epGuests,
+                crew = epCrew,
             )
         }
 
@@ -478,6 +485,10 @@ class Scanner(
                         ?.takeIf { it.name.isNotBlank() || it.overview.isNotBlank() }
                 } ?: tmdb.getEpisodeDetails(seriesTmdbId, seasonNum, epNum)
             } else null
+            // Phase 76: preserve existing guest stars/crew; re-fetch from TMDB if available
+            val (epGuests, epCrew) = if (seriesTmdbId != null && seasonNum != null && epNum != null) {
+                fetchEpisodeCredits(seriesTmdbId, seasonNum, epNum)
+            } else Pair(existingEp?.guestStars ?: emptyList(), existingEp?.crew ?: emptyList())
             episodes += Episode(
                 filename = file.substringAfterLast('/'),
                 path = file,
@@ -490,6 +501,8 @@ class Scanner(
                 overview = epDetails?.overview?.takeIf { it.isNotBlank() } ?: existingEp?.overview,
                 stillPath = epDetails?.stillPath ?: existingEp?.stillPath,
                 tmdbEpisodeId = epDetails?.id ?: existingEp?.tmdbEpisodeId,
+                guestStars = epGuests,
+                crew = epCrew,
             )
         }
         val sortedEpisodes = episodes.sortedWith(compareBy({ it.seasonNumber ?: 999 }, { it.episodeNumber ?: 999 }))
@@ -779,7 +792,38 @@ class Scanner(
 
     /** Phase 75 — fetch full cast + crew from TMDB and map to Person model. */
     suspend fun fetchCredits(tmdbId: Int, isMovie: Boolean): Pair<List<Person>, List<Person>> {
-        val response = if (isMovie) tmdb.getMovieFullCredits(tmdbId) else tmdb.getTvFullCredits(tmdbId)
+        if (!isMovie) {
+            // Phase 76: use aggregate_credits for TV series to get total_episode_count per actor
+            val agg = tmdb.getTvAggregateCredits(tmdbId)
+            val cast = agg.cast.sortedBy { it.order }.map { m ->
+                Person(
+                    tmdbId = m.id,
+                    name = m.name,
+                    profilePath = m.profilePath,
+                    character = m.roles.firstOrNull()?.character?.takeIf { it.isNotBlank() },
+                    order = m.order,
+                    type = "Actor",
+                    episodeCount = m.totalEpisodeCount,
+                )
+            }
+            val crew = agg.crew
+                .flatMap { m -> m.jobs.map { j -> Triple(m, j.job, j.episodeCount) } }
+                .distinctBy { (m, job, _) -> Pair(m.id, job) }
+                .sortedWith(compareBy({ it.first.department }, { it.first.name }))
+                .map { (m, job, _) ->
+                    Person(
+                        tmdbId = m.id,
+                        name = m.name,
+                        profilePath = m.profilePath,
+                        job = job.takeIf { it.isNotBlank() },
+                        department = m.department.takeIf { it.isNotBlank() },
+                        order = 0,
+                        type = "Director".takeIf { m.department.lowercase() == "directing" } ?: "Writer".takeIf { m.department.lowercase() == "writing" } ?: m.department,
+                    )
+                }
+            return Pair(cast, crew)
+        }
+        val response = tmdb.getMovieFullCredits(tmdbId)
         val cast = response.cast.sortedBy { it.order }.map { m ->
             Person(
                 tmdbId = m.id,
@@ -805,6 +849,36 @@ class Scanner(
                 )
             }
         return Pair(cast, crew)
+    }
+
+    /** Phase 76: fetch guest stars + crew for a single episode from TMDB. */
+    suspend fun fetchEpisodeCredits(seriesId: Int, season: Int, episode: Int): Pair<List<Person>, List<Person>> {
+        val creds = tmdb.getEpisodeCredits(seriesId, season, episode)
+        val guests = creds.guestStars.sortedBy { it.order }.map { m ->
+            Person(
+                tmdbId = m.id,
+                name = m.name,
+                profilePath = m.profilePath,
+                character = m.character.takeIf { it.isNotBlank() },
+                order = m.order,
+                type = "Actor",
+            )
+        }
+        val crew = creds.crew
+            .distinctBy { Pair(it.id, it.job) }
+            .sortedWith(compareBy({ it.department }, { it.name }))
+            .map { m ->
+                Person(
+                    tmdbId = m.id,
+                    name = m.name,
+                    profilePath = m.profilePath,
+                    job = m.job.takeIf { it.isNotBlank() },
+                    department = m.department.takeIf { it.isNotBlank() },
+                    order = 0,
+                    type = "Director".takeIf { m.department.lowercase() == "directing" } ?: "Writer".takeIf { m.department.lowercase() == "writing" } ?: m.department,
+                )
+            }
+        return Pair(guests, crew)
     }
 
     suspend fun translationLanguages(tmdbId: Int, isMovie: Boolean): List<String> =
