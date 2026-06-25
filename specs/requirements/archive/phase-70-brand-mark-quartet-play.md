@@ -1,6 +1,6 @@
 # Phase 70 — Brand mark "Quartet Play" + app logo wiring (FR-BR1)
 
-**Status:** ✓ Done
+**Status:** ◑ Reopened (2026-06-25, design-diff audit) — the Login screen still renders a CSS-gradient placeholder instead of the real SVG mark (`Login.kt`), and is also missing the design's connection-status row + footer auth note (`design/app/login.html`). Sidebar/topbar wiring is fine; login is the gap. _(Originally: Done.)_
 
 > Note: authored from the design project without the full latest `specs/` tree in
 > context — slot into the phase index where it fits; the FR code (FR-BR1) is the stable

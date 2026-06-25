@@ -1,6 +1,6 @@
 # Phase 19 — Studios, Networks, Genres & Tags (FR-M1)
 
-**Status:** Planned · _revised 2026-06-18 — added studio/network population prerequisite + artwork; corrected `js_tags` persistence._
+**Status:** ◑ Reopened (2026-06-25, design-diff audit) — diverges from `design/app/metadata.html`: the page subtitle is missing, and logo cards stack vertically (logo-on-top) instead of the design's horizontal logo-left card layout. _(Originally: Done — revised 2026-06-18, studio/network population + artwork; `js_tags` persistence.)_
 
 ## Problem
 There's no way to browse media by studio, network, genre, or tag. The Media Detail tags section needs

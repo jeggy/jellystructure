@@ -1,7 +1,6 @@
 # Phase 42 — Per-episode track & order editor on Series detail (FR-TO2)
 
-**Status:** Planned · _series episodes get the **same** unified track editor as movies, in a
-per-episode modal, replacing the ad-hoc inline snippets._
+**Status:** ◑ Reopened (2026-06-25, design-diff audit) — the Series detail Seasons & Episodes tab diverges from `design/app/series-simpsons.html`: the season picker is an inline segmented control that wraps unusably for 40+ season shows (design uses a searchable prev/next dropdown), and it is missing the "Expand all issues" button + the per-episode language badge in the collapsed row. _(Originally: Done — series episodes get the same unified track editor as movies, in a per-episode modal.)_
 
 > Builds directly on **[Phase 41](phase-41-merge-track-order-into-detail.md)**. The editor body,
 > warnings inventory, staged-changes panel, command/cost rules, and per-kind explainer copy are all

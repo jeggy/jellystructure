@@ -71,6 +71,26 @@ synced to the same model.
 No planned admin phases remain. Other active development is on the **Ravilo** side — see
 [`ravilo/STATUS.md`](ravilo/STATUS.md).
 
+## Design-fidelity audit — reopened phases (2026-06-25)
+
+A 10-screen design-diff audit (each impl vs its `design/` mockup) found that the **`✓ Done` label
+tracked "code exists", not "matches the design".** Several phases were reopened (`◑ Reopened`) with
+notes in their README rows + phase files. Admin reopens:
+
+- **17 (Activity)** — "Now processing" panel missing per-file progress bar + operation badge + status
+  chips vs `activity.html`. _Confirm backend emits per-file progress before fixing as UI._
+- **19 (Metadata)** — missing page subtitle; logo cards vertical vs design's horizontal logo-left.
+- **27 (Triage dock)** — Dashboard lacks the "Show attention dock" reopen control.
+- **36 (Operator controls)** — Settings → Scanning missing the **Cron** advanced field.
+- **42 (Series detail)** — season picker doesn't scale to 40+ season shows (`series-simpsons.html`
+  uses a searchable dropdown); missing "Expand all issues" + episode language badge.
+- **70 (Brand mark)** — Login still uses a CSS placeholder, not the SVG mark; missing status row + footer.
+
+Ravilo reopens (R24 tile watched-badge, R28 tile-shape pill, R54 rows UI, R57 Pair-a-TV) are tracked
+in [`ravilo/STATUS.md`](ravilo/STATUS.md). **Discounted as noise** (intentional post-mockup additions,
+not gaps): Library's Studio/Network/Genre/Tag/Audio dropdowns (Phase 20/30), Settings' per-*arr test
+button / Show-key / episode-probe-cap (later phases), Movie-detail + Artwork manager (matched well).
+
 ## Delivered — Settings / Radarr-Sonarr (drafted 2026-06-23, shipped)
 
 Two admin phases drafted from a Settings design pass, now **built and archived**

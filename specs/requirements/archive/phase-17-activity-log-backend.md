@@ -1,6 +1,6 @@
 # Phase 17 — Activity Log Backend & Live Runners (FR-A1)
 
-**Status:** Planned · _revised 2026-06-18 — persistence corrected to JSON/in-memory (no SQLite); active-runner display detailed._
+**Status:** ◑ Reopened (2026-06-25, design-diff audit) — the "Now processing" panel is simpler than `design/app/activity.html`: missing the per-file progress bar, the operation badge ("ffmpeg remux · -map 0 -c copy"), and the richer per-operation status chips. _Verify the backend emits per-file progress before treating this as a pure UI gap._ _(Originally: Done — revised 2026-06-18, JSON/in-memory persistence + active-runner display.)_
 
 ## Problem
 The Activity tab is **always empty** except for live WS events in the current browser session — it

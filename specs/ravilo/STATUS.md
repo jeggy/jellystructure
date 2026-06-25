@@ -31,9 +31,20 @@ badge + **name** + **source description** ("Newly Added Movies · kind = movie �
 `renderRows` shows ambiguous content badges (`All media`, `Movies only`) + a bare title input — so a
 Newly-Added row reads as a mystery **"All media"** row. Compounded by stale pre-R54 configs that were
 never migrated (a non-goal), existing users still see the old 2-row Continue + all-media-Newly-Added
-shape. Follow-up: match the design's row presentation + decide a migration/reset path. _This is a
-caution flag for the broader "all Done" claim — other phases marked Done may have similar
-design-fidelity gaps; a TV/admin design-diff audit is warranted._
+shape. Follow-up: match the design's row presentation + decide a migration/reset path.
+
+That caution flag was acted on: a **10-screen design-diff audit (2026-06-25)** reopened more Ravilo
+phases (`◑ Reopened`, notes in README rows):
+- **R57 (Pair-a-TV + sticky navbar)** — biggest gap, parallels R54: impl is a sidebar section (single
+  input, no user selector) instead of a modal from a **sticky** pagebar with a user picker + 6 code
+  fields; sticky Save·Pair·Open-Ravilo bar absent (`RaviloConfig.kt:386–430`).
+- **R24 (component fidelity)** — Tile `watched` param + `MediaCard.badge` never rendered, so watched /
+  "Next up" badges show only on episode cards, not on Home/Channel/Browse/related tiles. _(No phase file.)_
+- **R28 (config editor fidelity)** — Behaviour tile-shape is a `<select>` where the design uses a
+  3-button segmented pill. _(No phase file.)_
+
+Admin-side reopens (17/19/27/36/42/70) are in [`../STATUS.md`](../STATUS.md). Search-screen IME (vs the
+R12 on-screen keyboard mockup) was noted but left as a deliberate TV-input choice, not reopened.
 
 ## Genuinely-open phases — subtitle rendering (R55, R56)
 
