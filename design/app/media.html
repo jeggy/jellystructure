@@ -8,15 +8,7 @@
 <link rel="stylesheet" href="app.css">
 <link rel="stylesheet" href="ravilo-builders.css">
 <style>
-  /* dirty-field indicator (Phase 9) */
-  .field.dirty .input, .field.dirty textarea.input { border-color: var(--warn); border-left-width: 3px; background: var(--warn-soft); }
-  .diff-trigger { display: none; margin-left: 7px; cursor: pointer; font-size: .72rem; color: var(--warn);
-    border: 1px solid rgba(245,181,66,.4); border-radius: 6px; padding: 0 6px; line-height: 1.5; }
-  .field.dirty .diff-trigger { display: inline-block; }
   .field label { display: flex; align-items: center; }
-
-  /* tags dirty wrapper */
-  #tags-section.dirty { outline: 2px solid var(--warn); outline-offset: 4px; border-radius: var(--radius-s); }
   .tag-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex: none; }
 
   /* ===== unified track editor (merged from the old track-order page) ===== */
@@ -219,13 +211,14 @@
         <div class="menu-item" id="repull-tmdb-btn"><span class="mi-ic">⟲</span><span>From TMDB<span class="mi-sub">Re-fetch metadata &amp; artwork</span></span></div>
       </div>
     </span>
-    <!-- Save (split button) — sync-to-Jellyfin is the default action -->
+    <!-- Save (→ NFO) / Sync (Jellyfin reads NFO) — split button -->
     <span class="split" id="save-split">
-      <span class="btn primary" id="save-tell">Save &amp; sync to Jellyfin ↻</span>
+      <span class="btn primary" id="save-tell">Save &amp; Sync ↻</span>
       <span class="btn primary split-caret menu-btn"><span class="caret">▾</span></span>
       <div class="menu">
-        <div class="menu-item" id="save-tell-2"><span class="mi-ic">↻</span><span>Save &amp; sync to Jellyfin<span class="mi-sub">Write NFO &amp; artwork, then trigger a Jellyfin refresh</span></span></div>
-        <div class="menu-item" id="save-disk"><span class="mi-ic">↓</span><span>Save → disk<span class="mi-sub">Write NFO &amp; artwork only — no Jellyfin refresh</span></span></div>
+        <div class="menu-item" id="save-tell-2"><span class="mi-ic">↻</span><span>Save &amp; Sync<span class="mi-sub">Write our setup to the .nfo files, then ask Jellyfin to re-read them</span></span></div>
+        <div class="menu-item" id="save-disk"><span class="mi-ic">↓</span><span>Save → NFO<span class="mi-sub">Write our metadata, tags &amp; artwork to the .nfo files on disk</span></span></div>
+        <div class="menu-item" id="sync-jf"><span class="mi-ic">↻</span><span>Sync Jellyfin<span class="mi-sub">Ask Jellyfin to re-read the .nfo files (no rewrite)</span></span></div>
       </div>
     </span>
   </div>
@@ -329,14 +322,14 @@
     <!-- FIELDS -->
     <div class="col fill">
       <div class="card">
-        <div class="row center" style="margin-bottom:4px;"><h4 style="margin:0;">Metadata</h4><span class="spacer"></span><span class="btn sm primary" id="save-meta" style="display:none;">Save changes</span></div>
+        <div class="row center" style="margin-bottom:4px;"><h4 style="margin:0;">Metadata</h4><span class="spacer"></span><span class="tiny muted">saved to library as you edit · <b>Save</b> writes the NFO ↗</span></div>
         <hr class="dash" style="margin:6px 0 14px;">
         <div class="row">
           <div class="field fill"><label>Title</label><input class="input" id="f-title" value="Sintel"></div>
           <div class="field" style="width:110px;"><label>Year</label><input class="input" id="f-year" value="2010"></div>
         </div>
         <div class="field">
-          <label>Plot <span class="diff-trigger" data-for="f-plot">≠ diff</span></label>
+          <label>Plot</label>
           <textarea class="input" id="f-plot" rows="3" style="resize:vertical;line-height:1.5;">A lonely young woman, Sintel, helps and befriends a dragon she names Scales. When Scales is taken from her, Sintel embarks on a dangerous quest to find her lost companion.</textarea>
         </div>
         <div class="row">
@@ -507,16 +500,6 @@
   </div>
 </div>
 
-<!-- Diff modal (Phase 9) -->
-<div class="modal-back" id="diff-modal">
-  <div class="modal">
-    <span class="x" id="diff-x">✕</span>
-    <h3 id="diff-title">Plot · Changes</h3>
-    <div class="diff-col"><div class="lbl">Before</div><div id="diff-before"></div></div>
-    <div class="diff-col"><div class="lbl">After</div><div id="diff-after"></div></div>
-  </div>
-</div>
-
 <!-- TMDB match picker (Phase 32) -->
 <div class="modal-back" id="tmdb-modal">
   <div class="modal" style="width:600px;">
@@ -589,12 +572,14 @@
     document.addEventListener('click', e => { if (!e.target.closest('.menu-wrap, .split')) closeAll(); });
     document.addEventListener('keydown', e => { if (e.key === 'Escape') closeAll(); });
   })();
-  /* save + re-pull-from-TMDB actions */
-  const doSaveDisk = () => toast('Saved → disk · NFO + artwork written');
-  const doSaveSync = () => toast('Saved & synced to Jellyfin — refresh triggered ↻');
-  document.getElementById('save-tell').addEventListener('click', doSaveSync);    // primary face (default)
-  document.getElementById('save-tell-2').addEventListener('click', doSaveSync);  // menu · default
-  document.getElementById('save-disk').addEventListener('click', doSaveDisk);    // menu · disk only
+  /* save + sync actions — Save writes our setup to the .nfo files; Sync asks Jellyfin to re-read them */
+  const doSaveDisk = () => toast('Saved → NFO · metadata, tags & artwork written to disk');
+  const doSync = () => toast('Sync requested — Jellyfin re-reading the .nfo files ↻');
+  const doSaveSync = () => toast('Saved → NFO & sync requested — Jellyfin re-reading ↻');
+  document.getElementById('save-tell').addEventListener('click', doSaveSync);    // primary face (Save & Sync)
+  document.getElementById('save-tell-2').addEventListener('click', doSaveSync);  // menu · Save & Sync
+  document.getElementById('save-disk').addEventListener('click', doSaveDisk);    // menu · Save → NFO
+  document.getElementById('sync-jf').addEventListener('click', doSync);          // menu · Sync Jellyfin
   document.getElementById('repull-tmdb-btn').addEventListener('click', () => toast('Re-pulling metadata & artwork from TMDB…'));
   document.getElementById('repull-cancel').addEventListener('click', closeRm);
   rm.addEventListener('click', e => { if (e.target === rm) closeRm(); });
@@ -603,66 +588,27 @@
   /* ---- TMDB id editable ---- */
   document.getElementById('tmdb-save').addEventListener('click', () => toast('TMDB id saved — press Re-pull from TMDB to fetch'));
 
-  /* ---- per-field dirty indicators + diff (Phase 9) ---- */
-  const orig = { 'f-title': 'Sintel', 'f-year': '2010', 'f-director': 'Colin Levy', 'f-studio': 'Blender Foundation',
-    'f-plot': 'A lonely young woman, Sintel, helps and befriends a dragon she names Scales. When Scales is taken from her, Sintel embarks on a dangerous quest to find her lost companion.' };
-  const saveBtn = document.getElementById('save-meta');
-  function checkDirty() {
-    let any = false;
-    Object.keys(orig).forEach(id => {
-      const el = document.getElementById(id);
-      const dirty = el.value.trim() !== orig[id].trim();
-      el.closest('.field').classList.toggle('dirty', dirty);
-      if (dirty) any = true;
-    });
-    saveBtn.style.display = any ? 'inline-flex' : 'none';
-  }
-  Object.keys(orig).forEach(id => document.getElementById(id).addEventListener('input', checkDirty));
-  saveBtn.addEventListener('click', () => { Object.keys(orig).forEach(id => orig[id] = document.getElementById(id).value); checkDirty(); toast('Metadata saved'); });
-
-  // word-level diff for the Plot diff popup
-  function wordDiff(a, b) {
-    const aw = a.split(/(\s+)/), bw = b.split(/(\s+)/);
-    // simple LCS-free heuristic: mark trailing/leading equal run, diff the middle
-    let i = 0; while (i < aw.length && i < bw.length && aw[i] === bw[i]) i++;
-    let j = 0; while (j < aw.length - i && j < bw.length - i && aw[aw.length-1-j] === bw[bw.length-1-j]) j++;
-    const pre = aw.slice(0, i).join('');
-    const aMid = aw.slice(i, aw.length - j).join(''), bMid = bw.slice(i, bw.length - j).join('');
-    const post = aw.slice(aw.length - j).join('');
-    return {
-      before: esc(pre) + (aMid ? '<del>' + esc(aMid) + '</del>' : '') + esc(post),
-      after:  esc(pre) + (bMid ? '<ins>' + esc(bMid) + '</ins>' : '') + esc(post),
-    };
-  }
+  /* ---- metadata fields: write-through to the library DB (no staging) ---- */
+  // Edits commit to the database on change; the top "Save & sync to Jellyfin / Save → disk"
+  // is what later writes the stored metadata into the NFO files on disk.
+  const FIELD_LABELS = { 'f-title':'Title', 'f-year':'Year', 'f-director':'Director', 'f-studio':'Studio', 'f-plot':'Plot' };
+  Object.keys(FIELD_LABELS).forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener('change', () => toast(FIELD_LABELS[id] + ' saved to library'));
+  });
   function esc(s){ return s.replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
-  const dm = document.getElementById('diff-modal');
-  document.querySelectorAll('.diff-trigger').forEach(tr => tr.addEventListener('click', () => {
-    const el = document.getElementById(tr.dataset.for);
-    const d = wordDiff(orig[tr.dataset.for], el.value);
-    document.getElementById('diff-before').innerHTML = d.before;
-    document.getElementById('diff-after').innerHTML = d.after;
-    dm.classList.add('open');
-  }));
-  document.getElementById('diff-x').addEventListener('click', () => dm.classList.remove('open'));
-  dm.addEventListener('click', e => { if (e.target === dm) dm.classList.remove('open'); });
   document.addEventListener('keydown', e => { if (e.key === 'Escape') document.querySelectorAll('.modal-back.open').forEach(m => m.classList.remove('open')); });
 
   /* ---- tags: remove, JS-tag dropdown, dirty wrapper ---- */
   const tagrow = document.getElementById('tagrow');
-  const origTags = [...tagrow.querySelectorAll('.tag-chip')].map(c => c.textContent.replace('✕','').trim());
   const JS_TAGS = [{n:'open movie',c:'#7b6ef0'},{n:'blender',c:'#2dd49a'},{n:'4k remaster',c:'#f5b542'},{n:'fan favourite',c:'#3fb6f5'}];
-  function tagsDirty() {
-    const now = [...tagrow.querySelectorAll('.tag-chip')].map(c => c.textContent.replace('✕','').trim());
-    const same = now.length === origTags.length && now.every(t => origTags.includes(t));
-    document.getElementById('tags-section').classList.toggle('dirty', !same);
-  }
-  tagrow.addEventListener('click', e => { if (e.target.classList.contains('rm')) { e.target.closest('.tag-chip').remove(); tagsDirty(); } });
+  tagrow.addEventListener('click', e => { if (e.target.classList.contains('rm')) { const name = e.target.closest('.tag-chip').textContent.replace('✕','').trim(); e.target.closest('.tag-chip').remove(); toast('Tag “' + name + '” removed'); } });
   function addTag(name) {
     const js = JS_TAGS.find(t => t.n.toLowerCase() === name.toLowerCase());
     const c = document.createElement('span');
     c.className = 'chip tag-chip';
     c.innerHTML = (js ? '<span class="tag-dot" style="background:'+js.c+';"></span> ' : '') + esc(name) + ' <span class="rm">✕</span>';
-    tagrow.appendChild(c); tagsDirty();
+    tagrow.appendChild(c); toast('Tag “' + name + '” added');
   }
   const tagInput = document.getElementById('tagInput'), tagMenu = document.getElementById('tagMenu');
   function renderMenu() {
