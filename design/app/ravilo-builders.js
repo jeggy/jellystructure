@@ -231,7 +231,8 @@
       conditions: [ { facet: 'genre', op: 'isAny', values: [] } ],
       title: '', chStyle: 'logo', chColor: CH_COLORS[0], chText: '', chLogo: null, customGrad: null,
       chPad: { logo: { t:0, r:0, b:0, l:0 }, text: { t:0, r:0, b:0, l:0 } },
-      hero: { on:false, items:[], height:48, advance:7 }
+      hero: { on:false, items:[], height:48, advance:7 },
+      rows: { mode:'inherit', items:[] }
     };
     if (!state.conditions.length) state.conditions.push({ facet:'genre', op:'isAny', values:[] });
 
@@ -258,7 +259,9 @@
       const titleVal = state.title || autoTitle();
       const isCustom = isChannel && state.chColor && CH_COLORS.indexOf(state.chColor) === -1;
       const hero = state.hero || {};
-      const heroOn = !!hero.on, heroItems = hero.items || [], heroH = hero.height || 48, heroAdv = hero.advance || 7;
+      const heroOn = !!hero.on, heroItems = hero.items || [];
+      const rowsCfg = state.rows || { mode: 'inherit', items: [] };
+      const rowsMode = rowsCfg.mode || 'inherit', rowItems = rowsCfg.items || [];
       const cg = state.customGrad || { type: 'gradient', c1: '#7b6ef0', c2: '#3fb6f5', angle: 135 };
       const PAD_SIDES = [['t','Top'],['r','Right'],['b','Bottom'],['l','Left']];
       const padOf = m => (state.chPad && state.chPad[m]) || {};
@@ -351,10 +354,22 @@
               <div class="cf-herobox">
                 <div class="cf-herolist">${heroItems.length ? heroItems.map((it,i)=>`<div class="cf-heroitem" data-hiedit="${i}"><span class="cf-heromini" style="background:${grad(it.pick.title+(it.backdrop||0))};"></span><span style="flex:1;min-width:0;">${it.pick.title}${it.badge&&it.badge!=='None'?` <span class="badge" style="font-size:.56rem;">${it.badge}</span>`:''}</span><button type="button" class="cf-herorm" data-herorm="${i}" title="Remove">✕</button></div>`).join('') : `<div class="tiny muted" style="padding:9px 2px;">No hero items yet — add one or more titles.</div>`}</div>
                 <button type="button" class="btn sm ghost" data-heroadd style="margin-top:9px;">＋ Add hero item</button>
-                <div class="row center" style="gap:18px;margin-top:14px;flex-wrap:wrap;">
-                  <label class="cf-cfield" style="flex:1;min-width:190px;"><span class="tiny muted">Hero height <b class="cf-heroh-val">${heroH}%</b></span><input type="range" min="40" max="100" value="${heroH}" class="cf-heroh" style="width:100%;accent-color:var(--hi);"></label>
-                  <label class="cf-cfield"><span class="tiny muted">Auto-advance</span><select class="input cf-heroadv" style="margin-top:4px;">${[5,7,9,12].map(s=>`<option value="${s}" ${heroAdv===s?'selected':''}>Every ${s}s</option>`).join('')}</select></label>
-                </div>
+                <div class="tiny muted" style="margin-top:13px;line-height:1.5;"><b>Height</b> and <b>auto-advance</b> follow the global <b>Home hero</b> settings — set once for every hero.</div>
+              </div>
+            ` : ''}
+            ` : ''}
+
+            ${isChannel ? `
+            <hr class="dash" style="margin:16px 0;">
+            <div class="row center"><span class="cf-eyebrow">Content rows</span><span class="spacer"></span>
+              <span class="seg cf-rowsmode"><span class="${rowsMode==='inherit'?'on':''}" data-rmode="inherit">Same as Home</span><span class="${rowsMode==='custom'?'on':''}" data-rmode="custom">Custom</span></span>
+            </div>
+            <div class="tiny muted" style="margin:7px 0 0;">By default this channel shows the <b>Home content rows</b>, scoped to it. Switch to <b>Custom</b> to give this channel its own set.</div>
+            ${rowsMode==='custom' ? `
+              <div class="cf-herobox">
+                <div class="cf-herolist">${rowItems.length ? rowItems.map((it,i)=>`<div class="cf-heroitem" data-rdedit="${i}"><span class="badge info" style="font-size:.56rem;flex:none;">row</span><span style="flex:1;min-width:0;"><b>${it.title}</b>${it.summary?` <span class="muted">· ${it.summary}</span>`:''}</span><span class="badge" style="font-size:.56rem;flex:none;">${evaluate(it.state).length} titles</span><button type="button" class="cf-herorm" data-rdrm="${i}" title="Remove">✕</button></div>`).join('') : `<div class="tiny muted" style="padding:9px 2px;">No custom rows yet — add one or more.</div>`}</div>
+                <button type="button" class="btn sm ghost" data-rowadd style="margin-top:9px;">＋ Add row</button>
+                <div class="tiny muted" style="margin-top:11px;line-height:1.5;">These replace the Home rows on this channel’s page. System rows (Continue Watching, Newly Added) still appear unless removed.</div>
               </div>
             ` : ''}
             ` : ''}
@@ -453,10 +468,20 @@
           onSave: ({ state: hs }) => { h.items[i] = hs; render(); } });
       });
       node.querySelectorAll('[data-herorm]').forEach(b => b.onclick = e => { e.stopPropagation(); const h = ensureHero(); h.items.splice(+b.dataset.herorm, 1); render(); });
-      const heroHsl = node.querySelector('.cf-heroh');
-      if (heroHsl) heroHsl.oninput = () => { const h = ensureHero(); h.height = +heroHsl.value; const lbl = node.querySelector('.cf-heroh-val'); if (lbl) lbl.textContent = h.height + '%'; };
-      const heroAdvSel = node.querySelector('.cf-heroadv');
-      if (heroAdvSel) heroAdvSel.onchange = () => { ensureHero().advance = +heroAdvSel.value; };
+      function ensureRows(){ state.rows = state.rows || { mode:'inherit', items:[] }; return state.rows; }
+      node.querySelectorAll('.cf-rowsmode span').forEach(s => s.onclick = () => { ensureRows().mode = s.dataset.rmode; render(); });
+      const rowAddBtn = node.querySelector('[data-rowadd]');
+      if (rowAddBtn) rowAddBtn.onclick = () => openFilter({
+        mode: 'row', headTitle: 'Add channel row', saveLabel: 'Add row',
+        onSave: ({ state: rs, title, summary }) => { ensureRows().items.push({ title, summary, state: rs }); render(); }
+      });
+      node.querySelectorAll('[data-rdedit]').forEach(it => it.onclick = e => {
+        if (e.target.closest('[data-rdrm]')) return;
+        const i = +it.dataset.rdedit, rw = ensureRows();
+        openFilter({ mode:'row', edit:true, headTitle:'Edit channel row', saveLabel:'Save row', state: rw.items[i].state,
+          onSave: ({ state: rs, title, summary }) => { rw.items[i] = { title, summary, state: rs }; render(); } });
+      });
+      node.querySelectorAll('[data-rdrm]').forEach(b => b.onclick = e => { e.stopPropagation(); const rw = ensureRows(); rw.items.splice(+b.dataset.rdrm, 1); render(); });
       node.querySelectorAll('.cf-sw[data-color]').forEach(s => s.onclick = () => { state.chColor = s.dataset.color; render(); });
       const customSw = node.querySelector('[data-customsw]');
       if (customSw) customSw.onclick = () => { if (!state.customGrad) state.customGrad = { type:'gradient', c1:'#7b6ef0', c2:'#3fb6f5', angle:135 }; state.chColor = customCss(state.customGrad); render(); };
@@ -534,18 +559,19 @@
         return f.label + ' ' + opLabel(c.facet,c.op) + ' ' + (f.type==='num' ? c.values[0] : '“'+c.values.join('”, “')+'”');
       }).join(state.match==='any'?'  OR  ':'  ·  ') || 'all titles';
       const heroTag = isChannel && state.hero && state.hero.on ? '  ·  ⊳ hero' : '';
+      const rowsTag = isChannel && state.rows && state.rows.mode === 'custom' ? '  ·  ▤ custom rows' : '';
 
       if (opts.onSave) { opts.onSave({ state, matches, title, summary, isChannel }); dismiss(); return; }
 
       if (opts.editRow) {
         opts.editRow.querySelector('.nm').firstChild.textContent = title + ' ';
-        opts.editRow.querySelector('.src').textContent = summary + heroTag;
+        opts.editRow.querySelector('.src').textContent = summary + heroTag + rowsTag;
         if (isChannel) { const wmEl = opts.editRow.querySelector('.studio-wm'); if (wmEl) wmEl.outerHTML = channelWM(state, title); }
         opts.editRow._cfState = state;
       } else if (isChannel) {
         const row = el(`<div class="cfg-row cf-new">
           <span class="grab">⠿</span>${channelWM(state, title)}
-          <div style="flex:1;"><div class="nm">${title} <span class="badge info" style="font-size:.6rem;">${matches.length} titles</span></div><div class="src">${summary}${heroTag}</div></div>
+          <div style="flex:1;"><div class="nm">${title} <span class="badge info" style="font-size:.6rem;">${matches.length} titles</span></div><div class="src">${summary}${heroTag}${rowsTag}</div></div>
           <span class="toggle on"></span><span class="btn sm ghost rm">✕</span></div>`);
         row._cfState = state; row.dataset.kind = 'channel';
         document.getElementById('studiolist').appendChild(row); bindRow(row, true);

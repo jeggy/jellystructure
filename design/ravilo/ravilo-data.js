@@ -14,7 +14,6 @@
   // studios / categories (the Disney+-style rail; configured in Jellystructure)
   const studios = [
     { id: 'hbo',      name: 'HBO',       wm: 'HBO',        bg: 'linear-gradient(135deg,#3b2a78,#15102e)',
-      heroHeight: 48,
       hero: [
         { ...T('Iron Veil', 2021, 'Action · Sci-Fi', '16', 'film'), tagline: 'HBO Feature', badge: '4K',
           syn: 'A decommissioned war machine hides in a border town, until the soldiers who built it come looking.' },
@@ -82,7 +81,7 @@
 
   // the full home row set (same set is reused inside each category, scoped)
   const rows = [
-    { id: 'continue', title: 'Continue Watching', kind: 'land', cfg: 'Continue + Next Up', items: continueItems },
+    { id: 'continue', title: 'Continue Watching', kind: 'continue', cfg: 'Continue + Next Up', items: continueItems },
     { id: 'new-movies', title: 'Newly Added Movies', kind: 'poster', items: [ { ...T('Big Buck Bunny', 2008, 'Animation', 'G', 'film'), grad: BUNNY, image: BBB_IMG, badge: '4K' }, ...row('', 'drama', 'film').items ] },
     { id: 'new-series', title: 'Newly Added Series', kind: 'poster', items: row('', 'nordic', 'series').items },
     { id: 'g-nordic', title: 'Nordic Noir', kind: 'poster', items: row('', 'nordic', 'series').items.slice().reverse() },

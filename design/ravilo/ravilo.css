@@ -258,6 +258,16 @@ body { font-family: 'Sora', sans-serif; }
 .tile.land .pbar > i { display: block; height: 100%; border-radius: 4px; background: var(--accent); }
 .tile.land .meta-ep { position: absolute; left: 14px; bottom: 26px; font-size: 15px; color: #fff; z-index: 3; text-shadow: 0 1px 6px rgba(0,0,0,.7); }
 
+/* continue watching as posters (keeps resume progress + time-left) */
+.tile.cont .play { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; opacity: 0; transition: opacity .2s; z-index: 3; }
+.tile.cont .play span { width: 56px; height: 56px; border-radius: 50%; background: rgba(0,0,0,.5); -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px); display: flex; align-items: center; justify-content: center; font-size: 22px; color: #fff; }
+.tile.cont.focused .play { opacity: 1; }
+.tile.cont .pbar { position: absolute; left: 10px; right: 10px; bottom: 10px; height: 5px; border-radius: 4px; background: rgba(0,0,0,.45); box-shadow: 0 1px 6px rgba(0,0,0,.5); z-index: 3; }
+.tile.cont .pbar > i { display: block; height: 100%; border-radius: 4px; background: var(--accent); }
+.tile.cont .cont-badge { position: absolute; top: 10px; left: 10px; z-index: 3; background: rgba(8,10,16,.8); color: #fff; font-size: 12px; font-weight: 600;
+  padding: 3px 9px; border-radius: 6px; -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px); }
+.tile.cont .cont-sub { color: var(--ink-soft); }
+
 /* bottom spacer so last row can scroll up */
 .screen-end { height: 120px; }
 
