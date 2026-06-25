@@ -71,6 +71,7 @@ private val EN = mapOf<String, String>(
     "player.rail_hint"    to "← → switch  ·  ↵ play  ·  ↑ back",
     "player.tab_audio"    to "Audio",
     "player.tab_subtitles" to "Subtitles",
+    "player.burning_in_subtitle" to "Burning in subtitle… (transcoding)",
     "loading"             to "Loading...",
     "error.generic"       to "Something went wrong",
     "off"                 to "Off",

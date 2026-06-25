@@ -166,6 +166,16 @@ class TvApiClient(
         }.assertSuccess()
     }
 
+    /** R56 — re-stream with a subtitle burned in via Jellyfin HLS transcode (encode/PGS path). */
+    suspend fun restream(itemId: String, subtitleStreamIndex: Int, positionMs: Long): StreamTicket {
+        val r = client.post("$baseUrl/api/tv/playback/restream") {
+            auth()
+            jsonBody(json.encodeToString(PlaybackRestreamRequest(itemId, subtitleStreamIndex, positionMs)))
+        }
+        r.assertSuccess()
+        return json.decodeFromString<StreamTicket>(r.bodyAsText())
+    }
+
     suspend fun markPlayed(itemId: String, watched: Boolean) {
         client.post("$baseUrl/api/tv/mark") {
             auth()

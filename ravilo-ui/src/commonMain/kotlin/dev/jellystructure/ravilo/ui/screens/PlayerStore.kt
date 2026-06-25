@@ -51,6 +51,16 @@ class PlayerStore(private val apiClient: TvApiClient) {
         }
     }
 
+    /** R56 — Re-stream with a PGS subtitle burned in; keeps the heartbeat running (same item). */
+    fun restreamWithSub(itemId: String, subtitleStreamIndex: Int, positionMs: Long) {
+        scope.launch {
+            _state.value = PlayerSessionState.Loading
+            _state.value = runCatching {
+                PlayerSessionState.Ready(apiClient.restream(itemId, subtitleStreamIndex, positionMs))
+            }.getOrElse { PlayerSessionState.Error(it.message ?: "Failed to restream") }
+        }
+    }
+
     fun stopSession(positionMs: Long) {
         progressJob?.cancel()
         val itemId = currentItemId ?: return

@@ -67,6 +67,8 @@ data class SubTrack(
     val forced: Boolean = false,
     @SerialName("is_default") val isDefault: Boolean = false,
     val url: String?,
+    /** R56 — "external" (VTT sideload), "embed" (native in-container, VobSub/DVDSub), "encode" (burn-in transcode, PGS). */
+    @SerialName("delivery_method") val deliveryMethod: String = "external",
 )
 
 /**
@@ -407,6 +409,14 @@ data class PlaybackProgressRequest(
 data class PlaybackStopRequest(
     @SerialName("item_id") val itemId: String,
     @SerialName("position_ms") val positionMs: Long,
+)
+
+/** R56 — Re-request a stream ticket with a subtitle burned in (encode / PGS path). */
+@Serializable
+data class PlaybackRestreamRequest(
+    @SerialName("item_id") val itemId: String,
+    @SerialName("subtitle_stream_index") val subtitleStreamIndex: Int,
+    @SerialName("position_ms") val positionMs: Long = 0,
 )
 
 /** On-device viewer-tweakable settings (PUT /api/tv/settings). All fields optional = unchanged. */

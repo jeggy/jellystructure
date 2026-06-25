@@ -114,23 +114,81 @@ class PlaybackService(
     ): List<SubTrack> {
         val streams = itemDetail?.mediaStreams ?: return emptyList()
         return streams
-            // R55: drop the isExternal guard — Jellyfin's …/Subtitles/{idx}/0/Stream.vtt extracts
-            // embedded text subs on demand (same path as sidecar), so SRT/ASS/SSA muxed into the
-            // container now become VTT sideloads. PGS/VobSub image subs are still excluded by the
-            // text-codec guard (they're R56).
-            .filter { it.type.equals("Subtitle", ignoreCase = true) &&
-                (it.isTextSubtitleStream || isTextSubCodec(it.codec)) }
-            .map { s ->
-                SubTrack(
-                    index = s.index,
-                    language = s.language,
-                    label = s.displayTitle ?: s.title,
-                    forced = s.isForced,
-                    isDefault = s.isDefault,
-                    // Jellyfin extracts/serves the text sub as WebVTT for the player.
-                    url = "$jellyfinBase/Videos/$jellyfinId/$jellyfinId/Subtitles/${s.index}/0/Stream.vtt?api_key=$token",
-                )
+            .filter { it.type.equals("Subtitle", ignoreCase = true) }
+            .mapNotNull { s ->
+                val codec = s.codec?.lowercase()
+                when {
+                    // R55: text subs (SRT/ASS/SSA/VTT/muxed) — sideloaded via Jellyfin's VTT extractor.
+                    s.isTextSubtitleStream || isTextSubCodec(s.codec) -> SubTrack(
+                        index = s.index,
+                        language = s.language,
+                        label = s.displayTitle ?: s.title,
+                        forced = s.isForced,
+                        isDefault = s.isDefault,
+                        url = "$jellyfinBase/Videos/$jellyfinId/$jellyfinId/Subtitles/${s.index}/0/Stream.vtt?api_key=$token",
+                        deliveryMethod = "external",
+                    )
+                    // R56: VobSub/DVDSub — native in-container rendering via MatroskaExtractor.
+                    codec != null && isEmbedImageSubCodec(codec) -> SubTrack(
+                        index = s.index,
+                        language = s.language,
+                        label = s.displayTitle ?: s.title,
+                        forced = s.isForced,
+                        isDefault = s.isDefault,
+                        url = null,
+                        deliveryMethod = "embed",
+                    )
+                    // R56: PGS — burn-in via Jellyfin HLS transcode (encode path).
+                    codec != null && isPgsSubCodec(codec) -> SubTrack(
+                        index = s.index,
+                        language = s.language,
+                        label = s.displayTitle ?: s.title,
+                        forced = s.isForced,
+                        isDefault = s.isDefault,
+                        url = null,
+                        deliveryMethod = "encode",
+                    )
+                    else -> null // unknown image sub type — skip
+                }
             }
+    }
+
+    /** R56 — Re-stream the item with a PGS subtitle burned in via Jellyfin HLS transcode. */
+    suspend fun restream(
+        device: DeviceData,
+        jellyfinId: String,
+        subtitleStreamIndex: Int,
+        positionMs: Long,
+    ): StreamTicket? {
+        val jellyfinBase = configStore.current.apiKeys.jellyfinUrl.trimEnd('/')
+        val token = jellyfinClient.tvToken(jellyfinBase, device, configStore.current.apiKeys.jellyfinToken)
+        val itemDetail = jellyfinClient.getItemDetail(jellyfinBase, token, device.jellyfinUserId, jellyfinId)
+        val subtitles = buildSubtracks(itemDetail, jellyfinId, jellyfinBase, token)
+        val audio = buildAudioTracks(itemDetail)
+        // Jellyfin HLS transcode URL with subtitle burn-in; Jellyfin encodes the PGS bitmap into
+        // the video stream server-side (CPU-heavy; only used for the encode path).
+        val transcodingUrl = "$jellyfinBase/Videos/$jellyfinId/master.m3u8" +
+            "?DeviceId=jellystructure-ravilo" +
+            "&MediaSourceId=$jellyfinId" +
+            "&VideoCodec=h264" +
+            "&AudioCodec=aac" +
+            "&MaxWidth=1920&MaxHeight=1080" +
+            "&SubtitleMethod=Encode" +
+            "&SubtitleStreamIndex=$subtitleStreamIndex" +
+            "&api_key=$token"
+        return StreamTicket(
+            jellyfinBaseUrl = jellyfinBase,
+            accessToken = token,
+            itemId = jellyfinId,
+            container = "mkv",
+            directPlay = false,
+            hlsUrl = transcodingUrl,
+            startPositionMs = positionMs,
+            subtitles = subtitles,
+            audio = audio,
+            trickplayUrl = null,
+            expiresAt = nowMs() + TICKET_TTL_MS,
+        )
     }
 
     private fun buildAudioTracks(itemDetail: JellyfinItemDetail?): List<AudioTrack> {
@@ -156,6 +214,12 @@ class PlaybackService(
 
     private fun isTextSubCodec(c: String?): Boolean =
         (c?.lowercase()) in setOf("subrip", "srt", "ass", "ssa", "webvtt", "vtt", "mov_text", "text")
+
+    private fun isEmbedImageSubCodec(c: String): Boolean =
+        c in setOf("dvd_subtitle", "dvdsub", "vobsub", "dvbsub", "dvb_subtitle")
+
+    private fun isPgsSubCodec(c: String): Boolean =
+        c in setOf("hdmv_pgs_subtitle", "pgssub", "pgs")
 }
 
 /**
