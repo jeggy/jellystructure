@@ -20,13 +20,19 @@ longer encodes status — only this file does.
 
 ## Current focus
 
-**Done-ness audit + fixes (2026-06-25):** verified all 124 spec'd phases against the actual code; 7
-were falsely Done and have **all now been implemented → ✓ Done**: 70 (brand mark in sidebar/topbar),
-72 (`LanguageResolver.sameLanguage` in the TrackEditor banner), 74 (metadata write-through; backend
-PATCH is DB-only), 76 (presence-matrix cell toggle wired), R17 (lazy hls.js + JASSUB on web), R18
-(Kids flag + badge through pairing→device→profile), R56 (PlaybackInfo + DeviceProfile negotiation
-drives the stream URL). **0 phases are `⚠ Partial`.** Phases 41/42/46 stay ✓ Done — their
-staged-changes/command-preview UX was deliberately superseded by Phase 71's write-through model.
+**Everything is implemented except R62.** Admin phases 0–81 ✓ Done; Ravilo R01–R61 ✓ Done; the only
+open phase is **R62** (brand recolor + Android asset regen — design done, code pending: copy the
+regenerated PNGs into `ravilo-android`/`ravilo-phone` res + the `#000B25` splash color). No `⚠ Partial`
+phases remain.
+
+The 2026-06-25 done-ness audit found 7 falsely-Done phases and all 7 are now genuinely implemented
+(70 brand mark, 72 TrackEditor language equivalence, 74 metadata write-through, 76 presence-matrix
+toggle, R17 lazy hls.js/JASSUB, R18 Kids flag, R56 PlaybackInfo negotiation). Phases 41/42/46 stay
+✓ Done — their staged-changes/command-preview UX was deliberately superseded by Phase 71.
+
+> **Recurring sync regression:** each "updated designs" sync strips the Phase 75/76/79 cast CSS from
+> `design/app/wf.css` and reverts `CLAUDE.md`. Both are restored in the repo but **must be fixed in
+> the design-project source** to stop the loop (the cast tab renders unstyled without the CSS).
 
 Non-blocking follow-ups (not bugs): Phase 78 scan-time people-cache pre-warm (the `Semaphore(8)`
 already hard-caps the crash); R60 portrait polish via responsive `RaviloDimens` (the phone app
@@ -173,3 +179,4 @@ currently reflows with TV-tuned sizing, on-device test is the user's). Older ope
 | R59 | ✓ Done | **Per-channel content rows** — channel editor gains a **Same as Home / Custom** switch (default inherit): a channel can override the Home content rows with its **own ordered set**, built with the shared row workbench (popup over the channel page). System rows still appear unless removed; `ChannelConfig` gains `rows {mode, items}` reusing `RowConfig` (FR-RV-R1) | [spec](specs/ravilo/requirements/phase-R59-per-channel-content-rows.md) |
 | R60 | ✓ Done | **Android phone (mobile) target** — ship Ravilo on a Pixel 9 phone (portrait, touch) from the **same shared Compose codebase**; the only TV lock-in is the thin `:ravilo-android` entry (manifest + Activity), so a new thin `:ravilo-phone` module (or `tv`/`phone` flavor) is all that's needed — no shared-UI fork. Design = **portrait/touch reflow** of the existing system (top tabs, swipe hero, scroll rows, slide-in detail, ranked Top 10, native keyboard); no bottom-nav for v1; responsive `Dimens` over new mockups. TV stays primary (FR-RV-M1) | [spec](specs/ravilo/requirements/phase-R60-android-phone-target.md) |
 | R61 | ✓ Done | **Home rows: reduce system defaults to Continue + Newly Added** — replace the three system rows (Continue, Movies — Newly Added, Series — Newly Added) with two (Continue + Newly Added, all media). `DEFAULT_ROWS` (backend) + `SYSTEM_ROW_DEFAULTS` (editor) trimmed; existing configs gain ✕ delete buttons on the formerly-system split rows via `normalizedRows()` auto-insert of `newly-all` (FR-RV-RD1) | [spec](specs/ravilo/requirements/phase-R61-home-rows-reduce-defaults.md) |
+| R62 | Planned | **Brand recolor: Jellyfin palette + "D · Lit mark" asset regen** — recolor the Ravilo brand to `#AA5CC3 → #00A4DC` on a flat `#000B25` navy field (backlit mark), regenerate the whole Android asset pack from the SVG masters. Design/mockups + SVG masters + regenerated PNGs are done in the design project; **code pending** — copy the new PNGs into `ravilo-android/src/main/res/**` + `ravilo-phone/.../res/**` and change the splash `windowSplashScreenBackground` to `#000B25` in `themes.xml`. Mark shape unchanged; in-app Aurora accent untouched (FR-RV-B1) | [spec](specs/ravilo/requirements/phase-R62-brand-recolor-jellyfin-palette.md) |
