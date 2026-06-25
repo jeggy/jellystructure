@@ -631,7 +631,12 @@ class Scanner(
                 val localized = tmdbId?.let { tmdb.getMovieDetailsLocalized(it, langPriority) }
                     ?: return null
                 val details = localized.details
-                val resolvedLang = localized.language ?: langPriority.lastOrNull()
+                // Resolve the stored language through the SAME shared resolver the UI uses, fed with
+                // the languages TMDB actually has — so resolvedLanguage and the on-screen trace always
+                // agree. Falls back to the language we actually fetched content in.
+                val available = tmdbId?.let { tmdb.getTranslationLanguages(it, isMovie = true) }?.toSet()
+                val resolvedLang = LanguageResolver.resolve(sourceTracks, fallback, available).language
+                    ?: localized.language
                 val rescanCompany = details.productionCompanies.firstOrNull()
                 val rescanTmdbTags = tmdb.getMovieKeywords(details.id)
                 val rescanMovieExtIds = tmdb.getExternalIds(details.id, isMovie = true)

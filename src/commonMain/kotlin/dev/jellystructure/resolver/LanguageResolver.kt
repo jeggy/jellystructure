@@ -1,5 +1,36 @@
 package dev.jellystructure.resolver
 
+import dev.jellystructure.model.Track
+import dev.jellystructure.model.TrackKind
+
+/** Outcome of one step in the language-resolution trace (one per audio track, plus a fallback row). */
+enum class LangStepOutcome {
+    /** Track has no language tag — skipped. */
+    UNTAGGED,
+    /** Tagged, tried before a winner was found, but TMDB has no translation for it. */
+    NO_RESULT,
+    /** The chosen language — TMDB has a translation and it's the first such track. */
+    WINNER,
+    /** Same language as the winner, encountered later — already resolved. */
+    DUPLICATE,
+    /** Tagged, but a winner was already found earlier — not tried. */
+    SKIPPED,
+}
+
+/** One row of a language-resolution trace. [fallback] marks the synthetic fallback row (no track). */
+data class LangStep(
+    val specifier: String?,
+    val language: String?,
+    val outcome: LangStepOutcome,
+    val fallback: Boolean = false,
+)
+
+/** Result of [LanguageResolver.resolve]: the chosen language (normalized) plus the full trace. */
+data class LangResolution(
+    val language: String?,
+    val steps: List<LangStep>,
+)
+
 object LanguageResolver {
     // ffprobe tags tracks with ISO 639-2 three-letter codes; TMDB only accepts ISO 639-1 two-letter codes.
     // Map the common ones so TMDB queries actually hit the right translation.
@@ -105,5 +136,50 @@ object LanguageResolver {
         }
         seen.add(normalize(fallbackLanguage.ifBlank { "en" }))
         return seen.toList()
+    }
+
+    /**
+     * The single, shared metadata-language resolution used by both the backend (to pick the TMDB
+     * query language / `resolvedLanguage`) and the frontend (to visualise the decision). Walks the
+     * audio tracks in order and chooses the first whose language TMDB actually has a translation for,
+     * falling back to [fallbackLanguage] when none match. Returns the chosen language (normalized to
+     * ISO 639-1) and a step-by-step trace the UI can render verbatim.
+     *
+     * [availableLanguages] is the set of languages TMDB has translations for (any code form; compared
+     * normalized). `null` means availability is unknown — the caller couldn't fetch it — so the first
+     * tagged track wins (we can't disprove a match). An empty set means TMDB has nothing localized.
+     */
+    fun resolve(
+        tracks: List<Track>,
+        fallbackLanguage: String,
+        availableLanguages: Set<String>?,
+    ): LangResolution {
+        val avail = availableLanguages?.map { normalize(it) }?.toSet()
+        fun hasTranslation(lang: String): Boolean = avail == null || avail.contains(normalize(lang))
+
+        val steps = ArrayList<LangStep>()
+        var winner: String? = null
+        for (t in tracks) {
+            if (t.kind != TrackKind.AUDIO) continue
+            val lang = t.language
+            val outcome = when {
+                lang.isNullOrBlank() -> LangStepOutcome.UNTAGGED
+                winner != null && sameLanguage(lang, winner) -> LangStepOutcome.DUPLICATE
+                winner != null -> LangStepOutcome.SKIPPED
+                hasTranslation(lang) -> { winner = normalize(lang); LangStepOutcome.WINNER }
+                else -> LangStepOutcome.NO_RESULT
+            }
+            steps.add(LangStep(t.specifier, lang, outcome))
+        }
+        if (winner == null) {
+            val fb = fallbackLanguage.ifBlank { "en" }
+            if (hasTranslation(fb)) {
+                winner = normalize(fb)
+                steps.add(LangStep(null, fb, LangStepOutcome.WINNER, fallback = true))
+            } else {
+                steps.add(LangStep(null, fb, LangStepOutcome.NO_RESULT, fallback = true))
+            }
+        }
+        return LangResolution(winner, steps)
     }
 }
