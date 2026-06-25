@@ -13,6 +13,7 @@ import dev.jellystructure.model.Episode
 import dev.jellystructure.model.MediaItem
 import dev.jellystructure.model.MediaKind
 import dev.jellystructure.model.TrackKind
+import dev.jellystructure.resolver.LanguageResolver
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.request.receive
 import io.ktor.server.response.respond
@@ -307,7 +308,7 @@ private fun Episode.detectMultiDefaultAudio(): MultiDefaultIssue? {
 private fun MediaItem.detectCascadeMismatch(): CascadeMismatch? {
     if (languageMix || resolvedLanguage.isNullOrBlank()) return null
     val audioTracks = tracks.filter { it.kind == TrackKind.AUDIO }
-    val expectedTrack = audioTracks.firstOrNull { it.language == resolvedLanguage } ?: return null
+    val expectedTrack = audioTracks.firstOrNull { LanguageResolver.sameLanguage(it.language, resolvedLanguage) } ?: return null
     val currentDefault = audioTracks.firstOrNull { it.default }
     if (currentDefault != null && currentDefault.specifier == expectedTrack.specifier) return null
     return CascadeMismatch(
