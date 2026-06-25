@@ -114,7 +114,11 @@ class PlaybackService(
     ): List<SubTrack> {
         val streams = itemDetail?.mediaStreams ?: return emptyList()
         return streams
-            .filter { it.type.equals("Subtitle", ignoreCase = true) && it.isExternal &&
+            // R55: drop the isExternal guard — Jellyfin's …/Subtitles/{idx}/0/Stream.vtt extracts
+            // embedded text subs on demand (same path as sidecar), so SRT/ASS/SSA muxed into the
+            // container now become VTT sideloads. PGS/VobSub image subs are still excluded by the
+            // text-codec guard (they're R56).
+            .filter { it.type.equals("Subtitle", ignoreCase = true) &&
                 (it.isTextSubtitleStream || isTextSubCodec(it.codec)) }
             .map { s ->
                 SubTrack(
