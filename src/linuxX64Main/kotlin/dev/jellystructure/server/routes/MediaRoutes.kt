@@ -25,6 +25,7 @@ import dev.jellystructure.model.NfoFileTree
 import dev.jellystructure.model.Person
 import dev.jellystructure.model.TrackKind
 import dev.jellystructure.resolver.LanguageResolver
+import dev.jellystructure.resolver.primaryAudioLanguage
 import dev.jellystructure.nfo.NfoWriter
 import dev.jellystructure.tmdb.TmdbClient
 import dev.jellystructure.tmdb.TmdbImage
@@ -904,8 +905,25 @@ fun Route.mediaRoutes(
                     val newTracks = FfprobeRunner.probe(ep.path)
                     val newIssue = newTracks.count { (it.kind == TrackKind.AUDIO || it.kind == TrackKind.SUBTITLE) && it.language == null }
                     val updatedEpisodes = item.episodes.toMutableList()
-                    updatedEpisodes[epIdx] = ep.copy(tracks = newTracks, issueCount = newIssue)
-                    store.updateOne(item.copy(episodes = updatedEpisodes))
+                    // An audio reorder changes the episode's primary (language-driving) track — update
+                    // its resolvedLanguage so a series re-pull queries this episode in the new language
+                    // instead of treating the stale value as an override (mirrors the movie path).
+                    val epResolved = if (kind == TrackKind.AUDIO)
+                        primaryAudioLanguage(configStore.current, ep.path, newTracks)
+                    else ep.resolvedLanguage
+                    updatedEpisodes[epIdx] = ep.copy(tracks = newTracks, issueCount = newIssue, resolvedLanguage = epResolved)
+                    // Re-derive the series-level resolvedLanguage from the episodes' majority primary
+                    // audio language (same vote as Scanner), since that is the override repull uses.
+                    val seriesResolved = if (kind == TrackKind.AUDIO) {
+                        val votes = mutableMapOf<String, Int>()
+                        for (e in updatedEpisodes) {
+                            e.tracks.firstOrNull { it.kind == TrackKind.AUDIO }?.language
+                                ?.let { LanguageResolver.normalize(it) }
+                                ?.let { votes[it] = (votes[it] ?: 0) + 1 }
+                        }
+                        votes.maxByOrNull { it.value }?.key ?: item.resolvedLanguage
+                    } else item.resolvedLanguage
+                    store.updateOne(item.copy(episodes = updatedEpisodes, resolvedLanguage = seriesResolved))
                     mediaHistory.record(id, "reorder_tracks", "ep=${ep.filename} kind=${req.kind} order=${req.order.joinToString(",")}")
                     call.respond(mapOf("ok" to true))
                 }
