@@ -21,6 +21,20 @@ glow + lift into an inner `graphicsLayer` with the focusable on a fixed-size out
 scaled a descendant (unchanged). `:ravilo-ui` (android + wasmJs) compiles; `:ravilo-android:assembleDebug`
 builds. _Verify on-device:_ season picker / episode rail / action buttons no longer jump.
 
+## Reopened — Content rows UI vs design (R54)
+
+**[R54](requirements/phase-R54-rows-config-simplification.md) reopened (2026-06-25).** The backend
+logic shipped (3-row default, no kind picker, single `+ Add row` → workbench, GENRE→CUSTOM lazy
+migration — all verified in code), but a design walkthrough found the **live rows section diverges
+from `design/app/ravilo-config.html` §Content rows**: the mockup shows each system row as a `system`
+badge + **name** + **source description** ("Newly Added Movies · kind = movie · sort newest"), while
+`renderRows` shows ambiguous content badges (`All media`, `Movies only`) + a bare title input — so a
+Newly-Added row reads as a mystery **"All media"** row. Compounded by stale pre-R54 configs that were
+never migrated (a non-goal), existing users still see the old 2-row Continue + all-media-Newly-Added
+shape. Follow-up: match the design's row presentation + decide a migration/reset path. _This is a
+caution flag for the broader "all Done" claim — other phases marked Done may have similar
+design-fidelity gaps; a TV/admin design-diff audit is warranted._
+
 ## Genuinely-open phases — subtitle rendering (R55, R56)
 
 The only Ravilo specs still **unimplemented in code** are the two Android-player subtitle phases:

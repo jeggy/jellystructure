@@ -1,6 +1,31 @@
 # Phase R54 — Rows config simplification: workbench-only custom rows
 
-**Status:** Done
+**Status:** ◑ Reopened — backend logic shipped; live UI diverges from the design (see "Reopened" below).
+
+## Reopened (2026-06-25)
+
+A walkthrough against the design target (`design/app/ravilo-config.html` §Content rows) found the
+shipped rows section does **not** present like the design, which produces a confusing live state:
+
+1. **Row presentation diverges from the design.** The mockup (lines 146–149) renders each system row
+   as a `system` badge + a clear **name** (`.nm` "Newly Added Movies") + a **source description**
+   (`.src` "kind = movie · sort newest"). The implementation (`renderRows`) instead shows ambiguous
+   content badges — `Continue watching` / `Movies only` / `Series only` / **`All media`** — plus a
+   bare title `<input>`, with no "system" badge and no source line. A Newly-Added (all-media) row
+   therefore reads to the operator as a mystery **"All media"** row rather than "Newly Added".
+2. **Stale configs are never repaired.** R54 made config migration a non-goal (only the *default* for
+   new configs changed to 3 rows). Existing users keep their pre-R54 shape — typically
+   Continue + a single all-media Newly-Added row — so they never get the design's 3 clean system rows.
+
+### Follow-up scope
+- Rework `renderRows` (`RaviloConfig.kt`) to match the design: `system` badge + name + source line for
+  CONTINUE / NEWLY_ADDED rows (keep enable/reorder, no delete/kind picker).
+- Decide migration policy for stale row sets (one-time normalize to the 3 system rows, or a per-config
+  "reset rows to default" affordance) so existing users converge on the design.
+
+---
+
+**Original status:** Done (backend + add-row/migration logic — still correct, see Change below)
 
 ## Problem
 
