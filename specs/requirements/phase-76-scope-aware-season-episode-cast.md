@@ -1,6 +1,5 @@
 # Phase 76 — Scope-aware season/episode cast & crew (Series · Season · Episode) (FR-CC2)
 
-
 > Authored from the design project. Extends **[Phase 75](phase-75-cast-crew.md)** (cast & crew
 > fetch + NFO + person images) with the season/episode model. Companion exploration:
 > `design/app/Season Episode Cast.html`.

@@ -1,6 +1,5 @@
 # Phase 7 — Persistent Scan State & Resume (FR-S1)
 
-
 ## Problem
 `ScanTracker` is entirely in-memory. When the user refreshes the page mid-scan the dock counter
 resets to 0 because the frontend was accumulating `ItemScanned` WS events locally. When the backend

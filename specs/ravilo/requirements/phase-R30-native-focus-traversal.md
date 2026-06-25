@@ -1,6 +1,5 @@
 # Phase R30 — Native focus traversal (FR-RV30)
 
-
 ## Problem
 The R09 focus engine drove focus **by hand**: one `FocusRequester` per item plus a manual
 `requestFocus()` on every D-pad press (`FocusGrid` / `FocusRow` in `focus/FocusEngine.kt`). Inside

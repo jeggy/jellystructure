@@ -1,6 +1,5 @@
 # Phase R25 — Polish: loading skeletons, focus glow, smooth scroll (FR-RV25)
 
-
 ## What was built
 
 ### Shimmer skeleton utility

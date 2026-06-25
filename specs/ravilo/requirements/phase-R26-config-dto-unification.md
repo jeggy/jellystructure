@@ -1,6 +1,5 @@
 # Phase R26 — Config DTO unification (FR-RV26)
 
-
 ## Problem
 The admin frontend (`ravilo-web` / `wasmJsMain`) maintained parallel `Admin*` DTO classes that
 duplicated `:shared`'s `RaviloConfig` hierarchy. Any schema change had to be made in two places.

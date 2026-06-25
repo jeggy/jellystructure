@@ -1,6 +1,5 @@
 # Phase R05 — Home feed composition (FR-RV5)
 
-
 ## Problem
 The Ravilo home screen (hero + channel rail + content rows) must be **composed server-side** from the
 user's `RaviloConfig` + the library, and handed to the client as one ready-to-render feed. The client

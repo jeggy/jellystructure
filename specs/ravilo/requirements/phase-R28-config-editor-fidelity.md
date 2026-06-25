@@ -1,6 +1,5 @@
 # Phase R28 — Config editor fidelity (FR-RV28)
 
-
 ## Problem
 The `/ravilo` admin page was a bare prototype — form inputs not wired to save, no drag-reorder,
 no live preview, missing sections.

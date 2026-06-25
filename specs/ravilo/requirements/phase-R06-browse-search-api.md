@@ -1,6 +1,5 @@
 # Phase R06 — Browse + multi-language search + channel feeds (FR-RV6)
 
-
 ## Problem
 Beyond Home, Ravilo needs: a **channel view** (the same row set scoped to a channel), full **browse
 grids** for Movies / Series / My List with filters, and **search** that matches every title an item

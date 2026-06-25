@@ -1,6 +1,5 @@
 # Phase 24 — Manage the TMDB ID Field (FR-TI1)
 
-
 ## Problem
 On the Media Detail page the TMDB id is shown read-only. When an item has no TMDB match (or the wrong
 one), there's no way to set/correct it — and all the "Re-pull from TMDB" / sync functionality is gated

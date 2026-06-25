@@ -1,6 +1,5 @@
 # Phase 34 — Undo / Revert from History (FR-UR1)
 
-
 ## Problem
 Operators can accidentally change a TMDB ID, metadata fields, or language override and have no way to
 undo without remembering the old values manually.

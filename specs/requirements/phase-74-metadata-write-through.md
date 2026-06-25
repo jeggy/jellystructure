@@ -1,6 +1,5 @@
 # Phase 74 — Metadata write-through to the library DB; NFO write on explicit Save (FR-WM2)
 
-
 > Authored from the design project (`design/app/media.html`). **Supersedes
 > [Phase 9](archive/phase-09-dirty-indicators-diff-popup.md)** (per-field dirty indicators +
 > diff popup) and **revises the trigger model of

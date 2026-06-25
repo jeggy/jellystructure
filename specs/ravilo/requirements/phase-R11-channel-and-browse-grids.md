@@ -1,6 +1,5 @@
 # Phase R11 — Channel view + browse grids (FR-RV11)
 
-
 ## Problem
 From Home, selecting a channel (HBO, Dansk TV, …) should open a view with the **same rows scoped** to
 that channel; selecting a top-nav item (Movies / Series / My List) should open a **browse grid** with

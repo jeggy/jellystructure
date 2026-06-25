@@ -1,6 +1,5 @@
 # Phase R04 — Per-Jellyfin-user RaviloConfig store (FR-RV4)
 
-
 ## Problem
 A viewer's Ravilo layout (hero items, channels, rows, the merged-"Newly Added" toggle, default skin,
 playback prefs) must be **stored server-side per Jellyfin user** so that **every device a user signs

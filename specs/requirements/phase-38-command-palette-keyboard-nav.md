@@ -1,6 +1,5 @@
 # Phase 38 — Command Palette ⌘K + Keyboard Nav (FR-KB1)
 
-
 ## Features
 
 ### Sidebar search pill

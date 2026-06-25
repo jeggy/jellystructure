@@ -1,9 +1,5 @@
 # Phase R36 — Channel-button editor: logo asset upload, custom brand color/gradient, discoverable edit
 
-in the editor popup; logos are real uploaded/pickable image assets; the brand fill can be a preset, a
-custom solid, or a gradient; and every config row exposes a visible "edit" affordance so the popup is
-discoverable._
-
 > Revises **[R32](phase-R32-unified-filter-workbench.md) §C2** (the channel-button styling inside the
 > shared workbench) and the channel parts of **[R16](phase-R16-jellystructure-config-screen.md) §3** /
 > **[R28](phase-R28-config-editor-fidelity.md)**. Extends the `Channel` model in

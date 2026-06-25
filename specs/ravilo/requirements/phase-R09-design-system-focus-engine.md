@@ -1,6 +1,5 @@
 # Phase R09 — Design system + focus engine (FR-RV9)
 
-
 ## Problem
 Every Ravilo screen needs the same skinnable theme, the same focusable components, and one shared
 **D-pad/pointer focus engine** — written in common Compose so it runs on Android TV and browser canvas

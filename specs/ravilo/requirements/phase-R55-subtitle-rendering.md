@@ -1,6 +1,5 @@
 # Phase R55 — Subtitle rendering surface + embedded text subs (FR-RV-S1)
 
-
 ## Problem
 Subtitles are selectable in the player's Audio/Subtitles picker (R41) and carry rich
 labels (R46), but on Android TV **no subtitle ever appears on screen**, and for most

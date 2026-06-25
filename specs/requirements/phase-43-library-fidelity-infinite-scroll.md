@@ -1,8 +1,5 @@
 # Phase 43 — Library page: design fidelity + infinite scroll (FR-LV1)
 
-target and replaces prev/next pagination with continuous infinite scroll, kept cheap via CSS + lazy
-images (a JS virtualiser only as a measured fallback)._
-
 > **As built:** the kind switch renders as `<span class="seg">` segments (All/Movies/TV) so it picks
 > up the `.seg span.on` styling. The pager (`#lib-pager`, `renderLibraryPager`, `page=` URL param,
 > `libPage`) is gone; `loadMore(scope, reset)` fetches fixed slices into `#poster-grid`, driven by an

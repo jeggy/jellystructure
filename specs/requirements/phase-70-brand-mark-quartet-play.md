@@ -1,6 +1,5 @@
 # Phase 70 — Brand mark "Quartet Play" + app logo wiring (FR-BR1)
 
-
 > Note: authored from the design project without the full latest `specs/` tree in
 > context — slot into the phase index where it fits; the FR code (FR-BR1) is the stable
 > reference.

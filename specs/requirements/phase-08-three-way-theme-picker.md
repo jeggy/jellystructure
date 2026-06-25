@@ -1,6 +1,5 @@
 # Phase 8 — Three-Way Theme Picker (FR-T1)
 
-
 ## Problem
 The current theme toggle is a wide button at the bottom of the sidebar showing a sun/moon icon and
 "Toggle theme" text. It is visually heavy, only supports two states (light/dark), and defaults to

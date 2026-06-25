@@ -1,6 +1,5 @@
 # Phase 55 — Settings as URL-addressable tabs (FR-ST1)
 
-
 ## Goal
 
 The Settings page grew past the point where a single long scroll works well: Connections,

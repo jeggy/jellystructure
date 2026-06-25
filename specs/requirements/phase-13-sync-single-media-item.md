@@ -1,6 +1,5 @@
 # Phase 13 — Sync Single Media Item (FR-S2)
 
-
 ## Problem
 The only targeted re-fetch is "Re-pull from TMDB" which re-fetches TMDB only (no ffprobe). A full
 library scan re-probes everything. There is no way to do a targeted full rescan (ffprobe + TMDB) for

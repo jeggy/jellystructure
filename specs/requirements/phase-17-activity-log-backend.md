@@ -1,6 +1,5 @@
 # Phase 17 — Activity Log Backend & Live Runners (FR-A1)
 
-
 ## Problem
 The Activity tab is **always empty** except for live WS events in the current browser session — it
 resets on every page load and has no history. We want a real activity log managed on the backend: every

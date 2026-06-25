@@ -1,9 +1,5 @@
 # Phase R35 — Home-screen TV sizing + hero backdrop framing
 
-the same TV-tuned scale [R34](phase-R34-detail-layout-content-size.md) established for the detail
-screens; the shared `RaviloButton` chrome is reduced globally; and the hero backdrop crop is re-framed
-to sit below the AppBar across all three heroes._
-
 > Builds directly on **[R34](phase-R34-detail-layout-content-size.md)** (detail-screen TV sizing) and the
 > layout model from **[R24](phase-R24-component-visual-fidelity.md)** / **[R27](phase-R27-layout-model-extensions.md)**.
 > **Supersedes R24's home "Hero 600 dp / 72 sp" numbers.**

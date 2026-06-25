@@ -1,6 +1,5 @@
 # Phase 12 — Simplify TV Series Language UI (FR-U1)
 
-
 ## Problem
 The TV series overview tab has two redundant cards that both show language distribution:
 1. A large `tvOverviewBanner` at the top of the main content area with a prose explanation, distribution bars, and the language override input.

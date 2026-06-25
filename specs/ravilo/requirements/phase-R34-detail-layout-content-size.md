@@ -1,6 +1,5 @@
 # Phase R34 — TV detail-screen layout + per-user content size
 
-(no entry-scroll that strands the top of the screen), with TV-tuned sizing; plus a per-user
 **content-size** setting that scales the grid tiles, applied live._
 
 > Builds on the detail screens from **[R13](phase-R13-detail-screens.md)**, the config store

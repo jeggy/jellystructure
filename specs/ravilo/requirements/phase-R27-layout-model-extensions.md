@@ -1,6 +1,5 @@
 # Phase R27 — Layout model extensions (FR-RV27)
 
-
 ## What was built
 
 New fields on `RaviloConfig` / `HeroConfig` / `HomeFeed`:
