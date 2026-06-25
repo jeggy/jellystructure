@@ -21,13 +21,24 @@ glow + lift into an inner `graphicsLayer` with the focusable on a fixed-size out
 scaled a descendant (unchanged). `:ravilo-ui` (android + wasmJs) compiles; `:ravilo-android:assembleDebug`
 builds. _Verify on-device:_ season picker / episode rail / action buttons no longer jump.
 
-## Newly planned — Discover / Top 10 (2026-06-23)
+## Genuinely-open phases — subtitle rendering (R55, R56)
+
+The only Ravilo specs still **unimplemented in code** are the two Android-player subtitle phases:
+
+- **[R55](requirements/phase-R55-subtitle-rendering.md)** — subtitles never *draw* on Android:
+  `PlayerVideoSurface` is a bare `TextureView` (no `SubtitleView`/`onCues`), and `PlaybackService`
+  still filters `isExternal` so only sidecar subs are offered. Wire a Media3 `SubtitleView` fed by
+  `onCues` and drop the filter so embedded SRT/ASS/SSA sideload as Jellyfin VTT.
+- **[R56](requirements/phase-R56-image-subtitles.md)** — image-sub parity (PGS/VobSub/DVDSub) via real
+  Jellyfin `PlaybackInfo`/`DeviceProfile` negotiation + server burn-in transcode. **Depends on R55.**
+
+## Delivered — Discover / Top 10 (drafted 2026-06-23, shipped)
 
 A new TV surface: a **Top 10** tab driven by third-party popularity charts (Netflix via Tudum first),
 where titles not in the library can be **requested** and fetched through Radarr/Sonarr, with a **live,
 multi-stage status indicator** (requested → queued → downloading% → importing → available). Backend
 engine + chart ingestion are jellystructure phases (**56** acquisition pipeline, **57** chart
-ingestion — see [`../STATUS.md`](../STATUS.md)); the Ravilo side is three planned phases:
+ingestion — see [`../STATUS.md`](../STATUS.md)); the Ravilo side shipped as three phases:
 
 - **[R48](requirements/phase-R48-discover-api.md)** — `/api/tv/discover` API: a `discover` block on the
   per-user `RaviloConfig` (enabled/source/region/ordered lists), composition of charts + acquisition
