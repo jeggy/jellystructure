@@ -1,6 +1,6 @@
 # Phase R57 — Ravilo config: Pair-a-TV action + sticky action navbar (FR-RV-P1)
 
-**Status:** ✓ Done · _design_
+**Status:** ◑ Reopened (2026-06-25, design-diff audit) — impl diverges hard from the design: Pair-a-TV is a left-nav **sidebar section** with a single code input and **no Jellyfin-user selector**, instead of a **modal** launched from a **sticky** pagebar with a user picker + 6 individual code fields; the sticky Save · Pair · Open-Ravilo action bar is absent (`RaviloConfig.kt:386–430`). _(Originally: Done · design.)_
 
 > Authored from the design project (`design/app/ravilo-config.html`). Resolves the
 > **SYNC-AUDIT §3.2** open thread ("add a *Pair a TV* section, or keep it code-only?") and
