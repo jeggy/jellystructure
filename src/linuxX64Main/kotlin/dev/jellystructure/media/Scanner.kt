@@ -612,9 +612,15 @@ class Scanner(
         else item.tracks
         val audioLangs = sourceTracks.filter { it.kind == TrackKind.AUDIO }.map { it.language }
         val basePriority = LanguageResolver.priorityList(audioLangs, fallback)
-        // If the user has explicitly set a language override (e.g. via the language-mix control),
-        // honour it as the first TMDB query language so repull fetches metadata in that language.
-        val overrideLang = item.resolvedLanguage?.ifBlank { null }?.let { LanguageResolver.normalize(it) }
+        // Series have an explicit language override (the language-mix control writes it to
+        // resolvedLanguage); honour it as the first TMDB query language. Movies have NO manual
+        // override — their resolvedLanguage is always auto-derived from the audio order — so treating
+        // a movie's stale resolvedLanguage as an override would pin the old language forever and make
+        // reordering audio (or changing the fallback) unable to ever change the fetched language.
+        // For movies, follow the current audio order instead.
+        val overrideLang = if (item.kind == MediaKind.TV_SHOW)
+            item.resolvedLanguage?.ifBlank { null }?.let { LanguageResolver.normalize(it) }
+        else null
         val langPriority = if (overrideLang != null && basePriority.firstOrNull() != overrideLang)
             listOf(overrideLang) + basePriority.filter { it != overrideLang }
         else basePriority
