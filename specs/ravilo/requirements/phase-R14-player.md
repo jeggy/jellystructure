@@ -1,6 +1,5 @@
 # Phase R14 — Player: `RaviloPlayer` expect/actual (FR-RV14)
 
-**Status:** Planned · _play the bytes, from Jellyfin, report progress to jellystructure._
 
 ## Problem
 Ravilo must play media **directly from Jellyfin** (data plane) on both targets, with one shared player

@@ -1,6 +1,5 @@
 # R49 — Ravilo TV: Top 10 tab, dedicated detail, request + live status indicators (FR-RD2)
 
-**Status:** Planned
 **Depends on:** R48 (`/api/tv/discover` + events), R09 (design system/focus), R33 (live push)
 
 ## Goal

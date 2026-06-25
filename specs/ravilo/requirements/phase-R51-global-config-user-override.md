@@ -1,6 +1,5 @@
 # Phase R51 — Global-default Ravilo config + optional per-user override (FR-RV-G1)
 
-**Status:** ✓ Done · _design_
 
 > Authored from the design project (`design/app/ravilo-config.html`). Revises the
 > **per-user-only** storage default established in **[R16](phase-R16-jellystructure-config-screen.md)**

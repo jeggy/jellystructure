@@ -1,6 +1,5 @@
 # Phase R35 — Home-screen TV sizing + hero backdrop framing
 
-**Status:** ✓ Done (2026-06-22) · _the Home hero carousel and content-row headers are brought down to
 the same TV-tuned scale [R34](phase-R34-detail-layout-content-size.md) established for the detail
 screens; the shared `RaviloButton` chrome is reduced globally; and the hero backdrop crop is re-framed
 to sit below the AppBar across all three heroes._

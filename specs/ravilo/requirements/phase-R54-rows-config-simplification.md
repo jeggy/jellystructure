@@ -1,6 +1,5 @@
 # Phase R54 — Rows config simplification: workbench-only custom rows
 
-**Status:** Done
 
 ## Problem
 

@@ -1,6 +1,5 @@
 # Phase 80 — Cast presence matrix reflects real TMDB per-season data (FR-CC4)
 
-**Status:** ✓ Done
 
 > The Season-scope presence matrix shows **every actor present in every season and every
 > episode**. It's not reading real data — `episodePresence` is never populated, and the UI treats

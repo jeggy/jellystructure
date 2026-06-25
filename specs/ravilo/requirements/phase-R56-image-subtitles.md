@@ -1,6 +1,5 @@
 # Phase R56 — Image-based subtitle parity (PGS/VobSub/DVDSub) (FR-RV-S2)
 
-**Status:** Planned · _render image subs like the official Jellyfin client: native where the
 player can, server burn-in where it can't — via real PlaybackInfo negotiation._
 
 ## Problem
