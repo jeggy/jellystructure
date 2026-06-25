@@ -943,7 +943,12 @@ private fun openChannelEditorPage(container: Element, scope: CoroutineScope, idx
     val heroEnabled = pHero?.enabled == true
     val heroItemCount = pHero?.items?.size ?: 0
     val rowsCustom = c.rows?.mode == "custom"
-    val rowsCustomCount = c.rows?.items?.size ?: 0
+    val rowsCustomItems = c.rows?.items ?: emptyList()
+    val chRowsListHtml = rowsCustomItems.mapIndexed { i, r ->
+        val condSrc = if (r.conditions.isNotEmpty()) "${r.conditions.size} condition(s) · match ${r.match.name.lowercase()}" else "No filter — shows all media"
+        val name = r.title?.takeIf { it.isNotBlank() } ?: "Custom row"
+        """<div class="cfg-row" style="margin-bottom:6px"><div style="flex:1;min-width:0"><input class="input" style="width:100%;max-width:220px;font-size:.84rem;padding:3px 8px;height:auto" placeholder="Row title" value="${name.htmlEsc()}" data-row-ch-title="$i"><div class="src" style="margin-top:3px">${condSrc.htmlEsc()}</div></div><button class="btn sm ghost" data-row-ch-edit="$i" style="white-space:nowrap">Edit filter</button><button class="btn sm ghost" data-row-ch-del="$i" style="color:var(--bad)">&#x2715;</button></div>"""
+    }.joinToString("")
     val padLogo = c.paddingLogo
     val padText = c.paddingText
     val previewBg = c.brandColor?.takeIf { it.isNotBlank() } ?: "linear-gradient(135deg,#3b2a78,#15102e)"
@@ -1069,8 +1074,8 @@ private fun openChannelEditorPage(container: Element, scope: CoroutineScope, idx
           </div>
           <div id="ch-rows-custom-body" style="${if (!rowsCustom) "display:none;" else ""}">
             <p class="tiny muted" style="margin:0 0 10px">Custom rows for this channel. System rows (Continue, Newly Added) still appear unless removed.</p>
-            <div style="font-size:.82rem;color:var(--ink-soft);margin-bottom:8px">Rows: <b id="ch-rows-count">$rowsCustomCount</b></div>
-            <button id="ch-rows-edit" class="btn sm ghost">+ Add row</button>
+            <div id="ch-rows-list" style="margin-bottom:8px">$chRowsListHtml</div>
+            <button id="ch-rows-add" class="btn sm ghost">+ Add row</button>
           </div>
           <p id="ch-rows-inherit-note" class="tiny muted" style="margin:0;${if (rowsCustom) "display:none;" else ""}">Shows the global Home rows scoped to this channel — the default behaviour.</p>
         </div>
@@ -1249,10 +1254,24 @@ private fun openChannelEditorPage(container: Element, scope: CoroutineScope, idx
         }
     }
 
-    // R59: "Add row" for channel custom rows — same workbench as Home rows
-    container.querySelector("#ch-rows-edit")?.addEventListener("click") { _ ->
+    // R60: helper — re-render channel editor after mutating rows (full page re-render keeps state consistent)
+    fun reRenderChannelRows() {
+        val ch = currentConfig.channels.getOrNull(idx) ?: return
+        openChannelEditorPage(container, scope, idx, ch)
+    }
+
+    // R60: channel base-scope conds passed to row workbench so results are pre-scoped to the channel filter
+    fun chBaseConds(): List<WbCond> {
+        val ch = currentConfig.channels.getOrNull(idx) ?: return emptyList()
+        return if (ch.conditions.isNotEmpty()) wbCondsFrom(ch.conditions) else emptyList()
+    }
+    fun chBaseMatch(): String = currentConfig.channels.getOrNull(idx)?.match?.name ?: "ALL"
+
+    // R59/R60: "Add row" for channel custom rows
+    container.querySelector("#ch-rows-add")?.addEventListener("click") { _ ->
         openWorkbench(scope, "New row — ${c.name.ifBlank { "Channel" }}", viewer = currentUserId,
             applyLabel = "Add row",
+            baseConds = chBaseConds(), baseMatch = chBaseMatch(),
             onApply = { match, include, conds ->
                 val label = conds.firstOrNull { it.values.isNotEmpty() }?.values?.firstOrNull() ?: "Custom row"
                 val mediaKind = when (include) { "movies" -> "MOVIE"; "series" -> "SERIES"; else -> null }
@@ -1263,9 +1282,49 @@ private fun openChannelEditorPage(container: Element, scope: CoroutineScope, idx
                 val existing = cur.rows ?: ChannelRowsConfig(mode = "custom")
                 list[idx] = cur.copy(rows = existing.copy(mode = "custom", items = existing.items + newRow))
                 currentConfig = currentConfig.copy(channels = list)
-                val countEl = container.querySelector("#ch-rows-count") as? HTMLElement
-                countEl?.textContent = "${list[idx].rows?.items?.size ?: 0}"
+                reRenderChannelRows()
             })
+    }
+
+    // R60: wire edit-filter and delete buttons on each existing channel row
+    val chRowItems = currentConfig.channels.getOrNull(idx)?.rows?.items ?: emptyList()
+    for (ri in chRowItems.indices) {
+        container.querySelector("[data-row-ch-edit='$ri']")?.addEventListener("click") { _ ->
+            val row = currentConfig.channels.getOrNull(idx)?.rows?.items?.getOrNull(ri) ?: return@addEventListener
+            val inc = when (row.mediaKind) { "MOVIE" -> "movies"; "SERIES" -> "series"; else -> "all" }
+            openWorkbench(scope, "Edit row — ${(row.title ?: "Custom row").htmlEsc()}", viewer = currentUserId,
+                initialMatch = row.match.name, initialInclude = inc, initialConds = wbCondsFrom(row.conditions),
+                applyLabel = "Update row",
+                baseConds = chBaseConds(), baseMatch = chBaseMatch(),
+                onApply = { match, inc2, conds ->
+                    val mediaKind = when (inc2) { "movies" -> "MOVIE"; "series" -> "SERIES"; else -> null }
+                    val list = currentConfig.channels.toMutableList()
+                    val cur = list[idx]
+                    val items = cur.rows?.items?.toMutableList() ?: return@openWorkbench
+                    items[ri] = items[ri].copy(kind = RowKind.CUSTOM, match = wbMode(match), conditions = wbConds(conds), mediaKind = mediaKind)
+                    list[idx] = cur.copy(rows = cur.rows!!.copy(items = items))
+                    currentConfig = currentConfig.copy(channels = list)
+                    reRenderChannelRows()
+                })
+        }
+        container.querySelector("[data-row-ch-del='$ri']")?.addEventListener("click") { _ ->
+            val list = currentConfig.channels.toMutableList()
+            val cur = list[idx]
+            val items = cur.rows?.items?.toMutableList() ?: return@addEventListener
+            items.removeAt(ri)
+            list[idx] = cur.copy(rows = cur.rows!!.copy(items = items))
+            currentConfig = currentConfig.copy(channels = list)
+            reRenderChannelRows()
+        }
+        container.querySelector("[data-row-ch-title='$ri']")?.addEventListener("change") { _ ->
+            val input = container.querySelector("[data-row-ch-title='$ri']") as? HTMLInputElement ?: return@addEventListener
+            val list = currentConfig.channels.toMutableList()
+            val cur = list[idx]
+            val items = cur.rows?.items?.toMutableList() ?: return@addEventListener
+            items[ri] = items[ri].copy(title = input.value.ifBlank { null })
+            list[idx] = cur.copy(rows = cur.rows!!.copy(items = items))
+            currentConfig = currentConfig.copy(channels = list)
+        }
     }
 
     // Filter summary + workbench popup
