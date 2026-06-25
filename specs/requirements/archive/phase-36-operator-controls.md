@@ -1,6 +1,6 @@
 # Phase 36 — Operator Controls (FR-OC1)
 
-**Status:** ✓ Done
+**Status:** ◑ Reopened (2026-06-25, design-diff audit) — Settings → Scanning is missing the design's **Cron** advanced field (custom schedule, e.g. `0 3 * * *`); only Daily/Weekly + a time input exist. _(Originally: Done.)_
 
 ## Features
 
