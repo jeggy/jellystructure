@@ -1,6 +1,6 @@
 # Phase R60 — Android phone (mobile) target (FR-RV-M1)
 
-**Status:** ✓ Done · _design_
+**Status:** ✓ Done
 
 > Authored from the design project (`design/ravilo/Ravilo Mobile.html`). Broadens the
 > constitution's "10-foot, remote-first" framing to **multi-form-factor**. Based on the
