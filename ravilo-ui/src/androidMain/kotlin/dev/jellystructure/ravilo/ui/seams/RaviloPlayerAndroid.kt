@@ -1,8 +1,12 @@
 package dev.jellystructure.ravilo.ui.seams
 
 import android.content.Context
+import android.graphics.Color
 import android.net.Uri
 import android.view.TextureView
+import androidx.media3.common.text.CueGroup
+import androidx.media3.ui.CaptionStyleCompat
+import androidx.media3.ui.SubtitleView
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
@@ -74,6 +78,24 @@ actual class RaviloPlayer actual constructor() {
     }
 
     fun setVideoTextureView(tv: TextureView) { exo.setVideoTextureView(tv) }
+
+    /** R55 — attach a SubtitleView so ExoPlayer's text renderer can forward cues to the UI. */
+    fun setSubtitleView(view: SubtitleView) {
+        view.setStyle(CaptionStyleCompat(
+            Color.WHITE,
+            Color.TRANSPARENT,
+            Color.TRANSPARENT,
+            CaptionStyleCompat.EDGE_TYPE_DROP_SHADOW,
+            Color.BLACK,
+            null,
+        ))
+        view.setFractionalTextSize(SubtitleView.DEFAULT_TEXT_SIZE_FRACTION * 0.9f)
+        exo.addListener(object : Player.Listener {
+            override fun onCues(cueGroup: CueGroup) {
+                view.setCues(cueGroup.cues)
+            }
+        })
+    }
 
     actual fun play() { exo.play() }
     actual fun pause() { exo.pause() }
