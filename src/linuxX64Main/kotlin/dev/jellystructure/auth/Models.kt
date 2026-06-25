@@ -25,10 +25,15 @@ data class DeviceData(
     val jellyfinUsername: String,
     val jellyfinUserToken: String,
     val isAdmin: Boolean,
+    val isKids: Boolean = false,   // R18: Jellyfin user has a parental-rating cap
 )
 
 @Serializable
-data class JellyfinPolicy(@SerialName("IsAdministrator") val isAdministrator: Boolean)
+data class JellyfinPolicy(
+    @SerialName("IsAdministrator") val isAdministrator: Boolean,
+    // R18: present (non-null) when the Jellyfin user is restricted to a max rating → treat as a "Kids" profile.
+    @SerialName("MaxParentalRating") val maxParentalRating: Int? = null,
+)
 
 @Serializable
 data class JellyfinUser(

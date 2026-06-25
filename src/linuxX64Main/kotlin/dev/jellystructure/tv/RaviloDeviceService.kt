@@ -49,6 +49,7 @@ class RaviloDeviceService(private val db: JellystructureDb) {
         jellyfinUsername: String,
         jellyfinUserToken: String,
         isAdmin: Boolean,
+        isKids: Boolean = false,
     ): Boolean {
         val now = nowMs()
         db.raviloPairingQueries.approve(
@@ -56,6 +57,7 @@ class RaviloDeviceService(private val db: JellystructureDb) {
             jellyfin_username = jellyfinUsername,
             jellyfin_user_token = jellyfinUserToken,
             is_admin = if (isAdmin) 1L else 0L,
+            is_kids = if (isKids) 1L else 0L,
             code = code,
             now = now,
         )
@@ -81,6 +83,7 @@ class RaviloDeviceService(private val db: JellystructureDb) {
             jellyfin_username = username,
             jellyfin_user_token = userToken,
             is_admin = row.is_admin,
+            is_kids = row.is_kids,
             device_token = deviceToken,
             display_name = "",
             created_at = now,
@@ -96,6 +99,7 @@ class RaviloDeviceService(private val db: JellystructureDb) {
                 jellyfinUsername = username,
                 jellyfinUserToken = userToken,
                 isAdmin = row.is_admin == 1L,
+                isKids = row.is_kids == 1L,
             ),
             deviceToken,
         )
@@ -111,6 +115,7 @@ class RaviloDeviceService(private val db: JellystructureDb) {
             jellyfinUsername = row.jellyfin_username,
             jellyfinUserToken = row.jellyfin_user_token,
             isAdmin = row.is_admin == 1L,
+            isKids = row.is_kids == 1L,
         )
     }
 
@@ -128,6 +133,7 @@ class RaviloDeviceService(private val db: JellystructureDb) {
                 jellyfinUsername = row.jellyfin_username,
                 jellyfinUserToken = row.jellyfin_user_token,
                 isAdmin = row.is_admin == 1L,
+                isKids = row.is_kids == 1L,
             )
         }
 

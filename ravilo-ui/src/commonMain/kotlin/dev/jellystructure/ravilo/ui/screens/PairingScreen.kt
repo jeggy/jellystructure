@@ -90,6 +90,7 @@ class PairingStore(private val apiClient: TvApiClient) {
                     displayName = result.session.displayName,
                     deviceToken = result.deviceToken,
                     isAdmin = result.session.isAdmin,
+                    isKids = result.session.isKids,
                     avatarUrl = result.session.avatarUrl,
                 ))
                 _state.value = PairingState.Approved(result.session.displayName)

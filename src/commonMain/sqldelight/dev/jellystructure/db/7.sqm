@@ -1,0 +1,3 @@
+-- R18: carry a "Kids" flag (Jellyfin parental-rating cap) through pairing → device session.
+ALTER TABLE ravilo_pairing ADD COLUMN is_kids INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE ravilo_device ADD COLUMN is_kids INTEGER NOT NULL DEFAULT 0;

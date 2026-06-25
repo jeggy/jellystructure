@@ -3267,6 +3267,7 @@ private fun wireSeriesCastTab(item: MediaItem, mutableCast: MutableList<Person>,
     var selEp = item.episodes.filter { it.seasonNumber == selSeason }.mapNotNull { it.episodeNumber }.minOrNull() ?: 1
     val mutableGuests = mutableListOf<Person>()
     val mutableEpCrew = mutableListOf<Person>()
+    val mutableEpisodes = item.episodes.toMutableList()  // Phase 76: matrix guest toggles update this for live re-render
 
     fun currentEp() = item.episodes.firstOrNull { it.seasonNumber == selSeason && it.episodeNumber == selEp }
     fun syncEpState() {
@@ -3279,7 +3280,7 @@ private fun wireSeriesCastTab(item: MediaItem, mutableCast: MutableList<Person>,
         val bodyEl = document.getElementById("cast-body") as? HTMLElement ?: return
         bodyEl.innerHTML = when (castScope) {
             "series" -> renderSeriesScopeHtml(item.copy(cast = mutableCast, crew = mutableCrew))
-            "season" -> """<div class="card">${renderSeasonMatrixHtml(item, matrixView)}</div>"""
+            "season" -> """<div class="card">${renderSeasonMatrixHtml(item.copy(cast = mutableCast, crew = mutableCrew, episodes = mutableEpisodes), matrixView)}</div>"""
             else -> renderEpisodeScopeHtml(item, selSeason, selEp)
         }
     }
@@ -3368,6 +3369,44 @@ private fun wireSeriesCastTab(item: MediaItem, mutableCast: MutableList<Person>,
         target.closest("[data-mview]")?.let { el ->
             matrixView = (el as HTMLElement).getAttribute("data-mview") ?: return@let
             refreshBody()
+        }
+        // Phase 76: presence-matrix cell toggle (per-season E1..En view).
+        // main:pi:season:ep → flip episodePresence override on cast[pi]; guest:name:season:ep → add/remove from episode guestStars.
+        target.closest("[data-cell]")?.let { el ->
+            val cell = (el as HTMLElement).getAttribute("data-cell") ?: return@let
+            val parts = cell.split(":")
+            if (parts.size < 4) return@let
+            val sn = parts[parts.size - 2]
+            val en = parts.last().toIntOrNull() ?: return@let
+            when (parts[0]) {
+                "main" -> {
+                    val pi = parts[1].toIntOrNull() ?: return@let
+                    if (pi !in mutableCast.indices) return@let
+                    val p = mutableCast[pi]
+                    val seasonEps = mutableEpisodes.filter { it.seasonNumber?.toString() == sn }.mapNotNull { it.episodeNumber }
+                    // explicit override if set, else the season-member default = every episode in the season
+                    val cur = (p.episodePresence[sn]?.toMutableSet() ?: seasonEps.toMutableSet())
+                    if (en in cur) cur.remove(en) else cur.add(en)
+                    val newPresence = p.episodePresence.toMutableMap().apply { put(sn, cur.sorted()) }
+                    mutableCast[pi] = p.copy(episodePresence = newPresence)
+                    scope.launch { MediaApi.patchCast(item.id, mutableCast) }
+                    refreshBody()
+                }
+                "guest" -> {
+                    val name = parts.subList(1, parts.size - 2).joinToString(":")
+                    val epIdx = mutableEpisodes.indexOfFirst { it.seasonNumber?.toString() == sn && it.episodeNumber == en }
+                    if (epIdx < 0) return@let
+                    val ep = mutableEpisodes[epIdx]
+                    val guests = ep.guestStars.toMutableList()
+                    val at = guests.indexOfFirst { it.name == name }
+                    if (at >= 0) guests.removeAt(at)
+                    else guests.add(mutableEpisodes.flatMap { it.guestStars }.firstOrNull { it.name == name }
+                        ?: Person(tmdbId = 0, name = name, type = "Actor"))
+                    mutableEpisodes[epIdx] = ep.copy(guestStars = guests)
+                    scope.launch { MediaApi.patchEpisodeCast(item.id, ep.filename, guests) }
+                    refreshBody()
+                }
+            }
         }
         // Add cast (series scope)
         if (target.closest("#mc-add") != null || target.closest("#add-cast-btn") != null) {

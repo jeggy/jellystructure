@@ -212,7 +212,9 @@ fun wireUnifiedTrackEditor(
 
     fun langShortName(code: String?): String {
         if (code.isNullOrBlank()) return "untagged"
-        val found = getLanguages().find { it.first == code }
+        // Phase 72: normalize so a 3-letter tag (eng) resolves to its name, not the raw code.
+        val norm = LanguageResolver.normalize(code.trim().lowercase())
+        val found = getLanguages().find { it.first == norm || it.first == code }
         return found?.second ?: code
     }
 
@@ -223,7 +225,8 @@ fun wireUnifiedTrackEditor(
             return
         }
         val def = audioModel.find { it.def }
-        val show = def != null && !def.lang.isNullOrBlank() && def.lang != resolvedLanguage
+        // Phase 72: compare via canonical equivalence so eng==en doesn't false-fire the banner.
+        val show = def != null && !def.lang.isNullOrBlank() && !LanguageResolver.sameLanguage(def.lang, resolvedLanguage)
         cascadeEl.style.display = if (show) "flex" else "none"
         if (show && cascadeDefEl != null && def != null) {
             cascadeDefEl.innerHTML = """<span class="lang">${def.lang!!.esc()}</span> (${langShortName(def.lang)})"""
