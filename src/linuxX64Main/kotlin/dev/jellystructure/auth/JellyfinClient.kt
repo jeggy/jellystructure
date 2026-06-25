@@ -24,6 +24,12 @@ private const val DEVICE_ID = "jellystructure-server-v01"
 private const val AUTH_HEADER =
     """MediaBrowser Client="Jellystructure", Device="Server", DeviceId="$DEVICE_ID", Version="0.1.0""""
 
+// R56 — DeviceProfile sent to Jellyfin PlaybackInfo. Declares broad direct-play support (so most
+// items stream the raw container) and per-format subtitle delivery: text subs External, image subs
+// Embed where the player can render them, PGS via Encode (server burn-in). Permissive on purpose —
+// the Ravilo player + :ravilo-player FFmpeg decoder handle the codecs the library actually holds.
+private const val DEVICE_PROFILE = """{"MaxStreamingBitrate":120000000,"DirectPlayProfiles":[{"Container":"mkv,mp4,webm,mov,avi,ts,m2ts,flv,3gp,mpegts","Type":"Video","VideoCodec":"h264,hevc,vp8,vp9,av1,mpeg4,mpeg2video,vc1","AudioCodec":"aac,ac3,eac3,mp3,flac,vorbis,opus,dts,truehd,pcm,mp2,alac"}],"TranscodingProfiles":[{"Container":"ts","Type":"Video","VideoCodec":"h264","AudioCodec":"aac,ac3,mp3","Protocol":"hls","Context":"Streaming"}],"SubtitleProfiles":[{"Format":"vtt","Method":"External"},{"Format":"srt","Method":"External"},{"Format":"subrip","Method":"External"},{"Format":"ass","Method":"External"},{"Format":"ssa","Method":"External"},{"Format":"vobsub","Method":"Embed"},{"Format":"dvdsub","Method":"Embed"},{"Format":"dvbsub","Method":"Embed"},{"Format":"pgssub","Method":"Encode"},{"Format":"pgs","Method":"Encode"}]}"""
+
 class JellyfinClient {
     private val http = HttpClient(Curl) {
         install(ContentNegotiation) {
@@ -170,6 +176,26 @@ class JellyfinClient {
             setBody("""{"ItemId":"$jellyfinId","StartPositionTicks":$positionTicks,"MediaSourceId":"$mediaSourceId","CanSeek":true}""")
         }
     }.let { if (it.isFailure) Logger.warn("Jellyfin startPlaybackSession failed: ${it.exceptionOrNull()?.message}") }
+
+    /**
+     * R56 — negotiate delivery with Jellyfin. POSTs a [DEVICE_PROFILE] to PlaybackInfo; Jellyfin replies
+     * per MediaSource whether it can direct-play, else returns a TranscodingUrl (e.g. for a burned-in
+     * image subtitle). [subtitleStreamIndex] asks Jellyfin to Encode-burn that sub into the video.
+     */
+    suspend fun getPlaybackInfo(
+        baseUrl: String,
+        userToken: String,
+        userId: String,
+        itemId: String,
+        subtitleStreamIndex: Int? = null,
+    ): JellyfinPlaybackInfoResponse? = runCatching {
+        val subBody = subtitleStreamIndex?.let { ""","SubtitleStreamIndex":$it""" } ?: ""
+        http.post(baseUrl.trimEnd('/') + "/Items/$itemId/PlaybackInfo?UserId=$userId") {
+            jellyfinAuth(userToken)
+            contentType(ContentType.Application.Json)
+            setBody("""{"MediaSourceId":"$itemId","DeviceProfile":$DEVICE_PROFILE$subBody}""")
+        }.bodyOrNull<JellyfinPlaybackInfoResponse>("getPlaybackInfo")
+    }.getOrElse { Logger.warn("Jellyfin getPlaybackInfo failed: ${it.message}"); null }
 
     suspend fun reportPlaybackProgress(
         baseUrl: String,
