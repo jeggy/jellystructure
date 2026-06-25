@@ -1,0 +1,226 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="design_doc_mode" content="canvas">
+<title>Season / Episode Cast — design exploration</title>
+<link rel="stylesheet" href="wf.css">
+<style>
+  body { margin: 0; background: var(--bg); font-family: 'Sora', sans-serif; color: var(--ink); }
+  .frame { position: absolute; }
+  .flabel { font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--ink-soft); letter-spacing: .04em; margin-bottom: 10px; display: flex; align-items: center; gap: 8px; white-space: nowrap; }
+  .flabel .pill { background: var(--hi-soft); color: var(--acc-ink); border: 1px solid rgba(123,110,240,.3); border-radius: 999px; padding: 2px 9px; font-size: 11px; }
+  .flabel .rec { background: rgba(45,212,154,.16); color: var(--ok); border: 1px solid rgba(45,212,154,.32); border-radius: 999px; padding: 2px 9px; font-size: 11px; }
+  .panel { background: var(--bg-2); border: 1px solid var(--line-2); border-radius: 16px; padding: 22px; box-shadow: 0 30px 70px rgba(0,0,0,.4); }
+
+  .scopebar { display: inline-flex; gap: 3px; padding: 3px; border-radius: 10px; background: var(--fill-3); border: 1px solid var(--line); }
+  .scopebar span { padding: 7px 14px; border-radius: 7px; font-size: .84rem; font-weight: 600; color: var(--ink-soft); cursor: default; display: inline-flex; gap: 6px; align-items: center; }
+  .scopebar span.on { background: var(--hi-soft); color: var(--acc-ink); box-shadow: inset 0 0 0 1px rgba(123,110,240,.3); }
+  .scopebar .ep-pick { background: var(--fill); border: 1px solid var(--line-2); }
+
+  .sec-h { display: flex; align-items: center; gap: 9px; margin: 20px 0 12px; }
+  .sec-h h5 { margin: 0; font-size: .8rem; text-transform: uppercase; letter-spacing: .05em; color: var(--ink-soft); }
+  .sec-h .ct { font-family: 'JetBrains Mono', monospace; font-size: .7rem; color: var(--ink-dim); }
+  .sec-h .src { margin-left: auto; font-family: 'JetBrains Mono', monospace; font-size: .68rem; color: var(--ink-dim); }
+
+  .pgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); gap: 12px; }
+  .pc { position: relative; background: var(--fill-2); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+  .pc .ph { aspect-ratio: 2/3; display: flex; align-items: center; justify-content: center; font-size: 1.5rem; font-weight: 700; color: #fff; }
+  .pc .pb { padding: 8px 9px 10px; }
+  .pc .pn { font-weight: 600; font-size: .84rem; line-height: 1.2; }
+  .pc .pr { font-size: .76rem; color: var(--ink-soft); margin-top: 2px; }
+  .pc .tag { position: absolute; top: 6px; left: 6px; font-size: .58rem; font-family: 'JetBrains Mono', monospace; padding: 1px 6px; border-radius: 5px; background: rgba(8,10,16,.78); color: #fff; }
+  .pc.inh { opacity: .62; }
+  .pc.inh .tag { background: rgba(8,10,16,.72); color: #b9c0d6; }
+  .pc .epct { position: absolute; bottom: 44px; left: 6px; font-size: .58rem; font-family: 'JetBrains Mono', monospace; padding: 1px 6px; border-radius: 5px; background: rgba(8,10,16,.78); color: #9ab6ff; }
+  .pc.add { border-style: dashed; display: flex; align-items: center; justify-content: center; color: var(--ink-soft); font-size: .8rem; min-height: 120px; }
+
+  .crow { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px dashed var(--line); }
+  .crow:last-child { border-bottom: none; }
+  .cav { width: 32px; height: 32px; border-radius: 50%; flex: none; display: flex; align-items: center; justify-content: center; font-size: .72rem; font-weight: 700; color: #fff; }
+  .cj { font-size: .76rem; color: var(--ink-soft); }
+  .cn { font-weight: 600; font-size: .84rem; }
+  .note { background: var(--hi-soft); border: 1px solid rgba(123,110,240,.28); border-radius: 10px; padding: 10px 13px; font-size: .76rem; line-height: 1.55; color: var(--ink); }
+  .mono { font-family: 'JetBrains Mono', monospace; }
+
+  /* presence matrix */
+  .matrix { width: 100%; border-collapse: collapse; font-size: .8rem; }
+  .matrix th { font-weight: 600; color: var(--ink-soft); font-size: .72rem; padding: 6px 4px; text-align: center; }
+  .matrix td { padding: 6px 4px; text-align: center; border-top: 1px solid var(--line); }
+  .matrix td.name { text-align: left; font-weight: 600; white-space: nowrap; padding-right: 12px; }
+  .matrix td.name .r { font-weight: 400; color: var(--ink-soft); font-size: .72rem; }
+  .dot { width: 13px; height: 13px; border-radius: 50%; display: inline-block; }
+  .dot.on { background: var(--hi); }
+  .dot.g { background: var(--ok); }
+  .dot.off { background: var(--fill-3); border: 1px solid var(--line); }
+  .mlegend { display: flex; gap: 16px; margin-top: 12px; font-size: .74rem; color: var(--ink-soft); align-items: center; }
+  .mlegend .dot { vertical-align: -2px; margin-right: 5px; }
+
+  /* data flow */
+  .flow { display: flex; flex-direction: column; gap: 0; }
+  .flow .node { border: 1px solid var(--line-2); border-radius: 11px; padding: 12px 14px; background: var(--fill-2); }
+  .flow .node h6 { margin: 0 0 4px; font-size: .82rem; }
+  .flow .node .d { font-size: .73rem; color: var(--ink-soft); line-height: 1.5; }
+  .flow .arrow { text-align: center; color: var(--acc-ink); font-size: 1.1rem; padding: 7px 0; }
+  .maprow { display: grid; grid-template-columns: 92px 1fr; gap: 10px; padding: 8px 0; border-bottom: 1px dashed var(--line); font-size: .78rem; }
+  .maprow:last-child { border-bottom: none; }
+  .maprow .sc { font-weight: 600; }
+  .kbd { background: var(--bg-2); border: 1px solid var(--line-2); border-radius: 5px; padding: 1px 6px; font-family: 'JetBrains Mono', monospace; font-size: .72rem; }
+  h2.ttl { font-family: 'Space Grotesk', sans-serif; font-size: 1.5rem; margin: 0 0 6px; letter-spacing: -.01em; }
+  .sub { color: var(--ink-soft); font-size: .9rem; line-height: 1.5; max-width: 620px; }
+
+  /* help (?) icon + hover popup */
+  .help { width: 21px; height: 21px; border-radius: 50%; border: 1.5px solid var(--ink-soft); color: var(--ink-soft); font-size: .74rem; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; cursor: help; position: relative; }
+  .help:hover, .help:focus { border-color: var(--hi); color: var(--hi); outline: none; }
+  .help-pop { position: absolute; top: 30px; left: -10px; width: 330px; z-index: 80; background: var(--fill); border: 1px solid var(--line-2); border-radius: 13px; box-shadow: 0 24px 60px rgba(0,0,0,.55); padding: 16px; display: none; text-align: left; cursor: default; }
+  .help:hover .help-pop, .help:focus .help-pop { display: block; }
+  .help-pop .ttl2 { font-family:'JetBrains Mono',monospace; font-size:.7rem; color:var(--ink-soft); margin-bottom:11px; letter-spacing:.03em; }
+  .help-pop .flow .node { padding: 9px 11px; }
+  .help-pop .flow .node h6 { font-size:.78rem; }
+  .help-pop .flow .node .d { font-size:.7rem; }
+  .help-pop .flow .arrow { font-size:.95rem; padding:5px 0; }
+
+  /* numbered presence dots (all-seasons matrix) */
+  .ndot { width: 25px; height: 25px; border-radius: 50%; display:inline-flex; align-items:center; justify-content:center; font-size:.7rem; font-weight:700; font-family:'JetBrains Mono',monospace; }
+  .ndot.on { background: var(--hi); color:#fff; }
+  .ndot.g { background: var(--ok); color:#06281c; }
+  .ndot.off { color: var(--ink-dim); }
+</style>
+</head>
+<body>
+
+<!-- TITLE -->
+<div class="frame" style="left:60px; top:40px; width:680px;">
+  <h2 class="ttl">Managing cast across seasons &amp; episodes</h2>
+  <p class="sub">How the <b>Cast &amp; crew</b> tab on a series scales from the whole show down to one episode — what TMDB gives us at each scope, and what gets written to which NFO. Core idea: <b>main cast is defined once on the series and inherited downward</b>; only <b>guest stars</b> and <b>episode crew</b> are entered per episode.</p>
+</div>
+
+<!-- FRAME A — EPISODE SCOPE (recommended) -->
+<div class="frame" style="left:60px; top:200px; width:760px;">
+  <div class="flabel"><span class="rec">★ recommended</span> A · Cast &amp; crew tab — <b>Episode scope</b></div>
+  <div class="panel">
+    <div style="display:flex; align-items:center; gap:10px; margin-bottom:15px;">
+      <h4 style="margin:0;">Cast &amp; crew</h4>
+      <span class="help" tabindex="0">?
+        <div class="help-pop">
+          <div class="ttl2">TMDB → Jellystructure → NFO → Jellyfin</div>
+          <div class="flow">
+            <div class="node"><h6>① TMDB</h6><div class="d"><span class="mono">aggregate_credits</span> → main cast; episode <span class="mono">credits</span> → guest stars + crew.</div></div>
+            <div class="arrow">↓ fetch</div>
+            <div class="node"><h6>② Jellystructure DB</h6><div class="d">Series holds main cast; episodes hold guests + crew. Photos cached.</div></div>
+            <div class="arrow">↓ Save → NFO</div>
+            <div class="node"><h6>③ NFO files</h6><div class="d"><span class="mono">tvshow.nfo</span> ← main cast · <span class="mono">episodedetails.nfo</span> ← cast + guests + crew.</div></div>
+            <div class="arrow">↓ Sync</div>
+            <div class="node"><h6>④ Jellyfin</h6><div class="d">Downloads each <span class="mono">&lt;thumb&gt;</span> into its People store.</div></div>
+          </div>
+        </div>
+      </span>
+      <span class="tiny muted" style="font-size:.74rem;">saved to library as you edit · Save → NFO</span>
+    </div>
+    <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
+      <div class="scopebar">
+        <span>Series</span>
+        <span>Season 1 ▾</span>
+        <span class="on">Episode · S1·E3 ▾</span>
+      </div>
+      <span style="flex:1;"></span>
+      <span class="btn sm">↻ Fetch this episode</span>
+    </div>
+
+    <div class="sec-h"><h5>Main cast</h5><span class="ct">inherited from series</span><span class="src">tvshow.nfo → episode</span></div>
+    <div class="pgrid">
+      <div class="pc inh"><span class="tag">⤓ inherited</span><div class="ph" style="background:linear-gradient(150deg,#7b6ef0,rgba(0,0,0,.42));">SG</div><div class="pb"><div class="pn">Sofie Gråbøl</div><div class="pr">Hanne Vinter</div></div></div>
+      <div class="pc inh"><span class="tag">⤓ inherited</span><div class="ph" style="background:linear-gradient(150deg,#3fb6f5,rgba(0,0,0,.42));">LM</div><div class="pb"><div class="pn">Lars Mikkelsen</div><div class="pr">Detective Holm</div></div></div>
+      <div class="pc inh"><span class="tag">⤓ inherited</span><div class="ph" style="background:linear-gradient(150deg,#2dd49a,rgba(0,0,0,.42));">TD</div><div class="pb"><div class="pn">Trine Dyrholm</div><div class="pr">Eva Lund</div></div></div>
+    </div>
+    <div class="tiny" style="color:var(--ink-dim); margin-top:8px; font-size:.72rem;">Inherited members are read-only here — edit them on the <b>Series</b> scope. Drag one in to override its role for this episode only.</div>
+
+    <div class="sec-h"><h5>Guest stars</h5><span class="ct">this episode only</span><span class="src">S01E03.nfo</span></div>
+    <div class="pgrid">
+      <div class="pc"><span class="tag" style="background:rgba(45,212,154,.22);color:#7ad7b0;">guest</span><div class="ph" style="background:linear-gradient(150deg,#e36588,rgba(0,0,0,.42));">PA</div><div class="pb"><div class="pn">Pilou Asbæk</div><div class="pr">Karl Berg</div></div></div>
+      <div class="pc"><span class="tag" style="background:rgba(45,212,154,.22);color:#7ad7b0;">guest</span><div class="ph" style="background:linear-gradient(150deg,#f5b542,rgba(0,0,0,.42));">PS</div><div class="pb"><div class="pn">Paprika Steen</div><div class="pr">Dr. Holm</div></div></div>
+      <div class="pc add">＋ Add guest star</div>
+    </div>
+
+    <div class="sec-h"><h5>Episode crew</h5><span class="src">S01E03.nfo · &lt;director&gt;/&lt;writer&gt;</span></div>
+    <div>
+      <div class="crow"><span class="cav" style="background:linear-gradient(150deg,#5b8def,rgba(0,0,0,.42));">CB</span><div><div class="cn">Charlotte Bruus</div><div class="cj">Director</div></div><span style="margin-left:auto;color:var(--ink-dim);cursor:default;">✕</span></div>
+      <div class="crow"><span class="cav" style="background:linear-gradient(150deg,#19d6c6,rgba(0,0,0,.42));">TL</span><div><div class="cn">Tobias Lindholm</div><div class="cj">Writer</div></div><span style="margin-left:auto;color:var(--ink-dim);cursor:default;">✕</span></div>
+      <div style="margin-top:10px;"><span class="btn sm ghost">＋ Add crew</span></div>
+    </div>
+
+    <div class="note" style="margin-top:18px;">Writes <span class="mono">Nordvest - S01E03.nfo</span>: the <b>3 inherited</b> + <b>2 guest</b> actors (with <span class="mono">&lt;order&gt;</span> &amp; <span class="mono">&lt;thumb&gt;</span>) plus this episode's director &amp; writer. Edits save to the DB immediately; <b>Save → NFO</b> writes, <b>Sync</b> refreshes Jellyfin.</div>
+  </div>
+</div>
+
+<!-- FRAME B — SERIES SCOPE -->
+<div class="frame" style="left:860px; top:200px; width:520px;">
+  <div class="flabel"><span class="pill">B</span> Same tab — <b>Series scope</b> (the default)</div>
+  <div class="panel">
+    <div style="display:flex; align-items:center; gap:12px;">
+      <div class="scopebar"><span class="on">Series</span><span>Season 1 ▾</span><span>Episode ▾</span></div>
+      <span style="flex:1;"></span>
+      <span class="btn sm">↻ Fetch from TMDB</span>
+    </div>
+    <div class="sec-h"><h5>Main cast</h5><span class="ct">5 · drag to reorder</span><span class="src">tvshow.nfo</span></div>
+    <div class="pgrid">
+      <div class="pc"><span class="epct">▸ 8 eps</span><div class="ph" style="background:linear-gradient(150deg,#7b6ef0,rgba(0,0,0,.42));">SG</div><div class="pb"><div class="pn">Sofie Gråbøl</div><div class="pr">Hanne Vinter</div></div></div>
+      <div class="pc"><span class="epct">▸ 8 eps</span><div class="ph" style="background:linear-gradient(150deg,#3fb6f5,rgba(0,0,0,.42));">LM</div><div class="pb"><div class="pn">Lars Mikkelsen</div><div class="pr">Detective Holm</div></div></div>
+      <div class="pc"><span class="epct">▸ 6 eps</span><div class="ph" style="background:linear-gradient(150deg,#2dd49a,rgba(0,0,0,.42));">TD</div><div class="pb"><div class="pn">Trine Dyrholm</div><div class="pr">Eva Lund</div></div></div>
+      <div class="pc add">＋ Add cast</div>
+    </div>
+    <div class="sec-h"><h5>What counts as “main cast”?</h5></div>
+    <div class="note"><b>It comes straight from TMDB — no guesswork.</b> The series cast is TMDB <span class="kbd">aggregate_credits</span>, kept in TMDB’s own <span class="mono">order</span> (billing order); the <span class="mono">▸ N eps</span> badge is each role’s <span class="mono">total_episode_count</span>.
+      <div style="margin-top:8px;">Written verbatim to <span class="mono">tvshow.nfo</span>. You can still <b>reorder, edit a role, remove or add</b> a person — manual changes are <b>preserved across re-fetches</b> (like JS tags) and marked with a small <span class="mono">edited</span> tag, so a re-pull never clobbers your curation.</div></div>
+  </div>
+</div>
+
+<!-- FRAME C — SEASON PRESENCE MATRIX -->
+<div class="frame" style="left:60px; top:1480px; width:760px;">
+  <div class="flabel"><span class="pill">C</span> <b>Presence matrix</b> — who-appears-where, across all seasons or one</div>
+  <div class="panel">
+    <div style="display:flex; align-items:center; gap:12px; margin-bottom:14px; flex-wrap:wrap;">
+      <div class="scopebar"><span>Series</span><span class="on">Season ▾</span><span>Episode</span></div>
+      <div class="scopebar" style="background:var(--fill);"><span class="on">All seasons</span><span>S1</span><span>S2</span><span>S3</span><span>S4</span></div>
+      <span style="flex:1;"></span>
+      <span class="tiny muted" style="font-size:.72rem;">number = episodes in that season</span>
+    </div>
+    <table class="matrix">
+      <thead><tr><th class="name" style="text-align:left;">Actor</th><th>S1</th><th>S2</th><th>S3</th><th>S4</th><th>Total</th></tr></thead>
+      <tbody>
+        <tr><td class="name">Sofie Gråbøl <span class="r">· Hanne</span></td><td><span class="ndot on">8</span></td><td><span class="ndot on">10</span></td><td><span class="ndot on">10</span></td><td><span class="ndot on">6</span></td><td class="mono muted">34</td></tr>
+        <tr><td class="name">Lars Mikkelsen <span class="r">· Holm</span></td><td><span class="ndot on">8</span></td><td><span class="ndot on">10</span></td><td><span class="ndot on">4</span></td><td><span class="ndot off">·</span></td><td class="mono muted">22</td></tr>
+        <tr><td class="name">Trine Dyrholm <span class="r">· Eva</span></td><td><span class="ndot on">6</span></td><td><span class="ndot on">3</span></td><td><span class="ndot on">10</span></td><td><span class="ndot on">6</span></td><td class="mono muted">25</td></tr>
+        <tr><td class="name">Pilou Asbæk <span class="r">· Karl (guest)</span></td><td><span class="ndot g">2</span></td><td><span class="ndot off">·</span></td><td><span class="ndot off">·</span></td><td><span class="ndot off">·</span></td><td class="mono muted">2</td></tr>
+        <tr><td class="name">Paprika Steen <span class="r">· Dr. Holm (guest)</span></td><td><span class="ndot off">·</span></td><td><span class="ndot off">·</span></td><td><span class="ndot g">2</span></td><td><span class="ndot g">1</span></td><td class="mono muted">3</td></tr>
+      </tbody>
+    </table>
+    <div class="mlegend"><span><span class="ndot on" style="width:16px;height:16px;font-size:0;"></span> recurring</span><span><span class="ndot g" style="width:16px;height:16px;font-size:0;"></span> guest star</span><span>number = episodes that season</span></div>
+    <div class="note" style="margin-top:14px;">On <b>All seasons</b> each column is a season and the dot’s number is how many episodes that person is in that season — instantly spot a lead who thins out in S3, or a “guest” who actually recurs. Switch the picker to a single <b>season</b> and the columns become <b>E1…En</b> with on/off dots; tapping a cell toggles that actor on the episode’s <span class="mono">episodedetails.nfo</span>.</div>
+  </div>
+</div>
+
+<!-- FRAME D — DATA FLOW + NFO MAPPING -->
+<div class="frame" style="left:860px; top:1480px; width:520px;">
+  <div class="flabel"><span class="pill">D</span> The <b>ⓘ help popup</b> — hover the <b>?</b> in the tab header (frame A)</div>
+  <div class="panel">
+    <div class="flow">
+      <div class="node"><h6>① TMDB (source)</h6><div class="d"><span class="kbd">/tv/{id}/aggregate_credits</span> → recurring cast + per-role episode counts.<br><span class="kbd">/season/{n}/episode/{m}/credits</span> → that episode's <b>guest_stars</b> + crew.</div></div>
+      <div class="arrow">↓ fetch (scan or "↻ Fetch")</div>
+      <div class="node"><h6>② Jellystructure DB</h6><div class="d">Series holds the <b>main cast</b>; each episode holds its <b>guest stars + crew</b>. Profile images cached &amp; served (Phase 75). Write-through: edits persist immediately.</div></div>
+      <div class="arrow">↓ Save → NFO</div>
+      <div class="node"><h6>③ NFO files on disk</h6><div class="d"><span class="mono">tvshow.nfo</span> ← main cast.<br><span class="mono">episodedetails.nfo</span> ← main cast (resolved) + guest stars + <span class="mono">&lt;director&gt;</span>/<span class="mono">&lt;writer&gt;</span>, each <span class="mono">&lt;actor&gt;</span> with <span class="mono">&lt;order&gt;</span> + <span class="mono">&lt;thumb&gt;</span>.</div></div>
+      <div class="arrow">↓ Sync (refresh)</div>
+      <div class="node"><h6>④ Jellyfin</h6><div class="d">Reads each <span class="mono">&lt;thumb&gt;</span> URL and downloads the photo into its People store. Series page shows main cast; episode pages show cast + guest stars.</div></div>
+    </div>
+
+    <div class="sec-h" style="margin-top:20px;"><h5>Scope → NFO target</h5></div>
+    <div class="maprow"><span class="sc">Series</span><span>main cast → <span class="mono">tvshow.nfo</span> (+ seeds every episode)</span></div>
+    <div class="maprow"><span class="sc">Season</span><span>a filtered view; edits cascade to that season's episodes (no season-level cast file in Jellyfin)</span></div>
+    <div class="maprow"><span class="sc">Episode</span><span>inherited main cast + guest stars + crew → <span class="mono">episodedetails.nfo</span></span></div>
+  </div>
+</div>
+
+</body>
+</html>
