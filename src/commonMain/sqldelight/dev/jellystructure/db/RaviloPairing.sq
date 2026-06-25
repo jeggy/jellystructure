@@ -6,6 +6,7 @@ CREATE TABLE ravilo_pairing (
     jellyfin_username TEXT,
     jellyfin_user_token TEXT,
     is_admin INTEGER NOT NULL DEFAULT 0,
+    is_kids INTEGER NOT NULL DEFAULT 0,
     approved INTEGER NOT NULL DEFAULT 0,
     consumed INTEGER NOT NULL DEFAULT 0,
     expires_at INTEGER NOT NULL
@@ -27,6 +28,7 @@ SET jellyfin_user_id = :jellyfin_user_id,
     jellyfin_username = :jellyfin_username,
     jellyfin_user_token = :jellyfin_user_token,
     is_admin = :is_admin,
+    is_kids = :is_kids,
     approved = 1
 WHERE code = :code AND consumed = 0 AND expires_at > :now;
 
