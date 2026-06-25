@@ -164,6 +164,22 @@ fun startServer(
                         runCatching { jellyfinClient.testConnection(cfg.apiKeys.jellyfinUrl, cfg.apiKeys.jellyfinToken) }.getOrDefault(false)
                     } else false
                     checks.add(HealthCheck("Jellyfin", jfOk, if (cfg.apiKeys.jellyfinUrl.isBlank()) "URL not configured" else if (jfOk) "Connected to ${cfg.apiKeys.jellyfinUrl}" else "Connection failed"))
+                    // Check managed Jellyfin libraries for settings that conflict with Jellystructure
+                    // taking over metadata management (e.g. NFO Metadata Saver overwrites our NFO files).
+                    if (jfOk) {
+                        val managedIds = cfg.libraries.filter { !it.skip }.map { it.jellyfinId }.toSet()
+                        val jfLibs = runCatching { jellyfinClient.getLibraries(cfg.apiKeys.jellyfinUrl, cfg.apiKeys.jellyfinToken) }.getOrDefault(emptyList())
+                        for (lib in jfLibs.filter { it.id in managedIds }) {
+                            val savers = lib.libraryOptions?.metadataSavers ?: emptyList()
+                            if ("Nfo" in savers) {
+                                checks.add(HealthCheck(
+                                    name = "Jellyfin library: ${lib.name}",
+                                    ok = false,
+                                    detail = "NFO Metadata Saver is ON — Jellyfin re-writes NFO files after every refresh, overwriting Jellystructure's metadata. Fix: Administration → Libraries → ⋯ Edit ${lib.name} → Metadata savers → uncheck Nfo"
+                                ))
+                            }
+                        }
+                    }
                     // TMDB key
                     val tmdbKey = cfg.apiKeys.tmdbV3Key
                     val tmdbOk = if (tmdbKey.isNotBlank()) {
