@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="en" data-skin="aurora">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ravilo — Mobile (Pixel 9)</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Sora:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#0a0c13; --bg-2:#0e111b; --ink:#f3f4fb; --ink-soft:#aeb4cb; --ink-dim:#6b7290;
+    --line:rgba(255,255,255,.09); --card:#161a28; --card-2:#1b2031;
+    --accent:#7b6ef0; --accent-2:#3fb6f5; --grad:linear-gradient(120deg,#7b6ef0,#3fb6f5);
+    --good:#2dd49a; --ease:cubic-bezier(.22,.61,.36,1);
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  html,body{height:100%; background:#05060a; font-family:'Sora',sans-serif; overflow:hidden;}
+  #fit{position:fixed; inset:0; display:flex; align-items:center; justify-content:center;}
+
+  /* Pixel 9 — 412×915 portrait */
+  .phone{ width:412px; height:915px; border-radius:46px; background:#05060a;
+    box-shadow:0 0 0 11px #15171d, 0 0 0 13px #2a2d36, 0 40px 110px rgba(0,0,0,.7); position:relative; }
+  .screen{ position:absolute; inset:0; border-radius:46px; overflow:hidden; background:var(--bg); color:var(--ink); display:flex; flex-direction:column; }
+  .punch{ position:absolute; top:13px; left:50%; transform:translateX(-50%); width:11px; height:11px; border-radius:50%; background:#000; z-index:60; }
+
+  .statusbar{ height:34px; flex:none; display:flex; align-items:center; justify-content:space-between; padding:0 24px 0 26px; font-size:13px; font-weight:600; color:var(--ink); z-index:50; }
+  .statusbar .ic{ display:flex; gap:5px; align-items:center; opacity:.95; }
+  .statusbar svg{ display:block; }
+
+  .scroll{ flex:1; overflow-y:auto; overflow-x:hidden; -webkit-overflow-scrolling:touch; scrollbar-width:none; }
+  .scroll::-webkit-scrollbar{ display:none; }
+
+  /* app bar */
+  .appbar{ position:sticky; top:0; z-index:40; display:flex; align-items:center; gap:12px; padding:8px 18px 10px;
+    background:linear-gradient(180deg, var(--bg) 60%, rgba(10,12,19,0)); }
+  .wm{ font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:21px; letter-spacing:-.02em; }
+  .wm .g{ background:var(--grad); -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent; }
+  .appbar .sp{ flex:1; }
+  .iconbtn{ width:38px; height:38px; border-radius:50%; display:flex; align-items:center; justify-content:center; background:rgba(255,255,255,.07); color:var(--ink); border:none; cursor:pointer; }
+  .iconbtn:active{ background:rgba(255,255,255,.15); }
+  .avatar{ width:34px; height:34px; border-radius:50%; background:var(--grad); display:flex; align-items:center; justify-content:center; font-weight:700; font-size:13px; color:#fff; font-family:'Space Grotesk',sans-serif; }
+
+  /* tab chips */
+  .tabs{ position:sticky; top:56px; z-index:39; display:flex; gap:8px; padding:4px 18px 12px; overflow-x:auto; background:var(--bg); scrollbar-width:none; }
+  .tabs::-webkit-scrollbar{ display:none; }
+  .tab{ flex:none; padding:7px 15px; border-radius:999px; font-size:14px; font-weight:600; color:var(--ink-soft); background:rgba(255,255,255,.06); cursor:pointer; white-space:nowrap; transition:.18s var(--ease); }
+  .tab.on{ background:var(--ink); color:#0a0c13; }
+
+  /* hero carousel */
+  .hero{ display:flex; overflow-x:auto; scroll-snap-type:x mandatory; gap:0; scrollbar-width:none; }
+  .hero::-webkit-scrollbar{ display:none; }
+  .hslide{ flex:none; width:376px; margin:0 18px; scroll-snap-align:center; }
+  .hcard{ position:relative; height:470px; border-radius:20px; overflow:hidden; background-size:cover; background-position:center; }
+  .hcard .scrim{ position:absolute; inset:0; background:linear-gradient(0deg, rgba(8,10,16,.96) 6%, rgba(8,10,16,.55) 38%, rgba(8,10,16,.08) 70%); }
+  .hcard .body{ position:absolute; left:0; right:0; bottom:0; padding:20px 20px 22px; }
+  .hbadge{ position:absolute; top:14px; left:14px; font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:11px; letter-spacing:.04em; padding:4px 9px; border-radius:7px; background:rgba(8,10,16,.6); -webkit-backdrop-filter:blur(6px); backdrop-filter:blur(6px); color:#fff; }
+  .htag{ font-size:12px; font-weight:600; color:var(--accent-2); letter-spacing:.04em; text-transform:uppercase; margin-bottom:6px; }
+  .htitle{ font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:31px; line-height:1.02; letter-spacing:-.01em; }
+  .hmeta{ display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-top:9px; font-size:12.5px; color:var(--ink-soft); }
+  .hmeta .pg{ border:1px solid var(--line); border-radius:5px; padding:0 5px; font-size:11px; }
+  .hbtns{ display:flex; gap:10px; margin-top:15px; }
+  .btn{ flex:1; height:44px; border-radius:12px; display:flex; align-items:center; justify-content:center; gap:7px; font-weight:600; font-size:15px; cursor:pointer; border:none; }
+  .btn.play{ background:var(--ink); color:#0a0c13; }
+  .btn.ghost{ background:rgba(255,255,255,.13); color:var(--ink); -webkit-backdrop-filter:blur(6px); backdrop-filter:blur(6px); }
+  .btn:active{ transform:scale(.97); }
+  .hdots{ display:flex; gap:6px; justify-content:center; padding:12px 0 2px; }
+  .hdots i{ width:6px; height:6px; border-radius:50%; background:rgba(255,255,255,.25); transition:.2s; }
+  .hdots i.on{ width:18px; border-radius:3px; background:var(--accent); }
+
+  /* rows */
+  .row{ margin-top:24px; }
+  .row h3{ font-family:'Space Grotesk',sans-serif; font-size:17px; font-weight:600; padding:0 18px 11px; display:flex; align-items:center; gap:7px; }
+  .row h3 .more{ margin-left:auto; font-family:'Sora',sans-serif; font-size:12px; font-weight:500; color:var(--ink-dim); }
+  .track{ display:flex; gap:11px; overflow-x:auto; padding:0 18px 2px; scrollbar-width:none; }
+  .track::-webkit-scrollbar{ display:none; }
+  .tile{ flex:none; width:118px; cursor:pointer; }
+  .poster{ width:118px; height:177px; border-radius:12px; overflow:hidden; position:relative; display:flex; align-items:center; justify-content:center; }
+  .poster .ini{ font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:30px; color:rgba(255,255,255,.9); }
+  .poster .pb{ position:absolute; top:7px; right:7px; font-size:9.5px; font-weight:700; font-family:'Space Grotesk',sans-serif; padding:2px 6px; border-radius:5px; background:rgba(8,10,16,.66); color:#fff; }
+  .tile:active .poster{ outline:2px solid var(--accent); }
+  .tlabel{ font-size:12.5px; font-weight:500; margin-top:7px; line-height:1.25; }
+  .tsub{ font-size:11px; color:var(--ink-dim); margin-top:1px; }
+
+  /* studios rail */
+  .studios{ display:flex; gap:10px; overflow-x:auto; padding:0 18px; scrollbar-width:none; }
+  .studios::-webkit-scrollbar{ display:none; }
+  .studio{ flex:none; width:96px; height:60px; border-radius:13px; display:flex; align-items:center; justify-content:center; font-family:'Space Grotesk',sans-serif; font-weight:800; color:#fff; font-size:16px; cursor:pointer; box-shadow:inset 0 0 0 1px rgba(255,255,255,.08); }
+  .studio small{ font-size:10px; vertical-align:super; }
+
+  /* top 10 list */
+  .t10{ padding:4px 18px 0; }
+  .t10row{ display:flex; align-items:center; gap:2px; padding:8px 0; border-bottom:1px solid var(--line); cursor:pointer; }
+  .t10num{ font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:46px; width:54px; flex:none; text-align:center; line-height:1; background:linear-gradient(180deg,var(--ink),var(--ink-dim)); -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent; }
+  .t10p{ width:58px; height:80px; border-radius:9px; flex:none; display:flex; align-items:center; justify-content:center; font-family:'Space Grotesk',sans-serif; font-weight:700; color:rgba(255,255,255,.9); font-size:18px; }
+  .t10b{ flex:1; min-width:0; padding-left:12px; }
+  .t10b .nm{ font-weight:600; font-size:15px; }
+  .t10b .mt{ font-size:12px; color:var(--ink-soft); margin-top:2px; }
+  .t10b .st{ font-size:11px; margin-top:5px; display:inline-flex; align-items:center; gap:5px; }
+  .st .dot{ width:7px; height:7px; border-radius:50%; }
+  .st.avail{ color:var(--good); } .st.avail .dot{ background:var(--good); }
+  .st.fetch{ color:var(--accent-2); } .st.fetch .dot{ background:var(--accent-2); }
+  .st.none{ color:var(--ink-dim); } .st.none .dot{ background:var(--ink-dim); }
+
+  /* detail screen */
+  .detail{ position:absolute; inset:0; background:var(--bg); z-index:70; display:flex; flex-direction:column; transform:translateX(100%); transition:transform .3s var(--ease); }
+  .detail.on{ transform:translateX(0); }
+  .dscroll{ flex:1; overflow-y:auto; scrollbar-width:none; }
+  .dscroll::-webkit-scrollbar{ display:none; }
+  .dhero{ height:340px; position:relative; background-size:cover; background-position:center; }
+  .dhero .scrim{ position:absolute; inset:0; background:linear-gradient(0deg, var(--bg) 3%, rgba(10,12,19,.5) 45%, rgba(10,12,19,.1) 100%); }
+  .dback{ position:absolute; top:14px; left:14px; z-index:5; width:38px; height:38px; border-radius:50%; background:rgba(8,10,16,.55); -webkit-backdrop-filter:blur(6px); backdrop-filter:blur(6px); display:flex; align-items:center; justify-content:center; color:#fff; border:none; cursor:pointer; }
+  .dbody{ padding:0 20px 30px; margin-top:-58px; position:relative; }
+  .dtitle{ font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:27px; line-height:1.05; }
+  .dmeta{ display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-top:9px; font-size:12.5px; color:var(--ink-soft); }
+  .dmeta .pg{ border:1px solid var(--line); border-radius:5px; padding:0 5px; font-size:11px; }
+  .dbtns{ display:flex; gap:10px; margin-top:16px; }
+  .dsyn{ margin-top:16px; font-size:14px; line-height:1.6; color:var(--ink-soft); }
+  .seclbl{ font-family:'Space Grotesk',sans-serif; font-size:15px; font-weight:600; margin:22px 0 11px; }
+
+  .label{ position:absolute; bottom:-30px; left:0; right:0; text-align:center; color:#54596b; font-size:12px; font-family:'Space Grotesk',sans-serif; letter-spacing:.05em; }
+</style>
+</head>
+<body>
+<div id="fit">
+  <div class="phone">
+    <div class="punch"></div>
+    <div class="screen">
+      <div class="statusbar">
+        <span>9:41</span>
+        <span class="ic">
+          <svg width="17" height="12" viewBox="0 0 17 12" fill="currentColor"><rect x="0" y="7" width="3" height="5" rx="1"/><rect x="4.5" y="4.5" width="3" height="7.5" rx="1"/><rect x="9" y="2" width="3" height="10" rx="1"/><rect x="13.5" y="0" width="3" height="12" rx="1"/></svg>
+          <svg width="16" height="12" viewBox="0 0 16 12" fill="currentColor"><path d="M8 2.6c2.3 0 4.4.9 6 2.4l1.4-1.5A12 12 0 0 0 8 0 12 12 0 0 0 .6 3.5L2 5A8.4 8.4 0 0 1 8 2.6Zm0 4c1.2 0 2.3.5 3.1 1.3l1.4-1.5A6.4 6.4 0 0 0 8 4.6 6.4 6.4 0 0 0 3.5 6.4l1.4 1.5A4.4 4.4 0 0 1 8 6.6Zm0 4 2-2.1A2.8 2.8 0 0 0 8 7.6a2.8 2.8 0 0 0-2 .9Z"/></svg>
+          <svg width="25" height="12" viewBox="0 0 25 12" fill="none"><rect x="1" y="1" width="20" height="10" rx="3" stroke="currentColor" stroke-opacity=".5" fill="none"/><rect x="2.5" y="2.5" width="15" height="7" rx="1.5" fill="currentColor"/><rect x="22.5" y="4" width="1.6" height="4" rx=".8" fill="currentColor" fill-opacity=".6"/></svg>
+        </span>
+      </div>
+      <div class="scroll" id="scroll">
+        <div class="appbar">
+          <div class="wm"><span class="g">Ravilo</span></div>
+          <span class="sp"></span>
+          <button class="iconbtn" id="searchBtn" aria-label="Search">
+            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+          </button>
+          <div class="avatar">ER</div>
+        </div>
+        <div class="tabs" id="tabs">
+          <div class="tab on" data-tab="home">Home</div>
+          <div class="tab" data-tab="movies">Movies</div>
+          <div class="tab" data-tab="series">Series</div>
+          <div class="tab" data-tab="top10">Top 10</div>
+        </div>
+        <div id="app"></div>
+      </div>
+
+      <div class="detail" id="detail">
+        <div class="dscroll" id="dscroll"></div>
+      </div>
+    </div>
+    <div class="label">Ravilo · Pixel 9 · portrait</div>
+  </div>
+</div>
+
+<script src="ravilo-i18n.js"></script>
+<script src="ravilo-data.js"></script>
+<script>
+(function(){
+  const R = window.RAVILO;
+  const app = document.getElementById('app');
+  const scroll = document.getElementById('scroll');
+  const detail = document.getElementById('detail');
+  const dscroll = document.getElementById('dscroll');
+  const esc = s => (s==null?'':String(s)).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+  let tab = 'home';
+
+  /* ---- fit phone to viewport ---- */
+  function fit(){
+    const ph = document.querySelector('.phone');
+    const s = Math.min(window.innerWidth/452, window.innerHeight/975, 1);
+    ph.style.transform = 'scale('+s+')';
+  }
+  window.addEventListener('resize', fit); fit();
+
+  /* ---- tiles & rows ---- */
+  function tile(it){
+    const badge = it.badge ? '<span class="pb">'+esc(it.badge)+'</span>' : '';
+    return '<div class="tile" data-title="'+esc(it.title)+'">'
+      + '<div class="poster" style="background:'+it.grad+';">'+badge+'<span class="ini">'+esc(it.initials)+'</span></div>'
+      + '<div class="tlabel">'+esc(it.title)+'</div><div class="tsub">'+esc(String(it.year))+' · '+esc(it.genre.split(' · ')[0])+'</div></div>';
+  }
+  function rowHTML(r){
+    return '<div class="row"><h3>'+esc(r.title)+'<span class="more">See all ›</span></h3>'
+      + '<div class="track">'+r.items.map(tile).join('')+'</div></div>';
+  }
+
+  /* ---- hero ---- */
+  function heroHTML(items){
+    const slides = items.map(h=>{
+      const bg = h.backdrop ? 'url('+h.backdrop+') center/cover' : h.grad;
+      return '<div class="hslide" data-title="'+esc(h.title)+'"><div class="hcard" style="background:'+bg+';">'
+        + (h.badge?'<span class="hbadge">'+esc(h.badge)+'</span>':'')
+        + '<div class="scrim"></div><div class="body">'
+        + (h.tagline?'<div class="htag">'+esc(h.tagline)+'</div>':'')
+        + '<div class="htitle">'+esc(h.title)+'</div>'
+        + '<div class="hmeta"><span>'+esc(String(h.year))+'</span><span>·</span><span>'+esc(h.genre)+'</span><span class="pg">'+esc(h.rating)+'</span></div>'
+        + '<div class="hbtns"><button class="btn play" data-play="'+esc(h.title)+'">▶ Play</button><button class="btn ghost" data-title="'+esc(h.title)+'">ⓘ Info</button></div>'
+        + '</div></div></div>';
+    }).join('');
+    const dots = items.map((_,i)=>'<i class="'+(i===0?'on':'')+'"></i>').join('');
+    return '<div class="hero" id="hero">'+slides+'</div><div class="hdots" id="hdots">'+dots+'</div>';
+  }
+
+  function rowsForTab(){
+    if(tab==='movies') return R.rows.filter(r=>r.items.some(i=>i.kind==='film')).map(r=>({title:r.title,items:r.items.filter(i=>i.kind==='film')})).filter(r=>r.items.length);
+    if(tab==='series') return R.rows.filter(r=>r.items.some(i=>i.kind==='series')).map(r=>({title:r.title,items:r.items.filter(i=>i.kind==='series')})).filter(r=>r.items.length);
+    return R.rows;
+  }
+
+  function renderHome(){
+    const heroItems = tab==='movies' ? R.hero.filter(h=>h.kind==='film') : tab==='series' ? R.hero.filter(h=>h.kind==='series') : R.hero;
+    let html = heroHTML(heroItems);
+    if(tab==='home'){
+      html += '<div class="row"><h3>Channels</h3><div class="studios">'
+        + R.studios.map(s=>'<div class="studio" style="background:'+s.bg+';">'+s.wm.replace(/<small>/g,'<small>').replace(/<\/small>/g,'</small>')+'</div>').join('')
+        + '</div></div>';
+    }
+    html += rowsForTab().slice(0,6).map(rowHTML).join('');
+    html += '<div style="height:30px;"></div>';
+    app.innerHTML = html;
+    wireHero();
+  }
+
+  function renderTop10(){
+    const list = R.discover.lists[0];
+    const statusClass = s => s==='available'?'avail':(s==='downloading'||s==='fetching'?'fetch':'none');
+    const statusText = it => it.status==='available'?'In library':(it.status==='downloading'||it.status==='fetching'?'Fetching…':'Not in library');
+    app.innerHTML = '<div class="row" style="margin-top:8px;"><h3 style="padding-bottom:4px;">'+esc(list.title)+'</h3>'
+      + '<div class="tiny" style="padding:0 18px 6px;color:var(--ink-dim);font-size:12px;">'+esc(list.note||'')+'</div></div>'
+      + '<div class="t10">'
+      + list.items.slice(0,10).map((it,i)=>'<div class="t10row" data-title="'+esc(it.title)+'">'
+          + '<div class="t10num">'+(i+1)+'</div>'
+          + '<div class="t10p" style="background:'+it.grad+';">'+esc(it.initials)+'</div>'
+          + '<div class="t10b"><div class="nm">'+esc(it.title)+'</div>'
+          + '<div class="mt">'+esc(String(it.year))+' · '+esc(it.genre)+(it.views?' · '+esc(it.views):'')+'</div>'
+          + '<span class="st '+statusClass(it.status)+'"><span class="dot"></span>'+statusText(it)+'</span></div></div>').join('')
+      + '</div><div style="height:30px;"></div>';
+  }
+
+  function render(){
+    document.querySelectorAll('#tabs .tab').forEach(t=>t.classList.toggle('on', t.dataset.tab===tab));
+    scroll.scrollTop = 0;
+    if(tab==='top10') renderTop10(); else renderHome();
+  }
+
+  /* ---- hero dots on scroll ---- */
+  function wireHero(){
+    const hero = document.getElementById('hero'), dots = document.getElementById('hdots');
+    if(!hero||!dots) return;
+    hero.addEventListener('scroll', ()=>{
+      const i = Math.round(hero.scrollLeft / (hero.firstChild.offsetWidth + 0));
+      const slideW = hero.scrollWidth / hero.children.length;
+      const idx = Math.round(hero.scrollLeft / slideW);
+      [...dots.children].forEach((d,k)=>d.classList.toggle('on', k===idx));
+    }, {passive:true});
+  }
+
+  /* ---- detail ---- */
+  function findItem(title){
+    const all = [].concat(R.hero, ...R.rows.map(r=>r.items), ...R.discover.lists.map(l=>l.items));
+    return all.find(x=>x.title===title) || {title, year:'', genre:'', rating:'12', grad:R.grad(title), initials:R.initials(title)};
+  }
+  function openDetail(title){
+    const it = findItem(title);
+    const bg = it.backdrop ? 'url('+it.backdrop+') center/cover' : it.grad;
+    const syn = it.syn || 'A standout title from your Jellyfin library, organised and ready to play through Ravilo.';
+    const more = (R.relatedFor ? R.relatedFor(it) : R.rows[0].items).slice(0,10);
+    dscroll.innerHTML = '<div class="dhero" style="background:'+bg+';"><button class="dback" id="dback">‹</button><div class="scrim"></div></div>'
+      + '<div class="dbody">'
+      + '<div class="dtitle">'+esc(it.title)+'</div>'
+      + '<div class="dmeta"><span>'+esc(String(it.year))+'</span><span>·</span><span>'+esc(it.genre||'')+'</span><span class="pg">'+esc(it.rating)+'</span>'+(it.kind?'<span>·</span><span>'+(it.kind==='series'?'Series':'Film')+'</span>':'')+'</div>'
+      + '<div class="dbtns"><button class="btn play">▶ Play</button><button class="btn ghost">＋ My List</button></div>'
+      + '<div class="dsyn">'+esc(syn)+'</div>'
+      + '<div class="seclbl">More like this</div>'
+      + '<div class="track" style="padding-left:0;padding-right:0;">'+more.map(tile).join('')+'</div>'
+      + '<div style="height:24px;"></div></div>';
+    detail.classList.add('on');
+    dscroll.scrollTop = 0;
+  }
+  function closeDetail(){ detail.classList.remove('on'); }
+
+  /* ---- events ---- */
+  document.getElementById('tabs').addEventListener('click', e=>{ const t=e.target.closest('[data-tab]'); if(t){ tab=t.dataset.tab; render(); } });
+  app.addEventListener('click', e=>{
+    const play = e.target.closest('[data-play]'); if(play){ openDetail(play.dataset.play); return; }
+    const el = e.target.closest('[data-title]'); if(el){ openDetail(el.dataset.title); }
+  });
+  dscroll.addEventListener('click', e=>{
+    if(e.target.closest('#dback')){ closeDetail(); return; }
+    const el = e.target.closest('[data-title]'); if(el){ openDetail(el.dataset.title); }
+  });
+  document.getElementById('searchBtn').addEventListener('click', ()=>{ tab='top10'; render(); });
+
+  render();
+})();
+</script>
+</body>
+</html>
