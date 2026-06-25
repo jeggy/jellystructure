@@ -414,6 +414,20 @@ class TmdbClient(
         }.getOrElse { Logger.warn("TMDB aggregate_credits failed tmdbId=$tmdbId: ${it.message}"); TmdbAggregateCreditsResponse() }
     }
 
+    /**
+     * Phase 80 — per-season aggregate_credits. Each cast member's `totalEpisodeCount` here is the
+     * count of episodes they appear in **within this season** (TMDB scopes it to the season).
+     * A cast member absent from the season is simply not in the response.
+     */
+    suspend fun getTvSeasonAggregateCredits(seriesId: Int, season: Int): TmdbAggregateCreditsResponse {
+        val key = apiKey(); if (key.isBlank()) return TmdbAggregateCreditsResponse()
+        return runCatching {
+            val r = http.get("$baseUrl/tv/$seriesId/season/$season/aggregate_credits") { parameter("api_key", key) }
+            if (r.status != HttpStatusCode.OK) return TmdbAggregateCreditsResponse()
+            r.body<TmdbAggregateCreditsResponse>()
+        }.getOrElse { Logger.warn("TMDB season aggregate_credits failed s$season series=$seriesId: ${it.message}"); TmdbAggregateCreditsResponse() }
+    }
+
     /** Phase 76 — per-episode credits (guest stars + crew). */
     suspend fun getEpisodeCredits(seriesId: Int, season: Int, episode: Int): TmdbEpisodeCreditsResponse {
         val key = apiKey(); if (key.isBlank()) return TmdbEpisodeCreditsResponse()

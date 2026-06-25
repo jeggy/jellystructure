@@ -14,6 +14,11 @@ import kotlinx.serialization.json.Json
 class MediaStore(private val db: JellystructureDb, private val jsTagStore: JsTagStore) {
     private val json = Json { ignoreUnknownKeys = true }
 
+    // Phase 78: cached tmdbPersonId -> profilePath index for the /api/people/{id}/image endpoint,
+    // so a cache miss is O(1) instead of deserialising the whole library per request. Invalidated
+    // on any write (upsertItem). null = not built yet.
+    private var peopleIndexCache: Map<Int, String>? = null
+
     // Jellystructure-defined tags (those in the JS-tag store) always survive a re-scan, which
     // otherwise replaces an item's tags with the fresh Jellyfin set (constitution invariant #6).
     private fun preserveJsTags(fresh: MediaItem, existing: MediaItem?): MediaItem {
@@ -150,6 +155,28 @@ class MediaStore(private val db: JellystructureDb, private val jsTagStore: JsTag
             runCatching { json.decodeFromString(MediaItem.serializer(), blob) }.getOrNull()
         }
 
+    /**
+     * Phase 78: O(1) profilePath lookup for a TMDB person id across all cast/crew + episode
+     * guest stars/crew. Builds a cached index once; rebuilt after the next write. Returns the
+     * first non-blank profilePath found, or null if the person isn't in the library.
+     */
+    fun personProfilePath(tmdbId: Int): String? {
+        val index = peopleIndexCache ?: buildPeopleIndex().also { peopleIndexCache = it }
+        return index[tmdbId]
+    }
+
+    private fun buildPeopleIndex(): Map<Int, String> {
+        val map = HashMap<Int, String>()
+        for (item in allItems()) {
+            val all = item.cast + item.crew + item.episodes.flatMap { it.guestStars + it.crew }
+            for (p in all) {
+                val pp = p.profilePath
+                if (!pp.isNullOrBlank() && p.tmdbId != 0 && !map.containsKey(p.tmdbId)) map[p.tmdbId] = pp
+            }
+        }
+        return map
+    }
+
     suspend fun addOrUpdate(item: MediaItem) {
         val existing = get(item.id)
         var merged = preserveJsTags(item, existing)
@@ -239,6 +266,7 @@ class MediaStore(private val db: JellystructureDb, private val jsTagStore: JsTag
     }
 
     private fun upsertItem(item: MediaItem) {
+        peopleIndexCache = null  // Phase 78: invalidate the people→profilePath index on any write
         db.mediaQueries.upsert(
             id = item.id,
             json = json.encodeToString(MediaItem.serializer(), item),

@@ -1560,9 +1560,8 @@ private fun systemRowSource(r: RowConfig): String = when {
 }
 
 private val SYSTEM_ROW_DEFAULTS = listOf(
-    RowConfig(id = "continue",     kind = RowKind.CONTINUE,    title = "Continue Watching",    enabled = true, order = 0),
-    RowConfig(id = "newly-movies", kind = RowKind.NEWLY_ADDED, title = "Movies — Newly Added", enabled = true, order = 1, mediaKind = "MOVIE"),
-    RowConfig(id = "newly-series", kind = RowKind.NEWLY_ADDED, title = "Series — Newly Added",  enabled = true, order = 2, mediaKind = "SERIES"),
+    RowConfig(id = "continue",  kind = RowKind.CONTINUE,    title = "Continue Watching", enabled = true, order = 0),
+    RowConfig(id = "newly-all", kind = RowKind.NEWLY_ADDED, title = "Newly Added",       enabled = true, order = 1),
 )
 
 private fun normalizedRows(rows: List<RowConfig>): List<RowConfig> {

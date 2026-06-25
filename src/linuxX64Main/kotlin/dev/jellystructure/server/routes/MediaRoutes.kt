@@ -1268,7 +1268,7 @@ fun Route.mediaRoutes(
                 call.respond(HttpStatusCode.BadRequest, mapOf("error" to "item has no TMDB id"))
                 return@post
             }
-            val (cast, crew) = scanner.fetchCredits(tmdbId, item.kind == MediaKind.MOVIE)
+            val (cast, crew) = scanner.fetchCredits(tmdbId, item.kind == MediaKind.MOVIE, seasons = item.episodes.mapNotNull { it.seasonNumber }.distinct())
             val updated = item.copy(cast = cast, crew = crew)
             store.updateOne(updated)
             broadcaster.broadcast(JobEvent.ItemScanned("cast-fetch-$id", updated))
@@ -1342,10 +1342,9 @@ fun Route.mediaRoutes(
                 call.respondBytes(cached, ContentType.Image.JPEG)
                 return@get
             }
-            // Try to find the profilePath in the store to trigger a download (Phase 76: also search episode guest stars)
-            val allItems = store.allItems()
-            val profilePath = allItems.flatMap { it.cast + it.crew + it.episodes.flatMap { ep -> ep.guestStars + ep.crew } }
-                .firstOrNull { it.tmdbId == tmdbId }?.profilePath
+            // Phase 78: O(1) cached lookup (was a full-library deserialize per request → CPU storm
+            // under concurrent cold loads). Download is semaphore-bounded inside LogoDownloader.
+            val profilePath = store.personProfilePath(tmdbId)
             if (profilePath != null) {
                 logoDownloader.fetchPersonImage(tmdbId, profilePath)
                 val bytes = logoDownloader.servePersonImage(tmdbId)
