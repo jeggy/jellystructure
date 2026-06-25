@@ -57,6 +57,14 @@ class MediaStore(private val db: JellystructureDb, private val jsTagStore: JsTag
                 var merged = preserveJsTags(item, old)
                 val oldTitles = old?.titlesByLang
                 if (!oldTitles.isNullOrEmpty()) merged = merged.copy(titlesByLang = oldTitles + item.titlesByLang)
+                // Keep the original first-seen timestamp so a re-scan doesn't make every existing item
+                // look "newly added" — all recency sorts (Newly Added, hero auto, Browse default,
+                // related) order by scannedAt. New items keep the Scanner's fresh timestamp and
+                // correctly surface as newly added. Exception: a series that gained episodes counts as
+                // newly added again, so keep the fresh timestamp when the episode count grew.
+                if (old != null && item.episodes.size <= old.episodes.size) {
+                    merged = merged.copy(scannedAt = old.scannedAt)
+                }
                 upsertItem(merged)
             }
         }
