@@ -88,6 +88,16 @@ object LanguageResolver {
      * The WASM frontend uses the same function to render the live preview
      * without a round-trip.
      */
+    /**
+     * True when [a] and [b] refer to the same language, regardless of whether they're in ISO 639-1
+     * two-letter or ISO 639-2 three-letter form. Both sides are normalized before comparison so that,
+     * e.g., `eng` ≡ `en` and `deu` ≡ `ger` ≡ `de`. A null or blank code never matches anything.
+     */
+    fun sameLanguage(a: String?, b: String?): Boolean {
+        if (a.isNullOrBlank() || b.isNullOrBlank()) return false
+        return normalize(a) == normalize(b)
+    }
+
     fun priorityList(trackLanguages: List<String?>, fallbackLanguage: String): List<String> {
         val seen = LinkedHashSet<String>()
         for (lang in trackLanguages) {

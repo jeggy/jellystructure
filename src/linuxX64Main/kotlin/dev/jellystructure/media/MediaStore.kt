@@ -7,6 +7,7 @@ import dev.jellystructure.model.MediaKind
 import dev.jellystructure.model.MediaPage
 import dev.jellystructure.model.TrackKind
 import dev.jellystructure.nfo.NfoWriter
+import dev.jellystructure.resolver.LanguageResolver
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
 
@@ -286,7 +287,7 @@ private fun MediaItem.matchesAudioFilter(
     audioCodec: String?,
     untaggedAudio: Boolean,
 ): Boolean = allAudioTracks().any { t ->
-    (audioLangs.isEmpty() || audioLangs.any { lang -> t.language?.equals(lang, ignoreCase = true) == true }) &&
+    (audioLangs.isEmpty() || audioLangs.any { lang -> LanguageResolver.sameLanguage(t.language, lang) }) &&
     (trackTitle == null || t.title?.contains(trackTitle, ignoreCase = true) == true) &&
     (audioCodec == null || t.codec.equals(audioCodec, ignoreCase = true)) &&
     (!untaggedAudio || t.language == null)
