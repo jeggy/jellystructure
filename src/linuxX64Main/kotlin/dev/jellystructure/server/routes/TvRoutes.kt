@@ -22,6 +22,7 @@ import dev.jellystructure.shared.tv.RaviloConfig
 import dev.jellystructure.shared.tv.PairingChallenge
 import dev.jellystructure.shared.tv.PairResult
 import dev.jellystructure.shared.tv.PlaybackProgressRequest
+import dev.jellystructure.shared.tv.PlaybackRestreamRequest
 import dev.jellystructure.shared.tv.PlaybackStartRequest
 import dev.jellystructure.shared.tv.PlaybackStopRequest
 import dev.jellystructure.shared.tv.TvSession
@@ -306,6 +307,15 @@ fun Route.tvRoutes(
         val req = call.receive<PlaybackStopRequest>()
         playbackService.stopPlayback(device, req.itemId, req.positionMs)
         call.respond(mapOf("status" to "ok"))
+    }
+
+    // R56: restream with a subtitle burned in (PGS encode path)
+    post("/tv/playback/restream") {
+        val device = call.attributes[DeviceKey]
+        val req = call.receive<PlaybackRestreamRequest>()
+        val ticket = playbackService.restream(device, req.itemId, req.subtitleStreamIndex, req.positionMs)
+        if (ticket == null) call.respond(HttpStatusCode.NotFound, mapOf("error" to "Item not found"))
+        else call.respond(ticket)
     }
 
     post("/tv/mark") {
