@@ -379,8 +379,8 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
                 <div class="row center" style="margin-bottom:10px;">
                   <h4 style="margin:0;">Metadata</h4>
                   <span class="spacer"></span>
-                  <button id="save-metadata-btn" class="btn sm primary" style="display:none;">Save changes</button>
-                  <span id="save-metadata-msg" class="tiny muted" style="margin-left:8px;"></span>
+                  <span class="tiny muted">saved automatically</span>
+                  <span id="save-metadata-msg" class="tiny" style="margin-left:8px;color:var(--ok);"></span>
                 </div>
                 <div class="row">
                   <div class="field fill">
@@ -720,105 +720,42 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
             .filter { it.isNotBlank() }
     }
 
-    fun setFieldDirty(fieldEl: HTMLElement?, triggerEl: HTMLElement?, dirty: Boolean) {
-        val cls = fieldEl?.className ?: ""
-        fieldEl?.className = if (dirty) {
-            if ("field-dirty" !in cls) "$cls field-dirty".trim() else cls
-        } else {
-            cls.replace("field-dirty", "").trim()
-        }
-        triggerEl?.style?.display = if (dirty) "inline-flex" else "none"
-    }
+    // Phase 74: write-through — every metadata edit persists to the DB immediately (debounced),
+    // with a "Saved ✓" toast. No Save button, no amber dirty borders, no diff popup. The NFO write
+    // + Jellyfin refresh happen only via the explicit "Save → NFO" / "Save & sync" action.
+    val metaMsg = document.getElementById("save-metadata-msg") as? HTMLElement
+    var metaSaveJob: kotlinx.coroutines.Job? = null
 
-    fun checkDirty() {
-        var anyDirty = false
-        editableIds.forEach { id ->
-            val el = document.getElementById(id)
-            val current = (el as? HTMLInputElement)?.value ?: (el as? HTMLTextAreaElement)?.value ?: ""
-            val dirty = current != (origValues[id] ?: "")
-            if (dirty) anyDirty = true
-            setFieldDirty(el?.parentElement as? HTMLElement, document.getElementById("diff-$id") as? HTMLElement, dirty)
-        }
-        val tagsDirty = currentTagSet() != origTags
-        if (tagsDirty) anyDirty = true
-        // Tags live in their own card — toggle the outline-ring `dirty` class (not the text-field
-        // `field-dirty` border-left) and show/hide the diff (≠) trigger.
-        (document.getElementById("tags-section") as? HTMLElement)?.classList?.toggle("dirty", tagsDirty)
-        (document.getElementById("diff-tags") as? HTMLElement)?.style?.display = if (tagsDirty) "inline-flex" else "none"
-        val genresDirty = currentGenreList() != origGenres
-        if (genresDirty) anyDirty = true
-        (document.getElementById("diff-genres") as? HTMLElement)?.style?.display = if (genresDirty) "inline-flex" else "none"
-        (document.getElementById("save-metadata-btn") as? HTMLElement)?.style?.display = if (anyDirty) "inline-flex" else "none"
-    }
-    editableIds.forEach { id ->
-        document.getElementById(id)?.addEventListener("input") { checkDirty() }
-    }
-
-    // Wire diff trigger buttons
-    val diffLabels = mapOf(
-        "edit-title" to "Title",
-        "edit-year" to "Year",
-        "edit-original-title" to "Original title",
-        "edit-overview" to "Overview",
-        "edit-director" to (if (item.kind == MediaKind.TV_SHOW) "Network" else "Director"),
-        "edit-studio" to "Studio",
-    )
-    diffLabels.forEach { (fieldId, label) ->
-        document.getElementById("diff-$fieldId")?.addEventListener("click") {
-            val orig = origValues[fieldId] ?: ""
-            val current = (document.getElementById(fieldId) as? HTMLInputElement)?.value
-                ?: (document.getElementById(fieldId) as? HTMLTextAreaElement)?.value ?: ""
-            showDiffPopup(label, orig, current, isNumeric = fieldId == "edit-year")
-        }
-    }
-    document.getElementById("diff-tags")?.addEventListener("click") {
-        showTagsDiffPopup(origTags.sorted(), currentTagSet().sorted())
-    }
-    // Escape key dismissal for diff popup
-    document.addEventListener("keydown") { e ->
-        if ((e as? org.w3c.dom.events.KeyboardEvent)?.key == "Escape") {
-            document.getElementById("diff-modal-overlay")?.remove()
-        }
-    }
-    document.getElementById("save-metadata-btn")?.addEventListener("click") {
+    fun saveMetaNow() {
         val title = (document.getElementById("edit-title") as? HTMLInputElement)?.value?.trim()
         val year = (document.getElementById("edit-year") as? HTMLInputElement)?.value?.toIntOrNull()
         val originalTitle = (document.getElementById("edit-original-title") as? HTMLInputElement)?.value?.trim()
         val overview = (document.getElementById("edit-overview") as? HTMLTextAreaElement)?.value
         val directorVal = (document.getElementById("edit-director") as? HTMLInputElement)?.value?.trim()
         val studioVal = (document.getElementById("edit-studio") as? HTMLInputElement)?.value?.trim()
-        // Read current tags from state
-        val tagChips = document.getElementById("tags-chips")?.querySelectorAll(".tag-rm")
-        val tagsVal = if (tagChips != null) {
-            (0 until tagChips.length).mapNotNull { (tagChips.item(it) as? HTMLElement)?.getAttribute("data-tag") }.filter { it.isNotBlank() }
-        } else null
-        val genreChips = document.getElementById("genres-chips")?.querySelectorAll(".genre-rm")
-        val genresVal = if (genreChips != null) {
-            (0 until genreChips.length).mapNotNull { (genreChips.item(it) as? HTMLElement)?.getAttribute("data-genre") }.filter { it.isNotBlank() }
-        } else null
-        val msg = document.getElementById("save-metadata-msg") as? HTMLElement
-        msg?.textContent = "Saving…"
+        val tagsVal = currentTagSet().toList()
+        val genresVal = currentGenreList()
         scope.launch {
+            metaMsg?.textContent = "Saving…"
             val updated = MediaApi.editMetadata(
-                id = item.id,
-                title = title,
-                overview = overview,
-                year = year,
-                originalTitle = originalTitle,
-                tags = tagsVal,
-                genres = genresVal,
+                id = item.id, title = title, overview = overview, year = year,
+                originalTitle = originalTitle, tags = tagsVal, genres = genresVal,
                 director = if (item.kind != MediaKind.TV_SHOW) directorVal else null,
                 studio = studioVal,
                 network = if (item.kind == MediaKind.TV_SHOW) directorVal else null,
             )
-            if (updated != null) {
-                msg?.textContent = "Saved ✓"
-                delay(600)
-                renderDetailView(container, updated, scope, fallbackLang, jellyfinUrl, tmdbLangs)
-            } else {
-                msg?.textContent = "Save failed"
-            }
+            metaMsg?.textContent = if (updated != null) "Saved ✓" else "Save failed"
+            if (updated != null) { delay(1500); metaMsg?.textContent = "" }
         }
+    }
+
+    // `checkDirty` name retained for the tag/genre mutation call sites; it now debounces a write-through save.
+    fun checkDirty() {
+        metaSaveJob?.cancel()
+        metaSaveJob = scope.launch { delay(500); saveMetaNow() }
+    }
+    editableIds.forEach { id ->
+        document.getElementById(id)?.addEventListener("input") { checkDirty() }
     }
 
     fun addTagChip(tag: String) {
