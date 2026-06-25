@@ -1,6 +1,6 @@
 # Phase 27 — Merge Triage into Media Detail + floating Triage dock (FR-MT1)
 
-**Status:** ◑ Reopened (2026-06-25, design-diff audit) — the Dashboard lacks the design's **"Show attention dock"** control to reopen the floating Triage dock once it has been closed (`design/app/index.html` attention-card header). _(Originally: Done.)_
+**Status:** Planned
 
 ## Problem
 There are two places that edit the same media: the dedicated **triage pages** and the **media detail
