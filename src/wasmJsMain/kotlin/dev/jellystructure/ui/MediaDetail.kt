@@ -25,6 +25,7 @@ import dev.jellystructure.model.NfoFileTree
 import dev.jellystructure.model.Person
 import dev.jellystructure.model.Track
 import dev.jellystructure.model.TrackKind
+import dev.jellystructure.resolver.LanguageResolver
 import kotlin.js.JsAny
 import kotlinx.browser.document
 import kotlinx.coroutines.CoroutineScope
@@ -69,11 +70,11 @@ private fun buildResolverTrace(item: MediaItem, fallbackLang: String): String {
         when {
             t.language.isNullOrBlank() ->
                 """<div class="muted">$spec <span style="font-size:.85em">??</span> untagged → skipped</div>"""
-            t.language == resolved && !winnerFound -> {
+            LanguageResolver.sameLanguage(t.language, resolved) && !winnerFound -> {
                 winnerFound = true
                 """<div>$spec <span class="lang">${t.language.esc()}</span>? <span style="color:var(--ok)">✓ TMDB result → winner</span></div>"""
             }
-            t.language == resolved ->
+            LanguageResolver.sameLanguage(t.language, resolved) ->
                 """<div class="muted">$spec <span class="lang">${t.language.esc()}</span> → duplicate, already resolved</div>"""
             winnerFound ->
                 """<div class="muted">$spec <span class="lang">${t.language.esc()}</span> → skipped (winner already found)</div>"""
