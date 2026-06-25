@@ -4,11 +4,25 @@ Living record of where work currently stands. Update whenever a phase completes 
 The **[requirements/README.md](requirements/README.md)** is the single source of truth for which phases
 exist and their done/planned status. This file tracks _current focus_, recent context, and open issues.
 
-_Last updated: 2026-06-23_
+_Last updated: 2026-06-25_
 
 ## Current focus
 
-**Phases 0–53 complete.** [Phase 53](requirements/archive/phase-53-scanner-data-quality.md)
+**Phases 0–76 complete (code verified 2026-06-25).** An audit reconciled the README status markers
+against the actual codebase after a design-sync had reverted them to a stale snapshot. **Every admin
+phase 0–76 is implemented in code** — including Phase 72 (canonical language equivalence,
+`LanguageResolver.sameLanguage()` — commits `3f307ac`/`29a9c66`) and Phases 74–76 (metadata
+write-through, Cast & crew, scope-aware season/episode cast — commits `b8edbcc`/`58953b5`/`803f3f6`),
+which the sync had left marked Planned / "Done · design". The README is now corrected to ✓ Done.
+
+> **Open regression (2026-06-25):** the latest design-sync stripped the **Phase 75/76 cast CSS** from
+> `design/app/wf.css` (the `.cast-grid`/`.person`/`.matrix`/`.crew-*`/`.eppick` block, 48 lines). The
+> cast-tab Kotlin still references those classes, so the tab rendered unstyled until restored. Restored
+> locally; **it must also land in the canonical design repo or the next sync will delete it again.**
+
+Earlier detail below (Phases 47–53):
+
+[Phase 53](requirements/archive/phase-53-scanner-data-quality.md)
 (2026-06-23) fixed scanner data-quality issues found in a post-DB-reset full-sync review (296 scanned
 vs 303 in Jellyfin): full-scan `year` was null on 295/296 — now `searchYear = name ?? Jellyfin
 `ProductionYear`` drives the TMDB search + slug and the stored year prefers TMDB
