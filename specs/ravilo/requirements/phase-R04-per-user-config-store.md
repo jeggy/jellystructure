@@ -1,6 +1,5 @@
 # Phase R04 — Per-Jellyfin-user RaviloConfig store (FR-RV4)
 
-**Status:** Planned · _server-owned, synced-across-devices layout config._
 
 ## Problem
 A viewer's Ravilo layout (hero items, channels, rows, the merged-"Newly Added" toggle, default skin,

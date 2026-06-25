@@ -1,6 +1,5 @@
 # Phase 78 — File-descriptor exhaustion crash on person-image floods (FR-FD1)
 
-**Status:** ✓ Done — semaphore-bounded downloads + O(1) people lookup + lazy-load imgs. Scan-time pre-warm (C) deferred (the semaphore already hard-caps the crash).
 
 > The backend crashed hard with `IllegalStateException: File descriptor 1024 is larger or
 > equal to FD_SETSIZE (1024)` while serving a flood of `/api/people/{id}/image` requests.

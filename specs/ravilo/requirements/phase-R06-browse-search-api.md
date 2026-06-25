@@ -1,6 +1,5 @@
 # Phase R06 — Browse + multi-language search + channel feeds (FR-RV6)
 
-**Status:** Planned · _everything-grids and finding things, reusing existing capabilities._
 
 ## Problem
 Beyond Home, Ravilo needs: a **channel view** (the same row set scoped to a channel), full **browse

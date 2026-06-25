@@ -1,6 +1,5 @@
 # R50 — Ravilo config editor: per-user Top 10 list selection (FR-RD3)
 
-**Status:** Planned
 **Depends on:** R48 (`DiscoverConfig` on `RaviloConfig`), R16/R28 (config screen + editor fidelity),
 Phase 57 (`GET /api/discover/lists`)
 
