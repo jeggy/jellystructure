@@ -72,6 +72,7 @@ import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.allocArray
 import kotlinx.cinterop.memScoped
 import kotlinx.cinterop.toKString
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
@@ -233,6 +234,13 @@ fun startServer(
                     for (frame in incoming) {
                         if (frame is Frame.Close) break
                     }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Throwable) {
+                    // Client vanished (ECONNRESET / broken pipe). Iterating `incoming` rethrows the
+                    // socket's close cause; left uncaught it escapes the handler and, on Kotlin/Native,
+                    // terminates the whole process. Swallow it — the finally still unregisters.
+                    Logger.warn("WS /ws client connection dropped: ${e.message}", "ws")
                 } finally {
                     broadcaster.unregister(this)
                 }
@@ -253,6 +261,12 @@ fun startServer(
                     for (frame in incoming) {
                         if (frame is Frame.Close) break
                     }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Throwable) {
+                    // Device dropped the connection (ECONNRESET). See note on /ws above — must not
+                    // escape the handler or it crashes the Kotlin/Native process.
+                    Logger.warn("WS /api/tv/events device connection dropped: ${e.message}", "tv")
                 } finally {
                     tvEventBus.unregister(device.jellyfinUserId, this)
                 }
