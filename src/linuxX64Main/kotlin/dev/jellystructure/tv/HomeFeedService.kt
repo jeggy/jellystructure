@@ -61,8 +61,8 @@ class HomeFeedService(
             heroes = heroes,
             channels = buildChannels(config),
             rows = buildRows(config, device, filtered, jellyfinBase, token, channelFilter = channelCfg),
-            heroHeightPct = if (pageHero?.enabled == true) pageHero.heroHeightPct else config.heroHeightPct,
-            autoAdvanceSeconds = if (pageHero?.enabled == true) pageHero.autoAdvanceSeconds else config.autoAdvanceSeconds,
+            heroHeightPct = config.heroHeightPct,        // R58: global only — per-channel values removed
+            autoAdvanceSeconds = config.autoAdvanceSeconds,
             tileShape = config.tileShape,
         )
     }
@@ -158,7 +158,10 @@ class HomeFeedService(
         token: String,
         channelFilter: ChannelConfig?,
     ): List<Row> {
-        val enabledRows = config.rows.filter { it.enabled }.sortedBy { it.order }
+        // R59: channel custom rows override the global Home rows when mode == "custom".
+        val channelRows = channelFilter?.rows
+        val rowSource = if (channelRows?.mode == "custom") channelRows.items else config.rows
+        val enabledRows = rowSource.filter { it.enabled }.sortedBy { it.order }
         val result = mutableListOf<Row>()
 
         for (rowCfg in enabledRows) {

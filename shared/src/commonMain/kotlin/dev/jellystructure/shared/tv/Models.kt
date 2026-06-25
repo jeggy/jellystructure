@@ -281,13 +281,26 @@ data class ChannelButtonPadding(
     val left: Int = 0,
 )
 
-/** R52 — optional hero carousel for a channel/collection page (absent = no hero on that page). */
+/**
+ * R52 — optional hero carousel for a channel/collection page (absent = no hero on that page).
+ * R58 — heroHeightPct + autoAdvanceSeconds removed; both now live only at the layout level
+ *        (RaviloConfig) and apply to every hero uniformly (Home and all channel pages).
+ */
 @Serializable
 data class PageHeroConfig(
     val enabled: Boolean = false,
     val items: List<HeroConfig> = emptyList(),
-    @SerialName("hero_height_pct") val heroHeightPct: Int = 56,       // 40..100
-    @SerialName("auto_advance_seconds") val autoAdvanceSeconds: Int = 7,
+)
+
+/**
+ * R59 — per-channel content rows. `inherit` (default) = the feed serves the global Home rows
+ * scoped to this channel; `custom` = the feed serves [items] scoped to this channel.
+ * Reuses [RowConfig] verbatim — no parallel row model.
+ */
+@Serializable
+data class ChannelRowsConfig(
+    val mode: String = "inherit",  // "inherit" | "custom"
+    val items: List<RowConfig> = emptyList(),
 )
 
 @Serializable
@@ -311,6 +324,8 @@ data class ChannelConfig(
     // R53 — per-display-mode channel-button padding (null = no padding for that mode).
     @SerialName("padding_logo") val paddingLogo: ChannelButtonPadding? = null,
     @SerialName("padding_text") val paddingText: ChannelButtonPadding? = null,
+    // R59 — per-channel content rows (null / inherit = use global Home rows).
+    val rows: ChannelRowsConfig? = null,
 )
 
 /** A server-owned channel-button logo asset (R36 §F), served at `/api/tv/channel-logos/<file>`. */

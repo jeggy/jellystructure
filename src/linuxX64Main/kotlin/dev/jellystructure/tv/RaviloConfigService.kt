@@ -106,11 +106,7 @@ class RaviloConfigService(
                 order = i,
                 brandColor = sanitizeBrandColor(c.brandColor),
                 pageHero = c.pageHero?.let { h ->
-                    h.copy(
-                        items = h.items.filter { it.itemId.isNotBlank() }.mapIndexed { j, item -> item.copy(order = j) },
-                        heroHeightPct = h.heroHeightPct.coerceIn(40, 100),
-                        autoAdvanceSeconds = h.autoAdvanceSeconds.coerceIn(0, 120),
-                    )
+                    h.copy(items = h.items.filter { it.itemId.isNotBlank() }.mapIndexed { j, item -> item.copy(order = j) })
                 },
                 paddingLogo = c.paddingLogo?.let { p -> p.copy(top = p.top.coerceIn(0,40), right = p.right.coerceIn(0,40), bottom = p.bottom.coerceIn(0,40), left = p.left.coerceIn(0,40)) },
                 paddingText = c.paddingText?.let { p -> p.copy(top = p.top.coerceIn(0,40), right = p.right.coerceIn(0,40), bottom = p.bottom.coerceIn(0,40), left = p.left.coerceIn(0,40)) },

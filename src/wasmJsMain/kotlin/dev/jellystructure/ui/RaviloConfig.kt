@@ -9,6 +9,7 @@ import dev.jellystructure.historyReplaceState
 import dev.jellystructure.scrollIntoViewSmooth
 import dev.jellystructure.shared.tv.ChannelButtonPadding
 import dev.jellystructure.shared.tv.ChannelConfig
+import dev.jellystructure.shared.tv.ChannelRowsConfig
 import dev.jellystructure.shared.tv.ChannelStyle
 import dev.jellystructure.shared.tv.PageHeroConfig
 import dev.jellystructure.shared.tv.ChartListSpec
@@ -882,6 +883,7 @@ private fun renderChannels(container: Element) {
           ${channelChipHtml(c)}
           <input class="input" style="width:140px" placeholder="Name" value="${c.name.htmlEsc()}" data-ch-name="$i">
           <span class="badge" style="white-space:nowrap">${summary.htmlEsc()}</span>
+          ${if (c.rows?.mode == "custom") """<span class="badge" style="white-space:nowrap;background:var(--fill-2);font-size:.7rem">▤ custom rows</span>""" else ""}
           <span class="spacer" style="flex:1"></span>
           <button class="btn sm ghost" data-ch-edit="$i" title="Edit channel button + filter">✎ Edit</button>
           <label style="display:flex;align-items:center;gap:5px;font-size:.8rem;white-space:nowrap"><input type="checkbox" data-ch-enabled="$i"$showChecked> Show</label>
@@ -937,14 +939,11 @@ private fun openChannelEditorPage(container: Element, scope: CoroutineScope, idx
     historyPushState("#/ravilo?channel=${c.id}")
     val seed = if (c.conditions.isNotEmpty()) wbCondsFrom(c.conditions) else legacyToConds(c)
     val styleChecked = { s: String -> if ((if (c.style == ChannelStyle.LOGO) "logo" else "text") == s) " checked" else "" }
-    val advOpts = AUTO_ADVANCE_OPTIONS.joinToString("") { (v, l) ->
-        val s = if (v == (c.pageHero?.autoAdvanceSeconds ?: 7)) " selected" else ""
-        """<option value="$v"$s>$l</option>"""
-    }
     val pHero = c.pageHero
     val heroEnabled = pHero?.enabled == true
-    val heroHeightVal = pHero?.heroHeightPct ?: 56
     val heroItemCount = pHero?.items?.size ?: 0
+    val rowsCustom = c.rows?.mode == "custom"
+    val rowsCustomCount = c.rows?.items?.size ?: 0
     val padLogo = c.paddingLogo
     val padText = c.paddingText
     val previewBg = c.brandColor?.takeIf { it.isNotBlank() } ?: "linear-gradient(135deg,#3b2a78,#15102e)"
@@ -1049,20 +1048,31 @@ private fun openChannelEditorPage(container: Element, scope: CoroutineScope, idx
                 </label>
               </div>
               <div id="ch-hero-body" style="${if (!heroEnabled) "opacity:.45;pointer-events:none;" else ""}">
-                <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
-                  <label class="tiny muted">Height</label>
-                  <input id="ch-hero-height" type="range" min="40" max="100" value="$heroHeightVal" style="flex:1">
-                  <span id="ch-hero-height-val" class="tiny">$heroHeightVal%</span>
-                </div>
-                <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
-                  <label class="tiny muted">Auto-advance</label>
-                  <select id="ch-hero-advance" class="input" style="width:auto">$advOpts</select>
-                </div>
+                <p class="tiny muted" style="margin:0 0 10px">Height and auto-advance follow the global Home hero settings.</p>
                 <div style="font-size:.82rem;color:var(--ink-soft);margin-bottom:8px">Hero items: <b id="ch-hero-count">$heroItemCount</b></div>
                 <button id="ch-hero-edit" class="btn sm ghost">✎ Edit hero items</button>
               </div>
             </div>
           </div>
+        </div>
+
+        <!-- R59: Content rows (Same as Home / Custom) -->
+        <div class="card" style="padding:18px 20px;margin-top:14px">
+          <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px">
+            <b>Content rows</b>
+            <label style="display:flex;align-items:center;gap:5px;font-size:.82rem">
+              <input type="radio" name="ch-rows-mode" value="inherit"${if (!rowsCustom) " checked" else ""}> Same as Home
+            </label>
+            <label style="display:flex;align-items:center;gap:5px;font-size:.82rem">
+              <input type="radio" name="ch-rows-mode" value="custom"${if (rowsCustom) " checked" else ""}> Custom
+            </label>
+          </div>
+          <div id="ch-rows-custom-body" style="${if (!rowsCustom) "display:none;" else ""}">
+            <p class="tiny muted" style="margin:0 0 10px">Custom rows for this channel. System rows (Continue, Newly Added) still appear unless removed.</p>
+            <div style="font-size:.82rem;color:var(--ink-soft);margin-bottom:8px">Rows: <b id="ch-rows-count">$rowsCustomCount</b></div>
+            <button id="ch-rows-edit" class="btn sm ghost">+ Add row</button>
+          </div>
+          <p id="ch-rows-inherit-note" class="tiny muted" style="margin:0;${if (rowsCustom) "display:none;" else ""}">Shows the global Home rows scoped to this channel — the default behaviour.</p>
         </div>
     """.trimIndent()
 
@@ -1198,8 +1208,7 @@ private fun openChannelEditorPage(container: Element, scope: CoroutineScope, idx
         val color = (container.querySelector("#ch-ed-color") as? HTMLInputElement)?.value?.trim()?.ifBlank { null }
         val styleVal = (container.querySelector("input[name='ch-ed-style']:checked") as? HTMLInputElement)?.value ?: "logo"
         val heroEn = (container.querySelector("#ch-hero-enabled") as? org.w3c.dom.HTMLInputElement)?.checked ?: false
-        val heroH = (container.querySelector("#ch-hero-height") as? HTMLInputElement)?.value?.toIntOrNull() ?: 56
-        val heroAdv = (container.querySelector("#ch-hero-advance") as? HTMLSelectElement)?.value?.toIntOrNull() ?: 7
+        val rowsMode = (container.querySelector("input[name='ch-rows-mode']:checked") as? HTMLInputElement)?.value ?: "inherit"
         fun padOf(t: String, r: String, b: String, l: String): ChannelButtonPadding? {
             val top = (container.querySelector("#$t") as? HTMLInputElement)?.value?.toIntOrNull() ?: 0
             val right = (container.querySelector("#$r") as? HTMLInputElement)?.value?.toIntOrNull() ?: 0
@@ -1218,18 +1227,45 @@ private fun openChannelEditorPage(container: Element, scope: CoroutineScope, idx
             brandColor = color,
             logoUrl = logo,
             pageHero = if (heroEn || cur.pageHero?.items?.isNotEmpty() == true)
-                (cur.pageHero ?: PageHeroConfig()).copy(
-                    enabled = heroEn,
-                    heroHeightPct = heroH,
-                    autoAdvanceSeconds = heroAdv,
-                )
+                (cur.pageHero ?: PageHeroConfig()).copy(enabled = heroEn)
             else cur.pageHero,
             paddingLogo = paddingLogo,
             paddingText = paddingText,
+            rows = if (rowsMode == "custom") (cur.rows ?: ChannelRowsConfig()).copy(mode = "custom") else null,
         )
         currentConfig = currentConfig.copy(channels = list)
         historyReplaceState("#/ravilo")
         renderFull(container, scope)
+    }
+
+    // R59: rows mode toggle shows/hides custom body
+    container.querySelectorAll("input[name='ch-rows-mode']").let { radios ->
+        for (i in 0 until radios.length) {
+            (radios.item(i) as? HTMLInputElement)?.addEventListener("change") { _ ->
+                val isCustom = (container.querySelector("input[name='ch-rows-mode']:checked") as? HTMLInputElement)?.value == "custom"
+                (container.querySelector("#ch-rows-custom-body") as? HTMLElement)?.style?.display = if (isCustom) "" else "none"
+                (container.querySelector("#ch-rows-inherit-note") as? HTMLElement)?.style?.display = if (isCustom) "none" else ""
+            }
+        }
+    }
+
+    // R59: "Add row" for channel custom rows — same workbench as Home rows
+    container.querySelector("#ch-rows-edit")?.addEventListener("click") { _ ->
+        openWorkbench(scope, "New row — ${c.name.ifBlank { "Channel" }}", viewer = currentUserId,
+            applyLabel = "Add row",
+            onApply = { match, include, conds ->
+                val label = conds.firstOrNull { it.values.isNotEmpty() }?.values?.firstOrNull() ?: "Custom row"
+                val mediaKind = when (include) { "movies" -> "MOVIE"; "series" -> "SERIES"; else -> null }
+                val newRow = RowConfig(id = genId("row"), kind = RowKind.CUSTOM, title = label,
+                    mediaKind = mediaKind, match = wbMode(match), conditions = wbConds(conds))
+                val list = currentConfig.channels.toMutableList()
+                val cur = list[idx]
+                val existing = cur.rows ?: ChannelRowsConfig(mode = "custom")
+                list[idx] = cur.copy(rows = existing.copy(mode = "custom", items = existing.items + newRow))
+                currentConfig = currentConfig.copy(channels = list)
+                val countEl = container.querySelector("#ch-rows-count") as? HTMLElement
+                countEl?.textContent = "${list[idx].rows?.items?.size ?: 0}"
+            })
     }
 
     // Filter summary + workbench popup
