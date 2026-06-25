@@ -500,12 +500,23 @@ fun Route.mediaRoutes(
                     }
                     val ok = artwork.saveAsset(item, req.asset, req.source)
                     if (!ok) return@post call.respond(HttpStatusCode.BadGateway, mapOf("error" to "download failed"))
+                    // Persist which TMDB image is now on disk. The gallery marks a candidate "on disk"
+                    // by comparing its TMDB file_path against item.posterPath/backdropPath, so without
+                    // this the old image stays flagged and the new one can never take over. Only TMDB
+                    // paths ("/x.jpg") map to those fields; a custom http(s) URL is written to disk but
+                    // isn't a TMDB path, so leave the field untouched (it's rendered via the TMDB CDN).
+                    val updated = if (req.source.startsWith("/")) when (req.asset) {
+                        "poster" -> item.copy(posterPath = req.source)
+                        "backdrop" -> item.copy(backdropPath = req.source)
+                        else -> item
+                    } else item
+                    if (updated !== item) store.updateOne(updated)
                     mediaHistory.record(id, "artwork_save", "asset=${req.asset}")
                     val cfg = configStore.current
-                    if (!item.jellyfinId.isNullOrBlank() && cfg.apiKeys.jellyfinUrl.isNotBlank()) {
-                        jellyfinClient.refreshItem(cfg.apiKeys.jellyfinUrl, cfg.apiKeys.jellyfinToken, item.jellyfinId)
+                    if (!updated.jellyfinId.isNullOrBlank() && cfg.apiKeys.jellyfinUrl.isNotBlank()) {
+                        jellyfinClient.refreshItem(cfg.apiKeys.jellyfinUrl, cfg.apiKeys.jellyfinToken, updated.jellyfinId)
                     }
-                    call.respond(artwork.check(item))
+                    call.respond(artwork.check(updated))
                 }
             }
         }
