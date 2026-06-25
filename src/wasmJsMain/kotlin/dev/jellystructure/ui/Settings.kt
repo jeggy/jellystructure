@@ -335,6 +335,9 @@ private val HEALTH_CHECK_SECTION = mapOf(
     "Radarr" to "sect-arr",
     "Sonarr" to "sect-arr",
 )
+private fun healthCheckSection(checkName: String): String? =
+    HEALTH_CHECK_SECTION[checkName]
+        ?: if (checkName.startsWith("Jellyfin library:")) "sect-libraries" else null
 
 // Phase 55 — which tab owns each settings section (for tab show/hide + health-badge bubbling).
 private val SECTION_TAB = mapOf(
@@ -706,7 +709,7 @@ private fun attachListeners(scope: CoroutineScope) {
             // Bubble failures up to the per-section nav badges + the top button (scroll to first failure)
             val failsBySection = mutableMapOf<String, Int>()
             report.checks.filter { !it.ok }.forEach { check ->
-                val sect = HEALTH_CHECK_SECTION[check.name] ?: return@forEach
+                val sect = healthCheckSection(check.name) ?: return@forEach
                 failsBySection[sect] = (failsBySection[sect] ?: 0) + 1
             }
             applyHealthFailures(failsBySection)
