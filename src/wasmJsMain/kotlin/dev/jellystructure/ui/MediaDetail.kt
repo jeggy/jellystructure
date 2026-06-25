@@ -25,6 +25,7 @@ import dev.jellystructure.model.NfoFileTree
 import dev.jellystructure.model.Person
 import dev.jellystructure.model.Track
 import dev.jellystructure.model.TrackKind
+import dev.jellystructure.resolver.LangStepOutcome
 import dev.jellystructure.resolver.LanguageResolver
 import kotlin.js.JsAny
 import kotlinx.browser.document
@@ -59,34 +60,37 @@ fun renderMediaDetail(container: Element, scope: CoroutineScope, mediaId: String
     }
 }
 
-private fun buildResolverTrace(item: MediaItem, fallbackLang: String): String {
+private fun buildResolverTrace(item: MediaItem, fallbackLang: String, tmdbLangs: Set<String>?): String {
     if (item.kind == MediaKind.TV_SHOW) return ""
-    val audioTracks = item.tracks.filter { it.kind == TrackKind.AUDIO }
-    if (audioTracks.isEmpty()) return ""
-    val resolved = item.resolvedLanguage
-    var winnerFound = false
-    val traceLines = audioTracks.joinToString("") { t ->
-        val spec = t.specifier.esc()
-        when {
-            t.language.isNullOrBlank() ->
+    if (item.tracks.none { it.kind == TrackKind.AUDIO }) return ""
+    // One shared resolver drives both the real backend decision and this visualisation, fed with the
+    // languages TMDB actually has (tmdbLangs) so the trace matches what a re-pull will fetch.
+    val resolution = LanguageResolver.resolve(item.tracks, fallbackLang, tmdbLangs)
+    val resolved = resolution.language
+    val traceLines = resolution.steps.filter { !it.fallback }.joinToString("") { step ->
+        val spec = (step.specifier ?: "").esc()
+        val lang = (step.language ?: "").esc()
+        when (step.outcome) {
+            LangStepOutcome.UNTAGGED ->
                 """<div class="muted">$spec <span style="font-size:.85em">??</span> untagged → skipped</div>"""
-            LanguageResolver.sameLanguage(t.language, resolved) && !winnerFound -> {
-                winnerFound = true
-                """<div>$spec <span class="lang">${t.language.esc()}</span>? <span style="color:var(--ok)">✓ TMDB result → winner</span></div>"""
-            }
-            LanguageResolver.sameLanguage(t.language, resolved) ->
-                """<div class="muted">$spec <span class="lang">${t.language.esc()}</span> → duplicate, already resolved</div>"""
-            winnerFound ->
-                """<div class="muted">$spec <span class="lang">${t.language.esc()}</span> → skipped (winner already found)</div>"""
-            else ->
-                """<div class="muted">$spec <span class="lang">${t.language.esc()}</span>? → tried, no TMDB result</div>"""
+            LangStepOutcome.WINNER ->
+                """<div>$spec <span class="lang">$lang</span>? <span style="color:var(--ok)">✓ TMDB result → winner</span></div>"""
+            LangStepOutcome.DUPLICATE ->
+                """<div class="muted">$spec <span class="lang">$lang</span> → duplicate, already resolved</div>"""
+            LangStepOutcome.SKIPPED ->
+                """<div class="muted">$spec <span class="lang">$lang</span> → skipped (winner already found)</div>"""
+            LangStepOutcome.NO_RESULT ->
+                """<div class="muted">$spec <span class="lang">$lang</span>? → tried, no TMDB result</div>"""
         }
     }
-    val fallbackLine = if (!winnerFound && resolved != null) {
-        """<div>fallback → <span class="lang">${resolved.esc()}</span> <span style="color:var(--ok)">✓ TMDB result → winner</span></div>"""
-    } else if (!winnerFound) {
-        """<div class="muted">fallback <span class="lang">${fallbackLang.esc()}</span> → no TMDB match</div>"""
-    } else ""
+    val fallbackStep = resolution.steps.firstOrNull { it.fallback }
+    val fallbackLine = when (fallbackStep?.outcome) {
+        LangStepOutcome.WINNER ->
+            """<div>fallback → <span class="lang">${(fallbackStep.language ?: "").esc()}</span> <span style="color:var(--ok)">✓ TMDB result → winner</span></div>"""
+        LangStepOutcome.NO_RESULT ->
+            """<div class="muted">fallback <span class="lang">${(fallbackStep.language ?: "").esc()}</span> → no TMDB match</div>"""
+        else -> ""
+    }
     val resolvedBadge = if (resolved != null)
         """<span class="badge ok lang">${resolved.esc()}</span>"""
     else
@@ -320,7 +324,7 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
              <div style="display:flex;flex-wrap:wrap;gap:5px;">$trackChips</div>
            </div>"""
     } else ""
-    val resolverTraceHtml = buildResolverTrace(item, fallbackLang)
+    val resolverTraceHtml = buildResolverTrace(item, fallbackLang, tmdbLangs)
     val episodesTabHtml = if (isTvShow) buildEpisodesTab(item) else ""
 
     // Detail topbar external links (design media.html: grouped into an "External links ▾" menu).
