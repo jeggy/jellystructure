@@ -142,6 +142,10 @@ object NfoWriter {
             appendLine("  <tmdbid>${item.tmdbId}</tmdbid>")
             appendLine("""  <uniqueid type="tmdb" default="true">${item.tmdbId}</uniqueid>""")
         }
+        if (!item.imdbId.isNullOrBlank()) {
+            appendLine("  <imdbid>${item.imdbId.esc()}</imdbid>")
+            appendLine("""  <uniqueid type="imdb">${item.imdbId.esc()}</uniqueid>""")
+        }
         if (!item.originalLanguage.isNullOrBlank()) {
             appendLine("  <originallanguage>${item.originalLanguage.esc()}</originallanguage>")
         }
@@ -190,6 +194,13 @@ object NfoWriter {
         if (item.tmdbId != null) {
             appendLine("  <tmdbid>${item.tmdbId}</tmdbid>")
             appendLine("""  <uniqueid type="tmdb" default="true">${item.tmdbId}</uniqueid>""")
+        }
+        if (!item.imdbId.isNullOrBlank()) {
+            appendLine("  <imdbid>${item.imdbId.esc()}</imdbid>")
+            appendLine("""  <uniqueid type="imdb">${item.imdbId.esc()}</uniqueid>""")
+        }
+        if (item.tvdbId != null) {
+            appendLine("""  <uniqueid type="tvdb">${item.tvdbId}</uniqueid>""")
         }
         if (!item.originalLanguage.isNullOrBlank()) {
             appendLine("  <originallanguage>${item.originalLanguage.esc()}</originallanguage>")

@@ -189,7 +189,10 @@ data class TmdbMovieKeywordsResponse(val keywords: List<TmdbKeyword> = emptyList
 data class TmdbTvKeywordsResponse(val results: List<TmdbKeyword> = emptyList())
 
 @Serializable
-data class TmdbExternalIds(@SerialName("tvdb_id") val tvdbId: Int? = null)
+data class TmdbExternalIds(
+    @SerialName("tvdb_id") val tvdbId: Int? = null,
+    @SerialName("imdb_id") val imdbId: String? = null,
+)
 
 class TmdbClient(
     private val configStore: ConfigStore,
@@ -292,16 +295,19 @@ class TmdbClient(
         return result.getOrNull()
     }
 
-    /** Phase 56 — bridge a TMDB tv id to its TheTVDB id (Sonarr is keyed by tvdbId, not tmdbId). */
-    suspend fun getTvTvdbId(tmdbId: Int): Int? {
-        val key = apiKey()
-        if (key.isBlank()) return null
+    /** Phase 76 — fetch all useful external ids (IMDb, TheTVDB) for a movie or TV series. */
+    suspend fun getExternalIds(tmdbId: Int, isMovie: Boolean): TmdbExternalIds? {
+        val key = apiKey(); if (key.isBlank()) return null
+        val path = if (isMovie) "movie/$tmdbId/external_ids" else "tv/$tmdbId/external_ids"
         return runCatching {
-            val response = http.get("$baseUrl/tv/$tmdbId/external_ids") { parameter("api_key", key) }
+            val response = http.get("$baseUrl/$path") { parameter("api_key", key) }
             if (response.status != HttpStatusCode.OK) return null
-            response.body<TmdbExternalIds>().tvdbId
+            response.body<TmdbExternalIds>()
         }.getOrNull()
     }
+
+    /** Phase 56 — bridge a TMDB tv id to its TheTVDB id (Sonarr is keyed by tvdbId, not tmdbId). */
+    suspend fun getTvTvdbId(tmdbId: Int): Int? = getExternalIds(tmdbId, isMovie = false)?.tvdbId
 
     /** R63 — top-5 cast members for a movie (by `order`). Returns emptyList on any failure. */
     suspend fun getMovieCredits(tmdbId: Int): List<TmdbCastMember> {
