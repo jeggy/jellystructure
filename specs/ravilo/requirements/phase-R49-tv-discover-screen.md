@@ -68,5 +68,9 @@ doesn't apply here. Layout mirrors the library detail's *look* but its content/a
 ## Mockup
 `design/ravilo/Ravilo TV.html` + `ravilo-app.js` (`renderDiscover`, `rankTile`, `renderDiscoverDetail`)
 + `ravilo.css` (`.rtile`/`.rnum`/`.rstat`/`.ddt-*`) is the visual target.
-Note: the mockup currently models a reduced status set (`available`/`fetching`/`none`); this phase
-renders the full R48/Phase-56 enum (`requested`/`queued`/`downloading`+flags/`importing`).
+The mockup now renders the **full** R48/Phase-56 status enum (`not_requested` / `requested` /
+`queued · #N` / `downloading` NN% with `stalled`/`starting` flags / `importing` / `available` /
+`failed`) on both the ranked tiles and the dedicated detail, **series episode aggregates**
+(`Fetching · 3/10` + a `firstAvailable` → "Watch Now · E1"), and a **live ticker** that walks a
+user-requested title `requested → queued → downloading% → importing → available` in place
+(seeded items stay as static status exemplars). Strings run through the i18n layer (en/da/fo).

@@ -190,7 +190,7 @@
 
     /* ---------------- ROWS ---------------- */
     function tile(item, kind) {
-      const t = el('div', 'tile ' + (kind === 'land' ? 'land' : 'poster') + ' foc');
+      const t = el('div', 'tile ' + (kind === 'land' ? 'land' : 'poster') + (kind === 'continue' ? ' cont' : '') + ' foc');
       t._item = item;
       if (kind === 'land') {
         t.innerHTML = `<div class="art">${item.image ? `<img class="tile-img" src="${item.image}" alt="">` : `<div class="grad" style="background:${item.grad}"></div>`}
@@ -198,6 +198,13 @@
           <div class="play"><span>▶</span></div>
           <div class="pbar"><i style="width:${item.pct || 0}%"></i></div></div>
           <div class="label">${item.title}</div><div class="sub">${item.next ? 'Next up' : (item.genre || '')}</div>`;
+      } else if (kind === 'continue') {
+        // poster shape, but keep the resume progress + time-left from Continue Watching
+        t.innerHTML = `<div class="art">${artFill(item)}
+          ${item.next ? '<div class="cont-badge">Next up</div>' : ''}
+          <div class="play"><span>▶</span></div>
+          ${(item.pct || 0) > 0 ? `<div class="pbar"><i style="width:${item.pct}%"></i></div>` : ''}</div>
+          <div class="label">${item.title}</div><div class="sub cont-sub">${item.ep || ''}</div>`;
       } else {
         t.innerHTML = `<div class="art">${artFill(item)}${item.badge ? `<div class="badge">${item.badge}</div>` : ''}</div>
           <div class="label">${item.title}</div><div class="sub">${item.year} · ${item.genre}</div>`;
@@ -254,7 +261,7 @@
       const s = R.studios.find(x => x.id === studioId) || R.studios[0];
       scroll.innerHTML = '';
       const hasHero = s.hero && s.hero.length;
-      if (hasHero) scroll.appendChild(buildHero(s.hero, s.heroHeight));
+      if (hasHero) scroll.appendChild(buildHero(s.hero));   // height follows the global Home hero height
       const head = el('div', 'cathead' + (hasHero ? ' with-hero' : ''));
       head.innerHTML = `<div class="logo" style="background:${s.bg}">${s.logo ? `<img class="logo-img" src="${s.logo}" alt="${s.name}">` : s.wm}</div>
         <div><div class="back">‹ ${t('back_home')} &nbsp;·&nbsp; ${t('channel')}</div><h1>${s.name}</h1>
