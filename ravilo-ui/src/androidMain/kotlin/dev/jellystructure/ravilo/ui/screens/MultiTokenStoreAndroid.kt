@@ -9,6 +9,7 @@ private data class StoredSession(
     val displayName: String,
     val deviceToken: String,
     val isAdmin: Boolean,
+    val isKids: Boolean = false,
     val avatarUrl: String? = null,
 )
 
@@ -27,6 +28,7 @@ actual object MultiTokenStore {
                     displayName  = o.getString("displayName"),
                     deviceToken  = o.getString("deviceToken"),
                     isAdmin      = o.optBoolean("isAdmin", false),
+                    isKids       = o.optBoolean("isKids", false),
                     avatarUrl    = o.optString("avatarUrl").ifEmpty { null },
                 )
             }
@@ -41,6 +43,7 @@ actual object MultiTokenStore {
                 put("displayName", s.displayName)
                 put("deviceToken", s.deviceToken)
                 put("isAdmin",     s.isAdmin)
+                put("isKids",      s.isKids)
                 if (s.avatarUrl != null) put("avatarUrl", s.avatarUrl)
             })
         }
@@ -51,7 +54,7 @@ actual object MultiTokenStore {
 
     actual fun add(session: LocalSession) {
         val list = loadAll().filter { it.userId != session.userId }.toMutableList()
-        list.add(StoredSession(session.userId, session.displayName, session.deviceToken, session.isAdmin, session.avatarUrl))
+        list.add(StoredSession(session.userId, session.displayName, session.deviceToken, session.isAdmin, session.isKids, session.avatarUrl))
         saveAll(list)
         setActive(session.userId)
     }
@@ -77,5 +80,5 @@ actual object MultiTokenStore {
         prefs.edit().remove("sessions").remove("active_user").apply()
     }
 
-    private fun StoredSession.toLocal() = LocalSession(userId, displayName, deviceToken, isAdmin, avatarUrl)
+    private fun StoredSession.toLocal() = LocalSession(userId, displayName, deviceToken, isAdmin, isKids, avatarUrl)
 }

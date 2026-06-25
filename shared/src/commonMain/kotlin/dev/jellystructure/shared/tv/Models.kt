@@ -38,6 +38,7 @@ data class TvSession(
     @SerialName("user_id") val userId: String,
     @SerialName("display_name") val displayName: String,
     @SerialName("is_admin") val isAdmin: Boolean,
+    @SerialName("is_kids") val isKids: Boolean = false,
     @SerialName("avatar_url") val avatarUrl: String? = null,
 )
 

@@ -34,13 +34,14 @@ private fun parseAll(raw: String): List<LocalSession> {
             val n = map["n"] ?: return@mapNotNull null
             val t = map["t"] ?: return@mapNotNull null
             val a = map["a"] == "true"
-            LocalSession(u, n, t, a)
+            val k = map["k"] == "true"
+            LocalSession(u, n, t, a, k)
         }
 }
 
 private fun encodeAll(list: List<LocalSession>): String =
     list.joinToString(",", "[", "]") { s ->
-        """{"u":"${s.userId}","n":"${s.displayName}","t":"${s.deviceToken}","a":${s.isAdmin}}"""
+        """{"u":"${s.userId}","n":"${s.displayName}","t":"${s.deviceToken}","a":${s.isAdmin},"k":${s.isKids}}"""
     }
 
 actual object MultiTokenStore {

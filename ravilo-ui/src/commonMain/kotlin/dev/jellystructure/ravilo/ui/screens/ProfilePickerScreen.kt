@@ -55,6 +55,7 @@ data class LocalSession(
     val displayName: String,
     val deviceToken: String,
     val isAdmin: Boolean,
+    val isKids: Boolean = false,
     val avatarUrl: String? = null,
 )
 
@@ -229,6 +230,9 @@ private fun ProfileTile(
         if (session.isAdmin) {
             Spacer(Modifier.height(4.dp))
             Text(str("profile.admin"), color = colors.accent, fontSize = 11.sp)
+        } else if (session.isKids) {
+            Spacer(Modifier.height(4.dp))
+            Text(str("profile.kids"), color = colors.accent, fontSize = 11.sp)
         }
     }
 }

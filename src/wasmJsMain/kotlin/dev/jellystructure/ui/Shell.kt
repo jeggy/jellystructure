@@ -690,7 +690,7 @@ private fun shellHtml(user: UserProfile, savedPref: String = "system"): String {
         <div class="nav-backdrop" id="nav-backdrop"></div>
         <div class="shell">
           <aside class="app-side">
-            <div class="logo"><span class="glyph"></span> Jellystructure</div>
+            <div class="logo"><svg class="brand-mark" viewBox="0 0 100 100" aria-hidden="true"><defs><linearGradient id="jsg-side" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#b15cd0"/><stop offset=".52" stop-color="#7b6ef0"/><stop offset="1" stop-color="#00a4dc"/></linearGradient></defs><rect width="100" height="100" rx="30" fill="url(#jsg-side)"/><g transform="translate(18 18) scale(.64)" fill="#fff"><rect x="10" y="10" width="35" height="35" rx="9"/><rect x="55" y="10" width="35" height="35" rx="9" opacity=".5"/><rect x="10" y="55" width="35" height="35" rx="9" opacity=".5"/><rect x="55" y="55" width="35" height="35" rx="9" fill="none" stroke="#fff" stroke-width="6"/><path d="M68 64 L84 72.5 L68 81 Z"/></g></svg> Jellystructure</div>
             <button class="cmdk-pill" id="cmd-search-pill"><span>⌕ Search…</span><span class="kbd">⌘K</span></button>
             $navHtml
             <div class="grow"></div>
@@ -718,7 +718,7 @@ private fun shellHtml(user: UserProfile, savedPref: String = "system"): String {
               <button class="burger" id="nav-burger" aria-label="Open navigation">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
               </button>
-              <div class="tb-logo"><span class="glyph"></span> Jellystructure</div>
+              <div class="tb-logo"><svg class="brand-mark" viewBox="0 0 100 100" aria-hidden="true"><defs><linearGradient id="jsg-tb" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#b15cd0"/><stop offset=".52" stop-color="#7b6ef0"/><stop offset="1" stop-color="#00a4dc"/></linearGradient></defs><rect width="100" height="100" rx="30" fill="url(#jsg-tb)"/><g transform="translate(18 18) scale(.64)" fill="#fff"><rect x="10" y="10" width="35" height="35" rx="9"/><rect x="55" y="10" width="35" height="35" rx="9" opacity=".5"/><rect x="10" y="55" width="35" height="35" rx="9" opacity=".5"/><rect x="55" y="55" width="35" height="35" rx="9" fill="none" stroke="#fff" stroke-width="6"/><path d="M68 64 L84 72.5 L68 81 Z"/></g></svg> Jellystructure</div>
             </header>
             <main class="app-main2 wide" id="page-content"></main>
           </div>

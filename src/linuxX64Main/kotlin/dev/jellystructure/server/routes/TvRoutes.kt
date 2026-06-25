@@ -134,6 +134,7 @@ fun Route.tvRoutes(
                     userId = device.jellyfinUserId,
                     displayName = device.jellyfinUsername,
                     isAdmin = device.isAdmin,
+                    isKids = device.isKids,
                     avatarUrl = if (baseUrl.isNotBlank()) "$baseUrl/Users/${device.jellyfinUserId}/Images/Primary?api_key=${device.jellyfinUserToken}" else null,
                 ),
                 deviceToken = deviceToken,
@@ -152,6 +153,7 @@ fun Route.tvRoutes(
             val jellyfinUsername: String
             val jellyfinUserToken: String
             val isAdmin: Boolean
+            var isKids = false   // R18
 
             if (cookieSession != null) {
                 jellyfinUserId = cookieSession.jellyfinUserId
@@ -174,6 +176,7 @@ fun Route.tvRoutes(
                 jellyfinUsername = authResult.user.name
                 jellyfinUserToken = authResult.accessToken
                 isAdmin = authResult.user.policy.isAdministrator
+                isKids = authResult.user.policy.maxParentalRating != null   // R18: parental cap ⇒ Kids profile
             } else {
                 call.respond(HttpStatusCode.Unauthorized, mapOf("error" to "Authentication required"))
                 return@post
@@ -185,6 +188,7 @@ fun Route.tvRoutes(
                 jellyfinUsername = jellyfinUsername,
                 jellyfinUserToken = jellyfinUserToken,
                 isAdmin = isAdmin,
+                isKids = isKids,
             )
             if (!approved) {
                 call.respond(HttpStatusCode.NotFound, mapOf("error" to "Invalid or expired pairing code"))
@@ -214,6 +218,7 @@ fun Route.tvRoutes(
                 userId = d.jellyfinUserId,
                 displayName = d.jellyfinUsername,
                 isAdmin = d.isAdmin,
+                isKids = d.isKids,
                 avatarUrl = if (baseUrl.isNotBlank()) "$baseUrl/Users/${d.jellyfinUserId}/Images/Primary?api_key=${d.jellyfinUserToken}" else null,
             )
         }
