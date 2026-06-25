@@ -8,11 +8,26 @@ Ravilo is a sibling product **inside the jellystructure repo** — an Android TV
 canvas) streaming front-end built from one **Compose Multiplatform** codebase, talking only to the
 jellystructure backend.
 
-_Last updated: 2026-06-23_
+_Last updated: 2026-06-25_
 
 ## Current focus
 
-**Phases R01–R47 complete.** [R47](requirements/phase-R47-detail-focusable-draw-only-scale.md)
+**Phases R01–R59 complete (code verified 2026-06-25); R60 is the only open phase.** An audit
+reconciled the README markers against the codebase after a design-sync reverted them to a stale
+snapshot. Verified **implemented in code**: R48–R50 (Discover/Top 10 API + TV screen + config editor),
+R51–R53 (global config + per-page heroes + channel-editor page), R55–R56 (subtitle rendering +
+image-sub parity — commits `470a5d5`/`9020555`), R57–R59 (Pair-a-TV + single global hero height +
+per-channel rows — commit `449ca1c`). All now corrected to ✓ Done.
+
+**R60 — Android phone (mobile) target (FR-RV-M1) — the one genuinely-unbuilt phase.** Design/mockup
+done (`design/ravilo/Ravilo Mobile.html`); **code pending** — there is no `:ravilo-phone` module yet.
+It needs only a thin entry module (manifest `leanback required=false`, standard LAUNCHER, portrait,
+status-bars-visible Activity) reusing `:ravilo-ui`/`:ravilo-player` unchanged, plus responsive
+`Dimens`. Status correctly stays **"✓ Done · design"** until the module lands.
+
+Earlier detail below (through R47):
+
+[R47](requirements/phase-R47-detail-focusable-draw-only-scale.md)
 (2026-06-23) finished the R42 viewport-jump fix on the **detail screens**: R42 made the focus scale
 draw-only "only on Tile/ChannelCard", so navigating Movie/Series detail still jumped — `EpisodeCard`,
 `SeasonPicker` pills and `RaviloButton` applied `.scale` (and the button lift) as an **ancestor** of
