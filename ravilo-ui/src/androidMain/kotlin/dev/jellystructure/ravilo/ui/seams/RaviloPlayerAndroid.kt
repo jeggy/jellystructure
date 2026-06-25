@@ -28,6 +28,8 @@ import dev.jellystructure.shared.tv.SubTrack
 actual class RaviloPlayer actual constructor() {
     private val ctx: Context get() = RaviloAppContext.get()
     private val exo: ExoPlayer by lazy {
+        // R56: Media3's MatroskaExtractor already parses embedded VobSub/DVDSub and PGS tracks
+        // from MKV containers by default; no custom ExtractorsFactory is needed.
         val builder = ExoPlayer.Builder(ctx)
         RaviloPlayerEngine.renderersFactoryProvider?.invoke(ctx)?.let { builder.setRenderersFactory(it) }
         builder.build()
@@ -191,7 +193,14 @@ actual class RaviloPlayer actual constructor() {
                     val label = format.label ?: languageName(format.language) ?: format.language?.uppercase() ?: "Track ${idx + 1}"
                     val forced = (format.selectionFlags and C.SELECTION_FLAG_FORCED) != 0
                     val def = (format.selectionFlags and C.SELECTION_FLAG_DEFAULT) != 0
-                    result += PlayerSubtitleTrack(idx, label, format.language, forced, def)
+                    // R56: mark VobSub/DVDSub image subs as "embed" so the picker can show them
+                    // without a VTT URL; PGS is exposed separately as encode subs via the server list.
+                    val mime = format.sampleMimeType?.lowercase()
+                    val deliveryMethod = when {
+                        mime == "application/vobsub" || mime == "application/dvd-subtitle" -> "embed"
+                        else -> "external"
+                    }
+                    result += PlayerSubtitleTrack(idx, label, format.language, forced, def, deliveryMethod)
                     idx++
                 }
             }

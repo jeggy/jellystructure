@@ -161,8 +161,31 @@ fun PlayerScreen(
     var pauseFlash by remember { mutableStateOf(false) }
     var pauseFlashIsPlay by remember { mutableStateOf(true) }
 
-    // Subtitle options = "Off" + tracks discovered from the player (embedded + sideloaded externals).
-    val subOptions: List<PlayerSubtitleTrack?> = remember(subtitleTracks) { listOf(null) + subtitleTracks }
+    // R56: "burning in…" indicator shown while the restream ticket is loading for a PGS encode sub.
+    var burningInSub by remember { mutableStateOf(false) }
+
+    // R56: encode subs (PGS) from the server-pushed ticket, appended after native tracks in the picker.
+    val encodeSubTracks: List<PlayerSubtitleTrack> = remember(sessionState) {
+        val subs = (sessionState as? PlayerSessionState.Ready)?.ticket?.subtitles
+            ?.filter { it.deliveryMethod == "encode" } ?: emptyList()
+        subs.mapIndexed { i, sub ->
+            PlayerSubtitleTrack(
+                index = -1, // not an ExoPlayer track index
+                label = sub.label?.takeIf { it.isNotBlank() }
+                    ?: languageName(sub.language) ?: sub.language?.uppercase() ?: "Sub ${i + 1}",
+                language = sub.language,
+                forced = sub.forced,
+                isDefault = sub.isDefault,
+                deliveryMethod = "encode",
+                jellyfinStreamIndex = sub.index,
+            )
+        }
+    }
+
+    // Subtitle options: Off + native player tracks (embed/external) + encode (PGS burn-in) from ticket.
+    val subOptions: List<PlayerSubtitleTrack?> = remember(subtitleTracks, encodeSubTracks) {
+        listOf(null) + subtitleTracks + encodeSubTracks
+    }
 
     // ─── Helper functions ───────────────────────────────────────────────────
 
@@ -212,9 +235,16 @@ fun PlayerScreen(
             selectedAudio = pickerIdx
             player.selectAudioTrack(pickerIdx)
         } else {
-            val subIdx = pickerIdx - 1   // option 0 = Off
-            selectedSub = subIdx
-            player.selectSubtitleTrack(subIdx)
+            val sub = subOptions.getOrNull(pickerIdx)
+            if (sub != null && sub.deliveryMethod == "encode") {
+                // R56: PGS burn-in — restream with subtitle index baked into the Jellyfin transcode.
+                burningInSub = true
+                store.restreamWithSub(itemId, sub.jellyfinStreamIndex, player.positionMs)
+            } else {
+                val subIdx = pickerIdx - 1   // option 0 = Off
+                selectedSub = subIdx
+                player.selectSubtitleTrack(subIdx)
+            }
         }
         pickerOpen = false
         wake()
@@ -229,9 +259,10 @@ fun PlayerScreen(
         store.startSession(itemId, positionProvider = { positionMs }, isPausedProvider = { !isPlaying })
     }
 
-    // Load player when the StreamTicket is ready
+    // Load player when the StreamTicket is ready (initial load or R56 restream)
     LaunchedEffect(sessionState) {
         val s = sessionState as? PlayerSessionState.Ready ?: return@LaunchedEffect
+        burningInSub = false
         val streamUrl = s.ticket.hlsUrl
             ?: "${s.ticket.jellyfinBaseUrl}/Videos/${s.ticket.itemId}/stream.${s.ticket.container}?api_key=${s.ticket.accessToken}"
         player.load(streamUrl, s.ticket.startPositionMs, s.ticket.subtitles, s.ticket.audio)
@@ -446,7 +477,10 @@ fun PlayerScreen(
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 BufferingSpinner(colors)
                 Spacer(Modifier.height(48.dp))
-                Text(str("loading"), color = Color.White.copy(0.7f), fontSize = 18.sp)
+                Text(
+                    if (burningInSub) str("player.burning_in_subtitle") else str("loading"),
+                    color = Color.White.copy(0.7f), fontSize = 18.sp,
+                )
             }
         }
 

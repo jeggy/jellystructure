@@ -10,6 +10,10 @@ data class PlayerSubtitleTrack(
     val language: String?,
     val forced: Boolean = false,
     val isDefault: Boolean = false,
+    /** R56 — "external" (sideloaded VTT), "embed" (native in-container), "encode" (burn-in transcode). */
+    val deliveryMethod: String = "external",
+    /** R56 — Jellyfin stream index; only meaningful when deliveryMethod == "encode". */
+    val jellyfinStreamIndex: Int = -1,
 )
 
 /**
