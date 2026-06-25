@@ -9,8 +9,8 @@
   :root{
     --bg:#0a0c13; --bg-2:#0e111b; --ink:#f3f4fb; --ink-soft:#aeb4cb; --ink-dim:#6b7290;
     --line:rgba(255,255,255,.09); --line-2:rgba(255,255,255,.16); --card:#12141f; --card-2:#161a28;
-    --p1:#7b6ef0; --p2:#3fb6f5; --grad:linear-gradient(120deg,#7b6ef0,#3fb6f5);
-    --glow:rgba(123,110,240,.45); --mono:'JetBrains Mono',monospace;
+    --p1:#AA5CC3; --p2:#00A4DC; --grad:linear-gradient(120deg,#AA5CC3,#00A4DC);
+    --glow:rgba(120,108,225,.5); --brandbg:#000B25; --mono:'JetBrains Mono',monospace;
   }
   *{box-sizing:border-box;margin:0;padding:0}
   body{background:
@@ -82,8 +82,8 @@
   /* manifest code */
   .code{background:#070910;border:1px solid var(--line);border-radius:14px;padding:22px 24px;overflow-x:auto;
     font-family:var(--mono);font-size:13px;line-height:1.7;color:#c7cce0}
-  .code .k{color:#7b6ef0}
-  .code .s{color:#3fb6f5}
+  .code .k{color:#AA5CC3}
+  .code .s{color:#00A4DC}
   .code .a{color:#9aa0bd}
   .code .cm{color:#5b6178;font-style:italic}
   .note{display:flex;gap:12px;background:rgba(123,110,240,.07);border:1px solid rgba(123,110,240,.22);
@@ -109,19 +109,19 @@
     </div>
     <div class="tag">
       <b>Android TV — Asset Pack</b>
-      <span>Phase R22 · brand mark “logo 10” · Aurora accent</span>
+      <span>Phase R62 · jellyfish mark · Jellyfin-inspired palette</span>
     </div>
   </div>
   <p class="lede">Every branding asset an <b>Android TV APK / AAB</b> build needs, generated from the
     finalized jellyfish mark and <b>Ravilo</b> wordmark. Adaptive launcher icon, the leanback TV
     banner, the Android&nbsp;12+ splash logo, legacy density mipmaps, and Play Store graphics — one
-    app identity in the <b>Aurora</b> accent. Skins (Midnight / Noir) are in-app surfaces only; the
+    app identity in the new <b>Jellyfin-inspired</b> palette. Skins (Midnight / Noir) are in-app surfaces only; the
     launcher icon and banner never change.</p>
   <div class="chiprow">
-    <span class="chip"><span class="sw" style="background:#7b6ef0"></span><b>#7B6EF0</b> accent start</span>
-    <span class="chip"><span class="sw" style="background:#3fb6f5"></span><b>#3FB6F5</b> accent end</span>
-    <span class="chip"><span class="sw" style="background:#0a0c13;border:1px solid var(--line-2)"></span><b>#0A0C13</b> brand bg</span>
-    <span class="chip"><b>Space Grotesk</b> · wordmark</span>
+    <span class="chip"><span class="sw" style="background:#AA5CC3"></span><b>#AA5CC3</b> gradient start</span>
+    <span class="chip"><span class="sw" style="background:#00A4DC"></span><b>#00A4DC</b> gradient end</span>
+    <span class="chip"><span class="sw" style="background:#000B25;border:1px solid var(--line-2)"></span><b>#000B25</b> brand bg</span>
+    <span class="chip"><b>“D · Lit mark”</b> · backlit glow on navy</span>
     <span class="chip">vector masters → all raster exports</span>
   </div>
 </div>
@@ -129,9 +129,9 @@
 <!-- 1. MARK -->
 <section>
   <div class="sec-h"><span class="n">01</span><h2>Brand mark &amp; lockup</h2><span class="req">assets/brand/*.svg</span></div>
-  <p class="sec-d">The authoritative vector source. The stylised jellyfish (“logo 10”, original — not
-    Jellyfin’s logo) carries the square icon; the horizontal lockup carries the banner and marketing.
-    Both tint with the Aurora gradient.</p>
+  <p class="sec-d">The authoritative vector source. The stylised jellyfish (a nod to Jellyfin’s
+    branding, recolored to the new palette) carries the square icon; the horizontal lockup carries the
+    banner and marketing. Both tint with the <b>#AA5CC3 → #00A4DC</b> gradient.</p>
   <div class="grid">
     <div class="card">
       <div class="frame checker" style="width:160px;height:160px;border-radius:14px">
@@ -218,10 +218,10 @@
       <div class="lbl"><b>Leanback launcher banner</b><span>banner.png · 320 × 180 · drawable-xhdpi</span></div>
     </div>
     <div class="card" style="align-items:stretch">
-      <div class="frame" style="height:100%;min-height:160px;border-radius:14px;background:#0a0c13;border:1px solid var(--line)">
+      <div class="frame" style="height:100%;min-height:160px;border-radius:14px;background:#000B25;border:1px solid var(--line)">
         <img src="assets/android/drawable/splash_logo.png" style="width:128px;height:128px" alt="splash">
       </div>
-      <div class="lbl"><b>Splash logo</b><span>splash_logo.png · 432² transparent · bg #0A0C13</span></div>
+      <div class="lbl"><b>Splash logo</b><span>splash_logo.png · 432² transparent · bg #000B25</span></div>
     </div>
   </div>
 </section>
@@ -274,7 +274,7 @@
 
 <span class="cm">&lt;!-- res/values/themes.xml (androidx core-splashscreen) --&gt;</span>
 <span class="k">&lt;style</span> <span class="a">name</span>=<span class="s">"Theme.Ravilo.Splash"</span> <span class="a">parent</span>=<span class="s">"Theme.SplashScreen"</span><span class="k">&gt;</span>
-  <span class="k">&lt;item</span> <span class="a">name</span>=<span class="s">"windowSplashScreenBackground"</span><span class="k">&gt;</span>#0A0C13<span class="k">&lt;/item&gt;</span>
+  <span class="k">&lt;item</span> <span class="a">name</span>=<span class="s">"windowSplashScreenBackground"</span><span class="k">&gt;</span>#000B25<span class="k">&lt;/item&gt;</span>
   <span class="k">&lt;item</span> <span class="a">name</span>=<span class="s">"windowSplashScreenAnimatedIcon"</span><span class="k">&gt;</span>@drawable/splash_logo<span class="k">&lt;/item&gt;</span>
   <span class="k">&lt;item</span> <span class="a">name</span>=<span class="s">"postSplashScreenTheme"</span><span class="k">&gt;</span>@style/Theme.Ravilo<span class="k">&lt;/item&gt;</span>
 <span class="k">&lt;/style&gt;</span></div>
@@ -286,8 +286,9 @@
 </section>
 
 <footer>
-  <b>Ravilo — Android TV Asset Pack (R22).</b> Vector masters in <code>assets/brand/</code> are the
-  source of truth; all PNGs regenerate from them. Drop <code>assets/android/**</code> into the
+  <b>Ravilo — Android TV Asset Pack (R62 recolor).</b> Vector masters in <code>assets/brand/</code> are the
+  source of truth; all PNGs regenerate from them in the <b>#AA5CC3 → #00A4DC</b> gradient on the
+  <b>#000B25</b> brand field (“D · Lit mark”). Drop <code>assets/android/**</code> into the
   module’s <code>res/</code> and <code>assets/store/**</code> into the Play Console listing.
   Synced to <b>jellystructure@main</b> (R01–R21 done). The Gradle/Manifest packaging itself is
   implemented in the repo — this pack supplies the artwork that build consumes.
