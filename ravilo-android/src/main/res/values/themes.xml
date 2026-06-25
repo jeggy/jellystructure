@@ -5,7 +5,7 @@
 
     <!-- Android 12+ splash screen; hands off to Theme.Ravilo on entry -->
     <style name="Theme.Ravilo.Splash" parent="Theme.SplashScreen">
-        <item name="windowSplashScreenBackground">#0A0C13</item>
+        <item name="windowSplashScreenBackground">#000B25</item>
         <item name="windowSplashScreenAnimatedIcon">@drawable/splash_logo</item>
         <item name="postSplashScreenTheme">@style/Theme.Ravilo</item>
     </style>

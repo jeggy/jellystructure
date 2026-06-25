@@ -20,10 +20,10 @@ longer encodes status — only this file does.
 
 ## Current focus
 
-**Everything is implemented except R62.** Admin phases 0–81 ✓ Done; Ravilo R01–R61 ✓ Done; the only
-open phase is **R62** (brand recolor + Android asset regen — design done, code pending: copy the
-regenerated PNGs into `ravilo-android`/`ravilo-phone` res + the `#000B25` splash color). No `⚠ Partial`
-phases remain.
+**Everything is implemented.** Admin phases 0–81 ✓ Done; Ravilo R01–R62 ✓ Done. No `⚠ Partial` or
+`Planned` phases remain. (R62 — Jellyfin-palette brand recolor + Android asset regen — landed
+2026-06-26: recolored icon/splash/banner pack copied into both `ravilo-android` + `ravilo-phone`,
+`#000B25` splash color; both modules build.)
 
 The 2026-06-25 done-ness audit found 7 falsely-Done phases and all 7 are now genuinely implemented
 (70 brand mark, 72 TrackEditor language equivalence, 74 metadata write-through, 76 presence-matrix
@@ -179,4 +179,4 @@ currently reflows with TV-tuned sizing, on-device test is the user's). Older ope
 | R59 | ✓ Done | **Per-channel content rows** — channel editor gains a **Same as Home / Custom** switch (default inherit): a channel can override the Home content rows with its **own ordered set**, built with the shared row workbench (popup over the channel page). System rows still appear unless removed; `ChannelConfig` gains `rows {mode, items}` reusing `RowConfig` (FR-RV-R1) | [spec](specs/ravilo/requirements/phase-R59-per-channel-content-rows.md) |
 | R60 | ✓ Done | **Android phone (mobile) target** — ship Ravilo on a Pixel 9 phone (portrait, touch) from the **same shared Compose codebase**; the only TV lock-in is the thin `:ravilo-android` entry (manifest + Activity), so a new thin `:ravilo-phone` module (or `tv`/`phone` flavor) is all that's needed — no shared-UI fork. Design = **portrait/touch reflow** of the existing system (top tabs, swipe hero, scroll rows, slide-in detail, ranked Top 10, native keyboard); no bottom-nav for v1; responsive `Dimens` over new mockups. TV stays primary (FR-RV-M1) | [spec](specs/ravilo/requirements/phase-R60-android-phone-target.md) |
 | R61 | ✓ Done | **Home rows: reduce system defaults to Continue + Newly Added** — replace the three system rows (Continue, Movies — Newly Added, Series — Newly Added) with two (Continue + Newly Added, all media). `DEFAULT_ROWS` (backend) + `SYSTEM_ROW_DEFAULTS` (editor) trimmed; existing configs gain ✕ delete buttons on the formerly-system split rows via `normalizedRows()` auto-insert of `newly-all` (FR-RV-RD1) | [spec](specs/ravilo/requirements/phase-R61-home-rows-reduce-defaults.md) |
-| R62 | Planned | **Brand recolor: Jellyfin palette + "D · Lit mark" asset regen** — recolor the Ravilo brand to `#AA5CC3 → #00A4DC` on a flat `#000B25` navy field (backlit mark), regenerate the whole Android asset pack from the SVG masters. Design/mockups + SVG masters + regenerated PNGs are done in the design project; **code pending** — copy the new PNGs into `ravilo-android/src/main/res/**` + `ravilo-phone/.../res/**` and change the splash `windowSplashScreenBackground` to `#000B25` in `themes.xml`. Mark shape unchanged; in-app Aurora accent untouched (FR-RV-B1) | [spec](specs/ravilo/requirements/phase-R62-brand-recolor-jellyfin-palette.md) |
+| R62 | ✓ Done | **Brand recolor: Jellyfin palette + "D · Lit mark" asset regen** — recolored launcher icons (adaptive bg/fg/monochrome + all density `ic_launcher`/`ic_launcher_round`), splash logo and leanback banner copied from the regenerated design asset pack into **both** `ravilo-android` and `ravilo-phone` res; splash `windowSplashScreenBackground` → `#000B25` in both `themes.xml`. Mark shape unchanged; in-app Aurora accent untouched; both modules `assembleDebug` clean (FR-RV-B1) | [spec](specs/ravilo/requirements/phase-R62-brand-recolor-jellyfin-palette.md) |
