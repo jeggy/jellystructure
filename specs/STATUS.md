@@ -12,7 +12,17 @@ _Last updated: 2026-06-25_
 (external IDs in NFO) and [Phase 76](requirements/archive/phase-76-scope-aware-season-episode-cast.md)
 (scope-aware season/episode cast) are the most recent completions. [Phase 72](requirements/archive/phase-72-canonical-language-equivalence.md)
 (canonical language-code equivalence FR-LC1) fixed the `eng`→`en` false "Default ≠ resolved" cascade.
-No planned admin phases remain.
+
+**[Phase 78](requirements/phase-78-fd-exhaustion-crash.md) — planned (not built).** Backend crashed
+with `File descriptor 1024 is larger or equal to FD_SETSIZE (1024)` under a flood of
+`/api/people/{id}/image` requests. The Native CIO server multiplexes with `select()` (FD_SETSIZE=1024
+hard ceiling); the Phase 75/76 cast feature renders 50–200 **eager** `<img>` per detail page, each
+opening an inbound socket + (cold cache) an outbound TMDB download + temp file with **no concurrency
+cap**, so simultaneous FDs cross 1024 and the selector loop throws fatally. Layered fix specced:
+semaphore-bound `LogoDownloader.download`, scan-time people-cache pre-warm (`batchFetchPeople`), O(1)
+image lookup (drop per-request `store.allItems()` scan), `loading="lazy"` on person imgs, and an
+FD-budget invariant. Hard constraint: Ktor Native has no epoll engine — must keep concurrent FDs
+< ~512; raising `ulimit` does not help (it's the FD *number* ≥ 1024, not a quota).
 
 **[Phase 53](requirements/archive/phase-53-scanner-data-quality.md)**
 (2026-06-23) fixed scanner data-quality issues found in a post-DB-reset full-sync review (296 scanned
