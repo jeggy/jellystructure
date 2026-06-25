@@ -318,7 +318,7 @@ class Scanner(
             val mixNetwork = mixDetails?.networks?.firstOrNull()
             val mixTitlesByLang = buildTitlesByLang(seriesTmdbId, isMovie = false, mixDetails?.name, mixDetails?.originalLanguage, mixDetails?.originalName)
             val mixStoredYear = mixDetails?.firstAirDate?.take(4)?.toIntOrNull() ?: searchYear
-            val (mixCast, mixCrew) = seriesTmdbId?.let { fetchCredits(it, isMovie = false) } ?: Pair(emptyList(), emptyList())
+            val (mixCast, mixCrew) = seriesTmdbId?.let { fetchCredits(it, isMovie = false, seasons = sortedEpisodes.mapNotNull { ep -> ep.seasonNumber }.distinct()) } ?: Pair(emptyList(), emptyList())
             val mixExtIds = seriesTmdbId?.let { tmdb.getExternalIds(it, isMovie = false) }
             return MediaItem(
                 id = itemId(title, searchYear, jItem.id),
@@ -366,7 +366,7 @@ class Scanner(
         val tvTmdbFinalId = details?.id ?: seriesTmdbId
         val tvTitlesByLang = buildTitlesByLang(tvTmdbFinalId, isMovie = false, details?.name, details?.originalLanguage, details?.originalName)
         val tvStoredYear = details?.firstAirDate?.take(4)?.toIntOrNull() ?: searchYear
-        val (tvCast, tvCrew) = tvTmdbFinalId?.let { fetchCredits(it, isMovie = false) } ?: Pair(emptyList(), emptyList())
+        val (tvCast, tvCrew) = tvTmdbFinalId?.let { fetchCredits(it, isMovie = false, seasons = sortedEpisodes.mapNotNull { ep -> ep.seasonNumber }.distinct()) } ?: Pair(emptyList(), emptyList())
         val tvExtIds = tvTmdbFinalId?.let { tmdb.getExternalIds(it, isMovie = false) }
         return MediaItem(
             id = itemId(title, searchYear, jItem.id),
@@ -686,7 +686,7 @@ class Scanner(
                 val rescanNetwork = details.networks.firstOrNull()
                 val rescanTmdbTags = tmdb.getTvKeywords(details.id)
                 val rescanTvExtIds = tmdb.getExternalIds(details.id, isMovie = false)
-                val (rescanTvCast, rescanTvCrew) = fetchCredits(details.id, isMovie = false)
+                val (rescanTvCast, rescanTvCrew) = fetchCredits(details.id, isMovie = false, seasons = item.episodes.mapNotNull { it.seasonNumber }.distinct())
                 item.copy(
                     title = details.name,
                     originalTitle = details.originalName.takeIf { it.isNotBlank() },
@@ -790,11 +790,23 @@ class Scanner(
         return "other"
     }
 
-    /** Phase 75 — fetch full cast + crew from TMDB and map to Person model. */
-    suspend fun fetchCredits(tmdbId: Int, isMovie: Boolean): Pair<List<Person>, List<Person>> {
+    /**
+     * Phase 75 — fetch full cast + crew from TMDB and map to Person model.
+     * Phase 80 — for TV, [seasons] (the show's season numbers) drives per-season `aggregate_credits`
+     * so each cast member carries real `seasonEpisodeCounts` (accurate season-level presence).
+     */
+    suspend fun fetchCredits(tmdbId: Int, isMovie: Boolean, seasons: List<Int> = emptyList()): Pair<List<Person>, List<Person>> {
         if (!isMovie) {
             // Phase 76: use aggregate_credits for TV series to get total_episode_count per actor
             val agg = tmdb.getTvAggregateCredits(tmdbId)
+            // Phase 80: per-season episode counts per cast member (personId -> season -> count)
+            val perSeason = HashMap<Int, MutableMap<String, Int>>()
+            for (s in seasons.filter { it > 0 }.distinct().sorted()) {
+                val sc = tmdb.getTvSeasonAggregateCredits(tmdbId, s)
+                for (m in sc.cast) {
+                    if (m.totalEpisodeCount > 0) perSeason.getOrPut(m.id) { mutableMapOf() }[s.toString()] = m.totalEpisodeCount
+                }
+            }
             val cast = agg.cast.sortedBy { it.order }.map { m ->
                 Person(
                     tmdbId = m.id,
@@ -804,6 +816,7 @@ class Scanner(
                     order = m.order,
                     type = "Actor",
                     episodeCount = m.totalEpisodeCount,
+                    seasonEpisodeCounts = perSeason[m.id]?.toMap() ?: emptyMap(),
                 )
             }
             val crew = agg.crew

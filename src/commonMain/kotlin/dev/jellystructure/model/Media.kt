@@ -34,10 +34,18 @@ data class Person(
     /** Total episode count from TMDB aggregate_credits (Phase 76). */
     val episodeCount: Int = 0,
     /**
-     * Phase 76: per-season episode presence for main cast.
+     * Phase 80: per-season episode counts for main cast, from TMDB season `aggregate_credits`.
+     * Key = season number (as string), value = number of episodes this person appears in that season.
+     * A season absent from the map = the actor is NOT in that season (TMDB returned no credit).
+     * This is the accurate, TMDB-available granularity (recurring cast is season-level).
+     */
+    val seasonEpisodeCounts: Map<String, Int> = emptyMap(),
+    /**
+     * Phase 76/80: explicit per-episode presence OVERRIDES for main cast (operator-curated).
      * Key = season number (as string), value = list of episode numbers this person appears in.
-     * Empty = "not tracked / present in all episodes" (initial aggregate_credits state).
-     * Populated by user toggles in the season presence matrix.
+     * TMDB cannot resolve recurring cast per episode, so this is populated only by manual toggles.
+     * Empty = no override → fall back to season membership (`seasonEpisodeCounts`).
+     * NOTE (Phase 80): empty no longer means "present in all episodes".
      */
     val episodePresence: Map<String, List<Int>> = emptyMap(),
 )

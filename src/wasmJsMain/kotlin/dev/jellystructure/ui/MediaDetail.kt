@@ -3001,6 +3001,7 @@ private fun renderSeasonMatrixHtml(item: MediaItem, matrixView: String): String 
         append("""<button data-mview="$s" class="${if (matrixView == s.toString()) "on" else ""}">S${s.toString().padStart(2, '0')}</button>""")
     }
     append("""</div>""")
+    append("""<div class="tiny muted" style="margin-bottom:10px;line-height:1.5;">ⓘ TMDB resolves recurring cast <b>per season</b> (counts shown) and guest stars <b>per episode</b>. In a season view, recurring cast default to present across the season — tap a cell to refine an exact episode list (saved as an override).</div>""")
 
     append("""<div style="overflow-x:auto;"><table class="matrix"><thead><tr><th class="name" style="text-align:left;">Actor</th>""")
     if (selSeason == 0) {
@@ -3008,18 +3009,13 @@ private fun renderSeasonMatrixHtml(item: MediaItem, matrixView: String): String 
         for (s in seasons) append("""<th>S${s.toString().padStart(2, '0')}</th>""")
         append("""<th>Total</th>""")
         append("""</tr></thead><tbody>""")
-        // Main cast rows
+        // Main cast rows — Phase 80: real per-season counts from TMDB (seasonEpisodeCounts);
+        // an explicit operator override (episodePresence) wins. A season the actor isn't in renders "·".
         for (p in item.cast) {
             append("""<tr><td class="name">${p.name.esc()} <span class="r">· ${(p.character ?: p.role ?: "").esc()}</span></td>""")
             var total = 0
             for (s in seasons) {
-                val presence = p.episodePresence[s.toString()]
-                val count = if (presence.isNullOrEmpty() && p.episodePresence.isEmpty()) {
-                    // episodePresence empty = appears in all eps
-                    item.episodes.count { it.seasonNumber == s }
-                } else {
-                    presence?.size ?: 0
-                }
+                val count = p.episodePresence[s.toString()]?.size ?: p.seasonEpisodeCounts[s.toString()] ?: 0
                 total += count
                 val cls = if (count > 0) "on" else "off"
                 append("""<td><span class="ndot $cls">${if (count > 0) count.toString() else "·"}</span></td>""")
@@ -3043,12 +3039,17 @@ private fun renderSeasonMatrixHtml(item: MediaItem, matrixView: String): String 
         val seasonEps = item.episodes.filter { it.seasonNumber == selSeason }.sortedBy { it.episodeNumber ?: 0 }
         for (ep in seasonEps) append("""<th>E${ep.episodeNumber}</th>""")
         append("""</tr></thead><tbody>""")
+        // Phase 80: only show recurring cast who are in THIS season (TMDB season-level presence).
+        // Their episodes default to present (season member); an explicit override narrows per-episode.
+        val sn = selSeason.toString()
         for ((pi, p) in item.cast.withIndex()) {
+            val override = p.episodePresence[sn]
+            val inSeason = override != null || p.seasonEpisodeCounts.containsKey(sn)
+            if (!inSeason) continue
             append("""<tr><td class="name">${p.name.esc()} <span class="r">· ${(p.character ?: p.role ?: "").esc()}</span></td>""")
             for (ep in seasonEps) {
                 val en = ep.episodeNumber ?: 0
-                val sn = selSeason.toString()
-                val present = p.episodePresence.isEmpty() || p.episodePresence[sn]?.contains(en) == true
+                val present = if (override != null) override.contains(en) else true
                 val cls = if (present) "on" else "off"
                 append("""<td class="cell" data-cell="main:$pi:$selSeason:$en"><span class="dot $cls"></span></td>""")
             }
@@ -3133,16 +3134,21 @@ private fun renderPersonCardHtml(p: Person, showEpBadge: Boolean = false, inheri
     val imgSrc = if (!p.profilePath.isNullOrBlank()) "/api/people/${p.tmdbId}/image" else ""
     val inh = if (inherited) " inh" else ""
     val drag = if (!inherited && !guest) """ draggable="true"""" else ""
+    // Phase 79: lower-left photo overlays (episode count / inherited tag) live INSIDE .ph so
+    // they anchor to the image, not the variable-height text body below it.
+    val phBadges = buildString {
+        if (showEpBadge && p.episodeCount > 0) append("""<span class="epb">▸ ${p.episodeCount} eps</span>""")
+        if (inherited) append("""<span class="tag">⤓ inherited</span>""")
+    }
     append("""<div class="person$inh"$drag>""")
-    if (showEpBadge && p.episodeCount > 0) append("""<span class="epb">▸ ${p.episodeCount} eps</span>""")
-    if (inherited) append("""<span class="tag">⤓ inherited</span>""")
     if (guest) append("""<span class="gtag">guest</span>""")
     if (removeAttr.isNotBlank()) append("""<button class="prm" $removeAttr>✕</button>""")
     else if (!inherited) append("""<button class="prm" data-rm-cast="${p.tmdbId}">✕</button>""")
     if (imgSrc.isNotBlank()) {
-        append("""<div class="ph" style="background:$color;"><img src="$imgSrc" alt="" style="width:100%;height:100%;object-fit:cover;" onerror="this.parentElement.style.background='$color';this.remove();this.parentElement.textContent='$initials';"></div>""")
+        // onerror removes only the <img> and appends initials text — it must NOT clear .ph (that would wipe phBadges)
+        append("""<div class="ph" style="background:$color;">$phBadges<img src="$imgSrc" alt="" loading="lazy" decoding="async" style="width:100%;height:100%;object-fit:cover;" onerror="var p=this.parentElement;p.style.background='$color';this.remove();p.insertAdjacentText('beforeend','$initials')"></div>""")
     } else {
-        append("""<div class="ph" style="background:$color;color:#fff;">$initials</div>""")
+        append("""<div class="ph" style="background:$color;color:#fff;">$phBadges$initials</div>""")
     }
     val charOrRole = (p.character ?: p.role)?.takeIf { it.isNotBlank() } ?: ""
     append("""<div class="pbody"><div class="pname">${p.name.esc()}</div><div class="prole">${charOrRole.esc().ifEmpty { """<span class="muted">＋ role</span>""" }}</div></div>""")
