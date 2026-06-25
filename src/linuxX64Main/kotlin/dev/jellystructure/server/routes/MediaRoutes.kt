@@ -1030,7 +1030,8 @@ fun Route.mediaRoutes(
             val snap = MetaSnap(item.title, item.overview, item.year, item.originalTitle, item.director, item.studio, item.network, item.tags, item.genres)
             store.updateOne(updated)
             mediaHistory.record(id, "metadata_edit", "title=${updated.title}", revertable = true, beforeSnapshot = Json.encodeToString(snap))
-            appScope.launch { pushToJellyfin(updated, artwork, configStore, jellyfinClient, appScope, arrRescan) }
+            // Phase 74: write-through persists to the DB ONLY. The NFO write + Jellyfin refresh happen
+            // on the explicit "Save → NFO" / "Save & sync to Jellyfin" action, not on every field edit.
             call.respond(updated)
         }
 
