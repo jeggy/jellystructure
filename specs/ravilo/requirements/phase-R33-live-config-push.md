@@ -1,6 +1,5 @@
 # Phase R33 — Live config push: instant Ravilo layout updates on the TV
 
-**Status:** ✓ Done (2026-06-22) · _when a viewer's RaviloConfig changes (operator edit in the Jellystructure config
 screen, or the viewer's own on-device settings), every connected TV/web client signed in as that user
 reflects the change within ~1s — no manual reload — while still rendering only server-composed state._
 

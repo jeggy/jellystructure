@@ -1,6 +1,5 @@
 # R48 — Discover / Top 10 API (`/api/tv/discover`) + per-user list config + live status (FR-RD1)
 
-**Status:** Planned
 **Depends on:** Phase 57 (chart ingestion), Phase 56 (acquisition pipeline), R04 (per-user config
 store), R33 (live config/event push)
 

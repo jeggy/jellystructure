@@ -1,6 +1,5 @@
 # Phase R08 — Playback brokering + progress reporting (FR-RV8)
 
-**Status:** Planned · _the control/data-plane handoff and the watched-state write path._
 
 ## Problem
 Ravilo plays media **directly from Jellyfin** (data plane) but must never hold Jellyfin as its API.

@@ -1,6 +1,5 @@
 # Phase R34 — TV detail-screen layout + per-user content size
 
-**Status:** ✓ Done (2026-06-22) · _the Movie/Series detail screens open as a full-bleed cinematic hero
 (no entry-scroll that strands the top of the screen), with TV-tuned sizing; plus a per-user
 **content-size** setting that scales the grid tiles, applied live._
 

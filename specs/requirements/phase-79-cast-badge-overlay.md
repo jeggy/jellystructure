@@ -1,6 +1,5 @@
 # Phase 79 — Cast tab: episode-count badge overlaid on the photo (FR-CC3)
 
-**Status:** ✓ Done
 
 > The `▸ N eps` badge on each series cast card currently floats in the text area below the
 > photo, which looks broken. Move it to overlay the **lower-left corner of the photo**.

@@ -1,6 +1,5 @@
 # Phase R55 — Subtitle rendering surface + embedded text subs (FR-RV-S1)
 
-**Status:** Planned · _make selected subtitles actually draw, and offer embedded text subs._
 
 ## Problem
 Subtitles are selectable in the player's Audio/Subtitles picker (R41) and carry rich

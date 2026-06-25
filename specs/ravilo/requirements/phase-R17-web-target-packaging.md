@@ -1,6 +1,5 @@
 # Phase R17 — Web target hardening + packaging (FR-RV17)
 
-**Status:** Planned · _make the canvas web build production-worthy; ship both apps._
 
 ## Problem
 The Compose-MP **web (canvas)** target has tradeoffs that need explicit attention before release —

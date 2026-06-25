@@ -1,6 +1,5 @@
 # Phase 47 — Artwork manager on Movie & Series detail (FR-AM1)
 
-**Status:** Planned · _a complete artwork-editing surface on detail pages: an asset rail + inline
 TMDB gallery, language-aware candidate filtering with a never-empty fallback, drag-drop/upload/URL
 replace, and series season-poster + per-episode-still management._
 

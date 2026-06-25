@@ -1,6 +1,5 @@
 # Phase R61 — Home rows: reduce system defaults to Continue + Newly Added (FR-RV-RD1)
 
-**Status:** ✓ Done
 
 ## Problem
 

@@ -1,6 +1,5 @@
 # Phase R09 — Design system + focus engine (FR-RV9)
 
-**Status:** Planned · _the shared foundation every Ravilo screen is built on._
 
 ## Problem
 Every Ravilo screen needs the same skinnable theme, the same focusable components, and one shared
