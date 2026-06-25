@@ -4,38 +4,11 @@ Living record of where work currently stands. Update whenever a phase completes 
 The **[requirements/README.md](requirements/README.md)** is the single source of truth for which phases
 exist and their done/planned status. This file tracks _current focus_, recent context, and open issues.
 
-_Last updated: 2026-06-25_
+_Last updated: 2026-06-23_
 
 ## Current focus
 
-**Phases 0–77 complete.** [Phase 77](requirements/archive/phase-77-external-ids-nfo.md)
-(external IDs in NFO) and [Phase 76](requirements/archive/phase-76-scope-aware-season-episode-cast.md)
-(scope-aware season/episode cast) are the most recent completions. [Phase 72](requirements/archive/phase-72-canonical-language-equivalence.md)
-(canonical language-code equivalence FR-LC1) fixed the `eng`→`en` false "Default ≠ resolved" cascade.
-
-**Cast-tab follow-ups planned (not built):**
-[Phase 79](requirements/phase-79-cast-badge-overlay.md) (FR-CC3) — the `▸ N eps` badge on series
-cast cards floats over the text area below the photo (anchored to the card bottom, not the image);
-move the markup inside `.ph` + re-anchor `.epb`/`.tag` to the photo's lower-left. Display-only.
-[Phase 80](requirements/phase-80-cast-presence-matrix-real-data.md) (FR-CC4) — the Season presence
-matrix shows every actor in every season/episode because `Person.episodePresence` is never written
-and the UI reads empty as "present everywhere." Add TMDB `/season/{n}/aggregate_credits`, populate a
-real `Person.seasonEpisodeCounts` at scan time, render true per-season counts, keep guest stars
-episode-accurate, revise NFO inheritance. TMDB constraint: recurring cast is **season-granular**;
-only **guest stars** are episode-accurate (episode credits don't resolve regular cast per episode).
-
-**[Phase 78](requirements/phase-78-fd-exhaustion-crash.md) — planned (not built).** Backend crashed
-with `File descriptor 1024 is larger or equal to FD_SETSIZE (1024)` under a flood of
-`/api/people/{id}/image` requests. The Native CIO server multiplexes with `select()` (FD_SETSIZE=1024
-hard ceiling); the Phase 75/76 cast feature renders 50–200 **eager** `<img>` per detail page, each
-opening an inbound socket + (cold cache) an outbound TMDB download + temp file with **no concurrency
-cap**, so simultaneous FDs cross 1024 and the selector loop throws fatally. Layered fix specced:
-semaphore-bound `LogoDownloader.download`, scan-time people-cache pre-warm (`batchFetchPeople`), O(1)
-image lookup (drop per-request `store.allItems()` scan), `loading="lazy"` on person imgs, and an
-FD-budget invariant. Hard constraint: Ktor Native has no epoll engine — must keep concurrent FDs
-< ~512; raising `ulimit` does not help (it's the FD *number* ≥ 1024, not a quota).
-
-**[Phase 53](requirements/archive/phase-53-scanner-data-quality.md)**
+**Phases 0–53 complete.** [Phase 53](requirements/archive/phase-53-scanner-data-quality.md)
 (2026-06-23) fixed scanner data-quality issues found in a post-DB-reset full-sync review (296 scanned
 vs 303 in Jellyfin): full-scan `year` was null on 295/296 — now `searchYear = name ?? Jellyfin
 `ProductionYear`` drives the TMDB search + slug and the stored year prefers TMDB

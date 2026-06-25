@@ -8,19 +8,11 @@ Ravilo is a sibling product **inside the jellystructure repo** — an Android TV
 canvas) streaming front-end built from one **Compose Multiplatform** codebase, talking only to the
 jellystructure backend.
 
-_Last updated: 2026-06-25_
-
-## Newly planned — 2026-06-25
-
-**[R61](requirements/phase-R61-home-rows-reduce-defaults.md) — Home rows: reduce system defaults
-to Continue + Newly Added (FR-RV-RD1).** Replace the three system rows (Continue, Movies — Newly
-Added, Series — Newly Added) with two (Continue + Newly Added, all media). Two constant changes
-only: `DEFAULT_ROWS` in `RaviloConfigService.kt` and `SYSTEM_ROW_DEFAULTS` in `RaviloConfig.kt`.
-Existing configs gain ✕ delete buttons on the formerly-system split rows via `normalizedRows()`.
+_Last updated: 2026-06-23_
 
 ## Current focus
 
-**Phases R01–R60 complete.** [R47](requirements/phase-R47-detail-focusable-draw-only-scale.md)
+**Phases R01–R47 complete.** [R47](requirements/phase-R47-detail-focusable-draw-only-scale.md)
 (2026-06-23) finished the R42 viewport-jump fix on the **detail screens**: R42 made the focus scale
 draw-only "only on Tile/ChannelCard", so navigating Movie/Series detail still jumped — `EpisodeCard`,
 `SeasonPicker` pills and `RaviloButton` applied `.scale` (and the button lift) as an **ancestor** of
