@@ -136,9 +136,18 @@ data class TmdbTranslationsResponse(
     val translations: List<TmdbTranslation> = emptyList(),
 )
 
+/**
+ * Localized details together with the priority language that actually produced them — the entry from
+ * the caller's priority list whose translation had content (e.g. "en"), or null when no translation
+ * matched and TMDB's default/original details were used. Callers record this as resolvedLanguage so
+ * the stored language reflects what metadata was really fetched in, not a guess.
+ */
+data class Localized<T>(val details: T, val language: String?)
+
 @Serializable
 data class TmdbTranslation(
     @SerialName("iso_639_1") val languageCode: String = "",
+    @SerialName("iso_3166_1") val region: String = "",
     val data: TmdbTranslationData = TmdbTranslationData(),
 )
 
@@ -304,13 +313,22 @@ class TmdbClient(
         return result.getOrNull()
     }
 
-    // Try each language in priority order; use the first that has a non-empty overview.
-    suspend fun getMovieDetailsLocalized(tmdbId: Int, languages: List<String>): TmdbMovieDetails? {
+    // Try each language in priority order; use the first that has a non-empty overview. When a bare
+    // two-letter code yields an empty overview, retry with the region-qualified tag from /translations
+    // (e.g. en → en-US) so a movie translated only under a regional variant is still found.
+    suspend fun getMovieDetailsLocalized(tmdbId: Int, languages: List<String>): Localized<TmdbMovieDetails>? {
+        var regionTags: Map<String, String>? = null
         for (lang in languages) {
-            val d = getMovieDetails(tmdbId, lang) ?: continue
-            if (d.overview.isNotBlank()) return d
+            val d = getMovieDetails(tmdbId, lang)
+            if (d != null && d.overview.isNotBlank()) return Localized(d, lang)
+            if (regionTags == null) regionTags = getRegionedLanguageTags(tmdbId, isMovie = true)
+            val regional = regionTags[lang.lowercase()]
+            if (regional != null && !regional.equals(lang, ignoreCase = true)) {
+                val dr = getMovieDetails(tmdbId, regional)
+                if (dr != null && dr.overview.isNotBlank()) return Localized(dr, lang)
+            }
         }
-        return getMovieDetails(tmdbId)
+        return getMovieDetails(tmdbId)?.let { Localized(it, null) }
     }
 
     suspend fun searchTv(title: String, year: Int?): TmdbTvSearchResult? {
@@ -451,12 +469,19 @@ class TmdbClient(
         }.getOrElse { Logger.warn("TMDB person search failed '$query': ${it.message}"); emptyList() }
     }
 
-    suspend fun getTvDetailsLocalized(tmdbId: Int, languages: List<String>): TmdbTvDetails? {
+    suspend fun getTvDetailsLocalized(tmdbId: Int, languages: List<String>): Localized<TmdbTvDetails>? {
+        var regionTags: Map<String, String>? = null
         for (lang in languages) {
-            val d = getTvDetails(tmdbId, lang) ?: continue
-            if (d.overview.isNotBlank()) return d
+            val d = getTvDetails(tmdbId, lang)
+            if (d != null && d.overview.isNotBlank()) return Localized(d, lang)
+            if (regionTags == null) regionTags = getRegionedLanguageTags(tmdbId, isMovie = false)
+            val regional = regionTags[lang.lowercase()]
+            if (regional != null && !regional.equals(lang, ignoreCase = true)) {
+                val dr = getTvDetails(tmdbId, regional)
+                if (dr != null && dr.overview.isNotBlank()) return Localized(dr, lang)
+            }
         }
-        return getTvDetails(tmdbId)
+        return getTvDetails(tmdbId)?.let { Localized(it, null) }
     }
 
     suspend fun getTranslationLanguages(tmdbId: Int, isMovie: Boolean): List<String> {
@@ -502,6 +527,37 @@ class TmdbClient(
                 .toMap()
         }
         if (result.isFailure) Logger.warn("TMDB translated titles failed tmdbId=$tmdbId: ${result.exceptionOrNull()?.message}")
+        return result.getOrElse { emptyMap() }
+    }
+
+    /**
+     * Region-qualified language tags for every translation that actually carries an overview, keyed
+     * by the lowercased ISO 639-1 code — e.g. {"en" -> "en-US", "pt" -> "pt-BR"}. TMDB's details
+     * endpoint can return an empty overview for a bare two-letter `language` when the only translation
+     * is a regional variant (e.g. en-US, not plain en); callers retry the details fetch with this
+     * region-qualified tag. First translation (with an overview) wins per language.
+     */
+    suspend fun getRegionedLanguageTags(tmdbId: Int, isMovie: Boolean): Map<String, String> {
+        val key = apiKey()
+        if (key.isBlank()) return emptyMap()
+        val path = if (isMovie) "movie/$tmdbId/translations" else "tv/$tmdbId/translations"
+        val result = runCatching {
+            val response = http.get("$baseUrl/$path") {
+                parameter("api_key", key)
+            }
+            if (response.status == HttpStatusCode.TooManyRequests) {
+                delay(3000)
+                return getRegionedLanguageTags(tmdbId, isMovie)
+            }
+            val map = LinkedHashMap<String, String>()
+            for (t in response.body<TmdbTranslationsResponse>().translations) {
+                val lang = t.languageCode.lowercase()
+                if (lang.isBlank() || t.region.isBlank() || t.data.overview.isBlank()) continue
+                map.getOrPut(lang) { "$lang-${t.region.uppercase()}" }
+            }
+            map
+        }
+        if (result.isFailure) Logger.warn("TMDB regioned tags failed tmdbId=$tmdbId: ${result.exceptionOrNull()?.message}")
         return result.getOrElse { emptyMap() }
     }
 

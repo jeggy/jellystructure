@@ -164,11 +164,9 @@ class Scanner(
 
         val tmdbId = jItem.providerIds?.tmdb?.toIntOrNull()
             ?: tmdb.searchMovie(title, searchYear)?.id
-        val details = tmdbId?.let { tmdb.getMovieDetailsLocalized(it, langPriority) }
-        val resolvedLang = details?.let {
-            langPriority.firstOrNull { lang -> it.overview.isNotBlank() && lang != fallback }
-                ?: langPriority.lastOrNull()
-        }
+        val localized = tmdbId?.let { tmdb.getMovieDetailsLocalized(it, langPriority) }
+        val details = localized?.details
+        val resolvedLang = localized?.let { it.language ?: langPriority.lastOrNull() }
 
         val issueCount = tracks.count {
             (it.kind == TrackKind.AUDIO || it.kind == TrackKind.SUBTITLE) && it.language == null
@@ -314,7 +312,7 @@ class Scanner(
             val mixPriority = LanguageResolver.priorityList(
                 majorityLang?.let { listOf(it) } ?: emptyList(), fallback
             )
-            val mixDetails = seriesTmdbId?.let { tmdb.getTvDetailsLocalized(it, mixPriority) }
+            val mixDetails = seriesTmdbId?.let { tmdb.getTvDetailsLocalized(it, mixPriority) }?.details
             val mixNetwork = mixDetails?.networks?.firstOrNull()
             val mixTitlesByLang = buildTitlesByLang(seriesTmdbId, isMovie = false, mixDetails?.name, mixDetails?.originalLanguage, mixDetails?.originalName)
             val mixStoredYear = mixDetails?.firstAirDate?.take(4)?.toIntOrNull() ?: searchYear
@@ -357,11 +355,9 @@ class Scanner(
         val audioLangs = firstTracks.filter { it.kind == TrackKind.AUDIO }.map { it.language }
         val langPriority = LanguageResolver.priorityList(audioLangs, fallback)
 
-        val details = seriesTmdbId?.let { tmdb.getTvDetailsLocalized(it, langPriority) }
-        val resolvedLang = details?.let {
-            langPriority.firstOrNull { lang -> it.overview.isNotBlank() && lang != fallback }
-                ?: langPriority.lastOrNull()
-        }
+        val localized = seriesTmdbId?.let { tmdb.getTvDetailsLocalized(it, langPriority) }
+        val details = localized?.details
+        val resolvedLang = localized?.let { it.language ?: langPriority.lastOrNull() }
 
         val tvTmdbFinalId = details?.id ?: seriesTmdbId
         val tvTitlesByLang = buildTitlesByLang(tvTmdbFinalId, isMovie = false, details?.name, details?.originalLanguage, details?.originalName)
@@ -424,9 +420,9 @@ class Scanner(
         val audioLangs = tracks.filter { it.kind == TrackKind.AUDIO }.map { it.language }
         val langPriority = LanguageResolver.priorityList(audioLangs, fallback)
         val tmdbId = item.tmdbId ?: tmdb.searchMovie(item.title, item.year)?.id
-        val details = tmdbId?.let { tmdb.getMovieDetailsLocalized(it, langPriority) } ?: return null
-        val resolvedLang = langPriority.firstOrNull { lang -> details.overview.isNotBlank() && lang != fallback }
-            ?: langPriority.lastOrNull()
+        val localized = tmdbId?.let { tmdb.getMovieDetailsLocalized(it, langPriority) } ?: return null
+        val details = localized.details
+        val resolvedLang = localized.language ?: langPriority.lastOrNull()
         val issueCount = tracks.count { (it.kind == TrackKind.AUDIO || it.kind == TrackKind.SUBTITLE) && it.language == null }
         val primaryCompany = details.productionCompanies.firstOrNull()
         val tmdbTags = tmdb.getMovieKeywords(details.id)
@@ -521,15 +517,13 @@ class Scanner(
             val majorityLang = langVotes.maxByOrNull { it.value }?.key
             resolvedLang = majorityLang
             val mixPriority = LanguageResolver.priorityList(majorityLang?.let { listOf(it) } ?: emptyList(), fallback)
-            seriesTmdbId?.let { tmdb.getTvDetailsLocalized(it, mixPriority) }
+            seriesTmdbId?.let { tmdb.getTvDetailsLocalized(it, mixPriority) }?.details
         } else {
             val audioLangs = firstTracks.filter { it.kind == TrackKind.AUDIO }.map { it.language }
             val langPriority = LanguageResolver.priorityList(audioLangs, fallback)
-            val details = seriesTmdbId?.let { tmdb.getTvDetailsLocalized(it, langPriority) }
-            resolvedLang = details?.let {
-                langPriority.firstOrNull { lang -> it.overview.isNotBlank() && lang != fallback } ?: langPriority.lastOrNull()
-            }
-            details
+            val localized = seriesTmdbId?.let { tmdb.getTvDetailsLocalized(it, langPriority) }
+            resolvedLang = localized?.let { it.language ?: langPriority.lastOrNull() }
+            localized?.details
         }
         val syncNetwork = updatedDetails?.networks?.firstOrNull()
         val syncSeriesFinalId = updatedDetails?.id ?: seriesTmdbId
@@ -628,11 +622,10 @@ class Scanner(
         return when (item.kind) {
             MediaKind.MOVIE -> {
                 val tmdbId = item.tmdbId ?: tmdb.searchMovie(item.title, item.year)?.id
-                val details = tmdbId?.let { tmdb.getMovieDetailsLocalized(it, langPriority) }
+                val localized = tmdbId?.let { tmdb.getMovieDetailsLocalized(it, langPriority) }
                     ?: return null
-                val resolvedLang = langPriority.firstOrNull { lang ->
-                    details.overview.isNotBlank() && lang != fallback
-                } ?: langPriority.lastOrNull()
+                val details = localized.details
+                val resolvedLang = localized.language ?: langPriority.lastOrNull()
                 val rescanCompany = details.productionCompanies.firstOrNull()
                 val rescanTmdbTags = tmdb.getMovieKeywords(details.id)
                 val rescanMovieExtIds = tmdb.getExternalIds(details.id, isMovie = true)
@@ -659,11 +652,10 @@ class Scanner(
             }
             MediaKind.TV_SHOW -> {
                 val tmdbId = item.tmdbId ?: tmdb.searchTv(item.title, item.year)?.id
-                val details = tmdbId?.let { tmdb.getTvDetailsLocalized(it, langPriority) }
+                val localized = tmdbId?.let { tmdb.getTvDetailsLocalized(it, langPriority) }
                     ?: return null
-                val resolvedLang = langPriority.firstOrNull { lang ->
-                    details.overview.isNotBlank() && lang != fallback
-                } ?: langPriority.lastOrNull()
+                val details = localized.details
+                val resolvedLang = localized.language ?: langPriority.lastOrNull()
                 // Re-fetch per-episode TMDB details using the series langPriority, which already
                 // puts the user's selected series language first, then falls through the chain.
                 val updatedEpisodes = item.episodes.map { ep ->
