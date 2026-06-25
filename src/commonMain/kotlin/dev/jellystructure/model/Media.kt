@@ -83,6 +83,8 @@ data class MediaItem(
     val titlesByLang: Map<String, String> = emptyMap(),
     val cast: List<Person> = emptyList(),
     val crew: List<Person> = emptyList(),
+    val imdbId: String? = null,
+    val tvdbId: Int? = null,
 )
 
 @Serializable
