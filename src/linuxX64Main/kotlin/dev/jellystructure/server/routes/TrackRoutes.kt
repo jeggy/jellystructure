@@ -9,6 +9,7 @@ import dev.jellystructure.media.MediaHistory
 import dev.jellystructure.media.MediaStore
 import dev.jellystructure.media.MkvpropeditRunner
 import dev.jellystructure.resolver.LanguageResolver
+import dev.jellystructure.resolver.primaryAudioLanguage
 import dev.jellystructure.arr.ArrRescanService
 import dev.jellystructure.model.MediaKind
 import dev.jellystructure.model.TrackKind
@@ -336,7 +337,14 @@ fun Route.trackRoutes(store: MediaStore, configStore: ConfigStore, jellyfinClien
             val newIssueCount = newTracks.count {
                 (it.kind == TrackKind.AUDIO || it.kind == TrackKind.SUBTITLE) && it.language == null
             }
-            store.updateOne(item.copy(tracks = newTracks, issueCount = newIssueCount))
+            // An audio reorder changes which track is primary, which drives the metadata-fetch
+            // language. Recompute resolvedLanguage from the new order so the next re-pull queries in
+            // the new primary language — otherwise the stale value is treated as a language override
+            // and prepended, keeping the old language forever. Subtitle reorders never affect this.
+            val newResolved = if (kind == TrackKind.AUDIO)
+                primaryAudioLanguage(configStore.current, item.path, newTracks)
+            else item.resolvedLanguage
+            store.updateOne(item.copy(tracks = newTracks, issueCount = newIssueCount, resolvedLanguage = newResolved))
             mediaHistory.record(id, "reorder_tracks", "kind=${req.kind} order=${req.order.joinToString(",")}")
 
             val cfg = configStore.current
