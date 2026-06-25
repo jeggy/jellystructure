@@ -8,13 +8,11 @@ Ravilo is a sibling product **inside the jellystructure repo** — an Android TV
 canvas) streaming front-end built from one **Compose Multiplatform** codebase, talking only to the
 jellystructure backend.
 
-_Last updated: 2026-06-25_
+_Last updated: 2026-06-23_
 
 ## Current focus
 
-**Phases R01–R50 complete. Design-diff audit (2026-06-25) closed all reopened phases: R24 (MediaCard.watched wired to Tile()), R28 (tile-shape seg-pill), R54 (rows UI with system badge + source description + stale-config repair), R57 (sticky pagebar + Pair-a-TV modal with user picker + 6-field code input). All builds pass.**
-
-Previously: **Phases R01–R47 complete.** [R47](requirements/phase-R47-detail-focusable-draw-only-scale.md)
+**Phases R01–R47 complete.** [R47](requirements/phase-R47-detail-focusable-draw-only-scale.md)
 (2026-06-23) finished the R42 viewport-jump fix on the **detail screens**: R42 made the focus scale
 draw-only "only on Tile/ChannelCard", so navigating Movie/Series detail still jumped — `EpisodeCard`,
 `SeasonPicker` pills and `RaviloButton` applied `.scale` (and the button lift) as an **ancestor** of
@@ -23,49 +21,13 @@ glow + lift into an inner `graphicsLayer` with the focusable on a fixed-size out
 scaled a descendant (unchanged). `:ravilo-ui` (android + wasmJs) compiles; `:ravilo-android:assembleDebug`
 builds. _Verify on-device:_ season picker / episode rail / action buttons no longer jump.
 
-## Reopened — Content rows UI vs design (R54)
-
-**[R54](requirements/phase-R54-rows-config-simplification.md) reopened (2026-06-25).** The backend
-logic shipped (3-row default, no kind picker, single `+ Add row` → workbench, GENRE→CUSTOM lazy
-migration — all verified in code), but a design walkthrough found the **live rows section diverges
-from `design/app/ravilo-config.html` §Content rows**: the mockup shows each system row as a `system`
-badge + **name** + **source description** ("Newly Added Movies · kind = movie · sort newest"), while
-`renderRows` shows ambiguous content badges (`All media`, `Movies only`) + a bare title input — so a
-Newly-Added row reads as a mystery **"All media"** row. Compounded by stale pre-R54 configs that were
-never migrated (a non-goal), existing users still see the old 2-row Continue + all-media-Newly-Added
-shape. Follow-up: match the design's row presentation + decide a migration/reset path.
-
-That caution flag was acted on: a **10-screen design-diff audit (2026-06-25)** reopened more Ravilo
-phases (`◑ Reopened`, notes in README rows):
-- **R57 (Pair-a-TV + sticky navbar)** — biggest gap, parallels R54: impl is a sidebar section (single
-  input, no user selector) instead of a modal from a **sticky** pagebar with a user picker + 6 code
-  fields; sticky Save·Pair·Open-Ravilo bar absent (`RaviloConfig.kt:386–430`).
-- **R24 (component fidelity)** — Tile `watched` param + `MediaCard.badge` never rendered, so watched /
-  "Next up" badges show only on episode cards, not on Home/Channel/Browse/related tiles. _(No phase file.)_
-- **R28 (config editor fidelity)** — Behaviour tile-shape is a `<select>` where the design uses a
-  3-button segmented pill. _(No phase file.)_
-
-Admin-side reopens (17/19/27/36/42/70) are in [`../STATUS.md`](../STATUS.md). Search-screen IME (vs the
-R12 on-screen keyboard mockup) was noted but left as a deliberate TV-input choice, not reopened.
-
-## Genuinely-open phases — subtitle rendering (R55, R56)
-
-The only Ravilo specs still **unimplemented in code** are the two Android-player subtitle phases:
-
-- **[R55](requirements/phase-R55-subtitle-rendering.md)** — subtitles never *draw* on Android:
-  `PlayerVideoSurface` is a bare `TextureView` (no `SubtitleView`/`onCues`), and `PlaybackService`
-  still filters `isExternal` so only sidecar subs are offered. Wire a Media3 `SubtitleView` fed by
-  `onCues` and drop the filter so embedded SRT/ASS/SSA sideload as Jellyfin VTT.
-- **[R56](requirements/phase-R56-image-subtitles.md)** — image-sub parity (PGS/VobSub/DVDSub) via real
-  Jellyfin `PlaybackInfo`/`DeviceProfile` negotiation + server burn-in transcode. **Depends on R55.**
-
-## Delivered — Discover / Top 10 (drafted 2026-06-23, shipped)
+## Newly planned — Discover / Top 10 (2026-06-23)
 
 A new TV surface: a **Top 10** tab driven by third-party popularity charts (Netflix via Tudum first),
 where titles not in the library can be **requested** and fetched through Radarr/Sonarr, with a **live,
 multi-stage status indicator** (requested → queued → downloading% → importing → available). Backend
 engine + chart ingestion are jellystructure phases (**56** acquisition pipeline, **57** chart
-ingestion — see [`../STATUS.md`](../STATUS.md)); the Ravilo side shipped as three phases:
+ingestion — see [`../STATUS.md`](../STATUS.md)); the Ravilo side is three planned phases:
 
 - **[R48](requirements/phase-R48-discover-api.md)** — `/api/tv/discover` API: a `discover` block on the
   per-user `RaviloConfig` (enabled/source/region/ordered lists), composition of charts + acquisition
