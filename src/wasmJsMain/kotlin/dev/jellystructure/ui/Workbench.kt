@@ -43,6 +43,8 @@ private fun opsFor(f: String): List<Pair<String, String>> = when (f) {
 private var wbConds = mutableListOf<WbCond>()
 private var wbMatch = "ALL"
 private var wbInclude = "all"
+private var wbBaseConds = emptyList<WbCond>()  // R60: read-only channel scope for row workbench
+private var wbBaseMatch = "ALL"
 private var wbViewer: String? = null
 private var wbMeta: MetaFacets? = null
 private var wbTrack: TrackFacets? = null
@@ -98,12 +100,17 @@ fun openWorkbench(
     initialLogoUrl: String? = null,
     channelName: String = "",
     onSaveChannel: ((String, String, String?, String, String, List<WbCond>) -> Unit)? = null,
+    // R60: read-only channel-scope filter shown as a banner above the row's conditions.
+    baseConds: List<WbCond> = emptyList(),
+    baseMatch: String = "ALL",
 ) {
     wbScope = scope
     wbTitle = title
     wbViewer = viewer
     wbMatch = initialMatch
     wbInclude = initialInclude
+    wbBaseConds = baseConds
+    wbBaseMatch = baseMatch
     wbConds = initialConds.map { WbCond(it.facet, it.op, it.values.toMutableList()) }.toMutableList()
     if (wbConds.isEmpty()) wbConds.add(WbCond("studio", "is_any_of"))
     wbApplyLabel = applyLabel
@@ -151,6 +158,7 @@ fun openWorkbench(
             </span>
             <span class="wb-x" id="wb-close" style="margin-left:12px;cursor:pointer;">✕</span>
           </div>
+          <div id="wb-base-scope"></div>
           <div class="wb-body" id="wb-conds"></div>
           <button id="wb-add" class="btn sm ghost">+ Add condition</button>
           <div id="wb-channel"></div>
@@ -169,6 +177,7 @@ fun openWorkbench(
     scope.launch {
         if (wbMeta == null) wbMeta = MediaApi.metaFacets()
         if (wbTrack == null) wbTrack = MediaApi.trackFacets()
+        wbRenderScopeBanner()
         wbRenderConds()
         wbWireChrome()
         wbRefreshPreview()
@@ -325,16 +334,44 @@ private fun wbExactlyServable(): Boolean {
     return wbConds.none { it.op == "is_none_of" || it.op == "not_contains" }
 }
 
+/** R60: render a read-only banner above the condition builder when a channel scope is set. */
+private fun wbRenderScopeBanner() {
+    val host = document.getElementById("wb-base-scope") as? HTMLElement ?: return
+    if (wbBaseConds.isEmpty()) { host.innerHTML = ""; return }
+    val WB_LABELS_LOCAL = mapOf(
+        "studio" to "Studio", "network" to "Network", "genre" to "Genre", "tag" to "Tag",
+        "audio_language" to "Audio language", "audio_codec" to "Audio codec",
+        "track_title" to "Track title", "hero_item" to "Hero item",
+    )
+    val pills = wbBaseConds.filter { it.values.isNotEmpty() }.joinToString("") { cond ->
+        val facetLabel = WB_LABELS_LOCAL[cond.facet] ?: cond.facet
+        val valStr = cond.values.take(3).joinToString(", ") {
+            if (cond.values.size > 3) "$it +${cond.values.size - 3}" else it
+        }
+        """<span class="badge" style="margin-right:4px;margin-bottom:4px">${facetLabel.esc()}: ${valStr.esc()}</span>"""
+    }
+    val matchLabel = if (wbBaseMatch == "ANY") "any" else "all"
+    host.innerHTML = """
+        <div style="background:var(--hi-soft);border:1px solid rgba(99,179,237,.22);border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:.82rem">
+          <div style="font-weight:600;margin-bottom:6px">Scoped to channel filter <span style="font-weight:400;color:var(--ink-soft)">&mdash; match $matchLabel</span></div>
+          <div style="margin-bottom:4px">$pills</div>
+          <div class="tiny muted">Results are already limited to items matching this channel's filter. Edit the channel filter to change the scope.</div>
+        </div>
+    """.trimIndent()
+}
+
 private fun wbRefreshPreview() {
     val scope = wbScope ?: return
     val countEl = document.getElementById("wb-count") as? HTMLElement
     countEl?.innerHTML = """<span class="muted tiny">Computing…</span>"""
     scope.launch {
-        fun vals(f: String) = wbConds.filter { it.facet == f && it.op == "is_any_of" }.flatMap { it.values }.distinct()
+        // R60: union base (channel) conditions with row conditions for the live count/preview.
+        val allConds = wbConds + wbBaseConds
+        fun vals(f: String) = allConds.filter { it.facet == f && it.op == "is_any_of" }.flatMap { it.values }.distinct()
         val audioLangsAll = vals("audio_language")
         val untagged = audioLangsAll.contains("untagged")
         val audioLangs = audioLangsAll.filter { it != "untagged" }
-        val heroVals = wbConds.filter { it.facet == "hero_item" }.flatMap { it.values }
+        val heroVals = allConds.filter { it.facet == "hero_item" }.flatMap { it.values }
         val page = MediaApi.list(
             kind = when (wbInclude) { "movies" -> MediaKind.MOVIE; "series" -> MediaKind.TV_SHOW; else -> null },
             pageSize = 18,
@@ -344,7 +381,7 @@ private fun wbRefreshPreview() {
             tags = vals("tag"),
             audioLangs = audioLangs,
             audioCodec = vals("audio_codec").firstOrNull(),
-            trackTitle = wbConds.firstOrNull { it.facet == "track_title" && it.op == "contains" }?.values?.firstOrNull(),
+            trackTitle = allConds.firstOrNull { it.facet == "track_title" && it.op == "contains" }?.values?.firstOrNull(),
             untaggedAudio = untagged,
             heroItem = if (heroVals.contains("not_featured")) "not_featured" else if (heroVals.contains("featured")) "featured" else null,
             viewer = wbViewer,
