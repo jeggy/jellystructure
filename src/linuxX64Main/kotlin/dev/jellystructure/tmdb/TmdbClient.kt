@@ -491,6 +491,9 @@ class TmdbClient(
         var regionTags: Map<String, String>? = null
         for ((idx, lang) in languages.withIndex()) {
             val d = getTvDetails(tmdbId, lang)
+            // When acceptTitleOnly is set, the first language (the explicit user override) is
+            // accepted even with a blank overview — a Faroese show may have no contributed
+            // Faroese overview on TMDB; the overview stays null and the UI shows a warning.
             val accepted = d != null && (d.overview.isNotBlank() ||
                 (acceptTitleOnly && idx == 0 && d.name.isNotBlank()))
             if (d != null && accepted) return Localized(d, lang)
