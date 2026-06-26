@@ -17,6 +17,7 @@ import dev.jellystructure.shared.tv.DiscoverRow
 import dev.jellystructure.shared.tv.MediaKind
 import dev.jellystructure.shared.tv.Person
 import dev.jellystructure.shared.tv.ChannelLogoUpload
+import dev.jellystructure.shared.tv.CardPlayState
 import dev.jellystructure.shared.tv.MarkRequest
 import dev.jellystructure.shared.tv.RaviloConfig
 import dev.jellystructure.shared.tv.PairingChallenge
@@ -265,6 +266,17 @@ fun Route.tvRoutes(
         val detail = detailService.getSeriesDetail(device, id)
         if (detail == null) call.respond(HttpStatusCode.NotFound, mapOf("error" to "Series not found"))
         else call.respond(detail)
+    }
+
+    // ── R83: bulk play-state ─────────────────────────────────────────────────
+    get("/tv/playstate") {
+        val device = call.attributes[DeviceKey]
+        val raw = call.request.queryParameters["ids"] ?: run {
+            call.respond(HttpStatusCode.BadRequest, mapOf("error" to "ids required")); return@get
+        }
+        val ids = raw.split(",").map { it.trim() }.filter { it.isNotBlank() }
+        val result: Map<String, CardPlayState> = detailService.getPlaystate(device, ids)
+        call.respond(result)
     }
 
     // ── Browse, search, facets ───────────────────────────────────────────────
