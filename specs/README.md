@@ -10,6 +10,7 @@ changes with it.
 | [`requirements/`](requirements/) | The **"what"** — one flat file per phase, **content only**. See the [index](requirements/README.md). Ravilo: [`ravilo/requirements/`](ravilo/requirements/). |
 | [`plan.md`](plan.md) | The **"how"** — source layout, data models, API routes, UI pages, WebSocket protocol, scanner flow. |
 | [`tasks.md`](tasks.md) | Step-by-step TODO for the active phase. |
+| [`research-reports/`](research-reports/) | Standalone **research & investigation reports** — dated deep dives behind a decision or future phase. Research, not spec; may go stale. See the [index](research-reports/README.md). |
 
 **Phase status lives in the repo-root [`STATUS.md`](../STATUS.md)** — the single source of truth for
 both products (admin numeric + Ravilo `R…`). A spec's file location or body no longer encodes status.

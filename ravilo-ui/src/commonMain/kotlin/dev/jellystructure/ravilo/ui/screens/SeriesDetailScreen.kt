@@ -127,8 +127,8 @@ private fun buildEpisodeContext(
                 title         = e.title,
                 kicker        = "S$sNum · E${e.episodeNumber}",
                 durationLabel = if (e.runtime > 0) "${e.runtime}m" else "",
-                progressPct   = e.playback.pct,
-                watched       = e.playback.watched,
+                progressPct   = e.playback?.pct ?: 0f,
+                watched       = e.playback?.watched ?: false,
                 stillUrl      = e.stillUrl,
             )
         },
@@ -164,7 +164,8 @@ private fun SeriesDetailLoaded(
     val heroHeight = if (containerH > 0) with(density) { containerH.toDp() } else 540.dp
 
     val initialSeasonIdx = remember(detail) {
-        val rid = detail.progress.resumeEpisodeId
+        // R83: progress is null until hydrated by /api/tv/playstate; default to season 0
+        val rid = detail.progress?.resumeEpisodeId
         if (rid != null)
             detail.seasons.indexOfFirst { s -> s.episodes.any { it.id == rid } }.takeIf { it >= 0 } ?: 0
         else 0
@@ -176,7 +177,7 @@ private fun SeriesDetailLoaded(
     val playFR = remember { FocusRequester() }
     val navBarFR = remember { FocusRequester() }
 
-    val resumeEpIdx = episodes.indexOfFirst { it.id == detail.progress.resumeEpisodeId }
+    val resumeEpIdx = episodes.indexOfFirst { it.id == detail.progress?.resumeEpisodeId }
         .takeIf { it >= 0 } ?: 0
 
     LaunchedEffect(Unit) { runCatching { playFR.requestFocus() } }
@@ -241,7 +242,7 @@ private fun SeriesDetailLoaded(
                         AudioFlagStrip(detail.subtitleLanguages, label = "SUBTITLES")
                     }
                     val p = detail.progress
-                    if (p.totalCount > 0) {
+                    if (p != null && p.totalCount > 0) {
                         Spacer(Modifier.height(4.dp))
                         Text(
                             "${p.watchedCount} of ${p.totalCount} episodes watched",
@@ -259,7 +260,7 @@ private fun SeriesDetailLoaded(
                             overflow = TextOverflow.Ellipsis,
                         )
                     }
-                    detail.progress.resumeLabel?.let {
+                    detail.progress?.resumeLabel?.let {
                         Spacer(Modifier.height(8.dp))
                         Text(it, color = colors.accent, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
                     }
@@ -283,14 +284,16 @@ private fun SeriesDetailLoaded(
                             },
                         horizontalArrangement = Arrangement.spacedBy(12.dp),
                     ) {
-                        val resumeEpId = detail.progress.resumeEpisodeId
+                        val resumeEpId = detail.progress?.resumeEpisodeId
                         val resumeShort = resumeEpId?.let { rid ->
                             val sIdx = detail.seasons.indexOfFirst { s -> s.episodes.any { it.id == rid } }
                             val ep = detail.seasons.getOrNull(sIdx)?.episodes?.firstOrNull { it.id == rid }
                             if (sIdx >= 0 && ep != null) "S${detail.seasons[sIdx].index}E${ep.episodeNumber}"
                             else ep?.let { "E${it.episodeNumber}" }
                         } ?: "E${resumeEpIdx + 1}"
-                        val playLabel = if (resumeEpId != null && detail.progress.watchedCount < detail.progress.totalCount)
+                        // R83: progress null until hydrated; fall back to "Play · E1"
+                        val prog = detail.progress
+                        val playLabel = if (resumeEpId != null && prog != null && prog.watchedCount < prog.totalCount)
                             "${str("action.resume")} · $resumeShort"
                         else "${str("action.play")} · E1"
                         RaviloButton(
@@ -340,7 +343,7 @@ private fun SeriesDetailLoaded(
                         val ep = episodes[i]
                         EpisodeCard(
                             episode = ep,
-                            isResumeEpisode = ep.id == detail.progress.resumeEpisodeId,
+                            isResumeEpisode = ep.id == detail.progress?.resumeEpisodeId,
                             onSelect = { onPlay(buildEpisodeContext(detail, selectedSeasonIdx, episodes, ep.id)) },
                         )
                     }
