@@ -15,6 +15,8 @@ import dev.jellystructure.shared.tv.PlaybackState
 import dev.jellystructure.shared.tv.Season
 import dev.jellystructure.shared.tv.SeriesDetail
 import dev.jellystructure.shared.tv.SeriesProgress
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import dev.jellystructure.shared.tv.Episode as TvEpisode
 
 private const val RELATED_LIMIT = 12
@@ -25,31 +27,38 @@ class DetailService(
     private val jellyfinClient: JellyfinClient,
     private val configStore: ConfigStore,
 ) {
-    suspend fun getMovieDetail(device: DeviceData, jellyfinId: String): MovieDetail? {
-        val all = mediaStore.allItems()
-        val item = all.firstOrNull { it.jellyfinId == jellyfinId } ?: return null
+    suspend fun getMovieDetail(device: DeviceData, jellyfinId: String): MovieDetail? = coroutineScope {
         val jellyfinBase = configStore.current.apiKeys.jellyfinUrl.trimEnd('/')
-        val token = jellyfinClient.tvToken(jellyfinBase, device, configStore.current.apiKeys.jellyfinToken)
+        // allItems() (SQLite) and tvToken() (Jellyfin/cached) have no dependency — run in parallel.
+        val allDeferred   = async { mediaStore.allItems() }
+        val tokenDeferred = async { jellyfinClient.tvToken(jellyfinBase, device, configStore.current.apiKeys.jellyfinToken) }
 
-        val jfDetail = jellyfinClient.getItemDetail(jellyfinBase, token, device.jellyfinUserId, jellyfinId)
-        val userData = jfDetail?.userData
+        val all   = allDeferred.await()
+        val item  = all.firstOrNull { it.jellyfinId == jellyfinId } ?: return@coroutineScope null
+        val token = tokenDeferred.await()
+
+        val jfDetail  = jellyfinClient.getItemDetail(jellyfinBase, token, device.jellyfinUserId, jellyfinId)
+        val userData  = jfDetail?.userData
         val durationMs = (jfDetail?.runTimeTicks ?: 0L) / TICKS_PER_MS
 
-        return MovieDetail(
-            card = item.toMediaCard(jellyfinBase, token),
+        MovieDetail(
+            card     = item.toMediaCard(jellyfinBase, token),
             synopsis = item.overview,
-            runtime = (durationMs / 60_000L).toInt(),
-            cast = emptyList(),
-            related = relatedItems(item, all, jellyfinBase, token),
+            runtime  = (durationMs / 60_000L).toInt(),
+            cast     = emptyList(),
+            related  = relatedItems(item, all, jellyfinBase, token),
             playback = userData.toPlaybackState(durationMs),
         )
     }
 
-    suspend fun getSeriesDetail(device: DeviceData, jellyfinId: String): SeriesDetail? {
-        val all = mediaStore.allItems()
-        val item = all.firstOrNull { it.jellyfinId == jellyfinId } ?: return null
+    suspend fun getSeriesDetail(device: DeviceData, jellyfinId: String): SeriesDetail? = coroutineScope {
         val jellyfinBase = configStore.current.apiKeys.jellyfinUrl.trimEnd('/')
-        val token = jellyfinClient.tvToken(jellyfinBase, device, configStore.current.apiKeys.jellyfinToken)
+        val allDeferred   = async { mediaStore.allItems() }
+        val tokenDeferred = async { jellyfinClient.tvToken(jellyfinBase, device, configStore.current.apiKeys.jellyfinToken) }
+
+        val all   = allDeferred.await()
+        val item  = all.firstOrNull { it.jellyfinId == jellyfinId } ?: return@coroutineScope null
+        val token = tokenDeferred.await()
 
         val jfEpisodes = jellyfinClient.getSeriesEpisodes(
             jellyfinBase, token, device.jellyfinUserId, jellyfinId
@@ -101,7 +110,7 @@ class DetailService(
             resumeLabel = resumeLabel,
         )
 
-        return SeriesDetail(
+        SeriesDetail(
             card = item.toMediaCard(jellyfinBase, token),
             synopsis = item.overview,
             seasons = seasons,
