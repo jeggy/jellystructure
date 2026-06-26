@@ -1,0 +1,2 @@
+ALTER TABLE media ADD COLUMN search_text TEXT NOT NULL DEFAULT '';
+CREATE INDEX media_search_text ON media(search_text);

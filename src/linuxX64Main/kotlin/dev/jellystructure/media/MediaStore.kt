@@ -36,9 +36,9 @@ class MediaStore(private val db: JellystructureDb, private val jsTagStore: JsTag
 
     // Phase 89: memoize computed results keyed on libraryVersion so repeated reads between writes are O(1).
     // The Pair<Long, T> carries the version the result was built against; a version change auto-invalidates.
-    private var trackFacetsCache: Pair<Long, TrackFacets>? = null
-    private var metaFacetsCache:  Pair<Long, MetaFacets>? = null
-    private var nfoCoveredCache:  Pair<Long, Int>? = null
+    private var trackFacetsCache:  Pair<Long, TrackFacets>? = null
+    private var metaFacetsCache:   Pair<Long, MetaFacets>? = null
+    private var nfoCoveredCache:   Pair<Long, Int>? = null
 
     // Jellystructure-defined tags (those in the JS-tag store) always survive a re-scan, which
     // otherwise replaces an item's tags with the fresh Jellyfin set (constitution invariant #6).
@@ -51,6 +51,20 @@ class MediaStore(private val db: JellystructureDb, private val jsTagStore: JsTag
     suspend fun load() {
         val count = db.mediaQueries.count().executeAsOne()
         Logger.info("MediaStore: DB has $count media items")
+        backfillSearchText()
+    }
+
+    private fun backfillSearchText() {
+        val emptyCount = db.mediaQueries.countEmptySearchText().executeAsOne()
+        if (emptyCount == 0L) return
+        val items = allItems()
+        db.transaction {
+            for (item in items) {
+                val st = buildSearchText(item)
+                if (st.isNotEmpty()) db.mediaQueries.updateSearchText(search_text = st, id = item.id)
+            }
+        }
+        println("[INFO] MediaStore: backfilled search_text for $emptyCount rows")
     }
 
     // Two scanned items can produce the same id (e.g. same title+year, or a duplicate in Jellyfin).
@@ -351,10 +365,10 @@ class MediaStore(private val db: JellystructureDb, private val jsTagStore: JsTag
     }
 
     private fun upsertItem(item: MediaItem) {
-        allItemsCache    = null   // Phase 88: invalidate decoded-library cache on any write
-        peopleIndexCache = null   // Phase 78: invalidate the people→profilePath index on any write
-        jellyfinIdIndex  = null   // invalidate the jellyfinId→MediaItem index on any write
-        libraryVersion++           // Phase R86: bump version so HomeFeedService cache invalidates
+        allItemsCache    = null
+        peopleIndexCache = null
+        jellyfinIdIndex  = null
+        libraryVersion++
         db.mediaQueries.upsert(
             id = item.id,
             json = json.encodeToString(MediaItem.serializer(), item),
@@ -369,8 +383,15 @@ class MediaStore(private val db: JellystructureDb, private val jsTagStore: JsTag
             tmdb_id = item.tmdbId?.toLong(),
             poster_path = item.posterPath,
             episode_count = item.episodes.size.toLong(),
+            search_text = buildSearchText(item),
         )
     }
+
+    private fun buildSearchText(item: MediaItem): String = buildString {
+        append(item.title.lowercase())
+        item.originalTitle?.lowercase()?.let { if (it != item.title.lowercase()) { append(' '); append(it) } }
+        for (t in item.titlesByLang.values) { append(' '); append(t.lowercase()) }
+    }.trim()
 }
 
 data class TrackFacetItem(val value: String, val count: Int, val color: String? = null)
