@@ -46,7 +46,7 @@ class DetailService(
             card             = item.toMediaCard(jellyfinBase, token),
             synopsis         = item.overview,
             runtime          = (durationMs / 60_000L).toInt(),
-            cast             = emptyList(),
+            cast             = castFrom(item),
             related          = relatedItems(item, all, jellyfinBase, token),
             playback         = userData.toPlaybackState(durationMs),
             audioLanguages   = audioLanguagesFrom(jfDetail),
@@ -121,7 +121,7 @@ class DetailService(
             card           = item.toMediaCard(jellyfinBase, token),
             synopsis       = item.overview,
             seasons        = seasons,
-            cast           = emptyList(),
+            cast           = castFrom(item),
             related        = relatedItems(item, all, jellyfinBase, token),
             progress       = progress,
             audioLanguages = seriesAudioLangs,
@@ -152,6 +152,33 @@ class DetailService(
         )
     }
 }
+
+private const val CAST_LIMIT = 20
+private const val TMDB_PROFILE_W185 = "https://image.tmdb.org/t/p/w185"
+
+/**
+ * Map jellystructure's own scanned cast + crew (sourced from TMDB at scan time) to the TV [Person]
+ * DTO — R81. No Jellyfin round-trip: the [MediaItem] is already in memory, and person images come
+ * from the TMDB CDN, not Jellyfin. Cast first (TMDB billing order, already sorted on the item),
+ * then crew; deduped by TMDB id (a person credited as both keeps their cast entry); capped.
+ */
+private fun castFrom(item: MediaItem): List<Person> =
+    (item.cast + item.crew)
+        .filter { it.name.isNotBlank() }
+        .distinctBy { it.tmdbId }
+        .take(CAST_LIMIT)
+        .map { p ->
+            Person(
+                id = p.tmdbId.toString(),
+                name = p.name,
+                role = p.character?.takeIf { it.isNotBlank() }
+                    ?: p.job?.takeIf { it.isNotBlank() }
+                    ?: p.role?.takeIf { it.isNotBlank() }
+                    ?: p.department?.takeIf { it.isNotBlank() }
+                    ?: p.type.takeIf { it.isNotBlank() },
+                imageUrl = p.profilePath?.takeIf { it.isNotBlank() }?.let { "$TMDB_PROFILE_W185$it" },
+            )
+        }
 
 /** Extract ordered audio-language codes from a Jellyfin item's MediaStreams (R75 / Phase 87). */
 private fun audioLanguagesFrom(jfDetail: JellyfinItemDetail?): List<String> =
