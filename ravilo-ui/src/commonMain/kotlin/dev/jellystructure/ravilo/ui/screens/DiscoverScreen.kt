@@ -157,7 +157,7 @@ private fun DiscoverLoaded(
         LazyColumn(
             state = listState,
             modifier = Modifier.fillMaxSize().focusRequester(columnFR),
-            contentPadding = PaddingValues(top = 84.dp, bottom = 48.dp),
+            contentPadding = PaddingValues(top = RaviloDimens.appBarHeight + 24.dp, bottom = 48.dp),
         ) {
             item(key = "discover-head") {
                 Column(Modifier.padding(horizontal = RaviloDimens.sectionPadH, vertical = 8.dp)) {

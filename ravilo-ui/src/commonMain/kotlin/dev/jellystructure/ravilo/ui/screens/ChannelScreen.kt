@@ -160,7 +160,9 @@ fun ChannelScreen(
                     }
 
                     @Suppress("OPT_IN_USAGE")
-                    val edgeBringIntoViewSpec = rememberEdgeBringIntoViewSpec(peekDp = 80.dp)
+                    val edgeBringIntoViewSpec = rememberEdgeBringIntoViewSpec(
+                        peekDp = 80.dp, topInsetDp = RaviloDimens.appBarHeight + 34.dp, // R65
+                    )
                     @OptIn(ExperimentalFoundationApi::class)
                     CompositionLocalProvider(LocalBringIntoViewSpec provides edgeBringIntoViewSpec) {
                         LazyColumn(
