@@ -269,6 +269,24 @@ class JellyfinClient {
         result.getOrDefault(emptyList())
     }
 
+    /**
+     * R82: Fetch per-episode static metadata (id, runtime, season name) without a user context —
+     * uses the admin token so this can be called at scan time without a paired user session.
+     */
+    suspend fun getSeriesEpisodesMeta(
+        baseUrl: String,
+        token: String,
+        seriesId: String,
+    ): List<JellyfinEpisodeItem> = runCatching {
+        val url = baseUrl.trimEnd('/') +
+            "/Shows/$seriesId/Episodes?Fields=RunTimeTicks,SeasonName"
+        http.get(url) { jellyfinAuth(token) }
+            .bodyOrNull<JellyfinEpisodesResponse>("getSeriesEpisodesMeta")?.items.orEmpty()
+    }.let { result ->
+        if (result.isFailure) Logger.warn("Jellyfin getSeriesEpisodesMeta failed: ${result.exceptionOrNull()?.message}")
+        result.getOrDefault(emptyList())
+    }
+
     suspend fun getFavoriteItemIds(
         baseUrl: String,
         userToken: String,
