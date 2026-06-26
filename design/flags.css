@@ -1,0 +1,118 @@
+/* ============================================================
+   flags.css — local country-flag assets (ISO 3166-1-alpha-2)
+   99 flags in flags/4x3/<code>.svg (4:3 SVG, from lipis/flag-icons, MIT).
+   Usage: <span class="fi fi-dk"></span>  (add .fis nowhere — these are 4:3 only)
+   Self-hosted; no CDN. Paths are relative to THIS file's location.
+   ============================================================ */
+
+.fi {
+  position: relative;
+  display: inline-block;
+  width: 1.3333333333em;
+  line-height: 1em;
+  background-size: cover;
+  background-position: 50%;
+  background-repeat: no-repeat;
+  border-radius: 1px;
+}
+.fi::before { content: "\00a0"; }
+
+.fi-ad { background-image: url("flags/4x3/ad.svg"); }
+.fi-ae { background-image: url("flags/4x3/ae.svg"); }
+.fi-ar { background-image: url("flags/4x3/ar.svg"); }
+.fi-at { background-image: url("flags/4x3/at.svg"); }
+.fi-au { background-image: url("flags/4x3/au.svg"); }
+.fi-ax { background-image: url("flags/4x3/ax.svg"); }
+.fi-bd { background-image: url("flags/4x3/bd.svg"); }
+.fi-be { background-image: url("flags/4x3/be.svg"); }
+.fi-bg { background-image: url("flags/4x3/bg.svg"); }
+.fi-bo { background-image: url("flags/4x3/bo.svg"); }
+.fi-br { background-image: url("flags/4x3/br.svg"); }
+.fi-by { background-image: url("flags/4x3/by.svg"); }
+.fi-ca { background-image: url("flags/4x3/ca.svg"); }
+.fi-ch { background-image: url("flags/4x3/ch.svg"); }
+.fi-cl { background-image: url("flags/4x3/cl.svg"); }
+.fi-cn { background-image: url("flags/4x3/cn.svg"); }
+.fi-co { background-image: url("flags/4x3/co.svg"); }
+.fi-cr { background-image: url("flags/4x3/cr.svg"); }
+.fi-cu { background-image: url("flags/4x3/cu.svg"); }
+.fi-cy { background-image: url("flags/4x3/cy.svg"); }
+.fi-cz { background-image: url("flags/4x3/cz.svg"); }
+.fi-de { background-image: url("flags/4x3/de.svg"); }
+.fi-dk { background-image: url("flags/4x3/dk.svg"); }
+.fi-do { background-image: url("flags/4x3/do.svg"); }
+.fi-ec { background-image: url("flags/4x3/ec.svg"); }
+.fi-ee { background-image: url("flags/4x3/ee.svg"); }
+.fi-eg { background-image: url("flags/4x3/eg.svg"); }
+.fi-es { background-image: url("flags/4x3/es.svg"); }
+.fi-et { background-image: url("flags/4x3/et.svg"); }
+.fi-fi { background-image: url("flags/4x3/fi.svg"); }
+.fi-fj { background-image: url("flags/4x3/fj.svg"); }
+.fi-fo { background-image: url("flags/4x3/fo.svg"); }
+.fi-fr { background-image: url("flags/4x3/fr.svg"); }
+.fi-gb { background-image: url("flags/4x3/gb.svg"); }
+.fi-ge { background-image: url("flags/4x3/ge.svg"); }
+.fi-gh { background-image: url("flags/4x3/gh.svg"); }
+.fi-gr { background-image: url("flags/4x3/gr.svg"); }
+.fi-gt { background-image: url("flags/4x3/gt.svg"); }
+.fi-hk { background-image: url("flags/4x3/hk.svg"); }
+.fi-hn { background-image: url("flags/4x3/hn.svg"); }
+.fi-hr { background-image: url("flags/4x3/hr.svg"); }
+.fi-ht { background-image: url("flags/4x3/ht.svg"); }
+.fi-hu { background-image: url("flags/4x3/hu.svg"); }
+.fi-id { background-image: url("flags/4x3/id.svg"); }
+.fi-ie { background-image: url("flags/4x3/ie.svg"); }
+.fi-il { background-image: url("flags/4x3/il.svg"); }
+.fi-in { background-image: url("flags/4x3/in.svg"); }
+.fi-ir { background-image: url("flags/4x3/ir.svg"); }
+.fi-is { background-image: url("flags/4x3/is.svg"); }
+.fi-it { background-image: url("flags/4x3/it.svg"); }
+.fi-jm { background-image: url("flags/4x3/jm.svg"); }
+.fi-jp { background-image: url("flags/4x3/jp.svg"); }
+.fi-ke { background-image: url("flags/4x3/ke.svg"); }
+.fi-kr { background-image: url("flags/4x3/kr.svg"); }
+.fi-kz { background-image: url("flags/4x3/kz.svg"); }
+.fi-li { background-image: url("flags/4x3/li.svg"); }
+.fi-lk { background-image: url("flags/4x3/lk.svg"); }
+.fi-lt { background-image: url("flags/4x3/lt.svg"); }
+.fi-lu { background-image: url("flags/4x3/lu.svg"); }
+.fi-lv { background-image: url("flags/4x3/lv.svg"); }
+.fi-ma { background-image: url("flags/4x3/ma.svg"); }
+.fi-mc { background-image: url("flags/4x3/mc.svg"); }
+.fi-mt { background-image: url("flags/4x3/mt.svg"); }
+.fi-mx { background-image: url("flags/4x3/mx.svg"); }
+.fi-my { background-image: url("flags/4x3/my.svg"); }
+.fi-ng { background-image: url("flags/4x3/ng.svg"); }
+.fi-nl { background-image: url("flags/4x3/nl.svg"); }
+.fi-no { background-image: url("flags/4x3/no.svg"); }
+.fi-np { background-image: url("flags/4x3/np.svg"); }
+.fi-nz { background-image: url("flags/4x3/nz.svg"); }
+.fi-pa { background-image: url("flags/4x3/pa.svg"); }
+.fi-pe { background-image: url("flags/4x3/pe.svg"); }
+.fi-pg { background-image: url("flags/4x3/pg.svg"); }
+.fi-ph { background-image: url("flags/4x3/ph.svg"); }
+.fi-pk { background-image: url("flags/4x3/pk.svg"); }
+.fi-pl { background-image: url("flags/4x3/pl.svg"); }
+.fi-pt { background-image: url("flags/4x3/pt.svg"); }
+.fi-py { background-image: url("flags/4x3/py.svg"); }
+.fi-qa { background-image: url("flags/4x3/qa.svg"); }
+.fi-ro { background-image: url("flags/4x3/ro.svg"); }
+.fi-rs { background-image: url("flags/4x3/rs.svg"); }
+.fi-ru { background-image: url("flags/4x3/ru.svg"); }
+.fi-sa { background-image: url("flags/4x3/sa.svg"); }
+.fi-se { background-image: url("flags/4x3/se.svg"); }
+.fi-sg { background-image: url("flags/4x3/sg.svg"); }
+.fi-si { background-image: url("flags/4x3/si.svg"); }
+.fi-sk { background-image: url("flags/4x3/sk.svg"); }
+.fi-th { background-image: url("flags/4x3/th.svg"); }
+.fi-tr { background-image: url("flags/4x3/tr.svg"); }
+.fi-tt { background-image: url("flags/4x3/tt.svg"); }
+.fi-tw { background-image: url("flags/4x3/tw.svg"); }
+.fi-tz { background-image: url("flags/4x3/tz.svg"); }
+.fi-ua { background-image: url("flags/4x3/ua.svg"); }
+.fi-us { background-image: url("flags/4x3/us.svg"); }
+.fi-uy { background-image: url("flags/4x3/uy.svg"); }
+.fi-uz { background-image: url("flags/4x3/uz.svg"); }
+.fi-ve { background-image: url("flags/4x3/ve.svg"); }
+.fi-vn { background-image: url("flags/4x3/vn.svg"); }
+.fi-za { background-image: url("flags/4x3/za.svg"); }

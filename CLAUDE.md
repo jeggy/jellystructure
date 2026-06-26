@@ -1,36 +1,30 @@
-# CLAUDE.md — jellystructure repo notes
+# CLAUDE.md — design project notes
 
-This is the **full jellystructure code repo** — Ktor/Kotlin Native backend + Kotlin/WASM admin
-frontend + the Ravilo Compose-Multiplatform apps (`ravilo-ui`/`ravilo-android`/`ravilo-phone`/
-`ravilo-web`) — **plus** the design mockups under `design/` and the specs under `specs/`. (It is not
-just a design project, despite this file's history.)
+This Cosmos project holds the **HTML/CSS design mockups** for **jellystructure**
+(`app/`) plus the low-fi wireframes (`wireframes/`). These mirror the `design/`
+folder of the repo **github.com/jeggy/jellystructure**.
 
-> ⚠️ This file is overwritten by the "updated designs" sync. The repo-accurate version below must
-> also be set in the design-project source, or each sync reverts it. **Phase status is NOT here —
-> it lives in [`STATUS.md`](STATUS.md).**
+## Source of truth: the repo now uses spec-driven development
+The product is developed **spec-first**. Read the relevant spec before touching a
+mockup; the specs win over these designs on any conflict. Pull with the GitHub
+tools (ref `main`):
+- `specs/constitution.md` — non-negotiable architecture, the **language-resolution
+  algorithm**, **config shape**, and the visual system. **Source of truth.**
+- `specs/requirements/README.md` — the phase index (single source of truth for which
+  phases exist + done/planned). Completed phases live in `requirements/archive/`.
+- `specs/plan.md` — source layout, data models, API routes, UI pages, WS protocol.
+- `specs/STATUS.md` — where work currently stands; read first each session.
+- `CLAUDE.md` (repo root) — quick orientation + key invariants.
 
-## Source of truth — read this first
+**Ravilo (the TV companion app) has its OWN spec tree** at `specs/ravilo/` — read it
+for anything in `ravilo/` or the `ravilo-config.html` editor:
+- `specs/ravilo/constitution.md` · `specs/ravilo/plan.md` · `specs/ravilo/STATUS.md`
+- `specs/ravilo/requirements/` (phases R01–R31 done; R32 unified filter workbench planned).
 
-**Phase status: [`STATUS.md`](STATUS.md) at the repo root is the ONE overview** for both products
-(admin numeric phases + Ravilo `R…` phases), with a single status column each (`✓ Done` / `⚠ Partial`
-/ `Planned`). Read it first each session. **Nothing else tracks status** — not spec headers, not
-directory location, not the `requirements/README.md` files.
-
-Architecture & content (the "what" / "how"):
-- `specs/constitution.md` — non-negotiable architecture, the **language-resolution algorithm**,
-  **config shape**, visual system. `specs/plan.md` — source layout, data models, API routes, WS.
-- `specs/requirements/*.md` (admin) and `specs/ravilo/requirements/*.md` (Ravilo) — one flat file
-  per phase, **content only** (no status, no `archive/` split).
-- Ravilo has its own `specs/ravilo/constitution.md` + `specs/ravilo/plan.md`.
-
-**Sync & the never-forget rule:** the "updated designs" commits overwrite everything under `design/`
-and `specs/` (and this `CLAUDE.md`), but **never** `STATUS.md` or `scripts/`. So status lives at the
-root where the sync can't revert it. **After every sync, run `scripts/check-phases.sh`** — it flags
-any spec file with no row in `STATUS.md` (newly added → add a row) and any row whose spec file went
-missing (deleted by the sync → restore from git). That is how phases/specs stop getting forgotten.
-
-The old top-level `CONSTITUTION.md` and `wireframes/Requirements & Phases.html` are **superseded** by
-`specs/`.
+The admin app is at **phase 46 complete** (Phase 47 artwork manager planned); Ravilo at **R31
+complete** (R32 planned). The old
+top-level `CONSTITUTION.md` and `wireframes/Requirements & Phases.html` are
+**superseded** by `specs/`.
 
 ## Design constraints to respect
 - `design/app/` mockups are **the visual target for the Kotlin/WASM frontend**.
