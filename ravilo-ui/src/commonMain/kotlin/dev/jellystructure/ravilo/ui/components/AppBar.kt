@@ -92,8 +92,12 @@ fun AppBar(
         label = "appBarBg",
     )
 
-    val otherFRs = remember(items.size) { List(maxOf(items.size - 1, 0)) { FocusRequester() } }
-    val allFRs: List<FocusRequester> = remember(navFR, otherFRs) { listOf(navFR) + otherFRs }
+    // R67: place navFR at the activeNav slot so that callers calling navFR.requestFocus() land on
+    // the currently active tab instead of always landing on item 0 (Home).
+    val innerFRs = remember(items.size) { List(items.size) { FocusRequester() } }
+    val allFRs: List<FocusRequester> = remember(navFR, innerFRs, activeNav) {
+        innerFRs.mapIndexed { i, fr -> if (i == activeNav.coerceIn(0, innerFRs.lastIndex)) navFR else fr }
+    }
     var focusedIdx by remember { mutableIntStateOf(-1) }
 
     Box(

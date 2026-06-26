@@ -78,21 +78,45 @@ class BrowseStore(private val apiClient: TvApiClient) {
     var activeGenre: String? = null
         private set
 
-    fun load(kind: BrowseKind = activeKind, genre: String? = activeGenre) {
+    fun load(kind: BrowseKind = activeKind, genre: String? = null) {
         loadJob?.cancel()
         activeKind = kind; activeGenre = genre
         _state.value = BrowseState.Loading
         loadJob = scope.launch {
             _state.value = runCatching {
-                val results = apiClient.browse(kind = kind.apiKey, page = 1)
+                val results = apiClient.browse(kind = kind.apiKey, genre = genre, page = 1)
                 val facets = apiClient.getFacets(kind = kind.apiKey)
                 BrowseState.Loaded(results, facets)
             }.getOrElse { BrowseState.Error(it.message ?: "Unknown error") }
         }
     }
 
-    fun filterByGenre(genre: String?) = load(activeKind, genre)
+    /** Filter by genre in place — keeps the facets/genre chips mounted (no Loading flicker),
+     *  refetches only the results grid so focus never escapes to "Home" (R67). */
+    fun filterByGenre(genre: String?) {
+        loadJob?.cancel()
+        activeGenre = genre
+        val currentFacets = (_state.value as? BrowseState.Loaded)?.facets
+        if (currentFacets != null) {
+            // Keep the current state visible (chips stay mounted); swap results in place.
+            val currentResults = (_state.value as BrowseState.Loaded).results
+            _state.value = BrowseState.Loaded(currentResults, currentFacets) // optimistic (clear results)
+        }
+        loadJob = scope.launch {
+            val kind = activeKind
+            _state.value = runCatching {
+                val results = apiClient.browse(kind = kind.apiKey, genre = genre, page = 1)
+                val facets = currentFacets ?: apiClient.getFacets(kind = kind.apiKey)
+                BrowseState.Loaded(results, facets)
+            }.getOrElse { cur ->
+                currentFacets?.let { BrowseState.Loaded((_state.value as? BrowseState.Loaded)?.results ?: emptyResults, it) }
+                    ?: BrowseState.Error(cur.message ?: "Unknown error")
+            }
+        }
+    }
 }
+
+private val emptyResults = SearchResults(query = "", items = emptyList())
 
 @Composable
 fun BrowseScreen(
@@ -148,7 +172,7 @@ fun BrowseScreen(
                 },
             ),
     ) {
-        Column(modifier = Modifier.fillMaxSize().padding(top = 84.dp)) {
+        Column(modifier = Modifier.fillMaxSize().padding(top = RaviloDimens.appBarHeight + 24.dp)) {
             when (val s = state) {
                 is BrowseState.Loading -> Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
                     Text(str("loading"), color = colors.textSecondary, fontSize = 16.sp)
