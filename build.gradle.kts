@@ -213,6 +213,24 @@ tasks.register("buildFrontend") {
     dependsOn("syncDesignAssets")
 }
 
+// Mirror the design assets (CSS + flag sprites) into the production bundle so Docker builds
+// pick them up. wasmJsBrowserDistribution produces productionExecutable; syncDesignAssets only
+// covers developmentExecutable (used by runDev + the webpack dev server).
+tasks.named("wasmJsBrowserDistribution") {
+    doLast {
+        copy {
+            from(rootProject.layout.projectDirectory.dir("design/app")) {
+                include("wf.css", "app.css")
+            }
+            from(rootProject.layout.projectDirectory.dir("design")) {
+                include("flags.css")
+                include("flags/**")
+            }
+            into(layout.buildDirectory.dir("dist/wasmJs/productionExecutable"))
+        }
+    }
+}
+
     sourceSets {
         val commonMain by getting {
             dependencies {

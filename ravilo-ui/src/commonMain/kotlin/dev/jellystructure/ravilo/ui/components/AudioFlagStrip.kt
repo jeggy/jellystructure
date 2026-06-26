@@ -71,7 +71,9 @@ private const val FLAG_MAX = 5
  */
 @Composable
 fun AudioFlagStrip(audioLanguages: List<String>, modifier: Modifier = Modifier) {
-    val mapped = audioLanguages.mapNotNull { lang -> LANG_CC[lang.lowercase()] }
+    // Deduplicate: same language code from multiple audio tracks, or different 3-letter codes
+    // resolving to the same flag (nor/nob/nno → flag_no), should each show only once.
+    val mapped = audioLanguages.mapNotNull { lang -> LANG_CC[lang.lowercase()] }.distinct()
     if (mapped.isEmpty()) return
 
     val shown = mapped.take(FLAG_MAX)
