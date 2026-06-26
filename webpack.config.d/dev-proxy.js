@@ -7,6 +7,8 @@ config.devServer.static = [
     // Serve wf.css and app.css directly from the canonical design directory.
     // __dirname is build/wasm/packages/jellystructure/ so ../../../../design/app is the design dir.
     { directory: require("path").resolve(__dirname, "../../../../design/app"), publicPath: "/" },
+    // Serve flags.css and flags/** from the design root (sibling of design/app/).
+    { directory: require("path").resolve(__dirname, "../../../../design"), publicPath: "/" },
 ];
 config.devServer.proxy = [
     {

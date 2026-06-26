@@ -517,6 +517,7 @@ private val TRACK_LANG_CC = mapOf(
 internal fun refreshPagebarAudioFlags(audioModel: List<TrkModel>) {
     val el = document.getElementById("audio-flags") as? HTMLElement ?: return
     val langs = audioModel.mapNotNull { t -> t.lang?.lowercase()?.let { l -> TRACK_LANG_CC[l]?.let { cc -> l to cc } } }
+        .distinctBy { (_, cc) -> cc }  // one flag per country code
     if (langs.isEmpty()) { el.innerHTML = ""; return }
     val shown = langs.take(5)
     val extra = langs.size - shown.size
