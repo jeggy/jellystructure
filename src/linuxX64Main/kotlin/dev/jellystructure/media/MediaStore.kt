@@ -34,6 +34,12 @@ class MediaStore(private val db: JellystructureDb, private val jsTagStore: JsTag
     var libraryVersion: Long = 0
         private set
 
+    // Phase 89: memoize computed results keyed on libraryVersion so repeated reads between writes are O(1).
+    // The Pair<Long, T> carries the version the result was built against; a version change auto-invalidates.
+    private var trackFacetsCache: Pair<Long, TrackFacets>? = null
+    private var metaFacetsCache:  Pair<Long, MetaFacets>? = null
+    private var nfoCoveredCache:  Pair<Long, Int>? = null
+
     // Jellystructure-defined tags (those in the JS-tag store) always survive a re-scan, which
     // otherwise replaces an item's tags with the fresh Jellyfin set (constitution invariant #6).
     private fun preserveJsTags(fresh: MediaItem, existing: MediaItem?): MediaItem {
@@ -240,7 +246,11 @@ class MediaStore(private val db: JellystructureDb, private val jsTagStore: JsTag
 
     fun languageMixCount(): Int = db.mediaQueries.countLanguageMix().executeAsOne().toInt()
 
-    fun nfoCoveredCount(): Int = allItems().count { NfoWriter.exists(it) }
+    fun nfoCoveredCount(): Int {
+        val ver = libraryVersion
+        nfoCoveredCache?.let { (v, c) -> if (v == ver) return c }
+        return allItems().count { NfoWriter.exists(it) }.also { nfoCoveredCache = Pair(ver, it) }
+    }
 
     fun nfoCoveragePercent(): Int {
         val total = db.mediaQueries.count().executeAsOne().toInt()
@@ -249,6 +259,12 @@ class MediaStore(private val db: JellystructureDb, private val jsTagStore: JsTag
     }
 
     fun trackFacets(): TrackFacets {
+        val ver = libraryVersion
+        trackFacetsCache?.let { (v, f) -> if (v == ver) return f }
+        return buildTrackFacets().also { trackFacetsCache = Pair(ver, it) }
+    }
+
+    private fun buildTrackFacets(): TrackFacets {
         val items = allItems()
         val langCounts = mutableMapOf<String, Int>()
         val codecCounts = mutableMapOf<String, Int>()
@@ -276,6 +292,12 @@ class MediaStore(private val db: JellystructureDb, private val jsTagStore: JsTag
     }
 
     fun metaFacets(): MetaFacets {
+        val ver = libraryVersion
+        metaFacetsCache?.let { (v, f) -> if (v == ver) return f }
+        return buildMetaFacets().also { metaFacetsCache = Pair(ver, it) }
+    }
+
+    private fun buildMetaFacets(): MetaFacets {
         val items = allItems()
         val studioCounts  = mutableMapOf<String, Int>()
         val networkCounts = mutableMapOf<String, Int>()
