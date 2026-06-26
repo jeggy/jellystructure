@@ -55,6 +55,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontFamily
@@ -492,17 +493,31 @@ fun PlayerScreen(
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Box(
                     modifier = Modifier
-                        .size(92.dp)
+                        .size(80.dp)
                         .clip(CircleShape)
                         .background(Color.Black.copy(0.42f))
                         .border(2.dp, Color.White.copy(0.5f), CircleShape),
                     contentAlignment = Alignment.Center,
                 ) {
-                    Text(
-                        text = if (pauseFlashIsPlay) "▶" else "⏸",
-                        color = Color.White,
-                        fontSize = 36.sp,
-                    )
+                    Canvas(modifier = Modifier.size(28.dp)) {
+                        if (pauseFlashIsPlay) {
+                            val path = Path().apply {
+                                moveTo(size.width * 0.15f, 0f)
+                                lineTo(size.width, size.height / 2)
+                                lineTo(size.width * 0.15f, size.height)
+                                close()
+                            }
+                            drawPath(path, Color.White)
+                        } else {
+                            val bw = size.width * 0.28f
+                            val bh = size.height
+                            val gap = size.width * 0.15f
+                            val cx = size.width / 2
+                            val cy = size.height / 2
+                            drawRect(Color.White, topLeft = Offset(cx - gap / 2 - bw, cy - bh / 2), size = Size(bw, bh))
+                            drawRect(Color.White, topLeft = Offset(cx + gap / 2, cy - bh / 2), size = Size(bw, bh))
+                        }
+                    }
                 }
             }
         }
@@ -614,14 +629,14 @@ private fun PlayerChrome(
         Brush.verticalGradient(listOf(Color.Black.copy(alpha = 0.72f), Color.Transparent))
     }
     val botScrim = remember {
-        Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.86f)))
+        Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.78f)))
     }
 
     Box(Modifier.fillMaxSize()) {
         // Top gradient
         Box(Modifier.fillMaxWidth().height(230.dp).align(Alignment.TopCenter).background(topScrim))
         // Bottom gradient
-        Box(Modifier.fillMaxWidth().height(420.dp).align(Alignment.BottomCenter).background(botScrim))
+        Box(Modifier.fillMaxWidth().height(280.dp).align(Alignment.BottomCenter).background(botScrim))
 
         // Top bar
         Row(
@@ -642,7 +657,8 @@ private fun PlayerChrome(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth()
-                .padding(horizontal = 48.dp, vertical = 36.dp),
+                .padding(horizontal = 48.dp)
+                .padding(top = 12.dp, bottom = 16.dp),
         ) {
             // Metadata
             itemKicker?.let {
@@ -653,18 +669,18 @@ private fun PlayerChrome(
                     fontWeight = FontWeight.Bold,
                     letterSpacing = 1.5.sp,
                 )
-                Spacer(Modifier.height(6.dp))
+                Spacer(Modifier.height(4.dp))
             }
             Text(
                 text = itemTitle,
                 color = Color.White,
-                fontSize = 28.sp,
+                fontSize = 20.sp,
                 fontWeight = FontWeight.Bold,
                 fontFamily = SpaceGrotesk,
                 letterSpacing = (-0.5).sp,
                 maxLines = 1,
             )
-            Spacer(Modifier.height(14.dp))
+            Spacer(Modifier.height(8.dp))
 
             // Seek row
             SeekRow(
@@ -677,24 +693,24 @@ private fun PlayerChrome(
                 barFocused = focus == PlFocus.SEEK_BAR,
             )
 
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(6.dp))
 
             // Controls
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 SkipButton(label = "−10s", focused = focus == PlFocus.SKIP_BACK)
                 PlayPauseButton(isPlaying = isPlaying, focused = focus == PlFocus.PLAY)
                 SkipButton(label = "+30s", focused = focus == PlFocus.SKIP_FWD)
                 Spacer(Modifier.weight(1f))
                 TrackButton(label = str("player.audio_subs"), focused = focus == PlFocus.TRACKS)
-                if (hasNextEp) TrackButton(label = "▶▶ ${str("player.next")}", focused = focus == PlFocus.NEXT_EP)
+                if (hasNextEp) TrackButton(label = ">> ${str("player.next")}", focused = focus == PlFocus.NEXT_EP)
             }
 
             // Episode chip (series, only when rail/picker/nextup are closed)
             if (isSeries && !epRailOpen && !pickerOpen && !nextUpVisible) {
-                Spacer(Modifier.height(20.dp))
+                Spacer(Modifier.height(12.dp))
                 EpisodeChip(colors)
             }
         }
@@ -767,7 +783,7 @@ private fun SeekBar(
     val accentS  = colors.accentSecondary
     val ringColor = colors.focusRing
 
-    Canvas(modifier = Modifier.fillMaxWidth().height(48.dp)) {
+    Canvas(modifier = Modifier.fillMaxWidth().height(28.dp)) {
         val barHPx = barH.toPx()
         val y = center.y
         val w = size.width
@@ -808,25 +824,44 @@ private fun SeekBar(
 @Composable
 private fun PlayPauseButton(isPlaying: Boolean, focused: Boolean) {
     val colors = RaviloTheme.colors
-    val size by animateDpAsState(if (focused) 60.dp else 54.dp, label = "ppScale")
+    val grad = remember(colors.accent, colors.accentSecondary) { colors.accentGradient }
+    val size by animateDpAsState(if (focused) 50.dp else 44.dp, label = "ppScale")
+    val glyphColor = Color.White
     Box(
         modifier = Modifier
             .size(size)
-            .then(if (focused) Modifier.shadow(16.dp, CircleShape, spotColor = colors.focusGlow) else Modifier)
+            .then(if (focused) Modifier.shadow(14.dp, CircleShape, spotColor = colors.focusGlow) else Modifier)
             .clip(CircleShape)
-            .background(Color.White)
+            .background(if (focused) grad else Brush.linearGradient(listOf(Color.White.copy(0.14f), Color.White.copy(0.14f))))
             .border(
-                width = if (focused) 2.dp else 0.dp,
-                color = if (focused) colors.focusRing else Color.Transparent,
+                width = 1.dp,
+                color = if (focused) colors.focusRing.copy(alpha = 0.6f) else Color.White.copy(alpha = 0.22f),
                 shape = CircleShape,
             ),
         contentAlignment = Alignment.Center,
     ) {
-        Text(
-            text = if (isPlaying) "⏸" else "▶",
-            color = Color.Black,
-            fontSize = if (isPlaying) 19.sp else 20.sp,
-        )
+        Canvas(modifier = Modifier.size(if (isPlaying) 16.dp else 14.dp)) {
+            val cw = this.size.width
+            val ch = this.size.height
+            if (isPlaying) {
+                // Two vertical bars (pause)
+                val bw = cw * 0.28f
+                val bh = ch
+                val gap = cw * 0.16f
+                val cx = cw / 2
+                drawRect(glyphColor, topLeft = Offset(cx - gap / 2 - bw, 0f), size = Size(bw, bh))
+                drawRect(glyphColor, topLeft = Offset(cx + gap / 2, 0f), size = Size(bw, bh))
+            } else {
+                // Right-pointing triangle (play)
+                val path = Path().apply {
+                    moveTo(cw * 0.15f, 0f)
+                    lineTo(cw, ch / 2)
+                    lineTo(cw * 0.15f, ch)
+                    close()
+                }
+                drawPath(path, glyphColor)
+            }
+        }
     }
 }
 
@@ -836,18 +871,18 @@ private fun SkipButton(label: String, focused: Boolean) {
     Box(
         modifier = Modifier
             .scale(if (focused) 1.06f else 1f)
-            .height(46.dp)
-            .clip(RoundedCornerShape(12.dp))
+            .height(40.dp)
+            .clip(RoundedCornerShape(10.dp))
             .background(if (focused) Color.White else Color.White.copy(alpha = 0.08f))
-            .border(1.dp, Color.White.copy(alpha = 0.22f), RoundedCornerShape(12.dp))
-            .then(if (focused) Modifier.shadow(14.dp, RoundedCornerShape(12.dp), spotColor = colors.focusGlow) else Modifier)
-            .padding(horizontal = 16.dp),
+            .border(1.dp, Color.White.copy(alpha = 0.22f), RoundedCornerShape(10.dp))
+            .then(if (focused) Modifier.shadow(14.dp, RoundedCornerShape(10.dp), spotColor = colors.focusGlow) else Modifier)
+            .padding(horizontal = 12.dp),
         contentAlignment = Alignment.Center,
     ) {
         Text(
             text = label,
             color = if (focused) Color.Black else Color.White,
-            fontSize = 16.sp,
+            fontSize = 14.sp,
             fontFamily = FontFamily.Monospace,
             fontWeight = FontWeight.Bold,
         )
@@ -860,12 +895,12 @@ private fun TrackButton(label: String, focused: Boolean) {
     Box(
         modifier = Modifier
             .scale(if (focused) 1.04f else 1f)
-            .height(44.dp)
-            .clip(RoundedCornerShape(11.dp))
+            .height(40.dp)
+            .clip(RoundedCornerShape(10.dp))
             .background(if (focused) Color.White else Color.White.copy(alpha = 0.08f))
-            .border(1.dp, Color.White.copy(alpha = 0.22f), RoundedCornerShape(11.dp))
-            .then(if (focused) Modifier.shadow(14.dp, RoundedCornerShape(11.dp), spotColor = colors.focusGlow) else Modifier)
-            .padding(horizontal = 18.dp),
+            .border(1.dp, Color.White.copy(alpha = 0.22f), RoundedCornerShape(10.dp))
+            .then(if (focused) Modifier.shadow(14.dp, RoundedCornerShape(10.dp), spotColor = colors.focusGlow) else Modifier)
+            .padding(horizontal = 14.dp),
         contentAlignment = Alignment.Center,
     ) {
         Text(
@@ -1159,7 +1194,7 @@ private fun NextUpCard(
                     Spacer(Modifier.height(14.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         NuButton(
-                            label = "▶  ${str("player.play_in", mapOf("secs" to countdown.toString()))}",
+                            label = "> ${str("player.play_in", mapOf("secs" to countdown.toString()))}",
                             focused = nuFocus == NuFocus.PLAY,
                             isPrimary = true,
                             colors = colors,
