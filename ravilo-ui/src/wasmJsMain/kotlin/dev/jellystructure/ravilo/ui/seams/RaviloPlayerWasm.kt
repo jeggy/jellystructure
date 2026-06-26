@@ -45,12 +45,13 @@ actual class RaviloPlayer actual constructor() {
                 return@forEach
             }
             val trackEl = document.createElement("track")
-            trackEl.setAttribute("src", url)
             trackEl.setAttribute("kind", if (sub.forced) "forced" else "subtitles")
             sub.language?.let { trackEl.setAttribute("srclang", it) }
             sub.label?.let { trackEl.setAttribute("label", it) }
             if (sub.isDefault) trackEl.setAttribute("default", "")
             video.appendChild(trackEl)
+            // R68: fetch VTT, strip ASS/SSA override tags, attach as blob: URL
+            fetchAndCleanVtt(url) { cleanUrl -> trackEl.setAttribute("src", cleanUrl) }
         }
     }
 
@@ -183,6 +184,30 @@ private fun mountAss(video: HTMLVideoElement, url: String): Unit = js(
             var iv = setInterval(function(){ if (window.JASSUB){ clearInterval(iv); go(); } }, 100);
             setTimeout(function(){ clearInterval(iv); }, 8000);
         }
+    }"""
+)
+
+/**
+ * R68 — fetch a VTT subtitle URL, strip ASS/SSA override tags from every cue, and return a
+ * blob: URL pointing at the cleaned VTT so the browser <track> renders clean text.
+ * The callback receives the cleaned URL (blob: or the original on fetch failure).
+ */
+private fun fetchAndCleanVtt(url: String, callback: (String) -> Unit): Unit = js(
+    """{
+        fetch(url)
+            .then(function(r){ return r.text(); })
+            .then(function(vtt){
+                // Strip {\...} ASS override blocks and normalize \N/\h escape sequences.
+                var cleaned = vtt
+                    .replace(/\{\\[^}]*\}/g, '')
+                    .replace(/\\N/g, '\n')
+                    .replace(/\\n/g, '\n')
+                    .replace(/\\h/g, ' ');
+                var blob = new Blob([cleaned], {type: 'text/vtt'});
+                var blobUrl = URL.createObjectURL(blob);
+                callback(blobUrl);
+            })
+            .catch(function(){ callback(url); }); // fall back to original on error
     }"""
 )
 
