@@ -13,6 +13,7 @@ import dev.jellystructure.shared.tv.SearchResults
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 
+
 private const val DEFAULT_PAGE_SIZE = 40
 private const val SEARCH_SUGGESTION_LIMIT = 20
 
@@ -71,25 +72,21 @@ class BrowseService(
 
         val start = (page - 1) * pageSize
         val cards = sorted.drop(start).take(pageSize)
-            .map { it.toMediaCard(jellyfinBase, token) }
+            .map { it.toMediaCard() }
 
         SearchResults(query = kind ?: "all", items = cards)
     }
 
     /** Multi-language search: matches title, originalTitle, and every titlesByLang value. */
-    suspend fun search(device: DeviceData, query: String): SearchResults = coroutineScope {
-        val jellyfinBase  = configStore.current.apiKeys.jellyfinUrl.trimEnd('/')
-        val tokenDeferred = async { jellyfinClient.tvToken(jellyfinBase, device, configStore.current.apiKeys.jellyfinToken) }
-        val allDeferred   = async { mediaStore.allItems() }
-        val token = tokenDeferred.await()
-        val all   = allDeferred.await()
+    suspend fun search(device: DeviceData, query: String): SearchResults {
+        val all = mediaStore.allItems()
 
         if (query.isBlank()) {
             val suggestions = all
                 .sortedByDescending { it.scannedAt }
                 .take(SEARCH_SUGGESTION_LIMIT)
-                .map { it.toMediaCard(jellyfinBase, token) }
-            return@coroutineScope SearchResults(query = "", items = suggestions)
+                .map { it.toMediaCard() }
+            return SearchResults(query = "", items = suggestions)
         }
 
         val q = query.lowercase()
@@ -99,9 +96,9 @@ class BrowseService(
             item.titlesByLang.values.any { it.lowercase().contains(q) }
         }.sortedByDescending { it.scannedAt }
             .take(100)
-            .map { it.toMediaCard(jellyfinBase, token) }
+            .map { it.toMediaCard() }
 
-        SearchResults(query = query, items = items)
+        return SearchResults(query = query, items = items)
     }
 
     /** Available filter values + counts for browse filter chips. */
@@ -134,7 +131,7 @@ class BrowseService(
         )
     }
 
-    private fun MediaItem.toMediaCard(jellyfinBase: String, token: String): MediaCard {
+    private fun MediaItem.toMediaCard(): MediaCard {
         val jId = jellyfinId
         return MediaCard(
             id = jId ?: id,
@@ -144,8 +141,8 @@ class BrowseService(
             year = year,
             genre = genres.firstOrNull(),
             rating = null,
-            posterUrl = if (jId != null) JellyfinImageUrl.poster(jellyfinBase, jId, token) else null,
-            backdropUrl = if (jId != null) JellyfinImageUrl.backdrop(jellyfinBase, jId, token) else null,
+            posterUrl = if (jId != null) JellyfinImageUrl.poster(jId) else null,
+            backdropUrl = if (jId != null) JellyfinImageUrl.backdrop(jId) else null,
         )
     }
 }

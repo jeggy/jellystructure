@@ -1,23 +1,12 @@
 package dev.jellystructure.tv
 
-/** Build a Jellyfin image URL with server-side size caps (R63). Jellyfin honours fillWidth/fillHeight
- *  by downscaling before encoding, so the client receives a fraction of the full-resolution bytes. */
+/** R85: image URLs are now relative /api/tv/image/{id}/{type} paths — served by ImageProxyService.
+ *  The TV app resolves the base URL via LocalServerBaseUrl, keeping Jellyfin credentials off the app. */
 object JellyfinImageUrl {
-    fun poster(base: String, jellyfinId: String, token: String) =
-        "$base/Items/$jellyfinId/Images/Primary?api_key=$token&fillHeight=480&fillWidth=320&quality=90"
-
-    fun backdrop(base: String, jellyfinId: String, token: String) =
-        "$base/Items/$jellyfinId/Images/Backdrop/0?api_key=$token&fillWidth=1920&quality=90"
-
-    fun heroBackdrop(base: String, jellyfinId: String, token: String) =
-        "$base/Items/$jellyfinId/Images/Backdrop/0?api_key=$token&fillWidth=1920&quality=90"
-
-    fun logo(base: String, jellyfinId: String, token: String) =
-        "$base/Items/$jellyfinId/Images/Logo?api_key=$token&fillHeight=300"
-
-    fun still(base: String, jellyfinId: String, token: String) =
-        "$base/Items/$jellyfinId/Images/Primary?api_key=$token&fillWidth=640&quality=90"
-
-    fun avatar(base: String, userId: String, userToken: String) =
-        "$base/Users/$userId/Images/Primary?api_key=$userToken&fillHeight=160"
+    fun poster(jellyfinId: String)     = "/api/tv/image/$jellyfinId/poster"
+    fun backdrop(jellyfinId: String)   = "/api/tv/image/$jellyfinId/backdrop"
+    fun heroBackdrop(jellyfinId: String) = "/api/tv/image/$jellyfinId/backdrop"
+    fun logo(jellyfinId: String)       = "/api/tv/image/$jellyfinId/logo"
+    fun still(jellyfinId: String)      = "/api/tv/image/$jellyfinId/still"
+    fun avatar(userId: String)         = "/api/tv/image/$userId/avatar"
 }

@@ -41,7 +41,6 @@ import dev.jellystructure.ravilo.ui.focus.rememberEdgeBringIntoViewSpec
 import dev.jellystructure.ravilo.ui.focus.backToTopOnBack
 import dev.jellystructure.ravilo.ui.components.TileVariant
 import dev.jellystructure.ravilo.ui.components.toTileVariant
-import dev.jellystructure.ravilo.ui.LocalServerBaseUrl
 import dev.jellystructure.ravilo.ui.i18n.str
 import dev.jellystructure.ravilo.ui.theme.RaviloDimens
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
@@ -202,11 +201,9 @@ private fun HomeLoaded(
                     items = feed.channels,
                     itemKey = { ch -> ch.id },
                 ) { _, ch ->
-                    val baseUrl = LocalServerBaseUrl.current
-                    val resolvedLogoUrl = ch.logoUrl?.let { if (it.startsWith("/")) "$baseUrl$it" else it }
                     ChannelCard(
                         name = ch.name,
-                        logoUrl = resolvedLogoUrl,
+                        logoUrl = ch.logoUrl,
                         brandColor = ch.brandColor,
                         logoPadding = if (ch.style == dev.jellystructure.shared.tv.ChannelStyle.LOGO) ch.paddingLogo else ch.paddingText,
                         onSelect = { onChannelSelect(ch) },

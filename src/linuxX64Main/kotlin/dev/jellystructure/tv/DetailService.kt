@@ -13,8 +13,6 @@ import dev.jellystructure.shared.tv.MovieDetail
 import dev.jellystructure.shared.tv.Person
 import dev.jellystructure.shared.tv.Season
 import dev.jellystructure.shared.tv.SeriesDetail
-import kotlinx.coroutines.async
-import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import dev.jellystructure.shared.tv.Episode as TvEpisode
@@ -31,16 +29,9 @@ class DetailService(
     private val jellyfinClient: JellyfinClient,
     private val configStore: ConfigStore,
 ) {
-    suspend fun getMovieDetail(device: DeviceData, jellyfinId: String): MovieDetail? = coroutineScope {
-        val jellyfinBase = configStore.current.apiKeys.jellyfinUrl.trimEnd('/')
-        // allItems() (SQLite) and tvToken() (Jellyfin/cached) have no dependency — run in parallel.
-        // R83: getItemDetail is no longer called; token is still needed for image URLs (until R85).
-        val allDeferred   = async { mediaStore.allItems() }
-        val tokenDeferred = async { jellyfinClient.tvToken(jellyfinBase, device, configStore.current.apiKeys.jellyfinToken) }
-
-        val all   = allDeferred.await()
-        val item  = all.firstOrNull { it.jellyfinId == jellyfinId } ?: return@coroutineScope null
-        val token = tokenDeferred.await()
+    suspend fun getMovieDetail(device: DeviceData, jellyfinId: String): MovieDetail? {
+        val all  = mediaStore.allItems()
+        val item = all.firstOrNull { it.jellyfinId == jellyfinId } ?: return null
 
         // R82: audio/sub languages from local scanned tracks; R83: runtime from local model.
         val movieAudioLangs = item.tracks
@@ -49,27 +40,21 @@ class DetailService(
         val movieSubLangs = item.tracks
             .filter { it.kind == dev.jellystructure.model.TrackKind.SUBTITLE }
             .mapNotNull { it.language?.lowercase()?.takeIf { l -> l.isNotBlank() } }
-        MovieDetail(
-            card               = item.toMediaCard(jellyfinBase, token),
+        return MovieDetail(
+            card               = item.toMediaCard(),
             synopsis           = item.overview,
             runtime            = item.runtime ?: 0,
             cast               = castFrom(item),
-            related            = relatedItems(item, all, jellyfinBase, token),
+            related            = relatedItems(item, all),
             playback           = null,  // R83: hydrated by /api/tv/playstate (R84 overlays it)
             audioLanguages     = movieAudioLangs,
             subtitleLanguages  = movieSubLangs,
         )
     }
 
-    suspend fun getSeriesDetail(device: DeviceData, jellyfinId: String): SeriesDetail? = coroutineScope {
-        val jellyfinBase = configStore.current.apiKeys.jellyfinUrl.trimEnd('/')
-        // R83: getSeriesEpisodes is no longer called; token is still needed for image URLs (until R85).
-        val allDeferred   = async { mediaStore.allItems() }
-        val tokenDeferred = async { jellyfinClient.tvToken(jellyfinBase, device, configStore.current.apiKeys.jellyfinToken) }
-
-        val all   = allDeferred.await()
-        val item  = all.firstOrNull { it.jellyfinId == jellyfinId } ?: return@coroutineScope null
-        val token = tokenDeferred.await()
+    suspend fun getSeriesDetail(device: DeviceData, jellyfinId: String): SeriesDetail? {
+        val all  = mediaStore.allItems()
+        val item = all.firstOrNull { it.jellyfinId == jellyfinId } ?: return null
 
         val seasonNums = item.episodes.map { it.seasonNumber ?: 0 }.distinct().sorted()
 
@@ -79,8 +64,9 @@ class DetailService(
                 .sortedBy { it.episodeNumber ?: 0 }
             val seasonName = item.seasonNames[seasonNum] ?: "Season $seasonNum"
             val tvEpisodes = eps.map { ep ->
-                val stillUrl = ep.stillPath?.takeIf { it.isNotBlank() }
-                    ?.let { "https://image.tmdb.org/t/p/w300$it" }
+                // R85: episode stills served through the jellystructure image proxy (no TMDB CDN).
+                val stillUrl = ep.jellyfinId?.let { JellyfinImageUrl.still(it) }
+                    ?: ep.stillPath?.takeIf { it.isNotBlank() }?.let { "https://image.tmdb.org/t/p/w300$it" }
                 TvEpisode(
                     id = ep.jellyfinId ?: ep.path,
                     episodeNumber = ep.episodeNumber ?: 0,
@@ -104,12 +90,12 @@ class DetailService(
             ?.filter { it.kind == dev.jellystructure.model.TrackKind.SUBTITLE }
             ?.mapNotNull { it.language?.lowercase()?.takeIf { l -> l.isNotBlank() } }
             ?: emptyList()
-        SeriesDetail(
-            card              = item.toMediaCard(jellyfinBase, token),
+        return SeriesDetail(
+            card              = item.toMediaCard(),
             synopsis          = item.overview,
             seasons           = seasons,
             cast              = castFrom(item),
-            related           = relatedItems(item, all, jellyfinBase, token),
+            related           = relatedItems(item, all),
             progress          = null,  // R83: hydrated by /api/tv/playstate (R84 overlays it)
             audioLanguages    = seriesAudioLangs,
             subtitleLanguages = seriesSubLangs,
@@ -147,14 +133,14 @@ class DetailService(
 
     // ─── Helpers ──────────────────────────────────────────────────────────────
 
-    private fun relatedItems(source: MediaItem, all: List<MediaItem>, jellyfinBase: String, token: String): List<MediaCard> =
+    private fun relatedItems(source: MediaItem, all: List<MediaItem>): List<MediaCard> =
         all
             .filter { it.id != source.id && it.genres.any { g -> source.genres.contains(g) } }
             .sortedByDescending { it.scannedAt }
             .take(RELATED_LIMIT)
-            .map { it.toMediaCard(jellyfinBase, token) }
+            .map { it.toMediaCard() }
 
-    private fun MediaItem.toMediaCard(jellyfinBase: String, token: String): MediaCard {
+    private fun MediaItem.toMediaCard(): MediaCard {
         val jId = jellyfinId
         return MediaCard(
             id = jId ?: id,
@@ -164,8 +150,8 @@ class DetailService(
             year = year,
             genre = genres.firstOrNull(),
             rating = null,
-            posterUrl = if (jId != null) JellyfinImageUrl.poster(jellyfinBase, jId, token) else null,
-            backdropUrl = if (jId != null) JellyfinImageUrl.backdrop(jellyfinBase, jId, token) else null,
+            posterUrl = if (jId != null) JellyfinImageUrl.poster(jId) else null,
+            backdropUrl = if (jId != null) JellyfinImageUrl.backdrop(jId) else null,
         )
     }
 }
