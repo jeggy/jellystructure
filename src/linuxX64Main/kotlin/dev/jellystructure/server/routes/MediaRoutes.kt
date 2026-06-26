@@ -186,6 +186,24 @@ fun Route.mediaRoutes(
             call.respond(stripped)
         }
 
+        // POST /api/media/batch-count — evaluate N condition stacks in one library scan.
+        // Used by RaviloConfig channel count badges: N channels → 1 call instead of N.
+        post("/batch-count") {
+            @Serializable data class BatchCountReq(
+                val index: Int,
+                val match: String = "ALL",
+                val conditions: List<Condition> = emptyList(),
+            )
+            @Serializable data class BatchCountRes(val index: Int, val total: Int)
+            val requests = call.receive<List<BatchCountReq>>()
+            val pairs = requests.map { req ->
+                val m = runCatching { MatchMode.valueOf(req.match) }.getOrElse { MatchMode.ALL }
+                m to req.conditions
+            }
+            val counts = store.countBatch(pairs)
+            call.respond(requests.mapIndexed { i, req -> BatchCountRes(req.index, counts[i]) })
+        }
+
         get("/meta-facets") {
             @Serializable data class FacetItem(val value: String, val count: Int, val color: String? = null)
             @Serializable data class MetaFacetsResponse(
