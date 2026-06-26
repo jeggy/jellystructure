@@ -173,7 +173,7 @@ function CondRow({ join, children }) {
 function BoardB() {
   return (
     <Frame>
-      <Section title="Channels & collections" addLabel="＋ Add channel"
+      <Section title="Channels" addLabel="＋ Add channel"
         sub="The Disney+-style logo row under the hero. Each opens a view with the same content rows, filtered to that channel.">
         <div className="cfg-row" style={{ opacity: .5 }}>
           <span className="grab">⠿</span>

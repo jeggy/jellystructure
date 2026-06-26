@@ -893,7 +893,7 @@ private fun renderChannels(container: Element) {
     }.joinToString("")
     sect.innerHTML = """
         <div class="card" style="padding:18px 20px;margin-bottom:18px">
-          <div style="font-weight:600;margin-bottom:10px">Channels &amp; collections</div>
+          <div style="font-weight:600;margin-bottom:10px">Channels</div>
           <p style="font-size:.82rem;color:var(--ink-soft);margin-bottom:14px">
             The logo row under the hero. <b>Click ✎ Edit on a channel</b> to set its filter, choose Logo or Text, pick or upload a brand logo, and set the brand fill (solid or gradient).
           </p>

@@ -202,7 +202,7 @@ fun AppBar(
 }
 
 /**
- * Lightweight bar for channel/collection pages: back button + channel name + clock.
+ * Lightweight bar for channel pages: back button + channel name + clock.
  * Mirrors AppBar's layout height, gradient, and scrolled-solid behaviour so pages feel consistent.
  *
  * [navFR] is the entry-point requester — route D-pad UP from the hero/content here.
