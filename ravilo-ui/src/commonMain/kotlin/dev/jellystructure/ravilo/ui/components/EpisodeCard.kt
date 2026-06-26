@@ -41,6 +41,7 @@ import dev.jellystructure.ravilo.ui.theme.RaviloTheme
 import dev.jellystructure.ravilo.ui.theme.Sora
 import dev.jellystructure.ravilo.ui.theme.SpaceGrotesk
 import dev.jellystructure.ravilo.ui.theme.accentGradient
+import dev.jellystructure.shared.tv.CardPlayState
 import dev.jellystructure.shared.tv.Episode
 
 @Composable
@@ -49,6 +50,8 @@ fun EpisodeCard(
     focusRequester: FocusRequester? = null,
     isResumeEpisode: Boolean = false,
     onSelect: (() -> Unit)? = null,
+    /** R84: phase-2 overlay from /api/tv/playstate; null until hydrated. */
+    playstateOverride: CardPlayState? = null,
 ) {
     val colors = RaviloTheme.colors
     val sora = Sora
@@ -61,8 +64,10 @@ fun EpisodeCard(
     val glowElevation   by animateDpAsState(if (focused) 20.dp else 0.dp, dpSpec, label = "epShadow")
     val cardShape = remember { RoundedCornerShape(12.dp) }
 
-    val isWatched = episode.playback?.watched ?: false
-    val pct = episode.playback?.pct ?: 0f
+    // R84: prefer overlay (phase-2); fall back to embedded playback (always null from R83 catalog)
+    val isWatched = playstateOverride?.played ?: episode.playback?.watched ?: false
+    val rawPct = playstateOverride?.playedPct ?: episode.playback?.pct ?: 0f
+    val pct by animateFloatAsState(rawPct, label = "epProgressBar")
 
     val upNextGradient = remember(colors.accent, colors.accentSecondary) { colors.accentGradient }
 

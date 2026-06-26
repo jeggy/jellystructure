@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -58,6 +59,7 @@ import dev.jellystructure.ravilo.ui.seams.RemoteImage
 import dev.jellystructure.ravilo.ui.theme.RaviloDimens
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
 import dev.jellystructure.ravilo.ui.theme.SpaceGrotesk
+import dev.jellystructure.shared.tv.CardPlayState
 import dev.jellystructure.shared.tv.MediaCard
 import dev.jellystructure.shared.tv.MovieDetail
 
@@ -77,6 +79,8 @@ fun MovieDetailScreen(
     val colors = RaviloTheme.colors
     LaunchedEffect(itemId) { store.load(itemId) }
     val state by store.state.collectAsState()
+    // R84: phase-2 overlay — empty map until /api/tv/playstate returns after the catalog paint
+    val overlay by store.playstateOverlay.collectAsState()
 
     Box(modifier = Modifier.fillMaxSize().background(colors.background)) {
         when (val s = state) {
@@ -86,6 +90,7 @@ fun MovieDetailScreen(
             }
             is MovieDetailState.Loaded -> MovieDetailLoaded(
                 detail = s.detail,
+                overlay = overlay,
                 onBack = onBack,
                 onPlay = onPlay,
                 onRelatedSelect = onRelatedSelect,
@@ -102,6 +107,7 @@ fun MovieDetailScreen(
 @Composable
 private fun MovieDetailLoaded(
     detail: MovieDetail,
+    overlay: Map<String, CardPlayState>,
     onBack: () -> Unit,
     onPlay: (MediaCard) -> Unit,
     onRelatedSelect: (MediaCard) -> Unit,
@@ -225,16 +231,20 @@ private fun MovieDetailLoaded(
                             },
                         horizontalArrangement = Arrangement.spacedBy(12.dp),
                     ) {
-                        // R83: playback is null until hydrated by /api/tv/playstate; treat as unplayed
-                        val pb = detail.playback
-                        val isResume = pb != null && pb.positionMs > 0 && !pb.watched
-                        val minsLeft = if (pb != null && pb.durationMs > 0)
-                            ((pb.durationMs - pb.positionMs) / 60_000L).toInt() else 0
-                        val playLabel = if (isResume) "${str("action.resume")} · ${minsLeft} min left" else str("action.play")
+                        // R84: phase-2 overlay drives Play/Resume label; safe to press before it arrives
+                        val ps = overlay[detail.card.id]
+                        val isResume = ps != null && ps.resumeMs > 0 && !ps.played
+                        val runtimeMs = detail.runtime.toLong() * 60_000L
+                        val minsLeft = if (isResume && ps != null && runtimeMs > 0)
+                            ((runtimeMs - ps.resumeMs) / 60_000L).toInt() else 0
+                        val playLabel = if (isResume) "${str("action.resume")} · $minsLeft min left" else str("action.play")
+                        // Fixed min-width: sized for the longest "Resume · NN min left" label so
+                        // swapping Play→Resume never shifts the adjacent "My List" button (no-flicker rule).
                         RaviloButton(
                             label = playLabel,
                             focusRequester = playFR,
                             style = ButtonStyle.PRIMARY,
+                            modifier = Modifier.widthIn(min = 200.dp),
                             onSelect = { onPlay(detail.card) },
                         )
                         RaviloButton(

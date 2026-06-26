@@ -1,5 +1,6 @@
 package dev.jellystructure.ravilo.ui.screens
 
+import dev.jellystructure.shared.tv.CardPlayState
 import dev.jellystructure.shared.tv.MovieDetail
 import dev.jellystructure.shared.tv.SeriesDetail
 import dev.jellystructure.shared.tv.TvApiClient
@@ -28,26 +29,42 @@ class MovieDetailStore(private val apiClient: TvApiClient) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val _state = MutableStateFlow<MovieDetailState>(MovieDetailState.Loading)
     val state: StateFlow<MovieDetailState> = _state.asStateFlow()
+    /** R84: phase-2 overlay — empty until /api/tv/playstate returns after the catalog paint. */
+    private val _playstateOverlay = MutableStateFlow<Map<String, CardPlayState>>(emptyMap())
+    val playstateOverlay: StateFlow<Map<String, CardPlayState>> = _playstateOverlay.asStateFlow()
     private var loadJob: Job? = null
     private var currentId: String? = null
 
-    /** R40: when this id is already loaded (retained store, re-entry), keep it on screen and refresh
-     *  silently — no Loading flash. First load (or a new id) shows Loading normally. */
+    /** R40/R84: when this id is already loaded (retained store, re-entry), keep it on screen and
+     *  refresh silently — no Loading flash. First load (or a new id) shows Loading normally. */
     fun load(id: String) {
         if (currentId == id && _state.value is MovieDetailState.Loaded) { refreshSilent(id); return }
         currentId = id
         loadJob?.cancel()
+        _playstateOverlay.value = emptyMap()
         _state.value = MovieDetailState.Loading
         loadJob = scope.launch {
-            _state.value = runCatching { MovieDetailState.Loaded(apiClient.getMovie(id)) }
-                .getOrElse { MovieDetailState.Error(it.message ?: "Unknown error") }
+            val result = runCatching { apiClient.getMovie(id) }
+            val detail = result.getOrNull()
+            if (detail != null) {
+                _state.value = MovieDetailState.Loaded(detail)
+                // Phase 2: fetch per-user playstate after catalog paints (fast, single item)
+                runCatching { apiClient.getPlaystate(listOf(id)) }.getOrNull()
+                    ?.let { _playstateOverlay.value = it }
+            } else {
+                _state.value = MovieDetailState.Error(result.exceptionOrNull()?.message ?: "Unknown error")
+            }
         }
     }
 
     private fun refreshSilent(id: String) {
         loadJob?.cancel()
+        _playstateOverlay.value = emptyMap()
         loadJob = scope.launch {
-            runCatching { apiClient.getMovie(id) }.getOrNull()?.let { _state.value = MovieDetailState.Loaded(it) }
+            val detail = runCatching { apiClient.getMovie(id) }.getOrNull() ?: return@launch
+            _state.value = MovieDetailState.Loaded(detail)
+            runCatching { apiClient.getPlaystate(listOf(id)) }.getOrNull()
+                ?.let { _playstateOverlay.value = it }
         }
     }
 }
@@ -56,25 +73,47 @@ class SeriesDetailStore(private val apiClient: TvApiClient) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val _state = MutableStateFlow<SeriesDetailState>(SeriesDetailState.Loading)
     val state: StateFlow<SeriesDetailState> = _state.asStateFlow()
+    /** R84: phase-2 overlay — empty until /api/tv/playstate returns after the catalog paint. */
+    private val _playstateOverlay = MutableStateFlow<Map<String, CardPlayState>>(emptyMap())
+    val playstateOverlay: StateFlow<Map<String, CardPlayState>> = _playstateOverlay.asStateFlow()
     private var loadJob: Job? = null
     private var currentId: String? = null
 
-    /** R40: re-entry with the same id keeps the cached detail and refreshes silently (no flash). */
+    /** R40/R84: re-entry with the same id keeps the cached detail and refreshes silently (no flash). */
     fun load(id: String) {
         if (currentId == id && _state.value is SeriesDetailState.Loaded) { refreshSilent(id); return }
         currentId = id
         loadJob?.cancel()
+        _playstateOverlay.value = emptyMap()
         _state.value = SeriesDetailState.Loading
         loadJob = scope.launch {
-            _state.value = runCatching { SeriesDetailState.Loaded(apiClient.getSeries(id)) }
-                .getOrElse { SeriesDetailState.Error(it.message ?: "Unknown error") }
+            val result = runCatching { apiClient.getSeries(id) }
+            val detail = result.getOrNull()
+            if (detail != null) {
+                _state.value = SeriesDetailState.Loaded(detail)
+                // Phase 2: fetch per-episode playstate after catalog paints; keyed by episode Jellyfin id
+                val epIds = detail.seasons.flatMap { it.episodes }.map { it.id }
+                if (epIds.isNotEmpty()) {
+                    runCatching { apiClient.getPlaystate(epIds) }.getOrNull()
+                        ?.let { _playstateOverlay.value = it }
+                }
+            } else {
+                _state.value = SeriesDetailState.Error(result.exceptionOrNull()?.message ?: "Unknown error")
+            }
         }
     }
 
     private fun refreshSilent(id: String) {
         loadJob?.cancel()
+        _playstateOverlay.value = emptyMap()
         loadJob = scope.launch {
-            runCatching { apiClient.getSeries(id) }.getOrNull()?.let { _state.value = SeriesDetailState.Loaded(it) }
+            val detail = runCatching { apiClient.getSeries(id) }.getOrNull() ?: return@launch
+            _state.value = SeriesDetailState.Loaded(detail)
+            val epIds = detail.seasons.flatMap { it.episodes }.map { it.id }
+            if (epIds.isNotEmpty()) {
+                runCatching { apiClient.getPlaystate(epIds) }.getOrNull()
+                    ?.let { _playstateOverlay.value = it }
+            }
         }
     }
 }
