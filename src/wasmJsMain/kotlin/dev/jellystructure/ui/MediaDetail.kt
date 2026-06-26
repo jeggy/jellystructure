@@ -1705,37 +1705,13 @@ private fun openEpisodeTrackModal(ep: dev.jellystructure.model.Episode, mediaId:
     backdrop.setAttribute("style", "position:fixed;inset:0;z-index:130;background:rgba(8,10,16,.66);-webkit-backdrop-filter:blur(3px);backdrop-filter:blur(3px);display:flex;align-items:center;justify-content:center;padding:24px;")
     backdrop.innerHTML = """
         <div style="width:760px;max-width:100%;max-height:90vh;overflow-y:auto;background:var(--fill);border:1px solid var(--line-2);border-radius:var(--radius);box-shadow:var(--shadow);padding:22px 24px;">
-          <div class="row center" style="margin-bottom:4px;">
+          <div class="row center" style="margin-bottom:14px;">
             <h3 style="margin:0;">Tracks &amp; order</h3>
             <span class="badge info" style="margin-left:8px;">${epCode.esc()}</span>
             <span class="spacer"></span>
-            <span class="seg" id="te-seg"><span class="on" data-tk="audio">Audio</span><span data-tk="subs">Subtitles</span></span>
             <span id="te-x" style="cursor:pointer;color:var(--ink-soft);font-size:1.1rem;margin-left:14px;">✕</span>
           </div>
-          <div class="mono tiny muted" id="te-file" style="margin-bottom:12px;">${ep.filename.esc()}</div>
-          <div id="te-list"></div>
-          <div class="note blue" id="te-explain" style="margin-top:12px;"></div>
-          <div id="te-staged" style="display:none;margin-top:16px;">
-            <hr class="dash" style="margin:0 0 12px;">
-            <div class="row center"><b style="font-size:.95rem;">Staged changes</b><span class="badge" id="te-count" style="margin-left:6px;">0</span><span class="spacer"></span></div>
-            <div id="te-ops" style="margin:8px 0;"></div>
-            <div class="tiny muted" style="margin-bottom:6px;">Exact command — runs only on Apply:</div>
-            <div class="cmd-block" id="te-cmd" style="background:var(--bg-2);border:1px solid var(--line);border-radius:var(--radius-s);padding:12px 14px;font-family:'JetBrains Mono',monospace;font-size:.78rem;line-height:1.7;overflow-x:auto;white-space:pre;color:var(--ink-soft);"></div>
-            <div class="row center" style="margin-top:12px;gap:10px;flex-wrap:wrap;">
-              <span id="te-cost" style="display:inline-flex;align-items:center;gap:6px;"></span>
-              <span class="spacer" style="flex:1;"></span>
-              <span class="btn ghost" id="te-discard">Discard</span>
-              <span class="btn primary" id="te-apply">Apply to file</span>
-            </div>
-            <div id="te-apply-msg" class="tiny" style="display:none;margin-top:8px;"></div>
-          </div>
-          <div class="tiny muted" style="margin-top:14px;">Reorder by dragging the grip or ▲▼ · click a language to change it · ★ sets the default. Only touches the file on Apply.</div>
-          <span id="te-col-mid" style="display:none;"></span>
-          <div id="te-cascade" style="display:none;"></div>
-          <span id="te-cascade-def" style="display:none;"></span>
-          <span id="te-cascade-fix" style="display:none;"></span>
-          <span id="te-guard" style="display:none;"></span>
-          <span id="te-discard-2" style="display:none;"></span>
+          ${buildUnifiedTrackEditorShell("te", ep.path)}
         </div>
     """.trimIndent()
     document.body?.appendChild(backdrop)
