@@ -482,7 +482,8 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
         <div class="pagebar">
           <button id="back-btn" class="btn sm ghost">‹ Library</button>
           <h2>${item.title.esc()} <span class="muted">${if (item.year != null) "(${item.year})" else ""}</span></h2>
-          ${if (item.tmdbId != null) """<span class="badge ok">TMDB matched</span>""" else """<span class="badge warn">No TMDB match</span>"""}
+          ${if (item.tmdbId != null) """<span class="badge ok" id="match-badge">TMDB matched</span>""" else """<span class="badge warn" id="match-badge">No TMDB match</span>"""}
+          <span class="audio-flags" id="audio-flags">${audioFlagsHtml(item.tracks)}</span>
           <span class="spacer"></span>
           ${run {
               val imdbUrl = item.imdbId?.takeIf { it.isNotBlank() }?.let { "https://www.imdb.com/title/$it/" }
@@ -2559,6 +2560,44 @@ private fun selectNfoElement(treeEl: HTMLElement, nodeEl: HTMLElement, scope: Co
         // textContent (never innerHTML): the XML displays literally and is never parsed as markup.
         rawEl?.textContent = MediaApi.getNfoRaw(url) ?: "Could not read this file."
     }
+}
+
+/** ISO-639-1 language code → ISO-3166-1-alpha-2 country code for flag-icons assets (Phase 87). */
+private val LANG_CC = mapOf(
+    "en" to "gb", "fr" to "fr", "de" to "de", "es" to "es", "da" to "dk",
+    "fo" to "fo", "is" to "is", "no" to "no", "sv" to "se", "fi" to "fi",
+    "nl" to "nl", "it" to "it", "pt" to "pt", "pl" to "pl", "ru" to "ru",
+    "ja" to "jp", "ko" to "kr", "zh" to "cn", "ar" to "sa", "hi" to "in",
+)
+private const val AUDIO_FLAG_MAX = 5
+
+/**
+ * Build the `.audio-flags` pagebar strip HTML from the item's ordered audio tracks.
+ * Physical track order, untagged tracks skipped, max 5 flags then a +N pill.
+ * Hidden entirely when no audio track has a language that maps to a flag.
+ */
+private fun audioFlagsHtml(tracks: List<Track>): String {
+    val langs = tracks
+        .filter { it.kind == TrackKind.AUDIO }
+        .mapNotNull { t -> t.language?.lowercase()?.let { l -> LANG_CC[l]?.let { cc -> l to cc } } }
+    if (langs.isEmpty()) return ""
+    val shown = langs.take(AUDIO_FLAG_MAX)
+    val extra = langs.size - shown.size
+    val flags = shown.joinToString("") { (l, cc) ->
+        """<span class="fi fi-$cc" title="${langName(l)}" aria-label="${langName(l)}"></span>"""
+    }
+    val more = if (extra > 0) """<span class="af-more" title="$extra more">+$extra</span>""" else ""
+    return """<span class="af-label">Audio</span><span class="af-row">$flags$more</span>"""
+}
+
+/** Human-readable name for an ISO-639-1 code used in the audio-flag tooltips. */
+private fun langName(iso1: String): String = when (iso1) {
+    "en" -> "English"; "fr" -> "French"; "de" -> "German"; "es" -> "Spanish"
+    "da" -> "Danish"; "fo" -> "Faroese"; "is" -> "Icelandic"; "no" -> "Norwegian"
+    "sv" -> "Swedish"; "fi" -> "Finnish"; "nl" -> "Dutch"; "it" -> "Italian"
+    "pt" -> "Portuguese"; "pl" -> "Polish"; "ru" -> "Russian"; "ja" -> "Japanese"
+    "ko" -> "Korean"; "zh" -> "Chinese"; "ar" -> "Arabic"; "hi" -> "Hindi"
+    else -> iso1
 }
 
 /** Toggle the detail topbar dropdown/split menus (design media.html): a `.menu-btn` opens its menu;
