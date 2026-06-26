@@ -63,21 +63,23 @@ actual object TokenStore {
 // ─── R80: Browser history / URL navigation ────────────────────────────────────
 
 private fun jsGetHash(): String = js("window.location.hash")
-private fun jsSetHash(route: String): Unit = js("window.location.hash = route")
+private fun jsPushState(hash: String): Unit = js("window.history.pushState(null,'',hash)")
 private fun jsHistoryReplace(hash: String): Unit = js("window.history.replaceState(null,'',hash)")
 
+// history.pushState does NOT fire hashchange or popstate — no spurious pop() on every click.
 actual fun pushRoute(route: String) {
-    jsSetHash("#$route")
+    jsPushState("#$route")
 }
 
 actual fun replaceRoute(route: String) {
     jsHistoryReplace("#$route")
 }
 
+// popstate fires only on browser Back/Forward (history traversal), not on pushState/replaceState.
 actual fun installHashListener(onRoute: (String) -> Unit): () -> Unit {
-    jsInstallHashListener { onRoute(jsGetHash().removePrefix("#")) }
+    jsInstallPopStateListener { onRoute(jsGetHash().removePrefix("#")) }
     return {}
 }
 
-private fun jsInstallHashListener(callback: () -> Unit): Unit =
-    js("window.addEventListener('hashchange', function(){ callback() })")
+private fun jsInstallPopStateListener(callback: () -> Unit): Unit =
+    js("window.addEventListener('popstate', function(){ callback() })")
