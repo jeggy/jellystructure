@@ -1625,7 +1625,8 @@ internal suspend fun runScan(
     jellyfinClient: JellyfinClient,
     scanDispatcher: CoroutineDispatcher,
     libraryJellyfinId: String? = null,
-) {
+    freshnessFilter: ((dev.jellystructure.auth.JellyfinItem) -> Boolean)? = null,
+): List<MediaItem> {
     val allItems = mutableListOf<MediaItem>()
     val allItemsMutex = Mutex()
     val succeeded = AtomicInt(0)
@@ -1638,7 +1639,7 @@ internal suspend fun runScan(
     if (jellyfinItems == null) {
         scanTracker.complete()
         broadcaster.broadcast(JobEvent.Finished(jobId, 0, 0))
-        return
+        return emptyList()
     }
     Logger.info("Jellyfin returned ${jellyfinItems.size} items (${skipIds.size} will be skipped for resume)", "scan")
 
@@ -1650,7 +1651,7 @@ internal suspend fun runScan(
 
             scanTracker.targetWorkers.value = configStore.current.behavior.scanWorkers.coerceIn(1, 32)
 
-            // Producer: fills the channel, skipping already-processed IDs
+            // Producer: fills the channel, skipping already-processed IDs or freshness-filtered ones
             launch {
                 for (jItem in jellyfinItems) {
                     if (scanTracker.cancelRequested) break
@@ -1658,6 +1659,7 @@ internal suspend fun runScan(
                         Logger.info("Resume: skipping '${jItem.name}'")
                         continue
                     }
+                    if (freshnessFilter != null && !freshnessFilter(jItem)) continue
                     channel.send(jItem)
                 }
                 channel.close()
@@ -1724,7 +1726,7 @@ internal suspend fun runScan(
         Logger.error("Scan failed: ${e.message}", "scan")
         scanTracker.cancel()
         broadcaster.broadcast(JobEvent.Finished(jobId, succeeded.value, 1))
-        return
+        return emptyList()
     }
 
     // Post-scan cleanup: delete items no longer returned by the scan. Each item was already
@@ -1769,6 +1771,7 @@ internal suspend fun runScan(
     } else {
         broadcaster.broadcast(JobEvent.Finished(jobId, succeeded.value, 0))
     }
+    return allItems
 }
 
 @OptIn(ExperimentalForeignApi::class)

@@ -11,7 +11,14 @@ import dev.jellystructure.resolver.LanguageResolver
 import dev.jellystructure.shared.tv.Condition
 import dev.jellystructure.shared.tv.MatchMode
 import dev.jellystructure.tv.ConditionEvaluator
+import kotlinx.cinterop.ExperimentalForeignApi
+import kotlinx.cinterop.alloc
+import kotlinx.cinterop.memScoped
+import kotlinx.cinterop.ptr
 import kotlinx.serialization.json.Json
+import platform.posix.CLOCK_REALTIME
+import platform.posix.clock_gettime
+import platform.posix.timespec
 
 class MediaStore(private val db: JellystructureDb, private val jsTagStore: JsTagStore) {
     private val json = Json { ignoreUnknownKeys = true }
@@ -40,6 +47,10 @@ class MediaStore(private val db: JellystructureDb, private val jsTagStore: JsTag
     private var metaFacetsCache:   Pair<Long, MetaFacets>? = null
     private var nfoCoveredCache:   Pair<Long, Int>? = null
 
+    // Phase 91: per-item last_checked timestamps (item.id → epoch ms). Loaded from DB on startup,
+    // updated on upsertItem. Used by the pipeline freshness policy to skip recently-checked items.
+    private val lastCheckedMap: MutableMap<String, Long> = mutableMapOf()
+
     // Jellystructure-defined tags (those in the JS-tag store) always survive a re-scan, which
     // otherwise replaces an item's tags with the fresh Jellyfin set (constitution invariant #6).
     private fun preserveJsTags(fresh: MediaItem, existing: MediaItem?): MediaItem {
@@ -51,7 +62,19 @@ class MediaStore(private val db: JellystructureDb, private val jsTagStore: JsTag
     suspend fun load() {
         val count = db.mediaQueries.count().executeAsOne()
         Logger.info("MediaStore: DB has $count media items")
+        db.mediaQueries.allLastChecked().executeAsList().forEach { row ->
+            row.last_checked?.let { ts -> lastCheckedMap[row.id] = ts }
+        }
         backfillSearchText()
+    }
+
+    fun lastChecked(id: String): Long? = lastCheckedMap[id]
+
+    @OptIn(ExperimentalForeignApi::class)
+    fun nowMs(): Long = memScoped {
+        val ts = alloc<timespec>()
+        clock_gettime(CLOCK_REALTIME, ts.ptr)
+        ts.tv_sec * 1000L + ts.tv_nsec / 1_000_000L
     }
 
     private fun backfillSearchText() {
@@ -369,6 +392,8 @@ class MediaStore(private val db: JellystructureDb, private val jsTagStore: JsTag
         peopleIndexCache = null
         jellyfinIdIndex  = null
         libraryVersion++
+        val now = nowMs()
+        lastCheckedMap[item.id] = now
         db.mediaQueries.upsert(
             id = item.id,
             json = json.encodeToString(MediaItem.serializer(), item),
@@ -384,6 +409,7 @@ class MediaStore(private val db: JellystructureDb, private val jsTagStore: JsTag
             poster_path = item.posterPath,
             episode_count = item.episodes.size.toLong(),
             search_text = buildSearchText(item),
+            last_checked = now,
         )
     }
 
