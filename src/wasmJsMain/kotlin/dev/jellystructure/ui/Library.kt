@@ -50,6 +50,7 @@ private var libSort: String? = null
 private var libScanSocket: WebSocket? = null
 private var libScannedCount = 0
 private var libSearchJob: Job? = null
+private var libPendingScanCount = 0  // items scanned while a filter is active (not shown live)
 private var libStudios: List<String> = emptyList()
 private var libNetworks: List<String> = emptyList()
 private var libGenres: List<String> = emptyList()
@@ -109,6 +110,7 @@ fun renderLibrary(container: Element, scope: CoroutineScope, query: Map<String, 
     libScanSocket?.close()
     libScanSocket = null
     libScannedCount = 0
+    libPendingScanCount = 0
     parseLibraryUrl()
 
     container.innerHTML = """
@@ -400,6 +402,7 @@ private suspend fun triggerScan(scope: CoroutineScope) {
         return
     }
     libScannedCount = 0
+    libPendingScanCount = 0
     setScanRunning(true)
     document.getElementById("poster-grid")?.innerHTML = ""
     document.getElementById("lib-total")?.textContent = ""
@@ -408,6 +411,12 @@ private suspend fun triggerScan(scope: CoroutineScope) {
     libSlice = 0; libLoadedCount = 0; libTotal = 0; libEndReached = false
     connectScanSocket(scope)
 }
+
+private fun isQueryActive() =
+    libSearch != null || libFilter != null || libKind != null ||
+    libStudios.isNotEmpty() || libNetworks.isNotEmpty() || libGenres.isNotEmpty() ||
+    libTags.isNotEmpty() || libAudioLangs.isNotEmpty() || libTrackTitle != null ||
+    libAudioCodec != null || libUntaggedAudio
 
 private fun connectScanSocket(scope: CoroutineScope) {
     val proto = if (window.location.protocol == "https:") "wss" else "ws"
@@ -421,8 +430,13 @@ private fun connectScanSocket(scope: CoroutineScope) {
             when (event) {
                 is JobEvent.ItemScanned -> {
                     libScannedCount++
-                    appendItemToGrid(event.item, scope)
-                    updateScanBannerCount(libScannedCount)
+                    if (isQueryActive()) {
+                        libPendingScanCount++
+                        updateScanBannerWithPending(libScannedCount, libPendingScanCount, scope)
+                    } else {
+                        appendItemToGrid(event.item, scope)
+                        updateScanBannerCount(libScannedCount)
+                    }
                 }
                 is JobEvent.Finished -> {
                     ws.close()
@@ -464,6 +478,19 @@ private fun appendItemToGrid(item: MediaItem, scope: CoroutineScope) {
 private fun updateScanBannerCount(count: Int) {
     val banner = document.getElementById("scan-banner") as? HTMLElement ?: return
     banner.innerHTML = """<span class="badge">Scanning — $count item${if (count != 1) "s" else ""} found so far…</span>"""
+}
+
+private fun updateScanBannerWithPending(total: Int, pending: Int, scope: CoroutineScope) {
+    val banner = document.getElementById("scan-banner") as? HTMLElement ?: return
+    banner.style.display = "block"
+    banner.innerHTML = """
+        <span class="badge">Scanning — $total item${if (total != 1) "s" else ""} found so far ($pending new hidden by active filter)…</span>
+        <button id="scan-refresh-btn" class="btn sm ghost" style="margin-left:8px">Refresh results ($pending new)</button>
+    """.trimIndent()
+    banner.querySelector("#scan-refresh-btn")?.addEventListener("click") {
+        libPendingScanCount = 0
+        scope.launch { loadMore(scope, reset = true) }
+    }
 }
 
 private fun setScanRunning(running: Boolean) {
