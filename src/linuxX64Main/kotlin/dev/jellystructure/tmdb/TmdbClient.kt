@@ -320,11 +320,21 @@ class TmdbClient(
     // even with a blank overview as long as a localized title is present — some minority-language
     // translations supply only a title; the overview stays blank in the NFO rather than falling back
     // to English.
-    suspend fun getMovieDetailsLocalized(tmdbId: Int, languages: List<String>): Localized<TmdbMovieDetails>? {
+    //
+    // [acceptTitleOnly]: when true, the FIRST language in the priority list is also accepted when it
+    // returns a non-blank title even with a blank overview. Pass true when the caller has an explicit
+    // user-chosen language override — the user chose that language knowing an overview might not exist.
+    suspend fun getMovieDetailsLocalized(
+        tmdbId: Int,
+        languages: List<String>,
+        acceptTitleOnly: Boolean = false,
+    ): Localized<TmdbMovieDetails>? {
         var regionTags: Map<String, String>? = null
-        for (lang in languages) {
+        for ((idx, lang) in languages.withIndex()) {
             val d = getMovieDetails(tmdbId, lang)
-            if (d != null && d.overview.isNotBlank()) return Localized(d, lang)
+            val accepted = d != null && (d.overview.isNotBlank() ||
+                (acceptTitleOnly && idx == 0 && d.title.isNotBlank()))
+            if (d != null && accepted) return Localized(d, lang)
             if (regionTags == null) regionTags = getRegionedLanguageTags(tmdbId, isMovie = true)
             val regional = regionTags[lang.lowercase()]
             if (regional != null && !regional.equals(lang, ignoreCase = true)) {
@@ -473,11 +483,17 @@ class TmdbClient(
         }.getOrElse { Logger.warn("TMDB person search failed '$query': ${it.message}"); emptyList() }
     }
 
-    suspend fun getTvDetailsLocalized(tmdbId: Int, languages: List<String>): Localized<TmdbTvDetails>? {
+    suspend fun getTvDetailsLocalized(
+        tmdbId: Int,
+        languages: List<String>,
+        acceptTitleOnly: Boolean = false,
+    ): Localized<TmdbTvDetails>? {
         var regionTags: Map<String, String>? = null
-        for (lang in languages) {
+        for ((idx, lang) in languages.withIndex()) {
             val d = getTvDetails(tmdbId, lang)
-            if (d != null && d.overview.isNotBlank()) return Localized(d, lang)
+            val accepted = d != null && (d.overview.isNotBlank() ||
+                (acceptTitleOnly && idx == 0 && d.name.isNotBlank()))
+            if (d != null && accepted) return Localized(d, lang)
             if (regionTags == null) regionTags = getRegionedLanguageTags(tmdbId, isMovie = false)
             val regional = regionTags[lang.lowercase()]
             if (regional != null && !regional.equals(lang, ignoreCase = true)) {
