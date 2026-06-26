@@ -493,8 +493,17 @@ class TmdbClient(
     suspend fun getTranslationLanguages(tmdbId: Int, isMovie: Boolean): List<String> {
         val key = apiKey()
         if (key.isBlank()) return emptyList()
+        // Fetch translations and details in parallel (coroutines run sequentially here but both are fast).
+        // Details give us original_language — for original-language shows (e.g. a Faroese series) TMDB
+        // does not list the original language as a "translation", so it would never appear in the
+        // translations list; we must add it explicitly.
+        val originalLang: String? = runCatching {
+            if (isMovie) getMovieDetails(tmdbId)?.originalLanguage
+            else getTvDetails(tmdbId)?.originalLanguage
+        }.getOrNull()?.takeIf { it.isNotBlank() }
+
         val path = if (isMovie) "movie/$tmdbId/translations" else "tv/$tmdbId/translations"
-        val result = runCatching {
+        val fromTranslations = runCatching {
             val response = http.get("$baseUrl/$path") {
                 parameter("api_key", key)
             }
@@ -511,10 +520,14 @@ class TmdbClient(
                         (t.data.overview.isNotBlank() || t.data.name.isNotBlank() || t.data.title.isNotBlank())
                 }
                 .map { it.languageCode }
-                .distinct()
+        }.getOrElse { emptyList() }
+
+        if (fromTranslations.isEmpty() && originalLang == null) {
+            Logger.warn("TMDB translations empty for tmdbId=$tmdbId", "tmdb")
         }
-        if (result.isFailure) Logger.warn("TMDB translations failed tmdbId=$tmdbId: ${result.exceptionOrNull()?.message}")
-        return result.getOrElse { emptyList() }
+        // original_language is always fetchable (TMDB returns it natively) — prepend it so the
+        // resolver prefers the original over contributed translations when both are available.
+        return (listOfNotNull(originalLang) + fromTranslations).distinct()
     }
 
     /** Returns a map of language code → localized title for all available languages. */
