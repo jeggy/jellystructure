@@ -2,15 +2,30 @@
 
 package dev.jellystructure.ravilo.ui
 
+import coil3.ImageLoader
+import coil3.SingletonImageLoader
+import coil3.memory.MemoryCache
+import coil3.request.crossfade
+import dev.jellystructure.shared.tv.TvApiClient
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.js.Js
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.plugins.websocket.WebSockets
 import io.ktor.serialization.kotlinx.json.json
 import kotlinx.serialization.json.Json
-import dev.jellystructure.shared.tv.TvApiClient
+
+// R63: configure Coil for web — memory cache + crossfade (no disk cache on wasm/browser).
+private val imageLoaderInit = run {
+    SingletonImageLoader.setSafe { ctx ->
+        ImageLoader.Builder(ctx)
+            .memoryCache { MemoryCache.Builder().maxSizeBytes(64L * 1024 * 1024).build() }
+            .crossfade(true)
+            .build()
+    }
+}
 
 actual fun createTvApiClient(baseUrl: String, deviceTokenProvider: () -> String?): TvApiClient {
+    imageLoaderInit // ensure loader is configured before any image request
     val httpClient = HttpClient(Js) {
         install(ContentNegotiation) {
             json(Json { ignoreUnknownKeys = true; isLenient = true })
