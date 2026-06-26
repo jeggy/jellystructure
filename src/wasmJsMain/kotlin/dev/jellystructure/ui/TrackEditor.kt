@@ -169,7 +169,16 @@ fun buildUnifiedTrackEditorShell(prefix: String, filePath: String): String {
           </div>
           <div id="$prefix-list"></div>
           <div class="note blue" id="$prefix-explain" style="margin-top:14px;"></div>
-          <div class="tiny muted" style="margin-top:10px;">Reorder by dragging the grip or the ▲▼ buttons · click a language to change it · ★ sets the default. Track edits are <b>written to disk immediately</b>.</div>
+            <div class="tiny muted" style="margin-top:10px;">Reorder by dragging the grip or the ▲▼ buttons · click a language to change it · ★ sets the default. Changes are <b>saved only when you click Apply</b>.</div>
+          <div id="$prefix-pending" style="display:none;margin-top:14px;border:1px solid rgba(245,181,66,.45);border-radius:var(--radius-s);background:var(--warn-soft);padding:14px 16px;">
+            <div class="row center" style="margin-bottom:10px;gap:8px;">
+              <span class="badge warn" id="$prefix-pending-badge">0 pending</span>
+              <span class="spacer"></span>
+              <button id="$prefix-discard" class="btn sm ghost">Discard</button>
+              <button id="$prefix-apply" class="btn sm">Apply</button>
+            </div>
+            <div id="$prefix-pending-list" style="display:flex;flex-direction:column;gap:6px;"></div>
+          </div>
         </div>
     """.trimIndent()
 }
@@ -198,6 +207,9 @@ fun wireUnifiedTrackEditor(
 ) {
     val audioModel = tracks.filter { it.kind == TrackKind.AUDIO }.map { it.toModel() }.toMutableList()
     val subsModel = tracks.filter { it.kind == TrackKind.SUBTITLE }.map { it.toModel() }.toMutableList()
+    // Snapshots of the on-disk state — diff against these to compute pending changes.
+    val audioOriginal = audioModel.map { it.copy() }.toMutableList()
+    val subsOriginal = subsModel.map { it.copy() }.toMutableList()
     var currentKind = "audio"
     var dragIdx: Int? = null
 
@@ -293,71 +305,217 @@ fun wireUnifiedTrackEditor(
         if (currentKind == "audio") refreshPagebarAudioFlags(audioModel)
     }
 
+    // ── Pending-changes panel ───────────────────────────────────────────────────
+    val isMkv = filePath.substringAfterLast('.').lowercase() == "mkv"
+    val pendingEl  = document.getElementById("$prefix-pending") as? HTMLElement
+    val pendingBadge = document.getElementById("$prefix-pending-badge") as? HTMLElement
+    val pendingList  = document.getElementById("$prefix-pending-list") as? HTMLElement
+
+    fun pendingRow(desc: String, tool: String, slow: Boolean): String {
+        val toolLabel = if (slow) "$tool · slow (remux)" else "$tool · ~40 ms"
+        val toolColor = if (slow) "var(--bad)" else "var(--ok)"
+        return """<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;font-size:.82rem;">
+            <span>${desc.esc()}</span>
+            <span style="white-space:nowrap;font-family:'JetBrains Mono',monospace;font-size:.7rem;color:$toolColor;flex:none;">${toolLabel.esc()}</span>
+          </div>"""
+    }
+
+    fun renderPending() {
+        val pendEl = pendingEl ?: return
+        val rows = mutableListOf<String>()
+
+        // Audio language changes
+        audioModel.forEachIndexed { i, trk ->
+            val orig = audioOriginal.getOrNull(i) ?: return@forEachIndexed
+            if (trk.lang != orig.lang) {
+                val from = if (orig.lang.isNullOrBlank()) "none" else "${orig.lang} (${langShortName(orig.lang)})"
+                val to   = if (trk.lang.isNullOrBlank()) "none" else "${trk.lang} (${langShortName(trk.lang)})"
+                rows += pendingRow("Audio ${i+1} (${trk.sp}): language  $from → $to", if (isMkv) "mkvpropedit" else "ffmpeg", !isMkv)
+            }
+        }
+
+        // Audio default change
+        val origDefAudio = audioOriginal.firstOrNull { it.def }?.sp
+        val newDefAudio  = audioModel.firstOrNull  { it.def }
+        if (origDefAudio != newDefAudio?.sp) {
+            val pos = audioModel.indexOf(newDefAudio) + 1
+            val name = langShortName(newDefAudio?.lang)
+            rows += pendingRow("Audio $pos ($name): set as default", if (isMkv) "mkvpropedit" else "ffmpeg", !isMkv)
+        }
+
+        // Audio reorder
+        if (audioModel.map { it.sp } != audioOriginal.map { it.sp }) {
+            val seq = audioModel.joinToString(" → ") { langShortName(it.lang).ifBlank { it.sp } }
+            rows += pendingRow("Audio tracks reordered: $seq", "ffmpeg", true)
+        }
+
+        // Subtitle language changes
+        subsModel.forEachIndexed { i, trk ->
+            val orig = subsOriginal.getOrNull(i) ?: return@forEachIndexed
+            if (trk.lang != orig.lang) {
+                val from = if (orig.lang.isNullOrBlank()) "none" else "${orig.lang} (${langShortName(orig.lang)})"
+                val to   = if (trk.lang.isNullOrBlank()) "none" else "${trk.lang} (${langShortName(trk.lang)})"
+                rows += pendingRow("Subtitle ${i+1} (${trk.sp}): language  $from → $to", if (isMkv) "mkvpropedit" else "ffmpeg", !isMkv)
+            }
+        }
+
+        // Subtitle default change
+        val origDefSub = subsOriginal.firstOrNull { it.def }?.sp
+        val newDefSub  = subsModel.firstOrNull  { it.def }
+        if (origDefSub != newDefSub?.sp) {
+            val pos = subsModel.indexOf(newDefSub) + 1
+            rows += pendingRow("Subtitle $pos: set as default", if (isMkv) "mkvpropedit" else "ffmpeg", !isMkv)
+        }
+
+        // Subtitle forced changes
+        subsModel.forEachIndexed { i, trk ->
+            val orig = subsOriginal.getOrNull(i) ?: return@forEachIndexed
+            if (trk.forced != orig.forced) {
+                rows += pendingRow("Subtitle ${i+1}: forced → ${if (trk.forced) "on" else "off"}", if (isMkv) "mkvpropedit" else "ffmpeg", !isMkv)
+            }
+        }
+
+        // Subtitle reorder
+        if (subsModel.map { it.sp } != subsOriginal.map { it.sp }) {
+            rows += pendingRow("Subtitle tracks reordered", "ffmpeg", true)
+        }
+
+        if (rows.isEmpty()) {
+            pendEl.style.display = "none"
+        } else {
+            pendEl.style.display = "block"
+            pendingBadge?.textContent = "${rows.size} pending ${if (rows.size == 1) "change" else "changes"}"
+            pendingList?.innerHTML = rows.joinToString("")
+        }
+    }
+
+    // ── Apply / Discard ─────────────────────────────────────────────────────────
+
+    fun discardChanges() {
+        // Restore audio model from snapshot
+        audioModel.clear()
+        audioModel.addAll(audioOriginal.map { it.copy() })
+        // Restore sub model from snapshot
+        subsModel.clear()
+        subsModel.addAll(subsOriginal.map { it.copy() })
+        renderList()
+        renderPending()
+    }
+
+    fun applyChanges() {
+        val applyBtn = document.getElementById("$prefix-apply") as? HTMLElement ?: return
+        applyBtn.setAttribute("disabled", "")
+        applyBtn.textContent = "Applying…"
+
+        scope.launch {
+            var anyError = false
+
+            // 1. Language changes (mkvpropedit/fast — before reorder so specifiers stay valid)
+            for (trk in audioModel) {
+                val orig = audioOriginal.find { it.sp == trk.sp }
+                if (orig != null && trk.lang != orig.lang && !trk.lang.isNullOrBlank()) {
+                    val res = if (epFilename == null) MediaApi.setTrackLanguage(mediaId, trk.sp, trk.lang!!)
+                              else MediaApi.setEpisodeTrackLanguage(mediaId, epFilename, trk.sp, trk.lang!!)
+                    if (res.error != null) anyError = true
+                    else if (res.language != null) trk.lang = res.language
+                }
+            }
+            for (trk in subsModel) {
+                val orig = subsOriginal.find { it.sp == trk.sp }
+                if (orig != null && trk.lang != orig.lang && !trk.lang.isNullOrBlank()) {
+                    val res = if (epFilename == null) MediaApi.setTrackLanguage(mediaId, trk.sp, trk.lang!!)
+                              else MediaApi.setEpisodeTrackLanguage(mediaId, epFilename, trk.sp, trk.lang!!)
+                    if (res.error != null) anyError = true
+                    else if (res.language != null) trk.lang = res.language
+                }
+            }
+
+            // 2. Default changes
+            val origDefAudioSp = audioOriginal.firstOrNull { it.def }?.sp
+            val newDefAudio    = audioModel.firstOrNull { it.def }
+            if (origDefAudioSp != newDefAudio?.sp && newDefAudio != null) {
+                val err = if (epFilename == null) MediaApi.setDefaultTrack(mediaId, newDefAudio.sp)
+                          else MediaApi.setEpisodeDefaultTrack(mediaId, epFilename, newDefAudio.sp)
+                if (err != null) anyError = true
+            }
+            val origDefSubSp = subsOriginal.firstOrNull { it.def }?.sp
+            val newDefSub    = subsModel.firstOrNull { it.def }
+            if (origDefSubSp != newDefSub?.sp && newDefSub != null) {
+                val err = if (epFilename == null) MediaApi.setDefaultTrack(mediaId, newDefSub.sp)
+                          else MediaApi.setEpisodeDefaultTrack(mediaId, epFilename, newDefSub.sp)
+                if (err != null) anyError = true
+            }
+
+            // 3. Forced flag changes (subtitles only)
+            for (trk in subsModel) {
+                val orig = subsOriginal.find { it.sp == trk.sp }
+                if (orig != null && trk.forced != orig.forced) {
+                    val ok = if (epFilename == null) MediaApi.setForcedFlag(mediaId, trk.sp, trk.forced)
+                             else MediaApi.setEpisodeForcedFlag(mediaId, epFilename, trk.sp, trk.forced)
+                    if (!ok) anyError = true
+                }
+            }
+
+            // 4. Reorder (ffmpeg remux — last, as it changes stream indices on disk)
+            val audioNewOrder = audioModel.map { it.sp }
+            if (audioNewOrder != audioOriginal.map { it.sp }) {
+                val ok = if (epFilename == null) MediaApi.reorderTracks(mediaId, "audio", audioNewOrder)
+                         else MediaApi.reorderEpisodeTracks(mediaId, epFilename, "audio", audioNewOrder)
+                if (!ok) anyError = true
+            }
+            val subsNewOrder = subsModel.map { it.sp }
+            if (subsNewOrder != subsOriginal.map { it.sp }) {
+                val ok = if (epFilename == null) MediaApi.reorderTracks(mediaId, "subtitle", subsNewOrder)
+                         else MediaApi.reorderEpisodeTracks(mediaId, epFilename, "subtitle", subsNewOrder)
+                if (!ok) anyError = true
+            }
+
+            if (!anyError) {
+                // Update snapshots to match newly-applied disk state
+                audioOriginal.clear(); audioOriginal.addAll(audioModel.map { it.copy() })
+                subsOriginal.clear();  subsOriginal.addAll(subsModel.map { it.copy() })
+            }
+
+            renderList()
+            renderPending()
+            showDetailMsg(if (!anyError) "Changes applied" else "Some changes failed — see details", !anyError)
+
+            applyBtn.removeAttribute("disabled")
+            applyBtn.textContent = "Apply"
+        }
+    }
+
     // ── Event wiring ────────────────────────────────────────────────────────────
 
-    // Event delegation on track list — every action writes immediately
+    // Event delegation on track list — all actions update the local model only; Apply writes to disk.
     listEl.addEventListener("click") { e ->
         val el = (e.target as? HTMLElement)?.closest("[data-act]") as? HTMLElement ?: return@addEventListener
         val act = el.getAttribute("data-act") ?: return@addEventListener
         val i = el.getAttribute("data-i")?.toIntOrNull() ?: return@addEventListener
         val arr = model()
-        val kind = if (currentKind == "audio") "audio" else "subtitle"
         when (act) {
             "up" -> if (i > 0) {
-                val tmp = arr[i - 1]; arr[i - 1] = arr[i]; arr[i] = tmp; renderList()
-                val newOrder = arr.map { it.sp }
-                scope.launch {
-                    val ok = if (epFilename == null) MediaApi.reorderTracks(mediaId, kind, newOrder)
-                             else MediaApi.reorderEpisodeTracks(mediaId, epFilename, kind, newOrder)
-                    showDetailMsg(if (ok) "Reorder saved · ffmpeg -c copy remux" else "Reorder failed", ok)
-                }
+                val tmp = arr[i - 1]; arr[i - 1] = arr[i]; arr[i] = tmp
+                renderList(); renderPending()
             }
             "down" -> if (i < arr.size - 1) {
-                val tmp = arr[i + 1]; arr[i + 1] = arr[i]; arr[i] = tmp; renderList()
-                val newOrder = arr.map { it.sp }
-                scope.launch {
-                    val ok = if (epFilename == null) MediaApi.reorderTracks(mediaId, kind, newOrder)
-                             else MediaApi.reorderEpisodeTracks(mediaId, epFilename, kind, newOrder)
-                    showDetailMsg(if (ok) "Reorder saved · ffmpeg -c copy remux" else "Reorder failed", ok)
-                }
+                val tmp = arr[i + 1]; arr[i + 1] = arr[i]; arr[i] = tmp
+                renderList(); renderPending()
             }
             "default" -> {
-                arr.forEach { it.def = false }; arr[i].def = true; renderList()
-                val sp = arr[i].sp
-                scope.launch {
-                    val err = if (epFilename == null) MediaApi.setDefaultTrack(mediaId, sp)
-                              else MediaApi.setEpisodeDefaultTrack(mediaId, epFilename, sp)
-                    showDetailMsg(if (err == null) "Default saved · ~40 ms" else "Default failed: $err", err == null)
-                }
+                arr.forEach { it.def = false }; arr[i].def = true
+                renderList(); renderPending()
             }
             "forced" -> {
-                arr[i].forced = !arr[i].forced; renderList()
-                val sp = arr[i].sp; val newForced = arr[i].forced
-                scope.launch {
-                    val ok = if (epFilename == null) MediaApi.setForcedFlag(mediaId, sp, newForced)
-                             else MediaApi.setEpisodeForcedFlag(mediaId, epFilename, sp, newForced)
-                    if (!ok) { arr.find { it.sp == sp }?.forced = !newForced; renderList() }
-                    showDetailMsg(if (ok) "Forced flag saved · ~40 ms" else "Forced flag failed", ok)
-                }
+                arr[i].forced = !arr[i].forced
+                renderList(); renderPending()
             }
             "lang" -> {
-                e.stopPropagation() // prevent document close-listener from closing the menu immediately
+                e.stopPropagation()
                 val anchor = (e.target as? HTMLElement)?.closest(".lang-pickwrap") as? HTMLElement ?: el
-                val sp = arr[i].sp
                 openTrkLangMenu(anchor, arr[i].lang) { code ->
                     arr[i].lang = code
-                    renderList()
-                    scope.launch {
-                        val res = if (epFilename == null) MediaApi.setTrackLanguage(mediaId, sp, code)
-                                  else MediaApi.setEpisodeTrackLanguage(mediaId, epFilename, sp, code)
-                        if (res.error != null) {
-                            showDetailMsg("Language failed: ${res.error}", false)
-                        } else {
-                            if (res.language != null) arr.find { it.sp == sp }?.lang = res.language
-                            showDetailMsg("Language saved · ~40 ms", true)
-                            renderList()
-                        }
-                    }
+                    renderList(); renderPending()
                 }
             }
         }
@@ -391,14 +549,7 @@ fun wireUnifiedTrackEditor(
         val moved = arr.removeAt(from)
         arr.add(to, moved)
         dragIdx = null
-        renderList()
-        val kind = if (currentKind == "audio") "audio" else "subtitle"
-        val newOrder = arr.map { it.sp }
-        scope.launch {
-            val ok = if (epFilename == null) MediaApi.reorderTracks(mediaId, kind, newOrder)
-                     else MediaApi.reorderEpisodeTracks(mediaId, epFilename, kind, newOrder)
-            showDetailMsg(if (ok) "Reorder saved · ffmpeg -c copy remux" else "Reorder failed", ok)
-        }
+        renderList(); renderPending()
     }
 
     // Segment switch
@@ -412,20 +563,17 @@ fun wireUnifiedTrackEditor(
         renderList()
     }
 
-    // Cascade fix — write-through
+    // Cascade fix — deferred like all other edits
     document.getElementById("$prefix-cascade-fix")?.addEventListener("click") { _ ->
         if (resolvedLanguage.isNullOrBlank()) return@addEventListener
         val target = audioModel.find { it.lang == resolvedLanguage } ?: audioModel.firstOrNull() ?: return@addEventListener
         audioModel.forEach { it.def = false }
         target.def = true
-        renderList()
-        val sp = target.sp
-        scope.launch {
-            val err = if (epFilename == null) MediaApi.setDefaultTrack(mediaId, sp)
-                      else MediaApi.setEpisodeDefaultTrack(mediaId, epFilename, sp)
-            showDetailMsg(if (err == null) "Default fixed · ~40 ms" else "Default fix failed: $err", err == null)
-        }
+        renderList(); renderPending()
     }
+
+    document.getElementById("$prefix-apply")?.addEventListener("click") { _ -> applyChanges() }
+    document.getElementById("$prefix-discard")?.addEventListener("click") { _ -> discardChanges() }
 
     // Initial render
     renderList()
