@@ -31,6 +31,123 @@
   /* tabbed layout — one panel visible at a time, #tab= addressable */
   .set-section[data-tab] { display: none; }
   .set-section[data-tab].tab-show { display: block; }
+
+  /* ---------- scheduled scan pipeline ---------- */
+  .pipe-sched { display: flex; gap: 14px; align-items: flex-end; flex-wrap: wrap; }
+  .pipe-recipe { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-top: 12px; }
+  .pipe-recipe .rc { font-size: .72rem; font-weight: 700; padding: 3px 9px; border-radius: 7px; white-space: nowrap; }
+  .pipe-recipe .rc.off { filter: grayscale(.7); opacity: .5; text-decoration: line-through; }
+  .pipe-recipe .arrow { color: var(--ink-dim); font-size: .8rem; }
+  .pipe-canvas { transition: opacity .2s, filter .2s; }
+  .pipe-canvas.off { opacity: .42; pointer-events: none; filter: saturate(.45); }
+
+  .pipe-step { position: relative; display: flex; align-items: stretch; background: var(--fill-2);
+    border: 1px solid var(--line-2); border-radius: var(--radius-s); overflow: hidden;
+    transition: box-shadow .2s ease, border-color .2s ease, opacity .2s ease, transform .12s ease; }
+  .pipe-step::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--c); }
+  .pipe-step:hover { box-shadow: var(--shadow-s); }
+  .pipe-step.dashed { border-style: dashed; }
+  .pipe-step.disabled { opacity: .5; }
+  .pipe-step.dragging { opacity: .35; }
+  .pipe-step.drop-target { box-shadow: 0 -3px 0 0 var(--hi); }
+  .pipe-step.running { border-color: var(--hi); box-shadow: 0 0 0 3px var(--hi-soft); }
+  .pipe-step.done::before { background: var(--ok); }
+
+  .pipe-grip { display: flex; align-items: center; padding: 0 3px 0 9px; color: var(--ink-dim);
+    cursor: grab; font-size: 1.05rem; letter-spacing: -2px; flex: none; }
+  .pipe-grip:active { cursor: grabbing; }
+  .pipe-step.trigger .pipe-grip { cursor: default; opacity: .55; }
+  .pipe-ic { width: 34px; height: 34px; border-radius: 9px; display: flex; align-items: center;
+    justify-content: center; flex: none; align-self: center; background: var(--c-soft); color: var(--c); }
+  .pipe-ic svg { width: 17px; height: 17px; }
+  .pipe-body { flex: 1; min-width: 0; padding: 10px 12px; display: flex; flex-direction: column; gap: 4px; }
+  .pipe-row1 { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; }
+  .pipe-title { font-weight: 600; font-size: .92rem; }
+  .pipe-tag { font-size: .58rem; font-weight: 800; letter-spacing: .1em; text-transform: uppercase;
+    color: var(--c); background: var(--c-soft); padding: 2px 7px; border-radius: 5px; }
+  .pipe-need { font-size: .62rem; font-weight: 700; color: var(--warn); background: var(--warn-soft);
+    border: 1px solid rgba(245,181,66,.4); padding: 1px 7px; border-radius: 20px; }
+  .pipe-sub { font-size: .76rem; color: var(--ink-soft); line-height: 1.35; }
+  .pipe-opts { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 3px; }
+  .pipe-opts:empty { display: none; }
+  .opt-seg { display: inline-flex; border: 1px solid var(--line-2); border-radius: 7px; overflow: hidden; background: var(--fill); }
+  .opt-seg span { padding: 3px 9px; font-size: .72rem; font-weight: 600; color: var(--ink-soft); cursor: pointer;
+    border-right: 1px solid var(--line); transition: background .15s, color .15s; }
+  .opt-seg span:last-child { border-right: 0; }
+  .opt-seg span:hover { color: var(--ink); }
+  .opt-seg span.on { background: var(--c-soft); color: var(--c); }
+  .opt-tog { display: inline-flex; align-items: center; gap: 7px; font-size: .74rem; color: var(--ink-soft); cursor: pointer; }
+  .opt-step { display: inline-flex; align-items: center; gap: 8px; font-size: .74rem; font-weight: 600; color: var(--ink-soft);
+    border: 1px solid var(--line-2); border-radius: 7px; padding: 2px 5px 2px 9px; cursor: pointer; user-select: none; }
+  .opt-step b { color: var(--ink); font-family: 'JetBrains Mono', monospace; }
+  .opt-step .nx { width: 17px; height: 17px; display: inline-flex; align-items: center; justify-content: center;
+    border-radius: 5px; background: var(--fill-3); }
+
+  /* first-step freshness policy */
+  .scan-cfg { flex: 1 0 100%; margin-top: 4px; border: 1px solid var(--line); border-radius: 10px;
+    background: var(--fill); padding: 12px 13px; display: flex; flex-direction: column; }
+  .scan-cfg .sc-head { display: flex; align-items: center; gap: 9px; font-size: .86rem; cursor: pointer; }
+  .scan-cfg .sc-sub { font-size: .74rem; color: var(--ink-soft); line-height: 1.4; margin: 4px 0 10px 31px; }
+  .scan-cfg.off .fresh-tbl, .scan-cfg.off .sc-state { opacity: .4; pointer-events: none; }
+  .fresh-tbl { display: grid; grid-template-columns: 1fr auto; align-items: center; column-gap: 16px; }
+  .fresh-hd { display: contents; }
+  .fresh-hd span { font-size: .62rem; text-transform: uppercase; letter-spacing: .09em; color: var(--ink-dim);
+    font-weight: 700; padding-bottom: 6px; border-bottom: 1px solid var(--line); }
+  .fresh-hd span:last-child { text-align: right; }
+  .fr-age { display: flex; align-items: baseline; gap: 9px; padding: 9px 0; }
+  .fr-age .nm { font-size: .82rem; font-weight: 600; color: var(--ink); }
+  .fr-age .yr { font-family: 'JetBrains Mono', monospace; font-size: .68rem; color: var(--ink-soft); }
+  .fr-cell { display: flex; justify-content: flex-end; padding: 9px 0; }
+  .fresh-tbl > .fr-age, .fresh-tbl > .fr-cell { border-bottom: 1px solid var(--line); }
+  .fresh-tbl > .fr-age:nth-last-child(2), .fresh-tbl > .fr-cell:last-child { border-bottom: 0; }
+  .cad { display: inline-flex; align-items: center; gap: 7px; font-size: .78rem; font-weight: 600; color: var(--ink);
+    border: 1px solid var(--line-2); border-radius: 8px; padding: 5px 9px 5px 10px; cursor: pointer; user-select: none;
+    background: var(--fill-2); transition: border-color .15s, box-shadow .15s; }
+  .cad:hover { border-color: var(--hi); box-shadow: 0 0 0 3px var(--hi-soft); }
+  .cad .ci { color: var(--hi); display: inline-flex; }
+  .cad .ci svg { width: 14px; height: 14px; }
+  .cad .cv { min-width: 96px; }
+  .cad .cx { color: var(--ink-dim); font-size: .68rem; }
+  .cad.never { color: var(--ink-soft); }
+  .cad.never .ci { color: var(--ink-dim); }
+  .sc-state { font-size: .7rem; color: var(--ink-dim); line-height: 1.5; margin-top: 11px; padding-top: 10px; border-top: 1px solid var(--line); }
+  .sc-state b { color: var(--ink-soft); }
+
+  .pipe-act { display: flex; align-items: center; gap: 7px; padding: 0 11px; flex: none; }
+  .pipe-status { width: 16px; height: 16px; display: inline-flex; align-items: center; justify-content: center; }
+  .pipe-status .spin { width: 14px; height: 14px; border: 2px solid var(--line-2); border-top-color: var(--hi);
+    border-radius: 50%; animation: pspin .7s linear infinite; }
+  .pipe-status .ck { color: var(--ok); }
+  @keyframes pspin { to { transform: rotate(360deg); } }
+  .pipe-status .spin { animation-name: pspin; }
+  .pipe-x { width: 24px; height: 24px; display: flex; align-items: center; justify-content: center;
+    border-radius: 6px; color: var(--ink-dim); cursor: pointer; font-size: .82rem; transition: background .15s, color .15s; }
+  .pipe-x:hover { background: var(--bad-soft); color: var(--bad); }
+
+  .pipe-conn { position: relative; display: flex; justify-content: center; height: 26px; }
+  .pipe-conn .ln { width: 2px; height: 100%; background: var(--line-2); }
+  .pipe-add { position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%);
+    width: 24px; height: 24px; border-radius: 50%; border: 1px solid var(--line-2); background: var(--bg);
+    color: var(--ink-soft); display: flex; align-items: center; justify-content: center; cursor: pointer;
+    font-size: 1.05rem; line-height: 0; opacity: 0; transition: opacity .15s, border-color .15s, color .15s, box-shadow .15s; }
+  .pipe-conn:hover .pipe-add { opacity: 1; }
+  .pipe-add:hover { border-color: var(--hi); color: var(--hi); box-shadow: 0 0 0 3px var(--hi-soft); }
+  .pipe-end { display: flex; justify-content: center; margin-top: 8px; }
+  .pipe-end .btn { border-style: dashed; }
+
+  /* block palette popover */
+  .blk-back { position: fixed; inset: 0; z-index: 200; display: none; }
+  .blk-back.open { display: block; }
+  .blk-pal { position: fixed; z-index: 201; width: 296px; max-height: 64vh; overflow: auto; display: none;
+    background: var(--fill); border: 1px solid var(--line-2); border-radius: var(--radius); box-shadow: var(--shadow); padding: 8px; }
+  .blk-pal.open { display: block; }
+  .blk-pal .pl-h { font-size: .64rem; text-transform: uppercase; letter-spacing: .12em; color: var(--ink-soft);
+    font-weight: 700; padding: 6px 8px 4px; }
+  .blk-item { display: flex; gap: 10px; align-items: flex-start; padding: 8px 9px; border-radius: var(--radius-s); cursor: pointer; }
+  .blk-item:hover { background: var(--hi-soft); }
+  .blk-item .pipe-ic { width: 30px; height: 30px; }
+  .blk-item .nm { font-weight: 600; font-size: .85rem; }
+  .blk-item .ds { font-size: .72rem; color: var(--ink-soft); line-height: 1.3; }
 </style>
 </head>
 <body class="wf-body app-body">
@@ -112,13 +229,21 @@
           <div class="field" style="margin:0;width:200px;"><label>Scan thread pool <span class="restart-note">· restart required</span></label><div class="input">8</div><span class="hint">ffprobe/ffmpeg subprocess pool size.</span></div>
         </div>
         <hr class="dash" style="margin:12px 0;">
-        <div class="row center" style="padding:2px 0;"><div><b>Scheduled rescan</b><div class="tiny muted">Run a full library scan automatically on a schedule.</div></div><span class="spacer"></span><span class="toggle on"></span></div>
-        <div class="row" style="gap:16px;flex-wrap:wrap;margin-top:8px;">
-          <div class="field" style="margin:0;width:160px;"><label>Frequency</label><span class="select"><span>Daily</span></span></div>
-          <div class="field" style="margin:0;width:120px;"><label>At</label><div class="input">03:00</div></div>
-          <div class="field fill" style="margin:0;min-width:160px;"><label>Cron <span class="muted">(advanced)</span></label><div class="input mono">0 3 * * *</div></div>
+        <div class="row center" style="padding:2px 0;"><div><b>Scheduled scan pipeline</b><div class="tiny muted">Compose what runs on each automated scan. It always starts by <b>scanning media files</b> — then chain the steps you want, in any order.</div></div><span class="spacer"></span><span class="muted tiny">enable</span><span class="toggle on" id="pipe-enable"></span></div>
+
+        <div class="box flat" style="padding:12px 14px;margin-top:10px;">
+          <div class="pipe-sched">
+            <div class="field" style="margin:0;"><label>Runs</label><span class="seg" id="pipe-freq"><span class="on" data-f="daily">Daily</span><span data-f="weekly">Weekly</span><span data-f="6h">Every 6h</span></span></div>
+            <div class="field" style="margin:0;width:104px;" id="pipe-at-field"><label>At</label><div class="input">03:00</div></div>
+            <div class="field" style="margin:0;min-width:130px;"><label>Cron <span class="muted">(derived)</span></label><div class="input mono" id="pipe-cron">0 3 * * *</div></div>
+            <span class="spacer"></span>
+            <span class="badge ok" id="pipe-next">next · tonight 03:00</span>
+            <span class="btn sm primary" id="pipe-run"><span id="pipe-run-ic">▷</span> Run now</span>
+          </div>
+          <div class="pipe-recipe" id="pipe-recipe"></div>
         </div>
-        <div class="tiny muted" style="margin-top:8px;">Next run <b>tonight 03:00</b> · last full scan completed 14:02 today.</div>
+
+        <div class="pipe-canvas" id="pipeline" style="margin-top:14px;"></div>
       </div>
 
       <!-- LIBRARY MAPPING -->
@@ -261,7 +386,10 @@
         <div>tell_jellyfin = <span class="okc">true</span></div>
         <div>scan_workers = 4</div>
         <div>scan_threads = 8</div>
-        <div>scan_schedule = "0 3 * * *"</div>
+        <div>scan_schedule = <span id="toml-cron">"0 3 * * *"</span></div>
+        <div>&nbsp;</div>
+        <div class="muted"># scan.pipeline — built above</div>
+        <div id="toml-pipeline"></div>
         <div>&nbsp;</div>
         <div class="muted">[notifications]</div>
         <div>webhook_url = "https://ntfy.sh/…"</div>
@@ -284,6 +412,10 @@
     </div>
   </div>
 </main>
+
+<!-- block palette popover (scan pipeline) -->
+<div class="blk-back" id="blk-back"></div>
+<div class="blk-pal" id="blk-pal"><div class="pl-h">Add a step</div><div id="blk-list"></div></div>
 
 <script src="app-shell.js"></script>
 <script>
@@ -385,6 +517,277 @@
       const t = document.createElement('div'); t.className = 'toast'; t.textContent = 'Scanned data cleared'; document.body.appendChild(t); setTimeout(() => t.remove(), 1800);
     }
   });
+})();
+</script>
+
+<script>
+/* ---------- Scheduled scan pipeline builder ---------- */
+(function () {
+  const hexA = (h, a) => { const n = parseInt(h.slice(1), 16); return `rgba(${(n>>16)&255},${(n>>8)&255},${n&255},${a})`; };
+  const IC = {
+    scan:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="7" cy="7" r="4.4"/><line x1="10.4" y1="10.4" x2="14" y2="14"/></svg>',
+    tmdb:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3.5" width="12" height="9" rx="1.6"/><line x1="2" y1="6.4" x2="14" y2="6.4"/><line x1="4.4" y1="9.2" x2="8.4" y2="9.2"/></svg>',
+    art:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2.6" width="12" height="10.8" rx="1.6"/><circle cx="5.6" cy="6" r="1.2"/><polyline points="3,12 6.4,8.6 9,11 11,9 13.4,11.4"/></svg>',
+    nfo:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 1.9h4.2L12 5.5V14.1H4Z"/><polyline points="8,1.9 8,5.6 12,5.6"/><line x1="6" y1="9.1" x2="10" y2="9.1"/><line x1="6" y1="11.3" x2="10" y2="11.3"/></svg>',
+    sync:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M13 8a5 5 0 1 1-1.5-3.6"/><polyline points="13.2,2.4 13.3,5 10.6,5.2"/></svg>',
+    arr:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2 5.2h4l1.2 1.4h6.8V12.4H2Z"/><path d="M9.5 9.4a2 2 0 1 1-.6-1.5"/><polyline points="10.4,7.3 10.5,9 8.9,9"/></svg>',
+    drift:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 1.9 14.6 13.5H1.4Z"/><line x1="8" y1="6.4" x2="8" y2="9.6"/><line x1="8" y1="11.4" x2="8" y2="11.5"/></svg>',
+    notify:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6.6a4 4 0 0 1 8 0c0 2.8 1.2 3.7 1.2 3.7H2.8S4 9.4 4 6.6Z"/><path d="M6.6 12.6a1.5 1.5 0 0 0 2.8 0"/></svg>',
+    gate:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="4" cy="3.8" r="1.7"/><circle cx="4" cy="12.2" r="1.7"/><circle cx="12" cy="8" r="1.7"/><path d="M4 5.5v5M5.6 3.8h2.6a2 2 0 0 1 2 2v.6M5.6 12.2h2.6a2 2 0 0 0 2-2v-.6"/></svg>',
+    wait:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8.8" r="5.1"/><line x1="8" y1="8.8" x2="8" y2="5.8"/><line x1="8" y1="8.8" x2="10" y2="9.8"/><line x1="6.2" y1="1.9" x2="9.8" y2="1.9"/></svg>',
+    ck:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3,8.6 6.4,12 13,4.6"/></svg>'
+  };
+  const BLK = {
+    scan:  { name:'Scan media files',  sub:'New & changed files (Jellyfin + ffprobe) — plus stale re-checks by release age.', c:'#7b6ef0', ic:IC.scan, trigger:true },
+    tmdb:  { name:'Pull TMDB metadata',sub:'Match titles · metadata · original language.', c:'#3fb6f5', ic:IC.tmdb, opts:[{k:'scope',type:'seg',vals:['Missing only','All items'],def:0}] },
+    art:   { name:'Download artwork',  sub:'Poster · fanart · logo · stills from TMDB.', c:'#b15cd0', ic:IC.art, opts:[{k:'scope',type:'seg',vals:['Missing only','All items'],def:0}] },
+    nfo:   { name:'Write NFO files',   sub:'Write .nfo files to disk.', c:'#2dd49a', ic:IC.nfo, opts:[{k:'ovr',type:'tog',label:'Overwrite existing fields',def:false}] },
+    sync:  { name:'Sync Jellyfin',     sub:'POST /Items/{id}/Refresh so Jellyfin re-reads the NFOs.', c:'#18c2d4', ic:IC.sync },
+    arr:   { name:'Rescan in Radarr / Sonarr', sub:'Nudge the *arr that manages each touched title.', c:'#f5b542', ic:IC.arr, need:true },
+    drift: { name:'Detect drift',      sub:'Compare Jellyfin ⇄ NFO and flag differences.', c:'#ff6f61', ic:IC.drift },
+    notify:{ name:'Send notification', sub:'Ping your webhook when the run reaches here.', c:'#e0639a', ic:IC.notify, opts:[{k:'ev',type:'seg',vals:['Run summary','On changes','On errors'],def:0}] },
+    wait:  { name:'Wait',              sub:'Pause before the next step (let Jellyfin settle).', c:'#9aa0b4', ic:IC.wait, opts:[{k:'min',type:'step',vals:[5,10,15,30,60],def:1,unit:' min'}] }
+  };
+  const PALETTE = ['tmdb','art','nfo','sync','arr','drift','wait','notify'];
+  const SHORT = { scan:'Scan', tmdb:'TMDB', art:'Artwork', nfo:'NFO', sync:'Jellyfin', arr:'*arr', drift:'Drift', notify:'Notify', wait:'Wait' };
+
+  const mk = (type) => { const d = BLK[type]; const opts = {}; (d.opts||[]).forEach(o => opts[o.k] = o.def);
+    if (type === 'scan') Object.assign(opts, { recheck:true, cadY:0, cadM:1, cadO:2 }); return { type, enabled:true, opts }; };
+  const CAD = ['Weekly','Monthly','Every 6 months','Yearly','Never'];
+  const CAD_T = ['weekly','monthly','6months','yearly','never'];
+  const CAD_LABEL = ['every week','every month','every 6 months','every year','never'];
+
+  function scanCfg(st) {
+    const Y = new Date().getFullYear();
+    const rows = [
+      { k:'cadY', nm:'Released this year',        yr:`${Y}` },
+      { k:'cadM', nm:'Released 1\u20135 years ago',    yr:`${Y-5}\u2013${Y-1}` },
+      { k:'cadO', nm:'Released over 5 years ago', yr:`before ${Y-5}` }
+    ];
+    const box = document.createElement('div');
+    box.className = 'scan-cfg' + (st.opts.recheck ? '' : ' off');
+    const head = document.createElement('label');
+    head.className = 'sc-head';
+    head.innerHTML = `<span class="mini-toggle${st.opts.recheck ? ' on' : ''}"></span><b>Re-check unchanged media on a schedule</b>`;
+    head.onclick = () => { st.opts.recheck = !st.opts.recheck; render(); };
+    box.appendChild(head);
+    const sub = document.createElement('div'); sub.className = 'sc-sub';
+    sub.textContent = 'Re-sync metadata & artwork for titles whose files never change \u2014 often for new releases, rarely for old catalogue. Newer titles still get TMDB updates (ratings, cast, artwork); old ones almost never do.';
+    box.appendChild(sub);
+    const tbl = document.createElement('div'); tbl.className = 'fresh-tbl';
+    const hd = document.createElement('div'); hd.className = 'fresh-hd';
+    hd.innerHTML = '<span>Release age</span><span>Re-check</span>';
+    tbl.appendChild(hd);
+    rows.forEach(r => {
+      const idx = st.opts[r.k] || 0;
+      const age = document.createElement('div'); age.className = 'fr-age';
+      age.innerHTML = `<span class="nm">${r.nm}</span><span class="yr">${r.yr}</span>`;
+      tbl.appendChild(age);
+      const cell = document.createElement('div'); cell.className = 'fr-cell';
+      const cad = document.createElement('span'); cad.className = 'cad' + (idx === 4 ? ' never' : '');
+      cad.title = 'Click to change how often';
+      cad.innerHTML = `<span class="ci">${IC.wait}</span><span class="cv">${CAD_LABEL[idx]}</span><span class="cx">\u25be</span>`;
+      cad.onclick = () => { st.opts[r.k] = (idx + 1) % CAD.length; render(); };
+      cell.appendChild(cad); tbl.appendChild(cell);
+    });
+    box.appendChild(tbl);
+    const note = document.createElement('div'); note.className = 'sc-state';
+    note.innerHTML = '<b>How it works:</b> Jellystructure stores each title\u2019s last-checked date and, on every run, re-processes only the titles whose interval is due \u2014 they then flow through the steps below. New &amp; changed files are always processed immediately, no matter this schedule.';
+    box.appendChild(note);
+    return box;
+  }
+  let pipeline = [ mk('scan'), mk('tmdb'), mk('sync'), mk('notify') ];
+
+  const canvas = document.getElementById('pipeline');
+  const recipeEl = document.getElementById('pipe-recipe');
+  const tomlEl = document.getElementById('toml-pipeline');
+  let dragFrom = null;
+
+  function optEl(st, o) {
+    const wrap = document.createElement('span');
+    if (o.type === 'seg') {
+      wrap.className = 'opt-seg';
+      o.vals.forEach((v, i) => { const s = document.createElement('span'); s.textContent = v; if ((st.opts[o.k]||0) === i) s.classList.add('on');
+        s.onclick = () => { st.opts[o.k] = i; render(); }; wrap.appendChild(s); });
+    } else if (o.type === 'tog') {
+      wrap.className = 'opt-tog';
+      wrap.innerHTML = `<span class="mini-toggle${st.opts[o.k] ? ' on' : ''}"></span>${o.label}`;
+      wrap.onclick = () => { st.opts[o.k] = !st.opts[o.k]; render(); };
+    } else if (o.type === 'step') {
+      wrap.className = 'opt-step';
+      const idx = st.opts[o.k] ?? o.def;
+      wrap.innerHTML = `<b>${o.vals[idx]}${o.unit||''}</b><span class="nx">▸</span>`;
+      wrap.onclick = () => { st.opts[o.k] = ((st.opts[o.k] ?? o.def) + 1) % o.vals.length; render(); };
+    }
+    return wrap;
+  }
+
+  function stepEl(st, i) {
+    const d = BLK[st.type];
+    const el = document.createElement('div');
+    el.className = 'pipe-step' + (i === 0 ? ' trigger' : '') + (st.enabled ? '' : ' disabled') + (d.dashed ? ' dashed' : '');
+    el.style.setProperty('--c', d.c); el.style.setProperty('--c-soft', hexA(d.c, .16));
+    el.dataset.i = i;
+    el.innerHTML =
+      `<div class="pipe-grip">⠿</div>` +
+      `<div class="pipe-ic">${d.ic}</div>` +
+      `<div class="pipe-body">` +
+        `<div class="pipe-row1"><span class="pipe-title">${d.name}</span>` +
+          (i === 0 ? '<span class="pipe-tag">start</span>' : '') +
+          (d.need ? '<span class="pipe-need">needs *arr</span>' : '') +
+        `</div>` +
+        `<div class="pipe-sub">${d.sub}</div>` +
+        `<div class="pipe-opts"></div>` +
+      `</div>` +
+      `<div class="pipe-act"><span class="pipe-status"></span>` +
+        (i === 0 ? '' : `<span class="mini-toggle${st.enabled ? ' on' : ''}" data-tog title="Skip this step"></span><span class="pipe-x" data-x title="Remove">✕</span>`) +
+      `</div>`;
+    const opts = el.querySelector('.pipe-opts');
+    (d.opts || []).forEach(o => opts.appendChild(optEl(st, o)));
+    if (st.type === 'scan') opts.appendChild(scanCfg(st));
+    if (!opts.children.length) opts.remove();
+
+    const tog = el.querySelector('[data-tog]'); if (tog) tog.onclick = () => { st.enabled = !st.enabled; render(); };
+    const x = el.querySelector('[data-x]'); if (x) x.onclick = () => { pipeline.splice(i, 1); render(); };
+
+    if (i > 0) {
+      el.draggable = true;
+      el.addEventListener('dragstart', e => { dragFrom = i; el.classList.add('dragging'); e.dataTransfer.effectAllowed = 'move'; });
+      el.addEventListener('dragend', () => { dragFrom = null; render(); });
+      el.addEventListener('dragover', e => { e.preventDefault(); el.classList.add('drop-target'); });
+      el.addEventListener('dragleave', () => el.classList.remove('drop-target'));
+      el.addEventListener('drop', e => { e.preventDefault(); moveStep(dragFrom, i); });
+    }
+    return el;
+  }
+
+  function connEl(insertAt) {
+    const c = document.createElement('div');
+    c.className = 'pipe-conn';
+    c.innerHTML = `<span class="ln"></span><span class="pipe-add" title="Add a step here">+</span>`;
+    c.querySelector('.pipe-add').onclick = e => openPalette(e.currentTarget, insertAt);
+    return c;
+  }
+
+  function moveStep(from, to) {
+    if (from == null || from < 1) return;
+    const item = pipeline.splice(from, 1)[0];
+    if (from < to) to--;
+    to = Math.max(1, Math.min(to, pipeline.length));
+    pipeline.splice(to, 0, item);
+    render();
+  }
+
+  function render() {
+    canvas.innerHTML = '';
+    pipeline.forEach((st, i) => {
+      canvas.appendChild(stepEl(st, i));
+      if (i < pipeline.length - 1) canvas.appendChild(connEl(i + 1));
+    });
+    const end = document.createElement('div');
+    end.className = 'pipe-end';
+    end.innerHTML = `<span class="btn sm ghost" id="pipe-addend">+ Add step</span>`;
+    end.querySelector('#pipe-addend').onclick = e => openPalette(e.currentTarget, pipeline.length);
+    canvas.appendChild(end);
+    renderRecipe(); renderToml();
+  }
+
+  function renderRecipe() {
+    recipeEl.innerHTML = pipeline.map((st, i) => {
+      const d = BLK[st.type];
+      return (i ? '<span class="arrow">→</span>' : '') +
+        `<span class="rc${st.enabled ? '' : ' off'}" style="background:${hexA(d.c, .16)};color:${d.c}">${SHORT[st.type]}</span>`;
+    }).join('');
+  }
+
+  function renderToml() {
+    const ID = { scan:'scan_files', tmdb:'pull_tmdb', art:'fetch_artwork', nfo:'write_nfo', sync:'sync_jellyfin', arr:'rescan_arr', drift:'detect_drift', notify:'notify', wait:'wait' };
+    tomlEl.innerHTML = pipeline.map(st => {
+      const L = ['<div class="muted">[[scan.pipeline]]</div>', `<div>step = "${ID[st.type]}"</div>`];
+      if (st.type === 'scan') {
+        L.push(`<div>recheck_unchanged = <span class="${st.opts.recheck ? 'okc' : 'badc'}">${!!st.opts.recheck}</span></div>`);
+        if (st.opts.recheck) {
+          L.push(`<div>refresh_this_year = "${CAD_T[st.opts.cadY || 0]}"</div>`);
+          L.push(`<div>refresh_1_5y = "${CAD_T[st.opts.cadM || 0]}"</div>`);
+          L.push(`<div>refresh_older = "${CAD_T[st.opts.cadO || 0]}"</div>`);
+        }
+      }
+      if (st.type === 'tmdb' || st.type === 'art') L.push(`<div>scope = "${(st.opts.scope || 0) ? 'all' : 'missing'}"</div>`);
+      if (st.type === 'nfo') L.push(`<div>overwrite = <span class="${st.opts.ovr ? 'okc' : 'badc'}">${!!st.opts.ovr}</span></div>`);
+      if (st.type === 'notify') L.push(`<div>on = "${['summary','changes','errors'][st.opts.ev || 0]}"</div>`);
+      if (st.type === 'wait') L.push(`<div>minutes = ${BLK.wait.opts[0].vals[st.opts.min ?? 1]}</div>`);
+      if (!st.enabled) L.push('<div>enabled = <span class="badc">false</span></div>');
+      return L.join('');
+    }).join('<div>&nbsp;</div>');
+  }
+
+  /* palette */
+  const back = document.getElementById('blk-back'), pal = document.getElementById('blk-pal'), list = document.getElementById('blk-list');
+  list.innerHTML = PALETTE.map(t => { const d = BLK[t];
+    return `<div class="blk-item" data-t="${t}"><div class="pipe-ic" style="--c:${d.c};--c-soft:${hexA(d.c,.16)};background:${hexA(d.c,.16)};color:${d.c}">${d.ic}</div><div><div class="nm">${d.name}</div><div class="ds">${d.sub}</div></div></div>`;
+  }).join('');
+  let insertAt = null;
+  function openPalette(anchor, at) {
+    insertAt = at;
+    const r = anchor.getBoundingClientRect();
+    pal.style.visibility = 'hidden'; pal.classList.add('open'); back.classList.add('open');
+    const pw = pal.offsetWidth, ph = pal.offsetHeight;
+    let left = r.left + r.width / 2 - pw / 2;
+    left = Math.max(12, Math.min(left, window.innerWidth - pw - 12));
+    let top = r.bottom + 8;
+    if (top + ph > window.innerHeight - 12) top = Math.max(12, r.top - ph - 8);
+    pal.style.left = left + 'px'; pal.style.top = top + 'px'; pal.style.visibility = '';
+  }
+  function closePalette() { pal.classList.remove('open'); back.classList.remove('open'); insertAt = null; }
+  back.onclick = closePalette;
+  list.querySelectorAll('.blk-item').forEach(it => it.onclick = () => {
+    if (insertAt == null) return; pipeline.splice(insertAt, 0, mk(it.dataset.t)); closePalette(); render();
+  });
+  window.addEventListener('keydown', e => { if (e.key === 'Escape') closePalette(); });
+
+  /* master enable dims the canvas */
+  const pipeEnable = document.getElementById('pipe-enable');
+  pipeEnable.addEventListener('click', () => canvas.classList.toggle('off', !pipeEnable.classList.contains('on')));
+
+  /* schedule */
+  const SCHED = { daily:{ cron:'0 3 * * *', next:'next · tonight 03:00', at:true }, weekly:{ cron:'0 3 * * 0', next:'next · Sunday 03:00', at:true }, '6h':{ cron:'0 */6 * * *', next:'next · in ~2h 14m', at:false } };
+  const freq = document.getElementById('pipe-freq');
+  freq.querySelectorAll('span').forEach(s => s.onclick = () => {
+    freq.querySelectorAll('span').forEach(x => x.classList.remove('on')); s.classList.add('on');
+    const f = SCHED[s.dataset.f];
+    document.getElementById('pipe-cron').textContent = f.cron;
+    document.getElementById('toml-cron').textContent = '"' + f.cron + '"';
+    document.getElementById('pipe-next').textContent = f.next;
+    document.getElementById('pipe-at-field').style.display = f.at ? '' : 'none';
+  });
+
+  /* run now — pulse through the enabled steps */
+  let running = false;
+  const delay = ms => new Promise(r => setTimeout(r, ms));
+  document.getElementById('pipe-run').addEventListener('click', async () => {
+    if (running) return; running = true;
+    const btn = document.getElementById('pipe-run'); btn.style.opacity = '.6'; btn.style.pointerEvents = 'none';
+    document.getElementById('pipe-run-ic').textContent = '◷';
+    const steps = [...canvas.querySelectorAll('.pipe-step')];
+    let done = 0;
+    for (const el of steps) {
+      const st = pipeline[+el.dataset.i]; const slot = el.querySelector('.pipe-status');
+      if (!st.enabled) continue;
+      el.classList.add('running'); slot.innerHTML = '<span class="spin"></span>';
+      await delay(640);
+      el.classList.remove('running'); el.classList.add('done'); slot.innerHTML = `<span class="ck">${IC.ck}</span>`; done++;
+      await delay(140);
+    }
+    toast(`Pipeline finished · ${done} step${done === 1 ? '' : 's'} ran`);
+    await delay(900);
+    steps.forEach(el => { el.classList.remove('done'); const s = el.querySelector('.pipe-status'); if (s) s.innerHTML = ''; });
+    document.getElementById('pipe-run-ic').textContent = '▷';
+    btn.style.opacity = ''; btn.style.pointerEvents = ''; running = false;
+  });
+
+  function toast(msg) { const t = document.createElement('div'); t.className = 'toast'; t.textContent = msg; document.body.appendChild(t); setTimeout(() => t.remove(), 1900); }
+
+  render();
 })();
 </script>
 </body>
