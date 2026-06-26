@@ -404,79 +404,6 @@
       wire();
     }
 
-    // Hoisted out of wire() so refreshMatchPanel() and wireCondListeners() can call it.
-    function refreshChPrev(){ const box = node.querySelector('.cf-chprev'); if (box){ const fresh = el(channelWM(state, state.title||autoTitle(), {cls:'studio-wm cf-chprev', style:'width:100%;height:46px;margin-top:14px;', font:'1.05rem'})); box.replaceWith(fresh); } }
-
-    // Update only the right-side "Matches now" panel without rebuilding the full modal.
-    // Called after any state change that affects the match count but not the modal structure.
-    function refreshMatchPanel() {
-      const matches = evaluate(state);
-      const countN = node.querySelector('.cf-matchcount .n');
-      if (countN) countN.textContent = matches.length;
-      const badge = node.querySelector('.cf-matchcount + .spacer + .badge') ||
-                    node.querySelector('.badge.ok, .badge.warn');
-      if (badge) { badge.className = `badge ${matches.length ? 'ok' : 'warn'}`; badge.textContent = matches.length ? 'live' : 'none'; }
-      const grid = node.querySelector('.cf-prevgrid');
-      if (grid) grid.innerHTML = matches.slice(0,12).map(m =>
-        `<div class="cf-mp" title="${m.title} · ${m.year}" style="background:${grad(m.title)};"><span class="t">${m.title}</span></div>`
-      ).join('') || '<div class="tiny muted" style="grid-column:1/-1;padding:18px 4px;">No titles match — loosen a condition.</div>';
-      const moreEl = grid && grid.nextElementSibling;
-      if (moreEl && moreEl.classList.contains('tiny') && moreEl.classList.contains('muted')) {
-        moreEl.textContent = matches.length > 12 ? `+${matches.length-12} more` : '';
-        moreEl.style.display = matches.length > 12 ? '' : 'none';
-      }
-      const link = node.querySelector('a[href="library.html"]');
-      if (link) link.textContent = `Open these ${matches.length} in Library ↗`;
-      refreshChPrev();
-    }
-
-    // Re-wire only condition-row listeners after renderConds(). Keeps wire() out of tight loops.
-    function wireCondListeners() {
-      node.querySelector('[data-add]').onclick = () => { state.conditions.push({ facet:'genre', op:'isAny', values:[] }); renderConds(); wireCondListeners(); refreshMatchPanel(); };
-      node.querySelectorAll('[data-rmcond]').forEach(b => b.onclick = () => { state.conditions.splice(+b.dataset.rmcond,1); renderConds(); wireCondListeners(); refreshMatchPanel(); });
-      node.querySelectorAll('[data-rmval]').forEach(b => b.onclick = () => { const [i,vi] = b.dataset.rmval.split(':').map(Number); state.conditions[i].values.splice(vi,1); renderConds(); wireCondListeners(); refreshMatchPanel(); });
-      node.querySelectorAll('[data-facet]').forEach(a => a.onclick = () => {
-        const i = +a.dataset.facet;
-        let last = null;
-        const items = Object.keys(FACETS).map(k => {
-          const g = FACETS[k].group || '';
-          const head = (g && g !== last) ? `<div class="cf-popgroup">${g}</div>` : '';
-          last = g;
-          return head + `<div class="cf-popitem" data-val="${k}">${FACETS[k].label}</div>`;
-        }).join('');
-        popover(a, items, v => { state.conditions[i].facet = v; state.conditions[i].op = opsFor(v)[0][0]; state.conditions[i].values = []; renderConds(); wireCondListeners(); refreshMatchPanel(); });
-      });
-      node.querySelectorAll('[data-op]').forEach(a => a.onclick = () => {
-        const i = +a.dataset.op, f = state.conditions[i].facet;
-        popover(a, opsFor(f).map(o => `<div class="cf-popitem" data-val="${o[0]}">${o[1]}</div>`).join(''), v => { state.conditions[i].op = v; renderConds(); wireCondListeners(); refreshMatchPanel(); });
-      });
-      node.querySelectorAll('[data-pick]').forEach(a => a.onclick = () => {
-        const i = +a.dataset.pick, f = state.conditions[i].facet;
-        const cur = state.conditions[i].values;
-        popover(a, FACETS[f].options.map(o => `<div class="cf-popitem ${cur.includes(o)?'on':''}" data-val="${o}">${cur.includes(o)?'✓ ':''}${o}</div>`).join(''), v => {
-          if (!cur.includes(v)) cur.push(v); renderConds(); wireCondListeners(); refreshMatchPanel();
-        });
-      });
-      node.querySelectorAll('[data-num]').forEach(a => a.onclick = () => {
-        const i = +a.dataset.num, f = FACETS[state.conditions[i].facet];
-        popover(a, `<div style="padding:8px;"><input class="input cf-numin" type="number" ${f.min!=null?`min="${f.min}"`:''} ${f.max!=null?`max="${f.max}"`:''} step="${f.step||1}" placeholder="${state.conditions[i].facet==='year'?'2015':'7.5'}" style="width:120px;"><div class="btn sm primary cf-numok" style="margin-top:8px;justify-content:center;">Set</div></div>`, ()=>{});
-        const pop = document.querySelector('.cf-pop'); const inp = pop.querySelector('.cf-numin'); inp.focus();
-        const ok = () => { if (inp.value!=='') { state.conditions[i].values = [inp.value]; } pop.remove(); renderConds(); wireCondListeners(); refreshMatchPanel(); };
-        pop.querySelector('.cf-numok').onclick = ok;
-        inp.onkeydown = e => { if (e.key==='Enter') ok(); };
-      });
-      node.querySelectorAll('[data-text]').forEach(a => a.onclick = () => {
-        const i = +a.dataset.text;
-        popover(a, `<div style="padding:8px;"><input class="input cf-txtin" type="text" value="${(state.conditions[i].values[0]||'').replace(/"/g,'&quot;')}" placeholder="e.g. Synstolkning, Commentary, SDH" style="width:200px;"><div class="btn sm primary cf-txtok" style="margin-top:8px;justify-content:center;">Set</div></div>`, ()=>{});
-        const pop = document.querySelector('.cf-pop'); const inp = pop.querySelector('.cf-txtin'); inp.focus();
-        const ok = () => { state.conditions[i].values = inp.value.trim() ? [inp.value.trim()] : []; pop.remove(); renderConds(); wireCondListeners(); refreshMatchPanel(); };
-        pop.querySelector('.cf-txtok').onclick = ok;
-        inp.onkeydown = e => { if (e.key==='Enter') ok(); };
-      });
-      // Update AND/OR join labels in condition rows when match mode changes
-      node.querySelectorAll('.cf-join').forEach(j => j.textContent = state.match === 'any' ? 'OR' : 'AND');
-    }
-
     function renderConds() {
       const wrap = node.querySelector('.cf-conds');
       wrap.innerHTML = state.conditions.map((c, i) => {
@@ -501,19 +428,9 @@
 
     function wire() {
       node.querySelectorAll('[data-x]').forEach(b => b.onclick = dismiss);
-      // Match toggle: update active spans + AND/OR labels + match panel — no full re-render
-      node.querySelectorAll('.cf-match span').forEach(s => s.onclick = () => {
-        state.match = s.dataset.m;
-        node.querySelectorAll('.cf-match span').forEach(x => x.classList.toggle('on', x === s));
-        node.querySelectorAll('.cf-join').forEach(j => j.textContent = state.match === 'any' ? 'OR' : 'AND');
-        refreshMatchPanel();
-      });
-      // Include toggle: update active spans + match panel — no full re-render
-      node.querySelectorAll('.cf-include span').forEach(s => s.onclick = () => {
-        state.include = s.dataset.inc;
-        node.querySelectorAll('.cf-include span').forEach(x => x.classList.toggle('on', x === s));
-        refreshMatchPanel();
-      });
+      node.querySelectorAll('.cf-match span').forEach(s => s.onclick = () => { state.match = s.dataset.m; render(); });
+      node.querySelectorAll('.cf-include span').forEach(s => s.onclick = () => { state.include = s.dataset.inc; render(); });
+      function refreshChPrev(){ const box = node.querySelector('.cf-chprev'); if (box){ const fresh = el(channelWM(state, state.title||autoTitle(), {cls:'studio-wm cf-chprev', style:'width:100%;height:46px;margin-top:14px;', font:'1.05rem'})); box.replaceWith(fresh); } }
       const ti = node.querySelector('.cf-title'); if (ti) ti.oninput = () => { state.title = ti.value; const ct0 = node.querySelector('.cf-chtext'); if (ct0) ct0.placeholder = ti.value || autoTitle(); refreshChPrev(); };
       node.querySelectorAll('.cf-style span').forEach(s => s.onclick = () => { state.chStyle = s.dataset.st; render(); });
       node.querySelectorAll('.cf-pad').forEach(inp => inp.oninput = () => {
@@ -585,8 +502,52 @@
         upBtn.onclick = () => upFile.click();
         upFile.onchange = () => { const f = upFile.files && upFile.files[0]; if (!f) return; const rd = new FileReader(); rd.onload = () => { state.chLogo = { type:'upload', src: rd.result, label: f.name }; render(); }; rd.readAsDataURL(f); };
       }
-      // Condition operations use wireCondListeners() + refreshMatchPanel() — no full modal re-render
-      wireCondListeners();
+      node.querySelector('[data-add]').onclick = () => { state.conditions.push({ facet:'genre', op:'isAny', values:[] }); render(); };
+
+      node.querySelectorAll('[data-rmcond]').forEach(b => b.onclick = () => { state.conditions.splice(+b.dataset.rmcond,1); render(); });
+      node.querySelectorAll('[data-rmval]').forEach(b => b.onclick = () => { const [i,vi] = b.dataset.rmval.split(':').map(Number); state.conditions[i].values.splice(vi,1); render(); });
+
+      node.querySelectorAll('[data-facet]').forEach(a => a.onclick = () => {
+        const i = +a.dataset.facet;
+        let last = null;
+        const items = Object.keys(FACETS).map(k => {
+          const g = FACETS[k].group || '';
+          const head = (g && g !== last) ? `<div class="cf-popgroup">${g}</div>` : '';
+          last = g;
+          return head + `<div class="cf-popitem" data-val="${k}">${FACETS[k].label}</div>`;
+        }).join('');
+        popover(a, items, v => {
+          state.conditions[i].facet = v; state.conditions[i].op = opsFor(v)[0][0]; state.conditions[i].values = []; render();
+        });
+      });
+      node.querySelectorAll('[data-op]').forEach(a => a.onclick = () => {
+        const i = +a.dataset.op, f = state.conditions[i].facet;
+        popover(a, opsFor(f).map(o => `<div class="cf-popitem" data-val="${o[0]}">${o[1]}</div>`).join(''), v => { state.conditions[i].op = v; render(); });
+      });
+      node.querySelectorAll('[data-pick]').forEach(a => a.onclick = () => {
+        const i = +a.dataset.pick, f = state.conditions[i].facet;
+        const cur = state.conditions[i].values;
+        popover(a, FACETS[f].options.map(o => `<div class="cf-popitem ${cur.includes(o)?'on':''}" data-val="${o}">${cur.includes(o)?'✓ ':''}${o}</div>`).join(''), v => {
+          if (!cur.includes(v)) cur.push(v); render();
+        });
+      });
+      node.querySelectorAll('[data-num]').forEach(a => a.onclick = () => {
+        const i = +a.dataset.num, f = FACETS[state.conditions[i].facet];
+        popover(a, `<div style="padding:8px;"><input class="input cf-numin" type="number" ${f.min!=null?`min="${f.min}"`:''} ${f.max!=null?`max="${f.max}"`:''} step="${f.step||1}" placeholder="${state.conditions[i].facet==='year'?'2015':'7.5'}" style="width:120px;"><div class="btn sm primary cf-numok" style="margin-top:8px;justify-content:center;">Set</div></div>`, ()=>{});
+        const pop = document.querySelector('.cf-pop'); const inp = pop.querySelector('.cf-numin'); inp.focus();
+        const ok = () => { if (inp.value!=='') { state.conditions[i].values = [inp.value]; } pop.remove(); render(); };
+        pop.querySelector('.cf-numok').onclick = ok;
+        inp.onkeydown = e => { if (e.key==='Enter') ok(); };
+      });
+      node.querySelectorAll('[data-text]').forEach(a => a.onclick = () => {
+        const i = +a.dataset.text;
+        popover(a, `<div style="padding:8px;"><input class="input cf-txtin" type="text" value="${(state.conditions[i].values[0]||'').replace(/"/g,'&quot;')}" placeholder="e.g. Synstolkning, Commentary, SDH" style="width:200px;"><div class="btn sm primary cf-txtok" style="margin-top:8px;justify-content:center;">Set</div></div>`, ()=>{});
+        const pop = document.querySelector('.cf-pop'); const inp = pop.querySelector('.cf-txtin'); inp.focus();
+        const ok = () => { state.conditions[i].values = inp.value.trim() ? [inp.value.trim()] : []; pop.remove(); render(); };
+        pop.querySelector('.cf-txtok').onclick = ok;
+        inp.onkeydown = e => { if (e.key==='Enter') ok(); };
+      });
+
       node.querySelector('[data-save]').onclick = () => commit();
     }
 
