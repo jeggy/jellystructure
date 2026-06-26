@@ -86,6 +86,7 @@ import kotlinx.io.files.Path
 import kotlinx.io.files.SystemFileSystem
 import kotlinx.io.readByteArray
 import kotlinx.serialization.Serializable
+import platform.posix.exit
 import platform.posix.fgets
 import platform.posix.pclose
 import platform.posix.popen
@@ -296,7 +297,17 @@ fun startServer(
             }
         }
     }
-    engine.start(wait = false)
+    try {
+        engine.start(wait = false)
+    } catch (e: Exception) {
+        val msg = e.message ?: ""
+        if ("address already in use" in msg.lowercase() || "eaddrinuse" in msg.lowercase()) {
+            println("[ERROR] Port $port is already in use — is another jellystructure instance running?")
+            println("[ERROR]   kill it with:  fuser -k ${port}/tcp")
+            exit(1)
+        }
+        throw e
+    }
     return {
         broadcaster.closeAll()
         engine.stop(1_000L, 5_000L)
