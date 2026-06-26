@@ -30,8 +30,8 @@ class DetailService(
     private val configStore: ConfigStore,
 ) {
     suspend fun getMovieDetail(device: DeviceData, jellyfinId: String): MovieDetail? {
+        val item = mediaStore.resolveByJellyfinId(jellyfinId) ?: return null
         val all  = mediaStore.allItems()
-        val item = all.firstOrNull { it.jellyfinId == jellyfinId } ?: return null
 
         // R82: audio/sub languages from local scanned tracks; R83: runtime from local model.
         val movieAudioLangs = item.tracks
@@ -53,8 +53,8 @@ class DetailService(
     }
 
     suspend fun getSeriesDetail(device: DeviceData, jellyfinId: String): SeriesDetail? {
+        val item = mediaStore.resolveByJellyfinId(jellyfinId) ?: return null
         val all  = mediaStore.allItems()
-        val item = all.firstOrNull { it.jellyfinId == jellyfinId } ?: return null
 
         val seasonNums = item.episodes.map { it.seasonNumber ?: 0 }.distinct().sorted()
 

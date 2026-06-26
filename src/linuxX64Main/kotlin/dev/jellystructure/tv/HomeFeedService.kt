@@ -17,11 +17,19 @@ import dev.jellystructure.shared.tv.RaviloConfig
 import dev.jellystructure.shared.tv.Row
 import dev.jellystructure.shared.tv.RowConfig
 import dev.jellystructure.shared.tv.RowKind
+import kotlinx.cinterop.ExperimentalForeignApi
+import kotlinx.cinterop.alloc
+import kotlinx.cinterop.memScoped
+import kotlinx.cinterop.ptr
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
+import platform.posix.CLOCK_REALTIME
+import platform.posix.clock_gettime
+import platform.posix.timespec
 
 private const val ROW_ITEM_LIMIT = 30
 private const val HERO_AUTO_COUNT = 5
+private const val FEED_TTL_MS = 5 * 60_000L  // Continue row freshness window
 
 class HomeFeedService(
     private val mediaStore: MediaStore,
@@ -29,9 +37,31 @@ class HomeFeedService(
     private val jellyfinClient: JellyfinClient,
     private val configStore: ConfigStore,
 ) {
-    suspend fun getHomeFeed(device: DeviceData): HomeFeed = coroutineScope {
+    // Phase R86-A: stale-while-revalidate home feed cache per Jellyfin user.
+    // Key = jellyfinUserId; invalidated on library write (libraryVersion) or config change
+    // (cfgHash) or TTL (Continue stays fresh within FEED_TTL_MS).
+    private data class FeedEntry(val feed: HomeFeed, val builtAt: Long, val libVer: Long, val cfgHash: Int)
+    private val feedCache = HashMap<String, FeedEntry>()
+
+    suspend fun getHomeFeed(device: DeviceData): HomeFeed {
+        val userId = device.jellyfinUserId
+        val libVer = mediaStore.libraryVersion
+        val config = configService.getConfig(userId)
+        val cfgHash = config.hashCode()
+        val now = nowMs()
+
+        feedCache[userId]?.let { cached ->
+            if (cached.libVer == libVer && cached.cfgHash == cfgHash && (now - cached.builtAt) < FEED_TTL_MS)
+                return cached.feed
+        }
+
+        val feed = buildHomeFeed(device, config)
+        feedCache[userId] = FeedEntry(feed, now, libVer, cfgHash)
+        return feed
+    }
+
+    private suspend fun buildHomeFeed(device: DeviceData, config: RaviloConfig): HomeFeed = coroutineScope {
         val jellyfinBase = configStore.current.apiKeys.jellyfinUrl.trimEnd('/')
-        val config        = configService.getConfig(device.jellyfinUserId) // sync disk read — no suspend needed
         val allDeferred   = async { mediaStore.allItems() }
         // R85: token no longer needed for image URLs; still needed for buildContinueRow.
         val tokenDeferred = async { jellyfinClient.tvToken(jellyfinBase, device, configStore.current.apiKeys.jellyfinToken) }
@@ -160,6 +190,7 @@ class HomeFeedService(
         val channelRows = channelFilter?.rows
         val rowSource = if (channelRows?.mode == "custom") channelRows.items else config.rows
         val enabledRows = rowSource.filter { it.enabled }.sortedBy { it.order }
+        val heroIds = config.heroes.map { it.itemId }.toSet()  // Phase R86-C: hoist out of CUSTOM-row loop
         val result = mutableListOf<Row>()
 
         for (rowCfg in enabledRows) {
@@ -215,7 +246,6 @@ class HomeFeedService(
 
                 RowKind.CUSTOM -> {
                     // R32: a custom row is a saved condition stack.
-                    val heroIds = config.heroes.map { it.itemId }.toSet()
                     val matched = all.filter { ConditionEvaluator.matches(it, rowCfg.match, rowCfg.conditions, heroIds) }
                     val filtered = when (rowCfg.mediaKind) {
                         "MOVIE"  -> matched.filter { it.kind == MediaKind.MOVIE }
@@ -331,4 +361,11 @@ class HomeFeedService(
         if (ch.filterTag     != null && tags.any { it.equals(ch.filterTag, ignoreCase = true) }) return true
         return false
     }
+}
+
+@OptIn(ExperimentalForeignApi::class)
+private fun nowMs(): Long = memScoped {
+    val ts = alloc<timespec>()
+    clock_gettime(CLOCK_REALTIME, ts.ptr)
+    ts.tv_sec * 1000L + ts.tv_nsec / 1_000_000L
 }
