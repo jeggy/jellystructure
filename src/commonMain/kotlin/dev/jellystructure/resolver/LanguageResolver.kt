@@ -90,10 +90,14 @@ object LanguageResolver {
      * Maps a raw ffprobe/user language code to the ISO 639-1 two-letter form TMDB understands.
      * Handles both ISO 639-2/B and /T three-letter forms (via ISO2TO1 and the inverse of ISO1TO2),
      * so the verify-after-write check (Phase 46) is B/T-agnostic: `fao` ≡ `fo`, `ger`/`deu` ≡ `de`.
+     * BCP-47 region suffixes are stripped first (`fo-FO` → `fo`, `pt-BR` → `pt`), so TMDB codes like
+     * `fo-FO` normalize to the same bare two-letter form as track tags.
      */
     fun normalize(code: String): String {
         val c = code.trim().lowercase()
-        return ISO2TO1[c] ?: INV_ISO1TO2[c] ?: c
+        // Strip region suffix from BCP-47 tags (e.g. "fo-fo" → "fo", "pt-br" → "pt").
+        val bare = if ('-' in c) c.substringBefore('-') else c
+        return ISO2TO1[bare] ?: INV_ISO1TO2[bare] ?: bare
     }
 
     /**
