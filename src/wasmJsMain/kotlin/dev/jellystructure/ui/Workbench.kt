@@ -360,6 +360,42 @@ private fun wbRenderScopeBanner() {
     """.trimIndent()
 }
 
+/** R73: reusable count helper — maps a WbCond stack to /api/media and returns the result page.
+ *  Caller can request pageSize=1 for a cheap count-only call or larger for a preview grid. */
+internal suspend fun countMatching(
+    match: String,
+    include: String,
+    conds: List<WbCond>,
+    viewer: String? = null,
+    pageSize: Int = 1,
+) = run {
+    fun vals(f: String) = conds.filter { it.facet == f && it.op == "is_any_of" }.flatMap { it.values }.distinct()
+    val audioLangsAll = vals("audio_language")
+    val untagged = audioLangsAll.contains("untagged")
+    val audioLangs = audioLangsAll.filter { it != "untagged" }
+    val heroVals = conds.filter { it.facet == "hero_item" }.flatMap { it.values }
+    MediaApi.list(
+        kind = when (include) { "movies" -> MediaKind.MOVIE; "series" -> MediaKind.TV_SHOW; else -> null },
+        pageSize = pageSize,
+        studios = vals("studio"),
+        networks = vals("network"),
+        genres = vals("genre"),
+        tags = vals("tag"),
+        audioLangs = audioLangs,
+        audioCodec = vals("audio_codec").firstOrNull(),
+        trackTitle = conds.firstOrNull { it.facet == "track_title" && it.op == "contains" }?.values?.firstOrNull(),
+        untaggedAudio = untagged,
+        heroItem = if (heroVals.contains("not_featured")) "not_featured" else if (heroVals.contains("featured")) "featured" else null,
+        viewer = viewer,
+    )
+}
+
+/** Whether a condition set can be served exactly by /api/media (ALL mode, positive ops only). */
+internal fun exactlyServable(match: String, conds: List<WbCond>): Boolean {
+    if (match == "ANY") return false
+    return conds.none { it.op == "is_none_of" || it.op == "not_contains" }
+}
+
 private fun wbRefreshPreview() {
     val scope = wbScope ?: return
     val countEl = document.getElementById("wb-count") as? HTMLElement
@@ -367,25 +403,7 @@ private fun wbRefreshPreview() {
     scope.launch {
         // R60: union base (channel) conditions with row conditions for the live count/preview.
         val allConds = wbConds + wbBaseConds
-        fun vals(f: String) = allConds.filter { it.facet == f && it.op == "is_any_of" }.flatMap { it.values }.distinct()
-        val audioLangsAll = vals("audio_language")
-        val untagged = audioLangsAll.contains("untagged")
-        val audioLangs = audioLangsAll.filter { it != "untagged" }
-        val heroVals = allConds.filter { it.facet == "hero_item" }.flatMap { it.values }
-        val page = MediaApi.list(
-            kind = when (wbInclude) { "movies" -> MediaKind.MOVIE; "series" -> MediaKind.TV_SHOW; else -> null },
-            pageSize = 18,
-            studios = vals("studio"),
-            networks = vals("network"),
-            genres = vals("genre"),
-            tags = vals("tag"),
-            audioLangs = audioLangs,
-            audioCodec = vals("audio_codec").firstOrNull(),
-            trackTitle = allConds.firstOrNull { it.facet == "track_title" && it.op == "contains" }?.values?.firstOrNull(),
-            untaggedAudio = untagged,
-            heroItem = if (heroVals.contains("not_featured")) "not_featured" else if (heroVals.contains("featured")) "featured" else null,
-            viewer = wbViewer,
-        )
+        val page = countMatching(wbMatch, wbInclude, allConds, viewer = wbViewer, pageSize = 18)
         val approx = !wbExactlyServable()
         val total = page?.total ?: 0
         countEl?.innerHTML = """<b>${if (approx) "≈ " else ""}$total title(s) match</b>${if (approx) """ <span class="tiny muted">— some conditions (none-of / not-contains / ANY) are evaluated on the TV</span>""" else ""}"""
