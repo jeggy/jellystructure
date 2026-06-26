@@ -19,6 +19,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.foundation.MutatePriority
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -47,7 +48,7 @@ import dev.jellystructure.ravilo.ui.components.EpisodeCard
 import dev.jellystructure.ravilo.ui.components.RaviloButton
 import dev.jellystructure.ravilo.ui.components.SeasonPicker
 import dev.jellystructure.ravilo.ui.components.Tile
-import dev.jellystructure.ravilo.ui.focus.EdgeBringIntoViewSpec
+import dev.jellystructure.ravilo.ui.focus.rememberEdgeBringIntoViewSpec
 import dev.jellystructure.ravilo.ui.i18n.str
 import dev.jellystructure.ravilo.ui.seams.RemoteImage
 import dev.jellystructure.ravilo.ui.theme.RaviloDimens
@@ -161,8 +162,10 @@ private fun SeriesDetailLoaded(
 
     LaunchedEffect(Unit) { runCatching { playFR.requestFocus() } }
 
+    // R72: small top inset + 60dp bottom peek so focusables are revealed with breathing room.
+    val detailBivSpec = rememberEdgeBringIntoViewSpec(peekDp = 60.dp, topInsetDp = 20.dp)
     @OptIn(ExperimentalFoundationApi::class)
-    CompositionLocalProvider(LocalBringIntoViewSpec provides EdgeBringIntoViewSpec) {
+    CompositionLocalProvider(LocalBringIntoViewSpec provides detailBivSpec) {
     Column(modifier = Modifier.fillMaxSize().verticalScroll(scrollState)) {
         // Full-bleed hero: title · meta · progress · synopsis · resume · actions overlaid in the lower third.
         Box(modifier = Modifier.fillMaxWidth().height(heroHeight)) {
@@ -227,8 +230,15 @@ private fun SeriesDetailLoaded(
                 }
                 Spacer(Modifier.height(18.dp))
                 Row(
+                    // R72: scroll(UserInput) wins over bring-into-view (Default priority) so
+                    // focusing Play/Resume reliably reframes the full backdrop.
                     modifier = Modifier.onFocusChanged {
-                        if (it.hasFocus) scope.launch { scrollState.animateScrollTo(0) }
+                        if (it.hasFocus) scope.launch {
+                            // UserInput priority supersedes BIV (Default) so this wins the race.
+                            scrollState.scroll(MutatePriority.UserInput) {
+                                scrollBy(-scrollState.value.toFloat())
+                            }
+                        }
                     },
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
