@@ -934,9 +934,8 @@ private fun renderChannels(container: Element) {
                 val match = c.match.name
                 val page = countMatching(match, include = "all", conds, viewer = currentUserId)
                 val total = page?.total ?: 0
-                val approx = !exactlyServable(match, conds)
                 val badge = sect.querySelector("#ch-count-$i") as? HTMLElement ?: return@launch
-                badge.innerHTML = if (approx) "≈ $total items" else "$total items"
+                badge.innerHTML = "$total items"
             }
         }
     }

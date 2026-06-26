@@ -6,6 +6,7 @@ import dev.jellystructure.model.MediaKind
 import dev.jellystructure.model.MediaPage
 import dev.jellystructure.model.NfoFileTree
 import dev.jellystructure.model.Person
+import dev.jellystructure.shared.tv.Condition
 import io.ktor.client.call.body
 import io.ktor.client.request.delete
 import io.ktor.client.request.get
@@ -17,6 +18,8 @@ import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.json.Json as KJson
 
 @Serializable
 data class StatsResponse(
@@ -170,6 +173,8 @@ object MediaApi {
         tags: List<String> = emptyList(),
         heroItem: String? = null,
         viewer: String? = null,
+        match: String = "ALL",
+        conditions: List<Condition> = emptyList(),
     ): MediaPage? = runCatching {
         httpClient.get("/api/media") {
             if (kind != null) parameter("kind", kind.name)
@@ -178,15 +183,21 @@ object MediaApi {
             if (!sort.isNullOrBlank()) parameter("sort", sort)
             parameter("page", page)
             parameter("pageSize", pageSize)
-            if (studios.isNotEmpty()) parameter("studios", studios.joinToString(","))
-            if (networks.isNotEmpty()) parameter("networks", networks.joinToString(","))
-            if (genres.isNotEmpty()) parameter("genres", genres.joinToString(","))
-            if (audioLangs.isNotEmpty()) parameter("audioLang", audioLangs.joinToString(","))
-            if (!trackTitle.isNullOrBlank()) parameter("trackTitle", trackTitle)
-            if (!audioCodec.isNullOrBlank()) parameter("audioCodec", audioCodec)
-            if (untaggedAudio) parameter("untaggedAudio", "true")
-            if (tags.isNotEmpty()) parameter("tags", tags.joinToString(","))
-            if (!heroItem.isNullOrBlank()) parameter("heroItem", heroItem)
+            // R74: when a condition stack is provided, send it instead of per-facet params.
+            if (conditions.isNotEmpty()) {
+                parameter("conditions", KJson.encodeToString(ListSerializer(Condition.serializer()), conditions))
+                parameter("match", match)
+            } else {
+                if (studios.isNotEmpty()) parameter("studios", studios.joinToString(","))
+                if (networks.isNotEmpty()) parameter("networks", networks.joinToString(","))
+                if (genres.isNotEmpty()) parameter("genres", genres.joinToString(","))
+                if (audioLangs.isNotEmpty()) parameter("audioLang", audioLangs.joinToString(","))
+                if (!trackTitle.isNullOrBlank()) parameter("trackTitle", trackTitle)
+                if (!audioCodec.isNullOrBlank()) parameter("audioCodec", audioCodec)
+                if (untaggedAudio) parameter("untaggedAudio", "true")
+                if (tags.isNotEmpty()) parameter("tags", tags.joinToString(","))
+                if (!heroItem.isNullOrBlank()) parameter("heroItem", heroItem)
+            }
             if (!viewer.isNullOrBlank()) parameter("viewer", viewer)
         }.body<MediaPage>()
     }.getOrNull()

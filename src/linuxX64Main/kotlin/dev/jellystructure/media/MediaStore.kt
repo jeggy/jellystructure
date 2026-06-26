@@ -8,6 +8,9 @@ import dev.jellystructure.model.MediaPage
 import dev.jellystructure.model.TrackKind
 import dev.jellystructure.nfo.NfoWriter
 import dev.jellystructure.resolver.LanguageResolver
+import dev.jellystructure.shared.tv.Condition
+import dev.jellystructure.shared.tv.MatchMode
+import dev.jellystructure.tv.ConditionEvaluator
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
 
@@ -87,6 +90,8 @@ class MediaStore(private val db: JellystructureDb, private val jsTagStore: JsTag
         tags: List<String> = emptyList(),
         heroIds: Set<String> = emptySet(),
         heroMode: String? = null,   // "featured" | "not_featured" — membership in a viewer's hero carousel
+        conditions: List<Condition> = emptyList(),
+        match: MatchMode = MatchMode.ALL,
     ): MediaPage {
         // Attention filter is applied in-memory so multi-default items (issueCount=0) are included.
         val filterMissingArtwork = if (filter == "missing_artwork") 1L else 0L
@@ -119,21 +124,28 @@ class MediaStore(private val db: JellystructureDb, private val jsTagStore: JsTag
                     item.issueCount > 0 || item.languageMix || item.hasMultiDefaultAudio()
                 }
             }
-            if (studios.isNotEmpty()) result = result.filter { item -> studios.any { s -> item.studio.equals(s, ignoreCase = true) } }
-            if (networks.isNotEmpty()) result = result.filter { item -> networks.any { n -> item.network.equals(n, ignoreCase = true) } }
-            if (genres.isNotEmpty()) result = result.filter { item -> genres.any { g -> item.genres.any { it.equals(g, ignoreCase = true) } } }
-            if (audioLangs.isNotEmpty() || trackTitle != null || audioCodec != null || untaggedAudio) {
-                result = result.filter { item -> item.matchesAudioFilter(audioLangs, trackTitle, audioCodec, untaggedAudio) }
-            }
-            if (tags.isNotEmpty()) {
-                result = result.filter { item ->
-                    tags.any { tag -> item.tags.any { it.equals(tag, ignoreCase = true) } }
+            // R74: when a condition stack is provided, route through ConditionEvaluator so that
+            // ANY ORs correctly (and is_none_of / not_contains become exact). The legacy per-facet
+            // AND block is kept as the fast path when no conditions stack is passed.
+            if (conditions.isNotEmpty()) {
+                result = result.filter { item -> ConditionEvaluator.matches(item, match, conditions, heroIds) }
+            } else {
+                if (studios.isNotEmpty()) result = result.filter { item -> studios.any { s -> item.studio.equals(s, ignoreCase = true) } }
+                if (networks.isNotEmpty()) result = result.filter { item -> networks.any { n -> item.network.equals(n, ignoreCase = true) } }
+                if (genres.isNotEmpty()) result = result.filter { item -> genres.any { g -> item.genres.any { it.equals(g, ignoreCase = true) } } }
+                if (audioLangs.isNotEmpty() || trackTitle != null || audioCodec != null || untaggedAudio) {
+                    result = result.filter { item -> item.matchesAudioFilter(audioLangs, trackTitle, audioCodec, untaggedAudio) }
                 }
-            }
-            if (heroMode != null) {
-                result = result.filter { item ->
-                    val featured = (item.jellyfinId != null && heroIds.contains(item.jellyfinId)) || heroIds.contains(item.id)
-                    if (heroMode == "not_featured") !featured else featured
+                if (tags.isNotEmpty()) {
+                    result = result.filter { item ->
+                        tags.any { tag -> item.tags.any { it.equals(tag, ignoreCase = true) } }
+                    }
+                }
+                if (heroMode != null) {
+                    result = result.filter { item ->
+                        val featured = (item.jellyfinId != null && heroIds.contains(item.jellyfinId)) || heroIds.contains(item.id)
+                        if (heroMode == "not_featured") !featured else featured
+                    }
                 }
             }
             result

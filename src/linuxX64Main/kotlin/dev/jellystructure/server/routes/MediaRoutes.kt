@@ -65,7 +65,10 @@ import kotlinx.io.files.SystemFileSystem
 import kotlinx.io.readByteArray
 import dev.jellystructure.torrent.SeedingCheckResult
 import dev.jellystructure.torrent.SeedingGuard
+import dev.jellystructure.shared.tv.Condition
+import dev.jellystructure.shared.tv.MatchMode
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
@@ -169,9 +172,15 @@ fun Route.mediaRoutes(
             // R32 hero-item facet: filter by membership in a viewer's hero carousel.
             val heroMode = call.request.queryParameters["heroItem"]?.takeIf { it == "featured" || it == "not_featured" }
             val viewer = call.request.queryParameters["viewer"]?.takeIf { it.isNotBlank() }
-            val heroIds = if (heroMode != null && viewer != null)
+            // R74: condition stack — JSON-encoded List<Condition> + match=ALL|ANY.
+            val conditionsJson = call.request.queryParameters["conditions"]
+            val conditions = if (!conditionsJson.isNullOrBlank()) {
+                runCatching { Json { ignoreUnknownKeys = true }.decodeFromString(ListSerializer(Condition.serializer()), conditionsJson) }.getOrElse { emptyList() }
+            } else emptyList()
+            val match = call.request.queryParameters["match"]?.let { runCatching { MatchMode.valueOf(it) }.getOrNull() } ?: MatchMode.ALL
+            val heroIds = if ((heroMode != null || conditions.any { it.facet == "hero_item" }) && viewer != null)
                 raviloConfigService.getConfig(viewer).heroes.map { it.itemId }.toSet() else emptySet()
-            val result = store.list(kind, filter, search, sort, pageNum, pageSize, studios, networks, genres, audioLangs, trackTitle, audioCodec, untaggedAudio, tags, heroIds, heroMode)
+            val result = store.list(kind, filter, search, sort, pageNum, pageSize, studios, networks, genres, audioLangs, trackTitle, audioCodec, untaggedAudio, tags, heroIds, heroMode, conditions, match)
             // Strip episode data from list responses — full episode list is on the individual item endpoint
             val stripped = result.copy(items = result.items.map { it.copy(episodes = emptyList()) })
             call.respond(stripped)
