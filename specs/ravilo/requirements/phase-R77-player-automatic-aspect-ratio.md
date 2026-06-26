@@ -61,23 +61,30 @@ inside the black screen. No user action required; no picker is shown.
 
 `ravilo-ui/src/androidMain/kotlin/.../seams/RaviloPlayerAndroid.kt`
 
-1. Add a `MutableStateFlow<VideoSize>` field to the Android actual class, initialised to
-   `VideoSize.UNKNOWN`:
+New imports: `androidx.media3.common.VideoSize`, `kotlinx.coroutines.flow.MutableStateFlow`,
+`kotlinx.coroutines.flow.StateFlow`.
+
+1. Add a public `StateFlow<VideoSize>` field to the Android actual class, backed by a private
+   `MutableStateFlow`, initialised to `VideoSize.UNKNOWN`:
 
    ```kotlin
-   val videoSize = MutableStateFlow(VideoSize.UNKNOWN)
+   private val _videoSize = MutableStateFlow(VideoSize.UNKNOWN)
+   val videoSize: StateFlow<VideoSize> = _videoSize
    ```
 
-2. In the existing `Player.Listener` registration, add:
+2. Register a **dedicated** `Player.Listener` for video geometry — do **not** piggy-back on the
+   subtitle-cue listener inside `setSubtitleView()` (that listener exists only to forward cues and is
+   coupled to subtitle setup). Register it once when the player is built (in the `exo` lazy
+   initialiser, after `builder.build()`) or at the top of `load()`:
 
    ```kotlin
-   override fun onVideoSizeChanged(size: VideoSize) {
-       videoSize.value = size
-   }
-```
+   exo.addListener(object : Player.Listener {
+       override fun onVideoSizeChanged(size: VideoSize) { _videoSize.value = size }
+   })
+   ```
 
-   This is called by ExoPlayer/Media3 each time the decoded video geometry is known or changes
-   (e.g. ABR format switch).
+   `onVideoSizeChanged` fires each time the decoded video geometry becomes known or changes
+   (initial decode, seek to a different format, ABR quality switch).
 
 3. **DAR calculation** (done in the composable, not here — just store the raw `VideoSize`):
 
@@ -87,11 +94,18 @@ inside the black screen. No user action required; no picker is shown.
 
    `pixelWidthHeightRatio` (sample aspect ratio, SAR) accounts for anamorphic encoding (e.g. DVD
    720×480 @ SAR 32:27 = effective 853×480 ≈ 16:9). A `pixelWidthHeightRatio` of 1.0f means square
-   pixels (all modern streaming content).
+   pixels (all modern streaming content). **Rotation is not handled here:** on API 21+ with a
+   `TextureView` (our render path) ExoPlayer applies any rotation itself and reports
+   `unappliedRotationDegrees = 0`, and a Jellyfin movie/series library has no portrait/rotated
+   source — so `width`/`height` already reflect the on-screen orientation. No width/height swap.
 
 ### B. Android — constrain the video surface to DAR
 
 `ravilo-ui/src/androidMain/kotlin/.../seams/PlayerVideoSurface.kt`
+
+New imports: `androidx.compose.runtime.collectAsState`, `androidx.compose.runtime.getValue`,
+`androidx.compose.foundation.layout.aspectRatio` (via `Modifier.aspectRatio`),
+`androidx.compose.foundation.layout.Box`, `androidx.compose.ui.Alignment`.
 
 4. Collect `player.videoSize` as Compose state:
 
@@ -99,17 +113,14 @@ inside the black screen. No user action required; no picker is shown.
    val videoSize by player.videoSize.collectAsState()
    ```
 
-5. Compute the display aspect ratio and the effective rotation:
+5. Compute the display aspect ratio (square-pixel + anamorphic; no rotation branch — see A.3):
 
    ```kotlin
    val dar: Float = run {
        val w = videoSize.width
        val h = videoSize.height
        if (w <= 0 || h <= 0) return@run 0f
-       val sar = videoSize.pixelWidthHeightRatio
-       val rot = videoSize.unappliedRotationDegrees
-       // Swap width/height for 90° or 270° rotations (portrait video, rare on TV)
-       if (rot % 180 != 0) h * sar / w else w * sar / h
+       w * videoSize.pixelWidthHeightRatio / h
    }
    ```
 
@@ -133,9 +144,14 @@ inside the black screen. No user action required; no picker is shown.
    - When `dar == 0` (`VideoSize.UNKNOWN` on startup, or a degenerate stream): fall back to
      `fillMaxSize()`, matching current behaviour until the real size is known.
 
-7. **`SubtitleView` must follow the video frame, not the full screen.** It is already a child of the
-   `FrameLayout` inside the `AndroidView`, so it inherits the constrained dimensions automatically —
-   no change needed.
+7. **`SubtitleView` follows the video frame, not the full screen.** It is already a child of the
+   `FrameLayout` inside the `AndroidView`, so it inherits the constrained (DAR-sized) dimensions
+   automatically — no change needed. **Behaviour change to note:** cues now render *within the video
+   rectangle* rather than spanning the whole screen. For letterboxed (scope) content the bottom cue
+   line moves up into the picture instead of sitting in the lower black bar. This is the standard
+   player-of-record behaviour (Jellyfin/ExoPlayer `PlayerView` does the same) and is acceptable; if a
+   future phase wants cues anchored to the screen bottom, the `SubtitleView` would have to be lifted
+   out to the outer `Box` — explicitly out of scope here.
 
 8. **Recomposition on format switch:** `videoSize` is a `StateFlow`, so `collectAsState()` triggers
    recomposition whenever `onVideoSizeChanged` fires mid-stream (e.g. ABR quality switch at a
@@ -161,7 +177,7 @@ inside the black screen. No user action required; no picker is shown.
 | `VideoSize.UNKNOWN` (early frames, seek, initial load) | `dar = 0f` → `fillMaxSize()` (slight stretch until first frame decoded, typically < 1 frame) |
 | 16:9 content on a 16:9 screen | `dar ≈ 1.777…` → fills exactly, no bars |
 | Anamorphic (SAR ≠ 1.0) | `pixelWidthHeightRatio` applied → correct DAR without bars |
-| 90° / 270° rotated video (phone camera, rare on TV) | width and height swapped in DAR calc |
+| 90° / 270° rotated video (phone camera, not present in a Jellyfin film/series library) | ExoPlayer applies rotation to the TextureView; `width`/`height` already reflect it → handled, no swap needed |
 | ABR format switch mid-stream | `onVideoSizeChanged` re-fires → Compose recompose → bars adjust |
 | `width = 0` or `height = 0` (malformed stream) | guard → `dar = 0f` → fallback |
 | Portrait 9:16 video (very rare on TV) | pillarboxed — two vertical black bars |
@@ -189,7 +205,7 @@ inside the black screen. No user action required; no picker is shown.
 
 | File | Change |
 |---|---|
-| `ravilo-ui/src/androidMain/.../seams/RaviloPlayerAndroid.kt` | Add `videoSize: MutableStateFlow<VideoSize>` field; add `onVideoSizeChanged` override in listener |
+| `ravilo-ui/src/androidMain/.../seams/RaviloPlayerAndroid.kt` | Add public `videoSize: StateFlow<VideoSize>` (private `MutableStateFlow` backing); register a **dedicated** `Player.Listener` with `onVideoSizeChanged` (not on the subtitle-cue listener) |
 | `ravilo-ui/src/androidMain/.../seams/PlayerVideoSurface.kt` | Collect `videoSize` state; wrap `AndroidView` in centering `Box`; conditional `Modifier.aspectRatio(dar)` |
 | `ravilo-ui/src/wasmJsMain/.../seams/RaviloPlayerWasm.kt` | Add `object-fit:contain` to video element CSS |
 
