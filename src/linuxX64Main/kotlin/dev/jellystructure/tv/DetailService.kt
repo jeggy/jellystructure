@@ -15,6 +15,7 @@ import dev.jellystructure.shared.tv.PlaybackState
 import dev.jellystructure.shared.tv.Season
 import dev.jellystructure.shared.tv.SeriesDetail
 import dev.jellystructure.shared.tv.SeriesProgress
+import dev.jellystructure.auth.JellyfinItemDetail
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import dev.jellystructure.shared.tv.Episode as TvEpisode
@@ -42,12 +43,13 @@ class DetailService(
         val durationMs = (jfDetail?.runTimeTicks ?: 0L) / TICKS_PER_MS
 
         MovieDetail(
-            card     = item.toMediaCard(jellyfinBase, token),
-            synopsis = item.overview,
-            runtime  = (durationMs / 60_000L).toInt(),
-            cast     = emptyList(),
-            related  = relatedItems(item, all, jellyfinBase, token),
-            playback = userData.toPlaybackState(durationMs),
+            card             = item.toMediaCard(jellyfinBase, token),
+            synopsis         = item.overview,
+            runtime          = (durationMs / 60_000L).toInt(),
+            cast             = emptyList(),
+            related          = relatedItems(item, all, jellyfinBase, token),
+            playback         = userData.toPlaybackState(durationMs),
+            audioLanguages   = audioLanguagesFrom(jfDetail),
         )
     }
 
@@ -110,13 +112,19 @@ class DetailService(
             resumeLabel = resumeLabel,
         )
 
+        // Use the first episode's scanned audio tracks for the flag strip (no extra Jellyfin round-trip).
+        val seriesAudioLangs = item.episodes.firstOrNull()?.tracks
+            ?.filter { it.kind == dev.jellystructure.model.TrackKind.AUDIO }
+            ?.mapNotNull { it.language?.lowercase()?.takeIf { l -> l.isNotBlank() } }
+            ?: emptyList()
         SeriesDetail(
-            card = item.toMediaCard(jellyfinBase, token),
-            synopsis = item.overview,
-            seasons = seasons,
-            cast = emptyList(),
-            related = relatedItems(item, all, jellyfinBase, token),
-            progress = progress,
+            card           = item.toMediaCard(jellyfinBase, token),
+            synopsis       = item.overview,
+            seasons        = seasons,
+            cast           = emptyList(),
+            related        = relatedItems(item, all, jellyfinBase, token),
+            progress       = progress,
+            audioLanguages = seriesAudioLangs,
         )
     }
 
@@ -144,6 +152,12 @@ class DetailService(
         )
     }
 }
+
+/** Extract ordered audio-language codes from a Jellyfin item's MediaStreams (R75 / Phase 87). */
+private fun audioLanguagesFrom(jfDetail: JellyfinItemDetail?): List<String> =
+    (jfDetail?.mediaStreams ?: return emptyList())
+        .filter { it.type.equals("Audio", ignoreCase = true) }
+        .mapNotNull { it.language?.lowercase()?.takeIf { l -> l.isNotBlank() } }
 
 private fun JellyfinUserData?.toPlaybackState(durationMs: Long): PlaybackState {
     val posMs = (this?.playbackPositionTicks ?: 0L) / TICKS_PER_MS

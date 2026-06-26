@@ -40,6 +40,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import dev.jellystructure.ravilo.ui.components.AudioFlagStrip
 import dev.jellystructure.ravilo.ui.components.ButtonStyle
 import dev.jellystructure.ravilo.ui.components.CastCircle
 import dev.jellystructure.ravilo.ui.components.DetailLoadingShell
@@ -152,6 +153,10 @@ private fun MovieDetailLoaded(
                 if (meta.isNotEmpty()) {
                     Spacer(Modifier.height(8.dp))
                     Text(meta, color = colors.textSecondary, fontSize = 15.sp)
+                }
+                if (detail.audioLanguages.isNotEmpty()) {
+                    Spacer(Modifier.height(8.dp))
+                    AudioFlagStrip(detail.audioLanguages)
                 }
                 detail.synopsis?.let {
                     Spacer(Modifier.height(10.dp))

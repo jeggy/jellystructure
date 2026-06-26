@@ -289,6 +289,8 @@ fun wireUnifiedTrackEditor(
         }.joinToString("")
 
         cascade()
+        // Keep the pagebar audio-flag strip in sync with language/order changes (Phase 87).
+        if (currentKind == "audio") refreshPagebarAudioFlags(audioModel)
     }
 
     // ── Event wiring ────────────────────────────────────────────────────────────
@@ -470,4 +472,27 @@ fun injectTrackEditorStyles() {
         .seeded { background:var(--warn-soft);border-color:rgba(245,181,66,.4);color:var(--warn);cursor:help; }
     """.trimIndent()
     document.head?.appendChild(style)
+}
+
+/** ISO-639-1 → ISO-3166-1-alpha-2 for the pagebar audio flag strip (Phase 87, shared with MediaDetail). */
+private val TRACK_LANG_CC = mapOf(
+    "en" to "gb", "fr" to "fr", "de" to "de", "es" to "es", "da" to "dk",
+    "fo" to "fo", "is" to "is", "no" to "no", "sv" to "se", "fi" to "fi",
+    "nl" to "nl", "it" to "it", "pt" to "pt", "pl" to "pl", "ru" to "ru",
+    "ja" to "jp", "ko" to "kr", "zh" to "cn", "ar" to "sa", "hi" to "in",
+)
+
+/**
+ * Update `#audio-flags` in the pagebar from the current (possibly mutated) audio model,
+ * keeping the flag strip live without a full page rebuild.
+ */
+internal fun refreshPagebarAudioFlags(audioModel: List<TrkModel>) {
+    val el = document.getElementById("audio-flags") as? HTMLElement ?: return
+    val langs = audioModel.mapNotNull { t -> t.lang?.lowercase()?.let { l -> TRACK_LANG_CC[l]?.let { cc -> l to cc } } }
+    if (langs.isEmpty()) { el.innerHTML = ""; return }
+    val shown = langs.take(5)
+    val extra = langs.size - shown.size
+    val flags = shown.joinToString("") { (_, cc) -> """<span class="fi fi-$cc"></span>""" }
+    val more = if (extra > 0) """<span class="af-more">+$extra</span>""" else ""
+    el.innerHTML = """<span class="af-label">Audio</span><span class="af-row">$flags$more</span>"""
 }

@@ -193,6 +193,10 @@ tasks.register<Copy>("syncDesignAssets") {
     from(rootProject.layout.projectDirectory.dir("design/app")) {
         include("wf.css", "app.css")
     }
+    from(rootProject.layout.projectDirectory.dir("design")) {
+        include("flags.css")
+        include("flags/**")
+    }
     from(layout.buildDirectory.dir("kotlin-webpack/wasmJs/developmentExecutable")) {
         include("jellystructure.js", "*.wasm")
     }
