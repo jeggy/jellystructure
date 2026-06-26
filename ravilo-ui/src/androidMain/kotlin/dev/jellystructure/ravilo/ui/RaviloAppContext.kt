@@ -4,6 +4,7 @@ import android.content.Context
 import coil3.ImageLoader
 import coil3.SingletonImageLoader
 import coil3.disk.DiskCache
+import okio.Path.Companion.toOkioPath
 import coil3.memory.MemoryCache
 import coil3.request.crossfade
 import coil3.svg.SvgDecoder
@@ -22,7 +23,7 @@ object RaviloAppContext {
                 }
                 .diskCache {
                     DiskCache.Builder()
-                        .directory(c.cacheDir.resolve("ravilo_image_cache"))
+                        .directory(c.cacheDir.resolve("ravilo_image_cache").toOkioPath())
                         .maxSizeBytes(150L * 1024 * 1024) // 150 MB
                         .build()
                 }
