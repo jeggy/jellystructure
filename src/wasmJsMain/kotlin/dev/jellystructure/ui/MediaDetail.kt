@@ -132,6 +132,11 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
              <label>Plot</label>
              <div class="input" style="min-height:70px;align-items:flex-start;">${item.overview.esc()}</div>
            </div>"""
+    } else if (!item.resolvedLanguage.isNullOrBlank()) {
+        """<div class="field">
+             <label>Plot</label>
+             <div class="badge warn" style="font-size:.8rem;padding:6px 10px;">No ${langDisplay(item.resolvedLanguage)} overview on TMDB</div>
+           </div>"""
     } else ""
 
     fun genreChipHtml(genre: String): String =
@@ -399,6 +404,9 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
                 <div class="field">
                   <label>Overview <button class="diff-trigger" id="diff-edit-overview">≠</button></label>
                   <textarea id="edit-overview" class="input" rows="4" style="width:100%;resize:vertical;">${item.overview?.esc() ?: ""}</textarea>
+                  ${if (item.overview.isNullOrBlank() && !item.resolvedLanguage.isNullOrBlank())
+                    """<div class="tiny warn" style="margin-top:4px;">No ${langDisplay(item.resolvedLanguage!!)} overview on TMDB — you can write one above</div>"""
+                  else ""}
                 </div>
                 $genresHtml
                 $directorHtml
