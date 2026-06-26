@@ -14,11 +14,19 @@ import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.alloc
 import kotlinx.cinterop.memScoped
 import kotlinx.cinterop.ptr
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import platform.posix.CLOCK_REALTIME
 import platform.posix.clock_gettime
 import platform.posix.timespec
 
 private const val TICKET_TTL_MS = 4 * 60 * 60 * 1000L // 4 hours
+
+// Cache token validity so we don't make a live Jellyfin round-trip on every API request.
+// Key = jellyfinUserToken; value = expiry timestamp (ms). On cache hit tvToken() returns instantly.
+private val tokenValidUntil = HashMap<String, Long>()
+private val tokenCacheMutex = Mutex()
+private const val TOKEN_VALID_TTL_MS = 5 * 60_000L // 5 minutes
 private const val TICKS_PER_MS = 10_000L
 
 class PlaybackService(
@@ -246,16 +254,28 @@ class PlaybackService(
  * invalidated by Jellyfin) otherwise 401s every call — empty home feed, episodes falling back to a
  * file-path id, malformed stream URLs, black screen. The user's `userId` stays in each request URL,
  * so per-user data (resume/watched/next-up) is still correct under the server token.
+ *
+ * Validity is cached for [TOKEN_VALID_TTL_MS] so we don't pay a round-trip to Jellyfin on every
+ * route handler. On a cache hit this returns instantly; on a miss we fall through to isTokenValid().
  */
-internal suspend fun JellyfinClient.tvToken(baseUrl: String, device: DeviceData, serverToken: String): String =
-    if (isTokenValid(baseUrl, device.jellyfinUserToken, device.jellyfinUserId)) {
-        device.jellyfinUserToken
-    } else {
-        dev.jellystructure.log.Logger.warn(
-            "TV: paired user token rejected by Jellyfin (401) for user ${device.jellyfinUserId}; using server token"
-        )
-        serverToken
+internal suspend fun JellyfinClient.tvToken(baseUrl: String, device: DeviceData, serverToken: String): String {
+    val userToken = device.jellyfinUserToken
+    val now = nowMs()
+    // Fast path: token was recently validated — skip the Jellyfin round-trip.
+    if (tokenCacheMutex.withLock { tokenValidUntil[userToken]?.let { it > now } == true }) {
+        return userToken
     }
+    // Slow path: check with Jellyfin.
+    val valid = isTokenValid(baseUrl, userToken, device.jellyfinUserId)
+    tokenCacheMutex.withLock {
+        if (valid) tokenValidUntil[userToken] = nowMs() + TOKEN_VALID_TTL_MS
+        else tokenValidUntil.remove(userToken)
+    }
+    if (!valid) Logger.warn(
+        "TV: paired user token rejected by Jellyfin (401) for user ${device.jellyfinUserId}; using server token"
+    )
+    return if (valid) userToken else serverToken
+}
 
 @OptIn(ExperimentalForeignApi::class)
 private fun nowMs(): Long = memScoped {
