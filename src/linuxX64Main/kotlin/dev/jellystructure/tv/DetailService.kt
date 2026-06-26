@@ -67,7 +67,7 @@ class DetailService(
             val tvEpisodes = eps.map { ep ->
                 val jfEp = jfBySeasonEp[seasonNum to (ep.episodeNumber ?: 0)]
                 val durationMs = (jfEp?.runTimeTicks ?: 0L) / TICKS_PER_MS
-                val stillUrl = if (jfEp != null) "$jellyfinBase/Items/${jfEp.id}/Images/Primary?api_key=$token" else null
+                val stillUrl = if (jfEp != null) JellyfinImageUrl.still(jellyfinBase, jfEp.id, token) else null
                 TvEpisode(
                     id = jfEp?.id ?: ep.path,
                     episodeNumber = ep.episodeNumber ?: 0,
@@ -128,8 +128,8 @@ class DetailService(
             year = year,
             genre = genres.firstOrNull(),
             rating = null,
-            posterUrl = if (jId != null) "$jellyfinBase/Items/$jId/Images/Primary?api_key=$token" else null,
-            backdropUrl = if (jId != null) "$jellyfinBase/Items/$jId/Images/Backdrop/0?api_key=$token" else null,
+            posterUrl = if (jId != null) JellyfinImageUrl.poster(jellyfinBase, jId, token) else null,
+            backdropUrl = if (jId != null) JellyfinImageUrl.backdrop(jellyfinBase, jId, token) else null,
         )
     }
 }

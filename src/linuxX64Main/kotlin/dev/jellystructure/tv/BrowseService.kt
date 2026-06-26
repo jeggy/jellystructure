@@ -134,8 +134,8 @@ class BrowseService(
             year = year,
             genre = genres.firstOrNull(),
             rating = null,
-            posterUrl = if (jId != null) "$jellyfinBase/Items/$jId/Images/Primary?api_key=$token" else null,
-            backdropUrl = if (jId != null) "$jellyfinBase/Items/$jId/Images/Backdrop/0?api_key=$token" else null,
+            posterUrl = if (jId != null) JellyfinImageUrl.poster(jellyfinBase, jId, token) else null,
+            backdropUrl = if (jId != null) JellyfinImageUrl.backdrop(jellyfinBase, jId, token) else null,
         )
     }
 }

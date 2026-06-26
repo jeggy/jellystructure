@@ -82,8 +82,8 @@ class HomeFeedService(
                 Hero(
                     item = item.toMediaCard(jellyfinBase, token),
                     taglineKicker = null,
-                    backdropUrl = "$jellyfinBase/Items/$jellyfinId/Images/Backdrop/0?api_key=$token",
-                    logoUrl = "$jellyfinBase/Items/$jellyfinId/Images/Logo?api_key=$token",
+                    backdropUrl = JellyfinImageUrl.heroBackdrop(jellyfinBase, jellyfinId, token),
+                    logoUrl = JellyfinImageUrl.logo(jellyfinBase, jellyfinId, token),
                     badge = null,
                     synopsis = item.overview,
                 )
@@ -100,8 +100,8 @@ class HomeFeedService(
                 Hero(
                     item = item.toMediaCard(jellyfinBase, token),
                     taglineKicker = hc.tagline,
-                    backdropUrl = "$jellyfinBase/Items/$jellyfinId/Images/Backdrop/0?api_key=$token",
-                    logoUrl = if (hc.clearlogoOverlay) "$jellyfinBase/Items/$jellyfinId/Images/Logo?api_key=$token" else null,
+                    backdropUrl = JellyfinImageUrl.heroBackdrop(jellyfinBase, jellyfinId, token),
+                    logoUrl = if (hc.clearlogoOverlay) JellyfinImageUrl.logo(jellyfinBase, jellyfinId, token) else null,
                     badge = hc.badge,
                     synopsis = item.overview,
                 )
@@ -123,8 +123,8 @@ class HomeFeedService(
             Hero(
                 item = item.toMediaCard(jellyfinBase, token),
                 taglineKicker = hc.tagline,
-                backdropUrl = "$jellyfinBase/Items/$jellyfinId/Images/Backdrop/0?api_key=$token",
-                logoUrl = if (hc.clearlogoOverlay) "$jellyfinBase/Items/$jellyfinId/Images/Logo?api_key=$token" else null,
+                backdropUrl = JellyfinImageUrl.heroBackdrop(jellyfinBase, jellyfinId, token),
+                logoUrl = if (hc.clearlogoOverlay) JellyfinImageUrl.logo(jellyfinBase, jellyfinId, token) else null,
                 badge = hc.badge,
                 synopsis = item.overview,
             )
@@ -307,8 +307,8 @@ class HomeFeedService(
         badge: String? = null,
     ): MediaCard {
         val jId = jellyfinId
-        val posterUrl = if (jId != null) "$jellyfinBase/Items/$jId/Images/Primary?api_key=$token" else null
-        val backdropUrl = if (jId != null) "$jellyfinBase/Items/$jId/Images/Backdrop/0?api_key=$token" else null
+        val posterUrl = if (jId != null) JellyfinImageUrl.poster(jellyfinBase, jId, token) else null
+        val backdropUrl = if (jId != null) JellyfinImageUrl.backdrop(jellyfinBase, jId, token) else null
         return MediaCard(
             id = jId ?: id,
             kind = if (kind == MediaKind.TV_SHOW) dev.jellystructure.shared.tv.MediaKind.SERIES
