@@ -132,6 +132,9 @@ code, .mono { font-family: 'JetBrains Mono', ui-monospace, Menlo, monospace; fon
 .tiny { font-size: .8rem; }
 .center-x { text-align: center; }
 hr.dash { border: none; border-top: 1px solid var(--line); margin: 18px 0; }
+/* Settings tabbed layout — one panel visible at a time, ?tab= addressable (Phase 55) */
+.set-section[data-tab] { display: none; }
+.set-section[data-tab].tab-show { display: block; }
 .pill-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 .scrollbox { max-height: 460px; overflow: auto; }
 
