@@ -704,9 +704,7 @@ class Scanner(
                     resolvedLanguage = resolvedLang,
                     posterPath = details.posterPath,
                     backdropPath = details.backdropPath,
-                    // Preserve the existing overview when TMDB returns a blank one — a language-only
-                    // result (title present, no overview) should not silently erase stored content.
-                    overview = details.overview.takeIf { it.isNotBlank() } ?: item.overview,
+                    overview = details.overview.takeIf { it.isNotBlank() },
                     genres = details.genres.map { it.name },
                     network = rescanNetwork?.name ?: item.network,
                     networkTmdbId = rescanNetwork?.id ?: item.networkTmdbId,
