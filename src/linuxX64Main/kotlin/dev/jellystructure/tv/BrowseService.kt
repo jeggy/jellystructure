@@ -10,6 +10,8 @@ import dev.jellystructure.shared.tv.BrowseFacets
 import dev.jellystructure.shared.tv.FacetItem
 import dev.jellystructure.shared.tv.MediaCard
 import dev.jellystructure.shared.tv.SearchResults
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 
 private const val DEFAULT_PAGE_SIZE = 40
 private const val SEARCH_SUGGESTION_LIMIT = 20
@@ -30,9 +32,11 @@ class BrowseService(
         sort: String? = null,
         page: Int = 1,
         pageSize: Int = DEFAULT_PAGE_SIZE,
-    ): SearchResults {
-        val jellyfinBase = configStore.current.apiKeys.jellyfinUrl.trimEnd('/')
-        val token = jellyfinClient.tvToken(jellyfinBase, device, configStore.current.apiKeys.jellyfinToken)
+    ): SearchResults = coroutineScope {
+        val jellyfinBase  = configStore.current.apiKeys.jellyfinUrl.trimEnd('/')
+        val tokenDeferred = async { jellyfinClient.tvToken(jellyfinBase, device, configStore.current.apiKeys.jellyfinToken) }
+        // allItems() doesn't need the token; start it immediately in parallel.
+        val allDeferred   = async { mediaStore.allItems() }
 
         val mediaKind = when (kind) {
             "movie"  -> MediaKind.MOVIE
@@ -40,13 +44,16 @@ class BrowseService(
             else     -> null
         }
 
+        val token = tokenDeferred.await()
         val all = if (kind == "mylist") {
-            val favoriteIds = jellyfinClient.getFavoriteItemIds(
-                configStore.current.apiKeys.jellyfinUrl, token, device.jellyfinUserId
-            )
-            mediaStore.allItems().filter { it.jellyfinId != null && favoriteIds.contains(it.jellyfinId) }
+            // While we waited for the token, allItems may have already finished. Kick off favorites
+            // and await both — they overlap for whatever time remains.
+            val favDeferred = async { jellyfinClient.getFavoriteItemIds(configStore.current.apiKeys.jellyfinUrl, token, device.jellyfinUserId) }
+            val items       = allDeferred.await()
+            val favoriteIds = favDeferred.await()
+            items.filter { it.jellyfinId != null && favoriteIds.contains(it.jellyfinId) }
         } else {
-            mediaStore.allItems()
+            allDeferred.await()
         }
 
         val filtered = all
@@ -66,24 +73,27 @@ class BrowseService(
         val cards = sorted.drop(start).take(pageSize)
             .map { it.toMediaCard(jellyfinBase, token) }
 
-        return SearchResults(query = kind ?: "all", items = cards)
+        SearchResults(query = kind ?: "all", items = cards)
     }
 
     /** Multi-language search: matches title, originalTitle, and every titlesByLang value. */
-    suspend fun search(device: DeviceData, query: String): SearchResults {
-        val jellyfinBase = configStore.current.apiKeys.jellyfinUrl.trimEnd('/')
-        val token = jellyfinClient.tvToken(jellyfinBase, device, configStore.current.apiKeys.jellyfinToken)
+    suspend fun search(device: DeviceData, query: String): SearchResults = coroutineScope {
+        val jellyfinBase  = configStore.current.apiKeys.jellyfinUrl.trimEnd('/')
+        val tokenDeferred = async { jellyfinClient.tvToken(jellyfinBase, device, configStore.current.apiKeys.jellyfinToken) }
+        val allDeferred   = async { mediaStore.allItems() }
+        val token = tokenDeferred.await()
+        val all   = allDeferred.await()
 
         if (query.isBlank()) {
-            val suggestions = mediaStore.allItems()
+            val suggestions = all
                 .sortedByDescending { it.scannedAt }
                 .take(SEARCH_SUGGESTION_LIMIT)
                 .map { it.toMediaCard(jellyfinBase, token) }
-            return SearchResults(query = "", items = suggestions)
+            return@coroutineScope SearchResults(query = "", items = suggestions)
         }
 
         val q = query.lowercase()
-        val items = mediaStore.allItems().filter { item ->
+        val items = all.filter { item ->
             item.title.lowercase().contains(q) ||
             item.originalTitle?.lowercase()?.contains(q) == true ||
             item.titlesByLang.values.any { it.lowercase().contains(q) }
@@ -91,7 +101,7 @@ class BrowseService(
             .take(100)
             .map { it.toMediaCard(jellyfinBase, token) }
 
-        return SearchResults(query = query, items = items)
+        SearchResults(query = query, items = items)
     }
 
     /** Available filter values + counts for browse filter chips. */
