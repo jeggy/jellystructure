@@ -110,7 +110,7 @@ class ImageProxyService(
     private fun jellyfinUrl(base: String, token: String, itemId: String, type: String): String? = when (type) {
         "poster"   -> "$base/Items/$itemId/Images/Primary?api_key=$token&fillHeight=480&fillWidth=320&quality=90"
         "backdrop" -> "$base/Items/$itemId/Images/Backdrop/0?api_key=$token&fillWidth=1920&quality=90"
-        "logo"     -> "$base/Items/$itemId/Images/Logo?api_key=$token&fillHeight=300"
+        "logo"     -> "$base/Items/$itemId/Images/Logo?api_key=$token&fillHeight=300&format=png"
         "still"    -> "$base/Items/$itemId/Images/Primary?api_key=$token&fillWidth=640&quality=90"
         "avatar"   -> "$base/Users/$itemId/Images/Primary?api_key=$token&fillHeight=160"
         else       -> null  // unknown type — route handler returns 404
