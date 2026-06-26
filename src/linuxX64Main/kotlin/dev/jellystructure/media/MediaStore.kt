@@ -11,7 +11,6 @@ import dev.jellystructure.resolver.LanguageResolver
 import dev.jellystructure.shared.tv.Condition
 import dev.jellystructure.shared.tv.MatchMode
 import dev.jellystructure.tv.ConditionEvaluator
-import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
 
 class MediaStore(private val db: JellystructureDb, private val jsTagStore: JsTagStore) {
@@ -25,6 +24,10 @@ class MediaStore(private val db: JellystructureDb, private val jsTagStore: JsTag
     // jellyfinId → MediaItem index so TV detail routes avoid a full table scan + JSON deserialise
     // on every page open. Built on first use, invalidated on any write.
     private var jellyfinIdIndex: Map<String, MediaItem>? = null
+
+    // Phase 88: decoded-library cache — skip JSON deserialisation on every read path.
+    // Invalidated synchronously on every write (upsertItem). Rebuilt lazily on next allItems() call.
+    private var allItemsCache: List<MediaItem>? = null
 
     // Jellystructure-defined tags (those in the JS-tag store) always survive a re-scan, which
     // otherwise replaces an item's tags with the fresh Jellyfin set (constitution invariant #6).
@@ -97,23 +100,15 @@ class MediaStore(private val db: JellystructureDb, private val jsTagStore: JsTag
         conditions: List<Condition> = emptyList(),
         match: MatchMode = MatchMode.ALL,
     ): MediaPage {
-        // Attention filter is applied in-memory so multi-default items (issueCount=0) are included.
-        val filterMissingArtwork = if (filter == "missing_artwork") 1L else 0L
-        // When a search term is given, skip SQL LIKE (which only covers `title`) and do in-memory
-        // search across title + originalTitle + all titlesByLang values for multi-language coverage.
-        val searchArg = if (search.isNullOrBlank()) null else null // always null: in-memory below
-
-        val jsonBlobs = db.mediaQueries.listFiltered(
-            kind = kind?.name,
-            filterAttention = 0L,
-            filterMissingArtwork = filterMissingArtwork,
-            search = searchArg,
-        ).executeAsList()
-
         val searchLower = search?.lowercase()?.takeIf { it.isNotBlank() }
 
-        val decoded = jsonBlobs.mapNotNull { blob ->
-            runCatching { json.decodeFromString(MediaItem.serializer(), blob) }.getOrNull()
+        // Phase 88: read through the decoded-library cache; apply kind + missing-artwork pre-filters
+        // in memory (previously done in SQL by listFiltered, but allItems() is now free on cache hit).
+        val decoded = run {
+            var items = allItems()
+            if (kind != null) items = items.filter { it.kind == kind }
+            if (filter == "missing_artwork") items = items.filter { it.posterPath.isNullOrBlank() }
+            items
         }.let { items ->
             var result = items
             if (searchLower != null) {
@@ -183,10 +178,13 @@ class MediaStore(private val db: JellystructureDb, private val jsTagStore: JsTag
         return index[jellyfinId]
     }
 
-    fun allItems(): List<MediaItem> =
-        db.mediaQueries.getAll().executeAsList().mapNotNull { blob ->
+    fun allItems(): List<MediaItem> {
+        val cached = allItemsCache
+        if (cached != null) return cached
+        return db.mediaQueries.getAll().executeAsList().mapNotNull { blob ->
             runCatching { json.decodeFromString(MediaItem.serializer(), blob) }.getOrNull()
-        }
+        }.also { allItemsCache = it }
+    }
 
     /**
      * Phase 78: O(1) profilePath lookup for a TMDB person id across all cast/crew + episode
@@ -309,6 +307,7 @@ class MediaStore(private val db: JellystructureDb, private val jsTagStore: JsTag
     }
 
     private fun upsertItem(item: MediaItem) {
+        allItemsCache    = null   // Phase 88: invalidate decoded-library cache on any write
         peopleIndexCache = null   // Phase 78: invalidate the people→profilePath index on any write
         jellyfinIdIndex  = null   // invalidate the jellyfinId→MediaItem index on any write
         db.mediaQueries.upsert(
