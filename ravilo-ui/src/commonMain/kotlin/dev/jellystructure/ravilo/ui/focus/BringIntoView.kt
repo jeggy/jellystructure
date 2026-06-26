@@ -29,20 +29,23 @@ val EdgeBringIntoViewSpec: BringIntoViewSpec = object : BringIntoViewSpec {
 }
 
 /**
- * Density-aware variant of [EdgeBringIntoViewSpec]. When [peekDp] > 0, scrolls [peekDp] further
- * past the bottom clip point so the next row below is partially visible — gives the user a preview
- * that more content exists without a full scroll.
+ * Density-aware variant of [EdgeBringIntoViewSpec].
+ * - [peekDp] > 0: scroll [peekDp] further past the bottom clip so the next row is partially visible.
+ * - [topInsetDp] > 0 (R65): treat the top [topInsetDp] of the viewport as occupied (e.g. an overlay
+ *   app bar). Top-clipped targets are revealed at `topInsetDp` instead of `y=0`, keeping them from
+ *   sliding under the bar.
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun rememberEdgeBringIntoViewSpec(peekDp: Dp = 0.dp): BringIntoViewSpec {
+fun rememberEdgeBringIntoViewSpec(peekDp: Dp = 0.dp, topInsetDp: Dp = 0.dp): BringIntoViewSpec {
     val density = LocalDensity.current
-    return remember(density, peekDp) {
+    return remember(density, peekDp, topInsetDp) {
         object : BringIntoViewSpec {
             override fun calculateScrollDistance(offset: Float, size: Float, containerSize: Float): Float {
                 val peekPx = with(density) { peekDp.toPx() }
+                val topPx  = with(density) { topInsetDp.toPx() }
                 return when {
-                    offset < 0f -> offset
+                    offset < topPx -> offset - topPx
                     offset + size > containerSize -> offset + size - containerSize + peekPx
                     else -> 0f
                 }
