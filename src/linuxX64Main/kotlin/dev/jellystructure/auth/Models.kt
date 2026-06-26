@@ -170,3 +170,15 @@ data class JellyfinEpisodeItem(
 data class JellyfinEpisodesResponse(
     @SerialName("Items") val items: List<JellyfinEpisodeItem> = emptyList(),
 )
+
+/** R83: thin projection used by the bulk /Users/{userId}/Items?Ids=…&Fields=UserData call. */
+@Serializable
+data class JellyfinUserDataItem(
+    @SerialName("Id") val id: String,
+    @SerialName("UserData") val userData: JellyfinUserData? = null,
+)
+
+@Serializable
+data class JellyfinUserDataItemsResponse(
+    @SerialName("Items") val items: List<JellyfinUserDataItem> = emptyList(),
+)

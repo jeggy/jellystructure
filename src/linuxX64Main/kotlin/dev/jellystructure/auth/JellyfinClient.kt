@@ -287,6 +287,28 @@ class JellyfinClient {
         result.getOrDefault(emptyList())
     }
 
+    /**
+     * R83: Fetch per-user UserData for a batch of Jellyfin IDs in a single round-trip.
+     * Caller must chunk large id lists (≤100) before calling; chunking is the caller's responsibility
+     * so the Semaphore lives at the call site alongside other fan-out controls.
+     */
+    suspend fun getUserDataBulk(
+        baseUrl: String,
+        userToken: String,
+        userId: String,
+        jellyfinIds: List<String>,
+    ): List<JellyfinUserDataItem> = runCatching {
+        if (jellyfinIds.isEmpty()) return@runCatching emptyList()
+        val ids = jellyfinIds.joinToString(",")
+        val url = baseUrl.trimEnd('/') +
+            "/Users/$userId/Items?Ids=$ids&Fields=UserData&Limit=${jellyfinIds.size}"
+        http.get(url) { jellyfinAuth(userToken) }
+            .bodyOrNull<JellyfinUserDataItemsResponse>("getUserDataBulk")?.items.orEmpty()
+    }.let { result ->
+        if (result.isFailure) Logger.warn("Jellyfin getUserDataBulk failed: ${result.exceptionOrNull()?.message}")
+        result.getOrDefault(emptyList())
+    }
+
     suspend fun getFavoriteItemIds(
         baseUrl: String,
         userToken: String,

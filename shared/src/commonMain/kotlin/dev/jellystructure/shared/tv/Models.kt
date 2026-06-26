@@ -180,6 +180,17 @@ data class HomeFeed(
 
 // ─── Detail ───────────────────────────────────────────────────────────────────
 
+/**
+ * R83: per-id play-state snapshot, returned by `GET /api/tv/playstate?ids=…`.
+ * Null-absent ids are not in the response (item has no user data or was not found).
+ */
+@Serializable
+data class CardPlayState(
+    @SerialName("resume_ms") val resumeMs: Long = 0,
+    val played: Boolean = false,
+    @SerialName("played_pct") val playedPct: Float = 0f,
+)
+
 @Serializable
 data class Episode(
     val id: String,
@@ -188,7 +199,8 @@ data class Episode(
     val runtime: Int,
     val overview: String?,
     @SerialName("still_url") val stillUrl: String?,
-    val playback: PlaybackState,
+    /** R83: null until hydrated from `/api/tv/playstate`; R84 overlays it. */
+    val playback: PlaybackState? = null,
 )
 
 @Serializable
@@ -213,7 +225,8 @@ data class MovieDetail(
     val runtime: Int,
     val cast: List<Person>,
     val related: List<MediaCard>,
-    val playback: PlaybackState,
+    /** R83: null until hydrated from `/api/tv/playstate`; R84 overlays it. */
+    val playback: PlaybackState? = null,
     @SerialName("audio_languages") val audioLanguages: List<String> = emptyList(),
     @SerialName("subtitle_languages") val subtitleLanguages: List<String> = emptyList(),
 )
@@ -225,7 +238,8 @@ data class SeriesDetail(
     val seasons: List<Season>,
     val cast: List<Person>,
     val related: List<MediaCard>,
-    val progress: SeriesProgress,
+    /** R83: null until hydrated from `/api/tv/playstate`; R84 overlays it. */
+    val progress: SeriesProgress? = null,
     @SerialName("audio_languages") val audioLanguages: List<String> = emptyList(),
     @SerialName("subtitle_languages") val subtitleLanguages: List<String> = emptyList(),
 )

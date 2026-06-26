@@ -61,8 +61,8 @@ fun EpisodeCard(
     val glowElevation   by animateDpAsState(if (focused) 20.dp else 0.dp, dpSpec, label = "epShadow")
     val cardShape = remember { RoundedCornerShape(12.dp) }
 
-    val isWatched = episode.playback.watched
-    val pct = episode.playback.pct
+    val isWatched = episode.playback?.watched ?: false
+    val pct = episode.playback?.pct ?: 0f
 
     val upNextGradient = remember(colors.accent, colors.accentSecondary) { colors.accentGradient }
 

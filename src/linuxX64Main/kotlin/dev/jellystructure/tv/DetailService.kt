@@ -2,26 +2,29 @@ package dev.jellystructure.tv
 
 import dev.jellystructure.auth.DeviceData
 import dev.jellystructure.auth.JellyfinClient
-import dev.jellystructure.auth.JellyfinUserData
 import dev.jellystructure.config.ConfigStore
 import dev.jellystructure.media.MediaStore
 import dev.jellystructure.model.Episode
 import dev.jellystructure.model.MediaItem
 import dev.jellystructure.model.MediaKind
+import dev.jellystructure.shared.tv.CardPlayState
 import dev.jellystructure.shared.tv.MediaCard
 import dev.jellystructure.shared.tv.MovieDetail
 import dev.jellystructure.shared.tv.Person
-import dev.jellystructure.shared.tv.PlaybackState
 import dev.jellystructure.shared.tv.Season
 import dev.jellystructure.shared.tv.SeriesDetail
-import dev.jellystructure.shared.tv.SeriesProgress
-import dev.jellystructure.auth.JellyfinItemDetail
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import dev.jellystructure.shared.tv.Episode as TvEpisode
 
 private const val RELATED_LIMIT = 12
 private const val TICKS_PER_MS = 10_000L
+private const val PLAYSTATE_CHUNK = 100   // max ids per Jellyfin bulk UserData call
+
+// R83: gate concurrent outbound Jellyfin UserData calls to avoid FD ceiling (Phase 78).
+private val playstateGate = Semaphore(4)
 
 class DetailService(
     private val mediaStore: MediaStore,
@@ -31,6 +34,7 @@ class DetailService(
     suspend fun getMovieDetail(device: DeviceData, jellyfinId: String): MovieDetail? = coroutineScope {
         val jellyfinBase = configStore.current.apiKeys.jellyfinUrl.trimEnd('/')
         // allItems() (SQLite) and tvToken() (Jellyfin/cached) have no dependency — run in parallel.
+        // R83: getItemDetail is no longer called; token is still needed for image URLs (until R85).
         val allDeferred   = async { mediaStore.allItems() }
         val tokenDeferred = async { jellyfinClient.tvToken(jellyfinBase, device, configStore.current.apiKeys.jellyfinToken) }
 
@@ -38,11 +42,7 @@ class DetailService(
         val item  = all.firstOrNull { it.jellyfinId == jellyfinId } ?: return@coroutineScope null
         val token = tokenDeferred.await()
 
-        val jfDetail  = jellyfinClient.getItemDetail(jellyfinBase, token, device.jellyfinUserId, jellyfinId)
-        val userData  = jfDetail?.userData
-        val durationMs = (jfDetail?.runTimeTicks ?: 0L) / TICKS_PER_MS
-
-        // R82: audio/sub languages now come from local scanned tracks (parity with series).
+        // R82: audio/sub languages from local scanned tracks; R83: runtime from local model.
         val movieAudioLangs = item.tracks
             .filter { it.kind == dev.jellystructure.model.TrackKind.AUDIO }
             .mapNotNull { it.language?.lowercase()?.takeIf { l -> l.isNotBlank() } }
@@ -52,10 +52,10 @@ class DetailService(
         MovieDetail(
             card               = item.toMediaCard(jellyfinBase, token),
             synopsis           = item.overview,
-            runtime            = (durationMs / 60_000L).toInt(),
+            runtime            = item.runtime ?: 0,
             cast               = castFrom(item),
             related            = relatedItems(item, all, jellyfinBase, token),
-            playback           = userData.toPlaybackState(durationMs),
+            playback           = null,  // R83: hydrated by /api/tv/playstate (R84 overlays it)
             audioLanguages     = movieAudioLangs,
             subtitleLanguages  = movieSubLangs,
         )
@@ -63,6 +63,7 @@ class DetailService(
 
     suspend fun getSeriesDetail(device: DeviceData, jellyfinId: String): SeriesDetail? = coroutineScope {
         val jellyfinBase = configStore.current.apiKeys.jellyfinUrl.trimEnd('/')
+        // R83: getSeriesEpisodes is no longer called; token is still needed for image URLs (until R85).
         val allDeferred   = async { mediaStore.allItems() }
         val tokenDeferred = async { jellyfinClient.tvToken(jellyfinBase, device, configStore.current.apiKeys.jellyfinToken) }
 
@@ -70,55 +71,28 @@ class DetailService(
         val item  = all.firstOrNull { it.jellyfinId == jellyfinId } ?: return@coroutineScope null
         val token = tokenDeferred.await()
 
-        val jfEpisodes = jellyfinClient.getSeriesEpisodes(
-            jellyfinBase, token, device.jellyfinUserId, jellyfinId
-        )
-        // Index Jellyfin episode data by (season, episode) numbers
-        val jfBySeasonEp = jfEpisodes.associateBy { (it.parentIndexNumber ?: 0) to (it.indexNumber ?: 0) }
-
-        // Group our episodes by season, sorted by season number
         val seasonNums = item.episodes.map { it.seasonNumber ?: 0 }.distinct().sorted()
 
         val seasons = seasonNums.map { seasonNum ->
             val eps: List<Episode> = item.episodes
                 .filter { (it.seasonNumber ?: 0) == seasonNum }
                 .sortedBy { it.episodeNumber ?: 0 }
-            val jfFirstSeason = jfEpisodes.firstOrNull { it.parentIndexNumber == seasonNum }
-            val seasonName = jfFirstSeason?.seasonName ?: "Season $seasonNum"
+            val seasonName = item.seasonNames[seasonNum] ?: "Season $seasonNum"
             val tvEpisodes = eps.map { ep ->
-                val jfEp = jfBySeasonEp[seasonNum to (ep.episodeNumber ?: 0)]
-                val durationMs = (jfEp?.runTimeTicks ?: 0L) / TICKS_PER_MS
-                val stillUrl = if (jfEp != null) JellyfinImageUrl.still(jellyfinBase, jfEp.id, token) else null
+                val stillUrl = ep.stillPath?.takeIf { it.isNotBlank() }
+                    ?.let { "https://image.tmdb.org/t/p/w300$it" }
                 TvEpisode(
-                    id = jfEp?.id ?: ep.path,
+                    id = ep.jellyfinId ?: ep.path,
                     episodeNumber = ep.episodeNumber ?: 0,
-                    title = ep.title ?: jfEp?.name ?: "Episode ${ep.episodeNumber ?: seasonNum}",
-                    runtime = (durationMs / 60_000L).toInt(),
+                    title = ep.title ?: "Episode ${ep.episodeNumber ?: seasonNum}",
+                    runtime = ep.runtime ?: 0,
                     overview = ep.overview,
                     stillUrl = stillUrl,
-                    playback = jfEp?.userData.toPlaybackState(durationMs),
+                    playback = null,  // R83: hydrated by /api/tv/playstate (R84 overlays it)
                 )
             }
             Season(index = seasonNum, name = seasonName, episodes = tvEpisodes)
         }
-
-        val allEpisodes = seasons.flatMap { it.episodes }
-        val watchedCount = allEpisodes.count { it.playback.watched }
-        val resumeEp = allEpisodes.firstOrNull { !it.playback.watched && it.playback.positionMs > 0 }
-            ?: allEpisodes.firstOrNull { !it.playback.watched }
-            ?: allEpisodes.lastOrNull()
-
-        val resumeLabel = resumeEp?.let { ep ->
-            val seasonIdx = seasons.indexOfFirst { s -> s.episodes.any { e -> e.id == ep.id } }.takeIf { it >= 0 }?.plus(1)
-            if (seasonIdx != null) "S${seasonIdx}E${ep.episodeNumber} · ${ep.title}" else ep.title
-        }
-
-        val progress = SeriesProgress(
-            watchedCount = watchedCount,
-            totalCount = allEpisodes.size,
-            resumeEpisodeId = resumeEp?.id,
-            resumeLabel = resumeLabel,
-        )
 
         // Use the first episode's scanned tracks for flag strips (no extra Jellyfin round-trip).
         val firstEpTracks = item.episodes.firstOrNull()?.tracks
@@ -136,10 +110,39 @@ class DetailService(
             seasons           = seasons,
             cast              = castFrom(item),
             related           = relatedItems(item, all, jellyfinBase, token),
-            progress          = progress,
+            progress          = null,  // R83: hydrated by /api/tv/playstate (R84 overlays it)
             audioLanguages    = seriesAudioLangs,
             subtitleLanguages = seriesSubLangs,
         )
+    }
+
+    /**
+     * R83: Fetch per-user play-state for the given Jellyfin ids from Jellyfin UserData.
+     * Chunks the request into batches of [PLAYSTATE_CHUNK] and fans out with [playstateGate].
+     * Returns an empty map on auth/connectivity failures (callers treat absent entries as "not played").
+     */
+    suspend fun getPlaystate(device: DeviceData, jellyfinIds: List<String>): Map<String, CardPlayState> {
+        if (jellyfinIds.isEmpty()) return emptyMap()
+        val jellyfinBase = configStore.current.apiKeys.jellyfinUrl.trimEnd('/')
+        val token = jellyfinClient.tvToken(jellyfinBase, device, configStore.current.apiKeys.jellyfinToken)
+        val chunks = jellyfinIds.chunked(PLAYSTATE_CHUNK)
+        val results = mutableMapOf<String, CardPlayState>()
+        for (chunk in chunks) {
+            playstateGate.withPermit {
+                val items = jellyfinClient.getUserDataBulk(jellyfinBase, token, device.jellyfinUserId, chunk)
+                for (jfItem in items) {
+                    val ud = jfItem.userData ?: continue
+                    val posMs = ud.playbackPositionTicks / TICKS_PER_MS
+                    val pct = (ud.playedPercentage?.toFloat() ?: 0f) / 100f
+                    results[jfItem.id] = CardPlayState(
+                        resumeMs  = posMs,
+                        played    = ud.played,
+                        playedPct = pct,
+                    )
+                }
+            }
+        }
+        return results
     }
 
     // ─── Helpers ──────────────────────────────────────────────────────────────
@@ -194,19 +197,3 @@ private fun castFrom(item: MediaItem): List<Person> =
             )
         }
 
-/** Extract ordered language codes of the given stream type from a Jellyfin item's MediaStreams (R75/R78). */
-private fun streamsOf(jfDetail: JellyfinItemDetail?, type: String): List<String> =
-    (jfDetail?.mediaStreams ?: return emptyList())
-        .filter { it.type.equals(type, ignoreCase = true) }
-        .mapNotNull { it.language?.lowercase()?.takeIf { l -> l.isNotBlank() } }
-
-private fun JellyfinUserData?.toPlaybackState(durationMs: Long): PlaybackState {
-    val posMs = (this?.playbackPositionTicks ?: 0L) / TICKS_PER_MS
-    val pct = if (durationMs > 0) (posMs.toFloat() / durationMs.toFloat()) else 0f
-    return PlaybackState(
-        watched = this?.played ?: false,
-        positionMs = posMs,
-        durationMs = durationMs,
-        pct = pct,
-    )
-}

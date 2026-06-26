@@ -225,9 +225,11 @@ private fun MovieDetailLoaded(
                             },
                         horizontalArrangement = Arrangement.spacedBy(12.dp),
                     ) {
-                        val isResume = detail.playback.positionMs > 0 && !detail.playback.watched
-                        val minsLeft = if (detail.playback.durationMs > 0)
-                            ((detail.playback.durationMs - detail.playback.positionMs) / 60_000L).toInt() else 0
+                        // R83: playback is null until hydrated by /api/tv/playstate; treat as unplayed
+                        val pb = detail.playback
+                        val isResume = pb != null && pb.positionMs > 0 && !pb.watched
+                        val minsLeft = if (pb != null && pb.durationMs > 0)
+                            ((pb.durationMs - pb.positionMs) / 60_000L).toInt() else 0
                         val playLabel = if (isResume) "${str("action.resume")} · ${minsLeft} min left" else str("action.play")
                         RaviloButton(
                             label = playLabel,

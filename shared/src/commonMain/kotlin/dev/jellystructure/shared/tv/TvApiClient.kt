@@ -142,6 +142,17 @@ class TvApiClient(
         return json.decodeFromString<SeriesDetail>(r.bodyAsText())
     }
 
+    /** R83: fetch per-user play-state for a batch of Jellyfin ids in one round-trip. */
+    suspend fun getPlaystate(ids: List<String>): Map<String, CardPlayState> {
+        if (ids.isEmpty()) return emptyMap()
+        val r = client.get("$baseUrl/api/tv/playstate") {
+            auth()
+            parameter("ids", ids.joinToString(","))
+        }
+        r.assertSuccess()
+        return json.decodeFromString<Map<String, CardPlayState>>(r.bodyAsText())
+    }
+
     // ─── Playback ────────────────────────────────────────────────────────────
 
     suspend fun startPlayback(itemId: String, capabilities: ClientCapabilities): StreamTicket {
