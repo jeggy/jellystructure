@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="design_doc_mode" content="canvas">
+<title>Føroyskt — Roundel & Knockout variations</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: 'Sora', sans-serif; }
+  .frame { position: absolute; }
+
+  .head { width: 880px; color: #11131a; }
+  .head h1 { font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 32px; letter-spacing: -1px; margin: 0 0 8px; }
+  .head p { margin: 0; font-size: 15px; line-height: 1.6; color: #3a3f4d; max-width: 760px; }
+
+  .gh { display: flex; align-items: center; gap: 11px; font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 21px; color: #11131a; letter-spacing: -.4px; }
+  .gh .gn { font-family: 'JetBrains Mono', monospace; font-size: 13px; font-weight: 500; color: #fff; background: #0a66c8; border-radius: 7px; padding: 3px 10px; }
+  .gh.red .gn { background: #ed2939; }
+
+  .opt { width: 360px; background: #16181f; border: 1px solid #262a35; border-radius: 18px; padding: 20px 20px 18px; box-shadow: 0 24px 60px rgba(0,0,0,.28); }
+  .opt .lbl { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+  .opt .n { font-family: 'JetBrains Mono', monospace; font-size: 11.5px; font-weight: 500; color: #0b0c12; background: #aeb6cc; border-radius: 6px; padding: 2px 8px; }
+  .opt .ttl { font-family: 'Space Grotesk', sans-serif; font-weight: 600; font-size: 15.5px; color: #eef0f7; letter-spacing: -.2px; }
+
+  .card { width: 318px; height: 132px; border-radius: 20px; position: relative; overflow: hidden;
+    display: flex; align-items: center; justify-content: center; border: 2px solid rgba(255,255,255,.07);
+    box-shadow: 0 14px 34px rgba(0,0,0,.45); }
+  .card .sheen { position: absolute; inset: 0; background: radial-gradient(120% 120% at 80% 0%, rgba(255,255,255,.22), transparent 55%); }
+  .card svg { position: relative; z-index: 2; width: 76%; height: auto; max-height: 58%; display: block; }
+
+  .opt .cap { margin-top: 13px; font-size: 12px; line-height: 1.6; color: #8b93a8; font-family: 'JetBrains Mono', monospace; }
+  .opt .cap b { color: #c7cddc; font-weight: 500; }
+</style>
+</head>
+<body>
+
+  <div class="frame head" style="left:110px; top:60px;">
+    <h1>Føroyskt — Roundel & Knockout, explored</h1>
+    <p>Four variations on each of the two favourites. Left column riffs on the roundel; right column riffs on the gradient play-knockout. Same Faroese white / blue / red throughout.</p>
+  </div>
+
+  <!-- ============ GROUP A: ROUNDEL ============ -->
+  <div class="frame gh" style="left:110px; top:250px;"><span class="gn">03</span> Roundel — variations</div>
+
+  <!-- A1 -->
+  <div class="frame opt" style="left:110px; top:300px;">
+    <div class="lbl"><span class="n">03·A</span><span class="ttl">Classic</span></div>
+    <div class="card" style="background:linear-gradient(135deg,#11498f,#071b39);">
+      <div class="sheen"></div>
+      <svg viewBox="0 0 286 84" xmlns="http://www.w3.org/2000/svg" aria-label="Føroyskt">
+        <circle cx="34" cy="42" r="30" fill="#ffffff" stroke="#0065bd" stroke-width="4"></circle>
+        <path d="M27 28 L27 56 L52 42 Z" fill="#ed2939"></path>
+        <text x="84" y="54" font-family="'Helvetica Neue',Arial,sans-serif" font-weight="800" font-size="33" letter-spacing="-1.6" fill="#ffffff">Føroy<tspan fill="#ffffff" fill-opacity=".66">skt</tspan></text>
+      </svg>
+    </div>
+    <div class="cap"><b>White disc · blue ring · red play</b><br>white wordmark · marine</div>
+  </div>
+
+  <!-- A2 -->
+  <div class="frame opt" style="left:110px; top:580px;">
+    <div class="lbl"><span class="n">03·B</span><span class="ttl">Inverted disc</span></div>
+    <div class="card" style="background:linear-gradient(135deg,#0a3a78,#05152e);">
+      <div class="sheen"></div>
+      <svg viewBox="0 0 286 84" xmlns="http://www.w3.org/2000/svg" aria-label="Føroyskt">
+        <circle cx="34" cy="42" r="30" fill="#ed2939"></circle>
+        <circle cx="34" cy="42" r="27" fill="#0a66c8"></circle>
+        <path d="M27 28 L27 56 L52 42 Z" fill="#ffffff"></path>
+        <text x="84" y="54" font-family="'Helvetica Neue',Arial,sans-serif" font-weight="800" font-size="33" letter-spacing="-1.6" fill="#ffffff">Føroy<tspan fill="#ffffff" fill-opacity=".66">skt</tspan></text>
+      </svg>
+    </div>
+    <div class="cap"><b>Blue disc · red ring · white play</b><br>white wordmark · deep navy</div>
+  </div>
+
+  <!-- A3 -->
+  <div class="frame opt" style="left:110px; top:860px;">
+    <div class="lbl"><span class="n">03·C</span><span class="ttl">Gradient ring</span></div>
+    <div class="card" style="background:linear-gradient(135deg,#0e4f99,#06203f);">
+      <div class="sheen"></div>
+      <svg viewBox="0 0 286 84" xmlns="http://www.w3.org/2000/svg" aria-label="Føroyskt">
+        <defs>
+          <linearGradient id="a3g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#0a66c8"></stop><stop offset="1" stop-color="#ed2939"></stop></linearGradient>
+        </defs>
+        <circle cx="34" cy="42" r="29" fill="#ffffff" stroke="url(#a3g)" stroke-width="6"></circle>
+        <path d="M27 28 L27 56 L52 42 Z" fill="#0a66c8"></path>
+        <text x="84" y="54" font-family="'Helvetica Neue',Arial,sans-serif" font-weight="800" font-size="33" letter-spacing="-1.6" fill="#ffffff">Føroy<tspan fill="#ffffff" fill-opacity=".66">skt</tspan></text>
+      </svg>
+    </div>
+    <div class="cap"><b>White disc · blue→red ring · blue play</b><br>white wordmark · ocean</div>
+  </div>
+
+  <!-- A4 -->
+  <div class="frame opt" style="left:110px; top:1140px;">
+    <div class="lbl"><span class="n">03·D</span><span class="ttl">Red wordmark</span></div>
+    <div class="card" style="background:linear-gradient(135deg,#0e57aa,#06203f);">
+      <div class="sheen"></div>
+      <svg viewBox="0 0 286 84" xmlns="http://www.w3.org/2000/svg" aria-label="Føroyskt">
+        <circle cx="34" cy="42" r="30" fill="#ffffff" stroke="#0065bd" stroke-width="4"></circle>
+        <path d="M27 28 L27 56 L52 42 Z" fill="#0a66c8"></path>
+        <text x="84" y="54" font-family="'Helvetica Neue',Arial,sans-serif" font-weight="800" font-size="33" letter-spacing="-1.6" fill="#ed2939">Føroy<tspan fill="#ed2939" fill-opacity=".62">skt</tspan></text>
+      </svg>
+    </div>
+    <div class="cap"><b>White disc · blue ring · blue play</b><br>red wordmark · ocean → navy</div>
+  </div>
+
+  <!-- ============ GROUP B: KNOCKOUT ============ -->
+  <div class="frame gh red" style="left:600px; top:250px;"><span class="gn">06</span> Gradient knockout — variations</div>
+
+  <!-- B1 -->
+  <div class="frame opt" style="left:600px; top:300px;">
+    <div class="lbl"><span class="n">06·A</span><span class="ttl">Classic square</span></div>
+    <div class="card" style="background:linear-gradient(135deg,#0b66c8,#9a1f2c);">
+      <div class="sheen"></div>
+      <svg viewBox="0 0 286 84" xmlns="http://www.w3.org/2000/svg" aria-label="Føroyskt">
+        <defs>
+          <clipPath id="b1c"><rect x="2" y="10" width="64" height="64" rx="20"></rect></clipPath>
+          <mask id="b1m"><rect x="2" y="10" width="64" height="64" rx="20" fill="#ffffff"></rect><path d="M28 27 L28 57 L54 42 Z" fill="#000000"></path></mask>
+        </defs>
+        <g clip-path="url(#b1c)" mask="url(#b1m)"><rect x="2" y="10" width="64" height="64" fill="#ffffff"></rect></g>
+        <text x="84" y="54" font-family="'Helvetica Neue',Arial,sans-serif" font-weight="800" font-size="33" letter-spacing="-1.6" fill="#ffffff">Føroy<tspan fill="#ffffff" fill-opacity=".66">skt</tspan></text>
+      </svg>
+    </div>
+    <div class="cap"><b>White square · play knocked to BG</b><br>white wordmark · blue → red</div>
+  </div>
+
+  <!-- B2 -->
+  <div class="frame opt" style="left:600px; top:580px;">
+    <div class="lbl"><span class="n">06·B</span><span class="ttl">Circle knockout</span></div>
+    <div class="card" style="background:linear-gradient(135deg,#0b66c8,#9a1f2c);">
+      <div class="sheen"></div>
+      <svg viewBox="0 0 286 84" xmlns="http://www.w3.org/2000/svg" aria-label="Føroyskt">
+        <defs>
+          <mask id="b2m"><circle cx="34" cy="42" r="30" fill="#ffffff"></circle><path d="M28 27 L28 57 L54 42 Z" fill="#000000"></path></mask>
+        </defs>
+        <circle cx="34" cy="42" r="30" fill="#ffffff" mask="url(#b2m)"></circle>
+        <text x="84" y="54" font-family="'Helvetica Neue',Arial,sans-serif" font-weight="800" font-size="33" letter-spacing="-1.6" fill="#ffffff">Føroy<tspan fill="#ffffff" fill-opacity=".66">skt</tspan></text>
+      </svg>
+    </div>
+    <div class="cap"><b>White disc · play knocked to BG</b><br>white wordmark · blue → red</div>
+  </div>
+
+  <!-- B3 -->
+  <div class="frame opt" style="left:600px; top:860px;">
+    <div class="lbl"><span class="n">06·C</span><span class="ttl">Cool knockout</span></div>
+    <div class="card" style="background:linear-gradient(135deg,#0b66c8,#053a5e);">
+      <div class="sheen"></div>
+      <svg viewBox="0 0 286 84" xmlns="http://www.w3.org/2000/svg" aria-label="Føroyskt">
+        <defs>
+          <clipPath id="b3c"><rect x="2" y="10" width="64" height="64" rx="20"></rect></clipPath>
+          <mask id="b3m"><rect x="2" y="10" width="64" height="64" rx="20" fill="#ffffff"></rect><path d="M28 27 L28 57 L54 42 Z" fill="#000000"></path></mask>
+        </defs>
+        <g clip-path="url(#b3c)" mask="url(#b3m)"><rect x="2" y="10" width="64" height="64" fill="#ffffff"></rect></g>
+        <text x="84" y="54" font-family="'Helvetica Neue',Arial,sans-serif" font-weight="800" font-size="33" letter-spacing="-1.6" fill="#ffffff">Føroy<tspan fill="#ffffff" fill-opacity=".66">skt</tspan></text>
+      </svg>
+    </div>
+    <div class="cap"><b>White square · play knocked to BG</b><br>white wordmark · all-blue gradient</div>
+  </div>
+
+  <!-- B4 -->
+  <div class="frame opt" style="left:600px; top:1140px;">
+    <div class="lbl"><span class="n">06·D</span><span class="ttl">Tinted + red type</span></div>
+    <div class="card" style="background:linear-gradient(135deg,#0e57aa,#06203f);">
+      <div class="sheen"></div>
+      <svg viewBox="0 0 286 84" xmlns="http://www.w3.org/2000/svg" aria-label="Føroyskt">
+        <defs>
+          <linearGradient id="b4sq" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ffffff"></stop><stop offset="1" stop-color="#cfe0ff"></stop></linearGradient>
+          <clipPath id="b4c"><rect x="2" y="10" width="64" height="64" rx="20"></rect></clipPath>
+          <mask id="b4m"><rect x="2" y="10" width="64" height="64" rx="20" fill="#ffffff"></rect><path d="M28 27 L28 57 L54 42 Z" fill="#000000"></path></mask>
+        </defs>
+        <g clip-path="url(#b4c)" mask="url(#b4m)"><rect x="2" y="10" width="64" height="64" fill="url(#b4sq)"></rect></g>
+        <text x="84" y="54" font-family="'Helvetica Neue',Arial,sans-serif" font-weight="800" font-size="33" letter-spacing="-1.6" fill="#ed2939">Føroy<tspan fill="#ed2939" fill-opacity=".62">skt</tspan></text>
+      </svg>
+    </div>
+    <div class="cap"><b>Tinted square · play knocked to BG</b><br>red wordmark · ocean → navy</div>
+  </div>
+
+</body>
+</html>

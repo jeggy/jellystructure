@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="design_doc_mode" content="canvas">
+<title>Varpið — lockup options</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: 'Sora', sans-serif; }
+  .frame { position: absolute; }
+
+  .head { width: 880px; color: #11131a; }
+  .head h1 { font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 32px; letter-spacing: -1px; margin: 0 0 8px; }
+  .head p { margin: 0; font-size: 15px; line-height: 1.6; color: #3a3f4d; max-width: 760px; }
+
+  .opt { width: 360px; background: #16181f; border: 1px solid #262a35; border-radius: 18px; padding: 20px 20px 18px; box-shadow: 0 24px 60px rgba(0,0,0,.28); }
+  .opt .lbl { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+  .opt .n { font-family: 'JetBrains Mono', monospace; font-size: 11.5px; font-weight: 500; color: #0b0c12; background: #aeb6cc; border-radius: 6px; padding: 2px 8px; }
+  .opt .ttl { font-family: 'Space Grotesk', sans-serif; font-weight: 600; font-size: 15.5px; color: #eef0f7; letter-spacing: -.2px; }
+
+  .card { width: 318px; height: 132px; border-radius: 20px; position: relative; overflow: hidden;
+    display: flex; align-items: center; justify-content: center; border: 2px solid rgba(255,255,255,.07);
+    box-shadow: 0 14px 34px rgba(0,0,0,.45); background: linear-gradient(135deg,#0e4f99,#06203f); }
+  .card .sheen { position: absolute; inset: 0; background: radial-gradient(120% 120% at 80% 0%, rgba(255,255,255,.22), transparent 55%); }
+  .card svg { position: relative; z-index: 2; width: 78%; height: auto; max-height: 56%; display: block; }
+
+  .opt .cap { margin-top: 13px; font-size: 12px; line-height: 1.6; color: #8b93a8; font-family: 'JetBrains Mono', monospace; }
+  .opt .cap b { color: #c7cddc; font-weight: 500; }
+</style>
+</head>
+<body>
+
+  <div class="frame head" style="left:110px; top:60px;">
+    <h1>Varpið — pick the mark</h1>
+    <p>The name <b style="color:#11131a;">Varpið</b> ("the broadcast" — same root as <i>sjónvarp</i>, television) in the two favoured marks, plain and two-tone. Same Faroese white / blue / red.</p>
+  </div>
+
+  <!-- 1 ring · white -->
+  <div class="frame opt" style="left:110px; top:260px;">
+    <div class="lbl"><span class="n">1</span><span class="ttl">Gradient ring · white</span></div>
+    <div class="card">
+      <div class="sheen"></div>
+      <svg viewBox="0 0 286 84" xmlns="http://www.w3.org/2000/svg" aria-label="Varpið">
+        <defs><linearGradient id="r1" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#0a66c8"></stop><stop offset="1" stop-color="#ed2939"></stop></linearGradient></defs>
+        <circle cx="34" cy="42" r="29" fill="#ffffff" stroke="url(#r1)" stroke-width="6"></circle>
+        <path d="M27 28 L27 56 L52 42 Z" fill="#0a66c8"></path>
+        <text x="84" y="54" font-family="'Helvetica Neue',Arial,sans-serif" font-weight="800" font-size="35" letter-spacing="-1.6" fill="#ffffff">Varpið</text>
+      </svg>
+    </div>
+    <div class="cap">white disc · blue→red ring · blue play · <b>white wordmark</b></div>
+  </div>
+
+  <!-- 2 disc · white -->
+  <div class="frame opt" style="left:600px; top:260px;">
+    <div class="lbl"><span class="n">2</span><span class="ttl">Inverted disc · white</span></div>
+    <div class="card">
+      <div class="sheen"></div>
+      <svg viewBox="0 0 286 84" xmlns="http://www.w3.org/2000/svg" aria-label="Varpið">
+        <circle cx="34" cy="42" r="30" fill="#ed2939"></circle>
+        <circle cx="34" cy="42" r="27" fill="#0a66c8"></circle>
+        <path d="M27 28 L27 56 L52 42 Z" fill="#ffffff"></path>
+        <text x="84" y="54" font-family="'Helvetica Neue',Arial,sans-serif" font-weight="800" font-size="35" letter-spacing="-1.6" fill="#ffffff">Varpið</text>
+      </svg>
+    </div>
+    <div class="cap">red ring · blue disc · white play · <b>white wordmark</b></div>
+  </div>
+
+  <!-- 3 ring · two-tone -->
+  <div class="frame opt" style="left:110px; top:540px;">
+    <div class="lbl"><span class="n">3</span><span class="ttl">Gradient ring · two-tone</span></div>
+    <div class="card">
+      <div class="sheen"></div>
+      <svg viewBox="0 0 286 84" xmlns="http://www.w3.org/2000/svg" aria-label="Varpið">
+        <defs><linearGradient id="r3" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#0a66c8"></stop><stop offset="1" stop-color="#ed2939"></stop></linearGradient></defs>
+        <circle cx="34" cy="42" r="29" fill="#ffffff" stroke="url(#r3)" stroke-width="6"></circle>
+        <path d="M27 28 L27 56 L52 42 Z" fill="#0a66c8"></path>
+        <text x="84" y="54" font-family="'Helvetica Neue',Arial,sans-serif" font-weight="800" font-size="35" letter-spacing="-1.6" fill="#ffffff">Varp<tspan fill="#ed2939">ið</tspan></text>
+      </svg>
+    </div>
+    <div class="cap">white disc · blue→red ring · blue play · <b>white + red wordmark</b></div>
+  </div>
+
+  <!-- 4 disc · two-tone -->
+  <div class="frame opt" style="left:600px; top:540px;">
+    <div class="lbl"><span class="n">4</span><span class="ttl">Inverted disc · two-tone</span></div>
+    <div class="card">
+      <div class="sheen"></div>
+      <svg viewBox="0 0 286 84" xmlns="http://www.w3.org/2000/svg" aria-label="Varpið">
+        <circle cx="34" cy="42" r="30" fill="#ed2939"></circle>
+        <circle cx="34" cy="42" r="27" fill="#0a66c8"></circle>
+        <path d="M27 28 L27 56 L52 42 Z" fill="#ffffff"></path>
+        <text x="84" y="54" font-family="'Helvetica Neue',Arial,sans-serif" font-weight="800" font-size="35" letter-spacing="-1.6" fill="#ffffff">Varp<tspan fill="#ed2939">ið</tspan></text>
+      </svg>
+    </div>
+    <div class="cap">red ring · blue disc · white play · <b>white + red wordmark</b></div>
+  </div>
+
+</body>
+</html>
