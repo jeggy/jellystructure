@@ -2563,11 +2563,40 @@ private fun selectNfoElement(treeEl: HTMLElement, nodeEl: HTMLElement, scope: Co
 }
 
 /** ISO-639-1 language code → ISO-3166-1-alpha-2 country code for flag-icons assets (Phase 87). */
+// ISO 639-1 (2-letter) AND ISO 639-2/B + /T (3-letter) → ISO 3166-1-alpha-2 country code.
+// ffprobe and Jellyfin MediaStreams use 3-letter codes; include both so lookup never silently fails.
 private val LANG_CC = mapOf(
-    "en" to "gb", "fr" to "fr", "de" to "de", "es" to "es", "da" to "dk",
-    "fo" to "fo", "is" to "is", "no" to "no", "sv" to "se", "fi" to "fi",
-    "nl" to "nl", "it" to "it", "pt" to "pt", "pl" to "pl", "ru" to "ru",
-    "ja" to "jp", "ko" to "kr", "zh" to "cn", "ar" to "sa", "hi" to "in",
+    "en" to "gb", "eng" to "gb",
+    "fr" to "fr", "fra" to "fr", "fre" to "fr",
+    "de" to "de", "deu" to "de", "ger" to "de",
+    "es" to "es", "spa" to "es",
+    "da" to "dk", "dan" to "dk",
+    "fo" to "fo", "fao" to "fo",
+    "is" to "is", "isl" to "is", "ice" to "is",
+    "no" to "no", "nor" to "no", "nob" to "no", "nno" to "no",
+    "sv" to "se", "swe" to "se",
+    "fi" to "fi", "fin" to "fi",
+    "nl" to "nl", "nld" to "nl", "dut" to "nl",
+    "it" to "it", "ita" to "it",
+    "pt" to "pt", "por" to "pt",
+    "pl" to "pl", "pol" to "pl",
+    "ru" to "ru", "rus" to "ru",
+    "ja" to "jp", "jpn" to "jp",
+    "ko" to "kr", "kor" to "kr",
+    "zh" to "cn", "zho" to "cn", "chi" to "cn",
+    "ar" to "sa", "ara" to "sa",
+    "hi" to "in", "hin" to "in",
+    "cs" to "cz", "ces" to "cz", "cze" to "cz",
+    "tr" to "tr", "tur" to "tr",
+    "uk" to "ua", "ukr" to "ua",
+    "el" to "gr", "ell" to "gr", "gre" to "gr",
+    "hu" to "hu", "hun" to "hu",
+    "ro" to "ro", "ron" to "ro", "rum" to "ro",
+    "sk" to "sk", "slk" to "sk", "slo" to "sk",
+    "hr" to "hr", "hrv" to "hr",
+    "he" to "il", "heb" to "il",
+    "th" to "th", "tha" to "th",
+    "vi" to "vn", "vie" to "vn",
 )
 private const val AUDIO_FLAG_MAX = 5
 
@@ -2590,14 +2619,40 @@ private fun audioFlagsHtml(tracks: List<Track>): String {
     return """<span class="af-label">Audio</span><span class="af-row">$flags$more</span>"""
 }
 
-/** Human-readable name for an ISO-639-1 code used in the audio-flag tooltips. */
-private fun langName(iso1: String): String = when (iso1) {
-    "en" -> "English"; "fr" -> "French"; "de" -> "German"; "es" -> "Spanish"
-    "da" -> "Danish"; "fo" -> "Faroese"; "is" -> "Icelandic"; "no" -> "Norwegian"
-    "sv" -> "Swedish"; "fi" -> "Finnish"; "nl" -> "Dutch"; "it" -> "Italian"
-    "pt" -> "Portuguese"; "pl" -> "Polish"; "ru" -> "Russian"; "ja" -> "Japanese"
-    "ko" -> "Korean"; "zh" -> "Chinese"; "ar" -> "Arabic"; "hi" -> "Hindi"
-    else -> iso1
+/** Human-readable name for an ISO-639-1 or ISO-639-2 code used in the audio-flag tooltips. */
+private fun langName(code: String): String = when (code) {
+    "en", "eng" -> "English"
+    "fr", "fra", "fre" -> "French"
+    "de", "deu", "ger" -> "German"
+    "es", "spa" -> "Spanish"
+    "da", "dan" -> "Danish"
+    "fo", "fao" -> "Faroese"
+    "is", "isl", "ice" -> "Icelandic"
+    "no", "nor", "nob", "nno" -> "Norwegian"
+    "sv", "swe" -> "Swedish"
+    "fi", "fin" -> "Finnish"
+    "nl", "nld", "dut" -> "Dutch"
+    "it", "ita" -> "Italian"
+    "pt", "por" -> "Portuguese"
+    "pl", "pol" -> "Polish"
+    "ru", "rus" -> "Russian"
+    "ja", "jpn" -> "Japanese"
+    "ko", "kor" -> "Korean"
+    "zh", "zho", "chi" -> "Chinese"
+    "ar", "ara" -> "Arabic"
+    "hi", "hin" -> "Hindi"
+    "cs", "ces", "cze" -> "Czech"
+    "tr", "tur" -> "Turkish"
+    "uk", "ukr" -> "Ukrainian"
+    "el", "ell", "gre" -> "Greek"
+    "hu", "hun" -> "Hungarian"
+    "ro", "ron", "rum" -> "Romanian"
+    "sk", "slk", "slo" -> "Slovak"
+    "hr", "hrv" -> "Croatian"
+    "he", "heb" -> "Hebrew"
+    "th", "tha" -> "Thai"
+    "vi", "vie" -> "Vietnamese"
+    else -> code
 }
 
 /** Toggle the detail topbar dropdown/split menus (design media.html): a `.menu-btn` opens its menu;
