@@ -1,6 +1,8 @@
 package dev.jellystructure.ui
 
+import dev.jellystructure.api.BatchCountRequest
 import dev.jellystructure.api.JellyfinUser
+import dev.jellystructure.api.AdminConfigResponse
 import dev.jellystructure.api.MetadataApi
 import dev.jellystructure.api.RaviloApi
 import dev.jellystructure.Router
@@ -32,6 +34,8 @@ import org.w3c.files.FileReader
 import dev.jellystructure.model.MediaItem
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.absoluteValue
@@ -59,6 +63,9 @@ private val DISCOVER_SOURCES = listOf(Triple("netflix", "Netflix · via Tudum", 
 private val DISCOVER_REGIONS = listOf("DK" to "Denmark", "NO" to "Norway", "SE" to "Sweden", "FI" to "Finland", "IS" to "Iceland", "GB" to "United Kingdom", "US" to "United States", "DE" to "Germany", "FR" to "France")
 private var users: List<JellyfinUser> = emptyList()
 private var facets: Map<String, List<String>> = emptyMap() // "NETWORK"/"STUDIO"/"GENRE"/"TAG" -> values
+// Client-side scope config cache: avoids a server round-trip when switching between scopes the user
+// has already visited. Invalidated immediately before each successful Save.
+private val scopeConfigCache = HashMap<String, AdminConfigResponse>()
 
 private val CHANNEL_KINDS = listOf("NETWORK", "STUDIO", "GENRE", "TAG")
 private val AUTO_ADVANCE_OPTIONS = listOf(0 to "Off", 4 to "4 s", 6 to "6 s", 7 to "7 s", 8 to "8 s", 10 to "10 s")
@@ -127,11 +134,13 @@ private fun handleRaviloRoute(container: Element, scope: CoroutineScope) {
 }
 
 private suspend fun loadFacets(): Map<String, List<String>> = runCatching {
+    // /api/media/meta-facets returns all four in one call (one SQLite pass).
+    val f = MediaApi.metaFacets() ?: return@runCatching emptyMap()
     mapOf(
-        "NETWORK" to (MetadataApi.getNetworks()?.map { it.name } ?: emptyList()),
-        "STUDIO"  to (MetadataApi.getStudios()?.map { it.name } ?: emptyList()),
-        "GENRE"   to (MetadataApi.getGenres()?.map { it.name } ?: emptyList()),
-        "TAG"     to (MetadataApi.getTags()?.let { it.jsTags.map { t -> t.name } + it.otherTags.map { t -> t.name } } ?: emptyList()),
+        "NETWORK" to f.networks.map { it.value },
+        "STUDIO"  to f.studios.map { it.value },
+        "GENRE"   to f.genres.map { it.value },
+        "TAG"     to f.tags.map { it.value },
     )
 }.getOrDefault(emptyMap())
 
@@ -245,6 +254,14 @@ private fun buildShell(): String {
 }
 
 private fun reloadScopeIntoSections(container: Element, scope: CoroutineScope) {
+    val cacheKey = if (currentScopeIsGlobal) "global" else currentUserId
+    val cached = scopeConfigCache[cacheKey]
+    if (cached != null) {
+        currentConfig = cached.config
+        currentHasOverride = cached.hasOverride
+        renderFull(container, scope)
+        return
+    }
     (container.querySelector("#rav-sections") as? HTMLElement)?.innerHTML =
         """<p class="page-sub" style="color:var(--ink-soft);padding:24px 0">Loading…</p>"""
     scope.launch {
@@ -252,6 +269,7 @@ private fun reloadScopeIntoSections(container: Element, scope: CoroutineScope) {
             if (currentScopeIsGlobal) RaviloApi.getConfigWithMeta(scope = "global")
             else RaviloApi.getConfigWithMeta(userId = currentUserId)
         }.getOrNull()
+        if (resp != null) scopeConfigCache[cacheKey] = resp
         currentConfig = resp?.config ?: RaviloConfig()
         currentHasOverride = resp?.hasOverride ?: false
         discoverSpecs = runCatching { RaviloApi.getDiscoverLists(currentConfig.discover.region) }.getOrDefault(emptyList())
@@ -321,7 +339,11 @@ private fun wireShell(container: Element, scope: CoroutineScope) {
                 if (currentScopeIsGlobal) RaviloApi.putGlobalConfig(currentConfig)
                 else RaviloApi.putConfig(currentUserId, currentConfig)
             }.fold(
-                onSuccess = { showMsg(msg, "Saved.", ok = true) },
+                onSuccess = {
+                    // Invalidate cache so the next scope switch re-fetches fresh data
+                    scopeConfigCache.remove(if (currentScopeIsGlobal) "global" else currentUserId)
+                    showMsg(msg, "Saved.", ok = true)
+                },
                 onFailure = { showMsg(msg, "Save failed: ${it.message}", ok = false) },
             )
         }
@@ -345,8 +367,16 @@ private fun wireShell(container: Element, scope: CoroutineScope) {
     sections?.addEventListener("input") { ev ->
         val t = ev.target
         if (t is HTMLInputElement && t.id == "hero-height") {
-            container.querySelector("#hero-height-val")?.textContent = "${t.value}%"
-            collectConfig(container); renderPreview(container)
+            val pct = t.value
+            container.querySelector("#hero-height-val")?.textContent = "$pct%"
+            // Targeted update: only move the hero bar in the schematic preview — no full rebuild
+            val prevHero = container.querySelector("#rav-prev-hero") as? HTMLElement
+            if (prevHero != null) {
+                prevHero.style.height = "$pct%"
+                collectConfig(container)
+            } else {
+                collectConfig(container); renderPreview(container)
+            }
         }
     }
     sections?.addEventListener("change") { ev ->
@@ -504,24 +534,21 @@ private fun heroGradient(id: String): String {
 private var heroHintsResolving = false
 private fun resolveHeroDisplayHints(container: Element) {
     if (heroHintsResolving) return
-    if (currentConfig.heroes.none { it.displayTitle == null && it.itemId.isNotBlank() }) return
+    val toResolve = currentConfig.heroes.withIndex()
+        .filter { (_, h) -> h.displayTitle == null && h.itemId.isNotBlank() }
+    if (toResolve.isEmpty()) return
     val scope = rcScope ?: return
     heroHintsResolving = true
     scope.launch {
         try {
-            val all = mutableListOf<MediaItem>()
-            var page = 1
-            while (true) {
-                val result = MediaApi.list(pageSize = 100, page = page) ?: break
-                all.addAll(result.items)
-                if (all.size >= result.total || result.items.isEmpty()) break
-                page++
-            }
-            val byJfId = all.associateBy { it.jellyfinId ?: "" }.filterKeys { it.isNotBlank() }
-            val byId = all.associateBy { it.id }
-            val updated = currentConfig.heroes.map { h ->
-                if (h.displayTitle != null || h.itemId.isBlank()) return@map h
-                val item = byJfId[h.itemId] ?: byId[h.itemId] ?: return@map h
+            // One parallel GET /api/media/{id} per hero item — typically 3–10 calls total vs
+            // O(library/100) sequential pages that the previous paginated approach used.
+            val fetched = toResolve.map { (idx, h) ->
+                scope.async { idx to MediaApi.get(h.itemId) }
+            }.awaitAll()
+            val results = fetched.toMap()
+            val updated = currentConfig.heroes.mapIndexed { i, h ->
+                val item = results[i] ?: return@mapIndexed h
                 val kindStr = if (item.kind.name == "TV_SHOW") "Series" else "Film"
                 val meta = listOfNotNull(kindStr, item.network ?: item.studio, item.year?.toString()).joinToString(" · ")
                 h.copy(displayTitle = item.title, displayMeta = meta, displayBackdrop = item.backdropPath)
@@ -925,17 +952,18 @@ private fun renderChannels(container: Element) {
           <button id="ch-workbench" class="btn sm ghost" style="margin-top:6px">⚙ Build with workbench</button>
         </div>
     """.trimIndent()
-    // R73: async per-channel item-match count badges — list paints immediately, badges fill in.
+    // R73/86: single batch-count call instead of N parallel API calls (one per channel).
     val scope = rcScope
-    if (scope != null) {
-        currentConfig.channels.forEachIndexed { i, c ->
-            scope.launch {
+    if (scope != null && currentConfig.channels.isNotEmpty()) {
+        scope.launch {
+            val requests = currentConfig.channels.mapIndexed { i, c ->
                 val conds = if (c.conditions.isNotEmpty()) wbCondsFrom(c.conditions) else legacyToConds(c)
-                val match = c.match.name
-                val page = countMatching(match, include = "all", conds, viewer = currentUserId)
-                val total = page?.total ?: 0
-                val badge = sect.querySelector("#ch-count-$i") as? HTMLElement ?: return@launch
-                badge.innerHTML = "$total items"
+                BatchCountRequest(index = i, match = c.match.name, conditions = wbConds(conds))
+            }
+            val results = MediaApi.batchCount(requests) ?: return@launch
+            for (result in results) {
+                val badge = sect.querySelector("#ch-count-${result.index}") as? HTMLElement ?: continue
+                badge.innerHTML = "${result.total} items"
             }
         }
     }
@@ -1975,7 +2003,7 @@ private fun renderPreview(container: Element) {
     val rowTitles = previewRowTitles(cfg)
     host.innerHTML = buildString {
         append("""<div style="border-radius:10px;overflow:hidden;border:1px solid var(--line);background:#0a0c13;aspect-ratio:16/10;display:flex;flex-direction:column">""")
-        append("""<div style="height:$heroPct%;background:$heroBg;display:flex;align-items:flex-end;padding:8px"><span style="color:#fff;font-weight:700;font-size:.68rem;text-shadow:0 1px 4px rgba(0,0,0,.6)">${heroLabel.htmlEsc()}</span></div>""")
+        append("""<div id="rav-prev-hero" style="height:$heroPct%;background:$heroBg;display:flex;align-items:flex-end;padding:8px"><span style="color:#fff;font-weight:700;font-size:.68rem;text-shadow:0 1px 4px rgba(0,0,0,.6)">${heroLabel.htmlEsc()}</span></div>""")
         if (channels.isNotEmpty()) {
             append("""<div style="display:flex;gap:4px;padding:6px 8px;overflow:hidden">""")
             channels.take(5).forEach { c ->

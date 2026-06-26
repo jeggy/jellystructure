@@ -298,6 +298,16 @@ class MediaStore(private val db: JellystructureDb, private val jsTagStore: JsTag
         )
     }
 
+    /** Evaluate N condition stacks against the library in a single pass. Avoids N×allItems() calls. */
+    fun countBatch(requests: List<Pair<MatchMode, List<Condition>>>): List<Int> {
+        if (requests.isEmpty()) return emptyList()
+        val all = allItems()
+        return requests.map { (match, conditions) ->
+            if (conditions.isEmpty()) all.size
+            else all.count { item -> ConditionEvaluator.matches(item, match, conditions, emptySet()) }
+        }
+    }
+
     private fun upsertItem(item: MediaItem) {
         peopleIndexCache = null   // Phase 78: invalidate the people→profilePath index on any write
         jellyfinIdIndex  = null   // invalidate the jellyfinId→MediaItem index on any write

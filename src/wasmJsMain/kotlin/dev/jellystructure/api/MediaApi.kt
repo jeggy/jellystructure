@@ -145,6 +145,16 @@ data class MetaFacets(
 )
 
 @Serializable
+data class BatchCountRequest(
+    val index: Int,
+    val match: String = "ALL",
+    val conditions: List<Condition> = emptyList(),
+)
+
+@Serializable
+data class BatchCountResult(val index: Int, val total: Int)
+
+@Serializable
 data class ScanStatus(
     val running: Boolean,
     val status: String = "IDLE",
@@ -200,6 +210,13 @@ object MediaApi {
             }
             if (!viewer.isNullOrBlank()) parameter("viewer", viewer)
         }.body<MediaPage>()
+    }.getOrNull()
+
+    suspend fun batchCount(items: List<BatchCountRequest>): List<BatchCountResult>? = runCatching {
+        httpClient.post("/api/media/batch-count") {
+            contentType(ContentType.Application.Json)
+            setBody(items)
+        }.body<List<BatchCountResult>>()
     }.getOrNull()
 
     suspend fun trackFacets(): TrackFacets? = runCatching {
