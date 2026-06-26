@@ -34,3 +34,8 @@ actual object TokenStore {
     actual fun set(token: String) { prefs().edit().putString("device_token", token).apply() }
     actual fun clear() { prefs().edit().remove("device_token").apply() }
 }
+
+// R80: no-ops on Android — navigation is handled by Key.Back key events.
+actual fun pushRoute(route: String) {}
+actual fun replaceRoute(route: String) {}
+actual fun installHashListener(onRoute: (String) -> Unit): () -> Unit = {}

@@ -59,3 +59,25 @@ actual object TokenStore {
     actual fun set(token: String) = jsSetToken(token)
     actual fun clear() = jsClearToken()
 }
+
+// ─── R80: Browser history / URL navigation ────────────────────────────────────
+
+private fun jsGetHash(): String = js("window.location.hash")
+private fun jsSetHash(route: String): Unit = js("window.location.hash = route")
+private fun jsHistoryReplace(hash: String): Unit = js("window.history.replaceState(null,'',hash)")
+
+actual fun pushRoute(route: String) {
+    jsSetHash("#$route")
+}
+
+actual fun replaceRoute(route: String) {
+    jsHistoryReplace("#$route")
+}
+
+actual fun installHashListener(onRoute: (String) -> Unit): () -> Unit {
+    jsInstallHashListener { onRoute(jsGetHash().removePrefix("#")) }
+    return {}
+}
+
+private fun jsInstallHashListener(callback: () -> Unit): Unit =
+    js("window.addEventListener('hashchange', function(){ callback() })")

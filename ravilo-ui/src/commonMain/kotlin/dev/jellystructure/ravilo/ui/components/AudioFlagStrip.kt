@@ -65,13 +65,14 @@ private val LANG_CC: Map<String, DrawableResource> = mapOf(
 private const val FLAG_MAX = 5
 
 /**
- * R75 — audio-language flag strip for the detail hero.
- * One flag per audio track that has a language, in physical track order.
+ * R75/R78 — language flag strip for the detail hero.
+ * One flag per track that has a language, in physical track order.
  * Skips untagged/unmapped tracks; hidden entirely when none map to a flag; max 5 + "+N" pill.
+ * [label] is the category label shown before the flags ("AUDIO" or "SUBTITLES").
  */
 @Composable
-fun AudioFlagStrip(audioLanguages: List<String>, modifier: Modifier = Modifier) {
-    // Deduplicate: same language code from multiple audio tracks, or different 3-letter codes
+fun AudioFlagStrip(audioLanguages: List<String>, label: String = "AUDIO", modifier: Modifier = Modifier) {
+    // Deduplicate: same language code from multiple tracks, or different 3-letter codes
     // resolving to the same flag (nor/nob/nno → flag_no), should each show only once.
     val mapped = audioLanguages.mapNotNull { lang -> LANG_CC[lang.lowercase()] }.distinct()
     if (mapped.isEmpty()) return
@@ -86,7 +87,7 @@ fun AudioFlagStrip(audioLanguages: List<String>, modifier: Modifier = Modifier) 
         horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         Text(
-            text = "AUDIO",
+            text = label,
             color = Color.White.copy(alpha = 0.55f),
             fontSize = 9.sp,
             fontWeight = FontWeight.SemiBold,
