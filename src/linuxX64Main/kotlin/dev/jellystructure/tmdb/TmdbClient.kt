@@ -166,6 +166,7 @@ data class TmdbEpisodeDetails(
     @SerialName("season_number") val seasonNumber: Int = 0,
     @SerialName("episode_number") val episodeNumber: Int = 0,
     @SerialName("still_path") val stillPath: String? = null,
+    val runtime: Int? = null,
 )
 
 // --- Phase 47: TMDB images API (candidate galleries) ---

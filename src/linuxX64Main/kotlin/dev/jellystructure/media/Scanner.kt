@@ -208,6 +208,7 @@ class Scanner(
             cast = cast,
             crew = crew,
             imdbId = extIds?.imdbId?.takeIf { it.isNotBlank() },
+            runtime = details?.runtime,
         )
     }
 
@@ -243,6 +244,19 @@ class Scanner(
         val seriesTmdbId = jItem.providerIds?.tmdb?.toIntOrNull()
             ?: tmdb.searchTv(title, searchYear)?.id
 
+        // R82: Fetch per-episode static metadata (id, season name) from Jellyfin at scan time so
+        // DetailService no longer needs a live Jellyfin call just to map (season, ep) → Jellyfin id.
+        val scanBaseUrl = configStore.current.apiKeys.jellyfinUrl
+        val scanAdminToken = configStore.current.apiKeys.jellyfinToken
+        val jfEpsMeta = if (scanBaseUrl.isNotBlank() && scanAdminToken.isNotBlank()) {
+            jellyfinClient.getSeriesEpisodesMeta(scanBaseUrl.trimEnd('/'), scanAdminToken, jItem.id)
+        } else emptyList()
+        val jfBySeasonEp = jfEpsMeta.associateBy { (it.parentIndexNumber ?: 0) to (it.indexNumber ?: 0) }
+        val seasonNamesMap: Map<Int, String> = jfEpsMeta
+            .groupBy { it.parentIndexNumber ?: 0 }
+            .mapValues { (_, eps) -> eps.firstOrNull()?.seasonName ?: "" }
+            .filterValues { it.isNotBlank() }
+
         val episodes = mutableListOf<Episode>()
         for (file in filesToProbe) {
             val tracks = FfprobeRunner.probe(file)
@@ -268,6 +282,10 @@ class Scanner(
                 fetchEpisodeCredits(seriesTmdbId, seasonNum, epNum)
             } else Pair(emptyList(), emptyList())
 
+            // R82: map (season, ep) → Jellyfin id from the pre-fetched meta
+            val jfEpId = if (seasonNum != null && epNum != null)
+                jfBySeasonEp[seasonNum to epNum]?.id else null
+
             episodes += Episode(
                 filename = file.substringAfterLast('/'),
                 path = file,
@@ -282,6 +300,8 @@ class Scanner(
                 tmdbEpisodeId = epDetails?.id,
                 guestStars = epGuests,
                 crew = epCrew,
+                jellyfinId = jfEpId,
+                runtime = epDetails?.runtime,
             )
         }
 
@@ -349,6 +369,7 @@ class Scanner(
                 crew = mixCrew,
                 imdbId = mixExtIds?.imdbId?.takeIf { it.isNotBlank() },
                 tvdbId = mixExtIds?.tvdbId,
+                seasonNames = seasonNamesMap,
             )
         }
 
@@ -395,6 +416,7 @@ class Scanner(
             crew = tvCrew,
             imdbId = tvExtIds?.imdbId?.takeIf { it.isNotBlank() },
             tvdbId = tvExtIds?.tvdbId,
+            seasonNames = seasonNamesMap,
         )
     }
 
@@ -446,6 +468,7 @@ class Scanner(
             tags = mergeRepullTags(tmdbTags, item),
             scannedAt = epochSeconds(),
             imdbId = syncExtIds?.imdbId?.takeIf { it.isNotBlank() } ?: item.imdbId,
+            runtime = details.runtime,
         )
     }
 
@@ -499,6 +522,8 @@ class Scanner(
                 tmdbEpisodeId = epDetails?.id ?: existingEp?.tmdbEpisodeId,
                 guestStars = epGuests,
                 crew = epCrew,
+                jellyfinId = existingEp?.jellyfinId,
+                runtime = epDetails?.runtime ?: existingEp?.runtime,
             )
         }
         val sortedEpisodes = episodes.sortedWith(compareBy({ it.seasonNumber ?: 999 }, { it.episodeNumber ?: 999 }))
@@ -588,6 +613,7 @@ class Scanner(
                 overview = epDetails?.overview?.takeIf { it.isNotBlank() } ?: ep.overview,
                 stillPath = epDetails?.stillPath ?: ep.stillPath,
                 tmdbEpisodeId = epDetails?.id ?: ep.tmdbEpisodeId,
+                runtime = epDetails?.runtime ?: ep.runtime,
             )
             synced++
         }
@@ -659,6 +685,7 @@ class Scanner(
                     imdbId = rescanMovieExtIds?.imdbId?.takeIf { it.isNotBlank() } ?: item.imdbId,
                     cast = rescanCast,
                     crew = rescanCrew,
+                    runtime = details.runtime,
                 )
             }
             MediaKind.TV_SHOW -> {
@@ -688,6 +715,7 @@ class Scanner(
                             stillPath = epDetails.stillPath,
                             tmdbEpisodeId = epDetails.id,
                             resolvedLanguage = resolvedLang,
+                            runtime = epDetails.runtime ?: ep.runtime,
                         ) else ep
                     } else ep
                 }

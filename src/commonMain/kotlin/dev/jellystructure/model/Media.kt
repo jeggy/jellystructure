@@ -67,6 +67,10 @@ data class Episode(
     val guestStars: List<Person> = emptyList(),
     /** Phase 76: episode-specific crew (director, writer, etc.). */
     val crew: List<Person> = emptyList(),
+    /** R82: Jellyfin item id for this episode (the playable id). Null until re-scanned after R82. */
+    val jellyfinId: String? = null,
+    /** R82: Episode runtime in minutes from TMDB. Null until re-scanned after R82. */
+    val runtime: Int? = null,
 )
 
 @Serializable
@@ -105,6 +109,10 @@ data class MediaItem(
     val crew: List<Person> = emptyList(),
     val imdbId: String? = null,
     val tvdbId: Int? = null,
+    /** R82: Runtime in minutes (movies only; series episodes carry their own runtime). Null until re-scanned. */
+    val runtime: Int? = null,
+    /** R82: Season display names keyed by season number. Absent seasons fall back to "Season N". */
+    val seasonNames: Map<Int, String> = emptyMap(),
 )
 
 @Serializable
