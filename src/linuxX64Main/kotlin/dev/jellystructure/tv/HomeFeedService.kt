@@ -17,6 +17,8 @@ import dev.jellystructure.shared.tv.RaviloConfig
 import dev.jellystructure.shared.tv.Row
 import dev.jellystructure.shared.tv.RowConfig
 import dev.jellystructure.shared.tv.RowKind
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 
 private const val ROW_ITEM_LIMIT = 30
 private const val HERO_AUTO_COUNT = 5
@@ -27,12 +29,14 @@ class HomeFeedService(
     private val jellyfinClient: JellyfinClient,
     private val configStore: ConfigStore,
 ) {
-    suspend fun getHomeFeed(device: DeviceData): HomeFeed {
-        val config = configService.getConfig(device.jellyfinUserId)
-        val all = mediaStore.allItems()
+    suspend fun getHomeFeed(device: DeviceData): HomeFeed = coroutineScope {
         val jellyfinBase = configStore.current.apiKeys.jellyfinUrl.trimEnd('/')
-        val token = jellyfinClient.tvToken(jellyfinBase, device, configStore.current.apiKeys.jellyfinToken)
-        return HomeFeed(
+        val config        = configService.getConfig(device.jellyfinUserId) // sync disk read — no suspend needed
+        val allDeferred   = async { mediaStore.allItems() }
+        val tokenDeferred = async { jellyfinClient.tvToken(jellyfinBase, device, configStore.current.apiKeys.jellyfinToken) }
+        val all   = allDeferred.await()
+        val token = tokenDeferred.await()
+        HomeFeed(
             heroes = buildHeroes(config, all, jellyfinBase, token),
             channels = buildChannels(config),
             rows = buildRows(config, device, all, jellyfinBase, token, channelFilter = null),
@@ -42,26 +46,27 @@ class HomeFeedService(
         )
     }
 
-    suspend fun getChannelFeed(device: DeviceData, channelId: String): HomeFeed {
-        val config = configService.getConfig(device.jellyfinUserId)
+    suspend fun getChannelFeed(device: DeviceData, channelId: String): HomeFeed = coroutineScope {
+        val config     = configService.getConfig(device.jellyfinUserId)
         val channelCfg = config.channels.find { it.id == channelId }
-            ?: return HomeFeed(emptyList(), emptyList(), emptyList())
-        val allItems = mediaStore.allItems()
-        val heroIds = config.heroes.map { it.itemId }.toSet()
+            ?: return@coroutineScope HomeFeed(emptyList(), emptyList(), emptyList())
+        val jellyfinBase  = configStore.current.apiKeys.jellyfinUrl.trimEnd('/')
+        val allDeferred   = async { mediaStore.allItems() }
+        val tokenDeferred = async { jellyfinClient.tvToken(jellyfinBase, device, configStore.current.apiKeys.jellyfinToken) }
+        val allItems = allDeferred.await()
+        val token    = tokenDeferred.await()
+        val heroIds  = config.heroes.map { it.itemId }.toSet()
         val filtered = allItems.filter { it.matchesChannel(channelCfg, heroIds) }
-        val jellyfinBase = configStore.current.apiKeys.jellyfinUrl.trimEnd('/')
-        val token = jellyfinClient.tvToken(jellyfinBase, device, configStore.current.apiKeys.jellyfinToken)
-        // Use channel's own page-hero if enabled; look up items from the full store (not channel-filtered).
         val pageHero = channelCfg.pageHero
-        val heroes = if (pageHero?.enabled == true && pageHero.items.isNotEmpty())
+        val heroes   = if (pageHero?.enabled == true && pageHero.items.isNotEmpty())
             buildHeroesFromList(pageHero.items, allItems, jellyfinBase, token)
         else
             emptyList()
-        return HomeFeed(
+        HomeFeed(
             heroes = heroes,
             channels = buildChannels(config),
             rows = buildRows(config, device, filtered, jellyfinBase, token, channelFilter = channelCfg),
-            heroHeightPct = config.heroHeightPct,        // R58: global only — per-channel values removed
+            heroHeightPct = config.heroHeightPct,
             autoAdvanceSeconds = config.autoAdvanceSeconds,
             tileShape = config.tileShape,
         )
@@ -262,12 +267,15 @@ class HomeFeedService(
         all: List<MediaItem>,
         jellyfinBase: String,
         token: String,
-    ): List<MediaCard> {
+    ): List<MediaCard> = coroutineScope {
         val jellyfinUrl = configStore.current.apiKeys.jellyfinUrl.takeIf { it.isNotBlank() }
-            ?: return emptyList()
+            ?: return@coroutineScope emptyList()
 
-        val resumeItems = jellyfinClient.getResumeItems(jellyfinUrl, token, device.jellyfinUserId)
-        val nextUpItems = jellyfinClient.getNextUp(jellyfinUrl, token, device.jellyfinUserId)
+        // Both calls are independent — fetch in parallel to halve the Jellyfin round-trips.
+        val resumeDeferred = async { jellyfinClient.getResumeItems(jellyfinUrl, token, device.jellyfinUserId) }
+        val nextUpDeferred = async { jellyfinClient.getNextUp(jellyfinUrl, token, device.jellyfinUserId) }
+        val resumeItems = resumeDeferred.await()
+        val nextUpItems = nextUpDeferred.await()
 
         val cards = mutableListOf<MediaCard>()
         val seen = mutableSetOf<String>()
@@ -289,7 +297,7 @@ class HomeFeedService(
             cards.add(mediaItem.toMediaCard(jellyfinBase, token, nextUpLabel = label))
         }
 
-        return cards.take(ROW_ITEM_LIMIT)
+        cards.take(ROW_ITEM_LIMIT)
     }
 
     // ─── Helpers ──────────────────────────────────────────────────────────────
