@@ -2609,6 +2609,7 @@ private fun audioFlagsHtml(tracks: List<Track>): String {
     val langs = tracks
         .filter { it.kind == TrackKind.AUDIO }
         .mapNotNull { t -> t.language?.lowercase()?.let { l -> LANG_CC[l]?.let { cc -> l to cc } } }
+        .distinctBy { (_, cc) -> cc }  // one flag per country code; drop duplicate audio tracks
     if (langs.isEmpty()) return ""
     val shown = langs.take(AUDIO_FLAG_MAX)
     val extra = langs.size - shown.size
