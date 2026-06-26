@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="design_doc_mode" content="canvas">
+<title>Faroese streaming — name options</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: 'Sora', sans-serif; }
+  .frame { position: absolute; }
+
+  .head { width: 880px; color: #11131a; }
+  .head h1 { font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 32px; letter-spacing: -1px; margin: 0 0 8px; }
+  .head p { margin: 0; font-size: 15px; line-height: 1.6; color: #3a3f4d; max-width: 770px; }
+
+  .opt { width: 360px; background: #16181f; border: 1px solid #262a35; border-radius: 18px; padding: 20px 20px 18px; box-shadow: 0 24px 60px rgba(0,0,0,.28); }
+  .opt.star { border-color: #c8a24a; box-shadow: 0 0 0 1px rgba(200,162,74,.35), 0 24px 60px rgba(0,0,0,.28); }
+  .opt .lbl { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+  .opt .nm { font-family: 'Space Grotesk', sans-serif; font-weight: 600; font-size: 16px; color: #eef0f7; letter-spacing: -.2px; }
+  .opt .star-tag { margin-left: auto; font-family: 'JetBrains Mono', monospace; font-size: 10.5px; color: #e3b85a; border: 1px solid rgba(227,184,90,.4); border-radius: 20px; padding: 2px 8px; }
+
+  .card { width: 318px; height: 132px; border-radius: 20px; position: relative; overflow: hidden;
+    display: flex; align-items: center; justify-content: center; border: 2px solid rgba(255,255,255,.07);
+    box-shadow: 0 14px 34px rgba(0,0,0,.45); background: linear-gradient(135deg,#0e4f99,#06203f); }
+  .card .sheen { position: absolute; inset: 0; background: radial-gradient(120% 120% at 80% 0%, rgba(255,255,255,.22), transparent 55%); }
+  .card svg { position: relative; z-index: 2; width: 80%; height: auto; max-height: 56%; display: block; }
+
+  .opt .cap { margin-top: 13px; font-size: 12px; line-height: 1.6; color: #8b93a8; font-family: 'JetBrains Mono', monospace; }
+  .opt .cap b { color: #c7cddc; font-weight: 500; }
+</style>
+</head>
+<body>
+
+  <div class="frame head" style="left:110px; top:60px;">
+    <h1>Faroese streaming — name options</h1>
+    <p>Eight invented service names rooted in Faroese, each as a logo lockup with the gradient-ring play mark. Same white / blue / red, same field — only the name changes. Gold-outlined are the strongest picks.</p>
+  </div>
+
+  <!-- N1 Streymur -->
+  <div class="frame opt star" style="left:110px; top:260px;">
+    <div class="lbl"><span class="nm">Streymur</span><span class="star-tag">★ favourite</span></div>
+    <div class="card">
+      <div class="sheen"></div>
+      <svg viewBox="0 0 300 84" xmlns="http://www.w3.org/2000/svg" aria-label="Streymur">
+        <defs><linearGradient id="g1" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#0a66c8"></stop><stop offset="1" stop-color="#ed2939"></stop></linearGradient></defs>
+        <circle cx="34" cy="42" r="29" fill="#ffffff" stroke="url(#g1)" stroke-width="6"></circle>
+        <path d="M27 28 L27 56 L52 42 Z" fill="#0a66c8"></path>
+        <text x="84" y="54" font-family="'Helvetica Neue',Arial,sans-serif" font-weight="800" font-size="33" letter-spacing="-1.6" fill="#ffffff">Streym<tspan fill="#ffffff" fill-opacity=".66">ur</tspan></text>
+      </svg>
+    </div>
+    <div class="cap"><b>"current / stream"</b> — on-the-nose, brandable</div>
+  </div>
+
+  <!-- N2 Tjaldur -->
+  <div class="frame opt star" style="left:600px; top:260px;">
+    <div class="lbl"><span class="nm">Tjaldur</span><span class="star-tag">★ favourite</span></div>
+    <div class="card">
+      <div class="sheen"></div>
+      <svg viewBox="0 0 300 84" xmlns="http://www.w3.org/2000/svg" aria-label="Tjaldur">
+        <defs><linearGradient id="g2" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#0a66c8"></stop><stop offset="1" stop-color="#ed2939"></stop></linearGradient></defs>
+        <circle cx="34" cy="42" r="29" fill="#ffffff" stroke="url(#g2)" stroke-width="6"></circle>
+        <path d="M27 28 L27 56 L52 42 Z" fill="#0a66c8"></path>
+        <text x="84" y="54" font-family="'Helvetica Neue',Arial,sans-serif" font-weight="800" font-size="33" letter-spacing="-1.6" fill="#ffffff">Tjaldur</text>
+      </svg>
+    </div>
+    <div class="cap"><b>oystercatcher</b> — the Faroese national bird</div>
+  </div>
+
+  <!-- N3 Streym+ -->
+  <div class="frame opt" style="left:110px; top:540px;">
+    <div class="lbl"><span class="nm">Streym+</span></div>
+    <div class="card">
+      <div class="sheen"></div>
+      <svg viewBox="0 0 300 84" xmlns="http://www.w3.org/2000/svg" aria-label="Streym plus">
+        <defs><linearGradient id="g3" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#0a66c8"></stop><stop offset="1" stop-color="#ed2939"></stop></linearGradient></defs>
+        <circle cx="34" cy="42" r="29" fill="#ffffff" stroke="url(#g3)" stroke-width="6"></circle>
+        <path d="M27 28 L27 56 L52 42 Z" fill="#0a66c8"></path>
+        <text x="84" y="54" font-family="'Helvetica Neue',Arial,sans-serif" font-weight="800" font-size="33" letter-spacing="-1.6" fill="#ffffff">Streym<tspan fill="#ed2939">+</tspan></text>
+      </svg>
+    </div>
+    <div class="cap"><b>"stream, plus"</b> — modern subscription feel</div>
+  </div>
+
+  <!-- N4 Norðlýsi -->
+  <div class="frame opt" style="left:600px; top:540px;">
+    <div class="lbl"><span class="nm">Norðlýsi</span></div>
+    <div class="card">
+      <div class="sheen"></div>
+      <svg viewBox="0 0 300 84" xmlns="http://www.w3.org/2000/svg" aria-label="Norðlýsi">
+        <defs><linearGradient id="g4" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#0a66c8"></stop><stop offset="1" stop-color="#ed2939"></stop></linearGradient></defs>
+        <circle cx="34" cy="42" r="29" fill="#ffffff" stroke="url(#g4)" stroke-width="6"></circle>
+        <path d="M27 28 L27 56 L52 42 Z" fill="#0a66c8"></path>
+        <text x="84" y="54" font-family="'Helvetica Neue',Arial,sans-serif" font-weight="800" font-size="30" letter-spacing="-1.6" fill="#ffffff">Norðlýsi</text>
+      </svg>
+    </div>
+    <div class="cap"><b>"northern lights"</b> — evocative, premium</div>
+  </div>
+
+  <!-- N5 Skíggi -->
+  <div class="frame opt" style="left:110px; top:820px;">
+    <div class="lbl"><span class="nm">Skíggi</span></div>
+    <div class="card">
+      <div class="sheen"></div>
+      <svg viewBox="0 0 300 84" xmlns="http://www.w3.org/2000/svg" aria-label="Skíggi">
+        <defs><linearGradient id="g5" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#0a66c8"></stop><stop offset="1" stop-color="#ed2939"></stop></linearGradient></defs>
+        <circle cx="34" cy="42" r="29" fill="#ffffff" stroke="url(#g5)" stroke-width="6"></circle>
+        <path d="M27 28 L27 56 L52 42 Z" fill="#0a66c8"></path>
+        <text x="84" y="54" font-family="'Helvetica Neue',Arial,sans-serif" font-weight="800" font-size="34" letter-spacing="-1.6" fill="#ffffff">Skíggi</text>
+      </svg>
+    </div>
+    <div class="cap"><b>"screen"</b> — short, punchy, app-friendly</div>
+  </div>
+
+  <!-- N6 Bylgja -->
+  <div class="frame opt" style="left:600px; top:820px;">
+    <div class="lbl"><span class="nm">Bylgja</span></div>
+    <div class="card">
+      <div class="sheen"></div>
+      <svg viewBox="0 0 300 84" xmlns="http://www.w3.org/2000/svg" aria-label="Bylgja">
+        <defs><linearGradient id="g6" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#0a66c8"></stop><stop offset="1" stop-color="#ed2939"></stop></linearGradient></defs>
+        <circle cx="34" cy="42" r="29" fill="#ffffff" stroke="url(#g6)" stroke-width="6"></circle>
+        <path d="M27 28 L27 56 L52 42 Z" fill="#0a66c8"></path>
+        <text x="84" y="54" font-family="'Helvetica Neue',Arial,sans-serif" font-weight="800" font-size="34" letter-spacing="-1.6" fill="#ffffff">Bylgja</text>
+      </svg>
+    </div>
+    <div class="cap"><b>"wave"</b> — broadcast / signal connotation</div>
+  </div>
+
+  <!-- N7 Lundi -->
+  <div class="frame opt" style="left:110px; top:1100px;">
+    <div class="lbl"><span class="nm">Lundi</span></div>
+    <div class="card">
+      <div class="sheen"></div>
+      <svg viewBox="0 0 300 84" xmlns="http://www.w3.org/2000/svg" aria-label="Lundi">
+        <defs><linearGradient id="g7" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#0a66c8"></stop><stop offset="1" stop-color="#ed2939"></stop></linearGradient></defs>
+        <circle cx="34" cy="42" r="29" fill="#ffffff" stroke="url(#g7)" stroke-width="6"></circle>
+        <path d="M27 28 L27 56 L52 42 Z" fill="#0a66c8"></path>
+        <text x="84" y="54" font-family="'Helvetica Neue',Arial,sans-serif" font-weight="800" font-size="36" letter-spacing="-1.6" fill="#ffffff">Lundi</text>
+      </svg>
+    </div>
+    <div class="cap"><b>"puffin"</b> — friendly, iconic seabird</div>
+  </div>
+
+  <!-- N8 Viti -->
+  <div class="frame opt" style="left:600px; top:1100px;">
+    <div class="lbl"><span class="nm">Viti</span></div>
+    <div class="card">
+      <div class="sheen"></div>
+      <svg viewBox="0 0 300 84" xmlns="http://www.w3.org/2000/svg" aria-label="Viti">
+        <defs><linearGradient id="g8" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#0a66c8"></stop><stop offset="1" stop-color="#ed2939"></stop></linearGradient></defs>
+        <circle cx="34" cy="42" r="29" fill="#ffffff" stroke="url(#g8)" stroke-width="6"></circle>
+        <path d="M27 28 L27 56 L52 42 Z" fill="#0a66c8"></path>
+        <text x="84" y="54" font-family="'Helvetica Neue',Arial,sans-serif" font-weight="800" font-size="36" letter-spacing="-1.6" fill="#ffffff">Viti</text>
+      </svg>
+    </div>
+    <div class="cap"><b>"lighthouse"</b> — guidance / discovery</div>
+  </div>
+
+</body>
+</html>

@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="design_doc_mode" content="canvas">
+<title>Føroyskt — Channel Logo Options</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root { --ink: #eef0f7; --ink-soft: #aeb6cc; --ink-dim: #6b7280; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: 'Sora', sans-serif; }
+
+  .frame { position: absolute; }
+
+  /* heading */
+  .head { width: 860px; color: #11131a; }
+  .head h1 { font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 34px; letter-spacing: -1px; margin: 0 0 8px; }
+  .head p { margin: 0; font-size: 15px; line-height: 1.6; color: #3a3f4d; max-width: 720px; }
+  .head .swatches { display: flex; gap: 10px; margin-top: 16px; }
+  .head .sw { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: #3a3f4d; font-family: 'JetBrains Mono', monospace; }
+  .head .chip { width: 18px; height: 18px; border-radius: 5px; box-shadow: inset 0 0 0 1px rgba(0,0,0,.15); }
+
+  /* option panel */
+  .opt { width: 360px; background: #16181f; border: 1px solid #262a35; border-radius: 18px; padding: 22px 22px 20px; box-shadow: 0 24px 60px rgba(0,0,0,.28); }
+  .opt .lbl { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; }
+  .opt .n { font-family: 'JetBrains Mono', monospace; font-size: 12px; font-weight: 500; color: #0b0c12; background: #aeb6cc; border-radius: 6px; padding: 2px 8px; }
+  .opt .ttl { font-family: 'Space Grotesk', sans-serif; font-weight: 600; font-size: 16px; color: #eef0f7; letter-spacing: -.2px; }
+
+  /* the channel card (mirrors ravilo .studio) */
+  .card { width: 316px; height: 132px; border-radius: 20px; position: relative; overflow: hidden;
+    display: flex; align-items: center; justify-content: center; border: 2px solid rgba(255,255,255,.07);
+    box-shadow: 0 14px 34px rgba(0,0,0,.45); }
+  .card .sheen { position: absolute; inset: 0; background: radial-gradient(120% 120% at 80% 0%, rgba(255,255,255,.22), transparent 55%); }
+  .card svg { position: relative; z-index: 2; width: 76%; height: auto; max-height: 58%; display: block; }
+
+  .opt .cap { margin-top: 14px; font-size: 12.5px; line-height: 1.6; color: #8b93a8; font-family: 'JetBrains Mono', monospace; }
+  .opt .cap b { color: #c7cddc; font-weight: 500; }
+</style>
+</head>
+<body>
+
+  <div class="frame head" style="left:110px; top:60px;">
+    <h1>Føroyskt — channel logo</h1>
+    <p>Six flag-inspired directions for the Føroyskt channel mark, each on its own background, shown at channel-rail scale beside the brand palette. All built from the Faroese white / blue / red.</p>
+    <div class="swatches">
+      <span class="sw"><span class="chip" style="background:#ffffff;"></span> white</span>
+      <span class="sw"><span class="chip" style="background:#0065bd;"></span> #0065BD blue</span>
+      <span class="sw"><span class="chip" style="background:#ed2939;"></span> #ED2939 red</span>
+    </div>
+  </div>
+
+  <!-- 01 — blue play · red type -->
+  <div class="frame opt" style="left:110px; top:260px;">
+    <div class="lbl"><span class="n">01</span><span class="ttl">Blue play · red type</span></div>
+    <div class="card" style="background:linear-gradient(135deg,#0e57aa,#06203f);">
+      <div class="sheen"></div>
+      <svg viewBox="0 0 286 84" xmlns="http://www.w3.org/2000/svg" aria-label="Føroyskt">
+        <defs>
+          <linearGradient id="o1sq" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ffffff"></stop><stop offset="1" stop-color="#dbe7ff"></stop></linearGradient>
+          <clipPath id="o1c"><rect x="2" y="10" width="64" height="64" rx="20"></rect></clipPath>
+        </defs>
+        <g clip-path="url(#o1c)">
+          <rect x="2" y="10" width="64" height="64" fill="url(#o1sq)"></rect>
+          <path d="M28 27 L28 57 L54 42 Z" fill="#0a66c8"></path>
+        </g>
+        <text x="84" y="54" font-family="'Helvetica Neue',Arial,sans-serif" font-weight="800" font-size="33" letter-spacing="-1.6" fill="#ed2939">Føroy<tspan fill="#ed2939" fill-opacity=".62">skt</tspan></text>
+      </svg>
+    </div>
+    <div class="cap"><b>Mark:</b> white square + blue play<br><b>Type:</b> red · <b>BG:</b> ocean → navy</div>
+  </div>
+
+  <!-- 02 — split field · white play -->
+  <div class="frame opt" style="left:600px; top:260px;">
+    <div class="lbl"><span class="n">02</span><span class="ttl">Split field · white play</span></div>
+    <div class="card" style="background:linear-gradient(135deg,#0a3a78,#05152e);">
+      <div class="sheen"></div>
+      <svg viewBox="0 0 286 84" xmlns="http://www.w3.org/2000/svg" aria-label="Føroyskt">
+        <defs>
+          <clipPath id="o2c"><rect x="2" y="10" width="64" height="64" rx="20"></rect></clipPath>
+          <mask id="o2m"><rect x="2" y="10" width="64" height="64" rx="20" fill="#ffffff"></rect><path d="M28 27 L28 57 L54 42 Z" fill="#000000"></path></mask>
+        </defs>
+        <g clip-path="url(#o2c)" mask="url(#o2m)">
+          <rect x="2" y="10" width="32" height="64" fill="#0065bd"></rect>
+          <rect x="34" y="10" width="32" height="64" fill="#ed2939"></rect>
+        </g>
+        <text x="84" y="54" font-family="'Helvetica Neue',Arial,sans-serif" font-weight="800" font-size="33" letter-spacing="-1.6" fill="#ffffff">Føroy<tspan fill="#ffffff" fill-opacity=".66">skt</tspan></text>
+      </svg>
+    </div>
+    <div class="cap"><b>Mark:</b> blue/red split, play knockout<br><b>Type:</b> white · <b>BG:</b> deep navy</div>
+  </div>
+
+  <!-- 03 — roundel -->
+  <div class="frame opt" style="left:110px; top:560px;">
+    <div class="lbl"><span class="n">03</span><span class="ttl">Roundel</span></div>
+    <div class="card" style="background:linear-gradient(135deg,#11498f,#071b39);">
+      <div class="sheen"></div>
+      <svg viewBox="0 0 286 84" xmlns="http://www.w3.org/2000/svg" aria-label="Føroyskt">
+        <circle cx="34" cy="42" r="30" fill="#ffffff" stroke="#0065bd" stroke-width="4"></circle>
+        <path d="M27 28 L27 56 L52 42 Z" fill="#ed2939"></path>
+        <text x="84" y="54" font-family="'Helvetica Neue',Arial,sans-serif" font-weight="800" font-size="33" letter-spacing="-1.6" fill="#ffffff">Føroy<tspan fill="#ffffff" fill-opacity=".66">skt</tspan></text>
+      </svg>
+    </div>
+    <div class="cap"><b>Mark:</b> white roundel, blue ring, red play<br><b>Type:</b> white · <b>BG:</b> marine</div>
+  </div>
+
+  <!-- 04 — broadcast bars -->
+  <div class="frame opt" style="left:600px; top:560px;">
+    <div class="lbl"><span class="n">04</span><span class="ttl">Broadcast bars</span></div>
+    <div class="card" style="background:linear-gradient(135deg,#0c4f9c,#06203f);">
+      <div class="sheen"></div>
+      <svg viewBox="0 0 286 84" xmlns="http://www.w3.org/2000/svg" aria-label="Føroyskt">
+        <defs>
+          <linearGradient id="o4sq" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ffffff"></stop><stop offset="1" stop-color="#dbe7ff"></stop></linearGradient>
+          <clipPath id="o4c"><rect x="2" y="10" width="64" height="64" rx="20"></rect></clipPath>
+        </defs>
+        <g clip-path="url(#o4c)">
+          <rect x="2" y="10" width="64" height="64" fill="url(#o4sq)"></rect>
+          <rect x="18" y="46" width="10" height="20" rx="3" fill="#0a66c8"></rect>
+          <rect x="32" y="36" width="10" height="30" rx="3" fill="#0a66c8"></rect>
+          <rect x="46" y="26" width="10" height="40" rx="3" fill="#ed2939"></rect>
+        </g>
+        <text x="84" y="54" font-family="'Helvetica Neue',Arial,sans-serif" font-weight="800" font-size="33" letter-spacing="-1.6" fill="#ffffff">Føroy<tspan fill="#ffffff" fill-opacity=".66">skt</tspan></text>
+      </svg>
+    </div>
+    <div class="cap"><b>Mark:</b> white square, blue/red signal bars<br><b>Type:</b> white · <b>BG:</b> azure → navy</div>
+  </div>
+
+  <!-- 05 — wordmark only -->
+  <div class="frame opt" style="left:110px; top:860px;">
+    <div class="lbl"><span class="n">05</span><span class="ttl">Wordmark only</span></div>
+    <div class="card" style="background:linear-gradient(135deg,#0e5aa8,#072348);">
+      <div class="sheen"></div>
+      <svg viewBox="0 0 240 84" xmlns="http://www.w3.org/2000/svg" aria-label="Føroyskt">
+        <text x="8" y="50" font-family="'Helvetica Neue',Arial,sans-serif" font-weight="800" font-size="36" letter-spacing="-1.8" fill="#ed2939">Føroyskt</text>
+        <rect x="10" y="60" width="158" height="6" rx="3" fill="#0a66c8"></rect>
+      </svg>
+    </div>
+    <div class="cap"><b>Mark:</b> none — type-forward<br><b>Type:</b> red + blue rule · <b>BG:</b> blue</div>
+  </div>
+
+  <!-- 06 — gradient knockout play -->
+  <div class="frame opt" style="left:600px; top:860px;">
+    <div class="lbl"><span class="n">06</span><span class="ttl">Gradient knockout</span></div>
+    <div class="card" style="background:linear-gradient(135deg,#0b66c8,#9a1f2c);">
+      <div class="sheen"></div>
+      <svg viewBox="0 0 286 84" xmlns="http://www.w3.org/2000/svg" aria-label="Føroyskt">
+        <defs>
+          <clipPath id="o6c"><rect x="2" y="10" width="64" height="64" rx="20"></rect></clipPath>
+          <mask id="o6m"><rect x="2" y="10" width="64" height="64" rx="20" fill="#ffffff"></rect><path d="M28 27 L28 57 L54 42 Z" fill="#000000"></path></mask>
+        </defs>
+        <g clip-path="url(#o6c)" mask="url(#o6m)">
+          <rect x="2" y="10" width="64" height="64" fill="#ffffff"></rect>
+        </g>
+        <text x="84" y="54" font-family="'Helvetica Neue',Arial,sans-serif" font-weight="800" font-size="33" letter-spacing="-1.6" fill="#ffffff">Føroy<tspan fill="#ffffff" fill-opacity=".66">skt</tspan></text>
+      </svg>
+    </div>
+    <div class="cap"><b>Mark:</b> white square, play knocked to BG<br><b>Type:</b> white · <b>BG:</b> blue → red</div>
+  </div>
+
+</body>
+</html>

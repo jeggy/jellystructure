@@ -16,7 +16,7 @@
     { id: 'disney',   name: 'Disney+',   wm: 'Disney+',   bg: 'linear-gradient(135deg,#1648d0,#091646)' },
     { id: 'dansktv',  name: 'Dansk TV',  wm: 'Dansk<small>TV</small>', logo: 'assets/brand/dansk-tv-logo.svg', bg: 'linear-gradient(135deg,#c8102e,#1a1a1a)' },
     { id: 'universal',name: 'Universal', wm: 'Universal', bg: 'linear-gradient(135deg,#0b3d91,#06203f)' },
-    { id: 'foroyskt', name: 'Føroyskt',  wm: 'Føroyskt',  bg: 'linear-gradient(135deg,#0065bd,#ed2939)' },
+    { id: 'foroyskt', name: 'Varpið',    wm: 'Varpið',    logo: 'assets/brand/varpid-logo.svg', bg: 'linear-gradient(135deg,#0e4f99,#06203f)' },
     { id: 'hbo',      name: 'HBO',       wm: 'HBO',       bg: 'linear-gradient(135deg,#5b2db8,#1a0f3d)',
       hero: [
         { ...T('Iron Veil', 2021, 'Action · Sci-Fi', '16', 'film'), tagline: 'HBO Feature', badge: '4K',
