@@ -4,6 +4,7 @@ import dev.jellystructure.log.Logger
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.engine.curl.Curl
+import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.request.HttpRequestBuilder
 import io.ktor.client.request.delete
@@ -34,6 +35,11 @@ class JellyfinClient {
     private val http = HttpClient(Curl) {
         install(ContentNegotiation) {
             json(Json { ignoreUnknownKeys = true })
+        }
+        install(HttpTimeout) {
+            connectTimeoutMillis = 5_000
+            socketTimeoutMillis  = 30_000
+            requestTimeoutMillis = 30_000
         }
     }
 
