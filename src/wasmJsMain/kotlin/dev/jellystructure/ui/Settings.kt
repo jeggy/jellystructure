@@ -4,6 +4,8 @@ import dev.jellystructure.api.AppConfig
 import dev.jellystructure.api.ApiKeys
 import dev.jellystructure.api.LanguageRules
 import dev.jellystructure.api.Behavior
+import dev.jellystructure.api.PipelineStep
+import dev.jellystructure.api.ScanConfig
 import dev.jellystructure.api.ConfigResponse
 import dev.jellystructure.api.LibraryMapping
 import dev.jellystructure.api.LibraryPathDiag
@@ -117,24 +119,29 @@ fun renderSettings(container: Element, scope: CoroutineScope, query: Map<String,
                 <span class="hint"><strong>0 = unlimited</strong> — probe every episode. Set a positive number to sample only that many files per series on a full scan (very large libraries). The on-demand "Re-scan all episodes" button always probes everything.</span>
               </div>
               <div id="scan-threads-restart-banner" style="display:none;margin-top:10px;padding:8px 12px;border-radius:6px;background:var(--warn-fill,#7c5100);color:var(--warn-ink,#fff);font-size:.83rem"></div>
-              <div style="display:flex;align-items:center;justify-content:space-between;margin-top:12px">
+              <div class="row center" style="justify-content:space-between;margin-top:12px;">
                 <div>
-                  <span style="font-size:.9rem">Scheduled rescan</span>
-                  <div class="hint" style="margin-top:2px">Automatically re-scan on a fixed interval</div>
+                  <b>Scheduled scan pipeline</b>
+                  <div class="hint" style="margin-top:2px">Compose what runs on each automated scan — always starts with <b>Scan media files</b>, then chain any steps you want.</div>
                 </div>
-                <span id="scheduled-rescan-toggle" class="toggle" style="cursor:pointer;flex-shrink:0;margin-left:12px"></span>
+                <span id="pipe-enable" class="toggle" style="cursor:pointer;margin-left:12px;flex-shrink:0"></span>
               </div>
-              <div id="scheduled-rescan-fields" style="display:none;margin-top:10px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
-                <select id="rescan-frequency" class="input" style="width:auto">
-                  <option value="daily">Daily</option>
-                  <option value="weekly">Weekly</option>
-                </select>
-                <span class="hint" style="margin:0">at</span>
-                <input id="rescan-time" class="input" type="time" value="03:00" style="width:auto">
-              <div class="field" style="margin:0;min-width:160px;">
-                <label style="font-size:.85rem;">Cron <span class="muted">(advanced)</span></label>
-                <input id="rescan-cron" class="input mono" style="width:160px;font-size:.82rem;" placeholder="0 3 * * *" readonly title="Computed from Frequency and At fields above">
-              </div>
+              <div id="pipe-fields" style="display:none;margin-top:14px">
+                <div class="pipe-sched">
+                  <div class="field" style="margin:0"><label>Runs</label>
+                    <span class="seg" id="pipe-freq"><span data-f="daily" class="on">Daily</span><span data-f="weekly">Weekly</span><span data-f="6h">Every 6h</span></span>
+                  </div>
+                  <div class="field" style="margin:0;width:104px" id="pipe-at-field"><label>At</label>
+                    <input id="pipe-at" class="input" type="time" value="03:00">
+                  </div>
+                  <div class="field" style="margin:0;min-width:130px"><label>Cron <span class="muted">(derived)</span></label>
+                    <div class="input mono" id="pipe-cron" style="padding:5px 10px">0 3 * * *</div>
+                  </div>
+                  <span class="badge ok" id="pipe-next" style="align-self:flex-end">next · tonight 03:00</span>
+                  <button id="pipe-run" class="btn sm primary" style="align-self:flex-end">&#9655; Run now</button>
+                </div>
+                <div class="pipe-recipe" id="pipe-recipe" style="margin-top:12px"></div>
+                <div class="pipe-canvas" id="pipe-canvas" style="margin-top:14px"></div>
               </div>
             </div>
 
@@ -413,7 +420,11 @@ private var notifScanDone = true
 private var notifNoMatch = false
 private var notifWriteFailed = true
 private var notifDrift = false
-private var scheduledRescanEnabled = false
+private var pipelineEnabled = false
+private var pipelineFreq = "daily"
+private val pipelineSteps: MutableList<PipelineStep> = mutableListOf()
+private var pipeDragFrom = -1
+private var pipeInsertAt = -1
 private var settingsScope: CoroutineScope? = null
 
 private fun populateForm(response: ConfigResponse) {
@@ -488,13 +499,36 @@ private fun populateForm(response: ConfigResponse) {
     updateToggle("notif-write-failed-toggle", notifWriteFailed)
     updateToggle("notif-drift-toggle", notifDrift)
 
-    scheduledRescanEnabled = config.behavior.scanIntervalHours > 0
-    updateToggle("scheduled-rescan-toggle", scheduledRescanEnabled)
-    val rescanFields = document.getElementById("scheduled-rescan-fields") as? HTMLElement
-    rescanFields?.style?.display = if (scheduledRescanEnabled) "flex" else "none"
-    if (config.behavior.scanIntervalHours >= 168) {
-        (document.getElementById("rescan-frequency") as? HTMLSelectElement)?.value = "weekly"
+    // Phase 91 — pipeline
+    pipelineEnabled = config.scanSchedule.isNotBlank() || config.scan.pipeline.isNotEmpty()
+    updateToggle("pipe-enable", pipelineEnabled)
+    (document.getElementById("pipe-fields") as? HTMLElement)?.style?.display = if (pipelineEnabled) "" else "none"
+    pipelineSteps.clear()
+    if (config.scan.pipeline.isNotEmpty()) {
+        pipelineSteps.addAll(config.scan.pipeline)
+    } else {
+        pipelineSteps.addAll(listOf(
+            PipelineStep(step = "scan_files"),
+            PipelineStep(step = "sync_jellyfin"),
+            PipelineStep(step = "notify"),
+        ))
     }
+    when {
+        config.scanSchedule.matches(Regex("0 (\\d+) \\* \\* 0")) -> {
+            pipelineFreq = "weekly"
+            val h = config.scanSchedule.split(" ")[1].toIntOrNull() ?: 3
+            setInputValue("pipe-at", "${h.toString().padStart(2, '0')}:00")
+        }
+        config.scanSchedule.matches(Regex("0 (\\d+) \\* \\* \\*")) -> {
+            pipelineFreq = "daily"
+            val h = config.scanSchedule.split(" ")[1].toIntOrNull() ?: 3
+            setInputValue("pipe-at", "${h.toString().padStart(2, '0')}:00")
+        }
+        config.scanSchedule.contains("*/6") -> pipelineFreq = "6h"
+        else -> pipelineFreq = "daily"
+    }
+    renderPipelineFreq()
+    renderPipeline()
 
     refreshTomlPreview(config)
 }
@@ -635,28 +669,7 @@ private fun attachListeners(scope: CoroutineScope) {
         }
     }
 
-    fun updateCronPreview() {
-        val freq = (document.getElementById("rescan-frequency") as? org.w3c.dom.HTMLSelectElement)?.value ?: "daily"
-        val time = (document.getElementById("rescan-time") as? org.w3c.dom.HTMLInputElement)?.value ?: "03:00"
-        val parts = time.split(":")
-        val h = parts.getOrNull(0)?.trimStart('0')?.takeIf { it.isNotEmpty() } ?: "0"
-        val m = parts.getOrNull(1)?.trimStart('0')?.takeIf { it.isNotEmpty() } ?: "0"
-        val dayOfWeek = if (freq == "weekly") "0" else "*"
-        val cronStr = "$m $h * * $dayOfWeek"
-        (document.getElementById("rescan-cron") as? org.w3c.dom.HTMLInputElement)?.value = cronStr
-    }
-    document.getElementById("scheduled-rescan-toggle")?.addEventListener("click") {
-        scheduledRescanEnabled = !scheduledRescanEnabled
-        updateToggle("scheduled-rescan-toggle", scheduledRescanEnabled)
-        val rescanFields = document.getElementById("scheduled-rescan-fields") as? HTMLElement
-        rescanFields?.style?.display = if (scheduledRescanEnabled) "flex" else "none"
-        if (scheduledRescanEnabled) updateCronPreview()
-        refreshTomlPreview(readForm())
-    }
-    listOf("rescan-frequency", "rescan-time").forEach { id ->
-        document.getElementById(id)?.addEventListener("change") { updateCronPreview(); refreshTomlPreview(readForm()) }
-    }
-    updateCronPreview()
+    wirePipelineBuilder(scope)
 
     document.getElementById("save-settings")?.addEventListener("click") {
         scope.launch {
@@ -916,10 +929,7 @@ private fun readForm(): AppConfig = AppConfig(
         scanWorkers = scanWorkers,
         scanThreads = scanThreads,
         scanEpisodeCap = scanEpisodeCap,
-        scanIntervalHours = if (scheduledRescanEnabled) {
-            val freq = (document.getElementById("rescan-frequency") as? HTMLSelectElement)?.value ?: "daily"
-            if (freq == "weekly") 168 else 24
-        } else 0,
+        scanIntervalHours = 0,
         notificationsWebhook = getInputValue("notif-webhook"),
         notifyOnScanDone = notifScanDone,
         notifyOnNoMatch = notifNoMatch,
@@ -947,6 +957,8 @@ private fun readForm(): AppConfig = AppConfig(
         apiKey = getInputValue("sonarr-key").ifBlank { "##KEEP##" },
         rescanAfterWrite = sonarrRescan,
     ) else null,
+    scanSchedule = if (pipelineEnabled) computePipeCron() else "",
+    scan = ScanConfig(pipeline = if (pipelineEnabled) pipelineSteps.toList() else emptyList()),
 )
 
 private fun refreshTomlPreview(config: AppConfig) {
@@ -970,7 +982,27 @@ private fun buildToml(c: AppConfig): String = buildString {
     appendLine("tell_jellyfin = ${c.behavior.tellJellyfin}")
     appendLine("scan_workers = ${c.behavior.scanWorkers}")
     appendLine("scan_threads = ${c.behavior.scanThreads}")
-    if (c.behavior.scanIntervalHours > 0) appendLine("scan_interval_hours = ${c.behavior.scanIntervalHours}")
+    if (c.scanSchedule.isNotBlank()) {
+        appendLine("scan_schedule = \"${c.scanSchedule}\"")
+    }
+    for (step in c.scan.pipeline) {
+        appendLine()
+        appendLine("[[scan.pipeline]]")
+        appendLine("step = \"${step.step}\"")
+        if (!step.enabled) appendLine("enabled = false")
+        if (step.step == "scan_files") {
+            appendLine("recheck_unchanged = ${step.recheckUnchanged}")
+            if (step.recheckUnchanged) {
+                appendLine("refresh_this_year = \"${step.refreshThisYear}\"")
+                appendLine("refresh_1_5y = \"${step.refresh1To5y}\"")
+                appendLine("refresh_older = \"${step.refreshOlder}\"")
+            }
+        }
+        if (step.step in listOf("pull_tmdb", "fetch_artwork")) appendLine("scope = \"${step.scope}\"")
+        if (step.step == "write_nfo") appendLine("overwrite = ${step.overwrite}")
+        if (step.step == "notify") appendLine("on = \"${step.on}\"")
+        if (step.step == "wait") appendLine("minutes = ${step.minutes}")
+    }
     if (c.behavior.notificationsWebhook.isNotBlank()) {
         appendLine()
         appendLine("[notifications]")
@@ -1235,4 +1267,386 @@ private fun renderPathCheckInline(diags: List<LibraryPathDiag>?) {
             """<span class="badge bad" style="font-size:.7rem" title="Local path not found — check mount">path ✗</span>"""
         }
     }
+}
+
+// ── Phase 91 — pipeline builder ───────────────────────────────────────────────
+
+private data class PipeBlockDef(
+    val name: String, val subtitle: String, val color: String, val icon: String,
+    val needsArr: Boolean = false,
+)
+
+private data class PipeCadRow(val key: String, val nm: String, val yr: String, val cadValue: String)
+
+private val PIPE_SCAN_IC = """<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="7" cy="7" r="4.4"/><line x1="10.4" y1="10.4" x2="14" y2="14"/></svg>"""
+private val PIPE_TMDB_IC = """<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3.5" width="12" height="9" rx="1.6"/><line x1="2" y1="6.4" x2="14" y2="6.4"/><line x1="4.4" y1="9.2" x2="8.4" y2="9.2"/></svg>"""
+private val PIPE_ART_IC  = """<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2.6" width="12" height="10.8" rx="1.6"/><circle cx="5.6" cy="6" r="1.2"/><polyline points="3,12 6.4,8.6 9,11 11,9 13.4,11.4"/></svg>"""
+private val PIPE_NFO_IC  = """<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 1.9h4.2L12 5.5V14.1H4Z"/><polyline points="8,1.9 8,5.6 12,5.6"/><line x1="6" y1="9.1" x2="10" y2="9.1"/><line x1="6" y1="11.3" x2="10" y2="11.3"/></svg>"""
+private val PIPE_SYNC_IC = """<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M13 8a5 5 0 1 1-1.5-3.6"/><polyline points="13.2,2.4 13.3,5 10.6,5.2"/></svg>"""
+private val PIPE_ARR_IC  = """<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2 5.2h4l1.2 1.4h6.8V12.4H2Z"/><path d="M9.5 9.4a2 2 0 1 1-.6-1.5"/><polyline points="10.4,7.3 10.5,9 8.9,9"/></svg>"""
+private val PIPE_DRIFT_IC= """<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 1.9 14.6 13.5H1.4Z"/><line x1="8" y1="6.4" x2="8" y2="9.6"/><line x1="8" y1="11.4" x2="8" y2="11.5"/></svg>"""
+private val PIPE_NOTIFY_IC="""<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6.6a4 4 0 0 1 8 0c0 2.8 1.2 3.7 1.2 3.7H2.8S4 9.4 4 6.6Z"/><path d="M6.6 12.6a1.5 1.5 0 0 0 2.8 0"/></svg>"""
+private val PIPE_WAIT_IC = """<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8.8" r="5.1"/><line x1="8" y1="8.8" x2="8" y2="5.8"/><line x1="8" y1="8.8" x2="10" y2="9.8"/><line x1="6.2" y1="1.9" x2="9.8" y2="1.9"/></svg>"""
+
+private val PIPE_BLOCKS = mapOf(
+    "scan_files"    to PipeBlockDef("Scan media files",          "New & changed files + stale re-checks by release age.", "#7b6ef0", PIPE_SCAN_IC),
+    "pull_tmdb"     to PipeBlockDef("Pull TMDB metadata",        "Match titles · metadata · original language.",           "#3fb6f5", PIPE_TMDB_IC),
+    "fetch_artwork" to PipeBlockDef("Download artwork",          "Poster · fanart · logo · stills from TMDB.",            "#b15cd0", PIPE_ART_IC),
+    "write_nfo"     to PipeBlockDef("Write NFO files",           "Write .nfo files to disk.",                             "#2dd49a", PIPE_NFO_IC),
+    "sync_jellyfin" to PipeBlockDef("Sync Jellyfin",             "POST /Items/{id}/Refresh so Jellyfin re-reads the NFOs.","#18c2d4", PIPE_SYNC_IC),
+    "rescan_arr"    to PipeBlockDef("Rescan in Radarr / Sonarr", "Nudge the *arr that manages each touched title.",       "#f5b542", PIPE_ARR_IC, needsArr = true),
+    "detect_drift"  to PipeBlockDef("Detect drift",              "Compare Jellyfin ⇄ NFO and flag differences.",          "#ff6f61", PIPE_DRIFT_IC),
+    "notify"        to PipeBlockDef("Send notification",         "Ping your webhook when the run reaches here.",          "#e0639a", PIPE_NOTIFY_IC),
+    "wait"          to PipeBlockDef("Wait",                      "Pause before the next step (let Jellyfin settle).",     "#9aa0b4", PIPE_WAIT_IC),
+)
+private val PIPE_PALETTE = listOf("pull_tmdb","fetch_artwork","write_nfo","sync_jellyfin","rescan_arr","detect_drift","wait","notify")
+private val PIPE_SHORT   = mapOf("scan_files" to "Scan","pull_tmdb" to "TMDB","fetch_artwork" to "Artwork","write_nfo" to "NFO","sync_jellyfin" to "Jellyfin","rescan_arr" to "*arr","detect_drift" to "Drift","notify" to "Notify","wait" to "Wait")
+private val CAD_VALS     = listOf("weekly","monthly","6months","yearly","never")
+private val CAD_LABELS   = listOf("every week","every month","every 6 months","every year","never")
+private val WAIT_MINS    = listOf(5, 10, 15, 30, 60)
+
+// Top-level single-expression helpers for Kotlin/WASM js() constraints
+private fun pipeElBottom(el: HTMLElement): Double = js("el.getBoundingClientRect().bottom")
+private fun pipeElLeft(el: HTMLElement):   Double = js("el.getBoundingClientRect().left")
+private fun pipeElWidth(el: HTMLElement):  Double = js("el.getBoundingClientRect().width")
+private fun pipeElTop(el: HTMLElement):    Double = js("el.getBoundingClientRect().top")
+private fun pipeElOffsetW(el: HTMLElement): Int   = js("el.offsetWidth")
+private fun pipeElOffsetH(el: HTMLElement): Int   = js("el.offsetHeight")
+private fun pipeWinW(): Double = js("window.innerWidth")
+private fun pipeWinH(): Double = js("window.innerHeight")
+
+private fun hexAlpha(hex: String, alpha: Double): String {
+    val h = hex.trimStart('#')
+    val n = h.toLong(16)
+    val r = (n shr 16) and 0xFF; val g = (n shr 8) and 0xFF; val b = n and 0xFF
+    return "rgba($r,$g,$b,$alpha)"
+}
+
+private fun renderPipelineFreq() {
+    val freqEl = document.getElementById("pipe-freq") ?: return
+    val nodes = freqEl.childNodes
+    for (i in 0 until nodes.length) {
+        val s = nodes.item(i) as? HTMLElement ?: continue
+        val f = s.getAttribute("data-f") ?: continue
+        if (f == pipelineFreq) s.classList.add("on") else s.classList.remove("on")
+    }
+    updatePipeCron()
+}
+
+private fun updatePipeCron() {
+    val atVal  = (document.getElementById("pipe-at") as? HTMLInputElement)?.value ?: "03:00"
+    val h      = atVal.split(":")[0].toIntOrNull() ?: 3
+    val show6h = pipelineFreq == "6h"
+    val cron   = when (pipelineFreq) { "weekly" -> "0 $h * * 0"; "6h" -> "0 */6 * * *"; else -> "0 $h * * *" }
+    val next   = when (pipelineFreq) { "weekly" -> "next · Sunday $atVal"; "6h" -> "next · in ~6h"; else -> "next · tonight $atVal" }
+    (document.getElementById("pipe-at-field") as? HTMLElement)?.style?.display = if (show6h) "none" else ""
+    document.getElementById("pipe-cron")?.textContent = cron
+    document.getElementById("pipe-next")?.textContent = next
+    refreshTomlPreview(readForm())
+}
+
+private fun computePipeCron(): String {
+    val atVal = (document.getElementById("pipe-at") as? HTMLInputElement)?.value ?: "03:00"
+    val h = atVal.split(":")[0].toIntOrNull() ?: 3
+    return when (pipelineFreq) { "weekly" -> "0 $h * * 0"; "6h" -> "0 */6 * * *"; else -> "0 $h * * *" }
+}
+
+private fun renderPipeline() {
+    val canvas = document.getElementById("pipe-canvas") as? HTMLElement ?: return
+    canvas.innerHTML = ""
+    pipelineSteps.forEachIndexed { i, step ->
+        canvas.appendChild(pipeStepEl(step, i))
+        if (i < pipelineSteps.size - 1) canvas.appendChild(pipeConnEl(i + 1))
+    }
+    val end = document.createElement("div") as HTMLElement
+    end.className = "pipe-end"
+    val addBtn = document.createElement("button") as HTMLElement
+    addBtn.className = "btn sm ghost"; addBtn.textContent = "+ Add step"; addBtn.id = "pipe-addend"
+    addBtn.addEventListener("click") { openPipelinePalette(addBtn, pipelineSteps.size) }
+    end.appendChild(addBtn); canvas.appendChild(end)
+    renderPipelineRecipe()
+    refreshTomlPreview(readForm())
+}
+
+private fun pipeConnEl(insertAt: Int): Element {
+    val c = document.createElement("div") as HTMLElement
+    c.className = "pipe-conn"
+    val ln  = document.createElement("span"); ln.className = "ln"
+    val add = document.createElement("span") as HTMLElement; add.className = "pipe-add"; add.textContent = "+"
+    add.title = "Add a step here"
+    add.addEventListener("click") { openPipelinePalette(add, insertAt) }
+    c.appendChild(ln); c.appendChild(add)
+    return c
+}
+
+private fun pipeStepEl(step: PipelineStep, idx: Int): Element {
+    val d   = PIPE_BLOCKS[step.step] ?: return document.createElement("div")
+    val el  = document.createElement("div") as HTMLElement
+    val isFirst = idx == 0
+    el.className = "pipe-step" + (if (isFirst) " trigger" else "") + (if (!step.enabled) " disabled" else "")
+    el.style.setProperty("--c",      d.color)
+    el.style.setProperty("--c-soft", hexAlpha(d.color, 0.16))
+    el.setAttribute("data-pi", idx.toString())
+    if (!isFirst) el.setAttribute("draggable", "true")
+
+    val grip = document.createElement("div"); grip.className = "pipe-grip"; grip.textContent = "⠿"
+    val ic   = document.createElement("div"); ic.className = "pipe-ic"; ic.innerHTML = d.icon
+    val body = document.createElement("div"); body.className = "pipe-body"
+    val row1 = document.createElement("div"); row1.className = "pipe-row1"
+    val title= document.createElement("span"); title.className = "pipe-title"; title.textContent = d.name
+    row1.appendChild(title)
+    if (isFirst) { val t = document.createElement("span"); t.className = "pipe-tag"; t.textContent = "start"; row1.appendChild(t) }
+    if (d.needsArr) { val n = document.createElement("span"); n.className = "pipe-need"; n.textContent = "needs *arr"; row1.appendChild(n) }
+    val sub  = document.createElement("div"); sub.className = "pipe-sub"; sub.textContent = d.subtitle
+    val opts = document.createElement("div"); opts.className = "pipe-opts"
+    when (step.step) {
+        "scan_files"                      -> opts.appendChild(pipeScanCfgEl(step, idx))
+        "pull_tmdb", "fetch_artwork"      -> opts.appendChild(pipeScopeEl(step, idx))
+        "write_nfo"                       -> opts.appendChild(pipeOverwriteEl(step, idx))
+        "notify"                          -> opts.appendChild(pipeNotifyEl(step, idx))
+        "wait"                            -> opts.appendChild(pipeWaitEl(step, idx))
+    }
+    body.appendChild(row1); body.appendChild(sub)
+    if (opts.childNodes.length > 0) body.appendChild(opts)
+    val act  = document.createElement("div"); act.className = "pipe-act"
+    val stat = document.createElement("span"); stat.className = "pipe-status"
+    act.appendChild(stat)
+    if (!isFirst) {
+        val tog = document.createElement("span") as HTMLElement
+        tog.className = "mini-toggle" + (if (step.enabled) " on" else "")
+        tog.title = "Skip this step"
+        tog.addEventListener("click") { pipelineSteps[idx] = pipelineSteps[idx].copy(enabled = !pipelineSteps[idx].enabled); renderPipeline() }
+        val rm = document.createElement("span") as HTMLElement; rm.className = "pipe-x"; rm.textContent = "✕"; rm.title = "Remove"
+        rm.addEventListener("click") { pipelineSteps.removeAt(idx); renderPipeline() }
+        act.appendChild(tog); act.appendChild(rm)
+    }
+    el.appendChild(grip); el.appendChild(ic); el.appendChild(body); el.appendChild(act)
+
+    if (!isFirst) {
+        el.addEventListener("dragstart") { pipeDragFrom = idx; el.classList.add("dragging") }
+        el.addEventListener("dragend")   { pipeDragFrom = -1; renderPipeline() }
+        el.addEventListener("dragover")  { e -> e.preventDefault(); el.classList.add("drop-target") }
+        el.addEventListener("dragleave") { el.classList.remove("drop-target") }
+        el.addEventListener("drop")      { e -> e.preventDefault(); movePipelineStep(pipeDragFrom, idx) }
+    }
+    return el
+}
+
+private fun movePipelineStep(from: Int, to: Int) {
+    if (from < 1 || from == to) return
+    val item = pipelineSteps.removeAt(from)
+    val dest = (if (from < to) to - 1 else to).coerceIn(1, pipelineSteps.size.coerceAtLeast(1))
+    pipelineSteps.add(dest, item)
+    renderPipeline()
+}
+
+private fun pipeScanCfgEl(step: PipelineStep, idx: Int): Element {
+    val year = 2026
+    val box  = document.createElement("div") as HTMLElement
+    box.className = "scan-cfg" + (if (step.recheckUnchanged) "" else " off")
+    val head = document.createElement("label"); head.className = "sc-head"
+    val tog  = document.createElement("span")
+    tog.className = "mini-toggle" + (if (step.recheckUnchanged) " on" else "")
+    val lbl = document.createElement("b"); lbl.textContent = "Re-check unchanged media on a schedule"
+    head.appendChild(tog); head.appendChild(lbl)
+    head.addEventListener("click") {
+        pipelineSteps[idx] = pipelineSteps[idx].copy(recheckUnchanged = !pipelineSteps[idx].recheckUnchanged)
+        renderPipeline()
+    }
+    val sub  = document.createElement("div"); sub.className = "sc-sub"
+    sub.textContent = "Re-sync metadata & artwork for titles whose files never change — often for new releases, rarely for old catalogue."
+    val tbl  = document.createElement("div"); tbl.className = "fresh-tbl"
+    val hd   = document.createElement("div"); hd.className = "fresh-hd"
+    val h1   = document.createElement("span"); h1.textContent = "Release age"
+    val h2   = document.createElement("span"); h2.textContent = "Re-check"
+    hd.appendChild(h1); hd.appendChild(h2); tbl.appendChild(hd)
+    val rows = listOf(
+        PipeCadRow("cadY", "Released this year",        "$year",              step.refreshThisYear),
+        PipeCadRow("cadM", "Released 1–5 years ago",    "${year-5}–${year-1}", step.refresh1To5y),
+        PipeCadRow("cadO", "Released over 5 years ago", "before ${year-5}",   step.refreshOlder),
+    )
+    for (r in rows) {
+        val age  = document.createElement("div"); age.className = "fr-age"
+        val nm   = document.createElement("span"); nm.className = "nm"; nm.textContent = r.nm
+        val yr   = document.createElement("span"); yr.className = "yr"; yr.textContent = r.yr
+        age.appendChild(nm); age.appendChild(yr)
+        val cell = document.createElement("div"); cell.className = "fr-cell"
+        val cad  = document.createElement("span") as HTMLElement
+        val isNever = r.cadValue == "never"
+        cad.className = "cad" + (if (isNever) " never" else "")
+        cad.title = "Click to change how often"
+        val ci = document.createElement("span"); ci.className = "ci"; ci.innerHTML = PIPE_WAIT_IC
+        val cv = document.createElement("span"); cv.className = "cv"
+        cv.textContent = CAD_LABELS.getOrElse(CAD_VALS.indexOf(r.cadValue)) { "every week" }
+        val cx = document.createElement("span"); cx.className = "cx"; cx.textContent = "▾"
+        cad.appendChild(ci); cad.appendChild(cv); cad.appendChild(cx)
+        val capturedKey = r.key; val capturedVal = r.cadValue
+        cad.addEventListener("click") {
+            val next = CAD_VALS[(CAD_VALS.indexOf(capturedVal) + 1) % CAD_VALS.size]
+            pipelineSteps[idx] = when (capturedKey) {
+                "cadY" -> pipelineSteps[idx].copy(refreshThisYear = next)
+                "cadM" -> pipelineSteps[idx].copy(refresh1To5y   = next)
+                else   -> pipelineSteps[idx].copy(refreshOlder    = next)
+            }
+            renderPipeline()
+        }
+        cell.appendChild(cad); tbl.appendChild(age); tbl.appendChild(cell)
+    }
+    val note = document.createElement("div"); note.className = "sc-state"
+    note.innerHTML = "<b>How it works:</b> Jellystructure stores each title's last-checked date and re-processes only titles whose interval is due — new &amp; changed files are always processed immediately."
+    box.appendChild(head); box.appendChild(sub); box.appendChild(tbl); box.appendChild(note)
+    return box
+}
+
+private fun pipeScopeEl(step: PipelineStep, idx: Int): Element {
+    val el = document.createElement("span") as HTMLElement; el.className = "opt-seg"
+    listOf("missing" to "Missing only", "all" to "All items").forEach { (v, label) ->
+        val s = document.createElement("span"); s.textContent = label
+        if (step.scope == v) s.classList.add("on")
+        val capturedV = v
+        s.addEventListener("click") { pipelineSteps[idx] = pipelineSteps[idx].copy(scope = capturedV); renderPipeline() }
+        el.appendChild(s)
+    }
+    return el
+}
+
+private fun pipeOverwriteEl(step: PipelineStep, idx: Int): Element {
+    val el = document.createElement("span") as HTMLElement; el.className = "opt-tog"
+    val t  = document.createElement("span"); t.className = "mini-toggle" + (if (step.overwrite) " on" else "")
+    val lbl= document.createElement("span"); lbl.textContent = "Overwrite existing fields"
+    el.appendChild(t); el.appendChild(lbl)
+    el.addEventListener("click") { pipelineSteps[idx] = pipelineSteps[idx].copy(overwrite = !pipelineSteps[idx].overwrite); renderPipeline() }
+    return el
+}
+
+private fun pipeNotifyEl(step: PipelineStep, idx: Int): Element {
+    val el = document.createElement("span") as HTMLElement; el.className = "opt-seg"
+    listOf("summary" to "Run summary", "changes" to "On changes", "errors" to "On errors").forEach { (v, label) ->
+        val s = document.createElement("span"); s.textContent = label
+        if (step.on == v) s.classList.add("on")
+        val capturedV = v
+        s.addEventListener("click") { pipelineSteps[idx] = pipelineSteps[idx].copy(on = capturedV); renderPipeline() }
+        el.appendChild(s)
+    }
+    return el
+}
+
+private fun pipeWaitEl(step: PipelineStep, idx: Int): Element {
+    val el = document.createElement("span") as HTMLElement; el.className = "opt-step"
+    val b  = document.createElement("b"); b.textContent = "${step.minutes} min"
+    val nx = document.createElement("span"); nx.className = "nx"; nx.textContent = "▸"
+    el.appendChild(b); el.appendChild(nx)
+    el.addEventListener("click") {
+        val next = WAIT_MINS[(WAIT_MINS.indexOf(step.minutes) + 1) % WAIT_MINS.size]
+        pipelineSteps[idx] = pipelineSteps[idx].copy(minutes = next)
+        renderPipeline()
+    }
+    return el
+}
+
+private fun renderPipelineRecipe() {
+    val el = document.getElementById("pipe-recipe") as? HTMLElement ?: return
+    el.innerHTML = pipelineSteps.mapIndexed { i, st ->
+        val d = PIPE_BLOCKS[st.step] ?: return@mapIndexed ""
+        val c = d.color
+        val label = PIPE_SHORT[st.step] ?: st.step
+        val offCls = if (!st.enabled) " off" else ""
+        (if (i > 0) """<span class="arrow">→</span>""" else "") +
+            """<span class="rc$offCls" style="background:${hexAlpha(c,0.16)};color:$c">$label</span>"""
+    }.joinToString("")
+}
+
+private fun openPipelinePalette(anchor: HTMLElement, insertAt: Int) {
+    pipeInsertAt = insertAt
+    val pal  = document.getElementById("pipe-pal")  as? HTMLElement ?: return
+    val back = document.getElementById("pipe-back") as? HTMLElement ?: return
+    pal.style.visibility = "hidden"; pal.style.display = "block"; back.style.display = "block"
+    val pw = pipeElOffsetW(pal); val ph = pipeElOffsetH(pal)
+    var left = pipeElLeft(anchor) + pipeElWidth(anchor) / 2 - pw / 2
+    val winW = pipeWinW(); val winH = pipeWinH()
+    if (left < 12) left = 12.0; if (left + pw > winW - 12) left = winW - pw - 12
+    var top = pipeElBottom(anchor) + 8
+    if (top + ph > winH - 12) top = pipeElTop(anchor) - ph - 8
+    pal.style.left = "${left.toInt()}px"; pal.style.top = "${top.toInt()}px"
+    pal.style.visibility = ""
+}
+
+private fun closePipelinePalette() {
+    pipeInsertAt = -1
+    (document.getElementById("pipe-pal")  as? HTMLElement)?.style?.display = "none"
+    (document.getElementById("pipe-back") as? HTMLElement)?.style?.display = "none"
+}
+
+private fun wirePipelineBuilder(scope: CoroutineScope) {
+    document.getElementById("pipe-enable")?.addEventListener("click") {
+        pipelineEnabled = !pipelineEnabled
+        updateToggle("pipe-enable", pipelineEnabled)
+        (document.getElementById("pipe-fields") as? HTMLElement)?.style?.display = if (pipelineEnabled) "" else "none"
+        refreshTomlPreview(readForm())
+    }
+    document.getElementById("pipe-freq")?.let { freqEl ->
+        val nodes = freqEl.childNodes
+        for (i in 0 until nodes.length) {
+            val s = nodes.item(i) as? HTMLElement ?: continue
+            val f = s.getAttribute("data-f") ?: continue
+            val capturedF = f
+            s.addEventListener("click") {
+                pipelineFreq = capturedF
+                renderPipelineFreq()
+            }
+        }
+    }
+    document.getElementById("pipe-at")?.addEventListener("input") { updatePipeCron() }
+    document.getElementById("pipe-run")?.addEventListener("click") {
+        scope.launch {
+            val btn = document.getElementById("pipe-run") as? HTMLElement
+            btn?.setAttribute("disabled", "")
+            val ok = runCatching { MediaApi.startScan() }.getOrDefault(false)
+            btn?.removeAttribute("disabled")
+            if (ok) showPipelineToast("Scan started") else showPipelineToast("Failed to start scan")
+        }
+    }
+    val back = document.createElement("div") as HTMLElement
+    back.id = "pipe-back"; back.style.cssText = "display:none;position:fixed;inset:0;z-index:200"
+    back.addEventListener("click") { closePipelinePalette() }
+    val pal  = document.createElement("div") as HTMLElement
+    pal.id = "pipe-pal"; pal.className = "blk-pal"; pal.style.display = "none"
+    val plh = document.createElement("div"); plh.className = "pl-h"; plh.textContent = "Add a step"
+    val lst = document.createElement("div"); lst.id = "pipe-list"
+    PIPE_PALETTE.forEach { key ->
+        val d = PIPE_BLOCKS[key] ?: return@forEach
+        val item = document.createElement("div") as HTMLElement; item.className = "blk-item"
+        val ic   = document.createElement("div") as HTMLElement; ic.className = "pipe-ic"
+        ic.innerHTML = d.icon
+        ic.style.setProperty("--c",      d.color)
+        ic.style.setProperty("--c-soft", hexAlpha(d.color, 0.16))
+        ic.style.setProperty("background", hexAlpha(d.color, 0.16))
+        ic.style.setProperty("color", d.color)
+        val info = document.createElement("div")
+        val nm   = document.createElement("div"); nm.className = "nm"; nm.textContent = d.name
+        val ds   = document.createElement("div"); ds.className = "ds"; ds.textContent = d.subtitle
+        info.appendChild(nm); info.appendChild(ds)
+        item.appendChild(ic); item.appendChild(info)
+        val capturedKey = key
+        item.addEventListener("click") {
+            if (pipeInsertAt < 0) return@addEventListener
+            pipelineSteps.add(pipeInsertAt, PipelineStep(step = capturedKey))
+            closePipelinePalette()
+            renderPipeline()
+        }
+        lst.appendChild(item)
+    }
+    pal.appendChild(plh); pal.appendChild(lst)
+    document.body?.appendChild(back); document.body?.appendChild(pal)
+    window.addEventListener("keydown") { e ->
+        if ((e as? org.w3c.dom.events.KeyboardEvent)?.key == "Escape") closePipelinePalette()
+    }
+}
+
+private fun showPipelineToast(msg: String) {
+    val t = document.createElement("div") as HTMLElement
+    t.textContent = msg
+    t.style.cssText = "position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--fill-3);border:1px solid var(--line-2);border-radius:8px;padding:8px 16px;font-size:.82rem;z-index:9999;pointer-events:none"
+    document.body?.appendChild(t)
+    window.setTimeout({ document.body?.removeChild(t); null }, 2000)
 }
