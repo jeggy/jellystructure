@@ -29,6 +29,11 @@ class MediaStore(private val db: JellystructureDb, private val jsTagStore: JsTag
     // Invalidated synchronously on every write (upsertItem). Rebuilt lazily on next allItems() call.
     private var allItemsCache: List<MediaItem>? = null
 
+    // Phase R86: monotonic counter incremented on every write. Used by HomeFeedService as a cache
+    // invalidation key — if libraryVersion hasn't changed, the home feed is still valid.
+    var libraryVersion: Long = 0
+        private set
+
     // Jellystructure-defined tags (those in the JS-tag store) always survive a re-scan, which
     // otherwise replaces an item's tags with the fresh Jellyfin set (constitution invariant #6).
     private fun preserveJsTags(fresh: MediaItem, existing: MediaItem?): MediaItem {
@@ -310,6 +315,7 @@ class MediaStore(private val db: JellystructureDb, private val jsTagStore: JsTag
         allItemsCache    = null   // Phase 88: invalidate decoded-library cache on any write
         peopleIndexCache = null   // Phase 78: invalidate the people→profilePath index on any write
         jellyfinIdIndex  = null   // invalidate the jellyfinId→MediaItem index on any write
+        libraryVersion++           // Phase R86: bump version so HomeFeedService cache invalidates
         db.mediaQueries.upsert(
             id = item.id,
             json = json.encodeToString(MediaItem.serializer(), item),

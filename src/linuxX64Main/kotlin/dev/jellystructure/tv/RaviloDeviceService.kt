@@ -21,9 +21,17 @@ import platform.posix.timespec
 private const val PAIRING_TTL_MS = 5L * 60 * 1000
 private val CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789".toCharArray()
 
+// Phase R86-B: avoid a SQLite SELECT + UPDATE on every TV API call by caching validated tokens.
+private const val TOKEN_CACHE_TTL_MS  = 5 * 60_000L  // serve cached DeviceData for 5 min
+private const val LAST_SEEN_DEBOUNCE_MS = 60_000L      // write updateLastSeen at most once/min
+
 data class PairingStartResult(val code: String, val pollToken: String, val expiresAt: Long)
 
 class RaviloDeviceService(private val db: JellystructureDb) {
+
+    // token → (DeviceData, cachedAtMs, lastSeenWrittenMs)
+    private data class TokenEntry(val data: DeviceData, val cachedAt: Long, var lastSeenWritten: Long)
+    private val tokenCache = HashMap<String, TokenEntry>()
 
     init {
         db.raviloPairingQueries.deleteExpired(nowMs())
@@ -106,9 +114,25 @@ class RaviloDeviceService(private val db: JellystructureDb) {
     }
 
     fun validateDeviceToken(token: String): DeviceData? {
-        val row = db.raviloDeviceQueries.getByToken(token).executeAsOneOrNull() ?: return null
-        db.raviloDeviceQueries.updateLastSeen(last_seen = nowMs(), device_token = token)
-        return DeviceData(
+        val now = nowMs()
+        // Cache hit within TTL: skip the DB SELECT.
+        tokenCache[token]?.let { entry ->
+            if ((now - entry.cachedAt) < TOKEN_CACHE_TTL_MS) {
+                // Debounce updateLastSeen: at most once per minute per token.
+                if ((now - entry.lastSeenWritten) >= LAST_SEEN_DEBOUNCE_MS) {
+                    db.raviloDeviceQueries.updateLastSeen(last_seen = now, device_token = token)
+                    entry.lastSeenWritten = now
+                }
+                return entry.data
+            }
+        }
+        // Cache miss or expired: hit DB.
+        val row = db.raviloDeviceQueries.getByToken(token).executeAsOneOrNull() ?: run {
+            tokenCache.remove(token)
+            return null
+        }
+        db.raviloDeviceQueries.updateLastSeen(last_seen = now, device_token = token)
+        val data = DeviceData(
             deviceId = row.device_id,
             deviceToken = token,
             jellyfinUserId = row.jellyfin_user_id,
@@ -117,9 +141,12 @@ class RaviloDeviceService(private val db: JellystructureDb) {
             isAdmin = row.is_admin == 1L,
             isKids = row.is_kids == 1L,
         )
+        tokenCache[token] = TokenEntry(data, now, now)
+        return data
     }
 
     fun unpair(deviceToken: String) {
+        tokenCache.remove(deviceToken)
         db.raviloDeviceQueries.deleteByToken(deviceToken)
     }
 
