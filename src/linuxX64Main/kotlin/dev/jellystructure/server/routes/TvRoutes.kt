@@ -31,6 +31,7 @@ import dev.jellystructure.tv.BrowseService
 import dev.jellystructure.tv.ChannelLogoStore
 import dev.jellystructure.tv.DetailService
 import dev.jellystructure.tv.HomeFeedService
+import dev.jellystructure.tv.JellyfinImageUrl
 import dev.jellystructure.tv.PlaybackService
 import dev.jellystructure.tv.RaviloConfigService
 import dev.jellystructure.tv.RaviloDeviceService
@@ -135,7 +136,7 @@ fun Route.tvRoutes(
                     displayName = device.jellyfinUsername,
                     isAdmin = device.isAdmin,
                     isKids = device.isKids,
-                    avatarUrl = if (baseUrl.isNotBlank()) "$baseUrl/Users/${device.jellyfinUserId}/Images/Primary?api_key=${device.jellyfinUserToken}" else null,
+                    avatarUrl = if (baseUrl.isNotBlank()) JellyfinImageUrl.avatar(baseUrl, device.jellyfinUserId, device.jellyfinUserToken) else null,
                 ),
                 deviceToken = deviceToken,
             ))
@@ -219,7 +220,7 @@ fun Route.tvRoutes(
                 displayName = d.jellyfinUsername,
                 isAdmin = d.isAdmin,
                 isKids = d.isKids,
-                avatarUrl = if (baseUrl.isNotBlank()) "$baseUrl/Users/${d.jellyfinUserId}/Images/Primary?api_key=${d.jellyfinUserToken}" else null,
+                avatarUrl = if (baseUrl.isNotBlank()) JellyfinImageUrl.avatar(baseUrl, d.jellyfinUserId, d.jellyfinUserToken) else null,
             )
         }
         call.respond(sessions)
