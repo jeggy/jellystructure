@@ -42,6 +42,13 @@ class DetailService(
         val userData  = jfDetail?.userData
         val durationMs = (jfDetail?.runTimeTicks ?: 0L) / TICKS_PER_MS
 
+        // R82: audio/sub languages now come from local scanned tracks (parity with series).
+        val movieAudioLangs = item.tracks
+            .filter { it.kind == dev.jellystructure.model.TrackKind.AUDIO }
+            .mapNotNull { it.language?.lowercase()?.takeIf { l -> l.isNotBlank() } }
+        val movieSubLangs = item.tracks
+            .filter { it.kind == dev.jellystructure.model.TrackKind.SUBTITLE }
+            .mapNotNull { it.language?.lowercase()?.takeIf { l -> l.isNotBlank() } }
         MovieDetail(
             card               = item.toMediaCard(jellyfinBase, token),
             synopsis           = item.overview,
@@ -49,8 +56,8 @@ class DetailService(
             cast               = castFrom(item),
             related            = relatedItems(item, all, jellyfinBase, token),
             playback           = userData.toPlaybackState(durationMs),
-            audioLanguages     = streamsOf(jfDetail, "Audio"),
-            subtitleLanguages  = streamsOf(jfDetail, "Subtitle"),
+            audioLanguages     = movieAudioLangs,
+            subtitleLanguages  = movieSubLangs,
         )
     }
 
