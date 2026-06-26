@@ -36,6 +36,7 @@ fun RaviloButton(
     label: String,
     focusRequester: FocusRequester? = null,
     style: ButtonStyle = ButtonStyle.PRIMARY,
+    modifier: Modifier = Modifier,
     onFocused: () -> Unit = {},
     onLeft: (() -> Unit)? = null,
     onRight: (() -> Unit)? = null,
@@ -64,7 +65,7 @@ fun RaviloButton(
     // layer so the actions row never chases the focus animation → no viewport jump (R42/R43, now on the
     // detail/hero buttons too).
     Box(
-        modifier = Modifier.dpadFocusable(
+        modifier = modifier.dpadFocusable(
             focusRequester = focusRequester,
             onFocused = { focused = true; onFocused() },
             onBlurred = { focused = false },
