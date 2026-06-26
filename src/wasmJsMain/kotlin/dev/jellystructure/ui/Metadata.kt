@@ -236,12 +236,12 @@ private fun wireTagsTab(content: HTMLElement, scope: CoroutineScope) {
     }
 }
 
-private val PRESET_COLORS = listOf("#6b7280", "#ef4444", "#f97316", "#eab308", "#22c55e", "#3b82f6", "#8b5cf6", "#ec4899")
+private val PRESET_COLORS = listOf("#7b6ef0", "#2dd49a", "#f5b542", "#3fb6f5", "#ff6f61", "#b15cd0", "#6b7280", "#e0639a")
 
 private fun showTagModal(content: HTMLElement, scope: CoroutineScope, editName: String?, editColor: String? = null, editDesc: String? = null) {
     val modal = content.querySelector("#tag-modal") as? HTMLElement ?: return
     val isNew = editName == null
-    val initialColor = editColor?.takeIf { it.isNotBlank() } ?: "#6b7280"
+    val initialColor = editColor?.takeIf { it.isNotBlank() } ?: "#7b6ef0"
     val initialDesc = editDesc?.takeIf { it.isNotBlank() } ?: ""
     val title = if (isNew) "New tag" else "Edit tag"
     modal.style.display = "flex"
@@ -250,7 +250,7 @@ private fun showTagModal(content: HTMLElement, scope: CoroutineScope, editName: 
     }
     val libLink = if (!isNew) {
         val enc = dev.jellystructure.encodeURIComponent(editName!!)
-        """<a href="#/library?tags=$enc" class="btn sm ghost" id="modal-lib-btn" style="margin-right:auto">View in library →</a>"""
+        """<a href="#/library?tags=$enc" class="btn sm ghost" id="modal-lib-btn">View in library →</a>"""
     } else ""
     modal.innerHTML = """
         <div style="background:var(--card-bg);border-radius:10px;padding:24px;width:340px;max-width:calc(100vw - 32px);box-shadow:0 8px 32px rgba(0,0,0,.35);border:1px solid var(--line-2)">
@@ -269,11 +269,15 @@ private fun showTagModal(content: HTMLElement, scope: CoroutineScope, editName: 
             <input id="modal-tag-desc" class="input" type="text" placeholder="optional description" style="width:100%" value="${initialDesc.replace("\"", "&quot;")}">
           </div>
           <div id="modal-tag-error" class="badge bad" style="display:none;margin-bottom:10px"></div>
-          <div style="display:flex;gap:8px;justify-content:flex-end;align-items:center">
-            ${if (!isNew) """<button id="modal-delete-btn" class="btn sm ghost" style="color:var(--bad);border-color:var(--bad)">Delete</button>""" else ""}
-            $libLink
-            <button id="modal-cancel-btn" class="btn sm ghost">Cancel</button>
-            <button id="modal-save-btn" class="btn sm primary">${if (isNew) "Create" else "Save"}</button>
+          <div style="display:flex;flex-wrap:wrap;gap:8px;justify-content:space-between;align-items:center">
+            <div style="display:flex;gap:8px;align-items:center">
+              ${if (!isNew) """<button id="modal-delete-btn" class="btn sm ghost" style="color:var(--bad);border-color:var(--bad)">Delete</button>""" else ""}
+              $libLink
+            </div>
+            <div style="display:flex;gap:8px;align-items:center">
+              <button id="modal-cancel-btn" class="btn sm ghost">Cancel</button>
+              <button id="modal-save-btn" class="btn sm primary">${if (isNew) "Create" else "Save"}</button>
+            </div>
           </div>
         </div>
     """.trimIndent()
