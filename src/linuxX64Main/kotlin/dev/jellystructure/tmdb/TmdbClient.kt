@@ -313,9 +313,13 @@ class TmdbClient(
         return result.getOrNull()
     }
 
-    // Try each language in priority order; use the first that has a non-empty overview. When a bare
-    // two-letter code yields an empty overview, retry with the region-qualified tag from /translations
-    // (e.g. en → en-US) so a movie translated only under a regional variant is still found.
+    // Try each language in priority order; use the first that has a non-empty overview OR (for
+    // the regional retry) a non-empty title. When a bare two-letter code yields an empty overview,
+    // retry with the region-qualified tag from /translations (e.g. en → en-US, fo → fo-FO) so a
+    // movie translated only under a regional variant is still found. The regional result is accepted
+    // even with a blank overview as long as a localized title is present — some minority-language
+    // translations supply only a title; the overview stays blank in the NFO rather than falling back
+    // to English.
     suspend fun getMovieDetailsLocalized(tmdbId: Int, languages: List<String>): Localized<TmdbMovieDetails>? {
         var regionTags: Map<String, String>? = null
         for (lang in languages) {
@@ -325,7 +329,7 @@ class TmdbClient(
             val regional = regionTags[lang.lowercase()]
             if (regional != null && !regional.equals(lang, ignoreCase = true)) {
                 val dr = getMovieDetails(tmdbId, regional)
-                if (dr != null && dr.overview.isNotBlank()) return Localized(dr, lang)
+                if (dr != null && (dr.overview.isNotBlank() || dr.title.isNotBlank())) return Localized(dr, lang)
             }
         }
         return getMovieDetails(tmdbId)?.let { Localized(it, null) }
@@ -478,7 +482,9 @@ class TmdbClient(
             val regional = regionTags[lang.lowercase()]
             if (regional != null && !regional.equals(lang, ignoreCase = true)) {
                 val dr = getTvDetails(tmdbId, regional)
-                if (dr != null && dr.overview.isNotBlank()) return Localized(dr, lang)
+                // Accept regional result even with a blank overview if it has a localized title —
+                // minority-language translations (e.g. fo-FO) often supply only the name/title.
+                if (dr != null && (dr.overview.isNotBlank() || dr.name.isNotBlank())) return Localized(dr, lang)
             }
         }
         return getTvDetails(tmdbId)?.let { Localized(it, null) }
@@ -497,7 +503,13 @@ class TmdbClient(
                 return getTranslationLanguages(tmdbId, isMovie)
             }
             response.body<TmdbTranslationsResponse>().translations
-                .filter { it.languageCode.isNotBlank() && it.data.overview.isNotBlank() }
+                // Include a language when TMDB has ANY localized content (name/title or overview).
+                // Some minority languages (e.g. fo-FO) only have a translated title with no overview;
+                // excluding those left Faroese out of the picker entirely.
+                .filter { t ->
+                    t.languageCode.isNotBlank() &&
+                        (t.data.overview.isNotBlank() || t.data.name.isNotBlank() || t.data.title.isNotBlank())
+                }
                 .map { it.languageCode }
                 .distinct()
         }
@@ -552,7 +564,8 @@ class TmdbClient(
             val map = LinkedHashMap<String, String>()
             for (t in response.body<TmdbTranslationsResponse>().translations) {
                 val lang = t.languageCode.lowercase()
-                if (lang.isBlank() || t.region.isBlank() || t.data.overview.isBlank()) continue
+                val hasContent = t.data.overview.isNotBlank() || t.data.name.isNotBlank() || t.data.title.isNotBlank()
+                if (lang.isBlank() || t.region.isBlank() || !hasContent) continue
                 map.getOrPut(lang) { "$lang-${t.region.uppercase()}" }
             }
             map
