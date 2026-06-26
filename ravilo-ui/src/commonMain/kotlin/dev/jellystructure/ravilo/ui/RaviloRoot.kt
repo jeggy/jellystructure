@@ -25,6 +25,20 @@ expect object TokenStore {
     fun clear()
 }
 
+// ─── R80: Browser history / URL navigation seam ──────────────────────────────
+
+/** Push a hash route into browser history. No-op on non-web targets. */
+expect fun pushRoute(route: String)
+
+/** Replace the current history entry's hash without adding a new entry. No-op on non-web targets. */
+expect fun replaceRoute(route: String)
+
+/**
+ * Install a listener that fires whenever the browser's current hash URL changes (back/forward/manual).
+ * Returns an unsubscribe function. No-op (and returns `{}`) on non-web targets.
+ */
+expect fun installHashListener(onRoute: (String) -> Unit): () -> Unit
+
 @Composable
 fun RaviloRoot() {
     var baseUrl by remember { mutableStateOf(raviloBaseUrl()) }

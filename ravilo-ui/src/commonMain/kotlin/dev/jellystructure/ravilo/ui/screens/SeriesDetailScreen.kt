@@ -29,6 +29,11 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.focus.FocusRequester
@@ -41,6 +46,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import dev.jellystructure.ravilo.ui.components.AppBar
 import dev.jellystructure.ravilo.ui.components.AudioFlagStrip
 import dev.jellystructure.ravilo.ui.components.ButtonStyle
 import dev.jellystructure.ravilo.ui.components.CastCircle
@@ -66,6 +72,11 @@ fun SeriesDetailScreen(
     onBack: () -> Unit,
     onPlay: (EpisodePlayContext) -> Unit,
     onRelatedSelect: (MediaCard) -> Unit,
+    displayName: String = "",
+    onNavSelect: (Int) -> Unit = {},
+    onProfile: (() -> Unit)? = null,
+    onSearch: (() -> Unit)? = null,
+    discoverAvailable: Boolean = false,
 ) {
     val colors = RaviloTheme.colors
     LaunchedEffect(itemId) { store.load(itemId) }
@@ -77,8 +88,17 @@ fun SeriesDetailScreen(
             is SeriesDetailState.Error -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Text(s.message, color = colors.textSecondary, fontSize = 14.sp)
             }
-            is SeriesDetailState.Loaded -> SeriesDetailLoaded(s.detail, onBack, onPlay, onRelatedSelect)
-
+            is SeriesDetailState.Loaded -> SeriesDetailLoaded(
+                detail = s.detail,
+                onBack = onBack,
+                onPlay = onPlay,
+                onRelatedSelect = onRelatedSelect,
+                displayName = displayName,
+                onNavSelect = onNavSelect,
+                onProfile = onProfile,
+                onSearch = onSearch,
+                discoverAvailable = discoverAvailable,
+            )
         }
     }
 }
@@ -122,6 +142,11 @@ private fun SeriesDetailLoaded(
     onBack: () -> Unit,
     onPlay: (EpisodePlayContext) -> Unit,
     onRelatedSelect: (MediaCard) -> Unit,
+    displayName: String,
+    onNavSelect: (Int) -> Unit,
+    onProfile: (() -> Unit)?,
+    onSearch: (() -> Unit)?,
+    discoverAvailable: Boolean,
 ) {
     val colors = RaviloTheme.colors
     val spaceGrotesk = SpaceGrotesk
@@ -136,13 +161,8 @@ private fun SeriesDetailLoaded(
     val scope = rememberCoroutineScope()
     val density = LocalDensity.current
     val containerH = LocalWindowInfo.current.containerSize.height
-    // Full-bleed hero fills the first screenful. Whenever the actions row holds focus — on entry and
-    // when focus returns up from the season picker / episode rail — snap the page to the top so the
-    // full hero re-frames instead of stranding at the Resume button (R45).
     val heroHeight = if (containerH > 0) with(density) { containerH.toDp() } else 540.dp
 
-    // Default to the season that holds the resume episode, so Resume plays with the
-    // correct title/episode-rail context (not always season 0).
     val initialSeasonIdx = remember(detail) {
         val rid = detail.progress.resumeEpisodeId
         if (rid != null)
@@ -153,208 +173,236 @@ private fun SeriesDetailLoaded(
     val currentSeason = detail.seasons.getOrNull(selectedSeasonIdx)
     val episodes: List<Episode> = currentSeason?.episodes ?: emptyList()
 
-    // Entry focus only; movement between buttons, season picker, episode rail, cast and related
-    // is native spatial traversal within the non-lazy verticalScroll column.
     val playFR = remember { FocusRequester() }
+    val navBarFR = remember { FocusRequester() }
 
-    // Resume episode index in current season
     val resumeEpIdx = episodes.indexOfFirst { it.id == detail.progress.resumeEpisodeId }
         .takeIf { it >= 0 } ?: 0
 
     LaunchedEffect(Unit) { runCatching { playFR.requestFocus() } }
 
-    // R72: small top inset + 60dp bottom peek so focusables are revealed with breathing room.
-    val detailBivSpec = rememberEdgeBringIntoViewSpec(peekDp = 60.dp, topInsetDp = 20.dp)
-    @OptIn(ExperimentalFoundationApi::class)
-    CompositionLocalProvider(LocalBringIntoViewSpec provides detailBivSpec) {
-    Column(modifier = Modifier.fillMaxSize().verticalScroll(scrollState)) {
-        // Full-bleed hero: title · meta · progress · synopsis · resume · actions overlaid in the lower third.
-        Box(modifier = Modifier.fillMaxWidth().height(heroHeight)) {
-            val backdropUrl = detail.card.backdropUrl ?: detail.card.posterUrl
-            if (backdropUrl != null) {
-                RemoteImage(
-                    url = backdropUrl,
-                    contentDescription = null,
-                    modifier = Modifier.matchParentSize(),
-                    alignment = RaviloDimens.heroBackdropAlignment,
-                )
-            } else {
-                Box(modifier = Modifier.matchParentSize().background(colors.surfaceVariant))
-            }
-            Box(modifier = Modifier.matchParentSize().background(backdropGradient))
-            Column(
-                modifier = Modifier
-                    .align(Alignment.BottomStart)
-                    .fillMaxWidth(0.6f)
-                    .padding(start = RaviloDimens.heroBodyStart, bottom = 44.dp, end = 24.dp),
-            ) {
-                Text(
-                    text = detail.card.title,
-                    color = colors.text,
-                    fontSize = 34.sp,
-                    lineHeight = 40.sp,
-                    fontWeight = FontWeight.Bold,
-                    fontFamily = spaceGrotesk,
-                    letterSpacing = (-0.5).sp,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                val meta = remember(detail.card.year, detail.card.genre) {
-                    listOfNotNull(detail.card.year?.toString(), detail.card.genre).joinToString(" · ")
-                }
-                if (meta.isNotEmpty()) {
-                    Spacer(Modifier.height(8.dp))
-                    Text(meta, color = colors.textSecondary, fontSize = 15.sp)
-                }
-                if (detail.audioLanguages.isNotEmpty()) {
-                    Spacer(Modifier.height(8.dp))
-                    AudioFlagStrip(detail.audioLanguages)
-                }
-                val p = detail.progress
-                if (p.totalCount > 0) {
-                    Spacer(Modifier.height(4.dp))
-                    Text(
-                        "${p.watchedCount} of ${p.totalCount} episodes watched",
-                        color = colors.textDim, fontSize = 13.sp,
+    // R79: appBarHeight + 24dp top inset so season picker / episode rail title isn't hidden under the bar.
+    val detailBivSpec = rememberEdgeBringIntoViewSpec(peekDp = 60.dp, topInsetDp = RaviloDimens.appBarHeight + 24.dp)
+
+    val navItems = buildList {
+        add(str("nav.home")); add(str("nav.movies")); add(str("nav.series"))
+        if (discoverAvailable) add("Top 10")
+        add(str("nav.my_list"))
+    }
+
+    Box(Modifier.fillMaxSize()) {
+        @OptIn(ExperimentalFoundationApi::class)
+        CompositionLocalProvider(LocalBringIntoViewSpec provides detailBivSpec) {
+        Column(modifier = Modifier.fillMaxSize().verticalScroll(scrollState)) {
+            // Full-bleed hero: title · meta · progress · synopsis · resume · actions overlaid in the lower third.
+            Box(modifier = Modifier.fillMaxWidth().height(heroHeight)) {
+                val backdropUrl = detail.card.backdropUrl ?: detail.card.posterUrl
+                if (backdropUrl != null) {
+                    RemoteImage(
+                        url = backdropUrl,
+                        contentDescription = null,
+                        modifier = Modifier.matchParentSize(),
+                        alignment = RaviloDimens.heroBackdropAlignment,
                     )
+                } else {
+                    Box(modifier = Modifier.matchParentSize().background(colors.surfaceVariant))
                 }
-                detail.synopsis?.let {
-                    Spacer(Modifier.height(10.dp))
+                Box(modifier = Modifier.matchParentSize().background(backdropGradient))
+                Column(
+                    modifier = Modifier
+                        .align(Alignment.BottomStart)
+                        .fillMaxWidth(0.6f)
+                        .padding(start = RaviloDimens.heroBodyStart, bottom = 44.dp, end = 24.dp),
+                ) {
                     Text(
-                        text = it,
-                        color = colors.textSecondary,
-                        fontSize = 14.sp,
-                        lineHeight = 20.sp,
+                        text = detail.card.title,
+                        color = colors.text,
+                        fontSize = 34.sp,
+                        lineHeight = 40.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = spaceGrotesk,
+                        letterSpacing = (-0.5).sp,
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
                     )
-                }
-                detail.progress.resumeLabel?.let {
-                    Spacer(Modifier.height(8.dp))
-                    Text(it, color = colors.accent, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-                }
-                Spacer(Modifier.height(18.dp))
-                Row(
-                    // R72: scroll(UserInput) wins over bring-into-view (Default priority) so
-                    // focusing Play/Resume reliably reframes the full backdrop.
-                    modifier = Modifier.onFocusChanged {
-                        if (it.hasFocus) scope.launch {
-                            // UserInput priority supersedes BIV (Default) so this wins the race.
-                            scrollState.scroll(MutatePriority.UserInput) {
-                                scrollBy(-scrollState.value.toFloat())
+                    val meta = remember(detail.card.year, detail.card.genre) {
+                        listOfNotNull(detail.card.year?.toString(), detail.card.genre).joinToString(" · ")
+                    }
+                    if (meta.isNotEmpty()) {
+                        Spacer(Modifier.height(8.dp))
+                        Text(meta, color = colors.textSecondary, fontSize = 15.sp)
+                    }
+                    if (detail.audioLanguages.isNotEmpty()) {
+                        Spacer(Modifier.height(8.dp))
+                        AudioFlagStrip(detail.audioLanguages)
+                    }
+                    if (detail.subtitleLanguages.isNotEmpty()) {
+                        Spacer(Modifier.height(6.dp))
+                        AudioFlagStrip(detail.subtitleLanguages, label = "SUBTITLES")
+                    }
+                    val p = detail.progress
+                    if (p.totalCount > 0) {
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            "${p.watchedCount} of ${p.totalCount} episodes watched",
+                            color = colors.textDim, fontSize = 13.sp,
+                        )
+                    }
+                    detail.synopsis?.let {
+                        Spacer(Modifier.height(10.dp))
+                        Text(
+                            text = it,
+                            color = colors.textSecondary,
+                            fontSize = 14.sp,
+                            lineHeight = 20.sp,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                    detail.progress.resumeLabel?.let {
+                        Spacer(Modifier.height(8.dp))
+                        Text(it, color = colors.accent, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                    }
+                    Spacer(Modifier.height(18.dp))
+                    Row(
+                        // R72: scroll(UserInput) wins over bring-into-view (Default priority) so
+                        // focusing Play/Resume reliably reframes the full backdrop.
+                        modifier = Modifier
+                            .onFocusChanged {
+                                if (it.hasFocus) scope.launch {
+                                    scrollState.scroll(MutatePriority.UserInput) {
+                                        scrollBy(-scrollState.value.toFloat())
+                                    }
+                                }
                             }
-                        }
-                    },
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            // R79: UP from actions row → AppBar
+                            .onKeyEvent { ev ->
+                                if (ev.type == KeyEventType.KeyDown && ev.key == Key.DirectionUp) {
+                                    navBarFR.requestFocus(); true
+                                } else false
+                            },
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        val resumeEpId = detail.progress.resumeEpisodeId
+                        val resumeShort = resumeEpId?.let { rid ->
+                            val sIdx = detail.seasons.indexOfFirst { s -> s.episodes.any { it.id == rid } }
+                            val ep = detail.seasons.getOrNull(sIdx)?.episodes?.firstOrNull { it.id == rid }
+                            if (sIdx >= 0 && ep != null) "S${detail.seasons[sIdx].index}E${ep.episodeNumber}"
+                            else ep?.let { "E${it.episodeNumber}" }
+                        } ?: "E${resumeEpIdx + 1}"
+                        val playLabel = if (resumeEpId != null && detail.progress.watchedCount < detail.progress.totalCount)
+                            "${str("action.resume")} · $resumeShort"
+                        else "${str("action.play")} · E1"
+                        RaviloButton(
+                            label = playLabel,
+                            focusRequester = playFR,
+                            style = ButtonStyle.PRIMARY,
+                            onSelect = {
+                                val epId = resumeEpId ?: episodes.firstOrNull()?.id
+                                if (epId != null) onPlay(buildEpisodeContext(detail, selectedSeasonIdx, episodes, epId))
+                            },
+                        )
+                        RaviloButton(
+                            label = "+ ${str("nav.my_list")}",
+                            style = ButtonStyle.GHOST,
+                        )
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(28.dp))
+
+            // Season picker
+            if (detail.seasons.size > 1) {
+                SeasonPicker(
+                    seasons = detail.seasons,
+                    selectedIndex = selectedSeasonIdx,
+                    onSelect = { selectedSeasonIdx = it },
+                )
+                Spacer(Modifier.height(16.dp))
+            }
+
+            // Episode rail
+            if (episodes.isNotEmpty()) {
+                Text(
+                    str("detail.episodes"),
+                    color = colors.text, fontSize = 18.sp, fontWeight = FontWeight.SemiBold,
+                    fontFamily = spaceGrotesk, letterSpacing = (-0.5).sp,
+                    modifier = Modifier.padding(horizontal = RaviloDimens.sectionPadH),
+                )
+                Spacer(Modifier.height(RaviloDimens.rowHeadPadB))
+                LazyRow(
+                    modifier = Modifier.focusRestorer(),
+                    contentPadding = PaddingValues(horizontal = RaviloDimens.trackPadH, vertical = RaviloDimens.trackPadV),
+                    horizontalArrangement = Arrangement.spacedBy(RaviloDimens.itemSpacing),
                 ) {
-                    val resumeEpId = detail.progress.resumeEpisodeId
-                    // Season-aware "SxEy" for the button (no episode title — that shows above already).
-                    // Resolved from the full season list so it's correct regardless of the selected season.
-                    val resumeShort = resumeEpId?.let { rid ->
-                        val sIdx = detail.seasons.indexOfFirst { s -> s.episodes.any { it.id == rid } }
-                        val ep = detail.seasons.getOrNull(sIdx)?.episodes?.firstOrNull { it.id == rid }
-                        if (sIdx >= 0 && ep != null) "S${detail.seasons[sIdx].index}E${ep.episodeNumber}"
-                        else ep?.let { "E${it.episodeNumber}" }
-                    } ?: "E${resumeEpIdx + 1}"
-                    val playLabel = if (resumeEpId != null && detail.progress.watchedCount < detail.progress.totalCount)
-                        "${str("action.resume")} · $resumeShort"
-                    else "${str("action.play")} · E1"
-                    RaviloButton(
-                        label = playLabel,
-                        focusRequester = playFR,
-                        style = ButtonStyle.PRIMARY,
-                        onSelect = {
-                            val epId = resumeEpId ?: episodes.firstOrNull()?.id
-                            if (epId != null) onPlay(buildEpisodeContext(detail, selectedSeasonIdx, episodes, epId))
-                        },
-                    )
-                    RaviloButton(
-                        label = "+ ${str("nav.my_list")}",
-                        style = ButtonStyle.GHOST,
-                    )
+                    items(episodes.size, key = { i -> episodes[i].id }) { i ->
+                        val ep = episodes[i]
+                        EpisodeCard(
+                            episode = ep,
+                            isResumeEpisode = ep.id == detail.progress.resumeEpisodeId,
+                            onSelect = { onPlay(buildEpisodeContext(detail, selectedSeasonIdx, episodes, ep.id)) },
+                        )
+                    }
                 }
             }
-        }
 
-        Spacer(Modifier.height(28.dp))
-
-        // Season picker
-        if (detail.seasons.size > 1) {
-            SeasonPicker(
-                seasons = detail.seasons,
-                selectedIndex = selectedSeasonIdx,
-                onSelect = { selectedSeasonIdx = it },
-            )
-            Spacer(Modifier.height(16.dp))
-        }
-
-        // Episode rail
-        if (episodes.isNotEmpty()) {
-            Text(
-                str("detail.episodes"),
-                color = colors.text, fontSize = 18.sp, fontWeight = FontWeight.SemiBold,
-                fontFamily = spaceGrotesk, letterSpacing = (-0.5).sp,
-                modifier = Modifier.padding(horizontal = RaviloDimens.sectionPadH),
-            )
-            Spacer(Modifier.height(RaviloDimens.rowHeadPadB))
-            LazyRow(
-                modifier = Modifier.focusRestorer(),
-                contentPadding = PaddingValues(horizontal = RaviloDimens.trackPadH, vertical = RaviloDimens.trackPadV),
-                horizontalArrangement = Arrangement.spacedBy(RaviloDimens.itemSpacing),
-            ) {
-                items(episodes.size, key = { i -> episodes[i].id }) { i ->
-                    val ep = episodes[i]
-                    EpisodeCard(
-                        episode = ep,
-                        isResumeEpisode = ep.id == detail.progress.resumeEpisodeId,
-                        onSelect = { onPlay(buildEpisodeContext(detail, selectedSeasonIdx, episodes, ep.id)) },
-                    )
+            // Cast row
+            if (detail.cast.isNotEmpty()) {
+                Spacer(Modifier.height(RaviloDimens.rowGap))
+                Text(str("detail.cast"), color = colors.text, fontSize = 18.sp, fontWeight = FontWeight.SemiBold,
+                    fontFamily = spaceGrotesk, letterSpacing = (-0.5).sp,
+                    modifier = Modifier.padding(horizontal = RaviloDimens.sectionPadH))
+                Spacer(Modifier.height(RaviloDimens.rowHeadPadB))
+                LazyRow(
+                    modifier = Modifier.focusRestorer(),
+                    contentPadding = PaddingValues(horizontal = RaviloDimens.trackPadH, vertical = RaviloDimens.trackPadV),
+                    horizontalArrangement = Arrangement.spacedBy(RaviloDimens.itemSpacing),
+                ) {
+                    items(detail.cast.size, key = { i -> detail.cast[i].id }) { i ->
+                        CastCircle(person = detail.cast[i])
+                    }
                 }
             }
-        }
 
-        // Cast row
-        if (detail.cast.isNotEmpty()) {
-            Spacer(Modifier.height(RaviloDimens.rowGap))
-            Text(str("detail.cast"), color = colors.text, fontSize = 18.sp, fontWeight = FontWeight.SemiBold,
-                fontFamily = spaceGrotesk, letterSpacing = (-0.5).sp,
-                modifier = Modifier.padding(horizontal = RaviloDimens.sectionPadH))
-            Spacer(Modifier.height(RaviloDimens.rowHeadPadB))
-            LazyRow(
-                modifier = Modifier.focusRestorer(),
-                contentPadding = PaddingValues(horizontal = RaviloDimens.trackPadH, vertical = RaviloDimens.trackPadV),
-                horizontalArrangement = Arrangement.spacedBy(RaviloDimens.itemSpacing),
-            ) {
-                items(detail.cast.size, key = { i -> detail.cast[i].id }) { i ->
-                    CastCircle(person = detail.cast[i])
+            // More Like This
+            if (detail.related.isNotEmpty()) {
+                Spacer(Modifier.height(RaviloDimens.rowGap))
+                Text(str("section.related"), color = colors.text, fontSize = 18.sp, fontWeight = FontWeight.SemiBold,
+                    fontFamily = spaceGrotesk, letterSpacing = (-0.5).sp,
+                    modifier = Modifier.padding(horizontal = RaviloDimens.sectionPadH))
+                Spacer(Modifier.height(RaviloDimens.rowHeadPadB))
+                LazyRow(
+                    modifier = Modifier.focusRestorer(),
+                    contentPadding = PaddingValues(horizontal = RaviloDimens.trackPadH, vertical = RaviloDimens.trackPadV),
+                    horizontalArrangement = Arrangement.spacedBy(RaviloDimens.itemSpacing),
+                ) {
+                    items(detail.related.size, key = { i -> detail.related[i].id }) { i ->
+                        val card = detail.related[i]
+                        Tile(
+                            title = card.title,
+                            posterUrl = card.posterUrl,
+                            watched = card.watched,
+                            onSelect = { onRelatedSelect(card) },
+                        )
+                    }
                 }
             }
+            Spacer(Modifier.height(48.dp))
         }
+        } // CompositionLocalProvider
 
-        // More Like This
-        if (detail.related.isNotEmpty()) {
-            Spacer(Modifier.height(RaviloDimens.rowGap))
-            Text(str("section.related"), color = colors.text, fontSize = 18.sp, fontWeight = FontWeight.SemiBold,
-                fontFamily = spaceGrotesk, letterSpacing = (-0.5).sp,
-                modifier = Modifier.padding(horizontal = RaviloDimens.sectionPadH))
-            Spacer(Modifier.height(RaviloDimens.rowHeadPadB))
-            LazyRow(
-                modifier = Modifier.focusRestorer(),
-                contentPadding = PaddingValues(horizontal = RaviloDimens.trackPadH, vertical = RaviloDimens.trackPadV),
-                horizontalArrangement = Arrangement.spacedBy(RaviloDimens.itemSpacing),
-            ) {
-                items(detail.related.size, key = { i -> detail.related[i].id }) { i ->
-                    val card = detail.related[i]
-                    Tile(
-                        title = card.title,
-                        posterUrl = card.posterUrl,
-                        watched = card.watched,
-                        onSelect = { onRelatedSelect(card) },
-                    )
-                }
-            }
-        }
-        Spacer(Modifier.height(48.dp))
-    }
+        // R79: AppBar overlay — last child of the Box so it renders over the scroll content.
+        AppBar(
+            navItems = navItems,
+            activeNav = -1,
+            onNavSelect = onNavSelect,
+            navFR = navBarFR,
+            onDown = { runCatching { playFR.requestFocus() } },
+            userInitials = displayName.take(2).uppercase(),
+            onProfile = onProfile,
+            onSearch = onSearch,
+            scrolled = scrollState.value > 0,
+        )
     }
 }

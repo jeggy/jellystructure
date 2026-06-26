@@ -43,13 +43,14 @@ class DetailService(
         val durationMs = (jfDetail?.runTimeTicks ?: 0L) / TICKS_PER_MS
 
         MovieDetail(
-            card             = item.toMediaCard(jellyfinBase, token),
-            synopsis         = item.overview,
-            runtime          = (durationMs / 60_000L).toInt(),
-            cast             = castFrom(item),
-            related          = relatedItems(item, all, jellyfinBase, token),
-            playback         = userData.toPlaybackState(durationMs),
-            audioLanguages   = audioLanguagesFrom(jfDetail),
+            card               = item.toMediaCard(jellyfinBase, token),
+            synopsis           = item.overview,
+            runtime            = (durationMs / 60_000L).toInt(),
+            cast               = castFrom(item),
+            related            = relatedItems(item, all, jellyfinBase, token),
+            playback           = userData.toPlaybackState(durationMs),
+            audioLanguages     = streamsOf(jfDetail, "Audio"),
+            subtitleLanguages  = streamsOf(jfDetail, "Subtitle"),
         )
     }
 
@@ -112,19 +113,25 @@ class DetailService(
             resumeLabel = resumeLabel,
         )
 
-        // Use the first episode's scanned audio tracks for the flag strip (no extra Jellyfin round-trip).
-        val seriesAudioLangs = item.episodes.firstOrNull()?.tracks
+        // Use the first episode's scanned tracks for flag strips (no extra Jellyfin round-trip).
+        val firstEpTracks = item.episodes.firstOrNull()?.tracks
+        val seriesAudioLangs = firstEpTracks
             ?.filter { it.kind == dev.jellystructure.model.TrackKind.AUDIO }
             ?.mapNotNull { it.language?.lowercase()?.takeIf { l -> l.isNotBlank() } }
             ?: emptyList()
+        val seriesSubLangs = firstEpTracks
+            ?.filter { it.kind == dev.jellystructure.model.TrackKind.SUBTITLE }
+            ?.mapNotNull { it.language?.lowercase()?.takeIf { l -> l.isNotBlank() } }
+            ?: emptyList()
         SeriesDetail(
-            card           = item.toMediaCard(jellyfinBase, token),
-            synopsis       = item.overview,
-            seasons        = seasons,
-            cast           = castFrom(item),
-            related        = relatedItems(item, all, jellyfinBase, token),
-            progress       = progress,
-            audioLanguages = seriesAudioLangs,
+            card              = item.toMediaCard(jellyfinBase, token),
+            synopsis          = item.overview,
+            seasons           = seasons,
+            cast              = castFrom(item),
+            related           = relatedItems(item, all, jellyfinBase, token),
+            progress          = progress,
+            audioLanguages    = seriesAudioLangs,
+            subtitleLanguages = seriesSubLangs,
         )
     }
 
@@ -180,10 +187,10 @@ private fun castFrom(item: MediaItem): List<Person> =
             )
         }
 
-/** Extract ordered audio-language codes from a Jellyfin item's MediaStreams (R75 / Phase 87). */
-private fun audioLanguagesFrom(jfDetail: JellyfinItemDetail?): List<String> =
+/** Extract ordered language codes of the given stream type from a Jellyfin item's MediaStreams (R75/R78). */
+private fun streamsOf(jfDetail: JellyfinItemDetail?, type: String): List<String> =
     (jfDetail?.mediaStreams ?: return emptyList())
-        .filter { it.type.equals("Audio", ignoreCase = true) }
+        .filter { it.type.equals(type, ignoreCase = true) }
         .mapNotNull { it.language?.lowercase()?.takeIf { l -> l.isNotBlank() } }
 
 private fun JellyfinUserData?.toPlaybackState(durationMs: Long): PlaybackState {

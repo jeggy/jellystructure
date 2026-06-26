@@ -113,6 +113,22 @@ private sealed class Dest {
         val currentEpIndex: Int = 0,
     ) : Dest()
     data class Settings(val displayName: String) : Dest()
+
+    // R80: each Dest maps to a hash route (web) or is ignored (android/TV).
+    fun toRoute(): String = when (this) {
+        is Pairing        -> "/pairing"
+        is ProfilePicker  -> "/profiles"
+        is Home           -> "/home"
+        is ChannelView    -> "/channel/${channel.id}"
+        is Browse         -> "/browse/${kind.name.lowercase()}"
+        is Search         -> "/search"
+        is Discover       -> "/discover"
+        is DiscoverItem   -> "/discover/$listId/$rank"
+        is MovieDetail    -> "/movie/$itemId"
+        is SeriesDetail   -> "/series/$itemId"
+        is Player         -> "/player/$itemId"
+        is Settings       -> "/settings"
+    }
 }
 
 // ─── Root composable ──────────────────────────────────────────────────────────
@@ -198,8 +214,43 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
             androidx.compose.runtime.LaunchedEffect(Unit) { refreshConfig() }
         }
 
-        fun push(dest: Dest) { stack = stack + dest }
-        fun pop() { if (stack.size > 1) stack = stack.dropLast(1) }
+        // R80: stable holder for the "this mutation originated from the browser" flag.
+        // Prevents push/pop from issuing a redundant history.push/replace when we're already
+        // reacting to a browser-initiated navigation (hashchange).
+        val fromHistory = remember { object { var flag = false } }
+
+        fun push(dest: Dest) {
+            stack = stack + dest
+            if (!fromHistory.flag) pushRoute(dest.toRoute())
+        }
+        fun pop() {
+            if (stack.size > 1) {
+                stack = stack.dropLast(1)
+                // On browser, hashchange already moved the URL — don't push another entry.
+                // On Android, replaceRoute is a no-op, so calling it is harmless.
+                if (!fromHistory.flag) replaceRoute(stack.last().toRoute())
+            }
+        }
+        // Replace the whole stack (tab resets, sign-out) and sync the browser URL.
+        fun resetTo(dest: Dest) {
+            stack = listOf(dest)
+            if (!fromHistory.flag) replaceRoute(dest.toRoute())
+        }
+        // Replace the top of the stack in-place (episode navigation) and sync the browser URL.
+        fun replaceTop(dest: Dest) {
+            stack = if (stack.isEmpty()) listOf(dest) else stack.dropLast(1) + dest
+            if (!fromHistory.flag) replaceRoute(dest.toRoute())
+        }
+
+        // R80: write the initial URL on first composition, then listen for browser Back/Forward.
+        LaunchedEffect(Unit) {
+            replaceRoute(stack.last().toRoute())
+            installHashListener { _ ->
+                fromHistory.flag = true
+                pop()
+                fromHistory.flag = false
+            }
+        }
 
         val dest = stack.last()
 
@@ -251,7 +302,7 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                         // Reset the stack so Back from Home doesn't return to pairing,
                         // and carry the freshly-paired user's display name.
                         val name = MultiTokenStore.getActive()?.displayName ?: ""
-                        stack = listOf(Dest.Home(name))
+                        resetTo(Dest.Home(name))
                     },
                     onChangeServer = onChangeServer,
                 )
@@ -319,12 +370,12 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                     onBack = { pop() },
                     onNavSelect = { idx ->
                         when (idx) {
-                            0 -> { stack = listOf(Dest.Home(dest.displayName)) }
-                            1 -> { stack = stack.dropLast(1) + Dest.Browse(BrowseKind.MOVIES, dest.displayName) }
-                            2 -> { stack = stack.dropLast(1) + Dest.Browse(BrowseKind.SERIES, dest.displayName) }
+                            0 -> resetTo(Dest.Home(dest.displayName))
+                            1 -> replaceTop(Dest.Browse(BrowseKind.MOVIES, dest.displayName))
+                            2 -> replaceTop(Dest.Browse(BrowseKind.SERIES, dest.displayName))
                             3 -> if (discoverAvailable) push(Dest.Discover(dest.displayName))
-                                 else { stack = stack.dropLast(1) + Dest.Browse(BrowseKind.MY_LIST, dest.displayName) }
-                            4 -> { stack = stack.dropLast(1) + Dest.Browse(BrowseKind.MY_LIST, dest.displayName) }
+                                 else replaceTop(Dest.Browse(BrowseKind.MY_LIST, dest.displayName))
+                            4 -> replaceTop(Dest.Browse(BrowseKind.MY_LIST, dest.displayName))
                             else -> {}
                         }
                     },
@@ -360,7 +411,7 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                     displayName = dest.displayName,
                     onNavSelect = { idx ->
                         when (idx) {
-                            0 -> { stack = listOf(Dest.Home(dest.displayName)) }
+                            0 -> resetTo(Dest.Home(dest.displayName))
                             1 -> push(Dest.Browse(BrowseKind.MOVIES, dest.displayName))
                             2 -> push(Dest.Browse(BrowseKind.SERIES, dest.displayName))
                             4 -> push(Dest.Browse(BrowseKind.MY_LIST, dest.displayName))
@@ -395,6 +446,21 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                             else -> push(Dest.MovieDetail(card.id, dest.displayName))
                         }
                     },
+                    displayName = dest.displayName,
+                    discoverAvailable = discoverAvailable,
+                    onNavSelect = { idx ->
+                        when (idx) {
+                            0 -> resetTo(Dest.Home(dest.displayName))
+                            1 -> resetTo(Dest.Browse(BrowseKind.MOVIES, dest.displayName))
+                            2 -> resetTo(Dest.Browse(BrowseKind.SERIES, dest.displayName))
+                            3 -> if (discoverAvailable) resetTo(Dest.Discover(dest.displayName))
+                                 else resetTo(Dest.Browse(BrowseKind.MY_LIST, dest.displayName))
+                            4 -> resetTo(Dest.Browse(BrowseKind.MY_LIST, dest.displayName))
+                            else -> {}
+                        }
+                    },
+                    onProfile = { push(Dest.ProfilePicker) },
+                    onSearch = { push(Dest.Search(dest.displayName)) },
                 )
             }
 
@@ -423,6 +489,21 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                             else -> push(Dest.MovieDetail(card.id, dest.displayName))
                         }
                     },
+                    displayName = dest.displayName,
+                    discoverAvailable = discoverAvailable,
+                    onNavSelect = { idx ->
+                        when (idx) {
+                            0 -> resetTo(Dest.Home(dest.displayName))
+                            1 -> resetTo(Dest.Browse(BrowseKind.MOVIES, dest.displayName))
+                            2 -> resetTo(Dest.Browse(BrowseKind.SERIES, dest.displayName))
+                            3 -> if (discoverAvailable) resetTo(Dest.Discover(dest.displayName))
+                                 else resetTo(Dest.Browse(BrowseKind.MY_LIST, dest.displayName))
+                            4 -> resetTo(Dest.Browse(BrowseKind.MY_LIST, dest.displayName))
+                            else -> {}
+                        }
+                    },
+                    onProfile = { push(Dest.ProfilePicker) },
+                    onSearch = { push(Dest.Search(dest.displayName)) },
                 )
             }
 
@@ -445,7 +526,7 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                         if (newIdx < 0) return@PlayerScreen
                         val newEp = eps[newIdx]
                         val nextEp = eps.getOrNull(newIdx + 1)
-                        stack = stack.dropLast(1) + Dest.Player(
+                        replaceTop(Dest.Player(
                             itemId         = newEp.id,
                             title          = newEp.title,
                             kicker         = newEp.kicker,
@@ -455,7 +536,7 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                             displayName    = dest.displayName,
                             episodes       = eps,
                             currentEpIndex = newIdx,
-                        )
+                        ))
                     },
                 )
             }
@@ -466,7 +547,7 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                     store = store,
                     displayName = dest.displayName,
                     onSkinChange = { themeState.skin = it },
-                    onSignOut = { stack = listOf(Dest.Pairing) },
+                    onSignOut = { resetTo(Dest.Pairing) },
                     onBack = { pop() },
                 )
             }
