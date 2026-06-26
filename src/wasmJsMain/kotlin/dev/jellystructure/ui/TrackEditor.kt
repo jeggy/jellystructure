@@ -475,11 +475,39 @@ fun injectTrackEditorStyles() {
 }
 
 /** ISO-639-1 → ISO-3166-1-alpha-2 for the pagebar audio flag strip (Phase 87, shared with MediaDetail). */
+// ISO 639-1 (2-letter) AND ISO 639-2/B + /T (3-letter) → ISO 3166-1-alpha-2 country code.
 private val TRACK_LANG_CC = mapOf(
-    "en" to "gb", "fr" to "fr", "de" to "de", "es" to "es", "da" to "dk",
-    "fo" to "fo", "is" to "is", "no" to "no", "sv" to "se", "fi" to "fi",
-    "nl" to "nl", "it" to "it", "pt" to "pt", "pl" to "pl", "ru" to "ru",
-    "ja" to "jp", "ko" to "kr", "zh" to "cn", "ar" to "sa", "hi" to "in",
+    "en" to "gb", "eng" to "gb",
+    "fr" to "fr", "fra" to "fr", "fre" to "fr",
+    "de" to "de", "deu" to "de", "ger" to "de",
+    "es" to "es", "spa" to "es",
+    "da" to "dk", "dan" to "dk",
+    "fo" to "fo", "fao" to "fo",
+    "is" to "is", "isl" to "is", "ice" to "is",
+    "no" to "no", "nor" to "no", "nob" to "no", "nno" to "no",
+    "sv" to "se", "swe" to "se",
+    "fi" to "fi", "fin" to "fi",
+    "nl" to "nl", "nld" to "nl", "dut" to "nl",
+    "it" to "it", "ita" to "it",
+    "pt" to "pt", "por" to "pt",
+    "pl" to "pl", "pol" to "pl",
+    "ru" to "ru", "rus" to "ru",
+    "ja" to "jp", "jpn" to "jp",
+    "ko" to "kr", "kor" to "kr",
+    "zh" to "cn", "zho" to "cn", "chi" to "cn",
+    "ar" to "sa", "ara" to "sa",
+    "hi" to "in", "hin" to "in",
+    "cs" to "cz", "ces" to "cz", "cze" to "cz",
+    "tr" to "tr", "tur" to "tr",
+    "uk" to "ua", "ukr" to "ua",
+    "el" to "gr", "ell" to "gr", "gre" to "gr",
+    "hu" to "hu", "hun" to "hu",
+    "ro" to "ro", "ron" to "ro", "rum" to "ro",
+    "sk" to "sk", "slk" to "sk", "slo" to "sk",
+    "hr" to "hr", "hrv" to "hr",
+    "he" to "il", "heb" to "il",
+    "th" to "th", "tha" to "th",
+    "vi" to "vn", "vie" to "vn",
 )
 
 /**
