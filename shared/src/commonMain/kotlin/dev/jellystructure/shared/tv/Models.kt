@@ -214,6 +214,7 @@ data class MovieDetail(
     val cast: List<Person>,
     val related: List<MediaCard>,
     val playback: PlaybackState,
+    @SerialName("audio_languages") val audioLanguages: List<String> = emptyList(),
 )
 
 @Serializable
@@ -224,6 +225,7 @@ data class SeriesDetail(
     val cast: List<Person>,
     val related: List<MediaCard>,
     val progress: SeriesProgress,
+    @SerialName("audio_languages") val audioLanguages: List<String> = emptyList(),
 )
 
 // ─── Search ───────────────────────────────────────────────────────────────────
