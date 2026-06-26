@@ -1686,13 +1686,18 @@ private fun wireEpisodeEditing(item: MediaItem, container: Element, scope: Corou
             val epFilename = btn.getAttribute("data-ep-filename") ?: continue
             val ep = item.episodes.find { it.filename == epFilename } ?: continue
             btn.addEventListener("click") { _ ->
-                openEpisodeTrackModal(ep, item.id, scope)
+                openEpisodeTrackModal(ep, item.id, container, scope)
             }
         }
     }
 }
 
-private fun openEpisodeTrackModal(ep: dev.jellystructure.model.Episode, mediaId: String, scope: CoroutineScope) {
+private fun openEpisodeTrackModal(
+    ep: dev.jellystructure.model.Episode,
+    mediaId: String,
+    container: Element,
+    scope: CoroutineScope,
+) {
     document.getElementById("te-modal-back")?.remove()
     injectTrackEditorStyles()
 
@@ -1723,7 +1728,19 @@ private fun openEpisodeTrackModal(ep: dev.jellystructure.model.Episode, mediaId:
         if ((e as? org.w3c.dom.events.KeyboardEvent)?.key == "Escape") close()
     }
 
-    wireUnifiedTrackEditor("te", ep.tracks, mediaId, ep.filename, scope, ep.resolvedLanguage, ep.path)
+    wireUnifiedTrackEditor(
+        prefix = "te",
+        tracks = ep.tracks,
+        mediaId = mediaId,
+        epFilename = ep.filename,
+        scope = scope,
+        resolvedLanguage = ep.resolvedLanguage,
+        filePath = ep.path,
+        postApply = {
+            close()
+            scope.launch { renderMediaDetail(container, scope, mediaId) }
+        },
+    )
 }
 
 private suspend fun loadHistory(id: String, container: Element? = null, scope: CoroutineScope? = null) {
