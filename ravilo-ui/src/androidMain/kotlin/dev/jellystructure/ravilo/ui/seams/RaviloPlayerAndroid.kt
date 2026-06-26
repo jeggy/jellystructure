@@ -12,7 +12,10 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
 import androidx.media3.common.Player
 import androidx.media3.common.TrackSelectionOverride
+import androidx.media3.common.VideoSize
 import androidx.media3.exoplayer.ExoPlayer
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import androidx.media3.session.MediaSession
 import dev.jellystructure.ravilo.ui.RaviloAppContext
 import dev.jellystructure.shared.tv.AudioTrack
@@ -40,7 +43,12 @@ actual class RaviloPlayer actual constructor() {
         // from MKV containers by default; no custom ExtractorsFactory is needed.
         val builder = ExoPlayer.Builder(ctx)
         RaviloPlayerEngine.renderersFactoryProvider?.invoke(ctx)?.let { builder.setRenderersFactory(it) }
-        builder.build()
+        builder.build().also { player ->
+            // R77: capture video geometry so PlayerVideoSurface can apply the correct aspect ratio.
+            player.addListener(object : Player.Listener {
+                override fun onVideoSizeChanged(size: VideoSize) { _videoSize.value = size }
+            })
+        }
     }
 
     // R44: a MediaSession bound to the player so the OS routes hardware transport keys (Play/Pause/
@@ -51,6 +59,10 @@ actual class RaviloPlayer actual constructor() {
         MediaSession.Builder(ctx, exo).setId("ravilo-player").build()
     }
     private val mediaSession: MediaSession by mediaSessionLazy
+
+    // R77: video geometry for automatic aspect-ratio correction in PlayerVideoSurface.
+    private val _videoSize = MutableStateFlow(VideoSize.UNKNOWN)
+    val videoSize: StateFlow<VideoSize> = _videoSize
 
     // R46: server-derived audio metadata (Jellyfin DisplayTitle, in container audio-stream order).
     private var audioMeta: List<AudioTrack> = emptyList()

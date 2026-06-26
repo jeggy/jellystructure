@@ -15,7 +15,9 @@ import org.w3c.dom.HTMLVideoElement
  */
 actual class RaviloPlayer actual constructor() {
     private val video: HTMLVideoElement = (document.createElement("video") as HTMLVideoElement).also { v ->
-        v.style.cssText = "position:fixed;top:0;left:0;width:100%;height:100%;background:#000;z-index:0"
+        // R77: object-fit:contain preserves the video's native DAR, letterboxing/pillarboxing
+        // within the viewport. background:#000 fills the bars.
+        v.style.cssText = "position:fixed;top:0;left:0;width:100%;height:100%;object-fit:contain;background:#000;z-index:0"
         v.controls = false
         document.body?.appendChild(v)
     }
