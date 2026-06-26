@@ -12,7 +12,8 @@ CREATE TABLE media (
     tmdb_id INTEGER,
     poster_path TEXT,
     episode_count INTEGER NOT NULL DEFAULT 0,
-    search_text TEXT NOT NULL DEFAULT ''
+    search_text TEXT NOT NULL DEFAULT '',
+    last_checked INTEGER
 );
 
 CREATE INDEX media_kind ON media(kind);
@@ -20,8 +21,8 @@ CREATE INDEX media_scanned_at ON media(scanned_at);
 CREATE INDEX media_search_text ON media(search_text);
 
 upsert:
-INSERT OR REPLACE INTO media(id, json, kind, title, year, studio, network, issue_count, language_mix, scanned_at, tmdb_id, poster_path, episode_count, search_text)
-VALUES (:id, :json, :kind, :title, :year, :studio, :network, :issue_count, :language_mix, :scanned_at, :tmdb_id, :poster_path, :episode_count, :search_text);
+INSERT OR REPLACE INTO media(id, json, kind, title, year, studio, network, issue_count, language_mix, scanned_at, tmdb_id, poster_path, episode_count, search_text, last_checked)
+VALUES (:id, :json, :kind, :title, :year, :studio, :network, :issue_count, :language_mix, :scanned_at, :tmdb_id, :poster_path, :episode_count, :search_text, :last_checked);
 
 getById:
 SELECT json FROM media WHERE id = :id;
@@ -56,6 +57,12 @@ SELECT id FROM media;
 
 countEmptySearchText:
 SELECT COUNT(*) FROM media WHERE search_text = '';
+
+allLastChecked:
+SELECT id, last_checked FROM media WHERE last_checked IS NOT NULL;
+
+touchLastChecked:
+UPDATE media SET last_checked = :last_checked WHERE id = :id;
 
 updateSearchText:
 UPDATE media SET search_text = :search_text WHERE id = :id;

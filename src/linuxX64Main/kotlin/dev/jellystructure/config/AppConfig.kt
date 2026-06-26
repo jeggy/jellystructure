@@ -14,6 +14,34 @@ data class AppConfig(
     val sonarr: ArrConfig? = null,
     val acquisition: AcquisitionConfig? = null,
     val discover: DiscoverFeedConfig? = null,
+    // Phase 91 — scan pipeline
+    @SerialName("scan_schedule") val scanSchedule: String = "",
+    val scan: ScanConfig = ScanConfig(),
+)
+
+// Phase 91 — scan pipeline config: [[scan.pipeline]] array of steps
+@Serializable
+data class ScanConfig(
+    val pipeline: List<PipelineStep> = emptyList(),
+)
+
+@Serializable
+data class PipelineStep(
+    val step: String = "",
+    val enabled: Boolean = true,
+    // scan_files options
+    @SerialName("recheck_unchanged") val recheckUnchanged: Boolean = false,
+    @SerialName("refresh_this_year") val refreshThisYear: String = "weekly",
+    @SerialName("refresh_1_5y") val refresh1To5y: String = "monthly",
+    @SerialName("refresh_older") val refreshOlder: String = "6months",
+    // pull_tmdb / download_artwork options
+    val scope: String = "missing",  // missing|all
+    // write_nfo options
+    val overwrite: Boolean = false,
+    // wait options
+    val minutes: Int = 5,
+    // notify options
+    val on: String = "summary",  // summary|changes|errors
 )
 
 // Phase 57 — chart/Discover feed ingestion. Absent or enabled=false ⇒ no ingestion.
