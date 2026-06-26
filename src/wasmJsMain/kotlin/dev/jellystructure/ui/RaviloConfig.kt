@@ -905,6 +905,7 @@ private fun renderChannels(container: Element) {
           ${channelChipHtml(c)}
           <input class="input" style="width:140px" placeholder="Name" value="${c.name.htmlEsc()}" data-ch-name="$i">
           <span class="badge" style="white-space:nowrap">${summary.htmlEsc()}</span>
+          <span id="ch-count-$i" class="badge" style="white-space:nowrap;font-size:.75rem;color:var(--ink-soft)">…</span>
           ${if (c.rows?.mode == "custom") """<span class="badge" style="white-space:nowrap;background:var(--fill-2);font-size:.7rem">▤ custom rows</span>""" else ""}
           <span class="spacer" style="flex:1"></span>
           <button class="btn sm ghost" data-ch-edit="$i" title="Edit channel button + filter">✎ Edit</button>
@@ -924,6 +925,21 @@ private fun renderChannels(container: Element) {
           <button id="ch-workbench" class="btn sm ghost" style="margin-top:6px">⚙ Build with workbench</button>
         </div>
     """.trimIndent()
+    // R73: async per-channel item-match count badges — list paints immediately, badges fill in.
+    val scope = rcScope
+    if (scope != null) {
+        currentConfig.channels.forEachIndexed { i, c ->
+            scope.launch {
+                val conds = if (c.conditions.isNotEmpty()) wbCondsFrom(c.conditions) else legacyToConds(c)
+                val match = c.match.name
+                val page = countMatching(match, include = "all", conds, viewer = currentUserId)
+                val total = page?.total ?: 0
+                val approx = !exactlyServable(match, conds)
+                val badge = sect.querySelector("#ch-count-$i") as? HTMLElement ?: return@launch
+                badge.innerHTML = if (approx) "≈ $total items" else "$total items"
+            }
+        }
+    }
     sect.querySelector("#ch-add")?.addEventListener("click") { _ ->
         structural(container, { currentConfig = currentConfig.copy(channels = currentConfig.channels + ChannelConfig(id = genId("ch"))) }, ::renderChannels)
     }
