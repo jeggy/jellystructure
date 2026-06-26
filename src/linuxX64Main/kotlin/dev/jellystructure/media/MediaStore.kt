@@ -66,6 +66,23 @@ class MediaStore(private val db: JellystructureDb, private val jsTagStore: JsTag
         }
     }
 
+    fun deleteMissing(presentIds: Set<String>) {
+        val allIds = db.mediaQueries.allIds().executeAsList()
+        val toDelete = allIds.filter { it !in presentIds }
+        if (toDelete.isNotEmpty()) {
+            db.transaction {
+                toDelete.forEach { id ->
+                    allItemsCache    = null
+                    peopleIndexCache = null
+                    jellyfinIdIndex  = null
+                    libraryVersion++
+                    db.mediaQueries.deleteById(id)
+                }
+            }
+            println("[INFO] MediaStore: deleted ${toDelete.size} items no longer in scan")
+        }
+    }
+
     suspend fun update(rawItems: List<MediaItem>) {
         val newItems = disambiguateIds(rawItems)
         // Snapshot existing titlesByLang before deleting so a full rescan never erases

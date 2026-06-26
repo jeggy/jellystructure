@@ -49,3 +49,7 @@ fun createDatabase(dbFile: String): JellystructureDb {
     )
     return JellystructureDb(NativeSqliteDriver(config, maxReaderConnections = 4))
 }
+
+fun JellystructureDb.walCheckpoint() {
+    mediaQueries.walCheckpoint()
+}

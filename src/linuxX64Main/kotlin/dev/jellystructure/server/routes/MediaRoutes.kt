@@ -1727,8 +1727,10 @@ internal suspend fun runScan(
         return
     }
 
-    // Post-scan cleanup — runs only after all workers have finished
-    store.update(allItems)
+    // Post-scan cleanup: delete items no longer returned by the scan. Each item was already
+    // written (addOrUpdate) as it was discovered, so we only need to remove the now-missing
+    // ones — no full re-encode of the whole library (Phase 90 FR-PF3).
+    store.deleteMissing(allItems.map { it.id }.toSet())
 
     // Phase 53-D: report Jellyfin items that were returned but produced no stored item, with reasons,
     // so silent drops (file-not-found, unmatched library, …) are visible — not just a buried per-item warn.
