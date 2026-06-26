@@ -36,6 +36,23 @@ data class ArrConfig(
 )
 
 @Serializable
+data class PipelineStep(
+    val step: String = "",
+    val enabled: Boolean = true,
+    @SerialName("recheck_unchanged") val recheckUnchanged: Boolean = false,
+    @SerialName("refresh_this_year") val refreshThisYear: String = "weekly",
+    @SerialName("refresh_1_5y") val refresh1To5y: String = "monthly",
+    @SerialName("refresh_older") val refreshOlder: String = "6months",
+    val scope: String = "missing",
+    val overwrite: Boolean = false,
+    val minutes: Int = 5,
+    val on: String = "summary",
+)
+
+@Serializable
+data class ScanConfig(val pipeline: List<PipelineStep> = emptyList())
+
+@Serializable
 data class AppConfig(
     @SerialName("api_keys") val apiKeys: ApiKeys = ApiKeys(),
     @SerialName("language_rules") val languageRules: LanguageRules = LanguageRules(),
@@ -44,6 +61,8 @@ data class AppConfig(
     val qbittorrent: QBittorrentConfig? = null,
     val radarr: ArrConfig? = null,
     val sonarr: ArrConfig? = null,
+    @SerialName("scan_schedule") val scanSchedule: String = "",
+    val scan: ScanConfig = ScanConfig(),
 )
 
 @Serializable
