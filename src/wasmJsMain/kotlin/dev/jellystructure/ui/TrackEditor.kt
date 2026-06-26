@@ -3,6 +3,7 @@
 package dev.jellystructure.ui
 
 import dev.jellystructure.api.MediaApi
+import dev.jellystructure.media.TrackCommandBuilder
 import dev.jellystructure.model.Track
 import dev.jellystructure.model.TrackKind
 import dev.jellystructure.resolver.LanguageResolver
@@ -23,10 +24,11 @@ internal data class TrkModel(
     var lang: String?,
     var def: Boolean,
     var forced: Boolean,
+    val streamIndex: Int = -1,
 )
 
-private fun Track.toModel() = TrkModel(specifier, kind, codec, title, language, default, forced)
-private fun TrkModel.copy() = TrkModel(sp, kind, codec, title, lang, def, forced)
+private fun Track.toModel() = TrkModel(specifier, kind, codec, title, language, default, forced, streamIndex)
+private fun TrkModel.copy() = TrkModel(sp, kind, codec, title, lang, def, forced, streamIndex)
 
 // ── JS helpers (must be top-level for WASM interop) ──────────────────────────
 
@@ -178,6 +180,10 @@ fun buildUnifiedTrackEditorShell(prefix: String, filePath: String): String {
               <button id="$prefix-apply" class="btn sm">Apply</button>
             </div>
             <div id="$prefix-pending-list" style="display:flex;flex-direction:column;gap:6px;"></div>
+          <div style="margin-top:12px;">
+            <div class="tiny muted" style="margin-bottom:5px;letter-spacing:.05em;text-transform:uppercase;font-size:.65rem;font-weight:600;">Command preview</div>
+            <pre id="$prefix-cmd" style="margin:0;background:var(--fill-2);border:1px solid var(--line);border-radius:var(--radius-s);padding:10px 12px;font-family:'JetBrains Mono',monospace;font-size:.72rem;line-height:1.6;overflow-x:auto;white-space:pre;color:var(--ink-soft);max-height:200px;overflow-y:auto;"></pre>
+          </div>
           </div>
         </div>
     """.trimIndent()
@@ -204,6 +210,7 @@ fun wireUnifiedTrackEditor(
     scope: CoroutineScope,
     resolvedLanguage: String?,
     filePath: String,
+    postApply: (() -> Unit)? = null,
 ) {
     val audioModel = tracks.filter { it.kind == TrackKind.AUDIO }.map { it.toModel() }.toMutableList()
     val subsModel = tracks.filter { it.kind == TrackKind.SUBTITLE }.map { it.toModel() }.toMutableList()
@@ -310,6 +317,7 @@ fun wireUnifiedTrackEditor(
     val pendingEl  = document.getElementById("$prefix-pending") as? HTMLElement
     val pendingBadge = document.getElementById("$prefix-pending-badge") as? HTMLElement
     val pendingList  = document.getElementById("$prefix-pending-list") as? HTMLElement
+    val cmdEl = document.getElementById("$prefix-cmd") as? HTMLElement
 
     fun pendingRow(desc: String, tool: String, slow: Boolean): String {
         val toolLabel = if (slow) "$tool · slow (remux)" else "$tool · ~40 ms"
@@ -318,6 +326,61 @@ fun wireUnifiedTrackEditor(
             <span>${desc.esc()}</span>
             <span style="white-space:nowrap;font-family:'JetBrains Mono',monospace;font-size:.7rem;color:$toolColor;flex:none;">${toolLabel.esc()}</span>
           </div>"""
+    }
+
+    // Generates the exact shell commands that Apply will run — mirrors applyChanges() step-by-step.
+    // Uses TrackCommandBuilder (shared with the backend runners) so the preview is always faithful.
+    fun buildCommandText(): String {
+        val cmds = mutableListOf<String>()
+        // 1. Language changes — one command per changed track (audio then subs)
+        for (trk in audioModel) {
+            val orig = audioOriginal.find { it.sp == trk.sp } ?: continue
+            if (trk.lang != orig.lang && !trk.lang.isNullOrBlank()) {
+                val cmd = if (isMkv) TrackCommandBuilder.mkvLanguage(filePath, trk.streamIndex, trk.lang!!)
+                          else       TrackCommandBuilder.ffmpegLanguage(filePath, trk.streamIndex, trk.lang!!)
+                cmd?.let { cmds += it }
+            }
+        }
+        for (trk in subsModel) {
+            val orig = subsOriginal.find { it.sp == trk.sp } ?: continue
+            if (trk.lang != orig.lang && !trk.lang.isNullOrBlank()) {
+                val cmd = if (isMkv) TrackCommandBuilder.mkvLanguage(filePath, trk.streamIndex, trk.lang!!)
+                          else       TrackCommandBuilder.ffmpegLanguage(filePath, trk.streamIndex, trk.lang!!)
+                cmd?.let { cmds += it }
+            }
+        }
+        // 2. Audio default change
+        val origDefAudioSp = audioOriginal.firstOrNull { it.def }?.sp
+        val newDefAudio = audioModel.firstOrNull { it.def }
+        if (origDefAudioSp != newDefAudio?.sp && newDefAudio != null) {
+            val sameIdx = audioModel.map { it.streamIndex }
+            cmds += if (isMkv) TrackCommandBuilder.mkvDefault(filePath, newDefAudio.streamIndex, sameIdx)
+                    else       TrackCommandBuilder.ffmpegDefault(filePath, newDefAudio.streamIndex, sameIdx, "a")
+        }
+        // 3. Subtitle default change
+        val origDefSubSp = subsOriginal.firstOrNull { it.def }?.sp
+        val newDefSub = subsModel.firstOrNull { it.def }
+        if (origDefSubSp != newDefSub?.sp && newDefSub != null) {
+            val sameIdx = subsModel.map { it.streamIndex }
+            cmds += if (isMkv) TrackCommandBuilder.mkvDefault(filePath, newDefSub.streamIndex, sameIdx)
+                    else       TrackCommandBuilder.ffmpegDefault(filePath, newDefSub.streamIndex, sameIdx, "s")
+        }
+        // 4. Forced flag changes (MKV only — one command per changed track, clears all others)
+        if (isMkv) {
+            for (trk in subsModel) {
+                val orig = subsOriginal.find { it.sp == trk.sp } ?: continue
+                if (trk.forced != orig.forced) {
+                    val forcedIdx = if (trk.forced) trk.streamIndex else -1
+                    cmds += TrackCommandBuilder.mkvForced(filePath, forcedIdx, subsModel.map { it.streamIndex })
+                }
+            }
+        }
+        // 5. Reorder — ffmpeg for both MKV and non-MKV (mkvpropedit can't reorder)
+        if (audioModel.map { it.sp } != audioOriginal.map { it.sp })
+            cmds += TrackCommandBuilder.ffmpegReorder(filePath, audioModel.map { it.streamIndex }, isAudio = true)
+        if (subsModel.map { it.sp } != subsOriginal.map { it.sp })
+            cmds += TrackCommandBuilder.ffmpegReorder(filePath, subsModel.map { it.streamIndex }, isAudio = false)
+        return cmds.joinToString("\n\n")
     }
 
     fun renderPending() {
@@ -386,6 +449,7 @@ fun wireUnifiedTrackEditor(
             pendEl.style.display = "block"
             pendingBadge?.textContent = "${rows.size} pending ${if (rows.size == 1) "change" else "changes"}"
             pendingList?.innerHTML = rows.joinToString("")
+            cmdEl?.textContent = buildCommandText()
         }
     }
 
@@ -482,6 +546,8 @@ fun wireUnifiedTrackEditor(
 
             applyBtn.removeAttribute("disabled")
             applyBtn.textContent = "Apply"
+
+            if (!anyError) postApply?.invoke()
         }
     }
 

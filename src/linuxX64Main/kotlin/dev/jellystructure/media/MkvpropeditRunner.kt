@@ -1,7 +1,6 @@
 package dev.jellystructure.media
 
 import dev.jellystructure.log.Logger
-import dev.jellystructure.resolver.LanguageResolver
 import kotlinx.cinterop.ByteVar
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.allocArray
@@ -12,39 +11,15 @@ import platform.posix.pclose
 import platform.posix.popen
 
 object MkvpropeditRunner {
-    // mkvpropedit uses 1-based track numbers matching the overall stream index from ffprobe.
-    private fun trackArg(streamIndex: Int) = "track:@${streamIndex + 1}"
 
-    suspend fun setLanguage(filePath: String, streamIndex: Int, language: String): Boolean {
-        // Matroska's legacy Language element is ISO 639-2; a 2-letter value is fragile. Write the
-        // 3-letter code and also the BCP-47 language-ietf tag so modern players + re-probe agree.
-        val iso3 = LanguageResolver.toIso6392(language) ?: return false
-        val bcp47 = LanguageResolver.normalize(language)
-        val escaped = filePath.replace("'", "'\\''")
-        val cmd = "mkvpropedit '$escaped' --edit ${trackArg(streamIndex)} " +
-            "--set language=${iso3.replace("'", "")} --set language-ietf=${bcp47.replace("'", "")}"
-        return runCommand(cmd)
-    }
+    suspend fun setLanguage(filePath: String, streamIndex: Int, language: String): Boolean =
+        runCommand(TrackCommandBuilder.mkvLanguage(filePath, streamIndex, language) ?: return false)
 
-    suspend fun setForced(filePath: String, forcedStreamIndex: Int, sameTypeIndices: List<Int>): Boolean {
-        val escaped = filePath.replace("'", "'\\''")
-        val parts = sameTypeIndices.map { idx ->
-            val flag = if (idx == forcedStreamIndex) 1 else 0
-            "--edit ${trackArg(idx)} --set flag-forced=$flag"
-        }.joinToString(" ")
-        val cmd = "mkvpropedit '$escaped' $parts"
-        return runCommand(cmd)
-    }
+    suspend fun setForced(filePath: String, forcedStreamIndex: Int, sameTypeIndices: List<Int>): Boolean =
+        runCommand(TrackCommandBuilder.mkvForced(filePath, forcedStreamIndex, sameTypeIndices))
 
-    suspend fun setDefault(filePath: String, defaultStreamIndex: Int, sameTypeIndices: List<Int>): Boolean {
-        val escaped = filePath.replace("'", "'\\''")
-        val parts = sameTypeIndices.map { idx ->
-            val flag = if (idx == defaultStreamIndex) 1 else 0
-            "--edit ${trackArg(idx)} --set flag-default=$flag"
-        }.joinToString(" ")
-        val cmd = "mkvpropedit '$escaped' $parts"
-        return runCommand(cmd)
-    }
+    suspend fun setDefault(filePath: String, defaultStreamIndex: Int, sameTypeIndices: List<Int>): Boolean =
+        runCommand(TrackCommandBuilder.mkvDefault(filePath, defaultStreamIndex, sameTypeIndices))
 
     @OptIn(ExperimentalForeignApi::class)
     private suspend fun runCommand(cmd: String): Boolean {
