@@ -8,6 +8,7 @@ import dev.jellystructure.api.RaviloApi
 import dev.jellystructure.api.TrackFacets
 import dev.jellystructure.model.MediaKind
 import dev.jellystructure.shared.tv.ChannelLogo
+import dev.jellystructure.shared.tv.Condition
 import kotlin.js.JsString
 import kotlinx.browser.document
 import kotlinx.coroutines.CoroutineScope
@@ -360,40 +361,25 @@ private fun wbRenderScopeBanner() {
     """.trimIndent()
 }
 
-/** R73: reusable count helper — maps a WbCond stack to /api/media and returns the result page.
- *  Caller can request pageSize=1 for a cheap count-only call or larger for a preview grid. */
+/** R73/R74: reusable count helper — sends condition stack to /api/media and returns the result page.
+ *  R74: routes through ConditionEvaluator server-side so ANY ORs correctly. Caller can pass
+ *  pageSize=1 for a cheap count-only call or larger for a preview grid. */
 internal suspend fun countMatching(
     match: String,
     include: String,
     conds: List<WbCond>,
     viewer: String? = null,
     pageSize: Int = 1,
-) = run {
-    fun vals(f: String) = conds.filter { it.facet == f && it.op == "is_any_of" }.flatMap { it.values }.distinct()
-    val audioLangsAll = vals("audio_language")
-    val untagged = audioLangsAll.contains("untagged")
-    val audioLangs = audioLangsAll.filter { it != "untagged" }
-    val heroVals = conds.filter { it.facet == "hero_item" }.flatMap { it.values }
-    MediaApi.list(
+): dev.jellystructure.model.MediaPage? {
+    val conditions = conds.filter { it.values.isNotEmpty() || it.facet == "track_title" }
+        .map { Condition(it.facet, it.op, it.values.toList()) }
+    return MediaApi.list(
         kind = when (include) { "movies" -> MediaKind.MOVIE; "series" -> MediaKind.TV_SHOW; else -> null },
         pageSize = pageSize,
-        studios = vals("studio"),
-        networks = vals("network"),
-        genres = vals("genre"),
-        tags = vals("tag"),
-        audioLangs = audioLangs,
-        audioCodec = vals("audio_codec").firstOrNull(),
-        trackTitle = conds.firstOrNull { it.facet == "track_title" && it.op == "contains" }?.values?.firstOrNull(),
-        untaggedAudio = untagged,
-        heroItem = if (heroVals.contains("not_featured")) "not_featured" else if (heroVals.contains("featured")) "featured" else null,
         viewer = viewer,
+        match = match,
+        conditions = conditions,
     )
-}
-
-/** Whether a condition set can be served exactly by /api/media (ALL mode, positive ops only). */
-internal fun exactlyServable(match: String, conds: List<WbCond>): Boolean {
-    if (match == "ANY") return false
-    return conds.none { it.op == "is_none_of" || it.op == "not_contains" }
 }
 
 private fun wbRefreshPreview() {
@@ -402,11 +388,11 @@ private fun wbRefreshPreview() {
     countEl?.innerHTML = """<span class="muted tiny">Computing…</span>"""
     scope.launch {
         // R60: union base (channel) conditions with row conditions for the live count/preview.
+        // R74: send match + raw conditions so ANY ORs correctly on the server.
         val allConds = wbConds + wbBaseConds
         val page = countMatching(wbMatch, wbInclude, allConds, viewer = wbViewer, pageSize = 18)
-        val approx = !wbExactlyServable()
         val total = page?.total ?: 0
-        countEl?.innerHTML = """<b>${if (approx) "≈ " else ""}$total title(s) match</b>${if (approx) """ <span class="tiny muted">— some conditions (none-of / not-contains / ANY) are evaluated on the TV</span>""" else ""}"""
+        countEl?.innerHTML = """<b>$total title(s) match</b>"""
         val prev = document.getElementById("wb-preview") as? HTMLElement
         prev?.innerHTML = (page?.items ?: emptyList()).joinToString("") { m ->
             val img = if (!m.posterPath.isNullOrBlank()) """<img src="https://image.tmdb.org/t/p/w185${m.posterPath}" alt="">""" else """<div class="wb-noimg">${m.title.take(2).esc()}</div>"""
