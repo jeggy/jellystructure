@@ -847,10 +847,24 @@ fun Route.mediaRoutes(
                     val newTracks = FfprobeRunner.probe(ep.path)
                     val newIssue = newTracks.count { (it.kind == TrackKind.AUDIO || it.kind == TrackKind.SUBTITLE) && it.language == null }
                     val updatedEpisodes = item.episodes.toMutableList()
-                    updatedEpisodes[epIdx] = ep.copy(tracks = newTracks, issueCount = newIssue)
+                    // Re-derive episode resolvedLanguage if the changed track is audio (same as reorder path).
+                    val epResolved = if (targetTrack.kind == TrackKind.AUDIO)
+                        primaryAudioLanguage(configStore.current, ep.path, newTracks)
+                    else ep.resolvedLanguage
+                    updatedEpisodes[epIdx] = ep.copy(tracks = newTracks, issueCount = newIssue, resolvedLanguage = epResolved)
+                    // Re-derive series-level resolvedLanguage from episodes' majority primary audio language.
+                    val seriesResolved = if (targetTrack.kind == TrackKind.AUDIO) {
+                        val votes = mutableMapOf<String, Int>()
+                        for (e in updatedEpisodes) {
+                            e.tracks.firstOrNull { it.kind == TrackKind.AUDIO }?.language
+                                ?.let { LanguageResolver.normalize(it) }
+                                ?.let { votes[it] = (votes[it] ?: 0) + 1 }
+                        }
+                        votes.maxByOrNull { it.value }?.key ?: item.resolvedLanguage
+                    } else item.resolvedLanguage
                     // Keep item.tracks in sync with the first episode's tracks so repull language resolution is correct
                     val updatedItemTracks = if (epIdx == 0) newTracks else item.tracks
-                    store.updateOne(item.copy(episodes = updatedEpisodes, tracks = updatedItemTracks))
+                    store.updateOne(item.copy(episodes = updatedEpisodes, tracks = updatedItemTracks, resolvedLanguage = seriesResolved))
 
                     // Verify the tag actually persisted (B/T-agnostic); report disk truth, not the request.
                     val probed = newTracks.firstOrNull { it.specifier == req.specifier }?.language
