@@ -1,14 +1,5 @@
 package dev.jellystructure.ravilo.ui.seams
 
-/** Strip ASS/SSA override tags from VTT cue text (R68). Jellyfin's ASS→VTT extractor leaves
- *  {\an1}, {\pos(…)}, \N, \h etc. as literal text; remove them before rendering. */
-internal fun cleanCueText(text: String): String =
-    text.replace(Regex("""\{\\[^}]*\}"""), "")  // remove {\...} override blocks
-        .replace("""\N""", "\n")                  // hard line break
-        .replace("""\n""", "\n")                  // soft line break
-        .replace("""\h""", " ")                   // hard space
-        .trim()
-
 import android.content.Context
 import android.graphics.Color
 import android.net.Uri
@@ -26,6 +17,14 @@ import androidx.media3.session.MediaSession
 import dev.jellystructure.ravilo.ui.RaviloAppContext
 import dev.jellystructure.shared.tv.AudioTrack
 import dev.jellystructure.shared.tv.SubTrack
+
+/** Strip ASS/SSA override tags from VTT cue text (R68). */
+internal fun cleanCueText(text: String): String =
+    text.replace(Regex("""\{\\[^}]*\}"""), "")
+        .replace("""\N""", "\n")
+        .replace("""\n""", "\n")
+        .replace("""\h""", " ")
+        .trim()
 
 /**
  * Android actual backed by ExoPlayer/Media3.
