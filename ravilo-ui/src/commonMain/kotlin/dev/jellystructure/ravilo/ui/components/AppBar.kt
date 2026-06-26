@@ -99,7 +99,7 @@ fun AppBar(
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .height(60.dp)               // R52: compacter bar (was 72)
+            .height(RaviloDimens.appBarHeight)
             .background(solidBg)         // R62: solid layer (transparent when at top)
             .background(barGradient),    // gradient vignette on top
     ) {
@@ -249,7 +249,7 @@ fun ChannelBar(
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .height(60.dp)
+            .height(RaviloDimens.appBarHeight)
             .background(solidBg)
             .background(barGradient),
     ) {

@@ -155,7 +155,11 @@ private fun HomeLoaded(
         ),
     ) {
     @Suppress("OPT_IN_USAGE")
-    val edgeBringIntoViewSpec = rememberEdgeBringIntoViewSpec(peekDp = 80.dp)
+    // R65: topInsetDp clears the overlay AppBar (60dp) + row-title band (~34dp) so the title
+    // isn't hidden under the bar when D-pad navigates up to the first content row.
+    val edgeBringIntoViewSpec = rememberEdgeBringIntoViewSpec(
+        peekDp = 80.dp, topInsetDp = RaviloDimens.appBarHeight + 34.dp,
+    )
     @OptIn(ExperimentalFoundationApi::class)
     CompositionLocalProvider(LocalBringIntoViewSpec provides edgeBringIntoViewSpec) {
     LazyColumn(

@@ -5,6 +5,7 @@ import androidx.compose.ui.BiasAlignment
 import androidx.compose.ui.unit.dp
 
 object RaviloDimens {
+    val appBarHeight  = 60.dp   // overlay nav bar height (R65 tokenized)
     val screenPadH    = 48.dp   // left/right padding on all screens
     val trackPadH     = 48.dp   // LazyRow contentPadding start/end
     val trackPadV     = 20.dp   // LazyRow contentPadding top/bottom (also covers scale-overflow)
