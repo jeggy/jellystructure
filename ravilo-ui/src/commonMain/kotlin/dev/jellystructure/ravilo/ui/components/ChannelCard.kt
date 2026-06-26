@@ -39,6 +39,7 @@ import dev.jellystructure.ravilo.ui.seams.RemoteImage
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
 import dev.jellystructure.ravilo.ui.theme.SpaceGrotesk
 import dev.jellystructure.shared.tv.ChannelButtonPadding
+import dev.jellystructure.shared.tv.ChannelButtonSpec
 
 private class BrandFill(val colors: List<Color>)
 
@@ -95,11 +96,11 @@ fun ChannelCard(
     // Snappier focus feel (R43).
     val focusSpec = remember { spring<Float>(dampingRatio = 0.8f, stiffness = Spring.StiffnessMedium) }
     val dpSpec    = remember { spring<Dp>(dampingRatio = 0.8f, stiffness = Spring.StiffnessMedium) }
-    val scale         by animateFloatAsState(if (focused) 1.08f else 1f, focusSpec, label = "channelScale")
-    val ringWidth     by animateDpAsState(if (focused) 3.dp else 0.dp, dpSpec, label = "channelBorder")
-    val glowElevation by animateDpAsState(if (focused) 22.dp else 0.dp, dpSpec, label = "channelShadow")
+    val scale         by animateFloatAsState(if (focused) ChannelButtonSpec.FOCUS_SCALE else 1f, focusSpec, label = "channelScale")
+    val ringWidth     by animateDpAsState(if (focused) ChannelButtonSpec.RING_WIDTH_DP.dp else 0.dp, dpSpec, label = "channelBorder")
+    val glowElevation by animateDpAsState(if (focused) ChannelButtonSpec.GLOW_ELEV_DP.dp else 0.dp, dpSpec, label = "channelShadow")
 
-    val cardShape = remember { RoundedCornerShape(13.dp) }
+    val cardShape = remember { RoundedCornerShape(ChannelButtonSpec.CORNER_DP.dp) }
     val brandFill   = remember(brandColor) { parseBrandFill(brandColor) }
     val accentColor = brandFill?.colors?.firstOrNull() ?: colors.accent
     val glowColor   = remember(accentColor) { accentColor.copy(alpha = 0.55f) }
@@ -109,7 +110,7 @@ fun ChannelCard(
     // (density-independent); the authored angle is approximated to the card diagonal.
     val cardGradient = remember(brandFill, accentColor, colors.card) {
         val stops = if (brandFill != null && brandFill.colors.size >= 2) brandFill.colors
-                    else listOf(accentColor.copy(alpha = 0.28f), colors.card)
+                    else listOf(accentColor.copy(alpha = ChannelButtonSpec.SOLID_WASH_ALPHA), colors.card)
         Brush.linearGradient(
             colors = stops,
             start = androidx.compose.ui.geometry.Offset(0f, 0f),
@@ -119,7 +120,7 @@ fun ChannelCard(
     // Subtle sheen overlay
     val sheenGradient = remember {
         Brush.linearGradient(
-            colors = listOf(Color.White.copy(alpha = 0.08f), Color.Transparent),
+            colors = listOf(Color.White.copy(alpha = ChannelButtonSpec.SHEEN_ALPHA), Color.Transparent),
             start = androidx.compose.ui.geometry.Offset(0f, 0f),
             end = androidx.compose.ui.geometry.Offset(Float.POSITIVE_INFINITY, Float.POSITIVE_INFINITY),
         )
@@ -129,7 +130,7 @@ fun ChannelCard(
     // so the lazy list's focused-bounds tracking never chases the scale animation → no viewport jump (R42).
     Box(
         modifier = Modifier
-            .size(224.dp, 94.dp)
+            .size(ChannelButtonSpec.WIDTH_DP.dp, ChannelButtonSpec.HEIGHT_DP.dp)
             .dpadFocusable(
                 focusRequester = focusRequester,
                 onFocused = { focused = true },
@@ -152,12 +153,12 @@ fun ChannelCard(
                 }
                 .background(cardGradient)
                 .drawWithCache {
-                    val radius = CornerRadius(13.dp.toPx())
+                    val radius = CornerRadius(ChannelButtonSpec.CORNER_DP.dp.toPx())
                     onDrawWithContent {
                         drawContent()
                         val bw = ringWidth.toPx()
                         if (bw > 0f) drawRoundRect(
-                            color = accentColor.copy(alpha = 0.7f),
+                            color = accentColor.copy(alpha = ChannelButtonSpec.RING_ALPHA),
                             cornerRadius = radius,
                             style = Stroke(width = bw),
                             topLeft = Offset(bw / 2f, bw / 2f),
@@ -172,14 +173,17 @@ fun ChannelCard(
 
         // Watermark text (bottom-start, behind logo)
         Text(
-            text = name.take(8).uppercase(),
-            color = Color.White.copy(alpha = 0.06f),
-            fontSize = 29.sp,
+            text = name.take(ChannelButtonSpec.WATERMARK_TAKE_CHARS).uppercase(),
+            color = Color.White.copy(alpha = ChannelButtonSpec.WATERMARK_ALPHA),
+            fontSize = ChannelButtonSpec.WATERMARK_SIZE_SP.sp,
             fontWeight = FontWeight.Bold,
             fontFamily = spaceGrotesk,
             modifier = Modifier
                 .align(Alignment.BottomStart)
-                .padding(start = 12.dp, bottom = 8.dp),
+                .padding(
+                    start = ChannelButtonSpec.WATERMARK_PAD_START_DP.dp,
+                    bottom = ChannelButtonSpec.WATERMARK_PAD_BOT_DP.dp,
+                ),
         )
 
         if (logoUrl != null) {
@@ -202,12 +206,12 @@ fun ChannelCard(
             Text(
                 text = name,
                 color = if (focused) colors.text else colors.textSecondary,
-                fontSize = 16.sp,
+                fontSize = ChannelButtonSpec.TEXT_SIZE_SP.sp,
                 fontWeight = FontWeight.SemiBold,
                 textAlign = TextAlign.Center,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(12.dp),
+                modifier = Modifier.padding(ChannelButtonSpec.TEXT_PAD_DP.dp),
             )
         }
         }

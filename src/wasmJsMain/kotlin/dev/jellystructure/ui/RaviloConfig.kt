@@ -8,6 +8,7 @@ import dev.jellystructure.historyPushState
 import dev.jellystructure.historyReplaceState
 import dev.jellystructure.scrollIntoViewSmooth
 import dev.jellystructure.shared.tv.ChannelButtonPadding
+import dev.jellystructure.shared.tv.ChannelButtonSpec
 import dev.jellystructure.shared.tv.ChannelConfig
 import dev.jellystructure.shared.tv.ChannelRowsConfig
 import dev.jellystructure.shared.tv.ChannelStyle
@@ -846,16 +847,37 @@ private fun ChannelConfig.kindAndValue(): Pair<String, String> = when {
     else                  -> "GENRE"   to ""
 }
 
-// R36: the channel-button chip rendered on each config row + in the live preview, from the channel's
-// style/brandColor/logoUrl (brandColor may be a solid color or a CSS linear-gradient).
+// R36/R66: the channel-button chip rendered on each config row + in the live preview.
+// Scaled to a visible chip size while keeping the canonical 224:94 aspect ratio and 13/224 corner ratio.
 private fun channelChipHtml(c: ChannelConfig): String {
-    val fill = c.brandColor?.takeIf { it.isNotBlank() } ?: "linear-gradient(135deg,#3b2a78,#15102e)"
+    val chipW = 110; val chipH = (chipW / ChannelButtonSpec.ASPECT_RATIO).toInt()
+    val chipR = (chipW * ChannelButtonSpec.CORNER_RATIO).toInt()
+    val fill = channelFillCss(c.brandColor)
+    val logoPad = c.paddingLogo?.let { p ->
+        "padding:${p.top}px ${p.right}px ${p.bottom}px ${p.left}px;"
+    } ?: ""
     val inner = if (c.style == ChannelStyle.LOGO && !c.logoUrl.isNullOrBlank()) {
-        """<img src="${c.logoUrl!!.htmlEsc()}" alt="" style="width:100%;height:100%;object-fit:cover">"""
+        // R66: object-fit:contain matches the TV's ContentScale.Fit (no cropping)
+        """<img src="${c.logoUrl!!.htmlEsc()}" alt="" style="width:100%;height:100%;object-fit:${ChannelButtonSpec.LOGO_FIT_CSS};$logoPad">"""
     } else {
         (if (c.style == ChannelStyle.LOGO) c.name.take(3).uppercase() else c.name.take(10).ifEmpty { "Ch" }).htmlEsc()
     }
-    return """<div style="background:$fill;width:84px;height:34px;border-radius:8px;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:.7rem;overflow:hidden;flex:none">$inner</div>"""
+    return """<div style="background:$fill;width:${chipW}px;height:${chipH}px;border-radius:${chipR}px;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:.7rem;overflow:hidden;flex:none;position:relative">$inner</div>"""
+}
+
+/** Convert a channel brandColor (solid hex or linear-gradient) to a CSS background value, with the
+ *  TV's forced-diagonal direction (R66: the TV ignores the authored angle; we match it). */
+private fun channelFillCss(brandColor: String?): String {
+    val t = brandColor?.trim()?.takeIf { it.isNotBlank() }
+        ?: return "linear-gradient(135deg,#3b2a78,#15102e)"
+    if (t.startsWith("linear-gradient", ignoreCase = true)) {
+        // Extract colour stops (skip the angle/direction token); force diagonal 135deg to match TV.
+        val inner = t.substringAfter('(').substringBeforeLast(')')
+        val stops = inner.split(',').map { it.trim() }
+            .filter { it.isNotEmpty() && !it.endsWith("deg") && !it.startsWith("to ") }
+        if (stops.isNotEmpty()) return "linear-gradient(135deg,${stops.joinToString(",")})"
+    }
+    return t // solid hex passes through
 }
 
 // Seed the popup's condition stack from a legacy single-typed channel so editing preserves its filter.
@@ -992,7 +1014,7 @@ private fun openChannelEditorPage(container: Element, scope: CoroutineScope, idx
               </div>
               <div style="margin-top:14px">
                 <label class="tiny muted">Brand fill</label>
-                <div id="ch-color-preview" style="background:$previewBg;width:100%;height:38px;border-radius:8px;margin:6px 0 10px;display:flex;align-items:center;justify-content:center;color:#fff;font-family:var(--font-display,'Space Grotesk',sans-serif);font-weight:700;font-size:.82rem;overflow:hidden">${c.name.take(12).ifEmpty { "Channel" }.htmlEsc()}</div>
+                <div id="ch-color-preview" style="background:$previewBg;width:100%;aspect-ratio:${ChannelButtonSpec.ASPECT_RATIO};border-radius:${(ChannelButtonSpec.CORNER_RATIO * 100).toInt()}%;margin:6px 0 10px;display:flex;align-items:center;justify-content:center;color:#fff;font-family:var(--font-display,'Space Grotesk',sans-serif);font-weight:700;font-size:.82rem;overflow:hidden;max-height:80px">${c.name.take(12).ifEmpty { "Channel" }.htmlEsc()}</div>
                 <div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:10px">$swatchHtml</div>
                 <div style="display:flex;gap:8px;align-items:center">
                   <input type="color" id="ch-color-native" value="$solidHex" title="Custom colour" style="width:36px;height:36px;padding:2px;border:1px solid var(--line);border-radius:8px;cursor:pointer;background:transparent;flex:none">
@@ -1090,8 +1112,8 @@ private fun openChannelEditorPage(container: Element, scope: CoroutineScope, idx
     val nativeInput = container.querySelector("#ch-color-native") as? HTMLInputElement
     fun updateColorPreview(color: String) {
         val preview = container.querySelector("#ch-color-preview") as? HTMLElement ?: return
-        val bg = color.ifBlank { "linear-gradient(135deg,#3b2a78,#15102e)" }
-        preview.setAttribute("style", "background:$bg;width:100%;height:38px;border-radius:8px;margin:6px 0 10px;display:flex;align-items:center;justify-content:center;color:#fff;font-family:var(--font-display,'Space Grotesk',sans-serif);font-weight:700;font-size:.82rem;overflow:hidden")
+        val bg = channelFillCss(color.ifBlank { null })
+        preview.setAttribute("style", "background:$bg;width:100%;aspect-ratio:${ChannelButtonSpec.ASPECT_RATIO};border-radius:${(ChannelButtonSpec.CORNER_RATIO * 100).toInt()}%;margin:6px 0 10px;display:flex;align-items:center;justify-content:center;color:#fff;font-family:var(--font-display,'Space Grotesk',sans-serif);font-weight:700;font-size:.82rem;overflow:hidden;max-height:80px")
         preview.textContent = ((container.querySelector("#ch-ed-name") as? HTMLInputElement)?.value?.take(12) ?: c.name.take(12)).ifEmpty { "Channel" }
     }
     nativeInput?.addEventListener("input") { _ ->
