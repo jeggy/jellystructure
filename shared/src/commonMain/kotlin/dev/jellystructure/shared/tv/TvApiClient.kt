@@ -98,10 +98,11 @@ class TvApiClient(
 
     // ─── Browse + search ─────────────────────────────────────────────────────
 
-    suspend fun browse(kind: String? = null, page: Int = 0, pageSize: Int = 40): SearchResults {
+    suspend fun browse(kind: String? = null, genre: String? = null, page: Int = 0, pageSize: Int = 40): SearchResults {
         val r = client.get("$baseUrl/api/tv/browse") {
             auth()
             if (kind != null) parameter("kind", kind)
+            if (genre != null) parameter("genre", genre)
             parameter("page", page)
             parameter("pageSize", pageSize)
         }
