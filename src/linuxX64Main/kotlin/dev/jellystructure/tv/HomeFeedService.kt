@@ -177,6 +177,20 @@ class HomeFeedService(
                         // When merged, ALL NEWLY_ADDED rows are skipped; a single merged row is injected below
                         continue
                     }
+                    // When not merged and mediaKind=null (the single "newly-all" system row), emit
+                    // two typed rows: Movies then Series. This is what the "Merge newly added" toggle
+                    // controls: false → split, true → one combined (R71).
+                    if (rowCfg.mediaKind == null) {
+                        val movies = all.filter { it.kind == MediaKind.MOVIE }
+                            .sortedByDescending { it.scannedAt }.take(ROW_ITEM_LIMIT)
+                            .mapNotNull { it.toMediaCardOrNull(jellyfinBase, token) }
+                        val series = all.filter { it.kind == MediaKind.TV_SHOW }
+                            .sortedByDescending { it.scannedAt }.take(ROW_ITEM_LIMIT)
+                            .mapNotNull { it.toMediaCardOrNull(jellyfinBase, token) }
+                        if (movies.isNotEmpty()) result.add(Row("${rowCfg.id}-movies", rowCfg.title?.let { "$it — Movies" } ?: "Movies — Newly Added", RowKind.NEWLY_ADDED, movies))
+                        if (series.isNotEmpty()) result.add(Row("${rowCfg.id}-series", rowCfg.title?.let { "$it — Series" } ?: "Series — Newly Added", RowKind.NEWLY_ADDED, series))
+                        continue
+                    }
                     val filtered = when (rowCfg.mediaKind) {
                         "MOVIE"  -> all.filter { it.kind == MediaKind.MOVIE }
                         "SERIES" -> all.filter { it.kind == MediaKind.TV_SHOW }
