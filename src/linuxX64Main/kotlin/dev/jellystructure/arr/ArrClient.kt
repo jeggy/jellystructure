@@ -3,6 +3,7 @@ package dev.jellystructure.arr
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.engine.curl.Curl
+import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.request.delete
 import io.ktor.client.request.get
@@ -52,6 +53,11 @@ data class ArrPing(val ok: Boolean, val detail: String, val version: String? = n
 class ArrClient {
     private val http = HttpClient(Curl) {
         install(ContentNegotiation) { json(Json { ignoreUnknownKeys = true }) }
+        install(HttpTimeout) {
+            connectTimeoutMillis = 5_000
+            socketTimeoutMillis  = 30_000
+            requestTimeoutMillis = 30_000
+        }
     }
 
     private fun base(url: String) = url.trimEnd('/') + "/api/v3"
