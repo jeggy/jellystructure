@@ -132,6 +132,21 @@ code, .mono { font-family: 'JetBrains Mono', ui-monospace, Menlo, monospace; fon
 .tiny { font-size: .8rem; }
 .center-x { text-align: center; }
 hr.dash { border: none; border-top: 1px solid var(--line); margin: 18px 0; }
+/* Settings tabbed layout — one panel visible at a time, ?tab= addressable (Phase 55) */
+.set-section[data-tab] { display: none; }
+.set-section[data-tab].tab-show { display: block; }
+/* Tag cards + colour swatch picker (Phase 82 / FR-TG3) */
+.tag-card { display: flex; align-items: center; gap: 12px; padding: 13px 15px; cursor: pointer; }
+.tag-dot-lg { width: 14px; height: 14px; border-radius: 50%; flex: none; }
+.swatches { display: flex; gap: 8px; flex-wrap: wrap; }
+.swatch { width: 28px; height: 28px; border-radius: 8px; cursor: pointer; border: 2px solid transparent; }
+.swatch.on { border-color: var(--ink); }
+/* Audio-language flag strip — pagebar (Phase 87) + Ravilo detail (R75) */
+.audio-flags { display: inline-flex; align-items: center; gap: 7px; }
+.audio-flags .af-label { font-size: .64rem; text-transform: uppercase; letter-spacing: .07em; color: var(--ink-dim); font-weight: 600; }
+.audio-flags .af-row { display: inline-flex; align-items: center; gap: 5px; }
+.audio-flags .fi { width: 21px; height: 16px; border-radius: 3px; box-shadow: 0 0 0 1px var(--line-2), 0 1px 3px rgba(0,0,0,.3); background-size: cover; background-position: center; }
+.audio-flags .af-more { font-size: .68rem; font-weight: 600; color: var(--ink-soft); background: var(--fill-3); padding: 1px 7px; border-radius: 20px; line-height: 1.5; }
 .pill-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 .scrollbox { max-height: 460px; overflow: auto; }
 
@@ -369,6 +384,53 @@ hr.dash { border: none; border-top: 1px solid var(--line); margin: 18px 0; }
 .sp-opt .nm { font-weight: 600; font-family: 'Space Grotesk', sans-serif; }
 .sp-opt .ec { margin-left: auto; font-size: .76rem; color: var(--ink-soft); }
 .sp-opt .att { width: 8px; height: 8px; border-radius: 50%; background: var(--bad); flex: none; }
+
+/* Phase 76 — cast & crew: person cards, presence matrix, episode scope */
+.cast-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(146px, 1fr)); gap: 14px; }
+.person { position: relative; background: var(--fill-2); border: 1px solid var(--line); border-radius: var(--radius-s); overflow: hidden; cursor: grab; }
+.person.dragging { opacity: .4; }
+.person .ph { position: relative; aspect-ratio: 2/3; display: flex; align-items: center; justify-content: center; font-size: 1.7rem; font-weight: 600; letter-spacing: .03em; }
+.person .pbody { padding: 9px 10px 11px; }
+.person .pname { font-weight: 600; font-size: .9rem; line-height: 1.25; }
+.person .prole { font-size: .8rem; color: var(--ink-soft); margin-top: 2px; cursor: text; min-height: 1.1em; }
+.person .prole:hover { color: var(--ink); }
+.person .prole-input { width: 100%; font-size: .8rem; padding: 2px 5px; }
+.person .prm { position: absolute; top: 6px; right: 6px; width: 22px; height: 22px; border-radius: 50%; background: rgba(8,10,16,.72); color: #fff; border: none; cursor: pointer; opacity: 0; display: flex; align-items: center; justify-content: center; font-size: .7rem; transition: opacity .15s; }
+.person:hover .prm { opacity: 1; }
+.person .prm:hover { background: var(--bad); }
+.person.add { display: flex; align-items: center; justify-content: center; min-height: 130px; border-style: dashed; color: var(--ink-soft); cursor: pointer; font-size: .85rem; }
+.person.add:hover { color: var(--ink); border-color: var(--hi); }
+.person.inh { opacity: .62; cursor: default; }
+.person .gtag { position: absolute; top: 6px; left: 6px; font-size: .56rem; font-family: 'JetBrains Mono', monospace; padding: 1px 6px; border-radius: 5px; background: rgba(45,212,154,.22); color: #7ad7b0; z-index: 1; }
+.person .ph .epb { position: absolute; bottom: 6px; left: 6px; font-size: .58rem; font-family: 'JetBrains Mono', monospace; padding: 1px 6px; border-radius: 5px; background: rgba(8,10,16,.78); color: #9ab6ff; z-index: 1; }
+.person .ph .tag { position: absolute; bottom: 6px; left: 6px; font-size: .58rem; font-family: 'JetBrains Mono', monospace; padding: 1px 6px; border-radius: 5px; background: rgba(8,10,16,.78); color: var(--ink-soft); z-index: 1; }
+.crew-dept { font-size: .72rem; font-weight: 600; color: var(--ink-soft); text-transform: uppercase; letter-spacing: .06em; margin: 12px 0 6px; }
+.crew-row { display: flex; align-items: center; gap: 10px; padding: 7px 0; border-bottom: 1px solid var(--line); }
+.crew-row:last-child { border-bottom: none; }
+.crew-av { width: 32px; height: 32px; border-radius: 50%; flex: none; display: flex; align-items: center; justify-content: center; font-size: .72rem; font-weight: 700; color: #fff; }
+.crew-name { font-weight: 600; font-size: .88rem; }
+.crew-job { font-size: .78rem; color: var(--ink-soft); }
+.crew-rm { margin-left: auto; cursor: pointer; color: var(--ink-dim); font-size: .82rem; padding: 3px 6px; border-radius: 5px; }
+.crew-rm:hover { color: var(--bad); background: rgba(var(--bad-rgb, 231,76,60),.1); }
+.matrix { width: 100%; border-collapse: collapse; font-size: .8rem; }
+.matrix th { font-weight: 600; color: var(--ink-soft); font-size: .72rem; padding: 6px 4px; text-align: center; }
+.matrix td { padding: 6px 4px; text-align: center; border-top: 1px solid var(--line); }
+.matrix td.name { text-align: left; font-weight: 600; white-space: nowrap; padding-right: 12px; }
+.matrix td.name .r { font-weight: 400; color: var(--ink-soft); font-size: .72rem; }
+.matrix td.cell { cursor: pointer; }
+.matrix td.cell:hover { background: var(--hi-soft); }
+.ndot { width: 25px; height: 25px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: .72rem; font-weight: 700; }
+.ndot.on { background: var(--hi); color: #fff; }
+.ndot.g { background: var(--ok); color: #fff; }
+.ndot.off { background: var(--fill-3); color: var(--ink-dim); font-size: .9rem; }
+.dot.on { background: var(--hi); }
+.dot.g { background: var(--ok); }
+.dot.off { background: var(--fill-3); border: 1px solid var(--line-2); }
+.mlegend { display: flex; gap: 16px; font-size: .72rem; color: var(--ink-soft); margin-top: 10px; align-items: center; flex-wrap: wrap; }
+.mlegend span { display: flex; align-items: center; gap: 5px; }
+.eppick { display: flex; flex-wrap: wrap; gap: 5px; }
+.eppick button { padding: 3px 9px; border-radius: 6px; border: 1px solid var(--line); background: var(--fill-2); color: var(--ink-soft); font-size: .78rem; cursor: pointer; }
+.eppick button.on, .eppick button:hover { background: var(--hi-soft); border-color: var(--hi); color: var(--hi); }
 
 /* pair-a-TV modal — ravilo-config.html */
 .pair-back { position: fixed; inset: 0; z-index: 1000; display: none; align-items: center; justify-content: center;
