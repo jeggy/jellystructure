@@ -59,6 +59,7 @@ private var libTrackTitle: String? = null
 private var libAudioCodec: String? = null
 private var libUntaggedAudio: Boolean = false
 private var libTags: List<String> = emptyList()
+private var libMatch: String = "ALL"  // R74: "ALL" | "ANY"
 
 // -- URL helpers ----------------------------------------------------------
 
@@ -83,6 +84,7 @@ private fun parseLibraryUrl() {
     libAudioCodec    = param("audioCodec")
     libUntaggedAudio = param("untaggedAudio") == "true"
     libTags          = param("tags")?.split(",")?.filter { it.isNotBlank() } ?: emptyList()
+    libMatch         = if (param("match") == "ANY") "ANY" else "ALL"
 }
 
 private fun updateLibraryUrl() {
@@ -99,6 +101,7 @@ private fun updateLibraryUrl() {
         if (libNetworks.isNotEmpty()) add("networks=${libNetworks.joinToString(",") { dev.jellystructure.encodeURIComponent(it) }}")
         if (libGenres.isNotEmpty()) add("genres=${libGenres.joinToString(",") { dev.jellystructure.encodeURIComponent(it) }}")
         if (libTags.isNotEmpty()) add("tags=${libTags.joinToString(",") { dev.jellystructure.encodeURIComponent(it) }}")
+        if (libMatch == "ANY") add("match=ANY")
     }
     val newHash = if (params.isEmpty()) "#/library" else "#/library?${params.joinToString("&")}"
     historyReplaceState(newHash)
@@ -841,11 +844,16 @@ private suspend fun loadMore(scope: CoroutineScope, reset: Boolean) {
         var firstSlice = reset
         while (!libEndReached) {
             if (!firstSlice) setLoadMore("""<span class="muted tiny">Loading more…</span>""")
+            // R74: route through condition stack so ANY ORs correctly.
+            val libConds = libConditionsFromState()
             val page = MediaApi.list(
                 libKind, libFilter, libSearch, libSort, libSlice + 1, LIB_SLICE,
                 libStudios, libNetworks, libGenres,
                 libAudioLangs, libTrackTitle, libAudioCodec, libUntaggedAudio,
                 libTags,
+                match = libMatch,
+                conditions = libConds.filter { it.values.isNotEmpty() || it.facet == "track_title" }
+                    .map { dev.jellystructure.shared.tv.Condition(it.facet, it.op, it.values.toList()) },
             )
             if (page == null) {
                 if (firstSlice) grid?.innerHTML =
@@ -953,9 +961,9 @@ private fun libInclude(): String = when (libKind) {
 private fun wireLibraryWorkbench(scope: CoroutineScope) {
     fun open(title: String) = openWorkbench(
         scope = scope, title = title, viewer = null,
-        initialMatch = "ALL", initialInclude = libInclude(), initialConds = libConditionsFromState(),
+        initialMatch = libMatch, initialInclude = libInclude(), initialConds = libConditionsFromState(),
         applyLabel = "Apply to Library",
-        onApply = { _, include, conds -> applyWorkbenchToLibrary(include, conds) },
+        onApply = { match, include, conds -> applyWorkbenchToLibrary(match, include, conds) },
         onSaveAs = { target, match, include, conds -> pickViewerThen(scope) { uid, name -> scope.launch { saveFilterToViewer(uid, name, target, match, include, conds) } } },
     )
     document.getElementById("lib-workbench")?.addEventListener("click") { open("Library filter") }
@@ -963,7 +971,7 @@ private fun wireLibraryWorkbench(scope: CoroutineScope) {
 }
 
 /** Only the is_any_of / contains subset maps to the Library's URL filter; that is what the grid serves. */
-private fun applyWorkbenchToLibrary(include: String, conds: List<WbCond>) {
+private fun applyWorkbenchToLibrary(match: String, include: String, conds: List<WbCond>) {
     fun vals(f: String) = conds.filter { it.facet == f && it.op == "is_any_of" }.flatMap { it.values }.distinct()
     val params = buildList {
         when (include) { "movies" -> add("kind=MOVIE"); "series" -> add("kind=TV_SHOW") }
@@ -976,6 +984,7 @@ private fun applyWorkbenchToLibrary(include: String, conds: List<WbCond>) {
         if (al.contains("untagged")) add("untaggedAudio=true")
         vals("audio_codec").firstOrNull()?.let { add("audioCodec=$it") }
         conds.firstOrNull { it.facet == "track_title" && it.op == "contains" }?.values?.firstOrNull()?.let { add("trackTitle=${dev.jellystructure.encodeURIComponent(it)}") }
+        if (match == "ANY") add("match=ANY")
     }
     App.navigate(if (params.isEmpty()) "/library" else "/library?${params.joinToString("&")}")
 }
