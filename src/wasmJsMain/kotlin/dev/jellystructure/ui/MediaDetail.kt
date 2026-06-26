@@ -2681,7 +2681,7 @@ private fun buildNfoPermFixHtml(path: String): String {
           <p class="tiny muted" style="margin:8px 0 10px;">Run these on your <strong>host machine</strong> (not inside the container).</p>
           <div style="margin-bottom:10px;">
             <div class="tiny muted" style="margin-bottom:4px;"><strong>Step 1</strong> — find the UID:GID that owns the media directory:</div>
-            ${permCopyBlock("stat $p")}
+            ${permCopyBlock("stat '$p'")}
             <div class="tiny muted" style="margin-top:3px;">Look for <code style="$MONO_CODE_STYLE">Uid:</code> and <code style="$MONO_CODE_STYLE">Gid:</code> in the output.</div>
           </div>
           <div style="margin-bottom:10px;">
@@ -2691,7 +2691,7 @@ private fun buildNfoPermFixHtml(path: String): String {
           </div>
           <div>
             <div class="tiny muted" style="margin-bottom:4px;"><strong>Step 2b (alternative)</strong> — change ownership of the media directory on the host:</div>
-            ${permCopyBlock("sudo chown -R 1000:1000 $p", "replace 1000:1000 with UID:GID from Step 1")}
+            ${permCopyBlock("sudo chown -R 1000:1000 '$p'", "replace 1000:1000 with UID:GID from Step 1")}
           </div>
         </div>
     """.trimIndent()
@@ -2701,15 +2701,15 @@ private fun buildNfoPermFixHtml(path: String): String {
           <p class="tiny muted" style="margin:8px 0 10px;">The user running the Jellystructure binary needs write access to the media directory.</p>
           <div style="margin-bottom:10px;">
             <div class="tiny muted" style="margin-bottom:4px;"><strong>Option 1</strong> — change ownership to the current user:</div>
-            ${permCopyBlock("sudo chown -R \$(id -u):\$(id -g) $p")}
+            ${permCopyBlock("sudo chown -R \$(id -u):\$(id -g) '$p'")}
           </div>
           <div style="margin-bottom:10px;">
             <div class="tiny muted" style="margin-bottom:4px;"><strong>Option 2</strong> — add write permission for the directory's group:</div>
-            ${permCopyBlock("sudo chmod -R g+w $p")}
+            ${permCopyBlock("sudo chmod -R g+w '$p'")}
           </div>
           <div>
             <div class="tiny muted" style="margin-bottom:4px;">Check current ownership:</div>
-            ${permCopyBlock("stat $p")}
+            ${permCopyBlock("stat '$p'")}
           </div>
         </div>
     """.trimIndent()
