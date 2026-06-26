@@ -663,8 +663,13 @@ class Scanner(
             }
             MediaKind.TV_SHOW -> {
                 val tmdbId = item.tmdbId ?: tmdb.searchTv(item.title, item.year)?.id
-                val localized = tmdbId?.let { tmdb.getTvDetailsLocalized(it, langPriority) }
-                    ?: return null
+                // When the user has an explicit language override, accept a title-only TMDB result
+                // (non-blank name, blank overview) rather than falling through to English. Minority-
+                // language original shows (e.g. Faroese) often have no contributed overview on TMDB
+                // but do have the correct title in the original language.
+                val localized = tmdbId?.let {
+                    tmdb.getTvDetailsLocalized(it, langPriority, acceptTitleOnly = overrideLang != null)
+                } ?: return null
                 val details = localized.details
                 val resolvedLang = localized.language ?: langPriority.lastOrNull()
                 // Re-fetch per-episode TMDB details using the series langPriority, which already
@@ -699,7 +704,9 @@ class Scanner(
                     resolvedLanguage = resolvedLang,
                     posterPath = details.posterPath,
                     backdropPath = details.backdropPath,
-                    overview = details.overview.takeIf { it.isNotBlank() },
+                    // Preserve the existing overview when TMDB returns a blank one — a language-only
+                    // result (title present, no overview) should not silently erase stored content.
+                    overview = details.overview.takeIf { it.isNotBlank() } ?: item.overview,
                     genres = details.genres.map { it.name },
                     network = rescanNetwork?.name ?: item.network,
                     networkTmdbId = rescanNetwork?.id ?: item.networkTmdbId,
