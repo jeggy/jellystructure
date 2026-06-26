@@ -181,8 +181,12 @@ fun Route.mediaRoutes(
             val heroIds = if ((heroMode != null || conditions.any { it.facet == "hero_item" }) && viewer != null)
                 raviloConfigService.getConfig(viewer).heroes.map { it.itemId }.toSet() else emptySet()
             val result = store.list(kind, filter, search, sort, pageNum, pageSize, studios, networks, genres, audioLangs, trackTitle, audioCodec, untaggedAudio, tags, heroIds, heroMode, conditions, match)
-            // Strip episode data from list responses — full episode list is on the individual item endpoint
-            val stripped = result.copy(items = result.items.map { it.copy(episodes = emptyList()) })
+            // Phase 89: strip heavy fields not needed for grid cards (cast/crew/tracks/titlesByLang/episodes)
+            // to reduce response size from ~61KB/item mean to ~1KB/item.
+            val stripped = result.copy(items = result.items.map { it.copy(
+                episodes = emptyList(), cast = emptyList(), crew = emptyList(),
+                tracks = emptyList(), titlesByLang = emptyMap(),
+            )})
             call.respond(stripped)
         }
 
