@@ -26,7 +26,8 @@ class DetailService(
     private val configStore: ConfigStore,
 ) {
     suspend fun getMovieDetail(device: DeviceData, jellyfinId: String): MovieDetail? {
-        val item = mediaStore.allItems().firstOrNull { it.jellyfinId == jellyfinId } ?: return null
+        val all = mediaStore.allItems()
+        val item = all.firstOrNull { it.jellyfinId == jellyfinId } ?: return null
         val jellyfinBase = configStore.current.apiKeys.jellyfinUrl.trimEnd('/')
         val token = jellyfinClient.tvToken(jellyfinBase, device, configStore.current.apiKeys.jellyfinToken)
 
@@ -39,13 +40,14 @@ class DetailService(
             synopsis = item.overview,
             runtime = (durationMs / 60_000L).toInt(),
             cast = emptyList(),
-            related = relatedItems(item, jellyfinBase, token),
+            related = relatedItems(item, all, jellyfinBase, token),
             playback = userData.toPlaybackState(durationMs),
         )
     }
 
     suspend fun getSeriesDetail(device: DeviceData, jellyfinId: String): SeriesDetail? {
-        val item = mediaStore.allItems().firstOrNull { it.jellyfinId == jellyfinId } ?: return null
+        val all = mediaStore.allItems()
+        val item = all.firstOrNull { it.jellyfinId == jellyfinId } ?: return null
         val jellyfinBase = configStore.current.apiKeys.jellyfinUrl.trimEnd('/')
         val token = jellyfinClient.tvToken(jellyfinBase, device, configStore.current.apiKeys.jellyfinToken)
 
@@ -104,15 +106,15 @@ class DetailService(
             synopsis = item.overview,
             seasons = seasons,
             cast = emptyList(),
-            related = relatedItems(item, jellyfinBase, token),
+            related = relatedItems(item, all, jellyfinBase, token),
             progress = progress,
         )
     }
 
     // ─── Helpers ──────────────────────────────────────────────────────────────
 
-    private fun relatedItems(source: MediaItem, jellyfinBase: String, token: String): List<MediaCard> =
-        mediaStore.allItems()
+    private fun relatedItems(source: MediaItem, all: List<MediaItem>, jellyfinBase: String, token: String): List<MediaCard> =
+        all
             .filter { it.id != source.id && it.genres.any { g -> source.genres.contains(g) } }
             .sortedByDescending { it.scannedAt }
             .take(RELATED_LIMIT)

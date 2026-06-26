@@ -22,6 +22,10 @@ class MediaStore(private val db: JellystructureDb, private val jsTagStore: JsTag
     // on any write (upsertItem). null = not built yet.
     private var peopleIndexCache: Map<Int, String>? = null
 
+    // jellyfinId → MediaItem index so TV detail routes avoid a full table scan + JSON deserialise
+    // on every page open. Built on first use, invalidated on any write.
+    private var jellyfinIdIndex: Map<String, MediaItem>? = null
+
     // Jellystructure-defined tags (those in the JS-tag store) always survive a re-scan, which
     // otherwise replaces an item's tags with the fresh Jellyfin set (constitution invariant #6).
     private fun preserveJsTags(fresh: MediaItem, existing: MediaItem?): MediaItem {
@@ -168,7 +172,16 @@ class MediaStore(private val db: JellystructureDb, private val jsTagStore: JsTag
     }
 
     // Resolves either a slug id or a Jellyfin UUID — Jellyfin ID is the canonical URL form.
-    fun resolve(id: String): MediaItem? = get(id) ?: allItems().firstOrNull { it.jellyfinId == id }
+    fun resolve(id: String): MediaItem? = get(id) ?: resolveByJellyfinId(id)
+
+    /** O(1) lookup by Jellyfin UUID via a lazy-built in-memory index. */
+    fun resolveByJellyfinId(jellyfinId: String): MediaItem? {
+        val index = jellyfinIdIndex ?: allItems()
+            .associateBy { it.jellyfinId ?: "" }
+            .filterKeys { it.isNotEmpty() }
+            .also { jellyfinIdIndex = it }
+        return index[jellyfinId]
+    }
 
     fun allItems(): List<MediaItem> =
         db.mediaQueries.getAll().executeAsList().mapNotNull { blob ->
@@ -286,7 +299,8 @@ class MediaStore(private val db: JellystructureDb, private val jsTagStore: JsTag
     }
 
     private fun upsertItem(item: MediaItem) {
-        peopleIndexCache = null  // Phase 78: invalidate the people→profilePath index on any write
+        peopleIndexCache = null   // Phase 78: invalidate the people→profilePath index on any write
+        jellyfinIdIndex  = null   // invalidate the jellyfinId→MediaItem index on any write
         db.mediaQueries.upsert(
             id = item.id,
             json = json.encodeToString(MediaItem.serializer(), item),
