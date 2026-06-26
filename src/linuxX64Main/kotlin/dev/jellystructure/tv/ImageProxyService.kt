@@ -4,6 +4,7 @@ import dev.jellystructure.config.ConfigStore
 import dev.jellystructure.log.Logger
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.curl.Curl
+import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.request.get
 import io.ktor.client.statement.readRawBytes
 import io.ktor.http.contentType
@@ -30,7 +31,13 @@ class ImageProxyService(
     private val configStore: ConfigStore,
 ) {
     private val gate = Semaphore(8)
-    private val http = HttpClient(Curl)
+    private val http = HttpClient(Curl) {
+        install(HttpTimeout) {
+            connectTimeoutMillis = 10_000
+            socketTimeoutMillis  = 60_000
+            requestTimeoutMillis = 60_000
+        }
+    }
 
     private val cacheDir = "$dataDir/artwork/tv"
 

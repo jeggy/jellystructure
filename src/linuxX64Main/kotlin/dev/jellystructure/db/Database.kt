@@ -3,6 +3,7 @@ package dev.jellystructure.db
 import app.cash.sqldelight.driver.native.NativeSqliteDriver
 import app.cash.sqldelight.driver.native.wrapConnection
 import co.touchlab.sqliter.DatabaseConfiguration
+import co.touchlab.sqliter.SynchronousFlag
 import kotlinx.io.files.Path
 import kotlinx.io.files.SystemFileSystem
 
@@ -41,7 +42,10 @@ fun createDatabase(dbFile: String): JellystructureDb {
                 }
             }
         },
-        extendedConfig = DatabaseConfiguration.Extended(basePath = parentDir.ifEmpty { null }),
+        extendedConfig = DatabaseConfiguration.Extended(
+            basePath = parentDir.ifEmpty { null },
+            synchronousFlag = SynchronousFlag.NORMAL,
+        ),
     )
-    return JellystructureDb(NativeSqliteDriver(config))
+    return JellystructureDb(NativeSqliteDriver(config, maxReaderConnections = 4))
 }

@@ -6,10 +6,13 @@ import dev.jellystructure.model.MediaItem
 import dev.jellystructure.model.MediaKind
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.curl.Curl
+import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.request.get
 import io.ktor.client.statement.readRawBytes
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.io.buffered
 import kotlinx.io.files.Path
 import kotlinx.io.files.SystemFileSystem
@@ -28,7 +31,14 @@ data class ArtworkStatus(
 data class EpisodeStillStatus(val stillExists: Boolean, val stillPath: String)
 
 class ArtworkDownloader {
-    private val http = HttpClient(Curl)
+    private val downloadGate = Semaphore(8)
+    private val http = HttpClient(Curl) {
+        install(HttpTimeout) {
+            connectTimeoutMillis = 10_000
+            socketTimeoutMillis  = 120_000
+            requestTimeoutMillis = 120_000
+        }
+    }
 
     fun check(item: MediaItem): ArtworkStatus {
         val dir = mediaDir(item)
@@ -81,10 +91,10 @@ class ArtworkDownloader {
         else Logger.warn("Could not remove misplaced artwork $path: ${result.exceptionOrNull()?.message}")
     }
 
-    private suspend fun download(url: String, destPath: String): Boolean {
+    private suspend fun download(url: String, destPath: String): Boolean = downloadGate.withPermit {
         val result = runCatching {
             val bytes = http.get(url).readRawBytes()
-            if (bytes.isEmpty()) return false
+            if (bytes.isEmpty()) return@withPermit false
             val tmp = "$destPath.tmp"
             val sink = SystemFileSystem.sink(Path(tmp)).buffered()
             sink.write(bytes, 0, bytes.size)
@@ -95,7 +105,7 @@ class ArtworkDownloader {
             true
         }
         if (result.isFailure) Logger.warn("Failed to download $url: ${result.exceptionOrNull()?.message}")
-        return result.getOrDefault(false)
+        result.getOrDefault(false)
     }
 
     fun checkEpisodeStill(episode: Episode): EpisodeStillStatus {
