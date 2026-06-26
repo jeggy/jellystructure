@@ -151,7 +151,7 @@ fun Route.mediaRoutes(
             val kindStr = call.request.queryParameters["kind"]
             val kind = kindStr?.let { runCatching { MediaKind.valueOf(it) }.getOrNull() }
             val filter = call.request.queryParameters["filter"]
-            val search = call.request.queryParameters["search"]?.takeIf { it.isNotBlank() }
+            val search = call.request.queryParameters["search"]?.takeIf { it.length >= 2 }
             val sort = call.request.queryParameters["sort"]
             val pageNum = call.request.queryParameters["page"]?.toIntOrNull()?.coerceAtLeast(1) ?: 1
             val pageSize = call.request.queryParameters["pageSize"]?.toIntOrNull()

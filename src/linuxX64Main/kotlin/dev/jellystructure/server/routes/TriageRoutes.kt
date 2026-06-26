@@ -78,9 +78,13 @@ private data class AssignLanguageRequest(val language: String)
 @Serializable
 private data class AssignLanguageResponse(val ok: Boolean, val language: String)
 
+private var triageCountCache: Pair<Long, TriageCount>? = null
+
 fun Route.triageRoutes(store: MediaStore, jellyfinClient: JellyfinClient, configStore: ConfigStore, mediaHistory: MediaHistory, seedingGuard: SeedingGuard) {
     route("/triage") {
         get("/count") {
+            val ver = store.libraryVersion
+            triageCountCache?.let { (v, c) -> if (v == ver) { call.respond(c); return@get } }
             val all = store.allItems()
             val untagged = all.sumOf { item ->
                 if (item.kind == MediaKind.TV_SHOW) {
@@ -96,7 +100,9 @@ fun Route.triageRoutes(store: MediaStore, jellyfinClient: JellyfinClient, config
                 if (item.kind == MediaKind.TV_SHOW) item.episodes.any { it.detectMultiDefaultAudio() != null }
                 else item.detectMultiDefaultAudio() != null
             }
-            call.respond(TriageCount(untagged = untagged, mismatch = mismatch, multiDefault = multiDefault, total = untagged + mismatch + multiDefault))
+            val result = TriageCount(untagged = untagged, mismatch = mismatch, multiDefault = multiDefault, total = untagged + mismatch + multiDefault)
+            triageCountCache = Pair(ver, result)
+            call.respond(result)
         }
 
         get {
