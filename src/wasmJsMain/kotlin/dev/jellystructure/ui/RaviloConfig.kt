@@ -1915,13 +1915,18 @@ private fun previewRowTitles(cfg: RaviloConfig): List<String> {
 private fun renderPreview(container: Element) {
     val host = container.querySelector("#rav-preview") ?: return
     val cfg = currentConfig
-    val heroLabel = cfg.heroes.firstOrNull { it.enabled }?.itemId?.takeIf { it.isNotBlank() } ?: "Hero"
+    val firstHero = cfg.heroes.firstOrNull { it.enabled }
+    val heroLabel = firstHero?.displayTitle?.takeIf { it.isNotBlank() }
+        ?: firstHero?.itemId?.takeIf { it.isNotBlank() } ?: "Hero"
+    val heroBg = firstHero?.displayBackdrop?.takeIf { it.isNotBlank() }
+        ?.let { "url('https://image.tmdb.org/t/p/w780$it') center/cover,${heroGradient(firstHero.itemId)}" }
+        ?: heroGradient(firstHero?.itemId ?: "")
     val heroPct = cfg.heroHeightPct.coerceIn(40, 100)
     val channels = cfg.channels.filter { it.enabled }
     val rowTitles = previewRowTitles(cfg)
     host.innerHTML = buildString {
         append("""<div style="border-radius:10px;overflow:hidden;border:1px solid var(--line);background:#0a0c13;aspect-ratio:16/10;display:flex;flex-direction:column">""")
-        append("""<div style="height:$heroPct%;background:linear-gradient(120deg,#7b6ef0,#3fb6f5);display:flex;align-items:flex-end;padding:8px"><span style="color:#fff;font-weight:700;font-size:.68rem;text-shadow:0 1px 4px rgba(0,0,0,.6)">${heroLabel.htmlEsc()}</span></div>""")
+        append("""<div style="height:$heroPct%;background:$heroBg;display:flex;align-items:flex-end;padding:8px"><span style="color:#fff;font-weight:700;font-size:.68rem;text-shadow:0 1px 4px rgba(0,0,0,.6)">${heroLabel.htmlEsc()}</span></div>""")
         if (channels.isNotEmpty()) {
             append("""<div style="display:flex;gap:4px;padding:6px 8px;overflow:hidden">""")
             channels.take(5).forEach { c ->
