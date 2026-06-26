@@ -19,3 +19,4 @@ to the index below.
 | Report | Date | Summary |
 |--------|------|---------|
 | [`ravilo-jellyfin-decoupling-investigation.md`](ravilo-jellyfin-decoupling-investigation.md) | 2026-06-26 | How much Ravilo depends on Jellyfin (direct + via jellystructure) and a plan to serve catalog, artwork, and per-user-state reads from jellystructure so the app loads faster — streaming stays on Jellyfin. |
+| [`backend-performance-investigation.md`](backend-performance-investigation.md) | 2026-06-26 | Why the Library page, text search, and the Ravilo sofa feel slow: every read decodes the whole 18.7 MB / 307-item JSON-blob library (no SQL pushdown, no decode cache, no gzip). Prioritised workstreams (decode cache, projection, caching, transport, engine, filter caching) → specced as phases 88–90 + R86. Includes the no-flicker rule for Ravilo. |
