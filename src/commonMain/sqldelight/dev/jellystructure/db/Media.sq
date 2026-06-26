@@ -49,6 +49,12 @@ WHERE (:kind IS NULL OR kind = :kind)
   AND (:filterMissingArtwork = 0 OR poster_path IS NULL)
   AND (:search IS NULL OR lower(title) LIKE ('%' || lower(:search) || '%'));
 
+allIds:
+SELECT id FROM media;
+
+walCheckpoint:
+PRAGMA wal_checkpoint(TRUNCATE);
+
 deleteById:
 DELETE FROM media WHERE id = :id;
 

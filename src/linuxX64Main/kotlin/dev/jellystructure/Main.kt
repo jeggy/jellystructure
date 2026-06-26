@@ -14,6 +14,7 @@ import dev.jellystructure.chart.NetflixTudumProvider
 import dev.jellystructure.torrent.QBittorrentClient
 import dev.jellystructure.torrent.SeedingGuard
 import dev.jellystructure.db.createDatabase
+import dev.jellystructure.db.walCheckpoint
 import dev.jellystructure.jobs.WsBroadcaster
 import dev.jellystructure.log.Logger
 import dev.jellystructure.media.ActivityLog
@@ -167,6 +168,17 @@ fun main() = runBlocking {
             } else {
                 delay(60_000L)
             }
+        }
+    }
+
+    // WAL checkpoint every 6 hours — prevents the WAL file growing unbounded between restarts.
+    rootScope.launch {
+        delay(6 * 3_600_000L)
+        while (shutdownRequested.value == 0) {
+            runCatching { db.walCheckpoint() }
+                .onSuccess { Logger.info("WAL checkpoint: TRUNCATE complete") }
+                .onFailure { Logger.info("WAL checkpoint failed (non-fatal): ${it.message}") }
+            delay(6 * 3_600_000L)
         }
     }
 

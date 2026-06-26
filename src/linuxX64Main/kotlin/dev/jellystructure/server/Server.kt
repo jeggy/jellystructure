@@ -46,7 +46,9 @@ import dev.jellystructure.tv.ChannelLogoStore
 import dev.jellystructure.tv.RaviloConfigService
 import dev.jellystructure.tv.RaviloDeviceService
 import dev.jellystructure.tv.TvEventBus
+import io.ktor.http.CacheControl
 import io.ktor.http.ContentType
+import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpMethod
 import io.ktor.http.HttpStatusCode
 import io.ktor.serialization.kotlinx.json.json
@@ -57,6 +59,7 @@ import io.ktor.server.engine.embeddedServer
 import io.ktor.server.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.server.plugins.cors.routing.CORS
 import io.ktor.server.request.path
+import io.ktor.server.response.cacheControl
 import io.ktor.server.response.respond
 import io.ktor.server.response.respondBytes
 import io.ktor.server.response.respondText
@@ -342,19 +345,48 @@ private suspend fun io.ktor.server.application.ApplicationCall.serveFrontendFile
 
     val target = Path("$dir/$rel")
     if (SystemFileSystem.exists(target)) {
-        val bytes = SystemFileSystem.source(target).buffered().readByteArray()
-        respondBytes(bytes, contentTypeFor(rel))
+        serveStaticBytes(SystemFileSystem.source(target).buffered().readByteArray(), rel)
         return
     }
 
-    // SPA fallback
+    // SPA fallback — never cache index.html (it bootstraps the WASM app)
     val index = Path("$dir/index.html")
     if (SystemFileSystem.exists(index)) {
         val bytes = SystemFileSystem.source(index).buffered().readByteArray()
+        response.cacheControl(CacheControl.NoCache(null))
         respondBytes(bytes, ContentType.Text.Html)
     } else {
         respond(HttpStatusCode.NotFound)
     }
+}
+
+private suspend fun io.ktor.server.application.ApplicationCall.serveStaticBytes(
+    bytes: ByteArray,
+    rel: String,
+) {
+    val etag = "\"${bytes.crc32Hex()}\""
+    val ifNoneMatch = request.headers[HttpHeaders.IfNoneMatch]
+    if (ifNoneMatch == etag) {
+        respond(HttpStatusCode.NotModified)
+        return
+    }
+    response.headers.append(HttpHeaders.ETag, etag)
+    if (rel == "index.html") {
+        response.cacheControl(CacheControl.NoCache(null))
+    } else {
+        response.cacheControl(CacheControl.MaxAge(maxAgeSeconds = 3600, mustRevalidate = true))
+    }
+    respondBytes(bytes, contentTypeFor(rel))
+}
+
+private fun ByteArray.crc32Hex(): String {
+    var crc = 0xFFFFFFFFL
+    for (b in this) {
+        var v = ((crc xor b.toLong().and(0xFF)) and 0xFF).toInt()
+        repeat(8) { v = if (v and 1 != 0) (v ushr 1) xor 0xEDB88320.toInt() else v ushr 1 }
+        crc = (crc ushr 8) xor v.toLong().and(0xFFFFFFFFL)
+    }
+    return (crc xor 0xFFFFFFFFL).toString(16).padStart(8, '0')
 }
 
 private fun contentTypeFor(path: String): ContentType = when (path.substringAfterLast('.').lowercase()) {
