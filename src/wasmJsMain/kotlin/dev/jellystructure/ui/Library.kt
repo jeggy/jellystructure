@@ -21,6 +21,8 @@ import dev.jellystructure.model.MediaKind
 import kotlinx.browser.document
 import kotlinx.browser.window
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
 import org.w3c.dom.Element
@@ -47,6 +49,7 @@ private var libSearch: String? = null
 private var libSort: String? = null
 private var libScanSocket: WebSocket? = null
 private var libScannedCount = 0
+private var libSearchJob: Job? = null
 private var libStudios: List<String> = emptyList()
 private var libNetworks: List<String> = emptyList()
 private var libGenres: List<String> = emptyList()
@@ -252,8 +255,9 @@ private fun attachLibraryListeners(scope: CoroutineScope) {
 
     document.getElementById("lib-search")?.addEventListener("input") {
         val v = (document.getElementById("lib-search") as? HTMLInputElement)?.value?.trim()
-        libSearch = if (v.isNullOrBlank()) null else v
-        reload()
+        libSearch = if (v.isNullOrBlank()) null else v  // capture latest value immediately
+        libSearchJob?.cancel()
+        libSearchJob = scope.launch { delay(250); loadMore(scope, reset = true) }
     }
 
     document.getElementById("lib-sort")?.addEventListener("change") {
