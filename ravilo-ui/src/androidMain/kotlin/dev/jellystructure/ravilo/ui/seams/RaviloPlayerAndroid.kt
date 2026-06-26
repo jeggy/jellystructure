@@ -1,5 +1,14 @@
 package dev.jellystructure.ravilo.ui.seams
 
+/** Strip ASS/SSA override tags from VTT cue text (R68). Jellyfin's ASS→VTT extractor leaves
+ *  {\an1}, {\pos(…)}, \N, \h etc. as literal text; remove them before rendering. */
+internal fun cleanCueText(text: String): String =
+    text.replace(Regex("""\{\\[^}]*\}"""), "")  // remove {\...} override blocks
+        .replace("""\N""", "\n")                  // hard line break
+        .replace("""\n""", "\n")                  // soft line break
+        .replace("""\h""", " ")                   // hard space
+        .trim()
+
 import android.content.Context
 import android.graphics.Color
 import android.net.Uri
@@ -94,7 +103,12 @@ actual class RaviloPlayer actual constructor() {
         view.setFractionalTextSize(SubtitleView.DEFAULT_TEXT_SIZE_FRACTION * 0.9f)
         exo.addListener(object : Player.Listener {
             override fun onCues(cueGroup: CueGroup) {
-                view.setCues(cueGroup.cues)
+                val cleaned = cueGroup.cues.map { cue ->
+                    val raw = cue.text?.toString() ?: return@map cue
+                    val clean = cleanCueText(raw)
+                    if (clean == raw) cue else cue.buildUpon().setText(clean).build()
+                }
+                view.setCues(cleaned)
             }
         })
     }
