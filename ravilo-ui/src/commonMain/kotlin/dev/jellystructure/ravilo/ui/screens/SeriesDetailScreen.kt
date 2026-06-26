@@ -61,6 +61,10 @@ import dev.jellystructure.ravilo.ui.seams.RemoteImage
 import dev.jellystructure.ravilo.ui.theme.RaviloDimens
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
 import dev.jellystructure.ravilo.ui.theme.SpaceGrotesk
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.ui.draw.alpha
+import dev.jellystructure.shared.tv.CardPlayState
 import dev.jellystructure.shared.tv.Episode
 import dev.jellystructure.shared.tv.MediaCard
 import dev.jellystructure.shared.tv.SeriesDetail
@@ -81,6 +85,8 @@ fun SeriesDetailScreen(
     val colors = RaviloTheme.colors
     LaunchedEffect(itemId) { store.load(itemId) }
     val state by store.state.collectAsState()
+    // R84: phase-2 overlay — empty map until /api/tv/playstate returns after the catalog paint
+    val overlay by store.playstateOverlay.collectAsState()
 
     Box(modifier = Modifier.fillMaxSize().background(colors.background)) {
         when (val s = state) {
@@ -90,6 +96,7 @@ fun SeriesDetailScreen(
             }
             is SeriesDetailState.Loaded -> SeriesDetailLoaded(
                 detail = s.detail,
+                overlay = overlay,
                 onBack = onBack,
                 onPlay = onPlay,
                 onRelatedSelect = onRelatedSelect,
@@ -108,6 +115,7 @@ private fun buildEpisodeContext(
     seasonIdx: Int,
     episodes: List<Episode>,
     epId: String,
+    overlay: Map<String, CardPlayState> = emptyMap(),
 ): EpisodePlayContext {
     val sNum = detail.seasons.getOrNull(seasonIdx)?.index ?: (seasonIdx + 1)
     val epIdx = episodes.indexOfFirst { it.id == epId }.coerceAtLeast(0)
@@ -121,14 +129,16 @@ private fun buildEpisodeContext(
         nextEpLabel  = nextEp?.let { "S$sNum · E${it.episodeNumber}" },
         nextEpTitle  = nextEp?.title,
         episodes     = episodes.mapIndexed { i, e ->
+            // R84: prefer overlay playstate; fall back to 0f/false (catalog carries null from R83)
+            val ps = overlay[e.id]
             PlayerEpisodeEntry(
                 id            = e.id,
                 n             = e.episodeNumber,
                 title         = e.title,
                 kicker        = "S$sNum · E${e.episodeNumber}",
                 durationLabel = if (e.runtime > 0) "${e.runtime}m" else "",
-                progressPct   = e.playback?.pct ?: 0f,
-                watched       = e.playback?.watched ?: false,
+                progressPct   = ps?.playedPct ?: e.playback?.pct ?: 0f,
+                watched       = ps?.played ?: e.playback?.watched ?: false,
                 stillUrl      = e.stillUrl,
             )
         },
@@ -139,6 +149,7 @@ private fun buildEpisodeContext(
 @Composable
 private fun SeriesDetailLoaded(
     detail: SeriesDetail,
+    overlay: Map<String, CardPlayState>,
     onBack: () -> Unit,
     onPlay: (EpisodePlayContext) -> Unit,
     onRelatedSelect: (MediaCard) -> Unit,
@@ -163,22 +174,25 @@ private fun SeriesDetailLoaded(
     val containerH = LocalWindowInfo.current.containerSize.height
     val heroHeight = if (containerH > 0) with(density) { containerH.toDp() } else 540.dp
 
-    val initialSeasonIdx = remember(detail) {
-        // R83: progress is null until hydrated by /api/tv/playstate; default to season 0
-        val rid = detail.progress?.resumeEpisodeId
-        if (rid != null)
-            detail.seasons.indexOfFirst { s -> s.episodes.any { it.id == rid } }.takeIf { it >= 0 } ?: 0
-        else 0
-    }
-    var selectedSeasonIdx by remember(detail) { mutableIntStateOf(initialSeasonIdx) }
+    // R84: key on series id (not whole detail object) so overlay hydration never resets the season picker
+    val initialSeasonIdx = remember(detail.card.id) { 0 }
+    var selectedSeasonIdx by remember(detail.card.id) { mutableIntStateOf(initialSeasonIdx) }
     val currentSeason = detail.seasons.getOrNull(selectedSeasonIdx)
     val episodes: List<Episode> = currentSeason?.episodes ?: emptyList()
+
+    // R84: derive all progress values from the phase-2 overlay (empty map = not yet loaded)
+    val allEps = remember(detail) { detail.seasons.flatMap { it.episodes } }
+    val overlayLoaded = overlay.isNotEmpty()
+    val watchedCount = allEps.count { ep -> overlay[ep.id]?.played == true }
+    val resumeEpId: String? = allEps
+        .firstOrNull { ep -> overlay[ep.id].let { ps -> ps != null && !ps.played && ps.resumeMs > 0 } }?.id
+        ?: allEps.firstOrNull { ep -> overlay[ep.id]?.played != true }?.id
+        ?: allEps.lastOrNull()?.id
 
     val playFR = remember { FocusRequester() }
     val navBarFR = remember { FocusRequester() }
 
-    val resumeEpIdx = episodes.indexOfFirst { it.id == detail.progress?.resumeEpisodeId }
-        .takeIf { it >= 0 } ?: 0
+    val resumeEpIdx = episodes.indexOfFirst { it.id == resumeEpId }.takeIf { it >= 0 } ?: 0
 
     LaunchedEffect(Unit) { runCatching { playFR.requestFocus() } }
 
@@ -241,14 +255,19 @@ private fun SeriesDetailLoaded(
                         Spacer(Modifier.height(6.dp))
                         AudioFlagStrip(detail.subtitleLanguages, label = "SUBTITLES")
                     }
-                    val p = detail.progress
-                    if (p != null && p.totalCount > 0) {
-                        Spacer(Modifier.height(4.dp))
-                        Text(
-                            "${p.watchedCount} of ${p.totalCount} episodes watched",
-                            color = colors.textDim, fontSize = 13.sp,
-                        )
-                    }
+                    // R84: reserve the watched-count line from first paint; fade in when overlay lands
+                    // (no-flicker rule: the text line occupies space even before overlay arrives).
+                    val progressAlpha by animateFloatAsState(
+                        targetValue = if (overlayLoaded && allEps.isNotEmpty()) 1f else 0f,
+                        label = "watchedCountAlpha",
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        text = "$watchedCount of ${allEps.size} episodes watched",
+                        color = colors.textDim,
+                        fontSize = 13.sp,
+                        modifier = Modifier.alpha(progressAlpha),
+                    )
                     detail.synopsis?.let {
                         Spacer(Modifier.height(10.dp))
                         Text(
@@ -260,10 +279,27 @@ private fun SeriesDetailLoaded(
                             overflow = TextOverflow.Ellipsis,
                         )
                     }
-                    detail.progress?.resumeLabel?.let {
-                        Spacer(Modifier.height(8.dp))
-                        Text(it, color = colors.accent, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                    // Resume kicker: derived from overlay; always reserves a line so synopsis doesn't shift
+                    val resumeEpEntry = if (overlayLoaded) allEps.firstOrNull { ep ->
+                        overlay[ep.id].let { ps -> ps != null && !ps.played && ps.resumeMs > 0 }
+                    } else null
+                    val resumeKicker = resumeEpEntry?.let { ep ->
+                        val sIdx = detail.seasons.indexOfFirst { s -> s.episodes.any { it.id == ep.id } }
+                        val sNum = detail.seasons.getOrNull(sIdx)?.index
+                        if (sNum != null) "S${sNum}E${ep.episodeNumber} · ${ep.title}" else ep.title
                     }
+                    val kickerAlpha by animateFloatAsState(
+                        targetValue = if (resumeKicker != null) 1f else 0f,
+                        label = "resumeKickerAlpha",
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        text = resumeKicker ?: "",
+                        color = colors.accent,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.alpha(kickerAlpha),
+                    )
                     Spacer(Modifier.height(18.dp))
                     Row(
                         // R72: scroll(UserInput) wins over bring-into-view (Default priority) so
@@ -284,25 +320,27 @@ private fun SeriesDetailLoaded(
                             },
                         horizontalArrangement = Arrangement.spacedBy(12.dp),
                     ) {
-                        val resumeEpId = detail.progress?.resumeEpisodeId
+                        // R84: overlay-derived resume; neutral "Play · E1" until playstate lands
                         val resumeShort = resumeEpId?.let { rid ->
                             val sIdx = detail.seasons.indexOfFirst { s -> s.episodes.any { it.id == rid } }
                             val ep = detail.seasons.getOrNull(sIdx)?.episodes?.firstOrNull { it.id == rid }
                             if (sIdx >= 0 && ep != null) "S${detail.seasons[sIdx].index}E${ep.episodeNumber}"
                             else ep?.let { "E${it.episodeNumber}" }
-                        } ?: "E${resumeEpIdx + 1}"
-                        // R83: progress null until hydrated; fall back to "Play · E1"
-                        val prog = detail.progress
-                        val playLabel = if (resumeEpId != null && prog != null && prog.watchedCount < prog.totalCount)
+                        }
+                        val hasResume = overlayLoaded && resumeEpId != null && watchedCount < allEps.size
+                        val playLabel = if (hasResume && resumeShort != null)
                             "${str("action.resume")} · $resumeShort"
                         else "${str("action.play")} · E1"
+                        // Fixed min-width: sized for the longest "Resume · SNNEN" label so swapping
+                        // Play→Resume never shifts the "My List" button (no-flicker rule).
                         RaviloButton(
                             label = playLabel,
                             focusRequester = playFR,
                             style = ButtonStyle.PRIMARY,
+                            modifier = Modifier.widthIn(min = 220.dp),
                             onSelect = {
                                 val epId = resumeEpId ?: episodes.firstOrNull()?.id
-                                if (epId != null) onPlay(buildEpisodeContext(detail, selectedSeasonIdx, episodes, epId))
+                                if (epId != null) onPlay(buildEpisodeContext(detail, selectedSeasonIdx, episodes, epId, overlay))
                             },
                         )
                         RaviloButton(
@@ -343,8 +381,10 @@ private fun SeriesDetailLoaded(
                         val ep = episodes[i]
                         EpisodeCard(
                             episode = ep,
-                            isResumeEpisode = ep.id == detail.progress?.resumeEpisodeId,
-                            onSelect = { onPlay(buildEpisodeContext(detail, selectedSeasonIdx, episodes, ep.id)) },
+                            // R84: overlay-driven; no "UP NEXT" ribbon until playstate arrives
+                            isResumeEpisode = overlayLoaded && ep.id == resumeEpId,
+                            playstateOverride = overlay[ep.id],
+                            onSelect = { onPlay(buildEpisodeContext(detail, selectedSeasonIdx, episodes, ep.id, overlay)) },
                         )
                     }
                 }
