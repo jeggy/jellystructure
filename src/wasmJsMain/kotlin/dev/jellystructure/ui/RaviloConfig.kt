@@ -1581,7 +1581,9 @@ private fun renderRows(container: Element) {
 
     val rows = currentConfig.rows.mapIndexed { i, r ->
         val system = r.kind.isSystem()
-        val isMergedOut = merging && r.kind == RowKind.NEWLY_ADDED
+        // Only grey out typed NEWLY_ADDED rows (MOVIE/SERIES) when merge is ON — they're superseded.
+        // The all-media (mediaKind=null) row is always active: it shows as 1 row (merge ON) or 2 (OFF).
+        val isMergedOut = merging && r.kind == RowKind.NEWLY_ADDED && r.mediaKind != null
         val rowOpacity = if (isMergedOut) "opacity:0.45;" else ""
         val showChecked = if (r.enabled) " checked" else ""
         val showLabel = if (r.enabled) "show" else "hidden"
@@ -1606,8 +1608,8 @@ private fun renderRows(container: Element) {
           <div class="box flat" style="background:var(--hi-soft);border:1px solid rgba(255,180,0,.25);border-radius:8px;padding:12px 14px;margin-bottom:14px">
             <label style="display:flex;align-items:center;gap:10px;font-size:.9rem;cursor:pointer">
               <input type="checkbox" id="merge-newly-added"$mergeChecked>
-              <div><b>Merge newly added</b> <span style="font-size:.8rem;color:var(--ink-soft)">&mdash; ${if (merging) "combined into one row" else "showing separately"}</span>
-                <div class="tiny muted" style="margin-top:3px">Show movies and series in one combined row instead of separate typed rows.</div></div>
+              <div><b>Merge newly added</b> <span style="font-size:.8rem;color:var(--ink-soft)">&mdash; ${if (merging) "one combined row (all media)" else "two rows: Movies + Series"}</span>
+                <div class="tiny muted" style="margin-top:3px">ON: one "Newly Added" row for all media. OFF: separate "Movies — Newly Added" and "Series — Newly Added" rows.</div></div>
             </label>
           </div>
           <div id="row-list">$rows</div>
@@ -1903,9 +1905,19 @@ private fun previewRowTitles(cfg: RaviloConfig): List<String> {
     val out = mutableListOf<String>()
     var mergedAdded = false
     for (r in enabled) {
-        if (cfg.mergeNewlyAdded && r.kind == RowKind.NEWLY_ADDED) {
-            if (!mergedAdded) { out.add("Newly Added"); mergedAdded = true }
-            continue
+        if (r.kind == RowKind.NEWLY_ADDED) {
+            if (cfg.mergeNewlyAdded) {
+                // merge ON → one combined row
+                if (!mergedAdded) { out.add(r.title?.takeIf { it.isNotBlank() } ?: "Newly Added"); mergedAdded = true }
+                continue
+            }
+            if (r.mediaKind == null) {
+                // merge OFF + all-media row → show as two typed rows (matches feed behaviour)
+                val base = r.title?.takeIf { it.isNotBlank() }
+                out.add(base?.let { "$it — Movies" } ?: "Movies — Newly Added")
+                out.add(base?.let { "$it — Series" } ?: "Series — Newly Added")
+                continue
+            }
         }
         out.add(r.title?.takeIf { it.isNotBlank() } ?: defaultRowTitle(r.kind, r.mediaKind))
     }
