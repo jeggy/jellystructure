@@ -33,11 +33,12 @@ class HomeFeedService(
         val jellyfinBase = configStore.current.apiKeys.jellyfinUrl.trimEnd('/')
         val config        = configService.getConfig(device.jellyfinUserId) // sync disk read — no suspend needed
         val allDeferred   = async { mediaStore.allItems() }
+        // R85: token no longer needed for image URLs; still needed for buildContinueRow.
         val tokenDeferred = async { jellyfinClient.tvToken(jellyfinBase, device, configStore.current.apiKeys.jellyfinToken) }
         val all   = allDeferred.await()
         val token = tokenDeferred.await()
         HomeFeed(
-            heroes = buildHeroes(config, all, jellyfinBase, token),
+            heroes = buildHeroes(config, all),
             channels = buildChannels(config),
             rows = buildRows(config, device, all, jellyfinBase, token, channelFilter = null),
             heroHeightPct = config.heroHeightPct,
@@ -52,6 +53,7 @@ class HomeFeedService(
             ?: return@coroutineScope HomeFeed(emptyList(), emptyList(), emptyList())
         val jellyfinBase  = configStore.current.apiKeys.jellyfinUrl.trimEnd('/')
         val allDeferred   = async { mediaStore.allItems() }
+        // R85: token no longer needed for image URLs; still needed for buildContinueRow.
         val tokenDeferred = async { jellyfinClient.tvToken(jellyfinBase, device, configStore.current.apiKeys.jellyfinToken) }
         val allItems = allDeferred.await()
         val token    = tokenDeferred.await()
@@ -59,7 +61,7 @@ class HomeFeedService(
         val filtered = allItems.filter { it.matchesChannel(channelCfg, heroIds) }
         val pageHero = channelCfg.pageHero
         val heroes   = if (pageHero?.enabled == true && pageHero.items.isNotEmpty())
-            buildHeroesFromList(pageHero.items, allItems, jellyfinBase, token)
+            buildHeroesFromList(pageHero.items, allItems)
         else
             emptyList()
         HomeFeed(
@@ -74,21 +76,16 @@ class HomeFeedService(
 
     // ─── Heroes ───────────────────────────────────────────────────────────────
 
-    private fun buildHeroes(
-        config: RaviloConfig,
-        all: List<MediaItem>,
-        jellyfinBase: String,
-        token: String,
-    ): List<Hero> {
+    private fun buildHeroes(config: RaviloConfig, all: List<MediaItem>): List<Hero> {
         // Auto mode: pick the most-recently-scanned items with no dressing.
         if (config.heroes.isEmpty()) {
             return all.sortedByDescending { it.scannedAt }.take(HERO_AUTO_COUNT).mapNotNull { item ->
                 val jellyfinId = item.jellyfinId ?: return@mapNotNull null
                 Hero(
-                    item = item.toMediaCard(jellyfinBase, token),
+                    item = item.toMediaCard(),
                     taglineKicker = null,
-                    backdropUrl = JellyfinImageUrl.heroBackdrop(jellyfinBase, jellyfinId, token),
-                    logoUrl = JellyfinImageUrl.logo(jellyfinBase, jellyfinId, token),
+                    backdropUrl = JellyfinImageUrl.heroBackdrop(jellyfinId),
+                    logoUrl = JellyfinImageUrl.logo(jellyfinId),
                     badge = null,
                     synopsis = item.overview,
                 )
@@ -103,37 +100,33 @@ class HomeFeedService(
                     ?: return@mapNotNull null
                 val jellyfinId = item.jellyfinId ?: return@mapNotNull null
                 Hero(
-                    item = item.toMediaCard(jellyfinBase, token),
+                    item = item.toMediaCard(),
                     taglineKicker = hc.tagline,
-                    backdropUrl = JellyfinImageUrl.heroBackdrop(jellyfinBase, jellyfinId, token),
-                    logoUrl = if (hc.clearlogoOverlay) JellyfinImageUrl.logo(jellyfinBase, jellyfinId, token) else null,
+                    backdropUrl = JellyfinImageUrl.heroBackdrop(jellyfinId),
+                    logoUrl = if (hc.clearlogoOverlay) JellyfinImageUrl.logo(jellyfinId) else null,
                     badge = hc.badge,
                     synopsis = item.overview,
                 )
             }
     }
 
-    private fun buildHeroesFromList(
-        heroConfigs: List<HeroConfig>,
-        all: List<MediaItem>,
-        jellyfinBase: String,
-        token: String,
-    ): List<Hero> = heroConfigs
-        .filter { it.enabled }
-        .sortedBy { it.order }
-        .mapNotNull { hc ->
-            val item = all.firstOrNull { it.jellyfinId == hc.itemId } ?: all.firstOrNull { it.id == hc.itemId }
-                ?: return@mapNotNull null
-            val jellyfinId = item.jellyfinId ?: return@mapNotNull null
-            Hero(
-                item = item.toMediaCard(jellyfinBase, token),
-                taglineKicker = hc.tagline,
-                backdropUrl = JellyfinImageUrl.heroBackdrop(jellyfinBase, jellyfinId, token),
-                logoUrl = if (hc.clearlogoOverlay) JellyfinImageUrl.logo(jellyfinBase, jellyfinId, token) else null,
-                badge = hc.badge,
-                synopsis = item.overview,
-            )
-        }
+    private fun buildHeroesFromList(heroConfigs: List<HeroConfig>, all: List<MediaItem>): List<Hero> =
+        heroConfigs
+            .filter { it.enabled }
+            .sortedBy { it.order }
+            .mapNotNull { hc ->
+                val item = all.firstOrNull { it.jellyfinId == hc.itemId } ?: all.firstOrNull { it.id == hc.itemId }
+                    ?: return@mapNotNull null
+                val jellyfinId = item.jellyfinId ?: return@mapNotNull null
+                Hero(
+                    item = item.toMediaCard(),
+                    taglineKicker = hc.tagline,
+                    backdropUrl = JellyfinImageUrl.heroBackdrop(jellyfinId),
+                    logoUrl = if (hc.clearlogoOverlay) JellyfinImageUrl.logo(jellyfinId) else null,
+                    badge = hc.badge,
+                    synopsis = item.overview,
+                )
+            }
 
     // ─── Channels ─────────────────────────────────────────────────────────────
 
@@ -188,10 +181,10 @@ class HomeFeedService(
                     if (rowCfg.mediaKind == null) {
                         val movies = all.filter { it.kind == MediaKind.MOVIE }
                             .sortedByDescending { it.scannedAt }.take(ROW_ITEM_LIMIT)
-                            .mapNotNull { it.toMediaCardOrNull(jellyfinBase, token) }
+                            .mapNotNull { it.toMediaCardOrNull() }
                         val series = all.filter { it.kind == MediaKind.TV_SHOW }
                             .sortedByDescending { it.scannedAt }.take(ROW_ITEM_LIMIT)
-                            .mapNotNull { it.toMediaCardOrNull(jellyfinBase, token) }
+                            .mapNotNull { it.toMediaCardOrNull() }
                         if (movies.isNotEmpty()) result.add(Row("${rowCfg.id}-movies", rowCfg.title?.let { "$it — Movies" } ?: "Movies — Newly Added", RowKind.NEWLY_ADDED, movies))
                         if (series.isNotEmpty()) result.add(Row("${rowCfg.id}-series", rowCfg.title?.let { "$it — Series" } ?: "Series — Newly Added", RowKind.NEWLY_ADDED, series))
                         continue
@@ -204,7 +197,7 @@ class HomeFeedService(
                     val cards = filtered
                         .sortedByDescending { it.scannedAt }
                         .take(ROW_ITEM_LIMIT)
-                        .mapNotNull { it.toMediaCardOrNull(jellyfinBase, token) }
+                        .mapNotNull { it.toMediaCardOrNull() }
                     if (cards.isNotEmpty()) result.add(Row(rowCfg.id, rowCfg.title ?: "Newly Added", RowKind.NEWLY_ADDED, cards))
                 }
 
@@ -216,7 +209,7 @@ class HomeFeedService(
                         .filter { item -> genreTerms.isEmpty() || item.genres.any { g -> genreTerms.any { t -> g.lowercase().contains(t) } } }
                         .sortedByDescending { it.scannedAt }
                         .take(ROW_ITEM_LIMIT)
-                        .mapNotNull { it.toMediaCardOrNull(jellyfinBase, token) }
+                        .mapNotNull { it.toMediaCardOrNull() }
                     if (cards.isNotEmpty()) result.add(Row(rowCfg.id, rowCfg.title ?: "Genre", RowKind.GENRE, cards))
                 }
 
@@ -232,7 +225,7 @@ class HomeFeedService(
                     val cards = filtered
                         .sortedByDescending { it.scannedAt }
                         .take(ROW_ITEM_LIMIT)
-                        .mapNotNull { it.toMediaCardOrNull(jellyfinBase, token) }
+                        .mapNotNull { it.toMediaCardOrNull() }
                     if (cards.isNotEmpty()) result.add(Row(rowCfg.id, rowCfg.title ?: "Custom", RowKind.CUSTOM, cards))
                 }
             }
@@ -243,7 +236,7 @@ class HomeFeedService(
             val mergedCards = all
                 .sortedByDescending { it.scannedAt }
                 .take(ROW_ITEM_LIMIT)
-                .mapNotNull { it.toMediaCardOrNull(jellyfinBase, token) }
+                .mapNotNull { it.toMediaCardOrNull() }
             if (mergedCards.isNotEmpty()) {
                 // Find where in the config the first NEWLY_ADDED row was and insert the merged
                 // row at that logical position — after whichever result row came just before it.
@@ -285,7 +278,7 @@ class HomeFeedService(
             if (!seen.add(itemId)) continue
             val mediaItem = all.firstOrNull { it.jellyfinId == itemId } ?: continue
             val pct = play.userData?.playedPercentage?.toFloat()?.div(100f)
-            cards.add(mediaItem.toMediaCard(jellyfinBase, token, progressPct = pct))
+            cards.add(mediaItem.toMediaCard(progressPct = pct))
         }
 
         for (play in nextUpItems) {
@@ -294,7 +287,7 @@ class HomeFeedService(
             val mediaItem = all.firstOrNull { it.jellyfinId == itemId } ?: continue
             val s = play.seasonNumber; val e = play.episodeNumber
             val label = if (s != null && e != null) "S${s}E${e} · ${play.name}" else play.name
-            cards.add(mediaItem.toMediaCard(jellyfinBase, token, nextUpLabel = label))
+            cards.add(mediaItem.toMediaCard(nextUpLabel = label))
         }
 
         cards.take(ROW_ITEM_LIMIT)
@@ -302,21 +295,17 @@ class HomeFeedService(
 
     // ─── Helpers ──────────────────────────────────────────────────────────────
 
-    private fun MediaItem.toMediaCardOrNull(jellyfinBase: String, token: String): MediaCard? {
-        val jId = jellyfinId ?: return null
-        return toMediaCard(jellyfinBase, token)
+    private fun MediaItem.toMediaCardOrNull(): MediaCard? {
+        jellyfinId ?: return null
+        return toMediaCard()
     }
 
     private fun MediaItem.toMediaCard(
-        jellyfinBase: String,
-        token: String,
         progressPct: Float? = null,
         nextUpLabel: String? = null,
         badge: String? = null,
     ): MediaCard {
         val jId = jellyfinId
-        val posterUrl = if (jId != null) JellyfinImageUrl.poster(jellyfinBase, jId, token) else null
-        val backdropUrl = if (jId != null) JellyfinImageUrl.backdrop(jellyfinBase, jId, token) else null
         return MediaCard(
             id = jId ?: id,
             kind = if (kind == MediaKind.TV_SHOW) dev.jellystructure.shared.tv.MediaKind.SERIES
@@ -325,8 +314,8 @@ class HomeFeedService(
             year = year,
             genre = genres.firstOrNull(),
             rating = null,
-            posterUrl = posterUrl,
-            backdropUrl = backdropUrl,
+            posterUrl = if (jId != null) JellyfinImageUrl.poster(jId) else null,
+            backdropUrl = if (jId != null) JellyfinImageUrl.backdrop(jId) else null,
             progressPct = progressPct,
             nextUpLabel = nextUpLabel,
             badge = badge,

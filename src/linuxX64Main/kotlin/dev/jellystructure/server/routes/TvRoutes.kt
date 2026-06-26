@@ -32,6 +32,7 @@ import dev.jellystructure.tv.BrowseService
 import dev.jellystructure.tv.ChannelLogoStore
 import dev.jellystructure.tv.DetailService
 import dev.jellystructure.tv.HomeFeedService
+import dev.jellystructure.tv.ImageProxyService
 import dev.jellystructure.tv.JellyfinImageUrl
 import dev.jellystructure.tv.PlaybackService
 import dev.jellystructure.tv.RaviloConfigService
@@ -110,6 +111,7 @@ fun Route.tvRoutes(
     chartStore: dev.jellystructure.chart.ChartStore? = null,
     chartRegistry: dev.jellystructure.chart.ChartRegistry? = null,
     tmdbClient: dev.jellystructure.tmdb.TmdbClient? = null,
+    imageProxyService: ImageProxyService? = null,
 ) {
     route("/tv/pair") {
         post("/start") {
@@ -137,7 +139,7 @@ fun Route.tvRoutes(
                     displayName = device.jellyfinUsername,
                     isAdmin = device.isAdmin,
                     isKids = device.isKids,
-                    avatarUrl = if (baseUrl.isNotBlank()) JellyfinImageUrl.avatar(baseUrl, device.jellyfinUserId, device.jellyfinUserToken) else null,
+                    avatarUrl = JellyfinImageUrl.avatar(device.jellyfinUserId),
                 ),
                 deviceToken = deviceToken,
             ))
@@ -221,7 +223,7 @@ fun Route.tvRoutes(
                 displayName = d.jellyfinUsername,
                 isAdmin = d.isAdmin,
                 isKids = d.isKids,
-                avatarUrl = if (baseUrl.isNotBlank()) JellyfinImageUrl.avatar(baseUrl, d.jellyfinUserId, d.jellyfinUserToken) else null,
+                avatarUrl = JellyfinImageUrl.avatar(d.jellyfinUserId),
             )
         }
         call.respond(sessions)
@@ -487,6 +489,21 @@ fun Route.tvRoutes(
     }
 
     // ── Channel-logo asset library (R36 §F) ──────────────────────────────────
+    // R85: public image proxy — serves Jellyfin item/user images from disk cache (AuthPlugin OPEN_API_PATHS).
+    // Coil can't attach a device token to image requests; images are not sensitive.
+    get("/tv/image/{itemId}/{type}") {
+        val itemId = call.parameters["itemId"] ?: return@get call.respond(HttpStatusCode.BadRequest)
+        val type   = call.parameters["type"]   ?: return@get call.respond(HttpStatusCode.BadRequest)
+        val proxy  = imageProxyService ?: return@get call.respond(HttpStatusCode.ServiceUnavailable)
+        val result = proxy.serve(itemId, type)
+        if (result == null) {
+            call.respond(HttpStatusCode.NotFound)
+        } else {
+            val (bytes, ct) = result
+            call.respondBytes(bytes, ContentType.parse(ct))
+        }
+    }
+
     // Admin (cookie) uploads + lists; the serve route is public (AuthPlugin OPEN_API_PATHS) so the TV
     // can load a channel's logoUrl without a device token — brand logos are not sensitive.
     get("/tv/admin/channel-logos") {

@@ -25,6 +25,9 @@ private val OPEN_API_PATHS = listOf(
     // /api/tv/channel-logos/<file> serves channel-button brand logos (R36); not sensitive, and the TV
     // <img>/Coil loader can't attach a device token. Admin upload/list stays at /api/tv/admin/...
     "/api/tv/channel-logos/",
+    // /api/tv/image/{itemId}/{type} is the R85 Jellyfin image proxy cache. Images are not sensitive
+    // and Coil can't attach a device token to image requests.
+    "/api/tv/image/",
 )
 
 fun Application.installAuthPlugin(
