@@ -72,13 +72,30 @@
     const SAMPLE_FO = 'Hann er farin. Báturin kom aldri aftur.';
     function isBBB(item) { return item && item.title === 'Big Buck Bunny'; }
     function tracksFor(item) {
+      // audio tracks carry an optional ISO-639-1 `lang`; tracks with no language tag
+      // (e.g. commentary) intentionally omit it so the flag strip skips them.
       if (isBBB(item)) return {
-        audio: [{ label: 'English', desc: 'Stereo · AAC' }, { label: "Director's Commentary", desc: 'Stereo · AAC' }],
+        audio: [
+          { label: 'English', lang: 'en', desc: 'Stereo · AAC' },
+          { label: "Director's Commentary", desc: 'Stereo · AAC' },
+          { label: 'Føroyskt', lang: 'fo', desc: '5.1 · AC-3 · dub' },
+          { label: 'Dansk', lang: 'da', desc: '5.1 · E-AC-3 · dub' },
+          { label: 'Deutsch', lang: 'de', desc: '5.1 · AC-3 · dub' },
+          { label: 'Español', lang: 'es', desc: 'Stereo · AAC · dub' },
+          { label: 'Français', lang: 'fr', desc: 'Stereo · AAC · dub' },
+          { label: 'Italiano', lang: 'it', desc: 'Stereo · AAC · dub' },
+          { label: 'Nederlands', lang: 'nl', desc: 'Stereo · AAC · dub' },
+          { label: 'Português', lang: 'pt', desc: 'Stereo · AAC · dub' },
+        ],
         subs: [{ label: 'Off', off: true }, { label: 'English' }, { label: 'Føroyskt', desc: 'Faroese' }, { label: 'Dansk' }],
         audioDefault: 0, subsDefault: 0,
       };
       return {
-        audio: [{ label: 'Føroyskt', desc: '5.1 · AC-3' }, { label: 'English', desc: 'Stereo · AAC · dub' }],
+        audio: [
+          { label: 'Føroyskt', lang: 'fo', desc: '5.1 · AC-3' },
+          { label: 'Dansk', lang: 'da', desc: '5.1 · E-AC-3 · dub' },
+          { label: 'English', lang: 'en', desc: 'Stereo · AAC · dub' },
+        ],
         subs: [{ label: 'Off', off: true }, { label: 'Føroyskt', desc: 'Full' }, { label: 'English' }, { label: 'Dansk', desc: 'Signs only', flag: 'Forced' }],
         audioDefault: 0, subsDefault: 1,
       };
@@ -315,6 +332,21 @@
         <div class="cast-n">${c.n}</div><div class="cast-r">${c.r}</div>`;
       return t;
     }
+    // ---- audio-language flag strip (detail hero) ----
+    // ISO-639-1 → ISO-3166-1-alpha-2 (flag-icons country code) + English display name.
+    const LANG_CC = { en: 'gb', fr: 'fr', de: 'de', es: 'es', da: 'dk', fo: 'fo', is: 'is', no: 'no', sv: 'se', fi: 'fi', nl: 'nl', it: 'it', pt: 'pt', pl: 'pl', ru: 'ru', ja: 'jp', ko: 'kr', zh: 'cn', ar: 'sa', hi: 'in' };
+    const LANG_NAME = { en: 'English', fr: 'French', de: 'German', es: 'Spanish', da: 'Danish', fo: 'Faroese', is: 'Icelandic', no: 'Norwegian', sv: 'Swedish', fi: 'Finnish', nl: 'Dutch', it: 'Italian', pt: 'Portuguese', pl: 'Polish', ru: 'Russian', ja: 'Japanese', ko: 'Korean', zh: 'Chinese', ar: 'Arabic', hi: 'Hindi' };
+    const FLAG_MAX = 5;
+    function audioFlagsHTML(item) {
+      // physical track order = file order; keep only tracks that carry a flaggable language tag
+      const langs = ((tracksFor(item).audio) || []).map(a => a.lang).filter(l => l && LANG_CC[l]);
+      if (!langs.length) return '';                       // no tagged audio → skip the strip entirely
+      const shown = langs.slice(0, FLAG_MAX);
+      const extra = langs.length - shown.length;
+      const flags = shown.map(l => `<span class="fi fi-${LANG_CC[l]} aflag" title="${LANG_NAME[l] || l}"></span>`).join('');
+      const more = extra > 0 ? `<span class="aflag-more" title="${extra} more language${extra > 1 ? 's' : ''}">+${extra}</span>` : '';
+      return `<div class="dhero-audio"><span class="aflag-label">Audio</span><span class="aflag-row">${flags}${more}</span></div>`;
+    }
     function renderDetail(item) {
       stopHero();
       scroll.innerHTML = '';
@@ -341,6 +373,7 @@
           <div class="hero-kicker"><span>${item.tagline || (isSeries ? 'Series' : 'Film')}</span><span class="n">${isSeries ? seasons + ' Season' + (seasons > 1 ? 's' : '') : (item.year || '')}</span></div>
           ${detailTitle(item)}
           <div class="hero-meta"><span class="tag">${item.badge || 'HD'}</span><span>${item.year}</span><span>${item.genre}</span><span class="rt">${item.rating}+</span></div>
+          ${audioFlagsHTML(item)}
           <div class="hero-syn">${item.syn || 'A standout from your Ravilo library — streamed from Jellyfin, organised by Jellystructure.'}</div>
           ${upNote ? `<div class="dnext"><span class="dnext-dot"></span>${upNote}</div>` : ''}
           <div class="dactions focus-row">

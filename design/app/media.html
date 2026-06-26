@@ -7,9 +7,17 @@
 <link rel="stylesheet" href="wf.css">
 <link rel="stylesheet" href="app.css">
 <link rel="stylesheet" href="ravilo-builders.css">
+<link rel="stylesheet" href="../flags.css">
 <style>
   .field label { display: flex; align-items: center; }
   .tag-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex: none; }
+
+  /* audio-language flag strip (pagebar) */
+  .audio-flags { display: inline-flex; align-items: center; gap: 7px; }
+  .audio-flags .af-label { font-size: .64rem; text-transform: uppercase; letter-spacing: .07em; color: var(--ink-dim); font-weight: 600; }
+  .audio-flags .af-row { display: inline-flex; align-items: center; gap: 5px; }
+  .audio-flags .fi { width: 21px; height: 16px; border-radius: 3px; box-shadow: 0 0 0 1px var(--line-2), 0 1px 3px rgba(0,0,0,.3); background-size: cover; background-position: center; }
+  .audio-flags .af-more { font-size: .68rem; font-weight: 600; color: var(--ink-soft); background: var(--fill-3); padding: 1px 7px; border-radius: 20px; line-height: 1.5; }
 
   /* cast & crew (Phase 75) */
   .cast-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(146px, 1fr)); gap: 14px; }
@@ -223,6 +231,7 @@
   <div class="pagebar">
     <h1>Sintel <span class="muted">(2010)</span></h1>
     <span class="badge ok" id="match-badge">TMDB matched</span>
+    <span class="audio-flags" id="audio-flags"></span>
     <span class="spacer"></span>
     <!-- External links (Jellyfin / TMDB) -->
     <span class="menu-wrap" id="links-menu">
@@ -770,12 +779,17 @@
     const LANGS = (window.RAVILO_LANGS || []).map(l => l.code);   // codes, full data in LANGDATA
     const LANGDATA = window.RAVILO_LANGS || [];
     const LANGNAME = Object.fromEntries(LANGDATA.map(l => [l.code, l.name]).concat([['', 'untagged']]));
+    // ISO-639-1 → ISO-3166-1-alpha-2 (flag-icons country code) for the pagebar audio strip
+    const LANG_CC = { en:'gb', fr:'fr', de:'de', es:'es', da:'dk', fo:'fo', is:'is', no:'no', sv:'se', fi:'fi', nl:'nl', it:'it', pt:'pt', pl:'pl', ru:'ru', ja:'jp', ko:'kr', zh:'cn', ar:'sa', hi:'in' };
+    const FLAG_MAX = 5;
     // working model (clone of original); each track: {sp, lang, codec, title, def, forced}
     const model = {
       audio: [
         { sp:'0:a:0', lang:'en', codec:'vorbis · stereo', title:'', def:false },
         { sp:'0:a:1', lang:'fr', codec:'ac3 · 5.1', title:'Français', def:true },
-        { sp:'0:a:2', lang:'',   codec:'ac3', title:'commentary', def:false },
+        { sp:'0:a:2', lang:'fo', codec:'eac3 · 5.1', title:'Føroyskt', def:false },
+        { sp:'0:a:3', lang:'da', codec:'ac3 · 5.1', title:'Dansk', def:false },
+        { sp:'0:a:4', lang:'',   codec:'ac3', title:'commentary', def:false },
       ],
       subs: [
         { sp:'0:s:0', lang:'en', codec:'srt', title:'English', def:true,  forced:false },
@@ -801,6 +815,20 @@
     function rows() { return model[kind]; }
     const kindName = () => kind === 'audio' ? 'Audio' : 'Subtitle';
     const ordMsg = () => kindName() + ' order written · ffmpeg remux (no re-encode)';
+
+    // pagebar audio-language flags — driven by the same model.audio (physical track order).
+    // Untagged tracks (no language) are skipped; if none are tagged the strip is hidden entirely.
+    const flagStrip = document.getElementById('audio-flags');
+    function updateHeaderFlags() {
+      if (!flagStrip) return;
+      const langs = model.audio.map(t => t.lang).filter(l => l && LANG_CC[l]);
+      if (!langs.length) { flagStrip.innerHTML = ''; return; }
+      const shown = langs.slice(0, FLAG_MAX);
+      const extra = langs.length - shown.length;
+      const flags = shown.map(l => '<span class="fi fi-' + LANG_CC[l] + '" title="' + (LANGNAME[l] || l) + '"></span>').join('');
+      const more = extra > 0 ? '<span class="af-more" title="' + extra + ' more">+' + extra + '</span>' : '';
+      flagStrip.innerHTML = '<span class="af-label">Audio</span><span class="af-row">' + flags + more + '</span>';
+    }
 
     function render() {
       const arr = rows();
@@ -833,6 +861,7 @@
       explain.innerHTML = kind === 'audio' ? AUDIO_EXPLAIN : SUBS_EXPLAIN;
       cascade();
       diff();
+      updateHeaderFlags();
     }
 
     // cascade alert: audio default lang ≠ resolved metadata language

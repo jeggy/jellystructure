@@ -167,6 +167,12 @@ body { font-family: 'Sora', sans-serif; }
 .hero-meta { display: flex; align-items: center; gap: 14px; font-size: 19px; color: var(--ink-soft); margin-bottom: 18px; }
 .hero-meta .tag { padding: 3px 11px; border-radius: 7px; background: var(--chip); color: var(--ink); font-size: 16px; font-weight: 500; }
 .hero-meta .rt { border: 1px solid var(--line); padding: 2px 8px; border-radius: 6px; font-size: 15px; }
+/* audio-language flag strip (detail hero) */
+.dhero-audio { display: flex; align-items: center; gap: 14px; margin-bottom: 20px; }
+.dhero-audio .aflag-label { font-size: 13px; font-weight: 600; letter-spacing: 2px; text-transform: uppercase; color: var(--ink-dim); }
+.dhero-audio .aflag-row { display: flex; align-items: center; gap: 10px; }
+.dhero-audio .aflag { width: 32px; height: 24px; border-radius: 5px; box-shadow: 0 0 0 1px rgba(255,255,255,.2), 0 4px 12px rgba(0,0,0,.45); background-size: cover; background-position: center; }
+.dhero-audio .aflag-more { font-size: 15px; font-weight: 600; color: var(--ink); padding: 3px 10px; border-radius: 30px; background: var(--chip); line-height: 1; }
 .hero-syn { font-size: 22px; line-height: 1.45; color: var(--ink-soft); margin-bottom: 30px; text-wrap: pretty; }
 .hero-actions { display: flex; align-items: center; gap: 16px; }
 

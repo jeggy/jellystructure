@@ -13,7 +13,11 @@
 
   // studios / categories (the Disney+-style rail; configured in Jellystructure)
   const studios = [
-    { id: 'hbo',      name: 'HBO',       wm: 'HBO',        bg: 'linear-gradient(135deg,#3b2a78,#15102e)',
+    { id: 'disney',   name: 'Disney+',   wm: 'Disney+',   bg: 'linear-gradient(135deg,#1648d0,#091646)' },
+    { id: 'dansktv',  name: 'Dansk TV',  wm: 'Dansk<small>TV</small>', logo: 'assets/brand/dansk-tv-logo.svg', bg: 'linear-gradient(135deg,#c8102e,#1a1a1a)' },
+    { id: 'universal',name: 'Universal', wm: 'Universal', bg: 'linear-gradient(135deg,#0b3d91,#06203f)' },
+    { id: 'foroyskt', name: 'Føroyskt',  wm: 'Føroyskt',  bg: 'linear-gradient(135deg,#0065bd,#ed2939)' },
+    { id: 'hbo',      name: 'HBO',       wm: 'HBO',       bg: 'linear-gradient(135deg,#5b2db8,#1a0f3d)',
       hero: [
         { ...T('Iron Veil', 2021, 'Action · Sci-Fi', '16', 'film'), tagline: 'HBO Feature', badge: '4K',
           syn: 'A decommissioned war machine hides in a border town, until the soldiers who built it come looking.' },
@@ -22,12 +26,7 @@
         { ...T('Phantom Circuit', 2023, 'Thriller · Mystery', '16', 'film'), tagline: 'Featured', badge: 'Top 10',
           syn: 'A hardware hacker traces a ghost signal through the city grid and finds someone is tracing her back.' },
       ] },
-    { id: 'tv2',      name: 'TV 2',      wm: 'TV<small>2</small>', bg: 'linear-gradient(135deg,#e3122b,#7d0a1a)' },
-    { id: 'kringvarp',name: 'Kringvarp', wm: 'KvF',        bg: 'linear-gradient(135deg,#0a93a6,#063d47)' },
-    { id: 'dr',       name: 'DR',        wm: 'DR',         bg: 'linear-gradient(135deg,#1455d8,#0a2766)' },
-    { id: 'viaplay',  name: 'Viaplay',   wm: 'viaplay',    bg: 'linear-gradient(135deg,#ff2e5b,#8a0f2c)' },
-    { id: 'dansktv',  name: 'Dansk TV',  wm: 'Dansk<small>TV</small>', logo: 'assets/brand/dansk-tv-logo.svg', bg: 'linear-gradient(135deg,#c8102e,#1a1a1a)' },
-    { id: 'nordisk',  name: 'Nordisk Film', wm: 'NF',      bg: 'linear-gradient(135deg,#2b6f5d,#10342b)' },
+    { id: 'paramount',name: 'Paramount+',wm: 'Paramount+',bg: 'linear-gradient(135deg,#0064ff,#00204d)' },
   ];
 
   // helper to build a title
