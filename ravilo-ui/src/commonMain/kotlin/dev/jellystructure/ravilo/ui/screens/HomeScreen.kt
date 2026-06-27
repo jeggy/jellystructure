@@ -249,6 +249,7 @@ private fun HomeLoaded(
                     variant = rowVariant,
                     progressPct = card.progressPct ?: 0f,
                     watched = card.watched,
+                    sharedKey = card.id,  // R95: morph into the detail hero
                     onSelect = { onItemSelect(card) },
                 )
             }

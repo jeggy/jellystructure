@@ -1,6 +1,10 @@
 package dev.jellystructure.ravilo.ui
 
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibilityScope
+import androidx.compose.animation.ExperimentalSharedTransitionApi
+import androidx.compose.animation.SharedTransitionLayout
+import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -93,6 +97,36 @@ val LocalServerBaseUrl = staticCompositionLocalOf { "" }
 
 /** R65 — active user's Jellyfin avatar URL; null if the user has no profile picture. */
 val LocalUserAvatarUrl = staticCompositionLocalOf<String?> { null }
+
+/**
+ * R95 — shared-element morph scaffolding. The nav host wraps its AnimatedContent in a
+ * SharedTransitionLayout and publishes both scopes here; a Tile (poster) and the detail hero read
+ * them and tag themselves with `Modifier.sharedBounds(key = "media-<id>")` so the selected poster
+ * expands/crossfades into the hero on open. Null when no SharedTransitionLayout is in scope.
+ */
+@OptIn(ExperimentalSharedTransitionApi::class)
+val LocalSharedTransitionScope = staticCompositionLocalOf<SharedTransitionScope?> { null }
+val LocalNavAnimatedVisibilityScope = staticCompositionLocalOf<AnimatedVisibilityScope?> { null }
+
+/**
+ * R95 — tag this element as the shared "hero" for [key] (a media id) when a SharedTransitionLayout is
+ * in scope: the matching tile and detail hero with the same key morph (expand + content crossfade) into
+ * one another across the nav transition. No-op when no SharedTransitionLayout is in scope or [key] is
+ * null. Keeps the experimental API contained to this one function so call sites need no opt-in.
+ */
+@OptIn(ExperimentalSharedTransitionApi::class)
+@Composable
+fun Modifier.heroSharedBounds(key: Any?): Modifier {
+    val sts = LocalSharedTransitionScope.current ?: return this
+    val avs = LocalNavAnimatedVisibilityScope.current ?: return this
+    if (key == null) return this
+    return with(sts) {
+        this@heroSharedBounds.sharedBounds(
+            rememberSharedContentState(key = "media-$key"),
+            animatedVisibilityScope = avs,
+        )
+    }
+}
 
 // ─── Navigation direction (drives AnimatedContent transitionSpec) ─────────────
 
@@ -297,13 +331,19 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                     }
                 }
         ) {
-        // R92: direction-aware transitions — push slides left, pop slides right, resets fade.
-        // Slide is 25% of screen width (subtle) at ScreenEnterMs/ScreenExitMs durations.
-        // contentKey = class means same-class tab switches (Browse→Browse) skip the transition.
+        // R92/R95: SharedTransitionLayout wraps the directional transitions so the selected poster can
+        // morph into the detail hero. Detail open/close fades (the morph carries the spatial motion);
+        // everything else keeps the R92 directional slide. contentKey = class skips same-class switches.
+        @OptIn(ExperimentalSharedTransitionApi::class)
+        SharedTransitionLayout {
         AnimatedContent(
             targetState = dest,
             transitionSpec = {
-                when (navDir) {
+                val detailTransition = targetState is Dest.MovieDetail || targetState is Dest.SeriesDetail ||
+                    initialState is Dest.MovieDetail || initialState is Dest.SeriesDetail
+                if (detailTransition) {
+                    fadeIn(tween(RaviloMotion.ScreenEnterMs)) togetherWith fadeOut(tween(RaviloMotion.ScreenExitMs))
+                } else when (navDir) {
                     NavDir.Forward ->
                         (slideInHorizontally(tween(RaviloMotion.ScreenEnterMs)) { it / 4 } +
                             fadeIn(tween(RaviloMotion.ScreenEnterMs))) togetherWith
@@ -320,7 +360,12 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                 }
             },
             contentKey = { it::class },
-        ) { dest -> when (dest) {
+        ) { dest ->
+            CompositionLocalProvider(
+                LocalSharedTransitionScope provides this@SharedTransitionLayout,
+                LocalNavAnimatedVisibilityScope provides this@AnimatedContent,
+            ) {
+            when (dest) {
             is Dest.ProfilePicker -> {
                 val store = remember { ProfilePickerStore(apiClient) }
                 ProfilePickerScreen(
@@ -569,7 +614,7 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                     onBack = { pop() },
                 )
             }
-        } } // when / AnimatedContent
+        } } } } // when / CompositionLocalProvider / AnimatedContent / SharedTransitionLayout
         FrameTrackerOverlay(fpsOverlay)  // R94: F5 toggles; no-op when false
         } // Box (back-intercept)
         } // CompositionLocalProvider (live config)
