@@ -317,7 +317,8 @@ class HomeFeedService(
             if (!seen.add(itemId)) continue
             val mediaItem = all.firstOrNull { it.jellyfinId == itemId } ?: continue
             val pct = play.userData?.playedPercentage?.toFloat()?.div(100f)
-            cards.add(mediaItem.toMediaCard(progressPct = pct))
+            // R113: carry the resumed episode's season/episode for the on-image badge (null for movies).
+            cards.add(mediaItem.toMediaCard(progressPct = pct, seasonNumber = play.seasonNumber, episodeNumber = play.episodeNumber))
         }
 
         for (play in nextUpItems) {
@@ -326,7 +327,7 @@ class HomeFeedService(
             val mediaItem = all.firstOrNull { it.jellyfinId == itemId } ?: continue
             val s = play.seasonNumber; val e = play.episodeNumber
             val label = if (s != null && e != null) "S${s}E${e} · ${play.name}" else play.name
-            cards.add(mediaItem.toMediaCard(nextUpLabel = label))
+            cards.add(mediaItem.toMediaCard(nextUpLabel = label, seasonNumber = s, episodeNumber = e))
         }
 
         cards.take(ROW_ITEM_LIMIT)
@@ -342,6 +343,8 @@ class HomeFeedService(
     private fun MediaItem.toMediaCard(
         progressPct: Float? = null,
         nextUpLabel: String? = null,
+        seasonNumber: Int? = null,
+        episodeNumber: Int? = null,
         badge: String? = null,
     ): MediaCard {
         val jId = jellyfinId
@@ -357,6 +360,8 @@ class HomeFeedService(
             backdropUrl = if (jId != null) JellyfinImageUrl.backdrop(jId) else null,
             progressPct = progressPct,
             nextUpLabel = nextUpLabel,
+            seasonNumber = seasonNumber,
+            episodeNumber = episodeNumber,
             badge = badge,
         )
     }
