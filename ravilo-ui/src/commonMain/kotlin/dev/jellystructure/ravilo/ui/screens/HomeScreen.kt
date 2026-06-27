@@ -210,6 +210,7 @@ private fun HomeLoaded(
                     items = feed.channels,
                     itemKey = { ch -> ch.id },
                     urlResolver = { ch -> ch.logoUrl },
+                    bringRowHeaderIntoView = false,  // R108: spec topInset already shows the title
                 ) { _, ch ->
                     ChannelCard(
                         name = ch.name,
@@ -239,6 +240,7 @@ private fun HomeLoaded(
                     // full-size image and the tile cache-misses → double download).
                     u?.let { sizedProxyUrl(it, tileRequestedWidth(rowVariant)) }
                 },
+                bringRowHeaderIntoView = false,  // R108: spec topInset already shows the title
             ) { _, card ->
                 Tile(
                     title = card.title,
