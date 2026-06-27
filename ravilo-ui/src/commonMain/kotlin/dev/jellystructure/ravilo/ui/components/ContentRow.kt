@@ -53,6 +53,13 @@ fun <T> StaticContentRow(
     itemKey: ((T) -> Any)? = null,
     /** R88: supply a URL per item to warm Coil's cache ahead of the scroll position. */
     urlResolver: ((T) -> String?)? = null,
+    /**
+     * R108: bring the whole row (title + tiles) into view on focus. Pass `false` on screens whose
+     * vertical bring-into-view spec already reserves a top inset for the title (Home, R65): there this
+     * is a redundant *second* scroll that competes with the focused tile's native bring-into-view and
+     * janks fast up/down navigation. Screens without a top-inset spec (Discover/Channel) keep it true.
+     */
+    bringRowHeaderIntoView: Boolean = true,
     itemContent: @Composable (index: Int, item: T) -> Unit,
 ) {
     val colors = RaviloTheme.colors
@@ -86,14 +93,17 @@ fun <T> StaticContentRow(
     }
 
     // When any descendant gains focus, bring the *whole row* (title + tiles) into view so the
-    // vertical LazyColumn scrolls to show the row header, not just the focused tile.
+    // vertical LazyColumn scrolls to show the row header, not just the focused tile. R108: skipped
+    // when [bringRowHeaderIntoView] is false (the spec's top inset already shows the title there).
     @OptIn(ExperimentalFoundationApi::class)
     val rowBIVR = remember { BringIntoViewRequester() }
     val scope = rememberCoroutineScope()
+    val headerInViewModifier = if (bringRowHeaderIntoView) {
+        Modifier.bringIntoViewRequester(rowBIVR)
+            .onFocusChanged { if (it.hasFocus) scope.launch { rowBIVR.bringIntoView() } }
+    } else Modifier
 
-    Column(modifier = modifier.fillMaxWidth()
-        .bringIntoViewRequester(rowBIVR)
-        .onFocusChanged { if (it.hasFocus) scope.launch { rowBIVR.bringIntoView() } }) {
+    Column(modifier = modifier.fillMaxWidth().then(headerInViewModifier)) {
         if (title != null) {
             Row(
                 modifier = Modifier
