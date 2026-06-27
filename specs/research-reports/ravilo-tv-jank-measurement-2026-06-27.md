@@ -111,7 +111,18 @@ stall, or a server-lifecycle event. See R105.
 
 ## 5. Follow-up specs (new phases)
 
-### R103 — Ship/repair the Baseline Profile (★ highest value)
+### R103 — Ship/repair the Baseline Profile (★ highest value) — ✅ DONE (FPS re-measure pending backend)
+**Update 2026-06-27:** Implemented. Root cause confirmed: the merged Compose+Coil library
+profile *was* embedded (~7.4 KB `.dm`) but a sideloaded release APK had no
+`androidx.profileinstaller`, so ART never applied it → JIT every launch. Added
+`profileinstaller 1.4.1` (its `ProfileInstallerInitializer`/`ProfileInstallReceiver` are now in
+the merged manifest) + `ravilo-android/src/main/baseline-prof.txt` (app composables + Coil;
+wildcards expand to ~4.8k app + 3k Coil rules pre-R8, ~12.7k post-R8). On the stue TV:
+`INSTALL_PROFILE` broadcast → `result=1`; `compile -m speed-profile -f` → `status=speed-profile`.
+The full apply-chain works on-device. **Still to do:** re-run the §2.2 cold-scroll measurement
+once the backend is reachable, to confirm cold scroll lands near the AOT-warm ~0.2% jank.
+
+_Original spec:_
 **Why:** cold-start was measured as the dominant scroll-jank source (64% → 0.2% under
 forced AOT). The release build already emits a `baselineProfiles` artifact, yet the cold run
 was still janky — so either the profile is not being applied at runtime (missing/old
