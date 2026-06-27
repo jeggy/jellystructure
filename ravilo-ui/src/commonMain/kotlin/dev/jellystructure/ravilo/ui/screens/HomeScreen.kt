@@ -40,7 +40,9 @@ import dev.jellystructure.ravilo.ui.components.Tile
 import dev.jellystructure.ravilo.ui.focus.rememberEdgeBringIntoViewSpec
 import dev.jellystructure.ravilo.ui.focus.backToTopOnBack
 import dev.jellystructure.ravilo.ui.components.TileVariant
+import dev.jellystructure.ravilo.ui.components.tileRequestedWidth
 import dev.jellystructure.ravilo.ui.components.toTileVariant
+import dev.jellystructure.ravilo.ui.seams.sizedProxyUrl
 import dev.jellystructure.ravilo.ui.i18n.str
 import dev.jellystructure.ravilo.ui.theme.RaviloDimens
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
@@ -232,7 +234,10 @@ private fun HomeLoaded(
                 items = row.items,
                 itemKey = { card -> card.id },
                 urlResolver = { card ->
-                    if (rowVariant == TileVariant.LANDSCAPE) card.backdropUrl ?: card.posterUrl else card.posterUrl
+                    val u = if (rowVariant == TileVariant.LANDSCAPE) card.backdropUrl ?: card.posterUrl else card.posterUrl
+                    // R96 fix: prefetch the SAME ?w= URL the Tile will request (else prefetch warms the
+                    // full-size image and the tile cache-misses → double download).
+                    u?.let { sizedProxyUrl(it, tileRequestedWidth(rowVariant)) }
                 },
             ) { _, card ->
                 Tile(

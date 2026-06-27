@@ -62,6 +62,11 @@ private val SQUARE_H    = 180.dp
 // 2× panel while staying ~9× smaller in memory/decode than the 1920px proxy default.
 private const val LANDSCAPE_IMAGE_W = 640
 
+/** R96: the proxy `?w=` a tile of [variant] requests, or null for poster/square (already ~320px).
+ *  Exposed so a row's prefetch resolver requests the SAME width the tile will (shared cache key). */
+fun tileRequestedWidth(variant: TileVariant): Int? =
+    if (variant == TileVariant.LANDSCAPE) LANDSCAPE_IMAGE_W else null
+
 @Composable
 fun Tile(
     title: String,
@@ -154,7 +159,7 @@ fun Tile(
                     // R96: LANDSCAPE tiles render a backdrop (proxy default 1920px) into a ~256dp slot —
                     // request ~640px so Coil decodes ~0.9 MB, not ~8.3 MB. POSTER/SQUARE already use
                     // poster-type proxy images sized to ~320px, so they pass null (backend default).
-                    requestedWidth = if (variant == TileVariant.LANDSCAPE) LANDSCAPE_IMAGE_W else null,
+                    requestedWidth = tileRequestedWidth(variant),
                 )
             } else {
                 // HSL-style gradient fallback derived from title hash

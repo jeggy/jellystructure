@@ -47,7 +47,7 @@ fun RemoteImage(
     // Absolute TMDB/Jellyfin URLs (https://…) pass through unchanged.
     // R96: append ?w= only for proxy paths (the backend ignores it on absolute URLs anyway).
     val baseUrl = LocalServerBaseUrl.current
-    val sized = if (requestedWidth != null && url.startsWith("/api/tv/image/")) "$url?w=$requestedWidth" else url
+    val sized = sizedProxyUrl(url, requestedWidth)
     val resolved = if (sized.startsWith("/") && baseUrl.isNotBlank()) "$baseUrl$sized" else sized
 
     // R87: build the request per-call so the crossfade is a short ~220ms "settle," not the 600ms
@@ -84,6 +84,15 @@ fun RemoteImage(
 
 private fun resolveUrl(url: String, baseUrl: String): String =
     if (url.startsWith("/") && baseUrl.isNotBlank()) "$baseUrl$url" else url
+
+/**
+ * R96: append `?w=` to a proxy (/api/tv/image/...) URL so the backend serves a device-appropriate
+ * size; returns the URL unchanged for absolute/non-proxy URLs or a null/zero width. Used by BOTH the
+ * display path (RemoteImage) and the row prefetch resolver so a tile and its prefetch share ONE cache
+ * key — otherwise the prefetch warms the full-size image and the tile then cache-misses on `?w=`.
+ */
+fun sizedProxyUrl(url: String, width: Int?): String =
+    if (width != null && width > 0 && url.startsWith("/api/tv/image/")) "$url?w=$width" else url
 
 /**
  * R100: warm a single image (e.g. a detail backdrop) ahead of navigating to it, so it is a
