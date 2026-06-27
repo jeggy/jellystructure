@@ -193,27 +193,29 @@ private fun mountAss(video: HTMLVideoElement, url: String): Unit = js(
 
 /**
  * R110 — inject a one-time global ::cue style so native <track> (VTT) captions match the TV's
- * Android look: white text with a uniform black OUTLINE and no background box. CSS ::cue does not
- * reliably honor -webkit-text-stroke across browsers, so the outline is emulated with an 8-direction
- * black text-shadow stack (the design mockup `ravilo-player.css` .pl-sub documents the shadow route).
- * Guarded by an element id so repeated load() calls add it at most once. JASSUB/ASS subs are untouched
- * — they carry their own author styling and must not be overridden.
+ * Android look: white text with a GENTLE outline and no background box. CSS ::cue does not reliably
+ * honor -webkit-text-stroke across browsers, so the outline is emulated with an 8-direction text-shadow
+ * stack at ~1px and ~80% black (rgba(0,0,0,.8)) — defined but soft/easy on the eyes, not a hard border
+ * (the design mockup `ravilo-player.css` .pl-sub documents the shadow route). Guarded by an element id
+ * so repeated load() calls add it at most once. JASSUB/ASS subs are untouched — they carry their own
+ * author styling and must not be overridden.
  */
 private fun installCueStyle(): Unit = js(
     """{
         if (document.getElementById('ravilo-cue-style')) return;
         var st = document.createElement('style');
         st.id = 'ravilo-cue-style';
+        var c = 'rgba(0,0,0,.8)';
         st.textContent =
             'video::cue{' +
             'color:#fff;' +
             'background:transparent;' +
             'font-weight:600;' +
             'text-shadow:' +
-            '-1.5px -1.5px 0 #000,1.5px -1.5px 0 #000,' +
-            '-1.5px 1.5px 0 #000,1.5px 1.5px 0 #000,' +
-            '0 -1.5px 0 #000,0 1.5px 0 #000,' +
-            '-1.5px 0 0 #000,1.5px 0 0 #000;' +
+            '-1px -1px 0 ' + c + ',1px -1px 0 ' + c + ',' +
+            '-1px 1px 0 ' + c + ',1px 1px 0 ' + c + ',' +
+            '0 -1px 0 ' + c + ',0 1px 0 ' + c + ',' +
+            '-1px 0 0 ' + c + ',1px 0 0 ' + c + ';' +
             '}';
         document.head.appendChild(st);
     }"""
