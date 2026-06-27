@@ -1,6 +1,8 @@
 package dev.jellystructure.ravilo.ui.components
 
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -34,6 +36,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -64,6 +67,8 @@ fun HeroCarousel(
     autoAdvanceSeconds: Int = 7,
     onOpenDetail: (MediaCard) -> Unit = {},
     onUp: (() -> Unit)? = null,
+    /** R91: parallax — read inside graphicsLayer (draw-only, no HeroCarousel recompose on scroll). */
+    scrollOffsetPx: () -> Float = { 0f },
 ) {
     val colors = RaviloTheme.colors
     val sora = Sora
@@ -94,6 +99,14 @@ fun HeroCarousel(
     // the start so the dots / auto-advance stay consistent.
     LaunchedEffect(items.size) { if (activeIndex > items.lastIndex) { activeIndex = 0; resetTick++ } }
     val active = items[activeIndex.coerceIn(0, items.lastIndex)]
+
+    // R91: Ken Burns drift — each slide starts at 1.0 and drifts to 1.05 over ~9s.
+    // Animatable.value is a snapshot State read inside graphicsLayer (draw-only, no recompose per frame).
+    val kbScale = remember { Animatable(1.0f) }
+    LaunchedEffect(activeIndex) {
+        kbScale.snapTo(1.0f)  // instant reset; the 600ms crossfade covers the snap
+        kbScale.animateTo(RaviloMotion.HeroKenBurnsScale, tween(RaviloMotion.HeroKenBurnsTravelMs, easing = LinearEasing))
+    }
 
     // R88: warm the next 2 slides' backdrop + logo before auto-advance fires.
     if (items.size > 1) {
@@ -148,7 +161,15 @@ fun HeroCarousel(
             RemoteImage(
                 url = url,
                 contentDescription = null,
-                modifier = Modifier.fillMaxSize(),
+                // R91: Ken Burns scale + parallax translationY applied draw-only so neither
+                // recomposes the carousel on animation or scroll frames.
+                modifier = Modifier
+                    .fillMaxSize()
+                    .graphicsLayer {
+                        scaleX = kbScale.value
+                        scaleY = kbScale.value
+                        translationY = -scrollOffsetPx() * RaviloMotion.HeroParallaxFactor
+                    },
                 alignment = RaviloDimens.heroBackdropAlignment,
                 placeholderColor = colors.surface,
             )
