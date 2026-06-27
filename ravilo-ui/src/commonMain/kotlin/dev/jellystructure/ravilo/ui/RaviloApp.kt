@@ -56,6 +56,7 @@ import dev.jellystructure.ravilo.ui.screens.SeriesDetailStore
 import dev.jellystructure.ravilo.ui.screens.SettingsScreen
 import dev.jellystructure.ravilo.ui.screens.SettingsStore
 import dev.jellystructure.ravilo.ui.i18n.WithLocale
+import dev.jellystructure.ravilo.ui.perf.FrameTrackerOverlay
 import dev.jellystructure.ravilo.ui.theme.RaviloMotion
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
 import dev.jellystructure.ravilo.ui.theme.rememberRaviloTheme
@@ -202,6 +203,7 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
         var stack by remember { mutableStateOf(listOf<Dest>(initialDest)) }
         // R92: direction that drives the AnimatedContent transitionSpec.
         var navDir by remember { mutableStateOf(NavDir.Forward) }
+        var fpsOverlay by remember { mutableStateOf(false) }  // R94: toggle with F5
         // Top-level: track whether the Top 10 tab is available; set from HomeStore, propagated to all screens.
         var discoverAvailable by remember { mutableStateOf(false) }
 
@@ -274,10 +276,13 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                 .fillMaxSize()
                 .windowInsetsPadding(WindowInsets.safeDrawing)
                 .onKeyEvent { ev ->
-                    if (ev.type == KeyEventType.KeyDown &&
-                        (ev.key == Key.Back || ev.key == Key.Escape || ev.key == Key.Backspace) &&
-                        stack.size > 1
-                    ) { pop(); true } else false
+                    when {
+                        ev.type != KeyEventType.KeyDown -> false
+                        ev.key == Key.F5 -> { fpsOverlay = !fpsOverlay; true }  // R94 debug toggle
+                        (ev.key == Key.Back || ev.key == Key.Escape || ev.key == Key.Backspace) && stack.size > 1 ->
+                            { pop(); true }
+                        else -> false
+                    }
                 }
         ) {
         // R92: direction-aware transitions — push slides left, pop slides right, resets fade.
@@ -583,6 +588,7 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                 )
             }
         } } // when / AnimatedContent
+        FrameTrackerOverlay(fpsOverlay)  // R94: F5 toggles; no-op when false
         } // Box (back-intercept)
         } // CompositionLocalProvider (live config)
     } // WithLocale
