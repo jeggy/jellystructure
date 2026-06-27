@@ -287,14 +287,21 @@ data class HeroConfig(
 
 /**
  * One filter condition (R32 workbench). `facet` is one of: studio, network, genre, tag,
- * audio_language, audio_codec, track_title, hero_item. `op` is is_any_of | is_none_of for list
- * facets, or contains | not_contains for track_title.
+ * audio_language, audio_codec, track_title, hero_item, content_row. `op` is is_any_of | is_none_of
+ * for list facets, or contains | not_contains for track_title.
+ *
+ * R87 — `content_row` facet: membership in another saved filter (a content row). Its referenced rows
+ * are carried verbatim in [rows] (RowConfig specs, reused — no parallel taxonomy, no ids to resolve);
+ * `values` is unused for this facet. A title matches "is_any_of" iff it matches any listed row's
+ * filter; "is_none_of" iff none. Evaluated by the same per-title matcher as every other condition.
  */
 @Serializable
 data class Condition(
     val facet: String,
     val op: String = "is_any_of",
     val values: List<String> = emptyList(),
+    // R87: referenced content rows for the `content_row` facet (empty for all other facets).
+    val rows: List<RowConfig> = emptyList(),
 )
 
 /** R53 — per-display-mode edge padding for the channel button (0..40 px each side). */
