@@ -31,7 +31,6 @@ class DetailService(
 ) {
     suspend fun getMovieDetail(device: DeviceData, jellyfinId: String): MovieDetail? {
         val item = mediaStore.resolveByJellyfinId(jellyfinId) ?: return null
-        val all  = mediaStore.allItems()
 
         // R82: audio/sub languages from local scanned tracks; R83: runtime from local model.
         val movieAudioLangs = item.tracks
@@ -45,7 +44,7 @@ class DetailService(
             synopsis           = item.overview,
             runtime            = item.runtime ?: 0,
             cast               = castFrom(item),
-            related            = relatedItems(item, all),
+            related            = mediaStore.relatedByGenre(item, RELATED_LIMIT).map { it.toMediaCard() },
             playback           = null,  // R83: hydrated by /api/tv/playstate (R84 overlays it)
             audioLanguages     = movieAudioLangs,
             subtitleLanguages  = movieSubLangs,
@@ -54,7 +53,6 @@ class DetailService(
 
     suspend fun getSeriesDetail(device: DeviceData, jellyfinId: String): SeriesDetail? {
         val item = mediaStore.resolveByJellyfinId(jellyfinId) ?: return null
-        val all  = mediaStore.allItems()
 
         val seasonNums = item.episodes.map { it.seasonNumber ?: 0 }.distinct().sorted()
 
@@ -95,7 +93,7 @@ class DetailService(
             synopsis          = item.overview,
             seasons           = seasons,
             cast              = castFrom(item),
-            related           = relatedItems(item, all),
+            related           = mediaStore.relatedByGenre(item, RELATED_LIMIT).map { it.toMediaCard() },
             progress          = null,  // R83: hydrated by /api/tv/playstate (R84 overlays it)
             audioLanguages    = seriesAudioLangs,
             subtitleLanguages = seriesSubLangs,
@@ -135,13 +133,8 @@ class DetailService(
     }
 
     // ─── Helpers ──────────────────────────────────────────────────────────────
-
-    private fun relatedItems(source: MediaItem, all: List<MediaItem>): List<MediaCard> =
-        all
-            .filter { it.id != source.id && it.genres.any { g -> source.genres.contains(g) } }
-            .sortedByDescending { it.scannedAt }
-            .take(RELATED_LIMIT)
-            .map { it.toMediaCard() }
+    // R100: related items now come from MediaStore.relatedByGenre (genre-bucket index) instead of a
+    // full-library scan per detail open; the old in-place relatedItems()/allItems() pair is gone.
 
     private fun MediaItem.toMediaCard(): MediaCard {
         val jId = jellyfinId

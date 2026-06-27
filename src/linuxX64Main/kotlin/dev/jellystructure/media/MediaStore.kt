@@ -32,6 +32,11 @@ class MediaStore(private val db: JellystructureDb, private val jsTagStore: JsTag
     // on every page open. Built on first use, invalidated on any write.
     private var jellyfinIdIndex: Map<String, MediaItem>? = null
 
+    // R100: genre → items index so a detail page's "related" list is gathered from just the source's
+    // genre buckets instead of scanning the whole library per open. Built on first use, invalidated on
+    // any write — same pattern as jellyfinIdIndex.
+    private var genreIndexCache: Map<String, List<MediaItem>>? = null
+
     // Phase 88: decoded-library cache — skip JSON deserialisation on every read path.
     // Invalidated synchronously on every write (upsertItem). Rebuilt lazily on next allItems() call.
     private var allItemsCache: List<MediaItem>? = null
@@ -112,6 +117,7 @@ class MediaStore(private val db: JellystructureDb, private val jsTagStore: JsTag
                     allItemsCache    = null
                     peopleIndexCache = null
                     jellyfinIdIndex  = null
+                    genreIndexCache  = null
                     libraryVersion++
                     db.mediaQueries.deleteById(id)
                 }
@@ -249,6 +255,31 @@ class MediaStore(private val db: JellystructureDb, private val jsTagStore: JsTag
         return db.mediaQueries.getAll().executeAsList().mapNotNull { blob ->
             runCatching { json.decodeFromString(MediaItem.serializer(), blob) }.getOrNull()
         }.also { allItemsCache = it }
+    }
+
+    /**
+     * R100: items sharing any genre with [source], newest first, capped at [limit] — gathered from the
+     * source's genre buckets only, not a full-library scan. Preserves the prior semantics exactly
+     * (any shared genre, exclude self, sort by scannedAt desc). Dedup is by id (cheap) rather than by
+     * the deep data-class equality of MediaItem.
+     */
+    fun relatedByGenre(source: MediaItem, limit: Int): List<MediaItem> {
+        if (source.genres.isEmpty()) return emptyList()
+        val index = genreIndexCache ?: buildGenreIndex().also { genreIndexCache = it }
+        val byId = LinkedHashMap<String, MediaItem>()
+        for (g in source.genres) {
+            val bucket = index[g] ?: continue
+            for (item in bucket) if (item.id != source.id && item.id !in byId) byId[item.id] = item
+        }
+        return byId.values.sortedByDescending { it.scannedAt }.take(limit)
+    }
+
+    private fun buildGenreIndex(): Map<String, List<MediaItem>> {
+        val map = HashMap<String, MutableList<MediaItem>>()
+        for (item in allItems()) {
+            for (g in item.genres) map.getOrPut(g) { mutableListOf() }.add(item)
+        }
+        return map
     }
 
     /**
@@ -391,6 +422,7 @@ class MediaStore(private val db: JellystructureDb, private val jsTagStore: JsTag
         allItemsCache    = null
         peopleIndexCache = null
         jellyfinIdIndex  = null
+        genreIndexCache  = null
         libraryVersion++
         val now = nowMs()
         lastCheckedMap[item.id] = now
