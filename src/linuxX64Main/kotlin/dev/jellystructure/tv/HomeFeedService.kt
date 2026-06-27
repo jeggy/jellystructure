@@ -23,6 +23,7 @@ import kotlinx.cinterop.memScoped
 import kotlinx.cinterop.ptr
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.withTimeoutOrNull
 import platform.posix.CLOCK_REALTIME
 import platform.posix.clock_gettime
 import platform.posix.timespec
@@ -30,6 +31,7 @@ import platform.posix.timespec
 private const val ROW_ITEM_LIMIT = 30
 private const val HERO_AUTO_COUNT = 5
 private const val FEED_TTL_MS = 5 * 60_000L  // Continue row freshness window
+private const val CONTINUE_TIMEOUT_MS = 6_000L  // R102: cap the live Jellyfin resume/next-up wait
 
 class HomeFeedService(
     private val mediaStore: MediaStore,
@@ -295,10 +297,17 @@ class HomeFeedService(
             ?: return@coroutineScope emptyList()
 
         // Both calls are independent — fetch in parallel to halve the Jellyfin round-trips.
-        val resumeDeferred = async { jellyfinClient.getResumeItems(jellyfinUrl, token, device.jellyfinUserId) }
-        val nextUpDeferred = async { jellyfinClient.getNextUp(jellyfinUrl, token, device.jellyfinUserId) }
-        val resumeItems = resumeDeferred.await()
-        val nextUpItems = nextUpDeferred.await()
+        // R102: bound the wait so a cold/slow Jellyfin can't hang the whole home response on the 30s
+        // HttpTimeout. On timeout the asyncs are cancelled and home ships WITHOUT the Continue row —
+        // a missing row is atomic-safe (no reflow), and the R86-A SWR cache refreshes it next load.
+        val fetched = withTimeoutOrNull(CONTINUE_TIMEOUT_MS) {
+            coroutineScope {
+                val resumeDeferred = async { jellyfinClient.getResumeItems(jellyfinUrl, token, device.jellyfinUserId) }
+                val nextUpDeferred = async { jellyfinClient.getNextUp(jellyfinUrl, token, device.jellyfinUserId) }
+                resumeDeferred.await() to nextUpDeferred.await()
+            }
+        } ?: return@coroutineScope emptyList()
+        val (resumeItems, nextUpItems) = fetched
 
         val cards = mutableListOf<MediaCard>()
         val seen = mutableSetOf<String>()
