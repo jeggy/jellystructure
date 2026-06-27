@@ -227,7 +227,11 @@ private fun MovieDetailLoaded(
                         // focusing Play/Resume reliably reframes the full backdrop.
                         modifier = Modifier
                             .onFocusChanged {
-                                if (it.hasFocus) scope.launch {
+                                // R72: focusing Play/Resume reframes the full backdrop. R115: only when the
+                                // hero is actually scrolled — on open the list is already at the top (offset 0),
+                                // so skip the competing scroll(UserInput) that otherwise fights bring-into-view
+                                // mid-transition (the open transition was the jankiest pass on-device).
+                                if (it.hasFocus && listState.firstVisibleItemScrollOffset > 0) scope.launch {
                                     listState.scroll(MutatePriority.UserInput) {
                                         scrollBy(-listState.firstVisibleItemScrollOffset.toFloat())
                                     }
