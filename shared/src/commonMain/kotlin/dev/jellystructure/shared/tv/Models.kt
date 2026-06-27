@@ -125,6 +125,10 @@ data class MediaCard(
     @SerialName("backdrop_url") val backdropUrl: String?,
     @SerialName("progress_pct") val progressPct: Float? = null,
     @SerialName("next_up_label") val nextUpLabel: String? = null,
+    // R113: season/episode of the specific episode this card resumes/queues (Continue Watching),
+    // surfaced as a small on-image badge for TV shows. Null for movies / when unknown.
+    @SerialName("season_number") val seasonNumber: Int? = null,
+    @SerialName("episode_number") val episodeNumber: Int? = null,
     val badge: String? = null,
     val watched: Boolean = false,
 )

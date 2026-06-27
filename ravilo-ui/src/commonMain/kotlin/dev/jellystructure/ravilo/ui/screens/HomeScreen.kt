@@ -242,9 +242,15 @@ private fun HomeLoaded(
                 },
                 bringRowHeaderIntoView = false,  // R108: spec topInset already shows the title
             ) { _, card ->
+                // R113: in Continue Watching, show the season/episode as a small on-image badge for TV
+                // shows and leave just the series title below (was "S1E3 · Episode" as the subtitle).
+                val isContinue = row.kind == RowKind.CONTINUE
+                val episodeBadge = if (isContinue && card.seasonNumber != null && card.episodeNumber != null)
+                    "S${card.seasonNumber}:E${card.episodeNumber}" else null
                 Tile(
                     title = card.title,
-                    subtitle = card.nextUpLabel,
+                    subtitle = if (isContinue) null else card.nextUpLabel,
+                    episodeBadge = episodeBadge,
                     posterUrl = if (rowVariant == TileVariant.LANDSCAPE) card.backdropUrl ?: card.posterUrl else card.posterUrl,
                     variant = rowVariant,
                     progressPct = card.progressPct ?: 0f,
