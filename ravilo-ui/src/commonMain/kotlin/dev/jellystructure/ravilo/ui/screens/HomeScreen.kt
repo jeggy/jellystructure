@@ -186,6 +186,10 @@ private fun HomeLoaded(
                         // screen owns Play/resume. Left/Right pages the carousel inside HeroCarousel.
                         onOpenDetail = { onItemSelect(it) },
                         onUp = { navBarFR.requestFocus() },
+                        // R91: read scroll state inside the lambda (draw-only; no recompose on each frame).
+                        scrollOffsetPx = {
+                            if (listState.firstVisibleItemIndex == 0) listState.firstVisibleItemScrollOffset.toFloat() else 0f
+                        },
                         // Down omitted → native focus search moves into the channel rail / first row.
                     )
                 }
