@@ -1,0 +1,20 @@
+# R103 — Baseline Profile (app + image pipeline)
+#
+# The Compose runtime/foundation/ui/material and Coil baseline profiles are merged automatically
+# from their AAR artifacts. This file adds the app's OWN composables/stores and the Coil compose
+# glue that the library profiles don't cover, so the hot Home-scroll and detail-open paths are
+# AOT-compiled (speed-profile) at install instead of being JIT-compiled on every cold launch —
+# the measured cold-start scroll jank (~64% janky frames cold vs ~0.2% once AOT-compiled).
+#
+# Rules are authored against source names; AGP rewrites them through the R8 mapping when it
+# compiles the ART profile, so they remain correct under minification. `**` matches across packages.
+
+# All app code: ravilo-ui composables (HomeScreen, Tile, ContentRow, HeroCarousel, RemoteImage,
+# detail screens) + the shared models + the Android entry point. Hot + Startup + Post-startup.
+HSPLdev/jellystructure/**;->**(**)**
+Ldev/jellystructure/**;
+
+# Coil3 — decode, memory/disk cache, and the AsyncImage Compose integration, exercised on every
+# tile as it scrolls into view.
+HSPLcoil3/**;->**(**)**
+Lcoil3/**;
