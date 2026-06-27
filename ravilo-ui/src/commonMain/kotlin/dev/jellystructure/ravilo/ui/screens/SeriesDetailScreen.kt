@@ -13,17 +13,17 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.foundation.MutatePriority
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -40,7 +40,6 @@ import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRestorer
 import androidx.compose.ui.focus.onFocusChanged
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -70,9 +69,6 @@ import dev.jellystructure.shared.tv.CardPlayState
 import dev.jellystructure.shared.tv.Episode
 import dev.jellystructure.shared.tv.MediaCard
 import dev.jellystructure.shared.tv.SeriesDetail
-
-// R107: how long after open to compose the below-the-fold detail rails — past the 220ms slide.
-private const val POST_OPEN_COMPOSE_DELAY_MS = 280L
 
 @Composable
 fun SeriesDetailScreen(
@@ -173,7 +169,9 @@ private fun SeriesDetailLoaded(
             1f to colors.background,
         )
     }
-    val scrollState = rememberScrollState()
+    // R109: LazyColumn so below-hero rails (season picker, episodes, cast, related) compose only when
+    // scrolled into view — first paint is hero-only (supersedes R107's timed defer).
+    val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
     val density = LocalDensity.current
     val containerH = LocalWindowInfo.current.containerSize.height
@@ -204,16 +202,12 @@ private fun SeriesDetailLoaded(
 
     LaunchedEffect(Unit) { runCatching { playFR.requestFocus() } }
 
-    // R107: defer the below-hero rails (season picker, episodes, cast, related) until just after the
-    // open transition. The hero fills the viewport, so those rails are below the fold — composing
-    // ~10-12 off-screen EpisodeCard/CastCircle/Tile in the first frame is the measured detail-open
-    // hitch. They paint ~280ms later (after the 220ms slide), which is invisible: the user can't
-    // scroll to them during the transition, so nothing visible reflows (atomic-frame safe).
-    var showBelowFold by remember(detail.card.id) { mutableStateOf(false) }
-    LaunchedEffect(detail.card.id) { delay(POST_OPEN_COMPOSE_DELAY_MS); showBelowFold = true }
-
     // R79: appBarHeight + 24dp top inset so season picker / episode rail title isn't hidden under the bar.
     val detailBivSpec = rememberEdgeBringIntoViewSpec(peekDp = 60.dp, topInsetDp = RaviloDimens.appBarHeight + 24.dp)
+    // R109: boolean derivedStateOf (notifies only on threshold cross) — no per-scroll-frame recompose.
+    val appBarScrolled by remember {
+        derivedStateOf { listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 0 }
+    }
 
     val navItems = buildList {
         add(str("nav.home")); add(str("nav.movies")); add(str("nav.series"))
@@ -224,8 +218,9 @@ private fun SeriesDetailLoaded(
     Box(Modifier.fillMaxSize()) {
         @OptIn(ExperimentalFoundationApi::class)
         CompositionLocalProvider(LocalBringIntoViewSpec provides detailBivSpec) {
-        Column(modifier = Modifier.fillMaxSize().verticalScroll(scrollState)) {
+        LazyColumn(state = listState, modifier = Modifier.fillMaxSize()) {
             // Full-bleed hero: title · meta · progress · synopsis · resume · actions overlaid in the lower third.
+            item(key = "hero") {
             Box(modifier = Modifier.fillMaxWidth().height(heroHeight)) {
                 val backdropUrl = detail.card.backdropUrl ?: detail.card.posterUrl
                 if (backdropUrl != null) {
@@ -323,8 +318,8 @@ private fun SeriesDetailLoaded(
                         modifier = Modifier
                             .onFocusChanged {
                                 if (it.hasFocus) scope.launch {
-                                    scrollState.scroll(MutatePriority.UserInput) {
-                                        scrollBy(-scrollState.value.toFloat())
+                                    listState.scroll(MutatePriority.UserInput) {
+                                        scrollBy(-listState.firstVisibleItemScrollOffset.toFloat())
                                     }
                                 }
                             }
@@ -366,91 +361,97 @@ private fun SeriesDetailLoaded(
                     }
                 }
             }
+            } // item: hero
 
-            // R107: below-the-fold rails — composed ~280ms after open (see showBelowFold above).
-            if (showBelowFold) {
-            Spacer(Modifier.height(28.dp))
-
-            // Season picker
-            if (detail.seasons.size > 1) {
-                SeasonPicker(
-                    seasons = detail.seasons,
-                    selectedIndex = selectedSeasonIdx,
-                    onSelect = { selectedSeasonIdx = it },
-                )
-                Spacer(Modifier.height(16.dp))
+            // Season picker — own lazy item (R109: composes when scrolled into view).
+            if (detail.seasons.size > 1) item(key = "seasons") {
+                Column {
+                    Spacer(Modifier.height(28.dp))
+                    SeasonPicker(
+                        seasons = detail.seasons,
+                        selectedIndex = selectedSeasonIdx,
+                        onSelect = { selectedSeasonIdx = it },
+                    )
+                    Spacer(Modifier.height(16.dp))
+                }
             }
 
-            // Episode rail
-            if (episodes.isNotEmpty()) {
-                Text(
-                    str("detail.episodes"),
-                    color = colors.text, fontSize = 18.sp, fontWeight = FontWeight.SemiBold,
-                    fontFamily = spaceGrotesk, letterSpacing = (-0.5).sp,
-                    modifier = Modifier.padding(horizontal = RaviloDimens.sectionPadH),
-                )
-                Spacer(Modifier.height(RaviloDimens.rowHeadPadB))
-                LazyRow(
-                    modifier = Modifier.focusRestorer(),
-                    contentPadding = PaddingValues(horizontal = RaviloDimens.trackPadH, vertical = RaviloDimens.trackPadV),
-                    horizontalArrangement = Arrangement.spacedBy(RaviloDimens.itemSpacing),
-                ) {
-                    items(episodes.size, key = { i -> episodes[i].id }) { i ->
-                        val ep = episodes[i]
-                        EpisodeCard(
-                            episode = ep,
-                            // R84: overlay-driven; no "UP NEXT" ribbon until playstate arrives
-                            isResumeEpisode = overlayLoaded && ep.id == resumeEpId,
-                            playstateOverride = overlay[ep.id],
-                            onSelect = { onPlay(buildEpisodeContext(detail, selectedSeasonIdx, episodes, ep.id, overlay)) },
-                        )
+            // Episode rail — own lazy item.
+            if (episodes.isNotEmpty()) item(key = "episodes") {
+                Column {
+                    if (detail.seasons.size <= 1) Spacer(Modifier.height(28.dp))
+                    Text(
+                        str("detail.episodes"),
+                        color = colors.text, fontSize = 18.sp, fontWeight = FontWeight.SemiBold,
+                        fontFamily = spaceGrotesk, letterSpacing = (-0.5).sp,
+                        modifier = Modifier.padding(horizontal = RaviloDimens.sectionPadH),
+                    )
+                    Spacer(Modifier.height(RaviloDimens.rowHeadPadB))
+                    LazyRow(
+                        modifier = Modifier.focusRestorer(),
+                        contentPadding = PaddingValues(horizontal = RaviloDimens.trackPadH, vertical = RaviloDimens.trackPadV),
+                        horizontalArrangement = Arrangement.spacedBy(RaviloDimens.itemSpacing),
+                    ) {
+                        items(episodes.size, key = { i -> episodes[i].id }) { i ->
+                            val ep = episodes[i]
+                            EpisodeCard(
+                                episode = ep,
+                                // R84: overlay-driven; no "UP NEXT" ribbon until playstate arrives
+                                isResumeEpisode = overlayLoaded && ep.id == resumeEpId,
+                                playstateOverride = overlay[ep.id],
+                                onSelect = { onPlay(buildEpisodeContext(detail, selectedSeasonIdx, episodes, ep.id, overlay)) },
+                            )
+                        }
                     }
                 }
             }
 
-            // Cast row
-            if (detail.cast.isNotEmpty()) {
-                Spacer(Modifier.height(RaviloDimens.rowGap))
-                Text(str("detail.cast"), color = colors.text, fontSize = 18.sp, fontWeight = FontWeight.SemiBold,
-                    fontFamily = spaceGrotesk, letterSpacing = (-0.5).sp,
-                    modifier = Modifier.padding(horizontal = RaviloDimens.sectionPadH))
-                Spacer(Modifier.height(RaviloDimens.rowHeadPadB))
-                LazyRow(
-                    modifier = Modifier.focusRestorer(),
-                    contentPadding = PaddingValues(horizontal = RaviloDimens.trackPadH, vertical = RaviloDimens.trackPadV),
-                    horizontalArrangement = Arrangement.spacedBy(RaviloDimens.itemSpacing),
-                ) {
-                    items(detail.cast.size, key = { i -> detail.cast[i].id }) { i ->
-                        CastCircle(person = detail.cast[i])
+            // Cast row — own lazy item.
+            if (detail.cast.isNotEmpty()) item(key = "cast") {
+                Column {
+                    Spacer(Modifier.height(RaviloDimens.rowGap))
+                    Text(str("detail.cast"), color = colors.text, fontSize = 18.sp, fontWeight = FontWeight.SemiBold,
+                        fontFamily = spaceGrotesk, letterSpacing = (-0.5).sp,
+                        modifier = Modifier.padding(horizontal = RaviloDimens.sectionPadH))
+                    Spacer(Modifier.height(RaviloDimens.rowHeadPadB))
+                    LazyRow(
+                        modifier = Modifier.focusRestorer(),
+                        contentPadding = PaddingValues(horizontal = RaviloDimens.trackPadH, vertical = RaviloDimens.trackPadV),
+                        horizontalArrangement = Arrangement.spacedBy(RaviloDimens.itemSpacing),
+                    ) {
+                        items(detail.cast.size, key = { i -> detail.cast[i].id }) { i ->
+                            CastCircle(person = detail.cast[i])
+                        }
                     }
                 }
             }
 
-            // More Like This
-            if (detail.related.isNotEmpty()) {
-                Spacer(Modifier.height(RaviloDimens.rowGap))
-                Text(str("section.related"), color = colors.text, fontSize = 18.sp, fontWeight = FontWeight.SemiBold,
-                    fontFamily = spaceGrotesk, letterSpacing = (-0.5).sp,
-                    modifier = Modifier.padding(horizontal = RaviloDimens.sectionPadH))
-                Spacer(Modifier.height(RaviloDimens.rowHeadPadB))
-                LazyRow(
-                    modifier = Modifier.focusRestorer(),
-                    contentPadding = PaddingValues(horizontal = RaviloDimens.trackPadH, vertical = RaviloDimens.trackPadV),
-                    horizontalArrangement = Arrangement.spacedBy(RaviloDimens.itemSpacing),
-                ) {
-                    items(detail.related.size, key = { i -> detail.related[i].id }) { i ->
-                        val card = detail.related[i]
-                        Tile(
-                            title = card.title,
-                            posterUrl = card.posterUrl,
-                            watched = card.watched,
-                            onSelect = { onRelatedSelect(card) },
-                        )
+            // More Like This — own lazy item.
+            if (detail.related.isNotEmpty()) item(key = "related") {
+                Column {
+                    Spacer(Modifier.height(RaviloDimens.rowGap))
+                    Text(str("section.related"), color = colors.text, fontSize = 18.sp, fontWeight = FontWeight.SemiBold,
+                        fontFamily = spaceGrotesk, letterSpacing = (-0.5).sp,
+                        modifier = Modifier.padding(horizontal = RaviloDimens.sectionPadH))
+                    Spacer(Modifier.height(RaviloDimens.rowHeadPadB))
+                    LazyRow(
+                        modifier = Modifier.focusRestorer(),
+                        contentPadding = PaddingValues(horizontal = RaviloDimens.trackPadH, vertical = RaviloDimens.trackPadV),
+                        horizontalArrangement = Arrangement.spacedBy(RaviloDimens.itemSpacing),
+                    ) {
+                        items(detail.related.size, key = { i -> detail.related[i].id }) { i ->
+                            val card = detail.related[i]
+                            Tile(
+                                title = card.title,
+                                posterUrl = card.posterUrl,
+                                watched = card.watched,
+                                onSelect = { onRelatedSelect(card) },
+                            )
+                        }
                     }
                 }
             }
-            Spacer(Modifier.height(48.dp))
-            } // R107: showBelowFold
+            item(key = "tail") { Spacer(Modifier.height(48.dp)) }
         }
         } // CompositionLocalProvider
 
@@ -464,7 +465,7 @@ private fun SeriesDetailLoaded(
             userInitials = displayName.take(2).uppercase(),
             onProfile = onProfile,
             onSearch = onSearch,
-            scrolled = scrollState.value > 0,
+            scrolled = appBarScrolled,
         )
     }
 }
