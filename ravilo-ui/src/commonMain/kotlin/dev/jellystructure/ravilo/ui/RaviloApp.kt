@@ -4,6 +4,8 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.WindowInsets
@@ -54,6 +56,7 @@ import dev.jellystructure.ravilo.ui.screens.SeriesDetailStore
 import dev.jellystructure.ravilo.ui.screens.SettingsScreen
 import dev.jellystructure.ravilo.ui.screens.SettingsStore
 import dev.jellystructure.ravilo.ui.i18n.WithLocale
+import dev.jellystructure.ravilo.ui.theme.RaviloMotion
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
 import dev.jellystructure.ravilo.ui.theme.rememberRaviloTheme
 import dev.jellystructure.shared.tv.AcquisitionRecord
@@ -87,6 +90,10 @@ val LocalServerBaseUrl = staticCompositionLocalOf { "" }
 
 /** R65 — active user's Jellyfin avatar URL; null if the user has no profile picture. */
 val LocalUserAvatarUrl = staticCompositionLocalOf<String?> { null }
+
+// ─── Navigation direction (drives AnimatedContent transitionSpec) ─────────────
+
+private enum class NavDir { Forward, Back, Reset }
 
 // ─── Navigation destinations ──────────────────────────────────────────────────
 
@@ -193,6 +200,8 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
             }
         }
         var stack by remember { mutableStateOf(listOf<Dest>(initialDest)) }
+        // R92: direction that drives the AnimatedContent transitionSpec.
+        var navDir by remember { mutableStateOf(NavDir.Forward) }
         // Top-level: track whether the Top 10 tab is available; set from HomeStore, propagated to all screens.
         var discoverAvailable by remember { mutableStateOf(false) }
 
@@ -220,11 +229,13 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
         val fromHistory = remember { object { var flag = false } }
 
         fun push(dest: Dest) {
+            navDir = NavDir.Forward
             stack = stack + dest
             if (!fromHistory.flag) pushRoute(dest.toRoute())
         }
         fun pop() {
             if (stack.size > 1) {
+                navDir = NavDir.Back
                 stack = stack.dropLast(1)
                 // On browser, hashchange already moved the URL — don't push another entry.
                 // On Android, replaceRoute is a no-op, so calling it is harmless.
@@ -233,11 +244,13 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
         }
         // Replace the whole stack (tab resets, sign-out) and sync the browser URL.
         fun resetTo(dest: Dest) {
+            navDir = NavDir.Reset
             stack = listOf(dest)
             if (!fromHistory.flag) replaceRoute(dest.toRoute())
         }
         // Replace the top of the stack in-place (episode navigation) and sync the browser URL.
         fun replaceTop(dest: Dest) {
+            navDir = NavDir.Forward
             stack = if (stack.isEmpty()) listOf(dest) else stack.dropLast(1) + dest
             if (!fromHistory.flag) replaceRoute(dest.toRoute())
         }
@@ -247,6 +260,7 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
             replaceRoute(stack.last().toRoute())
             installHashListener { _ ->
                 fromHistory.flag = true
+                navDir = NavDir.Back  // R92: browser Back fires the reverse slide
                 pop()
                 fromHistory.flag = false
             }
@@ -266,10 +280,27 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                     ) { pop(); true } else false
                 }
         ) {
+        // R92: direction-aware transitions — push slides left, pop slides right, resets fade.
+        // Slide is 25% of screen width (subtle) at ScreenEnterMs/ScreenExitMs durations.
+        // contentKey = class means same-class tab switches (Browse→Browse) skip the transition.
         AnimatedContent(
             targetState = dest,
             transitionSpec = {
-                fadeIn(tween(200)) togetherWith fadeOut(tween(150))
+                when (navDir) {
+                    NavDir.Forward ->
+                        (slideInHorizontally(tween(RaviloMotion.ScreenEnterMs)) { it / 4 } +
+                            fadeIn(tween(RaviloMotion.ScreenEnterMs))) togetherWith
+                        (slideOutHorizontally(tween(RaviloMotion.ScreenExitMs)) { -it / 4 } +
+                            fadeOut(tween(RaviloMotion.ScreenExitMs)))
+                    NavDir.Back ->
+                        (slideInHorizontally(tween(RaviloMotion.ScreenEnterMs)) { -it / 4 } +
+                            fadeIn(tween(RaviloMotion.ScreenEnterMs))) togetherWith
+                        (slideOutHorizontally(tween(RaviloMotion.ScreenExitMs)) { it / 4 } +
+                            fadeOut(tween(RaviloMotion.ScreenExitMs)))
+                    NavDir.Reset ->
+                        fadeIn(tween(RaviloMotion.ScreenEnterMs)) togetherWith
+                            fadeOut(tween(RaviloMotion.ScreenExitMs))
+                }
             },
             contentKey = { it::class },
         ) { dest -> when (dest) {
