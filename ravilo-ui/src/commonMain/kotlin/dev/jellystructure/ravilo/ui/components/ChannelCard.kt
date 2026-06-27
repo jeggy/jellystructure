@@ -1,9 +1,7 @@
 package dev.jellystructure.ravilo.ui.components
 
-import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -36,6 +34,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.layout.ContentScale
 import dev.jellystructure.ravilo.ui.focus.dpadFocusable
 import dev.jellystructure.ravilo.ui.seams.RemoteImage
+import dev.jellystructure.ravilo.ui.theme.RaviloMotion
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
 import dev.jellystructure.ravilo.ui.theme.SpaceGrotesk
 import dev.jellystructure.shared.tv.ChannelButtonPadding
@@ -94,8 +93,8 @@ fun ChannelCard(
     val spaceGrotesk = SpaceGrotesk
     var focused by remember { mutableStateOf(false) }
     // Snappier focus feel (R43).
-    val focusSpec = remember { spring<Float>(dampingRatio = 0.8f, stiffness = Spring.StiffnessMedium) }
-    val dpSpec    = remember { spring<Dp>(dampingRatio = 0.8f, stiffness = Spring.StiffnessMedium) }
+    val focusSpec = remember { RaviloMotion.focusSpring<Float>() }
+    val dpSpec    = remember { RaviloMotion.focusSpring<Dp>() }
     val scale         by animateFloatAsState(if (focused) ChannelButtonSpec.FOCUS_SCALE else 1f, focusSpec, label = "channelScale")
     val ringWidth     by animateDpAsState(if (focused) ChannelButtonSpec.RING_WIDTH_DP.dp else 0.dp, dpSpec, label = "channelBorder")
     val glowElevation by animateDpAsState(if (focused) ChannelButtonSpec.GLOW_ELEV_DP.dp else 0.dp, dpSpec, label = "channelShadow")

@@ -1,10 +1,8 @@
 package dev.jellystructure.ravilo.ui.components
 
-import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -20,17 +18,19 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.scale
-import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.jellystructure.ravilo.ui.focus.dpadFocusable
 import dev.jellystructure.ravilo.ui.seams.RemoteImage
+import dev.jellystructure.ravilo.ui.theme.RaviloMotion
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
 import dev.jellystructure.ravilo.ui.theme.Sora
 import dev.jellystructure.shared.tv.Person
@@ -43,10 +43,12 @@ fun CastCircle(
     val colors = RaviloTheme.colors
     val sora = Sora
     var isFocused by remember { mutableStateOf(false) }
-    val scale          by animateFloatAsState(if (isFocused) 1.12f else 1f, label = "castScale")
-    val shadowElev     by animateDpAsState(if (isFocused) 20.dp else 0.dp, label = "castShadow")
-    val ringColor      by animateColorAsState(if (isFocused) colors.focusRing else Color.Transparent, label = "castRing")
-    val borderWidth    by animateDpAsState(if (isFocused) 3.dp else 0.dp, label = "castBorder")
+    // R89: snappy content-focus spring, matching Tile/ChannelCard.
+    val focusSpec = remember { RaviloMotion.focusSpring<Float>() }
+    val dpSpec    = remember { RaviloMotion.focusSpring<Dp>() }
+    val scale      by animateFloatAsState(if (isFocused) RaviloMotion.CastFocusScale else 1f, focusSpec, label = "castScale")
+    val shadowElev by animateDpAsState(if (isFocused) 20.dp else 0.dp, dpSpec, label = "castShadow")
+    val ringWidth  by animateDpAsState(if (isFocused) 3.dp else 0.dp, dpSpec, label = "castBorder")
 
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -56,14 +58,33 @@ fun CastCircle(
             onBlurred = { isFocused = false },
         ),
     ) {
+        // R89: the focus animation runs entirely in the draw phase — scale + shadow in the graphicsLayer
+        // lambda, the ring in drawWithCache — so the cast rail never recomposes per frame while focusing
+        // (was Modifier.scale/.shadow/.border, which re-read animated state at composition every frame).
         Box(
             modifier = Modifier
                 .size(72.dp)
-                .scale(scale)
-                .shadow(shadowElev, CircleShape, clip = false, ambientColor = colors.focusGlow, spotColor = colors.focusGlow)
+                .graphicsLayer {
+                    scaleX = scale; scaleY = scale
+                    shadowElevation = shadowElev.toPx()
+                    shape = CircleShape
+                    clip = false
+                    ambientShadowColor = colors.focusGlow
+                    spotShadowColor = colors.focusGlow
+                }
                 .clip(CircleShape)
                 .background(colors.surfaceVariant)
-                .border(borderWidth, ringColor, CircleShape),
+                .drawWithCache {
+                    onDrawWithContent {
+                        drawContent()
+                        val bw = ringWidth.toPx()
+                        if (bw > 0f) drawCircle(
+                            color = colors.focusRing,
+                            radius = (size.minDimension - bw) / 2f,
+                            style = Stroke(width = bw),
+                        )
+                    }
+                },
             contentAlignment = Alignment.Center,
         ) {
             val photoUrl = person.imageUrl
