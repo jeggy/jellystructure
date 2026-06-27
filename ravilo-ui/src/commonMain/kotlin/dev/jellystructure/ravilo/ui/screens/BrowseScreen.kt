@@ -85,7 +85,7 @@ class BrowseStore(private val apiClient: TvApiClient) {
         _state.value = BrowseState.Loading
         loadJob = scope.launch {
             _state.value = runCatching {
-                val results = apiClient.browse(kind = kind.apiKey, genre = genre, page = 1)
+                val results = apiClient.browse(kind = kind.apiKey, genre = genre)  // R118: full set (no pageSize cap)
                 val facets = apiClient.getFacets(kind = kind.apiKey)
                 BrowseState.Loaded(results, facets)
             }.getOrElse { BrowseState.Error(it.message ?: "Unknown error") }
@@ -106,7 +106,7 @@ class BrowseStore(private val apiClient: TvApiClient) {
         loadJob = scope.launch {
             val kind = activeKind
             _state.value = runCatching {
-                val results = apiClient.browse(kind = kind.apiKey, genre = genre, page = 1)
+                val results = apiClient.browse(kind = kind.apiKey, genre = genre)  // R118: full set (no pageSize cap)
                 val facets = currentFacets ?: apiClient.getFacets(kind = kind.apiKey)
                 BrowseState.Loaded(results, facets)
             }.getOrElse { cur ->
@@ -142,6 +142,9 @@ fun BrowseScreen(
     val gridState = rememberLazyGridState()
     val scope = rememberCoroutineScope()
     val firstCellFR = remember { FocusRequester() }
+    // R117: the genre-chip row's first ("All") chip — the DOWN target from the AppBar so the chips
+    // aren't skipped on the way into the grid.
+    val firstChipFR = remember { FocusRequester() }
 
     // R60: NavBar focus — ensures Back fires through Compose (not Android finish()) and AppBar is visible
     val navBarFR = remember { FocusRequester() }
@@ -188,6 +191,9 @@ fun BrowseScreen(
                             genres = s.facets.genres,
                             activeGenre = store.activeGenre,
                             onSelect = { store.filterByGenre(it) },
+                            firstChipFR = firstChipFR,
+                            onChipUp = { runCatching { navBarFR.requestFocus() } },
+                            onChipDown = { runCatching { firstCellFR.requestFocus() } },
                         )
                         Spacer(Modifier.height(16.dp))
                     }
@@ -214,7 +220,13 @@ fun BrowseScreen(
             activeNav = activeNav,
             onNavSelect = onNavSelect,
             navFR = navBarFR,
-            onDown = { runCatching { firstCellFR.requestFocus() } },
+            // R117: DOWN from the nav bar lands on the genre chips (the "All" chip) when they're shown,
+            // not straight on the grid; My List (no chips) drops to the grid as before.
+            onDown = {
+                val chipsShown = (state as? BrowseState.Loaded)
+                    ?.let { kind != BrowseKind.MY_LIST && it.facets.genres.isNotEmpty() } ?: false
+                runCatching { (if (chipsShown) firstChipFR else firstCellFR).requestFocus() }
+            },
             userInitials = displayName.take(2).uppercase(),
             onProfile = onProfile,
             onSearch = onSearch,
@@ -227,6 +239,11 @@ private fun GenreChips(
     genres: List<FacetItem>,
     activeGenre: String?,
     onSelect: (String?) -> Unit,
+    // R117: the AppBar's DOWN target (first chip), and explicit vertical exits so the chip row sits
+    // cleanly between the nav bar (UP) and the grid (DOWN) instead of relying on native focus search.
+    firstChipFR: FocusRequester,
+    onChipUp: () -> Unit,
+    onChipDown: () -> Unit,
 ) {
     val colors = RaviloTheme.colors
     val sora = Sora
@@ -254,9 +271,12 @@ private fun GenreChips(
                         else Modifier
                     )
                     .dpadFocusable(
+                        focusRequester = if (i == 0) firstChipFR else null,
                         onFocused = { focused = true },
                         onBlurred = { focused = false },
                         onSelect = { onSelect(chips[i]) },
+                        onUp = onChipUp,
+                        onDown = onChipDown,
                     )
                     .padding(horizontal = 14.dp, vertical = 8.dp),
                 contentAlignment = Alignment.Center,

@@ -98,13 +98,14 @@ class TvApiClient(
 
     // ─── Browse + search ─────────────────────────────────────────────────────
 
-    suspend fun browse(kind: String? = null, genre: String? = null, page: Int = 0, pageSize: Int = 40): SearchResults {
+    // R118: pageSize null ⇒ server returns the full filtered set (no 40-item cap).
+    suspend fun browse(kind: String? = null, genre: String? = null, page: Int = 1, pageSize: Int? = null): SearchResults {
         val r = client.get("$baseUrl/api/tv/browse") {
             auth()
             if (kind != null) parameter("kind", kind)
             if (genre != null) parameter("genre", genre)
             parameter("page", page)
-            parameter("pageSize", pageSize)
+            if (pageSize != null) parameter("pageSize", pageSize)
         }
         r.assertSuccess()
         return json.decodeFromString<SearchResults>(r.bodyAsText())
