@@ -190,6 +190,9 @@ private fun HomeLoaded(
                         scrollOffsetPx = {
                             if (listState.firstVisibleItemIndex == 0) listState.firstVisibleItemScrollOffset.toFloat() else 0f
                         },
+                        // R101: freeze the Ken Burns drift while the list is actively scrolling so the
+                        // full-width hero stops its per-frame scaled redraw during the gesture.
+                        driftEnabled = { !listState.isScrollInProgress },
                         // Down omitted → native focus search moves into the channel rail / first row.
                     )
                 }
