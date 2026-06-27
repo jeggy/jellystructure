@@ -450,6 +450,9 @@ fun PlayerScreen(
                         epRailOpen    -> { epRailOpen = false; wake() }
                         nextUpVisible -> stayThrough()
                         scrubbing     -> { scrubbing = false; wake() }
+                        // R112: if the controls are showing, Back just hides them → fullscreen video.
+                        // Only Back with nothing on screen leaves the player (so it takes two presses).
+                        chromeVisible -> chromeVisible = false
                         else          -> onBack()
                     }
                 },
