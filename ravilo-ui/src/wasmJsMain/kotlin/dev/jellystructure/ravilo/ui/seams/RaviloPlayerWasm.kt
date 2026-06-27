@@ -38,6 +38,8 @@ actual class RaviloPlayer actual constructor() {
         video.currentTime = startPositionMs / 1000.0
         // R44: route browser/OS media keys to the <video> via the Media Session API.
         wireMediaSession(video)
+        // R110: match the TV's white-text + black-outline caption look for native <track> (VTT) cues.
+        installCueStyle()
         subtitles.forEach { sub ->
             val url = sub.url ?: return@forEach
             // R17: native .ass/.ssa subs render with JASSUB (libass) for full styling; the rest are
@@ -186,6 +188,34 @@ private fun mountAss(video: HTMLVideoElement, url: String): Unit = js(
             var iv = setInterval(function(){ if (window.JASSUB){ clearInterval(iv); go(); } }, 100);
             setTimeout(function(){ clearInterval(iv); }, 8000);
         }
+    }"""
+)
+
+/**
+ * R110 — inject a one-time global ::cue style so native <track> (VTT) captions match the TV's
+ * Android look: white text with a uniform black OUTLINE and no background box. CSS ::cue does not
+ * reliably honor -webkit-text-stroke across browsers, so the outline is emulated with an 8-direction
+ * black text-shadow stack (the design mockup `ravilo-player.css` .pl-sub documents the shadow route).
+ * Guarded by an element id so repeated load() calls add it at most once. JASSUB/ASS subs are untouched
+ * — they carry their own author styling and must not be overridden.
+ */
+private fun installCueStyle(): Unit = js(
+    """{
+        if (document.getElementById('ravilo-cue-style')) return;
+        var st = document.createElement('style');
+        st.id = 'ravilo-cue-style';
+        st.textContent =
+            'video::cue{' +
+            'color:#fff;' +
+            'background:transparent;' +
+            'font-weight:600;' +
+            'text-shadow:' +
+            '-1.5px -1.5px 0 #000,1.5px -1.5px 0 #000,' +
+            '-1.5px 1.5px 0 #000,1.5px 1.5px 0 #000,' +
+            '0 -1.5px 0 #000,0 1.5px 0 #000,' +
+            '-1.5px 0 0 #000,1.5px 0 0 #000;' +
+            '}';
+        document.head.appendChild(st);
     }"""
 )
 

@@ -103,11 +103,16 @@ actual class RaviloPlayer actual constructor() {
 
     /** R55 — attach a SubtitleView so ExoPlayer's text renderer can forward cues to the UI. */
     fun setSubtitleView(view: SubtitleView) {
+        // R110: white text + a uniform BLACK OUTLINE (was EDGE_TYPE_DROP_SHADOW). A drop shadow only
+        // darkens the bottom-right offset of each glyph, so white letters wash out on bright scenes;
+        // an outline hugs every glyph on all sides — the streaming-industry readability standard
+        // ("reads on anything"). ExoPlayer hardcodes the outline to ~2dp (androidx/media#1834); if that
+        // ever reads thin we'd move to a custom Compose-stroked cue overlay.
         view.setStyle(CaptionStyleCompat(
             Color.WHITE,
             Color.TRANSPARENT,
             Color.TRANSPARENT,
-            CaptionStyleCompat.EDGE_TYPE_DROP_SHADOW,
+            CaptionStyleCompat.EDGE_TYPE_OUTLINE,
             Color.BLACK,
             null,
         ))
