@@ -58,6 +58,10 @@ private val LANDSCAPE_H = 144.dp
 private val SQUARE_W    = 180.dp
 private val SQUARE_H    = 180.dp
 
+// R96: backdrop request width for LANDSCAPE tiles — covers a 256dp slot up to ~tileScale 1.25 on a
+// 2× panel while staying ~9× smaller in memory/decode than the 1920px proxy default.
+private const val LANDSCAPE_IMAGE_W = 640
+
 @Composable
 fun Tile(
     title: String,
@@ -147,6 +151,10 @@ fun Tile(
                     contentDescription = title,
                     modifier = Modifier.matchParentSize(),
                     placeholderColor = posterPlaceholder,
+                    // R96: LANDSCAPE tiles render a backdrop (proxy default 1920px) into a ~256dp slot —
+                    // request ~640px so Coil decodes ~0.9 MB, not ~8.3 MB. POSTER/SQUARE already use
+                    // poster-type proxy images sized to ~320px, so they pass null (backend default).
+                    requestedWidth = if (variant == TileVariant.LANDSCAPE) LANDSCAPE_IMAGE_W else null,
                 )
             } else {
                 // HSL-style gradient fallback derived from title hash
