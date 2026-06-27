@@ -1,6 +1,7 @@
 package dev.jellystructure.media
 
 import dev.jellystructure.auth.JellyfinClient
+import dev.jellystructure.auth.JellyfinEpisodeItem
 import dev.jellystructure.auth.JellyfinItem
 import dev.jellystructure.config.ConfigStore
 import dev.jellystructure.log.Logger
@@ -490,6 +491,17 @@ class Scanner(
             return null
         }
         val seriesTmdbId = item.tmdbId
+        // Backfill missing jellyfinIds: fetch Jellyfin episode meta if the series has a jellyfinId
+        // and any episode is still missing one (e.g. scanned before R82 or via old sync path).
+        val scanBaseUrl = config.apiKeys.jellyfinUrl
+        val scanAdminToken = config.apiKeys.jellyfinToken
+        val jfBySeasonEp: Map<Pair<Int, Int>, JellyfinEpisodeItem> = if (
+            item.jellyfinId != null && scanBaseUrl.isNotBlank() && scanAdminToken.isNotBlank() &&
+            item.episodes.any { it.jellyfinId == null }
+        ) {
+            jellyfinClient.getSeriesEpisodesMeta(scanBaseUrl.trimEnd('/'), scanAdminToken, item.jellyfinId)
+                .associateBy { (it.parentIndexNumber ?: 0) to (it.indexNumber ?: 0) }
+        } else emptyMap()
         val episodes = mutableListOf<Episode>()
         for (file in episodeFiles) {
             val tracks = FfprobeRunner.probe(file)
@@ -522,7 +534,8 @@ class Scanner(
                 tmdbEpisodeId = epDetails?.id ?: existingEp?.tmdbEpisodeId,
                 guestStars = epGuests,
                 crew = epCrew,
-                jellyfinId = existingEp?.jellyfinId,
+                jellyfinId = existingEp?.jellyfinId
+                    ?: (if (seasonNum != null && epNum != null) jfBySeasonEp[seasonNum to epNum]?.id else null),
                 runtime = epDetails?.runtime ?: existingEp?.runtime,
             )
         }

@@ -111,7 +111,10 @@ class DetailService(
         if (jellyfinIds.isEmpty()) return emptyMap()
         val jellyfinBase = configStore.current.apiKeys.jellyfinUrl.trimEnd('/')
         val token = jellyfinClient.tvToken(jellyfinBase, device, configStore.current.apiKeys.jellyfinToken)
-        val chunks = jellyfinIds.chunked(PLAYSTATE_CHUNK)
+        // Filter out path-based IDs (ep.jellyfinId was null at scan time → ep.id = ep.path)
+        val realIds = jellyfinIds.filterNot { it.startsWith('/') }
+        if (realIds.isEmpty()) return emptyMap()
+        val chunks = realIds.chunked(PLAYSTATE_CHUNK)
         val results = mutableMapOf<String, CardPlayState>()
         for (chunk in chunks) {
             playstateGate.withPermit {
