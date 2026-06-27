@@ -165,4 +165,49 @@ the one "Connection refused" channel's upstream. Redeploy the backend so **R100 
 ### Deploy note
 R100-backend and R102 are committed but **need a server redeploy** to take effect; this
 measurement reflects frontend changes only.
+
+---
+
+## 6. Post-implementation validation (R103 + R105)
+
+### R103 — Baseline Profile, cold-scroll re-measurement (now with a live backend)
+With the app `speed-profile`-compiled (baseline profile applied), force-stopped, then cold-launched:
+
+| Pass (R103 build) | Modern jank | Legacy jank | 50th pct |
+|---|---|---|---|
+| **Cold, 1st scroll** (code AOT, **images cold**) | 0.57% | 53.5% | 30 ms |
+| **2nd scroll** (code AOT, **images warm**) | **0.23%** | **1.15%** | **19 ms** |
+| (reference) original cold, **no profile applied** | 0.80% | 63.9% | 32 ms |
+
+This cleanly isolates **two** cold-start axes:
+1. **Code cold-start (JIT)** — *fixed by R103.* The app is AOT-compiled from frame one;
+   modern jank on a cold scroll is 0.57% (vs 0.80% un-profiled), and the very next pass is
+   fully warm (0.23% / 19 ms) with no `compile -m speed` needed.
+2. **Image cold-cache** — *not a code problem.* The first scroll past never-seen tiles
+   decodes / GPU-uploads / crossfades them all at once (53.5% → 1.15% legacy jank between
+   pass 1 and pass 2). Mitigated by R96 (smaller decode), R98 (cache), R99 (prefetch ahead)
+   and R100 (detail pre-warm), but inherent the first time through fresh content.
+
+**Takeaway:** R103 delivers the win a Baseline Profile can deliver (code AOT from cold). The
+residual first-open image warming is a separate axis; the R96–R100 image work is what
+addresses it.
+
+### R105 — Backend outage + redeploy
+- **Where it runs:** the backend is a bare `jellystructure.kexe` on the dev host itself
+  (`10.0.0.10`), pointed at the live `config/` data (DB + pairing). Not the docker-compose
+  service (no such container exists).
+- **The outage:** it stopped mid-measurement (~09:22–24). **Root cause undetermined** — the
+  original process's output was not captured, so there is no crash trace. It coincided with
+  heavy measurement churn (repeated `am force-stop` → WS reconnects, fast-scroll image bursts,
+  plus local gradle/git activity). The Kotlin/Native fragilities (FD-ceiling, WS-handler
+  exception on abrupt disconnect) remain the prime suspects, but are **not demonstrated**.
+- **Redeploy:** rebuilt from `main` (so **R100 genre index + R102 Continue-row timeout are now
+  live**) and relaunched detached with **stdout/stderr captured to `backend.log`**. The stue TV
+  auto-reconnected with pairing intact. **It then survived the full R103 re-measurement load
+  (heavier than before) with a clean log — 0 errors.** A pre-existing
+  `[WARN] paired user token rejected by Jellyfin (401) → using server token` is unrelated
+  (stale per-user Jellyfin token; catalog is Jellyfin-free since R83, so home/detail still work).
+- **Follow-up if it recurs:** `backend.log` will now hold the trace. The defensive guidance
+  stands — keep every fan-out `Semaphore`-bounded and every WS read-loop / send wrapped in
+  `try`/`runCatching` so an abrupt TV disconnect can't abort the Native process.
 </content>

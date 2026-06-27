@@ -33,3 +33,4 @@ data
 config/*
 !config/config.example.toml.claude/
 .claude/
+backend.log
