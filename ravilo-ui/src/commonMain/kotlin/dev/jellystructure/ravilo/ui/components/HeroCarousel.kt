@@ -43,6 +43,7 @@ import androidx.compose.ui.unit.sp
 import dev.jellystructure.ravilo.ui.focus.dpadFocusable
 import dev.jellystructure.ravilo.ui.seams.RemoteImage
 import dev.jellystructure.ravilo.ui.theme.RaviloDimens
+import dev.jellystructure.ravilo.ui.theme.RaviloMotion
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
 import dev.jellystructure.ravilo.ui.theme.Sora
 import dev.jellystructure.ravilo.ui.theme.SpaceGrotesk
@@ -117,7 +118,10 @@ fun HeroCarousel(
         // Backdrop image, crossfades between slides
         AnimatedContent(
             targetState = active.backdropUrl,
-            transitionSpec = { fadeIn(tween(600)) togetherWith fadeOut(tween(400)) },
+            transitionSpec = {
+                fadeIn(tween(RaviloMotion.HeroCrossfadeInMs)) togetherWith
+                    fadeOut(tween(RaviloMotion.HeroCrossfadeOutMs))
+            },
             label = "heroBg",
         ) { url ->
             RemoteImage(
@@ -245,7 +249,7 @@ fun HeroCarousel(
                 items.forEachIndexed { i, _ ->
                     val dotWidth: Dp by animateDpAsState(
                         targetValue = if (i == activeIndex) 28.dp else 8.dp,
-                        animationSpec = tween(300),
+                        animationSpec = tween(RaviloMotion.HeroDotTweenMs),
                         label = "dot$i",
                     )
                     Box(

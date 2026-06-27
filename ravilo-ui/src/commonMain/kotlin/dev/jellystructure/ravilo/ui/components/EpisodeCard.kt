@@ -1,9 +1,7 @@
 package dev.jellystructure.ravilo.ui.components
 
-import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
@@ -37,6 +35,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.jellystructure.ravilo.ui.focus.dpadFocusable
 import dev.jellystructure.ravilo.ui.seams.RemoteImage
+import dev.jellystructure.ravilo.ui.theme.RaviloMotion
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
 import dev.jellystructure.ravilo.ui.theme.Sora
 import dev.jellystructure.ravilo.ui.theme.SpaceGrotesk
@@ -57,9 +56,9 @@ fun EpisodeCard(
     val sora = Sora
     val spaceGrotesk = SpaceGrotesk
     var focused by remember { mutableStateOf(false) }
-    val focusSpec = remember { spring<Float>(dampingRatio = 0.65f, stiffness = Spring.StiffnessMediumLow) }
-    val dpSpec    = remember { spring<Dp>(dampingRatio = 0.65f, stiffness = Spring.StiffnessMediumLow) }
-    val scale           by animateFloatAsState(if (focused) 1.06f else 1f, focusSpec, label = "epScale")
+    val focusSpec = remember { RaviloMotion.softSpring<Float>() }
+    val dpSpec    = remember { RaviloMotion.softSpring<Dp>() }
+    val scale           by animateFloatAsState(if (focused) RaviloMotion.CardFocusScale else 1f, focusSpec, label = "epScale")
     val borderWidth     by animateDpAsState(if (focused) 3.dp else 0.dp, dpSpec, label = "epBorder")
     val glowElevation   by animateDpAsState(if (focused) 20.dp else 0.dp, dpSpec, label = "epShadow")
     val cardShape = remember { RoundedCornerShape(12.dp) }

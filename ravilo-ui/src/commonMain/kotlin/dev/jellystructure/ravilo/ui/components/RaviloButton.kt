@@ -1,9 +1,7 @@
 package dev.jellystructure.ravilo.ui.components
 
-import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
@@ -26,6 +24,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.jellystructure.ravilo.ui.focus.dpadFocusable
+import dev.jellystructure.ravilo.ui.theme.RaviloMotion
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
 import dev.jellystructure.ravilo.ui.theme.Sora
 
@@ -48,9 +47,9 @@ fun RaviloButton(
     val sora = Sora
     val density = LocalDensity.current
     var focused by remember { mutableStateOf(false) }
-    val focusSpec = remember { spring<Float>(dampingRatio = 0.65f, stiffness = Spring.StiffnessMediumLow) }
-    val dpSpec    = remember { spring<Dp>(dampingRatio = 0.65f, stiffness = Spring.StiffnessMediumLow) }
-    val scale           by animateFloatAsState(if (focused) 1.06f else 1f, focusSpec, label = "buttonScale")
+    val focusSpec = remember { RaviloMotion.softSpring<Float>() }
+    val dpSpec    = remember { RaviloMotion.softSpring<Dp>() }
+    val scale           by animateFloatAsState(if (focused) RaviloMotion.ButtonFocusScale else 1f, focusSpec, label = "buttonScale")
     val glowElevation   by animateDpAsState(if (focused) 16.dp else 0.dp, dpSpec, label = "buttonShadow")
     // Lift: 4dp upward on focus (converted to px for graphicsLayer)
     val liftPx by animateFloatAsState(
