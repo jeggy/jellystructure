@@ -87,44 +87,41 @@ private fun resolveUrl(url: String, baseUrl: String): String =
 private const val PREFETCH_LOOKAHEAD = 4
 
 /**
- * Observes [listState] scroll position and enqueues up to [lookahead] image requests ahead of
- * the last visible item. Use [String.orEmpty] for items with no URL so indices stay aligned
- * with the lazy-list items. Capped at 4 to stay well within the backend's Semaphore(8) gate.
+ * Shared prefetch loop. Observes the last-visible index and enqueues up to [lookahead] image
+ * requests ahead of it. R99: a `lastEnqueued` high-water-mark means an advancing scroll only
+ * enqueues the *newly* exposed items — index 10→[11..14], 11→[15] — instead of re-building an
+ * overlapping window's worth of `ImageRequest`s on every item-step. Scroll-back enqueues nothing
+ * (those URLs are already warm). The watermark resets when [urls] changes (the effect restarts).
+ * Capped at 4 to stay well within the backend's Semaphore(8) gate.
  */
 @Composable
-fun PrefetchLazyRowEffect(listState: LazyListState, urls: List<String>, lookahead: Int = PREFETCH_LOOKAHEAD) {
+private fun PrefetchEffect(stateKey: Any, urls: List<String>, lookahead: Int, lastVisibleIndex: () -> Int) {
     val ctx = LocalPlatformContext.current
     val baseUrl = LocalServerBaseUrl.current
-    LaunchedEffect(listState, urls, baseUrl) {
-        snapshotFlow { listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1 }
+    LaunchedEffect(stateKey, urls, baseUrl) {
+        var lastEnqueued = -1
+        snapshotFlow { lastVisibleIndex() }
             .distinctUntilChanged()
             .collect { lastVisible ->
                 if (lastVisible < 0) return@collect
+                val start = maxOf(lastVisible + 1, lastEnqueued + 1)
+                val end = lastVisible + lookahead
+                if (start > end) return@collect
                 val loader = SingletonImageLoader.get(ctx)
-                for (i in (lastVisible + 1)..(lastVisible + lookahead)) {
+                for (i in start..end) {
                     val url = urls.getOrNull(i) ?: break
                     if (url.isBlank()) continue
                     loader.enqueue(ImageRequest.Builder(ctx).data(resolveUrl(url, baseUrl)).build())
                 }
+                if (end > lastEnqueued) lastEnqueued = end
             }
     }
 }
 
 @Composable
-fun PrefetchLazyGridEffect(gridState: LazyGridState, urls: List<String>, lookahead: Int = PREFETCH_LOOKAHEAD) {
-    val ctx = LocalPlatformContext.current
-    val baseUrl = LocalServerBaseUrl.current
-    LaunchedEffect(gridState, urls, baseUrl) {
-        snapshotFlow { gridState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1 }
-            .distinctUntilChanged()
-            .collect { lastVisible ->
-                if (lastVisible < 0) return@collect
-                val loader = SingletonImageLoader.get(ctx)
-                for (i in (lastVisible + 1)..(lastVisible + lookahead)) {
-                    val url = urls.getOrNull(i) ?: break
-                    if (url.isBlank()) continue
-                    loader.enqueue(ImageRequest.Builder(ctx).data(resolveUrl(url, baseUrl)).build())
-                }
-            }
-    }
-}
+fun PrefetchLazyRowEffect(listState: LazyListState, urls: List<String>, lookahead: Int = PREFETCH_LOOKAHEAD) =
+    PrefetchEffect(listState, urls, lookahead) { listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1 }
+
+@Composable
+fun PrefetchLazyGridEffect(gridState: LazyGridState, urls: List<String>, lookahead: Int = PREFETCH_LOOKAHEAD) =
+    PrefetchEffect(gridState, urls, lookahead) { gridState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1 }
