@@ -210,4 +210,32 @@ addresses it.
 - **Follow-up if it recurs:** `backend.log` will now hold the trace. The defensive guidance
   stands — keep every fan-out `Semaphore`-bounded and every WS read-loop / send wrapped in
   `try`/`runCatching` so an abrupt TV disconnect can't abort the Native process.
+
+### R106 — Proactive first-screen image prewarm — ⛔ TRIED, REVERTED (negative result)
+Attacked the cold-image residual from §6 with a client-side prewarm: on home-feed load, warm
+the first 3 content rows' initial 8 tiles (width-matched, 400 ms after first paint). Measured
+it as a negative result and reverted (commit reverted same day).
+
+**Why reverted — the residual is backend-side, not client-side.** Three identical R106 cold
+trials returned **50.8% / 36.4% / 6.3%** legacy janky — a huge spread with a clear *downward
+trend as the trials ran*. That trend is the finding: the cost is the **backend image-proxy
+cold disk-cache** — the first view of an item fetches the image from Jellyfin through the
+`Semaphore(8)` gate; once the proxy has it on disk, the same scroll is ~6% janky (trial 3).
+A *client* prewarm can't fix that — it is gated by the same cold proxy, and a 24-image burst
+can *add* contention if it overlaps the scroll. Benefit was unmeasurable above the noise, so
+shipping it would add per-load fetches for no demonstrable gain.
+
+**The real lever (if pursued):** warm the **backend** image-proxy disk cache — e.g. fetch
+each item's poster/backdrop at scan time, or a background warm after a scan — so *every*
+client's first view is fast. That is a larger, backend-touching change with diminishing
+returns: the cold-image residual is intrinsic to first-view content and is already made
+graceful by the R87 colored placeholders (no blank pop, just a settle) + R88/R99 scroll-ahead
+prefetch + R96 smaller decodes. **Recommendation: do not add a client-side bulk prewarm.**
+
+### Measurement-method caveat (important)
+Single cold-scroll runs on this rig vary widely (legacy janky 6–64% under identical
+conditions) because of background dexopt, GC, and especially **backend-proxy cache warmth**.
+Trust *trends across several trials* and the *modern* janky-frame metric, not any single
+legacy-jank number. The warm-scroll comparison (§2.1) is reliable because the caches are warm
+and the numbers are tight; cold single-runs are not.
 </content>
