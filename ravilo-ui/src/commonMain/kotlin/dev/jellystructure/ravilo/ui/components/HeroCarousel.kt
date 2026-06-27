@@ -115,7 +115,8 @@ fun HeroCarousel(
                 onSelect = { onOpenDetail(active.item) },
             ),
     ) {
-        // Backdrop image, crossfades between slides
+        // Backdrop image, crossfades between slides. R87: a neutral surface paints under the backdrop
+        // while it loads so the hero never flashes blank (Hero carries no brand color of its own).
         AnimatedContent(
             targetState = active.backdropUrl,
             transitionSpec = {
@@ -129,6 +130,7 @@ fun HeroCarousel(
                 contentDescription = null,
                 modifier = Modifier.fillMaxSize(),
                 alignment = RaviloDimens.heroBackdropAlignment,
+                placeholderColor = colors.surface,
             )
         }
 
