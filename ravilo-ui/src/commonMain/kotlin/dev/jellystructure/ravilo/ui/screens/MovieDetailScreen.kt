@@ -24,6 +24,8 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.foundation.MutatePriority
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -39,6 +41,7 @@ import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRestorer
 import androidx.compose.ui.focus.onFocusChanged
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -62,6 +65,9 @@ import dev.jellystructure.ravilo.ui.theme.SpaceGrotesk
 import dev.jellystructure.shared.tv.CardPlayState
 import dev.jellystructure.shared.tv.MediaCard
 import dev.jellystructure.shared.tv.MovieDetail
+
+// R107: how long after open to compose the below-the-fold detail rails — past the 220ms slide.
+private const val POST_OPEN_COMPOSE_DELAY_MS = 280L
 
 @Composable
 fun MovieDetailScreen(
@@ -135,6 +141,13 @@ private fun MovieDetailLoaded(
     val playFR = remember { FocusRequester() }
     val navBarFR = remember { FocusRequester() }
     LaunchedEffect(Unit) { runCatching { playFR.requestFocus() } }
+
+    // R107: defer the below-hero rails (cast, related) until ~280ms after open. The hero fills the
+    // viewport, so they are below the fold — composing ~10-12 off-screen CastCircle/Tile in the first
+    // frame is the measured detail-open hitch. Painting them after the 220ms slide is invisible
+    // (nothing visible reflows; the user can't scroll there during the transition).
+    var showBelowFold by remember(detail.card.id) { mutableStateOf(false) }
+    LaunchedEffect(detail.card.id) { delay(POST_OPEN_COMPOSE_DELAY_MS); showBelowFold = true }
 
     // R79: appBarHeight + 24dp top inset so cast/related rows aren't hidden under the overlay bar.
     val detailBivSpec = rememberEdgeBringIntoViewSpec(peekDp = 60.dp, topInsetDp = RaviloDimens.appBarHeight + 24.dp)
@@ -255,6 +268,8 @@ private fun MovieDetailLoaded(
                 }
             }
 
+            // R107: below-the-fold rails — composed ~280ms after open (see showBelowFold above).
+            if (showBelowFold) {
             // Cast row
             if (detail.cast.isNotEmpty()) {
                 Spacer(Modifier.height(RaviloDimens.rowGap))
@@ -297,6 +312,7 @@ private fun MovieDetailLoaded(
                 }
             }
             Spacer(Modifier.height(48.dp))
+            } // R107: showBelowFold
         }
         } // CompositionLocalProvider
 
