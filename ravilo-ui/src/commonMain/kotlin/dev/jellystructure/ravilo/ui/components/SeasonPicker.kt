@@ -1,9 +1,7 @@
 package dev.jellystructure.ravilo.ui.components
 
-import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -28,6 +26,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.jellystructure.ravilo.ui.focus.dpadFocusable
 import dev.jellystructure.ravilo.ui.theme.RaviloDimens
+import dev.jellystructure.ravilo.ui.theme.RaviloMotion
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
 import dev.jellystructure.ravilo.ui.theme.Sora
 import dev.jellystructure.shared.tv.Season
@@ -42,8 +41,8 @@ fun SeasonPicker(
     val colors = RaviloTheme.colors
     val sora = Sora
     val pillShape = remember { RoundedCornerShape(24.dp) }
-    val focusSpec = remember { spring<Float>(dampingRatio = 0.65f, stiffness = Spring.StiffnessMediumLow) }
-    val dpSpec    = remember { spring<Dp>(dampingRatio = 0.65f, stiffness = Spring.StiffnessMediumLow) }
+    val focusSpec = remember { RaviloMotion.softSpring<Float>() }
+    val dpSpec    = remember { RaviloMotion.softSpring<Dp>() }
 
     LazyRow(
         modifier = modifier.focusRestorer(),
@@ -53,7 +52,7 @@ fun SeasonPicker(
         items(seasons.size, key = { i -> seasons[i].index }) { i ->
             val isSelected = i == selectedIndex
             var focused by remember { mutableStateOf(false) }
-            val scale        by animateFloatAsState(if (focused) 1.06f else 1f, focusSpec, label = "pillScale$i")
+            val scale        by animateFloatAsState(if (focused) RaviloMotion.PillFocusScale else 1f, focusSpec, label = "pillScale$i")
             val borderWidth  by animateDpAsState(if (focused && !isSelected) 2.dp else 0.dp, dpSpec, label = "pillBorder$i")
             val glowElevation by animateDpAsState(if (focused) 14.dp else 0.dp, dpSpec, label = "pillShadow$i")
 
