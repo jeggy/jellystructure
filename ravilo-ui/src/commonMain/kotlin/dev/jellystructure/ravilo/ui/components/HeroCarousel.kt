@@ -40,6 +40,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import coil3.SingletonImageLoader
+import coil3.compose.LocalPlatformContext
+import coil3.request.ImageRequest
+import dev.jellystructure.ravilo.ui.LocalServerBaseUrl
 import dev.jellystructure.ravilo.ui.focus.dpadFocusable
 import dev.jellystructure.ravilo.ui.seams.RemoteImage
 import dev.jellystructure.ravilo.ui.theme.RaviloDimens
@@ -90,6 +94,22 @@ fun HeroCarousel(
     // the start so the dots / auto-advance stay consistent.
     LaunchedEffect(items.size) { if (activeIndex > items.lastIndex) { activeIndex = 0; resetTick++ } }
     val active = items[activeIndex.coerceIn(0, items.lastIndex)]
+
+    // R88: warm the next 2 slides' backdrop + logo before auto-advance fires.
+    if (items.size > 1) {
+        val prefetchCtx  = LocalPlatformContext.current
+        val prefetchBase = LocalServerBaseUrl.current
+        LaunchedEffect(activeIndex, prefetchBase) {
+            val loader = SingletonImageLoader.get(prefetchCtx)
+            for (offset in 1..2) {
+                val next = items[(activeIndex + offset) % items.size]
+                listOfNotNull(next.backdropUrl, next.logoUrl).forEach { url ->
+                    val r = if (url.startsWith("/") && prefetchBase.isNotBlank()) "$prefetchBase$url" else url
+                    loader.enqueue(ImageRequest.Builder(prefetchCtx).data(r).build())
+                }
+            }
+        }
+    }
 
     // Auto-advance; resets when the user manually changes slide. 0 seconds = off.
     if (autoAdvanceSeconds > 0 && items.size > 1) {
