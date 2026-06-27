@@ -56,7 +56,9 @@ import dev.jellystructure.ravilo.ui.screens.SeriesDetailStore
 import dev.jellystructure.ravilo.ui.screens.SettingsScreen
 import dev.jellystructure.ravilo.ui.screens.SettingsStore
 import dev.jellystructure.ravilo.ui.i18n.WithLocale
+import coil3.compose.LocalPlatformContext
 import dev.jellystructure.ravilo.ui.perf.FrameTrackerOverlay
+import dev.jellystructure.ravilo.ui.seams.prefetchImage
 import dev.jellystructure.ravilo.ui.theme.RaviloMotion
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
 import dev.jellystructure.ravilo.ui.theme.rememberRaviloTheme
@@ -230,6 +232,9 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
         // reacting to a browser-initiated navigation (hashchange).
         val fromHistory = remember { object { var flag = false } }
 
+        // R100: captured at composition so the detail-open click handlers can pre-warm a backdrop.
+        val imageCtx = LocalPlatformContext.current
+
         fun push(dest: Dest) {
             navDir = NavDir.Forward
             stack = stack + dest
@@ -255,6 +260,13 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
             navDir = NavDir.Forward
             stack = if (stack.isEmpty()) listOf(dest) else stack.dropLast(1) + dest
             if (!fromHistory.flag) replaceRoute(dest.toRoute())
+        }
+        // R100: single funnel for opening a movie/series detail — pre-warm the hero backdrop into
+        // Coil so it's a cache hit (no late fade) when the detail composes, then push the right Dest.
+        fun openDetail(card: MediaCard, displayName: String) {
+            prefetchImage(imageCtx, apiClient.baseUrl, card.backdropUrl)
+            if (card.kind == MediaKind.SERIES) push(Dest.SeriesDetail(card.id, displayName))
+            else push(Dest.MovieDetail(card.id, displayName))
         }
 
         // R80: write the initial URL on first composition, then listen for browser Back/Forward.
@@ -362,12 +374,7 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                         }
                     },
                     onSearch = { push(Dest.Search(dest.displayName)) },
-                    onItemSelect = { card ->
-                        when {
-                            card.kind == MediaKind.SERIES -> push(Dest.SeriesDetail(card.id, dest.displayName))
-                            else -> push(Dest.MovieDetail(card.id, dest.displayName))
-                        }
-                    },
+                    onItemSelect = { openDetail(it, dest.displayName) },
                     onItemPlay = { card ->
                         when {
                             // A series needs episode-resolution (resume point + rail) that only the
@@ -387,12 +394,7 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                     channel = dest.channel,
                     store = store,
                     onBack = { pop() },
-                    onItemSelect = { card ->
-                        when {
-                            card.kind == MediaKind.SERIES -> push(Dest.SeriesDetail(card.id, dest.displayName))
-                            else -> push(Dest.MovieDetail(card.id, dest.displayName))
-                        }
-                    },
+                    onItemSelect = { openDetail(it, dest.displayName) },
                 )
             }
 
@@ -415,12 +417,7 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                             else -> {}
                         }
                     },
-                    onItemSelect = { card ->
-                        when {
-                            card.kind == MediaKind.SERIES -> push(Dest.SeriesDetail(card.id, dest.displayName))
-                            else -> push(Dest.MovieDetail(card.id, dest.displayName))
-                        }
-                    },
+                    onItemSelect = { openDetail(it, dest.displayName) },
                     onProfile = { push(Dest.ProfilePicker) },
                     onSearch = { push(Dest.Search(dest.displayName)) },
                 )
@@ -431,12 +428,7 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                 SearchScreen(
                     store = store,
                     onBack = { pop() },
-                    onItemSelect = { card ->
-                        when {
-                            card.kind == MediaKind.SERIES -> push(Dest.SeriesDetail(card.id, dest.displayName))
-                            else -> push(Dest.MovieDetail(card.id, dest.displayName))
-                        }
-                    },
+                    onItemSelect = { openDetail(it, dest.displayName) },
                 )
             }
 
@@ -476,12 +468,7 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                     store = store,
                     onBack = { pop() },
                     onPlay = { card -> push(Dest.Player(card.id, card.title, displayName = dest.displayName)) },
-                    onRelatedSelect = { card ->
-                        when {
-                            card.kind == MediaKind.SERIES -> push(Dest.SeriesDetail(card.id, dest.displayName))
-                            else -> push(Dest.MovieDetail(card.id, dest.displayName))
-                        }
-                    },
+                    onRelatedSelect = { openDetail(it, dest.displayName) },
                     displayName = dest.displayName,
                     discoverAvailable = discoverAvailable,
                     onNavSelect = { idx ->
@@ -519,12 +506,7 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                             currentEpIndex = ctx.currentEpIndex,
                         ))
                     },
-                    onRelatedSelect = { card ->
-                        when {
-                            card.kind == MediaKind.SERIES -> push(Dest.SeriesDetail(card.id, dest.displayName))
-                            else -> push(Dest.MovieDetail(card.id, dest.displayName))
-                        }
-                    },
+                    onRelatedSelect = { openDetail(it, dest.displayName) },
                     displayName = dest.displayName,
                     discoverAvailable = discoverAvailable,
                     onNavSelect = { idx ->
