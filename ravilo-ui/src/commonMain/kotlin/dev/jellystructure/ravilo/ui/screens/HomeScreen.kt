@@ -42,7 +42,6 @@ import dev.jellystructure.ravilo.ui.focus.backToTopOnBack
 import dev.jellystructure.ravilo.ui.components.TileVariant
 import dev.jellystructure.ravilo.ui.components.tileRequestedWidth
 import dev.jellystructure.ravilo.ui.components.toTileVariant
-import dev.jellystructure.ravilo.ui.seams.PrewarmImages
 import dev.jellystructure.ravilo.ui.seams.sizedProxyUrl
 import dev.jellystructure.ravilo.ui.i18n.str
 import dev.jellystructure.ravilo.ui.theme.RaviloDimens
@@ -53,12 +52,6 @@ import dev.jellystructure.shared.tv.Row
 import dev.jellystructure.shared.tv.RowKind
 
 enum class NavDestination { HOME, MOVIES, SERIES, MY_LIST, SEARCH }
-
-// R106: how much below-the-fold content to pre-warm on home load — the first PREWARM_ROWS rows,
-// each PREWARM_PER_ROW initial tiles (≈ one viewport-row's worth). Bounded so the one-shot warm
-// stays well within the backend image proxy's Semaphore(8) gate.
-private const val PREWARM_ROWS = 3
-private const val PREWARM_PER_ROW = 8
 
 @Composable
 fun HomeScreen(
@@ -119,24 +112,6 @@ private fun HomeLoaded(
     val colors = RaviloTheme.colors
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
-
-    // R106: warm the first few content rows' initial tiles (below the fold) shortly after the feed
-    // paints, so the first scroll-down through fresh content hits cache instead of decoding/fetching
-    // a row's worth of images at once (the measured cold-image-cache jank). Width-matched to the tile
-    // request (R96) so the warm isn't wasted; bounded so it never fans out past the proxy's gate.
-    val prewarmUrls = remember(feed) {
-        buildList {
-            feed.rows.take(PREWARM_ROWS).forEach { row ->
-                val variant = if (row.kind == RowKind.CONTINUE) TileVariant.LANDSCAPE else feed.tileShape.toTileVariant()
-                val w = tileRequestedWidth(variant)
-                row.items.take(PREWARM_PER_ROW).forEach { card ->
-                    val u = if (variant == TileVariant.LANDSCAPE) card.backdropUrl ?: card.posterUrl else card.posterUrl
-                    if (!u.isNullOrBlank()) add(sizedProxyUrl(u, w))
-                }
-            }
-        }
-    }
-    PrewarmImages(key = feed, urls = prewarmUrls)
 
     // Hero height as a % of the screen, per the user's config (R27); auto-advance interval too.
     val density = LocalDensity.current
