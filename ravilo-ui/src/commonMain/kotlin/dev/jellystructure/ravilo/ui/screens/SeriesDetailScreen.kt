@@ -23,6 +23,7 @@ import androidx.compose.foundation.MutatePriority
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -39,6 +40,7 @@ import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRestorer
 import androidx.compose.ui.focus.onFocusChanged
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -68,6 +70,9 @@ import dev.jellystructure.shared.tv.CardPlayState
 import dev.jellystructure.shared.tv.Episode
 import dev.jellystructure.shared.tv.MediaCard
 import dev.jellystructure.shared.tv.SeriesDetail
+
+// R107: how long after open to compose the below-the-fold detail rails — past the 220ms slide.
+private const val POST_OPEN_COMPOSE_DELAY_MS = 280L
 
 @Composable
 fun SeriesDetailScreen(
@@ -183,11 +188,14 @@ private fun SeriesDetailLoaded(
     // R84: derive all progress values from the phase-2 overlay (empty map = not yet loaded)
     val allEps = remember(detail) { detail.seasons.flatMap { it.episodes } }
     val overlayLoaded = overlay.isNotEmpty()
-    val watchedCount = allEps.count { ep -> overlay[ep.id]?.played == true }
-    val resumeEpId: String? = allEps
-        .firstOrNull { ep -> overlay[ep.id].let { ps -> ps != null && !ps.played && ps.resumeMs > 0 } }?.id
-        ?: allEps.firstOrNull { ep -> overlay[ep.id]?.played != true }?.id
-        ?: allEps.lastOrNull()?.id
+    // R107: memoize the O(N)-over-all-episodes scans so they don't re-run on every recomposition
+    // (notably the phase-2 overlay re-emit) — only when the episode set or overlay actually changes.
+    val watchedCount = remember(allEps, overlay) { allEps.count { ep -> overlay[ep.id]?.played == true } }
+    val resumeEpId: String? = remember(allEps, overlay) {
+        allEps.firstOrNull { ep -> overlay[ep.id].let { ps -> ps != null && !ps.played && ps.resumeMs > 0 } }?.id
+            ?: allEps.firstOrNull { ep -> overlay[ep.id]?.played != true }?.id
+            ?: allEps.lastOrNull()?.id
+    }
 
     val playFR = remember { FocusRequester() }
     val navBarFR = remember { FocusRequester() }
@@ -195,6 +203,14 @@ private fun SeriesDetailLoaded(
     val resumeEpIdx = episodes.indexOfFirst { it.id == resumeEpId }.takeIf { it >= 0 } ?: 0
 
     LaunchedEffect(Unit) { runCatching { playFR.requestFocus() } }
+
+    // R107: defer the below-hero rails (season picker, episodes, cast, related) until just after the
+    // open transition. The hero fills the viewport, so those rails are below the fold — composing
+    // ~10-12 off-screen EpisodeCard/CastCircle/Tile in the first frame is the measured detail-open
+    // hitch. They paint ~280ms later (after the 220ms slide), which is invisible: the user can't
+    // scroll to them during the transition, so nothing visible reflows (atomic-frame safe).
+    var showBelowFold by remember(detail.card.id) { mutableStateOf(false) }
+    LaunchedEffect(detail.card.id) { delay(POST_OPEN_COMPOSE_DELAY_MS); showBelowFold = true }
 
     // R79: appBarHeight + 24dp top inset so season picker / episode rail title isn't hidden under the bar.
     val detailBivSpec = rememberEdgeBringIntoViewSpec(peekDp = 60.dp, topInsetDp = RaviloDimens.appBarHeight + 24.dp)
@@ -351,6 +367,8 @@ private fun SeriesDetailLoaded(
                 }
             }
 
+            // R107: below-the-fold rails — composed ~280ms after open (see showBelowFold above).
+            if (showBelowFold) {
             Spacer(Modifier.height(28.dp))
 
             // Season picker
@@ -432,6 +450,7 @@ private fun SeriesDetailLoaded(
                 }
             }
             Spacer(Modifier.height(48.dp))
+            } // R107: showBelowFold
         }
         } // CompositionLocalProvider
 
