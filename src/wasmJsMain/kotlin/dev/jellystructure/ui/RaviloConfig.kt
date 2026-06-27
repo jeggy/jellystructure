@@ -1141,6 +1141,8 @@ private fun openChannelEditorPage(container: Element, scope: CoroutineScope, idx
             <p class="tiny muted" style="margin:0 0 10px">Custom rows for this channel. System rows (Continue, Newly Added) still appear unless removed.</p>
             <div id="ch-rows-list" style="margin-bottom:8px">$chRowsListHtml</div>
             <button id="ch-rows-add" class="btn sm ghost">+ Add row</button>
+            <!-- R87: row-coverage gap panel (filled async by renderCoverage) -->
+            <div id="ch-rows-coverage" style="margin-top:14px"></div>
           </div>
           <p id="ch-rows-inherit-note" class="tiny muted" style="margin:0;${if (rowsCustom) "display:none;" else ""}">Shows the global Home rows scoped to this channel — the default behaviour.</p>
         </div>
@@ -1149,6 +1151,52 @@ private fun openChannelEditorPage(container: Element, scope: CoroutineScope, idx
     // Wire back / cancel — history.back() pops the pushState entry and fires popstate → handleRaviloRoute → renderFull
     container.querySelector("#ch-ed-back")?.addEventListener("click") { _ -> window.history.back() }
     container.querySelector("#ch-ed-cancel")?.addEventListener("click") { _ -> window.history.back() }
+
+    // R60: re-render the channel editor after mutating rows (full re-render keeps state consistent).
+    fun reRenderChannelRows() {
+        val ch = currentConfig.channels.getOrNull(idx) ?: return
+        openChannelEditorPage(container, scope, idx, ch)
+    }
+    // R87: a catch-all (no-condition) row matches everything scoped to the channel (R59) — closes the gap.
+    fun addCatchAllRow() {
+        val list = currentConfig.channels.toMutableList()
+        val cur = list[idx]
+        val existing = cur.rows ?: ChannelRowsConfig(mode = "custom")
+        val catchAll = RowConfig(id = genId("row"), kind = RowKind.CUSTOM, title = "All other titles",
+            match = MatchMode.ALL, conditions = emptyList())
+        list[idx] = cur.copy(rows = existing.copy(mode = "custom", items = existing.items + catchAll))
+        currentConfig = currentConfig.copy(channels = list)
+        reRenderChannelRows()
+    }
+    // R87: row-coverage gap = the channel filter AND `content_row is_none_of <the channel's own rows>`
+    // (the shared evaluator's content_row facet, R87a). Rendered into #ch-rows-coverage; recomputed on
+    // each (re-)render and when switching to Custom mode. System rows are time-based and excluded.
+    fun renderCoverage() {
+        val host = container.querySelector("#ch-rows-coverage") as? HTMLElement ?: return
+        val ch = currentConfig.channels.getOrNull(idx)
+        if (ch == null || ch.rows?.mode != "custom") { host.innerHTML = ""; return }
+        val rows = ch.rows?.items?.filter { it.enabled } ?: emptyList()
+        val channelConds = if (ch.conditions.isNotEmpty()) ch.conditions else wbConds(legacyToConds(ch))
+        host.innerHTML = """<div class="tiny muted">Checking coverage…</div>"""
+        scope.launch {
+            val pool = MediaApi.list(viewer = currentUserId, match = ch.match.name, conditions = channelConds, pageSize = 1)?.total ?: 0
+            val gapConds = channelConds + Condition(facet = "content_row", op = "is_none_of", rows = rows)
+            val page = MediaApi.list(viewer = currentUserId, match = "ALL", conditions = gapConds, pageSize = 24)
+            val n = page?.total ?: 0
+            if (n == 0) {
+                host.innerHTML = """<div class="card" style="padding:12px 14px;background:rgba(56,161,105,.10);border:1px solid rgba(56,161,105,.30)"><div style="display:flex;align-items:center;gap:8px"><b style="flex:1">Not shown by any row</b><span class="badge" style="background:rgba(56,161,105,.22);color:#38a169">0 of $pool</span></div><div class="tiny" style="margin-top:6px;color:var(--ink-soft)">✓ Every title in this channel appears in at least one row — nothing falls through the gaps.</div></div>""".trimIndent()
+                return@launch
+            }
+            val tiles = (page?.items ?: emptyList()).joinToString("") { m ->
+                val img = if (!m.posterPath.isNullOrBlank()) """<img src="https://image.tmdb.org/t/p/w185${m.posterPath}" alt="" style="width:100%;height:100%;object-fit:cover">""" else """<div style="display:flex;align-items:center;justify-content:center;width:100%;height:100%;font-size:.7rem;color:var(--ink-soft)">${m.title.take(2).htmlEsc()}</div>"""
+                """<div title="${m.title.htmlEsc()}" style="aspect-ratio:2/3;border-radius:6px;overflow:hidden;background:var(--fill-2)">$img</div>"""
+            }
+            val lead = if (rows.isEmpty()) "No rows yet — all <b>$n</b> titles that match this channel would be unreachable." else "These <b>$n</b> titles match the channel filter but <b>aren’t shown by any content row</b>, so viewers browsing this channel won’t find them."
+            host.innerHTML = """<div class="card" style="padding:12px 14px;background:rgba(214,158,46,.10);border:1px solid rgba(214,158,46,.30)"><div style="display:flex;align-items:center;gap:8px"><b style="flex:1">Not shown by any row</b><span class="badge" style="background:rgba(214,158,46,.22);color:#d69e2e">$n of $pool</span></div><div class="tiny" style="margin:6px 0 10px;line-height:1.5;color:var(--ink-soft)">$lead <span class="muted">System rows (Continue, Newly Added) aren’t counted.</span></div><div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(56px,1fr));gap:7px;max-height:200px;overflow:auto;margin-bottom:11px">$tiles</div><div style="display:flex;gap:8px;flex-wrap:wrap"><button type="button" id="cov-addcatchall" class="btn sm ghost">＋ Add a catch-all row for these</button></div></div>""".trimIndent()
+            host.querySelector("#cov-addcatchall")?.addEventListener("click") { _ -> addCatchAllRow() }
+        }
+    }
+    renderCoverage()
 
     // Brand colour picker
     val colorInput = container.querySelector("#ch-ed-color") as? HTMLInputElement
@@ -1315,14 +1363,9 @@ private fun openChannelEditorPage(container: Element, scope: CoroutineScope, idx
                 val isCustom = (container.querySelector("input[name='ch-rows-mode']:checked") as? HTMLInputElement)?.value == "custom"
                 (container.querySelector("#ch-rows-custom-body") as? HTMLElement)?.style?.display = if (isCustom) "" else "none"
                 (container.querySelector("#ch-rows-inherit-note") as? HTMLElement)?.style?.display = if (isCustom) "none" else ""
+                if (isCustom) renderCoverage()  // R87: surface the gap as soon as Custom is chosen
             }
         }
-    }
-
-    // R60: helper — re-render channel editor after mutating rows (full page re-render keeps state consistent)
-    fun reRenderChannelRows() {
-        val ch = currentConfig.channels.getOrNull(idx) ?: return
-        openChannelEditorPage(container, scope, idx, ch)
     }
 
     // R60: channel base-scope conds passed to row workbench so results are pre-scoped to the channel filter
