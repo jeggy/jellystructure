@@ -200,6 +200,7 @@ private fun HomeLoaded(
                     title = str("section.channels"),
                     items = feed.channels,
                     itemKey = { ch -> ch.id },
+                    urlResolver = { ch -> ch.logoUrl },
                 ) { _, ch ->
                     ChannelCard(
                         name = ch.name,
@@ -215,21 +216,23 @@ private fun HomeLoaded(
         // Content rows
         items(feed.rows.size, key = { ri -> feed.rows[ri].id }) { ri ->
             val row: Row = feed.rows[ri]
+            // Compute variant here so urlResolver and Tile use the same value.
+            val rowVariant = if (row.kind == RowKind.CONTINUE) TileVariant.LANDSCAPE else feed.tileShape.toTileVariant()
 
             Spacer(Modifier.height(RaviloDimens.rowGap))
             StaticContentRow(
                 title = row.title,
                 items = row.items,
                 itemKey = { card -> card.id },
+                urlResolver = { card ->
+                    if (rowVariant == TileVariant.LANDSCAPE) card.backdropUrl ?: card.posterUrl else card.posterUrl
+                },
             ) { _, card ->
-                // Continue Watching is always landscape (resume thumbnails); other rows follow the
-                // operator's configured tile shape (R32 §F: poster / landscape / square).
-                val variant = if (row.kind == RowKind.CONTINUE) TileVariant.LANDSCAPE else feed.tileShape.toTileVariant()
                 Tile(
                     title = card.title,
                     subtitle = card.nextUpLabel,
-                    posterUrl = if (variant == TileVariant.LANDSCAPE) card.backdropUrl ?: card.posterUrl else card.posterUrl,
-                    variant = variant,
+                    posterUrl = if (rowVariant == TileVariant.LANDSCAPE) card.backdropUrl ?: card.posterUrl else card.posterUrl,
+                    variant = rowVariant,
                     progressPct = card.progressPct ?: 0f,
                     watched = card.watched,
                     onSelect = { onItemSelect(card) },

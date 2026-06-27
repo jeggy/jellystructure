@@ -39,6 +39,7 @@ import dev.jellystructure.ravilo.ui.components.Tile
 import dev.jellystructure.ravilo.ui.focus.backToTopOnBack
 import dev.jellystructure.ravilo.ui.focus.dpadFocusable
 import dev.jellystructure.ravilo.ui.i18n.str
+import dev.jellystructure.ravilo.ui.seams.PrefetchLazyGridEffect
 import dev.jellystructure.ravilo.ui.theme.RaviloDimens
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
 import dev.jellystructure.ravilo.ui.theme.Sora
@@ -283,6 +284,10 @@ private fun BrowseGrid(
     firstCellFR: FocusRequester,
     onItemSelect: (MediaCard) -> Unit,
 ) {
+    // R88: warm the next 4 poster images ahead of the scroll position.
+    val prefetchUrls = remember(items) { items.map { it.posterUrl.orEmpty() } }
+    PrefetchLazyGridEffect(gridState = gridState, urls = prefetchUrls)
+
     // Native 2-D focus traversal across the grid: the framework composes off-screen rows in the
     // search direction and scrolls them into view; focusRestorer() returns focus to the last cell
     // on re-entry. No per-item FocusRequester (except the single first-cell back-to-top target, R55),
