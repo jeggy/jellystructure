@@ -232,7 +232,41 @@ returns: the cold-image residual is intrinsic to first-view content and is alrea
 graceful by the R87 colored placeholders (no blank pop, just a settle) + R88/R99 scroll-ahead
 prefetch + R96 smaller decodes. **Recommendation: do not add a client-side bulk prewarm.**
 
-### Measurement-method caveat (important)
+## 7. Vertical-nav + detail-open round (R107–R108)
+
+User feedback after R96–R103: "better, but still laggy going **up/down** (not left/right) and
+opening detail pages." Measured both (gfxinfo breakdown counters, not just jank %):
+
+- **Fast vertical nav:** 50th 30ms / 90th 34ms, "Slow bitmap uploads" = 0 → a **layout/scroll**
+  cost, not images.
+- **Detail-open:** 99th 129ms + **14 "Slow UI thread"** frames → heavy **synchronous composition**.
+
+Root causes (verified in source; two Explore agents, findings cross-checked — one bogus claim
+discarded: a boolean `derivedStateOf` does **not** recompose the AppBar per frame):
+
+- **Vertical nav = a redundant *double* bring-into-view.** On D-pad DOWN the focused tile's
+  *native* bring-into-view scrolls the `LazyColumn`, AND `ContentRow` launched a *second*
+  `bringIntoView()` of the whole row — two competing animated scrolls re-laying-out the nested
+  `LazyColumn(LazyRow…)` each frame, coroutines piling up under fast presses. Home's spec already
+  reserves a top inset (R65) that shows the row title via the native scroll, so the explicit one
+  is redundant *there*.
+- **Detail-open = eager off-screen composition.** The detail is a non-lazy
+  `Column(verticalScroll)`; the hero fills the viewport, so the cast + related rails (+ series'
+  season-picker + episode rail — ~10-12 off-screen `CastCircle`/`Tile`/`EpisodeCard`) all compose
+  on the first frame. Plus `SeriesDetail` re-scanned all episodes O(N) on every recomposition.
+
+**R108 — drop Home's redundant row bring-into-view** (`bringRowHeaderIntoView=false`; Discover/
+Channel keep it, they have no top-inset spec). **Result (measured): fast vertical nav 50th 30→17ms,
+legacy jank 63%→5%.** ✅ The big win — directly fixes the felt up/down lag; verified titles still show.
+
+**R107 — defer below-hero detail rails ~280ms + memoize the O(N) episode scans.** First paint
+composes hero-only; rails paint settled (below the fold → no visible reflow). **Result: detail-open
+peak 99th 129→97ms** (worst hitch ~25% smaller and now on a static screen, not mid-slide); total
+composition similar (rails still compose, just later). A further win would be converting the detail
+`Column(verticalScroll)`→`LazyColumn` (truly lazy, rails compose only when scrolled to) — left as a
+follow-up since it touches detail focus/scroll and the up/down complaint is the one now solved.
+
+## Measurement-method caveat (important)
 Single cold-scroll runs on this rig vary widely (legacy janky 6–64% under identical
 conditions) because of background dexopt, GC, and especially **backend-proxy cache warmth**.
 Trust *trends across several trials* and the *modern* janky-frame metric, not any single
