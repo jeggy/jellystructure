@@ -161,10 +161,26 @@
     'Comedy Central Hour': { k: 'missing_artwork', label: 'no poster', cls: 'warn' },
   };
 
-  let state = { conditions: [], match: 'all', include: 'all' };   // workbench filter (empty = all)
   let quick = 'all';
   let kind = 'movie';
   let search = '';
+
+  // Coverage hand-off from the Ravilo channel editor: a normal workbench filter (the channel's
+  // conditions ANDed with "Content row is none of <its rows>") carried via localStorage. It loads
+  // as ordinary, editable filter conditions — nothing special about it on this page.
+  let rowsContext = [];
+  let initialFilter = null;
+  let handoffLabel = '';
+  try {
+    if (new URLSearchParams(location.search).get('view') === 'coverage') {
+      const raw = localStorage.getItem('js-cov-filter');
+      if (raw) { const p = JSON.parse(raw); if (p && p.filter) { initialFilter = p.filter; rowsContext = p.rows || []; handoffLabel = p.label || ''; } }
+    }
+  } catch (e) { initialFilter = null; }
+
+  let state = initialFilter
+    ? { conditions: (initialFilter.conditions || []).filter(c => c.values && c.values.length), match: initialFilter.match || 'all', include: 'all' }
+    : { conditions: [], match: 'all', include: 'all' };   // workbench filter (empty = all)
 
   function effective() {
     return Object.assign({}, state, { include: kind });
@@ -202,18 +218,23 @@
     const opL = { isAny: 'is any of', isNot: 'is none of', gte: '≥', lte: '≤', eq: '=', contains: 'contains', ncontains: 'does not contain' };
     const chips = state.conditions.filter(c => c.values.length).map((c, i) => {
       const f = FACETS[c.facet];
-      const val = f.type === 'text' ? '“' + c.values[0] + '”' : f.type === 'num' ? c.values[0] : c.values.join(', ');
+      const val = f.type === 'text' ? '“' + c.values[0] + '”'
+        : f.type === 'num' ? c.values[0]
+        : f.type === 'rows' ? c.values.map(v => v && v.name).filter(Boolean).join(', ')
+        : c.values.join(', ');
       return `<span class="fxchip" data-edit="1">${f.label} ${opL[c.op] || c.op} ${val} <span class="rm" data-rm="${i}">✕</span></span>`;
     });
     if (chips.length) {
       const word = state.match === 'any' ? ' <span class="tiny muted">any of</span> ' : ' <span class="tiny muted">and</span> ';
+      const handoff = handoffLabel ? `<a class="tiny" href="ravilo-config.html" style="margin-left:10px;color:var(--ink-soft);" title="Coverage gap for the “${handoffLabel}” channel">‹ from “${handoffLabel}” · Ravilo config</a>` : '';
       active.innerHTML = chips.join(word)
         + `<span class="livecount" style="margin-left:6px;"><span class="n">${matches().length}</span><span class="tiny muted">titles match</span></span>`
         + `<span class="tiny" style="margin-left:6px;cursor:pointer;color:var(--acc-ink);" id="edit-filter">edit ⚙</span>`
-        + `<span class="tiny" style="margin-left:6px;cursor:pointer;color:var(--ink-soft);" id="clear-filter">clear all</span>`;
+        + `<span class="tiny" style="margin-left:6px;cursor:pointer;color:var(--ink-soft);" id="clear-filter">clear all</span>`
+        + handoff;
       active.querySelectorAll('[data-rm]').forEach(b => b.onclick = e => { e.stopPropagation(); state.conditions.splice(+b.dataset.rm, 1); renderAll(); });
       active.querySelector('#edit-filter').onclick = openBuilder;
-      active.querySelector('#clear-filter').onclick = () => { state.conditions = []; renderAll(); };
+      active.querySelector('#clear-filter').onclick = () => { state.conditions = []; handoffLabel = ''; renderAll(); };
       active.querySelectorAll('.fxchip[data-edit]').forEach(c => c.onclick = e => { if (!e.target.dataset.rm) openBuilder(); });
     } else {
       active.innerHTML = '';
@@ -298,6 +319,7 @@
       edit: state.conditions.some(c => c.values.length),
       headTitle: 'Library filter',
       saveLabel: 'Apply filter',
+      rowsContext: rowsContext,
       state: JSON.parse(JSON.stringify(state.conditions.length ? state : { match: 'all', include: 'all', conditions: [{ facet: 'genre', op: 'isAny', values: [] }] })),
       onSave: ({ state: s }) => { state = { conditions: s.conditions.filter(c => c.values.length), match: s.match, include: 'all' }; renderAll(); }
     });
