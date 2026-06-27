@@ -11,6 +11,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.painter.ColorPainter
 import androidx.compose.ui.layout.ContentScale
+import coil3.PlatformContext
 import coil3.SingletonImageLoader
 import coil3.compose.AsyncImage
 import coil3.compose.LocalPlatformContext
@@ -83,6 +84,16 @@ fun RemoteImage(
 
 private fun resolveUrl(url: String, baseUrl: String): String =
     if (url.startsWith("/") && baseUrl.isNotBlank()) "$baseUrl$url" else url
+
+/**
+ * R100: warm a single image (e.g. a detail backdrop) ahead of navigating to it, so it is a
+ * memory-cache hit — and paints with no fade — by the time the destination composes. No-op for a
+ * null/blank URL. Safe to call from a non-composable click handler ([ctx] captured at composition).
+ */
+fun prefetchImage(ctx: PlatformContext, baseUrl: String, url: String?) {
+    if (url.isNullOrBlank()) return
+    SingletonImageLoader.get(ctx).enqueue(ImageRequest.Builder(ctx).data(resolveUrl(url, baseUrl)).build())
+}
 
 private const val PREFETCH_LOOKAHEAD = 4
 
