@@ -86,7 +86,7 @@ import kotlin.math.PI
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 private const val CHROME_HIDE_MS = 3_600L
-private const val NEXTUP_AT_MS   = 34_000L    // show next-up card when this many ms remain
+private const val NEXTUP_AT_MS   = 20_000L    // R111: show next-up card when this many ms remain (was 34s — too early)
 private const val COUNTDOWN_SECS = 8
 private const val SKIP_BACK_MS   = 10_000L
 private const val SKIP_FWD_MS    = 30_000L
@@ -154,6 +154,9 @@ fun PlayerScreen(
 
     // Next-up card
     var nextUpVisible by remember { mutableStateOf(false) }
+    // R111: once the viewer picks "Watch credits" we latch it dismissed so the near-end poll doesn't
+    // re-show the card on the very next tick. Reset per-episode in LaunchedEffect(itemId).
+    var nextUpDismissed by remember { mutableStateOf(false) }
     var countdown     by remember { mutableIntStateOf(COUNTDOWN_SECS) }
     var nuFocus       by remember { mutableStateOf(NuFocus.PLAY) }
 
@@ -227,7 +230,9 @@ fun PlayerScreen(
         nextEpisodeId?.let { onNavigateToEpisode?.invoke(it) }
     }
 
-    fun stayThrough() { nextUpVisible = false; chromeVisible = true; scheduleHide() }
+    // R111: "Watch credits" — hide the card AND latch it so the near-end poll won't immediately re-show
+    // it. It can still re-appear at the true end of the file (the isEnded branch ignores the latch).
+    fun stayThrough() { nextUpVisible = false; nextUpDismissed = true; chromeVisible = true; scheduleHide() }
 
     fun chooseEpisode() {
         if (focusedEpIdx == currentEpIndex) { epRailOpen = false; return }
@@ -260,6 +265,7 @@ fun PlayerScreen(
 
     // Start the playback session
     LaunchedEffect(itemId) {
+        nextUpDismissed = false  // R111: each episode (replaceTop keeps this composable) starts fresh
         store.startSession(itemId, positionProvider = { positionMs }, isPausedProvider = { !isPlaying })
     }
 
@@ -286,8 +292,8 @@ fun PlayerScreen(
             audioTracks = player.audioTracks
             subtitleTracks = player.subtitleTracks
 
-            // Near-end → show next-up card
-            if (nextEpisodeId != null && durationMs > 0 && !nextUpVisible && !player.isEnded) {
+            // Near-end → show next-up card (R111: not if the viewer dismissed it via "Watch credits")
+            if (nextEpisodeId != null && durationMs > 0 && !nextUpVisible && !nextUpDismissed && !player.isEnded) {
                 if ((durationMs - positionMs) in 1..NEXTUP_AT_MS) {
                     nextUpVisible = true
                     nuFocus = NuFocus.PLAY
@@ -1158,66 +1164,64 @@ private fun NextUpCard(
     countdown: Int,
     nuFocus: NuFocus,
 ) {
+    // R111: compact card tucked into the bottom-right corner (was a 560dp full-width banner).
     Box(
         modifier = Modifier
-            .padding(end = 48.dp, bottom = 36.dp)
-            .width(560.dp)
-            .clip(RoundedCornerShape(18.dp))
+            .padding(end = 28.dp, bottom = 24.dp)
+            .width(360.dp)
+            .clip(RoundedCornerShape(14.dp))
             .background(Color(0xFF0E1119).copy(alpha = 0.95f))
-            .border(1.dp, Color.White.copy(alpha = 0.10f), RoundedCornerShape(18.dp))
-            .padding(22.dp),
+            .border(1.dp, Color.White.copy(alpha = 0.10f), RoundedCornerShape(14.dp))
+            .padding(14.dp),
     ) {
-        Column {
-            Text(
-                text = str("player.up_next"),
-                color = colors.accentSecondary,
-                fontSize = 11.sp,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = 2.sp,
-            )
-            Spacer(Modifier.height(12.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                // Thumbnail placeholder + countdown ring
-                Box(
-                    modifier = Modifier
-                        .width(180.dp)
-                        .aspectRatio(16f / 9f)
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(Color(0xFF1A1D28)),
-                    contentAlignment = Alignment.BottomEnd,
-                ) {
-                    Box(modifier = Modifier.padding(8.dp)) {
-                        CountdownRing(colors, countdown)
-                    }
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            // Thumbnail placeholder + countdown ring
+            Box(
+                modifier = Modifier
+                    .width(104.dp)
+                    .aspectRatio(16f / 9f)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(Color(0xFF1A1D28)),
+                contentAlignment = Alignment.BottomEnd,
+            ) {
+                Box(modifier = Modifier.padding(6.dp)) {
+                    CountdownRing(colors, countdown)
                 }
-                Column(modifier = Modifier.weight(1f)) {
-                    nextEpLabel?.let {
-                        Text(it, color = colors.textSecondary, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-                        Spacer(Modifier.height(4.dp))
-                    }
-                    Text(
-                        text = nextEpTitle ?: str("detail.episode"),
-                        color = colors.text,
-                        fontSize = 20.sp,
-                        fontWeight = FontWeight.Bold,
-                        fontFamily = SpaceGrotesk,
-                        maxLines = 1,
+            }
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = str("player.up_next"),
+                    color = colors.accentSecondary,
+                    fontSize = 9.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 1.5.sp,
+                )
+                Spacer(Modifier.height(3.dp))
+                nextEpLabel?.let {
+                    Text(it, color = colors.textSecondary, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                }
+                Text(
+                    text = nextEpTitle ?: str("detail.episode"),
+                    color = colors.text,
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Bold,
+                    fontFamily = SpaceGrotesk,
+                    maxLines = 1,
+                )
+                Spacer(Modifier.height(10.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    NuButton(
+                        label = "> ${str("player.play_in", mapOf("secs" to countdown.toString()))}",
+                        focused = nuFocus == NuFocus.PLAY,
+                        isPrimary = true,
+                        colors = colors,
                     )
-                    Spacer(Modifier.height(14.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        NuButton(
-                            label = "> ${str("player.play_in", mapOf("secs" to countdown.toString()))}",
-                            focused = nuFocus == NuFocus.PLAY,
-                            isPrimary = true,
-                            colors = colors,
-                        )
-                        NuButton(
-                            label = str("player.watch_credits"),
-                            focused = nuFocus == NuFocus.STAY,
-                            isPrimary = false,
-                            colors = colors,
-                        )
-                    }
+                    NuButton(
+                        label = str("player.watch_credits"),
+                        focused = nuFocus == NuFocus.STAY,
+                        isPrimary = false,
+                        colors = colors,
+                    )
                 }
             }
         }
@@ -1226,9 +1230,9 @@ private fun NextUpCard(
 
 @Composable
 private fun CountdownRing(colors: RaviloColors, countdown: Int) {
-    Canvas(Modifier.size(42.dp)) {
-        val r = 17.dp.toPx()
-        val stroke = 4.dp.toPx()
+    Canvas(Modifier.size(34.dp)) {
+        val r = 13.dp.toPx()
+        val stroke = 3.5.dp.toPx()
         val circumference = (2 * PI * r).toFloat()
         drawCircle(Color.White.copy(0.25f), r, style = Stroke(stroke))
         if (countdown > 0) {
@@ -1248,8 +1252,8 @@ private fun NuButton(label: String, focused: Boolean, isPrimary: Boolean, colors
     Box(
         modifier = Modifier
             .scale(if (focused) 1.04f else 1f)
-            .height(42.dp)
-            .clip(RoundedCornerShape(10.dp))
+            .height(34.dp)
+            .clip(RoundedCornerShape(8.dp))
             .background(
                 when {
                     focused && isPrimary -> Color.White
@@ -1261,17 +1265,18 @@ private fun NuButton(label: String, focused: Boolean, isPrimary: Boolean, colors
             .border(
                 width = if (focused) 2.dp else 1.dp,
                 color = if (focused) colors.focusRing else Color.White.copy(0.15f),
-                shape = RoundedCornerShape(10.dp),
+                shape = RoundedCornerShape(8.dp),
             )
-            .then(if (focused) Modifier.shadow(14.dp, RoundedCornerShape(10.dp), spotColor = colors.focusGlow) else Modifier)
-            .padding(horizontal = 18.dp),
+            .then(if (focused) Modifier.shadow(12.dp, RoundedCornerShape(8.dp), spotColor = colors.focusGlow) else Modifier)
+            .padding(horizontal = 13.dp),
         contentAlignment = Alignment.Center,
     ) {
         Text(
             text = label,
             color = if (focused && isPrimary) Color.Black else Color.White,
-            fontSize = 14.sp,
+            fontSize = 12.sp,
             fontWeight = FontWeight.SemiBold,
+            maxLines = 1,
         )
     }
 }
