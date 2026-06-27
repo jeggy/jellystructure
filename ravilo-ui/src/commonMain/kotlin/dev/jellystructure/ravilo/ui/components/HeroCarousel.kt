@@ -34,6 +34,7 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -154,6 +155,10 @@ fun HeroCarousel(
         modifier = Modifier
             .fillMaxWidth()
             .height(heightDp)
+            // R114: clip the hero to its bounds so the Ken Burns scale (and parallax) on the backdrop
+            // can't bleed past the box — otherwise the scaled image overflows below the scrim gradients
+            // (which only fill the box) and shows a thin un-darkened line at the very bottom edge.
+            .clipToBounds()
             // R53: the whole hero is one focusable surface — select opens detail, Left/Right page the
             // carousel (cyclic, since a full-bleed hero has no horizontal neighbour). onDown omitted so
             // native focus search drops into the channel rail / first content row.
