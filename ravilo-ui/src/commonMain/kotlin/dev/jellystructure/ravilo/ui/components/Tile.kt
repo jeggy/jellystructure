@@ -77,6 +77,9 @@ fun Tile(
     progressPct: Float = 0f,
     watched: Boolean = false,
     isNew: Boolean = false,
+    /** R113: small season/episode indicator (e.g. "S1:E3") overlaid on the image for TV shows in
+     *  Continue Watching. Null = no badge. */
+    episodeBadge: String? = null,
     onFocused: () -> Unit = {},
     onSelect: (() -> Unit)? = null,
 ) {
@@ -236,6 +239,28 @@ fun Tile(
                         fontWeight = FontWeight.Bold,
                         fontFamily = sora,
                         letterSpacing = 0.5.sp,
+                    )
+                }
+            }
+
+            // R113: season/episode badge (top-start) — small dark pill over the image for TV shows in
+            // Continue Watching. Neutral translucent black so it reads on any backdrop. (Continue rows
+            // never set isNew, so it won't collide with the NEW badge.)
+            if (episodeBadge != null) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.TopStart)
+                        .padding(8.dp)
+                        .background(Color.Black.copy(alpha = 0.6f), RoundedCornerShape(4.dp))
+                        .padding(horizontal = 6.dp, vertical = 2.dp),
+                ) {
+                    Text(
+                        text = episodeBadge,
+                        color = Color.White,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = sora,
+                        letterSpacing = 0.3.sp,
                     )
                 }
             }
