@@ -262,9 +262,16 @@ legacy jank 63%→5%.** ✅ The big win — directly fixes the felt up/down lag;
 **R107 — defer below-hero detail rails ~280ms + memoize the O(N) episode scans.** First paint
 composes hero-only; rails paint settled (below the fold → no visible reflow). **Result: detail-open
 peak 99th 129→97ms** (worst hitch ~25% smaller and now on a static screen, not mid-slide); total
-composition similar (rails still compose, just later). A further win would be converting the detail
-`Column(verticalScroll)`→`LazyColumn` (truly lazy, rails compose only when scrolled to) — left as a
-follow-up since it touches detail focus/scroll and the up/down complaint is the one now solved.
+composition similar (rails still compose, just later).
+
+**R109 — detail `Column(verticalScroll)` → `LazyColumn`** (supersedes R107's timed defer). The
+hero is item 0; each rail (cast, related; series' season-picker + episode rail) is its own lazy
+item, composed only when scrolled into view — so opening a detail and not scrolling composes *only*
+the hero. `scrollState`→`LazyListState`; AppBar `scrolled` becomes a boolean `derivedStateOf` (also
+removes a prior per-scroll-frame recompose from reading `scrollState.value` at composition scope).
+**Result: detail-open peak 99th 97→85ms (129→85 across the round).** Validated on the stue TV:
+movie + series detail render correctly, rails compose lazily on scroll with working focus, season
+switching recomposes the episode rail correctly, UP-NEXT playstate overlay + playback intact.
 
 ## Measurement-method caveat (important)
 Single cold-scroll runs on this rig vary widely (legacy janky 6–64% under identical
