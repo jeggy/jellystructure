@@ -97,6 +97,10 @@
     audioCodec: { label: 'Audio codec',    group: 'Audio track', type: 'list', options: ['E-AC-3','AC-3','DTS','AAC','TrueHD'], get: audCodecs },
     audioTitle: { label: 'Audio track title', group: 'Audio track', type: 'text', get: t => audTitles(t).join(' / ') },
     hero:    { label: 'Hero item', group: 'Ravilo layout', type: 'list', options: ['In hero','Not in hero'], get: t => [HERO.has(t.title) ? 'In hero' : 'Not in hero'] },
+    // membership in a channel's content rows — values are { name, state } row filters.
+    // contextual: only offered in the builder when a rows context is supplied (e.g. the
+    // channel's own rows on the Library coverage hand-off). Evaluated via matchRows().
+    row:     { label: 'Content row', group: 'Ravilo layout', type: 'rows', contextual: true },
   };
   const LIST_OPS = [ ['isAny','is any of'], ['isNot','is none of'] ];
   const NUM_OPS  = [ ['gte','is on or after'], ['lte','is before or in'], ['eq','is exactly'] ];
@@ -107,6 +111,7 @@
   /* ===================== match evaluation ===================== */
   function matchOne(t, cond) {
     const f = FACETS[cond.facet]; if (!f) return true;
+    if (f.type === 'rows') return matchRows(t, cond);
     if (f.type === 'num') {
       const v = f.get(t), n = parseFloat(cond.values[0]);
       if (isNaN(n)) return true;
@@ -124,14 +129,40 @@
     const hit = cond.values.some(v => have.includes(String(v)));
     return cond.op === 'isNot' ? !hit : hit;
   }
+  // membership in another saved filter (a content row): each value is { name, state }
+  function matchRows(t, cond) {
+    const vals = (cond.values || []).filter(v => v && v.state);
+    if (!vals.length) return true;
+    const hit = vals.some(rv => matchesState(t, rv.state));
+    return cond.op === 'isNot' ? !hit : hit;
+  }
+  // evaluate one title against a whole filter state (shared by evaluate() + the row facet)
+  function matchesState(t, state) {
+    if (state.include === 'movie' && t.kind !== 'movie') return false;
+    if (state.include === 'series' && t.kind !== 'series') return false;
+    const conds = state.conditions.filter(c => c.values && c.values.length);
+    if (!conds.length) return true;
+    return state.match === 'any' ? conds.some(c => matchOne(t, c)) : conds.every(c => matchOne(t, c));
+  }
   function evaluate(state) {
-    return TITLES.filter(t => {
-      if (state.include === 'movie' && t.kind !== 'movie') return false;
-      if (state.include === 'series' && t.kind !== 'series') return false;
-      const conds = state.conditions.filter(c => c.values.length);
-      if (!conds.length) return true;
-      return state.match === 'any' ? conds.some(c => matchOne(t, c)) : conds.every(c => matchOne(t, c));
+    return TITLES.filter(t => matchesState(t, state));
+  }
+
+  /* Coverage gap: titles inside a channel's filter that no custom content row would show.
+     pool = everything matching the channel filter; covered = union of each row's matches
+     intersected with the pool; uncovered = pool − covered. System rows (Continue / Newly
+     Added) are time-based and not counted. */
+  function rowCoverage(channelState) {
+    const pool = evaluate(channelState);
+    const items = (channelState.rows && channelState.rows.items) || [];
+    const covered = new Set();
+    const perRow = items.map(it => {
+      const inRow = evaluate(it.state).filter(t => pool.includes(t));
+      inRow.forEach(t => covered.add(t.title));
+      return { title: it.title, count: inRow.length };
     });
+    const uncovered = pool.filter(t => !covered.has(t.title));
+    return { pool, uncovered, coveredCount: covered.size, perRow };
   }
 
   /* ===================== gradient helper ===================== */
@@ -251,7 +282,7 @@
       const c = state.conditions.find(c => c.values.length);
       if (!c) return isChannel ? 'New channel' : 'New row';
       if (FACETS[c.facet].type === 'num') return FACETS[c.facet].label + ' ' + opLabel(c.facet,c.op) + ' ' + c.values[0];
-      return c.values.slice(0,2).join(' & ') + (c.values.length>2 ? ' +' : '');
+      return c.values.slice(0,2).map(v => (v && typeof v === 'object') ? v.name : v).join(' & ') + (c.values.length>2 ? ' +' : '');
     }
 
     function render() {
@@ -262,6 +293,25 @@
       const heroOn = !!hero.on, heroItems = hero.items || [];
       const rowsCfg = state.rows || { mode: 'inherit', items: [] };
       const rowsMode = rowsCfg.mode || 'inherit', rowItems = rowsCfg.items || [];
+      // coverage gap — titles in this channel not shown by any custom row
+      const cov = (isChannel && rowsMode === 'custom') ? rowCoverage(state) : null;
+      let coverageHtml = '';
+      if (cov && cov.pool.length) {
+        const u = cov.uncovered, poolN = cov.pool.length;
+        const head = `<div class="row center" style="margin-bottom:2px;"><span class="cf-eyebrow">Not shown by any row</span><span class="spacer"></span><span class="badge ${u.length ? 'warn' : 'ok'}" style="flex:none;">${u.length} of ${poolN}</span></div>`;
+        if (!u.length) {
+          coverageHtml = `<div class="cf-coverage ok">${head}<div class="cf-cov-note"><span class="cf-cov-ic">✓</span><span>Every title in this channel appears in at least one row — nothing falls through the gaps.</span></div></div>`;
+        } else {
+          const lead = cov.perRow.length === 0
+            ? `No rows yet — all <b>${u.length}</b> titles that match this channel would be unreachable.`
+            : `These <b>${u.length}</b> titles match the channel filter but <b>aren’t shown by any content row</b>, so viewers browsing this channel won’t find them.`;
+          coverageHtml = `<div class="cf-coverage warn">${head}
+            <div class="tiny" style="margin:2px 0 11px;line-height:1.5;color:var(--ink-soft);">${lead} <span class="cf-cov-sys">System rows (Continue, Newly Added) aren’t counted.</span></div>
+            <div class="cf-cov-grid">${u.map(m => `<div class="cf-mp" title="${m.title} · ${m.kind === 'movie' ? 'Film' : 'Series'} · ${m.year} · ${m.network}" style="background:${grad(m.title)};"><span class="t">${m.title}</span></div>`).join('')}</div>
+            <div class="cf-cov-actions"><button type="button" class="btn sm ghost" data-coveradd>＋ Add a catch-all row for these</button><a class="cf-cov-link" data-coverlink href="library.html?view=coverage">Open these ${u.length} in Library ↗</a></div>
+          </div>`;
+        }
+      }
       const cg = state.customGrad || { type: 'gradient', c1: '#7b6ef0', c2: '#3fb6f5', angle: 135 };
       const PAD_SIDES = [['t','Top'],['r','Right'],['b','Bottom'],['l','Left']];
       const padOf = m => (state.chPad && state.chPad[m]) || {};
@@ -371,6 +421,7 @@
                 <button type="button" class="btn sm ghost" data-rowadd style="margin-top:9px;">＋ Add row</button>
                 <div class="tiny muted" style="margin-top:11px;line-height:1.5;">These replace the Home rows on this channel’s page. System rows (Continue Watching, Newly Added) still appear unless removed.</div>
               </div>
+              ${coverageHtml}
             ` : ''}
             ` : ''}
 
@@ -412,6 +463,8 @@
           ? (c.values.length ? `<span class="vchip" data-vchip="${i}:0">${c.values[0]} <span class="x" data-rmval="${i}:0">✕</span></span>` : `<span class="vchip add" data-num="${i}">＋ value</span>`)
           : f.type === 'text'
           ? (c.values.length ? `<span class="vchip" data-text="${i}">“${c.values[0]}” <span class="x" data-rmval="${i}:0">✕</span></span>` : `<span class="vchip add" data-text="${i}">＋ text…</span>`)
+          : f.type === 'rows'
+          ? c.values.map((v, vi) => `<span class="vchip">${(v && v.name) || ''} <span class="x" data-rmval="${i}:${vi}">✕</span></span>`).join('') + ((opts.rowsContext && opts.rowsContext.length) ? `<span class="vchip add" data-pickrows="${i}">＋</span>` : (c.values.length ? '' : `<span class="tiny muted">no rows</span>`))
           : c.values.map((v, vi) => `<span class="vchip">${v} <span class="x" data-rmval="${i}:${vi}">✕</span></span>`).join('') + `<span class="vchip add" data-pick="${i}">＋</span>`;
         return `<div style="display:flex;align-items:center;gap:8px;">
           <span class="cf-join" style="width:36px;text-align:center;visibility:${i===0?'hidden':'visible'};">${state.match==='any'?'OR':'AND'}</span>
@@ -482,6 +535,30 @@
           onSave: ({ state: rs, title, summary }) => { rw.items[i] = { title, summary, state: rs }; render(); } });
       });
       node.querySelectorAll('[data-rdrm]').forEach(b => b.onclick = e => { e.stopPropagation(); const rw = ensureRows(); rw.items.splice(+b.dataset.rdrm, 1); render(); });
+      const coverAdd = node.querySelector('[data-coveradd]');
+      if (coverAdd) coverAdd.onclick = () => openFilter({
+        mode: 'row', headTitle: 'Add catch-all row', saveLabel: 'Add row',
+        state: { match: 'all', include: 'all', conditions: [{ facet: 'genre', op: 'isAny', values: [] }], title: 'More titles' },
+        onSave: ({ state: rs, title, summary }) => { ensureRows().items.push({ title, summary, state: rs }); render(); }
+      });
+      const coverLink = node.querySelector('[data-coverlink]');
+      if (coverLink) coverLink.onclick = e => {
+        e.preventDefault();
+        const items = (state.rows && state.rows.items) || [];
+        const rowsCtx = items.map(it => ({ name: it.title, state: it.state }));
+        // The coverage gap as an ordinary workbench filter: the channel's own conditions,
+        // ANDed with "Content row is none of <its rows>". Fully editable in the Library builder.
+        const filter = {
+          match: 'all', include: 'all',
+          conditions: [
+            ...state.conditions.filter(c => c.values && c.values.length).map(c => JSON.parse(JSON.stringify(c))),
+            { facet: 'row', op: 'isNot', values: rowsCtx.map(r => ({ name: r.name, state: r.state })) }
+          ]
+        };
+        const payload = { label: state.title || autoTitle(), filter, rows: rowsCtx };
+        try { localStorage.setItem('js-cov-filter', JSON.stringify(payload)); } catch (err) {}
+        location.href = 'library.html?view=coverage';
+      };
       node.querySelectorAll('.cf-sw[data-color]').forEach(s => s.onclick = () => { state.chColor = s.dataset.color; render(); });
       const customSw = node.querySelector('[data-customsw]');
       if (customSw) customSw.onclick = () => { if (!state.customGrad) state.customGrad = { type:'gradient', c1:'#7b6ef0', c2:'#3fb6f5', angle:135 }; state.chColor = customCss(state.customGrad); render(); };
@@ -510,7 +587,8 @@
       node.querySelectorAll('[data-facet]').forEach(a => a.onclick = () => {
         const i = +a.dataset.facet;
         let last = null;
-        const items = Object.keys(FACETS).map(k => {
+        const rowsOk = !!(opts.rowsContext && opts.rowsContext.length);
+        const items = Object.keys(FACETS).filter(k => rowsOk || !FACETS[k].contextual).map(k => {
           const g = FACETS[k].group || '';
           const head = (g && g !== last) ? `<div class="cf-popgroup">${g}</div>` : '';
           last = g;
@@ -529,6 +607,15 @@
         const cur = state.conditions[i].values;
         popover(a, FACETS[f].options.map(o => `<div class="cf-popitem ${cur.includes(o)?'on':''}" data-val="${o}">${cur.includes(o)?'✓ ':''}${o}</div>`).join(''), v => {
           if (!cur.includes(v)) cur.push(v); render();
+        });
+      });
+      node.querySelectorAll('[data-pickrows]').forEach(a => a.onclick = () => {
+        const i = +a.dataset.pickrows;
+        const cur = state.conditions[i].values.map(v => v && v.name);
+        const avail = (opts.rowsContext || []);
+        const inner = avail.map((r, ri) => `<div class="cf-popitem ${cur.includes(r.name)?'on':''}" data-val="${ri}">${cur.includes(r.name)?'✓ ':''}${r.name}</div>`).join('') || '<div class="cf-popitem" style="opacity:.6;cursor:default;">No content rows</div>';
+        popover(a, inner, v => {
+          const r = avail[+v]; if (r && !cur.includes(r.name)) state.conditions[i].values.push({ name: r.name, state: r.state }); render();
         });
       });
       node.querySelectorAll('[data-num]').forEach(a => a.onclick = () => {
@@ -556,7 +643,10 @@
       const title = state.title || autoTitle();
       const summary = state.conditions.filter(c=>c.values.length).map(c => {
         const f = FACETS[c.facet];
-        return f.label + ' ' + opLabel(c.facet,c.op) + ' ' + (f.type==='num' ? c.values[0] : '“'+c.values.join('”, “')+'”');
+        const valTxt = f.type==='num' ? c.values[0]
+          : f.type==='rows' ? c.values.map(v => v && v.name).filter(Boolean).join(', ')
+          : '“'+c.values.join('”, “')+'”';
+        return f.label + ' ' + opLabel(c.facet,c.op) + ' ' + valTxt;
       }).join(state.match==='any'?'  OR  ':'  ·  ') || 'all titles';
       const heroTag = isChannel && state.hero && state.hero.on ? '  ·  ⊳ hero' : '';
       const rowsTag = isChannel && state.rows && state.rows.mode === 'custom' ? '  ·  ▤ custom rows' : '';
@@ -807,7 +897,7 @@
     const aRow = find('sect-rows', 'Add row'); if (aRow) aRow.onclick = () => openFilter({ mode:'row' });
   }
 
-  window.RaviloBuilders = { openFilter, openHero, evaluate, grad, TITLES, FACETS };
+  window.RaviloBuilders = { openFilter, openHero, evaluate, matchesState, rowCoverage, grad, TITLES, FACETS };
   document.addEventListener('DOMContentLoaded', () => { seed(); wireAdds(); });
   if (document.readyState !== 'loading') { seed(); wireAdds(); }
 })();

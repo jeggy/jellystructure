@@ -135,6 +135,19 @@ body.cf-screen-on .app-main2 > :not(#cf-screen-root) { display: none; }
 .cf-cfield input[type=color]::-webkit-color-swatch { border: none; border-radius: 5px; }
 .cf-cfield input[type=range] { width: 100%; accent-color: #7b6ef0; }
 
+/* coverage gap — titles in a channel not shown by any custom row */
+.cf-coverage { margin-top: 14px; padding: 13px 14px; border: 1px solid var(--line-2); border-radius: 11px; background: var(--fill-2); }
+.cf-coverage.warn { border-color: rgba(245,181,66,.4); background: var(--warn-soft); }
+.cf-coverage.ok { border-color: rgba(45,212,154,.4); background: var(--ok-soft); }
+.cf-cov-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(56px, 1fr)); gap: 8px; }
+.cf-cov-sys { color: var(--ink-dim); }
+.cf-cov-note { display: flex; gap: 9px; align-items: center; font-size: .86rem; color: var(--ink); }
+.cf-cov-ic { flex: none; width: 22px; height: 22px; border-radius: 50%; display: inline-flex; align-items: center;
+  justify-content: center; background: var(--ok); color: #04261b; font-weight: 800; font-size: .8rem; }
+.cf-cov-actions { display: flex; align-items: center; gap: 14px; margin-top: 12px; flex-wrap: wrap; }
+.cf-cov-link { font-size: .82rem; font-weight: 600; color: var(--acc-ink); cursor: pointer; white-space: nowrap; }
+.cf-cov-link:hover { text-decoration: underline; }
+
 /* row edit affordance — signals each row opens the editor popup */
 .edit-ic { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px;
   border-radius: 8px; color: var(--ink-dim); cursor: pointer; transition: background .12s, color .12s; }
