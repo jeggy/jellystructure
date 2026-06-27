@@ -287,7 +287,8 @@ fun Route.tvRoutes(
         val kind     = call.request.queryParameters["kind"]
         val sort     = call.request.queryParameters["sort"]
         val page     = call.request.queryParameters["page"]?.toIntOrNull() ?: 1
-        val pageSize = call.request.queryParameters["pageSize"]?.toIntOrNull() ?: 40
+        // R118: absent pageSize ⇒ null ⇒ full filtered set (no 40-item default cap).
+        val pageSize = call.request.queryParameters["pageSize"]?.toIntOrNull()
         val genres   = call.request.queryParameters.getAll("genre")   ?: emptyList()
         val studios  = call.request.queryParameters.getAll("studio")  ?: emptyList()
         val networks = call.request.queryParameters.getAll("network") ?: emptyList()

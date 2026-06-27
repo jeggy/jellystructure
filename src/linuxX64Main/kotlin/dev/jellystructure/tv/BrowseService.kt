@@ -14,7 +14,6 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 
 
-private const val DEFAULT_PAGE_SIZE = 40
 private const val SEARCH_SUGGESTION_LIMIT = 20
 
 class BrowseService(
@@ -32,7 +31,9 @@ class BrowseService(
         tags: List<String> = emptyList(),
         sort: String? = null,
         page: Int = 1,
-        pageSize: Int = DEFAULT_PAGE_SIZE,
+        // R118: null = return the whole filtered set (the Ravilo browse grid wants the full catalog;
+        // the lazy grid only renders visible cells). A non-null pageSize keeps paging available.
+        pageSize: Int? = null,
     ): SearchResults = coroutineScope {
         val jellyfinBase  = configStore.current.apiKeys.jellyfinUrl.trimEnd('/')
         val tokenDeferred = async { jellyfinClient.tvToken(jellyfinBase, device, configStore.current.apiKeys.jellyfinToken) }
@@ -70,8 +71,8 @@ class BrowseService(
             else    -> filtered.sortedByDescending { it.scannedAt }
         }
 
-        val start = (page - 1) * pageSize
-        val cards = sorted.drop(start).take(pageSize)
+        val cards = (if (pageSize == null) sorted
+                     else sorted.drop((page - 1) * pageSize).take(pageSize))
             .map { it.toMediaCard() }
 
         SearchResults(query = kind ?: "all", items = cards)
