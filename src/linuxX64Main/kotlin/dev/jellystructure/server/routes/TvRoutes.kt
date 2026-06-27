@@ -495,7 +495,8 @@ fun Route.tvRoutes(
         val itemId = call.parameters["itemId"] ?: return@get call.respond(HttpStatusCode.BadRequest)
         val type   = call.parameters["type"]   ?: return@get call.respond(HttpStatusCode.BadRequest)
         val proxy  = imageProxyService ?: return@get call.respond(HttpStatusCode.ServiceUnavailable)
-        val result = proxy.serve(itemId, type)
+        val width  = call.request.queryParameters["w"]?.toIntOrNull()  // R93: optional width
+        val result = proxy.serve(itemId, type, width)
         if (result == null) {
             call.respond(HttpStatusCode.NotFound)
         } else {
