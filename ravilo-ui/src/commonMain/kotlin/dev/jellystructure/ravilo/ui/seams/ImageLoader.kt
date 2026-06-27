@@ -1,12 +1,17 @@
 package dev.jellystructure.ravilo.ui.seams
 
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.painter.ColorPainter
 import androidx.compose.ui.layout.ContentScale
+import coil3.SingletonImageLoader
 import coil3.compose.AsyncImage
 import coil3.compose.LocalPlatformContext
 import coil3.request.ImageRequest
@@ -14,6 +19,7 @@ import coil3.request.crossfade
 import dev.jellystructure.ravilo.ui.LocalServerBaseUrl
 import dev.jellystructure.ravilo.ui.theme.RaviloMotion
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
+import kotlinx.coroutines.flow.distinctUntilChanged
 
 @Composable
 fun RemoteImage(
@@ -62,4 +68,54 @@ fun RemoteImage(
         error = placeholder,
         fallback = placeholder,
     )
+}
+
+// ─── R88: scroll-ahead prefetch helpers ──────────────────────────────────────
+
+private fun resolveUrl(url: String, baseUrl: String): String =
+    if (url.startsWith("/") && baseUrl.isNotBlank()) "$baseUrl$url" else url
+
+private const val PREFETCH_LOOKAHEAD = 4
+
+/**
+ * Observes [listState] scroll position and enqueues up to [lookahead] image requests ahead of
+ * the last visible item. Use [String.orEmpty] for items with no URL so indices stay aligned
+ * with the lazy-list items. Capped at 4 to stay well within the backend's Semaphore(8) gate.
+ */
+@Composable
+fun PrefetchLazyRowEffect(listState: LazyListState, urls: List<String>, lookahead: Int = PREFETCH_LOOKAHEAD) {
+    val ctx = LocalPlatformContext.current
+    val baseUrl = LocalServerBaseUrl.current
+    LaunchedEffect(listState, urls, baseUrl) {
+        snapshotFlow { listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1 }
+            .distinctUntilChanged()
+            .collect { lastVisible ->
+                if (lastVisible < 0) return@collect
+                val loader = SingletonImageLoader.get(ctx)
+                for (i in (lastVisible + 1)..(lastVisible + lookahead)) {
+                    val url = urls.getOrNull(i) ?: break
+                    if (url.isBlank()) continue
+                    loader.enqueue(ImageRequest.Builder(ctx).data(resolveUrl(url, baseUrl)).build())
+                }
+            }
+    }
+}
+
+@Composable
+fun PrefetchLazyGridEffect(gridState: LazyGridState, urls: List<String>, lookahead: Int = PREFETCH_LOOKAHEAD) {
+    val ctx = LocalPlatformContext.current
+    val baseUrl = LocalServerBaseUrl.current
+    LaunchedEffect(gridState, urls, baseUrl) {
+        snapshotFlow { gridState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1 }
+            .distinctUntilChanged()
+            .collect { lastVisible ->
+                if (lastVisible < 0) return@collect
+                val loader = SingletonImageLoader.get(ctx)
+                for (i in (lastVisible + 1)..(lastVisible + lookahead)) {
+                    val url = urls.getOrNull(i) ?: break
+                    if (url.isBlank()) continue
+                    loader.enqueue(ImageRequest.Builder(ctx).data(resolveUrl(url, baseUrl)).build())
+                }
+            }
+    }
 }

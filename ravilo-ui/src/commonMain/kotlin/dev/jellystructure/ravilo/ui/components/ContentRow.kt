@@ -14,11 +14,13 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import dev.jellystructure.ravilo.ui.seams.PrefetchLazyRowEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.focusRestorer
@@ -49,6 +51,8 @@ fun <T> StaticContentRow(
     seeAllLabel: String? = null,
     onSeeAll: (() -> Unit)? = null,
     itemKey: ((T) -> Any)? = null,
+    /** R88: supply a URL per item to warm Coil's cache ahead of the scroll position. */
+    urlResolver: ((T) -> String?)? = null,
     itemContent: @Composable (index: Int, item: T) -> Unit,
 ) {
     val colors = RaviloTheme.colors
@@ -70,6 +74,12 @@ fun <T> StaticContentRow(
                 }
             }
         }
+    }
+
+    val listState = rememberLazyListState()
+    if (urlResolver != null) {
+        val prefetchUrls = remember(items) { items.map { urlResolver(it).orEmpty() } }
+        PrefetchLazyRowEffect(listState = listState, urls = prefetchUrls)
     }
 
     // When any descendant gains focus, bring the *whole row* (title + tiles) into view so the
@@ -111,6 +121,7 @@ fun <T> StaticContentRow(
         @OptIn(ExperimentalFoundationApi::class)
         CompositionLocalProvider(LocalBringIntoViewSpec provides bringIntoViewSpec) {
             LazyRow(
+                state = listState,
                 modifier = Modifier.focusRestorer(),
                 horizontalArrangement = Arrangement.spacedBy(RaviloDimens.itemSpacing),
                 contentPadding = PaddingValues(
