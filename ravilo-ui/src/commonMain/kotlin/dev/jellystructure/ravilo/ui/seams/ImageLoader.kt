@@ -20,6 +20,7 @@ import coil3.request.crossfade
 import dev.jellystructure.ravilo.ui.LocalServerBaseUrl
 import dev.jellystructure.ravilo.ui.theme.RaviloMotion
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
 
 @Composable
@@ -102,6 +103,29 @@ fun sizedProxyUrl(url: String, width: Int?): String =
 fun prefetchImage(ctx: PlatformContext, baseUrl: String, url: String?) {
     if (url.isNullOrBlank()) return
     SingletonImageLoader.get(ctx).enqueue(ImageRequest.Builder(ctx).data(resolveUrl(url, baseUrl)).build())
+}
+
+/**
+ * R106: warm a fixed, bounded set of below-the-fold images once, shortly after [key] changes (e.g.
+ * the home feed loads), so the first scroll past fresh content finds them in cache instead of
+ * decoding/fetching them all at once (the measured cold-image-cache jank). [urls] must already be
+ * width-applied + relative (see [sizedProxyUrl]) so each warm matches what the tile will request.
+ * [delayMs] lets the visible first paint (hero + channels) finish before the warm starts, so it
+ * doesn't compete for decode/network. Coil dedups against in-flight/cached requests and the backend
+ * image proxy is Semaphore(8)-gated, so this opens no unbounded fan-out.
+ */
+@Composable
+fun PrewarmImages(key: Any?, urls: List<String>, delayMs: Long = 400) {
+    val ctx = LocalPlatformContext.current
+    val baseUrl = LocalServerBaseUrl.current
+    LaunchedEffect(key) {
+        if (urls.isEmpty()) return@LaunchedEffect
+        delay(delayMs)
+        val loader = SingletonImageLoader.get(ctx)
+        for (u in urls) {
+            if (u.isNotBlank()) loader.enqueue(ImageRequest.Builder(ctx).data(resolveUrl(u, baseUrl)).build())
+        }
+    }
 }
 
 private const val PREFETCH_LOOKAHEAD = 4
