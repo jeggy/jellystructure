@@ -45,8 +45,15 @@ class ImageProxyService(
         runCatching { SystemFileSystem.createDirectories(Path(cacheDir)) }
     }
 
-    suspend fun serve(itemId: String, type: String): Pair<ByteArray, String>? {
-        val cachePath = "$cacheDir/$itemId-$type"
+    /**
+     * R93: optional [width] param — callers on small screens (phone/web) pass a lower value to
+     * receive a smaller image. Default (null) preserves today's values for backward-compat.
+     * Cache key includes width only when it differs from the type's default so existing disk-cache
+     * entries are reused by TV (which always requests the default 1920px backdrop).
+     */
+    suspend fun serve(itemId: String, type: String, width: Int? = null): Pair<ByteArray, String>? {
+        val cacheKey  = cacheKey(itemId, type, width)
+        val cachePath = "$cacheDir/$cacheKey"
         val ctPath    = "$cachePath.ct"
 
         // Cache hit
@@ -62,7 +69,7 @@ class ImageProxyService(
             val token = configStore.current.apiKeys.jellyfinToken
             if (jellyfinBase.isBlank() || token.isBlank()) return@withPermit null
 
-            val url = jellyfinUrl(jellyfinBase, token, itemId, type) ?: return@withPermit null
+            val url = jellyfinUrl(jellyfinBase, token, itemId, type, width) ?: return@withPermit null
             val response = runCatching { http.get(url) }.getOrElse {
                 Logger.warn("ImageProxy: fetch failed $url — ${it.message}", "tv-image")
                 return@withPermit null
@@ -107,11 +114,17 @@ class ImageProxyService(
         if (result.isFailure) Logger.warn("ImageProxy: cache write failed $destPath — ${result.exceptionOrNull()?.message}", "tv-image")
     }
 
-    private fun jellyfinUrl(base: String, token: String, itemId: String, type: String): String? = when (type) {
+    // R93: include width in cache key only when non-default so existing TV cache entries are reused.
+    private fun cacheKey(itemId: String, type: String, width: Int?): String {
+        val defaultW = when (type) { "backdrop" -> 1920; "poster" -> 320; "still" -> 640; else -> null }
+        return if (width != null && width > 0 && width != defaultW) "$itemId-$type-$width" else "$itemId-$type"
+    }
+
+    private fun jellyfinUrl(base: String, token: String, itemId: String, type: String, width: Int? = null): String? = when (type) {
         "poster"   -> "$base/Items/$itemId/Images/Primary?api_key=$token&fillHeight=480&fillWidth=320&quality=90"
-        "backdrop" -> "$base/Items/$itemId/Images/Backdrop/0?api_key=$token&fillWidth=1920&quality=90"
+        "backdrop" -> "$base/Items/$itemId/Images/Backdrop/0?api_key=$token&fillWidth=${width?.takeIf { it > 0 } ?: 1920}&quality=90"
         "logo"     -> "$base/Items/$itemId/Images/Logo?api_key=$token&fillHeight=300&format=png"
-        "still"    -> "$base/Items/$itemId/Images/Primary?api_key=$token&fillWidth=640&quality=90"
+        "still"    -> "$base/Items/$itemId/Images/Primary?api_key=$token&fillWidth=${width?.takeIf { it > 0 } ?: 640}&quality=90"
         "avatar"   -> "$base/Users/$itemId/Images/Primary?api_key=$token&fillHeight=160"
         else       -> null  // unknown type — route handler returns 404
     }
