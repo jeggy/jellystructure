@@ -34,11 +34,20 @@ fun RemoteImage(
      * opaque box. Pass a content-related color (poster hash tint, hero brand color) for the nicest look.
      */
     placeholderColor: Color? = null,
+    /**
+     * R96: device-appropriate pixel width for proxy images (/api/tv/image/...). Appended as `?w=`;
+     * the backend (R93) honours it for backdrop/still types and caches per width. Ignored for
+     * absolute (TMDB/https) URLs. Null = backend default — e.g. a LANDSCAPE tile passes ~640 instead
+     * of decoding the full 1920px backdrop (~8.3 MB) into a 256dp slot.
+     */
+    requestedWidth: Int? = null,
 ) {
     // R85: relative paths (e.g. /api/tv/image/{id}/poster) are resolved against the server base URL.
     // Absolute TMDB/Jellyfin URLs (https://…) pass through unchanged.
+    // R96: append ?w= only for proxy paths (the backend ignores it on absolute URLs anyway).
     val baseUrl = LocalServerBaseUrl.current
-    val resolved = if (url.startsWith("/") && baseUrl.isNotBlank()) "$baseUrl$url" else url
+    val sized = if (requestedWidth != null && url.startsWith("/api/tv/image/")) "$url?w=$requestedWidth" else url
+    val resolved = if (sized.startsWith("/") && baseUrl.isNotBlank()) "$baseUrl$sized" else sized
 
     // R87: build the request per-call so the crossfade is a short ~220ms "settle," not the 600ms
     // global "pop." Coil skips the crossfade for memory-cache hits, so prefetched (R88) / revisited
