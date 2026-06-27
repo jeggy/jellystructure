@@ -94,6 +94,10 @@ dependencies {
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.core.splashscreen)
     implementation(libs.androidx.leanback)
+    // R103: applies the (library-merged + app) baseline profile on first run. Without it a sideloaded
+    // release APK never AOT-compiles the profiled methods, so every launch runs JIT — the measured
+    // cold-start scroll jank (~64% janky frames cold vs ~0.2% once AOT-compiled).
+    implementation(libs.androidx.profileinstaller)
     implementation(libs.androidx.media3.exoplayer)
     implementation(libs.androidx.media3.exoplayer.hls)
     implementation(libs.androidx.media3.ui)
