@@ -81,6 +81,18 @@ in common code and run on both.
 - **Networking:** the shared **Ktor client** over the control plane; the platform's native media stack
   over the data plane. **Images:** an `expect`/`actual` image loader (Coil on Android, Compose MP
   resource/`<img>`-backed painter on Web), pointed at Jellyfin image URLs.
+- **AOT compilation is mandatory for the Android TV build.** The Compose runtime/foundation/ui
+  focus-traversal + lazy-list hot paths are **not** covered by the merged library Baseline Profiles, so
+  a profile-guided (`speed-profile`) install leaves them JIT-compiled at runtime → measurable, felt
+  D-pad navigation jank (on-device: **7–9 vs 0–1** frame-deadline misses per up/down pass on a BRAVIA
+  VH2; GPU was never the bottleneck). Every TV install MUST be **fully AOT-compiled**:
+  - **Sideloaded devices** (the current deployment): after `adb install`, run
+    `cmd package compile -m speed -f dev.jellystructure.ravilo` — **not** `-m speed-profile`.
+  - **Store/distributed builds** (if ever): ship a **generated** Baseline Profile (AGP baseline-profile
+    plugin + a `macrobenchmark` scroll/nav journey). Hand-written `androidx.compose.**` rules in
+    `baseline-prof.txt` do **not** work — R8 renames Compose in release, so source-name rules miss the
+    minified DEX. `speed-profile` alone is insufficient.
+  - See `research-reports/ravilo-tv-navigation-jank-aot-2026-06-27.md`.
 
 ### Player engine & licensing — forked from `jellyfin-androidtv` (GPL)
 Ravilo's **Android** player is **not** a from-scratch Media3 integration. The official
@@ -255,3 +267,8 @@ Ravilo shares jellystructure's **brand DNA** but is its own TV skin:
     built on the forked `playback/*` modules, isolated in **`:ravilo-player`**; this makes the
     **Android client GPL** but does **not** infect `:ravilo-web` or the jellystructure backend/admin
     frontend. The fork's direct-to-Jellyfin stream/progress paths are re-pointed through `/api/tv/**`.
+11. **The Android TV build runs fully AOT-compiled.** D-pad navigation smoothness depends on it:
+    profile-guided (`speed-profile`) / merged library Baseline Profiles leave this app's Compose
+    focus + lazy-list hot paths JIT-compiled and janky. Sideloaded deploys MUST use
+    `cmd package compile -m speed`; distributed builds MUST ship a generated Baseline Profile journey.
+    Measured, not assumed (see invariant rationale above).
