@@ -30,6 +30,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -58,6 +59,7 @@ import dev.jellystructure.ravilo.ui.theme.accentGradient
 import dev.jellystructure.shared.tv.Hero
 import dev.jellystructure.shared.tv.MediaCard
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
 
 @Composable
 fun HeroCarousel(
@@ -69,6 +71,9 @@ fun HeroCarousel(
     onUp: (() -> Unit)? = null,
     /** R91: parallax — read inside graphicsLayer (draw-only, no HeroCarousel recompose on scroll). */
     scrollOffsetPx: () -> Float = { 0f },
+    /** R101: Ken Burns drifts only while this is true (false ⇒ frozen). HomeScreen passes
+     *  `!isScrollInProgress` so the hero stops its per-frame scaled redraw during a scroll gesture. */
+    driftEnabled: () -> Boolean = { true },
 ) {
     val colors = RaviloTheme.colors
     val sora = Sora
@@ -102,10 +107,22 @@ fun HeroCarousel(
 
     // R91: Ken Burns drift — each slide starts at 1.0 and drifts to 1.05 over ~9s.
     // Animatable.value is a snapshot State read inside graphicsLayer (draw-only, no recompose per frame).
+    // R101: frozen while the home list is actively scrolling — collectLatest cancels the in-flight
+    // drift the moment driftEnabled() flips false (kbScale holds its value), and resumes it over the
+    // remaining distance when scrolling settles. Removes the full-width hero's per-frame scaled redraw
+    // from competing with the scroll's frame budget.
     val kbScale = remember { Animatable(1.0f) }
     LaunchedEffect(activeIndex) {
         kbScale.snapTo(1.0f)  // instant reset; the 600ms crossfade covers the snap
-        kbScale.animateTo(RaviloMotion.HeroKenBurnsScale, tween(RaviloMotion.HeroKenBurnsTravelMs, easing = LinearEasing))
+        snapshotFlow { driftEnabled() }
+            .collectLatest { enabled ->
+                if (!enabled) return@collectLatest
+                val span = RaviloMotion.HeroKenBurnsScale - 1.0f
+                val remaining = RaviloMotion.HeroKenBurnsScale - kbScale.value
+                if (remaining <= 0f) return@collectLatest
+                val ms = (RaviloMotion.HeroKenBurnsTravelMs * (remaining / span)).toInt()
+                kbScale.animateTo(RaviloMotion.HeroKenBurnsScale, tween(ms, easing = LinearEasing))
+            }
     }
 
     // R88: warm the next 2 slides' backdrop + logo before auto-advance fires.
