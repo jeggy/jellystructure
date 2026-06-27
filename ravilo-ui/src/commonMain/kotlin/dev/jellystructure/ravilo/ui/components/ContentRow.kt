@@ -78,7 +78,10 @@ fun <T> StaticContentRow(
 
     val listState = rememberLazyListState()
     if (urlResolver != null) {
-        val prefetchUrls = remember(items) { items.map { urlResolver(it).orEmpty() } }
+        // R99: key on urlResolver too — a row-kind/tile-shape change swaps the resolver (poster↔backdrop)
+        // while `items` stays the same object, so remember(items) alone would prefetch stale URLs and
+        // guarantee a cache miss when the tiles render the new ones.
+        val prefetchUrls = remember(items, urlResolver) { items.map { urlResolver(it).orEmpty() } }
         PrefetchLazyRowEffect(listState = listState, urls = prefetchUrls)
     }
 
