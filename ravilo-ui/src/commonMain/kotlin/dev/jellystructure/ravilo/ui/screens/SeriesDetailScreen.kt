@@ -58,7 +58,6 @@ import dev.jellystructure.ravilo.ui.components.SeasonPicker
 import dev.jellystructure.ravilo.ui.components.Tile
 import dev.jellystructure.ravilo.ui.focus.rememberEdgeBringIntoViewSpec
 import dev.jellystructure.ravilo.ui.i18n.str
-import dev.jellystructure.ravilo.ui.heroSharedBounds
 import dev.jellystructure.ravilo.ui.seams.RemoteImage
 import dev.jellystructure.ravilo.ui.theme.RaviloDimens
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
@@ -222,7 +221,7 @@ private fun SeriesDetailLoaded(
         LazyColumn(state = listState, modifier = Modifier.fillMaxSize()) {
             // Full-bleed hero: title · meta · progress · synopsis · resume · actions overlaid in the lower third.
             item(key = "hero") {
-            Box(modifier = Modifier.fillMaxWidth().height(heroHeight).heroSharedBounds(detail.card.id)) {  // R95
+            Box(modifier = Modifier.fillMaxWidth().height(heroHeight)) {
                 val backdropUrl = detail.card.backdropUrl ?: detail.card.posterUrl
                 if (backdropUrl != null) {
                     RemoteImage(

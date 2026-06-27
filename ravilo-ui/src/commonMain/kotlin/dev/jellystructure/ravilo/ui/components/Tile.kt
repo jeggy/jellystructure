@@ -36,7 +36,6 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.jellystructure.ravilo.ui.focus.dpadFocusable
-import dev.jellystructure.ravilo.ui.heroSharedBounds
 import dev.jellystructure.ravilo.ui.seams.RemoteImage
 import dev.jellystructure.ravilo.ui.theme.RaviloMotion
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
@@ -78,8 +77,6 @@ fun Tile(
     progressPct: Float = 0f,
     watched: Boolean = false,
     isNew: Boolean = false,
-    /** R95: media id for the shared-element morph (poster ↔ detail hero). Null = no morph. */
-    sharedKey: Any? = null,
     onFocused: () -> Unit = {},
     onSelect: (() -> Unit)? = null,
 ) {
@@ -122,8 +119,7 @@ fun Tile(
         Box(
             modifier = Modifier
                 .width(w)
-                .height(h)
-                .heroSharedBounds(sharedKey),  // R95: shared-element morph into the detail hero
+                .height(h),
         ) {
             Box(
                 modifier = Modifier

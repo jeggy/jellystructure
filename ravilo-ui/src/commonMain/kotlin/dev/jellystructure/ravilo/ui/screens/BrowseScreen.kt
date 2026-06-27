@@ -309,7 +309,6 @@ private fun BrowseGrid(
                 watched = card.watched,
                 // R55: the first cell is the back-to-top focus landing target.
                 focusRequester = if (i == 0) firstCellFR else null,
-                sharedKey = card.id,  // R95: morph into the detail hero
                 onSelect = { onItemSelect(card) },
             )
         }
