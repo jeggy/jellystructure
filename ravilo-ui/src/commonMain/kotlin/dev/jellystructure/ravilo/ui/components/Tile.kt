@@ -73,6 +73,9 @@ fun Tile(
 ) {
     val colors = RaviloTheme.colors
     val sora = Sora
+    // R87: per-title placeholder tint — the poster crossfades in over a related color, not blank.
+    val fallbackHue = remember(title) { (title.hashCode().toLong() and 0xFFFFFFFFL) % 360L }
+    val posterPlaceholder = remember(fallbackHue) { Color.hsl(fallbackHue.toFloat(), 0.30f, 0.18f) }
     var focused by remember { mutableStateOf(false) }
     // Snappier focus feel (R43): StiffnessMedium settles fast; soft StiffnessMediumLow read laggy.
     val focusSpec = remember { RaviloMotion.focusSpring<Float>() }
@@ -143,10 +146,10 @@ fun Tile(
                     url = posterUrl,
                     contentDescription = title,
                     modifier = Modifier.matchParentSize(),
+                    placeholderColor = posterPlaceholder,
                 )
             } else {
                 // HSL-style gradient fallback derived from title hash
-                val fallbackHue = remember(title) { (title.hashCode().toLong() and 0xFFFFFFFFL) % 360L }
                 val fallbackGradient = remember(fallbackHue, colors.surface) {
                     Brush.verticalGradient(
                         listOf(
