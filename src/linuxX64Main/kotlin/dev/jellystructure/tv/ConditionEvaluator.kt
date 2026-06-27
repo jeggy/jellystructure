@@ -1,9 +1,11 @@
 package dev.jellystructure.tv
 
 import dev.jellystructure.model.MediaItem
+import dev.jellystructure.model.MediaKind
 import dev.jellystructure.model.TrackKind
 import dev.jellystructure.shared.tv.Condition
 import dev.jellystructure.shared.tv.MatchMode
+import dev.jellystructure.shared.tv.RowConfig
 
 /**
  * Evaluates an R32 workbench condition stack against a [MediaItem]. Facets mirror the Phase-30 axes
@@ -73,8 +75,28 @@ object ConditionEvaluator {
                     else -> true
                 }
             }
+            // R87: membership in any of the referenced content rows — evaluated by the same per-title
+            // matcher (recursively), so "is_none_of <a channel's rows>" yields the row-coverage gap.
+            "content_row" -> {
+                if (c.rows.isEmpty()) return c.op == "is_none_of"
+                val hit = c.rows.any { row -> rowMatches(item, facets, row, heroIds) }
+                if (c.op == "is_none_of") !hit else hit
+            }
             else -> true
         }
+    }
+
+    /** R87: does [item] fall inside one content row's filter — its include (mediaKind) + its own
+     *  condition stack (ALL/ANY), reusing the precomputed [facets] for this item. Mirrors the
+     *  mockup's `matchesState`. */
+    private fun rowMatches(item: MediaItem, facets: ItemFacets, row: RowConfig, heroIds: Set<String>): Boolean {
+        when (row.mediaKind) {
+            "MOVIE"  -> if (item.kind != MediaKind.MOVIE) return false
+            "SERIES" -> if (item.kind != MediaKind.TV_SHOW) return false
+        }
+        if (row.conditions.isEmpty()) return true
+        val results = row.conditions.map { evalOne(item, facets, it, heroIds) }
+        return if (row.match == MatchMode.ANY) results.any { it } else results.all { it }
     }
 
     /** is_any_of / is_none_of over a pre-lowercased set; allocation-free Set.contains lookup. */
