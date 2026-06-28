@@ -331,7 +331,10 @@ suspend fun executePipeline(
                 val toProcess = if (step.scope == "all") workingSet
                     else workingSet.filter { s ->
                         val st = artworkDownloader.check(s)
-                        !st.posterExists || !st.fanartExists
+                        // R125: also pick up shows whose poster+fanart are present but episode stills aren't.
+                        !st.posterExists || !st.fanartExists ||
+                            (s.kind == dev.jellystructure.model.MediaKind.TV_SHOW &&
+                                s.episodes.any { !artworkDownloader.checkEpisodeStill(it).stillExists })
                     }
                 Logger.info("download_artwork: ${toProcess.size} items (scope=${step.scope})")
                 for (item in toProcess) {

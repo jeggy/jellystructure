@@ -406,18 +406,7 @@ fun Route.mediaRoutes(
                         ?: return@post call.respond(HttpStatusCode.BadRequest)
                     val item = store.resolve(id)
                         ?: return@post call.respond(HttpStatusCode.NotFound)
-                    val status = artwork.fetch(item)
-                    // For TV shows, also fetch episode stills
-                    if (item.kind == MediaKind.TV_SHOW) {
-                        var stillsFetched = 0
-                        for (ep in item.episodes) {
-                            if (!ep.stillPath.isNullOrBlank()) {
-                                val result = artwork.fetchEpisodeStill(ep)
-                                if (result.stillExists) stillsFetched++
-                            }
-                        }
-                        if (stillsFetched > 0) Logger.info("Fetched $stillsFetched episode still(s) for '$id'")
-                    }
+                    val status = artwork.fetch(item)   // R125: fetch() now also downloads missing episode stills
                     if (status.posterExists || status.fanartExists) {
                         mediaHistory.record(id, "artwork_fetch", "poster=${status.posterExists} fanart=${status.fanartExists}")
                         val cfg = configStore.current
