@@ -86,6 +86,7 @@ data class Behavior(
     @SerialName("scan_threads") val scanThreads: Int = 4,
     @SerialName("scan_interval_hours") val scanIntervalHours: Int = 0,
     @SerialName("scan_episode_cap") val scanEpisodeCap: Int = 0,
+    @SerialName("tv_image_cache_mb") val tvImageCacheMb: Int = 2048,
     @SerialName("notifications_webhook") val notificationsWebhook: String = "",
     @SerialName("notify_on_scan_done") val notifyOnScanDone: Boolean = true,
     @SerialName("notify_on_no_match") val notifyOnNoMatch: Boolean = false,

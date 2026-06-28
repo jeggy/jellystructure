@@ -46,8 +46,12 @@ class ImageProxyService(
     // R129: bound the on-disk proxy cache. It was unbounded (grew until the disk filled). Keep an in-memory
     // size index (seeded by a startup scan) and evict the oldest cached images on write once over the cap —
     // no per-serve overhead (eviction only runs on a cache miss, already behind the fetch gate).
-    private val maxCacheBytes = 2L * 1024 * 1024 * 1024            // 2 GB cap
-    private val lowWaterBytes = maxCacheBytes * 8 / 10             // evict down to 80% to avoid boundary thrash
+    // R130: the cap is configurable (`behavior.tv_image_cache_mb`, MB; 0 = unlimited), read live so a config
+    // edit applies without a restart.
+    private fun maxCacheBytes(): Long {
+        val mb = configStore.current.behavior.tvImageCacheMb
+        return if (mb <= 0) Long.MAX_VALUE else mb.coerceAtLeast(50).toLong() * 1024 * 1024
+    }
     private val cacheMutex = Mutex()
     private val cacheIndex = LinkedHashMap<String, Long>()         // cacheKey → bytes, oldest-first (insertion order)
     private var cacheBytes = 0L
@@ -115,19 +119,22 @@ class ImageProxyService(
             cacheIndex[p.name] = size
             cacheBytes += size
         }
-        println("[INFO] ImageProxy: cache index ${cacheIndex.size} files, ${cacheBytes / (1024 * 1024)} MB (cap ${maxCacheBytes / (1024 * 1024)} MB)")
+        val capMb = configStore.current.behavior.tvImageCacheMb
+        println("[INFO] ImageProxy: cache index ${cacheIndex.size} files, ${cacheBytes / (1024 * 1024)} MB (cap ${if (capMb <= 0) "unlimited" else "$capMb MB"})")
     }
 
     // R129: record a freshly-written cache entry and evict the oldest entries if the cache is over the cap.
     private suspend fun recordWrite(key: String, size: Long) {
+        val cap = maxCacheBytes()
+        val low = cap / 10 * 8   // evict down to ~80% (cap/10*8 avoids overflow when cap = Long.MAX_VALUE)
         val victims = cacheMutex.withLock {
             cacheIndex.remove(key)?.let { cacheBytes -= it }   // re-write: drop the stale size first
             cacheIndex[key] = size                              // (re)insert at the newest end
             cacheBytes += size
-            if (cacheBytes <= maxCacheBytes) return@withLock emptyList<String>()
+            if (cacheBytes <= cap) return@withLock emptyList<String>()
             val out = ArrayList<String>()
             val it = cacheIndex.entries.iterator()
-            while (cacheBytes > lowWaterBytes && it.hasNext()) {
+            while (cacheBytes > low && it.hasNext()) {
                 val e = it.next()
                 if (e.key == key) continue                      // never evict what we just wrote
                 it.remove()
