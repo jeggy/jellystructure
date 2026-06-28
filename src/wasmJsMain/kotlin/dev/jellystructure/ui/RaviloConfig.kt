@@ -86,9 +86,10 @@ private fun genId(prefix: String) = "$prefix-${Random.nextInt(100_000, 999_999)}
 
 private fun wbMode(match: String) = if (match == "ANY") MatchMode.ANY else MatchMode.ALL
 private fun wbConds(conds: List<WbCond>): List<Condition> =
-    conds.filter { it.values.isNotEmpty() || it.facet == "track_title" }.map { Condition(it.facet, it.op, it.values.toList()) }
+    conds.filter { it.values.isNotEmpty() || it.facet == "track_title" || (it.facet == "content_row" && it.rows.isNotEmpty()) }
+        .map { Condition(it.facet, it.op, it.values.toList(), it.rows.toList()) }
 private fun wbCondsFrom(conds: List<Condition>): List<WbCond> =
-    conds.map { WbCond(it.facet, it.op, it.values.toMutableList()) }
+    conds.map { WbCond(it.facet, it.op, it.values.toMutableList(), it.rows.toMutableList()) }
 
 // The jellyfish brand mark (matches design/app/ravilo-config.html).
 private const val RAVILO_MARK = """<svg viewBox="12 20 76 76" aria-hidden="true" style="width:1.12em;height:1.12em;flex:none;filter:drop-shadow(0 0 8px rgba(123,110,240,.5))"><defs><linearGradient id="ravJelly" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#7b6ef0"/><stop offset="1" stop-color="#3fb6f5"/></linearGradient></defs><path d="M22 52 C22 24 78 24 78 52 C66 45 59 45 50 49 C41 45 34 45 22 52 Z" fill="url(#ravJelly)"/><g stroke="url(#ravJelly)" stroke-width="4.5" stroke-linecap="round" fill="none"><path d="M33 51 q-5 12 1 20 q5 8 0 14" opacity=".9"/><path d="M44 52 q-4 13 1 21 q4 9 0 13" opacity=".72"/><path d="M56 52 q4 13 -1 21 q-4 9 0 13" opacity=".72"/><path d="M67 51 q5 12 -1 20 q-5 8 0 14" opacity=".9"/></g></svg>"""
