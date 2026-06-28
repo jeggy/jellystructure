@@ -91,7 +91,8 @@ private data class ArtworkCandidate(
     val voteAverage: Double,
     val width: Int,
     val height: Int,
-    val onDisk: Boolean,     // best-effort: matches the file_path captured at scan time
+    val onDisk: Boolean,     // R124: the artwork is actually on disk AND (best-effort) this candidate
+                             // matches the scanned file_path. Never true when the asset isn't on disk.
 )
 
 @Serializable
@@ -515,7 +516,9 @@ fun Route.mediaRoutes(
                         "backdrop" -> item.backdropPath
                         else -> null
                     }
-                    call.respond(ArtworkCandidatesResponse(asset, onDiskExists, item.resolvedLanguage, mapCandidates(list, onDiskSource)))
+                    // R124: only badge a candidate "ON DISK" when the asset is genuinely on disk — otherwise
+                    // a scanned-but-never-downloaded poster shows "ON DISK" while the rail says "missing".
+                    call.respond(ArtworkCandidatesResponse(asset, onDiskExists, item.resolvedLanguage, mapCandidates(list, onDiskSource.takeIf { onDiskExists })))
                 }
 
                 // POST /api/media/{id}/artwork/candidates/save  { asset, source }
