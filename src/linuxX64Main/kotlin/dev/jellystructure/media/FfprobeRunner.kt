@@ -88,6 +88,13 @@ object FfprobeRunner {
         return result.getOrElse { emptyList() }
     }
 
+    /** R131: media duration in seconds, or null if unknown — used to pick a screen-grab timestamp. */
+    fun duration(filePath: String): Double? {
+        val escaped = filePath.replace("'", "'\\''")
+        return runCommand("ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 '$escaped' 2>/dev/null")
+            ?.trim()?.toDoubleOrNull()
+    }
+
     @OptIn(ExperimentalForeignApi::class)
     private fun runCommand(command: String): String? = memScoped {
         val pipe = popen(command, "r") ?: return null

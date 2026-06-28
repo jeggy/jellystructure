@@ -18,6 +18,8 @@ import kotlinx.coroutines.sync.withPermit
 import kotlinx.io.buffered
 import kotlinx.io.files.Path
 import kotlinx.io.files.SystemFileSystem
+import kotlinx.io.readString
+import kotlinx.io.writeString
 import kotlinx.serialization.Serializable
 
 private const val TMDB_ORIGINAL = "https://image.tmdb.org/t/p/original"
@@ -30,7 +32,11 @@ data class ArtworkStatus(
 )
 
 @Serializable
-data class EpisodeStillStatus(val stillExists: Boolean, val stillPath: String)
+data class EpisodeStillStatus(
+    val stillExists: Boolean,
+    val stillPath: String,
+    val source: String? = null,  // R131: "tmdb" | "screengrab" | "manual" | null — from the .src sidecar
+)
 
 /** R122: true when a `poster.jpg` artwork file exists on disk for [item] — the real (Jellyfin) poster
  *  image, as opposed to the TMDB `posterPath` metadata. Drives the Library "missing artwork" filter,
@@ -43,7 +49,7 @@ fun posterArtworkExists(item: MediaItem): Boolean {
     return SystemFileSystem.exists(Path("$dir/poster.jpg"))
 }
 
-class ArtworkDownloader(private val tmdbClient: TmdbClient) {
+class ArtworkDownloader(private val tmdbClient: TmdbClient, private val screengrabber: Screengrabber) {
     private val downloadGate = Semaphore(8)
     private val http = HttpClient(Curl) {
         install(HttpTimeout) {
@@ -119,7 +125,12 @@ class ArtworkDownloader(private val tmdbClient: TmdbClient) {
         val st = check(item)
         if (!st.posterExists || !st.fanartExists) return true
         if (item.kind != MediaKind.TV_SHOW) return false
-        if (item.episodes.any { !checkEpisodeStill(it).stillExists }) return true
+        // R131: a still is "incomplete" when missing OR a screen-grab that TMDB can now upgrade — so the
+        // next scheduled "Download artwork (missing)" run re-processes the series and swaps in the real still.
+        if (item.episodes.any { ep ->
+            val st = checkEpisodeStill(ep)
+            !st.stillExists || (st.source == "screengrab" && !ep.stillPath.isNullOrBlank())
+        }) return true
         return item.episodes.mapNotNull { it.seasonNumber }.distinct().any { !checkSeasonPoster(item, it) }
     }
 
@@ -150,20 +161,52 @@ class ArtworkDownloader(private val tmdbClient: TmdbClient) {
 
     fun checkEpisodeStill(episode: Episode): EpisodeStillStatus {
         val destPath = episodeStillPath(episode)
-        return EpisodeStillStatus(
-            stillExists = SystemFileSystem.exists(Path(destPath)),
-            stillPath = destPath,
-        )
+        val exists = SystemFileSystem.exists(Path(destPath))
+        return EpisodeStillStatus(stillExists = exists, stillPath = destPath, source = if (exists) readStillSrc(destPath) else null)
     }
 
     suspend fun fetchEpisodeStill(episode: Episode): EpisodeStillStatus {
         val destPath = episodeStillPath(episode)
         val stillUrl = episode.stillPath
-        return if (!stillUrl.isNullOrBlank() && !SystemFileSystem.exists(Path(destPath))) {
+        if (SystemFileSystem.exists(Path(destPath))) {
+            val src = readStillSrc(destPath)
+            // R131: a screen-grab is the lowest priority — once TMDB has a real still, upgrade to it.
+            if (src == "screengrab" && !stillUrl.isNullOrBlank()) {
+                val ok = download("$TMDB_ORIGINAL$stillUrl", destPath)
+                if (ok) writeStillSrc(destPath, "tmdb")
+                return EpisodeStillStatus(stillExists = true, stillPath = destPath, source = if (ok) "tmdb" else src)
+            }
+            return EpisodeStillStatus(stillExists = true, stillPath = destPath, source = src)
+        }
+        // Nothing on disk: prefer the real TMDB still; otherwise grab a frame as a placeholder.
+        if (!stillUrl.isNullOrBlank()) {
             val ok = download("$TMDB_ORIGINAL$stillUrl", destPath)
-            EpisodeStillStatus(stillExists = ok, stillPath = destPath)
-        } else {
-            EpisodeStillStatus(stillExists = SystemFileSystem.exists(Path(destPath)), stillPath = destPath)
+            if (ok) writeStillSrc(destPath, "tmdb")
+            return EpisodeStillStatus(stillExists = ok, stillPath = destPath, source = if (ok) "tmdb" else null)
+        }
+        val ok = screengrabber.grabEpisodeStill(episode, destPath)
+        if (ok) writeStillSrc(destPath, "screengrab")
+        return EpisodeStillStatus(stillExists = ok, stillPath = destPath, source = if (ok) "screengrab" else null)
+    }
+
+    /** R131: regenerate a screen-grab still on demand (the picker's "Generate from frame" button). Always
+     *  marks it `screengrab` (lowest priority) — a manual upload/candidate is the way to lock a custom frame. */
+    suspend fun screengrabEpisodeStill(episode: Episode): EpisodeStillStatus {
+        val destPath = episodeStillPath(episode)
+        val ok = screengrabber.grabEpisodeStill(episode, destPath)
+        if (ok) writeStillSrc(destPath, "screengrab")
+        return EpisodeStillStatus(stillExists = ok || SystemFileSystem.exists(Path(destPath)), stillPath = destPath, source = if (ok) "screengrab" else readStillSrc(destPath))
+    }
+
+    // R131: provenance sidecar next to each still ("<base>-thumb.jpg.src"), mirroring the image-proxy `.ct`.
+    private fun readStillSrc(destPath: String): String? = runCatching {
+        SystemFileSystem.source(Path("$destPath.src")).buffered().readString().trim()
+    }.getOrNull()?.takeIf { it.isNotBlank() }
+
+    private fun writeStillSrc(destPath: String, source: String) {
+        runCatching {
+            val sink = SystemFileSystem.sink(Path("$destPath.src")).buffered()
+            sink.writeString(source); sink.flush(); sink.close()
         }
     }
 
@@ -211,8 +254,12 @@ class ArtworkDownloader(private val tmdbClient: TmdbClient) {
     suspend fun saveSeasonPoster(item: MediaItem, season: Int, source: String): Boolean =
         download(toUrl(source), seasonPosterPath(item, season))
 
-    suspend fun saveEpisodeStill(episode: Episode, source: String): Boolean =
-        download(toUrl(source), episodeStillPath(episode))
+    suspend fun saveEpisodeStill(episode: Episode, source: String): Boolean {
+        val dest = episodeStillPath(episode)
+        val ok = download(toUrl(source), dest)
+        if (ok) writeStillSrc(dest, "manual")  // R131: a manual pick is permanent — never auto-upgraded
+        return ok
+    }
 
     private fun toUrl(source: String): String =
         if (source.startsWith("http://") || source.startsWith("https://")) source else "$TMDB_ORIGINAL$source"
