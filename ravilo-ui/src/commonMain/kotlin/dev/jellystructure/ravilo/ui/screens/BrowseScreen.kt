@@ -72,6 +72,7 @@ class BrowseStore(private val apiClient: TvApiClient) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val _state = MutableStateFlow<BrowseState>(BrowseState.Loading)
     val state: StateFlow<BrowseState> = _state.asStateFlow()
+    val gridState = LazyGridState()   // R137: retained grid scroll survives navigate→back
     private var loadJob: Job? = null
 
     var activeKind: BrowseKind = BrowseKind.ALL
@@ -139,7 +140,7 @@ fun BrowseScreen(
     val state by store.state.collectAsState()
 
     // R55: Back scrolls a scrolled grid to the top before falling through to RaviloApp's pop.
-    val gridState = rememberLazyGridState()
+    val gridState = store.gridState   // R137: retained scroll position survives navigate→back
     val scope = rememberCoroutineScope()
     val firstCellFR = remember { FocusRequester() }
     // R117: the genre-chip row's first ("All") chip — the DOWN target from the AppBar so the chips
