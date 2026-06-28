@@ -51,6 +51,7 @@ private fun triageSubline(item: dev.jellystructure.api.TriageItem): String {
     }
     if (item.multiDefault != null) parts += "multiple default audio"
     if (item.languageMix) parts += "mixed-language series"
+    if (item.missingTmdb) parts += "no TMDB match"
     val epIssues = item.episodeIssues
     if (epIssues.isNotEmpty()) {
         val first = epIssues.first()
