@@ -233,6 +233,9 @@ data class MovieDetail(
     val playback: PlaybackState? = null,
     @SerialName("audio_languages") val audioLanguages: List<String> = emptyList(),
     @SerialName("subtitle_languages") val subtitleLanguages: List<String> = emptyList(),
+    /** R130: clearlogo proxy URL (always set when the item has a Jellyfin id); the app falls back to
+     *  the title as text if it's null or the image 404s. */
+    @SerialName("logo_url") val logoUrl: String? = null,
 )
 
 @Serializable
@@ -246,6 +249,8 @@ data class SeriesDetail(
     val progress: SeriesProgress? = null,
     @SerialName("audio_languages") val audioLanguages: List<String> = emptyList(),
     @SerialName("subtitle_languages") val subtitleLanguages: List<String> = emptyList(),
+    /** R130: clearlogo proxy URL; the app falls back to the title as text if null or the image 404s. */
+    @SerialName("logo_url") val logoUrl: String? = null,
 )
 
 // ─── Search ───────────────────────────────────────────────────────────────────

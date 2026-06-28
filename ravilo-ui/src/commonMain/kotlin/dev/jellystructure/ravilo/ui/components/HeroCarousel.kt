@@ -263,29 +263,13 @@ fun HeroCarousel(
                 Spacer(Modifier.height(8.dp))
             }
 
-            // Title — clearlogo image when available, text title as fallback
-            val logoUrl = active.logoUrl
-            if (logoUrl != null) {
-                RemoteImage(
-                    url = logoUrl,
-                    contentDescription = active.item.title,
-                    modifier = Modifier.height(80.dp).width(300.dp),
-                    alignment = Alignment.BottomStart,
-                    contentScale = ContentScale.Fit,
-                )
-            } else {
-                Text(
-                    text = active.item.title,
-                    color = colors.text,
-                    fontSize = 34.sp,
-                    lineHeight = 40.sp,
-                    fontWeight = FontWeight.Bold,
-                    fontFamily = spaceGrotesk,
-                    letterSpacing = (-0.5).sp,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
+            // R130: clearlogo when it loads, else the title as readable text — a missing or 404 logo
+            // (the server always sends a logo proxy URL) no longer leaves a blank space.
+            TitleLogoOrText(
+                logoUrl = active.logoUrl,
+                title = active.item.title,
+                logoModifier = Modifier.height(80.dp).width(300.dp),
+            )
 
             // Meta: year · rating
             val meta = listOfNotNull(
