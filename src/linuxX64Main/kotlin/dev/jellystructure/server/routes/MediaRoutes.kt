@@ -112,7 +112,7 @@ private data class SaveCandidateRequest(val asset: String = "", val source: Stri
 
 // Wire shape for GET /api/media/{id}/episodes/stills — mirrors the frontend's EpisodeStillStatus.
 @Serializable
-private data class EpisodeStillStatusDto(val filename: String, val stillExists: Boolean, val stillPath: String)
+private data class EpisodeStillStatusDto(val filename: String, val stillExists: Boolean, val stillPath: String, val source: String? = null)
 
 // Wire shape for the batch fire-and-forget endpoints ("…started", item count).
 @Serializable
@@ -621,7 +621,7 @@ fun Route.mediaRoutes(
                     ?: return@get call.respond(HttpStatusCode.NotFound)
                 val statuses = item.episodes.map { ep ->
                     val status = artwork.checkEpisodeStill(ep)
-                    EpisodeStillStatusDto(ep.filename, status.stillExists, status.stillPath)
+                    EpisodeStillStatusDto(ep.filename, status.stillExists, status.stillPath, status.source)
                 }
                 call.respond(statuses)
             }
@@ -738,6 +738,35 @@ fun Route.mediaRoutes(
                     // R124: only badge a still candidate "ON DISK" when the still is genuinely on disk —
                     // matching ep.stillPath (TMDB metadata) alone falsely badged never-downloaded stills.
                     call.respond(ArtworkCandidatesResponse("still", onDisk, ep.resolvedLanguage, mapCandidates(images?.stills ?: emptyList(), ep.stillPath.takeIf { onDisk })))
+                }
+
+                // R131: serve the current on-disk still (the screen-grab / TMDB still) for the picker preview.
+                get("/still/file") {
+                    val id = call.parameters["id"] ?: return@get call.respond(HttpStatusCode.BadRequest)
+                    val epFilename = call.parameters["epFilename"] ?: return@get call.respond(HttpStatusCode.BadRequest)
+                    val item = store.resolve(id) ?: return@get call.respond(HttpStatusCode.NotFound)
+                    val ep = item.episodes.firstOrNull { it.filename == epFilename } ?: return@get call.respond(HttpStatusCode.NotFound)
+                    val st = artwork.checkEpisodeStill(ep)
+                    if (!st.stillExists) return@get call.respond(HttpStatusCode.NotFound)
+                    val bytes = runCatching { SystemFileSystem.source(Path(st.stillPath)).buffered().readByteArray() }.getOrNull()
+                        ?: return@get call.respond(HttpStatusCode.NotFound)
+                    call.respondBytes(bytes, ContentType.Image.JPEG)
+                }
+
+                // R131: generate / regenerate a screen-grab still from the episode's video frame (lowest priority).
+                post("/still/screengrab") {
+                    val id = call.parameters["id"] ?: return@post call.respond(HttpStatusCode.BadRequest)
+                    val epFilename = call.parameters["epFilename"] ?: return@post call.respond(HttpStatusCode.BadRequest)
+                    val item = store.resolve(id) ?: return@post call.respond(HttpStatusCode.NotFound)
+                    val ep = item.episodes.firstOrNull { it.filename == epFilename } ?: return@post call.respond(HttpStatusCode.NotFound)
+                    val st = artwork.screengrabEpisodeStill(ep)
+                    if (!st.stillExists) return@post call.respond(HttpStatusCode.BadGateway, mapOf("error" to "frame extraction failed"))
+                    mediaHistory.record(id, "still_screengrab", "ep=$epFilename")
+                    val cfg = configStore.current
+                    if (!item.jellyfinId.isNullOrBlank() && cfg.apiKeys.jellyfinUrl.isNotBlank()) {
+                        jellyfinClient.refreshItem(cfg.apiKeys.jellyfinUrl, cfg.apiKeys.jellyfinToken, item.jellyfinId)
+                    }
+                    call.respond(EpisodeStillStatusDto(ep.filename, st.stillExists, st.stillPath, st.source))
                 }
 
                 // POST /api/media/{id}/episodes/{epFilename}/still/save  { source }

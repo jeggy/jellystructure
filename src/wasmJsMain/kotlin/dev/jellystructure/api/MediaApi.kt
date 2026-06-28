@@ -60,7 +60,7 @@ data class ArtworkCandidatesResponse(
 data class SeasonStatus(val season: Int, val posterExists: Boolean = false)
 
 @Serializable
-data class EpisodeStillStatus(val filename: String, val stillExists: Boolean = false, val stillPath: String = "")
+data class EpisodeStillStatus(val filename: String, val stillExists: Boolean = false, val stillPath: String = "", val source: String? = null)
 
 @Serializable
 data class TrackSnap(
@@ -389,6 +389,11 @@ object MediaApi {
             setBody("""{"source":${jsonStr(source)}}""")
         }.status == HttpStatusCode.OK
     }.getOrDefault(false)
+
+    // R131: generate / regenerate a screen-grab still from the episode's video frame.
+    suspend fun screengrabStill(id: String, epFilename: String): EpisodeStillStatus? = runCatching {
+        httpClient.post("/api/media/$id/episodes/${encodeURIComponent(epFilename)}/still/screengrab").body<EpisodeStillStatus>()
+    }.getOrNull()
 
     suspend fun getEpisodeStillStatuses(id: String): List<EpisodeStillStatus>? = runCatching {
         httpClient.get("/api/media/$id/episodes/stills").body<List<EpisodeStillStatus>>()
