@@ -37,8 +37,13 @@ import dev.jellystructure.tv.RaviloConfigService
 import dev.jellystructure.tv.RaviloDeviceService
 import dev.jellystructure.tmdb.TmdbClient
 import kotlinx.cinterop.ExperimentalForeignApi
+import kotlinx.cinterop.alloc
+import kotlinx.cinterop.convert
+import kotlinx.cinterop.memScoped
+import kotlinx.cinterop.ptr
 import kotlinx.cinterop.staticCFunction
 import kotlinx.cinterop.toKString
+import kotlinx.cinterop.value
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CoroutineExceptionHandler
@@ -49,7 +54,12 @@ import kotlinx.coroutines.runBlocking
 import platform.posix.SIGINT
 import platform.posix.SIGTERM
 import platform.posix.getenv
+import platform.posix.localtime_r
+import platform.posix.mktime
 import platform.posix.signal
+import platform.posix.time
+import platform.posix.time_tVar
+import platform.posix.tm
 import kotlin.concurrent.AtomicInt
 
 private val shutdownRequested = AtomicInt(0)
@@ -134,38 +144,45 @@ fun main() = runBlocking {
         frontendDir, raviloWebDir = raviloWebDir, port = port, scanDispatcher = scanDispatcher, effectiveScanThreads = effectiveScanThreads, jsTagStore = jsTagStore, seedingGuard = seedingGuard, logoDownloader = logoDownloader, qbClient = qbClient, arrClient = arrClient, arrRescan = arrRescan, acquisitionService = acquisitionService, chartRegistry = chartRegistry, chartStore = chartStore, chartIngest = chartIngest, tvEventBus = tvEventBus, imageProxyService = imageProxyService,
     )
 
-    // Scheduled scan / pipeline (Phase 91)
-    // When scan.pipeline is non-empty, runs the full pipeline; otherwise falls back to the legacy
-    // scanIntervalHours simple loop. Both share the same ScanTracker gate.
+    // Scheduled scan / pipeline (Phase 91 / 93b). Fires at the LOCAL WALL-CLOCK time the admin set
+    // (the cron the Settings schedule UI emits), not "interval since boot". Re-reads config every poll
+    // chunk so edits apply within a minute, and publishes the next-run time for the admin indicator.
     rootScope.launch {
+        var legacyNextSec = 0L  // armed lazily for the legacy scanIntervalHours fallback
         while (shutdownRequested.value == 0) {
             val cfg = configStore.current
             val pipeline = cfg.scan.pipeline.filter { it.enabled }
             val schedule = cfg.scanSchedule
             val legacyHours = cfg.behavior.scanIntervalHours
+            val nowSec = nowEpochSec()
 
-            // Determine delay before next run
-            val delayMs = when {
-                schedule.isNotBlank() -> scheduleDelayMs(schedule)
-                legacyHours > 0 -> legacyHours * 3_600_000L
-                else -> 60_000L  // poll for config change
+            // ms until the next due run (null = nothing scheduled / schedule not understood).
+            val dueInMs: Long? = when {
+                schedule.isNotBlank() -> nextRunDelayMs(schedule, nowSec)
+                    ?: run { Logger.warn("scan_schedule '$schedule' not understood — scheduler idle until it's fixed"); null }
+                legacyHours > 0 -> {
+                    if (legacyNextSec == 0L) legacyNextSec = nowSec + legacyHours * 3_600L
+                    (legacyNextSec - nowSec) * 1_000L
+                }
+                else -> null
             }
-            delay(delayMs)
+            scanTracker.nextScheduledRunSec.value = if (dueInMs != null && dueInMs > 0L) nowSec + dueInMs / 1_000L else 0L
+
+            // Far off (or nothing scheduled) → sleep a poll chunk so config edits are picked up, then recompute.
+            if (dueInMs == null || dueInMs > 60_000L) { delay(60_000L); continue }
+
+            delay(dueInMs.coerceAtLeast(0L))
             if (shutdownRequested.value != 0) break
-            if (scanTracker.running) {
-                Logger.info("Scheduled scan skipped — a scan is already running")
-                continue
-            }
+            if (scanTracker.running) { Logger.info("Scheduled run skipped — a scan is already running"); delay(60_000L); continue }
+            if (schedule.isBlank() && legacyHours > 0) legacyNextSec = nowEpochSec() + legacyHours * 3_600L
 
             val active = if (pipeline.isNotEmpty()) pipeline else null
-            if (active != null || (schedule.isBlank() && legacyHours > 0)) {
-                val jobId = scanTracker.startNew()
-                if (active != null) {
-                    executePipeline(active, jobId, mediaStore, scanner, scanTracker, broadcaster, configStore, jellyfinClient, scanDispatcher, artworkDownloader, arrRescan)
-                } else {
-                    Logger.info("Scheduled scan starting (interval=${legacyHours}h)")
-                    runScan(jobId, emptySet(), mediaStore, scanner, scanTracker, broadcaster, configStore, jellyfinClient, scanDispatcher)
-                }
+            val jobId = scanTracker.startNew()
+            if (active != null) {
+                executePipeline(active, jobId, mediaStore, scanner, scanTracker, broadcaster, configStore, jellyfinClient, scanDispatcher, artworkDownloader, arrRescan)
+            } else {
+                Logger.info("Scheduled scan starting (interval=${legacyHours}h)")
+                runScan(jobId, emptySet(), mediaStore, scanner, scanTracker, broadcaster, configStore, jellyfinClient, scanDispatcher)
             }
         }
     }
@@ -205,22 +222,47 @@ fun main() = runBlocking {
 fun env(name: String, default: String): String =
     getenv(name)?.toKString() ?: default
 
-/** Parse the operator schedule string → ms until next wakeup. Supports: "daily", "weekly",
- *  "6h", "every Xh" (X hours), or an integer string interpreted as hours. Falls back to 24h. */
-fun scheduleDelayMs(schedule: String): Long {
-    val s = schedule.trim().lowercase()
-    return when {
-        s == "daily"   || s == "24h" -> 24 * 3_600_000L
-        s == "weekly"  || s == "7d"  -> 7  * 24 * 3_600_000L
-        s == "6h"                    -> 6  * 3_600_000L
-        s == "12h"                   -> 12 * 3_600_000L
-        s.startsWith("every ") -> {
-            val part = s.removePrefix("every ").trim()
-            val h = part.removeSuffix("h").trim().toLongOrNull()
-            (h ?: 24) * 3_600_000L
-        }
-        else -> (s.toLongOrNull() ?: 24) * 3_600_000L
+@OptIn(ExperimentalForeignApi::class)
+fun nowEpochSec(): Long = time(null)
+
+/** ms until the next LOCAL wall-clock occurrence of the schedule, or null if it isn't understood.
+ *  Honors the three cron patterns the Settings schedule UI emits — daily at H:00 (`0 H * * *`),
+ *  weekly on Sunday at H:00 (`0 H * * 0`), and the every-N-hours form (hour field `[star]/N`) —
+ *  computed against the host's local timezone (the same clock the admin reads). Returns null on
+ *  anything else so the caller can warn instead of silently running every 24h. */
+@OptIn(ExperimentalForeignApi::class)
+fun nextRunDelayMs(cron: String, nowEpochSec: Long): Long? = memScoped {
+    val f = cron.trim().split(Regex("\\s+"))
+    if (f.size < 5) return@memScoped null
+    val minF = f[0]; val hourF = f[1]; val dowF = f[4]
+
+    val nowVar = alloc<time_tVar>().apply { value = nowEpochSec.convert() }
+    val tm = alloc<tm>()
+    if (localtime_r(nowVar.ptr, tm.ptr) == null) return@memScoped null
+    tm.tm_isdst = -1  // let mktime resolve DST for the (possibly future) target
+
+    // every-N-hours at minute 0: "0 */N * * *"
+    if (hourF.startsWith("*/")) {
+        val step = hourF.removePrefix("*/").toIntOrNull()?.takeIf { it in 1..23 } ?: return@memScoped null
+        tm.tm_min = 0; tm.tm_sec = 0
+        tm.tm_hour = ((tm.tm_hour / step) + 1) * step  // strictly-next boundary; mktime normalizes >23 into the next day
+        return@memScoped (mktime(tm.ptr).convert<Long>() - nowEpochSec) * 1_000L
     }
+
+    val hour = hourF.toIntOrNull()?.takeIf { it in 0..23 } ?: return@memScoped null
+    val minute = minF.toIntOrNull()?.takeIf { it in 0..59 } ?: 0
+    val targetDow = if (dowF == "*") null else dowF.toIntOrNull()?.takeIf { it in 0..6 }  // 0 = Sunday
+
+    tm.tm_hour = hour; tm.tm_min = minute; tm.tm_sec = 0
+    var target = mktime(tm.ptr).convert<Long>()  // today at H:MM local; mktime refreshes tm_wday
+    var guard = 0
+    while (target <= nowEpochSec || (targetDow != null && tm.tm_wday != targetDow)) {
+        tm.tm_mday += 1
+        tm.tm_isdst = -1
+        target = mktime(tm.ptr).convert<Long>()
+        if (++guard > 8) return@memScoped null
+    }
+    (target - nowEpochSec) * 1_000L
 }
 
 /** ms duration for a freshness cadence string: "weekly", "monthly", "6months", "yearly", "never" */
