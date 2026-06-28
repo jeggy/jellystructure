@@ -29,7 +29,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import dev.jellystructure.ravilo.ui.components.ChannelBar
+import dev.jellystructure.ravilo.ui.components.AppBar
 import dev.jellystructure.ravilo.ui.components.HeroCarousel
 import dev.jellystructure.ravilo.ui.components.StaticContentRow
 import dev.jellystructure.ravilo.ui.components.Tile
@@ -90,7 +90,12 @@ class ChannelStore(private val apiClient: TvApiClient) {
 fun ChannelScreen(
     channel: Channel,
     store: ChannelStore,
+    displayName: String,
+    discoverAvailable: Boolean,
     onBack: () -> Unit,
+    onNavSelect: (Int) -> Unit,
+    onProfile: () -> Unit,
+    onSearch: () -> Unit,
     onItemSelect: (MediaCard) -> Unit,
 ) {
     val colors = RaviloTheme.colors
@@ -114,6 +119,13 @@ fun ChannelScreen(
     val barScrolled by remember { derivedStateOf {
         listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 0
     } }
+
+    // R136: full nav bar (section tabs) on the channel page, matching the other screens.
+    val navItems = buildList {
+        add(str("nav.home")); add(str("nav.movies")); add(str("nav.series"))
+        if (discoverAvailable) add("Top 10")
+        add(str("nav.my_list"))
+    }
 
     // Give the bar initial focus so Back works even during the loading state;
     // LaunchedEffect(hasHero) in the Loaded branch will re-route to hero/content.
@@ -217,27 +229,37 @@ fun ChannelScreen(
                     }
                 }
 
-                // ChannelBar — always-composed overlay (even during Loading/Error so back works)
-                ChannelBar(
-                    channelName = channel.name,
+                // R136: full nav bar (section tabs) + the channel name as page context (replaces ChannelBar).
+                AppBar(
+                    navItems = navItems,
+                    activeNav = -1,   // a channel isn't one of the section tabs → no tab highlighted
+                    onNavSelect = onNavSelect,
                     navFR = channelBarFR,
-                    onBack = onBack,
                     onDown = {
                         runCatching { if (hasHero) heroFR.requestFocus() else firstTileFR.requestFocus() }
                     },
+                    userInitials = displayName.take(2).uppercase(),
+                    onProfile = onProfile,
+                    onSearch = onSearch,
                     scrolled = barScrolled,
+                    title = channel.name,
                 )
             }
         }
 
-        // ChannelBar during Loading / Error states — allow back navigation
+        // Nav bar during Loading / Error states — keep nav + back available.
         if (storeState !is HomeState.Loaded) {
-            ChannelBar(
-                channelName = channel.name,
+            AppBar(
+                navItems = navItems,
+                activeNav = -1,
+                onNavSelect = onNavSelect,
                 navFR = channelBarFR,
-                onBack = onBack,
                 onDown = {},
+                userInitials = displayName.take(2).uppercase(),
+                onProfile = onProfile,
+                onSearch = onSearch,
                 scrolled = false,
+                title = channel.name,
             )
         }
     }
