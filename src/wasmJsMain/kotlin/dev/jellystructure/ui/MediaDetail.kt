@@ -139,14 +139,26 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
            </div>"""
     } else ""
 
-    fun genreChipHtml(genre: String): String =
-        """<span class="chip" style="display:inline-flex;align-items:center;">${genre.esc()} <span class="genre-rm" data-genre="${genre.esc()}" style="cursor:pointer;margin-left:4px;color:var(--bad);">✕</span></span>"""
+    // Phase 94: genre provenance, derived from the TMDB baseline (item.tmdbGenres). A user-added genre
+    // (present but not in the baseline) gets an accent dot; TMDB genres the user removed (in the baseline,
+    // gone from genres) show as greyed "restore" chips. Empty baseline (pre-first-sync) → no markers.
+    val tmdbBaseline = item.tmdbGenres
+    val userAddedGenres = if (tmdbBaseline.isNotEmpty()) item.genres.filterNot { it in tmdbBaseline }.toSet() else emptySet()
+    val userRemovedGenres = tmdbBaseline.filterNot { it in item.genres }
+    fun genreChipHtml(genre: String): String {
+        val dot = if (genre in userAddedGenres) """<span title="Added by you — kept across TMDB sync" style="display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--hi);margin-right:5px;flex:0 0 auto;"></span>""" else ""
+        return """<span class="chip" style="display:inline-flex;align-items:center;">$dot${genre.esc()} <span class="genre-rm" data-genre="${genre.esc()}" style="cursor:pointer;margin-left:4px;color:var(--bad);">✕</span></span>"""
+    }
+    fun genreRestoreHtml(genre: String): String =
+        """<span class="chip genre-restore" data-genre="${genre.esc()}" title="Removed by you — TMDB still lists this genre. Click ↺ to restore." style="display:inline-flex;align-items:center;cursor:pointer;opacity:.5;text-decoration:line-through;">${genre.esc()} <span style="margin-left:4px;text-decoration:none;">↺</span></span>"""
     val genresHtml = """<div class="field" id="genres-section">
              <label>Genres <button class="diff-trigger" id="diff-genres">≠</button></label>
              <div id="genres-chips" style="display:flex;flex-wrap:wrap;gap:5px;align-items:center;">
                ${item.genres.joinToString("") { genreChipHtml(it) }}
+               ${userRemovedGenres.joinToString("") { genreRestoreHtml(it) }}
                <span id="genre-add-chip" class="chip ghost" style="cursor:pointer;">＋ add</span>
              </div>
+             <div class="tiny muted" style="margin-top:6px;">Your genre edits survive TMDB re-syncs — <span style="color:var(--acc-ink)">●</span> added by you${if (userRemovedGenres.isNotEmpty()) "; strikethrough = removed, TMDB still has it" else ""}.</div>
              <div id="genre-add-row" style="display:none;position:relative;gap:6px;margin-top:6px;align-items:center;">
                <input id="genre-input" class="input" type="text" placeholder="pick or type a genre…" maxlength="40" style="width:200px;" autocomplete="off">
                <button id="genre-add-btn" class="btn sm ghost">Add</button>
@@ -902,6 +914,16 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
     }
     document.querySelectorAll("#genres-chips .genre-rm").let { nodes ->
         for (i in 0 until nodes.length) (nodes.item(i) as? HTMLElement)?.let { wireGenreRemove(it) }
+    }
+    // Phase 94: restore a user-removed TMDB genre — re-add it as a chip and drop the restore marker.
+    document.querySelectorAll("#genres-chips .genre-restore").let { nodes ->
+        for (i in 0 until nodes.length) (nodes.item(i) as? HTMLElement)?.let { el ->
+            el.addEventListener("click") {
+                val g = el.getAttribute("data-genre") ?: return@addEventListener
+                addGenreChip(g)
+                el.remove()
+            }
+        }
     }
     document.getElementById("genre-add-chip")?.addEventListener("click") {
         val row = document.getElementById("genre-add-row") as? HTMLElement ?: return@addEventListener
