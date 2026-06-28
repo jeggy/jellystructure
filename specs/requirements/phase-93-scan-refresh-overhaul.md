@@ -32,8 +32,11 @@ and several didn't do what the admin thought:
 
 Three concepts, named consistently everywhere; the folder watcher is gone:
 
-- **Scan** — find new/changed media files from Jellyfin and add/update the library. (Fast. The pipeline's
-  `scan_files` step is the same operation.)
+- **Scan** — find new/changed media files from Jellyfin, add/update the library, and (when `fetch_images`
+  is on) **download any missing artwork** per title — poster/fanart + series stills/season posters,
+  gap-fill only. (Previously `fetch_images` was a dead flag and the scan wrote metadata only; now
+  `runScan` takes an optional `ArtworkDownloader` and fetches per item. The pipeline's `scan_files` step
+  passes none — the pipeline owns artwork via its own `download_artwork` step.)
 - **The Automation** (the pipeline) — a composed sequence that starts with Scan and chains optional
   follow-ups (Pull TMDB · Download artwork · Write NFO · Sync Jellyfin · Rescan *arr · Notify). Runs **on a
   wall-clock schedule** *and* **on demand**.
