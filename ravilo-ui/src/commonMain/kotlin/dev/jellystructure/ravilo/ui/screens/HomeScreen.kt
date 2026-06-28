@@ -80,6 +80,7 @@ fun HomeScreen(
             is HomeState.Error   -> HomeErrorState(s.message) { store.refresh() }
             is HomeState.Loaded  -> HomeLoaded(
                 feed = s.feed,
+                listState = store.listState,   // R137: retained scroll state
                 activeNav = activeNav,
                 displayName = displayName,
                 discoverAvailable = discoverAvailable,
@@ -98,6 +99,7 @@ fun HomeScreen(
 @Composable
 private fun HomeLoaded(
     feed: dev.jellystructure.shared.tv.HomeFeed,
+    listState: androidx.compose.foundation.lazy.LazyListState,
     activeNav: Int,
     displayName: String,
     discoverAvailable: Boolean,
@@ -110,7 +112,6 @@ private fun HomeLoaded(
     onSearch: () -> Unit,
 ) {
     val colors = RaviloTheme.colors
-    val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
 
     // Hero height as a % of the screen, per the user's config (R27); auto-advance interval too.
@@ -136,7 +137,14 @@ private fun HomeLoaded(
     // (always composed + focusable) so a hero-less feed never opens with nothing focused — Down
     // then enters the content. Requesting focus on the LazyColumn container itself is unreliable.
     LaunchedEffect(Unit) {
-        runCatching { if (hasHero) heroFR.requestFocus() else navBarFR.requestFocus() }
+        // R137: the feed's scroll position is retained in the store, so Back from a detail returns to where
+        // we were. When it was scrolled, focus the app bar (a fixed overlay — focusing it doesn't disturb the
+        // scroll, unlike focusing the off-screen hero which would yank back to the top); DOWN re-enters the
+        // content where we left. Fresh entry / at top → hero as before.
+        val wasScrolled = listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 0
+        runCatching {
+            if (!wasScrolled && hasHero) heroFR.requestFocus() else navBarFR.requestFocus()
+        }
     }
 
     // R55: Back scrolls a scrolled feed to the top (refocusing the hero / app bar so bring-into-view
