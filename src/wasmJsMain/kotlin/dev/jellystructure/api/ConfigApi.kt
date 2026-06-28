@@ -81,7 +81,6 @@ data class LanguageRules(
 data class Behavior(
     @SerialName("overwrite_nfo") val overwriteNfo: Boolean = false,
     @SerialName("fetch_images") val fetchImages: Boolean = true,
-    @SerialName("watch_enabled") val watchEnabled: Boolean = false,
     @SerialName("tell_jellyfin") val tellJellyfin: Boolean = true,
     @SerialName("scan_workers") val scanWorkers: Int = 1,
     @SerialName("scan_threads") val scanThreads: Int = 4,
