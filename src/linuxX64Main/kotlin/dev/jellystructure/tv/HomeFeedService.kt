@@ -111,7 +111,7 @@ class HomeFeedService(
     private fun buildHeroes(config: RaviloConfig, all: List<MediaItem>): List<Hero> {
         // Auto mode: pick the most-recently-scanned items with no dressing.
         if (config.heroes.isEmpty()) {
-            return all.sortedByDescending { it.scannedAt }.take(HERO_AUTO_COUNT).mapNotNull { item ->
+            return all.sortedByDescending { it.addedAt ?: it.scannedAt }.take(HERO_AUTO_COUNT).mapNotNull { item ->
                 val jellyfinId = item.jellyfinId ?: return@mapNotNull null
                 Hero(
                     item = item.toMediaCard(),
@@ -213,10 +213,10 @@ class HomeFeedService(
                     // controls: false → split, true → one combined (R71).
                     if (rowCfg.mediaKind == null) {
                         val movies = all.filter { it.kind == MediaKind.MOVIE }
-                            .sortedByDescending { it.scannedAt }.take(ROW_ITEM_LIMIT)
+                            .sortedByDescending { it.addedAt ?: it.scannedAt }.take(ROW_ITEM_LIMIT)
                             .mapNotNull { it.toMediaCardOrNull() }
                         val series = all.filter { it.kind == MediaKind.TV_SHOW }
-                            .sortedByDescending { it.scannedAt }.take(ROW_ITEM_LIMIT)
+                            .sortedByDescending { it.addedAt ?: it.scannedAt }.take(ROW_ITEM_LIMIT)
                             .mapNotNull { it.toMediaCardOrNull() }
                         if (movies.isNotEmpty()) result.add(Row("${rowCfg.id}-movies", rowCfg.title?.let { "$it — Movies" } ?: "Movies — Newly Added", RowKind.NEWLY_ADDED, movies))
                         if (series.isNotEmpty()) result.add(Row("${rowCfg.id}-series", rowCfg.title?.let { "$it — Series" } ?: "Series — Newly Added", RowKind.NEWLY_ADDED, series))
@@ -228,7 +228,7 @@ class HomeFeedService(
                         else     -> all
                     }
                     val cards = filtered
-                        .sortedByDescending { it.scannedAt }
+                        .sortedByDescending { it.addedAt ?: it.scannedAt }
                         .take(ROW_ITEM_LIMIT)
                         .mapNotNull { it.toMediaCardOrNull() }
                     if (cards.isNotEmpty()) result.add(Row(rowCfg.id, rowCfg.title ?: "Newly Added", RowKind.NEWLY_ADDED, cards))
@@ -240,7 +240,7 @@ class HomeFeedService(
                         .filter { it.isNotBlank() }
                     val cards = all
                         .filter { item -> genreTerms.isEmpty() || item.genres.any { g -> genreTerms.any { t -> g.lowercase().contains(t) } } }
-                        .sortedByDescending { it.scannedAt }
+                        .sortedByDescending { it.addedAt ?: it.scannedAt }
                         .take(ROW_ITEM_LIMIT)
                         .mapNotNull { it.toMediaCardOrNull() }
                     if (cards.isNotEmpty()) result.add(Row(rowCfg.id, rowCfg.title ?: "Genre", RowKind.GENRE, cards))
@@ -255,7 +255,7 @@ class HomeFeedService(
                         else     -> matched
                     }
                     val cards = filtered
-                        .sortedByDescending { it.scannedAt }
+                        .sortedByDescending { it.addedAt ?: it.scannedAt }
                         .take(ROW_ITEM_LIMIT)
                         .mapNotNull { it.toMediaCardOrNull() }
                     if (cards.isNotEmpty()) result.add(Row(rowCfg.id, rowCfg.title ?: "Custom", RowKind.CUSTOM, cards))
@@ -266,7 +266,7 @@ class HomeFeedService(
         // If mergeNewlyAdded is on, inject one merged NEWLY_ADDED row at the config position
         if (config.mergeNewlyAdded) {
             val mergedCards = all
-                .sortedByDescending { it.scannedAt }
+                .sortedByDescending { it.addedAt ?: it.scannedAt }
                 .take(ROW_ITEM_LIMIT)
                 .mapNotNull { it.toMediaCardOrNull() }
             if (mergedCards.isNotEmpty()) {

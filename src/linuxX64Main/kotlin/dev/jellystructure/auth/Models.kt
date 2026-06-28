@@ -78,6 +78,9 @@ data class JellyfinItem(
     @SerialName("LockData") val lockData: Boolean = false,
     @SerialName("LockedFields") val lockedFields: List<String> = emptyList(),
     @SerialName("Tags") val tags: List<String> = emptyList(),
+    // The library "date added" (ISO-8601 UTC), e.g. "2021-06-27T18:51:37.0000000Z". Drives the real
+    // "recently added" sort (scannedAt is only the scan timestamp).
+    @SerialName("DateCreated") val dateCreated: String? = null,
 )
 
 @Serializable

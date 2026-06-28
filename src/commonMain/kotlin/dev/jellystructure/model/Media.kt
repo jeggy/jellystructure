@@ -102,6 +102,10 @@ data class MediaItem(
     val issueCount: Int,
     val languageMix: Boolean = false,
     val scannedAt: Long,
+    // Jellyfin's DateCreated (epoch seconds) = the real library "date added". Null until a scan
+    // populates it; the "recently added" sort uses `addedAt ?: scannedAt`. (scannedAt is only the
+    // scan timestamp, so it sorts by scan order, not add order.)
+    val addedAt: Long? = null,
     val jellyfinLockData: Boolean = false,
     val jellyfinLockedFields: List<String> = emptyList(),
     val titlesByLang: Map<String, String> = emptyMap(),
