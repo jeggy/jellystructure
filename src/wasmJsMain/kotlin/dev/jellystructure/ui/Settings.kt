@@ -119,7 +119,7 @@ fun renderSettings(container: Element, scope: CoroutineScope, query: Map<String,
               <div class="field">
                 <label>Episode probe cap per series</label>
                 <input id="scan-episode-cap" class="input" type="number" min="0" max="100000" style="width:90px">
-                <span class="hint"><strong>0 = unlimited</strong> — probe every episode. Set a positive number to sample only that many files per series on a full scan (very large libraries). The on-demand "Re-scan all episodes" button always probes everything.</span>
+                <span class="hint"><strong>0 = unlimited</strong> — probe every episode. Set a positive number to sample only that many files per series on a full scan (very large libraries). The on-demand "Re-probe episode files" button always probes everything.</span>
               </div>
               <div id="scan-threads-restart-banner" style="display:none;margin-top:10px;padding:8px 12px;border-radius:6px;background:var(--warn-fill,#7c5100);color:var(--warn-ink,#fff);font-size:.83rem"></div>
               <div class="row center" style="justify-content:space-between;margin-top:12px;">
@@ -1452,7 +1452,7 @@ private fun pipeScanCfgEl(step: PipelineStep, idx: Int): Element {
     val head = document.createElement("label"); head.className = "sc-head"
     val tog  = document.createElement("span")
     tog.className = "mini-toggle" + (if (step.recheckUnchanged) " on" else "")
-    val lbl = document.createElement("b"); lbl.textContent = "Re-check unchanged media on a schedule"
+    val lbl = document.createElement("b"); lbl.textContent = "Refresh unchanged titles on a schedule"
     head.appendChild(tog); head.appendChild(lbl)
     head.addEventListener("click") {
         pipelineSteps[idx] = pipelineSteps[idx].copy(recheckUnchanged = !pipelineSteps[idx].recheckUnchanged)
@@ -1463,7 +1463,7 @@ private fun pipeScanCfgEl(step: PipelineStep, idx: Int): Element {
     val tbl  = document.createElement("div"); tbl.className = "fresh-tbl"
     val hd   = document.createElement("div"); hd.className = "fresh-hd"
     val h1   = document.createElement("span"); h1.textContent = "Release age"
-    val h2   = document.createElement("span"); h2.textContent = "Re-check"
+    val h2   = document.createElement("span"); h2.textContent = "Refresh"
     hd.appendChild(h1); hd.appendChild(h2); tbl.appendChild(hd)
     val rows = listOf(
         PipeCadRow("cadY", "Released this year",        "$year",              step.refreshThisYear),
