@@ -142,8 +142,8 @@ class BrowseService(
             year = year,
             genre = genres.firstOrNull(),
             rating = null,
-            posterUrl = if (jId != null) JellyfinImageUrl.poster(jId) else null,
-            backdropUrl = if (jId != null) JellyfinImageUrl.backdrop(jId) else null,
+            posterUrl = RaviloImageUrl.poster(id),     // R133: keyed by MediaItem.id (on-disk artwork)
+            backdropUrl = RaviloImageUrl.backdrop(id),
         )
     }
 }
