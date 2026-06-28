@@ -13,7 +13,6 @@ import dev.jellystructure.media.MediaHistory
 import dev.jellystructure.media.MediaStore
 import dev.jellystructure.media.Scanner
 import dev.jellystructure.media.ScanTracker
-import dev.jellystructure.watcher.FolderWatcher
 import dev.jellystructure.server.routes.activityRoutes
 import dev.jellystructure.server.routes.authRoutes
 import dev.jellystructure.server.routes.configureConfigRoutes
@@ -110,7 +109,6 @@ fun startServer(
     artworkDownloader: ArtworkDownloader,
     tmdbClient: TmdbClient,
     scanTracker: ScanTracker,
-    folderWatcher: FolderWatcher,
     mediaHistory: MediaHistory,
     activityLog: ActivityLog,
     broadcaster: WsBroadcaster,
