@@ -185,10 +185,9 @@ class MediaStore(private val db: JellystructureDb, private val jsTagStore: JsTag
         val decoded = run {
             var items = allItems()
             if (kind != null) items = items.filter { it.kind == kind }
-            // R122: "missing artwork" = no real poster.jpg on disk (the Jellyfin poster), not just a
-            // missing TMDB posterPath. Counts manually-added artwork; distinct from the "Missing TMDB" filter.
+            // R122/R123: "missing artwork" = no real poster.jpg on disk (the Jellyfin poster). The only
+            // artwork signal we track — we care about what's on disk, not the TMDB posterPath metadata.
             if (filter == "missing_artwork") items = items.filter { !posterArtworkExists(it) }
-            if (filter == "no_tmdb") items = items.filter { it.tmdbId == null }   // titles with no TMDB match
             items
         }.let { items ->
             var result = items
@@ -201,7 +200,7 @@ class MediaStore(private val db: JellystructureDb, private val jsTagStore: JsTag
             }
             if (filter == "attention") {
                 result = result.filter { item ->
-                    item.issueCount > 0 || item.languageMix || item.hasMultiDefaultAudio() || item.tmdbId == null
+                    item.issueCount > 0 || item.languageMix || item.hasMultiDefaultAudio() || !posterArtworkExists(item)
                 }
             }
             // R74: when a condition stack is provided, route through ConditionEvaluator so that
