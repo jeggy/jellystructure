@@ -148,7 +148,8 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
                <span id="genre-add-chip" class="chip ghost" style="cursor:pointer;">＋ add</span>
              </div>
              <div id="genre-add-row" style="display:none;gap:6px;margin-top:6px;">
-               <input id="genre-input" class="input" type="text" placeholder="genre…" maxlength="40" style="width:160px;" autocomplete="off">
+               <input id="genre-input" class="input" type="text" placeholder="pick or type a genre…" maxlength="40" style="width:200px;" autocomplete="off" list="genre-datalist">
+               <datalist id="genre-datalist"></datalist>
                <button id="genre-add-btn" class="btn sm ghost">Add</button>
              </div>
            </div>"""
@@ -893,6 +894,13 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
     }
     document.getElementById("diff-genres")?.addEventListener("click") {
         showTagsDiffPopup(origGenres.sorted(), currentGenreList().sorted(), label = "Genres")
+    }
+    // R128: populate the genre input's autocomplete with existing library genres (most common first), so
+    // adding a genre is a pick from the dropdown rather than free-typing — keeps genres consistent.
+    scope.launch {
+        val genres = MediaApi.metaFacets()?.genres ?: return@launch
+        (document.getElementById("genre-datalist"))?.innerHTML =
+            genres.joinToString("") { """<option value="${it.value.esc()}"></option>""" }
     }
 
     // Proactive write-permission check — runs in background after DOM is ready
