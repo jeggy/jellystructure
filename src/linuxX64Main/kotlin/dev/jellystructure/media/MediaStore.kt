@@ -185,7 +185,9 @@ class MediaStore(private val db: JellystructureDb, private val jsTagStore: JsTag
         val decoded = run {
             var items = allItems()
             if (kind != null) items = items.filter { it.kind == kind }
-            if (filter == "missing_artwork") items = items.filter { it.posterPath.isNullOrBlank() }
+            // R122: "missing artwork" = no real poster.jpg on disk (the Jellyfin poster), not just a
+            // missing TMDB posterPath. Counts manually-added artwork; distinct from the "Missing TMDB" filter.
+            if (filter == "missing_artwork") items = items.filter { !posterArtworkExists(it) }
             if (filter == "no_tmdb") items = items.filter { it.tmdbId == null }   // titles with no TMDB match
             items
         }.let { items ->
