@@ -718,7 +718,9 @@ fun Route.mediaRoutes(
                     val images = if (tid != null && s != null && e != null)
                         tmdbClient.getEpisodeImages(tid, s, e) else null
                     val onDisk = artwork.checkEpisodeStill(ep).stillExists
-                    call.respond(ArtworkCandidatesResponse("still", onDisk, ep.resolvedLanguage, mapCandidates(images?.stills ?: emptyList(), ep.stillPath)))
+                    // R124: only badge a still candidate "ON DISK" when the still is genuinely on disk —
+                    // matching ep.stillPath (TMDB metadata) alone falsely badged never-downloaded stills.
+                    call.respond(ArtworkCandidatesResponse("still", onDisk, ep.resolvedLanguage, mapCandidates(images?.stills ?: emptyList(), ep.stillPath.takeIf { onDisk })))
                 }
 
                 // POST /api/media/{id}/episodes/{epFilename}/still/save  { source }
