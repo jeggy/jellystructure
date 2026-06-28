@@ -11,6 +11,7 @@ import io.ktor.client.request.get
 import io.ktor.client.statement.readRawBytes
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.io.buffered
@@ -88,6 +89,12 @@ class ArtworkDownloader {
                 if (posterOk) deleteIfExists("$oldDir/poster.jpg")
                 if (fanartOk) deleteIfExists("$oldDir/fanart.jpg")
                 if (logoExists) deleteIfExists("$oldDir/clearlogo.png")
+            }
+            // R125: episode stills are part of fetch() now — download any missing (each from the
+            // episode's stored stillPath), bounded by the shared download gate. So every fetch()
+            // caller (scan-pipeline "Download artwork" + the per-item fetch) populates stills too.
+            if (item.episodes.isNotEmpty()) coroutineScope {
+                item.episodes.forEach { ep -> launch { runCatching { fetchEpisodeStill(ep) } } }
             }
         }
 
