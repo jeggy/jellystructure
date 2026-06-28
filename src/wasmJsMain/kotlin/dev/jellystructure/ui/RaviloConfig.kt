@@ -1193,8 +1193,24 @@ private fun openChannelEditorPage(container: Element, scope: CoroutineScope, idx
                 """<div title="${m.title.htmlEsc()}" style="aspect-ratio:2/3;border-radius:6px;overflow:hidden;background:var(--fill-2)">$img</div>"""
             }
             val lead = if (rows.isEmpty()) "No rows yet — all <b>$n</b> titles that match this channel would be unreachable." else "These <b>$n</b> titles match the channel filter but <b>aren’t shown by any content row</b>, so viewers browsing this channel won’t find them."
-            host.innerHTML = """<div class="card" style="padding:12px 14px;background:rgba(214,158,46,.10);border:1px solid rgba(214,158,46,.30)"><div style="display:flex;align-items:center;gap:8px"><b style="flex:1">Not shown by any row</b><span class="badge" style="background:rgba(214,158,46,.22);color:#d69e2e">$n of $pool</span></div><div class="tiny" style="margin:6px 0 10px;line-height:1.5;color:var(--ink-soft)">$lead <span class="muted">System rows (Continue, Newly Added) aren’t counted.</span></div><div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(56px,1fr));gap:7px;max-height:200px;overflow:auto;margin-bottom:11px">$tiles</div><div style="display:flex;gap:8px;flex-wrap:wrap"><button type="button" id="cov-addcatchall" class="btn sm ghost">＋ Add a catch-all row for these</button></div></div>""".trimIndent()
+            host.innerHTML = """<div class="card" style="padding:12px 14px;background:rgba(214,158,46,.10);border:1px solid rgba(214,158,46,.30)"><div style="display:flex;align-items:center;gap:8px"><b style="flex:1">Not shown by any row</b><span class="badge" style="background:rgba(214,158,46,.22);color:#d69e2e">$n of $pool</span></div><div class="tiny" style="margin:6px 0 10px;line-height:1.5;color:var(--ink-soft)">$lead <span class="muted">System rows (Continue, Newly Added) aren’t counted.</span></div><div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(56px,1fr));gap:7px;max-height:200px;overflow:auto;margin-bottom:11px">$tiles</div><div style="display:flex;gap:8px;flex-wrap:wrap"><button type="button" id="cov-addcatchall" class="btn sm ghost">＋ Add a catch-all row for these</button><button type="button" id="cov-openlib" class="btn sm ghost">Open these $n in Library ↗</button></div></div>""".trimIndent()
             host.querySelector("#cov-addcatchall")?.addEventListener("click") { _ -> addCatchAllRow() }
+            // R87d: hand the coverage filter to the Library — channel conds as per-facet params + the
+            // content_row gap condition as the `coverage` param (which carries the rows for editing).
+            host.querySelector("#cov-openlib")?.addEventListener("click") { _ ->
+                fun pf(facet: String, key: String): String? =
+                    channelConds.filter { it.facet == facet && it.op == "is_any_of" }.flatMap { it.values }.distinct()
+                        .takeIf { it.isNotEmpty() }?.let { "$key=" + it.joinToString(",") { v -> dev.jellystructure.encodeURIComponent(v) } }
+                val coverCond = Condition(facet = "content_row", op = "is_none_of", rows = rows)
+                val covParam = "coverage=" + dev.jellystructure.encodeURIComponent(
+                    kotlinx.serialization.json.Json.Default.encodeToString(Condition.serializer(), coverCond))
+                val params = listOfNotNull(
+                    pf("studio", "studios"), pf("network", "networks"), pf("genre", "genres"), pf("tag", "tags"),
+                    if (ch.match.name == "ANY") "match=ANY" else null,
+                    covParam,
+                )
+                dev.jellystructure.App.navigate("/library?" + params.joinToString("&"))
+            }
         }
     }
     renderCoverage()
