@@ -60,10 +60,11 @@ finish-summary to the Activity page and is filterable there; the next scheduled 
   and the scheduler idles (no silent 24h). Legacy `scan_interval_hours` kept as a fallback when the schedule
   is blank.
 
-### 93c — On-demand pipeline run *(planned)*
-- A title can run the **composed pipeline** on demand (not just a file scan). "Scan library" = file
-  discovery only; "Run pipeline now" = every enabled step. Shared `executePipeline` between the route and
-  the scheduler.
+### 93c — On-demand pipeline run ✓
+- `POST /api/pipeline/run` runs the **saved, composed pipeline** on demand via the same `executePipeline`
+  the scheduler uses (falls back to a plain scan if no steps configured); guarded on `scanTracker.running`.
+  `MediaApi.runPipeline()` backs it. The Settings button is now **"▶ Run pipeline now"** (runs every
+  enabled step) — distinct from "Scan library" / `POST /api/scan` (file discovery only).
 
 ### 93d — One vocabulary *(planned)*
 - Canonical labels across Settings/Dashboard/Library/MediaDetail/Activity: **Scan library** (find files),

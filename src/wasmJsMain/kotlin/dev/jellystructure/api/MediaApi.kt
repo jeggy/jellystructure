@@ -262,6 +262,12 @@ object MediaApi {
         response.status == HttpStatusCode.Accepted
     }.getOrDefault(false)
 
+    // 93c: run the composed automation (the saved scan pipeline) on demand — all enabled steps,
+    // not just file discovery like startScan().
+    suspend fun runPipeline(): Boolean = runCatching {
+        httpClient.post("/api/pipeline/run").status == HttpStatusCode.Accepted
+    }.getOrDefault(false)
+
     suspend fun scanStatus(): ScanStatus? = runCatching {
         httpClient.get("/api/scan/status").body<ScanStatus>()
     }.getOrNull()
