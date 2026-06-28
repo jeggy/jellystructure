@@ -44,6 +44,16 @@ item key in the store and restore via `scrollToItem` + `FocusRequester.requestFo
   detail stores — hold the list/grid state.
 - The screens — use the store-held state; ensure `focusRestorer()` on the outer list + rows/grids.
 
+## Implemented (R137, partial)
+
+Shipped the **scroll-restoration** half: the `LazyListState`/`LazyGridState` is hoisted into the retained
+store (`HomeStore`/`ChannelStore`/`BrowseStore`), so navigate→back returns to the scrolled position. On a
+scrolled return, focus the **app bar** (a fixed overlay that doesn't disturb the scroll, unlike the
+off-screen hero which would yank back to the top); DOWN re-enters the content. **GAP — exact-tile focus**:
+the focus system's reliable anchors are the hero + app bar, not individual tiles, so focus lands adjacent,
+not on the originating tile; restoring the exact tile (per-row FRs + saved index, surviving the screen's
+disposal on nav) is a follow-up that needs on-device tuning. Detail rails not yet covered.
+
 ## Out of scope
 
 Cross-session (app-restart) restoration; deep-link entry focus.

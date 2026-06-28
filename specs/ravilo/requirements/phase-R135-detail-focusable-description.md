@@ -42,6 +42,13 @@ Use both detail screens.
   `RaviloMotion`.
 - `ravilo-ui/.../screens/MovieDetailScreen.kt`, `…/SeriesDetailScreen.kt` (swap the `Text`; host the overlay).
 
+## Implemented (R135)
+
+Shipped as **inline expand**, not a modal overlay: `components/DetailSynopsis.kt` is a draw-only
+`dpadFocusable` that toggles `maxLines` on SELECT with a ▾more/▴less chevron, inserted into the hero focus
+order (action-row UP → synopsis → AppBar; DOWN → Play). A modal with custom D-pad focus/scroll was dropped
+to avoid adding a new focus path on this focus-sensitive screen; inline-expand reuses the page's scroll.
+
 ## Out of scope
 
 Editing the synopsis; read-aloud/TTS; per-paragraph navigation.
