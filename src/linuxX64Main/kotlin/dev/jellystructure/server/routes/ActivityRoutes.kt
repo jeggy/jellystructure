@@ -15,12 +15,18 @@ fun Route.activityRoutes(activityLog: ActivityLog) {
             val pageSize = call.request.queryParameters["pageSize"]?.toIntOrNull()?.coerceIn(1, 500) ?: 100
             val category = call.request.queryParameters["category"]?.takeIf { it.isNotBlank() }
             val level = call.request.queryParameters["level"]?.takeIf { it.isNotBlank() }
-            call.respond(activityLog.list(page, pageSize, category, level))
+            val run = call.request.queryParameters["run"]?.takeIf { it.isNotBlank() }   // 93g
+            call.respond(activityLog.list(page, pageSize, category, level, run))
         }
 
         delete {
             activityLog.clear()
             call.respond(HttpStatusCode.NoContent)
         }
+    }
+
+    // 93g — recent scan/pipeline runs (newest first) for the Activity run picker.
+    get("/activity/runs") {
+        call.respond(activityLog.runSummaries())
     }
 }

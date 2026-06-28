@@ -17,6 +17,7 @@ import dev.jellystructure.db.createDatabase
 import dev.jellystructure.db.walCheckpoint
 import dev.jellystructure.jobs.WsBroadcaster
 import dev.jellystructure.log.Logger
+import dev.jellystructure.log.RunContext
 import dev.jellystructure.media.ActivityLog
 import dev.jellystructure.media.LogoDownloader
 import dev.jellystructure.media.MediaHistory
@@ -50,6 +51,7 @@ import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.runBlocking
 import platform.posix.SIGINT
 import platform.posix.SIGTERM
@@ -178,11 +180,12 @@ fun main() = runBlocking {
 
             val active = if (pipeline.isNotEmpty()) pipeline else null
             val jobId = scanTracker.startNew()
-            if (active != null) {
-                executePipeline(active, jobId, mediaStore, scanner, scanTracker, broadcaster, configStore, jellyfinClient, scanDispatcher, artworkDownloader, arrRescan)
-            } else {
-                Logger.info("Scheduled scan starting (interval=${legacyHours}h)")
-                runScan(jobId, emptySet(), mediaStore, scanner, scanTracker, broadcaster, configStore, jellyfinClient, scanDispatcher)
+            runTagged(jobId, "scheduled", "▶ Scheduled ${if (active != null) "pipeline" else "scan"} run started") {
+                if (active != null) {
+                    executePipeline(active, jobId, mediaStore, scanner, scanTracker, broadcaster, configStore, jellyfinClient, scanDispatcher, artworkDownloader, arrRescan)
+                } else {
+                    runScan(jobId, emptySet(), mediaStore, scanner, scanTracker, broadcaster, configStore, jellyfinClient, scanDispatcher)
+                }
             }
         }
     }
@@ -321,11 +324,13 @@ suspend fun executePipeline(
             filter
         }
 
-    val workingSet = runScan(
-        jobId, emptySet(), store, scanner, scanTracker, broadcaster,
-        configStore, jellyfinClient, scanDispatcher,
-        freshnessFilter = freshnessFilter
-    )
+    val workingSet = withContext(RunContext(jobId, "scan_files")) {
+        runScan(
+            jobId, emptySet(), store, scanner, scanTracker, broadcaster,
+            configStore, jellyfinClient, scanDispatcher,
+            freshnessFilter = freshnessFilter
+        )
+    }
 
     if (workingSet.isEmpty()) {
         Logger.info("Pipeline scan_files: no items in working set, skipping action steps")
@@ -337,6 +342,7 @@ suspend fun executePipeline(
     val cfg = configStore.current
     for (step in pipeline) {
         if (step.step == "scan_files") continue
+        withContext(RunContext(jobId, step.step)) {
         Logger.info("Pipeline step: ${step.step}")
         when (step.step) {
             "pull_tmdb" -> {
@@ -401,7 +407,28 @@ suspend fun executePipeline(
                     .onFailure { Logger.warn("notify webhook failed: ${it.message}") }
             }
         }
+        }
     }
-    Logger.info("Pipeline complete")
+    Logger.info("Pipeline complete — ${workingSet.size} items processed")
+}
+
+/** 93g: run a scan/pipeline run inside a [RunContext] so every log line it emits is tagged with the run
+ *  id (and therefore filterable in the Activity page), record it in the runs index for the run picker,
+ *  and bracket it with start/finish log lines. Non-cancellation failures are logged and swallowed so the
+ *  scheduler loop survives; cancellation propagates. */
+suspend fun runTagged(jobId: String, trigger: String, startMsg: String, block: suspend () -> Unit) {
+    Logger.startRun(jobId, trigger)
+    withContext(RunContext(jobId)) {
+        Logger.info(startMsg, "scan")
+        try {
+            block()
+            Logger.info("✓ Run finished", "scan")
+        } catch (e: Throwable) {
+            if (e is kotlinx.coroutines.CancellationException) { Logger.warn("Run cancelled", "scan"); throw e }
+            Logger.error("Run failed: ${e.message}", "scan")
+        } finally {
+            Logger.finishRun(jobId)
+        }
+    }
 }
 
