@@ -9,6 +9,7 @@ import dev.jellystructure.api.TrackFacets
 import dev.jellystructure.model.MediaKind
 import dev.jellystructure.shared.tv.ChannelLogo
 import dev.jellystructure.shared.tv.Condition
+import dev.jellystructure.shared.tv.RowConfig
 import kotlin.js.JsString
 import kotlinx.browser.document
 import kotlinx.coroutines.CoroutineScope
@@ -25,7 +26,9 @@ import org.w3c.files.FileReader
 // (audio_language incl. "untagged", audio_codec, track_title contains) + a Ravilo-layout
 // hero_item facet. Live "N titles match" count + a poster preview, served by /api/media.
 
-class WbCond(var facet: String, var op: String, val values: MutableList<String> = mutableListOf())
+class WbCond(var facet: String, var op: String, val values: MutableList<String> = mutableListOf(),
+             // R87: referenced content rows for the `content_row` facet (`values` is unused for it).
+             val rows: MutableList<RowConfig> = mutableListOf())
 
 private val WB_GROUPS = listOf(
     "Metadata" to listOf("studio" to "Studio", "network" to "Network", "genre" to "Genre", "tag" to "Tag"),
@@ -46,6 +49,7 @@ private var wbMatch = "ALL"
 private var wbInclude = "all"
 private var wbBaseConds = emptyList<WbCond>()  // R60: read-only channel scope for row workbench
 private var wbBaseMatch = "ALL"
+private var wbRowsContext = emptyList<RowConfig>()  // R87: rows the `content_row` facet can reference
 private var wbViewer: String? = null
 private var wbMeta: MetaFacets? = null
 private var wbTrack: TrackFacets? = null
@@ -104,6 +108,8 @@ fun openWorkbench(
     // R60: read-only channel-scope filter shown as a banner above the row's conditions.
     baseConds: List<WbCond> = emptyList(),
     baseMatch: String = "ALL",
+    // R87: rows the `content_row` facet may reference; when non-empty the facet is offered.
+    rowsContext: List<RowConfig> = emptyList(),
 ) {
     wbScope = scope
     wbTitle = title
@@ -112,7 +118,8 @@ fun openWorkbench(
     wbInclude = initialInclude
     wbBaseConds = baseConds
     wbBaseMatch = baseMatch
-    wbConds = initialConds.map { WbCond(it.facet, it.op, it.values.toMutableList()) }.toMutableList()
+    wbRowsContext = rowsContext
+    wbConds = initialConds.map { WbCond(it.facet, it.op, it.values.toMutableList(), it.rows.toMutableList()) }.toMutableList()
     if (wbConds.isEmpty()) wbConds.add(WbCond("studio", "is_any_of"))
     wbApplyLabel = applyLabel
     wbOnApply = onApply
@@ -207,7 +214,9 @@ private fun wbTagColor(v: String): String? = wbMeta?.tags?.firstOrNull { it.valu
 private fun wbRenderConds() {
     val host = document.getElementById("wb-conds") as? HTMLElement ?: return
     val facetOpts = WB_GROUPS.joinToString("") { (group, facets) ->
-        "<optgroup label=\"$group\">" + facets.joinToString("") { (f, l) -> "<option value=\"$f\">${l.esc()}</option>" } + "</optgroup>"
+        // R87: the contextual `content_row` facet — only offered when a rows context is supplied.
+        val extra = if (group == "Ravilo layout" && wbRowsContext.isNotEmpty()) "<option value=\"content_row\">Content row</option>" else ""
+        "<optgroup label=\"$group\">" + facets.joinToString("") { (f, l) -> "<option value=\"$f\">${l.esc()}</option>" } + extra + "</optgroup>"
     }
     host.innerHTML = wbConds.mapIndexed { i, c ->
         val opOpts = opsFor(c.facet).joinToString("") { (v, l) -> "<option value=\"$v\"${if (c.op == v) " selected" else ""}>${l.esc()}</option>" }
@@ -225,6 +234,14 @@ private fun wbRenderConds() {
                 if (js.isNotEmpty()) append("""<div class="wb-vgroup">Jellystructure tags</div><div class="wb-vchips">${js.joinToString("") { tagChip(it) }}</div>""")
                 if (other.isNotEmpty()) append("""<div class="wb-vgroup">Other tags</div><div class="wb-vchips">${other.joinToString("") { tagChip(it) }}</div>""")
             }
+        } else if (c.facet == "content_row") {
+            // R87: pick which content rows to test membership against; values are row specs (c.rows).
+            val chips = wbRowsContext.joinToString("") { row ->
+                val on = c.rows.any { it.id == row.id }
+                val name = row.title?.takeIf { it.isNotBlank() } ?: "Untitled row"
+                """<span class="wb-vchip${if (on) " on" else ""}" data-i="$i" data-row="${row.id.esc()}">${name.esc()}</span>"""
+            }
+            """<div class="wb-vchips">${chips.ifEmpty { """<span class="muted tiny">No content rows in scope</span>""" }}</div>"""
         } else {
             val chips = wbValuesFor(c.facet).take(80).joinToString("") { v ->
                 val on = c.values.contains(v)
@@ -327,6 +344,19 @@ private fun wbWireConds() {
                 wbRefreshPreview()
             } }
     }
+    // R87: content_row chips toggle membership in c.rows (by row id), resolved from the rows context.
+    document.querySelectorAll("#wb-conds .wb-vchip[data-row]").let { els ->
+        for (i in 0 until els.length) { val el = els.item(i) as? HTMLElement ?: continue
+            el.addEventListener("click") {
+                val idx = el.getAttribute("data-i")?.toIntOrNull() ?: return@addEventListener
+                val rid = el.getAttribute("data-row") ?: return@addEventListener
+                val c = wbConds.getOrNull(idx) ?: return@addEventListener
+                val existing = c.rows.indexOfFirst { it.id == rid }
+                if (existing >= 0) c.rows.removeAt(existing)
+                else wbRowsContext.firstOrNull { it.id == rid }?.let { c.rows.add(it) }
+                wbRenderConds(); wbRefreshPreview()
+            } }
+    }
 }
 
 /** Whether every active condition can be served exactly by /api/media (ALL mode, positive ops). */
@@ -371,8 +401,8 @@ internal suspend fun countMatching(
     viewer: String? = null,
     pageSize: Int = 1,
 ): dev.jellystructure.model.MediaPage? {
-    val conditions = conds.filter { it.values.isNotEmpty() || it.facet == "track_title" }
-        .map { Condition(it.facet, it.op, it.values.toList()) }
+    val conditions = conds.filter { it.values.isNotEmpty() || it.facet == "track_title" || (it.facet == "content_row" && it.rows.isNotEmpty()) }
+        .map { Condition(it.facet, it.op, it.values.toList(), it.rows.toList()) }
     return MediaApi.list(
         kind = when (include) { "movies" -> MediaKind.MOVIE; "series" -> MediaKind.TV_SHOW; else -> null },
         pageSize = pageSize,
