@@ -66,11 +66,13 @@ finish-summary to the Activity page and is filterable there; the next scheduled 
   `MediaApi.runPipeline()` backs it. The Settings button is now **"▶ Run pipeline now"** (runs every
   enabled step) — distinct from "Scan library" / `POST /api/scan` (file discovery only).
 
-### 93d — One vocabulary *(planned)*
-- Canonical labels across Settings/Dashboard/Library/MediaDetail/Activity: **Scan library** (find files),
-  **Pull from TMDB** / **Re-pull from TMDB** (same engine), **Sync to Jellyfin** (our NFO → Jellyfin
-  re-reads), **Jellyfin: rescan its own library** (distinct), **Re-probe episode files** (was "Re-scan all
-  episodes"), **Refresh unchanged titles on a schedule** (was "Re-check…").
+### 93d — One vocabulary ✓
+- Applied: Dashboard "Jellyfin library scan" → **"Jellyfin: rescan its library"** (+ tooltip "does not change
+  Jellystructure data"; toast "Jellyfin rescan triggered"); MediaDetail "Re-scan all episodes" →
+  **"Re-probe episode files"** (both the button + empty-state); the scan_files pipeline option "Re-check
+  unchanged media…" / "Re-check" header → **"Refresh unchanged titles on a schedule"** / **"Refresh"**;
+  Settings episode-cap hint updated to the new button name. The "How scanning works" explainer (93e) ties
+  "Pull from TMDB" (pipeline) and "Re-pull from TMDB" (per-title) together as the same engine.
 
 ### 93e — Next-run indicator + explainer ✓
 - `GET /api/scan/status` returns `nextScheduledRun` (epoch), computed **fresh from the current config** via

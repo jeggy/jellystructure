@@ -906,7 +906,7 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
 
 private fun buildEpisodesTab(item: MediaItem): String {
     if (item.episodes.isEmpty()) {
-        return """<div class="card"><span class="muted tiny">No episode data available — run a scan to populate.</span> <button id="rescan-episodes-btn" class="btn sm ghost" style="margin-left:8px;">Re-scan all episodes ↻</button></div>"""
+        return """<div class="card"><span class="muted tiny">No episode data available — run a scan to populate.</span> <button id="rescan-episodes-btn" class="btn sm ghost" style="margin-left:8px;">Re-probe episode files ↻</button></div>"""
     }
 
     // Compute language voting across all episodes
@@ -1028,7 +1028,7 @@ private fun buildEpisodesTab(item: MediaItem): String {
           <div class="row center" style="margin-bottom:12px;">
             <span class="tiny muted">${item.episodes.size} episode(s) stored</span>
             <span class="spacer"></span>
-            <button id="rescan-episodes-btn" class="btn sm ghost" title="Re-probe every episode file on disk (uncapped)">Re-scan all episodes ↻</button>
+            <button id="rescan-episodes-btn" class="btn sm ghost" title="Re-probe every episode file on disk (uncapped)">Re-probe episode files ↻</button>
           </div>
           $seasonSummary
           <div class="row" style="align-items:flex-start;gap:16px;flex-wrap:wrap;">
