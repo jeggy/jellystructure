@@ -65,7 +65,7 @@ fun renderDashboard(container: Element, scope: CoroutineScope) {
                 <button id="qa-track-order" class="chip">Manage tracks</button>
                 <button id="qa-artwork" class="chip">Re-pull artwork</button>
                 <button id="qa-jf-push" class="chip">Sync NFOs to Jellyfin</button>
-                <button id="qa-jf-refresh" class="chip">Jellyfin library scan</button>
+                <button id="qa-jf-refresh" class="chip" title="Tell Jellyfin to rescan its own library (does not change Jellystructure data)">Jellyfin: rescan its library</button>
                 <button id="qa-activity" class="chip">View activity</button>
               </div>
               <div id="qa-feedback" style="margin-top:10px;min-height:20px"></div>
@@ -114,7 +114,7 @@ fun renderDashboard(container: Element, scope: CoroutineScope) {
             setQaFeedback("Sending library scan signal to Jellyfin…", "badge")
             val ok = MediaApi.jellyfinRefreshAll()
             setQaFeedback(
-                if (ok) "Jellyfin library scan triggered ✓" else "Failed — check Jellyfin connection in Settings",
+                if (ok) "Jellyfin rescan triggered ✓" else "Failed — check Jellyfin connection in Settings",
                 if (ok) "badge ok" else "badge bad"
             )
         }
