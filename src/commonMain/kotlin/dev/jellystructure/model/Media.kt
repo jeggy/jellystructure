@@ -89,6 +89,7 @@ data class MediaItem(
     val backdropPath: String? = null,
     val overview: String?,
     val genres: List<String> = emptyList(),
+    val tmdbGenres: List<String> = emptyList(),  // Phase 94: TMDB's raw genre baseline (written only by scan/sync). User provenance is derived: added = genres − tmdbGenres, removed = tmdbGenres − genres.
     val tags: List<String> = emptyList(),
     val director: String? = null,
     val studio: String? = null,
