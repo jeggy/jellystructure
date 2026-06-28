@@ -105,7 +105,7 @@ fun main() = runBlocking {
     activityLog.load()
     Logger.activityLog = activityLog
     val scanner = Scanner(configStore, tmdbClient, jellyfinClient, jsTagStore)
-    val artworkDownloader = ArtworkDownloader(tmdbClient)
+    val artworkDownloader = ArtworkDownloader(tmdbClient, dev.jellystructure.media.Screengrabber())
     val scanTracker = ScanTracker(db)
     scanTracker.load()
 

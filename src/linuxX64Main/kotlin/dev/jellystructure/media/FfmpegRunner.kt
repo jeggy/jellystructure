@@ -93,4 +93,12 @@ object FfmpegRunner {
             rc == 0
         }
     }
+
+    /** R131: extract a single JPEG frame at [atSeconds] into [output] (overwrites) — the screen-grabber's
+     *  core. `-ss` before `-i` is a fast input seek; `-q:v 3` ≈ JPEG quality 90. */
+    suspend fun extractFrame(input: String, output: String, atSeconds: Int): Boolean {
+        val inEsc = input.replace("'", "'\\''")
+        val outEsc = output.replace("'", "'\\''")
+        return runCommand("ffmpeg -y -ss $atSeconds -i '$inEsc' -frames:v 1 -q:v 3 '$outEsc' 2>&1")
+    }
 }
