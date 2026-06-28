@@ -199,6 +199,7 @@ private fun SeriesDetailLoaded(
 
     val playFR = remember { FocusRequester() }
     val synopsisFR = remember { FocusRequester() }   // R135
+    val seasonFirstFR = remember { FocusRequester() }   // R138
     val navBarFR = remember { FocusRequester() }
 
     val resumeEpIdx = episodes.indexOfFirst { it.id == resumeEpId }.takeIf { it >= 0 } ?: 0
@@ -320,13 +321,26 @@ private fun SeriesDetailLoaded(
                                     }
                                 }
                             }
-                            // R79/R135: UP from actions → the focusable synopsis if present, else the AppBar.
+                            // R79/R135/R138: UP → synopsis (or AppBar); DOWN → smoothly scroll the season
+                            // picker into view (composing the lazy item) and land on the selected season, so
+                            // native traversal can't skip the not-yet-composed picker and jump to episodes.
                             .onKeyEvent { ev ->
-                                if (ev.type == KeyEventType.KeyDown && ev.key == Key.DirectionUp) {
-                                    if (detail.synopsis != null) runCatching { synopsisFR.requestFocus() }
-                                    else navBarFR.requestFocus()
-                                    true
-                                } else false
+                                if (ev.type != KeyEventType.KeyDown) return@onKeyEvent false
+                                when (ev.key) {
+                                    Key.DirectionUp -> {
+                                        if (detail.synopsis != null) runCatching { synopsisFR.requestFocus() }
+                                        else navBarFR.requestFocus()
+                                        true
+                                    }
+                                    Key.DirectionDown -> if (detail.seasons.size > 1) {
+                                        scope.launch {
+                                            runCatching { listState.animateScrollToItem(1) }   // hero=0, seasons=1
+                                            runCatching { seasonFirstFR.requestFocus() }        // BIV reveals it below the AppBar
+                                        }
+                                        true
+                                    } else false
+                                    else -> false
+                                }
                             },
                         horizontalArrangement = Arrangement.spacedBy(12.dp),
                     ) {
@@ -370,6 +384,7 @@ private fun SeriesDetailLoaded(
                         seasons = detail.seasons,
                         selectedIndex = selectedSeasonIdx,
                         onSelect = { selectedSeasonIdx = it },
+                        firstFocusRequester = seasonFirstFR,   // R138
                     )
                     Spacer(Modifier.height(16.dp))
                 }
