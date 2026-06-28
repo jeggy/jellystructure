@@ -97,6 +97,15 @@ class ImageProxyService(
             if (bytes.isEmpty()) return@withPermit null
             val ct = response.contentType()?.toString() ?: "image/jpeg"
 
+            // R132: Jellyfin replies HTTP 200 with a JSON "does not have an image of type X" body when an
+            // image type is absent (e.g. before its poster.jpg is picked up). Never cache a non-image
+            // response — with no TTL it would be served forever as a broken image. Return null (the route
+            // 404s → the app shows its placeholder) so a later request re-fetches once the real image exists.
+            if (response.status.value !in 200..299 || !ct.startsWith("image/")) {
+                Logger.info("ImageProxy: $itemId/$type → ${response.status.value} $ct (no image) — not caching", "tv-image")
+                return@withPermit null
+            }
+
             atomicWrite(cachePath, bytes)
             atomicWrite(ctPath, ct.encodeToByteArray())
             recordWrite(cacheKey, bytes.size.toLong())   // R129: track size + evict if over cap
