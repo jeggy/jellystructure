@@ -393,7 +393,22 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                 ChannelScreen(
                     channel = dest.channel,
                     store = store,
+                    displayName = dest.displayName,
+                    discoverAvailable = discoverAvailable,
                     onBack = { pop() },
+                    onNavSelect = { idx ->   // R136: nav tabs on the channel page
+                        when (idx) {
+                            0 -> resetTo(Dest.Home(dest.displayName))
+                            1 -> push(Dest.Browse(BrowseKind.MOVIES, dest.displayName))
+                            2 -> push(Dest.Browse(BrowseKind.SERIES, dest.displayName))
+                            3 -> if (discoverAvailable) push(Dest.Discover(dest.displayName))
+                                 else push(Dest.Browse(BrowseKind.MY_LIST, dest.displayName))
+                            4 -> push(Dest.Browse(BrowseKind.MY_LIST, dest.displayName))
+                            else -> {}
+                        }
+                    },
+                    onProfile = { push(Dest.ProfilePicker) },
+                    onSearch = { push(Dest.Search(dest.displayName)) },
                     onItemSelect = { openDetail(it, dest.displayName) },
                 )
             }
