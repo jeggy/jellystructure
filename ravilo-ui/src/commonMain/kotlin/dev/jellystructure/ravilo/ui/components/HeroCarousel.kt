@@ -10,6 +10,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -39,6 +40,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -168,7 +170,24 @@ fun HeroCarousel(
                 onRight = { activeIndex = (activeIndex + 1) % items.size; resetTick++ },
                 onUp    = onUp,
                 onSelect = { onOpenDetail(active.item) },
-            ),
+            )
+            // R121: touch-swipe paging for the phone/web targets — drag left → next, right → previous
+            // (same cyclic step as the D-pad). Inert on TV (no pointer drag); horizontal-only so it
+            // doesn't fight the home list's vertical scroll.
+            .pointerInput(items.size) {
+                if (items.size <= 1) return@pointerInput
+                val threshold = 56.dp.toPx()
+                var dragTotal = 0f
+                detectHorizontalDragGestures(
+                    onDragStart = { dragTotal = 0f },
+                    onDragEnd = {
+                        when {
+                            dragTotal <= -threshold -> { activeIndex = (activeIndex + 1) % items.size; resetTick++ }
+                            dragTotal >=  threshold -> { activeIndex = (activeIndex - 1 + items.size) % items.size; resetTick++ }
+                        }
+                    },
+                ) { change, dragAmount -> dragTotal += dragAmount; change.consume() }
+            },
     ) {
         // Backdrop image, crossfades between slides. R87: a neutral surface paints under the backdrop
         // while it loads so the hero never flashes blank (Hero carries no brand color of its own).
