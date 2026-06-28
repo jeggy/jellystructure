@@ -94,7 +94,7 @@ fun main() = runBlocking {
     activityLog.load()
     Logger.activityLog = activityLog
     val scanner = Scanner(configStore, tmdbClient, jellyfinClient, jsTagStore)
-    val artworkDownloader = ArtworkDownloader()
+    val artworkDownloader = ArtworkDownloader(tmdbClient)
     val scanTracker = ScanTracker(db)
     scanTracker.load()
 
@@ -328,14 +328,10 @@ suspend fun executePipeline(
                 }
             }
             "download_artwork" -> {
+                // R125/R126: "missing" scope = anything fetch() can fill is absent — poster/fanart, plus
+                // episode stills + season posters for series.
                 val toProcess = if (step.scope == "all") workingSet
-                    else workingSet.filter { s ->
-                        val st = artworkDownloader.check(s)
-                        // R125: also pick up shows whose poster+fanart are present but episode stills aren't.
-                        !st.posterExists || !st.fanartExists ||
-                            (s.kind == dev.jellystructure.model.MediaKind.TV_SHOW &&
-                                s.episodes.any { !artworkDownloader.checkEpisodeStill(it).stillExists })
-                    }
+                    else workingSet.filter { artworkDownloader.isArtworkIncomplete(it) }
                 Logger.info("download_artwork: ${toProcess.size} items (scope=${step.scope})")
                 for (item in toProcess) {
                     val current = store.get(item.id) ?: item
