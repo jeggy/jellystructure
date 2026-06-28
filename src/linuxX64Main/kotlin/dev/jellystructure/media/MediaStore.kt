@@ -186,6 +186,7 @@ class MediaStore(private val db: JellystructureDb, private val jsTagStore: JsTag
             var items = allItems()
             if (kind != null) items = items.filter { it.kind == kind }
             if (filter == "missing_artwork") items = items.filter { it.posterPath.isNullOrBlank() }
+            if (filter == "no_tmdb") items = items.filter { it.tmdbId == null }   // titles with no TMDB match
             items
         }.let { items ->
             var result = items
