@@ -2,6 +2,8 @@ package dev.jellystructure.server.routes
 
 import dev.jellystructure.arr.ArrRescanService
 import dev.jellystructure.executePipeline
+import dev.jellystructure.nextRunDelayMs
+import dev.jellystructure.nowEpochSec
 import dev.jellystructure.runTagged
 import dev.jellystructure.auth.JellyfinClient
 import dev.jellystructure.auth.JellyfinItem
@@ -1493,7 +1495,11 @@ fun Route.mediaRoutes(
     }
 
     get("/scan/status") {
-        call.respond(scanTracker.status())
+        // 93e: compute the next scheduled run FRESH from the current config so the indicator updates
+        // the instant the admin saves a new schedule (no waiting for the scheduler loop to recompute).
+        val sched = configStore.current.scanSchedule
+        val next = if (sched.isNotBlank()) nextRunDelayMs(sched, nowEpochSec())?.let { nowEpochSec() + it / 1000L } else null
+        call.respond(scanTracker.status().copy(nextScheduledRun = next))
     }
 
     get("/stats") {

@@ -72,10 +72,15 @@ finish-summary to the Activity page and is filterable there; the next scheduled 
   re-reads), **Jellyfin: rescan its own library** (distinct), **Re-probe episode files** (was "Re-scan all
   episodes"), **Refresh unchanged titles on a schedule** (was "Re-check…").
 
-### 93e — Next-run indicator + explainer *(planned)*
-- Backend exposes the real `nextScheduledRun` (epoch); Settings + Dashboard show it ("next · today 11:00" /
-  "scheduling off"). A short "How scanning works" blurb states the three concepts + that the schedule is
-  wall-clock.
+### 93e — Next-run indicator + explainer ✓
+- `GET /api/scan/status` returns `nextScheduledRun` (epoch), computed **fresh from the current config** via
+  `nextRunDelayMs` (so it updates the instant the admin saves — no scheduler-loop lag). The Settings
+  `pipe-next` badge shows it ("next · <time>" / "scheduling off"); while editing it reads "save to apply"
+  rather than guessing. `refreshNextRun()` runs on load + after save. The Dashboard shows the same
+  "next run · <time>". A collapsible **"How scanning works"** explainer at the top of Settings → Scanning
+  states the three concepts (Scan / automation / per-title) and that the schedule fires at local wall-clock
+  time. (`ScanStatusResponse`/`ScanStatus` carry the field; the scheduler also publishes
+  `ScanTracker.nextScheduledRunSec`.)
 
 ### 93g — Run-tagged, filterable logging ✓
 - A `RunContext(runId, step)` coroutine element (mirrors `WorkerId`) is read in `Logger.emit`, so every
