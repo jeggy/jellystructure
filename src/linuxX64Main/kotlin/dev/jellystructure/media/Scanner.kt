@@ -118,35 +118,6 @@ class Scanner(
         return fresh.copy(tags = (fresh.tags + existing.tags).distinct())
     }
 
-    /** Sequential single-worker scan — used by FolderWatcher auto-scans. */
-    suspend fun scan(
-        tracker: ScanTracker? = null,
-        skipIds: Set<String> = emptySet(),
-        onItemReady: suspend (MediaItem) -> Unit,
-    ): Int {
-        val jellyfinItems = fetchItems() ?: return 0
-        Logger.info("Jellyfin returned ${jellyfinItems.size} items (${skipIds.size} will be skipped for resume)")
-        var count = 0
-        for (jItem in jellyfinItems) {
-            if (jItem.id in skipIds) {
-                Logger.info("Resume: skipping already-processed '${jItem.name}'")
-                continue
-            }
-            if (tracker?.cancelRequested == true) {
-                Logger.info("Scan cancelled after $count items")
-                break
-            }
-            val mediaItem = scanItem(jItem)
-            if (mediaItem != null) {
-                onItemReady(mediaItem)
-                count++
-                delay(100)
-            }
-        }
-        Logger.info("Scan complete — $count items processed")
-        return count
-    }
-
     private suspend fun scanMovie(jItem: JellyfinItem, localPath: String, fallback: String): MediaItem? {
         if (!SystemFileSystem.exists(Path(localPath))) {
             Logger.warn("Movie file not found on disk: $localPath")

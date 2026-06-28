@@ -96,13 +96,6 @@ fun renderSettings(container: Element, scope: CoroutineScope, query: Map<String,
                 <h3 style="font-size:1rem;margin:0">Scanning</h3>
                 <span id="tool-status-chip" style="font-size:.75rem;color:var(--ink-soft)"></span>
               </div>
-              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
-                <div>
-                  <span style="font-size:.9rem">Watch library folders for new files</span>
-                  <div class="hint" style="margin-top:2px">Polls every 30s; triggers a scan when stable new video files are detected</div>
-                </div>
-                <span id="watch-enabled-toggle" class="toggle" style="cursor:pointer;flex-shrink:0;margin-left:12px"></span>
-              </div>
               <div class="field">
                 <label>Scan workers</label>
                 <input id="scan-workers" class="input" type="number" min="1" max="32" style="width:90px">
@@ -402,7 +395,6 @@ private fun applyHealthFailures(failsBySection: Map<String, Int>) {
 
 private var overwriteNfo = false
 private var fetchImages = true
-private var watchEnabled = false
 private var tellJellyfin = true
 private var scanWorkers = 1
 private var scanThreads = 4
@@ -438,14 +430,12 @@ private fun populateForm(response: ConfigResponse) {
 
     overwriteNfo = config.behavior.overwriteNfo
     fetchImages = config.behavior.fetchImages
-    watchEnabled = config.behavior.watchEnabled
     tellJellyfin = config.behavior.tellJellyfin
     scanWorkers = config.behavior.scanWorkers
     scanThreads = config.behavior.scanThreads
     scanEpisodeCap = config.behavior.scanEpisodeCap
     updateToggle("overwrite-nfo-toggle", overwriteNfo)
     updateToggle("fetch-images-toggle", fetchImages)
-    updateToggle("watch-enabled-toggle", watchEnabled)
     updateToggle("tell-jellyfin-toggle", tellJellyfin)
     setInputValue("scan-workers", scanWorkers.toString())
     setInputValue("scan-threads", scanThreads.toString())
@@ -556,11 +546,6 @@ private fun attachListeners(scope: CoroutineScope) {
     document.getElementById("fetch-images-toggle")?.addEventListener("click") {
         fetchImages = !fetchImages
         updateToggle("fetch-images-toggle", fetchImages)
-        refreshTomlPreview(readForm())
-    }
-    document.getElementById("watch-enabled-toggle")?.addEventListener("click") {
-        watchEnabled = !watchEnabled
-        updateToggle("watch-enabled-toggle", watchEnabled)
         refreshTomlPreview(readForm())
     }
     document.getElementById("tell-jellyfin-toggle")?.addEventListener("click") {
@@ -924,7 +909,6 @@ private fun readForm(): AppConfig = AppConfig(
     behavior = Behavior(
         overwriteNfo = overwriteNfo,
         fetchImages = fetchImages,
-        watchEnabled = watchEnabled,
         tellJellyfin = tellJellyfin,
         scanWorkers = scanWorkers,
         scanThreads = scanThreads,
@@ -978,7 +962,6 @@ private fun buildToml(c: AppConfig): String = buildString {
     appendLine("[behavior]")
     appendLine("overwrite_nfo = ${c.behavior.overwriteNfo}")
     appendLine("fetch_images = ${c.behavior.fetchImages}")
-    appendLine("watch_enabled = ${c.behavior.watchEnabled}")
     appendLine("tell_jellyfin = ${c.behavior.tellJellyfin}")
     appendLine("scan_workers = ${c.behavior.scanWorkers}")
     appendLine("scan_threads = ${c.behavior.scanThreads}")

@@ -36,7 +36,6 @@ import dev.jellystructure.tv.PlaybackService
 import dev.jellystructure.tv.RaviloConfigService
 import dev.jellystructure.tv.RaviloDeviceService
 import dev.jellystructure.tmdb.TmdbClient
-import dev.jellystructure.watcher.FolderWatcher
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.staticCFunction
 import kotlinx.cinterop.toKString
@@ -101,25 +100,6 @@ fun main() = runBlocking {
     val effectiveScanThreads = configStore.current.behavior.scanThreads.coerceIn(1, 32)
     val scanDispatcher = Dispatchers.Default.limitedParallelism(effectiveScanThreads)
     scanTracker.targetWorkers.value = configStore.current.behavior.scanWorkers.coerceIn(1, 32)
-    val folderWatcher = FolderWatcher(configStore) {
-        if (!scanTracker.running) {
-            Logger.info("FolderWatcher: starting automatic scan")
-            val jobId = scanTracker.startNew()
-            try {
-                scanner.scan(tracker = scanTracker) { item ->
-                    mediaStore.addOrUpdate(item)
-                    item.jellyfinId?.let { scanTracker.recordProcessed(it) }
-                }
-                scanTracker.complete()
-                Logger.info("FolderWatcher: auto-scan complete jobId=$jobId")
-            } catch (e: Exception) {
-                Logger.error("FolderWatcher auto-scan failed: ${e.message}")
-                scanTracker.cancel()
-            }
-        } else {
-            Logger.info("FolderWatcher: scan already running — skipping auto-scan")
-        }
-    }
 
     signal(SIGTERM, staticCFunction(::onSignal))
     signal(SIGINT, staticCFunction(::onSignal))
@@ -150,7 +130,7 @@ fun main() = runBlocking {
     val chartIngest = ChartIngestService(configStore, chartRegistry, tmdbClient, chartStore, mediaStore)
     val shutdown = startServer(
         configStore, sessionService, raviloDeviceService, raviloConfigService, channelLogoStore, homeFeedService, browseService, detailService, playbackService, jellyfinClient, mediaStore, scanner,
-        artworkDownloader, tmdbClient, scanTracker, folderWatcher, mediaHistory, activityLog, broadcaster,
+        artworkDownloader, tmdbClient, scanTracker, mediaHistory, activityLog, broadcaster,
         frontendDir, raviloWebDir = raviloWebDir, port = port, scanDispatcher = scanDispatcher, effectiveScanThreads = effectiveScanThreads, jsTagStore = jsTagStore, seedingGuard = seedingGuard, logoDownloader = logoDownloader, qbClient = qbClient, arrClient = arrClient, arrRescan = arrRescan, acquisitionService = acquisitionService, chartRegistry = chartRegistry, chartStore = chartStore, chartIngest = chartIngest, tvEventBus = tvEventBus, imageProxyService = imageProxyService,
     )
 
