@@ -1,5 +1,6 @@
 package dev.jellystructure.ravilo.ui.screens
 
+import androidx.compose.foundation.lazy.LazyListState
 import dev.jellystructure.shared.tv.HomeFeed
 import dev.jellystructure.shared.tv.TvApiClient
 import kotlinx.coroutines.CoroutineScope
@@ -22,6 +23,9 @@ class HomeStore(private val apiClient: TvApiClient) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val _state = MutableStateFlow<HomeState>(HomeState.Loading)
     val state: StateFlow<HomeState> = _state.asStateFlow()
+    // R137: scroll state lives in the retained store (not remembered per-composition), so navigate→back
+    // restores the feed's scroll position instead of resetting to the top.
+    val listState = LazyListState()
     // R49 — server-decided Top 10 tab gating (Radarr/Sonarr + per-user opt-in + non-empty lists).
     private val _discoverAvailable = MutableStateFlow(false)
     val discoverAvailable: StateFlow<Boolean> = _discoverAvailable.asStateFlow()

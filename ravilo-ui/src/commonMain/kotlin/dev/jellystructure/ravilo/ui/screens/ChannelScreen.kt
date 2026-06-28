@@ -60,6 +60,7 @@ class ChannelStore(private val apiClient: TvApiClient) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val _state = MutableStateFlow<HomeState>(HomeState.Loading)
     val state: StateFlow<HomeState> = _state.asStateFlow()
+    val listState = LazyListState()   // R137: retained scroll position survives navigate→back
     private var loadJob: Job? = null
     private var currentId: String? = null
 
@@ -111,7 +112,7 @@ fun ChannelScreen(
     val density = LocalDensity.current
     val containerH = LocalWindowInfo.current.containerSize.height
 
-    val listState = rememberLazyListState()
+    val listState = store.listState   // R137
     val scope = rememberCoroutineScope()
     val channelBarFR = remember { FocusRequester() }
     val heroFR       = remember { FocusRequester() }
@@ -167,7 +168,10 @@ fun ChannelScreen(
                     else 460.dp
 
                     LaunchedEffect(hasHero) {
-                        runCatching { if (hasHero) heroFR.requestFocus() else channelBarFR.requestFocus() }
+                        // R137: Back to a scrolled channel (scroll retained in the store) → focus the bar (a
+                        // fixed overlay; doesn't disturb the scroll) instead of the off-screen hero.
+                        val wasScrolled = listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 0
+                        runCatching { if (hasHero && !wasScrolled) heroFR.requestFocus() else channelBarFR.requestFocus() }
                     }
 
                     @Suppress("OPT_IN_USAGE")
