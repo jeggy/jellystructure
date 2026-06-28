@@ -53,6 +53,7 @@ import dev.jellystructure.ravilo.ui.components.ButtonStyle
 import dev.jellystructure.ravilo.ui.components.CastCircle
 import dev.jellystructure.ravilo.ui.components.DetailLoadingShell
 import dev.jellystructure.ravilo.ui.components.EpisodeCard
+import dev.jellystructure.ravilo.ui.components.DetailSynopsis
 import dev.jellystructure.ravilo.ui.components.RaviloButton
 import dev.jellystructure.ravilo.ui.components.SeasonPicker
 import dev.jellystructure.ravilo.ui.components.Tile
@@ -197,6 +198,7 @@ private fun SeriesDetailLoaded(
     }
 
     val playFR = remember { FocusRequester() }
+    val synopsisFR = remember { FocusRequester() }   // R135
     val navBarFR = remember { FocusRequester() }
 
     val resumeEpIdx = episodes.indexOfFirst { it.id == resumeEpId }.takeIf { it >= 0 } ?: 0
@@ -273,13 +275,12 @@ private fun SeriesDetailLoaded(
                     )
                     detail.synopsis?.let {
                         Spacer(Modifier.height(10.dp))
-                        Text(
+                        DetailSynopsis(   // R135: focusable; SELECT expands the full text inline
                             text = it,
-                            color = colors.textSecondary,
-                            fontSize = 14.sp,
-                            lineHeight = 20.sp,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis,
+                            collapsedMaxLines = 2,
+                            focusRequester = synopsisFR,
+                            onUp = { navBarFR.requestFocus() },
+                            onDown = { runCatching { playFR.requestFocus() } },
                         )
                     }
                     // Resume kicker: derived from overlay; always reserves a line so synopsis doesn't shift
@@ -319,10 +320,12 @@ private fun SeriesDetailLoaded(
                                     }
                                 }
                             }
-                            // R79: UP from actions row → AppBar
+                            // R79/R135: UP from actions → the focusable synopsis if present, else the AppBar.
                             .onKeyEvent { ev ->
                                 if (ev.type == KeyEventType.KeyDown && ev.key == Key.DirectionUp) {
-                                    navBarFR.requestFocus(); true
+                                    if (detail.synopsis != null) runCatching { synopsisFR.requestFocus() }
+                                    else navBarFR.requestFocus()
+                                    true
                                 } else false
                             },
                         horizontalArrangement = Arrangement.spacedBy(12.dp),
