@@ -1447,7 +1447,8 @@ fun Route.mediaRoutes(
         }
         val libraryId = call.request.queryParameters["library"]?.takeIf { it.isNotBlank() }
         val jobId = scanTracker.startNew()
-        appScope.launch { runTagged(jobId, "scan", "▶ Library scan started") { runScan(jobId, emptySet(), store, scanner, scanTracker, broadcaster, configStore, jellyfinClient, scanDispatcher, libraryId) } }
+        val scanArtwork = if (configStore.current.behavior.fetchImages) artwork else null
+        appScope.launch { runTagged(jobId, "scan", "▶ Library scan started") { runScan(jobId, emptySet(), store, scanner, scanTracker, broadcaster, configStore, jellyfinClient, scanDispatcher, libraryId, artworkDownloader = scanArtwork) } }
         call.respond(HttpStatusCode.Accepted, mapOf("status" to "started", "library" to (libraryId ?: "all")))
     }
 
@@ -1465,7 +1466,7 @@ fun Route.mediaRoutes(
                 if (pipeline.isNotEmpty() && arrRescan != null) {
                     executePipeline(pipeline, jobId, store, scanner, scanTracker, broadcaster, configStore, jellyfinClient, scanDispatcher, artwork, arrRescan)
                 } else {
-                    runScan(jobId, emptySet(), store, scanner, scanTracker, broadcaster, configStore, jellyfinClient, scanDispatcher)
+                    runScan(jobId, emptySet(), store, scanner, scanTracker, broadcaster, configStore, jellyfinClient, scanDispatcher, artworkDownloader = if (configStore.current.behavior.fetchImages) artwork else null)
                 }
             }
         }
@@ -1480,7 +1481,8 @@ fun Route.mediaRoutes(
         }
         val skipIds = scanTracker.processedIdsSnapshot
         val jobId = scanTracker.startResume()
-        appScope.launch { runTagged(jobId, "scan", "▶ Library scan resumed") { runScan(jobId, skipIds, store, scanner, scanTracker, broadcaster, configStore, jellyfinClient, scanDispatcher) } }
+        val scanArtwork = if (configStore.current.behavior.fetchImages) artwork else null
+        appScope.launch { runTagged(jobId, "scan", "▶ Library scan resumed") { runScan(jobId, skipIds, store, scanner, scanTracker, broadcaster, configStore, jellyfinClient, scanDispatcher, artworkDownloader = scanArtwork) } }
         Logger.info("Scan resumed jobId=$jobId, skipping ${skipIds.size} already-processed items")
         call.respond(HttpStatusCode.Accepted, mapOf("status" to "resumed"))
     }
@@ -1649,6 +1651,10 @@ internal suspend fun runScan(
     scanDispatcher: CoroutineDispatcher,
     libraryJellyfinId: String? = null,
     freshnessFilter: ((dev.jellystructure.auth.JellyfinItem) -> Boolean)? = null,
+    // Phase 93: when set (manual "Scan library" / legacy scheduled scan), download any missing artwork
+    // for each scanned item right after it's stored. Left null for the pipeline's scan_files step, which
+    // has its own download_artwork step.
+    artworkDownloader: ArtworkDownloader? = null,
 ): List<MediaItem> {
     val allItems = mutableListOf<MediaItem>()
     val allItemsMutex = Mutex()
@@ -1709,6 +1715,14 @@ internal suspend fun runScan(
                                 jItem.id?.let { scanTracker.recordProcessed(it) }
                                 broadcaster.broadcast(JobEvent.ItemScanned(jobId, item))
                                 succeeded.incrementAndGet()
+                                // Phase 93: download any missing artwork for this item (poster/fanart, plus
+                                // stills + season posters for series). Gated by fetch_images via the caller
+                                // passing a non-null downloader; gap-fill only, bounded by the downloader's gate.
+                                if (artworkDownloader != null && artworkDownloader.isArtworkIncomplete(item)) {
+                                    val cur = store.get(item.id) ?: item
+                                    runCatching { artworkDownloader.fetch(cur) }
+                                        .onFailure { Logger.warn("scan artwork fetch failed for '${item.id}': ${it.message}", "artwork") }
+                                }
                             }
                             // Scale-down drain: exit if we are excess
                             if (scanTracker.activeWorkers.value > scanTracker.targetWorkers.value) {

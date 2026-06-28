@@ -100,7 +100,7 @@ fun renderSettings(container: Element, scope: CoroutineScope, query: Map<String,
                 <summary style="cursor:pointer;color:var(--ink-soft)">How scanning works</summary>
                 <div class="hint" style="margin-top:8px;line-height:1.5">
                   Three things keep your library current:<br>
-                  &bull; <b>Scan library</b> — finds new &amp; changed files from Jellyfin and adds/updates titles. Fast; metadata only.<br>
+                  &bull; <b>Scan library</b> — finds new &amp; changed files from Jellyfin, adds/updates titles, and (if &ldquo;Download missing artwork during a scan&rdquo; is on) pulls any missing posters/fanart from TMDB.<br>
                   &bull; <b>The automation (pipeline below)</b> — starts with a scan, then runs the steps you enable (pull TMDB, download artwork, write NFOs, sync Jellyfin&hellip;). Runs on the <b>schedule</b> (at the local time shown) and on demand via <b>Run pipeline now</b>.<br>
                   &bull; <b>Per-title actions</b> — on a movie/series page: <b>Re-pull from TMDB</b>, <b>Sync to Jellyfin</b>. Same engines, one title.<br>
                   Every run is logged and filterable on the <a href="#/activity">Activity</a> page by run.
@@ -159,10 +159,11 @@ fun renderSettings(container: Element, scope: CoroutineScope, query: Map<String,
                 <span style="font-size:.9rem">Overwrite existing NFO fields</span>
                 <span id="overwrite-nfo-toggle" class="toggle" style="cursor:pointer"></span>
               </div>
-              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
-                <span style="font-size:.9rem">Fetch artwork automatically</span>
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:2px">
+                <span style="font-size:.9rem">Download missing artwork during a scan</span>
                 <span id="fetch-images-toggle" class="toggle" style="cursor:pointer"></span>
               </div>
+              <div class="hint" style="margin-bottom:8px">Each scanned title also gets its poster/fanart (and series stills + season posters) pulled from TMDB if not already on disk.</div>
               <div style="display:flex;align-items:center;justify-content:space-between">
                 <div>
                   <span style="font-size:.9rem">Auto-tell Jellyfin to refresh</span>

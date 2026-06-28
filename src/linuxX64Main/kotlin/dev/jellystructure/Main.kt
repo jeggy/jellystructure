@@ -184,7 +184,7 @@ fun main() = runBlocking {
                 if (active != null) {
                     executePipeline(active, jobId, mediaStore, scanner, scanTracker, broadcaster, configStore, jellyfinClient, scanDispatcher, artworkDownloader, arrRescan)
                 } else {
-                    runScan(jobId, emptySet(), mediaStore, scanner, scanTracker, broadcaster, configStore, jellyfinClient, scanDispatcher)
+                    runScan(jobId, emptySet(), mediaStore, scanner, scanTracker, broadcaster, configStore, jellyfinClient, scanDispatcher, artworkDownloader = if (cfg.behavior.fetchImages) artworkDownloader else null)
                 }
             }
         }
