@@ -146,6 +146,9 @@ class MediaStore(private val db: JellystructureDb, private val jsTagStore: JsTag
                 if (old != null && item.episodes.size <= old.episodes.size) {
                     merged = merged.copy(scannedAt = old.scannedAt)
                 }
+                // addedAt is authoritative from Jellyfin (DateCreated) each scan; keep the old value
+                // only when this scan didn't return one (e.g. Jellyfin omitted the field).
+                if (merged.addedAt == null && old?.addedAt != null) merged = merged.copy(addedAt = old.addedAt)
                 upsertItem(merged)
             }
         }
@@ -224,7 +227,9 @@ class MediaStore(private val db: JellystructureDb, private val jsTagStore: JsTag
         val sorted = when (sort) {
             "title" -> decoded.sortedBy { it.title.lowercase() }
             "year" -> decoded.sortedByDescending { it.year ?: 0 }
-            else -> decoded.sortedByDescending { it.scannedAt }
+            // "recently added" (default): the real Jellyfin date-added, falling back to scan time for
+            // items not yet re-scanned. scannedAt alone sorts by scan order, not add order.
+            else -> decoded.sortedByDescending { it.addedAt ?: it.scannedAt }
         }
 
         val total = sorted.size
@@ -271,7 +276,7 @@ class MediaStore(private val db: JellystructureDb, private val jsTagStore: JsTag
             val bucket = index[g] ?: continue
             for (item in bucket) if (item.id != source.id && item.id !in byId) byId[item.id] = item
         }
-        return byId.values.sortedByDescending { it.scannedAt }.take(limit)
+        return byId.values.sortedByDescending { it.addedAt ?: it.scannedAt }.take(limit)
     }
 
     private fun buildGenreIndex(): Map<String, List<MediaItem>> {

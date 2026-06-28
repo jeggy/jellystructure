@@ -68,7 +68,7 @@ class BrowseService(
         val sorted = when (sort) {
             "title" -> filtered.sortedBy { it.title.lowercase() }
             "year"  -> filtered.sortedByDescending { it.year ?: 0 }
-            else    -> filtered.sortedByDescending { it.scannedAt }
+            else    -> filtered.sortedByDescending { it.addedAt ?: it.scannedAt }
         }
 
         val cards = (if (pageSize == null) sorted
@@ -84,7 +84,7 @@ class BrowseService(
 
         if (query.isBlank()) {
             val suggestions = all
-                .sortedByDescending { it.scannedAt }
+                .sortedByDescending { it.addedAt ?: it.scannedAt }
                 .take(SEARCH_SUGGESTION_LIMIT)
                 .map { it.toMediaCard() }
             return SearchResults(query = "", items = suggestions)
@@ -95,7 +95,7 @@ class BrowseService(
             item.title.lowercase().contains(q) ||
             item.originalTitle?.lowercase()?.contains(q) == true ||
             item.titlesByLang.values.any { it.lowercase().contains(q) }
-        }.sortedByDescending { it.scannedAt }
+        }.sortedByDescending { it.addedAt ?: it.scannedAt }
             .take(100)
             .map { it.toMediaCard() }
 

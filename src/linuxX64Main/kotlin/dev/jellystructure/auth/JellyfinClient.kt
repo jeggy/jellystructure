@@ -93,7 +93,7 @@ class JellyfinClient {
 
     suspend fun getItems(baseUrl: String, token: String): List<JellyfinItem> = runCatching {
         val url = baseUrl.trimEnd('/') +
-            "/Items?IncludeItemTypes=Movie,Series&Recursive=true&Fields=Path,ProviderIds,ProductionYear,LockData,LockedFields,Tags"
+            "/Items?IncludeItemTypes=Movie,Series&Recursive=true&Fields=Path,ProviderIds,ProductionYear,LockData,LockedFields,Tags,DateCreated"
         http.get(url) { jellyfinAuth(token) }
             .bodyOrNull<JellyfinItemsResponse>("getItems")?.items.orEmpty()
             .filter { it.type == "Movie" || it.type == "Series" }
@@ -104,7 +104,7 @@ class JellyfinClient {
 
     suspend fun getItemsByParent(baseUrl: String, token: String, parentId: String): List<JellyfinItem> = runCatching {
         val url = baseUrl.trimEnd('/') +
-            "/Items?ParentId=$parentId&IncludeItemTypes=Movie,Series&Recursive=true&Fields=Path,ProviderIds,ProductionYear,LockData,LockedFields,Tags"
+            "/Items?ParentId=$parentId&IncludeItemTypes=Movie,Series&Recursive=true&Fields=Path,ProviderIds,ProductionYear,LockData,LockedFields,Tags,DateCreated"
         http.get(url) { jellyfinAuth(token) }
             .bodyOrNull<JellyfinItemsResponse>("getItemsByParent")?.items.orEmpty()
             .filter { it.type == "Movie" || it.type == "Series" }
@@ -119,7 +119,7 @@ class JellyfinClient {
         // versions (it expects `/Users/{userId}/Items/{id}`); the `Ids=` filter on the list endpoint
         // is accepted with the same token + Fields (incl. LockData/LockedFields for Phase 22).
         val url = baseUrl.trimEnd('/') +
-            "/Items?Ids=$jellyfinId&Recursive=true&Fields=Path,ProviderIds,ProductionYear,LockData,LockedFields,Tags"
+            "/Items?Ids=$jellyfinId&Recursive=true&Fields=Path,ProviderIds,ProductionYear,LockData,LockedFields,Tags,DateCreated"
         http.get(url) { jellyfinAuth(token) }
             .bodyOrNull<JellyfinItemsResponse>("getItem")?.items?.firstOrNull()
     }.let { result ->
