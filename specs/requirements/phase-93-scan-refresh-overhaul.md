@@ -77,11 +77,19 @@ finish-summary to the Activity page and is filterable there; the next scheduled 
   "scheduling off"). A short "How scanning works" blurb states the three concepts + that the schedule is
   wall-clock.
 
-### 93g — Run-tagged, filterable logging *(planned)*
-- Every run is tagged with a run id (+ trigger: scheduled / manual / pipeline / item). All log lines during
-  the run carry it (via a `RunContext` coroutine element, mirroring `WorkerId`). The run logs start →
-  per-step (with counts) → finish-summary. The Activity page gains a **run picker** to scope the log to one
-  run; `GET /api/activity?run=<id>` and `GET /api/activity/runs` back it.
+### 93g — Run-tagged, filterable logging ✓
+- A `RunContext(runId, step)` coroutine element (mirrors `WorkerId`) is read in `Logger.emit`, so every
+  log line emitted during a run — including scan-worker lines (structured `coroutineScope`/`launch`
+  propagate it) — is tagged with the run id + step, with **no per-call-site change**. A `runTagged(jobId,
+  trigger, startMsg)` helper wraps each run (scheduler, `/scan`, `/scan/resume`, `/pipeline/run`): it opens
+  the run in the runs index, logs `▶ … started` → (per-step, via `executePipeline`'s per-step `RunContext`)
+  → `✓ Run finished`, and survives non-cancellation failures. `ActivityEntry` gains `runId`/`step`;
+  `JobEvent.LogLine` gains `runId` (so live WS lines tag too). `ActivityLog` keeps a bounded **runs index**
+  (`RunRecord`, persisted to `<log>.runs`) with `startRun`/`finishRun`/`runSummaries` (events+errors per run
+  derived from retained entries). `GET /api/activity/log?run=<id>` scopes server-side; `GET
+  /api/activity/runs` lists runs. The Activity page gains a **run picker** (`#run-filter`) — selecting a run
+  reloads the log scoped to it (combined with the category/errors filters), and live lines from other runs
+  are hidden; the picker refreshes when a run finishes.
 
 ## Out of scope
 

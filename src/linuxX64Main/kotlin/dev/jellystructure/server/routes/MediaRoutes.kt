@@ -2,6 +2,7 @@ package dev.jellystructure.server.routes
 
 import dev.jellystructure.arr.ArrRescanService
 import dev.jellystructure.executePipeline
+import dev.jellystructure.runTagged
 import dev.jellystructure.auth.JellyfinClient
 import dev.jellystructure.auth.JellyfinItem
 import dev.jellystructure.config.ConfigStore
@@ -1444,7 +1445,7 @@ fun Route.mediaRoutes(
         }
         val libraryId = call.request.queryParameters["library"]?.takeIf { it.isNotBlank() }
         val jobId = scanTracker.startNew()
-        appScope.launch { runScan(jobId, emptySet(), store, scanner, scanTracker, broadcaster, configStore, jellyfinClient, scanDispatcher, libraryId) }
+        appScope.launch { runTagged(jobId, "scan", "▶ Library scan started") { runScan(jobId, emptySet(), store, scanner, scanTracker, broadcaster, configStore, jellyfinClient, scanDispatcher, libraryId) } }
         call.respond(HttpStatusCode.Accepted, mapOf("status" to "started", "library" to (libraryId ?: "all")))
     }
 
@@ -1458,10 +1459,12 @@ fun Route.mediaRoutes(
         val pipeline = configStore.current.scan.pipeline.filter { it.enabled }
         val jobId = scanTracker.startNew()
         appScope.launch {
-            if (pipeline.isNotEmpty() && arrRescan != null) {
-                executePipeline(pipeline, jobId, store, scanner, scanTracker, broadcaster, configStore, jellyfinClient, scanDispatcher, artwork, arrRescan)
-            } else {
-                runScan(jobId, emptySet(), store, scanner, scanTracker, broadcaster, configStore, jellyfinClient, scanDispatcher)
+            runTagged(jobId, "manual", "▶ Pipeline run started (manual)") {
+                if (pipeline.isNotEmpty() && arrRescan != null) {
+                    executePipeline(pipeline, jobId, store, scanner, scanTracker, broadcaster, configStore, jellyfinClient, scanDispatcher, artwork, arrRescan)
+                } else {
+                    runScan(jobId, emptySet(), store, scanner, scanTracker, broadcaster, configStore, jellyfinClient, scanDispatcher)
+                }
             }
         }
         call.respond(HttpStatusCode.Accepted, mapOf("status" to "started", "steps" to pipeline.size))
@@ -1475,7 +1478,7 @@ fun Route.mediaRoutes(
         }
         val skipIds = scanTracker.processedIdsSnapshot
         val jobId = scanTracker.startResume()
-        appScope.launch { runScan(jobId, skipIds, store, scanner, scanTracker, broadcaster, configStore, jellyfinClient, scanDispatcher) }
+        appScope.launch { runTagged(jobId, "scan", "▶ Library scan resumed") { runScan(jobId, skipIds, store, scanner, scanTracker, broadcaster, configStore, jellyfinClient, scanDispatcher) } }
         Logger.info("Scan resumed jobId=$jobId, skipping ${skipIds.size} already-processed items")
         call.respond(HttpStatusCode.Accepted, mapOf("status" to "resumed"))
     }

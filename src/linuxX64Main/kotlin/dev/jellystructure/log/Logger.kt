@@ -10,6 +10,12 @@ class WorkerId(val id: Int) : AbstractCoroutineContextElement(WorkerId) {
     companion object Key : CoroutineContext.Key<WorkerId>
 }
 
+/** 93g: carries the current run's id (and optional pipeline step) on the coroutine context so every
+ *  log line emitted during a scan/pipeline run is tagged — and therefore filterable in Activity by run. */
+class RunContext(val runId: String, val step: String? = null) : AbstractCoroutineContextElement(RunContext) {
+    companion object Key : CoroutineContext.Key<RunContext>
+}
+
 /**
  * Single logging entry point for the entire backend.
  *
@@ -26,15 +32,23 @@ object Logger {
     var activityLog: ActivityLog? = null
 
     suspend fun info(msg: String, category: String = "system", mediaId: String? = null) =
-        emit("INFO", currentCoroutineContext()[WorkerId]?.id, category, msg, mediaId)
+        emit("INFO", category, msg, mediaId)
     suspend fun warn(msg: String, category: String = "system", mediaId: String? = null) =
-        emit("WARN", currentCoroutineContext()[WorkerId]?.id, category, msg, mediaId)
+        emit("WARN", category, msg, mediaId)
     suspend fun error(msg: String, category: String = "system", mediaId: String? = null) =
-        emit("ERROR", currentCoroutineContext()[WorkerId]?.id, category, msg, mediaId)
+        emit("ERROR", category, msg, mediaId)
 
-    private suspend fun emit(level: String, workerId: Int?, category: String, msg: String, mediaId: String?) {
+    /** 93g: open a run in the runs index (for the Activity run picker). [trigger] = scheduled/manual/scan. */
+    suspend fun startRun(runId: String, trigger: String) = activityLog?.startRun(runId, trigger)
+    /** 93g: mark a run finished in the runs index. */
+    suspend fun finishRun(runId: String) = activityLog?.finishRun(runId)
+
+    private suspend fun emit(level: String, category: String, msg: String, mediaId: String?) {
+        val ctx = currentCoroutineContext()
+        val workerId = ctx[WorkerId]?.id
+        val run = ctx[RunContext]
         val prefix = if (workerId != null) "[W#$workerId] " else ""
         println("[$level] $prefix$msg")
-        activityLog?.log(level, category, "$prefix$msg", mediaId)
+        activityLog?.log(level, category, "$prefix$msg", mediaId, run?.runId, run?.step)
     }
 }
