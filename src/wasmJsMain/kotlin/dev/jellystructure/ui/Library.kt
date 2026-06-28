@@ -139,6 +139,7 @@ fun renderLibrary(container: Element, scope: CoroutineScope, query: Map<String, 
           <button id="f-all" class="chip">All</button>
           <button id="f-attention" class="chip">Needs attention</button>
           <button id="f-artwork" class="chip">Missing artwork</button>
+          <button id="f-notmdb" class="chip">Missing TMDB</button>
           <div style="position:relative">
             <button id="meta-studio-btn" class="chip">Studio ▾</button>
             <div id="meta-studio-panel" style="display:none;position:absolute;top:calc(100% + 6px);left:0;z-index:200;min-width:240px;background:var(--fill);border:1px solid var(--line-2);border-radius:var(--radius-s);box-shadow:var(--shadow);padding:12px">
@@ -241,8 +242,8 @@ fun renderLibrary(container: Element, scope: CoroutineScope, query: Map<String, 
 
 // Syncs all UI widgets (chips, buttons, inputs) to the current lib* state vars.
 private fun syncFilterUiToState(scope: CoroutineScope) {
-    val filterActive = when (libFilter) { "attention" -> "f-attention"; "missing_artwork" -> "f-artwork"; else -> "f-all" }
-    listOf("f-all", "f-attention", "f-artwork").forEach { id ->
+    val filterActive = when (libFilter) { "attention" -> "f-attention"; "missing_artwork" -> "f-artwork"; "no_tmdb" -> "f-notmdb"; else -> "f-all" }
+    listOf("f-all", "f-attention", "f-artwork", "f-notmdb").forEach { id ->
         (document.getElementById(id) as? HTMLElement)?.className =
             if (id == filterActive) "chip active-chip" else "chip"
     }
@@ -282,10 +283,11 @@ private fun attachLibraryListeners(scope: CoroutineScope) {
         "f-all"       to { libFilter = null },
         "f-attention" to { libFilter = "attention" },
         "f-artwork"   to { libFilter = "missing_artwork" },
+        "f-notmdb"    to { libFilter = "no_tmdb" },
     ).forEach { (id, setter) ->
         document.getElementById(id)?.addEventListener("click") {
             setter()
-            listOf("f-all", "f-attention", "f-artwork").forEach { chipId ->
+            listOf("f-all", "f-attention", "f-artwork", "f-notmdb").forEach { chipId ->
                 (document.getElementById(chipId) as? HTMLElement)?.className =
                     if (chipId == id) "chip active-chip" else "chip"
             }
