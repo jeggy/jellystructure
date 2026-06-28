@@ -210,7 +210,7 @@ class ArtworkDownloader(private val tmdbClient: TmdbClient, private val screengr
         }
     }
 
-    private fun episodeStillPath(episode: Episode): String {
+    fun episodeStillPath(episode: Episode): String {  // R133: public so RaviloArtworkService can resolve stills
         val dir = episode.path.substringBeforeLast('/')
         val baseName = episode.filename.substringBeforeLast('.')
         return "$dir/$baseName-thumb.jpg"

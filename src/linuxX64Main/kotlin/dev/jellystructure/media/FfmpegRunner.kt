@@ -101,4 +101,16 @@ object FfmpegRunner {
         val outEsc = output.replace("'", "'\\''")
         return runCommand("ffmpeg -y -ss $atSeconds -i '$inEsc' -frames:v 1 -q:v 3 '$outEsc' 2>&1")
     }
+
+    /** R133: resize [input] into [output] for the Ravilo artwork service. Pass [width] OR [height] (the
+     *  other side scales to preserve aspect; -2 keeps it even, required by some encoders). PNG output
+     *  (logos) preserves alpha; JPEG gets `-q:v 3`. */
+    suspend fun resizeImage(input: String, output: String, width: Int? = null, height: Int? = null): Boolean {
+        val inEsc = input.replace("'", "'\\''")
+        val outEsc = output.replace("'", "'\\''")
+        val w = width?.takeIf { it > 0 } ?: -2
+        val h = height?.takeIf { it > 0 } ?: -2
+        val q = if (output.endsWith(".png")) "" else "-q:v 3 "
+        return runCommand("ffmpeg -y -i '$inEsc' -vf scale=$w:$h -frames:v 1 $q'$outEsc' 2>&1")
+    }
 }

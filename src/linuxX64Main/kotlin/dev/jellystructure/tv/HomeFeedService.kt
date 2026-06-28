@@ -112,12 +112,12 @@ class HomeFeedService(
         // Auto mode: pick the most-recently-scanned items with no dressing.
         if (config.heroes.isEmpty()) {
             return all.sortedByDescending { it.addedAt ?: it.scannedAt }.take(HERO_AUTO_COUNT).mapNotNull { item ->
-                val jellyfinId = item.jellyfinId ?: return@mapNotNull null
+                item.jellyfinId ?: return@mapNotNull null   // hero must be navigable (detail opens by jellyfinId)
                 Hero(
                     item = item.toMediaCard(),
                     taglineKicker = null,
-                    backdropUrl = JellyfinImageUrl.heroBackdrop(jellyfinId),
-                    logoUrl = JellyfinImageUrl.logo(jellyfinId),
+                    backdropUrl = RaviloImageUrl.heroBackdrop(item.id),
+                    logoUrl = RaviloImageUrl.logo(item.id),
                     badge = null,
                     synopsis = item.overview,
                 )
@@ -130,12 +130,12 @@ class HomeFeedService(
             .mapNotNull { hc ->
                 val item = all.firstOrNull { it.jellyfinId == hc.itemId } ?: all.firstOrNull { it.id == hc.itemId }
                     ?: return@mapNotNull null
-                val jellyfinId = item.jellyfinId ?: return@mapNotNull null
+                item.jellyfinId ?: return@mapNotNull null   // hero must be navigable (detail opens by jellyfinId)
                 Hero(
                     item = item.toMediaCard(),
                     taglineKicker = hc.tagline,
-                    backdropUrl = JellyfinImageUrl.heroBackdrop(jellyfinId),
-                    logoUrl = if (hc.clearlogoOverlay) JellyfinImageUrl.logo(jellyfinId) else null,
+                    backdropUrl = RaviloImageUrl.heroBackdrop(item.id),
+                    logoUrl = if (hc.clearlogoOverlay) RaviloImageUrl.logo(item.id) else null,
                     badge = hc.badge,
                     synopsis = item.overview,
                 )
@@ -149,12 +149,12 @@ class HomeFeedService(
             .mapNotNull { hc ->
                 val item = all.firstOrNull { it.jellyfinId == hc.itemId } ?: all.firstOrNull { it.id == hc.itemId }
                     ?: return@mapNotNull null
-                val jellyfinId = item.jellyfinId ?: return@mapNotNull null
+                item.jellyfinId ?: return@mapNotNull null   // hero must be navigable (detail opens by jellyfinId)
                 Hero(
                     item = item.toMediaCard(),
                     taglineKicker = hc.tagline,
-                    backdropUrl = JellyfinImageUrl.heroBackdrop(jellyfinId),
-                    logoUrl = if (hc.clearlogoOverlay) JellyfinImageUrl.logo(jellyfinId) else null,
+                    backdropUrl = RaviloImageUrl.heroBackdrop(item.id),
+                    logoUrl = if (hc.clearlogoOverlay) RaviloImageUrl.logo(item.id) else null,
                     badge = hc.badge,
                     synopsis = item.overview,
                 )
@@ -356,8 +356,8 @@ class HomeFeedService(
             year = year,
             genre = genres.firstOrNull(),
             rating = null,
-            posterUrl = if (jId != null) JellyfinImageUrl.poster(jId) else null,
-            backdropUrl = if (jId != null) JellyfinImageUrl.backdrop(jId) else null,
+            posterUrl = RaviloImageUrl.poster(id),     // R133: keyed by MediaItem.id (on-disk artwork)
+            backdropUrl = RaviloImageUrl.backdrop(id),
             progressPct = progressPct,
             nextUpLabel = nextUpLabel,
             seasonNumber = seasonNumber,
