@@ -30,12 +30,14 @@ import dev.jellystructure.ravilo.ui.theme.RaviloMotion
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
 import dev.jellystructure.ravilo.ui.theme.Sora
 import dev.jellystructure.shared.tv.Season
+import androidx.compose.ui.focus.FocusRequester
 
 @Composable
 fun SeasonPicker(
     seasons: List<Season>,
     selectedIndex: Int,
     onSelect: (Int) -> Unit,
+    firstFocusRequester: FocusRequester? = null,   // R138: lets the hero hand DOWN-focus straight to the selected season
     modifier: Modifier = Modifier,
 ) {
     val colors = RaviloTheme.colors
@@ -60,6 +62,7 @@ fun SeasonPicker(
             // layer so the season picker never chases the focus animation → no viewport jump (R42/R43).
             Box(
                 modifier = Modifier.dpadFocusable(
+                    focusRequester = if (i == selectedIndex) firstFocusRequester else null,
                     onFocused = { focused = true },
                     onBlurred = { focused = false },
                     onSelect = { onSelect(i) },
