@@ -4,6 +4,7 @@ import dev.jellystructure.log.Logger
 import dev.jellystructure.model.Episode
 import dev.jellystructure.model.MediaItem
 import dev.jellystructure.model.MediaKind
+import dev.jellystructure.tmdb.TmdbClient
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.curl.Curl
 import io.ktor.client.plugins.HttpTimeout
@@ -42,7 +43,7 @@ fun posterArtworkExists(item: MediaItem): Boolean {
     return SystemFileSystem.exists(Path("$dir/poster.jpg"))
 }
 
-class ArtworkDownloader {
+class ArtworkDownloader(private val tmdbClient: TmdbClient) {
     private val downloadGate = Semaphore(8)
     private val http = HttpClient(Curl) {
         install(HttpTimeout) {
@@ -96,9 +97,30 @@ class ArtworkDownloader {
             if (item.episodes.isNotEmpty()) coroutineScope {
                 item.episodes.forEach { ep -> launch { runCatching { fetchEpisodeStill(ep) } } }
             }
+            // R126: season posters — for each season we actually have on disk, download a missing one.
+            // Unlike poster/fanart/stills the chosen season poster isn't stored, so pull the season's
+            // TMDB images and pick the best (resolved-language, then highest-voted).
+            val tid = item.tmdbId
+            if (tid != null) for (season in item.episodes.mapNotNull { it.seasonNumber }.distinct()) {
+                if (checkSeasonPoster(item, season)) continue
+                val posters = runCatching { tmdbClient.getSeasonImages(tid, season)?.posters }.getOrNull().orEmpty()
+                val pick = posters.filter { it.languageCode == item.resolvedLanguage }.ifEmpty { posters }
+                    .maxByOrNull { it.voteAverage }
+                if (pick != null) runCatching { saveSeasonPoster(item, season, pick.filePath) }
+            }
         }
 
         return ArtworkStatus(posterExists = posterOk, fanartExists = fanartOk, logoExists = logoExists)
+    }
+
+    /** R126: true if any artwork the "Download artwork" step can fetch is missing on disk — poster/fanart
+     *  for everything, plus episode stills + season posters for series. Drives the pipeline "missing" scope. */
+    fun isArtworkIncomplete(item: MediaItem): Boolean {
+        val st = check(item)
+        if (!st.posterExists || !st.fanartExists) return true
+        if (item.kind != MediaKind.TV_SHOW) return false
+        if (item.episodes.any { !checkEpisodeStill(it).stillExists }) return true
+        return item.episodes.mapNotNull { it.seasonNumber }.distinct().any { !checkSeasonPoster(item, it) }
     }
 
     private suspend fun deleteIfExists(path: String) {
