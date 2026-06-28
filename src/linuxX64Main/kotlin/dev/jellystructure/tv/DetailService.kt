@@ -48,6 +48,7 @@ class DetailService(
             playback           = null,  // R83: hydrated by /api/tv/playstate (R84 overlays it)
             audioLanguages     = movieAudioLangs,
             subtitleLanguages  = movieSubLangs,
+            logoUrl            = item.jellyfinId?.let { JellyfinImageUrl.logo(it) },  // R130
         )
     }
 
@@ -97,6 +98,7 @@ class DetailService(
             progress          = null,  // R83: hydrated by /api/tv/playstate (R84 overlays it)
             audioLanguages    = seriesAudioLangs,
             subtitleLanguages = seriesSubLangs,
+            logoUrl           = item.jellyfinId?.let { JellyfinImageUrl.logo(it) },  // R130
         )
     }
 

@@ -56,6 +56,7 @@ import dev.jellystructure.ravilo.ui.components.EpisodeCard
 import dev.jellystructure.ravilo.ui.components.RaviloButton
 import dev.jellystructure.ravilo.ui.components.SeasonPicker
 import dev.jellystructure.ravilo.ui.components.Tile
+import dev.jellystructure.ravilo.ui.components.TitleLogoOrText
 import dev.jellystructure.ravilo.ui.focus.rememberEdgeBringIntoViewSpec
 import dev.jellystructure.ravilo.ui.i18n.str
 import dev.jellystructure.ravilo.ui.seams.RemoteImage
@@ -240,16 +241,11 @@ private fun SeriesDetailLoaded(
                         .fillMaxWidth(0.6f)
                         .padding(start = RaviloDimens.heroBodyStart, bottom = 44.dp, end = 24.dp),
                 ) {
-                    Text(
-                        text = detail.card.title,
-                        color = colors.text,
-                        fontSize = 34.sp,
-                        lineHeight = 40.sp,
-                        fontWeight = FontWeight.Bold,
-                        fontFamily = spaceGrotesk,
-                        letterSpacing = (-0.5).sp,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
+                    // R130: clearlogo when it loads, else the title as readable text.
+                    TitleLogoOrText(
+                        logoUrl = detail.logoUrl,
+                        title = detail.card.title,
+                        logoModifier = Modifier.height(80.dp).widthIn(max = 360.dp),
                     )
                     val meta = remember(detail.card.year, detail.card.genre) {
                         listOfNotNull(detail.card.year?.toString(), detail.card.genre).joinToString(" · ")
