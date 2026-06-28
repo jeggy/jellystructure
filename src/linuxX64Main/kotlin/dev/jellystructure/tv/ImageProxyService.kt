@@ -9,7 +9,9 @@ import io.ktor.client.request.get
 import io.ktor.client.statement.readRawBytes
 import io.ktor.http.contentType
 import kotlinx.cinterop.ExperimentalForeignApi
+import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.io.buffered
 import kotlinx.io.files.Path
@@ -41,8 +43,18 @@ class ImageProxyService(
 
     private val cacheDir = "$dataDir/artwork/tv"
 
+    // R129: bound the on-disk proxy cache. It was unbounded (grew until the disk filled). Keep an in-memory
+    // size index (seeded by a startup scan) and evict the oldest cached images on write once over the cap —
+    // no per-serve overhead (eviction only runs on a cache miss, already behind the fetch gate).
+    private val maxCacheBytes = 2L * 1024 * 1024 * 1024            // 2 GB cap
+    private val lowWaterBytes = maxCacheBytes * 8 / 10             // evict down to 80% to avoid boundary thrash
+    private val cacheMutex = Mutex()
+    private val cacheIndex = LinkedHashMap<String, Long>()         // cacheKey → bytes, oldest-first (insertion order)
+    private var cacheBytes = 0L
+
     init {
         runCatching { SystemFileSystem.createDirectories(Path(cacheDir)) }
+        runCatching { indexCache() }
     }
 
     /**
@@ -83,12 +95,54 @@ class ImageProxyService(
 
             atomicWrite(cachePath, bytes)
             atomicWrite(ctPath, ct.encodeToByteArray())
+            recordWrite(cacheKey, bytes.size.toLong())   // R129: track size + evict if over cap
 
             Pair(bytes, ct)
         }
     }
 
     // ─── helpers ────────────────────────────────────────────────────────────────
+
+    // R129: one-time startup scan to seed the size index from whatever's already on disk (so old entries
+    // from previous runs count toward the cap and are evictable too). Pre-existing files are seeded in
+    // name order; entries written this session then append to the back, so eviction is oldest-write-first.
+    private fun indexCache() {
+        val files = SystemFileSystem.list(Path(cacheDir))
+            .filter { val n = it.name; !n.endsWith(".ct") && !n.endsWith(".tmp") }
+            .sortedBy { it.name }
+        for (p in files) {
+            val size = SystemFileSystem.metadataOrNull(p)?.size ?: continue
+            cacheIndex[p.name] = size
+            cacheBytes += size
+        }
+        println("[INFO] ImageProxy: cache index ${cacheIndex.size} files, ${cacheBytes / (1024 * 1024)} MB (cap ${maxCacheBytes / (1024 * 1024)} MB)")
+    }
+
+    // R129: record a freshly-written cache entry and evict the oldest entries if the cache is over the cap.
+    private suspend fun recordWrite(key: String, size: Long) {
+        val victims = cacheMutex.withLock {
+            cacheIndex.remove(key)?.let { cacheBytes -= it }   // re-write: drop the stale size first
+            cacheIndex[key] = size                              // (re)insert at the newest end
+            cacheBytes += size
+            if (cacheBytes <= maxCacheBytes) return@withLock emptyList<String>()
+            val out = ArrayList<String>()
+            val it = cacheIndex.entries.iterator()
+            while (cacheBytes > lowWaterBytes && it.hasNext()) {
+                val e = it.next()
+                if (e.key == key) continue                      // never evict what we just wrote
+                it.remove()
+                cacheBytes -= e.value
+                out.add(e.key)
+            }
+            out
+        }
+        if (victims.isEmpty()) return
+        for (k in victims) {
+            runCatching { SystemFileSystem.delete(Path("$cacheDir/$k"), false) }
+            runCatching { SystemFileSystem.delete(Path("$cacheDir/$k.ct"), false) }
+        }
+        Logger.info("ImageProxy: evicted ${victims.size} cached image(s) — now ${cacheBytes / (1024 * 1024)} MB", "tv-image")
+    }
 
     private fun readCached(cachePath: String, ctPath: String): Pair<ByteArray, String>? {
         val p = Path(cachePath)
