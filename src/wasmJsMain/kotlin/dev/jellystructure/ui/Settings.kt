@@ -270,6 +270,11 @@ fun renderSettings(container: Element, scope: CoroutineScope, query: Map<String,
 
             <div class="card set-section" id="sect-advanced" data-tab="advanced">
               <h3 style="font-size:1rem;margin:0 0 10px">Advanced</h3>
+              <div class="field">
+                <label>TV image cache size (MB)</label>
+                <input id="tv-image-cache" class="input" type="number" min="0" max="1000000" style="width:110px">
+                <span class="hint">Disk cache for Ravilo TV artwork (the image proxy). <strong>0 = unlimited.</strong> Once over the cap the oldest images are evicted. Applies live — no restart.</span>
+              </div>
               <div style="border:1px solid var(--bad);border-radius:8px;padding:14px 16px">
                 <div style="font-size:.9rem;font-weight:600;color:var(--bad);margin-bottom:4px">Danger zone</div>
                 <p class="hint" style="margin:0 0 12px">Permanently deletes all scanned media data and resets scan state. Your media files and NFOs on disk are not touched. You will need to run a full scan afterwards.</p>
@@ -410,6 +415,7 @@ private var tellJellyfin = true
 private var scanWorkers = 1
 private var scanThreads = 4
 private var scanEpisodeCap = 0
+private var tvImageCacheMb = 2048
 private var effectiveScanThreads = 4
 private var libraryMappings: MutableList<LibraryMapping> = mutableListOf()
 private var qbEnabled = false
@@ -445,12 +451,14 @@ private fun populateForm(response: ConfigResponse) {
     scanWorkers = config.behavior.scanWorkers
     scanThreads = config.behavior.scanThreads
     scanEpisodeCap = config.behavior.scanEpisodeCap
+    tvImageCacheMb = config.behavior.tvImageCacheMb
     updateToggle("overwrite-nfo-toggle", overwriteNfo)
     updateToggle("fetch-images-toggle", fetchImages)
     updateToggle("tell-jellyfin-toggle", tellJellyfin)
     setInputValue("scan-workers", scanWorkers.toString())
     setInputValue("scan-threads", scanThreads.toString())
     setInputValue("scan-episode-cap", scanEpisodeCap.toString())
+    setInputValue("tv-image-cache", tvImageCacheMb.toString())
     updateRestartBanner()
 
     libraryMappings = config.libraries.toMutableList()
@@ -582,6 +590,10 @@ private fun attachListeners(scope: CoroutineScope) {
     }
     document.getElementById("scan-episode-cap")?.addEventListener("input") {
         scanEpisodeCap = (document.getElementById("scan-episode-cap") as? HTMLInputElement)?.value?.toIntOrNull()?.coerceAtLeast(0) ?: 0
+        refreshTomlPreview(readForm())
+    }
+    document.getElementById("tv-image-cache")?.addEventListener("input") {
+        tvImageCacheMb = (document.getElementById("tv-image-cache") as? HTMLInputElement)?.value?.toIntOrNull()?.coerceAtLeast(0) ?: 2048
         refreshTomlPreview(readForm())
     }
 
@@ -925,6 +937,7 @@ private fun readForm(): AppConfig = AppConfig(
         scanWorkers = scanWorkers,
         scanThreads = scanThreads,
         scanEpisodeCap = scanEpisodeCap,
+        tvImageCacheMb = tvImageCacheMb,
         scanIntervalHours = 0,
         notificationsWebhook = getInputValue("notif-webhook"),
         notifyOnScanDone = notifScanDone,
@@ -977,6 +990,7 @@ private fun buildToml(c: AppConfig): String = buildString {
     appendLine("tell_jellyfin = ${c.behavior.tellJellyfin}")
     appendLine("scan_workers = ${c.behavior.scanWorkers}")
     appendLine("scan_threads = ${c.behavior.scanThreads}")
+    appendLine("tv_image_cache_mb = ${c.behavior.tvImageCacheMb}")
     if (c.scanSchedule.isNotBlank()) {
         appendLine("scan_schedule = \"${c.scanSchedule}\"")
     }
