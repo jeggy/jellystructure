@@ -145,6 +145,21 @@ data class MetaFacets(
     val tags: List<TrackFacetItem> = emptyList(),
 )
 
+// R127: meta + track facet counts narrowed to a condition set (POST /api/media/facets).
+@Serializable
+data class NarrowedFacets(
+    val studios: List<TrackFacetItem> = emptyList(),
+    val networks: List<TrackFacetItem> = emptyList(),
+    val genres: List<TrackFacetItem> = emptyList(),
+    val tags: List<TrackFacetItem> = emptyList(),
+    val audioLanguages: List<TrackFacetItem> = emptyList(),
+    val audioCodecs: List<TrackFacetItem> = emptyList(),
+    val trackTitles: List<TrackFacetItem> = emptyList(),
+)
+
+@Serializable
+private data class FacetReq(val match: String = "ALL", val conditions: List<Condition> = emptyList())
+
 @Serializable
 data class BatchCountRequest(
     val index: Int,
@@ -219,6 +234,14 @@ object MediaApi {
             contentType(ContentType.Application.Json)
             setBody(items)
         }.body<List<BatchCountResult>>()
+    }.getOrNull()
+
+    // R127: facet counts narrowed to a condition set (e.g. a channel's filter).
+    suspend fun narrowedFacets(match: String, conditions: List<Condition>): NarrowedFacets? = runCatching {
+        httpClient.post("/api/media/facets") {
+            contentType(ContentType.Application.Json)
+            setBody(FacetReq(match, conditions))
+        }.body<NarrowedFacets>()
     }.getOrNull()
 
     suspend fun trackFacets(): TrackFacets? = runCatching {
