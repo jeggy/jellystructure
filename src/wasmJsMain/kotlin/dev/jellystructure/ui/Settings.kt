@@ -96,6 +96,16 @@ fun renderSettings(container: Element, scope: CoroutineScope, query: Map<String,
                 <h3 style="font-size:1rem;margin:0">Scanning</h3>
                 <span id="tool-status-chip" style="font-size:.75rem;color:var(--ink-soft)"></span>
               </div>
+              <details style="margin-bottom:14px;font-size:.84rem">
+                <summary style="cursor:pointer;color:var(--ink-soft)">How scanning works</summary>
+                <div class="hint" style="margin-top:8px;line-height:1.5">
+                  Three things keep your library current:<br>
+                  &bull; <b>Scan library</b> — finds new &amp; changed files from Jellyfin and adds/updates titles. Fast; metadata only.<br>
+                  &bull; <b>The automation (pipeline below)</b> — starts with a scan, then runs the steps you enable (pull TMDB, download artwork, write NFOs, sync Jellyfin&hellip;). Runs on the <b>schedule</b> (at the local time shown) and on demand via <b>Run pipeline now</b>.<br>
+                  &bull; <b>Per-title actions</b> — on a movie/series page: <b>Re-pull from TMDB</b>, <b>Sync to Jellyfin</b>. Same engines, one title.<br>
+                  Every run is logged and filterable on the <a href="#/activity">Activity</a> page by run.
+                </div>
+              </details>
               <div class="field">
                 <label>Scan workers</label>
                 <input id="scan-workers" class="input" type="number" min="1" max="32" style="width:90px">
@@ -655,13 +665,14 @@ private fun attachListeners(scope: CoroutineScope) {
     }
 
     wirePipelineBuilder(scope)
+    refreshNextRun()   // 93e: show the real next scheduled run on load
 
     document.getElementById("save-settings")?.addEventListener("click") {
         scope.launch {
             val config = readForm()
             val ok = ConfigApi.save(config)
             showSettingsMsg(if (ok) "Saved." else "Save failed.", ok)
-            if (ok) renderPathCheckInline(ConfigApi.pathCheck())
+            if (ok) { renderPathCheckInline(ConfigApi.pathCheck()); refreshNextRun() }   // 93e: reflect the saved schedule
         }
     }
 
@@ -1321,11 +1332,22 @@ private fun updatePipeCron() {
     val h      = atVal.split(":")[0].toIntOrNull() ?: 3
     val show6h = pipelineFreq == "6h"
     val cron   = when (pipelineFreq) { "weekly" -> "0 $h * * 0"; "6h" -> "0 */6 * * *"; else -> "0 $h * * *" }
-    val next   = when (pipelineFreq) { "weekly" -> "next · Sunday $atVal"; "6h" -> "next · in ~6h"; else -> "next · tonight $atVal" }
     (document.getElementById("pipe-at-field") as? HTMLElement)?.style?.display = if (show6h) "none" else ""
     document.getElementById("pipe-cron")?.textContent = cron
-    document.getElementById("pipe-next")?.textContent = next
+    // 93e: the real next-run is computed by the backend (wall-clock) and shown by refreshNextRun();
+    // while the schedule is being edited it's not applied yet, so say so rather than guess a time.
+    document.getElementById("pipe-next")?.textContent = "next · save to apply"
     refreshTomlPreview(readForm())
+}
+
+/** 93e: show the backend's actual next scheduled run (or "scheduling off") in the pipe-next badge. */
+private fun refreshNextRun() {
+    settingsScope?.launch {
+        val st = MediaApi.scanStatus()
+        val el = document.getElementById("pipe-next") ?: return@launch
+        val next = st?.nextScheduledRun
+        el.textContent = if (next != null) "next · ${dev.jellystructure.formatStoredTs(next.toString())}" else "scheduling off"
+    }
 }
 
 private fun computePipeCron(): String {

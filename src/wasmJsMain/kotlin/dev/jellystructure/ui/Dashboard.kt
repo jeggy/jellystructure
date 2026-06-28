@@ -29,7 +29,7 @@ fun renderDashboard(container: Element, scope: CoroutineScope) {
           <button id="dash-browse" class="btn sm ghost">Browse library</button>
           <button id="dash-scan" class="btn primary">▶ Scan library</button>
         </div>
-        <p class="page-sub">Single source of truth for your media metadata. Jellyfin just reads what Jellystructure writes — you never touch its built-in scraper.</p>
+        <p class="page-sub">Single source of truth for your media metadata. Jellyfin just reads what Jellystructure writes — you never touch its built-in scraper. <span id="dash-next-run" class="badge" style="margin-left:6px"></span></p>
 
         <div id="dash-scan-banner" style="margin-bottom:14px"></div>
 
@@ -132,6 +132,12 @@ fun renderDashboard(container: Element, scope: CoroutineScope) {
             }
             "CANCELLED" -> setDashScanCancelled(status.processedCount, scope)
             else -> setDashScanIdle()
+        }
+        // 93e: surface the next scheduled automation run.
+        document.getElementById("dash-next-run")?.let { el ->
+            val next = status?.nextScheduledRun
+            if (next != null) el.textContent = "next run · ${dev.jellystructure.formatStoredTs(next.toString())}"
+            else (el as? org.w3c.dom.HTMLElement)?.style?.display = "none"
         }
     }
 }

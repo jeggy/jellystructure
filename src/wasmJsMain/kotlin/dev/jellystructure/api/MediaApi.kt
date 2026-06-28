@@ -164,6 +164,7 @@ data class ScanStatus(
     val processedCount: Int = 0,
     val activeWorkers: Int = 0,
     val configuredWorkers: Int = 1,
+    val nextScheduledRun: Long? = null,   // 93e: epoch seconds of the next automation run
 )
 
 object MediaApi {
