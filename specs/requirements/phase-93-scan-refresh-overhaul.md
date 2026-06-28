@@ -50,10 +50,15 @@ finish-summary to the Activity page and is filterable there; the next scheduled 
 - Delete `FolderWatcher` and `Scanner.scan()` (the single-threaded path the watcher used). `runScan()` is the
   **only** scan entry point. Remove `behavior.watch_enabled` from config + the Settings toggle.
 
-### 93b — Wall-clock scheduling *(in progress)*
-- The schedule fires at the **local wall-clock time** the admin set. `0 H * * *` → next `H:00`; `0 H * * 0`
-  → next Sunday `H:00`; `0 */6 * * *` → next of 00/06/12/18. Correct across restarts (compute next from
-  "now", never "now + interval"). Unparseable schedule → log a warning, don't silently run every 24h.
+### 93b — Wall-clock scheduling ✓
+- The schedule fires at the **local wall-clock time** the admin set. `nextRunDelayMs(cron, now)` (Main.kt)
+  parses the three cron patterns the UI emits — `0 H * * *` (daily H:00), `0 H * * 0` (weekly Sun H:00),
+  every-N-hours — and returns ms to the **next local occurrence** via POSIX `localtime_r`/`mktime`
+  (`tm_isdst=-1`). Correct across restarts (computed from "now", never "now + interval"). The scheduler
+  loop re-reads config and recomputes every ≤60s, so edits apply within a minute; the next-run epoch is
+  published to `ScanTracker.nextScheduledRunSec` for the indicator (93e). Unparseable schedule → `Logger.warn`
+  and the scheduler idles (no silent 24h). Legacy `scan_interval_hours` kept as a fallback when the schedule
+  is blank.
 
 ### 93c — On-demand pipeline run *(planned)*
 - A title can run the **composed pipeline** on demand (not just a file scan). "Scan library" = file

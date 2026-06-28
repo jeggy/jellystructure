@@ -7,6 +7,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.Serializable
 import kotlin.concurrent.AtomicInt
+import kotlin.concurrent.AtomicLong
 
 @Serializable
 data class ScanStatusResponse(
@@ -17,6 +18,7 @@ data class ScanStatusResponse(
     val processedCount: Int = 0,
     val activeWorkers: Int = 0,
     val configuredWorkers: Int = 1,
+    val nextScheduledRun: Long? = null,   // 93e: epoch seconds of the next automation run (null = none)
 )
 
 class ScanTracker(private val db: JellystructureDb) {
@@ -28,6 +30,10 @@ class ScanTracker(private val db: JellystructureDb) {
     // Worker pool counters — updated by runScan workers
     val targetWorkers = AtomicInt(1)
     val activeWorkers = AtomicInt(0)
+
+    // 93b/93e: epoch seconds of the next scheduled automation run (0 = nothing scheduled). Set by the
+    // scheduler loop in Main.kt; surfaced in ScanStatusResponse for the admin's next-run indicator.
+    val nextScheduledRunSec = AtomicLong(0L)
 
     private val recordMutex = Mutex()
 
@@ -135,6 +141,7 @@ class ScanTracker(private val db: JellystructureDb) {
         processedCount = db.scanStateQueries.countProcessed(_jobId).executeAsOne().toInt(),
         activeWorkers = activeWorkers.value,
         configuredWorkers = targetWorkers.value,
+        nextScheduledRun = nextScheduledRunSec.value.takeIf { it > 0L },
     )
 }
 
