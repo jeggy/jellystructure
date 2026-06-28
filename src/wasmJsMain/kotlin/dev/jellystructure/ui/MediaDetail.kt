@@ -150,7 +150,7 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
              <div id="genre-add-row" style="display:none;position:relative;gap:6px;margin-top:6px;align-items:center;">
                <input id="genre-input" class="input" type="text" placeholder="pick or type a genre…" maxlength="40" style="width:200px;" autocomplete="off">
                <button id="genre-add-btn" class="btn sm ghost">Add</button>
-               <div id="genre-suggest" style="display:none;flex-wrap:wrap;gap:5px;align-content:flex-start;position:absolute;top:100%;left:0;z-index:60;margin-top:4px;width:300px;max-height:230px;overflow:auto;background:var(--card);border:1px solid var(--line);border-radius:8px;box-shadow:0 10px 30px rgba(0,0,0,.5);padding:8px;"></div>
+               <div id="genre-suggest" style="display:none;flex-wrap:wrap;gap:5px;align-content:flex-start;position:absolute;top:100%;left:0;z-index:60;margin-top:4px;width:300px;max-height:230px;overflow:auto;background:var(--fill);border:1px solid var(--line);border-radius:8px;box-shadow:0 10px 30px rgba(0,0,0,.5);padding:8px;"></div>
              </div>
            </div>"""
 
