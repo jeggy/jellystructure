@@ -15,6 +15,7 @@ import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
 import org.w3c.dom.Element
 import org.w3c.dom.HTMLElement
+import org.w3c.dom.HTMLSelectElement
 import org.w3c.dom.WebSocket
 import org.w3c.dom.events.Event
 import org.w3c.dom.events.MouseEvent
@@ -33,6 +34,7 @@ private var activityCurrentPoster: String? = null
 private var scanRunning = false
 private var activeLogCategory: String = ""
 private var errorsOnlyFilter: Boolean = false
+private var activeRunFilter: String? = null   // 93g: scope the log to one scan/pipeline run
 private var lastToolCommand: String? = null
 
 @Serializable
@@ -43,10 +45,18 @@ private data class ActivityEntryDto(
     val category: String,
     val message: String,
     val mediaId: String? = null,
+    val runId: String? = null,
+    val step: String? = null,
 )
 
 @Serializable
 private data class ActivityLogPageDto(val entries: List<ActivityEntryDto>, val total: Int)
+
+@Serializable
+private data class RunSummaryDto(
+    val runId: String, val trigger: String, val startedAt: Long, val finishedAt: Long? = null,
+    val events: Int = 0, val errors: Int = 0,
+)
 
 fun renderActivity(container: Element, scope: CoroutineScope, query: Map<String, String> = emptyMap()) {
     activityScope = scope
@@ -118,6 +128,9 @@ fun renderActivity(container: Element, scope: CoroutineScope, query: Map<String,
             <button data-cat="track" class="chip">Tracks</button>
             <button data-cat="system" class="chip">System</button>
             <span style="flex:1"></span>
+            <select id="run-filter" class="input" style="height:26px;padding:0 6px;font-size:.78rem" title="Scope the log to one scan/pipeline run">
+              <option value="">All runs</option>
+            </select>
             <label style="display:flex;align-items:center;gap:7px;cursor:pointer;font-size:.82rem"><span class="toggle" id="errors-only-toggle"></span> Errors only</label>
             <span id="workers-chip" class="chip" style="display:none"></span>
           </div>
@@ -165,10 +178,37 @@ fun renderActivity(container: Element, scope: CoroutineScope, query: Map<String,
         }
     }
 
+    // 93g — run picker: scope the log to one scan/pipeline run (server-side reload).
+    (container.querySelector("#run-filter") as? HTMLSelectElement)?.addEventListener("change") { ev ->
+        activeRunFilter = (ev.target as? HTMLSelectElement)?.value?.ifBlank { null }
+        scope.launch { loadLogHistory(container) }
+    }
+
     connectWebSocket(container)
+    scope.launch { loadRuns(container) }
     scope.launch { loadLogHistory(container) }
     hideJobUI(container)
     wireLogResize(container)
+}
+
+/** 93g — populate the run picker from /api/activity/runs (newest first). */
+private suspend fun loadRuns(container: Element) {
+    runCatching {
+        val runs: List<RunSummaryDto> = httpClient.get("/api/activity/runs").body()
+        val sel = container.querySelector("#run-filter") as? HTMLSelectElement ?: return
+        val sb = StringBuilder("""<option value="">All runs</option>""")
+        runs.forEach { r ->
+            val whenStr = dev.jellystructure.formatStoredTs(r.startedAt.toString())
+            val status = when {
+                r.finishedAt == null -> "running"
+                r.errors > 0 -> "${r.events} events · ${r.errors} err"
+                else -> "${r.events} events"
+            }
+            sb.append("""<option value="${r.runId.escapeHtml()}">${r.trigger.escapeHtml()} · $whenStr · $status</option>""")
+        }
+        sel.innerHTML = sb.toString()
+        sel.value = activeRunFilter ?: ""
+    }
 }
 
 private fun wireLogResize(container: Element) {
@@ -220,7 +260,8 @@ private fun reapplyFilter(container: Element) {
         val lvl = line.getAttribute("data-level") ?: ""
         val catOk = activeLogCategory.isEmpty() || cat == activeLogCategory
         val lvlOk = !errorsOnlyFilter || lvl == "error" || lvl == "warn"
-        line.style.display = if (catOk && lvlOk) "" else "none"
+        val runOk = activeRunFilter == null || line.getAttribute("data-run") == activeRunFilter
+        line.style.display = if (catOk && lvlOk && runOk) "" else "none"
     }
 }
 
@@ -228,15 +269,16 @@ private suspend fun loadLogHistory(container: Element) {
     runCatching {
         val page: ActivityLogPageDto = httpClient.get("/api/activity/log") {
             parameter("pageSize", "200")
+            activeRunFilter?.let { parameter("run", it) }   // 93g: server-side scope to one run
         }.body()
         val console = container.querySelector("#activity-console") ?: return
         if (page.entries.isEmpty()) {
-            console.innerHTML = """<div class="muted tiny">No activity entries yet.</div>"""
+            console.innerHTML = """<div class="muted tiny">No activity entries${if (activeRunFilter != null) " for this run" else " yet"}.</div>"""
             return
         }
         console.innerHTML = ""
         page.entries.forEach { entry ->
-            appendLogEntry(container, entry.level, entry.category, entry.message, ts = entry.ts)
+            appendLogEntry(container, entry.level, entry.category, entry.message, ts = entry.ts, runId = entry.runId)
         }
         (console as? HTMLElement)?.let { it.scrollTop = it.scrollHeight.toDouble() }
     }.onFailure {
@@ -344,16 +386,18 @@ private fun handleEvent(container: Element, raw: String) {
             (container.querySelector("#act-crumb") as? HTMLElement)?.style?.display = "none"
             (container.querySelector("#workers-chip") as? HTMLElement)?.style?.display = "none"
             appendLogEntry(container, "info", "scan", "■ Job $jobId done — $succeeded succeeded, $failed failed")
+            activityScope?.launch { loadRuns(container) }   // 93g: surface the just-finished run in the picker
         }
         "log_line" -> {
             val level = extractJsonField(raw, "level") ?: "info"
             val category = extractJsonField(raw, "category") ?: "system"
             val message = extractJsonField(raw, "message") ?: ""
+            val runId = extractJsonField(raw, "runId")
             if (category == "track" && (message.startsWith("ffmpeg:") || message.startsWith("mkvpropedit:"))) {
                 lastToolCommand = message
                 refreshNowOps(container)
             }
-            appendLogEntry(container, level, category, message)
+            appendLogEntry(container, level, category, message, runId = runId)
         }
         else -> appendLogEntry(container, "info", "system", raw)
     }
@@ -455,7 +499,7 @@ private fun updateActivityChips(container: Element) {
     }
 }
 
-private fun appendLogEntry(container: Element, level: String, category: String, text: String, ts: Long? = null) {
+private fun appendLogEntry(container: Element, level: String, category: String, text: String, ts: Long? = null, runId: String? = null) {
     val console = container.querySelector("#activity-console") ?: return
     console.querySelector(".muted")?.remove()
 
@@ -478,11 +522,13 @@ private fun appendLogEntry(container: Element, level: String, category: String, 
     val div = document.createElement("div")
     div.setAttribute("data-cat", category)
     div.setAttribute("data-level", level)
+    if (runId != null) div.setAttribute("data-run", runId)
     div.innerHTML = """<span class="ts">$tsStr</span> $catLabel<span style="$colorStyle">${text.escapeHtml()}</span>"""
 
     val catOk = activeLogCategory.isEmpty() || category == activeLogCategory
     val lvlOk = !errorsOnlyFilter || level == "error" || level == "warn"
-    if (!catOk || !lvlOk) (div as? HTMLElement)?.style?.display = "none"
+    val runOk = activeRunFilter == null || runId == activeRunFilter
+    if (!catOk || !lvlOk || !runOk) (div as? HTMLElement)?.style?.display = "none"
 
     console.appendChild(div)
     // Auto-scroll only when the user is already pinned to the bottom (within 80 px).
