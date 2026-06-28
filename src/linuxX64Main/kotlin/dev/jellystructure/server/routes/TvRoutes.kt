@@ -32,8 +32,8 @@ import dev.jellystructure.tv.BrowseService
 import dev.jellystructure.tv.ChannelLogoStore
 import dev.jellystructure.tv.DetailService
 import dev.jellystructure.tv.HomeFeedService
-import dev.jellystructure.tv.ImageProxyService
-import dev.jellystructure.tv.JellyfinImageUrl
+import dev.jellystructure.tv.RaviloArtworkService
+import dev.jellystructure.tv.RaviloImageUrl
 import dev.jellystructure.tv.PlaybackService
 import dev.jellystructure.tv.RaviloConfigService
 import dev.jellystructure.tv.RaviloDeviceService
@@ -111,7 +111,7 @@ fun Route.tvRoutes(
     chartStore: dev.jellystructure.chart.ChartStore? = null,
     chartRegistry: dev.jellystructure.chart.ChartRegistry? = null,
     tmdbClient: dev.jellystructure.tmdb.TmdbClient? = null,
-    imageProxyService: ImageProxyService? = null,
+    imageProxyService: RaviloArtworkService? = null,
 ) {
     route("/tv/pair") {
         post("/start") {
@@ -139,7 +139,7 @@ fun Route.tvRoutes(
                     displayName = device.jellyfinUsername,
                     isAdmin = device.isAdmin,
                     isKids = device.isKids,
-                    avatarUrl = JellyfinImageUrl.avatar(device.jellyfinUserId),
+                    avatarUrl = RaviloImageUrl.avatar(device.jellyfinUserId),
                 ),
                 deviceToken = deviceToken,
             ))
@@ -223,7 +223,7 @@ fun Route.tvRoutes(
                 displayName = d.jellyfinUsername,
                 isAdmin = d.isAdmin,
                 isKids = d.isKids,
-                avatarUrl = JellyfinImageUrl.avatar(d.jellyfinUserId),
+                avatarUrl = RaviloImageUrl.avatar(d.jellyfinUserId),
             )
         }
         call.respond(sessions)
@@ -490,20 +490,31 @@ fun Route.tvRoutes(
     }
 
     // ── Channel-logo asset library (R36 §F) ──────────────────────────────────
-    // R85: public image proxy — serves Jellyfin item/user images from disk cache (AuthPlugin OPEN_API_PATHS).
-    // Coil can't attach a device token to image requests; images are not sensitive.
+    // R133: public artwork — serves jellystructure's OWN on-disk poster/backdrop/logo (resized + cached),
+    // no Jellyfin call (AuthPlugin OPEN_API_PATHS; Coil can't attach a token, images aren't sensitive).
     get("/tv/image/{itemId}/{type}") {
         val itemId = call.parameters["itemId"] ?: return@get call.respond(HttpStatusCode.BadRequest)
         val type   = call.parameters["type"]   ?: return@get call.respond(HttpStatusCode.BadRequest)
-        val proxy  = imageProxyService ?: return@get call.respond(HttpStatusCode.ServiceUnavailable)
+        val svc    = imageProxyService ?: return@get call.respond(HttpStatusCode.ServiceUnavailable)
         val width  = call.request.queryParameters["w"]?.toIntOrNull()  // R93: optional width
-        val result = proxy.serve(itemId, type, width)
-        if (result == null) {
-            call.respond(HttpStatusCode.NotFound)
-        } else {
-            val (bytes, ct) = result
-            call.respondBytes(bytes, ContentType.parse(ct))
-        }
+        val result = svc.serve(itemId, type, width) ?: return@get call.respond(HttpStatusCode.NotFound)
+        call.respondBytes(result.first, ContentType.parse(result.second))
+    }
+    // R133: episode still — addressed by series id + episode filename.
+    get("/tv/image/{itemId}/still/{epFilename}") {
+        val itemId = call.parameters["itemId"] ?: return@get call.respond(HttpStatusCode.BadRequest)
+        val epFilename = call.parameters["epFilename"] ?: return@get call.respond(HttpStatusCode.BadRequest)
+        val svc = imageProxyService ?: return@get call.respond(HttpStatusCode.ServiceUnavailable)
+        val width = call.request.queryParameters["w"]?.toIntOrNull()
+        val result = svc.serveStill(itemId, epFilename, width) ?: return@get call.respond(HttpStatusCode.NotFound)
+        call.respondBytes(result.first, ContentType.parse(result.second))
+    }
+    // R133: user avatar — the one remaining (cached) Jellyfin fetch; reused by the admin pairing UI.
+    get("/tv/image/user/{userId}/avatar") {
+        val userId = call.parameters["userId"] ?: return@get call.respond(HttpStatusCode.BadRequest)
+        val svc = imageProxyService ?: return@get call.respond(HttpStatusCode.ServiceUnavailable)
+        val result = svc.serveAvatar(userId) ?: return@get call.respond(HttpStatusCode.NotFound)
+        call.respondBytes(result.first, ContentType.parse(result.second))
     }
 
     // Admin (cookie) uploads + lists; the serve route is public (AuthPlugin OPEN_API_PATHS) so the TV

@@ -48,7 +48,7 @@ class DetailService(
             playback           = null,  // R83: hydrated by /api/tv/playstate (R84 overlays it)
             audioLanguages     = movieAudioLangs,
             subtitleLanguages  = movieSubLangs,
-            logoUrl            = item.jellyfinId?.let { JellyfinImageUrl.logo(it) },  // R130
+            logoUrl            = RaviloImageUrl.logo(item.id),  // R130/R133
         )
     }
 
@@ -63,9 +63,8 @@ class DetailService(
                 .sortedBy { it.episodeNumber ?: 0 }
             val seasonName = item.seasonNames[seasonNum] ?: "Season $seasonNum"
             val tvEpisodes = eps.map { ep ->
-                // R85: episode stills served through the jellystructure image proxy (no TMDB CDN).
-                val stillUrl = ep.jellyfinId?.let { JellyfinImageUrl.still(it) }
-                    ?: ep.stillPath?.takeIf { it.isNotBlank() }?.let { "https://image.tmdb.org/t/p/w300$it" }
+                // R133: episode still from jellystructure's on-disk <base>-thumb.jpg (series id + filename).
+                val stillUrl = RaviloImageUrl.still(item.id, ep.filename)
                 TvEpisode(
                     id = ep.jellyfinId ?: ep.path,
                     episodeNumber = ep.episodeNumber ?: 0,
@@ -98,7 +97,7 @@ class DetailService(
             progress          = null,  // R83: hydrated by /api/tv/playstate (R84 overlays it)
             audioLanguages    = seriesAudioLangs,
             subtitleLanguages = seriesSubLangs,
-            logoUrl           = item.jellyfinId?.let { JellyfinImageUrl.logo(it) },  // R130
+            logoUrl           = RaviloImageUrl.logo(item.id),  // R130/R133
         )
     }
 
@@ -148,8 +147,8 @@ class DetailService(
             year = year,
             genre = genres.firstOrNull(),
             rating = null,
-            posterUrl = if (jId != null) JellyfinImageUrl.poster(jId) else null,
-            backdropUrl = if (jId != null) JellyfinImageUrl.backdrop(jId) else null,
+            posterUrl = RaviloImageUrl.poster(id),     // R133: keyed by MediaItem.id (on-disk artwork)
+            backdropUrl = RaviloImageUrl.backdrop(id),
         )
     }
 }

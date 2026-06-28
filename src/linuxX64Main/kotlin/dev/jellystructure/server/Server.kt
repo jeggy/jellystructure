@@ -39,7 +39,7 @@ import dev.jellystructure.torrent.SeedingGuard
 import dev.jellystructure.tv.BrowseService
 import dev.jellystructure.tv.DetailService
 import dev.jellystructure.tv.HomeFeedService
-import dev.jellystructure.tv.ImageProxyService
+import dev.jellystructure.tv.RaviloArtworkService
 import dev.jellystructure.tv.PlaybackService
 import dev.jellystructure.tv.ChannelLogoStore
 import dev.jellystructure.tv.RaviloConfigService
@@ -128,7 +128,7 @@ fun startServer(
     chartStore: ChartStore? = null,
     chartIngest: ChartIngestService? = null,
     tvEventBus: TvEventBus,
-    imageProxyService: ImageProxyService? = null,
+    imageProxyService: RaviloArtworkService? = null,
 ): suspend () -> Unit {
     // Fire-and-forget work (scans, NFO/artwork pushes, image fetches) runs as appScope.launch{}.
     // On Kotlin/Native an exception escaping a launched coroutine reaches the global handler and
