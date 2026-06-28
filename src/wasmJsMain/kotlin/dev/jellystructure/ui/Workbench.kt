@@ -4,6 +4,8 @@ package dev.jellystructure.ui
 
 import dev.jellystructure.api.MediaApi
 import dev.jellystructure.api.MetaFacets
+import dev.jellystructure.api.NarrowedFacets
+import dev.jellystructure.api.TrackFacetItem
 import dev.jellystructure.api.RaviloApi
 import dev.jellystructure.api.TrackFacets
 import dev.jellystructure.model.MediaKind
@@ -53,6 +55,7 @@ private var wbRowsContext = emptyList<RowConfig>()  // R87: rows the `content_ro
 private var wbViewer: String? = null
 private var wbMeta: MetaFacets? = null
 private var wbTrack: TrackFacets? = null
+private var wbNarrowed: NarrowedFacets? = null  // R127: facet counts narrowed to the channel scope (baseConds)
 private var wbScope: CoroutineScope? = null
 private var wbOnApply: ((String, String, List<WbCond>) -> Unit)? = null
 private var wbOnSave: ((String, String, String, List<WbCond>) -> Unit)? = null
@@ -185,6 +188,11 @@ fun openWorkbench(
     scope.launch {
         if (wbMeta == null) wbMeta = MediaApi.metaFacets()
         if (wbTrack == null) wbTrack = MediaApi.trackFacets()
+        // R127: in a channel content-row scope, narrow facet counts to the channel's filter (computed once;
+        // values not present in the channel disappear, the rest are ordered by their in-channel count).
+        wbNarrowed = if (wbBaseConds.isNotEmpty())
+            MediaApi.narrowedFacets(wbBaseMatch, wbBaseConds.map { Condition(it.facet, it.op, it.values.toList(), it.rows.toList()) })
+        else null
         wbRenderScopeBanner()
         wbRenderConds()
         wbWireChrome()
@@ -197,19 +205,27 @@ fun openWorkbench(
     }
 }
 
-private fun wbValuesFor(facet: String): List<String> = when (facet) {
-    "studio" -> wbMeta?.studios?.map { it.value } ?: emptyList()
-    "network" -> wbMeta?.networks?.map { it.value } ?: emptyList()
-    "genre" -> wbMeta?.genres?.map { it.value } ?: emptyList()
-    "tag" -> wbMeta?.tags?.map { it.value } ?: emptyList()
-    "audio_language" -> (wbTrack?.audioLanguages?.map { it.value } ?: emptyList()) + "untagged"
-    "audio_codec" -> wbTrack?.audioCodecs?.map { it.value } ?: emptyList()
-    "hero_item" -> listOf("featured", "not_featured")
-    else -> emptyList()
+// R127: facet values WITH their counts — narrowed to the channel scope (wbNarrowed) when present,
+// otherwise the global library counts. Already count-sorted by the API; order preserved.
+private fun wbItemsFor(facet: String): List<TrackFacetItem> {
+    val n = wbNarrowed
+    return when (facet) {
+        "studio" -> n?.studios ?: wbMeta?.studios ?: emptyList()
+        "network" -> n?.networks ?: wbMeta?.networks ?: emptyList()
+        "genre" -> n?.genres ?: wbMeta?.genres ?: emptyList()
+        "tag" -> n?.tags ?: wbMeta?.tags ?: emptyList()
+        "audio_language" -> (n?.audioLanguages ?: wbTrack?.audioLanguages ?: emptyList()) + TrackFacetItem("untagged", 0)
+        "audio_codec" -> n?.audioCodecs ?: wbTrack?.audioCodecs ?: emptyList()
+        "track_title" -> n?.trackTitles ?: wbTrack?.trackTitles ?: emptyList()
+        "hero_item" -> listOf(TrackFacetItem("featured", 0), TrackFacetItem("not_featured", 0))
+        else -> emptyList()
+    }
 }
 
-// JS-tag colour for a tag value (null = normal tag). Drives the dotted/grouped tag picker.
-private fun wbTagColor(v: String): String? = wbMeta?.tags?.firstOrNull { it.value == v }?.color
+private fun wbValuesFor(facet: String): List<String> = wbItemsFor(facet).map { it.value }
+
+// JS-tag colour for a tag value (null = normal tag). Drives the dotted/grouped tag picker. Narrowed-aware.
+private fun wbTagColor(v: String): String? = (wbNarrowed?.tags ?: wbMeta?.tags)?.firstOrNull { it.value == v }?.color
 
 private fun wbRenderConds() {
     val host = document.getElementById("wb-conds") as? HTMLElement ?: return
@@ -224,12 +240,12 @@ private fun wbRenderConds() {
             """<input class="input wb-text" data-i="$i" placeholder="e.g. Commentary, SDH, Synstolkning" value="${(c.values.firstOrNull() ?: "").esc()}">"""
         } else if (c.facet == "tag") {
             // Group Jellystructure tags (those with a colour) first + dotted, then plain tags.
-            fun tagChip(v: String): String {
-                val color = wbTagColor(v)
-                val dot = if (color != null) """<span class="tag-dot" style="background:$color"></span>""" else ""
-                return """<span class="wb-vchip${if (c.values.contains(v)) " on" else ""}" data-i="$i" data-v="${v.esc()}">$dot${v.esc()}</span>"""
+            fun tagChip(t: TrackFacetItem): String {
+                val dot = if (t.color != null) """<span class="tag-dot" style="background:${t.color}"></span>""" else ""
+                val cnt = if (t.count > 0) """<span class="wb-vcount">${t.count}</span>""" else ""
+                return """<span class="wb-vchip${if (c.values.contains(t.value)) " on" else ""}" data-i="$i" data-v="${t.value.esc()}">$dot${t.value.esc()}$cnt</span>"""
             }
-            val (js, other) = wbValuesFor("tag").take(80).partition { wbTagColor(it) != null }
+            val (js, other) = wbItemsFor("tag").take(80).partition { it.color != null }
             buildString {
                 if (js.isNotEmpty()) append("""<div class="wb-vgroup">Jellystructure tags</div><div class="wb-vchips">${js.joinToString("") { tagChip(it) }}</div>""")
                 if (other.isNotEmpty()) append("""<div class="wb-vgroup">Other tags</div><div class="wb-vchips">${other.joinToString("") { tagChip(it) }}</div>""")
@@ -243,10 +259,11 @@ private fun wbRenderConds() {
             }
             """<div class="wb-vchips">${chips.ifEmpty { """<span class="muted tiny">No content rows in scope</span>""" }}</div>"""
         } else {
-            val chips = wbValuesFor(c.facet).take(80).joinToString("") { v ->
-                val on = c.values.contains(v)
-                val lbl = if (c.facet == "hero_item") (if (v == "featured") "Featured" else "Not featured") else v
-                """<span class="wb-vchip${if (on) " on" else ""}" data-i="$i" data-v="${v.esc()}">${lbl.esc()}</span>"""
+            val chips = wbItemsFor(c.facet).take(80).joinToString("") { t ->
+                val on = c.values.contains(t.value)
+                val lbl = if (c.facet == "hero_item") (if (t.value == "featured") "Featured" else "Not featured") else t.value
+                val cnt = if (t.count > 0) """<span class="wb-vcount">${t.count}</span>""" else ""
+                """<span class="wb-vchip${if (on) " on" else ""}" data-i="$i" data-v="${t.value.esc()}">${lbl.esc()}$cnt</span>"""
             }
             """<div class="wb-vchips">$chips</div>"""
         }
@@ -551,6 +568,8 @@ private fun injectWorkbenchStyles() {
         .wb-vchips { display:flex; flex-wrap:wrap; gap:6px; max-height:120px; overflow:auto; }
         .wb-vchip { display:inline-flex; align-items:center; gap:6px; padding:3px 9px; border-radius:18px; border:1px solid var(--line-2); background:var(--fill-2); color:var(--ink); cursor:pointer; font-size:.76rem; }
         .wb-vchip.on { background:var(--hi); border-color:transparent; color:#fff; }
+        .wb-vcount { font-size:.66rem; line-height:1; padding:1px 6px; border-radius:99px; background:var(--fill-2); border:1px solid var(--line); color:var(--ink-soft); }
+        .wb-vchip.on .wb-vcount { background:rgba(255,255,255,.18); border-color:transparent; color:#fff; }
         .wb-vgroup { width:100%; font-size:.66rem; text-transform:uppercase; letter-spacing:.06em; color:var(--ink-soft); margin:6px 0 2px; }
         .wb-vgroup:first-child { margin-top:0; }
         .wb-count { margin:12px 0 8px; font-size:.9rem; color:var(--ink); }
