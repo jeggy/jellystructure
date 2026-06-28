@@ -187,7 +187,24 @@ fun renderActivity(container: Element, scope: CoroutineScope, query: Map<String,
     connectWebSocket(container)
     scope.launch { loadRuns(container) }
     scope.launch { loadLogHistory(container) }
-    hideJobUI(container)
+    // If a scan is already running when this page opens, show the running-job UI immediately — otherwise
+    // we miss the WS "started" event and wrongly show "No job is currently running" for the whole run.
+    scope.launch {
+        val st = MediaApi.scanStatus()
+        if (st?.running == true) {
+            scanRunning = true
+            jobItemCount = st.processedCount
+            jobDoneCount = st.processedCount
+            showJobUI(container)
+            (container.querySelector("#act-cancel-btn") as? HTMLElement)?.style?.display = ""
+            (container.querySelector("#act-crumb") as? HTMLElement)?.let { it.textContent = "Scanning"; it.style.display = "" }
+            updateActivityChips(container)
+            updateOvLabel(container)
+            pollWorkers(container)
+        } else {
+            hideJobUI(container)
+        }
+    }
     wireLogResize(container)
 }
 
@@ -355,6 +372,13 @@ private fun handleEvent(container: Element, raw: String) {
             }
         }
         "item_scanned" -> {
+            if (!scanRunning) {   // missed "started" (page opened mid-scan) — surface the job UI now
+                scanRunning = true
+                showJobUI(container)
+                (container.querySelector("#act-cancel-btn") as? HTMLElement)?.style?.display = ""
+                (container.querySelector("#act-crumb") as? HTMLElement)?.let { it.textContent = "Scanning"; it.style.display = "" }
+                activityScope?.launch { pollWorkers(container) }
+            }
             jobItemCount++
             val title = extractJsonField(raw, "title") ?: extractNestedField(raw, "item", "title")
             val poster = extractJsonField(raw, "posterPath") ?: extractNestedField(raw, "item", "posterPath")
