@@ -199,7 +199,7 @@ class MediaStore(private val db: JellystructureDb, private val jsTagStore: JsTag
             }
             if (filter == "attention") {
                 result = result.filter { item ->
-                    item.issueCount > 0 || item.languageMix || item.hasMultiDefaultAudio()
+                    item.issueCount > 0 || item.languageMix || item.hasMultiDefaultAudio() || item.tmdbId == null
                 }
             }
             // R74: when a condition stack is provided, route through ConditionEvaluator so that
