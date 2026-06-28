@@ -60,6 +60,10 @@ private var libAudioCodec: String? = null
 private var libUntaggedAudio: Boolean = false
 private var libTags: List<String> = emptyList()
 private var libMatch: String = "ALL"  // R74: "ALL" | "ANY"
+// R87: a handed-off `content_row` gap condition (its `rows` double as the workbench edit context).
+// Channel conditions ride the normal per-facet params; this rides a `coverage` param so it survives nav.
+private var libCoverageCond: Condition? = null
+private val libCovJson = Json { ignoreUnknownKeys = true }
 
 // -- URL helpers ----------------------------------------------------------
 
@@ -85,6 +89,8 @@ private fun parseLibraryUrl() {
     libUntaggedAudio = param("untaggedAudio") == "true"
     libTags          = param("tags")?.split(",")?.filter { it.isNotBlank() } ?: emptyList()
     libMatch         = if (param("match") == "ANY") "ANY" else "ALL"
+    // R87: decode the handed-off content_row gap condition (null on a normal library visit).
+    libCoverageCond  = param("coverage")?.let { runCatching { libCovJson.decodeFromString(Condition.serializer(), it) }.getOrNull() }
 }
 
 private fun updateLibraryUrl() {
@@ -102,6 +108,7 @@ private fun updateLibraryUrl() {
         if (libGenres.isNotEmpty()) add("genres=${libGenres.joinToString(",") { dev.jellystructure.encodeURIComponent(it) }}")
         if (libTags.isNotEmpty()) add("tags=${libTags.joinToString(",") { dev.jellystructure.encodeURIComponent(it) }}")
         if (libMatch == "ANY") add("match=ANY")
+        libCoverageCond?.let { add("coverage=${dev.jellystructure.encodeURIComponent(libCovJson.encodeToString(Condition.serializer(), it))}") }
     }
     val newHash = if (params.isEmpty()) "#/library" else "#/library?${params.joinToString("&")}"
     historyReplaceState(newHash)
@@ -350,6 +357,11 @@ private fun updateActiveChips(scope: CoroutineScope? = null) {
         libTrackTitle?.let  { add(Triple("title",   "Title",    it)) }
         libAudioCodec?.let  { add(Triple("codec",   "Codec",    codecDisplay(it))) }
         if (libUntaggedAudio) add(Triple("untagged", "Audio", "Untagged only"))
+        // R87: the handed-off content_row gap condition, as a normal (editable/removable) active chip.
+        libCoverageCond?.let { c ->
+            val names = c.rows.joinToString(", ") { it.title?.takeIf { t -> t.isNotBlank() } ?: "Untitled" }
+            add(Triple("coverage", "Content row " + (if (c.op == "is_none_of") "is none of" else "is any of"), names.ifEmpty { "—" }))
+        }
     }
 
     // Highlight filter buttons when their category is active
@@ -384,6 +396,7 @@ private fun updateActiveChips(scope: CoroutineScope? = null) {
                     libUntaggedAudio = false
                     (document.getElementById("af-untagged") as? HTMLInputElement)?.checked = false
                 }
+                key == "coverage"       -> libCoverageCond = null  // R87
             }
             updateActiveChips(scope)
             if (scope != null) scope.launch { loadMore(scope, reset = true) }
@@ -852,8 +865,8 @@ private suspend fun loadMore(scope: CoroutineScope, reset: Boolean) {
                 libAudioLangs, libTrackTitle, libAudioCodec, libUntaggedAudio,
                 libTags,
                 match = libMatch,
-                conditions = libConds.filter { it.values.isNotEmpty() || it.facet == "track_title" }
-                    .map { dev.jellystructure.shared.tv.Condition(it.facet, it.op, it.values.toList()) },
+                conditions = libConds.filter { it.values.isNotEmpty() || it.facet == "track_title" || (it.facet == "content_row" && it.rows.isNotEmpty()) }
+                    .map { dev.jellystructure.shared.tv.Condition(it.facet, it.op, it.values.toList(), it.rows.toList()) },
             )
             if (page == null) {
                 if (firstSlice) grid?.innerHTML =
@@ -952,6 +965,8 @@ private fun libConditionsFromState(): List<WbCond> = buildList {
     if (al.isNotEmpty()) add(WbCond("audio_language", "is_any_of", al.toMutableList()))
     libAudioCodec?.let { add(WbCond("audio_codec", "is_any_of", mutableListOf(it))) }
     libTrackTitle?.let { add(WbCond("track_title", "contains", mutableListOf(it))) }
+    // R87: the handed-off content_row gap condition joins the stack (grid + workbench see it).
+    libCoverageCond?.let { add(WbCond(it.facet, it.op, it.values.toMutableList(), it.rows.toMutableList())) }
 }
 
 private fun libInclude(): String = when (libKind) {
@@ -963,6 +978,8 @@ private fun wireLibraryWorkbench(scope: CoroutineScope) {
         scope = scope, title = title, viewer = null,
         initialMatch = libMatch, initialInclude = libInclude(), initialConds = libConditionsFromState(),
         applyLabel = "Apply to Library",
+        // R87: offer the content_row facet (and let the handed-off condition be edited) using its own rows.
+        rowsContext = libCoverageCond?.rows ?: emptyList(),
         onApply = { match, include, conds -> applyWorkbenchToLibrary(match, include, conds) },
         onSaveAs = { target, match, include, conds -> pickViewerThen(scope) { uid, name -> scope.launch { saveFilterToViewer(uid, name, target, match, include, conds) } } },
     )
@@ -985,6 +1002,11 @@ private fun applyWorkbenchToLibrary(match: String, include: String, conds: List<
         vals("audio_codec").firstOrNull()?.let { add("audioCodec=$it") }
         conds.firstOrNull { it.facet == "track_title" && it.op == "contains" }?.values?.firstOrNull()?.let { add("trackTitle=${dev.jellystructure.encodeURIComponent(it)}") }
         if (match == "ANY") add("match=ANY")
+        // R87: carry an edited content_row gap condition back into the URL so it survives the navigate.
+        conds.firstOrNull { it.facet == "content_row" && it.rows.isNotEmpty() }?.let { c ->
+            val cond = Condition(c.facet, c.op, c.values.toList(), c.rows.toList())
+            add("coverage=${dev.jellystructure.encodeURIComponent(libCovJson.encodeToString(Condition.serializer(), cond))}")
+        }
     }
     App.navigate(if (params.isEmpty()) "/library" else "/library?${params.joinToString("&")}")
 }
