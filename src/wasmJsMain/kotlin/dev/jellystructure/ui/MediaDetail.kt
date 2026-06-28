@@ -1995,9 +1995,11 @@ private class ArtTarget(
     val season: Int = -1,
     val epFilename: String = "",
     var onDisk: Boolean = false,
+    var source: String? = null,   // R131: "tmdb" | "screengrab" | "manual" — for stills
 )
 
 private var artId = ""
+private var artStillBust = 0   // R131: cache-buster so the still preview reloads after a regenerate
 private var artItem: MediaItem? = null
 private var artScope: CoroutineScope? = null
 private var artTargets: List<ArtTarget> = emptyList()
@@ -2067,13 +2069,14 @@ private suspend fun buildArtTargets(item: MediaItem): List<ArtTarget> {
             val label = if (s.season == 0) "Specials" else "Season ${s.season}"
             targets.add(ArtTarget("poster", label, "2 / 3", kind = "season", season = s.season, onDisk = s.posterExists))
         }
-        val stillStatus = MediaApi.getEpisodeStillStatuses(item.id)?.associate { it.filename to it.stillExists } ?: emptyMap()
+        val stillStatus = MediaApi.getEpisodeStillStatuses(item.id)?.associate { it.filename to it } ?: emptyMap()
         item.episodes.forEach { ep ->
             val s = ep.seasonNumber
             val e = ep.episodeNumber
             val code = if (s != null && e != null) "S${s.toString().padStart(2, '0')}E${e.toString().padStart(2, '0')}" else ep.filename
             val label = if (!ep.title.isNullOrBlank()) "$code · ${ep.title}" else code
-            targets.add(ArtTarget("still", label, "16 / 9", kind = "episode", epFilename = ep.filename, onDisk = stillStatus[ep.filename] ?: false))
+            val ss = stillStatus[ep.filename]
+            targets.add(ArtTarget("still", label, "16 / 9", kind = "episode", epFilename = ep.filename, onDisk = ss?.stillExists ?: false, source = ss?.source))
         }
     }
     return targets
@@ -2250,13 +2253,27 @@ private fun renderArtGallery() {
     val footer = ""
 
     val canUpload = t.kind == "asset" || t.kind == "episode"
+    // R131: current on-disk still preview + provenance badge (episodes only).
+    val currentPreview = if (t.kind == "episode" && t.onDisk) {
+        val (badgeCls, badgeTxt) = when (t.source) {
+            "screengrab" -> "warn" to "Screen grab · placeholder (a TMDB still will replace it automatically)"
+            "manual"     -> "ok" to "Manual"
+            else          -> "ok" to "From TMDB"
+        }
+        """<div class="row center" style="margin-bottom:10px;gap:10px;">
+             <img src="/api/media/$artId/episodes/${encodeURIComponent(t.epFilename)}/still/file?b=$artStillBust" style="height:64px;aspect-ratio:16/9;object-fit:cover;border-radius:6px;border:1px solid var(--line)" alt="current still">
+             <div><div class="tiny" style="font-weight:600;margin-bottom:2px;">Current still on disk</div><span class="badge $badgeCls" style="font-size:.62rem;">${badgeTxt.esc()}</span></div>
+           </div>"""
+    } else ""
     gallery.innerHTML = """
       <div class="row center" style="margin-bottom:8px;">
         <h4 style="margin:0;">${t.label.esc()} <span class="tiny muted">· ${all.size} TMDB candidate(s)</span></h4>
         <span class="spacer"></span>
+        ${if (t.kind == "episode") """<button id="art-screengrab-btn" class="btn sm ghost" title="Grab a frame from the video file as a placeholder still">&#9635; Generate frame</button>""" else ""}
         ${if (canUpload) """<button id="art-upload-btn" class="btn sm ghost">Upload</button>""" else ""}
         <button id="art-url-btn" class="btn sm ghost">Paste URL</button>
       </div>
+      $currentPreview
       <div class="art-explain ${if (fellBack) "warn" else ""}">$explainer</div>
       <div class="art-filterbar">
         <div class="art-chips">$langChips</div>
@@ -2347,6 +2364,22 @@ private fun wireArtGallery() {
                 } else {
                     showDetailMsg("Save failed.", false)
                 }
+            }
+        }
+    }
+    document.getElementById("art-screengrab-btn")?.addEventListener("click") {
+        scope.launch {
+            val btn = document.getElementById("art-screengrab-btn") as? HTMLElement
+            btn?.setAttribute("disabled", "")
+            showDetailMsg("Grabbing a frame…", true)
+            val st = MediaApi.screengrabStill(artId, t.epFilename)
+            btn?.removeAttribute("disabled")
+            if (st != null && st.stillExists) {
+                t.onDisk = true; t.source = st.source; artStillBust++
+                showDetailMsg("Frame grabbed.", true)
+                renderArtRail(); wireArtRail(); renderArtGallery(); wireArtGallery()
+            } else {
+                showDetailMsg("Could not grab a frame from the video.", false)
             }
         }
     }
