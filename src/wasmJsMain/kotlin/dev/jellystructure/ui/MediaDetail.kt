@@ -147,10 +147,10 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
                ${item.genres.joinToString("") { genreChipHtml(it) }}
                <span id="genre-add-chip" class="chip ghost" style="cursor:pointer;">＋ add</span>
              </div>
-             <div id="genre-add-row" style="display:none;gap:6px;margin-top:6px;">
-               <input id="genre-input" class="input" type="text" placeholder="pick or type a genre…" maxlength="40" style="width:200px;" autocomplete="off" list="genre-datalist">
-               <datalist id="genre-datalist"></datalist>
+             <div id="genre-add-row" style="display:none;position:relative;gap:6px;margin-top:6px;align-items:center;">
+               <input id="genre-input" class="input" type="text" placeholder="pick or type a genre…" maxlength="40" style="width:200px;" autocomplete="off">
                <button id="genre-add-btn" class="btn sm ghost">Add</button>
+               <div id="genre-suggest" style="display:none;flex-wrap:wrap;gap:5px;align-content:flex-start;position:absolute;top:100%;left:0;z-index:60;margin-top:4px;width:300px;max-height:230px;overflow:auto;background:var(--card);border:1px solid var(--line);border-radius:8px;box-shadow:0 10px 30px rgba(0,0,0,.5);padding:8px;"></div>
              </div>
            </div>"""
 
@@ -868,6 +868,38 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
         (chip.querySelector(".genre-rm") as? HTMLElement)?.let { wireGenreRemove(it) }
         checkDirty()
     }
+    // R128: themed picker of existing library genres (deduped + count-sorted by the API). Click one to add;
+    // filtered by what you type; genres already on this item are hidden so you only see what's addable.
+    var allGenres: List<Pair<String, Int>> = emptyList()
+    fun renderGenreSuggest() {
+        val box = document.getElementById("genre-suggest") as? HTMLElement ?: return
+        val have = currentGenreList().map { it.lowercase() }.toSet()
+        val filter = ((document.getElementById("genre-input") as? HTMLInputElement)?.value ?: "").trim().lowercase()
+        val opts = allGenres.filter { it.first.lowercase() !in have && (filter.isEmpty() || it.first.lowercase().contains(filter)) }
+        box.innerHTML = if (opts.isEmpty())
+            """<span class="muted tiny" style="padding:4px 6px">${if (allGenres.isEmpty()) "Loading…" else "No matching genres"}</span>"""
+        else opts.joinToString("") {
+            """<span class="chip genre-sug" data-g="${it.first.esc()}" style="cursor:pointer">${it.first.esc()} <span class="muted tiny">${it.second}</span></span>"""
+        }
+        box.querySelectorAll(".genre-sug").let { nodes ->
+            for (i in 0 until nodes.length) {
+                val el = nodes.item(i) as? HTMLElement ?: continue
+                // mousedown (not click) so it fires before the input's blur — keeps the dropdown open for multi-add.
+                el.addEventListener("mousedown") { e ->
+                    e.preventDefault()
+                    el.getAttribute("data-g")?.let { addGenreChip(it) }
+                    val inp = document.getElementById("genre-input") as? HTMLInputElement
+                    inp?.value = ""
+                    renderGenreSuggest()
+                    inp?.focus()
+                }
+            }
+        }
+    }
+    fun showGenreSuggest(show: Boolean) {
+        (document.getElementById("genre-suggest") as? HTMLElement)?.style?.display = if (show) "flex" else "none"
+        if (show) renderGenreSuggest()
+    }
     document.querySelectorAll("#genres-chips .genre-rm").let { nodes ->
         for (i in 0 until nodes.length) (nodes.item(i) as? HTMLElement)?.let { wireGenreRemove(it) }
     }
@@ -892,15 +924,18 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
             input.value = ""
         }
     }
+    (document.getElementById("genre-input") as? HTMLInputElement)?.let { inp ->
+        inp.addEventListener("focus") { showGenreSuggest(true) }
+        inp.addEventListener("input") { renderGenreSuggest() }
+        inp.addEventListener("blur") { showGenreSuggest(false) }
+    }
     document.getElementById("diff-genres")?.addEventListener("click") {
         showTagsDiffPopup(origGenres.sorted(), currentGenreList().sorted(), label = "Genres")
     }
-    // R128: populate the genre input's autocomplete with existing library genres (most common first), so
-    // adding a genre is a pick from the dropdown rather than free-typing — keeps genres consistent.
+    // R128: load the library's distinct genres for the picker (deduped + count-sorted by the API).
     scope.launch {
-        val genres = MediaApi.metaFacets()?.genres ?: return@launch
-        (document.getElementById("genre-datalist"))?.innerHTML =
-            genres.joinToString("") { """<option value="${it.value.esc()}"></option>""" }
+        allGenres = MediaApi.metaFacets()?.genres?.map { it.value to it.count } ?: emptyList()
+        if ((document.getElementById("genre-suggest") as? HTMLElement)?.style?.display == "flex") renderGenreSuggest()
     }
 
     // Proactive write-permission check — runs in background after DOM is ready
