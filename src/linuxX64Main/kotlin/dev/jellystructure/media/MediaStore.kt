@@ -360,8 +360,9 @@ class MediaStore(private val db: JellystructureDb, private val jsTagStore: JsTag
         return buildTrackFacets().also { trackFacetsCache = Pair(ver, it) }
     }
 
-    private fun buildTrackFacets(): TrackFacets {
-        val items = allItems()
+    private fun buildTrackFacets(): TrackFacets = buildTrackFacetsFrom(allItems())
+
+    private fun buildTrackFacetsFrom(items: List<MediaItem>): TrackFacets {
         val langCounts = mutableMapOf<String, Int>()
         val codecCounts = mutableMapOf<String, Int>()
         val titleCounts = mutableMapOf<String, Int>()
@@ -393,8 +394,9 @@ class MediaStore(private val db: JellystructureDb, private val jsTagStore: JsTag
         return buildMetaFacets().also { metaFacetsCache = Pair(ver, it) }
     }
 
-    private fun buildMetaFacets(): MetaFacets {
-        val items = allItems()
+    private fun buildMetaFacets(): MetaFacets = buildMetaFacetsFrom(allItems())
+
+    private fun buildMetaFacetsFrom(items: List<MediaItem>): MetaFacets {
         val studioCounts  = mutableMapOf<String, Int>()
         val networkCounts = mutableMapOf<String, Int>()
         val genreCounts   = mutableMapOf<String, Int>()
@@ -427,6 +429,15 @@ class MediaStore(private val db: JellystructureDb, private val jsTagStore: JsTag
             if (conditions.isEmpty()) all.size
             else all.count { item -> ConditionEvaluator.matches(item, match, conditions, emptySet()) }
         }
+    }
+
+    /** R127: facet value counts narrowed to the items matching [conditions] (e.g. a channel's filter) —
+     *  meta (studio/network/genre/tag) + track (audio language/codec/title), each count-sorted, only
+     *  values present in the narrowed set. Uncached: computed on demand when the workbench opens in scope. */
+    fun facetsNarrowed(match: MatchMode, conditions: List<Condition>): Pair<MetaFacets, TrackFacets> {
+        val items = if (conditions.isEmpty()) allItems()
+            else allItems().filter { ConditionEvaluator.matches(it, match, conditions, emptySet()) }
+        return buildMetaFacetsFrom(items) to buildTrackFacetsFrom(items)
     }
 
     private fun upsertItem(item: MediaItem) {

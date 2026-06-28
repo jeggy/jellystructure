@@ -245,6 +245,30 @@ fun Route.mediaRoutes(
             ))
         }
 
+        // R127: facet value counts narrowed to a condition set (e.g. a channel's filter) — meta + track in
+        // one pass. Used by the Workbench in a channel content-row scope; the global GET facets above stay
+        // for the library-wide workbench.
+        post("/facets") {
+            @Serializable data class FacetReq(val match: String = "ALL", val conditions: List<Condition> = emptyList())
+            @Serializable data class FItem(val value: String, val count: Int, val color: String? = null)
+            @Serializable data class NarrowedFacetsResponse(
+                val studios: List<FItem>, val networks: List<FItem>, val genres: List<FItem>, val tags: List<FItem>,
+                val audioLanguages: List<FItem>, val audioCodecs: List<FItem>, val trackTitles: List<FItem>,
+            )
+            val req = call.receive<FacetReq>()
+            val m = runCatching { MatchMode.valueOf(req.match) }.getOrElse { MatchMode.ALL }
+            val (meta, track) = store.facetsNarrowed(m, req.conditions)
+            call.respond(NarrowedFacetsResponse(
+                studios  = meta.studios.map  { FItem(it.value, it.count, it.color) },
+                networks = meta.networks.map { FItem(it.value, it.count, it.color) },
+                genres   = meta.genres.map   { FItem(it.value, it.count, it.color) },
+                tags     = meta.tags.map     { FItem(it.value, it.count, it.color) },
+                audioLanguages = track.audioLanguages.map { FItem(it.value, it.count) },
+                audioCodecs    = track.audioCodecs.map    { FItem(it.value, it.count) },
+                trackTitles    = track.trackTitles.map    { FItem(it.value, it.count) },
+            ))
+        }
+
         delete("/all") {
             if (scanTracker.status().running) {
                 return@delete call.respond(HttpStatusCode.Conflict, mapOf("error" to "A scan is currently running — stop it before clearing data."))
