@@ -131,7 +131,7 @@ fun renderSettings(container: Element, scope: CoroutineScope, query: Map<String,
                     <div class="input mono" id="pipe-cron" style="padding:5px 10px">0 3 * * *</div>
                   </div>
                   <span class="badge ok" id="pipe-next" style="align-self:flex-end">next · tonight 03:00</span>
-                  <button id="pipe-run" class="btn sm primary" style="align-self:flex-end">&#9655; Run now</button>
+                  <button id="pipe-run" class="btn sm primary" style="align-self:flex-end" title="Run every enabled step below now (not just a file scan)">&#9655; Run pipeline now</button>
                 </div>
                 <div class="pipe-recipe" id="pipe-recipe" style="margin-top:12px"></div>
                 <div class="pipe-canvas" id="pipe-canvas" style="margin-top:14px"></div>
@@ -1584,9 +1584,9 @@ private fun wirePipelineBuilder(scope: CoroutineScope) {
         scope.launch {
             val btn = document.getElementById("pipe-run") as? HTMLElement
             btn?.setAttribute("disabled", "")
-            val ok = runCatching { MediaApi.startScan() }.getOrDefault(false)
+            val ok = runCatching { MediaApi.runPipeline() }.getOrDefault(false)
             btn?.removeAttribute("disabled")
-            if (ok) showPipelineToast("Scan started") else showPipelineToast("Failed to start scan")
+            if (ok) showPipelineToast("Pipeline started") else showPipelineToast("Failed to start pipeline")
         }
     }
     val back = document.createElement("div") as HTMLElement
