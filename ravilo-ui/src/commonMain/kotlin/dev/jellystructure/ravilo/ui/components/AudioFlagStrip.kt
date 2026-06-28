@@ -123,3 +123,28 @@ fun AudioFlagStrip(audioLanguages: List<String>, label: String = "AUDIO", modifi
         }
     }
 }
+
+private fun hasMappedFlag(languages: List<String>): Boolean =
+    languages.any { LANG_CC.containsKey(it.lowercase()) }
+
+/**
+ * R134 — audio + subtitle flags on a single line: `AUDIO 🅐🅑 · SUBTITLES 🅒🅓`. Renders only the groups
+ * that actually map to a flag, with a subtle divider between them; nothing when neither maps.
+ */
+@Composable
+fun AudioSubtitleFlagLine(audioLanguages: List<String>, subtitleLanguages: List<String>, modifier: Modifier = Modifier) {
+    val hasAudio = hasMappedFlag(audioLanguages)
+    val hasSub = hasMappedFlag(subtitleLanguages)
+    if (!hasAudio && !hasSub) return
+    Row(
+        modifier = modifier,
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        if (hasAudio) AudioFlagStrip(audioLanguages, label = "AUDIO")
+        if (hasAudio && hasSub) {
+            Text("·", color = Color.White.copy(alpha = 0.35f), fontSize = 14.sp, fontFamily = Sora)
+        }
+        if (hasSub) AudioFlagStrip(subtitleLanguages, label = "SUBTITLES")
+    }
+}

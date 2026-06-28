@@ -48,7 +48,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.jellystructure.ravilo.ui.components.AppBar
-import dev.jellystructure.ravilo.ui.components.AudioFlagStrip
+import dev.jellystructure.ravilo.ui.components.AudioSubtitleFlagLine
 import dev.jellystructure.ravilo.ui.components.ButtonStyle
 import dev.jellystructure.ravilo.ui.components.CastCircle
 import dev.jellystructure.ravilo.ui.components.DetailLoadingShell
@@ -198,13 +198,9 @@ private fun MovieDetailLoaded(
                         Spacer(Modifier.height(8.dp))
                         Text(meta, color = colors.textSecondary, fontSize = 15.sp)
                     }
-                    if (detail.audioLanguages.isNotEmpty()) {
+                    if (detail.audioLanguages.isNotEmpty() || detail.subtitleLanguages.isNotEmpty()) {
                         Spacer(Modifier.height(8.dp))
-                        AudioFlagStrip(detail.audioLanguages)
-                    }
-                    if (detail.subtitleLanguages.isNotEmpty()) {
-                        Spacer(Modifier.height(6.dp))
-                        AudioFlagStrip(detail.subtitleLanguages, label = "SUBTITLES")
+                        AudioSubtitleFlagLine(detail.audioLanguages, detail.subtitleLanguages)  // R134: one line
                     }
                     detail.synopsis?.let {
                         Spacer(Modifier.height(10.dp))
