@@ -30,6 +30,17 @@ data class ArtworkStatus(
 @Serializable
 data class EpisodeStillStatus(val stillExists: Boolean, val stillPath: String)
 
+/** R122: true when a `poster.jpg` artwork file exists on disk for [item] — the real (Jellyfin) poster
+ *  image, as opposed to the TMDB `posterPath` metadata. Drives the Library "missing artwork" filter,
+ *  so it counts manually-added artwork and excludes TMDB-matched items whose poster never downloaded. */
+fun posterArtworkExists(item: MediaItem): Boolean {
+    val dir = when (item.kind) {
+        MediaKind.MOVIE -> item.path.substringBeforeLast('/')
+        MediaKind.TV_SHOW -> item.path
+    }
+    return SystemFileSystem.exists(Path("$dir/poster.jpg"))
+}
+
 class ArtworkDownloader {
     private val downloadGate = Semaphore(8)
     private val http = HttpClient(Curl) {
