@@ -68,6 +68,7 @@ fun AppBar(
     onProfile: (() -> Unit)? = null,
     onSearch: (() -> Unit)? = null,
     scrolled: Boolean = false,
+    title: String? = null,   // R136: page context (e.g. channel name) shown after the brand lockup
     modifier: Modifier = Modifier,
 ) {
     val colors = RaviloTheme.colors
@@ -128,6 +129,18 @@ fun AppBar(
                     fontWeight = FontWeight.Bold,
                     fontFamily = spaceGrotesk,
                     letterSpacing = (-1).sp,
+                )
+            }
+
+            // R136: page context (channel name) between the brand and the nav tabs.
+            if (title != null) {
+                Text(
+                    text = "· $title",
+                    color = colors.textSecondary,
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    fontFamily = sora,
+                    maxLines = 1,
                 )
             }
 
