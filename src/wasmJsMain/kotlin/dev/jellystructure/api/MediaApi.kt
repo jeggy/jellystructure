@@ -113,6 +113,7 @@ data class TriageItem(
     val untaggedTracks: List<TriageTrack>, val cascadeMismatch: CascadeMismatch? = null,
     val episodeIssues: List<EpisodeTriageItem> = emptyList(), val resolvedLanguage: String? = null,
     val languageMix: Boolean = false, val multiDefault: MultiDefaultIssue? = null,
+    val missingTmdb: Boolean = false,
 )
 
 @Serializable

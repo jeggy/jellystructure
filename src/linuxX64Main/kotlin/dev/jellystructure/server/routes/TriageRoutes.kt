@@ -67,10 +67,11 @@ data class TriageItem(
     val resolvedLanguage: String? = null,
     val languageMix: Boolean = false,
     val multiDefault: MultiDefaultIssue? = null,
+    val missingTmdb: Boolean = false,   // no TMDB match — needs an id picked
 )
 
 @Serializable
-data class TriageCount(val untagged: Int, val mismatch: Int, val multiDefault: Int = 0, val total: Int)
+data class TriageCount(val untagged: Int, val mismatch: Int, val multiDefault: Int = 0, val missingTmdb: Int = 0, val total: Int)
 
 @Serializable
 private data class AssignLanguageRequest(val language: String)
@@ -100,7 +101,8 @@ fun Route.triageRoutes(store: MediaStore, jellyfinClient: JellyfinClient, config
                 if (item.kind == MediaKind.TV_SHOW) item.episodes.any { it.detectMultiDefaultAudio() != null }
                 else item.detectMultiDefaultAudio() != null
             }
-            val result = TriageCount(untagged = untagged, mismatch = mismatch, multiDefault = multiDefault, total = untagged + mismatch + multiDefault)
+            val missingTmdb = all.count { it.tmdbId == null }
+            val result = TriageCount(untagged = untagged, mismatch = mismatch, multiDefault = multiDefault, missingTmdb = missingTmdb, total = untagged + mismatch + multiDefault + missingTmdb)
             triageCountCache = Pair(ver, result)
             call.respond(result)
         }
@@ -256,7 +258,8 @@ private fun MediaItem.toTriageItem(): TriageItem? {
                 multiDefault = multiDefault,
             )
         }
-        if (epIssues.isEmpty()) return null
+        val missingTmdb = tmdbId == null
+        if (epIssues.isEmpty() && !missingTmdb) return null
         return TriageItem(
             mediaId = id,
             title = title,
@@ -269,6 +272,7 @@ private fun MediaItem.toTriageItem(): TriageItem? {
             episodeIssues = epIssues,
             resolvedLanguage = resolvedLanguage,
             languageMix = languageMix,
+            missingTmdb = missingTmdb,
         )
     }
     val untagged = tracks
@@ -284,7 +288,8 @@ private fun MediaItem.toTriageItem(): TriageItem? {
         }
     val mismatch = detectCascadeMismatch()
     val multiDefault = detectMultiDefaultAudio()
-    if (untagged.isEmpty() && mismatch == null && multiDefault == null) return null
+    val missingTmdb = tmdbId == null
+    if (untagged.isEmpty() && mismatch == null && multiDefault == null && !missingTmdb) return null
     return TriageItem(
         mediaId = id,
         title = title,
@@ -296,6 +301,7 @@ private fun MediaItem.toTriageItem(): TriageItem? {
         untaggedTracks = untagged,
         cascadeMismatch = mismatch,
         multiDefault = multiDefault,
+        missingTmdb = missingTmdb,
     )
 }
 
