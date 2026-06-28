@@ -143,12 +143,16 @@ class MediaStore(private val db: JellystructureDb, private val jsTagStore: JsTag
                 // related) order by scannedAt. New items keep the Scanner's fresh timestamp and
                 // correctly surface as newly added. Exception: a series that gained episodes counts as
                 // newly added again, so keep the fresh timestamp when the episode count grew.
-                if (old != null && item.episodes.size <= old.episodes.size) {
+                val gainedEpisodes = old != null && item.episodes.size > old.episodes.size
+                if (old != null && !gainedEpisodes) {
                     merged = merged.copy(scannedAt = old.scannedAt)
                 }
-                // addedAt is authoritative from Jellyfin (DateCreated) each scan; keep the old value
-                // only when this scan didn't return one (e.g. Jellyfin omitted the field).
-                if (merged.addedAt == null && old?.addedAt != null) merged = merged.copy(addedAt = old.addedAt)
+                // addedAt = the real library date-added (Jellyfin DateCreated), with two rules on top:
+                // a series that GAINS an episode counts as newly added again (bump to now), and the
+                // value never moves backward across scans, so the bump persists until something newer
+                // arrives. (epoch seconds; nowMs() is ms.)
+                val freshAdded = if (gainedEpisodes) nowMs() / 1000 else (item.addedAt ?: old?.addedAt)
+                merged = merged.copy(addedAt = listOfNotNull(freshAdded, old?.addedAt).maxOrNull())
                 upsertItem(merged)
             }
         }
