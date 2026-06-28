@@ -1,6 +1,7 @@
 package dev.jellystructure.server.routes
 
 import dev.jellystructure.arr.ArrRescanService
+import dev.jellystructure.executePipeline
 import dev.jellystructure.auth.JellyfinClient
 import dev.jellystructure.auth.JellyfinItem
 import dev.jellystructure.config.ConfigStore
@@ -1445,6 +1446,25 @@ fun Route.mediaRoutes(
         val jobId = scanTracker.startNew()
         appScope.launch { runScan(jobId, emptySet(), store, scanner, scanTracker, broadcaster, configStore, jellyfinClient, scanDispatcher, libraryId) }
         call.respond(HttpStatusCode.Accepted, mapOf("status" to "started", "library" to (libraryId ?: "all")))
+    }
+
+    // Phase 93c: run the composed automation (the saved scan pipeline) on demand — same path the scheduler
+    // uses, unlike POST /scan which is file-discovery only. Falls back to a plain scan if no steps configured.
+    post("/pipeline/run") {
+        if (scanTracker.running) {
+            call.respond(HttpStatusCode.Conflict, mapOf("error" to "scan already running"))
+            return@post
+        }
+        val pipeline = configStore.current.scan.pipeline.filter { it.enabled }
+        val jobId = scanTracker.startNew()
+        appScope.launch {
+            if (pipeline.isNotEmpty() && arrRescan != null) {
+                executePipeline(pipeline, jobId, store, scanner, scanTracker, broadcaster, configStore, jellyfinClient, scanDispatcher, artwork, arrRescan)
+            } else {
+                runScan(jobId, emptySet(), store, scanner, scanTracker, broadcaster, configStore, jellyfinClient, scanDispatcher)
+            }
+        }
+        call.respond(HttpStatusCode.Accepted, mapOf("status" to "started", "steps" to pipeline.size))
     }
 
     post("/scan/resume") {
