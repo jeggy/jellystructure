@@ -61,6 +61,9 @@ class ChannelStore(private val apiClient: TvApiClient) {
     private val _state = MutableStateFlow<HomeState>(HomeState.Loading)
     val state: StateFlow<HomeState> = _state.asStateFlow()
     val listState = LazyListState()   // R137: retained scroll position survives navigate→back
+    // R139: identity of the tile the user last navigated from, so Back re-focuses that exact tile.
+    var focusRowKey: String? = null
+    var focusItemKey: String? = null
     private var loadJob: Job? = null
     private var currentId: String? = null
 
@@ -168,10 +171,12 @@ fun ChannelScreen(
                     else 460.dp
 
                     LaunchedEffect(hasHero) {
-                        // R137: Back to a scrolled channel (scroll retained in the store) → focus the bar (a
-                        // fixed overlay; doesn't disturb the scroll) instead of the off-screen hero.
-                        val wasScrolled = listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 0
-                        runCatching { if (hasHero && !wasScrolled) heroFR.requestFocus() else channelBarFR.requestFocus() }
+                        // R139: Back-return from a tile → its row restores focus to the exact tile; skip default.
+                        // R137: else focus the bar when scrolled (fixed overlay; doesn't disturb scroll), hero at top.
+                        if (store.focusItemKey == null) {
+                            val wasScrolled = listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 0
+                            runCatching { if (hasHero && !wasScrolled) heroFR.requestFocus() else channelBarFR.requestFocus() }
+                        }
                     }
 
                     @Suppress("OPT_IN_USAGE")
@@ -199,7 +204,7 @@ fun ChannelScreen(
                                             focusRequester = heroFR,
                                             heightDp = heroHeight,
                                             autoAdvanceSeconds = s.feed.autoAdvanceSeconds,
-                                            onOpenDetail = { onItemSelect(it) },
+                                            onOpenDetail = { store.focusRowKey = null; store.focusItemKey = null; onItemSelect(it) },  // R139
                                             onUp = { runCatching { channelBarFR.requestFocus() } },
                                         )
                                     }
@@ -214,7 +219,8 @@ fun ChannelScreen(
                                     title = row.title,
                                     items = row.items,
                                     itemKey = { card -> card.id },
-                                ) { idx, card ->
+                                    restoreItemKey = if (store.focusRowKey == row.id) store.focusItemKey else null,  // R139
+                                ) { idx, card, fr ->
                                     val variant = if (row.kind == RowKind.CONTINUE) TileVariant.LANDSCAPE
                                                   else s.feed.tileShape.toTileVariant()
                                     Tile(
@@ -224,8 +230,8 @@ fun ChannelScreen(
                                         variant = variant,
                                         progressPct = card.progressPct ?: 0f,
                                         watched = card.watched,
-                                        focusRequester = if (!hasHero && ri == 0 && idx == 0) firstTileFR else null,
-                                        onSelect = { onItemSelect(card) },
+                                        focusRequester = fr ?: if (!hasHero && ri == 0 && idx == 0) firstTileFR else null,  // R139
+                                        onSelect = { store.focusRowKey = row.id; store.focusItemKey = card.id; onItemSelect(card) },  // R139
                                     )
                                 }
                             }

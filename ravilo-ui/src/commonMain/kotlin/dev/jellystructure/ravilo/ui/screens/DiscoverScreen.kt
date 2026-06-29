@@ -175,7 +175,7 @@ private fun DiscoverLoaded(
                     title = row.spec.title,
                     items = row.entries,
                     itemKey = { e -> "${row.spec.id}:${e.entry.rank}" },
-                ) { _, e ->
+                ) { _, e, _ ->   // R139: StaticContentRow signature gained a FocusRequester slot (Discover keeps its row-level restore)
                     RankTile(e) {
                         store.lastSelectedRowIndex = ri
                         onEntrySelect(row.spec.id, e.entry.rank)
