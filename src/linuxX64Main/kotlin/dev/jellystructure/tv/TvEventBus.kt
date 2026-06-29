@@ -29,7 +29,11 @@ class TvEventBus(private val scope: CoroutineScope) {
             set.remove(session)
             if (set.isEmpty()) sessions.remove(userId)
         }
+        Logger.info("TV events: device disconnected for user $userId (${sessions[userId]?.size ?: 0} remaining)", "tv")
     }
+
+    /** R141: monotonic rev — exposed so the degrade-to-poll `/api/tv/config/rev` endpoint can serve it. */
+    suspend fun currentRev(): Long = mutex.withLock { rev }
 
     /** Notify all of [userId]'s connected devices that their RaviloConfig changed. Non-blocking. */
     fun notifyConfigChanged(userId: String) {
