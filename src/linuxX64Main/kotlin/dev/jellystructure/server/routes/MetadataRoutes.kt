@@ -208,7 +208,7 @@ fun Route.metadataRoutes(store: MediaStore, tagStore: JsTagStore, logoDownloader
                         TrackerResolver.hostOf(tor.tracker.takeIf { u -> u.isNotBlank() } ?: "") in t.hosts
                     } ?: 0
                     TrackerWithStats(t.name, t.isPrivate, t.hosts, count)
-                })
+                }.sortedByDescending { it.torrentCount })
             }
             post {
                 val cs = configStore ?: return@post call.respond(HttpStatusCode.ServiceUnavailable)

@@ -212,7 +212,8 @@ private fun renderTagsTab(data: TagsResponse): String = buildString {
                 append("""<span class="tiny muted" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:200px">${tag.description}</span>""")
             }
             append("</span>")
-            append("""<span class="badge info" style="flex-shrink:0">${tag.count}</span>""")
+            val enc102 = dev.jellystructure.encodeURIComponent(tag.name)
+            append("""<a href="#/library?tags=$enc102" onclick="event.stopPropagation()" class="badge info" style="flex-shrink:0;cursor:pointer;text-decoration:none">${tag.count}</a>""")
             append("</div>")
         }
         append("</div>")
@@ -221,7 +222,8 @@ private fun renderTagsTab(data: TagsResponse): String = buildString {
         append("""<h3 style="font-size:.9rem;font-weight:600;margin:0 0 10px;color:var(--ink-soft);text-transform:uppercase;letter-spacing:.06em">Other tags</h3>""")
         append("""<div style="display:flex;flex-wrap:wrap;gap:6px">""")
         for (tag in data.otherTags) {
-            append("""<span data-filter-name="${tag.name.lowercase()}" style="display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:99px;background:var(--fill-2);border:1px solid var(--line);font-size:.8rem;color:var(--ink)">${tag.name}<span style="font-size:.72rem;color:var(--ink-soft)">${tag.count}</span></span>""")
+            val encOther = dev.jellystructure.encodeURIComponent(tag.name)
+            append("""<a href="#/library?tags=$encOther" style="display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:99px;background:var(--fill-2);border:1px solid var(--line);font-size:.8rem;color:var(--ink);text-decoration:none;cursor:pointer">${tag.name}<span style="font-size:.72rem;color:var(--ink-soft)">${tag.count}</span></a>""")
         }
         append("</div>")
     }

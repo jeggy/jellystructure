@@ -29,6 +29,7 @@ data class ArtworkStatus(
     val posterExists: Boolean,
     val fanartExists: Boolean,
     val logoExists: Boolean = false,
+    val bannerExists: Boolean = false,
 )
 
 @Serializable
@@ -65,6 +66,7 @@ class ArtworkDownloader(private val tmdbClient: TmdbClient, private val screengr
             posterExists = SystemFileSystem.exists(Path("$dir/poster.jpg")),
             fanartExists = SystemFileSystem.exists(Path("$dir/fanart.jpg")),
             logoExists = SystemFileSystem.exists(Path("$dir/clearlogo.png")),
+            bannerExists = SystemFileSystem.exists(Path("$dir/banner.jpg")),
         )
     }
 
@@ -234,6 +236,17 @@ class ArtworkDownloader(private val tmdbClient: TmdbClient, private val screengr
 
     fun assetPath(item: MediaItem, asset: String): String? =
         assetFilename(asset)?.let { "${mediaDir(item)}/$it" }
+
+    /** Read the TMDB file_path recorded when a clearlogo candidate was picked, or null. */
+    fun readAssetSrc(item: MediaItem, asset: String): String? =
+        assetPath(item, asset)?.let { p -> runCatching { SystemFileSystem.source(Path("$p.src")).buffered().readString().trim() }.getOrNull()?.takeIf { it.isNotBlank() } }
+
+    /** Record the TMDB file_path for the chosen clearlogo (or banner when providers are added). */
+    fun writeAssetSrc(item: MediaItem, asset: String, source: String) {
+        assetPath(item, asset)?.let { p ->
+            runCatching { val s = SystemFileSystem.sink(Path("$p.src")).buffered(); s.writeString(source); s.flush(); s.close() }
+        }
+    }
 
     /** `source` is either a TMDB file_path (leading "/") or a full http(s) URL. */
     suspend fun saveAsset(item: MediaItem, asset: String, source: String): Boolean {
