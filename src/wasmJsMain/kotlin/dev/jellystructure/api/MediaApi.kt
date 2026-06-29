@@ -114,6 +114,7 @@ data class TriageItem(
     val episodeIssues: List<EpisodeTriageItem> = emptyList(), val resolvedLanguage: String? = null,
     val languageMix: Boolean = false, val multiDefault: MultiDefaultIssue? = null,
     val missingArtwork: Boolean = false,
+    val missingFromSource: Boolean = false,   // Phase 95: gone from Jellyfin — kept (scanner never deletes)
 )
 
 @Serializable
