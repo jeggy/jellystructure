@@ -34,19 +34,27 @@ val EdgeBringIntoViewSpec: BringIntoViewSpec = object : BringIntoViewSpec {
  * - [topInsetDp] > 0 (R65): treat the top [topInsetDp] of the viewport as occupied (e.g. an overlay
  *   app bar). Top-clipped targets are revealed at `topInsetDp` instead of `y=0`, keeping them from
  *   sliding under the bar.
+ * - [centerLineFraction] > 0 (R140): a **focus band** for downward navigation, as a fraction of the viewport
+ *   height (e.g. 0.3 = 30% down) so it's density-independent. A focused target whose top sits *below* the
+ *   band is pulled up so its top rests on it — the focused row lands at a consistent mid-screen height (next
+ *   row peeking below) instead of hugging the bottom edge. Unlike the edge-only peek, this fires even when
+ *   the target is already fully visible, which is what makes the position consistent. Upward reveals still
+ *   snap to [topInsetDp] (unchanged); 0 disables the band so detail screens keep pure edge behaviour.
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun rememberEdgeBringIntoViewSpec(peekDp: Dp = 0.dp, topInsetDp: Dp = 0.dp): BringIntoViewSpec {
+fun rememberEdgeBringIntoViewSpec(peekDp: Dp = 0.dp, topInsetDp: Dp = 0.dp, centerLineFraction: Float = 0f): BringIntoViewSpec {
     val density = LocalDensity.current
-    return remember(density, peekDp, topInsetDp) {
+    return remember(density, peekDp, topInsetDp, centerLineFraction) {
         object : BringIntoViewSpec {
             override fun calculateScrollDistance(offset: Float, size: Float, containerSize: Float): Float {
-                val peekPx = with(density) { peekDp.toPx() }
-                val topPx  = with(density) { topInsetDp.toPx() }
+                val peekPx   = with(density) { peekDp.toPx() }
+                val topPx    = with(density) { topInsetDp.toPx() }
+                val centerPx = containerSize * centerLineFraction   // fraction of viewport → density-independent
                 return when {
-                    offset < topPx -> offset - topPx
-                    offset + size > containerSize -> offset + size - containerSize + peekPx
+                    offset < topPx -> offset - topPx                                  // up / clipped-top → reveal at inset
+                    centerLineFraction > 0f && offset > centerPx -> offset - centerPx   // down → pull to the focus band
+                    offset + size > containerSize -> offset + size - containerSize + peekPx  // (band off) bottom clip
                     else -> 0f
                 }
             }

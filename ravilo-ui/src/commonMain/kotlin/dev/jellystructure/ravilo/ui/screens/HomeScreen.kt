@@ -169,10 +169,10 @@ private fun HomeLoaded(
     // R140: comfortable vertical framing for content rows.
     //  - topInsetDp clears the 60dp AppBar + the full ~64dp row-title band (was 34, too small → the title
     //    slid under the bar when navigating UP). Now the focused row's title is always clearly visible.
-    //  - peekDp (DOWN) reveals the *next* row's title + a sliver of its tiles, so a focused row sits higher
-    //    with the next one peeking below — easier on the eyes than the row landing at the very bottom.
+    //  - centerLineDp (DOWN) is a focus band: the focused row's top snaps to ~1/3 down, so the row you're
+    //    looking at sits toward the middle (not the bottom), with the next row peeking below.
     val edgeBringIntoViewSpec = rememberEdgeBringIntoViewSpec(
-        peekDp = 150.dp, topInsetDp = RaviloDimens.appBarHeight + 64.dp,
+        peekDp = 150.dp, topInsetDp = RaviloDimens.appBarHeight + 64.dp, centerLineFraction = 0.3f,
     )
     @OptIn(ExperimentalFoundationApi::class)
     CompositionLocalProvider(LocalBringIntoViewSpec provides edgeBringIntoViewSpec) {
@@ -180,7 +180,7 @@ private fun HomeLoaded(
         state = listState,
         // R140: generous bottom padding so the LAST row can still scroll up to the same comfortable height
         // as the others (never stranded at the very bottom of the screen).
-        contentPadding = PaddingValues(bottom = 220.dp),
+        contentPadding = PaddingValues(bottom = 240.dp),
         modifier = Modifier.fillMaxSize().focusRequester(columnFR),
     ) {
         // Hero carousel
