@@ -166,17 +166,22 @@ private fun HomeLoaded(
         ),
     ) {
     @Suppress("OPT_IN_USAGE")
-    // R65: topInsetDp clears the overlay AppBar (60dp) + row-title band (~34dp) so the title
-    // isn't hidden under the bar when D-pad navigates up to the first content row.
+    // R140: comfortable vertical framing for content rows.
+    //  - topInsetDp clears the 60dp AppBar + the full ~64dp row-title band (was 34, too small → the title
+    //    slid under the bar when navigating UP). Now the focused row's title is always clearly visible.
+    //  - peekDp (DOWN) reveals the *next* row's title + a sliver of its tiles, so a focused row sits higher
+    //    with the next one peeking below — easier on the eyes than the row landing at the very bottom.
     val edgeBringIntoViewSpec = rememberEdgeBringIntoViewSpec(
-        peekDp = 80.dp, topInsetDp = RaviloDimens.appBarHeight + 34.dp,
+        peekDp = 150.dp, topInsetDp = RaviloDimens.appBarHeight + 64.dp,
     )
     @OptIn(ExperimentalFoundationApi::class)
     CompositionLocalProvider(LocalBringIntoViewSpec provides edgeBringIntoViewSpec) {
     LazyColumn(
         state = listState,
+        // R140: generous bottom padding so the LAST row can still scroll up to the same comfortable height
+        // as the others (never stranded at the very bottom of the screen).
+        contentPadding = PaddingValues(bottom = 220.dp),
         modifier = Modifier.fillMaxSize().focusRequester(columnFR),
-        contentPadding = PaddingValues(bottom = 40.dp),
     ) {
         // Hero carousel
         if (hasHero) {

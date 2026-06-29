@@ -151,13 +151,14 @@ private fun DiscoverLoaded(
             },
         ),
     ) {
-    val edgeBringIntoViewSpec = rememberEdgeBringIntoViewSpec(peekDp = 80.dp)
+    // R140: match Home — bigger peek (next-row title peeks below), top inset clears the bar on UP.
+    val edgeBringIntoViewSpec = rememberEdgeBringIntoViewSpec(peekDp = 150.dp, topInsetDp = RaviloDimens.appBarHeight + 64.dp)
     @OptIn(ExperimentalFoundationApi::class)
     CompositionLocalProvider(LocalBringIntoViewSpec provides edgeBringIntoViewSpec) {
         LazyColumn(
             state = listState,
             modifier = Modifier.fillMaxSize().focusRequester(columnFR),
-            contentPadding = PaddingValues(top = RaviloDimens.appBarHeight + 24.dp, bottom = 48.dp),
+            contentPadding = PaddingValues(top = RaviloDimens.appBarHeight + 24.dp, bottom = 220.dp), // R140 bottom lift
         ) {
             item(key = "discover-head") {
                 Column(Modifier.padding(horizontal = RaviloDimens.sectionPadH, vertical = 8.dp)) {
