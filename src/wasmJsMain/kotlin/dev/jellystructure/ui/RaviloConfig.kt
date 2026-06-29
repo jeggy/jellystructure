@@ -1153,7 +1153,7 @@ private fun openChannelEditorPage(container: Element, scope: CoroutineScope, idx
             <div style="display:flex;align-items:center;gap:10px;margin-top:14px;padding-top:12px;border-top:1px solid var(--line)">
               <b style="font-size:.85rem">Newly Added on this channel</b>
               <select id="ch-newly-added" class="input" style="width:auto;font-size:.84rem;padding:3px 8px;height:auto">
-                <option value="inherit"${naOpt("inherit")}>Same as global setting</option>
+                <option value="inherit"${naOpt("inherit")}>Same as Home</option>
                 <option value="merged"${naOpt("merged")}>One combined row</option>
                 <option value="split"${naOpt("split")}>Split — Movies &amp; Series</option>
                 <option value="none"${naOpt("none")}>Don't show</option>
@@ -1723,8 +1723,6 @@ private fun renderRows(container: Element) {
     val sect = container.querySelector("#sect-rows") ?: return
     val merging = currentConfig.mergeNewlyAdded
     val mergeChecked = if (merging) " checked" else ""
-    val mergingChannels = currentConfig.mergeNewlyAddedChannels
-    val mergeChannelsChecked = if (mergingChannels) " checked" else ""
 
     val normalRows = normalizedRows(currentConfig.rows)
     if (normalRows.size != currentConfig.rows.size) currentConfig = currentConfig.copy(rows = normalRows)
@@ -1758,13 +1756,8 @@ private fun renderRows(container: Element) {
           <div class="box flat" style="background:var(--hi-soft);border:1px solid rgba(255,180,0,.25);border-radius:8px;padding:12px 14px;margin-bottom:14px">
             <label style="display:flex;align-items:center;gap:10px;font-size:.9rem;cursor:pointer">
               <input type="checkbox" id="merge-newly-added"$mergeChecked>
-              <div><b>Merge newly added — Home</b> <span style="font-size:.8rem;color:var(--ink-soft)">&mdash; ${if (merging) "one combined row (all media)" else "two rows: Movies + Series"}</span>
-                <div class="tiny muted" style="margin-top:3px">ON: one "Newly Added" row for all media. OFF: separate "Movies — Newly Added" and "Series — Newly Added" rows.</div></div>
-            </label>
-            <label style="display:flex;align-items:center;gap:10px;font-size:.9rem;cursor:pointer;margin-top:10px;padding-top:10px;border-top:1px solid rgba(255,180,0,.18)">
-              <input type="checkbox" id="merge-newly-added-channels"$mergeChannelsChecked>
-              <div><b>Merge newly added — Channels</b> <span style="font-size:.8rem;color:var(--ink-soft)">&mdash; ${if (mergingChannels) "one combined row (all media)" else "two rows: Movies + Series"}</span>
-                <div class="tiny muted" style="margin-top:3px">Same toggle, applied inside channel pages instead of Home — so a channel can show one combined "Newly Added" row while Home stays split (or vice-versa).</div></div>
+              <div><b>Merge newly added</b> <span style="font-size:.8rem;color:var(--ink-soft)">&mdash; ${if (merging) "one combined row (all media)" else "two rows: Movies + Series"}</span>
+                <div class="tiny muted" style="margin-top:3px">ON: one "Newly Added" row for all media. OFF: separate "Movies — Newly Added" and "Series — Newly Added" rows. Applies to Home and to channels set to "Same as Home"; each channel can override this in its own editor.</div></div>
             </label>
           </div>
           <div id="row-list">$rows</div>
@@ -1787,10 +1780,6 @@ private fun renderRows(container: Element) {
     sect.querySelector("#merge-newly-added")?.addEventListener("change") { _ ->
         val checked = (sect.querySelector("#merge-newly-added") as? HTMLInputElement)?.checked ?: false
         structural(container, { currentConfig = currentConfig.copy(mergeNewlyAdded = checked) }, ::renderRows)
-    }
-    sect.querySelector("#merge-newly-added-channels")?.addEventListener("change") { _ ->
-        val checked = (sect.querySelector("#merge-newly-added-channels") as? HTMLInputElement)?.checked ?: false
-        structural(container, { currentConfig = currentConfig.copy(mergeNewlyAddedChannels = checked) }, ::renderRows)
     }
     sect.querySelector("#row-add")?.addEventListener("click") { _ ->
         val scope = rcScope ?: return@addEventListener
@@ -2139,7 +2128,6 @@ private fun collectConfig(container: Element) {
         existing.copy(title = title, enabled = enabled, order = i)
     }
     val mergeNewlyAdded = (container.querySelector("#merge-newly-added") as? HTMLInputElement)?.checked ?: currentConfig.mergeNewlyAdded
-    val mergeNewlyAddedChannels = (container.querySelector("#merge-newly-added-channels") as? HTMLInputElement)?.checked ?: currentConfig.mergeNewlyAddedChannels
     val heroHeight   = (container.querySelector("#hero-height") as? HTMLInputElement)?.value?.toIntOrNull() ?: 56
     val autoAdvance  = (container.querySelector("#auto-advance") as? HTMLSelectElement)?.value?.toIntOrNull() ?: 7
     val uiLanguage   = (container.querySelector("#beh-lang") as? HTMLSelectElement)?.value ?: "en"
@@ -2170,7 +2158,6 @@ private fun collectConfig(container: Element) {
         channels = channels,
         rows = rows,
         mergeNewlyAdded = mergeNewlyAdded,
-        mergeNewlyAddedChannels = mergeNewlyAddedChannels,
         defaultSkin = defaultSkin,
         allowSkinOverride = allowOverride,
         // Preserve viewer-set fields that are not exposed in the admin UI.
