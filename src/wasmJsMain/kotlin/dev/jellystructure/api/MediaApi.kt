@@ -703,6 +703,25 @@ object MediaApi {
             parameter("q", query)
         }.body<List<PersonSearchResult>>()
     }.getOrDefault(emptyList())
+
+    // Phase 96 — bulk track reorder
+    suspend fun bulkReorderPlan(mediaId: String, kind: String, scope: String, order: List<String>, setDefault: Boolean): BulkPlanResponse? = runCatching {
+        val orderJson = order.joinToString(",") { "\"${it.replace("\"", "\\\"")}\"" }
+        httpClient.post("/api/media/$mediaId/tracks/bulk-reorder/plan") {
+            contentType(ContentType.Application.Json)
+            setBody("""{"kind":"$kind","scope":"$scope","order":[$orderJson],"setDefault":$setDefault}""")
+        }.body<BulkPlanResponse>()
+    }.getOrNull()
+
+    suspend fun startBulkReorder(mediaId: String, kind: String, scope: String, order: List<String>, setDefault: Boolean, optIn: List<String>): String? = runCatching {
+        val orderJson = order.joinToString(",") { "\"${it.replace("\"", "\\\"")}\"" }
+        val optInJson = optIn.joinToString(",") { "\"${it.replace("\"", "\\\"")}\"" }
+        val body = httpClient.post("/api/media/$mediaId/tracks/bulk-reorder") {
+            contentType(ContentType.Application.Json)
+            setBody("""{"kind":"$kind","scope":"$scope","order":[$orderJson],"setDefault":$setDefault,"optIn":[$optInJson]}""")
+        }.body<Map<String, String>>()
+        body["jobId"]
+    }.getOrNull()
 }
 
 @Serializable
@@ -726,4 +745,40 @@ data class TmdbMatchResult(
     val year: String,
     val posterPath: String? = null,
     val overview: String = "",
+)
+
+// Phase 96 — bulk track reorder DTOs
+@Serializable
+data class BulkTrackSummary(
+    val specifier: String,
+    val language: String? = null,
+    val title: String? = null,
+    val isDefault: Boolean = false,
+    val isStray: Boolean = false,
+)
+
+@Serializable
+data class BulkPlanEpisode(
+    val filename: String,
+    val code: String,
+    val title: String? = null,
+    val status: String, // will_reorder | already_correct | partial | needs_review | nothing_to_do
+    val currentOrder: List<BulkTrackSummary> = emptyList(),
+    val proposedOrder: List<BulkTrackSummary> = emptyList(),
+    val reason: String = "",
+    val estSeconds: Double = 0.0,
+    val remux: Boolean = false,
+)
+
+@Serializable
+data class BulkPlanResponse(
+    val episodes: List<BulkPlanEpisode> = emptyList(),
+    val scopeCount: Int = 0,
+    val willReorder: Int = 0,
+    val alreadyCorrect: Int = 0,
+    val partial: Int = 0,
+    val needsReview: Int = 0,
+    val nothingToDo: Int = 0,
+    val totalEstSeconds: Double = 0.0,
+    val remuxCount: Int = 0,
 )

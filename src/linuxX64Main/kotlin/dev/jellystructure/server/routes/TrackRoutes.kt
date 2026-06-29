@@ -3,6 +3,8 @@ package dev.jellystructure.server.routes
 import dev.jellystructure.auth.JellyfinClient
 import dev.jellystructure.config.ConfigStore
 import dev.jellystructure.server.routes.fireWebhook
+import dev.jellystructure.jobs.JobEvent
+import dev.jellystructure.jobs.WsBroadcaster
 import dev.jellystructure.media.FfmpegRunner
 import dev.jellystructure.media.FfprobeRunner
 import dev.jellystructure.media.MediaHistory
@@ -11,7 +13,9 @@ import dev.jellystructure.media.MkvpropeditRunner
 import dev.jellystructure.resolver.LanguageResolver
 import dev.jellystructure.resolver.primaryAudioLanguage
 import dev.jellystructure.arr.ArrRescanService
+import dev.jellystructure.model.Episode
 import dev.jellystructure.model.MediaKind
+import dev.jellystructure.model.Track
 import dev.jellystructure.model.TrackKind
 import dev.jellystructure.torrent.SeedingCheckResult
 import dev.jellystructure.torrent.SeedingGuard
@@ -23,7 +27,18 @@ import io.ktor.server.routing.delete
 import io.ktor.server.routing.get
 import io.ktor.server.routing.post
 import io.ktor.server.routing.route
+import kotlinx.cinterop.ByteVar
+import kotlinx.cinterop.ExperimentalForeignApi
+import kotlinx.cinterop.allocArray
+import kotlinx.cinterop.memScoped
+import kotlinx.cinterop.toKString
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
+import platform.posix.fgets
+import platform.posix.pclose
+import platform.posix.popen
+import platform.posix.time
 
 @Serializable
 private data class SetDefaultRequest(val specifier: String)
@@ -55,7 +70,53 @@ data class TrackPlan(
     val after: List<TrackSnap> = emptyList(),
 )
 
-fun Route.trackRoutes(store: MediaStore, configStore: ConfigStore, jellyfinClient: JellyfinClient, mediaHistory: MediaHistory, seedingGuard: SeedingGuard, arrRescan: ArrRescanService? = null) {
+// Phase 96 — bulk-reorder DTOs
+@Serializable
+data class BulkTrackSummary(
+    val specifier: String,
+    val language: String?,
+    val title: String?,
+    val isDefault: Boolean,
+    val isStray: Boolean,
+)
+
+@Serializable
+data class BulkPlanEpisode(
+    val filename: String,
+    val code: String,
+    val title: String?,
+    val status: String, // will_reorder | already_correct | partial | needs_review | nothing_to_do
+    val currentOrder: List<BulkTrackSummary>,
+    val proposedOrder: List<BulkTrackSummary>,
+    val reason: String,
+    val estSeconds: Double,
+    val remux: Boolean,
+)
+
+@Serializable
+data class BulkPlanResponse(
+    val episodes: List<BulkPlanEpisode>,
+    val scopeCount: Int,
+    val willReorder: Int,
+    val alreadyCorrect: Int,
+    val partial: Int,
+    val needsReview: Int,
+    val nothingToDo: Int,
+    val totalEstSeconds: Double,
+    val remuxCount: Int,
+)
+
+@OptIn(ExperimentalForeignApi::class)
+fun Route.trackRoutes(
+    store: MediaStore,
+    configStore: ConfigStore,
+    jellyfinClient: JellyfinClient,
+    mediaHistory: MediaHistory,
+    seedingGuard: SeedingGuard,
+    arrRescan: ArrRescanService? = null,
+    appScope: CoroutineScope,
+    broadcaster: WsBroadcaster,
+) {
     route("/media/{id}") {
         // GET /api/media/{id}/tracks/plan?specifier=a:0 — dry-run: returns command without executing
         get("/tracks/plan") {
@@ -379,5 +440,270 @@ fun Route.trackRoutes(store: MediaStore, configStore: ConfigStore, jellyfinClien
             if (ok) call.respond(mapOf("ok" to true))
             else call.respond(HttpStatusCode.BadGateway, mapOf("error" to "Jellyfin refresh failed"))
         }
+
+        // Phase 96: POST /api/media/{id}/tracks/bulk-reorder/plan — classify episodes (dry-run)
+        post("/tracks/bulk-reorder/plan") {
+            val id = call.parameters["id"] ?: return@post call.respond(HttpStatusCode.BadRequest)
+            val item = store.resolve(id) ?: return@post call.respond(HttpStatusCode.NotFound)
+            if (item.kind != MediaKind.TV_SHOW)
+                return@post call.respond(HttpStatusCode.BadRequest, mapOf("error" to "bulk reorder is only for TV shows"))
+
+            @Serializable data class BulkPlanReq(val kind: String, val scope: String, val order: List<String>, val setDefault: Boolean = false)
+            val req = call.receive<BulkPlanReq>()
+            val kind = parseBulkKind(req.kind)
+                ?: return@post call.respond(HttpStatusCode.BadRequest, mapOf("error" to "kind must be audio or subtitle"))
+            val episodes = episodesInScope(item.episodes, req.scope)
+                ?: return@post call.respond(HttpStatusCode.BadRequest, mapOf("error" to "scope must be 'series' or 'season-N'"))
+
+            call.respond(classifyEpisodes(episodes, kind, req.order, req.setDefault))
+        }
+
+        // Phase 96: POST /api/media/{id}/tracks/bulk-reorder — apply as background job
+        post("/tracks/bulk-reorder") {
+            val id = call.parameters["id"] ?: return@post call.respond(HttpStatusCode.BadRequest)
+            val item = store.resolve(id) ?: return@post call.respond(HttpStatusCode.NotFound)
+            if (item.kind != MediaKind.TV_SHOW)
+                return@post call.respond(HttpStatusCode.BadRequest, mapOf("error" to "bulk reorder is only for TV shows"))
+
+            @Serializable data class BulkApplyReq(val kind: String, val scope: String, val order: List<String>, val setDefault: Boolean = false, val optIn: List<String> = emptyList())
+            val req = call.receive<BulkApplyReq>()
+            val kind = parseBulkKind(req.kind)
+                ?: return@post call.respond(HttpStatusCode.BadRequest, mapOf("error" to "kind must be audio or subtitle"))
+            val episodes = episodesInScope(item.episodes, req.scope)
+                ?: return@post call.respond(HttpStatusCode.BadRequest, mapOf("error" to "scope must be 'series' or 'season-N'"))
+
+            val plan = classifyEpisodes(episodes, kind, req.order, req.setDefault)
+            val toReorder = plan.episodes.filter { ep ->
+                ep.status == "will_reorder" || (ep.status == "partial" && ep.filename in req.optIn)
+            }
+            val toFlagFix = if (req.setDefault) plan.episodes.filter { ep ->
+                ep.status == "already_correct" &&
+                    item.episodes.firstOrNull { it.filename == ep.filename }
+                        ?.tracks?.filter { it.kind == kind }
+                        ?.let { ts -> ts.isNotEmpty() && ts.minByOrNull { it.streamIndex }?.default == false } == true
+            } else emptyList()
+
+            val jobId = "reorder-bulk-$id-${time(null)}"
+            val total = toReorder.size + toFlagFix.size
+            call.respond(mapOf("jobId" to jobId))
+
+            appScope.launch {
+                broadcaster.broadcast(JobEvent.Started(jobId, total))
+                var succeeded = 0
+                var failed = 0
+
+                for (epPlan in toReorder) {
+                    val ep = store.resolve(id)?.episodes?.firstOrNull { it.filename == epPlan.filename } ?: continue
+                    val targetLangs = req.order.map { it.lowercase() }
+                    val tracksOfKind = ep.tracks.filter { it.kind == kind }
+                    val ordered = computeProposedTracks(tracksOfKind, targetLangs, partial = epPlan.status == "partial")
+                    val orderedIndices = ordered.map { it.streamIndex }
+
+                    when (val guard = seedingGuard.check(ep.path, configStore.current)) {
+                        is SeedingCheckResult.Blocked -> {
+                            broadcaster.broadcast(JobEvent.FileDone(jobId, epPlan.code, false, "Seeded by '${guard.torrentName}'"))
+                            failed++; continue
+                        }
+                        is SeedingCheckResult.Unreachable -> {
+                            broadcaster.broadcast(JobEvent.FileDone(jobId, epPlan.code, false, "qBittorrent unreachable"))
+                            failed++; continue
+                        }
+                        else -> Unit
+                    }
+
+                    val ok = FfmpegRunner.reorderTracks(ep.path, kind, orderedIndices)
+                    if (!ok) {
+                        broadcaster.broadcast(JobEvent.FileDone(jobId, epPlan.code, false, "ffmpeg remux failed"))
+                        failed++; continue
+                    }
+
+                    val newTracks = FfprobeRunner.probe(ep.path)
+                    val latestItem = store.resolve(id)
+                    if (latestItem != null) {
+                        val epIdx = latestItem.episodes.indexOfFirst { it.filename == ep.filename }
+                        if (epIdx >= 0) {
+                            val newIssue = newTracks.count { (it.kind == TrackKind.AUDIO || it.kind == TrackKind.SUBTITLE) && it.language == null }
+                            val epResolved = if (kind == TrackKind.AUDIO) primaryAudioLanguage(configStore.current, ep.path, newTracks) else ep.resolvedLanguage
+                            val updatedEps = latestItem.episodes.toMutableList()
+                            updatedEps[epIdx] = ep.copy(tracks = newTracks, issueCount = newIssue, resolvedLanguage = epResolved)
+                            store.updateOne(latestItem.copy(episodes = updatedEps))
+                        }
+                    }
+
+                    if (req.setDefault) {
+                        val firstOfKind = newTracks.filter { it.kind == kind }.minByOrNull { it.streamIndex }
+                        val sameKind = newTracks.filter { it.kind == kind }
+                        if (firstOfKind != null && !firstOfKind.default) {
+                            val ext = ep.path.substringAfterLast('.').lowercase()
+                            if (ext == "mkv") MkvpropeditRunner.setDefault(ep.path, firstOfKind.streamIndex, sameKind.map { it.streamIndex })
+                            else FfmpegRunner.setDefault(ep.path, firstOfKind.streamIndex, sameKind.map { it.streamIndex }, kind)
+                        }
+                    }
+
+                    store.resolve(id)?.let { broadcaster.broadcast(JobEvent.ItemScanned(jobId, it)) }
+                    broadcaster.broadcast(JobEvent.FileDone(jobId, epPlan.code, true, null))
+                    succeeded++
+                }
+
+                for (epPlan in toFlagFix) {
+                    val ep = store.resolve(id)?.episodes?.firstOrNull { it.filename == epPlan.filename } ?: continue
+                    val tracksOfKind = ep.tracks.filter { it.kind == kind }
+                    val firstOfKind = tracksOfKind.minByOrNull { it.streamIndex } ?: continue
+                    val sameKind = tracksOfKind.map { it.streamIndex }
+
+                    when (val guard = seedingGuard.check(ep.path, configStore.current)) {
+                        is SeedingCheckResult.Blocked -> { broadcaster.broadcast(JobEvent.FileDone(jobId, epPlan.code, false, "Seeded")); failed++; continue }
+                        is SeedingCheckResult.Unreachable -> { broadcaster.broadcast(JobEvent.FileDone(jobId, epPlan.code, false, "qBittorrent unreachable")); failed++; continue }
+                        else -> Unit
+                    }
+
+                    val ext = ep.path.substringAfterLast('.').lowercase()
+                    val ok = if (ext == "mkv") MkvpropeditRunner.setDefault(ep.path, firstOfKind.streamIndex, sameKind)
+                             else FfmpegRunner.setDefault(ep.path, firstOfKind.streamIndex, sameKind, kind)
+                    broadcaster.broadcast(JobEvent.FileDone(jobId, epPlan.code, ok, if (!ok) "set-default failed" else null))
+                    if (ok) succeeded++ else failed++
+                }
+
+                val finalItem = store.resolve(id)
+                if (finalItem != null && kind == TrackKind.AUDIO) {
+                    val votes = mutableMapOf<String, Int>()
+                    for (e in finalItem.episodes) {
+                        e.tracks.firstOrNull { it.kind == TrackKind.AUDIO }?.language
+                            ?.let { LanguageResolver.normalize(it) }
+                            ?.let { lang -> votes[lang] = (votes[lang] ?: 0) + 1 }
+                    }
+                    val newResolved = votes.maxByOrNull { it.value }?.key
+                    if (newResolved != null && newResolved != finalItem.resolvedLanguage)
+                        store.updateOne(finalItem.copy(resolvedLanguage = newResolved))
+                }
+                mediaHistory.record(id, "bulk_reorder_tracks", "kind=${req.kind} scope=${req.scope} succeeded=$succeeded failed=$failed")
+                val cfg = configStore.current
+                if (!item.jellyfinId.isNullOrBlank() && cfg.apiKeys.jellyfinUrl.isNotBlank())
+                    jellyfinClient.refreshItem(cfg.apiKeys.jellyfinUrl, cfg.apiKeys.jellyfinToken, item.jellyfinId)
+
+                broadcaster.broadcast(JobEvent.Finished(jobId, succeeded, failed))
+            }
+        }
     }
+}
+
+// ── Phase 96 helpers ─────────────────────────────────────────────────────────
+
+private fun parseBulkKind(s: String): TrackKind? = when (s.lowercase()) {
+    "audio" -> TrackKind.AUDIO
+    "subtitle" -> TrackKind.SUBTITLE
+    else -> null
+}
+
+private fun episodesInScope(episodes: List<Episode>, scope: String): List<Episode>? = when {
+    scope == "series" -> episodes
+    scope.startsWith("season-") -> {
+        val n = scope.removePrefix("season-").toIntOrNull() ?: return null
+        episodes.filter { it.seasonNumber == n }
+    }
+    else -> null
+}
+
+private fun classifyEpisodes(episodes: List<Episode>, kind: TrackKind, order: List<String>, setDefault: Boolean): BulkPlanResponse {
+    val targetLangs = order.map { it.lowercase() }
+    val targetSet = targetLangs.toSet()
+    val classified = episodes.map { ep -> classifyEpisode(ep, kind, targetLangs, targetSet, setDefault) }
+    return BulkPlanResponse(
+        episodes = classified,
+        scopeCount = episodes.size,
+        willReorder = classified.count { it.status == "will_reorder" },
+        alreadyCorrect = classified.count { it.status == "already_correct" },
+        partial = classified.count { it.status == "partial" },
+        needsReview = classified.count { it.status == "needs_review" },
+        nothingToDo = classified.count { it.status == "nothing_to_do" },
+        totalEstSeconds = classified.sumOf { it.estSeconds },
+        remuxCount = classified.count { it.remux },
+    )
+}
+
+private fun classifyEpisode(ep: Episode, kind: TrackKind, targetLangs: List<String>, targetSet: Set<String>, setDefault: Boolean): BulkPlanEpisode {
+    val code = buildBulkEpCode(ep)
+    val tracks = ep.tracks.filter { it.kind == kind }
+
+    if (tracks.size <= 1) {
+        val summary = tracks.toSummary(targetSet)
+        return BulkPlanEpisode(ep.filename, code, ep.title, "nothing_to_do", summary, summary, "≤1 track of this kind", 0.0, false)
+    }
+
+    val hasUntagged = tracks.any { it.language == null }
+    val present = tracks.mapNotNull { it.language?.lowercase() }.toSet()
+    val strays = present - targetSet
+    val missing = targetSet - present
+
+    return when {
+        hasUntagged || strays.isNotEmpty() -> {
+            val reason = buildString {
+                if (hasUntagged) append("has untagged track(s)")
+                if (hasUntagged && strays.isNotEmpty()) append("; ")
+                if (strays.isNotEmpty()) append("stray language(s): ${strays.sorted().joinToString()}")
+            }
+            val summary = tracks.sortedBy { it.streamIndex }.toSummary(targetSet)
+            BulkPlanEpisode(ep.filename, code, ep.title, "needs_review", summary, summary, reason, 0.0, false)
+        }
+        missing.isNotEmpty() -> {
+            val proposed = computeProposedTracks(tracks, targetLangs, partial = true)
+            BulkPlanEpisode(ep.filename, code, ep.title, "partial",
+                tracks.sortedBy { it.streamIndex }.toSummary(targetSet),
+                proposed.toSummary(targetSet),
+                "missing target language(s): ${missing.sorted().joinToString()}",
+                0.0, false)
+        }
+        else -> {
+            val currentLangs = tracks.sortedBy { it.streamIndex }.mapNotNull { it.language?.lowercase() }
+            val proposed = computeProposedTracks(tracks, targetLangs, partial = false)
+            val currentSummary = tracks.sortedBy { it.streamIndex }.toSummary(targetSet)
+            val proposedSummary = proposed.toSummary(targetSet)
+            val firstStreamIndex = tracks.minByOrNull { it.streamIndex }?.streamIndex
+            val currentDefault = tracks.firstOrNull { it.default }?.streamIndex
+            val needsDefaultFix = setDefault && currentDefault != firstStreamIndex
+
+            if (currentLangs == targetLangs) {
+                val estSec = if (needsDefaultFix) 0.05 else 0.0
+                BulkPlanEpisode(ep.filename, code, ep.title, "already_correct",
+                    currentSummary, proposedSummary, "already in target order", estSec, false)
+            } else {
+                val estSec = estimateRemuxSeconds(ep.path)
+                BulkPlanEpisode(ep.filename, code, ep.title, "will_reorder",
+                    currentSummary, proposedSummary, "order differs from target", estSec, true)
+            }
+        }
+    }
+}
+
+private fun List<Track>.toSummary(targetSet: Set<String>): List<BulkTrackSummary> =
+    map { t -> BulkTrackSummary(t.specifier, t.language, t.title, t.default, t.language?.lowercase()?.let { it !in targetSet } ?: false) }
+
+private fun computeProposedTracks(tracks: List<Track>, targetLangs: List<String>, partial: Boolean): List<Track> {
+    val byLang = LinkedHashMap<String, MutableList<Track>>()
+    val unmatched = mutableListOf<Track>()
+    for (t in tracks.sortedBy { it.streamIndex }) {
+        val key = t.language?.lowercase()
+        if (key != null && key in targetLangs.toSet()) byLang.getOrPut(key) { mutableListOf() }.add(t)
+        else if (!partial) unmatched.add(t)
+    }
+    return targetLangs.flatMap { byLang[it.lowercase()] ?: emptyList() } + unmatched
+}
+
+private fun buildBulkEpCode(ep: Episode): String {
+    val s = ep.seasonNumber?.toString()?.padStart(2, '0')
+    val e = ep.episodeNumber?.toString()?.padStart(2, '0')
+    return if (s != null && e != null) "S${s}E${e}" else ep.filename.substringBeforeLast('.')
+}
+
+@OptIn(ExperimentalForeignApi::class)
+private fun estimateRemuxSeconds(path: String): Double {
+    val escaped = path.replace("'", "'\\''")
+    val sizeBytes = memScoped {
+        val buf = allocArray<ByteVar>(32)
+        val fp = popen("stat -c '%s' '$escaped' 2>/dev/null", "r") ?: return 3.0
+        val n = fgets(buf, 31, fp)?.toKString()?.trim()?.toLongOrNull() ?: 0L
+        pclose(fp)
+        n
+    }
+    return if (sizeBytes > 0) maxOf(0.5, sizeBytes.toDouble() / 400_000_000.0) else 3.0
 }

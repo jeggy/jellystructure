@@ -668,6 +668,10 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
         document.getElementById("rescan-episodes-btn")?.addEventListener("click") {
             showSyncModal(item, container, scope)
         }
+        // Phase 96: open the bulk track re-order wizard.
+        document.getElementById("bulk-reorder-btn")?.addEventListener("click") {
+            App.navigate("/media/${item.id}/bulk-reorder")
+        }
     }
 
     // Tab switching — updates URL so tabs are deep-linkable and Back/Forward work
@@ -1093,7 +1097,8 @@ private fun buildEpisodesTab(item: MediaItem): String {
           <div class="row center" style="margin-bottom:12px;">
             <span class="tiny muted">${item.episodes.size} episode(s) stored</span>
             <span class="spacer"></span>
-            <button id="rescan-episodes-btn" class="btn sm ghost" title="Re-probe every episode file on disk (uncapped)">Re-probe episode files ↻</button>
+            <button id="bulk-reorder-btn" class="btn sm ghost" title="Open bulk track re-order wizard">↕ Re-order audio across series</button>
+            <button id="rescan-episodes-btn" class="btn sm ghost" title="Re-probe every episode file on disk (uncapped)" style="margin-left:8px;">Re-probe episode files ↻</button>
           </div>
           $seasonSummary
           <div class="row" style="align-items:flex-start;gap:16px;flex-wrap:wrap;">
