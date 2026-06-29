@@ -69,6 +69,8 @@ import kotlinx.io.files.SystemFileSystem
 import kotlinx.io.readByteArray
 import dev.jellystructure.torrent.SeedingCheckResult
 import dev.jellystructure.torrent.SeedingGuard
+import dev.jellystructure.torrent.SeedingReport
+import dev.jellystructure.torrent.SeedingSnapshot
 import dev.jellystructure.shared.tv.Condition
 import dev.jellystructure.shared.tv.MatchMode
 import kotlinx.serialization.Serializable
@@ -147,6 +149,7 @@ fun Route.mediaRoutes(
     mediaHistory: MediaHistory,
     scanDispatcher: CoroutineDispatcher,
     seedingGuard: SeedingGuard,
+    seedingSnapshot: SeedingSnapshot,
     raviloConfigService: RaviloConfigService,
     logoDownloader: LogoDownloader,
     arrRescan: ArrRescanService? = null,
@@ -185,7 +188,12 @@ fun Route.mediaRoutes(
             val match = call.request.queryParameters["match"]?.let { runCatching { MatchMode.valueOf(it) }.getOrNull() } ?: MatchMode.ALL
             val heroIds = if ((heroMode != null || conditions.any { it.facet == "hero_item" }) && viewer != null)
                 raviloConfigService.getConfig(viewer).heroes.map { it.itemId }.toSet() else emptySet()
-            val result = store.list(kind, filter, search, sort, pageNum, pageSize, studios, networks, genres, audioLangs, trackTitle, audioCodec, untaggedAudio, tags, heroIds, heroMode, conditions, match)
+            // Phase 98 — tracker filter: "any" = seeded anywhere, else a named tracker from the registry.
+            val trackerFilter = call.request.queryParameters["tracker"]?.takeIf { it.isNotBlank() }
+            val seededIds = if (trackerFilter != null) {
+                seedingSnapshot.seededItemIds(trackerFilter, store.allItems(), configStore.current)
+            } else null
+            val result = store.list(kind, filter, search, sort, pageNum, pageSize, studios, networks, genres, audioLangs, trackTitle, audioCodec, untaggedAudio, tags, heroIds, heroMode, conditions, match, seededIds)
             // Phase 89: strip heavy fields not needed for grid cards (cast/crew/tracks/titlesByLang/episodes)
             // to reduce response size from ~61KB/item mean to ~1KB/item.
             val stripped = result.copy(items = result.items.map { it.copy(
@@ -1204,20 +1212,19 @@ fun Route.mediaRoutes(
             call.respond(langs)
         }
 
-        // GET /api/media/{id}/seeding — check if the item's file is currently seeded in qBittorrent
+        // GET /api/media/{id}/seeding — full SeedingReport for the seeding surface (Phase 97)
         get("/{id}/seeding") {
             val id = call.parameters["id"] ?: return@get call.respond(HttpStatusCode.BadRequest)
             val item = store.resolve(id) ?: return@get call.respond(HttpStatusCode.NotFound)
-            val path = if (item.kind == dev.jellystructure.model.MediaKind.MOVIE) item.path else item.path
-            val result = seedingGuard.check(path, configStore.current)
-            @Serializable data class SeedingStatus(val status: String, val torrentName: String? = null, val detail: String? = null)
-            val response = when (result) {
-                is SeedingCheckResult.Unconfigured -> SeedingStatus("unconfigured")
-                is SeedingCheckResult.Allowed -> SeedingStatus("allowed")
-                is SeedingCheckResult.Blocked -> SeedingStatus("blocked", result.torrentName)
-                is SeedingCheckResult.Unreachable -> SeedingStatus("unreachable", detail = result.reason)
-            }
-            call.respond(response)
+            val report = seedingSnapshot.reportForItem(item, configStore.current)
+            call.respond(report)
+        }
+
+        // POST /api/media/{id}/seeding/refresh — force-refresh the shared snapshot
+        post("/{id}/seeding/refresh") {
+            call.parameters["id"] ?: return@post call.respond(HttpStatusCode.BadRequest)
+            seedingSnapshot.get(forceRefresh = true)
+            call.respond(mapOf("ok" to true))
         }
 
         // GET /api/media/{id}/drift — compare live Jellyfin metadata vs stored DB state

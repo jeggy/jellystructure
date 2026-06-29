@@ -1,6 +1,6 @@
 /* ============================================================
-   Seeding & cross-seed surface (Phase 97 — FR-XS1)
-   window.Seeding.{ renderMovie, renderSeries, pillHTML }
+   Seeding & cross-seed surface (Phases 97–99 — FR-XS1/XS2/XS3)
+   window.Seeding.{ renderMovie, renderSeries, pillHTML, setTrackers }
    Read-only view of qBittorrent state, cross-referenced to the
    Radarr/Sonarr grab history. Frontend renders server state only.
    ============================================================ */
@@ -48,11 +48,17 @@
      A torrent announces to ONE tracker, but the tracker may expose several mirror
      hosts in any order. We resolve a torrent's announce URLs to one named tracker
      by host; the passkey in the path is per-user and ignored. ------------------- */
-  const TRACKERS = [
+  let TRACKERS = [
     { name: 'NordicHD', priv: true, hosts: ['t.nordicswarm.org', 't.polarswarm.org', 't.nordicbytes.org'] },
     { name: 'FilmBytes', priv: true, hosts: ['announce.filmbytes.org'] },
     { name: 'OpenTrackers', priv: false, hosts: ['open.tracker.net', 'tracker.opentrackr.org'] },
   ];
+  // setTrackers: called by the Kotlin bridge whenever the Metadata ▸ Trackers list is fetched.
+  // Replaces the static TRACKERS table so resolveTracker() uses live server data.
+  function setTrackers(arr) {
+    if (!Array.isArray(arr)) return;
+    TRACKERS = arr.map(t => ({ name: t.name, priv: t.isPrivate ?? t.private ?? false, hosts: t.hosts || [] }));
+  }
   function hostOf(url) { try { return new URL(url).hostname; } catch (e) { return (url.split('/')[2] || url).split(':')[0]; } }
   function resolveTracker(announce) {
     const hosts = (announce || []).map(hostOf);
@@ -118,9 +124,10 @@
   }
   const pad = n => String(n).padStart(2, '0');
   function torrentCovers(t, ep) {
-    if (t.covers === 'all') return true;
-    if (t.scope === 'season') return t.covers.s === ep.s;
-    if (t.scope === 'episode') return t.covers.s === ep.s && t.covers.e === ep.e;
+    // covers may be the string 'all', the object {all: true}, {s:N} or {s:N, e:M}
+    if (t.covers === 'all' || (t.covers && t.covers.all)) return true;
+    if (t.scope === 'season') return t.covers && t.covers.s === ep.s;
+    if (t.scope === 'episode') return t.covers && t.covers.s === ep.s && t.covers.e === ep.e;
     return false;
   }
   function coveredEps(t, eps) { return eps.filter(ep => torrentCovers(t, ep)); }
@@ -162,20 +169,21 @@
   }
 
   /* ---------- coverage chart (series) ---------- */
-  function coverageChart(torrents, eps) {
+  function coverageChart(torrents, eps, seasons) {
     const nCols = eps.length;
+    const seriesSeasons = seasons || [];
     // group torrents by scope for row ordering
     const order = ['complete', 'season', 'episode'];
     const groups = order.map(sc => ({ sc, items: torrents.filter(t => t.scope === sc) })).filter(g => g.items.length);
     const colTmpl = `grid-template-columns: 200px repeat(${nCols}, minmax(30px, 1fr));`;
     const seasonStartIdx = {}; let acc = 0;
-    SERIES.seasons.forEach(se => { seasonStartIdx[acc] = se.n; acc += se.episodes; });
+    seriesSeasons.forEach(se => { seasonStartIdx[acc] = se.n; acc += se.episodes; });
     const isSeasonStart = i => seasonStartIdx.hasOwnProperty(i);
 
     // season header spans
     let seasonsRow = `<div class="gcell sd-rowlabel" style="grid-row:1;">Season</div>`;
     let c = 2;
-    SERIES.seasons.forEach(se => { seasonsRow += `<div class="scn" style="grid-column:${c}/${c + se.episodes};">Season ${se.n}</div>`; c += se.episodes; });
+    seriesSeasons.forEach(se => { seasonsRow += `<div class="scn" style="grid-column:${c}/${c + se.episodes};">Season ${se.n}</div>`; c += se.episodes; });
 
     let epsRow = `<div class="gcell sd-rowlabel">Episode</div>`;
     eps.forEach((ep, i) => { epsRow += `<div class="epn ${isSeasonStart(i) ? 'seasonstart' : ''}">${pad(ep.e)}</div>`; });
@@ -317,7 +325,15 @@
       const act = b.dataset.act;
       const card = b.closest('.sd-card');
       const hash = card && card.dataset.hash;
-      if (act === 'refresh') { snapshotAt = Date.now(); if (lastRender) lastRender(); toast(root, 'Re-queried qBittorrent — snapshot refreshed'); }
+      if (act === 'refresh') {
+        // ask the server to drop its snapshot; the next SeedingReport fetch will re-query qBittorrent
+        const itemEl = root.closest('[data-item-id]');
+        const itemId = itemEl && itemEl.dataset.itemId;
+        const path = itemId ? `/api/media/${itemId}/seeding/refresh` : '/api/media/_/seeding/refresh';
+        fetch(path, { method: 'POST' }).catch(() => {});
+        snapshotAt = Date.now();
+        toast(root, 'Refresh requested — reload the tab to see updated data');
+      }
       else if (act === 'hash') { toast(root, 'Info-hash copied to clipboard'); }
       else if (act === 'open') { toast(root, 'Opening torrent in qBittorrent web UI…'); }
       else if (act === 'reveal') { highlightBars(root, hash); toast(root, 'Highlighted covered episodes in the chart above'); }
@@ -357,10 +373,10 @@
     const eps = flatEps(d.seasons);
     lastRender = () => renderSeries(el, data);
     el.innerHTML = freshnessHTML() + summaryHTML(d.torrents, eps) + guardHTML(d.torrents, 'episodes of this series')
-      + coverageChart(d.torrents, eps) + listHTML(d.torrents, eps);
+      + coverageChart(d.torrents, eps, d.seasons) + listHTML(d.torrents, eps);
     wire(el, eps);
     return d.torrents;
   }
 
-  window.Seeding = { renderMovie, renderSeries, pillHTML, MOVIE, SERIES };
+  window.Seeding = { renderMovie, renderSeries, pillHTML, setTrackers, MOVIE, SERIES };
 })();

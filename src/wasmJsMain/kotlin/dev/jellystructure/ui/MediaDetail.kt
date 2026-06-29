@@ -228,6 +228,7 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
             "artwork" to "Artwork",
             "nfo" to "NFO raw",
             "history" to "History",
+            "seeding" to "Seeding",
         )
     } else {
         listOf(
@@ -237,6 +238,7 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
             "artwork" to "Artwork",
             "nfo" to "NFO raw",
             "history" to "History",
+            "seeding" to "Seeding",
         )
     }
     val tabIds = tabItems.map { it.first }
@@ -494,6 +496,10 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
             <h4 style="margin:0 0 12px;">Action history</h4>
             <div id="history-list"><span class="muted tiny">Loading…</span></div>
           </div>
+        </div>
+
+        <div id="tab-seeding" ${if (activeTab != "seeding") """style="display:none;" """ else ""}>
+          <div id="seeding-root"><span class="muted tiny">Loading…</span></div>
         </div>"""
 
     // Tabs at top level; left rail is inside the overview panel — other tabs are full-width.
@@ -505,6 +511,7 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
           <h2>${item.title.esc()} <span class="muted">${if (item.year != null) "(${item.year})" else ""}</span></h2>
           ${if (item.tmdbId != null) """<span class="badge ok" id="match-badge">TMDB matched</span>""" else """<span class="badge warn" id="match-badge">No TMDB match</span>"""}
           <span class="audio-flags" id="audio-flags">${audioFlagsHtml(item.tracks)}</span>
+          <span id="seeding-pill" style="display:none;cursor:pointer;" title="Click to open Seeding tab"></span>
           <span class="spacer"></span>
           ${run {
               val imdbUrl = item.imdbId?.takeIf { it.isNotBlank() }?.let { "https://www.imdb.com/title/$it/" }
@@ -696,9 +703,9 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
                     }
                     if (tab == "artwork") scope.launch { loadArtworkTab(item, scope) }
                     if (tab == "tracks" && !isTvShow) {
-                        scope.launch { loadSeedingStatus(item.id) }
                         wireUnifiedTrackEditor("trk", item.tracks, item.id, null, scope, item.resolvedLanguage, item.path)
                     }
+                    if (tab == "seeding") scope.launch { loadSeedingTab(item.id, item.kind == MediaKind.TV_SHOW) }
                     if (tab == "nfo") scope.launch { loadNfoTab(item, scope) }
                     if (tab == "cast") wireCastTab(item, container, scope)
                     // Update URL silently via replaceState — no hashchange fired, no page re-render
@@ -711,10 +718,11 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
 
     if (activeTab == "artwork") scope.launch { loadArtworkTab(item, scope) }
     scope.launch { loadDrift(item.id, scope) }
+    scope.launch { loadSeedingReport(item.id, item.kind == MediaKind.TV_SHOW) }
     if (activeTab == "tracks" && !isTvShow) {
-        scope.launch { loadSeedingStatus(item.id) }
         wireUnifiedTrackEditor("trk", item.tracks, item.id, null, scope, item.resolvedLanguage, item.path)
     }
+    if (activeTab == "seeding") scope.launch { loadSeedingTab(item.id, item.kind == MediaKind.TV_SHOW) }
     if (activeTab == "history") scope.launch { loadHistory(item.id, container, scope) }
     if (activeTab == "nfo") scope.launch { loadNfoTab(item, scope) }
     if (activeTab == "cast") wireCastTab(item, container, scope)
@@ -1896,19 +1904,39 @@ private suspend fun handleRepull(item: MediaItem, container: Element, scope: Cor
     }
 }
 
-private suspend fun loadSeedingStatus(id: String) {
-    val chip = document.getElementById("trk-guard") as? HTMLElement ?: return
-    val status = MediaApi.getSeedingStatus(id) ?: return
-    when (status.status) {
-        "blocked" -> {
-            chip.title = "qBittorrent seeding guard active — file is being seeded by '${(status.torrentName ?: "").esc()}'. Track edits are blocked to protect the torrent hash."
-            chip.style.display = ""
+private val seedingJson = kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
+
+private suspend fun loadSeedingReport(id: String, isTvShow: Boolean) {
+    val report = MediaApi.getSeedingReport(id) ?: return
+    if (!report.guard.configured) return
+    val pill = document.getElementById("seeding-pill") as? HTMLElement ?: return
+    val torrentsJson = seedingJson.encodeToString(
+        kotlinx.serialization.builtins.ListSerializer(dev.jellystructure.api.TorrentRef.serializer()), report.torrents)
+    val pillHtml = dev.jellystructure.seedingPillHtml(torrentsJson)
+    if (pillHtml.isNotBlank()) {
+        pill.innerHTML = pillHtml
+        pill.style.display = ""
+        pill.onclick = { _ ->
+            val tabs = document.querySelectorAll(".detail-tabs span[data-tab='seeding']")
+            if (tabs.length > 0) (tabs.item(0) as? HTMLElement)?.click()
         }
-        "unreachable" -> {
-            chip.title = "qBittorrent unreachable: ${(status.detail ?: "").esc()} — track edits proceed at your own risk."
-            chip.style.display = ""
-        }
-        else -> chip.style.display = "none"
+    }
+}
+
+private suspend fun loadSeedingTab(id: String, isTvShow: Boolean) {
+    val root = document.getElementById("seeding-root") as? HTMLElement ?: return
+    val report = MediaApi.getSeedingReport(id) ?: run {
+        root.innerHTML = """<span class="muted tiny">Seeding data unavailable.</span>"""
+        return
+    }
+    val trackers = MediaApi.getTrackers()
+    val reportJson = seedingJson.encodeToString(dev.jellystructure.api.SeedingReport.serializer(), report)
+    val trackersJson = seedingJson.encodeToString(
+        kotlinx.serialization.builtins.ListSerializer(dev.jellystructure.api.TrackerEntry.serializer()), trackers)
+    if (isTvShow) {
+        dev.jellystructure.seedingRenderSeries(root, reportJson, trackersJson)
+    } else {
+        dev.jellystructure.seedingRenderMovie(root, reportJson, trackersJson)
     }
 }
 

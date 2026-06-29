@@ -17,6 +17,8 @@ data class AppConfig(
     // Phase 91 — scan pipeline
     @SerialName("scan_schedule") val scanSchedule: String = "",
     val scan: ScanConfig = ScanConfig(),
+    // Phase 98 — tracker registry (announce-host → name mapping)
+    val trackers: List<TrackerEntry> = emptyList(),
 )
 
 // Phase 91 — scan pipeline config: [[scan.pipeline]] array of steps
@@ -114,6 +116,16 @@ data class QBittorrentConfig(
     val enabled: Boolean = false,
     @SerialName("no_auth") val noAuth: Boolean = false,
     @SerialName("path_mappings") val pathMappings: List<QBittorrentPathMapping> = emptyList(),
+    // Phase 99 — snapshot TTL in seconds (default 10 min)
+    @SerialName("seeding_cache_ttl") val seedingCacheTtl: Long = 600L,
+)
+
+// Phase 98 — tracker registry entry
+@Serializable
+data class TrackerEntry(
+    val name: String,
+    @SerialName("private") val isPrivate: Boolean = false,
+    val hosts: List<String> = emptyList(),
 )
 
 @Serializable

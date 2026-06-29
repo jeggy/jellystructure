@@ -25,6 +25,14 @@ data class QBittorrentConfig(
     val enabled: Boolean = false,
     @SerialName("no_auth") val noAuth: Boolean = false,
     @SerialName("path_mappings") val pathMappings: List<QBittorrentPathMapping> = emptyList(),
+    @SerialName("seeding_cache_ttl") val seedingCacheTtl: Long = 600L,
+)
+
+@Serializable
+data class TrackerConfig(
+    val name: String,
+    @SerialName("private") val isPrivate: Boolean = false,
+    val hosts: List<String> = emptyList(),
 )
 
 @Serializable
@@ -63,6 +71,7 @@ data class AppConfig(
     val sonarr: ArrConfig? = null,
     @SerialName("scan_schedule") val scanSchedule: String = "",
     val scan: ScanConfig = ScanConfig(),
+    val trackers: List<TrackerConfig> = emptyList(),
 )
 
 @Serializable

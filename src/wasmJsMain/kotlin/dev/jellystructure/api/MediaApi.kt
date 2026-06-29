@@ -13,10 +13,12 @@ import io.ktor.client.request.get
 import io.ktor.client.request.parameter
 import io.ktor.client.request.patch
 import io.ktor.client.request.post
+import io.ktor.client.request.put
 import io.ktor.client.request.setBody
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json as KJson
@@ -183,6 +185,10 @@ data class ScanStatus(
     val nextScheduledRun: Long? = null,   // 93e: epoch seconds of the next automation run
 )
 
+private fun String.escJson() = replace("\\", "\\\\").replace("\"", "\\\"")
+private fun String.encodeURL() = encodeURIComponent(this)
+private fun jsonStr(s: String) = "\"${s.escJson()}\""
+
 object MediaApi {
     suspend fun list(
         kind: MediaKind? = null,
@@ -203,6 +209,7 @@ object MediaApi {
         viewer: String? = null,
         match: String = "ALL",
         conditions: List<Condition> = emptyList(),
+        tracker: String? = null,
     ): MediaPage? = runCatching {
         httpClient.get("/api/media") {
             if (kind != null) parameter("kind", kind.name)
@@ -227,6 +234,7 @@ object MediaApi {
                 if (!heroItem.isNullOrBlank()) parameter("heroItem", heroItem)
             }
             if (!viewer.isNullOrBlank()) parameter("viewer", viewer)
+            if (!tracker.isNullOrBlank()) parameter("tracker", tracker)
         }.body<MediaPage>()
     }.getOrNull()
 
@@ -640,9 +648,55 @@ object MediaApi {
         response.status.value in 200..299
     }.getOrDefault(false)
 
+    /** @deprecated use getSeedingReport */
     suspend fun getSeedingStatus(id: String): SeedingStatus? = runCatching {
-        httpClient.get("/api/media/$id/seeding").body<SeedingStatus>()
+        // Legacy compatibility shim — returns unconfigured if new report is empty
+        val report = httpClient.get("/api/media/$id/seeding").body<SeedingReport>()
+        if (!report.guard.configured) SeedingStatus("unconfigured")
+        else if (!report.reachable) SeedingStatus("unreachable")
+        else if (report.torrents.any { it.state == "seeding" }) SeedingStatus("blocked", report.torrents.first { it.state == "seeding" }.name)
+        else SeedingStatus("allowed")
     }.getOrNull()
+
+    suspend fun getSeedingReport(id: String): SeedingReport? = runCatching {
+        httpClient.get("/api/media/$id/seeding").body<SeedingReport>()
+    }.getOrNull()
+
+    suspend fun forceRefreshSnapshot(id: String): Boolean = runCatching {
+        httpClient.post("/api/media/$id/seeding/refresh").status.value in 200..299
+    }.getOrDefault(false)
+
+    suspend fun getTrackers(): List<TrackerEntry> = runCatching {
+        httpClient.get("/api/metadata/trackers").body<List<TrackerEntry>>()
+    }.getOrDefault(emptyList())
+
+    suspend fun createTracker(name: String, private: Boolean, hosts: List<String>): Boolean = runCatching {
+        httpClient.post("/api/metadata/trackers") {
+            contentType(ContentType.Application.Json)
+            val hostsJson = "[${hosts.joinToString(",") { jsonStr(it) }}]"
+            setBody("""{"name":${jsonStr(name)},"private":$private,"hosts":$hostsJson}""")
+        }.status.value in 200..299
+    }.getOrDefault(false)
+
+    suspend fun updateTracker(name: String, newName: String?, private: Boolean?, hosts: List<String>?): Boolean = runCatching {
+        httpClient.put("/api/metadata/trackers/${name.encodeURL()}") {
+            contentType(ContentType.Application.Json)
+            val parts = buildList {
+                if (newName != null) add(""""name":${jsonStr(newName)}""")
+                if (private != null) add(""""private":$private""")
+                if (hosts != null) add(""""hosts":[${hosts.joinToString(",") { jsonStr(it) }}]""")
+            }
+            setBody("{${parts.joinToString(",")}}")
+        }.status.value in 200..299
+    }.getOrDefault(false)
+
+    suspend fun deleteTracker(name: String): Boolean = runCatching {
+        httpClient.delete("/api/metadata/trackers/${name.encodeURL()}").status.value in 200..299
+    }.getOrDefault(false)
+
+    suspend fun getUnmappedTrackers(): List<UnmappedHostEntry> = runCatching {
+        httpClient.get("/api/metadata/trackers/unmapped").body<List<UnmappedHostEntry>>()
+    }.getOrDefault(emptyList())
 
     suspend fun revertHistoryEntry(id: String, entryId: String): MediaItem? = runCatching {
         httpClient.post("/api/media/$id/history/$entryId/revert").body<MediaItem>()
@@ -734,6 +788,50 @@ data class PersonSearchResult(
 
 @Serializable
 data class SeedingStatus(val status: String, val torrentName: String? = null, val detail: String? = null)
+
+@Serializable
+data class TorrentCoversDto(val all: Boolean = false, val s: Int? = null, val e: Int? = null)
+
+@Serializable
+data class TorrentRef(
+    val hash: String,
+    val name: String,
+    val announce: List<String>,
+    val state: String,
+    val ratio: Double,
+    val seeders: Int,
+    val leechers: Int,
+    val uploaded: String,
+    val added: String,
+    val seedTime: String,
+    val scope: String,
+    val covers: TorrentCoversDto? = null,
+    val xseed: String? = null,
+    val xseedNote: String? = null,
+    val error: String? = null,
+)
+
+@Serializable
+data class GuardStatusDto(val configured: Boolean, val reachable: Boolean)
+
+@Serializable
+data class SeasonInfoDto(val n: Int, val episodes: Int)
+
+@Serializable
+data class SeedingReport(
+    val guard: GuardStatusDto,
+    val torrents: List<TorrentRef>,
+    val takenAt: Long = 0L,
+    val ttl: Long = 600L,
+    val reachable: Boolean = false,
+    val seasons: List<SeasonInfoDto> = emptyList(),
+)
+
+@Serializable
+data class TrackerEntry(val name: String, @SerialName("private") val isPrivate: Boolean = false, val hosts: List<String> = emptyList())
+
+@Serializable
+data class UnmappedHostEntry(val host: String, val torrentCount: Int)
 
 @Serializable
 data class DriftField(val field: String, val inJellyfin: String, val inDb: String)

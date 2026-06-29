@@ -58,3 +58,13 @@ internal fun copyToClipboard(text: String): Unit = js("""(function(){
         document.body.removeChild(ta);
     }
 })()""")
+
+// Phase 97 — Seeding surface JS bridge (window.Seeding from seeding.js)
+internal fun seedingPillHtml(torrentsJson: String): String =
+    js("window.Seeding ? window.Seeding.pillHTML(JSON.parse(torrentsJson)) : ''")
+
+internal fun seedingRenderMovie(el: JsAny, reportJson: String, trackersJson: String): Unit =
+    js("(function(){ if(!window.Seeding) return; if(window.Seeding.setTrackers) window.Seeding.setTrackers(JSON.parse(trackersJson)); window.Seeding.renderMovie(el, JSON.parse(reportJson)); })()")
+
+internal fun seedingRenderSeries(el: JsAny, reportJson: String, trackersJson: String): Unit =
+    js("(function(){ if(!window.Seeding) return; if(window.Seeding.setTrackers) window.Seeding.setTrackers(JSON.parse(trackersJson)); window.Seeding.renderSeries(el, JSON.parse(reportJson)); })()")
