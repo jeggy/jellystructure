@@ -12,9 +12,12 @@ import dev.jellystructure.shared.tv.MediaCard
 import dev.jellystructure.shared.tv.SearchResults
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.withTimeoutOrNull
 
 
 private const val SEARCH_SUGGESTION_LIMIT = 20
+// R142: cap the played-state overlay fetch so a slow Jellyfin never hangs a browse/search response.
+private const val HYDRATE_TIMEOUT_MS = 2_500L
 
 class BrowseService(
     private val mediaStore: MediaStore,
@@ -75,31 +78,39 @@ class BrowseService(
                      else sorted.drop((page - 1) * pageSize).take(pageSize))
             .map { it.toMediaCard() }
 
-        SearchResults(query = kind ?: "all", items = cards)
+        // R142: overlay Jellyfin played / in-progress state so grid tiles show ✓ / progress sliver.
+        val ps = withTimeoutOrNull(HYDRATE_TIMEOUT_MS) {
+            fetchPlaystate(jellyfinClient, jellyfinBase, token, device.jellyfinUserId, cards.map { it.id })
+        } ?: emptyMap()
+        SearchResults(query = kind ?: "all", items = cards.map { it.withPlaystate(ps) })
     }
 
     /** Multi-language search: matches title, originalTitle, and every titlesByLang value. */
     suspend fun search(device: DeviceData, query: String): SearchResults {
         val all = mediaStore.allItems()
+        val jellyfinBase = configStore.current.apiKeys.jellyfinUrl.trimEnd('/')
 
-        if (query.isBlank()) {
-            val suggestions = all
-                .sortedByDescending { it.addedAt ?: it.scannedAt }
+        val cards = if (query.isBlank()) {
+            all.sortedByDescending { it.addedAt ?: it.scannedAt }
                 .take(SEARCH_SUGGESTION_LIMIT)
                 .map { it.toMediaCard() }
-            return SearchResults(query = "", items = suggestions)
+        } else {
+            val q = query.lowercase()
+            all.filter { item ->
+                item.title.lowercase().contains(q) ||
+                item.originalTitle?.lowercase()?.contains(q) == true ||
+                item.titlesByLang.values.any { it.lowercase().contains(q) }
+            }.sortedByDescending { it.addedAt ?: it.scannedAt }
+                .take(100)
+                .map { it.toMediaCard() }
         }
 
-        val q = query.lowercase()
-        val items = all.filter { item ->
-            item.title.lowercase().contains(q) ||
-            item.originalTitle?.lowercase()?.contains(q) == true ||
-            item.titlesByLang.values.any { it.lowercase().contains(q) }
-        }.sortedByDescending { it.addedAt ?: it.scannedAt }
-            .take(100)
-            .map { it.toMediaCard() }
-
-        return SearchResults(query = query, items = items)
+        // R142: overlay Jellyfin played / in-progress state so search-result tiles show ✓ / progress sliver.
+        val ps = withTimeoutOrNull(HYDRATE_TIMEOUT_MS) {
+            val token = jellyfinClient.tvToken(jellyfinBase, device, configStore.current.apiKeys.jellyfinToken)
+            fetchPlaystate(jellyfinClient, jellyfinBase, token, device.jellyfinUserId, cards.map { it.id })
+        } ?: emptyMap()
+        return SearchResults(query = query, items = cards.map { it.withPlaystate(ps) })
     }
 
     /** Available filter values + counts for browse filter chips. */

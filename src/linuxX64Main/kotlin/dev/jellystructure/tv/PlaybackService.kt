@@ -7,6 +7,7 @@ import dev.jellystructure.auth.JellyfinItemDetail
 import dev.jellystructure.log.Logger
 import dev.jellystructure.media.MediaStore
 import dev.jellystructure.shared.tv.AudioTrack
+import dev.jellystructure.shared.tv.CardPlayState
 import dev.jellystructure.shared.tv.ClientCapabilities
 import dev.jellystructure.shared.tv.StreamTicket
 import dev.jellystructure.shared.tv.SubTrack
@@ -14,8 +15,13 @@ import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.alloc
 import kotlinx.cinterop.memScoped
 import kotlinx.cinterop.ptr
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.sync.withPermit
 import platform.posix.CLOCK_REALTIME
 import platform.posix.clock_gettime
 import platform.posix.timespec
@@ -28,6 +34,10 @@ private val tokenValidUntil = HashMap<String, Long>()
 private val tokenCacheMutex = Mutex()
 private const val TOKEN_VALID_TTL_MS = 5 * 60_000L // 5 minutes
 private const val TICKS_PER_MS = 10_000L
+
+// R142: bound the played write-through fan-out (a series mark-all can be dozens of episode calls).
+// Kotlin/Native CIO select() crashes on FD ≥ 1024, so every fan-out MUST be Semaphore-capped.
+private val playedGate = Semaphore(4)
 
 class PlaybackService(
     private val mediaStore: MediaStore,
@@ -124,6 +134,59 @@ class PlaybackService(
         } else {
             jellyfinClient.markUnplayed(jellyfinBase, token, device.jellyfinUserId, jellyfinId)
         }
+    }
+
+    /**
+     * R142 — played/unplayed write-through. Writes Jellyfin user-data only (never library metadata).
+     * For a series [itemId] (or an explicit [episodeIds] season set) the flag fans out to every child
+     * episode (bounded by [playedGate] — FD_SETSIZE-safe). Returns the authoritative play-state for the
+     * item + all affected episodes, re-read from Jellyfin, so the client renders from the server result.
+     */
+    suspend fun setPlayed(
+        device: DeviceData,
+        itemId: String,
+        played: Boolean,
+        episodeIds: List<String> = emptyList(),
+    ): Map<String, CardPlayState> {
+        val base = configStore.current.apiKeys.jellyfinUrl.trimEnd('/')
+        val token = jellyfinClient.tvToken(base, device, configStore.current.apiKeys.jellyfinToken)
+        val uid = device.jellyfinUserId
+
+        // Leaf ids to write: an explicit season set, else a series → all its episodes, else the item itself.
+        val targets: List<String> = (if (episodeIds.isNotEmpty()) {
+            episodeIds
+        } else {
+            val mi = mediaStore.resolveByJellyfinId(itemId)
+            if (mi != null && mi.episodes.isNotEmpty()) mi.episodes.mapNotNull { it.jellyfinId } else listOf(itemId)
+        }).filterNot { it.startsWith('/') }.distinct()
+
+        coroutineScope {
+            targets.map { id ->
+                async {
+                    playedGate.withPermit {
+                        if (played) jellyfinClient.markPlayed(base, token, uid, id)
+                        else        jellyfinClient.markUnplayed(base, token, uid, id)
+                    }
+                }
+            }.awaitAll()
+        }
+
+        // Re-read authoritative state for the parent item + every affected episode.
+        val readIds = (listOf(itemId) + targets).filterNot { it.startsWith('/') }.distinct()
+        val out = mutableMapOf<String, CardPlayState>()
+        for (chunk in readIds.chunked(100)) {
+            playedGate.withPermit {
+                jellyfinClient.getUserDataBulk(base, token, uid, chunk).forEach { jf ->
+                    val ud = jf.userData ?: return@forEach
+                    out[jf.id] = CardPlayState(
+                        resumeMs  = ud.playbackPositionTicks / TICKS_PER_MS,
+                        played    = ud.played,
+                        playedPct = (ud.playedPercentage?.toFloat() ?: 0f) / 100f,
+                    )
+                }
+            }
+        }
+        return out
     }
 
     // ─── Helpers ──────────────────────────────────────────────────────────────

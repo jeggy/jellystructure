@@ -500,6 +500,18 @@ data class MarkRequest(
     val watched: Boolean,
 )
 
+/**
+ * R142 — played/unplayed write-through. [itemId] is a movie / episode / series jellyfin id; for a series
+ * the server fans the flag out to every child episode. [episodeIds] (optional) targets a specific set —
+ * a season's episodes (Mark all played) — instead of letting the server derive them.
+ */
+@Serializable
+data class PlayedRequest(
+    @SerialName("item_id") val itemId: String,
+    val played: Boolean,
+    @SerialName("episode_ids") val episodeIds: List<String> = emptyList(),
+)
+
 // ─── Browse facets ────────────────────────────────────────────────────────────
 
 @Serializable

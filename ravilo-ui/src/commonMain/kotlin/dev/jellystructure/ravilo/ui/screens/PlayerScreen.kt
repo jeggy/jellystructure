@@ -227,6 +227,9 @@ fun PlayerScreen(
 
     fun advanceNext() {
         nextUpVisible = false
+        // R142: a genuinely finished episode (≥90%) is marked played as we advance, so up-next stays
+        // correct; a manual skip mid-episode is not (it stays in-progress with its resume sliver).
+        if (durationMs > 0 && positionMs >= durationMs * 90 / 100) store.markWatched(itemId)
         nextEpisodeId?.let { onNavigateToEpisode?.invoke(it) }
     }
 
@@ -341,7 +344,7 @@ fun PlayerScreen(
     // Cleanup on exit — stop the Jellyfin playback session and release the player engine
     DisposableEffect(Unit) {
         onDispose {
-            store.stopSession(positionMs)
+            store.stopSession(positionMs, durationMs)  // R142: ≥90% → mark played
             player.release()
         }
     }
