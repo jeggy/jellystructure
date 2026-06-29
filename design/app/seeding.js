@@ -326,13 +326,21 @@
       </div>`;
   }
 
+  function parseBytes(s) {
+    const m = s && s.match(/([\d.]+)\s*(B|KB|MB|GB|TB)/i);
+    if (!m) return 0;
+    const units = { B: 1, KB: 1024, MB: 1048576, GB: 1073741824, TB: 1099511627776 };
+    return parseFloat(m[1]) * (units[m[2].toUpperCase()] || 1);
+  }
+
   function listHTML(torrents, eps) {
     if (!torrents.length) return `<div class="sd-empty">No torrents reference this file.</div>`;
     if (!eps) return `<div class="sd-list">${torrents.map(t => torrentCard(t, null)).join('')}</div>`;
     const order = ['complete', 'season', 'episode'];
     let html = '';
     order.forEach(sc => {
-      const items = torrents.filter(t => t.scope === sc);
+      const items = torrents.filter(t => t.scope === sc)
+        .slice().sort((a, b) => parseBytes(b.uploaded) - parseBytes(a.uploaded));
       if (!items.length) return;
       html += `<div class="sd-grp-h">${GROUP_LABEL[sc]} <span class="chip">${items.length}</span></div>`;
       html += `<div class="sd-list">${items.map(t => torrentCard(t, eps)).join('')}</div>`;
