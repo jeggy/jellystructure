@@ -65,6 +65,7 @@ import dev.jellystructure.ravilo.ui.focus.rememberEdgeBringIntoViewSpec
 import dev.jellystructure.ravilo.ui.focus.backToTopOnBack
 import dev.jellystructure.ravilo.ui.i18n.str
 import dev.jellystructure.ravilo.ui.theme.RaviloDimens
+import dev.jellystructure.ravilo.ui.theme.raviloHPad
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
 import dev.jellystructure.ravilo.ui.theme.Sora
 import dev.jellystructure.ravilo.ui.theme.SpaceGrotesk
@@ -161,7 +162,7 @@ private fun DiscoverLoaded(
             contentPadding = PaddingValues(top = RaviloDimens.appBarHeight + 24.dp, bottom = 240.dp), // R140 bottom lift
         ) {
             item(key = "discover-head") {
-                Column(Modifier.padding(horizontal = RaviloDimens.sectionPadH, vertical = 8.dp)) {
+                Column(Modifier.padding(horizontal = raviloHPad, vertical = 8.dp)) {
                     Text("Top 10", color = colors.text, fontSize = 22.sp, fontWeight = FontWeight.Bold, fontFamily = SpaceGrotesk)
                     Text(
                         "Trending now · ${data.region}",

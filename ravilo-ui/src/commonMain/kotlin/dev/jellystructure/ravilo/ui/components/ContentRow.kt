@@ -34,6 +34,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 import dev.jellystructure.ravilo.ui.theme.RaviloDimens
+import dev.jellystructure.ravilo.ui.theme.raviloHPad
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
 import dev.jellystructure.ravilo.ui.theme.SpaceGrotesk
 import kotlinx.coroutines.launch
@@ -74,7 +75,7 @@ fun <T> StaticContentRow(
 
     // R42/R45: reveal off-screen tiles minimally; never move a fully-visible one; reveal a
     // start-clipped tile at the row's left inset (trackPadH) so item 0 keeps its padding.
-    val insetPx = with(LocalDensity.current) { RaviloDimens.trackPadH.toPx() }
+    val insetPx = with(LocalDensity.current) { raviloHPad.toPx() }
     @OptIn(ExperimentalFoundationApi::class)
     val bringIntoViewSpec = remember(insetPx) {
         object : BringIntoViewSpec {
@@ -132,7 +133,7 @@ fun <T> StaticContentRow(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = RaviloDimens.sectionPadH),
+                    .padding(horizontal = raviloHPad),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
@@ -162,7 +163,7 @@ fun <T> StaticContentRow(
                 modifier = Modifier.focusRestorer(),
                 horizontalArrangement = Arrangement.spacedBy(RaviloDimens.itemSpacing),
                 contentPadding = PaddingValues(
-                    horizontal = RaviloDimens.trackPadH,
+                    horizontal = raviloHPad,
                     vertical = RaviloDimens.trackPadV,
                 ),
             ) {
