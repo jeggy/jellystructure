@@ -1819,10 +1819,22 @@ internal suspend fun runScan(
         return emptyList()
     }
 
-    // Post-scan cleanup: delete items no longer returned by the scan. Each item was already
-    // written (addOrUpdate) as it was discovered, so we only need to remove the now-missing
-    // ones — no full re-encode of the whole library (Phase 90 FR-PF3).
-    store.deleteMissing(allItems.map { it.id }.toSet())
+    // Phase 95: the scanner is NON-DESTRUCTIVE — it only adds/updates, never deletes. (The old
+    // deleteMissing(allItems) pruned everything a scan didn't re-process — and a freshness-filtered
+    // scheduled scan only re-processes a stale subset, so it wiped the library down to that subset.)
+    // Instead, on a FULL scan, flag any item whose Jellyfin source is gone as `missingFromSource` so it
+    // surfaces in Triage + an Activity warning, rather than vanishing. Per-library scans skip this (they
+    // can't distinguish a removal from an item that lives in another library).
+    if (libraryJellyfinId == null) {
+        val presentJfIds = jellyfinItems.mapNotNull { it.id }.toSet()
+        val newlyMissing = store.flagMissingFromSource(presentJfIds, dev.jellystructure.nowEpochSec())
+        for (m in newlyMissing) {
+            Logger.warn("Scan: '${m.title}' is no longer in Jellyfin — kept and flagged for triage (the scanner never deletes)", "scan")
+        }
+        if (newlyMissing.isNotEmpty()) {
+            Logger.warn("Scan: ${newlyMissing.size} item(s) missing from Jellyfin — flagged for triage, none deleted", "scan")
+        }
+    }
 
     // Phase 53-D: report Jellyfin items that were returned but produced no stored item, with reasons,
     // so silent drops (file-not-found, unmatched library, …) are visible — not just a buried per-item warn.
