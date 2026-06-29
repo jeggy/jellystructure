@@ -5,6 +5,7 @@ import dev.jellystructure.ui.renderActivity
 import dev.jellystructure.ui.renderDashboard
 import dev.jellystructure.ui.renderLibrary
 import dev.jellystructure.ui.renderLogin
+import dev.jellystructure.ui.renderBulkReorderWizard
 import dev.jellystructure.ui.renderMediaDetail
 import dev.jellystructure.ui.renderMetadata
 import dev.jellystructure.ui.renderSetup
@@ -60,6 +61,11 @@ object App {
         when {
             path == "/" || path.isEmpty() || path == "/dashboard" -> renderDashboard(container, scope)
             path.startsWith("/library") -> renderLibrary(container, scope, query)
+            path.startsWith("/media/") && path.contains("/bulk-reorder") -> {
+                val id = path.removePrefix("/media/").substringBefore('/')
+                if (id.isNotEmpty()) renderBulkReorderWizard(container, scope, id)
+                else renderLibrary(container, scope, query)
+            }
             path.startsWith("/media/") -> {
                 val id = path.removePrefix("/media/").substringBefore('?')
                 if (id.isNotEmpty()) renderMediaDetail(container, scope, id, query["tab"])
