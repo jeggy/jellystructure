@@ -131,6 +131,20 @@ body.cf-screen-on .app-main2 > :not(#cf-screen-root) { display: none; }
 .cf-herorm { border: none; background: transparent; color: var(--ink-dim); cursor: pointer; font-size: .8rem; padding: 2px 4px; line-height: 1; }
 .cf-herorm:hover { color: var(--bad); }
 
+/* per-channel system-row controls (Continue Watching / Newly Added) */
+.cf-sysrows { margin-top: 12px; padding: 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--fill-2); }
+.cf-sysrow { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--fill-3); }
+.cf-sysrow + .cf-sysrow { margin-top: 6px; }
+.cf-sysrow.off { opacity: .5; }
+.cf-sysrow-main { flex: 1; min-width: 0; }
+.cf-sysrow-main .nm { font-weight: 600; font-size: .86rem; }
+.cf-sysrow-main .src { font-size: .72rem; color: var(--ink-soft); margin-top: 1px; }
+.cf-sysscope { flex: none; }
+.cf-sysscope span { padding: 5px 10px; font-size: .74rem; }
+.cf-sysmerge { display: flex; align-items: center; gap: 10px; padding: 9px 10px 2px; }
+.cf-sysmerge.off { opacity: .45; }
+.cf-sysmerge .tiny { color: var(--ink-soft); }
+
 /* custom color / gradient builder */
 .cf-sw-custom { display: flex; align-items: center; justify-content: center; color: var(--ink-soft);
   font-weight: 700; font-size: 1rem; line-height: 1; background: var(--fill-3); box-shadow: none; border: 2px dashed var(--line-2); }

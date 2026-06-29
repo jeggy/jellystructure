@@ -263,7 +263,7 @@
       title: '', chStyle: 'logo', chColor: CH_COLORS[0], chText: '', chLogo: null, customGrad: null,
       chPad: { logo: { t:0, r:0, b:0, l:0 }, text: { t:0, r:0, b:0, l:0 } },
       hero: { on:false, items:[], height:48, advance:7 },
-      rows: { mode:'inherit', items:[] }
+      rows: { mode:'inherit', items:[], system: { continue:{ show:true, scope:'all' }, newly:{ show:true, scope:'all', merge:false } } }
     };
     if (!state.conditions.length) state.conditions.push({ facet:'genre', op:'isAny', values:[] });
 
@@ -293,6 +293,9 @@
       const heroOn = !!hero.on, heroItems = hero.items || [];
       const rowsCfg = state.rows || { mode: 'inherit', items: [] };
       const rowsMode = rowsCfg.mode || 'inherit', rowItems = rowsCfg.items || [];
+      const sys = rowsCfg.system || { continue:{ show:true, scope:'all' }, newly:{ show:true, scope:'all', merge:false } };
+      const sysC = sys.continue || { show:true, scope:'all' };
+      const sysN = sys.newly || { show:true, scope:'all', merge:false };
       // coverage gap — titles in this channel not shown by any custom row
       const cov = (isChannel && rowsMode === 'custom') ? rowCoverage(state) : null;
       let coverageHtml = '';
@@ -416,10 +419,31 @@
             </div>
             <div class="tiny muted" style="margin:7px 0 0;">By default this channel shows the <b>Home content rows</b>, scoped to it. Switch to <b>Custom</b> to give this channel its own set.</div>
             ${rowsMode==='custom' ? `
+              <div class="cf-sysrows">
+                <div class="cf-eyebrow" style="margin-bottom:2px;">System rows</div>
+                <div class="tiny muted" style="margin:0 0 9px;line-height:1.5;">Time-based rows that pin to the top — not filter-built. Choose whether each pulls from the whole library or <b>only this channel</b>.</div>
+                <div class="cf-sysrow${sysC.show?'':' off'}">
+                  <span class="badge ok" style="flex:none;">system</span>
+                  <div class="cf-sysrow-main"><div class="nm">Continue Watching</div><div class="src">Continue + Next Up · ${sysC.scope==='channel'?'only this channel':'all the viewer’s titles'}</div></div>
+                  <span class="seg cf-sysscope" data-sys="continue"><span class="${sysC.scope==='all'?'on':''}" data-scope="all">All titles</span><span class="${sysC.scope==='channel'?'on':''}" data-scope="channel">This channel</span></span>
+                  <span class="toggle ${sysC.show?'on':''}" data-systog="continue"></span>
+                </div>
+                <div class="cf-sysrow${sysN.show?'':' off'}">
+                  <span class="badge ok" style="flex:none;">system</span>
+                  <div class="cf-sysrow-main"><div class="nm">Newly Added</div><div class="src">${sysN.merge?'Movies + series combined':'Movies + Series, split'} · sort newest · ${sysN.scope==='channel'?'only this channel':'whole library'}</div></div>
+                  <span class="seg cf-sysscope" data-sys="newly"><span class="${sysN.scope==='all'?'on':''}" data-scope="all">All titles</span><span class="${sysN.scope==='channel'?'on':''}" data-scope="channel">This channel</span></span>
+                  <span class="toggle ${sysN.show?'on':''}" data-systog="newly"></span>
+                </div>
+                <div class="cf-sysmerge${sysN.show?'':' off'}">
+                  <span class="tiny">Merge movies &amp; series into one “Newly Added” row</span><span class="spacer"></span>
+                  <span class="toggle ${sysN.merge?'on':''}" data-sysmerge></span>
+                </div>
+              </div>
               <div class="cf-herobox">
+                <div class="cf-eyebrow" style="margin-bottom:8px;">Filter rows</div>
                 <div class="cf-herolist">${rowItems.length ? rowItems.map((it,i)=>`<div class="cf-heroitem" data-rdedit="${i}"><span class="badge info" style="font-size:.56rem;flex:none;">row</span><span style="flex:1;min-width:0;"><b>${it.title}</b>${it.summary?` <span class="muted">· ${it.summary}</span>`:''}</span><span class="badge" style="font-size:.56rem;flex:none;">${evaluate(it.state).length} titles</span><button type="button" class="cf-herorm" data-rdrm="${i}" title="Remove">✕</button></div>`).join('') : `<div class="tiny muted" style="padding:9px 2px;">No custom rows yet — add one or more.</div>`}</div>
                 <button type="button" class="btn sm ghost" data-rowadd style="margin-top:9px;">＋ Add row</button>
-                <div class="tiny muted" style="margin-top:11px;line-height:1.5;">These replace the Home rows on this channel’s page. System rows (Continue Watching, Newly Added) still appear unless removed.</div>
+                <div class="tiny muted" style="margin-top:11px;line-height:1.5;">These workbench rows render below the system rows, replacing the Home rows on this channel’s page.</div>
               </div>
               ${coverageHtml}
             ` : ''}
@@ -521,8 +545,16 @@
           onSave: ({ state: hs }) => { h.items[i] = hs; render(); } });
       });
       node.querySelectorAll('[data-herorm]').forEach(b => b.onclick = e => { e.stopPropagation(); const h = ensureHero(); h.items.splice(+b.dataset.herorm, 1); render(); });
-      function ensureRows(){ state.rows = state.rows || { mode:'inherit', items:[] }; return state.rows; }
+      function ensureRows(){
+        state.rows = state.rows || { mode:'inherit', items:[] };
+        if (!state.rows.items) state.rows.items = [];
+        if (!state.rows.system) state.rows.system = { continue:{ show:true, scope:'all' }, newly:{ show:true, scope:'all', merge:false } };
+        return state.rows;
+      }
       node.querySelectorAll('.cf-rowsmode span').forEach(s => s.onclick = () => { ensureRows().mode = s.dataset.rmode; render(); });
+      node.querySelectorAll('[data-systog]').forEach(b => b.onclick = () => { const r = ensureRows(); r.system[b.dataset.systog].show = !r.system[b.dataset.systog].show; render(); });
+      node.querySelectorAll('.cf-sysscope').forEach(seg => seg.querySelectorAll('span').forEach(s => s.onclick = () => { const r = ensureRows(); r.system[seg.dataset.sys].scope = s.dataset.scope; render(); }));
+      const sysMerge = node.querySelector('[data-sysmerge]'); if (sysMerge) sysMerge.onclick = () => { const r = ensureRows(); r.system.newly.merge = !r.system.newly.merge; render(); };
       const rowAddBtn = node.querySelector('[data-rowadd]');
       if (rowAddBtn) rowAddBtn.onclick = () => openFilter({
         mode: 'row', headTitle: 'Add channel row', saveLabel: 'Add row',

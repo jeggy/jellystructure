@@ -263,5 +263,39 @@
   ];
   const discover = { config, sources, lists: discoverLists };
 
-  window.RAVILO = { studios, hero, rows, mergedNew, profiles, discover, grad, initials, episodesFor, seasonsFor, castFor, relatedFor };
+  // ---------- watched-state store (R07) ----------
+  // In production this is the per-Jellyfin-user PlaybackState merged onto metadata
+  // (GET /api/tv/movie|series/…). Here it's a deterministic seed the client reads; marking
+  // watched/unwatched in the UI writes through to Jellyfin via jellystructure (R08).
+  const _ws = {};                                         // key -> { pct, watched }
+  const _ik = tt => 'i:' + tt;                            // item (movie / series level)
+  const _ek = (tt, s, n) => 'e:' + tt + '|' + s + '|' + n; // episode
+  function itemState(title) { const r = _ws[_ik(title)]; return r ? { pct: r.pct || 0, watched: !!r.watched } : { pct: 0, watched: false }; }
+  function setItem(title, patch) { const k = _ik(title); _ws[k] = Object.assign({ pct: 0, watched: false }, _ws[k], patch); return _ws[k]; }
+  function setItemWatched(title, on) { return setItem(title, { watched: !!on, pct: on ? 100 : 0 }); }
+  function epState(title, s, n, seedPct) { const k = _ek(title, s, n); if (!(k in _ws)) _ws[k] = { pct: seedPct || 0, watched: (seedPct || 0) >= 100 }; const r = _ws[k]; return { pct: r.pct || 0, watched: !!r.watched }; }
+  function setEpWatched(title, s, n, on) { return (_ws[_ek(title, s, n)] = { pct: on ? 100 : 0, watched: !!on }); }
+  function setEpPct(title, s, n, pct) { return (_ws[_ek(title, s, n)] = { pct: pct, watched: pct >= 100 }); }
+
+  // deterministic initial spread so browse rows / grids show a realistic mix of
+  // ✓ watched · ◐ in-progress · unwatched with no interaction needed
+  (function seedWatched() {
+    const seen = {};
+    const apply = it => {
+      if (!it || !it.title || seen[it.title]) return; seen[it.title] = 1;
+      const h = hash(it.title), m = h % 100;
+      if (m < 24) setItem(it.title, { watched: true, pct: 100 });
+      else if (m < 38) setItem(it.title, { watched: false, pct: 10 + (h >> 4) % 80 });
+    };
+    hero.forEach(apply);
+    rows.forEach(r => (r.items || []).forEach(apply));
+    // continue-watching titles are, by definition, in progress — reflect their exact pct
+    continueItems.forEach(it => { if (it.pct >= 100) setItem(it.title, { watched: true, pct: 100 }); else if (it.pct > 0) setItem(it.title, { watched: false, pct: it.pct }); });
+    // hand-authored series: seed episode state from the metadata pct so detail + tiles agree
+    Object.keys(SERIES_EP).forEach(title => SERIES_EP[title].forEach((eps, s) => eps.forEach(e => { _ws[_ek(title, s, e.n)] = { pct: e.pct || 0, watched: (e.pct || 0) >= 100 }; })));
+  })();
+
+  const watched = { itemState, setItem, setItemWatched, epState, setEpWatched, setEpPct };
+
+  window.RAVILO = { studios, hero, rows, mergedNew, profiles, discover, grad, initials, episodesFor, seasonsFor, castFor, relatedFor, watched };
 })();
