@@ -37,6 +37,7 @@ data class ArtworkStatus(
     val posterExists: Boolean,
     val fanartExists: Boolean,
     val logoExists: Boolean = false,
+    val bannerExists: Boolean = false,
 )
 
 // --- Phase 47: artwork candidate gallery ---

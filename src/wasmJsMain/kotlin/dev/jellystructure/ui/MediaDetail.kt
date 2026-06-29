@@ -224,21 +224,21 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
         listOf(
             "overview" to "Overview",
             "episodes" to "Seasons &amp; episodes",
-            "cast" to "Cast &amp; crew",
-            "artwork" to "Artwork",
-            "nfo" to "NFO raw",
-            "history" to "History",
             "seeding" to "Seeding",
+            "artwork" to "Artwork",
+            "cast" to "Cast &amp; crew",
+            "nfo" to "NFO (raw)",
+            "history" to "History",
         )
     } else {
         listOf(
             "overview" to "Overview",
             "tracks" to "Tracks &amp; order",
-            "cast" to "Cast &amp; crew",
-            "artwork" to "Artwork",
-            "nfo" to "NFO raw",
-            "history" to "History",
             "seeding" to "Seeding",
+            "artwork" to "Artwork",
+            "cast" to "Cast &amp; crew",
+            "nfo" to "NFO (raw)",
+            "history" to "History",
         )
     }
     val tabIds = tabItems.map { it.first }
@@ -2117,6 +2117,7 @@ private suspend fun buildArtTargets(item: MediaItem): List<ArtTarget> {
         "poster" -> status.posterExists
         "backdrop" -> status.fanartExists
         "clearlogo" -> status.logoExists
+        "banner" -> status.bannerExists
         else -> t.onDisk
     }
     if (item.kind == MediaKind.TV_SHOW) {
@@ -2281,6 +2282,7 @@ private fun renderArtGallery() {
     // Explainer line — amber when a fallback is in effect (resolved language had none).
     val fellBack = resolved != null && artLang != resolved && all.none { it.lang == resolved } && all.isNotEmpty()
     val explainer = when {
+        all.isEmpty() && t.asset == "banner" -> "No banner providers configured — upload an image or paste a URL."
         all.isEmpty() -> "TMDB has no ${t.label.lowercase()} candidates for this title."
         fellBack -> """No ${if (resolved != null) resolved.uppercase() + " " else ""}${t.label.lowercase()} on TMDB. Falling back to ${artFilterLabel(artLang)} (${shown.size}).${if (hidden > 0) " <a class=\"art-showall\">$hidden other candidate(s) hidden — show all →</a>" else ""}"""
         else -> """Showing ${artFilterLabel(artLang)} (${shown.size}).${if (hidden > 0) " <a class=\"art-showall\">$hidden hidden — show all →</a>" else ""}"""
