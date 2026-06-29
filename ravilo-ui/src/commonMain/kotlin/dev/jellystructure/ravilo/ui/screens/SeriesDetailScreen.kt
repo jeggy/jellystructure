@@ -66,6 +66,8 @@ import dev.jellystructure.ravilo.ui.focus.rememberEdgeBringIntoViewSpec
 import dev.jellystructure.ravilo.ui.i18n.str
 import dev.jellystructure.ravilo.ui.seams.RemoteImage
 import dev.jellystructure.ravilo.ui.theme.RaviloDimens
+import dev.jellystructure.ravilo.ui.theme.raviloHPad
+import dev.jellystructure.ravilo.ui.theme.LocalCompact
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
 import dev.jellystructure.ravilo.ui.theme.SpaceGrotesk
 import androidx.compose.animation.core.animateFloatAsState
@@ -251,8 +253,9 @@ private fun SeriesDetailLoaded(
                 Column(
                     modifier = Modifier
                         .align(Alignment.BottomStart)
-                        .fillMaxWidth(0.6f)
-                        .padding(start = RaviloDimens.heroBodyStart, bottom = 44.dp, end = 24.dp),
+                        // R145: full width on a phone (TV 60% column wastes a narrow screen); TV unchanged.
+                        .fillMaxWidth(if (LocalCompact.current) 1f else 0.6f)
+                        .padding(start = raviloHPad, bottom = 44.dp, end = raviloHPad),
                 ) {
                     // R130: clearlogo when it loads, else the title as readable text.
                     TitleLogoOrText(
@@ -409,7 +412,7 @@ private fun SeriesDetailLoaded(
                 Column {
                     if (detail.seasons.size <= 1) Spacer(Modifier.height(28.dp))
                     Row(
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = RaviloDimens.sectionPadH),
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = raviloHPad),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Text(
@@ -435,7 +438,7 @@ private fun SeriesDetailLoaded(
                     Spacer(Modifier.height(RaviloDimens.rowHeadPadB))
                     LazyRow(
                         modifier = Modifier.focusRestorer(),
-                        contentPadding = PaddingValues(horizontal = RaviloDimens.trackPadH, vertical = RaviloDimens.trackPadV),
+                        contentPadding = PaddingValues(horizontal = raviloHPad, vertical = RaviloDimens.trackPadV),
                         horizontalArrangement = Arrangement.spacedBy(RaviloDimens.itemSpacing),
                     ) {
                         items(episodes.size, key = { i -> episodes[i].id }) { i ->
@@ -463,11 +466,11 @@ private fun SeriesDetailLoaded(
                     Spacer(Modifier.height(RaviloDimens.rowGap))
                     Text(str("detail.cast"), color = colors.text, fontSize = 18.sp, fontWeight = FontWeight.SemiBold,
                         fontFamily = spaceGrotesk, letterSpacing = (-0.5).sp,
-                        modifier = Modifier.padding(horizontal = RaviloDimens.sectionPadH))
+                        modifier = Modifier.padding(horizontal = raviloHPad))
                     Spacer(Modifier.height(RaviloDimens.rowHeadPadB))
                     LazyRow(
                         modifier = Modifier.focusRestorer(),
-                        contentPadding = PaddingValues(horizontal = RaviloDimens.trackPadH, vertical = RaviloDimens.trackPadV),
+                        contentPadding = PaddingValues(horizontal = raviloHPad, vertical = RaviloDimens.trackPadV),
                         horizontalArrangement = Arrangement.spacedBy(RaviloDimens.itemSpacing),
                     ) {
                         items(detail.cast.size, key = { i -> detail.cast[i].id }) { i ->
@@ -483,11 +486,11 @@ private fun SeriesDetailLoaded(
                     Spacer(Modifier.height(RaviloDimens.rowGap))
                     Text(str("section.related"), color = colors.text, fontSize = 18.sp, fontWeight = FontWeight.SemiBold,
                         fontFamily = spaceGrotesk, letterSpacing = (-0.5).sp,
-                        modifier = Modifier.padding(horizontal = RaviloDimens.sectionPadH))
+                        modifier = Modifier.padding(horizontal = raviloHPad))
                     Spacer(Modifier.height(RaviloDimens.rowHeadPadB))
                     LazyRow(
                         modifier = Modifier.focusRestorer(),
-                        contentPadding = PaddingValues(horizontal = RaviloDimens.trackPadH, vertical = RaviloDimens.trackPadV),
+                        contentPadding = PaddingValues(horizontal = raviloHPad, vertical = RaviloDimens.trackPadV),
                         horizontalArrangement = Arrangement.spacedBy(RaviloDimens.itemSpacing),
                     ) {
                         items(detail.related.size, key = { i -> detail.related[i].id }) { i ->

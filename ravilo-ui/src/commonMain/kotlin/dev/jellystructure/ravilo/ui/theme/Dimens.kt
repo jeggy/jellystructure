@@ -1,8 +1,21 @@
 package dev.jellystructure.ravilo.ui.theme
 
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.BiasAlignment
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+
+// R145: true on a handset-width screen (the phone target). Provided once by RaviloApp from the window
+// width. Drives a tighter horizontal gutter + full-width detail content so the TV-tuned 48dp margins
+// don't waste a narrow screen. Defaults false → TV/large layouts are completely unchanged.
+val LocalCompact = staticCompositionLocalOf { false }
+
+// R145: responsive horizontal content gutter — tight on phones, TV-wide otherwise. Replaces the fixed
+// 48dp screenPadH / trackPadH / sectionPadH / heroBodyStart at every content-margin call site.
+val raviloHPad: Dp
+    @Composable get() = if (LocalCompact.current) 20.dp else RaviloDimens.screenPadH
 
 object RaviloDimens {
     val appBarHeight  = 60.dp   // overlay nav bar height (R65 tokenized)

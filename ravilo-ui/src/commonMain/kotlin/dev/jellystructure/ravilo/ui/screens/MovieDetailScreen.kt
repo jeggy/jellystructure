@@ -60,6 +60,8 @@ import dev.jellystructure.ravilo.ui.focus.rememberEdgeBringIntoViewSpec
 import dev.jellystructure.ravilo.ui.i18n.str
 import dev.jellystructure.ravilo.ui.seams.RemoteImage
 import dev.jellystructure.ravilo.ui.theme.RaviloDimens
+import dev.jellystructure.ravilo.ui.theme.raviloHPad
+import dev.jellystructure.ravilo.ui.theme.LocalCompact
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
 import dev.jellystructure.ravilo.ui.theme.SpaceGrotesk
 import dev.jellystructure.shared.tv.CardPlayState
@@ -181,8 +183,10 @@ private fun MovieDetailLoaded(
                 Column(
                     modifier = Modifier
                         .align(Alignment.BottomStart)
-                        .fillMaxWidth(0.6f)
-                        .padding(start = RaviloDimens.heroBodyStart, bottom = 44.dp, end = 24.dp),
+                        // R145: full width on a phone (the TV 60% column wastes a narrow screen and
+                        // wraps/cuts the title, flags, synopsis and buttons); TV keeps the 60% column.
+                        .fillMaxWidth(if (LocalCompact.current) 1f else 0.6f)
+                        .padding(start = raviloHPad, bottom = 44.dp, end = raviloHPad),
                 ) {
                     // R130: clearlogo when it loads, else the title as readable text.
                     TitleLogoOrText(
@@ -296,11 +300,11 @@ private fun MovieDetailLoaded(
                     Spacer(Modifier.height(RaviloDimens.rowGap))
                     Text(str("detail.cast"), color = colors.text, fontSize = 18.sp, fontWeight = FontWeight.SemiBold,
                         fontFamily = spaceGrotesk, letterSpacing = (-0.3).sp,
-                        modifier = Modifier.padding(horizontal = RaviloDimens.sectionPadH))
+                        modifier = Modifier.padding(horizontal = raviloHPad))
                     Spacer(Modifier.height(RaviloDimens.rowHeadPadB))
                     LazyRow(
                         modifier = Modifier.focusRestorer(),
-                        contentPadding = PaddingValues(horizontal = RaviloDimens.trackPadH, vertical = RaviloDimens.trackPadV),
+                        contentPadding = PaddingValues(horizontal = raviloHPad, vertical = RaviloDimens.trackPadV),
                         horizontalArrangement = Arrangement.spacedBy(RaviloDimens.itemSpacing),
                     ) {
                         items(detail.cast.size, key = { i -> detail.cast[i].id }) { i ->
@@ -316,11 +320,11 @@ private fun MovieDetailLoaded(
                     Spacer(Modifier.height(RaviloDimens.rowGap))
                     Text(str("section.related"), color = colors.text, fontSize = 18.sp, fontWeight = FontWeight.SemiBold,
                         fontFamily = spaceGrotesk, letterSpacing = (-0.3).sp,
-                        modifier = Modifier.padding(horizontal = RaviloDimens.sectionPadH))
+                        modifier = Modifier.padding(horizontal = raviloHPad))
                     Spacer(Modifier.height(RaviloDimens.rowHeadPadB))
                     LazyRow(
                         modifier = Modifier.focusRestorer(),
-                        contentPadding = PaddingValues(horizontal = RaviloDimens.trackPadH, vertical = RaviloDimens.trackPadV),
+                        contentPadding = PaddingValues(horizontal = raviloHPad, vertical = RaviloDimens.trackPadV),
                         horizontalArrangement = Arrangement.spacedBy(RaviloDimens.itemSpacing),
                     ) {
                         items(detail.related.size, key = { i -> detail.related[i].id }) { i ->

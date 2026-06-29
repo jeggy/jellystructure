@@ -54,6 +54,7 @@ import dev.jellystructure.ravilo.ui.LocalServerBaseUrl
 import dev.jellystructure.ravilo.ui.focus.dpadFocusable
 import dev.jellystructure.ravilo.ui.seams.RemoteImage
 import dev.jellystructure.ravilo.ui.theme.RaviloDimens
+import dev.jellystructure.ravilo.ui.theme.raviloHPad
 import dev.jellystructure.ravilo.ui.theme.RaviloMotion
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
 import dev.jellystructure.ravilo.ui.theme.Sora
@@ -225,7 +226,7 @@ fun HeroCarousel(
             modifier = Modifier
                 .align(Alignment.BottomStart)
                 .padding(
-                    start  = RaviloDimens.heroBodyStart,
+                    start  = raviloHPad,
                     bottom = RaviloDimens.heroBodyBot,
                     end    = 40.dp,
                 ),

@@ -28,6 +28,9 @@ import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalWindowInfo
+import androidx.compose.ui.unit.dp
 import dev.jellystructure.ravilo.ui.screens.BrowseKind
 import dev.jellystructure.ravilo.ui.screens.BrowseScreen
 import dev.jellystructure.ravilo.ui.screens.BrowseStore
@@ -59,6 +62,7 @@ import dev.jellystructure.ravilo.ui.i18n.WithLocale
 import coil3.compose.LocalPlatformContext
 import dev.jellystructure.ravilo.ui.perf.FrameTrackerOverlay
 import dev.jellystructure.ravilo.ui.seams.prefetchImage
+import dev.jellystructure.ravilo.ui.theme.LocalCompact
 import dev.jellystructure.ravilo.ui.theme.RaviloMotion
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
 import dev.jellystructure.ravilo.ui.theme.rememberRaviloTheme
@@ -294,7 +298,15 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
 
         val dest = stack.last()
 
-        CompositionLocalProvider(LocalLiveConfig provides liveConfig, LocalLiveAcquisition provides liveAcquisition, LocalTileScale provides tileScale, LocalServerBaseUrl provides apiClient.baseUrl, LocalUserAvatarUrl provides activeAvatarUrl) {
+        // R145: detect a handset-width screen → tighter gutters + full-width detail content (phone target).
+        val windowInfo = LocalWindowInfo.current
+        val density = LocalDensity.current
+        val compact = remember(windowInfo.containerSize.width, density) {
+            val wPx = windowInfo.containerSize.width
+            wPx > 0 && with(density) { wPx.toDp() } < 600.dp
+        }
+
+        CompositionLocalProvider(LocalLiveConfig provides liveConfig, LocalLiveAcquisition provides liveAcquisition, LocalTileScale provides tileScale, LocalCompact provides compact, LocalServerBaseUrl provides apiClient.baseUrl, LocalUserAvatarUrl provides activeAvatarUrl) {
         Box(
             modifier = Modifier
                 .fillMaxSize()

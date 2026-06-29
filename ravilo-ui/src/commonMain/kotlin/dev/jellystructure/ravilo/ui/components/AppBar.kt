@@ -42,6 +42,7 @@ import dev.jellystructure.ravilo.ui.focus.dpadFocusable
 import dev.jellystructure.ravilo.ui.i18n.str
 import dev.jellystructure.ravilo.ui.seams.RemoteImage
 import dev.jellystructure.ravilo.ui.theme.RaviloDimens
+import dev.jellystructure.ravilo.ui.theme.raviloHPad
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
 import dev.jellystructure.ravilo.ui.theme.Sora
 import dev.jellystructure.ravilo.ui.theme.SpaceGrotesk
@@ -111,7 +112,7 @@ fun AppBar(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = RaviloDimens.screenPadH)
+                .padding(horizontal = raviloHPad)
                 .matchParentSize(),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(18.dp),   // R52: denser (was 28)
@@ -273,7 +274,7 @@ fun ChannelBar(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = RaviloDimens.screenPadH)
+                .padding(horizontal = raviloHPad)
                 .matchParentSize(),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(18.dp),

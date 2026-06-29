@@ -41,6 +41,7 @@ import dev.jellystructure.ravilo.ui.focus.dpadFocusable
 import dev.jellystructure.ravilo.ui.i18n.str
 import dev.jellystructure.ravilo.ui.seams.PrefetchLazyGridEffect
 import dev.jellystructure.ravilo.ui.theme.RaviloDimens
+import dev.jellystructure.ravilo.ui.theme.raviloHPad
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
 import dev.jellystructure.ravilo.ui.theme.Sora
 import dev.jellystructure.ravilo.ui.theme.SpaceGrotesk
@@ -205,7 +206,7 @@ fun BrowseScreen(
                         str("browse.titles", mapOf("count" to s.results.items.size.toString())),
                         color = colors.textSecondary,
                         fontSize = 16.sp,
-                        modifier = Modifier.padding(horizontal = RaviloDimens.screenPadH),
+                        modifier = Modifier.padding(horizontal = raviloHPad),
                     )
                     Spacer(Modifier.height(12.dp))
                     BrowseGrid(
@@ -256,7 +257,7 @@ private fun GenreChips(
 
     LazyRow(
         modifier = Modifier.focusRestorer(),
-        contentPadding = PaddingValues(horizontal = RaviloDimens.trackPadH),
+        contentPadding = PaddingValues(horizontal = raviloHPad),
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         items(chips.size, key = { i -> chips[i] ?: "all" }) { i ->
@@ -332,7 +333,7 @@ private fun BrowseGrid(
         columns = GridCells.Fixed(GRID_COLS),
         state = gridState,
         modifier = Modifier.focusRestorer(),
-        contentPadding = PaddingValues(horizontal = RaviloDimens.trackPadH, vertical = RaviloDimens.trackPadV),
+        contentPadding = PaddingValues(horizontal = raviloHPad, vertical = RaviloDimens.trackPadV),
         horizontalArrangement = Arrangement.spacedBy(RaviloDimens.itemSpacing),
         verticalArrangement = Arrangement.spacedBy(RaviloDimens.rowGap),
     ) {
