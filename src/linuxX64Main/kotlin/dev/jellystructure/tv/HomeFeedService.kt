@@ -194,6 +194,8 @@ class HomeFeedService(
         val enabledRows = rowSource.filter { it.enabled }.sortedBy { it.order }
         val heroIds = config.heroes.map { it.itemId }.toSet()  // Phase R86-C: hoist out of CUSTOM-row loop
         val result = mutableListOf<Row>()
+        // R104: Home and channel pages can merge newly-added independently. Pick the flag for this context.
+        val mergeNewly = if (channelFilter != null) config.mergeNewlyAddedChannels else config.mergeNewlyAdded
 
         for (rowCfg in enabledRows) {
             when (rowCfg.kind) {
@@ -204,7 +206,7 @@ class HomeFeedService(
                 }
 
                 RowKind.NEWLY_ADDED -> {
-                    if (config.mergeNewlyAdded) {
+                    if (mergeNewly) {
                         // When merged, ALL NEWLY_ADDED rows are skipped; a single merged row is injected below
                         continue
                     }
@@ -263,8 +265,8 @@ class HomeFeedService(
             }
         }
 
-        // If mergeNewlyAdded is on, inject one merged NEWLY_ADDED row at the config position
-        if (config.mergeNewlyAdded) {
+        // If merge is on for this context, inject one merged NEWLY_ADDED row at the config position
+        if (mergeNewly) {
             val mergedCards = all
                 .sortedByDescending { it.addedAt ?: it.scannedAt }
                 .take(ROW_ITEM_LIMIT)

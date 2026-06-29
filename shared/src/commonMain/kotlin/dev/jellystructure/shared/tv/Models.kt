@@ -394,6 +394,9 @@ data class RaviloConfig(
     val channels: List<ChannelConfig> = emptyList(),
     val rows: List<RowConfig> = emptyList(),
     @SerialName("merge_newly_added") val mergeNewlyAdded: Boolean = false,
+    // R104 — channel pages can merge newly-added independently of Home. When true, a channel's
+    // NEWLY_ADDED row is one combined row (all media); when false it splits into Movies + Series.
+    @SerialName("merge_newly_added_channels") val mergeNewlyAddedChannels: Boolean = false,
     @SerialName("default_skin") val defaultSkin: Skin = Skin.AURORA,
     @SerialName("allow_skin_override") val allowSkinOverride: Boolean = true,
     // Per-viewer skin choice, kept separate from the operator's defaultSkin so an operator
