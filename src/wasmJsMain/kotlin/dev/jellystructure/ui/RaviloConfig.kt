@@ -13,6 +13,9 @@ import dev.jellystructure.shared.tv.ChannelButtonPadding
 import dev.jellystructure.shared.tv.ChannelButtonSpec
 import dev.jellystructure.shared.tv.ChannelConfig
 import dev.jellystructure.shared.tv.ChannelRowsConfig
+import dev.jellystructure.shared.tv.ChannelSystemRows
+import dev.jellystructure.shared.tv.SystemContinue
+import dev.jellystructure.shared.tv.SystemNewly
 import dev.jellystructure.shared.tv.ChannelStyle
 import dev.jellystructure.shared.tv.PageHeroConfig
 import dev.jellystructure.shared.tv.ChartListSpec
@@ -1014,8 +1017,15 @@ private fun openChannelEditorPage(container: Element, scope: CoroutineScope, idx
     val heroEnabled = pHero?.enabled == true
     val heroItemCount = pHero?.items?.size ?: 0
     val rowsCustom = c.rows?.mode == "custom"
-    val chNewlyAdded = c.rows?.newlyAdded ?: "inherit"  // R143
-    val naOpt = { v: String -> if (chNewlyAdded == v) " selected" else "" }
+    // R143: per-channel system rows (Continue Watching, Newly Added).
+    val chSys = c.rows?.system ?: ChannelSystemRows()
+    val contShow = chSys.cont.show; val contScope = chSys.cont.scope
+    val newlyShow = chSys.newly.show; val newlyScope = chSys.newly.scope; val newlyMerge = chSys.newly.merge
+    fun scopeSeg(group: String, current: String): String {
+        val allOn = if (current == "all") " class=\"on\"" else ""
+        val chOn = if (current == "channel") " class=\"on\"" else ""
+        return "<span class=\"seg cf-sysscope\" data-sys=\"$group\" style=\"flex:none;font-size:.78rem\"><span data-scope=\"all\"$allOn>All titles</span><span data-scope=\"channel\"$chOn>This channel</span></span>"
+    }
     val rowsCustomItems = c.rows?.items ?: emptyList()
     val chRowsListHtml = rowsCustomItems.mapIndexed { i, r ->
         val condSrc = if (r.conditions.isNotEmpty()) "${r.conditions.size} condition(s) · match ${r.match.name.lowercase()}" else "No filter — shows all media"
@@ -1146,20 +1156,30 @@ private fun openChannelEditorPage(container: Element, scope: CoroutineScope, idx
             </label>
           </div>
           <div id="ch-rows-custom-body" style="${if (!rowsCustom) "display:none;" else ""}">
-            <p class="tiny muted" style="margin:0 0 10px">Custom rows for this channel. The <b>Continue Watching</b> row never shows inside a channel; control <b>Newly Added</b> below.</p>
+            <p class="tiny muted" style="margin:0 0 10px">Custom rows for this channel. <b>System rows</b> (Continue Watching, Newly Added) sit on top; your filter rows follow below.</p>
+            <!-- R143: per-channel system rows -->
+            <div class="cf-sysrows" style="border:1px solid var(--line);border-radius:8px;padding:12px 14px;margin-bottom:14px">
+              <div style="font-size:.7rem;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-soft);margin-bottom:8px">System rows</div>
+              <div class="cf-sysrow ${if (!contShow) "off" else ""}" style="display:flex;align-items:center;gap:10px;margin-bottom:8px;${if (!contShow) "opacity:.5" else ""}">
+                <span class="badge ok" style="flex:none;font-size:.62rem">system</span>
+                <div style="flex:1;min-width:0"><div style="font-size:.88rem;font-weight:500">Continue Watching</div><div class="tiny muted">${if (contScope == "channel") "In-progress titles from this channel" else "Your whole Continue + Next Up row"}</div></div>
+                ${scopeSeg("continue", contScope)}
+                <span class="toggle${if (contShow) " on" else ""}" data-systog="continue" style="cursor:pointer;flex:none"></span>
+              </div>
+              <div class="cf-sysrow ${if (!newlyShow) "off" else ""}" style="display:flex;align-items:center;gap:10px;${if (!newlyShow) "opacity:.5" else ""}">
+                <span class="badge ok" style="flex:none;font-size:.62rem">system</span>
+                <div style="flex:1;min-width:0"><div style="font-size:.88rem;font-weight:500">Newly Added</div><div class="tiny muted">${if (newlyScope == "channel") "Newest titles in this channel" else "Newest titles library-wide"}${if (newlyMerge) " · combined" else " · Movies + Series"}</div></div>
+                ${scopeSeg("newly", newlyScope)}
+                <span class="toggle${if (newlyShow) " on" else ""}" data-systog="newly" style="cursor:pointer;flex:none"></span>
+              </div>
+              <label class="cf-sysmerge ${if (!newlyShow) "off" else ""}" style="display:flex;align-items:center;gap:8px;margin-top:8px;padding-top:8px;border-top:1px solid var(--line);font-size:.82rem;cursor:pointer;${if (!newlyShow) "opacity:.45" else ""}">
+                <span class="toggle${if (newlyMerge) " on" else ""}" data-sysmerge style="cursor:pointer;flex:none"></span>
+                Merge movies &amp; series into one Newly Added row
+              </label>
+            </div>
+            <div style="font-size:.7rem;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-soft);margin-bottom:8px">Filter rows</div>
             <div id="ch-rows-list" style="margin-bottom:8px">$chRowsListHtml</div>
             <button id="ch-rows-add" class="btn sm ghost">+ Add row</button>
-            <!-- R143: per-channel Newly Added control -->
-            <div style="display:flex;align-items:center;gap:10px;margin-top:14px;padding-top:12px;border-top:1px solid var(--line)">
-              <b style="font-size:.85rem">Newly Added on this channel</b>
-              <select id="ch-newly-added" class="input" style="width:auto;font-size:.84rem;padding:3px 8px;height:auto">
-                <option value="inherit"${naOpt("inherit")}>Same as Home</option>
-                <option value="merged"${naOpt("merged")}>One combined row</option>
-                <option value="split"${naOpt("split")}>Split — Movies &amp; Series</option>
-                <option value="none"${naOpt("none")}>Don't show</option>
-              </select>
-            </div>
-            <p class="tiny muted" style="margin:6px 0 0">Appears at the bottom of the channel page. Pick <b>Don't show</b> to hide it entirely (e.g. a kids channel).</p>
             <!-- R87: row-coverage gap panel (filled async by renderCoverage) -->
             <div id="ch-rows-coverage" style="margin-top:14px"></div>
           </div>
@@ -1176,6 +1196,42 @@ private fun openChannelEditorPage(container: Element, scope: CoroutineScope, idx
         val ch = currentConfig.channels.getOrNull(idx) ?: return
         openChannelEditorPage(container, scope, idx, ch)
     }
+    // R143: mutate the channel's system-rows block then re-render (descriptions + merge enablement update).
+    fun mutateSystem(f: (ChannelSystemRows) -> ChannelSystemRows) {
+        val list = currentConfig.channels.toMutableList()
+        val cur = list[idx]
+        val existing = cur.rows ?: ChannelRowsConfig(mode = "custom")
+        list[idx] = cur.copy(rows = existing.copy(mode = "custom", system = f(existing.system)))
+        currentConfig = currentConfig.copy(channels = list)
+        reRenderChannelRows()
+    }
+    container.querySelectorAll("[data-systog]").let { tg ->
+        for (i in 0 until tg.length) {
+            val el = tg.item(i) as? HTMLElement ?: continue
+            el.addEventListener("click") { _ ->
+                when (el.getAttribute("data-systog")) {
+                    "continue" -> mutateSystem { it.copy(cont = it.cont.copy(show = !it.cont.show)) }
+                    "newly"    -> mutateSystem { it.copy(newly = it.newly.copy(show = !it.newly.show)) }
+                }
+            }
+        }
+    }
+    container.querySelector("[data-sysmerge]")?.addEventListener("click") { _ ->
+        mutateSystem { it.copy(newly = it.newly.copy(merge = !it.newly.merge)) }
+    }
+    container.querySelectorAll(".cf-sysscope span[data-scope]").let { sc ->
+        for (i in 0 until sc.length) {
+            val el = sc.item(i) as? HTMLElement ?: continue
+            el.addEventListener("click") { _ ->
+                val group = (el.parentElement?.getAttribute("data-sys")) ?: return@addEventListener
+                val scopeVal = el.getAttribute("data-scope") ?: return@addEventListener
+                when (group) {
+                    "continue" -> mutateSystem { it.copy(cont = it.cont.copy(scope = scopeVal)) }
+                    "newly"    -> mutateSystem { it.copy(newly = it.newly.copy(scope = scopeVal)) }
+                }
+            }
+        }
+    }
     // R87: a catch-all (no-condition) row matches everything scoped to the channel (R59) — closes the gap.
     fun addCatchAllRow() {
         val list = currentConfig.channels.toMutableList()
@@ -1183,9 +1239,7 @@ private fun openChannelEditorPage(container: Element, scope: CoroutineScope, idx
         val existing = cur.rows ?: ChannelRowsConfig(mode = "custom")
         val catchAll = RowConfig(id = genId("row"), kind = RowKind.CUSTOM, title = "All other titles",
             match = MatchMode.ALL, conditions = emptyList())
-        // R143: keep an unsaved Newly Added dropdown change across the re-render.
-        val naLive = (container.querySelector("#ch-newly-added") as? HTMLSelectElement)?.value ?: existing.newlyAdded
-        list[idx] = cur.copy(rows = existing.copy(mode = "custom", newlyAdded = naLive, items = existing.items + catchAll))
+        list[idx] = cur.copy(rows = existing.copy(mode = "custom", items = existing.items + catchAll))
         currentConfig = currentConfig.copy(channels = list)
         reRenderChannelRows()
     }
@@ -1364,7 +1418,6 @@ private fun openChannelEditorPage(container: Element, scope: CoroutineScope, idx
         val styleVal = (container.querySelector("input[name='ch-ed-style']:checked") as? HTMLInputElement)?.value ?: "logo"
         val heroEn = (container.querySelector("#ch-hero-enabled") as? org.w3c.dom.HTMLInputElement)?.checked ?: false
         val rowsMode = (container.querySelector("input[name='ch-rows-mode']:checked") as? HTMLInputElement)?.value ?: "inherit"
-        val newlyAddedVal = (container.querySelector("#ch-newly-added") as? HTMLSelectElement)?.value ?: "inherit"  // R143
         fun padOf(t: String, r: String, b: String, l: String): ChannelButtonPadding? {
             val top = (container.querySelector("#$t") as? HTMLInputElement)?.value?.toIntOrNull() ?: 0
             val right = (container.querySelector("#$r") as? HTMLInputElement)?.value?.toIntOrNull() ?: 0
@@ -1387,7 +1440,8 @@ private fun openChannelEditorPage(container: Element, scope: CoroutineScope, idx
             else cur.pageHero,
             paddingLogo = paddingLogo,
             paddingText = paddingText,
-            rows = if (rowsMode == "custom") (cur.rows ?: ChannelRowsConfig()).copy(mode = "custom", newlyAdded = newlyAddedVal) else null,
+            // R143: the system block is already in cur.rows (mutated live by the system-row toggles); copy preserves it.
+            rows = if (rowsMode == "custom") (cur.rows ?: ChannelRowsConfig()).copy(mode = "custom") else null,
         )
         currentConfig = currentConfig.copy(channels = list)
         historyReplaceState("#/ravilo")
@@ -1426,9 +1480,7 @@ private fun openChannelEditorPage(container: Element, scope: CoroutineScope, idx
                 val list = currentConfig.channels.toMutableList()
                 val cur = list[idx]
                 val existing = cur.rows ?: ChannelRowsConfig(mode = "custom")
-                // R143: keep an unsaved Newly Added dropdown change across the re-render.
-                val naLive = (container.querySelector("#ch-newly-added") as? HTMLSelectElement)?.value ?: existing.newlyAdded
-                list[idx] = cur.copy(rows = existing.copy(mode = "custom", newlyAdded = naLive, items = existing.items + newRow))
+                list[idx] = cur.copy(rows = existing.copy(mode = "custom", items = existing.items + newRow))
                 currentConfig = currentConfig.copy(channels = list)
                 reRenderChannelRows()
             })

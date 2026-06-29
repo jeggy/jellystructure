@@ -72,7 +72,7 @@ class HomeFeedService(
         HomeFeed(
             heroes = buildHeroes(config, all),
             channels = buildChannels(config),
-            rows = buildRows(config, device, all, jellyfinBase, token, channelFilter = null),
+            rows = buildRows(config, device, all, all, jellyfinBase, token, channelFilter = null),
             heroHeightPct = config.heroHeightPct,
             autoAdvanceSeconds = config.autoAdvanceSeconds,
             tileShape = config.tileShape,
@@ -99,7 +99,7 @@ class HomeFeedService(
         HomeFeed(
             heroes = heroes,
             channels = buildChannels(config),
-            rows = buildRows(config, device, filtered, jellyfinBase, token, channelFilter = channelCfg),
+            rows = buildRows(config, device, filtered, allItems, jellyfinBase, token, channelFilter = channelCfg),
             heroHeightPct = config.heroHeightPct,
             autoAdvanceSeconds = config.autoAdvanceSeconds,
             tileShape = config.tileShape,
@@ -180,62 +180,60 @@ class HomeFeedService(
 
     // ─── Rows ─────────────────────────────────────────────────────────────────
 
+    /**
+     * R143: [all] is the context list (the channel-scoped list inside a channel, the full library on Home);
+     * [libraryAll] is always the full unscoped library — used for system rows whose scope is "all".
+     */
     private suspend fun buildRows(
         config: RaviloConfig,
         device: DeviceData,
         all: List<MediaItem>,
+        libraryAll: List<MediaItem>,
         jellyfinBase: String,
         token: String,
         channelFilter: ChannelConfig?,
     ): List<Row> {
-        // R59: channel custom rows override the global Home rows when mode == "custom".
         val channelRows = channelFilter?.rows
-        val rowSource = if (channelRows?.mode == "custom") channelRows.items else config.rows
-        val enabledRows = rowSource.filter { it.enabled }.sortedBy { it.order }
         val heroIds = config.heroes.map { it.itemId }.toSet()  // Phase R86-C: hoist out of CUSTOM-row loop
         val result = mutableListOf<Row>()
-        // R104/R143: resolve the Newly Added behavior for this context.
-        //   Home                 → the global merge_newly_added flag (merged vs split).
-        //   custom-mode channel   → the channel's own rows.newlyAdded; "inherit" = same as Home,
-        //                           "none" hides it entirely, "merged"/"split" override per-channel.
-        //   inherit-mode channel  → same as Home (follows merge_newly_added).
-        val homeMode = if (config.mergeNewlyAdded) "merged" else "split"
-        val newlyMode: String = when {
-            channelFilter == null -> homeMode
-            channelFilter.rows?.mode == "custom" -> when (val n = channelFilter.rows?.newlyAdded ?: "inherit") {
-                "merged", "split", "none" -> n
-                else -> homeMode  // "inherit" = same as Home
-            }
-            else -> homeMode
-        }
-        val mergeNewly = newlyMode == "merged"
 
+        // ── R143: custom channel — emit the configured system rows (Continue, Newly Added) ABOVE the
+        // filter rows, each honouring its show / scope ("all" library-wide vs "channel" channel-scoped) /
+        // merge setting. Continue is resolved against the chosen source so scope="channel" yields only the
+        // viewer's in-progress titles that belong to this channel.
+        if (channelRows?.mode == "custom") {
+            val sys = channelRows.system
+            if (sys.cont.show) {
+                val src = if (sys.cont.scope == "channel") all else libraryAll
+                val cards = buildContinueRow(device, src, jellyfinBase, token)
+                if (cards.isNotEmpty()) result.add(Row("continue", "Continue Watching", RowKind.CONTINUE, cards))
+            }
+            if (sys.newly.show) {
+                val src = if (sys.newly.scope == "channel") all else libraryAll
+                addNewlyAddedRows(result, src, merge = sys.newly.merge)
+            }
+            for (rowCfg in channelRows.items.filter { it.enabled }.sortedBy { it.order }) {
+                buildFilterRow(rowCfg, all, heroIds)?.let { result.add(it) }
+            }
+            return result
+        }
+
+        // ── Home / inherit-mode channel — unchanged behaviour (config.rows drives system + filter rows).
+        val enabledRows = config.rows.filter { it.enabled }.sortedBy { it.order }
+        val mergeNewly = config.mergeNewlyAdded
         for (rowCfg in enabledRows) {
             when (rowCfg.kind) {
                 RowKind.CONTINUE -> {
-                    if (channelFilter != null) continue // skip resume row inside channel view
+                    if (channelFilter != null) continue // inherit-mode channels keep R59 behaviour (no Continue)
                     val cards = buildContinueRow(device, all, jellyfinBase, token)
                     if (cards.isNotEmpty()) result.add(Row(rowCfg.id, rowCfg.title ?: "Continue Watching", RowKind.CONTINUE, cards))
                 }
 
                 RowKind.NEWLY_ADDED -> {
-                    if (newlyMode == "none") continue  // R143: this channel hides Newly Added entirely
-                    if (mergeNewly) {
-                        // When merged, ALL NEWLY_ADDED rows are skipped; a single merged row is injected below
-                        continue
-                    }
-                    // When not merged and mediaKind=null (the single "newly-all" system row), emit
-                    // two typed rows: Movies then Series. This is what the "Merge newly added" toggle
-                    // controls: false → split, true → one combined (R71).
+                    if (mergeNewly) continue  // merged → single row injected below
+                    // mediaKind=null (the "newly-all" system row) → split into Movies then Series (R71).
                     if (rowCfg.mediaKind == null) {
-                        val movies = all.filter { it.kind == MediaKind.MOVIE }
-                            .sortedByDescending { it.addedAt ?: it.scannedAt }.take(ROW_ITEM_LIMIT)
-                            .mapNotNull { it.toMediaCardOrNull() }
-                        val series = all.filter { it.kind == MediaKind.TV_SHOW }
-                            .sortedByDescending { it.addedAt ?: it.scannedAt }.take(ROW_ITEM_LIMIT)
-                            .mapNotNull { it.toMediaCardOrNull() }
-                        if (movies.isNotEmpty()) result.add(Row("${rowCfg.id}-movies", rowCfg.title?.let { "$it — Movies" } ?: "Movies — Newly Added", RowKind.NEWLY_ADDED, movies))
-                        if (series.isNotEmpty()) result.add(Row("${rowCfg.id}-series", rowCfg.title?.let { "$it — Series" } ?: "Series — Newly Added", RowKind.NEWLY_ADDED, series))
+                        addNewlyAddedRows(result, all, merge = false, idPrefix = rowCfg.id, titlePrefix = rowCfg.title)
                         continue
                     }
                     val filtered = when (rowCfg.mediaKind) {
@@ -250,48 +248,19 @@ class HomeFeedService(
                     if (cards.isNotEmpty()) result.add(Row(rowCfg.id, rowCfg.title ?: "Newly Added", RowKind.NEWLY_ADDED, cards))
                 }
 
-                RowKind.GENRE -> {
-                    val genreTerms = (rowCfg.title ?: "").split("&", ",")
-                        .map { it.trim().lowercase() }
-                        .filter { it.isNotBlank() }
-                    val cards = all
-                        .filter { item -> genreTerms.isEmpty() || item.genres.any { g -> genreTerms.any { t -> g.lowercase().contains(t) } } }
-                        .sortedByDescending { it.addedAt ?: it.scannedAt }
-                        .take(ROW_ITEM_LIMIT)
-                        .mapNotNull { it.toMediaCardOrNull() }
-                    if (cards.isNotEmpty()) result.add(Row(rowCfg.id, rowCfg.title ?: "Genre", RowKind.GENRE, cards))
-                }
-
-                RowKind.CUSTOM -> {
-                    // R32: a custom row is a saved condition stack.
-                    val matched = all.filter { ConditionEvaluator.matches(it, rowCfg.match, rowCfg.conditions, heroIds) }
-                    val filtered = when (rowCfg.mediaKind) {
-                        "MOVIE"  -> matched.filter { it.kind == MediaKind.MOVIE }
-                        "SERIES" -> matched.filter { it.kind == MediaKind.TV_SHOW }
-                        else     -> matched
-                    }
-                    val cards = filtered
-                        .sortedByDescending { it.addedAt ?: it.scannedAt }
-                        .take(ROW_ITEM_LIMIT)
-                        .mapNotNull { it.toMediaCardOrNull() }
-                    if (cards.isNotEmpty()) result.add(Row(rowCfg.id, rowCfg.title ?: "Custom", RowKind.CUSTOM, cards))
-                }
+                RowKind.GENRE, RowKind.CUSTOM -> buildFilterRow(rowCfg, all, heroIds)?.let { result.add(it) }
             }
         }
 
-        // If merge is on for this context, inject one merged NEWLY_ADDED row at the config position
+        // Merge on → inject one merged NEWLY_ADDED row at the first configured NEWLY_ADDED position.
         if (mergeNewly) {
             val mergedCards = all
                 .sortedByDescending { it.addedAt ?: it.scannedAt }
                 .take(ROW_ITEM_LIMIT)
                 .mapNotNull { it.toMediaCardOrNull() }
             if (mergedCards.isNotEmpty()) {
-                // Find where in the config the first NEWLY_ADDED row was and insert the merged
-                // row at that logical position — after whichever result row came just before it.
                 val firstIdx = enabledRows.indexOfFirst { it.kind == RowKind.NEWLY_ADDED }
                 val insertAt = when {
-                    // R143: a custom channel has no configured NEWLY_ADDED row → append at the END
-                    // (previously this inserted at the top, so a custom channel showed Newly Added first).
                     firstIdx < 0 -> result.size
                     firstIdx == 0 -> 0
                     else -> {
@@ -302,18 +271,57 @@ class HomeFeedService(
                 }
                 result.add(insertAt.coerceIn(0, result.size), Row("newly-added", "Newly Added", RowKind.NEWLY_ADDED, mergedCards))
             }
-        } else if (newlyMode == "split" && enabledRows.none { it.kind == RowKind.NEWLY_ADDED }) {
-            // R143: a custom channel asked for split Newly Added but has no configured NEWLY_ADDED row
-            // (inherit-mode channels + Home already emit split rows inline) → inject Movies + Series at the END.
-            val movies = all.filter { it.kind == MediaKind.MOVIE }
-                .sortedByDescending { it.addedAt ?: it.scannedAt }.take(ROW_ITEM_LIMIT).mapNotNull { it.toMediaCardOrNull() }
-            val series = all.filter { it.kind == MediaKind.TV_SHOW }
-                .sortedByDescending { it.addedAt ?: it.scannedAt }.take(ROW_ITEM_LIMIT).mapNotNull { it.toMediaCardOrNull() }
-            if (movies.isNotEmpty()) result.add(Row("newly-added-movies", "Movies — Newly Added", RowKind.NEWLY_ADDED, movies))
-            if (series.isNotEmpty()) result.add(Row("newly-added-series", "Series — Newly Added", RowKind.NEWLY_ADDED, series))
         }
 
         return result
+    }
+
+    /** R143: append the Newly Added section from [src] — one merged row, or split Movies + Series rows. */
+    private fun addNewlyAddedRows(
+        result: MutableList<Row>,
+        src: List<MediaItem>,
+        merge: Boolean,
+        idPrefix: String = "newly-added",
+        titlePrefix: String? = null,
+    ) {
+        if (merge) {
+            val cards = src.sortedByDescending { it.addedAt ?: it.scannedAt }.take(ROW_ITEM_LIMIT).mapNotNull { it.toMediaCardOrNull() }
+            if (cards.isNotEmpty()) result.add(Row(idPrefix, titlePrefix ?: "Newly Added", RowKind.NEWLY_ADDED, cards))
+            return
+        }
+        val movies = src.filter { it.kind == MediaKind.MOVIE }
+            .sortedByDescending { it.addedAt ?: it.scannedAt }.take(ROW_ITEM_LIMIT).mapNotNull { it.toMediaCardOrNull() }
+        val series = src.filter { it.kind == MediaKind.TV_SHOW }
+            .sortedByDescending { it.addedAt ?: it.scannedAt }.take(ROW_ITEM_LIMIT).mapNotNull { it.toMediaCardOrNull() }
+        if (movies.isNotEmpty()) result.add(Row("$idPrefix-movies", titlePrefix?.let { "$it — Movies" } ?: "Movies — Newly Added", RowKind.NEWLY_ADDED, movies))
+        if (series.isNotEmpty()) result.add(Row("$idPrefix-series", titlePrefix?.let { "$it — Series" } ?: "Series — Newly Added", RowKind.NEWLY_ADDED, series))
+    }
+
+    /** R143: build one GENRE or CUSTOM filter row from [all] (already channel-scoped in channel context). */
+    private fun buildFilterRow(rowCfg: RowConfig, all: List<MediaItem>, heroIds: Set<String>): Row? = when (rowCfg.kind) {
+        RowKind.GENRE -> {
+            val genreTerms = (rowCfg.title ?: "").split("&", ",").map { it.trim().lowercase() }.filter { it.isNotBlank() }
+            val cards = all
+                .filter { item -> genreTerms.isEmpty() || item.genres.any { g -> genreTerms.any { t -> g.lowercase().contains(t) } } }
+                .sortedByDescending { it.addedAt ?: it.scannedAt }
+                .take(ROW_ITEM_LIMIT)
+                .mapNotNull { it.toMediaCardOrNull() }
+            if (cards.isNotEmpty()) Row(rowCfg.id, rowCfg.title ?: "Genre", RowKind.GENRE, cards) else null
+        }
+        RowKind.CUSTOM -> {
+            val matched = all.filter { ConditionEvaluator.matches(it, rowCfg.match, rowCfg.conditions, heroIds) }
+            val filtered = when (rowCfg.mediaKind) {
+                "MOVIE"  -> matched.filter { it.kind == MediaKind.MOVIE }
+                "SERIES" -> matched.filter { it.kind == MediaKind.TV_SHOW }
+                else     -> matched
+            }
+            val cards = filtered
+                .sortedByDescending { it.addedAt ?: it.scannedAt }
+                .take(ROW_ITEM_LIMIT)
+                .mapNotNull { it.toMediaCardOrNull() }
+            if (cards.isNotEmpty()) Row(rowCfg.id, rowCfg.title ?: "Custom", RowKind.CUSTOM, cards) else null
+        }
+        else -> null
     }
 
     private suspend fun buildContinueRow(
