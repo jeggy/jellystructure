@@ -33,6 +33,7 @@ private val DEFAULT_CONFIG = RaviloConfig(
     channels = emptyList(),
     rows = DEFAULT_ROWS,
     mergeNewlyAdded = false,
+    mergeNewlyAddedChannels = false,
     defaultSkin = Skin.AURORA,
     allowSkinOverride = true,
     showContinueProgress = true,
