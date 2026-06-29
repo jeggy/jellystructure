@@ -367,7 +367,8 @@ fun Route.tvRoutes(
         val device = call.attributes[DeviceKey]
         val d = raviloConfigService.getConfig(device.jellyfinUserId).discover
         val cfg = configStore.current
-        val specs = chartRegistry?.get(d.source)?.availableLists(d.region).orEmpty()
+        // R142: collect specs from ALL providers (not just d.source) so multi-provider lists are all served.
+        val specs = chartRegistry?.all()?.flatMap { it.availableLists(d.region) }.orEmpty()
         val acqEnabled = cfg.acquisition?.enabled == true
         // Tab shows when *arr is connected; acquisition engine only gates the request button, not browsing.
         val available = d.enabled && d.lists.isNotEmpty() && d.lists.any { servable(it, cfg) }
@@ -389,7 +390,12 @@ fun Route.tvRoutes(
         val entry = (chartStore?.entries(listId).orEmpty()).firstOrNull { it.rank == rank }
             ?: return@get call.respond(HttpStatusCode.NotFound)
         val d = raviloConfigService.getConfig(device.jellyfinUserId).discover
-        val provider = chartRegistry?.get(d.source)
+        // R142: find the owning provider from the spec (not d.source) so multi-provider attribution is correct.
+        // availableLists() is cheap (no I/O); use d.region as the primary region and also probe common
+        // "no region" global lists (mov-global etc.) which availableLists() returns for any region input.
+        val provider = chartRegistry?.all()?.firstOrNull { p ->
+            p.availableLists(d.region).any { it.id == listId }
+        }
         // R63 — fetch TMDB genres, runtime, cast when tmdbId is known
         val isSeries = entry.kind == MediaKind.SERIES
         val tmdbId = entry.tmdbId
