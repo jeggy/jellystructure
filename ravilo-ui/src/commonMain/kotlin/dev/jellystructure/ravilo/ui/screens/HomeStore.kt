@@ -26,6 +26,9 @@ class HomeStore(private val apiClient: TvApiClient) {
     // R137: scroll state lives in the retained store (not remembered per-composition), so navigate→back
     // restores the feed's scroll position instead of resetting to the top.
     val listState = LazyListState()
+    // R139: identity of the tile the user last navigated from, so Back re-focuses that exact tile.
+    var focusRowKey: String? = null
+    var focusItemKey: String? = null
     // R49 — server-decided Top 10 tab gating (Radarr/Sonarr + per-user opt-in + non-empty lists).
     private val _discoverAvailable = MutableStateFlow(false)
     val discoverAvailable: StateFlow<Boolean> = _discoverAvailable.asStateFlow()

@@ -18,8 +18,13 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.focus.FocusRequester
 import dev.jellystructure.ravilo.ui.seams.PrefetchLazyRowEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -60,7 +65,9 @@ fun <T> StaticContentRow(
      * janks fast up/down navigation. Screens without a top-inset spec (Discover/Channel) keep it true.
      */
     bringRowHeaderIntoView: Boolean = true,
-    itemContent: @Composable (index: Int, item: T) -> Unit,
+    /** R139: on a Back-return, scroll this row to the item with this key and focus it (the originating tile). */
+    restoreItemKey: Any? = null,
+    itemContent: @Composable (index: Int, item: T, focusRequester: FocusRequester?) -> Unit,
 ) {
     val colors = RaviloTheme.colors
     val spaceGrotesk = SpaceGrotesk
@@ -84,6 +91,23 @@ fun <T> StaticContentRow(
     }
 
     val listState = rememberLazyListState()
+
+    // R139: a Back-return into a screen that retained its scroll re-composes this row; if it's the row the
+    // user navigated from, scroll it to the originating tile and request focus there (once per entry). The
+    // matching item's content receives `restoreFR` below.
+    val restoreFR = remember { FocusRequester() }
+    var restoredOnce by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        if (!restoredOnce && restoreItemKey != null && itemKey != null) {
+            val idx = items.indexOfFirst { itemKey(it) == restoreItemKey }
+            if (idx >= 0) {
+                runCatching { listState.scrollToItem(idx) }
+                runCatching { restoreFR.requestFocus() }
+            }
+            restoredOnce = true
+        }
+    }
+
     if (urlResolver != null) {
         // R99: key on urlResolver too — a row-kind/tile-shape change swaps the resolver (poster↔backdrop)
         // while `items` stays the same object, so remember(items) alone would prefetch stale URLs and
@@ -143,7 +167,8 @@ fun <T> StaticContentRow(
                 ),
             ) {
                 items(items.size, key = if (itemKey != null) { i -> itemKey(items[i]) } else null) { i ->
-                    itemContent(i, items[i])
+                    val fr = if (restoreItemKey != null && itemKey != null && itemKey(items[i]) == restoreItemKey) restoreFR else null
+                    itemContent(i, items[i], fr)
                 }
             }
         }

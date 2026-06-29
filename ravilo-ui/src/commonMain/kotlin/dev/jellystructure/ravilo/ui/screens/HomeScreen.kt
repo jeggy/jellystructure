@@ -80,7 +80,7 @@ fun HomeScreen(
             is HomeState.Error   -> HomeErrorState(s.message) { store.refresh() }
             is HomeState.Loaded  -> HomeLoaded(
                 feed = s.feed,
-                listState = store.listState,   // R137: retained scroll state
+                store = store,   // R137 retained scroll + R139 focus-key
                 activeNav = activeNav,
                 displayName = displayName,
                 discoverAvailable = discoverAvailable,
@@ -99,7 +99,7 @@ fun HomeScreen(
 @Composable
 private fun HomeLoaded(
     feed: dev.jellystructure.shared.tv.HomeFeed,
-    listState: androidx.compose.foundation.lazy.LazyListState,
+    store: HomeStore,
     activeNav: Int,
     displayName: String,
     discoverAvailable: Boolean,
@@ -112,6 +112,7 @@ private fun HomeLoaded(
     onSearch: () -> Unit,
 ) {
     val colors = RaviloTheme.colors
+    val listState = store.listState   // R137
     val scope = rememberCoroutineScope()
 
     // Hero height as a % of the screen, per the user's config (R27); auto-advance interval too.
@@ -137,10 +138,11 @@ private fun HomeLoaded(
     // (always composed + focusable) so a hero-less feed never opens with nothing focused — Down
     // then enters the content. Requesting focus on the LazyColumn container itself is unreliable.
     LaunchedEffect(Unit) {
-        // R137: the feed's scroll position is retained in the store, so Back from a detail returns to where
-        // we were. When it was scrolled, focus the app bar (a fixed overlay — focusing it doesn't disturb the
-        // scroll, unlike focusing the off-screen hero which would yank back to the top); DOWN re-enters the
-        // content where we left. Fresh entry / at top → hero as before.
+        // R139: on a Back-return from a tile/channel (a key was saved on select), the originating row's own
+        // effect scrolls to + focuses that exact tile — skip the default entry focus so we don't fight it.
+        // R137: otherwise the retained scroll is preserved; focus the hero on a fresh/at-top entry, else the
+        // app bar (a fixed overlay — focusing it doesn't disturb the scroll).
+        if (store.focusItemKey != null) return@LaunchedEffect
         val wasScrolled = listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 0
         runCatching {
             if (!wasScrolled && hasHero) heroFR.requestFocus() else navBarFR.requestFocus()
@@ -194,7 +196,8 @@ private fun HomeLoaded(
                         autoAdvanceSeconds = feed.autoAdvanceSeconds,
                         // R53: button-less — the whole hero opens detail (movie + series alike); the detail
                         // screen owns Play/resume. Left/Right pages the carousel inside HeroCarousel.
-                        onOpenDetail = { onItemSelect(it) },
+                        // R139: opened from the hero (not a tile) → clear the saved key so Back returns to the hero.
+                        onOpenDetail = { store.focusRowKey = null; store.focusItemKey = null; onItemSelect(it) },
                         onUp = { navBarFR.requestFocus() },
                         // R91: read scroll state inside the lambda (draw-only; no recompose on each frame).
                         scrollOffsetPx = {
@@ -219,13 +222,15 @@ private fun HomeLoaded(
                     itemKey = { ch -> ch.id },
                     urlResolver = { ch -> ch.logoUrl },
                     bringRowHeaderIntoView = false,  // R108: spec topInset already shows the title
-                ) { _, ch ->
+                    restoreItemKey = if (store.focusRowKey == "channels") store.focusItemKey else null,  // R139
+                ) { _, ch, fr ->
                     ChannelCard(
                         name = ch.name,
                         logoUrl = ch.logoUrl,
                         brandColor = ch.brandColor,
                         logoPadding = if (ch.style == dev.jellystructure.shared.tv.ChannelStyle.LOGO) ch.paddingLogo else ch.paddingText,
-                        onSelect = { onChannelSelect(ch) },
+                        focusRequester = fr,  // R139
+                        onSelect = { store.focusRowKey = "channels"; store.focusItemKey = ch.id; onChannelSelect(ch) },  // R139
                     )
                 }
             }
@@ -249,7 +254,8 @@ private fun HomeLoaded(
                     u?.let { sizedProxyUrl(it, tileRequestedWidth(rowVariant)) }
                 },
                 bringRowHeaderIntoView = false,  // R108: spec topInset already shows the title
-            ) { _, card ->
+                restoreItemKey = if (store.focusRowKey == row.id) store.focusItemKey else null,  // R139
+            ) { _, card, fr ->
                 // R113: in Continue Watching, show the season/episode as a small on-image badge for TV
                 // shows and leave just the series title below (was "S1E3 · Episode" as the subtitle).
                 val isContinue = row.kind == RowKind.CONTINUE
@@ -263,7 +269,8 @@ private fun HomeLoaded(
                     variant = rowVariant,
                     progressPct = card.progressPct ?: 0f,
                     watched = card.watched,
-                    onSelect = { onItemSelect(card) },
+                    focusRequester = fr,  // R139
+                    onSelect = { store.focusRowKey = row.id; store.focusItemKey = card.id; onItemSelect(card) },  // R139
                 )
             }
         }
