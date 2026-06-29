@@ -187,6 +187,18 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
             backoff = (backoff * 2).coerceAtMost(15_000L)
         }
     }
+    // R141: degrade-to-poll fallback — safety net for when the WS is down or a single event is missed.
+    // Polls /api/tv/config/rev every 15 s; if the rev has advanced since last seen, emits on liveConfig
+    // so the visible screen does its existing silent refresh (same path as WS events — no duplication risk).
+    LaunchedEffect("r141-poll:$activeUserId") {
+        if (activeUserId == null) return@LaunchedEffect
+        var seenRev = 0L
+        while (true) {
+            delay(15_000L)
+            val rev = runCatching { apiClient.getConfigRev() }.getOrNull() ?: continue
+            if (rev != seenRev) { seenRev = rev; liveConfig.emit(rev) }
+        }
+    }
 
     RaviloTheme(state = themeState) {
     WithLocale(lang) {
@@ -360,6 +372,10 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                 val store = keptStore("home:${dest.displayName}") { HomeStore(apiClient) }
                 val da by store.discoverAvailable.collectAsState()
                 SideEffect { discoverAvailable = da }
+                // R141: on every Home re-entry (including Back-returns), emit on liveConfig so the store
+                // does a silent re-pull. HomeStore.refresh(silent=true) keeps the current content visible
+                // and swaps in the new feed when it arrives — no Loading flash.
+                LaunchedEffect(Unit) { liveConfig.emit(0L) }
                 HomeScreen(
                     store = store,
                     displayName = dest.displayName,

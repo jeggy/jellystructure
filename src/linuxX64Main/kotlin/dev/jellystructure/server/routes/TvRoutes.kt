@@ -37,6 +37,7 @@ import dev.jellystructure.tv.RaviloImageUrl
 import dev.jellystructure.tv.PlaybackService
 import dev.jellystructure.tv.RaviloConfigService
 import dev.jellystructure.tv.RaviloDeviceService
+import dev.jellystructure.tv.TvEventBus
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.request.receive
@@ -112,6 +113,7 @@ fun Route.tvRoutes(
     chartRegistry: dev.jellystructure.chart.ChartRegistry? = null,
     tmdbClient: dev.jellystructure.tmdb.TmdbClient? = null,
     imageProxyService: RaviloArtworkService? = null,
+    tvEventBus: TvEventBus? = null,
 ) {
     route("/tv/pair") {
         post("/start") {
@@ -350,6 +352,13 @@ fun Route.tvRoutes(
     get("/tv/config") {
         val device = call.attributes[DeviceKey]
         call.respond(raviloConfigService.getConfig(device.jellyfinUserId))
+    }
+
+    // R141: degrade-to-poll fallback — client polls this when the WS is down (or as a safety net).
+    // Returns the monotonic config-change rev so the client can detect a missed event and self-heal.
+    get("/tv/config/rev") {
+        val rev = tvEventBus?.currentRev() ?: 0L
+        call.respond(mapOf("rev" to rev))
     }
 
     // R48 — Discover / Top 10. Composes the per-user list selection (R04) + Phase 57 charts +
