@@ -71,6 +71,35 @@
   STR.fo.play = 'Sp\u00e6l';
   STR.fo.row_continue = 'Hald fram';
 
+  // ---- watched-state (R07) ----
+  Object.assign(STR.en, {
+    mark_watched: 'Mark Watched', watched: 'Watched', play_again: 'Play Again',
+    mark_all_watched: 'Mark all watched', mark_all_unwatched: 'Mark all unwatched',
+    watched_of: '{w} of {n} watched',
+    toast_marked_watched: '\u2713 Marked watched \u00b7 synced to Jellyfin',
+    toast_marked_unwatched: 'Marked unwatched \u00b7 synced to Jellyfin',
+    toast_all_watched: '\u2713 Season marked watched \u00b7 synced to Jellyfin',
+    toast_all_unwatched: 'Season marked unwatched \u00b7 synced to Jellyfin',
+  });
+  Object.assign(STR.da, {
+    mark_watched: 'Mark\u00e9r som set', watched: 'Set', play_again: 'Afspil igen',
+    mark_all_watched: 'Mark\u00e9r alle som set', mark_all_unwatched: 'Mark\u00e9r alle som uset',
+    watched_of: '{w} af {n} set',
+    toast_marked_watched: '\u2713 Markeret som set \u00b7 synket til Jellyfin',
+    toast_marked_unwatched: 'Markeret som uset \u00b7 synket til Jellyfin',
+    toast_all_watched: '\u2713 S\u00e6son markeret som set \u00b7 synket til Jellyfin',
+    toast_all_unwatched: 'S\u00e6son markeret som uset \u00b7 synket til Jellyfin',
+  });
+  Object.assign(STR.fo, {
+    mark_watched: 'Merk sum s\u00e6tt', watched: 'S\u00e6tt', play_again: 'Sp\u00e6l aftur',
+    mark_all_watched: 'Merk \u00f8ll sum s\u00e6dd', mark_all_unwatched: 'Merk \u00f8ll sum \u00f3s\u00e6dd',
+    watched_of: '{w} av {n} s\u00e6dd',
+    toast_marked_watched: '\u2713 Merkt sum s\u00e6tt \u00b7 samstillt vi\u00f0 Jellyfin',
+    toast_marked_unwatched: 'Merkt sum \u00f3s\u00e6tt \u00b7 samstillt vi\u00f0 Jellyfin',
+    toast_all_watched: '\u2713 \u00c1rst\u00ed\u00f0 merkt sum s\u00e6dd \u00b7 samstillt vi\u00f0 Jellyfin',
+    toast_all_unwatched: '\u00c1rst\u00ed\u00f0 merkt sum \u00f3s\u00e6dd \u00b7 samstillt vi\u00f0 Jellyfin',
+  });
+
   let lang = 'en';
   window.RAVILO_I18N = STR;
   window.RAVILO_LANGS_UI = [

@@ -2,6 +2,7 @@
    mountRavilo(stage, { interactive }) where stage is the 1920×1080 element. */
 (function () {
   const R = window.RAVILO;
+  const W = R.watched;
 
   function el(tag, cls, html) { const e = document.createElement(tag); if (cls) e.className = cls; if (html != null) e.innerHTML = html; return e; }
   function artFill(item) { return item.image ? `<img class="tile-img" src="${item.image}" alt="">` : `<div class="grad" style="background:${item.grad}"></div><div class="tt">${item.title}</div>`; }
@@ -108,7 +109,8 @@
     function durFor(item) { return isBBB(item) ? 596 : (item.kind === 'series' ? 52 : 112) * 60; }
     function movieCtx(item) {
       const ts = tracksFor(item), dur = durFor(item);
-      const resume = (item.pct > 0 && item.pct < 100) ? Math.round(dur * item.pct / 100) : 0;
+      const mst = W.itemState(item.title), mp = mst.pct || item.pct || 0;
+      const resume = (mp > 0 && mp < 100) ? Math.round(dur * mp / 100) : 0;
       return {
         type: 'film', kicker: item.tagline || 'Film', title: item.title,
         sub2: `${item.year || ''} · ${item.genre || ''} · <b>${item.rating}+</b>`,
@@ -122,7 +124,8 @@
     }
     function episodeCtx(seriesItem, season, eps, idx) {
       const e = eps[idx], ts = tracksFor(seriesItem), dur = (parseInt(e.dur) || 50) * 60;
-      const resume = (e.pct > 0 && e.pct < 100) ? Math.round(dur * e.pct / 100) : 0;
+      const est = W.epState(seriesItem.title, season, e.n, e.pct);
+      const resume = (est.pct > 0 && est.pct < 100) ? Math.round(dur * est.pct / 100) : 0;
       const ni = idx + 1, hasNext = ni < eps.length;
       return {
         type: 'episode', kicker: seriesItem.title, title: e.title,
@@ -136,7 +139,7 @@
         resolveNext: hasNext ? () => episodeCtx(seriesItem, season, eps, ni) : null,
         seasonLabel: 'Season ' + (season + 1),
         epIndex: idx,
-        episodes: eps.map(x => ({ n: x.n, title: x.title, dur: x.dur, grad: x.grad, pct: x.pct || 0, watched: (x.pct || 0) >= 100 })),
+        episodes: eps.map(x => { const xs = W.epState(seriesItem.title, season, x.n, x.pct); return { n: x.n, title: x.title, dur: x.dur, grad: x.grad, pct: xs.pct || 0, watched: xs.watched }; }),
         resolveEpisode: (i) => episodeCtx(seriesItem, season, eps, i),
       };
     }
@@ -144,7 +147,7 @@
       if (item.kind === 'series') {
         season = season || 0;
         const eps = R.episodesFor(item, season);
-        const prog = seriesProgress(eps);
+        const prog = seriesProgressFrom(eps.map(e => W.epState(item.title, season, e.n, e.pct)));
         openPlayer(episodeCtx(item, season, eps, prog.idx));
       } else {
         openPlayer(movieCtx(item));
@@ -153,11 +156,21 @@
     function openPlayer(ctx) { stopHero(); player.open(ctx); }
     const player = window.initRaviloPlayer(stage, {
       flash,
-      restoreFocus: function (watched) {
+      restoreFocus: function (info) {
+        // info = { title, pos, duration } from the player (or null). Write the resulting
+        // watched-state through to the store for library movies; series episodes are toggled
+        // from the detail page. (R07/R08 — server-pushed in production.)
+        let nowWatched = false;
+        if (info && info.duration && catalogHas(info.title)) {
+          const pct = Math.round(info.pos / info.duration * 100);
+          if (pct >= 90) { W.setItemWatched(info.title, true); nowWatched = true; }
+          else if (pct > 2) W.setItem(info.title, { pct: pct, watched: false });
+        }
+        const reRender = info && (view.type === 'movie' || view.type === 'series') && view.item && view.item.title === info.title;
         if (view.type === 'home') startHero();
-        const all = rows(); const its = items(all[cur.r] || all[0]);
-        if (its[cur.c]) focusEl(its[cur.c]); else focusRowByIndex(0);
-        if (watched) flash('✓ Progress saved — jellystructure → Jellyfin');
+        if (reRender) { renderDetail(view.item); setTimeout(() => { const ai = rows().findIndex(r => r.classList.contains('dactions')); focusRC(ai > 0 ? ai : 1, 0); }, 24); }
+        else { const all = rows(); const its = items(all[cur.r] || all[0]); if (its[cur.c]) focusEl(its[cur.c]); else focusRowByIndex(0); }
+        if (info) flash(nowWatched ? t('toast_marked_watched') : '✓ Progress saved — jellystructure → Jellyfin');
       },
     });
 
@@ -223,7 +236,10 @@
           ${(item.pct || 0) > 0 ? `<div class="pbar"><i style="width:${item.pct}%"></i></div>` : ''}</div>
           <div class="label">${item.title}</div><div class="sub cont-sub">${item.ep || ''}</div>`;
       } else {
-        t.innerHTML = `<div class="art">${artFill(item)}${item.badge ? `<div class="badge">${item.badge}</div>` : ''}</div>
+        const ws = W.itemState(item.title);
+        if (ws.watched) t.classList.add('watched');
+        const wmark = ws.watched ? `<div class="tile-check">✓</div>` : (ws.pct > 0 ? `<div class="tile-prog"><i style="width:${ws.pct}%"></i></div>` : '');
+        t.innerHTML = `<div class="art">${artFill(item)}${item.badge ? `<div class="badge">${item.badge}</div>` : ''}${wmark}</div>
           <div class="label">${item.title}</div><div class="sub">${item.year} · ${item.genre}</div>`;
       }
       return t;
@@ -306,18 +322,23 @@
       // R130 — fall back to the styled title on null OR load failure (the logo proxy 404s for no-clearlogo titles)
       return `<img class="dhero-logo" src="${it.logo}" alt="${esc(it.title)}" onerror="this.style.display='none';this.nextElementSibling.style.display='block';"><div class="dhero-title" style="display:none;">${esc(it.title)}</div>`;
     }
-    function episodeCard(e, st) {
+    function episodeCard(e, st, idx) {
       st = st || {};
-      const cls = 'ep-card foc' + (st.watched ? ' watched' : '') + (st.inprogress ? ' inprogress' : '') + (st.upnext ? ' upnext' : '');
-      const t = el('div', cls); t._ep = e;
-      t.innerHTML = `<div class="ep-still"><div class="grad" style="background:${e.grad}"></div>
+      const cls = 'ep-card' + (st.watched ? ' watched' : '') + (st.inprogress ? ' inprogress' : '') + (st.upnext ? ' upnext' : '');
+      const card = el('div', cls);
+      const pct = st.watched ? 100 : (st.pct || e.pct || 0);
+      const play = el('div', 'ep-play foc'); play._ep = e; play._epidx = idx;
+      play.innerHTML = `<div class="ep-still"><div class="grad" style="background:${e.grad}"></div>
         <span class="ep-num">${e.n}</span><span class="ep-dur">${e.dur}</span>
         ${st.upnext ? '<span class="ep-ribbon">UP NEXT</span>' : ''}
         ${st.watched ? '<span class="ep-check">✓</span>' : ''}
         <div class="play"><span>▶</span></div>
-        ${(st.inprogress || st.watched) ? `<div class="ep-prog"><i style="width:${st.watched ? 100 : e.pct}%"></i></div>` : ''}</div>
-        <div class="ep-info"><div class="ep-t">${e.n}. ${e.title}${st.watched ? ' <span class="ep-tag">Watched</span>' : ''}</div><div class="ep-d">${e.desc}</div></div>`;
-      return t;
+        ${(st.inprogress || st.watched) ? `<div class="ep-prog"><i style="width:${pct}%"></i></div>` : ''}</div>
+        <div class="ep-info"><div class="ep-t">${e.n}. ${e.title}${st.watched ? ` <span class="ep-tag">${t('watched')}</span>` : ''}</div><div class="ep-d">${e.desc}</div></div>`;
+      const done = el('div', 'ep-done foc' + (st.watched ? ' on' : '')); done._epdone = true; done._epn = e.n; done._epidx = idx; done.setAttribute('data-epidx', idx);
+      done.innerHTML = `<span class="ep-done-ic">${st.watched ? '✓' : ''}</span><span class="ep-done-tx">${st.watched ? t('watched') : t('mark_watched')}</span>`;
+      card.appendChild(play); card.appendChild(done);
+      return card;
     }
     function seriesProgress(eps) {
       let watched = 0;
@@ -328,6 +349,14 @@
       return { watched, idx };
     }
     function minsLeft(e) { const d = parseInt(e.dur) || 50; return Math.max(1, Math.round(d * (1 - (e.pct || 0) / 100))); }
+    function minsLeftPct(e, pct) { const d = parseInt(e.dur) || 50; return Math.max(1, Math.round(d * (1 - (pct || 0) / 100))); }
+    function seriesProgressFrom(states) {
+      let watched = 0; states.forEach(s => { if (s.watched) watched++; });
+      let idx = states.findIndex(s => s.pct > 0 && !s.watched);
+      if (idx < 0) idx = states.findIndex(s => !s.watched && !s.pct);
+      if (idx < 0) idx = states.length - 1;
+      return { watched, idx };
+    }
     function castCircle(c) {
       const t = el('div', 'cast foc'); t._cast = c;
       t.innerHTML = `<div class="cast-av" style="background:${R.grad(c.n)}">${R.initials(c.n)}</div>
@@ -364,17 +393,22 @@
       const seasons = isSeries ? R.seasonsFor(item) : 0;
       const season = view.season || 0;
       const eps = isSeries ? R.episodesFor(item, season) : [];
-      const prog = isSeries ? seriesProgress(eps) : null;
+      const states = isSeries ? eps.map(e => W.epState(item.title, season, e.n, e.pct)) : [];
+      const prog = isSeries ? seriesProgressFrom(states) : null;
       const rEp = isSeries ? eps[prog.idx] : null;
+      const rState = isSeries ? states[prog.idx] : null;
+      const wItem = W.itemState(item.title);
       const d = el('div', 'detail');
 
       let playLabel, upNote = '';
       if (isSeries) {
-        if (prog.watched === 0 && !rEp.pct) playLabel = t('play') + ' · E1';
-        else if (rEp.pct > 0 && rEp.pct < 100) { playLabel = t('resume') + ` · E${rEp.n}`; upNote = `Resume S${season + 1} · E${rEp.n} “${rEp.title}” · ${minsLeft(rEp)} min left`; }
+        if (prog.watched === 0 && !rState.pct) playLabel = t('play') + ' · E1';
+        else if (rState.pct > 0 && rState.pct < 100) { playLabel = t('resume') + ` · E${rEp.n}`; upNote = `Resume S${season + 1} · E${rEp.n} “${rEp.title}” · ${minsLeftPct(rEp, rState.pct)} min left`; }
         else { playLabel = t('play') + ` · E${rEp.n}`; upNote = `Up next · S${season + 1} · E${rEp.n} “${rEp.title}”`; }
       } else {
-        playLabel = (item.pct > 0 && item.pct < 100) ? t('resume') + ` · ${minsLeft(item)} min left` : t('play');
+        const mp = wItem.pct || item.pct || 0;
+        const mLeft = Math.max(1, Math.round(durFor(item) * (1 - mp / 100) / 60));
+        playLabel = wItem.watched ? t('play_again') : ((mp > 0 && mp < 100) ? t('resume') + ` · ${mLeft} min left` : t('play'));
       }
 
       const dhero = el('div', 'dhero');
@@ -382,12 +416,13 @@
         <div class="dhero-body">
           <div class="hero-kicker"><span>${item.tagline || (isSeries ? 'Series' : 'Film')}</span><span class="n">${isSeries ? seasons + ' Season' + (seasons > 1 ? 's' : '') : (item.year || '')}</span></div>
           ${detailTitle(item)}
-          <div class="hero-meta"><span class="tag">${item.badge || 'HD'}</span><span>${item.year}</span><span>${item.genre}</span><span class="rt">${item.rating}+</span></div>
+          <div class="hero-meta"><span class="tag">${item.badge || 'HD'}</span><span>${item.year}</span><span>${item.genre}</span><span class="rt">${item.rating}+</span>${wItem.watched ? `<span class="dmeta-watched">✓ ${t('watched')}</span>` : ''}</div>
           ${audioFlagsHTML(item)}
           <div class="dsyn-block focus-row"><div class="hero-syn dsyn foc" data-syn="1">${item.syn || 'A standout from your Ravilo library — streamed from Jellyfin, organised by Jellystructure.'}</div><span class="syn-toggle">▾ more</span></div>
           ${upNote ? `<div class="dnext"><span class="dnext-dot"></span>${upNote}</div>` : ''}
           <div class="dactions focus-row">
             <div class="btn primary foc" data-play="1"><span class="ic">▶</span> ${playLabel}</div>
+            ${!isSeries ? `<div class="btn ghost foc${wItem.watched ? ' watched-on' : ''}" data-mark="1"><span class="ic">${wItem.watched ? '✓' : '○'}</span> ${wItem.watched ? t('watched') : t('mark_watched')}</div>` : ''}
             <div class="btn ghost foc" data-trailer="1"><span class="ic">▷</span> ${t('trailer')}</div>
             <div class="btn ghost foc" data-list="1"><span class="ic">＋</span> ${t('add_list')}</div>
           </div>
@@ -396,20 +431,22 @@
 
       if (isSeries) {
         const pctWatched = Math.round(prog.watched / eps.length * 100);
+        const allW = prog.watched === eps.length;
         const sec = el('div', 'dsec');
         sec.innerHTML = `<div class="dsec-head"><h2>Episodes</h2>
-          <span class="dsec-sub">${prog.watched} of ${eps.length} watched</span>
-          <span class="seasonbar"><i style="width:${pctWatched}%"></i></span></div>`;
+          <span class="dsec-sub">${t('watched_of', { w: prog.watched, n: eps.length })}</span>
+          <span class="seasonbar"><i style="width:${pctWatched}%"></i></span></div>
+          <div class="dsec-actions focus-row"><div class="btn ghost small foc${allW ? ' watched-on' : ''}" data-markall="1"><span class="ic">✓</span> ${allW ? t('mark_all_unwatched') : t('mark_all_watched')}</div></div>`;
         const pills = el('div', 'seasonpills focus-row');
         for (let i = 0; i < seasons; i++) { const p = el('div', 'spill foc' + (i === season ? ' cur' : '')); p._season = i; p.textContent = 'Season ' + (i + 1); pills.appendChild(p); }
         sec.appendChild(pills);
         d.appendChild(sec);
         const epRow = el('div', 'crow eprow');
         const track = el('div', 'track focus-row');
-        track.dataset.def = prog.idx;
+        track.dataset.def = prog.idx * 2;
         eps.forEach((e, i) => track.appendChild(episodeCard(e, {
-          watched: e.pct >= 100, inprogress: e.pct > 0 && e.pct < 100, upnext: i === prog.idx,
-        })));
+          watched: states[i].watched, inprogress: states[i].pct > 0 && !states[i].watched, upnext: i === prog.idx, pct: states[i].pct,
+        }, i)));
         epRow.appendChild(track);
         d.appendChild(epRow);
       }
@@ -686,6 +723,45 @@
       appbar.querySelectorAll('.navitem').forEach(n => n.classList.toggle('cur', n.dataset.nav === 'search'));
     }
     function esc(s) { return s.replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c])); }
+    function catalogHas(title) { return catalog().some(it => it.title === title); }
+    function refocusSel(sel) {
+      setTimeout(() => {
+        const node = scroll.querySelector(sel); if (!node) return;
+        const all = rows();
+        for (let r = 0; r < all.length; r++) { const c = items(all[r]).indexOf(node); if (c >= 0) { cur = { r, c }; focusEl(node); return; } }
+      }, 24);
+    }
+    function syncSeriesItemState(item, season) {
+      const eps = R.episodesFor(item, season);
+      const st = eps.map(e => W.epState(item.title, season, e.n, e.pct));
+      const w = st.filter(s => s.watched).length;
+      if (w === st.length) W.setItem(item.title, { watched: true, pct: 100 });
+      else if (w === 0) W.setItem(item.title, { watched: false, pct: st.some(s => s.pct > 0) ? Math.round(st.reduce((a, s) => a + (s.pct || 0), 0) / st.length) : 0 });
+      else W.setItem(item.title, { watched: false, pct: Math.round(w / st.length * 100) });
+    }
+    function toggleItemWatched(item) {
+      const ws = W.itemState(item.title);
+      W.setItemWatched(item.title, !ws.watched);
+      flash(!ws.watched ? t('toast_marked_watched') : t('toast_marked_unwatched'));
+      renderDetail(item); refocusSel('[data-mark]');
+    }
+    function toggleSeasonWatched(item, season) {
+      const eps = R.episodesFor(item, season);
+      const allW = eps.map(e => W.epState(item.title, season, e.n, e.pct)).every(s => s.watched);
+      eps.forEach(e => W.setEpWatched(item.title, season, e.n, !allW));
+      syncSeriesItemState(item, season);
+      flash(!allW ? t('toast_all_watched') : t('toast_all_unwatched'));
+      renderDetail(item); refocusSel('[data-markall]');
+    }
+    function toggleEpisodeWatched(item, season, n, idx) {
+      const eps = R.episodesFor(item, season);
+      const e = eps.find(x => x.n === n) || eps[idx];
+      const st = W.epState(item.title, season, e.n, e.pct);
+      W.setEpWatched(item.title, season, e.n, !st.watched);
+      syncSeriesItemState(item, season);
+      flash(!st.watched ? t('toast_marked_watched') : t('toast_marked_unwatched'));
+      renderDetail(item); refocusSel('.ep-done[data-epidx="' + idx + '"]');
+    }
 
     function go(v) {
       view = v;
@@ -811,6 +887,9 @@
       if (f.dataset.hero) { const he = f.closest('.hero'); toDetail((he && he._items ? he._items : R.hero)[heroIdx]); return; }
       if (f.dataset.syn) { const exp = f.classList.toggle('expanded'); const tg = f.parentElement.querySelector('.syn-toggle'); if (tg) tg.textContent = exp ? '▴ less' : '▾ more'; return; }
       if (f.dataset.play) { playItem(view.item, view.season || 0); return; }
+      if (f.dataset.mark) { toggleItemWatched(view.item); return; }
+      if (f.dataset.markall) { toggleSeasonWatched(view.item, view.season || 0); return; }
+      if (f._epdone) { toggleEpisodeWatched(view.item, view.season || 0, f._epn, f._epidx); return; }
       if (f.dataset.trailer) { flash('▷ Trailer · ' + view.item.title); return; }
       if (f.dataset.list) { flash('＋ Added ' + view.item.title + ' to My List'); return; }
       if (f._season != null) {

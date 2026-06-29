@@ -8,7 +8,7 @@ Ravilo is a sibling product **inside the jellystructure repo** — an Android TV
 canvas) streaming front-end built from one **Compose Multiplatform** codebase, talking only to the
 jellystructure backend.
 
-_Last updated: 2026-06-19_
+_Last updated: 2026-06-29_
 
 ## Current focus
 
@@ -47,6 +47,12 @@ _Last updated: 2026-06-19_
 - Visual target: the prototype in `design/ravilo/` (`Ravilo TV.html`, `ravilo.css`) — Aurora/Midnight/
   Noir skins, jellyfish brand, hero/channel-rail/rows, movie+series detail with watched/resume, search.
 - The per-user config surface is mocked in `design/app/ravilo-config.html` (drives R16).
+- **Watched state everywhere (R142):** Jellyfin **played/unplayed** is now shown on every poster tile
+  (rows + Movies/Series/My-List grids) and is **maintainable from detail** — mark-played/unplayed for a
+  movie, an episode, a whole season or a series — written **through to Jellyfin user-data** (R07/R08).
+  Watched-state is **maintained by Jellyfin**: the client renders + re-pulls it, never accumulates it.
+  Mocked in `design/ravilo/ravilo-app.js` / `ravilo.css` / `ravilo-data.js`; specced in
+  [`requirements/phase-R142-watched-state-everywhere.md`](requirements/phase-R142-watched-state-everywhere.md).
 
 ## Open threads
 
