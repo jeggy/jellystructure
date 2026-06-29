@@ -4,9 +4,7 @@ package dev.jellystructure.ui
 
 import dev.jellystructure.App
 import dev.jellystructure.api.MediaApi
-import dev.jellystructure.api.MetaFacets
 import dev.jellystructure.api.RaviloApi
-import dev.jellystructure.api.TrackFacets
 import dev.jellystructure.shared.tv.ChannelConfig
 import dev.jellystructure.shared.tv.Condition
 import dev.jellystructure.shared.tv.MatchMode
@@ -125,6 +123,9 @@ fun renderLibrary(container: Element, scope: CoroutineScope, query: Map<String, 
     libScannedCount = 0
     libPendingScanCount = 0
     parseLibraryUrl()
+    // R101: reset pagination state on every renderLibrary so a stale libSlice/libEndReached from the
+    // previous view can't leak into the new load (the workbench-apply zero-results race root cause).
+    libLoading = false; libSlice = 0; libLoadedCount = 0; libTotal = 0; libEndReached = false
 
     container.innerHTML = """
         <div class="pagebar">
@@ -142,52 +143,9 @@ fun renderLibrary(container: Element, scope: CoroutineScope, query: Map<String, 
           <button id="f-all" class="chip">All</button>
           <button id="f-attention" class="chip">Needs attention</button>
           <button id="f-artwork" class="chip">Missing artwork</button>
-          <div style="position:relative">
-            <button id="meta-studio-btn" class="chip">Studio ▾</button>
-            <div id="meta-studio-panel" style="display:none;position:absolute;top:calc(100% + 6px);left:0;z-index:200;min-width:240px;background:var(--fill);border:1px solid var(--line-2);border-radius:var(--radius-s);box-shadow:var(--shadow);padding:12px">
-              <div id="mf-studio-wrap"><span class="muted tiny" style="font-style:italic">Loading…</span></div>
-            </div>
-          </div>
-          <div style="position:relative">
-            <button id="meta-network-btn" class="chip">Network ▾</button>
-            <div id="meta-network-panel" style="display:none;position:absolute;top:calc(100% + 6px);left:0;z-index:200;min-width:240px;background:var(--fill);border:1px solid var(--line-2);border-radius:var(--radius-s);box-shadow:var(--shadow);padding:12px">
-              <div id="mf-network-wrap"><span class="muted tiny" style="font-style:italic">Loading…</span></div>
-            </div>
-          </div>
-          <div style="position:relative">
-            <button id="meta-genre-btn" class="chip">Genre ▾</button>
-            <div id="meta-genre-panel" style="display:none;position:absolute;top:calc(100% + 6px);left:0;z-index:200;min-width:240px;background:var(--fill);border:1px solid var(--line-2);border-radius:var(--radius-s);box-shadow:var(--shadow);padding:12px">
-              <div id="mf-genre-wrap"><span class="muted tiny" style="font-style:italic">Loading…</span></div>
-            </div>
-          </div>
-          <div style="position:relative">
-            <button id="meta-tags-btn" class="chip">Tags ▾</button>
-            <div id="meta-tags-panel" style="display:none;position:absolute;top:calc(100% + 6px);left:0;z-index:200;min-width:240px;background:var(--fill);border:1px solid var(--line-2);border-radius:var(--radius-s);box-shadow:var(--shadow);padding:12px">
-              <div id="mf-tags-wrap"><span class="muted tiny" style="font-style:italic">Loading…</span></div>
-            </div>
-          </div>
-          <div style="position:relative">
-            <button id="audio-filter-btn" class="chip" style="gap:4px">Audio track ▾</button>
-            <div id="audio-filter-panel" style="display:none;position:absolute;top:calc(100% + 6px);left:0;z-index:200;min-width:280px;background:var(--fill);border:1px solid var(--line-2);border-radius:var(--radius-s);box-shadow:var(--shadow);padding:16px 16px 14px">
-              <div id="af-lang-wrap" style="margin-bottom:12px">
-                <div style="font-size:.72rem;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-soft);margin-bottom:6px">Language</div>
-                <span class="muted tiny" style="font-style:italic">Loading…</span>
-              </div>
-              <div id="af-title-wrap" style="margin-bottom:12px">
-                <div style="font-size:.72rem;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-soft);margin-bottom:6px">Track title</div>
-                <span class="muted tiny" style="font-style:italic">Loading…</span>
-              </div>
-              <div id="af-codec-wrap" style="margin-bottom:12px">
-                <div style="font-size:.72rem;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-soft);margin-bottom:6px">Codec</div>
-                <span class="muted tiny" style="font-style:italic">Loading…</span>
-              </div>
-              <label style="display:flex;align-items:center;gap:7px;font-size:.85rem;cursor:pointer;color:var(--ink)">
-                <input type="checkbox" id="af-untagged"> Untagged audio only
-              </label>
-            </div>
-          </div>
           <button id="lib-workbench" class="chip">⚙ Add filter</button>
           <button id="lib-saveas" class="chip">★ Save filter as…</button>
+          <button id="lib-clear" class="chip" style="display:none">✕ Clear filters</button>
           <span class="spacer" style="flex:1"></span>
           <select id="lib-sort" class="input" style="width:auto;font-size:.83rem;">
             <option value="">recently added ▾</option>
@@ -201,9 +159,6 @@ fun renderLibrary(container: Element, scope: CoroutineScope, query: Map<String, 
           </span>
           <span class="muted tiny" id="lib-total"></span>
         </div>
-        <div id="lib-search-note" class="note blue" style="margin:0 0 8px;padding:7px 12px;font-size:.8rem;line-height:1.5;">
-          Search matches <b>every title this item has ever had</b> — each language pulled from TMDB plus the original title, so a show pulled once in Danish stays findable by its Danish name even after re-resolving.
-        </div>
         <div id="active-chips" class="row center" style="display:none;margin-bottom:8px;gap:6px;flex-wrap:wrap;"></div>
 
         <div id="poster-grid" class="poster-grid"></div>
@@ -215,10 +170,11 @@ fun renderLibrary(container: Element, scope: CoroutineScope, query: Map<String, 
     attachLibraryListeners(scope)
     wireLibraryWorkbench(scope)
 
-    // Infinite scroll: a sentinel after the grid fetches the next slice as it nears the viewport.
-    // Auto-fetch is paused while a scan is running (items append live over the WebSocket instead).
+    // R101: gate the observer so an early reset=false load can't run before the canonical reset=true load
+    // completes — the initial observer fire sees initialLoadDone=false and skips (closes the race).
+    val initialLoad = object { var done = false }
     observeSections("lib-sentinel", "700px 0px 700px 0px") { _ ->
-        if (libScanSocket == null) scope.launch { loadMore(scope, reset = false) }
+        if (libScanSocket == null && initialLoad.done) scope.launch { loadMore(scope, reset = false) }
     }
 
     scope.launch {
@@ -231,14 +187,7 @@ fun renderLibrary(container: Element, scope: CoroutineScope, query: Map<String, 
         } else {
             loadMore(scope, reset = true)
         }
-    }
-    scope.launch {
-        val facets = MediaApi.trackFacets()
-        populateAudioFilterPanel(facets, scope)
-    }
-    scope.launch {
-        val facets = MediaApi.metaFacets()
-        populateMetaFilterPanel(facets, scope)
+        initialLoad.done = true
     }
 }
 
@@ -255,7 +204,6 @@ private fun syncFilterUiToState(scope: CoroutineScope) {
     }
     (document.getElementById("lib-search") as? HTMLInputElement)?.value = libSearch ?: ""
     (document.getElementById("lib-sort") as? HTMLSelectElement)?.value = libSort ?: ""
-    (document.getElementById("af-untagged") as? HTMLInputElement)?.checked = libUntaggedAudio
     updateActiveChips(scope)
 }
 
@@ -310,39 +258,17 @@ private fun attachLibraryListeners(scope: CoroutineScope) {
         }
     }
 
-    document.getElementById("audio-filter-btn")?.addEventListener("click") { e ->
-        e.stopPropagation()
-        val panel = document.getElementById("audio-filter-panel") as? HTMLElement ?: return@addEventListener
-        openMetaPanel?.style?.display = "none"; openMetaPanel = null
-        panel.style.display = if (panel.style.display == "none") "block" else "none"
+    // R101: Clear filters — reset all state vars and reload a clean grid.
+    document.getElementById("lib-clear")?.addEventListener("click") {
+        libSearch = null; libFilter = null
+        libStudios = emptyList(); libNetworks = emptyList(); libGenres = emptyList()
+        libTags = emptyList(); libAudioLangs = emptyList()
+        libTrackTitle = null; libAudioCodec = null; libUntaggedAudio = false
+        libCoverageCond = null; libTracker = null
+        libKind = null; libSort = null; libMatch = "ALL"
+        syncFilterUiToState(scope)
+        scope.launch { loadMore(scope, reset = true) }
     }
-
-    listOf("meta-studio-panel", "meta-network-panel", "meta-genre-panel", "meta-tags-panel")
-        .zip(listOf("meta-studio-btn", "meta-network-btn", "meta-genre-btn", "meta-tags-btn"))
-        .forEach { (panelId, btnId) ->
-            document.getElementById(btnId)?.addEventListener("click") { e ->
-                e.stopPropagation()
-                val panel = document.getElementById(panelId) as? HTMLElement ?: return@addEventListener
-                (document.getElementById("audio-filter-panel") as? HTMLElement)?.style?.display = "none"
-                openAudioSubpanel?.style?.display = "none"; openAudioSubpanel = null
-                if (panel.style.display == "none") {
-                    openMetaPanel?.style?.display = "none"
-                    panel.style.display = "block"
-                    openMetaPanel = panel
-                } else {
-                    panel.style.display = "none"
-                    openMetaPanel = null
-                }
-            }
-            document.getElementById(panelId)?.addEventListener("click") { e -> e.stopPropagation() }
-        }
-
-    document.addEventListener("click") { _ ->
-        (document.getElementById("audio-filter-panel") as? HTMLElement)?.style?.display = "none"
-        openAudioSubpanel?.style?.display = "none"; openAudioSubpanel = null
-        openMetaPanel?.style?.display = "none"; openMetaPanel = null
-    }
-    document.getElementById("audio-filter-panel")?.addEventListener("click") { e -> e.stopPropagation() }
 }
 
 // -- Active filter chips --------------------------------------------------
@@ -368,19 +294,10 @@ private fun updateActiveChips(scope: CoroutineScope? = null) {
         libTracker?.let { add(Triple("tracker", "Seeded on", it)) }
     }
 
-    // Highlight filter buttons when their category is active
-    fun btnHighlight(btnId: String, active: Boolean) {
-        val btn = document.getElementById(btnId) as? HTMLElement ?: return
-        btn.style.setProperty("background",    if (active) "var(--hi-soft)" else "")
-        btn.style.setProperty("border-color",  if (active) "var(--hi)" else "")
-    }
-    btnHighlight("meta-studio-btn",  libStudios.isNotEmpty())
-    btnHighlight("meta-network-btn", libNetworks.isNotEmpty())
-    btnHighlight("meta-genre-btn",   libGenres.isNotEmpty())
-    btnHighlight("meta-tags-btn",    libTags.isNotEmpty())
-    btnHighlight("audio-filter-btn", libAudioLangs.isNotEmpty() || libTrackTitle != null || libAudioCodec != null || libUntaggedAudio)
-
     container.style.display = if (active.isEmpty()) "none" else "flex"
+    // R101: show/hide the Clear filters button based on whether any filter is active.
+    (document.getElementById("lib-clear") as? HTMLElement)?.style?.display =
+        if (active.isEmpty() && libSearch == null && libFilter == null && libKind == null && libSort == null) "none" else "inline-flex"
 
     for ((key, prefix, label) in active) {
         val chip = document.createElement("span") as HTMLElement
@@ -548,295 +465,6 @@ private fun codecDisplay(codec: String): String = when (codec.lowercase()) {
     "pcm_s16le", "pcm_s24le",
     "pcm_s32le", "pcm_f32le"        -> "PCM"
     else                            -> codec.uppercase()
-}
-
-private var openAudioSubpanel: HTMLElement? = null
-private var openMetaPanel: HTMLElement? = null
-
-private fun buildAudioDropdown(
-    container: HTMLElement,
-    items: List<dev.jellystructure.api.TrackFacetItem>,
-    labelFn: (String) -> String,
-    multiSelect: Boolean,
-    getSelected: () -> List<String>,
-    onToggle: (String, Boolean) -> Unit,
-) {
-    if (items.isEmpty()) { container.style.display = "none"; return }
-
-    val wrapper = document.createElement("div") as HTMLElement
-    wrapper.setAttribute("style", "position:relative")
-
-    val trigger = document.createElement("div") as HTMLElement
-    trigger.className = "input"
-    trigger.tabIndex = 0
-    trigger.setAttribute("style", "display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;min-height:36px;box-sizing:border-box;transition:border-color .15s")
-
-    val displaySpan = document.createElement("span") as HTMLElement
-    displaySpan.setAttribute("style", "flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:.85rem")
-
-    val arrowSpan = document.createElement("span") as HTMLElement
-    arrowSpan.textContent = "▾"
-    arrowSpan.setAttribute("style", "font-size:.6rem;opacity:.45;flex-shrink:0;transition:transform .15s")
-
-    trigger.appendChild(displaySpan)
-    trigger.appendChild(arrowSpan)
-
-    // Elevated panel — solid fill-3 so it reads clearly above the fill outer panel
-    val panel = document.createElement("div") as HTMLElement
-    panel.setAttribute("style", "display:none;position:absolute;left:0;right:0;top:calc(100% + 4px);z-index:600;background:var(--fill-3);border:1px solid var(--line-2);border-radius:var(--radius-s);box-shadow:var(--shadow);overflow:hidden;min-width:240px")
-
-    val searchInput = document.createElement("input") as HTMLInputElement
-    searchInput.type = "text"
-    searchInput.placeholder = "Search…"
-    searchInput.setAttribute("style", "display:block;width:100%;box-sizing:border-box;border:none;border-bottom:1px solid var(--line-2);background:var(--fill-2);color:var(--ink);padding:8px 12px;font-size:.82rem;outline:none")
-
-    val listEl = document.createElement("div") as HTMLElement
-    listEl.setAttribute("style", "max-height:208px;overflow-y:auto")
-
-    panel.appendChild(searchInput)
-    panel.appendChild(listEl)
-    wrapper.appendChild(trigger)
-    wrapper.appendChild(panel)
-    container.appendChild(wrapper)
-
-    fun refreshDisplay() {
-        val sel = getSelected()
-        when {
-            sel.isEmpty() -> displaySpan.innerHTML = """<span style="opacity:.4;font-style:italic">— any —</span>"""
-            sel.size == 1 -> { displaySpan.textContent = labelFn(sel.first()); displaySpan.style.opacity = "1" }
-            else          -> { displaySpan.textContent = "${sel.size} selected"; displaySpan.style.opacity = "1" }
-        }
-    }
-
-    fun renderList(query: String) {
-        val filtered = if (query.isBlank()) items
-            else items.filter { labelFn(it.value).contains(query, ignoreCase = true) || it.value.contains(query, ignoreCase = true) }
-        listEl.innerHTML = ""
-
-        if (!multiSelect) {
-            val clearRow = document.createElement("div") as HTMLElement
-            clearRow.setAttribute("style", "padding:8px 12px;font-size:.82rem;color:var(--ink-soft);cursor:pointer;font-style:italic;border-bottom:1px solid var(--line)")
-            clearRow.textContent = "— any —"
-            clearRow.addEventListener("mouseover") { clearRow.style.background = "var(--fill-2)" }
-            clearRow.addEventListener("mouseout") { clearRow.style.background = "" }
-            clearRow.addEventListener("click") {
-                onToggle("", false); refreshDisplay()
-                panel.style.display = "none"; arrowSpan.style.transform = ""
-                openAudioSubpanel = null
-            }
-            listEl.appendChild(clearRow)
-        }
-
-        fun appendRow(item: dev.jellystructure.api.TrackFacetItem) {
-            val row = document.createElement("div") as HTMLElement
-            val isSel = item.value in getSelected()
-            row.setAttribute("style", "padding:8px 12px;font-size:.82rem;cursor:pointer;display:flex;align-items:center;gap:9px;${if (isSel) "background:var(--hi-soft);" else ""}")
-
-            if (multiSelect) {
-                val cb = document.createElement("input") as HTMLInputElement
-                cb.type = "checkbox"; cb.checked = isSel
-                cb.setAttribute("style", "flex-shrink:0;accent-color:var(--hi);width:14px;height:14px;pointer-events:none")
-                row.appendChild(cb)
-            }
-
-            // Jellystructure tags carry a colour → dot it (same convention as the detail page).
-            item.color?.let { c ->
-                val dot = document.createElement("span") as HTMLElement
-                dot.className = "tag-dot"
-                dot.setAttribute("style", "background:$c")
-                row.appendChild(dot)
-            }
-
-            val nameSpan = document.createElement("span") as HTMLElement
-            nameSpan.setAttribute("style", "flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--ink)")
-            nameSpan.textContent = labelFn(item.value)
-            row.appendChild(nameSpan)
-
-            val badge = document.createElement("span") as HTMLElement
-            badge.textContent = item.count.toString()
-            badge.setAttribute("style", "font-size:.7rem;color:var(--ink-soft);flex-shrink:0;background:var(--fill-2);border-radius:99px;padding:1px 7px;border:1px solid var(--line)")
-            row.appendChild(badge)
-
-            row.addEventListener("mouseover") { if (item.value !in getSelected()) row.style.background = "var(--fill-2)" }
-            row.addEventListener("mouseout") { row.style.background = if (item.value in getSelected()) "var(--hi-soft)" else "" }
-            row.addEventListener("click") {
-                val nowSel = item.value !in getSelected()
-                onToggle(item.value, nowSel); refreshDisplay()
-                if (!multiSelect) { panel.style.display = "none"; arrowSpan.style.transform = ""; openAudioSubpanel = null }
-                else renderList(searchInput.value)
-            }
-            listEl.appendChild(row)
-        }
-
-        fun appendGroupLabel(text: String) {
-            val lbl = document.createElement("div") as HTMLElement
-            lbl.textContent = text
-            lbl.setAttribute("style", "padding:7px 12px 3px;font-size:.64rem;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-soft)")
-            listEl.appendChild(lbl)
-        }
-
-        // Group Jellystructure tags (those with a colour) above the rest — but only when both kinds
-        // are present. Non-tag facets carry no colour, so they render as one flat list (unchanged).
-        val jsItems = filtered.filter { it.color != null }
-        val otherItems = filtered.filter { it.color == null }
-        if (jsItems.isNotEmpty() && otherItems.isNotEmpty()) {
-            appendGroupLabel("Jellystructure tags"); jsItems.forEach { appendRow(it) }
-            appendGroupLabel("Other tags"); otherItems.forEach { appendRow(it) }
-        } else {
-            filtered.forEach { appendRow(it) }
-        }
-        if (filtered.isEmpty()) {
-            val empty = document.createElement("div") as HTMLElement
-            empty.textContent = "No matches"
-            empty.setAttribute("style", "padding:12px;font-size:.82rem;color:var(--ink-soft);font-style:italic")
-            listEl.appendChild(empty)
-        }
-    }
-
-    fun openPanel() {
-        openAudioSubpanel?.let { it.style.display = "none" }
-        searchInput.value = ""
-        renderList("")
-        panel.style.display = "block"
-        arrowSpan.style.transform = "rotate(180deg)"
-        openAudioSubpanel = panel
-        searchInput.focus()
-    }
-
-    trigger.addEventListener("click") { e ->
-        e.stopPropagation()
-        if (panel.style.display == "none") openPanel()
-        else { panel.style.display = "none"; arrowSpan.style.transform = ""; openAudioSubpanel = null }
-    }
-    panel.addEventListener("click") { e -> e.stopPropagation() }
-    searchInput.addEventListener("input") { renderList(searchInput.value) }
-
-    refreshDisplay()
-}
-
-private fun populateAudioFilterPanel(facets: TrackFacets?, scope: CoroutineScope) {
-    fun reload() { scope.launch { loadMore(scope, reset = true) } }
-    if (facets == null) return
-
-    val labelStyle = """font-size:.72rem;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-soft);margin-bottom:6px"""
-
-    val langWrap = document.getElementById("af-lang-wrap") as? HTMLElement
-    if (langWrap != null) {
-        langWrap.innerHTML = """<div style="$labelStyle">Language</div>"""
-        if (facets.audioLanguages.isEmpty()) langWrap.style.display = "none"
-        else buildAudioDropdown(langWrap, facets.audioLanguages, { langDisplay(it) }, true,
-            { libAudioLangs },
-            { value, nowSel ->
-                libAudioLangs = if (nowSel) libAudioLangs + value else libAudioLangs - value
-                updateActiveChips(scope); reload()
-            })
-    }
-
-    val titleWrap = document.getElementById("af-title-wrap") as? HTMLElement
-    if (titleWrap != null) {
-        titleWrap.innerHTML = """<div style="$labelStyle">Track title</div>"""
-        if (facets.trackTitles.isEmpty()) titleWrap.style.display = "none"
-        else buildAudioDropdown(titleWrap, facets.trackTitles, { it }, false,
-            { if (libTrackTitle != null) listOf(libTrackTitle!!) else emptyList() },
-            { value, _ ->
-                libTrackTitle = value.takeIf { it.isNotBlank() }
-                updateActiveChips(scope); reload()
-            })
-    }
-
-    val codecWrap = document.getElementById("af-codec-wrap") as? HTMLElement
-    if (codecWrap != null) {
-        codecWrap.innerHTML = """<div style="$labelStyle">Codec</div>"""
-        if (facets.audioCodecs.isEmpty()) codecWrap.style.display = "none"
-        else buildAudioDropdown(codecWrap, facets.audioCodecs, { codecDisplay(it) }, false,
-            { if (libAudioCodec != null) listOf(libAudioCodec!!) else emptyList() },
-            { value, _ ->
-                libAudioCodec = value.takeIf { it.isNotBlank() }
-                updateActiveChips(scope); reload()
-            })
-    }
-
-    document.getElementById("af-untagged")?.addEventListener("change") {
-        libUntaggedAudio = (document.getElementById("af-untagged") as? HTMLInputElement)?.checked == true
-        updateActiveChips(scope); reload()
-    }
-
-    // Show chips for any state that was pre-loaded from the URL
-    updateActiveChips(scope)
-}
-
-private fun populateMetaFilterPanel(facets: MetaFacets?, scope: CoroutineScope) {
-    fun reload() { scope.launch { loadMore(scope, reset = true) } }
-    if (facets == null) return
-
-    val labelStyle = """font-size:.72rem;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-soft);margin-bottom:6px"""
-
-    // Studio — multi-select OR
-    val studioWrap = document.getElementById("mf-studio-wrap") as? HTMLElement
-    if (studioWrap != null) {
-        if (facets.studios.isEmpty()) {
-            studioWrap.innerHTML = """<span class="muted tiny" style="font-style:italic">No studios found.</span>"""
-        } else {
-            studioWrap.innerHTML = """<div style="$labelStyle">Studio</div>"""
-            buildAudioDropdown(studioWrap, facets.studios, { it }, true,
-                { libStudios },
-                { value, nowSel ->
-                    libStudios = if (nowSel) libStudios + value else libStudios - value
-                    updateActiveChips(scope); reload()
-                })
-        }
-    }
-
-    // Network — multi-select OR
-    val networkWrap = document.getElementById("mf-network-wrap") as? HTMLElement
-    if (networkWrap != null) {
-        if (facets.networks.isEmpty()) {
-            networkWrap.innerHTML = """<span class="muted tiny" style="font-style:italic">No networks found.</span>"""
-        } else {
-            networkWrap.innerHTML = """<div style="$labelStyle">Network</div>"""
-            buildAudioDropdown(networkWrap, facets.networks, { it }, true,
-                { libNetworks },
-                { value, nowSel ->
-                    libNetworks = if (nowSel) libNetworks + value else libNetworks - value
-                    updateActiveChips(scope); reload()
-                })
-        }
-    }
-
-    // Genre — multi-select OR
-    val genreWrap = document.getElementById("mf-genre-wrap") as? HTMLElement
-    if (genreWrap != null) {
-        if (facets.genres.isEmpty()) {
-            genreWrap.innerHTML = """<span class="muted tiny" style="font-style:italic">No genres found.</span>"""
-        } else {
-            genreWrap.innerHTML = """<div style="$labelStyle">Genre</div>"""
-            buildAudioDropdown(genreWrap, facets.genres, { it }, true,
-                { libGenres },
-                { value, nowSel ->
-                    libGenres = if (nowSel) libGenres + value else libGenres - value
-                    updateActiveChips(scope); reload()
-                })
-        }
-    }
-
-    // Tags — multi-select (OR logic)
-    val tagsWrap = document.getElementById("mf-tags-wrap") as? HTMLElement
-    if (tagsWrap != null) {
-        if (facets.tags.isEmpty()) {
-            tagsWrap.innerHTML = """<span class="muted tiny" style="font-style:italic">No tags found.</span>"""
-        } else {
-            tagsWrap.innerHTML = """<div style="$labelStyle">Tags</div>"""
-            buildAudioDropdown(tagsWrap, facets.tags, { it }, true,
-                { libTags },
-                { value, nowSel ->
-                    libTags = if (nowSel) libTags + value else libTags - value
-                    updateActiveChips(scope); reload()
-                })
-        }
-    }
-
-    // Sync chip highlights for any state pre-loaded from URL
-    updateActiveChips(scope)
 }
 
 // -- Grid & infinite scroll -----------------------------------------------
