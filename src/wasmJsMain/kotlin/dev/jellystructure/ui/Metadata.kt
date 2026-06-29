@@ -361,42 +361,38 @@ private fun errorHtml() = """<span class="badge bad">Failed to load — check se
 // ---------- Phase 98: Tracker registry tab ----------
 
 private fun renderTrackersTab(trackers: List<TrackerEntry>, groups: List<DetectedTrackerGroup>): String = buildString {
-    append("""<p class="hint" style="margin:0 0 14px">A torrent announces to one tracker but may expose several mirror hosts. Define each tracker once here — the seeding surface resolves announce URLs to a name by matching only the hostname.</p>""")
-    append("""<div style="display:flex;align-items:center;gap:8px;margin-bottom:14px"><button id="new-tracker-btn" class="btn sm">＋ New tracker</button></div>""")
+    append("""<div class="note blue" style="margin-bottom:18px;">A torrent announces to one <b>tracker</b>, but that tracker often exposes several announce URLs (mirrors). Define each tracker here with a name and the set of announce <b>hosts</b> that belong to it — the seeding view resolves every torrent to a single named tracker, regardless of which mirror URL it carries.</div>""")
+    append("""<div class="row center" style="margin-bottom:12px;"><h3 style="margin:0;font-size:1.15rem;">Trackers</h3>""")
+    if (trackers.isNotEmpty()) append("""<span class="muted tiny" style="margin-left:10px;">${trackers.size} defined</span>""")
+    append("""<span class="spacer"></span><button id="new-tracker-btn" class="btn sm primary">＋ New tracker</button></div>""")
     if (trackers.isEmpty()) {
-        append("""<p class="muted tiny" id="tracker-empty">No trackers defined yet. Add them manually or name an auto-detected host below.</p>""")
+        append("""<p class="muted tiny">No trackers defined yet. Name an auto-detected host below or add one manually.</p>""")
     } else {
-        append("""<div class="meta-grid" id="tracker-grid">""")
+        append("""<div class="meta-grid" style="grid-template-columns:repeat(auto-fill,minmax(330px,1fr));">""")
         trackers.forEach { t -> append(trackerCardHtml(t)) }
         append("</div>")
     }
     if (groups.isNotEmpty()) {
-        append("""<h4 style="margin:24px 0 6px;font-size:.85rem;font-weight:600;color:var(--ink-soft);text-transform:uppercase;letter-spacing:.06em">Detected announce hosts</h4>""")
-        append("""<p class="hint" style="margin:0 0 10px">Hosts observed in qBittorrent not yet matched to a tracker. Hosts sharing the same passkey are grouped as mirror candidates.</p>""")
-        append("""<div class="card" style="padding:0 14px">""")
-        groups.forEachIndexed { idx, g ->
+        append("""<h3 style="margin:28px 0 10px;font-size:1.05rem;">Unmapped announce hosts <span class="tiny muted" style="font-weight:400;">— seen in torrents but not yet assigned to a tracker</span></h3>""")
+        append("""<div class="col" style="gap:8px;">""")
+        groups.forEach { g ->
             val hostsAttr = g.hosts.joinToString("|") { it.esc() }
-            val border = if (idx < groups.size - 1) "border-bottom:1px solid var(--line-2)" else ""
-            append("""<div class="trk-unmapped-row" style="padding:10px 0;$border" data-hosts="$hostsAttr">""")
-            if (g.hosts.size == 1) {
-                append("""<div class="mono tiny" style="margin-bottom:6px">${g.hosts.first().esc()}</div>""")
+            val hostsDisplay = if (g.hosts.size == 1) {
+                """<span class="host-name">${g.hosts.first().esc()}</span>"""
             } else {
-                append("""<div style="margin-bottom:6px">""")
-                g.hosts.forEach { h -> append("""<div class="mono tiny">${h.esc()}</div>""") }
-                append("</div>")
+                """<span class="host-name" style="display:flex;flex-direction:column;gap:2px">${g.hosts.joinToString("") { """<span>${it.esc()}</span>""" }}</span>"""
             }
-            append("""<div class="row center" style="gap:8px;flex-wrap:wrap">""")
-            append("""<span class="muted tiny">${g.torrentCount} torrent${if (g.torrentCount != 1) "s" else ""}</span>""")
+            append("""<div class="unmapped-row" data-hosts="$hostsAttr">""")
+            append(hostsDisplay)
+            append("""<span class="tiny muted">seen in <b>${g.torrentCount}</b> torrent${if (g.torrentCount != 1) "s" else ""}</span>""")
             append("""<span class="spacer"></span>""")
             if (trackers.isNotEmpty()) {
-                append("""<span class="muted tiny" style="font-size:.75rem">assign to:</span>""")
-                append("""<select class="input trk-assign-select" style="font-size:.78rem;padding:2px 6px;height:auto;width:auto" data-hosts="$hostsAttr">""")
-                append("""<option value="">— existing tracker —</option>""")
+                append("""<select class="input trk-assign-select" style="font-size:.78rem;padding:2px 8px;height:auto;width:auto" data-hosts="$hostsAttr">""")
+                append("""<option value="">Assign to…</option>""")
                 trackers.forEach { t -> append("""<option value="${t.name.esc()}">${t.name.esc()}</option>""") }
                 append("</select>")
             }
-            append("""<button class="btn sm ghost unmapped-name-btn" data-hosts="$hostsAttr" style="white-space:nowrap">＋ Name as tracker</button>""")
-            append("</div>")
+            append("""<button class="btn sm unmapped-name-btn" data-hosts="$hostsAttr">＋ Name as new tracker</button>""")
             append("</div>")
         }
         append("</div>")
@@ -405,34 +401,33 @@ private fun renderTrackersTab(trackers: List<TrackerEntry>, groups: List<Detecte
 
 private fun trackerCardHtml(t: TrackerEntry): String = buildString {
     val encName = dev.jellystructure.encodeURIComponent(t.name)
-    val countText = if (t.torrentCount > 0) "${t.torrentCount} torrent${if (t.torrentCount != 1) "s" else ""} · " else ""
-    append("""<div class="card tracker-card" data-tracker="${t.name.esc()}">""")
-    // Header
-    append("""<div class="row center" style="margin-bottom:10px">""")
-    append("""<b style="font-size:.95rem">${t.name.esc()}</b>""")
-    append("""<span class="badge ${if (t.isPrivate) "warn" else "ok"}" style="font-size:.65rem;margin-left:6px">${if (t.isPrivate) "private" else "public"}</span>""")
+    val privClass = if (t.isPrivate) "private" else "public"
+    append("""<div class="card trk-card" data-tracker="${t.name.esc()}">""")
+    // Header row
+    append("""<div class="trk-top">""")
+    append("""<span class="nm">${t.name.esc()}</span>""")
+    append("""<span class="pvt-badge $privClass">$privClass</span>""")
     append("""<span class="spacer"></span>""")
-    append("""<a href="#/library?tracker=$encName" class="tiny muted" style="text-decoration:underline">${countText}Library ↗</a>""")
-    append("""<button class="btn sm ghost delete-tracker-btn" style="margin-left:10px;color:var(--bad)" title="Delete tracker">Delete</button>""")
+    append("""<button class="btn sm ghost edit-tracker-btn">Edit</button>""")
     append("</div>")
-    // Inline host list
+    // Inline host list using design classes
+    append("""<div class="host-list">""")
     if (t.hosts.isEmpty()) {
-        append("""<p class="muted tiny" style="margin:0 0 8px">No announce hosts — add one below.</p>""")
+        append("""<span class="muted tiny">No announce hosts — add one below.</span>""")
     } else {
-        append("""<div class="trk-hosts-list" style="margin-bottom:8px">""")
         t.hosts.forEach { h ->
-            append("""<div class="row center trk-host-row" style="padding:4px 0;border-bottom:1px solid var(--line-2)">""")
-            append("""<span class="mono tiny" style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${h.esc()}</span>""")
-            append("""<button class="btn sm ghost trk-rm-host" data-host="${h.esc()}" style="padding:1px 6px;font-size:.72rem;flex-shrink:0" title="Remove mirror">✕</button>""")
-            append("</div>")
+            append("""<div class="host"><span>${h.esc()}</span><span class="hx trk-rm-host" data-host="${h.esc()}" title="Remove mirror">✕</span></div>""")
         }
-        append("</div>")
     }
-    // Add mirror host inline field
-    append("""<div class="row center" style="gap:6px">""")
-    append("""<input class="input trk-add-host-input" type="text" placeholder="add mirror host…" style="flex:1;font-size:.8rem;padding:4px 8px">""")
-    append("""<button class="btn sm ghost trk-add-host-btn">Add</button>""")
     append("</div>")
+    // Add mirror host field
+    append("""<div class="add-host"><input class="input trk-add-host-input" placeholder="add mirror host… e.g. t.newmirror.org" style="flex:1;"><button class="btn sm ghost trk-add-host-btn">Add</button></div>""")
+    // Library link with count
+    if (t.torrentCount > 0) {
+        append("""<div class="trk-meta"><a class="trk-link" href="#/library?tracker=$encName"><b>${t.torrentCount}</b> torrent${if (t.torrentCount != 1) "s" else ""} seeded →</a></div>""")
+    } else {
+        append("""<div class="trk-meta"><a class="trk-link" href="#/library?tracker=$encName">Library →</a></div>""")
+    }
     append("</div>")
 }
 
@@ -443,18 +438,24 @@ private fun wireTrackersTab(content: HTMLElement, scope: CoroutineScope, tracker
         showTrackerModal(content, scope, null, null)
     }
 
-    // Inline host remove (✕ button per host row)
-    val cards = content.querySelectorAll(".tracker-card")
+    // Per-card wiring
+    val cards = content.querySelectorAll(".trk-card")
     for (i in 0 until cards.length) {
         val card = cards.item(i) as? HTMLElement ?: continue
         val tname = card.getAttribute("data-tracker") ?: continue
         val t = trackers.firstOrNull { it.name == tname } ?: continue
 
-        val rmBtns = card.querySelectorAll(".trk-rm-host")
-        for (j in 0 until rmBtns.length) {
-            val btn = rmBtns.item(j) as? HTMLElement ?: continue
-            val host = btn.getAttribute("data-host") ?: continue
-            btn.addEventListener("click") { _ ->
+        // Edit button — opens modal for name/type changes
+        card.querySelector(".edit-tracker-btn")?.addEventListener("click") { _ ->
+            showTrackerModal(content, scope, t, t.name)
+        }
+
+        // ✕ per host (span.hx.trk-rm-host)
+        val rmSpans = card.querySelectorAll(".trk-rm-host")
+        for (j in 0 until rmSpans.length) {
+            val span = rmSpans.item(j) as? HTMLElement ?: continue
+            val host = span.getAttribute("data-host") ?: continue
+            span.addEventListener("click") { _ ->
                 scope.launch {
                     MediaApi.updateTracker(t.name, null, null, t.hosts.filter { it != host })
                     reload()
@@ -462,6 +463,7 @@ private fun wireTrackersTab(content: HTMLElement, scope: CoroutineScope, tracker
             }
         }
 
+        // Add mirror host
         val addInput = card.querySelector(".trk-add-host-input") as? HTMLInputElement ?: continue
         val addBtn = card.querySelector(".trk-add-host-btn") as? HTMLElement ?: continue
         addBtn.addEventListener("click") { _ ->
@@ -470,13 +472,6 @@ private fun wireTrackersTab(content: HTMLElement, scope: CoroutineScope, tracker
             scope.launch {
                 MediaApi.updateTracker(t.name, null, null, (t.hosts + newHost).distinct())
                 reload()
-            }
-        }
-
-        val delBtn = card.querySelector(".delete-tracker-btn") as? HTMLElement ?: continue
-        delBtn.addEventListener("click") { _ ->
-            if (window.confirm("Delete tracker '${t.name}'?")) {
-                scope.launch { MediaApi.deleteTracker(t.name); reload() }
             }
         }
     }
@@ -498,7 +493,7 @@ private fun wireTrackersTab(content: HTMLElement, scope: CoroutineScope, tracker
         }
     }
 
-    // Unmapped: "Name as tracker" button
+    // Unmapped: "Name as new tracker" button
     val nameBtns = content.querySelectorAll(".unmapped-name-btn")
     for (i in 0 until nameBtns.length) {
         val btn = nameBtns.item(i) as? HTMLElement ?: continue
@@ -513,48 +508,71 @@ private fun wireTrackersTab(content: HTMLElement, scope: CoroutineScope, tracker
 
 private fun showTrackerModal(content: HTMLElement, scope: CoroutineScope, existing: TrackerEntry?, editName: String?) {
     val isEdit = editName != null
-    val modal = document.createElement("div") as HTMLElement
-    modal.className = "modal-overlay"
-    modal.innerHTML = """
-        <div class="modal-box card" style="max-width:480px;width:100%">
-          <h3 style="margin:0 0 14px">${if (isEdit) "Edit tracker" else "New tracker"}</h3>
-          <div class="field"><label>Name</label><input id="trk-name" class="input" style="width:100%" value="${(existing?.name ?: "").esc()}"></div>
-          <div style="margin-bottom:12px">
-            <span style="font-size:.85rem;font-weight:500">Type</span>
-            <div style="display:flex;gap:8px;margin-top:6px">
-              <label style="display:flex;align-items:center;gap:4px;cursor:pointer"><input type="radio" name="trk-priv" id="trk-priv" value="true" ${if (existing?.isPrivate != false) "checked" else ""}> Private</label>
-              <label style="display:flex;align-items:center;gap:4px;cursor:pointer"><input type="radio" name="trk-priv" id="trk-pub" value="false" ${if (existing?.isPrivate == false) "checked" else ""}> Public</label>
+    val back = document.createElement("div") as HTMLElement
+    back.className = "modal-back open"
+    val hostLines = (existing?.hosts ?: emptyList()).joinToString("\n") { it.esc() }
+    val privChecked = if (existing?.isPrivate != false) "checked" else ""
+    val pubChecked = if (existing?.isPrivate == false) "checked" else ""
+    back.innerHTML = """
+        <div class="modal">
+          <span class="x" id="trk-x">✕</span>
+          <h3>${if (isEdit) "Edit tracker" else "New tracker"}</h3>
+          <div class="field"><label>Name</label><input id="trk-name" class="input" style="width:100%" placeholder="e.g. FrostSeed" value="${(existing?.name ?: "").esc()}"></div>
+          <div class="field"><label>Type</label>
+            <div class="seg">
+              <span id="trk-priv-btn" ${if (existing?.isPrivate != false) """class="on" """ else ""}>Private</span>
+              <span id="trk-pub-btn" ${if (existing?.isPrivate == false) """class="on" """ else ""}>Public</span>
             </div>
+            <input type="hidden" id="trk-priv-val" value="${if (existing?.isPrivate != false) "true" else "false"}">
           </div>
           <div class="field">
-            <label>Announce hosts <span class="muted tiny">(one per line, passkey ignored)</span></label>
-            <textarea id="trk-hosts" class="input" style="width:100%;height:90px;font-family:var(--font-mono);font-size:.8rem">${(existing?.hosts ?: emptyList()).joinToString("\n") { it.esc() }}</textarea>
+            <label>Announce hosts <span class="tiny muted">— one per line; all mirrors of this tracker</span></label>
+            <textarea id="trk-hosts" class="input" rows="3" style="font-family:var(--font-mono);font-size:.78rem;resize:vertical;width:100%" placeholder="t.nordicswarm.org&#10;t.polarswarm.org">$hostLines</textarea>
           </div>
-          <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">
-            <button id="trk-cancel" class="btn sm ghost">Cancel</button>
-            <button id="trk-save" class="btn sm primary">${if (isEdit) "Save" else "Create"}</button>
+          <div class="tiny muted" style="margin:-4px 0 8px;line-height:1.5;">Match is by host only — the passkey in the path differs per user and is ignored.</div>
+          ${if (isEdit) """<div style="margin-bottom:10px"><button id="trk-delete" class="btn sm ghost" style="color:var(--bad)">Delete tracker</button></div>""" else ""}
+          <div class="row" style="justify-content:flex-end;gap:8px;margin-top:6px;">
+            <button id="trk-cancel" class="btn ghost">Cancel</button>
+            <button id="trk-save" class="btn primary">${if (isEdit) "Save" else "Create tracker"}</button>
           </div>
           <span id="trk-msg" class="muted tiny" style="display:block;margin-top:6px"></span>
         </div>""".trimIndent()
-    document.body?.appendChild(modal)
-    modal.querySelector("#trk-cancel")?.addEventListener("click") { _ -> modal.remove() }
-    modal.addEventListener("click") { e -> if (e.target == modal) modal.remove() }
-    modal.querySelector("#trk-save")?.addEventListener("click") { _ ->
-        val name = (modal.querySelector("#trk-name") as? HTMLInputElement)?.value?.trim() ?: ""
-        val priv = (modal.querySelector("#trk-priv") as? HTMLInputElement)?.checked ?: true
-        val hostsRaw = (modal.querySelector("#trk-hosts") as? HTMLTextAreaElement)?.value ?: ""
+    document.body?.appendChild(back)
+
+    // Private/Public toggle via .seg spans
+    val privBtn = back.querySelector("#trk-priv-btn") as? HTMLElement
+    val pubBtn = back.querySelector("#trk-pub-btn") as? HTMLElement
+    val privVal = back.querySelector("#trk-priv-val") as? HTMLInputElement
+    privBtn?.addEventListener("click") { _ ->
+        privBtn.className = "on"; pubBtn?.className = ""; privVal?.value = "true"
+    }
+    pubBtn?.addEventListener("click") { _ ->
+        pubBtn.className = "on"; privBtn?.className = ""; privVal?.value = "false"
+    }
+
+    fun close() { back.remove() }
+    back.querySelector("#trk-x")?.addEventListener("click") { _ -> close() }
+    back.querySelector("#trk-cancel")?.addEventListener("click") { _ -> close() }
+    back.addEventListener("click") { e -> if (e.target == back) close() }
+
+    back.querySelector("#trk-delete")?.addEventListener("click") { _ ->
+        if (editName != null && window.confirm("Delete tracker '$editName'?")) {
+            scope.launch { MediaApi.deleteTracker(editName); close(); loadTab(content.parentElement ?: content, scope, "trackers", "count") }
+        }
+    }
+
+    back.querySelector("#trk-save")?.addEventListener("click") { _ ->
+        val name = (back.querySelector("#trk-name") as? HTMLInputElement)?.value?.trim() ?: ""
+        val priv = privVal?.value != "false"
+        val hostsRaw = (back.querySelector("#trk-hosts") as? HTMLTextAreaElement)?.value ?: ""
         val hosts = hostsRaw.split("\n").map { it.trim() }.filter { it.isNotBlank() }
-        val msgEl = modal.querySelector("#trk-msg") as? HTMLElement
+        val msgEl = back.querySelector("#trk-msg") as? HTMLElement
         if (name.isEmpty()) { msgEl?.textContent = "Name is required."; return@addEventListener }
         scope.launch {
             val ok = if (isEdit) MediaApi.updateTracker(editName!!, name.takeIf { it != editName }, priv, hosts)
                      else MediaApi.createTracker(name, priv, hosts)
-            if (ok) {
-                modal.remove()
-                loadTab(content.parentElement ?: content, scope, "trackers", "count")
-            } else {
-                msgEl?.textContent = "Save failed — name may already exist."
-            }
+            if (ok) { close(); loadTab(content.parentElement ?: content, scope, "trackers", "count") }
+            else msgEl?.textContent = if (isEdit) "Save failed." else "Name already exists."
         }
     }
 }
