@@ -26,6 +26,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.jellystructure.ravilo.ui.focus.dpadFocusable
 import dev.jellystructure.ravilo.ui.theme.RaviloDimens
+import dev.jellystructure.ravilo.ui.theme.raviloHPad
 import dev.jellystructure.ravilo.ui.theme.RaviloMotion
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
 import dev.jellystructure.ravilo.ui.theme.Sora
@@ -49,7 +50,7 @@ fun SeasonPicker(
     LazyRow(
         modifier = modifier.focusRestorer(),
         horizontalArrangement = Arrangement.spacedBy(10.dp),
-        contentPadding = PaddingValues(horizontal = RaviloDimens.trackPadH),
+        contentPadding = PaddingValues(horizontal = raviloHPad),
     ) {
         items(seasons.size, key = { i -> seasons[i].index }) { i ->
             val isSelected = i == selectedIndex

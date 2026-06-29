@@ -25,6 +25,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.unit.dp
 import dev.jellystructure.ravilo.ui.theme.RaviloDimens
+import dev.jellystructure.ravilo.ui.theme.raviloHPad
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
 
 /**
@@ -117,12 +118,12 @@ fun HomeLoadingShell() {
 
         // Two skeleton rows
         repeat(2) {
-            Box(modifier = Modifier.padding(horizontal = RaviloDimens.sectionPadH)) {
+            Box(modifier = Modifier.padding(horizontal = raviloHPad)) {
                 ShimmerBox(modifier = Modifier.width(200.dp).height(29.dp), brush = brush)
             }
             Spacer(Modifier.height(12.dp))
             Row(
-                modifier = Modifier.padding(horizontal = RaviloDimens.trackPadH),
+                modifier = Modifier.padding(horizontal = raviloHPad),
                 horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(RaviloDimens.itemSpacing),
             ) {
                 repeat(5) { TileShimmer() }
@@ -143,12 +144,12 @@ fun DetailLoadingShell() {
         ShimmerBox(modifier = Modifier.fillMaxWidth().height(620.dp), brush = brush, radius = 0f)
         Spacer(Modifier.height(24.dp))
         // Title
-        Box(modifier = Modifier.padding(horizontal = RaviloDimens.heroBodyStart)) {
+        Box(modifier = Modifier.padding(horizontal = raviloHPad)) {
             ShimmerBox(modifier = Modifier.width(400.dp).height(60.dp), brush = brush)
         }
         Spacer(Modifier.height(16.dp))
         // Synopsis lines
-        Box(modifier = Modifier.padding(horizontal = RaviloDimens.heroBodyStart)) {
+        Box(modifier = Modifier.padding(horizontal = raviloHPad)) {
             Column {
                 ShimmerBox(modifier = Modifier.fillMaxWidth(0.8f).height(20.dp), brush = brush)
                 Spacer(Modifier.height(8.dp))
@@ -158,7 +159,7 @@ fun DetailLoadingShell() {
         Spacer(Modifier.height(24.dp))
         // Buttons
         Row(
-            modifier = Modifier.padding(horizontal = RaviloDimens.screenPadH),
+            modifier = Modifier.padding(horizontal = raviloHPad),
             horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(16.dp),
         ) {
             ShimmerBox(modifier = Modifier.width(160.dp).height(60.dp), brush = brush, radius = 12f)

@@ -49,6 +49,7 @@ import dev.jellystructure.ravilo.ui.components.Tile
 import dev.jellystructure.ravilo.ui.focus.backToTopOnBack
 import dev.jellystructure.ravilo.ui.i18n.str
 import dev.jellystructure.ravilo.ui.theme.RaviloDimens
+import dev.jellystructure.ravilo.ui.theme.raviloHPad
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
 import dev.jellystructure.ravilo.ui.theme.Sora
 import dev.jellystructure.ravilo.ui.theme.SpaceGrotesk
@@ -160,7 +161,7 @@ fun SearchScreen(
             ),
     ) {
         Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = RaviloDimens.screenPadH),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = raviloHPad),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
@@ -182,7 +183,7 @@ fun SearchScreen(
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = RaviloDimens.screenPadH)
+                .padding(horizontal = raviloHPad)
                 .height(60.dp)
                 .background(colors.surfaceVariant, RoundedCornerShape(14.dp))
                 .padding(horizontal = 24.dp),
@@ -236,7 +237,7 @@ fun SearchScreen(
             color = colors.textSecondary,
             fontSize = 16.sp,
             fontFamily = sora,
-            modifier = Modifier.padding(horizontal = RaviloDimens.screenPadH),
+            modifier = Modifier.padding(horizontal = raviloHPad),
         )
         Spacer(Modifier.height(12.dp))
 
@@ -260,7 +261,7 @@ fun SearchScreen(
                         }
                     },
                 contentPadding = PaddingValues(
-                    horizontal = RaviloDimens.trackPadH,
+                    horizontal = raviloHPad,
                     vertical = RaviloDimens.trackPadV,
                 ),
                 horizontalArrangement = Arrangement.spacedBy(RaviloDimens.itemSpacing),
