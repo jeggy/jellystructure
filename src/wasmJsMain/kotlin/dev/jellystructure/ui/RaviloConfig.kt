@@ -59,7 +59,12 @@ private var rcContainerRef: Element? = null
 private var popstateWired = false
 private var discoverSpecs: List<ChartListSpec> = emptyList()  // R50 — available charts for the edited region
 
-private val DISCOVER_SOURCES = listOf(Triple("netflix", "Netflix · via Tudum", false), Triple("disney", "Disney+", true), Triple("max", "Max", true))
+// Provider display names for the Top 10 list UI — id matches the backend ChartProvider id
+private val DISCOVER_PROVIDER_NAMES = mapOf(
+    "netflix" to "Netflix", "max" to "Max", "disney" to "Disney+",
+    "prime" to "Amazon Prime", "apple" to "Apple TV+",
+    "viaplay" to "Viaplay", "paramount" to "Paramount+", "skyshowtime" to "SkyShowtime",
+)
 private val DISCOVER_REGIONS = listOf("DK" to "Denmark", "NO" to "Norway", "SE" to "Sweden", "FI" to "Finland", "IS" to "Iceland", "GB" to "United Kingdom", "US" to "United States", "DE" to "Germany", "FR" to "France")
 private var users: List<JellyfinUser> = emptyList()
 private var facets: Map<String, List<String>> = emptyMap() // "NETWORK"/"STUDIO"/"GENRE"/"TAG" -> values
@@ -1817,21 +1822,16 @@ private fun renderDiscover(container: Element) {
     val d = currentConfig.discover
     val enabledChecked = if (d.enabled) " checked" else ""
     val canReqChecked = if (d.canRequest) " checked" else ""
-    val sourceOptions = DISCOVER_SOURCES.joinToString("") { (id, label, soon) ->
-        val sel = if (id == d.source) " selected" else ""
-        val dis = if (soon) " disabled" else ""
-        """<option value="$id"$sel$dis>$label${if (soon) " (soon)" else ""}</option>"""
-    }
     val regionOptions = DISCOVER_REGIONS.joinToString("") { (code, label) ->
         val sel = if (code == d.region) " selected" else ""
         """<option value="$code"$sel>$label</option>"""
     }
-    val last = d.lists.lastIndex
     val selectedRows = d.lists.mapIndexed { i, id ->
         val spec = discoverSpecs.firstOrNull { it.id == id }
         val title = spec?.title ?: id
         val rankOnly = spec?.scope == "country"
-        val sub = (spec?.let { "${it.scope} · ${it.metric}" } ?: "") + if (rankOnly) " · rank only (no view counts)" else ""
+        val providerName = DISCOVER_PROVIDER_NAMES[spec?.providerId ?: ""] ?: spec?.providerId ?: ""
+        val sub = providerName + (spec?.let { " · ${it.scope} · ${it.metric}" } ?: "") + if (rankOnly) " · rank only" else ""
         """
         <div class="cfg-row" draggable="true" data-t10-i="$i" style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
           <span class="drag-handle" style="cursor:grab;user-select:none;flex-shrink:0">⠿</span>
@@ -1844,9 +1844,17 @@ private fun renderDiscover(container: Element) {
         """.trimIndent()
     }.joinToString("")
     val addable = discoverSpecs.filter { it.id !in d.lists }
+    // Group addable specs by provider for a cleaner dropdown
+    val addOptions = addable.groupBy { it.providerId }.entries.joinToString("") { (pid, specs) ->
+        val pname = DISCOVER_PROVIDER_NAMES[pid] ?: pid
+        """<optgroup label="$pname">${specs.joinToString("") { """<option value="${it.id}">${it.title.htmlEsc()}</option>""" }}</optgroup>"""
+    }
     val addSelect = if (addable.isNotEmpty())
-        """<select id="t10-add" class="input" style="margin-top:6px;font-size:.85rem"><option value="">+ Add list…</option>${addable.joinToString("") { """<option value="${it.id}">${it.title.htmlEsc()}</option>""" }}</select>"""
-    else """<p class="tiny muted" style="margin-top:6px">All available charts for this country are added.</p>"""
+        """<select id="t10-add" class="input" style="margin-top:6px;font-size:.85rem"><option value="">+ Add list…</option>$addOptions</select>"""
+    else if (discoverSpecs.isEmpty())
+        """<p class="tiny muted" style="margin-top:6px">No providers enabled — enable chart sources in <a href="#/settings?tab=discover">Settings → Discover</a>.</p>"""
+    else
+        """<p class="tiny muted" style="margin-top:6px">All available charts for this country are added.</p>"""
     sect.innerHTML = """
         <div class="card" style="padding:18px 20px;margin-bottom:18px">
           <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
@@ -1858,15 +1866,12 @@ private fun renderDiscover(container: Element) {
           <p style="font-size:.82rem;color:var(--ink-soft);margin-bottom:12px">
             Requires the *arr serving the selected lists (movies → Radarr, TV → Sonarr) connected in
             <a href="#/settings?tab=downloads">Settings → Download tools</a> — otherwise the tab won't appear.
+            Enable chart providers in <a href="#/settings?tab=discover">Settings → Discover</a>.
           </p>
           <div id="top10-body" style="display:grid;gap:12px">
             <label style="display:flex;align-items:center;gap:10px;font-size:.9rem">
               <input type="checkbox" id="top10-canrequest"$canReqChecked>
               Allow this user to request downloads <span class="tiny muted">(admins always can)</span>
-            </label>
-            <label style="display:flex;align-items:center;justify-content:space-between;gap:12px">
-              <span style="font-size:.9rem">Source</span>
-              <select id="top10-source" class="input" style="width:200px;font-size:.85rem">$sourceOptions</select>
             </label>
             <label style="display:flex;align-items:center;justify-content:space-between;gap:12px">
               <span style="font-size:.9rem">Country</span>
@@ -1877,7 +1882,7 @@ private fun renderDiscover(container: Element) {
               <div id="t10-list">$selectedRows</div>
               $addSelect
             </div>
-            <p class="tiny muted">Country charts are <b>ranking only</b> (no view counts); global &amp; all-time carry real viewership.</p>
+            <p class="tiny muted">Country charts are <b>ranking only</b> (no view counts); Netflix global &amp; all-time lists carry real viewership hours.</p>
           </div>
         </div>
     """.trimIndent()
