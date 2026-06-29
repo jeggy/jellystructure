@@ -15,6 +15,7 @@ import dev.jellystructure.api.MediaApi
 import dev.jellystructure.api.ArrConfig
 import dev.jellystructure.api.QBittorrentConfig
 import dev.jellystructure.api.QBittorrentPathMapping
+import dev.jellystructure.api.DiscoverFeedConfig
 import dev.jellystructure.api.httpClient
 import io.ktor.client.request.delete
 import io.ktor.client.request.post
@@ -50,6 +51,7 @@ fun renderSettings(container: Element, scope: CoroutineScope, query: Map<String,
               ${settingsNavItemHtml("connections", "Connections")}
               ${settingsNavItemHtml("libraries", "Libraries")}
               ${settingsNavItemHtml("metadata", "Metadata")}
+              ${settingsNavItemHtml("discover", "Discover")}
               ${settingsNavItemHtml("downloads", "Download tools")}
               ${settingsNavItemHtml("notifications", "Notifications")}
               ${settingsNavItemHtml("advanced", "Advanced")}
@@ -170,6 +172,67 @@ fun renderSettings(container: Element, scope: CoroutineScope, query: Map<String,
                   <div class="hint" style="margin-top:2px">After writing NFO or artwork, trigger Jellyfin metadata refresh automatically</div>
                 </div>
                 <span id="tell-jellyfin-toggle" class="toggle" style="cursor:pointer;flex-shrink:0;margin-left:12px"></span>
+              </div>
+            </div>
+
+            <div class="card set-section" id="sect-discover" data-tab="discover">
+              <h3 style="font-size:1rem;margin:0 0 14px">Discover / Top 10</h3>
+              <div style="display:flex;align-items:flex-start;gap:12px;margin-bottom:16px">
+                <div style="flex:1">
+                  <span style="font-size:.9rem;font-weight:500">Enable Discover</span>
+                  <div class="hint">Ravilo's Top 10 tab — charts are ingested weekly from enabled providers below.</div>
+                </div>
+                <span id="discover-enabled-toggle" class="toggle" style="cursor:pointer;flex-shrink:0"></span>
+              </div>
+              <div id="discover-fields">
+                <div style="border:1px solid var(--line);border-radius:8px;padding:13px 15px;margin-bottom:10px">
+                  <div style="display:flex;align-items:center;gap:8px;margin-bottom:5px">
+                    <span style="font-weight:600;font-size:.9rem">Netflix</span>
+                    <span class="badge ok" style="font-size:.65rem">free · no setup</span>
+                    <span style="flex:1"></span>
+                    <span id="provider-netflix-toggle" class="toggle" style="cursor:pointer"></span>
+                  </div>
+                  <div class="hint">Official Tudum TSV feed — country Top 10, Global Top 10, Non-English, All-time.</div>
+                </div>
+                <div style="border:1px solid var(--line);border-radius:8px;padding:13px 15px;margin-bottom:10px">
+                  <div style="margin-bottom:8px">
+                    <span style="font-weight:600;font-size:.9rem">Max · Disney+ · Amazon Prime · Apple TV+</span>
+                    <span class="badge" style="font-size:.65rem;background:rgba(245,181,66,.15);color:var(--warn);margin-left:6px">RapidAPI key needed</span>
+                  </div>
+                  <div class="hint" style="margin-bottom:10px">Official in-app Top 10 per country via Streaming Availability API (movieofthenight.com, free tier: 500 req/month — weekly polling uses ≈ 40 req/month total).</div>
+                  <div class="field" style="margin-bottom:8px">
+                    <label>RapidAPI key <a id="sa-key-guide-btn" href="#" style="font-size:.78rem;margin-left:8px">How to get a free key ▸</a></label>
+                    <input id="sa-api-key" class="input" type="password" style="width:100%" placeholder="Paste key here — one key covers all four services">
+                    <span class="hint">Leave blank to disable this group.</span>
+                  </div>
+                  <div id="sa-key-guide" style="display:none;background:var(--fill-2);border-radius:6px;padding:11px 14px;margin-bottom:10px;font-size:.82rem">
+                    <ol style="margin:0;padding-left:18px;line-height:1.9">
+                      <li>Go to <strong>rapidapi.com</strong> and create a free account (no credit card).</li>
+                      <li>Search for <strong>"Streaming Availability"</strong> by Movie of the Night.</li>
+                      <li>Click Subscribe → pick the <strong>Basic plan</strong> (free, 500 req/month).</li>
+                      <li>Open the Endpoints tab → any endpoint → copy <strong>X-RapidAPI-Key</strong> from the request headers panel.</li>
+                      <li>Paste it above and save.</li>
+                    </ol>
+                  </div>
+                  <div style="display:grid;gap:7px;border-top:1px solid var(--line);padding-top:10px">
+                    <div style="display:flex;align-items:center;justify-content:space-between"><span style="font-size:.9rem">Max</span><span id="provider-max-toggle" class="toggle" style="cursor:pointer"></span></div>
+                    <div style="display:flex;align-items:center;justify-content:space-between"><span style="font-size:.9rem">Disney+</span><span id="provider-disney-toggle" class="toggle" style="cursor:pointer"></span></div>
+                    <div style="display:flex;align-items:center;justify-content:space-between"><span style="font-size:.9rem">Amazon Prime</span><span id="provider-prime-toggle" class="toggle" style="cursor:pointer"></span></div>
+                    <div style="display:flex;align-items:center;justify-content:space-between"><span style="font-size:.9rem">Apple TV+</span><span id="provider-apple-toggle" class="toggle" style="cursor:pointer"></span></div>
+                  </div>
+                </div>
+                <div style="border:1px solid var(--line);border-radius:8px;padding:13px 15px">
+                  <div style="display:flex;align-items:center;gap:8px;margin-bottom:5px">
+                    <span style="font-weight:600;font-size:.9rem">Viaplay · Paramount+ · SkyShowtime</span>
+                    <span class="badge ok" style="font-size:.65rem">free · no key</span>
+                  </div>
+                  <div class="hint" style="margin-bottom:10px">User-activity rankings via JustWatch (unofficial API, stable). Not platform-official viewership — no account required.</div>
+                  <div style="display:grid;gap:7px;border-top:1px solid var(--line);padding-top:10px">
+                    <div style="display:flex;align-items:center;justify-content:space-between"><span style="font-size:.9rem">Viaplay</span><span id="provider-viaplay-toggle" class="toggle" style="cursor:pointer"></span></div>
+                    <div style="display:flex;align-items:center;justify-content:space-between"><span style="font-size:.9rem">Paramount+</span><span id="provider-paramount-toggle" class="toggle" style="cursor:pointer"></span></div>
+                    <div style="display:flex;align-items:center;justify-content:space-between"><span style="font-size:.9rem">SkyShowtime</span><span id="provider-skyshowtime-toggle" class="toggle" style="cursor:pointer"></span></div>
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -368,12 +431,13 @@ private val SECTION_TAB = mapOf(
     "sect-libraries" to "libraries",
     "sect-scanning" to "libraries",
     "sect-metadata" to "metadata",
+    "sect-discover" to "discover",
     "sect-crossseed" to "downloads",
     "sect-arr" to "downloads",
     "sect-notifications" to "notifications",
     "sect-advanced" to "advanced",
 )
-private val SETTINGS_TABS = listOf("connections", "libraries", "metadata", "downloads", "notifications", "advanced")
+private val SETTINGS_TABS = listOf("connections", "libraries", "metadata", "discover", "downloads", "notifications", "advanced")
 
 private fun applyHealthFailures(failsBySection: Map<String, Int>) {
     // Phase 55 — bubble section failures up to their owning tab.
@@ -416,6 +480,12 @@ private fun applyHealthFailures(failsBySection: Map<String, Int>) {
     }
 }
 
+private val DISCOVER_PROVIDER_IDS = listOf("netflix", "max", "disney", "prime", "apple", "viaplay", "paramount", "skyshowtime")
+private var discoverEnabled = false
+private val discoverProviders = mutableSetOf<String>()
+private var discoverRegions = listOf("DK")
+private var discoverRefreshHours = 168
+
 private var overwriteNfo = false
 private var fetchImages = true
 private var tellJellyfin = true
@@ -450,7 +520,17 @@ private fun populateForm(response: ConfigResponse) {
     setInputValue("jellyfin-url", config.apiKeys.jellyfinUrl)
     setInputValue("jellyfin-token", config.apiKeys.jellyfinToken)
     setInputValue("tmdb-key", config.apiKeys.tmdbV3Key)
+    setInputValue("sa-api-key", config.apiKeys.streamingAvailabilityKey)
     setInputValue("fallback-language", config.languageRules.fallbackLanguage)
+
+    val disc = config.discover
+    discoverEnabled = disc?.enabled ?: false
+    discoverProviders.clear(); discoverProviders.addAll(disc?.providers ?: listOf("netflix"))
+    discoverRegions = disc?.regions ?: listOf("DK")
+    discoverRefreshHours = disc?.refreshHours ?: 168
+    updateToggle("discover-enabled-toggle", discoverEnabled)
+    for (id in DISCOVER_PROVIDER_IDS) updateToggle("provider-$id-toggle", id in discoverProviders)
+    (document.getElementById("discover-fields") as? HTMLElement)?.style?.display = if (discoverEnabled) "" else "none"
 
     overwriteNfo = config.behavior.overwriteNfo
     fetchImages = config.behavior.fetchImages
@@ -683,6 +763,26 @@ private fun attachListeners(scope: CoroutineScope) {
             }.getOrDefault(false)
             resultEl.innerHTML = if (ok) """<span class="badge ok">Delivered</span>""" else """<span class="badge bad">Failed</span>"""
         }
+    }
+
+    document.getElementById("discover-enabled-toggle")?.addEventListener("click") {
+        discoverEnabled = !discoverEnabled
+        updateToggle("discover-enabled-toggle", discoverEnabled)
+        (document.getElementById("discover-fields") as? HTMLElement)?.style?.display = if (discoverEnabled) "" else "none"
+        refreshTomlPreview(readForm())
+    }
+    for (id in DISCOVER_PROVIDER_IDS) {
+        document.getElementById("provider-$id-toggle")?.addEventListener("click") {
+            if (id in discoverProviders) discoverProviders.remove(id) else discoverProviders.add(id)
+            updateToggle("provider-$id-toggle", id in discoverProviders)
+            refreshTomlPreview(readForm())
+        }
+    }
+    document.getElementById("sa-api-key")?.addEventListener("input") { refreshTomlPreview(readForm()) }
+    document.getElementById("sa-key-guide-btn")?.addEventListener("click") { e ->
+        e.preventDefault()
+        val guide = document.getElementById("sa-key-guide") as? HTMLElement ?: return@addEventListener
+        guide.style.display = if (guide.style.display == "none") "" else "none"
     }
 
     wirePipelineBuilder(scope)
@@ -934,6 +1034,7 @@ private fun readForm(): AppConfig = AppConfig(
         jellyfinUrl = getInputValue("jellyfin-url"),
         jellyfinToken = getInputValue("jellyfin-token"),
         tmdbV3Key = getInputValue("tmdb-key"),
+        streamingAvailabilityKey = getInputValue("sa-api-key").ifBlank { "##KEEP##" },
     ),
     languageRules = LanguageRules(
         fallbackLanguage = getInputValue("fallback-language").ifEmpty { "en" },
@@ -975,6 +1076,12 @@ private fun readForm(): AppConfig = AppConfig(
         apiKey = getInputValue("sonarr-key").ifBlank { "##KEEP##" },
         rescanAfterWrite = sonarrRescan,
     ) else null,
+    discover = if (discoverEnabled) DiscoverFeedConfig(
+        enabled = true,
+        providers = discoverProviders.toList(),
+        regions = discoverRegions,
+        refreshHours = discoverRefreshHours,
+    ) else null,
     scanSchedule = if (pipelineEnabled) computePipeCron() else "",
     scan = ScanConfig(pipeline = if (pipelineEnabled) pipelineSteps.toList() else emptyList()),
 )
@@ -989,6 +1096,8 @@ private fun buildToml(c: AppConfig): String = buildString {
     appendLine("""jellyfin_url = "${c.apiKeys.jellyfinUrl}"""")
     appendLine("""jellyfin_token = "${c.apiKeys.jellyfinToken}"""")
     appendLine("""tmdb_v3_key = "${c.apiKeys.tmdbV3Key}"""")
+    if (c.apiKeys.streamingAvailabilityKey.isNotBlank() && c.apiKeys.streamingAvailabilityKey != "##KEEP##")
+        appendLine("""streaming_availability_key = "***"""")
     appendLine()
     appendLine("[language_rules]")
     appendLine("""fallback_language = "${c.languageRules.fallbackLanguage}"""")
@@ -1040,6 +1149,14 @@ private fun buildToml(c: AppConfig): String = buildString {
         appendLine("""local_path = "${lib.localPath}"""")
         appendLine("skip = ${lib.skip}")
         if (!lib.fallbackLanguage.isNullOrBlank()) appendLine("""fallback_language = "${lib.fallbackLanguage}"""")
+    }
+    c.discover?.let { d ->
+        appendLine()
+        appendLine("[discover]")
+        appendLine("enabled = ${d.enabled}")
+        appendLine("providers = [${d.providers.joinToString(", ") { "\"$it\"" }}]")
+        appendLine("regions = [${d.regions.joinToString(", ") { "\"$it\"" }}]")
+        appendLine("refresh_hours = ${d.refreshHours}")
     }
     val qb = c.qbittorrent
     if (qb != null) {
