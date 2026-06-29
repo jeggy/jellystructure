@@ -1,5 +1,6 @@
 package dev.jellystructure.ravilo.ui.screens
 
+import dev.jellystructure.shared.tv.CardPlayState
 import dev.jellystructure.shared.tv.ClientCapabilities
 import dev.jellystructure.shared.tv.StreamTicket
 import dev.jellystructure.shared.tv.TvApiClient
@@ -70,6 +71,7 @@ class PlayerStore(private val apiClient: TvApiClient) {
             // advances up-next — no manual toggle. Below threshold it stays in-progress (resume preserved).
             if (durationMs > 0 && positionMs >= durationMs * 90 / 100) {
                 runCatching { apiClient.markPlayed(itemId, watched = true) }
+                WatchedBus.publish(mapOf(itemId to CardPlayState(played = true, playedPct = 1f)))  // R147
             }
         }
         _state.value = PlayerSessionState.Idle
@@ -78,7 +80,10 @@ class PlayerStore(private val apiClient: TvApiClient) {
 
     /** R142: explicit played write-through used when advancing to the next episode (the finished one). */
     fun markWatched(itemId: String) {
-        scope.launch { runCatching { apiClient.markPlayed(itemId, watched = true) } }
+        scope.launch {
+            runCatching { apiClient.markPlayed(itemId, watched = true) }
+            WatchedBus.publish(mapOf(itemId to CardPlayState(played = true, playedPct = 1f)))  // R147
+        }
     }
 
     private fun startHeartbeat(

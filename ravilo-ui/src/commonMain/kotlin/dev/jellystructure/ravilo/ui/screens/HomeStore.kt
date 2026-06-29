@@ -34,7 +34,18 @@ class HomeStore(private val apiClient: TvApiClient) {
     val discoverAvailable: StateFlow<Boolean> = _discoverAvailable.asStateFlow()
     private var loadJob: Job? = null
 
-    init { load() }
+    init {
+        load()
+        // R147: patch tiles in place when a watched-state change is broadcast (instant, no re-fetch).
+        scope.launch {
+            WatchedBus.patches.collect { patch ->
+                val s = _state.value as? HomeState.Loaded ?: return@collect
+                _state.value = HomeState.Loaded(s.feed.copy(
+                    rows = s.feed.rows.map { r -> r.copy(items = r.items.map { it.applyWatchedPatch(patch) }) }
+                ))
+            }
+        }
+    }
 
     fun load() {
         loadJob?.cancel()

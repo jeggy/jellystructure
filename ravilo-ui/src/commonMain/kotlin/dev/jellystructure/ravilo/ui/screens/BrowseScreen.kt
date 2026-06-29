@@ -82,6 +82,18 @@ class BrowseStore(private val apiClient: TvApiClient) {
     var activeGenre: String? = null
         private set
 
+    init {
+        // R147: patch grid tiles in place when a watched-state change is broadcast (instant, no re-fetch).
+        scope.launch {
+            WatchedBus.patches.collect { patch ->
+                val s = _state.value as? BrowseState.Loaded ?: return@collect
+                _state.value = BrowseState.Loaded(
+                    s.results.copy(items = s.results.items.map { it.applyWatchedPatch(patch) }), s.facets,
+                )
+            }
+        }
+    }
+
     fun load(kind: BrowseKind = activeKind, genre: String? = null) {
         loadJob?.cancel()
         activeKind = kind; activeGenre = genre
