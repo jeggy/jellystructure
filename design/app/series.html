@@ -6,6 +6,7 @@
 <title>Jellystructure — Nordvest (2023)</title>
 <link rel="stylesheet" href="wf.css">
 <link rel="stylesheet" href="app.css">
+<link rel="stylesheet" href="seeding.css">
 <style>
   /* cast & crew (Phase 75) */
   .cast-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(146px, 1fr)); gap: 14px; }
@@ -163,6 +164,7 @@
   <div class="pagebar">
     <h1>Nordvest <span class="muted">(2023)</span></h1>
     <span class="badge bad">4 episodes need attention</span>
+    <a id="seed-pill-link" href="#tab=seeding" style="text-decoration:none;"></a>
     <span class="spacer"></span>
     <a class="btn sm ghost" href="#" target="_blank" rel="noopener">Jellyfin ↗</a>
     <a class="btn sm ghost" href="https://www.themoviedb.org/tv/210041" target="_blank" rel="noopener">TMDB ↗</a>
@@ -175,6 +177,7 @@
   <div class="tabs2" id="tabbar">
     <span data-tab="overview">Overview</span>
     <span class="on" data-tab="episodes">Seasons &amp; episodes</span>
+    <span data-tab="seeding">Seeding</span>
     <span data-tab="artwork">Artwork</span>
     <span data-tab="cast">Cast &amp; crew</span>
     <span data-tab="nfo">NFO (raw)</span>
@@ -446,6 +449,20 @@
       </div>
 
       <!-- ARTWORK PANEL -->
+      <div class="tabpanel" data-panel="seeding" style="display:none;">
+        <div class="card">
+          <div class="sd-head">
+            <h4>Seeding &amp; cross-seed</h4>
+            <span class="badge info">qBittorrent</span>
+            <span class="spacer"></span>
+            <span class="tiny muted">2 seasons · 14 episodes</span>
+          </div>
+          <div class="tiny muted" style="margin:4px 0 2px;line-height:1.5;">Episode files can belong to a single-episode torrent, a season pack <b>and</b> a complete-series pack at once. The chart shows which torrent covers which episodes, across all trackers — and where edits are guard-locked.</div>
+          <div id="seeding-root"></div>
+        </div>
+      </div>
+
+      <!-- ARTWORK PANEL -->
       <div class="tabpanel" data-panel="artwork" style="display:none;">
         <div class="card">
           <div class="row center"><h4 style="margin:0;">Series artwork</h4><span class="spacer"></span><span class="pill-row"><span class="btn sm">Fetch all from TMDB</span><span class="btn sm ghost">Upload</span></span></div>
@@ -576,6 +593,7 @@
 </div>
 
 <script src="app-shell.js"></script>
+<script src="seeding.js"></script>
 <script>
 (function () {
   /* URL-addressable tabs (Phase 28) */
@@ -589,6 +607,22 @@
   tabbar.addEventListener('click', e => { const t = e.target.closest('[data-tab]'); if (t) location.hash = 'tab=' + t.dataset.tab; });
   function fromHash() { const m = /tab=([a-z]+)/.exec(location.hash || ''); showTab(m ? m[1] : 'episodes'); }
   window.addEventListener('hashchange', fromHash); fromHash();
+
+  /* Seeding & cross-seed (Phase 97) — pill immediate, chart lazy on first open */
+  const seedRoot = document.getElementById('seeding-root');
+  let seedDone = false;
+  function ensureSeed() {
+    if (seedDone || !seedRoot) return;
+    const torrents = window.Seeding.renderSeries(seedRoot);
+    const link = document.getElementById('seed-pill-link');
+    if (link) link.innerHTML = window.Seeding.pillHTML(torrents);
+    seedDone = true;
+  }
+  const seedLink = document.getElementById('seed-pill-link');
+  if (seedLink && window.Seeding) seedLink.innerHTML = window.Seeding.pillHTML(window.Seeding.SERIES.torrents);
+  tabbar.addEventListener('click', e => { if (e.target.closest('[data-tab="seeding"]')) ensureSeed(); });
+  if (/tab=seeding/.test(location.hash)) ensureSeed();
+  window.addEventListener('hashchange', () => { if (/tab=seeding/.test(location.hash)) ensureSeed(); });
 
   /* episode expand/collapse */
   document.querySelectorAll('.ep-row').forEach(row => row.addEventListener('click', () => row.closest('.ep').classList.toggle('open')));
