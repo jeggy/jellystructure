@@ -338,6 +338,11 @@ data class PageHeroConfig(
 data class ChannelRowsConfig(
     val mode: String = "inherit",  // "inherit" | "custom"
     val items: List<RowConfig> = emptyList(),
+    // R143 — per-channel Newly Added control (custom mode), independent of the global
+    // merge_newly_added_channels flag. "inherit" = follow that global flag (back-compat);
+    // "merged" = one combined row; "split" = Movies + Series rows; "none" = no Newly Added row
+    // on this channel page at all.
+    @SerialName("newly_added") val newlyAdded: String = "inherit",
 )
 
 @Serializable

@@ -1014,6 +1014,8 @@ private fun openChannelEditorPage(container: Element, scope: CoroutineScope, idx
     val heroEnabled = pHero?.enabled == true
     val heroItemCount = pHero?.items?.size ?: 0
     val rowsCustom = c.rows?.mode == "custom"
+    val chNewlyAdded = c.rows?.newlyAdded ?: "inherit"  // R143
+    val naOpt = { v: String -> if (chNewlyAdded == v) " selected" else "" }
     val rowsCustomItems = c.rows?.items ?: emptyList()
     val chRowsListHtml = rowsCustomItems.mapIndexed { i, r ->
         val condSrc = if (r.conditions.isNotEmpty()) "${r.conditions.size} condition(s) · match ${r.match.name.lowercase()}" else "No filter — shows all media"
@@ -1144,9 +1146,20 @@ private fun openChannelEditorPage(container: Element, scope: CoroutineScope, idx
             </label>
           </div>
           <div id="ch-rows-custom-body" style="${if (!rowsCustom) "display:none;" else ""}">
-            <p class="tiny muted" style="margin:0 0 10px">Custom rows for this channel. System rows (Continue, Newly Added) still appear unless removed.</p>
+            <p class="tiny muted" style="margin:0 0 10px">Custom rows for this channel. The <b>Continue Watching</b> row never shows inside a channel; control <b>Newly Added</b> below.</p>
             <div id="ch-rows-list" style="margin-bottom:8px">$chRowsListHtml</div>
             <button id="ch-rows-add" class="btn sm ghost">+ Add row</button>
+            <!-- R143: per-channel Newly Added control -->
+            <div style="display:flex;align-items:center;gap:10px;margin-top:14px;padding-top:12px;border-top:1px solid var(--line)">
+              <b style="font-size:.85rem">Newly Added on this channel</b>
+              <select id="ch-newly-added" class="input" style="width:auto;font-size:.84rem;padding:3px 8px;height:auto">
+                <option value="inherit"${naOpt("inherit")}>Same as global setting</option>
+                <option value="merged"${naOpt("merged")}>One combined row</option>
+                <option value="split"${naOpt("split")}>Split — Movies &amp; Series</option>
+                <option value="none"${naOpt("none")}>Don't show</option>
+              </select>
+            </div>
+            <p class="tiny muted" style="margin:6px 0 0">Appears at the bottom of the channel page. Pick <b>Don't show</b> to hide it entirely (e.g. a kids channel).</p>
             <!-- R87: row-coverage gap panel (filled async by renderCoverage) -->
             <div id="ch-rows-coverage" style="margin-top:14px"></div>
           </div>
@@ -1170,7 +1183,9 @@ private fun openChannelEditorPage(container: Element, scope: CoroutineScope, idx
         val existing = cur.rows ?: ChannelRowsConfig(mode = "custom")
         val catchAll = RowConfig(id = genId("row"), kind = RowKind.CUSTOM, title = "All other titles",
             match = MatchMode.ALL, conditions = emptyList())
-        list[idx] = cur.copy(rows = existing.copy(mode = "custom", items = existing.items + catchAll))
+        // R143: keep an unsaved Newly Added dropdown change across the re-render.
+        val naLive = (container.querySelector("#ch-newly-added") as? HTMLSelectElement)?.value ?: existing.newlyAdded
+        list[idx] = cur.copy(rows = existing.copy(mode = "custom", newlyAdded = naLive, items = existing.items + catchAll))
         currentConfig = currentConfig.copy(channels = list)
         reRenderChannelRows()
     }
@@ -1349,6 +1364,7 @@ private fun openChannelEditorPage(container: Element, scope: CoroutineScope, idx
         val styleVal = (container.querySelector("input[name='ch-ed-style']:checked") as? HTMLInputElement)?.value ?: "logo"
         val heroEn = (container.querySelector("#ch-hero-enabled") as? org.w3c.dom.HTMLInputElement)?.checked ?: false
         val rowsMode = (container.querySelector("input[name='ch-rows-mode']:checked") as? HTMLInputElement)?.value ?: "inherit"
+        val newlyAddedVal = (container.querySelector("#ch-newly-added") as? HTMLSelectElement)?.value ?: "inherit"  // R143
         fun padOf(t: String, r: String, b: String, l: String): ChannelButtonPadding? {
             val top = (container.querySelector("#$t") as? HTMLInputElement)?.value?.toIntOrNull() ?: 0
             val right = (container.querySelector("#$r") as? HTMLInputElement)?.value?.toIntOrNull() ?: 0
@@ -1371,7 +1387,7 @@ private fun openChannelEditorPage(container: Element, scope: CoroutineScope, idx
             else cur.pageHero,
             paddingLogo = paddingLogo,
             paddingText = paddingText,
-            rows = if (rowsMode == "custom") (cur.rows ?: ChannelRowsConfig()).copy(mode = "custom") else null,
+            rows = if (rowsMode == "custom") (cur.rows ?: ChannelRowsConfig()).copy(mode = "custom", newlyAdded = newlyAddedVal) else null,
         )
         currentConfig = currentConfig.copy(channels = list)
         historyReplaceState("#/ravilo")
@@ -1410,7 +1426,9 @@ private fun openChannelEditorPage(container: Element, scope: CoroutineScope, idx
                 val list = currentConfig.channels.toMutableList()
                 val cur = list[idx]
                 val existing = cur.rows ?: ChannelRowsConfig(mode = "custom")
-                list[idx] = cur.copy(rows = existing.copy(mode = "custom", items = existing.items + newRow))
+                // R143: keep an unsaved Newly Added dropdown change across the re-render.
+                val naLive = (container.querySelector("#ch-newly-added") as? HTMLSelectElement)?.value ?: existing.newlyAdded
+                list[idx] = cur.copy(rows = existing.copy(mode = "custom", newlyAdded = naLive, items = existing.items + newRow))
                 currentConfig = currentConfig.copy(channels = list)
                 reRenderChannelRows()
             })

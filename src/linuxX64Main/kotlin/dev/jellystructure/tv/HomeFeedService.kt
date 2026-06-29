@@ -194,8 +194,20 @@ class HomeFeedService(
         val enabledRows = rowSource.filter { it.enabled }.sortedBy { it.order }
         val heroIds = config.heroes.map { it.itemId }.toSet()  // Phase R86-C: hoist out of CUSTOM-row loop
         val result = mutableListOf<Row>()
-        // R104: Home and channel pages can merge newly-added independently. Pick the flag for this context.
-        val mergeNewly = if (channelFilter != null) config.mergeNewlyAddedChannels else config.mergeNewlyAdded
+        // R104/R143: resolve the Newly Added behavior for this context.
+        //   Home               → the global merge_newly_added flag (merged vs split), unchanged.
+        //   custom-mode channel → the channel's own rows.newlyAdded ("inherit" falls back to the
+        //                         global merge_newly_added_channels flag); "none" hides it entirely.
+        //   inherit-mode channel → the global merge_newly_added_channels flag, unchanged.
+        val newlyMode: String = when {
+            channelFilter == null -> if (config.mergeNewlyAdded) "merged" else "split"
+            channelFilter.rows?.mode == "custom" -> when (val n = channelFilter.rows?.newlyAdded ?: "inherit") {
+                "merged", "split", "none" -> n
+                else -> if (config.mergeNewlyAddedChannels) "merged" else "split"  // "inherit"
+            }
+            else -> if (config.mergeNewlyAddedChannels) "merged" else "split"
+        }
+        val mergeNewly = newlyMode == "merged"
 
         for (rowCfg in enabledRows) {
             when (rowCfg.kind) {
@@ -206,6 +218,7 @@ class HomeFeedService(
                 }
 
                 RowKind.NEWLY_ADDED -> {
+                    if (newlyMode == "none") continue  // R143: this channel hides Newly Added entirely
                     if (mergeNewly) {
                         // When merged, ALL NEWLY_ADDED rows are skipped; a single merged row is injected below
                         continue
@@ -275,15 +288,28 @@ class HomeFeedService(
                 // Find where in the config the first NEWLY_ADDED row was and insert the merged
                 // row at that logical position — after whichever result row came just before it.
                 val firstIdx = enabledRows.indexOfFirst { it.kind == RowKind.NEWLY_ADDED }
-                val insertAt = if (firstIdx <= 0) {
-                    0 // no predecessor; place before all rows (or at 0 if firstIdx == -1 = no NEWLY_ADDED configured)
-                } else {
-                    val predecessorId = enabledRows[firstIdx - 1].id
-                    val pos = result.indexOfFirst { it.id == predecessorId }
-                    if (pos < 0) result.size else pos + 1
+                val insertAt = when {
+                    // R143: a custom channel has no configured NEWLY_ADDED row → append at the END
+                    // (previously this inserted at the top, so a custom channel showed Newly Added first).
+                    firstIdx < 0 -> result.size
+                    firstIdx == 0 -> 0
+                    else -> {
+                        val predecessorId = enabledRows[firstIdx - 1].id
+                        val pos = result.indexOfFirst { it.id == predecessorId }
+                        if (pos < 0) result.size else pos + 1
+                    }
                 }
                 result.add(insertAt.coerceIn(0, result.size), Row("newly-added", "Newly Added", RowKind.NEWLY_ADDED, mergedCards))
             }
+        } else if (newlyMode == "split" && enabledRows.none { it.kind == RowKind.NEWLY_ADDED }) {
+            // R143: a custom channel asked for split Newly Added but has no configured NEWLY_ADDED row
+            // (inherit-mode channels + Home already emit split rows inline) → inject Movies + Series at the END.
+            val movies = all.filter { it.kind == MediaKind.MOVIE }
+                .sortedByDescending { it.addedAt ?: it.scannedAt }.take(ROW_ITEM_LIMIT).mapNotNull { it.toMediaCardOrNull() }
+            val series = all.filter { it.kind == MediaKind.TV_SHOW }
+                .sortedByDescending { it.addedAt ?: it.scannedAt }.take(ROW_ITEM_LIMIT).mapNotNull { it.toMediaCardOrNull() }
+            if (movies.isNotEmpty()) result.add(Row("newly-added-movies", "Movies — Newly Added", RowKind.NEWLY_ADDED, movies))
+            if (series.isNotEmpty()) result.add(Row("newly-added-series", "Series — Newly Added", RowKind.NEWLY_ADDED, series))
         }
 
         return result
