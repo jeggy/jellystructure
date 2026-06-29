@@ -2,6 +2,8 @@ package dev.jellystructure.ravilo.ui.screens
 
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.gestures.LocalBringIntoViewSpec
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -13,6 +15,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -24,6 +27,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -67,6 +71,8 @@ import dev.jellystructure.ravilo.ui.theme.SpaceGrotesk
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
+import dev.jellystructure.ravilo.ui.focus.dpadFocusable
 import dev.jellystructure.shared.tv.CardPlayState
 import dev.jellystructure.shared.tv.Episode
 import dev.jellystructure.shared.tv.MediaCard
@@ -102,6 +108,8 @@ fun SeriesDetailScreen(
                 overlay = overlay,
                 onBack = onBack,
                 onPlay = onPlay,
+                onMarkEpisode = { epId, played -> store.setEpisodePlayed(epId, played) },
+                onMarkSeason = { epIds, played -> store.setSeasonPlayed(epIds, played) },
                 onRelatedSelect = onRelatedSelect,
                 displayName = displayName,
                 onNavSelect = onNavSelect,
@@ -155,6 +163,8 @@ private fun SeriesDetailLoaded(
     overlay: Map<String, CardPlayState>,
     onBack: () -> Unit,
     onPlay: (EpisodePlayContext) -> Unit,
+    onMarkEpisode: (String, Boolean) -> Unit,
+    onMarkSeason: (List<String>, Boolean) -> Unit,
     onRelatedSelect: (MediaCard) -> Unit,
     displayName: String,
     onNavSelect: (Int) -> Unit,
@@ -392,14 +402,36 @@ private fun SeriesDetailLoaded(
 
             // Episode rail — own lazy item.
             if (episodes.isNotEmpty()) item(key = "episodes") {
+                // R142: season-scoped watched count + Mark all toggle (the loaded season's episodes).
+                val seasonEpIds = remember(episodes) { episodes.map { it.id } }
+                val seasonWatched = episodes.count { overlay[it.id]?.played == true }
+                val seasonAllWatched = overlayLoaded && seasonWatched == episodes.size
                 Column {
                     if (detail.seasons.size <= 1) Spacer(Modifier.height(28.dp))
-                    Text(
-                        str("detail.episodes"),
-                        color = colors.text, fontSize = 18.sp, fontWeight = FontWeight.SemiBold,
-                        fontFamily = spaceGrotesk, letterSpacing = (-0.5).sp,
-                        modifier = Modifier.padding(horizontal = RaviloDimens.sectionPadH),
-                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = RaviloDimens.sectionPadH),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            str("detail.episodes"),
+                            color = colors.text, fontSize = 18.sp, fontWeight = FontWeight.SemiBold,
+                            fontFamily = spaceGrotesk, letterSpacing = (-0.5).sp,
+                        )
+                        if (overlayLoaded) {
+                            Spacer(Modifier.width(12.dp))
+                            Text(
+                                "$seasonWatched / ${episodes.size} ${str("action.watched").lowercase()}",
+                                color = colors.textSecondary, fontSize = 13.sp,
+                            )
+                        }
+                        Spacer(Modifier.weight(1f))
+                        // R142: Mark all played / unplayed for this season.
+                        RaviloButton(
+                            label = if (seasonAllWatched) str("action.mark_all_unwatched") else str("action.mark_all_watched"),
+                            style = ButtonStyle.GHOST,
+                            onSelect = { onMarkSeason(seasonEpIds, !seasonAllWatched) },
+                        )
+                    }
                     Spacer(Modifier.height(RaviloDimens.rowHeadPadB))
                     LazyRow(
                         modifier = Modifier.focusRestorer(),
@@ -408,13 +440,18 @@ private fun SeriesDetailLoaded(
                     ) {
                         items(episodes.size, key = { i -> episodes[i].id }) { i ->
                             val ep = episodes[i]
-                            EpisodeCard(
-                                episode = ep,
-                                // R84: overlay-driven; no "UP NEXT" ribbon until playstate arrives
-                                isResumeEpisode = overlayLoaded && ep.id == resumeEpId,
-                                playstateOverride = overlay[ep.id],
-                                onSelect = { onPlay(buildEpisodeContext(detail, selectedSeasonIdx, episodes, ep.id, overlay)) },
-                            )
+                            val epWatched = overlay[ep.id]?.played == true
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                EpisodeCard(
+                                    episode = ep,
+                                    // R84: overlay-driven; no "UP NEXT" ribbon until playstate arrives
+                                    isResumeEpisode = overlayLoaded && ep.id == resumeEpId,
+                                    playstateOverride = overlay[ep.id],
+                                    onSelect = { onPlay(buildEpisodeContext(detail, selectedSeasonIdx, episodes, ep.id, overlay)) },
+                                )
+                                Spacer(Modifier.height(6.dp))
+                                EpisodeWatchToggle(watched = epWatched, onToggle = { onMarkEpisode(ep.id, !epWatched) })
+                            }
                         }
                     }
                 }
@@ -480,6 +517,45 @@ private fun SeriesDetailLoaded(
             onProfile = onProfile,
             onSearch = onSearch,
             scrolled = appBarScrolled,
+        )
+    }
+}
+
+/**
+ * R142 — per-episode played toggle: a second focusable below each EpisodeCard (the card stays the play
+ * target; D-pad steps card → toggle → next card). SELECT marks the episode played/unplayed via the
+ * server, and the store overlay re-emit re-renders the ✓ / count / season bar / up-next.
+ */
+@Composable
+private fun EpisodeWatchToggle(watched: Boolean, onToggle: () -> Unit) {
+    val colors = RaviloTheme.colors
+    var focused by remember { mutableStateOf(false) }
+    val shape = RoundedCornerShape(8.dp)
+    val bg = if (watched) colors.badgeWatched.copy(alpha = 0.16f) else colors.surfaceVariant
+    Row(
+        modifier = Modifier
+            .clip(shape)
+            .background(bg)
+            .then(if (focused) Modifier.border(2.dp, colors.focusRing, shape) else Modifier)
+            .dpadFocusable(
+                onFocused = { focused = true },
+                onBlurred = { focused = false },
+                onSelect = onToggle,
+            )
+            .padding(horizontal = 10.dp, vertical = 5.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            if (watched) "✓" else "○",
+            color = if (watched) colors.badgeWatched else colors.textSecondary,
+            fontSize = 13.sp,
+            fontWeight = FontWeight.Bold,
+        )
+        Spacer(Modifier.width(5.dp))
+        Text(
+            if (watched) str("action.watched") else str("action.mark_watched"),
+            color = colors.text,
+            fontSize = 12.sp,
         )
     }
 }

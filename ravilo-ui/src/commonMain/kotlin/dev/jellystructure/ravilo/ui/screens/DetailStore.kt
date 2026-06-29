@@ -67,6 +67,15 @@ class MovieDetailStore(private val apiClient: TvApiClient) {
                 ?.let { _playstateOverlay.value = it }
         }
     }
+
+    /** R142: mark this movie played/unplayed; patch the overlay from the server-returned authoritative state. */
+    fun setPlayed(played: Boolean) {
+        val id = currentId ?: return
+        scope.launch {
+            runCatching { apiClient.setPlayed(id, played) }.getOrNull()
+                ?.let { _playstateOverlay.value = _playstateOverlay.value + it }
+        }
+    }
 }
 
 class SeriesDetailStore(private val apiClient: TvApiClient) {
@@ -114,6 +123,24 @@ class SeriesDetailStore(private val apiClient: TvApiClient) {
                 runCatching { apiClient.getPlaystate(epIds) }.getOrNull()
                     ?.let { _playstateOverlay.value = it }
             }
+        }
+    }
+
+    /** R142: toggle one episode's played state; patch the overlay from the server result. */
+    fun setEpisodePlayed(episodeId: String, played: Boolean) {
+        scope.launch {
+            runCatching { apiClient.setPlayed(episodeId, played) }.getOrNull()
+                ?.let { _playstateOverlay.value = _playstateOverlay.value + it }
+        }
+    }
+
+    /** R142: mark a whole season (the given episode ids) played/unplayed via the series; patch the overlay. */
+    fun setSeasonPlayed(episodeIds: List<String>, played: Boolean) {
+        val seriesId = currentId ?: return
+        if (episodeIds.isEmpty()) return
+        scope.launch {
+            runCatching { apiClient.setPlayed(seriesId, played, episodeIds) }.getOrNull()
+                ?.let { _playstateOverlay.value = _playstateOverlay.value + it }
         }
     }
 }

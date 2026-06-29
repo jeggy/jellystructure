@@ -196,6 +196,20 @@ class TvApiClient(
         }.assertSuccess()
     }
 
+    /**
+     * R142 — set played/unplayed for a movie / episode / series (server fans a series out to its episodes;
+     * pass [episodeIds] to target a season). Returns the authoritative per-id play-state for the item + all
+     * affected episodes, so the caller patches its overlay from the server result instead of guessing.
+     */
+    suspend fun setPlayed(itemId: String, played: Boolean, episodeIds: List<String> = emptyList()): Map<String, CardPlayState> {
+        val r = client.put("$baseUrl/api/tv/played") {
+            auth()
+            jsonBody(json.encodeToString(PlayedRequest(itemId, played, episodeIds)))
+        }
+        r.assertSuccess()
+        return json.decodeFromString(r.bodyAsText())
+    }
+
     // ─── Config ──────────────────────────────────────────────────────────────
 
     suspend fun getConfig(): RaviloConfig {

@@ -188,6 +188,11 @@ fun Tile(
                 }
             }
 
+            // R142: dim a watched poster (~brightness .62 via a dark scrim); un-dims on focus.
+            if (watched && !focused) {
+                Box(modifier = Modifier.matchParentSize().background(Color.Black.copy(alpha = 0.38f)))
+            }
+
             // Progress bar (bottom, overlaid)
             if (progressPct > 0f && !watched) {
                 Box(
@@ -206,11 +211,11 @@ fun Tile(
                 }
             }
 
-            // Watched circle badge (bottom-end)
+            // R142: watched ✓ badge (top-end — opposite the top-start NEW / episode badges so they never collide).
             if (watched) {
                 Box(
                     modifier = Modifier
-                        .align(Alignment.BottomEnd)
+                        .align(Alignment.TopEnd)
                         .padding(8.dp)
                         .size(24.dp)
                         .background(colors.badgeWatched, CircleShape),
