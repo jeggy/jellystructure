@@ -539,6 +539,7 @@ fun Route.mediaRoutes(
                     val onDiskSource = when (asset) {
                         "poster" -> item.posterPath
                         "backdrop" -> item.backdropPath
+                        "clearlogo" -> artwork.readAssetSrc(item, "clearlogo")
                         else -> null
                     }
                     // R124: only badge a candidate "ON DISK" when the asset is genuinely on disk — otherwise
@@ -564,6 +565,9 @@ fun Route.mediaRoutes(
                     // this the old image stays flagged and the new one can never take over. Only TMDB
                     // paths ("/x.jpg") map to those fields; a custom http(s) URL is written to disk but
                     // isn't a TMDB path, so leave the field untouched (it's rendered via the TMDB CDN).
+                    if (req.source.startsWith("/") && req.asset == "clearlogo") {
+                        artwork.writeAssetSrc(item, "clearlogo", req.source)
+                    }
                     val updated = if (req.source.startsWith("/")) when (req.asset) {
                         "poster" -> item.copy(posterPath = req.source)
                         "backdrop" -> item.copy(backdropPath = req.source)
