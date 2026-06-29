@@ -41,6 +41,22 @@
   .pipe-canvas { transition: opacity .2s, filter .2s; }
   .pipe-canvas.off { opacity: .42; pointer-events: none; filter: saturate(.45); }
 
+  /* ---------- "how scanning works" explainer ---------- */
+  .scan-explain { border: 1px solid var(--line-2); border-radius: 10px; background: var(--fill); margin-bottom: 12px; }
+  .scan-explain > summary { list-style: none; cursor: pointer; display: flex; align-items: center; gap: 9px;
+    padding: 10px 13px; font-size: .86rem; font-weight: 600; color: var(--ink); }
+  .scan-explain > summary::-webkit-details-marker { display: none; }
+  .scan-explain .ex-ic { width: 19px; height: 19px; border-radius: 50%; display: inline-flex; align-items: center;
+    justify-content: center; background: var(--hi-soft); color: var(--hi); font-size: .72rem; font-weight: 800; flex: none; }
+  .scan-explain .ex-chev { margin-left: auto; color: var(--ink-dim); transition: transform .2s; }
+  .scan-explain[open] .ex-chev { transform: rotate(180deg); }
+  .scan-explain .ex-body { padding: 2px 14px 13px; display: flex; flex-direction: column; gap: 10px; }
+  .scan-explain .ex-row { display: grid; grid-template-columns: 124px 1fr; gap: 12px; font-size: .8rem; line-height: 1.5; color: var(--ink-soft); }
+  .scan-explain .ex-row > b { color: var(--ink); }
+  .scan-explain .ex-note { font-size: .76rem; line-height: 1.5; color: var(--ink-soft); padding: 9px 11px;
+    border-radius: 8px; background: var(--fill-2); border: 1px solid var(--line); }
+  .scan-explain .ex-note b { color: var(--ink); }
+
   .pipe-step { position: relative; display: flex; align-items: stretch; background: var(--fill-2);
     border: 1px solid var(--line-2); border-radius: var(--radius-s); overflow: hidden;
     transition: box-shadow .2s ease, border-color .2s ease, opacity .2s ease, transform .12s ease; }
@@ -222,7 +238,15 @@
       <!-- SCANNING (new — Phase 16) -->
       <div class="card set-section" id="sect-scanning" data-tab="libraries">
         <div class="row center" style="margin-bottom:10px;"><h3 style="font-size:1.05rem;margin:0;">Scanning</h3><span class="spacer"></span><span class="muted tiny">media tooling:</span><span class="chk" id="chk-tools"><span class="dot ok"></span><span class="badge ok">ffmpeg · ffprobe · mkvpropedit</span></span></div>
-        <div class="row center" style="padding:6px 0;"><div><b>Watch library folders</b><div class="tiny muted">Process new media automatically as it appears (inotify).</div></div><span class="spacer"></span><span class="toggle on"></span></div>
+        <details class="scan-explain" id="how-scan">
+          <summary><span class="ex-ic">i</span> How scanning works<span class="ex-chev">▾</span></summary>
+          <div class="ex-body">
+            <div class="ex-row"><b>Scan</b><span>Finds new &amp; changed media from Jellyfin, updates the library, and fills in any missing artwork (gap-fill only). Trigger it from a library's <b>Scan</b> button or on the schedule below.</span></div>
+            <div class="ex-row"><b>The Automation</b><span>A pipeline that always starts with a scan, then chains the follow-ups you pick — Pull TMDB · Download artwork · Write NFO · Sync Jellyfin · … It runs on the wall-clock schedule <em>and</em> on demand via <b>▶ Run pipeline now</b>.</span></div>
+            <div class="ex-row"><b>Per-title actions</b><span>On a title's page: <b>Re-pull</b> (TMDB / Jellyfin) and <b>Save &amp; sync</b> — the same engines, scoped to one title.</span></div>
+            <div class="ex-note">The schedule fires at the <b>local wall-clock time</b> shown — “Daily at 03:00” means 03:00 every day, not 24h after a restart.</div>
+          </div>
+        </details>
         <hr class="dash" style="margin:8px 0;">
         <div class="row" style="gap:16px;flex-wrap:wrap;">
           <div class="field" style="margin:0;width:180px;"><label>Scan workers</label><div class="input">4</div><span class="hint">Concurrent items processed. Live scale-up/down.</span></div>
@@ -238,7 +262,7 @@
             <div class="field" style="margin:0;min-width:130px;"><label>Cron <span class="muted">(derived)</span></label><div class="input mono" id="pipe-cron">0 3 * * *</div></div>
             <span class="spacer"></span>
             <span class="badge ok" id="pipe-next">next · tonight 03:00</span>
-            <span class="btn sm primary" id="pipe-run"><span id="pipe-run-ic">▷</span> Run now</span>
+            <span class="btn sm primary" id="pipe-run"><span id="pipe-run-ic">▷</span> Run pipeline now</span>
           </div>
           <div class="pipe-recipe" id="pipe-recipe"></div>
         </div>
@@ -382,7 +406,6 @@
         <div class="muted">[behavior]</div>
         <div>overwrite_nfo = <span class="badc">false</span></div>
         <div>fetch_images = <span class="okc">true</span></div>
-        <div>watch_enabled = <span class="okc">true</span></div>
         <div>tell_jellyfin = <span class="okc">true</span></div>
         <div>scan_workers = 4</div>
         <div>scan_threads = 8</div>
@@ -568,7 +591,7 @@
     box.className = 'scan-cfg' + (st.opts.recheck ? '' : ' off');
     const head = document.createElement('label');
     head.className = 'sc-head';
-    head.innerHTML = `<span class="mini-toggle${st.opts.recheck ? ' on' : ''}"></span><b>Re-check unchanged media on a schedule</b>`;
+    head.innerHTML = `<span class="mini-toggle${st.opts.recheck ? ' on' : ''}"></span><b>Refresh unchanged titles on a schedule</b>`;
     head.onclick = () => { st.opts.recheck = !st.opts.recheck; render(); };
     box.appendChild(head);
     const sub = document.createElement('div'); sub.className = 'sc-sub';
@@ -747,7 +770,14 @@
 
   /* master enable dims the canvas */
   const pipeEnable = document.getElementById('pipe-enable');
-  pipeEnable.addEventListener('click', () => canvas.classList.toggle('off', !pipeEnable.classList.contains('on')));
+  const nextBadge = document.getElementById('pipe-next');
+  let lastNext = nextBadge.textContent;
+  pipeEnable.addEventListener('click', () => {
+    const off = !pipeEnable.classList.contains('on');
+    canvas.classList.toggle('off', off);
+    if (off) { lastNext = nextBadge.textContent; nextBadge.textContent = 'scheduling off'; nextBadge.classList.remove('ok'); }
+    else { nextBadge.textContent = lastNext; nextBadge.classList.add('ok'); }
+  });
 
   /* schedule */
   const SCHED = { daily:{ cron:'0 3 * * *', next:'next · tonight 03:00', at:true }, weekly:{ cron:'0 3 * * 0', next:'next · Sunday 03:00', at:true }, '6h':{ cron:'0 */6 * * *', next:'next · in ~2h 14m', at:false } };

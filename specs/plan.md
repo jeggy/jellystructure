@@ -248,10 +248,15 @@ data class Episode(
 | POST | `/media/{id}/tracks/language` | Write a language tag to one track |
 | POST | `/media/{id}/tracks/reorder` | Reorder tracks of a type (ffmpeg `-c copy` remux) |
 | DELETE | `/media/{id}/tracks/{specifier}` | Remove a track (ffmpeg `-c copy` remux) |
+| POST | `/media/{id}/episodes/{epFilename}/tracks/reorder` | Reorder one episode's tracks (Phase 96; ffmpeg `-c copy` remux) |
+| POST | `/media/{id}/tracks/bulk-reorder/plan` | Dry-run bulk plan: classify every episode in scope vs a target order (Phase 96; writes nothing) |
+| POST | `/media/{id}/tracks/bulk-reorder` | Apply a target order across a series/season as a `JobEvent` background job → `{jobId}` (Phase 96) |
 | POST | `/media/{id}/jellyfin-refresh` | Trigger Jellyfin to reload this item |
 
 > All five mkvpropedit/ffmpeg call sites run the qBittorrent `SeedingGuard` first (Phase 26): a
 > seeded file yields **409** (`Blocked`) or **503** (`Unreachable`); unconfigured guard passes through.
+> The Phase 96 episode-reorder + bulk-apply call sites run the same guard **per file**; in the bulk
+> job a blocked/failed file is reported in the result, not fatal to the run.
 
 ### Triage (data source for the floating Triage dock — Phase 27; triage is no longer a page)
 | Method | Path | Description |
@@ -301,6 +306,7 @@ data class Episode(
 | `/dashboard` | `Dashboard.kt` | Stats cards, recent activity, scan trigger, batch action chips |
 | `/library` | `Library.kt` | Media grid; multi-axis filters (studio/network/genre/tags + audio-track), search, sort — all URL-addressable |
 | `/media/:id` | `MediaDetail.kt` | Single editing surface: metadata (dirty + diff), **tracks & order** (Phase 41 — was `/track-order`), artwork, NFO, lock banner, history; tabs via `?tab=` |
+| `/media/:id/bulk-reorder` | `BulkReorder.kt` | Full-screen wizard (in-shell): apply one target track order across a series/season (Phase 96). Set up → Review (pivot table) → Apply (WS progress) → manual-handling list |
 | `/metadata` | `Metadata.kt` | Studios · Networks · Genres · Tags (`?tab=`) |
 | `/settings` | `Settings.kt` | Connections · Library mapping · Scanning · Metadata · Advanced (`?sect=`) |
 | `/activity` | `Activity.kt` | Real-time scan console + audit log (category/level filters, workers chip) |

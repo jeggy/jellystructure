@@ -1,0 +1,699 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Jellystructure — Bulk re-order tracks</title>
+<link rel="stylesheet" href="wf.css">
+<link rel="stylesheet" href="app.css">
+<style>
+  body { margin: 0; background: var(--bg); color: var(--ink); font-family: 'Sora', sans-serif; }
+  #root { height: 100%; }
+  .wz { height: 100%; display: flex; flex-direction: column; }
+
+  /* takeover top bar */
+  .wz-bar { display: flex; align-items: center; gap: 16px; padding: 14px 26px; border-bottom: 1px solid var(--line);
+    position: sticky; top: 0; background: color-mix(in srgb, var(--bg) 86%, transparent); backdrop-filter: blur(10px); z-index: 20; }
+  .wz-back { display: inline-flex; align-items: center; gap: 7px; color: var(--ink-soft); cursor: pointer; font-size: .88rem; font-weight: 600; }
+  .wz-back:hover { color: var(--ink); }
+  .wz-crumb { font-size: .82rem; color: var(--ink-dim); }
+  .wz-crumb b { color: var(--ink-soft); font-weight: 600; }
+
+  /* stepper */
+  .stepper { display: flex; align-items: center; gap: 10px; margin: 0 auto; }
+  .stp { display: inline-flex; align-items: center; gap: 9px; color: var(--ink-dim); font-size: .84rem; font-weight: 600; }
+  .stp .n { width: 26px; height: 26px; border-radius: 50%; border: 1.5px solid var(--line-2); display: inline-flex;
+    align-items: center; justify-content: center; font-size: .8rem; flex: none; transition: all .2s; }
+  .stp.on { color: var(--ink); } .stp.on .n { border-color: var(--hi); background: var(--hi-soft); color: var(--acc-ink); }
+  .stp.done { color: var(--ink-soft); } .stp.done .n { border-color: transparent; background: var(--grad); color: #fff; }
+  .stp-sep { width: 26px; height: 1.5px; background: var(--line-2); }
+
+  .wz-scroll { flex: 1; overflow-y: auto; min-height: 0; }
+  .wz-main { max-width: 960px; margin: 0 auto; padding: 30px 26px 120px; }
+  .wz-h { font-family: 'Space Grotesk', sans-serif; font-size: 1.5rem; margin: 0 0 5px; letter-spacing: -.5px; }
+  .wz-sub { color: var(--ink-soft); font-size: .92rem; margin: 0 0 22px; line-height: 1.5; max-width: 680px; }
+
+  .seclbl { font-size: .68rem; text-transform: uppercase; letter-spacing: .12em; color: var(--ink-dim); font-weight: 700; margin: 0 0 10px; }
+
+  /* priority list */
+  .prio { display: flex; flex-direction: column; gap: 8px; }
+  .prio-row { display: flex; align-items: center; gap: 12px; padding: 11px 13px; border: 1px solid var(--line-2);
+    border-radius: var(--radius-s); background: var(--fill-2); transition: box-shadow .15s, border-color .15s, opacity .15s; }
+  .prio-row.dragging { opacity: .35; }
+  .prio-row.over { box-shadow: 0 -3px 0 var(--hi); }
+  .prio-rank { width: 26px; height: 26px; border-radius: 7px; background: var(--grad); color: #fff; font-weight: 700;
+    font-family: 'Space Grotesk', sans-serif; display: inline-flex; align-items: center; justify-content: center; flex: none; font-size: .9rem; }
+  .prio-grip { cursor: grab; color: var(--ink-dim); font-size: 1.05rem; letter-spacing: -2px; user-select: none; }
+  .prio-name { font-weight: 600; }
+  .prio-ord { display: inline-flex; flex-direction: column; gap: 3px; margin-left: auto; }
+  .ordbtn { width: 28px; height: 16px; display: inline-flex; align-items: center; justify-content: center; font-size: .58rem;
+    border: 1px solid var(--line-2); border-radius: 5px; background: var(--fill-3); color: var(--ink-soft); cursor: pointer; }
+  .ordbtn:hover { background: var(--hi-soft); color: var(--hi); border-color: var(--hi); }
+  .ordbtn[disabled] { opacity: .3; pointer-events: none; }
+  .prio-rm { cursor: pointer; color: var(--ink-dim); padding: 4px 7px; border-radius: 6px; font-size: .8rem; }
+  .prio-rm:hover { color: var(--bad); background: var(--bad-soft); }
+
+  .addlang { display: flex; gap: 7px; flex-wrap: wrap; margin-top: 12px; align-items: center; }
+  .addlang .add-opt { cursor: pointer; }
+
+  .opt-card { display: flex; align-items: center; gap: 13px; padding: 13px 15px; border: 1px solid var(--line); border-radius: var(--radius-s); background: var(--fill-2); margin-top: 10px; }
+
+  /* summary cards */
+  .sumgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 18px; }
+  .sumcard { padding: 14px 16px; border: 1px solid var(--line); border-radius: var(--radius-s); background: var(--fill-2);
+    cursor: pointer; transition: border-color .15s, box-shadow .15s; }
+  .sumcard.sel { border-color: var(--hi); box-shadow: 0 0 0 3px var(--hi-soft); }
+  .sumcard .v { font-family: 'Space Grotesk', sans-serif; font-size: 1.9rem; font-weight: 700; line-height: 1; }
+  .sumcard .k { font-size: .78rem; color: var(--ink-soft); margin-top: 6px; display: flex; align-items: center; gap: 6px; }
+  .sumcard.reorder .v { color: var(--hi); }
+  .sumcard.correct .v { color: var(--ok); }
+  .sumcard.partial .v { color: var(--warn); }
+  .sumcard.review .v { color: var(--bad); }
+  .sumcard.nothing .v { color: var(--ink-soft); }
+
+  /* episode rows */
+  .ep-grp { margin-bottom: 8px; }
+  .epr { border: 1px solid var(--line); border-radius: var(--radius-s); background: var(--fill); margin-top: 8px; overflow: hidden; }
+  .epr.rev { border-left: 3px solid var(--bad); }
+  .epr.par { border-left: 3px solid var(--warn); }
+  .epr.reo { border-left: 3px solid var(--hi); }
+  .epr.cor { border-left: 3px solid var(--ok); }
+  .epr.not { border-left: 3px solid var(--ink-dim); }
+  .epr-head { display: flex; align-items: center; gap: 13px; padding: 11px 14px; cursor: pointer; }
+  .epr-head:hover { background: var(--hi-soft); }
+  .epr-num { font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: .82rem; color: var(--ink-soft); flex: none; width: 58px; }
+  .epr-title { font-weight: 600; font-size: .92rem; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .epr-flow { display: flex; align-items: center; gap: 8px; margin-left: auto; flex-wrap: wrap; justify-content: flex-end; }
+  .epr-chev { color: var(--ink-dim); transition: transform .2s; flex: none; }
+  .epr.open .epr-chev { transform: rotate(90deg); }
+  .epr-body { padding: 0 14px 14px 85px; display: none; }
+  .epr.open .epr-body { display: block; }
+
+  .ordchips { display: inline-flex; align-items: center; gap: 5px; flex-wrap: wrap; }
+  .lchip { font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: .72rem; padding: 3px 8px; border-radius: 6px;
+    background: var(--fill-3); border: 1px solid var(--line-2); color: var(--ink); letter-spacing: .03em; text-transform: uppercase; }
+  .lchip.star { border-color: rgba(245,181,66,.5); box-shadow: inset 2px 0 0 var(--warn); }
+  .lchip.stray { background: var(--bad-soft); border-color: rgba(255,111,97,.5); color: var(--bad); }
+  .lchip.untag { background: var(--bad-soft); border-color: rgba(255,111,97,.5); color: var(--bad); }
+  .lchip.ghostpos { opacity: .4; border-style: dashed; }
+  .flowarrow { color: var(--ink-dim); font-size: .9rem; }
+
+  .costline { display: inline-flex; align-items: center; gap: 6px; font-size: .72rem; color: var(--ink-soft); }
+  .costline.remux { color: var(--warn); }
+
+  .reasonbox { font-size: .82rem; color: var(--ink-soft); line-height: 1.5; margin: 4px 0 12px; }
+  .reasonbox b { color: var(--ink); }
+
+  /* pivot / matrix table */
+  .ctrlbar { display: flex; align-items: center; gap: 20px; flex-wrap: wrap; margin-bottom: 14px; }
+  .ctrlbar .grp { display: flex; align-items: center; gap: 8px; }
+  .ctrlbar .lbl { font-size: .68rem; text-transform: uppercase; letter-spacing: .08em; color: var(--ink-dim); font-weight: 700; }
+  .pvt { width: 100%; border-collapse: collapse; font-size: .84rem; }
+  .pvt th { font-size: .64rem; text-transform: uppercase; letter-spacing: .08em; color: var(--ink-dim); font-weight: 700; text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--line-2); }
+  .pvt th.pos { text-align: center; width: 60px; }
+  .pvt th.morecol { text-align: center; width: 54px; }
+  .pvt td { padding: 9px 10px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+  .pvt td.pos { text-align: center; }
+  .pvt tr.prow { cursor: pointer; transition: background .15s; }
+  .pvt tr.prow:hover td { background: var(--hi-soft); }
+  .pvt tr.prow.open td { background: var(--fill-2); }
+  .pvt td.epc { font-family: 'JetBrains Mono', monospace; font-size: .78rem; color: var(--ink); white-space: nowrap; }
+  .pvt td.epc .et { font-family: 'Sora', sans-serif; color: var(--ink-soft); margin-left: 7px; }
+  .pvt .pdash { color: var(--ink-dim); }
+  .pvt .morepill { display: inline-flex; align-items: center; font-family: 'JetBrains Mono', monospace; font-size: .7rem; font-weight: 700;
+    color: var(--acc-ink); background: var(--hi-soft); border: 1px solid rgba(123,110,240,.35); border-radius: 20px; padding: 2px 9px; cursor: pointer; }
+  .pvt .morepill:hover { border-color: var(--hi); }
+  .pvt td.stat { white-space: nowrap; }
+  .pvt tr.detail td { background: var(--fill-2); padding: 4px 14px 16px 14px; }
+  .pvt tr.detail .reasonbox { margin: 8px 0 12px; }
+  .pvt .chev { color: var(--ink-dim); display: inline-block; width: 12px; transition: transform .2s; }
+  .pvt tr.prow.open .chev { transform: rotate(90deg); }
+
+  /* sticky footer */
+  .wz-foot { position: sticky; bottom: 0; background: color-mix(in srgb, var(--bg) 90%, transparent); backdrop-filter: blur(10px);
+    border-top: 1px solid var(--line); padding: 14px 26px; display: flex; align-items: center; gap: 14px; z-index: 20; }
+  .wz-foot .summary { font-size: .85rem; color: var(--ink-soft); }
+  .wz-foot .summary b { color: var(--ink); }
+
+  .remux-banner { display: flex; align-items: center; gap: 14px; padding: 13px 16px; border-radius: var(--radius-s);
+    background: var(--warn-soft); border: 1px solid rgba(245,181,66,.4); margin-bottom: 18px; }
+  .remux-banner .ic { width: 34px; height: 34px; border-radius: 9px; background: rgba(245,181,66,.22); color: var(--warn);
+    display: flex; align-items: center; justify-content: center; flex: none; font-size: 1.1rem; }
+
+  /* progress */
+  .prog-wrap { max-width: 620px; margin: 6vh auto 0; text-align: center; }
+  .prog-pct { font-family: 'Space Grotesk', sans-serif; font-size: 3.2rem; font-weight: 700; letter-spacing: -1px; }
+  .prog-now { color: var(--ink-soft); font-size: .92rem; margin: 4px 0 22px; min-height: 1.3em; }
+  .prog-now .lang { color: var(--ink); }
+  .prog-counts { display: flex; justify-content: center; gap: 26px; margin-top: 20px; font-size: .82rem; color: var(--ink-soft); }
+  .prog-counts b { color: var(--ink); font-family: 'JetBrains Mono', monospace; }
+
+  .done-hero { text-align: center; padding: 4vh 0 26px; }
+  .done-ic { width: 64px; height: 64px; border-radius: 50%; background: var(--ok-soft); color: var(--ok);
+    display: inline-flex; align-items: center; justify-content: center; font-size: 1.8rem; margin-bottom: 14px; }
+  .manual-card { border: 1px solid rgba(245,181,66,.4); background: var(--warn-soft); border-radius: var(--radius); padding: 4px 0; }
+  .manual-row { display: flex; align-items: center; gap: 13px; padding: 12px 16px; border-bottom: 1px solid var(--line); }
+  .manual-row:last-child { border-bottom: 0; }
+  .manual-row .why { font-size: .8rem; color: var(--ink-soft); margin-left: auto; }
+  .miniseg { display: inline-flex; align-items: center; gap: 7px; }
+</style>
+</head>
+<body class="wf-body app-body">
+<main class="app-main2 app-flush" data-no-dock>
+  <div id="root"></div>
+</main>
+
+<script src="app-shell.js"></script>
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+<script type="text/babel" data-presets="react">
+const { useState, useMemo, useRef, useEffect } = React;
+
+/* ---------------- language meta ---------------- */
+const LANGS = {
+  da: { name: 'Danish',   cc: 'da' }, en: { name: 'English', cc: 'en' }, zh: { name: 'Chinese', cc: 'zh' },
+  de: { name: 'German',   cc: 'de' }, fr: { name: 'French',  cc: 'fr' }, es: { name: 'Spanish', cc: 'es' },
+  ja: { name: 'Japanese', cc: 'ja' }, no: { name: 'Norwegian', cc: 'no' }, sv: { name: 'Swedish', cc: 'sv' },
+};
+const up = l => (l || '').toUpperCase();
+const nm = l => (LANGS[l] && LANGS[l].name) || up(l);
+
+/* ---------------- the series (Chinese/English/Danish co-production) ---------------- */
+// each track: { lang, codec }; physical order = array order. `und` = untagged.
+const SERIES = { title: 'The Tea Road', year: 2024 };
+const A = (codec, ...langs) => langs.map(l => ({ lang: l, codec }));
+const EPISODES = [
+  { id: 'S01E01', s: 1, n: 1, title: 'The Mountain Pass',  gb: 3.1, audio: A('eac3','zh','en','da') },
+  { id: 'S01E02', s: 1, n: 2, title: 'Salt & Silver',      gb: 2.8, audio: A('eac3','da','en','zh') },
+  { id: 'S01E03', s: 1, n: 3, title: 'The Long Caravan',   gb: 3.4, audio: A('eac3','en','zh','da') },
+  { id: 'S01E04', s: 1, n: 4, title: 'Frost',              gb: 2.6, audio: A('ac3','zh','da') },
+  { id: 'S01E05', s: 1, n: 5, title: 'The Envoy',          gb: 3.9, audio: A('eac3','zh','en','da','de') },
+  { id: 'S01E06', s: 1, n: 6, title: 'Still Water',        gb: 2.2, audio: A('aac','zh') },
+  { id: 'S01E07', s: 1, n: 7, title: 'Two Rivers',         gb: 3.0, audio: A('eac3','en','da','zh') },
+  { id: 'S01E08', s: 1, n: 8, title: 'Homecoming',         gb: 4.2, audio: [...A('eac3','zh','en','da'), { lang: 'und', codec: 'ac3' }] },
+  { id: 'S02E01', s: 2, n: 1, title: 'New Roads',          gb: 3.3, audio: A('eac3','zh','en','da') },
+  { id: 'S02E02', s: 2, n: 2, title: 'The Border',         gb: 2.9, audio: A('eac3','da','en','zh') },
+  { id: 'S02E03', s: 2, n: 3, title: 'Paper Lanterns',     gb: 2.7, audio: A('ac3','en','zh') },
+  { id: 'S02E04', s: 2, n: 4, title: 'The Last Mile',      gb: 3.6, audio: A('eac3','zh','en','da') },
+];
+// subtitle variant (same flow, different data) — a couple more gaps to feel real
+const SUBS = {
+  S01E01: A('srt','zh','en','da'), S01E02: A('srt','da','en','zh'), S01E03: A('srt','en','da','zh'),
+  S01E04: A('srt','zh','en','da'), S01E05: A('srt','zh','en','da'), S01E06: A('srt','en'),
+  S01E07: A('srt','da','zh'),      S01E08: A('srt','zh','en','da'), S02E01: A('srt','en','zh','da'),
+  S02E02: A('srt','da','en','zh'), S02E03: A('srt','en','zh','fr'), S02E04: A('srt','zh','en','da'),
+};
+function tracksOf(ep, mode) { return mode === 'subs' ? (SUBS[ep.id] || []) : ep.audio; }
+
+/* ---------------- classification (re-derives whenever target order changes) ---------------- */
+function reorderToTarget(tracks, target) {
+  // stable sort present-in-target tracks by target rank; this is order-only (a metadata index move)
+  return tracks.slice().sort((a, b) => target.indexOf(a.lang) - target.indexOf(b.lang));
+}
+function sameSeq(a, b) { return a.length === b.length && a.every((t, i) => t.lang === b[i].lang); }
+
+function classify(ep, mode, target) {
+  const tracks = tracksOf(ep, mode);
+  const langs = tracks.map(t => t.lang);
+  const present = [...new Set(langs.filter(l => l && l !== 'und'))];
+  const hasUntagged = langs.some(l => !l || l === 'und');
+  const strays = present.filter(l => !target.includes(l));
+  const missing = target.filter(l => !present.includes(l));
+  const base = { tracks, present, missing, strays };
+
+  if (tracks.length <= 1) return { ...base, status: 'nothing', reason: 'Only one track — nothing to sort.' };
+  if (hasUntagged) return { ...base, status: 'review', reason: 'Has an untagged track — tag it before sorting.' };
+  if (strays.length) return { ...base, status: 'review',
+    reason: `Has ${strays.map(nm).join(', ')}, which isn’t in your order. Left in place for manual handling.` };
+
+  const proposed = reorderToTarget(tracks, target);
+  if (sameSeq(tracks, proposed)) return { ...base, status: 'correct', proposed, reason: 'Already in the target order.' };
+  if (missing.length) return { ...base, status: 'partial', proposed,
+    reason: `Missing ${missing.map(nm).join(', ')}. Skipped by default — opt in to sort just the languages it has.` };
+  return { ...base, status: 'reorder', proposed, reason: 'Will be re-ordered to match your target.' };
+}
+
+const STATUS_META = {
+  reorder: { cls: 'reo', label: 'Will re-order',  badge: 'info' },
+  correct: { cls: 'cor', label: 'Already correct', badge: 'ok' },
+  partial: { cls: 'par', label: 'Partial — skipped', badge: 'warn' },
+  review:  { cls: 'rev', label: 'Needs review',   badge: 'bad' },
+  nothing: { cls: 'not', label: 'Nothing to do',  badge: '' },
+};
+
+/* ---------------- small pieces ---------------- */
+function LangChip({ l, star, kind }) {
+  const cls = l === 'und' ? 'untag' : (kind === 'stray' ? 'stray' : '');
+  return <span className={`lchip ${cls} ${star ? 'star' : ''}`}>{l === 'und' ? '⚠ und' : up(l)}{star ? ' ★' : ''}</span>;
+}
+function Seq({ tracks, target, defLang }) {
+  return <span className="ordchips">{tracks.map((t, i) =>
+    <LangChip key={i} l={t.lang} star={defLang && t.lang === defLang}
+      kind={t.lang !== 'und' && target && !target.includes(t.lang) ? 'stray' : ''} />)}</span>;
+}
+
+/* ---------------- step 1: set up ---------------- */
+function SetUp({ mode, setMode, scope, setScope, order, setOrder, setDefault, setSetDefault }) {
+  const dragI = useRef(null);
+  const [overI, setOverI] = useState(null);
+  const move = (i, d) => { const a = order.slice(); const j = i + d; if (j < 0 || j >= a.length) return; [a[i], a[j]] = [a[j], a[i]]; setOrder(a); };
+  const remove = i => setOrder(order.filter((_, k) => k !== i));
+  const addable = Object.keys(LANGS).filter(l => !order.includes(l));
+  const onDrop = i => { const f = dragI.current; if (f == null || f === i) return; const a = order.slice(); const [m] = a.splice(f, 1); a.splice(i, 0, m); setOrder(a); setOverI(null); };
+
+  return (
+    <div className="wz-main">
+      <h1 className="wz-h">Re-order tracks across the series</h1>
+      <p className="wz-sub">Set one target language order and apply it to every episode of <b>{SERIES.title}</b> at once.
+        Episodes that don’t fit cleanly are flagged so you can handle them by hand — nothing is changed without your review.</p>
+
+      <div className="row" style={{ gap: 26, flexWrap: 'wrap', marginBottom: 24 }}>
+        <div>
+          <div className="seclbl">Track type</div>
+          <span className="seg">
+            <span className={mode === 'audio' ? 'on' : ''} onClick={() => setMode('audio')}>Audio</span>
+            <span className={mode === 'subs' ? 'on' : ''} onClick={() => setMode('subs')}>Subtitles</span>
+          </span>
+          <div className="tiny" style={{ color: 'var(--ink-dim)', marginTop: 7, maxWidth: 230 }}>Audio and subtitles are separate passes — same flow, run one at a time.</div>
+        </div>
+        <div>
+          <div className="seclbl">Scope</div>
+          <span className="seg">
+            <span className={scope === 'series' ? 'on' : ''} onClick={() => setScope('series')}>Whole series · 12</span>
+            <span className={scope === 's1' ? 'on' : ''} onClick={() => setScope('s1')}>Season 1 · 8</span>
+            <span className={scope === 's2' ? 'on' : ''} onClick={() => setScope('s2')}>Season 2 · 4</span>
+          </span>
+        </div>
+      </div>
+
+      <div className="seclbl">Target {mode === 'subs' ? 'subtitle' : 'audio'} order — drag to arrange</div>
+      <div className="prio">
+        {order.map((l, i) => (
+          <div key={l} className={`prio-row ${overI === i ? 'over' : ''}`} draggable
+            onDragStart={() => { dragI.current = i; }}
+            onDragOver={e => { e.preventDefault(); setOverI(i); }}
+            onDragLeave={() => setOverI(p => p === i ? null : p)}
+            onDrop={() => onDrop(i)} onDragEnd={() => { dragI.current = null; setOverI(null); }}>
+            <span className="prio-grip">⠿</span>
+            <span className="prio-rank">{i + 1}</span>
+            <span className="lang lchip" style={{ background: 'var(--hi-soft)', borderColor: 'transparent', color: 'var(--acc-ink)' }}>{up(l)}</span>
+            <span className="prio-name">{nm(l)}</span>
+            <span className="prio-ord">
+              <span className="ordbtn" onClick={() => move(i, -1)} {...(i === 0 ? { disabled: true } : {})}>▲</span>
+              <span className="ordbtn" onClick={() => move(i, 1)} {...(i === order.length - 1 ? { disabled: true } : {})}>▼</span>
+            </span>
+            {order.length > 1 && <span className="prio-rm" onClick={() => remove(i)}>✕</span>}
+          </div>
+        ))}
+      </div>
+      {addable.length > 0 &&
+        <div className="addlang">
+          <span className="muted tiny">add a language:</span>
+          {addable.map(l => <span key={l} className="chip add-opt" onClick={() => setOrder([...order, l])}>＋ {nm(l)}</span>)}
+        </div>}
+
+      <div className="opt-card">
+        <span className={`toggle ${setDefault ? 'on' : ''}`} onClick={() => setSetDefault(v => !v)}></span>
+        <div>
+          <b>Also set the default {mode === 'subs' ? 'subtitle' : 'audio'} track to #1 ({nm(order[0])})</b>
+          <div className="tiny muted" style={{ marginTop: 3 }}>Order and the ★ default flag are separate — leave off to keep each episode’s current default.</div>
+        </div>
+      </div>
+
+      <div className="note blue" style={{ marginTop: 18 }}>
+        <b>Edge cases are flagged, never guessed.</b> An episode with a language not on this list (or an untagged track) is left untouched and sent to a <b>manual-review list</b>. Episodes missing one of your languages are skipped by default — you can opt them in one by one on the next step.
+      </div>
+    </div>
+  );
+}
+
+/* ---------------- step 2: review ---------------- */
+function EpRow({ ep, info, mode, order, setDefault, optIn, toggleOptIn }) {
+  const [open, setOpen] = useState(false);
+  const willApply = info.status === 'reorder' || (info.status === 'partial' && optIn);
+  const defLang = setDefault ? order.find(l => info.present.includes(l)) : null;
+  const cls = STATUS_META[info.status].cls;
+  const remux = willApply;
+  return (
+    <div className={`epr ${cls} ${open ? 'open' : ''}`}>
+      <div className="epr-head" onClick={() => setOpen(o => !o)}>
+        <span className="epr-num">{ep.id}</span>
+        <span className="epr-title">{ep.title}</span>
+        <span className="epr-flow">
+          {info.status === 'partial' && optIn && <span className="badge info">opted in</span>}
+          <span className={`badge ${STATUS_META[info.status].badge}`}>{STATUS_META[info.status].label}</span>
+          {remux
+            ? <span className="costline remux" title="Track order change → full remux">⟳ remux ~{Math.round(ep.gb * 20 + 8)}s</span>
+            : (info.status === 'correct' && setDefault)
+              ? <span className="costline">⚡ flag only</span> : null}
+        </span>
+        <span className="epr-chev">›</span>
+      </div>
+      <div className="epr-body">
+        <div className="reasonbox">{info.reason}</div>
+        <div className="row" style={{ gap: 16, flexWrap: 'wrap', alignItems: 'center' }}>
+          <div>
+            <div className="seclbl" style={{ margin: '0 0 6px' }}>Current</div>
+            <Seq tracks={info.tracks} target={order} />
+          </div>
+          {info.proposed && (info.status === 'reorder' || info.status === 'correct' || (info.status === 'partial')) &&
+            <>
+              <span className="flowarrow">→</span>
+              <div>
+                <div className="seclbl" style={{ margin: '0 0 6px' }}>{info.status === 'correct' ? 'Unchanged' : (willApply ? 'Proposed' : 'Proposed (if opted in)')}</div>
+                <Seq tracks={info.proposed} target={order} defLang={defLang} />
+              </div>
+            </>}
+        </div>
+        <div className="row center" style={{ gap: 10, marginTop: 14 }}>
+          {info.status === 'partial' &&
+            <span className={`btn sm ${optIn ? 'primary' : ''}`} onClick={() => toggleOptIn(ep.id)}>
+              {optIn ? '✓ Sorting the subset' : 'Apply to the subset anyway'}</span>}
+          {info.status === 'review' &&
+            <a className="btn sm" href={`series.html#${ep.id}`}>Open episode editor →</a>}
+          <span className="muted tiny">{tracksOf(ep, mode).length} {mode === 'subs' ? 'subtitle' : 'audio'} track{tracksOf(ep, mode).length > 1 ? 's' : ''} · {ep.gb} GB</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ---------------- pivot / matrix table ---------------- */
+function PivotTable({ rows, mode, order, setDefault, optIns, toggleOptIn, orderMode }) {
+  const [open, setOpen] = useState({});
+  const MAX = 3;
+  const toggle = id => setOpen(o => ({ ...o, [id]: !o[id] }));
+  return (
+    <table className="pvt">
+      <thead>
+        <tr>
+          <th>Episode</th>
+          <th className="pos">1st</th><th className="pos">2nd</th><th className="pos">3rd</th>
+          <th className="morecol">more</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map(({ ep, info }) => {
+          const willApply = info.status === 'reorder' || (info.status === 'partial' && optIns[ep.id]);
+          const proposed = info.proposed || info.tracks;
+          const seq = orderMode === 'proposed' ? proposed : info.tracks;
+          const defLang = setDefault && (willApply || info.status === 'correct') ? order.find(l => info.present.includes(l)) : null;
+          const extra = Math.max(0, seq.length - MAX);
+          const isOpen = !!open[ep.id];
+          const cells = [];
+          for (let i = 0; i < MAX; i++) {
+            const t = seq[i];
+            cells.push(
+              <td className="pos" key={i}>
+                {t ? <LangChip l={t.lang} star={!!defLang && orderMode === 'proposed' && t.lang === defLang}
+                  kind={t.lang !== 'und' && !order.includes(t.lang) ? 'stray' : ''} /> : <span className="pdash">·</span>}
+              </td>);
+          }
+          return (
+            <React.Fragment key={ep.id}>
+              <tr className={`prow ${isOpen ? 'open' : ''}`} onClick={() => toggle(ep.id)}>
+                <td className="epc"><span className="chev">›</span> {ep.id}<span className="et">{ep.title}</span></td>
+                {cells}
+                <td className="pos">{extra > 0
+                  ? <span className="morepill" onClick={e => { e.stopPropagation(); toggle(ep.id); }}>+{extra}</span>
+                  : <span className="pdash">·</span>}</td>
+                <td className="stat"><span className={`badge ${STATUS_META[info.status].badge}`}>{STATUS_META[info.status].label}</span></td>
+              </tr>
+              {isOpen &&
+                <tr className="detail">
+                  <td colSpan={6}>
+                    <div className="reasonbox">{info.reason}</div>
+                    <div className="row" style={{ gap: 16, flexWrap: 'wrap', alignItems: 'center' }}>
+                      <div>
+                        <div className="seclbl" style={{ margin: '0 0 6px' }}>Current</div>
+                        <Seq tracks={info.tracks} target={order} />
+                      </div>
+                      {info.proposed && info.status !== 'review' &&
+                        <>
+                          <span className="flowarrow">→</span>
+                          <div>
+                            <div className="seclbl" style={{ margin: '0 0 6px' }}>{info.status === 'correct' ? 'Unchanged' : (willApply ? 'Proposed' : 'Proposed (if opted in)')}</div>
+                            <Seq tracks={info.proposed} target={order} defLang={setDefault && (willApply || info.status === 'correct') ? order.find(l => info.present.includes(l)) : null} />
+                          </div>
+                        </>}
+                      <span className="spacer" style={{ flex: 1 }}></span>
+                      {info.status === 'partial' &&
+                        <span className={`btn sm ${optIns[ep.id] ? 'primary' : ''}`} onClick={e => { e.stopPropagation(); toggleOptIn(ep.id); }}>
+                          {optIns[ep.id] ? '✓ Sorting the subset' : 'Apply to the subset anyway'}</span>}
+                      {info.status === 'review' &&
+                        <a className="btn sm" href={`series.html#${ep.id}`} onClick={e => e.stopPropagation()}>Open episode editor →</a>}
+                    </div>
+                  </td>
+                </tr>}
+            </React.Fragment>
+          );
+        })}
+      </tbody>
+    </table>
+  );
+}
+
+function Review({ episodes, mode, order, setDefault, optIns, toggleOptIn, filter, setFilter }) {
+  const [view, setView] = useState('pivot');
+  const [orderMode, setOrderMode] = useState('proposed');
+  const [sort, setSort] = useState('ep');
+  const rows = episodes.map(ep => ({ ep, info: classify(ep, mode, order) }));
+  const counts = { reorder: 0, correct: 0, partial: 0, review: 0, nothing: 0 };
+  rows.forEach(r => { counts[r.info.status]++; });
+  const optedPartials = rows.filter(r => r.info.status === 'partial' && optIns[r.ep.id]).length;
+  const willApply = rows.filter(r => r.info.status === 'reorder' || (r.info.status === 'partial' && optIns[r.ep.id]));
+  const remuxN = willApply.length;
+  const totalSec = willApply.reduce((s, r) => s + Math.round(r.ep.gb * 20 + 8), 0);
+  const STORD = { reorder: 0, partial: 1, review: 2, correct: 3, nothing: 4 };
+  let visible = rows.filter(r => !filter || r.info.status === filter);
+  if (sort === 'status') visible = visible.slice().sort((a, b) => (STORD[a.info.status] - STORD[b.info.status]) || (a.ep.id < b.ep.id ? -1 : 1));
+
+  const cards = [
+    ['reorder', 'Will re-order'], ['correct', 'Already correct'],
+    ['partial', 'Partial — skipped'], ['review', 'Needs review'], ['nothing', 'Nothing to do'],
+  ];
+  return (
+    <div className="wz-main">
+      <h1 className="wz-h">Review — {willApply.length} of {rows.length} episodes will change</h1>
+      <p className="wz-sub">Target order <b>{order.map(up).join(' → ')}</b>{setDefault ? <> · default → <b>{up(order[0])}</b></> : null}. Tap a card to filter, or expand any episode to see the exact before → after.</p>
+
+      <div className="sumgrid">
+        {cards.map(([k, label]) => (
+          <div key={k} className={`sumcard ${k} ${filter === k ? 'sel' : ''}`} onClick={() => setFilter(filter === k ? null : k)}>
+            <div className="v">{counts[k]}{k === 'partial' && optedPartials ? <span style={{ fontSize: '.9rem', color: 'var(--hi)' }}> · {optedPartials} in</span> : null}</div>
+            <div className="k">{label}</div>
+          </div>
+        ))}
+      </div>
+
+      {remuxN > 0 &&
+        <div className="remux-banner">
+          <span className="ic">⟳</span>
+          <div style={{ fontSize: '.88rem', lineHeight: 1.5 }}>
+            <b>Est. ~{fmt(totalSec)}</b> · {remuxN} episode{remuxN > 1 ? 's' : ''} need a full remux (changing track order rewrites the container with <span className="mono">ffmpeg -c copy</span>).
+            {setDefault && counts.correct > 0 && <> The {counts.correct} already-correct episode{counts.correct > 1 ? 's' : ''} only get an instant default-flag edit.</>}
+          </div>
+        </div>}
+
+      {filter && <div className="tiny" style={{ marginBottom: 8 }}><span className="chip" onClick={() => setFilter(null)} style={{ cursor: 'pointer' }}>✕ clear filter · showing {STATUS_META[filter].label}</span></div>}
+
+      <div className="ctrlbar">
+        <div className="grp"><span className="lbl">View</span>
+          <span className="seg">
+            <span className={view === 'pivot' ? 'on' : ''} onClick={() => setView('pivot')}>Pivot</span>
+            <span className={view === 'list' ? 'on' : ''} onClick={() => setView('list')}>List</span>
+          </span>
+        </div>
+        <div className="grp"><span className="lbl">Show</span>
+          <span className="seg">
+            <span className={orderMode === 'current' ? 'on' : ''} onClick={() => setOrderMode('current')}>Current</span>
+            <span className={orderMode === 'proposed' ? 'on' : ''} onClick={() => setOrderMode('proposed')}>Proposed</span>
+          </span>
+        </div>
+        <div className="grp"><span className="lbl">Sort</span>
+          <span className="seg">
+            <span className={sort === 'ep' ? 'on' : ''} onClick={() => setSort('ep')}>Episode</span>
+            <span className={sort === 'status' ? 'on' : ''} onClick={() => setSort('status')}>Status</span>
+          </span>
+        </div>
+      </div>
+
+      {view === 'pivot'
+        ? <PivotTable rows={visible} mode={mode} order={order} setDefault={setDefault} optIns={optIns} toggleOptIn={toggleOptIn} orderMode={orderMode} />
+        : <div className="ep-grp">
+            {visible.map(r => <EpRow key={r.ep.id} ep={r.ep} info={r.info} mode={mode} order={order}
+              setDefault={setDefault} optIn={!!optIns[r.ep.id]} toggleOptIn={toggleOptIn} />)}
+          </div>}
+    </div>
+  );
+}
+
+function fmt(sec) {
+  if (sec < 60) return sec + 's';
+  const m = Math.floor(sec / 60), s = sec % 60;
+  return s ? `${m}m ${s}s` : `${m}m`;
+}
+
+/* ---------------- step 3: apply (progress) ---------------- */
+function Apply({ queue, mode, order, onFinished }) {
+  const [pct, setPct] = useState(0);
+  const [idx, setIdx] = useState(0);
+  const total = queue.length;
+  const totalSec = queue.reduce((s, q) => s + Math.round(q.ep.gb * 20 + 8), 0) || 1;
+
+  useEffect(() => {
+    if (!total) { onFinished(); return; }
+    let done = 0; let cancelled = false; let tick = null;
+    const step = () => {
+      if (cancelled) return;
+      if (done >= total) { setPct(100); setTimeout(() => { if (!cancelled) onFinished(); }, 650); return; }
+      setIdx(done);
+      const share = (Math.round(queue[done].ep.gb * 20 + 8) / totalSec) * 100;
+      const start = (done / total) * 100;
+      let p = 0;
+      tick = setInterval(() => {
+        p += 0.18;
+        setPct(Math.min(100, start + share * Math.min(1, p)));
+        if (p >= 1) { clearInterval(tick); done++; setTimeout(step, 120); }
+      }, 24);
+    };
+    const t = setTimeout(step, 350);
+    return () => { cancelled = true; clearTimeout(t); if (tick) clearInterval(tick); };
+  }, []);
+
+  const cur = queue[Math.min(idx, total - 1)];
+  return (
+    <div className="wz-main">
+      <div className="prog-wrap">
+        <div className="prog-pct">{Math.round(pct)}%</div>
+        <div className="prog-now">{cur && <>Re-ordering <b>{cur.ep.id}</b> · <span className="lang">{order.map(up).join('→')}</span> · {cur.ep.gb} GB {mode === 'subs' ? 'mux' : 'remux'}</>}</div>
+        <div className="bar" style={{ maxWidth: 460, margin: '0 auto' }}><i style={{ width: pct + '%' }}></i></div>
+        <div className="prog-counts">
+          <span><b>{Math.min(idx + 1, total)}</b> / {total} episodes</span>
+          <span>~{fmt(Math.round(totalSec * (1 - pct / 100)))} left</span>
+          <span>{mode === 'subs' ? 'Subtitles' : 'Audio'} pass</span>
+        </div>
+        <div className="tiny muted" style={{ marginTop: 22 }}>Writing with <span className="mono">ffmpeg -map 0 -c copy</span> then re-probing each file. Safe to leave — it keeps going in the background.</div>
+      </div>
+    </div>
+  );
+}
+
+/* step 3 wrapper: progress → done summary with the manual-review list */
+function ApplyOrDone({ willApply, manual, mode, order, setDefault, reset }) {
+  const [done, setDone] = useState(false);
+  if (!done) return <Apply queue={willApply} mode={mode} order={order} onFinished={() => setDone(true)} />;
+  return <DoneSummary applied={willApply} manual={manual} mode={mode} order={order} reset={reset} />;
+}
+
+/* ---------------- root ---------------- */
+function App() {
+  const [step, setStep] = useState(1);
+  const [mode, setMode] = useState('audio');
+  const [scope, setScope] = useState('series');
+  const [order, setOrder] = useState(['da', 'en', 'zh']);
+  const [setDefault, setSetDefault] = useState(true);
+  const [optIns, setOptIns] = useState({});
+  const [filter, setFilter] = useState(null);
+
+  const episodes = useMemo(() => EPISODES.filter(e => scope === 'series' || (scope === 's1' && e.s === 1) || (scope === 's2' && e.s === 2)), [scope]);
+  const rows = useMemo(() => episodes.map(ep => ({ ep, info: classify(ep, mode, order) })), [episodes, mode, order]);
+  const willApply = rows.filter(r => r.info.status === 'reorder' || (r.info.status === 'partial' && optIns[r.ep.id]));
+  const manual = rows.filter(r => r.info.status === 'review' || (r.info.status === 'partial' && !optIns[r.ep.id]));
+
+  const toggleOptIn = id => setOptIns(o => ({ ...o, [id]: !o[id] }));
+  const reset = () => { setStep(1); setOptIns({}); setFilter(null); };
+
+  const steps = ['Set up', 'Review', 'Apply'];
+
+  return (
+    <div className="wz">
+      <div className="wz-bar">
+        {step === 3
+          ? <span className="wz-back" onClick={reset}>‹ Start over</span>
+          : <a className="wz-back" href="series.html">‹ Back to {SERIES.title}</a>}
+        <span className="wz-crumb"><b>{SERIES.title}</b> · bulk re-order</span>
+        <div className="stepper">
+          {steps.map((s, i) => (
+            <React.Fragment key={s}>
+              {i > 0 && <span className="stp-sep"></span>}
+              <span className={`stp ${step === i + 1 ? 'on' : ''} ${step > i + 1 ? 'done' : ''}`}>
+                <span className="n">{step > i + 1 ? '✓' : i + 1}</span>{s}</span>
+            </React.Fragment>
+          ))}
+        </div>
+        <span style={{ width: 120 }}></span>
+      </div>
+
+      <div className="wz-scroll">
+        {step === 1 && <SetUp {...{ mode, setMode, scope, setScope, order, setOrder, setDefault, setSetDefault }} />}
+        {step === 2 && <Review {...{ episodes, mode, order, setDefault, optIns, toggleOptIn, filter, setFilter }} />}
+        {step === 3 && <ApplyOrDone {...{ willApply, manual, mode, order, setDefault, reset }} />}
+      </div>
+
+      {step < 3 &&
+        <div className="wz-foot">
+          {step === 2 &&
+            <span className="summary"><b>{willApply.length}</b> will re-order · <b>{manual.length}</b> need manual handling
+              {manual.length > 0 && <span className="muted"> (carried to the end)</span>}</span>}
+          <span className="spacer" style={{ flex: 1 }}></span>
+          {step === 2 && <span className="btn ghost" onClick={() => setStep(1)}>‹ Back</span>}
+          {step === 1 && <span className="btn" onClick={() => { setFilter(null); setStep(2); }}>Analyze {episodes.length} episodes →</span>}
+          {step === 2 && <span className={`btn primary ${willApply.length ? '' : 'ghost'}`}
+            onClick={() => willApply.length && setStep(3)}
+            style={willApply.length ? {} : { pointerEvents: 'none', opacity: .5 }}>
+            Apply to {willApply.length} episode{willApply.length === 1 ? '' : 's'} →</span>}
+        </div>}
+    </div>
+  );
+}
+
+function DoneSummary({ applied, manual, mode, order, reset }) {
+  return (
+    <div className="wz-main">
+      <div className="done-hero">
+        <div className="done-ic">✓</div>
+        <h1 className="wz-h" style={{ fontSize: '1.7rem' }}>{applied.length} episode{applied.length === 1 ? '' : 's'} re-ordered</h1>
+        <p className="wz-sub" style={{ margin: '4px auto 0' }}>Target {mode === 'subs' ? 'subtitle' : 'audio'} order <b>{order.map(up).join(' → ')}</b> written to disk and re-probed. Jellyfin will pick them up on its next read, or sync now.</p>
+        <div className="row center" style={{ justifyContent: 'center', gap: 10, marginTop: 16 }}>
+          <a className="btn ghost" href="series.html">Back to series</a>
+          <span className="btn primary">Sync Jellyfin ↻</span>
+        </div>
+      </div>
+
+      {manual.length > 0 && <>
+        <div className="row center" style={{ gap: 10, margin: '8px 0 10px' }}>
+          <h3 style={{ margin: 0, fontSize: '1.05rem' }}>Needs manual handling</h3>
+          <span className="badge warn">{manual.length}</span>
+          <span className="spacer" style={{ flex: 1 }}></span>
+          <span className="tiny muted">These were never touched — open each to fix by hand.</span>
+        </div>
+        <div className="manual-card">
+          {manual.map(r => (
+            <div className="manual-row" key={r.ep.id}>
+              <span className="epr-num">{r.ep.id}</span>
+              <span style={{ fontWeight: 600, fontSize: '.9rem' }}>{r.ep.title}</span>
+              <span className="badge bad">{r.info.status === 'review' ? 'Needs review' : 'Skipped — partial'}</span>
+              <Seq tracks={r.info.tracks} target={order} />
+              <span className="why">{r.info.status === 'review'
+                ? (r.info.strays.length ? `${r.info.strays.map(nm).join(', ')} not in order` : 'untagged track')
+                : `missing ${r.info.missing.map(nm).join(', ')}`}</span>
+              <a className="btn sm" href={`series.html#${r.ep.id}`}>Open →</a>
+            </div>
+          ))}
+        </div>
+        <div className="tiny muted" style={{ marginTop: 12 }}>Tip: tag the untagged tracks and add the missing languages, then run this again — they’ll fold into the clean set.</div>
+      </>}
+    </div>
+  );
+}
+
+/* ---------------- mount ---------------- */
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>
