@@ -26,6 +26,14 @@ data class QBTorrent(
     val state: String,
     @SerialName("save_path") val savePath: String,
     @SerialName("content_path") val contentPath: String,
+    // active tracker announce URL (single URL; may be empty string when no peers)
+    val tracker: String = "",
+    val ratio: Double = 0.0,
+    @SerialName("num_seeds") val numSeeds: Int = 0,
+    @SerialName("num_leechs") val numLeechs: Int = 0,
+    val uploaded: Long = 0L,
+    @SerialName("added_on") val addedOn: Long = 0L,
+    @SerialName("seeding_time") val seedingTime: Int = 0,
 )
 
 class QBittorrentClient {

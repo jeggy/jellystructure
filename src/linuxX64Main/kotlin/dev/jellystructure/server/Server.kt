@@ -36,6 +36,7 @@ import dev.jellystructure.server.routes.acquisitionRoutes
 import dev.jellystructure.server.routes.chartRoutes
 import dev.jellystructure.torrent.QBittorrentClient
 import dev.jellystructure.torrent.SeedingGuard
+import dev.jellystructure.torrent.SeedingSnapshot
 import dev.jellystructure.tv.BrowseService
 import dev.jellystructure.tv.DetailService
 import dev.jellystructure.tv.HomeFeedService
@@ -119,6 +120,7 @@ fun startServer(
     effectiveScanThreads: Int,
     jsTagStore: JsTagStore,
     seedingGuard: SeedingGuard,
+    seedingSnapshot: SeedingSnapshot,
     logoDownloader: LogoDownloader,
     qbClient: QBittorrentClient? = null,
     arrClient: ArrClient? = null,
@@ -228,10 +230,10 @@ fun startServer(
                 configureConfigRoutes(configStore, effectiveScanThreads, qbClient, arrClient)
                 setupRoutes(configStore, jellyfinClient)
                 jellyfinRoutes(configStore, jellyfinClient)
-                mediaRoutes(mediaStore, scanner, artworkDownloader, tmdbClient, appScope, scanTracker, broadcaster, jellyfinClient, configStore, mediaHistory, scanDispatcher, seedingGuard, raviloConfigService, logoDownloader, arrRescan)
+                mediaRoutes(mediaStore, scanner, artworkDownloader, tmdbClient, appScope, scanTracker, broadcaster, jellyfinClient, configStore, mediaHistory, scanDispatcher, seedingGuard, seedingSnapshot, raviloConfigService, logoDownloader, arrRescan)
                 activityRoutes(activityLog)
                 triageRoutes(mediaStore, jellyfinClient, configStore, mediaHistory, seedingGuard)
-                metadataRoutes(mediaStore, jsTagStore, logoDownloader)
+                metadataRoutes(mediaStore, jsTagStore, logoDownloader, seedingSnapshot, configStore)
                 trackRoutes(mediaStore, configStore, jellyfinClient, mediaHistory, seedingGuard, arrRescan, appScope, broadcaster)
                 acquisitionService?.let { acquisitionRoutes(it) }
                 if (chartRegistry != null && chartStore != null && chartIngest != null) {

@@ -198,6 +198,7 @@ class MediaStore(private val db: JellystructureDb, private val jsTagStore: JsTag
         heroMode: String? = null,   // "featured" | "not_featured" — membership in a viewer's hero carousel
         conditions: List<Condition> = emptyList(),
         match: MatchMode = MatchMode.ALL,
+        allowedIds: Set<String>? = null,  // Phase 98: tracker filter — null = no restriction
     ): MediaPage {
         val searchLower = search?.lowercase()?.takeIf { it.isNotBlank() }
 
@@ -248,6 +249,7 @@ class MediaStore(private val db: JellystructureDb, private val jsTagStore: JsTag
                     }
                 }
             }
+            if (allowedIds != null) result = result.filter { it.id in allowedIds }
             result
         }
 

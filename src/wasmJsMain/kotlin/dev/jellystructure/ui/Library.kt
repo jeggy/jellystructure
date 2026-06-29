@@ -63,6 +63,7 @@ private var libMatch: String = "ALL"  // R74: "ALL" | "ANY"
 // R87: a handed-off `content_row` gap condition (its `rows` double as the workbench edit context).
 // Channel conditions ride the normal per-facet params; this rides a `coverage` param so it survives nav.
 private var libCoverageCond: Condition? = null
+private var libTracker: String? = null  // Phase 98: "seeded on" tracker filter
 private val libCovJson = Json { ignoreUnknownKeys = true }
 
 // -- URL helpers ----------------------------------------------------------
@@ -91,6 +92,7 @@ private fun parseLibraryUrl() {
     libMatch         = if (param("match") == "ANY") "ANY" else "ALL"
     // R87: decode the handed-off content_row gap condition (null on a normal library visit).
     libCoverageCond  = param("coverage")?.let { runCatching { libCovJson.decodeFromString(Condition.serializer(), it) }.getOrNull() }
+    libTracker       = param("tracker")
 }
 
 private fun updateLibraryUrl() {
@@ -109,6 +111,7 @@ private fun updateLibraryUrl() {
         if (libTags.isNotEmpty()) add("tags=${libTags.joinToString(",") { dev.jellystructure.encodeURIComponent(it) }}")
         if (libMatch == "ANY") add("match=ANY")
         libCoverageCond?.let { add("coverage=${dev.jellystructure.encodeURIComponent(libCovJson.encodeToString(Condition.serializer(), it))}") }
+        libTracker?.let { add("tracker=${dev.jellystructure.encodeURIComponent(it)}") }
     }
     val newHash = if (params.isEmpty()) "#/library" else "#/library?${params.joinToString("&")}"
     historyReplaceState(newHash)
@@ -362,6 +365,7 @@ private fun updateActiveChips(scope: CoroutineScope? = null) {
             val names = c.rows.joinToString(", ") { it.title?.takeIf { t -> t.isNotBlank() } ?: "Untitled" }
             add(Triple("coverage", "Content row " + (if (c.op == "is_none_of") "is none of" else "is any of"), names.ifEmpty { "—" }))
         }
+        libTracker?.let { add(Triple("tracker", "Seeded on", it)) }
     }
 
     // Highlight filter buttons when their category is active
@@ -397,6 +401,7 @@ private fun updateActiveChips(scope: CoroutineScope? = null) {
                     (document.getElementById("af-untagged") as? HTMLInputElement)?.checked = false
                 }
                 key == "coverage"       -> libCoverageCond = null  // R87
+                key == "tracker"        -> libTracker = null
             }
             updateActiveChips(scope)
             if (scope != null) scope.launch { loadMore(scope, reset = true) }
@@ -867,6 +872,7 @@ private suspend fun loadMore(scope: CoroutineScope, reset: Boolean) {
                 match = libMatch,
                 conditions = libConds.filter { it.values.isNotEmpty() || it.facet == "track_title" || (it.facet == "content_row" && it.rows.isNotEmpty()) }
                     .map { dev.jellystructure.shared.tv.Condition(it.facet, it.op, it.values.toList(), it.rows.toList()) },
+                tracker = libTracker,
             )
             if (page == null) {
                 if (firstSlice) grid?.innerHTML =
