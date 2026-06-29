@@ -338,10 +338,9 @@ data class PageHeroConfig(
 data class ChannelRowsConfig(
     val mode: String = "inherit",  // "inherit" | "custom"
     val items: List<RowConfig> = emptyList(),
-    // R143 — per-channel Newly Added control (custom mode), independent of the global
-    // merge_newly_added_channels flag. "inherit" = follow that global flag (back-compat);
-    // "merged" = one combined row; "split" = Movies + Series rows; "none" = no Newly Added row
-    // on this channel page at all.
+    // R143 — per-channel Newly Added control (custom mode). "inherit" = same as Home (follow
+    // merge_newly_added); "merged" = one combined row; "split" = Movies + Series rows;
+    // "none" = no Newly Added row on this channel page at all.
     @SerialName("newly_added") val newlyAdded: String = "inherit",
 )
 
@@ -398,10 +397,10 @@ data class RaviloConfig(
     val heroes: List<HeroConfig> = emptyList(),
     val channels: List<ChannelConfig> = emptyList(),
     val rows: List<RowConfig> = emptyList(),
+    // Newly Added on Home: true = one combined row (all media); false = split Movies + Series.
+    // Channel pages follow this too (R143): inherit-mode channels and custom channels set to
+    // "inherit" use it; custom channels can override per-channel (merged/split/none).
     @SerialName("merge_newly_added") val mergeNewlyAdded: Boolean = false,
-    // R104 — channel pages can merge newly-added independently of Home. When true, a channel's
-    // NEWLY_ADDED row is one combined row (all media); when false it splits into Movies + Series.
-    @SerialName("merge_newly_added_channels") val mergeNewlyAddedChannels: Boolean = false,
     @SerialName("default_skin") val defaultSkin: Skin = Skin.AURORA,
     @SerialName("allow_skin_override") val allowSkinOverride: Boolean = true,
     // Per-viewer skin choice, kept separate from the operator's defaultSkin so an operator

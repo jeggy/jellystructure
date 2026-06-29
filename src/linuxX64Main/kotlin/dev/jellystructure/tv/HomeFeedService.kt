@@ -195,17 +195,18 @@ class HomeFeedService(
         val heroIds = config.heroes.map { it.itemId }.toSet()  // Phase R86-C: hoist out of CUSTOM-row loop
         val result = mutableListOf<Row>()
         // R104/R143: resolve the Newly Added behavior for this context.
-        //   Home               → the global merge_newly_added flag (merged vs split), unchanged.
-        //   custom-mode channel → the channel's own rows.newlyAdded ("inherit" falls back to the
-        //                         global merge_newly_added_channels flag); "none" hides it entirely.
-        //   inherit-mode channel → the global merge_newly_added_channels flag, unchanged.
+        //   Home                 → the global merge_newly_added flag (merged vs split).
+        //   custom-mode channel   → the channel's own rows.newlyAdded; "inherit" = same as Home,
+        //                           "none" hides it entirely, "merged"/"split" override per-channel.
+        //   inherit-mode channel  → same as Home (follows merge_newly_added).
+        val homeMode = if (config.mergeNewlyAdded) "merged" else "split"
         val newlyMode: String = when {
-            channelFilter == null -> if (config.mergeNewlyAdded) "merged" else "split"
+            channelFilter == null -> homeMode
             channelFilter.rows?.mode == "custom" -> when (val n = channelFilter.rows?.newlyAdded ?: "inherit") {
                 "merged", "split", "none" -> n
-                else -> if (config.mergeNewlyAddedChannels) "merged" else "split"  // "inherit"
+                else -> homeMode  // "inherit" = same as Home
             }
-            else -> if (config.mergeNewlyAddedChannels) "merged" else "split"
+            else -> homeMode
         }
         val mergeNewly = newlyMode == "merged"
 
