@@ -225,6 +225,23 @@ class SeedingSnapshot(
         }
     }
 
+    // Returns the set of file/dir names in path (empty if path can't be opened as directory).
+    @OptIn(ExperimentalForeignApi::class)
+    private fun filenameSetInDir(path: String): Set<String> {
+        val dir = opendir(path) ?: return emptySet()
+        return buildSet {
+            try {
+                while (true) {
+                    val entry = readdir(dir) ?: break
+                    val name = entry.pointed.d_name.toKString()
+                    if (name != "." && name != "..") add(name)
+                }
+            } finally {
+                closedir(dir)
+            }
+        }
+    }
+
     private fun buildCrossSeedMap(torrents: List<QBTorrent>, qbConfig: QBittorrentConfig): Map<String, String> {
         val byPath = torrents.groupBy { translateRemoteToLocal(it.contentPath, qbConfig).trimEnd('/') }
         val map = mutableMapOf<String, String>()
@@ -271,11 +288,20 @@ class SeedingSnapshot(
 
     private fun computeScopeCovers(t: QBTorrent, item: MediaItem, localPath: String): Pair<String, TorrentCoversDto?> {
         if (item.kind == MediaKind.MOVIE) return "movie" to null
-        val coveredEps = item.episodes.filter { ep -> ep.path == localPath || ep.path.startsWith("$localPath/") }
+        // 1. Path-based episode matching (works when content is saved into the media tree directly).
+        var coveredEps = item.episodes.filter { ep -> ep.path == localPath || ep.path.startsWith("$localPath/") }
+        // 2. Filename-based fallback for cross-seed / hard-link setups where the torrent save path
+        //    differs from the media library path (e.g. /mnt/cross-seed/IPT/Show.S01/ → /mnt/media/Show/).
+        if (coveredEps.isEmpty()) {
+            val dirFiles = filenameSetInDir(localPath)
+            if (dirFiles.isNotEmpty()) {
+                coveredEps = item.episodes.filter { ep -> ep.path.substringAfterLast("/") in dirFiles }
+            }
+        }
         val allSeasons = item.episodes.mapNotNull { it.seasonNumber }.distinct().sorted()
         val coveredSeasons = coveredEps.mapNotNull { it.seasonNumber }.distinct().sorted()
         return when {
-            coveredSeasons.isEmpty() || coveredSeasons == allSeasons ->
+            coveredSeasons.isNotEmpty() && coveredSeasons == allSeasons ->
                 "complete" to TorrentCoversDto(all = true)
             coveredSeasons.size == 1 && coveredEps.size > 1 ->
                 "season" to TorrentCoversDto(s = coveredSeasons.first())
@@ -283,8 +309,21 @@ class SeedingSnapshot(
                 val ep = coveredEps.first()
                 "episode" to TorrentCoversDto(s = ep.seasonNumber, e = ep.episodeNumber)
             }
-            else -> "season" to TorrentCoversDto(s = coveredSeasons.firstOrNull())
+            coveredSeasons.size > 1 ->
+                // Multi-season partial pack — report first covered season as a reasonable label.
+                "season" to TorrentCoversDto(s = coveredSeasons.firstOrNull())
+            else -> {
+                // No episode match via path or filename — last resort: parse SXX from torrent name.
+                val sn = SEASON_PACK_RE.find(t.name)?.groupValues?.getOrNull(1)?.toIntOrNull()
+                if (sn != null) "season" to TorrentCoversDto(s = sn)
+                else "complete" to TorrentCoversDto(all = true)
+            }
         }
+    }
+
+    companion object {
+        // Matches season-pack names: S01, S1, etc. — not followed by E (episode marker).
+        private val SEASON_PACK_RE = Regex("""[Ss]0*(\d{1,2})(?![Ee\d])""")
     }
 }
 
