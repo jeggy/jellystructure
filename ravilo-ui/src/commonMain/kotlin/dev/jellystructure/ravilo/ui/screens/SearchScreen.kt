@@ -149,7 +149,7 @@ fun SearchScreen(
         modifier = Modifier
             .fillMaxSize()
             .background(colors.background)
-            .padding(top = 48.dp)
+            .padding(top = RaviloDimens.appBarHeight + 24.dp)
             // Back from results grid → text field + IME; Back from text field → pops screen.
             .backToTopOnBack(
                 atTop = { !inGrid },

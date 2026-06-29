@@ -164,7 +164,7 @@ private fun DiscoverLoaded(
                 Column(Modifier.padding(horizontal = RaviloDimens.sectionPadH, vertical = 8.dp)) {
                     Text("Top 10", color = colors.text, fontSize = 22.sp, fontWeight = FontWeight.Bold, fontFamily = SpaceGrotesk)
                     Text(
-                        "Trending now · ${data.region}  ·  ${data.source.replaceFirstChar { it.uppercase() }} via Tudum",
+                        "Trending now · ${data.region}",
                         color = colors.textSecondary, fontSize = 13.sp,
                     )
                 }
