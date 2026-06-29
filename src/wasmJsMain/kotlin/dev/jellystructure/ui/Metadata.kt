@@ -1,6 +1,7 @@
 package dev.jellystructure.ui
 
 import dev.jellystructure.App
+import dev.jellystructure.api.DetectedTrackerGroup
 import dev.jellystructure.api.JsTag
 import dev.jellystructure.api.MediaApi
 import dev.jellystructure.api.MetadataApi
@@ -117,9 +118,9 @@ private fun loadTab(container: Element, scope: CoroutineScope, tab: String, sort
             }
             "trackers" -> {
                 val trackers = MediaApi.getTrackers()
-                val unmapped = MediaApi.getUnmappedTrackers()
-                content.innerHTML = renderTrackersTab(trackers, unmapped)
-                wireTrackersTab(content, scope, trackers)
+                val groups = MediaApi.getUnmappedTrackers()
+                content.innerHTML = renderTrackersTab(trackers, groups)
+                wireTrackersTab(content, scope, trackers, groups)
             }
         }
     }
@@ -359,25 +360,43 @@ private fun errorHtml() = """<span class="badge bad">Failed to load — check se
 
 // ---------- Phase 98: Tracker registry tab ----------
 
-private fun renderTrackersTab(trackers: List<TrackerEntry>, unmapped: List<dev.jellystructure.api.UnmappedHostEntry>): String = buildString {
-    append("""<p class="hint" style="margin:0 0 14px">A torrent announces to one tracker but may expose several mirror hosts. Define each tracker once here; the seeding surface resolves announce URLs to a name by hostname.</p>""")
+private fun renderTrackersTab(trackers: List<TrackerEntry>, groups: List<DetectedTrackerGroup>): String = buildString {
+    append("""<p class="hint" style="margin:0 0 14px">A torrent announces to one tracker but may expose several mirror hosts. Define each tracker once here — the seeding surface resolves announce URLs to a name by matching only the hostname.</p>""")
     append("""<div style="display:flex;align-items:center;gap:8px;margin-bottom:14px"><button id="new-tracker-btn" class="btn sm">＋ New tracker</button></div>""")
     if (trackers.isEmpty()) {
-        append("""<p class="muted tiny" id="tracker-empty">No trackers defined yet.</p>""")
+        append("""<p class="muted tiny" id="tracker-empty">No trackers defined yet. Add them manually or name an auto-detected host below.</p>""")
     } else {
         append("""<div class="meta-grid" id="tracker-grid">""")
         trackers.forEach { t -> append(trackerCardHtml(t)) }
         append("</div>")
     }
-    if (unmapped.isNotEmpty()) {
-        append("""<h4 style="margin:24px 0 8px;font-size:.9rem">Unmapped announce hosts</h4>""")
-        append("""<p class="hint" style="margin:0 0 10px">Hosts seen in qBittorrent torrents that don't match any tracker definition.</p>""")
-        append("""<div class="card" style="padding:10px 14px">""")
-        unmapped.forEach { u ->
-            append("""<div class="row center" style="padding:6px 0;border-bottom:1px solid var(--line-2);gap:8px" data-host="${u.host.esc()}">""")
-            append("""<span class="mono tiny" style="flex:1">${u.host.esc()}</span>""")
-            append("""<span class="muted tiny">${u.torrentCount} torrent${if (u.torrentCount != 1) "s" else ""}</span>""")
-            append("""<button class="btn sm ghost unmapped-name-btn" data-host="${u.host.esc()}">＋ Name as new tracker</button>""")
+    if (groups.isNotEmpty()) {
+        append("""<h4 style="margin:24px 0 6px;font-size:.85rem;font-weight:600;color:var(--ink-soft);text-transform:uppercase;letter-spacing:.06em">Detected announce hosts</h4>""")
+        append("""<p class="hint" style="margin:0 0 10px">Hosts observed in qBittorrent not yet matched to a tracker. Hosts sharing the same passkey are grouped as mirror candidates.</p>""")
+        append("""<div class="card" style="padding:0 14px">""")
+        groups.forEachIndexed { idx, g ->
+            val hostsAttr = g.hosts.joinToString("|") { it.esc() }
+            val border = if (idx < groups.size - 1) "border-bottom:1px solid var(--line-2)" else ""
+            append("""<div class="trk-unmapped-row" style="padding:10px 0;$border" data-hosts="$hostsAttr">""")
+            if (g.hosts.size == 1) {
+                append("""<div class="mono tiny" style="margin-bottom:6px">${g.hosts.first().esc()}</div>""")
+            } else {
+                append("""<div style="margin-bottom:6px">""")
+                g.hosts.forEach { h -> append("""<div class="mono tiny">${h.esc()}</div>""") }
+                append("</div>")
+            }
+            append("""<div class="row center" style="gap:8px;flex-wrap:wrap">""")
+            append("""<span class="muted tiny">${g.torrentCount} torrent${if (g.torrentCount != 1) "s" else ""}</span>""")
+            append("""<span class="spacer"></span>""")
+            if (trackers.isNotEmpty()) {
+                append("""<span class="muted tiny" style="font-size:.75rem">assign to:</span>""")
+                append("""<select class="input trk-assign-select" style="font-size:.78rem;padding:2px 6px;height:auto;width:auto" data-hosts="$hostsAttr">""")
+                append("""<option value="">— existing tracker —</option>""")
+                trackers.forEach { t -> append("""<option value="${t.name.esc()}">${t.name.esc()}</option>""") }
+                append("</select>")
+            }
+            append("""<button class="btn sm ghost unmapped-name-btn" data-hosts="$hostsAttr" style="white-space:nowrap">＋ Name as tracker</button>""")
+            append("</div>")
             append("</div>")
         }
         append("</div>")
@@ -385,53 +404,108 @@ private fun renderTrackersTab(trackers: List<TrackerEntry>, unmapped: List<dev.j
 }
 
 private fun trackerCardHtml(t: TrackerEntry): String = buildString {
+    val encName = dev.jellystructure.encodeURIComponent(t.name)
+    val countText = if (t.torrentCount > 0) "${t.torrentCount} torrent${if (t.torrentCount != 1) "s" else ""} · " else ""
     append("""<div class="card tracker-card" data-tracker="${t.name.esc()}">""")
-    append("""<div class="row center" style="margin-bottom:8px">""")
+    // Header
+    append("""<div class="row center" style="margin-bottom:10px">""")
     append("""<b style="font-size:.95rem">${t.name.esc()}</b>""")
     append("""<span class="badge ${if (t.isPrivate) "warn" else "ok"}" style="font-size:.65rem;margin-left:6px">${if (t.isPrivate) "private" else "public"}</span>""")
     append("""<span class="spacer"></span>""")
-    append("""<a href="#/library?tracker=${encodeURIComponent(t.name)}" class="tiny muted" style="text-decoration:underline">Library ↗</a>""")
-    append("""<button class="btn sm ghost edit-tracker-btn" style="margin-left:8px">Edit</button>""")
-    append("""<button class="btn sm ghost delete-tracker-btn" style="margin-left:4px;color:var(--bad)">✕</button>""")
+    append("""<a href="#/library?tracker=$encName" class="tiny muted" style="text-decoration:underline">${countText}Library ↗</a>""")
+    append("""<button class="btn sm ghost delete-tracker-btn" style="margin-left:10px;color:var(--bad)" title="Delete tracker">Delete</button>""")
     append("</div>")
+    // Inline host list
     if (t.hosts.isEmpty()) {
-        append("""<span class="muted tiny">No announce hosts defined.</span>""")
+        append("""<p class="muted tiny" style="margin:0 0 8px">No announce hosts — add one below.</p>""")
     } else {
-        t.hosts.forEach { h -> append("""<div class="mono tiny" style="padding:3px 0;border-bottom:1px solid var(--line-2)">${h.esc()}</div>""") }
+        append("""<div class="trk-hosts-list" style="margin-bottom:8px">""")
+        t.hosts.forEach { h ->
+            append("""<div class="row center trk-host-row" style="padding:4px 0;border-bottom:1px solid var(--line-2)">""")
+            append("""<span class="mono tiny" style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${h.esc()}</span>""")
+            append("""<button class="btn sm ghost trk-rm-host" data-host="${h.esc()}" style="padding:1px 6px;font-size:.72rem;flex-shrink:0" title="Remove mirror">✕</button>""")
+            append("</div>")
+        }
+        append("</div>")
     }
+    // Add mirror host inline field
+    append("""<div class="row center" style="gap:6px">""")
+    append("""<input class="input trk-add-host-input" type="text" placeholder="add mirror host…" style="flex:1;font-size:.8rem;padding:4px 8px">""")
+    append("""<button class="btn sm ghost trk-add-host-btn">Add</button>""")
+    append("</div>")
     append("</div>")
 }
 
-private fun wireTrackersTab(content: HTMLElement, scope: CoroutineScope, trackers: List<TrackerEntry>) {
+private fun wireTrackersTab(content: HTMLElement, scope: CoroutineScope, trackers: List<TrackerEntry>, groups: List<DetectedTrackerGroup>) {
+    fun reload() { loadTab(content.parentElement ?: content, scope, "trackers", "count") }
+
     content.querySelector("#new-tracker-btn")?.addEventListener("click") { _ ->
         showTrackerModal(content, scope, null, null)
     }
-    val editBtns = content.querySelectorAll(".edit-tracker-btn")
-    for (i in 0 until editBtns.length) {
-        val btn = editBtns.item(i) as? HTMLElement ?: continue
-        val name = btn.closest(".tracker-card")?.getAttribute("data-tracker") ?: continue
-        val t = trackers.firstOrNull { it.name == name } ?: continue
-        btn.addEventListener("click") { _ -> showTrackerModal(content, scope, t, name) }
-    }
-    val deleteBtns = content.querySelectorAll(".delete-tracker-btn")
-    for (i in 0 until deleteBtns.length) {
-        val btn = deleteBtns.item(i) as? HTMLElement ?: continue
-        val name = btn.closest(".tracker-card")?.getAttribute("data-tracker") ?: continue
-        btn.addEventListener("click") { _ ->
-            if (window.confirm("Delete tracker '${name}'?")) {
+
+    // Inline host remove (✕ button per host row)
+    val cards = content.querySelectorAll(".tracker-card")
+    for (i in 0 until cards.length) {
+        val card = cards.item(i) as? HTMLElement ?: continue
+        val tname = card.getAttribute("data-tracker") ?: continue
+        val t = trackers.firstOrNull { it.name == tname } ?: continue
+
+        val rmBtns = card.querySelectorAll(".trk-rm-host")
+        for (j in 0 until rmBtns.length) {
+            val btn = rmBtns.item(j) as? HTMLElement ?: continue
+            val host = btn.getAttribute("data-host") ?: continue
+            btn.addEventListener("click") { _ ->
                 scope.launch {
-                    MediaApi.deleteTracker(name)
-                    loadTab(content.parentElement ?: content, scope, "trackers", "count")
+                    MediaApi.updateTracker(t.name, null, null, t.hosts.filter { it != host })
+                    reload()
                 }
             }
         }
+
+        val addInput = card.querySelector(".trk-add-host-input") as? HTMLInputElement ?: continue
+        val addBtn = card.querySelector(".trk-add-host-btn") as? HTMLElement ?: continue
+        addBtn.addEventListener("click") { _ ->
+            val newHost = addInput.value.trim()
+            if (newHost.isBlank()) return@addEventListener
+            scope.launch {
+                MediaApi.updateTracker(t.name, null, null, (t.hosts + newHost).distinct())
+                reload()
+            }
+        }
+
+        val delBtn = card.querySelector(".delete-tracker-btn") as? HTMLElement ?: continue
+        delBtn.addEventListener("click") { _ ->
+            if (window.confirm("Delete tracker '${t.name}'?")) {
+                scope.launch { MediaApi.deleteTracker(t.name); reload() }
+            }
+        }
     }
-    val unmappedBtns = content.querySelectorAll(".unmapped-name-btn")
-    for (i in 0 until unmappedBtns.length) {
-        val btn = unmappedBtns.item(i) as? HTMLElement ?: continue
-        val host = btn.getAttribute("data-host") ?: continue
+
+    // Unmapped: "Assign to existing tracker" dropdown
+    val assignSelects = content.querySelectorAll(".trk-assign-select")
+    for (i in 0 until assignSelects.length) {
+        val sel = assignSelects.item(i) as? HTMLElement ?: continue
+        val hostsAttr = sel.getAttribute("data-hosts") ?: continue
+        val groupHosts = hostsAttr.split("|").filter { it.isNotBlank() }
+        sel.addEventListener("change") { _ ->
+            val selectedName = (sel as? HTMLInputElement)?.value?.takeIf { it.isNotBlank() } ?: return@addEventListener
+            val tracker = trackers.firstOrNull { it.name == selectedName } ?: return@addEventListener
+            scope.launch {
+                val newHosts = (tracker.hosts + groupHosts).distinct()
+                MediaApi.updateTracker(selectedName, null, null, newHosts)
+                reload()
+            }
+        }
+    }
+
+    // Unmapped: "Name as tracker" button
+    val nameBtns = content.querySelectorAll(".unmapped-name-btn")
+    for (i in 0 until nameBtns.length) {
+        val btn = nameBtns.item(i) as? HTMLElement ?: continue
+        val hostsAttr = btn.getAttribute("data-hosts") ?: continue
+        val groupHosts = hostsAttr.split("|").filter { it.isNotBlank() }
         btn.addEventListener("click") { _ ->
-            val stub = TrackerEntry(name = "", isPrivate = true, hosts = listOf(host))
+            val stub = TrackerEntry(name = "", isPrivate = true, hosts = groupHosts)
             showTrackerModal(content, scope, stub, null)
         }
     }
@@ -479,11 +553,8 @@ private fun showTrackerModal(content: HTMLElement, scope: CoroutineScope, existi
                 modal.remove()
                 loadTab(content.parentElement ?: content, scope, "trackers", "count")
             } else {
-                msgEl?.textContent = "Save failed."
+                msgEl?.textContent = "Save failed — name may already exist."
             }
         }
     }
 }
-
-// Reuse encodeURIComponent for tracker library links
-private fun encodeURIComponent(s: String): String = dev.jellystructure.encodeURIComponent(s)

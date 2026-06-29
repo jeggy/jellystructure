@@ -7,6 +7,7 @@ import dev.jellystructure.media.JsTagStore
 import dev.jellystructure.media.LogoDownloader
 import dev.jellystructure.media.MediaStore
 import dev.jellystructure.model.MediaKind
+import dev.jellystructure.torrent.DetectedTrackerGroup
 import dev.jellystructure.torrent.SeedingSnapshot
 import dev.jellystructure.torrent.TrackerResolver
 import io.ktor.http.ContentType
@@ -57,6 +58,15 @@ data class CreateTagRequest(val name: String, val color: String = "#6b7280", val
 
 @Serializable
 data class UpdateTagRequest(val color: String? = null, val description: String? = null)
+
+@Serializable
+data class TrackerWithStats(val name: String, val private: Boolean, val hosts: List<String>, val torrentCount: Int)
+
+@Serializable
+data class CreateTrackerRequest(val name: String, val private: Boolean = false, val hosts: List<String> = emptyList())
+
+@Serializable
+data class UpdateTrackerRequest(val name: String? = null, val private: Boolean? = null, val hosts: List<String>? = null)
 
 fun Route.metadataRoutes(store: MediaStore, tagStore: JsTagStore, logoDownloader: LogoDownloader, seedingSnapshot: SeedingSnapshot, configStore: ConfigStore? = null) {
     route("/metadata") {
@@ -187,6 +197,63 @@ fun Route.metadataRoutes(store: MediaStore, tagStore: JsTagStore, logoDownloader
                 .let { list -> if (sort == "name") list.sortedBy { it.name.lowercase() } else list.sortedByDescending { it.count } }
             call.respond(TagsResponse(jsTags = jsTags, otherTags = otherTags))
         }
+
+        // Phase 98 — tracker registry CRUD at /api/metadata/trackers
+        route("/trackers") {
+            get {
+                val trackers = configStore?.current?.trackers ?: emptyList()
+                val snap = runCatching { seedingSnapshot.get() }.getOrNull()
+                call.respond(trackers.map { t ->
+                    val count = snap?.torrents?.count { tor ->
+                        TrackerResolver.hostOf(tor.tracker.takeIf { u -> u.isNotBlank() } ?: "") in t.hosts
+                    } ?: 0
+                    TrackerWithStats(t.name, t.isPrivate, t.hosts, count)
+                })
+            }
+            post {
+                val cs = configStore ?: return@post call.respond(HttpStatusCode.ServiceUnavailable)
+                val req = call.receive<CreateTrackerRequest>()
+                if (req.name.isBlank()) return@post call.respond(HttpStatusCode.BadRequest, mapOf("error" to "name required"))
+                val config = cs.current
+                if (config.trackers.any { it.name == req.name }) return@post call.respond(HttpStatusCode.Conflict, mapOf("error" to "tracker '${req.name}' already exists"))
+                val updated = config.copy(trackers = config.trackers + TrackerEntry(req.name, req.private, req.hosts))
+                cs.update(updated)
+                call.respond(HttpStatusCode.Created, TrackerWithStats(req.name, req.private, req.hosts, 0))
+            }
+            get("/unmapped") {
+                val snap = seedingSnapshot.get()
+                val trackers = configStore?.current?.trackers ?: emptyList()
+                val groups = TrackerResolver.detectUnmappedGroups(snap.torrents, trackers)
+                call.respond(groups)
+            }
+            route("/{name}") {
+                put {
+                    val cs = configStore ?: return@put call.respond(HttpStatusCode.ServiceUnavailable)
+                    val name = call.parameters["name"] ?: return@put call.respond(HttpStatusCode.BadRequest)
+                    val req = call.receive<UpdateTrackerRequest>()
+                    val config = cs.current
+                    val idx = config.trackers.indexOfFirst { it.name == name }
+                    if (idx < 0) return@put call.respond(HttpStatusCode.NotFound)
+                    val existing = config.trackers[idx]
+                    val updated = existing.copy(
+                        name = req.name ?: existing.name,
+                        isPrivate = req.private ?: existing.isPrivate,
+                        hosts = req.hosts ?: existing.hosts,
+                    )
+                    val newList = config.trackers.toMutableList().also { it[idx] = updated }
+                    cs.update(config.copy(trackers = newList))
+                    call.respond(TrackerWithStats(updated.name, updated.isPrivate, updated.hosts, 0))
+                }
+                delete {
+                    val cs = configStore ?: return@delete call.respond(HttpStatusCode.ServiceUnavailable)
+                    val name = call.parameters["name"] ?: return@delete call.respond(HttpStatusCode.BadRequest)
+                    val config = cs.current
+                    if (config.trackers.none { it.name == name }) return@delete call.respond(HttpStatusCode.NotFound)
+                    cs.update(config.copy(trackers = config.trackers.filter { it.name != name }))
+                    call.respond(HttpStatusCode.NoContent)
+                }
+            }
+        }
     }
 
     route("/tags") {
@@ -213,62 +280,6 @@ fun Route.metadataRoutes(store: MediaStore, tagStore: JsTagStore, logoDownloader
                 val name = call.parameters["name"] ?: return@delete call.respond(HttpStatusCode.BadRequest)
                 val ok = tagStore.delete(name)
                 if (!ok) return@delete call.respond(HttpStatusCode.NotFound)
-                call.respond(HttpStatusCode.NoContent)
-            }
-        }
-    }
-
-    // Phase 98 — tracker registry CRUD
-    @Serializable data class TrackerResponse(val name: String, val private: Boolean, val hosts: List<String>)
-    @Serializable data class CreateTrackerRequest(val name: String, val private: Boolean = false, val hosts: List<String> = emptyList())
-    @Serializable data class UpdateTrackerRequest(val name: String? = null, val private: Boolean? = null, val hosts: List<String>? = null)
-    @Serializable data class UnmappedHostEntry(val host: String, val torrentCount: Int)
-
-    route("/trackers") {
-        get {
-            val trackers = configStore?.current?.trackers ?: emptyList()
-            call.respond(trackers.map { TrackerResponse(it.name, it.isPrivate, it.hosts) })
-        }
-        post {
-            val cs = configStore ?: return@post call.respond(HttpStatusCode.ServiceUnavailable)
-            val req = call.receive<CreateTrackerRequest>()
-            if (req.name.isBlank()) return@post call.respond(HttpStatusCode.BadRequest, mapOf("error" to "name required"))
-            val config = cs.current
-            if (config.trackers.any { it.name == req.name }) return@post call.respond(HttpStatusCode.Conflict, mapOf("error" to "tracker '${req.name}' already exists"))
-            val updated = config.copy(trackers = config.trackers + TrackerEntry(req.name, req.private, req.hosts))
-            cs.update(updated)
-            call.respond(HttpStatusCode.Created, TrackerResponse(req.name, req.private, req.hosts))
-        }
-        get("/unmapped") {
-            val snap = seedingSnapshot.get()
-            val trackers = configStore?.current?.trackers ?: emptyList()
-            val unmapped = TrackerResolver.unmappedHosts(snap.torrents, trackers)
-            call.respond(unmapped.map { (host, count) -> UnmappedHostEntry(host, count) }.sortedByDescending { it.torrentCount })
-        }
-        route("/{name}") {
-            put {
-                val cs = configStore ?: return@put call.respond(HttpStatusCode.ServiceUnavailable)
-                val name = call.parameters["name"] ?: return@put call.respond(HttpStatusCode.BadRequest)
-                val req = call.receive<UpdateTrackerRequest>()
-                val config = cs.current
-                val idx = config.trackers.indexOfFirst { it.name == name }
-                if (idx < 0) return@put call.respond(HttpStatusCode.NotFound)
-                val existing = config.trackers[idx]
-                val updated = existing.copy(
-                    name = req.name ?: existing.name,
-                    isPrivate = req.private ?: existing.isPrivate,
-                    hosts = req.hosts ?: existing.hosts,
-                )
-                val newList = config.trackers.toMutableList().also { it[idx] = updated }
-                cs.update(config.copy(trackers = newList))
-                call.respond(TrackerResponse(updated.name, updated.isPrivate, updated.hosts))
-            }
-            delete {
-                val cs = configStore ?: return@delete call.respond(HttpStatusCode.ServiceUnavailable)
-                val name = call.parameters["name"] ?: return@delete call.respond(HttpStatusCode.BadRequest)
-                val config = cs.current
-                if (config.trackers.none { it.name == name }) return@delete call.respond(HttpStatusCode.NotFound)
-                cs.update(config.copy(trackers = config.trackers.filter { it.name != name }))
                 call.respond(HttpStatusCode.NoContent)
             }
         }

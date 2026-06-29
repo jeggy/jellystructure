@@ -694,8 +694,8 @@ object MediaApi {
         httpClient.delete("/api/metadata/trackers/${name.encodeURL()}").status.value in 200..299
     }.getOrDefault(false)
 
-    suspend fun getUnmappedTrackers(): List<UnmappedHostEntry> = runCatching {
-        httpClient.get("/api/metadata/trackers/unmapped").body<List<UnmappedHostEntry>>()
+    suspend fun getUnmappedTrackers(): List<DetectedTrackerGroup> = runCatching {
+        httpClient.get("/api/metadata/trackers/unmapped").body<List<DetectedTrackerGroup>>()
     }.getOrDefault(emptyList())
 
     suspend fun revertHistoryEntry(id: String, entryId: String): MediaItem? = runCatching {
@@ -828,10 +828,15 @@ data class SeedingReport(
 )
 
 @Serializable
-data class TrackerEntry(val name: String, @SerialName("private") val isPrivate: Boolean = false, val hosts: List<String> = emptyList())
+data class TrackerEntry(
+    val name: String,
+    @SerialName("private") val isPrivate: Boolean = false,
+    val hosts: List<String> = emptyList(),
+    val torrentCount: Int = 0,
+)
 
 @Serializable
-data class UnmappedHostEntry(val host: String, val torrentCount: Int)
+data class DetectedTrackerGroup(val hosts: List<String>, val torrentCount: Int)
 
 @Serializable
 data class DriftField(val field: String, val inJellyfin: String, val inDb: String)
