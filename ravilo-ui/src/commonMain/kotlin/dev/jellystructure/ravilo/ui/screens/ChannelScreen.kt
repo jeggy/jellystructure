@@ -181,7 +181,7 @@ fun ChannelScreen(
 
                     @Suppress("OPT_IN_USAGE")
                     val edgeBringIntoViewSpec = rememberEdgeBringIntoViewSpec(
-                        peekDp = 150.dp, topInsetDp = RaviloDimens.appBarHeight + 64.dp, // R140 (was R65 80/+34)
+                        peekDp = 150.dp, topInsetDp = RaviloDimens.appBarHeight + 64.dp, centerLineFraction = 0.3f, // R140
                     )
                     @OptIn(ExperimentalFoundationApi::class)
                     CompositionLocalProvider(LocalBringIntoViewSpec provides edgeBringIntoViewSpec) {
@@ -190,7 +190,7 @@ fun ChannelScreen(
                             modifier = Modifier.fillMaxSize().focusRequester(firstTileFR),
                             contentPadding = PaddingValues(
                                 top = if (hasHero) 0.dp else 60.dp, // leave room for bar when no hero
-                                bottom = 220.dp, // R140: last row lifts to a comfortable height
+                                bottom = 240.dp, // R140: last row lifts to the focus band
                             ),
                         ) {
                             // Hero carousel (R52: per-channel page hero)
