@@ -25,7 +25,18 @@ longer encodes status — only this file does.
 
 ## Current focus
 
-**Admin phases 0–104 ✓ Done** (100/101/102/103/104 landed 2026-06-29). Ravilo R01–R142 ✓ Done (R142 landed 2026-06-29). No phases Planned.
+**Admin phases 0–104 ✓ Done** (100/101/102/103/104 landed 2026-06-29). Ravilo R01–R141 ✓ Done. No phases Planned.
+
+> **⚠ 2026-06-29 phase-number collision — UNRESOLVED (decide later).** Two R-numbers were used twice. The
+> `2026-06-29` "updated designs" pull added the **canonical** specs (source of truth), which disagree with
+> what landed in code this session:
+> | # | Canonical spec (pulled `specs/ravilo/requirements/`) | What the code/commits call it |
+> |---|---|---|
+> | **R142** | **Watched state everywhere** — tile played/unplayed badges + mark-played write-through (NOT built) | "Multi-provider Discover + Search navbar padding" (commit `a111e0f`, built ✓) |
+> | **R143** | **Per-channel system rows** — show toggle + *All titles / Only this channel* scope + merge, for **both** Continue Watching **and** Newly Added | "Per-channel Newly Added control" (commits `52a9fa4`/`db3c02c`, built ✓) — a **subset** of the canonical spec (Newly Added merge/split/none only; no Continue scoping, no show toggle, no scope option) |
+> Net: the code's R142 needs renumbering (e.g. → R144) since canonical R142 is a different, unbuilt feature;
+> the code's R143 is a partial implementation of canonical R143. **No renumber done yet — flagged only.**
+> The R142/R143 rows below still describe the *as-built* (code) meaning.
 
 > **2026-06-26 correction:** the previous "15 phases Planned (R63–R74 + admin 82–85)" line was **stale** — all 15 are implemented in code and the tables mark them ✓ Done (verified: R64 `section.channels` i18n, R65 `topInsetDp`, R68 `cleanCueText`, R73 `countMatching`, 82 `PRESET_COLORS`, 83 `isQueryActive`, 84 search debounce, 85 `data-tab` machinery). The design-project's CLAUDE.md still lists them as "Planned" because **design-side status lags code** (the recurring sync issue). Phases 82 & 85 needed only their `wf.css` rules, which the 2026-06-26 `df5b6ca` "updated designs" sync stripped again (along with 76/87/R75) and which are **now restored** in `design/app/wf.css`.
 

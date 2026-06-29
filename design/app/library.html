@@ -20,9 +20,6 @@
   .seedfilter.on .seed-x { display: inline; }
   .seed-x:hover { color: var(--bad); }
   .searchwrap { position: relative; }
-  .search-note { position: absolute; top: 44px; left: 0; width: 320px; z-index: 30; display: none;
-    font-size: .8rem; line-height: 1.5; padding: 11px 13px; }
-  .searchwrap.show .search-note { display: block; }
   .pop { position: relative; }
   .pop-panel { position: absolute; top: 40px; right: 0; width: 320px; z-index: 40; display: none; padding: 14px; }
   .pop.open .pop-panel { display: block; }
@@ -89,7 +86,6 @@
     <span class="spacer"></span>
     <span class="searchwrap" id="searchwrap">
       <input class="input" id="lib-search" placeholder="⌕ search title…" style="width:240px;" autocomplete="off">
-      <div class="card note blue search-note">Search matches <b>every title this item has ever had</b> — each language pulled from TMDB plus the original title. A show pulled once in Danish stays findable by its Danish name even after re-resolving.</div>
     </span>
     <span class="seg" id="kindseg"><span class="on" data-kind="movies">Movies</span><span data-kind="tv">TV</span></span>
   </div>
@@ -98,6 +94,7 @@
   <div class="filterbar">
     <span class="muted tiny">filter:</span>
     <span class="addfilter" id="add-filter">⚙ Add filter</span>
+    <span class="chip" id="lib-clear" style="display:none">✕ Clear filters</span>
     <span class="chip fchip on" data-quick="all">All</span>
     <span class="chip fchip" data-quick="attention">Needs attention</span>
     <span class="chip fchip" data-quick="missing_artwork" title="No poster.jpg on disk">Missing artwork</span>
