@@ -50,7 +50,7 @@
 .sd-guard .gt .sub { color: var(--ink-soft); font-size: .82rem; margin-top: 2px; }
 
 /* ---- coverage chart (gantt) ---- */
-.sd-cov { border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; margin-bottom: 18px; }
+.sd-cov { border: 1px solid var(--line); border-radius: var(--radius); overflow: clip; margin-bottom: 18px; }
 .sd-cov-scroll { overflow-x: auto; }
 .sd-grid { display: grid; min-width: max-content; }
 .sd-grid .gcell { padding: 0; min-width: 30px; }
