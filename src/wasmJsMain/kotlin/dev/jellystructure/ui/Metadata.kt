@@ -2,9 +2,11 @@ package dev.jellystructure.ui
 
 import dev.jellystructure.App
 import dev.jellystructure.api.JsTag
+import dev.jellystructure.api.MediaApi
 import dev.jellystructure.api.MetadataApi
 import dev.jellystructure.api.MetadataEntry
 import dev.jellystructure.api.TagsResponse
+import dev.jellystructure.api.TrackerEntry
 import kotlinx.browser.document
 import kotlinx.browser.window
 import kotlinx.coroutines.CoroutineScope
@@ -12,8 +14,9 @@ import kotlinx.coroutines.launch
 import org.w3c.dom.Element
 import org.w3c.dom.HTMLElement
 import org.w3c.dom.HTMLInputElement
+import org.w3c.dom.HTMLTextAreaElement
 
-private val TAB_LABELS = listOf("studios", "networks", "genres", "tags")
+private val TAB_LABELS = listOf("studios", "networks", "genres", "tags", "trackers")
 
 fun renderMetadata(container: Element, scope: CoroutineScope, initialTab: String = "studios") {
     val activeTab = if (initialTab in TAB_LABELS) initialTab else "studios"
@@ -111,6 +114,12 @@ private fun loadTab(container: Element, scope: CoroutineScope, tab: String, sort
                 val tags = MetadataApi.getTags(sort)
                 content.innerHTML = if (tags == null) errorHtml() else renderTagsTab(tags)
                 if (tags != null) wireTagsTab(content, scope)
+            }
+            "trackers" -> {
+                val trackers = MediaApi.getTrackers()
+                val unmapped = MediaApi.getUnmappedTrackers()
+                content.innerHTML = renderTrackersTab(trackers, unmapped)
+                wireTrackersTab(content, scope, trackers)
             }
         }
     }
@@ -347,3 +356,134 @@ private fun showTagModal(content: HTMLElement, scope: CoroutineScope, editName: 
 }
 
 private fun errorHtml() = """<span class="badge bad">Failed to load — check server connection.</span>"""
+
+// ---------- Phase 98: Tracker registry tab ----------
+
+private fun renderTrackersTab(trackers: List<TrackerEntry>, unmapped: List<dev.jellystructure.api.UnmappedHostEntry>): String = buildString {
+    append("""<p class="hint" style="margin:0 0 14px">A torrent announces to one tracker but may expose several mirror hosts. Define each tracker once here; the seeding surface resolves announce URLs to a name by hostname.</p>""")
+    append("""<div style="display:flex;align-items:center;gap:8px;margin-bottom:14px"><button id="new-tracker-btn" class="btn sm">＋ New tracker</button></div>""")
+    if (trackers.isEmpty()) {
+        append("""<p class="muted tiny" id="tracker-empty">No trackers defined yet.</p>""")
+    } else {
+        append("""<div class="meta-grid" id="tracker-grid">""")
+        trackers.forEach { t -> append(trackerCardHtml(t)) }
+        append("</div>")
+    }
+    if (unmapped.isNotEmpty()) {
+        append("""<h4 style="margin:24px 0 8px;font-size:.9rem">Unmapped announce hosts</h4>""")
+        append("""<p class="hint" style="margin:0 0 10px">Hosts seen in qBittorrent torrents that don't match any tracker definition.</p>""")
+        append("""<div class="card" style="padding:10px 14px">""")
+        unmapped.forEach { u ->
+            append("""<div class="row center" style="padding:6px 0;border-bottom:1px solid var(--line-2);gap:8px" data-host="${u.host.esc()}">""")
+            append("""<span class="mono tiny" style="flex:1">${u.host.esc()}</span>""")
+            append("""<span class="muted tiny">${u.torrentCount} torrent${if (u.torrentCount != 1) "s" else ""}</span>""")
+            append("""<button class="btn sm ghost unmapped-name-btn" data-host="${u.host.esc()}">＋ Name as new tracker</button>""")
+            append("</div>")
+        }
+        append("</div>")
+    }
+}
+
+private fun trackerCardHtml(t: TrackerEntry): String = buildString {
+    append("""<div class="card tracker-card" data-tracker="${t.name.esc()}">""")
+    append("""<div class="row center" style="margin-bottom:8px">""")
+    append("""<b style="font-size:.95rem">${t.name.esc()}</b>""")
+    append("""<span class="badge ${if (t.isPrivate) "warn" else "ok"}" style="font-size:.65rem;margin-left:6px">${if (t.isPrivate) "private" else "public"}</span>""")
+    append("""<span class="spacer"></span>""")
+    append("""<a href="#/library?tracker=${encodeURIComponent(t.name)}" class="tiny muted" style="text-decoration:underline">Library ↗</a>""")
+    append("""<button class="btn sm ghost edit-tracker-btn" style="margin-left:8px">Edit</button>""")
+    append("""<button class="btn sm ghost delete-tracker-btn" style="margin-left:4px;color:var(--bad)">✕</button>""")
+    append("</div>")
+    if (t.hosts.isEmpty()) {
+        append("""<span class="muted tiny">No announce hosts defined.</span>""")
+    } else {
+        t.hosts.forEach { h -> append("""<div class="mono tiny" style="padding:3px 0;border-bottom:1px solid var(--line-2)">${h.esc()}</div>""") }
+    }
+    append("</div>")
+}
+
+private fun wireTrackersTab(content: HTMLElement, scope: CoroutineScope, trackers: List<TrackerEntry>) {
+    content.querySelector("#new-tracker-btn")?.addEventListener("click") { _ ->
+        showTrackerModal(content, scope, null, null)
+    }
+    val editBtns = content.querySelectorAll(".edit-tracker-btn")
+    for (i in 0 until editBtns.length) {
+        val btn = editBtns.item(i) as? HTMLElement ?: continue
+        val name = btn.closest(".tracker-card")?.getAttribute("data-tracker") ?: continue
+        val t = trackers.firstOrNull { it.name == name } ?: continue
+        btn.addEventListener("click") { _ -> showTrackerModal(content, scope, t, name) }
+    }
+    val deleteBtns = content.querySelectorAll(".delete-tracker-btn")
+    for (i in 0 until deleteBtns.length) {
+        val btn = deleteBtns.item(i) as? HTMLElement ?: continue
+        val name = btn.closest(".tracker-card")?.getAttribute("data-tracker") ?: continue
+        btn.addEventListener("click") { _ ->
+            if (window.confirm("Delete tracker '${name}'?")) {
+                scope.launch {
+                    MediaApi.deleteTracker(name)
+                    loadTab(content.parentElement ?: content, scope, "trackers", "count")
+                }
+            }
+        }
+    }
+    val unmappedBtns = content.querySelectorAll(".unmapped-name-btn")
+    for (i in 0 until unmappedBtns.length) {
+        val btn = unmappedBtns.item(i) as? HTMLElement ?: continue
+        val host = btn.getAttribute("data-host") ?: continue
+        btn.addEventListener("click") { _ ->
+            val stub = TrackerEntry(name = "", isPrivate = true, hosts = listOf(host))
+            showTrackerModal(content, scope, stub, null)
+        }
+    }
+}
+
+private fun showTrackerModal(content: HTMLElement, scope: CoroutineScope, existing: TrackerEntry?, editName: String?) {
+    val isEdit = editName != null
+    val modal = document.createElement("div") as HTMLElement
+    modal.className = "modal-overlay"
+    modal.innerHTML = """
+        <div class="modal-box card" style="max-width:480px;width:100%">
+          <h3 style="margin:0 0 14px">${if (isEdit) "Edit tracker" else "New tracker"}</h3>
+          <div class="field"><label>Name</label><input id="trk-name" class="input" style="width:100%" value="${(existing?.name ?: "").esc()}"></div>
+          <div style="margin-bottom:12px">
+            <span style="font-size:.85rem;font-weight:500">Type</span>
+            <div style="display:flex;gap:8px;margin-top:6px">
+              <label style="display:flex;align-items:center;gap:4px;cursor:pointer"><input type="radio" name="trk-priv" id="trk-priv" value="true" ${if (existing?.isPrivate != false) "checked" else ""}> Private</label>
+              <label style="display:flex;align-items:center;gap:4px;cursor:pointer"><input type="radio" name="trk-priv" id="trk-pub" value="false" ${if (existing?.isPrivate == false) "checked" else ""}> Public</label>
+            </div>
+          </div>
+          <div class="field">
+            <label>Announce hosts <span class="muted tiny">(one per line, passkey ignored)</span></label>
+            <textarea id="trk-hosts" class="input" style="width:100%;height:90px;font-family:var(--font-mono);font-size:.8rem">${(existing?.hosts ?: emptyList()).joinToString("\n") { it.esc() }}</textarea>
+          </div>
+          <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">
+            <button id="trk-cancel" class="btn sm ghost">Cancel</button>
+            <button id="trk-save" class="btn sm primary">${if (isEdit) "Save" else "Create"}</button>
+          </div>
+          <span id="trk-msg" class="muted tiny" style="display:block;margin-top:6px"></span>
+        </div>""".trimIndent()
+    document.body?.appendChild(modal)
+    modal.querySelector("#trk-cancel")?.addEventListener("click") { _ -> modal.remove() }
+    modal.addEventListener("click") { e -> if (e.target == modal) modal.remove() }
+    modal.querySelector("#trk-save")?.addEventListener("click") { _ ->
+        val name = (modal.querySelector("#trk-name") as? HTMLInputElement)?.value?.trim() ?: ""
+        val priv = (modal.querySelector("#trk-priv") as? HTMLInputElement)?.checked ?: true
+        val hostsRaw = (modal.querySelector("#trk-hosts") as? HTMLTextAreaElement)?.value ?: ""
+        val hosts = hostsRaw.split("\n").map { it.trim() }.filter { it.isNotBlank() }
+        val msgEl = modal.querySelector("#trk-msg") as? HTMLElement
+        if (name.isEmpty()) { msgEl?.textContent = "Name is required."; return@addEventListener }
+        scope.launch {
+            val ok = if (isEdit) MediaApi.updateTracker(editName!!, name.takeIf { it != editName }, priv, hosts)
+                     else MediaApi.createTracker(name, priv, hosts)
+            if (ok) {
+                modal.remove()
+                loadTab(content.parentElement ?: content, scope, "trackers", "count")
+            } else {
+                msgEl?.textContent = "Save failed."
+            }
+        }
+    }
+}
+
+// Reuse encodeURIComponent for tracker library links
+private fun encodeURIComponent(s: String): String = dev.jellystructure.encodeURIComponent(s)

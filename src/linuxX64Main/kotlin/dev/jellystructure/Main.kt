@@ -13,6 +13,7 @@ import dev.jellystructure.chart.ChartStore
 import dev.jellystructure.chart.NetflixTudumProvider
 import dev.jellystructure.torrent.QBittorrentClient
 import dev.jellystructure.torrent.SeedingGuard
+import dev.jellystructure.torrent.SeedingSnapshot
 import dev.jellystructure.db.createDatabase
 import dev.jellystructure.db.walCheckpoint
 import dev.jellystructure.jobs.WsBroadcaster
@@ -133,7 +134,8 @@ fun main() = runBlocking {
     val imageProxyService = dev.jellystructure.tv.RaviloArtworkService(dataDir, configStore, mediaStore, artworkDownloader)
     val channelLogoStore = dev.jellystructure.tv.ChannelLogoStore(dataDir)
     val qbClient = QBittorrentClient()
-    val seedingGuard = SeedingGuard(qbClient)
+    val seedingSnapshot = SeedingSnapshot(configStore, qbClient)
+    val seedingGuard = SeedingGuard(seedingSnapshot)
     val arrClient = ArrClient()
     val arrRescan = ArrRescanService(configStore, arrClient, rootScope)
     val acquisitionStore = AcquisitionStore(db)
@@ -145,7 +147,7 @@ fun main() = runBlocking {
     val shutdown = startServer(
         configStore, sessionService, raviloDeviceService, raviloConfigService, channelLogoStore, homeFeedService, browseService, detailService, playbackService, jellyfinClient, mediaStore, scanner,
         artworkDownloader, tmdbClient, scanTracker, mediaHistory, activityLog, broadcaster,
-        frontendDir, raviloWebDir = raviloWebDir, port = port, scanDispatcher = scanDispatcher, effectiveScanThreads = effectiveScanThreads, jsTagStore = jsTagStore, seedingGuard = seedingGuard, logoDownloader = logoDownloader, qbClient = qbClient, arrClient = arrClient, arrRescan = arrRescan, acquisitionService = acquisitionService, chartRegistry = chartRegistry, chartStore = chartStore, chartIngest = chartIngest, tvEventBus = tvEventBus, imageProxyService = imageProxyService,
+        frontendDir, raviloWebDir = raviloWebDir, port = port, scanDispatcher = scanDispatcher, effectiveScanThreads = effectiveScanThreads, jsTagStore = jsTagStore, seedingGuard = seedingGuard, seedingSnapshot = seedingSnapshot, logoDownloader = logoDownloader, qbClient = qbClient, arrClient = arrClient, arrRescan = arrRescan, acquisitionService = acquisitionService, chartRegistry = chartRegistry, chartStore = chartStore, chartIngest = chartIngest, tvEventBus = tvEventBus, imageProxyService = imageProxyService,
     )
 
     // Scheduled scan / pipeline (Phase 91 / 93b). Fires at the LOCAL WALL-CLOCK time the admin set

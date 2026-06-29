@@ -220,6 +220,13 @@ fun renderSettings(container: Element, scope: CoroutineScope, query: Map<String,
                   <div id="qb-path-mappings"></div>
                   <button id="qb-add-mapping" class="btn sm ghost" style="margin-top:6px">+ Add mapping</button>
                 </div>
+                <div style="margin-top:14px">
+                  <div style="font-size:.85rem;font-weight:500;margin-bottom:4px">Snapshot refresh every</div>
+                  <div style="display:flex;align-items:center;gap:8px">
+                    <input id="qb-cache-ttl" class="input" type="number" min="30" max="3600" step="30" style="width:90px" placeholder="600">
+                    <span class="muted tiny">seconds (default 600 = 10 min). The seeding surface reads this shared snapshot — lower = fresher data, more load.</span>
+                  </div>
+                </div>
                 <div class="hint" style="margin-top:12px;color:var(--warn)">When enabled but unreachable, edits are blocked until qBittorrent responds or the guard is disabled.</div>
               </div>
             </div>
@@ -473,6 +480,7 @@ private fun populateForm(response: ConfigResponse) {
     if (qb != null) {
         setInputValue("qb-url", qb.url)
         setInputValue("qb-username", qb.username)
+        setInputValue("qb-cache-ttl", if (qb.seedingCacheTtl == 600L) "" else qb.seedingCacheTtl.toString())
     }
     val qbFields = document.getElementById("qb-fields") as? HTMLElement
     qbFields?.style?.display = if (qbEnabled) "block" else "none"
@@ -611,7 +619,7 @@ private fun attachListeners(scope: CoroutineScope) {
         qbCredFields?.style?.display = if (qbNoAuth) "none" else "block"
         refreshTomlPreview(readForm())
     }
-    listOf("qb-url", "qb-username", "qb-password").forEach { id ->
+    listOf("qb-url", "qb-username", "qb-password", "qb-cache-ttl").forEach { id ->
         document.getElementById(id)?.addEventListener("input") { refreshTomlPreview(readForm()) }
     }
     document.getElementById("qb-test-btn")?.addEventListener("click") {
@@ -953,6 +961,7 @@ private fun readForm(): AppConfig = AppConfig(
         username = if (qbNoAuth) "" else getInputValue("qb-username"),
         password = if (qbNoAuth) "" else getInputValue("qb-password").ifBlank { "##KEEP##" },
         pathMappings = qbPathMappings.toList(),
+        seedingCacheTtl = getInputValue("qb-cache-ttl").toLongOrNull()?.coerceIn(30L, 86400L) ?: 600L,
     ) else null,
     radarr = if (radarrEnabled) ArrConfig(
         enabled = true,

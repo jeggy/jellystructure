@@ -191,7 +191,7 @@ tasks.register<Copy>("syncDesignAssets") {
     description = "Assemble the complete frontend dist (CSS + JS bundle + index.html) after webpack"
     group = "application"
     from(rootProject.layout.projectDirectory.dir("design/app")) {
-        include("wf.css", "app.css")
+        include("wf.css", "app.css", "seeding.css", "seeding.js")
     }
     from(rootProject.layout.projectDirectory.dir("design")) {
         include("flags.css")
@@ -220,7 +220,7 @@ tasks.named("wasmJsBrowserDistribution") {
     doLast {
         copy {
             from(rootProject.layout.projectDirectory.dir("design/app")) {
-                include("wf.css", "app.css")
+                include("wf.css", "app.css", "seeding.css", "seeding.js")
             }
             from(rootProject.layout.projectDirectory.dir("design")) {
                 include("flags.css")
