@@ -10,7 +10,9 @@ import dev.jellystructure.arr.ArrRescanService
 import dev.jellystructure.chart.ChartIngestService
 import dev.jellystructure.chart.ChartRegistry
 import dev.jellystructure.chart.ChartStore
+import dev.jellystructure.chart.JustWatchProvider
 import dev.jellystructure.chart.NetflixTudumProvider
+import dev.jellystructure.chart.StreamingAvailabilityProvider
 import dev.jellystructure.torrent.QBittorrentClient
 import dev.jellystructure.torrent.SeedingGuard
 import dev.jellystructure.torrent.SeedingSnapshot
@@ -142,7 +144,21 @@ fun main() = runBlocking {
     val acquisitionService = AcquisitionService(configStore, arrClient, tmdbClient, acquisitionStore, mediaStore, tvEventBus, rootScope)
     acquisitionService.startReconciler()
     val chartStore = ChartStore(db)
-    val chartRegistry = ChartRegistry(listOf(NetflixTudumProvider()))
+    val chartRegistry = ChartRegistry(listOf(
+        NetflixTudumProvider(),
+        // Phase 59 — Streaming Availability API (movieofthenight.com): official platform top lists.
+        // Free tier = 500 req/month; week-gated polling uses ~40 req/month.
+        // Requires [api_keys] streaming_availability_key in config (free RapidAPI sign-up).
+        StreamingAvailabilityProvider(configStore, "max",     "Max"),
+        StreamingAvailabilityProvider(configStore, "disney",  "Disney+"),
+        StreamingAvailabilityProvider(configStore, "prime",   "Amazon Prime"),
+        StreamingAvailabilityProvider(configStore, "apple",   "Apple TV+"),
+        // Phase 59 — JustWatch unofficial GraphQL: covers Nordic and other regional services.
+        // No API key needed. Provider shortName is auto-discovered from urlSlug via GetProviders.
+        JustWatchProvider("viaplay",     "Viaplay",     "viaplay"),
+        JustWatchProvider("paramount",   "Paramount+",  "paramount-plus-premium"),
+        JustWatchProvider("skyshowtime", "SkyShowtime", "sky-showtime"),
+    ))
     val chartIngest = ChartIngestService(configStore, chartRegistry, tmdbClient, chartStore, mediaStore)
     val shutdown = startServer(
         configStore, sessionService, raviloDeviceService, raviloConfigService, channelLogoStore, homeFeedService, browseService, detailService, playbackService, jellyfinClient, mediaStore, scanner,
