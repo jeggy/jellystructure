@@ -95,13 +95,12 @@
 
 .sd-grouplbl { padding: 9px 12px 4px; font-size: .64rem; text-transform: uppercase; letter-spacing: .09em; font-weight: 700; color: var(--ink-dim);
   background: var(--fill); border-top: 1px solid var(--line-2); position: sticky; left: 0; }
-.sd-tracklbl { padding: 5px 12px 4px 20px; font-size: .72rem; font-weight: 700; color: var(--ink);
-  background: var(--fill); border-top: 1px solid var(--line); position: sticky; left: 0;
-  display: flex; align-items: center; gap: 7px; }
-.sd-tracklbl .pvt { font-size: .57rem; text-transform: uppercase; letter-spacing: .06em; padding: 1px 5px; border-radius: 4px; font-weight: 700; }
-.sd-tracklbl .pvt.private { background: var(--hi-soft); color: var(--acc-ink); }
-.sd-tracklbl .pvt.public { background: var(--fill-3); color: var(--ink-soft); }
-.sd-tracklbl .pvt.unmapped { background: var(--warn-soft); color: var(--warn); }
+/* private/public badge inside a row label (tracker-per-row chart) */
+.sd-rowlabel .pvt { font-size: .56rem; text-transform: uppercase; letter-spacing: .06em; padding: 1px 5px; border-radius: 4px; font-weight: 700; margin-right: 5px; flex: none; }
+.sd-rowlabel .pvt.private { background: var(--hi-soft); color: var(--acc-ink); }
+.sd-rowlabel .pvt.public { background: var(--fill-3); color: var(--ink-soft); }
+.sd-rowlabel .pvt.unmapped { background: var(--warn-soft); color: var(--warn); }
+.sd-rowlabel .chip { margin-left: 5px; }
 
 /* ---- torrent detail list ---- */
 .sd-list { display: flex; flex-direction: column; gap: 8px; }
