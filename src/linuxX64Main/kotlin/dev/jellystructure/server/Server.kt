@@ -232,7 +232,7 @@ fun startServer(
                 activityRoutes(activityLog)
                 triageRoutes(mediaStore, jellyfinClient, configStore, mediaHistory, seedingGuard)
                 metadataRoutes(mediaStore, jsTagStore, logoDownloader)
-                trackRoutes(mediaStore, configStore, jellyfinClient, mediaHistory, seedingGuard, arrRescan)
+                trackRoutes(mediaStore, configStore, jellyfinClient, mediaHistory, seedingGuard, arrRescan, appScope, broadcaster)
                 acquisitionService?.let { acquisitionRoutes(it) }
                 if (chartRegistry != null && chartStore != null && chartIngest != null) {
                     chartRoutes(chartRegistry, chartStore, configStore, chartIngest)
