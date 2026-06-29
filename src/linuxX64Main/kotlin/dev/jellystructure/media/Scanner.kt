@@ -289,6 +289,7 @@ class Scanner(
                 crew = epCrew,
                 jellyfinId = jfEpId,
                 runtime = epDetails?.runtime,
+                airDate = epDetails?.airDate?.takeIf { it.isNotBlank() },  // R148
             )
         }
 
@@ -528,6 +529,7 @@ class Scanner(
                 jellyfinId = existingEp?.jellyfinId
                     ?: (if (seasonNum != null && epNum != null) jfBySeasonEp[seasonNum to epNum]?.id else null),
                 runtime = epDetails?.runtime ?: existingEp?.runtime,
+                airDate = epDetails?.airDate?.takeIf { it.isNotBlank() } ?: existingEp?.airDate,  // R148
             )
         }
         val sortedEpisodes = episodes.sortedWith(compareBy({ it.seasonNumber ?: 999 }, { it.episodeNumber ?: 999 }))
@@ -619,6 +621,7 @@ class Scanner(
                 stillPath = epDetails?.stillPath ?: ep.stillPath,
                 tmdbEpisodeId = epDetails?.id ?: ep.tmdbEpisodeId,
                 runtime = epDetails?.runtime ?: ep.runtime,
+                airDate = epDetails?.airDate?.takeIf { it.isNotBlank() } ?: ep.airDate,  // R148
             )
             synced++
         }
@@ -722,6 +725,7 @@ class Scanner(
                             tmdbEpisodeId = epDetails.id,
                             resolvedLanguage = resolvedLang,
                             runtime = epDetails.runtime ?: ep.runtime,
+                            airDate = epDetails.airDate?.takeIf { it.isNotBlank() } ?: ep.airDate,  // R148
                         ) else ep
                     } else ep
                 }
