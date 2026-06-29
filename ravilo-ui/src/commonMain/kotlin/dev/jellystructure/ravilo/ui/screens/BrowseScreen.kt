@@ -73,6 +73,7 @@ class BrowseStore(private val apiClient: TvApiClient) {
     private val _state = MutableStateFlow<BrowseState>(BrowseState.Loading)
     val state: StateFlow<BrowseState> = _state.asStateFlow()
     val gridState = LazyGridState()   // R137: retained grid scroll survives navigate→back
+    var focusItemKey: String? = null  // R139: the grid cell the user last navigated from
     private var loadJob: Job? = null
 
     var activeKind: BrowseKind = BrowseKind.ALL
@@ -149,7 +150,8 @@ fun BrowseScreen(
 
     // R60: NavBar focus — ensures Back fires through Compose (not Android finish()) and AppBar is visible
     val navBarFR = remember { FocusRequester() }
-    LaunchedEffect(Unit) { runCatching { navBarFR.requestFocus() } }
+    // R139: on a Back-return from a grid cell, the grid re-focuses that cell; skip the default nav-bar focus.
+    LaunchedEffect(Unit) { if (store.focusItemKey == null) runCatching { navBarFR.requestFocus() } }
 
     val navItems = buildList {
         add(str("nav.home")); add(str("nav.movies")); add(str("nav.series"))
@@ -210,7 +212,8 @@ fun BrowseScreen(
                         items = s.results.items,
                         gridState = gridState,
                         firstCellFR = firstCellFR,
-                        onItemSelect = onItemSelect,
+                        restoreItemKey = store.focusItemKey,   // R139
+                        onItemSelect = { card -> store.focusItemKey = card.id; onItemSelect(card) },  // R139: save on select
                     )
                 }
             }
@@ -303,11 +306,23 @@ private fun BrowseGrid(
     items: List<MediaCard>,
     gridState: LazyGridState,
     firstCellFR: FocusRequester,
+    restoreItemKey: String?,   // R139: the cell to re-focus on Back (its scroll is already retained)
     onItemSelect: (MediaCard) -> Unit,
 ) {
     // R88: warm the next 4 poster images ahead of the scroll position.
     val prefetchUrls = remember(items) { items.map { it.posterUrl.orEmpty() } }
     PrefetchLazyGridEffect(gridState = gridState, urls = prefetchUrls)
+
+    // R139: on a Back-return, re-focus the cell the user navigated from. The grid's scroll is retained
+    // (R137) so the cell is already in view → request focus directly (no scroll disturbance).
+    val restoreFR = remember { FocusRequester() }
+    var restoredOnce by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        if (!restoredOnce && restoreItemKey != null && items.any { it.id == restoreItemKey }) {
+            runCatching { restoreFR.requestFocus() }
+            restoredOnce = true
+        }
+    }
 
     // Native 2-D focus traversal across the grid: the framework composes off-screen rows in the
     // search direction and scrolls them into view; focusRestorer() returns focus to the last cell
@@ -328,8 +343,8 @@ private fun BrowseGrid(
                 posterUrl = card.posterUrl,
                 progressPct = card.progressPct ?: 0f,
                 watched = card.watched,
-                // R55: the first cell is the back-to-top focus landing target.
-                focusRequester = if (i == 0) firstCellFR else null,
+                // R139 restore target takes precedence; R55: first cell is the back-to-top landing target.
+                focusRequester = if (card.id == restoreItemKey) restoreFR else if (i == 0) firstCellFR else null,
                 onSelect = { onItemSelect(card) },
             )
         }
