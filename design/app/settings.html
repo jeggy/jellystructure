@@ -184,6 +184,7 @@
       <div class="navitem active" data-tab="connections">Connections<span class="nav-badge" data-badge="connections">!</span></div>
       <div class="navitem" data-tab="libraries">Libraries<span class="nav-badge" data-badge="libraries">!</span></div>
       <div class="navitem" data-tab="metadata">Metadata<span class="nav-badge" data-badge="metadata">!</span></div>
+      <div class="navitem" data-tab="discover">Discover</div>
       <div class="navitem" data-tab="downloads">Download tools<span class="nav-badge" data-badge="downloads">!</span></div>
       <div class="navitem" data-tab="notifications">Notifications</div>
       <div class="navitem" data-tab="advanced">Advanced</div>
@@ -362,6 +363,90 @@
         </div>
       </div>
 
+      <!-- DISCOVER / TOP 10 CHART PROVIDERS (Phase 59) -->
+      <div class="card set-section" id="sect-discover" data-tab="discover">
+        <div class="row center" style="margin-bottom:4px;">
+          <h3 style="font-size:1.05rem;margin:0;">Discover / Top 10</h3>
+          <span class="spacer"></span>
+          <span class="muted tiny">enable</span>
+          <span class="toggle on" id="discover-enable"></span>
+        </div>
+        <div class="tiny muted" style="margin-bottom:14px;">Enables the <b>Top 10</b> tab in Ravilo with trending charts. Charts are ingested weekly — configure which services to pull and which Ravilo users can see them in <a href="ravilo-config.html">Ravilo config</a>.</div>
+
+        <div id="discover-body">
+          <div class="row" style="gap:16px;flex-wrap:wrap;margin-bottom:14px;">
+            <div class="field" style="margin:0;width:220px;"><label>Region</label><span class="select"><span>🇩🇰 Denmark (DK)</span></span><span class="hint">ISO country code for per-country charts.</span></div>
+            <div class="field" style="margin:0;width:160px;"><label>Refresh</label><span class="select"><span>Weekly</span></span><span class="hint">How often to re-ingest. Weekly is plenty.</span></div>
+          </div>
+          <hr class="dash" style="margin:0 0 16px;">
+
+          <!-- Netflix — free, official TSV feed -->
+          <div class="box flat" style="padding:13px 15px;">
+            <div class="row center" style="gap:9px;">
+              <span style="font-size:1.1rem;">🎬</span>
+              <b>Netflix</b>
+              <span class="badge ok">free · no setup</span>
+              <span class="spacer"></span>
+              <span class="muted tiny">enable</span>
+              <span class="toggle on"></span>
+            </div>
+            <div class="tiny muted" style="margin-top:6px;">Official <b>Tudum</b> data feed — country Top 10 · Global Top 10 · Non-English · All-time. No API key required.</div>
+          </div>
+
+          <!-- Streaming Availability API group -->
+          <div class="box flat" style="padding:13px 15px;margin-top:10px;">
+            <div class="row center" style="gap:8px;margin-bottom:8px;">
+              <span style="font-size:1rem;">📺</span>
+              <b>Max · Disney+ · Amazon Prime · Apple TV+</b>
+              <span class="badge warn">free RapidAPI key needed</span>
+              <span class="spacer"></span>
+            </div>
+            <div class="tiny muted" style="margin-bottom:12px;">Official in-app Top 10 per country via <b>Streaming Availability API</b> (movieofthenight.com on RapidAPI). Free tier: 500 req/month — weekly polling uses ≈ 40 req/month across all four.</div>
+
+            <div class="field" style="margin-bottom:10px;">
+              <label>RapidAPI key <span class="chk" id="chk-sa" style="margin-left:auto;"><span class="dot ok"></span><span class="badge ok">valid</span></span></label>
+              <div class="input">••••••••••••••d4e2</div>
+              <span class="hint">One key covers all four services. Leave blank to disable this group.</span>
+            </div>
+
+            <details style="margin-bottom:14px;">
+              <summary class="tiny" style="cursor:pointer;color:var(--ink-soft);user-select:none;">▸ How to get a free RapidAPI key</summary>
+              <ol class="tiny muted" style="margin:10px 0 0 16px;line-height:1.8;">
+                <li>Go to <b>rapidapi.com</b> and create a free account (no credit card required).</li>
+                <li>Search for <b>"Streaming Availability"</b> by Movie of the Night.</li>
+                <li>Click <b>Subscribe to Test</b> and pick the <b>Basic</b> plan (free, 500 req/month).</li>
+                <li>Open the <b>Endpoints</b> tab → click any endpoint → copy the value from <b>X-RapidAPI-Key</b> in the request headers panel.</li>
+                <li>Paste it in the field above and save.</li>
+              </ol>
+            </details>
+
+            <div class="col" style="gap:5px;border-top:1px solid var(--line);padding-top:10px;">
+              <div class="row center" style="padding:3px 0;"><div><b>Max</b><div class="tiny muted">HBO / Warner Bros. Discovery</div></div><span class="spacer"></span><span class="muted tiny">enable</span><span class="toggle on" style="margin-left:8px;"></span></div>
+              <div class="row center" style="padding:3px 0;"><div><b>Disney+</b><div class="tiny muted">Disney · Marvel · Star Wars · Pixar</div></div><span class="spacer"></span><span class="muted tiny">enable</span><span class="toggle on" style="margin-left:8px;"></span></div>
+              <div class="row center" style="padding:3px 0;"><div><b>Amazon Prime</b><div class="tiny muted">Prime Video originals &amp; catalogue</div></div><span class="spacer"></span><span class="muted tiny">enable</span><span class="toggle on" style="margin-left:8px;"></span></div>
+              <div class="row center" style="padding:3px 0;"><div><b>Apple TV+</b><div class="tiny muted">Apple originals only</div></div><span class="spacer"></span><span class="muted tiny">enable</span><span class="toggle" style="margin-left:8px;"></span></div>
+            </div>
+          </div>
+
+          <!-- JustWatch group -->
+          <div class="box flat" style="padding:13px 15px;margin-top:10px;">
+            <div class="row center" style="gap:8px;margin-bottom:8px;">
+              <span style="font-size:1rem;">🌍</span>
+              <b>Viaplay · Paramount+ · SkyShowtime</b>
+              <span class="badge ok">free · no key</span>
+              <span class="spacer"></span>
+            </div>
+            <div class="tiny muted" style="margin-bottom:12px;">User-activity rankings via the <b>JustWatch</b> service. Data is based on what 60M users are watching — not platform-official viewership. No API key or account required.</div>
+
+            <div class="col" style="gap:5px;border-top:1px solid var(--line);padding-top:10px;">
+              <div class="row center" style="padding:3px 0;"><div><b>Viaplay</b><div class="tiny muted">Nordic sports &amp; films</div></div><span class="spacer"></span><span class="muted tiny">enable</span><span class="toggle on" style="margin-left:8px;"></span></div>
+              <div class="row center" style="padding:3px 0;"><div><b>Paramount+</b><div class="tiny muted">Paramount, CBS, Showtime</div></div><span class="spacer"></span><span class="muted tiny">enable</span><span class="toggle on" style="margin-left:8px;"></span></div>
+              <div class="row center" style="padding:3px 0;"><div><b>SkyShowtime</b><div class="tiny muted">Sky, Universal, Peacock</div></div><span class="spacer"></span><span class="muted tiny">enable</span><span class="toggle" style="margin-left:8px;"></span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <!-- NOTIFICATIONS (Phase 36) -->
       <div class="card set-section" id="sect-notifications" data-tab="notifications">
         <h3 style="font-size:1.05rem;margin:0 0 10px;">Notifications</h3>
@@ -435,6 +520,16 @@
         <div>local_path = "/mnt/media/movies"</div>
         <div>skip = <span class="badc">false</span></div>
         <div>&nbsp;</div>
+        <div>&nbsp;</div>
+        <div class="muted">[api_keys]</div>
+        <div>streaming_availability_key = "••••••••d4e2"</div>
+        <div>&nbsp;</div>
+        <div class="muted">[discover]</div>
+        <div>enabled = <span class="okc">true</span></div>
+        <div>providers = ["netflix", "max", "disney", "prime", "viaplay", "paramount"]</div>
+        <div>regions = ["DK"]</div>
+        <div>refresh_hours = <span class="okc">168</span> <span class="muted"># 7 days</span></div>
+        <div>&nbsp;</div>
         <div class="muted"># omitted when guard is off</div>
         <div class="muted">[qbittorrent]</div>
         <div>enabled = <span class="badc">false</span></div>
@@ -456,7 +551,7 @@
   const sectionTab = {
     'sect-connections': 'connections', 'sect-arr': 'downloads',
     'sect-library': 'libraries', 'sect-scanning': 'libraries',
-    'sect-metadata': 'metadata', 'sect-seeding': 'downloads',
+    'sect-metadata': 'metadata', 'sect-discover': 'discover', 'sect-seeding': 'downloads',
     'sect-notifications': 'notifications', 'sect-advanced': 'advanced'
   };
   const names = [...tabs].map(t => t.dataset.tab);
