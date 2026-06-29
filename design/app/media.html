@@ -7,6 +7,7 @@
 <link rel="stylesheet" href="wf.css">
 <link rel="stylesheet" href="app.css">
 <link rel="stylesheet" href="ravilo-builders.css">
+<link rel="stylesheet" href="seeding.css">
 <link rel="stylesheet" href="../flags.css">
 <style>
   .field label { display: flex; align-items: center; }
@@ -241,6 +242,7 @@
     <h1>Sintel <span class="muted">(2010)</span></h1>
     <span class="badge ok" id="match-badge">TMDB matched</span>
     <span class="audio-flags" id="audio-flags"></span>
+    <a id="seed-pill-link" href="#tab=seeding" style="text-decoration:none;"></a>
     <span class="spacer"></span>
     <!-- External links (Jellyfin / TMDB) -->
     <span class="menu-wrap" id="links-menu">
@@ -304,6 +306,7 @@
   <div class="tabs2" id="tabbar">
     <span class="on" data-tab="overview">Overview</span>
     <span data-tab="tracks">Tracks &amp; order</span>
+    <span data-tab="seeding">Seeding</span>
     <span data-tab="artwork">Artwork</span>
     <span data-tab="cast">Cast &amp; crew</span>
     <span data-tab="nfo">NFO (raw)</span>
@@ -446,6 +449,20 @@
           <div class="tiny muted" style="line-height:1.6;">Flag &amp; language changes use <b>mkvpropedit</b> in place (~40ms, no re-encode). Re-ordering streams needs an <b>ffmpeg -c copy</b> remux (no re-encode, but rewrites the file). Press <b>Save &amp; sync to Jellyfin</b> to push now — otherwise Jellyfin picks the changes up on its next scan.</div>
         </div>
       </div>
+    </div>
+  </div>
+
+  <!-- ================= SEEDING TAB (Phase 97 — cross-seed surface) ================= -->
+  <div class="tabpanel" data-panel="seeding" style="display:none;">
+    <div class="card">
+      <div class="sd-head">
+        <h4>Seeding &amp; cross-seed</h4>
+        <span class="badge info">qBittorrent</span>
+        <span class="spacer"></span>
+        <span class="mono tiny muted">Sintel (2010).mkv</span>
+      </div>
+      <div class="tiny muted" style="margin:4px 0 2px;line-height:1.5;">Live view of every torrent that references this file, cross-referenced to the Radarr grab history. This is the source of the track-edit guard.</div>
+      <div id="seeding-root"></div>
     </div>
   </div>
 
@@ -623,6 +640,7 @@
 </div>
 
 <script src="app-shell.js"></script>
+<script src="seeding.js"></script>
 <script>
 (function () {
   /* ---- URL-addressable tabs (Phase 28) ---- */
@@ -961,6 +979,24 @@
 
   /* ---- qBittorrent guard chip (Phase 37) ---- */
   const gc = document.getElementById('guard-chip'); if (gc) gc.addEventListener('click', () => toast('Seeding guard active — edits to a file being seeded return 409 and are blocked'));
+
+  /* ---- Seeding & cross-seed (Phase 97) ---- */
+  (function () {
+    const root = document.getElementById('seeding-root');
+    let rendered = false;
+    function ensure() {
+      if (rendered || !root) return;
+      const torrents = window.Seeding.renderMovie(root);
+      const link = document.getElementById('seed-pill-link');
+      if (link) link.innerHTML = window.Seeding.pillHTML(torrents);
+      rendered = true;
+    }
+    const link = document.getElementById('seed-pill-link');
+    if (link) link.innerHTML = window.Seeding.pillHTML(window.Seeding.MOVIE.torrents);
+    document.getElementById('tabbar').addEventListener('click', e => { if (e.target.closest('[data-tab="seeding"]')) ensure(); });
+    if (/tab=seeding/.test(location.hash)) ensure();
+    window.addEventListener('hashchange', () => { if (/tab=seeding/.test(location.hash)) ensure(); });
+  })();
 
   /* ---- Artwork manager (Phase 40 — asset rail + inline gallery) ---- */
   (function artwork(){

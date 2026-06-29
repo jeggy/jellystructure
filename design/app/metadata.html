@@ -24,6 +24,28 @@
   .swatches { display: flex; gap: 8px; flex-wrap: wrap; }
   .swatch { width: 28px; height: 28px; border-radius: 8px; cursor: pointer; border: 2px solid transparent; }
   .swatch.on { border-color: var(--ink); }
+  /* trackers (Phase 98) */
+  .trk-card { display: flex; flex-direction: column; gap: 10px; align-items: stretch; }
+  .trk-top { display: flex; align-items: center; gap: 9px; }
+  .trk-top .nm { font-weight: 600; font-size: 1rem; }
+  .pvt-badge { font-size: .58rem; text-transform: uppercase; letter-spacing: .06em; padding: 2px 7px; border-radius: 5px; font-weight: 700; }
+  .pvt-badge.private { background: var(--hi-soft); color: var(--acc-ink); }
+  .pvt-badge.public { background: var(--fill-3); color: var(--ink-soft); }
+  .host-list { display: flex; flex-direction: column; gap: 5px; }
+  .host { display: flex; align-items: center; gap: 8px; font-family: 'JetBrains Mono', monospace; font-size: .74rem; color: var(--ink-soft);
+    background: var(--fill); border: 1px solid var(--line); border-radius: 7px; padding: 5px 9px; }
+  .host .hx { margin-left: auto; color: var(--ink-dim); cursor: pointer; font-size: .8rem; }
+  .host .hx:hover { color: var(--bad); }
+  .trk-meta { display: flex; align-items: center; gap: 12px; font-size: .74rem; color: var(--ink-soft); margin-top: 2px; }
+  .trk-link { display: inline-flex; align-items: center; gap: 6px; font-size: .76rem; font-weight: 600; color: var(--acc-ink);
+    text-decoration: none; padding: 5px 10px; border-radius: 7px; background: var(--hi-soft); border: 1px solid rgba(123,110,240,.3); }
+  .trk-link:hover { border-color: var(--hi); }
+  .trk-link b { font-family: 'JetBrains Mono', monospace; }
+  .add-host { display: flex; gap: 7px; align-items: center; }
+  .add-host input { font-family: 'JetBrains Mono', monospace; font-size: .74rem; }
+  .unmapped-row { display: flex; align-items: center; gap: 12px; padding: 10px 13px; border: 1px solid rgba(245,181,66,.4);
+    background: var(--warn-soft); border-radius: var(--radius-s); }
+  .unmapped-row .host-name { font-family: 'JetBrains Mono', monospace; font-size: .8rem; color: var(--ink); }
 </style>
 </head>
 <body class="wf-body app-body">
@@ -41,6 +63,7 @@
     <span data-tab="networks">Networks</span>
     <span data-tab="genres">Genres</span>
     <span data-tab="tags">Tags</span>
+    <span data-tab="trackers">Trackers</span>
   </div>
 
   <!-- STUDIOS -->
@@ -106,6 +129,57 @@
       <span class="chip">crime drama <span class="muted">22</span></span>
     </div>
   </div>
+
+  <!-- TRACKERS (Phase 98) -->
+  <div class="tabpanel" data-panel="trackers" style="display:none;">
+    <div class="note blue" style="margin-bottom:18px;">A torrent announces to one <b>tracker</b>, but that tracker often exposes several announce URLs (mirrors / load-balanced hosts) that aren’t always listed in the same order. Define each tracker here with a friendly name and the set of announce <b>hosts</b> that belong to it — the seeding view then resolves every torrent to a single named tracker, no matter which mirror URL it carries.</div>
+
+    <div class="row center" style="margin-bottom:12px;"><h3 style="margin:0;font-size:1.15rem;">Trackers</h3><span class="muted tiny" style="margin-left:10px;">3 defined</span><span class="spacer"></span><span class="btn sm primary" id="new-trk">＋ New tracker</span></div>
+    <div class="meta-grid" style="grid-template-columns:repeat(auto-fill,minmax(330px,1fr));">
+
+      <div class="card trk-card">
+        <div class="trk-top"><span class="nm">FrostSeed</span><span class="pvt-badge private">private</span><span class="spacer"></span><span class="btn sm ghost">Edit</span></div>
+        <div class="host-list">
+          <div class="host"><span>t.nordicswarm.org</span><span class="hx" title="Remove mirror">✕</span></div>
+          <div class="host"><span>t.polarswarm.org</span><span class="hx" title="Remove mirror">✕</span></div>
+          <div class="host"><span>t.nordicvault.org</span><span class="hx" title="Remove mirror">✕</span></div>
+        </div>
+        <div class="add-host"><input class="input" placeholder="add mirror host… e.g. t.newmirror.org" style="flex:1;"><span class="btn sm">Add</span></div>
+        <div class="trk-meta"><a class="trk-link" href="library.html?tracker=FrostSeed"><b>48</b> torrents · <b>41</b> items seeded →</a></div>
+      </div>
+
+      <div class="card trk-card">
+        <div class="trk-top"><span class="nm">FilmBytes</span><span class="pvt-badge private">private</span><span class="spacer"></span><span class="btn sm ghost">Edit</span></div>
+        <div class="host-list">
+          <div class="host"><span>announce.filmbytes.org</span><span class="hx" title="Remove mirror">✕</span></div>
+        </div>
+        <div class="add-host"><input class="input" placeholder="add mirror host…" style="flex:1;"><span class="btn sm">Add</span></div>
+        <div class="trk-meta"><a class="trk-link" href="library.html?tracker=FilmBytes"><b>22</b> torrents · <b>20</b> items seeded →</a></div>
+      </div>
+
+      <div class="card trk-card">
+        <div class="trk-top"><span class="nm">OpenTrackers</span><span class="pvt-badge public">public</span><span class="spacer"></span><span class="btn sm ghost">Edit</span></div>
+        <div class="host-list">
+          <div class="host"><span>open.tracker.net</span><span class="hx" title="Remove mirror">✕</span></div>
+          <div class="host"><span>tracker.opentrackr.org</span><span class="hx" title="Remove mirror">✕</span></div>
+        </div>
+        <div class="add-host"><input class="input" placeholder="add mirror host…" style="flex:1;"><span class="btn sm">Add</span></div>
+        <div class="trk-meta"><a class="trk-link" href="library.html?tracker=OpenTrackers"><b>9</b> torrents · <b>9</b> items seeded →</a></div>
+      </div>
+
+    </div>
+
+    <h3 style="margin:24px 0 10px;font-size:1.05rem;">Unmapped announce hosts <span class="tiny muted" style="font-weight:400;">— seen in torrents but not yet assigned to a tracker</span></h3>
+    <div class="col" style="gap:8px;">
+      <div class="unmapped-row">
+        <span class="host-name">t.newswarm.io</span>
+        <span class="tiny muted">seen in <b>3</b> torrents · 6 items</span>
+        <span class="spacer"></span>
+        <span class="select" style="width:auto;min-width:150px;"><span>Assign to… FrostSeed</span></span>
+        <span class="btn sm" id="name-trk">＋ Name as new tracker</span>
+      </div>
+    </div>
+  </div>
 </main>
 
 <!-- New tag modal -->
@@ -124,6 +198,22 @@
     </div>
     <div class="field"><label>Description</label><input class="input" placeholder="What this tag means"></div>
     <div class="row" style="justify-content:flex-end;gap:8px;margin-top:6px;"><span class="btn ghost" id="tag-cancel">Cancel</span><span class="btn primary" id="tag-create">Create tag</span></div>
+  </div>
+</div>
+
+<!-- New tracker modal -->
+<div class="modal-back" id="trk-modal">
+  <div class="modal">
+    <span class="x" id="trk-x">✕</span>
+    <h3>New tracker</h3>
+    <div class="field"><label>Name</label><input class="input" placeholder="e.g. FrostSeed"></div>
+    <div class="field"><label>Type</label>
+      <div class="seg"><span class="on">Private</span><span>Public</span></div>
+    </div>
+    <div class="field"><label>Announce hosts <span class="tiny muted">— one per line; all mirrors of this tracker</span></label>
+      <textarea class="input" rows="3" placeholder="t.nordicswarm.org&#10;t.polarswarm.org&#10;t.nordicvault.org" style="font-family:'JetBrains Mono',monospace;font-size:.78rem;resize:vertical;"></textarea></div>
+    <div class="tiny muted" style="margin:-4px 0 8px;line-height:1.5;">Match is by host only — the passkey in the path differs per user and is ignored.</div>
+    <div class="row" style="justify-content:flex-end;gap:8px;margin-top:6px;"><span class="btn ghost" id="trk-cancel">Cancel</span><span class="btn primary" id="trk-create">Create tracker</span></div>
   </div>
 </div>
 
@@ -148,7 +238,18 @@
   document.getElementById('tag-create').addEventListener('click', () => tm.classList.remove('open'));
   tm.addEventListener('click', e => { if (e.target === tm) tm.classList.remove('open'); });
   document.querySelectorAll('.swatch').forEach(s => s.addEventListener('click', () => { document.querySelectorAll('.swatch').forEach(x => x.classList.remove('on')); s.classList.add('on'); }));
-  document.addEventListener('keydown', e => { if (e.key === 'Escape') tm.classList.remove('open'); });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') { tm.classList.remove('open'); trk.classList.remove('open'); } });
+
+  /* trackers modal (Phase 98) */
+  const trk = document.getElementById('trk-modal');
+  const openTrk = () => trk.classList.add('open'), closeTrk = () => trk.classList.remove('open');
+  document.getElementById('new-trk').addEventListener('click', openTrk);
+  document.getElementById('name-trk').addEventListener('click', openTrk);
+  document.getElementById('trk-x').addEventListener('click', closeTrk);
+  document.getElementById('trk-cancel').addEventListener('click', closeTrk);
+  document.getElementById('trk-create').addEventListener('click', closeTrk);
+  trk.addEventListener('click', e => { if (e.target === trk) closeTrk(); });
+  document.querySelectorAll('.seg span').forEach(s => s.addEventListener('click', () => { const sib = s.parentElement.querySelectorAll('span'); sib.forEach(x => x.classList.remove('on')); s.classList.add('on'); }));
 })();
 </script>
 </body>
