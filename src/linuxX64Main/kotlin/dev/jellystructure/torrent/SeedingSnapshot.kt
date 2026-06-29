@@ -14,12 +14,16 @@ import kotlinx.cinterop.convert
 import kotlinx.cinterop.memScoped
 import kotlinx.cinterop.pointed
 import kotlinx.cinterop.ptr
+import kotlinx.cinterop.toKString
 import kotlinx.cinterop.value
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import platform.posix.closedir
 import platform.posix.localtime
+import platform.posix.opendir
+import platform.posix.readdir
 import platform.posix.time_tVar
 
 // ---------- API DTOs ----------
@@ -183,11 +187,41 @@ class SeedingSnapshot(
 
     private fun coversItem(t: QBTorrent, item: MediaItem, qbConfig: QBittorrentConfig, localPath: String? = null): Boolean {
         val norm = (localPath ?: translateRemoteToLocal(t.contentPath, qbConfig)).trimEnd('/')
-        return when (item.kind) {
+        // Primary: path-prefix matching (works when qBittorrent saves directly into the media tree)
+        val directMatch = when (item.kind) {
             MediaKind.MOVIE -> item.path == norm || item.path.startsWith("$norm/") || norm.startsWith(item.path.substringBeforeLast("/"))
             MediaKind.TV_SHOW ->
                 item.episodes.any { ep -> ep.path == norm || ep.path.startsWith("$norm/") } ||
                 norm.startsWith(item.path.trimEnd('/'))
+        }
+        if (directMatch) return true
+        // Fallback: filename-based matching for hard-link / cross-seed setups where the torrent's
+        // save path differs from the media library path. List files in the content directory and
+        // compare basenames against the item's known file names.
+        return filenameMatch(norm, item)
+    }
+
+    @OptIn(ExperimentalForeignApi::class)
+    private fun filenameMatch(contentPath: String, item: MediaItem): Boolean {
+        val targetNames: Set<String> = when (item.kind) {
+            MediaKind.MOVIE -> setOf(item.path.substringAfterLast("/"))
+            MediaKind.TV_SHOW -> item.episodes.mapTo(mutableSetOf()) { it.path.substringAfterLast("/") }
+        }
+        if (targetNames.isEmpty() || targetNames.all { it.isBlank() }) return false
+        // Check contentPath as a directory whose files are hard-linked to the media tree
+        val dir = opendir(contentPath) ?: run {
+            // contentPath is a single file — compare its basename directly
+            return contentPath.substringAfterLast("/") in targetNames
+        }
+        return try {
+            while (true) {
+                val entry = readdir(dir) ?: break
+                val name = entry.pointed.d_name.toKString()
+                if (name != "." && name != ".." && name in targetNames) return true
+            }
+            false
+        } finally {
+            closedir(dir)
         }
     }
 

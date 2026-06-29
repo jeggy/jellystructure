@@ -1227,6 +1227,7 @@ fun Route.mediaRoutes(
             call.respond(mapOf("ok" to true))
         }
 
+
         // GET /api/media/{id}/drift — compare live Jellyfin metadata vs stored DB state
         get("/{id}/drift") {
             val id = call.parameters["id"] ?: return@get call.respond(HttpStatusCode.BadRequest)
