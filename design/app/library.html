@@ -11,6 +11,14 @@
   .filterbar { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; margin-bottom: 12px; }
   .fchip { cursor: pointer; }
   .fchip.on { background: var(--hi); color: #fff; border-color: transparent; }
+  /* tracker filter (Phase 98) — a library axis, separate from the workbench */
+  .seedfilter { display: inline-flex; align-items: center; gap: 7px; font-size: .82rem; }
+  .seedfilter.on .seedsel { border-color: var(--hi); color: var(--acc-ink); background: var(--hi-soft); font-weight: 600; }
+  .seedsel { font: inherit; font-size: .82rem; padding: 6px 10px; border-radius: 8px; border: 1px solid var(--line-2);
+    background: var(--fill-2); color: var(--ink); cursor: pointer; }
+  .seed-x { cursor: pointer; color: var(--ink-dim); font-size: .9rem; display: none; }
+  .seedfilter.on .seed-x { display: inline; }
+  .seed-x:hover { color: var(--bad); }
   .searchwrap { position: relative; }
   .search-note { position: absolute; top: 44px; left: 0; width: 320px; z-index: 30; display: none;
     font-size: .8rem; line-height: 1.5; padding: 11px 13px; }
@@ -93,6 +101,17 @@
     <span class="chip fchip on" data-quick="all">All</span>
     <span class="chip fchip" data-quick="attention">Needs attention</span>
     <span class="chip fchip" data-quick="missing_artwork" title="No poster.jpg on disk">Missing artwork</span>
+    <span class="seedfilter" id="seedfilter" title="Show only items seeded on a tracker (qBittorrent). Not a workbench facet — a library view.">
+      <span class="muted tiny" style="margin-left:4px;">🌱 seeded on:</span>
+      <select class="seedsel" id="seed-tracker">
+        <option value="">any tracker (off)</option>
+        <option value="*">— any tracker —</option>
+        <option value="NordicHD">NordicHD</option>
+        <option value="FilmBytes">FilmBytes</option>
+        <option value="OpenTrackers">OpenTrackers</option>
+      </select>
+      <span class="seed-x" id="seed-x" title="Clear tracker filter">✕</span>
+    </span>
 
     <span class="spacer" style="flex:1"></span>
 
@@ -165,6 +184,20 @@
   let kind = 'movie';
   let search = '';
 
+  /* tracker seeding filter (Phase 98) — which tracker (if any) a title is seeded on.
+     Live data comes from qBittorrent resolved via the Phase-98 tracker registry; here it's a
+     deterministic stand-in so the filter produces a believable subset. */
+  const SEED_TRACKERS = ['NordicHD', 'FilmBytes', 'OpenTrackers'];
+  const SEED_OVERRIDE = { 'Nordvest': 'NordicHD', 'Sintel': 'NordicHD' };
+  function hashStr(s) { let h = 0; for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0; return h; }
+  function seededOn(title) {
+    if (title in SEED_OVERRIDE) return SEED_OVERRIDE[title];
+    const h = hashStr(title);
+    return (h % 100) < 38 ? SEED_TRACKERS[h % SEED_TRACKERS.length] : null;  // ~38% are seeded
+  }
+  let seedTracker = '';
+  try { const tp = new URLSearchParams(location.search).get('tracker'); if (tp) seedTracker = tp; } catch (e) {}
+
   // Coverage hand-off from the Ravilo channel editor: a normal workbench filter (the channel's
   // conditions ANDed with "Content row is none of <its rows>") carried via localStorage. It loads
   // as ordinary, editable filter conditions — nothing special about it on this page.
@@ -188,6 +221,7 @@
   function matches() {
     let list = RB.evaluate(effective());
     if (quick !== 'all') list = list.filter(t => STATUS[t.title] && STATUS[t.title].k === quick);
+    if (seedTracker) list = list.filter(t => { const s = seededOn(t.title); return seedTracker === '*' ? !!s : s === seedTracker; });
     if (search) list = list.filter(t => t.title.toLowerCase().includes(search.toLowerCase()));
     return list;
   }
@@ -250,7 +284,7 @@
   let done = false;
 
   function browsing() {
-    return !state.conditions.some(c => c.values.length) && quick === 'all' && !search;
+    return !state.conditions.some(c => c.values.length) && quick === 'all' && !search && !seedTracker;
   }
   function buildOrder() {
     const base = matches();
@@ -327,6 +361,17 @@
 
   // wire controls
   document.getElementById('add-filter').onclick = openBuilder;
+
+  /* tracker seeding filter wiring (Phase 98) */
+  const seedSel = document.getElementById('seed-tracker');
+  const seedWrap = document.getElementById('seedfilter');
+  function syncSeedUI() {
+    seedSel.value = seedTracker || '';
+    seedWrap.classList.toggle('on', !!seedTracker);
+  }
+  seedSel.addEventListener('change', () => { seedTracker = seedSel.value; syncSeedUI(); renderAll(); });
+  document.getElementById('seed-x').addEventListener('click', () => { seedTracker = ''; syncSeedUI(); renderAll(); });
+  syncSeedUI();
 
   const kindseg = document.getElementById('kindseg');
   kindseg.addEventListener('click', e => {

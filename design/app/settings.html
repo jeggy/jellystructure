@@ -350,6 +350,14 @@
               <span class="btn sm ghost" style="align-self:flex-end;">✕</span>
             </div>
           </div>
+          <hr class="dash" style="margin:16px 0;">
+          <div class="row center"><h4 style="margin:0;">Seeding snapshot freshness</h4><span class="badge info" style="margin-left:8px;">Phase 99</span></div>
+          <div class="tiny muted" style="margin:6px 0 12px;line-height:1.5;">The seeding &amp; cross-seed views (and the library <b>seeded-on</b> filter) read one shared, cached snapshot of qBittorrent rather than querying per title. This is how often that snapshot is auto-refreshed — a longer interval is lighter on qBittorrent; <b>Refresh now</b> on any seeding view always forces an immediate re-query.</div>
+          <div class="row center" style="gap:12px;flex-wrap:wrap;">
+            <div class="field" style="margin:0;width:120px;"><label>Refresh every</label><input class="input" type="number" id="seed-ttl-val" value="10" min="1" max="60" style="width:100%;"></div>
+            <div class="field" style="margin:0;width:130px;"><label>Unit</label><span class="select" style="width:100%;"><span>minutes</span></span></div>
+          </div>
+          <div class="tiny muted" id="seed-ttl-hint" style="margin-top:2px;">Default <b>10 minutes</b>. Range 1–60 min. Set lower if you cross-seed frequently and want the view fresher; higher to minimise load.</div>
           <div class="note" style="margin-top:14px;background:var(--warn-soft);border-color:rgba(245,181,66,.4);"><span class="tiny"><b>Fail-closed:</b> if the guard is enabled but qBittorrent is unreachable, edits are <b>blocked</b> (rather than risking a seeded file) until it responds or you disable the guard.</span></div>
         </div>
       </div>
@@ -430,6 +438,7 @@
         <div class="muted"># omitted when guard is off</div>
         <div class="muted">[qbittorrent]</div>
         <div>enabled = <span class="badc">false</span></div>
+        <div>seeding_cache_ttl = <span class="okc" id="toml-ttl">600</span> <span class="muted"># snapshot freshness, seconds (Phase 99 · default 600 = 10 min)</span></div>
       </div>
       <div class="tiny muted center-x" style="margin-top:8px;">updates as you type</div>
     </div>
@@ -529,6 +538,16 @@
     runHealthCheck(false); // re-evaluate so the nav badge + button reflect the new state
   });
   document.getElementById('seed-add-path').addEventListener('click', () => toast('Add a path mapping'));
+  // seeding snapshot freshness TTL (Phase 99) — minutes in the UI, seconds in the TOML
+  (function () {
+    const valEl = document.getElementById('seed-ttl-val');
+    const tomlEl = document.getElementById('toml-ttl');
+    if (!valEl) return;
+    valEl.addEventListener('input', () => {
+      const min = Math.max(1, Math.min(60, +valEl.value || 1));
+      if (tomlEl) tomlEl.textContent = min * 60;
+    });
+  })();
   // radarr / sonarr enable toggles reveal their config
   [['radarr-enable','radarr-on'],['sonarr-enable','sonarr-on']].forEach(([t,c]) => {
     const tog = document.getElementById(t);

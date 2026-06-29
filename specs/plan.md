@@ -53,7 +53,8 @@ src/
     db/Database.kt          — SQLDelight native SQLite driver wiring
     torrent/
       QBittorrentClient.kt  — qBittorrent Web API client (Phase 26)
-      SeedingGuard.kt       — blocks mkvpropedit on actively-seeded files (fail-closed)
+      SeedingSnapshot.kt    — one short-lived (TTL, default 10min) process-wide snapshot of the whole torrent list, tracker-resolved + mapped to library files; serves Phase 97/98 reads + the guard (Phase 99)
+      SeedingGuard.kt       — blocks mkvpropedit on actively-seeded files (fail-closed); reads SeedingSnapshot
     nfo/NfoWriter.kt        — write movie.nfo / tvshow.nfo / episodedetails.nfo
     jobs/WsBroadcaster.kt   — fan-out JobEvent JSON to all WebSocket sessions
     server/
@@ -67,7 +68,8 @@ src/
                               episodes, scan, stats, batch, tmdb-id, repull, repull-jellyfin, jellyfin-locks)
         TrackRoutes.kt      — /api/media/{id}/tracks/** (plan, default, language, reorder, delete, jellyfin-refresh)
         TriageRoutes.kt     — GET /api/triage, /count, /{id}/suggest, POST language-assign (movie + episode)
-        MetadataRoutes.kt   — GET /api/metadata/{studios,networks,genres,tags}; /api/tags CRUD (Phase 19)
+        MetadataRoutes.kt   — GET /api/metadata/{studios,networks,genres,tags}; /api/tags CRUD (Phase 19); /api/metadata/trackers (Phase 98)
+        SeedingRoutes.kt    — GET /api/media/{id}/seeding (Phase 97; resolves announce hosts via the Phase-98 tracker registry, served from SeedingSnapshot)
         ActivityRoutes.kt   — GET/DELETE /api/activity/log — paged, category/level filters (Phase 17)
     watcher/FolderWatcher.kt — inotify-based folder watcher (when watch_enabled = true)
     tmdb/TmdbClient.kt      — TMDB v3 REST calls (search, movie details, TV details, episodes)
@@ -88,9 +90,9 @@ src/
       Login.kt              — /login — Jellyfin admin sign-in form
       Setup.kt              — /setup — first-run Jellyfin URL + token entry
       Dashboard.kt          — /dashboard — stats cards, recent activity, batch actions
-      Library.kt            — /library — media grid; multi-axis filters (studio/network/genre/tags + audio-track) + search/sort, URL-addressable
+      Library.kt            — /library — media grid; multi-axis filters (studio/network/genre/tags + audio-track) + search/sort + tracker "seeded on" filter (Phase 98, ?tracker=), URL-addressable
       MediaDetail.kt        — /media/:id — single editing surface (metadata, tracks, artwork, NFO, resolver trace, lock banner, ?tab=)
-      Metadata.kt           — /metadata — Studios · Networks · Genres · Tags (?tab=)
+      Metadata.kt           — /metadata — Studios · Networks · Genres · Tags · Trackers (?tab=)
       LanguagePicker.kt     — reusable searchable language-code picker component (Phase 11)
       Settings.kt           — /settings — Connections · Library mapping · Scanning · Metadata · Advanced
       Activity.kt           — /activity — real-time scan console + audit log (filters + workers)
@@ -252,6 +254,7 @@ data class Episode(
 | POST | `/media/{id}/tracks/bulk-reorder/plan` | Dry-run bulk plan: classify every episode in scope vs a target order (Phase 96; writes nothing) |
 | POST | `/media/{id}/tracks/bulk-reorder` | Apply a target order across a series/season as a `JobEvent` background job → `{jobId}` (Phase 96) |
 | POST | `/media/{id}/jellyfin-refresh` | Trigger Jellyfin to reload this item |
+| GET | `/media/{id}/seeding` | `SeedingReport` — all torrents referencing the title's file(s): scope/covers, state, ratio, peers, tracker, cross-seed group, *arr provenance (Phase 97). Served from the shared `SeedingSnapshot`; returns `takenAt`+`ttl`; `?refresh=true` forces a rebuild (Phase 99) |
 
 > All five mkvpropedit/ffmpeg call sites run the qBittorrent `SeedingGuard` first (Phase 26): a
 > seeded file yields **409** (`Blocked`) or **503** (`Unreachable`); unconfigured guard passes through.
@@ -274,6 +277,7 @@ data class Episode(
 | GET | `/metadata/networks?sort=…` | Same shape; TV only |
 | GET | `/metadata/genres?sort=…` | `[{name, count}]` |
 | GET | `/metadata/tags?sort=…` | `{jsTags:[{name,color,description,count}], otherTags:[{name,count}]}` |
+| GET | `/metadata/trackers` | `[{name, private, hosts:[host], torrentCount, itemCount}]` + `unmapped:[{host,torrentCount,itemCount}]` (Phase 98) |
 | GET | `/tags` | All JS-tag definitions |
 | POST | `/tags` | Create a JS tag (`{name,color,description}`); 409 if it exists |
 | PATCH | `/tags/{name}` | Update color / description |
@@ -307,7 +311,7 @@ data class Episode(
 | `/library` | `Library.kt` | Media grid; multi-axis filters (studio/network/genre/tags + audio-track), search, sort — all URL-addressable |
 | `/media/:id` | `MediaDetail.kt` | Single editing surface: metadata (dirty + diff), **tracks & order** (Phase 41 — was `/track-order`), artwork, NFO, lock banner, history; tabs via `?tab=` |
 | `/media/:id/bulk-reorder` | `BulkReorder.kt` | Full-screen wizard (in-shell): apply one target track order across a series/season (Phase 96). Set up → Review (pivot table) → Apply (WS progress) → manual-handling list |
-| `/metadata` | `Metadata.kt` | Studios · Networks · Genres · Tags (`?tab=`) |
+| `/metadata` | `Metadata.kt` | Studios · Networks · Genres · Tags · **Trackers** (named tracker + announce-host mirrors, Phase 98) (`?tab=`) |
 | `/settings` | `Settings.kt` | Connections · Library mapping · Scanning · Metadata · Advanced (`?sect=`) |
 | `/activity` | `Activity.kt` | Real-time scan console + audit log (category/level filters, workers chip) |
 
