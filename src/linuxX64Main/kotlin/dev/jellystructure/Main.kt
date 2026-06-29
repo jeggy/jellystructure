@@ -59,8 +59,10 @@ import platform.posix.getenv
 import platform.posix.localtime_r
 import platform.posix.mktime
 import platform.posix.signal
+import platform.posix.getenv
 import platform.posix.time
 import platform.posix.time_tVar
+import kotlinx.cinterop.toKString
 import platform.posix.tm
 import kotlin.concurrent.AtomicInt
 
@@ -186,6 +188,18 @@ fun main() = runBlocking {
                 } else {
                     runScan(jobId, emptySet(), mediaStore, scanner, scanTracker, broadcaster, configStore, jellyfinClient, scanDispatcher, artworkDownloader = if (cfg.behavior.fetchImages) artworkDownloader else null)
                 }
+            }
+        }
+    }
+
+    // Ops hook (Phase 95): a full library scan on startup when SCAN_ON_START=1 — e.g. to rebuild the
+    // catalog after an incident. The scanner is non-destructive (adds/updates, flags gone items for triage).
+    if (platform.posix.getenv("SCAN_ON_START")?.toKString() == "1") {
+        rootScope.launch {
+            val jobId = scanTracker.startNew()
+            runTagged(jobId, "scan", "▶ Startup scan (SCAN_ON_START=1)") {
+                // Items-only (no artwork fetch) — fast + FD-safe; on-disk posters are still served by R133.
+                runScan(jobId, emptySet(), mediaStore, scanner, scanTracker, broadcaster, configStore, jellyfinClient, scanDispatcher, artworkDownloader = null)
             }
         }
     }
