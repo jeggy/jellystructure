@@ -133,12 +133,9 @@
   function pillHTML(torrents) {
     const active = torrents.filter(isActive);
     if (!torrents.length) return `<span class="sd-pill clear" title="No torrents reference this file — edits are safe."><span class="sd-dot"></span>Not seeded<span class="sd-sub">· safe to edit</span></span>`;
-    const risk = torrents.some(isRisk);
     const trk = trackerSet(torrents).length;
-    const cls = risk ? 'risk' : (active.length ? 'seeded' : 'clear');
-    const icon = risk ? '⚠' : '⛨';
     const lead = active.length ? `Seeded ×${active.length}` : `${torrents.length} torrent${torrents.length > 1 ? 's' : ''} · paused`;
-    return `<span class="sd-pill ${cls}" title="Cross-seed: this file is in ${torrents.length} torrent(s) across ${trk} tracker(s). Active seeding blocks track edits.">${icon} ${lead}<span class="sd-sub">· ${trk} tracker${trk > 1 ? 's' : ''}</span></span>`;
+    return `<span class="sd-pill seeded" title="Cross-seed: this file is in ${torrents.length} torrent(s) across ${trk} tracker(s). Active seeding blocks track edits."><span class="sd-seed">🌱</span>${lead}<span class="sd-sub">· ${trk} tracker${trk > 1 ? 's' : ''}</span></span>`;
   }
 
   /* ---------- summary + guard ---------- */
