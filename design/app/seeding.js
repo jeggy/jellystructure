@@ -202,29 +202,55 @@
         <span class="dbars">${bars}</span><span class="dn ${d.locked ? 'locked' : (d.n ? '' : 'zero')}">${d.locked ? '🔒' : ''}${d.n}</span></div>`;
     });
 
-    // torrent bar rows
+    // torrent bar rows — grouped by scope, then sub-grouped by tracker
     let rows = '';
     groups.forEach(g => {
       rows += `<div class="sd-grouplbl" style="grid-column:1/${nCols + 2};">${GROUP_LABEL[g.sc]}</div>`;
+      // Group torrents by resolved tracker name within this scope group
+      const byTracker = new Map();
       g.items.forEach(t => {
-        const cov = coveredEps(t, eps);
-        if (!cov.length) return;
-        const startGlobal = eps.findIndex(e => e.key === cov[0].key);
-        const span = cov.length;
-        const gcStart = startGlobal + 2, gcEnd = gcStart + span;
-        let track = `<div class="gcell sd-rowlabel"><span class="tk">${esc(resolveTracker(t.announce).name)}</span><span class="badge ${badgeForState(t.state)} scope">${STATE_LABEL[t.state]}</span></div>`;
-        // background track cells (for season separators)
-        for (let i = 0; i < nCols; i++) track += `<div class="sd-track ${isSeasonStart(i) ? 'seasonstart' : ''}" style="grid-column:${i + 2};"></div>`;
-        const lock = isActive(t) ? '<span class="lk">🔒</span>' : '';
-        let bar;
-        if (t.scope === 'episode') {
-          bar = `<div class="sd-bar ep ${t.state}" data-hash="${t.hash}" style="grid-column:${gcStart}/${gcEnd};" title="${esc(t.name)} · ${cov[0].key}">${lock || (t.state === 'errored' ? '!' : '●')}</div>`;
-        } else {
-          const label = `<span class="bt">${esc(shortName(t.name))}</span>`;
-          bar = `<div class="sd-bar ${t.state}" data-hash="${t.hash}" style="grid-column:${gcStart}/${gcEnd};" title="${esc(t.name)}">${lock}<span>${SCOPE_LABEL[t.scope]}</span>${label}</div>`;
+        const trk = resolveTracker(t.announce);
+        if (!byTracker.has(trk.name)) byTracker.set(trk.name, { trk, torrents: [] });
+        byTracker.get(trk.name).torrents.push(t);
+      });
+      const multiTracker = byTracker.size > 1;
+      byTracker.forEach(({ trk, torrents }) => {
+        // Show tracker sub-header when tracker has multiple torrents OR there are multiple trackers
+        if (torrents.length > 1 || multiTracker) {
+          const pvt = trk.unmapped
+            ? `<span class="pvt unmapped">unmapped</span>`
+            : `<span class="pvt ${trk.priv ? 'private' : 'public'}">${trk.priv ? 'private' : 'public'}</span>`;
+          rows += `<div class="sd-tracklbl">${pvt}${esc(trk.name)}<span class="chip">${torrents.length}</span></div>`;
         }
-        track += bar;
-        rows += `<div class="sd-trow" style="${colTmpl}">${track}</div>`;
+        torrents.forEach(t => {
+          const cov = coveredEps(t, eps);
+          if (!cov.length) return;
+          const startGlobal = eps.findIndex(e => e.key === cov[0].key);
+          const span = cov.length;
+          const gcStart = startGlobal + 2, gcEnd = gcStart + span;
+          // Row label: season/episode identifier when grouped under a tracker sub-header; tracker name otherwise
+          let labelText;
+          if (torrents.length > 1) {
+            if (t.scope === 'season' && t.covers && t.covers.s != null) labelText = `S${pad(t.covers.s)}`;
+            else if (t.scope === 'episode' && t.covers) labelText = `S${pad(t.covers.s)}E${pad(t.covers.e)}`;
+            else labelText = esc(shortName(t.name));
+          } else {
+            labelText = esc(trk.name);
+          }
+          let track = `<div class="gcell sd-rowlabel"><span class="tk">${labelText}</span><span class="badge ${badgeForState(t.state)} scope">${STATE_LABEL[t.state]}</span></div>`;
+          // background track cells (for season separators)
+          for (let i = 0; i < nCols; i++) track += `<div class="sd-track ${isSeasonStart(i) ? 'seasonstart' : ''}" style="grid-column:${i + 2};"></div>`;
+          const lock = isActive(t) ? '<span class="lk">🔒</span>' : '';
+          let bar;
+          if (t.scope === 'episode') {
+            bar = `<div class="sd-bar ep ${t.state}" data-hash="${t.hash}" style="grid-column:${gcStart}/${gcEnd};" title="${esc(t.name)} · ${cov[0].key}">${lock || (t.state === 'errored' ? '!' : '●')}</div>`;
+          } else {
+            const label = `<span class="bt">${esc(shortName(t.name))}</span>`;
+            bar = `<div class="sd-bar ${t.state}" data-hash="${t.hash}" style="grid-column:${gcStart}/${gcEnd};" title="${esc(t.name)}">${lock}<span>${SCOPE_LABEL[t.scope]}</span>${label}</div>`;
+          }
+          track += bar;
+          rows += `<div class="sd-trow" style="${colTmpl}">${track}</div>`;
+        });
       });
     });
 
