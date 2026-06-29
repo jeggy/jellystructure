@@ -243,6 +243,17 @@ class TvApiClient(
         return json.decodeFromString(r.bodyAsText())
     }
 
+    // ─── Live events (R33/R141) ──────────────────────────────────────────────
+
+    /** R141: degrade-to-poll fallback. Returns the server's monotonic config-change rev so the client
+     *  can detect a missed WS event and trigger a silent refresh without a full reconnect. */
+    suspend fun getConfigRev(): Long? {
+        val r = runCatching { client.get("$baseUrl/api/tv/config/rev") { auth() } }.getOrNull() ?: return null
+        if (!r.status.isSuccess()) return null
+        val body = runCatching { r.bodyAsText() }.getOrNull() ?: return null
+        return runCatching { json.decodeFromString<Map<String, Long>>(body)["rev"] }.getOrNull()
+    }
+
     // ─── Live events (R33) ───────────────────────────────────────────────────
 
     /**
