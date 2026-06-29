@@ -108,6 +108,27 @@ class MediaStore(private val db: JellystructureDb, private val jsTagStore: JsTag
         }
     }
 
+    /**
+     * Phase 95: non-destructive scan reconciliation. The scanner never deletes — instead, any catalog item
+     * whose Jellyfin id is no longer in [presentJellyfinIds] is **flagged** `missingFromSource` (so it
+     * surfaces in Triage for the admin to act on); items that re-appear have the flag cleared. Local-only
+     * items (no jellyfinId) are left untouched. Returns the items NEWLY flagged missing (for logging).
+     */
+    suspend fun flagMissingFromSource(presentJellyfinIds: Set<String>, nowSec: Long): List<MediaItem> {
+        val newlyMissing = mutableListOf<MediaItem>()
+        for (item in allItems()) {
+            val jf = item.jellyfinId ?: continue
+            val missing = jf !in presentJellyfinIds
+            if (missing && !item.missingFromSource) {
+                addOrUpdate(item.copy(missingFromSource = true, missingSince = nowSec))
+                newlyMissing += item
+            } else if (!missing && item.missingFromSource) {
+                addOrUpdate(item.copy(missingFromSource = false, missingSince = null))
+            }
+        }
+        return newlyMissing
+    }
+
     fun deleteMissing(presentIds: Set<String>) {
         val allIds = db.mediaQueries.allIds().executeAsList()
         val toDelete = allIds.filter { it !in presentIds }

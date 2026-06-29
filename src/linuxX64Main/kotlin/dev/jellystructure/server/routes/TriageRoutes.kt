@@ -69,10 +69,11 @@ data class TriageItem(
     val languageMix: Boolean = false,
     val multiDefault: MultiDefaultIssue? = null,
     val missingArtwork: Boolean = false,   // R123: no poster.jpg on disk — needs artwork
+    val missingFromSource: Boolean = false, // Phase 95: gone from Jellyfin — kept (scanner never deletes), needs review
 )
 
 @Serializable
-data class TriageCount(val untagged: Int, val mismatch: Int, val multiDefault: Int = 0, val missingArtwork: Int = 0, val total: Int)
+data class TriageCount(val untagged: Int, val mismatch: Int, val multiDefault: Int = 0, val missingArtwork: Int = 0, val missingFromSource: Int = 0, val total: Int)
 
 @Serializable
 private data class AssignLanguageRequest(val language: String)
@@ -103,7 +104,8 @@ fun Route.triageRoutes(store: MediaStore, jellyfinClient: JellyfinClient, config
                 else item.detectMultiDefaultAudio() != null
             }
             val missingArtwork = all.count { !posterArtworkExists(it) }
-            val result = TriageCount(untagged = untagged, mismatch = mismatch, multiDefault = multiDefault, missingArtwork = missingArtwork, total = untagged + mismatch + multiDefault + missingArtwork)
+            val missingFromSource = all.count { it.missingFromSource }   // Phase 95
+            val result = TriageCount(untagged = untagged, mismatch = mismatch, multiDefault = multiDefault, missingArtwork = missingArtwork, missingFromSource = missingFromSource, total = untagged + mismatch + multiDefault + missingArtwork + missingFromSource)
             triageCountCache = Pair(ver, result)
             call.respond(result)
         }
@@ -260,7 +262,7 @@ private fun MediaItem.toTriageItem(): TriageItem? {
             )
         }
         val missingArtwork = !posterArtworkExists(this)
-        if (epIssues.isEmpty() && !missingArtwork) return null
+        if (epIssues.isEmpty() && !missingArtwork && !missingFromSource) return null
         return TriageItem(
             mediaId = id,
             title = title,
@@ -274,6 +276,7 @@ private fun MediaItem.toTriageItem(): TriageItem? {
             resolvedLanguage = resolvedLanguage,
             languageMix = languageMix,
             missingArtwork = missingArtwork,
+            missingFromSource = missingFromSource,
         )
     }
     val untagged = tracks
@@ -290,7 +293,7 @@ private fun MediaItem.toTriageItem(): TriageItem? {
     val mismatch = detectCascadeMismatch()
     val multiDefault = detectMultiDefaultAudio()
     val missingArtwork = !posterArtworkExists(this)
-    if (untagged.isEmpty() && mismatch == null && multiDefault == null && !missingArtwork) return null
+    if (untagged.isEmpty() && mismatch == null && multiDefault == null && !missingArtwork && !missingFromSource) return null
     return TriageItem(
         mediaId = id,
         title = title,
@@ -303,6 +306,7 @@ private fun MediaItem.toTriageItem(): TriageItem? {
         cascadeMismatch = mismatch,
         multiDefault = multiDefault,
         missingArtwork = missingArtwork,
+        missingFromSource = missingFromSource,
     )
 }
 
