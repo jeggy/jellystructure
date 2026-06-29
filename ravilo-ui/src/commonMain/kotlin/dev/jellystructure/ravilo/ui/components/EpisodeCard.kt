@@ -208,6 +208,17 @@ fun EpisodeCard(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
+            // R148: episode air date (scanned from TMDB) under the title — nothing when absent.
+            episode.airDate?.let { formatAirDate(it) }?.let { aired ->
+                Spacer(Modifier.height(3.dp))
+                Text(
+                    text = aired,
+                    color = colors.textDim,
+                    fontSize = 13.sp,
+                    fontFamily = sora,
+                    maxLines = 1,
+                )
+            }
             episode.overview?.let { overview ->
                 Spacer(Modifier.height(4.dp))
                 Text(
@@ -222,4 +233,23 @@ fun EpisodeCard(
         }
     }
     }
+}
+
+private val EP_AIR_MONTHS = arrayOf(
+    "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+)
+
+/**
+ * R148 — format an ISO `yyyy-MM-dd` air date as e.g. "Sep 22, 2003". Parses the y/m/d parts directly
+ * (no Instant / timezone), so the calendar day is UTC-pinned by construction and never drifts. Returns
+ * null for a blank/malformed string so the caller renders no date line.
+ */
+private fun formatAirDate(iso: String): String? {
+    val p = iso.trim().split("-")
+    if (p.size != 3) return null
+    val y = p[0].toIntOrNull() ?: return null
+    val m = p[1].toIntOrNull() ?: return null
+    val d = p[2].toIntOrNull() ?: return null
+    if (m !in 1..12 || d !in 1..31) return null
+    return "${EP_AIR_MONTHS[m - 1]} $d, $y"
 }

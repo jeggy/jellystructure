@@ -74,6 +74,7 @@ class DetailService(
                     overview = ep.overview,
                     stillUrl = stillUrl,
                     playback = null,  // R83: hydrated by /api/tv/playstate (R84 overlays it)
+                    airDate = ep.airDate,  // R148: scanned TMDB air date — no request-time call
                 )
             }
             Season(index = seasonNum, name = seasonName, episodes = tvEpisodes)

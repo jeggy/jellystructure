@@ -71,6 +71,8 @@ data class Episode(
     val jellyfinId: String? = null,
     /** R82: Episode runtime in minutes from TMDB. Null until re-scanned after R82. */
     val runtime: Int? = null,
+    /** R148: episode first-air date (ISO yyyy-MM-dd) from TMDB. Null until re-scanned after R148. */
+    val airDate: String? = null,
 )
 
 @Serializable
