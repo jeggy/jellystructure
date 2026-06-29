@@ -101,7 +101,18 @@ class SearchStore(private val apiClient: TvApiClient) {
         }.getOrElse { SearchState.Error(it.message ?: "Error") }
     }
 
-    init { scope.launch { loadSuggestions() } }
+    init {
+        scope.launch { loadSuggestions() }
+        // R147: patch result tiles in place when a watched-state change is broadcast (instant, no re-fetch).
+        scope.launch {
+            WatchedBus.patches.collect { patch ->
+                val s = _state.value as? SearchState.Loaded ?: return@collect
+                _state.value = SearchState.Loaded(
+                    s.results.copy(items = s.results.items.map { it.applyWatchedPatch(patch) }), s.query,
+                )
+            }
+        }
+    }
 }
 
 private const val GRID_COLS_SEARCH = 5

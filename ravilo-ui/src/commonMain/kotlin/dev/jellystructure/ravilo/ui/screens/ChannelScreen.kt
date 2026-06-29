@@ -67,6 +67,18 @@ class ChannelStore(private val apiClient: TvApiClient) {
     private var loadJob: Job? = null
     private var currentId: String? = null
 
+    init {
+        // R147: patch channel-row tiles in place when a watched-state change is broadcast.
+        scope.launch {
+            WatchedBus.patches.collect { patch ->
+                val s = _state.value as? HomeState.Loaded ?: return@collect
+                _state.value = HomeState.Loaded(s.feed.copy(
+                    rows = s.feed.rows.map { r -> r.copy(items = r.items.map { it.applyWatchedPatch(patch) }) }
+                ))
+            }
+        }
+    }
+
     fun load(channelId: String) {
         // R40: re-entry with the same channel keeps the cached feed and refreshes silently (no flash).
         if (currentId == channelId && _state.value is HomeState.Loaded) { refresh(silent = true); return }
