@@ -344,9 +344,10 @@ data class ChannelRowsConfig(
 )
 
 /**
- * R143 — per-channel system-row settings. Default preserves pre-R143 behaviour: both rows shown,
- * library-wide, Newly Added split. `scope = "channel"` ANDs the channel's own conditions (R32) onto the
- * Continue / Newly-Added query so only titles belonging to the channel appear.
+ * R143 — per-channel system-row settings. Both rows shown by default, **scoped to the channel** (R145):
+ * a channel page is a curated subset, so its Continue Watching / Newly Added show only titles belonging to
+ * the channel (`scope = "channel"` ANDs the channel's own conditions, R32). `scope = "all"` is the opt-out
+ * that shows the library-wide row instead.
  */
 @Serializable
 data class ChannelSystemRows(
@@ -358,13 +359,13 @@ data class ChannelSystemRows(
 @Serializable
 data class SystemContinue(
     val show: Boolean = true,
-    val scope: String = "all",  // "all" | "channel"
+    val scope: String = "channel",  // "channel" (this channel's in-progress titles) | "all" (library-wide)
 )
 
 @Serializable
 data class SystemNewly(
     val show: Boolean = true,
-    val scope: String = "all",  // "all" | "channel"
+    val scope: String = "channel",  // "channel" (newest in this channel) | "all" (library-wide)
     val merge: Boolean = false,
 )
 
