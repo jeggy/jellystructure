@@ -338,10 +338,34 @@ data class PageHeroConfig(
 data class ChannelRowsConfig(
     val mode: String = "inherit",  // "inherit" | "custom"
     val items: List<RowConfig> = emptyList(),
-    // R143 — per-channel Newly Added control (custom mode). "inherit" = same as Home (follow
-    // merge_newly_added); "merged" = one combined row; "split" = Movies + Series rows;
-    // "none" = no Newly Added row on this channel page at all.
-    @SerialName("newly_added") val newlyAdded: String = "inherit",
+    // R143 — per-channel system rows (Continue Watching, Newly Added). Only consulted in custom mode;
+    // in "inherit" mode the channel keeps inheriting Home's system rows (scoped to the channel per R59).
+    val system: ChannelSystemRows = ChannelSystemRows(),
+)
+
+/**
+ * R143 — per-channel system-row settings. Default preserves pre-R143 behaviour: both rows shown,
+ * library-wide, Newly Added split. `scope = "channel"` ANDs the channel's own conditions (R32) onto the
+ * Continue / Newly-Added query so only titles belonging to the channel appear.
+ */
+@Serializable
+data class ChannelSystemRows(
+    // `continue` is a Kotlin keyword → property is `cont`, serialized as "continue" to match the mockup.
+    @SerialName("continue") val cont: SystemContinue = SystemContinue(),
+    val newly: SystemNewly = SystemNewly(),
+)
+
+@Serializable
+data class SystemContinue(
+    val show: Boolean = true,
+    val scope: String = "all",  // "all" | "channel"
+)
+
+@Serializable
+data class SystemNewly(
+    val show: Boolean = true,
+    val scope: String = "all",  // "all" | "channel"
+    val merge: Boolean = false,
 )
 
 @Serializable
