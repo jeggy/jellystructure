@@ -368,7 +368,7 @@ private fun renderTrackersTab(trackers: List<TrackerEntry>, groups: List<Detecte
     if (trackers.isEmpty()) {
         append("""<p class="muted tiny">No trackers defined yet. Name an auto-detected host below or add one manually.</p>""")
     } else {
-        append("""<div class="meta-grid" style="grid-template-columns:repeat(auto-fill,minmax(330px,1fr));">""")
+        append("""<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:14px;">""")
         trackers.forEach { t -> append(trackerCardHtml(t)) }
         append("</div>")
     }
