@@ -87,7 +87,7 @@
           { label: 'Nederlands', lang: 'nl', desc: 'Stereo · AAC · dub' },
           { label: 'Português', lang: 'pt', desc: 'Stereo · AAC · dub' },
         ],
-        subs: [{ label: 'Off', off: true }, { label: 'English' }, { label: 'Føroyskt', desc: 'Faroese' }, { label: 'Dansk' }],
+        subs: [{ label: 'Off', off: true }, { label: 'English', lang: 'en' }, { label: 'Føroyskt', lang: 'fo', desc: 'Faroese' }, { label: 'Dansk', lang: 'da' }],
         audioDefault: 0, subsDefault: 0,
       };
       return {
@@ -96,7 +96,7 @@
           { label: 'Dansk', lang: 'da', desc: '5.1 · E-AC-3 · dub' },
           { label: 'English', lang: 'en', desc: 'Stereo · AAC · dub' },
         ],
-        subs: [{ label: 'Off', off: true }, { label: 'Føroyskt', desc: 'Full' }, { label: 'English' }, { label: 'Dansk', desc: 'Signs only', flag: 'Forced' }],
+        subs: [{ label: 'Off', off: true }, { label: 'Føroyskt', lang: 'fo', desc: 'Full' }, { label: 'English', lang: 'en' }, { label: 'Dansk', lang: 'da', desc: 'Signs only', flag: 'Forced' }],
         audioDefault: 0, subsDefault: 1,
       };
     }
@@ -181,7 +181,7 @@
           <div class="hero-bg">${it.backdrop ? `<img class="hero-backdrop" src="${it.backdrop}" alt="">` : `<div class="grad" style="position:absolute;inset:0;background:${it.grad}"></div><div class="hero-noise"></div>`}<div class="hero-scrim"></div></div>
           <div class="hero-body">
             <div class="hero-kicker"><span>${it.tagline}</span><span class="n">${it.kind === 'series' ? 'Series' : 'Film'}</span></div>
-            ${it.logo ? `<img class="hero-logo" src="${it.logo}" alt="${it.title}">` : `<div class="hero-title">${it.title}</div>`}
+            ${it.logo ? `<img class="hero-logo" src="${it.logo}" alt="${esc(it.title)}" onerror="this.style.display='none';this.nextElementSibling.style.display='block';"><div class="hero-title" style="display:none;">${esc(it.title)}</div>` : `<div class="hero-title">${esc(it.title)}</div>`}
             <div class="hero-meta"><span class="tag">${it.badge}</span><span>${it.year}</span><span>${it.genre}</span><span class="rt">${it.rating}+</span></div>
             <div class="hero-syn">${it.syn}</div>
           </div>`;
@@ -302,7 +302,9 @@
         : `<div class="grad" style="position:absolute;inset:0;background:${it.grad}"></div><div class="hero-noise"></div>`;
     }
     function detailTitle(it) {
-      return it.logo ? `<img class="dhero-logo" src="${it.logo}" alt="${it.title}">` : `<div class="dhero-title">${it.title}</div>`;
+      if (!it.logo) return `<div class="dhero-title">${esc(it.title)}</div>`;
+      // R130 — fall back to the styled title on null OR load failure (the logo proxy 404s for no-clearlogo titles)
+      return `<img class="dhero-logo" src="${it.logo}" alt="${esc(it.title)}" onerror="this.style.display='none';this.nextElementSibling.style.display='block';"><div class="dhero-title" style="display:none;">${esc(it.title)}</div>`;
     }
     function episodeCard(e, st) {
       st = st || {};
@@ -338,14 +340,22 @@
     const LANG_NAME = { en: 'English', fr: 'French', de: 'German', es: 'Spanish', da: 'Danish', fo: 'Faroese', is: 'Icelandic', no: 'Norwegian', sv: 'Swedish', fi: 'Finnish', nl: 'Dutch', it: 'Italian', pt: 'Portuguese', pl: 'Polish', ru: 'Russian', ja: 'Japanese', ko: 'Korean', zh: 'Chinese', ar: 'Arabic', hi: 'Hindi' };
     const FLAG_MAX = 5;
     function audioFlagsHTML(item) {
-      // physical track order = file order; keep only tracks that carry a flaggable language tag
-      const langs = ((tracksFor(item).audio) || []).map(a => a.lang).filter(l => l && LANG_CC[l]);
-      if (!langs.length) return '';                       // no tagged audio → skip the strip entirely
-      const shown = langs.slice(0, FLAG_MAX);
-      const extra = langs.length - shown.length;
-      const flags = shown.map(l => `<span class="fi fi-${LANG_CC[l]} aflag" title="${LANG_NAME[l] || l}"></span>`).join('');
-      const more = extra > 0 ? `<span class="aflag-more" title="${extra} more language${extra > 1 ? 's' : ''}">+${extra}</span>` : '';
-      return `<div class="dhero-audio"><span class="aflag-label">Audio</span><span class="aflag-row">${flags}${more}</span></div>`;
+      // R134 — one merged line: Audio 🅐🅑 · Subtitles 🅒🅓, rendering only the groups that exist.
+      const ts = tracksFor(item);
+      const uniq = arr => { const seen = new Set(), out = []; arr.filter(l => l && LANG_CC[l]).forEach(l => { if (!seen.has(l)) { seen.add(l); out.push(l); } }); return out; };
+      const flagRow = langs => {
+        const shown = langs.slice(0, FLAG_MAX), extra = langs.length - shown.length;
+        const flags = shown.map(l => `<span class="fi fi-${LANG_CC[l]} aflag" title="${LANG_NAME[l] || l}"></span>`).join('');
+        const more = extra > 0 ? `<span class="aflag-more" title="${extra} more language${extra > 1 ? 's' : ''}">+${extra}</span>` : '';
+        return flags + more;
+      };
+      const aud = uniq((ts.audio || []).map(a => a.lang));                  // physical track order
+      const sub = uniq((ts.subs || []).filter(s => !s.off).map(s => s.lang)); // one flag per language
+      if (!aud.length && !sub.length) return '';
+      const groups = [];
+      if (aud.length) groups.push(`<span class="aflag-group"><span class="aflag-label">Audio</span><span class="aflag-row">${flagRow(aud)}</span></span>`);
+      if (sub.length) groups.push(`<span class="aflag-group"><span class="aflag-label">Subtitles</span><span class="aflag-row">${flagRow(sub)}</span></span>`);
+      return `<div class="dhero-flags">${groups.join('<span class="aflag-div"></span>')}</div>`;
     }
     function renderDetail(item) {
       stopHero();
@@ -374,7 +384,7 @@
           ${detailTitle(item)}
           <div class="hero-meta"><span class="tag">${item.badge || 'HD'}</span><span>${item.year}</span><span>${item.genre}</span><span class="rt">${item.rating}+</span></div>
           ${audioFlagsHTML(item)}
-          <div class="hero-syn">${item.syn || 'A standout from your Ravilo library — streamed from Jellyfin, organised by Jellystructure.'}</div>
+          <div class="dsyn-block focus-row"><div class="hero-syn dsyn foc" data-syn="1">${item.syn || 'A standout from your Ravilo library — streamed from Jellyfin, organised by Jellystructure.'}</div><span class="syn-toggle">▾ more</span></div>
           ${upNote ? `<div class="dnext"><span class="dnext-dot"></span>${upNote}</div>` : ''}
           <div class="dactions focus-row">
             <div class="btn primary foc" data-play="1"><span class="ic">▶</span> ${playLabel}</div>
@@ -690,7 +700,8 @@
       setTimeout(() => {
         if (v.type === 'home') focusRowByIndex(0);
         else if (v.type === 'category' || v.type === 'discover') focusRowByIndex(firstContentRowIndex());
-        else focusRC(1, 0); // detail / discoverDetail / grid / search → first focusable row
+        else if (v.type === 'movie' || v.type === 'series') { const ai = rows().findIndex(r => r.classList.contains('dactions')); focusRC(ai > 0 ? ai : 1, 0); } // entry focus stays on Play (R135)
+        else focusRC(1, 0); // discoverDetail / grid / search → first focusable row
       }, 30);
     }
 
@@ -798,11 +809,12 @@
         return;
       }
       if (f.dataset.hero) { const he = f.closest('.hero'); toDetail((he && he._items ? he._items : R.hero)[heroIdx]); return; }
+      if (f.dataset.syn) { const exp = f.classList.toggle('expanded'); const tg = f.parentElement.querySelector('.syn-toggle'); if (tg) tg.textContent = exp ? '▴ less' : '▾ more'; return; }
       if (f.dataset.play) { playItem(view.item, view.season || 0); return; }
       if (f.dataset.trailer) { flash('▷ Trailer · ' + view.item.title); return; }
       if (f.dataset.list) { flash('＋ Added ' + view.item.title + ' to My List'); return; }
       if (f._season != null) {
-        if (f._season !== (view.season || 0)) { view.season = f._season; renderDetail(view.item); setTimeout(() => focusRC(2, f._season), 20); }
+        if (f._season !== (view.season || 0)) { view.season = f._season; renderDetail(view.item); setTimeout(() => { const sp = rows().findIndex(r => r.classList.contains('seasonpills')); focusRC(sp > 0 ? sp : 2, f._season); }, 20); }
         return;
       }
       if (f._ep) { const eps = R.episodesFor(view.item, view.season || 0); const idx = eps.findIndex(x => x.n === f._ep.n); openPlayer(episodeCtx(view.item, view.season || 0, eps, Math.max(0, idx))); return; }

@@ -9,6 +9,10 @@
 <style>
   .fchip { cursor: pointer; }
   .fchip.on { background: var(--hi); color: #fff; border-color: transparent; }
+  .run-sel { font: inherit; font-size: .8rem; padding: 3px 9px; border-radius: 7px; border: 1px solid var(--line-2);
+    background: var(--fill-2); color: var(--ink); cursor: pointer; }
+  .log .run { color: var(--ink-dim); font-size: .9em; margin-right: 5px; }
+  .log .step { color: var(--ink-dim); font-size: .82em; opacity: .8; }
 </style>
 </head>
 <body class="wf-body app-body">
@@ -17,7 +21,7 @@
   <div class="pagebar">
     <h1>Activity</h1>
     <span class="badge warn">running</span>
-    <span class="crumb">Scanning · Movies</span>
+    <span class="crumb">Run #2847 · scheduled · Scanning Movies</span>
     <span class="spacer"></span>
     <span class="btn sm">Pause</span>
     <span class="btn sm bad">Stop</span>
@@ -26,7 +30,14 @@
 
   <div class="card" style="margin-bottom:14px;">
     <div class="row center" style="flex-wrap:wrap;gap:8px;">
-      <span class="muted tiny">filter:</span>
+      <span class="muted tiny">run:</span>
+      <select class="run-sel" id="run-filter">
+        <option value="">All runs</option>
+        <option value="2847" selected>▶ #2847 · scheduled · 03:00 · running</option>
+        <option value="2846">#2846 · Run pipeline now · 13:58</option>
+        <option value="2845">#2845 · scheduled · yesterday 03:00</option>
+      </select>
+      <span class="muted tiny" style="margin-left:6px;">filter:</span>
       <span class="chip fchip on">All</span>
       <span class="chip fchip">Scan</span>
       <span class="chip fchip">NFO</span>
@@ -74,14 +85,15 @@
     <div class="card" style="width:400px;">
       <div class="row center"><h4 style="margin:0;">Live log</h4><span class="spacer"></span><span class="chip" style="font-size:.65rem;"><span class="dot ok"></span> ws connected</span></div>
       <div class="log" id="log" style="max-height:320px;margin-top:8px;">
-        <div><span class="ts">14:03:01</span> Sintel <span class="okc">✓ default=da</span> <span class="muted">(mkvpropedit 38ms)</span></div>
-        <div><span class="ts">14:03:01</span> Sintel → jellyfin refresh <span class="okc">204</span></div>
-        <div><span class="ts">14:03:02</span> Caminandes 3 <span class="okc">✓ nfo</span></div>
-        <div><span class="ts">14:03:03</span> Caminandes 3 <span class="okc">✓ artwork ×3</span></div>
-        <div><span class="ts">14:03:04</span> Glass Half <span class="warnc">⟳ remux 44%</span></div>
-        <div><span class="ts">14:03:05</span> Big Buck Bunny <span class="okc">✓ default=da</span></div>
-        <div><span class="ts">14:03:06</span> Wing It! <span class="badc">✗ TMDB no match</span></div>
-        <div><span class="ts">14:03:06</span> Wing It! <span class="muted">→ flagged for attention</span></div>
+        <div data-run="2846"><span class="ts">13:58:41</span> <span class="run">#2846</span><span class="step">sync_jellyfin</span> Sintel <span class="okc">✓ default=da</span> <span class="muted">(mkvpropedit 38ms)</span></div>
+        <div data-run="2846"><span class="ts">13:58:41</span> <span class="run">#2846</span><span class="step">sync_jellyfin</span> Sintel → jellyfin refresh <span class="okc">204</span></div>
+        <div data-run="2846"><span class="ts">13:58:42</span> <span class="run">#2846</span><span class="step">write_nfo</span> Caminandes 3 <span class="okc">✓ nfo</span></div>
+        <div data-run="2846"><span class="ts">13:58:43</span> <span class="run">#2846</span><span class="step">download_artwork</span> Caminandes 3 <span class="okc">✓ artwork ×3</span></div>
+        <div data-run="2847"><span class="ts">14:03:04</span> <span class="run">#2847</span><span class="step">scan_files</span> Glass Half <span class="warnc">⟳ remux 44%</span></div>
+        <div data-run="2847"><span class="ts">14:03:05</span> <span class="run">#2847</span><span class="step">scan_files</span> Big Buck Bunny <span class="okc">✓ default=da</span></div>
+        <div data-run="2847"><span class="ts">14:03:06</span> <span class="run">#2847</span><span class="step">scan_files</span> The Daily Show <span class="warnc">⚠ no longer in Jellyfin — kept &amp; flagged for triage (the scanner never deletes)</span></div>
+        <div data-run="2847"><span class="ts">14:03:06</span> <span class="run">#2847</span><span class="step">pull_tmdb</span> Wing It! <span class="badc">✗ TMDB no match</span></div>
+        <div data-run="2847"><span class="ts">14:03:06</span> <span class="run">#2847</span><span class="step">pull_tmdb</span> Wing It! <span class="muted">→ flagged for attention</span></div>
       </div>
       <div class="tiny muted center-x" style="margin-top:8px;">streaming live</div>
     </div>
@@ -107,8 +119,9 @@
       const names = ['Spring', 'Agent 327', 'Hero', 'Cosmos Laundromat'];
       const n = names[pos % names.length];
       const line = document.createElement('div');
-      line.innerHTML = '<span class="ts">14:03:' + (10 + (pos % 50)) + '</span> ' + n + ' <span class="okc">✓ default=da</span>';
-      log.appendChild(line); log.scrollTop = log.scrollHeight;
+      line.setAttribute('data-run', '2847');
+      line.innerHTML = '<span class="ts">14:03:' + (10 + (pos % 50)) + '</span> <span class="run">#2847</span><span class="step">scan_files</span> ' + n + ' <span class="okc">✓ default=da</span>';
+      log.appendChild(line); applyRunFilter(); log.scrollTop = log.scrollHeight;
     }
     fb.style.width = f.toFixed(0) + '%';
     ff.textContent = 'frame=' + frame + ' fps=611 time=00:0' + (1 + Math.floor(f / 40)) + ':' + String(Math.floor(f) % 60).padStart(2, '0') + ' speed=4.1x';
@@ -118,6 +131,16 @@
     document.querySelectorAll('.fchip').forEach(x => x.classList.toggle('on', x === c));
   }));
   document.getElementById('errtog').addEventListener('click', e => e.currentTarget.classList.toggle('on'));
+  // run picker — scope the log to one run (combines with the category/errors filters)
+  const runSel = document.getElementById('run-filter');
+  function applyRunFilter() {
+    const r = runSel.value;
+    log.querySelectorAll('div[data-run]').forEach(d => {
+      d.style.display = (!r || d.getAttribute('data-run') === r) ? '' : 'none';
+    });
+  }
+  runSel.addEventListener('change', applyRunFilter);
+  applyRunFilter();
 })();
 </script>
 </body>

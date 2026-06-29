@@ -605,7 +605,19 @@
       node.querySelectorAll('[data-pick]').forEach(a => a.onclick = () => {
         const i = +a.dataset.pick, f = state.conditions[i].facet;
         const cur = state.conditions[i].values;
-        popover(a, FACETS[f].options.map(o => `<div class="cf-popitem ${cur.includes(o)?'on':''}" data-val="${o}">${cur.includes(o)?'✓ ':''}${o}</div>`).join(''), v => {
+        const fac = FACETS[f];
+        // R127 — item count per facet value, ordered by count desc. When the workbench is
+        // scoped to a channel (opts.scopeState), counts narrow to that channel's set and
+        // values absent from it disappear; library-wide workbench shows global counts.
+        const scope = opts.scopeState ? evaluate(opts.scopeState) : TITLES;
+        const counts = fac.options
+          .map(o => ({ o, n: scope.filter(t => fac.get(t).map(String).includes(String(o))).length }))
+          .filter(c => !opts.scopeState || c.n > 0)
+          .sort((x, y) => y.n - x.n);
+        const inner = counts.map(c =>
+          `<div class="cf-popitem ${cur.includes(c.o)?'on':''}" data-val="${c.o}">${cur.includes(c.o)?'✓ ':''}<span class="wb-vname">${c.o}</span><span class="wb-vcount">${c.n}</span></div>`
+        ).join('') || '<div class="cf-popitem" style="opacity:.6;cursor:default;">No values in scope</div>';
+        popover(a, inner, v => {
           if (!cur.includes(v)) cur.push(v); render();
         });
       });

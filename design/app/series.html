@@ -99,6 +99,19 @@
   .trk-main { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
   .langpick { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 9px; }
   .langpick .btn.sm { padding: 4px 10px; }
+  /* genre provenance (Phase 94) */
+  .gen-dot { display:inline-block; width:6px; height:6px; border-radius:50%; background:var(--hi); margin-right:6px; vertical-align:middle; flex:none; }
+  .gen-user { display:inline-flex; align-items:center; }
+  .gen-restore { color: var(--ink-dim); cursor: default; }
+  .gen-restore .gx { text-decoration: line-through; text-decoration-color: var(--ink-dim); }
+  .gen-restore .gen-undo { text-decoration: none; cursor: pointer; color: var(--acc-ink); font-weight: 700; margin-left: 4px; }
+  .gen-restore:hover { color: var(--ink-soft); }
+  .gen-note { display:flex; align-items:center; gap:2px; margin-top:8px; line-height:1.5; }
+  /* episode-still provenance (R131) */
+  .still-prov { display:inline-flex; align-items:center; gap:5px; font-size:.6rem; font-weight:700; letter-spacing:.03em; padding:2px 8px; border-radius:20px; }
+  .still-prov.tmdb { color: var(--ok); background: var(--ok-soft); }
+  .still-prov.grab { color: var(--ink-soft); background: var(--fill-3); }
+  .still-prov.manual { color: var(--acc-ink); background: var(--hi-soft); }
   /* episode track-editor modal (same merged editor as media.html, scoped to one episode) */
   .modal-back { position: fixed; inset: 0; z-index: 130; background: rgba(8,10,16,.66); -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px); display: none; align-items: center; justify-content: center; padding: 24px; }
   .modal-back.open { display: flex; }
@@ -221,7 +234,7 @@
           <div class="row"><div class="field fill"><label>Series title</label><input class="input" value="Nordvest"></div><div class="field" style="width:110px;"><label>Year</label><input class="input" value="2023"></div></div>
           <div class="field"><label>Plot</label><textarea class="input" rows="3" style="resize:vertical;line-height:1.5;">In a fog-bound Faroese fishing town, a detective returns home to a death that reopens a buried family secret.</textarea></div>
           <div class="row">
-            <div class="field fill"><label>Genres</label><div class="pill-row"><span class="chip">Crime ✕</span><span class="chip">Drama ✕</span><span class="chip">Thriller ✕</span><span class="chip ghost">＋</span></div></div>
+            <div class="field fill"><label>Genres</label><div class="pill-row" id="genre-pills"><span class="chip">Crime ✕</span><span class="chip">Drama ✕</span><span class="chip">Thriller ✕</span><span class="chip gen-user"><span class="gen-dot"></span>Nordic noir ✕</span><span class="chip ghost">＋</span><span class="chip gen-restore" title="TMDB genre you removed — ↺ to restore"><span class="gx">Mystery</span><span class="gen-undo" data-restore>↺</span></span></div><div class="tiny muted gen-note"><span class="gen-dot"></span> Your genre edits survive TMDB re-syncs — dotted chips are ones you added; greyed chips are TMDB genres you removed.</div></div>
             <div class="field" style="width:180px;"><label>Network</label><input class="input" value="Kringvarp"></div>
           </div>
         </div>
@@ -244,6 +257,8 @@
           <span class="chip"><span class="dot warn"></span> 1 missing still</span>
           <span class="chip"><span class="dot warn"></span> 2 missing overview</span>
           <span class="spacer" style="flex:1"></span>
+          <a class="btn sm" href="Bulk Audio Reorder.html">↕ Re-order audio across series</a>
+          <span class="btn sm ghost" id="reprobe-eps" title="Re-probe every episode file with ffprobe — uncapped (ignores scan_episode_cap)">↻ Re-probe episode files</span>
           <span class="btn sm ghost" id="expand-issues">Expand all issues</span>
         </div>
 
@@ -260,7 +275,10 @@
             </div>
             <div class="ep-body">
               <div class="grid2">
-                <div class="imgslot" style="height:150px;"><span>still / thumb</span></div>
+                <div class="col" style="gap:8px;">
+                  <div class="imgslot" style="height:150px;"><span>still / thumb</span></div>
+                  <div class="row center" style="gap:8px;"><span class="still-prov tmdb">● From TMDB</span><span class="spacer"></span><span class="btn sm ghost ep-grab">Generate frame</span></div>
+                </div>
                 <div class="col" style="gap:10px;">
                   <div class="field" style="margin:0;"><label>Episode title</label><input class="input" value="Hvalvík"></div>
                   <div class="field" style="margin:0;"><label>Overview</label><textarea class="input" rows="2" style="resize:vertical;">Detective Eyð Restorff steps off the ferry into a town that would rather forget her.</textarea></div>
@@ -286,7 +304,8 @@
                 <div class="col" style="gap:10px;">
                   <div class="field" style="margin:0;"><label>Episode title</label><input class="input" value="Bóndin"></div>
                   <div class="field" style="margin:0;"><label>Overview</label><textarea class="input" rows="2" placeholder="No overview — fetch from TMDB or write one…" style="resize:vertical;background:var(--bad-soft);border-color:var(--bad);"></textarea></div>
-                  <div class="row center" style="gap:8px;flex-wrap:wrap;"><span class="btn sm">Fetch still + overview from TMDB</span><span class="btn sm ghost">Upload still</span><span class="spacer"></span><span class="btn sm primary">Save episode</span></div>
+                  <div class="row center" style="gap:8px;flex-wrap:wrap;"><span class="btn sm">Fetch still + overview from TMDB</span><span class="btn sm ghost ep-grab">Generate frame</span><span class="btn sm ghost">Upload still</span><span class="spacer"></span><span class="btn sm primary">Save episode</span></div>
+                  <div class="tiny muted" style="margin-top:2px;line-height:1.5;">No still on disk. <b>Generate frame</b> grabs a placeholder from the video (~20% in) — the next artwork run auto-upgrades it to the TMDB still when one appears.</div>
                 </div>
               </div>
             </div>
@@ -304,7 +323,10 @@
             </div>
             <div class="ep-body">
               <div class="grid2">
-                <div class="imgslot" style="height:150px;"><span>still / thumb</span></div>
+                <div class="col" style="gap:8px;">
+                  <div class="imgslot" style="height:150px;"><span>still / thumb</span></div>
+                  <div class="row center" style="gap:8px;"><span class="still-prov grab">▤ Screen grab placeholder</span><span class="spacer"></span><span class="btn sm ghost ep-grab">Regenerate</span></div>
+                </div>
                 <div class="col" style="gap:10px;">
                   <div class="field" style="margin:0;"><label>Overview</label><textarea class="input" rows="2" style="resize:vertical;">A whale hunt on the black beach surfaces a body that has been in the water far too long.</textarea></div>
                   <div class="row center" style="gap:8px;flex-wrap:wrap;"><span class="muted tiny">tracks:</span><span class="chip mono">fo · eac3 ★</span><span class="chip mono" style="background:var(--bad-soft);border-color:var(--bad);color:var(--bad);">?? · ac3 “commentary”</span><span class="spacer"></span><span class="badge bad">1 untagged</span><span class="btn sm ep-tracks" data-ep="S01E03">Fix tracks &amp; order →</span></div>
@@ -772,6 +794,26 @@
     });
     document.querySelectorAll('.ep-tracks').forEach(b => b.addEventListener('click', e => { e.stopPropagation(); open(b.dataset.ep); }));
   })();
+})();
+</script>
+<script>
+/* Phase 94 genre provenance + R131 episode-still affordances */
+(function () {
+  function toast(msg){ const t=document.createElement('div'); t.className='toast'; t.textContent=msg; document.body.appendChild(t); setTimeout(()=>t.remove(),1700); }
+  const pills = document.getElementById('genre-pills');
+  if (pills) pills.addEventListener('click', e => {
+    const u = e.target.closest('[data-restore]'); if (!u) return;
+    const chip = u.closest('.gen-restore'); const name = chip.querySelector('.gx').textContent;
+    const plain = document.createElement('span'); plain.className = 'chip'; plain.textContent = name + ' ✕';
+    pills.insertBefore(plain, pills.querySelector('.chip.ghost')); chip.remove();
+    toast('Restored “' + name + '” — TMDB won’t re-add it on the next sync');
+  });
+  document.querySelectorAll('.ep-grab').forEach(b => b.addEventListener('click', e => {
+    e.stopPropagation();
+    toast('Grabbed a frame from the video → screen-grab placeholder (auto-upgrades to TMDB later)');
+  }));
+  const rp = document.getElementById('reprobe-eps');
+  if (rp) rp.addEventListener('click', () => toast('Re-probing every episode file with ffprobe…'));
 })();
 </script>
 <script src="series-cast.js"></script>
