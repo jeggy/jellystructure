@@ -32,6 +32,7 @@ private const val ROW_ITEM_LIMIT = 30
 private const val HERO_AUTO_COUNT = 5
 private const val FEED_TTL_MS = 5 * 60_000L  // Continue row freshness window
 private const val CONTINUE_TIMEOUT_MS = 6_000L  // R102: cap the live Jellyfin resume/next-up wait
+private const val WATCHED_TIMEOUT_MS = 2_500L  // R142: cap the played-state overlay so it never hangs the feed
 
 class HomeFeedService(
     private val mediaStore: MediaStore,
@@ -54,12 +55,33 @@ class HomeFeedService(
 
         feedCache[userId]?.let { cached ->
             if (cached.libVer == libVer && cached.cfgHash == cfgHash && (now - cached.builtAt) < FEED_TTL_MS)
-                return cached.feed
+                return hydrateWatched(device, cached.feed)
         }
 
         val feed = buildHomeFeed(device, config)
         feedCache[userId] = FeedEntry(feed, now, libVer, cfgHash)
-        return feed
+        // R142: hydrate played-state AFTER the structural-feed cache so tile ✓ / progress are always fresh
+        // (cache key is libVer + cfgHash; per-user playstate is not part of it).
+        return hydrateWatched(device, feed)
+    }
+
+    /**
+     * R142 — overlay each tile's Jellyfin played / in-progress state. Continue Watching rows keep their
+     * episode-level progress (carried in the card already); all other rows get a ✓ when played or a resume
+     * sliver when in-progress. Bounded by [WATCHED_TIMEOUT_MS] — on a slow Jellyfin the feed ships as-is.
+     */
+    private suspend fun hydrateWatched(device: DeviceData, feed: HomeFeed): HomeFeed {
+        val ids = feed.rows.filter { it.kind != RowKind.CONTINUE }.flatMap { row -> row.items.map { it.id } }
+        if (ids.isEmpty()) return feed
+        val base = configStore.current.apiKeys.jellyfinUrl.trimEnd('/')
+        val ps = withTimeoutOrNull(WATCHED_TIMEOUT_MS) {
+            val token = jellyfinClient.tvToken(base, device, configStore.current.apiKeys.jellyfinToken)
+            fetchPlaystate(jellyfinClient, base, token, device.jellyfinUserId, ids)
+        } ?: return feed
+        if (ps.isEmpty()) return feed
+        return feed.copy(rows = feed.rows.map { row ->
+            if (row.kind == RowKind.CONTINUE) row else row.copy(items = row.items.map { it.withPlaystate(ps) })
+        })
     }
 
     private suspend fun buildHomeFeed(device: DeviceData, config: RaviloConfig): HomeFeed = coroutineScope {
@@ -96,14 +118,14 @@ class HomeFeedService(
             buildHeroesFromList(pageHero.items, allItems)
         else
             emptyList()
-        HomeFeed(
+        hydrateWatched(device, HomeFeed(
             heroes = heroes,
             channels = buildChannels(config),
             rows = buildRows(config, device, filtered, allItems, jellyfinBase, token, channelFilter = channelCfg),
             heroHeightPct = config.heroHeightPct,
             autoAdvanceSeconds = config.autoAdvanceSeconds,
             tileShape = config.tileShape,
-        )
+        ))
     }
 
     // ─── Heroes ───────────────────────────────────────────────────────────────

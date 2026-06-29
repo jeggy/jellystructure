@@ -15,6 +15,7 @@ import dev.jellystructure.shared.tv.Season
 import dev.jellystructure.shared.tv.SeriesDetail
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
+import kotlinx.coroutines.withTimeoutOrNull
 import dev.jellystructure.shared.tv.Episode as TvEpisode
 
 private const val RELATED_LIMIT = 12
@@ -44,7 +45,7 @@ class DetailService(
             synopsis           = item.overview,
             runtime            = item.runtime ?: 0,
             cast               = castFrom(item),
-            related            = mediaStore.relatedByGenre(item, RELATED_LIMIT).map { it.toMediaCard() },
+            related            = hydrateRelated(device, mediaStore.relatedByGenre(item, RELATED_LIMIT).map { it.toMediaCard() }),
             playback           = null,  // R83: hydrated by /api/tv/playstate (R84 overlays it)
             audioLanguages     = movieAudioLangs,
             subtitleLanguages  = movieSubLangs,
@@ -93,7 +94,7 @@ class DetailService(
             synopsis          = item.overview,
             seasons           = seasons,
             cast              = castFrom(item),
-            related           = mediaStore.relatedByGenre(item, RELATED_LIMIT).map { it.toMediaCard() },
+            related           = hydrateRelated(device, mediaStore.relatedByGenre(item, RELATED_LIMIT).map { it.toMediaCard() }),
             progress          = null,  // R83: hydrated by /api/tv/playstate (R84 overlays it)
             audioLanguages    = seriesAudioLangs,
             subtitleLanguages = seriesSubLangs,
@@ -136,6 +137,17 @@ class DetailService(
     // ─── Helpers ──────────────────────────────────────────────────────────────
     // R100: related items now come from MediaStore.relatedByGenre (genre-bucket index) instead of a
     // full-library scan per detail open; the old in-place relatedItems()/allItems() pair is gone.
+
+    /** R142: overlay played / in-progress state onto More-Like-This tiles (bounded so it never hangs detail). */
+    private suspend fun hydrateRelated(device: DeviceData, cards: List<MediaCard>): List<MediaCard> {
+        if (cards.isEmpty()) return cards
+        val base = configStore.current.apiKeys.jellyfinUrl.trimEnd('/')
+        val ps = withTimeoutOrNull(2_500L) {
+            val token = jellyfinClient.tvToken(base, device, configStore.current.apiKeys.jellyfinToken)
+            fetchPlaystate(jellyfinClient, base, token, device.jellyfinUserId, cards.map { it.id })
+        } ?: return cards
+        return cards.map { it.withPlaystate(ps) }
+    }
 
     private fun MediaItem.toMediaCard(): MediaCard {
         val jId = jellyfinId

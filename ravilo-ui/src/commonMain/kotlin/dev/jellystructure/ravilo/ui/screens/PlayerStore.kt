@@ -61,16 +61,22 @@ class PlayerStore(private val apiClient: TvApiClient) {
         }
     }
 
-    fun stopSession(positionMs: Long) {
+    fun stopSession(positionMs: Long, durationMs: Long = 0L) {
         progressJob?.cancel()
         val itemId = currentItemId ?: return
         scope.launch {
             runCatching { apiClient.stopPlayback(itemId, positionMs) }
+            // R142: finishing (≥90%) marks the item played so its tiles flip to ✓ and a series episode
+            // advances up-next — no manual toggle. Below threshold it stays in-progress (resume preserved).
+            if (durationMs > 0 && positionMs >= durationMs * 90 / 100) {
+                runCatching { apiClient.markPlayed(itemId, watched = true) }
+            }
         }
         _state.value = PlayerSessionState.Idle
         currentItemId = null
     }
 
+    /** R142: explicit played write-through used when advancing to the next episode (the finished one). */
     fun markWatched(itemId: String) {
         scope.launch { runCatching { apiClient.markPlayed(itemId, watched = true) } }
     }

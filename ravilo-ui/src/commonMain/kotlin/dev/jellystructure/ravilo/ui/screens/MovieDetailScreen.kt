@@ -96,6 +96,7 @@ fun MovieDetailScreen(
                 overlay = overlay,
                 onBack = onBack,
                 onPlay = onPlay,
+                onMarkPlayed = { played -> store.setPlayed(played) },
                 onRelatedSelect = onRelatedSelect,
                 displayName = displayName,
                 onNavSelect = onNavSelect,
@@ -113,6 +114,7 @@ private fun MovieDetailLoaded(
     overlay: Map<String, CardPlayState>,
     onBack: () -> Unit,
     onPlay: (MediaCard) -> Unit,
+    onMarkPlayed: (Boolean) -> Unit,
     onRelatedSelect: (MediaCard) -> Unit,
     displayName: String,
     onNavSelect: (Int) -> Unit,
@@ -198,7 +200,19 @@ private fun MovieDetailLoaded(
                     }
                     if (meta.isNotEmpty()) {
                         Spacer(Modifier.height(8.dp))
-                        Text(meta, color = colors.textSecondary, fontSize = 15.sp)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(meta, color = colors.textSecondary, fontSize = 15.sp)
+                            // R142: ✓ Watched chip when the movie is played.
+                            if (overlay[detail.card.id]?.played == true) {
+                                Spacer(Modifier.width(10.dp))
+                                Text(
+                                    "✓ ${str("action.watched")}",
+                                    color = colors.badgeWatched,
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                )
+                            }
+                        }
                     }
                     if (detail.audioLanguages.isNotEmpty() || detail.subtitleLanguages.isNotEmpty()) {
                         Spacer(Modifier.height(8.dp))
@@ -242,19 +256,30 @@ private fun MovieDetailLoaded(
                     ) {
                         // R84: phase-2 overlay drives Play/Resume label; safe to press before it arrives
                         val ps = overlay[detail.card.id]
+                        val played = ps?.played == true
                         val isResume = ps != null && ps.resumeMs > 0 && !ps.played
                         val runtimeMs = detail.runtime.toLong() * 60_000L
                         val minsLeft = if (isResume && ps != null && runtimeMs > 0)
                             ((runtimeMs - ps.resumeMs) / 60_000L).toInt() else 0
-                        val playLabel = if (isResume) "${str("action.resume")} · $minsLeft min left" else str("action.play")
+                        val playLabel = when {
+                            played   -> str("action.play_again")          // R142
+                            isResume -> "${str("action.resume")} · $minsLeft min left"
+                            else     -> str("action.play")
+                        }
                         // Fixed min-width: sized for the longest "Resume · NN min left" label so
-                        // swapping Play→Resume never shifts the adjacent "My List" button (no-flicker rule).
+                        // swapping Play→Resume never shifts the adjacent buttons (no-flicker rule).
                         RaviloButton(
                             label = playLabel,
                             focusRequester = playFR,
                             style = ButtonStyle.PRIMARY,
                             modifier = Modifier.widthIn(min = 200.dp),
                             onSelect = { onPlay(detail.card) },
+                        )
+                        // R142: mark played / unplayed write-through. Re-renders from the server-returned state.
+                        RaviloButton(
+                            label = if (played) "✓ ${str("action.watched")}" else str("action.mark_watched"),
+                            style = ButtonStyle.GHOST,
+                            onSelect = { onMarkPlayed(!played) },
                         )
                         RaviloButton(
                             label = "+ ${str("nav.my_list")}",

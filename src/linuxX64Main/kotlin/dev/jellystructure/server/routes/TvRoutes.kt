@@ -19,6 +19,7 @@ import dev.jellystructure.shared.tv.Person
 import dev.jellystructure.shared.tv.ChannelLogoUpload
 import dev.jellystructure.shared.tv.CardPlayState
 import dev.jellystructure.shared.tv.MarkRequest
+import dev.jellystructure.shared.tv.PlayedRequest
 import dev.jellystructure.shared.tv.RaviloConfig
 import dev.jellystructure.shared.tv.PairingChallenge
 import dev.jellystructure.shared.tv.PairResult
@@ -346,6 +347,14 @@ fun Route.tvRoutes(
         val req = call.receive<MarkRequest>()
         playbackService.mark(device, req.itemId, req.watched)
         call.respond(mapOf("status" to "ok"))
+    }
+
+    // R142 — played/unplayed write-through (movie / episode / season / series). Returns the authoritative
+    // per-id play-state for the item + affected episodes so the client renders from the server result.
+    put("/tv/played") {
+        val device = call.attributes[DeviceKey]
+        val req = call.receive<PlayedRequest>()
+        call.respond(playbackService.setPlayed(device, req.itemId, req.played, req.episodeIds))
     }
 
     // ── Per-user config ──────────────────────────────────────────────────────
