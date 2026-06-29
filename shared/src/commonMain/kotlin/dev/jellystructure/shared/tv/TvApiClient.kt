@@ -9,6 +9,10 @@ import io.ktor.websocket.*
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
+// R146: ids per /api/tv/playstate request. 100 × ~33 chars ≈ 3.3 KB — well under the Ktor CIO
+// 8192-char request-line limit, so even a 261-episode series never 400s the play-state lookup.
+private const val PLAYSTATE_ID_BATCH = 100
+
 /**
  * Ktor-based client for the jellystructure `/api/tv/` control plane.
  *
@@ -143,15 +147,25 @@ class TvApiClient(
         return json.decodeFromString<SeriesDetail>(r.bodyAsText())
     }
 
-    /** R83: fetch per-user play-state for a batch of Jellyfin ids in one round-trip. */
+    /**
+     * R83: fetch per-user play-state for a batch of Jellyfin ids.
+     * R146: chunk the ids so a long series (e.g. 261 episodes ≈ 8.6 KB of ids) never blows past the
+     * Ktor CIO 8192-char request-line limit, which silently 400'd the whole request and left every
+     * episode looking unwatched. Each chunk is a separate request; results are merged. A failed chunk is
+     * skipped (its items render unwatched) rather than failing the whole lookup.
+     */
     suspend fun getPlaystate(ids: List<String>): Map<String, CardPlayState> {
         if (ids.isEmpty()) return emptyMap()
-        val r = client.get("$baseUrl/api/tv/playstate") {
-            auth()
-            parameter("ids", ids.joinToString(","))
+        val out = mutableMapOf<String, CardPlayState>()
+        for (chunk in ids.chunked(PLAYSTATE_ID_BATCH)) {
+            val r = runCatching {
+                client.get("$baseUrl/api/tv/playstate") { auth(); parameter("ids", chunk.joinToString(",")) }
+            }.getOrNull() ?: continue
+            if (!r.status.isSuccess()) continue
+            runCatching { json.decodeFromString<Map<String, CardPlayState>>(r.bodyAsText()) }
+                .getOrNull()?.let { out.putAll(it) }
         }
-        r.assertSuccess()
-        return json.decodeFromString<Map<String, CardPlayState>>(r.bodyAsText())
+        return out
     }
 
     // ─── Playback ────────────────────────────────────────────────────────────
