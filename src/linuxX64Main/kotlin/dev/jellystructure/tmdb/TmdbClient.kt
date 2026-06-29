@@ -168,6 +168,8 @@ data class TmdbEpisodeDetails(
     @SerialName("episode_number") val episodeNumber: Int = 0,
     @SerialName("still_path") val stillPath: String? = null,
     val runtime: Int? = null,
+    // R148: episode first-air date (ISO yyyy-MM-dd) — already returned by TMDB's episode endpoint.
+    @SerialName("air_date") val airDate: String? = null,
 )
 
 // --- Phase 47: TMDB images API (candidate galleries) ---

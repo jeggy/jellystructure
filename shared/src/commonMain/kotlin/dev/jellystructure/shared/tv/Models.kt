@@ -205,6 +205,8 @@ data class Episode(
     @SerialName("still_url") val stillUrl: String?,
     /** R83: null until hydrated from `/api/tv/playstate`; R84 overlays it. */
     val playback: PlaybackState? = null,
+    /** R148: episode first-air date (ISO yyyy-MM-dd) from the scanned MediaItem. Null = no date line. */
+    @SerialName("air_date") val airDate: String? = null,
 )
 
 @Serializable
