@@ -121,6 +121,15 @@
   .mini-toggle.on::after { left: auto; right: 2px; background: #fff; }
   .revert-btn { font-size: .72rem; }
 
+  /* ===== genre provenance (Phase 94) ===== */
+  .gen-dot { display:inline-block; width:6px; height:6px; border-radius:50%; background:var(--hi); margin-right:6px; vertical-align:middle; flex:none; }
+  .gen-user { display:inline-flex; align-items:center; }
+  .gen-restore { color: var(--ink-dim); cursor: default; }
+  .gen-restore .gx { text-decoration: line-through; text-decoration-color: var(--ink-dim); }
+  .gen-restore .gen-undo { text-decoration: none; cursor: pointer; color: var(--acc-ink); font-weight: 700; margin-left: 4px; }
+  .gen-restore:hover { color: var(--ink-soft); }
+  .gen-note { display:flex; align-items:center; gap:2px; margin-top:8px; line-height:1.5; }
+
   /* ===== Artwork manager (Phase 40 — asset rail + inline gallery) ===== */
   .aw-fill { position:absolute; inset:0; background:
     radial-gradient(120% 90% at 28% 8%, rgba(177,92,208,.55), transparent 56%),
@@ -372,7 +381,7 @@
           <textarea class="input" id="f-plot" rows="3" style="resize:vertical;line-height:1.5;">A lonely young woman, Sintel, helps and befriends a dragon she names Scales. When Scales is taken from her, Sintel embarks on a dangerous quest to find her lost companion.</textarea>
         </div>
         <div class="row">
-          <div class="field fill"><label>Genres</label><div class="pill-row"><span class="chip">Animation ✕</span><span class="chip">Fantasy ✕</span><span class="chip">Short ✕</span><span class="chip ghost">＋</span></div></div>
+          <div class="field fill"><label>Genres</label><div class="pill-row" id="genre-pills"><span class="chip">Animation ✕</span><span class="chip">Fantasy ✕</span><span class="chip">Short ✕</span><span class="chip gen-user"><span class="gen-dot"></span>Indie ✕</span><span class="chip ghost">＋</span><span class="chip gen-restore" title="TMDB genre you removed — ↺ to restore"><span class="gx">Comedy</span><span class="gen-undo" data-restore>↺</span></span></div><div class="tiny muted gen-note"><span class="gen-dot"></span> Your genre edits survive TMDB re-syncs — dotted chips are ones you added; greyed chips are TMDB genres you removed.</div></div>
           <div class="field" style="width:170px;"><label>Original language</label><div class="input"><span class="lang">en</span> · from TMDB</div></div>
         </div>
         <div class="row">
@@ -1329,6 +1338,23 @@
         },
         onSave: ({ pick, state }) => (window.__toast || alert)('Added “' + pick.title + '” to ' + (state.viewer || 'the viewer') + '’s hero carousel')
       });
+    });
+  })();
+  /* genre provenance (Phase 94) — ↺ restores a removed TMDB genre into the list */
+  (function () {
+    const pills = document.getElementById('genre-pills');
+    if (!pills) return;
+    pills.addEventListener('click', e => {
+      const u = e.target.closest('[data-restore]');
+      if (!u) return;
+      const chip = u.closest('.gen-restore');
+      const name = chip.querySelector('.gx').textContent;
+      const plain = document.createElement('span');
+      plain.className = 'chip';
+      plain.textContent = name + ' ✕';
+      pills.insertBefore(plain, pills.querySelector('.chip.ghost'));
+      chip.remove();
+      (window.__toast || function(){})('Restored “' + name + '” — TMDB won’t re-add it on the next sync');
     });
   })();
 </script>

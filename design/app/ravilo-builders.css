@@ -74,6 +74,13 @@ body.cf-screen-on .app-main2 > :not(#cf-screen-root) { display: none; }
 .cf-popitem { padding: 7px 10px; border-radius: 7px; font-size: .85rem; font-weight: 500; cursor: pointer; color: var(--ink); }
 .cf-popitem:hover { background: var(--fill-3); }
 .cf-popitem.on { color: var(--acc-ink); font-weight: 600; }
+/* R127 — facet-value counts in the workbench value picker */
+.cf-popitem { display: flex; align-items: center; gap: 8px; }
+.cf-popitem .wb-vname { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cf-popitem .wb-vcount { flex: none; font-family: 'JetBrains Mono', monospace; font-size: .72rem; font-weight: 600;
+  color: var(--ink-dim); background: var(--fill-3); border-radius: 6px; padding: 1px 7px; min-width: 26px; text-align: center; }
+.cf-popitem:hover .wb-vcount { color: var(--ink-soft); }
+.cf-popitem.on .wb-vcount { color: var(--acc-ink); background: var(--hi-soft); }
 .cf-popgroup { font-size: .62rem; text-transform: uppercase; letter-spacing: .08em; color: var(--ink-dim);
   font-weight: 700; padding: 8px 10px 3px; }
 

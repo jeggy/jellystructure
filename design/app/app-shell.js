@@ -70,6 +70,8 @@
     { title: 'Sintel',         sub: 'wrong default audio (fra → eng)', href: 'media.html' },
     { title: 'Nordvest',       sub: 'S01E02 · missing still + overview', href: 'series.html' },
     { title: 'Babel Fish',     sub: 'S02E05 · multiple default audio', href: 'series.html' },
+    { title: 'Caminandes 2',   sub: 'missing poster artwork', href: 'media.html' },
+    { title: 'The Daily Show', sub: 'no longer in Jellyfin — kept, flagged for triage', href: 'series.html' },
   ];
   const ATTN_TOTAL = 214;
 
