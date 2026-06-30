@@ -9,7 +9,7 @@ See [`STATUS.md`](STATUS.md) for the overall snapshot.
 
 ## Active: Phase 18 — Settings page cleanup (FR-C1)
 
-Spec: [`requirements/phase-18-settings-page-cleanup.md`](requirements/phase-18-settings-page-cleanup.md)
+Spec: `requirements/phase-18-settings-page-cleanup.md`
 
 ### Steps
 
