@@ -2,6 +2,7 @@ package dev.jellystructure.ravilo.ui.screens
 
 import androidx.compose.foundation.lazy.LazyListState
 import dev.jellystructure.shared.tv.HomeFeed
+import dev.jellystructure.shared.tv.Row
 import dev.jellystructure.shared.tv.TvApiClient
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -12,6 +13,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+
+private fun HomeFeed.deduped() = copy(rows = rows.map { r -> r.copy(items = r.items.distinctBy { it.id }) })
 
 sealed class HomeState {
     data object Loading : HomeState()
@@ -41,7 +44,7 @@ class HomeStore(private val apiClient: TvApiClient) {
             WatchedBus.patches.collect { patch ->
                 val s = _state.value as? HomeState.Loaded ?: return@collect
                 _state.value = HomeState.Loaded(s.feed.copy(
-                    rows = s.feed.rows.map { r -> r.copy(items = r.items.map { it.applyWatchedPatch(patch) }) }
+                    rows = s.feed.rows.map { r -> r.copy(items = r.items.map { it.applyWatchedPatch(patch) }.distinctBy { it.id }) }
                 ))
             }
         }
@@ -58,7 +61,7 @@ class HomeStore(private val apiClient: TvApiClient) {
             for (i in 0..3) {
                 val result = runCatching { apiClient.getHome() }
                 if (result.isSuccess) {
-                    _state.value = HomeState.Loaded(result.getOrThrow())
+                    _state.value = HomeState.Loaded(result.getOrThrow().deduped())
                     return@launch
                 }
                 lastErr = result.exceptionOrNull()?.message ?: "Unknown error"
@@ -81,7 +84,7 @@ class HomeStore(private val apiClient: TvApiClient) {
         if (!silent) { load(); return }
         loadJob?.cancel()
         loadJob = scope.launch {
-            runCatching { apiClient.getHome() }.getOrNull()?.let { _state.value = HomeState.Loaded(it) }
+            runCatching { apiClient.getHome() }.getOrNull()?.let { _state.value = HomeState.Loaded(it.deduped()) }
         }
         refreshDiscoverAvailable()
     }
