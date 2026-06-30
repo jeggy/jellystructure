@@ -6,8 +6,8 @@ plugins {
 // ─── GPL-containment boundary (R31) ────────────────────────────────────────────
 // This Android-only module is the *only* place the GPL-3.0 jellyfin FFmpeg decoder is linked.
 // Only :ravilo-android depends on it; :ravilo-ui and :ravilo-web never do, so the shared UI and
-// the web bundle stay free of the GPL dependency. See NOTICE and
-// specs/ravilo/requirements/phase-R31-player-engine-fork.md.
+// the web bundle stay free of the GPL dependency. See NOTICE. (Spec R31 detail is in git history —
+// the older Ravilo specs were pruned 2026-06-30; see specs/ravilo/requirements/README.md.)
 
 android {
     namespace = "dev.jellystructure.ravilo.player"
