@@ -137,16 +137,4 @@ class SeriesDetailStore(private val apiClient: TvApiClient) {
             }
         }
     }
-
-    /** R142: mark a whole season (the given episode ids) played/unplayed via the series; patch the overlay. */
-    fun setSeasonPlayed(episodeIds: List<String>, played: Boolean) {
-        val seriesId = currentId ?: return
-        if (episodeIds.isEmpty()) return
-        scope.launch {
-            runCatching { apiClient.setPlayed(seriesId, played, episodeIds) }.getOrNull()?.let {
-                _playstateOverlay.value = _playstateOverlay.value + it
-                WatchedBus.publish(it)  // R147
-            }
-        }
-    }
 }
