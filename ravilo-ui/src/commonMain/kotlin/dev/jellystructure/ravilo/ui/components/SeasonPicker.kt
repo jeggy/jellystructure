@@ -39,6 +39,7 @@ fun SeasonPicker(
     selectedIndex: Int,
     onSelect: (Int) -> Unit,
     firstFocusRequester: FocusRequester? = null,   // R138: lets the hero hand DOWN-focus straight to the selected season
+    watchedSeasons: Set<Int> = emptySet(),
     modifier: Modifier = Modifier,
 ) {
     val colors = RaviloTheme.colors
@@ -88,8 +89,9 @@ fun SeasonPicker(
                     .padding(horizontal = 18.dp, vertical = 8.dp),
                 contentAlignment = Alignment.Center,
             ) {
+                val isWatched = seasons[i].index in watchedSeasons
                 Text(
-                    text = seasons[i].name,
+                    text = if (isWatched) "${seasons[i].name}  ✓" else seasons[i].name,
                     color = if (isSelected) colors.onAccent else if (focused) colors.text else colors.textSecondary,
                     fontSize = 14.sp,
                     fontWeight = if (isSelected || focused) FontWeight.SemiBold else FontWeight.Normal,
