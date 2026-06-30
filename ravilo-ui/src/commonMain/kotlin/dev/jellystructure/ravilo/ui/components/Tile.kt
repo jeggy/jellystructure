@@ -229,8 +229,8 @@ fun Tile(
                 }
             }
 
-            // "NEW" gradient badge (top-start)
-            if (isNew && !watched) {
+            // "NEW" gradient badge (top-start). Suppressed when hasUpcoming badge occupies the same corner.
+            if (isNew && !watched && !hasUpcoming) {
                 val newGradient = remember(colors.accent, colors.accentSecondary) {
                     colors.accentGradient
                 }
@@ -274,22 +274,21 @@ fun Tile(
                 }
             }
 
-            // R149: "Airing soon" accent badge (top-end). Shown when series has a next scheduled episode
-            // and the poster is not already marked watched. Complements the watched ✓ badge position.
+            // R149: "Airing soon" badge (top-start). Solid accent background so it reads on any poster.
             if (hasUpcoming) {
                 Row(
                     modifier = Modifier
-                        .align(Alignment.TopEnd)
+                        .align(Alignment.TopStart)
                         .padding(8.dp)
-                        .background(colors.accent.copy(alpha = 0.18f), RoundedCornerShape(4.dp))
+                        .background(colors.accent, RoundedCornerShape(4.dp))
                         .padding(horizontal = 6.dp, vertical = 3.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Box(modifier = Modifier.size(5.dp).background(colors.accent, CircleShape))
+                    Box(modifier = Modifier.size(5.dp).background(Color.White, CircleShape))
                     Spacer(Modifier.width(4.dp))
                     Text(
                         text = str("sonarr.upcoming"),
-                        color = colors.accent,
+                        color = Color.White,
                         fontSize = 10.sp,
                         fontWeight = FontWeight.Bold,
                         fontFamily = sora,
