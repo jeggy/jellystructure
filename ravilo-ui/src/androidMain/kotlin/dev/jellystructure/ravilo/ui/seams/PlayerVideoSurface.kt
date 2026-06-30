@@ -36,7 +36,7 @@ actual fun PlayerVideoSurface(player: RaviloPlayer, modifier: Modifier) {
                 val frame = FrameLayout(ctx)
                 val texture = TextureView(ctx)
                 val subtitles = SubtitleView(ctx).apply {
-                    val bottomPx = (32 * ctx.resources.displayMetrics.density).toInt()
+                    val bottomPx = (28 * ctx.resources.displayMetrics.density).toInt()
                     layoutParams = FrameLayout.LayoutParams(
                         FrameLayout.LayoutParams.MATCH_PARENT,
                         FrameLayout.LayoutParams.MATCH_PARENT,
