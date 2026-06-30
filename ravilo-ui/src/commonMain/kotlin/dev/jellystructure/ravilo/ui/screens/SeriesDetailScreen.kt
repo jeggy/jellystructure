@@ -446,7 +446,7 @@ private fun SeriesDetailLoaded(
                             Text(
                                 buildString {
                                     append(str("sonarr.next_ep"))
-                                    append(" · S%02dE%02d".format(na.season, na.episode))
+                                    append(" · S${na.season.toString().padStart(2,'0')}E${na.episode.toString().padStart(2,'0')}")
                                     if (!na.title.isNullOrBlank()) append(" · '${na.title}'")
                                     append(" · ")
                                     append(str("sonarr.airs"))
