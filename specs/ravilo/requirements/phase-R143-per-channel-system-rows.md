@@ -1,12 +1,12 @@
 # Phase R143 — Per-channel system rows: scope Continue Watching & Newly Added to the channel
 
-> Extends **[R59](phase-R59-per-channel-content-rows.md)** (per-channel custom content rows). R59 lets a
+> Extends **R59** (per-channel custom content rows). R59 lets a
 > channel define its own ordered **filter** rows but left the **system rows** (Continue Watching, Newly
 > Added) as an un-configurable footnote ("still appear unless removed"). This phase makes them
 > first-class per-channel settings — a **show** toggle, an **All titles / Only this channel** scope, and
-> a **merge** option for Newly Added. Builds on **[R54](phase-R54-rows-config-simplification.md)** /
-> **[R61](phase-R61-home-rows-reduce-defaults.md)** (the system-row model) and reuses the channel's own
-> conditions from **[R32](phase-R32-unified-filter-workbench.md)** for scoping.
+> a **merge** option for Newly Added. Builds on **R54** /
+> **R61** (the system-row model) and reuses the channel's own
+> conditions from **R32** for scoping.
 
 ## Problem
 R59 gave a channel its own **Custom** content rows, but the two **system rows** — Continue Watching and

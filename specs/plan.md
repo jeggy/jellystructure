@@ -351,6 +351,5 @@ persist across route changes. A `log_line` event type streams activity-log lines
 8. On scan complete: call Jellyfin library refresh
 
 Scan state persistence and the resume checkpoint were introduced in Phase 7
-(see [`requirements/archive/phase-07-persistent-scan-state.md`](requirements/archive/phase-07-persistent-scan-state.md))
 and now live in **SQLite** (`scan_state` / `scan_processed` tables) since Phase 14
-(see [`requirements/archive/phase-14-persistence-sqlite.md`](requirements/archive/phase-14-persistence-sqlite.md)).
+(both spec files pruned 2026-06-30 — see git history).

@@ -6,7 +6,7 @@ against code before implementing — they were true at the commit noted in [`../
 ## Persistence — SQLite/SQLDelight (Phase 14 ✓ Done)
 
 > **Phase 14 is complete.** All four stores now run against a real SQLite DB. The activity log
-> ([`phase-17`](phase-17-activity-log-backend.md)) and JS tags ([`phase-19`](phase-19-metadata-page.md))
+> (`phase-17`) and JS tags (`phase-19`)
 > should use SQLite tables when implemented, not a new JSON-file pattern.
 
 Persistence as of Phase 14:
@@ -28,7 +28,7 @@ No migration from legacy JSON files — new installs start fresh.
 - `TmdbMovieDetails` / `TmdbTvDetails` in `TmdbClient.kt` don't even model `production_companies` /
   `networks`.
 - **Therefore the Studios/Networks metadata page has no data until the scanner is extended.** This is
-  a prerequisite, specced in [`phase-19`](phase-19-metadata-page.md).
+  a prerequisite, specced in `phase-19`.
 
 ## TMDB network/studio artwork
 
@@ -46,7 +46,7 @@ No migration from legacy JSON files — new installs start fresh.
 
 - Already commented out in all three builders (`buildMovieXml`, `buildTvShowXml`, `buildEpisodeXml`)
   and in the Media Detail "lockdata=true" UI block. Removal is dead-code cleanup; the new work is
-  *detecting* Jellyfin-side locks — see [`phase-22`](phase-22-remove-lockdata-detect-locks.md).
+  *detecting* Jellyfin-side locks — see `phase-22`.
 - Jellyfin exposes per-item `LockData` (bool) and `LockedFields` (list) — fetchable by adding to the
   `Fields=` query on `/Items` or via a single-item fetch.
 
@@ -56,7 +56,7 @@ No migration from legacy JSON files — new installs start fresh.
   forms like `/library?studio=Warner` and `/metadata?tab=networks` will currently fall through to the
   dashboard. Navigation that carries query params needs `startsWith` handling + a query parser.
 - Settings sub-nav uses real `<a href="#sect-...">` anchors → fires `hashchange` → router renders
-  dashboard. This is the "redirects to dashboard" bug ([`phase-18`](phase-18-settings-page-cleanup.md)).
+  dashboard. This is the "redirects to dashboard" bug (`phase-18`).
 
 ## Track model & the "Synstolkning" case
 
@@ -64,12 +64,12 @@ No migration from legacy JSON files — new installs start fresh.
   `tags.title`. Audio-description tracks are identified by their **title** text, not language.
 - The display string the user sees ("Dansk Synstolkning - Danish - AAC - Stereo - Default") is a
   Jellyfin-composed label; locally we have the component parts (`title`, `language`, `codec`,
-  `default`). Filtering must operate on these parts — see [`phase-20`](phase-20-library-audio-track-filter.md).
+  `default`). Filtering must operate on these parts — see `phase-20`.
 
 ## Scan loop is single sequential coroutine
 
 - `runScan` calls `scanner.scan { … }` which iterates items sequentially with `delay(100)` between
-  items. No channel/worker pool yet. Multi-worker is [`phase-16`](phase-16-multi-worker-scanner.md).
+  items. No channel/worker pool yet. Multi-worker is `phase-16`.
 - `WsBroadcaster.broadcast` is already `Mutex`-guarded and concurrency-safe.
 - `ScanTracker.recordProcessed` is **not** synchronized (plain `MutableSet`) — needs a `Mutex` for
   concurrent workers.
@@ -80,4 +80,4 @@ No migration from legacy JSON files — new installs start fresh.
   `rescanMetadata` (TMDB only) or `syncSeriesEpisodes` (ffprobe + TMDB).
 - `POST /api/media/{id}/repull` → `Scanner.rescanMetadata` (TMDB only).
 - **Neither re-fetches the item from Jellyfin.** The "Re-pull from Jellyfin" button is new behaviour —
-  see [`phase-25`](phase-25-repull-from-jellyfin.md).
+  see `phase-25`.

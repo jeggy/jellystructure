@@ -1,8 +1,8 @@
 # Phase 92 — "Missing artwork" means no poster on disk (filter + triage) (FR-AM3)
 
-> Builds on **[Phase 31](archive/phase-31-studio-network-artwork.md)** / the Phase-3 artwork downloader
-> (fetch/cache/write `poster.jpg`·`fanart.jpg`·`clearlogo.png` next to the media), **[Phase 47](phase-47-artwork-manager.md)**
-> (per-item Artwork tab), and **[Phase 27](archive/phase-27-merge-triage-into-media-detail.md)** (the
+> Builds on **Phase 31** / the Phase-3 artwork downloader
+> (fetch/cache/write `poster.jpg`·`fanart.jpg`·`clearlogo.png` next to the media), **Phase 47**
+> (per-item Artwork tab), and **Phase 27** (the
 > floating Triage dock). This phase fixes *what "missing artwork" means* across the Library filter and
 > triage — it does not change how artwork is fetched, cached or written.
 

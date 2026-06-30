@@ -1,6 +1,6 @@
 # R131 — Episode-still screen-grabber (lowest-priority placeholder, auto-upgraded by TMDB) (FR-AM4)
 
-> Builds on **[Phase 47](../../requirements/phase-47-artwork-manager.md)** (artwork manager), **R124**
+> Builds on **Phase 47** (artwork manager), **R124**
 > (on-disk artwork truth), **R125** (episode stills are part of `fetch()`), and the existing
 > `FfmpegRunner`/`FfprobeRunner`. Our version of Jellyfin's thumbnail extractor.
 
