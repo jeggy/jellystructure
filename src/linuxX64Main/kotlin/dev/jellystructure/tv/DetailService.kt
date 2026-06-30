@@ -46,7 +46,7 @@ class DetailService(
             synopsis           = item.overview,
             runtime            = item.runtime ?: 0,
             cast               = castFrom(item),
-            related            = hydrateRelated(device, mediaStore.relatedByGenre(item, RELATED_LIMIT).map { it.toMediaCard() }),
+            related            = hydrateRelated(device, mediaStore.relatedByGenre(item, RELATED_LIMIT).map { it.toMediaCard() }.distinctBy { it.id }),
             playback           = null,  // R83: hydrated by /api/tv/playstate (R84 overlays it)
             audioLanguages     = movieAudioLangs,
             subtitleLanguages  = movieSubLangs,
@@ -105,7 +105,7 @@ class DetailService(
             synopsis          = item.overview,
             seasons           = seasons,
             cast              = castFrom(item),
-            related           = hydrateRelated(device, mediaStore.relatedByGenre(item, RELATED_LIMIT).map { it.toMediaCard() }),
+            related           = hydrateRelated(device, mediaStore.relatedByGenre(item, RELATED_LIMIT).map { it.toMediaCard() }.distinctBy { it.id }),
             progress          = null,  // R83: hydrated by /api/tv/playstate (R84 overlays it)
             audioLanguages    = seriesAudioLangs,
             subtitleLanguages = seriesSubLangs,
