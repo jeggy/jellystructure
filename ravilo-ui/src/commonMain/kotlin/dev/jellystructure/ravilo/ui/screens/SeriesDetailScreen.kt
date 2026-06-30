@@ -446,13 +446,11 @@ private fun SeriesDetailLoaded(
                             Text(
                                 buildString {
                                     append(str("sonarr.next_ep"))
-                                    append(" · S${na.season}:E${na.episode}")
+                                    append(" · S%02dE%02d".format(na.season, na.episode))
                                     if (!na.title.isNullOrBlank()) append(" · '${na.title}'")
                                     append(" · ")
                                     append(str("sonarr.airs"))
                                     append(" ${na.airDate}")
-                                    append(" · ")
-                                    append(str("sonarr.via_sonarr"))
                                 },
                                 color = colors.accent,
                                 fontSize = 13.sp,
@@ -525,7 +523,7 @@ private fun SeriesDetailLoaded(
                                 title = card.title,
                                 posterUrl = card.posterUrl,
                                 watched = card.watched,
-                                hasUpcoming = card.hasUpcoming,
+                                upcomingLabel = card.upcomingEpisode,
                                 onSelect = { onRelatedSelect(card) },
                             )
                         }

@@ -333,7 +333,7 @@ private fun MovieDetailLoaded(
                                 title = card.title,
                                 posterUrl = card.posterUrl,
                                 watched = card.watched,
-                                hasUpcoming = card.hasUpcoming,
+                                upcomingLabel = card.upcomingEpisode,
                                 onSelect = { onRelatedSelect(card) },
                             )
                         }

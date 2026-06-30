@@ -244,7 +244,7 @@ fun ChannelScreen(
                                         variant = variant,
                                         progressPct = card.progressPct ?: 0f,
                                         watched = card.watched,
-                                        hasUpcoming = card.hasUpcoming,
+                                        upcomingLabel = card.upcomingEpisode,
                                         focusRequester = fr ?: if (!hasHero && ri == 0 && idx == 0) firstTileFR else null,  // R139
                                         onSelect = { store.focusRowKey = row.id; store.focusItemKey = card.id; onItemSelect(card) },  // R139
                                     )

@@ -427,8 +427,10 @@ class HomeFeedService(
             seasonNumber = seasonNumber,
             episodeNumber = episodeNumber,
             badge = badge,
-            hasUpcoming = sonarrEnabled && kind == MediaKind.TV_SHOW &&
-                sonarrStatus != "ended" && sonarrNextAiringDate != null,
+            upcomingEpisode = if (sonarrEnabled && kind == MediaKind.TV_SHOW &&
+                sonarrStatus != "ended" && sonarrNextAiringDate != null &&
+                sonarrNextAiringSeason != null && sonarrNextAiringEpisode != null)
+                "S${sonarrNextAiringSeason.toString().padStart(2,'0')}E${sonarrNextAiringEpisode.toString().padStart(2,'0')}" else null,
         )
     }
 

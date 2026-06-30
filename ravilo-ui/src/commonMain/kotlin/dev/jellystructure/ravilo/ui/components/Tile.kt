@@ -82,8 +82,8 @@ fun Tile(
     /** R113: small season/episode indicator (e.g. "S1:E3") overlaid on the image for TV shows in
      *  Continue Watching. Null = no badge. */
     episodeBadge: String? = null,
-    /** R149: show "Airing soon" accent badge (top-end) for continuing series with a scheduled episode. */
-    hasUpcoming: Boolean = false,
+    /** R149: "Soon • SxxExx" badge for continuing series with a scheduled episode. Null = no badge. */
+    upcomingLabel: String? = null,
     onFocused: () -> Unit = {},
     onSelect: (() -> Unit)? = null,
 ) {
@@ -215,8 +215,8 @@ fun Tile(
                 }
             }
 
-            // R142: watched ✓ badge (top-end). Suppressed when hasUpcoming badge occupies the same corner.
-            if (watched && !hasUpcoming) {
+            // R142: watched ✓ badge (top-end). Suppressed when upcomingLabel badge occupies top-start.
+            if (watched && upcomingLabel == null) {
                 Box(
                     modifier = Modifier
                         .align(Alignment.TopEnd)
@@ -229,8 +229,8 @@ fun Tile(
                 }
             }
 
-            // "NEW" gradient badge (top-start). Suppressed when hasUpcoming badge occupies the same corner.
-            if (isNew && !watched && !hasUpcoming) {
+            // "NEW" gradient badge (top-start). Suppressed when upcomingLabel badge occupies the same corner.
+            if (isNew && !watched && upcomingLabel == null) {
                 val newGradient = remember(colors.accent, colors.accentSecondary) {
                     colors.accentGradient
                 }
@@ -274,8 +274,8 @@ fun Tile(
                 }
             }
 
-            // R149: "Airing soon" badge (top-start). Solid accent background so it reads on any poster.
-            if (hasUpcoming) {
+            // R149: "Soon • SxxExx" badge (top-start). Solid accent background so it reads on any poster.
+            if (upcomingLabel != null) {
                 Row(
                     modifier = Modifier
                         .align(Alignment.TopStart)
@@ -287,7 +287,7 @@ fun Tile(
                     Box(modifier = Modifier.size(5.dp).background(Color.White, CircleShape))
                     Spacer(Modifier.width(4.dp))
                     Text(
-                        text = str("sonarr.upcoming"),
+                        text = "Soon • $upcomingLabel",
                         color = Color.White,
                         fontSize = 10.sp,
                         fontWeight = FontWeight.Bold,

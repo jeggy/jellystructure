@@ -132,7 +132,7 @@ data class MediaCard(
     val badge: String? = null,
     val watched: Boolean = false,
     /** R149: true when Sonarr is enabled, the series is continuing, and a next-airing date exists. */
-    @SerialName("has_upcoming") val hasUpcoming: Boolean = false,
+    @SerialName("upcoming_episode") val upcomingEpisode: String? = null,
 )
 
 @Serializable

@@ -174,8 +174,10 @@ class DetailService(
             rating = null,
             posterUrl = RaviloImageUrl.poster(id),     // R133: keyed by MediaItem.id (on-disk artwork)
             backdropUrl = RaviloImageUrl.backdrop(id),
-            hasUpcoming = sonarrEnabled && kind == MediaKind.TV_SHOW &&
-                sonarrStatus != "ended" && sonarrNextAiringDate != null,
+            upcomingEpisode = if (sonarrEnabled && kind == MediaKind.TV_SHOW &&
+                sonarrStatus != "ended" && sonarrNextAiringDate != null &&
+                sonarrNextAiringSeason != null && sonarrNextAiringEpisode != null)
+                "S${sonarrNextAiringSeason.toString().padStart(2,'0')}E${sonarrNextAiringEpisode.toString().padStart(2,'0')}" else null,
         )
     }
 }
