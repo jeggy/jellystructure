@@ -149,7 +149,7 @@ private fun renderStep1(container: Element, scope: CoroutineScope, state: Wizard
             </div>
             <div class="note" style="margin-top:12px;font-size:.78rem;color:var(--ink-soft);">
               Strays (unlisted languages) and untagged tracks → flagged for manual review, never auto-placed.
-              Episodes missing a target language → skipped by default; you can opt individual ones in on the next step.
+              Episodes missing some target languages are still reordered by the tracks they have.
             </div>
           </div>
 
