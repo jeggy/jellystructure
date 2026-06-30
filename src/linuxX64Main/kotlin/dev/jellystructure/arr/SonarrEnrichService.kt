@@ -36,11 +36,18 @@ class SonarrEnrichService(
         }
         if (allSonarrSeries.isEmpty()) return
 
-        val byPath: Map<String, ArrSeriesInfo> = allSonarrSeries.associateBy { it.path }
+        val byPath: Map<String, ArrSeriesInfo> = allSonarrSeries.associateBy { it.path.trimEnd('/') }
+        // Fallback: match by the last path component (folder name, lowercased) when mount points differ.
+        val byFolderName: Map<String, ArrSeriesInfo> = allSonarrSeries.associateBy {
+            it.path.trimEnd('/').substringAfterLast('/').lowercase()
+        }
         val tvShows = mediaStore.allItems().filter { it.kind == MediaKind.TV_SHOW }
         var enriched = 0
         for (item in tvShows) {
-            val info = byPath[item.path.trimEnd('/')] ?: continue
+            val itemPathNorm = item.path.trimEnd('/')
+            val info = byPath[itemPathNorm]
+                ?: byFolderName[itemPathNorm.substringAfterLast('/').lowercase()]
+                ?: continue
             val updated = applyEnrichment(item, info, sonarr)
             if (updated !== item) {
                 mediaStore.updateOne(updated)
@@ -58,7 +65,10 @@ class SonarrEnrichService(
             arrClient.getAllSeriesInfo(sonarr.url, sonarr.apiKey)
         }.getOrElse { return item }
         val itemPath = item.path.trimEnd('/')
-        val info = allSonarrSeries.firstOrNull { it.path == itemPath } ?: return item
+        val itemFolder = itemPath.substringAfterLast('/').lowercase()
+        val info = allSonarrSeries.firstOrNull { it.path.trimEnd('/') == itemPath }
+            ?: allSonarrSeries.firstOrNull { it.path.trimEnd('/').substringAfterLast('/').lowercase() == itemFolder }
+            ?: return item
         return applyEnrichment(item, info, sonarr)
     }
 
