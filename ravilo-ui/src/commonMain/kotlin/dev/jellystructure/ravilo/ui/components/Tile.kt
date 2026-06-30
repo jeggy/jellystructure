@@ -215,8 +215,8 @@ fun Tile(
                 }
             }
 
-            // R142: watched ✓ badge (top-end — opposite the top-start NEW / episode badges so they never collide).
-            if (watched) {
+            // R142: watched ✓ badge (top-end). Suppressed when hasUpcoming badge occupies the same corner.
+            if (watched && !hasUpcoming) {
                 Box(
                     modifier = Modifier
                         .align(Alignment.TopEnd)
@@ -276,7 +276,7 @@ fun Tile(
 
             // R149: "Airing soon" accent badge (top-end). Shown when series has a next scheduled episode
             // and the poster is not already marked watched. Complements the watched ✓ badge position.
-            if (hasUpcoming && !watched) {
+            if (hasUpcoming) {
                 Row(
                     modifier = Modifier
                         .align(Alignment.TopEnd)
