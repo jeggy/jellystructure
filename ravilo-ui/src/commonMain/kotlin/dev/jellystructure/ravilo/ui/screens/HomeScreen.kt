@@ -274,7 +274,7 @@ private fun HomeLoaded(
                     variant = rowVariant,
                     progressPct = card.progressPct ?: 0f,
                     watched = card.watched,
-                    hasUpcoming = card.hasUpcoming,
+                    upcomingLabel = card.upcomingEpisode,
                     focusRequester = fr,  // R139
                     onSelect = { store.focusRowKey = row.id; store.focusItemKey = card.id; onItemSelect(card) },  // R139
                 )
