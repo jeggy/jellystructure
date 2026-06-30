@@ -517,6 +517,18 @@ fun Route.trackRoutes(
                         failed++; continue
                     }
 
+                    // Run setDefault before the final probe so the DB gets the post-setDefault state.
+                    if (req.setDefault) {
+                        val midTracks = FfprobeRunner.probe(ep.path)
+                        val firstOfKind = midTracks.filter { it.kind == kind }.minByOrNull { it.streamIndex }
+                        val sameKind = midTracks.filter { it.kind == kind }
+                        if (firstOfKind != null && !firstOfKind.default) {
+                            val ext = ep.path.substringAfterLast('.').lowercase()
+                            if (ext == "mkv") MkvpropeditRunner.setDefault(ep.path, firstOfKind.streamIndex, sameKind.map { it.streamIndex })
+                            else FfmpegRunner.setDefault(ep.path, firstOfKind.streamIndex, sameKind.map { it.streamIndex }, kind)
+                        }
+                    }
+
                     val newTracks = FfprobeRunner.probe(ep.path)
                     val latestItem = store.resolve(id)
                     if (latestItem != null) {
@@ -527,16 +539,6 @@ fun Route.trackRoutes(
                             val updatedEps = latestItem.episodes.toMutableList()
                             updatedEps[epIdx] = ep.copy(tracks = newTracks, issueCount = newIssue, resolvedLanguage = epResolved)
                             store.updateOne(latestItem.copy(episodes = updatedEps))
-                        }
-                    }
-
-                    if (req.setDefault) {
-                        val firstOfKind = newTracks.filter { it.kind == kind }.minByOrNull { it.streamIndex }
-                        val sameKind = newTracks.filter { it.kind == kind }
-                        if (firstOfKind != null && !firstOfKind.default) {
-                            val ext = ep.path.substringAfterLast('.').lowercase()
-                            if (ext == "mkv") MkvpropeditRunner.setDefault(ep.path, firstOfKind.streamIndex, sameKind.map { it.streamIndex })
-                            else FfmpegRunner.setDefault(ep.path, firstOfKind.streamIndex, sameKind.map { it.streamIndex }, kind)
                         }
                     }
 
