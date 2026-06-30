@@ -581,6 +581,7 @@ private fun renderStep3(container: Element, scope: CoroutineScope, state: Wizard
     wireBackButton(container, scope, state)
 
     var done = 0
+    var actualTotal = total // updated from the Started event so the bar reflects the real job size
     val failures = mutableListOf<Pair<String, String>>() // code → reason
 
     val proto = if (window.location.protocol == "https:") "wss" else "ws"
@@ -591,15 +592,22 @@ private fun renderStep3(container: Element, scope: CoroutineScope, state: Wizard
         runCatching {
             // Simple parse without full deserialization — match on "type" field
             when {
+                text.contains("\"started\"") || text.contains("\"Started\"") -> {
+                    val t = extractJsonInt(text, "total")
+                    if (t != null && t > 0) {
+                        actualTotal = t
+                        (document.getElementById("wiz-prog-count") as? HTMLElement)?.textContent = "$done / $actualTotal"
+                    }
+                }
                 text.contains("\"file_done\"") || text.contains("\"FileDone\"") -> {
                     val ok = !text.contains("\"ok\":false")
                     val file = extractJsonString(text, "file")
                     val msg = extractJsonString(text, "msg")
                     done++
-                    val pct = if (total > 0) (done * 100 / total) else 100
+                    val pct = if (actualTotal > 0) (done * 100 / actualTotal) else 100
                     (document.getElementById("wiz-prog-bar") as? HTMLElement)?.setAttribute("style", "background:var(--hi);height:100%;width:${pct}%;transition:width .3s;")
                     (document.getElementById("wiz-prog-pct") as? HTMLElement)?.textContent = "$pct%"
-                    (document.getElementById("wiz-prog-count") as? HTMLElement)?.textContent = "$done / $total"
+                    (document.getElementById("wiz-prog-count") as? HTMLElement)?.textContent = "$done / $actualTotal"
                     (document.getElementById("wiz-prog-current") as? HTMLElement)?.textContent = "Done: ${file ?: ""}"
                     val logEl = document.getElementById("wiz-prog-log") as? HTMLElement
                     logEl?.insertAdjacentHTML("afterbegin",
