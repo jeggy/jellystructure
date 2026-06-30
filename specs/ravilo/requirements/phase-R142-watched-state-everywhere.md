@@ -4,10 +4,10 @@
 > it from the detail screen — a ✓ check / progress sliver on every poster tile (Home rows, channel rows,
 > Movies / Series / My-List grids, search, More-Like-This) and **mark-played / mark-unplayed**
 > write-through on movie + series detail (per-episode and whole-season). Builds on
-> **R07** (detail PlaybackState), **R08**
-> (progress / played reporting) and **R13** (detail UI); extends the
-> poster-tile component from **R10** / **R11**.
-> Completes the poster-tile indicators that **R75**
+> **[R07](phase-R07-detail-watched-state-api.md)** (detail PlaybackState), **[R08](phase-R08-playback-brokering-reporting.md)**
+> (progress / played reporting) and **[R13](phase-R13-detail-screens.md)** (detail UI); extends the
+> poster-tile component from **[R10](phase-R10-home-screen.md)** / **[R11](phase-R11-channel-and-browse-grids.md)**.
+> Completes the poster-tile indicators that **[R75](phase-R75-detail-audio-language-flags.md)**
 > explicitly deferred.
 
 ## Problem

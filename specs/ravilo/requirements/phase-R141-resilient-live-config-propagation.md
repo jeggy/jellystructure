@@ -1,10 +1,10 @@
 # Phase R141 — Resilient live config propagation: never need an app restart again
 
-> Hardens **R33** (live config push). R33's mechanism is fully built and
+> Hardens **[R33](phase-R33-live-config-push.md)** (live config push). R33's mechanism is fully built and
 > correct; this phase removes its single-point-of-failure so a config change **always** reaches the TV
 > within seconds — even when the one WebSocket can't be established. Interacts with
-> **R51** (global vs per-user scope),
-> **R40** (retained stores), **R18**
+> **[R51](phase-R51-global-config-user-override.md)** (global vs per-user scope),
+> **[R40](phase-R40-instant-back-navigation.md)** (retained stores), **[R18](phase-R18-multi-user-profiles.md)**
 > (profile switch). It adds a fallback + self-heal path; it does **not** add a new way to mutate state.
 
 ## Problem
