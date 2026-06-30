@@ -56,6 +56,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import androidx.compose.runtime.collectAsState
 
+private fun HomeFeed.deduped() = copy(rows = rows.map { r -> r.copy(items = r.items.distinctBy { it.id }) })
+
 class ChannelStore(private val apiClient: TvApiClient) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val _state = MutableStateFlow<HomeState>(HomeState.Loading)
@@ -73,7 +75,7 @@ class ChannelStore(private val apiClient: TvApiClient) {
             WatchedBus.patches.collect { patch ->
                 val s = _state.value as? HomeState.Loaded ?: return@collect
                 _state.value = HomeState.Loaded(s.feed.copy(
-                    rows = s.feed.rows.map { r -> r.copy(items = r.items.map { it.applyWatchedPatch(patch) }) }
+                    rows = s.feed.rows.map { r -> r.copy(items = r.items.map { it.applyWatchedPatch(patch) }.distinctBy { it.id }) }
                 ))
             }
         }
@@ -86,7 +88,7 @@ class ChannelStore(private val apiClient: TvApiClient) {
         loadJob?.cancel()
         _state.value = HomeState.Loading
         loadJob = scope.launch {
-            _state.value = runCatching { HomeState.Loaded(apiClient.getChannel(channelId)) }
+            _state.value = runCatching { HomeState.Loaded(apiClient.getChannel(channelId).deduped()) }
                 .getOrElse { HomeState.Error(it.message ?: "Unknown error") }
         }
     }
@@ -97,7 +99,7 @@ class ChannelStore(private val apiClient: TvApiClient) {
         if (!silent) { load(id); return }
         loadJob?.cancel()
         loadJob = scope.launch {
-            runCatching { apiClient.getChannel(id) }.getOrNull()?.let { _state.value = HomeState.Loaded(it) }
+            runCatching { apiClient.getChannel(id) }.getOrNull()?.let { _state.value = HomeState.Loaded(it.deduped()) }
         }
     }
 }
