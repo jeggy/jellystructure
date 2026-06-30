@@ -7,11 +7,15 @@ import io.ktor.client.call.body
 import io.ktor.client.engine.curl.Curl
 import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
+import io.ktor.client.request.HttpRequestBuilder
 import io.ktor.client.request.get
 import io.ktor.client.request.parameter
+import io.ktor.client.statement.HttpResponse
 import io.ktor.http.HttpStatusCode
 import io.ktor.serialization.kotlinx.json.json
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -277,15 +281,23 @@ class TmdbClient(
         }
     }
 
+    // Cap simultaneous outbound TMDB connections. CIO server uses select() which crashes fatally
+    // when any file descriptor reaches FD_SETSIZE (1024). With many scan workers each making
+    // multiple concurrent TMDB calls the FD count easily exceeds this ceiling.
+    private val sem = Semaphore(8)
+
     private val detailsCache = mutableMapOf<Int, TmdbMovieDetails>()
 
     private fun apiKey(): String = configStore.current.apiKeys.tmdbV3Key
+
+    private suspend fun httpGet(url: String, block: HttpRequestBuilder.() -> Unit = {}): HttpResponse =
+        sem.withPermit { http.get(url, block) }
 
     suspend fun searchMovie(title: String, year: Int?): TmdbSearchResult? {
         val key = apiKey()
         if (key.isBlank()) return null
         val result = runCatching {
-            val response = http.get("$baseUrl/search/movie") {
+            val response = httpGet("$baseUrl/search/movie") {
                 parameter("api_key", key)
                 parameter("query", title)
                 if (year != null) parameter("year", year)
@@ -306,7 +318,7 @@ class TmdbClient(
         val key = apiKey()
         if (key.isBlank()) return null
         val result = runCatching {
-            val response = http.get("$baseUrl/movie/$tmdbId") {
+            val response = httpGet("$baseUrl/movie/$tmdbId") {
                 parameter("api_key", key)
                 if (!language.isNullOrBlank()) parameter("language", language)
             }
@@ -358,7 +370,7 @@ class TmdbClient(
         val key = apiKey()
         if (key.isBlank()) return null
         val result = runCatching {
-            val response = http.get("$baseUrl/search/tv") {
+            val response = httpGet("$baseUrl/search/tv") {
                 parameter("api_key", key)
                 parameter("query", title)
                 if (year != null) parameter("first_air_date_year", year)
@@ -377,7 +389,7 @@ class TmdbClient(
         val key = apiKey()
         if (key.isBlank()) return null
         val result = runCatching {
-            val response = http.get("$baseUrl/tv/$tmdbId") {
+            val response = httpGet("$baseUrl/tv/$tmdbId") {
                 parameter("api_key", key)
                 if (!language.isNullOrBlank()) parameter("language", language)
             }
@@ -396,7 +408,7 @@ class TmdbClient(
         val key = apiKey(); if (key.isBlank()) return null
         val path = if (isMovie) "movie/$tmdbId/external_ids" else "tv/$tmdbId/external_ids"
         return runCatching {
-            val response = http.get("$baseUrl/$path") { parameter("api_key", key) }
+            val response = httpGet("$baseUrl/$path") { parameter("api_key", key) }
             if (response.status != HttpStatusCode.OK) return null
             response.body<TmdbExternalIds>()
         }.getOrNull()
@@ -409,7 +421,7 @@ class TmdbClient(
     suspend fun getMovieCredits(tmdbId: Int): List<TmdbCastMember> {
         val key = apiKey(); if (key.isBlank()) return emptyList()
         return runCatching {
-            val r = http.get("$baseUrl/movie/$tmdbId/credits") { parameter("api_key", key) }
+            val r = httpGet("$baseUrl/movie/$tmdbId/credits") { parameter("api_key", key) }
             if (r.status != HttpStatusCode.OK) return emptyList()
             r.body<TmdbCreditsResponse>().cast.sortedBy { it.order }.take(5)
         }.getOrElse { Logger.warn("TMDB movie credits failed tmdbId=$tmdbId: ${it.message}"); emptyList() }
@@ -419,7 +431,7 @@ class TmdbClient(
     suspend fun getTvCredits(tmdbId: Int): List<TmdbCastMember> {
         val key = apiKey(); if (key.isBlank()) return emptyList()
         return runCatching {
-            val r = http.get("$baseUrl/tv/$tmdbId/credits") { parameter("api_key", key) }
+            val r = httpGet("$baseUrl/tv/$tmdbId/credits") { parameter("api_key", key) }
             if (r.status != HttpStatusCode.OK) return emptyList()
             r.body<TmdbCreditsResponse>().cast.sortedBy { it.order }.take(5)
         }.getOrElse { Logger.warn("TMDB tv credits failed tmdbId=$tmdbId: ${it.message}"); emptyList() }
@@ -429,7 +441,7 @@ class TmdbClient(
     suspend fun getMovieFullCredits(tmdbId: Int): TmdbCreditsResponse {
         val key = apiKey(); if (key.isBlank()) return TmdbCreditsResponse()
         return runCatching {
-            val r = http.get("$baseUrl/movie/$tmdbId/credits") { parameter("api_key", key) }
+            val r = httpGet("$baseUrl/movie/$tmdbId/credits") { parameter("api_key", key) }
             if (r.status != HttpStatusCode.OK) return TmdbCreditsResponse()
             r.body<TmdbCreditsResponse>()
         }.getOrElse { Logger.warn("TMDB movie full credits failed tmdbId=$tmdbId: ${it.message}"); TmdbCreditsResponse() }
@@ -439,7 +451,7 @@ class TmdbClient(
     suspend fun getTvFullCredits(tmdbId: Int): TmdbCreditsResponse {
         val key = apiKey(); if (key.isBlank()) return TmdbCreditsResponse()
         return runCatching {
-            val r = http.get("$baseUrl/tv/$tmdbId/credits") { parameter("api_key", key) }
+            val r = httpGet("$baseUrl/tv/$tmdbId/credits") { parameter("api_key", key) }
             if (r.status != HttpStatusCode.OK) return TmdbCreditsResponse()
             r.body<TmdbCreditsResponse>()
         }.getOrElse { Logger.warn("TMDB tv full credits failed tmdbId=$tmdbId: ${it.message}"); TmdbCreditsResponse() }
@@ -449,7 +461,7 @@ class TmdbClient(
     suspend fun getTvAggregateCredits(tmdbId: Int): TmdbAggregateCreditsResponse {
         val key = apiKey(); if (key.isBlank()) return TmdbAggregateCreditsResponse()
         return runCatching {
-            val r = http.get("$baseUrl/tv/$tmdbId/aggregate_credits") { parameter("api_key", key) }
+            val r = httpGet("$baseUrl/tv/$tmdbId/aggregate_credits") { parameter("api_key", key) }
             if (r.status != HttpStatusCode.OK) return TmdbAggregateCreditsResponse()
             r.body<TmdbAggregateCreditsResponse>()
         }.getOrElse { Logger.warn("TMDB aggregate_credits failed tmdbId=$tmdbId: ${it.message}"); TmdbAggregateCreditsResponse() }
@@ -463,7 +475,7 @@ class TmdbClient(
     suspend fun getTvSeasonAggregateCredits(seriesId: Int, season: Int): TmdbAggregateCreditsResponse {
         val key = apiKey(); if (key.isBlank()) return TmdbAggregateCreditsResponse()
         return runCatching {
-            val r = http.get("$baseUrl/tv/$seriesId/season/$season/aggregate_credits") { parameter("api_key", key) }
+            val r = httpGet("$baseUrl/tv/$seriesId/season/$season/aggregate_credits") { parameter("api_key", key) }
             if (r.status != HttpStatusCode.OK) return TmdbAggregateCreditsResponse()
             r.body<TmdbAggregateCreditsResponse>()
         }.getOrElse { Logger.warn("TMDB season aggregate_credits failed s$season series=$seriesId: ${it.message}"); TmdbAggregateCreditsResponse() }
@@ -473,7 +485,7 @@ class TmdbClient(
     suspend fun getEpisodeCredits(seriesId: Int, season: Int, episode: Int): TmdbEpisodeCreditsResponse {
         val key = apiKey(); if (key.isBlank()) return TmdbEpisodeCreditsResponse()
         return runCatching {
-            val r = http.get("$baseUrl/tv/$seriesId/season/$season/episode/$episode/credits") { parameter("api_key", key) }
+            val r = httpGet("$baseUrl/tv/$seriesId/season/$season/episode/$episode/credits") { parameter("api_key", key) }
             if (r.status != HttpStatusCode.OK) return TmdbEpisodeCreditsResponse()
             r.body<TmdbEpisodeCreditsResponse>()
         }.getOrElse { Logger.warn("TMDB episode credits failed s${season}e${episode} series=$seriesId: ${it.message}"); TmdbEpisodeCreditsResponse() }
@@ -483,7 +495,7 @@ class TmdbClient(
     suspend fun searchPeople(query: String): List<TmdbPersonSearchResult> {
         val key = apiKey(); if (key.isBlank()) return emptyList()
         return runCatching {
-            val r = http.get("$baseUrl/search/person") {
+            val r = httpGet("$baseUrl/search/person") {
                 parameter("api_key", key)
                 parameter("query", query)
             }
@@ -532,7 +544,7 @@ class TmdbClient(
 
         val path = if (isMovie) "movie/$tmdbId/translations" else "tv/$tmdbId/translations"
         val fromTranslations = runCatching {
-            val response = http.get("$baseUrl/$path") {
+            val response = httpGet("$baseUrl/$path") {
                 parameter("api_key", key)
             }
             if (response.status == HttpStatusCode.TooManyRequests) {
@@ -564,7 +576,7 @@ class TmdbClient(
         if (key.isBlank()) return emptyMap()
         val path = if (isMovie) "movie/$tmdbId/translations" else "tv/$tmdbId/translations"
         val result = runCatching {
-            val response = http.get("$baseUrl/$path") {
+            val response = httpGet("$baseUrl/$path") {
                 parameter("api_key", key)
             }
             if (response.status == HttpStatusCode.TooManyRequests) {
@@ -595,7 +607,7 @@ class TmdbClient(
         if (key.isBlank()) return emptyMap()
         val path = if (isMovie) "movie/$tmdbId/translations" else "tv/$tmdbId/translations"
         val result = runCatching {
-            val response = http.get("$baseUrl/$path") {
+            val response = httpGet("$baseUrl/$path") {
                 parameter("api_key", key)
             }
             if (response.status == HttpStatusCode.TooManyRequests) {
@@ -619,7 +631,7 @@ class TmdbClient(
         val key = apiKey()
         if (key.isBlank()) return emptyList()
         val result = runCatching {
-            val response = http.get("$baseUrl/search/movie") {
+            val response = httpGet("$baseUrl/search/movie") {
                 parameter("api_key", key)
                 parameter("query", query)
                 if (year != null) parameter("year", year)
@@ -638,7 +650,7 @@ class TmdbClient(
         val key = apiKey()
         if (key.isBlank()) return emptyList()
         val result = runCatching {
-            val response = http.get("$baseUrl/search/tv") {
+            val response = httpGet("$baseUrl/search/tv") {
                 parameter("api_key", key)
                 parameter("query", query)
                 if (year != null) parameter("first_air_date_year", year)
@@ -657,7 +669,7 @@ class TmdbClient(
         val key = apiKey()
         if (key.isBlank()) return null
         val result = runCatching {
-            val response = http.get("$baseUrl/search/company") {
+            val response = httpGet("$baseUrl/search/company") {
                 parameter("api_key", key)
                 parameter("query", name)
             }
@@ -675,7 +687,7 @@ class TmdbClient(
         val key = apiKey()
         if (key.isBlank()) return null
         val result = runCatching {
-            val response = http.get("$baseUrl/tv/$seriesId/season/$season/episode/$episode") {
+            val response = httpGet("$baseUrl/tv/$seriesId/season/$season/episode/$episode") {
                 parameter("api_key", key)
                 if (!language.isNullOrBlank()) parameter("language", language)
             }
@@ -696,7 +708,7 @@ class TmdbClient(
         val key = apiKey()
         if (key.isBlank()) return null
         val result = runCatching {
-            val response = http.get("$baseUrl/$path/images") {
+            val response = httpGet("$baseUrl/$path/images") {
                 parameter("api_key", key)
             }
             if (response.status == HttpStatusCode.TooManyRequests) {
@@ -718,7 +730,7 @@ class TmdbClient(
         val key = apiKey()
         if (key.isBlank()) return emptyList()
         val result = runCatching {
-            val response = http.get("$baseUrl/movie/$tmdbId/keywords") { parameter("api_key", key) }
+            val response = httpGet("$baseUrl/movie/$tmdbId/keywords") { parameter("api_key", key) }
             if (response.status == HttpStatusCode.TooManyRequests) {
                 delay(3000)
                 return getMovieKeywords(tmdbId)
@@ -734,7 +746,7 @@ class TmdbClient(
         val key = apiKey()
         if (key.isBlank()) return emptyList()
         val result = runCatching {
-            val response = http.get("$baseUrl/tv/$tmdbId/keywords") { parameter("api_key", key) }
+            val response = httpGet("$baseUrl/tv/$tmdbId/keywords") { parameter("api_key", key) }
             if (response.status == HttpStatusCode.TooManyRequests) {
                 delay(3000)
                 return getTvKeywords(tmdbId)
