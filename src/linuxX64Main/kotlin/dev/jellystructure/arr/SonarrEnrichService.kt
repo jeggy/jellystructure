@@ -99,6 +99,7 @@ class SonarrEnrichService(
 }
 
 /** Current UTC date as "yyyy-MM-dd" derived from POSIX epoch. UTC-pinned (no timezone shift). */
+@OptIn(kotlinx.cinterop.ExperimentalForeignApi::class)
 private fun todayUtcDateString(): String {
     val epochSec = time(null)
     var d = (epochSec / 86400).toInt()  // days since 1970-01-01
