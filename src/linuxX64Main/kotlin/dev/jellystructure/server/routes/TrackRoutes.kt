@@ -646,12 +646,26 @@ private fun classifyEpisode(ep: Episode, kind: TrackKind, targetLangs: List<Stri
             BulkPlanEpisode(ep.filename, code, ep.title, "needs_review", summary, summary, reason, 0.0, false)
         }
         missing.isNotEmpty() -> {
+            // Episode has a subset of the target languages. Reorder the present tracks by their
+            // priority in the target list — the missing languages just won't appear.
             val proposed = computeProposedTracks(tracks, targetLangs, partial = true)
-            BulkPlanEpisode(ep.filename, code, ep.title, "partial",
-                tracks.sortedBy { it.streamIndex }.toSummary(targetSet),
-                proposed.toSummary(targetSet),
-                "missing target language(s): ${missing.sorted().joinToString()}",
-                0.0, false)
+            val currentLangs = tracks.sortedBy { it.streamIndex }.mapNotNull { it.language?.lowercase() }
+            val proposedLangs = proposed.mapNotNull { it.language?.lowercase() }
+            val currentSummary = tracks.sortedBy { it.streamIndex }.toSummary(targetSet)
+            val proposedSummary = proposed.toSummary(targetSet)
+            val firstStreamIndex = tracks.minByOrNull { it.streamIndex }?.streamIndex
+            val currentDefault = tracks.firstOrNull { it.default }?.streamIndex
+            val needsDefaultFix = setDefault && currentDefault != firstStreamIndex
+            val missingNote = "missing: ${missing.sorted().joinToString()}"
+            if (currentLangs == proposedLangs) {
+                val estSec = if (needsDefaultFix) 0.05 else 0.0
+                BulkPlanEpisode(ep.filename, code, ep.title, "already_correct",
+                    currentSummary, proposedSummary, "already in target order ($missingNote)", estSec, false)
+            } else {
+                val estSec = estimateRemuxSeconds(ep.path)
+                BulkPlanEpisode(ep.filename, code, ep.title, "will_reorder",
+                    currentSummary, proposedSummary, "order differs from target ($missingNote)", estSec, true)
+            }
         }
         else -> {
             val currentLangs = tracks.sortedBy { it.streamIndex }.mapNotNull { it.language?.lowercase() }
