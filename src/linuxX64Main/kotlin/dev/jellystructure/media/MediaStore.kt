@@ -340,6 +340,22 @@ class MediaStore(private val db: JellystructureDb, private val jsTagStore: JsTag
 
     suspend fun addOrUpdate(item: MediaItem) {
         val existing = get(item.id)
+        // If another row already holds the same Jellyfin ID under a different slug (e.g. the year
+        // was unknown on the first scan so the id was "girl-taken", then TMDB returned 2026 and
+        // the scanner now produces "girl-missing-2026"), delete the stale row so it doesn't show up
+        // as a duplicate in the library.
+        val jellyfinId = item.jellyfinId
+        if (jellyfinId != null) {
+            val stale = resolveByJellyfinId(jellyfinId)
+            if (stale != null && stale.id != item.id) {
+                allItemsCache    = null
+                peopleIndexCache = null
+                jellyfinIdIndex  = null
+                genreIndexCache  = null
+                db.mediaQueries.deleteById(stale.id)
+                println("[INFO] MediaStore: removed stale duplicate ${stale.id} → replaced by ${item.id}")
+            }
+        }
         var merged = preserveJsTags(item, existing)
         if (existing != null && existing.titlesByLang.isNotEmpty()) {
             merged = merged.copy(titlesByLang = existing.titlesByLang + item.titlesByLang)
