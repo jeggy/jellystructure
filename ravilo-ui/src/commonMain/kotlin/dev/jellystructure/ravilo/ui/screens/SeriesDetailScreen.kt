@@ -111,7 +111,6 @@ fun SeriesDetailScreen(
                 onBack = onBack,
                 onPlay = onPlay,
                 onMarkEpisode = { epId, played -> store.setEpisodePlayed(epId, played) },
-                onMarkSeason = { epIds, played -> store.setSeasonPlayed(epIds, played) },
                 onRelatedSelect = onRelatedSelect,
                 displayName = displayName,
                 onNavSelect = onNavSelect,
@@ -166,7 +165,6 @@ private fun SeriesDetailLoaded(
     onBack: () -> Unit,
     onPlay: (EpisodePlayContext) -> Unit,
     onMarkEpisode: (String, Boolean) -> Unit,
-    onMarkSeason: (List<String>, Boolean) -> Unit,
     onRelatedSelect: (MediaCard) -> Unit,
     displayName: String,
     onNavSelect: (Int) -> Unit,
@@ -405,10 +403,9 @@ private fun SeriesDetailLoaded(
 
             // Episode rail — own lazy item.
             if (episodes.isNotEmpty()) item(key = "episodes") {
-                // R142: season-scoped watched count + Mark all toggle (the loaded season's episodes).
-                val seasonEpIds = remember(episodes) { episodes.map { it.id } }
+                // R142: season-scoped watched count (the loaded season's episodes). Marking watched is
+                // episode-level only (the season-wide "Mark all" toggle was removed by request).
                 val seasonWatched = episodes.count { overlay[it.id]?.played == true }
-                val seasonAllWatched = overlayLoaded && seasonWatched == episodes.size
                 Column {
                     if (detail.seasons.size <= 1) Spacer(Modifier.height(28.dp))
                     Row(
@@ -427,13 +424,6 @@ private fun SeriesDetailLoaded(
                                 color = colors.textSecondary, fontSize = 13.sp,
                             )
                         }
-                        Spacer(Modifier.weight(1f))
-                        // R142: Mark all played / unplayed for this season.
-                        RaviloButton(
-                            label = if (seasonAllWatched) str("action.mark_all_unwatched") else str("action.mark_all_watched"),
-                            style = ButtonStyle.GHOST,
-                            onSelect = { onMarkSeason(seasonEpIds, !seasonAllWatched) },
-                        )
                     }
                     Spacer(Modifier.height(RaviloDimens.rowHeadPadB))
                     LazyRow(
