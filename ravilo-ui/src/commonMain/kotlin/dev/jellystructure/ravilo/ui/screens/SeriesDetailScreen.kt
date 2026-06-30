@@ -194,8 +194,18 @@ private fun SeriesDetailLoaded(
     val heroHeight = if (containerH > 0) with(density) { containerH.toDp() } else 540.dp
 
     // R84: key on series id (not whole detail object) so overlay hydration never resets the season picker
-    val initialSeasonIdx = remember(detail.card.id) { 0 }
-    var selectedSeasonIdx by remember(detail.card.id) { mutableIntStateOf(initialSeasonIdx) }
+    var selectedSeasonIdx by remember(detail.card.id) { mutableIntStateOf(0) }
+    // Auto-select the first incomplete season once the playstate overlay arrives (one-shot).
+    var autoSeasonDone by remember(detail.card.id) { mutableStateOf(false) }
+    LaunchedEffect(overlay, detail.card.id) {
+        if (!autoSeasonDone && overlay.isNotEmpty()) {
+            autoSeasonDone = true
+            val activeIdx = detail.seasons.indexOfFirst { season ->
+                season.episodes.any { ep -> overlay[ep.id]?.played != true }
+            }.takeIf { it >= 0 } ?: (detail.seasons.size - 1)
+            selectedSeasonIdx = activeIdx
+        }
+    }
     val currentSeason = detail.seasons.getOrNull(selectedSeasonIdx)
     val episodes: List<Episode> = currentSeason?.episodes ?: emptyList()
 
@@ -205,6 +215,13 @@ private fun SeriesDetailLoaded(
     // R107: memoize the O(N)-over-all-episodes scans so they don't re-run on every recomposition
     // (notably the phase-2 overlay re-emit) — only when the episode set or overlay actually changes.
     val watchedCount = remember(allEps, overlay) { allEps.count { ep -> overlay[ep.id]?.played == true } }
+    // Set of season indices (season.index, not list position) where every episode is watched.
+    val watchedSeasons: Set<Int> = remember(detail.seasons, overlay) {
+        detail.seasons
+            .filter { season -> season.episodes.isNotEmpty() && season.episodes.all { ep -> overlay[ep.id]?.played == true } }
+            .map { it.index }
+            .toSet()
+    }
     val resumeEpId: String? = remember(allEps, overlay) {
         allEps.firstOrNull { ep -> overlay[ep.id].let { ps -> ps != null && !ps.played && ps.resumeMs > 0 } }?.id
             ?: allEps.firstOrNull { ep -> overlay[ep.id]?.played != true }?.id
@@ -400,6 +417,7 @@ private fun SeriesDetailLoaded(
                         selectedIndex = selectedSeasonIdx,
                         onSelect = { selectedSeasonIdx = it },
                         firstFocusRequester = seasonFirstFR,   // R138
+                        watchedSeasons = watchedSeasons,
                     )
                     Spacer(Modifier.height(16.dp))
                 }
@@ -459,8 +477,17 @@ private fun SeriesDetailLoaded(
                         }
                     }
 
+                    val epRowState = rememberLazyListState()
+                    // Scroll to first unwatched episode whenever the selected season or overlay changes.
+                    LaunchedEffect(selectedSeasonIdx, overlay) {
+                        if (overlay.isEmpty()) return@LaunchedEffect
+                        val firstUnwatched = episodes.indexOfFirst { ep -> overlay[ep.id]?.played != true }
+                        val scrollTo = if (firstUnwatched >= 0) firstUnwatched else 0
+                        if (scrollTo > 0) epRowState.scrollToItem(scrollTo)
+                    }
                     Spacer(Modifier.height(RaviloDimens.rowHeadPadB))
                     LazyRow(
+                        state = epRowState,
                         modifier = Modifier.focusRestorer(),
                         contentPadding = PaddingValues(horizontal = raviloHPad, vertical = RaviloDimens.trackPadV),
                         horizontalArrangement = Arrangement.spacedBy(RaviloDimens.itemSpacing),
