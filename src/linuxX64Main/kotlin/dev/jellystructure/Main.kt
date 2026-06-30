@@ -168,6 +168,9 @@ fun main() = runBlocking {
         frontendDir, raviloWebDir = raviloWebDir, port = port, scanDispatcher = scanDispatcher, effectiveScanThreads = effectiveScanThreads, jsTagStore = jsTagStore, seedingGuard = seedingGuard, seedingSnapshot = seedingSnapshot, logoDownloader = logoDownloader, qbClient = qbClient, arrClient = arrClient, arrRescan = arrRescan, sonarrEnrich = sonarrEnrich, acquisitionService = acquisitionService, chartRegistry = chartRegistry, chartStore = chartStore, chartIngest = chartIngest, tvEventBus = tvEventBus, imageProxyService = imageProxyService,
     )
 
+    // R149: populate Sonarr next-airing data for all TV shows on startup (background, non-blocking).
+    rootScope.launch { sonarrEnrich.enrichAll() }
+
     // Scheduled scan / pipeline (Phase 91 / 93b). Fires at the LOCAL WALL-CLOCK time the admin set
     // (the cron the Settings schedule UI emits), not "interval since boot". Re-reads config every poll
     // chunk so edits apply within a minute, and publishes the next-run time for the admin indicator.
