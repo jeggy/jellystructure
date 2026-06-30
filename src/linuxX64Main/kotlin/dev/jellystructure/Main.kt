@@ -169,7 +169,8 @@ fun main() = runBlocking {
     )
 
     // R149: populate Sonarr next-airing data for all TV shows on startup (background, non-blocking).
-    rootScope.launch { sonarrEnrich.enrichAll() }
+    // After enriching, nudge all connected Ravilo clients to silently re-pull their home feed.
+    rootScope.launch { sonarrEnrich.enrichAll(); tvEventBus.notifyGlobalConfigChanged() }
 
     // Scheduled scan / pipeline (Phase 91 / 93b). Fires at the LOCAL WALL-CLOCK time the admin set
     // (the cron the Settings schedule UI emits), not "interval since boot". Re-reads config every poll
