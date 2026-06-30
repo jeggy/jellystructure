@@ -125,6 +125,7 @@ fun startServer(
     qbClient: QBittorrentClient? = null,
     arrClient: ArrClient? = null,
     arrRescan: ArrRescanService? = null,
+    sonarrEnrich: dev.jellystructure.arr.SonarrEnrichService? = null,
     acquisitionService: AcquisitionService? = null,
     chartRegistry: ChartRegistry? = null,
     chartStore: ChartStore? = null,
@@ -230,7 +231,7 @@ fun startServer(
                 configureConfigRoutes(configStore, effectiveScanThreads, qbClient, arrClient)
                 setupRoutes(configStore, jellyfinClient)
                 jellyfinRoutes(configStore, jellyfinClient)
-                mediaRoutes(mediaStore, scanner, artworkDownloader, tmdbClient, appScope, scanTracker, broadcaster, jellyfinClient, configStore, mediaHistory, scanDispatcher, seedingGuard, seedingSnapshot, raviloConfigService, logoDownloader, arrRescan)
+                mediaRoutes(mediaStore, scanner, artworkDownloader, tmdbClient, appScope, scanTracker, broadcaster, jellyfinClient, configStore, mediaHistory, scanDispatcher, seedingGuard, seedingSnapshot, raviloConfigService, logoDownloader, arrRescan, sonarrEnrich)
                 activityRoutes(activityLog)
                 triageRoutes(mediaStore, jellyfinClient, configStore, mediaHistory, seedingGuard)
                 metadataRoutes(mediaStore, jsTagStore, logoDownloader, seedingSnapshot, configStore)

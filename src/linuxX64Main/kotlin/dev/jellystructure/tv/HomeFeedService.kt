@@ -407,6 +407,7 @@ class HomeFeedService(
         badge: String? = null,
     ): MediaCard {
         val jId = jellyfinId
+        val sonarrEnabled = configStore.current.sonarr?.enabled == true
         return MediaCard(
             id = jId ?: id,
             kind = if (kind == MediaKind.TV_SHOW) dev.jellystructure.shared.tv.MediaKind.SERIES
@@ -422,6 +423,8 @@ class HomeFeedService(
             seasonNumber = seasonNumber,
             episodeNumber = episodeNumber,
             badge = badge,
+            hasUpcoming = sonarrEnabled && kind == MediaKind.TV_SHOW &&
+                sonarrStatus != "ended" && sonarrNextAiringDate != null,
         )
     }
 

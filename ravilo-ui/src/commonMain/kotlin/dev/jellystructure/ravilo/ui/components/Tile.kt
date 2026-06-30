@@ -5,6 +5,7 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -36,6 +37,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.jellystructure.ravilo.ui.focus.dpadFocusable
+import dev.jellystructure.ravilo.ui.i18n.str
 import dev.jellystructure.ravilo.ui.seams.RemoteImage
 import dev.jellystructure.ravilo.ui.theme.RaviloMotion
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
@@ -80,6 +82,8 @@ fun Tile(
     /** R113: small season/episode indicator (e.g. "S1:E3") overlaid on the image for TV shows in
      *  Continue Watching. Null = no badge. */
     episodeBadge: String? = null,
+    /** R149: show "Airing soon" accent badge (top-end) for continuing series with a scheduled episode. */
+    hasUpcoming: Boolean = false,
     onFocused: () -> Unit = {},
     onSelect: (() -> Unit)? = null,
 ) {
@@ -266,6 +270,29 @@ fun Tile(
                         fontWeight = FontWeight.Bold,
                         fontFamily = sora,
                         letterSpacing = 0.3.sp,
+                    )
+                }
+            }
+
+            // R149: "Airing soon" accent badge (top-end). Shown when series has a next scheduled episode
+            // and the poster is not already marked watched. Complements the watched ✓ badge position.
+            if (hasUpcoming && !watched) {
+                Row(
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(8.dp)
+                        .background(colors.accent.copy(alpha = 0.18f), RoundedCornerShape(4.dp))
+                        .padding(horizontal = 6.dp, vertical = 3.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Box(modifier = Modifier.size(5.dp).background(colors.accent, CircleShape))
+                    Spacer(Modifier.width(4.dp))
+                    Text(
+                        text = str("sonarr.upcoming"),
+                        color = colors.accent,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = sora,
                     )
                 }
             }
