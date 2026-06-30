@@ -3,6 +3,7 @@ package dev.jellystructure.ravilo.ui.screens
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.gestures.LocalBringIntoViewSpec
 import androidx.compose.foundation.layout.Arrangement
@@ -15,6 +16,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -69,6 +71,7 @@ import dev.jellystructure.ravilo.ui.theme.RaviloDimens
 import dev.jellystructure.ravilo.ui.theme.raviloHPad
 import dev.jellystructure.ravilo.ui.theme.LocalCompact
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
+import dev.jellystructure.ravilo.ui.theme.Sora
 import dev.jellystructure.ravilo.ui.theme.SpaceGrotesk
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.layout.widthIn
@@ -174,6 +177,7 @@ private fun SeriesDetailLoaded(
 ) {
     val colors = RaviloTheme.colors
     val spaceGrotesk = SpaceGrotesk
+    val sora = Sora
     val backdropGradient = remember(colors.background) {
         Brush.verticalGradient(
             0f to Color.Transparent,
@@ -425,6 +429,38 @@ private fun SeriesDetailLoaded(
                             )
                         }
                     }
+
+                    // R149: next-airing banner — shown when Sonarr has a scheduled upcoming episode.
+                    val na = detail.nextAiring
+                    if (na != null) {
+                        Spacer(Modifier.height(8.dp))
+                        Row(
+                            modifier = Modifier
+                                .padding(horizontal = raviloHPad)
+                                .background(colors.accent.copy(alpha = 0.10f), RoundedCornerShape(8.dp))
+                                .padding(horizontal = 12.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Box(modifier = Modifier.size(7.dp).background(colors.accent, CircleShape))
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                buildString {
+                                    append(str("sonarr.next_ep"))
+                                    append(" · S${na.season}:E${na.episode}")
+                                    if (!na.title.isNullOrBlank()) append(" · '${na.title}'")
+                                    append(" · ")
+                                    append(str("sonarr.airs"))
+                                    append(" ${na.airDate}")
+                                    append(" · ")
+                                    append(str("sonarr.via_sonarr"))
+                                },
+                                color = colors.accent,
+                                fontSize = 13.sp,
+                                fontFamily = sora,
+                            )
+                        }
+                    }
+
                     Spacer(Modifier.height(RaviloDimens.rowHeadPadB))
                     LazyRow(
                         modifier = Modifier.focusRestorer(),
@@ -489,6 +525,7 @@ private fun SeriesDetailLoaded(
                                 title = card.title,
                                 posterUrl = card.posterUrl,
                                 watched = card.watched,
+                                hasUpcoming = card.hasUpcoming,
                                 onSelect = { onRelatedSelect(card) },
                             )
                         }

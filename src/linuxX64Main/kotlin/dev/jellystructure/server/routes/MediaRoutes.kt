@@ -153,6 +153,7 @@ fun Route.mediaRoutes(
     raviloConfigService: RaviloConfigService,
     logoDownloader: LogoDownloader,
     arrRescan: ArrRescanService? = null,
+    sonarrEnrich: dev.jellystructure.arr.SonarrEnrichService? = null,
 ) {
     route("/media") {
         get {
@@ -1288,11 +1289,12 @@ fun Route.mediaRoutes(
                 call.respond(HttpStatusCode.InternalServerError, mapOf("error" to "re-pull failed — item not found in Jellyfin or config missing"))
                 return@post
             }
-            store.updateOne(updated)
-            broadcaster.broadcast(JobEvent.ItemScanned("repull-jellyfin-$id", updated))
+            val enriched = sonarrEnrich?.enrichOne(updated) ?: updated
+            store.updateOne(enriched)
+            broadcaster.broadcast(JobEvent.ItemScanned("repull-jellyfin-$id", enriched))
             mediaHistory.record(id, "repull_jellyfin", "jellyfinId=${item.jellyfinId}")
-            pushToJellyfin(updated, artwork, configStore, jellyfinClient, appScope, arrRescan)
-            call.respond(updated)
+            pushToJellyfin(enriched, artwork, configStore, jellyfinClient, appScope, arrRescan)
+            call.respond(enriched)
         }
 
         // POST /api/media/{id}/sync — targeted full rescan for one item (no ScanTracker transitions)
@@ -1316,11 +1318,12 @@ fun Route.mediaRoutes(
                 call.respond(HttpStatusCode.InternalServerError, mapOf("error" to "sync failed — file not found or no TMDB match"))
                 return@post
             }
-            store.updateOne(updated)
-            broadcaster.broadcast(JobEvent.ItemScanned("sync-$id", updated))
+            val enriched = sonarrEnrich?.enrichOne(updated) ?: updated
+            store.updateOne(enriched)
+            broadcaster.broadcast(JobEvent.ItemScanned("sync-$id", enriched))
             mediaHistory.record(id, "sync", "kind=${item.kind.name.lowercase()} scope=${req.scope}")
-            pushToJellyfin(updated, artwork, configStore, jellyfinClient, appScope, arrRescan)
-            call.respond(updated)
+            pushToJellyfin(enriched, artwork, configStore, jellyfinClient, appScope, arrRescan)
+            call.respond(enriched)
         }
 
         // POST /api/media/{id}/seasons/{seasonNumber}/sync — per-season resync
@@ -1362,10 +1365,11 @@ fun Route.mediaRoutes(
                     return@post
                 }
 
-                store.updateOne(updated)
-                Logger.info("Re-pulled TMDB for '$id': title='${updated.title}' tmdbId=${updated.tmdbId} episodes=${updated.episodes.size}")
-                pushToJellyfin(updated, artwork, configStore, jellyfinClient, appScope, arrRescan)
-                call.respond(updated)
+                val enriched = sonarrEnrich?.enrichOne(updated) ?: updated
+                store.updateOne(enriched)
+                Logger.info("Re-pulled TMDB for '$id': title='${enriched.title}' tmdbId=${enriched.tmdbId} episodes=${enriched.episodes.size}")
+                pushToJellyfin(enriched, artwork, configStore, jellyfinClient, appScope, arrRescan)
+                call.respond(enriched)
             }
         }
 
@@ -1513,7 +1517,7 @@ fun Route.mediaRoutes(
         val libraryId = call.request.queryParameters["library"]?.takeIf { it.isNotBlank() }
         val jobId = scanTracker.startNew()
         val scanArtwork = if (configStore.current.behavior.fetchImages) artwork else null
-        appScope.launch { runTagged(jobId, "scan", "▶ Library scan started") { runScan(jobId, emptySet(), store, scanner, scanTracker, broadcaster, configStore, jellyfinClient, scanDispatcher, libraryId, artworkDownloader = scanArtwork) } }
+        appScope.launch { runTagged(jobId, "scan", "▶ Library scan started") { runScan(jobId, emptySet(), store, scanner, scanTracker, broadcaster, configStore, jellyfinClient, scanDispatcher, libraryId, artworkDownloader = scanArtwork); sonarrEnrich?.enrichAll() } }
         call.respond(HttpStatusCode.Accepted, mapOf("status" to "started", "library" to (libraryId ?: "all")))
     }
 
@@ -1529,7 +1533,7 @@ fun Route.mediaRoutes(
         appScope.launch {
             runTagged(jobId, "manual", "▶ Pipeline run started (manual)") {
                 if (pipeline.isNotEmpty() && arrRescan != null) {
-                    executePipeline(pipeline, jobId, store, scanner, scanTracker, broadcaster, configStore, jellyfinClient, scanDispatcher, artwork, arrRescan)
+                    executePipeline(pipeline, jobId, store, scanner, scanTracker, broadcaster, configStore, jellyfinClient, scanDispatcher, artwork, arrRescan, sonarrEnrich)
                 } else {
                     runScan(jobId, emptySet(), store, scanner, scanTracker, broadcaster, configStore, jellyfinClient, scanDispatcher, artworkDownloader = if (configStore.current.behavior.fetchImages) artwork else null)
                 }
@@ -1547,7 +1551,7 @@ fun Route.mediaRoutes(
         val skipIds = scanTracker.processedIdsSnapshot
         val jobId = scanTracker.startResume()
         val scanArtwork = if (configStore.current.behavior.fetchImages) artwork else null
-        appScope.launch { runTagged(jobId, "scan", "▶ Library scan resumed") { runScan(jobId, skipIds, store, scanner, scanTracker, broadcaster, configStore, jellyfinClient, scanDispatcher, artworkDownloader = scanArtwork) } }
+        appScope.launch { runTagged(jobId, "scan", "▶ Library scan resumed") { runScan(jobId, skipIds, store, scanner, scanTracker, broadcaster, configStore, jellyfinClient, scanDispatcher, artworkDownloader = scanArtwork); sonarrEnrich?.enrichAll() } }
         Logger.info("Scan resumed jobId=$jobId, skipping ${skipIds.size} already-processed items")
         call.respond(HttpStatusCode.Accepted, mapOf("status" to "resumed"))
     }

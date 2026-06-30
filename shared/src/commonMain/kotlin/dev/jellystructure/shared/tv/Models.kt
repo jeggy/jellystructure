@@ -131,6 +131,8 @@ data class MediaCard(
     @SerialName("episode_number") val episodeNumber: Int? = null,
     val badge: String? = null,
     val watched: Boolean = false,
+    /** R149: true when Sonarr is enabled, the series is continuing, and a next-airing date exists. */
+    @SerialName("has_upcoming") val hasUpcoming: Boolean = false,
 )
 
 @Serializable
@@ -183,6 +185,16 @@ data class HomeFeed(
 )
 
 // ─── Detail ───────────────────────────────────────────────────────────────────
+
+/** R149: Next scheduled unaired episode (Sonarr-sourced, server-pushed). Null = not applicable. */
+@Serializable
+data class NextAiring(
+    val season: Int,
+    val episode: Int,
+    val title: String? = null,
+    /** UTC-pinned ISO date: yyyy-MM-dd. */
+    @SerialName("air_date") val airDate: String,
+)
 
 /**
  * R83: per-id play-state snapshot, returned by `GET /api/tv/playstate?ids=…`.
@@ -253,6 +265,8 @@ data class SeriesDetail(
     @SerialName("subtitle_languages") val subtitleLanguages: List<String> = emptyList(),
     /** R130: clearlogo proxy URL; the app falls back to the title as text if null or the image 404s. */
     @SerialName("logo_url") val logoUrl: String? = null,
+    /** R149: next scheduled unaired episode from Sonarr. Null = Sonarr off / ended / no date. */
+    @SerialName("next_airing") val nextAiring: NextAiring? = null,
 )
 
 // ─── Search ───────────────────────────────────────────────────────────────────

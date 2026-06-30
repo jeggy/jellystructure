@@ -7,6 +7,7 @@ import dev.jellystructure.arr.AcquisitionService
 import dev.jellystructure.arr.AcquisitionStore
 import dev.jellystructure.arr.ArrClient
 import dev.jellystructure.arr.ArrRescanService
+import dev.jellystructure.arr.SonarrEnrichService
 import dev.jellystructure.chart.ChartIngestService
 import dev.jellystructure.chart.ChartRegistry
 import dev.jellystructure.chart.ChartStore
@@ -140,6 +141,7 @@ fun main() = runBlocking {
     val seedingGuard = SeedingGuard(seedingSnapshot)
     val arrClient = ArrClient()
     val arrRescan = ArrRescanService(configStore, arrClient, rootScope)
+    val sonarrEnrich = SonarrEnrichService(mediaStore, arrClient, configStore)
     val acquisitionStore = AcquisitionStore(db)
     val acquisitionService = AcquisitionService(configStore, arrClient, tmdbClient, acquisitionStore, mediaStore, tvEventBus, rootScope)
     acquisitionService.startReconciler()
@@ -163,7 +165,7 @@ fun main() = runBlocking {
     val shutdown = startServer(
         configStore, sessionService, raviloDeviceService, raviloConfigService, channelLogoStore, homeFeedService, browseService, detailService, playbackService, jellyfinClient, mediaStore, scanner,
         artworkDownloader, tmdbClient, scanTracker, mediaHistory, activityLog, broadcaster,
-        frontendDir, raviloWebDir = raviloWebDir, port = port, scanDispatcher = scanDispatcher, effectiveScanThreads = effectiveScanThreads, jsTagStore = jsTagStore, seedingGuard = seedingGuard, seedingSnapshot = seedingSnapshot, logoDownloader = logoDownloader, qbClient = qbClient, arrClient = arrClient, arrRescan = arrRescan, acquisitionService = acquisitionService, chartRegistry = chartRegistry, chartStore = chartStore, chartIngest = chartIngest, tvEventBus = tvEventBus, imageProxyService = imageProxyService,
+        frontendDir, raviloWebDir = raviloWebDir, port = port, scanDispatcher = scanDispatcher, effectiveScanThreads = effectiveScanThreads, jsTagStore = jsTagStore, seedingGuard = seedingGuard, seedingSnapshot = seedingSnapshot, logoDownloader = logoDownloader, qbClient = qbClient, arrClient = arrClient, arrRescan = arrRescan, sonarrEnrich = sonarrEnrich, acquisitionService = acquisitionService, chartRegistry = chartRegistry, chartStore = chartStore, chartIngest = chartIngest, tvEventBus = tvEventBus, imageProxyService = imageProxyService,
     )
 
     // Scheduled scan / pipeline (Phase 91 / 93b). Fires at the LOCAL WALL-CLOCK time the admin set
@@ -202,7 +204,7 @@ fun main() = runBlocking {
             val jobId = scanTracker.startNew()
             runTagged(jobId, "scheduled", "▶ Scheduled ${if (active != null) "pipeline" else "scan"} run started") {
                 if (active != null) {
-                    executePipeline(active, jobId, mediaStore, scanner, scanTracker, broadcaster, configStore, jellyfinClient, scanDispatcher, artworkDownloader, arrRescan)
+                    executePipeline(active, jobId, mediaStore, scanner, scanTracker, broadcaster, configStore, jellyfinClient, scanDispatcher, artworkDownloader, arrRescan, sonarrEnrich)
                 } else {
                     runScan(jobId, emptySet(), mediaStore, scanner, scanTracker, broadcaster, configStore, jellyfinClient, scanDispatcher, artworkDownloader = if (cfg.behavior.fetchImages) artworkDownloader else null)
                 }
@@ -324,6 +326,7 @@ suspend fun executePipeline(
     scanDispatcher: kotlinx.coroutines.CoroutineDispatcher,
     artworkDownloader: ArtworkDownloader,
     arrRescan: ArrRescanService,
+    sonarrEnrich: SonarrEnrichService? = null,
 ) {
     val scanStep = pipeline.firstOrNull { it.step == "scan_files" }
         ?: PipelineStep(step = "scan_files")
@@ -363,6 +366,8 @@ suspend fun executePipeline(
             freshnessFilter = freshnessFilter
         )
     }
+
+    sonarrEnrich?.enrichAll()
 
     if (workingSet.isEmpty()) {
         Logger.info("Pipeline scan_files: no items in working set, skipping action steps")

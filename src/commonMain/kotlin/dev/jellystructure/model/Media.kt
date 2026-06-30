@@ -122,6 +122,12 @@ data class MediaItem(
     val runtime: Int? = null,
     /** R82: Season display names keyed by season number. Absent seasons fall back to "Season N". */
     val seasonNames: Map<Int, String> = emptyMap(),
+    // R149: Sonarr-sourced series status + next-airing (null = not yet enriched or Sonarr not configured).
+    val sonarrStatus: String? = null,         // "continuing" | "ended"
+    val sonarrNextAiringDate: String? = null, // yyyy-MM-dd (UTC-pinned date from Sonarr)
+    val sonarrNextAiringSeason: Int? = null,
+    val sonarrNextAiringEpisode: Int? = null,
+    val sonarrNextAiringTitle: String? = null,
 )
 
 @Serializable

@@ -79,6 +79,11 @@ private val EN = mapOf<String, String>(
     "error.generic"       to "Something went wrong",
     "off"                 to "Off",
     "on"                  to "On",
+    // R149: Sonarr next-airing
+    "sonarr.upcoming"     to "Airing soon",
+    "sonarr.next_ep"      to "Next episode",
+    "sonarr.airs"         to "airs",
+    "sonarr.via_sonarr"   to "Sonarr",
 )
 
 private val DA = mapOf<String, String>(
@@ -156,6 +161,11 @@ private val DA = mapOf<String, String>(
     "error.generic"       to "Noget gik galt",
     "off"                 to "Fra",
     "on"                  to "Til",
+    // R149: Sonarr next-airing
+    "sonarr.upcoming"     to "Kommer snart",
+    "sonarr.next_ep"      to "Naeste afsnit",
+    "sonarr.airs"         to "sendes",
+    "sonarr.via_sonarr"   to "Sonarr",
 )
 
 private val FO = mapOf<String, String>(
@@ -233,6 +243,11 @@ private val FO = mapOf<String, String>(
     "error.generic"       to "Nakad gjekk skeivt",
     "off"                 to "Av",
     "on"                  to "A",
+    // R149: Sonarr next-airing
+    "sonarr.upcoming"     to "Kemur skjótt",
+    "sonarr.next_ep"      to "Naesti táttur",
+    "sonarr.airs"         to "verður sendur",
+    "sonarr.via_sonarr"   to "Sonarr",
 )
 
 private val LOCALES: Map<String, Map<String, String>> = mapOf("en" to EN, "da" to DA, "fo" to FO)

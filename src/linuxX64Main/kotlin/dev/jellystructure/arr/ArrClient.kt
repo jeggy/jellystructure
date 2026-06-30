@@ -39,7 +39,20 @@ private data class ArrRootFolder(val path: String = "")
 private data class ArrMovieRef(val id: Int = 0, val tmdbId: Int = 0, val path: String = "")
 
 @Serializable
-private data class ArrSeriesRef(val id: Int = 0, val path: String = "")
+private data class ArrSeriesRef(
+    val id: Int = 0,
+    val path: String = "",
+    val status: String = "",          // "continuing" | "ended"
+    val nextAiring: String? = null,   // ISO UTC datetime e.g. "2026-07-04T20:00:00Z"
+)
+
+/** Sonarr series info exposed to R149 enrichment: id, path, status, next-airing UTC datetime. */
+data class ArrSeriesInfo(
+    val id: Int,
+    val path: String,
+    val status: String,
+    val nextAiringUtc: String?,
+)
 
 /** Outcome of a connection probe. */
 data class ArrPing(val ok: Boolean, val detail: String, val version: String? = null)
@@ -99,6 +112,16 @@ class ArrClient {
         series.filter { it.path.isNotBlank() && (path == it.path || path.startsWith(it.path.trimEnd('/') + "/")) }
             .maxByOrNull { it.path.length }?.id
     }.getOrNull()
+
+    /** R149: fetch all Sonarr series with status + next-airing datetime (one API call). */
+    suspend fun getAllSeriesInfo(url: String, apiKey: String): List<ArrSeriesInfo> = runCatching {
+        val series: List<ArrSeriesRef> = http.get(base(url) + "/series") {
+            header("X-Api-Key", apiKey)
+        }.body()
+        series.filter { it.path.isNotBlank() }.map {
+            ArrSeriesInfo(id = it.id, path = it.path.trimEnd('/'), status = it.status, nextAiringUtc = it.nextAiring)
+        }
+    }.getOrElse { emptyList() }
 
     suspend fun rescanMovie(url: String, apiKey: String, movieId: Int): Boolean =
         command(url, apiKey, """{"name":"RescanMovie","movieId":$movieId}""")
@@ -241,6 +264,7 @@ data class ArrEpisode(
     val monitored: Boolean = false,
     val hasFile: Boolean = false,
     val airDateUtc: String? = null,
+    val title: String? = null,
 )
 
 /** Unified download-queue item across Radarr (movieId) and Sonarr (seriesId + episode). */

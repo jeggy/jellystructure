@@ -145,6 +145,7 @@ class BrowseService(
 
     private fun MediaItem.toMediaCard(): MediaCard {
         val jId = jellyfinId
+        val sonarrEnabled = configStore.current.sonarr?.enabled == true
         return MediaCard(
             id = jId ?: id,
             kind = if (kind == MediaKind.TV_SHOW) dev.jellystructure.shared.tv.MediaKind.SERIES
@@ -155,6 +156,8 @@ class BrowseService(
             rating = null,
             posterUrl = RaviloImageUrl.poster(id),     // R133: keyed by MediaItem.id (on-disk artwork)
             backdropUrl = RaviloImageUrl.backdrop(id),
+            hasUpcoming = sonarrEnabled && kind == MediaKind.TV_SHOW &&
+                sonarrStatus != "ended" && sonarrNextAiringDate != null,
         )
     }
 }
