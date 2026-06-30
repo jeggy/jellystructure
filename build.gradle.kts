@@ -63,13 +63,14 @@ tasks.register<Exec>("runBackend") {
 }
 
 tasks.register("runDev") {
-    description = "Compile backend + frontend (incremental), then start API server (port 9505) + frontend dev server (port 8081)."
+    description = "Compile backend + frontend (incremental), then start API server (port 9505) + admin frontend dev server (port 8081) + Ravilo web dev server (port 8082)."
     group = "application"
-    dependsOn("linkDebugExecutableLinuxX64", "syncDesignAssets")
+    dependsOn("linkDebugExecutableLinuxX64", "syncDesignAssets", ":ravilo-web:wasmJsBrowserDevelopmentWebpack")
 
     // These are set from doLast and read by the buildFinished callback below.
     var backendProc: Process? = null
     var frontendProc: Process? = null
+    var raviloWebProc: Process? = null
 
     // buildFinished fires when the Gradle build ends — including on Ctrl+C cancellation — even
     // when the Gradle daemon JVM stays alive. A JVM shutdown hook alone is not enough because the
@@ -78,6 +79,7 @@ tasks.register("runDev") {
     project.gradle.buildFinished {
         backendProc?.destroyForcibly()
         frontendProc?.destroyForcibly()
+        raviloWebProc?.destroyForcibly()
     }
 
     doLast {
@@ -127,8 +129,12 @@ tasks.register("runDev") {
         val webpackConfig = layout.buildDirectory.file("wasm/packages/jellystructure/webpack.config.js").get().asFile
         if (!webpackConfig.exists()) error("webpack.config.js not found at ${webpackConfig.absolutePath}")
 
-        println("[runDev] Starting frontend dev server on http://localhost:8081")
-        println("[runDev] Starting backend API server on http://localhost:9505")
+        val raviloWebConfig = layout.buildDirectory.file("wasm/packages/jellystructure-ravilo-web/webpack.config.js").get().asFile
+        if (!raviloWebConfig.exists()) error("ravilo-web webpack.config.js not found at ${raviloWebConfig.absolutePath}")
+
+        println("[runDev] Starting admin frontend dev server on http://localhost:8081")
+        println("[runDev] Starting Ravilo web dev server     on http://localhost:8082")
+        println("[runDev] Starting backend API server        on http://localhost:9505")
 
         fun Process.pipeToGradle(prefix: String) {
             val out = System.out
@@ -150,6 +156,16 @@ tasks.register("runDev") {
             .also { it.pipeToGradle("fe") }
         frontendProc = frontend
 
+        val raviloWeb = ProcessBuilder(node.absolutePath, webpackDevServer.absolutePath, "--config", raviloWebConfig.absolutePath)
+            .directory(raviloWebConfig.parentFile)
+            .apply {
+                environment()["KOTLIN_TOOLING_DIR"] = toolingNodeModules.absolutePath
+                environment()["NODE_PATH"] = toolingNodeModules.absolutePath
+            }
+            .start()
+            .also { it.pipeToGradle("ravilo-web") }
+        raviloWebProc = raviloWeb
+
         // stdbuf -oL forces line-buffered stdout so every println flushes immediately.
         // Without it the C runtime switches to fully-buffered mode when stdout is piped,
         // causing logs to appear in large delayed bursts rather than in real time.
@@ -168,15 +184,18 @@ tasks.register("runDev") {
         Runtime.getRuntime().addShutdownHook(Thread {
             backend.destroyForcibly()
             frontend.destroyForcibly()
+            raviloWeb.destroyForcibly()
         })
 
         try {
             val exitCode = backend.waitFor()
             frontend.destroyForcibly()
+            raviloWeb.destroyForcibly()
             if (exitCode != 0) error("Backend exited with code $exitCode — see output above")
         } catch (_: InterruptedException) {
             backend.destroyForcibly()
             frontend.destroyForcibly()
+            raviloWeb.destroyForcibly()
             Thread.currentThread().interrupt()
         }
     }

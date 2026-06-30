@@ -12,6 +12,7 @@ import dev.jellystructure.shared.tv.MediaCard
 import dev.jellystructure.shared.tv.MovieDetail
 import dev.jellystructure.shared.tv.Person
 import dev.jellystructure.shared.tv.Season
+import dev.jellystructure.shared.tv.NextAiring
 import dev.jellystructure.shared.tv.SeriesDetail
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
@@ -90,6 +91,15 @@ class DetailService(
             ?.filter { it.kind == dev.jellystructure.model.TrackKind.SUBTITLE }
             ?.mapNotNull { it.language?.lowercase()?.takeIf { l -> l.isNotBlank() } }
             ?: emptyList()
+        val sonarrEnabled = configStore.current.sonarr?.enabled == true
+        val nextAiring = if (sonarrEnabled && item.sonarrStatus != "ended") {
+            val date = item.sonarrNextAiringDate
+            val season = item.sonarrNextAiringSeason
+            val episode = item.sonarrNextAiringEpisode
+            if (date != null && season != null && episode != null)
+                NextAiring(season = season, episode = episode, title = item.sonarrNextAiringTitle, airDate = date)
+            else null
+        } else null
         return SeriesDetail(
             card              = item.toMediaCard(),
             synopsis          = item.overview,
@@ -100,6 +110,7 @@ class DetailService(
             audioLanguages    = seriesAudioLangs,
             subtitleLanguages = seriesSubLangs,
             logoUrl           = RaviloImageUrl.logo(item.id),  // R130/R133
+            nextAiring        = nextAiring,
         )
     }
 
@@ -152,6 +163,7 @@ class DetailService(
 
     private fun MediaItem.toMediaCard(): MediaCard {
         val jId = jellyfinId
+        val sonarrEnabled = configStore.current.sonarr?.enabled == true
         return MediaCard(
             id = jId ?: id,
             kind = if (kind == MediaKind.TV_SHOW) dev.jellystructure.shared.tv.MediaKind.SERIES
@@ -162,6 +174,8 @@ class DetailService(
             rating = null,
             posterUrl = RaviloImageUrl.poster(id),     // R133: keyed by MediaItem.id (on-disk artwork)
             backdropUrl = RaviloImageUrl.backdrop(id),
+            hasUpcoming = sonarrEnabled && kind == MediaKind.TV_SHOW &&
+                sonarrStatus != "ended" && sonarrNextAiringDate != null,
         )
     }
 }
