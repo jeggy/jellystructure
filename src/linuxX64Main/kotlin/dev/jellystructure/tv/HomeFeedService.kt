@@ -267,6 +267,7 @@ class HomeFeedService(
                         .sortedByDescending { it.addedAt ?: it.scannedAt }
                         .take(ROW_ITEM_LIMIT)
                         .mapNotNull { it.toMediaCardOrNull() }
+                        .distinctBy { it.id }
                     if (cards.isNotEmpty()) result.add(Row(rowCfg.id, rowCfg.title ?: "Newly Added", RowKind.NEWLY_ADDED, cards))
                 }
 
@@ -280,6 +281,7 @@ class HomeFeedService(
                 .sortedByDescending { it.addedAt ?: it.scannedAt }
                 .take(ROW_ITEM_LIMIT)
                 .mapNotNull { it.toMediaCardOrNull() }
+                .distinctBy { it.id }
             if (mergedCards.isNotEmpty()) {
                 val firstIdx = enabledRows.indexOfFirst { it.kind == RowKind.NEWLY_ADDED }
                 val insertAt = when {
@@ -307,14 +309,14 @@ class HomeFeedService(
         titlePrefix: String? = null,
     ) {
         if (merge) {
-            val cards = src.sortedByDescending { it.addedAt ?: it.scannedAt }.take(ROW_ITEM_LIMIT).mapNotNull { it.toMediaCardOrNull() }
+            val cards = src.sortedByDescending { it.addedAt ?: it.scannedAt }.take(ROW_ITEM_LIMIT).mapNotNull { it.toMediaCardOrNull() }.distinctBy { it.id }
             if (cards.isNotEmpty()) result.add(Row(idPrefix, titlePrefix ?: "Newly Added", RowKind.NEWLY_ADDED, cards))
             return
         }
         val movies = src.filter { it.kind == MediaKind.MOVIE }
-            .sortedByDescending { it.addedAt ?: it.scannedAt }.take(ROW_ITEM_LIMIT).mapNotNull { it.toMediaCardOrNull() }
+            .sortedByDescending { it.addedAt ?: it.scannedAt }.take(ROW_ITEM_LIMIT).mapNotNull { it.toMediaCardOrNull() }.distinctBy { it.id }
         val series = src.filter { it.kind == MediaKind.TV_SHOW }
-            .sortedByDescending { it.addedAt ?: it.scannedAt }.take(ROW_ITEM_LIMIT).mapNotNull { it.toMediaCardOrNull() }
+            .sortedByDescending { it.addedAt ?: it.scannedAt }.take(ROW_ITEM_LIMIT).mapNotNull { it.toMediaCardOrNull() }.distinctBy { it.id }
         if (movies.isNotEmpty()) result.add(Row("$idPrefix-movies", titlePrefix?.let { "$it — Movies" } ?: "Movies — Newly Added", RowKind.NEWLY_ADDED, movies))
         if (series.isNotEmpty()) result.add(Row("$idPrefix-series", titlePrefix?.let { "$it — Series" } ?: "Series — Newly Added", RowKind.NEWLY_ADDED, series))
     }
@@ -328,6 +330,7 @@ class HomeFeedService(
                 .sortedByDescending { it.addedAt ?: it.scannedAt }
                 .take(ROW_ITEM_LIMIT)
                 .mapNotNull { it.toMediaCardOrNull() }
+                .distinctBy { it.id }
             if (cards.isNotEmpty()) Row(rowCfg.id, rowCfg.title ?: "Genre", RowKind.GENRE, cards) else null
         }
         RowKind.CUSTOM -> {
@@ -341,6 +344,7 @@ class HomeFeedService(
                 .sortedByDescending { it.addedAt ?: it.scannedAt }
                 .take(ROW_ITEM_LIMIT)
                 .mapNotNull { it.toMediaCardOrNull() }
+                .distinctBy { it.id }
             if (cards.isNotEmpty()) Row(rowCfg.id, rowCfg.title ?: "Custom", RowKind.CUSTOM, cards) else null
         }
         else -> null
