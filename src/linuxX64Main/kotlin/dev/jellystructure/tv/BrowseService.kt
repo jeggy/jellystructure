@@ -77,6 +77,7 @@ class BrowseService(
         val cards = (if (pageSize == null) sorted
                      else sorted.drop((page - 1) * pageSize).take(pageSize))
             .map { it.toMediaCard() }
+            .distinctBy { it.id }
 
         // R142: overlay Jellyfin played / in-progress state so grid tiles show ✓ / progress sliver.
         val ps = withTimeoutOrNull(HYDRATE_TIMEOUT_MS) {
@@ -94,6 +95,7 @@ class BrowseService(
             all.sortedByDescending { it.addedAt ?: it.scannedAt }
                 .take(SEARCH_SUGGESTION_LIMIT)
                 .map { it.toMediaCard() }
+                .distinctBy { it.id }
         } else {
             val q = query.lowercase()
             all.filter { item ->
@@ -103,6 +105,7 @@ class BrowseService(
             }.sortedByDescending { it.addedAt ?: it.scannedAt }
                 .take(100)
                 .map { it.toMediaCard() }
+                .distinctBy { it.id }
         }
 
         // R142: overlay Jellyfin played / in-progress state so search-result tiles show ✓ / progress sliver.
