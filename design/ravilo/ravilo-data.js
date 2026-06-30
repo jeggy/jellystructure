@@ -97,26 +97,26 @@
     items: row('', 'drama', 'film').items.filter((_, i) => i % 2).concat(row('', 'nordic', 'series').items.filter((_, i) => i % 2)) };
 
   // ---------- detail-page data (episodes / cast / related) ----------
-  function ep(n, title, dur, desc, pct) { return { n, title, dur, desc, pct: pct || 0, grad: grad(title + n) }; }
+  function ep(n, title, dur, desc, pct, air) { return { n, title, dur, desc, pct: pct || 0, air: air || '', grad: grad(title + n) }; }
   const SERIES_EP = {
     'Nordvest': [
       [ // Season 1
-        ep(1, 'Hvalvík', '58m', 'Detective Sigrun Restorff steps off the ferry into the town that raised her — and a body that won\u2019t let her leave.', 100),
-        ep(2, 'Bóndin', '54m', 'A farmer\u2019s confession unravels faster than the rope that bound him.', 100),
-        ep(3, 'Grindadráp', '61m', 'The grind paints the bay red; beneath the tide, an older debt surfaces.', 100),
-        ep(4, 'Útróður', '57m', 'A prosecutor from Copenhagen arrives, and the case shifts language and loyalty.', 62),
-        ep(5, 'Foss', '55m', 'Sigrun follows the money upriver to the salmon farm the whole town depends on.', 0),
-        ep(6, 'Náttúra', '59m', 'A storm seals the island. The suspect list narrows to the people she loves.', 0),
-        ep(7, 'Heim', '56m', 'The secret her father carried to sea washes back to the harbour wall.', 0),
-        ep(8, 'Endi', '63m', 'Two truths, one confession, and a tide that takes everything back.', 0),
+        ep(1, 'Hvalvík', '58m', 'Detective Sigrun Restorff steps off the ferry into the town that raised her — and a body that won\u2019t let her leave.', 100, '2023-09-03'),
+        ep(2, 'Bóndin', '54m', 'A farmer\u2019s confession unravels faster than the rope that bound him.', 100, '2023-09-10'),
+        ep(3, 'Grindadráp', '61m', 'The grind paints the bay red; beneath the tide, an older debt surfaces.', 100, '2023-09-17'),
+        ep(4, 'Útróður', '57m', 'A prosecutor from Copenhagen arrives, and the case shifts language and loyalty.', 62, '2023-09-24'),
+        ep(5, 'Foss', '55m', 'Sigrun follows the money upriver to the salmon farm the whole town depends on.', 0, '2023-10-01'),
+        ep(6, 'Náttúra', '59m', 'A storm seals the island. The suspect list narrows to the people she loves.', 0, '2023-10-08'),
+        ep(7, 'Heim', '56m', 'The secret her father carried to sea washes back to the harbour wall.', 0, '2023-10-15'),
+        ep(8, 'Endi', '63m', 'Two truths, one confession, and a tide that takes everything back.', 0, '2023-10-22'),
       ],
       [ // Season 2
-        ep(1, 'Nýtt Ár', '60m', 'A new year, a frozen harbour, and a face Sigrun buried long ago.', 0),
-        ep(2, 'Toka', '52m', 'Fog swallows the road north; a routine call goes silent.', 0),
-        ep(3, 'Djúpið', '58m', 'Divers find more than the wreck they were paid to forget.', 0),
-        ep(4, 'Skuld', '55m', 'An old debt comes due in the only currency the coast respects.', 0),
-        ep(5, 'Brot', '57m', 'Everything cracks at once; Sigrun chooses which piece to save.', 0),
-        ep(6, 'Lokið', '64m', 'The coast keeps its dead, but not its secrets. Season finale.', 0),
+        ep(1, 'Nýtt Ár', '60m', 'A new year, a frozen harbour, and a face Sigrun buried long ago.', 0, '2024-11-10'),
+        ep(2, 'Toka', '52m', 'Fog swallows the road north; a routine call goes silent.', 0, '2024-11-17'),
+        ep(3, 'Djúpið', '58m', 'Divers find more than the wreck they were paid to forget.', 0, '2024-11-24'),
+        ep(4, 'Skuld', '55m', 'An old debt comes due in the only currency the coast respects.', 0, '2024-12-01'),
+        ep(5, 'Brot', '57m', 'Everything cracks at once; Sigrun chooses which piece to save.', 0, '2024-12-08'),
+        ep(6, 'Lokið', '64m', 'The coast keeps its dead, but not its secrets. Season finale.', 0, '2024-12-15'),
       ],
     ],
   };
@@ -140,7 +140,8 @@
     const out = [];
     for (let i = 0; i < count; i++) {
       const t = names[(i * 3 + key.length) % names.length];
-      out.push(ep(i + 1, t, (48 + (i * 7) % 20) + 'm', 'A new chapter, pulled live from Jellyfin and organised by Jellystructure.', i === 0 ? 28 : 0));
+      const ad = new Date(Date.UTC(2024, 0, 7 + i * 7));
+      out.push(ep(i + 1, t, (48 + (i * 7) % 20) + 'm', 'A new chapter, pulled live from Jellyfin and organised by Jellystructure.', i === 0 ? 28 : 0, ad.toISOString().slice(0, 10)));
     }
     return out;
   }
@@ -169,7 +170,7 @@
   //   available  → already in the Jellyfin library (Watch Now)
   //   fetching   → Radarr is grabbing it now (progress %)
   //   none       → not in library — the user can request a fetch via Radarr
-  const config = { radarr: true, region: 'DK', regionName: 'Denmark' };
+  const config = { radarr: true, sonarr: true, region: 'DK', regionName: 'Denmark' };
 
   const sources = [
     { id: 'netflix', name: 'Netflix', via: 'Tudum', wm: 'N', accent: '#e50914', enabled: true },
@@ -295,7 +296,27 @@
     Object.keys(SERIES_EP).forEach(title => SERIES_EP[title].forEach((eps, s) => eps.forEach(e => { _ws[_ek(title, s, e.n)] = { pct: e.pct || 0, watched: (e.pct || 0) >= 100 }; })));
   })();
 
+  // ---------- Sonarr: upcoming-episode info for ongoing (not-ended) series ----------
+  // Sonarr knows each series' status (continuing vs ended) and the air date of the next
+  // monitored episode. Surfaced on the series detail page ONLY when the show has not ended.
+  // Dates are computed relative to “now” so the mock always reads as genuinely upcoming.
+  const SERIES_STATUS = {
+    'Nordvest':       { ended: false, season: 3, ep: 1, title: 'Heimferð' },
+    'Havets Hjarta':  { ended: false, season: 3, ep: 6, title: 'Brotsjór' },
+    'Arvur':          { ended: false, season: 2, ep: 1, title: 'Nýggj Spor' },
+    'Klovn i Nord':   { ended: true },
+    'Havets Folk':    { ended: true },
+  };
+  function nextAiringFor(item) {
+    if (!config.sonarr || !item || item.kind !== 'series') return null;
+    const s = SERIES_STATUS[item.title];
+    if (!s || s.ended) return null;
+    const days = (hash(item.title) % 18) + 3;           // 3–20 days out, deterministic per title
+    const when = new Date(Date.now() + days * 864e5);
+    return { season: s.season, ep: s.ep, title: s.title || '', date: when.toISOString().slice(0, 10), days };
+  }
+
   const watched = { itemState, setItem, setItemWatched, epState, setEpWatched, setEpPct };
 
-  window.RAVILO = { studios, hero, rows, mergedNew, profiles, discover, grad, initials, episodesFor, seasonsFor, castFor, relatedFor, watched };
+  window.RAVILO = { studios, hero, rows, mergedNew, profiles, discover, grad, initials, episodesFor, seasonsFor, castFor, relatedFor, nextAiringFor, watched };
 })();

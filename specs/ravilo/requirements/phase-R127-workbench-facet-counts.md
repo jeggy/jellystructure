@@ -1,8 +1,8 @@
 # R127 — Workbench facet-value counts (+ channel-scoped narrowing)
 
-> Builds on **R32** (the shared condition-stack Workbench used by
-> Library + Channels + Content rows), **R86**
-> (`batch-count`, the decoded-library/facet caches), and **R87**
+> Builds on **[R32](phase-R32-unified-filter-workbench.md)** (the shared condition-stack Workbench used by
+> Library + Channels + Content rows), **[R86](../../requirements/phase-86-ravilo-config-page-performance.md)**
+> (`batch-count`, the decoded-library/facet caches), and **[R87](phase-R87-channel-row-coverage-gap.md)**
 > (channel↔row composition). Pure metadata/UX — no change to the evaluator or the config model.
 
 ---

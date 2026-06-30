@@ -4,8 +4,8 @@
 > (non-destructive scanner), so it was renumbered to **96** on the next sync. Status: **Planned**
 > (design done, not built).
 
-> Builds on **Phase 41** (the unified editor — command,
-> cost, seeding-guard and warning rules are inherited verbatim) and **Phase 42**
+> Builds on **[Phase 41](phase-41-merge-track-order-into-detail.md)** (the unified editor — command,
+> cost, seeding-guard and warning rules are inherited verbatim) and **[Phase 42](phase-42-series-episode-track-editor.md)**
 > (per-episode modal editor). This phase **lifts Phase 42's "no bulk/season apply" invariant** — that
 > was explicitly parked there as a "possible later phase". The per-episode editor is unchanged and
 > remains the place to fix one episode by hand.

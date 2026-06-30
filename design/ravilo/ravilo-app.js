@@ -218,6 +218,11 @@
     function startHero() { stopHero(); if (interactive) heroTimer = setInterval(() => setHero(heroIdx + 1), 6500); }
     function stopHero() { if (heroTimer) clearInterval(heroTimer); heroTimer = null; }
 
+    function upcomingLabel() { return t('upcoming'); }
+    function airBadge(iso) {
+      const d = new Date(iso + 'T00:00:00Z');
+      return isNaN(d) ? iso : d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', timeZone: 'UTC' });
+    }
     /* ---------------- ROWS ---------------- */
     function tile(item, kind) {
       const t = el('div', 'tile ' + (kind === 'land' ? 'land' : 'poster') + (kind === 'continue' ? ' cont' : '') + ' foc');
@@ -238,8 +243,9 @@
       } else {
         const ws = W.itemState(item.title);
         if (ws.watched) t.classList.add('watched');
+        const air = item.kind === 'series' ? R.nextAiringFor(item) : null;
         const wmark = ws.watched ? `<div class="tile-check">✓</div>` : (ws.pct > 0 ? `<div class="tile-prog"><i style="width:${ws.pct}%"></i></div>` : '');
-        t.innerHTML = `<div class="art">${artFill(item)}${item.badge ? `<div class="badge">${item.badge}</div>` : ''}${wmark}</div>
+        t.innerHTML = `<div class="art">${artFill(item)}${item.badge ? `<div class="badge">${item.badge}</div>` : ''}${air ? `<div class="tile-air"><span class="tile-air-dot"></span>${upcomingLabel()}</div>` : ''}${wmark}</div>
           <div class="label">${item.title}</div><div class="sub">${item.year} · ${item.genre}</div>`;
       }
       return t;
@@ -322,6 +328,11 @@
       // R130 — fall back to the styled title on null OR load failure (the logo proxy 404s for no-clearlogo titles)
       return `<img class="dhero-logo" src="${it.logo}" alt="${esc(it.title)}" onerror="this.style.display='none';this.nextElementSibling.style.display='block';"><div class="dhero-title" style="display:none;">${esc(it.title)}</div>`;
     }
+    function epAirLabel(iso) {
+      const d = new Date(iso + 'T00:00:00Z');
+      if (isNaN(d)) return iso;
+      return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC' });
+    }
     function episodeCard(e, st, idx) {
       st = st || {};
       const cls = 'ep-card' + (st.watched ? ' watched' : '') + (st.inprogress ? ' inprogress' : '') + (st.upnext ? ' upnext' : '');
@@ -334,7 +345,7 @@
         ${st.watched ? '<span class="ep-check">✓</span>' : ''}
         <div class="play"><span>▶</span></div>
         ${(st.inprogress || st.watched) ? `<div class="ep-prog"><i style="width:${pct}%"></i></div>` : ''}</div>
-        <div class="ep-info"><div class="ep-t">${e.n}. ${e.title}${st.watched ? ` <span class="ep-tag">${t('watched')}</span>` : ''}</div><div class="ep-d">${e.desc}</div></div>`;
+        <div class="ep-info"><div class="ep-t">${e.n}. ${e.title}${st.watched ? ` <span class="ep-tag">${t('watched')}</span>` : ''}</div>${e.air ? `<div class="ep-date">${epAirLabel(e.air)}</div>` : ''}<div class="ep-d">${e.desc}</div></div>`;
       const done = el('div', 'ep-done foc' + (st.watched ? ' on' : '')); done._epdone = true; done._epn = e.n; done._epidx = idx; done.setAttribute('data-epidx', idx);
       done.innerHTML = `<span class="ep-done-ic">${st.watched ? '✓' : ''}</span><span class="ep-done-tx">${st.watched ? t('watched') : t('mark_watched')}</span>`;
       card.appendChild(play); card.appendChild(done);
@@ -398,6 +409,7 @@
       const rEp = isSeries ? eps[prog.idx] : null;
       const rState = isSeries ? states[prog.idx] : null;
       const wItem = W.itemState(item.title);
+      const nextAir = isSeries ? R.nextAiringFor(item) : null;
       const d = el('div', 'detail');
 
       let playLabel, upNote = '';
@@ -436,7 +448,7 @@
         sec.innerHTML = `<div class="dsec-head"><h2>Episodes</h2>
           <span class="dsec-sub">${t('watched_of', { w: prog.watched, n: eps.length })}</span>
           <span class="seasonbar"><i style="width:${pctWatched}%"></i></span></div>
-          <div class="dsec-actions focus-row"><div class="btn ghost small foc${allW ? ' watched-on' : ''}" data-markall="1"><span class="ic">✓</span> ${allW ? t('mark_all_unwatched') : t('mark_all_watched')}</div></div>`;
+          <div class="dsec-actions focus-row"><div class="btn ghost small foc${allW ? ' watched-on' : ''}" data-markall="1"><span class="ic">✓</span> ${allW ? t('mark_all_unwatched') : t('mark_all_watched')}</div></div>${nextAir ? `<div class="dnext air"><span class="dnext-dot"></span>${t('next_ep')} · S${nextAir.season}:E${nextAir.ep}${nextAir.title ? ` “${nextAir.title}”` : ''} · ${t('airs')} ${epAirLabel(nextAir.date)}<span class="dnext-src">${t('via_sonarr')}</span></div>` : ''}`;
         const pills = el('div', 'seasonpills focus-row');
         for (let i = 0; i < seasons; i++) { const p = el('div', 'spill foc' + (i === season ? ' cur' : '')); p._season = i; p.textContent = 'Season ' + (i + 1); pills.appendChild(p); }
         sec.appendChild(pills);

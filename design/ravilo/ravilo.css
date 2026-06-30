@@ -348,6 +348,11 @@ body { font-family: 'Sora', sans-serif; }
 .ep-t { font-size: 20px; font-weight: 600; color: var(--ink-soft); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ep-card.upnext .ep-t, .ep-card.inprogress .ep-t { color: var(--ink); }
 .ep-tag { font-size: 13px; font-weight: 600; color: var(--good); border: 1px solid rgba(45,212,154,.4); border-radius: 6px; padding: 1px 7px; margin-left: 6px; vertical-align: middle; }
+.ep-date { font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 13px; letter-spacing: .3px; color: var(--ink-dim); margin-top: 4px; }
+.dnext.air { margin-left: 4px; }
+.tile-air { position: absolute; top: 8px; right: 8px; display: inline-flex; align-items: center; gap: 5px; font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 12px; font-weight: 600; letter-spacing: .2px; color: #fff; background: rgba(8,12,28,.72); backdrop-filter: blur(6px); border: 1px solid rgba(255,255,255,.16); padding: 3px 8px; border-radius: 20px; z-index: 2; }
+.tile-air-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent, #7b6ef0); box-shadow: 0 0 6px var(--accent, #7b6ef0); }
+.dnext .dnext-src { margin-left: 9px; font-size: 11px; text-transform: uppercase; letter-spacing: .7px; color: var(--ink-dim); border: 1px solid var(--line); padding: 1px 8px; border-radius: 20px; vertical-align: 1px; }
 .ep-d { font-size: 16px; color: var(--ink-dim); margin-top: 5px; line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 /* episode focus moved from .ep-card → .ep-play (card now holds a play surface + watched toggle) */
 .ep-play { cursor: pointer; transition: transform .18s var(--ease); display: block; }

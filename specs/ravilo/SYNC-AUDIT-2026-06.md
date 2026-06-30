@@ -13,7 +13,7 @@ the spec that tracks the fix. Severity: **S1** = visible/behavioural mismatch, *
 
 ---
 
-## 1 · Channel-button editor  → tracked by **R36**
+## 1 · Channel-button editor  → tracked by **[R36](requirements/phase-R36-channel-button-editor.md)**
 
 The implemented admin editor is the **pre-R36 inline editor**; the current design moved all channel-button
 styling into the row's **popup** with a real logo-image path and a custom color/gradient builder.
@@ -32,7 +32,7 @@ and runtime `Channel(logoUrl, style, brandColor)` need **no field changes** — 
 string, so a gradient fits. The work is editor UI + backend asset endpoint + validation + the TV
 gradient parse.
 
-## 2 · Brand mark + asset pack  → tracked by **R37**
+## 2 · Brand mark + asset pack  → tracked by **[R37](requirements/phase-R37-brand-mark-centering.md)**
 
 | # | Sev | Finding | Code evidence | Design intent |
 |---|----|---------|---------------|---------------|
