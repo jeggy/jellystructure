@@ -392,9 +392,10 @@ fun Route.mediaRoutes(
                         ?: return@post call.respond(HttpStatusCode.BadRequest)
                     val item = store.resolve(id)
                         ?: return@post call.respond(HttpStatusCode.NotFound)
-                    NfoWriter.write(item, ageRatingCascade = configStore.current.metadata.ageRatingCascade)
-                        .onSuccess { path ->
-                            mediaHistory.record(id, "nfo_write", path)
+                    NfoWriter.writeTracked(item, configStore.current.apiKeys.jellyfinUrl, configStore.current.metadata.ageRatingCascade)
+                        .onSuccess { result ->
+                            mediaHistory.record(id, "nfo_write", result.path)
+                            store.updateOne(item.copy(nfoWrittenAt = result.writtenAt, nfoHash = result.hash))
                             // For TV shows, also write episodedetails.nfo for each episode (Phase 76: pass main cast)
                             if (item.kind == MediaKind.TV_SHOW) {
                                 var epWritten = 0
@@ -405,7 +406,7 @@ fun Route.mediaRoutes(
                                 }
                                 if (epWritten > 0) Logger.info("Wrote $epWritten episode NFO(s) for '$id'")
                             }
-                            call.respond(mapOf("path" to path))
+                            call.respond(mapOf("path" to result.path))
                         }
                         .onFailure { e ->
                             Logger.error("NFO write failed for $id: ${e.message}")
@@ -1058,7 +1059,7 @@ fun Route.mediaRoutes(
                     val updatedItem = item.copy(episodes = updatedEpisodes)
                     store.updateOne(updatedItem)
                     mediaHistory.record(id, "episode_meta_edit", "ep=${ep.filename}")
-                    appScope.launch { pushToJellyfin(updatedItem, artwork, configStore, jellyfinClient, appScope, arrRescan) }
+                    appScope.launch { pushToJellyfin(updatedItem, artwork, configStore, jellyfinClient, appScope, store, arrRescan) }
                     call.respond(updatedEp)
                 }
             }
@@ -1220,42 +1221,17 @@ fun Route.mediaRoutes(
         }
 
 
-        // GET /api/media/{id}/drift — compare live Jellyfin metadata vs stored DB state
+        // GET /api/media/{id}/drift — Phase 115: three-state sync evaluation (NFO stale / Jellyfin
+        // behind / external drift), replacing the old blunt DB-vs-Jellyfin field compare.
         get("/{id}/drift") {
             val id = call.parameters["id"] ?: return@get call.respond(HttpStatusCode.BadRequest)
             val item = store.resolve(id) ?: return@get call.respond(HttpStatusCode.NotFound)
-            val jid = item.jellyfinId
-            if (jid.isNullOrBlank()) {
-                call.respond(emptyList<Map<String, String>>())
-                return@get
-            }
-            val cfg = configStore.current
-            if (cfg.apiKeys.jellyfinUrl.isBlank() || cfg.apiKeys.jellyfinToken.isBlank()) {
-                call.respond(emptyList<Map<String, String>>())
-                return@get
-            }
-            val jItem = jellyfinClient.getItem(cfg.apiKeys.jellyfinUrl, cfg.apiKeys.jellyfinToken, jid)
-            if (jItem == null) {
-                call.respond(HttpStatusCode.NotFound, mapOf("error" to "item not found in Jellyfin"))
-                return@get
-            }
-            @Serializable data class DriftField(val field: String, val inJellyfin: String, val inDb: String)
-            val drifts = buildList<DriftField> {
-                val jfTitle = jItem.name
-                val dbTitle = item.title
-                if (jfTitle != dbTitle) add(DriftField("title", jfTitle, dbTitle))
-                val jfYear = jItem.year?.toString() ?: ""
-                val dbYear = item.year?.toString() ?: ""
-                if (jfYear != dbYear) add(DriftField("year", jfYear, dbYear))
-                val jfTmdb = jItem.providerIds?.tmdb ?: ""
-                val dbTmdb = item.tmdbId?.toString() ?: ""
-                if (jfTmdb != dbTmdb) add(DriftField("tmdbId", jfTmdb, dbTmdb))
-            }
-            call.respond(drifts)
-            if (drifts.isNotEmpty()) {
+            val result = dev.jellystructure.nfo.DriftEvaluator.evaluate(item, jellyfinClient, configStore.current)
+            call.respond(result)
+            if (result.state == dev.jellystructure.nfo.DriftState.EXTERNAL_DRIFT.name.lowercase()) {
                 val cfg = configStore.current
                 if (cfg.behavior.notifyOnDrift)
-                    fireWebhook(cfg, """{"event":"drift_detected","mediaId":"$id","fields":${drifts.size}}""")
+                    fireWebhook(cfg, """{"event":"drift_detected","mediaId":"$id","fields":${result.fields.size}}""")
             }
         }
 
@@ -1280,7 +1256,7 @@ fun Route.mediaRoutes(
             store.updateOne(enriched)
             broadcaster.broadcast(JobEvent.ItemScanned("repull-jellyfin-$id", enriched))
             mediaHistory.record(id, "repull_jellyfin", "jellyfinId=${item.jellyfinId}")
-            pushToJellyfin(enriched, artwork, configStore, jellyfinClient, appScope, arrRescan)
+            pushToJellyfin(enriched, artwork, configStore, jellyfinClient, appScope, store, arrRescan)
             call.respond(enriched)
         }
 
@@ -1309,7 +1285,7 @@ fun Route.mediaRoutes(
             store.updateOne(enriched)
             broadcaster.broadcast(JobEvent.ItemScanned("sync-$id", enriched))
             mediaHistory.record(id, "sync", "kind=${item.kind.name.lowercase()} scope=${req.scope}")
-            pushToJellyfin(enriched, artwork, configStore, jellyfinClient, appScope, arrRescan)
+            pushToJellyfin(enriched, artwork, configStore, jellyfinClient, appScope, store, arrRescan)
             call.respond(enriched)
         }
 
@@ -1333,7 +1309,7 @@ fun Route.mediaRoutes(
             store.updateOne(updatedItem)
             broadcaster.broadcast(JobEvent.ItemScanned("sync-$id-s$seasonNumber", updatedItem))
             mediaHistory.record(id, "season_sync", "season=$seasonNumber scope=${req.scope} synced=$synced")
-            pushToJellyfin(updatedItem, artwork, configStore, jellyfinClient, appScope, arrRescan)
+            pushToJellyfin(updatedItem, artwork, configStore, jellyfinClient, appScope, store, arrRescan)
             call.respond(mapOf("synced" to synced))
         }
 
@@ -1355,7 +1331,7 @@ fun Route.mediaRoutes(
                 val enriched = sonarrEnrich?.enrichOne(updated) ?: updated
                 store.updateOne(enriched)
                 Logger.info("Re-pulled TMDB for '$id': title='${enriched.title}' tmdbId=${enriched.tmdbId} episodes=${enriched.episodes.size}")
-                pushToJellyfin(enriched, artwork, configStore, jellyfinClient, appScope, arrRescan)
+                pushToJellyfin(enriched, artwork, configStore, jellyfinClient, appScope, store, arrRescan)
                 call.respond(enriched)
             }
         }
@@ -1617,9 +1593,12 @@ fun Route.mediaRoutes(
             var refreshFail = 0
             val freshCfg = configStore.current
             for (item in items) {
-                NfoWriter.write(item, ageRatingCascade = freshCfg.metadata.ageRatingCascade)
-                    .onSuccess {
+                var current = item
+                NfoWriter.writeTracked(item, freshCfg.apiKeys.jellyfinUrl, freshCfg.metadata.ageRatingCascade)
+                    .onSuccess { result ->
                         nfoOk++
+                        current = item.copy(nfoWrittenAt = result.writtenAt, nfoHash = result.hash)
+                        store.updateOne(current)
                         if (item.kind == MediaKind.TV_SHOW) {
                             for (ep in item.episodes) {
                                 NfoWriter.writeEpisode(ep, item.cast)
@@ -1630,7 +1609,8 @@ fun Route.mediaRoutes(
                     .onFailure { nfoFail++; Logger.warn("batch-push: NFO write failed for '${item.id}': ${it.message}") }
                 if (!item.jellyfinId.isNullOrBlank()) {
                     val ok = jellyfinClient.refreshItem(freshCfg.apiKeys.jellyfinUrl, freshCfg.apiKeys.jellyfinToken, item.jellyfinId, full = true)
-                    if (ok) refreshOk++ else { refreshFail++; Logger.warn("batch-push: Jellyfin refresh failed for '${item.id}'") }
+                    if (ok) { refreshOk++; store.updateOne(current.copy(jfSyncedAt = platform.posix.time(null))) }
+                    else { refreshFail++; Logger.warn("batch-push: Jellyfin refresh failed for '${item.id}'") }
                 }
             }
             // Trigger a library scan after all NFOs are written so Jellyfin reliably picks up
@@ -1653,11 +1633,15 @@ private suspend fun pushToJellyfin(
     configStore: ConfigStore,
     jellyfinClient: JellyfinClient,
     appScope: CoroutineScope,
+    store: MediaStore,
     arrRescan: ArrRescanService? = null,
 ): Boolean {
-    NfoWriter.write(item, ageRatingCascade = configStore.current.metadata.ageRatingCascade)
-        .onSuccess { path ->
-            Logger.info("pushToJellyfin: wrote NFO $path")
+    var current = item
+    NfoWriter.writeTracked(item, configStore.current.apiKeys.jellyfinUrl, configStore.current.metadata.ageRatingCascade)
+        .onSuccess { result ->
+            Logger.info("pushToJellyfin: wrote NFO ${result.path}")
+            current = item.copy(nfoWrittenAt = result.writtenAt, nfoHash = result.hash)
+            store.updateOne(current)
             if (item.kind == MediaKind.TV_SHOW) {
                 var epWritten = 0
                 for (ep in item.episodes) {
@@ -1678,7 +1662,8 @@ private suspend fun pushToJellyfin(
     var refreshOk = true
     if (!item.jellyfinId.isNullOrBlank()) {
         refreshOk = jellyfinClient.refreshItem(cfg.apiKeys.jellyfinUrl, cfg.apiKeys.jellyfinToken, item.jellyfinId, full = true)
-        if (!refreshOk) Logger.warn("pushToJellyfin: Jellyfin refresh failed for '${item.id}' (jellyfinId=${item.jellyfinId})")
+        if (refreshOk) store.updateOne(current.copy(jfSyncedAt = platform.posix.time(null)))
+        else Logger.warn("pushToJellyfin: Jellyfin refresh failed for '${item.id}' (jellyfinId=${item.jellyfinId})")
     } else {
         Logger.warn("pushToJellyfin: no jellyfinId for '${item.id}' — skipping per-item Jellyfin refresh")
     }

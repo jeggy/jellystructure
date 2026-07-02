@@ -19,6 +19,26 @@ object NfoWriter {
         MediaKind.TV_SHOW -> buildTvShowXml(item, serverUrl, ageRatingCascade)
     }
 
+    // Phase 115: a stable content hash for the item-level NFO — used to tell "we haven't written this
+    // change yet" (DB ≠ nfoHash) from "the file on disk isn't ours" (readRaw() ≠ nfoHash) without a
+    // byte-for-byte compare at every call site. Not cryptographic — collision risk is irrelevant here,
+    // this only ever answers "did the generated XML change since the last write".
+    fun contentHash(item: MediaItem, serverUrl: String? = null, ageRatingCascade: List<String> = emptyList()): String =
+        buildXml(item, serverUrl, ageRatingCascade).hashCode().toString()
+
+    /** The hash of what's CURRENTLY on disk, or null if there's no NFO yet. Comparing this against
+     *  [MediaItem.nfoHash] tells whether the on-disk file is still the one jellystructure last wrote. */
+    fun onDiskHash(item: MediaItem): String? = readRaw(item)?.hashCode()?.toString()
+
+    data class WriteResult(val path: String, val hash: String, val writtenAt: Long)
+
+    /** Like [write] but also returns the content hash + write time, for callers that persist
+     *  [MediaItem.nfoWrittenAt]/[MediaItem.nfoHash] (Phase 115 sync-state tracking). */
+    suspend fun writeTracked(item: MediaItem, serverUrl: String? = null, ageRatingCascade: List<String> = emptyList()): Result<WriteResult> {
+        val hash = contentHash(item, serverUrl, ageRatingCascade)
+        return write(item, serverUrl, ageRatingCascade).map { path -> WriteResult(path, hash, platform.posix.time(null)) }
+    }
+
     suspend fun write(item: MediaItem, serverUrl: String? = null, ageRatingCascade: List<String> = emptyList()): Result<String> {
         return runCatching {
             val dir = when (item.kind) {
