@@ -42,3 +42,33 @@ data class ChartEntry(
     val posterPath: String? = null,  // portrait poster for the ranked Top 10 tiles (R49 mockup)
     val overview: String? = null,
 )
+
+// R154 — GET /api/discover/coverage?region=CC: which enabled providers/lists actually have ingested
+// data for a region, so the config editor's verdict matches what the TV will actually show (same
+// ChartStore data the feed itself reads — no separate hard-coded coverage table to drift out of sync).
+@Serializable
+data class ListCoverage(
+    val listId: String,
+    val title: String,
+    val covered: Boolean,
+    // "not_ingested" (never fetched — usually because the region isn't in discover.regions) |
+    // "empty_feed" (fetched, but the vendor returned nothing for this region) | null when covered.
+    val reason: String? = null,
+    val entryCount: Int = 0,
+)
+
+@Serializable
+data class ProviderCoverage(
+    val id: String,
+    val displayName: String,
+    val covered: Boolean,     // true if at least one of `lists` is covered
+    val lists: List<ListCoverage> = emptyList(),
+)
+
+@Serializable
+data class DiscoverCoverageResponse(
+    val region: String,
+    val providers: List<ProviderCoverage>,
+    val ingestedRegions: List<String>,
+    val radarrConnected: Boolean,
+)
