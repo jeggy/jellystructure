@@ -43,6 +43,15 @@ private var libEndReached = false
 private var libLoading = false
 private var libKind: MediaKind? = null
 private var libFilter: String? = null
+// Phase 117: display labels for a dashboard-breakdown deep link's per-type `?filter=` value.
+private val ISSUE_FILTER_LABELS = mapOf(
+    "untagged" to "Untagged tracks",
+    "cascade_mismatch" to "Wrong default audio",
+    "multi_default" to "Multiple default audio",
+    "language_mix" to "Mixed-language series",
+    "missing_from_source" to "No longer in Jellyfin",
+    "missing_overview" to "Missing overview",
+)
 private var libSearch: String? = null
 private var libSort: String? = null
 private var libScanSocket: WebSocket? = null
@@ -193,7 +202,12 @@ fun renderLibrary(container: Element, scope: CoroutineScope, query: Map<String, 
 
 // Syncs all UI widgets (chips, buttons, inputs) to the current lib* state vars.
 private fun syncFilterUiToState(scope: CoroutineScope) {
-    val filterActive = when (libFilter) { "attention" -> "f-attention"; "missing_artwork" -> "f-artwork"; else -> "f-all" }
+    val filterActive = when (libFilter) {
+        "attention" -> "f-attention"
+        "missing_artwork" -> "f-artwork"
+        in ISSUE_FILTER_LABELS.keys -> null  // Phase 117: shown as its own removable "Issue: …" chip instead
+        else -> "f-all"
+    }
     listOf("f-all", "f-attention", "f-artwork").forEach { id ->
         (document.getElementById(id) as? HTMLElement)?.className =
             if (id == filterActive) "chip active-chip" else "chip"
@@ -292,6 +306,9 @@ private fun updateActiveChips(scope: CoroutineScope? = null) {
             add(Triple("coverage", "Content row " + (if (c.op == "is_none_of") "is none of" else "is any of"), names.ifEmpty { "—" }))
         }
         libTracker?.let { add(Triple("tracker", "Seeded on", it)) }
+        // Phase 117: a dashboard-breakdown deep link (?filter=<issue type>) shows as a normal removable
+        // chip, same as any other filter — "attention"/"missing_artwork" keep their dedicated quick chips.
+        libFilter?.let { f -> ISSUE_FILTER_LABELS[f]?.let { label -> add(Triple("issue:$f", "Issue", label)) } }
     }
 
     container.style.display = if (active.isEmpty()) "none" else "flex"
@@ -319,6 +336,7 @@ private fun updateActiveChips(scope: CoroutineScope? = null) {
                 }
                 key == "coverage"       -> libCoverageCond = null  // R87
                 key == "tracker"        -> libTracker = null
+                key.startsWith("issue:") -> libFilter = null
             }
             updateActiveChips(scope)
             if (scope != null) scope.launch { loadMore(scope, reset = true) }
@@ -510,8 +528,16 @@ private suspend fun loadMore(scope: CoroutineScope, reset: Boolean) {
             }
 
             libTotal = page.total
+            // Phase 117: on a dashboard-breakdown deep link, show "N titles · M issues" — the instance
+            // count (episode/track-level for untagged/missing_overview) alongside the title count, so
+            // "200 issues" and "3 titles" are both legible instead of looking contradictory.
+            val issueType = libFilter?.let { ISSUE_FILTER_LABELS[it] }?.let { libFilter }
+            val instanceSuffix = if (issueType != null) {
+                val type = MediaApi.getTriageCount()?.types?.firstOrNull { it.key == issueType }
+                if (type != null && type.instances != page.total) " · ${type.instances} issue${if (type.instances != 1) "s" else ""}" else ""
+            } else ""
             document.getElementById("lib-total")?.textContent =
-                "${page.total} item${if (page.total != 1) "s" else ""}"
+                "${page.total} item${if (page.total != 1) "s" else ""}$instanceSuffix"
 
             if (firstSlice) {
                 if (page.items.isEmpty()) {

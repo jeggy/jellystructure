@@ -53,6 +53,8 @@ fun renderDashboard(container: Element, scope: CoroutineScope) {
             <div class="tiny muted" style="margin:6px 0 0">Step through every flagged item from the floating dock, bottom-right — it opens each one's detail page where you fix it. Closed it? <b>Show attention dock</b> brings it back.</div>
             <hr class="dash" style="margin:11px 0">
             <div id="attention-list"><span class="muted tiny">Loading…</span></div>
+            <hr class="dash" style="margin:11px 0">
+            <div id="attention-breakdown"><span class="muted tiny">Loading…</span></div>
           </div>
           <div class="col" style="width:320px;flex:none;gap:14px">
             <div class="card">
@@ -124,6 +126,7 @@ fun renderDashboard(container: Element, scope: CoroutineScope) {
     scope.launch {
         loadDashboardStats()
         loadAttentionQueue()
+        loadAttentionBreakdown()
         loadRecentActivity()
         val status = MediaApi.scanStatus()
         when (status?.status) {
@@ -190,8 +193,44 @@ private suspend fun loadDashboardStats() {
     val stats = MediaApi.stats() ?: return
     (document.getElementById("stat-movies") as? HTMLElement)?.textContent = stats.movies.toString()
     (document.getElementById("stat-tv") as? HTMLElement)?.textContent = stats.tvEpisodes.toString()
-    (document.getElementById("stat-issues") as? HTMLElement)?.textContent = stats.issues.toString()
     (document.getElementById("stat-nfo") as? HTMLElement)?.textContent = "${stats.nfoCoverage}%"
+    // Phase 117: "Items needing attention" now reads the same triage total the breakdown below sums —
+    // it used to be store.totalIssueCount() (an untagged-only SQL sum), a different, smaller number.
+}
+
+/** Phase 117: one row per triage issue type — every type, always, including zeros — each linking to
+ *  the Library pre-filtered to that issue. Mirrors the Triage dock's phrasing (Shell.kt triageSubline). */
+private suspend fun loadAttentionBreakdown() {
+    val count = MediaApi.getTriageCount()
+    val el = document.getElementById("attention-breakdown") as? HTMLElement ?: return
+    if (count == null || count.types.isEmpty()) {
+        el.innerHTML = """<span class="muted tiny">Couldn't load the issue breakdown.</span>"""
+        return
+    }
+    (document.getElementById("stat-issues") as? HTMLElement)?.textContent = count.total.toString()
+    el.innerHTML = buildString {
+        append("""<div class="tiny muted" style="margin-bottom:8px;">Every issue type Jellystructure tracks — click one to see the affected titles in the Library.</div>""")
+        for (t in count.types) {
+            val zero = t.instances == 0
+            val countLabel = if (t.instances != t.titles) "${t.instances} (${t.titles} title${if (t.titles != 1) "s" else ""})" else "${t.instances}"
+            val badgeCls = if (zero) "badge" else "badge bad"
+            val rowStyle = if (zero) "opacity:.55;" else "cursor:pointer;"
+            append("""<div class="row center" style="padding:6px 0;$rowStyle" ${if (!zero) """data-issue-filter="${t.key}"""" else ""}>""")
+            append("""<div style="flex:1;min-width:0;"><b style="font-size:.86rem;">${t.label.esc()}</b>""")
+            append("""<div class="tiny muted" style="margin-top:1px;">${t.description.esc()}</div></div>""")
+            append("""<span class="$badgeCls" style="flex-shrink:0;margin-left:10px;">${if (zero) "✓ 0" else countLabel}</span>""")
+            append("</div>")
+        }
+    }
+    el.querySelectorAll("[data-issue-filter]").let { nodes ->
+        for (i in 0 until nodes.length) {
+            val row = nodes.item(i) as? HTMLElement ?: continue
+            row.addEventListener("click") {
+                val key = row.getAttribute("data-issue-filter") ?: return@addEventListener
+                App.navigate("/library?filter=$key")
+            }
+        }
+    }
 }
 
 private suspend fun loadRecentActivity() {
