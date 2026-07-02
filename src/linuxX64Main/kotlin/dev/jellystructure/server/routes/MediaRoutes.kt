@@ -194,7 +194,7 @@ fun Route.mediaRoutes(
             val seededIds = if (trackerFilter != null) {
                 seedingSnapshot.seededItemIds(trackerFilter, store.allItems(), configStore.current)
             } else null
-            val result = store.list(kind, filter, search, sort, pageNum, pageSize, studios, networks, genres, audioLangs, trackTitle, audioCodec, untaggedAudio, tags, heroIds, heroMode, conditions, match, seededIds)
+            val result = store.list(kind, filter, search, sort, pageNum, pageSize, studios, networks, genres, audioLangs, trackTitle, audioCodec, untaggedAudio, tags, heroIds, heroMode, conditions, match, seededIds, excludeMissing = viewer != null)
             // Phase 89: strip heavy fields not needed for grid cards (cast/crew/tracks/titlesByLang/episodes)
             // to reduce response size from ~61KB/item mean to ~1KB/item.
             val stripped = result.copy(items = result.items.map { it.copy(

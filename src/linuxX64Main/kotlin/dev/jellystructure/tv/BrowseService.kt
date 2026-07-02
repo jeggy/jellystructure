@@ -40,8 +40,8 @@ class BrowseService(
     ): SearchResults = coroutineScope {
         val jellyfinBase  = configStore.current.apiKeys.jellyfinUrl.trimEnd('/')
         val tokenDeferred = async { jellyfinClient.tvToken(jellyfinBase, device, configStore.current.apiKeys.jellyfinToken) }
-        // allItems() doesn't need the token; start it immediately in parallel.
-        val allDeferred   = async { mediaStore.allItems() }
+        // liveItems() doesn't need the token; start it immediately in parallel.
+        val allDeferred   = async { mediaStore.liveItems() }
 
         val mediaKind = when (kind) {
             "movie"  -> MediaKind.MOVIE
@@ -88,7 +88,7 @@ class BrowseService(
 
     /** Multi-language search: matches title, originalTitle, and every titlesByLang value. */
     suspend fun search(device: DeviceData, query: String): SearchResults {
-        val all = mediaStore.allItems()
+        val all = mediaStore.liveItems()
         val jellyfinBase = configStore.current.apiKeys.jellyfinUrl.trimEnd('/')
 
         val cards = if (query.isBlank()) {
@@ -123,8 +123,8 @@ class BrowseService(
             "series" -> MediaKind.TV_SHOW
             else     -> null
         }
-        val all = if (mediaKind != null) mediaStore.allItems().filter { it.kind == mediaKind }
-                  else mediaStore.allItems()
+        val all = if (mediaKind != null) mediaStore.liveItems().filter { it.kind == mediaKind }
+                  else mediaStore.liveItems()
 
         val genreCounts   = mutableMapOf<String, Int>()
         val studioCounts  = mutableMapOf<String, Int>()
