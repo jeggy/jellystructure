@@ -229,6 +229,7 @@ fun Route.mediaRoutes(
                 val networks: List<FacetItem>,
                 val genres: List<FacetItem>,
                 val tags: List<FacetItem>,
+                val ageRatings: List<FacetItem>,
             )
             val f = store.metaFacets()
             call.respond(MetaFacetsResponse(
@@ -236,6 +237,7 @@ fun Route.mediaRoutes(
                 networks = f.networks.map { FacetItem(it.value, it.count) },
                 genres   = f.genres.map   { FacetItem(it.value, it.count) },
                 tags     = f.tags.map     { FacetItem(it.value, it.count, it.color) },
+                ageRatings = f.ageRatings.map { FacetItem(it.value, it.count) },
             ))
         }
 
@@ -262,6 +264,7 @@ fun Route.mediaRoutes(
             @Serializable data class FItem(val value: String, val count: Int, val color: String? = null)
             @Serializable data class NarrowedFacetsResponse(
                 val studios: List<FItem>, val networks: List<FItem>, val genres: List<FItem>, val tags: List<FItem>,
+                val ageRatings: List<FItem>,
                 val audioLanguages: List<FItem>, val audioCodecs: List<FItem>, val trackTitles: List<FItem>,
             )
             val req = call.receive<FacetReq>()
@@ -272,6 +275,7 @@ fun Route.mediaRoutes(
                 networks = meta.networks.map { FItem(it.value, it.count, it.color) },
                 genres   = meta.genres.map   { FItem(it.value, it.count, it.color) },
                 tags     = meta.tags.map     { FItem(it.value, it.count, it.color) },
+                ageRatings = meta.ageRatings.map { FItem(it.value, it.count, it.color) },
                 audioLanguages = track.audioLanguages.map { FItem(it.value, it.count) },
                 audioCodecs    = track.audioCodecs.map    { FItem(it.value, it.count) },
                 trackTitles    = track.trackTitles.map    { FItem(it.value, it.count) },
@@ -387,7 +391,7 @@ fun Route.mediaRoutes(
                         ?: return@post call.respond(HttpStatusCode.BadRequest)
                     val item = store.resolve(id)
                         ?: return@post call.respond(HttpStatusCode.NotFound)
-                    NfoWriter.write(item)
+                    NfoWriter.write(item, ageRatingCascade = configStore.current.metadata.ageRatingCascade)
                         .onSuccess { path ->
                             mediaHistory.record(id, "nfo_write", path)
                             // For TV shows, also write episodedetails.nfo for each episode (Phase 76: pass main cast)
@@ -1628,7 +1632,7 @@ fun Route.mediaRoutes(
             var refreshFail = 0
             val freshCfg = configStore.current
             for (item in items) {
-                NfoWriter.write(item)
+                NfoWriter.write(item, ageRatingCascade = freshCfg.metadata.ageRatingCascade)
                     .onSuccess {
                         nfoOk++
                         if (item.kind == MediaKind.TV_SHOW) {
@@ -1666,7 +1670,7 @@ private suspend fun pushToJellyfin(
     appScope: CoroutineScope,
     arrRescan: ArrRescanService? = null,
 ): Boolean {
-    NfoWriter.write(item)
+    NfoWriter.write(item, ageRatingCascade = configStore.current.metadata.ageRatingCascade)
         .onSuccess { path ->
             Logger.info("pushToJellyfin: wrote NFO $path")
             if (item.kind == MediaKind.TV_SHOW) {

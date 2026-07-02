@@ -6,6 +6,7 @@ import dev.jellystructure.config.ConfigStore
 import dev.jellystructure.media.MediaStore
 import dev.jellystructure.model.MediaItem
 import dev.jellystructure.model.MediaKind
+import dev.jellystructure.resolver.CertificationResolver
 import dev.jellystructure.shared.tv.BrowseFacets
 import dev.jellystructure.shared.tv.FacetItem
 import dev.jellystructure.shared.tv.MediaCard
@@ -156,7 +157,7 @@ class BrowseService(
             title = title,
             year = year,
             genre = genres.firstOrNull(),
-            rating = null,
+            rating = CertificationResolver.resolve(configStore.current.metadata.ageRatingCascade, certifications)?.code,
             posterUrl = RaviloImageUrl.poster(id),     // R133: keyed by MediaItem.id (on-disk artwork)
             backdropUrl = RaviloImageUrl.backdrop(id),
             upcomingEpisode = if (sonarrEnabled && kind == MediaKind.TV_SHOW &&

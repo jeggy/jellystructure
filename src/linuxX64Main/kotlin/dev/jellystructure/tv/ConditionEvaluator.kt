@@ -3,6 +3,7 @@ package dev.jellystructure.tv
 import dev.jellystructure.model.MediaItem
 import dev.jellystructure.model.MediaKind
 import dev.jellystructure.model.TrackKind
+import dev.jellystructure.resolver.CertificationResolver
 import dev.jellystructure.shared.tv.Condition
 import dev.jellystructure.shared.tv.MatchMode
 import dev.jellystructure.shared.tv.RowConfig
@@ -10,7 +11,8 @@ import dev.jellystructure.shared.tv.RowConfig
 /**
  * Evaluates an R32 workbench condition stack against a [MediaItem]. Facets mirror the Phase-30 axes
  * (studio/network/genre/tag) plus audio-track facets (audio_language incl. an `untagged` value,
- * audio_codec, track_title contains) and the Ravilo-layout `hero_item` membership facet.
+ * audio_codec, track_title contains), the Ravilo-layout `hero_item` membership facet, and the
+ * Phase-106 `age_rating` facet (the region-cascade-resolved certification code).
  *
  * Phase R86 — WS-I Tier 1: [matches] precomputes a lowercased [ItemFacets] per item before
  * iterating conditions, so [evalOne] uses allocation-free [Set.contains] instead of re-lowercasing
@@ -18,10 +20,12 @@ import dev.jellystructure.shared.tv.RowConfig
  */
 object ConditionEvaluator {
 
-    /** [heroIds] = item ids (jellyfinId and/or slug) currently in the viewer's hero carousel. */
-    fun matches(item: MediaItem, match: MatchMode, conditions: List<Condition>, heroIds: Set<String>): Boolean {
+    /** [heroIds] = item ids (jellyfinId and/or slug) currently in the viewer's hero carousel.
+     *  [ageRatingCascade] = the admin-configured region cascade (Phase 106); age_rating conditions
+     *  match against the resolved certification code for that cascade. */
+    fun matches(item: MediaItem, match: MatchMode, conditions: List<Condition>, heroIds: Set<String>, ageRatingCascade: List<String> = emptyList()): Boolean {
         if (conditions.isEmpty()) return true
-        val facets  = ItemFacets.of(item)
+        val facets  = ItemFacets.of(item, ageRatingCascade)
         val results = conditions.map { evalOne(item, facets, it, heroIds) }
         return if (match == MatchMode.ANY) results.any { it } else results.all { it }
     }
@@ -35,10 +39,12 @@ object ConditionEvaluator {
         val tags: Set<String>,
         val audioLanguages: Set<String>,
         val audioCodecs: Set<String>,
+        val ageRating: Set<String>,
     ) {
         companion object {
-            fun of(item: MediaItem): ItemFacets {
+            fun of(item: MediaItem, ageRatingCascade: List<String>): ItemFacets {
                 val audio = item.tracks.filter { it.kind == TrackKind.AUDIO }
+                val resolvedCode = CertificationResolver.resolve(ageRatingCascade, item.certifications)?.code
                 return ItemFacets(
                     studio         = setOfNotNull(item.studio?.lowercase()),
                     network        = setOfNotNull(item.network?.lowercase()),
@@ -46,6 +52,7 @@ object ConditionEvaluator {
                     tags           = item.tags.mapTo(HashSet()) { it.lowercase() },
                     audioLanguages = audio.mapTo(HashSet()) { it.language?.lowercase() ?: "untagged" },
                     audioCodecs    = audio.mapTo(HashSet()) { it.codec.lowercase() },
+                    ageRating      = setOfNotNull(resolvedCode?.lowercase()),
                 )
             }
         }
@@ -60,6 +67,7 @@ object ConditionEvaluator {
             "tag"            -> setMatch(facets.tags, vals, c.op)
             "audio_language" -> setMatch(facets.audioLanguages, vals, c.op)
             "audio_codec"    -> setMatch(facets.audioCodecs, vals, c.op)
+            "age_rating"     -> setMatch(facets.ageRating, vals, c.op)
             "track_title" -> {
                 val needle = vals.firstOrNull() ?: return c.op == "not_contains"
                 val has = item.tracks.any { it.title?.lowercase()?.contains(needle) == true }

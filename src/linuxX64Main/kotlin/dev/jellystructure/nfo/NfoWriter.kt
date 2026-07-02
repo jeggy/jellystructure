@@ -5,18 +5,21 @@ import dev.jellystructure.model.Episode
 import dev.jellystructure.model.MediaItem
 import dev.jellystructure.model.MediaKind
 import dev.jellystructure.model.Person
+import dev.jellystructure.resolver.CertificationResolver
 import kotlinx.io.buffered
 import kotlinx.io.files.Path
 import kotlinx.io.files.SystemFileSystem
 import kotlinx.io.writeString
 
 object NfoWriter {
-    fun buildXml(item: MediaItem, serverUrl: String? = null): String = when (item.kind) {
-        MediaKind.MOVIE -> buildMovieXml(item, serverUrl)
-        MediaKind.TV_SHOW -> buildTvShowXml(item, serverUrl)
+    // Phase 106: [ageRatingCascade] resolves item.certifications → a single <mpaa> code; empty
+    // cascade or no certifications on the item ⇒ no <mpaa> tag written (feature off / no data).
+    fun buildXml(item: MediaItem, serverUrl: String? = null, ageRatingCascade: List<String> = emptyList()): String = when (item.kind) {
+        MediaKind.MOVIE -> buildMovieXml(item, serverUrl, ageRatingCascade)
+        MediaKind.TV_SHOW -> buildTvShowXml(item, serverUrl, ageRatingCascade)
     }
 
-    suspend fun write(item: MediaItem, serverUrl: String? = null): Result<String> {
+    suspend fun write(item: MediaItem, serverUrl: String? = null, ageRatingCascade: List<String> = emptyList()): Result<String> {
         return runCatching {
             val dir = when (item.kind) {
                 MediaKind.MOVIE -> item.path.substringBeforeLast('/')
@@ -30,7 +33,7 @@ object NfoWriter {
             Logger.info("NfoWriter.write: id='${item.id}' kind=${item.kind} item.path='${item.path}' nfoPath='$nfoPath'")
             val dirExists = SystemFileSystem.exists(Path(dir))
             Logger.info("NfoWriter.write: dir exists=$dirExists")
-            val xml = buildXml(item, serverUrl)
+            val xml = buildXml(item, serverUrl, ageRatingCascade)
             writeAtomically(nfoPath, xml)
             Logger.info("Wrote NFO: $nfoPath", "nfo")
             nfoPath
@@ -161,7 +164,7 @@ object NfoWriter {
         appendLine("</episodedetails>")
     }
 
-    private fun buildMovieXml(item: MediaItem, serverUrl: String? = null): String = buildString {
+    private fun buildMovieXml(item: MediaItem, serverUrl: String? = null, ageRatingCascade: List<String> = emptyList()): String = buildString {
         appendLine("""<?xml version="1.0" encoding="utf-8" standalone="yes"?>""")
         appendLine("<movie>")
         appendLine("  <title>${item.title.esc()}</title>")
@@ -171,6 +174,9 @@ object NfoWriter {
         if (item.year != null) appendLine("  <year>${item.year}</year>")
         if (!item.overview.isNullOrBlank()) {
             appendLine("  <plot>${item.overview.esc()}</plot>")
+        }
+        CertificationResolver.resolve(ageRatingCascade, item.certifications)?.let {
+            appendLine("  <mpaa>${it.code.esc()}</mpaa>")
         }
         if (item.tmdbId != null) {
             appendLine("  <tmdbid>${item.tmdbId}</tmdbid>")
@@ -214,7 +220,7 @@ object NfoWriter {
         appendLine("</movie>")
     }
 
-    private fun buildTvShowXml(item: MediaItem, serverUrl: String? = null): String = buildString {
+    private fun buildTvShowXml(item: MediaItem, serverUrl: String? = null, ageRatingCascade: List<String> = emptyList()): String = buildString {
         appendLine("""<?xml version="1.0" encoding="utf-8" standalone="yes"?>""")
         appendLine("<tvshow>")
         appendLine("  <title>${item.title.esc()}</title>")
@@ -224,6 +230,9 @@ object NfoWriter {
         if (item.year != null) appendLine("  <year>${item.year}</year>")
         if (!item.overview.isNullOrBlank()) {
             appendLine("  <plot>${item.overview.esc()}</plot>")
+        }
+        CertificationResolver.resolve(ageRatingCascade, item.certifications)?.let {
+            appendLine("  <mpaa>${it.code.esc()}</mpaa>")
         }
         if (item.tmdbId != null) {
             appendLine("  <tmdbid>${item.tmdbId}</tmdbid>")

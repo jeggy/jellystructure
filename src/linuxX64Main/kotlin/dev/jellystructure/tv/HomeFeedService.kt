@@ -6,6 +6,7 @@ import dev.jellystructure.config.ConfigStore
 import dev.jellystructure.media.MediaStore
 import dev.jellystructure.model.MediaItem
 import dev.jellystructure.model.MediaKind
+import dev.jellystructure.resolver.CertificationResolver
 import dev.jellystructure.shared.tv.Channel
 import dev.jellystructure.shared.tv.ChannelConfig
 import dev.jellystructure.shared.tv.ChannelStyle
@@ -334,7 +335,7 @@ class HomeFeedService(
             if (cards.isNotEmpty()) Row(rowCfg.id, rowCfg.title ?: "Genre", RowKind.GENRE, cards) else null
         }
         RowKind.CUSTOM -> {
-            val matched = all.filter { ConditionEvaluator.matches(it, rowCfg.match, rowCfg.conditions, heroIds) }
+            val matched = all.filter { ConditionEvaluator.matches(it, rowCfg.match, rowCfg.conditions, heroIds, configStore.current.metadata.ageRatingCascade) }
             val filtered = when (rowCfg.mediaKind) {
                 "MOVIE"  -> matched.filter { it.kind == MediaKind.MOVIE }
                 "SERIES" -> matched.filter { it.kind == MediaKind.TV_SHOW }
@@ -419,7 +420,7 @@ class HomeFeedService(
             title = title,
             year = year,
             genre = genres.firstOrNull(),
-            rating = null,
+            rating = CertificationResolver.resolve(configStore.current.metadata.ageRatingCascade, certifications)?.code,
             posterUrl = RaviloImageUrl.poster(id),     // R133: keyed by MediaItem.id (on-disk artwork)
             backdropUrl = RaviloImageUrl.backdrop(id),
             progressPct = progressPct,
@@ -436,7 +437,7 @@ class HomeFeedService(
 
     private fun MediaItem.matchesChannel(ch: ChannelConfig, heroIds: Set<String>): Boolean {
         // R32: a condition stack supersedes the legacy single typed filters.
-        if (ch.conditions.isNotEmpty()) return ConditionEvaluator.matches(this, ch.match, ch.conditions, heroIds)
+        if (ch.conditions.isNotEmpty()) return ConditionEvaluator.matches(this, ch.match, ch.conditions, heroIds, configStore.current.metadata.ageRatingCascade)
         if (ch.filterNetwork != null && network.equals(ch.filterNetwork, ignoreCase = true)) return true
         if (ch.filterStudio  != null && studio.equals(ch.filterStudio,  ignoreCase = true)) return true
         if (ch.filterGenre   != null && genres.any { it.equals(ch.filterGenre, ignoreCase = true) }) return true

@@ -16,6 +16,8 @@ import dev.jellystructure.api.ArrConfig
 import dev.jellystructure.api.QBittorrentConfig
 import dev.jellystructure.api.QBittorrentPathMapping
 import dev.jellystructure.api.DiscoverFeedConfig
+import dev.jellystructure.api.MetadataConfig
+import dev.jellystructure.resolver.CertificationCatalog
 import dev.jellystructure.api.httpClient
 import io.ktor.client.request.delete
 import io.ktor.client.request.post
@@ -172,6 +174,22 @@ fun renderSettings(container: Element, scope: CoroutineScope, query: Map<String,
                   <div class="hint" style="margin-top:2px">After writing NFO or artwork, trigger Jellyfin metadata refresh automatically</div>
                 </div>
                 <span id="tell-jellyfin-toggle" class="toggle" style="cursor:pointer;flex-shrink:0;margin-left:12px"></span>
+              </div>
+            </div>
+
+            <div class="card set-section" id="sect-ageratings" data-tab="metadata">
+              <div class="row center"><h3 style="font-size:1rem;margin:0;">Age ratings</h3><span class="badge info" style="margin-left:8px;">region cascade</span></div>
+              <div class="tiny muted" style="margin:8px 0 2px;line-height:1.6;">
+                TMDB carries a separate certification per country. Jellystructure picks the one to store &amp; show by walking this
+                <b>region cascade</b> top-to-bottom and using the <b>first region that has a rating</b> for a title — the same
+                first-match idea as the language cascade. Reorder with &#9650;&#9660;; the top region wins whenever it has a certification.
+                This is fetched from TMDB on scan and stored for Ravilo &amp; the filter workbench to use.
+              </div>
+              <ol class="rc-list" id="rc-list"></ol>
+              <div class="rc-add" id="rc-add-wrap">
+                <span class="btn sm" id="rc-add">&#65291; Add region</span>
+                <div class="card rc-menu" id="rc-menu"></div>
+                <span class="tiny muted">If none of these have a rating, the title's own primary certification is shown as a last resort.</span>
               </div>
             </div>
 
@@ -513,6 +531,10 @@ private var pipeDragFrom = -1
 private var pipeInsertAt = -1
 private var settingsScope: CoroutineScope? = null
 
+// Phase 106 — age-rating region cascade (ordered ISO-3166-1 codes; empty = feature off).
+private val ageRatingCascade: MutableList<String> = mutableListOf()
+private var rcDragFrom: String? = null
+
 private fun populateForm(response: ConfigResponse) {
     val config = response.config
     effectiveScanThreads = response.effectiveScanThreads
@@ -522,6 +544,10 @@ private fun populateForm(response: ConfigResponse) {
     setInputValue("tmdb-key", config.apiKeys.tmdbV3Key)
     setInputValue("sa-api-key", config.apiKeys.streamingAvailabilityKey)
     setInputValue("fallback-language", config.languageRules.fallbackLanguage)
+
+    ageRatingCascade.clear()
+    ageRatingCascade.addAll(config.metadata.ageRatingCascade)
+    renderAgeRatingCascade()
 
     val disc = config.discover
     discoverEnabled = disc?.enabled ?: false
@@ -660,6 +686,7 @@ private fun attachListeners(scope: CoroutineScope) {
         updateToggle("tell-jellyfin-toggle", tellJellyfin)
         refreshTomlPreview(readForm())
     }
+    wireAgeRatingCascade()
 
     listOf("jellyfin-url", "jellyfin-token", "tmdb-key", "fallback-language").forEach { id ->
         document.getElementById(id)?.addEventListener("input") {
@@ -1039,6 +1066,9 @@ private fun readForm(): AppConfig = AppConfig(
     languageRules = LanguageRules(
         fallbackLanguage = getInputValue("fallback-language").ifEmpty { "en" },
     ),
+    metadata = MetadataConfig(
+        ageRatingCascade = ageRatingCascade.toList(),
+    ),
     behavior = Behavior(
         overwriteNfo = overwriteNfo,
         fetchImages = fetchImages,
@@ -1101,6 +1131,9 @@ private fun buildToml(c: AppConfig): String = buildString {
     appendLine()
     appendLine("[language_rules]")
     appendLine("""fallback_language = "${c.languageRules.fallbackLanguage}"""")
+    appendLine()
+    appendLine("[metadata]")
+    appendLine("age_rating_cascade = [${c.metadata.ageRatingCascade.joinToString(", ") { "\"$it\"" }}]")
     appendLine()
     appendLine("[behavior]")
     appendLine("overwrite_nfo = ${c.behavior.overwriteNfo}")
@@ -1252,6 +1285,100 @@ private fun setArrKeyBadgeResult(kind: String, ok: Boolean) {
     b.style.display = "inline"
     b.innerHTML = if (ok) """<span class="badge ok" style="font-size:.72rem">valid ✓</span>"""
                   else """<span class="badge bad" style="font-size:.72rem">invalid ✗</span>"""
+}
+
+// Phase 106 — age-rating region cascade card (Settings ▸ Metadata). Mirrors design/app/settings.html's
+// rc-list/rc-item/rc-add/rc-menu markup: reorder (▲▼ + drag), remove, add-from-catalog.
+private fun renderAgeRatingCascade() {
+    val listEl = document.getElementById("rc-list") as? HTMLElement ?: return
+    listEl.innerHTML = ""
+    if (ageRatingCascade.isEmpty()) {
+        val empty = document.createElement("div") as HTMLElement
+        empty.className = "tiny muted"
+        empty.style.padding = "6px 2px"
+        empty.textContent = "No regions added — age ratings won't be shown until you add at least one."
+        listEl.appendChild(empty)
+    }
+    ageRatingCascade.forEachIndexed { i, cc ->
+        val region = CertificationCatalog.BY_CODE[cc] ?: return@forEachIndexed
+        val li = document.createElement("li") as HTMLElement
+        li.className = "rc-item" + (if (i == 0) " top" else "")
+        li.setAttribute("draggable", "true")
+
+        val grip = document.createElement("span"); grip.className = "rc-grip"; grip.textContent = "⛷"
+        val ord = document.createElement("span"); ord.className = "rc-ord"; ord.textContent = (i + 1).toString()
+        val ccEl = document.createElement("span"); ccEl.className = "rc-cc"; ccEl.textContent = region.code
+        val nameEl = document.createElement("span"); nameEl.className = "rc-name"; nameEl.textContent = region.name
+        val sysEl = document.createElement("span"); sysEl.className = "rc-sys"; sysEl.textContent = region.system
+        val scaleEl = document.createElement("span"); scaleEl.className = "rc-scale"
+        scaleEl.innerHTML = region.scale.joinToString("") { "<span>${it}</span>" }
+        li.appendChild(grip); li.appendChild(ord); li.appendChild(ccEl); li.appendChild(nameEl); li.appendChild(sysEl); li.appendChild(scaleEl)
+        if (i == 0) {
+            val tag = document.createElement("span"); tag.className = "rc-top-tag"; tag.textContent = "shown by default"
+            li.appendChild(tag)
+        }
+        val actions = document.createElement("span"); actions.className = "rc-actions"
+        val up = document.createElement("span") as HTMLElement
+        up.className = "rc-btn up" + (if (i == 0) " dis" else ""); up.textContent = "▲"; up.title = "Move up"
+        up.addEventListener("click") { if (i > 0) { ageRatingCascade.add(i - 1, ageRatingCascade.removeAt(i)); renderAgeRatingCascade() } }
+        val down = document.createElement("span") as HTMLElement
+        down.className = "rc-btn down" + (if (i == ageRatingCascade.size - 1) " dis" else ""); down.textContent = "▼"; down.title = "Move down"
+        down.addEventListener("click") { if (i < ageRatingCascade.size - 1) { ageRatingCascade.add(i + 1, ageRatingCascade.removeAt(i)); renderAgeRatingCascade() } }
+        val rm = document.createElement("span") as HTMLElement
+        rm.className = "rc-btn rm"; rm.textContent = "✕"; rm.title = "Remove"
+        rm.addEventListener("click") { ageRatingCascade.removeAt(i); renderAgeRatingCascade() }
+        actions.appendChild(up); actions.appendChild(down); actions.appendChild(rm)
+        li.appendChild(actions)
+
+        li.addEventListener("dragstart") { rcDragFrom = cc; li.classList.add("dragging") }
+        li.addEventListener("dragend") { rcDragFrom = null; renderAgeRatingCascade() }
+        li.addEventListener("dragover") { e -> e.preventDefault(); if (rcDragFrom != null && rcDragFrom != cc) li.classList.add("drag-over") }
+        li.addEventListener("dragleave") { li.classList.remove("drag-over") }
+        li.addEventListener("drop") { e ->
+            e.preventDefault()
+            val from = rcDragFrom
+            if (from != null && from != cc) {
+                ageRatingCascade.remove(from)
+                ageRatingCascade.add(ageRatingCascade.indexOf(cc), from)
+                renderAgeRatingCascade()
+            }
+        }
+        listEl.appendChild(li)
+    }
+    renderAgeRatingMenu()
+}
+
+private fun renderAgeRatingMenu() {
+    val menuEl = document.getElementById("rc-menu") as? HTMLElement ?: return
+    val avail = CertificationCatalog.REGIONS.filter { it.code !in ageRatingCascade }
+    if (avail.isEmpty()) {
+        menuEl.innerHTML = """<div class="tiny muted" style="padding:8px 9px;">All regions added.</div>"""
+        return
+    }
+    menuEl.innerHTML = avail.joinToString("") { r ->
+        """<div class="rc-mi" data-add="${r.code}"><span class="rc-cc">${r.code}</span><span class="rc-name">${r.name}</span><span class="rc-sys">${r.system}</span></div>"""
+    }
+    menuEl.querySelectorAll("[data-add]").let { els ->
+        for (i in 0 until els.length) {
+            val el = els.item(i) as? HTMLElement ?: continue
+            el.addEventListener("click") {
+                val code = el.getAttribute("data-add") ?: return@addEventListener
+                ageRatingCascade.add(code)
+                (document.getElementById("rc-add-wrap") as? HTMLElement)?.classList?.remove("open")
+                renderAgeRatingCascade()
+            }
+        }
+    }
+}
+
+private fun wireAgeRatingCascade() {
+    val addBtn = document.getElementById("rc-add") as? HTMLElement ?: return
+    val addWrap = document.getElementById("rc-add-wrap") as? HTMLElement ?: return
+    addBtn.addEventListener("click") { e ->
+        e.stopPropagation()
+        addWrap.classList.toggle("open")
+    }
+    document.addEventListener("click") { addWrap.classList.remove("open") }
 }
 
 private fun renderArrRoots(kind: String, roots: List<String>) {

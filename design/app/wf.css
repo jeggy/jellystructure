@@ -564,3 +564,50 @@ hr.dash { border: none; border-top: 1px solid var(--line); margin: 18px 0; }
 .blk-item .pipe-ic { width: 30px; height: 30px; }
 .blk-item .nm { font-weight: 600; font-size: .85rem; }
 .blk-item .ds { font-size: .72rem; color: var(--ink-soft); line-height: 1.3; }
+
+/* Phase 106 — age-rating region cascade (Settings → Metadata) */
+.rc-list { list-style: none; margin: 12px 0 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.rc-item { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border: 1px solid var(--line-2); border-radius: 10px; background: var(--fill-2); }
+.rc-item.top { border-color: rgba(123,110,240,.5); background: var(--hi-soft); }
+.rc-grip { flex: none; cursor: grab; color: var(--ink-dim); font-size: 1rem; line-height: 1; user-select: none; padding: 0 2px; }
+.rc-grip:active { cursor: grabbing; }
+.rc-item.dragging { opacity: .45; }
+.rc-item.drag-over { box-shadow: 0 -3px 0 var(--hi); border-color: var(--hi); }
+.rc-ord { width: 24px; height: 24px; flex: none; border-radius: 7px; background: var(--fill-3); color: var(--ink-soft); font-weight: 700; font-size: .8rem; display: inline-flex; align-items: center; justify-content: center; }
+.rc-item.top .rc-ord { background: var(--hi); color: #fff; }
+.rc-cc { font-family: 'JetBrains Mono', monospace; font-weight: 700; font-size: .78rem; padding: 3px 7px; border-radius: 6px; background: var(--fill-3); color: var(--ink); letter-spacing: .5px; }
+.rc-name { font-weight: 600; }
+.rc-sys { color: var(--ink-dim); font-size: .8rem; }
+.rc-scale { display: inline-flex; gap: 4px; margin-left: 2px; flex-wrap: wrap; }
+.rc-scale span { font-size: .62rem; font-weight: 600; padding: 1px 5px; border-radius: 4px; background: var(--fill-3); color: var(--ink-soft); }
+.rc-top-tag { font-size: .58rem; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; color: var(--acc-ink); border: 1px solid rgba(123,110,240,.4); padding: 2px 6px; border-radius: 20px; }
+.rc-actions { margin-left: auto; display: inline-flex; gap: 4px; }
+.rc-btn { width: 28px; height: 28px; border-radius: 7px; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; color: var(--ink-soft); border: 1px solid var(--line-2); background: transparent; font-size: .8rem; }
+.rc-btn:hover { color: var(--ink); background: var(--fill-3); }
+.rc-btn.rm:hover { color: var(--bad); border-color: var(--bad); }
+.rc-btn.dis { opacity: .3; pointer-events: none; }
+.rc-add { display: flex; align-items: center; gap: 12px; margin-top: 12px; position: relative; }
+.rc-menu { position: absolute; top: 40px; left: 0; z-index: 40; width: 260px; max-height: 260px; overflow: auto; padding: 6px; display: none; }
+.rc-add.open .rc-menu { display: block; }
+.rc-mi { display: flex; align-items: center; gap: 9px; padding: 8px 9px; border-radius: 8px; cursor: pointer; }
+.rc-mi:hover { background: var(--hi-soft); }
+
+/* Phase 106 — certification badge (pagebar) + cascade-resolution trace (media/series detail) */
+.cert { display: inline-flex; align-items: stretch; overflow: hidden; border-radius: 7px; border: 1px solid var(--line-2); line-height: 1; vertical-align: middle; }
+.cert .cert-rg { display: inline-flex; align-items: center; font-size: .62rem; font-weight: 700; letter-spacing: .5px; color: var(--ink-soft); background: var(--fill-3); padding: 0 6px; }
+.cert .cert-code { display: inline-flex; align-items: center; font-size: .78rem; font-weight: 800; color: #fff; padding: 4px 8px; }
+.cert.lvl-0 .cert-code { background: #2e9e6b; }
+.cert.lvl-1 .cert-code { background: #3a9bd6; }
+.cert.lvl-2 .cert-code { background: #d69a2a; color: #1a1204; }
+.cert.lvl-3 .cert-code { background: #e0792f; }
+.cert.lvl-4 .cert-code { background: #d64541; }
+.rc-trace { display: flex; flex-direction: column; }
+.rc-tr { display: flex; align-items: center; gap: 9px; padding: 7px 4px; font-size: .78rem; }
+.rc-tr + .rc-tr { border-top: 1px dashed var(--line); }
+.rc-tr .rc-cc { font-family: 'JetBrains Mono', monospace; font-weight: 700; font-size: .66rem; padding: 2px 6px; border-radius: 5px; background: var(--fill-3); color: var(--ink); }
+.rc-tr .rc-tn { color: var(--ink-soft); }
+.rc-tr .rc-tv { margin-left: auto; color: var(--ink-dim); font-size: .72rem; }
+.rc-tr.skip { opacity: .55; }
+.rc-tr.skip .rc-cc { text-decoration: line-through; }
+.rc-tr.use .cert { margin-left: auto; }
+.rc-tr.rest { opacity: .4; }

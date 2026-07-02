@@ -128,6 +128,11 @@ data class MediaItem(
     val sonarrNextAiringSeason: Int? = null,
     val sonarrNextAiringEpisode: Int? = null,
     val sonarrNextAiringTitle: String? = null,
+    // Phase 106: raw per-country TMDB certifications (uppercase ISO-3166-1 → code), e.g. {"DK":"15","US":"PG-13"}.
+    // The SHOWN rating is never stored — it's resolved on read from this map + the configured region
+    // cascade (dev.jellystructure.resolver.CertificationResolver), so re-ordering the cascade changes
+    // what's displayed everywhere with no re-scan.
+    val certifications: Map<String, String> = emptyMap(),
 )
 
 @Serializable

@@ -97,7 +97,7 @@ fun main() = runBlocking {
     val dataDir = dbFile.substringBeforeLast('/')
     val jsTagStore = dev.jellystructure.media.JsTagStore("$dataDir/js-tags.json")
     jsTagStore.load()
-    val mediaStore = MediaStore(db, jsTagStore)
+    val mediaStore = MediaStore(db, jsTagStore, configStore)
     mediaStore.load()
     // Catch exceptions escaping fire-and-forget coroutines so one failure can't abort the whole
     // Kotlin/Native process (unhandled → SIGABRT/134); log and keep running. See Server.appScope.
@@ -415,7 +415,7 @@ suspend fun executePipeline(
                 for (item in workingSet) {
                     val current = store.get(item.id) ?: item
                     if (step.overwrite || cfg.behavior.overwriteNfo) {
-                        runCatching { NfoWriter.write(current, serverUrl) }
+                        runCatching { NfoWriter.write(current, serverUrl, cfg.metadata.ageRatingCascade) }
                             .onFailure { Logger.warn("write_nfo failed for '${item.id}': ${it.message}") }
                     }
                 }
