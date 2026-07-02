@@ -21,8 +21,10 @@ data class ApiKeyRow(
     val revoked: Boolean,
 )
 
-/** Phase 111 — jellystructure-issued API keys for external tools, bound to a Jellyfin user and fenced
- *  to `/api/remote/**` by AuthPlugin. Only [sha256Hex] of the plaintext key is ever stored. */
+// Phase 111 — jellystructure-issued API keys for external tools, bound to a Jellyfin user and fenced
+// to /api/remote/** by AuthPlugin. Only sha256Hex of the plaintext key is ever stored.
+// (Line comment on purpose: Kotlin block comments NEST, so the `/*` inside "/api/remote/**" would
+// open a nested comment that never closes and break the whole file.)
 class ApiKeyStore(private val db: JellystructureDb) {
     // O(1)-cached like device tokens (Phase 111 FR A.3) — most requests hit this, not the DB.
     private data class CacheEntry(val data: ApiKeyData, val cachedAt: Long)

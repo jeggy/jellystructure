@@ -1623,7 +1623,7 @@ private suspend fun loadIngestCard() {
                 dev.jellystructure.copyToClipboard(value)
                 val original = btn.textContent
                 btn.textContent = "Copied!"
-                window.setTimeout({ btn.textContent = original }, 1500)
+                window.setTimeout({ btn.textContent = original; null }, 1500)
             }
         }
     }

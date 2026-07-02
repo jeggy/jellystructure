@@ -90,13 +90,14 @@ fun main() = runBlocking {
     // Phase 118 (FR B.1) — first thing: an unhandled exception anywhere in this process (not just once
     // the server is up) writes a crash marker + attempts a synchronous webhook, since the selector's
     // failure mode cancels main() outright and there's no later "safe" point to install this from.
-    val dataDir = configFile.substringBeforeLast('/', missingDelimiterValue = ".")
-    dev.jellystructure.ops.installCrashHook(dataDir)
+    // (Named crashMarkerDir, not dataDir — a `dataDir` derived from DB_FILE already exists below.)
+    val crashMarkerDir = configFile.substringBeforeLast('/', missingDelimiterValue = ".")
+    dev.jellystructure.ops.installCrashHook(crashMarkerDir)
 
     val configStore = ConfigStore(configFile)
     configStore.load()
     dev.jellystructure.ops.setCrashWebhookUrl(configStore.current.behavior.notificationsWebhook)
-    dev.jellystructure.ops.reportCrashRecoveryIfAny(dataDir, configStore)
+    dev.jellystructure.ops.reportCrashRecoveryIfAny(crashMarkerDir, configStore)
 
     val db = createDatabase(dbFile)
     val sessionService = SessionService(db)

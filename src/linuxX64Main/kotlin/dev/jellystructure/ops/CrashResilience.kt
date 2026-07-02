@@ -3,6 +3,7 @@ package dev.jellystructure.ops
 import dev.jellystructure.config.ConfigStore
 import dev.jellystructure.log.Logger
 import dev.jellystructure.server.routes.fireWebhook
+import kotlin.concurrent.Volatile
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.io.buffered
 import kotlinx.io.files.Path
@@ -14,8 +15,8 @@ import platform.posix.system as posixSystemBlocking
 /**
  * Phase 118 (FR B) — Ktor Native's selector is a child of the server engine's job; a fatal exception
  * there cancels the engine via structured concurrency and unwinds `main()`. `setUnhandledExceptionHook`
- * cannot keep the process alive (that's an external supervisor's job — see scripts/run-supervised.sh /
- * the sample systemd unit) — it's a last-gasp reporter: write a crash marker to disk and attempt one
+ * cannot keep the process alive (that's an external supervisor's job — `restart: unless-stopped` in
+ * docker-compose once containers land) — it's a last-gasp reporter: write a crash marker to disk and attempt one
  * *synchronous* webhook POST, both without any coroutine/selector machinery, since that's exactly what
  * just died. [installCrashHook] must be called first thing in `main()`, before any coroutine work starts.
  */
@@ -28,7 +29,7 @@ fun setCrashWebhookUrl(url: String) {
     crashWebhookUrl = url
 }
 
-@OptIn(kotlin.native.ExperimentalNativeApi::class, ExperimentalForeignApi::class)
+@OptIn(kotlin.experimental.ExperimentalNativeApi::class, ExperimentalForeignApi::class)
 fun installCrashHook(dataDir: String) {
     kotlin.native.setUnhandledExceptionHook { throwable ->
         runCatching {

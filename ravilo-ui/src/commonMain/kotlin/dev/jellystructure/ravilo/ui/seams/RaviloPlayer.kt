@@ -43,6 +43,18 @@ expect class RaviloPlayer() {
 
     fun release()
 
+    /**
+     * R157 (FR-R157-1.3, the documented fallback) — on web, the Compose canvas has no accessible
+     * alpha/transparency toggle in this Compose Multiplatform version's `CanvasBasedWindow` API
+     * (verified: no such parameter exists), so the video can't simply show through a transparent
+     * scene as originally hoped. Instead the `<video>` element swaps z-order with the canvas: on top
+     * (with `pointer-events: none`, so clicks still reach the canvas beneath) while chrome is hidden
+     * so the picture is visible; back behind the canvas when chrome is shown so Compose's opaque
+     * chrome paints over it and the canvas receives pointer events for the controls. No-op on
+     * Android, where the video surface is already in-scene via TextureView.
+     */
+    fun setChromeVisible(visible: Boolean)
+
     val positionMs: Long
     val durationMs: Long
     val bufferedMs: Long

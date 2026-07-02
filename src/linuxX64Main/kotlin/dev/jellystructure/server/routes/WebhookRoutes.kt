@@ -124,9 +124,9 @@ private suspend fun nudgeAndIngest(
 
     // Bounded fallback poll (~5 min per spec FR A.3) — Jellyfin's own monitor settle delay is ~60s even
     // after the nudge above; poll for the item to actually exist rather than guessing a fixed wait.
-    val deadline = platform.posix.time(null) + 5 * 60
+    val deadline = dev.jellystructure.nowEpochSec() + 5 * 60
     var found: dev.jellystructure.auth.JellyfinItem? = null
-    while (platform.posix.time(null) < deadline) {
+    while (dev.jellystructure.nowEpochSec() < deadline) {
         kotlinx.coroutines.delay(10_000L)
         found = jellyfinClient.getItemByPath(baseUrl, token, jellyfinPath)
         if (found != null) break

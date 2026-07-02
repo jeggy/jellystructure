@@ -15,6 +15,7 @@ import dev.jellystructure.resolver.LanguageResolver
 import dev.jellystructure.resolver.primaryAudioLanguage
 import dev.jellystructure.torrent.SeedingCheckResult
 import dev.jellystructure.torrent.SeedingGuard
+import kotlin.concurrent.Volatile
 import kotlinx.cinterop.ByteVar
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.allocArray
@@ -367,10 +368,10 @@ class MediaJobQueue(
         sb.toString()
     }
 
-    private fun epochSeconds(): Long = platform.posix.time(null)
+    private fun epochSeconds(): Long = dev.jellystructure.nowEpochSec()
 }
 
 // Concurrent HTTP handlers can call enqueue() at the same time — AtomicInt (not a plain var) keeps the
 // id suffix collision-free under real concurrency, matching the AtomicInt usage in the scan worker pool.
 private val jobSeq = kotlin.concurrent.AtomicInt(0)
-private fun genId(): String = "${platform.posix.time(null)}-${jobSeq.incrementAndGet()}"
+private fun genId(): String = "${dev.jellystructure.nowEpochSec()}-${jobSeq.incrementAndGet()}"

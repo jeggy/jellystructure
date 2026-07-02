@@ -11,10 +11,11 @@ import dev.jellystructure.ravilo.ui.RaviloRoot
 @OptIn(ExperimentalComposeUiApi::class)
 @Suppress("DEPRECATION_ERROR")
 fun main() {
-    // R157 — opaque=false lets the canvas show through wherever Compose paints nothing (or an
-    // explicitly transparent fill): the player screen relies on this so the <video> element sitting
-    // behind the canvas (RaviloPlayerWasm.kt) is actually visible instead of painted over.
-    CanvasBasedWindow(title = "Ravilo", opaque = false) {
+    // R157 — this CanvasBasedWindow API has no canvas-alpha/opaque parameter in this Compose
+    // Multiplatform version (verified directly against its signature), so the canvas can't be made
+    // transparent. Video visibility while the player's chrome is hidden is instead achieved by
+    // RaviloPlayer.setChromeVisible's z-index swap — see RaviloPlayerWasm.kt / RaviloPlayer.kt.
+    CanvasBasedWindow(title = "Ravilo") {
         RaviloRoot()
     }
 }

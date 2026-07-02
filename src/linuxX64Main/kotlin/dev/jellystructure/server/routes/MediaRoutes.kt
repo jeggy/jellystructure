@@ -1614,7 +1614,7 @@ fun Route.mediaRoutes(
                     .onFailure { nfoFail++; Logger.warn("batch-push: NFO write failed for '${item.id}': ${it.message}") }
                 if (!item.jellyfinId.isNullOrBlank()) {
                     val ok = jellyfinClient.refreshItem(freshCfg.apiKeys.jellyfinUrl, freshCfg.apiKeys.jellyfinToken, item.jellyfinId, full = true)
-                    if (ok) { refreshOk++; store.updateOne(current.copy(jfSyncedAt = platform.posix.time(null))) }
+                    if (ok) { refreshOk++; store.updateOne(current.copy(jfSyncedAt = dev.jellystructure.nowEpochSec())) }
                     else { refreshFail++; Logger.warn("batch-push: Jellyfin refresh failed for '${item.id}'") }
                 }
             }
@@ -1669,7 +1669,7 @@ internal suspend fun pushToJellyfin(
     var refreshOk = true
     if (!item.jellyfinId.isNullOrBlank()) {
         refreshOk = jellyfinClient.refreshItem(cfg.apiKeys.jellyfinUrl, cfg.apiKeys.jellyfinToken, item.jellyfinId, full = true)
-        if (refreshOk) store.updateOne(current.copy(jfSyncedAt = platform.posix.time(null)))
+        if (refreshOk) store.updateOne(current.copy(jfSyncedAt = dev.jellystructure.nowEpochSec()))
         else Logger.warn("pushToJellyfin: Jellyfin refresh failed for '${item.id}' (jellyfinId=${item.jellyfinId})")
     } else {
         Logger.warn("pushToJellyfin: no jellyfinId for '${item.id}' — skipping per-item Jellyfin refresh")

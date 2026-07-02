@@ -124,10 +124,9 @@ private data class CreateApiKeyRequest(
     @SerialName("jellyfin_username") val jellyfinUsername: String,
 )
 
-/**
- * Phase 111 (FR A.2) — Settings ▸ Connections ▸ "API keys" CRUD. Cookie-gated (falls through
- * AuthPlugin's default /api/** branch — not under /api/remote/**, so an API key can't manage keys).
- */
+// Phase 111 (FR A.2) — Settings ▸ Connections ▸ "API keys" CRUD. Cookie-gated (falls through
+// AuthPlugin's default /api/** branch — not under /api/remote/**, so an API key can't manage keys).
+// (Line comment on purpose: Kotlin block comments nest, so the `/*` in those path globs would break the file.)
 fun Route.apiKeyManagementRoutes(apiKeyStore: ApiKeyStore) {
     route("/settings/api-keys") {
         get {
