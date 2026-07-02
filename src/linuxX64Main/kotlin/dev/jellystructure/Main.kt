@@ -306,8 +306,9 @@ fun nextRunDelayMs(cron: String, nowEpochSec: Long): Long? = memScoped {
     (target - nowEpochSec) * 1_000L
 }
 
-/** ms duration for a freshness cadence string: "weekly", "monthly", "6months", "yearly", "never" */
+/** ms duration for a freshness cadence string: "daily", "weekly", "monthly", "6months", "yearly", "never" */
 fun cadenceMs(cadence: String): Long? = when (cadence.trim().lowercase()) {
+    "daily"   -> 24 * 3_600_000L
     "weekly"  -> 7  * 24 * 3_600_000L
     "monthly" -> 30 * 24 * 3_600_000L
     "6months" -> 180 * 24 * 3_600_000L
