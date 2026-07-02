@@ -13,6 +13,49 @@
     background: var(--fill-2); color: var(--ink); cursor: pointer; }
   .log .run { color: var(--ink-dim); font-size: .9em; margin-right: 5px; }
   .log .step { color: var(--ink-dim); font-size: .82em; opacity: .8; }
+  .viewseg span { cursor: pointer; }
+  .jobs-count { display:inline-flex; align-items:center; justify-content:center; min-width:16px; height:16px; padding:0 5px; border-radius:20px; background:var(--warn); color:#1a1204; font-size:.62rem; font-weight:800; margin-left:6px; }
+  .wk-dot { width:10px; height:10px; border-radius:50%; flex:none; }
+  .wk-dot.busy { background:var(--warn); box-shadow:0 0 0 4px var(--warn-soft); }
+  .wk-dot.idle { background:var(--ink-dim); }
+  .jobrow { display:flex; align-items:center; gap:12px; padding:11px 4px; border-top:1px dashed var(--line); }
+  .jobrow:first-child { border-top:none; }
+  .jq-pos { width:22px; height:22px; flex:none; border-radius:6px; background:var(--fill-3); color:var(--ink-soft); font-size:.72rem; font-weight:700; display:flex; align-items:center; justify-content:center; }
+  .jq-ic { width:22px; flex:none; text-align:center; font-weight:800; }
+  .jq-ic.ok { color:var(--ok); } .jq-ic.bad { color:var(--bad); }
+  .jq-main { flex:1; min-width:0; }
+  .jq-title { font-size:.86rem; }
+  .jq-sub { font-size:.72rem; color:var(--ink-dim); margin-top:2px; }
+  .jobrow.leaving { opacity:0; transform:translateX(10px); transition:opacity .25s, transform .25s; }
+  /* searchable run picker */
+  .runpick { position: relative; display: inline-block; z-index: 5; }
+  .runpick.open { z-index: 100; }
+  /* lift the whole filter card above the cards below it while the picker is open */
+  .card:has(.runpick.open) { position: relative; z-index: 60; }
+  .runpick-btn { display:inline-flex; align-items:center; gap:8px; font:inherit; font-size:.8rem; padding:5px 10px; border-radius:8px; border:1px solid var(--line-2); background:var(--fill-2); color:var(--ink); cursor:pointer; min-width:250px; }
+  .runpick-btn:hover { border-color:var(--line); }
+  .runpick-btn .rp-label { flex:1; text-align:left; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .runpick-btn .rp-chev { color:var(--ink-dim); font-size:.7rem; }
+  .rp-dot { width:8px; height:8px; border-radius:50%; flex:none; background:var(--ink-dim); }
+  .rp-dot.ok { background:var(--ok); } .rp-dot.warn { background:var(--warn); } .rp-dot.bad { background:var(--bad); }
+  .runpick-pop { position:absolute; top:38px; left:0; z-index:60; width:360px; max-width:82vw; background:var(--fill); border:1px solid var(--line-2); border-radius:11px; box-shadow:var(--shadow); display:none; overflow:hidden; }
+  .runpick.open .runpick-pop { display:block; }
+  .runpick-search { padding:9px; border-bottom:1px solid var(--line); }
+  .runpick-search input { width:100%; font:inherit; font-size:.82rem; padding:8px 11px; border-radius:8px; border:1px solid var(--line-2); background:var(--fill-2); color:var(--ink); }
+  .runpick-search input:focus { outline:none; border-color:var(--hi); }
+  .runpick-list { max-height:320px; overflow:auto; padding:5px; }
+  .runpick-grp { font-size:.6rem; text-transform:uppercase; letter-spacing:.07em; color:var(--ink-dim); font-weight:700; padding:9px 9px 4px; }
+  .runpick-opt { display:grid; grid-template-columns:auto 58px 1fr auto; align-items:center; gap:9px; padding:8px 9px; border-radius:8px; cursor:pointer; }
+  .runpick-opt:hover, .runpick-opt.active { background:var(--hi-soft); }
+  .runpick-opt.sel { box-shadow:inset 0 0 0 1px rgba(123,110,240,.45); }
+  .runpick-opt .rp-id { font-family:'JetBrains Mono',monospace; font-size:.76rem; color:var(--ink); }
+  .runpick-opt .rp-main { min-width:0; font-size:.78rem; color:var(--ink-soft); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .runpick-opt .rp-main .rp-when { color:var(--ink-dim); font-size:.9em; }
+  .runpick-opt .rp-st { font-size:.58rem; font-weight:700; text-transform:uppercase; letter-spacing:.04em; padding:2px 7px; border-radius:20px; white-space:nowrap; }
+  .runpick-opt .rp-st.running, .runpick-opt .rp-st.partial { color:var(--warn); background:var(--warn-soft); }
+  .runpick-opt .rp-st.done { color:var(--ok); background:var(--ok-soft); }
+  .runpick-opt .rp-st.failed { color:var(--bad); background:var(--bad-soft); }
+  .runpick-empty { padding:18px; text-align:center; color:var(--ink-dim); font-size:.8rem; }
 </style>
 </head>
 <body class="wf-body app-body">
@@ -28,15 +71,21 @@
   </div>
   <p class="page-sub">The full console for the job that's also shown in the ambient dock. Everything streams over WebSocket — no polling, no page reloads. Items with problems are flagged for attention and the run keeps going.</p>
 
+  <div class="row center" style="margin-bottom:14px;"><span class="seg viewseg" id="viewseg"><span class="on" data-view="console">Scan console</span><span data-view="jobs">Jobs &amp; workers <span class="jobs-count">4</span></span></span></div>
+
+  <div id="view-console">
+
   <div class="card" style="margin-bottom:14px;">
     <div class="row center" style="flex-wrap:wrap;gap:8px;">
       <span class="muted tiny">run:</span>
-      <select class="run-sel" id="run-filter">
-        <option value="">All runs</option>
-        <option value="2847" selected>▶ #2847 · scheduled · 03:00 · running</option>
-        <option value="2846">#2846 · Run pipeline now · 13:58</option>
-        <option value="2845">#2845 · scheduled · yesterday 03:00</option>
-      </select>
+      <div class="runpick" id="runpick">
+        <button class="runpick-btn" id="runpick-btn" type="button"><span class="rp-dot"></span><span class="rp-label">All runs</span><span class="rp-chev">▾</span></button>
+        <div class="runpick-pop" id="runpick-pop">
+          <div class="runpick-search"><input type="text" id="runpick-search" placeholder="Search runs — #id, type, status…" autocomplete="off"></div>
+          <div class="runpick-list" id="runpick-list"></div>
+          <div class="runpick-empty" id="runpick-empty" style="display:none;">No matching runs</div>
+        </div>
+      </div>
       <span class="muted tiny" style="margin-left:6px;">filter:</span>
       <span class="chip fchip on">All</span>
       <span class="chip fchip">Scan</span>
@@ -98,6 +147,55 @@
       <div class="tiny muted center-x" style="margin-top:8px;">streaming live</div>
     </div>
   </div>
+  </div><!-- /view-console -->
+
+  <div id="view-jobs" style="display:none;">
+    <div class="note blue" style="margin-bottom:14px;display:flex;gap:11px;align-items:flex-start;">
+      <span style="flex:none;">ℹ</span>
+      <div class="tiny" style="line-height:1.6;">Heavy media edits — an audio <b>re-order</b> is an <span class="mono">ffmpeg</span> remux (a full stream copy, 4K included) — are queued through a <b>single media worker</b> and run <b>one at a time</b>. So clicking <b>Apply</b> on several titles, or two admins re-ordering at once, can't saturate CPU/disk or stall the API (no more 504s). Scanning keeps its own parallel workers.</div>
+    </div>
+
+    <div class="card" style="margin-bottom:14px;">
+      <div class="row center" style="gap:10px;flex-wrap:wrap;">
+        <span class="wk-dot busy"></span><b>Media worker</b><span class="badge warn">busy</span>
+        <span class="muted tiny">concurrency 1 · FIFO queue · remux runs at low I/O priority</span>
+        <span class="spacer"></span>
+        <span class="chip"><b>1</b> running</span><span class="chip"><b id="q-count">3</b> queued</span><span class="chip ok" style="background:var(--ok-soft);">12 done today</span>
+      </div>
+    </div>
+
+    <div class="card" style="margin-bottom:14px;">
+      <div class="row center"><h4 style="margin:0;">Running now</h4><span class="spacer"></span><span class="mono tiny">Sintel (2010) · 4K · 18.4 GB</span></div>
+      <hr class="dash" style="margin:10px 0;">
+      <div class="row center" style="gap:8px;flex-wrap:wrap;">
+        <span class="badge warn">audio re-order</span><span class="muted tiny mono">ffmpeg -map 0 -c copy (remux)</span>
+        <span class="spacer"></span><span class="tiny muted">queued by <b>Eyð</b> · started 14:02</span>
+        <span class="btn sm bad" id="cancel-run">Cancel</span>
+      </div>
+      <div class="bar" style="margin-top:10px;"><i id="jobbar" style="width:37%"></i></div>
+      <div class="tiny muted mono" style="margin-top:6px;" id="jobff">frame=52180 fps=734 time=00:12:20 speed=6.2x · ~2m10s left</div>
+    </div>
+
+    <div class="card" style="margin-bottom:14px;">
+      <div class="row center"><h4 style="margin:0;">Queue</h4><span class="chip" style="margin-left:8px;"><b>3</b> waiting</span><span class="spacer"></span><span class="tiny muted">processed in order (FIFO)</span></div>
+      <hr class="dash" style="margin:10px 0 4px;">
+      <div id="jobqueue">
+        <div class="jobrow" data-job="q1"><span class="jq-pos">1</span><div class="jq-main"><div class="jq-title">Re-order audio · <b>Big Buck Bunny (2008)</b></div><div class="jq-sub">4K remux · 12.1 GB · queued by Eyð · 14:03</div></div><span class="badge">queued</span><span class="btn sm ghost jq-cancel">Cancel</span></div>
+        <div class="jobrow" data-job="q2"><span class="jq-pos">2</span><div class="jq-main"><div class="jq-title">Re-order audio across series · <b>Nordvest</b></div><div class="jq-sub">8 episodes · ~19 GB · queued by Marin · 14:05</div></div><span class="badge">queued</span><span class="btn sm ghost jq-cancel">Cancel</span></div>
+        <div class="jobrow" data-job="q3"><span class="jq-pos">3</span><div class="jq-main"><div class="jq-title">Re-order audio · <b>Cosmos Laundromat</b></div><div class="jq-sub">HD remux · 2.4 GB · queued by Eyð · 14:06</div></div><span class="badge">queued</span><span class="btn sm ghost jq-cancel">Cancel</span></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="row center"><h4 style="margin:0;">Recent</h4><span class="spacer"></span><span class="btn sm ghost">Clear</span></div>
+      <hr class="dash" style="margin:10px 0 4px;">
+      <div id="jobrecent">
+        <div class="jobrow"><span class="jq-ic ok">✓</span><div class="jq-main"><div class="jq-title">Re-order audio · Caminandes 3</div><div class="jq-sub">HD remux · 1.2 GB · by Marin · took 41s</div></div><span class="badge ok">done</span></div>
+        <div class="jobrow"><span class="jq-ic ok">✓</span><div class="jq-main"><div class="jq-title">Re-order audio · Agent 327</div><div class="jq-sub">4K remux · 9.8 GB · by Eyð · took 3m12s</div></div><span class="badge ok">done</span></div>
+        <div class="jobrow"><span class="jq-ic bad">✗</span><div class="jq-main"><div class="jq-title">Re-order audio · Wing It!</div><div class="jq-sub">failed · ffmpeg exit 1 (source unreadable) · flagged for attention</div></div><span class="badge bad">failed</span><span class="btn sm ghost">Retry</span></div>
+      </div>
+    </div>
+  </div><!-- /view-jobs -->
 </main>
 
 <script src="app-shell.js"></script>
@@ -132,15 +230,123 @@
   }));
   document.getElementById('errtog').addEventListener('click', e => e.currentTarget.classList.toggle('on'));
   // run picker — scope the log to one run (combines with the category/errors filters)
-  const runSel = document.getElementById('run-filter');
+  // searchable run picker — scales to many runs (replaces the native select)
+  let currentRun = '2847';
   function applyRunFilter() {
-    const r = runSel.value;
     log.querySelectorAll('div[data-run]').forEach(d => {
-      d.style.display = (!r || d.getAttribute('data-run') === r) ? '' : 'none';
+      d.style.display = (!currentRun || d.getAttribute('data-run') === currentRun) ? '' : 'none';
     });
   }
-  runSel.addEventListener('change', applyRunFilter);
+  (function runPicker() {
+    const RUNS = [
+      { id: '', label: 'All runs', status: 'all' },
+      { id: '2847', type: 'Scheduled',        when: 'Today 03:00',      status: 'running', group: 'Today' },
+      { id: '2846', type: 'Run pipeline now', when: 'Today 13:58',      status: 'done',    group: 'Today' },
+      { id: '2845', type: 'Scan library',     when: 'Today 09:12',      status: 'done',    group: 'Today' },
+      { id: '2844', type: 'Scheduled',        when: 'Yesterday 03:00',  status: 'done',    group: 'Yesterday' },
+      { id: '2843', type: 'Manual sync',      when: 'Yesterday 21:40',  status: 'partial', group: 'Yesterday' },
+      { id: '2842', type: 'Run pipeline now', when: 'Yesterday 16:05',  status: 'failed',  group: 'Yesterday' },
+      { id: '2841', type: 'Scan library',     when: 'Yesterday 11:18',  status: 'done',    group: 'Yesterday' },
+      { id: '2840', type: 'Scheduled',        when: 'Mon 03:00',        status: 'done',    group: 'This week' },
+      { id: '2839', type: 'Artwork refresh',  when: 'Mon 14:22',        status: 'done',    group: 'This week' },
+      { id: '2838', type: 'Scheduled',        when: 'Sun 03:00',        status: 'partial', group: 'This week' },
+      { id: '2837', type: 'Manual sync',      when: 'Sun 19:03',        status: 'done',    group: 'This week' },
+      { id: '2836', type: 'Scheduled',        when: 'Sat 03:00',        status: 'done',    group: 'This week' },
+      { id: '2835', type: 'Run pipeline now', when: 'Fri 10:47',        status: 'failed',  group: 'This week' },
+      { id: '2834', type: 'Scheduled',        when: 'Jun 24 03:00',     status: 'done',    group: 'Earlier' },
+      { id: '2833', type: 'Scan library',     when: 'Jun 23 20:11',     status: 'done',    group: 'Earlier' },
+      { id: '2832', type: 'Scheduled',        when: 'Jun 23 03:00',     status: 'done',    group: 'Earlier' },
+      { id: '2831', type: 'Manual sync',      when: 'Jun 22 12:30',     status: 'partial', group: 'Earlier' },
+      { id: '2830', type: 'Scheduled',        when: 'Jun 22 03:00',     status: 'done',    group: 'Earlier' },
+      { id: '2829', type: 'Run pipeline now', when: 'Jun 21 09:05',     status: 'done',    group: 'Earlier' },
+    ];
+    const wrap = document.getElementById('runpick');
+    const btn = document.getElementById('runpick-btn');
+    const listEl = document.getElementById('runpick-list');
+    const emptyEl = document.getElementById('runpick-empty');
+    const search = document.getElementById('runpick-search');
+    const dotCls = s => (s === 'running' || s === 'partial') ? 'warn' : s === 'failed' ? 'bad' : s === 'done' ? 'ok' : '';
+    function setSel(run) {
+      currentRun = run.id;
+      btn.querySelector('.rp-label').textContent = run.id ? '#' + run.id + ' · ' + run.type : 'All runs';
+      btn.querySelector('.rp-dot').className = 'rp-dot ' + dotCls(run.status);
+      applyRunFilter();
+    }
+    function render(q) {
+      q = (q || '').toLowerCase().trim();
+      let last = null, html = '', shown = 0;
+      RUNS.forEach(run => {
+        const hay = ((run.id || 'all runs') + ' ' + (run.type || '') + ' ' + (run.when || '') + ' ' + run.status).toLowerCase();
+        if (q && !hay.includes(q)) return;
+        shown++;
+        if (run.group && run.group !== last) { html += `<div class="runpick-grp">${run.group}</div>`; last = run.group; }
+        html += `<div class="runpick-opt${run.id === currentRun ? ' sel' : ''}" data-run="${run.id}">`
+          + `<span class="rp-dot ${dotCls(run.status)}"></span>`
+          + `<span class="rp-id">${run.id ? '#' + run.id : '—'}</span>`
+          + `<span class="rp-main">${run.id ? run.type + ' <span class="rp-when">· ' + run.when + '</span>' : 'Show every run'}</span>`
+          + (run.status && run.status !== 'all' ? `<span class="rp-st ${run.status}">${run.status}</span>` : '')
+          + `</div>`;
+      });
+      listEl.innerHTML = html;
+      emptyEl.style.display = shown ? 'none' : 'block';
+      listEl.querySelectorAll('.runpick-opt').forEach(o => o.onclick = () => { setSel(RUNS.find(r => String(r.id) === o.dataset.run)); close(); });
+    }
+    function open() { wrap.classList.add('open'); search.value = ''; render(''); setTimeout(() => search.focus(), 0); }
+    function close() { wrap.classList.remove('open'); }
+    btn.onclick = e => { e.stopPropagation(); wrap.classList.contains('open') ? close() : open(); };
+    search.oninput = () => render(search.value);
+    search.onkeydown = e => {
+      if (e.key === 'Escape') { close(); return; }
+      if (e.key === 'Enter') { const t = listEl.querySelector('.runpick-opt.active') || listEl.querySelector('.runpick-opt'); if (t) t.click(); return; }
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        e.preventDefault();
+        const opts = [...listEl.querySelectorAll('.runpick-opt')]; if (!opts.length) return;
+        let i = opts.findIndex(o => o.classList.contains('active'));
+        i = e.key === 'ArrowDown' ? Math.min(opts.length - 1, i + 1) : Math.max(0, i - 1);
+        opts.forEach(o => o.classList.remove('active')); opts[i].classList.add('active'); opts[i].scrollIntoView({ block: 'nearest' });
+      }
+    };
+    document.addEventListener('click', e => { if (!e.target.closest('#runpick')) close(); });
+    setSel(RUNS.find(r => r.id === '2847'));
+  })();
   applyRunFilter();
+
+  /* ---- view switcher: Scan console vs Jobs & workers ---- */
+  const viewseg = document.getElementById('viewseg');
+  const vConsole = document.getElementById('view-console'), vJobs = document.getElementById('view-jobs');
+  viewseg.addEventListener('click', e => {
+    const s = e.target.closest('[data-view]'); if (!s) return;
+    [...viewseg.children].forEach(x => x.classList.toggle('on', x === s));
+    const jobs = s.dataset.view === 'jobs';
+    vConsole.style.display = jobs ? 'none' : '';
+    vJobs.style.display = jobs ? '' : 'none';
+  });
+
+  /* ---- media-worker job animation + cancel ---- */
+  let jp = 37;
+  const jobbar = document.getElementById('jobbar'), jobff = document.getElementById('jobff');
+  setInterval(() => {
+    if (vJobs.style.display === 'none') return;
+    jp = jp >= 99 ? 37 : jp + 0.6;
+    if (jobbar) jobbar.style.width = jp.toFixed(0) + '%';
+    const left = Math.max(0, Math.round((100 - jp) * 2.4));
+    if (jobff) jobff.textContent = 'frame=' + (52180 + Math.round(jp * 900)) + ' fps=734 time=00:' + String(12 + Math.floor(jp / 8)).padStart(2, '0') + ':20 speed=6.2x · ~' + Math.floor(left / 60) + 'm' + (left % 60) + 's left';
+  }, 700);
+  function reindex() {
+    const rows = [...document.querySelectorAll('#jobqueue .jobrow')];
+    rows.forEach((r, i) => { const p = r.querySelector('.jq-pos'); if (p) p.textContent = i + 1; });
+    const n = rows.length;
+    document.getElementById('q-count').textContent = n;
+    document.querySelectorAll('#viewseg .jobs-count').forEach(c => c.textContent = n + 1);
+  }
+  document.getElementById('jobqueue').addEventListener('click', e => {
+    if (!e.target.closest('.jq-cancel')) return;
+    const row = e.target.closest('.jobrow'); row.classList.add('leaving');
+    setTimeout(() => { row.remove(); reindex(); }, 250);
+  });
+  document.getElementById('cancel-run').addEventListener('click', function () {
+    this.textContent = 'Cancelling…'; this.classList.add('disabled');
+  });
 })();
 </script>
 </body>

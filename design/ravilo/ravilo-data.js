@@ -104,16 +104,16 @@
         ep(1, 'Hvalvík', '58m', 'Detective Sigrun Restorff steps off the ferry into the town that raised her — and a body that won\u2019t let her leave.', 100, '2023-09-03'),
         ep(2, 'Bóndin', '54m', 'A farmer\u2019s confession unravels faster than the rope that bound him.', 100, '2023-09-10'),
         ep(3, 'Grindadráp', '61m', 'The grind paints the bay red; beneath the tide, an older debt surfaces.', 100, '2023-09-17'),
-        ep(4, 'Útróður', '57m', 'A prosecutor from Copenhagen arrives, and the case shifts language and loyalty.', 62, '2023-09-24'),
-        ep(5, 'Foss', '55m', 'Sigrun follows the money upriver to the salmon farm the whole town depends on.', 0, '2023-10-01'),
-        ep(6, 'Náttúra', '59m', 'A storm seals the island. The suspect list narrows to the people she loves.', 0, '2023-10-08'),
-        ep(7, 'Heim', '56m', 'The secret her father carried to sea washes back to the harbour wall.', 0, '2023-10-15'),
-        ep(8, 'Endi', '63m', 'Two truths, one confession, and a tide that takes everything back.', 0, '2023-10-22'),
+        ep(4, 'Útróður', '57m', 'A prosecutor from Copenhagen arrives, and the case shifts language and loyalty.', 100, '2023-09-24'),
+        ep(5, 'Foss', '55m', 'Sigrun follows the money upriver to the salmon farm the whole town depends on.', 100, '2023-10-01'),
+        ep(6, 'Náttúra', '59m', 'A storm seals the island. The suspect list narrows to the people she loves.', 100, '2023-10-08'),
+        ep(7, 'Heim', '56m', 'The secret her father carried to sea washes back to the harbour wall.', 100, '2023-10-15'),
+        ep(8, 'Endi', '63m', 'Two truths, one confession, and a tide that takes everything back.', 100, '2023-10-22'),
       ],
       [ // Season 2
-        ep(1, 'Nýtt Ár', '60m', 'A new year, a frozen harbour, and a face Sigrun buried long ago.', 0, '2024-11-10'),
-        ep(2, 'Toka', '52m', 'Fog swallows the road north; a routine call goes silent.', 0, '2024-11-17'),
-        ep(3, 'Djúpið', '58m', 'Divers find more than the wreck they were paid to forget.', 0, '2024-11-24'),
+        ep(1, 'Nýtt Ár', '60m', 'A new year, a frozen harbour, and a face Sigrun buried long ago.', 100, '2024-11-10'),
+        ep(2, 'Toka', '52m', 'Fog swallows the road north; a routine call goes silent.', 100, '2024-11-17'),
+        ep(3, 'Djúpið', '58m', 'Divers find more than the wreck they were paid to forget.', 45, '2024-11-24'),
         ep(4, 'Skuld', '55m', 'An old debt comes due in the only currency the coast respects.', 0, '2024-12-01'),
         ep(5, 'Brot', '57m', 'Everything cracks at once; Sigrun chooses which piece to save.', 0, '2024-12-08'),
         ep(6, 'Lokið', '64m', 'The coast keeps its dead, but not its secrets. Season finale.', 0, '2024-12-15'),
@@ -170,7 +170,58 @@
   //   available  → already in the Jellyfin library (Watch Now)
   //   fetching   → Radarr is grabbing it now (progress %)
   //   none       → not in library — the user can request a fetch via Radarr
-  const config = { radarr: true, sonarr: true, region: 'DK', regionName: 'Denmark' };
+  const config = { radarr: true, sonarr: true, region: 'DK', regionName: 'Denmark',
+    // Age-rating region cascade (global; set in Jellystructure → Settings → Metadata).
+    // Jellystructure resolves each title's certification by walking this ordered list and
+    // using the first region that has one. Here it drives the badge + the workbench facet.
+    ageRating: { cascade: ['DK', 'US', 'GB'] } };
+
+  // Certification systems per region (TMDB “release_dates” certifications), scaled by tier 0–4.
+  const CERT_SYS = {
+    DK: { name: 'Denmark',        system: 'Medierådet',        scale: ['A', '7', '11', '15', '15'] },
+    US: { name: 'United States',  system: 'MPA',              scale: ['G', 'PG', 'PG-13', 'R', 'NC-17'] },
+    GB: { name: 'United Kingdom', system: 'BBFC',             scale: ['U', 'PG', '12', '15', '18'] },
+    DE: { name: 'Germany',        system: 'FSK',              scale: ['0', '6', '12', '16', '18'] },
+    SE: { name: 'Sweden',         system: 'Statens medieråd', scale: ['Btl', '7', '11', '15', '15'] },
+    NO: { name: 'Norway',         system: 'Medietilsynet',    scale: ['A', '6', '12', '15', '18'] },
+  };
+  // map any certification code (or the item's base rating) to a 0–4 maturity tier for colour + scaling
+  function certTier(r) {
+    r = (r == null ? '' : String(r)).toUpperCase().trim();
+    if (r === 'G' || r === 'A' || r === 'U' || r === '0' || r === 'BTL' || r === 'TLL') return 0;
+    if (r === '7' || r === '6' || r === '9' || r === 'PG') return 1;
+    if (r === '11' || r === '12' || r === '12A' || r === 'PG-13') return 2;
+    if (r === '15' || r === '16' || r === 'R') return 3;
+    if (r === '18' || r === 'NC-17') return 4;
+    const n = parseInt(r, 10);
+    if (!isNaN(n)) return n <= 6 ? 1 : n <= 12 ? 2 : n <= 16 ? 3 : 4;
+    return 2;
+  }
+  // deterministic per-title certification map; some regions are intentionally absent so the
+  // cascade fallback (e.g. Denmark missing → United States) is visible in the demo.
+  function itemCerts(item) {
+    if (item._certs) return item._certs;
+    const tier = certTier(item.rating), h = hash(item.title), out = {};
+    Object.keys(CERT_SYS).forEach((rg, i) => {
+      if (((h >> (i * 3)) % 5) === 0) return;               // ~20% of regions absent per title
+      const sc = CERT_SYS[rg].scale; out[rg] = sc[Math.min(tier, sc.length - 1)];
+    });
+    if (!Object.keys(out).length) out.US = CERT_SYS.US.scale[Math.min(tier, 4)];
+    return (item._certs = out);
+  }
+  // resolve the rating to show for an item: first region in the cascade that has a cert, else any.
+  function ratingFor(item) {
+    if (!item) return null;
+    const certs = itemCerts(item);
+    const cascade = (config.ageRating && config.ageRating.cascade) || ['US'];
+    for (const rg of cascade) {
+      if (certs[rg] != null) { const s = CERT_SYS[rg]; return { region: rg, regionName: s.name, system: s.system, code: certs[rg], tier: certTier(certs[rg]) }; }
+    }
+    const any = Object.keys(certs)[0];
+    if (!any) return null;
+    const s = CERT_SYS[any];
+    return { region: any, regionName: s.name, system: s.system, code: certs[any], tier: certTier(certs[any]), fallback: true };
+  }
 
   const sources = [
     { id: 'netflix', name: 'Netflix', via: 'Tudum', wm: 'N', accent: '#e50914', enabled: true },
@@ -318,5 +369,5 @@
 
   const watched = { itemState, setItem, setItemWatched, epState, setEpWatched, setEpPct };
 
-  window.RAVILO = { studios, hero, rows, mergedNew, profiles, discover, grad, initials, episodesFor, seasonsFor, castFor, relatedFor, nextAiringFor, watched };
+  window.RAVILO = { studios, hero, rows, mergedNew, profiles, discover, grad, initials, episodesFor, seasonsFor, castFor, relatedFor, nextAiringFor, ratingFor, itemCerts, CERT_SYS, config, watched };
 })();

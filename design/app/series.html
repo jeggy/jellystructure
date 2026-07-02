@@ -73,6 +73,30 @@
   .ep.open { border-color: var(--hi); }
   .ep-row { display: flex; align-items: center; gap: 14px; padding: 11px 14px; cursor: pointer; }
   .ep-row:hover { background: var(--hi-soft); }
+  /* timestamps + help tooltip */
+  .help-dot { display:inline-flex; align-items:center; justify-content:center; width:15px; height:15px; border-radius:50%; background:var(--fill-3); color:var(--ink-soft); font-size:.62rem; font-weight:700; cursor:help; position:relative; vertical-align:middle; margin-left:5px; }
+  .help-dot:hover { background:var(--hi); color:#fff; }
+  .help-dot .tip { position:absolute; bottom:150%; left:50%; transform:translateX(-50%); width:250px; background:var(--fill); border:1px solid var(--line-2); border-radius:9px; padding:10px 12px; font-size:.72rem; font-weight:400; line-height:1.55; color:var(--ink-soft); box-shadow:var(--shadow); display:none; z-index:50; text-align:left; }
+  .help-dot:hover .tip { display:block; }
+  .help-dot .tip b { color:var(--ink); }
+  .ts-cols { display:grid; grid-template-columns:1fr 1fr; gap:26px; }
+  @media (max-width:820px){ .ts-cols{ grid-template-columns:1fr; gap:10px; } }
+  .ts-h { font-size:.66rem; text-transform:uppercase; letter-spacing:.06em; color:var(--ink-dim); font-weight:700; margin-bottom:6px; }
+  .ts-row { display:flex; justify-content:space-between; align-items:center; gap:12px; padding:7px 0; border-top:1px dashed var(--line); }
+  .ts-row.first { border-top:none; }
+  .ts-k { font-size:.8rem; color:var(--ink-soft); display:inline-flex; align-items:center; }
+  .ts-v { font-family:'JetBrains Mono',monospace; font-size:.76rem; color:var(--ink); white-space:nowrap; }
+  .ts-v .ago { color:var(--ink-dim); }
+  /* newest-episode side card + per-episode timestamps */
+  .ep-side { display:none; margin-top:14px; }
+  .ep-side.show { display:block; }
+  .ne-ep { font-weight:600; font-size:.92rem; margin:8px 0 2px; }
+  .ne-ep .num { font-size:.72rem; color:var(--ink-soft); margin-right:5px; }
+  .ep-added { color:var(--ink-dim); }
+  .ep-ts { display:flex; flex-wrap:wrap; gap:12px 24px; margin-top:12px; padding-top:11px; border-top:1px dashed var(--line); }
+  .ep-ts .grp { display:flex; flex-direction:column; gap:2px; }
+  .ep-ts .k { font-size:.6rem; text-transform:uppercase; letter-spacing:.05em; color:var(--ink-dim); font-weight:700; }
+  .ep-ts .v { font-family:'JetBrains Mono',monospace; font-size:.72rem; color:var(--ink-soft); }
   .ep-thumb { width: 92px; height: 52px; flex: none; }
   .ep-meta { min-width: 0; flex: 1; }
   .ep-meta .t { font-weight: 600; font-size: .96rem; display: flex; align-items: center; gap: 9px; flex-wrap: wrap; }
@@ -225,6 +249,7 @@
         </div>
         <div class="tiny muted" style="margin-top:8px;">Used for TMDB metadata and tvshow.nfo writes. Does not affect audio tracks.</div>
       </div>
+      <div class="override ep-side" id="ep-newest"></div>
     </div>
 
     <!-- MAIN COLUMN -->
@@ -245,6 +270,23 @@
           <div class="row center"><h4 style="margin:0;">Tags</h4><span class="spacer"></span><span class="tiny muted"><a href="metadata.html">manage tags →</a></span></div>
           <hr class="dash" style="margin:10px 0;">
           <div class="pill-row"><span class="chip"><span class="tag-dot" style="width:8px;height:8px;border-radius:50%;display:inline-block;background:#3fb6f5;"></span> nordic noir <span class="rm" style="cursor:pointer;">✕</span></span><span class="chip">crime drama <span class="rm" style="cursor:pointer;">✕</span></span><span class="chip ghost">＋ add</span></div>
+        </div>
+        <div class="card" id="ts-card" style="margin-top:16px;">
+          <div class="row center"><h4 style="margin:0;">Timestamps</h4><span class="tiny muted" style="margin-left:8px;">when this series was created, updated &amp; scanned — in Jellystructure and in Jellyfin</span></div>
+          <hr class="dash" style="margin:10px 0 14px;">
+          <div class="ts-cols">
+            <div>
+              <div class="ts-h">Jellystructure</div>
+              <div class="ts-row first"><span class="ts-k">Created<span class="help-dot">?<span class="tip"><b>Created in Jellystructure</b> — when this series was first added to your library. Ravilo's <b>Newly Added</b> rows sort a series by its <b>most-recently-added episode</b> (see Seasons &amp; episodes).</span></span></span><span class="ts-v">2023-09-04 08:20 <span class="ago">· 2y ago</span></span></div>
+              <div class="ts-row"><span class="ts-k">Updated</span><span class="ts-v">2024-12-16 11:03 <span class="ago">· recently</span></span></div>
+              <div class="ts-row"><span class="ts-k">Last scanned</span><span class="ts-v">2026-06-30 03:12 <span class="ago">· 2d ago</span></span></div>
+            </div>
+            <div>
+              <div class="ts-h">Jellyfin</div>
+              <div class="ts-row first"><span class="ts-k">Created <span class="mono muted" style="font-size:.7rem;">DateCreated</span></span><span class="ts-v">2023-09-04 08:24</span></div>
+              <div class="ts-row"><span class="ts-k">Updated</span><span class="ts-v">2024-12-16 11:05</span></div>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -851,5 +893,58 @@
 })();
 </script>
 <script src="series-cast.js"></script>
+<!-- per-episode timestamps + newest-episode side panel (CreatedAt drives Ravilo Newly Added) -->
+<script>
+(function () {
+  const eps = [...document.querySelectorAll('#eplist .ep[data-ep]')];
+  if (!eps.length) return;
+  const pad = n => String(n).padStart(2, '0');
+  const fmtDt = d => d.getUTCFullYear() + '-' + pad(d.getUTCMonth() + 1) + '-' + pad(d.getUTCDate()) + ' ' + pad(d.getUTCHours()) + ':' + pad(d.getUTCMinutes());
+  const fmtD = d => d.getUTCFullYear() + '-' + pad(d.getUTCMonth() + 1) + '-' + pad(d.getUTCDate());
+  const scan = new Date(Date.UTC(2026, 5, 30, 3, 12));
+  const rows = eps.map((ep, i) => {
+    const code = ep.dataset.ep;
+    const n = parseInt((code.match(/E(\d+)/) || [])[1] || (i + 1), 10);
+    const air = new Date(Date.UTC(2023, 8, 3 + (n - 1) * 7, 20, 0));   // weekly from 2023-09-03
+    const added = new Date(air.getTime() + 12 * 3600 * 1000);           // added the next morning
+    const updated = new Date(added.getTime() + 2 * 3600 * 1000);
+    const tEl = ep.querySelector('.ep-meta .t');
+    const title = tEl ? tEl.textContent.replace(code, '').replace(/\s+[a-z]{2}$/, '').trim() : code;
+    return { ep, code, n, air, added, updated, title };
+  });
+  rows.forEach(r => {
+    const s = r.ep.querySelector('.ep-row .s');
+    if (s && !s.querySelector('.ep-added')) s.insertAdjacentHTML('beforeend', ` \u00b7 <span class="ep-added">added ${fmtD(r.added)}</span>`);
+    const body = r.ep.querySelector('.ep-body');
+    if (body && !body.querySelector('.ep-ts')) body.insertAdjacentHTML('beforeend',
+      `<div class="ep-ts">` +
+      `<div class="grp"><span class="k">Added \u00b7 JS</span><span class="v">${fmtDt(r.added)}</span></div>` +
+      `<div class="grp"><span class="k">Updated \u00b7 JS</span><span class="v">${fmtDt(r.updated)}</span></div>` +
+      `<div class="grp"><span class="k">Scanned</span><span class="v">${fmtDt(scan)}</span></div>` +
+      `<div class="grp"><span class="k">Created \u00b7 Jellyfin</span><span class="v">${fmtDt(new Date(r.added.getTime() + 3 * 60000))}</span></div>` +
+      `</div>`);
+  });
+  const newest = rows.reduce((a, b) => b.added > a.added ? b : a, rows[0]);
+  const side = document.getElementById('ep-newest');
+  if (side) side.innerHTML =
+    `<div class="row center"><h4 style="margin:0;white-space:nowrap;">Newest episode</h4><span class="help-dot">?<span class="tip"><b>Created in Jellystructure</b> \u2014 when an episode was added to your library. A series' spot in Ravilo's <b>Newly Added</b> row uses its <b>most-recently-added episode</b>, shown here.</span></span></div>` +
+    `<div class="ne-ep"><span class="num mono">${newest.code}</span>${newest.title}</div>` +
+    `<div style="margin-top:6px;">` +
+    `<div class="ts-row first"><span class="ts-k">Added \u00b7 JS</span><span class="ts-v">${fmtDt(newest.added)}</span></div>` +
+    `<div class="ts-row"><span class="ts-k">Updated \u00b7 JS</span><span class="ts-v">${fmtDt(newest.updated)}</span></div>` +
+    `<div class="ts-row"><span class="ts-k">Scanned</span><span class="ts-v">${fmtDt(scan)}</span></div>` +
+    `<div class="ts-row"><span class="ts-k">Created \u00b7 JF</span><span class="ts-v">${fmtDt(new Date(newest.added.getTime() + 3 * 60000))}</span></div>` +
+    `</div>` +
+    `<div class="tiny muted" style="margin-top:10px;line-height:1.5;">This is what places <b>Nordvest</b> in Ravilo's <b>Newly Added</b>.</div>`;
+  function syncSide() {
+    const onEps = /tab=episodes/.test(location.hash) || (!/tab=/.test(location.hash) && (document.querySelector('#tabbar .on') || {}).dataset?.tab === 'episodes');
+    if (side) side.classList.toggle('show', !!onEps);
+  }
+  const tb = document.getElementById('tabbar');
+  if (tb) tb.addEventListener('click', () => setTimeout(syncSide, 0));
+  window.addEventListener('hashchange', syncSide);
+  syncSide();
+})();
+</script>
 </body>
 </html>
