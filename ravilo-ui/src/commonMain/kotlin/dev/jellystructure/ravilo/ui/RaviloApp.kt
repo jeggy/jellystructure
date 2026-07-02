@@ -98,6 +98,13 @@ val LocalLiveAcquisition = staticCompositionLocalOf<SharedFlow<AcquisitionRecord
  *  bridge; collected by [dev.jellystructure.ravilo.ui.components.ServerMessageHost] at the app root. */
 val LocalServerMessages = staticCompositionLocalOf<SharedFlow<ServerMessageEnvelope>?> { null }
 
+/** R159 — is the app's viewport currently taller than it is wide? Recomputed live on resize/rotation
+ *  (TVs/desktop web: always false; a phone held upright: true; a resized browser window follows too).
+ *  Drives portrait-only presentation overrides (starting with hero height) — the client only *selects*
+ *  by its own viewport, both numbers are server-pushed, so this stays presentation selection, not
+ *  derived state (same class as [LocalTileScale]'s uiDensity). */
+val LocalPortrait = staticCompositionLocalOf { false }
+
 /** R155 — remote playstate commands (stop/pause/unpause/seek) for whatever's playing on this device.
  *  Collected directly by PlayerScreen — a SharedFlow with no active collector just drops the value,
  *  which is exactly "ignore when no player is open" (FR-R155-2) with no extra check needed. */
@@ -369,8 +376,14 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
             val wPx = windowInfo.containerSize.width
             wPx > 0 && with(density) { wPx.toDp() } < 600.dp
         }
+        // R159 — orientation, not width: a resized browser window or a rotated phone flips this live.
+        // Compact controls *sizing*; portrait controls *these overrides* — a portrait phone is usually
+        // both, but they're independent signals (e.g. a narrow-but-landscape split-screen window).
+        val portrait = remember(windowInfo.containerSize.width, windowInfo.containerSize.height) {
+            windowInfo.containerSize.height > windowInfo.containerSize.width
+        }
 
-        CompositionLocalProvider(LocalLiveConfig provides liveConfig, LocalLiveAcquisition provides liveAcquisition, LocalServerMessages provides liveServerMessages, LocalPlaystateCommands provides livePlaystateCommands, LocalTileScale provides tileScale, LocalCompact provides compact, LocalServerBaseUrl provides apiClient.baseUrl, LocalUserAvatarUrl provides activeAvatarUrl) {
+        CompositionLocalProvider(LocalLiveConfig provides liveConfig, LocalLiveAcquisition provides liveAcquisition, LocalServerMessages provides liveServerMessages, LocalPlaystateCommands provides livePlaystateCommands, LocalTileScale provides tileScale, LocalCompact provides compact, LocalPortrait provides portrait, LocalServerBaseUrl provides apiClient.baseUrl, LocalUserAvatarUrl provides activeAvatarUrl) {
         Box(
             modifier = Modifier
                 .fillMaxSize()

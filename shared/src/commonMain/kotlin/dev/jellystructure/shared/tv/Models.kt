@@ -182,6 +182,8 @@ data class HomeFeed(
     @SerialName("hero_height_pct") val heroHeightPct: Int = 56,
     @SerialName("auto_advance_seconds") val autoAdvanceSeconds: Int = 7,
     @SerialName("tile_shape") val tileShape: TileShape = TileShape.POSTER,
+    // R159 — portrait-only hero height override (20-100); null = no override, portrait uses heroHeightPct.
+    @SerialName("portrait_hero_height_pct") val portraitHeroHeightPct: Int? = null,
 )
 
 // ─── Detail ───────────────────────────────────────────────────────────────────
@@ -511,10 +513,21 @@ data class RaviloConfig(
     @SerialName("hero_height_pct") val heroHeightPct: Int = 56,       // % of screen the hero fills (40..100)
     @SerialName("auto_advance_seconds") val autoAdvanceSeconds: Int = 7, // hero carousel interval seconds; 0 = off (0..120)
     val discover: DiscoverConfig = DiscoverConfig(),                   // R48 — Top 10 / Discover tab
+    // R159 — optional overrides applied only when the app's viewport is portrait. Null = no overrides
+    // (portrait behaves exactly like landscape); the home for future portrait-only settings.
+    val portrait: PortraitConfig? = null,
 ) {
     /** The skin actually rendered: the viewer's override when allowed, else the operator default. */
     fun effectiveSkin(): Skin = if (allowSkinOverride) (viewerSkinOverride ?: defaultSkin) else defaultSkin
 }
+
+/** R159 — portrait-only display overrides. Each field null = that override is off; the block itself
+ *  being null means no portrait overrides at all (both are equivalent, but `heroHeightPct == null`
+ *  lets the section keep the toggle's on/off state independent of future sibling fields). */
+@Serializable
+data class PortraitConfig(
+    @SerialName("hero_height_pct") val heroHeightPct: Int? = null, // % of screen the hero fills in portrait (20..100)
+)
 
 /**
  * R48 — per-user Discover/Top-10 selection (server-owned, synced). `canRequest` gates whether a
