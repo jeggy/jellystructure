@@ -74,10 +74,91 @@ object FfmpegRunner {
         "{ [ -n \"\$_jsu\" ] && chown \"\${_jsu}:\${_jsg}\" '$escapedOrig' 2>/dev/null || true;" +
         "[ -n \"\$_jsm\" ] && chmod \"\$_jsm\" '$escapedOrig' 2>/dev/null || true; }"
 
-    private fun tmpPath(filePath: String): String {
+    // Phase 109: exposed so MediaJobQueue can target the same temp file for cancellation (pkill -f) and
+    // for the disk-space preflight — the tmp copy is a second full-size file on the same filesystem.
+    fun tmpPath(filePath: String): String {
         val dir = filePath.substringBeforeLast('/')
         val name = filePath.substringAfterLast('/')
         return "$dir/.jstmp_$name"
+    }
+
+    /** Phase 109: source duration in seconds via ffprobe, for live remux progress %. Null if unknown
+     *  (ffprobe failure, or a non-numeric/empty duration) — callers degrade to speed-only progress. */
+    suspend fun probeDurationSeconds(filePath: String): Double? {
+        val escaped = filePath.replace("'", "'\\''")
+        val out = captureCommand("ffprobe -v error -show_entries format=duration -of csv=p=0 '$escaped' 2>/dev/null")
+        return out?.trim()?.toDoubleOrNull()?.takeIf { it > 0 }
+    }
+
+    /**
+     * Phase 109: like [runRemux] but runs the core command with `nice`/`ionice` (protects API/playback
+     * from a big remux) and `-progress pipe:1 -nostats` (structured progress instead of ffmpeg's default
+     * human-readable stats line), parsing `out_time_ms=`/`speed=` out of each progress block and invoking
+     * [onProgress] once per block (~every 0.5s, ffmpeg's own default `-progress` cadence). [onProgress]
+     * runs synchronously inside the blocking read loop — callers must keep it cheap (a WS broadcast) and
+     * non-suspending; it uses `runBlocking` internally to bridge into a suspend broadcaster.
+     */
+    suspend fun runRemuxTracked(
+        filePath: String,
+        cmd: String,
+        durationSeconds: Double?,
+        onProgress: (pct: Double, speed: String?) -> Unit,
+    ): Boolean {
+        val niced = cmd.replaceFirst("ffmpeg -y ", "nice -n 19 ionice -c3 ffmpeg -y -progress pipe:1 -nostats ")
+        val escaped = filePath.replace("'", "'\\''")
+        val ok = runCommandTracked(withOwnershipPreservation(escaped, niced), durationSeconds, onProgress)
+        if (!ok) {
+            val tmp = tmpPath(filePath)
+            @OptIn(ExperimentalForeignApi::class)
+            remove(tmp)
+        }
+        return ok
+    }
+
+    @OptIn(ExperimentalForeignApi::class)
+    private suspend fun captureCommand(cmd: String): String? = memScoped {
+        val pipe = popen(cmd, "r") ?: return null
+        val sb = StringBuilder()
+        val buf = allocArray<ByteVar>(4096)
+        while (fgets(buf, 4096, pipe) != null) sb.append(buf.toKString())
+        pclose(pipe)
+        sb.toString()
+    }
+
+    @OptIn(ExperimentalForeignApi::class)
+    private suspend fun runCommandTracked(
+        cmd: String,
+        durationSeconds: Double?,
+        onProgress: (pct: Double, speed: String?) -> Unit,
+    ): Boolean {
+        Logger.info("ffmpeg (tracked): $cmd", "track")
+        return memScoped {
+            val pipe = popen(cmd, "r") ?: return false
+            val sb = StringBuilder()
+            val buf = allocArray<ByteVar>(4096)
+            var lastSpeed: String? = null
+            var lastOutTimeUs: Long? = null
+            while (fgets(buf, 4096, pipe) != null) {
+                val line = buf.toKString()
+                sb.append(line)
+                for (raw in line.split('\n')) {
+                    val trimmed = raw.trim()
+                    when {
+                        trimmed.startsWith("out_time_ms=") -> lastOutTimeUs = trimmed.removePrefix("out_time_ms=").toLongOrNull()
+                        trimmed.startsWith("speed=") -> lastSpeed = trimmed.removePrefix("speed=").trim().takeIf { it.isNotBlank() && it != "N/A" }
+                        trimmed == "progress=continue" || trimmed == "progress=end" -> {
+                            val pct = if (durationSeconds != null && lastOutTimeUs != null)
+                                ((lastOutTimeUs.toDouble() / 1_000_000.0) / durationSeconds * 100.0).coerceIn(0.0, 100.0)
+                            else 0.0
+                            onProgress(pct, lastSpeed)
+                        }
+                    }
+                }
+            }
+            val rc = pclose(pipe)
+            if (rc != 0) Logger.warn("ffmpeg exit $rc: $sb", "track")
+            rc == 0
+        }
     }
 
     @OptIn(ExperimentalForeignApi::class)

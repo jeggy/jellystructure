@@ -5,6 +5,7 @@ import dev.jellystructure.config.ConfigStore
 import dev.jellystructure.server.routes.fireWebhook
 import dev.jellystructure.jobs.JobEvent
 import dev.jellystructure.jobs.WsBroadcaster
+import dev.jellystructure.log.Logger
 import dev.jellystructure.media.FfmpegRunner
 import dev.jellystructure.media.FfprobeRunner
 import dev.jellystructure.media.MediaHistory
@@ -38,7 +39,6 @@ import kotlinx.serialization.Serializable
 import platform.posix.fgets
 import platform.posix.pclose
 import platform.posix.popen
-import platform.posix.time
 
 @Serializable
 private data class SetDefaultRequest(val specifier: String)
@@ -116,6 +116,7 @@ fun Route.trackRoutes(
     arrRescan: ArrRescanService? = null,
     appScope: CoroutineScope,
     broadcaster: WsBroadcaster,
+    mediaJobQueue: dev.jellystructure.media.MediaJobQueue,
 ) {
     route("/media/{id}") {
         // GET /api/media/{id}/tracks/plan?specifier=a:0 — dry-run: returns command without executing
@@ -335,7 +336,8 @@ fun Route.trackRoutes(
             call.respond(LangWriteResponse(ok = true, language = probed))
         }
 
-        // DELETE /api/media/{id}/tracks/{specifier} — remove a track from the file (ffmpeg remux)
+        // DELETE /api/media/{id}/tracks/{specifier} — Phase 109: enqueues an ffmpeg remux job (removes
+        // the track) and returns immediately instead of blocking the request for the whole remux.
         delete("/tracks/{specifier}") {
             val id = call.parameters["id"]
                 ?: return@delete call.respond(HttpStatusCode.BadRequest)
@@ -343,31 +345,21 @@ fun Route.trackRoutes(
                 ?: return@delete call.respond(HttpStatusCode.BadRequest)
             val item = store.resolve(id)
                 ?: return@delete call.respond(HttpStatusCode.NotFound)
-            val targetTrack = item.tracks.firstOrNull { it.specifier == specifier }
+            item.tracks.firstOrNull { it.specifier == specifier }
                 ?: return@delete call.respond(HttpStatusCode.NotFound, mapOf("error" to "track not found"))
 
-            val ok = FfmpegRunner.removeTrack(item.path, targetTrack.streamIndex)
-            if (!ok) {
-                call.respond(HttpStatusCode.InternalServerError, mapOf("error" to "ffmpeg failed"))
-                return@delete
+            when (val guard = seedingGuard.check(item.path, configStore.current)) {
+                is SeedingCheckResult.Blocked -> { call.respond(HttpStatusCode.Conflict, mapOf("error" to "File is seeded by '${guard.torrentName}'")); return@delete }
+                is SeedingCheckResult.Unreachable -> { call.respond(HttpStatusCode.ServiceUnavailable, mapOf("error" to "qBittorrent unreachable: ${guard.reason}")); return@delete }
+                else -> Unit
             }
 
-            val newTracks = FfprobeRunner.probe(item.path)
-            val newIssueCount = newTracks.count {
-                (it.kind == TrackKind.AUDIO || it.kind == TrackKind.SUBTITLE) && it.language == null
-            }
-            store.updateOne(item.copy(tracks = newTracks, issueCount = newIssueCount))
-            mediaHistory.record(id, "remove_track", "specifier=$specifier")
-
-            val cfg = configStore.current
-            if (!item.jellyfinId.isNullOrBlank() && cfg.apiKeys.jellyfinUrl.isNotBlank()) {
-                jellyfinClient.refreshItem(cfg.apiKeys.jellyfinUrl, cfg.apiKeys.jellyfinToken, item.jellyfinId)
-            }
-            arrRescan?.nudge(item)  // Phase 54 — refresh the *arr's MediaInfo after a track edit (best-effort)
-            call.respond(mapOf("ok" to true))
+            val job = mediaJobQueue.enqueue("remove", id, item.title, dev.jellystructure.jobs.MediaJobParams(specifier = specifier))
+            call.respond(HttpStatusCode.Accepted, mapOf("jobId" to job.id))
         }
 
-        // POST /api/media/{id}/tracks/reorder — reorder tracks of a given type (ffmpeg remux)
+        // POST /api/media/{id}/tracks/reorder — Phase 109: enqueues an ffmpeg remux job and returns
+        // immediately (202 + job id) instead of blocking the request for the whole remux.
         post("/tracks/reorder") {
             val id = call.parameters["id"]
                 ?: return@post call.respond(HttpStatusCode.BadRequest)
@@ -386,34 +378,20 @@ fun Route.trackRoutes(
                 call.respond(HttpStatusCode.BadRequest, mapOf("error" to "one or more specifiers not found"))
                 return@post
             }
-            val orderedIndices = orderedTracks.map { it.streamIndex }
 
-            val ok = FfmpegRunner.reorderTracks(item.path, kind, orderedIndices)
-            if (!ok) {
-                call.respond(HttpStatusCode.InternalServerError, mapOf("error" to "ffmpeg remux failed"))
-                return@post
+            // Fail-fast guard at enqueue time (Phase 109 FR A.3) — the job re-checks at start too,
+            // since the seeding state can change while it waits in the queue.
+            when (val guard = seedingGuard.check(item.path, configStore.current)) {
+                is SeedingCheckResult.Blocked -> { call.respond(HttpStatusCode.Conflict, mapOf("error" to "File is seeded by '${guard.torrentName}'")); return@post }
+                is SeedingCheckResult.Unreachable -> { call.respond(HttpStatusCode.ServiceUnavailable, mapOf("error" to "qBittorrent unreachable: ${guard.reason}")); return@post }
+                else -> Unit
             }
 
-            val newTracks = FfprobeRunner.probe(item.path)
-            val newIssueCount = newTracks.count {
-                (it.kind == TrackKind.AUDIO || it.kind == TrackKind.SUBTITLE) && it.language == null
-            }
-            // An audio reorder changes which track is primary, which drives the metadata-fetch
-            // language. Recompute resolvedLanguage from the new order so the next re-pull queries in
-            // the new primary language — otherwise the stale value is treated as a language override
-            // and prepended, keeping the old language forever. Subtitle reorders never affect this.
-            val newResolved = if (kind == TrackKind.AUDIO)
-                primaryAudioLanguage(configStore.current, item.path, newTracks)
-            else item.resolvedLanguage
-            store.updateOne(item.copy(tracks = newTracks, issueCount = newIssueCount, resolvedLanguage = newResolved))
-            mediaHistory.record(id, "reorder_tracks", "kind=${req.kind} order=${req.order.joinToString(",")}")
-
-            val cfg = configStore.current
-            if (!item.jellyfinId.isNullOrBlank() && cfg.apiKeys.jellyfinUrl.isNotBlank()) {
-                jellyfinClient.refreshItem(cfg.apiKeys.jellyfinUrl, cfg.apiKeys.jellyfinToken, item.jellyfinId)
-            }
-            arrRescan?.nudge(item)  // Phase 54 — refresh the *arr's MediaInfo after a track edit (best-effort)
-            call.respond(mapOf("ok" to true))
+            val job = mediaJobQueue.enqueue(
+                "reorder", id, item.title,
+                dev.jellystructure.jobs.MediaJobParams(kind = req.kind.lowercase(), order = req.order),
+            )
+            call.respond(HttpStatusCode.Accepted, mapOf("jobId" to job.id))
         }
 
         // POST /api/media/{id}/jellyfin-refresh — trigger Jellyfin to reload this item's metadata
@@ -483,14 +461,25 @@ fun Route.trackRoutes(
                         ?.let { ts -> ts.isNotEmpty() && ts.minByOrNull { it.streamIndex }?.default == false } == true
             } else emptyList()
 
-            val jobId = "reorder-bulk-$id-${time(null)}"
             val total = toReorder.size + toFlagFix.size
+            // Phase 109: registers a media_job row (Jobs page visibility) and takes the same
+            // single-worker slot a queued reorder/remove job would — a bulk run and a concurrent single
+            // reorder can never remux in parallel. The per-episode work below is unchanged (Phase 96);
+            // only the outer scheduling is new.
+            val jobRow = mediaJobQueue.registerBulkJob(
+                id, "${item.title} — bulk ${req.kind} reorder (${total} episode${if (total != 1) "s" else ""})",
+                dev.jellystructure.jobs.MediaJobParams(kind = req.kind, order = req.order, bulkScope = req.scope, bulkOptIn = req.optIn, bulkSetDefault = req.setDefault),
+                total,
+            )
+            val jobId = jobRow.id
             call.respond(mapOf("jobId" to jobId))
 
             appScope.launch {
-                broadcaster.broadcast(JobEvent.Started(jobId, total))
+                mediaJobQueue.acquireBulkSlot(jobId)
                 var succeeded = 0
                 var failed = 0
+                try {
+                broadcaster.broadcast(JobEvent.Started(jobId, total))
 
                 for (epPlan in toReorder) {
                     val ep = store.resolve(id)?.episodes?.firstOrNull { it.filename == epPlan.filename } ?: continue
@@ -584,6 +573,14 @@ fun Route.trackRoutes(
                     jellyfinClient.refreshItem(cfg.apiKeys.jellyfinUrl, cfg.apiKeys.jellyfinToken, item.jellyfinId)
 
                 broadcaster.broadcast(JobEvent.Finished(jobId, succeeded, failed))
+                mediaJobQueue.markBulkFinished(jobId, ok = failed == 0, error = if (failed > 0) "$failed of $total episode(s) failed" else null, filesDone = succeeded)
+                } catch (e: Exception) {
+                    // Phase 109: a worker-loop-style safety net — an exception anywhere in the bulk run
+                    // must still release the single-worker slot, or every later reorder/remove job (and
+                    // any other bulk run) would wait on it forever.
+                    Logger.error("bulk reorder job $jobId threw: ${e.message}", "jobs")
+                    mediaJobQueue.markBulkFinished(jobId, ok = false, error = e.message ?: "unexpected error", filesDone = succeeded)
+                }
             }
         }
     }

@@ -154,6 +154,7 @@ fun Route.mediaRoutes(
     logoDownloader: LogoDownloader,
     arrRescan: ArrRescanService? = null,
     sonarrEnrich: dev.jellystructure.arr.SonarrEnrichService? = null,
+    mediaJobQueue: dev.jellystructure.media.MediaJobQueue,
 ) {
     route("/media") {
         get {
@@ -992,7 +993,9 @@ fun Route.mediaRoutes(
                     call.respond(mapOf("ok" to true))
                 }
 
-                // POST /api/media/{id}/episodes/{epFilename}/tracks/reorder — reorder tracks (ffmpeg remux)
+                // POST /api/media/{id}/episodes/{epFilename}/tracks/reorder — Phase 109: enqueues an
+                // ffmpeg remux job and returns immediately (202 + job id) instead of blocking the request
+                // for the whole remux — see MediaJobQueue.
                 post("/tracks/reorder") {
                     val id = call.parameters["id"]
                         ?: return@post call.respond(HttpStatusCode.BadRequest)
@@ -1000,9 +1003,8 @@ fun Route.mediaRoutes(
                         ?: return@post call.respond(HttpStatusCode.BadRequest)
                     val item = store.resolve(id)
                         ?: return@post call.respond(HttpStatusCode.NotFound)
-                    val epIdx = item.episodes.indexOfFirst { it.filename == epFilename }
-                    if (epIdx < 0) return@post call.respond(HttpStatusCode.NotFound, mapOf("error" to "episode not found"))
-                    val ep = item.episodes[epIdx]
+                    val ep = item.episodes.firstOrNull { it.filename == epFilename }
+                        ?: return@post call.respond(HttpStatusCode.NotFound, mapOf("error" to "episode not found"))
 
                     @Serializable data class ReorderReq(val kind: String, val order: List<String>)
                     val req = call.receive<ReorderReq>()
@@ -1015,39 +1017,22 @@ fun Route.mediaRoutes(
                     if (orderedTracks.size != req.order.size)
                         return@post call.respond(HttpStatusCode.BadRequest, mapOf("error" to "one or more specifiers not found"))
 
+                    // Fail-fast guard at enqueue time (Phase 109 FR A.3) — the job re-checks at start too,
+                    // since the seeding state can change while it waits in the queue.
                     when (val guard = seedingGuard.check(ep.path, configStore.current)) {
                         is SeedingCheckResult.Blocked -> { call.respond(HttpStatusCode.Conflict, mapOf("error" to "File is seeded by '${guard.torrentName}'")); return@post }
                         is SeedingCheckResult.Unreachable -> { call.respond(HttpStatusCode.ServiceUnavailable, mapOf("error" to "qBittorrent unreachable: ${guard.reason}")); return@post }
                         else -> Unit
                     }
 
-                    val ok = FfmpegRunner.reorderTracks(ep.path, kind, orderedTracks.map { it.streamIndex })
-                    if (!ok) { call.respond(HttpStatusCode.InternalServerError, mapOf("error" to "ffmpeg remux failed")); return@post }
-
-                    val newTracks = FfprobeRunner.probe(ep.path)
-                    val newIssue = newTracks.count { (it.kind == TrackKind.AUDIO || it.kind == TrackKind.SUBTITLE) && it.language == null }
-                    val updatedEpisodes = item.episodes.toMutableList()
-                    // An audio reorder changes the episode's primary (language-driving) track — update
-                    // its resolvedLanguage so a series re-pull queries this episode in the new language
-                    // instead of treating the stale value as an override (mirrors the movie path).
-                    val epResolved = if (kind == TrackKind.AUDIO)
-                        primaryAudioLanguage(configStore.current, ep.path, newTracks)
-                    else ep.resolvedLanguage
-                    updatedEpisodes[epIdx] = ep.copy(tracks = newTracks, issueCount = newIssue, resolvedLanguage = epResolved)
-                    // Re-derive the series-level resolvedLanguage from the episodes' majority primary
-                    // audio language (same vote as Scanner), since that is the override repull uses.
-                    val seriesResolved = if (kind == TrackKind.AUDIO) {
-                        val votes = mutableMapOf<String, Int>()
-                        for (e in updatedEpisodes) {
-                            e.tracks.firstOrNull { it.kind == TrackKind.AUDIO }?.language
-                                ?.let { LanguageResolver.normalize(it) }
-                                ?.let { votes[it] = (votes[it] ?: 0) + 1 }
-                        }
-                        votes.maxByOrNull { it.value }?.key ?: item.resolvedLanguage
-                    } else item.resolvedLanguage
-                    store.updateOne(item.copy(episodes = updatedEpisodes, resolvedLanguage = seriesResolved))
-                    mediaHistory.record(id, "reorder_tracks", "ep=${ep.filename} kind=${req.kind} order=${req.order.joinToString(",")}")
-                    call.respond(mapOf("ok" to true))
+                    val epCode = if (ep.seasonNumber != null && ep.episodeNumber != null)
+                        "S${ep.seasonNumber.toString().padStart(2, '0')}E${ep.episodeNumber.toString().padStart(2, '0')}"
+                    else ep.filename
+                    val job = mediaJobQueue.enqueue(
+                        "reorder", id, "${item.title} — $epCode",
+                        dev.jellystructure.jobs.MediaJobParams(kind = req.kind.lowercase(), order = req.order, episodeFilename = epFilename),
+                    )
+                    call.respond(HttpStatusCode.Accepted, mapOf("jobId" to job.id))
                 }
 
                 // PATCH /api/media/{id}/episodes/{epFilename}/metadata — edit episode title/overview
