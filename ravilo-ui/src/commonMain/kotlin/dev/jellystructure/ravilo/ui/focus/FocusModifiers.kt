@@ -11,6 +11,8 @@ import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.input.pointer.pointerInput
 
 /**
@@ -35,6 +37,10 @@ enum class MediaKey { PLAY_PAUSE, PLAY, PAUSE, STOP, FAST_FORWARD, REWIND, NEXT,
  * Pointer support: when `onSelect` is supplied a tap (mouse click / touch) also fires it and pulls
  * focus to the item, so the same surface works on pointer platforms (web/desktop) as on a D-pad.
  * Pointer taps and key events are distinct input sources, so this never double-fires `onSelect`.
+ *
+ * R157: `onTap` lets a tap diverge from Enter-key (defaults to `onSelect`, so existing call sites
+ * are unaffected); `moveFocusOnHover` (opt-in) shifts focus to this item on pointer hover, so the
+ * visual focus state follows the mouse and a click/Enter agree on the target.
  */
 fun Modifier.dpadFocusable(
     focusRequester: FocusRequester? = null,
@@ -47,6 +53,15 @@ fun Modifier.dpadFocusable(
     onSelect: (() -> Unit)? = null,
     onBack: (() -> Unit)? = null,
     onMediaKey: ((MediaKey) -> Unit)? = null,
+    // R157 — a tap/click can mean something different from Enter-key (e.g. the player root: Enter
+    // activates the focused control, but a web click on empty space toggles chrome instead). Defaults
+    // to `onSelect` everywhere this divergence doesn't apply — existing call sites are unaffected.
+    onTap: (() -> Unit)? = onSelect,
+    // R157 — mouse hover moves focus here, so the visual focus ring follows the cursor and a
+    // subsequent click/Enter agree on the target. Opt-in (default off): most `dpadFocusable` call
+    // sites are lazy-list items where untested hover-focus churn isn't worth the risk; the player's
+    // transport controls turn it on explicitly.
+    moveFocusOnHover: Boolean = false,
 ): Modifier = this
     .onKeyEvent { ev ->
         if (ev.type != KeyEventType.KeyDown) return@onKeyEvent false
@@ -80,12 +95,17 @@ fun Modifier.dpadFocusable(
     .onFocusChanged { if (it.isFocused) onFocused() else onBlurred() }
     .focusable()
     .then(
-        if (onSelect != null) Modifier.pointerInput(onSelect, focusRequester) {
+        if (onTap != null) Modifier.pointerInput(onTap, focusRequester) {
             detectTapGestures(onTap = {
                 // Pull focus so the focus ring follows the pointer and subsequent
                 // D-pad/keyboard navigation continues from the tapped item.
                 focusRequester?.let { runCatching { it.requestFocus() } }
-                onSelect()
+                onTap()
             })
+        } else Modifier
+    )
+    .then(
+        if (moveFocusOnHover && focusRequester != null) Modifier.onPointerEvent(PointerEventType.Enter) {
+            runCatching { focusRequester.requestFocus() }
         } else Modifier
     )
