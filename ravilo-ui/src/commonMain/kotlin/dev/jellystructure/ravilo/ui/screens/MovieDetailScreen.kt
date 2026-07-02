@@ -51,6 +51,7 @@ import dev.jellystructure.ravilo.ui.components.AppBar
 import dev.jellystructure.ravilo.ui.components.AudioSubtitleFlagLine
 import dev.jellystructure.ravilo.ui.components.ButtonStyle
 import dev.jellystructure.ravilo.ui.components.CastCircle
+import dev.jellystructure.ravilo.ui.components.CertBadge
 import dev.jellystructure.ravilo.ui.components.DetailLoadingShell
 import dev.jellystructure.ravilo.ui.components.DetailSynopsis
 import dev.jellystructure.ravilo.ui.components.RaviloButton
@@ -194,18 +195,22 @@ private fun MovieDetailLoaded(
                         title = detail.card.title,
                         logoModifier = Modifier.height(80.dp).widthIn(max = 360.dp),
                     )
-                    val meta = remember(detail.card.year, detail.runtime, detail.card.genre, detail.card.rating) {
+                    val meta = remember(detail.card.year, detail.runtime, detail.card.genre) {
                         listOfNotNull(
                             detail.card.year?.toString(),
                             if (detail.runtime > 0) "${detail.runtime} min" else null,
                             detail.card.genre,
-                            detail.card.rating,
                         ).joinToString(" · ")
                     }
-                    if (meta.isNotEmpty()) {
+                    if (meta.isNotEmpty() || detail.ratingBadge != null) {
                         Spacer(Modifier.height(8.dp))
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(meta, color = colors.textSecondary, fontSize = 15.sp)
+                            if (meta.isNotEmpty()) Text(meta, color = colors.textSecondary, fontSize = 15.sp)
+                            // Phase 106/R153: server-resolved age-rating badge.
+                            if (detail.ratingBadge != null) {
+                                if (meta.isNotEmpty()) Spacer(Modifier.width(10.dp))
+                                CertBadge(detail.ratingBadge)
+                            }
                             // R142: ✓ Watched chip when the movie is played.
                             if (overlay[detail.card.id]?.played == true) {
                                 Spacer(Modifier.width(10.dp))
