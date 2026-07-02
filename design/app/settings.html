@@ -32,6 +32,53 @@
   .set-section[data-tab] { display: none; }
   .set-section[data-tab].tab-show { display: block; }
 
+  /* age-rating region cascade (Metadata tab) */
+  .rc-list { list-style: none; margin: 12px 0 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+  .rc-item { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border: 1px solid var(--line-2); border-radius: 10px; background: var(--fill-2); }
+  .rc-item.top { border-color: rgba(123,110,240,.5); background: var(--hi-soft); }
+  .rc-grip { flex: none; cursor: grab; color: var(--ink-dim); font-size: 1rem; line-height: 1; user-select: none; padding: 0 2px; }
+  .rc-grip:active { cursor: grabbing; }
+  .rc-item.dragging { opacity: .45; }
+  .rc-item.drag-over { box-shadow: 0 -3px 0 var(--hi); border-color: var(--hi); }
+  .rc-ord { width: 24px; height: 24px; flex: none; border-radius: 7px; background: var(--fill-3); color: var(--ink-soft); font-weight: 700; font-size: .8rem; display: inline-flex; align-items: center; justify-content: center; }
+  .rc-item.top .rc-ord { background: var(--hi); color: #fff; }
+  .rc-cc { font-family: 'JetBrains Mono', monospace; font-weight: 700; font-size: .78rem; padding: 3px 7px; border-radius: 6px; background: var(--fill-3); color: var(--ink); letter-spacing: .5px; }
+  .rc-name { font-weight: 600; }
+  .rc-sys { color: var(--ink-dim); font-size: .8rem; }
+  .rc-scale { display: inline-flex; gap: 4px; margin-left: 2px; flex-wrap: wrap; }
+  .rc-scale span { font-size: .62rem; font-weight: 600; padding: 1px 5px; border-radius: 4px; background: var(--fill-3); color: var(--ink-soft); }
+  .rc-top-tag { font-size: .58rem; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; color: var(--acc-ink); border: 1px solid rgba(123,110,240,.4); padding: 2px 6px; border-radius: 20px; }
+  .rc-actions { margin-left: auto; display: inline-flex; gap: 4px; }
+  .rc-btn { width: 28px; height: 28px; border-radius: 7px; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; color: var(--ink-soft); border: 1px solid var(--line-2); background: transparent; font-size: .8rem; }
+  .rc-btn:hover { color: var(--ink); background: var(--fill-3); }
+  .rc-btn.rm:hover { color: var(--bad); border-color: var(--bad); }
+  .rc-btn.dis { opacity: .3; pointer-events: none; }
+  .rc-add { display: flex; align-items: center; gap: 12px; margin-top: 12px; position: relative; }
+  .rc-menu { position: absolute; top: 40px; left: 0; z-index: 40; width: 260px; max-height: 260px; overflow: auto; padding: 6px; display: none; }
+  .rc-add.open .rc-menu { display: block; }
+  .rc-mi { display: flex; align-items: center; gap: 9px; padding: 8px 9px; border-radius: 8px; cursor: pointer; }
+  .rc-mi:hover { background: var(--hi-soft); }
+
+  /* discover / top 10 provider + region multi-select */
+  .disc-intro { margin: 8px 0 2px; line-height: 1.6; }
+  .prov-group { margin-top: 16px; }
+  .prov-group-h { font-size: .68rem; text-transform: uppercase; letter-spacing: .07em; color: var(--ink-dim); font-weight: 700; margin-bottom: 8px; }
+  .prov-group-h .sub { font-weight: 500; text-transform: none; letter-spacing: 0; color: var(--ink-dim); margin-left: 8px; }
+  .prov-grid { display: flex; flex-wrap: wrap; gap: 8px; }
+  .prov-chip { display: inline-flex; align-items: center; gap: 10px; padding: 9px 13px; border: 1px solid var(--line-2); border-radius: 10px; background: var(--fill-2); cursor: pointer; user-select: none; transition: border-color .15s, background .15s; }
+  .prov-chip:hover { border-color: var(--line); }
+  .prov-chip .box { width: 18px; height: 18px; flex: none; border-radius: 5px; border: 1.5px solid var(--line-2); display: flex; align-items: center; justify-content: center; font-size: .72rem; color: transparent; }
+  .prov-chip.on { border-color: var(--hi); background: var(--hi-soft); }
+  .prov-chip.on .box { background: var(--hi); border-color: var(--hi); color: #fff; }
+  .prov-chip .pv { display: flex; flex-direction: column; line-height: 1.25; }
+  .prov-chip .pv-name { font-weight: 600; font-size: .86rem; }
+  .prov-chip .pv-sub { font-size: .66rem; color: var(--ink-dim); }
+  .prov-chip.locked { opacity: .6; cursor: not-allowed; }
+  .prov-chip .pv-key { font-size: .56rem; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--warn); border: 1px solid rgba(245,181,66,.45); padding: 1px 6px; border-radius: 20px; white-space: nowrap; }
+  .reg-grid { display: flex; flex-wrap: wrap; gap: 7px; }
+  .reg-chip { padding: 6px 11px; border: 1px solid var(--line-2); border-radius: 20px; background: var(--fill-2); cursor: pointer; font-size: .8rem; user-select: none; }
+  .reg-chip.on { border-color: var(--hi); background: var(--hi-soft); color: var(--acc-ink); font-weight: 600; }
+
   /* ---------- scheduled scan pipeline ---------- */
   .pipe-sched { display: flex; gap: 14px; align-items: flex-end; flex-wrap: wrap; }
   .pipe-recipe { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-top: 12px; }
@@ -198,6 +245,8 @@
           <div class="field fill"><label>Jellyfin URL</label><div class="input">http://jellyfin:8096</div><span class="hint">Same Docker network → no reverse proxy needed.</span></div>
           <div class="field fill"><label>Jellyfin machine token</label><div class="input">••••••••••••••a1c <span class="chk" id="chk-jellyfin" style="margin-left:auto;"><span class="dot ok"></span><span class="badge ok">204 · 38ms</span></span></div><span class="hint">Background-job token for POST /Items/{id}/Refresh.</span></div>
         </div>
+        <hr class="dash" style="margin:12px 0 10px;">
+        <div class="field"><label>Streaming Availability API key <span class="muted" style="font-weight:400;">· optional</span></label><input class="input" id="sa-key" type="text" placeholder="paste RapidAPI key to enable Max · Disney+ · Prime · Apple TV+ Top 10" autocomplete="off"><span class="hint">RapidAPI key for <span class="mono">streaming-availability</span> (movieofthenight.com). Free tier ≈ 500 req/mo, week-gated. Netflix (Tudum) &amp; JustWatch sources don't need it.</span></div>
       </div>
 
       <!-- RADARR / SONARR -->
@@ -310,6 +359,37 @@
         <div class="row center" style="padding:6px 0;"><div><b>Fetch artwork automatically</b><div class="tiny muted">Download poster / fanart / logo / stills from TMDB.</div></div><span class="spacer"></span><span class="chk" id="chk-disk" style="margin-right:12px;"><span class="dot ok"></span><span class="badge ok">cache 41 GB free</span></span><span class="toggle on"></span></div>
         <hr class="dash" style="margin:6px 0;">
         <div class="row center" style="padding:6px 0;"><div><b>Auto-tell Jellyfin to refresh</b><div class="tiny muted">POST /Items/{id}/Refresh after writes.</div></div><span class="spacer"></span><span class="toggle on"></span></div>
+      </div>
+
+      <!-- AGE RATINGS — region cascade (global) -->
+      <div class="card set-section" id="sect-ageratings" data-tab="metadata">
+        <div class="row center"><h3 style="font-size:1.05rem;margin:0;">Age ratings</h3><span class="badge info" style="margin-left:8px;">region cascade</span></div>
+        <div class="tiny muted" style="margin:8px 0 2px;line-height:1.6;">
+          TMDB carries a separate certification per country. Jellystructure picks the one to store &amp; show by walking this
+          <b>region cascade</b> top&#8209;to&#8209;bottom and using the <b>first region that has a rating</b> for a title — the same
+          first&#8209;match idea as the language cascade. Reorder with ▲▼; the top region wins whenever it has a certification.
+          This is fetched from TMDB on scan and stored for Ravilo &amp; the filter workbench to use.
+        </div>
+        <ol class="rc-list" id="rc-list"></ol>
+        <div class="rc-add" id="rc-add-wrap">
+          <span class="btn sm" id="rc-add">＋ Add region</span>
+          <div class="card rc-menu" id="rc-menu"></div>
+          <span class="tiny muted">If none of these have a rating, the title's own primary certification is shown as a last resort.</span>
+        </div>
+      </div>
+
+      <!-- DISCOVER / TOP 10 SOURCES (global) -->
+      <div class="card set-section" id="sect-discover" data-tab="downloads">
+        <div class="row center"><h3 style="font-size:1.05rem;margin:0;">Discover / Top 10 sources</h3><span class="badge info" style="margin-left:8px;">charts</span><span class="spacer"></span><span class="muted tiny">enable discover</span><span class="toggle on" id="discover-enable"></span></div>
+        <div class="tiny muted disc-intro">Ingests trending charts from the sources you enable here, for the countries below — each user's <b>Top 10</b> tab then picks from what's enabled. Fetching a title uses <b>Radarr</b>; the <b>movieofthenight</b> sources also need a <a href="?tab=connections">Streaming Availability API key</a>.</div>
+        <div id="discover-body">
+          <div id="prov-groups"></div>
+          <hr class="dash" style="margin:16px 0 12px;">
+          <div class="row center"><h4 style="margin:0;">Country charts</h4><span class="tiny muted" style="margin-left:8px;">which countries to ingest</span></div>
+          <div class="reg-grid" id="reg-grid" style="margin-top:10px;"></div>
+          <hr class="dash" style="margin:14px 0 12px;">
+          <div class="field" style="max-width:260px;"><label>Refresh charts</label><select class="input" id="disc-refresh"><option value="24">Daily</option><option value="72">Every 3 days</option><option value="168" selected>Weekly</option></select><span class="hint">Feeds are week-gated, so weekly is plenty.</span></div>
+        </div>
       </div>
 
       <!-- CROSS-SEED SAFETY / qBITTORRENT (Phase 26 — now configurable) -->
@@ -456,7 +536,7 @@
   const sectionTab = {
     'sect-connections': 'connections', 'sect-arr': 'downloads',
     'sect-library': 'libraries', 'sect-scanning': 'libraries',
-    'sect-metadata': 'metadata', 'sect-seeding': 'downloads',
+    'sect-metadata': 'metadata', 'sect-ageratings': 'metadata', 'sect-discover': 'downloads', 'sect-seeding': 'downloads',
     'sect-notifications': 'notifications', 'sect-advanced': 'advanced'
   };
   const names = [...tabs].map(t => t.dataset.tab);
@@ -837,6 +917,138 @@
   function toast(msg) { const t = document.createElement('div'); t.className = 'toast'; t.textContent = msg; document.body.appendChild(t); setTimeout(() => t.remove(), 1900); }
 
   render();
+})();
+</script>
+
+<!-- Age-rating region cascade (Metadata tab) -->
+<script>
+(function () {
+  const CAT = {
+    DK: { name: 'Denmark',        sys: 'Medierådet',        scale: ['A','7','11','15'] },
+    US: { name: 'United States',  sys: 'MPA',              scale: ['G','PG','PG-13','R','NC-17'] },
+    GB: { name: 'United Kingdom', sys: 'BBFC',             scale: ['U','PG','12','15','18'] },
+    DE: { name: 'Germany',        sys: 'FSK',              scale: ['0','6','12','16','18'] },
+    SE: { name: 'Sweden',         sys: 'Statens medieråd', scale: ['Btl','7','11','15'] },
+    NO: { name: 'Norway',         sys: 'Medietilsynet',    scale: ['A','6','9','12','15','18'] },
+    FR: { name: 'France',         sys: 'CNC',              scale: ['U','10','12','16','18'] },
+    NL: { name: 'Netherlands',    sys: 'Kijkwijzer',       scale: ['AL','6','9','12','14','16'] },
+    IE: { name: 'Ireland',        sys: 'IFCO',             scale: ['G','PG','12','15','16','18'] },
+    IS: { name: 'Iceland',        sys: 'SMÁÍS',            scale: ['L','7','9','12','16'] },
+  };
+  let order = ['DK', 'US', 'GB'];
+  let dragCC = null;
+  const listEl = document.getElementById('rc-list');
+  const addWrap = document.getElementById('rc-add-wrap');
+  const menuEl = document.getElementById('rc-menu');
+  if (!listEl) return;
+
+  function render() {
+    listEl.innerHTML = order.map((cc, i) => {
+      const c = CAT[cc];
+      const scale = c.scale.map(s => `<span>${s}</span>`).join('');
+      return `<li class="rc-item${i === 0 ? ' top' : ''}" data-cc="${cc}" draggable="true">
+        <span class="rc-grip" title="Drag to reorder">⠷</span>
+        <span class="rc-ord">${i + 1}</span>
+        <span class="rc-cc">${cc}</span>
+        <span class="rc-name">${c.name}</span>
+        <span class="rc-sys">${c.sys}</span>
+        <span class="rc-scale">${scale}</span>
+        ${i === 0 ? '<span class="rc-top-tag">shown by default</span>' : ''}
+        <span class="rc-actions">
+          <span class="rc-btn up${i === 0 ? ' dis' : ''}" data-up title="Move up">▲</span>
+          <span class="rc-btn down${i === order.length - 1 ? ' dis' : ''}" data-down title="Move down">▼</span>
+          <span class="rc-btn rm${order.length <= 1 ? ' dis' : ''}" data-rm title="Remove">✕</span>
+        </span>
+      </li>`;
+    }).join('');
+    listEl.querySelectorAll('.rc-item').forEach(li => {
+      const cc = li.dataset.cc, i = order.indexOf(cc);
+      const up = li.querySelector('[data-up]'), dn = li.querySelector('[data-down]'), rm = li.querySelector('[data-rm]');
+      if (up) up.onclick = () => { if (i > 0) { order.splice(i - 1, 0, order.splice(i, 1)[0]); render(); toast('Region cascade updated'); } };
+      if (dn) dn.onclick = () => { if (i < order.length - 1) { order.splice(i + 1, 0, order.splice(i, 1)[0]); render(); toast('Region cascade updated'); } };
+      if (rm) rm.onclick = () => { if (order.length > 1) { order.splice(i, 1); render(); toast(CAT[cc].name + ' removed'); } };
+      // drag-and-drop reorder (grip or row); drops the dragged region in front of the target
+      li.addEventListener('dragstart', e => { dragCC = cc; li.classList.add('dragging'); e.dataTransfer.effectAllowed = 'move'; try { e.dataTransfer.setData('text/plain', cc); } catch (_) {} });
+      li.addEventListener('dragend', () => { dragCC = null; listEl.querySelectorAll('.rc-item').forEach(x => x.classList.remove('dragging', 'drag-over')); });
+      li.addEventListener('dragover', e => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; if (dragCC && dragCC !== cc) li.classList.add('drag-over'); });
+      li.addEventListener('dragleave', () => li.classList.remove('drag-over'));
+      li.addEventListener('drop', e => {
+        e.preventDefault();
+        if (!dragCC || dragCC === cc) return;
+        const moved = order.splice(order.indexOf(dragCC), 1)[0];
+        order.splice(order.indexOf(cc), 0, moved);
+        render(); toast('Region cascade updated');
+      });
+    });
+    renderMenu();
+  }
+  function renderMenu() {
+    const avail = Object.keys(CAT).filter(cc => !order.includes(cc));
+    menuEl.innerHTML = avail.length
+      ? avail.map(cc => `<div class="rc-mi" data-add="${cc}"><span class="rc-cc">${cc}</span><span class="rc-name">${CAT[cc].name}</span><span class="rc-sys">${CAT[cc].sys}</span></div>`).join('')
+      : '<div class="tiny muted" style="padding:8px 9px;">All regions added.</div>';
+    menuEl.querySelectorAll('[data-add]').forEach(m => m.onclick = () => { order.push(m.dataset.add); addWrap.classList.remove('open'); render(); toast(CAT[m.dataset.add].name + ' added'); });
+  }
+  function toast(msg) { const t = document.createElement('div'); t.className = 'toast'; t.textContent = msg; document.body.appendChild(t); setTimeout(() => t.remove(), 1600); }
+  document.getElementById('rc-add').onclick = e => { e.stopPropagation(); addWrap.classList.toggle('open'); };
+  document.addEventListener('click', e => { if (!e.target.closest('#rc-add-wrap')) addWrap.classList.remove('open'); });
+  render();
+})();
+</script>
+
+<!-- Discover / Top 10 sources (global config) -->
+<script>
+(function () {
+  const PROVIDERS = {
+    netflix:     { name: 'Netflix',      lists: 'country · global · all-time', needsKey: false },
+    viaplay:     { name: 'Viaplay',      lists: 'country',                   needsKey: false },
+    paramount:   { name: 'Paramount+',   lists: 'country',                   needsKey: false },
+    skyshowtime: { name: 'SkyShowtime',  lists: 'country',                   needsKey: false },
+    max:         { name: 'Max',          lists: 'country',                   needsKey: true },
+    disney:      { name: 'Disney+',      lists: 'country',                   needsKey: true },
+    prime:       { name: 'Amazon Prime', lists: 'country',                   needsKey: true },
+    apple:       { name: 'Apple TV+',    lists: 'country',                   needsKey: true },
+    crunchyroll: { name: 'Crunchyroll',  lists: 'country',                   needsKey: true },
+  };
+  const GROUPS = [
+    ['Netflix · Tudum', 'Official engagement feeds — country, global & all-time', ['netflix']],
+    ['JustWatch', 'User-activity charts across 4,500+ services', ['viaplay', 'paramount', 'skyshowtime']],
+    ['movieofthenight.com', 'Official service top lists · needs a Streaming Availability API key', ['max', 'disney', 'prime', 'apple', 'crunchyroll']],
+  ];
+  const REGIONS = [['DK','Denmark'],['US','United States'],['GB','United Kingdom'],['SE','Sweden'],['NO','Norway'],['DE','Germany'],['FR','France'],['ES','Spain'],['NL','Netherlands'],['IE','Ireland'],['IS','Iceland'],['FO','Faroe Islands']];
+  const enabled = new Set(['netflix', 'viaplay']);
+  const regions = new Set(['DK']);
+  const groupsEl = document.getElementById('prov-groups');
+  const regEl = document.getElementById('reg-grid');
+  const saKey = document.getElementById('sa-key');
+  if (!groupsEl) return;
+  const keySet = () => !!(saKey && saKey.value.trim());
+
+  function renderProviders() {
+    groupsEl.innerHTML = GROUPS.map(([title, sub, ids]) => {
+      const chips = ids.map(id => {
+        const p = PROVIDERS[id];
+        const locked = p.needsKey && !keySet();
+        if (locked) enabled.delete(id);
+        const on = enabled.has(id);
+        return `<div class="prov-chip${on ? ' on' : ''}${locked ? ' locked' : ''}" data-prov="${id}"><span class="box">✓</span><span class="pv"><span class="pv-name">${p.name}</span><span class="pv-sub">${p.lists}</span></span>${locked ? '<span class="pv-key">needs key</span>' : ''}</div>`;
+      }).join('');
+      return `<div class="prov-group"><div class="prov-group-h">${title}<span class="sub">${sub}</span></div><div class="prov-grid">${chips}</div></div>`;
+    }).join('');
+    groupsEl.querySelectorAll('.prov-chip').forEach(c => c.onclick = () => {
+      if (c.classList.contains('locked')) { toast('Add a Streaming Availability API key in Connections first'); return; }
+      const id = c.dataset.prov; enabled.has(id) ? enabled.delete(id) : enabled.add(id); renderProviders();
+    });
+  }
+  function renderRegions() {
+    regEl.innerHTML = REGIONS.map(([c, n]) => `<div class="reg-chip${regions.has(c) ? ' on' : ''}" data-reg="${c}">${n}</div>`).join('');
+    regEl.querySelectorAll('.reg-chip').forEach(r => r.onclick = () => { const c = r.dataset.reg; if (regions.has(c)) { if (regions.size > 1) regions.delete(c); } else regions.add(c); renderRegions(); });
+  }
+  function toast(m) { const t = document.createElement('div'); t.className = 'toast'; t.textContent = m; document.body.appendChild(t); setTimeout(() => t.remove(), 1700); }
+  if (saKey) saKey.addEventListener('input', renderProviders);
+  const de = document.getElementById('discover-enable'), db = document.getElementById('discover-body');
+  if (de) de.addEventListener('click', () => { db.style.display = de.classList.contains('on') ? '' : 'none'; });
+  renderProviders(); renderRegions();
 })();
 </script>
 </body>

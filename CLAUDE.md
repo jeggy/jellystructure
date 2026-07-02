@@ -11,24 +11,26 @@ GitHub is the **source of truth**; we layer designs on top of it.
 - **Pull (repo → here):** the canonical specs live in the repo under `specs/`. This
   project keeps an exact mirror of `specs/` at its root, plus `CLAUDE.md`. Re-pull
   with the GitHub tools (ref `main`) whenever the specs move.
-- **Export (here → repo):** export the whole project; `specs/` **and** `CLAUDE.md`
-  go to the **repo root**, and *everything else* (`app/`, `ravilo/`, `flags/`,
+- **Export (here → repo):** export the whole project; `specs/`, `CLAUDE.md` **and**
+  `STATUS.md` go to the **repo root**, and *everything else* (`app/`, `ravilo/`, `flags/`,
   `wireframes/`, `flags.css`, `scraps/`, `uploads/`, the standalone logo HTML…) goes
   under the repo's **`design/`** folder. Then commit + push.
-- **`STATUS.md` is repo-root-owned** (single source of truth for phase status,
-  admin + Ravilo in one file). The export **never** touches it — so this project does
-  **not** carry a root `STATUS.md`. Read it on GitHub when you need status.
-- **Watch the loop:** because the export overwrites the repo's `CLAUDE.md` and
-  `design/**`, any spec/status edits made *only* in the repo get reverted on the next
-  export. Keep design-side source of truth here; keep phase status in the repo's
-  `STATUS.md`.
+- **`STATUS.md` is maintained two-way** (single source of truth for phase status,
+  admin + Ravilo in one file). It lives at the repo root **and** is mirrored at this
+  project's root; **both** the repo team and this project edit it. **Re-pull it (ref
+  `main`) before editing** to absorb the other team's changes, then export it back to the
+  repo root alongside `specs/` + `CLAUDE.md`.
+- **Watch the loop:** the export overwrites the repo's `CLAUDE.md`, `STATUS.md` and
+  `design/**` with this project's copies, so edits made *only* in the repo get reverted
+  on the next export. Re-pull `specs/`, `CLAUDE.md` **and** `STATUS.md` before editing;
+  keep the design-side source of truth here.
 
 ### Spec layout (mirrored at `specs/`)
 - `specs/constitution.md` — non-negotiable architecture, language-resolution
   algorithm, config shape, visual system. **Wins on conflict.**
 - `specs/plan.md` — source layout, data models, API routes, UI pages, WS protocol.
 - `specs/requirements/phase-NN-*.md` — one flat file per admin phase (content only;
-  status lives in the repo `STATUS.md`).
+  status lives in `STATUS.md`, mirrored at this project's root).
 - `specs/ravilo/` — Ravilo's own tree: `constitution.md`, `plan.md`,
   `requirements/phase-R*.md`, plus `SYNC-AUDIT-2026-06.md`.
 - `specs/research-reports/` — dated deep-dives (research, not spec; may go stale).
