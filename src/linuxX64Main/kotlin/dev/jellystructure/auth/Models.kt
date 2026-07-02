@@ -26,6 +26,7 @@ data class DeviceData(
     val jellyfinUserToken: String,
     val isAdmin: Boolean,
     val isKids: Boolean = false,   // R18: Jellyfin user has a parental-rating cap
+    val displayName: String = "", // Phase 110: the TV's own name ("Stue TV"), for the Jellyfin session bridge
 )
 
 @Serializable

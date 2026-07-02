@@ -9,12 +9,15 @@ CREATE TABLE ravilo_pairing (
     is_kids INTEGER NOT NULL DEFAULT 0,
     approved INTEGER NOT NULL DEFAULT 0,
     consumed INTEGER NOT NULL DEFAULT 0,
-    expires_at INTEGER NOT NULL
+    expires_at INTEGER NOT NULL,
+    -- Phase 110: the TV's own device name (Android model / browser label), captured at pairing-start
+    -- and carried through to ravilo_device.display_name once the pairing is polled/consumed.
+    device_name TEXT
 );
 
 insertPairing:
-INSERT INTO ravilo_pairing(pair_id, code, poll_token, expires_at)
-VALUES (:pair_id, :code, :poll_token, :expires_at);
+INSERT INTO ravilo_pairing(pair_id, code, poll_token, expires_at, device_name)
+VALUES (:pair_id, :code, :poll_token, :expires_at, :device_name);
 
 getByCode:
 SELECT * FROM ravilo_pairing WHERE code = :code AND consumed = 0 AND expires_at > :now;
