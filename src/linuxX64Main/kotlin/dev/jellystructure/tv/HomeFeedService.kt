@@ -86,7 +86,7 @@ class HomeFeedService(
 
     private suspend fun buildHomeFeed(device: DeviceData, config: RaviloConfig): HomeFeed = coroutineScope {
         val jellyfinBase = configStore.current.apiKeys.jellyfinUrl.trimEnd('/')
-        val allDeferred   = async { mediaStore.allItems() }
+        val allDeferred   = async { mediaStore.liveItems() }
         // R85: token no longer needed for image URLs; still needed for buildContinueRow.
         val tokenDeferred = async { jellyfinClient.tvToken(jellyfinBase, device, configStore.current.apiKeys.jellyfinToken) }
         val all   = allDeferred.await()
@@ -106,7 +106,7 @@ class HomeFeedService(
         val channelCfg = config.channels.find { it.id == channelId }
             ?: return@coroutineScope HomeFeed(emptyList(), emptyList(), emptyList())
         val jellyfinBase  = configStore.current.apiKeys.jellyfinUrl.trimEnd('/')
-        val allDeferred   = async { mediaStore.allItems() }
+        val allDeferred   = async { mediaStore.liveItems() }
         // R85: token no longer needed for image URLs; still needed for buildContinueRow.
         val tokenDeferred = async { jellyfinClient.tvToken(jellyfinBase, device, configStore.current.apiKeys.jellyfinToken) }
         val allItems = allDeferred.await()
