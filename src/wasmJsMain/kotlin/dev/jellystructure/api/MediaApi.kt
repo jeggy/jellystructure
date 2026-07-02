@@ -747,9 +747,9 @@ object MediaApi {
         httpClient.post("/api/media/$id/history/$entryId/revert").body<MediaItem>()
     }.getOrNull()
 
-    suspend fun getDrift(id: String): List<DriftField> = runCatching {
-        httpClient.get("/api/media/$id/drift").body<List<DriftField>>()
-    }.getOrDefault(emptyList())
+    suspend fun getDrift(id: String): DriftResult? = runCatching {
+        httpClient.get("/api/media/$id/drift").body<DriftResult>()
+    }.getOrNull()
 
     suspend fun tmdbSearch(id: String, query: String, year: Int? = null): List<TmdbMatchResult> = runCatching {
         httpClient.get("/api/media/$id/tmdb-search") {
@@ -885,6 +885,10 @@ data class DetectedTrackerGroup(val hosts: List<String>, val torrentCount: Int)
 
 @Serializable
 data class DriftField(val field: String, val inJellyfin: String, val inDb: String)
+
+// Phase 115 — three-state sync evaluation: "nfo_stale" | "jellyfin_behind" | "external_drift" | "converged".
+@Serializable
+data class DriftResult(val state: String, val message: String, val fields: List<DriftField> = emptyList())
 
 @Serializable
 data class TmdbMatchResult(

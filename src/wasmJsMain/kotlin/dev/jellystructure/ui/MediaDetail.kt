@@ -738,13 +738,13 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
     }
 
     document.getElementById("write-nfo-btn")?.addEventListener("click") {
-        scope.launch { handleWriteNfo(item.id, refresh = false) }
+        scope.launch { handleWriteNfo(item.id, refresh = false, scope = scope) }
     }
     document.getElementById("write-nfo-refresh-btn")?.addEventListener("click") {
-        scope.launch { handleWriteNfo(item.id, refresh = true) }
+        scope.launch { handleWriteNfo(item.id, refresh = true, scope = scope) }
     }
     document.getElementById("write-nfo-refresh-btn-2")?.addEventListener("click") {
-        scope.launch { handleWriteNfo(item.id, refresh = true) }
+        scope.launch { handleWriteNfo(item.id, refresh = true, scope = scope) }
     }
     wirePagebarMenus()
 
@@ -2082,20 +2082,33 @@ private val DRIFT_FIELD_NAMES = mapOf(
     "overview" to "Overview", "genres" to "Genres", "studio" to "Studio", "network" to "Network",
 )
 
+// Phase 115 — three-state sync banner. State 1/2 are the write-through model working as designed (not
+// drift); only state 3 is the real "someone edited this outside jellystructure" warning.
 private suspend fun loadDrift(id: String, scope: CoroutineScope) {
-    val drifts = MediaApi.getDrift(id)
+    val result = MediaApi.getDrift(id)
     val banner = document.getElementById("drift-banner") as? HTMLElement ?: return
-    if (drifts.isEmpty()) { banner.style.display = "none"; return }
-    val n = drifts.size
-    // Jellystructure is the source of truth (Phase 33 / P2-1): re-assert the NFO back to Jellyfin.
+    if (result == null || result.state == "converged") { banner.style.display = "none"; return }
+
+    val (badgeCls, badgeText, ctaId, ctaLabel) = when (result.state) {
+        "nfo_stale" -> listOf("badge", "○ Not saved yet", "drift-cta-btn", "Save → NFO")
+        "jellyfin_behind" -> listOf("badge warn", "⏳ Syncing…", "drift-cta-btn", "Sync Jellyfin")
+        else -> listOf("badge warn", "⇄ Drift detected", "drift-cta-btn", "Re-assert NFO → Jellyfin")
+    }
+    val n = result.fields.size
+    val detail = when (result.state) {
+        "nfo_stale" -> "The stored metadata has changed since the NFO was last written — click Save → NFO (or Save & Sync) to write it out."
+        "jellyfin_behind" -> "The NFO on disk is current, but Jellyfin hasn't re-read it yet. This usually clears itself within a few seconds."
+        else -> "Someone edited this item in Jellyfin (or another tool touched the NFO). <b>$n field${if (n != 1) "s" else ""}</b> differ from your last write — Jellystructure is the source of truth, so re-assert to restore it."
+    }
+    val reviewBtn = if (result.state == "external_drift") """<button id="drift-review-btn" class="btn sm ghost">Review differences</button>""" else ""
     banner.innerHTML = """<div style="background:var(--warn-soft,#2d220b);border:1px solid var(--warn,#b8860b);border-radius:6px;padding:10px 14px;display:flex;align-items:flex-start;gap:12px;flex-wrap:wrap;">
-      <span class="badge warn" style="flex:none;margin-top:1px;">⇄ Drift detected</span>
+      <span class="$badgeCls" style="flex:none;margin-top:1px;">${badgeText.esc()}</span>
       <div style="flex:1;min-width:200px;">
-        <b style="font-size:.9rem;">Jellyfin's metadata no longer matches the NFO Jellystructure wrote.</b>
-        <div class="tiny muted" style="margin-top:5px;line-height:1.6;">Someone edited this item in Jellyfin (or another tool touched the NFO). <b>$n field${if (n != 1) "s" else ""}</b> differ from your last write — Jellystructure is the source of truth, so re-assert to restore it.</div>
+        <b style="font-size:.9rem;">${result.message.esc()}</b>
+        <div class="tiny muted" style="margin-top:5px;line-height:1.6;">$detail</div>
         <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;">
-          <button id="drift-review-btn" class="btn sm ghost">Review differences</button>
-          <button id="drift-reassert-btn" class="btn sm">Re-assert NFO → Jellyfin</button>
+          $reviewBtn
+          <button id="$ctaId" class="btn sm">${ctaLabel.esc()}</button>
         </div>
       </div>
       <span id="drift-dismiss-btn" class="x" style="cursor:pointer;color:var(--ink-soft);">✕</span>
@@ -2103,15 +2116,31 @@ private suspend fun loadDrift(id: String, scope: CoroutineScope) {
     banner.style.display = "block"
 
     document.getElementById("drift-dismiss-btn")?.addEventListener("click") { banner.style.display = "none" }
-    document.getElementById("drift-review-btn")?.addEventListener("click") { showDriftModal(id, drifts, scope) }
-    document.getElementById("drift-reassert-btn")?.addEventListener("click") {
-        scope.launch { reassertDrift(id) }
+    document.getElementById("drift-review-btn")?.addEventListener("click") { showDriftModal(id, result.fields, scope) }
+    document.getElementById(ctaId)?.addEventListener("click") {
+        scope.launch {
+            when (result.state) {
+                "nfo_stale" -> handleWriteNfo(id, refresh = false, scope = scope)
+                else -> reassertDrift(id, scope)
+            }
+        }
     }
 }
 
-/** Re-asserts the NFO Jellystructure holds (source of truth) back onto disk + tells Jellyfin to refresh. */
-private suspend fun reassertDrift(id: String) {
-    val banner = document.getElementById("drift-banner") as? HTMLElement
+/** Phase 115 (FR E) — after a sync-triggering action, Jellyfin's refresh is async: poll the drift state
+ *  every 3s for up to ~30s so the banner clears itself without a manual page reload. */
+private suspend fun pollDriftUntilConverged(id: String, scope: CoroutineScope, attempts: Int = 10) {
+    repeat(attempts) {
+        delay(3000)
+        val result = MediaApi.getDrift(id)
+        loadDrift(id, scope)
+        if (result == null || result.state == "converged") return
+    }
+}
+
+/** Re-asserts the NFO Jellystructure holds (source of truth) back onto disk + tells Jellyfin to refresh,
+ *  then polls until the banner confirms convergence (Phase 115 FR E). */
+private suspend fun reassertDrift(id: String, scope: CoroutineScope) {
     document.getElementById("drift-modal-overlay")?.remove()
     showDetailMsg("Re-asserting NFO → Jellyfin…", true)
     val (result, error) = MediaApi.writeNfo(id)
@@ -2120,8 +2149,8 @@ private suspend fun reassertDrift(id: String) {
         return
     }
     MediaApi.jellyfinRefresh(id)
-    banner?.style?.display = "none"
     showDetailMsg("NFO re-asserted — Jellyfin refresh requested ✓", true)
+    pollDriftUntilConverged(id, scope)
 }
 
 private fun showDriftModal(id: String, drifts: List<DriftField>, scope: CoroutineScope) {
@@ -2163,10 +2192,10 @@ private fun showDriftModal(id: String, drifts: List<DriftField>, scope: Coroutin
     document.getElementById("drift-modal-close")?.addEventListener("click") { close() }
     document.getElementById("drift-modal-close-2")?.addEventListener("click") { close() }
     // Per-field and global re-assert both write the (wholesale) NFO from the source-of-truth DB state.
-    document.getElementById("drift-reassert-all-btn")?.addEventListener("click") { scope.launch { reassertDrift(id) } }
+    document.getElementById("drift-reassert-all-btn")?.addEventListener("click") { scope.launch { reassertDrift(id, scope) } }
     overlay.querySelectorAll(".drift-field-reassert").let { nodes ->
         for (i in 0 until nodes.length) {
-            (nodes.item(i) as? HTMLElement)?.addEventListener("click") { scope.launch { reassertDrift(id) } }
+            (nodes.item(i) as? HTMLElement)?.addEventListener("click") { scope.launch { reassertDrift(id, scope) } }
         }
     }
 }
@@ -2957,7 +2986,7 @@ private fun closeAllPagebarMenus() {
     for (i in 0 until open.length) (open.item(i) as? HTMLElement)?.classList?.remove("open")
 }
 
-private suspend fun handleWriteNfo(id: String, refresh: Boolean = false) {
+private suspend fun handleWriteNfo(id: String, refresh: Boolean = false, scope: CoroutineScope? = null) {
     // The Save split's primary face shows progress; "Save → disk" is now a menu item (a div), so we
     // only drive the primary button's state here.
     val face = document.getElementById("write-nfo-refresh-btn") as? HTMLElement
@@ -2974,8 +3003,12 @@ private suspend fun handleWriteNfo(id: String, refresh: Boolean = false) {
             face?.textContent = "Notifying Jellyfin…"
             MediaApi.jellyfinRefresh(id)
             showDetailMsg("NFO written, artwork synced, Jellyfin notified ✓", true)
+            // Phase 115 (FR E) — Jellyfin's refresh is async; poll the drift state so the banner clears
+            // itself within seconds instead of needing a manual page reload.
+            if (scope != null) pollDriftUntilConverged(id, scope)
         } else {
             showDetailMsg("NFO written to ${result.path}", true)
+            if (scope != null) loadDrift(id, scope)
         }
     } else {
         showNfoWriteError(error ?: "NFO write failed.")

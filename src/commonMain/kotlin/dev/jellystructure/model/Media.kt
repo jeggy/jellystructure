@@ -146,6 +146,13 @@ data class MediaItem(
     val updatedAt: Long? = null,
     /** Phase 108: Jellyfin's own DateLastSaved, when available. Display only. */
     val jellyfinUpdatedAt: Long? = null,
+    // Phase 115: sync-chain state for the drift banner. nfoWrittenAt/nfoHash are stamped by
+    // NfoWriter.write() on every successful write (button + pipeline); jfSyncedAt is stamped whenever a
+    // Jellyfin refresh is triggered for this item. Together they let the drift check distinguish "we
+    // haven't written the NFO yet" from "Jellyfin hasn't re-read it yet" from real external drift.
+    val nfoWrittenAt: Long? = null,
+    val nfoHash: String? = null,
+    val jfSyncedAt: Long? = null,
 )
 
 /** Phase 108: the sort key every "recently added" surface uses (Ravilo's Newly Added, Browse default,

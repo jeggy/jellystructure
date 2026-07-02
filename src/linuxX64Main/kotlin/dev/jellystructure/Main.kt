@@ -414,25 +414,49 @@ suspend fun executePipeline(
                 }
             }
             "write_nfo" -> {
-                Logger.info("write_nfo: ${workingSet.size} items (overwrite=${step.overwrite})")
+                // Phase 115 (FR B) — content-aware: the old `overwrite`-gated write meant an NFO
+                // written once was never updated again by the pipeline (default overwrite=false), so
+                // every later DB change (a TMDB freshness re-pull, an operator edit) diverged from the
+                // NFO forever. Now: always regenerate + compare by hash. If our own last-written hash
+                // changed, rewrite regardless of the flag — that's just keeping our own file current,
+                // not "overwriting". If the on-disk file isn't ours (foreign/hand-edited — its hash
+                // doesn't match nfoHash), only `overwrite`/`overwriteNfo` may replace it; otherwise skip
+                // and count it for a once-per-run summary line (Phase 53 skip-summary pattern).
                 val serverUrl = cfg.apiKeys.jellyfinUrl
+                var written = 0
+                var unchanged = 0
+                var foreignSkipped = 0
                 for (item in workingSet) {
                     val current = store.get(item.id) ?: item
-                    if (step.overwrite || cfg.behavior.overwriteNfo) {
-                        runCatching { NfoWriter.write(current, serverUrl, cfg.metadata.ageRatingCascade) }
-                            .onFailure { Logger.warn("write_nfo failed for '${item.id}': ${it.message}") }
-                    }
+                    val wouldBeHash = NfoWriter.contentHash(current, serverUrl, cfg.metadata.ageRatingCascade)
+                    if (wouldBeHash == current.nfoHash) { unchanged++; continue }
+                    val onDiskHash = NfoWriter.onDiskHash(current)
+                    val isForeign = onDiskHash != null && onDiskHash != current.nfoHash
+                    if (isForeign && !(step.overwrite || cfg.behavior.overwriteNfo)) { foreignSkipped++; continue }
+                    runCatching { NfoWriter.writeTracked(current, serverUrl, cfg.metadata.ageRatingCascade).getOrThrow() }
+                        .onSuccess { r ->
+                            store.updateOne(current.copy(nfoWrittenAt = r.writtenAt, nfoHash = r.hash))
+                            written++
+                        }
+                        .onFailure { Logger.warn("write_nfo failed for '${item.id}': ${it.message}") }
                 }
+                Logger.info("write_nfo: $written written, $unchanged unchanged" +
+                    if (foreignSkipped > 0) ", $foreignSkipped foreign NFO(s) skipped (set overwrite to replace)" else "")
             }
             "sync_jellyfin" -> {
-                Logger.info("sync_jellyfin: ${workingSet.size} items")
+                // Phase 115 (FR C) — full import (not the old ValidationOnly, which never re-reads NFOs),
+                // scoped to items that actually have something new to import (nfoWrittenAt > jfSyncedAt)
+                // so an unchanged library doesn't hammer Jellyfin with hundreds of full refreshes a night.
+                val toSync = workingSet.filter { (it.nfoWrittenAt ?: 0L) > (it.jfSyncedAt ?: 0L) && !it.jellyfinId.isNullOrBlank() }
+                Logger.info("sync_jellyfin: ${toSync.size} of ${workingSet.size} items have unsynced NFO changes")
                 if (cfg.apiKeys.jellyfinUrl.isNotBlank() && cfg.apiKeys.jellyfinToken.isNotBlank()) {
-                    for (item in workingSet) {
-                        item.jellyfinId?.let { jid ->
-                            runCatching {
-                                jellyfinClient.refreshItem(cfg.apiKeys.jellyfinUrl, cfg.apiKeys.jellyfinToken, jid)
-                            }.onFailure { Logger.warn("sync_jellyfin failed for '${item.id}': ${it.message}") }
-                        }
+                    for (item in toSync) {
+                        val jid = item.jellyfinId ?: continue
+                        runCatching {
+                            jellyfinClient.refreshItem(cfg.apiKeys.jellyfinUrl, cfg.apiKeys.jellyfinToken, jid, full = true)
+                        }.onSuccess { ok ->
+                            if (ok) store.updateOne(item.copy(jfSyncedAt = nowEpochSec()))
+                        }.onFailure { Logger.warn("sync_jellyfin failed for '${item.id}': ${it.message}") }
                     }
                 }
             }
@@ -441,7 +465,34 @@ suspend fun executePipeline(
                 for (item in workingSet) arrRescan.nudge(item)
             }
             "detect_drift" -> {
-                Logger.warn("Pipeline: detect_drift not yet wired in pipeline executor")
+                // Phase 115 (FR F) — real state evaluation across the working set, replacing the no-op.
+                var converged = 0; var nfoStale = 0; var jfBehind = 0; var external = 0
+                for (item in workingSet) {
+                    val current = store.get(item.id) ?: item
+                    val result = dev.jellystructure.nfo.DriftEvaluator.evaluate(current, jellyfinClient, cfg)
+                    when (result.state) {
+                        dev.jellystructure.nfo.DriftState.NFO_STALE.name.lowercase() -> nfoStale++
+                        dev.jellystructure.nfo.DriftState.JELLYFIN_BEHIND.name.lowercase() -> {
+                            jfBehind++
+                            if (step.autoReassert) {
+                                runCatching { NfoWriter.writeTracked(current, cfg.apiKeys.jellyfinUrl, cfg.metadata.ageRatingCascade).getOrThrow() }
+                                    .onSuccess { r -> store.updateOne(current.copy(nfoWrittenAt = r.writtenAt, nfoHash = r.hash)) }
+                                current.jellyfinId?.let { jid ->
+                                    val ok = runCatching { jellyfinClient.refreshItem(cfg.apiKeys.jellyfinUrl, cfg.apiKeys.jellyfinToken, jid, full = true) }.getOrDefault(false)
+                                    if (ok) store.updateOne(current.copy(jfSyncedAt = nowEpochSec()))
+                                }
+                            }
+                        }
+                        dev.jellystructure.nfo.DriftState.EXTERNAL_DRIFT.name.lowercase() -> external++
+                        else -> converged++
+                    }
+                }
+                Logger.info("detect_drift: $converged converged, $nfoStale NFO stale, $jfBehind Jellyfin behind" +
+                    (if (step.autoReassert) " (auto-reassert attempted)" else "") + ", $external external drift")
+                if (external > 0 && cfg.behavior.notifyOnDrift) {
+                    runCatching { fireWebhook(cfg, """{"event":"drift_detected","pipeline":true,"items":$external}""") }
+                        .onFailure { Logger.warn("detect_drift notify webhook failed: ${it.message}") }
+                }
             }
             "wait" -> {
                 Logger.info("wait: ${step.minutes} min")

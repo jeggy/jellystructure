@@ -325,7 +325,11 @@
     <span class="x" id="dismiss-lock" style="cursor:pointer;color:var(--ink-soft);">✕</span>
   </div>
 
-  <!-- Jellyfin ⇄ NFO drift banner (Phase 33) -->
+  <!-- Jellyfin ⇄ NFO sync banner (Phase 33, three-state model Phase 115). Real state comes from
+       GET /api/media/{id}/drift — state="external_drift" is shown below (the rare, real warning);
+       "nfo_stale" ("Your edits aren't in the NFO yet" + Save → NFO CTA) and "jellyfin_behind"
+       ("Jellyfin hasn't re-read the NFO yet" + Sync Jellyfin CTA) are the two other states, same shell,
+       different badge/message/CTA — see MediaDetail.kt loadDrift(). "converged" hides the banner. -->
   <div class="note" id="drift-banner" style="margin-bottom:16px;background:var(--warn-soft);border-color:rgba(245,181,66,.4);display:flex;gap:13px;align-items:flex-start;">
     <span class="badge warn" style="flex:none;margin-top:1px;">⇄ Drift detected</span>
     <div style="flex:1;min-width:0;">
