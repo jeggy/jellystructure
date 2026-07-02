@@ -498,6 +498,36 @@ fun Route.tvRoutes(
         call.respond(AdminConfigEnvelope(config, hasOverride, userId == dev.jellystructure.tv.GLOBAL_USER_ID))
     }
 
+    // Phase 111 (FR D.1) — paired-devices list for the Ravilo config editor's Pair-a-TV area (name,
+    // last seen, connected, and eventually Phase 110's "re-pair" chip). Same shape as /api/remote/devices
+    // minus the API-key fence — cookie-gated like the rest of Settings.
+    get("/tv/admin/devices") {
+        runCatching { call.attributes[SessionKey] }.getOrNull()
+            ?: run { call.respond(HttpStatusCode.Unauthorized, mapOf("error" to "Not logged in")); return@get }
+        val userId = call.request.queryParameters["userId"]
+            ?: return@get call.respond(HttpStatusCode.BadRequest, mapOf("error" to "userId is required"))
+        val devices = deviceService.listByUser(userId).map { d ->
+            RemoteDevice(
+                deviceId = d.deviceId,
+                name = d.displayName,
+                connected = tvEventBus?.isConnected(d.deviceId) ?: false,
+                lastSeen = d.lastSeen,
+                nowPlaying = dev.jellystructure.tv.nowPlayingItem(d.deviceId),
+            )
+        }
+        call.respond(devices)
+    }
+
+    delete("/tv/admin/devices/{deviceId}") {
+        runCatching { call.attributes[SessionKey] }.getOrNull()
+            ?: run { call.respond(HttpStatusCode.Unauthorized, mapOf("error" to "Not logged in")); return@delete }
+        val deviceId = call.parameters["deviceId"] ?: return@delete call.respond(HttpStatusCode.BadRequest)
+        val userId = call.request.queryParameters["userId"]
+            ?: return@delete call.respond(HttpStatusCode.BadRequest, mapOf("error" to "userId is required"))
+        deviceService.removeSession(deviceId, userId)
+        call.respond(mapOf("ok" to true))
+    }
+
     put("/tv/admin/config") {
         val session = runCatching { call.attributes[SessionKey] }.getOrNull()
             ?: run { call.respond(HttpStatusCode.Unauthorized, mapOf("error" to "Not logged in")); return@put }

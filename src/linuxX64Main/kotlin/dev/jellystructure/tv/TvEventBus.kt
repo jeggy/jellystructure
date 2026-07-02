@@ -118,4 +118,13 @@ class TvEventBus(private val scope: CoroutineScope) {
             runCatching { target.send(Frame.Text(msg)) }
         }
     }
+
+    /** Phase 111 (FR B.3) — the `home` remote-control command: send the TV back to its home screen. */
+    fun notifyNavigate(userId: String, deviceId: String, destination: String) {
+        scope.launch {
+            val target = mutex.withLock { sessions[userId]?.get(deviceId) } ?: return@launch
+            val msg = """{"type":"navigate","destination":${destination.jsonEsc()}}"""
+            runCatching { target.send(Frame.Text(msg)) }
+        }
+    }
 }

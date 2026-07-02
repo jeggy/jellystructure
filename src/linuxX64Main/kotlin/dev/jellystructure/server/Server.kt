@@ -135,6 +135,7 @@ fun startServer(
     imageProxyService: RaviloArtworkService? = null,
     mediaJobQueue: dev.jellystructure.media.MediaJobQueue,
     sessionBridge: dev.jellystructure.tv.JellyfinSessionBridge,
+    apiKeyStore: dev.jellystructure.auth.ApiKeyStore,
 ): suspend () -> Unit {
     // Fire-and-forget work (scans, NFO/artwork pushes, image fetches) runs as appScope.launch{}.
     // On Kotlin/Native an exception escaping a launched coroutine reaches the global handler and
@@ -166,7 +167,7 @@ fun startServer(
             allowCredentials = true
         }
 
-        installAuthPlugin(sessionService, validateDeviceToken = { deviceService.validateDeviceToken(it) })
+        installAuthPlugin(sessionService, validateDeviceToken = { deviceService.validateDeviceToken(it) }, validateApiKey = { apiKeyStore.validate(it) })
 
         routing {
             route("/api") {
@@ -240,6 +241,8 @@ fun startServer(
                 metadataRoutes(mediaStore, jsTagStore, logoDownloader, seedingSnapshot, configStore)
                 trackRoutes(mediaStore, configStore, jellyfinClient, mediaHistory, seedingGuard, arrRescan, appScope, broadcaster, mediaJobQueue)
                 jobsRoutes(mediaJobQueue)
+                dev.jellystructure.server.routes.remoteRoutes(deviceService, tvEventBus)
+                dev.jellystructure.server.routes.apiKeyManagementRoutes(apiKeyStore)
                 acquisitionService?.let { acquisitionRoutes(it) }
                 if (chartRegistry != null && chartStore != null && chartIngest != null) {
                     chartRoutes(chartRegistry, chartStore, configStore, chartIngest)

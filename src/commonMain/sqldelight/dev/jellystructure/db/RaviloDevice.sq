@@ -26,6 +26,10 @@ SELECT * FROM ravilo_device WHERE device_id = :device_id ORDER BY last_seen DESC
 getByDeviceAndUser:
 SELECT * FROM ravilo_device WHERE device_id = :device_id AND jellyfin_user_id = :jellyfin_user_id;
 
+-- Phase 111 — every device paired to this Jellyfin user (remote-control device list, Ravilo config editor).
+getByUser:
+SELECT * FROM ravilo_device WHERE jellyfin_user_id = :jellyfin_user_id ORDER BY last_seen DESC;
+
 updateLastSeen:
 UPDATE ravilo_device SET last_seen = :last_seen WHERE device_token = :device_token;
 

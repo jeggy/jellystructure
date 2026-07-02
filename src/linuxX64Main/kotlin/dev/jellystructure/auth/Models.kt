@@ -27,6 +27,7 @@ data class DeviceData(
     val isAdmin: Boolean,
     val isKids: Boolean = false,   // R18: Jellyfin user has a parental-rating cap
     val displayName: String = "", // Phase 110: the TV's own name ("Stue TV"), for the Jellyfin session bridge
+    val lastSeen: Long = 0L,      // Phase 111: for the remote-control / Ravilo config editor device list
 )
 
 @Serializable
