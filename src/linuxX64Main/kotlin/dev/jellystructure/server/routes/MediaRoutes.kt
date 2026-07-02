@@ -480,11 +480,10 @@ fun Route.mediaRoutes(
                         "poster" -> "poster.jpg"
                         "fanart", "backdrop" -> "fanart.jpg"
                         "logo", "clearlogo" -> "clearlogo.png"
-                        "banner" -> "banner.jpg"
                         else -> ""
                     }
                     if (filename.isEmpty()) {
-                        call.respond(HttpStatusCode.BadRequest, mapOf("error" to "type must be poster, backdrop, clearlogo, or banner"))
+                        call.respond(HttpStatusCode.BadRequest, mapOf("error" to "type must be poster, backdrop, or clearlogo"))
                         return@post
                     }
                     val bytes = fileBytes
@@ -512,7 +511,7 @@ fun Route.mediaRoutes(
                     call.respond(artwork.check(item))
                 }
 
-                // GET /api/media/{id}/artwork/candidates?asset=poster|backdrop|clearlogo|banner
+                // GET /api/media/{id}/artwork/candidates?asset=poster|backdrop|clearlogo
                 // — full TMDB candidate list (every language incl. textless) for the gallery.
                 get("/candidates") {
                     val id = call.parameters["id"]
@@ -525,7 +524,6 @@ fun Route.mediaRoutes(
                         "poster" -> status.posterExists
                         "backdrop" -> status.fanartExists
                         "clearlogo" -> status.logoExists
-                        "banner" -> artwork.assetPath(item, asset)?.let { SystemFileSystem.exists(Path(it)) } ?: false
                         else -> false
                     }
                     val images = item.tmdbId?.let { tid ->
@@ -535,7 +533,7 @@ fun Route.mediaRoutes(
                         "poster" -> images?.posters
                         "backdrop" -> images?.backdrops
                         "clearlogo" -> images?.logos
-                        else -> null  // banner: TMDB has no banner type — upload / URL only
+                        else -> null
                     } ?: emptyList()
                     val onDiskSource = when (asset) {
                         "poster" -> item.posterPath

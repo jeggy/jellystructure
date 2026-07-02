@@ -2043,7 +2043,7 @@ private fun showDriftModal(id: String, drifts: List<DriftField>, scope: Coroutin
 private const val TMDB_IMG_THUMB = "https://image.tmdb.org/t/p/w342"
 
 private class ArtTarget(
-    val asset: String,          // poster | backdrop | clearlogo | banner — also the upload "type"
+    val asset: String,          // poster | backdrop | clearlogo — also the upload "type"
     val label: String,
     val aspect: String,         // CSS aspect-ratio for cards/slots
     val kind: String = "asset", // asset | season | episode
@@ -2110,14 +2110,12 @@ private suspend fun buildArtTargets(item: MediaItem): List<ArtTarget> {
         ArtTarget("poster", "Poster", "2 / 3"),
         ArtTarget("backdrop", "Backdrop", "16 / 9"),
         ArtTarget("clearlogo", "Clearlogo", "16 / 9"),
-        ArtTarget("banner", "Banner", "5.4 / 1"),
     )
     val status = MediaApi.getArtworkStatus(item.id)
     if (status != null) for (t in targets) t.onDisk = when (t.asset) {
         "poster" -> status.posterExists
         "backdrop" -> status.fanartExists
         "clearlogo" -> status.logoExists
-        "banner" -> status.bannerExists
         else -> t.onDisk
     }
     if (item.kind == MediaKind.TV_SHOW) {
@@ -2282,7 +2280,6 @@ private fun renderArtGallery() {
     // Explainer line — amber when a fallback is in effect (resolved language had none).
     val fellBack = resolved != null && artLang != resolved && all.none { it.lang == resolved } && all.isNotEmpty()
     val explainer = when {
-        all.isEmpty() && t.asset == "banner" -> "No banner providers configured — upload an image or paste a URL."
         all.isEmpty() -> "TMDB has no ${t.label.lowercase()} candidates for this title."
         fellBack -> """No ${if (resolved != null) resolved.uppercase() + " " else ""}${t.label.lowercase()} on TMDB. Falling back to ${artFilterLabel(artLang)} (${shown.size}).${if (hidden > 0) " <a class=\"art-showall\">$hidden other candidate(s) hidden — show all →</a>" else ""}"""
         else -> """Showing ${artFilterLabel(artLang)} (${shown.size}).${if (hidden > 0) " <a class=\"art-showall\">$hidden hidden — show all →</a>" else ""}"""

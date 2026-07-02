@@ -1089,11 +1089,8 @@
         sub:'transparent · missing', disk:null,
         cands:[ C('xx',8.3,800,310,0), C('xx',7.8,500,200,0), C('xx',7.1,400,155,0),
           C('de',8.0,800,310,0), C('de',7.4,600,240,0), C('fr',6.9,500,200,0), C('ja',6.5,500,200,0) ] },   // note: no 'en'
-      banner:{ key:'banner', label:'Banner', ratio:'5.4:1', file:'banner.jpg', kind:'banner', status:'warn', railHue:300,
-        sub:'5.4:1 · low-res 1000×185', disk:{ lang:'en', res:'1000×185', lowres:true },
-        cands:[ C('en',7.4,1000,185,300,true), C('en',7.0,1500,278,330), C('xx',6.8,1500,278,210), C('xx',6.2,1000,185,180) ] },
     };
-    const ORDER = ['poster','fanart','clearlogo','banner'];
+    const ORDER = ['poster','fanart','clearlogo'];
     let cur = 'poster';
 
     // ---- per-asset filter state (lazy) ----
@@ -1111,7 +1108,7 @@
     function st(a){ return state[a.key] || (state[a.key] = initState(a)); }
 
     // ---- rail ----
-    const RDIM = { poster:[30,45], fanart:[48,27], clearlogo:[48,27], banner:[48,18] };
+    const RDIM = { poster:[30,45], fanart:[48,27], clearlogo:[48,27] };
     function railThumb(a){
       const d = RDIM[a.key]; let inner;
       if (a.localUrl) inner = '<img src="'+a.localUrl+'" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;">';
@@ -1139,7 +1136,7 @@
     const grid = document.getElementById('aw-grid');
     const foot = document.getElementById('aw-foot');
     const dzName = document.getElementById('aw-dz-name');
-    const GDIM = { portrait:[124,186], land:[220,124], logo:[196,92], banner:[300,56] };
+    const GDIM = { portrait:[124,186], land:[220,124], logo:[196,92] };
 
     function filtered(a){
       const s = st(a); let list = a.cands.filter(c => s.active.has(c.lang));
@@ -1227,7 +1224,7 @@
       lbPanel = document.getElementById('aw-lb-panel'), lbPrev = document.getElementById('aw-lb-prev'),
       lbNext = document.getElementById('aw-lb-next'), lbCounter = document.getElementById('aw-lb-counter');
     let lbList = [], lbIdx = 0;
-    const LBDIM = { portrait:[348,522], land:[660,372], logo:[560,263], banner:[792,148] };
+    const LBDIM = { portrait:[348,522], land:[660,372], logo:[560,263] };
     function lbArtHTML(c, a){ const d = LBDIM[a.kind]; let bg;
       if (a.kind==='logo') bg = '<div class="aw-checker" style="position:absolute;inset:0;"><div class="aw-logomark" style="font-size:'+(d[0]/9)+'px;">Sintel</div></div>';
       else bg = '<div class="aw-fill" style="filter:hue-rotate('+c.hue+'deg);"></div>';
