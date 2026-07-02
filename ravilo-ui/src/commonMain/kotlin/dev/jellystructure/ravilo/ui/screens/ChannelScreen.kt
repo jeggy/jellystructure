@@ -182,8 +182,9 @@ fun ChannelScreen(
                     }
                 } else {
                     // R159 — same portrait-override selection as HomeScreen.
-                    val heroPct = if (LocalPortrait.current && s.feed.portraitHeroHeightPct != null)
-                        s.feed.portraitHeroHeightPct.coerceIn(20, 100) else s.feed.heroHeightPct.coerceIn(40, 100)
+                    val portraitHeroPct = s.feed.portraitHeroHeightPct
+                    val heroPct = if (LocalPortrait.current && portraitHeroPct != null)
+                        portraitHeroPct.coerceIn(20, 100) else s.feed.heroHeightPct.coerceIn(40, 100)
                     val heroHeight = if (containerH > 0)
                         with(density) { containerH.toDp() } * (heroPct / 100f)
                     else 460.dp

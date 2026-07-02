@@ -167,11 +167,16 @@ class PlaybackService(
      *  [STOP_WATCHDOG_MS] (an app kill / dropped network / HDMI-off never sent an explicit stop), and
      *  anything for a device whose TV-events socket has disconnected (checked via [isDeviceConnected]).
      *  Called on a periodic tick from Main.kt; also callable immediately on a TV disconnect. */
-    suspend fun stopWatchdogTick(isDeviceConnected: (String) -> Boolean) {
+    suspend fun stopWatchdogTick(isDeviceConnected: suspend (String) -> Boolean) {
         val now = nowMs()
-        val stale = activePlayback.entries.filter { (deviceId, _) ->
-            (now - (lastHeartbeatMs[deviceId] ?: 0L) > STOP_WATCHDOG_MS) || !isDeviceConnected(deviceId)
-        }.map { it.value }
+        // buildList's lambda is inline, so the suspend isDeviceConnected() call is allowed here —
+        // a plain `.filter { }` lambda is not inline and can't call a suspend function.
+        val stale = buildList {
+            for ((deviceId, value) in activePlayback.entries) {
+                val heartbeatStale = now - (lastHeartbeatMs[deviceId] ?: 0L) > STOP_WATCHDOG_MS
+                if (heartbeatStale || !isDeviceConnected(deviceId)) add(value)
+            }
+        }
         for ((device, jellyfinId, positionMs) in stale) {
             Logger.info("Stop watchdog: force-stopping stale playback item=$jellyfinId device=${device.deviceId}", "tv")
             runCatching { stopPlayback(device, jellyfinId, positionMs) }

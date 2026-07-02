@@ -3,7 +3,9 @@ package dev.jellystructure.ops
 import dev.jellystructure.config.ConfigStore
 import dev.jellystructure.log.Logger
 import dev.jellystructure.server.routes.fireWebhook
+import kotlin.concurrent.Volatile
 import kotlinx.cinterop.ExperimentalForeignApi
+import kotlinx.cinterop.pointed
 import kotlinx.cinterop.toKString
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay

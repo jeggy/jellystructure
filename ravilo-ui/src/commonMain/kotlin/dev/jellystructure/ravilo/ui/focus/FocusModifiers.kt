@@ -2,7 +2,13 @@ package dev.jellystructure.ravilo.ui.focus
 
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.hoverable
+import androidx.compose.foundation.interaction.HoverInteraction
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.composed
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
@@ -11,8 +17,6 @@ import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.type
-import androidx.compose.ui.input.pointer.PointerEventType
-import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.input.pointer.pointerInput
 
 /**
@@ -105,7 +109,16 @@ fun Modifier.dpadFocusable(
         } else Modifier
     )
     .then(
-        if (moveFocusOnHover && focusRequester != null) Modifier.onPointerEvent(PointerEventType.Enter) {
-            runCatching { focusRequester.requestFocus() }
+        // hoverable()/HoverInteraction is cross-platform commonMain (unlike the lower-level
+        // onPointerEvent, which is skiko-only — desktop/web — and unavailable on Android); composed{}
+        // gives this non-@Composable modifier factory the composable scope remember/LaunchedEffect need.
+        if (moveFocusOnHover && focusRequester != null) Modifier.composed {
+            val interactionSource = remember { MutableInteractionSource() }
+            LaunchedEffect(interactionSource) {
+                interactionSource.interactions.collect { interaction ->
+                    if (interaction is HoverInteraction.Enter) runCatching { focusRequester.requestFocus() }
+                }
+            }
+            Modifier.hoverable(interactionSource)
         } else Modifier
     )
