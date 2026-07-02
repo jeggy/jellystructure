@@ -57,6 +57,7 @@ import dev.jellystructure.ravilo.ui.components.AppBar
 import dev.jellystructure.ravilo.ui.components.AudioSubtitleFlagLine
 import dev.jellystructure.ravilo.ui.components.ButtonStyle
 import dev.jellystructure.ravilo.ui.components.CastCircle
+import dev.jellystructure.ravilo.ui.components.CertBadge
 import dev.jellystructure.ravilo.ui.components.DetailLoadingShell
 import dev.jellystructure.ravilo.ui.components.EpisodeCard
 import dev.jellystructure.ravilo.ui.components.DetailSynopsis
@@ -285,9 +286,16 @@ private fun SeriesDetailLoaded(
                     val meta = remember(detail.card.year, detail.card.genre) {
                         listOfNotNull(detail.card.year?.toString(), detail.card.genre).joinToString(" · ")
                     }
-                    if (meta.isNotEmpty()) {
+                    if (meta.isNotEmpty() || detail.ratingBadge != null) {
                         Spacer(Modifier.height(8.dp))
-                        Text(meta, color = colors.textSecondary, fontSize = 15.sp)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            if (meta.isNotEmpty()) Text(meta, color = colors.textSecondary, fontSize = 15.sp)
+                            // Phase 106/R153: server-resolved age-rating badge.
+                            if (detail.ratingBadge != null) {
+                                if (meta.isNotEmpty()) Spacer(Modifier.width(10.dp))
+                                CertBadge(detail.ratingBadge)
+                            }
+                        }
                     }
                     if (detail.audioLanguages.isNotEmpty() || detail.subtitleLanguages.isNotEmpty()) {
                         Spacer(Modifier.height(8.dp))
