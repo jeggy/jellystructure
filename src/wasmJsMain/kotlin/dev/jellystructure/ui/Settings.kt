@@ -251,6 +251,19 @@ fun renderSettings(container: Element, scope: CoroutineScope, query: Map<String,
                     <div style="display:flex;align-items:center;justify-content:space-between"><span style="font-size:.9rem">SkyShowtime</span><span id="provider-skyshowtime-toggle" class="toggle" style="cursor:pointer"></span></div>
                   </div>
                 </div>
+                <hr class="dash" style="margin:16px 0 12px;">
+                <div class="row center"><h4 style="margin:0;">Country charts</h4><span class="tiny muted" style="margin-left:8px;">which countries to ingest</span></div>
+                <div class="reg-grid" id="reg-grid" style="margin-top:10px;"></div>
+                <hr class="dash" style="margin:14px 0 12px;">
+                <div class="field" style="max-width:260px;">
+                  <label>Refresh charts</label>
+                  <select class="input" id="disc-refresh">
+                    <option value="24">Daily</option>
+                    <option value="72">Every 3 days</option>
+                    <option value="168">Weekly</option>
+                  </select>
+                  <span class="hint">Feeds are week-gated, so weekly is plenty.</span>
+                </div>
               </div>
             </div>
 
@@ -499,6 +512,14 @@ private fun applyHealthFailures(failsBySection: Map<String, Int>) {
 }
 
 private val DISCOVER_PROVIDER_IDS = listOf("netflix", "max", "disney", "prime", "apple", "viaplay", "paramount", "skyshowtime")
+// Phase 107 — movieofthenight.com sources need api_keys.streaming_availability_key; gated live off the
+// Connections field so enabling/clearing the key immediately locks/unlocks these four toggles.
+private val DISCOVER_KEYED_PROVIDER_IDS = setOf("max", "disney", "prime", "apple")
+private val DISCOVER_REGIONS = listOf(
+    "DK" to "Denmark", "US" to "United States", "GB" to "United Kingdom", "SE" to "Sweden",
+    "NO" to "Norway", "DE" to "Germany", "FR" to "France", "ES" to "Spain",
+    "NL" to "Netherlands", "IE" to "Ireland", "IS" to "Iceland", "FO" to "Faroe Islands",
+)
 private var discoverEnabled = false
 private val discoverProviders = mutableSetOf<String>()
 private var discoverRegions = listOf("DK")
@@ -557,6 +578,9 @@ private fun populateForm(response: ConfigResponse) {
     updateToggle("discover-enabled-toggle", discoverEnabled)
     for (id in DISCOVER_PROVIDER_IDS) updateToggle("provider-$id-toggle", id in discoverProviders)
     (document.getElementById("discover-fields") as? HTMLElement)?.style?.display = if (discoverEnabled) "" else "none"
+    (document.getElementById("disc-refresh") as? HTMLSelectElement)?.value = discoverRefreshHours.toString()
+    renderDiscoverRegions()
+    updateDiscoverProviderLocks()
 
     overwriteNfo = config.behavior.overwriteNfo
     fetchImages = config.behavior.fetchImages
@@ -805,7 +829,14 @@ private fun attachListeners(scope: CoroutineScope) {
             refreshTomlPreview(readForm())
         }
     }
-    document.getElementById("sa-api-key")?.addEventListener("input") { refreshTomlPreview(readForm()) }
+    document.getElementById("sa-api-key")?.addEventListener("input") {
+        updateDiscoverProviderLocks()
+        refreshTomlPreview(readForm())
+    }
+    (document.getElementById("disc-refresh") as? HTMLSelectElement)?.addEventListener("change") {
+        discoverRefreshHours = (document.getElementById("disc-refresh") as? HTMLSelectElement)?.value?.toIntOrNull() ?: 168
+        refreshTomlPreview(readForm())
+    }
     document.getElementById("sa-key-guide-btn")?.addEventListener("click") { e ->
         e.preventDefault()
         val guide = document.getElementById("sa-key-guide") as? HTMLElement ?: return@addEventListener
@@ -1419,6 +1450,44 @@ private fun showSettingsMsg(msg: String, ok: Boolean) {
 private fun updateToggle(id: String, on: Boolean) {
     val el = document.getElementById(id) as? HTMLElement ?: return
     if (on) el.className = "toggle on" else el.className = "toggle"
+}
+
+// Phase 107 — country-chart multi-select for Discover/Top 10 (design/app/settings.html .reg-grid).
+private fun renderDiscoverRegions() {
+    val grid = document.getElementById("reg-grid") as? HTMLElement ?: return
+    grid.innerHTML = DISCOVER_REGIONS.joinToString("") { (code, name) ->
+        """<div class="reg-chip${if (code in discoverRegions) " on" else ""}" data-reg="$code">${name.esc()}</div>"""
+    }
+    grid.querySelectorAll(".reg-chip").let { nodes ->
+        for (i in 0 until nodes.length) {
+            val chip = nodes.item(i) as? HTMLElement ?: continue
+            chip.addEventListener("click") {
+                val code = chip.getAttribute("data-reg") ?: return@addEventListener
+                discoverRegions = if (code in discoverRegions) {
+                    // At least one region must stay selected — ingestion needs somewhere to ingest for.
+                    if (discoverRegions.size > 1) discoverRegions - code else discoverRegions
+                } else discoverRegions + code
+                renderDiscoverRegions()
+                refreshTomlPreview(readForm())
+            }
+        }
+    }
+}
+
+// Phase 107 (FR B.3) — movieofthenight providers can't be enabled without the RapidAPI key; clearing an
+// already-set key also clears any of the four from the selected set, matching the design's `enabled.delete`.
+private fun updateDiscoverProviderLocks() {
+    val hasKey = getInputValue("sa-api-key").isNotBlank()
+    for (id in DISCOVER_KEYED_PROVIDER_IDS) {
+        val toggle = document.getElementById("provider-$id-toggle") as? HTMLElement ?: continue
+        if (hasKey) {
+            toggle.removeAttribute("style"); toggle.setAttribute("style", "cursor:pointer")
+        } else {
+            if (id in discoverProviders) discoverProviders.remove(id)
+            updateToggle("provider-$id-toggle", false)
+            toggle.setAttribute("style", "cursor:not-allowed;opacity:.4;pointer-events:none")
+        }
+    }
 }
 
 private fun setInputValue(id: String, value: String) {
