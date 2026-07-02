@@ -174,3 +174,22 @@ body.cf-screen-on .app-main2 > :not(#cf-screen-root) { display: none; }
   border-radius: 8px; color: var(--ink-dim); cursor: pointer; transition: background .12s, color .12s; }
 .edit-ic:hover { background: var(--fill-3); color: var(--acc-ink); }
 .cfg-row:hover .edit-ic { color: var(--ink-soft); }
+
+/* R154 — Top 10 config validation (coverage warnings) */
+.cfg-row.warn { border-color: rgba(245,181,66,.55); background: var(--warn-soft); }
+.toggle.locked { opacity: .4; cursor: not-allowed; }
+.rowwarn { display: none; align-items: center; gap: 5px; font-size: .7rem; font-weight: 600; color: var(--warn);
+  background: rgba(245,181,66,.12); border: 1px solid rgba(245,181,66,.45); padding: 3px 9px; border-radius: 20px; white-space: nowrap; }
+.rowwarn.show { display: inline-flex; }
+.t10-status { margin-top: 16px; display: flex; flex-direction: column; gap: 8px; }
+.t10-status:empty { display: none; }
+.t10-issue { display: flex; gap: 10px; align-items: flex-start; padding: 10px 13px; border-radius: 10px; font-size: .82rem; line-height: 1.5; border: 1px solid; }
+.t10-issue .ic { flex: none; font-size: .9rem; margin-top: 1px; }
+.t10-issue.err  { background: rgba(224,69,65,.1);  border-color: rgba(224,69,65,.42); }
+.t10-issue.warn { background: var(--warn-soft);     border-color: rgba(245,181,66,.42); }
+.t10-issue.ok   { background: rgba(45,212,154,.1);  border-color: rgba(45,212,154,.38); }
+.t10-issue b { color: var(--ink); }
+.t10-issue .fix { color: var(--acc-ink); white-space: nowrap; cursor: pointer; }
+.field.warn select, .field.warn .input { border-color: rgba(245,181,66,.6) !important; }
+.fhint-warn { display: none; color: var(--warn); font-size: .72rem; margin-top: 4px; }
+.field.warn .fhint-warn { display: block; }

@@ -61,6 +61,12 @@ private var rcScope: CoroutineScope? = null
 private var rcContainerRef: Element? = null
 private var popstateWired = false
 private var discoverSpecs: List<ChartListSpec> = emptyList()  // R50 — available charts for the edited region
+private var discoverCoverage: dev.jellystructure.shared.tv.DiscoverCoverageResponse? = null  // R154
+
+private suspend fun loadDiscoverForRegion(region: String) {
+    discoverSpecs = runCatching { RaviloApi.getDiscoverLists(region) }.getOrDefault(discoverSpecs)
+    discoverCoverage = runCatching { RaviloApi.getDiscoverCoverage(region) }.getOrNull()
+}
 
 // Provider display names for the Top 10 list UI — id matches the backend ChartProvider id
 private val DISCOVER_PROVIDER_NAMES = mapOf(
@@ -117,7 +123,7 @@ fun renderRaviloConfig(container: Element, scope: CoroutineScope) {
         currentUserId = GLOBAL_SCOPE; currentScopeIsGlobal = true; currentHasOverride = false
         val resp = runCatching { RaviloApi.getConfigWithMeta(scope = "global") }.getOrNull()
         currentConfig = resp?.config ?: RaviloConfig()
-        discoverSpecs = runCatching { RaviloApi.getDiscoverLists(currentConfig.discover.region) }.getOrDefault(emptyList())
+        loadDiscoverForRegion(currentConfig.discover.region)
         if (!popstateWired) {
             popstateWired = true
             window.addEventListener("popstate") { _ ->
@@ -281,7 +287,7 @@ private fun reloadScopeIntoSections(container: Element, scope: CoroutineScope) {
         if (resp != null) scopeConfigCache[cacheKey] = resp
         currentConfig = resp?.config ?: RaviloConfig()
         currentHasOverride = resp?.hasOverride ?: false
-        discoverSpecs = runCatching { RaviloApi.getDiscoverLists(currentConfig.discover.region) }.getOrDefault(emptyList())
+        loadDiscoverForRegion(currentConfig.discover.region)
         renderFull(container, scope)
     }
 }
@@ -1876,28 +1882,95 @@ private fun renderRows(container: Element) {
 
 // ── Top 10 / Discover (R50) ─────────────────────────────────────────────────────
 
+// R154 — which selected list rows can't actually serve data right now, keyed by ChartListSpec id.
+// Missing from the map (coverage not loaded yet) is treated as "unknown", not "broken".
+private fun discoverCoverageByListId(): Map<String, dev.jellystructure.shared.tv.ListCoverage> =
+    discoverCoverage?.providers?.flatMap { it.lists }?.associateBy { it.listId } ?: emptyMap()
+
+// R154 (FR-R154-1/2) — the status banner: errors before warnings, or a single "✓ verified" line when
+// nothing's wrong. Reads the same coverage data the row-level warning chips use, so the two can never
+// disagree with each other or with what the TV actually shows.
+private fun buildDiscoverIssuesHtml(
+    d: dev.jellystructure.shared.tv.DiscoverConfig,
+    countryIngested: Boolean,
+    coverageByListId: Map<String, dev.jellystructure.shared.tv.ListCoverage>,
+): String {
+    if (!d.enabled) return ""
+    val coverage = discoverCoverage
+    val countryLabel = DISCOVER_REGIONS.firstOrNull { it.first == d.region }?.second ?: d.region
+    data class Issue(val level: String, val html: String)
+    val issues = mutableListOf<Issue>()
+
+    if (coverage != null && !coverage.radarrConnected) {
+        issues += Issue("err", """Top 10 needs <b>Radarr</b> connected to fetch requested titles. <span class="fix" data-goto="/settings?tab=downloads">Connect Radarr →</span>""")
+    }
+    if (d.lists.isEmpty()) {
+        issues += Issue("warn", "No lists selected — this user's Top 10 tab will be empty.")
+    } else if (!countryIngested) {
+        issues += Issue("warn", "<b>$countryLabel</b> isn't ingested by <a href=\"#/settings?tab=discover\">Settings → Discover</a> — every country list here will stay empty until it's added.")
+    } else if (coverage != null) {
+        // Per-provider: a provider whose every SELECTED country list is broken for this region.
+        val selectedSpecs = d.lists.mapNotNull { id -> discoverSpecs.firstOrNull { it.id == id } }
+        val byProvider = selectedSpecs.filter { it.scope == "country" }.groupBy { it.providerId }
+        for ((pid, specs) in byProvider) {
+            val allBroken = specs.isNotEmpty() && specs.all { coverageByListId[it.id]?.covered == false }
+            if (allBroken) {
+                val pname = DISCOVER_PROVIDER_NAMES[pid] ?: pid
+                issues += Issue("warn", "<b>$pname</b> has no chart for $countryLabel — those rows are locked.")
+            }
+        }
+        val shown = d.lists.count { id -> coverageByListId[id]?.covered != false }
+        if (shown == 0) issues += Issue("warn", "No lists work for this source × country combination.")
+    }
+
+    if (issues.isEmpty()) {
+        if (d.lists.isEmpty()) return ""
+        val sourceNames = d.lists.mapNotNull { id -> discoverSpecs.firstOrNull { it.id == id }?.providerId }
+            .distinct().mapNotNull { DISCOVER_PROVIDER_NAMES[it] }.joinToString(", ")
+        return """<div class="t10-issue ok"><span class="ic">✓</span><div>Verified — ${sourceNames.htmlEsc()} for ${countryLabel.htmlEsc()} (${d.lists.size} list${if (d.lists.size != 1) "s" else ""} shown).</div></div>"""
+    }
+    return issues.sortedBy { if (it.level == "err") 0 else 1 }.joinToString("") { issue ->
+        """<div class="t10-issue ${issue.level}"><span class="ic">⚠</span><div>${issue.html}</div></div>"""
+    }
+}
+
 private fun renderDiscover(container: Element) {
     val sect = container.querySelector("#sect-discover") ?: return
     val d = currentConfig.discover
     val enabledChecked = if (d.enabled) " checked" else ""
     val canReqChecked = if (d.canRequest) " checked" else ""
+    val coverage = discoverCoverage
+    val countryIngested = coverage == null || d.region in coverage.ingestedRegions
     val regionOptions = DISCOVER_REGIONS.joinToString("") { (code, label) ->
         val sel = if (code == d.region) " selected" else ""
         """<option value="$code"$sel>$label</option>"""
     }
+    val coverageByListId = discoverCoverageByListId()
     val selectedRows = d.lists.mapIndexed { i, id ->
         val spec = discoverSpecs.firstOrNull { it.id == id }
         val title = spec?.title ?: id
         val rankOnly = spec?.scope == "country"
         val providerName = DISCOVER_PROVIDER_NAMES[spec?.providerId ?: ""] ?: spec?.providerId ?: ""
         val sub = providerName + (spec?.let { " · ${it.scope} · ${it.metric}" } ?: "") + if (rankOnly) " · rank only" else ""
+        // Only flag a row once coverage data has actually loaded — an unresolved id (spec == null,
+        // e.g. mid region-switch) isn't itself a coverage problem.
+        val cov = coverageByListId[id]
+        val broken = coverage != null && cov != null && !cov.covered
+        val warnCls = if (broken) " warn" else ""
+        val reasonText = when (cov?.reason) {
+            "empty_feed" -> "No results this week"
+            "not_ingested" -> "No chart for ${DISCOVER_REGIONS.firstOrNull { it.first == d.region }?.second ?: d.region}"
+            else -> "Unavailable"
+        }
+        val rowWarn = if (broken) """<span class="rowwarn show">⚠ ${reasonText.htmlEsc()}</span>""" else ""
         """
-        <div class="cfg-row" draggable="true" data-t10-i="$i" style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+        <div class="cfg-row$warnCls" draggable="true" data-t10-i="$i" style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
           <span class="drag-handle" style="cursor:grab;user-select:none;flex-shrink:0">⠿</span>
           <div style="flex:1">
             <div style="font-size:.9rem">${title.htmlEsc()}</div>
             <div class="tiny muted">${sub.htmlEsc()}</div>
           </div>
+          $rowWarn
           <button class="btn sm ghost" data-t10-del="$i">✕</button>
         </div>
         """.trimIndent()
@@ -1906,7 +1979,11 @@ private fun renderDiscover(container: Element) {
     // Group addable specs by provider for a cleaner dropdown
     val addOptions = addable.groupBy { it.providerId }.entries.joinToString("") { (pid, specs) ->
         val pname = DISCOVER_PROVIDER_NAMES[pid] ?: pid
-        """<optgroup label="$pname">${specs.joinToString("") { """<option value="${it.id}">${it.title.htmlEsc()}</option>""" }}</optgroup>"""
+        """<optgroup label="$pname">${specs.joinToString("") { spec ->
+            val cov = coverageByListId[spec.id]
+            val flag = if (coverage != null && cov != null && !cov.covered) " ⚠" else ""
+            """<option value="${spec.id}">${spec.title.htmlEsc()}$flag</option>"""
+        }}</optgroup>"""
     }
     val addSelect = if (addable.isNotEmpty())
         """<select id="t10-add" class="input" style="margin-top:6px;font-size:.85rem"><option value="">+ Add list…</option>$addOptions</select>"""
@@ -1914,6 +1991,10 @@ private fun renderDiscover(container: Element) {
         """<p class="tiny muted" style="margin-top:6px">No providers enabled — enable chart sources in <a href="#/settings?tab=discover">Settings → Discover</a>.</p>"""
     else
         """<p class="tiny muted" style="margin-top:6px">All available charts for this country are added.</p>"""
+    val countryWarnCls = if (!countryIngested) " warn" else ""
+    val countryHint = if (!countryIngested)
+        """<div class="fhint-warn">Not in <a href="#/settings?tab=discover">Settings → Discover</a>'s ingested countries — these lists will stay empty until it's added there.</div>"""
+    else ""
     sect.innerHTML = """
         <div class="card" style="padding:18px 20px;margin-bottom:18px">
           <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
@@ -1932,19 +2013,27 @@ private fun renderDiscover(container: Element) {
               <input type="checkbox" id="top10-canrequest"$canReqChecked>
               Allow this user to request downloads <span class="tiny muted">(admins always can)</span>
             </label>
-            <label style="display:flex;align-items:center;justify-content:space-between;gap:12px">
+            <div class="field$countryWarnCls" style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin:0;">
               <span style="font-size:.9rem">Country</span>
               <select id="top10-region" class="input" style="width:200px;font-size:.85rem">$regionOptions</select>
-            </label>
+            </div>
+            $countryHint
             <div>
               <div style="font-size:.85rem;font-weight:500;margin-bottom:6px">Lists shown to this user</div>
               <div id="t10-list">$selectedRows</div>
               $addSelect
             </div>
             <p class="tiny muted">Country charts are <b>ranking only</b> (no view counts); Netflix global &amp; all-time lists carry real viewership hours.</p>
+            <div class="t10-status" id="t10-status">${buildDiscoverIssuesHtml(d, countryIngested, coverageByListId)}</div>
           </div>
         </div>
     """.trimIndent()
+    sect.querySelector("#t10-status")?.querySelectorAll(".fix[data-goto]")?.let { nodes ->
+        for (i in 0 until nodes.length) {
+            val el = nodes.item(i) as? HTMLElement ?: continue
+            el.addEventListener("click") { dev.jellystructure.App.navigate(el.getAttribute("data-goto") ?: return@addEventListener) }
+        }
+    }
     wireDragReorder(container, sect, "t10", "t10-list",
         get = { currentConfig.discover.lists },
         set = { currentConfig = currentConfig.copy(discover = currentConfig.discover.copy(lists = it)) },
@@ -1970,7 +2059,7 @@ private fun renderDiscover(container: Element) {
             collectConfig(container) // capture the new region (+ other edits)
             val scope = rcScope ?: return@addEventListener
             scope.launch {
-                discoverSpecs = runCatching { RaviloApi.getDiscoverLists(currentConfig.discover.region) }.getOrDefault(discoverSpecs)
+                loadDiscoverForRegion(currentConfig.discover.region)
                 val valid = discoverSpecs.map { it.id }.toSet()
                 currentConfig = currentConfig.copy(discover = currentConfig.discover.copy(lists = currentConfig.discover.lists.filter { it in valid }))
                 renderDiscover(container); renderPreview(container)
@@ -2199,10 +2288,17 @@ private fun collectConfig(container: Element) {
     val allowOverride = (container.querySelector("#beh-skin-override") as? HTMLInputElement)?.checked ?: true
     val showProgress  = (container.querySelector("#beh-progress") as? HTMLInputElement)?.checked ?: true
     // Discover (R50) — toggles/selects from the DOM; the ordered `lists` are managed structurally.
+    // R154: `sources` is derived from the selected lists' providers (this editor is list-first, not
+    // source-first — see renderDiscover) so it stays accurate for any other consumer without its own UI
+    // control; `source` (singular) is kept in sync too for pre-R154 clients reading the legacy field.
+    val derivedSources = currentConfig.discover.lists
+        .mapNotNull { id -> discoverSpecs.firstOrNull { it.id == id }?.providerId }
+        .distinct()
     val discover = currentConfig.discover.copy(
         enabled    = (container.querySelector("#top10-enable") as? HTMLInputElement)?.checked ?: currentConfig.discover.enabled,
         canRequest = (container.querySelector("#top10-canrequest") as? HTMLInputElement)?.checked ?: currentConfig.discover.canRequest,
-        source     = (container.querySelector("#top10-source") as? HTMLSelectElement)?.value ?: currentConfig.discover.source,
+        source     = derivedSources.firstOrNull() ?: currentConfig.discover.source,
+        sources    = derivedSources.ifEmpty { currentConfig.discover.sources },
         region     = (container.querySelector("#top10-region") as? HTMLSelectElement)?.value ?: currentConfig.discover.region,
     )
     currentConfig = RaviloConfig(
