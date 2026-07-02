@@ -295,6 +295,8 @@ class TvApiClient(
         onOpen: suspend () -> Unit = {},
         onEvent: suspend (TvEvent) -> Unit,
         onAcquisition: suspend (AcquisitionRecord) -> Unit = {},
+        // R152 — a Jellyfin dashboard message relayed device-addressed via the Phase 110 session bridge.
+        onServerMessage: suspend (ServerMessageEnvelope) -> Unit = {},
     ) {
         val token = deviceToken() ?: return
         val wsUrl = baseUrl.replaceFirst("http", "ws").trimEnd('/') +
@@ -305,11 +307,15 @@ class TvApiClient(
                 if (frame !is Frame.Text) continue
                 val text = frame.readText()
                 val ev = runCatching { json.decodeFromString<TvEvent>(text) }.getOrNull() ?: continue
-                if (ev.type == "acquisition_changed") {
-                    // Payload-bearing (Phase 56): patch a tile in place, no re-pull.
-                    runCatching { json.decodeFromString<AcquisitionChangedEnvelope>(text).record }.getOrNull()?.let { onAcquisition(it) }
-                } else {
-                    onEvent(ev)
+                when (ev.type) {
+                    "acquisition_changed" -> {
+                        // Payload-bearing (Phase 56): patch a tile in place, no re-pull.
+                        runCatching { json.decodeFromString<AcquisitionChangedEnvelope>(text).record }.getOrNull()?.let { onAcquisition(it) }
+                    }
+                    "server_message" -> {
+                        runCatching { json.decodeFromString<ServerMessageEnvelope>(text) }.getOrNull()?.let { onServerMessage(it) }
+                    }
+                    else -> onEvent(ev)
                 }
             }
         }

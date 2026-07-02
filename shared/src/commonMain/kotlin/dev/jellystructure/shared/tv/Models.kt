@@ -301,6 +301,18 @@ data class SearchResults(
 @Serializable
 data class TvEvent(val type: String, val rev: Long = 0)
 
+/**
+ * R152 — a Jellyfin dashboard "send message" relayed device-addressed over `/api/tv/events` (via the
+ * Phase 110 session bridge). Payload-bearing, same envelope shape as [dev.jellystructure.shared.tv.AcquisitionChangedEnvelope].
+ */
+@Serializable
+data class ServerMessageEnvelope(
+    val type: String = "",
+    val text: String = "",
+    val header: String? = null,
+    @SerialName("timeout_ms") val timeoutMs: Long? = null,
+)
+
 // ─── Config ───────────────────────────────────────────────────────────────────
 
 @Serializable
