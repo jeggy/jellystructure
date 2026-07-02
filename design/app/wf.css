@@ -524,6 +524,9 @@ hr.dash { border: none; border-top: 1px solid var(--line); margin: 18px 0; }
 .cad .cx { color: var(--ink-dim); font-size: .68rem; }
 .cad.never { color: var(--ink-soft); }
 .cad.never .ci { color: var(--ink-dim); }
+.cv-select { background: transparent; border: 0; color: inherit; font: inherit; min-width: 120px;
+  cursor: pointer; appearance: none; -webkit-appearance: none; padding-right: 2px; }
+.cv-select:focus-visible { outline: 2px solid var(--hi); outline-offset: 2px; border-radius: 4px; }
 .sc-state { font-size: .7rem; color: var(--ink-dim); line-height: 1.5; margin-top: 11px; padding-top: 10px; border-top: 1px solid var(--line); }
 .sc-state b { color: var(--ink-soft); }
 

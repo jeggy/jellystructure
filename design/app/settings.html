@@ -173,6 +173,9 @@
   .cad .cx { color: var(--ink-dim); font-size: .68rem; }
   .cad.never { color: var(--ink-soft); }
   .cad.never .ci { color: var(--ink-dim); }
+  .cv-select { background: transparent; border: 0; color: inherit; font: inherit; min-width: 120px;
+    cursor: pointer; appearance: none; -webkit-appearance: none; padding-right: 2px; }
+  .cv-select:focus-visible { outline: 2px solid var(--hi); outline-offset: 2px; border-radius: 4px; }
   .sc-state { font-size: .7rem; color: var(--ink-dim); line-height: 1.5; margin-top: 11px; padding-top: 10px; border-top: 1px solid var(--line); }
   .sc-state b { color: var(--ink-soft); }
 
@@ -674,10 +677,10 @@
   const SHORT = { scan:'Scan', tmdb:'TMDB', art:'Artwork', nfo:'NFO', sync:'Jellyfin', arr:'*arr', drift:'Drift', notify:'Notify', wait:'Wait' };
 
   const mk = (type) => { const d = BLK[type]; const opts = {}; (d.opts||[]).forEach(o => opts[o.k] = o.def);
-    if (type === 'scan') Object.assign(opts, { recheck:true, cadY:0, cadM:1, cadO:2 }); return { type, enabled:true, opts }; };
-  const CAD = ['Weekly','Monthly','Every 6 months','Yearly','Never'];
-  const CAD_T = ['weekly','monthly','6months','yearly','never'];
-  const CAD_LABEL = ['every week','every month','every 6 months','every year','never'];
+    if (type === 'scan') Object.assign(opts, { recheck:true, cadY:1, cadM:2, cadO:3 }); return { type, enabled:true, opts }; };
+  const CAD = ['Daily','Weekly','Monthly','Every 6 months','Yearly','Never'];
+  const CAD_T = ['daily','weekly','monthly','6months','yearly','never'];
+  const CAD_LABEL = ['every day','every week','every month','every 6 months','every year','never'];
 
   function scanCfg(st) {
     const Y = new Date().getFullYear();
@@ -706,10 +709,10 @@
       age.innerHTML = `<span class="nm">${r.nm}</span><span class="yr">${r.yr}</span>`;
       tbl.appendChild(age);
       const cell = document.createElement('div'); cell.className = 'fr-cell';
-      const cad = document.createElement('span'); cad.className = 'cad' + (idx === 4 ? ' never' : '');
-      cad.title = 'Click to change how often';
-      cad.innerHTML = `<span class="ci">${IC.wait}</span><span class="cv">${CAD_LABEL[idx]}</span><span class="cx">\u25be</span>`;
-      cad.onclick = () => { st.opts[r.k] = (idx + 1) % CAD.length; render(); };
+      const cad = document.createElement('span'); cad.className = 'cad' + (idx === CAD.length - 1 ? ' never' : '');
+      const opts = CAD_LABEL.map((lbl, i) => `<option value="${i}"${i === idx ? ' selected' : ''}>${lbl}</option>`).join('');
+      cad.innerHTML = `<span class="ci">${IC.wait}</span><select class="cv-select">${opts}</select>`;
+      cad.querySelector('select').onchange = (e) => { st.opts[r.k] = parseInt(e.target.value, 10); render(); };
       cell.appendChild(cad); tbl.appendChild(cell);
     });
     box.appendChild(tbl);
