@@ -199,13 +199,14 @@ class MediaStore(private val db: JellystructureDb, private val jsTagStore: JsTag
         conditions: List<Condition> = emptyList(),
         match: MatchMode = MatchMode.ALL,
         allowedIds: Set<String>? = null,  // Phase 98: tracker filter — null = no restriction
+        excludeMissing: Boolean = false,  // true in viewer/Ravilo-config context: hide missingFromSource rows
     ): MediaPage {
         val searchLower = search?.lowercase()?.takeIf { it.isNotBlank() }
 
         // Phase 88: read through the decoded-library cache; apply kind + missing-artwork pre-filters
         // in memory (previously done in SQL by listFiltered, but allItems() is now free on cache hit).
         val decoded = run {
-            var items = allItems()
+            var items = if (excludeMissing) liveItems() else allItems()
             if (kind != null) items = items.filter { it.kind == kind }
             // R122/R123: "missing artwork" = no real poster.jpg on disk (the Jellyfin poster). The only
             // artwork signal we track — we care about what's on disk, not the TMDB posterPath metadata.
@@ -290,6 +291,10 @@ class MediaStore(private val db: JellystructureDb, private val jsTagStore: JsTag
             runCatching { json.decodeFromString(MediaItem.serializer(), blob) }.getOrNull()
         }.also { allItemsCache = it }
     }
+
+    /** Items that are present in Jellyfin — `missingFromSource` rows excluded. Use this in Ravilo
+     *  catalog/browse paths so stale items (removed/re-added in Jellyfin) never surface to viewers. */
+    fun liveItems(): List<MediaItem> = allItems().filter { !it.missingFromSource }
 
     /**
      * R100: items sharing any genre with [source], newest first, capped at [limit] — gathered from the
@@ -463,7 +468,7 @@ class MediaStore(private val db: JellystructureDb, private val jsTagStore: JsTag
     /** Evaluate N condition stacks against the library in a single pass. Avoids N×allItems() calls. */
     fun countBatch(requests: List<Pair<MatchMode, List<Condition>>>): List<Int> {
         if (requests.isEmpty()) return emptyList()
-        val all = allItems()
+        val all = liveItems()  // batch-count is always Ravilo-config context
         return requests.map { (match, conditions) ->
             if (conditions.isEmpty()) all.size
             else all.count { item -> ConditionEvaluator.matches(item, match, conditions, emptySet()) }
@@ -474,8 +479,8 @@ class MediaStore(private val db: JellystructureDb, private val jsTagStore: JsTag
      *  meta (studio/network/genre/tag) + track (audio language/codec/title), each count-sorted, only
      *  values present in the narrowed set. Uncached: computed on demand when the workbench opens in scope. */
     fun facetsNarrowed(match: MatchMode, conditions: List<Condition>): Pair<MetaFacets, TrackFacets> {
-        val items = if (conditions.isEmpty()) allItems()
-            else allItems().filter { ConditionEvaluator.matches(it, match, conditions, emptySet()) }
+        val items = if (conditions.isEmpty()) liveItems()  // workbench narrowed-facets = Ravilo-config context
+            else liveItems().filter { ConditionEvaluator.matches(it, match, conditions, emptySet()) }
         return buildMetaFacetsFrom(items) to buildTrackFacetsFrom(items)
     }
 
