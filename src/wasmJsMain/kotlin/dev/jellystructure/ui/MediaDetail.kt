@@ -170,6 +170,41 @@ private fun buildAgeRatingTrace(item: MediaItem, ageRatingCascade: List<String>)
     </div>""".trimIndent()
 }
 
+private fun tsAbs(epochSec: Long): String = dev.jellystructure.formatFullDateTime(epochSec.toString())
+private fun tsAgo(epochSec: Long): String = dev.jellystructure.formatRelativeAgo(epochSec.toString())
+private fun tsRow(label: String, epochSec: Long?, first: Boolean = false, helpTip: String? = null): String {
+    val v = if (epochSec != null) """${tsAbs(epochSec)} <span class="ago">· ${tsAgo(epochSec)}</span>""" else """<span class="muted">—</span>"""
+    val help = if (helpTip != null) """<span class="help-dot">?<span class="tip">$helpTip</span></span>""" else ""
+    return """<div class="ts-row${if (first) " first" else ""}"><span class="ts-k">${label.esc()}$help</span><span class="ts-v">$v</span></div>"""
+}
+
+/** Phase 108: full-width "Timestamps" card at the bottom of the Overview tab — everything we know about
+ *  when a title was created/updated/scanned, in Jellystructure and in Jellyfin. Mirrors design's #ts-card. */
+private fun buildTimestampsCard(item: MediaItem): String {
+    val createdHelp = "<b>Created in Jellystructure</b> — when this title was first added to your library. " +
+        (if (item.kind == MediaKind.TV_SHOW)
+            "Ravilo's <b>Newly Added</b> rows sort a series by its <b>most-recently-added episode</b> (see Seasons &amp; episodes)."
+        else "This is the timestamp Ravilo's <b>Newly Added</b> rows sort by.")
+    return """
+    <div class="card" id="ts-card" style="margin-top:16px;">
+      <div class="row center"><h4 style="margin:0;">Timestamps</h4><span class="tiny muted" style="margin-left:8px;">when this ${if (item.kind == MediaKind.TV_SHOW) "series" else "title"} was created, updated &amp; scanned — in Jellystructure and in Jellyfin</span></div>
+      <hr class="dash" style="margin:10px 0 14px;">
+      <div class="ts-cols">
+        <div>
+          <div class="ts-h">Jellystructure</div>
+          ${tsRow("Created", item.createdAt, first = true, helpTip = createdHelp)}
+          ${tsRow("Updated", item.updatedAt)}
+          ${tsRow("Last scanned", item.scannedAt)}
+        </div>
+        <div>
+          <div class="ts-h">Jellyfin</div>
+          ${tsRow("Created", item.addedAt, first = true)}
+          ${tsRow("Updated", item.jellyfinUpdatedAt)}
+        </div>
+      </div>
+    </div>"""
+}
+
 private fun renderDetailView(container: Element, item: MediaItem, scope: CoroutineScope, fallbackLang: String = "en", jellyfinUrl: String = "", tmdbLangs: Set<String>? = null, jsTags: List<JsTag> = emptyList(), initialTab: String? = null, ageRatingCascade: List<String> = emptyList()) {
     val isTvShow = item.kind == MediaKind.TV_SHOW
 
@@ -496,7 +531,8 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
           <div class="row" style="align-items:flex-start;gap:22px;flex-wrap:wrap;">
             $leftRailHtml
             $overviewMainHtml
-          </div>"""
+          </div>
+          ${buildTimestampsCard(item)}"""
 
     // The tab bar + all tab panels.
     val tabsAndPanelsHtml = """
@@ -1079,6 +1115,26 @@ private fun buildEpisodesTab(item: MediaItem): String {
           </div>
         </div>"""
 
+    // Phase 108: which episode is Ravilo's Newly-Added sort key for this series (max episode.createdAt).
+    val newestEpisode = item.episodes.filter { it.createdAt != null }.maxByOrNull { it.createdAt!! }
+    val newestEpisodeCard = if (newestEpisode != null) {
+        val code = if (newestEpisode.seasonNumber != null && newestEpisode.episodeNumber != null)
+            "S${newestEpisode.seasonNumber.toString().padStart(2, '0')}E${newestEpisode.episodeNumber.toString().padStart(2, '0')}"
+        else newestEpisode.filename.substringBeforeLast('.')
+        val title = newestEpisode.title?.takeIf { it.isNotBlank() } ?: code
+        val helpTip = "<b>Created in Jellystructure</b> — when an episode was added to your library. A series' spot in Ravilo's <b>Newly Added</b> row uses its <b>most-recently-added episode</b>, shown here."
+        """<div class="override" style="width:220px;flex:none;">
+          <div class="row center"><h4 style="margin:0;white-space:nowrap;">Newest episode</h4><span class="help-dot">?<span class="tip">$helpTip</span></span></div>
+          <div class="ne-ep"><span class="num mono">${code.esc()}</span>${title.esc()}</div>
+          <div style="margin-top:6px;">
+            ${tsRow("Added · JS", newestEpisode.createdAt, first = true)}
+            ${tsRow("Scanned", item.scannedAt)}
+            ${tsRow("Created · JF", newestEpisode.jellyfinCreatedAt)}
+          </div>
+          <div class="tiny muted" style="margin-top:10px;line-height:1.5;">This is what places <b>${item.title.esc()}</b> in Ravilo's <b>Newly Added</b>.</div>
+        </div>"""
+    } else ""
+
     // Group episodes by season
     val bySeason = item.episodes.groupBy { it.seasonNumber }
     val sortedSeasons = bySeason.toList().sortedBy { it.first ?: 999 }
@@ -1130,7 +1186,7 @@ private fun buildEpisodesTab(item: MediaItem): String {
             val issueSummary = if (seasonIssues > 0)
                 """<span class="badge bad" style="font-size:.72rem;">$seasonIssues untagged</span>"""
             else ""
-            val rows = eps.mapIndexed { idx, ep -> buildEpisodeRow(ep, season, idx, item.id) }.joinToString("")
+            val rows = eps.mapIndexed { idx, ep -> buildEpisodeRow(ep, season, idx, item.id, item.scannedAt) }.joinToString("")
             val seasonAttr = if (season != null) """data-season="$season"""" else ""
             val hidden = if (seasonKeys.size > 1 && season != firstSeasonKey) "display:none;" else ""
             """<div class="ep-season-block" data-season-block="${seasonSelKey(season)}" style="margin-bottom:20px;$hidden">
@@ -1168,7 +1224,10 @@ private fun buildEpisodesTab(item: MediaItem): String {
           </div>
           $seasonSummary
           <div class="row" style="align-items:flex-start;gap:16px;flex-wrap:wrap;">
-            $votingCard
+            <div class="col" style="width:220px;flex:none;gap:14px;">
+              $votingCard
+              $newestEpisodeCard
+            </div>
             <div class="col fill">
               $seasonSelectorHtml
               $seasonBlocks
@@ -1177,7 +1236,7 @@ private fun buildEpisodesTab(item: MediaItem): String {
         </div>"""
 }
 
-private fun buildEpisodeRow(ep: Episode, season: Int?, idx: Int, mediaId: String): String {
+private fun buildEpisodeRow(ep: Episode, season: Int?, idx: Int, mediaId: String, itemScannedAt: Long): String {
     val epCode = if (season != null && ep.episodeNumber != null) {
         "S${season.toString().padStart(2, '0')}E${ep.episodeNumber.toString().padStart(2, '0')}"
     } else ep.filename.substringBeforeLast('.')
@@ -1259,6 +1318,7 @@ private fun buildEpisodeRow(ep: Episode, season: Int?, idx: Int, mediaId: String
             $stillThumb
             <span class="num" style="min-width:64px;font-size:.82rem;">${epCode.esc()}</span>
             ${if (!ep.title.isNullOrBlank()) """<span style="font-size:.85rem;font-weight:500;flex:none;max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${ep.title.esc()}">${ep.title.esc()}</span>""" else ""}
+            ${if (ep.createdAt != null) """<span class="tiny ep-added">added ${tsAbs(ep.createdAt).substringBefore(' ')}</span>""" else ""}
             ${if (!ep.resolvedLanguage.isNullOrBlank()) """<span class="lang" style="font-size:.72rem;flex:none;">${ep.resolvedLanguage.esc()}</span>""" else ""}
             <div style="display:flex;gap:4px;flex-wrap:wrap;flex:1;">$trackChips</div>
             $multiDefaultBadge
@@ -1298,8 +1358,24 @@ private fun buildEpisodeRow(ep: Episode, season: Int?, idx: Int, mediaId: String
               <input type="file" id="still-file-$bodyId" name="file" accept="image/jpeg,image/jpg,image/png"
                 class="ep-still-file-input" data-form-id="still-form-$bodyId">
             </form>
+            ${buildEpisodeTimestamps(ep, itemScannedAt)}
           </div>
         </div>"""
+}
+
+/** Phase 108: the timestamps we know about one episode file — mirrors the design's `.ep-ts` block.
+ *  There's no per-episode "scanned" timestamp (episodes are scanned as part of one series scan), so
+ *  that row shows the series' own last-scanned time rather than a fabricated per-episode value. */
+private fun buildEpisodeTimestamps(ep: Episode, itemScannedAt: Long): String {
+    fun grp(label: String, epochSec: Long?): String {
+        val v = if (epochSec != null) tsAbs(epochSec) else "—"
+        return """<div class="grp"><span class="k">${label.esc()}</span><span class="v">${v.esc()}</span></div>"""
+    }
+    return """<div class="ep-ts">
+        ${grp("Added · JS", ep.createdAt)}
+        ${grp("Scanned", itemScannedAt)}
+        ${grp("Created · Jellyfin", ep.jellyfinCreatedAt)}
+      </div>"""
 }
 
 private fun showSyncModal(item: MediaItem, container: Element, scope: CoroutineScope) {

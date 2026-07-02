@@ -189,6 +189,7 @@ class Scanner(
             languageMix = false,
             scannedAt = epochSeconds(),
             addedAt = jItem.dateCreated?.let { isoToEpochSeconds(it) },
+            jellyfinUpdatedAt = jItem.dateLastSaved?.let { isoToEpochSeconds(it) },
             jellyfinLockData = jItem.lockData,
             jellyfinLockedFields = jItem.lockedFields,
             tags = jItem.tags,
@@ -269,8 +270,7 @@ class Scanner(
             } else Pair(emptyList(), emptyList())
 
             // R82: map (season, ep) → Jellyfin id from the pre-fetched meta
-            val jfEpId = if (seasonNum != null && epNum != null)
-                jfBySeasonEp[seasonNum to epNum]?.id else null
+            val jfEp = if (seasonNum != null && epNum != null) jfBySeasonEp[seasonNum to epNum] else null
 
             episodes += Episode(
                 filename = file.substringAfterLast('/'),
@@ -286,9 +286,10 @@ class Scanner(
                 tmdbEpisodeId = epDetails?.id,
                 guestStars = epGuests,
                 crew = epCrew,
-                jellyfinId = jfEpId,
+                jellyfinId = jfEp?.id,
                 runtime = epDetails?.runtime,
                 airDate = epDetails?.airDate?.takeIf { it.isNotBlank() },  // R148
+                jellyfinCreatedAt = jfEp?.dateCreated?.let { isoToEpochSeconds(it) },  // Phase 108
             )
         }
 
@@ -351,6 +352,7 @@ class Scanner(
                 languageMix = true,
                 scannedAt = epochSeconds(),
                 addedAt = jItem.dateCreated?.let { isoToEpochSeconds(it) },
+                jellyfinUpdatedAt = jItem.dateLastSaved?.let { isoToEpochSeconds(it) },
                 jellyfinLockData = jItem.lockData,
                 jellyfinLockedFields = jItem.lockedFields,
                 tags = jItem.tags,
@@ -402,6 +404,7 @@ class Scanner(
             languageMix = false,
             scannedAt = epochSeconds(),
             addedAt = jItem.dateCreated?.let { isoToEpochSeconds(it) },
+            jellyfinUpdatedAt = jItem.dateLastSaved?.let { isoToEpochSeconds(it) },
             jellyfinLockData = jItem.lockData,
             jellyfinLockedFields = jItem.lockedFields,
             tags = jItem.tags,
@@ -532,6 +535,8 @@ class Scanner(
                     ?: (if (seasonNum != null && epNum != null) jfBySeasonEp[seasonNum to epNum]?.id else null),
                 runtime = epDetails?.runtime ?: existingEp?.runtime,
                 airDate = epDetails?.airDate?.takeIf { it.isNotBlank() } ?: existingEp?.airDate,  // R148
+                jellyfinCreatedAt = existingEp?.jellyfinCreatedAt
+                    ?: (if (seasonNum != null && epNum != null) jfBySeasonEp[seasonNum to epNum]?.dateCreated?.let { isoToEpochSeconds(it) } else null),  // Phase 108
             )
         }
         val sortedEpisodes = episodes.sortedWith(compareBy({ it.seasonNumber ?: 999 }, { it.episodeNumber ?: 999 }))
