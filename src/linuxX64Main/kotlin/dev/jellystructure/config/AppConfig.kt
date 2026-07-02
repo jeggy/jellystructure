@@ -45,6 +45,9 @@ data class PipelineStep(
     val minutes: Int = 5,
     // notify options
     val on: String = "summary",  // summary|changes|errors
+    // Phase 115 — detect_drift option: silently fix "Jellyfin behind" items (write NFO if needed + full
+    // refresh) and only report real external drift, instead of just reporting every non-converged item.
+    @SerialName("auto_reassert") val autoReassert: Boolean = false,
 )
 
 // Phase 57 — chart/Discover feed ingestion. Absent or enabled=false ⇒ no ingestion.
