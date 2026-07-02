@@ -889,6 +889,8 @@ private fun PlayPauseButton(isPlaying: Boolean, focused: Boolean) {
     }
 }
 
+// R158: transport-control focus chrome matches the app-wide language (accent ring + focusGlow +
+// draw-only scale) instead of an opaque fill flip — the resting translucent pill never changes color.
 @Composable
 private fun SkipButton(label: String, focused: Boolean) {
     val colors = RaviloTheme.colors
@@ -896,16 +898,20 @@ private fun SkipButton(label: String, focused: Boolean) {
         modifier = Modifier
             .scale(if (focused) 1.06f else 1f)
             .height(40.dp)
-            .clip(RoundedCornerShape(10.dp))
-            .background(if (focused) Color.White else Color.White.copy(alpha = 0.08f))
-            .border(1.dp, Color.White.copy(alpha = 0.22f), RoundedCornerShape(10.dp))
             .then(if (focused) Modifier.shadow(14.dp, RoundedCornerShape(10.dp), spotColor = colors.focusGlow) else Modifier)
+            .clip(RoundedCornerShape(10.dp))
+            .background(Color.White.copy(alpha = 0.08f))
+            .border(
+                width = if (focused) 2.dp else 1.dp,
+                color = if (focused) colors.accent else Color.White.copy(alpha = 0.22f),
+                shape = RoundedCornerShape(10.dp),
+            )
             .padding(horizontal = 12.dp),
         contentAlignment = Alignment.Center,
     ) {
         Text(
             text = label,
-            color = if (focused) Color.Black else Color.White,
+            color = Color.White.copy(alpha = if (focused) 1f else 0.85f),
             fontSize = 14.sp,
             fontFamily = FontFamily.Monospace,
             fontWeight = FontWeight.Bold,
@@ -920,16 +926,20 @@ private fun TrackButton(label: String, focused: Boolean) {
         modifier = Modifier
             .scale(if (focused) 1.04f else 1f)
             .height(40.dp)
-            .clip(RoundedCornerShape(10.dp))
-            .background(if (focused) Color.White else Color.White.copy(alpha = 0.08f))
-            .border(1.dp, Color.White.copy(alpha = 0.22f), RoundedCornerShape(10.dp))
             .then(if (focused) Modifier.shadow(14.dp, RoundedCornerShape(10.dp), spotColor = colors.focusGlow) else Modifier)
+            .clip(RoundedCornerShape(10.dp))
+            .background(Color.White.copy(alpha = 0.08f))
+            .border(
+                width = if (focused) 2.dp else 1.dp,
+                color = if (focused) colors.accent else Color.White.copy(alpha = 0.22f),
+                shape = RoundedCornerShape(10.dp),
+            )
             .padding(horizontal = 14.dp),
         contentAlignment = Alignment.Center,
     ) {
         Text(
             text = label,
-            color = if (focused) Color.Black else Color.White,
+            color = Color.White.copy(alpha = if (focused) 1f else 0.85f),
             fontSize = 14.sp,
             fontWeight = FontWeight.SemiBold,
         )
@@ -938,16 +948,23 @@ private fun TrackButton(label: String, focused: Boolean) {
 
 @Composable
 private fun BackButton(focused: Boolean) {
+    val colors = RaviloTheme.colors
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         Box(
             modifier = Modifier
+                .scale(if (focused) 1.06f else 1f)
                 .size(34.dp)
+                .then(if (focused) Modifier.shadow(14.dp, CircleShape, spotColor = colors.focusGlow) else Modifier)
                 .clip(CircleShape)
-                .background(if (focused) Color.White else Color.White.copy(alpha = 0.10f))
-                .border(1.dp, Color.White.copy(alpha = if (focused) 0f else 0.22f), CircleShape),
+                .background(Color.White.copy(alpha = 0.10f))
+                .border(
+                    width = if (focused) 2.dp else 1.dp,
+                    color = if (focused) colors.accent else Color.White.copy(alpha = 0.22f),
+                    shape = CircleShape,
+                ),
             contentAlignment = Alignment.Center,
         ) {
-            Text("‹", color = if (focused) Color.Black else Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+            Text("‹", color = Color.White.copy(alpha = if (focused) 1f else 0.85f), fontSize = 20.sp, fontWeight = FontWeight.Bold)
         }
         Text(
             text = str("action.back"),
