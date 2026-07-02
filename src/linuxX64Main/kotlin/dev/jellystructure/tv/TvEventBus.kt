@@ -100,11 +100,16 @@ class TvEventBus(private val scope: CoroutineScope) {
         }
     }
 
-    /** Jellyfin Play command from the dashboard cast menu / Home Assistant (→ R155). */
-    fun notifyPlayItem(userId: String, deviceId: String, jellyfinId: String, startPositionMs: Long) {
+    /** Jellyfin Play command from the dashboard cast menu / Home Assistant (→ R155). [kind] is resolved
+     *  server-side ("movie" | "series" | "episode") so the app never has to look it up. */
+    fun notifyPlayItem(userId: String, deviceId: String, jellyfinId: String, kind: String, title: String?, startPositionMs: Long) {
         scope.launch {
             val target = mutex.withLock { sessions[userId]?.get(deviceId) } ?: return@launch
-            val msg = """{"type":"play_item","jellyfin_id":"$jellyfinId","start_position_ms":$startPositionMs}"""
+            val msg = buildString {
+                append("""{"type":"play_item","jellyfin_id":"$jellyfinId","kind":"$kind","start_position_ms":$startPositionMs""")
+                if (title != null) append(""","title":${title.jsonEsc()}""")
+                append("}")
+            }
             runCatching { target.send(Frame.Text(msg)) }
         }
     }

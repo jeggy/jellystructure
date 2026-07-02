@@ -313,6 +313,36 @@ data class ServerMessageEnvelope(
     @SerialName("timeout_ms") val timeoutMs: Long? = null,
 )
 
+/**
+ * R155 — a remote "play this" command (Home Assistant via Phase 111, or the Jellyfin dashboard cast
+ * menu via the Phase 110 bridge), device-addressed over `/api/tv/events`. `kind` is resolved
+ * server-side ("movie" | "series" | "episode") so the app never has to look it up.
+ */
+@Serializable
+data class PlayItemEnvelope(
+    val type: String = "",
+    @SerialName("jellyfin_id") val jellyfinId: String = "",
+    val kind: String = "movie",
+    val title: String? = null,
+    @SerialName("start_position_ms") val startPositionMs: Long = 0,
+)
+
+/** R155 — a remote playstate command (stop/pause/unpause/seek) for whichever item is currently
+ *  playing on this device. Ignored if no player is open. */
+@Serializable
+data class PlaystateCommandEnvelope(
+    val type: String = "",
+    val command: String = "",
+    @SerialName("seek_position_ms") val seekPositionMs: Long? = null,
+)
+
+/** R155 — a remote navigation command ("home" only, this phase). */
+@Serializable
+data class NavigateEnvelope(
+    val type: String = "",
+    val destination: String = "",
+)
+
 // ─── Config ───────────────────────────────────────────────────────────────────
 
 @Serializable

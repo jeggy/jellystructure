@@ -5,6 +5,7 @@ import dev.jellystructure.auth.JellyfinClient
 import dev.jellystructure.auth.JellyfinDeviceIdentity
 import dev.jellystructure.config.ConfigStore
 import dev.jellystructure.log.Logger
+import dev.jellystructure.media.MediaStore
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.curl.Curl
 import io.ktor.client.plugins.websocket.WebSockets
@@ -47,6 +48,7 @@ class JellyfinSessionBridge(
     private val configStore: ConfigStore,
     private val tvEventBus: TvEventBus,
     private val scope: CoroutineScope,
+    private val mediaStore: MediaStore,
 ) {
     private val http = HttpClient(Curl) { install(WebSockets) }
     private val jellyfinClient = JellyfinClient()
@@ -135,7 +137,8 @@ class JellyfinSessionBridge(
             "Play" -> {
                 val itemId = data?.get("ItemIds")?.jsonArray?.firstOrNull()?.jsonPrimitive?.contentOrNull ?: return
                 val startTicks = data["StartPositionTicks"]?.jsonPrimitive?.longOrNull ?: 0L
-                tvEventBus.notifyPlayItem(device.jellyfinUserId, device.deviceId, itemId, startTicks / 10_000L)
+                val (kind, title) = mediaStore.resolvePlayTarget(itemId) ?: ("movie" to null)
+                tvEventBus.notifyPlayItem(device.jellyfinUserId, device.deviceId, itemId, kind, title, startTicks / 10_000L)
             }
             "Playstate" -> {
                 val command = data?.get("Command")?.jsonPrimitive?.contentOrNull ?: return
