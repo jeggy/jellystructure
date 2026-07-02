@@ -27,6 +27,9 @@ import dev.jellystructure.model.Track
 import dev.jellystructure.model.TrackKind
 import dev.jellystructure.resolver.LangStepOutcome
 import dev.jellystructure.resolver.LanguageResolver
+import dev.jellystructure.resolver.CascadeStepOutcome
+import dev.jellystructure.resolver.CertificationCatalog
+import dev.jellystructure.resolver.CertificationResolver
 import kotlin.js.JsAny
 import kotlinx.browser.document
 import kotlinx.coroutines.CoroutineScope
@@ -54,9 +57,10 @@ fun renderMediaDetail(container: Element, scope: CoroutineScope, mediaId: String
         val config = ConfigApi.get()
         val fallbackLang = config?.config?.languageRules?.fallbackLanguage ?: "en"
         val jellyfinUrl = config?.config?.apiKeys?.jellyfinUrl?.trimEnd('/') ?: ""
+        val ageRatingCascade = config?.config?.metadata?.ageRatingCascade ?: emptyList()
         val tmdbLangs = if (item.tmdbId != null) MediaApi.getTmdbLanguages(item.id) else null
         val jsTags = dev.jellystructure.api.MetadataApi.getAllJsTags() ?: emptyList()
-        renderDetailView(container, item, scope, fallbackLang, jellyfinUrl, tmdbLangs, jsTags = jsTags, initialTab = initialTab)
+        renderDetailView(container, item, scope, fallbackLang, jellyfinUrl, tmdbLangs, jsTags = jsTags, initialTab = initialTab, ageRatingCascade = ageRatingCascade)
     }
 }
 
@@ -117,7 +121,56 @@ private fun buildResolverTrace(item: MediaItem, fallbackLang: String, tmdbLangs:
         </div>""".trimIndent()
 }
 
-private fun renderDetailView(container: Element, item: MediaItem, scope: CoroutineScope, fallbackLang: String = "en", jellyfinUrl: String = "", tmdbLangs: Set<String>? = null, jsTags: List<JsTag> = emptyList(), initialTab: String? = null) {
+/** Phase 106: pagebar `.cert` chip — the resolved region+code, colour-coded by maturity tier. Empty when
+ *  the item has no certification data at all (never re-runs the cascade client-side; server-resolved). */
+private fun buildAgeRatingBadge(item: MediaItem, ageRatingCascade: List<String>): String {
+    val cert = CertificationResolver.resolve(ageRatingCascade, item.certifications) ?: return ""
+    val region = CertificationCatalog.BY_CODE[cert.region]
+    val title = buildString {
+        append(region?.let { "${it.name} · ${it.system}" } ?: cert.region)
+        if (cert.fallback) append(" — via region cascade (no cascade region had a rating)")
+    }
+    return """<span class="cert lvl-${cert.tier}" title="${title.esc()}"><span class="cert-rg">${cert.region.esc()}</span><span class="cert-code">${cert.code.esc()}</span></span>"""
+}
+
+/** Phase 106: "Age rating" sidebar trace card — mirrors the language-cascade trace card
+ *  ([buildResolverTrace]) so admins meet one consistent mental model for both cascades. */
+private fun buildAgeRatingTrace(item: MediaItem, ageRatingCascade: List<String>): String {
+    if (item.certifications.isEmpty()) return ""
+    if (ageRatingCascade.isEmpty()) {
+        return """
+        <div class="override" style="margin-top:16px;">
+          <div class="row center"><h4 style="margin:0;">Age rating</h4><span class="spacer"></span><span class="badge info">region cascade</span></div>
+          <div class="tiny muted" style="margin-top:8px;">No region cascade configured — <a href="#/settings?tab=metadata">Settings → Metadata →</a></div>
+        </div>""".trimIndent()
+    }
+    val trace = CertificationResolver.trace(ageRatingCascade, item.certifications)
+    val rows = trace.joinToString("") { step ->
+        val region = CertificationCatalog.BY_CODE[step.region]
+        val label = region?.let { "${it.name} · ${it.system}" } ?: step.region
+        when (step.outcome) {
+            CascadeStepOutcome.USED -> {
+                val c = step.certification!!
+                """<div class="rc-tr use"><span class="rc-cc">${step.region.esc()}</span><span class="rc-tn">${label.esc()}</span><span class="cert lvl-${c.tier}"><span class="cert-rg">${c.region.esc()}</span><span class="cert-code">${c.code.esc()}</span></span></div>"""
+            }
+            CascadeStepOutcome.SKIPPED ->
+                """<div class="rc-tr skip"><span class="rc-cc">${step.region.esc()}</span><span class="rc-tn">${label.esc()}</span><span class="rc-tv">no certification</span></div>"""
+            CascadeStepOutcome.NOT_REACHED ->
+                """<div class="rc-tr rest"><span class="rc-cc">${step.region.esc()}</span><span class="rc-tn">${label.esc()}</span><span class="rc-tv">not reached</span></div>"""
+        }
+    }
+    return """
+    <div class="override" style="margin-top:16px;">
+      <div class="row center"><h4 style="margin:0;">Age rating</h4><span class="spacer"></span><span class="badge info">region cascade</span></div>
+      <div class="tiny" style="margin-top:8px;">The certification shown in Ravilo is resolved by walking the global <b>region cascade</b> and using the first region TMDB has a rating for. <a href="#/settings?tab=metadata">Settings → Metadata →</a></div>
+      <div class="box flat" style="margin-top:10px;background:var(--bg-2);">
+        <div class="rc-trace">$rows</div>
+      </div>
+      <div class="tiny muted" style="margin-top:8px;">Stored on the item &amp; filterable in the <a href="#/library">Library workbench</a>.</div>
+    </div>""".trimIndent()
+}
+
+private fun renderDetailView(container: Element, item: MediaItem, scope: CoroutineScope, fallbackLang: String = "en", jellyfinUrl: String = "", tmdbLangs: Set<String>? = null, jsTags: List<JsTag> = emptyList(), initialTab: String? = null, ageRatingCascade: List<String> = emptyList()) {
     val isTvShow = item.kind == MediaKind.TV_SHOW
 
     val posterHtml = if (item.posterPath != null) {
@@ -345,6 +398,8 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
            </div>"""
     } else ""
     val resolverTraceHtml = buildResolverTrace(item, fallbackLang, tmdbLangs)
+    val ageRatingTraceHtml = buildAgeRatingTrace(item, ageRatingCascade)
+    val ageRatingBadgeHtml = buildAgeRatingBadge(item, ageRatingCascade)
     val episodesTabHtml = if (isTvShow) buildEpisodesTab(item) else ""
 
     // Detail topbar external links (design media.html: grouped into an "External links ▾" menu).
@@ -432,6 +487,7 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
               </div>
               $tagsChipsHtml
               $resolverTraceHtml
+              $ageRatingTraceHtml
             </div>"""
 
     // Both movies and TV shows keep the left rail inside the overview panel so other tabs
@@ -511,6 +567,7 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
           <h2>${item.title.esc()} <span class="muted">${if (item.year != null) "(${item.year})" else ""}</span></h2>
           ${if (item.tmdbId != null) """<span class="badge ok" id="match-badge">TMDB matched</span>""" else """<span class="badge warn" id="match-badge">No TMDB match</span>"""}
           <span class="audio-flags" id="audio-flags">${audioFlagsHtml(item.tracks)}</span>
+          $ageRatingBadgeHtml
           <span id="seeding-pill" style="display:none;cursor:pointer;" title="Click to open Seeding tab"></span>
           <span class="spacer"></span>
           ${run {
@@ -589,9 +646,10 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
                 val config = ConfigApi.get()
                 val fallback = config?.config?.languageRules?.fallbackLanguage ?: "en"
                 val jellyfinUrl2 = config?.config?.apiKeys?.jellyfinUrl?.trimEnd('/') ?: ""
+                val ageRatingCascade2 = config?.config?.metadata?.ageRatingCascade ?: emptyList()
                 val tmdbLangs2 = if (updated.tmdbId != null) MediaApi.getTmdbLanguages(updated.id) else null
                 val jsTags2 = dev.jellystructure.api.MetadataApi.getAllJsTags() ?: emptyList()
-                renderDetailView(container, updated, scope, fallback, jellyfinUrl2, tmdbLangs2, jsTags = jsTags2)
+                renderDetailView(container, updated, scope, fallback, jellyfinUrl2, tmdbLangs2, jsTags = jsTags2, ageRatingCascade = ageRatingCascade2)
             }
         }
     }
@@ -1360,9 +1418,10 @@ private fun showTmdbMatchModal(
                         val config = ConfigApi.get()
                         val fb = config?.config?.languageRules?.fallbackLanguage ?: fallbackLang
                         val jfUrl = config?.config?.apiKeys?.jellyfinUrl?.trimEnd('/') ?: jellyfinUrl
+                        val ageRatingCascade3 = config?.config?.metadata?.ageRatingCascade ?: emptyList()
                         val langs = MediaApi.getTmdbLanguages(updated.id)
                         val jsTags = dev.jellystructure.api.MetadataApi.getAllJsTags() ?: emptyList()
-                        renderDetailView(container, updated, scope, fb, jfUrl, langs, jsTags = jsTags)
+                        renderDetailView(container, updated, scope, fb, jfUrl, langs, jsTags = jsTags, ageRatingCascade = ageRatingCascade3)
                     } else {
                         statusEl?.innerHTML = """<span style="color:var(--bad);" class="tiny">Save failed — try again.</span>"""
                         renderResults(results)
@@ -1898,7 +1957,9 @@ private suspend fun handleRepull(item: MediaItem, container: Element, scope: Cor
         delay(600)
         // Re-fetch languages in case the TMDB match changed
         val tmdbLangs = if (updated.tmdbId != null) MediaApi.getTmdbLanguages(updated.id) else prevTmdbLangs
-        renderDetailView(container, updated, scope, fallbackLang, jellyfinUrl, tmdbLangs)
+        // Certifications were just re-pulled (Phase 106) — re-fetch the cascade so the badge/trace update.
+        val ageRatingCascade4 = ConfigApi.get()?.config?.metadata?.ageRatingCascade ?: emptyList()
+        renderDetailView(container, updated, scope, fallbackLang, jellyfinUrl, tmdbLangs, ageRatingCascade = ageRatingCascade4)
     } else {
         showDetailMsg("Re-pull failed — no TMDB match found.", false)
     }

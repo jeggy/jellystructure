@@ -265,6 +265,33 @@ data class TmdbExternalIds(
     @SerialName("imdb_id") val imdbId: String? = null,
 )
 
+// --- Phase 106: age-rating certifications. Movies: /release_dates (per-country, several release
+// `type`s can carry different certification strings — theatrical types preferred). TV: /content_ratings
+// (flat, one rating per country, no type/date — TMDB has no episode-level ratings). ---
+@Serializable
+data class TmdbReleaseDateEntry(
+    val certification: String = "",
+    val type: Int = 0,
+)
+
+@Serializable
+data class TmdbReleaseDatesCountry(
+    @SerialName("iso_3166_1") val country: String,
+    @SerialName("release_dates") val releaseDates: List<TmdbReleaseDateEntry> = emptyList(),
+)
+
+@Serializable
+data class TmdbReleaseDatesResponse(val results: List<TmdbReleaseDatesCountry> = emptyList())
+
+@Serializable
+data class TmdbContentRatingEntry(
+    @SerialName("iso_3166_1") val country: String,
+    val rating: String = "",
+)
+
+@Serializable
+data class TmdbContentRatingsResponse(val results: List<TmdbContentRatingEntry> = emptyList())
+
 class TmdbClient(
     private val configStore: ConfigStore,
     private val baseUrl: String = "https://api.themoviedb.org/3",
@@ -780,4 +807,56 @@ class TmdbClient(
         getImages("tv/$seriesId/season/$season")
     suspend fun getEpisodeImages(seriesId: Int, season: Int, episode: Int): TmdbImagesResponse? =
         getImages("tv/$seriesId/season/$season/episode/$episode")
+
+    // Preference order for a movie's release `type` when several entries carry a certification for
+    // the same country: theatrical (3) first, then digital/physical/limited-theatrical, TV, premiere.
+    private val RELEASE_TYPE_PREFERENCE = listOf(3, 4, 5, 2, 6, 1)
+
+    /** Phase 106: per-country certification map for a movie (uppercase ISO-3166-1 → code), picking the
+     *  best release-type entry per country. Best-effort — empty map on any failure/missing key. */
+    suspend fun getMovieCertifications(tmdbId: Int): Map<String, String> {
+        val key = apiKey()
+        if (key.isBlank()) return emptyMap()
+        val result = runCatching {
+            val response = httpGet("$baseUrl/movie/$tmdbId/release_dates") { parameter("api_key", key) }
+            if (response.status == HttpStatusCode.TooManyRequests) {
+                delay(3000)
+                return getMovieCertifications(tmdbId)
+            }
+            if (response.status.value == 404) return emptyMap()
+            val map = LinkedHashMap<String, String>()
+            for (c in response.body<TmdbReleaseDatesResponse>().results) {
+                val byType = c.releaseDates.groupBy { it.type }
+                val code = RELEASE_TYPE_PREFERENCE.firstNotNullOfOrNull { t ->
+                    byType[t]?.firstOrNull { it.certification.isNotBlank() }?.certification
+                } ?: c.releaseDates.firstOrNull { it.certification.isNotBlank() }?.certification
+                if (!code.isNullOrBlank()) map[c.country.uppercase()] = code
+            }
+            map
+        }
+        if (result.isFailure) Logger.warn("TMDB movie release_dates failed for id=$tmdbId: ${result.exceptionOrNull()?.message}")
+        return result.getOrDefault(emptyMap())
+    }
+
+    /** Phase 106: per-country certification map for a TV series (uppercase ISO-3166-1 → rating).
+     *  Series-level only — TMDB has no episode-level ratings. Best-effort. */
+    suspend fun getTvCertifications(tmdbId: Int): Map<String, String> {
+        val key = apiKey()
+        if (key.isBlank()) return emptyMap()
+        val result = runCatching {
+            val response = httpGet("$baseUrl/tv/$tmdbId/content_ratings") { parameter("api_key", key) }
+            if (response.status == HttpStatusCode.TooManyRequests) {
+                delay(3000)
+                return getTvCertifications(tmdbId)
+            }
+            if (response.status.value == 404) return emptyMap()
+            val map = LinkedHashMap<String, String>()
+            for (e in response.body<TmdbContentRatingsResponse>().results) {
+                if (e.rating.isNotBlank()) map[e.country.uppercase()] = e.rating
+            }
+            map
+        }
+        if (result.isFailure) Logger.warn("TMDB tv content_ratings failed for id=$tmdbId: ${result.exceptionOrNull()?.message}")
+        return result.getOrDefault(emptyMap())
+    }
 }
