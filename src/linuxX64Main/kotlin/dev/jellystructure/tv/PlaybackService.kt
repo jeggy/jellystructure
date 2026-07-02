@@ -2,6 +2,7 @@ package dev.jellystructure.tv
 
 import dev.jellystructure.auth.DeviceData
 import dev.jellystructure.auth.JellyfinClient
+import dev.jellystructure.auth.JellyfinDeviceIdentity
 import dev.jellystructure.config.ConfigStore
 import dev.jellystructure.auth.JellyfinItemDetail
 import dev.jellystructure.log.Logger
@@ -33,11 +34,29 @@ private const val TICKET_TTL_MS = 4 * 60 * 60 * 1000L // 4 hours
 private val tokenValidUntil = HashMap<String, Long>()
 private val tokenCacheMutex = Mutex()
 private const val TOKEN_VALID_TTL_MS = 5 * 60_000L // 5 minutes
+
+// Phase 110 (FR E) — a rejected token used to be dropped from the cache entirely, so the very next TV
+// request re-triggered the slow isTokenValid() round-trip unconditionally — every request, forever,
+// for every device sharing that dead token. Negative-cache it instead, and log the rejection once per
+// transition (not once per request).
+private val tokenInvalidUntil = HashMap<String, Long>()
+private val tokenRejectionLogged = HashSet<String>()
+private const val TOKEN_NEGATIVE_TTL_MS = 10 * 60_000L // ~10 minutes, per spec FR E.1
 private const val TICKS_PER_MS = 10_000L
 
 // R142: bound the played write-through fan-out (a series mark-all can be dozens of episode calls).
 // Kotlin/Native CIO select() crashes on FD ≥ 1024, so every fan-out MUST be Semaphore-capped.
 private val playedGate = Semaphore(4)
+
+// Phase 110 (FR B.2) — stop watchdog: a playback the client hasn't heartbeated (progress report, ~every
+// 10s) in STOP_WATCHDOG_MS is force-stopped server-side, so an app kill / network drop / HDMI-off
+// doesn't leave "Now Playing" lingering in the Jellyfin dashboard until its own 5-minute timeout.
+// Key = deviceId (one active playback per device); cleared on an explicit stop.
+private val lastHeartbeatMs = HashMap<String, Long>()
+private val activePlayback = HashMap<String, Triple<DeviceData, String, Long>>() // deviceId -> (device, jellyfinId, lastKnownPositionMs)
+private const val STOP_WATCHDOG_MS = 90_000L
+
+private fun playSessionIdFor(device: DeviceData, jellyfinId: String): String = "${device.deviceId}-$jellyfinId"
 
 class PlaybackService(
     private val mediaStore: MediaStore,
@@ -59,6 +78,11 @@ class PlaybackService(
     ): StreamTicket? {
         val jellyfinBase = configStore.current.apiKeys.jellyfinUrl.trimEnd('/')
         val token = jellyfinClient.tvToken(jellyfinBase, device, configStore.current.apiKeys.jellyfinToken)
+        // Phase 110: this device's own Jellyfin identity — every call below presents it, so the
+        // dashboard shows one correctly-named session per TV instead of one shared "Jellystructure"
+        // session for all playback everywhere.
+        val identity = JellyfinDeviceIdentity.forDevice(device)
+        val playSessionId = playSessionIdFor(device, jellyfinId)
 
         // Resolve resume position from Jellyfin user-data
         val itemDetail = jellyfinClient.getItemDetail(jellyfinBase, token, device.jellyfinUserId, jellyfinId)
@@ -66,7 +90,7 @@ class PlaybackService(
         val startPositionMs = startPositionTicks / TICKS_PER_MS
 
         // Start a Jellyfin playback session so the server tracks Now Playing + resume
-        jellyfinClient.startPlaybackSession(jellyfinBase, token, jellyfinId, startPositionTicks, jellyfinId)
+        jellyfinClient.startPlaybackSession(jellyfinBase, token, jellyfinId, startPositionTicks, jellyfinId, identity, playSessionId)
 
         // Build the external-subtitle list from Jellyfin's MediaStreams for THIS playable item
         // (works for movies + episodes; embedded subs are discovered in-container by the player).
@@ -79,7 +103,7 @@ class PlaybackService(
 
         // R56: negotiate delivery via PlaybackInfo + DeviceProfile. Jellyfin tells us whether the item
         // can direct-play; if not, it hands back a TranscodingUrl. Fall back to a direct-play URL.
-        val source = jellyfinClient.getPlaybackInfo(jellyfinBase, token, device.jellyfinUserId, jellyfinId)
+        val source = jellyfinClient.getPlaybackInfo(jellyfinBase, token, device.jellyfinUserId, jellyfinId, identity = identity)
             ?.mediaSources?.firstOrNull()
         val needsTranscode = source != null && !source.supportsDirectPlay && source.transcodingUrl != null
         Logger.info(
@@ -90,8 +114,11 @@ class PlaybackService(
             val tu = source!!.transcodingUrl!!
             if (tu.startsWith("http")) tu else "$jellyfinBase$tu"
         } else {
-            "$jellyfinBase/Videos/$jellyfinId/stream?Static=true&MediaSourceId=$jellyfinId&api_key=$token"
+            "$jellyfinBase/Videos/$jellyfinId/stream?Static=true&MediaSourceId=$jellyfinId&DeviceId=${identity.deviceId}&api_key=$token"
         }
+
+        lastHeartbeatMs[device.deviceId] = nowMs()
+        activePlayback[device.deviceId] = Triple(device, jellyfinId, startPositionMs)
 
         return StreamTicket(
             jellyfinBaseUrl = jellyfinBase,
@@ -111,19 +138,41 @@ class PlaybackService(
     suspend fun reportProgress(device: DeviceData, jellyfinId: String, positionMs: Long, isPaused: Boolean) {
         val jellyfinBase = configStore.current.apiKeys.jellyfinUrl.trimEnd('/')
         val token = jellyfinClient.tvToken(jellyfinBase, device, configStore.current.apiKeys.jellyfinToken)
+        lastHeartbeatMs[device.deviceId] = nowMs()
+        activePlayback[device.deviceId] = Triple(device, jellyfinId, positionMs)
         jellyfinClient.reportPlaybackProgress(
             jellyfinBase, token, jellyfinId,
             positionMs * TICKS_PER_MS, isPaused, jellyfinId,
+            JellyfinDeviceIdentity.forDevice(device), playSessionIdFor(device, jellyfinId),
         )
     }
 
     suspend fun stopPlayback(device: DeviceData, jellyfinId: String, positionMs: Long) {
         val jellyfinBase = configStore.current.apiKeys.jellyfinUrl.trimEnd('/')
         val token = jellyfinClient.tvToken(jellyfinBase, device, configStore.current.apiKeys.jellyfinToken)
+        lastHeartbeatMs.remove(device.deviceId)
+        activePlayback.remove(device.deviceId)
         jellyfinClient.stopPlaybackSession(
             jellyfinBase, token, jellyfinId,
             positionMs * TICKS_PER_MS, jellyfinId,
+            JellyfinDeviceIdentity.forDevice(device), playSessionIdFor(device, jellyfinId),
         )
+    }
+
+    /** Phase 110 (FR B.2) — force-stops any playback whose last heartbeat is older than
+     *  [STOP_WATCHDOG_MS] (an app kill / dropped network / HDMI-off never sent an explicit stop), and
+     *  anything for a device whose TV-events socket has disconnected (checked via [isDeviceConnected]).
+     *  Called on a periodic tick from Main.kt; also callable immediately on a TV disconnect. */
+    suspend fun stopWatchdogTick(isDeviceConnected: (String) -> Boolean) {
+        val now = nowMs()
+        val stale = activePlayback.entries.filter { (deviceId, _) ->
+            (now - (lastHeartbeatMs[deviceId] ?: 0L) > STOP_WATCHDOG_MS) || !isDeviceConnected(deviceId)
+        }.map { it.value }
+        for ((device, jellyfinId, positionMs) in stale) {
+            Logger.info("Stop watchdog: force-stopping stale playback item=$jellyfinId device=${device.deviceId}", "tv")
+            runCatching { stopPlayback(device, jellyfinId, positionMs) }
+                .onFailure { Logger.warn("Stop watchdog: force-stop failed: ${it.message}", "tv") }
+        }
     }
 
     suspend fun mark(device: DeviceData, jellyfinId: String, watched: Boolean) {
@@ -247,17 +296,18 @@ class PlaybackService(
     ): StreamTicket? {
         val jellyfinBase = configStore.current.apiKeys.jellyfinUrl.trimEnd('/')
         val token = jellyfinClient.tvToken(jellyfinBase, device, configStore.current.apiKeys.jellyfinToken)
+        val identity = JellyfinDeviceIdentity.forDevice(device)
         val itemDetail = jellyfinClient.getItemDetail(jellyfinBase, token, device.jellyfinUserId, jellyfinId)
         val subtitles = buildSubtracks(itemDetail, jellyfinId, jellyfinBase, token)
         val audio = buildAudioTracks(itemDetail)
         // R56: ask Jellyfin (PlaybackInfo + DeviceProfile, with the sub index for Encode burn-in) for the
         // real TranscodingUrl; fall back to a hand-built HLS burn-in URL if PlaybackInfo is unavailable.
-        val negotiated = jellyfinClient.getPlaybackInfo(jellyfinBase, token, device.jellyfinUserId, jellyfinId, subtitleStreamIndex)
+        val negotiated = jellyfinClient.getPlaybackInfo(jellyfinBase, token, device.jellyfinUserId, jellyfinId, subtitleStreamIndex, identity)
             ?.mediaSources?.firstOrNull()?.transcodingUrl
             ?.let { if (it.startsWith("http")) it else "$jellyfinBase$it" }
         Logger.info("PlaybackInfo(burn-in): item=$jellyfinId sub=$subtitleStreamIndex negotiated=${negotiated != null}", "tv")
         val transcodingUrl = negotiated ?: ("$jellyfinBase/Videos/$jellyfinId/master.m3u8" +
-            "?DeviceId=jellystructure-ravilo" +
+            "?DeviceId=${identity.deviceId}" +
             "&MediaSourceId=$jellyfinId" +
             "&VideoCodec=h264" +
             "&AudioCodec=aac" +
@@ -324,20 +374,39 @@ class PlaybackService(
 internal suspend fun JellyfinClient.tvToken(baseUrl: String, device: DeviceData, serverToken: String): String {
     val userToken = device.jellyfinUserToken
     val now = nowMs()
-    // Fast path: token was recently validated — skip the Jellyfin round-trip.
-    if (tokenCacheMutex.withLock { tokenValidUntil[userToken]?.let { it > now } == true }) {
-        return userToken
+    tokenCacheMutex.withLock {
+        // Fast path: token was recently validated — skip the Jellyfin round-trip.
+        tokenValidUntil[userToken]?.let { if (it > now) return userToken }
+        // Phase 110: negative-cached — known-dead as of a recent check, skip the round-trip too.
+        tokenInvalidUntil[userToken]?.let { if (it > now) return serverToken }
     }
     // Slow path: check with Jellyfin.
     val valid = isTokenValid(baseUrl, userToken, device.jellyfinUserId)
     tokenCacheMutex.withLock {
-        if (valid) tokenValidUntil[userToken] = nowMs() + TOKEN_VALID_TTL_MS
-        else tokenValidUntil.remove(userToken)
+        if (valid) {
+            tokenValidUntil[userToken] = nowMs() + TOKEN_VALID_TTL_MS
+            tokenInvalidUntil.remove(userToken)
+            tokenRejectionLogged.remove(userToken)
+        } else {
+            tokenValidUntil.remove(userToken)
+            tokenInvalidUntil[userToken] = nowMs() + TOKEN_NEGATIVE_TTL_MS
+        }
     }
-    if (!valid) Logger.warn(
-        "TV: paired user token rejected by Jellyfin (401) for user ${device.jellyfinUserId}; using server token"
-    )
+    if (!valid && tokenRejectionLogged.add(userToken)) {
+        Logger.warn(
+            "TV: paired user token rejected by Jellyfin (401) for user ${device.jellyfinUserId} " +
+                "— negative-cached ${TOKEN_NEGATIVE_TTL_MS / 60_000}min, using server token meanwhile",
+            "tv",
+        )
+    }
     return if (valid) userToken else serverToken
+}
+
+/** Phase 110 (FR E.2) — is this device's paired token currently known-dead? Surfaced by the device
+ *  list / health panel so "re-pair this user" is visible instead of a silent server-token fallback. */
+fun isTokenNegativeCached(device: DeviceData): Boolean {
+    val until = tokenInvalidUntil[device.jellyfinUserToken] ?: return false
+    return until > nowMs()
 }
 
 @OptIn(ExperimentalForeignApi::class)

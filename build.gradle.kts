@@ -278,6 +278,9 @@ tasks.named("wasmJsBrowserDistribution") {
                 implementation(libs.ktor.client.core)
                 implementation(libs.ktor.client.curl)
                 implementation(libs.ktor.client.content.negotiation)
+                // Phase 110 — outbound WS client to Jellyfin's own /socket (session bridge), one per
+                // connected Ravilo TV. Already used client-side by ravilo-ui/shared for /api/tv/events.
+                implementation(libs.ktor.client.websockets)
                 implementation(libs.kotlinx.coroutines.core)
                 implementation(libs.kotlinx.serialization.json)
                 implementation(libs.kotlinx.io.core)

@@ -55,10 +55,16 @@ class JellyfinClient {
         baseUrl: String,
         username: String,
         password: String,
+        // Phase 110: TV pairing mints the token under the TV's own DeviceId (see JellyfinDeviceIdentity)
+        // so the resulting Jellyfin session is per-device; admin login (no identity) keeps the server one.
+        identity: JellyfinDeviceIdentity? = null,
     ): JellyfinAuthResponse {
         val url = baseUrl.trimEnd('/') + "/Users/AuthenticateByName"
+        val authHeader = if (identity != null) {
+            """MediaBrowser Client="Ravilo", Device="${headerSafe(identity.deviceName)}", DeviceId="${headerSafe(identity.deviceId)}", Version="0.1.0""""
+        } else AUTH_HEADER
         val response = httpPost(url) {
-            header("Authorization", AUTH_HEADER)
+            header("Authorization", authHeader)
             contentType(ContentType.Application.Json)
             setBody("""{"Username":${username.jsonEscape()},"Pw":${password.jsonEscape()}}""")
         }
@@ -183,11 +189,14 @@ class JellyfinClient {
         jellyfinId: String,
         positionTicks: Long,
         mediaSourceId: String,
+        identity: JellyfinDeviceIdentity? = null,
+        playSessionId: String? = null,
     ) = runCatching {
         httpPost(baseUrl.trimEnd('/') + "/Sessions/Playing") {
-            jellyfinAuth(userToken)
+            jellyfinAuth(userToken, identity)
             contentType(ContentType.Application.Json)
-            setBody("""{"ItemId":"$jellyfinId","StartPositionTicks":$positionTicks,"MediaSourceId":"$mediaSourceId","CanSeek":true}""")
+            val psid = playSessionId?.let { ""","PlaySessionId":"$it"""" } ?: ""
+            setBody("""{"ItemId":"$jellyfinId","StartPositionTicks":$positionTicks,"MediaSourceId":"$mediaSourceId","CanSeek":true$psid}""")
         }
     }.let { if (it.isFailure) Logger.warn("Jellyfin startPlaybackSession failed: ${it.exceptionOrNull()?.message}") }
 
@@ -202,10 +211,11 @@ class JellyfinClient {
         userId: String,
         itemId: String,
         subtitleStreamIndex: Int? = null,
+        identity: JellyfinDeviceIdentity? = null,
     ): JellyfinPlaybackInfoResponse? = runCatching {
         val subBody = subtitleStreamIndex?.let { ""","SubtitleStreamIndex":$it""" } ?: ""
         httpPost(baseUrl.trimEnd('/') + "/Items/$itemId/PlaybackInfo?UserId=$userId") {
-            jellyfinAuth(userToken)
+            jellyfinAuth(userToken, identity)
             contentType(ContentType.Application.Json)
             setBody("""{"MediaSourceId":"$itemId","DeviceProfile":$DEVICE_PROFILE$subBody}""")
         }.bodyOrNull<JellyfinPlaybackInfoResponse>("getPlaybackInfo")
@@ -218,11 +228,14 @@ class JellyfinClient {
         positionTicks: Long,
         isPaused: Boolean,
         mediaSourceId: String,
+        identity: JellyfinDeviceIdentity? = null,
+        playSessionId: String? = null,
     ) = runCatching {
         httpPost(baseUrl.trimEnd('/') + "/Sessions/Playing/Progress") {
-            jellyfinAuth(userToken)
+            jellyfinAuth(userToken, identity)
             contentType(ContentType.Application.Json)
-            setBody("""{"ItemId":"$jellyfinId","PositionTicks":$positionTicks,"IsPaused":$isPaused,"MediaSourceId":"$mediaSourceId","EventName":"timeupdate"}""")
+            val psid = playSessionId?.let { ""","PlaySessionId":"$it"""" } ?: ""
+            setBody("""{"ItemId":"$jellyfinId","PositionTicks":$positionTicks,"IsPaused":$isPaused,"MediaSourceId":"$mediaSourceId","EventName":"timeupdate"$psid}""")
         }
     }.let { if (it.isFailure) Logger.warn("Jellyfin reportPlaybackProgress failed: ${it.exceptionOrNull()?.message}") }
 
@@ -232,13 +245,30 @@ class JellyfinClient {
         jellyfinId: String,
         positionTicks: Long,
         mediaSourceId: String,
+        identity: JellyfinDeviceIdentity? = null,
+        playSessionId: String? = null,
     ) = runCatching {
         httpPost(baseUrl.trimEnd('/') + "/Sessions/Playing/Stopped") {
-            jellyfinAuth(userToken)
+            jellyfinAuth(userToken, identity)
             contentType(ContentType.Application.Json)
-            setBody("""{"ItemId":"$jellyfinId","PositionTicks":$positionTicks,"MediaSourceId":"$mediaSourceId"}""")
+            val psid = playSessionId?.let { ""","PlaySessionId":"$it"""" } ?: ""
+            setBody("""{"ItemId":"$jellyfinId","PositionTicks":$positionTicks,"MediaSourceId":"$mediaSourceId"$psid}""")
         }
     }.let { if (it.isFailure) Logger.warn("Jellyfin stopPlaybackSession failed: ${it.exceptionOrNull()?.message}") }
+
+    /** Phase 110 (FR C.2) — registers this device as a remote-control target: makes the dashboard
+     *  message button and cast/remote-control menu appear for its session, and Home Assistant's
+     *  Jellyfin integration list it as a controllable media_player. Only takes effect while paired
+     *  with an open session WebSocket (SupportsMediaControl + a live socket = an addressable session). */
+    suspend fun postCapabilities(baseUrl: String, userToken: String, identity: JellyfinDeviceIdentity) = runCatching {
+        httpPost(baseUrl.trimEnd('/') + "/Sessions/Capabilities/Full") {
+            jellyfinAuth(userToken, identity)
+            contentType(ContentType.Application.Json)
+            setBody(
+                """{"PlayableMediaTypes":["Video"],"SupportedCommands":["DisplayMessage","Play","Playstate"],"SupportsMediaControl":true}"""
+            )
+        }
+    }.let { if (it.isFailure) Logger.warn("Jellyfin postCapabilities failed: ${it.exceptionOrNull()?.message}") }
 
     suspend fun markPlayed(baseUrl: String, userToken: String, userId: String, jellyfinId: String) = runCatching {
         httpPost(baseUrl.trimEnd('/') + "/Users/$userId/PlayedItems/$jellyfinId") {
@@ -355,9 +385,30 @@ class JellyfinClient {
     }
 }
 
-/** Canonical authenticated Jellyfin header — one place so no call site can drift (Phase 50). */
-private fun HttpRequestBuilder.jellyfinAuth(token: String) {
-    header("Authorization", """$AUTH_HEADER, Token="$token"""")
+/**
+ * Phase 110 — a per-device identity for the Jellyfin session bridge. Every Ravilo TV authenticating
+ * under its OWN DeviceId (instead of the one shared `jellystructure-server-v01` every TV + the admin
+ * server used before) is the root-cause fix for the paired-token 401 storm: Jellyfin prunes a
+ * DeviceId's older tokens on every new login under that same id, so with one shared id, pairing a
+ * second TV could invalidate the first TV's token. It also makes each TV show up as its own named
+ * session in the Jellyfin dashboard instead of one anonymous "Jellystructure" session for all of them.
+ */
+data class JellyfinDeviceIdentity(val deviceId: String, val deviceName: String) {
+    companion object {
+        fun forDevice(device: DeviceData): JellyfinDeviceIdentity =
+            JellyfinDeviceIdentity("ravilo-${device.deviceId}", device.displayName.ifBlank { "Ravilo TV" })
+    }
+}
+
+private fun headerSafe(s: String): String = s.replace("\"", "'").replace("\n", " ").take(64)
+
+/** Canonical authenticated Jellyfin header — one place so no call site can drift (Phase 50). Phase 110:
+ *  an [identity] swaps in a per-device Client/Device/DeviceId instead of the shared server identity. */
+private fun HttpRequestBuilder.jellyfinAuth(token: String, identity: JellyfinDeviceIdentity? = null) {
+    val header = if (identity != null) {
+        """MediaBrowser Client="Ravilo", Device="${headerSafe(identity.deviceName)}", DeviceId="${headerSafe(identity.deviceId)}", Version="0.1.0""""
+    } else AUTH_HEADER
+    header("Authorization", """$header, Token="$token"""")
 }
 
 /**

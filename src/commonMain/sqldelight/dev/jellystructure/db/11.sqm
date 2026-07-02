@@ -1,0 +1,2 @@
+-- Phase 110 — capture the TV's own device name at pairing (v11 -> v12).
+ALTER TABLE ravilo_pairing ADD COLUMN device_name TEXT;

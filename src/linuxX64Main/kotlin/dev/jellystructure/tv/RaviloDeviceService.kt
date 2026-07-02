@@ -37,7 +37,9 @@ class RaviloDeviceService(private val db: JellystructureDb) {
         db.raviloPairingQueries.deleteExpired(nowMs())
     }
 
-    fun startPairing(): PairingStartResult {
+    // Phase 110: [deviceName] is the TV's own name (Android device model / browser label), sent at
+    // pairing-start; carried through to ravilo_device.display_name once polling creates the device row.
+    fun startPairing(deviceName: String? = null): PairingStartResult {
         val code = generateCode()
         val pollToken = generateSecureToken()
         val pairId = generateSecureToken()
@@ -47,6 +49,7 @@ class RaviloDeviceService(private val db: JellystructureDb) {
             code = code,
             poll_token = pollToken,
             expires_at = expiresAt,
+            device_name = deviceName?.take(80)?.ifBlank { null },
         )
         return PairingStartResult(code = code, pollToken = pollToken, expiresAt = expiresAt)
     }
@@ -85,6 +88,11 @@ class RaviloDeviceService(private val db: JellystructureDb) {
         val deviceId = existingDeviceId ?: generateSecureToken()
         val deviceToken = generateSecureToken()
         val now = nowMs()
+        // Phase 110: prefer the name the TV sent at pairing-start; an already-paired device adding a
+        // second user (existingDeviceId set) keeps whatever name the first pairing gave it.
+        val displayName = row.device_name?.takeIf { it.isNotBlank() }
+            ?: existingDeviceId?.let { db.raviloDeviceQueries.getByDevice(it).executeAsList().firstOrNull()?.display_name?.takeIf { n -> n.isNotBlank() } }
+            ?: "Ravilo TV ${deviceId.take(6)}"
         db.raviloDeviceQueries.insertDevice(
             device_id = deviceId,
             jellyfin_user_id = userId,
@@ -93,7 +101,7 @@ class RaviloDeviceService(private val db: JellystructureDb) {
             is_admin = row.is_admin,
             is_kids = row.is_kids,
             device_token = deviceToken,
-            display_name = "",
+            display_name = displayName,
             created_at = now,
             last_seen = now,
         )
@@ -108,6 +116,7 @@ class RaviloDeviceService(private val db: JellystructureDb) {
                 jellyfinUserToken = userToken,
                 isAdmin = row.is_admin == 1L,
                 isKids = row.is_kids == 1L,
+                displayName = displayName,
             ),
             deviceToken,
         )
@@ -140,6 +149,7 @@ class RaviloDeviceService(private val db: JellystructureDb) {
             jellyfinUserToken = row.jellyfin_user_token,
             isAdmin = row.is_admin == 1L,
             isKids = row.is_kids == 1L,
+            displayName = row.display_name.ifBlank { "Ravilo TV ${row.device_id.take(6)}" },
         )
         tokenCache[token] = TokenEntry(data, now, now)
         return data
@@ -161,6 +171,7 @@ class RaviloDeviceService(private val db: JellystructureDb) {
                 jellyfinUserToken = row.jellyfin_user_token,
                 isAdmin = row.is_admin == 1L,
                 isKids = row.is_kids == 1L,
+                displayName = row.display_name.ifBlank { "Ravilo TV ${row.device_id.take(6)}" },
             )
         }
 
