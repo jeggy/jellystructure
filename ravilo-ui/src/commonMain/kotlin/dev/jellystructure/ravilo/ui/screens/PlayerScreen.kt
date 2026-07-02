@@ -1,5 +1,6 @@
 package dev.jellystructure.ravilo.ui.screens
 
+import dev.jellystructure.ravilo.ui.LocalPlaystateCommands
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
@@ -263,6 +264,27 @@ fun PlayerScreen(
     }
 
     fun scrubStep() = SKIP_BACK_MS.coerceAtMost(maxOf(5_000L, (durationMs * 0.012).toLong()))
+
+    // R155 — remote playstate commands (Phase 111 Home Assistant / Jellyfin dashboard buttons via the
+    // Phase 110 bridge). Set (not toggle) play state so a stale/duplicate command is idempotent.
+    // Collecting LocalPlaystateCommands only while this screen is composed is itself the "ignore when
+    // no player is open" behaviour (FR-R155-2) — nothing else needs to check that.
+    val remotePlaystate = LocalPlaystateCommands.current
+    LaunchedEffect(remotePlaystate) {
+        remotePlaystate?.collect { cmd ->
+            when (cmd.command.lowercase()) {
+                "stop" -> onBack()
+                "pause" -> if (isPlaying) togglePlay()
+                "unpause" -> if (!isPlaying) togglePlay()
+                "seek" -> cmd.seekPositionMs?.let { ms ->
+                    val clamped = ms.coerceIn(0L, durationMs.coerceAtLeast(0L))
+                    player.seekTo(clamped)
+                    positionMs = clamped
+                    wake()
+                }
+            }
+        }
+    }
 
     // ─── Effects ────────────────────────────────────────────────────────────
 

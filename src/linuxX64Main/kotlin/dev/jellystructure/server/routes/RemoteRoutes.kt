@@ -3,6 +3,7 @@ package dev.jellystructure.server.routes
 import dev.jellystructure.auth.ApiKeyAttr
 import dev.jellystructure.auth.ApiKeyStore
 import dev.jellystructure.log.Logger
+import dev.jellystructure.media.MediaStore
 import dev.jellystructure.tv.RaviloDeviceService
 import dev.jellystructure.tv.TvEventBus
 import dev.jellystructure.tv.nowPlayingItem
@@ -46,7 +47,7 @@ private data class CommandRequest(
  * existing per-device `/api/tv/events` socket (Phase 110). Fenced to API-key auth by AuthPlugin —
  * see [ApiKeyAttr].
  */
-fun Route.remoteRoutes(deviceService: RaviloDeviceService, tvEventBus: TvEventBus) {
+fun Route.remoteRoutes(deviceService: RaviloDeviceService, tvEventBus: TvEventBus, mediaStore: MediaStore) {
     route("/remote") {
         get("/devices") {
             val key = call.attributes[ApiKeyAttr]
@@ -74,7 +75,8 @@ fun Route.remoteRoutes(deviceService: RaviloDeviceService, tvEventBus: TvEventBu
                 call.respond(HttpStatusCode.Conflict, mapOf("error" to "device_offline"))
                 return@post
             }
-            tvEventBus.notifyPlayItem(key.jellyfinUserId, device.deviceId, req.jellyfinItemId, req.startPositionMs)
+            val (kind, title) = mediaStore.resolvePlayTarget(req.jellyfinItemId) ?: ("movie" to null)
+            tvEventBus.notifyPlayItem(key.jellyfinUserId, device.deviceId, req.jellyfinItemId, kind, title, req.startPositionMs)
             Logger.info("remote play: key='${key.name}' device=${device.deviceId} item=${req.jellyfinItemId}", "remote")
             call.respond(HttpStatusCode.Accepted, mapOf("ok" to true))
         }

@@ -68,6 +68,9 @@ import dev.jellystructure.ravilo.ui.theme.RaviloMotion
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
 import dev.jellystructure.ravilo.ui.theme.rememberRaviloTheme
 import dev.jellystructure.shared.tv.AcquisitionRecord
+import dev.jellystructure.shared.tv.NavigateEnvelope
+import dev.jellystructure.shared.tv.PlayItemEnvelope
+import dev.jellystructure.shared.tv.PlaystateCommandEnvelope
 import dev.jellystructure.shared.tv.ServerMessageEnvelope
 import dev.jellystructure.shared.tv.Channel
 import dev.jellystructure.shared.tv.MediaCard
@@ -94,6 +97,11 @@ val LocalLiveAcquisition = staticCompositionLocalOf<SharedFlow<AcquisitionRecord
 /** R152 — Jellyfin dashboard "send message" events, relayed device-addressed via the Phase 110 session
  *  bridge; collected by [dev.jellystructure.ravilo.ui.components.ServerMessageHost] at the app root. */
 val LocalServerMessages = staticCompositionLocalOf<SharedFlow<ServerMessageEnvelope>?> { null }
+
+/** R155 — remote playstate commands (stop/pause/unpause/seek) for whatever's playing on this device.
+ *  Collected directly by PlayerScreen — a SharedFlow with no active collector just drops the value,
+ *  which is exactly "ignore when no player is open" (FR-R155-2) with no extra check needed. */
+val LocalPlaystateCommands = staticCompositionLocalOf<SharedFlow<PlaystateCommandEnvelope>?> { null }
 
 /** Tile-size multiplier from the active user's `RaviloConfig.uiDensity`; read by [dev.jellystructure.ravilo.ui.components.Tile]. */
 val LocalTileScale = staticCompositionLocalOf { 1f }
@@ -179,6 +187,13 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
     val liveConfig = remember { MutableSharedFlow<Long>(replay = 0, extraBufferCapacity = 16) }
     val liveAcquisition = remember { MutableSharedFlow<AcquisitionRecord>(replay = 0, extraBufferCapacity = 32) }
     val liveServerMessages = remember { MutableSharedFlow<ServerMessageEnvelope>(replay = 0, extraBufferCapacity = 8) }
+    // R155 — remote-control commands (Phase 111 / Home Assistant + the Jellyfin dashboard cast menu).
+    // play_item/navigate need push()/resetTo(), which aren't declared yet at this point in the
+    // composable — collected further down, after those are in scope. playstate_command is exposed via
+    // LocalPlaystateCommands for PlayerScreen to collect directly (naturally a no-op if no player is open).
+    val livePlayItem = remember { MutableSharedFlow<PlayItemEnvelope>(replay = 0, extraBufferCapacity = 8) }
+    val livePlaystateCommands = remember { MutableSharedFlow<PlaystateCommandEnvelope>(replay = 0, extraBufferCapacity = 8) }
+    val liveNavigate = remember { MutableSharedFlow<NavigateEnvelope>(replay = 0, extraBufferCapacity = 8) }
     var activeUserId by remember { mutableStateOf(MultiTokenStore.getActive()?.userId) }
     var activeAvatarUrl by remember { mutableStateOf(MultiTokenStore.getActive()?.avatarUrl) }
 
@@ -193,6 +208,9 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                     onEvent = { liveConfig.emit(it.rev) },
                     onAcquisition = { liveAcquisition.emit(it) },
                     onServerMessage = { liveServerMessages.emit(it) },
+                    onPlayItem = { livePlayItem.emit(it) },
+                    onPlaystateCommand = { livePlaystateCommands.emit(it) },
+                    onNavigate = { liveNavigate.emit(it) },
                 )
             }
             delay(backoff)
@@ -293,6 +311,44 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
             else push(Dest.MovieDetail(card.id, displayName))
         }
 
+        // R155 — remote-control play (Phase 111 / Home Assistant, or the Jellyfin dashboard cast menu
+        // via the Phase 110 bridge). Profile guard: only act while a profile is active — a command
+        // addressed to a (user, device) that arrives while the picker is up or mid-switch is dropped,
+        // never queued (FR-R155-1.2/.3).
+        LaunchedEffect(Unit) {
+            livePlayItem.collect { env ->
+                if (activeUserId == null || stack.lastOrNull() is Dest.ProfilePicker || stack.lastOrNull() is Dest.Pairing) {
+                    return@collect
+                }
+                val displayName = stack.lastOrNull()?.let {
+                    when (it) {
+                        is Dest.Home -> it.displayName; is Dest.ChannelView -> it.displayName
+                        is Dest.Browse -> it.displayName; is Dest.Search -> it.displayName
+                        is Dest.Discover -> it.displayName; is Dest.DiscoverItem -> it.displayName
+                        is Dest.MovieDetail -> it.displayName; is Dest.SeriesDetail -> it.displayName
+                        is Dest.Player -> it.displayName; is Dest.Settings -> it.displayName
+                        else -> null
+                    }
+                } ?: MultiTokenStore.getActive()?.displayName.orEmpty()
+                when (env.kind) {
+                    "series" -> push(Dest.SeriesDetail(env.jellyfinId, displayName))
+                    else -> push(Dest.Player(
+                        itemId = env.jellyfinId,
+                        title = env.title.orEmpty(),
+                        displayName = displayName,
+                    ))
+                }
+            }
+        }
+        LaunchedEffect(Unit) {
+            liveNavigate.collect { env ->
+                if (activeUserId == null) return@collect
+                if (env.destination == "home") {
+                    resetTo(Dest.Home(MultiTokenStore.getActive()?.displayName.orEmpty()))
+                }
+            }
+        }
+
         // R80: write the initial URL on first composition, then listen for browser Back/Forward.
         LaunchedEffect(Unit) {
             replaceRoute(stack.last().toRoute())
@@ -314,7 +370,7 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
             wPx > 0 && with(density) { wPx.toDp() } < 600.dp
         }
 
-        CompositionLocalProvider(LocalLiveConfig provides liveConfig, LocalLiveAcquisition provides liveAcquisition, LocalServerMessages provides liveServerMessages, LocalTileScale provides tileScale, LocalCompact provides compact, LocalServerBaseUrl provides apiClient.baseUrl, LocalUserAvatarUrl provides activeAvatarUrl) {
+        CompositionLocalProvider(LocalLiveConfig provides liveConfig, LocalLiveAcquisition provides liveAcquisition, LocalServerMessages provides liveServerMessages, LocalPlaystateCommands provides livePlaystateCommands, LocalTileScale provides tileScale, LocalCompact provides compact, LocalServerBaseUrl provides apiClient.baseUrl, LocalUserAvatarUrl provides activeAvatarUrl) {
         Box(
             modifier = Modifier
                 .fillMaxSize()
