@@ -1727,17 +1727,25 @@ internal suspend fun runScan(
     val allItemsMutex = Mutex()
     val succeeded = AtomicInt(0)
     val nextWorkerId = AtomicInt(0)
+    val processed = AtomicInt(0)
 
     Logger.info("Library scan started jobId=$jobId (skip=${skipIds.size}${if (libraryJellyfinId != null) " library=$libraryJellyfinId" else ""})", "scan")
-    broadcaster.broadcast(JobEvent.Started(jobId, -1))
 
     val jellyfinItems = if (libraryJellyfinId != null) scanner.fetchItemsForLibrary(libraryJellyfinId) else scanner.fetchItems()
     if (jellyfinItems == null) {
         scanTracker.complete()
+        broadcaster.broadcast(JobEvent.Started(jobId, 0))
         broadcaster.broadcast(JobEvent.Finished(jobId, 0, 0))
         return emptyList()
     }
-    Logger.info("Jellyfin returned ${jellyfinItems.size} items (${skipIds.size} will be skipped for resume)", "scan")
+    // Phase 116: precompute the EFFECTIVE worklist (skipIds + freshness filter applied) up front so the
+    // Started total is exact — the scanner already knows the full item list before processing starts,
+    // there's nothing to guess. Items dropped here are counted in `skipped.size` at the end, not here.
+    val worklist = jellyfinItems.filter { jItem ->
+        jItem.id !in skipIds && (freshnessFilter == null || freshnessFilter(jItem))
+    }
+    Logger.info("Jellyfin returned ${jellyfinItems.size} items (${skipIds.size} skipped for resume, ${worklist.size} in the effective worklist)", "scan")
+    broadcaster.broadcast(JobEvent.Started(jobId, worklist.size))
 
     // coroutineScope suspends here until the producer, all workers, and the supervisor have ALL finished.
     // Post-scan cleanup runs only after this block returns.
@@ -1747,15 +1755,10 @@ internal suspend fun runScan(
 
             scanTracker.targetWorkers.value = configStore.current.behavior.scanWorkers.coerceIn(1, 32)
 
-            // Producer: fills the channel, skipping already-processed IDs or freshness-filtered ones
+            // Producer: fills the channel from the precomputed worklist (total already broadcast above).
             launch {
-                for (jItem in jellyfinItems) {
+                for (jItem in worklist) {
                     if (scanTracker.cancelRequested) break
-                    if (jItem.id in skipIds) {
-                        Logger.info("Resume: skipping '${jItem.name}'")
-                        continue
-                    }
-                    if (freshnessFilter != null && !freshnessFilter(jItem)) continue
                     channel.send(jItem)
                 }
                 channel.close()
@@ -1791,6 +1794,10 @@ internal suspend fun runScan(
                                         .onFailure { Logger.warn("scan artwork fetch failed for '${item.id}': ${it.message}", "artwork") }
                                 }
                             }
+                            // Phase 116: determinate progress — one tick per item attempted (success or
+                            // failure), clamped so a mid-scan item never pushes past the precomputed total.
+                            val done = processed.incrementAndGet().coerceAtMost(worklist.size)
+                            broadcaster.broadcast(JobEvent.FileProgress(jobId, item?.title ?: jItem.name, done, worklist.size))
                             // Scale-down drain: exit if we are excess
                             if (scanTracker.activeWorkers.value > scanTracker.targetWorkers.value) {
                                 Logger.info("Worker draining (scale-down)", "scan")

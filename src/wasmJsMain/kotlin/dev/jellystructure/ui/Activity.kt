@@ -21,6 +21,7 @@ import org.w3c.dom.events.Event
 import org.w3c.dom.events.MouseEvent
 
 private fun currentTimeString(): String = js("new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false})")
+private fun nowMs(): Double = js("Date.now()")
 
 private const val TMDB_POSTER_W92 = "https://image.tmdb.org/t/p/w92"
 
@@ -29,6 +30,9 @@ private var activityScope: CoroutineScope? = null
 private var jobItemCount = 0
 private var jobDoneCount = 0
 private var jobFailCount = 0
+private var jobTotalCount = 0    // Phase 116: real worklist size from the Started event (0 = unknown)
+private var jobProgressCount = 0 // Phase 116: attempted-so-far (success+failure) from FileProgress events
+private var jobStartMs = 0.0     // Phase 116: for the rolling items/sec → "~T remaining" estimate
 private var activityCurrentTitle: String? = null
 private var activityCurrentPoster: String? = null
 private var scanRunning = false
@@ -348,13 +352,17 @@ private fun handleEvent(container: Element, raw: String) {
             val jobId = extractJsonField(raw, "jobId") ?: "?"
             val total = extractJsonField(raw, "total") ?: "?"
             jobItemCount = 0; jobDoneCount = 0; jobFailCount = 0
+            jobTotalCount = total.toIntOrNull()?.coerceAtLeast(0) ?: 0
+            jobProgressCount = 0
+            jobStartMs = nowMs()
             scanRunning = true
             showJobUI(container)
             (container.querySelector("#ov-bar") as? HTMLElement)?.style?.width = "0%"
             (container.querySelector("#act-cancel-btn") as? HTMLElement)?.style?.display = ""
             (container.querySelector("#act-crumb") as? HTMLElement)?.let { it.textContent = "Scanning"; it.style.display = "" }
             updateActivityChips(container)
-            appendLogEntry(container, "info", "scan", "▶ Job $jobId started${if (total != "-1") " — $total files" else ""}")
+            updateOvLabel(container)
+            appendLogEntry(container, "info", "scan", "▶ Job $jobId started${if (jobTotalCount > 0) " — $jobTotalCount item${if (jobTotalCount != 1) "s" else ""}" else ""}")
             activityScope?.launch { pollWorkers(container) }
         }
         "progress" -> {
@@ -363,12 +371,15 @@ private fun handleEvent(container: Element, raw: String) {
             val total = extractJsonField(raw, "total") ?: "?"
             val shortName = file.substringAfterLast('/')
             updateNowFilename(container, shortName)
-            // Overall scan total is unknown (items are discovered), so drive the bar from the
-            // current item's real per-file progress (P0-5 — it was hardcoded to 0%).
+            // Phase 116: the scanner precomputes its worklist up front, so `total` here is exact —
+            // drives both the overall bar and (via jobTotalCount from Started) the ETA label.
             val cur = current.toIntOrNull(); val tot = total.toIntOrNull()
             if (cur != null && tot != null && tot > 0) {
                 val pct = (cur * 100 / tot).coerceIn(0, 100)
                 (container.querySelector("#ov-bar") as? HTMLElement)?.style?.width = "$pct%"
+                if (jobTotalCount <= 0) jobTotalCount = tot
+                jobProgressCount = cur
+                updateOvLabel(container)
             }
         }
         "item_scanned" -> {
@@ -509,8 +520,31 @@ private fun resetNowCard(container: Element) {
     lastToolCommand = null
 }
 
+/** Phase 116: "N of M · ~T remaining" once a real total is known (jobTotalCount > 0), else the old
+ *  open-ended "N items scanned" (unknown-total jobs, e.g. legacy/never-started-total edge cases). */
 private fun updateOvLabel(container: Element) {
-    (container.querySelector("#ov-label") as? HTMLElement)?.textContent = "$jobItemCount item${if (jobItemCount != 1) "s" else ""} scanned"
+    val el = container.querySelector("#ov-label") as? HTMLElement ?: return
+    if (jobTotalCount <= 0) {
+        el.textContent = "$jobItemCount item${if (jobItemCount != 1) "s" else ""} scanned"
+        return
+    }
+    val current = maxOf(jobProgressCount, jobItemCount).coerceAtMost(jobTotalCount)
+    val elapsedMs = nowMs() - jobStartMs
+    val etaText = if (current in 1 until jobTotalCount && elapsedMs > 1000) {
+        val perItemMs = elapsedMs / current
+        val remainingMs = perItemMs * (jobTotalCount - current)
+        " · ~${formatRemaining(remainingMs)} remaining"
+    } else ""
+    el.textContent = "$current of $jobTotalCount$etaText"
+}
+
+private fun formatRemaining(ms: Double): String {
+    val totalSec = (ms / 1000).toInt().coerceAtLeast(0)
+    return when {
+        totalSec < 60 -> "${totalSec}s"
+        totalSec < 3600 -> "${totalSec / 60}m"
+        else -> "${totalSec / 3600}h ${(totalSec % 3600) / 60}m"
+    }
 }
 
 private fun updateActivityChips(container: Element) {
