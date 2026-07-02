@@ -1,0 +1,57 @@
+CREATE TABLE media_job (
+    id TEXT NOT NULL PRIMARY KEY,
+    type TEXT NOT NULL,               -- reorder | remove | bulk_reorder
+    media_id TEXT NOT NULL,
+    label TEXT NOT NULL,              -- display title for the Jobs page, e.g. "Some Movie (2019)"
+    params TEXT NOT NULL,             -- JSON-encoded MediaJobParams (op-specific args)
+    state TEXT NOT NULL,              -- queued | running | done | failed | cancelled
+    enqueued_by TEXT NOT NULL DEFAULT 'admin',
+    created_at INTEGER NOT NULL,
+    started_at INTEGER,
+    finished_at INTEGER,
+    error TEXT,
+    file_count INTEGER NOT NULL DEFAULT 1,
+    files_done INTEGER NOT NULL DEFAULT 0,
+    pct REAL NOT NULL DEFAULT 0,      -- live progress of the file currently being remuxed
+    speed TEXT                        -- ffmpeg's own "speed=" readout, e.g. "2.3x"
+);
+
+CREATE INDEX media_job_state ON media_job(state);
+CREATE INDEX media_job_media_id ON media_job(media_id);
+
+insert:
+INSERT INTO media_job(id, type, media_id, label, params, state, enqueued_by, created_at, file_count)
+VALUES (:id, :type, :media_id, :label, :params, :state, :enqueued_by, :created_at, :file_count);
+
+findById:
+SELECT * FROM media_job WHERE id = :id;
+
+listQueued:
+SELECT * FROM media_job WHERE state = 'queued' ORDER BY created_at ASC;
+
+listRunning:
+SELECT * FROM media_job WHERE state = 'running' LIMIT 1;
+
+listRecent:
+SELECT * FROM media_job WHERE state IN ('done', 'failed', 'cancelled') ORDER BY COALESCE(finished_at, created_at) DESC LIMIT :max_rows;
+
+markRunning:
+UPDATE media_job SET state = 'running', started_at = :started_at WHERE id = :id;
+
+updateProgress:
+UPDATE media_job SET pct = :pct, speed = :speed, files_done = :files_done WHERE id = :id;
+
+markFinished:
+UPDATE media_job SET state = :state, finished_at = :finished_at, error = :error, files_done = :files_done WHERE id = :id;
+
+requeueRunning:
+UPDATE media_job SET state = 'queued', started_at = NULL, pct = 0, speed = NULL WHERE state = 'running';
+
+deleteOld:
+DELETE FROM media_job WHERE state IN ('done', 'failed', 'cancelled') AND COALESCE(finished_at, created_at) < :cutoff;
+
+countByState:
+SELECT state, COUNT(*) AS n FROM media_job WHERE state IN ('queued', 'running') GROUP BY state;
+
+countDoneToday:
+SELECT COUNT(*) FROM media_job WHERE state IN ('done', 'failed') AND finished_at >= :since;

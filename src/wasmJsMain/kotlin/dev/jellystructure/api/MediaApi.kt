@@ -93,6 +93,20 @@ data class NfoWritableResult(val writable: Boolean, val path: String, val error:
 // Phase 117: one row per triage issue type (always present, even at 0 — the Dashboard breakdown
 // renders every type). `instances` is episode/track-level for untagged/missingOverview, title-level
 // for the rest; `titles` is always how many Library rows the type will show.
+// Phase 109 — media worker (ffmpeg remux) job queue, mirrors dev.jellystructure.jobs.MediaJobSnapshot.
+@Serializable
+data class MediaJobSnapshot(
+    val id: String, val type: String, val mediaId: String, val label: String, val state: String,
+    val enqueuedBy: String, val createdAt: Long, val startedAt: Long? = null, val finishedAt: Long? = null,
+    val error: String? = null, val fileCount: Int = 1, val filesDone: Int = 0, val pct: Double = 0.0, val speed: String? = null,
+)
+
+@Serializable
+data class JobsSummary(
+    val busy: Boolean, val doneToday: Int, val running: MediaJobSnapshot? = null,
+    val queued: List<MediaJobSnapshot> = emptyList(), val recent: List<MediaJobSnapshot> = emptyList(),
+)
+
 @Serializable
 data class TriageTypeCount(val key: String, val label: String, val description: String, val instances: Int, val titles: Int)
 
@@ -524,6 +538,18 @@ object MediaApi {
         httpClient.get("/api/triage/count").body<TriageCount>()
     }.getOrNull()
 
+    suspend fun getJobsSummary(): JobsSummary? = runCatching {
+        httpClient.get("/api/jobs").body<JobsSummary>()
+    }.getOrNull()
+
+    suspend fun cancelJob(id: String): Boolean = runCatching {
+        httpClient.post("/api/jobs/$id/cancel").status.value in 200..299
+    }.getOrDefault(false)
+
+    suspend fun retryJob(id: String): Boolean = runCatching {
+        httpClient.post("/api/jobs/$id/retry").status.value in 200..299
+    }.getOrDefault(false)
+
     suspend fun getTriageItems(): List<TriageItem> = runCatching {
         httpClient.get("/api/triage").body<List<TriageItem>>()
     }.getOrDefault(emptyList())
@@ -572,20 +598,27 @@ object MediaApi {
         }
     }.getOrDefault(TrackLangResult("request failed", null))
 
-    suspend fun removeTrack(id: String, specifier: String): Boolean = runCatching {
+    /** Phase 109: removing a track is now a queued ffmpeg-remux job — returns the job id (see Activity
+     *  ▸ Jobs for progress), or null on failure to enqueue. */
+    suspend fun removeTrack(id: String, specifier: String): String? = runCatching {
         val encoded = encodeURIComponent(specifier)
         val response = httpClient.delete("/api/media/$id/tracks/$encoded")
-        response.status.value in 200..299
-    }.getOrDefault(false)
+        if (response.status.value !in 200..299) return@runCatching null
+        @Serializable data class JobIdResp(val jobId: String)
+        response.body<JobIdResp>().jobId
+    }.getOrNull()
 
-    suspend fun reorderTracks(id: String, kind: String, order: List<String>): Boolean = runCatching {
+    /** Phase 109: reordering is now a queued ffmpeg-remux job — returns the job id, or null on failure. */
+    suspend fun reorderTracks(id: String, kind: String, order: List<String>): String? = runCatching {
         val orderJson = order.joinToString(",") { "\"${it.replace("\"", "")}\"" }
         val response = httpClient.post("/api/media/$id/tracks/reorder") {
             setBody("""{"kind":"$kind","order":[$orderJson]}""")
             contentType(ContentType.Application.Json)
         }
-        response.status.value in 200..299
-    }.getOrDefault(false)
+        if (response.status.value !in 200..299) return@runCatching null
+        @Serializable data class JobIdResp(val jobId: String)
+        response.body<JobIdResp>().jobId
+    }.getOrNull()
 
     suspend fun getRecentActivity(): List<HistoryEntry> = runCatching {
         httpClient.get("/api/activity/recent").body<List<HistoryEntry>>()
@@ -638,15 +671,19 @@ object MediaApi {
         response.status.value in 200..299
     }.getOrDefault(false)
 
-    suspend fun reorderEpisodeTracks(mediaId: String, epFilename: String, kind: String, order: List<String>): Boolean = runCatching {
+    /** Phase 109: per-episode reordering is now a queued ffmpeg-remux job — returns the job id, or null
+     *  on failure. */
+    suspend fun reorderEpisodeTracks(mediaId: String, epFilename: String, kind: String, order: List<String>): String? = runCatching {
         val encoded = encodeURIComponent(epFilename)
         val orderJson = order.joinToString(",") { "\"${it.replace("\"", "")}\"" }
         val response = httpClient.post("/api/media/$mediaId/episodes/$encoded/tracks/reorder") {
             setBody("""{"kind":"$kind","order":[$orderJson]}""")
             contentType(ContentType.Application.Json)
         }
-        response.status.value in 200..299
-    }.getOrDefault(false)
+        if (response.status.value !in 200..299) return@runCatching null
+        @Serializable data class JobIdResp(val jobId: String)
+        response.body<JobIdResp>().jobId
+    }.getOrNull()
 
     suspend fun setForcedFlag(id: String, specifier: String, forced: Boolean): Boolean = runCatching {
         val response = httpClient.post("/api/media/$id/tracks/forced") {

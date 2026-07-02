@@ -40,6 +40,7 @@ private var activeLogCategory: String = ""
 private var errorsOnlyFilter: Boolean = false
 private var activeRunFilter: String? = null   // 93g: scope the log to one scan/pipeline run
 private var lastToolCommand: String? = null
+private var jobsPollActive = false   // Phase 109: true while the "Jobs & workers" segment is showing
 
 @Serializable
 private data class ActivityEntryDto(
@@ -85,6 +86,36 @@ fun renderActivity(container: Element, scope: CoroutineScope, query: Map<String,
         </div>
         <p class="page-sub">Full activity log: scan events, NFO writes, artwork downloads, and track operations. Streams live over WebSocket; history is loaded from disk on page open.</p>
 
+        <div class="row center" style="margin-bottom:14px;"><span class="seg viewseg" id="viewseg"><span class="on" data-view="console">Scan console</span><span data-view="jobs">Jobs &amp; workers <span class="jobs-count" id="jobs-count-badge" style="display:none;">0</span></span></span></div>
+
+        <div id="view-jobs" style="display:none;">
+          <div class="note blue" style="margin-bottom:14px;display:flex;gap:11px;align-items:flex-start;">
+            <span style="flex:none;">ℹ</span>
+            <div class="tiny" style="line-height:1.6;">Heavy media edits — an audio <b>re-order</b> is an <span class="mono">ffmpeg</span> remux (a full stream copy, 4K included) — are queued through a <b>single media worker</b> and run <b>one at a time</b>. Clicking <b>Apply</b> on several titles, or two admins re-ordering at once, can't saturate CPU/disk or stall the API. Scanning keeps its own parallel workers.</div>
+          </div>
+          <div class="card" style="margin-bottom:14px;">
+            <div class="row center" style="gap:10px;flex-wrap:wrap;" id="jobs-worker-line">
+              <span class="muted tiny">Loading…</span>
+            </div>
+          </div>
+          <div class="card" id="jobs-running-card" style="margin-bottom:14px;display:none;">
+            <div class="row center"><h4 style="margin:0;">Running now</h4><span class="spacer"></span><span class="mono tiny" id="jobs-running-title"></span></div>
+            <hr class="dash" style="margin:10px 0;">
+            <div id="jobs-running-body"></div>
+          </div>
+          <div class="card" style="margin-bottom:14px;">
+            <div class="row center"><h4 style="margin:0;">Queue</h4><span class="chip" style="margin-left:8px;"><b id="jobs-q-count">0</b> waiting</span><span class="spacer"></span><span class="tiny muted">processed in order (FIFO)</span></div>
+            <hr class="dash" style="margin:10px 0 4px;">
+            <div id="jobqueue"><span class="muted tiny">Queue is empty.</span></div>
+          </div>
+          <div class="card">
+            <div class="row center"><h4 style="margin:0;">Recent</h4></div>
+            <hr class="dash" style="margin:10px 0 4px;">
+            <div id="jobrecent"><span class="muted tiny">Nothing yet.</span></div>
+          </div>
+        </div>
+
+        <div id="view-console">
         <div id="overall-card" class="card" style="display:none;margin-bottom:14px">
           <div class="row center">
             <b>Overall</b>
@@ -145,10 +176,29 @@ fun renderActivity(container: Element, scope: CoroutineScope, query: Map<String,
             <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor"><path d="M11 3.5a.5.5 0 0 0-.5-.5h-7a.5.5 0 0 0 0 1h7a.5.5 0 0 0 .5-.5zm0 5a.5.5 0 0 0-.5-.5h-7a.5.5 0 0 0 0 1h7a.5.5 0 0 0 .5-.5z"/></svg>
           </div>
         </div>
+        </div><!-- /view-console -->
     """.trimIndent()
 
     container.querySelector("#act-cancel-btn")?.addEventListener("click") {
         scope.launch { MediaApi.cancelScan() }
+    }
+
+    // Phase 109 — "Jobs & workers" segmented view (design/app/activity.html #viewseg): the media-worker
+    // queue, polled independently of the scan console's own WS-pushed log — its own JobEvent variant is
+    // a small, low-frequency stream that doesn't need the log console's heavier text-based dispatch.
+    jobsPollActive = false
+    container.querySelector("#viewseg")?.addEventListener("click") { e ->
+        val target = (e.target as? HTMLElement)?.closest("[data-view]") as? HTMLElement ?: return@addEventListener
+        val jobs = target.getAttribute("data-view") == "jobs"
+        val segOpts = container.querySelectorAll("#viewseg [data-view]")
+        for (i in 0 until segOpts.length) {
+            val opt = segOpts.item(i) as? HTMLElement ?: continue
+            if (opt == target) opt.classList.add("on") else opt.classList.remove("on")
+        }
+        (container.querySelector("#view-console") as? HTMLElement)?.style?.display = if (jobs) "none" else ""
+        (container.querySelector("#view-jobs") as? HTMLElement)?.style?.display = if (jobs) "" else "none"
+        jobsPollActive = jobs
+        if (jobs) scope.launch { pollJobsPanel(container) }
     }
 
     container.querySelector("#clear-log-btn")?.addEventListener("click") {
@@ -305,6 +355,117 @@ private suspend fun loadLogHistory(container: Element) {
     }.onFailure {
         val console = container.querySelector("#activity-console")
         console?.innerHTML = """<div class="muted tiny">Could not load log history.</div>"""
+    }
+}
+
+// Phase 109 — polls GET /api/jobs while the "Jobs & workers" segment is visible and re-renders the
+// worker line, running card, queue and recent lists. Mirrors design/app/activity.html #view-jobs.
+private suspend fun pollJobsPanel(container: Element) {
+    while (jobsPollActive) {
+        refreshJobsPanel(container)
+        delay(2000)
+    }
+}
+
+private suspend fun refreshJobsPanel(container: Element) {
+    val summary = MediaApi.getJobsSummary()
+    if (summary != null) renderJobsPanel(container, summary)
+}
+
+private fun jobTypeLabel(type: String): String = when (type) {
+    "reorder" -> "audio/subtitle re-order"
+    "remove" -> "track removal"
+    "bulk_reorder" -> "bulk re-order"
+    else -> type
+}
+
+private fun renderJobsPanel(container: Element, s: dev.jellystructure.api.JobsSummary) {
+    (container.querySelector("#jobs-count-badge") as? HTMLElement)?.let {
+        val n = s.queued.size + (if (s.running != null) 1 else 0)
+        it.textContent = n.toString()
+        it.style.display = if (n > 0) "" else "none"
+    }
+
+    (container.querySelector("#jobs-worker-line") as? HTMLElement)?.innerHTML = """
+        <span class="wk-dot ${if (s.busy) "busy" else "idle"}"></span><b>Media worker</b>
+        <span class="badge ${if (s.busy) "warn" else ""}">${if (s.busy) "busy" else "idle"}</span>
+        <span class="muted tiny">concurrency 1 · FIFO queue · remux runs at low I/O priority</span>
+        <span class="spacer"></span>
+        <span class="chip"><b>${if (s.running != null) 1 else 0}</b> running</span>
+        <span class="chip"><b>${s.queued.size}</b> queued</span>
+        <span class="chip ok" style="background:var(--ok-soft);">${s.doneToday} done today</span>"""
+
+    val runningCard = container.querySelector("#jobs-running-card") as? HTMLElement
+    if (s.running != null) {
+        val r = s.running
+        runningCard?.style?.display = ""
+        (container.querySelector("#jobs-running-title") as? HTMLElement)?.textContent = r.label
+        val startedStr = r.startedAt?.let { dev.jellystructure.formatStoredTs(it.toString()) } ?: "?"
+        (container.querySelector("#jobs-running-body") as? HTMLElement)?.innerHTML = """
+            <div class="row center" style="gap:8px;flex-wrap:wrap;">
+              <span class="badge warn">${jobTypeLabel(r.type).esc()}</span>
+              <span class="muted tiny mono">ffmpeg -map 0 -c copy (remux)</span>
+              <span class="spacer"></span>
+              <span class="tiny muted">queued by <b>${r.enqueuedBy.esc()}</b> · started $startedStr</span>
+              <span class="btn sm bad" id="jobs-cancel-running" data-job-id="${r.id}">Cancel</span>
+            </div>
+            <div class="bar" style="margin-top:10px;"><i style="width:${r.pct.coerceIn(0.0, 100.0)}%"></i></div>
+            <div class="tiny muted mono" style="margin-top:6px;">${if (r.speed != null) "speed=${r.speed.esc()} · " else ""}${r.pct.toInt()}%${if (r.fileCount > 1) " · file ${r.filesDone + 1} of ${r.fileCount}" else ""}</div>"""
+    } else {
+        runningCard?.style?.display = "none"
+    }
+
+    (container.querySelector("#jobs-q-count") as? HTMLElement)?.textContent = s.queued.size.toString()
+    val queueEl = container.querySelector("#jobqueue") as? HTMLElement
+    queueEl?.innerHTML = if (s.queued.isEmpty()) """<span class="muted tiny">Queue is empty.</span>""" else
+        s.queued.mapIndexed { idx, j ->
+            """<div class="jobrow" data-job="${j.id}">
+                 <span class="jq-pos">${idx + 1}</span>
+                 <div class="jq-main"><div class="jq-title">${j.label.esc()}</div><div class="jq-sub">${jobTypeLabel(j.type).esc()} · queued by ${j.enqueuedBy.esc()} · ${dev.jellystructure.formatStoredTs(j.createdAt.toString())}</div></div>
+                 <span class="badge">queued</span>
+                 <span class="btn sm ghost jq-cancel" data-job-id="${j.id}">Cancel</span>
+               </div>"""
+        }.joinToString("")
+
+    val recentEl = container.querySelector("#jobrecent") as? HTMLElement
+    recentEl?.innerHTML = if (s.recent.isEmpty()) """<span class="muted tiny">Nothing yet.</span>""" else
+        s.recent.map { j ->
+            val ic = if (j.state == "done") """<span class="jq-ic ok">✓</span>""" else """<span class="jq-ic bad">✗</span>"""
+            val took = if (j.startedAt != null && j.finishedAt != null) "took ${(j.finishedAt - j.startedAt).coerceAtLeast(0)}s" else ""
+            val sub = when (j.state) {
+                "done" -> "${jobTypeLabel(j.type)} · $took · by ${j.enqueuedBy}"
+                "cancelled" -> "cancelled"
+                else -> "failed · ${j.error ?: "unknown error"}"
+            }
+            val badgeCls = if (j.state == "done") "badge ok" else "badge bad"
+            val retryBtn = if (j.state == "failed" || j.state == "cancelled")
+                """<span class="btn sm ghost jq-retry" data-job-id="${j.id}">Retry</span>""" else ""
+            """<div class="jobrow">
+                 $ic
+                 <div class="jq-main"><div class="jq-title">${j.label.esc()}</div><div class="jq-sub">${sub.esc()}</div></div>
+                 <span class="$badgeCls">${j.state.esc()}</span>
+                 $retryBtn
+               </div>"""
+        }.joinToString("")
+
+    // Wire cancel/retry buttons fresh each render (innerHTML was just replaced).
+    container.querySelectorAll(".jq-cancel, #jobs-cancel-running").let { nodes ->
+        for (i in 0 until nodes.length) {
+            val btn = nodes.item(i) as? HTMLElement ?: continue
+            btn.addEventListener("click") {
+                val jobId = btn.getAttribute("data-job-id") ?: return@addEventListener
+                activityScope?.launch { MediaApi.cancelJob(jobId); refreshJobsPanel(container) }
+            }
+        }
+    }
+    container.querySelectorAll(".jq-retry").let { nodes ->
+        for (i in 0 until nodes.length) {
+            val btn = nodes.item(i) as? HTMLElement ?: continue
+            btn.addEventListener("click") {
+                val jobId = btn.getAttribute("data-job-id") ?: return@addEventListener
+                activityScope?.launch { MediaApi.retryJob(jobId); refreshJobsPanel(container) }
+            }
+        }
     }
 }
 
