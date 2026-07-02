@@ -1,6 +1,7 @@
 package dev.jellystructure.chart
 
 import dev.jellystructure.log.Logger
+import dev.jellystructure.OutboundHttp
 import dev.jellystructure.shared.tv.ChartListSpec
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
@@ -46,6 +47,9 @@ class JustWatchProvider(
     private val gate = Semaphore(8)
 
     private val json = Json { ignoreUnknownKeys = true }
+
+    private suspend fun httpPost(url: String, block: io.ktor.client.request.HttpRequestBuilder.() -> Unit = {}): io.ktor.client.statement.HttpResponse =
+        OutboundHttp.withPermit { http.post(url, block) }
 
     private val http = HttpClient(Curl) {
         install(ContentNegotiation) { json(json) }
@@ -95,7 +99,7 @@ class JustWatchProvider(
 
         val resp = gate.withPermit {
             runCatching {
-                http.post(ENDPOINT) {
+                httpPost(ENDPOINT) {
                     contentType(ContentType.Application.Json)
                     setBody(payload.toString())
                 }.body<JwPopularResponse>()
@@ -121,7 +125,7 @@ class JustWatchProvider(
                         put("formatOfferIcon", "JPG")
                     }
                 }
-                val resp = http.post(ENDPOINT) {
+                val resp = httpPost(ENDPOINT) {
                     contentType(ContentType.Application.Json)
                     setBody(payload.toString())
                 }.body<JwProvidersResponse>()
