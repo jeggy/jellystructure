@@ -29,6 +29,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import dev.jellystructure.ravilo.ui.LocalPortrait
 import dev.jellystructure.ravilo.ui.components.AppBar
 import dev.jellystructure.ravilo.ui.components.HeroCarousel
 import dev.jellystructure.ravilo.ui.components.StaticContentRow
@@ -180,8 +181,11 @@ fun ChannelScreen(
                         Text(str("browse.empty_channel"), color = colors.textSecondary, fontSize = 16.sp)
                     }
                 } else {
+                    // R159 — same portrait-override selection as HomeScreen.
+                    val heroPct = if (LocalPortrait.current && s.feed.portraitHeroHeightPct != null)
+                        s.feed.portraitHeroHeightPct.coerceIn(20, 100) else s.feed.heroHeightPct.coerceIn(40, 100)
                     val heroHeight = if (containerH > 0)
-                        with(density) { containerH.toDp() } * (s.feed.heroHeightPct.coerceIn(40, 100) / 100f)
+                        with(density) { containerH.toDp() } * (heroPct / 100f)
                     else 460.dp
 
                     LaunchedEffect(hasHero) {

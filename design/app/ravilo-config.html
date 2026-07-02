@@ -112,6 +112,7 @@
       <div class="navitem" data-goto="sect-rows">Content rows</div>
       <div class="navitem" data-goto="sect-top10">Top 10</div>
       <div class="navitem" data-goto="sect-behaviour">Behaviour</div>
+      <div class="navitem" data-goto="sect-portrait">Portrait screen</div>
     </div>    <div class="col fill" id="config-col">
       <!-- lock prompt: shown when a user without a custom layout is selected -->
       <div class="card" id="scope-lock" style="display:none;margin-bottom:14px;border-color:var(--hi);background:var(--hi-soft);">
@@ -214,6 +215,20 @@
         <div class="row center" style="padding:6px 0;"><div><b>Show progress bars on Continue Watching</b></div><span class="spacer"></span><span class="toggle on"></span></div>
         <hr class="dash" style="margin:6px 0;">
         <div class="row center" style="padding:6px 0;"><div><b>Tile shape</b><div class="tiny muted">How rows render on the TV. Continue Watching stays landscape.</div></div><span class="spacer"></span><span class="seg-pill"><button class="on">Standard poster</button><button>Wide landscape</button><button>Square</button></span></div>
+      </div>
+
+      <!-- R159 — portrait-only overrides. Ravilo detects landscape (TVs, desktop web) vs portrait
+           (a phone held upright, or a resized browser window) automatically; this is the home for
+           overrides that apply only in portrait. First (and so far only) override: hero height. -->
+      <div class="card set-section" id="sect-portrait">
+        <h3 style="font-size:1.05rem;margin:0 0 6px;">Portrait screen</h3>
+        <p class="tiny muted" style="margin:0 0 14px;">Landscape (TVs, desktop web) and portrait (a phone held upright, or a resized browser window) are detected automatically. Overrides set here apply <b>only</b> in portrait — landscape is untouched. This is the home for future portrait-only settings.</p>
+        <div class="row center" style="padding:6px 0;"><div><b>Override hero height in portrait</b></div><span class="spacer"></span><span class="toggle on"></span></div>
+        <div class="field" style="max-width:340px;margin-top:8px;">
+          <label>Hero height <span class="mono" id="portrait-hero-h-val">30%</span> of screen</label>
+          <input type="range" min="20" max="100" value="30" id="portrait-hero-h" style="width:100%;accent-color:var(--hi);">
+          <span class="hint">A hero tuned for a TV is far too tall on a phone — portrait allows a much smaller number (20–100%).</span>
+        </div>
       </div>
     </div>
 
