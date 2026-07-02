@@ -21,17 +21,24 @@ object MkvpropeditRunner {
     suspend fun setDefault(filePath: String, defaultStreamIndex: Int, sameTypeIndices: List<Int>): Boolean =
         runCommand(TrackCommandBuilder.mkvDefault(filePath, defaultStreamIndex, sameTypeIndices))
 
+    // Phase 118 (FR C.3) — shared ProcessGate.
     @OptIn(ExperimentalForeignApi::class)
     private suspend fun runCommand(cmd: String): Boolean {
         Logger.info("mkvpropedit: $cmd", "track")
-        return memScoped {
-            val pipe = popen("$cmd 2>&1", "r") ?: return false
-            val sb = StringBuilder()
-            val buf = allocArray<ByteVar>(4096)
-            while (fgets(buf, 4096, pipe) != null) sb.append(buf.toKString())
-            val rc = pclose(pipe)
-            if (rc != 0) Logger.warn("mkvpropedit exit $rc: $sb", "track")
-            rc == 0
+        return dev.jellystructure.ops.ProcessGate.withPermit {
+            memScoped {
+                val pipe = popen("$cmd 2>&1", "r")
+                if (pipe == null) {
+                    false
+                } else {
+                    val sb = StringBuilder()
+                    val buf = allocArray<ByteVar>(4096)
+                    while (fgets(buf, 4096, pipe) != null) sb.append(buf.toKString())
+                    val rc = pclose(pipe)
+                    if (rc != 0) Logger.warn("mkvpropedit exit $rc: $sb", "track")
+                    rc == 0
+                }
+            }
         }
     }
 }

@@ -87,8 +87,16 @@ fun main() = runBlocking {
     val port = env("SERVER_PORT", "9505").toIntOrNull() ?: 9505
     val tmdbBaseUrl = env("TMDB_BASE_URL", "https://api.themoviedb.org/3")
 
+    // Phase 118 (FR B.1) — first thing: an unhandled exception anywhere in this process (not just once
+    // the server is up) writes a crash marker + attempts a synchronous webhook, since the selector's
+    // failure mode cancels main() outright and there's no later "safe" point to install this from.
+    val dataDir = configFile.substringBeforeLast('/', missingDelimiterValue = ".")
+    dev.jellystructure.ops.installCrashHook(dataDir)
+
     val configStore = ConfigStore(configFile)
     configStore.load()
+    dev.jellystructure.ops.setCrashWebhookUrl(configStore.current.behavior.notificationsWebhook)
+    dev.jellystructure.ops.reportCrashRecoveryIfAny(dataDir, configStore)
 
     val db = createDatabase(dbFile)
     val sessionService = SessionService(db)
@@ -158,6 +166,11 @@ fun main() = runBlocking {
     val realtimeIngest = dev.jellystructure.media.RealtimeIngestService(scanner, mediaStore, jellyfinClient, configStore, artworkDownloader, rootScope, broadcaster, mediaHistory, arrRescan, sonarrEnrich)
     val libraryListener = dev.jellystructure.tv.JellyfinLibraryListener(configStore, jellyfinClient, mediaStore, realtimeIngest, rootScope)
     libraryListener.start()
+    // Phase 118 (FR C.4) — FD telemetry: the durable defense against the unfixable Ktor Native
+    // FD_SETSIZE selector crash is keeping total FDs under the 1024 ceiling; this makes pressure
+    // observable (warn/alert thresholds) before the process dies.
+    val fdWatchdog = dev.jellystructure.ops.FdWatchdog(configStore, rootScope)
+    fdWatchdog.start()
     val acquisitionStore = AcquisitionStore(db)
     val acquisitionService = AcquisitionService(configStore, arrClient, tmdbClient, acquisitionStore, mediaStore, tvEventBus, rootScope)
     acquisitionService.startReconciler()
@@ -181,7 +194,7 @@ fun main() = runBlocking {
     val shutdown = startServer(
         configStore, sessionService, raviloDeviceService, raviloConfigService, channelLogoStore, homeFeedService, browseService, detailService, playbackService, jellyfinClient, mediaStore, scanner,
         artworkDownloader, tmdbClient, scanTracker, mediaHistory, activityLog, broadcaster,
-        frontendDir, raviloWebDir = raviloWebDir, port = port, scanDispatcher = scanDispatcher, effectiveScanThreads = effectiveScanThreads, jsTagStore = jsTagStore, seedingGuard = seedingGuard, seedingSnapshot = seedingSnapshot, logoDownloader = logoDownloader, qbClient = qbClient, arrClient = arrClient, arrRescan = arrRescan, sonarrEnrich = sonarrEnrich, acquisitionService = acquisitionService, chartRegistry = chartRegistry, chartStore = chartStore, chartIngest = chartIngest, tvEventBus = tvEventBus, imageProxyService = imageProxyService, mediaJobQueue = mediaJobQueue, sessionBridge = sessionBridge, apiKeyStore = apiKeyStore, realtimeIngest = realtimeIngest, libraryListener = libraryListener,
+        frontendDir, raviloWebDir = raviloWebDir, port = port, scanDispatcher = scanDispatcher, effectiveScanThreads = effectiveScanThreads, jsTagStore = jsTagStore, seedingGuard = seedingGuard, seedingSnapshot = seedingSnapshot, logoDownloader = logoDownloader, qbClient = qbClient, arrClient = arrClient, arrRescan = arrRescan, sonarrEnrich = sonarrEnrich, acquisitionService = acquisitionService, chartRegistry = chartRegistry, chartStore = chartStore, chartIngest = chartIngest, tvEventBus = tvEventBus, imageProxyService = imageProxyService, mediaJobQueue = mediaJobQueue, sessionBridge = sessionBridge, apiKeyStore = apiKeyStore, realtimeIngest = realtimeIngest, libraryListener = libraryListener, fdWatchdog = fdWatchdog,
     )
 
     // R149: populate Sonarr next-airing data for all TV shows on startup (background, non-blocking).

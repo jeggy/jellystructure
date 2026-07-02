@@ -1,5 +1,6 @@
 package dev.jellystructure.server.routes
 
+import dev.jellystructure.server.respondCachedBytes
 import dev.jellystructure.arr.ArrRescanService
 import dev.jellystructure.executePipeline
 import dev.jellystructure.nextRunDelayMs
@@ -767,7 +768,11 @@ fun Route.mediaRoutes(
                     if (!st.stillExists) return@get call.respond(HttpStatusCode.NotFound)
                     val bytes = runCatching { SystemFileSystem.source(Path(st.stillPath)).buffered().readByteArray() }.getOrNull()
                         ?: return@get call.respond(HttpStatusCode.NotFound)
-                    call.respondBytes(bytes, ContentType.Image.JPEG)
+                    // Short max-age (not the usual 86400s) — this preview can be regenerated in place by
+                    // the admin; the content-hash ETag alone already busts a stale cache correctly, but a
+                    // short max-age also avoids a picker showing a *just*-regenerated still as "same" for
+                    // a full day on a client that skips revalidation.
+                    call.respondCachedBytes(bytes, ContentType.Image.JPEG, maxAgeSeconds = 60)
                 }
 
                 // R131: generate / regenerate a screen-grab still from the episode's video frame (lowest priority).
@@ -1444,7 +1449,7 @@ fun Route.mediaRoutes(
             // Serve from cache if present
             val cached = logoDownloader.servePersonImage(tmdbId)
             if (cached != null) {
-                call.respondBytes(cached, ContentType.Image.JPEG)
+                call.respondCachedBytes(cached, ContentType.Image.JPEG)
                 return@get
             }
             // Phase 78: O(1) cached lookup (was a full-library deserialize per request → CPU storm
@@ -1454,7 +1459,7 @@ fun Route.mediaRoutes(
                 logoDownloader.fetchPersonImage(tmdbId, profilePath)
                 val bytes = logoDownloader.servePersonImage(tmdbId)
                 if (bytes != null) {
-                    call.respondBytes(bytes, ContentType.Image.JPEG)
+                    call.respondCachedBytes(bytes, ContentType.Image.JPEG)
                     return@get
                 }
             }

@@ -89,25 +89,34 @@ object FfprobeRunner {
     }
 
     /** R131: media duration in seconds, or null if unknown — used to pick a screen-grab timestamp. */
-    fun duration(filePath: String): Double? {
+    suspend fun duration(filePath: String): Double? {
         val escaped = filePath.replace("'", "'\\''")
         return runCommand("ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 '$escaped' 2>/dev/null")
             ?.trim()?.toDoubleOrNull()
     }
 
+    // Phase 118 (FR C.3) — shared ProcessGate on top of Screengrabber's own Semaphore(2). No bare
+    // `return` inside the gated block — ProcessGate.withPermit's lambda isn't inline, so a non-local
+    // return isn't allowed there; a nullable pipe + if/else avoids it.
     @OptIn(ExperimentalForeignApi::class)
-    private fun runCommand(command: String): String? = memScoped {
-        val pipe = popen(command, "r") ?: return null
-        val result = StringBuilder()
-        val bufSize = 8192
-        val buffer = allocArray<ByteVar>(bufSize)
-        try {
-            while (fgets(buffer, bufSize, pipe) != null) {
-                result.append(buffer.toKString())
+    private suspend fun runCommand(command: String): String? = dev.jellystructure.ops.ProcessGate.withPermit {
+        memScoped {
+            val pipe = popen(command, "r")
+            if (pipe == null) {
+                null
+            } else {
+                val result = StringBuilder()
+                val bufSize = 8192
+                val buffer = allocArray<ByteVar>(bufSize)
+                try {
+                    while (fgets(buffer, bufSize, pipe) != null) {
+                        result.append(buffer.toKString())
+                    }
+                } finally {
+                    pclose(pipe)
+                }
+                result.toString().takeIf { it.isNotBlank() }
             }
-        } finally {
-            pclose(pipe)
         }
-        result.toString().takeIf { it.isNotBlank() }
     }
 }
