@@ -115,14 +115,23 @@ object FfmpegRunner {
         return ok
     }
 
+    // Phase 118 (FR C.3) — shared ProcessGate on top of the Phase 109 worker's own single-remux
+    // serialization. No bare `return` inside the gated block — ProcessGate.withPermit's lambda isn't
+    // inline, so a non-local return isn't allowed there; a nullable pipe + if/else avoids it.
     @OptIn(ExperimentalForeignApi::class)
-    private suspend fun captureCommand(cmd: String): String? = memScoped {
-        val pipe = popen(cmd, "r") ?: return null
-        val sb = StringBuilder()
-        val buf = allocArray<ByteVar>(4096)
-        while (fgets(buf, 4096, pipe) != null) sb.append(buf.toKString())
-        pclose(pipe)
-        sb.toString()
+    private suspend fun captureCommand(cmd: String): String? = dev.jellystructure.ops.ProcessGate.withPermit {
+        memScoped {
+            val pipe = popen(cmd, "r")
+            if (pipe == null) {
+                null
+            } else {
+                val sb = StringBuilder()
+                val buf = allocArray<ByteVar>(4096)
+                while (fgets(buf, 4096, pipe) != null) sb.append(buf.toKString())
+                pclose(pipe)
+                sb.toString()
+            }
+        }
     }
 
     @OptIn(ExperimentalForeignApi::class)
@@ -132,46 +141,60 @@ object FfmpegRunner {
         onProgress: (pct: Double, speed: String?) -> Unit,
     ): Boolean {
         Logger.info("ffmpeg (tracked): $cmd", "track")
-        return memScoped {
-            val pipe = popen(cmd, "r") ?: return false
-            val sb = StringBuilder()
-            val buf = allocArray<ByteVar>(4096)
-            var lastSpeed: String? = null
-            var lastOutTimeUs: Long? = null
-            while (fgets(buf, 4096, pipe) != null) {
-                val line = buf.toKString()
-                sb.append(line)
-                for (raw in line.split('\n')) {
-                    val trimmed = raw.trim()
-                    when {
-                        trimmed.startsWith("out_time_ms=") -> lastOutTimeUs = trimmed.removePrefix("out_time_ms=").toLongOrNull()
-                        trimmed.startsWith("speed=") -> lastSpeed = trimmed.removePrefix("speed=").trim().takeIf { it.isNotBlank() && it != "N/A" }
-                        trimmed == "progress=continue" || trimmed == "progress=end" -> {
-                            val pct = if (durationSeconds != null && lastOutTimeUs != null)
-                                ((lastOutTimeUs.toDouble() / 1_000_000.0) / durationSeconds * 100.0).coerceIn(0.0, 100.0)
-                            else 0.0
-                            onProgress(pct, lastSpeed)
+        // Phase 118 (FR C.3) — shared ProcessGate.
+        return dev.jellystructure.ops.ProcessGate.withPermit {
+            memScoped {
+                val pipe = popen(cmd, "r")
+                if (pipe == null) {
+                    false
+                } else {
+                    val sb = StringBuilder()
+                    val buf = allocArray<ByteVar>(4096)
+                    var lastSpeed: String? = null
+                    var lastOutTimeUs: Long? = null
+                    while (fgets(buf, 4096, pipe) != null) {
+                        val line = buf.toKString()
+                        sb.append(line)
+                        for (raw in line.split('\n')) {
+                            val trimmed = raw.trim()
+                            when {
+                                trimmed.startsWith("out_time_ms=") -> lastOutTimeUs = trimmed.removePrefix("out_time_ms=").toLongOrNull()
+                                trimmed.startsWith("speed=") -> lastSpeed = trimmed.removePrefix("speed=").trim().takeIf { it.isNotBlank() && it != "N/A" }
+                                trimmed == "progress=continue" || trimmed == "progress=end" -> {
+                                    val pct = if (durationSeconds != null && lastOutTimeUs != null)
+                                        ((lastOutTimeUs.toDouble() / 1_000_000.0) / durationSeconds * 100.0).coerceIn(0.0, 100.0)
+                                    else 0.0
+                                    onProgress(pct, lastSpeed)
+                                }
+                            }
                         }
                     }
+                    val rc = pclose(pipe)
+                    if (rc != 0) Logger.warn("ffmpeg exit $rc: $sb", "track")
+                    rc == 0
                 }
             }
-            val rc = pclose(pipe)
-            if (rc != 0) Logger.warn("ffmpeg exit $rc: $sb", "track")
-            rc == 0
         }
     }
 
+    // Phase 118 (FR C.3) — shared ProcessGate.
     @OptIn(ExperimentalForeignApi::class)
     private suspend fun runCommand(cmd: String): Boolean {
         Logger.info("ffmpeg: $cmd", "track")
-        return memScoped {
-            val pipe = popen(cmd, "r") ?: return false
-            val sb = StringBuilder()
-            val buf = allocArray<ByteVar>(4096)
-            while (fgets(buf, 4096, pipe) != null) sb.append(buf.toKString())
-            val rc = pclose(pipe)
-            if (rc != 0) Logger.warn("ffmpeg exit $rc: $sb", "track")
-            rc == 0
+        return dev.jellystructure.ops.ProcessGate.withPermit {
+            memScoped {
+                val pipe = popen(cmd, "r")
+                if (pipe == null) {
+                    false
+                } else {
+                    val sb = StringBuilder()
+                    val buf = allocArray<ByteVar>(4096)
+                    while (fgets(buf, 4096, pipe) != null) sb.append(buf.toKString())
+                    val rc = pclose(pipe)
+                    if (rc != 0) Logger.warn("ffmpeg exit $rc: $sb", "track")
+                    rc == 0
+                }
+            }
         }
     }
 

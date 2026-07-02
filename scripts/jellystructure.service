@@ -1,0 +1,33 @@
+# Phase 118 (FR B.3) — sample systemd unit for a bare-metal jellystructure run. Preferred over
+# run-supervised.sh when systemd is available: `Restart=on-failure` gives the same "come back after
+# the unfixable FD_SETSIZE selector crash" recovery, with proper logging (journalctl) and process
+# supervision instead of a hand-rolled shell loop.
+#
+# Install: copy to /etc/systemd/system/jellystructure.service, edit the paths/User below, then:
+#   systemctl daemon-reload && systemctl enable --now jellystructure
+
+[Unit]
+Description=jellystructure media metadata server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=jellystructure
+WorkingDirectory=/opt/jellystructure
+ExecStart=/opt/jellystructure/jellystructure.kexe
+Environment=CONFIG_FILE=/opt/jellystructure/config/config.toml
+Environment=DB_FILE=/opt/jellystructure/config/jellystructure.db
+Environment=FRONTEND_DIR=/opt/jellystructure/frontend
+Environment=SERVER_PORT=9505
+
+# Capped restart-on-failure, mirroring run-supervised.sh's backoff intent: systemd's own
+# StartLimitIntervalSec/StartLimitBurst below caps a genuine crash-loop (bad config, corrupt data)
+# instead of restarting forever in a tight loop.
+Restart=on-failure
+RestartSec=2
+StartLimitIntervalSec=600
+StartLimitBurst=20
+
+[Install]
+WantedBy=multi-user.target

@@ -59,6 +59,7 @@ import io.ktor.server.cio.CIO
 import io.ktor.server.engine.embeddedServer
 import io.ktor.server.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.server.plugins.cors.routing.CORS
+import io.ktor.server.plugins.statuspages.StatusPages
 import io.ktor.server.request.path
 import io.ktor.server.response.cacheControl
 import io.ktor.server.response.respond
@@ -138,6 +139,7 @@ fun startServer(
     apiKeyStore: dev.jellystructure.auth.ApiKeyStore,
     realtimeIngest: dev.jellystructure.media.RealtimeIngestService,
     libraryListener: dev.jellystructure.tv.JellyfinLibraryListener,
+    fdWatchdog: dev.jellystructure.ops.FdWatchdog,
 ): suspend () -> Unit {
     // Fire-and-forget work (scans, NFO/artwork pushes, image fetches) runs as appScope.launch{}.
     // On Kotlin/Native an exception escaping a launched coroutine reaches the global handler and
@@ -147,11 +149,33 @@ fun startServer(
         println("[ERROR] Uncaught background coroutine exception (server kept alive): ${e.message}")
         println(e.stackTraceToString())
     })
-    val engine = embeddedServer(CIO, port = port) {
+    val engine = embeddedServer(
+        CIO,
+        port = port,
+        // Phase 118 (FR C.6) — the only inbound FD knob CIO Native exposes. Trims idle keep-alive
+        // connections so they don't sit on the FD budget; a reverse proxy is the real concurrency cap
+        // for any internet-facing deployment.
+        configure = { connectionIdleTimeoutSeconds = 20 },
+    ) {
         install(ContentNegotiation) { json(Json { ignoreUnknownKeys = true }) }
         install(WebSockets) {
             pingPeriodMillis = 30_000L
             timeoutMillis = 15_000L
+        }
+        // Phase 118 (FR A.1) — CIO already isolates a handler exception from crashing the process; this
+        // makes it observable and consistent instead of a bare connection drop.
+        install(StatusPages) {
+            exception<Throwable> { call, cause ->
+                // Logger.error writes both the log line and the Activity entry in one call.
+                Logger.error("Unhandled route exception on ${call.request.path()}: ${cause.message}", "http")
+                call.respond(HttpStatusCode.InternalServerError, mapOf("error" to "internal server error"))
+            }
+            status(HttpStatusCode.NotFound) { call, status ->
+                call.respond(status, mapOf("error" to "not found"))
+            }
+            status(HttpStatusCode.MethodNotAllowed) { call, status ->
+                call.respond(status, mapOf("error" to "method not allowed"))
+            }
         }
         install(CORS) {
             // Fully permissive: the Ravilo web client may be served from a different origin than
@@ -174,13 +198,27 @@ fun startServer(
         routing {
             route("/api") {
                 get("/health") {
-                    call.respondText("""{"status":"ok"}""", ContentType.Application.Json)
+                    // Phase 118 (FR C.4) — FD count on the lightweight probe too, so a monitoring
+                    // scraper hitting this endpoint every few seconds doesn't need the /full checks.
+                    call.respondText(
+                        """{"status":"ok","fd_count":${fdWatchdog.currentCount},"fd_high_water_mark":${fdWatchdog.highWaterMark}}""",
+                        ContentType.Application.Json,
+                    )
                 }
 
                 get("/health/full") {
                     @Serializable data class HealthCheck(val name: String, val ok: Boolean, val detail: String)
                     val checks = mutableListOf<HealthCheck>()
                     val cfg = configStore.current
+                    // Phase 118 (FR C.4) — the FD budget itself. The 1024 ceiling is glibc's fd_set
+                    // compile-time constant (FD_SETSIZE) — Ktor Native's selector crashes the whole
+                    // process the moment any fd number reaches it (KTOR-8703, unfixed upstream).
+                    val fdCount = fdWatchdog.currentCount
+                    checks.add(HealthCheck(
+                        "File descriptors",
+                        fdCount < 700,
+                        "$fdCount open (high water ${fdWatchdog.highWaterMark}) — warns at 700, alerts at 900, sheds load above 950, hard ceiling 1024",
+                    ))
                     // Jellyfin connectivity
                     val jfOk = if (cfg.apiKeys.jellyfinUrl.isNotBlank() && cfg.apiKeys.jellyfinToken.isNotBlank()) {
                         runCatching { jellyfinClient.testConnection(cfg.apiKeys.jellyfinUrl, cfg.apiKeys.jellyfinToken) }.getOrDefault(false)
@@ -256,7 +294,7 @@ fun startServer(
                 if (chartRegistry != null && chartStore != null && chartIngest != null) {
                     chartRoutes(chartRegistry, chartStore, configStore, chartIngest)
                 }
-                tvRoutes(deviceService, raviloConfigService, homeFeedService, browseService, detailService, playbackService, sessionService, jellyfinClient, configStore, channelLogoStore, acquisitionService, chartStore, chartRegistry, tmdbClient, imageProxyService, tvEventBus)
+                tvRoutes(deviceService, raviloConfigService, homeFeedService, browseService, detailService, playbackService, sessionService, jellyfinClient, configStore, channelLogoStore, acquisitionService, chartStore, chartRegistry, tmdbClient, imageProxyService, tvEventBus, fdWatchdog)
             }
 
             webSocket("/ws") {
@@ -280,6 +318,12 @@ fun startServer(
             // R33 — per-user live config push. Device token comes via query param (browsers can't set
             // a handshake header); this path is exempt from the bearer-gate AuthPlugin and validates here.
             webSocket("/api/tv/events") {
+                // Phase 118 (FR C.5) — reject new TV connections above the FD danger zone; already-
+                // connected TVs keep their socket (their FDs are already committed either way).
+                if (fdWatchdog.isOverShedThreshold) {
+                    close(CloseReason(CloseReason.Codes.TRY_AGAIN_LATER, "Server under FD pressure, retry shortly"))
+                    return@webSocket
+                }
                 val token = call.request.queryParameters["token"]?.takeIf { it.isNotBlank() }
                     ?: call.request.headers["Authorization"]?.removePrefix("Bearer ")?.takeIf { it.isNotBlank() }
                 val device = token?.let { deviceService.validateDeviceToken(it) }
@@ -344,17 +388,24 @@ fun startServer(
     }
 }
 
+// Phase 118 (FR C.3) — shared ProcessGate; callers are all inside the /health/full suspend handler.
 @OptIn(ExperimentalForeignApi::class)
-private fun runShell(command: String): String? = memScoped {
-    val pipe = popen(command, "r") ?: return null
-    val result = StringBuilder()
-    val buffer = allocArray<ByteVar>(4096)
-    try {
-        while (fgets(buffer, 4096, pipe) != null) result.append(buffer.toKString())
-    } finally {
-        pclose(pipe)
+private suspend fun runShell(command: String): String? = dev.jellystructure.ops.ProcessGate.withPermit {
+    memScoped {
+        val pipe = popen(command, "r")
+        if (pipe == null) {
+            null
+        } else {
+            val result = StringBuilder()
+            val buffer = allocArray<ByteVar>(4096)
+            try {
+                while (fgets(buffer, 4096, pipe) != null) result.append(buffer.toKString())
+            } finally {
+                pclose(pipe)
+            }
+            result.toString().takeIf { it.isNotBlank() }
+        }
     }
-    result.toString().takeIf { it.isNotBlank() }
 }
 
 private suspend fun io.ktor.server.application.ApplicationCall.serveFrontendFile(

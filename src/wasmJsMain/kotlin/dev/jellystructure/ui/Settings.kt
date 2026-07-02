@@ -408,9 +408,13 @@ fun renderSettings(container: Element, scope: CoroutineScope, query: Map<String,
                 <span style="font-size:.9rem">Track write failed</span>
                 <span id="notif-write-failed-toggle" class="toggle" style="cursor:pointer"></span>
               </div>
-              <div style="display:flex;align-items:center;justify-content:space-between">
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
                 <span style="font-size:.9rem">Drift detected</span>
                 <span id="notif-drift-toggle" class="toggle" style="cursor:pointer"></span>
+              </div>
+              <div style="display:flex;align-items:center;justify-content:space-between">
+                <span style="font-size:.9rem">Server recovered from a crash</span>
+                <span id="notif-crash-toggle" class="toggle" style="cursor:pointer"></span>
               </div>
             </div>
 
@@ -592,6 +596,7 @@ private var notifScanDone = true
 private var notifNoMatch = false
 private var notifWriteFailed = true
 private var notifDrift = false
+private var notifCrash = true
 private var pipelineEnabled = false
 private var pipelineFreq = "daily"
 private val pipelineSteps: MutableList<PipelineStep> = mutableListOf()
@@ -687,11 +692,13 @@ private fun populateForm(response: ConfigResponse) {
     notifNoMatch = config.behavior.notifyOnNoMatch
     notifWriteFailed = config.behavior.notifyOnWriteFailed
     notifDrift = config.behavior.notifyOnDrift
+    notifCrash = config.behavior.notifyOnCrash
     setInputValue("notif-webhook", config.behavior.notificationsWebhook)
     updateToggle("notif-scan-done-toggle", notifScanDone)
     updateToggle("notif-no-match-toggle", notifNoMatch)
     updateToggle("notif-write-failed-toggle", notifWriteFailed)
     updateToggle("notif-drift-toggle", notifDrift)
+    updateToggle("notif-crash-toggle", notifCrash)
 
     // Phase 91 — pipeline
     pipelineEnabled = config.scanSchedule.isNotBlank() || config.scan.pipeline.isNotEmpty()
@@ -844,6 +851,11 @@ private fun attachListeners(scope: CoroutineScope) {
     document.getElementById("notif-drift-toggle")?.addEventListener("click") {
         notifDrift = !notifDrift
         updateToggle("notif-drift-toggle", notifDrift)
+        refreshTomlPreview(readForm())
+    }
+    document.getElementById("notif-crash-toggle")?.addEventListener("click") {
+        notifCrash = !notifCrash
+        updateToggle("notif-crash-toggle", notifCrash)
         refreshTomlPreview(readForm())
     }
     document.getElementById("notif-webhook")?.addEventListener("input") { refreshTomlPreview(readForm()) }
@@ -1161,6 +1173,7 @@ private fun readForm(): AppConfig = AppConfig(
         notifyOnNoMatch = notifNoMatch,
         notifyOnWriteFailed = notifWriteFailed,
         notifyOnDrift = notifDrift,
+        notifyOnCrash = notifCrash,
     ),
     libraries = libraryMappings.toList(),
     qbittorrent = if (qbEnabled) QBittorrentConfig(
@@ -1249,6 +1262,7 @@ private fun buildToml(c: AppConfig): String = buildString {
         appendLine("notify_on_no_match = ${c.behavior.notifyOnNoMatch}")
         appendLine("notify_on_write_failed = ${c.behavior.notifyOnWriteFailed}")
         appendLine("notify_on_drift = ${c.behavior.notifyOnDrift}")
+        appendLine("notify_on_crash = ${c.behavior.notifyOnCrash}")
     }
     for (lib in c.libraries) {
         appendLine()

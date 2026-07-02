@@ -118,6 +118,7 @@ data class Behavior(
     @SerialName("notify_on_no_match") val notifyOnNoMatch: Boolean = false,
     @SerialName("notify_on_write_failed") val notifyOnWriteFailed: Boolean = true,
     @SerialName("notify_on_drift") val notifyOnDrift: Boolean = false,
+    @SerialName("notify_on_crash") val notifyOnCrash: Boolean = true,
 )
 
 @Serializable
