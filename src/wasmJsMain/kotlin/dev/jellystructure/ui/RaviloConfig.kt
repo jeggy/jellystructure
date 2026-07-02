@@ -23,6 +23,7 @@ import dev.jellystructure.shared.tv.Condition
 import dev.jellystructure.shared.tv.MatchMode
 import dev.jellystructure.shared.tv.HeroConfig
 import dev.jellystructure.shared.tv.RaviloConfig
+import dev.jellystructure.shared.tv.PortraitConfig
 import dev.jellystructure.shared.tv.RowConfig
 import dev.jellystructure.shared.tv.RowKind
 import dev.jellystructure.shared.tv.Skin
@@ -249,6 +250,7 @@ private fun buildShell(): String {
           <button data-rav-sect="sect-rows"     class="rav-nav-item">Content rows</button>
           <button data-rav-sect="sect-discover" class="rav-nav-item">Top 10</button>
           <button data-rav-sect="sect-behaviour"class="rav-nav-item">Behaviour</button>
+          <button data-rav-sect="sect-portrait" class="rav-nav-item">Portrait screen</button>
         </div>
       </nav>
       <div class="col fill" style="min-width:280px" id="rav-sections">
@@ -258,6 +260,7 @@ private fun buildShell(): String {
         <div id="sect-rows"></div>
         <div id="sect-discover"></div>
         <div id="sect-behaviour"></div>
+        <div id="sect-portrait"></div>
       </div>
       <div class="card" style="width:280px;flex:none;position:sticky;top:88px;padding:12px">
         <div class="row center" style="margin:2px 4px 10px"><h4 style="margin:0">Live preview</h4><span class="spacer"></span><span class="badge ok" style="font-size:.6rem">this user</span></div>
@@ -412,6 +415,23 @@ private fun wireShell(container: Element, scope: CoroutineScope) {
         t.classList.add("on")
         collectConfig(container); renderPreview(container)
     }
+    // R159 — portrait hero-height slider: live label + thumbnail (full renderPreview — the portrait
+    // thumbnail is small and infrequent to drag, so the landscape slider's targeted-update optimization
+    // isn't worth mirroring here).
+    sections?.addEventListener("input") { ev ->
+        val t = ev.target
+        if (t is HTMLInputElement && t.id == "portrait-hero-height") {
+            container.querySelector("#portrait-hero-height-val")?.textContent = "${t.value}%"
+            collectConfig(container); renderPreview(container)
+        }
+    }
+    // R159 — the toggle enables/disables the slider and flips the live-preview thumbnail.
+    sections?.addEventListener("change") { ev ->
+        val t = ev.target
+        if (t is HTMLInputElement && t.id == "portrait-enable") {
+            (container.querySelector("#portrait-hero-height") as? HTMLInputElement)?.disabled = !t.checked
+        }
+    }
 }
 
 private fun renderSections(container: Element, scope: CoroutineScope) {
@@ -421,6 +441,7 @@ private fun renderSections(container: Element, scope: CoroutineScope) {
     renderRows(container)
     renderDiscover(container)
     renderBehaviour(container)
+    renderPortrait(container)
     renderPreview(container)
 }
 
@@ -2176,6 +2197,32 @@ private fun renderBehaviour(container: Element) {
     """.trimIndent()
 }
 
+// R159 — "Portrait screen" section: overrides applied only when the viewer's app is in portrait
+// (phone held upright, or a portrait browser window). This phase's only override is hero height; the
+// section is deliberately the home for future portrait-only settings, not a one-off toggle.
+private fun renderPortrait(container: Element) {
+    val sect = container.querySelector("#sect-portrait") ?: return
+    val portraitHero = currentConfig.portrait?.heroHeightPct
+    val enabled = portraitHero != null
+    val checkedAttr = if (enabled) " checked" else ""
+    val disabledAttr = if (!enabled) " disabled" else ""
+    val sliderVal = portraitHero ?: 30
+    sect.innerHTML = """
+        <div class="card" style="padding:18px 20px;margin-bottom:18px">
+          <div style="font-weight:600;margin-bottom:6px">Portrait screen</div>
+          <p class="tiny muted" style="margin:0 0 14px">Ravilo detects two display modes automatically: landscape (TVs, desktop web) and portrait
+            (a phone held upright, or a resized browser window). Overrides set here apply <strong>only</strong> in portrait — landscape is
+            untouched. This section is the home for future portrait-only settings.</p>
+          <label style="display:flex;align-items:center;gap:10px;font-size:.9rem;margin-bottom:12px">
+            <input type="checkbox" id="portrait-enable"$checkedAttr>
+            Override hero height in portrait
+          </label>
+          <label style="display:block;font-size:.85rem;margin-bottom:4px">Hero height <span class="mono" id="portrait-hero-height-val">${sliderVal}%</span> of screen</label>
+          <input type="range" id="portrait-hero-height" min="20" max="100" value="$sliderVal"$disabledAttr style="width:100%;accent-color:var(--acc,#7b6ef0)">
+        </div>
+    """.trimIndent()
+}
+
 // ── Live preview (schematic) ───────────────────────────────────────────────────
 
 private fun defaultRowTitle(kind: RowKind, mediaKind: String? = null) = when (kind) {
@@ -2225,8 +2272,10 @@ private fun renderPreview(container: Element) {
     val heroPct = cfg.heroHeightPct.coerceIn(40, 100)
     val channels = cfg.channels.filter { it.enabled }
     val rowTitles = previewRowTitles(cfg)
+    val portraitPct = cfg.portrait?.heroHeightPct
     host.innerHTML = buildString {
-        append("""<div style="border-radius:10px;overflow:hidden;border:1px solid var(--line);background:#0a0c13;aspect-ratio:16/10;display:flex;flex-direction:column">""")
+        append("""<div style="display:flex;gap:10px;align-items:flex-start">""")
+        append("""<div style="flex:1;border-radius:10px;overflow:hidden;border:1px solid var(--line);background:#0a0c13;aspect-ratio:16/10;display:flex;flex-direction:column">""")
         append("""<div id="rav-prev-hero" style="height:$heroPct%;background:$heroBg;display:flex;align-items:flex-end;padding:8px"><span style="color:#fff;font-weight:700;font-size:.68rem;text-shadow:0 1px 4px rgba(0,0,0,.6)">${heroLabel.htmlEsc()}</span></div>""")
         if (channels.isNotEmpty()) {
             append("""<div style="display:flex;gap:4px;padding:6px 8px;overflow:hidden">""")
@@ -2239,6 +2288,18 @@ private fun renderPreview(container: Element) {
         append("""<div style="flex:1;padding:4px 8px;overflow:hidden">""")
         rowTitles.take(5).forEach { append("""<div style="color:#aeb4cb;font-size:.58rem;margin-bottom:5px">${it.htmlEsc()} <span style="opacity:.35">▦ ▦ ▦</span></div>""") }
         append("</div>")
+        append("</div>")
+        // R159 — portrait thumbnail: only shown when an override is actually set, so it never implies
+        // portrait behaviour exists when the toggle is off.
+        if (portraitPct != null) {
+            append("""<div style="flex:none;width:64px" title="Portrait preview">""")
+            append("""<div style="border-radius:8px;overflow:hidden;border:1px solid var(--line);background:#0a0c13;aspect-ratio:9/16;display:flex;flex-direction:column">""")
+            append("""<div style="height:${portraitPct.coerceIn(20, 100)}%;background:$heroBg"></div>""")
+            append("""<div style="flex:1"></div>""")
+            append("</div>")
+            append("""<div class="tiny muted" style="text-align:center;margin-top:4px">Portrait</div>""")
+            append("</div>")
+        }
         append("</div>")
     }
 }
@@ -2287,6 +2348,10 @@ private fun collectConfig(container: Element) {
         .getOrDefault(UiDensity.COMFORTABLE)
     val allowOverride = (container.querySelector("#beh-skin-override") as? HTMLInputElement)?.checked ?: true
     val showProgress  = (container.querySelector("#beh-progress") as? HTMLInputElement)?.checked ?: true
+    // R159 — toggled off saves null (no override; portrait behaves exactly like landscape).
+    val portraitEnabled = (container.querySelector("#portrait-enable") as? HTMLInputElement)?.checked ?: (currentConfig.portrait?.heroHeightPct != null)
+    val portraitHeroHeight = (container.querySelector("#portrait-hero-height") as? HTMLInputElement)?.value?.toIntOrNull()
+    val portrait = if (portraitEnabled) PortraitConfig(heroHeightPct = portraitHeroHeight ?: currentConfig.portrait?.heroHeightPct ?: 30) else null
     // Discover (R50) — toggles/selects from the DOM; the ordered `lists` are managed structurally.
     // R154: `sources` is derived from the selected lists' providers (this editor is list-first, not
     // source-first — see renderDiscover) so it stays accurate for any other consumer without its own UI
@@ -2318,6 +2383,7 @@ private fun collectConfig(container: Element) {
         heroHeightPct = heroHeight,
         autoAdvanceSeconds = autoAdvance,
         discover = discover,
+        portrait = portrait,
     )
 }
 

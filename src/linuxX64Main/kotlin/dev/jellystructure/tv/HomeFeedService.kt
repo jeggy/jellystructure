@@ -100,6 +100,7 @@ class HomeFeedService(
             heroHeightPct = config.heroHeightPct,
             autoAdvanceSeconds = config.autoAdvanceSeconds,
             tileShape = config.tileShape,
+            portraitHeroHeightPct = config.portrait?.heroHeightPct,
         )
     }
 
@@ -127,6 +128,7 @@ class HomeFeedService(
             heroHeightPct = config.heroHeightPct,
             autoAdvanceSeconds = config.autoAdvanceSeconds,
             tileShape = config.tileShape,
+            portraitHeroHeightPct = config.portrait?.heroHeightPct,
         ))
     }
 

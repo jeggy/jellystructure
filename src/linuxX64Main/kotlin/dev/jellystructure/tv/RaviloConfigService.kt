@@ -114,6 +114,8 @@ class RaviloConfigService(
         rows = config.rows.mapIndexed { i, r -> r.copy(order = i) },
         heroHeightPct = config.heroHeightPct.coerceIn(40, 100),
         autoAdvanceSeconds = config.autoAdvanceSeconds.coerceIn(0, 120),
+        // R159 — portrait can go smaller than landscape's 40 floor (a phone hero at 40% is still huge).
+        portrait = config.portrait?.let { p -> p.copy(heroHeightPct = p.heroHeightPct?.coerceIn(20, 100)) },
     )
 
     /**
