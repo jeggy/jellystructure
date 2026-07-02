@@ -17,6 +17,7 @@ import org.w3c.dom.events.Event
 
 private val dashJson = Json { classDiscriminator = "type"; ignoreUnknownKeys = true }
 private var dashScanSocket: WebSocket? = null
+private var dashScanTotal = 0   // Phase 116: real worklist size from the Started event (0 = unknown)
 
 fun renderDashboard(container: Element, scope: CoroutineScope) {
     dashScanSocket?.close()
@@ -230,16 +231,23 @@ private fun connectDashScanSocket(scope: CoroutineScope, baseCount: Int = 0) {
     dashScanSocket = ws
 
     var scannedCount = baseCount
+    dashScanTotal = 0
 
     ws.onmessage = { ev ->
         val text = ev.data.toString()
         runCatching {
             val event = dashJson.decodeFromString<JobEvent>(text)
             when (event) {
+                is JobEvent.Started -> {
+                    // Phase 116: the scan now reports its real worklist size up front.
+                    if (event.total > 0) dashScanTotal = event.total
+                }
                 is JobEvent.ItemScanned -> {
                     scannedCount++
                     val banner = document.getElementById("dash-scan-banner") as? HTMLElement
-                    banner?.innerHTML = """<span class="badge">Scanning — $scannedCount item${if (scannedCount != 1) "s" else ""} found so far…</span> <button id="cancel-scan-btn" class="btn sm ghost" style="margin-left:8px">Cancel</button>"""
+                    val countNote = if (dashScanTotal > 0) "Scanning — $scannedCount of $dashScanTotal items…"
+                        else "Scanning — $scannedCount item${if (scannedCount != 1) "s" else ""} found so far…"
+                    banner?.innerHTML = """<span class="badge">$countNote</span> <button id="cancel-scan-btn" class="btn sm ghost" style="margin-left:8px">Cancel</button>"""
                     wireCancelBtn(scope)
                 }
                 is JobEvent.Finished -> {
