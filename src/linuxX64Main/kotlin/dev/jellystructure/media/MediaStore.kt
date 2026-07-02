@@ -112,7 +112,7 @@ class MediaStore(
     // Phase 108: one-time startup backfill for rows written before createdAt/updatedAt existed.
     // Best-available history: item createdAt <- addedAt (Jellyfin DateCreated) ?: scannedAt; episode
     // createdAt <- the same item-level fallback (no per-episode history exists to do better).
-    private fun backfillTimestamps() {
+    private suspend fun backfillTimestamps() {
         val toBackfill = allItems().filter { it.createdAt == null || it.episodes.any { ep -> ep.createdAt == null } }
         if (toBackfill.isEmpty()) return
         db.transaction {
