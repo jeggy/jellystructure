@@ -60,6 +60,7 @@ import dev.jellystructure.ravilo.ui.screens.SettingsScreen
 import dev.jellystructure.ravilo.ui.screens.SettingsStore
 import dev.jellystructure.ravilo.ui.i18n.WithLocale
 import coil3.compose.LocalPlatformContext
+import dev.jellystructure.ravilo.ui.components.ServerMessageHost
 import dev.jellystructure.ravilo.ui.perf.FrameTrackerOverlay
 import dev.jellystructure.ravilo.ui.seams.prefetchImage
 import dev.jellystructure.ravilo.ui.theme.LocalCompact
@@ -67,6 +68,7 @@ import dev.jellystructure.ravilo.ui.theme.RaviloMotion
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
 import dev.jellystructure.ravilo.ui.theme.rememberRaviloTheme
 import dev.jellystructure.shared.tv.AcquisitionRecord
+import dev.jellystructure.shared.tv.ServerMessageEnvelope
 import dev.jellystructure.shared.tv.Channel
 import dev.jellystructure.shared.tv.MediaCard
 import dev.jellystructure.shared.tv.MediaKind
@@ -88,6 +90,10 @@ val LocalLiveConfig = staticCompositionLocalOf<SharedFlow<Long>?> { null }
 
 /** R49 — payload-bearing acquisition updates (Phase 56 `acquisition_changed`); Discover screens patch tiles live. */
 val LocalLiveAcquisition = staticCompositionLocalOf<SharedFlow<AcquisitionRecord>?> { null }
+
+/** R152 — Jellyfin dashboard "send message" events, relayed device-addressed via the Phase 110 session
+ *  bridge; collected by [dev.jellystructure.ravilo.ui.components.ServerMessageHost] at the app root. */
+val LocalServerMessages = staticCompositionLocalOf<SharedFlow<ServerMessageEnvelope>?> { null }
 
 /** Tile-size multiplier from the active user's `RaviloConfig.uiDensity`; read by [dev.jellystructure.ravilo.ui.components.Tile]. */
 val LocalTileScale = staticCompositionLocalOf { 1f }
@@ -172,6 +178,7 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
     // socket run on background scopes, so navigation is never blocked.
     val liveConfig = remember { MutableSharedFlow<Long>(replay = 0, extraBufferCapacity = 16) }
     val liveAcquisition = remember { MutableSharedFlow<AcquisitionRecord>(replay = 0, extraBufferCapacity = 32) }
+    val liveServerMessages = remember { MutableSharedFlow<ServerMessageEnvelope>(replay = 0, extraBufferCapacity = 8) }
     var activeUserId by remember { mutableStateOf(MultiTokenStore.getActive()?.userId) }
     var activeAvatarUrl by remember { mutableStateOf(MultiTokenStore.getActive()?.avatarUrl) }
 
@@ -185,6 +192,7 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                     onOpen = { backoff = 1000L; liveConfig.emit(0L) },
                     onEvent = { liveConfig.emit(it.rev) },
                     onAcquisition = { liveAcquisition.emit(it) },
+                    onServerMessage = { liveServerMessages.emit(it) },
                 )
             }
             delay(backoff)
@@ -306,7 +314,7 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
             wPx > 0 && with(density) { wPx.toDp() } < 600.dp
         }
 
-        CompositionLocalProvider(LocalLiveConfig provides liveConfig, LocalLiveAcquisition provides liveAcquisition, LocalTileScale provides tileScale, LocalCompact provides compact, LocalServerBaseUrl provides apiClient.baseUrl, LocalUserAvatarUrl provides activeAvatarUrl) {
+        CompositionLocalProvider(LocalLiveConfig provides liveConfig, LocalLiveAcquisition provides liveAcquisition, LocalServerMessages provides liveServerMessages, LocalTileScale provides tileScale, LocalCompact provides compact, LocalServerBaseUrl provides apiClient.baseUrl, LocalUserAvatarUrl provides activeAvatarUrl) {
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -614,6 +622,7 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
             }
         } } // when / AnimatedContent
         FrameTrackerOverlay(fpsOverlay)  // R94: F5 toggles; no-op when false
+        ServerMessageHost()  // R152: floats over every screen incl. the player (reads LocalServerMessages)
         } // Box (back-intercept)
         } // CompositionLocalProvider (live config)
     } // WithLocale

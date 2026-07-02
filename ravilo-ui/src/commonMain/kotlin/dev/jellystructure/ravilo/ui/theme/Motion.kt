@@ -67,4 +67,7 @@ object RaviloMotion {
     const val PauseFlashFromScale = 0.9f
     const val PauseFlashToScale = 1.4f
     const val NextUpSlideMs = 340
+
+    // ── Server-message toast (R152) ─────────────────────────────────────────────
+    const val ToastTransitionMs = 340
 }
