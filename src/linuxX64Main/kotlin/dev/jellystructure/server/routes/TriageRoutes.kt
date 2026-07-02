@@ -72,8 +72,24 @@ data class TriageItem(
     val missingFromSource: Boolean = false, // Phase 95: gone from Jellyfin — kept (scanner never deletes), needs review
 )
 
+// Phase 117: one row per triage issue type, always present (even at 0), carrying its own display copy
+// and BOTH counting bases — `instances` (what the dashboard headline sums; episode/track-level for
+// untagged/missingOverview) and `titles` (how many distinct items/series the Library will actually show
+// for this type — a series with 200 untagged episode tracks is 200 instances but 1 title).
 @Serializable
-data class TriageCount(val untagged: Int, val mismatch: Int, val multiDefault: Int = 0, val missingArtwork: Int = 0, val missingFromSource: Int = 0, val total: Int)
+data class TriageTypeCount(
+    val key: String,
+    val label: String,
+    val description: String,
+    val instances: Int,
+    val titles: Int,
+)
+
+@Serializable
+data class TriageCount(
+    val types: List<TriageTypeCount>,
+    val total: Int,
+)
 
 @Serializable
 private data class AssignLanguageRequest(val language: String)
@@ -89,23 +105,41 @@ fun Route.triageRoutes(store: MediaStore, jellyfinClient: JellyfinClient, config
             val ver = store.libraryVersion
             triageCountCache?.let { (v, c) -> if (v == ver) { call.respond(c); return@get } }
             val all = store.allItems()
-            val untagged = all.sumOf { item ->
-                if (item.kind == MediaKind.TV_SHOW) {
-                    item.episodes.sumOf { ep ->
-                        ep.tracks.count { (it.kind == TrackKind.AUDIO || it.kind == TrackKind.SUBTITLE) && it.language == null }
-                    }
-                } else {
-                    item.tracks.count { (it.kind == TrackKind.AUDIO || it.kind == TrackKind.SUBTITLE) && it.language == null }
-                }
-            }
-            val mismatch = all.count { it.detectCascadeMismatch() != null }
-            val multiDefault = all.count { item ->
-                if (item.kind == MediaKind.TV_SHOW) item.episodes.any { it.detectMultiDefaultAudio() != null }
-                else item.detectMultiDefaultAudio() != null
-            }
-            val missingArtwork = all.count { !posterArtworkExists(it) }
-            val missingFromSource = all.count { it.missingFromSource }   // Phase 95
-            val result = TriageCount(untagged = untagged, mismatch = mismatch, multiDefault = multiDefault, missingArtwork = missingArtwork, missingFromSource = missingFromSource, total = untagged + mismatch + multiDefault + missingArtwork + missingFromSource)
+
+            val untaggedInstances = all.sumOf { TriageDetection.untaggedCount(it) }
+            val untaggedTitles = all.count { TriageDetection.untaggedCount(it) > 0 }
+            val mismatchTitles = all.count { TriageDetection.hasCascadeMismatch(it) }
+            val multiDefaultTitles = all.count { TriageDetection.hasMultiDefault(it) }
+            val languageMixTitles = all.count { it.languageMix }
+            val missingArtworkTitles = all.count { !posterArtworkExists(it) }
+            val missingFromSourceTitles = all.count { it.missingFromSource }   // Phase 95
+            val missingOverviewInstances = all.sumOf { TriageDetection.missingOverviewCount(it) }
+            val missingOverviewTitles = all.count { TriageDetection.missingOverviewCount(it) > 0 }
+
+            val types = listOf(
+                TriageTypeCount("untagged", "Untagged audio/subtitle tracks",
+                    "Tracks with no language tag — Ravilo and the workbench can't filter by language until these are assigned.",
+                    untaggedInstances, untaggedTitles),
+                TriageTypeCount("cascade_mismatch", "Wrong default audio track",
+                    "The default audio track doesn't match the title's resolved metadata language.",
+                    mismatchTitles, mismatchTitles),
+                TriageTypeCount("multi_default", "Multiple default audio tracks",
+                    "More than one audio track is flagged default — a file should have exactly one.",
+                    multiDefaultTitles, multiDefaultTitles),
+                TriageTypeCount("language_mix", "Mixed-language series",
+                    "Episodes disagree on audio language — the majority language is used for metadata.",
+                    languageMixTitles, languageMixTitles),
+                TriageTypeCount("missing_artwork", "Missing poster artwork",
+                    "No poster.jpg on disk for this title.",
+                    missingArtworkTitles, missingArtworkTitles),
+                TriageTypeCount("missing_from_source", "No longer in Jellyfin",
+                    "The scanner no longer finds this title in Jellyfin — kept for review, never auto-deleted.",
+                    missingFromSourceTitles, missingFromSourceTitles),
+                TriageTypeCount("missing_overview", "Missing episode overview",
+                    "Episodes with no plot summary from TMDB.",
+                    missingOverviewInstances, missingOverviewTitles),
+            )
+            val result = TriageCount(types = types, total = types.sumOf { it.instances })
             triageCountCache = Pair(ver, result)
             call.respond(result)
         }
