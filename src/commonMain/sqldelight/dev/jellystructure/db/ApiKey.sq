@@ -1,0 +1,30 @@
+-- Phase 111 — jellystructure-issued API keys for external tools (Home Assistant etc.), bound to a
+-- Jellyfin user and fenced to /api/remote/**. Only the hash is stored; the plaintext is shown once.
+CREATE TABLE api_key (
+    id TEXT NOT NULL PRIMARY KEY,
+    name TEXT NOT NULL,
+    jellyfin_user_id TEXT NOT NULL,
+    jellyfin_username TEXT NOT NULL,
+    token_hash TEXT NOT NULL UNIQUE,
+    created_at INTEGER NOT NULL,
+    last_used_at INTEGER,
+    revoked INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE INDEX api_key_hash ON api_key(token_hash);
+
+insert:
+INSERT INTO api_key(id, name, jellyfin_user_id, jellyfin_username, token_hash, created_at)
+VALUES (:id, :name, :jellyfin_user_id, :jellyfin_username, :token_hash, :created_at);
+
+findByHash:
+SELECT * FROM api_key WHERE token_hash = :token_hash AND revoked = 0;
+
+listAll:
+SELECT * FROM api_key ORDER BY created_at DESC;
+
+touchLastUsed:
+UPDATE api_key SET last_used_at = :last_used_at WHERE id = :id;
+
+revoke:
+UPDATE api_key SET revoked = 1 WHERE id = :id;
