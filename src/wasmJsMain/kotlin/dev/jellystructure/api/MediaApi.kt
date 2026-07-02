@@ -146,6 +146,7 @@ data class MetaFacets(
     val networks: List<TrackFacetItem> = emptyList(),
     val genres: List<TrackFacetItem> = emptyList(),
     val tags: List<TrackFacetItem> = emptyList(),
+    val ageRatings: List<TrackFacetItem> = emptyList(),
 )
 
 // R127: meta + track facet counts narrowed to a condition set (POST /api/media/facets).
@@ -155,6 +156,7 @@ data class NarrowedFacets(
     val networks: List<TrackFacetItem> = emptyList(),
     val genres: List<TrackFacetItem> = emptyList(),
     val tags: List<TrackFacetItem> = emptyList(),
+    val ageRatings: List<TrackFacetItem> = emptyList(),
     val audioLanguages: List<TrackFacetItem> = emptyList(),
     val audioCodecs: List<TrackFacetItem> = emptyList(),
     val trackTitles: List<TrackFacetItem> = emptyList(),

@@ -64,6 +64,7 @@ data class ScanConfig(val pipeline: List<PipelineStep> = emptyList())
 data class AppConfig(
     @SerialName("api_keys") val apiKeys: ApiKeys = ApiKeys(),
     @SerialName("language_rules") val languageRules: LanguageRules = LanguageRules(),
+    val metadata: MetadataConfig = MetadataConfig(),
     val behavior: Behavior = Behavior(),
     val libraries: List<LibraryMapping> = emptyList(),
     val qbittorrent: QBittorrentConfig? = null,
@@ -94,6 +95,12 @@ data class DiscoverFeedConfig(
 @Serializable
 data class LanguageRules(
     @SerialName("fallback_language") val fallbackLanguage: String = "en",
+)
+
+// Phase 106 — age-rating region cascade: an ordered list of ISO-3166-1 country codes.
+@Serializable
+data class MetadataConfig(
+    @SerialName("age_rating_cascade") val ageRatingCascade: List<String> = emptyList(),
 )
 
 @Serializable

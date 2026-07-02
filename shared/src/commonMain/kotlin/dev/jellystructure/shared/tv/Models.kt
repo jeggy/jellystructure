@@ -186,6 +186,16 @@ data class HomeFeed(
 
 // ─── Detail ───────────────────────────────────────────────────────────────────
 
+/** Phase 106: server-resolved age-rating certification badge (region-cascade winner). Null = the item
+ *  has no certification data at all. Ravilo never re-runs the cascade — it only renders this (R153). */
+@Serializable
+data class RatingBadge(
+    val region: String,
+    val code: String,
+    val tier: Int,
+    val fallback: Boolean = false,
+)
+
 /** R149: Next scheduled unaired episode (Sonarr-sourced, server-pushed). Null = not applicable. */
 @Serializable
 data class NextAiring(
@@ -250,6 +260,8 @@ data class MovieDetail(
     /** R130: clearlogo proxy URL (always set when the item has a Jellyfin id); the app falls back to
      *  the title as text if it's null or the image 404s. */
     @SerialName("logo_url") val logoUrl: String? = null,
+    /** Phase 106: server-resolved age-rating badge (R153 renders it). Null = no certification data. */
+    @SerialName("rating_badge") val ratingBadge: RatingBadge? = null,
 )
 
 @Serializable
@@ -267,6 +279,8 @@ data class SeriesDetail(
     @SerialName("logo_url") val logoUrl: String? = null,
     /** R149: next scheduled unaired episode from Sonarr. Null = Sonarr off / ended / no date. */
     @SerialName("next_airing") val nextAiring: NextAiring? = null,
+    /** Phase 106: server-resolved age-rating badge (R153 renders it). Null = no certification data. */
+    @SerialName("rating_badge") val ratingBadge: RatingBadge? = null,
 )
 
 // ─── Search ───────────────────────────────────────────────────────────────────

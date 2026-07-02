@@ -13,7 +13,9 @@ import dev.jellystructure.shared.tv.MovieDetail
 import dev.jellystructure.shared.tv.Person
 import dev.jellystructure.shared.tv.Season
 import dev.jellystructure.shared.tv.NextAiring
+import dev.jellystructure.shared.tv.RatingBadge
 import dev.jellystructure.shared.tv.SeriesDetail
+import dev.jellystructure.resolver.CertificationResolver
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withTimeoutOrNull
@@ -51,6 +53,7 @@ class DetailService(
             audioLanguages     = movieAudioLangs,
             subtitleLanguages  = movieSubLangs,
             logoUrl            = RaviloImageUrl.logo(item.id),  // R130/R133
+            ratingBadge        = item.ratingBadge(),  // Phase 106
         )
     }
 
@@ -111,6 +114,7 @@ class DetailService(
             subtitleLanguages = seriesSubLangs,
             logoUrl           = RaviloImageUrl.logo(item.id),  // R130/R133
             nextAiring        = nextAiring,
+            ratingBadge       = item.ratingBadge(),  // Phase 106
         )
     }
 
@@ -171,7 +175,7 @@ class DetailService(
             title = title,
             year = year,
             genre = genres.firstOrNull(),
-            rating = null,
+            rating = ratingBadge()?.code,  // Phase 106
             posterUrl = RaviloImageUrl.poster(id),     // R133: keyed by MediaItem.id (on-disk artwork)
             backdropUrl = RaviloImageUrl.backdrop(id),
             upcomingEpisode = if (sonarrEnabled && kind == MediaKind.TV_SHOW &&
@@ -179,6 +183,12 @@ class DetailService(
                 sonarrNextAiringSeason != null && sonarrNextAiringEpisode != null)
                 "S${sonarrNextAiringSeason.toString().padStart(2,'0')}E${sonarrNextAiringEpisode.toString().padStart(2,'0')}" else null,
         )
+    }
+
+    /** Phase 106: resolve the item's certification against the configured region cascade. */
+    private fun MediaItem.ratingBadge(): RatingBadge? {
+        val cert = CertificationResolver.resolve(configStore.current.metadata.ageRatingCascade, certifications) ?: return null
+        return RatingBadge(region = cert.region, code = cert.code, tier = cert.tier, fallback = cert.fallback)
     }
 }
 

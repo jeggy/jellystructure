@@ -1,5 +1,6 @@
 package dev.jellystructure.media
 
+import dev.jellystructure.config.ConfigStore
 import dev.jellystructure.db.JellystructureDb
 import dev.jellystructure.log.Logger
 import dev.jellystructure.model.MediaItem
@@ -7,6 +8,7 @@ import dev.jellystructure.model.MediaKind
 import dev.jellystructure.model.MediaPage
 import dev.jellystructure.model.TrackKind
 import dev.jellystructure.nfo.NfoWriter
+import dev.jellystructure.resolver.CertificationResolver
 import dev.jellystructure.resolver.LanguageResolver
 import dev.jellystructure.shared.tv.Condition
 import dev.jellystructure.shared.tv.MatchMode
@@ -20,8 +22,13 @@ import platform.posix.CLOCK_REALTIME
 import platform.posix.clock_gettime
 import platform.posix.timespec
 
-class MediaStore(private val db: JellystructureDb, private val jsTagStore: JsTagStore) {
+class MediaStore(
+    private val db: JellystructureDb,
+    private val jsTagStore: JsTagStore,
+    private val configStore: ConfigStore,
+) {
     private val json = Json { ignoreUnknownKeys = true }
+    private fun ageRatingCascade(): List<String> = configStore.current.metadata.ageRatingCascade
 
     // Phase 78: cached tmdbPersonId -> profilePath index for the /api/people/{id}/image endpoint,
     // so a cache miss is O(1) instead of deserialising the whole library per request. Invalidated
@@ -230,7 +237,8 @@ class MediaStore(private val db: JellystructureDb, private val jsTagStore: JsTag
             // ANY ORs correctly (and is_none_of / not_contains become exact). The legacy per-facet
             // AND block is kept as the fast path when no conditions stack is passed.
             if (conditions.isNotEmpty()) {
-                result = result.filter { item -> ConditionEvaluator.matches(item, match, conditions, heroIds) }
+                val cascade = ageRatingCascade()
+                result = result.filter { item -> ConditionEvaluator.matches(item, match, conditions, heroIds, cascade) }
             } else {
                 if (studios.isNotEmpty()) result = result.filter { item -> studios.any { s -> item.studio.equals(s, ignoreCase = true) } }
                 if (networks.isNotEmpty()) result = result.filter { item -> networks.any { n -> item.network.equals(n, ignoreCase = true) } }
@@ -445,11 +453,16 @@ class MediaStore(private val db: JellystructureDb, private val jsTagStore: JsTag
         val networkCounts = mutableMapOf<String, Int>()
         val genreCounts   = mutableMapOf<String, Int>()
         val tagCounts     = mutableMapOf<String, Int>()
+        val ageRatingCounts = mutableMapOf<String, Int>()
+        val cascade = ageRatingCascade()
         for (item in items) {
             item.studio?.let  { s -> studioCounts[s]  = (studioCounts[s]  ?: 0) + 1 }
             item.network?.let { n -> networkCounts[n] = (networkCounts[n] ?: 0) + 1 }
             item.genres.forEach { g -> genreCounts[g] = (genreCounts[g] ?: 0) + 1 }
             item.tags.forEach   { t -> tagCounts[t]   = (tagCounts[t]   ?: 0) + 1 }
+            CertificationResolver.resolve(cascade, item.certifications)?.let { cert ->
+                ageRatingCounts[cert.code] = (ageRatingCounts[cert.code] ?: 0) + 1
+            }
         }
         // JS-tag color by name (lowercased — list() OR-filters tags case-insensitively, so a tag
         // defined "Open Movie" must still color an item tagged "open movie"). Presence of a color
@@ -462,6 +475,10 @@ class MediaStore(private val db: JellystructureDb, private val jsTagStore: JsTag
             tags     = tagCounts.entries
                 .map { TrackFacetItem(it.key, it.value, tagColors[it.key.lowercase()]) }
                 .sortedWith(compareBy({ it.color == null }, { -it.count })),
+            // Phase 106: ordered by maturity tier then count, so the picker reads like a rating scale.
+            ageRatings = ageRatingCounts.entries
+                .sortedWith(compareBy({ CertificationResolver.tierFor(it.key) }, { -it.value }))
+                .map { TrackFacetItem(it.key, it.value) },
         )
     }
 
@@ -469,9 +486,10 @@ class MediaStore(private val db: JellystructureDb, private val jsTagStore: JsTag
     fun countBatch(requests: List<Pair<MatchMode, List<Condition>>>): List<Int> {
         if (requests.isEmpty()) return emptyList()
         val all = liveItems()  // batch-count is always Ravilo-config context
+        val cascade = ageRatingCascade()
         return requests.map { (match, conditions) ->
             if (conditions.isEmpty()) all.size
-            else all.count { item -> ConditionEvaluator.matches(item, match, conditions, emptySet()) }
+            else all.count { item -> ConditionEvaluator.matches(item, match, conditions, emptySet(), cascade) }
         }
     }
 
@@ -480,7 +498,7 @@ class MediaStore(private val db: JellystructureDb, private val jsTagStore: JsTag
      *  values present in the narrowed set. Uncached: computed on demand when the workbench opens in scope. */
     fun facetsNarrowed(match: MatchMode, conditions: List<Condition>): Pair<MetaFacets, TrackFacets> {
         val items = if (conditions.isEmpty()) liveItems()  // workbench narrowed-facets = Ravilo-config context
-            else liveItems().filter { ConditionEvaluator.matches(it, match, conditions, emptySet()) }
+            else liveItems().filter { ConditionEvaluator.matches(it, match, conditions, emptySet(), ageRatingCascade()) }
         return buildMetaFacetsFrom(items) to buildTrackFacetsFrom(items)
     }
 
@@ -530,6 +548,7 @@ data class MetaFacets(
     val networks: List<TrackFacetItem>,
     val genres: List<TrackFacetItem>,
     val tags: List<TrackFacetItem>,
+    val ageRatings: List<TrackFacetItem> = emptyList(),
 )
 
 private fun MediaItem.hasMultiDefaultAudio(): Boolean {

@@ -33,13 +33,13 @@ class WbCond(var facet: String, var op: String, val values: MutableList<String> 
              val rows: MutableList<RowConfig> = mutableListOf())
 
 private val WB_GROUPS = listOf(
-    "Metadata" to listOf("studio" to "Studio", "network" to "Network", "genre" to "Genre", "tag" to "Tag"),
+    "Metadata" to listOf("studio" to "Studio", "network" to "Network", "genre" to "Genre", "tag" to "Tag", "age_rating" to "Age rating"),
     "Audio track" to listOf("audio_language" to "Audio language", "audio_codec" to "Audio codec", "track_title" to "Audio track title"),
     "Ravilo layout" to listOf("hero_item" to "Hero item"),
 )
 private val WB_LABELS = WB_GROUPS.flatMap { it.second }.toMap()
 
-private fun isListFacet(f: String) = f in setOf("studio", "network", "genre", "tag", "audio_language", "audio_codec", "hero_item")
+private fun isListFacet(f: String) = f in setOf("studio", "network", "genre", "tag", "age_rating", "audio_language", "audio_codec", "hero_item")
 private fun opsFor(f: String): List<Pair<String, String>> = when (f) {
     "track_title" -> listOf("contains" to "contains", "not_contains" to "does not contain")
     "hero_item" -> listOf("is_any_of" to "is any of")
@@ -214,6 +214,7 @@ private fun wbItemsFor(facet: String): List<TrackFacetItem> {
         "network" -> n?.networks ?: wbMeta?.networks ?: emptyList()
         "genre" -> n?.genres ?: wbMeta?.genres ?: emptyList()
         "tag" -> n?.tags ?: wbMeta?.tags ?: emptyList()
+        "age_rating" -> n?.ageRatings ?: wbMeta?.ageRatings ?: emptyList()
         "audio_language" -> (n?.audioLanguages ?: wbTrack?.audioLanguages ?: emptyList()) + TrackFacetItem("untagged", 0)
         "audio_codec" -> n?.audioCodecs ?: wbTrack?.audioCodecs ?: emptyList()
         "track_title" -> n?.trackTitles ?: wbTrack?.trackTitles ?: emptyList()
@@ -388,6 +389,7 @@ private fun wbRenderScopeBanner() {
     if (wbBaseConds.isEmpty()) { host.innerHTML = ""; return }
     val WB_LABELS_LOCAL = mapOf(
         "studio" to "Studio", "network" to "Network", "genre" to "Genre", "tag" to "Tag",
+        "age_rating" to "Age rating",
         "audio_language" to "Audio language", "audio_codec" to "Audio codec",
         "track_title" to "Track title", "hero_item" to "Hero item",
     )
