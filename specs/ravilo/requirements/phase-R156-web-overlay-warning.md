@@ -25,7 +25,9 @@ load and reads like a crash.
 ## Requirements
 
 ### FR-R156-1 — Suppress the known warning
-Add a `ravilo-web/webpack.config.d/90-warnings.js` (name sorts after `dev-server.js`):
+Add a `ravilo-web/webpack.config.d/zz-warnings.js` (a numeric prefix like `90-` would sort *before*
+`dev-server.js` lexicographically — `9` < `d` — and get clobbered; `zz-` sorts after any plausible
+sibling file name):
 ```js
 config.ignoreWarnings = [...(config.ignoreWarnings || []),
   /Critical dependency: the request of a dependency is an expression/];
