@@ -90,8 +90,14 @@ data class NfoWriteResult(val path: String)
 @Serializable
 data class NfoWritableResult(val writable: Boolean, val path: String, val error: String? = null)
 
+// Phase 117: one row per triage issue type (always present, even at 0 — the Dashboard breakdown
+// renders every type). `instances` is episode/track-level for untagged/missingOverview, title-level
+// for the rest; `titles` is always how many Library rows the type will show.
 @Serializable
-data class TriageCount(val untagged: Int, val mismatch: Int, val total: Int)
+data class TriageTypeCount(val key: String, val label: String, val description: String, val instances: Int, val titles: Int)
+
+@Serializable
+data class TriageCount(val types: List<TriageTypeCount> = emptyList(), val total: Int = 0)
 
 @Serializable
 data class TriageTrack(val specifier: String, val streamIndex: Int, val kind: String, val codec: String, val title: String? = null)

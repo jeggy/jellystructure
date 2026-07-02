@@ -267,6 +267,16 @@ class MediaStore(
             // R122/R123: "missing artwork" = no real poster.jpg on disk (the Jellyfin poster). The only
             // artwork signal we track — we care about what's on disk, not the TMDB posterPath metadata.
             if (filter == "missing_artwork") items = items.filter { !posterArtworkExists(it) }
+            // Phase 117: one filter value per dashboard triage-breakdown row — same TriageDetection
+            // predicates the breakdown counts against, so the numbers and the Library never disagree.
+            when (filter) {
+                "untagged" -> items = items.filter { TriageDetection.untaggedCount(it) > 0 }
+                "cascade_mismatch" -> items = items.filter { TriageDetection.hasCascadeMismatch(it) }
+                "multi_default" -> items = items.filter { TriageDetection.hasMultiDefault(it) }
+                "language_mix" -> items = items.filter { it.languageMix }
+                "missing_from_source" -> items = items.filter { it.missingFromSource }
+                "missing_overview" -> items = items.filter { TriageDetection.missingOverviewCount(it) > 0 }
+            }
             items
         }.let { items ->
             var result = items
