@@ -10,6 +10,7 @@ import io.ktor.util.AttributeKey
 
 val SessionKey = AttributeKey<SessionData>("JsSession")
 val DeviceKey = AttributeKey<DeviceData>("RaviloDevice")
+val ApiKeyAttr = AttributeKey<ApiKeyData>("RaviloApiKey")
 
 private val OPEN_API_PATHS = listOf(
     "/api/auth/login",
@@ -33,6 +34,9 @@ private val OPEN_API_PATHS = listOf(
 fun Application.installAuthPlugin(
     sessionService: SessionService,
     validateDeviceToken: ((String) -> DeviceData?)? = null,
+    // Phase 111 — least-privilege by design: an API key is accepted ONLY for /api/remote/**, never for
+    // the admin/media/TV surfaces. Widening that is a deliberate future decision, not a default.
+    validateApiKey: ((String) -> ApiKeyData?)? = null,
 ) {
     intercept(ApplicationCallPipeline.Plugins) {
         val path = call.request.path()
@@ -44,6 +48,24 @@ fun Application.installAuthPlugin(
 
         if (OPEN_API_PATHS.any { path.startsWith(it) }) {
             proceed()
+            return@intercept
+        }
+
+        if (path.startsWith("/api/remote/") && validateApiKey != null) {
+            val bearer = call.request.headers["Authorization"]
+                ?.takeIf { it.startsWith("Bearer ") }
+                ?.removePrefix("Bearer ")
+                ?: call.request.headers["X-JS-Api-Key"]
+
+            val keyData = bearer?.let { validateApiKey(it) }
+            if (keyData != null) {
+                call.attributes.put(ApiKeyAttr, keyData)
+                proceed()
+                return@intercept
+            }
+
+            call.respond(HttpStatusCode.Unauthorized, mapOf("error" to "Invalid or missing API key"))
+            finish()
             return@intercept
         }
 

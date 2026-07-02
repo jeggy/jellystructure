@@ -117,6 +117,7 @@ class RaviloDeviceService(private val db: JellystructureDb) {
                 isAdmin = row.is_admin == 1L,
                 isKids = row.is_kids == 1L,
                 displayName = displayName,
+                lastSeen = now,
             ),
             deviceToken,
         )
@@ -150,6 +151,7 @@ class RaviloDeviceService(private val db: JellystructureDb) {
             isAdmin = row.is_admin == 1L,
             isKids = row.is_kids == 1L,
             displayName = row.display_name.ifBlank { "Ravilo TV ${row.device_id.take(6)}" },
+            lastSeen = row.last_seen,
         )
         tokenCache[token] = TokenEntry(data, now, now)
         return data
@@ -172,6 +174,7 @@ class RaviloDeviceService(private val db: JellystructureDb) {
                 isAdmin = row.is_admin == 1L,
                 isKids = row.is_kids == 1L,
                 displayName = row.display_name.ifBlank { "Ravilo TV ${row.device_id.take(6)}" },
+                lastSeen = row.last_seen,
             )
         }
 
@@ -179,6 +182,23 @@ class RaviloDeviceService(private val db: JellystructureDb) {
     fun removeSession(deviceId: String, jellyfinUserId: String) {
         db.raviloDeviceQueries.deleteByDeviceAndUser(device_id = deviceId, jellyfin_user_id = jellyfinUserId)
     }
+
+    /** Phase 111 — every device paired to [jellyfinUserId] (remote-control device list / D.1's admin
+     *  Ravilo config editor device list). */
+    fun listByUser(jellyfinUserId: String): List<DeviceData> =
+        db.raviloDeviceQueries.getByUser(jellyfinUserId).executeAsList().map { row ->
+            DeviceData(
+                deviceId = row.device_id,
+                deviceToken = row.device_token,
+                jellyfinUserId = row.jellyfin_user_id,
+                jellyfinUsername = row.jellyfin_username,
+                jellyfinUserToken = row.jellyfin_user_token,
+                isAdmin = row.is_admin == 1L,
+                isKids = row.is_kids == 1L,
+                displayName = row.display_name.ifBlank { "Ravilo TV ${row.device_id.take(6)}" },
+                lastSeen = row.last_seen,
+            )
+        }
 
     @OptIn(ExperimentalForeignApi::class)
     private fun generateCode(): String {

@@ -148,6 +148,8 @@ fun main() = runBlocking {
     mediaJobQueue.start()
     // Phase 110 — one outbound Jellyfin WS per connected Ravilo TV (dashboard messages, remote control).
     val sessionBridge = dev.jellystructure.tv.JellyfinSessionBridge(configStore, tvEventBus, rootScope)
+    // Phase 111 — jellystructure-issued API keys for external tools (Home Assistant etc.), fenced to /api/remote/**.
+    val apiKeyStore = dev.jellystructure.auth.ApiKeyStore(db)
     val acquisitionStore = AcquisitionStore(db)
     val acquisitionService = AcquisitionService(configStore, arrClient, tmdbClient, acquisitionStore, mediaStore, tvEventBus, rootScope)
     acquisitionService.startReconciler()
@@ -171,7 +173,7 @@ fun main() = runBlocking {
     val shutdown = startServer(
         configStore, sessionService, raviloDeviceService, raviloConfigService, channelLogoStore, homeFeedService, browseService, detailService, playbackService, jellyfinClient, mediaStore, scanner,
         artworkDownloader, tmdbClient, scanTracker, mediaHistory, activityLog, broadcaster,
-        frontendDir, raviloWebDir = raviloWebDir, port = port, scanDispatcher = scanDispatcher, effectiveScanThreads = effectiveScanThreads, jsTagStore = jsTagStore, seedingGuard = seedingGuard, seedingSnapshot = seedingSnapshot, logoDownloader = logoDownloader, qbClient = qbClient, arrClient = arrClient, arrRescan = arrRescan, sonarrEnrich = sonarrEnrich, acquisitionService = acquisitionService, chartRegistry = chartRegistry, chartStore = chartStore, chartIngest = chartIngest, tvEventBus = tvEventBus, imageProxyService = imageProxyService, mediaJobQueue = mediaJobQueue, sessionBridge = sessionBridge,
+        frontendDir, raviloWebDir = raviloWebDir, port = port, scanDispatcher = scanDispatcher, effectiveScanThreads = effectiveScanThreads, jsTagStore = jsTagStore, seedingGuard = seedingGuard, seedingSnapshot = seedingSnapshot, logoDownloader = logoDownloader, qbClient = qbClient, arrClient = arrClient, arrRescan = arrRescan, sonarrEnrich = sonarrEnrich, acquisitionService = acquisitionService, chartRegistry = chartRegistry, chartStore = chartStore, chartIngest = chartIngest, tvEventBus = tvEventBus, imageProxyService = imageProxyService, mediaJobQueue = mediaJobQueue, sessionBridge = sessionBridge, apiKeyStore = apiKeyStore,
     )
 
     // R149: populate Sonarr next-airing data for all TV shows on startup (background, non-blocking).

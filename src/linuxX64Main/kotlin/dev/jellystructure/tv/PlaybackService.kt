@@ -54,6 +54,10 @@ private val playedGate = Semaphore(4)
 // Key = deviceId (one active playback per device); cleared on an explicit stop.
 private val lastHeartbeatMs = HashMap<String, Long>()
 private val activePlayback = HashMap<String, Triple<DeviceData, String, Long>>() // deviceId -> (device, jellyfinId, lastKnownPositionMs)
+
+/** Phase 111 (FR B.1) — the Jellyfin item id this device is actively playing, or null. Used by the
+ *  remote-control device list; reads the same map the stop watchdog does, no separate tracking. */
+fun nowPlayingItem(deviceId: String): String? = activePlayback[deviceId]?.second
 private const val STOP_WATCHDOG_MS = 90_000L
 
 private fun playSessionIdFor(device: DeviceData, jellyfinId: String): String = "${device.deviceId}-$jellyfinId"

@@ -19,7 +19,9 @@ import dev.jellystructure.api.DiscoverFeedConfig
 import dev.jellystructure.api.MetadataConfig
 import dev.jellystructure.resolver.CertificationCatalog
 import dev.jellystructure.api.httpClient
+import io.ktor.client.call.body
 import io.ktor.client.request.delete
+import io.ktor.client.request.get
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.http.ContentType
@@ -29,6 +31,8 @@ import kotlinx.browser.document
 import kotlinx.browser.window
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
 import org.w3c.dom.Element
 import org.w3c.dom.HTMLElement
 import org.w3c.dom.HTMLInputElement
@@ -78,6 +82,24 @@ fun renderSettings(container: Element, scope: CoroutineScope, query: Map<String,
                 <input id="tmdb-key" class="input" type="password" style="width:100%">
               </div>
               <div id="conn-result" style="display:none;margin-top:8px"></div>
+            </div>
+
+            <div class="card set-section" id="sect-apikeys" data-tab="connections">
+              <h3 style="font-size:1rem;margin:0 0 14px">API keys</h3>
+              <p class="hint" style="margin:0 0 12px">For external tools (Home Assistant etc.) to control Ravilo devices via <span class="mono">/api/remote/**</span> — a key acts as one Jellyfin user and can list/play/command that user's paired TVs.</p>
+              <div class="row" style="gap:8px;flex-wrap:wrap;align-items:flex-end;margin-bottom:10px">
+                <div class="field" style="flex:1;min-width:160px;margin:0">
+                  <label>Key name</label>
+                  <input id="apikey-name" class="input" type="text" placeholder="Home Assistant" style="width:100%">
+                </div>
+                <div class="field" style="flex:1;min-width:160px;margin:0">
+                  <label>Acts as</label>
+                  <select id="apikey-user" class="input" style="width:100%"></select>
+                </div>
+                <button id="apikey-create-btn" class="btn sm">+ Create key</button>
+              </div>
+              <div id="apikey-created" style="display:none;margin-bottom:12px;padding:10px 12px;border-radius:6px;background:var(--ok-soft,rgba(45,212,154,.1));border:1px solid var(--ok,#2dd49a)"></div>
+              <div id="apikey-list"><span class="muted tiny">Loading…</span></div>
             </div>
 
             <div class="card set-section" id="sect-libraries" data-tab="libraries">
@@ -399,6 +421,7 @@ fun renderSettings(container: Element, scope: CoroutineScope, query: Map<String,
         installLanguagePickerById("fallback-language")
         attachListeners(scope)
     }
+    scope.launch { loadApiKeysCard(scope) }
 
     wireSettingsTabs(container)
     showTab(query["tab"]) // Phase 55 — URL-addressable tab (?tab=…), defaults to connections
@@ -1445,6 +1468,83 @@ private fun showSettingsMsg(msg: String, ok: Boolean) {
     val el = document.getElementById("settings-msg") as? HTMLElement ?: return
     el.style.display = "block"
     el.innerHTML = """<span class="badge ${if (ok) "ok" else "bad"}">$msg</span>"""
+}
+
+// Phase 111 — Settings ▸ Connections ▸ "API keys" card.
+@Serializable
+private data class ApiKeySummary(
+    val id: String,
+    val name: String,
+    @SerialName("jellyfin_user_id") val jellyfinUserId: String,
+    @SerialName("jellyfin_username") val jellyfinUsername: String,
+    @SerialName("created_at") val createdAt: Long,
+    @SerialName("last_used_at") val lastUsedAt: Long? = null,
+)
+
+private var apiKeyUsers: List<dev.jellystructure.api.JellyfinUser> = emptyList()
+
+private suspend fun loadApiKeysCard(scope: CoroutineScope) {
+    apiKeyUsers = runCatching { dev.jellystructure.api.RaviloApi.getUsers() }.getOrDefault(emptyList())
+    (document.getElementById("apikey-user") as? HTMLSelectElement)?.innerHTML =
+        apiKeyUsers.joinToString("") { u -> """<option value="${u.id}" data-name="${u.displayName.esc()}">${u.displayName.esc()}</option>""" }
+    refreshApiKeyList()
+
+    document.getElementById("apikey-create-btn")?.addEventListener("click") {
+        scope.launch {
+            val name = (document.getElementById("apikey-name") as? HTMLInputElement)?.value?.trim().orEmpty()
+            val userSel = document.getElementById("apikey-user") as? HTMLSelectElement
+            val userId = userSel?.value.orEmpty()
+            val userName = apiKeyUsers.firstOrNull { it.id == userId }?.displayName.orEmpty()
+            if (name.isBlank() || userId.isBlank()) return@launch
+            val body = """{"name":"${name.replace("\"", "")}","jellyfin_user_id":"$userId","jellyfin_username":"${userName.replace("\"", "")}"}"""
+            val token = runCatching {
+                val resp = httpClient.post("/api/settings/api-keys") { contentType(ContentType.Application.Json); setBody(body) }
+                if (resp.status.value in 200..299) resp.body<Map<String, String>>()["token"] else null
+            }.getOrNull()
+            if (token != null) {
+                (document.getElementById("apikey-created") as? HTMLElement)?.let {
+                    it.style.display = "block"
+                    it.innerHTML = """<b>Key created — copy it now, it won't be shown again:</b><div class="input mono" style="margin-top:6px;user-select:all;word-break:break-all;">${token.esc()}</div>"""
+                }
+                (document.getElementById("apikey-name") as? HTMLInputElement)?.value = ""
+                refreshApiKeyList()
+            }
+        }
+    }
+}
+
+private fun refreshApiKeyList() {
+    val listEl = document.getElementById("apikey-list") as? HTMLElement ?: return
+    val scope = kotlinx.coroutines.MainScope()
+    scope.launch {
+        val keys = runCatching { httpClient.get("/api/settings/api-keys").body<List<ApiKeySummary>>() }.getOrDefault(emptyList())
+        if (keys.isEmpty()) {
+            listEl.innerHTML = """<span class="muted tiny">No API keys yet.</span>"""
+            return@launch
+        }
+        listEl.innerHTML = keys.joinToString("") { k ->
+            val lastUsed = k.lastUsedAt?.let { dev.jellystructure.formatStoredTs(it.toString()) } ?: "never"
+            """<div class="row center" style="padding:8px 0;border-top:1px solid var(--line);">
+                 <div style="flex:1;min-width:0;">
+                   <b style="font-size:.88rem;">${k.name.esc()}</b>
+                   <div class="tiny muted">acts as ${k.jellyfinUsername.esc()} · last used $lastUsed</div>
+                 </div>
+                 <button class="btn sm ghost apikey-revoke-btn" data-id="${k.id}">Revoke</button>
+               </div>"""
+        }
+        listEl.querySelectorAll(".apikey-revoke-btn").let { nodes ->
+            for (i in 0 until nodes.length) {
+                val btn = nodes.item(i) as? HTMLElement ?: continue
+                btn.addEventListener("click") {
+                    val id = btn.getAttribute("data-id") ?: return@addEventListener
+                    scope.launch {
+                        runCatching { httpClient.delete("/api/settings/api-keys/$id") }
+                        refreshApiKeyList()
+                    }
+                }
+            }
+        }
+    }
 }
 
 private fun updateToggle(id: String, on: Boolean) {
