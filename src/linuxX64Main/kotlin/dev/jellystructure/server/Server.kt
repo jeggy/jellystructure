@@ -134,6 +134,7 @@ fun startServer(
     tvEventBus: TvEventBus,
     imageProxyService: RaviloArtworkService? = null,
     mediaJobQueue: dev.jellystructure.media.MediaJobQueue,
+    sessionBridge: dev.jellystructure.tv.JellyfinSessionBridge,
 ): suspend () -> Unit {
     // Fire-and-forget work (scans, NFO/artwork pushes, image fetches) runs as appScope.launch{}.
     // On Kotlin/Native an exception escaping a launched coroutine reaches the global handler and
@@ -274,7 +275,11 @@ fun startServer(
                     close(CloseReason(CloseReason.Codes.VIOLATED_POLICY, "Invalid or missing device token"))
                     return@webSocket
                 }
-                tvEventBus.register(device.jellyfinUserId, this)
+                tvEventBus.register(device.jellyfinUserId, device.deviceId, this)
+                // Phase 110 — while this TV is connected, bridge one outbound session to Jellyfin for
+                // it (dashboard messages, remote control). Best-effort: never let a bridge problem take
+                // down the TV's own event socket.
+                runCatching { sessionBridge.connect(device) }
                 try {
                     for (frame in incoming) {
                         if (frame is Frame.Close) break
@@ -286,7 +291,11 @@ fun startServer(
                     // escape the handler or it crashes the Kotlin/Native process.
                     Logger.warn("WS /api/tv/events device connection dropped: ${e.message}", "tv")
                 } finally {
-                    tvEventBus.unregister(device.jellyfinUserId, this)
+                    tvEventBus.unregister(device.jellyfinUserId, device.deviceId, this)
+                    runCatching { sessionBridge.disconnect(device.deviceId) }
+                    // Phase 110 (FR B.2) — a TV disconnecting clears its Now Playing immediately rather
+                    // than waiting out the 90s heartbeat timeout.
+                    runCatching { playbackService.stopWatchdogTick { deviceId -> tvEventBus.isConnected(deviceId) } }
                 }
             }
 

@@ -61,6 +61,13 @@ private data class PollRequest(
     @SerialName("device_id") val deviceId: String? = null,
 )
 
+// Phase 110: optional — old TV/web clients that send no body (or an empty one) still pair fine, just
+// without a device name until they update (backfilled as "Ravilo TV <short-id>").
+@Serializable
+private data class PairingStartRequest(
+    @SerialName("device_name") val deviceName: String? = null,
+)
+
 
 @Serializable
 private data class ApproveRequest(
@@ -118,7 +125,8 @@ fun Route.tvRoutes(
 ) {
     route("/tv/pair") {
         post("/start") {
-            val result = deviceService.startPairing()
+            val deviceName = runCatching { call.receive<PairingStartRequest>() }.getOrNull()?.deviceName
+            val result = deviceService.startPairing(deviceName)
             call.respond(PairingChallenge(
                 code = result.code,
                 pollToken = result.pollToken,
@@ -173,8 +181,15 @@ fun Route.tvRoutes(
                     call.respond(HttpStatusCode.ServiceUnavailable, mapOf("error" to "Jellyfin not configured"))
                     return@post
                 }
+                // Phase 110: a scratch per-pairing DeviceId (not the shared server identity, and not
+                // yet the TV's real one — that's only known once polling creates the device row).
+                // Jellyfin keys sessions by the DeviceId on EACH request, not the one a token was
+                // minted under, so this only needs to avoid colliding with another concurrent
+                // pairing/TV — the root-cause 401 storm was two TVs sharing one identity forever, not
+                // this one-time mint call.
+                val pairingIdentity = dev.jellystructure.auth.JellyfinDeviceIdentity("ravilo-pair-${req.code}", "Ravilo pairing")
                 val authResult = runCatching {
-                    jellyfinClient.authenticateByName(config.apiKeys.jellyfinUrl, req.username, req.password)
+                    jellyfinClient.authenticateByName(config.apiKeys.jellyfinUrl, req.username, req.password, pairingIdentity)
                 }.getOrElse {
                     call.respond(HttpStatusCode.Unauthorized, mapOf("error" to "Invalid Jellyfin credentials"))
                     return@post
