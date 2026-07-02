@@ -1436,8 +1436,8 @@ private val PIPE_BLOCKS = mapOf(
 )
 private val PIPE_PALETTE = listOf("pull_tmdb","fetch_artwork","write_nfo","sync_jellyfin","rescan_arr","detect_drift","wait","notify")
 private val PIPE_SHORT   = mapOf("scan_files" to "Scan","pull_tmdb" to "TMDB","fetch_artwork" to "Artwork","write_nfo" to "NFO","sync_jellyfin" to "Jellyfin","rescan_arr" to "*arr","detect_drift" to "Drift","notify" to "Notify","wait" to "Wait")
-private val CAD_VALS     = listOf("weekly","monthly","6months","yearly","never")
-private val CAD_LABELS   = listOf("every week","every month","every 6 months","every year","never")
+private val CAD_VALS     = listOf("daily","weekly","monthly","6months","yearly","never")
+private val CAD_LABELS   = listOf("every day","every week","every month","every 6 months","every year","never")
 private val WAIT_MINS    = listOf(5, 10, 15, 30, 60)
 
 // Top-level single-expression helpers for Kotlin/WASM js() constraints
@@ -1617,18 +1617,22 @@ private fun pipeScanCfgEl(step: PipelineStep, idx: Int): Element {
         val yr   = document.createElement("span"); yr.className = "yr"; yr.textContent = r.yr
         age.appendChild(nm); age.appendChild(yr)
         val cell = document.createElement("div"); cell.className = "fr-cell"
-        val cad  = document.createElement("span") as HTMLElement
         val isNever = r.cadValue == "never"
+        val cad  = document.createElement("span") as HTMLElement
         cad.className = "cad" + (if (isNever) " never" else "")
-        cad.title = "Click to change how often"
         val ci = document.createElement("span"); ci.className = "ci"; ci.innerHTML = PIPE_WAIT_IC
-        val cv = document.createElement("span"); cv.className = "cv"
-        cv.textContent = CAD_LABELS.getOrElse(CAD_VALS.indexOf(r.cadValue)) { "every week" }
-        val cx = document.createElement("span"); cx.className = "cx"; cx.textContent = "▾"
-        cad.appendChild(ci); cad.appendChild(cv); cad.appendChild(cx)
-        val capturedKey = r.key; val capturedVal = r.cadValue
-        cad.addEventListener("click") {
-            val next = CAD_VALS[(CAD_VALS.indexOf(capturedVal) + 1) % CAD_VALS.size]
+        val sel = document.createElement("select") as HTMLSelectElement
+        sel.className = "cv-select"
+        sel.title = "How often to re-check this age tier"
+        CAD_VALS.forEachIndexed { i, v ->
+            val opt = document.createElement("option") as org.w3c.dom.HTMLOptionElement
+            opt.value = v; opt.textContent = CAD_LABELS[i]
+            if (v == r.cadValue) opt.selected = true
+            sel.appendChild(opt)
+        }
+        val capturedKey = r.key
+        sel.addEventListener("change") {
+            val next = sel.value
             pipelineSteps[idx] = when (capturedKey) {
                 "cadY" -> pipelineSteps[idx].copy(refreshThisYear = next)
                 "cadM" -> pipelineSteps[idx].copy(refresh1To5y   = next)
@@ -1636,6 +1640,7 @@ private fun pipeScanCfgEl(step: PipelineStep, idx: Int): Element {
             }
             renderPipeline()
         }
+        cad.appendChild(ci); cad.appendChild(sel)
         cell.appendChild(cad); tbl.appendChild(age); tbl.appendChild(cell)
     }
     val note = document.createElement("div"); note.className = "sc-state"
