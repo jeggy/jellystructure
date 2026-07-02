@@ -150,6 +150,14 @@ fun main() = runBlocking {
     val sessionBridge = dev.jellystructure.tv.JellyfinSessionBridge(configStore, tvEventBus, rootScope, mediaStore)
     // Phase 111 — jellystructure-issued API keys for external tools (Home Assistant etc.), fenced to /api/remote/**.
     val apiKeyStore = dev.jellystructure.auth.ApiKeyStore(db)
+    // Phase 114 — realtime ingest: *arr webhooks + Jellyfin's own LibraryChanged reach Ravilo in
+    // seconds instead of waiting for the next scheduled scan.
+    if (configStore.current.ingest.webhookSecret.isBlank()) {
+        rootScope.launch { configStore.update(configStore.current.copy(ingest = configStore.current.ingest.copy(webhookSecret = dev.jellystructure.auth.generateSecureToken()))) }
+    }
+    val realtimeIngest = dev.jellystructure.media.RealtimeIngestService(scanner, mediaStore, jellyfinClient, configStore, artworkDownloader, rootScope, broadcaster, mediaHistory, arrRescan, sonarrEnrich)
+    val libraryListener = dev.jellystructure.tv.JellyfinLibraryListener(configStore, jellyfinClient, mediaStore, realtimeIngest, rootScope)
+    libraryListener.start()
     val acquisitionStore = AcquisitionStore(db)
     val acquisitionService = AcquisitionService(configStore, arrClient, tmdbClient, acquisitionStore, mediaStore, tvEventBus, rootScope)
     acquisitionService.startReconciler()
@@ -173,7 +181,7 @@ fun main() = runBlocking {
     val shutdown = startServer(
         configStore, sessionService, raviloDeviceService, raviloConfigService, channelLogoStore, homeFeedService, browseService, detailService, playbackService, jellyfinClient, mediaStore, scanner,
         artworkDownloader, tmdbClient, scanTracker, mediaHistory, activityLog, broadcaster,
-        frontendDir, raviloWebDir = raviloWebDir, port = port, scanDispatcher = scanDispatcher, effectiveScanThreads = effectiveScanThreads, jsTagStore = jsTagStore, seedingGuard = seedingGuard, seedingSnapshot = seedingSnapshot, logoDownloader = logoDownloader, qbClient = qbClient, arrClient = arrClient, arrRescan = arrRescan, sonarrEnrich = sonarrEnrich, acquisitionService = acquisitionService, chartRegistry = chartRegistry, chartStore = chartStore, chartIngest = chartIngest, tvEventBus = tvEventBus, imageProxyService = imageProxyService, mediaJobQueue = mediaJobQueue, sessionBridge = sessionBridge, apiKeyStore = apiKeyStore,
+        frontendDir, raviloWebDir = raviloWebDir, port = port, scanDispatcher = scanDispatcher, effectiveScanThreads = effectiveScanThreads, jsTagStore = jsTagStore, seedingGuard = seedingGuard, seedingSnapshot = seedingSnapshot, logoDownloader = logoDownloader, qbClient = qbClient, arrClient = arrClient, arrRescan = arrRescan, sonarrEnrich = sonarrEnrich, acquisitionService = acquisitionService, chartRegistry = chartRegistry, chartStore = chartStore, chartIngest = chartIngest, tvEventBus = tvEventBus, imageProxyService = imageProxyService, mediaJobQueue = mediaJobQueue, sessionBridge = sessionBridge, apiKeyStore = apiKeyStore, realtimeIngest = realtimeIngest, libraryListener = libraryListener,
     )
 
     // R149: populate Sonarr next-airing data for all TV shows on startup (background, non-blocking).

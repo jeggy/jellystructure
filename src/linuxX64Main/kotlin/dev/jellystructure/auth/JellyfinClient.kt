@@ -18,6 +18,7 @@ import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
+import io.ktor.http.encodeURLParameter
 import io.ktor.http.isSuccess
 import io.ktor.serialization.kotlinx.json.json
 import kotlinx.serialization.json.Json
@@ -133,13 +134,45 @@ class JellyfinClient {
         // versions (it expects `/Users/{userId}/Items/{id}`); the `Ids=` filter on the list endpoint
         // is accepted with the same token + Fields (incl. LockData/LockedFields for Phase 22).
         val url = baseUrl.trimEnd('/') +
-            "/Items?Ids=$jellyfinId&Recursive=true&Fields=Path,ProviderIds,ProductionYear,LockData,LockedFields,Tags,DateCreated,DateLastSaved"
+            "/Items?Ids=$jellyfinId&Recursive=true&Fields=Path,ProviderIds,ProductionYear,LockData,LockedFields,Tags,DateCreated,DateLastSaved,SeriesId"
         httpGet(url) { jellyfinAuth(token) }
             .bodyOrNull<JellyfinItemsResponse>("getItem")?.items?.firstOrNull()
     }.let { result ->
         if (result.isFailure) Logger.warn("Jellyfin getItem failed: ${result.exceptionOrNull()?.message}")
         result.getOrNull()
     }
+
+    /** Phase 114 (FR A.3) — the webhook fallback poll: has Jellyfin picked up this exact path yet?
+     *  Cheap compared to fetching every item — `Path=` is an exact-match filter Jellyfin's `/Items`
+     *  endpoint supports alongside `Ids=`. */
+    suspend fun getItemByPath(baseUrl: String, token: String, path: String): JellyfinItem? = runCatching {
+        val url = baseUrl.trimEnd('/') +
+            "/Items?Path=${path.encodeURLParameter()}&Recursive=true&Fields=Path,ProviderIds,ProductionYear,LockData,LockedFields,Tags,DateCreated,DateLastSaved,SeriesId"
+        httpGet(url) { jellyfinAuth(token) }.bodyOrNull<JellyfinItemsResponse>("getItemByPath")?.items?.firstOrNull()
+    }.getOrElse { Logger.warn("Jellyfin getItemByPath failed: ${it.message}"); null }
+
+    /** Phase 114 — batch form of [getItem] for the LibraryChanged listener (chunked by the caller to
+     *  keep URLs reasonable; Jellyfin has no documented Ids= count limit but a few hundred is prudent). */
+    suspend fun getItemsByIds(baseUrl: String, token: String, jellyfinIds: List<String>): List<JellyfinItem> {
+        if (jellyfinIds.isEmpty()) return emptyList()
+        val url = baseUrl.trimEnd('/') +
+            "/Items?Ids=${jellyfinIds.joinToString(",")}&Recursive=true&Fields=Path,ProviderIds,ProductionYear,LockData,LockedFields,Tags,DateCreated,DateLastSaved,SeriesId"
+        return runCatching {
+            httpGet(url) { jellyfinAuth(token) }.bodyOrNull<JellyfinItemsResponse>("getItemsByIds")?.items ?: emptyList()
+        }.getOrElse { Logger.warn("Jellyfin getItemsByIds failed: ${it.message}"); emptyList() }
+    }
+
+    /** Phase 114 (FR A.2) — asks Jellyfin to examine one path right now, instead of waiting for its own
+     *  library monitor (unreliable on network mounts — the usual reason ingest "takes forever"). */
+    suspend fun notifyLibraryMediaUpdated(baseUrl: String, token: String, path: String): Boolean = runCatching {
+        val body = """{"Updates":[{"Path":${path.jsonEscape()},"UpdateType":"Created"}]}"""
+        val r = httpPost(baseUrl.trimEnd('/') + "/Library/Media/Updated") {
+            jellyfinAuth(token)
+            contentType(ContentType.Application.Json)
+            setBody(body)
+        }
+        r.status.isSuccess()
+    }.getOrElse { Logger.warn("Jellyfin notifyLibraryMediaUpdated failed: ${it.message}"); false }
 
     suspend fun refreshItem(baseUrl: String, token: String, jellyfinId: String, full: Boolean = false): Boolean = runCatching {
         // FullRefresh forces Jellyfin to actually re-read all providers (including our NFO) regardless
