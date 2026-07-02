@@ -1,5 +1,6 @@
 package dev.jellystructure.auth
 
+import dev.jellystructure.OutboundHttp
 import dev.jellystructure.log.Logger
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
@@ -32,6 +33,13 @@ private const val AUTH_HEADER =
 private const val DEVICE_PROFILE = """{"MaxStreamingBitrate":120000000,"DirectPlayProfiles":[{"Container":"mkv,mp4,webm,mov,avi,ts,m2ts,flv,3gp,mpegts","Type":"Video","VideoCodec":"h264,hevc,vp8,vp9,av1,mpeg4,mpeg2video,vc1","AudioCodec":"aac,ac3,eac3,mp3,flac,vorbis,opus,dts,truehd,pcm,mp2,alac"}],"TranscodingProfiles":[{"Container":"ts","Type":"Video","VideoCodec":"h264","AudioCodec":"aac,ac3,mp3","Protocol":"hls","Context":"Streaming"}],"SubtitleProfiles":[{"Format":"vtt","Method":"External"},{"Format":"srt","Method":"External"},{"Format":"subrip","Method":"External"},{"Format":"ass","Method":"External"},{"Format":"ssa","Method":"External"},{"Format":"vobsub","Method":"Embed"},{"Format":"dvdsub","Method":"Embed"},{"Format":"dvbsub","Method":"Embed"},{"Format":"pgssub","Method":"Encode"},{"Format":"pgs","Method":"Encode"}]}"""
 
 class JellyfinClient {
+    private suspend fun httpGet(url: String, block: HttpRequestBuilder.() -> Unit = {}): HttpResponse =
+        OutboundHttp.withPermit { http.get(url, block) }
+    private suspend fun httpPost(url: String, block: HttpRequestBuilder.() -> Unit = {}): HttpResponse =
+        OutboundHttp.withPermit { http.post(url, block) }
+    private suspend fun httpDelete(url: String, block: HttpRequestBuilder.() -> Unit = {}): HttpResponse =
+        OutboundHttp.withPermit { http.delete(url, block) }
+
     private val http = HttpClient(Curl) {
         install(ContentNegotiation) {
             json(Json { ignoreUnknownKeys = true })
@@ -49,7 +57,7 @@ class JellyfinClient {
         password: String,
     ): JellyfinAuthResponse {
         val url = baseUrl.trimEnd('/') + "/Users/AuthenticateByName"
-        val response = http.post(url) {
+        val response = httpPost(url) {
             header("Authorization", AUTH_HEADER)
             contentType(ContentType.Application.Json)
             setBody("""{"Username":${username.jsonEscape()},"Pw":${password.jsonEscape()}}""")
@@ -65,7 +73,7 @@ class JellyfinClient {
 
     suspend fun testConnection(baseUrl: String, token: String): Boolean = runCatching {
         val url = baseUrl.trimEnd('/') + "/System/Info/Public"
-        val response = http.get(url) { jellyfinAuth(token) }
+        val response = httpGet(url) { jellyfinAuth(token) }
         response.status.value in 200..299
     }.getOrDefault(false)
 
@@ -77,24 +85,24 @@ class JellyfinClient {
      */
     suspend fun isTokenValid(baseUrl: String, token: String, userId: String): Boolean = runCatching {
         if (token.isBlank()) return false
-        http.get(baseUrl.trimEnd('/') + "/Users/$userId") { jellyfinAuth(token) }.status.isSuccess()
+        httpGet(baseUrl.trimEnd('/') + "/Users/$userId") { jellyfinAuth(token) }.status.isSuccess()
     }.getOrDefault(false)
 
     suspend fun getUsers(baseUrl: String, token: String): List<JellyfinUser> = runCatching {
-        http.get(baseUrl.trimEnd('/') + "/Users") { jellyfinAuth(token) }
+        httpGet(baseUrl.trimEnd('/') + "/Users") { jellyfinAuth(token) }
             .bodyOrNull<List<JellyfinUser>>("getUsers").orEmpty()
     }.getOrDefault(emptyList())
 
     suspend fun getLibraries(baseUrl: String, token: String): List<JellyfinLibrary> = runCatching {
         val url = baseUrl.trimEnd('/') + "/Library/VirtualFolders"
-        http.get(url) { jellyfinAuth(token) }
+        httpGet(url) { jellyfinAuth(token) }
             .bodyOrNull<List<JellyfinLibrary>>("getLibraries").orEmpty()
     }.getOrDefault(emptyList())
 
     suspend fun getItems(baseUrl: String, token: String): List<JellyfinItem> = runCatching {
         val url = baseUrl.trimEnd('/') +
             "/Items?IncludeItemTypes=Movie,Series&Recursive=true&Fields=Path,ProviderIds,ProductionYear,LockData,LockedFields,Tags,DateCreated"
-        http.get(url) { jellyfinAuth(token) }
+        httpGet(url) { jellyfinAuth(token) }
             .bodyOrNull<JellyfinItemsResponse>("getItems")?.items.orEmpty()
             .filter { it.type == "Movie" || it.type == "Series" }
     }.let { result ->
@@ -105,7 +113,7 @@ class JellyfinClient {
     suspend fun getItemsByParent(baseUrl: String, token: String, parentId: String): List<JellyfinItem> = runCatching {
         val url = baseUrl.trimEnd('/') +
             "/Items?ParentId=$parentId&IncludeItemTypes=Movie,Series&Recursive=true&Fields=Path,ProviderIds,ProductionYear,LockData,LockedFields,Tags,DateCreated"
-        http.get(url) { jellyfinAuth(token) }
+        httpGet(url) { jellyfinAuth(token) }
             .bodyOrNull<JellyfinItemsResponse>("getItemsByParent")?.items.orEmpty()
             .filter { it.type == "Movie" || it.type == "Series" }
     }.let { result ->
@@ -120,7 +128,7 @@ class JellyfinClient {
         // is accepted with the same token + Fields (incl. LockData/LockedFields for Phase 22).
         val url = baseUrl.trimEnd('/') +
             "/Items?Ids=$jellyfinId&Recursive=true&Fields=Path,ProviderIds,ProductionYear,LockData,LockedFields,Tags,DateCreated"
-        http.get(url) { jellyfinAuth(token) }
+        httpGet(url) { jellyfinAuth(token) }
             .bodyOrNull<JellyfinItemsResponse>("getItem")?.items?.firstOrNull()
     }.let { result ->
         if (result.isFailure) Logger.warn("Jellyfin getItem failed: ${result.exceptionOrNull()?.message}")
@@ -140,14 +148,14 @@ class JellyfinClient {
         val extra = if (full) "&ReplaceAllMetadata=true" else ""
         val url = baseUrl.trimEnd('/') +
             "/Items/$jellyfinId/Refresh?MetadataRefreshMode=$mode&ImageRefreshMode=$mode$extra"
-        val response = http.post(url) { jellyfinAuth(token) }
+        val response = httpPost(url) { jellyfinAuth(token) }
         Logger.info("Jellyfin item refresh $jellyfinId (${if (full) "full/nfo-sync" else "validation"}): ${response.status.value}")
         response.status.value in 200..299
     }.getOrDefault(false)
 
     suspend fun triggerLibraryRefresh(baseUrl: String, token: String): Boolean = runCatching {
         val url = baseUrl.trimEnd('/') + "/Library/Refresh"
-        val response = http.post(url) { jellyfinAuth(token) }
+        val response = httpPost(url) { jellyfinAuth(token) }
         response.status.value in 200..299
     }.getOrDefault(false)
 
@@ -162,7 +170,7 @@ class JellyfinClient {
             "&IncludeItemTypes=Movie,Episode&Limit=$limit" +
             "&SortBy=DatePlayed&SortOrder=Descending" +
             "&Fields=UserData,SeriesId,SeriesName,SeasonId,IndexNumber,ParentIndexNumber"
-        http.get(url) { jellyfinAuth(userToken) }
+        httpGet(url) { jellyfinAuth(userToken) }
             .bodyOrNull<JellyfinPlayItemsResponse>("getResumeItems")?.items.orEmpty()
     }.let { result ->
         if (result.isFailure) Logger.warn("Jellyfin getResumeItems failed: ${result.exceptionOrNull()?.message}")
@@ -176,7 +184,7 @@ class JellyfinClient {
         positionTicks: Long,
         mediaSourceId: String,
     ) = runCatching {
-        http.post(baseUrl.trimEnd('/') + "/Sessions/Playing") {
+        httpPost(baseUrl.trimEnd('/') + "/Sessions/Playing") {
             jellyfinAuth(userToken)
             contentType(ContentType.Application.Json)
             setBody("""{"ItemId":"$jellyfinId","StartPositionTicks":$positionTicks,"MediaSourceId":"$mediaSourceId","CanSeek":true}""")
@@ -196,7 +204,7 @@ class JellyfinClient {
         subtitleStreamIndex: Int? = null,
     ): JellyfinPlaybackInfoResponse? = runCatching {
         val subBody = subtitleStreamIndex?.let { ""","SubtitleStreamIndex":$it""" } ?: ""
-        http.post(baseUrl.trimEnd('/') + "/Items/$itemId/PlaybackInfo?UserId=$userId") {
+        httpPost(baseUrl.trimEnd('/') + "/Items/$itemId/PlaybackInfo?UserId=$userId") {
             jellyfinAuth(userToken)
             contentType(ContentType.Application.Json)
             setBody("""{"MediaSourceId":"$itemId","DeviceProfile":$DEVICE_PROFILE$subBody}""")
@@ -211,7 +219,7 @@ class JellyfinClient {
         isPaused: Boolean,
         mediaSourceId: String,
     ) = runCatching {
-        http.post(baseUrl.trimEnd('/') + "/Sessions/Playing/Progress") {
+        httpPost(baseUrl.trimEnd('/') + "/Sessions/Playing/Progress") {
             jellyfinAuth(userToken)
             contentType(ContentType.Application.Json)
             setBody("""{"ItemId":"$jellyfinId","PositionTicks":$positionTicks,"IsPaused":$isPaused,"MediaSourceId":"$mediaSourceId","EventName":"timeupdate"}""")
@@ -225,7 +233,7 @@ class JellyfinClient {
         positionTicks: Long,
         mediaSourceId: String,
     ) = runCatching {
-        http.post(baseUrl.trimEnd('/') + "/Sessions/Playing/Stopped") {
+        httpPost(baseUrl.trimEnd('/') + "/Sessions/Playing/Stopped") {
             jellyfinAuth(userToken)
             contentType(ContentType.Application.Json)
             setBody("""{"ItemId":"$jellyfinId","PositionTicks":$positionTicks,"MediaSourceId":"$mediaSourceId"}""")
@@ -233,13 +241,13 @@ class JellyfinClient {
     }.let { if (it.isFailure) Logger.warn("Jellyfin stopPlaybackSession failed: ${it.exceptionOrNull()?.message}") }
 
     suspend fun markPlayed(baseUrl: String, userToken: String, userId: String, jellyfinId: String) = runCatching {
-        http.post(baseUrl.trimEnd('/') + "/Users/$userId/PlayedItems/$jellyfinId") {
+        httpPost(baseUrl.trimEnd('/') + "/Users/$userId/PlayedItems/$jellyfinId") {
             jellyfinAuth(userToken)
         }
     }.let { if (it.isFailure) Logger.warn("Jellyfin markPlayed failed: ${it.exceptionOrNull()?.message}") }
 
     suspend fun markUnplayed(baseUrl: String, userToken: String, userId: String, jellyfinId: String) = runCatching {
-        http.delete(baseUrl.trimEnd('/') + "/Users/$userId/PlayedItems/$jellyfinId") {
+        httpDelete(baseUrl.trimEnd('/') + "/Users/$userId/PlayedItems/$jellyfinId") {
             jellyfinAuth(userToken)
         }
     }.let { if (it.isFailure) Logger.warn("Jellyfin markUnplayed failed: ${it.exceptionOrNull()?.message}") }
@@ -252,7 +260,7 @@ class JellyfinClient {
     ): JellyfinItemDetail? = runCatching {
         val url = baseUrl.trimEnd('/') +
             "/Users/$userId/Items/$jellyfinId?Fields=UserData,RunTimeTicks,MediaStreams"
-        http.get(url) { jellyfinAuth(userToken) }
+        httpGet(url) { jellyfinAuth(userToken) }
             .bodyOrNull<JellyfinItemDetail>("getItemDetail")
     }.let { result ->
         if (result.isFailure) Logger.warn("Jellyfin getItemDetail failed: ${result.exceptionOrNull()?.message}")
@@ -268,7 +276,7 @@ class JellyfinClient {
         val url = baseUrl.trimEnd('/') +
             "/Shows/$seriesId/Episodes?UserId=$userId" +
             "&Fields=UserData,RunTimeTicks,SeasonName"
-        http.get(url) { jellyfinAuth(userToken) }
+        httpGet(url) { jellyfinAuth(userToken) }
             .bodyOrNull<JellyfinEpisodesResponse>("getSeriesEpisodes")?.items.orEmpty()
     }.let { result ->
         if (result.isFailure) Logger.warn("Jellyfin getSeriesEpisodes failed: ${result.exceptionOrNull()?.message}")
@@ -286,7 +294,7 @@ class JellyfinClient {
     ): List<JellyfinEpisodeItem> = runCatching {
         val url = baseUrl.trimEnd('/') +
             "/Shows/$seriesId/Episodes?Fields=RunTimeTicks,SeasonName"
-        http.get(url) { jellyfinAuth(token) }
+        httpGet(url) { jellyfinAuth(token) }
             .bodyOrNull<JellyfinEpisodesResponse>("getSeriesEpisodesMeta")?.items.orEmpty()
     }.let { result ->
         if (result.isFailure) Logger.warn("Jellyfin getSeriesEpisodesMeta failed: ${result.exceptionOrNull()?.message}")
@@ -308,7 +316,7 @@ class JellyfinClient {
         val ids = jellyfinIds.joinToString(",")
         val url = baseUrl.trimEnd('/') +
             "/Users/$userId/Items?Ids=$ids&Fields=UserData&Limit=${jellyfinIds.size}"
-        http.get(url) { jellyfinAuth(userToken) }
+        httpGet(url) { jellyfinAuth(userToken) }
             .bodyOrNull<JellyfinUserDataItemsResponse>("getUserDataBulk")?.items.orEmpty()
     }.let { result ->
         if (result.isFailure) Logger.warn("Jellyfin getUserDataBulk failed: ${result.exceptionOrNull()?.message}")
@@ -323,7 +331,7 @@ class JellyfinClient {
         val url = baseUrl.trimEnd('/') +
             "/Users/$userId/Items?Filters=IsFavorite&Recursive=true" +
             "&IncludeItemTypes=Movie,Series&Fields=Id&Limit=500"
-        http.get(url) { jellyfinAuth(userToken) }
+        httpGet(url) { jellyfinAuth(userToken) }
             .bodyOrNull<JellyfinItemsResponse>("getFavoriteItemIds")?.items?.map { it.id }?.toSet().orEmpty()
     }.let { result ->
         if (result.isFailure) Logger.warn("Jellyfin getFavoriteItemIds failed: ${result.exceptionOrNull()?.message}")
@@ -339,7 +347,7 @@ class JellyfinClient {
         val url = baseUrl.trimEnd('/') +
             "/Shows/NextUp?UserId=$userId&Limit=$limit" +
             "&Fields=UserData,SeriesId,SeriesName,SeasonId,IndexNumber,ParentIndexNumber"
-        http.get(url) { jellyfinAuth(userToken) }
+        httpGet(url) { jellyfinAuth(userToken) }
             .bodyOrNull<JellyfinPlayItemsResponse>("getNextUp")?.items.orEmpty()
     }.let { result ->
         if (result.isFailure) Logger.warn("Jellyfin getNextUp failed: ${result.exceptionOrNull()?.message}")

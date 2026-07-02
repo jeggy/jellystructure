@@ -1,6 +1,7 @@
 package dev.jellystructure.chart
 
 import dev.jellystructure.config.ConfigStore
+import dev.jellystructure.OutboundHttp
 import dev.jellystructure.shared.tv.ChartListSpec
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
@@ -41,6 +42,9 @@ class StreamingAvailabilityProvider(
 
     private val gate = Semaphore(8)
 
+    private suspend fun httpGet(url: String, block: io.ktor.client.request.HttpRequestBuilder.() -> Unit = {}): io.ktor.client.statement.HttpResponse =
+        OutboundHttp.withPermit { http.get(url, block) }
+
     private val http = HttpClient(Curl) {
         install(ContentNegotiation) {
             json(Json { ignoreUnknownKeys = true })
@@ -67,7 +71,7 @@ class StreamingAvailabilityProvider(
 
         val shows = gate.withPermit {
             runCatching {
-                http.get("https://streaming-availability.p.rapidapi.com/shows/top") {
+                httpGet("https://streaming-availability.p.rapidapi.com/shows/top") {
                     header("X-RapidAPI-Key", key)
                     header("X-RapidAPI-Host", "streaming-availability.p.rapidapi.com")
                     parameter("country", region.lowercase())

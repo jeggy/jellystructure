@@ -1,6 +1,7 @@
 package dev.jellystructure.torrent
 
 import dev.jellystructure.config.QBittorrentConfig
+import dev.jellystructure.OutboundHttp
 import dev.jellystructure.log.Logger
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
@@ -37,6 +38,11 @@ data class QBTorrent(
 )
 
 class QBittorrentClient {
+    private suspend fun httpGet(url: String, block: io.ktor.client.request.HttpRequestBuilder.() -> Unit = {}): io.ktor.client.statement.HttpResponse =
+        OutboundHttp.withPermit { http.get(url, block) }
+    private suspend fun httpPost(url: String, block: io.ktor.client.request.HttpRequestBuilder.() -> Unit = {}): io.ktor.client.statement.HttpResponse =
+        OutboundHttp.withPermit { http.post(url, block) }
+
     private val http = HttpClient(Curl) {
         install(ContentNegotiation) {
             json(Json { ignoreUnknownKeys = true })
@@ -52,7 +58,7 @@ class QBittorrentClient {
     suspend fun login(config: QBittorrentConfig): String {
         if (config.noAuth) return ""
         val url = config.url.trimEnd('/') + "/api/v2/auth/login"
-        val response = http.post(url) {
+        val response = httpPost(url) {
             contentType(ContentType.Application.FormUrlEncoded)
             setBody("username=${config.username}&password=${config.password}")
         }
@@ -76,7 +82,7 @@ class QBittorrentClient {
 
     suspend fun getTorrents(config: QBittorrentConfig, sid: String): List<QBTorrent> {
         val url = config.url.trimEnd('/') + "/api/v2/torrents/info?filter=all"
-        val response = http.get(url) {
+        val response = httpGet(url) {
             if (sid.isNotBlank()) header("Cookie", "SID=$sid")
         }
         if (response.status != HttpStatusCode.OK) {

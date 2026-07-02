@@ -1,5 +1,6 @@
 package dev.jellystructure.arr
 
+import dev.jellystructure.OutboundHttp
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.engine.curl.Curl
@@ -64,6 +65,13 @@ data class ArrPing(val ok: Boolean, val detail: String, val version: String? = n
  * client serves both the test flow (temporary creds) and the post-write hook (stored config).
  */
 class ArrClient {
+    private suspend fun httpGet(url: String, block: io.ktor.client.request.HttpRequestBuilder.() -> Unit = {}): io.ktor.client.statement.HttpResponse =
+        OutboundHttp.withPermit { http.get(url, block) }
+    private suspend fun httpPost(url: String, block: io.ktor.client.request.HttpRequestBuilder.() -> Unit = {}): io.ktor.client.statement.HttpResponse =
+        OutboundHttp.withPermit { http.post(url, block) }
+    private suspend fun httpDelete(url: String, block: io.ktor.client.request.HttpRequestBuilder.() -> Unit = {}): io.ktor.client.statement.HttpResponse =
+        OutboundHttp.withPermit { http.delete(url, block) }
+
     private val http = HttpClient(Curl) {
         install(ContentNegotiation) { json(Json { ignoreUnknownKeys = true }) }
         install(HttpTimeout) {
@@ -76,14 +84,14 @@ class ArrClient {
     private fun base(url: String) = url.trimEnd('/') + "/api/v3"
 
     suspend fun ping(url: String, apiKey: String): ArrPing = runCatching {
-        val status: ArrSystemStatus = http.get(base(url) + "/system/status") {
+        val status: ArrSystemStatus = httpGet(base(url) + "/system/status") {
             header("X-Api-Key", apiKey)
         }.body()
         ArrPing(true, "Connected", status.version.ifBlank { null })
     }.getOrElse { e -> ArrPing(false, e.message ?: "Unknown error") }
 
     suspend fun rootFolders(url: String, apiKey: String): List<String> = runCatching {
-        val folders: List<ArrRootFolder> = http.get(base(url) + "/rootfolder") {
+        val folders: List<ArrRootFolder> = httpGet(base(url) + "/rootfolder") {
             header("X-Api-Key", apiKey)
         }.body()
         folders.map { it.path }.filter { it.isNotBlank() }
@@ -91,7 +99,7 @@ class ArrClient {
 
     /** Radarr: resolve a movie's `movieId` by its TMDB id. */
     suspend fun findMovieId(url: String, apiKey: String, tmdbId: Int): Int? = runCatching {
-        val movies: List<ArrMovieRef> = http.get(base(url) + "/movie") {
+        val movies: List<ArrMovieRef> = httpGet(base(url) + "/movie") {
             header("X-Api-Key", apiKey)
             parameter("tmdbId", tmdbId)
         }.body()
@@ -106,7 +114,7 @@ class ArrClient {
      * inside the series folder, so we take the longest series `path` that is a prefix of it.
      */
     suspend fun findSeriesIdByPath(url: String, apiKey: String, path: String): Int? = runCatching {
-        val series: List<ArrSeriesRef> = http.get(base(url) + "/series") {
+        val series: List<ArrSeriesRef> = httpGet(base(url) + "/series") {
             header("X-Api-Key", apiKey)
         }.body()
         series.filter { it.path.isNotBlank() && (path == it.path || path.startsWith(it.path.trimEnd('/') + "/")) }
@@ -115,7 +123,7 @@ class ArrClient {
 
     /** R149: fetch all Sonarr series with status + next-airing datetime (one API call). */
     suspend fun getAllSeriesInfo(url: String, apiKey: String): List<ArrSeriesInfo> = runCatching {
-        val series: List<ArrSeriesRef> = http.get(base(url) + "/series") {
+        val series: List<ArrSeriesRef> = httpGet(base(url) + "/series") {
             header("X-Api-Key", apiKey)
         }.body()
         series.filter { it.path.isNotBlank() }.map {
@@ -130,7 +138,7 @@ class ArrClient {
         command(url, apiKey, """{"name":"RescanSeries","seriesId":$seriesId}""")
 
     private suspend fun command(url: String, apiKey: String, body: String): Boolean = runCatching {
-        val resp = http.post(base(url) + "/command") {
+        val resp = httpPost(base(url) + "/command") {
             header("X-Api-Key", apiKey)
             contentType(ContentType.Application.Json)
             setBody(body)
@@ -141,7 +149,7 @@ class ArrClient {
     // ---- Phase 56: acquisition (add + search, queue, cancel) ----
 
     suspend fun getQualityProfiles(url: String, apiKey: String): List<ArrQualityProfile> = runCatching {
-        http.get(base(url) + "/qualityprofile") { header("X-Api-Key", apiKey) }.body<List<ArrQualityProfile>>()
+        httpGet(base(url) + "/qualityprofile") { header("X-Api-Key", apiKey) }.body<List<ArrQualityProfile>>()
     }.getOrElse { emptyList() }
 
     /** Resolve a profile name to its id; blank name → the *arr's first/default profile. */
@@ -161,7 +169,7 @@ class ArrClient {
 
     /** Radarr: add by TMDB id + start a search. Returns the new movieId, or null. */
     suspend fun addMovie(url: String, apiKey: String, tmdbId: Int, rootFolder: String, qualityProfileId: Int): Int? = runCatching {
-        val lookups = http.get(base(url) + "/movie/lookup") {
+        val lookups = httpGet(base(url) + "/movie/lookup") {
             header("X-Api-Key", apiKey); parameter("term", "tmdb:$tmdbId")
         }.body<JsonArray>()
         val movie = lookups.map { it.jsonObject }.firstOrNull { it["tmdbId"]?.jsonPrimitive?.intOrNull == tmdbId }
@@ -173,7 +181,7 @@ class ArrClient {
             put("monitored", true)
             put("addOptions", buildJsonObject { put("searchForMovie", true) })
         }
-        val resp = http.post(base(url) + "/movie") {
+        val resp = httpPost(base(url) + "/movie") {
             header("X-Api-Key", apiKey); contentType(ContentType.Application.Json); setBody(payload.toString())
         }
         if (resp.status == HttpStatusCode.Created || resp.status == HttpStatusCode.OK)
@@ -182,7 +190,7 @@ class ArrClient {
 
     /** Sonarr: add by TheTVDB id (bridge tmdb→tvdb first) + monitor scope + search. Returns seriesId. */
     suspend fun addSeries(url: String, apiKey: String, tvdbId: Int, rootFolder: String, qualityProfileId: Int, monitor: String, seasonFolder: Boolean): Int? = runCatching {
-        val lookups = http.get(base(url) + "/series/lookup") {
+        val lookups = httpGet(base(url) + "/series/lookup") {
             header("X-Api-Key", apiKey); parameter("term", "tvdb:$tvdbId")
         }.body<JsonArray>()
         val series = lookups.map { it.jsonObject }.firstOrNull { it["tvdbId"]?.jsonPrimitive?.intOrNull == tvdbId }
@@ -199,7 +207,7 @@ class ArrClient {
                 put("searchForCutoffUnmetEpisodes", false)
             })
         }
-        val resp = http.post(base(url) + "/series") {
+        val resp = httpPost(base(url) + "/series") {
             header("X-Api-Key", apiKey); contentType(ContentType.Application.Json); setBody(payload.toString())
         }
         if (resp.status == HttpStatusCode.Created || resp.status == HttpStatusCode.OK)
@@ -208,7 +216,7 @@ class ArrClient {
 
     /** The *arr download queue (Radarr movies + Sonarr episodes), normalized. */
     suspend fun getQueue(url: String, apiKey: String): List<ArrQueueItem> = runCatching {
-        val obj = http.get(base(url) + "/queue") {
+        val obj = httpGet(base(url) + "/queue") {
             header("X-Api-Key", apiKey); parameter("pageSize", 200); parameter("includeEpisode", true)
         }.body<JsonObject>()
         val records = obj["records"]?.jsonArray ?: return emptyList()
@@ -234,7 +242,7 @@ class ArrClient {
 
     /** Sonarr: monitored/aired/hasFile state per episode, for the series roll-up. */
     suspend fun getSeriesEpisodes(url: String, apiKey: String, seriesId: Int): List<ArrEpisode> = runCatching {
-        http.get(base(url) + "/episode") {
+        httpGet(base(url) + "/episode") {
             header("X-Api-Key", apiKey); parameter("seriesId", seriesId)
         }.body<List<ArrEpisode>>()
     }.getOrElse { emptyList() }
@@ -249,7 +257,7 @@ class ArrClient {
         del(url, apiKey, "/queue/$queueId?removeFromClient=true&blocklist=false")
 
     private suspend fun del(url: String, apiKey: String, path: String): Boolean = runCatching {
-        val resp = http.delete(base(url) + path) { header("X-Api-Key", apiKey) }
+        val resp = httpDelete(base(url) + path) { header("X-Api-Key", apiKey) }
         resp.status == HttpStatusCode.OK || resp.status == HttpStatusCode.NoContent || resp.status == HttpStatusCode.Accepted
     }.getOrElse { false }
 }

@@ -13,9 +13,8 @@ import io.ktor.client.request.parameter
 import io.ktor.client.statement.HttpResponse
 import io.ktor.http.HttpStatusCode
 import io.ktor.serialization.kotlinx.json.json
+import dev.jellystructure.OutboundHttp
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.sync.Semaphore
-import kotlinx.coroutines.sync.withPermit
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -281,17 +280,12 @@ class TmdbClient(
         }
     }
 
-    // Cap simultaneous outbound TMDB connections. CIO server uses select() which crashes fatally
-    // when any file descriptor reaches FD_SETSIZE (1024). With many scan workers each making
-    // multiple concurrent TMDB calls the FD count easily exceeds this ceiling.
-    private val sem = Semaphore(8)
-
     private val detailsCache = mutableMapOf<Int, TmdbMovieDetails>()
 
     private fun apiKey(): String = configStore.current.apiKeys.tmdbV3Key
 
     private suspend fun httpGet(url: String, block: HttpRequestBuilder.() -> Unit = {}): HttpResponse =
-        sem.withPermit { http.get(url, block) }
+        OutboundHttp.withPermit { http.get(url, block) }
 
     suspend fun searchMovie(title: String, year: Int?): TmdbSearchResult? {
         val key = apiKey()
@@ -700,6 +694,31 @@ class TmdbClient(
         }
         if (result.isFailure) Logger.warn("TMDB episode details failed for series=$seriesId s${season}e${episode} lang=$language: ${result.exceptionOrNull()?.message}")
         return result.getOrNull()
+    }
+
+    /**
+     * Like [getEpisodeDetails] but walks [languages] in priority order with the same regional-retry
+     * logic as [getTvDetailsLocalized]: if bare `fo` returns no name/overview, look up `fo-FO` from
+     * the series /translations and retry. Falls back to no-language (TMDB default) when exhausted.
+     */
+    suspend fun getEpisodeDetailsLocalized(
+        seriesId: Int,
+        season: Int,
+        episode: Int,
+        languages: List<String>,
+    ): TmdbEpisodeDetails? {
+        var regionTags: Map<String, String>? = null
+        for (lang in languages) {
+            val d = getEpisodeDetails(seriesId, season, episode, lang)
+            if (d != null && (d.name.isNotBlank() || d.overview.isNotBlank())) return d
+            if (regionTags == null) regionTags = getRegionedLanguageTags(seriesId, isMovie = false)
+            val regional = regionTags?.get(lang.lowercase())
+            if (regional != null && !regional.equals(lang, ignoreCase = true)) {
+                val dr = getEpisodeDetails(seriesId, season, episode, regional)
+                if (dr != null && (dr.name.isNotBlank() || dr.overview.isNotBlank())) return dr
+            }
+        }
+        return getEpisodeDetails(seriesId, season, episode)
     }
 
     // --- Phase 47: image candidate galleries. No `language` param so TMDB returns every
