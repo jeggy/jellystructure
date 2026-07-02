@@ -75,6 +75,14 @@ import dev.jellystructure.ravilo.ui.seams.PlayerVideoSurface
 import dev.jellystructure.ravilo.ui.seams.RaviloPlayer
 import dev.jellystructure.ravilo.ui.seams.RemoteImage
 import dev.jellystructure.ravilo.ui.seams.languageName
+import dev.jellystructure.ravilo.ui.seams.playerBackdropColor
+import dev.jellystructure.ravilo.ui.seams.playerTapTogglesChrome
+import dev.jellystructure.ravilo.ui.seams.setPointerCursorHidden
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.onPointerEvent
+import androidx.compose.ui.input.pointer.pointerInput
 import dev.jellystructure.ravilo.ui.theme.RaviloColors
 import dev.jellystructure.ravilo.ui.theme.RaviloMotion
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
@@ -87,6 +95,7 @@ import kotlin.math.PI
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 private const val CHROME_HIDE_MS = 3_600L
+private const val CURSOR_HIDE_MS = 2_000L // R157 FR-R157-3.2
 private const val NEXTUP_AT_MS   = 20_000L    // R111: show next-up card when this many ms remain (was 34s — too early)
 private const val COUNTDOWN_SECS = 8
 private const val SKIP_BACK_MS   = 10_000L
@@ -138,6 +147,8 @@ fun PlayerScreen(
     // Chrome visibility — bumping chromeRevision restarts the auto-hide timer
     var chromeVisible  by remember { mutableStateOf(true) }
     var chromeRevision by remember { mutableLongStateOf(0L) }
+    // R157 (FR-R157-3.2) — bumping restarts the cursor auto-hide timer, independently of chrome.
+    var pointerActivityRevision by remember { mutableLongStateOf(0L) }
 
     // Focus
     var focus    by remember { mutableStateOf(PlFocus.PLAY) }
@@ -342,6 +353,15 @@ fun PlayerScreen(
         if (!pickerOpen && !nextUpVisible && !epRailOpen) chromeVisible = false
     }
 
+    // R157 (FR-R157-3.2) — cursor auto-hides after a couple of seconds of no pointer movement during
+    // playback (no-op on Android/TV); reappears immediately on the next move via the restart above.
+    LaunchedEffect(pointerActivityRevision) {
+        setPointerCursorHidden(false)
+        delay(CURSOR_HIDE_MS)
+        if (isPlaying) setPointerCursorHidden(true)
+    }
+    DisposableEffect(Unit) { onDispose { setPointerCursorHidden(false) } }
+
     // Next-up countdown
     LaunchedEffect(nextUpVisible) {
         if (!nextUpVisible) return@LaunchedEffect
@@ -379,7 +399,8 @@ fun PlayerScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.Black)
+            .background(playerBackdropColor)
+            .onPointerEvent(PointerEventType.Move) { wake(); pointerActivityRevision++ }
             .dpadFocusable(
                 focusRequester = playerFR,
                 onFocused = {},
@@ -495,6 +516,13 @@ fun PlayerScreen(
                         MediaKey.STOP         -> onBack()
                     }
                 },
+                // R157 (FR-R157-2.4) — on web, a click on empty space toggles chrome instead of
+                // activating the focused control (the web convention; a click has no D-pad "focus"
+                // concept to act on). Android/TV: playerTapTogglesChrome is false, so this stays null
+                // and dpadFocusable's default (onTap falls back to onSelect) preserves today's behaviour.
+                onTap = if (playerTapTogglesChrome) {
+                    { if (chromeVisible) chromeVisible = false else wake() }
+                } else null,
             )
     ) {
         // ── Platform video surface (TextureView on Android, <video> element on WASM) ───
@@ -693,7 +721,14 @@ private fun PlayerChrome(
                 .padding(horizontal = 48.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            BackButton(focused = focus == PlFocus.BACK)
+            BackButton(
+                focused = focus == PlFocus.BACK,
+                // Matches the root's onSelect { focus == PlFocus.BACK -> onBack() } — a direct click
+                // on the visible back button navigates immediately (not the two-press hardware-Back
+                // semantics in the root's onBack, which first closes pickers/rail/chrome).
+                onClick = { wake(); onBack() },
+                onHover = { focus = PlFocus.BACK },
+            )
             Spacer(Modifier.weight(1f))
             StreamPill(colors = colors, directPlay = directPlay, container = container)
         }
@@ -737,6 +772,11 @@ private fun PlayerChrome(
                 scrubbing  = scrubbing,
                 scrubPos   = scrubPos,
                 barFocused = focus == PlFocus.SEEK_BAR,
+                // R157 (FR-R157-2.3) — click-to-seek / drag-to-scrub, reusing the existing D-pad
+                // scrub state (scrubbing/scrubPos) and commitScrub() so both input paths converge.
+                onSeekStart = { ms -> wake(); focus = PlFocus.SEEK_BAR; scrubbing = true; scrubPos = ms },
+                onSeekDrag = { ms -> scrubPos = ms },
+                onSeekEnd = { commitScrub() },
             )
 
             Spacer(Modifier.height(6.dp))
@@ -746,12 +786,36 @@ private fun PlayerChrome(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                SkipButton(label = "−10s", focused = focus == PlFocus.SKIP_BACK)
-                PlayPauseButton(isPlaying = isPlaying, focused = focus == PlFocus.PLAY)
-                SkipButton(label = "+30s", focused = focus == PlFocus.SKIP_FWD)
+                SkipButton(
+                    label = "−10s", focused = focus == PlFocus.SKIP_BACK,
+                    onClick = { wake(); skip(-SKIP_BACK_MS) },
+                    onHover = { focus = PlFocus.SKIP_BACK },
+                )
+                PlayPauseButton(
+                    isPlaying = isPlaying, focused = focus == PlFocus.PLAY,
+                    onClick = { wake(); togglePlay() },
+                    onHover = { focus = PlFocus.PLAY },
+                )
+                SkipButton(
+                    label = "+30s", focused = focus == PlFocus.SKIP_FWD,
+                    onClick = { wake(); skip(SKIP_FWD_MS) },
+                    onHover = { focus = PlFocus.SKIP_FWD },
+                )
                 Spacer(Modifier.weight(1f))
-                TrackButton(label = str("player.audio_subs"), focused = focus == PlFocus.TRACKS)
-                if (hasNextEp) TrackButton(label = ">> ${str("player.next")}", focused = focus == PlFocus.NEXT_EP)
+                TrackButton(
+                    label = str("player.audio_subs"), focused = focus == PlFocus.TRACKS,
+                    onClick = {
+                        wake()
+                        pickerOpen = true
+                        pickerIdx = if (pickerTab == 0) selectedAudio else (selectedSub + 1).coerceIn(0, subOptions.lastIndex)
+                    },
+                    onHover = { focus = PlFocus.TRACKS },
+                )
+                if (hasNextEp) TrackButton(
+                    label = ">> ${str("player.next")}", focused = focus == PlFocus.NEXT_EP,
+                    onClick = { wake(); advanceNext() },
+                    onHover = { focus = PlFocus.NEXT_EP },
+                )
             }
 
             // Episode chip (series, only when rail/picker/nextup are closed)
@@ -774,6 +838,9 @@ private fun SeekRow(
     scrubbing: Boolean,
     scrubPos: Long,
     barFocused: Boolean,
+    onSeekStart: (Long) -> Unit = {},
+    onSeekDrag: (Long) -> Unit = {},
+    onSeekEnd: () -> Unit = {},
 ) {
     val timeColor = Color.White.copy(alpha = 0.8f)
 
@@ -794,6 +861,9 @@ private fun SeekRow(
                 scrubbing   = scrubbing,
                 scrubPos    = scrubPos,
                 focused     = barFocused,
+                onSeekStart = onSeekStart,
+                onSeekDrag  = onSeekDrag,
+                onSeekEnd   = onSeekEnd,
             )
         }
         if (durationMs > 0) {
@@ -819,6 +889,11 @@ private fun SeekBar(
     scrubbing: Boolean,
     scrubPos: Long,
     focused: Boolean,
+    // R157 (FR-R157-2.3) — click-to-seek / drag-to-scrub. Positions are already clamped to
+    // [0, durationMs] by the caller (mirroring the existing D-pad scrub step logic).
+    onSeekStart: (Long) -> Unit = {},
+    onSeekDrag: (Long) -> Unit = {},
+    onSeekEnd: () -> Unit = {},
 ) {
     val played   = if (durationMs > 0) (positionMs.toFloat() / durationMs).coerceIn(0f, 1f) else 0f
     val buffered = if (durationMs > 0) (bufferedMs.toFloat() / durationMs).coerceIn(0f, 1f) else 0f
@@ -829,7 +904,30 @@ private fun SeekBar(
     val accentS  = colors.accentSecondary
     val ringColor = colors.focusRing
 
-    Canvas(modifier = Modifier.fillMaxWidth().height(28.dp)) {
+    fun posAt(x: Float, widthPx: Int): Long {
+        if (durationMs <= 0 || widthPx <= 0) return 0L
+        return ((x / widthPx) * durationMs).toLong().coerceIn(0L, durationMs)
+    }
+
+    Canvas(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(28.dp)
+            .pointerInput(durationMs) {
+                detectTapGestures(onTap = { offset ->
+                    onSeekStart(posAt(offset.x, size.width))
+                    onSeekEnd()
+                })
+            }
+            .pointerInput(durationMs) {
+                detectDragGestures(
+                    onDragStart = { offset -> onSeekStart(posAt(offset.x, size.width)) },
+                    onDrag = { change, _ -> change.consume(); onSeekDrag(posAt(change.position.x, size.width)) },
+                    onDragEnd = { onSeekEnd() },
+                    onDragCancel = { onSeekEnd() },
+                )
+            }
+    ) {
         val barHPx = barH.toPx()
         val y = center.y
         val w = size.width
@@ -868,7 +966,7 @@ private fun SeekBar(
 // ─── Control buttons ──────────────────────────────────────────────────────────
 
 @Composable
-private fun PlayPauseButton(isPlaying: Boolean, focused: Boolean) {
+private fun PlayPauseButton(isPlaying: Boolean, focused: Boolean, onClick: () -> Unit = {}, onHover: () -> Unit = {}) {
     val colors = RaviloTheme.colors
     val grad = remember(colors.accent, colors.accentSecondary) { colors.accentGradient }
     val size by animateDpAsState(if (focused) 50.dp else 44.dp, label = "ppScale")
@@ -883,7 +981,13 @@ private fun PlayPauseButton(isPlaying: Boolean, focused: Boolean) {
                 width = 1.dp,
                 color = if (focused) colors.focusRing.copy(alpha = 0.6f) else Color.White.copy(alpha = 0.22f),
                 shape = CircleShape,
-            ),
+            )
+            // R157 (FR-R157-2.1/2.2) — a real pointer target: click activates, hover moves logical
+            // focus here. Deliberately NOT dpadFocusable/.focusable() — the root Box is the sole real
+            // Compose-focus owner (D-pad navigation is hand-rolled via the PlFocus enum); making every
+            // button its own focus node would fight that model and risk breaking D-pad/TV navigation.
+            .pointerInput(onClick) { detectTapGestures(onTap = { onClick() }) }
+            .onPointerEvent(PointerEventType.Enter) { onHover() },
         contentAlignment = Alignment.Center,
     ) {
         Canvas(modifier = Modifier.size(if (isPlaying) 16.dp else 14.dp)) {
@@ -914,7 +1018,7 @@ private fun PlayPauseButton(isPlaying: Boolean, focused: Boolean) {
 // R158: transport-control focus chrome matches the app-wide language (accent ring + focusGlow +
 // draw-only scale) instead of an opaque fill flip — the resting translucent pill never changes color.
 @Composable
-private fun SkipButton(label: String, focused: Boolean) {
+private fun SkipButton(label: String, focused: Boolean, onClick: () -> Unit = {}, onHover: () -> Unit = {}) {
     val colors = RaviloTheme.colors
     Box(
         modifier = Modifier
@@ -928,6 +1032,8 @@ private fun SkipButton(label: String, focused: Boolean) {
                 color = if (focused) colors.accent else Color.White.copy(alpha = 0.22f),
                 shape = RoundedCornerShape(10.dp),
             )
+            .pointerInput(onClick) { detectTapGestures(onTap = { onClick() }) }
+            .onPointerEvent(PointerEventType.Enter) { onHover() }
             .padding(horizontal = 12.dp),
         contentAlignment = Alignment.Center,
     ) {
@@ -942,7 +1048,7 @@ private fun SkipButton(label: String, focused: Boolean) {
 }
 
 @Composable
-private fun TrackButton(label: String, focused: Boolean) {
+private fun TrackButton(label: String, focused: Boolean, onClick: () -> Unit = {}, onHover: () -> Unit = {}) {
     val colors = RaviloTheme.colors
     Box(
         modifier = Modifier
@@ -956,6 +1062,8 @@ private fun TrackButton(label: String, focused: Boolean) {
                 color = if (focused) colors.accent else Color.White.copy(alpha = 0.22f),
                 shape = RoundedCornerShape(10.dp),
             )
+            .pointerInput(onClick) { detectTapGestures(onTap = { onClick() }) }
+            .onPointerEvent(PointerEventType.Enter) { onHover() }
             .padding(horizontal = 14.dp),
         contentAlignment = Alignment.Center,
     ) {
@@ -969,9 +1077,15 @@ private fun TrackButton(label: String, focused: Boolean) {
 }
 
 @Composable
-private fun BackButton(focused: Boolean) {
+private fun BackButton(focused: Boolean, onClick: () -> Unit = {}, onHover: () -> Unit = {}) {
     val colors = RaviloTheme.colors
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        modifier = Modifier
+            .pointerInput(onClick) { detectTapGestures(onTap = { onClick() }) }
+            .onPointerEvent(PointerEventType.Enter) { onHover() },
+    ) {
         Box(
             modifier = Modifier
                 .scale(if (focused) 1.06f else 1f)
