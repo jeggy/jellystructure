@@ -73,6 +73,12 @@ data class Episode(
     val runtime: Int? = null,
     /** R148: episode first-air date (ISO yyyy-MM-dd) from TMDB. Null until re-scanned after R148. */
     val airDate: String? = null,
+    /** Phase 108: JS "first-seen" timestamp (epoch seconds) — stamped once when this episode is first
+     *  scanned, preserved on every later re-scan. The sort key for a series' Newly Added placement is
+     *  max(episode.createdAt) across its episodes — a new episode re-floats the series. */
+    val createdAt: Long? = null,
+    /** Phase 108: Jellyfin's own DateCreated for this episode, when the episode-list fetch provides it. Display only. */
+    val jellyfinCreatedAt: Long? = null,
 )
 
 @Serializable
@@ -133,7 +139,23 @@ data class MediaItem(
     // cascade (dev.jellystructure.resolver.CertificationResolver), so re-ordering the cascade changes
     // what's displayed everywhere with no re-scan.
     val certifications: Map<String, String> = emptyMap(),
+    // Phase 108: JS-owned timestamps — createdAt is stamped once (first insert) and never moves;
+    // updatedAt bumps only when the stored content actually changed (MediaStore.stampTimestamps).
+    // Distinct from `addedAt` (Jellyfin's DateCreated) and `scannedAt` (scan-order, not add-order).
+    val createdAt: Long? = null,
+    val updatedAt: Long? = null,
+    /** Phase 108: Jellyfin's own DateLastSaved, when available. Display only. */
+    val jellyfinUpdatedAt: Long? = null,
 )
+
+/** Phase 108: the sort key every "recently added" surface uses (Ravilo's Newly Added, Browse default,
+ *  the admin Library default sort, related-by-genre). Movies sort by their own createdAt; a series
+ *  sorts by its most-recently-added EPISODE (max(episode.createdAt)) so a new episode re-floats it —
+ *  not by the series record's own createdAt. Falls back to scannedAt for pre-backfill legacy rows. */
+fun MediaItem.recencyKey(): Long = when (kind) {
+    MediaKind.MOVIE -> createdAt ?: scannedAt
+    MediaKind.TV_SHOW -> episodes.mapNotNull { it.createdAt }.maxOrNull() ?: createdAt ?: scannedAt
+}
 
 @Serializable
 data class MediaPage(

@@ -7,6 +7,7 @@ import dev.jellystructure.model.MediaItem
 import dev.jellystructure.model.MediaKind
 import dev.jellystructure.model.MediaPage
 import dev.jellystructure.model.TrackKind
+import dev.jellystructure.model.recencyKey
 import dev.jellystructure.nfo.NfoWriter
 import dev.jellystructure.resolver.CertificationResolver
 import dev.jellystructure.resolver.LanguageResolver
@@ -71,6 +72,33 @@ class MediaStore(
         return fresh.copy(tags = (fresh.tags + keptJs).distinct())
     }
 
+    // Phase 108: JS-owned created/updated timestamps. createdAt is stamped once (first insert) and
+    // never moves; updatedAt only bumps when the item's actual content changed — a scan that re-finds
+    // an unchanged title must not make it look freshly edited. Compared via a "content signature" that
+    // zeroes the fields which are expected to differ on every write regardless of real content change.
+    private fun contentSignature(item: MediaItem): MediaItem =
+        item.copy(scannedAt = 0, createdAt = null, updatedAt = null, jellyfinUpdatedAt = null)
+
+    private fun stampTimestamps(fresh: MediaItem, old: MediaItem?): MediaItem {
+        val now = nowMs() / 1000
+        val createdAt = old?.createdAt ?: now
+        val changed = old == null || contentSignature(old) != contentSignature(fresh)
+        val updatedAt = if (changed) now else (old.updatedAt ?: now)
+        return fresh.copy(createdAt = createdAt, updatedAt = updatedAt)
+    }
+
+    // Phase 108: an episode's createdAt is the JS "first-seen" timestamp — stamped once when it's not
+    // present in the item's previous episode list (matched by season/episode, else filename), preserved
+    // on every later re-scan. This is the sort key a series' "Newly Added" placement uses.
+    private fun episodeKey(ep: dev.jellystructure.model.Episode): String =
+        if (ep.seasonNumber != null && ep.episodeNumber != null) "${ep.seasonNumber}:${ep.episodeNumber}" else ep.filename
+
+    private fun stampEpisodeCreatedAt(fresh: List<dev.jellystructure.model.Episode>, old: List<dev.jellystructure.model.Episode>?): List<dev.jellystructure.model.Episode> {
+        val now = nowMs() / 1000
+        val oldByKey = old?.associateBy { episodeKey(it) } ?: emptyMap()
+        return fresh.map { ep -> ep.copy(createdAt = oldByKey[episodeKey(ep)]?.createdAt ?: ep.createdAt ?: now) }
+    }
+
     suspend fun load() {
         val count = db.mediaQueries.count().executeAsOne()
         Logger.info("MediaStore: DB has $count media items")
@@ -78,6 +106,27 @@ class MediaStore(
             row.last_checked?.let { ts -> lastCheckedMap[row.id] = ts }
         }
         backfillSearchText()
+        backfillTimestamps()
+    }
+
+    // Phase 108: one-time startup backfill for rows written before createdAt/updatedAt existed.
+    // Best-available history: item createdAt <- addedAt (Jellyfin DateCreated) ?: scannedAt; episode
+    // createdAt <- the same item-level fallback (no per-episode history exists to do better).
+    private fun backfillTimestamps() {
+        val toBackfill = allItems().filter { it.createdAt == null || it.episodes.any { ep -> ep.createdAt == null } }
+        if (toBackfill.isEmpty()) return
+        db.transaction {
+            for (item in toBackfill) {
+                val fallback = item.addedAt ?: item.scannedAt
+                val backfilled = item.copy(
+                    createdAt = item.createdAt ?: fallback,
+                    updatedAt = item.updatedAt ?: item.scannedAt,
+                    episodes = item.episodes.map { ep -> if (ep.createdAt == null) ep.copy(createdAt = fallback) else ep },
+                )
+                upsertItem(backfilled)
+            }
+        }
+        Logger.info("MediaStore: backfilled createdAt/updatedAt for ${toBackfill.size} rows")
     }
 
     fun lastChecked(id: String): Long? = lastCheckedMap[id]
@@ -267,7 +316,7 @@ class MediaStore(
             "year" -> decoded.sortedByDescending { it.year ?: 0 }
             // "recently added" (default): the real Jellyfin date-added, falling back to scan time for
             // items not yet re-scanned. scannedAt alone sorts by scan order, not add order.
-            else -> decoded.sortedByDescending { it.addedAt ?: it.scannedAt }
+            else -> decoded.sortedByDescending { it.recencyKey() }
         }
 
         val total = sorted.size
@@ -318,7 +367,7 @@ class MediaStore(
             val bucket = index[g] ?: continue
             for (item in bucket) if (item.id != source.id && item.id !in byId) byId[item.id] = item
         }
-        return byId.values.sortedByDescending { it.addedAt ?: it.scannedAt }.take(limit)
+        return byId.values.sortedByDescending { it.recencyKey() }.take(limit)
     }
 
     private fun buildGenreIndex(): Map<String, List<MediaItem>> {
@@ -358,8 +407,9 @@ class MediaStore(
         // the scanner now produces "girl-taken-2026"), delete the stale row so it doesn't show up
         // as a duplicate in the library.
         val jellyfinId = item.jellyfinId
+        var stale: MediaItem? = null
         if (jellyfinId != null) {
-            val stale = resolveByJellyfinId(jellyfinId)
+            stale = resolveByJellyfinId(jellyfinId)
             if (stale != null && stale.id != item.id) {
                 allItemsCache    = null
                 peopleIndexCache = null
@@ -367,20 +417,28 @@ class MediaStore(
                 genreIndexCache  = null
                 db.mediaQueries.deleteById(stale.id)
                 println("[INFO] MediaStore: removed stale duplicate ${stale.id} → replaced by ${item.id}")
-            }
+            } else stale = null
         }
+        // Phase 108: the item's real predecessor is `stale` across an id-rename (existing is null in
+        // that case, keyed under the old id), otherwise `existing` — so createdAt/episode createdAt
+        // survive a slug change instead of resetting.
+        val old = stale ?: existing
         var merged = preserveJsTags(item, existing)
         if (existing != null && existing.titlesByLang.isNotEmpty()) {
             merged = merged.copy(titlesByLang = existing.titlesByLang + item.titlesByLang)
         }
+        merged = merged.copy(episodes = stampEpisodeCreatedAt(merged.episodes, old?.episodes))
+        merged = stampTimestamps(merged, old)
         upsertItem(merged)
     }
 
     suspend fun updateOne(item: MediaItem) {
         val existing = get(item.id)
-        val merged = if (existing != null && existing.titlesByLang.isNotEmpty()) {
+        var merged = if (existing != null && existing.titlesByLang.isNotEmpty()) {
             item.copy(titlesByLang = existing.titlesByLang + item.titlesByLang)
         } else item
+        merged = merged.copy(episodes = stampEpisodeCreatedAt(merged.episodes, existing?.episodes))
+        merged = stampTimestamps(merged, existing)
         upsertItem(merged)
     }
 

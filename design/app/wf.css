@@ -611,3 +611,25 @@ hr.dash { border: none; border-top: 1px solid var(--line); margin: 18px 0; }
 .rc-tr.skip .rc-cc { text-decoration: line-through; }
 .rc-tr.use .cert { margin-left: auto; }
 .rc-tr.rest { opacity: .4; }
+
+/* Phase 108 — Timestamps card (Overview) + per-episode timestamps + newest-episode card (Seasons & episodes) */
+.help-dot { display:inline-flex; align-items:center; justify-content:center; width:15px; height:15px; border-radius:50%; background:var(--fill-3); color:var(--ink-soft); font-size:.62rem; font-weight:700; cursor:help; position:relative; vertical-align:middle; margin-left:5px; }
+.help-dot:hover { background:var(--hi); color:#fff; }
+.help-dot .tip { position:absolute; bottom:150%; left:50%; transform:translateX(-50%); width:250px; background:var(--fill); border:1px solid var(--line-2); border-radius:9px; padding:10px 12px; font-size:.72rem; font-weight:400; line-height:1.55; color:var(--ink-soft); box-shadow:var(--shadow); display:none; z-index:50; text-align:left; }
+.help-dot:hover .tip { display:block; }
+.help-dot .tip b { color:var(--ink); }
+.ts-cols { display:grid; grid-template-columns:1fr 1fr; gap:26px; }
+@media (max-width:820px){ .ts-cols{ grid-template-columns:1fr; gap:10px; } }
+.ts-h { font-size:.66rem; text-transform:uppercase; letter-spacing:.06em; color:var(--ink-dim); font-weight:700; margin-bottom:6px; }
+.ts-row { display:flex; justify-content:space-between; align-items:center; gap:12px; padding:7px 0; border-top:1px dashed var(--line); }
+.ts-row.first { border-top:none; }
+.ts-k { font-size:.8rem; color:var(--ink-soft); display:inline-flex; align-items:center; }
+.ts-v { font-family:'JetBrains Mono',monospace; font-size:.76rem; color:var(--ink); white-space:nowrap; }
+.ts-v .ago { color:var(--ink-dim); }
+.ne-ep { font-weight:600; font-size:.92rem; margin:8px 0 2px; }
+.ne-ep .num { font-size:.72rem; color:var(--ink-soft); margin-right:5px; }
+.ep-added { color:var(--ink-dim); }
+.ep-ts { display:flex; flex-wrap:wrap; gap:12px 24px; margin-top:12px; padding-top:11px; border-top:1px dashed var(--line); }
+.ep-ts .grp { display:flex; flex-direction:column; gap:2px; }
+.ep-ts .k { font-size:.6rem; text-transform:uppercase; letter-spacing:.05em; color:var(--ink-dim); font-weight:700; }
+.ep-ts .v { font-family:'JetBrains Mono',monospace; font-size:.72rem; color:var(--ink-soft); }
