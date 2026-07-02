@@ -297,6 +297,10 @@ class TvApiClient(
         onAcquisition: suspend (AcquisitionRecord) -> Unit = {},
         // R152 — a Jellyfin dashboard message relayed device-addressed via the Phase 110 session bridge.
         onServerMessage: suspend (ServerMessageEnvelope) -> Unit = {},
+        // R155 — remote-control commands (Phase 111 / Home Assistant + the Jellyfin dashboard cast menu).
+        onPlayItem: suspend (PlayItemEnvelope) -> Unit = {},
+        onPlaystateCommand: suspend (PlaystateCommandEnvelope) -> Unit = {},
+        onNavigate: suspend (NavigateEnvelope) -> Unit = {},
     ) {
         val token = deviceToken() ?: return
         val wsUrl = baseUrl.replaceFirst("http", "ws").trimEnd('/') +
@@ -314,6 +318,15 @@ class TvApiClient(
                     }
                     "server_message" -> {
                         runCatching { json.decodeFromString<ServerMessageEnvelope>(text) }.getOrNull()?.let { onServerMessage(it) }
+                    }
+                    "play_item" -> {
+                        runCatching { json.decodeFromString<PlayItemEnvelope>(text) }.getOrNull()?.let { onPlayItem(it) }
+                    }
+                    "playstate_command" -> {
+                        runCatching { json.decodeFromString<PlaystateCommandEnvelope>(text) }.getOrNull()?.let { onPlaystateCommand(it) }
+                    }
+                    "navigate" -> {
+                        runCatching { json.decodeFromString<NavigateEnvelope>(text) }.getOrNull()?.let { onNavigate(it) }
                     }
                     else -> onEvent(ev)
                 }

@@ -241,7 +241,7 @@ fun startServer(
                 metadataRoutes(mediaStore, jsTagStore, logoDownloader, seedingSnapshot, configStore)
                 trackRoutes(mediaStore, configStore, jellyfinClient, mediaHistory, seedingGuard, arrRescan, appScope, broadcaster, mediaJobQueue)
                 jobsRoutes(mediaJobQueue)
-                dev.jellystructure.server.routes.remoteRoutes(deviceService, tvEventBus)
+                dev.jellystructure.server.routes.remoteRoutes(deviceService, tvEventBus, mediaStore)
                 dev.jellystructure.server.routes.apiKeyManagementRoutes(apiKeyStore)
                 acquisitionService?.let { acquisitionRoutes(it) }
                 if (chartRegistry != null && chartStore != null && chartIngest != null) {

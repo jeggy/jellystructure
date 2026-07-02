@@ -351,6 +351,19 @@ class MediaStore(
         return index[jellyfinId]
     }
 
+    /** Phase 111/R155 — resolves a Jellyfin id to what the remote-control `play_item` event needs:
+     *  "movie" | "series" (both O(1) via [resolveByJellyfinId]) or "episode" (O(n) scan over series —
+     *  no index exists for nested episode ids). Null if the id isn't in this library at all. */
+    fun resolvePlayTarget(jellyfinId: String): Pair<String, String?>? {
+        resolveByJellyfinId(jellyfinId)?.let { item ->
+            return (if (item.kind == dev.jellystructure.model.MediaKind.TV_SHOW) "series" else "movie") to item.title
+        }
+        allItems().asSequence()
+            .filter { it.kind == dev.jellystructure.model.MediaKind.TV_SHOW }
+            .forEach { series -> series.episodes.firstOrNull { it.jellyfinId == jellyfinId }?.let { return "episode" to null } }
+        return null
+    }
+
     fun allItems(): List<MediaItem> {
         val cached = allItemsCache
         if (cached != null) return cached
