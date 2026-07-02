@@ -633,3 +633,19 @@ hr.dash { border: none; border-top: 1px solid var(--line); margin: 18px 0; }
 .ep-ts .grp { display:flex; flex-direction:column; gap:2px; }
 .ep-ts .k { font-size:.6rem; text-transform:uppercase; letter-spacing:.05em; color:var(--ink-dim); font-weight:700; }
 .ep-ts .v { font-family:'JetBrains Mono',monospace; font-size:.72rem; color:var(--ink-soft); }
+
+/* Phase 109 — Activity ▸ Jobs & workers (media worker queue) */
+.jobs-count { display:inline-flex; align-items:center; justify-content:center; min-width:16px; height:16px; padding:0 5px; border-radius:20px; background:var(--warn); color:#1a1204; font-size:.62rem; font-weight:800; margin-left:6px; }
+.wk-dot { width:10px; height:10px; border-radius:50%; flex:none; display:inline-block; }
+.wk-dot.busy { background:var(--warn); box-shadow:0 0 0 4px var(--warn-soft); }
+.wk-dot.idle { background:var(--ink-dim); }
+.jobrow { display:flex; align-items:center; gap:12px; padding:11px 4px; border-top:1px dashed var(--line); }
+.jobrow:first-child { border-top:none; }
+.jq-pos { width:22px; height:22px; flex:none; border-radius:6px; background:var(--fill-3); color:var(--ink-soft); font-size:.72rem; font-weight:700; display:flex; align-items:center; justify-content:center; }
+.jq-ic { width:22px; flex:none; text-align:center; font-weight:800; }
+.jq-ic.ok { color:var(--ok); }
+.jq-ic.bad { color:var(--bad); }
+.jq-main { flex:1; min-width:0; }
+.jq-title { font-size:.86rem; }
+.jq-sub { font-size:.72rem; color:var(--ink-dim); margin-top:2px; }
+.jobrow.leaving { opacity:0; transform:translateX(10px); transition:opacity .25s, transform .25s; }

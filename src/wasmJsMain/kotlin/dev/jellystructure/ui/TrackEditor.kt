@@ -520,18 +520,21 @@ fun wireUnifiedTrackEditor(
                 }
             }
 
-            // 4. Reorder (ffmpeg remux — last, as it changes stream indices on disk)
+            // 4. Reorder (ffmpeg remux — last, as it changes stream indices on disk). Phase 109: this now
+            // enqueues a background job instead of remuxing inline — the order shown here is what will
+            // land once the job runs, not what's on disk yet.
+            var reorderQueued = false
             val audioNewOrder = audioModel.map { it.sp }
             if (audioNewOrder != audioOriginal.map { it.sp }) {
-                val ok = if (epFilename == null) MediaApi.reorderTracks(mediaId, "audio", audioNewOrder)
+                val jobId = if (epFilename == null) MediaApi.reorderTracks(mediaId, "audio", audioNewOrder)
                          else MediaApi.reorderEpisodeTracks(mediaId, epFilename, "audio", audioNewOrder)
-                if (!ok) anyError = true
+                if (jobId == null) anyError = true else reorderQueued = true
             }
             val subsNewOrder = subsModel.map { it.sp }
             if (subsNewOrder != subsOriginal.map { it.sp }) {
-                val ok = if (epFilename == null) MediaApi.reorderTracks(mediaId, "subtitle", subsNewOrder)
+                val jobId = if (epFilename == null) MediaApi.reorderTracks(mediaId, "subtitle", subsNewOrder)
                          else MediaApi.reorderEpisodeTracks(mediaId, epFilename, "subtitle", subsNewOrder)
-                if (!ok) anyError = true
+                if (jobId == null) anyError = true else reorderQueued = true
             }
 
             if (!anyError) {
@@ -542,7 +545,8 @@ fun wireUnifiedTrackEditor(
 
             renderList()
             renderPending()
-            showDetailMsg(if (!anyError) "Changes applied" else "Some changes failed — see details", !anyError)
+            val doneMsg = if (reorderQueued) "Changes applied — reorder queued, see Activity ▸ Jobs" else "Changes applied"
+            showDetailMsg(if (!anyError) doneMsg else "Some changes failed — see details", !anyError)
 
             applyBtn.removeAttribute("disabled")
             applyBtn.textContent = "Apply"

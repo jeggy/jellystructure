@@ -1,0 +1,21 @@
+-- Phase 109 — persistent FIFO queue for heavy media edits (ffmpeg remuxes), v10 -> v11.
+CREATE TABLE media_job (
+    id TEXT NOT NULL PRIMARY KEY,
+    type TEXT NOT NULL,
+    media_id TEXT NOT NULL,
+    label TEXT NOT NULL,
+    params TEXT NOT NULL,
+    state TEXT NOT NULL,
+    enqueued_by TEXT NOT NULL DEFAULT 'admin',
+    created_at INTEGER NOT NULL,
+    started_at INTEGER,
+    finished_at INTEGER,
+    error TEXT,
+    file_count INTEGER NOT NULL DEFAULT 1,
+    files_done INTEGER NOT NULL DEFAULT 0,
+    pct REAL NOT NULL DEFAULT 0,
+    speed TEXT
+);
+
+CREATE INDEX media_job_state ON media_job(state);
+CREATE INDEX media_job_media_id ON media_job(media_id);
