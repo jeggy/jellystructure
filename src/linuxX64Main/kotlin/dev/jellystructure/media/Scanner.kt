@@ -258,10 +258,7 @@ class Scanner(
 
             // Fetch per-episode TMDB details in the episode's own resolved language
             val epDetails = if (seriesTmdbId != null && seasonNum != null && epNum != null) {
-                epLangPriority.firstNotNullOfOrNull { lang ->
-                    tmdb.getEpisodeDetails(seriesTmdbId, seasonNum, epNum, lang)
-                        ?.takeIf { it.name.isNotBlank() || it.overview.isNotBlank() }
-                } ?: tmdb.getEpisodeDetails(seriesTmdbId, seasonNum, epNum)
+                tmdb.getEpisodeDetailsLocalized(seriesTmdbId, seasonNum, epNum, epLangPriority)
             } else null
 
             // Phase 76: fetch guest stars + episode crew from TMDB
@@ -503,10 +500,7 @@ class Scanner(
             val (seasonNum, epNum) = parseSeasonEpisode(file)
             val existingEp = item.episodes.firstOrNull { it.filename == file.substringAfterLast('/') }
             val epDetails = if (seriesTmdbId != null && seasonNum != null && epNum != null) {
-                epLangPriority.firstNotNullOfOrNull { lang ->
-                    tmdb.getEpisodeDetails(seriesTmdbId, seasonNum, epNum, lang)
-                        ?.takeIf { it.name.isNotBlank() || it.overview.isNotBlank() }
-                } ?: tmdb.getEpisodeDetails(seriesTmdbId, seasonNum, epNum)
+                tmdb.getEpisodeDetailsLocalized(seriesTmdbId, seasonNum, epNum, epLangPriority)
             } else null
             // Phase 76: preserve existing guest stars/crew; re-fetch from TMDB if available
             val (epGuests, epCrew) = if (seriesTmdbId != null && seasonNum != null && epNum != null) {
@@ -607,10 +601,7 @@ class Scanner(
             val epLangPriority = LanguageResolver.priorityList(audioLangs, fallback)
             val epNum = ep.episodeNumber
             val epDetails = if (seriesTmdbId != null && epNum != null) {
-                epLangPriority.firstNotNullOfOrNull { lang ->
-                    tmdb.getEpisodeDetails(seriesTmdbId, seasonNumber, epNum, lang)
-                        ?.takeIf { it.name.isNotBlank() || it.overview.isNotBlank() }
-                } ?: tmdb.getEpisodeDetails(seriesTmdbId, seasonNumber, epNum)
+                tmdb.getEpisodeDetailsLocalized(seriesTmdbId, seasonNumber, epNum, epLangPriority)
             } else null
             updatedEpisodes[idx] = ep.copy(
                 tracks = tracks,
@@ -714,10 +705,7 @@ class Scanner(
                     val s = ep.seasonNumber
                     val e = ep.episodeNumber
                     if (s != null && e != null) {
-                        val epDetails = langPriority.firstNotNullOfOrNull { lang ->
-                            tmdb.getEpisodeDetails(details.id, s, e, lang)
-                                ?.takeIf { it.name.isNotBlank() || it.overview.isNotBlank() }
-                        } ?: tmdb.getEpisodeDetails(details.id, s, e)
+                        val epDetails = tmdb.getEpisodeDetailsLocalized(details.id, s, e, langPriority)
                         if (epDetails != null) ep.copy(
                             title = epDetails.name.takeIf { it.isNotBlank() },
                             overview = epDetails.overview.takeIf { it.isNotBlank() },
