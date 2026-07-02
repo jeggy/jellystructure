@@ -29,6 +29,9 @@ private val OPEN_API_PATHS = listOf(
     // /api/tv/image/{itemId}/{type} is the R85 Jellyfin image proxy cache. Images are not sensitive
     // and Coil can't attach a device token to image requests.
     "/api/tv/image/",
+    // Phase 114 — *arr webhooks: authenticated by their own per-install secret query param, since *arr's
+    // webhook sender can't attach a cookie/device-token/API-key like every other caller.
+    "/api/webhooks/",
 )
 
 fun Application.installAuthPlugin(

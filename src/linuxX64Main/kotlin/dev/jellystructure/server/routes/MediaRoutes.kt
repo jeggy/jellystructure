@@ -1627,7 +1627,9 @@ fun Route.mediaRoutes(
  * refresh succeeded (or was not applicable: no jellyfinId / no Jellyfin config) so callers can report
  * an honest result instead of implying a refresh that didn't run (Phase 50).
  */
-private suspend fun pushToJellyfin(
+// Phase 114 — internal (not private): RealtimeIngestService also calls this after a targeted ingest,
+// same as every route handler in this file that finishes a re-scan.
+internal suspend fun pushToJellyfin(
     item: MediaItem,
     artwork: ArtworkDownloader,
     configStore: ConfigStore,
