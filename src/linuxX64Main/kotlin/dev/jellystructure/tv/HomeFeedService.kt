@@ -6,6 +6,7 @@ import dev.jellystructure.config.ConfigStore
 import dev.jellystructure.media.MediaStore
 import dev.jellystructure.model.MediaItem
 import dev.jellystructure.model.MediaKind
+import dev.jellystructure.model.recencyKey
 import dev.jellystructure.resolver.CertificationResolver
 import dev.jellystructure.shared.tv.Channel
 import dev.jellystructure.shared.tv.ChannelConfig
@@ -134,7 +135,7 @@ class HomeFeedService(
     private fun buildHeroes(config: RaviloConfig, all: List<MediaItem>): List<Hero> {
         // Auto mode: pick the most-recently-scanned items with no dressing.
         if (config.heroes.isEmpty()) {
-            return all.sortedByDescending { it.addedAt ?: it.scannedAt }.take(HERO_AUTO_COUNT).mapNotNull { item ->
+            return all.sortedWith(compareByDescending<dev.jellystructure.model.MediaItem> { it.recencyKey() }.thenBy { it.title }).take(HERO_AUTO_COUNT).mapNotNull { item ->
                 item.jellyfinId ?: return@mapNotNull null   // hero must be navigable (detail opens by jellyfinId)
                 Hero(
                     item = item.toMediaCard(),
@@ -265,7 +266,7 @@ class HomeFeedService(
                         else     -> all
                     }
                     val cards = filtered
-                        .sortedByDescending { it.addedAt ?: it.scannedAt }
+                        .sortedWith(compareByDescending<dev.jellystructure.model.MediaItem> { it.recencyKey() }.thenBy { it.title })
                         .take(ROW_ITEM_LIMIT)
                         .mapNotNull { it.toMediaCardOrNull() }
                         .distinctBy { it.id }
@@ -279,7 +280,7 @@ class HomeFeedService(
         // Merge on → inject one merged NEWLY_ADDED row at the first configured NEWLY_ADDED position.
         if (mergeNewly) {
             val mergedCards = all
-                .sortedByDescending { it.addedAt ?: it.scannedAt }
+                .sortedWith(compareByDescending<dev.jellystructure.model.MediaItem> { it.recencyKey() }.thenBy { it.title })
                 .take(ROW_ITEM_LIMIT)
                 .mapNotNull { it.toMediaCardOrNull() }
                 .distinctBy { it.id }
@@ -310,14 +311,14 @@ class HomeFeedService(
         titlePrefix: String? = null,
     ) {
         if (merge) {
-            val cards = src.sortedByDescending { it.addedAt ?: it.scannedAt }.take(ROW_ITEM_LIMIT).mapNotNull { it.toMediaCardOrNull() }.distinctBy { it.id }
+            val cards = src.sortedWith(compareByDescending<dev.jellystructure.model.MediaItem> { it.recencyKey() }.thenBy { it.title }).take(ROW_ITEM_LIMIT).mapNotNull { it.toMediaCardOrNull() }.distinctBy { it.id }
             if (cards.isNotEmpty()) result.add(Row(idPrefix, titlePrefix ?: "Newly Added", RowKind.NEWLY_ADDED, cards))
             return
         }
         val movies = src.filter { it.kind == MediaKind.MOVIE }
-            .sortedByDescending { it.addedAt ?: it.scannedAt }.take(ROW_ITEM_LIMIT).mapNotNull { it.toMediaCardOrNull() }.distinctBy { it.id }
+            .sortedWith(compareByDescending<dev.jellystructure.model.MediaItem> { it.recencyKey() }.thenBy { it.title }).take(ROW_ITEM_LIMIT).mapNotNull { it.toMediaCardOrNull() }.distinctBy { it.id }
         val series = src.filter { it.kind == MediaKind.TV_SHOW }
-            .sortedByDescending { it.addedAt ?: it.scannedAt }.take(ROW_ITEM_LIMIT).mapNotNull { it.toMediaCardOrNull() }.distinctBy { it.id }
+            .sortedWith(compareByDescending<dev.jellystructure.model.MediaItem> { it.recencyKey() }.thenBy { it.title }).take(ROW_ITEM_LIMIT).mapNotNull { it.toMediaCardOrNull() }.distinctBy { it.id }
         if (movies.isNotEmpty()) result.add(Row("$idPrefix-movies", titlePrefix?.let { "$it — Movies" } ?: "Movies — Newly Added", RowKind.NEWLY_ADDED, movies))
         if (series.isNotEmpty()) result.add(Row("$idPrefix-series", titlePrefix?.let { "$it — Series" } ?: "Series — Newly Added", RowKind.NEWLY_ADDED, series))
     }
@@ -328,7 +329,7 @@ class HomeFeedService(
             val genreTerms = (rowCfg.title ?: "").split("&", ",").map { it.trim().lowercase() }.filter { it.isNotBlank() }
             val cards = all
                 .filter { item -> genreTerms.isEmpty() || item.genres.any { g -> genreTerms.any { t -> g.lowercase().contains(t) } } }
-                .sortedByDescending { it.addedAt ?: it.scannedAt }
+                .sortedWith(compareByDescending<dev.jellystructure.model.MediaItem> { it.recencyKey() }.thenBy { it.title })
                 .take(ROW_ITEM_LIMIT)
                 .mapNotNull { it.toMediaCardOrNull() }
                 .distinctBy { it.id }
@@ -342,7 +343,7 @@ class HomeFeedService(
                 else     -> matched
             }
             val cards = filtered
-                .sortedByDescending { it.addedAt ?: it.scannedAt }
+                .sortedWith(compareByDescending<dev.jellystructure.model.MediaItem> { it.recencyKey() }.thenBy { it.title })
                 .take(ROW_ITEM_LIMIT)
                 .mapNotNull { it.toMediaCardOrNull() }
                 .distinctBy { it.id }

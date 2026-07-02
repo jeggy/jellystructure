@@ -6,6 +6,7 @@ import dev.jellystructure.config.ConfigStore
 import dev.jellystructure.media.MediaStore
 import dev.jellystructure.model.MediaItem
 import dev.jellystructure.model.MediaKind
+import dev.jellystructure.model.recencyKey
 import dev.jellystructure.resolver.CertificationResolver
 import dev.jellystructure.shared.tv.BrowseFacets
 import dev.jellystructure.shared.tv.FacetItem
@@ -72,7 +73,7 @@ class BrowseService(
         val sorted = when (sort) {
             "title" -> filtered.sortedBy { it.title.lowercase() }
             "year"  -> filtered.sortedByDescending { it.year ?: 0 }
-            else    -> filtered.sortedByDescending { it.addedAt ?: it.scannedAt }
+            else    -> filtered.sortedByDescending { it.recencyKey() }
         }
 
         val cards = (if (pageSize == null) sorted
@@ -93,7 +94,7 @@ class BrowseService(
         val jellyfinBase = configStore.current.apiKeys.jellyfinUrl.trimEnd('/')
 
         val cards = if (query.isBlank()) {
-            all.sortedByDescending { it.addedAt ?: it.scannedAt }
+            all.sortedByDescending { it.recencyKey() }
                 .take(SEARCH_SUGGESTION_LIMIT)
                 .map { it.toMediaCard() }
                 .distinctBy { it.id }
@@ -103,7 +104,7 @@ class BrowseService(
                 item.title.lowercase().contains(q) ||
                 item.originalTitle?.lowercase()?.contains(q) == true ||
                 item.titlesByLang.values.any { it.lowercase().contains(q) }
-            }.sortedByDescending { it.addedAt ?: it.scannedAt }
+            }.sortedByDescending { it.recencyKey() }
                 .take(100)
                 .map { it.toMediaCard() }
                 .distinctBy { it.id }

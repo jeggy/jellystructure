@@ -78,9 +78,11 @@ data class JellyfinItem(
     @SerialName("LockData") val lockData: Boolean = false,
     @SerialName("LockedFields") val lockedFields: List<String> = emptyList(),
     @SerialName("Tags") val tags: List<String> = emptyList(),
-    // The library "date added" (ISO-8601 UTC), e.g. "2021-06-27T18:51:37.0000000Z". Drives the real
-    // "recently added" sort (scannedAt is only the scan timestamp).
+    // The library "date added" (ISO-8601 UTC), e.g. "2021-06-27T18:51:37.0000000Z". Display only as of
+    // Phase 108 (JS-owned createdAt/updatedAt now drive "recently added"; scannedAt is the scan timestamp).
     @SerialName("DateCreated") val dateCreated: String? = null,
+    // Phase 108: Jellyfin's own "last updated" timestamp, display only (Overview ▸ Timestamps).
+    @SerialName("DateLastSaved") val dateLastSaved: String? = null,
 )
 
 @Serializable
@@ -167,6 +169,8 @@ data class JellyfinEpisodeItem(
     @SerialName("RunTimeTicks") val runTimeTicks: Long? = null,
     @SerialName("UserData") val userData: JellyfinUserData? = null,
     @SerialName("SeasonName") val seasonName: String? = null,
+    // Phase 108: display-only, best-effort — only populated when this fetch runs (jellyfinId backfill).
+    @SerialName("DateCreated") val dateCreated: String? = null,
 )
 
 @Serializable

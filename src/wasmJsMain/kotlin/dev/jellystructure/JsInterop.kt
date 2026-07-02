@@ -26,6 +26,25 @@ internal fun formatStoredTs(epochSecStr: String): String = js("""(function(){
     return same?d.toLocaleTimeString([],tOpts):d.toLocaleString([],{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit',hour12:false});
 })()""")
 
+// Phase 108: absolute "YYYY-MM-DD HH:mm" for a stored epoch-seconds value (passed as a string to
+// sidestep Kotlin/Wasm's Long↔JS marshaling — same pattern as formatStoredTs above).
+internal fun formatFullDateTime(epochSecStr: String): String = js("""(function(){
+    var d = new Date(parseFloat(epochSecStr) * 1000);
+    var p = function(n){ return String(n).padStart(2,'0'); };
+    return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate())+' '+p(d.getHours())+':'+p(d.getMinutes());
+})()""")
+
+// Phase 108: relative "2y ago" / "4d ago" / "just now" hint for a stored epoch-seconds value.
+internal fun formatRelativeAgo(epochSecStr: String): String = js("""(function(){
+    var diffSec = (Date.now()/1000) - parseFloat(epochSecStr);
+    if (diffSec < 60) return 'just now';
+    var mins = Math.floor(diffSec/60); if (mins < 60) return mins+'m ago';
+    var hrs = Math.floor(mins/60); if (hrs < 24) return hrs+'h ago';
+    var days = Math.floor(hrs/24); if (days < 30) return days+'d ago';
+    var months = Math.floor(days/30); if (months < 12) return months+'mo ago';
+    var years = Math.floor(days/365); return years+'y ago';
+})()""")
+
 // Observes elements whose ids are in the comma-separated `idsCsv` string; calls `onVisible(id)`
 // when one enters the viewport within the given rootMargin (CSS-style, e.g. "-10% 0px -80% 0px").
 // True when the element's top edge is within [marginPx] of the viewport bottom — used by the

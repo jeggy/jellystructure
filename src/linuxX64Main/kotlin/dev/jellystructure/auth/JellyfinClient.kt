@@ -101,7 +101,7 @@ class JellyfinClient {
 
     suspend fun getItems(baseUrl: String, token: String): List<JellyfinItem> = runCatching {
         val url = baseUrl.trimEnd('/') +
-            "/Items?IncludeItemTypes=Movie,Series&Recursive=true&Fields=Path,ProviderIds,ProductionYear,LockData,LockedFields,Tags,DateCreated"
+            "/Items?IncludeItemTypes=Movie,Series&Recursive=true&Fields=Path,ProviderIds,ProductionYear,LockData,LockedFields,Tags,DateCreated,DateLastSaved"
         httpGet(url) { jellyfinAuth(token) }
             .bodyOrNull<JellyfinItemsResponse>("getItems")?.items.orEmpty()
             .filter { it.type == "Movie" || it.type == "Series" }
@@ -112,7 +112,7 @@ class JellyfinClient {
 
     suspend fun getItemsByParent(baseUrl: String, token: String, parentId: String): List<JellyfinItem> = runCatching {
         val url = baseUrl.trimEnd('/') +
-            "/Items?ParentId=$parentId&IncludeItemTypes=Movie,Series&Recursive=true&Fields=Path,ProviderIds,ProductionYear,LockData,LockedFields,Tags,DateCreated"
+            "/Items?ParentId=$parentId&IncludeItemTypes=Movie,Series&Recursive=true&Fields=Path,ProviderIds,ProductionYear,LockData,LockedFields,Tags,DateCreated,DateLastSaved"
         httpGet(url) { jellyfinAuth(token) }
             .bodyOrNull<JellyfinItemsResponse>("getItemsByParent")?.items.orEmpty()
             .filter { it.type == "Movie" || it.type == "Series" }
@@ -127,7 +127,7 @@ class JellyfinClient {
         // versions (it expects `/Users/{userId}/Items/{id}`); the `Ids=` filter on the list endpoint
         // is accepted with the same token + Fields (incl. LockData/LockedFields for Phase 22).
         val url = baseUrl.trimEnd('/') +
-            "/Items?Ids=$jellyfinId&Recursive=true&Fields=Path,ProviderIds,ProductionYear,LockData,LockedFields,Tags,DateCreated"
+            "/Items?Ids=$jellyfinId&Recursive=true&Fields=Path,ProviderIds,ProductionYear,LockData,LockedFields,Tags,DateCreated,DateLastSaved"
         httpGet(url) { jellyfinAuth(token) }
             .bodyOrNull<JellyfinItemsResponse>("getItem")?.items?.firstOrNull()
     }.let { result ->
@@ -293,7 +293,7 @@ class JellyfinClient {
         seriesId: String,
     ): List<JellyfinEpisodeItem> = runCatching {
         val url = baseUrl.trimEnd('/') +
-            "/Shows/$seriesId/Episodes?Fields=RunTimeTicks,SeasonName"
+            "/Shows/$seriesId/Episodes?Fields=RunTimeTicks,SeasonName,DateCreated"
         httpGet(url) { jellyfinAuth(token) }
             .bodyOrNull<JellyfinEpisodesResponse>("getSeriesEpisodesMeta")?.items.orEmpty()
     }.let { result ->
