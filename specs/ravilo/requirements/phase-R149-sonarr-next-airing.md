@@ -2,104 +2,86 @@
 
 > When **Sonarr is configured** and a series has **not ended**, show that a new episode is scheduled:
 > a **"Next episode · S·E · airs <date>"** line in the **series-detail hero** (visible without scrolling,
-> no source attribution), and a compact
-> **"Airing soon"** badge on the **series poster** in content rows. Ended series show nothing.
+> no source attribution), and a compact **"Airing soon"** badge on the **series poster** in content rows.
+> Ended series show nothing.
 
-**Status:** Planned — **reopened**. Previously Done for the under-the-season-picker banner. The design has
-since moved the next-airing line into the series-detail **hero** (above the fold) and **removed the source
-attribution** (see Requirement C); the Compose app must be updated to match before this is Done again.
-> Flip the R149 row in the repo-root `STATUS.md` from `✓ Done` to `Planned` to match (repo-owned file).
+**Status: Planned — reopened, placement-only.** The feature shipped once (badge + banner + full backend);
+the design has since moved the next-airing line into the series-detail **hero** (above the fold) and the
+source attribution was already removed. **Only the line's placement remains to be built.**
 
 ## Problem
 Ravilo shows the catalogue it already has — episodes, watched/resume state, cast — but gives a viewer
-no signal that an **ongoing** series has a new episode on the way. Sonarr already tracks each series'
-status (continuing vs ended) and the air date of the next monitored episode; that information was never
-surfaced in the TV UI. A viewer browsing a continuing series can't tell it isn't complete, and a poster
-in a row looks identical whether the show is finished or actively airing.
+no signal that an **ongoing** series has a new episode on the way, *until they scroll*: the line renders
+inside the episodes section today, below the season picker, so it's invisible when the detail page opens.
 
-## Architectural constraint (driving decision)
+## Architectural constraint (unchanged)
 **Ravilo requests from Jellyfin as little as possible — the UI is served from jellystructure's own
-data.** Next-airing info is **Sonarr-owned**, not Jellyfin-owned: jellystructure reads it from the
-Sonarr API (series status + next-airing date) at scan/refresh time and stores it on the series record.
-The TV detail + rows feeds then carry it through. No Jellyfin round-trip, no client-side derivation.
+data.** Next-airing info is **Sonarr-owned**: jellystructure reads it from the Sonarr API and stores it
+on the series record; the TV detail + rows feeds carry it through. No Jellyfin round-trip, no client-side
+derivation.
 
-## Current state (as-is)
-- **Design is built** in `design/ravilo/`:
-  - `ravilo-data.js`: `config.sonarr` flag; `SERIES_STATUS` map (`{ ended, season, ep, title }` per
-    series); `nextAiringFor(item)` → `null` unless `config.sonarr && item.kind === 'series' &&
-    !status.ended`, else `{ season, ep, title, date (ISO yyyy-mm-dd), days }` (date computed relative to
-    now in the mock so it always reads as upcoming). Exported on `window.RAVILO`.
-  - `ravilo-app.js`: series **detail hero** renders a `.dnext.air` line (in `.dnext-row`, beside the
-    resume/up-next pill, above the fold) — `Next episode · S{n}:E{n} "{title}" · airs {full date}` — via
-    `epAirLabel()` (UTC-pinned, locale month/day/year). **No source attribution** is shown in the UI.
-    Poster `tile()` renders a compact `.tile-air` badge (`upcomingLabel()` → `t('upcoming')`, accent dot)
-    top-right when `nextAiringFor(item)` is set.
-  - `ravilo-i18n.js`: `upcoming` ("Airing soon" / "Kommer snart" / "Kemur skjótt"), `next_ep`, `airs`
-    in en/da/fo. (`via_sonarr` is retired — the UI never names the source.)
-  - `ravilo.css`: `.dnext.air`, `.dnext-row` (hero pill row), `.tile-air` + `.tile-air-dot`.
-- **Sonarr is already a configured integration** in jellystructure (`[sonarr]`, read-only root-folder
-  import + best-effort rescan, alongside Radarr). Its series **status / next-airing** fields are not yet
-  read into the catalog record or the TV feeds.
-- **Backend is the gap**: the Sonarr client, the series catalog record, and the TV detail/rows DTOs do
-  not yet carry next-airing data.
+## Current state (verified in code, 2026-07-02)
+**Backend: fully built.** (The earlier "backend is the gap" note is stale.)
+- `SonarrEnrichService` (`src/linuxX64Main/…/arr/SonarrEnrichService.kt`) reads series status +
+  next-monitored-episode from Sonarr (`ArrClient.ArrSeriesInfo.nextAiringUtc`, `ArrClient.kt:47-55`,
+  date stored as `airDateUtc.take(10)` = date-only) — runs on startup (`enrichAll()`) and broadcasts a
+  feed-changed signal after enriching.
+- `MediaItem` carries `sonarrStatus` / `sonarrNextAiringDate|Season|Episode|Title`
+  (`model/Media.kt:126-130`).
+- TV DTOs populated and gated (Sonarr enabled ∧ not ended ∧ date exists):
+  `SeriesDetail.next_airing` (`NextAiring{season,episode,title?,airDate}`, `Models.kt:190-197,269`,
+  built in `DetailService.kt:95-113`) and the card label `MediaCard.upcoming_episode`
+  (`Models.kt:135`, built as `"SxxEyy"` in `HomeFeedService.kt:431-433`, `BrowseService.kt:163-165`,
+  `DetailService.kt:178-180`).
+- **Poster badge: built.** `Tile.kt:277-297` renders the top-start accent pill `"Soon • S01E05"` from
+  `upcomingLabel` — short fixed-ish label, never a date.
+- i18n keys exist in all three locales (`Strings.kt` — `sonarr.next_ep`, `sonarr.airs`, upcoming label);
+  the UI shows **no Sonarr attribution** anywhere (already removed).
+
+**The gap — placement.** `SeriesDetailScreen.kt:451-478` renders the next-airing pill inside the
+`item("episodes")` block (between the "Episodes" header and the episode rail), i.e. **below the season
+picker, below the fold**. The hero (`:258-407`) ends with the resume kicker (`:319-339`) and the action
+row (`:392-405`) — all above the fold on a TV.
 
 ## Requirements
 
-### A. Read next-airing from Sonarr (ingest)
-1. When `[sonarr]` is configured, read each series' **status** (`continuing`/`ended`) and **next-airing
-   date** (next monitored, unaired episode incl. its season/episode number + title when available) from
-   the Sonarr API during scan/refresh. Store on the series catalog record. Best-effort: a Sonarr outage
-   leaves the field null, never blocks the scan.
+### A. Move the line into the hero (the only build item)
+1. In `SeriesDetailScreen.kt`, render the next-airing line **in the hero column, beside/alongside the
+   resume kicker row** (`:319-339` — the design's `.dnext-row`): when `detail.nextAiring != null`, show
+   localized `Next episode` · `S{season}:E{episode}` · optional `"{title}"` · `airs {formatted date}`.
+   Keep the existing pill styling (accent dot + text) and i18n keys. Date formatting stays locale-aware
+   and **UTC-pinned** (parse y-m-d parts; the calendar day must not shift by timezone).
+2. **Remove** the episodes-section banner (`:451-478`) — the line lives in the hero only.
+3. When `nextAiring == null`, render nothing and reserve no space (the hero column is bottom-anchored, so
+   this cannot reflow content that is already visible — no-flicker rule holds).
+4. The hero column is width-constrained (`0.6f` on TV); if both the resume kicker and the next-airing
+   line are present they stack (kicker first) — verify neither wraps into the action row.
 
-### B. Carry it on the TV DTOs
-2. Add an optional `nextAiring` to the TV **series detail** model: `{ season: Int, episode: Int, title:
-   String?, airDate: String /* yyyy-MM-dd */ }`, nullable + defaulted. Add the same (or a `boolean
-   hasUpcoming` + `airDate`) to the **row/poster** series tile DTO so rows can render the badge without
-   the full detail payload.
-3. Populate both only when **Sonarr is enabled AND the series has not ended AND a next-airing date
-   exists**. Otherwise null.
-
-### C. Render — detail page
-4. In the series-detail **hero** (above the fold, beside the resume/up-next pill — **not** under the
-   season picker), when `nextAiring != null`, show the line: localized `Next episode` ·
-   `S{season}:E{episode}` · optional `"{title}"` · `airs {formatted date}`. **Show no source attribution**
-   (no "Sonarr" pill/label) — the viewer is never told where the data comes from. Date formatting is
-   locale-aware and **UTC-pinned** (calendar day must not shift by timezone). When null, render nothing.
-
-### D. Render — content-row poster
-5. On series poster tiles in content rows, when the series has an upcoming episode, show a compact
-   **"Airing soon"** badge (top-right, accent dot). The badge is a **short fixed label** — NOT the date
-   — so it never overflows the poster; the full date lives on the detail page only. When null, render
-   nothing.
+### B. Poster badge + DTOs + ingest (already built — regression-guard only)
+5. No change to `Tile.kt` badge, DTO fields, gating, or Sonarr ingest. Acceptance re-verifies them.
 
 ## Invariants
-- **Jellyfin is not consulted** for status or next-airing — Sonarr-sourced, jellystructure-stored,
-  server-pushed. Renders server state only; the TV never derives or guesses the date.
-- **Gated on `config.sonarr`.** With Sonarr disabled, neither the banner nor the badge ever appears
-  (mirrors the Radarr/Discover gating in `discoverEnabled()`).
-- **Ended series show neither** banner nor badge — the feature is strictly for continuing series.
+- **Jellyfin is not consulted** — Sonarr-sourced, jellystructure-stored, server-pushed. The TV never
+  derives or guesses the date.
+- **Gated on `config.sonarr`** ∧ series not ended ∧ a next-airing date exists — otherwise neither line
+  nor badge appears.
 - Date stored/transported as date-only ISO; all display formatting UTC-pinned.
-- Poster badge copy is a short fixed label (`upcoming` i18n key), never a date — overflow-safe. The
-  hero line carries the precise date.
-- **The UI never names the data source** (no "Sonarr"/"Radarr" attribution anywhere) — provenance stays
-  server-side only.
+- Poster badge stays a short label (`Soon • SxxEyy`), never a date; the hero line carries the full date.
+- **The UI never names the data source** (no "Sonarr"/"Radarr" attribution anywhere).
 
 ## Out of scope
-- A countdown / "in N days" timer, calendar reminders, or notifications when the episode airs.
-- A dedicated "Upcoming" / "Airing this week" browse row or screen (display-on-existing-surfaces only).
-- Auto-requesting or grabbing the upcoming episode (Sonarr already handles acquisition) — this is
-  display only, no fetch affordance.
-- Movie equivalents (theatrical/digital release countdowns) — series only this phase.
+- Countdown timers, calendar reminders, notifications, an "Upcoming" browse row, auto-requesting the
+  episode, movie release countdowns — unchanged from the original spec.
+
+## Acceptance
+- Opening an ongoing series with a scheduled episode shows the "Next episode …" line **without any
+  scrolling**, in the hero, beside the resume/up-next kicker; the old below-the-picker banner is gone.
+- Ended series and Sonarr-disabled setups show neither line nor badge (unchanged).
+- Row posters keep the "Soon • SxxEyy" badge (unchanged).
 
 ## Source references
-- Design: `design/ravilo/Ravilo TV.html`; `design/ravilo/ravilo-data.js`
-  (`config.sonarr`, `SERIES_STATUS`, `nextAiringFor`); `design/ravilo/ravilo-app.js`
-  (series-detail hero `.dnext.air` line in `.dnext-row`, `tile()` `.tile-air` badge, `upcomingLabel`,
-  `epAirLabel`); `design/ravilo/ravilo-i18n.js` (`upcoming`/`next_ep`/`airs`); `design/ravilo/ravilo.css`
-  (`.dnext.air`, `.dnext-row`, `.tile-air`, `.tile-air-dot`).
-- Backend: Sonarr client + config (`[sonarr]`); series catalog record; TV `DetailService` + row/tile
-  feed builders; shared TV `Models.kt` (series detail + tile DTOs);
-  `ravilo-ui/.../screens/SeriesDetailScreen.kt` + the row/poster tile composable.
-- Related: **R148** (episode air dates — same Sonarr/TMDB date-display spirit, episode picker),
-  **Phase 54 / Discover** (`config.radarr` gating pattern this mirrors for `config.sonarr`),
-  **R48–R50** (Radarr-backed request/fetch surfaces — sibling integration UX).
+- Design: `design/ravilo/ravilo-app.js` (series-detail hero `.dnext.air` line in `.dnext-row`),
+  `ravilo-data.js` (`nextAiringFor`, `SERIES_STATUS`), `ravilo.css` (`.dnext.air`, `.dnext-row`,
+  `.tile-air`), `ravilo-i18n.js`.
+- Code: `ravilo-ui/…/screens/SeriesDetailScreen.kt` (`:319-339` hero kicker row — target;
+  `:451-478` episodes-section banner — remove); backend + DTOs as listed in Current state.

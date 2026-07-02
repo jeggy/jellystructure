@@ -17,6 +17,15 @@ The codebase already implements a **multi-provider** chart system (`providers: L
   **Amazon Prime**, **Apple TV+**, **Crunchyroll** — country lists only; **requires**
   `api_keys.streaming_availability_key` (RapidAPI).
 
+**Verified in code (2026-07-02):** `DiscoverFeedConfig` exists exactly as assumed —
+`{ enabled=false, providers=["netflix"], regions=["DK"], refresh_hours=24 }` (`config/AppConfig.kt:50-56`)
+with `streaming_availability_key` in `ApiKeys` (`:88`) — and none of it is surfaced in Settings.
+Provider ids in the registry: `netflix` (Tudum), `viaplay`/`paramount`/`skyshowtime` (JustWatch),
+`max`/`disney`/`prime`/`apple`(+`crunchyroll`) (movieofthenight). Note each provider's
+`availableLists(region)` is a **static list template** (it does not verify the region has data) —
+per-country *coverage* is R154's server-side addition, not something this phase can read off the
+registry.
+
 > **⚠ Migration note (backend):** the `StreamingAvailabilityProvider` currently calls movieofthenight
 > **through the RapidAPI proxy** (`https://streaming-availability.p.rapidapi.com`, with
 > `X-RapidAPI-Key`/`X-RapidAPI-Host` headers). This should be **changed to call movieofthenight's API
@@ -40,7 +49,8 @@ and JustWatch sources don't need it.
    tag and can't be enabled; supplying the key (A) unlocks them live.
 4. A **country multi-select** (`discover.regions: List<String>`) — which country charts to ingest.
 5. A **refresh** cadence (`discover.refresh_hours`: daily / every 3 days / weekly). Feeds are week-gated,
-   so weekly is the default.
+   so weekly is the sensible default for **new** configs — note the current backend default is
+   `refresh_hours = 24` (daily); existing configs keep whatever value they carry.
 
 ### C. Consumed by the per-user picker
 The per-user Top 10 editor (R154) offers only globally-enabled providers and ingested regions, and flags
