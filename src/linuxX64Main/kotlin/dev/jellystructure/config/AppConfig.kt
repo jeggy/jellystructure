@@ -130,6 +130,10 @@ data class Behavior(
     @SerialName("notify_on_no_match") val notifyOnNoMatch: Boolean = false,
     @SerialName("notify_on_write_failed") val notifyOnWriteFailed: Boolean = true,
     @SerialName("notify_on_drift") val notifyOnDrift: Boolean = false,
+    // Phase 118 — fires server_recovered_from_crash on the next boot after an unhandled fatal
+    // exception (the crash webhook itself is always attempted, best-effort, synchronously, from the
+    // crash hook — this toggle only gates the *recovery* notification).
+    @SerialName("notify_on_crash") val notifyOnCrash: Boolean = true,
 )
 
 @Serializable

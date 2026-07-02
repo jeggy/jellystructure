@@ -1,5 +1,6 @@
 package dev.jellystructure.server.routes
 
+import dev.jellystructure.server.respondCachedBytes
 import dev.jellystructure.config.ConfigStore
 import dev.jellystructure.config.TrackerEntry
 import dev.jellystructure.media.JsTag
@@ -119,7 +120,7 @@ fun Route.metadataRoutes(store: MediaStore, tagStore: JsTagStore, logoDownloader
                     val name = call.parameters["name"] ?: return@get call.respond(HttpStatusCode.BadRequest)
                     val bytes = logoDownloader.serveLogo("studios", name)
                         ?: return@get call.respond(HttpStatusCode.NotFound)
-                    call.respondBytes(bytes, ContentType.Image.PNG)
+                    call.respondCachedBytes(bytes, ContentType.Image.PNG)
                 }
                 post("/artwork") {
                     val name = call.parameters["name"] ?: return@post call.respond(HttpStatusCode.BadRequest)
@@ -148,7 +149,7 @@ fun Route.metadataRoutes(store: MediaStore, tagStore: JsTagStore, logoDownloader
                     val name = call.parameters["name"] ?: return@get call.respond(HttpStatusCode.BadRequest)
                     val bytes = logoDownloader.serveLogo("networks", name)
                         ?: return@get call.respond(HttpStatusCode.NotFound)
-                    call.respondBytes(bytes, ContentType.Image.PNG)
+                    call.respondCachedBytes(bytes, ContentType.Image.PNG)
                 }
                 post("/artwork") {
                     val name = call.parameters["name"] ?: return@post call.respond(HttpStatusCode.BadRequest)
