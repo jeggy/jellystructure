@@ -337,6 +337,28 @@ private fun SeriesDetailLoaded(
                         fontWeight = FontWeight.SemiBold,
                         modifier = Modifier.alpha(kickerAlpha),
                     )
+                    // R149: next-airing line — in the hero, beside the resume/up-next kicker above the
+                    // fold (design's .dnext-row), not below the season picker. No source attribution.
+                    detail.nextAiring?.let { na ->
+                        Spacer(Modifier.height(6.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box(modifier = Modifier.size(6.dp).background(colors.accent, CircleShape))
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                text = buildString {
+                                    append(str("sonarr.next_ep"))
+                                    append(" · S${na.season.toString().padStart(2, '0')}E${na.episode.toString().padStart(2, '0')}")
+                                    if (!na.title.isNullOrBlank()) append(" “${na.title}”")
+                                    append(" · ")
+                                    append(str("sonarr.airs"))
+                                    append(" ${na.airDate}")
+                                },
+                                color = colors.textSecondary,
+                                fontSize = 13.sp,
+                                fontFamily = sora,
+                            )
+                        }
+                    }
                     Spacer(Modifier.height(18.dp))
                     Row(
                         // R72: scroll(UserInput) wins over bring-into-view (Default priority) so
@@ -444,35 +466,6 @@ private fun SeriesDetailLoaded(
                             Text(
                                 "$seasonWatched / ${episodes.size} ${str("action.watched").lowercase()}",
                                 color = colors.textSecondary, fontSize = 13.sp,
-                            )
-                        }
-                    }
-
-                    // R149: next-airing banner — shown when Sonarr has a scheduled upcoming episode.
-                    val na = detail.nextAiring
-                    if (na != null) {
-                        Spacer(Modifier.height(8.dp))
-                        Row(
-                            modifier = Modifier
-                                .padding(horizontal = raviloHPad)
-                                .background(colors.accent.copy(alpha = 0.10f), RoundedCornerShape(8.dp))
-                                .padding(horizontal = 12.dp, vertical = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Box(modifier = Modifier.size(7.dp).background(colors.accent, CircleShape))
-                            Spacer(Modifier.width(8.dp))
-                            Text(
-                                buildString {
-                                    append(str("sonarr.next_ep"))
-                                    append(" · S${na.season.toString().padStart(2,'0')}E${na.episode.toString().padStart(2,'0')}")
-                                    if (!na.title.isNullOrBlank()) append(" · '${na.title}'")
-                                    append(" · ")
-                                    append(str("sonarr.airs"))
-                                    append(" ${na.airDate}")
-                                },
-                                color = colors.accent,
-                                fontSize = 13.sp,
-                                fontFamily = sora,
                             )
                         }
                     }
