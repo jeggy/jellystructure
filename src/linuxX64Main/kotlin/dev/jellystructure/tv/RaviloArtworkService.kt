@@ -2,6 +2,7 @@ package dev.jellystructure.tv
 
 import dev.jellystructure.config.ConfigStore
 import dev.jellystructure.log.Logger
+import dev.jellystructure.OutboundHttp
 import dev.jellystructure.media.ArtworkDownloader
 import dev.jellystructure.media.FfmpegRunner
 import dev.jellystructure.media.MediaStore
@@ -14,9 +15,7 @@ import io.ktor.client.statement.readRawBytes
 import io.ktor.http.contentType
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withLock
-import kotlinx.coroutines.sync.withPermit
 import kotlinx.io.buffered
 import kotlinx.io.files.Path
 import kotlinx.io.files.SystemFileSystem
@@ -36,7 +35,8 @@ import kotlinx.io.readByteArray
  * explicit hooks to miss. Bounded by `behavior.tv_image_cache_mb` (R129/R130).
  * Avatar cache: `$dataDir/artwork/avatars/{userId}` — durable, not size-capped.
  *
- * Gate: Semaphore(8) keeps FD count well below the CIO select() ceiling (avatar fetch + ffmpeg spawn).
+ * Gate: the app-wide [OutboundHttp] permit keeps FD count well below the CIO select() ceiling
+ * (avatar fetch + ffmpeg spawn both consume FDs from the same process-wide table).
  */
 class RaviloArtworkService(
     private val dataDir: String,
@@ -44,7 +44,6 @@ class RaviloArtworkService(
     private val store: MediaStore,
     private val artwork: ArtworkDownloader,
 ) {
-    private val gate = Semaphore(8)
     private val http = HttpClient(Curl) {
         install(HttpTimeout) {
             connectTimeoutMillis = 10_000
@@ -93,7 +92,7 @@ class RaviloArtworkService(
         val cachePath = "$avatarDir/$userId"
         val ctPath = "$cachePath.ct"
         readSimple(cachePath, ctPath)?.let { return it }
-        return gate.withPermit {
+        return OutboundHttp.withPermit {
             readSimple(cachePath, ctPath)?.let { return@withPermit it }
             val base = configStore.current.apiKeys.jellyfinUrl.trimEnd('/')
             val token = configStore.current.apiKeys.jellyfinToken
@@ -116,7 +115,7 @@ class RaviloArtworkService(
         val cachePath = "$cacheDir/$cacheKey"
         val ctPath = "$cachePath.ct"
         readFresh(cachePath, ctPath, srcSize)?.let { return it }
-        return gate.withPermit {
+        return OutboundHttp.withPermit {
             readFresh(cachePath, ctPath, srcSize)?.let { return@withPermit it }
             val isPng = type == "logo"
             val ct = if (isPng) "image/png" else "image/jpeg"

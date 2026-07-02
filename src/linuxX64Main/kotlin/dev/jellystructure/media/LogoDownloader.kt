@@ -1,6 +1,7 @@
 package dev.jellystructure.media
 
 import dev.jellystructure.log.Logger
+import dev.jellystructure.OutboundHttp
 import dev.jellystructure.tmdb.TmdbClient
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.curl.Curl
@@ -8,8 +9,6 @@ import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.request.get
 import io.ktor.client.statement.readRawBytes
 import kotlinx.cinterop.ExperimentalForeignApi
-import kotlinx.coroutines.sync.Semaphore
-import kotlinx.coroutines.sync.withPermit
 import kotlinx.io.buffered
 import kotlinx.io.files.Path
 import kotlinx.io.files.SystemFileSystem
@@ -23,6 +22,9 @@ class LogoDownloader(
     private val dataDir: String,
     private val tmdbClient: TmdbClient,
 ) {
+    private suspend fun httpGet(url: String, block: io.ktor.client.request.HttpRequestBuilder.() -> Unit = {}): io.ktor.client.statement.HttpResponse =
+        OutboundHttp.withPermit { http.get(url, block) }
+
     private val http = HttpClient(Curl) {
         install(HttpTimeout) {
             connectTimeoutMillis = 10_000
@@ -30,13 +32,6 @@ class LogoDownloader(
             requestTimeoutMillis = 120_000
         }
     }
-
-    /**
-     * Phase 78: cap concurrent downloads so in-flight outbound sockets + temp-file FDs stay well
-     * under the Native CIO server's select() ceiling (FD_SETSIZE = 1024). Without this, a flood of
-     * cold `/api/people/{id}/image` requests opened unbounded sockets and crashed the process.
-     */
-    private val downloadGate = Semaphore(8)
 
     private fun logoFile(kind: String, name: String): String {
         val slug = name.replace(Regex("[^a-zA-Z0-9._-]"), "_").take(120)
@@ -126,10 +121,10 @@ class LogoDownloader(
     }
 
     @OptIn(ExperimentalForeignApi::class)
-    private suspend fun download(url: String, destPath: String): Boolean = downloadGate.withPermit {
+    private suspend fun download(url: String, destPath: String): Boolean {
         val result = runCatching {
-            val bytes = http.get(url).readRawBytes()
-            if (bytes.isEmpty()) return@withPermit false
+            val bytes = httpGet(url).readRawBytes()
+            if (bytes.isEmpty()) return@runCatching false
             val tmp = "$destPath.tmp"
             val sink = SystemFileSystem.sink(Path(tmp)).buffered()
             sink.write(bytes, 0, bytes.size)
@@ -140,6 +135,6 @@ class LogoDownloader(
             true
         }
         if (result.isFailure) Logger.warn("Failed to download logo $url: ${result.exceptionOrNull()?.message}")
-        result.getOrDefault(false)
+        return result.getOrDefault(false)
     }
 }

@@ -1,6 +1,7 @@
 package dev.jellystructure.chart
 
 import dev.jellystructure.shared.tv.ChartListSpec
+import dev.jellystructure.OutboundHttp
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.engine.curl.Curl
@@ -19,6 +20,9 @@ class NetflixTudumProvider : ChartProvider {
     override val id = "netflix"
     override val displayName = "Netflix"
     override val attribution = "Tudum"
+
+    private suspend fun httpGet(url: String, block: io.ktor.client.request.HttpRequestBuilder.() -> Unit = {}): io.ktor.client.statement.HttpResponse =
+        OutboundHttp.withPermit { http.get(url, block) }
 
     private val http = HttpClient(Curl) {
         install(HttpTimeout) {
@@ -79,7 +83,7 @@ class NetflixTudumProvider : ChartProvider {
     }
 
     private suspend fun download(file: String): List<Map<String, String>> {
-        val text = http.get("$base/$file") { header("User-Agent", "Mozilla/5.0") }.body<String>()
+        val text = httpGet("$base/$file") { header("User-Agent", "Mozilla/5.0") }.body<String>()
         return parseTsv(text)
     }
 

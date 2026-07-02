@@ -1,5 +1,6 @@
 package dev.jellystructure.media
 
+import dev.jellystructure.OutboundHttp
 import dev.jellystructure.log.Logger
 import dev.jellystructure.model.Episode
 import dev.jellystructure.model.MediaItem
@@ -13,8 +14,6 @@ import io.ktor.client.statement.readRawBytes
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.sync.Semaphore
-import kotlinx.coroutines.sync.withPermit
 import kotlinx.io.buffered
 import kotlinx.io.files.Path
 import kotlinx.io.files.SystemFileSystem
@@ -51,7 +50,6 @@ fun posterArtworkExists(item: MediaItem): Boolean {
 }
 
 class ArtworkDownloader(private val tmdbClient: TmdbClient, private val screengrabber: Screengrabber) {
-    private val downloadGate = Semaphore(8)
     private val http = HttpClient(Curl) {
         install(HttpTimeout) {
             connectTimeoutMillis = 10_000
@@ -144,7 +142,7 @@ class ArtworkDownloader(private val tmdbClient: TmdbClient, private val screengr
         else Logger.warn("Could not remove misplaced artwork $path: ${result.exceptionOrNull()?.message}")
     }
 
-    private suspend fun download(url: String, destPath: String): Boolean = downloadGate.withPermit {
+    private suspend fun download(url: String, destPath: String): Boolean = OutboundHttp.withPermit {
         val result = runCatching {
             val bytes = http.get(url).readRawBytes()
             if (bytes.isEmpty()) return@withPermit false
