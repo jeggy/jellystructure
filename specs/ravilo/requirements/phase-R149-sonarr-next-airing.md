@@ -1,8 +1,14 @@
 # Phase R149 — Series detail + rows: surface Sonarr's next-airing episode for ongoing series
 
 > When **Sonarr is configured** and a series has **not ended**, show that a new episode is scheduled:
-> a full "Next episode · S·E · airs <date>" banner on the **series detail** page, and a compact
+> a **"Next episode · S·E · airs <date>"** line in the **series-detail hero** (visible without scrolling,
+> no source attribution), and a compact
 > **"Airing soon"** badge on the **series poster** in content rows. Ended series show nothing.
+
+**Status:** Planned — **reopened**. Previously Done for the under-the-season-picker banner. The design has
+since moved the next-airing line into the series-detail **hero** (above the fold) and **removed the source
+attribution** (see Requirement C); the Compose app must be updated to match before this is Done again.
+> Flip the R149 row in the repo-root `STATUS.md` from `✓ Done` to `Planned` to match (repo-owned file).
 
 ## Problem
 Ravilo shows the catalogue it already has — episodes, watched/resume state, cast — but gives a viewer
@@ -23,13 +29,14 @@ The TV detail + rows feeds then carry it through. No Jellyfin round-trip, no cli
     series); `nextAiringFor(item)` → `null` unless `config.sonarr && item.kind === 'series' &&
     !status.ended`, else `{ season, ep, title, date (ISO yyyy-mm-dd), days }` (date computed relative to
     now in the mock so it always reads as upcoming). Exported on `window.RAVILO`.
-  - `ravilo-app.js`: series **detail** episodes section renders a `.dnext.air` banner —
-    `Next episode · S{n}:E{n} "{title}" · airs {full date} · Sonarr` — via `epAirLabel()` (UTC-pinned,
-    locale month/day/year) + a `.dnext-src` Sonarr pill. Poster `tile()` renders a compact `.tile-air`
-    badge (`upcomingLabel()` → `t('upcoming')`, accent dot) top-right when `nextAiringFor(item)` is set.
-  - `ravilo-i18n.js`: `upcoming` ("Airing soon" / "Kommer snart" / "Kemur skjótt"), `next_ep`, `airs`,
-    `via_sonarr` in en/da/fo.
-  - `ravilo.css`: `.dnext.air`, `.dnext-src` pill, `.tile-air` + `.tile-air-dot`.
+  - `ravilo-app.js`: series **detail hero** renders a `.dnext.air` line (in `.dnext-row`, beside the
+    resume/up-next pill, above the fold) — `Next episode · S{n}:E{n} "{title}" · airs {full date}` — via
+    `epAirLabel()` (UTC-pinned, locale month/day/year). **No source attribution** is shown in the UI.
+    Poster `tile()` renders a compact `.tile-air` badge (`upcomingLabel()` → `t('upcoming')`, accent dot)
+    top-right when `nextAiringFor(item)` is set.
+  - `ravilo-i18n.js`: `upcoming` ("Airing soon" / "Kommer snart" / "Kemur skjótt"), `next_ep`, `airs`
+    in en/da/fo. (`via_sonarr` is retired — the UI never names the source.)
+  - `ravilo.css`: `.dnext.air`, `.dnext-row` (hero pill row), `.tile-air` + `.tile-air-dot`.
 - **Sonarr is already a configured integration** in jellystructure (`[sonarr]`, read-only root-folder
   import + best-effort rescan, alongside Radarr). Its series **status / next-airing** fields are not yet
   read into the catalog record or the TV feeds.
@@ -53,10 +60,11 @@ The TV detail + rows feeds then carry it through. No Jellyfin round-trip, no cli
    exists**. Otherwise null.
 
 ### C. Render — detail page
-4. In the series detail episodes section, when `nextAiring != null`, show the banner: localized
-   `Next episode` · `S{season}:E{episode}` · optional `"{title}"` · `airs {formatted date}` · a `Sonarr`
-   source pill. Date formatting is locale-aware and **UTC-pinned** (calendar day must not shift by
-   timezone). When null, render nothing.
+4. In the series-detail **hero** (above the fold, beside the resume/up-next pill — **not** under the
+   season picker), when `nextAiring != null`, show the line: localized `Next episode` ·
+   `S{season}:E{episode}` · optional `"{title}"` · `airs {formatted date}`. **Show no source attribution**
+   (no "Sonarr" pill/label) — the viewer is never told where the data comes from. Date formatting is
+   locale-aware and **UTC-pinned** (calendar day must not shift by timezone). When null, render nothing.
 
 ### D. Render — content-row poster
 5. On series poster tiles in content rows, when the series has an upcoming episode, show a compact
@@ -72,7 +80,9 @@ The TV detail + rows feeds then carry it through. No Jellyfin round-trip, no cli
 - **Ended series show neither** banner nor badge — the feature is strictly for continuing series.
 - Date stored/transported as date-only ISO; all display formatting UTC-pinned.
 - Poster badge copy is a short fixed label (`upcoming` i18n key), never a date — overflow-safe. The
-  banner carries the precise date.
+  hero line carries the precise date.
+- **The UI never names the data source** (no "Sonarr"/"Radarr" attribution anywhere) — provenance stays
+  server-side only.
 
 ## Out of scope
 - A countdown / "in N days" timer, calendar reminders, or notifications when the episode airs.
@@ -84,9 +94,9 @@ The TV detail + rows feeds then carry it through. No Jellyfin round-trip, no cli
 ## Source references
 - Design: `design/ravilo/Ravilo TV.html`; `design/ravilo/ravilo-data.js`
   (`config.sonarr`, `SERIES_STATUS`, `nextAiringFor`); `design/ravilo/ravilo-app.js`
-  (series detail `.dnext.air` banner, `tile()` `.tile-air` badge, `upcomingLabel`, `epAirLabel`);
-  `design/ravilo/ravilo-i18n.js` (`upcoming`/`next_ep`/`airs`/`via_sonarr`); `design/ravilo/ravilo.css`
-  (`.dnext.air`, `.dnext-src`, `.tile-air`, `.tile-air-dot`).
+  (series-detail hero `.dnext.air` line in `.dnext-row`, `tile()` `.tile-air` badge, `upcomingLabel`,
+  `epAirLabel`); `design/ravilo/ravilo-i18n.js` (`upcoming`/`next_ep`/`airs`); `design/ravilo/ravilo.css`
+  (`.dnext.air`, `.dnext-row`, `.tile-air`, `.tile-air-dot`).
 - Backend: Sonarr client + config (`[sonarr]`); series catalog record; TV `DetailService` + row/tile
   feed builders; shared TV `Models.kt` (series detail + tile DTOs);
   `ravilo-ui/.../screens/SeriesDetailScreen.kt` + the row/poster tile composable.

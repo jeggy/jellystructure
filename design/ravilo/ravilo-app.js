@@ -18,6 +18,7 @@
       if (u && window.setRaviloLang) window.setRaviloLang(u.lang || 'en');
     } catch (e) {}
     let view = { type: 'home', studio: null };
+    let autoSeasonDone = null;   // R150 — per-series guard for season auto-select
     let heroIdx = 0, heroTimer = null;
 
     // ---- app bar ----
@@ -402,6 +403,14 @@
       scroll.innerHTML = '';
       const isSeries = item.kind === 'series';
       const seasons = isSeries ? R.seasonsFor(item) : 0;
+      // R150-2 — auto-select the first incomplete season, once per series
+      const seasonWatched = (s) => R.episodesFor(item, s).every(e => W.epState(item.title, s, e.n, e.pct).watched);
+      if (isSeries && autoSeasonDone !== item.title) {
+        autoSeasonDone = item.title;
+        let target = seasons - 1;
+        for (let s = 0; s < seasons; s++) { if (!seasonWatched(s)) { target = s; break; } }
+        view.season = target;
+      }
       const season = view.season || 0;
       const eps = isSeries ? R.episodesFor(item, season) : [];
       const states = isSeries ? eps.map(e => W.epState(item.title, season, e.n, e.pct)) : [];
@@ -423,15 +432,18 @@
         playLabel = wItem.watched ? t('play_again') : ((mp > 0 && mp < 100) ? t('resume') + ` · ${mLeft} min left` : t('play'));
       }
 
+      const nextAirHTML = nextAir ? `<div class="dnext air"><span class="dnext-dot"></span>${t('next_ep')} · S${nextAir.season}:E${nextAir.ep}${nextAir.title ? ` “${nextAir.title}”` : ''} · ${t('airs')} ${epAirLabel(nextAir.date)}</div>` : '';
+      const rating = R.ratingFor(item);
+      const certHTML = rating ? `<span class="cert lvl-${rating.tier}" title="${esc(rating.regionName)} · ${esc(rating.system)}${rating.fallback ? ' (fallback)' : ''}"><span class="cert-rg">${rating.region}</span><span class="cert-code">${esc(rating.code)}</span></span>` : '';
       const dhero = el('div', 'dhero');
       dhero.innerHTML = `<div class="hero-bg">${detailBg(item)}<div class="hero-scrim"></div></div>
         <div class="dhero-body">
           <div class="hero-kicker"><span>${item.tagline || (isSeries ? 'Series' : 'Film')}</span><span class="n">${isSeries ? seasons + ' Season' + (seasons > 1 ? 's' : '') : (item.year || '')}</span></div>
           ${detailTitle(item)}
-          <div class="hero-meta"><span class="tag">${item.badge || 'HD'}</span><span>${item.year}</span><span>${item.genre}</span><span class="rt">${item.rating}+</span>${wItem.watched ? `<span class="dmeta-watched">✓ ${t('watched')}</span>` : ''}</div>
+          <div class="hero-meta"><span class="tag">${item.badge || 'HD'}</span><span>${item.year}</span><span>${item.genre}</span>${certHTML}${wItem.watched ? `<span class="dmeta-watched">✓ ${t('watched')}</span>` : ''}</div>
           ${audioFlagsHTML(item)}
           <div class="dsyn-block focus-row"><div class="hero-syn dsyn foc" data-syn="1">${item.syn || 'A standout from your Ravilo library — streamed from Jellyfin, organised by Jellystructure.'}</div><span class="syn-toggle">▾ more</span></div>
-          ${upNote ? `<div class="dnext"><span class="dnext-dot"></span>${upNote}</div>` : ''}
+          ${(upNote || nextAirHTML) ? `<div class="dnext-row">${upNote ? `<div class="dnext"><span class="dnext-dot"></span>${upNote}</div>` : ''}${nextAirHTML}</div>` : ''}
           <div class="dactions focus-row">
             <div class="btn primary foc" data-play="1"><span class="ic">▶</span> ${playLabel}</div>
             ${!isSeries ? `<div class="btn ghost foc${wItem.watched ? ' watched-on' : ''}" data-mark="1"><span class="ic">${wItem.watched ? '✓' : '○'}</span> ${wItem.watched ? t('watched') : t('mark_watched')}</div>` : ''}
@@ -443,14 +455,23 @@
 
       if (isSeries) {
         const pctWatched = Math.round(prog.watched / eps.length * 100);
-        const allW = prog.watched === eps.length;
         const sec = el('div', 'dsec');
         sec.innerHTML = `<div class="dsec-head"><h2>Episodes</h2>
           <span class="dsec-sub">${t('watched_of', { w: prog.watched, n: eps.length })}</span>
-          <span class="seasonbar"><i style="width:${pctWatched}%"></i></span></div>
-          <div class="dsec-actions focus-row"><div class="btn ghost small foc${allW ? ' watched-on' : ''}" data-markall="1"><span class="ic">✓</span> ${allW ? t('mark_all_unwatched') : t('mark_all_watched')}</div></div>${nextAir ? `<div class="dnext air"><span class="dnext-dot"></span>${t('next_ep')} · S${nextAir.season}:E${nextAir.ep}${nextAir.title ? ` “${nextAir.title}”` : ''} · ${t('airs')} ${epAirLabel(nextAir.date)}<span class="dnext-src">${t('via_sonarr')}</span></div>` : ''}`;
+          <span class="seasonbar"><i style="width:${pctWatched}%"></i></span></div>`;
         const pills = el('div', 'seasonpills focus-row');
-        for (let i = 0; i < seasons; i++) { const p = el('div', 'spill foc' + (i === season ? ' cur' : '')); p._season = i; p.textContent = 'Season ' + (i + 1); pills.appendChild(p); }
+        for (let i = 0; i < seasons; i++) {
+          const seps = R.episodesFor(item, i);
+          const w = seps.reduce((a, e) => a + (W.epState(item.title, i, e.n, e.pct).watched ? 1 : 0), 0);
+          const done = w === seps.length, part = w > 0 && !done;
+          const p = el('div', 'spill foc' + (i === season ? ' cur' : '') + (done ? ' done' : part ? ' partial' : ''));
+          p._season = i;
+          p.innerHTML = 'Season ' + (i + 1)
+            + (done ? '<span class="spill-check" aria-label="all watched">✓</span>'
+                    : part ? `<span class="spill-frac" aria-label="${w} of ${seps.length} watched">${w}/${seps.length}</span>` : '');
+          if (part) { const pr = el('span', 'spill-prog'); pr.style.width = Math.round(w / seps.length * 100) + '%'; p.appendChild(pr); }
+          pills.appendChild(p);
+        }
         sec.appendChild(pills);
         d.appendChild(sec);
         const epRow = el('div', 'crow eprow');
@@ -951,6 +972,36 @@
       t.textContent = msg; t.style.opacity = '1'; clearTimeout(t._h); t._h = setTimeout(() => t.style.opacity = '0', 1700);
     }
 
+    /* ---- server message toast (Jellyfin “DisplayMessage” general command) ----
+       Shown top-right; on-screen time follows the client display formula (75ms/char,
+       1.5s base, clamped 3–15s). A server-supplied TimeoutMs, when > 0, wins. */
+    function calculateToastDurationMs(message) {
+      const baseTimeMs = 1500, msPerCharacter = 75, minDurationMs = 3000, maxDurationMs = 15000;
+      const calculatedTime = baseTimeMs + ((message ? message.length : 0) * msPerCharacter);
+      return Math.min(Math.max(calculatedTime, minDurationMs), maxDurationMs);
+    }
+    function showServerMessage(message, timeoutMs) {
+      const text = (message == null ? '' : String(message)).trim();
+      if (!text) return null;
+      let stack = stage.querySelector('.rv-msgstack');
+      if (!stack) { stack = el('div', 'rv-msgstack'); stage.appendChild(stack); }
+      const dur = (typeof timeoutMs === 'number' && timeoutMs > 0) ? timeoutMs : calculateToastDurationMs(text);
+      const m = el('div', 'rv-msg');
+      m.innerHTML = `<div class="ic" aria-hidden="true">✉</div><div class="tx">${esc(text)}</div><span class="rv-msg-bar"></span>`;
+      stack.appendChild(m);
+      const dismiss = () => { if (m._done) return; m._done = true; m.classList.remove('in'); m.classList.add('out'); setTimeout(() => m.remove(), 340); };
+      requestAnimationFrame(() => {
+        m.classList.add('in');
+        const bar = m.querySelector('.rv-msg-bar');
+        if (bar) { bar.style.transition = `transform ${dur}ms linear`; bar.style.transform = 'scaleX(0)'; }
+      });
+      m._h = setTimeout(dismiss, dur);
+      m.addEventListener('click', () => { clearTimeout(m._h); dismiss(); });
+      return m;
+    }
+    // Jellyfin admin → client entry point (in production, fed by the WS GeneralCommand handler).
+    window.raviloSendMessage = showServerMessage;
+
     /* ---- input ---- */
     if (interactive) {
       window.addEventListener('keydown', e => {
@@ -1069,6 +1120,9 @@
     setTimeout(() => focusRowByIndex(0), 40);
     cur = { r: 0, c: 0 }; focusEl(items(rows()[0])[0]);
     if (!startUser && interactive) openProfiles('gate');   // first run → "Who's watching?"
+
+    // demo: simulate an admin sending a message from the Jellyfin dashboard (single message field)
+    if (interactive) setTimeout(() => showServerMessage('Dinner in ten minutes — please pause your show and come to the kitchen.'), 2600);
 
     return { go, setSkin: () => {}, openProfiles };
   }

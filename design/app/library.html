@@ -20,9 +20,15 @@
   .seedfilter.on .seed-x { display: inline; }
   .seed-x:hover { color: var(--bad); }
   .searchwrap { position: relative; }
-  .search-note { position: absolute; top: 44px; left: 0; width: 320px; z-index: 30; display: none;
-    font-size: .8rem; line-height: 1.5; padding: 11px 13px; }
-  .searchwrap.show .search-note { display: block; }
+  /* Clear filters chip (Phase 101) — shown only when something is active */
+  .clearchip { display: none; align-items: center; gap: 6px; padding: 7px 13px; border-radius: 8px;
+    font-size: .82rem; font-weight: 600; cursor: pointer; color: var(--ink-soft);
+    background: transparent; border: 1px solid var(--line-2);
+    transition: color .18s, background .18s, border-color .18s, transform .18s; }
+  .clearchip.show { display: inline-flex; animation: clearIn .22s ease both; }
+  .clearchip:hover { color: #fff; background: var(--bad); border-color: transparent; transform: translateY(-1px); }
+  .clearchip .x { font-size: .72rem; opacity: .85; }
+  @keyframes clearIn { from { opacity: 0; transform: translateX(-6px) scale(.94); } to { opacity: 1; transform: none; } }
   .pop { position: relative; }
   .pop-panel { position: absolute; top: 40px; right: 0; width: 320px; z-index: 40; display: none; padding: 14px; }
   .pop.open .pop-panel { display: block; }
@@ -40,16 +46,6 @@
   .fxchip .rm:hover { opacity: 1; }
   .livecount { display: inline-flex; align-items: baseline; gap: 6px; }
   .livecount .n { font-family: 'Space Grotesk',sans-serif; font-weight: 700; font-size: 1.05rem; color: var(--ok); }
-
-  /* "Save filter as…" round-trip menu */
-  .saveas { position: relative; }
-  .saveas-menu { position: absolute; top: 40px; right: 0; width: 296px; z-index: 45; display: none; padding: 8px; }
-  .saveas.open .saveas-menu { display: block; }
-  .saveas-opt { display: flex; gap: 11px; align-items: center; padding: 9px 10px; border-radius: 9px; cursor: pointer; }
-  .saveas-opt:hover { background: var(--hi-soft); }
-  .saveas-opt .ic { width: 30px; height: 30px; flex: none; border-radius: 8px; background: var(--fill-3);
-    display: flex; align-items: center; justify-content: center; color: var(--acc-ink); }
-  .ravilo-mark { width: 18px; height: 18px; vertical-align: middle; filter: drop-shadow(0 0 6px rgba(123,110,240,.5)); }
 
   /* poster grid rendered from the shared title pool */
   .poster { position: relative; cursor: pointer; }
@@ -89,7 +85,6 @@
     <span class="spacer"></span>
     <span class="searchwrap" id="searchwrap">
       <input class="input" id="lib-search" placeholder="⌕ search title…" style="width:240px;" autocomplete="off">
-      <div class="card note blue search-note">Search matches <b>every title this item has ever had</b> — each language pulled from TMDB plus the original title. A show pulled once in Danish stays findable by its Danish name even after re-resolving.</div>
     </span>
     <span class="seg" id="kindseg"><span class="on" data-kind="movies">Movies</span><span data-kind="tv">TV</span></span>
   </div>
@@ -113,23 +108,9 @@
       <span class="seed-x" id="seed-x" title="Clear tracker filter">✕</span>
     </span>
 
-    <span class="spacer" style="flex:1"></span>
+    <span class="clearchip" id="lib-clear" title="Reset every filter, search and quick chip"><span class="x">✕</span> Clear filters</span>
 
-    <!-- Ravilo round-trip -->
-    <span class="saveas" id="saveas">
-      <span class="btn sm" id="saveas-btn" style="display:inline-flex;gap:7px;">
-        <svg class="ravilo-mark" viewBox="12 20 76 76" aria-hidden="true"><defs><linearGradient id="ravLib" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#7b6ef0"/><stop offset="1" stop-color="#3fb6f5"/></linearGradient></defs><path d="M22 52 C22 24 78 24 78 52 C66 45 59 45 50 49 C41 45 34 45 22 52 Z" fill="url(#ravLib)"/><g stroke="url(#ravLib)" stroke-width="4.5" stroke-linecap="round" fill="none"><path d="M33 51 q-5 12 1 20 q5 8 0 14"/><path d="M44 52 q-4 13 1 21 q4 9 0 13" opacity=".7"/><path d="M56 52 q4 13 -1 21 q-4 9 0 13" opacity=".7"/><path d="M67 51 q5 12 -1 20 q-5 8 0 14"/></g></svg>
-        Save filter as… ▾
-      </span>
-      <div class="card saveas-menu" id="saveas-menu">
-        <div class="tiny muted" style="padding:4px 8px 8px;">Push this filter into a viewer's TV layout — same conditions, no retyping.</div>
-        <div class="saveas-opt" data-as="channel"><span class="ic">📺</span><div><div style="font-weight:600;font-size:.88rem;">As a Channel</div><div class="tiny muted">logo button + scoped rows</div></div></div>
-        <div class="saveas-opt" data-as="row"><span class="ic">☰</span><div><div style="font-weight:600;font-size:.88rem;">As a Content row</div><div class="tiny muted">one row on Home</div></div></div>
-        <hr class="dash" style="margin:8px 4px;">
-        <div class="field" style="margin:4px 6px 8px;"><label>For viewer</label><span class="select"><span>Eyð Restorff</span> <span class="muted" style="font-size:.7rem;">▾</span></span></div>
-        <a class="tiny" href="ravilo-config.html" style="display:block;text-align:center;color:var(--acc-ink);padding:4px;">Open Ravilo config ↗</a>
-      </div>
-    </span>
+    <span class="spacer" style="flex:1"></span>
 
     <span class="select" style="width:auto;min-width:170px;"><span>sort: recently added</span></span>
   </div>
@@ -344,10 +325,9 @@
     appendSlice();
   }
 
-  function renderAll() { renderActive(); renderGrid(); }
+  function renderAll() { renderActive(); renderGrid(); syncClear(); }
 
   function openBuilder() {
-    document.getElementById('saveas').classList.remove('open');
     RB.openFilter({
       mode: 'library',
       edit: state.conditions.some(c => c.values.length),
@@ -361,6 +341,20 @@
 
   // wire controls
   document.getElementById('add-filter').onclick = openBuilder;
+
+  /* Clear filters (Phase 101) — one-click reset of the whole filter row */
+  const clearBtn = document.getElementById('lib-clear');
+  function anyActive() { return state.conditions.some(c => c.values.length) || quick !== 'all' || !!search || !!seedTracker; }
+  function syncClear() { if (clearBtn) clearBtn.classList.toggle('show', anyActive()); }
+  clearBtn.addEventListener('click', () => {
+    state.conditions = []; handoffLabel = '';
+    quick = 'all';
+    document.querySelectorAll('.filterbar .fchip[data-quick]').forEach(x => x.classList.toggle('on', x.dataset.quick === 'all'));
+    search = ''; document.getElementById('lib-search').value = '';
+    seedTracker = ''; syncSeedUI();
+    renderAll();
+    toast('Filters cleared');
+  });
 
   /* tracker seeding filter wiring (Phase 98) */
   const seedSel = document.getElementById('seed-tracker');
@@ -388,24 +382,7 @@
 
   // search
   const sw = document.getElementById('searchwrap'), si = document.getElementById('lib-search');
-  si.addEventListener('focus', () => sw.classList.add('show'));
-  si.addEventListener('blur', () => setTimeout(() => sw.classList.remove('show'), 150));
-  si.addEventListener('input', () => { search = si.value; renderGrid(); });
-
-  // Save filter as… round-trip
-  const saveas = document.getElementById('saveas');
-  document.getElementById('saveas-btn').addEventListener('click', e => {
-    e.stopPropagation();
-    if (!state.conditions.some(c => c.values.length)) { toast('Build a filter first — then save it to Ravilo'); openBuilder(); return; }
-    saveas.classList.toggle('open');
-  });
-  document.addEventListener('click', e => { if (!e.target.closest('#saveas')) saveas.classList.remove('open'); });
-  document.querySelectorAll('.saveas-opt').forEach(o => o.addEventListener('click', () => {
-    saveas.classList.remove('open');
-    const as = o.dataset.as === 'channel' ? 'Channel' : 'Content row';
-    const n = matches().length;
-    toast('Saved as a ' + as + ' for ' + VIEWER + ' · ' + n + ' titles');
-  }));
+  si.addEventListener('input', () => { search = si.value; renderGrid(); syncClear(); });
 
   // local toast (also used by the shared builder via window.__toast)
   function toast(msg) { const t = document.createElement('div'); t.className = 'toast'; t.textContent = msg; document.body.appendChild(t); setTimeout(() => t.remove(), 1900); }

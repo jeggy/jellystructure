@@ -13,6 +13,41 @@
   .field label { display: flex; align-items: center; }
   .tag-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex: none; }
 
+  /* age-rating certification badge + resolution trace (region cascade) */
+  .cert { display: inline-flex; align-items: stretch; overflow: hidden; border-radius: 7px; border: 1px solid var(--line-2); line-height: 1; vertical-align: middle; }
+  .cert .cert-rg { display: inline-flex; align-items: center; font-size: .62rem; font-weight: 700; letter-spacing: .5px; color: var(--ink-soft); background: var(--fill-3); padding: 0 6px; }
+  .cert .cert-code { display: inline-flex; align-items: center; font-size: .78rem; font-weight: 800; color: #fff; padding: 4px 8px; }
+  .cert.lvl-0 .cert-code { background: #2e9e6b; }
+  .cert.lvl-1 .cert-code { background: #3a9bd6; }
+  .cert.lvl-2 .cert-code { background: #d69a2a; color: #1a1204; }
+  .cert.lvl-3 .cert-code { background: #e0792f; }
+  .cert.lvl-4 .cert-code { background: #d64541; }
+
+  /* timestamps section + help tooltip */
+  .help-dot { display:inline-flex; align-items:center; justify-content:center; width:15px; height:15px; border-radius:50%; background:var(--fill-3); color:var(--ink-soft); font-size:.62rem; font-weight:700; cursor:help; position:relative; vertical-align:middle; margin-left:5px; }
+  .help-dot:hover { background:var(--hi); color:#fff; }
+  .help-dot .tip { position:absolute; bottom:150%; left:50%; transform:translateX(-50%); width:250px; background:var(--fill); border:1px solid var(--line-2); border-radius:9px; padding:10px 12px; font-size:.72rem; font-weight:400; line-height:1.55; color:var(--ink-soft); box-shadow:var(--shadow); display:none; z-index:50; text-align:left; }
+  .help-dot:hover .tip { display:block; }
+  .help-dot .tip b { color:var(--ink); }
+  .ts-cols { display:grid; grid-template-columns:1fr 1fr; gap:26px; }
+  @media (max-width:820px){ .ts-cols{ grid-template-columns:1fr; gap:10px; } }
+  .ts-h { font-size:.66rem; text-transform:uppercase; letter-spacing:.06em; color:var(--ink-dim); font-weight:700; margin-bottom:6px; }
+  .ts-row { display:flex; justify-content:space-between; align-items:center; gap:12px; padding:7px 0; border-top:1px dashed var(--line); }
+  .ts-row.first { border-top:none; }
+  .ts-k { font-size:.8rem; color:var(--ink-soft); display:inline-flex; align-items:center; }
+  .ts-v { font-family:'JetBrains Mono',monospace; font-size:.76rem; color:var(--ink); white-space:nowrap; }
+  .ts-v .ago { color:var(--ink-dim); }
+  .rc-trace { display: flex; flex-direction: column; }
+  .rc-tr { display: flex; align-items: center; gap: 9px; padding: 7px 4px; font-size: .78rem; }
+  .rc-tr + .rc-tr { border-top: 1px dashed var(--line); }
+  .rc-tr .rc-cc { font-family: 'JetBrains Mono', monospace; font-weight: 700; font-size: .66rem; padding: 2px 6px; border-radius: 5px; background: var(--fill-3); color: var(--ink); }
+  .rc-tr .rc-tn { color: var(--ink-soft); }
+  .rc-tr .rc-tv { margin-left: auto; color: var(--ink-dim); font-size: .72rem; }
+  .rc-tr.skip { opacity: .55; }
+  .rc-tr.skip .rc-cc { text-decoration: line-through; }
+  .rc-tr.use .cert { margin-left: auto; }
+  .rc-tr.rest { opacity: .4; }
+
   /* audio-language flag strip (pagebar) */
   .audio-flags { display: inline-flex; align-items: center; gap: 7px; }
   .audio-flags .af-label { font-size: .64rem; text-transform: uppercase; letter-spacing: .07em; color: var(--ink-dim); font-weight: 600; }
@@ -242,6 +277,7 @@
     <h1>Sintel <span class="muted">(2010)</span></h1>
     <span class="badge ok" id="match-badge">TMDB matched</span>
     <span class="audio-flags" id="audio-flags"></span>
+    <span class="cert lvl-2" title="United States · MPA — via region cascade (Denmark had no rating)"><span class="cert-rg">US</span><span class="cert-code">PG</span></span>
     <a id="seed-pill-link" href="#tab=seeding" style="text-decoration:none;"></a>
     <span class="spacer"></span>
     <!-- External links (Jellyfin / TMDB) -->
@@ -368,6 +404,19 @@
         </div>
         <div class="tiny muted" style="margin-top:8px;">Global fallback is <span class="lang">en</span> · <a href="settings.html">Settings → Metadata →</a></div>
       </div>
+      <!-- Resolved age rating (region cascade trace) -->
+      <div class="override">
+        <div class="row center"><h4 style="margin:0;">Age rating</h4><span class="spacer"></span><span class="badge info">region cascade</span></div>
+        <div class="tiny" style="margin-top:8px;">The certification shown in Ravilo is resolved by walking the global <b>region cascade</b> and using the first region TMDB has a rating for. <a href="settings.html?tab=metadata">Settings → Metadata →</a></div>
+        <div class="box flat" style="margin-top:10px;background:var(--bg-2);">
+          <div class="rc-trace">
+            <div class="rc-tr skip"><span class="rc-cc">DK</span><span class="rc-tn">Denmark · Medierådet</span><span class="rc-tv">no certification</span></div>
+            <div class="rc-tr use"><span class="rc-cc">US</span><span class="rc-tn">United States · MPA</span><span class="cert lvl-2"><span class="cert-rg">US</span><span class="cert-code">PG</span></span></div>
+            <div class="rc-tr rest"><span class="rc-cc">GB</span><span class="rc-tn">United Kingdom · BBFC</span><span class="rc-tv">not reached</span></div>
+          </div>
+        </div>
+        <div class="tiny muted" style="margin-top:8px;">Stored on the item &amp; filterable in the <a href="library.html">Library workbench</a>.</div>
+      </div>
     </div>
 
     <!-- FIELDS -->
@@ -410,6 +459,23 @@
       </div>
     </div>
   </div>
+  <div class="card" id="ts-card" style="margin-top:16px;">
+    <div class="row center"><h4 style="margin:0;">Timestamps</h4><span class="tiny muted" style="margin-left:8px;">when this title was created, updated &amp; scanned — in Jellystructure and in Jellyfin</span></div>
+    <hr class="dash" style="margin:10px 0 14px;">
+    <div class="ts-cols">
+      <div>
+        <div class="ts-h">Jellystructure</div>
+        <div class="ts-row first"><span class="ts-k">Created<span class="help-dot">?<span class="tip"><b>Created in Jellystructure</b> — when this title was first added to your library. This is the timestamp Ravilo's <b>Newly Added</b> rows sort by (for a series, the most-recently-added episode).</span></span></span><span class="ts-v">2024-03-08 14:02 <span class="ago">· 2y ago</span></span></div>
+        <div class="ts-row"><span class="ts-k">Updated</span><span class="ts-v">2026-06-27 09:14 <span class="ago">· 4d ago</span></span></div>
+        <div class="ts-row"><span class="ts-k">Last scanned</span><span class="ts-v">2026-06-30 03:12 <span class="ago">· 2d ago</span></span></div>
+      </div>
+      <div>
+        <div class="ts-h">Jellyfin</div>
+        <div class="ts-row first"><span class="ts-k">Created <span class="mono muted" style="font-size:.7rem;">DateCreated</span></span><span class="ts-v">2024-03-08 14:05</span></div>
+        <div class="ts-row"><span class="ts-k">Updated</span><span class="ts-v">2026-06-27 09:15</span></div>
+      </div>
+    </div>
+  </div>
   </div>
 
   <!-- ================= TRACKS & ORDER TAB ================= -->
@@ -446,7 +512,7 @@
         <div class="card" id="trk-writethru">
           <div class="row center" style="gap:10px;"><span class="op-ic" style="width:22px;height:22px;flex:none;border-radius:6px;display:inline-flex;align-items:center;justify-content:center;font-size:.7rem;background:var(--ok-soft);color:var(--ok);">✓</span><span class="tiny">Track edits are <b>written to disk immediately</b>.</span></div>
           <hr class="dash" style="margin:10px 0;">
-          <div class="tiny muted" style="line-height:1.6;">Flag &amp; language changes use <b>mkvpropedit</b> in place (~40ms, no re-encode). Re-ordering streams needs an <b>ffmpeg -c copy</b> remux (no re-encode, but rewrites the file). Press <b>Save &amp; sync to Jellyfin</b> to push now — otherwise Jellyfin picks the changes up on its next scan.</div>
+          <div class="tiny muted" style="line-height:1.6;">Flag &amp; language changes use <b>mkvpropedit</b> in place (~40ms, no re-encode). Re-ordering streams needs an <b>ffmpeg -c copy</b> remux (no re-encode, but rewrites the file) — so <b>Apply</b> <b>queues a background job</b> on the single media worker (one at a time; watch it in <a href="activity.html">Activity ▸ Jobs</a>) instead of blocking. Jellyfin picks the change up on its next scan, or when the job finishes if you chose <b>Save &amp; sync</b>.</div>
         </div>
       </div>
     </div>
@@ -841,7 +907,7 @@
 
     function rows() { return model[kind]; }
     const kindName = () => kind === 'audio' ? 'Audio' : 'Subtitle';
-    const ordMsg = () => kindName() + ' order written · ffmpeg remux (no re-encode)';
+    const ordMsg = () => kindName() + ' order queued · ffmpeg remux job (Activity ▸ Jobs)';
 
     // pagebar audio-language flags — driven by the same model.audio (physical track order).
     // Untagged tracks (no language) are skipped; if none are tagged the strip is hidden entirely.

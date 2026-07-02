@@ -88,11 +88,21 @@
 
   const HERO = new Set(['Wasteland Kings', 'Quantum Drift']);   // titles currently in the active viewer's hero carousel (demo)
 
+  /* ---- resolved age-rating certification (deterministic; mirrors the region cascade) ---- */
+  function certCode(t) {
+    const h = hashHue(t.title + (t.year || ''));
+    const kids = t.genres && (t.genres.includes('Animation') || t.genres.includes('Family'));
+    const tier = kids ? (h % 2) : (h % 5);
+    const dk = ['A', '7', '11', '15', '15'], us = ['G', 'PG', 'PG-13', 'R', 'NC-17'];
+    return ((h % 4) === 0 ? us : dk)[Math.min(tier, 4)];   // ~25% resolve via the US fallback
+  }
+
   const FACETS = {
     studio:  { label: 'Studio',  type: 'list', options: ['Blender','Kringvarp','DR','TV 2','HBO','Max Originals','Netflix','BBC'], get: t => [t.studio || t.network] },
     network: { label: 'Network', type: 'list', options: ['HBO','Max Originals','TV 2','Kringvarp','DR','Netflix','BBC','Blender'], get: t => [t.network] },
     genre:   { label: 'Genre',   type: 'list', options: Object.values(G), get: t => t.genres },
     tag:     { label: 'Tag',     type: 'list', options: ['nordic-noir','dansk-tv','4k','staff-pick','award-winner'], get: t => t.tags },
+    ageRating: { label: 'Age rating', type: 'list', options: ['A','7','11','15','G','PG','PG-13','R','NC-17'], get: t => [certCode(t)] },
     audioLang:  { label: 'Audio language', group: 'Audio track', type: 'list', options: ['English','Danish','Faroese','Spanish','Untagged'], get: audLangs },
     audioCodec: { label: 'Audio codec',    group: 'Audio track', type: 'list', options: ['E-AC-3','AC-3','DTS','AAC','TrueHD'], get: audCodecs },
     audioTitle: { label: 'Audio track title', group: 'Audio track', type: 'text', get: t => audTitles(t).join(' / ') },
