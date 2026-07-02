@@ -136,6 +136,8 @@ fun startServer(
     mediaJobQueue: dev.jellystructure.media.MediaJobQueue,
     sessionBridge: dev.jellystructure.tv.JellyfinSessionBridge,
     apiKeyStore: dev.jellystructure.auth.ApiKeyStore,
+    realtimeIngest: dev.jellystructure.media.RealtimeIngestService,
+    libraryListener: dev.jellystructure.tv.JellyfinLibraryListener,
 ): suspend () -> Unit {
     // Fire-and-forget work (scans, NFO/artwork pushes, image fetches) runs as appScope.launch{}.
     // On Kotlin/Native an exception escaping a launched coroutine reaches the global handler and
@@ -228,6 +230,12 @@ fun startServer(
                         val p = if (arrClient != null && s.url.isNotBlank()) arrClient.ping(s.url, s.apiKey) else ArrPing(false, "URL not configured")
                         checks.add(HealthCheck("Sonarr", p.ok, if (p.ok) "Connected" + (p.version?.let { " · v$it" } ?: "") else p.detail))
                     }
+                    // Phase 114 (FR B.3) — the Jellyfin LibraryChanged listener's own connection state.
+                    if (cfg.ingest.realtime) {
+                        val connected = libraryListener.connected
+                        val lastEvent = libraryListener.lastEventAt?.let { " · last event ${platform.posix.time(null) - it}s ago" } ?: ""
+                        checks.add(HealthCheck("Realtime ingest listener", connected, (if (connected) "Connected" else "Disconnected — reconnecting") + lastEvent))
+                    }
                     call.respond(mapOf("checks" to checks))
                 }
 
@@ -243,6 +251,7 @@ fun startServer(
                 jobsRoutes(mediaJobQueue)
                 dev.jellystructure.server.routes.remoteRoutes(deviceService, tvEventBus, mediaStore)
                 dev.jellystructure.server.routes.apiKeyManagementRoutes(apiKeyStore)
+                dev.jellystructure.server.routes.webhookRoutes(configStore, jellyfinClient, realtimeIngest, appScope, libraryListener)
                 acquisitionService?.let { acquisitionRoutes(it) }
                 if (chartRegistry != null && chartStore != null && chartIngest != null) {
                     chartRoutes(chartRegistry, chartStore, configStore, chartIngest)

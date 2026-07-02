@@ -85,6 +85,9 @@ data class JellyfinItem(
     @SerialName("DateCreated") val dateCreated: String? = null,
     // Phase 108: Jellyfin's own "last updated" timestamp, display only (Overview ▸ Timestamps).
     @SerialName("DateLastSaved") val dateLastSaved: String? = null,
+    // Phase 114 — set on Episode-type items; used to resolve a new episode back to its parent series
+    // for a targeted re-scan (jellystructure has no standalone "episode" ingest path).
+    @SerialName("SeriesId") val seriesId: String? = null,
 )
 
 @Serializable

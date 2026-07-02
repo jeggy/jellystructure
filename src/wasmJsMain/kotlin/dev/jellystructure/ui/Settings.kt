@@ -358,6 +358,29 @@ fun renderSettings(container: Element, scope: CoroutineScope, query: Map<String,
               <div class="hint" style="margin-top:2px">Root-folder paths reconcile with <strong>Library mapping</strong> by longest prefix.</div>
             </div>
 
+            <div class="card set-section" id="sect-ingest" data-tab="downloads">
+              <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
+                <h3 style="font-size:1rem;margin:0">Realtime ingest</h3>
+                <span id="ingest-listener-badge" class="badge" style="font-size:.7rem;background:var(--fill-2)">…</span>
+              </div>
+              <p class="hint" style="margin:0 0 14px">New imports reach Ravilo within minutes instead of waiting for the next scheduled scan. Add these as webhooks in Radarr/Sonarr (Settings → Connect → Webhooks) — leave everything unchecked except <strong>On Import</strong> / <strong>On Upgrade</strong>.</p>
+              <div class="field">
+                <label>Sonarr webhook URL</label>
+                <div style="display:flex;gap:8px">
+                  <input id="ingest-url-sonarr" class="input mono" type="text" readonly style="width:100%;font-size:.78rem">
+                  <button class="btn sm ghost ingest-copy-btn" data-target="ingest-url-sonarr">Copy</button>
+                </div>
+              </div>
+              <div class="field">
+                <label>Radarr webhook URL</label>
+                <div style="display:flex;gap:8px">
+                  <input id="ingest-url-radarr" class="input mono" type="text" readonly style="width:100%;font-size:.78rem">
+                  <button class="btn sm ghost ingest-copy-btn" data-target="ingest-url-radarr">Copy</button>
+                </div>
+              </div>
+              <div class="hint" id="ingest-listener-detail" style="margin-top:2px"></div>
+            </div>
+
             <div class="card set-section" id="sect-notifications" data-tab="notifications">
               <h3 style="font-size:1rem;margin:0 0 14px">Notifications</h3>
               <div class="field">
@@ -422,6 +445,7 @@ fun renderSettings(container: Element, scope: CoroutineScope, query: Map<String,
         attachListeners(scope)
     }
     scope.launch { loadApiKeysCard(scope) }
+    scope.launch { loadIngestCard() }
 
     wireSettingsTabs(container)
     showTab(query["tab"]) // Phase 55 — URL-addressable tab (?tab=…), defaults to connections
@@ -1542,6 +1566,50 @@ private fun refreshApiKeyList() {
                         refreshApiKeyList()
                     }
                 }
+            }
+        }
+    }
+}
+
+// Phase 114 — Settings ▸ Download tools ▸ "Realtime ingest" card.
+@Serializable
+private data class IngestStatus(
+    @SerialName("webhook_secret") val webhookSecret: String,
+    val realtime: Boolean,
+    @SerialName("listener_connected") val listenerConnected: Boolean,
+    @SerialName("last_event_at") val lastEventAt: Long? = null,
+)
+
+private suspend fun loadIngestCard() {
+    val status = runCatching { httpClient.get("/api/settings/ingest-status").body<IngestStatus>() }.getOrNull() ?: return
+    val origin = "${window.location.protocol}//${window.location.host}"
+    (document.getElementById("ingest-url-sonarr") as? HTMLInputElement)?.value = "$origin/api/webhooks/sonarr?secret=${status.webhookSecret}"
+    (document.getElementById("ingest-url-radarr") as? HTMLInputElement)?.value = "$origin/api/webhooks/radarr?secret=${status.webhookSecret}"
+
+    val badge = document.getElementById("ingest-listener-badge") as? HTMLElement
+    if (!status.realtime) {
+        badge?.textContent = "Off"
+    } else if (status.listenerConnected) {
+        badge?.textContent = "Connected"
+        badge?.setAttribute("style", "font-size:.7rem;background:var(--ok-soft,rgba(45,212,154,.15));color:var(--ok,#2dd49a)")
+    } else {
+        badge?.textContent = "Reconnecting…"
+        badge?.setAttribute("style", "font-size:.7rem;background:var(--warn-soft,rgba(240,180,60,.15));color:var(--warn,#f0b43c)")
+    }
+    (document.getElementById("ingest-listener-detail") as? HTMLElement)?.textContent =
+        if (status.realtime) "Also listening for manual library changes on Jellyfin's own change feed" + (if (status.lastEventAt != null) " — has seen at least one event" else " — no events seen yet")
+        else "Realtime ingest is off — new media only appears on the next scheduled scan"
+
+    document.querySelectorAll(".ingest-copy-btn").let { nodes ->
+        for (i in 0 until nodes.length) {
+            val btn = nodes.item(i) as? HTMLElement ?: continue
+            btn.addEventListener("click") {
+                val targetId = btn.getAttribute("data-target") ?: return@addEventListener
+                val value = (document.getElementById(targetId) as? HTMLInputElement)?.value ?: return@addEventListener
+                dev.jellystructure.copyToClipboard(value)
+                val original = btn.textContent
+                btn.textContent = "Copied!"
+                window.setTimeout({ btn.textContent = original }, 1500)
             }
         }
     }

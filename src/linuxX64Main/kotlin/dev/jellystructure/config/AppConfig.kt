@@ -20,6 +20,17 @@ data class AppConfig(
     val scan: ScanConfig = ScanConfig(),
     // Phase 98 — tracker registry (announce-host → name mapping)
     val trackers: List<TrackerEntry> = emptyList(),
+    // Phase 114 — realtime ingest (arr webhooks + Jellyfin LibraryChanged)
+    val ingest: IngestConfig = IngestConfig(),
+)
+
+// Phase 114 — realtime ingest. `realtime` defaults on when a Jellyfin token is configured (checked at
+// call sites, not here — this class has no access to the rest of AppConfig). `webhookSecret` gates
+// POST /api/webhooks/{sonarr,radarr}; generated once and shown in Settings ▸ Download tools.
+@Serializable
+data class IngestConfig(
+    val realtime: Boolean = true,
+    @SerialName("webhook_secret") val webhookSecret: String = "",
 )
 
 // Phase 91 — scan pipeline config: [[scan.pipeline]] array of steps
