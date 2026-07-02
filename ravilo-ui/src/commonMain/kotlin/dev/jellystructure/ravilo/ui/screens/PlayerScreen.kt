@@ -18,6 +18,9 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.hoverable
+import androidx.compose.foundation.interaction.HoverInteraction
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -78,10 +81,9 @@ import dev.jellystructure.ravilo.ui.seams.languageName
 import dev.jellystructure.ravilo.ui.seams.playerBackdropColor
 import dev.jellystructure.ravilo.ui.seams.playerTapTogglesChrome
 import dev.jellystructure.ravilo.ui.seams.setPointerCursorHidden
+import dev.jellystructure.ravilo.ui.seams.wakeOnPointerMove
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.ui.input.pointer.PointerEventType
-import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.input.pointer.pointerInput
 import dev.jellystructure.ravilo.ui.theme.RaviloColors
 import dev.jellystructure.ravilo.ui.theme.RaviloMotion
@@ -114,6 +116,18 @@ private fun transportOrder(hasNextEp: Boolean): List<PlFocus> =
         if (hasNextEp) add(PlFocus.NEXT_EP)
         add(PlFocus.BACK)
     }
+
+// R157 (FR-R157-2.2) — hoverable()/HoverInteraction is cross-platform commonMain, unlike the
+// lower-level onPointerEvent (skiko-only — desktop/web — unavailable on Android). Shared by every
+// transport button below instead of repeating the interaction-source + LaunchedEffect boilerplate.
+@Composable
+private fun Modifier.hoverToCall(onHover: () -> Unit): Modifier {
+    val interactionSource = remember { MutableInteractionSource() }
+    LaunchedEffect(interactionSource) {
+        interactionSource.interactions.collect { if (it is HoverInteraction.Enter) onHover() }
+    }
+    return this.hoverable(interactionSource)
+}
 
 // ─── Top-level composable ─────────────────────────────────────────────────────
 
@@ -353,6 +367,10 @@ fun PlayerScreen(
         if (!pickerOpen && !nextUpVisible && !epRailOpen) chromeVisible = false
     }
 
+    // R157 (FR-R157-1.3 fallback) — web only, no-op elsewhere: keep the <video> element's z-order
+    // in sync with chrome visibility every time it changes.
+    LaunchedEffect(chromeVisible) { player.setChromeVisible(chromeVisible) }
+
     // R157 (FR-R157-3.2) — cursor auto-hides after a couple of seconds of no pointer movement during
     // playback (no-op on Android/TV); reappears immediately on the next move via the restart above.
     LaunchedEffect(pointerActivityRevision) {
@@ -400,7 +418,7 @@ fun PlayerScreen(
         modifier = Modifier
             .fillMaxSize()
             .background(playerBackdropColor)
-            .onPointerEvent(PointerEventType.Move) { wake(); pointerActivityRevision++ }
+            .wakeOnPointerMove { wake(); pointerActivityRevision++ }
             .dpadFocusable(
                 focusRequester = playerFR,
                 onFocused = {},
@@ -619,6 +637,28 @@ fun PlayerScreen(
                 nextUpVisible   = nextUpVisible,
                 directPlay      = (sessionState as? PlayerSessionState.Ready)?.ticket?.directPlay ?: true,
                 container       = (sessionState as? PlayerSessionState.Ready)?.ticket?.container ?: "",
+                // R157 — PlayerChrome is a stateless presentational composable; it reports which
+                // logical control was clicked/hovered and this dispatcher (which has wake/skip/
+                // togglePlay/etc in scope) does the actual work, mirroring the root's onSelect dispatch.
+                onControlClick = { clicked ->
+                    wake()
+                    when (clicked) {
+                        PlFocus.BACK      -> onBack()
+                        PlFocus.SKIP_BACK -> skip(-SKIP_BACK_MS)
+                        PlFocus.PLAY      -> togglePlay()
+                        PlFocus.SKIP_FWD  -> skip(SKIP_FWD_MS)
+                        PlFocus.TRACKS    -> {
+                            pickerOpen = true
+                            pickerIdx = if (pickerTab == 0) selectedAudio else (selectedSub + 1).coerceIn(0, subOptions.lastIndex)
+                        }
+                        PlFocus.NEXT_EP   -> advanceNext()
+                        else -> {}
+                    }
+                },
+                onControlHover = { hovered -> focus = hovered },
+                onSeekStart = { ms -> wake(); focus = PlFocus.SEEK_BAR; scrubbing = true; scrubPos = ms },
+                onSeekDrag = { ms -> scrubPos = ms },
+                onSeekEnd = { commitScrub() },
             )
         }
 
@@ -698,6 +738,11 @@ private fun PlayerChrome(
     nextUpVisible: Boolean,
     directPlay: Boolean,
     container: String,
+    onControlClick: (PlFocus) -> Unit,
+    onControlHover: (PlFocus) -> Unit,
+    onSeekStart: (Long) -> Unit,
+    onSeekDrag: (Long) -> Unit,
+    onSeekEnd: () -> Unit,
 ) {
     val topScrim = remember {
         Brush.verticalGradient(listOf(Color.Black.copy(alpha = 0.72f), Color.Transparent))
@@ -726,8 +771,8 @@ private fun PlayerChrome(
                 // Matches the root's onSelect { focus == PlFocus.BACK -> onBack() } — a direct click
                 // on the visible back button navigates immediately (not the two-press hardware-Back
                 // semantics in the root's onBack, which first closes pickers/rail/chrome).
-                onClick = { wake(); onBack() },
-                onHover = { focus = PlFocus.BACK },
+                onClick = { onControlClick(PlFocus.BACK) },
+                onHover = { onControlHover(PlFocus.BACK) },
             )
             Spacer(Modifier.weight(1f))
             StreamPill(colors = colors, directPlay = directPlay, container = container)
@@ -772,11 +817,11 @@ private fun PlayerChrome(
                 scrubbing  = scrubbing,
                 scrubPos   = scrubPos,
                 barFocused = focus == PlFocus.SEEK_BAR,
-                // R157 (FR-R157-2.3) — click-to-seek / drag-to-scrub, reusing the existing D-pad
-                // scrub state (scrubbing/scrubPos) and commitScrub() so both input paths converge.
-                onSeekStart = { ms -> wake(); focus = PlFocus.SEEK_BAR; scrubbing = true; scrubPos = ms },
-                onSeekDrag = { ms -> scrubPos = ms },
-                onSeekEnd = { commitScrub() },
+                // R157 (FR-R157-2.3) — click-to-seek / drag-to-scrub; forwarded from PlayerScreen,
+                // which owns the actual scrub state and commitScrub().
+                onSeekStart = onSeekStart,
+                onSeekDrag = onSeekDrag,
+                onSeekEnd = onSeekEnd,
             )
 
             Spacer(Modifier.height(6.dp))
@@ -788,33 +833,29 @@ private fun PlayerChrome(
             ) {
                 SkipButton(
                     label = "−10s", focused = focus == PlFocus.SKIP_BACK,
-                    onClick = { wake(); skip(-SKIP_BACK_MS) },
-                    onHover = { focus = PlFocus.SKIP_BACK },
+                    onClick = { onControlClick(PlFocus.SKIP_BACK) },
+                    onHover = { onControlHover(PlFocus.SKIP_BACK) },
                 )
                 PlayPauseButton(
                     isPlaying = isPlaying, focused = focus == PlFocus.PLAY,
-                    onClick = { wake(); togglePlay() },
-                    onHover = { focus = PlFocus.PLAY },
+                    onClick = { onControlClick(PlFocus.PLAY) },
+                    onHover = { onControlHover(PlFocus.PLAY) },
                 )
                 SkipButton(
                     label = "+30s", focused = focus == PlFocus.SKIP_FWD,
-                    onClick = { wake(); skip(SKIP_FWD_MS) },
-                    onHover = { focus = PlFocus.SKIP_FWD },
+                    onClick = { onControlClick(PlFocus.SKIP_FWD) },
+                    onHover = { onControlHover(PlFocus.SKIP_FWD) },
                 )
                 Spacer(Modifier.weight(1f))
                 TrackButton(
                     label = str("player.audio_subs"), focused = focus == PlFocus.TRACKS,
-                    onClick = {
-                        wake()
-                        pickerOpen = true
-                        pickerIdx = if (pickerTab == 0) selectedAudio else (selectedSub + 1).coerceIn(0, subOptions.lastIndex)
-                    },
-                    onHover = { focus = PlFocus.TRACKS },
+                    onClick = { onControlClick(PlFocus.TRACKS) },
+                    onHover = { onControlHover(PlFocus.TRACKS) },
                 )
                 if (hasNextEp) TrackButton(
                     label = ">> ${str("player.next")}", focused = focus == PlFocus.NEXT_EP,
-                    onClick = { wake(); advanceNext() },
-                    onHover = { focus = PlFocus.NEXT_EP },
+                    onClick = { onControlClick(PlFocus.NEXT_EP) },
+                    onHover = { onControlHover(PlFocus.NEXT_EP) },
                 )
             }
 
@@ -987,7 +1028,7 @@ private fun PlayPauseButton(isPlaying: Boolean, focused: Boolean, onClick: () ->
             // Compose-focus owner (D-pad navigation is hand-rolled via the PlFocus enum); making every
             // button its own focus node would fight that model and risk breaking D-pad/TV navigation.
             .pointerInput(onClick) { detectTapGestures(onTap = { onClick() }) }
-            .onPointerEvent(PointerEventType.Enter) { onHover() },
+            .hoverToCall(onHover),
         contentAlignment = Alignment.Center,
     ) {
         Canvas(modifier = Modifier.size(if (isPlaying) 16.dp else 14.dp)) {
@@ -1033,7 +1074,7 @@ private fun SkipButton(label: String, focused: Boolean, onClick: () -> Unit = {}
                 shape = RoundedCornerShape(10.dp),
             )
             .pointerInput(onClick) { detectTapGestures(onTap = { onClick() }) }
-            .onPointerEvent(PointerEventType.Enter) { onHover() }
+            .hoverToCall(onHover)
             .padding(horizontal = 12.dp),
         contentAlignment = Alignment.Center,
     ) {
@@ -1063,7 +1104,7 @@ private fun TrackButton(label: String, focused: Boolean, onClick: () -> Unit = {
                 shape = RoundedCornerShape(10.dp),
             )
             .pointerInput(onClick) { detectTapGestures(onTap = { onClick() }) }
-            .onPointerEvent(PointerEventType.Enter) { onHover() }
+            .hoverToCall(onHover)
             .padding(horizontal = 14.dp),
         contentAlignment = Alignment.Center,
     ) {
@@ -1084,7 +1125,7 @@ private fun BackButton(focused: Boolean, onClick: () -> Unit = {}, onHover: () -
         horizontalArrangement = Arrangement.spacedBy(10.dp),
         modifier = Modifier
             .pointerInput(onClick) { detectTapGestures(onTap = { onClick() }) }
-            .onPointerEvent(PointerEventType.Enter) { onHover() },
+            .hoverToCall(onHover),
     ) {
         Box(
             modifier = Modifier

@@ -63,8 +63,9 @@ fun ServerMessageHost(modifier: Modifier = Modifier) {
 
     LaunchedEffect(messages) {
         messages.collect { envelope ->
+            val header = envelope.header
             val text = buildString {
-                if (!envelope.header.isNullOrBlank()) { append(envelope.header.trim()); append(" — ") }
+                if (!header.isNullOrBlank()) { append(header.trim()); append(" — ") }
                 append(envelope.text)
             }.trim()
             if (text.isEmpty()) return@collect

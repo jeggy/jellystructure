@@ -35,6 +35,9 @@ import dev.jellystructure.chart.ChartRegistry
 import dev.jellystructure.chart.ChartStore
 import dev.jellystructure.server.routes.acquisitionRoutes
 import dev.jellystructure.server.routes.chartRoutes
+import dev.jellystructure.server.routes.remoteRoutes
+import dev.jellystructure.server.routes.apiKeyManagementRoutes
+import dev.jellystructure.server.routes.webhookRoutes
 import dev.jellystructure.torrent.QBittorrentClient
 import dev.jellystructure.torrent.SeedingGuard
 import dev.jellystructure.torrent.SeedingSnapshot
@@ -149,13 +152,17 @@ fun startServer(
         println("[ERROR] Uncaught background coroutine exception (server kept alive): ${e.message}")
         println(e.stackTraceToString())
     })
+    // Ktor 3.x: the port-based embeddedServer overloads have no `configure` param — the configure
+    // variant takes an environment + explicit connectors instead.
     val engine = embeddedServer(
         CIO,
-        port = port,
-        // Phase 118 (FR C.6) — the only inbound FD knob CIO Native exposes. Trims idle keep-alive
-        // connections so they don't sit on the FD budget; a reverse proxy is the real concurrency cap
-        // for any internet-facing deployment.
-        configure = { connectionIdleTimeoutSeconds = 20 },
+        configure = {
+            connectors.add(io.ktor.server.engine.EngineConnectorBuilder().apply { this.port = port })
+            // Phase 118 (FR C.6) — the only inbound FD knob CIO Native exposes. Trims idle keep-alive
+            // connections so they don't sit on the FD budget; a reverse proxy is the real concurrency
+            // cap for any internet-facing deployment.
+            connectionIdleTimeoutSeconds = 20
+        },
     ) {
         install(ContentNegotiation) { json(Json { ignoreUnknownKeys = true }) }
         install(WebSockets) {
@@ -271,7 +278,7 @@ fun startServer(
                     // Phase 114 (FR B.3) — the Jellyfin LibraryChanged listener's own connection state.
                     if (cfg.ingest.realtime) {
                         val connected = libraryListener.connected
-                        val lastEvent = libraryListener.lastEventAt?.let { " · last event ${platform.posix.time(null) - it}s ago" } ?: ""
+                        val lastEvent = libraryListener.lastEventAt?.let { " · last event ${dev.jellystructure.nowEpochSec() - it}s ago" } ?: ""
                         checks.add(HealthCheck("Realtime ingest listener", connected, (if (connected) "Connected" else "Disconnected — reconnecting") + lastEvent))
                     }
                     call.respond(mapOf("checks" to checks))
@@ -287,9 +294,9 @@ fun startServer(
                 metadataRoutes(mediaStore, jsTagStore, logoDownloader, seedingSnapshot, configStore)
                 trackRoutes(mediaStore, configStore, jellyfinClient, mediaHistory, seedingGuard, arrRescan, appScope, broadcaster, mediaJobQueue)
                 jobsRoutes(mediaJobQueue)
-                dev.jellystructure.server.routes.remoteRoutes(deviceService, tvEventBus, mediaStore)
-                dev.jellystructure.server.routes.apiKeyManagementRoutes(apiKeyStore)
-                dev.jellystructure.server.routes.webhookRoutes(configStore, jellyfinClient, realtimeIngest, appScope, libraryListener)
+                remoteRoutes(deviceService, tvEventBus, mediaStore)
+                apiKeyManagementRoutes(apiKeyStore)
+                webhookRoutes(configStore, jellyfinClient, realtimeIngest, appScope, libraryListener)
                 acquisitionService?.let { acquisitionRoutes(it) }
                 if (chartRegistry != null && chartStore != null && chartIngest != null) {
                     chartRoutes(chartRegistry, chartStore, configStore, chartIngest)

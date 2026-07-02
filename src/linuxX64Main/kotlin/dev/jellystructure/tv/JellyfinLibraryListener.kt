@@ -11,6 +11,7 @@ import io.ktor.client.plugins.websocket.WebSockets
 import io.ktor.client.plugins.websocket.webSocket
 import io.ktor.websocket.Frame
 import io.ktor.websocket.readText
+import kotlin.concurrent.Volatile
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -24,7 +25,6 @@ import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
-import platform.posix.time
 
 private const val KEEPALIVE_INTERVAL_MS = 30_000L
 private const val RECONNECT_BASE_MS = 2_000L
@@ -105,7 +105,7 @@ class JellyfinLibraryListener(
                             runCatching {
                                 val added = parseItemsAdded(frame.readText())
                                 if (added.isNotEmpty()) {
-                                    lastEventAt = time(null)
+                                    lastEventAt = dev.jellystructure.nowEpochSec()
                                     pendingIds.addAll(added)
                                     scheduleFlush()
                                 }

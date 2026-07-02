@@ -180,6 +180,9 @@ actual class RaviloPlayer actual constructor() {
         exo.release()
     }
 
+    // No-op — the video surface is already in-scene via TextureView; nothing to swap z-order with.
+    actual fun setChromeVisible(visible: Boolean) {}
+
     actual val positionMs: Long get() = exo.currentPosition.coerceAtLeast(0)
     actual val durationMs: Long get() = exo.duration.let { if (it == C.TIME_UNSET) 0L else it.coerceAtLeast(0) }
     actual val bufferedMs: Long get() = exo.bufferedPosition.coerceAtLeast(0)

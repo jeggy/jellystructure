@@ -8,18 +8,30 @@ import kotlinx.browser.document
 import org.w3c.dom.HTMLVideoElement
 
 /**
- * Web actual: a browser <video> element appended to the document body, positioned behind
- * the Compose/skiko canvas so the shared chrome renders on top.
+ * Web actual: a browser <video> element appended to the document body.
  * HLS is handled by browser-native support (Safari/Edge) or a future hls.js injection.
  * Audio track selection is handled by the browser; subtitle tracks use <track> elements.
+ *
+ * R157: this Compose Multiplatform version's `CanvasBasedWindow` exposes no canvas-alpha/opaque
+ * toggle (verified directly against the API — no such parameter exists), so the canvas can't be made
+ * transparent to let the video show through underneath it as originally hoped. Instead [setChromeVisible]
+ * swaps the video's z-order with the canvas (`z-index: 1` in index.html): above it — with
+ * `pointer-events: none` set once here, so clicks always pass through to the canvas beneath regardless
+ * of z-order — while chrome is hidden (so the picture is visible), behind it while chrome is shown (so
+ * Compose's opaque chrome paints over it correctly). See RaviloPlayer.kt's doc comment.
  */
 actual class RaviloPlayer actual constructor() {
     private val video: HTMLVideoElement = (document.createElement("video") as HTMLVideoElement).also { v ->
         // R77: object-fit:contain preserves the video's native DAR, letterboxing/pillarboxing
-        // within the viewport. background:#000 fills the bars.
-        v.style.cssText = "position:fixed;top:0;left:0;width:100%;height:100%;object-fit:contain;background:#000;z-index:0"
+        // within the viewport. background:#000 fills the bars. Starts behind the canvas (z-index 0 <
+        // the canvas's 1 in index.html) — chrome is visible by default when the player opens.
+        v.style.cssText = "position:fixed;top:0;left:0;width:100%;height:100%;object-fit:contain;background:#000;z-index:0;pointer-events:none"
         v.controls = false
         document.body?.appendChild(v)
+    }
+
+    actual fun setChromeVisible(visible: Boolean) {
+        video.style.zIndex = if (visible) "0" else "2"
     }
 
     private var loadedSubtitles: List<SubTrack> = emptyList()

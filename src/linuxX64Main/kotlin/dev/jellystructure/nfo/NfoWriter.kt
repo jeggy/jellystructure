@@ -36,7 +36,7 @@ object NfoWriter {
      *  [MediaItem.nfoWrittenAt]/[MediaItem.nfoHash] (Phase 115 sync-state tracking). */
     suspend fun writeTracked(item: MediaItem, serverUrl: String? = null, ageRatingCascade: List<String> = emptyList()): Result<WriteResult> {
         val hash = contentHash(item, serverUrl, ageRatingCascade)
-        return write(item, serverUrl, ageRatingCascade).map { path -> WriteResult(path, hash, platform.posix.time(null)) }
+        return write(item, serverUrl, ageRatingCascade).map { path -> WriteResult(path, hash, dev.jellystructure.nowEpochSec()) }
     }
 
     suspend fun write(item: MediaItem, serverUrl: String? = null, ageRatingCascade: List<String> = emptyList()): Result<String> {
