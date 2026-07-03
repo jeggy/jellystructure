@@ -21,11 +21,13 @@ import dev.jellystructure.shared.tv.MatchMode
 import dev.jellystructure.shared.tv.HeroConfig
 import dev.jellystructure.shared.tv.RaviloConfig
 import dev.jellystructure.shared.tv.PortraitConfig
+import dev.jellystructure.shared.tv.ResolvedBehaviour
 import dev.jellystructure.shared.tv.RowConfig
 import dev.jellystructure.shared.tv.RowKind
 import dev.jellystructure.shared.tv.Skin
 import dev.jellystructure.shared.tv.TileShape
 import dev.jellystructure.shared.tv.UiDensity
+import dev.jellystructure.shared.tv.ViewerSettingsRequest
 import kotlin.js.JsString
 import kotlinx.browser.document
 import kotlinx.browser.window
@@ -220,8 +222,8 @@ private fun buildShell(): String {
       } else ""}
       <div class="tiny" id="rav-scope-hint" style="flex:1;color:var(--ink-soft)">
         ${if (currentScopeIsGlobal) "Default layout for all users. Any user without a custom layout sees this."
-          else if (currentHasOverride) "Custom layout — overrides the global for this user only. <b>Global changes won't reach them.</b>"
-          else "This user uses the global layout."}
+          else if (currentHasOverride) "Custom <b>layout</b> — overrides the global hero/channels/rows/Top 10 for this user only. <b>Global layout changes won't reach them</b> (their Behaviour &amp; preferences below are unaffected either way)."
+          else "This user follows the global layout. Behaviour &amp; preferences below are independent and always editable."}
       </div>
       ${if (!currentScopeIsGlobal && currentHasOverride) """<button id="rav-remove-override" class="btn sm ghost" style="color:var(--bad)">Remove custom layout</button>""" else ""}
     </div>
@@ -230,7 +232,8 @@ private fun buildShell(): String {
       <span style="font-size:1.4rem">🔒</span>
       <div class="col" style="flex:1">
         <b>${users.find { it.id == currentUserId }?.displayName?.htmlEsc() ?: currentUserId} uses the global layout</b>
-        <div class="tiny muted">Create a custom layout to give them their own personalised Ravilo home.</div>
+        <div class="tiny muted">Create a custom layout to give them their own personalised hero, channels, rows &amp; Top 10 — a
+          <b>Behaviour &amp; preferences</b> override doesn't need one, see below.</div>
       </div>
       <button id="rav-create-override" class="btn">Create custom layout</button>
     </div>
@@ -339,6 +342,49 @@ private fun wireShell(container: Element, scope: CoroutineScope) {
                 },
                 onFailure = { showMsg(msg, "Failed: ${it.message}", ok = false) },
             )
+        }
+    }
+
+    // R162: behaviour & preferences overlay (user scope) — a single delegated listener on the stable
+    // #sect-behaviour element (its children are replaced on every renderBehaviour call, but the element
+    // itself survives, so this attaches exactly once per full renderFull/wireShell pass). Every change
+    // applies immediately via the dedicated /tv/admin/behaviour endpoint — independent of the big Save
+    // button's layout-override lock, per FR-R162-1/0.
+    val behSect = container.querySelector("#sect-behaviour")
+    behSect?.addEventListener("click") { ev ->
+        val t = ev.target as? HTMLElement ?: return@addEventListener
+        val uid = currentUserId
+        when {
+            t.id == "beh-retry" -> { resolvedBehaviourUserId = null; renderBehaviour(container) }
+            t.hasAttribute("data-beh-tile") -> {
+                val shape = runCatching { TileShape.valueOf(t.getAttribute("data-beh-tile") ?: "") }.getOrNull() ?: return@addEventListener
+                scope.launch {
+                    resolvedBehaviour = runCatching { RaviloApi.setBehaviour(uid, ViewerSettingsRequest(tileShape = shape)) }.getOrNull()
+                    if (uid == currentUserId) renderBehaviour(container)
+                }
+            }
+            t.id.startsWith("beh-reset-") -> {
+                val field = t.id.removePrefix("beh-reset-")
+                scope.launch {
+                    resolvedBehaviour = runCatching { RaviloApi.resetBehaviourField(uid, field) }.getOrNull()
+                    if (uid == currentUserId) renderBehaviour(container)
+                }
+            }
+        }
+    }
+    behSect?.addEventListener("change") { ev ->
+        val t = ev.target
+        val uid = currentUserId
+        val req = when {
+            t is HTMLSelectElement && t.id == "beh-u-lang" -> ViewerSettingsRequest(uiLanguage = t.value)
+            t is HTMLSelectElement && t.id == "beh-u-skin" -> runCatching { Skin.valueOf(t.value) }.getOrNull()?.let { ViewerSettingsRequest(skin = it) }
+            t is HTMLInputElement && t.id == "beh-u-progress" -> ViewerSettingsRequest(showContinueProgress = t.checked)
+            t is HTMLInputElement && t.id == "beh-u-autoplay" -> ViewerSettingsRequest(autoplayNext = t.checked)
+            else -> null
+        } ?: return@addEventListener
+        scope.launch {
+            resolvedBehaviour = runCatching { RaviloApi.setBehaviour(uid, req) }.getOrNull()
+            if (uid == currentUserId) renderBehaviour(container)
         }
     }
 
@@ -2131,8 +2177,38 @@ private val TILE_SHAPE_LABELS = mapOf(TileShape.POSTER to "Standard poster", Til
 private val DENSITY_LABELS = mapOf(UiDensity.COMPACT to "Compact (smaller)", UiDensity.COZY to "Cozy", UiDensity.COMFORTABLE to "Comfortable (default)")
 private val LANGS = listOf("en" to "English", "da" to "Dansk", "fo" to "Føroyskt")
 
+// R162: cache of the resolved per-user behaviour overlay, keyed by user id so a scope/user switch
+// re-fetches rather than showing stale state. Null value = not fetched yet / fetch failed.
+private var resolvedBehaviour: ResolvedBehaviour? = null
+private var resolvedBehaviourUserId: String? = null
+
 private fun renderBehaviour(container: Element) {
     val sect = container.querySelector("#sect-behaviour") ?: return
+    if (currentScopeIsGlobal) {
+        renderBehaviourGlobal(sect)
+        return
+    }
+    if (resolvedBehaviourUserId != currentUserId) {
+        resolvedBehaviour = null
+        sect.innerHTML = """<div class="card" style="padding:18px 20px;margin-bottom:18px"><div class="tiny muted">Loading…</div></div>"""
+        val scope = rcScope ?: return
+        val uid = currentUserId
+        scope.launch {
+            val resolved = runCatching { RaviloApi.getBehaviour(uid) }.getOrNull()
+            if (uid == currentUserId) {
+                resolvedBehaviour = resolved
+                resolvedBehaviourUserId = uid
+                renderBehaviour(container)
+            }
+        }
+        return
+    }
+    renderBehaviourUser(sect)
+}
+
+/** Global scope: no overlay concept — these fields ARE the shared defaults, bundled into `currentConfig`
+ *  and saved through the normal Save button like heroes/channels/rows. */
+private fun renderBehaviourGlobal(sect: Element) {
     val skinOptions = Skin.entries.joinToString("") { s ->
         val sel = if (s == currentConfig.defaultSkin) " selected" else ""
         """<option value="${s.name}"$sel>${s.name.lowercase().replaceFirstChar { it.uppercase() }}</option>"""
@@ -2147,20 +2223,24 @@ private fun renderBehaviour(container: Element) {
     }
     val overrideChecked = if (currentConfig.allowSkinOverride) " checked" else ""
     val progressChecked = if (currentConfig.showContinueProgress) " checked" else ""
+    val autoplayChecked = if (currentConfig.autoplayNext) " checked" else ""
     val langOptions = LANGS.joinToString("") { (code, label) ->
         val sel = if (code == currentConfig.uiLanguage) " selected" else ""
         """<option value="$code"$sel>$label</option>"""
     }
     sect.innerHTML = """
         <div class="card" style="padding:18px 20px;margin-bottom:18px">
-          <div style="font-weight:600;margin-bottom:14px">Behaviour</div>
+          <div style="font-weight:600;margin-bottom:2px">Behaviour &amp; preferences</div>
+          <div class="tiny muted" style="margin-bottom:14px">Defaults for every user. A per-user override (set below when viewing a specific user) or the
+            viewer's own on-TV choice (language/skin) takes precedence over these — see R161/R162. This is
+            separate from the <b>layout</b> override above (hero/channels/rows/Top 10).</div>
           <div style="display:grid;gap:14px">
             <label style="display:flex;align-items:center;justify-content:space-between;gap:12px">
-              <span style="font-size:.9rem">Interface language</span>
+              <span style="font-size:.9rem">Interface language <span class="tiny muted">· viewer-editable on the TV</span></span>
               <select id="beh-lang" class="input" style="width:160px;font-size:.85rem">$langOptions</select>
             </label>
             <label style="display:flex;align-items:center;justify-content:space-between;gap:12px">
-              <span style="font-size:.9rem">Default skin</span>
+              <span style="font-size:.9rem">Default skin <span class="tiny muted">· viewer-editable on the TV</span></span>
               <select id="beh-skin" class="input" style="width:160px;font-size:.85rem">$skinOptions</select>
             </label>
             <div style="display:flex;align-items:center;justify-content:space-between;gap:12px">
@@ -2179,7 +2259,95 @@ private fun renderBehaviour(container: Element) {
               <input type="checkbox" id="beh-progress"$progressChecked>
               Show progress bar on Continue Watching tiles
             </label>
+            <label style="display:flex;align-items:center;gap:10px;font-size:.9rem">
+              <input type="checkbox" id="beh-autoplay"$autoplayChecked>
+              Autoplay next episode
+            </label>
           </div>
+        </div>
+    """.trimIndent()
+}
+
+/** One resolved-field row: control + its "Following global"/"Overridden"/"Set by viewer" state,
+ *  with a Reset action when there's something to reset. `disabledAttr` locks the control itself when
+ *  the viewer set it on their TV — the editor's only action there is Reset (R161's guardrail). */
+private fun behFieldRow(label: String, sub: String?, controlHtml: String, source: String, resetAttr: String): String {
+    val stateHtml = when (source) {
+        "viewer" -> """<span class="tiny" style="color:#2dd49a;font-weight:600">✱ Set by viewer on their TV</span><span class="btn sm ghost" $resetAttr style="padding:2px 9px;font-size:.72rem">Reset to default</span>"""
+        "admin"  -> """<span class="tiny" style="color:var(--acc-ink);font-weight:600">Overridden for this user</span><span class="btn sm ghost" $resetAttr style="padding:2px 9px;font-size:.72rem">Reset to global</span>"""
+        else     -> """<span class="tiny muted">Following global</span>"""
+    }
+    val subHtml = if (sub != null) """<div class="tiny muted">$sub</div>""" else ""
+    return """
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 0;border-bottom:1px solid var(--line)">
+          <div><span style="font-size:.9rem">$label</span>$subHtml</div>
+          <div style="display:flex;flex-direction:column;align-items:flex-end;gap:5px">
+            $controlHtml
+            <div style="display:flex;align-items:center;gap:8px">$stateHtml</div>
+          </div>
+        </div>"""
+}
+
+/**
+ * R162: user scope — each field independently resolves viewer → admin → global, is editable here
+ * (never gated by "Create custom layout"), and applies **immediately** on change (not the big Save
+ * button — setting/clearing one of these never touches the layout record, so it has nothing to do
+ * with that button's lock/scope). A viewer-set value locks its control; only Reset is offered.
+ */
+private fun renderBehaviourUser(sect: Element) {
+    val r = resolvedBehaviour
+    if (r == null) {
+        sect.innerHTML = """<div class="card" style="padding:18px 20px;margin-bottom:18px"><div class="tiny muted">Couldn't load behaviour preferences. <span class="btn sm ghost" id="beh-retry">Retry</span></div></div>"""
+        return
+    }
+    val userName = users.find { it.id == currentUserId }?.displayName?.htmlEsc() ?: currentUserId
+    val langDisabled = if (r.uiLanguage.source == "viewer") " disabled" else ""
+    val langOptions = LANGS.joinToString("") { (code, label) ->
+        val sel = if (code == r.uiLanguage.value) " selected" else ""
+        """<option value="$code"$sel>$label</option>"""
+    }
+    val skinDisabled = if (r.skin.source == "viewer") " disabled" else ""
+    val skinOptions = Skin.entries.joinToString("") { s ->
+        val sel = if (s == r.skin.value) " selected" else ""
+        """<option value="${s.name}"$sel>${s.name.lowercase().replaceFirstChar { it.uppercase() }}</option>"""
+    }
+    val tileButtons = TileShape.entries.joinToString("") { s ->
+        val onAttr = if (s == r.tileShape.value) " class=\"on\"" else ""
+        """<button data-beh-tile="${s.name}"$onAttr>${TILE_SHAPE_LABELS[s] ?: s.name}</button>"""
+    }
+    val progressChecked = if (r.showContinueProgress.value) " checked" else ""
+    val autoplayChecked = if (r.autoplayNext.value) " checked" else ""
+    sect.innerHTML = """
+        <div class="card" style="padding:18px 20px;margin-bottom:18px">
+          <div style="font-weight:600;margin-bottom:2px">Behaviour &amp; preferences — ${userName.htmlEsc()}</div>
+          <div class="tiny muted" style="margin-bottom:6px">Field-level — separate from the <b>layout</b> override above (hero/channels/rows/Top 10).
+            Overriding a preference here never creates a custom layout; ${userName.htmlEsc()} keeps following the global layout
+            and its future updates.</div>
+          ${behFieldRow(
+              "Interface language", "Viewer-editable on the TV",
+              """<select id="beh-u-lang" class="input" style="width:160px;font-size:.85rem"$langDisabled>$langOptions</select>""",
+              r.uiLanguage.source, "id=\"beh-reset-ui_language\"",
+          )}
+          ${behFieldRow(
+              "Skin", "Viewer-editable on the TV",
+              """<select id="beh-u-skin" class="input" style="width:160px;font-size:.85rem"$skinDisabled>$skinOptions</select>""",
+              r.skin.source, "id=\"beh-reset-skin\"",
+          )}
+          ${behFieldRow(
+              "Tile shape", "How rows render on the TV. Continue Watching stays landscape.",
+              """<span class="seg-pill" id="beh-u-tile-pill">$tileButtons</span>""",
+              r.tileShape.source, "id=\"beh-reset-tile_shape\"",
+          )}
+          ${behFieldRow(
+              "Continue-Watching progress bars", null,
+              """<label style="display:flex;align-items:center;gap:8px"><input type="checkbox" id="beh-u-progress"$progressChecked></label>""",
+              r.showContinueProgress.source, "id=\"beh-reset-show_continue_progress\"",
+          )}
+          ${behFieldRow(
+              "Autoplay next episode", null,
+              """<label style="display:flex;align-items:center;gap:8px"><input type="checkbox" id="beh-u-autoplay"$autoplayChecked></label>""",
+              r.autoplayNext.source, "id=\"beh-reset-autoplay_next\"",
+          )}
         </div>
     """.trimIndent()
 }
@@ -2335,6 +2503,7 @@ private fun collectConfig(container: Element) {
         .getOrDefault(UiDensity.COMFORTABLE)
     val allowOverride = (container.querySelector("#beh-skin-override") as? HTMLInputElement)?.checked ?: true
     val showProgress  = (container.querySelector("#beh-progress") as? HTMLInputElement)?.checked ?: true
+    val autoplayNext  = (container.querySelector("#beh-autoplay") as? HTMLInputElement)?.checked ?: currentConfig.autoplayNext
     // R159 — toggled off saves null (no override; portrait behaves exactly like landscape).
     val portraitEnabled = (container.querySelector("#portrait-enable") as? HTMLInputElement)?.checked ?: (currentConfig.portrait?.heroHeightPct != null)
     val portraitHeroHeight = (container.querySelector("#portrait-hero-height") as? HTMLInputElement)?.value?.toIntOrNull()
@@ -2362,7 +2531,7 @@ private fun collectConfig(container: Element) {
         allowSkinOverride = allowOverride,
         // Preserve viewer-set fields that are not exposed in the admin UI.
         viewerSkinOverride = currentConfig.viewerSkinOverride,
-        autoplayNext = currentConfig.autoplayNext,
+        autoplayNext = autoplayNext,
         showContinueProgress = showProgress,
         tileShape = tileShape,
         uiDensity = uiDensity,
