@@ -190,6 +190,8 @@ data class ScanStatus(
     val nextScheduledRun: Long? = null,   // 93e: epoch seconds of the next automation run
 )
 
+enum class PipelineRunResult { STARTED, ALREADY_RUNNING, FAILED }
+
 private fun String.encodeURL() = encodeURIComponent(this)
 
 object MediaApi {
@@ -299,10 +301,15 @@ object MediaApi {
     }.getOrDefault(false)
 
     // 93c: run the composed automation (the saved scan pipeline) on demand — all enabled steps,
-    // not just file discovery like startScan().
-    suspend fun runPipeline(): Boolean = runCatching {
-        httpClient.post("/api/pipeline/run").status == HttpStatusCode.Accepted
-    }.getOrDefault(false)
+    // not just file discovery like startScan(). Conflict is distinguished from a genuine failure so the
+    // caller can show "already running" instead of a misleading "failed to start".
+    suspend fun runPipeline(): PipelineRunResult = runCatching {
+        when (httpClient.post("/api/pipeline/run").status) {
+            HttpStatusCode.Accepted -> PipelineRunResult.STARTED
+            HttpStatusCode.Conflict -> PipelineRunResult.ALREADY_RUNNING
+            else -> PipelineRunResult.FAILED
+        }
+    }.getOrDefault(PipelineRunResult.FAILED)
 
     suspend fun scanStatus(): ScanStatus? = runCatching {
         httpClient.get("/api/scan/status").body<ScanStatus>()
