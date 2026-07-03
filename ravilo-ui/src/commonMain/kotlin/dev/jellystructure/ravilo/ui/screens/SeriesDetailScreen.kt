@@ -595,9 +595,12 @@ private fun SeriesDetailLoaded(
         )
 
         // R163: fullscreen embedded trailer, last child so it paints over the AppBar too.
-        if (showTrailer && detail.trailer != null) {
+        // Cross-module `val` properties (detail.trailer is declared in :shared) aren't smart-cast —
+        // bind to a local val first.
+        val trailer = detail.trailer
+        if (showTrailer && trailer != null) {
             TrailerOverlay(
-                trailer = detail.trailer,
+                trailer = trailer,
                 title = detail.card.title,
                 onClose = { showTrailer = false; runCatching { trailerFR.requestFocus() } },
             )
