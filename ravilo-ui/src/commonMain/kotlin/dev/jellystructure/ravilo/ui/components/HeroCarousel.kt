@@ -70,8 +70,6 @@ fun HeroCarousel(
     autoAdvanceSeconds: Int = 7,
     onOpenDetail: (MediaCard) -> Unit = {},
     onUp: (() -> Unit)? = null,
-    /** R91: parallax — read inside graphicsLayer (draw-only, no HeroCarousel recompose on scroll). */
-    scrollOffsetPx: () -> Float = { 0f },
     /** R101: Ken Burns drifts only while this is true (false ⇒ frozen). HomeScreen passes
      *  `!isScrollInProgress` so the hero stops its per-frame scaled redraw during a scroll gesture. */
     driftEnabled: () -> Boolean = { true },
@@ -154,8 +152,8 @@ fun HeroCarousel(
         modifier = Modifier
             .fillMaxWidth()
             .height(heightDp)
-            // R114: clip the hero to its bounds so the Ken Burns scale (and parallax) on the backdrop
-            // can't bleed past the box — otherwise the scaled image overflows below the scrim gradients
+            // R114: clip the hero to its bounds so the Ken Burns scale on the backdrop can't bleed
+            // past the box — otherwise the scaled image overflows below the scrim gradients
             // (which only fill the box) and shows a thin un-darkened line at the very bottom edge.
             .clipToBounds()
             // R53: the whole hero is one focusable surface — select opens detail, Left/Right page the
@@ -199,14 +197,13 @@ fun HeroCarousel(
             RemoteImage(
                 url = url,
                 contentDescription = null,
-                // R91: Ken Burns scale + parallax translationY applied draw-only so neither
-                // recomposes the carousel on animation or scroll frames.
+                // R91: Ken Burns scale applied draw-only so it never recomposes the carousel on
+                // animation frames.
                 modifier = Modifier
                     .fillMaxSize()
                     .graphicsLayer {
                         scaleX = kbScale.value
                         scaleY = kbScale.value
-                        translationY = -scrollOffsetPx() * RaviloMotion.HERO_PARALLAX_FACTOR
                     },
                 alignment = RaviloDimens.heroBackdropAlignment,
                 placeholderColor = colors.surface,

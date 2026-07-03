@@ -206,10 +206,6 @@ private fun HomeLoaded(
                         // R139: opened from the hero (not a tile) → clear the saved key so Back returns to the hero.
                         onOpenDetail = { store.focusRowKey = null; store.focusItemKey = null; onItemSelect(it) },
                         onUp = { navBarFR.requestFocus() },
-                        // R91: read scroll state inside the lambda (draw-only; no recompose on each frame).
-                        scrollOffsetPx = {
-                            if (listState.firstVisibleItemIndex == 0) listState.firstVisibleItemScrollOffset.toFloat() else 0f
-                        },
                         // R101: freeze the Ken Burns drift while the list is actively scrolling so the
                         // full-width hero stops its per-frame scaled redraw during the gesture.
                         driftEnabled = { !listState.isScrollInProgress },
