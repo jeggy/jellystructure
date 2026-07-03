@@ -31,11 +31,7 @@ import dev.jellystructure.arr.AcquisitionService
 import dev.jellystructure.arr.ArrClient
 import dev.jellystructure.arr.ArrPing
 import dev.jellystructure.arr.ArrRescanService
-import dev.jellystructure.chart.ChartIngestService
-import dev.jellystructure.chart.ChartRegistry
-import dev.jellystructure.chart.ChartStore
 import dev.jellystructure.server.routes.acquisitionRoutes
-import dev.jellystructure.server.routes.chartRoutes
 import dev.jellystructure.server.routes.remoteRoutes
 import dev.jellystructure.server.routes.apiKeyManagementRoutes
 import dev.jellystructure.server.routes.webhookRoutes
@@ -131,9 +127,7 @@ fun startServer(
     arrRescan: ArrRescanService? = null,
     sonarrEnrich: dev.jellystructure.arr.SonarrEnrichService? = null,
     acquisitionService: AcquisitionService? = null,
-    chartRegistry: ChartRegistry? = null,
-    chartStore: ChartStore? = null,
-    chartIngest: ChartIngestService? = null,
+    seerrClient: dev.jellystructure.seerr.SeerrClient? = null,
     tvEventBus: TvEventBus,
     imageProxyService: RaviloArtworkService? = null,
     mediaJobQueue: dev.jellystructure.media.MediaJobQueue,
@@ -307,7 +301,7 @@ fun startServer(
                 }
 
                 authRoutes(sessionService, jellyfinClient, configStore)
-                configureConfigRoutes(configStore, effectiveScanThreads, qbClient, arrClient)
+                configureConfigRoutes(configStore, effectiveScanThreads, qbClient, arrClient, seerrClient)
                 setupRoutes(configStore, jellyfinClient)
                 jellyfinRoutes(configStore, jellyfinClient)
                 mediaRoutes(mediaStore, scanner, artworkDownloader, tmdbClient, appScope, scanTracker, broadcaster, jellyfinClient, configStore, mediaHistory, scanDispatcher, seedingGuard, seedingSnapshot, raviloConfigService, logoDownloader, arrRescan, sonarrEnrich, mediaJobQueue, imdbClient)
@@ -320,10 +314,7 @@ fun startServer(
                 apiKeyManagementRoutes(apiKeyStore)
                 webhookRoutes(configStore, jellyfinClient, realtimeIngest, appScope, libraryListener)
                 acquisitionService?.let { acquisitionRoutes(it) }
-                if (chartRegistry != null && chartStore != null && chartIngest != null) {
-                    chartRoutes(chartRegistry, chartStore, configStore, chartIngest)
-                }
-                tvRoutes(deviceService, raviloConfigService, homeFeedService, browseService, detailService, playbackService, sessionService, jellyfinClient, configStore, channelLogoStore, acquisitionService, chartStore, chartRegistry, tmdbClient, imageProxyService, tvEventBus, upcomingService)
+                tvRoutes(deviceService, raviloConfigService, homeFeedService, browseService, detailService, playbackService, sessionService, jellyfinClient, configStore, channelLogoStore, imageProxyService, tvEventBus, upcomingService)
             }
 
             webSocket("/ws") {

@@ -8,11 +8,6 @@ import dev.jellystructure.arr.AcquisitionStore
 import dev.jellystructure.arr.ArrClient
 import dev.jellystructure.arr.ArrRescanService
 import dev.jellystructure.arr.SonarrEnrichService
-import dev.jellystructure.chart.ChartIngestService
-import dev.jellystructure.chart.ChartRegistry
-import dev.jellystructure.chart.ChartStore
-import dev.jellystructure.chart.JustWatchProvider
-import dev.jellystructure.chart.NetflixTudumProvider
 import dev.jellystructure.torrent.QBittorrentClient
 import dev.jellystructure.torrent.SeedingGuard
 import dev.jellystructure.torrent.SeedingSnapshot
@@ -155,6 +150,7 @@ fun main() = runBlocking {
     val seedingSnapshot = SeedingSnapshot(configStore, qbClient)
     val seedingGuard = SeedingGuard(seedingSnapshot)
     val arrClient = ArrClient()
+    val seerrClient = dev.jellystructure.seerr.SeerrClient()
     val arrRescan = ArrRescanService(configStore, arrClient, rootScope)
     val sonarrEnrich = SonarrEnrichService(mediaStore, arrClient, configStore)
     val upcomingService = dev.jellystructure.tv.UpcomingService(configStore, arrClient, mediaStore, tmdbClient)
@@ -182,23 +178,10 @@ fun main() = runBlocking {
     val acquisitionStore = AcquisitionStore(db)
     val acquisitionService = AcquisitionService(configStore, arrClient, tmdbClient, acquisitionStore, mediaStore, tvEventBus, rootScope)
     acquisitionService.startReconciler()
-    val chartStore = ChartStore(db)
-    // Phase 132: RapidAPI removal — scrub any chart rows a previously-registered
-    // StreamingAvailabilityProvider left behind (idempotent no-op once cleaned).
-    for (prefix in listOf("max-", "disney-", "prime-", "apple-")) chartStore.deleteListsWithPrefix(prefix)
-    val chartRegistry = ChartRegistry(listOf(
-        NetflixTudumProvider(),
-        // Phase 59 — JustWatch unofficial GraphQL: covers Nordic and other regional services.
-        // No API key needed. Provider shortName is auto-discovered from urlSlug via GetProviders.
-        JustWatchProvider("viaplay",     "Viaplay",     "viaplay"),
-        JustWatchProvider("paramount",   "Paramount+",  "paramount-plus-premium"),
-        JustWatchProvider("skyshowtime", "SkyShowtime", "sky-showtime"),
-    ))
-    val chartIngest = ChartIngestService(configStore, chartRegistry, tmdbClient, chartStore, mediaStore)
     val shutdown = startServer(
         configStore, sessionService, raviloDeviceService, raviloConfigService, channelLogoStore, homeFeedService, browseService, detailService, playbackService, jellyfinClient, mediaStore, scanner,
         artworkDownloader, tmdbClient, scanTracker, mediaHistory, activityLog, broadcaster,
-        frontendDir, raviloWebDir = raviloWebDir, port = port, scanDispatcher = scanDispatcher, effectiveScanThreads = effectiveScanThreads, jsTagStore = jsTagStore, seedingGuard = seedingGuard, seedingSnapshot = seedingSnapshot, logoDownloader = logoDownloader, qbClient = qbClient, arrClient = arrClient, arrRescan = arrRescan, sonarrEnrich = sonarrEnrich, acquisitionService = acquisitionService, chartRegistry = chartRegistry, chartStore = chartStore, chartIngest = chartIngest, tvEventBus = tvEventBus, imageProxyService = imageProxyService, mediaJobQueue = mediaJobQueue, sessionBridge = sessionBridge, apiKeyStore = apiKeyStore, realtimeIngest = realtimeIngest, libraryListener = libraryListener, fdWatchdog = fdWatchdog, imdbClient = imdbClient, upcomingService = upcomingService,
+        frontendDir, raviloWebDir = raviloWebDir, port = port, scanDispatcher = scanDispatcher, effectiveScanThreads = effectiveScanThreads, jsTagStore = jsTagStore, seedingGuard = seedingGuard, seedingSnapshot = seedingSnapshot, logoDownloader = logoDownloader, qbClient = qbClient, arrClient = arrClient, arrRescan = arrRescan, sonarrEnrich = sonarrEnrich, acquisitionService = acquisitionService, seerrClient = seerrClient, tvEventBus = tvEventBus, imageProxyService = imageProxyService, mediaJobQueue = mediaJobQueue, sessionBridge = sessionBridge, apiKeyStore = apiKeyStore, realtimeIngest = realtimeIngest, libraryListener = libraryListener, fdWatchdog = fdWatchdog, imdbClient = imdbClient, upcomingService = upcomingService,
     )
 
     // R149: populate Sonarr next-airing data for all TV shows on startup (background, non-blocking).
@@ -284,19 +267,6 @@ fun main() = runBlocking {
                 .onSuccess { Logger.info("WAL checkpoint: TRUNCATE complete") }
                 .onFailure { Logger.info("WAL checkpoint failed (non-fatal): ${it.message}") }
             delay(6 * 3_600_000L)
-        }
-    }
-
-    // Scheduled chart ingest (Phase 57) — refresh every refresh_hours (default 24), week-gated.
-    // Ingest runs by default even without an explicit [discover] block; set enabled=false to opt out.
-    rootScope.launch {
-        while (shutdownRequested.value == 0) {
-            val d = configStore.current.discover
-            if (d?.enabled != false) {
-                val regions = d?.regions ?: listOf("DK")
-                for (region in regions) runCatching { chartIngest.refresh(region) }
-            }
-            delay((configStore.current.discover?.refreshHours ?: 24).coerceAtLeast(1) * 3_600_000L)
         }
     }
 
