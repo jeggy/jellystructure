@@ -34,3 +34,7 @@ config/*
 !config/config.example.toml.claude/
 .claude/
 backend.log
+
+# Qodana local analysis (never committed)
+.qodana/
+qodana.sarif.json
