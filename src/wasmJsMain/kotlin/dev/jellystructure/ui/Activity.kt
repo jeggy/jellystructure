@@ -42,6 +42,16 @@ private var activeRunFilter: String? = null   // 93g: scope the log to one scan/
 private var lastToolCommand: String? = null
 private var jobsPollActive = false   // Phase 109: true while the "Jobs & workers" segment is showing
 
+// Phase 135 — the whole ordered step plan for the active/last run, which step is active, and a
+// one-line result summary per finished step (all reset per renderActivity()/on "started").
+private var stepPlan: List<String> = emptyList()
+private var activeStepName: String? = null
+private val stepSummaries = mutableMapOf<String, String>()
+private var runTrigger: String? = null
+private var runScope: String? = null
+private var runType: String? = null
+private var activeStepFilter: String? = null   // FR-135-3 item 7: scope the log to one pipeline step
+
 @Serializable
 private data class ActivityEntryDto(
     val id: Int,
@@ -61,6 +71,7 @@ private data class ActivityLogPageDto(val entries: List<ActivityEntryDto>, val t
 private data class RunSummaryDto(
     val runId: String, val trigger: String, val startedAt: Long, val finishedAt: Long? = null,
     val events: Int = 0, val errors: Int = 0,
+    val scope: String = "library", val type: String? = null,
 )
 
 fun renderActivity(container: Element, scope: CoroutineScope, query: Map<String, String> = emptyMap()) {
@@ -75,11 +86,17 @@ fun renderActivity(container: Element, scope: CoroutineScope, query: Map<String,
     scanRunning = false
     activeLogCategory = ""
     errorsOnlyFilter = false
+    stepPlan = emptyList()
+    activeStepName = null
+    stepSummaries.clear()
+    runTrigger = null; runScope = null; runType = null
+    activeStepFilter = null
 
     container.innerHTML = """
         <div class="pagebar">
           <h1>Activity</h1>
           <span id="act-crumb" style="display:none" class="crumb"></span>
+          <span id="run-badge" style="display:none" class="badge"></span>
           <span class="spacer"></span>
           <span id="ws-status" class="badge">Connecting…</span>
           <button id="act-cancel-btn" class="btn sm ghost" style="display:none">Pause</button>
@@ -117,8 +134,9 @@ fun renderActivity(container: Element, scope: CoroutineScope, query: Map<String,
 
         <div id="view-console">
         <div id="overall-card" class="card" style="display:none;margin-bottom:14px">
+          <div id="step-chips" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px"></div>
           <div class="row center">
-            <b>Overall</b>
+            <b id="ov-step-label">Overall</b>
             <span class="spacer"></span>
             <span class="mono tiny" id="ov-label">0 items</span>
           </div>
@@ -165,6 +183,9 @@ fun renderActivity(container: Element, scope: CoroutineScope, query: Map<String,
             <span style="flex:1"></span>
             <select id="run-filter" class="input" style="height:26px;padding:0 6px;font-size:.78rem" title="Scope the log to one scan/pipeline run">
               <option value="">All runs</option>
+            </select>
+            <select id="step-filter" class="input" style="height:26px;padding:0 6px;font-size:.78rem;display:none" title="Scope the log to one pipeline step">
+              <option value="">All steps</option>
             </select>
             <label style="display:flex;align-items:center;gap:7px;cursor:pointer;font-size:.82rem"><span class="toggle" id="errors-only-toggle"></span> Errors only</label>
             <span id="workers-chip" class="chip" style="display:none"></span>
@@ -238,6 +259,12 @@ fun renderActivity(container: Element, scope: CoroutineScope, query: Map<String,
         scope.launch { loadLogHistory(container) }
     }
 
+    // Phase 135 (FR-135-3 item 7) — step picker: scope the log to one pipeline step.
+    (container.querySelector("#step-filter") as? HTMLSelectElement)?.addEventListener("change") { ev ->
+        activeStepFilter = (ev.target as? HTMLSelectElement)?.value?.ifBlank { null }
+        scope.launch { loadLogHistory(container) }
+    }
+
     connectWebSocket(container)
     scope.launch { loadRuns(container) }
     scope.launch { loadLogHistory(container) }
@@ -252,6 +279,7 @@ fun renderActivity(container: Element, scope: CoroutineScope, query: Map<String,
             showJobUI(container)
             (container.querySelector("#act-cancel-btn") as? HTMLElement)?.style?.display = ""
             (container.querySelector("#act-crumb") as? HTMLElement)?.let { it.textContent = "Scanning"; it.style.display = "" }
+            applyScanStatus(container, st)   // Phase 135: seed step chips + trigger/scope/type badge
             updateActivityChips(container)
             updateOvLabel(container)
             pollWorkers(container)
@@ -260,6 +288,42 @@ fun renderActivity(container: Element, scope: CoroutineScope, query: Map<String,
         }
     }
     wireLogResize(container)
+}
+
+/** Phase 135 — apply the step plan/active step/run descriptors from a [MediaApi.ScanStatus] poll. Used
+ *  both as the source of truth for a page that (re)loads mid-run (before any WS event arrives) and as a
+ *  periodic supplement in [pollWorkers], since a plain (non-pipeline) `/scan` run never broadcasts a
+ *  `pipeline_plan`/`step_started` WS event — polling is the only way its chip/badge ever populate. */
+private fun applyScanStatus(container: Element, st: dev.jellystructure.api.ScanStatus) {
+    if (st.stepPlan.isNotEmpty() && stepPlan != st.stepPlan) {
+        stepPlan = st.stepPlan
+        renderStepChips(container)
+    }
+    if (st.activeStep != null && st.activeStep != activeStepName) {
+        activeStepName = st.activeStep
+        (container.querySelector("#ov-step-label") as? HTMLElement)?.textContent = stepLabel(st.activeStep)
+        renderStepChips(container)
+    }
+    if (st.trigger != runTrigger || st.scope != runScope || st.type != runType) {
+        runTrigger = st.trigger; runScope = st.scope; runType = st.type
+        renderRunBadge(container)
+    }
+}
+
+/** Phase 135 (FR-135-4) — badge the run's trigger/scope/type in the Activity header, e.g.
+ *  "Scheduled · Full pipeline · ignoring freshness" or "Manual · Library scan". */
+private fun renderRunBadge(container: Element) {
+    val el = container.querySelector("#run-badge") as? HTMLElement ?: return
+    val trigger = runTrigger
+    if (trigger == null) { el.style.display = "none"; return }
+    val triggerLabel = when (trigger) {
+        "manual" -> "Manual"; "scheduled" -> "Scheduled"; "startup" -> "Startup"; "ingest" -> "Realtime ingest"
+        else -> trigger.replaceFirstChar { it.uppercase() }
+    }
+    val scopeLabel = if (runScope == "pipeline") "Full pipeline" else "Library scan"
+    val typeSuffix = if (runType == "full") " · ignoring freshness" else ""
+    el.textContent = "$triggerLabel · $scopeLabel$typeSuffix"
+    el.style.display = ""
 }
 
 /** 93g — populate the run picker from /api/activity/runs (newest first). */
@@ -275,7 +339,10 @@ private suspend fun loadRuns(container: Element) {
                 r.errors > 0 -> "${r.events} events · ${r.errors} err"
                 else -> "${r.events} events"
             }
-            sb.append("""<option value="${r.runId.escapeHtml()}">${r.trigger.escapeHtml()} · $whenStr · $status</option>""")
+            // Phase 135 (FR-135-4) — badge scope/type alongside trigger in the run picker too.
+            val scopeLabel = if (r.scope == "pipeline") "pipeline" else "scan"
+            val typeSuffix = if (r.type == "full") " (full)" else ""
+            sb.append("""<option value="${r.runId.escapeHtml()}">${r.trigger.escapeHtml()} · $scopeLabel$typeSuffix · $whenStr · $status</option>""")
         }
         sel.innerHTML = sb.toString()
         sel.value = activeRunFilter ?: ""
@@ -332,7 +399,8 @@ private fun reapplyFilter(container: Element) {
         val catOk = activeLogCategory.isEmpty() || cat == activeLogCategory
         val lvlOk = !errorsOnlyFilter || lvl == "error" || lvl == "warn"
         val runOk = activeRunFilter == null || line.getAttribute("data-run") == activeRunFilter
-        line.style.display = if (catOk && lvlOk && runOk) "" else "none"
+        val stepOk = activeStepFilter == null || line.getAttribute("data-step") == activeStepFilter
+        line.style.display = if (catOk && lvlOk && runOk && stepOk) "" else "none"
     }
 }
 
@@ -341,15 +409,16 @@ private suspend fun loadLogHistory(container: Element) {
         val page: ActivityLogPageDto = httpClient.get("/api/activity/log") {
             parameter("pageSize", "200")
             activeRunFilter?.let { parameter("run", it) }   // 93g: server-side scope to one run
+            activeStepFilter?.let { parameter("step", it) } // Phase 135: server-side scope to one step
         }.body()
         val console = container.querySelector("#activity-console") ?: return
         if (page.entries.isEmpty()) {
-            console.innerHTML = """<div class="muted tiny">No activity entries${if (activeRunFilter != null) " for this run" else " yet"}.</div>"""
+            console.innerHTML = """<div class="muted tiny">No activity entries${if (activeRunFilter != null || activeStepFilter != null) " for this filter" else " yet"}.</div>"""
             return
         }
         console.innerHTML = ""
         page.entries.forEach { entry ->
-            appendLogEntry(container, entry.level, entry.category, entry.message, ts = entry.ts, runId = entry.runId)
+            appendLogEntry(container, entry.level, entry.category, entry.message, ts = entry.ts, runId = entry.runId, stepTag = entry.step)
         }
         (console as? HTMLElement)?.let { it.scrollTop = it.scrollHeight.toDouble() }
     }.onFailure {
@@ -580,20 +649,66 @@ private fun handleEvent(container: Element, raw: String) {
             hideJobUI(container)
             (container.querySelector("#act-cancel-btn") as? HTMLElement)?.style?.display = "none"
             (container.querySelector("#act-crumb") as? HTMLElement)?.style?.display = "none"
+            (container.querySelector("#run-badge") as? HTMLElement)?.style?.display = "none"
             (container.querySelector("#workers-chip") as? HTMLElement)?.style?.display = "none"
             appendLogEntry(container, "info", "scan", "■ Job $jobId done — $succeeded succeeded, $failed failed")
             activityScope?.launch { loadRuns(container) }   // 93g: surface the just-finished run in the picker
+        }
+        // Phase 135 — step-aware pipeline progress. scan_files keeps the events above untouched
+        // (started/progress/item_scanned/file_done); every step gets these three instead.
+        "pipeline_plan" -> {
+            stepPlan = extractJsonStringArray(raw, "steps")
+            activeStepName = "scan_files"
+            stepSummaries.clear()
+            renderStepChips(container)
+        }
+        "step_started" -> {
+            val step = extractJsonField(raw, "step") ?: "?"
+            val total = extractJsonField(raw, "total")?.toIntOrNull() ?: 0
+            activeStepName = step
+            stepSummaries.remove(step)
+            jobTotalCount = total
+            jobProgressCount = 0
+            jobStartMs = nowMs()
+            (container.querySelector("#ov-step-label") as? HTMLElement)?.textContent = stepLabel(step)
+            (container.querySelector("#ov-bar") as? HTMLElement)?.style?.width = "0%"
+            renderStepChips(container)
+            updateOvLabel(container)
+            appendLogEntry(container, "info", "scan", "▶ ${stepLabel(step)} started" + (if (total > 0) " — $total item${if (total != 1) "s" else ""}" else ""), stepTag = step)
+        }
+        "step_progress" -> {
+            val step = extractJsonField(raw, "step") ?: "?"
+            val item = extractJsonField(raw, "item") ?: "?"
+            val current = extractJsonField(raw, "current")?.toIntOrNull()
+            val total = extractJsonField(raw, "total")?.toIntOrNull()
+            activeStepName = step
+            updateNowFilename(container, item)
+            if (current != null && total != null && total > 0) {
+                val pct = (current * 100 / total).coerceIn(0, 100)
+                (container.querySelector("#ov-bar") as? HTMLElement)?.style?.width = "$pct%"
+                jobTotalCount = total
+                jobProgressCount = current
+                updateOvLabel(container)
+            }
+        }
+        "step_finished" -> {
+            val step = extractJsonField(raw, "step") ?: "?"
+            val summary = extractJsonField(raw, "summary") ?: ""
+            stepSummaries[step] = summary
+            renderStepChips(container)
+            appendLogEntry(container, "info", "scan", "■ ${stepLabel(step)} done — $summary", stepTag = step)
         }
         "log_line" -> {
             val level = extractJsonField(raw, "level") ?: "info"
             val category = extractJsonField(raw, "category") ?: "system"
             val message = extractJsonField(raw, "message") ?: ""
             val runId = extractJsonField(raw, "runId")
+            val step = extractJsonField(raw, "step")
             if (category == "track" && (message.startsWith("ffmpeg:") || message.startsWith("mkvpropedit:"))) {
                 lastToolCommand = message
                 refreshNowOps(container)
             }
-            appendLogEntry(container, level, category, message, runId = runId)
+            appendLogEntry(container, level, category, message, runId = runId, stepTag = step)
         }
         else -> appendLogEntry(container, "info", "system", raw)
     }
@@ -607,6 +722,7 @@ private suspend fun pollWorkers(container: Element) {
                 it.textContent = "Workers: ${status.activeWorkers}/${status.configuredWorkers}"
                 it.style.display = ""
             }
+            applyScanStatus(container, status)
         }
         delay(2000)
     }
@@ -708,6 +824,53 @@ private fun formatRemaining(ms: Double): String {
     }
 }
 
+/** Phase 135 — a short display label for a pipeline step id; falls back to the raw id for anything
+ *  unrecognized so a future step added server-side never renders blank. */
+private fun stepLabel(step: String): String = when (step) {
+    "scan_files" -> "Scan"
+    "pull_tmdb" -> "TMDB"
+    "download_artwork" -> "Artwork"
+    "sync_imdb_ratings" -> "IMDb"
+    "rescan_arr" -> "*arr"
+    "write_nfo" -> "NFO"
+    "sync_jellyfin" -> "Jellyfin"
+    "detect_drift" -> "Drift"
+    "wait" -> "Wait"
+    "notify" -> "Notify"
+    else -> step
+}
+
+/** Phase 135 (FR-135-3 item 6) — one chip per step in [stepPlan]: highlights the active phase,
+ *  checks off finished ones with their result summary as a tooltip, per FR-135-3 item 6. */
+private fun renderStepChips(container: Element) {
+    val el = container.querySelector("#step-chips") as? HTMLElement ?: return
+    if (stepPlan.isEmpty()) { el.innerHTML = ""; return }
+    el.innerHTML = stepPlan.joinToString("") { step ->
+        val summary = stepSummaries[step]
+        val done = summary != null
+        val active = step == activeStepName && !done
+        val cls = if (active) "chip act" else "chip"
+        val styleAttr = if (done) " style=\"background:var(--ok-soft)\"" else ""
+        val icon = if (done) "✓ " else if (active) "⟳ " else ""
+        val titleAttr = summary?.let { """ title="${it.escapeHtml()}"""" } ?: ""
+        """<span class="$cls"$styleAttr$titleAttr>$icon${stepLabel(step).escapeHtml()}</span>"""
+    }
+}
+
+/** Phase 135 (FR-135-3 item 7) — lazily add a step to the `#step-filter` dropdown the first time a log
+ *  line tagged with it is seen, so the filter always offers exactly the steps this run actually used. */
+private fun registerStepFilterOption(container: Element, step: String) {
+    val sel = container.querySelector("#step-filter") as? HTMLSelectElement ?: return
+    val exists = (0 until sel.options.length).any { i -> (sel.options.item(i) as? HTMLElement)?.getAttribute("value") == step }
+    if (!exists) {
+        val opt = document.createElement("option")
+        opt.setAttribute("value", step)
+        opt.textContent = stepLabel(step)
+        sel.appendChild(opt)
+    }
+    sel.style.display = if (sel.options.length > 1) "" else "none"
+}
+
 private fun updateActivityChips(container: Element) {
     val el = container.querySelector("#act-chips") as? HTMLElement ?: return
     if (jobItemCount == 0 && jobDoneCount == 0 && jobFailCount == 0) { el.innerHTML = ""; return }
@@ -718,7 +881,7 @@ private fun updateActivityChips(container: Element) {
     }
 }
 
-private fun appendLogEntry(container: Element, level: String, category: String, text: String, ts: Long? = null, runId: String? = null) {
+private fun appendLogEntry(container: Element, level: String, category: String, text: String, ts: Long? = null, runId: String? = null, stepTag: String? = null) {
     val console = container.querySelector("#activity-console") ?: return
     console.querySelector(".muted")?.remove()
 
@@ -730,6 +893,12 @@ private fun appendLogEntry(container: Element, level: String, category: String, 
         "track" -> "<span class='chip' style='font-size:.6rem;padding:0 4px;background:var(--fill-2)'>track</span> "
         else -> ""
     }
+    // Phase 135 (FR-135-3 item 7) — a small step badge alongside the category chip when the line
+    // belongs to a pipeline step; also registers the step in the filter dropdown on first sight.
+    val stepLabelHtml = if (stepTag != null) {
+        registerStepFilterOption(container, stepTag)
+        "<span class='chip' style='font-size:.6rem;padding:0 4px;background:var(--fill-3)'>${stepLabel(stepTag).escapeHtml()}</span> "
+    } else ""
     val colorStyle = when {
         level == "error" -> "color:var(--bad)"
         level == "warn" -> "color:var(--warn,#f59e0b)"
@@ -742,12 +911,14 @@ private fun appendLogEntry(container: Element, level: String, category: String, 
     div.setAttribute("data-cat", category)
     div.setAttribute("data-level", level)
     if (runId != null) div.setAttribute("data-run", runId)
-    div.innerHTML = """<span class="ts">$tsStr</span> $catLabel<span style="$colorStyle">${text.escapeHtml()}</span>"""
+    if (stepTag != null) div.setAttribute("data-step", stepTag)
+    div.innerHTML = """<span class="ts">$tsStr</span> $catLabel$stepLabelHtml<span style="$colorStyle">${text.escapeHtml()}</span>"""
 
     val catOk = activeLogCategory.isEmpty() || category == activeLogCategory
     val lvlOk = !errorsOnlyFilter || level == "error" || level == "warn"
     val runOk = activeRunFilter == null || runId == activeRunFilter
-    if (!catOk || !lvlOk || !runOk) (div as? HTMLElement)?.style?.display = "none"
+    val stepOk = activeStepFilter == null || stepTag == activeStepFilter
+    if (!catOk || !lvlOk || !runOk || !stepOk) (div as? HTMLElement)?.style?.display = "none"
 
     console.appendChild(div)
     // Auto-scroll only when the user is already pinned to the bottom (within 80 px).
@@ -795,4 +966,16 @@ private fun extractNestedField(json: String, outerKey: String, innerKey: String)
     }
     val inner = json.substring(objStart, objEnd + 1)
     return extractJsonField(inner, innerKey)
+}
+
+/** Phase 135 — a `List<String>` field (e.g. `PipelinePlan.steps`): step ids are plain identifiers with
+ *  no commas/quotes, so a simple split is safe (unlike the general case a full JSON parser would need). */
+private fun extractJsonStringArray(json: String, field: String): List<String> {
+    val key = "\"$field\":"
+    val start = json.indexOf(key).takeIf { it >= 0 } ?: return emptyList()
+    val arrStart = json.indexOf('[', start).takeIf { it >= 0 } ?: return emptyList()
+    val arrEnd = json.indexOf(']', arrStart).takeIf { it >= 0 } ?: return emptyList()
+    val body = json.substring(arrStart + 1, arrEnd).trim()
+    if (body.isEmpty()) return emptyList()
+    return body.split(',').map { it.trim().trim('"') }
 }
