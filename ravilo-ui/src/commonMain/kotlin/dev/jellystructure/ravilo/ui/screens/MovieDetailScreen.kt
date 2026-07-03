@@ -26,8 +26,10 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.key.Key
@@ -56,6 +58,7 @@ import dev.jellystructure.ravilo.ui.components.DetailSynopsis
 import dev.jellystructure.ravilo.ui.components.RaviloButton
 import dev.jellystructure.ravilo.ui.components.Tile
 import dev.jellystructure.ravilo.ui.components.TitleLogoOrText
+import dev.jellystructure.ravilo.ui.components.TrailerOverlay
 import dev.jellystructure.ravilo.ui.focus.rememberEdgeBringIntoViewSpec
 import dev.jellystructure.ravilo.ui.i18n.str
 import dev.jellystructure.ravilo.ui.seams.RemoteImage
@@ -145,6 +148,8 @@ private fun MovieDetailLoaded(
     val playFR = remember { FocusRequester() }
     val synopsisFR = remember { FocusRequester() }   // R135
     val navBarFR = remember { FocusRequester() }
+    val trailerFR = remember { FocusRequester() }   // R163
+    var showTrailer by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { runCatching { playFR.requestFocus() } }
 
     // R79: appBarHeight + 24dp top inset so cast/related rows aren't hidden under the overlay bar.
@@ -293,6 +298,15 @@ private fun MovieDetailLoaded(
                             label = "+ ${str("nav.my_list")}",
                             style = ButtonStyle.GHOST,
                         )
+                        // R163: only when Phase 130 ingested a usable trailer — never a dead affordance.
+                        if (detail.trailer != null) {
+                            RaviloButton(
+                                label = "▷ ${str("action.trailer")}",
+                                focusRequester = trailerFR,
+                                style = ButtonStyle.GHOST,
+                                onSelect = { showTrailer = true },
+                            )
+                        }
                     }
                 }
             }
@@ -360,5 +374,14 @@ private fun MovieDetailLoaded(
             onSearch = onSearch,
             scrolled = appBarScrolled,
         )
+
+        // R163: fullscreen embedded trailer, last child so it paints over the AppBar too.
+        if (showTrailer && detail.trailer != null) {
+            TrailerOverlay(
+                trailer = detail.trailer,
+                title = detail.card.title,
+                onClose = { showTrailer = false; runCatching { trailerFR.requestFocus() } },
+            )
+        }
     }
 }
