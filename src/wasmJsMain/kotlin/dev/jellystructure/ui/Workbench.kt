@@ -55,8 +55,6 @@ private var wbTrack: TrackFacets? = null
 private var wbNarrowed: NarrowedFacets? = null  // R127: facet counts narrowed to the channel scope (baseConds)
 private var wbScope: CoroutineScope? = null
 private var wbOnApply: ((String, String, List<WbCond>) -> Unit)? = null
-private var wbOnSave: ((String, String, String, List<WbCond>) -> Unit)? = null
-private var wbShowSaveAs = false
 private var wbTitle = ""
 private var wbApplyLabel = "Apply"
 
@@ -84,8 +82,6 @@ private val WB_CH_PRESETS = listOf(
 /**
  * Open the workbench modal.
  * @param onApply     called with (match, include, conditions) when the user applies the filter.
- * @param onSaveAs    when non-null, "Save as… Channel/Row" buttons appear; called with
- *                    (target = "channel"|"row", match, include, conditions).
  */
 fun openWorkbench(
     scope: CoroutineScope,
@@ -96,7 +92,6 @@ fun openWorkbench(
     initialConds: List<WbCond> = emptyList(),
     applyLabel: String = "Apply",
     onApply: (String, String, List<WbCond>) -> Unit,
-    onSaveAs: ((String, String, String, List<WbCond>) -> Unit)? = null,
     // R36: when channelMode, the modal also edits the channel button; onSaveChannel receives
     // (style "LOGO"|"TEXT", brandColor, logoUrl, match, include, conditions).
     channelMode: Boolean = false,
@@ -123,8 +118,6 @@ fun openWorkbench(
     if (wbConds.isEmpty()) wbConds.add(WbCond("studio", "is_any_of"))
     wbApplyLabel = applyLabel
     wbOnApply = onApply
-    wbOnSave = onSaveAs
-    wbShowSaveAs = onSaveAs != null
     wbChannelMode = channelMode
     wbChStyle = if (initialStyle.equals("text", ignoreCase = true)) "text" else "logo"
     wbChColor = initialBrandColor
@@ -175,7 +168,6 @@ fun openWorkbench(
           <div class="wb-foot">
             <span class="spacer"></span>
             <button id="wb-cancel" class="btn sm ghost">Cancel</button>
-            ${if (wbShowSaveAs) """<button id="wb-save-channel" class="btn sm ghost">Save as Channel</button><button id="wb-save-row" class="btn sm ghost">Save as Content row</button>""" else ""}
             <button id="wb-apply" class="btn sm">${applyLabel.esc()}</button>
           </div>
         </div>
@@ -301,8 +293,6 @@ private fun wbWireChrome() {
         }
         closeWorkbench()
     }
-    document.getElementById("wb-save-channel")?.addEventListener("click") { wbOnSave?.invoke("channel", wbMatch, wbInclude, wbConds); closeWorkbench() }
-    document.getElementById("wb-save-row")?.addEventListener("click") { wbOnSave?.invoke("row", wbMatch, wbInclude, wbConds); closeWorkbench() }
 }
 
 private fun refreshChromeSeg() {

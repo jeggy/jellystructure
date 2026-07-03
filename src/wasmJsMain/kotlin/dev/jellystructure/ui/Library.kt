@@ -4,12 +4,7 @@ package dev.jellystructure.ui
 
 import dev.jellystructure.App
 import dev.jellystructure.api.MediaApi
-import dev.jellystructure.api.RaviloApi
-import dev.jellystructure.shared.tv.ChannelConfig
 import dev.jellystructure.shared.tv.Condition
-import dev.jellystructure.shared.tv.MatchMode
-import dev.jellystructure.shared.tv.RowConfig
-import dev.jellystructure.shared.tv.RowKind
 import dev.jellystructure.elemNearViewportBottom
 import dev.jellystructure.historyReplaceState
 import dev.jellystructure.observeSections
@@ -149,19 +144,25 @@ fun renderLibrary(container: Element, scope: CoroutineScope, query: Map<String, 
           <h1>Library</h1>
           <span class="spacer"></span>
           <button id="scan-btn" class="btn primary">▶ Scan library</button>
+          <span class="searchwrap" id="searchwrap">
+            <input id="lib-search" class="input" type="search" placeholder="⌕ search title…" style="width:200px;flex-shrink:0;">
+          </span>
+          <span class="seg" id="kindseg">
+            <span id="k-all" class="on">All</span>
+            <span id="k-movie">Movies</span>
+            <span id="k-tv">TV</span>
+          </span>
         </div>
         <p class="page-sub">Everything Jellystructure manages. A red corner means at least one untagged track; an orange one means a mixed-language series. Click any title to open its detail page.</p>
 
         <div id="scan-banner" style="display:none;margin-bottom:14px"></div>
 
         <div class="row center" style="margin-bottom:6px;gap:8px;flex-wrap:wrap;">
-          <input id="lib-search" class="input" type="search" placeholder="⌕ search title…" style="width:200px;flex-shrink:0;">
+          <button id="lib-workbench" class="chip">⚙ Add filter</button>
           <span class="muted tiny">filter:</span>
           <button id="f-all" class="chip">All</button>
           <button id="f-attention" class="chip">Needs attention</button>
           <button id="f-artwork" class="chip">Missing artwork</button>
-          <button id="lib-workbench" class="chip">⚙ Add filter</button>
-          <button id="lib-saveas" class="chip">★ Save filter as…</button>
           <button id="lib-clear" class="chip" style="display:none">✕ Clear filters</button>
           <span class="spacer" style="flex:1"></span>
           <select id="lib-sort" class="input" style="width:auto;font-size:.83rem;">
@@ -169,11 +170,6 @@ fun renderLibrary(container: Element, scope: CoroutineScope, query: Map<String, 
             <option value="title">title A–Z</option>
             <option value="year">year newest first</option>
           </select>
-          <span class="seg" id="kindseg">
-            <span id="k-all" class="on">All</span>
-            <span id="k-movie">Movies</span>
-            <span id="k-tv">TV</span>
-          </span>
           <span class="muted tiny" id="lib-total"></span>
         </div>
         <div id="active-chips" class="row center" style="display:none;margin-bottom:8px;gap:6px;flex-wrap:wrap;"></div>
@@ -640,6 +636,10 @@ private fun libInclude(): String = when (libKind) {
     MediaKind.MOVIE -> "movies"; MediaKind.TV_SHOW -> "series"; else -> "all"
 }
 
+// Phase 105: channel/content-row authoring now lives in the Ravilo config editor (per-user & global
+// scope, R51+) — pushing a Library filter into a viewer's layout from here is no longer a supported
+// flow, so this only wires the "Add filter" (apply-to-Library) path; the old "Save filter as…" round
+// trip (onSaveAs → pickViewerThen → saveFilterToViewer) is gone.
 private fun wireLibraryWorkbench(scope: CoroutineScope) {
     fun open(title: String) = openWorkbench(
         scope = scope, title = title, viewer = null,
@@ -648,10 +648,8 @@ private fun wireLibraryWorkbench(scope: CoroutineScope) {
         // R87: offer the content_row facet (and let the handed-off condition be edited) using its own rows.
         rowsContext = libCoverageCond?.rows ?: emptyList(),
         onApply = { match, include, conds -> applyWorkbenchToLibrary(match, include, conds) },
-        onSaveAs = { target, match, include, conds -> pickViewerThen(scope) { uid, name -> scope.launch { saveFilterToViewer(uid, name, target, match, include, conds) } } },
     )
     document.getElementById("lib-workbench")?.addEventListener("click") { open("Library filter") }
-    document.getElementById("lib-saveas")?.addEventListener("click") { open("Save filter as…") }
 }
 
 /** Only the is_any_of / contains subset maps to the Library's URL filter; that is what the grid serves. */
@@ -678,58 +676,3 @@ private fun applyWorkbenchToLibrary(match: String, include: String, conds: List<
     App.navigate(if (params.isEmpty()) "/library" else "/library?${params.joinToString("&")}")
 }
 
-private fun wbToConditions(conds: List<WbCond>): List<Condition> =
-    conds.filter { it.values.isNotEmpty() || it.facet == "track_title" }.map { Condition(it.facet, it.op, it.values.toList()) }
-
-private suspend fun saveFilterToViewer(userId: String, name: String, target: String, match: String, include: String, conds: List<WbCond>) {
-    val cfg = runCatching { RaviloApi.getConfig(userId) }.getOrNull() ?: return
-    val mode = if (match == "ANY") MatchMode.ANY else MatchMode.ALL
-    val conditions = wbToConditions(conds)
-    val label = conds.firstOrNull { it.values.isNotEmpty() }?.values?.firstOrNull() ?: "Custom filter"
-    val mediaKind = when (include) { "movies" -> "MOVIE"; "series" -> "SERIES"; else -> null }
-    val newCfg = if (target == "channel") {
-        cfg.copy(channels = cfg.channels + ChannelConfig(id = "ch-${(0..999999).random()}", name = label, match = mode, conditions = conditions))
-    } else {
-        cfg.copy(rows = cfg.rows + RowConfig(id = "row-${(0..999999).random()}", kind = RowKind.CUSTOM, title = label, mediaKind = mediaKind, match = mode, conditions = conditions))
-    }
-    val ok = runCatching { RaviloApi.putConfig(userId, newCfg); true }.getOrDefault(false)
-    libToast(if (ok) "Saved ${if (target == "channel") "channel" else "content row"} to ${name}'s layout." else "Save failed.")
-}
-
-private fun libToast(msg: String) {
-    val banner = document.getElementById("scan-banner") as? HTMLElement ?: return
-    banner.style.display = "block"
-    banner.innerHTML = """<span class="badge ok">$msg</span>"""
-}
-
-/** Minimal viewer picker modal (radio list of Jellyfin users). */
-private fun pickViewerThen(scope: CoroutineScope, onPick: (String, String) -> Unit) {
-    scope.launch {
-        val users = runCatching { RaviloApi.getUsers() }.getOrDefault(emptyList())
-        if (users.isEmpty()) { libToast("No Jellyfin users available."); return@launch }
-        val existing = document.getElementById("viewer-pick-overlay")
-        existing?.parentElement?.removeChild(existing)
-        val overlay = document.createElement("div") as HTMLElement
-        overlay.id = "viewer-pick-overlay"
-        overlay.setAttribute("style", "position:fixed;inset:0;background:#000a;display:flex;align-items:center;justify-content:center;z-index:1100;")
-        val rows = users.joinToString("") { u ->
-            """<label style="display:flex;gap:8px;align-items:center;padding:7px 4px;cursor:pointer;"><input type="radio" name="vp" value="${u.id}" data-name="${u.displayName.esc()}"> ${u.displayName.esc()}</label>"""
-        }
-        overlay.innerHTML = """
-            <div style="background:var(--fill);color:var(--ink);border:1px solid var(--line);border-radius:14px;padding:18px;min-width:280px;box-shadow:var(--shadow);">
-              <h3 style="margin:0 0 10px;">For which viewer?</h3>
-              <div style="max-height:300px;overflow:auto;">$rows</div>
-              <div class="row center" style="margin-top:14px;gap:8px;justify-content:flex-end;">
-                <button id="vp-cancel" class="btn sm ghost">Cancel</button>
-                <button id="vp-ok" class="btn sm">Save</button>
-              </div>
-            </div>"""
-        document.body?.appendChild(overlay)
-        document.getElementById("vp-cancel")?.addEventListener("click") { overlay.parentElement?.removeChild(overlay) }
-        document.getElementById("vp-ok")?.addEventListener("click") {
-            val sel = document.querySelector("#viewer-pick-overlay input[name=vp]:checked") as? HTMLInputElement
-            if (sel != null) { onPick(sel.value, sel.getAttribute("data-name") ?: sel.value) }
-            overlay.parentElement?.removeChild(overlay)
-        }
-    }
-}
