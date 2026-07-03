@@ -75,13 +75,13 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import kotlinx.datetime.Clock
 import kotlinx.datetime.DayOfWeek
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.Month
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.daysUntil
 import kotlinx.datetime.toLocalDateTime
+import kotlin.time.Clock
 
 sealed class UpcomingState {
     data object Loading : UpcomingState()
@@ -376,7 +376,7 @@ private fun DateRail(days: List<String>, grouped: Map<String, List<UpcomingItem>
                     color = colors.textSecondary, fontSize = 10.sp, fontWeight = FontWeight.SemiBold,
                 )
                 Text(
-                    date?.dayOfMonth?.toString() ?: "?",
+                    date?.day?.toString() ?: "?",
                     color = colors.text, fontSize = 16.sp, fontWeight = FontWeight.Bold,
                 )
                 Text(
@@ -436,8 +436,11 @@ private fun UpcomingCard(item: UpcomingItem, focusRequester: FocusRequester?, on
                     }
                 },
         ) {
-            if (item.posterUrl != null) {
-                RemoteImage(item.posterUrl, item.title, Modifier.fillMaxSize())
+            // Cross-module `val` properties (item.posterUrl is declared in :shared) aren't
+            // smart-cast — bind to a local val first.
+            val posterUrl = item.posterUrl
+            if (posterUrl != null) {
+                RemoteImage(posterUrl, item.title, Modifier.fillMaxSize())
             } else {
                 Box(Modifier.fillMaxSize().background(gradient))
             }
@@ -512,7 +515,7 @@ private fun dayLabel(dateStr: String): String {
         0 -> str("up.day_today")
         1 -> str("up.day_tomorrow")
         -1 -> str("up.day_yesterday")
-        else -> "${weekdayAbbrev(date.dayOfWeek)} ${date.dayOfMonth} ${monthAbbrev(date.month)}"
+        else -> "${weekdayAbbrev(date.dayOfWeek)} ${date.day} ${monthAbbrev(date.month)}"
     }
 }
 
@@ -521,14 +524,13 @@ private fun todayUtc(): LocalDate = Clock.System.now().toLocalDateTime(TimeZone.
 private fun weekdayAbbrev(d: DayOfWeek): String = when (d) {
     DayOfWeek.MONDAY -> "MON"; DayOfWeek.TUESDAY -> "TUE"; DayOfWeek.WEDNESDAY -> "WED"
     DayOfWeek.THURSDAY -> "THU"; DayOfWeek.FRIDAY -> "FRI"; DayOfWeek.SATURDAY -> "SAT"
-    DayOfWeek.SUNDAY -> "SUN"; else -> ""
+    DayOfWeek.SUNDAY -> "SUN"
 }
 
 private fun monthAbbrev(m: Month): String = when (m) {
     Month.JANUARY -> "JAN"; Month.FEBRUARY -> "FEB"; Month.MARCH -> "MAR"; Month.APRIL -> "APR"
     Month.MAY -> "MAY"; Month.JUNE -> "JUN"; Month.JULY -> "JUL"; Month.AUGUST -> "AUG"
     Month.SEPTEMBER -> "SEP"; Month.OCTOBER -> "OCT"; Month.NOVEMBER -> "NOV"; Month.DECEMBER -> "DEC"
-    else -> ""
 }
 
 // internal, not private: UpcomingDetailScreen.kt (a different file, same package) reuses this too.
