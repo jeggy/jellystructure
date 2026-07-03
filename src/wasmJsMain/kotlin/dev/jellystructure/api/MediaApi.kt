@@ -515,6 +515,12 @@ object MediaApi {
         if (response.status == HttpStatusCode.OK) response.body<MediaItem>() else null
     }.getOrNull()
 
+    // Phase 131: manual per-title IMDb rating re-sync against imdbapi.dev.
+    suspend fun syncImdbRating(id: String): MediaItem? = runCatching {
+        val response = httpClient.post("/api/media/$id/imdb-rating/sync")
+        if (response.status == HttpStatusCode.OK) response.body<MediaItem>() else null
+    }.getOrNull()
+
     suspend fun getTriageCount(): TriageCount? = runCatching {
         httpClient.get("/api/triage/count").body<TriageCount>()
     }.getOrNull()

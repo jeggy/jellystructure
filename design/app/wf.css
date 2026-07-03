@@ -707,3 +707,13 @@ hr.dash { border: none; border-top: 1px solid var(--line); margin: 18px 0; }
 .tr-src { font-size: .62rem; font-weight: 700; letter-spacing: .05em; padding: 2px 9px; border-radius: 20px; }
 .tr-src.yt { color: #ff5252; background: rgba(255,82,82,.12); border: 1px solid rgba(255,82,82,.42); }
 .tr-src.vm { color: #3fb6f5; background: rgba(63,182,245,.12); border: 1px solid rgba(63,182,245,.42); }
+
+/* Phase 131 — IMDb rating (pagebar pill + Overview card) */
+.imdb-wm { display: inline-flex; align-items: center; gap: 3px; font-family: 'Space Grotesk', sans-serif; font-weight: 800; font-size: .6rem; letter-spacing: .3px; color: #0a0c13; background: #f5c518; padding: 2px 6px; border-radius: 5px; line-height: 1.3; }
+.imdb-star { color: #0a0c13; }
+.imdb-pill { display: inline-flex; align-items: center; gap: 7px; text-decoration: none; color: var(--ink); font-size: .82rem; font-weight: 700; padding: 3px 11px 3px 4px; border: 1px solid var(--line); border-radius: 20px; background: var(--fill-2); }
+.imdb-pill:hover { border-color: var(--line-2); }
+.imdb-pill .imdb-votes { color: var(--ink-dim); font-weight: 500; }
+.imdb-big { display: flex; align-items: center; gap: 11px; }
+.imdb-score { font-family: 'Space Grotesk', sans-serif; display: inline-flex; align-items: baseline; gap: 4px; font-size: 1.55rem; font-weight: 800; }
+.imdb-score .imdb-max { font-size: .9rem; color: var(--ink-dim); font-weight: 600; }

@@ -257,6 +257,14 @@ data class TvTrailer(
     val name: String? = null,
 )
 
+/** Phase 131: IMDb rating — catalog-only, populated straight from the stored MediaItem.imdbRating
+ *  (never fetched at detail-read time). Null when the title has no rating yet. R164 renders it. */
+@Serializable
+data class TvImdbRating(
+    @SerialName("aggregate_rating") val aggregateRating: Double,
+    @SerialName("vote_count") val voteCount: Long,
+)
+
 @Serializable
 data class MovieDetail(
     val card: MediaCard,
@@ -275,6 +283,8 @@ data class MovieDetail(
     @SerialName("rating_badge") val ratingBadge: RatingBadge? = null,
     /** Phase 130: null when TMDB has no usable trailer. R163 renders the Play-Trailer button. */
     val trailer: TvTrailer? = null,
+    /** Phase 131: null when the title has no IMDb rating yet. R164 renders it. */
+    @SerialName("imdb_rating") val imdbRating: TvImdbRating? = null,
 )
 
 @Serializable
@@ -296,6 +306,8 @@ data class SeriesDetail(
     @SerialName("rating_badge") val ratingBadge: RatingBadge? = null,
     /** Phase 130: null when TMDB has no usable trailer (series-level only). R163 renders the button. */
     val trailer: TvTrailer? = null,
+    /** Phase 131: null when the title has no IMDb rating yet (the show-level rating). R164 renders it. */
+    @SerialName("imdb_rating") val imdbRating: TvImdbRating? = null,
 )
 
 // ─── Search ───────────────────────────────────────────────────────────────────

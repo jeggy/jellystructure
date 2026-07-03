@@ -101,6 +101,7 @@ fun main() = runBlocking {
     val sessionService = SessionService(db)
     val jellyfinClient = JellyfinClient()
     val tmdbClient = TmdbClient(configStore, tmdbBaseUrl)
+    val imdbClient = dev.jellystructure.imdb.ImdbClient()  // Phase 131
     val dataDir = dbFile.substringBeforeLast('/')
     val jsTagStore = dev.jellystructure.media.JsTagStore("$dataDir/js-tags.json")
     jsTagStore.load()
@@ -189,7 +190,7 @@ fun main() = runBlocking {
     val shutdown = startServer(
         configStore, sessionService, raviloDeviceService, raviloConfigService, channelLogoStore, homeFeedService, browseService, detailService, playbackService, jellyfinClient, mediaStore, scanner,
         artworkDownloader, tmdbClient, scanTracker, mediaHistory, activityLog, broadcaster,
-        frontendDir, raviloWebDir = raviloWebDir, port = port, scanDispatcher = scanDispatcher, effectiveScanThreads = effectiveScanThreads, jsTagStore = jsTagStore, seedingGuard = seedingGuard, seedingSnapshot = seedingSnapshot, logoDownloader = logoDownloader, qbClient = qbClient, arrClient = arrClient, arrRescan = arrRescan, sonarrEnrich = sonarrEnrich, acquisitionService = acquisitionService, chartRegistry = chartRegistry, chartStore = chartStore, chartIngest = chartIngest, tvEventBus = tvEventBus, imageProxyService = imageProxyService, mediaJobQueue = mediaJobQueue, sessionBridge = sessionBridge, apiKeyStore = apiKeyStore, realtimeIngest = realtimeIngest, libraryListener = libraryListener, fdWatchdog = fdWatchdog,
+        frontendDir, raviloWebDir = raviloWebDir, port = port, scanDispatcher = scanDispatcher, effectiveScanThreads = effectiveScanThreads, jsTagStore = jsTagStore, seedingGuard = seedingGuard, seedingSnapshot = seedingSnapshot, logoDownloader = logoDownloader, qbClient = qbClient, arrClient = arrClient, arrRescan = arrRescan, sonarrEnrich = sonarrEnrich, acquisitionService = acquisitionService, chartRegistry = chartRegistry, chartStore = chartStore, chartIngest = chartIngest, tvEventBus = tvEventBus, imageProxyService = imageProxyService, mediaJobQueue = mediaJobQueue, sessionBridge = sessionBridge, apiKeyStore = apiKeyStore, realtimeIngest = realtimeIngest, libraryListener = libraryListener, fdWatchdog = fdWatchdog, imdbClient = imdbClient,
     )
 
     // R149: populate Sonarr next-airing data for all TV shows on startup (background, non-blocking).
@@ -232,7 +233,7 @@ fun main() = runBlocking {
             val jobId = scanTracker.startNew()
             runTagged(jobId, "scheduled", "▶ Scheduled ${if (active != null) "pipeline" else "scan"} run started") {
                 if (active != null) {
-                    executePipeline(active, jobId, mediaStore, scanner, scanTracker, broadcaster, configStore, jellyfinClient, scanDispatcher, artworkDownloader, arrRescan, sonarrEnrich)
+                    executePipeline(active, jobId, mediaStore, scanner, scanTracker, broadcaster, configStore, jellyfinClient, scanDispatcher, artworkDownloader, arrRescan, sonarrEnrich, imdbClient)
                 } else {
                     runScan(jobId, emptySet(), mediaStore, scanner, scanTracker, broadcaster, configStore, jellyfinClient, scanDispatcher, artworkDownloader = if (cfg.behavior.fetchImages) artworkDownloader else null)
                 }
@@ -367,6 +368,7 @@ suspend fun executePipeline(
     artworkDownloader: ArtworkDownloader,
     arrRescan: ArrRescanService,
     sonarrEnrich: SonarrEnrichService? = null,
+    imdbClient: dev.jellystructure.imdb.ImdbClient? = null,
 ) {
     val scanStep = pipeline.firstOrNull { it.step == "scan_files" }
         ?: PipelineStep(step = "scan_files")
@@ -524,6 +526,25 @@ suspend fun executePipeline(
                     runCatching { fireWebhook(cfg, """{"event":"drift_detected","pipeline":true,"items":$external}""") }
                         .onFailure { Logger.warn("detect_drift notify webhook failed: ${it.message}") }
                 }
+            }
+            "sync_imdb_ratings" -> {
+                // Phase 131: keyed by imdbId; a title without one has no rating to sync. Modest
+                // per-title delay (on top of the Phase 129 OutboundHttp permit gate) since imdbapi.dev
+                // has no batch endpoint verified at implementation time — small and simple beats a
+                // second unverified code path.
+                val toSync = workingSet.filter { !it.imdbId.isNullOrBlank() }
+                Logger.info("sync_imdb_ratings: ${toSync.size} of ${workingSet.size} items have an IMDb id")
+                var updated = 0
+                for (item in toSync) {
+                    val imdbId = item.imdbId ?: continue
+                    val fetched = imdbClient?.getRating(imdbId)
+                    if (fetched != null) {
+                        store.updateOne(item.copy(imdbRating = dev.jellystructure.model.ImdbRating(fetched.aggregateRating, fetched.voteCount, nowEpochSec())))
+                        updated++
+                    }
+                    delay(250)
+                }
+                Logger.info("sync_imdb_ratings: $updated of ${toSync.size} ratings updated")
             }
             "wait" -> {
                 Logger.info("wait: ${step.minutes} min")
