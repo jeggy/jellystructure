@@ -99,8 +99,6 @@ data class ApiKeys(
     @SerialName("tmdb_v3_key") val tmdbV3Key: String = "",
     @SerialName("jellyfin_token") val jellyfinToken: String = "",
     @SerialName("jellyfin_url") val jellyfinUrl: String = "",
-    // Phase 58-chart — RapidAPI key for streaming-availability (movieofthenight.com); free tier is plenty.
-    @SerialName("streaming_availability_key") val streamingAvailabilityKey: String = "",
 )
 
 @Serializable

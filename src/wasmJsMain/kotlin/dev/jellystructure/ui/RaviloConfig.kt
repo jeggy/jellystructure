@@ -68,8 +68,7 @@ private suspend fun loadDiscoverForRegion(region: String) {
 
 // Provider display names for the Top 10 list UI — id matches the backend ChartProvider id
 private val DISCOVER_PROVIDER_NAMES = mapOf(
-    "netflix" to "Netflix", "max" to "Max", "disney" to "Disney+",
-    "prime" to "Amazon Prime", "apple" to "Apple TV+",
+    "netflix" to "Netflix",
     "viaplay" to "Viaplay", "paramount" to "Paramount+", "skyshowtime" to "SkyShowtime",
 )
 private val DISCOVER_REGIONS = listOf("DK" to "Denmark", "NO" to "Norway", "SE" to "Sweden", "FI" to "Finland", "IS" to "Iceland", "GB" to "United Kingdom", "US" to "United States", "DE" to "Germany", "FR" to "France")

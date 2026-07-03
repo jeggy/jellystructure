@@ -1,6 +1,13 @@
 package dev.jellystructure.chart
 
 import dev.jellystructure.shared.tv.ChartListSpec
+import kotlinx.cinterop.ExperimentalForeignApi
+import kotlinx.cinterop.alloc
+import kotlinx.cinterop.memScoped
+import kotlinx.cinterop.ptr
+import platform.posix.CLOCK_REALTIME
+import platform.posix.clock_gettime
+import platform.posix.timespec
 
 /** Raw, pre-resolution entry as scraped/parsed from a vendor feed. */
 data class RawChartEntry(
@@ -31,4 +38,13 @@ class ChartRegistry(providers: List<ChartProvider>) {
     fun get(id: String): ChartProvider? = byId[id]
     fun all(): List<ChartProvider> = byId.values.toList()
     fun enabled(ids: List<String>): List<ChartProvider> = ids.mapNotNull { byId[it] }
+}
+
+// Phase 132: relocated from the now-deleted StreamingAvailabilityProvider (RapidAPI removal) —
+// JustWatchProvider also week-gates its refresh on this.
+@OptIn(ExperimentalForeignApi::class)
+internal fun weekKey(): String = memScoped {
+    val ts = alloc<timespec>()
+    clock_gettime(CLOCK_REALTIME, ts.ptr)
+    "W${ts.tv_sec / (7L * 24 * 3600)}"
 }
