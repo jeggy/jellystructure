@@ -3,15 +3,10 @@ package dev.jellystructure.chart
 import dev.jellystructure.config.ConfigStore
 import dev.jellystructure.OutboundHttp
 import dev.jellystructure.shared.tv.ChartListSpec
-import io.ktor.client.HttpClient
 import io.ktor.client.call.body
-import io.ktor.client.engine.curl.Curl
-import io.ktor.client.plugins.HttpTimeout
-import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.parameter
-import io.ktor.serialization.kotlinx.json.json
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.alloc
 import kotlinx.cinterop.memScoped
@@ -20,7 +15,6 @@ import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.Json
 import platform.posix.CLOCK_REALTIME
 import platform.posix.clock_gettime
 import platform.posix.timespec
@@ -45,16 +39,8 @@ class StreamingAvailabilityProvider(
     private suspend fun httpGet(url: String, block: io.ktor.client.request.HttpRequestBuilder.() -> Unit = {}): io.ktor.client.statement.HttpResponse =
         OutboundHttp.withPermit { http.get(url, block) }
 
-    private val http = HttpClient(Curl) {
-        install(ContentNegotiation) {
-            json(Json { ignoreUnknownKeys = true })
-        }
-        install(HttpTimeout) {
-            connectTimeoutMillis = 10_000
-            socketTimeoutMillis  = 30_000
-            requestTimeoutMillis = 30_000
-        }
-    }
+    // Phase 129 (FR-OPS1 §B.1) — shared client, one idle connection pool for all outbound callers.
+    private val http = OutboundHttp.client
 
     override fun availableLists(region: String): List<ChartListSpec> = listOf(
         ChartListSpec("$id-mov-$region", id, "Top 10 Movies on $displayName", "country", "film", "rank", region),

@@ -3,21 +3,15 @@ package dev.jellystructure.chart
 import dev.jellystructure.log.Logger
 import dev.jellystructure.OutboundHttp
 import dev.jellystructure.shared.tv.ChartListSpec
-import io.ktor.client.HttpClient
 import io.ktor.client.call.body
-import io.ktor.client.engine.curl.Curl
-import io.ktor.client.plugins.HttpTimeout
-import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.http.ContentType
 import io.ktor.http.contentType
-import io.ktor.serialization.kotlinx.json.json
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -46,19 +40,11 @@ class JustWatchProvider(
 
     private val gate = Semaphore(8)
 
-    private val json = Json { ignoreUnknownKeys = true }
-
     private suspend fun httpPost(url: String, block: io.ktor.client.request.HttpRequestBuilder.() -> Unit = {}): io.ktor.client.statement.HttpResponse =
         OutboundHttp.withPermit { http.post(url, block) }
 
-    private val http = HttpClient(Curl) {
-        install(ContentNegotiation) { json(json) }
-        install(HttpTimeout) {
-            connectTimeoutMillis = 10_000
-            socketTimeoutMillis  = 30_000
-            requestTimeoutMillis = 30_000
-        }
-    }
+    // Phase 129 (FR-OPS1 §B.1) — shared client, one idle connection pool for all outbound callers.
+    private val http = OutboundHttp.client
 
     // shortName cache: country → 3-letter code (null = not available in that country)
     private val shortNameCache = mutableMapOf<String, String?>()

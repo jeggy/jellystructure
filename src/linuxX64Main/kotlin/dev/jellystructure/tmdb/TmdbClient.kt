@@ -2,22 +2,16 @@ package dev.jellystructure.tmdb
 
 import dev.jellystructure.config.ConfigStore
 import dev.jellystructure.log.Logger
-import io.ktor.client.HttpClient
 import io.ktor.client.call.body
-import io.ktor.client.engine.curl.Curl
-import io.ktor.client.plugins.HttpTimeout
-import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.request.HttpRequestBuilder
 import io.ktor.client.request.get
 import io.ktor.client.request.parameter
 import io.ktor.client.statement.HttpResponse
 import io.ktor.http.HttpStatusCode
-import io.ktor.serialization.kotlinx.json.json
 import dev.jellystructure.OutboundHttp
 import kotlinx.coroutines.delay
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.Json
 
 @Serializable
 data class TmdbSearchResponse(
@@ -296,16 +290,8 @@ class TmdbClient(
     private val configStore: ConfigStore,
     private val baseUrl: String = "https://api.themoviedb.org/3",
 ) {
-    private val http = HttpClient(Curl) {
-        install(ContentNegotiation) {
-            json(Json { ignoreUnknownKeys = true })
-        }
-        install(HttpTimeout) {
-            connectTimeoutMillis = 10_000
-            socketTimeoutMillis  = 60_000
-            requestTimeoutMillis = 60_000
-        }
-    }
+    // Phase 129 (FR-OPS1 §B.1) — shared client, one idle connection pool for all outbound callers.
+    private val http = OutboundHttp.client
 
     private val detailsCache = mutableMapOf<Int, TmdbMovieDetails>()
 

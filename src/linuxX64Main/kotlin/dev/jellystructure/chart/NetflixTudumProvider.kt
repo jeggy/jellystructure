@@ -2,10 +2,7 @@ package dev.jellystructure.chart
 
 import dev.jellystructure.shared.tv.ChartListSpec
 import dev.jellystructure.OutboundHttp
-import io.ktor.client.HttpClient
 import io.ktor.client.call.body
-import io.ktor.client.engine.curl.Curl
-import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.request.get
 import io.ktor.client.request.header
 
@@ -24,13 +21,8 @@ class NetflixTudumProvider : ChartProvider {
     private suspend fun httpGet(url: String, block: io.ktor.client.request.HttpRequestBuilder.() -> Unit = {}): io.ktor.client.statement.HttpResponse =
         OutboundHttp.withPermit { http.get(url, block) }
 
-    private val http = HttpClient(Curl) {
-        install(HttpTimeout) {
-            connectTimeoutMillis = 10_000
-            socketTimeoutMillis  = 60_000
-            requestTimeoutMillis = 60_000
-        }
-    }
+    // Phase 129 (FR-OPS1 §B.1) — shared client, one idle connection pool for all outbound callers.
+    private val http = OutboundHttp.client
     private val base = "https://www.netflix.com/tudum/top10/data"
 
     override fun availableLists(region: String): List<ChartListSpec> = listOf(
