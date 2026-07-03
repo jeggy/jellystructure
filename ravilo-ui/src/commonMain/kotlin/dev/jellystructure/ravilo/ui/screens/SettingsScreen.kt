@@ -19,10 +19,12 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -89,6 +91,29 @@ class SettingsStore(private val apiClient: TvApiClient) {
         _state.value = SettingsState.Loaded(updated)
         scope.launch { runCatching { apiClient.putViewerSettings(autoplayNext = v) } }
     }
+
+    /** R161: a per-user viewer override, resolved server-side (R162) against the admin override then
+     *  the global default. Re-localizing the whole UI happens automatically: RaviloApp's live-config
+     *  push re-pulls `getConfig()` after any settings write and re-sets `WithLocale(cfg.uiLanguage)`. */
+    fun saveUiLanguage(lang: String) {
+        val cur = (_state.value as? SettingsState.Loaded)?.config ?: return
+        val updated = cur.copy(uiLanguage = lang)
+        _state.value = SettingsState.Loaded(updated)
+        scope.launch { runCatching { apiClient.putViewerSettings(uiLanguage = lang) } }
+    }
+
+    /**
+     * R161 — "Unpair this TV": revokes every session this device holds (not just the active one),
+     * then clears the local store. Distinct from per-session Sign out. Best-effort per token — a
+     * failed revoke for one session doesn't stop the others; the local store is cleared regardless
+     * so the device always ends up back at the pairing gate.
+     */
+    suspend fun unpairDevice() {
+        for (session in MultiTokenStore.getAll()) {
+            runCatching { apiClient.unpair(session.deviceToken) }
+        }
+        MultiTokenStore.clear()
+    }
 }
 
 @Composable
@@ -98,9 +123,14 @@ fun SettingsScreen(
     onSignOut: () -> Unit,
     onBack: () -> Unit,
     onSkinChange: (Skin) -> Unit = {},
+    // R161: fires after the device's sessions are actually revoked (store.unpairDevice() has
+    // completed) — the caller navigates to the pairing gate, mirroring onSignOut's role.
+    onUnpair: () -> Unit = {},
 ) {
     val colors = RaviloTheme.colors
     val state by store.state.collectAsState()
+    val scope = rememberCoroutineScope()
+    var showUnpairConfirm by remember { mutableStateOf(false) }
 
     // R33: silently re-pull settings when the user's config changes elsewhere.
     val live = dev.jellystructure.ravilo.ui.LocalLiveConfig.current
@@ -122,11 +152,84 @@ fun SettingsScreen(
                     store = store,
                     onSignOut = onSignOut,
                     onSkinChange = onSkinChange,
+                    onUnpairRequest = { showUnpairConfirm = true },
                 )
+            }
+        }
+        // R161: 2-D nav is "steps out one level" for Back/Esc — the confirm overlay owns input while
+        // shown (dpadFocusable's onBack on Cancel closes it) and defaults focus to the non-destructive
+        // Cancel choice.
+        if (showUnpairConfirm) {
+            UnpairConfirmOverlay(
+                onCancel = { showUnpairConfirm = false },
+                onConfirm = {
+                    showUnpairConfirm = false
+                    scope.launch { store.unpairDevice(); onUnpair() }
+                },
+            )
+        }
+    }
+}
+
+@Composable
+private fun UnpairConfirmOverlay(onCancel: () -> Unit, onConfirm: () -> Unit) {
+    val colors = RaviloTheme.colors
+    val cancelFR = remember { FocusRequester() }
+    val confirmFR = remember { FocusRequester() }
+    LaunchedEffect(Unit) { runCatching { cancelFR.requestFocus() } }
+    Box(
+        modifier = Modifier.fillMaxSize().background(colors.overlay),
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(
+            modifier = Modifier
+                .background(colors.surface, RoundedCornerShape(14.dp))
+                .padding(32.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Text(str("settings.unpair_confirm"), color = colors.text, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(8.dp))
+            Text(str("settings.unpair_desc"), color = colors.textSecondary, fontSize = 14.sp)
+            Spacer(Modifier.height(28.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                var cancelFocused by remember { mutableStateOf(false) }
+                Box(
+                    modifier = Modifier
+                        .background(colors.surfaceVariant, RoundedCornerShape(8.dp))
+                        .then(if (cancelFocused) Modifier.border(2.dp, colors.focusRing, RoundedCornerShape(8.dp)) else Modifier)
+                        .dpadFocusable(
+                            focusRequester = cancelFR,
+                            onFocused = { cancelFocused = true },
+                            onBlurred = { cancelFocused = false },
+                            onRight = { runCatching { confirmFR.requestFocus() } },
+                            onSelect = onCancel,
+                            onBack = onCancel,
+                        )
+                        .padding(horizontal = 24.dp, vertical = 12.dp),
+                ) { Text(str("action.cancel"), color = colors.text, fontSize = 14.sp, fontWeight = FontWeight.SemiBold) }
+                var confirmFocused by remember { mutableStateOf(false) }
+                Box(
+                    modifier = Modifier
+                        .background(Color(0xFFE0393A), RoundedCornerShape(8.dp))
+                        .then(if (confirmFocused) Modifier.border(2.dp, colors.focusRing, RoundedCornerShape(8.dp)) else Modifier)
+                        .dpadFocusable(
+                            focusRequester = confirmFR,
+                            onFocused = { confirmFocused = true },
+                            onBlurred = { confirmFocused = false },
+                            onLeft = { runCatching { cancelFR.requestFocus() } },
+                            onSelect = onConfirm,
+                            onBack = onCancel,
+                        )
+                        .padding(horizontal = 24.dp, vertical = 12.dp),
+                ) { Text(str("settings.unpair_yes"), color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold) }
             }
         }
     }
 }
+
+// R161 — endonyms, not translated (a language picker names languages in themselves regardless of
+// the currently active UI language, same convention the admin editor's language list already uses).
+private val UI_LANGUAGES = listOf("en" to "English", "da" to "Dansk", "fo" to "Foroyskt")
 
 @Composable
 private fun SettingsContent(
@@ -135,6 +238,7 @@ private fun SettingsContent(
     store: SettingsStore,
     onSignOut: () -> Unit,
     onSkinChange: (Skin) -> Unit,
+    onUnpairRequest: () -> Unit,
 ) {
     val colors = RaviloTheme.colors
 
@@ -180,6 +284,43 @@ private fun SettingsContent(
         Spacer(Modifier.height(32.dp))
     }
 
+    // R161: interface language — a per-user viewer override (server-owned, R162), never written back
+    // to the Jellystructure profile itself. Endonyms, current highlighted, left/right within the row.
+    SectionHeader(str("settings.language"))
+    Spacer(Modifier.height(12.dp))
+    val langFRs = remember { UI_LANGUAGES.map { FocusRequester() } }
+    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        UI_LANGUAGES.forEachIndexed { i, (code, label) ->
+            val isActive = config.uiLanguage == code
+            var focused by remember { mutableStateOf(false) }
+            Box(
+                modifier = Modifier
+                    .background(if (isActive) colors.accent else colors.surfaceVariant, RoundedCornerShape(10.dp))
+                    .then(
+                        if (focused && !isActive) Modifier.border(2.dp, colors.focusRing, RoundedCornerShape(10.dp))
+                        else Modifier
+                    )
+                    .dpadFocusable(
+                        focusRequester = langFRs[i],
+                        onFocused = { focused = true },
+                        onLeft  = { if (i > 0) langFRs[i - 1].requestFocus() },
+                        onRight = { if (i < UI_LANGUAGES.lastIndex) langFRs[i + 1].requestFocus() },
+                        onSelect = { store.saveUiLanguage(code) },
+                    )
+                    .padding(horizontal = 24.dp, vertical = 12.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = label,
+                    color = if (isActive) colors.onAccent else if (focused) colors.text else colors.textSecondary,
+                    fontSize = 14.sp,
+                    fontWeight = if (isActive || focused) FontWeight.SemiBold else FontWeight.Normal,
+                )
+            }
+        }
+    }
+    Spacer(Modifier.height(32.dp))
+
     // Playback prefs
     SectionHeader(str("settings.playback"))
     Spacer(Modifier.height(12.dp))
@@ -222,6 +363,31 @@ private fun SettingsContent(
         contentAlignment = Alignment.Center,
     ) {
         Text(str("profile.sign_out"), color = colors.text, fontSize = 14.sp)
+    }
+
+    Spacer(Modifier.height(32.dp))
+
+    // R161 — "Unpair this TV": a device-scoped action distinct from the per-session Sign out above
+    // (revokes every session this device holds). Danger-styled; requires the confirm overlay.
+    SectionHeader(str("settings.unpair").uppercase())
+    Spacer(Modifier.height(12.dp))
+    var unpairFocused by remember { mutableStateOf(false) }
+    Box(
+        modifier = Modifier
+            .background(Color(0xFFE0393A).copy(alpha = 0.14f), RoundedCornerShape(8.dp))
+            .then(if (unpairFocused) Modifier.border(2.dp, Color(0xFFE0393A), RoundedCornerShape(8.dp)) else Modifier)
+            .dpadFocusable(
+                onFocused = { unpairFocused = true },
+                onBlurred = { unpairFocused = false },
+                onSelect = onUnpairRequest,
+            )
+            .padding(horizontal = 24.dp, vertical = 12.dp),
+    ) {
+        Column {
+            Text(str("settings.unpair"), color = Color(0xFFE0393A), fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+            Spacer(Modifier.height(2.dp))
+            Text(str("settings.unpair_desc"), color = colors.textSecondary, fontSize = 12.sp)
+        }
     }
 }
 
