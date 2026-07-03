@@ -103,7 +103,7 @@ class MediaStore(
         val count = db.mediaQueries.count().executeAsOne()
         Logger.info("MediaStore: DB has $count media items")
         db.mediaQueries.allLastChecked().executeAsList().forEach { row ->
-            row.last_checked?.let { ts -> lastCheckedMap[row.id] = ts }
+            lastCheckedMap[row.id] = row.last_checked
         }
         backfillSearchText()
         backfillTimestamps()

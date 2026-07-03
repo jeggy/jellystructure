@@ -138,8 +138,8 @@ class SeedingSnapshot(
         val ttl = qbConfig?.seedingCacheTtl ?: 600L
         if (!configured) return SeedingReport(guard, emptyList(), snap.takenAt, ttl, snap.reachable)
 
-        val matching = snap.torrents.filter { coversItem(it, item, qbConfig!!) }
-        val crossSeedMap = buildCrossSeedMap(matching, qbConfig!!)
+        val matching = snap.torrents.filter { coversItem(it, item, qbConfig) }
+        val crossSeedMap = buildCrossSeedMap(matching, qbConfig)
         val refs = matching.map { buildRef(it, item, qbConfig, config.trackers, crossSeedMap) }
 
         val seasons = if (item.kind == MediaKind.TV_SHOW) {

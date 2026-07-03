@@ -137,6 +137,10 @@ private fun mapCandidates(images: List<TmdbImage>, onDiskSource: String?): List<
         )
     }
 
+// Shared lenient parser — reused across handlers so a Json format isn't rebuilt per request
+// (kotlinx.serialization advises against per-call `Json { }` creation).
+private val lenientJson = Json { ignoreUnknownKeys = true }
+
 fun Route.mediaRoutes(
     store: MediaStore,
     scanner: Scanner,
@@ -186,7 +190,7 @@ fun Route.mediaRoutes(
             // R74: condition stack — JSON-encoded List<Condition> + match=ALL|ANY.
             val conditionsJson = call.request.queryParameters["conditions"]
             val conditions = if (!conditionsJson.isNullOrBlank()) {
-                runCatching { Json { ignoreUnknownKeys = true }.decodeFromString(ListSerializer(Condition.serializer()), conditionsJson) }.getOrElse { emptyList() }
+                runCatching { lenientJson.decodeFromString(ListSerializer(Condition.serializer()), conditionsJson) }.getOrElse { emptyList() }
             } else emptyList()
             val match = call.request.queryParameters["match"]?.let { runCatching { MatchMode.valueOf(it) }.getOrNull() } ?: MatchMode.ALL
             val heroIds = if ((heroMode != null || conditions.any { it.facet == "hero_item" }) && viewer != null)
@@ -321,7 +325,7 @@ fun Route.mediaRoutes(
                     call.respond(HttpStatusCode.BadRequest, mapOf("error" to "entry not revertable"))
                     return@post
                 }
-                val json = Json { ignoreUnknownKeys = true }
+                val json = lenientJson
                 val reverted: dev.jellystructure.model.MediaItem = when (entry.action) {
                     "set_tmdb_id" -> {
                         @Serializable data class TmdbSnap(val tmdbId: Int? = null)
@@ -1687,6 +1691,7 @@ internal suspend fun pushToJellyfin(
     return refreshOk
 }
 
+@OptIn(kotlinx.coroutines.DelicateCoroutinesApi::class) // channel.isClosedForReceive — best-effort worker-pool guard
 internal suspend fun runScan(
     jobId: String,
     skipIds: Set<String>,
@@ -1763,7 +1768,7 @@ internal suspend fun runScan(
                             if (item != null) {
                                 allItemsMutex.withLock { allItems += item }
                                 store.addOrUpdate(item)
-                                jItem.id?.let { scanTracker.recordProcessed(it) }
+                                scanTracker.recordProcessed(jItem.id)
                                 broadcaster.broadcast(JobEvent.ItemScanned(jobId, item))
                                 succeeded.incrementAndGet()
                                 // Phase 93: download any missing artwork for this item (poster/fanart, plus
