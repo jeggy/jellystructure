@@ -87,6 +87,14 @@ tasks.register("runDev") {
         // Use SIGKILL so the socket is released immediately rather than waiting for graceful shutdown.
         ProcessBuilder("pkill", "-KILL", "-f", "jellystructure.kexe").inheritIO().start().waitFor()
         ProcessBuilder("pkill", "-KILL", "-f", "webpack-dev-server").inheritIO().start().waitFor()
+        // Bug fix (2026-07-03): the bind-test below turned out to be an unreliable predictor —
+        // SO_REUSEADDR only relaxes the bind it's set ON, and Ktor's own listening socket (built by
+        // its Native CIO engine, no config knob for it — checked EngineConnectorBuilder's source)
+        // never gets it, so this JVM's own reuseAddress-enabled test socket binding successfully says
+        // nothing about whether the *actual* server's plain bind() will. A flat, unconditional grace
+        // period is a cruder but honest backstop for the same OS-level socket-teardown lag, on top of
+        // (not instead of) the bind-test and the retry loop below.
+        Thread.sleep(400)
         // Poll until port 9505 is actually bindable (up to 5 s), not just "nothing answers".
         // A plain connect-test (ECONNREFUSED = free) is an insufficient proxy: the OS can still
         // refuse a fresh bind() for a brief window right after SIGKILL-ing the old listener even
@@ -95,21 +103,26 @@ tasks.register("runDev") {
         // its internal engine coroutine uncaught (unlike appScope/rootScope's own launches, which do
         // have a CoroutineExceptionHandler) and aborts the whole process (SIGABRT/134). Testing an
         // actual bind (with SO_REUSEADDR, like a real server would use) is the only proxy that matches
-        // what the real server needs to succeed at.
-        val deadline = System.currentTimeMillis() + 5_000
-        while (System.currentTimeMillis() < deadline) {
-            val bindable = try {
-                ServerSocket().use { s ->
-                    s.reuseAddress = true
-                    s.bind(InetSocketAddress("localhost", 9505))
+        // what the real server needs to succeed at. A local fun, not a one-off block, because a crashed
+        // attempt's own port hold can outlast its own exit just as easily as the original pkill target's
+        // did — re-checked before every retry below, not just this first attempt.
+        fun waitForPortBindable() {
+            val deadline = System.currentTimeMillis() + 5_000
+            while (System.currentTimeMillis() < deadline) {
+                val bindable = try {
+                    ServerSocket().use { s ->
+                        s.reuseAddress = true
+                        s.bind(InetSocketAddress("localhost", 9505))
+                    }
+                    true
+                } catch (_: Exception) {
+                    false
                 }
-                true
-            } catch (_: Exception) {
-                false
+                if (bindable) break
+                Thread.sleep(200)
             }
-            if (bindable) break
-            Thread.sleep(200)
         }
+        waitForPortBindable()
 
         val configDir = rootProject.layout.projectDirectory.dir("config").asFile
         configDir.mkdirs()
@@ -218,7 +231,7 @@ tasks.register("runDev") {
                 // a startup race.
                 if (ranMs < 15_000 && attempt < maxAttempts) {
                     println("[runDev] Backend exited with code $exitCode after ${ranMs}ms (attempt $attempt/$maxAttempts) — likely the startup port race, retrying...")
-                    Thread.sleep(500)
+                    waitForPortBindable()
                     continue
                 }
                 frontend.destroyForcibly()
