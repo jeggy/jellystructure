@@ -2,11 +2,16 @@ package dev.jellystructure.ravilo.ui.components
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
@@ -41,7 +46,8 @@ fun CertBadge(badge: RatingBadge?, modifier: Modifier = Modifier) {
     Row(
         modifier = modifier
             .clip(shape)
-            .border(1.dp, Color.White.copy(alpha = 0.18f), shape),
+            .border(1.dp, Color.White.copy(alpha = 0.18f), shape)
+            .height(IntrinsicSize.Max),
     ) {
         Text(
             text = badge.region,
@@ -49,8 +55,10 @@ fun CertBadge(badge: RatingBadge?, modifier: Modifier = Modifier) {
             fontSize = 11.sp,
             fontWeight = FontWeight.Bold,
             modifier = Modifier
+                .fillMaxHeight()
                 .background(Color.White.copy(alpha = 0.10f))
-                .padding(horizontal = 8.dp, vertical = 5.dp),
+                .padding(horizontal = 8.dp)
+                .wrapContentHeight(Alignment.CenterVertically),
         )
         Text(
             text = badge.code,
@@ -58,8 +66,10 @@ fun CertBadge(badge: RatingBadge?, modifier: Modifier = Modifier) {
             fontSize = 14.sp,
             fontWeight = FontWeight.ExtraBold,
             modifier = Modifier
+                .fillMaxHeight()
                 .background(codeColor)
-                .padding(horizontal = 9.dp, vertical = 5.dp),
+                .padding(horizontal = 9.dp)
+                .wrapContentHeight(Alignment.CenterVertically),
         )
     }
 }
