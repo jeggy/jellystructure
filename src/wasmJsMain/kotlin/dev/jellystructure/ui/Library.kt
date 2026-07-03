@@ -35,6 +35,12 @@ private val scanJson = Json { classDiscriminator = "type"; ignoreUnknownKeys = t
 
 private const val TMDB_IMG = "https://image.tmdb.org/t/p/w342"
 
+// Phase 133: posterPath is usually a TMDB file_path fragment ("/abc.jpg"), but a manually-uploaded
+// poster with no TMDB equivalent instead holds the jellystructure-served on-disk URL
+// ("/tv/image/{id}/poster") — route to it directly instead of prefixing the TMDB CDN.
+internal fun posterSrc(posterPath: String, tmdbPrefix: String): String =
+    if (posterPath.startsWith("/tv/image/")) posterPath else "$tmdbPrefix$posterPath"
+
 private const val LIB_SLICE = 60  // items fetched per infinite-scroll slice
 private var libSlice = 0          // slices loaded so far for the current filter set; next fetch = libSlice + 1
 private var libLoadedCount = 0    // cards currently in the grid
@@ -599,7 +605,7 @@ private fun posterCardHtml(item: MediaItem): String {
         else              -> """<span class="badge ok" style="font-size:.62rem;">ok</span>"""
     }
     val imgContent = if (item.posterPath != null) {
-        """<img src="$TMDB_IMG${item.posterPath}" alt="${item.title.esc()}" loading="lazy"
+        """<img src="${posterSrc(item.posterPath, TMDB_IMG)}" alt="${item.title.esc()}" loading="lazy"
              style="width:100%;height:100%;object-fit:cover;border-radius:4px 4px 0 0;">"""
     } else {
         """<div class="x"></div><span>${item.title.esc()}</span>"""

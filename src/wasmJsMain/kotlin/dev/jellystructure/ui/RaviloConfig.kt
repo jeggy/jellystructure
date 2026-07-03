@@ -1278,7 +1278,7 @@ private fun openChannelEditorPage(container: Element, scope: CoroutineScope, idx
                 return@launch
             }
             val tiles = (page?.items ?: emptyList()).joinToString("") { m ->
-                val img = if (!m.posterPath.isNullOrBlank()) """<img src="https://image.tmdb.org/t/p/w185${m.posterPath}" alt="" style="width:100%;height:100%;object-fit:cover">""" else """<div style="display:flex;align-items:center;justify-content:center;width:100%;height:100%;font-size:.7rem;color:var(--ink-soft)">${m.title.take(2).htmlEsc()}</div>"""
+                val img = if (!m.posterPath.isNullOrBlank()) """<img src="${posterSrc(m.posterPath, "https://image.tmdb.org/t/p/w185")}" alt="" style="width:100%;height:100%;object-fit:cover">""" else """<div style="display:flex;align-items:center;justify-content:center;width:100%;height:100%;font-size:.7rem;color:var(--ink-soft)">${m.title.take(2).htmlEsc()}</div>"""
                 """<div title="${m.title.htmlEsc()}" style="aspect-ratio:2/3;border-radius:6px;overflow:hidden;background:var(--fill-2)">$img</div>"""
             }
             val lead = if (rows.isEmpty()) "No rows yet — all <b>$n</b> titles that match this channel would be unreachable." else "These <b>$n</b> titles match the channel filter but <b>aren’t shown by any content row</b>, so viewers browsing this channel won’t find them."
