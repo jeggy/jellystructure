@@ -375,16 +375,25 @@ suspend fun executePipeline(
     arrRescan: ArrRescanService,
     sonarrEnrich: SonarrEnrichService? = null,
     imdbClient: dev.jellystructure.imdb.ImdbClient? = null,
+    // "Run pipeline now (full)" — every step downstream of scan_files (pull_tmdb, fetch_artwork,
+    // sync_imdb_ratings, write_nfo, sync_jellyfin, …) only ever sees `workingSet`, i.e. whatever
+    // scan_files' freshness filter let through. That's correct for "keep already-scanned metadata
+    // fresh", but wrong for a step whose own "does this need doing" condition is independent of scan
+    // freshness — sync_imdb_ratings backfilling a brand-new field across the whole library, or
+    // write_nfo catching a stored-vs-disk hash mismatch from an edit or a TMDB re-pull. Those items
+    // otherwise wait for their unrelated metadata-recheck cadence to come due, which can take weeks.
+    // fullRun=true skips the freshness filter outright so worklist == the whole library for this run.
+    fullRun: Boolean = false,
 ) {
     val scanStep = pipeline.firstOrNull { it.step == "scan_files" }
         ?: PipelineStep(step = "scan_files")
 
-    Logger.info("Pipeline starting: ${pipeline.joinToString(" → ") { it.step }}")
+    Logger.info("Pipeline starting: ${pipeline.joinToString(" → ") { it.step }}${if (fullRun) " (full — no freshness filter)" else ""}")
 
     // Build freshness filter: compute the set of JellyfinItem IDs that are NOT due (→ skip them).
     // Items with no lastChecked or no release year are always included.
     val freshnessFilter: ((dev.jellystructure.auth.JellyfinItem) -> Boolean)? =
-        if (!scanStep.recheckUnchanged) null
+        if (fullRun || !scanStep.recheckUnchanged) null
         else {
             val now = store.nowMs()
             // Approximate current calendar year from epoch ms (leap-year-agnostic, ±1 day error OK)

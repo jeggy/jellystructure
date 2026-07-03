@@ -303,8 +303,12 @@ object MediaApi {
     // 93c: run the composed automation (the saved scan pipeline) on demand — all enabled steps,
     // not just file discovery like startScan(). Conflict is distinguished from a genuine failure so the
     // caller can show "already running" instead of a misleading "failed to start".
-    suspend fun runPipeline(): PipelineRunResult = runCatching {
-        when (httpClient.post("/api/pipeline/run").status) {
+    // full=true bypasses scan_files' freshness filter for this one run, so every downstream step
+    // (sync_imdb_ratings, write_nfo, …) sees the whole library instead of just whatever's due for an
+    // unrelated metadata recheck — "Run pipeline now (full)" in Settings.
+    suspend fun runPipeline(full: Boolean = false): PipelineRunResult = runCatching {
+        val url = if (full) "/api/pipeline/run?full=true" else "/api/pipeline/run"
+        when (httpClient.post(url).status) {
             HttpStatusCode.Accepted -> PipelineRunResult.STARTED
             HttpStatusCode.Conflict -> PipelineRunResult.ALREADY_RUNNING
             else -> PipelineRunResult.FAILED
