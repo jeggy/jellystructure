@@ -44,6 +44,25 @@ data class UpcomingItem(
     /** 0-100, only meaningful when [status] == DOWNLOADING. */
     val progress: Int? = null,
     val synopsis: String? = null,
+    /** R167 — not-held-only fallback art, loaded by the client directly from the external *arr/
+     *  TMDB CDN (no jellystructure proxy, no on-disk caching). The client prefers [posterUrl] when
+     *  present, else this, else the gradient placeholder. */
+    @SerialName("poster_remote_url") val posterRemoteUrl: String? = null,
+    @SerialName("backdrop_remote_url") val backdropRemoteUrl: String? = null,
+)
+
+/**
+ * R167 — the enriched detail payload for one Upcoming item (Discover-detail parity: genres/runtime/
+ * cast from a live TMDB lookup). Modeled on [DiscoverDetail]; `genres`/`runtime`/`cast` are best-effort
+ * (empty/null when the item has no resolvable tmdbId or the TMDB call fails) — the client still shows
+ * [item] alone in that case, never a blank page.
+ */
+@Serializable
+data class UpcomingDetail(
+    val item: UpcomingItem,
+    val genres: List<String> = emptyList(),
+    val runtime: Int? = null,
+    val cast: List<Person> = emptyList(),
 )
 
 /**

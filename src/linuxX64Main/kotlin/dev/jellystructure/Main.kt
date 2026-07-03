@@ -155,7 +155,7 @@ fun main() = runBlocking {
     val arrClient = ArrClient()
     val arrRescan = ArrRescanService(configStore, arrClient, rootScope)
     val sonarrEnrich = SonarrEnrichService(mediaStore, arrClient, configStore)
-    val upcomingService = dev.jellystructure.tv.UpcomingService(configStore, arrClient, mediaStore)
+    val upcomingService = dev.jellystructure.tv.UpcomingService(configStore, arrClient, mediaStore, tmdbClient)
     // Phase 109: single-worker persistent queue for heavy media edits (ffmpeg remuxes) — see the class
     // doc for why enqueue-then-drain replaces running ffmpeg inline on the request thread.
     val mediaJobQueue = dev.jellystructure.media.MediaJobQueue(db, mediaStore, broadcaster, jellyfinClient, configStore, mediaHistory, seedingGuard, arrRescan, rootScope)

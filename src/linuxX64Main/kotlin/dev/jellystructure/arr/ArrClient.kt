@@ -325,6 +325,16 @@ data class ArrCalendarSeriesRef(
     val network: String? = null,
     val year: Int? = null,
     val genres: List<String> = emptyList(),
+    val images: List<ArrCalendarImage> = emptyList(),  // R167 — poster/fanart remoteUrl, client-direct CDN
+)
+
+/** R167 — one Sonarr/Radarr calendar-response image ref. `remoteUrl` points at the upstream CDN
+ *  (TheTVDB/TMDB/fanart.tv) and is loaded by the client verbatim — no jellystructure proxy. */
+@Serializable
+data class ArrCalendarImage(
+    val coverType: String = "",  // "poster" | "fanart" | ...
+    val remoteUrl: String? = null,
+    val url: String? = null,
 )
 
 /** R160 — one Radarr calendar entry (`GET /calendar`). [id] is Radarr's own movieId (matches
@@ -344,4 +354,5 @@ data class ArrCalendarMovie(
     val monitored: Boolean = false,
     val isAvailable: Boolean = false,
     val minimumAvailability: String = "",  // "tba"|"announced"|"inCinemas"|"released"|"preDB" (R168 — display only; isAvailable already bakes it in)
+    val images: List<ArrCalendarImage> = emptyList(),  // R167 — poster/fanart remoteUrl, client-direct CDN
 )

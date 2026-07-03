@@ -1,14 +1,19 @@
 package dev.jellystructure.tv
 
 import dev.jellystructure.arr.ArrCalendarEpisode
+import dev.jellystructure.arr.ArrCalendarImage
 import dev.jellystructure.arr.ArrCalendarMovie
 import dev.jellystructure.arr.ArrClient
 import dev.jellystructure.arr.ArrQueueItem
 import dev.jellystructure.config.ConfigStore
 import dev.jellystructure.media.MediaStore
+import dev.jellystructure.shared.tv.Person
+import dev.jellystructure.shared.tv.UpcomingDetail
 import dev.jellystructure.shared.tv.UpcomingFeed
 import dev.jellystructure.shared.tv.UpcomingItem
 import dev.jellystructure.shared.tv.UpcomingStatus
+import dev.jellystructure.tmdb.TmdbCastMember
+import dev.jellystructure.tmdb.TmdbClient
 import kotlinx.cinterop.ExperimentalForeignApi
 import platform.posix.time
 import dev.jellystructure.model.MediaKind as StoreKind
@@ -31,22 +36,65 @@ class UpcomingService(
     private val configStore: ConfigStore,
     private val arrClient: ArrClient,
     private val mediaStore: MediaStore,
+    private val tmdbClient: TmdbClient,
 ) {
-    private data class CacheEntry(val feed: UpcomingFeed, val builtAt: Long)
+    /** R167 — the tmdb/tvdb id behind one feed item, kept alongside the cache so [getDetail] can do
+     *  a live TMDB enrichment (genres/runtime/cast) without a second *arr round-trip. */
+    private data class DetailKey(val tmdbId: Int?, val tvdbId: Int?, val isSeries: Boolean)
+    private data class CacheEntry(val feed: UpcomingFeed, val builtAt: Long, val keys: Map<String, DetailKey>)
     private var cache: CacheEntry? = null
 
     suspend fun getUpcoming(): UpcomingFeed {
         cache?.let { if (nowMs() - it.builtAt < UPCOMING_TTL_MS) return it.feed }
-        val feed = build()
-        cache = CacheEntry(feed, nowMs())
-        return feed
+        return buildAndCache().feed
     }
 
-    private suspend fun build(): UpcomingFeed {
+    /** R167 FR-R167-2 — Discover-detail parity: a live TMDB lookup (by tmdbId, resolving tvdb→tmdb
+     *  for series) for genres/runtime/cast, best-effort (never throws; empty on any miss/failure so
+     *  the client still has [UpcomingDetail.item] to render). */
+    suspend fun getDetail(id: String): UpcomingDetail? {
+        val entry = cache?.takeIf { nowMs() - it.builtAt < UPCOMING_TTL_MS } ?: buildAndCache()
+        val item = (entry.feed.items + entry.feed.missing).firstOrNull { it.id == id } ?: return null
+        val key = entry.keys[id]
+        var genres = emptyList<String>()
+        var runtime: Int? = null
+        var cast = emptyList<Person>()
+        val tmdbId = key?.tmdbId ?: key?.tvdbId?.let { runCatching { tmdbClient.findTvByTvdbId(it) }.getOrNull() }
+        if (tmdbId != null) {
+            if (key?.isSeries == true) {
+                val det = runCatching { tmdbClient.getTvDetails(tmdbId) }.getOrNull()
+                genres = det?.genres?.map { it.name } ?: emptyList()
+                runtime = det?.episodeRunTime?.firstOrNull()
+                cast = runCatching { tmdbClient.getTvCredits(tmdbId) }.getOrNull()?.map { it.toPerson() } ?: emptyList()
+            } else {
+                val det = runCatching { tmdbClient.getMovieDetails(tmdbId) }.getOrNull()
+                genres = det?.genres?.map { it.name } ?: emptyList()
+                runtime = det?.runtime
+                cast = runCatching { tmdbClient.getMovieCredits(tmdbId) }.getOrNull()?.map { it.toPerson() } ?: emptyList()
+            }
+        }
+        return UpcomingDetail(item = item, genres = genres, runtime = runtime, cast = cast)
+    }
+
+    private fun TmdbCastMember.toPerson() = Person(
+        id = id.toString(),
+        name = name,
+        role = character.takeIf { it.isNotBlank() },
+        imageUrl = profilePath?.let { "https://image.tmdb.org/t/p/w185$it" },
+    )
+
+    private suspend fun buildAndCache(): CacheEntry {
+        val (feed, keys) = build()
+        val entry = CacheEntry(feed, nowMs(), keys)
+        cache = entry
+        return entry
+    }
+
+    private suspend fun build(): Pair<UpcomingFeed, Map<String, DetailKey>> {
         val cfg = configStore.current
         val sonarr = cfg.sonarr?.takeIf { it.enabled && it.url.isNotBlank() }
         val radarr = cfg.radarr?.takeIf { it.enabled && it.url.isNotBlank() }
-        if (sonarr == null && radarr == null) return UpcomingFeed(enabled = false)
+        if (sonarr == null && radarr == null) return UpcomingFeed(enabled = false) to emptyMap()
 
         val today = todayUtcDateString()
         val start = shiftDate(today, -LOOKBACK_DAYS)
@@ -65,6 +113,7 @@ class UpcomingService(
             .associateBy { it.tmdbId!! }
 
         val all = mutableListOf<UpcomingItem>()
+        val keys = mutableMapOf<String, DetailKey>()
 
         if (sonarr != null) {
             val episodes = runCatching { arrClient.getSonarrCalendar(sonarr.url, sonarr.apiKey, start, end) }.getOrElse { emptyList() }
@@ -84,8 +133,10 @@ class UpcomingService(
                 val held = matched != null && matched.episodes.any {
                     it.seasonNumber == ep.seasonNumber && it.episodeNumber == ep.episodeNumber
                 }
+                val itemIdStr = "ep-${ep.seriesId}-${ep.seasonNumber}-${ep.episodeNumber}"
+                keys[itemIdStr] = DetailKey(tmdbId = null, tvdbId = series.tvdbId.takeIf { it != 0 }, isSeries = true)
                 all += UpcomingItem(
-                    id = "ep-${ep.seriesId}-${ep.seasonNumber}-${ep.episodeNumber}",
+                    id = itemIdStr,
                     kind = TvMediaKind.SERIES,
                     // Prefer the library's localized title/synopsis/genre when we hold the series
                     // (constitution's language-resolution algorithm already resolved them); fall back
@@ -104,6 +155,9 @@ class UpcomingService(
                     status = resolveEpisodeStatus(date, today, held, queued != null),
                     progress = queued?.let { downloadProgress(it) },
                     synopsis = matched?.overview?.takeIf { it.isNotBlank() } ?: ep.overview?.takeIf { it.isNotBlank() },
+                    // R167 — not-held-only client-direct-CDN fallback art (no jellystructure proxy).
+                    posterRemoteUrl = pickImage(series.images, "poster"),
+                    backdropRemoteUrl = pickImage(series.images, "fanart"),
                 )
             }
         }
@@ -117,8 +171,10 @@ class UpcomingService(
                 val queued = queue.firstOrNull { it.refId == mv.id }
                 val matched = moviesByTmdb[mv.tmdbId]
                 val itemId = matched?.let { it.jellyfinId ?: it.id }
+                val itemIdStr = "mv-${mv.id}"
+                keys[itemIdStr] = DetailKey(tmdbId = mv.tmdbId.takeIf { it != 0 }, tvdbId = null, isSeries = false)
                 all += UpcomingItem(
-                    id = "mv-${mv.id}",
+                    id = itemIdStr,
                     kind = TvMediaKind.MOVIE,
                     // A movie match is item-level-correct (atomic) — held = matched != null stays right
                     // for the Radarr branch (FR-R166-1 #4); still prefer the localized library value for
@@ -133,6 +189,9 @@ class UpcomingService(
                     status = resolveMovieStatus(date, today, itemId != null, queued != null, mv.isAvailable),
                     progress = queued?.let { downloadProgress(it) },
                     synopsis = matched?.overview?.takeIf { it.isNotBlank() } ?: mv.overview?.takeIf { it.isNotBlank() },
+                    // R167 — not-held-only client-direct-CDN fallback art (no jellystructure proxy).
+                    posterRemoteUrl = pickImage(mv.images, "poster"),
+                    backdropRemoteUrl = pickImage(mv.images, "fanart"),
                 )
             }
         }
@@ -142,8 +201,11 @@ class UpcomingService(
         val items = all.filter { it.date >= today || it.status == UpcomingStatus.DOWNLOADING }.sortedBy { it.date }
         val missing = all.filter { it.date < today && it.status == UpcomingStatus.MISSING }
             .sortedByDescending { it.date }
-        return UpcomingFeed(enabled = true, items = items, missing = missing)
+        return UpcomingFeed(enabled = true, items = items, missing = missing) to keys
     }
+
+    private fun pickImage(images: List<ArrCalendarImage>, coverType: String): String? =
+        images.firstOrNull { it.coverType == coverType }?.remoteUrl?.takeIf { it.isNotBlank() }
 
     /** Sonarr has no per-episode availability flag — a grace window avoids flagging MISSING the
      *  instant the air date passes (a just-aired episode legitimately isn't grabbable yet). */
