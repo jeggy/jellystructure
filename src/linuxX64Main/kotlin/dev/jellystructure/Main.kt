@@ -13,7 +13,6 @@ import dev.jellystructure.chart.ChartRegistry
 import dev.jellystructure.chart.ChartStore
 import dev.jellystructure.chart.JustWatchProvider
 import dev.jellystructure.chart.NetflixTudumProvider
-import dev.jellystructure.chart.StreamingAvailabilityProvider
 import dev.jellystructure.torrent.QBittorrentClient
 import dev.jellystructure.torrent.SeedingGuard
 import dev.jellystructure.torrent.SeedingSnapshot
@@ -175,15 +174,11 @@ fun main() = runBlocking {
     val acquisitionService = AcquisitionService(configStore, arrClient, tmdbClient, acquisitionStore, mediaStore, tvEventBus, rootScope)
     acquisitionService.startReconciler()
     val chartStore = ChartStore(db)
+    // Phase 132: RapidAPI removal — scrub any chart rows a previously-registered
+    // StreamingAvailabilityProvider left behind (idempotent no-op once cleaned).
+    for (prefix in listOf("max-", "disney-", "prime-", "apple-")) chartStore.deleteListsWithPrefix(prefix)
     val chartRegistry = ChartRegistry(listOf(
         NetflixTudumProvider(),
-        // Phase 59 — Streaming Availability API (movieofthenight.com): official platform top lists.
-        // Free tier = 500 req/month; week-gated polling uses ~40 req/month.
-        // Requires [api_keys] streaming_availability_key in config (free RapidAPI sign-up).
-        StreamingAvailabilityProvider(configStore, "max",     "Max"),
-        StreamingAvailabilityProvider(configStore, "disney",  "Disney+"),
-        StreamingAvailabilityProvider(configStore, "prime",   "Amazon Prime"),
-        StreamingAvailabilityProvider(configStore, "apple",   "Apple TV+"),
         // Phase 59 — JustWatch unofficial GraphQL: covers Nordic and other regional services.
         // No API key needed. Provider shortName is auto-discovered from urlSlug via GetProviders.
         JustWatchProvider("viaplay",     "Viaplay",     "viaplay"),

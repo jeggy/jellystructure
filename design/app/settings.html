@@ -245,8 +245,6 @@
           <div class="field fill"><label>Jellyfin URL</label><div class="input">http://jellyfin:8096</div><span class="hint">Same Docker network → no reverse proxy needed.</span></div>
           <div class="field fill"><label>Jellyfin machine token</label><div class="input">••••••••••••••a1c <span class="chk" id="chk-jellyfin" style="margin-left:auto;"><span class="dot ok"></span><span class="badge ok">204 · 38ms</span></span></div><span class="hint">Background-job token for POST /Items/{id}/Refresh.</span></div>
         </div>
-        <hr class="dash" style="margin:12px 0 10px;">
-        <div class="field"><label>Streaming Availability API key <span class="muted" style="font-weight:400;">· optional</span></label><input class="input" id="sa-key" type="text" placeholder="paste RapidAPI key to enable Max · Disney+ · Prime · Apple TV+ Top 10" autocomplete="off"><span class="hint">RapidAPI key for <span class="mono">streaming-availability</span> (movieofthenight.com). Free tier ≈ 500 req/mo, week-gated. Netflix (Tudum) &amp; JustWatch sources don't need it.</span></div>
       </div>
 
       <!-- RADARR / SONARR -->
@@ -381,7 +379,7 @@
       <!-- DISCOVER / TOP 10 SOURCES (global) -->
       <div class="card set-section" id="sect-discover" data-tab="downloads">
         <div class="row center"><h3 style="font-size:1.05rem;margin:0;">Discover / Top 10 sources</h3><span class="badge info" style="margin-left:8px;">charts</span><span class="spacer"></span><span class="muted tiny">enable discover</span><span class="toggle on" id="discover-enable"></span></div>
-        <div class="tiny muted disc-intro">Ingests trending charts from the sources you enable here, for the countries below — each user's <b>Top 10</b> tab then picks from what's enabled. Fetching a title uses <b>Radarr</b>; the <b>movieofthenight</b> sources also need a <a href="?tab=connections">Streaming Availability API key</a>.</div>
+        <div class="tiny muted disc-intro">Ingests trending charts from the sources you enable here, for the countries below — each user's <b>Top 10</b> tab then picks from what's enabled. Fetching a title uses <b>Radarr</b>.</div>
         <div id="discover-body">
           <div id="prov-groups"></div>
           <hr class="dash" style="margin:16px 0 12px;">
@@ -1000,43 +998,32 @@
 <script>
 (function () {
   const PROVIDERS = {
-    netflix:     { name: 'Netflix',      lists: 'country · global · all-time', needsKey: false },
-    viaplay:     { name: 'Viaplay',      lists: 'country',                   needsKey: false },
-    paramount:   { name: 'Paramount+',   lists: 'country',                   needsKey: false },
-    skyshowtime: { name: 'SkyShowtime',  lists: 'country',                   needsKey: false },
-    max:         { name: 'Max',          lists: 'country',                   needsKey: true },
-    disney:      { name: 'Disney+',      lists: 'country',                   needsKey: true },
-    prime:       { name: 'Amazon Prime', lists: 'country',                   needsKey: true },
-    apple:       { name: 'Apple TV+',    lists: 'country',                   needsKey: true },
-    crunchyroll: { name: 'Crunchyroll',  lists: 'country',                   needsKey: true },
+    netflix:     { name: 'Netflix',      lists: 'country · global · all-time' },
+    viaplay:     { name: 'Viaplay',      lists: 'country' },
+    paramount:   { name: 'Paramount+',   lists: 'country' },
+    skyshowtime: { name: 'SkyShowtime',  lists: 'country' },
   };
   const GROUPS = [
     ['Netflix · Tudum', 'Official engagement feeds — country, global & all-time', ['netflix']],
     ['JustWatch', 'User-activity charts across 4,500+ services', ['viaplay', 'paramount', 'skyshowtime']],
-    ['movieofthenight.com', 'Official service top lists · needs a Streaming Availability API key', ['max', 'disney', 'prime', 'apple', 'crunchyroll']],
   ];
   const REGIONS = [['DK','Denmark'],['US','United States'],['GB','United Kingdom'],['SE','Sweden'],['NO','Norway'],['DE','Germany'],['FR','France'],['ES','Spain'],['NL','Netherlands'],['IE','Ireland'],['IS','Iceland'],['FO','Faroe Islands']];
   const enabled = new Set(['netflix', 'viaplay']);
   const regions = new Set(['DK']);
   const groupsEl = document.getElementById('prov-groups');
   const regEl = document.getElementById('reg-grid');
-  const saKey = document.getElementById('sa-key');
   if (!groupsEl) return;
-  const keySet = () => !!(saKey && saKey.value.trim());
 
   function renderProviders() {
     groupsEl.innerHTML = GROUPS.map(([title, sub, ids]) => {
       const chips = ids.map(id => {
         const p = PROVIDERS[id];
-        const locked = p.needsKey && !keySet();
-        if (locked) enabled.delete(id);
         const on = enabled.has(id);
-        return `<div class="prov-chip${on ? ' on' : ''}${locked ? ' locked' : ''}" data-prov="${id}"><span class="box">✓</span><span class="pv"><span class="pv-name">${p.name}</span><span class="pv-sub">${p.lists}</span></span>${locked ? '<span class="pv-key">needs key</span>' : ''}</div>`;
+        return `<div class="prov-chip${on ? ' on' : ''}" data-prov="${id}"><span class="box">✓</span><span class="pv"><span class="pv-name">${p.name}</span><span class="pv-sub">${p.lists}</span></span></div>`;
       }).join('');
       return `<div class="prov-group"><div class="prov-group-h">${title}<span class="sub">${sub}</span></div><div class="prov-grid">${chips}</div></div>`;
     }).join('');
     groupsEl.querySelectorAll('.prov-chip').forEach(c => c.onclick = () => {
-      if (c.classList.contains('locked')) { toast('Add a Streaming Availability API key in Connections first'); return; }
       const id = c.dataset.prov; enabled.has(id) ? enabled.delete(id) : enabled.add(id); renderProviders();
     });
   }
@@ -1044,8 +1031,6 @@
     regEl.innerHTML = REGIONS.map(([c, n]) => `<div class="reg-chip${regions.has(c) ? ' on' : ''}" data-reg="${c}">${n}</div>`).join('');
     regEl.querySelectorAll('.reg-chip').forEach(r => r.onclick = () => { const c = r.dataset.reg; if (regions.has(c)) { if (regions.size > 1) regions.delete(c); } else regions.add(c); renderRegions(); });
   }
-  function toast(m) { const t = document.createElement('div'); t.className = 'toast'; t.textContent = m; document.body.appendChild(t); setTimeout(() => t.remove(), 1700); }
-  if (saKey) saKey.addEventListener('input', renderProviders);
   const de = document.getElementById('discover-enable'), db = document.getElementById('discover-body');
   if (de) de.addEventListener('click', () => { db.style.display = de.classList.contains('on') ? '' : 'none'; });
   renderProviders(); renderRegions();

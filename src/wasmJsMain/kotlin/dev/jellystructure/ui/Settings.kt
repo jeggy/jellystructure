@@ -233,33 +233,6 @@ fun renderSettings(container: Element, scope: CoroutineScope, query: Map<String,
                   </div>
                   <div class="hint">Official Tudum TSV feed — country Top 10, Global Top 10, Non-English, All-time.</div>
                 </div>
-                <div style="border:1px solid var(--line);border-radius:8px;padding:13px 15px;margin-bottom:10px">
-                  <div style="margin-bottom:8px">
-                    <span style="font-weight:600;font-size:.9rem">Max · Disney+ · Amazon Prime · Apple TV+</span>
-                    <span class="badge" style="font-size:.65rem;background:rgba(245,181,66,.15);color:var(--warn);margin-left:6px">RapidAPI key needed</span>
-                  </div>
-                  <div class="hint" style="margin-bottom:10px">Official in-app Top 10 per country via Streaming Availability API (movieofthenight.com, free tier: 500 req/month — weekly polling uses ≈ 40 req/month total).</div>
-                  <div class="field" style="margin-bottom:8px">
-                    <label>RapidAPI key <a id="sa-key-guide-btn" href="#" style="font-size:.78rem;margin-left:8px">How to get a free key ▸</a></label>
-                    <input id="sa-api-key" class="input" type="password" style="width:100%" placeholder="Paste key here — one key covers all four services">
-                    <span class="hint">Leave blank to disable this group.</span>
-                  </div>
-                  <div id="sa-key-guide" style="display:none;background:var(--fill-2);border-radius:6px;padding:11px 14px;margin-bottom:10px;font-size:.82rem">
-                    <ol style="margin:0;padding-left:18px;line-height:1.9">
-                      <li>Go to <strong>rapidapi.com</strong> and create a free account (no credit card).</li>
-                      <li>Search for <strong>"Streaming Availability"</strong> by Movie of the Night.</li>
-                      <li>Click Subscribe → pick the <strong>Basic plan</strong> (free, 500 req/month).</li>
-                      <li>Open the Endpoints tab → any endpoint → copy <strong>X-RapidAPI-Key</strong> from the request headers panel.</li>
-                      <li>Paste it above and save.</li>
-                    </ol>
-                  </div>
-                  <div style="display:grid;gap:7px;border-top:1px solid var(--line);padding-top:10px">
-                    <div style="display:flex;align-items:center;justify-content:space-between"><span style="font-size:.9rem">Max</span><span id="provider-max-toggle" class="toggle" style="cursor:pointer"></span></div>
-                    <div style="display:flex;align-items:center;justify-content:space-between"><span style="font-size:.9rem">Disney+</span><span id="provider-disney-toggle" class="toggle" style="cursor:pointer"></span></div>
-                    <div style="display:flex;align-items:center;justify-content:space-between"><span style="font-size:.9rem">Amazon Prime</span><span id="provider-prime-toggle" class="toggle" style="cursor:pointer"></span></div>
-                    <div style="display:flex;align-items:center;justify-content:space-between"><span style="font-size:.9rem">Apple TV+</span><span id="provider-apple-toggle" class="toggle" style="cursor:pointer"></span></div>
-                  </div>
-                </div>
                 <div style="border:1px solid var(--line);border-radius:8px;padding:13px 15px">
                   <div style="display:flex;align-items:center;gap:8px;margin-bottom:5px">
                     <span style="font-weight:600;font-size:.9rem">Viaplay · Paramount+ · SkyShowtime</span>
@@ -561,10 +534,7 @@ private fun applyHealthFailures(failsBySection: Map<String, Int>) {
     }
 }
 
-private val DISCOVER_PROVIDER_IDS = listOf("netflix", "max", "disney", "prime", "apple", "viaplay", "paramount", "skyshowtime")
-// Phase 107 — movieofthenight.com sources need api_keys.streaming_availability_key; gated live off the
-// Connections field so enabling/clearing the key immediately locks/unlocks these four toggles.
-private val DISCOVER_KEYED_PROVIDER_IDS = setOf("max", "disney", "prime", "apple")
+private val DISCOVER_PROVIDER_IDS = listOf("netflix", "viaplay", "paramount", "skyshowtime")
 private val DISCOVER_REGIONS = listOf(
     "DK" to "Denmark", "US" to "United States", "GB" to "United Kingdom", "SE" to "Sweden",
     "NO" to "Norway", "DE" to "Germany", "FR" to "France", "ES" to "Spain",
@@ -614,7 +584,6 @@ private fun populateForm(response: ConfigResponse) {
     setInputValue("jellyfin-url", config.apiKeys.jellyfinUrl)
     setInputValue("jellyfin-token", config.apiKeys.jellyfinToken)
     setInputValue("tmdb-key", config.apiKeys.tmdbV3Key)
-    setInputValue("sa-api-key", config.apiKeys.streamingAvailabilityKey)
     setInputValue("fallback-language", config.languageRules.fallbackLanguage)
 
     ageRatingCascade.clear()
@@ -631,7 +600,6 @@ private fun populateForm(response: ConfigResponse) {
     (document.getElementById("discover-fields") as? HTMLElement)?.style?.display = if (discoverEnabled) "" else "none"
     (document.getElementById("disc-refresh") as? HTMLSelectElement)?.value = discoverRefreshHours.toString()
     renderDiscoverRegions()
-    updateDiscoverProviderLocks()
 
     overwriteNfo = config.behavior.overwriteNfo
     fetchImages = config.behavior.fetchImages
@@ -887,18 +855,9 @@ private fun attachListeners(scope: CoroutineScope) {
             refreshTomlPreview(readForm())
         }
     }
-    document.getElementById("sa-api-key")?.addEventListener("input") {
-        updateDiscoverProviderLocks()
-        refreshTomlPreview(readForm())
-    }
     (document.getElementById("disc-refresh") as? HTMLSelectElement)?.addEventListener("change") {
         discoverRefreshHours = (document.getElementById("disc-refresh") as? HTMLSelectElement)?.value?.toIntOrNull() ?: 168
         refreshTomlPreview(readForm())
-    }
-    document.getElementById("sa-key-guide-btn")?.addEventListener("click") { e ->
-        e.preventDefault()
-        val guide = document.getElementById("sa-key-guide") as? HTMLElement ?: return@addEventListener
-        guide.style.display = if (guide.style.display == "none") "" else "none"
     }
 
     wirePipelineBuilder(scope)
@@ -1150,7 +1109,6 @@ private fun readForm(): AppConfig = AppConfig(
         jellyfinUrl = getInputValue("jellyfin-url"),
         jellyfinToken = getInputValue("jellyfin-token"),
         tmdbV3Key = getInputValue("tmdb-key"),
-        streamingAvailabilityKey = getInputValue("sa-api-key").ifBlank { "##KEEP##" },
     ),
     languageRules = LanguageRules(
         fallbackLanguage = getInputValue("fallback-language").ifEmpty { "en" },
@@ -1216,8 +1174,6 @@ private fun buildToml(c: AppConfig): String = buildString {
     appendLine("""jellyfin_url = "${c.apiKeys.jellyfinUrl}"""")
     appendLine("""jellyfin_token = "${c.apiKeys.jellyfinToken}"""")
     appendLine("""tmdb_v3_key = "${c.apiKeys.tmdbV3Key}"""")
-    if (c.apiKeys.streamingAvailabilityKey.isNotBlank() && c.apiKeys.streamingAvailabilityKey != "##KEEP##")
-        appendLine("""streaming_availability_key = "***"""")
     appendLine()
     appendLine("[language_rules]")
     appendLine("""fallback_language = "${c.languageRules.fallbackLanguage}"""")
@@ -1655,21 +1611,6 @@ private fun renderDiscoverRegions() {
     }
 }
 
-// Phase 107 (FR B.3) — movieofthenight providers can't be enabled without the RapidAPI key; clearing an
-// already-set key also clears any of the four from the selected set, matching the design's `enabled.delete`.
-private fun updateDiscoverProviderLocks() {
-    val hasKey = getInputValue("sa-api-key").isNotBlank()
-    for (id in DISCOVER_KEYED_PROVIDER_IDS) {
-        val toggle = document.getElementById("provider-$id-toggle") as? HTMLElement ?: continue
-        if (hasKey) {
-            toggle.removeAttribute("style"); toggle.setAttribute("style", "cursor:pointer")
-        } else {
-            if (id in discoverProviders) discoverProviders.remove(id)
-            updateToggle("provider-$id-toggle", false)
-            toggle.setAttribute("style", "cursor:not-allowed;opacity:.4;pointer-events:none")
-        }
-    }
-}
 
 private fun setInputValue(id: String, value: String) {
     (document.getElementById(id) as? HTMLInputElement)?.value = value
