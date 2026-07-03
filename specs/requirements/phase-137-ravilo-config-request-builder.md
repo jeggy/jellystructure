@@ -118,6 +118,17 @@ Enum + the Seerr path each maps to (Phase 136 §D0), grouped as the mock's popov
 - Doesn't touch the R162 behaviour overlay, the hero/channels/content-rows config, or global-vs-custom scope
   mechanics — only the one `discover`→`request` slot changes.
 
+**Implementation note (2026-07-04):** shipped per the design above, with one naming simplification —
+`RaviloConfig.discover` **kept its field name** (didn't rename to `.request`) since it's a persisted
+per-user JSON blob key; renaming would only add churn across the wasmJs editor without any migration
+benefit (old chart-list selections are being invalidated either way — the referenced chart list ids no
+longer resolve to anything after Phase 136). `DiscoverConfig`'s *shape* changed as designed:
+`enabled`/`canRequest` kept, `lists`/`source`/`sources`/`region` replaced by `feeds: List<SeerrFeed>`.
+`SeerrDiscoverEndpoint.needsParam` lives on the shared enum itself (not a separate lookup table) so the
+editor's add-row UI and `RaviloConfigService.validate()` can't drift apart on which endpoints are
+parameterised. Also removed the now-dead `RaviloApi.getDiscoverLists`/`getDiscoverCoverage` client calls
+(Phase 136 deleted their backend routes) that the pre-137 editor was still calling.
+
 ### Source references (backend anchors)
 - Model: `shared/.../tv/Models.kt:540` (`RaviloConfig.discover`), `:598-609` (`DiscoverConfig`).
 - Service: `tv/RaviloConfigService.kt:57/93/111/138/184`, sentinel `:24`; DB `db/RaviloConfig.sq`.

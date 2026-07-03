@@ -592,21 +592,40 @@ data class PortraitConfig(
 )
 
 /**
- * R48 — per-user Discover/Top-10 selection (server-owned, synced). `canRequest` gates whether a
- * non-admin may spend disk/bandwidth (admins always may). `lists` are ordered ChartListSpec ids.
+ * R48/Phase 137 — per-user Request (formerly Discover/Top-10) selection (server-owned, synced).
+ * `canRequest` gates whether a non-admin may place a request (admins always may). `feeds` are the
+ * ordered Seerr discover feeds shown on this user's Request tab (Phase 136 retired the chart backend
+ * this used to select from — `lists`/`source`/`sources`/`region` are gone, replaced by `feeds`).
  */
 @Serializable
 data class DiscoverConfig(
     val enabled: Boolean = false,
     @SerialName("can_request") val canRequest: Boolean = false,
-    // R154: multi-source — `source` is legacy (pre-R154 configs, pre-R144 single-provider reads); a
-    // blank `sources` list falls back to `[source]`. Row resolution itself doesn't care (already reads
-    // `lists` directly, R142) — this only drives which provider chips the editor shows as selected.
-    val source: String = "netflix",
-    val sources: List<String> = emptyList(),
-    val region: String = "DK",
-    val lists: List<String> = emptyList(),
+    val feeds: List<SeerrFeed> = emptyList(),
 )
+
+/** Phase 137 — one configured Seerr discover feed row (order + visibility live in [DiscoverConfig.feeds]). */
+@Serializable
+data class SeerrFeed(
+    val id: String,
+    val kind: SeerrFeedKind,
+    val endpoint: SeerrDiscoverEndpoint,
+    val param: String? = null,   // genre id / studio id / network id / ISO-639-1 language code
+    val name: String,
+    val visible: Boolean = true,
+)
+
+enum class SeerrFeedKind { MOVIE, TV, MIXED }
+
+/** Phase 137 — the Seerr discover-endpoint catalogue the "+ Add row" popover offers. [needsParam] is
+ *  the single source of truth for which endpoints require a value (genre/studio/network id, or an
+ *  ISO-639-1 language code) — both the admin editor's add-row UI and RaviloConfigService.validate()
+ *  read it, so they can never drift apart on which endpoints are parameterised. */
+enum class SeerrDiscoverEndpoint(val needsParam: Boolean) {
+    MOVIES_POPULAR(false), MOVIES_GENRE(true), MOVIES_LANGUAGE(true), MOVIES_STUDIO(true), MOVIES_UPCOMING(false),
+    TV_POPULAR(false), TV_GENRE(true), TV_LANGUAGE(true), TV_NETWORK(true), TV_UPCOMING(false),
+    TRENDING(false),
+}
 
 // ─── Request bodies ───────────────────────────────────────────────────────────
 
