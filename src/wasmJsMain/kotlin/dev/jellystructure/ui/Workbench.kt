@@ -435,7 +435,7 @@ private fun wbRefreshPreview() {
         countEl?.innerHTML = """<b>$total title(s) match</b>"""
         val prev = document.getElementById("wb-preview") as? HTMLElement
         prev?.innerHTML = (page?.items ?: emptyList()).joinToString("") { m ->
-            val img = if (!m.posterPath.isNullOrBlank()) """<img src="https://image.tmdb.org/t/p/w185${m.posterPath}" alt="">""" else """<div class="wb-noimg">${m.title.take(2).esc()}</div>"""
+            val img = if (!m.posterPath.isNullOrBlank()) """<img src="${posterSrc(m.posterPath, "https://image.tmdb.org/t/p/w185")}" alt="">""" else """<div class="wb-noimg">${m.title.take(2).esc()}</div>"""
             """<div class="wb-pcard" title="${m.title.esc()}">$img</div>"""
         }
     }

@@ -513,12 +513,24 @@ fun Route.mediaRoutes(
                     platform.posix.rename(tmpPath, destPath)
                     Logger.info("Artwork uploaded: $destPath (${bytes.size} bytes)")
 
+                    // Phase 133: mark poster/backdrop as manually chosen (survives the next TMDB sync)
+                    // and point the admin at the file we just wrote — an upload has no TMDB file_path,
+                    // so posterPath/backdropPath would otherwise stay stale and the upload would be
+                    // invisible in the admin (Ravilo already renders on-disk artwork and would show it).
+                    val asset = when (type) { "poster" -> "poster"; "fanart", "backdrop" -> "backdrop"; else -> null }
+                    val updated = when (asset) {
+                        "poster" -> item.copy(posterPath = "/tv/image/${item.id}/poster", lockedArtwork = (item.lockedArtwork + "poster").distinct())
+                        "backdrop" -> item.copy(backdropPath = "/tv/image/${item.id}/backdrop", lockedArtwork = (item.lockedArtwork + "backdrop").distinct())
+                        else -> item
+                    }
+                    if (updated !== item) store.updateOne(updated)
+
                     val cfg = configStore.current
                     if (!item.jellyfinId.isNullOrBlank() && cfg.apiKeys.jellyfinUrl.isNotBlank()) {
                         jellyfinClient.refreshItem(cfg.apiKeys.jellyfinUrl, cfg.apiKeys.jellyfinToken, item.jellyfinId)
                     }
 
-                    call.respond(artwork.check(item))
+                    call.respond(artwork.check(updated))
                 }
 
                 // GET /api/media/{id}/artwork/candidates?asset=poster|backdrop|clearlogo
@@ -577,11 +589,15 @@ fun Route.mediaRoutes(
                     if (req.source.startsWith("/") && req.asset == "clearlogo") {
                         artwork.writeAssetSrc(item, "clearlogo", req.source)
                     }
-                    val updated = if (req.source.startsWith("/")) when (req.asset) {
+                    var updated = if (req.source.startsWith("/")) when (req.asset) {
                         "poster" -> item.copy(posterPath = req.source)
                         "backdrop" -> item.copy(backdropPath = req.source)
                         else -> item
                     } else item
+                    // Phase 133: an explicit pick locks the asset so it survives the next TMDB sync/re-pull.
+                    if (req.asset == "poster" || req.asset == "backdrop") {
+                        updated = updated.copy(lockedArtwork = (updated.lockedArtwork + req.asset).distinct())
+                    }
                     if (updated !== item) store.updateOne(updated)
                     mediaHistory.record(id, "artwork_save", "asset=${req.asset}")
                     val cfg = configStore.current

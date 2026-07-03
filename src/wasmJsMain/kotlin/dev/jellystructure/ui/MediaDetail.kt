@@ -212,7 +212,7 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
     val isTvShow = item.kind == MediaKind.TV_SHOW
 
     val posterHtml = if (item.posterPath != null) {
-        """<img src="$TMDB_IMG_LG${item.posterPath}" alt="${item.title.esc()}"
+        """<img src="${posterSrc(item.posterPath, TMDB_IMG_LG)}" alt="${item.title.esc()}"
              style="width:100%;height:auto;border-radius:4px;">"""
     } else {
         """<div class="imgslot" style="height:260px;"><div class="x"></div><span>No poster</span></div>"""
