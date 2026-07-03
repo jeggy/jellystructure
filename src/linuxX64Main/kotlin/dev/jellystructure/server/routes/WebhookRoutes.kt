@@ -81,7 +81,10 @@ private suspend fun handleArrWebhook(
         call.respond(HttpStatusCode.OK, mapOf("ok" to true))
         return
     }
-    if (eventType != "Download" || json == null) {
+    // `json == null` first: it's a live check here (receiveText/parse can fail). If it were second,
+    // reaching it would require eventType == "Download", which — being derived from json?.get(...) —
+    // already implies json != null, making the null check dead (the "always false" warning).
+    if (json == null || eventType != "Download") {
         call.respond(HttpStatusCode.OK, mapOf("ignored" to true)) // acknowledge, don't 4xx unknown events
         return
     }
