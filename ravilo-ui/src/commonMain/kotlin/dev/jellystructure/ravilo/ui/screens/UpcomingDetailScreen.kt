@@ -42,11 +42,11 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import kotlinx.datetime.Clock
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.daysUntil
 import kotlinx.datetime.toLocalDateTime
+import kotlin.time.Clock
 
 sealed class UpcomingDetailState {
     data object Loading : UpcomingDetailState()
@@ -100,9 +100,12 @@ private fun UpcomingDetailContent(item: UpcomingItem) {
     val scrollState = rememberScrollState()
     val gradient = remember(item.title) { gradientFor(item.title) }
 
+    // Cross-module `val` properties (item.posterUrl is declared in :shared) aren't smart-cast —
+    // bind to a local val first.
+    val posterUrl = item.posterUrl
     Box(Modifier.fillMaxSize()) {
         Box(Modifier.fillMaxWidth().height(380.dp)) {
-            if (item.posterUrl != null) RemoteImage(item.posterUrl, item.title, Modifier.fillMaxSize())
+            if (posterUrl != null) RemoteImage(posterUrl, item.title, Modifier.fillMaxSize())
             else Box(Modifier.fillMaxSize().background(gradient))
             Box(Modifier.matchParentSize().background(scrim))
         }
