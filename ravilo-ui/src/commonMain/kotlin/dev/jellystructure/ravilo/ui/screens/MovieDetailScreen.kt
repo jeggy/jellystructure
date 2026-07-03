@@ -55,6 +55,7 @@ import dev.jellystructure.ravilo.ui.components.CastCircle
 import dev.jellystructure.ravilo.ui.components.CertBadge
 import dev.jellystructure.ravilo.ui.components.DetailLoadingShell
 import dev.jellystructure.ravilo.ui.components.DetailSynopsis
+import dev.jellystructure.ravilo.ui.components.ImdbChip
 import dev.jellystructure.ravilo.ui.components.RaviloButton
 import dev.jellystructure.ravilo.ui.components.Tile
 import dev.jellystructure.ravilo.ui.components.TitleLogoOrText
@@ -206,7 +207,7 @@ private fun MovieDetailLoaded(
                             detail.card.genre,
                         ).joinToString(" · ")
                     }
-                    if (meta.isNotEmpty() || detail.ratingBadge != null) {
+                    if (meta.isNotEmpty() || detail.ratingBadge != null || detail.imdbRating != null) {
                         Spacer(Modifier.height(8.dp))
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             if (meta.isNotEmpty()) Text(meta, color = colors.textSecondary, fontSize = 15.sp)
@@ -214,6 +215,11 @@ private fun MovieDetailLoaded(
                             if (detail.ratingBadge != null) {
                                 if (meta.isNotEmpty()) Spacer(Modifier.width(10.dp))
                                 CertBadge(detail.ratingBadge)
+                            }
+                            // R164: server-pushed IMDb rating chip, after the certification badge.
+                            if (detail.imdbRating != null) {
+                                if (meta.isNotEmpty() || detail.ratingBadge != null) Spacer(Modifier.width(10.dp))
+                                ImdbChip(detail.imdbRating)
                             }
                             // R142: ✓ Watched chip when the movie is played.
                             if (overlay[detail.card.id]?.played == true) {
