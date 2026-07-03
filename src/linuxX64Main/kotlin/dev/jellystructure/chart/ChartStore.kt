@@ -13,6 +13,11 @@ class ChartStore(private val db: JellystructureDb) {
 
     fun entries(listId: String): List<ChartEntry> = q.entriesForList(listId).executeAsList().map(::toEntry)
 
+    // Phase 132: one-time cleanup of stale rows left behind by a provider that's since been unregistered
+    // (e.g. RapidAPI's max-*/disney-*/prime-*/apple-* lists) — ChartIngestService.refresh() never
+    // revisits an id once its provider is gone, so they'd otherwise persist as orphans forever.
+    fun deleteListsWithPrefix(prefix: String) = q.deleteListsWithPrefix("$prefix%")
+
     fun replaceList(listId: String, week: String, entries: List<ChartEntry>, now: Long) {
         q.transaction {
             q.deleteList(listId)

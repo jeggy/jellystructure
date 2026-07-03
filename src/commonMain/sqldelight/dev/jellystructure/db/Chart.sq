@@ -46,6 +46,9 @@ SELECT week FROM chart_entry WHERE list_id = :list_id LIMIT 1;
 deleteList:
 DELETE FROM chart_entry WHERE list_id = :list_id;
 
+deleteListsWithPrefix:
+DELETE FROM chart_entry WHERE list_id LIKE :prefix;
+
 insertEntry:
 INSERT OR REPLACE INTO chart_entry(list_id, rank, week, title, kind, year, tmdb_id, tmdb_confidence, item_id, weeks_on_chart, trend, is_new, views, backdrop_path, poster_path, overview, updated_at)
 VALUES (:list_id, :rank, :week, :title, :kind, :year, :tmdb_id, :tmdb_confidence, :item_id, :weeks_on_chart, :trend, :is_new, :views, :backdrop_path, :poster_path, :overview, :updated_at);
