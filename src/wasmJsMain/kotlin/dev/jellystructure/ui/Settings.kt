@@ -11,6 +11,7 @@ import dev.jellystructure.api.LibraryMapping
 import dev.jellystructure.api.LibraryPathDiag
 import dev.jellystructure.api.ConfigApi
 import dev.jellystructure.api.MediaApi
+import dev.jellystructure.api.PipelineRunResult
 import dev.jellystructure.api.ArrConfig
 import dev.jellystructure.api.QBittorrentConfig
 import dev.jellystructure.api.QBittorrentPathMapping
@@ -29,6 +30,8 @@ import io.ktor.http.contentType
 import kotlinx.browser.document
 import kotlinx.browser.window
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -1811,6 +1814,23 @@ private fun refreshNextRun() {
     }
 }
 
+/** Keeps the "Run pipeline now" button truthful — disabled + labeled while a scan/pipeline (from any
+ *  trigger: this button, the Dashboard's Scan, or the schedule) is actually running, so clicking it never
+ *  again lands on a surprise "already running" conflict. Polled every few seconds while Settings is open. */
+private suspend fun refreshPipelineRunButton() {
+    val btn = document.getElementById("pipe-run") as? HTMLElement ?: return
+    val running = MediaApi.scanStatus()?.running == true
+    if (running) {
+        btn.setAttribute("disabled", "")
+        btn.textContent = "⏳ Pipeline running…"
+        btn.title = "A scan/pipeline is already running — check Activity for progress"
+    } else {
+        btn.removeAttribute("disabled")
+        btn.textContent = "▷ Run pipeline now"
+        btn.title = "Run every enabled step below now (not just a file scan)"
+    }
+}
+
 private fun computePipeCron(): String {
     val atVal = (document.getElementById("pipe-at") as? HTMLInputElement)?.value ?: "03:00"
     val h = atVal.split(":")[0].toIntOrNull() ?: 3
@@ -2071,9 +2091,21 @@ private fun wirePipelineBuilder(scope: CoroutineScope) {
         scope.launch {
             val btn = document.getElementById("pipe-run") as? HTMLElement
             btn?.setAttribute("disabled", "")
-            val ok = runCatching { MediaApi.runPipeline() }.getOrDefault(false)
-            btn?.removeAttribute("disabled")
-            if (ok) showPipelineToast("Pipeline started") else showPipelineToast("Failed to start pipeline")
+            val result = runCatching { MediaApi.runPipeline() }.getOrDefault(PipelineRunResult.FAILED)
+            when (result) {
+                PipelineRunResult.STARTED -> showPipelineToast("Pipeline started")
+                PipelineRunResult.ALREADY_RUNNING -> showPipelineToast("A scan/pipeline is already running")
+                PipelineRunResult.FAILED -> { btn?.removeAttribute("disabled"); showPipelineToast("Failed to start pipeline") }
+            }
+            // Either outcome (started, or already-running) means one is now known to be in flight —
+            // reflect that on the button immediately rather than waiting for the next poll tick.
+            if (result != PipelineRunResult.FAILED) refreshPipelineRunButton()
+        }
+    }
+    scope.launch {
+        while (isActive) {
+            refreshPipelineRunButton()
+            delay(3_000)
         }
     }
     val back = document.createElement("div") as HTMLElement
