@@ -29,6 +29,7 @@ import dev.jellystructure.media.Scanner
 import dev.jellystructure.media.ScanTracker
 import dev.jellystructure.config.PipelineStep
 import dev.jellystructure.media.ArtworkDownloader
+import dev.jellystructure.jobs.JobEvent
 import dev.jellystructure.nfo.NfoWriter
 import dev.jellystructure.server.routes.fireWebhook
 import dev.jellystructure.server.routes.runScan
@@ -406,11 +407,38 @@ suspend fun executePipeline(
             filter
         }
 
+    // Bug fix (2026-07-03): runScan's own completion (scanTracker.complete(), which resets
+    // activeWorkers to 0 and flips running=false) must NOT fire after just this scan_files sub-step —
+    // it previously did, so "Run pipeline now" could race to a false "already running" 409 on a second
+    // click and the Activity page's worker count froze at 0/N for the rest of the run while pull_tmdb/
+    // fetch_artwork/etc. were still actually going. This pipeline signals completion itself, once, after
+    // every step has truly finished (or on the early "nothing to do" return right below).
+    suspend fun signalPipelineComplete(items: List<dev.jellystructure.model.MediaItem>) {
+        if (scanTracker.cancelRequested) {
+            broadcaster.broadcast(JobEvent.Finished(jobId, items.size, 0))
+            return
+        }
+        scanTracker.complete()
+        broadcaster.broadcast(JobEvent.Finished(jobId, items.size, 0))
+        val cfg = configStore.current
+        if (cfg.apiKeys.jellyfinUrl.isNotBlank() && cfg.apiKeys.jellyfinToken.isNotBlank()) {
+            jellyfinClient.triggerLibraryRefresh(cfg.apiKeys.jellyfinUrl, cfg.apiKeys.jellyfinToken)
+        }
+        if (cfg.behavior.notifyOnScanDone)
+            fireWebhook(cfg, """{"event":"scan_complete","jobId":"$jobId","items":${items.size}}""")
+        if (cfg.behavior.notifyOnNoMatch) {
+            val unmatched = items.count { it.tmdbId == null }
+            if (unmatched > 0)
+                fireWebhook(cfg, """{"event":"no_tmdb_match","jobId":"$jobId","unmatched":$unmatched}""")
+        }
+    }
+
     val workingSet = withContext(RunContext(jobId, "scan_files")) {
         runScan(
             jobId, emptySet(), store, scanner, scanTracker, broadcaster,
             configStore, jellyfinClient, scanDispatcher,
-            freshnessFilter = freshnessFilter
+            freshnessFilter = freshnessFilter,
+            signalCompletion = false,
         )
     }
 
@@ -418,12 +446,14 @@ suspend fun executePipeline(
 
     if (workingSet.isEmpty()) {
         Logger.info("Pipeline scan_files: no items in working set, skipping action steps")
+        signalPipelineComplete(workingSet)
         return
     }
 
     Logger.info("Pipeline scan_files complete: ${workingSet.size} items in working set")
 
     val cfg = configStore.current
+    try {
     for (step in pipeline) {
         if (step.step == "scan_files") continue
         withContext(RunContext(jobId, step.step)) {
@@ -564,6 +594,12 @@ suspend fun executePipeline(
         }
     }
     Logger.info("Pipeline complete — ${workingSet.size} items processed")
+    } finally {
+        // Guarantees scanTracker is always released — even if a step above threw (runTagged's own
+        // catch just logs "Run failed" and never touches scanTracker, which is exactly how a stuck
+        // "0/N workers" / phantom-running pipeline could happen from any step-level exception).
+        signalPipelineComplete(workingSet)
+    }
 }
 
 /** 93g: run a scan/pipeline run inside a [RunContext] so every log line it emits is tagged with the run
