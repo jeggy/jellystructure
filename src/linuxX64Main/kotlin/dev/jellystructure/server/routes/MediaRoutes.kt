@@ -8,6 +8,7 @@ import dev.jellystructure.nowEpochSec
 import dev.jellystructure.runTagged
 import dev.jellystructure.auth.JellyfinClient
 import dev.jellystructure.auth.JellyfinItem
+import dev.jellystructure.io.FileIo
 import dev.jellystructure.config.ConfigStore
 import dev.jellystructure.jobs.JobEvent
 import dev.jellystructure.jobs.WsBroadcaster
@@ -788,7 +789,7 @@ fun Route.mediaRoutes(
                     val ep = item.episodes.firstOrNull { it.filename == epFilename } ?: return@get call.respond(HttpStatusCode.NotFound)
                     val st = artwork.checkEpisodeStill(ep)
                     if (!st.stillExists) return@get call.respond(HttpStatusCode.NotFound)
-                    val bytes = runCatching { SystemFileSystem.source(Path(st.stillPath)).buffered().readByteArray() }.getOrNull()
+                    val bytes = runCatching { FileIo.readBytes(Path(st.stillPath)) }.getOrNull()
                         ?: return@get call.respond(HttpStatusCode.NotFound)
                     // Short max-age (not the usual 86400s) — this preview can be regenerated in place by
                     // the admin; the content-hash ETag alone already busts a stale cache correctly, but a
@@ -1864,7 +1865,7 @@ internal suspend fun runScan(
         coroutineScope {
             val channel = Channel<JellyfinItem>(Channel.UNLIMITED)
 
-            scanTracker.targetWorkers.value = configStore.current.behavior.scanWorkers.coerceIn(1, 32)
+            scanTracker.targetWorkers.value = configStore.current.behavior.scanWorkers.coerceIn(1, 100)
 
             // Producer: fills the channel from the precomputed worklist (total already broadcast above).
             launch {
@@ -1929,7 +1930,7 @@ internal suspend fun runScan(
             launch {
                 while (!channel.isClosedForReceive || scanTracker.activeWorkers.value > 0) {
                     delay(500)
-                    val newTarget = configStore.current.behavior.scanWorkers.coerceIn(1, 32)
+                    val newTarget = configStore.current.behavior.scanWorkers.coerceIn(1, 100)
                     if (newTarget != scanTracker.targetWorkers.value) {
                         Logger.info("Scan workers: ${scanTracker.targetWorkers.value} → $newTarget", "scan")
                         scanTracker.targetWorkers.value = newTarget

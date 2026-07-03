@@ -13,17 +13,22 @@ import kotlinx.serialization.json.Json
  * client every stateless outbound caller should use.
  *
  * Kotlin/Native's CIO server uses select() which crashes fatally when any file descriptor
- * reaches FD_SETSIZE (1024). Every live Curl connection consumes one FD, and with 15 scan
+ * reaches FD_SETSIZE (1024). Every live Curl connection consumes one FD, and with many scan
  * workers each making concurrent TMDB + Jellyfin + artwork calls the total easily exceeds
  * the ceiling. All backend HTTP clients must acquire a permit before opening a connection.
  *
- * Budget: 24 concurrent outbound connections (in-flight, via [withPermit]) + one shared idle
+ * Budget: 64 concurrent outbound connections (in-flight, via [withPermit]) + one shared idle
  * connection pool (resting keep-alive sockets, via [client]) instead of the ~12 independent
  * pools a `HttpClient(Curl)` per caller used to leave resting. Remaining headroom covers inbound
  * server connections, WebSocket sessions, SQLite WAL, ffprobe pipes, and stdio.
+ *
+ * Phase 134 (FR-OPS2 §F): 24 → 64 — this is the gate up to 100 concurrent scan workers actually
+ * queue behind for TMDB/artwork/Jellyfin calls, so unlike `ProcessGate` (real forked processes,
+ * kept conservative) this one scales with worker count: a stalled HTTP round-trip only costs
+ * latency, not host resources, so a higher in-flight cap is safe throughput, not a resource risk.
  */
 object OutboundHttp {
-    private val sem = Semaphore(24)
+    private val sem = Semaphore(64)
     suspend fun <T> withPermit(block: suspend () -> T): T {
         sem.acquire()
         return try { block() } finally { sem.release() }

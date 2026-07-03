@@ -10,6 +10,12 @@ import kotlinx.coroutines.sync.withLock
 
 private fun String.jsonEsc(): String = "\"" + replace("\\", "\\\\").replace("\"", "\\\"") + "\""
 
+// Phase 134 (FR-OPS2 §D) — a defensive hard cap on distinct connected devices, so this class's own
+// growth is bounded by construction (unlike every other consumer in the FD budget, this one previously
+// had no ceiling at all: it registers unconditionally on every valid device token). 2.5× the stated
+// 50-TV target, covering reconnect churn without ever letting the count grow unbounded.
+private const val MAX_TV_EVENT_SESSIONS = 128
+
 /**
  * Per-user + per-device push channel (R33; re-keyed Phase 110). Holds live device WebSocket sessions
  * keyed by `(jellyfinUserId, deviceId)` and fans out small change signals. Most events stay per-user
@@ -25,9 +31,22 @@ class TvEventBus(private val scope: CoroutineScope) {
     private val sessions = mutableMapOf<String, MutableMap<String, DefaultWebSocketServerSession>>()
     private var rev = 0L
 
-    suspend fun register(userId: String, deviceId: String, session: DefaultWebSocketServerSession) = mutex.withLock {
+    /**
+     * Phase 134 (FR-OPS2 §D) — returns `false` (refuse) only when [deviceId] would be a genuinely NEW
+     * entry and the bus is already at [MAX_TV_EVENT_SESSIONS]; a reconnect of an already-registered
+     * device always succeeds (it just overwrites its own entry) so existing TVs are never punished by
+     * the cap.
+     */
+    suspend fun tryRegister(userId: String, deviceId: String, session: DefaultWebSocketServerSession): Boolean = mutex.withLock {
+        val totalDevices = sessions.values.sumOf { it.size }
+        val isNewDevice = sessions[userId]?.containsKey(deviceId) != true
+        if (isNewDevice && totalDevices >= MAX_TV_EVENT_SESSIONS) {
+            Logger.warn("TV events: refused device $deviceId for user $userId — at the $MAX_TV_EVENT_SESSIONS-session cap", "tv")
+            return@withLock false
+        }
         sessions.getOrPut(userId) { mutableMapOf() }[deviceId] = session
         Logger.info("TV events: device $deviceId connected for user $userId (${sessions[userId]?.size} live)", "tv")
+        true
     }
 
     suspend fun unregister(userId: String, deviceId: String, session: DefaultWebSocketServerSession) = mutex.withLock {

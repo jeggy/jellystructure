@@ -1,10 +1,8 @@
 package dev.jellystructure.media
 
-import kotlinx.io.buffered
+import dev.jellystructure.io.FileIo
 import kotlinx.io.files.Path
 import kotlinx.io.files.SystemFileSystem
-import kotlinx.io.readString
-import kotlinx.io.writeString
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 
@@ -23,7 +21,7 @@ class JsTagStore(private val filePath: String) {
         val path = Path(filePath)
         if (!SystemFileSystem.exists(path)) return
         runCatching {
-            val text = SystemFileSystem.source(path).buffered().readString()
+            val text = FileIo.readText(path)
             tags = json.decodeFromString<List<JsTag>>(text).toMutableList()
         }
     }
@@ -61,10 +59,7 @@ class JsTagStore(private val filePath: String) {
     private fun persist() {
         val tmp = Path("$filePath.tmp")
         val target = Path(filePath)
-        val sink = SystemFileSystem.sink(tmp).buffered()
-        sink.writeString(json.encodeToString(tags.toList()))
-        sink.flush()
-        sink.close()
+        FileIo.writeText(tmp, json.encodeToString(tags.toList()))   // Phase 134: use{}-scoped
         SystemFileSystem.atomicMove(tmp, target)
     }
 }

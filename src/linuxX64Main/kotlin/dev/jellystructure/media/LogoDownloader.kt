@@ -1,15 +1,14 @@
 package dev.jellystructure.media
 
+import dev.jellystructure.io.FileIo
 import dev.jellystructure.log.Logger
 import dev.jellystructure.OutboundHttp
 import dev.jellystructure.tmdb.TmdbClient
 import io.ktor.client.request.get
 import io.ktor.client.statement.readRawBytes
 import kotlinx.cinterop.ExperimentalForeignApi
-import kotlinx.io.buffered
 import kotlinx.io.files.Path
 import kotlinx.io.files.SystemFileSystem
-import kotlinx.io.readByteArray
 
 private const val TMDB_ORIGINAL = "https://image.tmdb.org/t/p/original"
 
@@ -40,9 +39,7 @@ class LogoDownloader(
 
     fun serveLogo(kind: String, name: String): ByteArray? {
         val path = Path(logoFile(kind, name))
-        return if (SystemFileSystem.exists(path))
-            SystemFileSystem.source(path).buffered().readByteArray()
-        else null
+        return if (SystemFileSystem.exists(path)) FileIo.readBytes(path) else null
     }
 
     suspend fun fetchStudioLogo(name: String, tmdbId: Int?, capturedLogoPath: String?): Boolean {
@@ -87,7 +84,7 @@ class LogoDownloader(
 
     fun servePersonImage(tmdbId: Int): ByteArray? {
         val path = Path(personImageFile(tmdbId))
-        return if (SystemFileSystem.exists(path)) SystemFileSystem.source(path).buffered().readByteArray() else null
+        return if (SystemFileSystem.exists(path)) FileIo.readBytes(path) else null
     }
 
     suspend fun fetchPersonImage(tmdbId: Int, profilePath: String?): Boolean {
@@ -104,10 +101,7 @@ class LogoDownloader(
             val bytes = httpGet(url).readRawBytes()
             if (bytes.isEmpty()) return@runCatching false
             val tmp = "$destPath.tmp"
-            val sink = SystemFileSystem.sink(Path(tmp)).buffered()
-            sink.write(bytes, 0, bytes.size)
-            sink.flush()
-            sink.close()
+            FileIo.writeBytes(Path(tmp), bytes)   // Phase 134: use{}-scoped — no FD leak on a mid-write throw
             platform.posix.rename(tmp, destPath)
             Logger.info("Downloaded logo: $destPath", "artwork")
             true

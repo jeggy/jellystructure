@@ -2,14 +2,12 @@ package dev.jellystructure.config
 
 import com.akuleshov7.ktoml.Toml
 import com.akuleshov7.ktoml.TomlInputConfig
+import dev.jellystructure.io.FileIo
 import dev.jellystructure.log.Logger
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import kotlinx.io.buffered
 import kotlinx.io.files.Path
 import kotlinx.io.files.SystemFileSystem
-import kotlinx.io.readString
-import kotlinx.io.writeString
 
 class ConfigStore(private val filePath: String) {
     private val mutex = Mutex()
@@ -30,7 +28,7 @@ class ConfigStore(private val filePath: String) {
             return
         }
         val result = runCatching {
-            val content = SystemFileSystem.source(path).buffered().readString()
+            val content = FileIo.readText(path)
             _config = toml.decodeFromString(AppConfig.serializer(), content)
         }
         if (result.isFailure) Logger.warn("Failed to parse config, using defaults: ${result.exceptionOrNull()?.message}")
@@ -45,10 +43,7 @@ class ConfigStore(private val filePath: String) {
         val tmp = "$filePath.tmp"
         val result = runCatching {
             val content = toml.encodeToString(AppConfig.serializer(), _config)
-            val sink = SystemFileSystem.sink(Path(tmp)).buffered()
-            sink.writeString(content)
-            sink.flush()
-            sink.close()
+            FileIo.writeText(Path(tmp), content)   // Phase 134: use{}-scoped
             // Atomic rename — POSIX guarantees this is atomic on the same filesystem
             platform.posix.rename(tmp, filePath)
         }
