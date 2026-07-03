@@ -367,7 +367,136 @@
     return { season: s.season, ep: s.ep, title: s.title || '', date: when.toISOString().slice(0, 10), days };
   }
 
+  // ---------- Upcoming calendar (Sonarr episodes + Radarr movie releases) ----------
+  // A merged air/release schedule. Sonarr supplies the next monitored episodes of
+  // continuing series (with air time + network); Radarr supplies movie release dates
+  // (digital / physical / in-cinemas) it is monitoring. Gated on config.sonarr || .radarr.
+  // Offsets are days from “now”, so the calendar always reads as genuinely upcoming.
+  function localYMD(d) {
+    const m = String(d.getMonth() + 1).padStart(2, '0'), day = String(d.getDate()).padStart(2, '0');
+    return d.getFullYear() + '-' + m + '-' + day;
+  }
+  function upDate(offset) { const d = new Date(); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() + offset); return d; }
+  function U(offset, o) {
+    const d = upDate(offset);
+    return Object.assign(T(o.title, o.year, o.genre, o.rating, o.kind), {
+      date: localYMD(d), offset,
+      time: o.time || '', ep: o.ep || '', epTitle: o.epTitle || '',
+      source: o.source, network: o.network || '', release: o.release || '',
+      monitored: o.monitored !== false, status: o.status || 'monitored', progress: o.progress || 0,
+      qp: o.qp || (o.kind === 'series' ? 'HD-1080p' : 'Ultra-HD'),
+      syn: o.syn || '', grad: grad(o.title + (o.ep || '')),
+    });
+  }
+  const upcoming = [
+    // ---- today (offset 0) ----
+    U(0, { title: 'Arvur', year: 2023, genre: 'Drama', rating: '16', kind: 'series', ep: 'S2:E1', epTitle: 'Nýggj Spor', time: '20:30', source: 'sonarr', network: 'Viaplay', status: 'downloading', progress: 62,
+      syn: 'The estate reopens old wounds as the eldest sibling returns to bury the family’s last secret — and its last debt.' }),
+    U(0, { title: 'Hraðar Ljós II', year: 2025, genre: 'Thriller', rating: '16', kind: 'film', source: 'radarr', release: 'Digital Release', status: 'downloading', progress: 38,
+      syn: 'The Tórshavn night shift returns. One paramedic, one impossible call, and a city that never quite goes dark.' }),
+    // ---- tomorrow (1) ----
+    U(1, { title: 'Nordvest', year: 2023, genre: 'Crime', rating: '16', kind: 'series', ep: 'S3:E1', epTitle: 'Heimferð', time: '20:00', source: 'sonarr', network: 'Kringvarp', status: 'monitored',
+      syn: 'Detective Sigrun Restorff is called back to Hvalvík a third time — and the tide brings up a name she buried herself.' }),
+    // ---- 2 ----
+    U(2, { title: 'Havets Hjarta', year: 2022, genre: 'Drama', rating: '12', kind: 'series', ep: 'S3:E6', epTitle: 'Brotsjór', time: '21:00', source: 'sonarr', network: 'Dansk TV', status: 'monitored',
+      syn: 'The trawler family faces the storm that the whole harbour has feared since the herring first thinned.' }),
+    U(2, { title: 'Carry-On', year: 2024, genre: 'Thriller', rating: '16', kind: 'film', source: 'radarr', release: 'Digital Release', status: 'downloading', progress: 47,
+      syn: 'A young TSA officer is blackmailed into letting a dangerous package slip onto a Christmas Eve flight.' }),
+    // ---- 3 ----
+    U(3, { title: 'Frostbarn', year: 2024, genre: 'Crime', rating: '16', kind: 'series', ep: 'S1:E3', epTitle: 'Ísvøk', time: '22:00', source: 'sonarr', network: 'Kringvarp', status: 'monitored',
+      syn: 'A frozen fjord gives up a child’s coat and no child. The town closes ranks; the ice does not.' }),
+    U(3, { title: 'Spring: Return', year: 2025, genre: 'Animation · Family', rating: '7', kind: 'film', source: 'radarr', release: 'Digital Release', status: 'announced',
+      syn: 'The shepherd girl and her dog climb higher than the seasons have ever reached — a wordless animated wonder returns.' }),
+    // ---- 4 ----
+    U(4, { title: 'Glasberget', year: 2024, genre: 'Drama', rating: '16', kind: 'series', ep: 'S2:E1', epTitle: 'Sprekk', time: '20:00', source: 'sonarr', network: 'SVT', status: 'monitored',
+      syn: 'Everything cracks at once, and the family must choose which piece of the glass mountain to save.' }),
+    U(4, { title: 'KPop Demon Hunters', year: 2025, genre: 'Animation', rating: '7', kind: 'film', source: 'radarr', release: 'Digital Release', status: 'announced',
+      syn: 'A chart-topping trio moonlights as a demon-slaying squad, protecting their fans from the underworld between shows.' }),
+    // ---- 5 ----
+    U(5, { title: 'Mýrin', year: 2021, genre: 'Crime', rating: '16', kind: 'series', ep: 'S2:E1', epTitle: 'Aftur í Myrkri', time: '21:30', source: 'sonarr', network: 'Netflix', status: 'available',
+      syn: 'The bog keeps its dead well. When it gives one back, the case it reopens is one nobody wanted solved.' }),
+    // ---- 6 ----
+    U(6, { title: 'Tórshavn 1918', year: 2021, genre: 'Drama', rating: '12', kind: 'series', ep: 'S2:E1', epTitle: 'Spanska Sótt', time: '20:00', source: 'sonarr', network: 'Kringvarp', status: 'monitored',
+      syn: 'A century on, the harbour town relives the winter the influenza came ashore with the mail boat.' }),
+    U(6, { title: 'Troll 2', year: 2025, genre: 'Action · Fantasy', rating: '12', kind: 'film', source: 'radarr', release: 'In Cinemas', status: 'announced',
+      syn: 'The mountain wakes again. This time the legends march south — and the palaeontologist who believed them is out of time.' }),
+    // ---- 7 ----
+    U(7, { title: 'Arvur', year: 2023, genre: 'Drama', rating: '16', kind: 'series', ep: 'S2:E2', epTitle: 'Skuld', time: '20:30', source: 'sonarr', network: 'Viaplay', status: 'monitored' }),
+    U(7, { title: 'Cosmos Laundromat', year: 2015, genre: 'Sci-Fi · Adventure', rating: '12', kind: 'film', source: 'radarr', release: 'Physical Release', status: 'available',
+      syn: 'On a desolate island, a suicidal sheep named Franck meets a salesman who offers him the gift — and curse — of a lifetime.' }),
+    // ---- 8 ----
+    U(8, { title: 'Nordvest', year: 2023, genre: 'Crime', rating: '16', kind: 'series', ep: 'S3:E2', epTitle: 'Toka', time: '20:00', source: 'sonarr', network: 'Kringvarp', status: 'monitored' }),
+    // ---- 9 ----
+    U(9, { title: 'Havets Hjarta', year: 2022, genre: 'Drama', rating: '12', kind: 'series', ep: 'S3:E7', epTitle: 'Logn', time: '21:00', source: 'sonarr', network: 'Dansk TV', status: 'monitored' }),
+    U(9, { title: 'Society of the Snow', year: 2023, genre: 'Drama', rating: '16', kind: 'film', source: 'radarr', release: 'Physical Release', status: 'announced',
+      syn: 'The survivors of a 1972 Andes crash endure 72 days in the high cordillera, bound by an impossible pact to stay alive.' }),
+    // ---- 10 & 11 have nothing scheduled (gap) ----
+    // ---- 12 ----
+    U(12, { title: 'Nordlys Protocol', year: 2023, genre: 'Action', rating: '16', kind: 'film', source: 'radarr', release: 'Digital Release', status: 'announced',
+      syn: 'When the aurora grid goes dark over Svalbard, the only operative left online has ninety minutes and no orders.' }),
+  ];
+  // ---- Overdue / missing (released in the past, still not in the library) ----
+  // Radarr/Sonarr flagged these as available at the source, but nothing has landed yet.
+  // Only surface up to ~6 months back; anything older is written off (the -210 item proves it).
+  const overdue = [
+    U(-2,  { title: 'The Gray Man', year: 2022, genre: 'Action', rating: '16', kind: 'film', source: 'radarr', release: 'Digital Release', status: 'missing',
+      syn: 'A CIA mercenary uncovers the agency’s dirty secrets and becomes the target of a global manhunt led by a former colleague.' }),
+    U(-4,  { title: 'Frostbarn', year: 2024, genre: 'Crime', rating: '16', kind: 'series', ep: 'S1:E1', epTitle: 'Kaldi Fjørður', time: '22:00', source: 'sonarr', network: 'Kringvarp', status: 'missing',
+      syn: 'The season opener nobody grabbed — the fjord freezes over, and the first body surfaces beneath the ice.' }),
+    U(-8,  { title: 'Damsel', year: 2024, genre: 'Fantasy', rating: '12', kind: 'film', source: 'radarr', release: 'Digital Release', status: 'missing',
+      syn: 'A dutiful maiden discovers her royal marriage is a sacrifice — and the only way out is down, into the dragon’s lair.' }),
+    U(-15, { title: 'Blood Red Sky', year: 2021, genre: 'Horror', rating: '18', kind: 'film', source: 'radarr', release: 'Digital Release', status: 'missing' }),
+    U(-26, { title: 'Athena', year: 2022, genre: 'Drama', rating: '16', kind: 'film', source: 'radarr', release: 'Digital Release', status: 'missing' }),
+    U(-44, { title: 'Below Zero', year: 2021, genre: 'Thriller', rating: '16', kind: 'film', source: 'radarr', release: 'Digital Release', status: 'missing' }),
+    U(-210, { title: 'The Old Guard', year: 2020, genre: 'Action', rating: '16', kind: 'film', source: 'radarr', release: 'Digital Release', status: 'missing' }),
+  ];
+  // group by date, preserving chronological order
+  function upcomingByDay() {
+    const map = new Map();
+    upcoming.forEach(it => { if (!map.has(it.date)) map.set(it.date, []); map.get(it.date).push(it); });
+    return [...map.entries()].map(([date, items]) => ({ date, offset: items[0].offset, items }));
+  }
+
+  // ---------- TMDB trailers (videos section) ----------
+  // Ingested at scan time from TMDB `/videos`: pick one official YouTube/Vimeo "Trailer"
+  // (fallback Teaser), preferring the original language then English. Stored per title as
+  // { site: 'youtube'|'vimeo', key, name }. Titles with no video simply have no entry — the
+  // Ravilo "▷ Trailer" button and the admin trailer card only appear when one exists.
+  const TRAILERS = {
+    'Big Buck Bunny':    { site: 'youtube', key: 'aqz-KE-bpKQ', name: 'Official Trailer' },
+    'Cosmos Laundromat': { site: 'youtube', key: 'Y-rmzh0PI3c', name: 'First Cycle · Trailer' },
+    'Spring':            { site: 'youtube', key: 'WhWc3b3KhnY', name: 'Official Trailer' },
+    'Nordvest':          { site: 'vimeo',   key: '76979871',    name: 'Teaser' },
+    'Havets Hjarta':     { site: 'youtube', key: 'b7Cmt-Ng2S0', name: 'Season 2 Trailer' },
+    'Hraðar Ljós':       { site: 'youtube', key: 'aqz-KE-bpKQ', name: 'Premiere Trailer' },
+  };
+  function trailerFor(item) { return (item && TRAILERS[item.title]) || null; }
+
+  // ---------- IMDb ratings (imdbapi.dev) ----------
+  // Aggregate rating + vote count per title. In production this is fetched from
+  // https://imdbapi.dev for every title that carries an imdbId, STORED on the item, and
+  // refreshed on a periodic sync — never queried ad-hoc at render time. The stored shape
+  // mirrors the API response: { aggregateRating, voteCount }. Titles without an imdbId
+  // (or not yet synced) have no rating and the detail chip is simply hidden.
+  const IMDB = {
+    'Big Buck Bunny':    { id: 'tt1254207', rating: 8.1, votes: 24800 },
+    'Cosmos Laundromat': { id: 'tt4331594', rating: 7.3, votes: 3900 },
+    'Spring':            { id: 'tt5188920', rating: 8.0, votes: 1250 },
+    'Nordvest':          { id: 'tt6910212', rating: 7.9, votes: 5400 },
+    'Havets Hjarta':     { id: 'tt7180392', rating: 7.2, votes: 2100 },
+    'Hraðar Ljós':       { id: 'tt9910233', rating: 4.5, votes: 667 },
+  };
+  function imdbFor(item) {
+    if (!item || !item.title) return null;
+    if (IMDB[item.title]) return IMDB[item.title];
+    const h = hash(item.title);
+    if (h % 10 < 3) return null;                         // ~30% carry no imdbId / rating
+    const rating = (55 + (h >> 3) % 40) / 10;            // 5.5 – 9.4
+    const votes = 240 + (h % 1200) * 96;                 // ~240 – ~115k
+    return { id: 'tt' + (1000000 + h % 8999999), rating, votes };
+  }
+
   const watched = { itemState, setItem, setItemWatched, epState, setEpWatched, setEpPct };
 
-  window.RAVILO = { studios, hero, rows, mergedNew, profiles, discover, grad, initials, episodesFor, seasonsFor, castFor, relatedFor, nextAiringFor, ratingFor, itemCerts, CERT_SYS, config, watched };
+  window.RAVILO = { studios, hero, rows, mergedNew, profiles, discover, upcoming, upcomingByDay, overdue, grad, initials, episodesFor, seasonsFor, castFor, relatedFor, nextAiringFor, trailerFor, imdbFor, ratingFor, itemCerts, CERT_SYS, config, watched };
 })();

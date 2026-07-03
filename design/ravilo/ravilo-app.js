@@ -15,8 +15,9 @@
     try {
       const uid = localStorage.getItem('js-ravilo-user');
       const u = (R.profiles || []).find(p => p.id === uid);
-      if (u && window.setRaviloLang) window.setRaviloLang(u.lang || 'en');
+      if (u && window.setRaviloLang) window.setRaviloLang(resolveLang(u));
     } catch (e) {}
+    try { const sk = localStorage.getItem('js-ravilo-skin'); if (sk) document.documentElement.setAttribute('data-skin', sk); } catch (e) {}
     let view = { type: 'home', studio: null };
     let autoSeasonDone = null;   // R150 — per-series guard for season auto-select
     let heroIdx = 0, heroTimer = null;
@@ -41,6 +42,7 @@
         <div class="navitem foc cur" data-nav="home">${t('nav_home')}</div>
         <div class="navitem foc" data-nav="movies">${t('nav_movies')}</div>
         <div class="navitem foc" data-nav="series">${t('nav_series')}</div>
+        <div class="navitem foc" data-nav="upcoming" id="rv-nav-upcoming" style="display:none">${t('nav_upcoming')}</div>
         <div class="navitem foc" data-nav="top10" id="rv-nav-top10" style="display:none">${t('nav_top10')}</div>
         <div class="navitem foc" data-nav="mylist">${t('nav_mylist')}</div>
       </div>
@@ -398,6 +400,12 @@
       if (sub.length) groups.push(`<span class="aflag-group"><span class="aflag-label">Subtitles</span><span class="aflag-row">${flagRow(sub)}</span></span>`);
       return `<div class="dhero-flags">${groups.join('<span class="aflag-div"></span>')}</div>`;
     }
+    // ---- IMDb rating chip (detail hero) — data from imdbapi.dev, stored + synced (R164) ----
+    function fmtVotes(n) { return n >= 1e6 ? (n / 1e6).toFixed(1).replace(/\.0$/, '') + 'M' : n >= 1e3 ? (n / 1e3).toFixed(1).replace(/\.0$/, '') + 'K' : String(n); }
+    function imdbHTML(item) {
+      const im = R.imdbFor(item); if (!im) return '';
+      return `<span class="imdb" title="IMDb ${im.rating.toFixed(1)}/10 · ${im.votes.toLocaleString()} votes"><span class="imdb-wm"><span class="imdb-star">★</span>IMDb</span><span class="imdb-val">${im.rating.toFixed(1)}</span><span class="imdb-votes">${fmtVotes(im.votes)}</span></span>`;
+    }
     function renderDetail(item) {
       stopHero();
       scroll.innerHTML = '';
@@ -440,14 +448,14 @@
         <div class="dhero-body">
           <div class="hero-kicker"><span>${item.tagline || (isSeries ? 'Series' : 'Film')}</span><span class="n">${isSeries ? seasons + ' Season' + (seasons > 1 ? 's' : '') : (item.year || '')}</span></div>
           ${detailTitle(item)}
-          <div class="hero-meta"><span class="tag">${item.badge || 'HD'}</span><span>${item.year}</span><span>${item.genre}</span>${certHTML}${wItem.watched ? `<span class="dmeta-watched">✓ ${t('watched')}</span>` : ''}</div>
+          <div class="hero-meta"><span class="tag">${item.badge || 'HD'}</span><span>${item.year}</span><span>${item.genre}</span>${certHTML}${imdbHTML(item)}${wItem.watched ? `<span class="dmeta-watched">✓ ${t('watched')}</span>` : ''}</div>
           ${audioFlagsHTML(item)}
           <div class="dsyn-block focus-row"><div class="hero-syn dsyn foc" data-syn="1">${item.syn || 'A standout from your Ravilo library — streamed from Jellyfin, organised by Jellystructure.'}</div><span class="syn-toggle">▾ more</span></div>
           ${(upNote || nextAirHTML) ? `<div class="dnext-row">${upNote ? `<div class="dnext"><span class="dnext-dot"></span>${upNote}</div>` : ''}${nextAirHTML}</div>` : ''}
           <div class="dactions focus-row">
             <div class="btn primary foc" data-play="1"><span class="ic">▶</span> ${playLabel}</div>
             ${!isSeries ? `<div class="btn ghost foc${wItem.watched ? ' watched-on' : ''}" data-mark="1"><span class="ic">${wItem.watched ? '✓' : '○'}</span> ${wItem.watched ? t('watched') : t('mark_watched')}</div>` : ''}
-            <div class="btn ghost foc" data-trailer="1"><span class="ic">▷</span> ${t('trailer')}</div>
+            ${R.trailerFor(item) ? `<div class="btn ghost foc" data-trailer="1"><span class="ic">▷</span> ${t('trailer')}</div>` : ''}
             <div class="btn ghost foc" data-list="1"><span class="ic">＋</span> ${t('add_list')}</div>
           </div>
         </div>`;
@@ -661,7 +669,7 @@
         ? `<div class="btn fetching foc" data-dact="progress"><span class="spin"></span> ${fetchLong(it)}</div>` : '';
       return `<div class="ddt-actions focus-row">
         ${primary}${prog}
-        <div class="btn ghost foc" data-dact="list"><span class="ic">＋</span> ${t('add_list')}</div>
+        ${it.status === 'available' ? `<div class="btn ghost foc" data-dact="list"><span class="ic">＋</span> ${t('add_list')}</div>` : ''}
       </div>`;
     }
     function renderDiscoverDetail(it, list) {
@@ -678,7 +686,7 @@
             <div class="ddt-kicker"><span class="ddt-srcwm" style="background:${src.accent}">${src.wm}</span>${src.name} ${t('via_source', { src: src.via })}<span class="ddt-rank">${t('rank_in', { n: it.rank, region })}</span></div>
             <div class="ddt-title">${it.title}</div>
             <div class="hero-meta"><span class="tag">${it.rating}+</span><span>${it.year}</span><span>${it.genre}</span><span>${it.kind === 'series' ? 'Series' : 'Film'}</span>${statusLine}</div>
-            <div class="hero-syn">${it.syn || 'Trending on ' + src.name + ' right now. Not yet in your Jellyfin library — request it and Radarr will grab it, then Jellystructure organises it automatically.'}</div>
+            <div class="hero-syn">${it.syn || 'Trending on ' + src.name + ' right now. Not yet in your library — request it and it will be added and organised automatically.'}</div>
             ${discoverActions(it)}
           </div>
         </div>
@@ -695,6 +703,173 @@
       scroll.appendChild(d);
       appbar.querySelectorAll('.navitem').forEach(n => n.classList.remove('cur'));
     }
+
+    /* ---------------- UPCOMING (Sonarr + Radarr backed — never surfaced to the viewer) ---------------- */
+    function upDateObj(iso) { return new Date(iso + 'T00:00:00'); }
+    function upDow(iso) { return upDateObj(iso).toLocaleDateString(undefined, { weekday: 'short' }); }
+    function upDowLong(iso) { return upDateObj(iso).toLocaleDateString(undefined, { weekday: 'long' }); }
+    function upDayNum(iso) { return String(upDateObj(iso).getDate()).padStart(2, '0'); }
+    function upMon(iso) { return upDateObj(iso).toLocaleDateString(undefined, { month: 'short' }); }
+    function upRel(offset) { return offset === 0 ? t('up_today') : offset === 1 ? t('up_tomorrow') : null; }
+    function upSrcBadge(it) {
+      return it.source === 'sonarr'
+        ? `<span class="up-src sonarr">${t('up_episode')}</span>`
+        : `<span class="up-src radarr">${t('up_movie')}</span>`;
+    }
+    function upStatusPill(it) {
+      // "Already available" — we already have it; downloading — live %; missing — overdue.
+      // everything else on this screen is simply "upcoming", so no redundant pill.
+      if (it.status === 'available') return `<span class="up-stat avail-lib">✓ ${t('up_available')}</span>`;
+      if (it.status === 'missing') return `<span class="up-stat missing">${t('up_missing')}</span>`;
+      if (it.status === 'downloading') return `<span class="up-stat dl"><span class="spin"></span>${fetchShort(it)}</span>`;
+      return '';
+    }
+    function upCardSub(it) {
+      if (it.kind === 'series') return it.ep + (it.epTitle ? ' · ' + it.epTitle : '');
+      return it.release || 'Film';
+    }
+    function upcomingCard(it) {
+      const c = el('div', 'up-card foc'); c._upitem = it;
+      c.innerHTML = `
+        <div class="up-art">
+          <div class="grad" style="background:${it.grad}"></div>
+          <div class="up-art-top">${upSrcBadge(it)}${upStatusPill(it)}</div>
+          <div class="up-art-bot"><span class="up-time">${it.time || it.release || ''}</span></div>
+        </div>
+        <div class="up-cbody">
+          <div class="up-ctitle">${esc(it.title)}</div>
+          <div class="up-csub">${esc(upCardSub(it))}</div>
+          <div class="up-cnet">${esc(it.kind === 'series' ? (it.network || it.genre) : it.genre)} · ${it.rating}+</div>
+          ${it.status === 'missing' ? `<div class="up-cdue"><span class="up-cdue-ic">!</span>${t('up_due')} ${epAirLabel(it.date)}</div>` : ''}
+        </div>`;
+      return c;
+    }
+    function upDayChip(day) {
+      const c = el('div', 'up-day foc' + (day.offset === 0 ? ' today' : '')); c._upday = day.date;
+      const rel = upRel(day.offset);
+      c.innerHTML = `<span class="up-dow">${rel || upDow(day.date)}</span>
+        <span class="up-dnum">${upDayNum(day.date)}</span>
+        <span class="up-dmon">${upMon(day.date)}</span>
+        <span class="up-dcount">${day.items.length}</span>`;
+      return c;
+    }
+    function renderUpcoming() {
+      stopHero(); scroll.innerHTML = '';
+      const src = view.upSource || 'all';
+      const match = it => src === 'all' || (src === 'series' && it.source === 'sonarr') || (src === 'movies' && it.source === 'radarr');
+      const days = R.upcomingByDay()
+        .map(d => ({ date: d.date, offset: d.offset, items: d.items.filter(match) }))
+        .filter(d => d.items.length);
+      // overdue / missing — released in the past (up to ~6 months back), still not in the library
+      const missing = (R.overdue || []).filter(it => it.offset >= -183 && match(it)).sort((a, b) => b.offset - a.offset);
+
+      const wrap = el('div', 'upscreen');
+      const head = el('div', 'uphead');
+      head.innerHTML = `<div class="uphead-row"><h1>${t('nav_upcoming')}</h1><span class="disc-sub">${t('upcoming_sub')}</span></div>`;
+      const chips = el('div', 'upfilter focus-row');
+      [['all', t('up_all')], ['series', t('up_series')], ['movies', t('up_movies')]].forEach(([k, l]) => {
+        const ch = el('div', 'upchip foc' + (k === src ? ' cur' : '')); ch._upsrc = k;
+        ch.innerHTML = `<span class="upchip-dot ${k}"></span>${l}`;
+        chips.appendChild(ch);
+      });
+      head.appendChild(chips);
+      if (missing.length) {
+        const jump = el('div', 'up-missjump foc'); jump._upjump = true;
+        jump.innerHTML = `<span class="up-missjump-ic">!</span>${t('up_missing')}<span class="up-missjump-n">${missing.length}</span>`;
+        chips.appendChild(jump);
+      }
+      wrap.appendChild(head);
+
+      if (!days.length && !missing.length) {
+        wrap.appendChild(el('div', 'up-empty', t('up_nothing')));
+      }
+
+      // calendar date rail — only days that actually have releases (nothing is expected every day,
+      // so empty days are simply skipped and the rail jumps to the next day with content)
+      if (days.length) {
+        const railWrap = el('div', 'crow up-railwrap');
+        railWrap.innerHTML = `<div class="crow-head"><h2 class="up-railh">${upMon(days[0].date)} — ${upDayNum(days[days.length - 1].date)} ${upMon(days[days.length - 1].date)}</h2></div>`;
+        const railTrack = el('div', 'track focus-row up-rail');
+        days.forEach(day => railTrack.appendChild(upDayChip(day)));
+        railWrap.appendChild(railTrack);
+        wrap.appendChild(railWrap);
+
+        days.forEach(day => {
+          const sec = el('div', 'crow up-sec'); sec.dataset.upday = day.date;
+          const rel = upRel(day.offset);
+          sec.innerHTML = `<div class="crow-head up-sechead">
+            <div class="up-daybadge${day.offset === 0 ? ' today' : ''}"><span class="dow">${upDow(day.date)}</span><span class="dnum">${upDayNum(day.date)}</span></div>
+            <div class="up-sectitle"><h2>${rel || upDowLong(day.date)}</h2><span class="up-secfull">${upDowLong(day.date)}, ${upMon(day.date)} ${upDayNum(day.date)}</span></div>
+            <span class="up-seccount">${t(day.items.length === 1 ? 'up_release' : 'up_releases', { n: day.items.length })}</span></div>`;
+          const track = el('div', 'track focus-row');
+          day.items.forEach(it => track.appendChild(upcomingCard(it)));
+          sec.appendChild(track);
+          wrap.appendChild(sec);
+        });
+      }
+
+      // missing / overdue overview — an at-a-glance list of what we should already have
+      if (missing.length) {
+        const sec = el('div', 'crow up-sec up-missing');
+        sec.innerHTML = `<div class="crow-head up-sechead up-mhead">
+          <div class="up-mbadge">!</div>
+          <div class="up-sectitle"><h2>${t('up_missing_title')}</h2><span class="up-secfull">${t('up_missing_sub')}</span></div>
+          <span class="up-seccount">${t(missing.length === 1 ? 'up_release' : 'up_releases', { n: missing.length })}</span></div>`;
+        const track = el('div', 'track focus-row');
+        missing.forEach(it => track.appendChild(upcomingCard(it)));
+        sec.appendChild(track);
+        wrap.appendChild(sec);
+      }
+
+      wrap.appendChild(el('div', 'screen-end'));
+      scroll.appendChild(wrap);
+      appbar.querySelectorAll('.navitem').forEach(n => n.classList.toggle('cur', n.dataset.nav === 'upcoming'));
+    }
+    function renderUpcomingDetail(it) {
+      stopHero(); scroll.innerHTML = '';
+      const isSeries = it.kind === 'series';
+      const isMissing = it.status === 'missing';
+      const kindLabel = isMissing ? t('up_missing') : (isSeries ? t('up_new_episode') : t('up_premiere'));
+      const kindDot = isMissing ? 'missing' : (isSeries ? 'series' : 'movie');
+      const dago = Math.abs(it.offset);
+      const rel = it.offset === 0 ? t('up_airs_today')
+        : it.offset === 1 ? t('up_airs_tomorrow')
+        : it.offset > 1 ? t('up_airs_in', { n: it.offset })
+        : dago === 1 ? (isSeries ? t('up_aired_yest') : t('up_released_yest'))
+        : (isSeries ? t('up_aired_ago', { n: dago }) : t('up_released_ago', { n: dago }));
+      const rating = R.ratingFor(it);
+      const certHTML = rating
+        ? `<span class="cert lvl-${rating.tier}"><span class="cert-rg">${rating.region}</span><span class="cert-code">${esc(rating.code)}</span></span>`
+        : `<span class="tag">${it.rating}+</span>`;
+      const d = el('div', 'ddt updt');
+      d.innerHTML = `
+        <div class="ddt-hero">
+          <div class="ddt-bg"><div class="grad" style="position:absolute;inset:0;background:${it.grad}"></div><div class="hero-noise"></div><div class="ddt-scrim"></div></div>
+          <div class="ddt-body">
+            <div class="ddt-kicker up-kicker"><span class="up-kdot ${kindDot}"></span>${kindLabel}<span class="ddt-rank up-airchip${isMissing ? ' missing' : ''}"><span class="up-airdot"></span>${rel}</span></div>
+            <div class="ddt-title">${esc(it.title)}</div>
+            <div class="hero-meta">${certHTML}<span>${it.year}</span><span>${it.genre}</span><span>${isSeries ? 'Series' : 'Film'}</span>${isSeries && it.ep ? `<span class="up-epchip">${it.ep}${it.epTitle ? ' · ' + esc(it.epTitle) : ''}</span>` : `<span class="up-epchip">${esc(it.release || '')}</span>`}</div>
+            <div class="hero-syn">${esc(it.syn || ('Coming soon to your library — ' + (isSeries ? 'the new episode is added automatically when it airs' : 'added automatically when it releases') + '.'))}</div>
+          </div>
+        </div>
+        <div class="ddt-why">
+          <h2>${t('up_schedule')}</h2>
+          <div class="ddt-stats">
+            <div class="ddt-stat"><div class="k">${isSeries ? t('up_airdate') : t('up_reldate')}</div><div class="v up-vsm">${epAirLabel(it.date)}</div></div>
+            <div class="ddt-stat"><div class="k">${isSeries ? t('up_airtime') : t('up_release_type')}</div><div class="v up-vsm">${isSeries ? (it.time || '—') : (it.release || '—')}</div></div>
+            ${isSeries ? `<div class="ddt-stat"><div class="k">${t('up_network')}</div><div class="v up-vsm">${it.network || '—'}</div></div>` : ''}
+            <div class="ddt-stat"><div class="k">${t('up_quality')}</div><div class="v up-vsm">${it.qp || '—'}</div></div>
+          </div>
+          <div class="ddt-foot">${isMissing
+            ? 'Released, but not in your library yet — it hasn’t been downloaded.'
+            : (isSeries ? 'New episode — added to your library automatically when it airs.' : 'Added to your library automatically when it releases.')}</div>
+        </div>
+        <div class="screen-end"></div>`;
+      scroll.appendChild(d);
+      appbar.querySelectorAll('.navitem').forEach(n => n.classList.remove('cur'));
+    }
+    function upcomingEnabled() { return !!(R.config && (R.config.sonarr || R.config.radarr)); }
+    function updateUpcomingNav() { const e = document.getElementById('rv-nav-upcoming'); if (e) e.style.display = upcomingEnabled() ? '' : 'none'; }
 
     /* ---------------- BROWSE GRID + SEARCH ---------------- */
     let _catalog = null;
@@ -802,6 +977,8 @@
       else if (v.type === 'category') renderCategory(v.studio);
       else if (v.type === 'movie' || v.type === 'series') renderDetail(v.item);
       else if (v.type === 'discover') renderDiscover();
+      else if (v.type === 'upcoming') renderUpcoming();
+      else if (v.type === 'upcomingDetail') renderUpcomingDetail(v.item);
       else if (v.type === 'discoverDetail') renderDiscoverDetail(v.item, v.list);
       else if (v.type === 'grid') renderGrid(v);
       else if (v.type === 'search') renderSearch(v);
@@ -809,7 +986,9 @@
       setTimeout(() => {
         if (v.type === 'home') focusRowByIndex(0);
         else if (v.type === 'category' || v.type === 'discover') focusRowByIndex(firstContentRowIndex());
+        else if (v.type === 'upcoming') focusRC(firstContentRowIndex(), 0);
         else if (v.type === 'movie' || v.type === 'series') { const ai = rows().findIndex(r => r.classList.contains('dactions')); focusRC(ai > 0 ? ai : 1, 0); } // entry focus stays on Play (R135)
+        else if (v.type === 'upcomingDetail') { const ni = items(appbar).findIndex(n => n.dataset && n.dataset.nav === 'upcoming'); focusRC(0, ni > 0 ? ni : 0); } // info-only page → rest focus on the nav
         else focusRC(1, 0); // discoverDetail / grid / search → first focusable row
       }, 30);
     }
@@ -894,6 +1073,7 @@
         else if (f.dataset.nav === 'movies') go({ type: 'grid', kind: 'film', title: 'Movies', nav: 'movies' });
         else if (f.dataset.nav === 'series') go({ type: 'grid', kind: 'series', title: 'Series', nav: 'series' });
         else if (f.dataset.nav === 'top10') go({ type: 'discover' });
+        else if (f.dataset.nav === 'upcoming') go({ type: 'upcoming' });
         else if (f.dataset.nav === 'mylist') go({ type: 'grid', kind: 'mylist', title: 'My List', nav: 'mylist' });
         else if (f.dataset.nav === 'profile') openProfiles('switch');
         return;
@@ -923,7 +1103,7 @@
       if (f.dataset.mark) { toggleItemWatched(view.item); return; }
       if (f.dataset.markall) { toggleSeasonWatched(view.item, view.season || 0); return; }
       if (f._epdone) { toggleEpisodeWatched(view.item, view.season || 0, f._epn, f._epidx); return; }
-      if (f.dataset.trailer) { flash('▷ Trailer · ' + view.item.title); return; }
+      if (f.dataset.trailer) { openTrailer(view.item); return; }
       if (f.dataset.list) { flash('＋ Added ' + view.item.title + ' to My List'); return; }
       if (f._season != null) {
         if (f._season !== (view.season || 0)) { view.season = f._season; renderDetail(view.item); setTimeout(() => { const sp = rows().findIndex(r => r.classList.contains('seasonpills')); focusRC(sp > 0 ? sp : 2, f._season); }, 20); }
@@ -933,11 +1113,39 @@
       if (f._cast) { flash(f._cast.n + ' · ' + f._cast.r); return; }
       if (f._src) { if (f._src.enabled) { renderDiscover(); setTimeout(() => focusRowByIndex(firstContentRowIndex()), 20); } else flash(f._src.name + ' · coming soon'); return; }
       if (f._ditem) { go({ type: 'discoverDetail', item: f._ditem, list: f._dlist, from: { type: 'discover' } }); return; }
+      if (f._upsrc) { view.upSource = f._upsrc; renderUpcoming(); setTimeout(() => focusRC(1, ['all', 'series', 'movies'].indexOf(f._upsrc)), 20); return; }
+      if (f._upjump) {
+        const sec = scroll.querySelector('.up-missing');
+        if (sec) {
+          const card = sec.querySelector('.foc');
+          if (card) { const all = rows(); for (let r = 0; r < all.length; r++) { const c = items(all[r]).indexOf(card); if (c >= 0) { cur = { r, c }; focusEl(card); break; } } }
+          scroll.scrollTop = Math.max(0, sec.offsetTop - 120);   // guarantee the jump lands on the section
+        }
+        return;
+      }
+      if (f._upday) {
+        const secEl = scroll.querySelector('.up-sec[data-upday="' + f._upday + '"]');
+        const card = secEl && secEl.querySelector('.foc');
+        if (card) { const all = rows(); for (let r = 0; r < all.length; r++) { const c = items(all[r]).indexOf(card); if (c >= 0) { cur = { r, c }; focusEl(card); break; } } }
+        return;
+      }
+      if (f._upitem) {
+        const uit = f._upitem, ufrom = { type: 'upcoming', upSource: view.upSource };
+        // if we already have it in the library, open the real detail page:
+        //  - "available" items (movie or series) we hold ahead of the air/release date
+        //  - any series we already track (some episodes on disk)
+        const tgt = catalog().find(x => x.title === uit.title && (uit.kind === 'series' ? x.kind === 'series' : x.kind !== 'series'));
+        if (tgt && (uit.status === 'available' || uit.kind === 'series')) {
+          go({ type: tgt.kind === 'series' ? 'series' : 'movie', item: tgt, from: ufrom }); return;
+        }
+        go({ type: 'upcomingDetail', item: uit, from: ufrom });
+        return;
+      }
       if (f.dataset.dact) {
         const it = view.item;
         if (f.dataset.dact === 'watch') playItem(it);
         else if (f.dataset.dact === 'request') requestFetch(it);
-        else if (f.dataset.dact === 'progress') flash(fetchLong(it) + ' · Radarr');
+        else if (f.dataset.dact === 'progress') flash(fetchLong(it));
         else if (f.dataset.dact === 'list') flash('＋ ' + it.title);
         return;
       }
@@ -945,8 +1153,10 @@
       if (f._item) { if (f.classList.contains('land')) playItem(f._item, 0); else toDetail(f._item); return; }
     }
     function back() {
+      if (trailerOpen) { closeTrailer(); return; }
       if (overlay.classList.contains('on')) { closeOverlay(); return; }
       if (view.type === 'discoverDetail') { go(view.from || { type: 'discover' }); return; }
+      if (view.type === 'upcomingDetail') { go(view.from || { type: 'upcoming' }); return; }
       if (view.type === 'movie' || view.type === 'series') { go(view.from || { type: 'home' }); return; }
       if (view.type !== 'home') go({ type: 'home' });
     }
@@ -964,6 +1174,50 @@
       overlay.classList.add('on'); stopHero();
     }
     function closeOverlay() { overlay.classList.remove('on'); if (view.type === 'home') startHero(); }
+
+    /* ---- trailer overlay (TMDB YouTube/Vimeo embed, fullscreen — R163) ----
+       TMDB trailers live on YouTube/Vimeo, so they can't play through the ExoPlayer-style
+       engine (there's no direct stream); we embed the provider's own iframe player
+       fullscreen, chrome-matched to the real player. The button only renders when
+       R.trailerFor(item) exists (TMDB had a video for the title). */
+    const trailerEl = el('div', 'rv-trailer'); trailerEl.style.display = 'none';
+    trailerEl.innerHTML = `<div class="rv-tr-frame"></div>
+      <div class="rv-tr-top">
+        <div class="rv-tr-title"></div>
+        <div class="rv-tr-close foc focused" data-trclose="1">✕ ${t('close')}</div>
+      </div>`;
+    stage.appendChild(trailerEl);
+    let trailerOpen = false;
+    function trailerEmbed(tr) {
+      if (tr.site === 'vimeo') return `https://player.vimeo.com/video/${tr.key}?autoplay=1&title=0&byline=0&portrait=0`;
+      return `https://www.youtube-nocookie.com/embed/${tr.key}?autoplay=1&rel=0&modestbranding=1&playsinline=1`;
+    }
+    function openTrailer(item) {
+      const tr = R.trailerFor(item); if (!tr) return;
+      stopHero();
+      const src = tr.site === 'vimeo' ? 'Vimeo' : 'YouTube';
+      trailerEl.querySelector('.rv-tr-title').innerHTML =
+        `<span class="rv-tr-kick">${t('trailer')}</span><span class="rv-tr-name">${esc(item.title)}${tr.name ? ' · ' + esc(tr.name) : ''}</span><span class="rv-tr-src">${src}</span>`;
+      trailerEl.querySelector('.rv-tr-frame').innerHTML =
+        `<iframe src="${trailerEmbed(tr)}" title="${esc(item.title)} — ${t('trailer')}" allow="autoplay; fullscreen; encrypted-media; picture-in-picture" allowfullscreen></iframe>`;
+      trailerEl.querySelector('.rv-tr-close').classList.add('focused');
+      trailerEl.style.display = 'flex'; trailerOpen = true;
+    }
+    function closeTrailer() {
+      if (!trailerOpen) return;
+      trailerEl.querySelector('.rv-tr-frame').innerHTML = '';   // stop playback
+      trailerEl.style.display = 'none'; trailerOpen = false;
+      if (view.type === 'home') startHero();
+      setTimeout(() => refocusSel('[data-trailer]'), 12);
+    }
+    trailerEl.addEventListener('click', e => { if (e.target.closest('[data-trclose]')) { e.stopPropagation(); closeTrailer(); } });
+    // capture-phase so the fullscreen trailer owns Back / Select while open
+    window.addEventListener('keydown', e => {
+      if (!trailerOpen) return;
+      const k = e.key;
+      if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Enter', ' ', 'Backspace', 'Escape'].includes(k)) { e.preventDefault(); e.stopImmediatePropagation(); }
+      if (k === 'Backspace' || k === 'Escape' || k === 'Enter' || k === ' ') closeTrailer();
+    }, true);
 
     /* ---- toast ---- */
     function flash(msg) {
@@ -1016,6 +1270,7 @@
       });
       // pointer fallbacks
       stage.addEventListener('click', e => {
+        if (e.target.closest('.profiles')) return;   // the profiles/settings overlay owns its own clicks
         const dot = e.target.closest('.hero-dots .d'); if (dot) { setHero(+dot.dataset.dot); return; }
         const f = e.target.closest('.foc'); if (!f) { if (e.target.closest('.overlay') && !e.target.closest('.sheet')) closeOverlay(); return; }
         const all = rows(); for (let r = 0; r < all.length; r++) { const c = items(all[r]).indexOf(f); if (c >= 0) { cur = { r, c }; break; } }
@@ -1038,15 +1293,35 @@
     }
     function applyUser(p) {
       try { localStorage.setItem(PKEY, p.id); } catch (e) {}
-      if (window.setRaviloLang) window.setRaviloLang(p.lang || 'en');
+      if (window.setRaviloLang) window.setRaviloLang(resolveLang(p));
       relabelChrome();
       updateDiscoverNav();
+      updateUpcomingNav();
       const av = document.getElementById('rv-avatar');
       if (av) { av.textContent = p.initials; av.style.background = p.color; }
     }
+    // In-app interface-language override — one of the few prefs controllable on the TV itself.
+    // Defaults to the user's Jellystructure-set language; an in-app choice is stored per user id.
+    function langOverride(uid) { try { return localStorage.getItem('js-ravilo-lang:' + (uid || '_')); } catch (e) { return null; } }
+    function resolveLang(p) { return langOverride(p && p.id) || (p && p.lang) || 'en'; }
+    function setUserLang(code) {
+      const u = currentUser(), uid = u ? u.id : '_';
+      try { localStorage.setItem('js-ravilo-lang:' + uid, code); } catch (e) {}
+      if (window.setRaviloLang) window.setRaviloLang(code);
+      relabelChrome(); updateDiscoverNav(); updateUpcomingNav();
+      go(view);          // re-localize the screen behind the overlay
+      if (pMode === 'settings') renderSettings(); else renderProfiles();  // re-render the open panel (new labels + highlight)
+    }
+    function langSectionHTML() {
+      const cur = window.getRaviloLang ? window.getRaviloLang() : 'en';
+      const chips = (window.RAVILO_LANGS_UI || []).map(l =>
+        '<div class="lang-chip foc' + (l.code === cur ? ' cur' : '') + '" data-pid="__lang:' + l.code + '">' +
+        '<span class="lang-endo">' + l.endo + '</span><span class="lang-name">' + l.name + '</span></div>').join('');
+      return '<div class="prof-langs"><div class="prof-langs-h">' + t('language') + '</div><div class="lang-row">' + chips + '</div></div>';
+    }
     // re-label the persistent app-bar nav after a language switch (screens re-localize via go())
     function relabelChrome() {
-      const map = { home: 'nav_home', movies: 'nav_movies', series: 'nav_series', top10: 'nav_top10', mylist: 'nav_mylist' };
+      const map = { home: 'nav_home', movies: 'nav_movies', series: 'nav_series', top10: 'nav_top10', mylist: 'nav_mylist', upcoming: 'nav_upcoming' };
       appbar.querySelectorAll('.navitem').forEach(n => { const k = map[n.dataset.nav]; if (k) n.textContent = t(k); });
     }
     // Top 10 tab is gated: Radarr enabled in Jellystructure AND the user's per-user discover config.
@@ -1066,6 +1341,7 @@
         '<div class="grid">' +
           signed.map(p => '<div class="prof foc" data-pid="' + p.id + '"><div class="pic" style="background:' + p.color + '"><div class="sheen"></div>' + p.initials + (p.kid ? '<span class="badge-k">' + t('kids') + '</span>' : '') + '</div><div class="nm">' + p.name + '</div>' + (p.isAdmin ? '<div class="tag">' + t('admin') + '</div>' : '') + '</div>').join('') +
           '<div class="prof foc" data-pid="__add"><div class="pic add">＋</div><div class="nm">' + t('add_user') + '</div></div>' +
+          (pMode === 'switch' ? '<div class="prof foc" data-pid="__settings"><div class="pic settings">⚙</div><div class="nm">' + t('settings') + '</div></div>' : '') +
         '</div>' +
         (pMode === 'switch' ? '<div class="ft"><span class="btn ghost foc" data-pid="__close">' + t('cancel') + '</span></div>' : '<div class="ft"><span class="tiny" style="color:var(--ink-dim);font-size:15px;">' + t('profiles_hint') + '</span></div>');
       pTiles = [...prof.querySelectorAll('.foc')];
@@ -1073,12 +1349,87 @@
       paintP();
     }
     function paintP() { pTiles.forEach((el, i) => el.classList.toggle('focused', i === pIdx)); }
+    // group the focusable tiles into visual rows (by on-screen top) so the D-pad can move
+    // up/down between rows (theme → language → unpair → back) and left/right within a row.
+    function pGrid() {
+      const rows = [];
+      pTiles.forEach((el, i) => {
+        const top = Math.round(el.getBoundingClientRect().top);
+        let row = rows.find(r => Math.abs(r.top - top) < 24);
+        if (!row) { row = { top, idx: [] }; rows.push(row); }
+        row.idx.push(i);
+      });
+      rows.sort((a, b) => a.top - b.top);
+      return rows;
+    }
+    function movePidx(dir) {
+      const rows = pGrid(); if (!rows.length) return;
+      let r = 0, c = 0;
+      for (let ri = 0; ri < rows.length; ri++) { const ci = rows[ri].idx.indexOf(pIdx); if (ci >= 0) { r = ri; c = ci; break; } }
+      if (dir === 'left') c = Math.max(0, c - 1);
+      else if (dir === 'right') c = Math.min(rows[r].idx.length - 1, c + 1);
+      else if (dir === 'up') { r = Math.max(0, r - 1); c = Math.min(c, rows[r].idx.length - 1); }
+      else if (dir === 'down') { r = Math.min(rows.length - 1, r + 1); c = Math.min(c, rows[r].idx.length - 1); }
+      pIdx = rows[r].idx[c];
+    }
     function openProfiles(mode) {
       pMode = mode || 'gate'; pIdx = 0; renderProfiles(); prof.style.display = 'flex';
     }
     function closeProfiles() { prof.style.display = 'none'; }
+    // ---- Settings page (opened from the profile grid, right of “Add user”) ----
+    function openSettings() { pMode = 'settings'; pIdx = 0; renderSettings(); prof.style.display = 'flex'; }
+    function renderSettings() {
+      prof.className = 'profiles switch settings-panel';
+      const curSkin = document.documentElement.getAttribute('data-skin') || 'aurora';
+      const themes = [['aurora', 'Aurora'], ['midnight', 'Midnight'], ['noir', 'Noir']];
+      const themeChips = themes.map(function (tm) {
+        return '<div class="lang-chip theme-chip foc' + (tm[0] === curSkin ? ' cur' : '') + '" data-pid="__theme:' + tm[0] + '">' +
+          '<span class="theme-dot ' + tm[0] + '"></span><span class="lang-endo">' + tm[1] + '</span></div>';
+      }).join('');
+      prof.innerHTML =
+        '<h2>' + t('settings') + '</h2>' +
+        '<div class="set-sec"><div class="prof-langs-h">' + t('theme') + '</div><div class="lang-row">' + themeChips + '</div></div>' +
+        langSectionHTML() +
+        '<div class="set-sec set-danger"><div class="prof-langs-h">' + t('unpair') + '</div>' +
+          '<div class="set-danger-desc">' + t('unpair_desc') + '</div>' +
+          '<div class="btn danger foc" data-pid="__logout"><span class="ic">⏻</span> ' + t('unpair') + '</div></div>' +
+        '<div class="ft"><span class="btn ghost foc" data-pid="__close">' + t('back') + '</span></div>';
+      pTiles = [...prof.querySelectorAll('.foc')];
+      pIdx = Math.min(pIdx, pTiles.length - 1);
+      paintP();
+    }
+    function setSkin(skin) {
+      document.documentElement.setAttribute('data-skin', skin);
+      try { localStorage.setItem('js-ravilo-skin', skin); } catch (e) {}
+      const pick = document.getElementById('skinpick');
+      if (pick) pick.querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.skin === skin));
+      renderSettings();
+    }
+    function doLogout() {
+      try { localStorage.removeItem(PKEY); } catch (e) {}
+      flash(t('toast_unpaired'));
+      openProfiles('gate');
+    }
+    // unpair is destructive — confirm before signing everyone out
+    function renderUnpairConfirm() {
+      pMode = 'unpair';
+      prof.className = 'profiles switch';
+      prof.innerHTML =
+        '<div class="signin-panel"><h3>' + t('unpair_confirm') + '</h3>' +
+        '<div class="sub">' + t('unpair_desc') + '</div>' +
+        '<div class="row center" style="gap:14px;justify-content:center;display:flex;margin-top:6px;">' +
+          '<span class="btn ghost foc" data-pid="__close">' + t('cancel') + '</span>' +
+          '<span class="btn danger foc" data-pid="__logout-confirm"><span class="ic">⏻</span> ' + t('unpair_yes') + '</span>' +
+        '</div></div>';
+      pTiles = [...prof.querySelectorAll('.foc')]; pIdx = 0; paintP();
+    }
     function pickProfile(pid) {
-      if (pid === '__close') { closeProfiles(); return; }
+      if (pid === '__settings') { openSettings(); return; }
+      if (pid && pid.indexOf('__theme:') === 0) { setSkin(pid.slice(8)); return; }
+      if (pid && pid.indexOf('__lang:') === 0) { setUserLang(pid.slice(7)); return; }
+      if (pid === '__logout') { renderUnpairConfirm(); return; }
+      if (pid === '__logout-confirm') { doLogout(); return; }
+      if (pid === '__close') { if (pMode === 'unpair') { openSettings(); return; } if (pMode === 'settings') { openProfiles('switch'); return; } closeProfiles(); return; }
       if (pid === '__add') { openSignin(); return; }
       const p = profiles.find(x => x.id === pid); if (!p) return;
       applyUser(p); closeProfiles();
@@ -1103,11 +1454,12 @@
       const k = e.key;
       if (!['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','Enter',' ','Backspace','Escape'].includes(k)) return;
       e.preventDefault(); e.stopImmediatePropagation();
-      if (k === 'Backspace' || k === 'Escape') { if (pMode === 'switch' || pMode === 'signin') closeProfiles(); return; }
+      if (k === 'Backspace' || k === 'Escape') { if (pMode === 'unpair') { openSettings(); return; } if (pMode === 'settings') { openProfiles('switch'); return; } if (pMode === 'switch' || pMode === 'signin') closeProfiles(); return; }
       if (k === 'Enter' || k === ' ') { const t = pTiles[pIdx]; if (t) pickProfile(t.dataset.pid); return; }
-      // grid is a single wrapping row of tiles → left/right (and up/down) step through
-      if (k === 'ArrowRight' || k === 'ArrowDown') pIdx = Math.min(pTiles.length - 1, pIdx + 1);
-      else if (k === 'ArrowLeft' || k === 'ArrowUp') pIdx = Math.max(0, pIdx - 1);
+      if (k === 'ArrowRight') movePidx('right');
+      else if (k === 'ArrowLeft') movePidx('left');
+      else if (k === 'ArrowDown') movePidx('down');
+      else if (k === 'ArrowUp') movePidx('up');
       paintP();
     }, true);
     prof.addEventListener('click', e => { const t = e.target.closest('.foc'); if (t) pickProfile(t.dataset.pid); });
@@ -1115,6 +1467,7 @@
 
     // ---- boot ----
     const startUser = currentUser();
+    updateUpcomingNav();
     go({ type: 'home' });
     if (startUser) applyUser(startUser);
     setTimeout(() => focusRowByIndex(0), 40);

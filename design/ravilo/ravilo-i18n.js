@@ -5,7 +5,7 @@
   const STR = {
     en: {
       nav_top10: 'Top 10', request_fetch: 'Request', requesting: 'Requesting…', fetching: 'Fetching', in_library: 'In Library',
-      watch_now: 'Watch Now', not_in_library: 'Not in your library yet', requested_via: 'Requested · Radarr is fetching it',
+      watch_now: 'Watch Now', not_in_library: 'Not in your library yet', requested_via: 'Requested · fetching it now',
       in_queue: 'In queue', importing: 'Importing…', requested: 'Requested', failed: 'Failed', stalled: 'stalled', starting: 'starting', retry_fetch: 'Retry', watch_e1: 'Watch Now · E1',
       upcoming: 'Airing soon', next_ep: 'Next episode', airs: 'airs', via_sonarr: 'Sonarr',
       top10_sub: 'Trending now · {region}', weeks_on: '{n} wks on chart', new_this_week: 'New this week',
@@ -27,7 +27,7 @@
     },
     da: {
       nav_top10: 'Top 10', request_fetch: 'Anmod', requesting: 'Anmoder…', fetching: 'Henter', in_library: 'I biblioteket',
-      watch_now: 'Se nu', not_in_library: 'Ikke i dit bibliotek endnu', requested_via: 'Anmodet · Radarr henter den',
+      watch_now: 'Se nu', not_in_library: 'Ikke i dit bibliotek endnu', requested_via: 'Anmodet · henter den nu',
       in_queue: 'I kø', importing: 'Importerer…', requested: 'Anmodet', failed: 'Mislykkedes', stalled: 'i stå', starting: 'starter', retry_fetch: 'Prøv igen', watch_e1: 'Se nu · E1',
       upcoming: 'Kommer snart', next_ep: 'Næste afsnit', airs: 'sendes', via_sonarr: 'Sonarr',
       top10_sub: 'Populært nu · {region}', weeks_on: '{n} uger på listen', new_this_week: 'Ny i denne uge',
@@ -49,7 +49,7 @@
     },
     fo: {
       nav_top10: 'Top 10', request_fetch: 'Bið', requesting: 'Biður…', fetching: 'Heintar', in_library: 'Í savninum',
-      watch_now: 'Sígj nú', not_in_library: 'Ikki í savninum enn', requested_via: 'Biðið · Radarr heintar hana',
+      watch_now: 'Sígj nú', not_in_library: 'Ikki í savninum enn', requested_via: 'Biðið · heintar hana nú',
       in_queue: 'Í bíðiraði', importing: 'Innflyti…', requested: 'Biðið', failed: 'Miseydnaðist', stalled: 'steðgað', starting: 'byrjar', retry_fetch: 'Royn aftur', watch_e1: 'Sígj nú · E1',
       upcoming: 'Kemur skjótt', next_ep: 'Næsti táttur', airs: 'verður sendur', via_sonarr: 'Sonarr',
       top10_sub: 'Vinsælt nú · {region}', weeks_on: '{n} vikur á listanum', new_this_week: 'Nýtt hesa viku',
@@ -93,6 +93,31 @@
     toast_all_watched: '\u2713 S\u00e6son markeret som set \u00b7 synket til Jellyfin',
     toast_all_unwatched: 'S\u00e6son markeret som uset \u00b7 synket til Jellyfin',
   });
+  // ---- Upcoming calendar ----
+  Object.assign(STR.en, {
+    nav_upcoming: 'Upcoming', upcoming_sub: 'New episodes & movie premieres, coming soon',
+    up_today: 'Today', up_tomorrow: 'Tomorrow', up_all: 'All', up_series: 'Series', up_movies: 'Movies',
+    up_release: '{n} release', up_releases: '{n} releases', up_nothing: 'Nothing scheduled',
+    up_airs_in: 'Airs in {n} days', up_airs_today: 'Airs today', up_airs_tomorrow: 'Airs tomorrow',
+    up_schedule: 'Schedule', up_airdate: 'Air date', up_airtime: 'Air time', up_release_type: 'Release',
+    up_network: 'Network', up_studio: 'Studio', up_monitored: 'Monitored', up_unmonitored: 'Not monitored',
+    up_quality: 'Quality', up_arriving: 'Arriving soon', up_episode: 'Episode', up_movie: 'Movie', up_new_episode: 'New Episode', up_premiere: 'Premiere', up_reldate: 'Release date',
+  });
+  Object.assign(STR.da, {
+    nav_upcoming: 'Kommende', upcoming_sub: 'Nye afsnit & filmpremierer, kommer snart',
+    up_episode: 'Afsnit', up_movie: 'Film', up_new_episode: 'Nyt afsnit', up_premiere: 'Premiere', up_arriving: 'Kommer snart', up_reldate: 'Udgivelsesdato', up_quality: 'Kvalitet',
+    up_today: 'I dag', up_tomorrow: 'I morgen', up_all: 'Alle', up_series: 'Serier', up_movies: 'Film',
+    up_airs_today: 'Sendes i dag', up_airs_tomorrow: 'Sendes i morgen', up_airs_in: 'Sendes om {n} dage',
+    set_reminder: 'Mind mig', go_to_series: 'G\u00e5 til serie',
+  });
+  Object.assign(STR.fo, {
+    nav_upcoming: 'Kemur', upcoming_sub: 'Nýggjar tættir & filmar, koma skjótt',
+    up_episode: 'Táttur', up_movie: 'Filmur', up_new_episode: 'Nýggjur táttur', up_premiere: 'Frumsýning', up_arriving: 'Kemur skjótt', up_reldate: 'Útgevudato', up_quality: 'Góðska',
+    up_today: '\u00cd dag', up_tomorrow: '\u00cd morgin', up_all: '\u00d8ll', up_series: 'S\u00f8gur', up_movies: 'Filmar',
+    up_airs_today: 'Verður sendur \u00ed dag', up_airs_tomorrow: 'Verður sendur \u00ed morgin', up_airs_in: 'Verður sendur um {n} dagar',
+    set_reminder: 'Minn meg', go_to_series: 'Far til s\u00f8gu',
+  });
+
   Object.assign(STR.fo, {
     mark_watched: 'Merk sum s\u00e6tt', watched: 'S\u00e6tt', play_again: 'Sp\u00e6l aftur',
     mark_all_watched: 'Merk \u00f8ll sum s\u00e6dd', mark_all_unwatched: 'Merk \u00f8ll sum \u00f3s\u00e6dd',
@@ -102,6 +127,30 @@
     toast_all_watched: '\u2713 \u00c1rst\u00ed\u00f0 merkt sum s\u00e6dd \u00b7 samstillt vi\u00f0 Jellyfin',
     toast_all_unwatched: '\u00c1rst\u00ed\u00f0 merkt sum \u00f3s\u00e6dd \u00b7 samstillt vi\u00f0 Jellyfin',
   });
+
+  // ---- Upcoming: available + missing/overdue ----
+  Object.assign(STR.en, {
+    up_available: 'Already available', up_missing: 'Missing', up_due: 'Was due',
+    up_missing_title: 'Missing from your library', up_missing_sub: 'Released, but not downloaded yet',
+    up_aired_ago: 'Aired {n} days ago', up_released_ago: 'Released {n} days ago',
+    up_aired_yest: 'Aired yesterday', up_released_yest: 'Released yesterday',
+  });
+  Object.assign(STR.da, {
+    up_available: 'Allerede tilg\u00e6ngelig', up_missing: 'Mangler',
+    up_missing_title: 'Mangler i dit bibliotek', up_missing_sub: 'Udgivet, men ikke hentet endnu',
+    up_aired_ago: 'Sendt for {n} dage siden', up_released_ago: 'Udgivet for {n} dage siden',
+    up_aired_yest: 'Sendt i g\u00e5r', up_released_yest: 'Udgivet i g\u00e5r',
+  });
+  Object.assign(STR.fo, {
+    up_available: 'Longu t\u00f8kt', up_missing: 'Vantar', up_due: 'Skuldi komi\u00f0',
+    up_missing_title: 'Vantar \u00ed savninum', up_missing_sub: 'Givi\u00f0 \u00fat, men ikki heinta\u00f0 enn',
+    up_aired_ago: 'Sent fyri {n} d\u00f8gum s\u00ed\u00f0ani', up_released_ago: 'Givi\u00f0 \u00fat fyri {n} d\u00f8gum s\u00ed\u00f0ani',
+    up_aired_yest: 'Sent \u00ed gj\u00e1r', up_released_yest: 'Givi\u00f0 \u00fat \u00ed gj\u00e1r',
+  });
+
+  Object.assign(STR.en, { language: 'Language', settings: 'Settings', theme: 'Theme', unpair: 'Unpair this TV', unpair_desc: 'Signs out every user and removes this TV\u2019s pairing.', toast_unpaired: '\u2713 This TV has been unpaired', unpair_confirm: 'Unpair this TV?', unpair_yes: 'Yes, unpair' });
+  Object.assign(STR.da, { language: 'Sprog', settings: 'Indstillinger', theme: 'Tema', unpair: 'Fjern parring', unpair_desc: 'Logger alle brugere ud og fjerner dette tv\u2019s parring.', toast_unpaired: '\u2713 Dette tv er blevet fjernet', unpair_confirm: 'Fjern parring?', unpair_yes: 'Ja, fjern parring' });
+  Object.assign(STR.fo, { language: 'M\u00e1l', settings: 'Stillingar', theme: 'Tema', unpair: 'Avpara sj\u00f3nvarp', unpair_desc: 'Ritar allar br\u00fakarar \u00fat og strikar parringina \u00e1 hesum sj\u00f3nvarpi.', toast_unpaired: '\u2713 Hetta sj\u00f3nvarpi\u00f0 er avpara\u00f0', unpair_confirm: 'Avpara sj\u00f3nvarp?', unpair_yes: 'Ja, avpara' });
 
   let lang = 'en';
   window.RAVILO_I18N = STR;
