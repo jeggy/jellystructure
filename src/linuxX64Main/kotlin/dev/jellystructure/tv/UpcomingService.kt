@@ -78,13 +78,21 @@ class UpcomingService(
                 // itemId is the client-navigable id (matches DetailService.toMediaCard's `jellyfinId ?: id`
                 // convention — /api/tv/series/{id} resolves via resolveByJellyfinId, NOT MediaItem.id).
                 // posterUrl keys off MediaItem.id (the on-disk artwork cache key) — a different id scheme.
+                // itemId (routing) stays series-level so a held series still opens the real detail page
+                // (R160 §G) even for an episode we don't hold yet; `held` (below) is episode-specific.
                 val itemId = matched?.let { it.jellyfinId ?: it.id }
+                val held = matched != null && matched.episodes.any {
+                    it.seasonNumber == ep.seasonNumber && it.episodeNumber == ep.episodeNumber
+                }
                 all += UpcomingItem(
                     id = "ep-${ep.seriesId}-${ep.seasonNumber}-${ep.episodeNumber}",
                     kind = TvMediaKind.SERIES,
-                    title = series.title,
+                    // Prefer the library's localized title/synopsis/genre when we hold the series
+                    // (constitution's language-resolution algorithm already resolved them); fall back
+                    // to the *arr's English string only when there's no catalogue match to localize from.
+                    title = matched?.title ?: series.title,
                     year = series.year,
-                    genre = series.genres.firstOrNull(),
+                    genre = matched?.genres?.firstOrNull() ?: series.genres.firstOrNull(),
                     itemId = itemId,
                     posterUrl = matched?.let { RaviloImageUrl.poster(it.id) },
                     date = date,
@@ -93,9 +101,9 @@ class UpcomingService(
                     episode = ep.episodeNumber,
                     episodeTitle = ep.title.takeIf { it.isNotBlank() },
                     network = series.network?.takeIf { it.isNotBlank() },
-                    status = resolveEpisodeStatus(date, today, itemId != null, queued != null),
+                    status = resolveEpisodeStatus(date, today, held, queued != null),
                     progress = queued?.let { downloadProgress(it) },
-                    synopsis = ep.overview?.takeIf { it.isNotBlank() },
+                    synopsis = matched?.overview?.takeIf { it.isNotBlank() } ?: ep.overview?.takeIf { it.isNotBlank() },
                 )
             }
         }
@@ -112,16 +120,19 @@ class UpcomingService(
                 all += UpcomingItem(
                     id = "mv-${mv.id}",
                     kind = TvMediaKind.MOVIE,
-                    title = mv.title,
+                    // A movie match is item-level-correct (atomic) — held = matched != null stays right
+                    // for the Radarr branch (FR-R166-1 #4); still prefer the localized library value for
+                    // title/genre/synopsis when we hold it (FR-R166-2).
+                    title = matched?.title ?: mv.title,
                     year = mv.year,
-                    genre = mv.genres.firstOrNull(),
+                    genre = matched?.genres?.firstOrNull() ?: mv.genres.firstOrNull(),
                     itemId = itemId,
                     posterUrl = matched?.let { RaviloImageUrl.poster(it.id) },
                     date = date,
                     releaseType = releaseType,
                     status = resolveMovieStatus(date, today, itemId != null, queued != null, mv.isAvailable),
                     progress = queued?.let { downloadProgress(it) },
-                    synopsis = mv.overview?.takeIf { it.isNotBlank() },
+                    synopsis = matched?.overview?.takeIf { it.isNotBlank() } ?: mv.overview?.takeIf { it.isNotBlank() },
                 )
             }
         }
