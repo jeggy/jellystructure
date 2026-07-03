@@ -109,6 +109,7 @@ fun ChannelScreen(
     store: ChannelStore,
     displayName: String,
     discoverAvailable: Boolean,
+    upcomingAvailable: Boolean = false,
     onBack: () -> Unit,
     onNavSelect: (Int) -> Unit,
     onProfile: () -> Unit,
@@ -138,11 +139,7 @@ fun ChannelScreen(
     } }
 
     // R136: full nav bar (section tabs) on the channel page, matching the other screens.
-    val navItems = buildList {
-        add(str("nav.home")); add(str("nav.movies")); add(str("nav.series"))
-        if (discoverAvailable) add("Top 10")
-        add(str("nav.my_list"))
-    }
+    val navItems = raviloNavItems(upcomingAvailable, discoverAvailable)
 
     // Give the bar initial focus so Back works even during the loading state;
     // LaunchedEffect(hasHero) in the Loaded branch will re-route to hero/content.

@@ -144,6 +144,7 @@ fun startServer(
     libraryListener: dev.jellystructure.tv.JellyfinLibraryListener,
     fdWatchdog: dev.jellystructure.ops.FdWatchdog,
     imdbClient: dev.jellystructure.imdb.ImdbClient,
+    upcomingService: dev.jellystructure.tv.UpcomingService? = null,
 ): suspend () -> Unit {
     // Fire-and-forget work (scans, NFO/artwork pushes, image fetches) runs as appScope.launch{}.
     // On Kotlin/Native an exception escaping a launched coroutine reaches the global handler and
@@ -323,7 +324,7 @@ fun startServer(
                 if (chartRegistry != null && chartStore != null && chartIngest != null) {
                     chartRoutes(chartRegistry, chartStore, configStore, chartIngest)
                 }
-                tvRoutes(deviceService, raviloConfigService, homeFeedService, browseService, detailService, playbackService, sessionService, jellyfinClient, configStore, channelLogoStore, acquisitionService, chartStore, chartRegistry, tmdbClient, imageProxyService, tvEventBus)
+                tvRoutes(deviceService, raviloConfigService, homeFeedService, browseService, detailService, playbackService, sessionService, jellyfinClient, configStore, channelLogoStore, acquisitionService, chartStore, chartRegistry, tmdbClient, imageProxyService, tvEventBus, upcomingService)
             }
 
             webSocket("/ws") {

@@ -67,6 +67,7 @@ fun HomeScreen(
     val colors = RaviloTheme.colors
     val state by store.state.collectAsState()
     val discoverAvailable by store.discoverAvailable.collectAsState()
+    val upcomingAvailable by store.upcomingAvailable.collectAsState()
 
     // R33: silently re-pull the home feed when this user's layout changes elsewhere.
     val live = dev.jellystructure.ravilo.ui.LocalLiveConfig.current
@@ -286,12 +287,7 @@ private fun HomeLoaded(
         displayName.split(' ').filter { it.isNotBlank() }.take(2)
             .joinToString("") { it.first().uppercase() }
     }
-    val navItems = buildList {
-        // R52: Search left the nav (now the right-cluster icon). Home·Movies·Series·Top 10·My List.
-        add(str("nav.home")); add(str("nav.movies")); add(str("nav.series"))
-        if (discoverAvailable) add("Top 10") // R49 — gated tab (index 3); My List shifts to 4
-        add(str("nav.my_list"))
-    }
+    val navItems = raviloNavItems(upcomingAvailable, discoverAvailable)
     val appBarScrolled by remember { derivedStateOf {
         listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 0
     } }

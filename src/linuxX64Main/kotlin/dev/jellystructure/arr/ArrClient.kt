@@ -235,6 +235,30 @@ class ArrClient {
         }.body<List<ArrEpisode>>()
     }.getOrElse { emptyList() }
 
+    /**
+     * R160 — Sonarr calendar: monitored episodes airing within [start, end] (both "yyyy-MM-dd"),
+     * nested `series` object included (id/title/network/tvdbId) so the caller can resolve a
+     * catalogue match without a second per-series call. Best-effort: empty list on any failure.
+     */
+    suspend fun getSonarrCalendar(url: String, apiKey: String, start: String, end: String): List<ArrCalendarEpisode> = runCatching {
+        httpGet(base(url) + "/calendar") {
+            header("X-Api-Key", apiKey)
+            parameter("start", start); parameter("end", end)
+            parameter("includeSeries", true)
+        }.body<List<ArrCalendarEpisode>>()
+    }.getOrElse { emptyList() }
+
+    /**
+     * R160 — Radarr calendar: monitored movies releasing within [start, end] (both "yyyy-MM-dd").
+     * Best-effort: empty list on any failure.
+     */
+    suspend fun getRadarrCalendar(url: String, apiKey: String, start: String, end: String): List<ArrCalendarMovie> = runCatching {
+        httpGet(base(url) + "/calendar") {
+            header("X-Api-Key", apiKey)
+            parameter("start", start); parameter("end", end)
+        }.body<List<ArrCalendarMovie>>()
+    }.getOrElse { emptyList() }
+
     suspend fun deleteMovie(url: String, apiKey: String, movieId: Int): Boolean =
         del(url, apiKey, "/movie/$movieId?deleteFiles=false&addImportExclusion=false")
 
@@ -277,4 +301,46 @@ data class ArrQueueItem(
     val season: Int?,
     val episode: Int?,
     val errorMessage: String?,
+)
+
+/** R160 — one Sonarr calendar entry (`GET /calendar?includeSeries=true`). */
+@Serializable
+data class ArrCalendarEpisode(
+    val seriesId: Int = 0,
+    val seasonNumber: Int = 0,
+    val episodeNumber: Int = 0,
+    val title: String = "",             // episode title
+    val airDateUtc: String? = null,     // "2026-07-10T20:00:00Z"
+    val airDate: String? = null,        // "2026-07-10" — series-local calendar date
+    val overview: String? = null,
+    val hasFile: Boolean = false,
+    val monitored: Boolean = false,
+    val series: ArrCalendarSeriesRef? = null,
+)
+
+@Serializable
+data class ArrCalendarSeriesRef(
+    val title: String = "",
+    val tvdbId: Int = 0,
+    val network: String? = null,
+    val year: Int? = null,
+    val genres: List<String> = emptyList(),
+)
+
+/** R160 — one Radarr calendar entry (`GET /calendar`). [id] is Radarr's own movieId (matches
+ *  [ArrQueueItem.refId] — the queue is keyed by Radarr's internal id, not tmdbId). */
+@Serializable
+data class ArrCalendarMovie(
+    val id: Int = 0,
+    val tmdbId: Int = 0,
+    val title: String = "",
+    val year: Int? = null,
+    val overview: String? = null,
+    val genres: List<String> = emptyList(),
+    val inCinemas: String? = null,       // "2026-07-10" or "2026-07-10T00:00:00Z"
+    val physicalRelease: String? = null,
+    val digitalRelease: String? = null,
+    val hasFile: Boolean = false,
+    val monitored: Boolean = false,
+    val isAvailable: Boolean = false,
 )

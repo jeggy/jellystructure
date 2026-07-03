@@ -122,6 +122,7 @@ fun Route.tvRoutes(
     tmdbClient: dev.jellystructure.tmdb.TmdbClient? = null,
     imageProxyService: RaviloArtworkService? = null,
     tvEventBus: TvEventBus? = null,
+    upcomingService: dev.jellystructure.tv.UpcomingService? = null,
 ) {
     route("/tv/pair") {
         post("/start") {
@@ -399,6 +400,13 @@ fun Route.tvRoutes(
             DiscoverRow(spec, entries)
         }
         call.respond(DiscoverResponse(true, d.source, d.region, acqEnabled && (device.isAdmin || d.canRequest), rows))
+    }
+
+    // R160 — the calendar is the same for every viewer (no per-user scoping), server-cached with a
+    // short TTL (UpcomingService) so opening the tab never fans out a live Sonarr/Radarr round-trip.
+    get("/tv/upcoming") {
+        call.attributes[DeviceKey]  // auth only; no per-device personalization
+        call.respond(upcomingService?.getUpcoming() ?: dev.jellystructure.shared.tv.UpcomingFeed(enabled = false))
     }
 
     get("/tv/discover/item/{listId}/{rank}") {
