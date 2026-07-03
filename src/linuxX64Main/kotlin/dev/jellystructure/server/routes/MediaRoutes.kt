@@ -1834,6 +1834,13 @@ internal suspend fun runScan(
     // for each scanned item right after it's stored. Left null for the pipeline's scan_files step, which
     // has its own download_artwork step.
     artworkDownloader: ArtworkDownloader? = null,
+    // Bug fix (2026-07-03): false when this call is executePipeline's scan_files sub-step — calling this
+    // is NOT the end of the run, and marking scanTracker complete()/firing scan_complete here reset
+    // activeWorkers to 0 and flipped running=false while pull_tmdb/fetch_artwork/etc. were still ahead,
+    // which is exactly what surfaced as "Run pipeline now" racing to a false "already running" 409 and
+    // the Activity page's worker count freezing at 0/N for the rest of the run. executePipeline signals
+    // completion itself once every step has actually finished.
+    signalCompletion: Boolean = true,
 ): List<MediaItem> {
     val allItems = mutableListOf<MediaItem>()
     val allItemsMutex = Mutex()
@@ -1845,9 +1852,11 @@ internal suspend fun runScan(
 
     val jellyfinItems = if (libraryJellyfinId != null) scanner.fetchItemsForLibrary(libraryJellyfinId) else scanner.fetchItems()
     if (jellyfinItems == null) {
-        scanTracker.complete()
-        broadcaster.broadcast(JobEvent.Started(jobId, 0))
-        broadcaster.broadcast(JobEvent.Finished(jobId, 0, 0))
+        if (signalCompletion) {
+            scanTracker.complete()
+            broadcaster.broadcast(JobEvent.Started(jobId, 0))
+            broadcaster.broadcast(JobEvent.Finished(jobId, 0, 0))
+        }
         return emptyList()
     }
     // Phase 116: precompute the EFFECTIVE worklist (skipIds + freshness filter applied) up front so the
@@ -1989,22 +1998,24 @@ internal suspend fun runScan(
 
     val cancelled = scanTracker.cancelRequested
     Logger.info("Library scan ${if (cancelled) "cancelled" else "complete"} — ${succeeded.value} items", "scan")
-    if (!cancelled) {
-        scanTracker.complete()
-        broadcaster.broadcast(JobEvent.Finished(jobId, succeeded.value, 0))
-        val cfg = configStore.current
-        if (cfg.apiKeys.jellyfinUrl.isNotBlank() && cfg.apiKeys.jellyfinToken.isNotBlank()) {
-            jellyfinClient.triggerLibraryRefresh(cfg.apiKeys.jellyfinUrl, cfg.apiKeys.jellyfinToken)
+    if (signalCompletion) {
+        if (!cancelled) {
+            scanTracker.complete()
+            broadcaster.broadcast(JobEvent.Finished(jobId, succeeded.value, 0))
+            val cfg = configStore.current
+            if (cfg.apiKeys.jellyfinUrl.isNotBlank() && cfg.apiKeys.jellyfinToken.isNotBlank()) {
+                jellyfinClient.triggerLibraryRefresh(cfg.apiKeys.jellyfinUrl, cfg.apiKeys.jellyfinToken)
+            }
+            if (cfg.behavior.notifyOnScanDone)
+                fireWebhook(cfg, """{"event":"scan_complete","jobId":"$jobId","items":${succeeded.value}}""")
+            if (cfg.behavior.notifyOnNoMatch) {
+                val unmatched = allItems.count { it.tmdbId == null }
+                if (unmatched > 0)
+                    fireWebhook(cfg, """{"event":"no_tmdb_match","jobId":"$jobId","unmatched":$unmatched}""")
+            }
+        } else {
+            broadcaster.broadcast(JobEvent.Finished(jobId, succeeded.value, 0))
         }
-        if (cfg.behavior.notifyOnScanDone)
-            fireWebhook(cfg, """{"event":"scan_complete","jobId":"$jobId","items":${succeeded.value}}""")
-        if (cfg.behavior.notifyOnNoMatch) {
-            val unmatched = allItems.count { it.tmdbId == null }
-            if (unmatched > 0)
-                fireWebhook(cfg, """{"event":"no_tmdb_match","jobId":"$jobId","unmatched":$unmatched}""")
-        }
-    } else {
-        broadcaster.broadcast(JobEvent.Finished(jobId, succeeded.value, 0))
     }
     return allItems
 }
