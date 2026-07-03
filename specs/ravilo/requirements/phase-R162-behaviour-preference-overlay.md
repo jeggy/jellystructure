@@ -7,7 +7,10 @@
 > **viewer-editable on the TV** (R161, device-local) and surfaced here read-only. Removes the trap where an
 > in-app change appeared to fork the whole config and orphan the user under "A specific user".
 
-**Status:** Planned — **design built**, backend/app-integration unbuilt.
+**Status:** Planned — **design built**, backend/app-integration unbuilt. ⚠ Dev review 2026-07-03
+**confirmed the trap is a live, shipped bug** — see the Dev-review addenda at the bottom, which also
+correct the storage model (no device-local lane; writer-tagged server overlay instead) and widen the
+field set (+`autoplay_next`).
 
 ## Problem
 In the Ravilo config editor (`app/ravilo-config.html`), the **Behaviour** section (interface language, default
@@ -138,3 +141,37 @@ TV" and offer Reset-to-default without ever writing the device value back.
   **R161** (in-app device-local theme/language the overlay resolves under), **R141 §D** (scope-mismatch
   legibility — this removes the biggest source of it), **constitution** (per-user config is server-owned;
   the R161 device-local exception).
+
+## Dev-review addenda (2026-07-03 — supersede the storage model above)
+
+1. **The orphaning trap is a live, shipped bug — this phase is a bug fix, not just editor UX.**
+   `RaviloConfigService.applyViewerSettings` (the `PUT /api/tv/settings` handler) does
+   `getConfig(userId)` — which **falls through to the global record** when the user has none — and then
+   `save(userId, …)`: the first time a global-layout viewer changes *any* viewer setting from the
+   shipped Settings screen (skin, Continue-progress, autoplay), the **entire resolved global layout is
+   snapshotted into a personal record**. From then on `hasCustomConfig()` is true, the user shows under
+   "A specific user", and global layout/default updates stop reaching them. Exactly the R141 §D trap;
+   reachable today without R161.
+2. **Overlay field set is five, not four:** `ui_language`, `skin`, `tile_shape`,
+   `show_continue_progress`, **and `autoplay_next`** — everything `ViewerSettingsRequest` already lets a
+   viewer write. Leaving `autoplay_next` in the layout record would keep the §1 fork alive for that one
+   field. (`allowSkinOverride` stays a global-record admin gate, unchanged.)
+3. **No device-local lane — replace "read-only exposure of R161 device overrides" with writer-tagged
+   server entries.** Per the R161 dev review, viewer prefs are **server-owned** (localStorage was a mock
+   artifact); there is nothing device-local to "expose read-only", and no contradiction with "never
+   written back". Instead each **overlay entry carries its writer**: `viewer` (set via
+   `PUT /api/tv/settings`) or `admin` (set via the config editor). The editor's three states map 1:1:
+   *Following global* (no entry) · *Overridden for \<user\>* (admin entry, → Reset to global) · *"✱ Set
+   by viewer on their TV"* (viewer entry — **reset-only in the editor**, preserving the design's
+   guardrail that an operator doesn't silently clobber a viewer's explicit choice). Reset deletes the
+   entry and live-pushes (R33/TvEventBus) so the TV re-resolves immediately — no server→device
+   "clear localStorage" push needed, because there is no localStorage.
+4. **Resolution order simplifies to two layers:** **viewer overlay entry → admin overlay entry → global
+   default** (writer tags order the same overlay; R161's "device → admin → global" collapses into this).
+5. **Migration.** On upgrade, for each existing per-user record: lift `viewerSkinOverride` into the
+   overlay as a `viewer`-tagged `skin` entry (it is viewer-set by construction); lift
+   `show_continue_progress` / `autoplay_next` / `tile_shape` / `ui_language` values that **differ from
+   the global record** into `admin`-tagged entries (best guess — an admin can reset). The layout portion
+   of the record stays a layout override; records that only ever existed because of the §1 fork can then
+   be dropped by the admin via the existing "Remove custom layout" **without losing the user's
+   preferences** — which is the whole point of the split.
