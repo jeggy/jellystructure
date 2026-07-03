@@ -250,6 +250,14 @@ class TvApiClient(
         return json.decodeFromString(r.bodyAsText())
     }
 
+    /** R167 — the enriched not-held detail (genres/runtime/cast); throws on a lookup miss (404) so
+     *  the caller can fall back to the plain feed item it already has. */
+    suspend fun getUpcomingItem(id: String): UpcomingDetail {
+        val r = client.get("$baseUrl/api/tv/upcoming/item/$id") { auth() }
+        r.assertSuccess()
+        return json.decodeFromString(r.bodyAsText())
+    }
+
     suspend fun requestDiscover(listId: String, rank: Int): AcquisitionRecord {
         val r = client.post("$baseUrl/api/tv/discover/request") {
             auth(); jsonBody("""{"listId":${listId.jsonStr()},"rank":$rank}""")

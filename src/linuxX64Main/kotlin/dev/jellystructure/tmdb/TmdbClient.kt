@@ -259,6 +259,15 @@ data class TmdbExternalIds(
     @SerialName("imdb_id") val imdbId: String? = null,
 )
 
+// --- R167: /find/{external_id} (tvdb -> tmdb resolution for not-held Upcoming series) ---
+@Serializable
+data class TmdbFindResult(val id: Int)
+
+@Serializable
+data class TmdbFindResponse(
+    @SerialName("tv_results") val tvResults: List<TmdbFindResult> = emptyList(),
+)
+
 // --- Phase 130: /videos (trailer ingest) ---
 @Serializable
 data class TmdbVideosResponse(val results: List<TmdbVideo> = emptyList())
@@ -442,6 +451,20 @@ class TmdbClient(
 
     /** Phase 56 — bridge a TMDB tv id to its TheTVDB id (Sonarr is keyed by tvdbId, not tmdbId). */
     suspend fun getTvTvdbId(tmdbId: Int): Int? = getExternalIds(tmdbId, isMovie = false)?.tvdbId
+
+    /** R167 — the reverse of [getTvTvdbId]: resolve a TheTVDB id (Sonarr calendar) to its TMDB id,
+     *  via TMDB's `/find` endpoint, so a not-held series can still get a live TMDB enrichment. */
+    suspend fun findTvByTvdbId(tvdbId: Int): Int? {
+        val key = apiKey(); if (key.isBlank()) return null
+        return runCatching {
+            val response = httpGet("$baseUrl/find/$tvdbId") {
+                parameter("api_key", key)
+                parameter("external_source", "tvdb_id")
+            }
+            if (response.status != HttpStatusCode.OK) return null
+            response.body<TmdbFindResponse>().tvResults.firstOrNull()?.id
+        }.getOrNull()
+    }
 
     /** R63 — top-5 cast members for a movie (by `order`). Returns emptyList on any failure. */
     suspend fun getMovieCredits(tmdbId: Int): List<TmdbCastMember> {
