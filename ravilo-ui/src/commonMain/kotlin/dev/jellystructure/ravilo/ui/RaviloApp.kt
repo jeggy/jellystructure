@@ -51,12 +51,18 @@ import dev.jellystructure.ravilo.ui.screens.PlayerScreen
 import dev.jellystructure.ravilo.ui.screens.PlayerStore
 import dev.jellystructure.ravilo.ui.screens.ProfilePickerScreen
 import dev.jellystructure.ravilo.ui.screens.ProfilePickerStore
+import dev.jellystructure.ravilo.ui.screens.RaviloNavTarget
+import dev.jellystructure.ravilo.ui.screens.raviloNavTarget
 import dev.jellystructure.ravilo.ui.screens.SearchScreen
 import dev.jellystructure.ravilo.ui.screens.SearchStore
 import dev.jellystructure.ravilo.ui.screens.SeriesDetailScreen
 import dev.jellystructure.ravilo.ui.screens.SeriesDetailStore
 import dev.jellystructure.ravilo.ui.screens.SettingsScreen
 import dev.jellystructure.ravilo.ui.screens.SettingsStore
+import dev.jellystructure.ravilo.ui.screens.UpcomingDetailScreen
+import dev.jellystructure.ravilo.ui.screens.UpcomingDetailStore
+import dev.jellystructure.ravilo.ui.screens.UpcomingScreen
+import dev.jellystructure.ravilo.ui.screens.UpcomingStore
 import dev.jellystructure.ravilo.ui.i18n.WithLocale
 import coil3.compose.LocalPlatformContext
 import dev.jellystructure.ravilo.ui.components.ServerMessageHost
@@ -133,6 +139,8 @@ private sealed class Dest {
     data class Search(val displayName: String) : Dest()
     data class Discover(val displayName: String) : Dest()
     data class DiscoverItem(val listId: String, val rank: Int, val displayName: String) : Dest()
+    data class Upcoming(val displayName: String) : Dest()
+    data class UpcomingDetail(val id: String, val displayName: String) : Dest()
     data class MovieDetail(val itemId: String, val displayName: String) : Dest()
     data class SeriesDetail(val itemId: String, val displayName: String) : Dest()
     data class Player(
@@ -158,6 +166,8 @@ private sealed class Dest {
         is Search         -> "/search"
         is Discover       -> "/discover"
         is DiscoverItem   -> "/discover/$listId/$rank"
+        is Upcoming       -> "/upcoming"
+        is UpcomingDetail -> "/upcoming/$id"
         is MovieDetail    -> "/movie/$itemId"
         is SeriesDetail   -> "/series/$itemId"
         is Player         -> "/player/$itemId"
@@ -256,6 +266,8 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
         var fpsOverlay by remember { mutableStateOf(false) }  // R94: toggle with F5
         // Top-level: track whether the Top 10 tab is available; set from HomeStore, propagated to all screens.
         var discoverAvailable by remember { mutableStateOf(false) }
+        // R160: same pattern for the Upcoming tab (server-gated on [sonarr]/[radarr] presence).
+        var upcomingAvailable by remember { mutableStateOf(false) }
 
         // R58: first-ever launch — initialDest called setActive() after activeUserId was already
         // initialized to null; sync the value so the WS LaunchedEffect fires and self-heals.
@@ -331,6 +343,7 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                         is Dest.Home -> it.displayName; is Dest.ChannelView -> it.displayName
                         is Dest.Browse -> it.displayName; is Dest.Search -> it.displayName
                         is Dest.Discover -> it.displayName; is Dest.DiscoverItem -> it.displayName
+                        is Dest.Upcoming -> it.displayName; is Dest.UpcomingDetail -> it.displayName
                         is Dest.MovieDetail -> it.displayName; is Dest.SeriesDetail -> it.displayName
                         is Dest.Player -> it.displayName; is Dest.Settings -> it.displayName
                         else -> null
@@ -460,6 +473,8 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                 val store = keptStore("home:${dest.displayName}") { HomeStore(apiClient) }
                 val da by store.discoverAvailable.collectAsState()
                 SideEffect { discoverAvailable = da }
+                val ua by store.upcomingAvailable.collectAsState()
+                SideEffect { upcomingAvailable = ua }
                 // R141: on every Home re-entry (including Back-returns), emit on liveConfig so the store
                 // does a silent re-pull. HomeStore.refresh(silent=true) keeps the current content visible
                 // and swaps in the new feed when it arrives — no Loading flash.
@@ -469,12 +484,13 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                     displayName = dest.displayName,
                     onProfile = { push(Dest.ProfilePicker) },
                     onNavSelect = { idx ->
-                        when (idx) {
-                            1 -> push(Dest.Browse(BrowseKind.MOVIES, dest.displayName))
-                            2 -> push(Dest.Browse(BrowseKind.SERIES, dest.displayName))
-                            3 -> push(Dest.Discover(dest.displayName)) // Top 10 (index 3); My List at 4
-                            4 -> push(Dest.Browse(BrowseKind.MY_LIST, dest.displayName))
-                            else -> {} // 0 = already home
+                        when (raviloNavTarget(idx, upcomingAvailable, discoverAvailable)) {
+                            RaviloNavTarget.HOME -> {} // already home
+                            RaviloNavTarget.MOVIES -> push(Dest.Browse(BrowseKind.MOVIES, dest.displayName))
+                            RaviloNavTarget.SERIES -> push(Dest.Browse(BrowseKind.SERIES, dest.displayName))
+                            RaviloNavTarget.UPCOMING -> push(Dest.Upcoming(dest.displayName))
+                            RaviloNavTarget.DISCOVER -> push(Dest.Discover(dest.displayName))
+                            RaviloNavTarget.MY_LIST -> push(Dest.Browse(BrowseKind.MY_LIST, dest.displayName))
                         }
                     },
                     onSearch = { push(Dest.Search(dest.displayName)) },
@@ -499,16 +515,16 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                     store = store,
                     displayName = dest.displayName,
                     discoverAvailable = discoverAvailable,
+                    upcomingAvailable = upcomingAvailable,
                     onBack = { pop() },
                     onNavSelect = { idx ->   // R136: nav tabs on the channel page
-                        when (idx) {
-                            0 -> resetTo(Dest.Home(dest.displayName))
-                            1 -> push(Dest.Browse(BrowseKind.MOVIES, dest.displayName))
-                            2 -> push(Dest.Browse(BrowseKind.SERIES, dest.displayName))
-                            3 -> if (discoverAvailable) push(Dest.Discover(dest.displayName))
-                                 else push(Dest.Browse(BrowseKind.MY_LIST, dest.displayName))
-                            4 -> push(Dest.Browse(BrowseKind.MY_LIST, dest.displayName))
-                            else -> {}
+                        when (raviloNavTarget(idx, upcomingAvailable, discoverAvailable)) {
+                            RaviloNavTarget.HOME -> resetTo(Dest.Home(dest.displayName))
+                            RaviloNavTarget.MOVIES -> push(Dest.Browse(BrowseKind.MOVIES, dest.displayName))
+                            RaviloNavTarget.SERIES -> push(Dest.Browse(BrowseKind.SERIES, dest.displayName))
+                            RaviloNavTarget.UPCOMING -> push(Dest.Upcoming(dest.displayName))
+                            RaviloNavTarget.DISCOVER -> push(Dest.Discover(dest.displayName))
+                            RaviloNavTarget.MY_LIST -> push(Dest.Browse(BrowseKind.MY_LIST, dest.displayName))
                         }
                     },
                     onProfile = { push(Dest.ProfilePicker) },
@@ -524,16 +540,16 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                     store = store,
                     displayName = dest.displayName,
                     discoverAvailable = discoverAvailable,
+                    upcomingAvailable = upcomingAvailable,
                     onBack = { pop() },
                     onNavSelect = { idx ->
-                        when (idx) {
-                            0 -> resetTo(Dest.Home(dest.displayName))
-                            1 -> replaceTop(Dest.Browse(BrowseKind.MOVIES, dest.displayName))
-                            2 -> replaceTop(Dest.Browse(BrowseKind.SERIES, dest.displayName))
-                            3 -> if (discoverAvailable) push(Dest.Discover(dest.displayName))
-                                 else replaceTop(Dest.Browse(BrowseKind.MY_LIST, dest.displayName))
-                            4 -> replaceTop(Dest.Browse(BrowseKind.MY_LIST, dest.displayName))
-                            else -> {}
+                        when (raviloNavTarget(idx, upcomingAvailable, discoverAvailable)) {
+                            RaviloNavTarget.HOME -> resetTo(Dest.Home(dest.displayName))
+                            RaviloNavTarget.MOVIES -> replaceTop(Dest.Browse(BrowseKind.MOVIES, dest.displayName))
+                            RaviloNavTarget.SERIES -> replaceTop(Dest.Browse(BrowseKind.SERIES, dest.displayName))
+                            RaviloNavTarget.UPCOMING -> push(Dest.Upcoming(dest.displayName))
+                            RaviloNavTarget.DISCOVER -> push(Dest.Discover(dest.displayName))
+                            RaviloNavTarget.MY_LIST -> replaceTop(Dest.Browse(BrowseKind.MY_LIST, dest.displayName))
                         }
                     },
                     onItemSelect = { openDetail(it, dest.displayName) },
@@ -557,17 +573,19 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                     store = store,
                     displayName = dest.displayName,
                     onNavSelect = { idx ->
-                        when (idx) {
-                            0 -> resetTo(Dest.Home(dest.displayName))
-                            1 -> push(Dest.Browse(BrowseKind.MOVIES, dest.displayName))
-                            2 -> push(Dest.Browse(BrowseKind.SERIES, dest.displayName))
-                            4 -> push(Dest.Browse(BrowseKind.MY_LIST, dest.displayName))
-                            else -> {} // 3 = already on Top 10; 0 = go home handled above
+                        when (raviloNavTarget(idx, upcomingAvailable, discoverAvailable)) {
+                            RaviloNavTarget.HOME -> resetTo(Dest.Home(dest.displayName))
+                            RaviloNavTarget.MOVIES -> push(Dest.Browse(BrowseKind.MOVIES, dest.displayName))
+                            RaviloNavTarget.SERIES -> push(Dest.Browse(BrowseKind.SERIES, dest.displayName))
+                            RaviloNavTarget.UPCOMING -> push(Dest.Upcoming(dest.displayName))
+                            RaviloNavTarget.DISCOVER -> {} // already on Top 10
+                            RaviloNavTarget.MY_LIST -> push(Dest.Browse(BrowseKind.MY_LIST, dest.displayName))
                         }
                     },
                     onEntrySelect = { listId, rank -> push(Dest.DiscoverItem(listId, rank, dest.displayName)) },
                     onProfile = { push(Dest.ProfilePicker) },
                     onSearch = { push(Dest.Search(dest.displayName)) },
+                    upcomingAvailable = upcomingAvailable,
                 )
             }
 
@@ -580,6 +598,40 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                 )
             }
 
+            is Dest.Upcoming -> {
+                val store = keptStore("upcoming:${dest.displayName}") { UpcomingStore(apiClient) }
+                UpcomingScreen(
+                    store = store,
+                    displayName = dest.displayName,
+                    discoverAvailable = discoverAvailable,
+                    onNavSelect = { idx ->
+                        when (raviloNavTarget(idx, upcomingAvailable, discoverAvailable)) {
+                            RaviloNavTarget.HOME -> resetTo(Dest.Home(dest.displayName))
+                            RaviloNavTarget.MOVIES -> push(Dest.Browse(BrowseKind.MOVIES, dest.displayName))
+                            RaviloNavTarget.SERIES -> push(Dest.Browse(BrowseKind.SERIES, dest.displayName))
+                            RaviloNavTarget.UPCOMING -> {} // already here
+                            RaviloNavTarget.DISCOVER -> push(Dest.Discover(dest.displayName))
+                            RaviloNavTarget.MY_LIST -> push(Dest.Browse(BrowseKind.MY_LIST, dest.displayName))
+                        }
+                    },
+                    onProfile = { push(Dest.ProfilePicker) },
+                    onSearch = { push(Dest.Search(dest.displayName)) },
+                    onItemSelect = { item ->
+                        val itemId = item.itemId
+                        when {
+                            itemId != null && item.kind == MediaKind.SERIES -> push(Dest.SeriesDetail(itemId, dest.displayName))
+                            itemId != null -> push(Dest.MovieDetail(itemId, dest.displayName))
+                            else -> push(Dest.UpcomingDetail(item.id, dest.displayName))
+                        }
+                    },
+                )
+            }
+
+            is Dest.UpcomingDetail -> {
+                val store = remember(dest.id) { UpcomingDetailStore(apiClient, dest.id) }
+                UpcomingDetailScreen(store = store)
+            }
+
             is Dest.MovieDetail -> {
                 val store = keptStore("movie:${dest.displayName}:${dest.itemId}") { MovieDetailStore(apiClient) }
                 MovieDetailScreen(
@@ -590,15 +642,15 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                     onRelatedSelect = { openDetail(it, dest.displayName) },
                     displayName = dest.displayName,
                     discoverAvailable = discoverAvailable,
+                    upcomingAvailable = upcomingAvailable,
                     onNavSelect = { idx ->
-                        when (idx) {
-                            0 -> resetTo(Dest.Home(dest.displayName))
-                            1 -> resetTo(Dest.Browse(BrowseKind.MOVIES, dest.displayName))
-                            2 -> resetTo(Dest.Browse(BrowseKind.SERIES, dest.displayName))
-                            3 -> if (discoverAvailable) resetTo(Dest.Discover(dest.displayName))
-                                 else resetTo(Dest.Browse(BrowseKind.MY_LIST, dest.displayName))
-                            4 -> resetTo(Dest.Browse(BrowseKind.MY_LIST, dest.displayName))
-                            else -> {}
+                        when (raviloNavTarget(idx, upcomingAvailable, discoverAvailable)) {
+                            RaviloNavTarget.HOME -> resetTo(Dest.Home(dest.displayName))
+                            RaviloNavTarget.MOVIES -> resetTo(Dest.Browse(BrowseKind.MOVIES, dest.displayName))
+                            RaviloNavTarget.SERIES -> resetTo(Dest.Browse(BrowseKind.SERIES, dest.displayName))
+                            RaviloNavTarget.UPCOMING -> resetTo(Dest.Upcoming(dest.displayName))
+                            RaviloNavTarget.DISCOVER -> resetTo(Dest.Discover(dest.displayName))
+                            RaviloNavTarget.MY_LIST -> resetTo(Dest.Browse(BrowseKind.MY_LIST, dest.displayName))
                         }
                     },
                     onProfile = { push(Dest.ProfilePicker) },
@@ -628,15 +680,15 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                     onRelatedSelect = { openDetail(it, dest.displayName) },
                     displayName = dest.displayName,
                     discoverAvailable = discoverAvailable,
+                    upcomingAvailable = upcomingAvailable,
                     onNavSelect = { idx ->
-                        when (idx) {
-                            0 -> resetTo(Dest.Home(dest.displayName))
-                            1 -> resetTo(Dest.Browse(BrowseKind.MOVIES, dest.displayName))
-                            2 -> resetTo(Dest.Browse(BrowseKind.SERIES, dest.displayName))
-                            3 -> if (discoverAvailable) resetTo(Dest.Discover(dest.displayName))
-                                 else resetTo(Dest.Browse(BrowseKind.MY_LIST, dest.displayName))
-                            4 -> resetTo(Dest.Browse(BrowseKind.MY_LIST, dest.displayName))
-                            else -> {}
+                        when (raviloNavTarget(idx, upcomingAvailable, discoverAvailable)) {
+                            RaviloNavTarget.HOME -> resetTo(Dest.Home(dest.displayName))
+                            RaviloNavTarget.MOVIES -> resetTo(Dest.Browse(BrowseKind.MOVIES, dest.displayName))
+                            RaviloNavTarget.SERIES -> resetTo(Dest.Browse(BrowseKind.SERIES, dest.displayName))
+                            RaviloNavTarget.UPCOMING -> resetTo(Dest.Upcoming(dest.displayName))
+                            RaviloNavTarget.DISCOVER -> resetTo(Dest.Discover(dest.displayName))
+                            RaviloNavTarget.MY_LIST -> resetTo(Dest.Browse(BrowseKind.MY_LIST, dest.displayName))
                         }
                     },
                     onProfile = { push(Dest.ProfilePicker) },

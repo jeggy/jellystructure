@@ -89,12 +89,16 @@ fun DiscoverScreen(
     onEntrySelect: (listId: String, rank: Int) -> Unit,
     onProfile: () -> Unit,
     onSearch: () -> Unit,
+    upcomingAvailable: Boolean = false,
 ) {
     val colors = RaviloTheme.colors
     val state by store.state.collectAsState()
-    val navItems = listOf(
-        str("nav.home"), str("nav.movies"), str("nav.series"), "Top 10", str("nav.my_list"),
-    )
+    // Being on this screen implies Discover itself is available; Upcoming (R160), when also
+    // available, sits ahead of it — so its active index shifts from 3 to 4. Derived from navItems
+    // itself (not DISCOVER_NAV_INDEX + a hand-computed offset) so it can't drift out of sync with
+    // raviloNavItems's actual ordering (see the equivalent BrowseScreen.kt MY_LIST fix).
+    val navItems = raviloNavItems(upcomingAvailable, discoverAvailable = true)
+    val discoverNavIndex = navItems.indexOf("Top 10").let { if (it >= 0) it else DISCOVER_NAV_INDEX }
 
     // R33 live config refresh + payload-bearing acquisition patching (Phase 56).
     val live = LocalLiveConfig.current
@@ -109,7 +113,7 @@ fun DiscoverScreen(
                 Spacer(Modifier.height(200.dp)); Text("Top 10 unavailable", color = colors.text, fontSize = 20.sp)
                 Spacer(Modifier.height(8.dp)); Text(s.message, color = colors.textSecondary, fontSize = 14.sp)
             }
-            is DiscoverState.Loaded -> DiscoverLoaded(store, s.data, displayName, DISCOVER_NAV_INDEX, navItems, onNavSelect, onEntrySelect, onProfile, onSearch)
+            is DiscoverState.Loaded -> DiscoverLoaded(store, s.data, displayName, discoverNavIndex, navItems, onNavSelect, onEntrySelect, onProfile, onSearch)
         }
     }
 }

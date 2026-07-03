@@ -242,6 +242,14 @@ class TvApiClient(
         return json.decodeFromString(r.bodyAsText())
     }
 
+    // ─── Upcoming calendar (R160) ────────────────────────────────────────────
+
+    suspend fun getUpcoming(): UpcomingFeed {
+        val r = client.get("$baseUrl/api/tv/upcoming") { auth() }
+        r.assertSuccess()
+        return json.decodeFromString(r.bodyAsText())
+    }
+
     suspend fun requestDiscover(listId: String, rank: Int): AcquisitionRecord {
         val r = client.post("$baseUrl/api/tv/discover/request") {
             auth(); jsonBody("""{"listId":${listId.jsonStr()},"rank":$rank}""")
