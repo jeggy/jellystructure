@@ -204,10 +204,27 @@ class TvApiClient(
         showContinueProgress: Boolean? = null,
         autoplayNext: Boolean? = null,
         tileShape: TileShape? = null,
+        // R161/R162: a per-user viewer override, resolved server-side against the per-user admin
+        // override then the global default (RaviloConfigService.resolveBehaviour) — never written
+        // back to the Jellystructure profile itself.
+        uiLanguage: String? = null,
     ) {
         client.put("$baseUrl/api/tv/settings") {
             auth()
-            jsonBody(json.encodeToString(ViewerSettingsRequest(skin, showContinueProgress, autoplayNext, tileShape)))
+            jsonBody(json.encodeToString(ViewerSettingsRequest(skin, showContinueProgress, autoplayNext, tileShape, uiLanguage)))
+        }.assertSuccess()
+    }
+
+    /**
+     * R161 — "Unpair this TV" revokes every session this device holds, not just the active one:
+     * the caller iterates `MultiTokenStore.getAll()` and calls this once per stored token (an
+     * explicit [tokenOverride], since each session's token is a different Bearer identity — not
+     * necessarily the one [deviceToken] currently resolves to), then clears the local store.
+     * Distinct from per-session "Sign out", which only ends the active session client-side.
+     */
+    suspend fun unpair(tokenOverride: String) {
+        client.post("$baseUrl/api/tv/unpair") {
+            headers { append(HttpHeaders.Authorization, "Bearer $tokenOverride") }
         }.assertSuccess()
     }
 

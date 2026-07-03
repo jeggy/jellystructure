@@ -686,6 +686,10 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                     onSkinChange = { themeState.skin = it },
                     onSignOut = { resetTo(Dest.Pairing) },
                     onBack = { pop() },
+                    // R161: unpair revokes every session this device holds (store.unpairDevice() has
+                    // already cleared MultiTokenStore by the time this fires) — always lands on the
+                    // pairing gate, matching the "no sessions" boot state.
+                    onUnpair = { resetTo(Dest.Pairing) },
                 )
             }
         } } // when / AnimatedContent
