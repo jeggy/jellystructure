@@ -101,20 +101,34 @@ Base `{{seerr.url}}/api/v1`, auth header **`X-Api-Key: <key>`** (same header nam
 ### B. `SeerrClient` + Test connection
 - **New client** `src/linuxX64Main/.../seerr/SeerrClient.kt` (structure mirrors `arr/ArrClient.kt`): `base(url) =
   url.trimEnd('/') + "/api/v1"`, `X-Api-Key` header, **under the app-wide `OutboundHttp` permit + `HttpTimeout`**
-  (Phase 90/129/134 — do not add an unbounded Curl client). Introduced here; its `discover()`/`search()`/
-  `createRequest()`/`media()` methods are consumed by 137/R171.
-- **Test route:** `POST /api/config/test-seerr` in `ConfigRoutes.kt` (mirror `testArr` `:110-119`; register in
-  `Server.kt:310`), body `TestSeerrRequest(url, apiKey)`, response `SeerrTestResult(ok, detail, version)` →
-  `SeerrClient.status()` (GET `/status` for version + an auth'd `GET /auth/me` for the key). Frontend
-  `ConfigApi.testSeerr` + `#seerr-test-btn` handler (mirror `Settings.kt:1304-1320`). The card lives under
-  `data-tab="downloads"` beside `#sect-arr`/`#sect-crossseed`/`#sect-ingest` (mock `#sect-seerr` already present).
+  (Phase 90/129/134 — do not add an unbounded Curl client). Introduced here with only `ping(url, apiKey):
+  ArrPing` (reuses the existing `ArrPing` type rather than a redundant `SeerrPing`) — enough to prove the
+  connection; its `discover()`/`search()`/`createRequest()` methods are added by 137/R171 when the TV Request
+  tab actually needs them, not spun up unused now.
+- **Test route:** `POST /config/test-seerr` in `ConfigRoutes.kt` (mirrors `testArr`), reusing the existing
+  `TestArrRequest`/`ArrTestResult` DTOs (identical `url`+`apiKey` shape — no redundant `TestSeerrRequest` type) →
+  `SeerrClient.ping()` (`GET /status` for version + an auth'd `GET /auth/me` for the key in one probe). Frontend
+  `ConfigApi.testSeerr` (one-liner over the existing generic `testArr(kind, url, apiKey)` helper) +
+  `#seerr-test-btn` handler via a new `wireSeerr()` (mirrors `wireArr()` minus the rescan-toggle/root-folder-
+  import bits, which don't apply to Seerr). The card lives under `data-tab="downloads"` beside
+  `#sect-arr`/`#sect-crossseed`/`#sect-ingest`, matching the mock; the old standalone **"Discover" left-nav tab
+  is removed** (its one card *was* `#sect-discover`, now gone) rather than repurposed, since the mock places the
+  Seerr card inside "Download tools", not its own tab.
+
+**Implementation note (2026-07-04):** shipped as designed above. `shared/.../tv/Chart.kt`'s deletion (§C) is
+deferred to R171 — see that section for why (still consumed by the admin editor's chart picker and the TV
+Discover screen, both migrated off it in Phase 137/R171, not this phase).
 
 ### C. Removal surface — the chart / Discover / Top-10 subsystem (delete, don't migrate)
 RapidAPI / movieofthenight / streaming-availability is **already gone** (Phase 132 — only dead comments remain at
 `Main.kt:184-186`, `ConfigStore.kt:16-17`, `ChartProvider.kt:43`). What Phase 136 removes:
 - **`chart/` package (all 5 files):** `ChartProvider.kt`, `ChartIngestService.kt`, `ChartStore.kt`,
   `NetflixTudumProvider.kt`, `JustWatchProvider.kt`.
-- **Shared:** `shared/.../tv/Chart.kt` (whole file — `ChartListSpec`/`ChartEntry`/`Trend`/coverage). ⚠ **Keep
+- **Shared:** `shared/.../tv/Chart.kt` (`ChartListSpec`/`ChartEntry`/`Trend`/coverage) — **deletion deferred to
+  R171**, not part of this phase: its types are still consumed by the admin editor's chart-list picker
+  (`ui/RaviloConfig.kt` `renderDiscover()` + `api/RaviloApi.kt` `getDiscoverLists`/`getDiscoverCoverage` — Phase
+  137's job to migrate off) and the TV app's chart UI (`DiscoverScreen.kt`/`DiscoverDetailScreen.kt` — R171's
+  job). Delete it only once both have moved to the `SeerrFeed`/Seerr-backed model. ⚠ **Keep
   `shared/.../tv/Discover.kt`'s `AcquisitionChangedEnvelope`** (`:47`) — it's shared with the acquisition engine
   (§E); repurpose the rest of `Discover.kt` for R171 rather than deleting the file wholesale.
 - **Routes:** `server/routes/ChartRoutes.kt` (whole — `/discover/lists`, `/discover/list/{id}`,

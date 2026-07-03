@@ -43,6 +43,14 @@ data class ArrConfig(
     @SerialName("rescan_after_write") val rescanAfterWrite: Boolean = true,
 )
 
+// Phase 136 — Jellyseerr/Overseerr connection (replaces the retired DiscoverFeedConfig chart backend).
+@Serializable
+data class SeerrConfig(
+    val enabled: Boolean = false,
+    val url: String = "",
+    @SerialName("api_key") val apiKey: String = "",
+)
+
 @Serializable
 data class PipelineStep(
     val step: String = "",
@@ -70,7 +78,7 @@ data class AppConfig(
     val qbittorrent: QBittorrentConfig? = null,
     val radarr: ArrConfig? = null,
     val sonarr: ArrConfig? = null,
-    val discover: DiscoverFeedConfig? = null,
+    val seerr: SeerrConfig? = null,
     @SerialName("scan_schedule") val scanSchedule: String = "",
     val scan: ScanConfig = ScanConfig(),
     val trackers: List<TrackerConfig> = emptyList(),
@@ -81,14 +89,6 @@ data class ApiKeys(
     @SerialName("tmdb_v3_key") val tmdbV3Key: String = "",
     @SerialName("jellyfin_token") val jellyfinToken: String = "",
     @SerialName("jellyfin_url") val jellyfinUrl: String = "",
-)
-
-@Serializable
-data class DiscoverFeedConfig(
-    val enabled: Boolean = false,
-    val providers: List<String> = listOf("netflix"),
-    val regions: List<String> = listOf("DK"),
-    @SerialName("refresh_hours") val refreshHours: Int = 168,
 )
 
 @Serializable
@@ -195,6 +195,7 @@ object ConfigApi {
 
     suspend fun testRadarr(url: String, apiKey: String): ArrTestResult? = testArr("radarr", url, apiKey)
     suspend fun testSonarr(url: String, apiKey: String): ArrTestResult? = testArr("sonarr", url, apiKey)
+    suspend fun testSeerr(url: String, apiKey: String): ArrTestResult? = testArr("seerr", url, apiKey)
     private suspend fun testArr(kind: String, url: String, apiKey: String): ArrTestResult? = runCatching {
         httpClient.post("/api/config/test-$kind") {
             contentType(ContentType.Application.Json)

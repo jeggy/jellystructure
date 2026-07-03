@@ -4,6 +4,7 @@ import dev.jellystructure.arr.ArrClient
 import dev.jellystructure.config.AppConfig
 import dev.jellystructure.config.ConfigStore
 import dev.jellystructure.config.QBittorrentConfig
+import dev.jellystructure.seerr.SeerrClient
 import dev.jellystructure.torrent.QBittorrentClient
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.request.receive
@@ -64,6 +65,7 @@ fun Route.configureConfigRoutes(
     effectiveScanThreads: Int,
     qbClient: QBittorrentClient? = null,
     arrClient: ArrClient? = null,
+    seerrClient: SeerrClient? = null,
 ) {
     get("/config") {
         call.respond(ConfigResponse(configStore.current, effectiveScanThreads))
@@ -82,10 +84,12 @@ fun Route.configureConfigRoutes(
         if (received.sonarr?.apiKey == "##KEEP##") {
             config = config.copy(sonarr = received.sonarr.copy(apiKey = stored.sonarr?.apiKey ?: ""))
         }
-        // The frontend AppConfig model omits acquisition and discover (config-file-only sections,
-        // not exposed in the Settings UI). Preserve the stored values so a Settings save never wipes them.
+        if (received.seerr?.apiKey == "##KEEP##") {
+            config = config.copy(seerr = received.seerr.copy(apiKey = stored.seerr?.apiKey ?: ""))
+        }
+        // The frontend AppConfig model omits acquisition (config-file-only, not exposed in the Settings
+        // UI). Preserve the stored value so a Settings save never wipes it.
         if (config.acquisition == null) config = config.copy(acquisition = stored.acquisition)
-        if (config.discover    == null) config = config.copy(discover    = stored.discover)
         configStore.update(config)
         call.respond(HttpStatusCode.NoContent)
     }
@@ -117,6 +121,15 @@ fun Route.configureConfigRoutes(
     }
     post("/config/test-radarr") { call.respond(testArr(call.receive())) }
     post("/config/test-sonarr") { call.respond(testArr(call.receive())) }
+    // Phase 136 — Jellyseerr/Overseerr connection test (temporary creds, never persisted). Reuses
+    // TestArrRequest/ArrTestResult (identical url+apiKey shape) rather than a redundant pair of DTOs.
+    post("/config/test-seerr") {
+        val req = call.receive<TestArrRequest>()
+        if (seerrClient == null) { call.respond(ArrTestResult(false, "Seerr client not available")); return@post }
+        if (req.url.isBlank()) { call.respond(ArrTestResult(false, "URL not configured")); return@post }
+        val ping = seerrClient.ping(req.url, req.apiKey)
+        call.respond(ArrTestResult(ping.ok, if (ping.ok) "Connected" + (ping.version?.let { " · v$it" } ?: "") else ping.detail, ping.version))
+    }
     // Import root folders → pre-fill [[libraries]] local paths (uses the stored, saved creds).
     get("/config/radarr/root-folders") {
         val r = configStore.current.radarr

@@ -14,7 +14,8 @@ data class AppConfig(
     val radarr: ArrConfig? = null,
     val sonarr: ArrConfig? = null,
     val acquisition: AcquisitionConfig? = null,
-    val discover: DiscoverFeedConfig? = null,
+    // Phase 136 — Jellyseerr/Overseerr connection (replaces the retired chart/Discover-charts subsystem)
+    val seerr: SeerrConfig? = null,
     // Phase 91 — scan pipeline
     @SerialName("scan_schedule") val scanSchedule: String = "",
     val scan: ScanConfig = ScanConfig(),
@@ -61,13 +62,15 @@ data class PipelineStep(
     @SerialName("auto_reassert") val autoReassert: Boolean = false,
 )
 
-// Phase 57 — chart/Discover feed ingestion. Absent or enabled=false ⇒ no ingestion.
+// Phase 136 — Jellyseerr/Overseerr connection. Mirrors ArrConfig's shape (Phase 54) so the Settings UI,
+// ##KEEP##-masked-key save path, and test-connection route all follow the same established pattern.
+// Absent or enabled=false ⇒ integration completely inert; per-user Request rows (Phase 137) and the TV
+// Request tab (R171) both require this to be connected.
 @Serializable
-data class DiscoverFeedConfig(
+data class SeerrConfig(
     val enabled: Boolean = false,
-    val providers: List<String> = listOf("netflix"),
-    val regions: List<String> = listOf("DK"),
-    @SerialName("refresh_hours") val refreshHours: Int = 24,
+    val url: String = "",
+    @SerialName("api_key") val apiKey: String = "",
 )
 
 // Phase 56 — acquisition engine settings. Absent or enabled=false ⇒ no requests/polling.
