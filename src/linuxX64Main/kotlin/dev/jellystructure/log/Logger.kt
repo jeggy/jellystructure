@@ -38,8 +38,11 @@ object Logger {
     suspend fun error(msg: String, category: String = "system", mediaId: String? = null) =
         emit("ERROR", category, msg, mediaId)
 
-    /** 93g: open a run in the runs index (for the Activity run picker). [trigger] = scheduled/manual/scan. */
-    suspend fun startRun(runId: String, trigger: String) = activityLog?.startRun(runId, trigger)
+    /** 93g: open a run in the runs index (for the Activity run picker).
+     *  Phase 135 (FR-135-4): [trigger] = manual/scheduled/startup, [scope] = library/pipeline,
+     *  [type] = normal/full (pipeline-only). */
+    suspend fun startRun(runId: String, trigger: String, scope: String = "library", type: String? = null) =
+        activityLog?.startRun(runId, trigger, scope, type)
     /** 93g: mark a run finished in the runs index. */
     suspend fun finishRun(runId: String) = activityLog?.finishRun(runId)
 

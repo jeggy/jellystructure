@@ -22,7 +22,23 @@ sealed class JobEvent {
     data class Finished(val jobId: String, val succeeded: Int, val failed: Int) : JobEvent()
 
     @Serializable @SerialName("log_line")
-    data class LogLine(val level: String, val category: String, val message: String, val mediaId: String? = null, val runId: String? = null) : JobEvent()
+    data class LogLine(val level: String, val category: String, val message: String, val mediaId: String? = null, val runId: String? = null, val step: String? = null) : JobEvent()
+
+    // Phase 135 — step-aware pipeline progress. `scan_files` keeps broadcasting Started/ItemScanned/
+    // FileProgress unchanged (its own battle-tested worker pool, untouched); every step from PipelinePlan
+    // onward (including scan_files itself, listed first) gets these three so the Activity page can render
+    // the whole pipeline and highlight the active phase, not just freeze after scan_files.
+    @Serializable @SerialName("pipeline_plan")
+    data class PipelinePlan(val jobId: String, val steps: List<String>) : JobEvent()
+
+    @Serializable @SerialName("step_started")
+    data class StepStarted(val jobId: String, val step: String, val total: Int) : JobEvent()
+
+    @Serializable @SerialName("step_progress")
+    data class StepProgress(val jobId: String, val step: String, val item: String, val current: Int, val total: Int) : JobEvent()
+
+    @Serializable @SerialName("step_finished")
+    data class StepFinished(val jobId: String, val step: String, val summary: String) : JobEvent()
 
     // Phase 109 — media worker (ffmpeg remux) job queue. `mediaJobId` is the media_job row id, distinct
     // from the scan-style `jobId` used by the events above. One MediaJobSnapshot per state change or

@@ -45,7 +45,7 @@ class RealtimeIngestService(
     fun enqueue(jellyfinId: String) {
         if (!configStore.current.ingest.realtime) return
         queueScope.launch {
-            runTagged("realtime-ingest-$jellyfinId", "ingest", "Realtime ingest: $jellyfinId") {
+            runTagged("realtime-ingest-$jellyfinId", "ingest", "library", null, "Realtime ingest: $jellyfinId") {
                 if (!ingestOnce(jellyfinId)) {
                     delay(60_000L) // FR C.4 — one retry after 60s for TMDB hiccups etc.
                     if (!ingestOnce(jellyfinId)) {

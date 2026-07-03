@@ -16,7 +16,8 @@ fun Route.activityRoutes(activityLog: ActivityLog) {
             val category = call.request.queryParameters["category"]?.takeIf { it.isNotBlank() }
             val level = call.request.queryParameters["level"]?.takeIf { it.isNotBlank() }
             val run = call.request.queryParameters["run"]?.takeIf { it.isNotBlank() }   // 93g
-            call.respond(activityLog.list(page, pageSize, category, level, run))
+            val step = call.request.queryParameters["step"]?.takeIf { it.isNotBlank() } // Phase 135 (FR-135-3 item 7)
+            call.respond(activityLog.list(page, pageSize, category, level, run, step))
         }
 
         delete {

@@ -188,6 +188,13 @@ data class ScanStatus(
     val activeWorkers: Int = 0,
     val configuredWorkers: Int = 1,
     val nextScheduledRun: Long? = null,   // 93e: epoch seconds of the next automation run
+    // Phase 135 — lets a late-joining/polling client reconstruct where the run is without having seen
+    // the WS event stream: the active step + the whole ordered plan, plus the three run descriptors.
+    val activeStep: String? = null,
+    val stepPlan: List<String> = emptyList(),
+    val trigger: String? = null,
+    val scope: String? = null,
+    val type: String? = null,
 )
 
 enum class PipelineRunResult { STARTED, ALREADY_RUNNING, FAILED }

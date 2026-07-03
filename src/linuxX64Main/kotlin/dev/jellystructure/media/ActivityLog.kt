@@ -32,15 +32,23 @@ data class ActivityEntry(
 @Serializable
 data class ActivityLogPage(val entries: List<ActivityEntry>, val total: Int)
 
-/** 93g: one scan/pipeline run, for the Activity run picker. [trigger] = scheduled/manual/scan. */
+/** 93g: one scan/pipeline run, for the Activity run picker.
+ *  Phase 135 (FR-135-4) — three orthogonal descriptors, replacing the old conflated
+ *  `"scan"|"manual"|"scheduled"` vocabulary: [trigger] = manual/scheduled/startup, [scope] =
+ *  library (plain file-discovery scan) / pipeline (the full automation), [type] = normal/full
+ *  (pipeline-only — the `?full=true` freshness-ignoring run), null for a library-scope run. */
 @Serializable
-data class RunRecord(val runId: String, val trigger: String, val startedAt: Long, val finishedAt: Long? = null)
+data class RunRecord(
+    val runId: String, val trigger: String, val startedAt: Long, val finishedAt: Long? = null,
+    val scope: String = "library", val type: String? = null,
+)
 
 /** 93g: a run plus the event/error counts derived from the (retained) activity entries. */
 @Serializable
 data class RunSummary(
     val runId: String, val trigger: String, val startedAt: Long, val finishedAt: Long? = null,
     val events: Int = 0, val errors: Int = 0,
+    val scope: String = "library", val type: String? = null,
 )
 
 class ActivityLog(
@@ -78,13 +86,13 @@ class ActivityLog(
             e
         }
         scope.launch { persistSnapshot() }
-        broadcaster.broadcast(JobEvent.LogLine(entry.level, entry.category, entry.message, entry.mediaId, entry.runId))
+        broadcaster.broadcast(JobEvent.LogLine(entry.level, entry.category, entry.message, entry.mediaId, entry.runId, entry.step))
     }
 
-    // 93g — runs index for the Activity run picker.
-    suspend fun startRun(runId: String, trigger: String) {
+    // 93g — runs index for the Activity run picker. Phase 135: scope/type descriptors (FR-135-4).
+    suspend fun startRun(runId: String, trigger: String, runScope: String = "library", runType: String? = null) {
         mutex.withLock {
-            runs.addLast(RunRecord(runId, trigger, epochSeconds()))
+            runs.addLast(RunRecord(runId, trigger, epochSeconds(), scope = runScope, type = runType))
             if (runs.size > MAX_RUNS) runs.removeFirst()
         }
         scope.launch { persistRuns() }
@@ -103,16 +111,18 @@ class ActivityLog(
         val byRun = entries.groupBy { it.runId }
         runs.reversed().map { r ->
             val es = byRun[r.runId].orEmpty()
-            RunSummary(r.runId, r.trigger, r.startedAt, r.finishedAt, es.size, es.count { it.level == "ERROR" })
+            RunSummary(r.runId, r.trigger, r.startedAt, r.finishedAt, es.size, es.count { it.level == "ERROR" }, r.scope, r.type)
         }
     }
 
-    suspend fun list(page: Int, pageSize: Int, category: String?, level: String?, run: String? = null): ActivityLogPage {
+    // Phase 135 (FR-135-3 item 7) — filter by pipeline step, in addition to category/level/run.
+    suspend fun list(page: Int, pageSize: Int, category: String?, level: String?, run: String? = null, step: String? = null): ActivityLogPage {
         val filtered = mutex.withLock {
             entries.filter { e ->
                 (category == null || e.category == category) &&
                 (level == null || e.level == level) &&
-                (run == null || e.runId == run)
+                (run == null || e.runId == run) &&
+                (step == null || e.step == step)
             }
         }
         val total = filtered.size
