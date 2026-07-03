@@ -739,7 +739,7 @@ class TmdbClient(
             val d = getEpisodeDetails(seriesId, season, episode, lang)
             if (d != null && (d.name.isNotBlank() || d.overview.isNotBlank())) return d
             if (regionTags == null) regionTags = getRegionedLanguageTags(seriesId, isMovie = false)
-            val regional = regionTags?.get(lang.lowercase())
+            val regional = regionTags[lang.lowercase()]
             if (regional != null && !regional.equals(lang, ignoreCase = true)) {
                 val dr = getEpisodeDetails(seriesId, season, episode, regional)
                 if (dr != null && (dr.name.isNotBlank() || dr.overview.isNotBlank())) return dr

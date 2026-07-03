@@ -83,7 +83,7 @@ fun main() = runBlocking {
     val configFile = env("CONFIG_FILE", "./data/config.toml")
     val dbFile = env("DB_FILE", "./data/jellystructure.db")
     val frontendDir = env("FRONTEND_DIR", "/app/frontend")
-    val raviloWebDir = env("RAVILO_WEB_DIR", "")?.takeIf { it.isNotBlank() }
+    val raviloWebDir = env("RAVILO_WEB_DIR", "").takeIf { it.isNotBlank() }
     val port = env("SERVER_PORT", "9505").toIntOrNull() ?: 9505
     val tmdbBaseUrl = env("TMDB_BASE_URL", "https://api.themoviedb.org/3")
 

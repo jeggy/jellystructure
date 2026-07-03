@@ -115,7 +115,7 @@ class PlaybackService(
             "tv",
         )
         val streamUrl = if (needsTranscode) {
-            val tu = source!!.transcodingUrl!!
+            val tu = source.transcodingUrl
             if (tu.startsWith("http")) tu else "$jellyfinBase$tu"
         } else {
             "$jellyfinBase/Videos/$jellyfinId/stream?Static=true&MediaSourceId=$jellyfinId&DeviceId=${identity.deviceId}&api_key=$token"
