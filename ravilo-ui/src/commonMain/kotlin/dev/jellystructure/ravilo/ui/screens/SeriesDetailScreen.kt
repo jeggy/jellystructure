@@ -64,6 +64,7 @@ import dev.jellystructure.ravilo.ui.components.RaviloButton
 import dev.jellystructure.ravilo.ui.components.SeasonPicker
 import dev.jellystructure.ravilo.ui.components.Tile
 import dev.jellystructure.ravilo.ui.components.TitleLogoOrText
+import dev.jellystructure.ravilo.ui.components.TrailerOverlay
 import dev.jellystructure.ravilo.ui.focus.rememberEdgeBringIntoViewSpec
 import dev.jellystructure.ravilo.ui.i18n.str
 import dev.jellystructure.ravilo.ui.seams.RemoteImage
@@ -236,6 +237,8 @@ private fun SeriesDetailLoaded(
     val synopsisFR = remember { FocusRequester() }   // R135
     val seasonFirstFR = remember { FocusRequester() }   // R138
     val navBarFR = remember { FocusRequester() }
+    val trailerFR = remember { FocusRequester() }   // R163
+    var showTrailer by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) { runCatching { playFR.requestFocus() } }
 
@@ -434,6 +437,15 @@ private fun SeriesDetailLoaded(
                             label = "+ ${str("nav.my_list")}",
                             style = ButtonStyle.GHOST,
                         )
+                        // R163: only when Phase 130 ingested a usable trailer — never a dead affordance.
+                        if (detail.trailer != null) {
+                            RaviloButton(
+                                label = "▷ ${str("action.trailer")}",
+                                focusRequester = trailerFR,
+                                style = ButtonStyle.GHOST,
+                                onSelect = { showTrailer = true },
+                            )
+                        }
                     }
                 }
             }
@@ -576,6 +588,15 @@ private fun SeriesDetailLoaded(
             onSearch = onSearch,
             scrolled = appBarScrolled,
         )
+
+        // R163: fullscreen embedded trailer, last child so it paints over the AppBar too.
+        if (showTrailer && detail.trailer != null) {
+            TrailerOverlay(
+                trailer = detail.trailer,
+                title = detail.card.title,
+                onClose = { showTrailer = false; runCatching { trailerFR.requestFocus() } },
+            )
+        }
     }
 }
 
