@@ -159,6 +159,7 @@ fun Route.mediaRoutes(
     arrRescan: ArrRescanService? = null,
     sonarrEnrich: dev.jellystructure.arr.SonarrEnrichService? = null,
     mediaJobQueue: dev.jellystructure.media.MediaJobQueue,
+    imdbClient: dev.jellystructure.imdb.ImdbClient,
 ) {
     route("/media") {
         get {
@@ -1402,6 +1403,25 @@ fun Route.mediaRoutes(
             call.respond(updated)
         }
 
+        // POST /api/media/{id}/imdb-rating/sync — Phase 131: manual per-title re-sync against
+        // imdbapi.dev. A failed/absent lookup leaves the previous stored rating intact.
+        post("/{id}/imdb-rating/sync") {
+            val id = call.parameters["id"] ?: return@post call.respond(HttpStatusCode.BadRequest)
+            val item = store.resolve(id) ?: return@post call.respond(HttpStatusCode.NotFound)
+            val imdbId = item.imdbId
+            if (imdbId.isNullOrBlank()) {
+                call.respond(HttpStatusCode.BadRequest, mapOf("error" to "item has no IMDb id"))
+                return@post
+            }
+            val fetched = imdbClient.getRating(imdbId)
+            val updated = if (fetched != null)
+                item.copy(imdbRating = dev.jellystructure.model.ImdbRating(fetched.aggregateRating, fetched.voteCount, dev.jellystructure.nowEpochSec()))
+            else item
+            if (fetched != null) store.updateOne(updated)
+            mediaHistory.record(id, "imdb_rating_sync", if (fetched != null) "rating=${fetched.aggregateRating} votes=${fetched.voteCount}" else "no rating returned")
+            call.respond(updated)
+        }
+
         // POST /api/media/{id}/seasons/{seasonNumber}/sync — per-season resync
         post("/{id}/seasons/{seasonNumber}/sync") {
             val id = call.parameters["id"] ?: return@post call.respond(HttpStatusCode.BadRequest)
@@ -1610,7 +1630,7 @@ fun Route.mediaRoutes(
         appScope.launch {
             runTagged(jobId, "manual", "▶ Pipeline run started (manual)") {
                 if (pipeline.isNotEmpty() && arrRescan != null) {
-                    executePipeline(pipeline, jobId, store, scanner, scanTracker, broadcaster, configStore, jellyfinClient, scanDispatcher, artwork, arrRescan, sonarrEnrich)
+                    executePipeline(pipeline, jobId, store, scanner, scanTracker, broadcaster, configStore, jellyfinClient, scanDispatcher, artwork, arrRescan, sonarrEnrich, imdbClient)
                 } else {
                     runScan(jobId, emptySet(), store, scanner, scanTracker, broadcaster, configStore, jellyfinClient, scanDispatcher, artworkDownloader = if (configStore.current.behavior.fetchImages) artwork else null)
                 }

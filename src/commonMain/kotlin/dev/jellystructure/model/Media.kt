@@ -16,6 +16,15 @@ data class MediaTrailer(
     val thumb: String? = null,
 )
 
+/** Phase 131: one stored IMDb rating (0-10 aggregate + raw vote count), refreshed by the scheduled
+ *  sync pipeline step / manual Re-sync — never fetched at detail/feed-read time. */
+@Serializable
+data class ImdbRating(
+    val aggregateRating: Double,
+    val voteCount: Long,
+    val syncedAt: Long,
+)
+
 @Serializable
 enum class TrackKind { VIDEO, AUDIO, SUBTITLE, DATA }
 
@@ -176,6 +185,9 @@ data class MediaItem(
     // Phase 130: one official trailer from TMDB /videos, refreshed on every scan/sync/re-pull (no usable
     // video ⇒ null, clearing a stale one). Manual Clear/Re-fetch via the admin routes bypass ingest.
     val trailer: MediaTrailer? = null,
+    // Phase 131: IMDb rating from imdbapi.dev, refreshed only by the scheduled sync step or manual
+    // Re-sync — a failed/absent lookup leaves the previous value intact (never blanks a good rating).
+    val imdbRating: ImdbRating? = null,
 )
 
 /** Phase 108: the sort key every "recently added" surface uses (Ravilo's Newly Added, Browse default,
