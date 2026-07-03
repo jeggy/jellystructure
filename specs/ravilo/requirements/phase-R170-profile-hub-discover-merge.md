@@ -72,3 +72,63 @@ separate destinations.
   `design/ravilo/ravilo.css` (`.profmenu`, `.discseg`); `design/ravilo/ravilo-i18n.js` (new keys).
 - Related: **R160** (Upcoming calendar → Coming Soon), **R48–R50** (the retired Top 10 / Discover charts),
   **R161** (in-app settings panel reused by the menu), **constitution** (renders server-pushed state).
+
+---
+
+## Dev-review addenda (2026-07-04 — Compose/app design, verified against code)
+
+> The mock is accepted; this maps it onto the real `ravilo-ui` nav shell. Pairs with
+> [R171](phase-R171-seerr-request-tab.md) (Request tab contents) and [Phase 136](../../requirements/phase-136-seerr-connection-retire-charts.md)
+> (`seerr.enabled`). Note the `TvApiClient.unpair()` "missing" note elsewhere is **stale** — it exists
+> (`shared/.../tv/TvApiClient.kt:225`, R161).
+
+### A. Nav model — `NavItems.kt` + `AppBar.kt`
+- **`raviloNavItems(upcomingAvailable, discoverAvailable)`** (`ravilo-ui/.../screens/NavItems.kt:14`) today emits a
+  variable row (Home/Movies/Series + optional Upcoming + optional "Top 10" + always My List). Rework to a **fixed
+  Home · Movies · Series + one optional Discover**: `["Home","Movies","Series"] + if (discoverShown) ["Discover"] else []`.
+  **My List leaves the section row** (moves to the avatar menu, §B). `discoverShown = upcomingAvailable || seerrEnabled`.
+- **`enum RaviloNavTarget`** (`:21`) drop `UPCOMING`/(the Top-10 target) as section tabs; keep `DISCOVER`, `MY_LIST`
+  (now reached from the menu, not the tab index). Simplify `raviloNavTarget(index, …)` (`:26`) index math — one
+  optional slot instead of two, so the fragile `index - 3 in optional.indices` collapses.
+- **`AppBar`** (`ravilo-ui/.../components/AppBar.kt:61`): tabs render 3–4 items (`:148-195`); the right cluster
+  (`SearchIcon :199`, `ClockDisplay :208`, `ProfileAvatar :209`) stays — **clock retained** (invariant). D-pad
+  wiring rightmost-tab → search → avatar (`:185-217`) still holds.
+
+### B. Avatar dropdown (`profmenu`) — new modal composable, render-only re-routing
+Today the avatar calls `onProfile = { push(Dest.ProfilePicker) }` (`RaviloApp.kt:485` etc.) — one callback. Replace
+with a **dropdown overlay** anchored under `ProfileAvatar` (`AppBar.kt:222`), modeled on the existing detail
+`overlay` modal (D-pad up/down through items, Select activates, Back/Esc closes, pointer-clickable). Items re-route
+into **existing** destinations/actions — no new server state:
+- **My List** → `Dest.Browse(BrowseKind.MY_LIST, …)` (the browse screen already supports MY_LIST).
+- **Settings** → `Dest.Settings(…)` (opens `SettingsScreen`, R161 — skin/language/unpair/playback toggles).
+- **Switch profile** (menu header) → `Dest.ProfilePicker` ("Who's watching", `ProfilePickerScreen.kt:94`).
+- **Unpair this TV** → the confirm + `SettingsStore.unpairDevice()` path (`SettingsScreen.kt:111-116`, iterates
+  `MultiTokenStore.getAll()` → `apiClient.unpair(token)` → `MultiTokenStore.clear()` → `resetTo(Dest.Pairing)`).
+  ⚠ **Today unpair only exists *inside* `SettingsScreen`** — extract the confirm+revoke into a small reusable
+  overlay (or route Unpair to open Settings focused on that block) so the menu can invoke it directly.
+
+### C. Discover screen — merge Upcoming (Coming Soon) + Request under a segment
+- **Dest model** (`RaviloApp.kt:133-176`): collapse the separate `Dest.Upcoming` + `Dest.Discover(Top10)` into a
+  single **`Dest.Discover(segment: ComingSoon | Request)`**. Selecting the Discover tab opens the default segment:
+  `upcomingEnabled() ? ComingSoon : Request`.
+- **Content:** the segment bar sits above the content; **Coming Soon** renders the existing `UpcomingScreen`
+  body (R160 calendar — `UpcomingScreen.kt`, unchanged behaviour); **Request** renders R171's Seerr surface
+  (rebuilt from `DiscoverScreen.kt`). Segment reachable by D-pad **up** from the content; both keep AppBar `cur =
+  Discover`. Remove the standalone `DISCOVER_NAV_INDEX` pinning (`DiscoverScreen.kt:82`, `UpcomingScreen.kt:289`
+  `activeNav = 3`) in favour of the resolved Discover index.
+- **Top 10 as a section is gone** — no `nav_top10`/standalone destination (its requestable role → R171).
+
+### D. Gating + backend flag
+`HomeStore` already exposes `upcomingAvailable` (from `getUpcoming().enabled`) and `discoverAvailable` (from
+`getDiscover().available`) as `StateFlow` (`HomeStore.kt:35-39/79-83`), lifted into `RaviloApp` (`:268-270/474-477`).
+Repoint `discoverAvailable` at **`seerrEnabled`**: add `seerr.enabled` to the TV config/home DTO (backend — a bool
+from `configStore.current.seerr?.enabled`, Phase 136) and expose it like the retired chart `available`. `Discover`
+tab shows when `upcomingAvailable || seerrEnabled`.
+
+### Source references (app anchors)
+- `ravilo-ui/.../screens/NavItems.kt:14/21/26`; `components/AppBar.kt:61/148-217/222`.
+- `screens/RaviloApp.kt:133-176/268-270/474-477/485` (nav stack, gating, avatar callback);
+  `screens/ProfilePickerScreen.kt:94`; `screens/SettingsScreen.kt:111-116/119`; `screens/HomeStore.kt:35-39/79-83`.
+- `screens/UpcomingScreen.kt` (Coming Soon body), `screens/DiscoverScreen.kt:82` (Request body — rebuilt in R171).
+- `shared/.../tv/TvApiClient.kt:225` (`unpair`), `:233/247` (`getDiscover`/`getUpcoming`).
+- Mock: `design/ravilo/ravilo-app.js` (`profmenu`, `discSegment`, `updateDiscoverNav`/`seerrEnabled`).
