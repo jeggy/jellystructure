@@ -1637,7 +1637,15 @@ fun Route.mediaRoutes(
                 }
             }
         }
-        call.respond(HttpStatusCode.Accepted, mapOf("status" to "started", "steps" to pipeline.size))
+        // Bug fix (2026-07-03): mapOf("status" to "started", "steps" to pipeline.size) mixes a
+        // String and an Int, inferring Map<String, Any> — kotlinx.serialization's default Json can't
+        // serialize Any without a polymorphic module, so respond() threw here on every successful
+        // start. The frontend's post() call then errored (never seeing the 202 that was already
+        // committed), landing in runCatching's default and showing "Failed to start pipeline" even
+        // though the pipeline had, in fact, started correctly — the exact "it says failed but
+        // something did start running" symptom. Every sibling route (e.g. POST /api/scan two routes
+        // up) happens to only ever mix String values, which is why only this one route hit it.
+        call.respond(HttpStatusCode.Accepted, mapOf("status" to "started", "steps" to pipeline.size.toString()))
     }
 
     post("/scan/resume") {
