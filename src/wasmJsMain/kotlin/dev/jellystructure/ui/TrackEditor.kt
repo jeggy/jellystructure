@@ -268,11 +268,68 @@ fun wireUnifiedTrackEditor(
         <b style="white-space:nowrap;">⮕ Forced</b><span class="tiny">A <b>separate</b> flag — shows only foreign-dialogue lines over a known-language audio. A track can be forced without being default.</span>
     </div>"""
 
+    // Phase 128 — empty-state (zero tracks, most often a corrupt/truncated file) diagnosis, fetched
+    // once lazily and cached; renderList() re-runs when it arrives.
+    var diagnosis: MediaApi.ProbeDiagnosis? = null
+    var diagnosisLoading = false
+
+    // Pure — renders the current diagnosis state; never triggers a fetch itself (renderList's own
+    // empty-list branch owns that, so it can call itself again once the fetch resolves).
+    fun emptyStateHtml(): String {
+        val d = diagnosis
+        if (d == null) {
+            return """<div class="note" style="padding:16px;"><span class="muted">Diagnosing…</span></div>"""
+        }
+        val reason = when (d.status) {
+            MediaApi.ProbeStatus.CORRUPT -> "Corrupt container — ${d.detail.esc()}. The file is likely a truncated/incomplete download; replace it to recover the audio."
+            MediaApi.ProbeStatus.UNREADABLE -> "File unreadable — ${d.detail.esc()}. Check the path exists and Jellystructure can read it."
+            MediaApi.ProbeStatus.PROBE_MISSING -> "ffprobe isn't available on the server — install it to enable track diagnosis."
+            MediaApi.ProbeStatus.NO_AUDIO -> "The container was read successfully but has no audio stream at all."
+            MediaApi.ProbeStatus.OK -> "Probe found streams, but none landed here — try Re-probe."
+            MediaApi.ProbeStatus.UNKNOWN -> "Unknown probe failure — ${d.detail.esc()}"
+        }
+        val repairAction = if (d.managed)
+            """<span class="btn sm" data-act="reacquire">Re-acquire via Sonarr/Radarr</span>"""
+        else
+            """<div class="tiny muted" style="margin-top:4px;">This file isn't managed by Sonarr/Radarr — replace it at the path above with a complete copy, then Re-probe.</div>"""
+        val kindLabel = if (currentKind == "audio") "audio" else "subtitle"
+        return """<div class="note" style="background:var(--bad-soft);border:1px solid var(--bad);border-radius:var(--radius-s);padding:14px 16px;">
+              <b style="color:var(--bad);">⚠ No $kindLabel tracks detected</b>
+              <div class="tiny" style="margin-top:6px;line-height:1.5;">$reason</div>
+              <div class="row center" style="gap:6px;margin-top:10px;flex-wrap:wrap;">
+                <span class="mono tiny" style="background:var(--fill-2);padding:4px 8px;border-radius:6px;user-select:all;">${filePath.esc()}</span>
+                <button data-copy="${filePath.esc()}" onclick="(function(t){try{navigator.clipboard.writeText(t)}catch(e){var a=document.createElement('textarea');a.value=t;a.style.position='fixed';a.style.opacity='0';document.body.appendChild(a);a.focus();a.select();try{document.execCommand('copy')}catch(_){}document.body.removeChild(a)}})(this.dataset.copy);var b=this;b.textContent='Copied!';setTimeout(function(){b.textContent='Copy'},1500);" class="btn sm ghost" style="font-size:.72rem;padding:3px 8px;">Copy</button>
+              </div>
+              <div class="row center" style="gap:8px;margin-top:10px;flex-wrap:wrap;">
+                <span class="btn sm" data-act="reprobe">Re-probe file</span>
+                $repairAction
+              </div>
+            </div>"""
+    }
+
     fun renderList() {
         val arr = model()
         colMidEl?.textContent = if (currentKind == "audio") "language & codec" else "language, codec & forced"
-        explainEl?.innerHTML = if (currentKind == "audio") audioExplain else subsExplain
 
+        // Phase 128 — a zero-track list used to render as a silently blank tab, indistinguishable from
+        // "no changes needed"; show why and offer a repair path instead (and hide the now-irrelevant
+        // reorder/default explanation while it's up).
+        if (arr.isEmpty()) {
+            explainEl?.innerHTML = ""
+            if (diagnosis == null && !diagnosisLoading) {
+                diagnosisLoading = true
+                scope.launch {
+                    diagnosis = if (epFilename == null) MediaApi.diagnoseTracks(mediaId) else MediaApi.diagnoseEpisodeTracks(mediaId, epFilename)
+                    diagnosisLoading = false
+                    renderList()
+                }
+            }
+            listEl.innerHTML = emptyStateHtml()
+            cascade()
+            return
+        }
+
+        explainEl?.innerHTML = if (currentKind == "audio") audioExplain else subsExplain
         listEl.innerHTML = arr.mapIndexed { i, t ->
             val isUntagged = t.lang.isNullOrBlank()
             val defsCount = arr.count { it.def }
@@ -567,6 +624,40 @@ fun wireUnifiedTrackEditor(
     listEl.addEventListener("click") { e ->
         val el = (e.target as? HTMLElement)?.closest("[data-act]") as? HTMLElement ?: return@addEventListener
         val act = el.getAttribute("data-act") ?: return@addEventListener
+
+        // Phase 128 — empty-state actions (no track index involved).
+        if (act == "reprobe") {
+            el.setAttribute("disabled", ""); el.textContent = "Re-probing…"
+            scope.launch {
+                val fresh = if (epFilename == null) MediaApi.reprobeTracks(mediaId) else MediaApi.reprobeEpisodeTracks(mediaId, epFilename)
+                if (fresh != null) {
+                    val freshModel = fresh.map { it.toModel() }
+                    audioModel.clear(); audioModel.addAll(freshModel.filter { it.kind == TrackKind.AUDIO })
+                    subsModel.clear(); subsModel.addAll(freshModel.filter { it.kind == TrackKind.SUBTITLE })
+                    audioOriginal.clear(); audioOriginal.addAll(audioModel.map { it.copy() })
+                    subsOriginal.clear(); subsOriginal.addAll(subsModel.map { it.copy() })
+                    diagnosis = null  // stale — re-fetched lazily only if still empty
+                    renderList(); renderPending()
+                } else {
+                    el.removeAttribute("disabled"); el.textContent = "Re-probe file"
+                }
+            }
+            return@addEventListener
+        }
+        if (act == "reacquire") {
+            el.setAttribute("disabled", ""); el.textContent = "Requesting…"
+            scope.launch {
+                val result = if (epFilename == null) MediaApi.reacquire(mediaId) else MediaApi.reacquireEpisode(mediaId, epFilename)
+                el.removeAttribute("disabled")
+                el.textContent = when {
+                    result == null -> "Request failed"
+                    result.ok -> "Rescan queued ✓"
+                    else -> result.detail
+                }
+            }
+            return@addEventListener
+        }
+
         val i = el.getAttribute("data-i")?.toIntOrNull() ?: return@addEventListener
         val arr = model()
         when (act) {

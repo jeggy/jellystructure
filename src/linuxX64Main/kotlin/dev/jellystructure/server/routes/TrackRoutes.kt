@@ -12,6 +12,7 @@ import dev.jellystructure.media.MediaStore
 import dev.jellystructure.media.MkvpropeditRunner
 import dev.jellystructure.resolver.LanguageResolver
 import dev.jellystructure.resolver.primaryAudioLanguage
+import dev.jellystructure.media.ProbeDiagnosis
 import dev.jellystructure.arr.ArrRescanService
 import dev.jellystructure.model.Episode
 import dev.jellystructure.model.MediaKind
@@ -68,6 +69,10 @@ data class TrackPlan(
     val before: List<TrackSnap> = emptyList(),
     val after: List<TrackSnap> = emptyList(),
 )
+
+// Phase 128
+@Serializable
+data class ReacquireResponse(val managed: Boolean, val ok: Boolean, val detail: String)
 
 // Phase 96 — bulk-reorder DTOs
 @Serializable
@@ -169,6 +174,54 @@ fun Route.trackRoutes(
                     )
                 )
             }
+        }
+
+        // Phase 128 — GET /api/media/{id}/tracks/diagnose: why did this file's track probe come back
+        // the way it did (corrupt/unreadable/no-audio/etc), plus whether a configured Sonarr/Radarr
+        // manages it (drives the empty-state card's Re-acquire vs. manual-repair guidance).
+        get("/tracks/diagnose") {
+            val id = call.parameters["id"]
+                ?: return@get call.respond(HttpStatusCode.BadRequest)
+            val item = store.resolve(id)
+                ?: return@get call.respond(HttpStatusCode.NotFound)
+            val diagnosis = FfprobeRunner.diagnose(item.path).copy(managed = arrRescan?.isManaged(item) ?: false)
+            call.respond(diagnosis)
+        }
+
+        // Phase 128 — POST /api/media/{id}/tracks/reprobe: re-run ffprobe and store the fresh tracks +
+        // issueCount + resolvedLanguage (honest — null if still no audio), so a manually-replaced file
+        // picks up its real tracks without a full library scan.
+        post("/tracks/reprobe") {
+            val id = call.parameters["id"]
+                ?: return@post call.respond(HttpStatusCode.BadRequest)
+            val item = store.resolve(id)
+                ?: return@post call.respond(HttpStatusCode.NotFound)
+            val newTracks = FfprobeRunner.probe(item.path)
+            val newIssueCount = newTracks.count {
+                (it.kind == TrackKind.AUDIO || it.kind == TrackKind.SUBTITLE) && it.language == null
+            }
+            val hasAudio = newTracks.any { it.kind == TrackKind.AUDIO }
+            val updated = item.copy(
+                tracks = newTracks,
+                issueCount = newIssueCount,
+                resolvedLanguage = primaryAudioLanguage(configStore.current, item.path, newTracks).takeIf { hasAudio },
+            )
+            store.updateOne(updated)
+            mediaHistory.record(id, "tracks_reprobe", "streams=${newTracks.size} hasAudio=$hasAudio")
+            call.respond(newTracks)
+        }
+
+        // Phase 128 — POST /api/media/{id}/reacquire: managed-only best-effort Sonarr/Radarr rescan
+        // trigger for the empty-state card's repair action — reuses ArrRescanService, but synchronous
+        // and reporting back (unlike the fire-and-forget nudge() used after Jellystructure's own writes)
+        // so the UI can tell the difference between "queued" and "not managed, do it manually".
+        post("/reacquire") {
+            val id = call.parameters["id"]
+                ?: return@post call.respond(HttpStatusCode.BadRequest)
+            val item = store.resolve(id)
+                ?: return@post call.respond(HttpStatusCode.NotFound)
+            val (managed, ok, detail) = arrRescan?.reacquire(item) ?: Triple(false, false, "No *arr configured")
+            call.respond(ReacquireResponse(managed, ok, detail))
         }
 
         // POST /api/media/{id}/tracks/default — set a track as default for its type

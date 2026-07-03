@@ -117,6 +117,8 @@ fun Route.triageRoutes(store: MediaStore, jellyfinClient: JellyfinClient, config
             val missingStillInstances = all.sumOf { TriageDetection.missingStillCount(it) }
             val missingStillTitles = all.count { TriageDetection.missingStillCount(it) > 0 }
             val dupGroups = all.filter { !it.jellyfinId.isNullOrBlank() }.groupBy { it.jellyfinId }.filterValues { it.size > 1 }
+            val zeroAudioInstances = all.sumOf { TriageDetection.zeroAudioCount(it) }
+            val zeroAudioTitles = all.count { TriageDetection.zeroAudioCount(it) > 0 }
 
             val types = listOf(
                 TriageTypeCount("untagged", "Untagged audio/subtitle tracks",
@@ -143,6 +145,9 @@ fun Route.triageRoutes(store: MediaStore, jellyfinClient: JellyfinClient, config
                 TriageTypeCount("duplicate", "Duplicate library entries",
                     "The same Jellyfin item appears more than once — both open the same detail page; re-scan or remove the extra entry.",
                     dupGroups.values.sumOf { it.size }, dupGroups.size),
+                TriageTypeCount("zero_audio", "No audio tracks",
+                    "Zero audio tracks detected — usually a corrupt/truncated file. Open Tracks & order for the diagnosis and repair options.",
+                    zeroAudioInstances, zeroAudioTitles),
             )
             val result = TriageCount(types = types, total = types.sumOf { it.instances })
             triageCountCache = Pair(ver, result)
