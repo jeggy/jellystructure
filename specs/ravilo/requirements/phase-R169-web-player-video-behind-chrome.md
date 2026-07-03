@@ -5,8 +5,31 @@
 > **overlay the video** (video stays visible, dimmed only where the scrims actually are — exactly like the
 > Android/TV player), not black out the whole frame.
 
-**Status:** Planned — follows **R157** (made the web video visible at all) and **R158** (player focus
-chrome). Web (`wasmJs`) target only; **Android/TV is unaffected** and must stay pixel-identical.
+**Status:** ✓ Done — implemented via the **FR-R169-3 fallback**, not FR-R169-2. Follows **R157** (made
+the web video visible at all) and **R158** (player focus chrome). Web (`wasmJs`) target only;
+**Android/TV is unaffected** and stays pixel-identical (`PlayerChromeBridge` is a no-op there).
+
+## Implementation note (2026-07-04) — why the fallback, not the transparent-canvas fix
+Investigated FR-R169-2 first: confirmed `ComposeViewportConfiguration.isWindowTransparent` genuinely
+exists in this exact CMP 1.9.3 wasmJs `.klib` (new evidence the original spec didn't have — it only
+hedged "may... allow"), so canvas transparency is technically *possible*. But `ComposeViewport` takes a
+**container id** and creates its **own** canvas inside it — it does not adopt an existing `<canvas>`
+element — whereas `index.html`'s hand-authored `#ComposeTarget` **is itself** the canvas (`<canvas
+id="ComposeTarget">`), and the manual keyboard/gamepad-replay dispatch
+(`document.getElementById('ComposeTarget').dispatchEvent(...)`) targets that exact element directly.
+Migrating would mean turning `#ComposeTarget` into a container `<div>`, with no way to verify — without a
+live browser — that the input dispatch still reaches whatever canvas `ComposeViewport` creates inside it.
+A mistake there breaks **D-pad/gamepad navigation app-wide**, not just the player screen. Given no way to
+interactively verify a browser-only regression of that severity in this environment, implemented the
+explicitly-sanctioned **DOM-overlay fallback (FR-R169-3)** instead — bounded to the player screen only,
+additive (Android untouched), and the existing z-index-swap mechanism is **kept exactly as-is**, just
+re-triggered by a narrower condition (`pickerOpen || nextUpVisible || epRailOpen` instead of
+`chromeVisible`) so the video only ever demotes behind the canvas for the picker/next-up/episode-rail
+overlays — which Compose still draws unchanged. The basic transport (play/pause, skip ±, seek, time) is a
+small DOM/CSS bar (`PlayerChromeBridge` + its wasmJs actual), reusing a native `<input type="range">` for
+scrubbing rather than hand-rolled drag math. **FR-R169-2 remains a valid future upgrade** — the
+`isWindowTransparent` finding is a real lead for whoever picks it up, now backed by evidence instead of
+speculation — but requires interactive browser verification of input dispatch before landing.
 
 ## Problem
 Web only: with the chrome **shown**, the whole picture is black behind the controls; with the chrome
