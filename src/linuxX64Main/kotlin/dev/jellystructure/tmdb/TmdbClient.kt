@@ -259,6 +259,26 @@ data class TmdbExternalIds(
     @SerialName("imdb_id") val imdbId: String? = null,
 )
 
+// --- Phase 130: /videos (trailer ingest) ---
+@Serializable
+data class TmdbVideosResponse(val results: List<TmdbVideo> = emptyList())
+
+@Serializable
+data class TmdbVideo(
+    val site: String = "",
+    val key: String = "",
+    val name: String = "",
+    val type: String = "",
+    val official: Boolean = false,
+    @SerialName("iso_639_1") val language: String = "",
+    @SerialName("published_at") val publishedAt: String = "",
+)
+
+@Serializable
+data class VimeoOembedResponse(
+    @SerialName("thumbnail_url") val thumbnailUrl: String? = null,
+)
+
 // --- Phase 106: age-rating certifications. Movies: /release_dates (per-country, several release
 // `type`s can carry different certification strings — theatrical types preferred). TV: /content_ratings
 // (flat, one rating per country, no type/date — TMDB has no episode-level ratings). ---
@@ -833,5 +853,64 @@ class TmdbClient(
         }
         if (result.isFailure) Logger.warn("TMDB tv content_ratings failed for id=$tmdbId: ${result.exceptionOrNull()?.message}")
         return result.getOrDefault(emptyMap())
+    }
+
+    // --- Phase 130: one official trailer per title (YouTube/Vimeo). Deterministic selection —
+    // Trailer preferred over Teaser, then official, then original-language/English, then newest.
+    private fun selectTrailerVideo(videos: List<TmdbVideo>, originalLanguage: String): TmdbVideo? {
+        val usable = videos.filter { it.site.equals("YouTube", ignoreCase = true) || it.site.equals("Vimeo", ignoreCase = true) }
+        val byType = usable.filter { it.type == "Trailer" }.ifEmpty { usable.filter { it.type == "Teaser" } }
+        if (byType.isEmpty()) return null
+        return byType.sortedWith(
+            compareByDescending<TmdbVideo> { it.official }
+                .thenByDescending { it.language == originalLanguage }
+                .thenByDescending { it.language == "en" }
+                .thenByDescending { it.publishedAt }
+        ).firstOrNull()
+    }
+
+    suspend fun getMovieVideos(tmdbId: Int, originalLanguage: String): TmdbVideo? {
+        val key = apiKey()
+        if (key.isBlank()) return null
+        val result = runCatching {
+            val response = httpGet("$baseUrl/movie/$tmdbId/videos") { parameter("api_key", key) }
+            if (response.status == HttpStatusCode.TooManyRequests) {
+                delay(3000)
+                return getMovieVideos(tmdbId, originalLanguage)
+            }
+            if (response.status.value == 404) return null
+            selectTrailerVideo(response.body<TmdbVideosResponse>().results, originalLanguage)
+        }
+        if (result.isFailure) Logger.warn("TMDB movie videos failed for id=$tmdbId: ${result.exceptionOrNull()?.message}")
+        return result.getOrNull()
+    }
+
+    suspend fun getTvVideos(tmdbId: Int, originalLanguage: String): TmdbVideo? {
+        val key = apiKey()
+        if (key.isBlank()) return null
+        val result = runCatching {
+            val response = httpGet("$baseUrl/tv/$tmdbId/videos") { parameter("api_key", key) }
+            if (response.status == HttpStatusCode.TooManyRequests) {
+                delay(3000)
+                return getTvVideos(tmdbId, originalLanguage)
+            }
+            if (response.status.value == 404) return null
+            selectTrailerVideo(response.body<TmdbVideosResponse>().results, originalLanguage)
+        }
+        if (result.isFailure) Logger.warn("TMDB tv videos failed for id=$tmdbId: ${result.exceptionOrNull()?.message}")
+        return result.getOrNull()
+    }
+
+    /** Phase 130: Vimeo has no key-derivable thumbnail URL (unlike YouTube's `img.youtube.com/vi/{key}`),
+     *  so resolve it once at ingest via Vimeo's public oEmbed endpoint. Best-effort — null on any failure,
+     *  the admin card then falls back to a generic play-glyph tile. No render-time external calls. */
+    suspend fun resolveVimeoThumb(videoKey: String): String? {
+        val result = runCatching {
+            val response = httpGet("https://vimeo.com/api/oembed.json") { parameter("url", "https://vimeo.com/$videoKey") }
+            if (response.status.value != 200) return null
+            response.body<VimeoOembedResponse>().thumbnailUrl
+        }
+        if (result.isFailure) Logger.warn("Vimeo oEmbed failed for key=$videoKey: ${result.exceptionOrNull()?.message}")
+        return result.getOrNull()
     }
 }

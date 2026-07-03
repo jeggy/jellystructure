@@ -504,6 +504,17 @@ object MediaApi {
         if (response.status == HttpStatusCode.OK) response.body<MediaItem>() else null
     }.getOrNull()
 
+    // Phase 130: trailer ingest — re-run TMDB /videos + selection, or clear a manually/auto-ingested one.
+    suspend fun refetchTrailer(id: String): MediaItem? = runCatching {
+        val response = httpClient.post("/api/media/$id/trailer/refetch")
+        if (response.status == HttpStatusCode.OK) response.body<MediaItem>() else null
+    }.getOrNull()
+
+    suspend fun clearTrailer(id: String): MediaItem? = runCatching {
+        val response = httpClient.delete("/api/media/$id/trailer")
+        if (response.status == HttpStatusCode.OK) response.body<MediaItem>() else null
+    }.getOrNull()
+
     suspend fun getTriageCount(): TriageCount? = runCatching {
         httpClient.get("/api/triage/count").body<TriageCount>()
     }.getOrNull()

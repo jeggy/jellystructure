@@ -15,6 +15,7 @@ import dev.jellystructure.shared.tv.Season
 import dev.jellystructure.shared.tv.NextAiring
 import dev.jellystructure.shared.tv.RatingBadge
 import dev.jellystructure.shared.tv.SeriesDetail
+import dev.jellystructure.shared.tv.TvTrailer
 import dev.jellystructure.resolver.CertificationResolver
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
@@ -54,6 +55,7 @@ class DetailService(
             subtitleLanguages  = movieSubLangs,
             logoUrl            = RaviloImageUrl.logo(item.id),  // R130/R133
             ratingBadge        = item.ratingBadge(),  // Phase 106
+            trailer            = item.tvTrailer(),  // Phase 130
         )
     }
 
@@ -115,6 +117,7 @@ class DetailService(
             logoUrl           = RaviloImageUrl.logo(item.id),  // R130/R133
             nextAiring        = nextAiring,
             ratingBadge       = item.ratingBadge(),  // Phase 106
+            trailer           = item.tvTrailer(),  // Phase 130
         )
     }
 
@@ -190,6 +193,11 @@ class DetailService(
         val cert = CertificationResolver.resolve(configStore.current.metadata.ageRatingCascade, certifications) ?: return null
         return RatingBadge(region = cert.region, code = cert.code, tier = cert.tier, fallback = cert.fallback)
     }
+
+    /** Phase 130: catalog-only — the item's stored trailer, straight off the in-memory MediaItem
+     *  (no TMDB/Jellyfin round-trip at detail-read time). */
+    private fun MediaItem.tvTrailer(): TvTrailer? =
+        trailer?.let { TvTrailer(site = it.site, key = it.key, name = it.name.takeIf { n -> n.isNotBlank() }) }
 }
 
 private const val CAST_LIMIT = 20

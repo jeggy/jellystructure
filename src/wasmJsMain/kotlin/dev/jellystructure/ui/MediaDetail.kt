@@ -181,6 +181,52 @@ private fun tsRow(label: String, epochSec: Long?, first: Boolean = false, helpTi
     return """<div class="ts-row${if (first) " first" else ""}"><span class="ts-k">${label.esc()}$help</span><span class="ts-v">$v</span></div>"""
 }
 
+/** Phase 130: "Trailer" card on the Overview tab — the one official trailer ingested from TMDB's
+ *  `videos` section (YouTube/Vimeo). Mirrors design's `#trailer-card`. Empty state when the item has
+ *  no trailer (nothing usable on TMDB, or never re-fetched since scan). */
+private fun buildTrailerCard(item: MediaItem): String {
+    val trailer = item.trailer
+    if (trailer == null) {
+        return """
+        <div class="card" id="trailer-card" style="margin-top:16px;">
+          <div class="row center"><h4 style="margin:0;">Trailer</h4><span class="badge info" style="margin-left:8px;">from TMDB</span></div>
+          <hr class="dash" style="margin:10px 0 14px;">
+          <div class="tiny muted">No trailer — TMDB had no usable video.</div>
+          <div class="pill-row" style="margin-top:11px;">
+            <span class="btn sm ghost" id="trailer-refetch">Re-fetch from TMDB</span>
+          </div>
+        </div>"""
+    }
+    val isYoutube = trailer.site == "youtube"
+    val watchUrl = if (isYoutube) "https://www.youtube.com/watch?v=${trailer.key.esc()}" else "https://vimeo.com/${trailer.key.esc()}"
+    val thumbUrl = if (isYoutube) "https://img.youtube.com/vi/${trailer.key.esc()}/hqdefault.jpg" else trailer.thumb
+    val thumbHtml = if (thumbUrl != null)
+        """<img src="${thumbUrl.esc()}" alt="${item.title.esc()} trailer thumbnail" loading="lazy">"""
+    else ""
+    val srcBadge = if (isYoutube) """<span class="tr-src yt">YouTube</span>""" else """<span class="tr-src vm">Vimeo</span>"""
+    val name = trailer.name.ifBlank { "Trailer" }
+    return """
+    <div class="card" id="trailer-card" style="margin-top:16px;">
+      <div class="row center"><h4 style="margin:0;">Trailer</h4><span class="badge info" style="margin-left:8px;">from TMDB</span><span class="spacer"></span><span class="tiny muted">TMDB <b>videos</b> → shown as ▷ Trailer in Ravilo</span></div>
+      <hr class="dash" style="margin:10px 0 14px;">
+      <div class="row" style="gap:16px;align-items:flex-start;">
+        <a class="tr-thumb" href="$watchUrl" target="_blank" rel="noopener" title="Open trailer on ${if (isYoutube) "YouTube" else "Vimeo"}">
+          $thumbHtml
+          <span class="tr-play">▶</span>
+        </a>
+        <div style="flex:1;min-width:0;">
+          <div class="row center" style="gap:9px;"><b>${name.esc()}</b>$srcBadge</div>
+          <div class="pill-row" style="margin-top:11px;">
+            <a class="btn sm" href="$watchUrl" target="_blank" rel="noopener">▷ Preview ↗</a>
+            <span class="btn sm ghost" id="trailer-refetch">Re-fetch from TMDB</span>
+            <span class="btn sm ghost" id="trailer-clear">Clear</span>
+          </div>
+          <div class="mono tiny muted" style="margin-top:9px;">${trailer.site.esc()} · ${trailer.key.esc()}</div>
+        </div>
+      </div>
+    </div>"""
+}
+
 /** Phase 108: full-width "Timestamps" card at the bottom of the Overview tab — everything we know about
  *  when a title was created/updated/scanned, in Jellystructure and in Jellyfin. Mirrors design's #ts-card. */
 private fun buildTimestampsCard(item: MediaItem): String {
@@ -513,6 +559,7 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
             $leftRailHtml
             $overviewMainHtml
           </div>
+          ${buildTrailerCard(item)}
           ${buildTimestampsCard(item)}"""
 
     // The tab bar + all tab panels.
@@ -698,6 +745,13 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
 
     document.getElementById("repull-jellyfin-btn")?.addEventListener("click") {
         showRepullJellyfinModal(item, container, scope)
+    }
+
+    document.getElementById("trailer-refetch")?.addEventListener("click") {
+        scope.launch { MediaApi.refetchTrailer(item.id); renderMediaDetail(container, scope, item.id) }
+    }
+    document.getElementById("trailer-clear")?.addEventListener("click") {
+        scope.launch { MediaApi.clearTrailer(item.id); renderMediaDetail(container, scope, item.id) }
     }
 
     document.getElementById("lang-override-btn")?.addEventListener("click") {

@@ -8,6 +8,7 @@ import dev.jellystructure.log.Logger
 import dev.jellystructure.model.Episode
 import dev.jellystructure.model.MediaItem
 import dev.jellystructure.model.MediaKind
+import dev.jellystructure.model.MediaTrailer
 import dev.jellystructure.model.Person
 import dev.jellystructure.model.TrackKind
 import dev.jellystructure.resolver.LanguageResolver
@@ -164,6 +165,7 @@ class Scanner(
         val (cast, crew) = tmdbFinalId?.let { fetchCredits(it, isMovie = true) } ?: Pair(emptyList(), emptyList())
         val extIds = tmdbFinalId?.let { tmdb.getExternalIds(it, isMovie = true) }
         val certifications = tmdbFinalId?.let { tmdb.getMovieCertifications(it) } ?: emptyMap()
+        val trailer = tmdbFinalId?.let { buildTrailer(tmdb.getMovieVideos(it, details?.originalLanguage.orEmpty())) }
         return MediaItem(
             id = itemId(title, searchYear, jItem.id),
             title = details?.title ?: title,
@@ -201,6 +203,7 @@ class Scanner(
             imdbId = extIds?.imdbId?.takeIf { it.isNotBlank() },
             runtime = details?.runtime,
             certifications = certifications,
+            trailer = trailer,
         )
     }
 
@@ -336,6 +339,7 @@ class Scanner(
             val (mixCast, mixCrew) = seriesTmdbId?.let { fetchCredits(it, isMovie = false, seasons = sortedEpisodes.mapNotNull { ep -> ep.seasonNumber }.distinct()) } ?: Pair(emptyList(), emptyList())
             val mixExtIds = seriesTmdbId?.let { tmdb.getExternalIds(it, isMovie = false) }
             val mixCertifications = seriesTmdbId?.let { tmdb.getTvCertifications(it) } ?: emptyMap()
+            val mixTrailer = seriesTmdbId?.let { buildTrailer(tmdb.getTvVideos(it, mixDetails?.originalLanguage.orEmpty())) }
             return MediaItem(
                 id = itemId(title, searchYear, jItem.id),
                 title = mixDetails?.name ?: title,
@@ -374,6 +378,7 @@ class Scanner(
                 tvdbId = mixExtIds?.tvdbId,
                 seasonNames = seasonNamesMap,
                 certifications = mixCertifications,
+                trailer = mixTrailer,
             )
         }
 
@@ -390,6 +395,7 @@ class Scanner(
         val (tvCast, tvCrew) = tvTmdbFinalId?.let { fetchCredits(it, isMovie = false, seasons = sortedEpisodes.mapNotNull { ep -> ep.seasonNumber }.distinct()) } ?: Pair(emptyList(), emptyList())
         val tvExtIds = tvTmdbFinalId?.let { tmdb.getExternalIds(it, isMovie = false) }
         val tvCertifications = tvTmdbFinalId?.let { tmdb.getTvCertifications(it) } ?: emptyMap()
+        val tvTrailer = tvTmdbFinalId?.let { buildTrailer(tmdb.getTvVideos(it, details?.originalLanguage.orEmpty())) }
         return MediaItem(
             id = itemId(title, searchYear, jItem.id),
             title = details?.name ?: title,
@@ -427,6 +433,7 @@ class Scanner(
             tvdbId = tvExtIds?.tvdbId,
             seasonNames = seasonNamesMap,
             certifications = tvCertifications,
+            trailer = tvTrailer,
         )
     }
 
@@ -460,6 +467,7 @@ class Scanner(
         val tmdbTags = tmdb.getMovieKeywords(details.id)
         val syncExtIds = tmdb.getExternalIds(details.id, isMovie = true)
         val syncCertifications = tmdb.getMovieCertifications(details.id)
+        val syncTrailer = buildTrailer(tmdb.getMovieVideos(details.id, details.originalLanguage))
         return item.copy(
             title = details.title,
             originalTitle = details.originalTitle.takeIf { it.isNotBlank() },
@@ -483,6 +491,7 @@ class Scanner(
             imdbId = syncExtIds?.imdbId?.takeIf { it.isNotBlank() } ?: item.imdbId,
             runtime = details.runtime,
             certifications = syncCertifications.ifEmpty { item.certifications },
+            trailer = syncTrailer,
         )
     }
 
@@ -582,6 +591,7 @@ class Scanner(
         val tmdbTags = syncSeriesFinalId?.let { tmdb.getTvKeywords(it) } ?: emptyList()
         val syncSeriesExtIds = syncSeriesFinalId?.let { tmdb.getExternalIds(it, isMovie = false) }
         val syncSeriesCertifications = syncSeriesFinalId?.let { tmdb.getTvCertifications(it) } ?: emptyMap()
+        val syncSeriesTrailer = syncSeriesFinalId?.let { buildTrailer(tmdb.getTvVideos(it, updatedDetails?.originalLanguage.orEmpty())) }
         return item.copy(
             title = updatedDetails?.name ?: item.title,
             originalTitle = updatedDetails?.originalName?.takeIf { it.isNotBlank() } ?: item.originalTitle,
@@ -609,6 +619,7 @@ class Scanner(
             imdbId = syncSeriesExtIds?.imdbId?.takeIf { it.isNotBlank() } ?: item.imdbId,
             tvdbId = syncSeriesExtIds?.tvdbId ?: item.tvdbId,
             certifications = syncSeriesCertifications.ifEmpty { item.certifications },
+            trailer = syncSeriesTrailer,
         )
     }
 
@@ -699,6 +710,7 @@ class Scanner(
                 val rescanTmdbTags = tmdb.getMovieKeywords(details.id)
                 val rescanMovieExtIds = tmdb.getExternalIds(details.id, isMovie = true)
                 val rescanCertifications = tmdb.getMovieCertifications(details.id)
+                val rescanTrailer = buildTrailer(tmdb.getMovieVideos(details.id, details.originalLanguage))
                 val (rescanCast, rescanCrew) = fetchCredits(details.id, isMovie = true)
                 item.copy(
                     title = details.title,
@@ -722,6 +734,7 @@ class Scanner(
                     crew = rescanCrew,
                     runtime = details.runtime,
                     certifications = rescanCertifications.ifEmpty { item.certifications },
+                    trailer = rescanTrailer,
                 )
             }
             MediaKind.TV_SHOW -> {
@@ -760,6 +773,7 @@ class Scanner(
                 val rescanTmdbTags = tmdb.getTvKeywords(details.id)
                 val rescanTvExtIds = tmdb.getExternalIds(details.id, isMovie = false)
                 val rescanTvCertifications = tmdb.getTvCertifications(details.id)
+                val rescanTvTrailer = buildTrailer(tmdb.getTvVideos(details.id, details.originalLanguage))
                 val (rescanTvCast, rescanTvCrew) = fetchCredits(details.id, isMovie = false, seasons = item.episodes.mapNotNull { it.seasonNumber }.distinct())
                 item.copy(
                     title = details.name,
@@ -785,6 +799,7 @@ class Scanner(
                     cast = rescanTvCast,
                     crew = rescanTvCrew,
                     certifications = rescanTvCertifications.ifEmpty { item.certifications },
+                    trailer = rescanTvTrailer,
                 )
             }
         }
@@ -1002,6 +1017,15 @@ class Scanner(
             if (!base.containsKey(normLang)) base[normLang] = originalTitle
         }
         return base
+    }
+
+    /** Phase 130: resolve one [TmdbVideo] selection into a stored [MediaTrailer], fetching the Vimeo
+     *  thumbnail once at ingest (YouTube thumbnails are derived client-side from the key — no fetch). */
+    private suspend fun buildTrailer(video: dev.jellystructure.tmdb.TmdbVideo?): MediaTrailer? {
+        if (video == null) return null
+        val site = if (video.site.equals("Vimeo", ignoreCase = true)) "vimeo" else "youtube"
+        val thumb = if (site == "vimeo") tmdb.resolveVimeoThumb(video.key) else null
+        return MediaTrailer(site = site, key = video.key, name = video.name, thumb = thumb)
     }
 
     @OptIn(ExperimentalForeignApi::class)
