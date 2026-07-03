@@ -1,0 +1,18 @@
+-- R162: field-level per-user behaviour & preferences overlay, stored independently of ravilo_config
+-- (the R51 layout override) so removing a custom layout never loses a viewer's/admin's preferences,
+-- and setting a preference never creates a layout override.
+CREATE TABLE ravilo_behaviour (
+    user_id TEXT NOT NULL PRIMARY KEY,
+    json TEXT NOT NULL,
+    updated_at INTEGER NOT NULL
+);
+
+upsert:
+INSERT OR REPLACE INTO ravilo_behaviour(user_id, json, updated_at)
+VALUES (:user_id, :json, :updated_at);
+
+getByUser:
+SELECT json FROM ravilo_behaviour WHERE user_id = :user_id;
+
+deleteByUser:
+DELETE FROM ravilo_behaviour WHERE user_id = :user_id;

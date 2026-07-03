@@ -546,6 +546,43 @@ data class RaviloConfig(
     fun effectiveSkin(): Skin = if (allowSkinOverride) (viewerSkinOverride ?: defaultSkin) else defaultSkin
 }
 
+/**
+ * R162 — field-level per-user behaviour & preferences overlay, independent of [RaviloConfig]'s
+ * layout override (R51, full-replace). Each field is sparse: absent = "follow global default".
+ * `*Writer` tags who set a present value — `"viewer"` (via `PUT /api/tv/settings`, R161) or
+ * `"admin"` (via the config editor). Resolution is always **viewer entry → admin entry → global
+ * default**; the editor may only Reset a viewer-tagged entry, never overwrite it (R161's guardrail
+ * against silently clobbering a viewer's explicit on-TV choice).
+ */
+@Serializable
+data class BehaviourOverlay(
+    @SerialName("ui_language") val uiLanguage: String? = null,
+    @SerialName("ui_language_writer") val uiLanguageWriter: String? = null,
+    val skin: Skin? = null,
+    @SerialName("skin_writer") val skinWriter: String? = null,
+    @SerialName("tile_shape") val tileShape: TileShape? = null,
+    @SerialName("tile_shape_writer") val tileShapeWriter: String? = null,
+    @SerialName("show_continue_progress") val showContinueProgress: Boolean? = null,
+    @SerialName("show_continue_progress_writer") val showContinueProgressWriter: String? = null,
+    @SerialName("autoplay_next") val autoplayNext: Boolean? = null,
+    @SerialName("autoplay_next_writer") val autoplayNextWriter: String? = null,
+)
+
+/** One resolved behaviour field for the config-editor UI: the effective [value] plus where it came
+ *  from — `"global"` (no override), `"admin"` (admin-set per-user override), or `"viewer"` (set by
+ *  the viewer on their own TV — reset-only in the editor). */
+@Serializable
+data class ResolvedBehaviourField<T>(val value: T, val source: String)
+
+@Serializable
+data class ResolvedBehaviour(
+    @SerialName("ui_language") val uiLanguage: ResolvedBehaviourField<String>,
+    val skin: ResolvedBehaviourField<Skin>,
+    @SerialName("tile_shape") val tileShape: ResolvedBehaviourField<TileShape>,
+    @SerialName("show_continue_progress") val showContinueProgress: ResolvedBehaviourField<Boolean>,
+    @SerialName("autoplay_next") val autoplayNext: ResolvedBehaviourField<Boolean>,
+)
+
 /** R159 — portrait-only display overrides. Each field null = that override is off; the block itself
  *  being null means no portrait overrides at all (both are equivalent, but `heroHeightPct == null`
  *  lets the section keep the toggle's on/off state independent of future sibling fields). */
@@ -607,6 +644,9 @@ data class ViewerSettingsRequest(
     @SerialName("show_continue_progress") val showContinueProgress: Boolean? = null,
     @SerialName("autoplay_next") val autoplayNext: Boolean? = null,
     @SerialName("tile_shape") val tileShape: TileShape? = null,
+    // R162: joins the other four in the field-level behaviour overlay (R161 will be the first UI to
+    // actually send it — the field/plumbing lands now so that phase is a pure UI change).
+    @SerialName("ui_language") val uiLanguage: String? = null,
 )
 
 @Serializable

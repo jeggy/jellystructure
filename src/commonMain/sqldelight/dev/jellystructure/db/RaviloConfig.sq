@@ -13,3 +13,8 @@ SELECT json FROM ravilo_config WHERE user_id = :user_id;
 
 deleteByUser:
 DELETE FROM ravilo_config WHERE user_id = :user_id;
+
+-- R162: one-time boot migration walks every per-user record to lift legacy behaviour fields
+-- (viewerSkinOverride/tileShape/showContinueProgress/autoplayNext/uiLanguage) into the new overlay.
+allUserIds:
+SELECT user_id FROM ravilo_config;
