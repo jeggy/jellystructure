@@ -1,7 +1,7 @@
 @file:OptIn(org.jetbrains.kotlin.gradle.ExperimentalWasmDsl::class)
 
-import java.net.ConnectException
-import java.net.Socket
+import java.net.InetSocketAddress
+import java.net.ServerSocket
 
 plugins {
     alias(libs.plugins.kotlin.multiplatform)
@@ -87,21 +87,28 @@ tasks.register("runDev") {
         // Use SIGKILL so the socket is released immediately rather than waiting for graceful shutdown.
         ProcessBuilder("pkill", "-KILL", "-f", "jellystructure.kexe").inheritIO().start().waitFor()
         ProcessBuilder("pkill", "-KILL", "-f", "webpack-dev-server").inheritIO().start().waitFor()
-        // Poll until port 9505 is actually free (up to 5 s).
-        // Uses a Java socket instead of bash /dev/tcp — /dev/tcp is not enabled in all
-        // bash builds and returns a misleading non-zero exit even when the port is occupied.
+        // Poll until port 9505 is actually bindable (up to 5 s), not just "nothing answers".
+        // A plain connect-test (ECONNREFUSED = free) is an insufficient proxy: the OS can still
+        // refuse a fresh bind() for a brief window right after SIGKILL-ing the old listener even
+        // though nothing is actively accepting connections on the port anymore. That gap crashed the
+        // Kotlin/Native backend outright — EADDRINUSE from Ktor's embeddedServer(...).start() escapes
+        // its internal engine coroutine uncaught (unlike appScope/rootScope's own launches, which do
+        // have a CoroutineExceptionHandler) and aborts the whole process (SIGABRT/134). Testing an
+        // actual bind (with SO_REUSEADDR, like a real server would use) is the only proxy that matches
+        // what the real server needs to succeed at.
         val deadline = System.currentTimeMillis() + 5_000
         while (System.currentTimeMillis() < deadline) {
-            Thread.sleep(200)
-            val inUse = try {
-                Socket("localhost", 9505).also { it.close() }
-                true   // connected → port is still in use
-            } catch (_: ConnectException) {
-                false  // ECONNREFUSED → port is free
+            val bindable = try {
+                ServerSocket().use { s ->
+                    s.reuseAddress = true
+                    s.bind(InetSocketAddress("localhost", 9505))
+                }
+                true
             } catch (_: Exception) {
-                false  // any other error → treat as free
+                false
             }
-            if (!inUse) break
+            if (bindable) break
+            Thread.sleep(200)
         }
 
         val configDir = rootProject.layout.projectDirectory.dir("config").asFile
