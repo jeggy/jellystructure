@@ -8,6 +8,25 @@
 <link rel="stylesheet" href="app.css">
 <link rel="stylesheet" href="seeding.css">
 <style>
+  /* trailer card (Overview) */
+  .tr-thumb { position: relative; width: 190px; height: 107px; border-radius: 10px; overflow: hidden; flex: none; border: 1px solid var(--line); display: block; background: var(--bg-2); }
+  .tr-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .tr-play { position: absolute; inset: 0; margin: auto; width: 46px; height: 46px; border-radius: 50%; background: rgba(0,0,0,.55); color: #fff; display: flex; align-items: center; justify-content: center; font-size: 17px; transition: background .15s, transform .15s; }
+  .tr-thumb:hover .tr-play { background: rgba(0,0,0,.75); transform: scale(1.08); }
+  .tr-src { font-size: .62rem; font-weight: 700; letter-spacing: .05em; padding: 2px 9px; border-radius: 20px; }
+  .tr-src.yt { color: #ff5252; background: rgba(255,82,82,.12); border: 1px solid rgba(255,82,82,.42); }
+  .tr-src.vm { color: #3fb6f5; background: rgba(63,182,245,.12); border: 1px solid rgba(63,182,245,.42); }
+
+  /* IMDb rating (pagebar pill + Overview card) */
+  .imdb-wm { display: inline-flex; align-items: center; gap: 3px; font-family: 'Space Grotesk', sans-serif; font-weight: 800; font-size: .6rem; letter-spacing: .3px; color: #0a0c13; background: #f5c518; padding: 2px 6px; border-radius: 5px; line-height: 1.3; }
+  .imdb-star { color: #0a0c13; }
+  .imdb-pill { display: inline-flex; align-items: center; gap: 7px; text-decoration: none; color: var(--ink); font-size: .82rem; font-weight: 700; padding: 3px 11px 3px 4px; border: 1px solid var(--line); border-radius: 20px; background: var(--fill-2); }
+  .imdb-pill:hover { border-color: var(--line-2); }
+  .imdb-pill .imdb-votes { color: var(--ink-dim); font-weight: 500; }
+  .imdb-big { display: flex; align-items: center; gap: 11px; }
+  .imdb-score { font-family: 'Space Grotesk', sans-serif; display: inline-flex; align-items: baseline; gap: 4px; font-size: 1.55rem; font-weight: 800; }
+  .imdb-score .imdb-max { font-size: .9rem; color: var(--ink-dim); font-weight: 600; }
+
   /* cast & crew (Phase 75) */
   .cast-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(146px, 1fr)); gap: 14px; }
   .person { position: relative; background: var(--fill-2); border: 1px solid var(--line); border-radius: var(--radius-s); overflow: hidden; cursor: grab; }
@@ -188,6 +207,7 @@
   <div class="pagebar">
     <h1>Nordvest <span class="muted">(2023)</span></h1>
     <span class="badge bad">4 episodes need attention</span>
+    <a class="imdb-pill" href="https://www.imdb.com/title/tt6910212/" target="_blank" rel="noopener" title="IMDb 7.9/10 · 5,412 votes · synced 2d ago"><span class="imdb-wm"><span class="imdb-star">★</span>IMDb</span><b>7.9</b><span class="imdb-votes">5.4K</span></a>
     <a id="seed-pill-link" href="#tab=seeding" style="text-decoration:none;"></a>
     <span class="spacer"></span>
     <a class="btn sm ghost" href="#" target="_blank" rel="noopener">Jellyfin ↗</a>
@@ -270,6 +290,43 @@
           <div class="row center"><h4 style="margin:0;">Tags</h4><span class="spacer"></span><span class="tiny muted"><a href="metadata.html">manage tags →</a></span></div>
           <hr class="dash" style="margin:10px 0;">
           <div class="pill-row"><span class="chip"><span class="tag-dot" style="width:8px;height:8px;border-radius:50%;display:inline-block;background:#3fb6f5;"></span> nordic noir <span class="rm" style="cursor:pointer;">✕</span></span><span class="chip">crime drama <span class="rm" style="cursor:pointer;">✕</span></span><span class="chip ghost">＋ add</span></div>
+        </div>
+        <div class="card" id="imdb-card">
+          <div class="row center"><h4 style="margin:0;">IMDb rating</h4><span class="badge info" style="margin-left:8px;">synced</span><span class="spacer"></span><span class="tiny muted">from imdbapi.dev → shown on the title in Ravilo</span></div>
+          <hr class="dash" style="margin:10px 0 14px;">
+          <div class="row" style="gap:24px;align-items:center;">
+            <div class="imdb-big">
+              <span class="imdb-wm"><span class="imdb-star">★</span>IMDb</span>
+              <span class="imdb-score"><span>7.9</span><span class="imdb-max">/10</span></span>
+            </div>
+            <div>
+              <div><b>5,412</b> <span class="muted tiny">votes</span></div>
+              <div class="tiny muted" style="margin-top:2px;">id <a href="https://www.imdb.com/title/tt6910212/" target="_blank" rel="noopener" class="mono">tt6910212</a> · synced 2d ago</div>
+            </div>
+            <span class="spacer"></span>
+            <span class="btn sm ghost" id="imdb-resync">Re-sync from imdbapi.dev</span>
+          </div>
+          <div class="tiny muted" style="margin-top:12px;line-height:1.5;">Fetched by IMDb id from <b>imdbapi.dev</b>, stored on the item &amp; refreshed on a schedule (never queried ad-hoc). For a series this is the <b>show</b> rating.</div>
+        </div>
+        <div class="card" id="trailer-card" style="margin-top:16px;">
+          <div class="row center"><h4 style="margin:0;">Trailer</h4><span class="badge info" style="margin-left:8px;">from TMDB</span><span class="spacer"></span><span class="tiny muted">TMDB <b>videos</b> → shown as ▷ Trailer in Ravilo</span></div>
+          <hr class="dash" style="margin:10px 0 14px;">
+          <div class="row" style="gap:16px;align-items:flex-start;">
+            <a class="tr-thumb" href="https://vimeo.com/76979871" target="_blank" rel="noopener" title="Open trailer on Vimeo">
+              <img src="https://vumbnail.com/76979871.jpg" alt="Nordvest teaser thumbnail" loading="lazy">
+              <span class="tr-play">▶</span>
+            </a>
+            <div style="flex:1;min-width:0;">
+              <div class="row center" style="gap:9px;"><b>Teaser</b><span class="tr-src vm">Vimeo</span></div>
+              <div class="tiny muted" style="margin-top:6px;line-height:1.6;max-width:60ch;">Ingested from the TMDB <b>videos</b> section at scan time — the show trailer, original-language preferred then English. Exposed on the Ravilo TV detail DTO so a <b>▷ Trailer</b> button appears on this series; the button is hidden when TMDB has no video.</div>
+              <div class="pill-row" style="margin-top:11px;">
+                <a class="btn sm" href="https://vimeo.com/76979871" target="_blank" rel="noopener">▷ Preview ↗</a>
+                <span class="btn sm ghost" id="trailer-refetch">Re-fetch from TMDB</span>
+                <span class="btn sm ghost" id="trailer-clear">Clear</span>
+              </div>
+              <div class="mono tiny muted" style="margin-top:9px;">vimeo · 76979871</div>
+            </div>
+          </div>
         </div>
         <div class="card" id="ts-card" style="margin-top:16px;">
           <div class="row center"><h4 style="margin:0;">Timestamps</h4><span class="tiny muted" style="margin-left:8px;">when this series was created, updated &amp; scanned — in Jellystructure and in Jellyfin</span></div>
