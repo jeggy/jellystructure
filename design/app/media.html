@@ -247,6 +247,25 @@
   .aw-rail-item .sub { font-size:.72rem; color:var(--ink-soft); font-family:'JetBrains Mono',monospace; margin-top:2px; }
   .aw-eyebrow { font-size:.66rem; text-transform:uppercase; letter-spacing:.06em; color:var(--ink-soft); font-weight:600; }
 
+  /* trailer card (Overview) */
+  .tr-thumb { position: relative; width: 190px; height: 107px; border-radius: 10px; overflow: hidden; flex: none; border: 1px solid var(--line); display: block; background: var(--bg-2); }
+  .tr-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .tr-play { position: absolute; inset: 0; margin: auto; width: 46px; height: 46px; border-radius: 50%; background: rgba(0,0,0,.55); color: #fff; display: flex; align-items: center; justify-content: center; font-size: 17px; transition: background .15s, transform .15s; }
+  .tr-thumb:hover .tr-play { background: rgba(0,0,0,.75); transform: scale(1.08); }
+  .tr-src { font-size: .62rem; font-weight: 700; letter-spacing: .05em; padding: 2px 9px; border-radius: 20px; }
+  .tr-src.yt { color: #ff5252; background: rgba(255,82,82,.12); border: 1px solid rgba(255,82,82,.42); }
+  .tr-src.vm { color: #3fb6f5; background: rgba(63,182,245,.12); border: 1px solid rgba(63,182,245,.42); }
+
+  /* IMDb rating (pagebar pill + Overview card) */
+  .imdb-wm { display: inline-flex; align-items: center; gap: 3px; font-family: 'Space Grotesk', sans-serif; font-weight: 800; font-size: .6rem; letter-spacing: .3px; color: #0a0c13; background: #f5c518; padding: 2px 6px; border-radius: 5px; line-height: 1.3; }
+  .imdb-star { color: #0a0c13; }
+  .imdb-pill { display: inline-flex; align-items: center; gap: 7px; text-decoration: none; color: var(--ink); font-size: .82rem; font-weight: 700; padding: 3px 11px 3px 4px; border: 1px solid var(--line); border-radius: 20px; background: var(--fill-2); }
+  .imdb-pill:hover { border-color: var(--line-2); }
+  .imdb-pill .imdb-votes { color: var(--ink-dim); font-weight: 500; }
+  .imdb-big { display: flex; align-items: center; gap: 11px; }
+  .imdb-score { font-family: 'Space Grotesk', sans-serif; display: inline-flex; align-items: baseline; gap: 4px; font-size: 1.55rem; font-weight: 800; }
+  .imdb-score .imdb-max { font-size: .9rem; color: var(--ink-dim); font-weight: 600; }
+
   /* ===== pagebar dropdown menus + split save button ===== */
   .menu-wrap, .split { position: relative; display: inline-flex; }
   .menu-btn { cursor: pointer; }
@@ -278,6 +297,7 @@
     <span class="badge ok" id="match-badge">TMDB matched</span>
     <span class="audio-flags" id="audio-flags"></span>
     <span class="cert lvl-2" title="United States · MPA — via region cascade (Denmark had no rating)"><span class="cert-rg">US</span><span class="cert-code">PG</span></span>
+    <a class="imdb-pill" href="https://www.imdb.com/title/tt1727587/" target="_blank" rel="noopener" title="IMDb 7.6/10 · 28,431 votes · synced 2d ago"><span class="imdb-wm"><span class="imdb-star">★</span>IMDb</span><b>7.6</b><span class="imdb-votes">28K</span></a>
     <a id="seed-pill-link" href="#tab=seeding" style="text-decoration:none;"></a>
     <span class="spacer"></span>
     <!-- External links (Jellyfin / TMDB) -->
@@ -325,11 +345,7 @@
     <span class="x" id="dismiss-lock" style="cursor:pointer;color:var(--ink-soft);">✕</span>
   </div>
 
-  <!-- Jellyfin ⇄ NFO sync banner (Phase 33, three-state model Phase 115). Real state comes from
-       GET /api/media/{id}/drift — state="external_drift" is shown below (the rare, real warning);
-       "nfo_stale" ("Your edits aren't in the NFO yet" + Save → NFO CTA) and "jellyfin_behind"
-       ("Jellyfin hasn't re-read the NFO yet" + Sync Jellyfin CTA) are the two other states, same shell,
-       different badge/message/CTA — see MediaDetail.kt loadDrift(). "converged" hides the banner. -->
+  <!-- Jellyfin ⇄ NFO drift banner (Phase 33) -->
   <div class="note" id="drift-banner" style="margin-bottom:16px;background:var(--warn-soft);border-color:rgba(245,181,66,.4);display:flex;gap:13px;align-items:flex-start;">
     <span class="badge warn" style="flex:none;margin-top:1px;">⇄ Drift detected</span>
     <div style="flex:1;min-width:0;">
@@ -421,6 +437,22 @@
         </div>
         <div class="tiny muted" style="margin-top:8px;">Stored on the item &amp; filterable in the <a href="library.html">Library workbench</a>.</div>
       </div>
+      <!-- IMDb rating (imdbapi.dev — stored + synced) -->
+      <div class="card" id="imdb-card">
+        <div class="row center"><h4 style="margin:0;">IMDb rating</h4><span class="spacer"></span><span class="badge info">synced</span></div>
+        <div class="imdb-big" style="margin-top:10px;">
+          <span class="imdb-wm"><span class="imdb-star">★</span>IMDb</span>
+          <span class="imdb-score"><span>7.6</span><span class="imdb-max">/10</span></span>
+        </div>
+        <div class="tiny muted" style="margin-top:5px;">28,431 votes</div>
+        <hr class="dash" style="margin:10px 0;">
+        <div class="row center tiny" style="justify-content:space-between;gap:7px;">
+          <span><span class="muted">id</span> <a href="https://www.imdb.com/title/tt1727587/" target="_blank" rel="noopener" class="mono">tt1727587</a></span>
+          <span class="muted">synced 2d ago</span>
+        </div>
+        <div class="pill-row" style="margin-top:10px;"><span class="btn sm fill" id="imdb-resync" style="justify-content:center;">Re-sync from imdbapi.dev</span></div>
+        <div class="tiny muted" style="margin-top:8px;line-height:1.5;">Fetched from <b>imdbapi.dev</b> by IMDb id, stored on the item &amp; refreshed on a schedule — shown on the title in <b>Ravilo</b>.</div>
+      </div>
     </div>
 
     <!-- FIELDS -->
@@ -460,6 +492,26 @@
           <div id="tagMenu" class="card" style="display:none;position:absolute;top:46px;left:0;z-index:20;width:240px;padding:6px;box-shadow:var(--shadow);"></div>
           <span class="tiny muted">Jellystructure tags (dotted) survive re-syncs.</span>
         </div>
+      </div>
+    </div>
+  </div>
+  <div class="card" id="trailer-card" style="margin-top:16px;">
+    <div class="row center"><h4 style="margin:0;">Trailer</h4><span class="badge info" style="margin-left:8px;">from TMDB</span><span class="spacer"></span><span class="tiny muted">TMDB <b>videos</b> → shown as ▷ Trailer in Ravilo</span></div>
+    <hr class="dash" style="margin:10px 0 14px;">
+    <div class="row" style="gap:16px;align-items:flex-start;">
+      <a class="tr-thumb" href="https://www.youtube.com/watch?v=eRsGyueVLvQ" target="_blank" rel="noopener" title="Open trailer on YouTube">
+        <img src="https://img.youtube.com/vi/eRsGyueVLvQ/hqdefault.jpg" alt="Sintel trailer thumbnail" loading="lazy">
+        <span class="tr-play">▶</span>
+      </a>
+      <div style="flex:1;min-width:0;">
+        <div class="row center" style="gap:9px;"><b>Official Trailer</b><span class="tr-src yt">YouTube</span></div>
+        <div class="tiny muted" style="margin-top:6px;line-height:1.6;max-width:60ch;">Ingested from the TMDB <b>videos</b> section at scan time — the official trailer, original-language preferred then English. Exposed on the Ravilo TV detail DTO so a <b>▷ Trailer</b> button appears on this title; the button is hidden when TMDB has no video.</div>
+        <div class="pill-row" style="margin-top:11px;">
+          <a class="btn sm" href="https://www.youtube.com/watch?v=eRsGyueVLvQ" target="_blank" rel="noopener">▷ Preview ↗</a>
+          <span class="btn sm ghost" id="trailer-refetch">Re-fetch from TMDB</span>
+          <span class="btn sm ghost" id="trailer-clear">Clear</span>
+        </div>
+        <div class="mono tiny muted" style="margin-top:9px;">youtube · eRsGyueVLvQ</div>
       </div>
     </div>
   </div>
@@ -1093,8 +1145,11 @@
         sub:'transparent · missing', disk:null,
         cands:[ C('xx',8.3,800,310,0), C('xx',7.8,500,200,0), C('xx',7.1,400,155,0),
           C('de',8.0,800,310,0), C('de',7.4,600,240,0), C('fr',6.9,500,200,0), C('ja',6.5,500,200,0) ] },   // note: no 'en'
+      banner:{ key:'banner', label:'Banner', ratio:'5.4:1', file:'banner.jpg', kind:'banner', status:'warn', railHue:300,
+        sub:'5.4:1 · low-res 1000×185', disk:{ lang:'en', res:'1000×185', lowres:true },
+        cands:[ C('en',7.4,1000,185,300,true), C('en',7.0,1500,278,330), C('xx',6.8,1500,278,210), C('xx',6.2,1000,185,180) ] },
     };
-    const ORDER = ['poster','fanart','clearlogo'];
+    const ORDER = ['poster','fanart','clearlogo','banner'];
     let cur = 'poster';
 
     // ---- per-asset filter state (lazy) ----
@@ -1112,7 +1167,7 @@
     function st(a){ return state[a.key] || (state[a.key] = initState(a)); }
 
     // ---- rail ----
-    const RDIM = { poster:[30,45], fanart:[48,27], clearlogo:[48,27] };
+    const RDIM = { poster:[30,45], fanart:[48,27], clearlogo:[48,27], banner:[48,18] };
     function railThumb(a){
       const d = RDIM[a.key]; let inner;
       if (a.localUrl) inner = '<img src="'+a.localUrl+'" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;">';
@@ -1140,7 +1195,7 @@
     const grid = document.getElementById('aw-grid');
     const foot = document.getElementById('aw-foot');
     const dzName = document.getElementById('aw-dz-name');
-    const GDIM = { portrait:[124,186], land:[220,124], logo:[196,92] };
+    const GDIM = { portrait:[124,186], land:[220,124], logo:[196,92], banner:[300,56] };
 
     function filtered(a){
       const s = st(a); let list = a.cands.filter(c => s.active.has(c.lang));
@@ -1228,7 +1283,7 @@
       lbPanel = document.getElementById('aw-lb-panel'), lbPrev = document.getElementById('aw-lb-prev'),
       lbNext = document.getElementById('aw-lb-next'), lbCounter = document.getElementById('aw-lb-counter');
     let lbList = [], lbIdx = 0;
-    const LBDIM = { portrait:[348,522], land:[660,372], logo:[560,263] };
+    const LBDIM = { portrait:[348,522], land:[660,372], logo:[560,263], banner:[792,148] };
     function lbArtHTML(c, a){ const d = LBDIM[a.kind]; let bg;
       if (a.kind==='logo') bg = '<div class="aw-checker" style="position:absolute;inset:0;"><div class="aw-logomark" style="font-size:'+(d[0]/9)+'px;">Sintel</div></div>';
       else bg = '<div class="aw-fill" style="filter:hue-rotate('+c.hue+'deg);"></div>';

@@ -70,6 +70,22 @@
   /* sticky action navbar so Save / Pair / Open stay reachable while scrolling */
   .app-main2 .pagebar { position: sticky; top: 0; z-index: 50; background: var(--bg);
     padding-top: 14px; padding-bottom: 12px; border-bottom: 1px solid var(--line); }
+  /* Behaviour & preferences — field-level per-user overlay (independent of the layout override) */
+  .beh-row { display: flex; align-items: flex-start; gap: 16px; padding: 15px 4px; }
+  .beh-row + .beh-row { border-top: 1px solid var(--line); }
+  .beh-main { flex: 1; min-width: 0; }
+  .beh-name { font-weight: 600; }
+  .beh-desc { font-size: .76rem; color: var(--ink-soft); margin-top: 3px; line-height: 1.45; max-width: 48ch; }
+  .beh-right { flex: none; display: flex; flex-direction: column; align-items: flex-end; gap: 9px; }
+  .beh-ctl .seg-pill.beh-ro, .beh-ctl .toggle.beh-ro { opacity: .5; cursor: default; }
+  .beh-ctl .seg-pill button[disabled] { cursor: default; }
+  .beh-meta { display: flex; align-items: center; gap: 12px; font-size: .72rem; }
+  .beh-state { display: inline-flex; align-items: center; gap: 5px; padding: 3px 10px; border-radius: 20px; font-weight: 600; white-space: nowrap; }
+  .beh-state.follow { color: var(--ink-dim); background: var(--fill-3); border: 1px solid var(--line); }
+  .beh-state.admin  { color: var(--acc-ink); background: var(--hi-soft); border: 1px solid rgba(123,110,240,.35); }
+  .beh-state.device { color: #12b39a; background: rgba(45,212,154,.12); border: 1px solid rgba(45,212,154,.4); }
+  .beh-reset { color: var(--acc-ink); cursor: pointer; font-weight: 600; white-space: nowrap; }
+  .beh-reset:hover { text-decoration: underline; }
 </style>
 </head>
 <body class="wf-body app-body">
@@ -100,7 +116,7 @@
     </div>
     <div id="scope-user-menu" class="card" style="display:none;position:absolute;z-index:30;min-width:260px;padding:6px;box-shadow:var(--shadow);margin-top:6px;"></div>
     <div id="scope-note" class="note blue" style="margin-top:12px;display:flex;gap:10px;align-items:center;">
-      <span class="tiny" style="flex:1;" id="scope-note-text">These settings are the <b>global layout</b> — every Jellyfin user who doesn’t have their own custom layout sees this.</span>
+      <span class="tiny" style="flex:1;" id="scope-note-text">These settings are the <b>global layout</b> — every Jellyfin user who doesn’t have their own custom layout sees this. <b>Behaviour preferences</b> layer on top per user and are edited separately below.</span>
     </div>
   </div>
 
@@ -112,12 +128,11 @@
       <div class="navitem" data-goto="sect-rows">Content rows</div>
       <div class="navitem" data-goto="sect-top10">Top 10</div>
       <div class="navitem" data-goto="sect-behaviour">Behaviour</div>
-      <div class="navitem" data-goto="sect-portrait">Portrait screen</div>
     </div>    <div class="col fill" id="config-col">
       <!-- lock prompt: shown when a user without a custom layout is selected -->
       <div class="card" id="scope-lock" style="display:none;margin-bottom:14px;border-color:var(--hi);background:var(--hi-soft);">
         <div class="row center" style="gap:12px;">
-          <div style="flex:1;"><b id="scope-lock-title">This user uses the global layout</b><div class="tiny muted" id="scope-lock-sub">Create a custom layout to give them a different Ravilo home. It fully replaces the global one for this user — nothing is inherited.</div></div>
+          <div style="flex:1;"><b id="scope-lock-title">This user uses the global layout</b><div class="tiny muted" id="scope-lock-sub">Create a custom layout to give them a different Ravilo home. It fully replaces the global layout — hero, channels, rows and Top 10 — for this user. Behaviour preferences below stay separate.</div></div>
           <span class="btn primary" id="scope-create">Create custom layout</span>
         </div>
       </div>
@@ -201,34 +216,12 @@
         </div>
       </div>
 
-      <!-- BEHAVIOUR -->
+      <!-- BEHAVIOUR & PREFERENCES (field-level per-user overlay — never forks the layout) -->
       <div class="card set-section" id="sect-behaviour">
-        <h3 style="font-size:1.05rem;margin:0 0 10px;">Behaviour</h3>
-        <div class="field" style="max-width:340px;"><label>Interface language <span class="badge info" style="margin-left:4px;">this user</span></label>
-          <span class="select" id="ui-lang"><span><span class="lang">fo</span> Faroese (Føroyskt)</span> <span class="muted" style="font-size:.7rem;">▾</span></span>
-          <span class="hint">The language Ravilo's menus &amp; buttons appear in for <b>Eyð Restorff</b> — syncs to all their devices. Media titles &amp; descriptions stay in their own metadata language.</span>
-          <div id="ui-lang-menu" class="card" style="display:none;position:absolute;z-index:30;width:300px;padding:6px;box-shadow:var(--shadow);margin-top:4px;"></div>
-        </div>
-        <hr class="dash" style="margin:10px 0;">
-        <div class="field" style="max-width:300px;"><label>Default skin on new devices</label><span class="select"><span>Aurora</span></span><span class="hint">Viewers can still change it on their TV.</span></div>
-        <hr class="dash" style="margin:10px 0;">
-        <div class="row center" style="padding:6px 0;"><div><b>Show progress bars on Continue Watching</b></div><span class="spacer"></span><span class="toggle on"></span></div>
-        <hr class="dash" style="margin:6px 0;">
-        <div class="row center" style="padding:6px 0;"><div><b>Tile shape</b><div class="tiny muted">How rows render on the TV. Continue Watching stays landscape.</div></div><span class="spacer"></span><span class="seg-pill"><button class="on">Standard poster</button><button>Wide landscape</button><button>Square</button></span></div>
-      </div>
-
-      <!-- R159 — portrait-only overrides. Ravilo detects landscape (TVs, desktop web) vs portrait
-           (a phone held upright, or a resized browser window) automatically; this is the home for
-           overrides that apply only in portrait. First (and so far only) override: hero height. -->
-      <div class="card set-section" id="sect-portrait">
-        <h3 style="font-size:1.05rem;margin:0 0 6px;">Portrait screen</h3>
-        <p class="tiny muted" style="margin:0 0 14px;">Landscape (TVs, desktop web) and portrait (a phone held upright, or a resized browser window) are detected automatically. Overrides set here apply <b>only</b> in portrait — landscape is untouched. This is the home for future portrait-only settings.</p>
-        <div class="row center" style="padding:6px 0;"><div><b>Override hero height in portrait</b></div><span class="spacer"></span><span class="toggle on"></span></div>
-        <div class="field" style="max-width:340px;margin-top:8px;">
-          <label>Hero height <span class="mono" id="portrait-hero-h-val">30%</span> of screen</label>
-          <input type="range" min="20" max="100" value="30" id="portrait-hero-h" style="width:100%;accent-color:var(--hi);">
-          <span class="hint">A hero tuned for a TV is far too tall on a phone — portrait allows a much smaller number (20–100%).</span>
-        </div>
+        <div class="row center"><h3 style="font-size:1.05rem;margin:0;">Behaviour &amp; preferences</h3><span class="badge info" id="beh-scope-badge" style="margin-left:8px;">global defaults</span></div>
+        <p class="tiny muted" id="beh-intro" style="margin:8px 0 2px;"></p>
+        <div id="beh-list" style="margin-top:8px;"></div>
+        <div class="note blue" id="beh-foot" style="margin-top:14px;"></div>
       </div>
     </div>
 
@@ -322,40 +315,125 @@
   // remove rows
   document.querySelectorAll('.rm').forEach(b => b.addEventListener('click', () => b.closest('.cfg-row').remove()));
 
-  // per-user interface language picker (R19) — the value Jellystructure stores as uiLanguage
-  const UI_LANGS = [
-    { code: 'en', name: 'English',  endo: 'English' },
-    { code: 'da', name: 'Danish',   endo: 'Dansk' },
-    { code: 'fo', name: 'Faroese',  endo: 'Føroyskt' },
-  ];
-  const langSel = document.getElementById('ui-lang');
-  const langMenu = document.getElementById('ui-lang-menu');
-  function setLang(l) {
-    langSel.querySelector('span').innerHTML = '<span class="lang">' + l.code + '</span> ' + l.name + ' (' + l.endo + ')';
-  }
-  langSel.addEventListener('click', e => {
-    e.stopPropagation();
-    if (langMenu.style.display === 'block') { langMenu.style.display = 'none'; return; }
-    langMenu.innerHTML = UI_LANGS.map(l =>
-      '<div class="navitem" data-code="' + l.code + '"><span class="l" style="display:flex;align-items:center;gap:10px;"><span class="lang">' + l.code + '</span> ' + l.name + ' <span class="muted tiny">' + l.endo + '</span></span></div>'
-    ).join('');
-    langMenu.style.display = 'block';
-  });
-  langMenu.addEventListener('click', e => {
-    const it = e.target.closest('[data-code]'); if (!it) return;
-    setLang(UI_LANGS.find(l => l.code === it.dataset.code));
-    langMenu.style.display = 'none';
-  });
-  document.addEventListener('click', e => { if (!e.target.closest('#sect-behaviour .field')) langMenu.style.display = 'none'; });
+  /* ---- Behaviour & preferences: a field-level per-user overlay that layers over the global
+     defaults. Overriding one setting never creates a custom layout (that's the separate R51
+     layout override), so a viewer keeps getting global updates. Language & Theme can also be set
+     by the viewer on their own TV (R161) — a device-local override we surface here read-only. ---- */
+  const behaviour = (function () {
+    const list  = document.getElementById('beh-list');
+    const badge = document.getElementById('beh-scope-badge');
+    const intro = document.getElementById('beh-intro');
+    const foot  = document.getElementById('beh-foot');
+    if (!list) return { render() {} };
+    const toast = m => (window.__toast ? window.__toast(m) : 0);
+
+    // global defaults every user starts from
+    const GLOBAL = { lang: 'en', skin: 'aurora', tile: 'poster', progress: true };
+    const ORDER  = { lang: ['en', 'da', 'fo'], skin: ['aurora', 'midnight', 'noir'], tile: ['poster', 'wide', 'square'] };
+    const SHORT  = {
+      lang: { en: 'English', da: 'Dansk', fo: 'Føroyskt' },
+      skin: { aurora: 'Aurora', midnight: 'Midnight', noir: 'Noir' },
+      tile: { poster: 'Poster', wide: 'Wide', square: 'Square' },
+    };
+    const FULL = {
+      lang: { en: 'English', da: 'Danish (Dansk)', fo: 'Faroese (Føroyskt)' },
+      skin: { aurora: 'Aurora', midnight: 'Midnight', noir: 'Noir' },
+      tile: { poster: 'Standard poster', wide: 'Wide landscape', square: 'Square' },
+      progress: { true: 'On', false: 'Off' },
+    };
+    const DEFS = [
+      { key: 'lang', name: 'Interface language', device: true,
+        desc: 'Ravilo’s menus &amp; buttons. Media titles &amp; descriptions always stay in their own metadata language.' },
+      { key: 'skin', name: 'Theme', device: true,
+        desc: 'The visual skin Ravilo renders in — Aurora, Midnight or Noir.' },
+      { key: 'tile', name: 'Tile shape', device: false,
+        desc: 'How rows render on the TV. Continue Watching always stays landscape.' },
+      { key: 'progress', name: 'Progress bars on Continue Watching', device: false,
+        desc: 'Show a resume-position bar under in-progress tiles.' },
+    ];
+
+    let ctx = { scope: 'global', user: null };
+    const fullLabel = (key, v) => FULL[key][String(v)];
+    function resolved(def, user) {
+      if (ctx.scope === 'global' || !user) return GLOBAL[def.key];
+      const ov = user.pref[def.key];
+      return ov ? ov.val : GLOBAL[def.key];
+    }
+    function ctlHTML(def, value, active) {
+      if (def.key === 'progress')
+        return '<span class="toggle' + (value ? ' on' : '') + (active ? '' : ' beh-ro') + '" data-ctl="progress"></span>';
+      const opts = ORDER[def.key].map(v =>
+        '<button class="' + (v === value ? 'on' : '') + '" data-key="' + def.key + '" data-val="' + v + '"' + (active ? '' : ' disabled') + '>' + SHORT[def.key][v] + '</button>'
+      ).join('');
+      return '<span class="seg-pill' + (active ? '' : ' beh-ro') + '">' + opts + '</span>';
+    }
+
+    function render(scope, user) {
+      ctx = { scope, user };
+      const onUser = scope === 'user' && !!user;
+      badge.className = 'badge ' + (onUser ? 'warn' : 'info');
+      badge.textContent = onUser ? 'preferences · ' + user.name.split(' ')[0] : 'global defaults';
+      intro.innerHTML = onUser
+        ? 'How <b>' + user.name + '</b>’s Ravilo behaves. Each setting either follows your global default or is overridden just for them — <b>overriding a preference never creates a custom layout</b>, so ' + user.name.split(' ')[0] + ' keeps receiving your global layout and default updates.'
+        : 'The global defaults every user starts from. Each can be overridden per user, and viewers can change <b>Language</b> &amp; <b>Theme</b> on their own TV.';
+
+      list.innerHTML = DEFS.map(def => {
+        const val = resolved(def, user);
+        const ov = onUser ? user.pref[def.key] : null;
+        const device = ov && ov.by === 'device';
+        const admin  = ov && ov.by === 'admin';
+        const active = !device;   // a value the viewer set on the TV wins there — we can't force it here
+        let meta;
+        if (!onUser) meta = '<span class="beh-state follow">Default for all users</span>';
+        else if (device) meta = '<span class="beh-state device">✱ Set by viewer on their TV</span><span class="beh-reset" data-reset="' + def.key + '">Reset to default</span>';
+        else if (admin)  meta = '<span class="beh-state admin">Overridden for ' + user.name.split(' ')[0] + '</span><span class="beh-reset" data-reset="' + def.key + '">Reset to global</span>';
+        else meta = '<span class="beh-state follow">Following global · ' + fullLabel(def.key, val) + '</span>';
+        return '<div class="beh-row" data-key="' + def.key + '">' +
+          '<div class="beh-main"><div class="beh-name">' + def.name +
+            (def.device ? ' <span class="badge" style="font-size:.55rem;vertical-align:1px;margin-left:4px;">viewer-editable</span>' : '') +
+          '</div><div class="beh-desc">' + def.desc + '</div></div>' +
+          '<div class="beh-right"><div class="beh-ctl">' + ctlHTML(def, val, active) + '</div><div class="beh-meta">' + meta + '</div></div>' +
+        '</div>';
+      }).join('');
+
+      foot.innerHTML = '<span class="tiny"><b>Why this matters:</b> <b>Language</b> and <b>Theme</b> can be changed by the viewer on their own TV (Ravilo → <b>Settings</b>, right of “Add user”). That choice is stored per user <b>on the device</b> and layers over your default — it <b>does not fork their layout</b>, so your global layout and other defaults keep reaching them.</span>';
+    }
+
+    function setVal(key, val) {
+      if (ctx.scope === 'global' || !ctx.user) { GLOBAL[key] = val; render('global', null); return; }
+      const u = ctx.user;
+      if (String(val) === String(GLOBAL[key])) u.pref[key] = null;   // matches global → just follow it
+      else u.pref[key] = { val, by: 'admin' };
+      render('user', u);
+    }
+    function reset(key) {
+      if (ctx.scope === 'global' || !ctx.user) return;
+      const wasDevice = ctx.user.pref[key] && ctx.user.pref[key].by === 'device';
+      ctx.user.pref[key] = null;
+      render('user', ctx.user);
+      toast(wasDevice ? 'Cleared the viewer’s on-TV choice — back to your default' : 'Reset to the global default');
+    }
+
+    list.addEventListener('click', e => {
+      const opt = e.target.closest('button[data-key]');
+      if (opt && !opt.disabled) { setVal(opt.dataset.key, opt.dataset.val); return; }
+      const tog = e.target.closest('.toggle[data-ctl="progress"]');
+      if (tog && !tog.classList.contains('beh-ro')) { setVal('progress', !resolved({ key: 'progress' }, ctx.user)); return; }
+      const rs = e.target.closest('[data-reset]');
+      if (rs) reset(rs.dataset.reset);
+    });
+
+    return { render };
+  })();
 
   /* ---- scope switcher: global default + optional per-user FULL override ---- */
   (function scopeCtl(){
     const toast = (m) => (window.__toast ? window.__toast(m) : 0);
     const USERS = [
-      { id:'eyd',    name:'Eyð Restorff',  custom:true  },
-      { id:'olivar', name:'Olivar Hansen', custom:false },
-      { id:'marjun', name:'Marjun í Dali', custom:false },
-      { id:'kids',   name:'Kids',          custom:true  },
+      { id:'eyd',    name:'Eyð Restorff',  custom:true,  pref:{ lang:{val:'fo',by:'device'}, skin:null, tile:{val:'wide',by:'admin'}, progress:null } },
+      { id:'olivar', name:'Olivar Hansen', custom:false, pref:{ lang:{val:'da',by:'device'}, skin:null, tile:null, progress:null } },
+      { id:'marjun', name:'Marjun í Dali', custom:false, pref:{ lang:null, skin:null, tile:null, progress:null } },
+      { id:'kids',   name:'Kids',          custom:true,  pref:{ lang:null, skin:{val:'noir',by:'admin'}, tile:null, progress:{val:false,by:'admin'} } },
     ];
     let scope = 'global';            // 'global' | 'user'
     let userId = USERS[0].id;
@@ -370,8 +448,7 @@
     const lockTitle = document.getElementById('scope-lock-title');
     const lockSub   = document.getElementById('scope-lock-sub');
     const createBtn = document.getElementById('scope-create');
-    const sections  = document.querySelectorAll('#config-col .set-section');
-    const langBadge = document.querySelector('#sect-behaviour .field label .badge');
+    const sections  = [...document.querySelectorAll('#config-col .set-section')].filter(s => s.id !== 'sect-behaviour');
     const curUser = () => USERS.find(u => u.id === userId);
 
     function render(){
@@ -386,18 +463,18 @@
       lock.style.display = locked ? '' : 'none';
       if (locked) {
         lockTitle.textContent = u.name + ' uses the global layout';
-        lockSub.textContent = 'Create a custom layout to give ' + u.name + ' a different Ravilo home. It fully replaces the global one for them — nothing is inherited.';
+        lockSub.textContent = 'Create a custom layout to give ' + u.name + ' a different Ravilo home. It fully replaces the global layout — hero, channels, rows and Top 10 — for them. Behaviour preferences below are separate and keep following your global defaults.';
       }
 
       const rmOld = noteBox.querySelector('#scope-remove'); if (rmOld) rmOld.remove();
       if (!onUser) {
         badge.className = 'badge ok'; badge.textContent = 'applies to everyone';
         noteBox.className = 'note blue'; noteBox.style.cssText = 'margin-top:12px;display:flex;gap:10px;align-items:center;';
-        noteText.innerHTML = 'These settings are the <b>global layout</b> — every Jellyfin user who doesn’t have their own custom layout sees this.';
+        noteText.innerHTML = 'These settings are the <b>global layout</b> — every Jellyfin user who doesn’t have their own custom layout sees this. <b>Behaviour preferences</b> layer on top per user and are edited separately below.';
       } else if (u.custom) {
         badge.className = 'badge warn'; badge.textContent = 'custom layout';
         noteBox.className = 'note'; noteBox.style.cssText = 'margin-top:12px;display:flex;gap:10px;align-items:center;border-color:rgba(245,181,66,.4);background:var(--warn-soft);';
-        noteText.innerHTML = '<b>' + u.name + '</b> has a <b>custom layout</b> that fully replaces the global one — global changes won’t reach them.';
+        noteText.innerHTML = '<b>' + u.name + '</b> has a <b>custom layout</b> that replaces the global <b>layout</b> — global layout changes won’t reach them. Their <b>behaviour preferences</b> are tracked separately below.';
         const rm = document.createElement('span'); rm.id = 'scope-remove'; rm.className = 'btn sm ghost'; rm.style.flex = 'none'; rm.textContent = 'Remove custom layout';
         rm.onclick = () => { u.custom = false; render(); toast(u.name + ' reset to the global layout'); };
         noteBox.appendChild(rm);
@@ -406,7 +483,7 @@
         noteBox.className = 'note blue'; noteBox.style.cssText = 'margin-top:12px;display:flex;gap:10px;align-items:center;';
         noteText.innerHTML = '<b>' + u.name + '</b> currently uses the <b>global layout</b>. Create a custom one to override it just for them.';
       }
-      if (langBadge) langBadge.textContent = onUser ? 'this user' : 'all users';
+      behaviour.render(scope, onUser ? u : null);
     }
 
     seg.querySelectorAll('button').forEach(b => b.onclick = () => { scope = b.dataset.scope; render(); });
