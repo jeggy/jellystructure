@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="en" data-skin="aurora">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="design_doc_mode" content="canvas">
+<title>Ravilo TV — Discover + Seerr (v4)</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Sora:wght@300;400;500;600;700&display=swap');
+
+:root{
+  --bg:#0a0c13; --bg-2:#0e111b;
+  --ink:#f3f4fb; --ink-soft:#aeb4cb; --ink-dim:#6b7290;
+  --line:rgba(255,255,255,.09);
+  --card:#161a28; --card-2:#1b2031;
+  --accent:#7b6ef0; --accent-2:#3fb6f5;
+  --grad:linear-gradient(120deg,#7b6ef0,#3fb6f5);
+  --ring:#8e82ff; --ring-glow:rgba(123,110,240,.55);
+  --chip:rgba(255,255,255,.10);
+  --good:#2dd49a;
+}
+*{box-sizing:border-box; margin:0; padding:0;}
+body{ font-family:'Sora',sans-serif; }
+
+/* ---------- canvas scaffolding ---------- */
+.intro{ position:absolute; width:1320px; color:#e9ecf6; }
+.intro .eyebrow{ font-family:'JetBrains Mono','Sora',monospace; letter-spacing:.32em; text-transform:uppercase; font-size:15px; color:#8b93ad; }
+.intro h1{ font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:52px; letter-spacing:-1.5px; margin:10px 0 14px; color:#f4f5fb;}
+.intro p{ font-size:20px; line-height:1.55; color:#aeb4cb; max-width:1120px; }
+.intro p b{ color:#e9ecf6; font-weight:600; }
+.flow{ display:flex; align-items:center; gap:14px; margin-top:24px; flex-wrap:wrap; }
+.fstep{ display:flex; align-items:center; gap:11px; padding:13px 18px; border-radius:14px; background:rgba(255,255,255,.045); border:1px solid var(--line); font-size:16px; color:#c9cde0; }
+.fstep .fn{ width:26px; height:26px; border-radius:50%; background:var(--grad); color:#fff; font-weight:700; font-size:14px; display:flex; align-items:center; justify-content:center; flex:none; }
+.fstep b{ color:#f3f4fb; font-weight:600; }
+.farrow{ color:#5a6076; font-size:22px; }
+
+.concept{ position:absolute; width:1920px; }
+.clabel{ display:flex; align-items:baseline; gap:18px; margin-bottom:20px; flex-wrap:wrap; }
+.clabel .idx{ font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:28px; color:var(--accent); letter-spacing:-.5px; }
+.clabel .name{ font-family:'Space Grotesk',sans-serif; font-weight:600; font-size:30px; color:#f3f4fb; letter-spacing:-.5px; }
+.clabel .note{ font-size:19px; color:#9aa0ba; }
+.clabel .tag{ font-family:'JetBrains Mono',monospace; font-size:13px; letter-spacing:.12em; text-transform:uppercase; padding:5px 12px; border-radius:8px; }
+.tag.tv{ background:rgba(45,212,154,.13); color:#57e0ad; border:1px solid rgba(45,212,154,.3);}
+.tag.set{ background:rgba(63,182,245,.13); color:#5fc4f7; border:1px solid rgba(63,182,245,.3);}
+.tag.cfg{ background:rgba(123,110,240,.15); color:#a99ff4; border:1px solid rgba(123,110,240,.32);}
+
+/* ---------- Ravilo stage ---------- */
+.stage{ position:relative; width:1920px; height:660px; border-radius:22px; overflow:hidden;
+  background:var(--bg); color:var(--ink); box-shadow:0 40px 90px -30px rgba(0,0,0,.7); border:1px solid rgba(255,255,255,.06); }
+.flat{ position:absolute; inset:0; background:radial-gradient(120% 120% at 15% 0%, #12172a 0%, #0a0c13 60%); }
+
+.appbar{ position:relative; z-index:5; height:92px; display:flex; align-items:center; gap:38px; padding:0 64px;
+  background:linear-gradient(180deg, rgba(0,0,0,.55), rgba(0,0,0,0)); }
+.brand{ display:flex; align-items:center; gap:14px; font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:31px; letter-spacing:-1px; }
+.brand .mark{ width:48px; height:48px; flex:none; filter:drop-shadow(0 0 16px var(--ring-glow)); }
+.brand .wm{ color:var(--ink); }
+.topnav{ display:flex; align-items:center; gap:8px; }
+.navitem{ font-size:21px; font-weight:500; color:var(--ink-soft); padding:9px 20px; border-radius:11px; white-space:nowrap; }
+.navitem.cur{ color:var(--ink); font-weight:600; }
+.right{ margin-left:auto; display:flex; align-items:center; gap:22px; }
+.clock{ font-size:19px; color:var(--ink-soft); font-variant-numeric:tabular-nums; }
+.iconbtn{ width:44px; height:44px; border-radius:50%; display:flex; align-items:center; justify-content:center; color:var(--ink-soft); }
+.iconbtn svg{ width:24px; height:24px; display:block; }
+.avatar{ width:44px; height:44px; border-radius:50%; display:flex; align-items:center; justify-content:center; background:var(--grad); font-weight:700; font-size:18px; color:#fff; }
+.searchpill{ display:flex; align-items:center; gap:13px; height:48px; padding:0 22px; border-radius:26px; background:rgba(255,255,255,.07); border:1px solid var(--line); color:var(--ink-dim); font-size:18px; min-width:340px; }
+.searchpill svg{ width:22px; height:22px; }
+
+.screen{ position:absolute; z-index:4; left:0; right:0; top:92px; bottom:0; padding:26px 64px; display:flex; flex-direction:column; gap:24px; }
+.dischead{ display:flex; align-items:center; gap:18px; }
+.dischead h1{ font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:44px; letter-spacing:-1.2px; color:#fff; }
+.seerr-chip{ display:inline-flex; align-items:center; gap:7px; font-size:15px; font-weight:600; color:#a99ff4; background:rgba(123,110,240,.14); border:1px solid rgba(123,110,240,.3); padding:6px 12px; border-radius:9px; }
+.seerr-chip svg{ width:16px; height:16px; }
+
+.segment{ display:flex; align-items:center; gap:5px; padding:5px; border-radius:16px; background:rgba(255,255,255,.06); border:1px solid var(--line); align-self:flex-start; }
+.segment .seg{ font-size:21px; font-weight:500; color:var(--ink-soft); padding:10px 24px; border-radius:12px; display:flex; align-items:center; gap:10px; }
+.segment .seg svg{ width:22px; height:22px; }
+.segment .seg.on{ background:var(--ink); color:#0a0c13; font-weight:600; }
+.segment .seg.on svg{ color:#0a0c13; }
+
+.drow{ display:flex; flex-direction:column; gap:15px; }
+.drow-h{ display:flex; align-items:center; gap:12px; font-family:'Space Grotesk',sans-serif; font-weight:600; font-size:25px; color:#eef0fa; letter-spacing:-.4px; }
+.drow-h .src-pill{ font-family:'JetBrains Mono',monospace; font-size:12px; letter-spacing:.05em; color:#8b93ad; background:rgba(255,255,255,.05); border:1px solid var(--line); padding:3px 9px; border-radius:7px; text-transform:none; }
+.drow-track{ display:flex; gap:24px; align-items:flex-start; }
+
+.qtile{ width:150px; flex:none; }
+.qtile .qposter{ width:150px; height:214px; border-radius:12px; position:relative; overflow:hidden; box-shadow:0 14px 30px -14px rgba(0,0,0,.7); }
+.qtile.focused .qposter{ box-shadow:0 0 0 4px var(--ring), 0 14px 30px -14px rgba(0,0,0,.7); }
+.q-flag{ position:absolute; top:8px; left:8px; font-family:'JetBrains Mono',monospace; font-size:11px; letter-spacing:.08em; padding:3px 7px; border-radius:6px; background:rgba(0,0,0,.5); color:#fff; }
+.q-flag.new{ background:var(--accent); }
+.q-t{ font-family:'Space Grotesk',sans-serif; font-weight:600; font-size:17px; color:#fff; margin-top:10px; line-height:1.15; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.q-act{ margin-top:9px; display:flex; align-items:center; justify-content:center; gap:7px; height:34px; border-radius:9px; font-size:15px; font-weight:600; }
+.q-act svg{ width:16px; height:16px; }
+.q-act.req{ background:var(--ink); color:#0a0c13; }
+.q-act.pending{ background:rgba(255,255,255,.07); color:var(--ink-soft); border:1px solid var(--line); }
+.q-act.dl{ background:rgba(63,182,245,.14); color:#5fc4f7; border:1px solid rgba(63,182,245,.3); }
+.q-act.have{ background:rgba(45,212,154,.12); color:#3fce9c; border:1px solid rgba(45,212,154,.28); }
+.q-dotpulse{ width:8px; height:8px; border-radius:50%; background:currentColor; }
+
+/* ---------- admin (Jellystructure) ---------- */
+.astage{ position:relative; width:1920px; border-radius:22px; overflow:hidden;
+  background:#101218; border:1px solid rgba(255,255,255,.06); box-shadow:0 40px 90px -30px rgba(0,0,0,.7); color:#dde1ec; }
+.atop{ height:62px; display:flex; align-items:center; gap:13px; padding:0 40px; border-bottom:1px solid rgba(255,255,255,.06); background:#14161d; }
+.atop .amark{ width:30px; height:30px; }
+.atop .acrumb{ font-size:16px; color:#8b93ad; } .atop .acrumb b{ color:#dde1ec; font-weight:600; }
+.atabs{ margin-left:auto; display:flex; gap:6px; }
+.atab{ font-size:14px; color:#8b93ad; padding:7px 14px; border-radius:9px; }
+.atab.on{ background:rgba(123,110,240,.16); color:#c3bbf7; }
+.abody{ padding:30px 40px; display:flex; gap:26px; }
+.acol{ flex:1; display:flex; flex-direction:column; gap:16px; min-width:0; }
+.acard{ position:relative; background:#181b23; border:1px solid rgba(255,255,255,.07); border-radius:16px; padding:24px; }
+.acard h3{ font-family:'Space Grotesk',sans-serif; font-weight:600; font-size:23px; color:#eef0f6; display:flex; align-items:center; gap:11px; }
+.abadge{ font-size:12px; font-family:'JetBrains Mono',monospace; letter-spacing:.08em; text-transform:uppercase; padding:4px 9px; border-radius:7px; background:rgba(123,110,240,.16); color:#a99ff4; border:1px solid rgba(123,110,240,.3); }
+.abadge.blue{ background:rgba(63,182,245,.14); color:#7fc9f5; border-color:rgba(63,182,245,.3); }
+.adesc{ font-size:15.5px; line-height:1.6; color:#9aa1b5; margin:11px 0 18px; }
+.adesc b{ color:#c9cfdd; font-weight:600; } .adesc a{ color:#7fc9f5; }
+.abox{ background:#12141b; border:1px solid rgba(255,255,255,.06); border-radius:13px; padding:18px; }
+.arow{ display:flex; align-items:center; gap:12px; }
+.atoggle{ width:46px; height:26px; border-radius:14px; background:var(--accent); position:relative; flex:none; }
+.atoggle::after{ content:''; position:absolute; top:3px; right:3px; width:20px; height:20px; border-radius:50%; background:#fff; }
+.atoggle.off{ background:#2b2f3b; } .atoggle.off::after{ right:auto; left:3px; }
+.afield label{ display:block; font-size:12px; color:#8b93ad; margin-bottom:6px; text-transform:uppercase; letter-spacing:.05em; }
+.ainput{ background:#0c0e14; border:1px solid rgba(255,255,255,.09); border-radius:9px; padding:11px 14px; font-size:15px; color:#dde1ec; font-family:'JetBrains Mono',monospace; display:flex; align-items:center; gap:8px; }
+.achk{ margin-left:auto; display:inline-flex; align-items:center; gap:6px; font-family:'Sora',sans-serif; font-size:13px; color:#3fce9c; }
+.achk .adot{ width:8px; height:8px; border-radius:50%; background:var(--good); }
+.asub{ font-size:13px; color:#8b93ad; margin-top:3px; }
+.abtn{ font-size:14px; font-weight:600; color:#c3bbf7; background:rgba(123,110,240,.14); border:1px solid rgba(123,110,240,.3); border-radius:9px; padding:8px 14px; }
+.atoml{ flex:none; width:470px; background:#0c0e14; border:1px solid rgba(255,255,255,.07); border-radius:16px; padding:22px 26px; font-family:'JetBrains Mono',monospace; font-size:15px; line-height:2; height:max-content; }
+.atoml .th{ font-size:13px; color:#6b7290; text-transform:uppercase; letter-spacing:.12em; margin-bottom:10px; font-family:'Sora',sans-serif; }
+.atoml .c{ color:#6b7290; } .atoml .k{ color:#c7ccda; } .atoml .s{ color:#7fd7ff; } .atoml .b{ color:#57e0ad; }
+.anav{ width:172px; flex:none; display:flex; flex-direction:column; gap:4px; }
+.anav .ai{ font-size:15px; color:#8b93ad; padding:10px 14px; border-radius:10px; }
+.anav .ai.on{ background:rgba(123,110,240,.16); color:#dcd7fb; font-weight:600; }
+
+/* config rows builder */
+.rowshead{ display:flex; align-items:center; gap:12px; margin-bottom:12px; }
+.rowshead h4{ font-family:'Space Grotesk',sans-serif; font-weight:600; font-size:18px; color:#eef0f6; }
+.cfgrow{ display:flex; align-items:center; gap:14px; padding:13px 16px; border:1px solid rgba(255,255,255,.08); border-radius:12px; background:#12141b; }
+.cfgrow+.cfgrow{ margin-top:9px; }
+.cfgrow .grab{ color:#565c72; font-size:19px; }
+.cfgrow .cbadge{ font-size:11px; font-family:'JetBrains Mono',monospace; letter-spacing:.07em; text-transform:uppercase; padding:3px 8px; border-radius:6px; flex:none; width:44px; text-align:center; }
+.cbadge.mov{ background:rgba(63,182,245,.14); color:#7fc9f5; }
+.cbadge.tv{ background:rgba(123,110,240,.18); color:#a99ff4; }
+.cbadge.mix{ background:rgba(45,212,154,.14); color:#57e0ad; }
+.cfgrow .cmain{ flex:1; min-width:0; } .cfgrow .cnm{ font-family:'Space Grotesk',sans-serif; font-weight:600; font-size:18px; color:#eef0f6; }
+.cfgrow .csrc{ font-size:13px; color:#8b93ad; font-family:'JetBrains Mono',monospace; margin-top:2px; }
+.cfgrow .cshow{ font-size:13px; color:#8b93ad; }
+.cfgrow .ctog{ width:40px; height:23px; border-radius:12px; background:var(--accent); position:relative; flex:none; }
+.cfgrow .ctog::after{ content:''; position:absolute; top:3px; right:3px; width:17px; height:17px; border-radius:50%; background:#fff; }
+.cfgrow .cx{ color:#565c72; font-size:16px; width:20px; text-align:center; }
+.cfgrow.off{ opacity:.5; } .cfgrow.off .ctog{ background:#2b2f3b; } .cfgrow.off .ctog::after{ right:auto; left:3px; }
+
+/* add-row picker */
+.addmenu{ position:absolute; z-index:20; top:70px; right:24px; width:326px; padding:10px; border-radius:16px;
+  background:#1b1e28; border:1px solid rgba(255,255,255,.12); box-shadow:0 40px 80px -22px rgba(0,0,0,.85); }
+.addmenu .amhead{ font-size:11px; text-transform:uppercase; letter-spacing:.12em; color:#6b7290; padding:10px 10px 5px; font-family:'JetBrains Mono',monospace; }
+.addmenu .ami{ display:flex; align-items:center; gap:11px; padding:10px 11px; border-radius:10px; font-size:15.5px; color:#c9cfdd; }
+.addmenu .ami svg{ width:18px; height:18px; color:#8b93ad; flex:none; }
+.addmenu .ami.hot{ background:rgba(123,110,240,.16); color:#eef0f6; } .addmenu .ami.hot svg{ color:#a99ff4; }
+.addmenu .ami .amp{ margin-left:auto; font-size:11px; font-family:'JetBrains Mono',monospace; color:#6b7290; }
+.addmenu .amdiv{ height:1px; background:rgba(255,255,255,.07); margin:6px 8px; }
+</style>
+</head>
+<body>
+
+<!-- ============ INTRO ============ -->
+<div class="intro" style="left:80px; top:56px;">
+  <div class="eyebrow">Ravilo TV · Seerr integration · structure</div>
+  <h1>Discover = Coming Soon + Request</h1>
+  <p>Trending / Top 10 is <b>retired</b> — it becomes just one row inside <b>Request</b>, a full <b>Jellyseerr</b> integration. The config splits in two: the <b>connection</b> lives in Settings, while <b>which rows show (and their order)</b> is set per-user in Ravilo config, drawing on Seerr's discover endpoints.</p>
+  <div class="flow">
+    <div class="fstep"><span class="fn">1</span><b>Settings › Download tools</b>&nbsp;— connect Seerr</div>
+    <span class="farrow">→</span>
+    <div class="fstep"><span class="fn">2</span><b>Ravilo config › Request</b>&nbsp;— show tab + pick rows</div>
+    <span class="farrow">→</span>
+    <div class="fstep"><span class="fn">3</span><b>Ravilo TV › Discover › Request</b>&nbsp;— browse &amp; request</div>
+  </div>
+</div>
+
+<!-- ============ 1 · RAVILO — DISCOVER · REQUEST ============ -->
+<div class="concept" style="left:80px; top:440px;">
+  <div class="clabel">
+    <span class="idx">01</span><span class="name">Ravilo — Discover › Request</span>
+    <span class="tag tv">On the TV</span>
+    <span class="note">Two tabs now: Coming Soon · Request. Each Request row is a configured Seerr feed.</span>
+  </div>
+  <div class="stage">
+    <div class="flat"></div>
+    <div class="appbar">
+      <div class="brand"><svg class="mark" viewBox="12 20 76 76"><defs><linearGradient id="j1" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="var(--accent)"/><stop offset="1" stop-color="var(--accent-2)"/></linearGradient></defs><path d="M22 52 C22 24 78 24 78 52 C66 45 59 45 50 49 C41 45 34 45 22 52 Z" fill="url(#j1)"/><g stroke="url(#j1)" stroke-width="4.5" stroke-linecap="round" fill="none"><path d="M33 51 q-5 12 1 20 q5 8 0 14" opacity=".9"/><path d="M44 52 q-4 13 1 21 q4 9 0 13" opacity=".72"/><path d="M56 52 q4 13 -1 21 q-4 9 0 13" opacity=".72"/><path d="M67 51 q5 12 -1 20 q-5 8 0 14" opacity=".9"/></g></svg><span class="wm">Ravilo</span></div>
+      <div class="topnav">
+        <div class="navitem">Home</div><div class="navitem">Movies</div><div class="navitem">Series</div><div class="navitem cur">Discover</div>
+      </div>
+      <div class="right">
+        <div class="iconbtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><line x1="16.5" y1="16.5" x2="21" y2="21"></line></svg></div>
+        <div class="clock">21:11</div>
+        <div class="avatar">ER</div>
+      </div>
+    </div>
+    <div class="screen">
+      <div class="dischead">
+        <h1>Discover</h1>
+        <span class="seerr-chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 3 14h8l-1 8 10-12h-8z"/></svg>Powered by Jellyseerr</span>
+        <div class="searchpill" style="margin-left:auto;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><line x1="16.5" y1="16.5" x2="21" y2="21"></line></svg>Search films, series, people…</div>
+      </div>
+      <div class="segment">
+        <div class="seg"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>Coming Soon</div>
+        <div class="seg on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg>Request</div>
+      </div>
+      <div class="drow">
+        <div class="drow-h">Trending <span class="src-pill">trending · week</span></div>
+        <div class="drow-track">
+          <div class="qtile focused"><div class="qposter" style="background:linear-gradient(150deg,#3a2c1a,#a06a2a);"><span class="q-flag new">NEW</span></div><div class="q-t">Dune: Part Two</div><div class="q-act req"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>Request</div></div>
+          <div class="qtile"><div class="qposter" style="background:linear-gradient(150deg,#1a2c3a,#2a5f8a);"></div><div class="q-t">Shōgun</div><div class="q-act pending"><span class="q-dotpulse"></span>Requested</div></div>
+          <div class="qtile"><div class="qposter" style="background:linear-gradient(150deg,#2a1a3a,#5a2a8a);"></div><div class="q-t">Fallout</div><div class="q-act dl">◔ 42%</div></div>
+          <div class="qtile"><div class="qposter" style="background:linear-gradient(150deg,#3a1a2c,#a02a5a);"></div><div class="q-t">Poor Things</div><div class="q-act req"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>Request</div></div>
+          <div class="qtile"><div class="qposter" style="background:linear-gradient(150deg,#1a3a2c,#2a8a5a);"></div><div class="q-t">The Bear</div><div class="q-act have"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12l5 5 11-11"/></svg>In Library</div></div>
+          <div class="qtile"><div class="qposter" style="background:linear-gradient(150deg,#2c2a1a,#8a7a2a);"></div><div class="q-t">Oppenheimer</div><div class="q-act req"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>Request</div></div>
+          <div class="qtile"><div class="qposter" style="background:linear-gradient(150deg,#1a1f3a,#3a45a0);"></div><div class="q-t">Ripley</div><div class="q-act pending"><span class="q-dotpulse"></span>Requested</div></div>
+        </div>
+      </div>
+      <div class="drow">
+        <div class="drow-h">Popular Movies <span class="src-pill">discover/movies</span></div>
+        <div class="drow-track">
+          <div class="qtile"><div class="qposter" style="background:linear-gradient(150deg,#1a2a3a,#2a6a9a);"></div><div class="q-t">Furiosa</div><div class="q-act req"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>Request</div></div>
+          <div class="qtile"><div class="qposter" style="background:linear-gradient(150deg,#2a1a2a,#7a2a7a);"></div><div class="q-t">Interstellar</div><div class="q-act have"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12l5 5 11-11"/></svg>In Library</div></div>
+          <div class="qtile"><div class="qposter" style="background:linear-gradient(150deg,#1a3a3a,#2a8a8a);"></div><div class="q-t">Challengers</div><div class="q-act req"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>Request</div></div>
+          <div class="qtile"><div class="qposter" style="background:linear-gradient(150deg,#3a2a2a,#8a4a4a);"></div><div class="q-t">The Fall Guy</div><div class="q-act req"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>Request</div></div>
+          <div class="qtile"><div class="qposter" style="background:linear-gradient(150deg,#22304a,#3a5aa0);"></div><div class="q-t">Civil War</div><div class="q-act req"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>Request</div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 2 · SETTINGS — SEERR CONNECTION ============ -->
+<div class="concept" style="left:80px; top:1300px;">
+  <div class="clabel">
+    <span class="idx">02</span><span class="name">Settings › Download tools — Seerr connection</span>
+    <span class="tag set">Connect once</span>
+    <span class="note">Just the connection lives here. What shows on the TV is set per-user, next frame.</span>
+  </div>
+  <div class="astage">
+    <div class="atop">
+      <svg class="amark" viewBox="12 20 76 76"><defs><linearGradient id="j2" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="var(--accent)"/><stop offset="1" stop-color="var(--accent-2)"/></linearGradient></defs><path d="M22 52 C22 24 78 24 78 52 C66 45 59 45 50 49 C41 45 34 45 22 52 Z" fill="url(#j2)"/></svg>
+      <span class="acrumb">Jellystructure · <b>Settings › Download tools</b></span>
+      <div class="atabs"><span class="atab">Connections</span><span class="atab">Libraries</span><span class="atab">Metadata</span><span class="atab on">Download tools</span><span class="atab">Notifications</span></div>
+    </div>
+    <div class="abody">
+      <div class="acol">
+        <div class="acard">
+          <h3><svg viewBox="0 0 24 24" fill="none" stroke="#a99ff4" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:26px;height:26px;"><path d="M13 2 3 14h8l-1 8 10-12h-8z"/></svg>Jellyseerr / Overseerr<span class="abadge">requests</span></h3>
+          <div class="adesc">The <b>connection</b> to your Seerr server — nothing else. Jellystructure uses it to search, browse and place requests. Where the <b>Request</b> tab appears and which discover rows it shows is set per user in <a>Ravilo config › Request</a>.</div>
+          <div class="abox">
+            <div class="arow"><b style="font-size:17px;color:#eef0f6;">Jellyseerr</b><span class="abadge blue">movies · series</span><span style="margin-left:auto;font-size:13px;color:#8b93ad;">enabled</span><span class="atoggle"></span></div>
+            <div class="arow" style="margin-top:16px; gap:16px; align-items:flex-start;">
+              <div style="flex:1;"><div class="afield"><label>Seerr URL</label><div class="ainput">http://jellyseerr:5055</div></div></div>
+              <div style="flex:1;"><div class="afield"><label>API key</label><div class="ainput">••••••••••••3a9f</div></div></div>
+            </div>
+            <div class="arow" style="margin-top:14px;"><span class="achk" style="margin-left:0;"><span class="adot"></span>Reachable · Jellyseerr 2.1.0 · 1 user matched</span><span style="margin-left:auto;"></span><span class="abtn">Test connection</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="atoml">
+        <div class="th">config.toml</div>
+        <div><span class="c">[seerr]</span></div>
+        <div><span class="k">enabled</span> = <span class="b">true</span></div>
+        <div><span class="k">url</span> = <span class="s">"http://jellyseerr:5055"</span></div>
+        <div><span class="k">api_key</span> = <span class="s">"•••3a9f"</span></div>
+        <div>&nbsp;</div>
+        <div><span class="c"># per-user rows &amp; visibility</span></div>
+        <div><span class="c"># live in each user's Ravilo layout</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 3 · RAVILO CONFIG — REQUEST BUILDER ============ -->
+<div class="concept" style="left:80px; top:1900px;">
+  <div class="clabel">
+    <span class="idx">03</span><span class="name">Ravilo config › Request — rows builder</span>
+    <span class="tag cfg">Per user</span>
+    <span class="note">Show the tab, set permission, and pick/order the Seerr discover rows. ＋ Add row lists every endpoint.</span>
+  </div>
+  <div class="astage">
+    <div class="atop">
+      <svg class="amark" viewBox="12 20 76 76"><defs><linearGradient id="j3" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="var(--accent)"/><stop offset="1" stop-color="var(--accent-2)"/></linearGradient></defs><path d="M22 52 C22 24 78 24 78 52 C66 45 59 45 50 49 C41 45 34 45 22 52 Z" fill="url(#j3)"/></svg>
+      <span class="acrumb">Jellystructure · <b>Ravilo config › Eyð</b></span>
+      <div class="atabs"><span class="atab">global · per-user</span></div>
+    </div>
+    <div class="abody">
+      <div class="anav">
+        <div class="ai">Hero carousel</div>
+        <div class="ai">Channels</div>
+        <div class="ai">Content rows</div>
+        <div class="ai on">Request</div>
+        <div class="ai">Behaviour</div>
+      </div>
+      <div class="acol">
+        <div class="acard">
+          <h3><svg viewBox="0 0 24 24" fill="none" stroke="#a99ff4" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:25px;height:25px;"><path d="M13 2 3 14h8l-1 8 10-12h-8z"/></svg>Request<span class="abadge">Jellyseerr</span><span style="margin-left:auto;display:flex;align-items:center;gap:10px;"><span style="font-size:13px;color:#8b93ad;">show this tab</span><span class="atoggle"></span></span></h3>
+          <div class="adesc">Adds a <b>Request</b> tab on Eyð's TV, powered by the Seerr server from <a>Settings → Download tools</a>. Each row below is a Seerr <b>discover</b> feed — drag to reorder, toggle to hide, or add more.</div>
+          <div class="abox" style="margin-bottom:16px;">
+            <div class="arow"><div><b style="font-size:15px;color:#eef0f6;">Allow this user to request</b><div class="asub">Off = browse &amp; see status only · admins can always request. Approvals happen in Jellyseerr.</div></div><span class="atoggle" style="margin-left:auto;"></span></div>
+          </div>
+          <div class="rowshead"><h4>Rows shown in Request</h4><span style="font-size:13px;color:#8b93ad;">drag to reorder</span><span style="margin-left:auto;"></span><span class="abtn">＋ Add row</span></div>
+          <div class="cfgrow"><span class="grab">⠿</span><span class="cbadge mix">MIX</span><div class="cmain"><div class="cnm">Trending</div><div class="csrc">trending/all · week</div></div><span class="cshow">show</span><span class="ctog"></span><span class="cx">✕</span></div>
+          <div class="cfgrow"><span class="grab">⠿</span><span class="cbadge mov">MOV</span><div class="cmain"><div class="cnm">Popular Movies</div><div class="csrc">discover/movies · sort = popularity</div></div><span class="cshow">show</span><span class="ctog"></span><span class="cx">✕</span></div>
+          <div class="cfgrow"><span class="grab">⠿</span><span class="cbadge mov">MOV</span><div class="cmain"><div class="cnm">Action Movies</div><div class="csrc">discover/movies · genre = Action</div></div><span class="cshow">show</span><span class="ctog"></span><span class="cx">✕</span></div>
+          <div class="cfgrow"><span class="grab">⠿</span><span class="cbadge mov">MOV</span><div class="cmain"><div class="cnm">A24</div><div class="csrc">discover/movies · studio = A24</div></div><span class="cshow">show</span><span class="ctog"></span><span class="cx">✕</span></div>
+          <div class="cfgrow"><span class="grab">⠿</span><span class="cbadge tv">TV</span><div class="cmain"><div class="cnm">HBO Originals</div><div class="csrc">discover/tv · network = HBO</div></div><span class="cshow">show</span><span class="ctog"></span><span class="cx">✕</span></div>
+          <div class="cfgrow"><span class="grab">⠿</span><span class="cbadge tv">TV</span><div class="cmain"><div class="cnm">Anime</div><div class="csrc">discover/tv · original language = ja</div></div><span class="cshow">show</span><span class="ctog"></span><span class="cx">✕</span></div>
+          <div class="cfgrow off"><span class="grab">⠿</span><span class="cbadge mov">MOV</span><div class="cmain"><div class="cnm">Upcoming Movies</div><div class="csrc">discover/movies/upcoming</div></div><span class="cshow">hidden</span><span class="ctog"></span><span class="cx">✕</span></div>
+
+          <!-- add-row picker (open) -->
+          <div class="addmenu">
+            <div class="amhead">Movies</div>
+            <div class="ami"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2.5"/><path d="M8 5v14M16 5v14" stroke-width="1.4"/></svg>Discover movies<span class="amp">popular</span></div>
+            <div class="ami hot"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M7 12h10M10 17h4"/></svg>By genre<span class="amp">genre</span></div>
+            <div class="ami"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a15 15 0 0 1 0 18M12 3a15 15 0 0 0 0 18"/></svg>By original language<span class="amp">lang</span></div>
+            <div class="ami"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M4 20V8l8-4 8 4v12"/><path d="M9 20v-6h6v6"/></svg>By studio<span class="amp">studio</span></div>
+            <div class="ami"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>Upcoming movies<span class="amp">upcoming</span></div>
+            <div class="amdiv"></div>
+            <div class="amhead">TV</div>
+            <div class="ami"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"><rect x="3" y="6" width="18" height="12" rx="2.5"/><path d="M9 21h6"/></svg>Discover TV<span class="amp">popular</span></div>
+            <div class="ami"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M7 12h10M10 17h4"/></svg>By genre<span class="amp">genre</span></div>
+            <div class="ami"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a15 15 0 0 1 0 18M12 3a15 15 0 0 0 0 18"/></svg>By original language<span class="amp">lang</span></div>
+            <div class="ami"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20V9l16-5v16"/><circle cx="8" cy="17" r="2"/><circle cx="18" cy="15" r="2"/></svg>By network<span class="amp">network</span></div>
+            <div class="ami"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>Upcoming TV<span class="amp">upcoming</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="atoml">
+        <div class="th">user layout · request[]</div>
+        <div><span class="c"># rows (in order):</span></div>
+        <div><span class="k">trending</span> = <span class="b">on</span></div>
+        <div><span class="k">movies.popular</span> = <span class="b">on</span></div>
+        <div><span class="k">movies.genre</span> = <span class="s">"Action"</span></div>
+        <div><span class="k">movies.studio</span> = <span class="s">"A24"</span></div>
+        <div><span class="k">tv.network</span> = <span class="s">"HBO"</span></div>
+        <div><span class="k">tv.lang</span> = <span class="s">"ja"</span></div>
+        <div><span class="k">movies.upcoming</span> = <span class="c">off</span></div>
+        <div>&nbsp;</div>
+        <div><span class="k">show_tab</span> = <span class="b">true</span></div>
+        <div><span class="k">can_request</span> = <span class="b">true</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

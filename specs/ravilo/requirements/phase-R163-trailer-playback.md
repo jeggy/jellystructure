@@ -94,19 +94,3 @@ a DTO trailer field.
 - Related: **Phase 130** (TMDB ingest + DTO — the data source), **R14** (the media-player chrome this mirrors),
   **constitution** (renders server state; embedded provider playback is a bounded exception like the Jellyfin
   player).
-
-## Dev-review addenda (2026-07-03 — platform embed details the design mock couldn't know)
-
-1. **Web target: host the iframe the R157 way.** The Compose-web app draws on an opaque-less canvas
-   (`CanvasBasedWindow(opaque = false)`, R157) with the `<video>` element **under** it. The trailer
-   iframe uses the same recipe: a DOM `<iframe>` under the transparent canvas, Compose chrome drawn
-   above. Consequence: the iframe can't receive pointer/D-pad input through the canvas — so embed with
-   `controls=0&autoplay=1` and let **our** Compose chrome (Close) own all input, exactly as the design's
-   input model already demands (§C "owns input while open"). Don't try to make the provider's own player
-   UI clickable.
-2. **Android target: WebView specifics.** Host in an `AndroidView`-wrapped `WebView` with JS enabled and
-   `mediaPlaybackRequiresUserGesture = false` (otherwise `autoplay=1` silently no-ops). Tear the WebView
-   down on close (`loadUrl("about:blank")` + destroy) — that is what "stops playback" means there. The
-   iframe embed **is** YouTube's official player, so ToS-wise this is the sanctioned path.
-3. **DTO note:** `trailer.thumb` (the Phase 130 dev-review addition for Vimeo thumbnails) is not needed
-   by this phase — the button opens straight into playback; only the admin card uses thumbnails.

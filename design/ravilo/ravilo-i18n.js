@@ -8,7 +8,7 @@
       watch_now: 'Watch Now', not_in_library: 'Not in your library yet', requested_via: 'Requested · fetching it now',
       in_queue: 'In queue', importing: 'Importing…', requested: 'Requested', failed: 'Failed', stalled: 'stalled', starting: 'starting', retry_fetch: 'Retry', watch_e1: 'Watch Now · E1',
       upcoming: 'Airing soon', next_ep: 'Next episode', airs: 'airs', via_sonarr: 'Sonarr',
-      top10_sub: 'Trending now · {region}', weeks_on: '{n} wks on chart', new_this_week: 'New this week',
+      top10_sub: 'Trending now · {region}', weeks_on: '{n} wks trending', new_this_week: 'New this week',
       why_trending: 'Why it’s trending', rank_in: '#{n} in {region}', views_week: '{v} this week', via_source: 'via {src}',
       nav_home: 'Home', nav_movies: 'Movies', nav_series: 'Series', nav_mylist: 'My List',
       play: 'Play', resume: 'Resume', more_info: 'More Info', trailer: 'Trailer',
@@ -93,6 +93,11 @@
     toast_all_watched: '\u2713 S\u00e6son markeret som set \u00b7 synket til Jellyfin',
     toast_all_unwatched: 'S\u00e6son markeret som uset \u00b7 synket til Jellyfin',
   });
+  // ---- Profile menu + Discover tabs (nav restructure) ----
+  Object.assign(STR.en, { nav_discover: 'Discover', pm_switch: 'Switch', pm_continue: 'Continue Watching', pm_settings: 'Settings', pm_unpair: 'Unpair this TV', seg_coming: 'Coming Soon', seg_request: 'Request', request_sub: 'Browse the catalogue and request what is missing', search_seerr: 'Search Seerr' });
+  Object.assign(STR.da, { nav_discover: 'Opdag', pm_switch: 'Skift', pm_continue: 'Fortsæt', pm_settings: 'Indstillinger', pm_unpair: 'Frakobl dette TV', seg_coming: 'Kommende', seg_request: 'Anmod', request_sub: 'Gennemse kataloget og anmod om det, der mangler', search_seerr: 'Søg i Seerr' });
+  Object.assign(STR.fo, { nav_discover: 'Uppdaga', pm_switch: 'Skift', pm_continue: 'Hald fram', pm_settings: 'Innstillingar', pm_unpair: 'Frákopla sjónvarp', seg_coming: 'Kemur', seg_request: 'Bið', request_sub: 'Kaga í savninum og bið um tað, sum vantar', search_seerr: 'Leita í Seerr' });
+
   // ---- Upcoming calendar ----
   Object.assign(STR.en, {
     nav_upcoming: 'Upcoming', upcoming_sub: 'New episodes & movie premieres, coming soon',

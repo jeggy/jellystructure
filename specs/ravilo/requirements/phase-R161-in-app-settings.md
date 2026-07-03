@@ -6,10 +6,7 @@
 > **Unpair this TV** (with a confirm step). D-pad moves **up/down between the sections** and left/right
 > within a row. These are deliberately **device-local preferences**, not server media state.
 
-**Status:** Planned — **design built**. ⚠ Dev review 2026-07-03: parts of this already exist in the app
-(see the **Dev-review addenda** at the bottom — they supersede the "gap" claims and the device-local
-storage model below). What is genuinely new: the **language picker**, the **unpair flow** (client side),
-and the design restyle of the existing Settings screen.
+**Status:** Planned — **design built**, backend/app-integration unbuilt.
 
 ## Problem
 Everything Ravilo shows is server-pushed, and there was **no on-TV settings surface at all**: the interface
@@ -59,15 +56,8 @@ never mutates the server-side profile.
   `.set-danger-desc`; `.btn.danger`; `.lang-chip` / `.lang-endo` / `.lang-name`; `.theme-chip` /
   `.theme-dot.{aurora,midnight,noir}`.
 
-**The gap (corrected by dev review, 2026-07-03):** the mock's claims above describe the *mock*, not the
-app. The Compose app **already has** `SettingsScreen.kt` (skin picker gated on `allowSkinOverride`,
-Continue-progress + autoplay toggles, sign-out), reachable from the profile picker's Settings tile
-(already switcher-only, exactly per §A/Invariants), and the skin choice is **already server-owned**
-(`PUT /api/tv/settings` → `RaviloConfig.viewerSkinOverride`, resolved by `effectiveSkin()`). The backend
-also already has a device-initiated **`POST /api/tv/unpair`** route. What's actually missing: the
-**language picker** (per-user `ui_language` override), the **unpair flow in the app** (`TvApiClient` has
-no unpair call; no confirm dialog), and the **visual restyle** to this design (theme dots, section
-layout, danger styling, 2-D d-pad grouping).
+**The gap:** the Compose app has no Settings screen, no device-local preference store, no skin token
+switch wired to a control, and no in-app unpair/revoke.
 
 ## Requirements
 
@@ -130,29 +120,3 @@ layout, danger styling, 2-D d-pad grouping).
   Jellystructure — the server-owned language default this overrides), **constitution** (interface-language
   rule + "renders server state" invariant this phase bounds an exception to), **R62** (Aurora/Midnight/Noir
   skins reused here).
-
-## Dev-review addenda (2026-07-03 — supersede the device-local storage model above)
-
-1. **No localStorage / device-local lane — viewer prefs are server-owned.** The mock stores theme +
-   language in localStorage because a static mock has no server. The real app **already** persists the
-   viewer's skin **server-side** (`PUT /api/tv/settings` → `viewerSkinOverride`, kept separate from the
-   operator's `defaultSkin` so operator default changes still reach viewers who never picked one, and
-   gated by the admin's `allowSkinOverride`). **Language follows the same lane**: add `ui_language` to
-   `ViewerSettingsRequest` as a per-user viewer override resolved against the operator default. This is
-   strictly better than device-local (survives reinstall, follows the user across TVs/phone/web) and it
-   **dissolves the "bounded exception" this spec claims** — the constitution's "render server-pushed
-   state" holds untouched. Resolution order becomes: **viewer override → per-user admin override → global
-   default** (see R162, which owns the storage split).
-2. **Ordering: R162 first (or together).** Today `applyViewerSettings` copies the **whole resolved
-   config** into a per-user record on first write — a global-layout viewer changing any setting forks the
-   entire layout (the exact trap R162 fixes, and it is **live in the shipped app already**). Landing the
-   language picker on the current mechanism would widen that bug; implement R162's overlay split first.
-3. **Unpair semantics.** "Unpair this TV" ≠ the existing per-session "Sign out". Unpair revokes **every
-   session this device holds**: iterate `MultiTokenStore.getAll()`, call the **existing**
-   `POST /api/tv/unpair` per token (add the missing `TvApiClient.unpair()` wrapper), then
-   `MultiTokenStore.clear()` (the deliberately-kept Phase 127 symbol — this phase is its intended
-   consumer) → first-run "Who's watching?" gate. Keep the existing single-session Sign out alongside it.
-4. **Scope of the screen.** This design **restyles the existing `SettingsScreen.kt`** — the shipped
-   Continue-progress and autoplay toggles **stay** (removing them would regress shipped behaviour; the
-   design simply didn't know about them). Theme keeps its `allowSkinOverride` gate (section hidden when
-   the admin disallows overrides).

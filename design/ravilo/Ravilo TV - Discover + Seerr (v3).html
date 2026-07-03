@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+<html lang="en" data-skin="aurora">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="design_doc_mode" content="canvas">
+<title>Ravilo TV — Discover + Seerr (v3)</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Sora:wght@300;400;500;600;700&display=swap');
+
+:root{
+  --bg:#0a0c13; --bg-2:#0e111b;
+  --ink:#f3f4fb; --ink-soft:#aeb4cb; --ink-dim:#6b7290;
+  --line:rgba(255,255,255,.09);
+  --card:#161a28; --card-2:#1b2031;
+  --accent:#7b6ef0; --accent-2:#3fb6f5;
+  --grad:linear-gradient(120deg,#7b6ef0,#3fb6f5);
+  --ring:#8e82ff; --ring-glow:rgba(123,110,240,.55);
+  --chip:rgba(255,255,255,.10);
+  --good:#2dd49a;
+}
+*{box-sizing:border-box; margin:0; padding:0;}
+body{ font-family:'Sora',sans-serif; }
+
+/* ---------- canvas scaffolding ---------- */
+.intro{ position:absolute; width:1280px; color:#e9ecf6; }
+.intro .eyebrow{ font-family:'JetBrains Mono','Sora',monospace; letter-spacing:.32em; text-transform:uppercase; font-size:15px; color:#8b93ad; }
+.intro h1{ font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:52px; letter-spacing:-1.5px; margin:10px 0 14px; color:#f4f5fb;}
+.intro p{ font-size:20px; line-height:1.55; color:#aeb4cb; max-width:1080px; }
+.intro p b{ color:#e9ecf6; font-weight:600; }
+.rules{ display:flex; gap:14px; margin-top:22px; flex-wrap:wrap; }
+.rule{ display:flex; align-items:center; gap:10px; padding:11px 18px; border-radius:13px; background:rgba(255,255,255,.045); border:1px solid var(--line); font-size:16px; color:#c9cde0; }
+.rule b{ color:#f3f4fb; font-weight:600; }
+.rule .dot{ width:9px; height:9px; border-radius:50%; flex:none; }
+.rule .p{ background:#7b6ef0; } .rule .d{ background:#3fb6f5; } .rule .g{ background:#2dd49a; }
+
+.concept{ position:absolute; width:1920px; }
+.clabel{ display:flex; align-items:baseline; gap:18px; margin-bottom:20px; flex-wrap:wrap; }
+.clabel .idx{ font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:28px; color:var(--accent); letter-spacing:-.5px; }
+.clabel .name{ font-family:'Space Grotesk',sans-serif; font-weight:600; font-size:30px; color:#f3f4fb; letter-spacing:-.5px; }
+.clabel .note{ font-size:19px; color:#9aa0ba; }
+.clabel .tag{ font-family:'JetBrains Mono',monospace; font-size:13px; letter-spacing:.12em; text-transform:uppercase; padding:5px 12px; border-radius:8px; }
+.tag.lock{ background:rgba(45,212,154,.13); color:#57e0ad; border:1px solid rgba(45,212,154,.3);}
+.tag.seerr{ background:rgba(123,110,240,.15); color:#a99ff4; border:1px solid rgba(123,110,240,.32);}
+.tag.admin{ background:rgba(63,182,245,.13); color:#5fc4f7; border:1px solid rgba(63,182,245,.3);}
+
+/* ---------- stage ---------- */
+.stage{ position:relative; width:1920px; height:660px; border-radius:22px; overflow:hidden;
+  background:var(--bg); color:var(--ink); box-shadow:0 40px 90px -30px rgba(0,0,0,.7); border:1px solid rgba(255,255,255,.06); }
+.backdrop{ position:absolute; inset:0;
+  background:
+    radial-gradient(120% 105% at 76% 12%, rgba(96,146,206,.55), rgba(24,32,54,.25) 44%, transparent 72%),
+    radial-gradient(95% 130% at 58% 128%, rgba(123,110,240,.4), transparent 60%),
+    linear-gradient(100deg,#0a0c13 6%, #131a2e 42%, #223052 72%, #33507e 100%); }
+.flat{ position:absolute; inset:0; background:radial-gradient(120% 120% at 15% 0%, #12172a 0%, #0a0c13 60%); }
+.vign{ position:absolute; inset:0; background:linear-gradient(90deg, rgba(10,12,19,.97) 0%, rgba(10,12,19,.82) 30%, rgba(10,12,19,.32) 62%, rgba(10,12,19,.04) 100%), linear-gradient(0deg, var(--bg) 3%, rgba(10,12,19,0) 42%); }
+
+/* ---------- app bar ---------- */
+.appbar{ position:relative; z-index:5; height:92px; display:flex; align-items:center; gap:38px; padding:0 64px;
+  background:linear-gradient(180deg, rgba(0,0,0,.55), rgba(0,0,0,0)); }
+.brand{ display:flex; align-items:center; gap:14px; font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:31px; letter-spacing:-1px; }
+.brand .mark{ width:48px; height:48px; flex:none; filter:drop-shadow(0 0 16px var(--ring-glow)); }
+.brand .wm{ color:var(--ink); }
+.topnav{ display:flex; align-items:center; gap:8px; }
+.navitem{ font-size:21px; font-weight:500; color:var(--ink-soft); padding:9px 20px; border-radius:11px; white-space:nowrap; position:relative; display:flex; align-items:center; gap:9px; }
+.navitem.cur{ color:var(--ink); font-weight:600; }
+.navitem.focused{ background:var(--ink); color:#0a0c13; }
+.right{ margin-left:auto; display:flex; align-items:center; gap:22px; }
+.clock{ font-size:19px; color:var(--ink-soft); font-variant-numeric:tabular-nums; }
+.iconbtn{ width:44px; height:44px; border-radius:50%; display:flex; align-items:center; justify-content:center; color:var(--ink-soft); }
+.iconbtn svg{ width:24px; height:24px; display:block; }
+.avatar{ width:44px; height:44px; border-radius:50%; display:flex; align-items:center; justify-content:center; background:var(--grad); font-weight:700; font-size:18px; color:#fff; }
+.avatar.focused{ box-shadow:0 0 0 4px var(--ring); }
+.searchpill{ display:flex; align-items:center; gap:13px; height:48px; padding:0 22px; border-radius:26px; background:rgba(255,255,255,.07); border:1px solid var(--line); color:var(--ink-dim); font-size:18px; min-width:340px; }
+.searchpill svg{ width:22px; height:22px; }
+
+/* ---------- hero ---------- */
+.hero{ position:absolute; z-index:4; left:64px; top:196px; }
+.kicker{ font-family:'JetBrains Mono',monospace; letter-spacing:.28em; font-size:15px; color:var(--accent-2); text-transform:uppercase; }
+.htitle{ font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:74px; line-height:.98; letter-spacing:-2px; color:#fff; margin:14px 0 4px; white-space:nowrap; }
+.hmeta{ display:flex; align-items:center; gap:16px; font-size:19px; color:var(--ink-soft); margin-top:16px; }
+.hmeta .chip{ background:var(--chip); padding:4px 11px; border-radius:7px; font-size:16px; font-weight:600; color:#eef0fa; }
+.railpeek{ position:absolute; z-index:4; left:64px; bottom:34px; right:64px; }
+.rp-head{ font-family:'Space Grotesk',sans-serif; font-weight:600; font-size:24px; color:#eef0fa; margin-bottom:16px; letter-spacing:-.4px; }
+.rp-track{ display:flex; gap:16px; }
+.cpill{ width:210px; height:96px; border-radius:14px; display:flex; align-items:center; justify-content:center; font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:24px; color:#fff; letter-spacing:-.3px; flex:none; box-shadow:0 12px 30px -12px rgba(0,0,0,.6); }
+.c1{ background:linear-gradient(135deg,#1a49c9,#1170e4);} .c2{ background:linear-gradient(135deg,#8f1024,#c31b34);}
+.c3{ background:linear-gradient(135deg,#243049,#3a4d78); color:#dfe6f5;} .c4{ background:linear-gradient(135deg,#0b7d5a,#12b07d);}
+.c5{ background:linear-gradient(135deg,#3a1a72,#6a35c9);} .c6{ background:linear-gradient(135deg,#123a86,#1f7ad0);}
+
+/* ---------- content screen ---------- */
+.screen{ position:absolute; z-index:4; left:0; right:0; top:92px; bottom:0; padding:26px 64px; display:flex; flex-direction:column; gap:24px; }
+.dischead{ display:flex; align-items:center; gap:18px; }
+.dischead h1{ font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:44px; letter-spacing:-1.2px; color:#fff; }
+.dischead .dsub{ font-size:19px; color:var(--ink-soft); }
+.seerr-chip{ display:inline-flex; align-items:center; gap:7px; font-size:15px; font-weight:600; color:#a99ff4; background:rgba(123,110,240,.14); border:1px solid rgba(123,110,240,.3); padding:6px 12px; border-radius:9px; }
+.seerr-chip svg{ width:16px; height:16px; }
+
+.segment{ display:flex; align-items:center; gap:5px; padding:5px; border-radius:16px; background:rgba(255,255,255,.06); border:1px solid var(--line); align-self:flex-start; }
+.segment .seg{ font-size:21px; font-weight:500; color:var(--ink-soft); padding:10px 24px; border-radius:12px; display:flex; align-items:center; gap:10px; }
+.segment .seg svg{ width:22px; height:22px; }
+.segment .seg.on{ background:var(--ink); color:#0a0c13; font-weight:600; }
+.segment .seg.on svg{ color:#0a0c13; }
+
+.drow{ display:flex; flex-direction:column; gap:15px; }
+.drow-h{ display:flex; align-items:center; gap:12px; font-family:'Space Grotesk',sans-serif; font-weight:600; font-size:25px; color:#eef0fa; letter-spacing:-.4px; }
+.drow-h svg{ width:25px; height:25px; color:var(--accent-2); }
+.drow-track{ display:flex; gap:24px; align-items:flex-end; }
+.drow-track.cards{ gap:18px; align-items:stretch; }
+
+/* ranked (trending) */
+.ranktile{ display:flex; align-items:flex-end; }
+.rank-num{ font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:158px; line-height:.7; color:transparent; -webkit-text-stroke:2.5px rgba(174,180,203,.55); margin-right:-24px; margin-bottom:-6px; }
+.rank-poster{ width:144px; height:206px; border-radius:12px; flex:none; box-shadow:0 16px 34px -14px rgba(0,0,0,.7); position:relative; overflow:hidden; }
+.rank-poster .rp-scrim{ position:absolute; inset:0; background:linear-gradient(0deg, rgba(0,0,0,.7), transparent 55%); }
+.rank-poster .rp-t{ position:absolute; left:12px; right:12px; bottom:11px; z-index:2; font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:18px; color:#fff; line-height:1.05; }
+
+/* coming soon card */
+.upcard{ width:262px; border-radius:16px; background:var(--card); border:1px solid var(--line); padding:20px; display:flex; flex-direction:column; gap:14px; flex:none; }
+.upcard .uc-date{ display:inline-flex; align-items:center; gap:8px; align-self:flex-start; font-family:'JetBrains Mono',monospace; font-size:13px; letter-spacing:.06em; color:var(--accent-2); background:rgba(63,182,245,.12); padding:5px 11px; border-radius:8px; }
+.upcard .uc-t{ font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:22px; color:#fff; letter-spacing:-.4px; line-height:1.12; }
+.upcard .uc-sub{ font-size:15px; color:var(--ink-soft); margin-top:auto; display:flex; align-items:center; gap:8px; }
+.upcard .uc-dot{ width:7px; height:7px; border-radius:50%; background:var(--good); }
+
+/* request (Seerr) tiles */
+.qtile{ width:150px; flex:none; }
+.qtile .qposter{ width:150px; height:214px; border-radius:12px; position:relative; overflow:hidden; box-shadow:0 14px 30px -14px rgba(0,0,0,.7); }
+.qtile.focused .qposter{ box-shadow:0 0 0 4px var(--ring), 0 14px 30px -14px rgba(0,0,0,.7); }
+.q-flag{ position:absolute; top:8px; left:8px; font-family:'JetBrains Mono',monospace; font-size:11px; letter-spacing:.08em; padding:3px 7px; border-radius:6px; background:rgba(0,0,0,.5); color:#fff; }
+.q-flag.new{ background:var(--accent); }
+.q-t{ font-family:'Space Grotesk',sans-serif; font-weight:600; font-size:17px; color:#fff; margin-top:10px; line-height:1.15; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.q-act{ margin-top:9px; display:flex; align-items:center; justify-content:center; gap:7px; height:34px; border-radius:9px; font-size:15px; font-weight:600; }
+.q-act svg{ width:16px; height:16px; }
+.q-act.req{ background:var(--ink); color:#0a0c13; }
+.q-act.pending{ background:rgba(255,255,255,.07); color:var(--ink-soft); border:1px solid var(--line); }
+.q-act.dl{ background:rgba(63,182,245,.14); color:#5fc4f7; border:1px solid rgba(63,182,245,.3); }
+.q-act.have{ background:rgba(45,212,154,.12); color:#3fce9c; border:1px solid rgba(45,212,154,.28); }
+.q-dotpulse{ width:8px; height:8px; border-radius:50%; background:currentColor; }
+
+/* profile menu */
+.profmenu{ position:absolute; z-index:9; top:82px; right:64px; width:346px; padding:14px; border-radius:20px;
+  background:rgba(16,19,31,.97); border:1px solid rgba(255,255,255,.11); box-shadow:0 40px 80px -24px rgba(0,0,0,.85); backdrop-filter:blur(16px); }
+.pm-head{ display:flex; align-items:center; gap:14px; padding:8px 8px 14px; }
+.pm-av{ width:52px; height:52px; border-radius:50%; background:var(--grad); display:flex; align-items:center; justify-content:center; font-weight:700; font-size:20px; color:#fff; flex:none; }
+.pm-id{ flex:1; } .pm-name{ font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:22px; color:#fff; } .pm-sub{ font-size:14px; color:var(--ink-dim); }
+.pm-switch{ font-size:15px; color:var(--accent-2); font-weight:600; padding:6px 12px; border-radius:9px; border:1px solid rgba(63,182,245,.3); }
+.pm-div{ height:1px; background:var(--line); margin:4px 6px 10px; }
+.pm-row{ display:flex; align-items:center; gap:14px; padding:13px 12px; border-radius:12px; font-size:20px; color:var(--ink-soft); }
+.pm-row svg{ width:23px; height:23px; flex:none; }
+.pm-row .pm-badge{ margin-left:auto; font-family:'JetBrains Mono',monospace; font-size:14px; font-weight:600; color:#0a0c13; background:var(--accent-2); border-radius:20px; padding:2px 10px; }
+.pm-row.focused{ background:var(--ink); color:#0a0c13; }
+.pm-row.focused svg{ color:#0a0c13; }
+.pm-row.focused .pm-badge{ background:#0a0c13; color:#fff; }
+
+/* ---------- admin (Jellystructure) frame ---------- */
+.astage{ position:relative; width:1920px; height:660px; border-radius:22px; overflow:hidden;
+  background:#101218; border:1px solid rgba(255,255,255,.06); box-shadow:0 40px 90px -30px rgba(0,0,0,.7); color:#dde1ec; }
+.atop{ height:62px; display:flex; align-items:center; gap:13px; padding:0 40px; border-bottom:1px solid rgba(255,255,255,.06); background:#14161d; }
+.atop .amark{ width:30px; height:30px; }
+.atop .acrumb{ font-size:16px; color:#8b93ad; } .atop .acrumb b{ color:#dde1ec; font-weight:600; }
+.atabs{ margin-left:auto; display:flex; gap:6px; }
+.atab{ font-size:14px; color:#8b93ad; padding:7px 14px; border-radius:9px; }
+.atab.on{ background:rgba(123,110,240,.16); color:#c3bbf7; }
+.abody{ padding:30px 40px; display:flex; gap:26px; }
+.acol{ flex:1; display:flex; flex-direction:column; gap:16px; }
+.acard{ background:#181b23; border:1px solid rgba(255,255,255,.07); border-radius:16px; padding:24px; }
+.acard h3{ font-family:'Space Grotesk',sans-serif; font-weight:600; font-size:23px; color:#eef0f6; display:flex; align-items:center; gap:11px; }
+.abadge{ font-size:12px; font-family:'JetBrains Mono',monospace; letter-spacing:.08em; text-transform:uppercase; padding:4px 9px; border-radius:7px; background:rgba(123,110,240,.16); color:#a99ff4; border:1px solid rgba(123,110,240,.3); }
+.abadge.blue{ background:rgba(63,182,245,.14); color:#7fc9f5; border-color:rgba(63,182,245,.3); }
+.adesc{ font-size:15.5px; line-height:1.6; color:#9aa1b5; margin:11px 0 18px; }
+.adesc b{ color:#c9cfdd; font-weight:600; }
+.abox{ background:#12141b; border:1px solid rgba(255,255,255,.06); border-radius:13px; padding:18px; }
+.arow{ display:flex; align-items:center; gap:12px; }
+.atoggle{ width:46px; height:26px; border-radius:14px; background:var(--accent); position:relative; flex:none; }
+.atoggle::after{ content:''; position:absolute; top:3px; right:3px; width:20px; height:20px; border-radius:50%; background:#fff; }
+.atoggle.off{ background:#2b2f3b; } .atoggle.off::after{ right:auto; left:3px; }
+.afield label{ display:block; font-size:12px; color:#8b93ad; margin-bottom:6px; text-transform:uppercase; letter-spacing:.05em; }
+.ainput{ background:#0c0e14; border:1px solid rgba(255,255,255,.09); border-radius:9px; padding:11px 14px; font-size:15px; color:#dde1ec; font-family:'JetBrains Mono',monospace; display:flex; align-items:center; gap:8px; }
+.achk{ margin-left:auto; display:inline-flex; align-items:center; gap:6px; font-family:'Sora',sans-serif; font-size:13px; color:#3fce9c; }
+.achk .adot{ width:8px; height:8px; border-radius:50%; background:var(--good); }
+.asel{ margin-left:auto; font-size:15px; color:#dde1ec; background:#0c0e14; border:1px solid rgba(255,255,255,.09); border-radius:9px; padding:9px 14px; display:flex; align-items:center; gap:10px; }
+.asub{ font-size:13px; color:#8b93ad; margin-top:3px; }
+.aunlock{ display:flex; align-items:center; gap:13px; padding:16px 18px; border-radius:13px; background:rgba(63,182,245,.08); border:1px solid rgba(63,182,245,.22); font-size:16px; color:#bcd7ef; }
+.aunlock svg{ width:22px; height:22px; color:#5fc4f7; flex:none; }
+.aunlock b{ color:#eaf3fb; font-weight:600; }
+.atoml{ flex:none; width:500px; background:#0c0e14; border:1px solid rgba(255,255,255,.07); border-radius:16px; padding:22px 26px; font-family:'JetBrains Mono',monospace; font-size:15px; line-height:2; }
+.atoml .th{ font-size:13px; color:#6b7290; text-transform:uppercase; letter-spacing:.12em; margin-bottom:10px; font-family:'Sora',sans-serif; }
+.atoml .c{ color:#6b7290; } .atoml .k{ color:#c7ccda; } .atoml .s{ color:#7fd7ff; } .atoml .b{ color:#57e0ad; }
+</style>
+</head>
+<body>
+
+<!-- ============ INTRO ============ -->
+<div class="intro" style="left:80px; top:56px;">
+  <div class="eyebrow">Ravilo TV · Aurora skin · Locked direction + Seerr</div>
+  <h1>Profile hub · Discover · Request from the sofa</h1>
+  <p>The chosen shape: <b>My List lives under the avatar</b>, and <b>Top 10 + Upcoming merge into “Discover”</b> — now ordered <b>Coming Soon · Trending</b>. When Jellystructure is pointed at a <b>Jellyseerr</b> instance, Discover gains a third <b>Request</b> tab: browse the whole catalogue and request anything missing, right from the TV.</p>
+  <div class="rules">
+    <div class="rule"><span class="dot p"></span><b>Under the avatar ▾:</b>&nbsp;My List · Switch profile · Settings</div>
+    <div class="rule"><span class="dot d"></span><b>Discover:</b>&nbsp;Coming Soon · Trending · Request</div>
+    <div class="rule"><span class="dot g"></span><b>Request</b>&nbsp;appears only when Seerr is configured</div>
+  </div>
+</div>
+
+<!-- ============ 1 · PROFILE HUB ============ -->
+<div class="concept" style="left:80px; top:440px;">
+  <div class="clabel">
+    <span class="idx">01</span><span class="name">Profile hub</span>
+    <span class="tag lock">Locked</span>
+    <span class="note">Home · Movies · Series · Discover. Personal stuff tucks under the avatar.</span>
+  </div>
+  <div class="stage">
+    <div class="backdrop"></div><div class="vign"></div>
+    <div class="appbar">
+      <div class="brand"><svg class="mark" viewBox="12 20 76 76"><defs><linearGradient id="j1" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="var(--accent)"/><stop offset="1" stop-color="var(--accent-2)"/></linearGradient></defs><path d="M22 52 C22 24 78 24 78 52 C66 45 59 45 50 49 C41 45 34 45 22 52 Z" fill="url(#j1)"/><g stroke="url(#j1)" stroke-width="4.5" stroke-linecap="round" fill="none"><path d="M33 51 q-5 12 1 20 q5 8 0 14" opacity=".9"/><path d="M44 52 q-4 13 1 21 q4 9 0 13" opacity=".72"/><path d="M56 52 q4 13 -1 21 q-4 9 0 13" opacity=".72"/><path d="M67 51 q5 12 -1 20 q-5 8 0 14" opacity=".9"/></g></svg><span class="wm">Ravilo</span></div>
+      <div class="topnav">
+        <div class="navitem cur">Home</div>
+        <div class="navitem">Movies</div>
+        <div class="navitem">Series</div>
+        <div class="navitem">Discover</div>
+      </div>
+      <div class="right">
+        <div class="iconbtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><line x1="16.5" y1="16.5" x2="21" y2="21"></line></svg></div>
+        <div class="clock">21:11</div>
+        <div class="avatar focused">ER</div>
+      </div>
+    </div>
+    <div class="profmenu">
+      <div class="pm-head">
+        <div class="pm-av">ER</div>
+        <div class="pm-id"><div class="pm-name">Eyð</div><div class="pm-sub">Faroe · Aurora skin</div></div>
+        <div class="pm-switch">Switch</div>
+      </div>
+      <div class="pm-div"></div>
+      <div class="pm-row focused"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M6 3h12v18l-6-4-6 4z"/></svg>My List <span class="pm-badge">12</span></div>
+      <div class="pm-row"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>Continue Watching</div>
+      <div class="pm-row"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 8h9M18 8h2M4 16h2M11 16h9"/><circle cx="15.5" cy="8" r="2.3"/><circle cx="8" cy="16" r="2.3"/></svg>Settings</div>
+      <div class="pm-row"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 3v9"/><path d="M6.5 7a7 7 0 1 0 11 0"/></svg>Unpair this TV</div>
+    </div>
+    <div class="hero">
+      <div class="kicker">Blender Open Movie · Film</div>
+      <h1 class="htitle">Big Buck Bunny</h1>
+      <div class="hmeta"><span class="chip">4K</span><span>2008</span><span>Animation · Comedy</span><span class="chip">G+</span></div>
+    </div>
+    <div class="railpeek">
+      <div class="rp-head">Channels &amp; Collections</div>
+      <div class="rp-track"><span class="cpill c1">Disney+</span><span class="cpill c2">dansktv</span><span class="cpill c3">Universal</span><span class="cpill c4">Viaplay</span><span class="cpill c5">HBO</span><span class="cpill c6">Paramount+</span></div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 2 · DISCOVER · COMING SOON (default) ============ -->
+<div class="concept" style="left:80px; top:1300px;">
+  <div class="clabel">
+    <span class="idx">02</span><span class="name">Discover — Coming Soon</span>
+    <span class="tag lock">Reordered</span>
+    <span class="note">Coming Soon now leads (default), then Trending. The merged screen.</span>
+  </div>
+  <div class="stage">
+    <div class="flat"></div>
+    <div class="appbar">
+      <div class="brand"><svg class="mark" viewBox="12 20 76 76"><defs><linearGradient id="j2" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="var(--accent)"/><stop offset="1" stop-color="var(--accent-2)"/></linearGradient></defs><path d="M22 52 C22 24 78 24 78 52 C66 45 59 45 50 49 C41 45 34 45 22 52 Z" fill="url(#j2)"/><g stroke="url(#j2)" stroke-width="4.5" stroke-linecap="round" fill="none"><path d="M33 51 q-5 12 1 20 q5 8 0 14" opacity=".9"/><path d="M44 52 q-4 13 1 21 q4 9 0 13" opacity=".72"/><path d="M56 52 q4 13 -1 21 q-4 9 0 13" opacity=".72"/><path d="M67 51 q5 12 -1 20 q-5 8 0 14" opacity=".9"/></g></svg><span class="wm">Ravilo</span></div>
+      <div class="topnav">
+        <div class="navitem">Home</div>
+        <div class="navitem">Movies</div>
+        <div class="navitem">Series</div>
+        <div class="navitem cur">Discover</div>
+      </div>
+      <div class="right">
+        <div class="iconbtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><line x1="16.5" y1="16.5" x2="21" y2="21"></line></svg></div>
+        <div class="clock">21:11</div>
+        <div class="avatar">ER</div>
+      </div>
+    </div>
+    <div class="screen">
+      <div class="dischead"><h1>Discover</h1><span class="dsub">What’s on the way — and what everyone’s watching</span></div>
+      <div class="segment">
+        <div class="seg on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>Coming Soon</div>
+        <div class="seg"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 16l6-6 4 4 8-8"/><path d="M15 6h6v6"/></svg>Trending</div>
+        <div class="seg"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg>Request</div>
+      </div>
+      <div class="drow">
+        <div class="drow-h"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>This week · July</div>
+        <div class="drow-track cards">
+          <div class="upcard"><span class="uc-date">FRI · 11 JUL</span><div class="uc-t">Nordvest<br>S2 : E5</div><div class="uc-sub"><span class="uc-dot"></span>Airing · Sonarr</div></div>
+          <div class="upcard"><span class="uc-date">SAT · 12 JUL</span><div class="uc-t">Dune:<br>Part Two</div><div class="uc-sub"><span class="uc-dot"></span>Released · Radarr</div></div>
+          <div class="upcard"><span class="uc-date">MON · 14 JUL</span><div class="uc-t">Havets<br>Hjarta S3</div><div class="uc-sub"><span class="uc-dot"></span>Premiere · Sonarr</div></div>
+          <div class="upcard"><span class="uc-date">WED · 16 JUL</span><div class="uc-t">The Bear<br>S3</div><div class="uc-sub"><span class="uc-dot"></span>Airing · Sonarr</div></div>
+          <div class="upcard"><span class="uc-date">FRI · 18 JUL</span><div class="uc-t">Furiosa</div><div class="uc-sub"><span class="uc-dot"></span>Released · Radarr</div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 3 · DISCOVER · REQUEST (Seerr) ============ -->
+<div class="concept" style="left:80px; top:2160px;">
+  <div class="clabel">
+    <span class="idx">03</span><span class="name">Discover — Request</span>
+    <span class="tag seerr">New · Seerr</span>
+    <span class="note">Browse the full catalogue and request anything missing — from the sofa.</span>
+  </div>
+  <div class="stage">
+    <div class="flat"></div>
+    <div class="appbar">
+      <div class="brand"><svg class="mark" viewBox="12 20 76 76"><defs><linearGradient id="j3" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="var(--accent)"/><stop offset="1" stop-color="var(--accent-2)"/></linearGradient></defs><path d="M22 52 C22 24 78 24 78 52 C66 45 59 45 50 49 C41 45 34 45 22 52 Z" fill="url(#j3)"/><g stroke="url(#j3)" stroke-width="4.5" stroke-linecap="round" fill="none"><path d="M33 51 q-5 12 1 20 q5 8 0 14" opacity=".9"/><path d="M44 52 q-4 13 1 21 q4 9 0 13" opacity=".72"/><path d="M56 52 q4 13 -1 21 q-4 9 0 13" opacity=".72"/><path d="M67 51 q5 12 -1 20 q-5 8 0 14" opacity=".9"/></g></svg><span class="wm">Ravilo</span></div>
+      <div class="topnav">
+        <div class="navitem">Home</div>
+        <div class="navitem">Movies</div>
+        <div class="navitem">Series</div>
+        <div class="navitem cur">Discover</div>
+      </div>
+      <div class="right">
+        <div class="iconbtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><line x1="16.5" y1="16.5" x2="21" y2="21"></line></svg></div>
+        <div class="clock">21:11</div>
+        <div class="avatar">ER</div>
+      </div>
+    </div>
+    <div class="screen">
+      <div class="dischead">
+        <h1>Discover</h1>
+        <span class="seerr-chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 3 14h8l-1 8 10-12h-8z"/></svg>Powered by Jellyseerr</span>
+        <div class="searchpill" style="margin-left:auto;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><line x1="16.5" y1="16.5" x2="21" y2="21"></line></svg>Search films, series, people…</div>
+      </div>
+      <div class="segment">
+        <div class="seg"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>Coming Soon</div>
+        <div class="seg"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 16l6-6 4 4 8-8"/><path d="M15 6h6v6"/></svg>Trending</div>
+        <div class="seg on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg>Request</div>
+      </div>
+      <div class="drow">
+        <div class="drow-h">Popular on Jellyseerr</div>
+        <div class="drow-track">
+          <div class="qtile focused"><div class="qposter" style="background:linear-gradient(150deg,#3a2c1a,#a06a2a);"><span class="q-flag new">NEW</span></div><div class="q-t">Dune: Part Two</div><div class="q-act req"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>Request</div></div>
+          <div class="qtile"><div class="qposter" style="background:linear-gradient(150deg,#1a2c3a,#2a5f8a);"></div><div class="q-t">Shōgun</div><div class="q-act pending"><span class="q-dotpulse"></span>Requested</div></div>
+          <div class="qtile"><div class="qposter" style="background:linear-gradient(150deg,#2a1a3a,#5a2a8a);"></div><div class="q-t">Fallout</div><div class="q-act dl">◔ 42%</div></div>
+          <div class="qtile"><div class="qposter" style="background:linear-gradient(150deg,#3a1a2c,#a02a5a);"></div><div class="q-t">Poor Things</div><div class="q-act req"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>Request</div></div>
+          <div class="qtile"><div class="qposter" style="background:linear-gradient(150deg,#1a3a2c,#2a8a5a);"></div><div class="q-t">The Bear</div><div class="q-act have"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12l5 5 11-11"/></svg>In Library</div></div>
+          <div class="qtile"><div class="qposter" style="background:linear-gradient(150deg,#2c2a1a,#8a7a2a);"></div><div class="q-t">Oppenheimer</div><div class="q-act req"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>Request</div></div>
+          <div class="qtile"><div class="qposter" style="background:linear-gradient(150deg,#1a1f3a,#3a45a0);"><span class="q-flag new">NEW</span></div><div class="q-t">Blue Eye Samurai</div><div class="q-act req"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>Request</div></div>
+          <div class="qtile"><div class="qposter" style="background:linear-gradient(150deg,#3a2a1a,#8a5a2a);"></div><div class="q-t">Ripley</div><div class="q-act pending"><span class="q-dotpulse"></span>Requested</div></div>
+        </div>
+      </div>
+      <div class="drow">
+        <div class="drow-h">New Movies</div>
+        <div class="drow-track">
+          <div class="qtile"><div class="qposter" style="background:linear-gradient(150deg,#1a2a3a,#2a6a9a);"></div><div class="q-t">Furiosa</div></div>
+          <div class="qtile"><div class="qposter" style="background:linear-gradient(150deg,#2a1a2a,#7a2a7a);"></div><div class="q-t">Interstellar</div></div>
+          <div class="qtile"><div class="qposter" style="background:linear-gradient(150deg,#1a3a3a,#2a8a8a);"></div><div class="q-t">Andor</div></div>
+          <div class="qtile"><div class="qposter" style="background:linear-gradient(150deg,#3a2a2a,#8a4a4a);"></div><div class="q-t">Chernobyl</div></div>
+          <div class="qtile"><div class="qposter" style="background:linear-gradient(150deg,#22304a,#3a5aa0);"></div><div class="q-t">Presumed Innocent</div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 4 · JELLYSTRUCTURE · SEERR SETTING ============ -->
+<div class="concept" style="left:80px; top:3020px;">
+  <div class="clabel">
+    <span class="idx">04</span><span class="name">Jellystructure — Seerr integration</span>
+    <span class="tag admin">Admin</span>
+    <span class="note">Settings › Download tools. Turning this on lights up the Request tab in Ravilo.</span>
+  </div>
+  <div class="astage">
+    <div class="atop">
+      <svg class="amark" viewBox="12 20 76 76"><defs><linearGradient id="j5" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="var(--accent)"/><stop offset="1" stop-color="var(--accent-2)"/></linearGradient></defs><path d="M22 52 C22 24 78 24 78 52 C66 45 59 45 50 49 C41 45 34 45 22 52 Z" fill="url(#j5)"/></svg>
+      <span class="acrumb">Jellystructure · <b>Settings › Download tools</b></span>
+      <div class="atabs">
+        <span class="atab">Connections</span><span class="atab">Libraries</span><span class="atab">Metadata</span><span class="atab on">Download tools</span><span class="atab">Notifications</span>
+      </div>
+    </div>
+    <div class="abody">
+      <div class="acol">
+        <div class="acard">
+          <h3><svg viewBox="0 0 24 24" fill="none" stroke="#a99ff4" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:26px;height:26px;"><path d="M13 2 3 14h8l-1 8 10-12h-8z"/></svg>Jellyseerr / Overseerr<span class="abadge">requests</span></h3>
+          <div class="adesc">Optional. Point Jellystructure at your Seerr instance and it proxies browse &amp; request for the TV. Turn on <b>Show in Ravilo</b> and a <b>Request</b> tab appears in Discover — anyone can find and request missing titles from the sofa; approved requests hand off to Radarr / Sonarr.</div>
+          <div class="abox">
+            <div class="arow"><b style="font-size:17px;color:#eef0f6;">Jellyseerr</b><span class="abadge blue">movies · series</span><span style="margin-left:auto;font-size:13px;color:#8b93ad;">enabled</span><span class="atoggle"></span></div>
+            <div class="arow" style="margin-top:16px; gap:16px; align-items:flex-start;">
+              <div class="afield" style="flex:1;"><label>Seerr URL</label><div class="ainput">http://jellyseerr:5055</div></div>
+              <div class="afield" style="flex:1;"><label>API key</label><div class="ainput">••••••••••••3a9f <span class="achk"><span class="adot"></span>connected</span></div></div>
+            </div>
+            <hr style="border:none;border-top:1px solid rgba(255,255,255,.07);margin:16px 0;">
+            <div class="arow"><div><b style="font-size:15px;color:#eef0f6;">Show Request tab in Ravilo</b><div class="asub">Adds Discover › Request for every profile</div></div><span class="atoggle" style="margin-left:auto;"></span></div>
+            <div class="arow" style="margin-top:15px;"><div><b style="font-size:15px;color:#eef0f6;">Approval</b><div class="asub">Admins auto-approve · everyone else needs a yes</div></div><span class="asel">Require for non-admins <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" style="width:14px;height:14px;"><path d="M6 9l6 6 6-6"/></svg></span></div>
+          </div>
+        </div>
+        <div class="aunlock"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 3 14h8l-1 8 10-12h-8z"/></svg><div>Live now in Ravilo → <b>Discover › Request</b> for Eyð, Olivar &amp; Marjun.</div></div>
+      </div>
+      <div class="atoml">
+        <div class="th">config.toml</div>
+        <div><span class="c">[seerr]</span></div>
+        <div><span class="k">enabled</span> = <span class="b">true</span></div>
+        <div><span class="k">url</span> = <span class="s">"http://jellyseerr:5055"</span></div>
+        <div><span class="k">api_key</span> = <span class="s">"•••3a9f"</span></div>
+        <div><span class="k">show_in_ravilo</span> = <span class="b">true</span></div>
+        <div><span class="k">require_approval</span> = <span class="s">"non_admins"</span></div>
+        <div>&nbsp;</div>
+        <div><span class="c"># hands approved requests to:</span></div>
+        <div><span class="c"># [radarr] · [sonarr]</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>
