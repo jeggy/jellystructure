@@ -158,6 +158,10 @@ data class MediaItem(
     val nfoWrittenAt: Long? = null,
     val nfoHash: String? = null,
     val jfSyncedAt: Long? = null,
+    // Phase 133: which of "poster"/"backdrop" were manually picked/uploaded by an operator, as opposed
+    // to the TMDB default — preserved across every automatic scan/sync/re-pull at the MediaStore.addOrUpdate
+    // choke point (mirrors preserveJsTags/mergeUserGenres); only an explicit re-pick/upload changes it.
+    val lockedArtwork: List<String> = emptyList(),
 )
 
 /** Phase 108: the sort key every "recently added" surface uses (Ravilo's Newly Added, Browse default,

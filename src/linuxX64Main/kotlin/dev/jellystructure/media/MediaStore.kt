@@ -72,6 +72,18 @@ class MediaStore(
         return fresh.copy(tags = (fresh.tags + keptJs).distinct())
     }
 
+    // Phase 133: a manually-picked/uploaded poster or backdrop must survive every automatic metadata
+    // pull (scan/sync/re-pull), which otherwise unconditionally resets posterPath/backdropPath to TMDB's
+    // current default. Single choke point mirroring preserveJsTags/mergeUserGenres — the Scanner never
+    // needs to know about the lock itself.
+    private fun preserveLockedArtwork(fresh: MediaItem, existing: MediaItem?): MediaItem {
+        if (existing == null || existing.lockedArtwork.isEmpty()) return fresh
+        var result = fresh.copy(lockedArtwork = existing.lockedArtwork)
+        if ("poster" in existing.lockedArtwork) result = result.copy(posterPath = existing.posterPath)
+        if ("backdrop" in existing.lockedArtwork) result = result.copy(backdropPath = existing.backdropPath)
+        return result
+    }
+
     // Phase 108: JS-owned created/updated timestamps. createdAt is stamped once (first insert) and
     // never moves; updatedAt only bumps when the item's actual content changed — a scan that re-finds
     // an unchanged title must not make it look freshly edited. Compared via a "content signature" that
@@ -438,6 +450,7 @@ class MediaStore(
         // survive a slug change instead of resetting.
         val old = stale ?: existing
         var merged = preserveJsTags(item, existing)
+        merged = preserveLockedArtwork(merged, existing)
         if (existing != null && existing.titlesByLang.isNotEmpty()) {
             merged = merged.copy(titlesByLang = existing.titlesByLang + item.titlesByLang)
         }
