@@ -5,18 +5,8 @@ import dev.jellystructure.auth.DeviceKey
 import dev.jellystructure.auth.JellyfinClient
 import dev.jellystructure.auth.SessionKey
 import dev.jellystructure.auth.SessionService
-import dev.jellystructure.config.AppConfig
 import dev.jellystructure.config.ConfigStore
-import dev.jellystructure.arr.AcquisitionService
-import dev.jellystructure.shared.tv.AcquisitionRecord
-import dev.jellystructure.shared.tv.AcquisitionStatus
-import dev.jellystructure.shared.tv.ChartEntry
-import dev.jellystructure.shared.tv.DiscoverDetail
-import dev.jellystructure.shared.tv.DiscoverEntry
 import dev.jellystructure.shared.tv.DiscoverResponse
-import dev.jellystructure.shared.tv.DiscoverRow
-import dev.jellystructure.shared.tv.MediaKind
-import dev.jellystructure.shared.tv.Person
 import dev.jellystructure.shared.tv.ChannelLogoUpload
 import dev.jellystructure.shared.tv.CardPlayState
 import dev.jellystructure.shared.tv.MarkRequest
@@ -83,28 +73,6 @@ private data class AdminConfigEnvelope(
     val isGlobal: Boolean,
 )
 
-@Serializable
-private data class TvDiscoverRequest(
-    val listId: String? = null,
-    val rank: Int? = null,
-    val mediaKind: String? = null,
-    val tmdbId: Int? = null,
-)
-
-// R48 — which *arr must be enabled to serve a given list (tv-* → Sonarr, else Radarr).
-private fun servable(listId: String, cfg: AppConfig): Boolean =
-    if (listId.startsWith("tv-")) cfg.sonarr?.enabled == true else cfg.radarr?.enabled == true
-
-// R48 — derive the per-entry acquisition status: in-library → available; else the tracked record, else not_requested.
-private fun acquisitionFor(e: ChartEntry, acq: AcquisitionService?): AcquisitionRecord {
-    val itemId = e.itemId
-    if (itemId != null)
-        return AcquisitionRecord(itemId, e.kind, AcquisitionStatus.AVAILABLE, e.tmdbId, e.title, progress = 100, itemId = itemId)
-    val key = e.tmdbId?.let { "tmdb:$it" }
-        ?: return AcquisitionRecord("chart:${e.listId}:${e.rank}", e.kind, AcquisitionStatus.NOT_REQUESTED, e.tmdbId, e.title)
-    return acq?.get(key) ?: AcquisitionRecord(key, e.kind, AcquisitionStatus.NOT_REQUESTED, e.tmdbId, e.title)
-}
-
 fun Route.tvRoutes(
     deviceService: RaviloDeviceService,
     raviloConfigService: RaviloConfigService,
@@ -116,10 +84,6 @@ fun Route.tvRoutes(
     jellyfinClient: JellyfinClient,
     configStore: ConfigStore,
     channelLogoStore: ChannelLogoStore,
-    acquisitionService: AcquisitionService? = null,
-    chartStore: dev.jellystructure.chart.ChartStore? = null,
-    chartRegistry: dev.jellystructure.chart.ChartRegistry? = null,
-    tmdbClient: dev.jellystructure.tmdb.TmdbClient? = null,
     imageProxyService: RaviloArtworkService? = null,
     tvEventBus: TvEventBus? = null,
     upcomingService: dev.jellystructure.tv.UpcomingService? = null,
@@ -380,26 +344,13 @@ fun Route.tvRoutes(
         call.respond(mapOf("rev" to rev))
     }
 
-    // R48 — Discover / Top 10. Composes the per-user list selection (R04) + Phase 57 charts +
-    // Phase 56 live acquisition status. Server decides availability/gating; the TV never re-derives it.
+    // Phase 136 — the chart/Discover-charts backend (RapidAPI/Netflix-Tudum/JustWatch) is retired in
+    // favour of Jellyseerr/Overseerr. The per-user config model (RaviloConfig.discover) and this route
+    // are repurposed for Seerr feeds by Phase 137/R171; until then this always reports unavailable so
+    // an old TV build's Discover tab just stays hidden rather than erroring.
     get("/tv/discover") {
-        val device = call.attributes[DeviceKey]
-        val d = raviloConfigService.getConfig(device.jellyfinUserId).discover
-        val cfg = configStore.current
-        // R142: collect specs from ALL providers (not just d.source) so multi-provider lists are all served.
-        val specs = chartRegistry?.all()?.flatMap { it.availableLists(d.region) }.orEmpty()
-        val acqEnabled = cfg.acquisition?.enabled == true
-        // Tab shows when *arr is connected; acquisition engine only gates the request button, not browsing.
-        val available = d.enabled && d.lists.isNotEmpty() && d.lists.any { servable(it, cfg) }
-        if (!available) {
-            call.respond(DiscoverResponse(false, d.source, d.region, false)); return@get
-        }
-        val rows = d.lists.mapNotNull { listId ->
-            val spec = specs.firstOrNull { it.id == listId } ?: return@mapNotNull null
-            val entries = (chartStore?.entries(listId).orEmpty()).map { DiscoverEntry(it, acquisitionFor(it, acquisitionService)) }
-            DiscoverRow(spec, entries)
-        }
-        call.respond(DiscoverResponse(true, d.source, d.region, acqEnabled && (device.isAdmin || d.canRequest), rows))
+        call.attributes[DeviceKey]
+        call.respond(DiscoverResponse(available = false, source = "", region = "", canRequest = false))
     }
 
     // R160 — the calendar is the same for every viewer (no per-user scoping), server-cached with a
@@ -419,79 +370,15 @@ fun Route.tvRoutes(
         call.respond(detail)
     }
 
+    // Phase 136 — stubbed alongside /tv/discover above; Phase 137/R171 rebuild these against Seerr.
     get("/tv/discover/item/{listId}/{rank}") {
-        val device = call.attributes[DeviceKey]
-        val listId = call.parameters["listId"] ?: return@get call.respond(HttpStatusCode.BadRequest)
-        val rank = call.parameters["rank"]?.toIntOrNull() ?: return@get call.respond(HttpStatusCode.BadRequest)
-        val entry = (chartStore?.entries(listId).orEmpty()).firstOrNull { it.rank == rank }
-            ?: return@get call.respond(HttpStatusCode.NotFound)
-        val d = raviloConfigService.getConfig(device.jellyfinUserId).discover
-        // R142: find the owning provider from the spec (not d.source) so multi-provider attribution is correct.
-        // availableLists() is cheap (no I/O); use d.region as the primary region and also probe common
-        // "no region" global lists (mov-global etc.) which availableLists() returns for any region input.
-        val provider = chartRegistry?.all()?.firstOrNull { p ->
-            p.availableLists(d.region).any { it.id == listId }
-        }
-        // R63 — fetch TMDB genres, runtime, cast when tmdbId is known
-        val isSeries = entry.kind == MediaKind.SERIES
-        val tmdbId = entry.tmdbId
-        val genres: List<String>
-        val runtime: Int?
-        val cast: List<Person>
-        if (tmdbId != null && tmdbClient != null) {
-            if (isSeries) {
-                val det = tmdbClient.getTvDetails(tmdbId)
-                val cred = tmdbClient.getTvCredits(tmdbId)
-                genres = det?.genres?.map { it.name } ?: emptyList()
-                runtime = det?.episodeRunTime?.firstOrNull()
-                cast = cred.map { m -> Person(m.id.toString(), m.name, m.character.takeIf { it.isNotBlank() }, m.profilePath?.let { "https://image.tmdb.org/t/p/w185$it" }) }
-            } else {
-                val det = tmdbClient.getMovieDetails(tmdbId)
-                val cred = tmdbClient.getMovieCredits(tmdbId)
-                genres = det?.genres?.map { it.name } ?: emptyList()
-                runtime = det?.runtime
-                cast = cred.map { m -> Person(m.id.toString(), m.name, m.character.takeIf { it.isNotBlank() }, m.profilePath?.let { "https://image.tmdb.org/t/p/w185$it" }) }
-            }
-        } else {
-            genres = emptyList(); runtime = null; cast = emptyList()
-        }
-        call.respond(
-            DiscoverDetail(
-                entry = entry,
-                acquisition = acquisitionFor(entry, acquisitionService),
-                sourceLabel = provider?.displayName ?: d.source,
-                attribution = provider?.attribution ?: "",
-                genres = genres,
-                runtime = runtime,
-                isSeries = isSeries,
-                cast = cast,
-            )
-        )
+        call.attributes[DeviceKey]
+        call.respond(HttpStatusCode.NotFound)
     }
 
     post("/tv/discover/request") {
-        val device = call.attributes[DeviceKey]
-        val d = raviloConfigService.getConfig(device.jellyfinUserId).discover
-        if (!(device.isAdmin || d.canRequest)) {
-            call.respond(HttpStatusCode.Forbidden, mapOf("error" to "not allowed to request — ask the owner")); return@post
-        }
-        if (acquisitionService == null) {
-            call.respond(HttpStatusCode.ServiceUnavailable, mapOf("error" to "acquisition not available")); return@post
-        }
-        val req = call.receive<TvDiscoverRequest>()
-        // Resolve the target either from a chart entry (listId+rank) or directly (mediaKind+tmdbId).
-        val entry = if (req.listId != null && req.rank != null)
-            (chartStore?.entries(req.listId).orEmpty()).firstOrNull { it.rank == req.rank } else null
-        val tmdbId = entry?.tmdbId ?: req.tmdbId
-        val kind = entry?.kind ?: when {
-            req.mediaKind.equals("series", true) || req.mediaKind.equals("tv", true) -> MediaKind.SERIES
-            else -> MediaKind.MOVIE
-        }
-        val title = entry?.title ?: ""
-        if (tmdbId == null) {
-            call.respond(HttpStatusCode.BadRequest, mapOf("error" to "no tmdbId for this title")); return@post
-        }
-        call.respond(acquisitionService.request(kind, tmdbId, title, requestedBy = device.jellyfinUserId))
+        call.attributes[DeviceKey]
+        call.respond(HttpStatusCode.ServiceUnavailable, mapOf("error" to "discover request unavailable"))
     }
 
     // Admin config endpoints — authenticated by session cookie (jellystructure admin login)

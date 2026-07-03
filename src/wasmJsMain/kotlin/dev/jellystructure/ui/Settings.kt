@@ -15,7 +15,7 @@ import dev.jellystructure.api.PipelineRunResult
 import dev.jellystructure.api.ArrConfig
 import dev.jellystructure.api.QBittorrentConfig
 import dev.jellystructure.api.QBittorrentPathMapping
-import dev.jellystructure.api.DiscoverFeedConfig
+import dev.jellystructure.api.SeerrConfig
 import dev.jellystructure.api.MetadataConfig
 import dev.jellystructure.resolver.CertificationCatalog
 import dev.jellystructure.api.httpClient
@@ -59,7 +59,6 @@ fun renderSettings(container: Element, scope: CoroutineScope, query: Map<String,
               ${settingsNavItemHtml("connections", "Connections")}
               ${settingsNavItemHtml("libraries", "Libraries")}
               ${settingsNavItemHtml("metadata", "Metadata")}
-              ${settingsNavItemHtml("discover", "Discover")}
               ${settingsNavItemHtml("downloads", "Download tools")}
               ${settingsNavItemHtml("notifications", "Notifications")}
               ${settingsNavItemHtml("advanced", "Advanced")}
@@ -223,52 +222,6 @@ fun renderSettings(container: Element, scope: CoroutineScope, query: Map<String,
               </div>
             </div>
 
-            <div class="card set-section" id="sect-discover" data-tab="discover">
-              <h3 style="font-size:1rem;margin:0 0 14px">Discover / Top 10</h3>
-              <div style="display:flex;align-items:flex-start;gap:12px;margin-bottom:16px">
-                <div style="flex:1">
-                  <span style="font-size:.9rem;font-weight:500">Enable Discover</span>
-                  <div class="hint">Ravilo's Top 10 tab — charts are ingested weekly from enabled providers below.</div>
-                </div>
-                <span id="discover-enabled-toggle" class="toggle" style="cursor:pointer;flex-shrink:0"></span>
-              </div>
-              <div id="discover-fields">
-                <div style="border:1px solid var(--line);border-radius:8px;padding:13px 15px;margin-bottom:10px">
-                  <div style="display:flex;align-items:center;gap:8px;margin-bottom:5px">
-                    <span style="font-weight:600;font-size:.9rem">Netflix</span>
-                    <span class="badge ok" style="font-size:.65rem">free · no setup</span>
-                    <span style="flex:1"></span>
-                    <span id="provider-netflix-toggle" class="toggle" style="cursor:pointer"></span>
-                  </div>
-                  <div class="hint">Official Tudum TSV feed — country Top 10, Global Top 10, Non-English, All-time.</div>
-                </div>
-                <div style="border:1px solid var(--line);border-radius:8px;padding:13px 15px">
-                  <div style="display:flex;align-items:center;gap:8px;margin-bottom:5px">
-                    <span style="font-weight:600;font-size:.9rem">Viaplay · Paramount+ · SkyShowtime</span>
-                    <span class="badge ok" style="font-size:.65rem">free · no key</span>
-                  </div>
-                  <div class="hint" style="margin-bottom:10px">User-activity rankings via JustWatch (unofficial API, stable). Not platform-official viewership — no account required.</div>
-                  <div style="display:grid;gap:7px;border-top:1px solid var(--line);padding-top:10px">
-                    <div style="display:flex;align-items:center;justify-content:space-between"><span style="font-size:.9rem">Viaplay</span><span id="provider-viaplay-toggle" class="toggle" style="cursor:pointer"></span></div>
-                    <div style="display:flex;align-items:center;justify-content:space-between"><span style="font-size:.9rem">Paramount+</span><span id="provider-paramount-toggle" class="toggle" style="cursor:pointer"></span></div>
-                    <div style="display:flex;align-items:center;justify-content:space-between"><span style="font-size:.9rem">SkyShowtime</span><span id="provider-skyshowtime-toggle" class="toggle" style="cursor:pointer"></span></div>
-                  </div>
-                </div>
-                <hr class="dash" style="margin:16px 0 12px;">
-                <div class="row center"><h4 style="margin:0;">Country charts</h4><span class="tiny muted" style="margin-left:8px;">which countries to ingest</span></div>
-                <div class="reg-grid" id="reg-grid" style="margin-top:10px;"></div>
-                <hr class="dash" style="margin:14px 0 12px;">
-                <div class="field" style="max-width:260px;">
-                  <label>Refresh charts</label>
-                  <select class="input" id="disc-refresh">
-                    <option value="24">Daily</option>
-                    <option value="72">Every 3 days</option>
-                    <option value="168">Weekly</option>
-                  </select>
-                  <span class="hint">Feeds are week-gated, so weekly is plenty.</span>
-                </div>
-              </div>
-            </div>
 
             <div class="card set-section" id="sect-crossseed" data-tab="downloads">
               <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
@@ -337,6 +290,25 @@ fun renderSettings(container: Element, scope: CoroutineScope, query: Map<String,
               ${arrBoxHtml("radarr", "Radarr", "movies", "http://radarr:7878")}
               ${arrBoxHtml("sonarr", "Sonarr", "tvshows", "http://sonarr:8989")}
               <div class="hint" style="margin-top:2px">Root-folder paths reconcile with <strong>Library mapping</strong> by longest prefix.</div>
+            </div>
+
+            <div class="card set-section" id="sect-seerr" data-tab="downloads">
+              <div class="row center"><h3 style="font-size:1.05rem;margin:0;">Jellyseerr / Overseerr</h3><span class="badge info" style="margin-left:8px;">requests</span><span class="spacer"></span><span class="muted tiny">enable</span><span id="seerr-enabled-toggle" class="toggle" style="cursor:pointer"></span></div>
+              <div class="tiny muted" style="margin:8px 0 0;">Optional. The <strong>connection</strong> to your Seerr server — Jellystructure uses it to search, browse and place requests from the TV, and shows live request status. Seerr owns request &amp; approval rules and hands approved titles to Radarr / Sonarr. <strong>Where the Request tab appears</strong> and <strong>which discover rows it shows</strong> is set per user in Ravilo config → Request.</div>
+              <div id="seerr-on" style="display:none;margin-top:14px">
+                <div class="field"><label>Seerr URL</label><input id="seerr-url" class="input" type="url" placeholder="http://jellyseerr:5055" style="width:100%"></div>
+                <div class="field"><label>API key <span id="seerr-key-badge" style="display:none;margin-left:8px"></span></label>
+                  <div style="display:flex;gap:8px;align-items:center">
+                    <input id="seerr-key" class="input" type="password" style="flex:1;min-width:0">
+                    <button id="seerr-key-reveal" type="button" class="btn sm ghost" style="flex:none">Show</button>
+                  </div>
+                  <span class="hint">Jellyseerr/Overseerr → Settings → General → API Key. The saved key is pre-filled — clear it to remove.</span>
+                </div>
+                <div style="display:flex;align-items:center;gap:8px">
+                  <button id="seerr-test-btn" class="btn sm ghost">Test connection</button>
+                  <span id="chk-seerr" class="tiny muted"></span>
+                </div>
+              </div>
             </div>
 
             <div class="card set-section" id="sect-ingest" data-tab="downloads">
@@ -494,13 +466,13 @@ private val SECTION_TAB = mapOf(
     "sect-libraries" to "libraries",
     "sect-scanning" to "libraries",
     "sect-metadata" to "metadata",
-    "sect-discover" to "discover",
     "sect-crossseed" to "downloads",
     "sect-arr" to "downloads",
+    "sect-seerr" to "downloads",
     "sect-notifications" to "notifications",
     "sect-advanced" to "advanced",
 )
-private val SETTINGS_TABS = listOf("connections", "libraries", "metadata", "discover", "downloads", "notifications", "advanced")
+private val SETTINGS_TABS = listOf("connections", "libraries", "metadata", "downloads", "notifications", "advanced")
 
 private fun applyHealthFailures(failsBySection: Map<String, Int>) {
     // Phase 55 — bubble section failures up to their owning tab.
@@ -543,17 +515,6 @@ private fun applyHealthFailures(failsBySection: Map<String, Int>) {
     }
 }
 
-private val DISCOVER_PROVIDER_IDS = listOf("netflix", "viaplay", "paramount", "skyshowtime")
-private val DISCOVER_REGIONS = listOf(
-    "DK" to "Denmark", "US" to "United States", "GB" to "United Kingdom", "SE" to "Sweden",
-    "NO" to "Norway", "DE" to "Germany", "FR" to "France", "ES" to "Spain",
-    "NL" to "Netherlands", "IE" to "Ireland", "IS" to "Iceland", "FO" to "Faroe Islands",
-)
-private var discoverEnabled = false
-private val discoverProviders = mutableSetOf<String>()
-private var discoverRegions = listOf("DK")
-private var discoverRefreshHours = 168
-
 private var overwriteNfo = false
 private var fetchImages = true
 private var tellJellyfin = true
@@ -570,6 +531,7 @@ private var radarrEnabled = false
 private var radarrRescan = true
 private var sonarrEnabled = false
 private var sonarrRescan = true
+private var seerrEnabled = false
 private var notifScanDone = true
 private var notifNoMatch = false
 private var notifWriteFailed = true
@@ -599,16 +561,13 @@ private fun populateForm(response: ConfigResponse) {
     ageRatingCascade.addAll(config.metadata.ageRatingCascade)
     renderAgeRatingCascade()
 
-    val disc = config.discover
-    discoverEnabled = disc?.enabled ?: false
-    discoverProviders.clear(); discoverProviders.addAll(disc?.providers ?: listOf("netflix"))
-    discoverRegions = disc?.regions ?: listOf("DK")
-    discoverRefreshHours = disc?.refreshHours ?: 168
-    updateToggle("discover-enabled-toggle", discoverEnabled)
-    for (id in DISCOVER_PROVIDER_IDS) updateToggle("provider-$id-toggle", id in discoverProviders)
-    (document.getElementById("discover-fields") as? HTMLElement)?.style?.display = if (discoverEnabled) "" else "none"
-    (document.getElementById("disc-refresh") as? HTMLSelectElement)?.value = discoverRefreshHours.toString()
-    renderDiscoverRegions()
+    // Phase 136 — Jellyseerr/Overseerr (API key left blank; "(unchanged)" placeholder, ##KEEP## on save)
+    val seerr = config.seerr
+    seerrEnabled = seerr?.enabled ?: false
+    updateToggle("seerr-enabled-toggle", seerrEnabled)
+    if (seerr != null) { setInputValue("seerr-url", seerr.url); setInputValue("seerr-key", seerr.apiKey) }
+    setArrKeyBadge("seerr", (seerr?.apiKey ?: "").isNotBlank())
+    (document.getElementById("seerr-on") as? HTMLElement)?.style?.display = if (seerrEnabled) "block" else "none"
 
     overwriteNfo = config.behavior.overwriteNfo
     fetchImages = config.behavior.fetchImages
@@ -808,6 +767,7 @@ private fun attachListeners(scope: CoroutineScope) {
 
     wireArr(scope, "radarr")
     wireArr(scope, "sonarr")
+    wireSeerr(scope)
 
     document.getElementById("notif-scan-done-toggle")?.addEventListener("click") {
         notifScanDone = !notifScanDone
@@ -849,24 +809,6 @@ private fun attachListeners(scope: CoroutineScope) {
             }.getOrDefault(false)
             resultEl.innerHTML = if (ok) """<span class="badge ok">Delivered</span>""" else """<span class="badge bad">Failed</span>"""
         }
-    }
-
-    document.getElementById("discover-enabled-toggle")?.addEventListener("click") {
-        discoverEnabled = !discoverEnabled
-        updateToggle("discover-enabled-toggle", discoverEnabled)
-        (document.getElementById("discover-fields") as? HTMLElement)?.style?.display = if (discoverEnabled) "" else "none"
-        refreshTomlPreview(readForm())
-    }
-    for (id in DISCOVER_PROVIDER_IDS) {
-        document.getElementById("provider-$id-toggle")?.addEventListener("click") {
-            if (id in discoverProviders) discoverProviders.remove(id) else discoverProviders.add(id)
-            updateToggle("provider-$id-toggle", id in discoverProviders)
-            refreshTomlPreview(readForm())
-        }
-    }
-    (document.getElementById("disc-refresh") as? HTMLSelectElement)?.addEventListener("change") {
-        discoverRefreshHours = (document.getElementById("disc-refresh") as? HTMLSelectElement)?.value?.toIntOrNull() ?: 168
-        refreshTomlPreview(readForm())
     }
 
     wirePipelineBuilder(scope)
@@ -1163,11 +1105,10 @@ private fun readForm(): AppConfig = AppConfig(
         apiKey = getInputValue("sonarr-key").ifBlank { "##KEEP##" },
         rescanAfterWrite = sonarrRescan,
     ) else null,
-    discover = if (discoverEnabled) DiscoverFeedConfig(
+    seerr = if (seerrEnabled) SeerrConfig(
         enabled = true,
-        providers = discoverProviders.toList(),
-        regions = discoverRegions,
-        refreshHours = discoverRefreshHours,
+        url = getInputValue("seerr-url"),
+        apiKey = getInputValue("seerr-key").ifBlank { "##KEEP##" },
     ) else null,
     scanSchedule = if (pipelineEnabled) computePipeCron() else "",
     scan = ScanConfig(pipeline = if (pipelineEnabled) pipelineSteps.toList() else emptyList()),
@@ -1239,14 +1180,6 @@ private fun buildToml(c: AppConfig): String = buildString {
         appendLine("skip = ${lib.skip}")
         if (!lib.fallbackLanguage.isNullOrBlank()) appendLine("""fallback_language = "${lib.fallbackLanguage}"""")
     }
-    c.discover?.let { d ->
-        appendLine()
-        appendLine("[discover]")
-        appendLine("enabled = ${d.enabled}")
-        appendLine("providers = [${d.providers.joinToString(", ") { "\"$it\"" }}]")
-        appendLine("regions = [${d.regions.joinToString(", ") { "\"$it\"" }}]")
-        appendLine("refresh_hours = ${d.refreshHours}")
-    }
     val qb = c.qbittorrent
     if (qb != null) {
         appendLine()
@@ -1280,6 +1213,13 @@ private fun buildToml(c: AppConfig): String = buildString {
         appendLine("""url = "${s.url}"""")
         appendLine("""api_key = "***"""")
         appendLine("rescan_after_write = ${s.rescanAfterWrite}")
+    }
+    c.seerr?.let { sr ->
+        appendLine()
+        appendLine("[seerr]")
+        appendLine("enabled = ${sr.enabled}")
+        appendLine("""url = "${sr.url}"""")
+        appendLine("""api_key = "***"""")
     }
 }
 
@@ -1324,6 +1264,42 @@ private fun wireArr(scope: CoroutineScope, kind: String) {
     document.getElementById("$kind-key-reveal")?.addEventListener("click") {
         val inp = document.getElementById("$kind-key") as? HTMLInputElement ?: return@addEventListener
         val btn = document.getElementById("$kind-key-reveal") as? HTMLElement
+        if (inp.type == "password") { inp.type = "text"; btn?.textContent = "Hide" }
+        else { inp.type = "password"; btn?.textContent = "Show" }
+    }
+}
+
+// Phase 136 — wire the Jellyseerr/Overseerr card (enable toggle, inputs, test, key reveal). Simpler
+// than wireArr: no rescan toggle, no root-folder import — Seerr isn't a library-mapping source.
+private fun wireSeerr(scope: CoroutineScope) {
+    document.getElementById("seerr-enabled-toggle")?.addEventListener("click") {
+        seerrEnabled = !seerrEnabled
+        updateToggle("seerr-enabled-toggle", seerrEnabled)
+        (document.getElementById("seerr-on") as? HTMLElement)?.style?.display = if (seerrEnabled) "block" else "none"
+        refreshTomlPreview(readForm())
+    }
+    listOf("seerr-url", "seerr-key").forEach { id ->
+        document.getElementById(id)?.addEventListener("input") { refreshTomlPreview(readForm()) }
+    }
+    document.getElementById("seerr-test-btn")?.addEventListener("click") {
+        scope.launch {
+            val el = document.getElementById("chk-seerr") as? HTMLElement ?: return@launch
+            if (getInputValue("seerr-key").isBlank()) {
+                el.innerHTML = """<span class="badge" style="font-size:.72rem">Key hidden — Save, then use “Test connections” (top) to verify the stored key</span>"""
+                return@launch
+            }
+            el.textContent = "Testing…"
+            val r = ConfigApi.testSeerr(getInputValue("seerr-url"), getInputValue("seerr-key"))
+            when {
+                r == null -> el.innerHTML = """<span class="badge bad">Request failed</span>"""
+                r.ok -> el.innerHTML = """<span class="badge ok">${r.detail.esc()}</span>"""
+                else -> el.innerHTML = """<span class="badge bad">${r.detail.esc()}</span>"""
+            }
+        }
+    }
+    document.getElementById("seerr-key-reveal")?.addEventListener("click") {
+        val inp = document.getElementById("seerr-key") as? HTMLInputElement ?: return@addEventListener
+        val btn = document.getElementById("seerr-key-reveal") as? HTMLElement
         if (inp.type == "password") { inp.type = "text"; btn?.textContent = "Hide" }
         else { inp.type = "password"; btn?.textContent = "Show" }
     }
@@ -1599,26 +1575,6 @@ private fun updateToggle(id: String, on: Boolean) {
 }
 
 // Phase 107 — country-chart multi-select for Discover/Top 10 (design/app/settings.html .reg-grid).
-private fun renderDiscoverRegions() {
-    val grid = document.getElementById("reg-grid") as? HTMLElement ?: return
-    grid.innerHTML = DISCOVER_REGIONS.joinToString("") { (code, name) ->
-        """<div class="reg-chip${if (code in discoverRegions) " on" else ""}" data-reg="$code">${name.esc()}</div>"""
-    }
-    grid.querySelectorAll(".reg-chip").let { nodes ->
-        for (i in 0 until nodes.length) {
-            val chip = nodes.item(i) as? HTMLElement ?: continue
-            chip.addEventListener("click") {
-                val code = chip.getAttribute("data-reg") ?: return@addEventListener
-                discoverRegions = if (code in discoverRegions) {
-                    // At least one region must stay selected — ingestion needs somewhere to ingest for.
-                    if (discoverRegions.size > 1) discoverRegions - code else discoverRegions
-                } else discoverRegions + code
-                renderDiscoverRegions()
-                refreshTomlPreview(readForm())
-            }
-        }
-    }
-}
 
 
 private fun setInputValue(id: String, value: String) {

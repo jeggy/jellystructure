@@ -1,0 +1,5 @@
+-- Phase 136 — retire the chart/Discover-charts subsystem (RapidAPI/Netflix-Tudum/JustWatch), replaced
+-- by Jellyseerr/Overseerr (Phase 137/R171). Drop the now-orphaned chart tables, v15 -> v16.
+DROP TABLE chart_entry;
+DROP TABLE chart_history;
+DROP TABLE chart_override;
