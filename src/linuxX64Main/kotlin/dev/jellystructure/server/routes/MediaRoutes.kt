@@ -16,6 +16,7 @@ import dev.jellystructure.log.WorkerId
 import dev.jellystructure.media.ArtworkDownloader
 import dev.jellystructure.media.FfmpegRunner
 import dev.jellystructure.media.FfprobeRunner
+import dev.jellystructure.media.ProbeDiagnosis
 import dev.jellystructure.media.LogoDownloader
 import dev.jellystructure.media.MediaHistory
 import dev.jellystructure.media.MediaStore
@@ -843,6 +844,59 @@ fun Route.mediaRoutes(
                     } else {
                         call.respond(TrackPlan(FfmpegRunner.planSetDefault(ep.path, targetTrack.streamIndex, sameType.map { it.streamIndex }, targetTrack.kind), "ffmpeg", 5000, specifier, beforeSnaps, afterSnaps))
                     }
+                }
+
+                // Phase 128 — GET .../episodes/{epFilename}/tracks/diagnose: see TrackRoutes.kt's movie
+                // twin for the full rationale (corrupt/unreadable/no-audio classification + *arr-managed).
+                get("/tracks/diagnose") {
+                    val id = call.parameters["id"]
+                        ?: return@get call.respond(HttpStatusCode.BadRequest)
+                    val epFilename = call.parameters["epFilename"]
+                        ?: return@get call.respond(HttpStatusCode.BadRequest)
+                    val item = store.resolve(id)
+                        ?: return@get call.respond(HttpStatusCode.NotFound)
+                    val ep = item.episodes.firstOrNull { it.filename == epFilename }
+                        ?: return@get call.respond(HttpStatusCode.NotFound, mapOf("error" to "episode not found"))
+                    val diagnosis = FfprobeRunner.diagnose(ep.path).copy(managed = arrRescan?.isManaged(item) ?: false)
+                    call.respond(diagnosis)
+                }
+
+                // Phase 128 — POST .../episodes/{epFilename}/tracks/reprobe: see TrackRoutes.kt's movie
+                // twin. Episode-level resolvedLanguage is honest (null) when the fresh probe still shows
+                // no audio, independent of the series' own resolved language.
+                post("/tracks/reprobe") {
+                    val id = call.parameters["id"]
+                        ?: return@post call.respond(HttpStatusCode.BadRequest)
+                    val epFilename = call.parameters["epFilename"]
+                        ?: return@post call.respond(HttpStatusCode.BadRequest)
+                    val item = store.resolve(id)
+                        ?: return@post call.respond(HttpStatusCode.NotFound)
+                    val epIdx = item.episodes.indexOfFirst { it.filename == epFilename }
+                    if (epIdx < 0) return@post call.respond(HttpStatusCode.NotFound, mapOf("error" to "episode not found"))
+                    val ep = item.episodes[epIdx]
+                    val newTracks = FfprobeRunner.probe(ep.path)
+                    val newIssue = newTracks.count { (it.kind == TrackKind.AUDIO || it.kind == TrackKind.SUBTITLE) && it.language == null }
+                    val hasAudio = newTracks.any { it.kind == TrackKind.AUDIO }
+                    val updatedEpisodes = item.episodes.toMutableList()
+                    updatedEpisodes[epIdx] = ep.copy(
+                        tracks = newTracks,
+                        issueCount = newIssue,
+                        resolvedLanguage = primaryAudioLanguage(configStore.current, ep.path, newTracks).takeIf { hasAudio },
+                    )
+                    store.updateOne(item.copy(episodes = updatedEpisodes))
+                    mediaHistory.record(id, "tracks_reprobe", "ep=${ep.filename} streams=${newTracks.size} hasAudio=$hasAudio")
+                    call.respond(newTracks)
+                }
+
+                // Phase 128 — POST .../episodes/{epFilename}/reacquire: see TrackRoutes.kt's movie twin.
+                // *arr manages at the SERIES level, so this nudges the whole series' Sonarr entry.
+                post("/reacquire") {
+                    val id = call.parameters["id"]
+                        ?: return@post call.respond(HttpStatusCode.BadRequest)
+                    val item = store.resolve(id)
+                        ?: return@post call.respond(HttpStatusCode.NotFound)
+                    val (managed, ok, detail) = arrRescan?.reacquire(item) ?: Triple(false, false, "No *arr configured")
+                    call.respond(ReacquireResponse(managed, ok, detail))
                 }
 
                 // POST /api/media/{id}/episodes/{epFilename}/tracks/default

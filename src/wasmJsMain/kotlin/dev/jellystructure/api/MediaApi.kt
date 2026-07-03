@@ -6,6 +6,8 @@ import dev.jellystructure.model.MediaKind
 import dev.jellystructure.model.MediaPage
 import dev.jellystructure.model.NfoFileTree
 import dev.jellystructure.model.Person
+import dev.jellystructure.model.Track
+import dev.jellystructure.model.TrackKind
 import dev.jellystructure.shared.tv.Condition
 import io.ktor.client.call.body
 import io.ktor.client.request.delete
@@ -553,6 +555,51 @@ object MediaApi {
             TrackLangResult(runCatching { response.body<TrackOpError>().error }.getOrDefault("HTTP ${response.status.value}"), null)
         }
     }.getOrDefault(TrackLangResult("request failed", null))
+
+    // Phase 128 — mirrors dev.jellystructure.media.ProbeDiagnosis/ProbeStatus (linuxX64-only, so a
+    // hand-mirrored DTO here, matching this file's existing convention for backend response shapes).
+    @Serializable
+    enum class ProbeStatus { OK, NO_AUDIO, CORRUPT, UNREADABLE, PROBE_MISSING, UNKNOWN }
+
+    @Serializable
+    data class ProbeDiagnosis(
+        val status: ProbeStatus,
+        val detail: String,
+        val streamCounts: Map<TrackKind, Int> = emptyMap(),
+        val managed: Boolean = false,
+    )
+
+    @Serializable
+    data class ReacquireResponse(val managed: Boolean, val ok: Boolean, val detail: String)
+
+    suspend fun diagnoseTracks(id: String): ProbeDiagnosis? = runCatching {
+        httpClient.get("/api/media/$id/tracks/diagnose").body<ProbeDiagnosis>()
+    }.getOrNull()
+
+    suspend fun diagnoseEpisodeTracks(mediaId: String, epFilename: String): ProbeDiagnosis? = runCatching {
+        val encoded = encodeURIComponent(epFilename)
+        httpClient.get("/api/media/$mediaId/episodes/$encoded/tracks/diagnose").body<ProbeDiagnosis>()
+    }.getOrNull()
+
+    suspend fun reprobeTracks(id: String): List<Track>? = runCatching {
+        val response = httpClient.post("/api/media/$id/tracks/reprobe")
+        if (response.status.value in 200..299) response.body<List<Track>>() else null
+    }.getOrNull()
+
+    suspend fun reprobeEpisodeTracks(mediaId: String, epFilename: String): List<Track>? = runCatching {
+        val encoded = encodeURIComponent(epFilename)
+        val response = httpClient.post("/api/media/$mediaId/episodes/$encoded/tracks/reprobe")
+        if (response.status.value in 200..299) response.body<List<Track>>() else null
+    }.getOrNull()
+
+    suspend fun reacquire(id: String): ReacquireResponse? = runCatching {
+        httpClient.post("/api/media/$id/reacquire").body<ReacquireResponse>()
+    }.getOrNull()
+
+    suspend fun reacquireEpisode(mediaId: String, epFilename: String): ReacquireResponse? = runCatching {
+        val encoded = encodeURIComponent(epFilename)
+        httpClient.post("/api/media/$mediaId/episodes/$encoded/reacquire").body<ReacquireResponse>()
+    }.getOrNull()
 
     /** Phase 109: reordering is now a queued ffmpeg-remux job — returns the job id, or null on failure. */
     suspend fun reorderTracks(id: String, kind: String, order: List<String>): String? = runCatching {

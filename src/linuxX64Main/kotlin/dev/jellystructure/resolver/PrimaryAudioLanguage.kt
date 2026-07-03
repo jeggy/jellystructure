@@ -24,5 +24,9 @@ fun primaryAudioLanguage(config: AppConfig, path: String, tracks: List<Track>): 
     }
     val fallback = lib?.fallbackLanguage?.ifBlank { null } ?: globalFallback
     val audioLangs = tracks.filter { it.kind == TrackKind.AUDIO }.map { it.language }
+    // Phase 128: a zero-audio-track file (e.g. corrupt/truncated) shouldn't display a language it never
+    // earned — priorityList's fallback exists to keep a TMDB query working, not to fabricate a display
+    // language for a title with no audio at all.
+    if (audioLangs.isEmpty()) return null
     return LanguageResolver.priorityList(audioLangs, fallback).firstOrNull()
 }

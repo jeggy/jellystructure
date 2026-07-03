@@ -49,4 +49,14 @@ object TriageDetection {
             .filter { it.size > 1 }
             .flatten()
             .mapTo(mutableSetOf()) { it.id }
+
+    /** Phase 128: an item/episode with literally zero audio tracks — most often a corrupt/truncated
+     *  file (verified case: ffprobe "moov atom not found") rather than a genuinely audio-less
+     *  container. `issueCount`/`untaggedCount` don't catch this — they only count UNTAGGED tracks, and
+     *  a zero-track file has none to untag, so it silently looked "clean". */
+    fun zeroAudioCount(item: MediaItem): Int = if (item.kind == MediaKind.TV_SHOW) {
+        item.episodes.count { ep -> ep.tracks.none { it.kind == TrackKind.AUDIO } }
+    } else {
+        if (item.tracks.none { it.kind == TrackKind.AUDIO }) 1 else 0
+    }
 }

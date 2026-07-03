@@ -1232,6 +1232,12 @@ private fun buildEpisodeRow(ep: Episode, season: Int?, idx: Int, mediaId: String
         """<span class="badge bad" style="font-size:.7rem;">${ep.issueCount} untagged</span>"""
     else ""
 
+    // Phase 128: zero audio tracks (usually a corrupt/truncated file) is distinct from "untagged" —
+    // there's nothing to tag, and issueCount is 0, so it would otherwise look clean.
+    val zeroAudioBadge = if (audioTracks.isEmpty())
+        """<span class="badge bad" style="font-size:.7rem;" title="No audio tracks detected — open Tracks &amp; order for diagnosis">⚠ no audio</span>"""
+    else ""
+
     // Phase 21 — flag episodes with more than one default audio track.
     val multiDefaultAudio = ep.tracks.count { it.kind == TrackKind.AUDIO && it.default } > 1
     val multiDefaultBadge = if (multiDefaultAudio)
@@ -1300,6 +1306,7 @@ private fun buildEpisodeRow(ep: Episode, season: Int?, idx: Int, mediaId: String
             <div style="display:flex;gap:4px;flex-wrap:wrap;flex:1;">$trackChips</div>
             $multiDefaultBadge
             $issueBadge
+            $zeroAudioBadge
             <span class="ep-chev" style="color:var(--ink-soft);font-size:.9rem;margin-left:4px;">›</span>
           </div>
           <div id="$bodyId" style="display:none;padding:0 12px 12px;">
@@ -2876,8 +2883,14 @@ private const val AUDIO_FLAG_MAX = 5
  * Hidden entirely when no audio track has a language that maps to a flag.
  */
 private fun audioFlagsHtml(tracks: List<Track>): String {
-    val langs = tracks
-        .filter { it.kind == TrackKind.AUDIO }
+    val audioTracks = tracks.filter { it.kind == TrackKind.AUDIO }
+    // Phase 128: zero audio tracks at all (usually a corrupt/truncated file) is distinct from having
+    // audio tracks with no recognized language — show an explicit "?" rather than silently showing
+    // nothing, so the pagebar never reads as "clean" for a file that isn't.
+    if (audioTracks.isEmpty()) {
+        return """<span class="af-label">Audio</span><span class="af-row"><span class="badge bad" style="font-size:.68rem;" title="No audio tracks detected">?</span></span>"""
+    }
+    val langs = audioTracks
         .mapNotNull { t -> t.language?.lowercase()?.let { l -> LANG_CC[l]?.let { cc -> l to cc } } }
         .distinctBy { (_, cc) -> cc }  // one flag per country code; drop duplicate audio tracks
     if (langs.isEmpty()) return ""
