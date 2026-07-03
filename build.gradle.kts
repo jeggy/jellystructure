@@ -172,38 +172,68 @@ tasks.register("runDev") {
             .also { it.pipeToGradle("ravilo-web") }
         raviloWebProc = raviloWeb
 
-        // stdbuf -oL forces line-buffered stdout so every println flushes immediately.
-        // Without it the C runtime switches to fully-buffered mode when stdout is piped,
-        // causing logs to appear in large delayed bursts rather than in real time.
-        val backend = ProcessBuilder("stdbuf", "-oL", binary.absolutePath)
-            .apply {
-                environment()["CONFIG_FILE"] = configDir.resolve("config.toml").absolutePath
-                environment()["DB_FILE"] = configDir.resolve("jellystructure.db").absolutePath
-                environment()["FRONTEND_DIR"] = frontendDir.absolutePath
-                environment()["SERVER_PORT"] = "9505"
-            }
-            .start()
-            .also { it.pipeToGradle("be") }
-        backendProc = backend
-
-        // Fallback: if the Gradle daemon JVM ever does exit, clean up then too.
+        // Fallback: if the Gradle daemon JVM ever does exit, clean up then too. Reads backendProc
+        // (not a per-attempt local) so it always targets whichever attempt is currently running.
         Runtime.getRuntime().addShutdownHook(Thread {
-            backend.destroyForcibly()
+            backendProc?.destroyForcibly()
             frontend.destroyForcibly()
             raviloWeb.destroyForcibly()
         })
 
-        try {
-            val exitCode = backend.waitFor()
-            frontend.destroyForcibly()
-            raviloWeb.destroyForcibly()
-            if (exitCode != 0) error("Backend exited with code $exitCode — see output above")
-        } catch (_: InterruptedException) {
-            backend.destroyForcibly()
-            frontend.destroyForcibly()
-            raviloWeb.destroyForcibly()
-            Thread.currentThread().interrupt()
+        // The port-bind-test above shrinks the startup EADDRINUSE race (a fresh bind() can still be
+        // refused for a brief window right after SIGKILL-ing the old listener) but doesn't eliminate
+        // it — a Kotlin/Native process spawn (dynamic linking + runtime init) takes measurably longer
+        // than this JVM's own quick test-bind-and-close, so conditions can still shift in between.
+        // That race crashes the whole backend uncaught (EADDRINUSE escapes Ktor's internal engine
+        // coroutine, which has no CoroutineExceptionHandler, unlike appScope/rootScope) rather than
+        // failing gracefully, so it's cheaply worth retrying the spawn itself a few times: a crash
+        // within the first few seconds looks nothing like a genuine runtime bug, which would surface
+        // much later after real traffic/work.
+        val maxAttempts = 3
+        for (attempt in 1..maxAttempts) {
+            // stdbuf -oL forces line-buffered stdout so every println flushes immediately.
+            // Without it the C runtime switches to fully-buffered mode when stdout is piped,
+            // causing logs to appear in large delayed bursts rather than in real time.
+            val backend = ProcessBuilder("stdbuf", "-oL", binary.absolutePath)
+                .apply {
+                    environment()["CONFIG_FILE"] = configDir.resolve("config.toml").absolutePath
+                    environment()["DB_FILE"] = configDir.resolve("jellystructure.db").absolutePath
+                    environment()["FRONTEND_DIR"] = frontendDir.absolutePath
+                    environment()["SERVER_PORT"] = "9505"
+                }
+                .start()
+                .also { it.pipeToGradle("be") }
+            backendProc = backend
+
+            val startedAt = System.currentTimeMillis()
+            try {
+                val exitCode = backend.waitFor()
+                if (exitCode == 0) break
+                val ranMs = System.currentTimeMillis() - startedAt
+                // 15 s, not 3 — the Kotlin/Native crash dump itself (100+ symbol-resolved coroutine
+                // stack frames) takes real wall-clock time to format and print before the process
+                // actually exits, on top of however long boot took to reach the race in the first
+                // place. A genuine runtime crash (real traffic/work already served) is going to be
+                // running for much longer than that either way, so this still can't mistake one for
+                // a startup race.
+                if (ranMs < 15_000 && attempt < maxAttempts) {
+                    println("[runDev] Backend exited with code $exitCode after ${ranMs}ms (attempt $attempt/$maxAttempts) — likely the startup port race, retrying...")
+                    Thread.sleep(500)
+                    continue
+                }
+                frontend.destroyForcibly()
+                raviloWeb.destroyForcibly()
+                error("Backend exited with code $exitCode — see output above")
+            } catch (_: InterruptedException) {
+                backend.destroyForcibly()
+                frontend.destroyForcibly()
+                raviloWeb.destroyForcibly()
+                Thread.currentThread().interrupt()
+                break
+            }
         }
+        frontend.destroyForcibly()
+        raviloWeb.destroyForcibly()
     }
 }
 
