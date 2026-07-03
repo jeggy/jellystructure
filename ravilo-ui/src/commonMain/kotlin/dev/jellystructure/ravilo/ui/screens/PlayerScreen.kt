@@ -43,6 +43,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -73,6 +74,9 @@ import dev.jellystructure.ravilo.ui.focus.dpadFocusable
 import dev.jellystructure.ravilo.ui.i18n.str
 import dev.jellystructure.ravilo.ui.seams.PlayerAudioTrack
 import dev.jellystructure.ravilo.ui.seams.PlayerSubtitleTrack
+import dev.jellystructure.ravilo.ui.seams.PlayerChromeActions
+import dev.jellystructure.ravilo.ui.seams.PlayerChromeBridge
+import dev.jellystructure.ravilo.ui.seams.PlayerChromeState
 import dev.jellystructure.ravilo.ui.seams.PlayerLifecycleEffect
 import dev.jellystructure.ravilo.ui.seams.PlayerVideoSurface
 import dev.jellystructure.ravilo.ui.seams.RaviloPlayer
@@ -365,9 +369,33 @@ fun PlayerScreen(
         if (!pickerOpen && !nextUpVisible && !epRailOpen) chromeVisible = false
     }
 
-    // R157 (FR-R157-1.3 fallback) — web only, no-op elsewhere: keep the <video> element's z-order
-    // in sync with chrome visibility every time it changes.
-    LaunchedEffect(chromeVisible) { player.setChromeVisible(chromeVisible) }
+    // R157/R169 (FR-R157-1.3 fallback) — web only, no-op elsewhere: keep the <video> element's z-order
+    // in sync. The video only needs to hide behind the canvas when a *Compose-drawn* overlay that the
+    // web DOM chrome (below) doesn't replicate is open — the track picker, next-up card, or episode
+    // rail. For the everyday "chrome visible, nothing else open" state the video now stays promoted
+    // (visible) and PlayerChromeBridge below draws the basic transport on top of it instead (R169 —
+    // this CMP version's canvas can't composite Compose-drawn chrome over a still-visible video).
+    val videoBehindCanvas = pickerOpen || nextUpVisible || epRailOpen
+    LaunchedEffect(videoBehindCanvas) { player.setChromeVisible(videoBehindCanvas) }
+
+    // R169 (FR-R169-3) — push live state to the web DOM transport bar (no-op on Android/TV) whenever
+    // it's the active chrome (chromeVisible, and none of the Compose-only overlays are open); hide it
+    // otherwise so Compose's own picker/next-up/rail — still drawn exactly as before — aren't covered.
+    SideEffect {
+        if (chromeVisible && !videoBehindCanvas) {
+            PlayerChromeBridge.show(
+                PlayerChromeState(isPlaying = isPlaying, positionMs = positionMs, durationMs = durationMs),
+                PlayerChromeActions(
+                    onTogglePlay = ::togglePlay,
+                    onSkipBack = { skip(-SKIP_BACK_MS) },
+                    onSkipForward = { skip(SKIP_FWD_MS) },
+                    onSeek = { ms -> player.seekTo(ms); positionMs = ms; wake() },
+                ),
+            )
+        } else {
+            PlayerChromeBridge.hide()
+        }
+    }
 
     // R157 (FR-R157-3.2) — cursor auto-hides after a couple of seconds of no pointer movement during
     // playback (no-op on Android/TV); reappears immediately on the next move via the restart above.
@@ -404,6 +432,7 @@ fun PlayerScreen(
         onDispose {
             store.stopSession(positionMs, durationMs)  // R142: ≥90% → mark played
             player.release()
+            PlayerChromeBridge.hide()  // R169 — no-op on Android/TV
         }
     }
 
