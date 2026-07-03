@@ -343,4 +343,5 @@ data class ArrCalendarMovie(
     val hasFile: Boolean = false,
     val monitored: Boolean = false,
     val isAvailable: Boolean = false,
+    val minimumAvailability: String = "",  // "tba"|"announced"|"inCinemas"|"released"|"preDB" (R168 — display only; isAvailable already bakes it in)
 )

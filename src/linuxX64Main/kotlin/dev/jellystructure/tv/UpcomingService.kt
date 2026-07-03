@@ -17,6 +17,7 @@ import dev.jellystructure.shared.tv.MediaKind as TvMediaKind
 private const val UPCOMING_TTL_MS = 5 * 60_000L
 private const val LOOKAHEAD_DAYS = 60
 private const val LOOKBACK_DAYS = 183  // ~6 months, the "missing" bound (FR-H)
+private const val EPISODE_MISSING_GRACE_DAYS = 1  // R168 FR-R168-4 — Sonarr has no per-episode availability flag
 
 /**
  * R160 — assembles the Upcoming calendar: Sonarr's next monitored episodes + Radarr's monitored
@@ -92,7 +93,7 @@ class UpcomingService(
                     episode = ep.episodeNumber,
                     episodeTitle = ep.title.takeIf { it.isNotBlank() },
                     network = series.network?.takeIf { it.isNotBlank() },
-                    status = resolveStatus(date, today, itemId != null, queued != null),
+                    status = resolveEpisodeStatus(date, today, itemId != null, queued != null),
                     progress = queued?.let { downloadProgress(it) },
                     synopsis = ep.overview?.takeIf { it.isNotBlank() },
                 )
@@ -118,7 +119,7 @@ class UpcomingService(
                     posterUrl = matched?.let { RaviloImageUrl.poster(it.id) },
                     date = date,
                     releaseType = releaseType,
-                    status = resolveStatus(date, today, itemId != null, queued != null),
+                    status = resolveMovieStatus(date, today, itemId != null, queued != null, mv.isAvailable),
                     progress = queued?.let { downloadProgress(it) },
                     synopsis = mv.overview?.takeIf { it.isNotBlank() },
                 )
@@ -133,10 +134,22 @@ class UpcomingService(
         return UpcomingFeed(enabled = true, items = items, missing = missing)
     }
 
-    private fun resolveStatus(date: String, today: String, held: Boolean, queued: Boolean): UpcomingStatus = when {
+    /** Sonarr has no per-episode availability flag — a grace window avoids flagging MISSING the
+     *  instant the air date passes (a just-aired episode legitimately isn't grabbable yet). */
+    private fun resolveEpisodeStatus(date: String, today: String, held: Boolean, queued: Boolean): UpcomingStatus = when {
         queued -> UpcomingStatus.DOWNLOADING
         held -> UpcomingStatus.AVAILABLE
-        date < today -> UpcomingStatus.MISSING
+        shiftDate(date, EPISODE_MISSING_GRACE_DAYS) < today -> UpcomingStatus.MISSING
+        else -> UpcomingStatus.MONITORED
+    }
+
+    /** [isAvailable] is Radarr's own computed signal (bakes in the movie's `minimumAvailability`) —
+     *  a "Released"-minimum movie that's only had a cinema release has `isAvailable == false` and is
+     *  therefore never MISSING, even though [date] (from [pickMovieRelease]) may be in the past. */
+    private fun resolveMovieStatus(date: String, today: String, held: Boolean, queued: Boolean, isAvailable: Boolean): UpcomingStatus = when {
+        queued -> UpcomingStatus.DOWNLOADING
+        held -> UpcomingStatus.AVAILABLE
+        isAvailable && date < today -> UpcomingStatus.MISSING
         else -> UpcomingStatus.MONITORED
     }
 
