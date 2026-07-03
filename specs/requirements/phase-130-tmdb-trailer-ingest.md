@@ -73,3 +73,22 @@ detail DTO. One trailer per title — not an extras gallery.
 - Related: **[R163](../ravilo/requirements/phase-R163-trailer-playback.md)** (Ravilo Play-Trailer button +
   fullscreen embed — the primary consumer), **Phase 106 / R153** (the ingest→DTO→render pattern this mirrors),
   **Phase 108** (additive JSON-blob fields, no migration).
+
+## Dev-review addenda (2026-07-03 — backend decisions the design mock couldn't know)
+
+1. **There is no "thumbnail proxy" (FR-130-2 assumed one).** YouTube thumbnails need no backend at all —
+   derive `img.youtube.com/vi/{key}/hqdefault.jpg` from the key client-side. For **Vimeo**, resolve the
+   thumbnail **once at ingest** via Vimeo's oEmbed (`vimeo.com/api/oembed.json?url=…` → `thumbnail_url`)
+   and store it as an optional `thumb` field on `MediaItem.trailer` (best-effort: oEmbed failure ⇒
+   `thumb = null` ⇒ the card renders a generic play-glyph tile). No new proxy route, no render-time
+   external calls.
+2. **Explicit admin routes:** `POST /api/media/{id}/trailer/refetch` (re-runs `/videos` + selection,
+   responds with the new trailer-or-null) and `DELETE /api/media/{id}/trailer` (Clear → null). Both
+   record to `MediaHistory`.
+3. **Outbound discipline is automatic:** the new `getMovieVideos`/`getTvVideos` calls live on the existing
+   `TmdbClient`, which already rides the Phase 129 shared `OutboundHttp.client` + `withPermit(24)` gate —
+   one extra TMDB call per title per scan-site, no new client, no new FD surface.
+4. **Series-level only:** one trailer per **title** — no per-season/per-episode trailers; `syncSeason`
+   (episode-detail-only) is NOT one of the ingest sites. The ingest sites are exactly the Phase 106
+   certification sites: `scanMovie`, `scanSeries` (both the mixed-language and normal branches),
+   `syncMovie`, `syncSeries`, and both `repullFromTmdb` branches.
