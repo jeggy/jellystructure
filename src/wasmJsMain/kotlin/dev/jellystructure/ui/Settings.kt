@@ -169,7 +169,13 @@ fun renderSettings(container: Element, scope: CoroutineScope, query: Map<String,
                     <div class="input mono" id="pipe-cron" style="padding:5px 10px">0 3 * * *</div>
                   </div>
                   <span class="badge ok" id="pipe-next" style="align-self:flex-end">next · tonight 03:00</span>
-                  <button id="pipe-run" class="btn sm primary" style="align-self:flex-end" title="Run every enabled step below now (not just a file scan)">&#9655; Run pipeline now</button>
+                  <span class="split" id="pipe-run-split" style="align-self:flex-end">
+                    <button id="pipe-run" class="btn sm primary" title="Run every enabled step below now (not just a file scan)">&#9655; Run pipeline now</button>
+                    <span class="btn sm primary split-caret menu-btn"><span class="caret">▾</span></span>
+                    <div class="menu">
+                      <div class="menu-item" id="pipe-run-full"><span class="mi-ic">⟳</span><span>Run pipeline now (full)<span class="mi-sub">No freshness filter — every step sees the whole library</span></span></div>
+                    </div>
+                  </span>
                 </div>
                 <div class="pipe-recipe" id="pipe-recipe" style="margin-top:12px"></div>
                 <div class="pipe-canvas" id="pipe-canvas" style="margin-top:14px"></div>
@@ -1814,21 +1820,45 @@ private fun refreshNextRun() {
     }
 }
 
-/** Keeps the "Run pipeline now" button truthful — disabled + labeled while a scan/pipeline (from any
- *  trigger: this button, the Dashboard's Scan, or the schedule) is actually running, so clicking it never
- *  again lands on a surprise "already running" conflict. Polled every few seconds while Settings is open. */
+/** Keeps the "Run pipeline now" split button truthful — disabled + labeled while a scan/pipeline (from
+ *  any trigger: this button, its "(full)" sibling, the Dashboard's Scan, or the schedule) is actually
+ *  running, so clicking it never again lands on a surprise "already running" conflict. Polled every few
+ *  seconds while Settings is open. */
 private suspend fun refreshPipelineRunButton() {
     val btn = document.getElementById("pipe-run") as? HTMLElement ?: return
+    val caret = document.getElementById("pipe-run-split")?.querySelector(".menu-btn") as? HTMLElement
+    val fullItem = document.getElementById("pipe-run-full") as? HTMLElement
     val running = MediaApi.scanStatus()?.running == true
     if (running) {
         btn.setAttribute("disabled", "")
         btn.textContent = "⏳ Pipeline running…"
         btn.title = "A scan/pipeline is already running — check Activity for progress"
+        caret?.setAttribute("disabled", "")
+        fullItem?.setAttribute("disabled", "")
+        (document.getElementById("pipe-run-split") as? HTMLElement)?.classList?.remove("open")
     } else {
         btn.removeAttribute("disabled")
         btn.textContent = "▷ Run pipeline now"
         btn.title = "Run every enabled step below now (not just a file scan)"
+        caret?.removeAttribute("disabled")
+        fullItem?.removeAttribute("disabled")
     }
+}
+
+/** Shared by the split button's primary face and its "(full)" menu item — full=true bypasses scan_files'
+ *  freshness filter (see MediaApi.runPipeline) so every downstream step sees the whole library this run. */
+private suspend fun triggerPipelineRun(full: Boolean) {
+    val btn = document.getElementById("pipe-run") as? HTMLElement
+    btn?.setAttribute("disabled", "")
+    val result = runCatching { MediaApi.runPipeline(full) }.getOrDefault(PipelineRunResult.FAILED)
+    when (result) {
+        PipelineRunResult.STARTED -> showPipelineToast(if (full) "Full pipeline run started" else "Pipeline started")
+        PipelineRunResult.ALREADY_RUNNING -> showPipelineToast("A scan/pipeline is already running")
+        PipelineRunResult.FAILED -> { btn?.removeAttribute("disabled"); showPipelineToast("Failed to start pipeline") }
+    }
+    // Either outcome (started, or already-running) means one is now known to be in flight — reflect
+    // that on the button immediately rather than waiting for the next poll tick.
+    if (result != PipelineRunResult.FAILED) refreshPipelineRunButton()
 }
 
 private fun computePipeCron(): String {
@@ -2087,21 +2117,20 @@ private fun wirePipelineBuilder(scope: CoroutineScope) {
         }
     }
     document.getElementById("pipe-at")?.addEventListener("input") { updatePipeCron() }
-    document.getElementById("pipe-run")?.addEventListener("click") {
-        scope.launch {
-            val btn = document.getElementById("pipe-run") as? HTMLElement
-            btn?.setAttribute("disabled", "")
-            val result = runCatching { MediaApi.runPipeline() }.getOrDefault(PipelineRunResult.FAILED)
-            when (result) {
-                PipelineRunResult.STARTED -> showPipelineToast("Pipeline started")
-                PipelineRunResult.ALREADY_RUNNING -> showPipelineToast("A scan/pipeline is already running")
-                PipelineRunResult.FAILED -> { btn?.removeAttribute("disabled"); showPipelineToast("Failed to start pipeline") }
-            }
-            // Either outcome (started, or already-running) means one is now known to be in flight —
-            // reflect that on the button immediately rather than waiting for the next poll tick.
-            if (result != PipelineRunResult.FAILED) refreshPipelineRunButton()
+    document.getElementById("pipe-run")?.addEventListener("click") { scope.launch { triggerPipelineRun(full = false) } }
+    document.getElementById("pipe-run-full")?.addEventListener("click") { e ->
+        if ((e.currentTarget as? HTMLElement)?.hasAttribute("disabled") == true) return@addEventListener
+        (document.getElementById("pipe-run-split") as? HTMLElement)?.classList?.remove("open")
+        scope.launch { triggerPipelineRun(full = true) }
+    }
+    (document.getElementById("pipe-run-split") as? HTMLElement)?.querySelector(".menu-btn")?.let { caret ->
+        (caret as? HTMLElement)?.addEventListener("click") { e ->
+            e.stopPropagation()
+            if ((e.currentTarget as? HTMLElement)?.hasAttribute("disabled") == true) return@addEventListener
+            (document.getElementById("pipe-run-split") as? HTMLElement)?.classList?.toggle("open")
         }
     }
+    document.addEventListener("click") { (document.getElementById("pipe-run-split") as? HTMLElement)?.classList?.remove("open") }
     scope.launch {
         while (isActive) {
             refreshPipelineRunButton()

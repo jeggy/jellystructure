@@ -1626,12 +1626,16 @@ fun Route.mediaRoutes(
             call.respond(HttpStatusCode.Conflict, mapOf("error" to "scan already running"))
             return@post
         }
+        // "Run pipeline now (full)" — bypasses scan_files' freshness filter so every downstream step
+        // (sync_imdb_ratings, write_nfo, …) sees the whole library this run, not just whatever's due
+        // for an unrelated metadata recheck.
+        val full = call.request.queryParameters["full"] == "true"
         val pipeline = configStore.current.scan.pipeline.filter { it.enabled }
         val jobId = scanTracker.startNew()
         appScope.launch {
-            runTagged(jobId, "manual", "▶ Pipeline run started (manual)") {
+            runTagged(jobId, "manual", "▶ Pipeline run started (manual)${if (full) " (full)" else ""}") {
                 if (pipeline.isNotEmpty() && arrRescan != null) {
-                    executePipeline(pipeline, jobId, store, scanner, scanTracker, broadcaster, configStore, jellyfinClient, scanDispatcher, artwork, arrRescan, sonarrEnrich, imdbClient)
+                    executePipeline(pipeline, jobId, store, scanner, scanTracker, broadcaster, configStore, jellyfinClient, scanDispatcher, artwork, arrRescan, sonarrEnrich, imdbClient, fullRun = full)
                 } else {
                     runScan(jobId, emptySet(), store, scanner, scanTracker, broadcaster, configStore, jellyfinClient, scanDispatcher, artworkDownloader = if (configStore.current.behavior.fetchImages) artwork else null)
                 }
