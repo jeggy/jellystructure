@@ -10,18 +10,37 @@
 version: "1.0"
 
 #Specify inspection profile for code analysis
+# qodana.recommended, not qodana.starter — the starter profile surfaces almost nothing useful on this
+# codebase (verified: 4 inspection types, 100/103 findings being 2 cosmetic Kotlin-modernization rules).
 profile:
-  name: qodana.starter
+  name: qodana.recommended
 
 #Enable inspections
 #include:
 #  - name: <SomeEnabledInspectionId>
 
 #Disable inspections
-#exclude:
-#  - name: <SomeDisabledInspectionId>
-#    paths:
-#      - <path/where/not/run/inspection>
+# Phase 126: these four are false positives for THIS codebase's deliberate conventions, not defects —
+# suppressed with rationale rather than "fixed", since fixing them would be churn or actively wrong.
+exclude:
+  # Every hit is a @Composable function (RankTile, PairingScreen, CertBadge, PlayerVideoSurface, …).
+  # PascalCase for @Composable is the official Compose convention — renaming would be WRONG.
+  - name: FunctionName
+    paths:
+      - ravilo-ui
+  # The codebase deliberately uses Long milliseconds for delay()/timeouts/ktor/-progress math (they
+  # cross expect/actual, SQLDelight, and native APIs that take Long). Converting to kotlin.time.Duration
+  # is pure churn with no benefit here.
+  - name: ConvertLongToDuration
+  # The flagged strings are ffmpeg/shell command lines and hand-built JSON with intentional literal $.
+  # The multi-dollar prefix is a new Kotlin idiom that adds no clarity to these; explicit \$/$ is clearer.
+  - name: CanConvertToMultiDollarString
+  - name: CanUnescapeDollarLiteral
+  # settings.gradle.kts's dependencyResolutionManagement { repositories { … } } is the RECOMMENDED
+  # Gradle DSL, merely marked @Incubating — not a real instability risk.
+  - name: UnstableApiUsage
+    paths:
+      - settings.gradle.kts
 
 projectJDK: "21" #(Applied in CI/CD pipeline)
 
@@ -45,4 +64,9 @@ projectJDK: "21" #(Applied in CI/CD pipeline)
 #    total: 50
 
 #Specify Qodana linter for analysis (Applied in CI/CD pipeline)
-linter: jetbrains/qodana-jvm:2026.1
+# Community, not the release jetbrains/qodana-jvm image — since v2023.2 the release linters refuse to
+# run without a Qodana Cloud connection/token, which conflicts with running this locally/offline.
+# Verified: jetbrains/qodana-jvm-community runs fully offline with no QODANA_TOKEN. Trade-off: Community
+# disables Ultimate-only modules (deep dataflow, duplicate detection, some Java analyses) — acceptable
+# for a Kotlin/KMP project, standard Kotlin/Java inspections all run.
+linter: jetbrains/qodana-jvm-community:2026.1
