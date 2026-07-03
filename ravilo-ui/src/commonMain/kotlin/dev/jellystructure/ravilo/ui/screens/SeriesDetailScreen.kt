@@ -60,6 +60,7 @@ import dev.jellystructure.ravilo.ui.components.CertBadge
 import dev.jellystructure.ravilo.ui.components.DetailLoadingShell
 import dev.jellystructure.ravilo.ui.components.EpisodeCard
 import dev.jellystructure.ravilo.ui.components.DetailSynopsis
+import dev.jellystructure.ravilo.ui.components.ImdbChip
 import dev.jellystructure.ravilo.ui.components.RaviloButton
 import dev.jellystructure.ravilo.ui.components.SeasonPicker
 import dev.jellystructure.ravilo.ui.components.Tile
@@ -290,7 +291,7 @@ private fun SeriesDetailLoaded(
                     val meta = remember(detail.card.year, detail.card.genre) {
                         listOfNotNull(detail.card.year?.toString(), detail.card.genre).joinToString(" · ")
                     }
-                    if (meta.isNotEmpty() || detail.ratingBadge != null) {
+                    if (meta.isNotEmpty() || detail.ratingBadge != null || detail.imdbRating != null) {
                         Spacer(Modifier.height(8.dp))
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             if (meta.isNotEmpty()) Text(meta, color = colors.textSecondary, fontSize = 15.sp)
@@ -298,6 +299,11 @@ private fun SeriesDetailLoaded(
                             if (detail.ratingBadge != null) {
                                 if (meta.isNotEmpty()) Spacer(Modifier.width(10.dp))
                                 CertBadge(detail.ratingBadge)
+                            }
+                            // R164: server-pushed IMDb rating chip (show-level), after the cert badge.
+                            if (detail.imdbRating != null) {
+                                if (meta.isNotEmpty() || detail.ratingBadge != null) Spacer(Modifier.width(10.dp))
+                                ImdbChip(detail.imdbRating)
                             }
                         }
                     }
