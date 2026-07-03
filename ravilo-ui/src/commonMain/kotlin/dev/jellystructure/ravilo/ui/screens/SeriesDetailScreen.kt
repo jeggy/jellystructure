@@ -222,6 +222,10 @@ private fun SeriesDetailLoaded(
             .map { it.index }
             .toSet()
     }
+    // R151: per-season watched episode count, for the picker's partial (1..n-1 watched) w/N badge + sliver.
+    val watchedCounts: Map<Int, Int> = remember(detail.seasons, overlay) {
+        detail.seasons.associate { season -> season.index to season.episodes.count { ep -> overlay[ep.id]?.played == true } }
+    }
     val resumeEpId: String? = remember(allEps, overlay) {
         allEps.firstOrNull { ep -> overlay[ep.id].let { ps -> ps != null && !ps.played && ps.resumeMs > 0 } }?.id
             ?: allEps.firstOrNull { ep -> overlay[ep.id]?.played != true }?.id
@@ -445,6 +449,7 @@ private fun SeriesDetailLoaded(
                         onSelect = { selectedSeasonIdx = it },
                         firstFocusRequester = seasonFirstFR,   // R138
                         watchedSeasons = watchedSeasons,
+                        watchedCounts = watchedCounts,
                     )
                     Spacer(Modifier.height(16.dp))
                 }
