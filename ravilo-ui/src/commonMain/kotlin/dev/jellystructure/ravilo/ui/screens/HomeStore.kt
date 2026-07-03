@@ -34,6 +34,9 @@ class HomeStore(private val apiClient: TvApiClient) {
     // R49 — server-decided Top 10 tab gating (Radarr/Sonarr + per-user opt-in + non-empty lists).
     private val _discoverAvailable = MutableStateFlow(false)
     val discoverAvailable: StateFlow<Boolean> = _discoverAvailable.asStateFlow()
+    // R160 — server-decided Upcoming tab gating ([sonarr]/[radarr] presence).
+    private val _upcomingAvailable = MutableStateFlow(false)
+    val upcomingAvailable: StateFlow<Boolean> = _upcomingAvailable.asStateFlow()
     private var loadJob: Job? = null
 
     init {
@@ -69,10 +72,15 @@ class HomeStore(private val apiClient: TvApiClient) {
             _state.value = HomeState.Error(lastErr)
         }
         refreshDiscoverAvailable()
+        refreshUpcomingAvailable()
     }
 
     private fun refreshDiscoverAvailable() {
         scope.launch { _discoverAvailable.value = runCatching { apiClient.getDiscover().available }.getOrDefault(false) }
+    }
+
+    private fun refreshUpcomingAvailable() {
+        scope.launch { _upcomingAvailable.value = runCatching { apiClient.getUpcoming().enabled }.getOrDefault(false) }
     }
 
     /**
@@ -86,5 +94,6 @@ class HomeStore(private val apiClient: TvApiClient) {
             runCatching { apiClient.getHome() }.getOrNull()?.let { _state.value = HomeState.Loaded(it.deduped()) }
         }
         refreshDiscoverAvailable()
+        refreshUpcomingAvailable()
     }
 }

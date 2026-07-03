@@ -142,6 +142,7 @@ fun BrowseScreen(
     onProfile: (() -> Unit)? = null,
     onSearch: (() -> Unit)? = null,
     discoverAvailable: Boolean = false,
+    upcomingAvailable: Boolean = false,
 ) {
     val colors = RaviloTheme.colors
 
@@ -162,15 +163,14 @@ fun BrowseScreen(
     // R139: on a Back-return from a grid cell, the grid re-focuses that cell; skip the default nav-bar focus.
     LaunchedEffect(Unit) { if (store.focusItemKey == null) runCatching { navBarFR.requestFocus() } }
 
-    val navItems = buildList {
-        add(str("nav.home")); add(str("nav.movies")); add(str("nav.series"))
-        if (discoverAvailable) add("Top 10")
-        add(str("nav.my_list"))
-    }
+    val navItems = raviloNavItems(upcomingAvailable, discoverAvailable)
+    // My List is always the last item in navItems, whatever combination of the two optional
+    // (Upcoming/Top 10) tabs is present — deriving it from the list itself (rather than
+    // re-deriving the optional-tab count by hand) can't drift out of sync with raviloNavItems.
     val activeNav = when (kind) {
         BrowseKind.MOVIES -> 1
         BrowseKind.SERIES -> 2
-        BrowseKind.MY_LIST -> if (discoverAvailable) 4 else 3
+        BrowseKind.MY_LIST -> navItems.lastIndex
         BrowseKind.ALL -> 0
     }
 
