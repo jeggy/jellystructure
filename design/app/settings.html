@@ -282,6 +282,19 @@
         <div class="note" style="margin-top:14px;"><span class="tiny">Root-folder paths are matched against <b>Library mapping</b> below using the same longest-prefix rule, so a title resolved by Jellystructure lines up with the *arr that manages it.</span></div>
       </div>
 
+      <!-- JELLYSEERR / OVERSEERR (requests) -->
+      <div class="card set-section" id="sect-seerr" data-tab="downloads">
+        <div class="row center"><h3 style="font-size:1.05rem;margin:0;">Jellyseerr / Overseerr</h3><span class="badge info" style="margin-left:8px;">requests</span><span class="spacer"></span><span class="muted tiny">enable</span><span class="toggle on" id="seerr-enable"></span></div>
+        <div class="tiny muted" style="margin:8px 0 0;">Optional. The <b>connection</b> to your Seerr server — Jellystructure uses it to search, browse and place requests from the TV, and shows live request status. Seerr owns request &amp; approval rules and hands approved titles to Radarr / Sonarr. <b>Where the Request tab appears</b> and <b>which discover rows it shows</b> is set per user in <a href="ravilo-config.html">Ravilo config → Request</a>.</div>
+        <div id="seerr-on" class="box flat" style="padding:14px 15px;margin-top:14px;">
+          <div class="row" style="gap:12px;flex-wrap:wrap;">
+            <div class="field fill" style="margin:0;min-width:220px;"><label>Seerr URL</label><div class="input mono">http://jellyseerr:5055</div><span class="hint">Jellyseerr or Overseerr, reachable from the Jellystructure container.</span></div>
+            <div class="field fill" style="margin:0;min-width:200px;"><label>API key</label><div class="input">••••••••••••••3a9f <span class="chk" id="chk-seerr" style="margin-left:auto;"><span class="dot ok"></span><span class="badge ok">v2.1.0 · 28ms</span></span></div><span class="hint">Settings → General → API Key in Jellyseerr.</span></div>
+          </div>
+          <div class="row center" style="gap:9px;margin-top:8px;"><span class="badge ok">connected</span><span class="tiny muted">1 Jellyfin user matched to a Seerr account</span><span class="spacer"></span><span class="btn sm ghost">Test connection</span></div>
+        </div>
+      </div>
+
       <!-- SCANNING (new — Phase 16) -->
       <div class="card set-section" id="sect-scanning" data-tab="libraries">
         <div class="row center" style="margin-bottom:10px;"><h3 style="font-size:1.05rem;margin:0;">Scanning</h3><span class="spacer"></span><span class="muted tiny">media tooling:</span><span class="chk" id="chk-tools"><span class="dot ok"></span><span class="badge ok">ffmpeg · ffprobe · mkvpropedit</span></span></div>
@@ -373,20 +386,6 @@
           <span class="btn sm" id="rc-add">＋ Add region</span>
           <div class="card rc-menu" id="rc-menu"></div>
           <span class="tiny muted">If none of these have a rating, the title's own primary certification is shown as a last resort.</span>
-        </div>
-      </div>
-
-      <!-- DISCOVER / TOP 10 SOURCES (global) -->
-      <div class="card set-section" id="sect-discover" data-tab="downloads">
-        <div class="row center"><h3 style="font-size:1.05rem;margin:0;">Discover / Top 10 sources</h3><span class="badge info" style="margin-left:8px;">charts</span><span class="spacer"></span><span class="muted tiny">enable discover</span><span class="toggle on" id="discover-enable"></span></div>
-        <div class="tiny muted disc-intro">Ingests trending charts from the sources you enable here, for the countries below — each user's <b>Top 10</b> tab then picks from what's enabled. Fetching a title uses <b>Radarr</b>.</div>
-        <div id="discover-body">
-          <div id="prov-groups"></div>
-          <hr class="dash" style="margin:16px 0 12px;">
-          <div class="row center"><h4 style="margin:0;">Country charts</h4><span class="tiny muted" style="margin-left:8px;">which countries to ingest</span></div>
-          <div class="reg-grid" id="reg-grid" style="margin-top:10px;"></div>
-          <hr class="dash" style="margin:14px 0 12px;">
-          <div class="field" style="max-width:260px;"><label>Refresh charts</label><select class="input" id="disc-refresh"><option value="24">Daily</option><option value="72">Every 3 days</option><option value="168" selected>Weekly</option></select><span class="hint">Feeds are week-gated, so weekly is plenty.</span></div>
         </div>
       </div>
 
@@ -486,6 +485,11 @@
         <div>api_key = "•••9d41"</div>
         <div>rescan_after_write = <span class="okc">true</span></div>
         <div>&nbsp;</div>
+        <div class="muted">[seerr]</div>
+        <div>enabled = <span class="okc">true</span></div>
+        <div>url = "http://jellyseerr:5055"</div>
+        <div>api_key = "•••3a9f"</div>
+        <div>&nbsp;</div>
         <div class="muted">[language_rules]</div>
         <div>fallback_language = "en"</div>
         <div>&nbsp;</div>
@@ -534,7 +538,7 @@
   const sectionTab = {
     'sect-connections': 'connections', 'sect-arr': 'downloads',
     'sect-library': 'libraries', 'sect-scanning': 'libraries',
-    'sect-metadata': 'metadata', 'sect-ageratings': 'metadata', 'sect-discover': 'downloads', 'sect-seeding': 'downloads',
+    'sect-metadata': 'metadata', 'sect-ageratings': 'metadata', 'sect-seeding': 'downloads',
     'sect-notifications': 'notifications', 'sect-advanced': 'advanced'
   };
   const names = [...tabs].map(t => t.dataset.tab);
@@ -996,45 +1000,8 @@
 
 <!-- Discover / Top 10 sources (global config) -->
 <script>
-(function () {
-  const PROVIDERS = {
-    netflix:     { name: 'Netflix',      lists: 'country · global · all-time' },
-    viaplay:     { name: 'Viaplay',      lists: 'country' },
-    paramount:   { name: 'Paramount+',   lists: 'country' },
-    skyshowtime: { name: 'SkyShowtime',  lists: 'country' },
-  };
-  const GROUPS = [
-    ['Netflix · Tudum', 'Official engagement feeds — country, global & all-time', ['netflix']],
-    ['JustWatch', 'User-activity charts across 4,500+ services', ['viaplay', 'paramount', 'skyshowtime']],
-  ];
-  const REGIONS = [['DK','Denmark'],['US','United States'],['GB','United Kingdom'],['SE','Sweden'],['NO','Norway'],['DE','Germany'],['FR','France'],['ES','Spain'],['NL','Netherlands'],['IE','Ireland'],['IS','Iceland'],['FO','Faroe Islands']];
-  const enabled = new Set(['netflix', 'viaplay']);
-  const regions = new Set(['DK']);
-  const groupsEl = document.getElementById('prov-groups');
-  const regEl = document.getElementById('reg-grid');
-  if (!groupsEl) return;
-
-  function renderProviders() {
-    groupsEl.innerHTML = GROUPS.map(([title, sub, ids]) => {
-      const chips = ids.map(id => {
-        const p = PROVIDERS[id];
-        const on = enabled.has(id);
-        return `<div class="prov-chip${on ? ' on' : ''}" data-prov="${id}"><span class="box">✓</span><span class="pv"><span class="pv-name">${p.name}</span><span class="pv-sub">${p.lists}</span></span></div>`;
-      }).join('');
-      return `<div class="prov-group"><div class="prov-group-h">${title}<span class="sub">${sub}</span></div><div class="prov-grid">${chips}</div></div>`;
-    }).join('');
-    groupsEl.querySelectorAll('.prov-chip').forEach(c => c.onclick = () => {
-      const id = c.dataset.prov; enabled.has(id) ? enabled.delete(id) : enabled.add(id); renderProviders();
-    });
-  }
-  function renderRegions() {
-    regEl.innerHTML = REGIONS.map(([c, n]) => `<div class="reg-chip${regions.has(c) ? ' on' : ''}" data-reg="${c}">${n}</div>`).join('');
-    regEl.querySelectorAll('.reg-chip').forEach(r => r.onclick = () => { const c = r.dataset.reg; if (regions.has(c)) { if (regions.size > 1) regions.delete(c); } else regions.add(c); renderRegions(); });
-  }
-  const de = document.getElementById('discover-enable'), db = document.getElementById('discover-body');
-  if (de) de.addEventListener('click', () => { db.style.display = de.classList.contains('on') ? '' : 'none'; });
-  renderProviders(); renderRegions();
-})();
+// Discover / Top-10 chart ingestion (RapidAPI · JustWatch · movieofthenight) removed —
+// Jellyseerr is now the sole discover/request source. Configure per user in Ravilo config → Request.
 </script>
 </body>
 </html>

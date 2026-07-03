@@ -170,7 +170,7 @@
   //   available  → already in the Jellyfin library (Watch Now)
   //   fetching   → Radarr is grabbing it now (progress %)
   //   none       → not in library — the user can request a fetch via Radarr
-  const config = { radarr: true, sonarr: true, region: 'DK', regionName: 'Denmark',
+  const config = { radarr: true, sonarr: true, seerr: true, region: 'DK', regionName: 'Denmark',
     // Age-rating region cascade (global; set in Jellystructure → Settings → Metadata).
     // Jellystructure resolves each title's certification by walking this ordered list and
     // using the first region that has one. Here it drives the badge + the workbench facet.
@@ -247,8 +247,8 @@
   function ranked(items) { items.forEach((it, i) => it.rank = i + 1); return items; }
 
   const discoverLists = [
-    { id: 'mov-dk', title: 'Top 10 Movies in Denmark', scope: 'country', category: 'film', metric: 'rank',
-      note: 'Ranking only — the country feed has no view counts', items: ranked([
+    { id: 'mov-dk', title: 'Trending Movies', scope: 'country', category: 'film', metric: 'rank',
+      note: '', items: ranked([
         D('Carry-On', 2024, 'Thriller', '16', 'film', { status: 'fetching', progress: 47, weeks: 2, trend: 'up', syn: 'A young TSA officer is blackmailed by a mysterious traveller into letting a dangerous package slip onto a Christmas Eve flight.' }),
         D('Hraðar Ljós', 2024, 'Thriller', '16', 'film', { status: 'available', weeks: 4, trend: 'same', syn: 'A night-shift paramedic in Tórshavn races a ticking clock when a routine call turns into something far darker.' }),
         D('Saltvatn', 2023, 'Drama', '12', 'film', { status: 'requested', weeks: 1, trend: 'new', syn: 'A widowed lighthouse keeper takes in a stranded sailor as winter storms close the only road home.' }),
@@ -260,8 +260,8 @@
         D('Drift 7', 2022, 'Sci-Fi', '12', 'film', { status: 'importing', weeks: 2, trend: 'same' }),
         D('Stormkast', 2019, 'Action', '12', 'film', { status: 'none', weeks: 1, trend: 'new' }),
       ]) },
-    { id: 'tv-dk', title: 'Top 10 TV Shows in Denmark', scope: 'country', category: 'series', metric: 'rank',
-      note: 'Ranking only — the country feed has no view counts', items: ranked([
+    { id: 'tv-dk', title: 'Trending Series', scope: 'country', category: 'series', metric: 'rank',
+      note: '', items: ranked([
         D('Nordvest', 2023, 'Crime', '16', 'series', { status: 'available', weeks: 7, trend: 'same', syn: 'In a fog-bound Faroese fishing town, a detective returns home to a death that reopens a buried family secret.' }),
         D('Arvur', 2023, 'Drama', '16', 'series', { status: 'none', weeks: 2, trend: 'up', syn: 'When the family patriarch dies, three siblings discover the inheritance is a debt none of them can pay.' }),
         D('Havets Hjarta', 2022, 'Drama', '12', 'series', { status: 'available', weeks: 3, trend: 'down' }),
@@ -273,8 +273,8 @@
         D('Tórshavn 1918', 2021, 'Drama', '12', 'series', { status: 'none', weeks: 3, trend: 'same' }),
         D('Frostbarn', 2024, 'Crime', '16', 'series', { status: 'none', weeks: 1, trend: 'new' }),
       ]) },
-    { id: 'mov-global', title: 'Global Top 10 Movies', scope: 'global', category: 'film', metric: 'views',
-      note: 'Global feed — real hours viewed this week', items: ranked([
+    { id: 'mov-global', title: 'Popular Movies', scope: 'global', category: 'film', metric: 'views',
+      note: '', items: ranked([
         D('Blue Warrant', 2021, 'Action · Comedy', '12', 'film', { status: 'none', weeks: 2, trend: 'up', views: '47.1M', syn: 'An Interpol agent and the world’s most-wanted art thief are forced into an uneasy alliance to catch an even greater rival.' }),
         D('JRock Ghost Chasers', 2025, 'Animation', '7', 'film', { status: 'fetching', progress: 28, weeks: 1, trend: 'new', views: '41.7M', syn: 'A chart-topping K-pop trio moonlights as a demon-slaying squad protecting their fans from the underworld.' }),
         D('Carry-On', 2024, 'Thriller', '16', 'film', { status: 'fetching', progress: 47, weeks: 2, trend: 'same', views: '33.0M' }),
@@ -286,8 +286,8 @@
         D('Glass Onion', 2022, 'Mystery', '12', 'film', { status: 'none', weeks: 3, trend: 'up', views: '15.1M' }),
         D('Bird Box', 2018, 'Thriller', '16', 'film', { status: 'none', weeks: 1, trend: 'new', views: '13.8M' }),
       ]) },
-    { id: 'noneng', title: 'Top 10 Non-English Films', scope: 'global', category: 'film', metric: 'views',
-      note: 'Global feed — surfaces foreign-language hits', items: ranked([
+    { id: 'noneng', title: 'International Films', scope: 'global', category: 'film', metric: 'views',
+      note: '', items: ranked([
         D('Troll', 2022, 'Action · Fantasy', '12', 'film', { status: 'none', weeks: 2, trend: 'up', views: '23.0M', syn: 'Deep in a Norwegian mountain, an ancient creature awakens and marches on Oslo — and only a rogue palaeontologist believes the legends.' }),
         D('Society of the Snow', 2023, 'Drama', '16', 'film', { status: 'none', weeks: 1, trend: 'new', views: '20.4M', syn: 'The survivors of a 1972 Andes plane crash endure 72 days in the high cordillera, bound by an impossible pact to stay alive.' }),
         D('Lost Bullet', 2020, 'Action', '16', 'film', { status: 'none', weeks: 3, trend: 'same', views: '14.7M' }),
@@ -299,8 +299,8 @@
         D('A Classic Horror Story', 2021, 'Horror', '18', 'film', { status: 'none', weeks: 1, trend: 'new', views: '6.2M' }),
         D('Below Zero', 2021, 'Thriller', '16', 'film', { status: 'none', weeks: 2, trend: 'same', views: '5.5M' }),
       ]) },
-    { id: 'alltime', title: 'Most Popular of All Time', scope: 'alltime', category: 'film', metric: 'views91',
-      note: 'Ranked by views in the first 91 days', items: ranked([
+    { id: 'alltime', title: 'All-Time Popular', scope: 'alltime', category: 'film', metric: 'views91',
+      note: '', items: ranked([
         D('Blue Warrant', 2021, 'Action · Comedy', '12', 'film', { status: 'none', weeks: 91, trend: 'same', views: '230.9M', syn: 'An Interpol agent and the world’s most-wanted art thief are forced into an uneasy alliance to catch an even greater rival.' }),
         D('Carry-On', 2024, 'Thriller', '16', 'film', { status: 'fetching', progress: 47, weeks: 64, trend: 'same', views: '172.0M' }),
         D('Don’t Look Up', 2021, 'Comedy', '16', 'film', { status: 'none', weeks: 91, trend: 'same', views: '171.4M' }),

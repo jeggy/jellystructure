@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="en" data-skin="aurora">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="design_doc_mode" content="canvas">
+<title>Ravilo TV — Navbar Concepts</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Sora:wght@300;400;500;600;700&display=swap');
+
+:root{
+  --bg:#0a0c13; --bg-2:#0e111b;
+  --ink:#f3f4fb; --ink-soft:#aeb4cb; --ink-dim:#6b7290;
+  --line:rgba(255,255,255,.09);
+  --card:#161a28; --card-2:#1b2031;
+  --accent:#7b6ef0; --accent-2:#3fb6f5;
+  --grad:linear-gradient(120deg,#7b6ef0,#3fb6f5);
+  --ring:#8e82ff; --ring-glow:rgba(123,110,240,.55);
+  --chip:rgba(255,255,255,.10);
+  --ease:cubic-bezier(.22,.61,.36,1);
+}
+*{box-sizing:border-box; margin:0; padding:0;}
+body{ font-family:'Sora',sans-serif; }
+
+/* ---------- canvas scaffolding ---------- */
+.intro{ position:absolute; width:1180px; color:#e9ecf6; font-family:'Sora',sans-serif; }
+.intro .eyebrow{ font-family:'JetBrains Mono','Sora',monospace; letter-spacing:.32em; text-transform:uppercase; font-size:15px; color:#8b93ad; }
+.intro h1{ font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:52px; letter-spacing:-1.5px; margin:10px 0 14px; color:#f4f5fb;}
+.intro p{ font-size:20px; line-height:1.55; color:#aeb4cb; max-width:1000px; }
+.rules{ display:flex; gap:14px; margin-top:22px; flex-wrap:wrap; }
+.rule{ display:flex; align-items:center; gap:10px; padding:11px 18px; border-radius:13px; background:rgba(255,255,255,.045); border:1px solid var(--line); font-size:16px; color:#c9cde0; }
+.rule b{ color:#f3f4fb; font-weight:600; }
+.rule .dot{ width:9px; height:9px; border-radius:50%; flex:none; }
+.rule .k{ background:#2dd49a; } .rule .t{ background:#f5b542; }
+
+.concept{ position:absolute; width:1920px; }
+.clabel{ display:flex; align-items:baseline; gap:18px; margin-bottom:20px; flex-wrap:wrap; }
+.clabel .idx{ font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:28px; color:var(--accent); letter-spacing:-.5px; }
+.clabel .name{ font-family:'Space Grotesk',sans-serif; font-weight:600; font-size:30px; color:#f3f4fb; letter-spacing:-.5px; }
+.clabel .note{ font-size:19px; color:#9aa0ba; }
+.clabel .tag{ font-family:'JetBrains Mono',monospace; font-size:13px; letter-spacing:.12em; text-transform:uppercase; padding:5px 12px; border-radius:8px; }
+.tag.good{ background:rgba(45,212,154,.14); color:#57e0ad; border:1px solid rgba(45,212,154,.3);}
+.tag.warn{ background:rgba(245,181,66,.13); color:#f5b542; border:1px solid rgba(245,181,66,.3);}
+
+/* ---------- stage (a real Ravilo home crop) ---------- */
+.stage{
+  position:relative; width:1920px; height:640px; border-radius:22px; overflow:hidden;
+  background:var(--bg); color:var(--ink); box-shadow:0 40px 90px -30px rgba(0,0,0,.7); border:1px solid rgba(255,255,255,.06);
+}
+.backdrop{ position:absolute; inset:0;
+  background:
+    radial-gradient(120% 105% at 76% 12%, rgba(96,146,206,.55), rgba(24,32,54,.25) 44%, transparent 72%),
+    radial-gradient(95% 130% at 58% 128%, rgba(123,110,240,.4), transparent 60%),
+    linear-gradient(100deg,#0a0c13 6%, #131a2e 42%, #223052 72%, #33507e 100%);
+}
+.vign{ position:absolute; inset:0; background:linear-gradient(90deg, rgba(10,12,19,.97) 0%, rgba(10,12,19,.82) 30%, rgba(10,12,19,.32) 62%, rgba(10,12,19,.04) 100%), linear-gradient(0deg, var(--bg) 3%, rgba(10,12,19,0) 42%); }
+
+/* ---------- app bar (base) ---------- */
+.appbar{ position:relative; z-index:5; height:92px; display:flex; align-items:center; gap:38px; padding:0 64px;
+  background:linear-gradient(180deg, rgba(0,0,0,.55), rgba(0,0,0,0)); }
+.brand{ display:flex; align-items:center; gap:14px; font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:31px; letter-spacing:-1px; }
+.brand .mark{ width:48px; height:48px; flex:none; filter:drop-shadow(0 0 16px var(--ring-glow)); }
+.brand .wm{ color:var(--ink); }
+.topnav{ display:flex; align-items:center; gap:8px; }
+.navitem{ font-size:21px; font-weight:500; color:var(--ink-soft); padding:9px 20px; border-radius:11px; white-space:nowrap; position:relative; display:flex; align-items:center; gap:10px; }
+.navitem.cur{ color:var(--ink); font-weight:600; }
+.navitem.focused{ background:var(--ink); color:#0a0c13; }
+.navitem.focused svg{ color:#0a0c13; }
+.right{ margin-left:auto; display:flex; align-items:center; gap:22px; }
+.clock{ font-size:19px; color:var(--ink-soft); font-variant-numeric:tabular-nums; }
+.iconbtn{ width:44px; height:44px; border-radius:50%; display:flex; align-items:center; justify-content:center; color:var(--ink-soft); }
+.iconbtn.focused{ background:var(--ink); color:#0a0c13; }
+.iconbtn svg{ width:24px; height:24px; display:block; }
+.avatar{ width:44px; height:44px; border-radius:50%; display:flex; align-items:center; justify-content:center; background:var(--grad); font-weight:700; font-size:18px; color:#fff; }
+.avatar.focused{ box-shadow:0 0 0 4px var(--ring); }
+.caret{ width:14px; height:14px; }
+
+/* dropdown for "More" */
+.moremenu{ position:absolute; top:78px; left:0; z-index:8; min-width:230px; padding:10px; border-radius:16px;
+  background:rgba(18,21,33,.96); border:1px solid rgba(255,255,255,.1); box-shadow:0 30px 60px -20px rgba(0,0,0,.8); backdrop-filter:blur(14px); }
+.moremenu .mi{ padding:12px 18px; border-radius:11px; font-size:20px; color:var(--ink-soft); display:flex; align-items:center; gap:12px; }
+.moremenu .mi.focused{ background:var(--ink); color:#0a0c13; }
+.moremenu .mi .badge{ margin-left:auto; font-size:13px; font-family:'JetBrains Mono',monospace; color:var(--accent); }
+
+/* segmented control */
+.segment{ display:flex; align-items:center; gap:4px; padding:5px; border-radius:15px; background:rgba(255,255,255,.06); border:1px solid var(--line); }
+.segment .seg{ font-size:20px; font-weight:500; color:var(--ink-soft); padding:8px 22px; border-radius:11px; display:flex; align-items:center; gap:9px; }
+.segment .seg.on{ background:var(--ink); color:#0a0c13; font-weight:600; }
+.segment .seg.more{ padding:8px 14px; color:var(--ink-dim); }
+
+/* ---------- hero content ---------- */
+.hero{ position:absolute; z-index:4; left:64px; top:196px; max-width:900px; }
+.railmode .hero{ left:236px; }
+.kicker{ font-family:'JetBrains Mono',monospace; letter-spacing:.28em; font-size:15px; color:var(--accent-2); text-transform:uppercase; }
+.htitle{ font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:74px; line-height:.98; letter-spacing:-2px; color:#fff; margin:14px 0 4px; white-space:nowrap; }
+.hmeta{ display:flex; align-items:center; gap:16px; font-size:19px; color:var(--ink-soft); margin-top:16px; }
+.hmeta .chip{ background:var(--chip); padding:4px 11px; border-radius:7px; font-size:16px; font-weight:600; color:#eef0fa; }
+.hsyn{ font-size:20px; line-height:1.5; color:#c4c9dd; max-width:620px; margin-top:18px; }
+.hacts{ display:flex; gap:14px; margin-top:26px; }
+.btn{ display:flex; align-items:center; gap:10px; font-size:20px; font-weight:600; padding:14px 28px; border-radius:13px; }
+.btn.primary{ background:var(--ink); color:#0a0c13; }
+.btn.ghost{ background:rgba(255,255,255,.1); color:#eef0fa; border:1px solid var(--line); }
+
+/* channel rail peek */
+.railpeek{ position:absolute; z-index:4; left:64px; bottom:34px; right:64px; }
+.railmode .railpeek{ left:236px; }
+.rp-head{ font-family:'Space Grotesk',sans-serif; font-weight:600; font-size:24px; color:#eef0fa; margin-bottom:16px; letter-spacing:-.4px; }
+.rp-track{ display:flex; gap:16px; }
+.cpill{ width:210px; height:96px; border-radius:14px; display:flex; align-items:center; justify-content:center; font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:24px; color:#fff; letter-spacing:-.3px; flex:none; box-shadow:0 12px 30px -12px rgba(0,0,0,.6); }
+.c1{ background:linear-gradient(135deg,#1a49c9,#1170e4);} .c2{ background:linear-gradient(135deg,#8f1024,#c31b34);}
+.c3{ background:linear-gradient(135deg,#243049,#3a4d78); color:#dfe6f5;} .c4{ background:linear-gradient(135deg,#0b7d5a,#12b07d);}
+.c5{ background:linear-gradient(135deg,#3a1a72,#6a35c9);} .c6{ background:linear-gradient(135deg,#123a86,#1f7ad0);}
+
+/* ---------- left rail concept ---------- */
+.leftrail{ position:absolute; z-index:6; top:0; left:0; bottom:0; width:236px; padding:36px 22px;
+  display:flex; flex-direction:column; gap:8px;
+  background:linear-gradient(90deg, rgba(8,10,17,.98) 60%, rgba(8,10,17,0)); }
+.leftrail .lbrand{ display:flex; align-items:center; gap:12px; margin-bottom:14px; }
+.leftrail .lbrand .mark{ width:44px; height:44px; filter:drop-shadow(0 0 14px var(--ring-glow)); }
+.leftrail .lbrand .wm{ font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:26px; letter-spacing:-.8px; color:#fff; }
+.lclock{ font-family:'JetBrains Mono',monospace; font-size:17px; color:var(--ink-dim); padding:2px 8px 16px; letter-spacing:.05em; }
+.lrow{ display:flex; align-items:center; gap:16px; padding:12px 14px; border-radius:13px; font-size:21px; font-weight:500; color:var(--ink-soft); }
+.lrow svg{ width:26px; height:26px; flex:none; }
+.lrow.on{ color:var(--ink); font-weight:600; }
+.lrow.focused{ background:var(--ink); color:#0a0c13; }
+.lrow.focused svg{ color:#0a0c13; }
+.lspring{ flex:1; }
+.lrow.profile{ margin-top:6px; }
+.lrow.profile .av{ width:30px; height:30px; border-radius:50%; background:var(--grad); font-size:13px; font-weight:700; color:#fff; display:flex; align-items:center; justify-content:center; }
+.railhint{ position:absolute; z-index:7; left:236px; top:44px; display:flex; align-items:center; gap:12px;
+  font-size:16px; color:#8b93ad; background:rgba(14,17,27,.7); padding:8px 16px; border-radius:10px; border:1px solid var(--line); }
+.railhint .mini{ display:flex; gap:5px; }
+.railhint .mini i{ width:6px; height:24px; border-radius:3px; background:#3a4160; display:block; }
+.railhint .mini i.a{ background:var(--accent); }
+
+/* focus ring accent under hero synopsis (for realism) */
+.pros{ position:absolute; z-index:7; right:64px; bottom:40px; display:flex; gap:10px; flex-direction:column; align-items:flex-end; max-width:520px; }
+.railmode .pros, .stage.icontop .pros{ }
+.proline{ font-size:16px; color:#aab0c8; background:rgba(10,12,19,.55); border:1px solid var(--line); padding:7px 14px; border-radius:9px; backdrop-filter:blur(6px); }
+.proline b{ color:#eef0fa; font-weight:600; }
+</style>
+</head>
+<body>
+
+<!-- ============ INTRO ============ -->
+<div class="intro" style="left:80px; top:56px;">
+  <div class="eyebrow">Ravilo TV · Aurora skin · Sony Google TV</div>
+  <h1>Decluttering the top navbar</h1>
+  <p>Today the bar carries up to six section tabs at once — and Upcoming + Top 10 only ever appear when they're enabled, so the row keeps growing. Four directions below, all in the real Aurora look. Each keeps the essentials one D-pad click away and tucks the rest.</p>
+  <div class="rules">
+    <div class="rule"><span class="dot k"></span><b>Always visible:</b>&nbsp;Home · Movies · Series · Search · Profile · Clock</div>
+    <div class="rule"><span class="dot t"></span><b>Tucked away:</b>&nbsp;Upcoming · Top 10 · My List</div>
+    <div class="rule">Bar shrinks &amp; fades once you scroll into content, returns on&nbsp;<b>UP</b></div>
+  </div>
+</div>
+
+<!-- ============ 0 · CURRENT ============ -->
+<div class="concept" style="left:80px; top:460px;">
+  <div class="clabel">
+    <span class="idx">00</span><span class="name">Today</span>
+    <span class="tag warn">Reference</span>
+    <span class="note">Six tabs + search + clock + avatar all competing in one row.</span>
+  </div>
+  <div class="stage">
+    <div class="backdrop"></div><div class="vign"></div>
+    <div class="appbar">
+      <div class="brand"><svg class="mark" viewBox="12 20 76 76" aria-hidden="true"><defs><linearGradient id="j0" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="var(--accent)"/><stop offset="1" stop-color="var(--accent-2)"/></linearGradient></defs><path d="M22 52 C22 24 78 24 78 52 C66 45 59 45 50 49 C41 45 34 45 22 52 Z" fill="url(#j0)"/><g stroke="url(#j0)" stroke-width="4.5" stroke-linecap="round" fill="none"><path d="M33 51 q-5 12 1 20 q5 8 0 14" opacity=".9"/><path d="M44 52 q-4 13 1 21 q4 9 0 13" opacity=".72"/><path d="M56 52 q4 13 -1 21 q-4 9 0 13" opacity=".72"/><path d="M67 51 q5 12 -1 20 q-5 8 0 14" opacity=".9"/></g></svg><span class="wm">Ravilo</span></div>
+      <div class="topnav">
+        <div class="navitem cur focused">Home</div>
+        <div class="navitem">Movies</div>
+        <div class="navitem">Series</div>
+        <div class="navitem">Upcoming</div>
+        <div class="navitem">Top 10</div>
+        <div class="navitem">My List</div>
+      </div>
+      <div class="right">
+        <div class="iconbtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><line x1="16.5" y1="16.5" x2="21" y2="21"></line></svg></div>
+        <div class="clock">21:11</div>
+        <div class="avatar">ER</div>
+      </div>
+    </div>
+    <div class="hero">
+      <div class="kicker">Blender Open Movie · Film</div>
+      <h1 class="htitle">Big Buck Bunny</h1>
+      <div class="hmeta"><span class="chip">4K</span><span>2008</span><span>Animation · Comedy</span><span class="chip">G+</span></div>
+    </div>
+    <div class="railpeek">
+      <div class="rp-head">Channels &amp; Collections</div>
+      <div class="rp-track"><span class="cpill c1">Disney+</span><span class="cpill c2">dansktv</span><span class="cpill c3">Universal</span><span class="cpill c4">Viaplay</span><span class="cpill c5">HBO</span><span class="cpill c6">Paramount+</span></div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ A · OVERFLOW "MORE" ============ -->
+<div class="concept" style="left:80px; top:1280px;">
+  <div class="clabel">
+    <span class="idx">A</span><span class="name">Overflow “More”</span>
+    <span class="tag good">Smallest change</span>
+    <span class="note">Core three stay; the rest live behind a single ⌄ that opens a menu.</span>
+  </div>
+  <div class="stage">
+    <div class="backdrop"></div><div class="vign"></div>
+    <div class="appbar">
+      <div class="brand"><svg class="mark" viewBox="12 20 76 76" aria-hidden="true"><defs><linearGradient id="jA" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="var(--accent)"/><stop offset="1" stop-color="var(--accent-2)"/></linearGradient></defs><path d="M22 52 C22 24 78 24 78 52 C66 45 59 45 50 49 C41 45 34 45 22 52 Z" fill="url(#jA)"/><g stroke="url(#jA)" stroke-width="4.5" stroke-linecap="round" fill="none"><path d="M33 51 q-5 12 1 20 q5 8 0 14" opacity=".9"/><path d="M44 52 q-4 13 1 21 q4 9 0 13" opacity=".72"/><path d="M56 52 q4 13 -1 21 q-4 9 0 13" opacity=".72"/><path d="M67 51 q5 12 -1 20 q-5 8 0 14" opacity=".9"/></g></svg><span class="wm">Ravilo</span></div>
+      <div class="topnav">
+        <div class="navitem cur">Home</div>
+        <div class="navitem">Movies</div>
+        <div class="navitem">Series</div>
+        <div class="navitem focused" style="position:relative;">More
+          <svg class="caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 9l6 6 6-6"/></svg>
+          <div class="moremenu">
+            <div class="mi focused">Upcoming</div>
+            <div class="mi">Top 10 <span class="badge">▲ live</span></div>
+            <div class="mi">My List</div>
+          </div>
+        </div>
+      </div>
+      <div class="right">
+        <div class="iconbtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><line x1="16.5" y1="16.5" x2="21" y2="21"></line></svg></div>
+        <div class="clock">21:11</div>
+        <div class="avatar">ER</div>
+      </div>
+    </div>
+    <div class="hero">
+      <div class="kicker">Blender Open Movie · Film</div>
+      <h1 class="htitle">Big Buck Bunny</h1>
+      <div class="hmeta"><span class="chip">4K</span><span>2008</span><span>Animation · Comedy</span><span class="chip">G+</span></div>
+    </div>
+    <div class="railpeek">
+      <div class="rp-head">Channels &amp; Collections</div>
+      <div class="rp-track"><span class="cpill c1">Disney+</span><span class="cpill c2">dansktv</span><span class="cpill c3">Universal</span><span class="cpill c4">Viaplay</span><span class="cpill c5">HBO</span><span class="cpill c6">Paramount+</span></div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ B · LEFT RAIL ============ -->
+<div class="concept" style="left:80px; top:2100px;">
+  <div class="clabel">
+    <span class="idx">B</span><span class="name">Left rail</span>
+    <span class="tag good">Most room for content</span>
+    <span class="note">Icon strip at rest; slides open to labels when you press LEFT.</span>
+  </div>
+  <div class="stage railmode">
+    <div class="backdrop"></div><div class="vign"></div>
+    <div class="leftrail">
+      <div class="lbrand"><svg class="mark" viewBox="12 20 76 76" aria-hidden="true"><defs><linearGradient id="jB" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="var(--accent)"/><stop offset="1" stop-color="var(--accent-2)"/></linearGradient></defs><path d="M22 52 C22 24 78 24 78 52 C66 45 59 45 50 49 C41 45 34 45 22 52 Z" fill="url(#jB)"/><g stroke="url(#jB)" stroke-width="4.5" stroke-linecap="round" fill="none"><path d="M33 51 q-5 12 1 20 q5 8 0 14" opacity=".9"/><path d="M44 52 q-4 13 1 21 q4 9 0 13" opacity=".72"/><path d="M56 52 q4 13 -1 21 q-4 9 0 13" opacity=".72"/><path d="M67 51 q5 12 -1 20 q-5 8 0 14" opacity=".9"/></g></svg><span class="wm">Ravilo</span></div>
+      <div class="lclock">21:11</div>
+      <div class="lrow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><line x1="16.5" y1="16.5" x2="21" y2="21"/></svg>Search</div>
+      <div class="lrow on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"><path d="M4 11.5 12 4l8 7.5"/><path d="M6 10.5V20h12v-9.5"/></svg>Home</div>
+      <div class="lrow focused"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2.5"/><path d="M8 5v14M16 5v14" stroke-width="1.6"/></svg>Movies</div>
+      <div class="lrow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"><rect x="3" y="6" width="18" height="12" rx="2.5"/><path d="M9 21h6"/></svg>Series</div>
+      <div class="lrow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><circle cx="6" cy="12" r="1.1"/><circle cx="12" cy="12" r="1.1"/><circle cx="18" cy="12" r="1.1"/></svg>More</div>
+      <div class="lspring"></div>
+      <div class="lrow profile"><span class="av">ER</span>Erik</div>
+    </div>
+    <div class="railhint"><span class="mini"><i></i><i class="a"></i><i></i><i></i></span>Collapsed at rest — just icons. Expands on focus, overlaying the art.</div>
+    <div class="hero">
+      <div class="kicker">Blender Open Movie · Film</div>
+      <h1 class="htitle">Big Buck Bunny</h1>
+      <div class="hmeta"><span class="chip">4K</span><span>2008</span><span>Animation · Comedy</span><span class="chip">G+</span></div>
+    </div>
+    <div class="railpeek">
+      <div class="rp-head">Channels &amp; Collections</div>
+      <div class="rp-track"><span class="cpill c1">Disney+</span><span class="cpill c2">dansktv</span><span class="cpill c3">Universal</span><span class="cpill c4">Viaplay</span><span class="cpill c5">HBO</span><span class="cpill c6">Paramount+</span></div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ C · ICON-FIRST TOP ============ -->
+<div class="concept" style="left:80px; top:2920px;">
+  <div class="clabel">
+    <span class="idx">C</span><span class="name">Icon-first top bar</span>
+    <span class="tag good">Lightest footprint</span>
+    <span class="note">Icons at rest; the focused item grows into a labelled pill.</span>
+  </div>
+  <div class="stage icontop">
+    <div class="backdrop"></div><div class="vign"></div>
+    <div class="appbar">
+      <div class="brand"><svg class="mark" viewBox="12 20 76 76" aria-hidden="true"><defs><linearGradient id="jC" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="var(--accent)"/><stop offset="1" stop-color="var(--accent-2)"/></linearGradient></defs><path d="M22 52 C22 24 78 24 78 52 C66 45 59 45 50 49 C41 45 34 45 22 52 Z" fill="url(#jC)"/><g stroke="url(#jC)" stroke-width="4.5" stroke-linecap="round" fill="none"><path d="M33 51 q-5 12 1 20 q5 8 0 14" opacity=".9"/><path d="M44 52 q-4 13 1 21 q4 9 0 13" opacity=".72"/><path d="M56 52 q4 13 -1 21 q-4 9 0 13" opacity=".72"/><path d="M67 51 q5 12 -1 20 q-5 8 0 14" opacity=".9"/></g></svg><span class="wm">Ravilo</span></div>
+      <div class="topnav" style="gap:6px;">
+        <div class="navitem" title="Home"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"><path d="M4 11.5 12 4l8 7.5"/><path d="M6 10.5V20h12v-9.5"/></svg></div>
+        <div class="navitem focused"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2.5"/><path d="M8 5v14M16 5v14" stroke-width="1.6"/></svg>Movies</div>
+        <div class="navitem" title="Series"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"><rect x="3" y="6" width="18" height="12" rx="2.5"/><path d="M9 21h6"/></svg></div>
+        <div class="navitem" title="More"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><circle cx="6" cy="12" r="1.1"/><circle cx="12" cy="12" r="1.1"/><circle cx="18" cy="12" r="1.1"/></svg></div>
+      </div>
+      <div class="right">
+        <div class="iconbtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><line x1="16.5" y1="16.5" x2="21" y2="21"></line></svg></div>
+        <div class="clock">21:11</div>
+        <div class="avatar">ER</div>
+      </div>
+    </div>
+    <div class="hero">
+      <div class="kicker">Blender Open Movie · Film</div>
+      <h1 class="htitle">Big Buck Bunny</h1>
+      <div class="hmeta"><span class="chip">4K</span><span>2008</span><span>Animation · Comedy</span><span class="chip">G+</span></div>
+    </div>
+    <div class="railpeek">
+      <div class="rp-head">Channels &amp; Collections</div>
+      <div class="rp-track"><span class="cpill c1">Disney+</span><span class="cpill c2">dansktv</span><span class="cpill c3">Universal</span><span class="cpill c4">Viaplay</span><span class="cpill c5">HBO</span><span class="cpill c6">Paramount+</span></div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ D · SEGMENTED PILL ============ -->
+<div class="concept" style="left:80px; top:3740px;">
+  <div class="clabel">
+    <span class="idx">D</span><span class="name">Segmented pill</span>
+    <span class="tag good">Most composed</span>
+    <span class="note">Primary sections gathered into one contained control, centred.</span>
+  </div>
+  <div class="stage">
+    <div class="backdrop"></div><div class="vign"></div>
+    <div class="appbar">
+      <div class="brand"><svg class="mark" viewBox="12 20 76 76" aria-hidden="true"><defs><linearGradient id="jD" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="var(--accent)"/><stop offset="1" stop-color="var(--accent-2)"/></linearGradient></defs><path d="M22 52 C22 24 78 24 78 52 C66 45 59 45 50 49 C41 45 34 45 22 52 Z" fill="url(#jD)"/><g stroke="url(#jD)" stroke-width="4.5" stroke-linecap="round" fill="none"><path d="M33 51 q-5 12 1 20 q5 8 0 14" opacity=".9"/><path d="M44 52 q-4 13 1 21 q4 9 0 13" opacity=".72"/><path d="M56 52 q4 13 -1 21 q-4 9 0 13" opacity=".72"/><path d="M67 51 q5 12 -1 20 q-5 8 0 14" opacity=".9"/></g></svg><span class="wm">Ravilo</span></div>
+      <div style="margin-left:auto;"></div>
+      <div class="segment">
+        <div class="seg on">Home</div>
+        <div class="seg">Movies</div>
+        <div class="seg">Series</div>
+        <div class="seg more"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><circle cx="6" cy="12" r="1.1"/><circle cx="12" cy="12" r="1.1"/><circle cx="18" cy="12" r="1.1"/></svg></div>
+      </div>
+      <div class="right" style="margin-left:auto;">
+        <div class="iconbtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><line x1="16.5" y1="16.5" x2="21" y2="21"></line></svg></div>
+        <div class="clock">21:11</div>
+        <div class="avatar">ER</div>
+      </div>
+    </div>
+    <div class="hero">
+      <div class="kicker">Blender Open Movie · Film</div>
+      <h1 class="htitle">Big Buck Bunny</h1>
+      <div class="hmeta"><span class="chip">4K</span><span>2008</span><span>Animation · Comedy</span><span class="chip">G+</span></div>
+    </div>
+    <div class="railpeek">
+      <div class="rp-head">Channels &amp; Collections</div>
+      <div class="rp-track"><span class="cpill c1">Disney+</span><span class="cpill c2">dansktv</span><span class="cpill c3">Universal</span><span class="cpill c4">Viaplay</span><span class="cpill c5">HBO</span><span class="cpill c6">Paramount+</span></div>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

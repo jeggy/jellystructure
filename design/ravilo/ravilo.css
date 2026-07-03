@@ -114,6 +114,37 @@ body { font-family: 'Sora', sans-serif; }
 .avatar { background: var(--grad); font-weight: 700; font-size: 18px; color: #fff; cursor: pointer; }
 .avatar.focused { box-shadow: 0 0 0 4px var(--ring); }
 
+/* ---- profile menu (avatar dropdown) ---- */
+.profmenu { position: absolute; z-index: 60; top: 82px; right: 64px; width: 340px; padding: 14px; border-radius: 20px;
+  background: rgba(16,19,31,.97); border: 1px solid rgba(255,255,255,.11); box-shadow: 0 40px 80px -24px rgba(0,0,0,.85); -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px);
+  opacity: 0; transform: translateY(-8px) scale(.98); transform-origin: top right; pointer-events: none; transition: opacity .16s var(--ease), transform .16s var(--ease); }
+.profmenu.on { opacity: 1; transform: none; pointer-events: auto; }
+.profmenu .pm-head { display: flex; align-items: center; gap: 14px; padding: 8px 8px 14px; }
+.profmenu .pm-av { width: 52px; height: 52px; border-radius: 50%; background: var(--grad); display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 20px; color: #fff; flex: none; }
+.profmenu .pm-id { flex: 1; }
+.profmenu .pm-name { font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 22px; color: var(--ink); }
+.profmenu .pm-sub { font-size: 14px; color: var(--ink-dim); }
+.profmenu .pm-switch { font-size: 15px; color: var(--accent-2); font-weight: 600; padding: 6px 12px; border-radius: 9px; border: 1px solid rgba(63,182,245,.3); cursor: pointer; }
+.profmenu .pm-div { height: 1px; background: var(--line); margin: 4px 6px 10px; }
+.profmenu .pm-row { display: flex; align-items: center; gap: 14px; padding: 13px 12px; border-radius: 12px; font-size: 20px; color: var(--ink-soft); cursor: pointer; }
+.profmenu .pm-ic { width: 24px; text-align: center; font-size: 19px; }
+.profmenu .foc.focused { background: var(--ink); color: #0a0c13; }
+.profmenu .pm-switch.focused { background: var(--ink); color: #0a0c13; border-color: transparent; }
+
+/* ---- Discover segment (Coming Soon / Request) ---- */
+.discseg { display: inline-flex; align-items: center; gap: 5px; padding: 5px; border-radius: 16px; background: rgba(255,255,255,.06); border: 1px solid var(--line); margin-top: 0; }
+.discseg .dseg { font-size: 21px; font-weight: 500; color: var(--ink-soft); padding: 10px 24px; border-radius: 12px; cursor: pointer; white-space: nowrap; transition: color .18s var(--ease), background .18s var(--ease); }
+.discseg .dseg.cur { color: var(--ink); font-weight: 600; }
+.discseg .dseg.focused { background: var(--ink); color: #0a0c13; }
+
+/* ---- Seerr search pill (Request page) ---- */
+.dsearch-row { margin-top: 14px; }
+.dischead-controls { display: flex; align-items: center; gap: 18px; margin-top: 16px; }
+.dischead-controls .dsearch { margin-left: auto; }
+.dsearch { display: inline-flex; align-items: center; gap: 12px; height: 50px; padding: 0 24px; border-radius: 26px; background: rgba(255,255,255,.07); border: 1px solid var(--line); color: var(--ink-soft); font-size: 19px; cursor: pointer; }
+.dsearch .sic { font-size: 24px; line-height: 1; }
+.dsearch.focused { background: var(--ink); color: #0a0c13; }
+
 /* ---- profile gate / switcher ("Who's watching?") ---- */
 .profiles { position: absolute; inset: 0; z-index: 95; background: var(--bg); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 54px; }
 .profiles.switch { background: rgba(10,12,19,.92); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); }
@@ -515,7 +546,7 @@ body { font-family: 'Sora', sans-serif; }
 
 /* ranked tile: big numeral + poster */
 .drow .track { overflow: visible; }
-.rtile { flex: none; width: 286px; cursor: pointer; }
+.rtile { flex: none; width: 180px; cursor: pointer; }
 .rtop { display: flex; align-items: flex-end; height: 270px; }
 .rnum { font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 168px; line-height: .74; letter-spacing: -8px;
   color: transparent; -webkit-text-stroke: 3px var(--ink-dim); margin-right: -10px; position: relative; z-index: 1; transition: -webkit-text-stroke-color .2s; }
@@ -611,7 +642,7 @@ body { font-family: 'Sora', sans-serif; }
 .uphead { padding: 0 64px; margin-bottom: 8px; }
 .uphead-row { display: flex; align-items: baseline; gap: 18px; }
 .uphead-row h1 { font-family: 'Space Grotesk', sans-serif; font-size: 52px; letter-spacing: -1.5px; }
-.upfilter { display: flex; gap: 12px; margin-top: 20px; }
+.upfilter { display: flex; align-items: center; gap: 12px; margin-top: 20px; }
 .upchip { display: inline-flex; align-items: center; gap: 10px; padding: 11px 22px; border-radius: 14px;
   background: var(--card); border: 2px solid transparent; color: var(--ink-soft); font-size: 19px; font-weight: 600;
   cursor: pointer; transition: transform .15s, border-color .15s, color .15s; }
