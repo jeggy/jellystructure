@@ -248,6 +248,15 @@ data class SeriesProgress(
     @SerialName("resume_label") val resumeLabel: String?,
 )
 
+/** Phase 130: one official trailer reference (YouTube/Vimeo) — catalog-only, populated straight from
+ *  the stored MediaItem.trailer. Null when the title has none; every consumer (R163) is conditional. */
+@Serializable
+data class TvTrailer(
+    val site: String,   // "youtube" | "vimeo"
+    val key: String,
+    val name: String? = null,
+)
+
 @Serializable
 data class MovieDetail(
     val card: MediaCard,
@@ -264,6 +273,8 @@ data class MovieDetail(
     @SerialName("logo_url") val logoUrl: String? = null,
     /** Phase 106: server-resolved age-rating badge (R153 renders it). Null = no certification data. */
     @SerialName("rating_badge") val ratingBadge: RatingBadge? = null,
+    /** Phase 130: null when TMDB has no usable trailer. R163 renders the Play-Trailer button. */
+    val trailer: TvTrailer? = null,
 )
 
 @Serializable
@@ -283,6 +294,8 @@ data class SeriesDetail(
     @SerialName("next_airing") val nextAiring: NextAiring? = null,
     /** Phase 106: server-resolved age-rating badge (R153 renders it). Null = no certification data. */
     @SerialName("rating_badge") val ratingBadge: RatingBadge? = null,
+    /** Phase 130: null when TMDB has no usable trailer (series-level only). R163 renders the button. */
+    val trailer: TvTrailer? = null,
 )
 
 // ─── Search ───────────────────────────────────────────────────────────────────

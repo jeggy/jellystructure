@@ -5,6 +5,17 @@ import kotlinx.serialization.Serializable
 @Serializable
 enum class MediaKind { MOVIE, TV_SHOW }
 
+/** Phase 130: one official trailer reference per title (YouTube/Vimeo) — a reference only, no
+ *  hosting/download. `thumb` is Vimeo-only (resolved once at ingest via oEmbed); YouTube thumbnails
+ *  are derived client-side from `key`. */
+@Serializable
+data class MediaTrailer(
+    val site: String,   // "youtube" | "vimeo"
+    val key: String,
+    val name: String = "",
+    val thumb: String? = null,
+)
+
 @Serializable
 enum class TrackKind { VIDEO, AUDIO, SUBTITLE, DATA }
 
@@ -162,6 +173,9 @@ data class MediaItem(
     // to the TMDB default — preserved across every automatic scan/sync/re-pull at the MediaStore.addOrUpdate
     // choke point (mirrors preserveJsTags/mergeUserGenres); only an explicit re-pick/upload changes it.
     val lockedArtwork: List<String> = emptyList(),
+    // Phase 130: one official trailer from TMDB /videos, refreshed on every scan/sync/re-pull (no usable
+    // video ⇒ null, clearing a stale one). Manual Clear/Re-fetch via the admin routes bypass ingest.
+    val trailer: MediaTrailer? = null,
 )
 
 /** Phase 108: the sort key every "recently added" surface uses (Ravilo's Newly Added, Browse default,

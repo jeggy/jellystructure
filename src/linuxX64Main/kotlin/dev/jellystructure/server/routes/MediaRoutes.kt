@@ -26,6 +26,7 @@ import dev.jellystructure.media.ScanTracker
 import dev.jellystructure.model.Episode
 import dev.jellystructure.model.MediaItem
 import dev.jellystructure.model.MediaKind
+import dev.jellystructure.model.MediaTrailer
 import dev.jellystructure.model.NfoFileNode
 import dev.jellystructure.model.NfoFileTree
 import dev.jellystructure.model.Person
@@ -1365,6 +1366,40 @@ fun Route.mediaRoutes(
             mediaHistory.record(id, "sync", "kind=${item.kind.name.lowercase()} scope=${req.scope}")
             pushToJellyfin(enriched, artwork, configStore, jellyfinClient, appScope, store, arrRescan)
             call.respond(enriched)
+        }
+
+        // POST /api/media/{id}/trailer/refetch — Phase 130: re-run TMDB /videos + selection for this
+        // title only (no probe/re-scan of anything else). No usable video ⇒ trailer becomes null.
+        post("/{id}/trailer/refetch") {
+            val id = call.parameters["id"] ?: return@post call.respond(HttpStatusCode.BadRequest)
+            val item = store.resolve(id) ?: return@post call.respond(HttpStatusCode.NotFound)
+            val tmdbId = item.tmdbId
+            if (tmdbId == null) {
+                call.respond(HttpStatusCode.BadRequest, mapOf("error" to "item has no TMDB id"))
+                return@post
+            }
+            val video = if (item.kind == MediaKind.MOVIE) tmdbClient.getMovieVideos(tmdbId, item.originalLanguage.orEmpty())
+                else tmdbClient.getTvVideos(tmdbId, item.originalLanguage.orEmpty())
+            val trailer = video?.let { v ->
+                val site = if (v.site.equals("Vimeo", ignoreCase = true)) "vimeo" else "youtube"
+                val thumb = if (site == "vimeo") tmdbClient.resolveVimeoThumb(v.key) else null
+                MediaTrailer(site = site, key = v.key, name = v.name, thumb = thumb)
+            }
+            val updated = item.copy(trailer = trailer)
+            store.updateOne(updated)
+            mediaHistory.record(id, "trailer_refetch", if (trailer != null) "site=${trailer.site} key=${trailer.key}" else "no usable video")
+            call.respond(updated)
+        }
+
+        // DELETE /api/media/{id}/trailer — Phase 130: Clear — an explicit operator action, not
+        // preserved/reintroduced by the next automatic sync (which would just refetch and overwrite it).
+        delete("/{id}/trailer") {
+            val id = call.parameters["id"] ?: return@delete call.respond(HttpStatusCode.BadRequest)
+            val item = store.resolve(id) ?: return@delete call.respond(HttpStatusCode.NotFound)
+            val updated = item.copy(trailer = null)
+            store.updateOne(updated)
+            mediaHistory.record(id, "trailer_clear", "")
+            call.respond(updated)
         }
 
         // POST /api/media/{id}/seasons/{seasonNumber}/sync — per-season resync
