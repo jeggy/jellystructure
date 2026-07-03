@@ -38,16 +38,3 @@ suspend fun ApplicationCall.respondCachedBytes(bytes: ByteArray, contentType: Co
     respondBytes(bytes, contentType)
 }
 
-/**
- * Phase 118 (FR C.5) — load-shedding before death: above the FD ceiling's danger zone, an image route
- * responds 503 + Retry-After instead of doing the work (which would itself open more FDs — artwork
- * fetch, image-proxy cache reads, etc). The browser/app retries; normal API routes are unaffected since
- * they reuse already-open sockets rather than opening new ones. Returns true if the request was shed
- * (the caller must `return` immediately after).
- */
-suspend fun ApplicationCall.shedIfFdCritical(fdWatchdog: dev.jellystructure.ops.FdWatchdog?): Boolean {
-    if (fdWatchdog?.isOverShedThreshold != true) return false
-    response.headers.append(HttpHeaders.RetryAfter, "5")
-    respond(HttpStatusCode.ServiceUnavailable, mapOf("error" to "server under FD pressure, retry shortly"))
-    return true
-}

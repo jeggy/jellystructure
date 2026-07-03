@@ -2,11 +2,7 @@ package dev.jellystructure.auth
 
 import dev.jellystructure.OutboundHttp
 import dev.jellystructure.log.Logger
-import io.ktor.client.HttpClient
 import io.ktor.client.call.body
-import io.ktor.client.engine.curl.Curl
-import io.ktor.client.plugins.HttpTimeout
-import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.request.HttpRequestBuilder
 import io.ktor.client.request.delete
 import io.ktor.client.request.get
@@ -20,8 +16,6 @@ import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
 import io.ktor.http.encodeURLParameter
 import io.ktor.http.isSuccess
-import io.ktor.serialization.kotlinx.json.json
-import kotlinx.serialization.json.Json
 
 private const val DEVICE_ID = "jellystructure-server-v01"
 private const val AUTH_HEADER =
@@ -41,16 +35,8 @@ class JellyfinClient {
     private suspend fun httpDelete(url: String, block: HttpRequestBuilder.() -> Unit = {}): HttpResponse =
         OutboundHttp.withPermit { http.delete(url, block) }
 
-    private val http = HttpClient(Curl) {
-        install(ContentNegotiation) {
-            json(Json { ignoreUnknownKeys = true })
-        }
-        install(HttpTimeout) {
-            connectTimeoutMillis = 5_000
-            socketTimeoutMillis  = 30_000
-            requestTimeoutMillis = 30_000
-        }
-    }
+    // Phase 129 (FR-OPS1 §B.1) — shared client, one idle connection pool for all outbound callers.
+    private val http = OutboundHttp.client
 
     suspend fun authenticateByName(
         baseUrl: String,

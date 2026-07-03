@@ -96,6 +96,7 @@ fun main() = runBlocking {
     configStore.load()
     dev.jellystructure.ops.setCrashWebhookUrl(configStore.current.behavior.notificationsWebhook)
     dev.jellystructure.ops.reportCrashRecoveryIfAny(crashMarkerDir, configStore)
+    dev.jellystructure.ops.reportFdRestartRecoveryIfAny(crashMarkerDir, configStore)
 
     val db = createDatabase(dbFile)
     val sessionService = SessionService(db)
@@ -168,7 +169,7 @@ fun main() = runBlocking {
     // Phase 118 (FR C.4) — FD telemetry: the durable defense against the unfixable Ktor Native
     // FD_SETSIZE selector crash is keeping total FDs under the 1024 ceiling; this makes pressure
     // observable (warn/alert thresholds) before the process dies.
-    val fdWatchdog = dev.jellystructure.ops.FdWatchdog(configStore, rootScope)
+    val fdWatchdog = dev.jellystructure.ops.FdWatchdog(configStore, crashMarkerDir, rootScope)
     fdWatchdog.start()
     val acquisitionStore = AcquisitionStore(db)
     val acquisitionService = AcquisitionService(configStore, arrClient, tmdbClient, acquisitionStore, mediaStore, tvEventBus, rootScope)

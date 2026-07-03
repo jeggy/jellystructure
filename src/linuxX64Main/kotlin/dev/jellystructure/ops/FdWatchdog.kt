@@ -4,8 +4,13 @@ import dev.jellystructure.config.ConfigStore
 import dev.jellystructure.log.Logger
 import dev.jellystructure.server.routes.fireWebhook
 import kotlin.concurrent.Volatile
+import kotlinx.cinterop.ByteVar
 import kotlinx.cinterop.ExperimentalForeignApi
+import kotlinx.cinterop.allocArray
+import kotlinx.cinterop.convert
+import kotlinx.cinterop.memScoped
 import kotlinx.cinterop.pointed
+import kotlinx.cinterop.readBytes
 import kotlinx.cinterop.toKString
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
@@ -13,42 +18,89 @@ import kotlinx.coroutines.launch
 import platform.posix.closedir
 import platform.posix.opendir
 import platform.posix.readdir
+import platform.posix.readlink
 
 /**
- * Phase 118 (FR C.4/C.5) — the durable fix for Ktor Native's unfixable FD_SETSIZE selector crash
- * (KTOR-8703, no poll()/epoll() work planned) is keeping total process FDs under 1024. This watchdog
- * makes that budget observable and gives the server a chance to shed load before it dies:
- * ticks every 60s, counts `/proc/self/fd`, tracks a high-water mark, warns once per crossing at 700,
- * alerts via webhook once per crossing at 900, and [isOverShedThreshold] (950) is read by the image
- * routes / TV events route to reject new work instead of accumulating more FDs toward the ceiling.
+ * Phase 129 (FR-OPS1 §A) — a breakdown of open FDs by kind, cheap enough (`readlink` only, no
+ * `/proc/net` parse) to compute on every threshold crossing. Makes a spike attributable: sockets
+ * (outbound idle vs. inbound vs. WS), files (a leak), or pipes (child processes).
+ */
+data class FdCensus(
+    val total: Int,
+    val sockets: Int,
+    val pipes: Int,
+    val anon: Int,
+    val files: Int,
+    val other: Int,
+    val topFiles: List<Pair<String, Int>>,
+) {
+    /** Compact JSON for logs / the `fd_pressure` webhook / `/api/health`. */
+    fun toJson(): String {
+        val topFilesJson = topFiles.joinToString(",") { (path, count) -> """{"path":${path.fdJsonEsc()},"count":$count}""" }
+        return """{"total":$total,"sockets":$sockets,"pipes":$pipes,"anon":$anon,"files":$files,"other":$other,"top_files":[$topFilesJson]}"""
+    }
+}
+
+private fun String.fdJsonEsc(): String =
+    "\"" + replace("\\", "\\\\").replace("\"", "\\\"") + "\""
+
+/**
+ * Phase 118 (FR C.4/C.5), bounded in code by Phase 129 (FR-OPS1) — the durable fix for Ktor Native's
+ * unfixable FD_SETSIZE selector crash (KTOR-8703, no poll()/epoll() work planned) is keeping total
+ * process FDs under 1024. This watchdog makes that budget observable, sheds load before the ceiling,
+ * and — only as a last-resort backstop that should never fire once the Phase 129 bounding holds —
+ * triggers a controlled restart via the existing Docker `restart: unless-stopped` policy.
+ *
+ * Ticks every **2s** (was 60s, Phase 129 — the shed/exit decisions need a fresh count, not a up-to-
+ * 60s-stale one). The plain FD count is cheap every tick; [FdCensus] is only computed at/above the
+ * warn threshold, keeping the hot tick a bare `/proc/self/fd` count.
+ *
+ * Thresholds (Phase 129): **700** warn (log + census) · **850** alert + webhook + census · **900**
+ * global shed (`isOverShedThreshold`, read by [dev.jellystructure.server.CacheHeaders]'s global
+ * intercept) · **980** drain + controlled `_exit(17)`, insurance only — see [drainAndExit].
  *
  * Documented FD budget (kept current here — any new long-lived FD source must add its line):
- *   outbound HTTP (OutboundHttp)          ≤ 24
- *   per-TV Jellyfin session WS (Phase 110) ≤ 16
- *   Jellyfin library listener WS (Phase 114) = 1
- *   child processes (ProcessGate)         ≤ 4
- *   SQLite (WAL + readers)                 ~ 6
- *   admin/TV app WS                       ≤ ~20
- *   stdio/misc                             ~ 10
+ *   outbound HTTP in-flight (OutboundHttp.withPermit)        ≤ 24
+ *   outbound HTTP shared idle pool (OutboundHttp.client, Phase 129) ≈ 15
+ *   per-TV Jellyfin session WS (Phase 110)                    ≤ 16
+ *   Jellyfin library listener WS (Phase 114)                  = 1
+ *   child processes (ProcessGate)                             ≤ 4
+ *   SQLite (WAL + readers)                                     ~ 6
+ *   admin/TV app WS                                           ≤ ~20
+ *   stdio/misc                                                 ~ 10
  *   -------------------------------------------
- *   committed                             ≤ ~81, leaving ≥900 fds of headroom for inbound sockets,
- *   which the Phase 118 cache headers + CIO idle timeout keep low in practice.
+ *   committed                                                 ≤ ~96, leaving ~900 fds of headroom
+ *   for inbound sockets — bounded in-process by the 900 global shed + 10s idle timeout (CIO Native
+ *   exposes no accept-time cap, so that's the ceiling of in-code inbound control), not hard-capped.
  */
-class FdWatchdog(private val configStore: ConfigStore, private val scope: CoroutineScope) {
+class FdWatchdog(
+    private val configStore: ConfigStore,
+    private val dataDir: String,
+    private val scope: CoroutineScope,
+) {
     @Volatile var currentCount: Int = 0
         private set
     @Volatile var highWaterMark: Int = 0
         private set
+    @Volatile var lastCensus: FdCensus? = null
+        private set
+
+    /** Phase 129 §D.2 — while true, [dev.jellystructure.server.CacheHeaders]'s global shed intercept
+     *  refuses ALL new work (not just above-threshold work), so in-flight requests can finish before
+     *  the controlled exit. */
+    @Volatile var draining: Boolean = false
+        private set
 
     private var warnedAt700 = false
-    private var alertedAt900 = false
+    private var alertedAt850 = false
+    private var exitTriggered = false
 
-    val isOverShedThreshold: Boolean get() = currentCount > 950
+    val isOverShedThreshold: Boolean get() = currentCount > 900
 
     fun start() {
         scope.launch {
             while (true) {
-                delay(60_000L)
+                delay(2_000L)
                 runCatching { tick() }
             }
         }
@@ -63,21 +115,51 @@ class FdWatchdog(private val configStore: ConfigStore, private val scope: Corout
         if (count > 700) {
             if (!warnedAt700) {
                 warnedAt700 = true
-                Logger.warn("FD count high: $count open file descriptors (>700, ceiling is 1024)", "ops")
+                val census = censusOpenFds()
+                lastCensus = census
+                Logger.warn("FD count high: $count open file descriptors (>700, ceiling is 1024) census=${census.toJson()}", "ops")
             }
         } else {
             warnedAt700 = false
         }
 
-        if (count > 900) {
-            if (!alertedAt900) {
-                alertedAt900 = true
-                Logger.error("FD count critical: $count open file descriptors (>900, ceiling is 1024)", "ops")
-                fireWebhook(configStore.current, """{"event":"fd_pressure","count":$count,"high_water_mark":$highWaterMark}""")
+        if (count > 850) {
+            if (!alertedAt850) {
+                alertedAt850 = true
+                val census = censusOpenFds()
+                lastCensus = census
+                Logger.error("FD count critical: $count open file descriptors (>850, ceiling is 1024)", "ops")
+                fireWebhook(configStore.current, """{"event":"fd_pressure","count":$count,"high_water_mark":$highWaterMark,"census":${census.toJson()}}""")
             }
         } else {
-            alertedAt900 = false
+            alertedAt850 = false
         }
+
+        if (count > 980 && !exitTriggered) {
+            exitTriggered = true
+            drainAndExit(count)
+        }
+    }
+
+    /**
+     * Phase 129 (FR-OPS1 §D.2) — insurance only; should never fire in normal operation once §B's
+     * in-code bounding holds. Sets [draining] (the global shed intercept then refuses everything
+     * new), waits ~2s for in-flight work to drain, writes an **intentional** `last-restart.json`
+     * marker (distinct from the crash marker — this is the safety valve working, not a fault), fires
+     * a **synchronous** webhook (must have actually left the box before the process exits, unlike the
+     * normal fire-and-forget `fireWebhook`), then exits with a clean non-zero code — strictly before
+     * any FD reaches the 1024 hard ceiling — that the existing Docker `restart: unless-stopped` policy
+     * brings back. [dev.jellystructure.ops.reportFdRestartRecoveryIfAny] reports the recovery at the
+     * next boot.
+     */
+    private suspend fun drainAndExit(count: Int) {
+        draining = true
+        val census = lastCensus ?: censusOpenFds()
+        Logger.error("FD count at drain threshold: $count open file descriptors (>980) — draining and restarting", "ops")
+        delay(2_000L)
+        writeLastRestartMarker(dataDir, count, census.toJson())
+        fireSynchronousWebhook(configStore.current.behavior.notificationsWebhook, """{"event":"fd_controlled_restart","count":$count,"census":${census.toJson()}}""")
+        platform.posix._exit(17)
     }
 
     @OptIn(ExperimentalForeignApi::class)
@@ -96,5 +178,47 @@ class FdWatchdog(private val configStore: ConfigStore, private val scope: Corout
         // opendir itself holds one fd for the duration of the scan; subtract it so the count reflects
         // the process's steady-state FD usage, not this watchdog's own transient probe.
         return (count - 1).coerceAtLeast(0)
+    }
+
+    @OptIn(ExperimentalForeignApi::class)
+    fun censusOpenFds(): FdCensus {
+        val dir = opendir("/proc/self/fd") ?: return FdCensus(0, 0, 0, 0, 0, 0, emptyList())
+        var sockets = 0
+        var pipes = 0
+        var anon = 0
+        var files = 0
+        var other = 0
+        val fileCounts = mutableMapOf<String, Int>()
+        try {
+            while (true) {
+                val entry = readdir(dir) ?: break
+                val name = entry.pointed.d_name.toKString()
+                if (name == "." || name == "..") continue
+                val target = readlinkSafe("/proc/self/fd/$name") ?: continue
+                when {
+                    target.startsWith("socket:") -> sockets++
+                    target.startsWith("pipe:") -> pipes++
+                    target.startsWith("anon_inode:") -> anon++
+                    target.startsWith("/") -> {
+                        files++
+                        fileCounts[target] = (fileCounts[target] ?: 0) + 1
+                    }
+                    else -> other++
+                }
+            }
+        } finally {
+            closedir(dir)
+        }
+        val topFiles = fileCounts.entries.sortedByDescending { it.value }.take(10).map { it.key to it.value }
+        return FdCensus(sockets + pipes + anon + files + other, sockets, pipes, anon, files, other, topFiles)
+    }
+
+    @OptIn(ExperimentalForeignApi::class)
+    private fun readlinkSafe(path: String): String? = memScoped {
+        val bufSize = 256
+        val buf = allocArray<ByteVar>(bufSize)
+        val n = readlink(path, buf, (bufSize - 1).convert())
+        if (n <= 0) return@memScoped null
+        buf.readBytes(n.toInt()).decodeToString()
     }
 }
