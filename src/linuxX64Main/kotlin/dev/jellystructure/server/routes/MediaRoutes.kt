@@ -1988,8 +1988,21 @@ internal suspend fun runScan(
 
     // Phase 53-D: report Jellyfin items that were returned but produced no stored item, with reasons,
     // so silent drops (file-not-found, unmatched library, …) are visible — not just a buried per-item warn.
+    // Bug fix (2026-07-03): this used to filter over ALL of jellyfinItems with no regard for the
+    // freshness filter, so every item that was simply not due for a recheck yet (excluded from
+    // `worklist` above, by design, on every incremental scan) landed in `skipped` too. classifySkip()
+    // finds nothing actually wrong with those (valid path, library match, file exists) so it falls
+    // through to "other" — which isn't in the `expected` set below — so a completely normal
+    // freshness-filtered scan logged "N item(s) unexpectedly skipped" for the ENTIRE rest of the
+    // library every single run. Excluding not-due items here (we already know exactly why they weren't
+    // touched) makes `skipped` mean what the log claims: something that should have been processed
+    // this run but wasn't.
+    val notDueThisRun = if (freshnessFilter != null)
+        jellyfinItems.filter { it.id !in skipIds && !freshnessFilter(it) }.map { it.id }.toSet()
+        else emptySet()
+    if (notDueThisRun.isNotEmpty()) Logger.info("Scan: ${notDueThisRun.size} item(s) not due for a recheck yet — skipped by the freshness filter", "scan")
     val scannedJfIds = allItems.mapNotNull { it.jellyfinId }.toSet()
-    val skipped = jellyfinItems.filter { it.id !in scannedJfIds && it.id !in skipIds }
+    val skipped = jellyfinItems.filter { it.id !in scannedJfIds && it.id !in skipIds && it.id !in notDueThisRun }
     if (skipped.isNotEmpty()) {
         val reasons = skipped.associateWith { scanner.classifySkip(it) }
         val byReason = reasons.values.groupingBy { it }.eachCount().entries
