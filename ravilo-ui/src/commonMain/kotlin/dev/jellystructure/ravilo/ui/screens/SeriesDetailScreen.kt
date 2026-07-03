@@ -50,7 +50,6 @@ import kotlinx.coroutines.launch
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.jellystructure.ravilo.ui.components.AppBar
@@ -233,8 +232,6 @@ private fun SeriesDetailLoaded(
     val synopsisFR = remember { FocusRequester() }   // R135
     val seasonFirstFR = remember { FocusRequester() }   // R138
     val navBarFR = remember { FocusRequester() }
-
-    val resumeEpIdx = episodes.indexOfFirst { it.id == resumeEpId }.takeIf { it >= 0 } ?: 0
 
     LaunchedEffect(Unit) { runCatching { playFR.requestFocus() } }
 

@@ -50,9 +50,6 @@ class ChartStore(private val db: JellystructureDb) {
     fun getOverride(provider: String, title: String, kind: String): Int? =
         q.getOverride(provider, title.lowercase(), kind).executeAsOneOrNull()?.toInt()
 
-    fun setOverride(provider: String, title: String, kind: String, tmdbId: Int) =
-        q.setOverride(provider, title.lowercase(), kind, tmdbId.toLong())
-
     private fun toEntry(r: dev.jellystructure.db.Chart_entry): ChartEntry = ChartEntry(
         listId = r.list_id,
         rank = r.rank.toInt(),

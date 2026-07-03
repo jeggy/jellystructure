@@ -42,7 +42,6 @@ import dev.jellystructure.ravilo.ui.screens.DiscoverScreen
 import dev.jellystructure.ravilo.ui.screens.DiscoverStore
 import dev.jellystructure.ravilo.ui.screens.HomeScreen
 import dev.jellystructure.ravilo.ui.screens.HomeStore
-import dev.jellystructure.ravilo.ui.screens.LocalSession
 import dev.jellystructure.ravilo.ui.screens.MovieDetailScreen
 import dev.jellystructure.ravilo.ui.screens.MovieDetailStore
 import dev.jellystructure.ravilo.ui.screens.MultiTokenStore
@@ -251,7 +250,7 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                 else -> Dest.ProfilePicker
             }
         }
-        var stack by remember { mutableStateOf(listOf<Dest>(initialDest)) }
+        var stack by remember { mutableStateOf(listOf(initialDest)) }
         // R92: direction that drives the AnimatedContent transitionSpec.
         var navDir by remember { mutableStateOf(NavDir.Forward) }
         var fpsOverlay by remember { mutableStateOf(false) }  // R94: toggle with F5
@@ -406,24 +405,24 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
             transitionSpec = {
                 when (navDir) {
                     NavDir.Forward ->
-                        (slideInHorizontally(tween(RaviloMotion.ScreenEnterMs)) { it / 4 } +
-                            fadeIn(tween(RaviloMotion.ScreenEnterMs))) togetherWith
-                        (slideOutHorizontally(tween(RaviloMotion.ScreenExitMs)) { -it / 4 } +
-                            fadeOut(tween(RaviloMotion.ScreenExitMs)))
+                        (slideInHorizontally(tween(RaviloMotion.SCREEN_ENTER_MS)) { it / 4 } +
+                            fadeIn(tween(RaviloMotion.SCREEN_ENTER_MS))) togetherWith
+                        (slideOutHorizontally(tween(RaviloMotion.SCREEN_EXIT_MS)) { -it / 4 } +
+                            fadeOut(tween(RaviloMotion.SCREEN_EXIT_MS)))
                     NavDir.Back ->
-                        (slideInHorizontally(tween(RaviloMotion.ScreenEnterMs)) { -it / 4 } +
-                            fadeIn(tween(RaviloMotion.ScreenEnterMs))) togetherWith
-                        (slideOutHorizontally(tween(RaviloMotion.ScreenExitMs)) { it / 4 } +
-                            fadeOut(tween(RaviloMotion.ScreenExitMs)))
+                        (slideInHorizontally(tween(RaviloMotion.SCREEN_ENTER_MS)) { -it / 4 } +
+                            fadeIn(tween(RaviloMotion.SCREEN_ENTER_MS))) togetherWith
+                        (slideOutHorizontally(tween(RaviloMotion.SCREEN_EXIT_MS)) { it / 4 } +
+                            fadeOut(tween(RaviloMotion.SCREEN_EXIT_MS)))
                     NavDir.Reset ->
-                        fadeIn(tween(RaviloMotion.ScreenEnterMs)) togetherWith
-                            fadeOut(tween(RaviloMotion.ScreenExitMs))
+                        fadeIn(tween(RaviloMotion.SCREEN_ENTER_MS)) togetherWith
+                            fadeOut(tween(RaviloMotion.SCREEN_EXIT_MS))
                 }
             },
             contentKey = { it::class },
         ) { dest -> when (dest) {
             is Dest.ProfilePicker -> {
-                val store = remember { ProfilePickerStore(apiClient) }
+                val store = remember { ProfilePickerStore() }
                 ProfilePickerScreen(
                     store = store,
                     apiClient = apiClient,

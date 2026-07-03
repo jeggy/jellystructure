@@ -11,7 +11,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.material3.Text
@@ -51,8 +50,6 @@ import dev.jellystructure.shared.tv.Channel
 import dev.jellystructure.shared.tv.MediaCard
 import dev.jellystructure.shared.tv.Row
 import dev.jellystructure.shared.tv.RowKind
-
-enum class NavDestination { HOME, MOVIES, SERIES, MY_LIST, SEARCH }
 
 @Composable
 fun HomeScreen(
@@ -112,7 +109,6 @@ private fun HomeLoaded(
     onProfile: () -> Unit,
     onSearch: () -> Unit,
 ) {
-    val colors = RaviloTheme.colors
     val listState = store.listState   // R137
     val scope = rememberCoroutineScope()
 

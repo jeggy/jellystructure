@@ -410,7 +410,7 @@ private fun renderJobsPanel(container: Element, s: dev.jellystructure.api.JobsSu
               <span class="btn sm bad" id="jobs-cancel-running" data-job-id="${r.id}">Cancel</span>
             </div>
             <div class="bar" style="margin-top:10px;"><i style="width:${r.pct.coerceIn(0.0, 100.0)}%"></i></div>
-            <div class="tiny muted mono" style="margin-top:6px;">${if (r.speed != null) "speed=${r.speed.esc()} · " else ""}${r.pct.toInt()}%${if (r.fileCount > 1) " · file ${r.filesDone + 1} of ${r.fileCount}" else ""}</div>"""
+            <div class="tiny muted mono" style="margin-top:6px;">${if (r.speed != null) "speed=${r.speed.esc()} · " else ""}${r.pct.toInt()}%${if (r.fileCount > 1) " · file ${r.filesDone + 1} of ${r.fileCount}" else ""}${r.etaSeconds?.let { " · ~${formatRemaining(it * 1000.0)} left" } ?: ""}</div>"""
     } else {
         runningCard?.style?.display = "none"
     }
@@ -429,7 +429,7 @@ private fun renderJobsPanel(container: Element, s: dev.jellystructure.api.JobsSu
 
     val recentEl = container.querySelector("#jobrecent") as? HTMLElement
     recentEl?.innerHTML = if (s.recent.isEmpty()) """<span class="muted tiny">Nothing yet.</span>""" else
-        s.recent.map { j ->
+        s.recent.joinToString("") { j ->
             val ic = if (j.state == "done") """<span class="jq-ic ok">✓</span>""" else """<span class="jq-ic bad">✗</span>"""
             val took = if (j.startedAt != null && j.finishedAt != null) "took ${(j.finishedAt - j.startedAt).coerceAtLeast(0)}s" else ""
             val sub = when (j.state) {
@@ -446,7 +446,7 @@ private fun renderJobsPanel(container: Element, s: dev.jellystructure.api.JobsSu
                  <span class="$badgeCls">${j.state.esc()}</span>
                  $retryBtn
                </div>"""
-        }.joinToString("")
+        }
 
     // Wire cancel/retry buttons fresh each render (innerHTML was just replaced).
     container.querySelectorAll(".jq-cancel, #jobs-cancel-running").let { nodes ->

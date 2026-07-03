@@ -6,7 +6,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -58,7 +57,7 @@ fun EpisodeCard(
     var focused by remember { mutableStateOf(false) }
     val focusSpec = remember { RaviloMotion.softSpring<Float>() }
     val dpSpec    = remember { RaviloMotion.softSpring<Dp>() }
-    val scale           by animateFloatAsState(if (focused) RaviloMotion.CardFocusScale else 1f, focusSpec, label = "epScale")
+    val scale           by animateFloatAsState(if (focused) RaviloMotion.CARD_FOCUS_SCALE else 1f, focusSpec, label = "epScale")
     val borderWidth     by animateDpAsState(if (focused) 3.dp else 0.dp, dpSpec, label = "epBorder")
     val glowElevation   by animateDpAsState(if (focused) 20.dp else 0.dp, dpSpec, label = "epShadow")
     val cardShape = remember { RoundedCornerShape(12.dp) }

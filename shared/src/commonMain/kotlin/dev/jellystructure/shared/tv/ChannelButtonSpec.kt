@@ -22,7 +22,6 @@ object ChannelButtonSpec {
     const val RING_WIDTH_DP   = 3
     const val RING_ALPHA      = 0.7f
     const val GLOW_ELEV_DP    = 22
-    const val GLOW_ALPHA      = 0.55f
 
     // Brand fill defaults
     const val SOLID_WASH_ALPHA = 0.28f   // accent@0.28 when no custom gradient

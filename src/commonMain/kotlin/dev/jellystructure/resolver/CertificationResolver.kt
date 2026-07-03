@@ -77,24 +77,19 @@ object CertificationResolver {
     }
 
     /** [cascade] is an ordered list of ISO-3166-1 country codes; [certifications] is the title's raw
-     *  per-country map (uppercase keys). Returns null only when [certifications] is empty. */
+     *  per-country map (uppercase keys). Returns null when [certifications] is empty, or when no
+     *  cascade region has a certification — Phase 119: the cascade is authoritative, no fallback to
+     *  a region the admin never configured. */
     fun resolve(cascade: List<String>, certifications: Map<String, String>): Certification? {
         if (certifications.isEmpty()) return null
         for (region in cascade) {
             val code = certifications[region.uppercase()]
             if (!code.isNullOrBlank()) return Certification(region.uppercase(), code, tierFor(code), fallback = false)
         }
-        val fallbackRegion = when {
-            certifications.containsKey("US") -> "US"
-            certifications.containsKey("GB") -> "GB"
-            else -> certifications.keys.sorted().firstOrNull() ?: return null
-        }
-        val code = certifications[fallbackRegion] ?: return null
-        return Certification(fallbackRegion, code, tierFor(code), fallback = true)
+        return null
     }
 
-    /** The full cascade trace for the admin detail page: one row per cascade region (used / skipped),
-     *  plus a fallback row when the cascade missed and a fallback certification exists. */
+    /** The full cascade trace for the admin detail page: one row per cascade region (used / skipped). */
     fun trace(cascade: List<String>, certifications: Map<String, String>): List<CascadeStep> {
         if (cascade.isEmpty()) return emptyList()
         var used = false
@@ -108,8 +103,6 @@ object CertificationResolver {
                 CascadeStep(region, CascadeStepOutcome.SKIPPED)
             }
         }
-        if (used) return steps
-        val fallback = resolve(cascade, certifications) ?: return steps
-        return steps + CascadeStep(fallback.region, CascadeStepOutcome.USED, fallback)
+        return steps
     }
 }

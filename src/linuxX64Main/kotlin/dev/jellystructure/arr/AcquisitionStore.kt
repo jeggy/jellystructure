@@ -16,8 +16,6 @@ class AcquisitionStore(private val db: JellystructureDb) {
 
     fun get(itemKey: String): AcquisitionRecord? = q.getByKey(itemKey).executeAsOneOrNull()?.let(::toRecord)
 
-    fun getByTmdb(tmdbId: Int): AcquisitionRecord? = q.getByTmdb(tmdbId.toLong()).executeAsOneOrNull()?.let(::toRecord)
-
     fun getMany(keys: List<String>): List<AcquisitionRecord> =
         if (keys.isEmpty()) emptyList() else q.getByKeys(keys).executeAsList().map(::toRecord)
 

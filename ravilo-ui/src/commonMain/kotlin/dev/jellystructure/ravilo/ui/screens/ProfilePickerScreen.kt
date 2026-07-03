@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.draw.clip
@@ -35,14 +34,9 @@ import dev.jellystructure.ravilo.ui.focus.dpadFocusable
 import dev.jellystructure.ravilo.ui.i18n.str
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
 import dev.jellystructure.shared.tv.TvApiClient
-import dev.jellystructure.shared.tv.TvSession
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.launch
 
 // ─── Multi-user session model ─────────────────────────────────────────────────
 
@@ -76,8 +70,7 @@ sealed class ProfilePickerState {
     data object AddingUser : ProfilePickerState()
 }
 
-class ProfilePickerStore(private val apiClient: TvApiClient) {
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+class ProfilePickerStore {
     private val _state = MutableStateFlow<ProfilePickerState>(
         ProfilePickerState.Picking(MultiTokenStore.getAll())
     )

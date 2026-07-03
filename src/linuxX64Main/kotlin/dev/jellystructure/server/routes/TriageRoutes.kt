@@ -50,7 +50,7 @@ data class EpisodeTriageItem(
     val episodeCode: String,
     val title: String? = null,
     val untaggedTracks: List<TriageTrack>,
-    val missingOverview: Boolean,
+    val missingStill: Boolean,  // Phase 121: no image on disk at all (was missingOverview — TMDB plot text isn't an issue)
     val multiDefault: MultiDefaultIssue? = null,
 )
 
@@ -75,7 +75,7 @@ data class TriageItem(
 
 // Phase 117: one row per triage issue type, always present (even at 0), carrying its own display copy
 // and BOTH counting bases — `instances` (what the dashboard headline sums; episode/track-level for
-// untagged/missingOverview) and `titles` (how many distinct items/series the Library will actually show
+// untagged/missingStill) and `titles` (how many distinct items/series the Library will actually show
 // for this type — a series with 200 untagged episode tracks is 200 instances but 1 title).
 @Serializable
 data class TriageTypeCount(
@@ -114,8 +114,9 @@ fun Route.triageRoutes(store: MediaStore, jellyfinClient: JellyfinClient, config
             val languageMixTitles = all.count { it.languageMix }
             val missingArtworkTitles = all.count { !posterArtworkExists(it) }
             val missingFromSourceTitles = all.count { it.missingFromSource }   // Phase 95
-            val missingOverviewInstances = all.sumOf { TriageDetection.missingOverviewCount(it) }
-            val missingOverviewTitles = all.count { TriageDetection.missingOverviewCount(it) > 0 }
+            val missingStillInstances = all.sumOf { TriageDetection.missingStillCount(it) }
+            val missingStillTitles = all.count { TriageDetection.missingStillCount(it) > 0 }
+            val dupGroups = all.filter { !it.jellyfinId.isNullOrBlank() }.groupBy { it.jellyfinId }.filterValues { it.size > 1 }
 
             val types = listOf(
                 TriageTypeCount("untagged", "Untagged audio/subtitle tracks",
@@ -136,9 +137,12 @@ fun Route.triageRoutes(store: MediaStore, jellyfinClient: JellyfinClient, config
                 TriageTypeCount("missing_from_source", "No longer in Jellyfin",
                     "The scanner no longer finds this title in Jellyfin — kept for review, never auto-deleted.",
                     missingFromSourceTitles, missingFromSourceTitles),
-                TriageTypeCount("missing_overview", "Missing episode overview",
-                    "Episodes with no plot summary from TMDB.",
-                    missingOverviewInstances, missingOverviewTitles),
+                TriageTypeCount("missing_still", "Missing episode image",
+                    "Episode has no still image — no TMDB still and no screen-grab — so Ravilo shows a blank episode card.",
+                    missingStillInstances, missingStillTitles),
+                TriageTypeCount("duplicate", "Duplicate library entries",
+                    "The same Jellyfin item appears more than once — both open the same detail page; re-scan or remove the extra entry.",
+                    dupGroups.values.sumOf { it.size }, dupGroups.size),
             )
             val result = TriageCount(types = types, total = types.sumOf { it.instances })
             triageCountCache = Pair(ver, result)
@@ -281,9 +285,9 @@ private fun MediaItem.toTriageItem(): TriageItem? {
             val untagged = ep.tracks
                 .filter { (it.kind == TrackKind.AUDIO || it.kind == TrackKind.SUBTITLE) && it.language == null }
                 .map { t -> TriageTrack(specifier = t.specifier, streamIndex = t.streamIndex, kind = t.kind.name.lowercase(), codec = t.codec, title = t.title) }
-            val missingOverview = ep.overview.isNullOrBlank()
+            val missingStill = !ep.hasStill
             val multiDefault = ep.detectMultiDefaultAudio()
-            if (untagged.isEmpty() && !missingOverview && multiDefault == null) return@mapNotNull null
+            if (untagged.isEmpty() && !missingStill && multiDefault == null) return@mapNotNull null
             val code = if (ep.seasonNumber != null && ep.episodeNumber != null) {
                 "S${ep.seasonNumber.toString().padStart(2, '0')}E${ep.episodeNumber.toString().padStart(2, '0')}"
             } else ep.filename.substringBeforeLast('.')
@@ -292,7 +296,7 @@ private fun MediaItem.toTriageItem(): TriageItem? {
                 episodeCode = code,
                 title = ep.title,
                 untaggedTracks = untagged,
-                missingOverview = missingOverview,
+                missingStill = missingStill,
                 multiDefault = multiDefault,
             )
         }

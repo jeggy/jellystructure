@@ -112,16 +112,16 @@ fun ChannelCard(
                     else listOf(accentColor.copy(alpha = ChannelButtonSpec.SOLID_WASH_ALPHA), colors.card)
         Brush.linearGradient(
             colors = stops,
-            start = androidx.compose.ui.geometry.Offset(0f, 0f),
-            end = androidx.compose.ui.geometry.Offset(Float.POSITIVE_INFINITY, Float.POSITIVE_INFINITY),
+            start = Offset(0f, 0f),
+            end = Offset(Float.POSITIVE_INFINITY, Float.POSITIVE_INFINITY),
         )
     }
     // Subtle sheen overlay
     val sheenGradient = remember {
         Brush.linearGradient(
             colors = listOf(Color.White.copy(alpha = ChannelButtonSpec.SHEEN_ALPHA), Color.Transparent),
-            start = androidx.compose.ui.geometry.Offset(0f, 0f),
-            end = androidx.compose.ui.geometry.Offset(Float.POSITIVE_INFINITY, Float.POSITIVE_INFINITY),
+            start = Offset(0f, 0f),
+            end = Offset(Float.POSITIVE_INFINITY, Float.POSITIVE_INFINITY),
         )
     }
 
@@ -186,17 +186,16 @@ fun ChannelCard(
         )
 
         if (logoUrl != null) {
-            val logoPad = logoPadding
             RemoteImage(
                 url = logoUrl,
                 contentDescription = name,
                 contentScale = ContentScale.Fit,
-                modifier = if (logoPad != null)
+                modifier = if (logoPadding != null)
                     Modifier.fillMaxSize().padding(
-                        start = logoPad.left.dp,
-                        top = logoPad.top.dp,
-                        end = logoPad.right.dp,
-                        bottom = logoPad.bottom.dp,
+                        start = logoPadding.left.dp,
+                        top = logoPadding.top.dp,
+                        end = logoPadding.right.dp,
+                        bottom = logoPadding.bottom.dp,
                     )
                 else
                     Modifier.fillMaxSize(),

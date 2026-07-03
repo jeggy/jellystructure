@@ -90,9 +90,7 @@ import dev.jellystructure.ravilo.ui.theme.RaviloMotion
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
 import dev.jellystructure.ravilo.ui.theme.SpaceGrotesk
 import dev.jellystructure.ravilo.ui.theme.accentGradient
-import dev.jellystructure.shared.tv.SubTrack
 import kotlinx.coroutines.delay
-import kotlin.math.PI
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -575,10 +573,10 @@ fun PlayerScreen(
         // R90: scale-bounce matches the CSS plflash spec — pop in from 0.9→1.0, expand out to 1.4.
         AnimatedVisibility(
             pauseFlash,
-            enter = scaleIn(initialScale = RaviloMotion.PauseFlashFromScale, animationSpec = tween(RaviloMotion.PauseFlashInMs)) +
-                    fadeIn(tween(RaviloMotion.PauseFlashInMs)),
-            exit  = scaleOut(targetScale = RaviloMotion.PauseFlashToScale, animationSpec = tween(RaviloMotion.PauseFlashOutMs)) +
-                    fadeOut(tween(RaviloMotion.PauseFlashOutMs)),
+            enter = scaleIn(initialScale = RaviloMotion.PAUSE_FLASH_FROM_SCALE, animationSpec = tween(RaviloMotion.PAUSE_FLASH_IN_MS)) +
+                    fadeIn(tween(RaviloMotion.PAUSE_FLASH_IN_MS)),
+            exit  = scaleOut(targetScale = RaviloMotion.PAUSE_FLASH_TO_SCALE, animationSpec = tween(RaviloMotion.PAUSE_FLASH_OUT_MS)) +
+                    fadeOut(tween(RaviloMotion.PAUSE_FLASH_OUT_MS)),
         ) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Box(
@@ -616,8 +614,8 @@ fun PlayerScreen(
         // R90: 300ms fade-in / 200ms fade-out matches the CSS spec (was enter=200/exit=300, reversed).
         AnimatedVisibility(
             visible = chromeVisible,
-            enter = fadeIn(tween(RaviloMotion.ChromeFadeInMs)),
-            exit = fadeOut(tween(RaviloMotion.ChromeFadeOutMs)),
+            enter = fadeIn(tween(RaviloMotion.CHROME_FADE_IN_MS)),
+            exit = fadeOut(tween(RaviloMotion.CHROME_FADE_OUT_MS)),
         ) {
             PlayerChrome(
                 colors          = colors,
@@ -684,8 +682,8 @@ fun PlayerScreen(
         // R90: slide-up from below + fade matches the CSS translateY(112%)→0 spec (was fade-only).
         AnimatedVisibility(
             visible = nextUpVisible,
-            enter = slideInVertically { it } + fadeIn(tween(RaviloMotion.NextUpSlideMs)),
-            exit  = slideOutVertically { it } + fadeOut(tween(RaviloMotion.NextUpSlideMs)),
+            enter = slideInVertically { it } + fadeIn(tween(RaviloMotion.NEXT_UP_SLIDE_MS)),
+            exit  = slideOutVertically { it } + fadeOut(tween(RaviloMotion.NEXT_UP_SLIDE_MS)),
             modifier = Modifier.align(Alignment.BottomEnd),
         ) {
             NextUpCard(
@@ -1037,11 +1035,10 @@ private fun PlayPauseButton(isPlaying: Boolean, focused: Boolean, onClick: () ->
             if (isPlaying) {
                 // Two vertical bars (pause)
                 val bw = cw * 0.28f
-                val bh = ch
                 val gap = cw * 0.16f
                 val cx = cw / 2
-                drawRect(glyphColor, topLeft = Offset(cx - gap / 2 - bw, 0f), size = Size(bw, bh))
-                drawRect(glyphColor, topLeft = Offset(cx + gap / 2, 0f), size = Size(bw, bh))
+                drawRect(glyphColor, topLeft = Offset(cx - gap / 2 - bw, 0f), size = Size(bw, ch))
+                drawRect(glyphColor, topLeft = Offset(cx + gap / 2, 0f), size = Size(bw, ch))
             } else {
                 // Right-pointing triangle (play)
                 val path = Path().apply {
@@ -1251,7 +1248,7 @@ private fun TrackPicker(
             Spacer(Modifier.height(14.dp))
 
             // Options
-            val effectiveAudio = if (audioTracks.isEmpty()) listOf(PlayerAudioTrack(0, "Default", null)) else audioTracks
+            val effectiveAudio = audioTracks.ifEmpty { listOf(PlayerAudioTrack(0, "Default", null)) }
             val items: List<Triple<String, String?, String?>> = if (pickerTab == 0) {
                 // Secondary line: humanized language, hidden when the label already starts with it.
                 effectiveAudio.map { Triple(it.label, langLine(it.language, it.label), null) }
@@ -1433,7 +1430,6 @@ private fun CountdownRing(colors: RaviloColors, countdown: Int) {
     Canvas(Modifier.size(34.dp)) {
         val r = 13.dp.toPx()
         val stroke = 3.5.dp.toPx()
-        val circumference = (2 * PI * r).toFloat()
         drawCircle(Color.White.copy(0.25f), r, style = Stroke(stroke))
         if (countdown > 0) {
             drawArc(

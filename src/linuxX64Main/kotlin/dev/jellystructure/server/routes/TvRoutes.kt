@@ -45,7 +45,6 @@ import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.request.receive
 import io.ktor.server.response.respond
-import io.ktor.server.response.respondBytes
 import io.ktor.server.routing.Route
 import io.ktor.server.routing.delete
 import io.ktor.server.routing.get
@@ -118,7 +117,7 @@ fun Route.tvRoutes(
     jellyfinClient: JellyfinClient,
     configStore: ConfigStore,
     channelLogoStore: ChannelLogoStore,
-    acquisitionService: dev.jellystructure.arr.AcquisitionService? = null,
+    acquisitionService: AcquisitionService? = null,
     chartStore: dev.jellystructure.chart.ChartStore? = null,
     chartRegistry: dev.jellystructure.chart.ChartRegistry? = null,
     tmdbClient: dev.jellystructure.tmdb.TmdbClient? = null,
@@ -145,7 +144,6 @@ fun Route.tvRoutes(
                 return@post
             }
             val (device, deviceToken) = result
-            val baseUrl = configStore.current.apiKeys.jellyfinUrl.trimEnd('/')
             call.respond(PairResult(
                 session = TvSession(
                     deviceId = device.deviceId,
@@ -236,7 +234,6 @@ fun Route.tvRoutes(
     // ── Multi-user sessions ──────────────────────────────────────────────────
     get("/tv/sessions") {
         val device = call.attributes[DeviceKey]
-        val baseUrl = configStore.current.apiKeys.jellyfinUrl.trimEnd('/')
         val sessions = deviceService.listSessions(device.deviceId).map { d ->
             TvSession(
                 deviceId = d.deviceId,
@@ -332,9 +329,7 @@ fun Route.tvRoutes(
     post("/tv/playback/start") {
         val device = call.attributes[DeviceKey]
         val req = call.receive<PlaybackStartRequest>()
-        val ticket = playbackService.startPlayback(device, req.itemId, req.capabilities)
-        if (ticket == null) call.respond(HttpStatusCode.NotFound, mapOf("error" to "Item not found"))
-        else call.respond(ticket)
+        call.respond(playbackService.startPlayback(device, req.itemId, req.capabilities))
     }
 
     post("/tv/playback/progress") {
@@ -355,9 +350,7 @@ fun Route.tvRoutes(
     post("/tv/playback/restream") {
         val device = call.attributes[DeviceKey]
         val req = call.receive<PlaybackRestreamRequest>()
-        val ticket = playbackService.restream(device, req.itemId, req.subtitleStreamIndex, req.positionMs)
-        if (ticket == null) call.respond(HttpStatusCode.NotFound, mapOf("error" to "Item not found"))
-        else call.respond(ticket)
+        call.respond(playbackService.restream(device, req.itemId, req.subtitleStreamIndex, req.positionMs))
     }
 
     post("/tv/mark") {
@@ -550,7 +543,7 @@ fun Route.tvRoutes(
     }
 
     delete("/tv/admin/config") {
-        val session = runCatching { call.attributes[SessionKey] }.getOrNull()
+        runCatching { call.attributes[SessionKey] }.getOrNull()
             ?: run { call.respond(HttpStatusCode.Unauthorized, mapOf("error" to "Not logged in")); return@delete }
         val userId = call.request.queryParameters["userId"]
             ?: run { call.respond(HttpStatusCode.BadRequest, mapOf("error" to "userId required")); return@delete }

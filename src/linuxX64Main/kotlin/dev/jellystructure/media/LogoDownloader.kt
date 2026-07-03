@@ -93,8 +93,6 @@ class LogoDownloader(
 
     private fun personImageFile(tmdbId: Int) = "$dataDir/artwork/people/$tmdbId.jpg"
 
-    fun hasPersonImage(tmdbId: Int) = SystemFileSystem.exists(Path(personImageFile(tmdbId)))
-
     fun servePersonImage(tmdbId: Int): ByteArray? {
         val path = Path(personImageFile(tmdbId))
         return if (SystemFileSystem.exists(path)) SystemFileSystem.source(path).buffered().readByteArray() else null
@@ -106,18 +104,6 @@ class LogoDownloader(
         val destPath = personImageFile(tmdbId)
         if (SystemFileSystem.exists(Path(destPath))) return true
         return download("https://image.tmdb.org/t/p/w185$profilePath", destPath)
-    }
-
-    /** Phase 78: pre-warm the people image cache off the request path (sequential, bounded). */
-    suspend fun batchFetchPeople(people: List<Pair<Int, String?>>): LogoBatchResult {
-        var fetched = 0; var skipped = 0; var failed = 0
-        for ((tmdbId, profilePath) in people.distinctBy { it.first }) {
-            if (hasPersonImage(tmdbId)) { skipped++; continue }
-            if (profilePath.isNullOrBlank()) { skipped++; continue }
-            val ok = runCatching { fetchPersonImage(tmdbId, profilePath) }.getOrDefault(false)
-            if (ok) fetched++ else failed++
-        }
-        return LogoBatchResult(fetched, skipped, failed)
     }
 
     @OptIn(ExperimentalForeignApi::class)

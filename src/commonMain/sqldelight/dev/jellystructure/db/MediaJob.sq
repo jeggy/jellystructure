@@ -13,7 +13,8 @@ CREATE TABLE media_job (
     file_count INTEGER NOT NULL DEFAULT 1,
     files_done INTEGER NOT NULL DEFAULT 0,
     pct REAL NOT NULL DEFAULT 0,      -- live progress of the file currently being remuxed
-    speed TEXT                        -- ffmpeg's own "speed=" readout, e.g. "2.3x"
+    speed TEXT,                       -- ffmpeg's own "speed=" readout, e.g. "2.3x"
+    eta_seconds INTEGER               -- Phase 123: estimated seconds remaining, derived from speed + duration
 );
 
 CREATE INDEX media_job_state ON media_job(state);
@@ -39,13 +40,13 @@ markRunning:
 UPDATE media_job SET state = 'running', started_at = :started_at WHERE id = :id;
 
 updateProgress:
-UPDATE media_job SET pct = :pct, speed = :speed, files_done = :files_done WHERE id = :id;
+UPDATE media_job SET pct = :pct, speed = :speed, files_done = :files_done, eta_seconds = :eta_seconds WHERE id = :id;
 
 markFinished:
 UPDATE media_job SET state = :state, finished_at = :finished_at, error = :error, files_done = :files_done WHERE id = :id;
 
 requeueRunning:
-UPDATE media_job SET state = 'queued', started_at = NULL, pct = 0, speed = NULL WHERE state = 'running';
+UPDATE media_job SET state = 'queued', started_at = NULL, pct = 0, speed = NULL, eta_seconds = NULL WHERE state = 'running';
 
 deleteOld:
 DELETE FROM media_job WHERE state IN ('done', 'failed', 'cancelled') AND COALESCE(finished_at, created_at) < :cutoff;

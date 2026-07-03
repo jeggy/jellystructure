@@ -65,33 +65,13 @@ data class SeasonStatus(val season: Int, val posterExists: Boolean = false)
 data class EpisodeStillStatus(val filename: String, val stillExists: Boolean = false, val stillPath: String = "", val source: String? = null)
 
 @Serializable
-data class TrackSnap(
-    val specifier: String,
-    val language: String?,
-    val codec: String,
-    val title: String?,
-    val isDefault: Boolean,
-    val kind: String,
-)
-
-@Serializable
-data class TrackPlan(
-    val command: String,
-    val tool: String,
-    val estimatedMs: Int,
-    val targetSpecifier: String,
-    val before: List<TrackSnap> = emptyList(),
-    val after: List<TrackSnap> = emptyList(),
-)
-
-@Serializable
 data class NfoWriteResult(val path: String)
 
 @Serializable
 data class NfoWritableResult(val writable: Boolean, val path: String, val error: String? = null)
 
 // Phase 117: one row per triage issue type (always present, even at 0 — the Dashboard breakdown
-// renders every type). `instances` is episode/track-level for untagged/missingOverview, title-level
+// renders every type). `instances` is episode/track-level for untagged/missingStill, title-level
 // for the rest; `titles` is always how many Library rows the type will show.
 // Phase 109 — media worker (ffmpeg remux) job queue, mirrors dev.jellystructure.jobs.MediaJobSnapshot.
 @Serializable
@@ -99,6 +79,7 @@ data class MediaJobSnapshot(
     val id: String, val type: String, val mediaId: String, val label: String, val state: String,
     val enqueuedBy: String, val createdAt: Long, val startedAt: Long? = null, val finishedAt: Long? = null,
     val error: String? = null, val fileCount: Int = 1, val filesDone: Int = 0, val pct: Double = 0.0, val speed: String? = null,
+    val etaSeconds: Long? = null,
 )
 
 @Serializable
@@ -125,7 +106,7 @@ data class MultiDefaultIssue(val defaultSpecifiers: List<String>)
 @Serializable
 data class EpisodeTriageItem(
     val filename: String, val episodeCode: String, val title: String? = null,
-    val untaggedTracks: List<TriageTrack>, val missingOverview: Boolean, val multiDefault: MultiDefaultIssue? = null,
+    val untaggedTracks: List<TriageTrack>, val missingStill: Boolean, val multiDefault: MultiDefaultIssue? = null,
 )
 
 @Serializable
@@ -207,9 +188,7 @@ data class ScanStatus(
     val nextScheduledRun: Long? = null,   // 93e: epoch seconds of the next automation run
 )
 
-private fun String.escJson() = replace("\\", "\\\\").replace("\"", "\\\"")
 private fun String.encodeURL() = encodeURIComponent(this)
-private fun jsonStr(s: String) = "\"${s.escJson()}\""
 
 object MediaApi {
     suspend fun list(
@@ -341,11 +320,6 @@ object MediaApi {
         httpClient.get("/api/stats").body<StatsResponse>()
     }.getOrNull()
 
-    suspend fun getNfo(id: String): String? = runCatching {
-        val response = httpClient.get("/api/media/$id/nfo")
-        if (response.status == HttpStatusCode.OK) response.body<String>() else null
-    }.getOrNull()
-
     /** Phase 44 — the tree of NFO files for an item (movie.nfo / tvshow.nfo + per-episode). */
     suspend fun getNfoFiles(id: String): NfoFileTree? = runCatching {
         httpClient.get("/api/media/$id/nfo/files").body<NfoFileTree>()
@@ -430,12 +404,6 @@ object MediaApi {
         httpClient.get("/api/media/$id/episodes/stills").body<List<EpisodeStillStatus>>()
     }.getOrNull()
 
-    suspend fun getTrackPlan(id: String, specifier: String): TrackPlan? = runCatching {
-        httpClient.get("/api/media/$id/tracks/plan") {
-            parameter("specifier", specifier)
-        }.body<TrackPlan>()
-    }.getOrNull()
-
     @Serializable
     data class TrackOpError(val error: String = "")
 
@@ -450,7 +418,7 @@ object MediaApi {
     suspend fun setDefaultTrack(id: String, specifier: String): String? = runCatching {
         val response = httpClient.post("/api/media/$id/tracks/default") {
             setBody("""{"specifier":"$specifier"}""")
-            contentType(io.ktor.http.ContentType.Application.Json)
+            contentType(ContentType.Application.Json)
         }
         if (response.status.value in 200..299) null
         else runCatching { response.body<TrackOpError>().error }.getOrDefault("HTTP ${response.status.value}")
@@ -558,21 +526,9 @@ object MediaApi {
         httpClient.get("/api/media/$id/history").body<List<HistoryEntry>>()
     }.getOrDefault(emptyList())
 
-    suspend fun writeEpisodeNfos(id: String): Map<String, Int>? = runCatching {
-        val response = httpClient.post("/api/media/$id/episodes/nfo")
-        if (response.status == HttpStatusCode.OK) response.body<Map<String, Int>>() else null
-    }.getOrNull()
-
     suspend fun fetchEpisodeStills(id: String): Map<String, Int>? = runCatching {
         val response = httpClient.post("/api/media/$id/episodes/stills")
         if (response.status == HttpStatusCode.OK) response.body<Map<String, Int>>() else null
-    }.getOrNull()
-
-    suspend fun getEpisodeTrackPlan(mediaId: String, epFilename: String, specifier: String): TrackPlan? = runCatching {
-        val encoded = encodeURIComponent(epFilename)
-        httpClient.get("/api/media/$mediaId/episodes/$encoded/tracks/plan") {
-            parameter("specifier", specifier)
-        }.body<TrackPlan>()
     }.getOrNull()
 
     suspend fun setEpisodeDefaultTrack(mediaId: String, epFilename: String, specifier: String): String? = runCatching {
@@ -598,16 +554,6 @@ object MediaApi {
         }
     }.getOrDefault(TrackLangResult("request failed", null))
 
-    /** Phase 109: removing a track is now a queued ffmpeg-remux job — returns the job id (see Activity
-     *  ▸ Jobs for progress), or null on failure to enqueue. */
-    suspend fun removeTrack(id: String, specifier: String): String? = runCatching {
-        val encoded = encodeURIComponent(specifier)
-        val response = httpClient.delete("/api/media/$id/tracks/$encoded")
-        if (response.status.value !in 200..299) return@runCatching null
-        @Serializable data class JobIdResp(val jobId: String)
-        response.body<JobIdResp>().jobId
-    }.getOrNull()
-
     /** Phase 109: reordering is now a queued ffmpeg-remux job — returns the job id, or null on failure. */
     suspend fun reorderTracks(id: String, kind: String, order: List<String>): String? = runCatching {
         val orderJson = order.joinToString(",") { "\"${it.replace("\"", "")}\"" }
@@ -623,11 +569,6 @@ object MediaApi {
     suspend fun getRecentActivity(): List<HistoryEntry> = runCatching {
         httpClient.get("/api/activity/recent").body<List<HistoryEntry>>()
     }.getOrDefault(emptyList())
-
-    suspend fun getTriageSuggestion(mediaId: String): String? = runCatching {
-        @Serializable data class SuggestResp(val language: String?)
-        httpClient.get("/api/triage/$mediaId/suggest").body<SuggestResp>().language
-    }.getOrNull()
 
     suspend fun jellyfinRefresh(id: String): Boolean = runCatching {
         val response = httpClient.post("/api/media/$id/jellyfin-refresh")
@@ -706,10 +647,6 @@ object MediaApi {
     suspend fun getSeedingReport(id: String): SeedingReport? = runCatching {
         httpClient.get("/api/media/$id/seeding").body<SeedingReport>()
     }.getOrNull()
-
-    suspend fun forceRefreshSnapshot(id: String): Boolean = runCatching {
-        httpClient.post("/api/media/$id/seeding/refresh").status.value in 200..299
-    }.getOrDefault(false)
 
     suspend fun getTrackers(): List<TrackerEntry> = runCatching {
         httpClient.get("/api/metadata/trackers").body<List<TrackerEntry>>()

@@ -9,7 +9,6 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -41,7 +40,6 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -58,7 +56,6 @@ import dev.jellystructure.ravilo.ui.theme.raviloHPad
 import dev.jellystructure.ravilo.ui.theme.RaviloMotion
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
 import dev.jellystructure.ravilo.ui.theme.Sora
-import dev.jellystructure.ravilo.ui.theme.SpaceGrotesk
 import dev.jellystructure.ravilo.ui.theme.accentGradient
 import dev.jellystructure.shared.tv.Hero
 import dev.jellystructure.shared.tv.MediaCard
@@ -81,7 +78,6 @@ fun HeroCarousel(
 ) {
     val colors = RaviloTheme.colors
     val sora = Sora
-    val spaceGrotesk = SpaceGrotesk
 
     val tintGradient = remember(colors.background) {
         Brush.horizontalGradient(
@@ -121,11 +117,11 @@ fun HeroCarousel(
         snapshotFlow { driftEnabled() }
             .collectLatest { enabled ->
                 if (!enabled) return@collectLatest
-                val span = RaviloMotion.HeroKenBurnsScale - 1.0f
-                val remaining = RaviloMotion.HeroKenBurnsScale - kbScale.value
+                val span = RaviloMotion.HERO_KEN_BURNS_SCALE - 1.0f
+                val remaining = RaviloMotion.HERO_KEN_BURNS_SCALE - kbScale.value
                 if (remaining <= 0f) return@collectLatest
-                val ms = (RaviloMotion.HeroKenBurnsTravelMs * (remaining / span)).toInt()
-                kbScale.animateTo(RaviloMotion.HeroKenBurnsScale, tween(ms, easing = LinearEasing))
+                val ms = (RaviloMotion.HERO_KEN_BURNS_TRAVEL_MS * (remaining / span)).toInt()
+                kbScale.animateTo(RaviloMotion.HERO_KEN_BURNS_SCALE, tween(ms, easing = LinearEasing))
             }
     }
 
@@ -195,8 +191,8 @@ fun HeroCarousel(
         AnimatedContent(
             targetState = active.backdropUrl,
             transitionSpec = {
-                fadeIn(tween(RaviloMotion.HeroCrossfadeInMs)) togetherWith
-                    fadeOut(tween(RaviloMotion.HeroCrossfadeOutMs))
+                fadeIn(tween(RaviloMotion.HERO_CROSSFADE_IN_MS)) togetherWith
+                    fadeOut(tween(RaviloMotion.HERO_CROSSFADE_OUT_MS))
             },
             label = "heroBg",
         ) { url ->
@@ -210,7 +206,7 @@ fun HeroCarousel(
                     .graphicsLayer {
                         scaleX = kbScale.value
                         scaleY = kbScale.value
-                        translationY = -scrollOffsetPx() * RaviloMotion.HeroParallaxFactor
+                        translationY = -scrollOffsetPx() * RaviloMotion.HERO_PARALLAX_FACTOR
                     },
                 alignment = RaviloDimens.heroBackdropAlignment,
                 placeholderColor = colors.surface,
@@ -318,7 +314,7 @@ fun HeroCarousel(
                 items.forEachIndexed { i, _ ->
                     val dotWidth: Dp by animateDpAsState(
                         targetValue = if (i == activeIndex) 28.dp else 8.dp,
-                        animationSpec = tween(RaviloMotion.HeroDotTweenMs),
+                        animationSpec = tween(RaviloMotion.HERO_DOT_TWEEN_MS),
                         label = "dot$i",
                     )
                     Box(

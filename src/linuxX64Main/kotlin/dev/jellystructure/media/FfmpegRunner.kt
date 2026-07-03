@@ -31,15 +31,6 @@ object FfmpegRunner {
         return runRemux(filePath, withOwnershipPreservation(escaped, core))
     }
 
-    // Remux file removing a single track (by absolute stream index) — no shared builder (unique op).
-    suspend fun removeTrack(filePath: String, streamIndex: Int): Boolean {
-        val tmp = tmpPath(filePath)
-        val escaped = filePath.replace("'", "'\\''")
-        val escapedTmp = tmp.replace("'", "'\\''")
-        val core = "ffmpeg -y -i '$escaped' -map 0 -map -0:$streamIndex -c copy '$escapedTmp' 2>&1 && mv '$escapedTmp' '$escaped'"
-        return runRemux(filePath, withOwnershipPreservation(escaped, core))
-    }
-
     suspend fun reorderTracks(filePath: String, kind: TrackKind, orderedIndices: List<Int>): Boolean {
         val core = TrackCommandBuilder.ffmpegReorder(filePath, orderedIndices, kind == TrackKind.AUDIO)
         val escaped = filePath.replace("'", "'\\''")
@@ -49,9 +40,6 @@ object FfmpegRunner {
     // Dry-run command strings for the /tracks/plan endpoint — delegate to the shared builder.
     fun planSetDefault(filePath: String, defaultStreamIndex: Int, sameTypeIndices: List<Int>, kind: TrackKind): String =
         TrackCommandBuilder.ffmpegDefault(filePath, defaultStreamIndex, sameTypeIndices, typeChar(kind))
-
-    fun planReorderTracks(filePath: String, kind: TrackKind, orderedIndices: List<Int>): String =
-        TrackCommandBuilder.ffmpegReorder(filePath, orderedIndices, kind == TrackKind.AUDIO)
 
     private suspend fun runRemux(filePath: String, cmd: String): Boolean {
         val ok = runCommand(cmd)
@@ -102,7 +90,7 @@ object FfmpegRunner {
         filePath: String,
         cmd: String,
         durationSeconds: Double?,
-        onProgress: (pct: Double, speed: String?) -> Unit,
+        onProgress: (pct: Double, speed: String?, etaSeconds: Long?) -> Unit,
     ): Boolean {
         val niced = cmd.replaceFirst("ffmpeg -y ", "nice -n 19 ionice -c3 ffmpeg -y -progress pipe:1 -nostats ")
         val escaped = filePath.replace("'", "'\\''")
@@ -138,7 +126,7 @@ object FfmpegRunner {
     private suspend fun runCommandTracked(
         cmd: String,
         durationSeconds: Double?,
-        onProgress: (pct: Double, speed: String?) -> Unit,
+        onProgress: (pct: Double, speed: String?, etaSeconds: Long?) -> Unit,
     ): Boolean {
         Logger.info("ffmpeg (tracked): $cmd", "track")
         // Phase 118 (FR C.3) — shared ProcessGate.
@@ -161,10 +149,15 @@ object FfmpegRunner {
                                 trimmed.startsWith("out_time_ms=") -> lastOutTimeUs = trimmed.removePrefix("out_time_ms=").toLongOrNull()
                                 trimmed.startsWith("speed=") -> lastSpeed = trimmed.removePrefix("speed=").trim().takeIf { it.isNotBlank() && it != "N/A" }
                                 trimmed == "progress=continue" || trimmed == "progress=end" -> {
+                                    val outTimeS = (lastOutTimeUs ?: 0L) / 1_000_000.0
                                     val pct = if (durationSeconds != null && lastOutTimeUs != null)
-                                        ((lastOutTimeUs.toDouble() / 1_000_000.0) / durationSeconds * 100.0).coerceIn(0.0, 100.0)
+                                        (outTimeS / durationSeconds * 100.0).coerceIn(0.0, 100.0)
                                     else 0.0
-                                    onProgress(pct, lastSpeed)
+                                    val speedMult = lastSpeed?.removeSuffix("x")?.toDoubleOrNull()
+                                    val etaSeconds: Long? = if (speedMult != null && speedMult > 0 && durationSeconds != null)
+                                        ((durationSeconds - outTimeS) / speedMult).toLong().coerceAtLeast(0)
+                                    else null
+                                    onProgress(pct, lastSpeed, etaSeconds)
                                 }
                             }
                         }

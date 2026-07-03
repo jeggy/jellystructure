@@ -43,7 +43,6 @@ import io.ktor.http.content.forEachPart
 import io.ktor.server.request.receive
 import io.ktor.server.request.receiveMultipart
 import io.ktor.server.response.respond
-import io.ktor.server.response.respondBytes
 import io.ktor.server.response.respondText
 import io.ktor.server.routing.Route
 import io.ktor.server.routing.delete
@@ -70,13 +69,11 @@ import kotlinx.io.files.SystemFileSystem
 import kotlinx.io.readByteArray
 import dev.jellystructure.torrent.SeedingCheckResult
 import dev.jellystructure.torrent.SeedingGuard
-import dev.jellystructure.torrent.SeedingReport
 import dev.jellystructure.torrent.SeedingSnapshot
 import dev.jellystructure.shared.tv.Condition
 import dev.jellystructure.shared.tv.MatchMode
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.ListSerializer
-import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
 @Serializable
@@ -326,7 +323,7 @@ fun Route.mediaRoutes(
                     return@post
                 }
                 val json = lenientJson
-                val reverted: dev.jellystructure.model.MediaItem = when (entry.action) {
+                val reverted: MediaItem = when (entry.action) {
                     "set_tmdb_id" -> {
                         @Serializable data class TmdbSnap(val tmdbId: Int? = null)
                         val snap = runCatching { json.decodeFromString<TmdbSnap>(entry.beforeSnapshot) }.getOrNull()
@@ -337,7 +334,7 @@ fun Route.mediaRoutes(
                         @Serializable data class MetaSnap(val title: String, val overview: String? = null, val year: Int? = null, val originalTitle: String? = null, val director: String? = null, val studio: String? = null, val network: String? = null, val tags: List<String> = emptyList(), val genres: List<String> = emptyList())
                         val snap = runCatching { json.decodeFromString<MetaSnap>(entry.beforeSnapshot) }.getOrNull()
                             ?: return@post call.respond(HttpStatusCode.UnprocessableEntity, mapOf("error" to "corrupt snapshot"))
-                        item.copy(title = snap.title, overview = snap.overview, year = snap.year, originalTitle = snap.originalTitle, director = snap.director, studio = snap.studio, network = snap.network, tags = snap.tags, genres = if (snap.genres.isNotEmpty()) snap.genres else item.genres)
+                        item.copy(title = snap.title, overview = snap.overview, year = snap.year, originalTitle = snap.originalTitle, director = snap.director, studio = snap.studio, network = snap.network, tags = snap.tags, genres = snap.genres.ifEmpty { item.genres })
                     }
                     "language_override" -> {
                         @Serializable data class LangSnap(val language: String? = null)
@@ -510,7 +507,7 @@ fun Route.mediaRoutes(
                     sink.write(bytes, 0, bytes.size)
                     sink.flush()
                     sink.close()
-                    @OptIn(kotlinx.cinterop.ExperimentalForeignApi::class)
+                    @OptIn(ExperimentalForeignApi::class)
                     platform.posix.rename(tmpPath, destPath)
                     Logger.info("Artwork uploaded: $destPath (${bytes.size} bytes)")
 
@@ -714,7 +711,7 @@ fun Route.mediaRoutes(
                 sink.write(bytes, 0, bytes.size)
                 sink.flush()
                 sink.close()
-                @OptIn(kotlinx.cinterop.ExperimentalForeignApi::class)
+                @OptIn(ExperimentalForeignApi::class)
                 platform.posix.rename(tmpPath, destPath)
                 Logger.info("Episode still uploaded: $destPath (${bytes.size} bytes)")
 
@@ -838,10 +835,10 @@ fun Route.mediaRoutes(
 
                     if (ext == "mkv") {
                         val escaped = ep.path.replace("'", "'\\''")
-                        val parts = sameType.map { t ->
+                        val parts = sameType.joinToString(" \\\n  ") { t ->
                             val flag = if (t.streamIndex == targetTrack.streamIndex) 1 else 0
                             "--edit track:@${t.streamIndex + 1} --set flag-default=$flag"
-                        }.joinToString(" \\\n  ")
+                        }
                         call.respond(TrackPlan("mkvpropedit '$escaped' \\\n  $parts", "mkvpropedit", 40, specifier, beforeSnaps, afterSnaps))
                     } else {
                         call.respond(TrackPlan(FfmpegRunner.planSetDefault(ep.path, targetTrack.streamIndex, sameType.map { it.streamIndex }, targetTrack.kind), "ffmpeg", 5000, specifier, beforeSnaps, afterSnaps))
@@ -1018,7 +1015,7 @@ fun Route.mediaRoutes(
 
                     @Serializable data class ReorderReq(val kind: String, val order: List<String>)
                     val req = call.receive<ReorderReq>()
-                    val kind = when (req.kind.lowercase()) {
+                    when (req.kind.lowercase()) {
                         "audio" -> TrackKind.AUDIO
                         "subtitle" -> TrackKind.SUBTITLE
                         else -> return@post call.respond(HttpStatusCode.BadRequest, mapOf("error" to "kind must be audio or subtitle"))
@@ -1117,12 +1114,12 @@ fun Route.mediaRoutes(
             val newTitle = req.title?.takeIf { it.isNotBlank() } ?: item.title
             // If the user changed the title, record it in titlesByLang under the resolved language
             // so the manual title remains searchable. Never remove other languages' entries.
-            val updatedTitlesByLang = if (req.title != null && req.title.isNotBlank() && item.resolvedLanguage != null) {
+            val updatedTitlesByLang = if (!req.title.isNullOrBlank() && item.resolvedLanguage != null) {
                 item.titlesByLang + mapOf(item.resolvedLanguage to newTitle)
             } else item.titlesByLang
             val updated = item.copy(
                 title = newTitle,
-                overview = if (req.overview != null) req.overview else item.overview,
+                overview = req.overview ?: item.overview,
                 year = req.year ?: item.year,
                 originalTitle = if (req.originalTitle != null) req.originalTitle.ifBlank { null } else item.originalTitle,
                 tags = req.tags ?: item.tags,
@@ -1256,7 +1253,7 @@ fun Route.mediaRoutes(
                 call.respond(HttpStatusCode.Conflict, mapOf("error" to "scan already running"))
                 return@post
             }
-            val updated = scanner.rescanFromJellyfin(item)
+            val updated = scanner.rescanFromJellyfin(item)?.let { artwork.stampHasStill(it) }
             if (updated == null) {
                 call.respond(HttpStatusCode.InternalServerError, mapOf("error" to "re-pull failed — item not found in Jellyfin or config missing"))
                 return@post
@@ -1285,7 +1282,7 @@ fun Route.mediaRoutes(
                     "series" -> scanner.rescanMetadata(item)
                     else -> scanner.syncSeriesEpisodes(item)
                 }
-            }
+            }?.let { artwork.stampHasStill(it) }
             if (updated == null) {
                 call.respond(HttpStatusCode.InternalServerError, mapOf("error" to "sync failed — file not found or no TMDB match"))
                 return@post
@@ -1314,7 +1311,8 @@ fun Route.mediaRoutes(
             }
             @Serializable data class SeasonSyncReq(val scope: String = "episodes")
             val req = runCatching { call.receive<SeasonSyncReq>() }.getOrDefault(SeasonSyncReq())
-            val (updatedItem, synced) = scanner.syncSeason(item, seasonNumber, probeFiles = req.scope != "season")
+            val (syncedItem, synced) = scanner.syncSeason(item, seasonNumber, probeFiles = req.scope != "season")
+            val updatedItem = artwork.stampHasStill(syncedItem)
             store.updateOne(updatedItem)
             broadcaster.broadcast(JobEvent.ItemScanned("sync-$id-s$seasonNumber", updatedItem))
             mediaHistory.record(id, "season_sync", "season=$seasonNumber scope=${req.scope} synced=$synced")
@@ -1618,7 +1616,7 @@ fun Route.mediaRoutes(
                     .onFailure { nfoFail++; Logger.warn("batch-push: NFO write failed for '${item.id}': ${it.message}") }
                 if (!item.jellyfinId.isNullOrBlank()) {
                     val ok = jellyfinClient.refreshItem(freshCfg.apiKeys.jellyfinUrl, freshCfg.apiKeys.jellyfinToken, item.jellyfinId, full = true)
-                    if (ok) { refreshOk++; store.updateOne(current.copy(jfSyncedAt = dev.jellystructure.nowEpochSec())) }
+                    if (ok) { refreshOk++; store.updateOne(current.copy(jfSyncedAt = nowEpochSec())) }
                     else { refreshFail++; Logger.warn("batch-push: Jellyfin refresh failed for '${item.id}'") }
                 }
             }
@@ -1673,7 +1671,7 @@ internal suspend fun pushToJellyfin(
     var refreshOk = true
     if (!item.jellyfinId.isNullOrBlank()) {
         refreshOk = jellyfinClient.refreshItem(cfg.apiKeys.jellyfinUrl, cfg.apiKeys.jellyfinToken, item.jellyfinId, full = true)
-        if (refreshOk) store.updateOne(current.copy(jfSyncedAt = dev.jellystructure.nowEpochSec()))
+        if (refreshOk) store.updateOne(current.copy(jfSyncedAt = nowEpochSec()))
         else Logger.warn("pushToJellyfin: Jellyfin refresh failed for '${item.id}' (jellyfinId=${item.jellyfinId})")
     } else {
         Logger.warn("pushToJellyfin: no jellyfinId for '${item.id}' — skipping per-item Jellyfin refresh")
@@ -1703,7 +1701,7 @@ internal suspend fun runScan(
     jellyfinClient: JellyfinClient,
     scanDispatcher: CoroutineDispatcher,
     libraryJellyfinId: String? = null,
-    freshnessFilter: ((dev.jellystructure.auth.JellyfinItem) -> Boolean)? = null,
+    freshnessFilter: ((JellyfinItem) -> Boolean)? = null,
     // Phase 93: when set (manual "Scan library" / legacy scheduled scan), download any missing artwork
     // for each scanned item right after it's stored. Left null for the pipeline's scan_files step, which
     // has its own download_artwork step.
@@ -1761,7 +1759,7 @@ internal suspend fun runScan(
                     try {
                         for (jItem in channel) {
                             if (scanTracker.cancelRequested) break
-                            val item = try { scanner.scanItem(jItem) } catch (e: Exception) {
+                            val item = try { scanner.scanItem(jItem)?.let { artworkDownloader?.stampHasStill(it) ?: it } } catch (e: Exception) {
                                 Logger.error("scanItem failed for '${jItem.name}': ${e.message}", "scan")
                                 null
                             }
@@ -1834,7 +1832,7 @@ internal suspend fun runScan(
     // can't distinguish a removal from an item that lives in another library).
     if (libraryJellyfinId == null) {
         val presentJfIds = jellyfinItems.mapNotNull { it.id }.toSet()
-        val newlyMissing = store.flagMissingFromSource(presentJfIds, dev.jellystructure.nowEpochSec())
+        val newlyMissing = store.flagMissingFromSource(presentJfIds, nowEpochSec())
         for (m in newlyMissing) {
             Logger.warn("Scan: '${m.title}' is no longer in Jellyfin — kept and flagged for triage (the scanner never deletes)", "scan")
         }

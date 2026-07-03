@@ -46,7 +46,7 @@ fun CastCircle(
     // R89: snappy content-focus spring, matching Tile/ChannelCard.
     val focusSpec = remember { RaviloMotion.focusSpring<Float>() }
     val dpSpec    = remember { RaviloMotion.focusSpring<Dp>() }
-    val scale      by animateFloatAsState(if (isFocused) RaviloMotion.CastFocusScale else 1f, focusSpec, label = "castScale")
+    val scale      by animateFloatAsState(if (isFocused) RaviloMotion.CAST_FOCUS_SCALE else 1f, focusSpec, label = "castScale")
     val shadowElev by animateDpAsState(if (isFocused) 20.dp else 0.dp, dpSpec, label = "castShadow")
     val ringWidth  by animateDpAsState(if (isFocused) 3.dp else 0.dp, dpSpec, label = "castBorder")
 
