@@ -6,7 +6,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
@@ -15,7 +14,6 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -44,7 +42,6 @@ import dev.jellystructure.ravilo.ui.theme.RaviloDimens
 import dev.jellystructure.ravilo.ui.theme.raviloHPad
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
 import dev.jellystructure.ravilo.ui.theme.Sora
-import dev.jellystructure.ravilo.ui.theme.SpaceGrotesk
 import dev.jellystructure.shared.tv.BrowseFacets
 import dev.jellystructure.shared.tv.FacetItem
 import dev.jellystructure.shared.tv.MediaCard
@@ -147,7 +144,6 @@ fun BrowseScreen(
     discoverAvailable: Boolean = false,
 ) {
     val colors = RaviloTheme.colors
-    val spaceGrotesk = SpaceGrotesk
 
     LaunchedEffect(kind) { if (store.activeKind != kind) store.load(kind) }
 

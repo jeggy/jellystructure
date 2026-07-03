@@ -2,7 +2,6 @@ package dev.jellystructure.server.routes
 
 import dev.jellystructure.auth.JellyfinClient
 import dev.jellystructure.config.ConfigStore
-import dev.jellystructure.server.routes.fireWebhook
 import dev.jellystructure.jobs.JobEvent
 import dev.jellystructure.jobs.WsBroadcaster
 import dev.jellystructure.log.Logger
@@ -144,10 +143,10 @@ fun Route.trackRoutes(
 
             if (ext == "mkv") {
                 val escaped = item.path.replace("'", "'\\''")
-                val parts = sameType.map { t ->
+                val parts = sameType.joinToString(" \\\n  ") { t ->
                     val flag = if (t.streamIndex == targetTrack.streamIndex) 1 else 0
                     "--edit track:@${t.streamIndex + 1} --set flag-default=$flag"
-                }.joinToString(" \\\n  ")
+                }
                 call.respond(
                     TrackPlan(
                         command = "mkvpropedit '$escaped' \\\n  $parts",
@@ -368,7 +367,7 @@ fun Route.trackRoutes(
 
             @Serializable data class ReorderRequest(val kind: String, val order: List<String>)
             val req = call.receive<ReorderRequest>()
-            val kind = when (req.kind.lowercase()) {
+            when (req.kind.lowercase()) {
                 "audio" -> TrackKind.AUDIO
                 "subtitle" -> TrackKind.SUBTITLE
                 else -> return@post call.respond(HttpStatusCode.BadRequest, mapOf("error" to "kind must be audio or subtitle"))

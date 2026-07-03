@@ -62,6 +62,11 @@ data class Episode(
     val title: String? = null,
     val overview: String? = null,
     val stillPath: String? = null,
+    /** Phase 121: whether a still image (TMDB download or screen-grab, either lands at the same disk
+     *  path) exists on disk for this episode — the actual "does Ravilo have a picture to show" signal,
+     *  distinct from [stillPath] which is just TMDB's metadata URL. Refreshed by [dev.jellystructure.media.ArtworkDownloader.stampHasStill]
+     *  wherever a scan/rescan/sync (re)builds the episode list, so triage/Library filtering stay O(1). */
+    val hasStill: Boolean = false,
     val tmdbEpisodeId: Int? = null,
     /** Phase 76: episode-specific guest stars (from TMDB episode credits). */
     val guestStars: List<Person> = emptyList(),

@@ -1,4 +1,4 @@
-@file:OptIn(kotlin.js.ExperimentalWasmJsInterop::class)
+@file:OptIn(ExperimentalWasmJsInterop::class)
 
 package dev.jellystructure.ui
 
@@ -28,7 +28,13 @@ internal data class TrkModel(
 )
 
 private fun Track.toModel() = TrkModel(specifier, kind, codec, title, language, default, forced, streamIndex)
-private fun TrkModel.copy() = TrkModel(sp, kind, codec, title, lang, def, forced, streamIndex)
+
+// Phase 127: shared by buildCommandText/renderPending/applyChanges for both audio and subtitle blocks —
+// factored out after the Phase 120 bug where this exact diff, duplicated per call site, was fixed
+// incorrectly in one place at a time. A per-track flag diff (not just comparing the first default)
+// so "keep this one" registers even when the kept track was already first-default.
+private fun defaultChanged(model: List<TrkModel>, original: List<TrkModel>): Boolean =
+    model.any { m -> original.find { it.sp == m.sp }?.def != m.def }
 
 // ── JS helpers (must be top-level for WASM interop) ──────────────────────────
 
@@ -350,17 +356,17 @@ fun wireUnifiedTrackEditor(
             }
         }
         // 2. Audio default change
-        val origDefAudioSp = audioOriginal.firstOrNull { it.def }?.sp
+        val audioDefChanged = defaultChanged(audioModel, audioOriginal)
         val newDefAudio = audioModel.firstOrNull { it.def }
-        if (origDefAudioSp != newDefAudio?.sp && newDefAudio != null) {
+        if (audioDefChanged && newDefAudio != null) {
             val sameIdx = audioModel.map { it.streamIndex }
             cmds += if (isMkv) TrackCommandBuilder.mkvDefault(filePath, newDefAudio.streamIndex, sameIdx)
                     else       TrackCommandBuilder.ffmpegDefault(filePath, newDefAudio.streamIndex, sameIdx, "a")
         }
         // 3. Subtitle default change
-        val origDefSubSp = subsOriginal.firstOrNull { it.def }?.sp
+        val subDefChanged = defaultChanged(subsModel, subsOriginal)
         val newDefSub = subsModel.firstOrNull { it.def }
-        if (origDefSubSp != newDefSub?.sp && newDefSub != null) {
+        if (subDefChanged && newDefSub != null) {
             val sameIdx = subsModel.map { it.streamIndex }
             cmds += if (isMkv) TrackCommandBuilder.mkvDefault(filePath, newDefSub.streamIndex, sameIdx)
                     else       TrackCommandBuilder.ffmpegDefault(filePath, newDefSub.streamIndex, sameIdx, "s")
@@ -398,9 +404,9 @@ fun wireUnifiedTrackEditor(
         }
 
         // Audio default change
-        val origDefAudio = audioOriginal.firstOrNull { it.def }?.sp
+        val audioDefChanged = defaultChanged(audioModel, audioOriginal)
         val newDefAudio  = audioModel.firstOrNull  { it.def }
-        if (origDefAudio != newDefAudio?.sp) {
+        if (audioDefChanged) {
             val pos = audioModel.indexOf(newDefAudio) + 1
             val name = langShortName(newDefAudio?.lang)
             rows += pendingRow("Audio $pos ($name): set as default", if (isMkv) "mkvpropedit" else "ffmpeg", !isMkv)
@@ -423,9 +429,9 @@ fun wireUnifiedTrackEditor(
         }
 
         // Subtitle default change
-        val origDefSub = subsOriginal.firstOrNull { it.def }?.sp
+        val subDefChanged = defaultChanged(subsModel, subsOriginal)
         val newDefSub  = subsModel.firstOrNull  { it.def }
-        if (origDefSub != newDefSub?.sp) {
+        if (subDefChanged) {
             val pos = subsModel.indexOf(newDefSub) + 1
             rows += pendingRow("Subtitle $pos: set as default", if (isMkv) "mkvpropedit" else "ffmpeg", !isMkv)
         }
@@ -495,16 +501,16 @@ fun wireUnifiedTrackEditor(
             }
 
             // 2. Default changes
-            val origDefAudioSp = audioOriginal.firstOrNull { it.def }?.sp
+            val audioDefChanged = defaultChanged(audioModel, audioOriginal)
             val newDefAudio    = audioModel.firstOrNull { it.def }
-            if (origDefAudioSp != newDefAudio?.sp && newDefAudio != null) {
+            if (audioDefChanged && newDefAudio != null) {
                 val err = if (epFilename == null) MediaApi.setDefaultTrack(mediaId, newDefAudio.sp)
                           else MediaApi.setEpisodeDefaultTrack(mediaId, epFilename, newDefAudio.sp)
                 if (err != null) anyError = true
             }
-            val origDefSubSp = subsOriginal.firstOrNull { it.def }?.sp
+            val subDefChanged = defaultChanged(subsModel, subsOriginal)
             val newDefSub    = subsModel.firstOrNull { it.def }
-            if (origDefSubSp != newDefSub?.sp && newDefSub != null) {
+            if (subDefChanged && newDefSub != null) {
                 val err = if (epFilename == null) MediaApi.setDefaultTrack(mediaId, newDefSub.sp)
                           else MediaApi.setEpisodeDefaultTrack(mediaId, epFilename, newDefSub.sp)
                 if (err != null) anyError = true

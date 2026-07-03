@@ -73,7 +73,7 @@ class MovieDetailStore(private val apiClient: TvApiClient) {
         val id = currentId ?: return
         scope.launch {
             runCatching { apiClient.setPlayed(id, played) }.getOrNull()?.let {
-                _playstateOverlay.value = _playstateOverlay.value + it
+                _playstateOverlay.value += it
                 WatchedBus.publish(it)  // R147: flip this title's tiles on Home/Browse/Search instantly
             }
         }
@@ -132,7 +132,7 @@ class SeriesDetailStore(private val apiClient: TvApiClient) {
     fun setEpisodePlayed(episodeId: String, played: Boolean) {
         scope.launch {
             runCatching { apiClient.setPlayed(episodeId, played) }.getOrNull()?.let {
-                _playstateOverlay.value = _playstateOverlay.value + it
+                _playstateOverlay.value += it
                 WatchedBus.publish(it)  // R147: also flips the series tile if this completes/uncompletes it
             }
         }

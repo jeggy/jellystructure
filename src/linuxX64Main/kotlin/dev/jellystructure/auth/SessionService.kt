@@ -25,7 +25,7 @@ class SessionService(private val db: JellystructureDb) {
         db.sessionQueries.deleteExpired(nowMs())
     }
 
-    suspend fun create(
+    fun create(
         jellyfinUserId: String,
         jellyfinUsername: String,
         jellyfinUserToken: String,
@@ -53,7 +53,7 @@ class SessionService(private val db: JellystructureDb) {
         )
     }
 
-    suspend fun revoke(token: String) {
+    fun revoke(token: String) {
         db.sessionQueries.deleteByToken(token)
     }
 }

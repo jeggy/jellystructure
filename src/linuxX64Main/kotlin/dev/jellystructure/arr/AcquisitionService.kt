@@ -55,7 +55,6 @@ class AcquisitionService(
     // ---- read API ----
     fun snapshot(keys: List<String>): List<AcquisitionRecord> = store.getMany(keys)
     fun get(itemKey: String): AcquisitionRecord? = store.get(itemKey)
-    fun byTmdb(tmdbId: Int): AcquisitionRecord? = store.getByTmdb(tmdbId)
 
     // ---- request ----
     suspend fun request(mediaKind: MediaKind, tmdbId: Int, title: String, requestedBy: String?): AcquisitionRecord =

@@ -87,8 +87,6 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
 import kotlinx.io.buffered
 import kotlinx.io.files.Path
 import kotlinx.io.files.SystemFileSystem
@@ -258,7 +256,7 @@ fun startServer(
                     val dfOut = runShell("df -BM . 2>/dev/null | tail -1")
                     val freeMb = dfOut?.trim()?.split(Regex("\\s+"))?.getOrNull(3)?.trimEnd('M')?.toLongOrNull()
                     val diskOk = freeMb != null && freeMb > 1024
-                    checks.add(HealthCheck("Disk space", diskOk, if (freeMb != null) "${freeMb} MB free" else "Unknown"))
+                    checks.add(HealthCheck("Disk space", diskOk, if (freeMb != null) "$freeMb MB free" else "Unknown"))
                     // mkvpropedit
                     val mkv = runShell("which mkvpropedit 2>/dev/null")?.trim()
                     checks.add(HealthCheck("mkvpropedit", !mkv.isNullOrBlank(), if (!mkv.isNullOrBlank()) mkv else "not found in PATH"))

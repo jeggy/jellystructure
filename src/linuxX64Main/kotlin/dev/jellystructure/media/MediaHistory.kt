@@ -19,7 +19,7 @@ data class HistoryEntry(
 
 class MediaHistory(private val db: JellystructureDb) {
 
-    suspend fun record(
+    fun record(
         mediaId: String,
         action: String,
         detail: String,

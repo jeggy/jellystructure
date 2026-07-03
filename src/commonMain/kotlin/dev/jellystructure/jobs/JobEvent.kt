@@ -49,4 +49,5 @@ data class MediaJobSnapshot(
     val filesDone: Int = 0,
     val pct: Double = 0.0,
     val speed: String? = null,
+    val etaSeconds: Long? = null,
 )

@@ -2,7 +2,6 @@ package dev.jellystructure.ravilo.ui.screens
 
 import androidx.compose.foundation.lazy.LazyListState
 import dev.jellystructure.shared.tv.HomeFeed
-import dev.jellystructure.shared.tv.Row
 import dev.jellystructure.shared.tv.TvApiClient
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers

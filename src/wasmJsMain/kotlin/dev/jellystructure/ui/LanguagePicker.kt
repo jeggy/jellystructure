@@ -1,4 +1,4 @@
-@file:OptIn(kotlin.js.ExperimentalWasmJsInterop::class)
+@file:OptIn(ExperimentalWasmJsInterop::class)
 
 package dev.jellystructure.ui
 
@@ -335,7 +335,7 @@ fun installLanguagePicker(inputEl: HTMLInputElement, allowedCodes: Set<String>? 
     }
     updateDisplay(inputEl.value)
 
-    val baseList = if (allowedCodes != null && allowedCodes.isNotEmpty())
+    val baseList = if (!allowedCodes.isNullOrEmpty())
         LANGUAGES.filter { it.code in allowedCodes }
     else LANGUAGES
     var filtered = baseList
@@ -426,18 +426,6 @@ fun installLanguagePicker(inputEl: HTMLInputElement, allowedCodes: Set<String>? 
 fun installLanguagePickerById(id: String, allowedCodes: Set<String>? = null) {
     val el = document.getElementById(id) as? HTMLInputElement ?: return
     installLanguagePicker(el, allowedCodes)
-}
-
-/** Call this if an input's value is set externally after picker installation. */
-fun refreshLanguagePicker(inputEl: HTMLInputElement) {
-    val wrapper = inputEl.parentElement as? HTMLElement ?: return
-    val display = wrapper.querySelector(".lp-display") as? HTMLElement ?: return
-    val label = langDisplay(inputEl.value)
-    if (label.isBlank()) {
-        display.innerHTML = """<span style="opacity:.45;font-weight:400;">Select language…</span>"""
-    } else {
-        display.textContent = label
-    }
 }
 
 internal fun injectPickerStyles() {

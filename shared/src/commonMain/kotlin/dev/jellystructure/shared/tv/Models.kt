@@ -538,16 +538,13 @@ data class DiscoverConfig(
     val enabled: Boolean = false,
     @SerialName("can_request") val canRequest: Boolean = false,
     // R154: multi-source — `source` is legacy (pre-R154 configs, pre-R144 single-provider reads); a
-    // blank `sources` list falls back to `[source]` (see DiscoverConfig.effectiveSources()). Row
-    // resolution itself doesn't care (already reads `lists` directly, R142) — this only drives which
-    // provider chips the editor shows as selected.
+    // blank `sources` list falls back to `[source]`. Row resolution itself doesn't care (already reads
+    // `lists` directly, R142) — this only drives which provider chips the editor shows as selected.
     val source: String = "netflix",
     val sources: List<String> = emptyList(),
     val region: String = "DK",
     val lists: List<String> = emptyList(),
-) {
-    fun effectiveSources(): List<String> = sources.ifEmpty { listOf(source) }
-}
+)
 
 // ─── Request bodies ───────────────────────────────────────────────────────────
 
@@ -622,6 +619,4 @@ data class BrowseFacets(
 
 sealed class TvApiError(message: String, cause: Throwable? = null) : Exception(message, cause) {
     class Http(val status: Int, override val message: String) : TvApiError("HTTP $status: $message")
-    class Network(override val cause: Throwable) : TvApiError("Network error: ${cause.message}", cause)
-    class Parse(override val message: String, override val cause: Throwable) : TvApiError(message, cause)
 }

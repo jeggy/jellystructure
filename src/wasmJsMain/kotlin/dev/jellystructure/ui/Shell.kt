@@ -59,7 +59,7 @@ private fun triageSubline(item: dev.jellystructure.api.TriageItem): String {
         val epParts = mutableListOf<String>()
         if (first.untaggedTracks.isNotEmpty()) epParts += "untagged tracks"
         if (first.multiDefault != null) epParts += "multiple default audio"
-        if (first.missingOverview) epParts += "missing overview"
+        if (first.missingStill) epParts += "missing episode image"
         val more = if (epIssues.size > 1) " (+${epIssues.size - 1} more)" else ""
         parts += "${first.episodeCode} · ${epParts.joinToString(", ").ifEmpty { "needs attention" }}$more"
     }
@@ -169,7 +169,7 @@ fun renderShell(user: UserProfile) {
         }
         // Connection status — retry up to 3 times (5 s apart) to survive a brief cold-start delay
         launch {
-            var delayMs = 5_000L
+            val delayMs = 5_000L
             repeat(4) { attempt ->
                 try {
                     val conn = ConfigApi.testConnections()
@@ -539,23 +539,6 @@ internal fun updateTriageDock() {
     (document.getElementById("triage-dock-sub") as? HTMLElement)?.textContent =
         item?.let { triageSubline(it) } ?: ""
     (document.getElementById("triage-dock-pos") as? HTMLElement)?.textContent = "$pos / $total"
-}
-
-internal fun refreshTriageDockCount() {
-    MainScope().launch {
-        val count = MediaApi.getTriageCount()
-        val total = count?.total ?: 0
-        if (total == 0) {
-            triageDockItems = emptyList()
-            triageDockIndex = 0
-            updateTriageDock()
-        } else {
-            triageDockItems = MediaApi.getTriageItems()
-            if (triageDockIndex >= triageDockItems.size) triageDockIndex = 0
-            updateTriageDock()
-        }
-        updateSidebarStatus(total)
-    }
 }
 
 private fun connectDockSocket() {

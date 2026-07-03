@@ -8,14 +8,12 @@ import dev.jellystructure.media.JsTagStore
 import dev.jellystructure.media.LogoDownloader
 import dev.jellystructure.media.MediaStore
 import dev.jellystructure.model.MediaKind
-import dev.jellystructure.torrent.DetectedTrackerGroup
 import dev.jellystructure.torrent.SeedingSnapshot
 import dev.jellystructure.torrent.TrackerResolver
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.request.receive
 import io.ktor.server.response.respond
-import io.ktor.server.response.respondBytes
 import io.ktor.server.routing.Route
 import io.ktor.server.routing.delete
 import io.ktor.server.routing.get

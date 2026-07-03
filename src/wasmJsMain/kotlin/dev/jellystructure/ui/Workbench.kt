@@ -1,4 +1,4 @@
-@file:OptIn(kotlin.js.ExperimentalWasmJsInterop::class)
+@file:OptIn(ExperimentalWasmJsInterop::class)
 
 package dev.jellystructure.ui
 
@@ -37,9 +37,6 @@ private val WB_GROUPS = listOf(
     "Audio track" to listOf("audio_language" to "Audio language", "audio_codec" to "Audio codec", "track_title" to "Audio track title"),
     "Ravilo layout" to listOf("hero_item" to "Hero item"),
 )
-private val WB_LABELS = WB_GROUPS.flatMap { it.second }.toMap()
-
-private fun isListFacet(f: String) = f in setOf("studio", "network", "genre", "tag", "age_rating", "audio_language", "audio_codec", "hero_item")
 private fun opsFor(f: String): List<Pair<String, String>> = when (f) {
     "track_title" -> listOf("contains" to "contains", "not_contains" to "does not contain")
     "hero_item" -> listOf("is_any_of" to "is any of")
@@ -223,11 +220,6 @@ private fun wbItemsFor(facet: String): List<TrackFacetItem> {
     }
 }
 
-private fun wbValuesFor(facet: String): List<String> = wbItemsFor(facet).map { it.value }
-
-// JS-tag colour for a tag value (null = normal tag). Drives the dotted/grouped tag picker. Narrowed-aware.
-private fun wbTagColor(v: String): String? = (wbNarrowed?.tags ?: wbMeta?.tags)?.firstOrNull { it.value == v }?.color
-
 private fun wbRenderConds() {
     val host = document.getElementById("wb-conds") as? HTMLElement ?: return
     val facetOpts = WB_GROUPS.joinToString("") { (group, facets) ->
@@ -237,36 +229,41 @@ private fun wbRenderConds() {
     }
     host.innerHTML = wbConds.mapIndexed { i, c ->
         val opOpts = opsFor(c.facet).joinToString("") { (v, l) -> "<option value=\"$v\"${if (c.op == v) " selected" else ""}>${l.esc()}</option>" }
-        val valEditor = if (c.facet == "track_title") {
-            """<input class="input wb-text" data-i="$i" placeholder="e.g. Commentary, SDH, Synstolkning" value="${(c.values.firstOrNull() ?: "").esc()}">"""
-        } else if (c.facet == "tag") {
-            // Group Jellystructure tags (those with a colour) first + dotted, then plain tags.
-            fun tagChip(t: TrackFacetItem): String {
-                val dot = if (t.color != null) """<span class="tag-dot" style="background:${t.color}"></span>""" else ""
-                val cnt = if (t.count > 0) """<span class="wb-vcount">${t.count}</span>""" else ""
-                return """<span class="wb-vchip${if (c.values.contains(t.value)) " on" else ""}" data-i="$i" data-v="${t.value.esc()}">$dot${t.value.esc()}$cnt</span>"""
+        val valEditor = when (c.facet) {
+            "track_title" -> {
+                """<input class="input wb-text" data-i="$i" placeholder="e.g. Commentary, SDH, Synstolkning" value="${(c.values.firstOrNull() ?: "").esc()}">"""
             }
-            val (js, other) = wbItemsFor("tag").take(80).partition { it.color != null }
-            buildString {
-                if (js.isNotEmpty()) append("""<div class="wb-vgroup">Jellystructure tags</div><div class="wb-vchips">${js.joinToString("") { tagChip(it) }}</div>""")
-                if (other.isNotEmpty()) append("""<div class="wb-vgroup">Other tags</div><div class="wb-vchips">${other.joinToString("") { tagChip(it) }}</div>""")
+            "tag" -> {
+                // Group Jellystructure tags (those with a colour) first + dotted, then plain tags.
+                fun tagChip(t: TrackFacetItem): String {
+                    val dot = if (t.color != null) """<span class="tag-dot" style="background:${t.color}"></span>""" else ""
+                    val cnt = if (t.count > 0) """<span class="wb-vcount">${t.count}</span>""" else ""
+                    return """<span class="wb-vchip${if (c.values.contains(t.value)) " on" else ""}" data-i="$i" data-v="${t.value.esc()}">$dot${t.value.esc()}$cnt</span>"""
+                }
+                val (js, other) = wbItemsFor("tag").take(80).partition { it.color != null }
+                buildString {
+                    if (js.isNotEmpty()) append("""<div class="wb-vgroup">Jellystructure tags</div><div class="wb-vchips">${js.joinToString("") { tagChip(it) }}</div>""")
+                    if (other.isNotEmpty()) append("""<div class="wb-vgroup">Other tags</div><div class="wb-vchips">${other.joinToString("") { tagChip(it) }}</div>""")
+                }
             }
-        } else if (c.facet == "content_row") {
-            // R87: pick which content rows to test membership against; values are row specs (c.rows).
-            val chips = wbRowsContext.joinToString("") { row ->
-                val on = c.rows.any { it.id == row.id }
-                val name = row.title?.takeIf { it.isNotBlank() } ?: "Untitled row"
-                """<span class="wb-vchip${if (on) " on" else ""}" data-i="$i" data-row="${row.id.esc()}">${name.esc()}</span>"""
+            "content_row" -> {
+                // R87: pick which content rows to test membership against; values are row specs (c.rows).
+                val chips = wbRowsContext.joinToString("") { row ->
+                    val on = c.rows.any { it.id == row.id }
+                    val name = row.title?.takeIf { it.isNotBlank() } ?: "Untitled row"
+                    """<span class="wb-vchip${if (on) " on" else ""}" data-i="$i" data-row="${row.id.esc()}">${name.esc()}</span>"""
+                }
+                """<div class="wb-vchips">${chips.ifEmpty { """<span class="muted tiny">No content rows in scope</span>""" }}</div>"""
             }
-            """<div class="wb-vchips">${chips.ifEmpty { """<span class="muted tiny">No content rows in scope</span>""" }}</div>"""
-        } else {
-            val chips = wbItemsFor(c.facet).take(80).joinToString("") { t ->
-                val on = c.values.contains(t.value)
-                val lbl = if (c.facet == "hero_item") (if (t.value == "featured") "Featured" else "Not featured") else t.value
-                val cnt = if (t.count > 0) """<span class="wb-vcount">${t.count}</span>""" else ""
-                """<span class="wb-vchip${if (on) " on" else ""}" data-i="$i" data-v="${t.value.esc()}">${lbl.esc()}$cnt</span>"""
+            else -> {
+                val chips = wbItemsFor(c.facet).take(80).joinToString("") { t ->
+                    val on = c.values.contains(t.value)
+                    val lbl = if (c.facet == "hero_item") (if (t.value == "featured") "Featured" else "Not featured") else t.value
+                    val cnt = if (t.count > 0) """<span class="wb-vcount">${t.count}</span>""" else ""
+                    """<span class="wb-vchip${if (on) " on" else ""}" data-i="$i" data-v="${t.value.esc()}">${lbl.esc()}$cnt</span>"""
+                }
+                """<div class="wb-vchips">$chips</div>"""
             }
-            """<div class="wb-vchips">$chips</div>"""
         }
         """<div class="wb-cond">
               <div class="wb-cond-head">
@@ -377,24 +374,18 @@ private fun wbWireConds() {
     }
 }
 
-/** Whether every active condition can be served exactly by /api/media (ALL mode, positive ops). */
-private fun wbExactlyServable(): Boolean {
-    if (wbMatch == "ANY") return false
-    return wbConds.none { it.op == "is_none_of" || it.op == "not_contains" }
-}
-
 /** R60: render a read-only banner above the condition builder when a channel scope is set. */
 private fun wbRenderScopeBanner() {
     val host = document.getElementById("wb-base-scope") as? HTMLElement ?: return
     if (wbBaseConds.isEmpty()) { host.innerHTML = ""; return }
-    val WB_LABELS_LOCAL = mapOf(
+    val wbLabelsLocal = mapOf(
         "studio" to "Studio", "network" to "Network", "genre" to "Genre", "tag" to "Tag",
         "age_rating" to "Age rating",
         "audio_language" to "Audio language", "audio_codec" to "Audio codec",
         "track_title" to "Track title", "hero_item" to "Hero item",
     )
     val pills = wbBaseConds.filter { it.values.isNotEmpty() }.joinToString("") { cond ->
-        val facetLabel = WB_LABELS_LOCAL[cond.facet] ?: cond.facet
+        val facetLabel = wbLabelsLocal[cond.facet] ?: cond.facet
         val valStr = cond.values.take(3).joinToString(", ") {
             if (cond.values.size > 3) "$it +${cond.values.size - 3}" else it
         }

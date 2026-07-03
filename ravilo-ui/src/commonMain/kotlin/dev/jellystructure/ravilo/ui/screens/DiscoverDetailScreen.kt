@@ -42,7 +42,6 @@ import dev.jellystructure.ravilo.ui.LocalLiveAcquisition
 import dev.jellystructure.ravilo.ui.components.ButtonStyle
 import dev.jellystructure.ravilo.ui.components.RaviloButton
 import dev.jellystructure.ravilo.ui.seams.RemoteImage
-import dev.jellystructure.ravilo.ui.theme.RaviloDimens
 import dev.jellystructure.ravilo.ui.theme.raviloHPad
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
 import dev.jellystructure.ravilo.ui.theme.Sora

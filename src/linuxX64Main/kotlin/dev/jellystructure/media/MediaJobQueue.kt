@@ -104,11 +104,6 @@ class MediaJobQueue(
         broadcastSnapshot(jobId)
     }
 
-    suspend fun markBulkProgress(jobId: String, filesDone: Int) {
-        queries.updateProgress(0.0, null, filesDone.toLong(), jobId)
-        broadcastSnapshot(jobId)
-    }
-
     suspend fun markBulkFinished(jobId: String, ok: Boolean, error: String?, filesDone: Int) {
         queries.markFinished(if (ok) "done" else "failed", epochSeconds(), error, filesDone.toLong(), jobId)
         bulkRunning = false
@@ -225,7 +220,7 @@ class MediaJobQueue(
 
         val cmd = TrackCommandBuilder.ffmpegReorder(targetPath, orderedIndices, kind == TrackKind.AUDIO)
         val duration = FfmpegRunner.probeDurationSeconds(targetPath)
-        val ok = FfmpegRunner.runRemuxTracked(targetPath, cmd, duration) { pct, speed -> onProgress(row.id, pct, speed) }
+        val ok = FfmpegRunner.runRemuxTracked(targetPath, cmd, duration) { pct, speed, etaSeconds -> onProgress(row.id, pct, speed, etaSeconds) }
         if (cancelRunning) return Cancelled
         if (!ok) return Failure("ffmpeg remux failed")
 
@@ -265,7 +260,7 @@ class MediaJobQueue(
         val escapedTmp = FfmpegRunner.tmpPath(targetPath).replace("'", "'\\''")
         val cmd = "ffmpeg -y -i '$escaped' -map 0 -map -0:${target.streamIndex} -c copy '$escapedTmp' 2>&1 && mv '$escapedTmp' '$escaped'"
         val duration = FfmpegRunner.probeDurationSeconds(targetPath)
-        val ok = FfmpegRunner.runRemuxTracked(targetPath, cmd, duration) { pct, speed -> onProgress(row.id, pct, speed) }
+        val ok = FfmpegRunner.runRemuxTracked(targetPath, cmd, duration) { pct, speed, etaSeconds -> onProgress(row.id, pct, speed, etaSeconds) }
         if (cancelRunning) return Cancelled
         if (!ok) return Failure("ffmpeg remux failed")
 
@@ -303,8 +298,8 @@ class MediaJobQueue(
         else -> null
     }
 
-    private fun onProgress(jobId: String, pct: Double, speed: String?) {
-        queries.updateProgress(pct, speed, 0, jobId)
+    private fun onProgress(jobId: String, pct: Double, speed: String?, etaSeconds: Long?) {
+        queries.updateProgress(pct, speed, 0, etaSeconds, jobId)
         kotlinx.coroutines.runBlocking { broadcastSnapshot(jobId) }
     }
 
@@ -324,7 +319,7 @@ class MediaJobQueue(
         return true
     }
 
-    private suspend fun fileSizeBytes(filePath: String): Long? {
+    private fun fileSizeBytes(filePath: String): Long? {
         val escaped = filePath.replace("'", "'\\''")
         val out = shellCapture("stat -c '%s' '$escaped' 2>/dev/null")
         return out?.trim()?.toLongOrNull()
@@ -339,7 +334,7 @@ class MediaJobQueue(
         return path?.let { FfmpegRunner.tmpPath(it) }
     }
 
-    private suspend fun snapshotOf(id: String): MediaJobSnapshot? = queries.findById(id).executeAsOneOrNull()?.let { toSnapshot(it) }
+    private fun snapshotOf(id: String): MediaJobSnapshot? = queries.findById(id).executeAsOneOrNull()?.let { toSnapshot(it) }
 
     private suspend fun broadcastSnapshot(id: String) {
         snapshotOf(id)?.let { broadcaster.broadcast(JobEvent.MediaJobUpdate(it)) }
@@ -349,7 +344,7 @@ class MediaJobQueue(
         id = row.id, type = row.type, mediaId = row.media_id, label = row.label, state = row.state,
         enqueuedBy = row.enqueued_by, createdAt = row.created_at, startedAt = row.started_at,
         finishedAt = row.finished_at, error = row.error, fileCount = row.file_count.toInt(),
-        filesDone = row.files_done.toInt(), pct = row.pct, speed = row.speed,
+        filesDone = row.files_done.toInt(), pct = row.pct, speed = row.speed, etaSeconds = row.eta_seconds,
     )
 
     @OptIn(ExperimentalForeignApi::class)

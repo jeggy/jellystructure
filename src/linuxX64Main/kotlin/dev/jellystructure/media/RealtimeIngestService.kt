@@ -98,7 +98,7 @@ class RealtimeIngestService(
         // Same additive tag-union as Scanner.rescanFromJellyfin — a re-scan must not drop tags the item
         // already had (TMDB-sourced + jellystructure-defined tags all survive).
         val merged = if (existing != null) fresh.copy(tags = (fresh.tags + existing.tags).distinct()) else fresh
-        val enriched = sonarrEnrich?.enrichOne(merged) ?: merged
+        val enriched = artwork.stampHasStill(sonarrEnrich?.enrichOne(merged) ?: merged)
         store.addOrUpdate(enriched)
         broadcaster.broadcast(JobEvent.ItemScanned("realtime-ingest-${enriched.id}", enriched))
         mediaHistory.record(enriched.id, "realtime_ingest", "jellyfinId=${jItem.id}")

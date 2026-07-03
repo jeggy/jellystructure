@@ -63,10 +63,8 @@ import platform.posix.getenv
 import platform.posix.localtime_r
 import platform.posix.mktime
 import platform.posix.signal
-import platform.posix.getenv
 import platform.posix.time
 import platform.posix.time_tVar
-import kotlinx.cinterop.toKString
 import platform.posix.tm
 import kotlin.concurrent.AtomicInt
 
@@ -234,7 +232,7 @@ fun main() = runBlocking {
             if (scanTracker.running) { Logger.info("Scheduled run skipped — a scan is already running"); delay(60_000L); continue }
             if (schedule.isBlank() && legacyHours > 0) legacyNextSec = nowEpochSec() + legacyHours * 3_600L
 
-            val active = if (pipeline.isNotEmpty()) pipeline else null
+            val active = pipeline.ifEmpty { null }
             val jobId = scanTracker.startNew()
             runTagged(jobId, "scheduled", "▶ Scheduled ${if (active != null) "pipeline" else "scan"} run started") {
                 if (active != null) {
@@ -248,7 +246,7 @@ fun main() = runBlocking {
 
     // Ops hook (Phase 95): a full library scan on startup when SCAN_ON_START=1 — e.g. to rebuild the
     // catalog after an incident. The scanner is non-destructive (adds/updates, flags gone items for triage).
-    if (platform.posix.getenv("SCAN_ON_START")?.toKString() == "1") {
+    if (getenv("SCAN_ON_START")?.toKString() == "1") {
         rootScope.launch {
             val jobId = scanTracker.startNew()
             runTagged(jobId, "scan", "▶ Startup scan (SCAN_ON_START=1)") {
@@ -364,9 +362,9 @@ suspend fun executePipeline(
     pipeline: List<PipelineStep>,
     jobId: String,
     store: MediaStore,
-    scanner: dev.jellystructure.media.Scanner,
-    scanTracker: dev.jellystructure.media.ScanTracker,
-    broadcaster: dev.jellystructure.jobs.WsBroadcaster,
+    scanner: Scanner,
+    scanTracker: ScanTracker,
+    broadcaster: WsBroadcaster,
     configStore: ConfigStore,
     jellyfinClient: JellyfinClient,
     scanDispatcher: kotlinx.coroutines.CoroutineDispatcher,
@@ -533,7 +531,7 @@ suspend fun executePipeline(
             }
             "wait" -> {
                 Logger.info("wait: ${step.minutes} min")
-                kotlinx.coroutines.delay(step.minutes * 60_000L)
+                delay(step.minutes * 60_000L)
             }
             "notify" -> {
                 val payload = """{"event":"pipeline_complete","items":${workingSet.size},"on":"${step.on}"}"""

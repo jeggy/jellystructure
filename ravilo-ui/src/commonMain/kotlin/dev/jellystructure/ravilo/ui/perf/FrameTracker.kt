@@ -55,10 +55,10 @@ fun FrameTrackerOverlay(enabled: Boolean) {
         ) {
             Text(
                 text = "${fps.toInt()} fps  drop:$dropped",
-                color = when {
-                    fps in 1f..44f -> Color(0xFFFF5252)
-                    fps in 45f..54f -> Color(0xFFFFD740)
-                    else            -> Color(0xFF69F0AE)
+                color = when (fps) {
+                    in 1f..44f -> Color(0xFFFF5252)
+                    in 45f..54f -> Color(0xFFFFD740)
+                    else -> Color(0xFF69F0AE)
                 },
                 fontSize = 11.sp,
             )

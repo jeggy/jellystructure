@@ -100,7 +100,7 @@ class BrowseService(
                 .distinctBy { it.id }
         } else {
             val q = query.lowercase()
-            all.filter { item ->
+            all.asSequence().filter { item ->
                 item.title.lowercase().contains(q) ||
                 item.originalTitle?.lowercase()?.contains(q) == true ||
                 item.titlesByLang.values.any { it.lowercase().contains(q) }
@@ -108,6 +108,7 @@ class BrowseService(
                 .take(100)
                 .map { it.toMediaCard() }
                 .distinctBy { it.id }
+                .toList()
         }
 
         // R142: overlay Jellyfin played / in-progress state so search-result tiles show ✓ / progress sliver.

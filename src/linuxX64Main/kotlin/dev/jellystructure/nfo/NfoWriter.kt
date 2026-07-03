@@ -196,6 +196,7 @@ object NfoWriter {
             appendLine("  <plot>${item.overview.esc()}</plot>")
         }
         CertificationResolver.resolve(ageRatingCascade, item.certifications)?.let {
+            check(!it.fallback) { "Phase 119: resolve() must never return a fallback certification" }
             appendLine("  <mpaa>${it.code.esc()}</mpaa>")
         }
         if (item.tmdbId != null) {
@@ -252,6 +253,7 @@ object NfoWriter {
             appendLine("  <plot>${item.overview.esc()}</plot>")
         }
         CertificationResolver.resolve(ageRatingCascade, item.certifications)?.let {
+            check(!it.fallback) { "Phase 119: resolve() must never return a fallback certification" }
             appendLine("  <mpaa>${it.code.esc()}</mpaa>")
         }
         if (item.tmdbId != null) {

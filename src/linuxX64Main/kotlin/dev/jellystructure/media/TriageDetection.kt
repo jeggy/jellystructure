@@ -33,6 +33,20 @@ object TriageDetection {
         item.episodes.any { tracksHaveMultiDefault(it.tracks) }
     } else tracksHaveMultiDefault(item.tracks)
 
-    fun missingOverviewCount(item: MediaItem): Int =
-        if (item.kind == MediaKind.TV_SHOW) item.episodes.count { it.overview.isNullOrBlank() } else 0
+    // Phase 121: a missing plot summary isn't a real problem (Ravilo always has a still to show, via
+    // TMDB or the screen-grabber) — this counts episodes with NO image on disk at all (neither), the
+    // genuine "Ravilo shows a blank episode card" case. `hasStill` is a persisted, scan-refreshed flag
+    // (ArtworkDownloader.stampHasStill) so this stays O(1), unlike a per-request filesystem stat.
+    fun missingStillCount(item: MediaItem): Int =
+        if (item.kind == MediaKind.TV_SHOW) item.episodes.count { !it.hasStill } else 0
+
+    /** Phase 122: a relationship, not a per-item predicate — the set of item ids that share a Jellyfin
+     *  id with at least one other item (both would open the same detail page). */
+    fun duplicateIds(items: List<MediaItem>): Set<String> =
+        items.filter { !it.jellyfinId.isNullOrBlank() }
+            .groupBy { it.jellyfinId }
+            .values
+            .filter { it.size > 1 }
+            .flatten()
+            .mapTo(mutableSetOf()) { it.id }
 }

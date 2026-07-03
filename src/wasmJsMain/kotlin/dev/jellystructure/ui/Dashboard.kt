@@ -141,7 +141,7 @@ fun renderDashboard(container: Element, scope: CoroutineScope) {
         document.getElementById("dash-next-run")?.let { el ->
             val next = status?.nextScheduledRun
             if (next != null) el.textContent = "next run · ${dev.jellystructure.formatStoredTs(next.toString())}"
-            else (el as? org.w3c.dom.HTMLElement)?.style?.display = "none"
+            else (el as? HTMLElement)?.style?.display = "none"
         }
     }
 }
@@ -275,8 +275,7 @@ private fun connectDashScanSocket(scope: CoroutineScope, baseCount: Int = 0) {
     ws.onmessage = { ev ->
         val text = ev.data.toString()
         runCatching {
-            val event = dashJson.decodeFromString<JobEvent>(text)
-            when (event) {
+            when (val event = dashJson.decodeFromString<JobEvent>(text)) {
                 is JobEvent.Started -> {
                     // Phase 116: the scan now reports its real worklist size up front.
                     if (event.total > 0) dashScanTotal = event.total

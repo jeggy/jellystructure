@@ -73,7 +73,7 @@ fun TitleLogoOrText(
     val resolved = if (logoUrl.startsWith("/") && baseUrl.isNotBlank()) "$baseUrl$logoUrl" else logoUrl
     val ctx = LocalPlatformContext.current
     val request = remember(resolved) {
-        ImageRequest.Builder(ctx).data(resolved).crossfade(RaviloMotion.ImageCrossfadeMs).build()
+        ImageRequest.Builder(ctx).data(resolved).crossfade(RaviloMotion.IMAGE_CROSSFADE_MS).build()
     }
     AsyncImage(
         model = request,

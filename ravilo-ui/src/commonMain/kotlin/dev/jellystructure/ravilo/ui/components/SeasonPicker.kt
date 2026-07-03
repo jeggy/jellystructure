@@ -25,7 +25,6 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.jellystructure.ravilo.ui.focus.dpadFocusable
-import dev.jellystructure.ravilo.ui.theme.RaviloDimens
 import dev.jellystructure.ravilo.ui.theme.raviloHPad
 import dev.jellystructure.ravilo.ui.theme.RaviloMotion
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
@@ -56,7 +55,7 @@ fun SeasonPicker(
         items(seasons.size, key = { i -> seasons[i].index }) { i ->
             val isSelected = i == selectedIndex
             var focused by remember { mutableStateOf(false) }
-            val scale        by animateFloatAsState(if (focused) RaviloMotion.PillFocusScale else 1f, focusSpec, label = "pillScale$i")
+            val scale        by animateFloatAsState(if (focused) RaviloMotion.PILL_FOCUS_SCALE else 1f, focusSpec, label = "pillScale$i")
             val borderWidth  by animateDpAsState(if (focused && !isSelected) 2.dp else 0.dp, dpSpec, label = "pillBorder$i")
             val glowElevation by animateDpAsState(if (focused) 14.dp else 0.dp, dpSpec, label = "pillShadow$i")
 
