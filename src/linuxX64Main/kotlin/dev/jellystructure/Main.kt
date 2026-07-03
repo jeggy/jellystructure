@@ -27,6 +27,8 @@ import dev.jellystructure.media.MediaHistory
 import dev.jellystructure.media.MediaStore
 import dev.jellystructure.media.Scanner
 import dev.jellystructure.media.ScanTracker
+import dev.jellystructure.media.pipelineStepConcurrency
+import dev.jellystructure.media.runPipelineStepPool
 import dev.jellystructure.config.PipelineStep
 import dev.jellystructure.media.ArtworkDownloader
 import dev.jellystructure.jobs.JobEvent
@@ -237,7 +239,11 @@ fun main() = runBlocking {
 
             val active = pipeline.ifEmpty { null }
             val jobId = scanTracker.startNew()
-            runTagged(jobId, "scheduled", "▶ Scheduled ${if (active != null) "pipeline" else "scan"} run started") {
+            runTagged(
+                jobId, "scheduled", if (active != null) "pipeline" else "library",
+                if (active != null) "normal" else null,
+                "▶ Scheduled ${if (active != null) "pipeline" else "scan"} run started", scanTracker,
+            ) {
                 if (active != null) {
                     executePipeline(active, jobId, mediaStore, scanner, scanTracker, broadcaster, configStore, jellyfinClient, scanDispatcher, artworkDownloader, arrRescan, sonarrEnrich, imdbClient)
                 } else {
@@ -252,7 +258,7 @@ fun main() = runBlocking {
     if (getenv("SCAN_ON_START")?.toKString() == "1") {
         rootScope.launch {
             val jobId = scanTracker.startNew()
-            runTagged(jobId, "scan", "▶ Startup scan (SCAN_ON_START=1)") {
+            runTagged(jobId, "startup", "library", null, "▶ Startup scan (SCAN_ON_START=1)", scanTracker) {
                 // Items-only (no artwork fetch) — fast + FD-safe; on-disk posters are still served by R133.
                 runScan(jobId, emptySet(), mediaStore, scanner, scanTracker, broadcaster, configStore, jellyfinClient, scanDispatcher, artworkDownloader = null)
             }
@@ -442,6 +448,15 @@ suspend fun executePipeline(
         }
     }
 
+    // Phase 135 (FR-135-2 item 4) — emit the whole ordered step plan up front, before scan_files itself
+    // runs, so the client can draw every step chip immediately instead of discovering steps one at a
+    // time. scan_files is listed first but keeps its own existing Started/ItemScanned/FileProgress
+    // events untouched below — the client infers "scan_files is active" from ScanStatusResponse.activeStep.
+    val orderedSteps = listOf("scan_files") + pipeline.filter { it.step != "scan_files" }.map { it.step }
+    scanTracker.setStepPlan(orderedSteps)
+    broadcaster.broadcast(JobEvent.PipelinePlan(jobId, orderedSteps))
+    scanTracker.setActiveStep("scan_files")
+
     val workingSet = withContext(RunContext(jobId, "scan_files")) {
         runScan(
             jobId, emptySet(), store, scanner, scanTracker, broadcaster,
@@ -467,15 +482,28 @@ suspend fun executePipeline(
         if (step.step == "scan_files") continue
         withContext(RunContext(jobId, step.step)) {
         Logger.info("Pipeline step: ${step.step}")
+        // Phase 135 (FR-135-1) — every step below now runs its per-item work through
+        // runPipelineStepPool: a bounded worker pool (reusing scan_files' pattern) sized off
+        // behavior.scanWorkers (clamped per-step by pipelineStepConcurrency), so ScanTracker's
+        // activeWorkers/targetWorkers reflect this step's live pool and the work is concurrent instead
+        // of one item at a time. Real per-item concurrency stays bounded by each item's own existing
+        // gate (OutboundHttp/ProcessGate/the artwork downloader's semaphore/the imdb throttle) — the
+        // pool only controls dispatch, not a new ceiling. The pool wraps every item in runCatching
+        // uniformly (matching most steps' pre-existing per-item error handling; rescan_arr/detect_drift
+        // previously had none at the top level — an item failure there now degrades gracefully instead
+        // of aborting the rest of the run, which is strictly safer under concurrent dispatch).
+        val scanWorkers = configStore.current.behavior.scanWorkers
         when (step.step) {
             "pull_tmdb" -> {
                 val toProcess = if (step.scope == "all") workingSet
                     else workingSet.filter { it.tmdbId == null }
                 Logger.info("pull_tmdb: ${toProcess.size} items (scope=${step.scope})")
-                for (item in toProcess) {
-                    runCatching { scanner.rescanMetadata(item) }
-                        .onSuccess { updated -> updated?.let { store.addOrUpdate(it) } }
-                        .onFailure { Logger.warn("pull_tmdb failed for '${item.id}': ${it.message}") }
+                runPipelineStepPool(
+                    jobId, step.step, toProcess, pipelineStepConcurrency(step.step, scanWorkers),
+                    scanTracker, broadcaster, labelOf = { it.title },
+                ) { item ->
+                    val updated = scanner.rescanMetadata(item)
+                    updated?.let { store.addOrUpdate(it) }
                 }
             }
             "download_artwork" -> {
@@ -484,10 +512,12 @@ suspend fun executePipeline(
                 val toProcess = if (step.scope == "all") workingSet
                     else workingSet.filter { artworkDownloader.isArtworkIncomplete(it) }
                 Logger.info("download_artwork: ${toProcess.size} items (scope=${step.scope})")
-                for (item in toProcess) {
+                runPipelineStepPool(
+                    jobId, step.step, toProcess, pipelineStepConcurrency(step.step, scanWorkers),
+                    scanTracker, broadcaster, labelOf = { it.title },
+                ) { item ->
                     val current = store.get(item.id) ?: item
-                    runCatching { artworkDownloader.fetch(current) }
-                        .onFailure { Logger.warn("download_artwork failed for '${item.id}': ${it.message}") }
+                    artworkDownloader.fetch(current)
                 }
             }
             "write_nfo" -> {
@@ -500,57 +530,63 @@ suspend fun executePipeline(
                 // doesn't match nfoHash), only `overwrite`/`overwriteNfo` may replace it; otherwise skip
                 // and count it for a once-per-run summary line (Phase 53 skip-summary pattern).
                 val serverUrl = cfg.apiKeys.jellyfinUrl
-                var written = 0
-                var unchanged = 0
-                var foreignSkipped = 0
-                for (item in workingSet) {
+                val written = AtomicInt(0)
+                val unchanged = AtomicInt(0)
+                val foreignSkipped = AtomicInt(0)
+                runPipelineStepPool(
+                    jobId, step.step, workingSet, pipelineStepConcurrency(step.step, scanWorkers),
+                    scanTracker, broadcaster, labelOf = { it.title },
+                ) { item ->
                     val current = store.get(item.id) ?: item
                     val wouldBeHash = NfoWriter.contentHash(current, serverUrl, cfg.metadata.ageRatingCascade)
-                    if (wouldBeHash == current.nfoHash) { unchanged++; continue }
+                    if (wouldBeHash == current.nfoHash) { unchanged.incrementAndGet(); return@runPipelineStepPool }
                     val onDiskHash = NfoWriter.onDiskHash(current)
                     val isForeign = onDiskHash != null && onDiskHash != current.nfoHash
-                    if (isForeign && !(step.overwrite || cfg.behavior.overwriteNfo)) { foreignSkipped++; continue }
-                    runCatching { NfoWriter.writeTracked(current, serverUrl, cfg.metadata.ageRatingCascade).getOrThrow() }
-                        .onSuccess { r ->
-                            store.updateOne(current.copy(nfoWrittenAt = r.writtenAt, nfoHash = r.hash))
-                            written++
-                        }
-                        .onFailure { Logger.warn("write_nfo failed for '${item.id}': ${it.message}") }
+                    if (isForeign && !(step.overwrite || cfg.behavior.overwriteNfo)) { foreignSkipped.incrementAndGet(); return@runPipelineStepPool }
+                    val r = NfoWriter.writeTracked(current, serverUrl, cfg.metadata.ageRatingCascade).getOrThrow()
+                    store.updateOne(current.copy(nfoWrittenAt = r.writtenAt, nfoHash = r.hash))
+                    written.incrementAndGet()
                 }
-                Logger.info("write_nfo: $written written, $unchanged unchanged" +
-                    if (foreignSkipped > 0) ", $foreignSkipped foreign NFO(s) skipped (set overwrite to replace)" else "")
+                Logger.info("write_nfo: ${written.value} written, ${unchanged.value} unchanged" +
+                    if (foreignSkipped.value > 0) ", ${foreignSkipped.value} foreign NFO(s) skipped (set overwrite to replace)" else "")
             }
             "sync_jellyfin" -> {
                 // Phase 115 (FR C) — full import (not the old ValidationOnly, which never re-reads NFOs),
                 // scoped to items that actually have something new to import (nfoWrittenAt > jfSyncedAt)
                 // so an unchanged library doesn't hammer Jellyfin with hundreds of full refreshes a night.
                 val toSync = workingSet.filter { (it.nfoWrittenAt ?: 0L) > (it.jfSyncedAt ?: 0L) && !it.jellyfinId.isNullOrBlank() }
+                val jellyfinReady = cfg.apiKeys.jellyfinUrl.isNotBlank() && cfg.apiKeys.jellyfinToken.isNotBlank()
                 Logger.info("sync_jellyfin: ${toSync.size} of ${workingSet.size} items have unsynced NFO changes")
-                if (cfg.apiKeys.jellyfinUrl.isNotBlank() && cfg.apiKeys.jellyfinToken.isNotBlank()) {
-                    for (item in toSync) {
-                        val jid = item.jellyfinId ?: continue
-                        runCatching {
-                            jellyfinClient.refreshItem(cfg.apiKeys.jellyfinUrl, cfg.apiKeys.jellyfinToken, jid, full = true)
-                        }.onSuccess { ok ->
-                            if (ok) store.updateOne(item.copy(jfSyncedAt = nowEpochSec()))
-                        }.onFailure { Logger.warn("sync_jellyfin failed for '${item.id}': ${it.message}") }
-                    }
+                runPipelineStepPool(
+                    jobId, step.step, if (jellyfinReady) toSync else emptyList(),
+                    pipelineStepConcurrency(step.step, scanWorkers), scanTracker, broadcaster, labelOf = { it.title },
+                ) { item ->
+                    val jid = item.jellyfinId ?: return@runPipelineStepPool
+                    val ok = jellyfinClient.refreshItem(cfg.apiKeys.jellyfinUrl, cfg.apiKeys.jellyfinToken, jid, full = true)
+                    if (ok) store.updateOne(item.copy(jfSyncedAt = nowEpochSec()))
                 }
             }
             "rescan_arr" -> {
                 Logger.info("rescan_arr: ${workingSet.size} items")
-                for (item in workingSet) arrRescan.nudge(item)
+                runPipelineStepPool(
+                    jobId, step.step, workingSet, pipelineStepConcurrency(step.step, scanWorkers),
+                    scanTracker, broadcaster, labelOf = { it.title },
+                ) { item -> arrRescan.nudge(item) }
             }
             "detect_drift" -> {
                 // Phase 115 (FR F) — real state evaluation across the working set, replacing the no-op.
-                var converged = 0; var nfoStale = 0; var jfBehind = 0; var external = 0
-                for (item in workingSet) {
+                val converged = AtomicInt(0); val nfoStale = AtomicInt(0)
+                val jfBehind = AtomicInt(0); val external = AtomicInt(0)
+                runPipelineStepPool(
+                    jobId, step.step, workingSet, pipelineStepConcurrency(step.step, scanWorkers),
+                    scanTracker, broadcaster, labelOf = { it.title },
+                ) { item ->
                     val current = store.get(item.id) ?: item
                     val result = dev.jellystructure.nfo.DriftEvaluator.evaluate(current, jellyfinClient, cfg)
                     when (result.state) {
-                        dev.jellystructure.nfo.DriftState.NFO_STALE.name.lowercase() -> nfoStale++
+                        dev.jellystructure.nfo.DriftState.NFO_STALE.name.lowercase() -> nfoStale.incrementAndGet()
                         dev.jellystructure.nfo.DriftState.JELLYFIN_BEHIND.name.lowercase() -> {
-                            jfBehind++
+                            jfBehind.incrementAndGet()
                             if (step.autoReassert) {
                                 runCatching { NfoWriter.writeTracked(current, cfg.apiKeys.jellyfinUrl, cfg.metadata.ageRatingCascade).getOrThrow() }
                                     .onSuccess { r -> store.updateOne(current.copy(nfoWrittenAt = r.writtenAt, nfoHash = r.hash)) }
@@ -560,44 +596,54 @@ suspend fun executePipeline(
                                 }
                             }
                         }
-                        dev.jellystructure.nfo.DriftState.EXTERNAL_DRIFT.name.lowercase() -> external++
-                        else -> converged++
+                        dev.jellystructure.nfo.DriftState.EXTERNAL_DRIFT.name.lowercase() -> external.incrementAndGet()
+                        else -> converged.incrementAndGet()
                     }
                 }
-                Logger.info("detect_drift: $converged converged, $nfoStale NFO stale, $jfBehind Jellyfin behind" +
-                    (if (step.autoReassert) " (auto-reassert attempted)" else "") + ", $external external drift")
-                if (external > 0 && cfg.behavior.notifyOnDrift) {
-                    runCatching { fireWebhook(cfg, """{"event":"drift_detected","pipeline":true,"items":$external}""") }
+                Logger.info("detect_drift: ${converged.value} converged, ${nfoStale.value} NFO stale, ${jfBehind.value} Jellyfin behind" +
+                    (if (step.autoReassert) " (auto-reassert attempted)" else "") + ", ${external.value} external drift")
+                if (external.value > 0 && cfg.behavior.notifyOnDrift) {
+                    runCatching { fireWebhook(cfg, """{"event":"drift_detected","pipeline":true,"items":${external.value}}""") }
                         .onFailure { Logger.warn("detect_drift notify webhook failed: ${it.message}") }
                 }
             }
             "sync_imdb_ratings" -> {
-                // Phase 131: keyed by imdbId; a title without one has no rating to sync. Modest
-                // per-title delay (on top of the Phase 129 OutboundHttp permit gate) since imdbapi.dev
-                // has no batch endpoint verified at implementation time — small and simple beats a
-                // second unverified code path.
+                // Phase 131: keyed by imdbId; a title without one has no rating to sync. A *small* pool
+                // (pipelineStepConcurrency caps this step at 2) preserves the intended per-call throttle
+                // (imdbapi.dev has no verified batch endpoint) instead of multiplying it by scanWorkers.
                 val toSync = workingSet.filter { !it.imdbId.isNullOrBlank() }
                 Logger.info("sync_imdb_ratings: ${toSync.size} of ${workingSet.size} items have an IMDb id")
-                var updated = 0
-                for (item in toSync) {
-                    val imdbId = item.imdbId ?: continue
+                val updated = AtomicInt(0)
+                runPipelineStepPool(
+                    jobId, step.step, toSync, pipelineStepConcurrency(step.step, scanWorkers),
+                    scanTracker, broadcaster, labelOf = { it.title },
+                ) { item ->
+                    val imdbId = item.imdbId ?: return@runPipelineStepPool
                     val fetched = imdbClient?.getRating(imdbId)
                     if (fetched != null) {
                         store.updateOne(item.copy(imdbRating = dev.jellystructure.model.ImdbRating(fetched.aggregateRating, fetched.voteCount, nowEpochSec())))
-                        updated++
+                        updated.incrementAndGet()
                     }
                     delay(250)
                 }
-                Logger.info("sync_imdb_ratings: $updated of ${toSync.size} ratings updated")
+                Logger.info("sync_imdb_ratings: ${updated.value} of ${toSync.size} ratings updated")
             }
             "wait" -> {
+                // No per-item fan-out — still bracket with step events (FR-135-1 item 3) so the chip
+                // shows active + a result summary instead of a silent gap.
                 Logger.info("wait: ${step.minutes} min")
+                scanTracker.setActiveStep(step.step)
+                broadcaster.broadcast(JobEvent.StepStarted(jobId, step.step, 1))
                 delay(step.minutes * 60_000L)
+                broadcaster.broadcast(JobEvent.StepFinished(jobId, step.step, "${step.minutes} min elapsed"))
             }
             "notify" -> {
+                scanTracker.setActiveStep(step.step)
+                broadcaster.broadcast(JobEvent.StepStarted(jobId, step.step, 1))
                 val payload = """{"event":"pipeline_complete","items":${workingSet.size},"on":"${step.on}"}"""
                 runCatching { fireWebhook(cfg, payload) }
                     .onFailure { Logger.warn("notify webhook failed: ${it.message}") }
+                broadcaster.broadcast(JobEvent.StepFinished(jobId, step.step, "notified"))
             }
         }
         }
@@ -614,9 +660,26 @@ suspend fun executePipeline(
 /** 93g: run a scan/pipeline run inside a [RunContext] so every log line it emits is tagged with the run
  *  id (and therefore filterable in the Activity page), record it in the runs index for the run picker,
  *  and bracket it with start/finish log lines. Non-cancellation failures are logged and swallowed so the
- *  scheduler loop survives; cancellation propagates. */
-suspend fun runTagged(jobId: String, trigger: String, startMsg: String, block: suspend () -> Unit) {
-    Logger.startRun(jobId, trigger)
+ *  scheduler loop survives; cancellation propagates.
+ *  Phase 135 (FR-135-4) — [scope]/[type] are the two new orthogonal run descriptors alongside
+ *  [trigger] (manual/scheduled/startup — the pre-existing "ingest" trigger, [RealtimeIngestService],
+ *  keeps using this same function without a live [scanTracker]); [scope] is library (plain
+ *  file-discovery) or pipeline, [type] is normal/full (pipeline-only, null for library scope).
+ *  [scanTracker] is null for a run that shouldn't touch the live scan-status bookkeeping (realtime
+ *  ingest runs alongside a possibly-in-progress real scan on its own small dispatcher — writing to the
+ *  same tracker would corrupt that scan's live activeStep/worker display). [stepPlan] seeds
+ *  ScanTracker's live status for pollers — `executePipeline` immediately supersedes it with the real
+ *  plan once `block` runs it; the default `["scan_files"]` is correct as-is for every runScan-only
+ *  call site. */
+suspend fun runTagged(
+    jobId: String, trigger: String, scope: String, type: String?,
+    startMsg: String, scanTracker: ScanTracker? = null,
+    stepPlan: List<String> = listOf("scan_files"),
+    block: suspend () -> Unit,
+) {
+    scanTracker?.setDescriptors(trigger, scope, type)
+    scanTracker?.setStepPlan(stepPlan)
+    Logger.startRun(jobId, trigger, scope, type)
     withContext(RunContext(jobId)) {
         Logger.info(startMsg, "scan")
         try {

@@ -1615,7 +1615,7 @@ fun Route.mediaRoutes(
         val libraryId = call.request.queryParameters["library"]?.takeIf { it.isNotBlank() }
         val jobId = scanTracker.startNew()
         val scanArtwork = if (configStore.current.behavior.fetchImages) artwork else null
-        appScope.launch { runTagged(jobId, "scan", "▶ Library scan started") { runScan(jobId, emptySet(), store, scanner, scanTracker, broadcaster, configStore, jellyfinClient, scanDispatcher, libraryId, artworkDownloader = scanArtwork); sonarrEnrich?.enrichAll() } }
+        appScope.launch { runTagged(jobId, "manual", "library", null, "▶ Library scan started", scanTracker) { runScan(jobId, emptySet(), store, scanner, scanTracker, broadcaster, configStore, jellyfinClient, scanDispatcher, libraryId, artworkDownloader = scanArtwork); sonarrEnrich?.enrichAll() } }
         call.respond(HttpStatusCode.Accepted, mapOf("status" to "started", "library" to (libraryId ?: "all")))
     }
 
@@ -1632,9 +1632,14 @@ fun Route.mediaRoutes(
         val full = call.request.queryParameters["full"] == "true"
         val pipeline = configStore.current.scan.pipeline.filter { it.enabled }
         val jobId = scanTracker.startNew()
+        val runsPipeline = pipeline.isNotEmpty() && arrRescan != null
         appScope.launch {
-            runTagged(jobId, "manual", "▶ Pipeline run started (manual)${if (full) " (full)" else ""}") {
-                if (pipeline.isNotEmpty() && arrRescan != null) {
+            runTagged(
+                jobId, "manual", if (runsPipeline) "pipeline" else "library",
+                if (runsPipeline) (if (full) "full" else "normal") else null,
+                "▶ Pipeline run started (manual)${if (full) " (full)" else ""}", scanTracker,
+            ) {
+                if (runsPipeline) {
                     executePipeline(pipeline, jobId, store, scanner, scanTracker, broadcaster, configStore, jellyfinClient, scanDispatcher, artwork, arrRescan, sonarrEnrich, imdbClient, fullRun = full)
                 } else {
                     runScan(jobId, emptySet(), store, scanner, scanTracker, broadcaster, configStore, jellyfinClient, scanDispatcher, artworkDownloader = if (configStore.current.behavior.fetchImages) artwork else null)
@@ -1661,7 +1666,7 @@ fun Route.mediaRoutes(
         val skipIds = scanTracker.processedIdsSnapshot
         val jobId = scanTracker.startResume()
         val scanArtwork = if (configStore.current.behavior.fetchImages) artwork else null
-        appScope.launch { runTagged(jobId, "scan", "▶ Library scan resumed") { runScan(jobId, skipIds, store, scanner, scanTracker, broadcaster, configStore, jellyfinClient, scanDispatcher, artworkDownloader = scanArtwork); sonarrEnrich?.enrichAll() } }
+        appScope.launch { runTagged(jobId, "manual", "library", null, "▶ Library scan resumed", scanTracker) { runScan(jobId, skipIds, store, scanner, scanTracker, broadcaster, configStore, jellyfinClient, scanDispatcher, artworkDownloader = scanArtwork); sonarrEnrich?.enrichAll() } }
         Logger.info("Scan resumed jobId=$jobId, skipping ${skipIds.size} already-processed items")
         call.respond(HttpStatusCode.Accepted, mapOf("status" to "resumed"))
     }

@@ -19,6 +19,14 @@ data class ScanStatusResponse(
     val activeWorkers: Int = 0,
     val configuredWorkers: Int = 1,
     val nextScheduledRun: Long? = null,   // 93e: epoch seconds of the next automation run (null = none)
+    // Phase 135 (FR-135-2 item 5 / FR-135-4) — lets a late-joining/polling client reconstruct where the
+    // run is without having seen the WS event stream: the active step + the whole ordered plan, plus the
+    // run's three orthogonal descriptors (trigger/scope/type — see RunRecord).
+    val activeStep: String? = null,
+    val stepPlan: List<String> = emptyList(),
+    val trigger: String? = null,
+    val scope: String? = null,
+    val type: String? = null,
 )
 
 class ScanTracker(private val db: JellystructureDb) {
@@ -34,6 +42,21 @@ class ScanTracker(private val db: JellystructureDb) {
     // 93b/93e: epoch seconds of the next scheduled automation run (0 = nothing scheduled). Set by the
     // scheduler loop in Main.kt; surfaced in ScanStatusResponse for the admin's next-run indicator.
     val nextScheduledRunSec = AtomicLong(0L)
+
+    // Phase 135 — the current run's step plan/active-step + descriptors, for late-joining pollers.
+    // Plain vars (not Atomic): read-mostly, single-writer-at-a-time (the running pipeline coroutine),
+    // a stale read on one poll tick is harmless — same tradeoff already made for _status/_jobId below.
+    private var _activeStep: String? = null
+    private var _stepPlan: List<String> = emptyList()
+    private var _trigger: String? = null
+    private var _runScope: String? = null
+    private var _type: String? = null
+
+    fun setActiveStep(step: String?) { _activeStep = step }
+    fun setStepPlan(steps: List<String>) { _stepPlan = steps }
+    fun setDescriptors(trigger: String, runScope: String, type: String?) {
+        _trigger = trigger; _runScope = runScope; _type = type
+    }
 
     private val recordMutex = Mutex()
 
@@ -67,6 +90,8 @@ class ScanTracker(private val db: JellystructureDb) {
         db.scanStateQueries.clearOldProcessed(jobId)
         cancelRequested = false
         activeWorkers.value = 0
+        _activeStep = null
+        _stepPlan = emptyList()
         _status = "RUNNING"
         _jobId = jobId
         _startedAt = epochSeconds()
@@ -82,6 +107,8 @@ class ScanTracker(private val db: JellystructureDb) {
     fun startResume(): String {
         cancelRequested = false
         activeWorkers.value = 0
+        _activeStep = null
+        _stepPlan = emptyList()
         _status = "RUNNING"
         db.scanStateQueries.upsertState(
             status = "RUNNING",
@@ -142,6 +169,11 @@ class ScanTracker(private val db: JellystructureDb) {
         activeWorkers = activeWorkers.value,
         configuredWorkers = targetWorkers.value,
         nextScheduledRun = nextScheduledRunSec.value.takeIf { it > 0L },
+        activeStep = _activeStep,
+        stepPlan = _stepPlan,
+        trigger = _trigger,
+        scope = _runScope,
+        type = _type,
     )
 }
 
