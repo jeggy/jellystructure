@@ -17,8 +17,12 @@ import org.w3c.dom.HTMLVideoElement
  * transparent to let the video show through underneath it as originally hoped. Instead [setChromeVisible]
  * swaps the video's z-order with the canvas (`z-index: 1` in index.html): above it — with
  * `pointer-events: none` set once here, so clicks always pass through to the canvas beneath regardless
- * of z-order — while chrome is hidden (so the picture is visible), behind it while chrome is shown (so
- * Compose's opaque chrome paints over it correctly). See RaviloPlayer.kt's doc comment.
+ * of z-order — while demoted below it whenever a Compose-only overlay (track picker / next-up card /
+ * episode rail) needs to paint over it. R169: the caller (`PlayerScreen`) now only asks for that demote
+ * in those three cases — for the everyday "chrome visible, nothing else open" state the video stays
+ * promoted (visible) and `PlayerChromeBridge` draws the basic transport on top of it in the DOM instead,
+ * since this version's canvas still can't composite Compose's own chrome over a visible video. See
+ * RaviloPlayer.kt's doc comment and PlayerChromeBridge.kt.
  */
 actual class RaviloPlayer actual constructor() {
     private val video: HTMLVideoElement = (document.createElement("video") as HTMLVideoElement).also { v ->
