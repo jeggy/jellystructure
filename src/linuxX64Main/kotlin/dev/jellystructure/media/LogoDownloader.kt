@@ -3,9 +3,6 @@ package dev.jellystructure.media
 import dev.jellystructure.log.Logger
 import dev.jellystructure.OutboundHttp
 import dev.jellystructure.tmdb.TmdbClient
-import io.ktor.client.HttpClient
-import io.ktor.client.engine.curl.Curl
-import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.request.get
 import io.ktor.client.statement.readRawBytes
 import kotlinx.cinterop.ExperimentalForeignApi
@@ -25,13 +22,8 @@ class LogoDownloader(
     private suspend fun httpGet(url: String, block: io.ktor.client.request.HttpRequestBuilder.() -> Unit = {}): io.ktor.client.statement.HttpResponse =
         OutboundHttp.withPermit { http.get(url, block) }
 
-    private val http = HttpClient(Curl) {
-        install(HttpTimeout) {
-            connectTimeoutMillis = 10_000
-            socketTimeoutMillis  = 120_000
-            requestTimeoutMillis = 120_000
-        }
-    }
+    // Phase 129 (FR-OPS1 §B.1) — shared client, one idle connection pool for all outbound callers.
+    private val http = OutboundHttp.client
 
     private fun logoFile(kind: String, name: String): String {
         val slug = name.replace(Regex("[^a-zA-Z0-9._-]"), "_").take(120)

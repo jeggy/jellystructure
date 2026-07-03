@@ -429,8 +429,8 @@ fun Route.mediaRoutes(
                     val testFile = "$dir/.jellystructure-write-test.tmp"
                     @Serializable data class WritableResult(val writable: Boolean, val path: String, val error: String? = null)
                     val error = runCatching {
-                        val sink = SystemFileSystem.sink(Path(testFile)).buffered()
-                        sink.close()
+                        // Phase 129 (FR-OPS1 §C) — use{} so a mid-write throw still closes the sink.
+                        SystemFileSystem.sink(Path(testFile)).buffered().use { }
                         runCatching { SystemFileSystem.delete(Path(testFile)) }
                         null as String?
                     }.getOrElse { it.message ?: "write failed" }
@@ -504,10 +504,11 @@ fun Route.mediaRoutes(
                     val dir = item.kind.let { if (it == MediaKind.TV_SHOW) item.path else item.path.substringBeforeLast('/') }
                     val destPath = "$dir/$filename"
                     val tmpPath = "$destPath.tmp"
-                    val sink = SystemFileSystem.sink(Path(tmpPath)).buffered()
-                    sink.write(bytes, 0, bytes.size)
-                    sink.flush()
-                    sink.close()
+                    // Phase 129 (FR-OPS1 §C) — use{} so a mid-write throw still closes the sink.
+                    SystemFileSystem.sink(Path(tmpPath)).buffered().use { sink ->
+                        sink.write(bytes, 0, bytes.size)
+                        sink.flush()
+                    }
                     @OptIn(ExperimentalForeignApi::class)
                     platform.posix.rename(tmpPath, destPath)
                     Logger.info("Artwork uploaded: $destPath (${bytes.size} bytes)")
@@ -708,10 +709,11 @@ fun Route.mediaRoutes(
                 val stillStatus = artwork.checkEpisodeStill(ep)
                 val destPath = stillStatus.stillPath
                 val tmpPath = "$destPath.tmp"
-                val sink = SystemFileSystem.sink(Path(tmpPath)).buffered()
-                sink.write(bytes, 0, bytes.size)
-                sink.flush()
-                sink.close()
+                // Phase 129 (FR-OPS1 §C) — use{} so a mid-write throw still closes the sink.
+                SystemFileSystem.sink(Path(tmpPath)).buffered().use { sink ->
+                    sink.write(bytes, 0, bytes.size)
+                    sink.flush()
+                }
                 @OptIn(ExperimentalForeignApi::class)
                 platform.posix.rename(tmpPath, destPath)
                 Logger.info("Episode still uploaded: $destPath (${bytes.size} bytes)")

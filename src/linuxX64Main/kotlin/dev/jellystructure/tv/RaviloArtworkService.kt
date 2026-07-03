@@ -7,9 +7,6 @@ import dev.jellystructure.media.ArtworkDownloader
 import dev.jellystructure.media.FfmpegRunner
 import dev.jellystructure.media.MediaStore
 import dev.jellystructure.model.MediaItem
-import io.ktor.client.HttpClient
-import io.ktor.client.engine.curl.Curl
-import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.request.get
 import io.ktor.client.statement.readRawBytes
 import io.ktor.http.contentType
@@ -44,13 +41,8 @@ class RaviloArtworkService(
     private val store: MediaStore,
     private val artwork: ArtworkDownloader,
 ) {
-    private val http = HttpClient(Curl) {
-        install(HttpTimeout) {
-            connectTimeoutMillis = 10_000
-            socketTimeoutMillis  = 60_000
-            requestTimeoutMillis = 60_000
-        }
-    }
+    // Phase 129 (FR-OPS1 §B.1) — shared client, one idle connection pool for all outbound callers.
+    private val http = OutboundHttp.client
 
     private val cacheDir = "$dataDir/artwork/tv"
     private val avatarDir = "$dataDir/artwork/avatars"

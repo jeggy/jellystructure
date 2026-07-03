@@ -320,11 +320,12 @@ object NfoWriter {
 @OptIn(kotlinx.cinterop.ExperimentalForeignApi::class)
 private suspend fun writeAtomically(destPath: String, content: String) {
     val tmp = "$destPath.tmp"
-    // Write content to the .tmp file
-    val sink = SystemFileSystem.sink(Path(tmp)).buffered()
-    sink.writeString(content)
-    sink.flush()
-    sink.close()
+    // Phase 129 (FR-OPS1 §C) — use{} so a mid-write throw (ENOSPC/EIO/corrupt target) still closes the
+    // sink instead of leaking the FD.
+    SystemFileSystem.sink(Path(tmp)).buffered().use { sink ->
+        sink.writeString(content)
+        sink.flush()
+    }
 
     // Try atomic rename first
     val rc = platform.posix.rename(tmp, destPath)
@@ -336,10 +337,10 @@ private suspend fun writeAtomically(destPath: String, content: String) {
     Logger.warn("writeAtomically: rename failed (errno=$renameErrno), falling back to direct write for '$destPath'")
 
     // Direct overwrite
-    val sink2 = SystemFileSystem.sink(Path(destPath)).buffered()
-    sink2.writeString(content)
-    sink2.flush()
-    sink2.close()
+    SystemFileSystem.sink(Path(destPath)).buffered().use { sink ->
+        sink.writeString(content)
+        sink.flush()
+    }
 }
 
 private fun kotlinx.io.Source.readString(): String {

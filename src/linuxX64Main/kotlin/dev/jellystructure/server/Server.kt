@@ -57,6 +57,8 @@ import io.ktor.http.HttpMethod
 import io.ktor.http.HttpStatusCode
 import io.ktor.serialization.kotlinx.json.json
 import kotlinx.serialization.json.Json
+import io.ktor.server.application.ApplicationCallPipeline
+import io.ktor.server.application.call
 import io.ktor.server.application.install
 import io.ktor.server.cio.CIO
 import io.ktor.server.engine.embeddedServer
@@ -156,10 +158,11 @@ fun startServer(
         CIO,
         configure = {
             connectors.add(io.ktor.server.engine.EngineConnectorBuilder().apply { this.port = port })
-            // Phase 118 (FR C.6) — the only inbound FD knob CIO Native exposes. Trims idle keep-alive
-            // connections so they don't sit on the FD budget; a reverse proxy is the real concurrency
-            // cap for any internet-facing deployment.
-            connectionIdleTimeoutSeconds = 20
+            // Phase 118 (FR C.6), lowered by Phase 129 (FR-OPS1 §B.2) — the only inbound FD knob CIO
+            // Native exposes. Trims idle keep-alive connections so they don't sit on the FD budget
+            // twice as fast as before; a reverse proxy is the real concurrency cap for any internet-
+            // facing deployment.
+            connectionIdleTimeoutSeconds = 10
         },
     ) {
         install(ContentNegotiation) { json(Json { ignoreUnknownKeys = true }) }
@@ -200,13 +203,33 @@ fun startServer(
 
         installAuthPlugin(sessionService, validateDeviceToken = { deviceService.validateDeviceToken(it) }, validateApiKey = { apiKeyStore.validate(it) })
 
+        // Phase 129 (FR-OPS1 §B.2) — global load shed, earliest pipeline phase so a shed response
+        // costs the least possible work (no routing, no auth, no handler — none of which would open
+        // further FDs). Replaces the old image/TV-events-only shed. `Connection: close` (not just the
+        // 503) is the point: it makes the inbound FD live ~one request cycle instead of being held
+        // open by keep-alive while under pressure. `/api/health` stays reachable so monitoring can see
+        // why everything else is 503ing. While `draining` (the FR-OPS1 §D controlled-restart path),
+        // sheds unconditionally — even the shed threshold itself doesn't matter anymore, the process
+        // is on its way out.
+        intercept(ApplicationCallPipeline.Setup) {
+            if (call.request.path() != "/api/health" && (fdWatchdog.draining || fdWatchdog.isOverShedThreshold)) {
+                call.response.headers.append(HttpHeaders.Connection, "close")
+                call.response.headers.append(HttpHeaders.RetryAfter, "5")
+                call.respond(HttpStatusCode.ServiceUnavailable, mapOf("error" to "server under FD pressure, retry shortly"))
+                finish()
+            }
+        }
+
         routing {
             route("/api") {
                 get("/health") {
                     // Phase 118 (FR C.4) — FD count on the lightweight probe too, so a monitoring
                     // scraper hitting this endpoint every few seconds doesn't need the /full checks.
+                    // Phase 129 (FR-OPS1 §A.2) — the last-computed census (only recomputed at/above the
+                    // 700 warn threshold, so this stays cheap on a healthy server) rides along too.
+                    val census = fdWatchdog.lastCensus
                     call.respondText(
-                        """{"status":"ok","fd_count":${fdWatchdog.currentCount},"fd_high_water_mark":${fdWatchdog.highWaterMark}}""",
+                        """{"status":"ok","fd_count":${fdWatchdog.currentCount},"fd_high_water_mark":${fdWatchdog.highWaterMark},"fd_census":${census?.toJson() ?: "null"}}""",
                         ContentType.Application.Json,
                     )
                 }
@@ -299,7 +322,7 @@ fun startServer(
                 if (chartRegistry != null && chartStore != null && chartIngest != null) {
                     chartRoutes(chartRegistry, chartStore, configStore, chartIngest)
                 }
-                tvRoutes(deviceService, raviloConfigService, homeFeedService, browseService, detailService, playbackService, sessionService, jellyfinClient, configStore, channelLogoStore, acquisitionService, chartStore, chartRegistry, tmdbClient, imageProxyService, tvEventBus, fdWatchdog)
+                tvRoutes(deviceService, raviloConfigService, homeFeedService, browseService, detailService, playbackService, sessionService, jellyfinClient, configStore, channelLogoStore, acquisitionService, chartStore, chartRegistry, tmdbClient, imageProxyService, tvEventBus)
             }
 
             webSocket("/ws") {
@@ -323,12 +346,9 @@ fun startServer(
             // R33 — per-user live config push. Device token comes via query param (browsers can't set
             // a handshake header); this path is exempt from the bearer-gate AuthPlugin and validates here.
             webSocket("/api/tv/events") {
-                // Phase 118 (FR C.5) — reject new TV connections above the FD danger zone; already-
-                // connected TVs keep their socket (their FDs are already committed either way).
-                if (fdWatchdog.isOverShedThreshold) {
-                    close(CloseReason(CloseReason.Codes.TRY_AGAIN_LATER, "Server under FD pressure, retry shortly"))
-                    return@webSocket
-                }
+                // Phase 118 (FR C.5), superseded by Phase 129's global Setup-phase shed intercept above
+                // — a shed 503 is sent before the WS upgrade ever reaches this handler, so there's
+                // nothing left to check here; already-connected TVs keep their socket either way.
                 val token = call.request.queryParameters["token"]?.takeIf { it.isNotBlank() }
                     ?: call.request.headers["Authorization"]?.removePrefix("Bearer ")?.takeIf { it.isNotBlank() }
                 val device = token?.let { deviceService.validateDeviceToken(it) }

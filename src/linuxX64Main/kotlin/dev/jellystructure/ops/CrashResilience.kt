@@ -37,19 +37,23 @@ fun installCrashHook(dataDir: String) {
             val frames = throwable.stackTraceToString().lineSequence().take(8).joinToString("\n")
             val marker = """{"timestamp":${platform.posix.time(null)},"message":${message.crashJsonEsc()},"stack":${frames.crashJsonEsc()}}"""
             runCatching { writeFileBlocking("$dataDir/last-crash.json", marker) }
-            val webhookUrl = crashWebhookUrl
-            if (webhookUrl.isNotBlank()) {
-                val payload = """{"event":"server_crashed","message":${message.crashJsonEsc()}}"""
-                val safePayload = payload.replace("'", "'\\''")
-                // No trailing `&` (unlike the normal async fireWebhook) — this must block until curl
-                // finishes or times out, since the process is about to exit either way.
-                posixSystemBlocking("curl -sf --max-time 5 -X POST -H 'Content-Type: application/json' -d '$safePayload' '$webhookUrl' >/dev/null 2>&1")
-            }
+            fireSynchronousWebhook(crashWebhookUrl, """{"event":"server_crashed","message":${message.crashJsonEsc()}}""")
         }
         // Deliberately no rethrow / process-alive attempt — the engine's job is already unwinding;
         // the process exiting from here is expected (Non-goals: "no attempt to keep the process alive
         // through a selector failure — impossible by construction").
     }
+}
+
+/**
+ * Phase 129 (FR-OPS1 §D.2) — a blocking (`system()`, no `&`) curl POST, shared by the crash hook above
+ * and [dev.jellystructure.ops.FdWatchdog]'s controlled FD-pressure restart: both need the POST to have
+ * actually left the box before the process exits, unlike the normal fire-and-forget `fireWebhook`.
+ */
+fun fireSynchronousWebhook(url: String, payload: String) {
+    if (url.isBlank()) return
+    val safePayload = payload.replace("'", "'\\''")
+    posixSystemBlocking("curl -sf --max-time 5 -X POST -H 'Content-Type: application/json' -d '$safePayload' '$url' >/dev/null 2>&1")
 }
 
 /** Phase 118 (FR B.2) — called once at boot, after ConfigStore is loaded but before anything else
@@ -68,12 +72,42 @@ suspend fun reportCrashRecoveryIfAny(dataDir: String, configStore: ConfigStore) 
     }
 }
 
+/**
+ * Phase 129 (FR-OPS1 §D.2) — a **deliberate, controlled** restart (FD pressure hit the drain
+ * threshold) is distinct from an actual crash: it's the insurance backstop working as intended, not a
+ * bug, so it gets its own marker and its own recovery event rather than reusing `last-crash.json` /
+ * `server_recovered_from_crash` (which would misreport a healthy safety-valve trip as a fault).
+ */
+@OptIn(ExperimentalForeignApi::class)
+fun writeLastRestartMarker(dataDir: String, count: Int, censusJson: String) {
+    val marker = """{"timestamp":${platform.posix.time(null)},"count":$count,"census":$censusJson}"""
+    runCatching { writeFileBlocking("$dataDir/last-restart.json", marker) }
+}
+
+/** Phase 129 (FR-OPS1 §D.2) — the `last-restart.json` twin of [reportCrashRecoveryIfAny]: called once
+ *  at boot, reports (gated by the same `notify_on_crash` flag) that the previous exit was a controlled
+ *  FD-pressure restart, not a crash. */
+suspend fun reportFdRestartRecoveryIfAny(dataDir: String, configStore: ConfigStore) {
+    val path = Path("$dataDir/last-restart.json")
+    if (!SystemFileSystem.exists(path)) return
+    val content = runCatching { SystemFileSystem.source(path).buffered().readString() }.getOrNull()
+    runCatching { SystemFileSystem.delete(path) }
+    if (content == null) return
+
+    Logger.error("Server recovered from a controlled FD-pressure restart: $content", "ops")
+    if (configStore.current.behavior.notifyOnCrash) {
+        fireWebhook(configStore.current, """{"event":"server_recovered_from_fd_restart","previous_restart":$content}""")
+    }
+}
+
 private fun String.crashJsonEsc(): String =
     "\"" + replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n") + "\""
 
 private fun writeFileBlocking(path: String, content: String) {
-    val sink = SystemFileSystem.sink(Path(path)).buffered()
-    sink.writeString(content)
-    sink.flush()
-    sink.close()
+    // Phase 129 (FR-OPS1 §C) — use{} so a mid-write throw still closes the sink instead of leaking
+    // the FD.
+    SystemFileSystem.sink(Path(path)).buffered().use { sink ->
+        sink.writeString(content)
+        sink.flush()
+    }
 }

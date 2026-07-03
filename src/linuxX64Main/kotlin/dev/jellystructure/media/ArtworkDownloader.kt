@@ -6,9 +6,6 @@ import dev.jellystructure.model.Episode
 import dev.jellystructure.model.MediaItem
 import dev.jellystructure.model.MediaKind
 import dev.jellystructure.tmdb.TmdbClient
-import io.ktor.client.HttpClient
-import io.ktor.client.engine.curl.Curl
-import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.request.get
 import io.ktor.client.statement.readRawBytes
 import kotlinx.coroutines.async
@@ -49,13 +46,8 @@ fun posterArtworkExists(item: MediaItem): Boolean {
 }
 
 class ArtworkDownloader(private val tmdbClient: TmdbClient, private val screengrabber: Screengrabber) {
-    private val http = HttpClient(Curl) {
-        install(HttpTimeout) {
-            connectTimeoutMillis = 10_000
-            socketTimeoutMillis  = 120_000
-            requestTimeoutMillis = 120_000
-        }
-    }
+    // Phase 129 (FR-OPS1 §B.1) — shared client, one idle connection pool for all outbound callers.
+    private val http = OutboundHttp.client
 
     fun check(item: MediaItem): ArtworkStatus {
         val dir = mediaDir(item)
