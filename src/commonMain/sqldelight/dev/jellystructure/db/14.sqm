@@ -1,0 +1,14 @@
+-- R162 — behaviour & preferences overlay table, v14 -> v15.
+-- Bug: this table was added directly to RaviloBehaviour.sq (the schema SQLDelight uses to CREATE a
+-- brand-new database) with no matching numbered migration, so `JellystructureDb.Schema.version`
+-- never advanced and any EXISTING database silently never got the table — `Schema.migrate()` only
+-- runs when old < new, and nothing here ever told it a new version existed. Surfaced live as
+-- "no such table: ravilo_behaviour" on /api/tv/discover (getConfig's behaviour-overlay resolution
+-- calls getByUser on every request). This migration's CREATE TABLE must stay byte-for-byte identical to
+-- RaviloBehaviour.sq's, since a fresh DB (via Schema.create) and an upgraded one (via this file)
+-- must end up with the same schema.
+CREATE TABLE ravilo_behaviour (
+    user_id TEXT NOT NULL PRIMARY KEY,
+    json TEXT NOT NULL,
+    updated_at INTEGER NOT NULL
+);
