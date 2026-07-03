@@ -1,4 +1,4 @@
-# Phase 134 — FD leak elimination: close every file read, and prove the 50-TV + concurrent-scan budget (FR-OPS2)
+# Phase 134 — FD leak elimination: close every file read, and prove the 50-TV + 100-worker-scan budget (FR-OPS2)
 
 ## Goal
 A second real FD incident occurred — this time **user-visible on a TV**: during a `runDev` session the
@@ -6,9 +6,32 @@ watchdog logged `[ERROR] FD count critical: 851 open file descriptors (>850, cei
 Phase-129 global shed then (correctly) started refusing work at >900, and the Ravilo TV showed
 *"Something went wrong — {"error":"server under FD pressure, retry shortly"}"*. The shed backstop worked
 as designed; the point of this phase is that it must **never be reached** in normal operation. Target
-capacity, explicitly: **1–50 connected TVs browsing while a full library scan runs concurrently**, with
-comfortable headroom under the hard 1024 ceiling (Ktor Native CIO `select()`, KTOR-8703, unfixable
-upstream — see Phase 118/129).
+capacity, explicitly: **1–50 connected TVs browsing while a full library scan runs with up to 100
+concurrent scan workers** (revised up from single-digit scan concurrency — this deployment's host has
+the CPU/network headroom to make 100 real, not just configured-and-ignored), with comfortable headroom
+under the hard 1024 ceiling (Ktor Native CIO `select()`, KTOR-8703, unfixable upstream — see Phase
+118/129).
+
+## Addendum — scaling scan concurrency for real (FR-OPS2 §F)
+The original draft of this spec left `scan_workers`/`scan_threads` at their existing 32-ceiling and
+`ProcessGate`/`OutboundHttp` at their existing 4/24 permits, on the reasoning that worker count doesn't
+by itself cost FDs — workers queue behind the downstream gates. That's true, but it also means 100
+workers would buy **no extra scan throughput** behind gates sized for 4-8 concurrent devices: ffprobe
+capped at 4 processes and TMDB/artwork/Jellyfin HTTP capped at 24 in-flight would just make 96 of the 100
+workers sit idle. On a host with real CPU/network capacity to spare, that's leaving throughput on the
+table for no FD-safety reason. Revised targets (all still comfortably bounded, see §Budget below):
+- `scan_workers` / `scan_threads` config ceiling: **32 → 100** (admin- and frontend-settable; the
+  frontend's own `max="32"` mirrors the backend clamp and must move with it or the backend change is
+  invisible).
+- `ProcessGate` (ffprobe/ffmpeg/mkvpropedit/screengrab/health-check — every `popen` site, not
+  scan-specific): **4 → 16**. Deliberately *not* 100 — each permit is a real forked OS process, and
+  100 concurrent ffprobe/ffmpeg children is a resource-exhaustion risk unrelated to FDs (CPU/memory
+  contention, not the thing this phase is fixing). 16 concurrent probes meaningfully speeds up a big
+  scan without turning the host into a fork bomb.
+- `OutboundHttp` in-flight permits: **24 → 64**, idle pool assumption **≈15 → ≈40**. This is the gate 100
+  scan workers actually queue behind for TMDB/artwork/Jellyfin calls, so it's the one that should scale
+  the most — a stalled TMDB/CDN round-trip costs latency, not host resources, so a higher cap is safe
+  headroom, not a fork-bomb risk the way ProcessGate is.
 
 ## Root cause — proven live, not inferred
 The broken process was still running and was inspected directly (`/proc/<pid>/fd`, 922 FDs at the time
@@ -57,26 +80,31 @@ disk full):** `ArtworkDownloader.kt:140` (`download`) `,:198` (`writeStillSrc`) 
 - `TrackRoutes.kt:768` `estimateRemuxSeconds` runs `popen("stat …")` outside `ProcessGate` — transient
   and sequential (max 1 pipe), gate it for uniformity.
 
-## The 50-TV + concurrent-scan budget (post-fix)
+## The 50-TV + 100-worker-scan budget (post-fix, post-§F scale-up)
 With reads transient (opened → read → closed inside one call), the **committed** long-lived budget is:
 
 | Consumer | Bound | Enforced by |
 |---|---|---|
 | stdio / misc | ~10 | — |
 | SQLite (writer + WAL + readers) | 5 (hard) | SQLDelight native Pool blocks at capacity (verified in driver source, not just config intent) |
-| outbound HTTP in-flight | ≤ 24 | `OutboundHttp.withPermit` |
-| outbound HTTP idle pool (one, shared) | ≈ 15 | Phase 129 §B.1 (+ this phase folds in the qbit stray) |
-| child processes (ffprobe/ffmpeg/stat) | ≤ 4 | `ProcessGate` |
+| outbound HTTP in-flight | ≤ 64 (was 24) | `OutboundHttp.withPermit` — this is the gate 100 scan workers actually queue behind |
+| outbound HTTP idle pool (one, shared) | ≈ 40 (was ≈15) | Phase 129 §B.1 (+ this phase folds in the qbit stray) |
+| child processes (ffprobe/ffmpeg/stat) | ≤ 16 (was 4) | `ProcessGate` — deliberately *not* scaled to 100 workers; see §F (real OS processes, not just FDs) |
 | per-TV `/api/tv/events` WS | **≤ 128 (new hard cap)** | this phase §D |
 | Jellyfin session bridges (outbound WS) | ≤ 16 | `JellyfinSessionBridge` semaphore (17th+ TV: no dashboard remote-control until a slot frees — existing, documented degradation) |
 | Jellyfin library listener WS | 1 | Phase 114 |
 | admin `/ws` | ~few | low-volume by nature |
 
-≈ **205 committed at the full 50-TV + scan target** (50 event sockets live), leaving **~800 FDs** for
-transient inbound request sockets — 50 TVs bursting a home screen of images concurrently fit several
-times over (clients hold 6–8 connections each; 10 s idle timeout + keep-alive reuse). Scan-side opens
-(ffprobe ≤4, HTTP ≤24, NFO/artwork file writes ≤ scan-worker count, all `.use{}`-scoped) add single-digit
-transients. **Conclusion: the architecture was already sized for 50 TVs; the leak was the entire story.**
+≈ **290 committed at the full 50-TV + 100-worker-scan target** (50 event sockets live, both scan gates at
+their new full capacity simultaneously), leaving **~610 FDs** to the 900 shed threshold / **~734** to the
+1024 ceiling for transient inbound request sockets and transient file reads. 50 TVs bursting a home
+screen of images concurrently (clients hold 6–8 connections each) plus 100 scan workers each briefly
+holding a `.use{}`-scoped read (artwork/.src sidecar checks, now microsecond-duration since Phase 134's
+fix) fit comfortably within that headroom under realistic load; only a genuinely pathological
+everything-at-once peak would approach the shed, and even then the outcome is a graceful 503 + retry, not
+a crash. **Conclusion: the architecture is now sized for 50 TVs + 100 real scan workers; the leak was the
+entire story for the *incident*, and §F's gate scale-up is what turns "100 workers" from a config number
+into actual throughput.**
 The 900-shed + 980-drain backstops stay, expected to never fire.
 
 ## Requirements
@@ -99,9 +127,14 @@ The 900-shed + 980-drain backstops stay, expected to never fire.
 
 ### C. Outbound-pool strays
 5. `QBittorrentClient` drops its private `HttpClient(Curl)` for `OutboundHttp.client` (in-flight calls
-   already go through `withPermit` — only the idle pool moves).
-6. `estimateRemuxSeconds`'s `popen` goes through `ProcessGate.withPermit` and `pclose` moves into a
-   `try/finally`.
+   already go through `withPermit` — only the idle pool moves). **Done.**
+6. ~~`estimateRemuxSeconds`'s `popen` goes through `ProcessGate.withPermit`~~ — **investigated, descoped.**
+   Its only callers (`classifyEpisode`, from `classifyEpisodes`'s plain `.map{}`) are synchronous and
+   iterate episodes strictly sequentially — there is no concurrent fan-out to gate against, so this
+   `popen`/`pclose` pair (already correctly paired, no leak) never has more than one instance in flight
+   regardless of gating. Making the whole `classifyEpisodes`/`classifyEpisode`/`estimateRemuxSeconds`
+   chain `suspend` just to route through `ProcessGate` would be a real refactor for a purely cosmetic
+   uniformity concern with no safety benefit — not worth it.
 
 ### D. `/api/tv/events` defensive cap
 7. `TvEventBus.register` becomes `tryRegister` — atomically (inside its existing mutex) refuses a **new**
@@ -115,6 +148,13 @@ The 900-shed + 980-drain backstops stay, expected to never fire.
    and the webhook already carry. (This incident's only surfaced line was the census-less critical line;
    the diagnosis had to come from a live `/proc` inspection that a restart would have destroyed.)
 9. `FdWatchdog`'s budget doc-comment is updated to this phase's table (event-WS cap line, FileIo note).
+
+### F. Scale scan concurrency for real (§Addendum)
+10. `scan_workers`/`scan_threads` config clamp raised 32 → 100, backend (`Main.kt`) and the admin
+    frontend's mirrored `coerceIn`/`max="32"` input constraint (Settings.kt) together — the backend clamp
+    alone is invisible if the input field silently discards anything typed above 32.
+11. `ProcessGate` permits: 4 → 16. `OutboundHttp` in-flight permits: 24 → 64 (doc-comment budget math
+    updated in place).
 
 ## Invariants
 - **No whole-file read/write outside `FileIo`** (or an inline `.use{}` for streaming) — enforced by

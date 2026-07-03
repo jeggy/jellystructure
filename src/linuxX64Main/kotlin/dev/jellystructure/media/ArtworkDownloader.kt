@@ -1,6 +1,7 @@
 package dev.jellystructure.media
 
 import dev.jellystructure.OutboundHttp
+import dev.jellystructure.io.FileIo
 import dev.jellystructure.log.Logger
 import dev.jellystructure.model.Episode
 import dev.jellystructure.model.MediaItem
@@ -11,11 +12,8 @@ import io.ktor.client.statement.readRawBytes
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
-import kotlinx.io.buffered
 import kotlinx.io.files.Path
 import kotlinx.io.files.SystemFileSystem
-import kotlinx.io.readString
-import kotlinx.io.writeString
 import kotlinx.serialization.Serializable
 
 private const val TMDB_ORIGINAL = "https://image.tmdb.org/t/p/original"
@@ -137,10 +135,7 @@ class ArtworkDownloader(private val tmdbClient: TmdbClient, private val screengr
             val bytes = http.get(url).readRawBytes()
             if (bytes.isEmpty()) return@withPermit false
             val tmp = "$destPath.tmp"
-            val sink = SystemFileSystem.sink(Path(tmp)).buffered()
-            sink.write(bytes, 0, bytes.size)
-            sink.flush()
-            sink.close()
+            FileIo.writeBytes(Path(tmp), bytes)   // Phase 134: use{}-scoped — no FD leak on a mid-write throw
             platform.posix.rename(tmp, destPath)
             Logger.info("Downloaded artwork: $destPath", "artwork")
             true
@@ -189,15 +184,14 @@ class ArtworkDownloader(private val tmdbClient: TmdbClient, private val screengr
     }
 
     // R131: provenance sidecar next to each still ("<base>-thumb.jpg.src"), mirroring the image-proxy `.ct`.
+    // Phase 134: this was the incident's leak — called per episode on every scan/rescan pass, and the
+    // old `source(...).buffered().readString()` never closed the fd.
     private fun readStillSrc(destPath: String): String? = runCatching {
-        SystemFileSystem.source(Path("$destPath.src")).buffered().readString().trim()
+        FileIo.readText(Path("$destPath.src")).trim()
     }.getOrNull()?.takeIf { it.isNotBlank() }
 
     private fun writeStillSrc(destPath: String, source: String) {
-        runCatching {
-            val sink = SystemFileSystem.sink(Path("$destPath.src")).buffered()
-            sink.writeString(source); sink.flush(); sink.close()
-        }
+        runCatching { FileIo.writeText(Path("$destPath.src"), source) }
     }
 
     /** Phase 121: stamps `Episode.hasStill` from an on-disk check so triage/Library filtering can stay
@@ -234,13 +228,11 @@ class ArtworkDownloader(private val tmdbClient: TmdbClient, private val screengr
 
     /** Read the TMDB file_path recorded when a clearlogo candidate was picked, or null. */
     fun readAssetSrc(item: MediaItem, asset: String): String? =
-        assetPath(item, asset)?.let { p -> runCatching { SystemFileSystem.source(Path("$p.src")).buffered().readString().trim() }.getOrNull()?.takeIf { it.isNotBlank() } }
+        assetPath(item, asset)?.let { p -> runCatching { FileIo.readText(Path("$p.src")).trim() }.getOrNull()?.takeIf { it.isNotBlank() } }
 
     /** Record the TMDB file_path for the chosen clearlogo. */
     fun writeAssetSrc(item: MediaItem, asset: String, source: String) {
-        assetPath(item, asset)?.let { p ->
-            runCatching { val s = SystemFileSystem.sink(Path("$p.src")).buffered(); s.writeString(source); s.flush(); s.close() }
-        }
+        assetPath(item, asset)?.let { p -> runCatching { FileIo.writeText(Path("$p.src"), source) } }
     }
 
     /** `source` is either a TMDB file_path (leading "/") or a full http(s) URL. */

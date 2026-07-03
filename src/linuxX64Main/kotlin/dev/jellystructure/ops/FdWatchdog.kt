@@ -59,19 +59,38 @@ private fun String.fdJsonEsc(): String =
  * global shed (`isOverShedThreshold`, read by [dev.jellystructure.server.CacheHeaders]'s global
  * intercept) · **980** drain + controlled `_exit(17)`, insurance only — see [drainAndExit].
  *
- * Documented FD budget (kept current here — any new long-lived FD source must add its line):
- *   outbound HTTP in-flight (OutboundHttp.withPermit)        ≤ 24
- *   outbound HTTP shared idle pool (OutboundHttp.client, Phase 129) ≈ 15
- *   per-TV Jellyfin session WS (Phase 110)                    ≤ 16
- *   Jellyfin library listener WS (Phase 114)                  = 1
- *   child processes (ProcessGate)                             ≤ 4
- *   SQLite (WAL + readers)                                     ~ 6
- *   admin/TV app WS                                           ≤ ~20
- *   stdio/misc                                                 ~ 10
+ * Documented FD budget (kept current here — any new long-lived FD source must add its line). Revised
+ * by Phase 134 (FR-OPS2) after a second real incident (851 FDs, user-visible on a TV) was root-caused
+ * live to a systemic file-read leak, NOT a scaling problem: `SystemFileSystem.source(...)` is a raw
+ * `fopen()` with no finalizer, and the pervasive `source(p).buffered().readString()/readByteArray()`
+ * idiom across ~16 call sites never closed it — a permanent per-call leak. Phase 134 introduced
+ * `dev.jellystructure.io.FileIo` (`.use{}`-scoped read/write) as the *only* sanctioned way to read/write
+ * a whole file; every prior leak site now goes through it, so file reads are transient again, not
+ * committed. Phase 134 §F also scaled scan concurrency for real (100 workers need real gate capacity,
+ * not just a higher config ceiling that queues uselessly behind unchanged 4/24 gates):
+ *   outbound HTTP in-flight (OutboundHttp.withPermit)          ≤ 64  (was 24 — Phase 134 §F)
+ *   outbound HTTP shared idle pool (OutboundHttp.client)       ≈ 40  (was ≈15 — also absorbs the
+ *                                                                     Phase 134 QBittorrentClient stray)
+ *   per-TV Jellyfin session WS (Phase 110)                     ≤ 16
+ *   Jellyfin library listener WS (Phase 114)                   = 1
+ *   child processes (ProcessGate)                              ≤ 16  (was 4 — Phase 134 §F; kept far
+ *                                                                     below the 100-worker ceiling since
+ *                                                                     each permit is a real forked
+ *                                                                     process, not just an fd)
+ *   SQLite (WAL + readers)                                      ~ 6
+ *   per-TV `/api/tv/events` WS                                 ≤ 128 (Phase 134 §D — previously
+ *                                                                     UNBOUNDED; this was the one
+ *                                                                     genuine scaling gap the incident
+ *                                                                     wasn't actually caused by)
+ *   admin `/ws`                                                ~ 10
+ *   stdio/misc                                                  ~ 10
  *   -------------------------------------------
- *   committed                                                 ≤ ~96, leaving ~900 fds of headroom
- *   for inbound sockets — bounded in-process by the 900 global shed + 10s idle timeout (CIO Native
- *   exposes no accept-time cap, so that's the ceiling of in-code inbound control), not hard-capped.
+ *   committed                                                  ≤ ~290 at the full 50-TV + 100-worker-
+ *   scan target, leaving ~610 fds of headroom to the 900 shed threshold (~734 to the 1024 ceiling) for
+ *   transient inbound request sockets and transient (`.use{}`-scoped) file reads — bounded in-process by
+ *   the 900 global shed + 10s idle timeout (CIO Native exposes no accept-time cap, so that's the ceiling
+ *   of in-code inbound control), not hard-capped, but no longer the load-bearing assumption it was before
+ *   Phase 134: normal operation shouldn't get anywhere near it.
  */
 class FdWatchdog(
     private val configStore: ConfigStore,
@@ -128,7 +147,10 @@ class FdWatchdog(
                 alertedAt850 = true
                 val census = censusOpenFds()
                 lastCensus = census
-                Logger.error("FD count critical: $count open file descriptors (>850, ceiling is 1024)", "ops")
+                // Phase 134 (FR-OPS2 §E) — the incident that prompted this fix surfaced only this line
+                // (no census), forcing a live /proc inspection to diagnose; carry the same breakdown
+                // the >700 warn line and the webhook already do.
+                Logger.error("FD count critical: $count open file descriptors (>850, ceiling is 1024) census=${census.toJson()}", "ops")
                 fireWebhook(configStore.current, """{"event":"fd_pressure","count":$count,"high_water_mark":$highWaterMark,"census":${census.toJson()}}""")
             }
         } else {

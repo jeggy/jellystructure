@@ -1,6 +1,7 @@
 package dev.jellystructure.ops
 
 import dev.jellystructure.config.ConfigStore
+import dev.jellystructure.io.FileIo
 import dev.jellystructure.log.Logger
 import dev.jellystructure.server.routes.fireWebhook
 import kotlin.concurrent.Volatile
@@ -8,7 +9,6 @@ import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.io.buffered
 import kotlinx.io.files.Path
 import kotlinx.io.files.SystemFileSystem
-import kotlinx.io.readString
 import kotlinx.io.writeString
 import platform.posix.system as posixSystemBlocking
 
@@ -62,7 +62,7 @@ fun fireSynchronousWebhook(url: String, payload: String) {
 suspend fun reportCrashRecoveryIfAny(dataDir: String, configStore: ConfigStore) {
     val path = Path("$dataDir/last-crash.json")
     if (!SystemFileSystem.exists(path)) return
-    val content = runCatching { SystemFileSystem.source(path).buffered().readString() }.getOrNull()
+    val content = runCatching { FileIo.readText(path) }.getOrNull()
     runCatching { SystemFileSystem.delete(path) }
     if (content == null) return
 
@@ -90,7 +90,7 @@ fun writeLastRestartMarker(dataDir: String, count: Int, censusJson: String) {
 suspend fun reportFdRestartRecoveryIfAny(dataDir: String, configStore: ConfigStore) {
     val path = Path("$dataDir/last-restart.json")
     if (!SystemFileSystem.exists(path)) return
-    val content = runCatching { SystemFileSystem.source(path).buffered().readString() }.getOrNull()
+    val content = runCatching { FileIo.readText(path) }.getOrNull()
     runCatching { SystemFileSystem.delete(path) }
     if (content == null) return
 

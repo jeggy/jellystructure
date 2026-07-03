@@ -133,12 +133,12 @@ fun renderSettings(container: Element, scope: CoroutineScope, query: Map<String,
               </details>
               <div class="field">
                 <label>Scan workers</label>
-                <input id="scan-workers" class="input" type="number" min="1" max="32" style="width:90px">
+                <input id="scan-workers" class="input" type="number" min="1" max="100" style="width:90px">
                 <span class="hint">Number of items processed concurrently. Changing this during a scan takes effect immediately.</span>
               </div>
               <div class="field">
                 <label>Scan thread pool size</label>
-                <input id="scan-threads" class="input" type="number" min="1" max="32" style="width:90px">
+                <input id="scan-threads" class="input" type="number" min="1" max="100" style="width:90px">
                 <span class="hint">Thread pool the workers run on. <strong>Requires an application restart.</strong></span>
               </div>
               <div class="field">
@@ -740,11 +740,11 @@ private fun attachListeners(scope: CoroutineScope) {
     }
 
     document.getElementById("scan-workers")?.addEventListener("input") {
-        scanWorkers = (document.getElementById("scan-workers") as? HTMLInputElement)?.value?.toIntOrNull()?.coerceIn(1, 32) ?: 1
+        scanWorkers = (document.getElementById("scan-workers") as? HTMLInputElement)?.value?.toIntOrNull()?.coerceIn(1, 100) ?: 1
         refreshTomlPreview(readForm())
     }
     document.getElementById("scan-threads")?.addEventListener("input") {
-        scanThreads = (document.getElementById("scan-threads") as? HTMLInputElement)?.value?.toIntOrNull()?.coerceIn(1, 32) ?: 4
+        scanThreads = (document.getElementById("scan-threads") as? HTMLInputElement)?.value?.toIntOrNull()?.coerceIn(1, 100) ?: 4
         updateRestartBanner()
         refreshTomlPreview(readForm())
     }

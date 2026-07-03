@@ -123,9 +123,12 @@ fun main() = runBlocking {
     val scanTracker = ScanTracker(db)
     scanTracker.load()
 
-    val effectiveScanThreads = configStore.current.behavior.scanThreads.coerceIn(1, 32)
+    // Phase 134 (FR-OPS2 §F): 32→100 — a worker/thread count doesn't cost FDs by itself (workers queue
+    // behind ProcessGate/OutboundHttp, both raised alongside this), so a powerful host can genuinely
+    // run 100 concurrent scan workers instead of the extra 68 just queuing uselessly behind a 32-ceiling.
+    val effectiveScanThreads = configStore.current.behavior.scanThreads.coerceIn(1, 100)
     val scanDispatcher = Dispatchers.Default.limitedParallelism(effectiveScanThreads)
-    scanTracker.targetWorkers.value = configStore.current.behavior.scanWorkers.coerceIn(1, 32)
+    scanTracker.targetWorkers.value = configStore.current.behavior.scanWorkers.coerceIn(1, 100)
 
     signal(SIGTERM, staticCFunction(::onSignal))
     signal(SIGINT, staticCFunction(::onSignal))

@@ -1,6 +1,7 @@
 package dev.jellystructure.tv
 
 import dev.jellystructure.config.ConfigStore
+import dev.jellystructure.io.FileIo
 import dev.jellystructure.log.Logger
 import dev.jellystructure.OutboundHttp
 import dev.jellystructure.media.ArtworkDownloader
@@ -16,7 +17,6 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.io.buffered
 import kotlinx.io.files.Path
 import kotlinx.io.files.SystemFileSystem
-import kotlinx.io.readByteArray
 
 /**
  * R133: serves Ravilo artwork from jellystructure's OWN on-disk files (poster.jpg / fanart.jpg /
@@ -119,7 +119,7 @@ class RaviloArtworkService(
                 "logo"     -> FfmpegRunner.resizeImage(sourcePath, tmpOut, height = 300)
                 else       -> false
             }
-            val bytes = if (ok) runCatching { SystemFileSystem.source(Path(tmpOut)).buffered().readByteArray() }.getOrNull() else null
+            val bytes = if (ok) runCatching { FileIo.readBytes(Path(tmpOut)) }.getOrNull() else null
             runCatching { SystemFileSystem.delete(Path(tmpOut), false) }
             if (bytes == null || bytes.isEmpty()) {
                 Logger.warn("RaviloArtwork: resize failed $sourcePath ($type)", "tv-image")
@@ -186,11 +186,11 @@ class RaviloArtworkService(
     /** Media cache read with size-staleness check (R133 auto-invalidation). */
     private fun readFresh(cachePath: String, ctPath: String, srcSize: Long): Pair<ByteArray, String>? {
         if (!SystemFileSystem.exists(Path(cachePath))) return null
-        val meta = runCatching { SystemFileSystem.source(Path(ctPath)).buffered().readByteArray().decodeToString() }.getOrNull() ?: return null
+        val meta = runCatching { FileIo.readBytes(Path(ctPath)).decodeToString() }.getOrNull() ?: return null
         val parts = meta.split('|', limit = 2)
         if (parts.getOrNull(0)?.toLongOrNull() != srcSize) return null   // source changed → stale
         val ct = parts.getOrNull(1)?.takeIf { it.isNotBlank() } ?: "image/jpeg"
-        val bytes = runCatching { SystemFileSystem.source(Path(cachePath)).buffered().readByteArray() }.getOrNull() ?: return null
+        val bytes = runCatching { FileIo.readBytes(Path(cachePath)) }.getOrNull() ?: return null
         if (bytes.isEmpty()) return null
         return Pair(bytes, ct)
     }
@@ -198,9 +198,9 @@ class RaviloArtworkService(
     /** Avatar cache read — durable, no staleness check. */
     private fun readSimple(cachePath: String, ctPath: String): Pair<ByteArray, String>? {
         if (!SystemFileSystem.exists(Path(cachePath))) return null
-        val bytes = runCatching { SystemFileSystem.source(Path(cachePath)).buffered().readByteArray() }.getOrNull() ?: return null
+        val bytes = runCatching { FileIo.readBytes(Path(cachePath)) }.getOrNull() ?: return null
         if (bytes.isEmpty()) return null
-        val ct = runCatching { SystemFileSystem.source(Path(ctPath)).buffered().readByteArray().decodeToString() }.getOrDefault("image/jpeg")
+        val ct = runCatching { FileIo.readBytes(Path(ctPath)).decodeToString() }.getOrDefault("image/jpeg")
         return Pair(bytes, ct)
     }
 
