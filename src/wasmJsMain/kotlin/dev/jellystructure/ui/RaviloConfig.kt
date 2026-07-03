@@ -15,7 +15,9 @@ import dev.jellystructure.shared.tv.ChannelRowsConfig
 import dev.jellystructure.shared.tv.ChannelSystemRows
 import dev.jellystructure.shared.tv.ChannelStyle
 import dev.jellystructure.shared.tv.PageHeroConfig
-import dev.jellystructure.shared.tv.ChartListSpec
+import dev.jellystructure.shared.tv.SeerrFeed
+import dev.jellystructure.shared.tv.SeerrFeedKind
+import dev.jellystructure.shared.tv.SeerrDiscoverEndpoint
 import dev.jellystructure.shared.tv.Condition
 import dev.jellystructure.shared.tv.MatchMode
 import dev.jellystructure.shared.tv.HeroConfig
@@ -60,20 +62,37 @@ private var currentConfig: RaviloConfig = RaviloConfig()
 private var rcScope: CoroutineScope? = null
 private var rcContainerRef: Element? = null
 private var popstateWired = false
-private var discoverSpecs: List<ChartListSpec> = emptyList()  // R50 — available charts for the edited region
-private var discoverCoverage: dev.jellystructure.shared.tv.DiscoverCoverageResponse? = null  // R154
-
-private suspend fun loadDiscoverForRegion(region: String) {
-    discoverSpecs = runCatching { RaviloApi.getDiscoverLists(region) }.getOrDefault(discoverSpecs)
-    discoverCoverage = runCatching { RaviloApi.getDiscoverCoverage(region) }.getOrNull()
+// Phase 137 — the Seerr discover-endpoint catalogue the "+ Add row" popover offers, grouped exactly
+// like the mock: Movies / TV / Mixed. `needsParam` gates the inline param prompt (genre/studio/network
+// id, or an ISO-639-1 language code) shown when the operator picks a parameterised entry.
+// `needsParam` lives on the shared SeerrDiscoverEndpoint enum itself (single source of truth with
+// RaviloConfigService.validate() on the backend) — this metadata only adds the UI-facing label/group.
+private data class SeerrEndpointMeta(
+    val endpoint: SeerrDiscoverEndpoint,
+    val kind: SeerrFeedKind,
+    val group: String,
+    val label: String,
+    val paramLabel: String = "",
+)
+private val SEERR_ENDPOINTS = listOf(
+    SeerrEndpointMeta(SeerrDiscoverEndpoint.MOVIES_POPULAR, SeerrFeedKind.MOVIE, "Movies", "Discover (popular)"),
+    SeerrEndpointMeta(SeerrDiscoverEndpoint.MOVIES_GENRE, SeerrFeedKind.MOVIE, "Movies", "By genre", "Genre id"),
+    SeerrEndpointMeta(SeerrDiscoverEndpoint.MOVIES_LANGUAGE, SeerrFeedKind.MOVIE, "Movies", "By original language", "ISO-639-1 code, e.g. da"),
+    SeerrEndpointMeta(SeerrDiscoverEndpoint.MOVIES_STUDIO, SeerrFeedKind.MOVIE, "Movies", "By studio", "Studio id"),
+    SeerrEndpointMeta(SeerrDiscoverEndpoint.MOVIES_UPCOMING, SeerrFeedKind.MOVIE, "Movies", "Upcoming"),
+    SeerrEndpointMeta(SeerrDiscoverEndpoint.TV_POPULAR, SeerrFeedKind.TV, "TV", "Discover (popular)"),
+    SeerrEndpointMeta(SeerrDiscoverEndpoint.TV_GENRE, SeerrFeedKind.TV, "TV", "By genre", "Genre id"),
+    SeerrEndpointMeta(SeerrDiscoverEndpoint.TV_LANGUAGE, SeerrFeedKind.TV, "TV", "By original language", "ISO-639-1 code, e.g. da"),
+    SeerrEndpointMeta(SeerrDiscoverEndpoint.TV_NETWORK, SeerrFeedKind.TV, "TV", "By network", "Network id"),
+    SeerrEndpointMeta(SeerrDiscoverEndpoint.TV_UPCOMING, SeerrFeedKind.TV, "TV", "Upcoming"),
+    SeerrEndpointMeta(SeerrDiscoverEndpoint.TRENDING, SeerrFeedKind.MIXED, "Mixed", "Trending"),
+)
+private fun seerrEndpointMeta(endpoint: SeerrDiscoverEndpoint): SeerrEndpointMeta =
+    SEERR_ENDPOINTS.first { it.endpoint == endpoint }
+private fun seerrKindBadge(kind: SeerrFeedKind): String = when (kind) {
+    SeerrFeedKind.MOVIE -> "MOV"; SeerrFeedKind.TV -> "TV"; SeerrFeedKind.MIXED -> "MIX"
 }
 
-// Provider display names for the Top 10 list UI — id matches the backend ChartProvider id
-private val DISCOVER_PROVIDER_NAMES = mapOf(
-    "netflix" to "Netflix",
-    "viaplay" to "Viaplay", "paramount" to "Paramount+", "skyshowtime" to "SkyShowtime",
-)
-private val DISCOVER_REGIONS = listOf("DK" to "Denmark", "NO" to "Norway", "SE" to "Sweden", "FI" to "Finland", "IS" to "Iceland", "GB" to "United Kingdom", "US" to "United States", "DE" to "Germany", "FR" to "France")
 private var users: List<JellyfinUser> = emptyList()
 private var facets: Map<String, List<String>> = emptyMap() // "NETWORK"/"STUDIO"/"GENRE"/"TAG" -> values
 // Client-side scope config cache: avoids a server round-trip when switching between scopes the user
@@ -121,7 +140,6 @@ fun renderRaviloConfig(container: Element, scope: CoroutineScope) {
         currentUserId = GLOBAL_SCOPE; currentScopeIsGlobal = true; currentHasOverride = false
         val resp = runCatching { RaviloApi.getConfigWithMeta(scope = "global") }.getOrNull()
         currentConfig = resp?.config ?: RaviloConfig()
-        loadDiscoverForRegion(currentConfig.discover.region)
         if (!popstateWired) {
             popstateWired = true
             window.addEventListener("popstate") { _ ->
@@ -246,7 +264,7 @@ private fun buildShell(): String {
           <button data-rav-sect="sect-heroes"   class="rav-nav-item">Hero carousel</button>
           <button data-rav-sect="sect-channels" class="rav-nav-item">Channels</button>
           <button data-rav-sect="sect-rows"     class="rav-nav-item">Content rows</button>
-          <button data-rav-sect="sect-discover" class="rav-nav-item">Top 10</button>
+          <button data-rav-sect="sect-discover" class="rav-nav-item">Request</button>
           <button data-rav-sect="sect-behaviour"class="rav-nav-item">Behaviour</button>
           <button data-rav-sect="sect-portrait" class="rav-nav-item">Portrait screen</button>
         </div>
@@ -288,7 +306,6 @@ private fun reloadScopeIntoSections(container: Element, scope: CoroutineScope) {
         if (resp != null) scopeConfigCache[cacheKey] = resp
         currentConfig = resp?.config ?: RaviloConfig()
         currentHasOverride = resp?.hasOverride ?: false
-        loadDiscoverForRegion(currentConfig.discover.region)
         renderFull(container, scope)
     }
 }
@@ -1934,191 +1951,152 @@ private fun renderRows(container: Element) {
 
 // ── Reorder helpers ─────────────────────────────────────────────────────────────
 
-// ── Top 10 / Discover (R50) ─────────────────────────────────────────────────────
-
-// R154 — which selected list rows can't actually serve data right now, keyed by ChartListSpec id.
-// Missing from the map (coverage not loaded yet) is treated as "unknown", not "broken".
-private fun discoverCoverageByListId(): Map<String, dev.jellystructure.shared.tv.ListCoverage> =
-    discoverCoverage?.providers?.flatMap { it.lists }?.associateBy { it.listId } ?: emptyMap()
-
-// R154 (FR-R154-1/2) — the status banner: errors before warnings, or a single "✓ verified" line when
-// nothing's wrong. Reads the same coverage data the row-level warning chips use, so the two can never
-// disagree with each other or with what the TV actually shows.
-private fun buildDiscoverIssuesHtml(
-    d: dev.jellystructure.shared.tv.DiscoverConfig,
-    countryIngested: Boolean,
-    coverageByListId: Map<String, dev.jellystructure.shared.tv.ListCoverage>,
-): String {
-    if (!d.enabled) return ""
-    val coverage = discoverCoverage
-    val countryLabel = DISCOVER_REGIONS.firstOrNull { it.first == d.region }?.second ?: d.region
-    data class Issue(val level: String, val html: String)
-    val issues = mutableListOf<Issue>()
-
-    if (coverage != null && !coverage.radarrConnected) {
-        issues += Issue("err", """Top 10 needs <b>Radarr</b> connected to fetch requested titles. <span class="fix" data-goto="/settings?tab=downloads">Connect Radarr →</span>""")
-    }
-    if (d.lists.isEmpty()) {
-        issues += Issue("warn", "No lists selected — this user's Top 10 tab will be empty.")
-    } else if (!countryIngested) {
-        issues += Issue("warn", "<b>$countryLabel</b> isn't ingested by <a href=\"#/settings?tab=discover\">Settings → Discover</a> — every country list here will stay empty until it's added.")
-    } else if (coverage != null) {
-        // Per-provider: a provider whose every SELECTED country list is broken for this region.
-        val selectedSpecs = d.lists.mapNotNull { id -> discoverSpecs.firstOrNull { it.id == id } }
-        val byProvider = selectedSpecs.filter { it.scope == "country" }.groupBy { it.providerId }
-        for ((pid, specs) in byProvider) {
-            val allBroken = specs.isNotEmpty() && specs.all { coverageByListId[it.id]?.covered == false }
-            if (allBroken) {
-                val pname = DISCOVER_PROVIDER_NAMES[pid] ?: pid
-                issues += Issue("warn", "<b>$pname</b> has no chart for $countryLabel — those rows are locked.")
-            }
-        }
-        val shown = d.lists.count { id -> coverageByListId[id]?.covered != false }
-        if (shown == 0) issues += Issue("warn", "No lists work for this source × country combination.")
-    }
-
-    if (issues.isEmpty()) {
-        if (d.lists.isEmpty()) return ""
-        val sourceNames = d.lists.mapNotNull { id -> discoverSpecs.firstOrNull { it.id == id }?.providerId }
-            .distinct().mapNotNull { DISCOVER_PROVIDER_NAMES[it] }.joinToString(", ")
-        return """<div class="t10-issue ok"><span class="ic">✓</span><div>Verified — ${sourceNames.htmlEsc()} for ${countryLabel.htmlEsc()} (${d.lists.size} list${if (d.lists.size != 1) "s" else ""} shown).</div></div>"""
-    }
-    return issues.sortedBy { if (it.level == "err") 0 else 1 }.joinToString("") { issue ->
-        """<div class="t10-issue ${issue.level}"><span class="ic">⚠</span><div>${issue.html}</div></div>"""
-    }
-}
+// ── Request / Seerr discover feeds (Phase 137 — replaces R50's chart-list Top 10) ────────────────
 
 private fun renderDiscover(container: Element) {
     val sect = container.querySelector("#sect-discover") ?: return
     val d = currentConfig.discover
     val enabledChecked = if (d.enabled) " checked" else ""
     val canReqChecked = if (d.canRequest) " checked" else ""
-    val coverage = discoverCoverage
-    val countryIngested = coverage == null || d.region in coverage.ingestedRegions
-    val regionOptions = DISCOVER_REGIONS.joinToString("") { (code, label) ->
-        val sel = if (code == d.region) " selected" else ""
-        """<option value="$code"$sel>$label</option>"""
-    }
-    val coverageByListId = discoverCoverageByListId()
-    val selectedRows = d.lists.mapIndexed { i, id ->
-        val spec = discoverSpecs.firstOrNull { it.id == id }
-        val title = spec?.title ?: id
-        val rankOnly = spec?.scope == "country"
-        val providerName = DISCOVER_PROVIDER_NAMES[spec?.providerId ?: ""] ?: spec?.providerId ?: ""
-        val sub = providerName + (spec?.let { " · ${it.scope} · ${it.metric}" } ?: "") + if (rankOnly) " · rank only" else ""
-        // Only flag a row once coverage data has actually loaded — an unresolved id (spec == null,
-        // e.g. mid region-switch) isn't itself a coverage problem.
-        val cov = coverageByListId[id]
-        val broken = coverage != null && cov != null && !cov.covered
-        val warnCls = if (broken) " warn" else ""
-        val reasonText = when (cov?.reason) {
-            "empty_feed" -> "No results this week"
-            "not_ingested" -> "No chart for ${DISCOVER_REGIONS.firstOrNull { it.first == d.region }?.second ?: d.region}"
-            else -> "Unavailable"
+
+    val rows = d.feeds.mapIndexed { i, feed ->
+        val meta = seerrEndpointMeta(feed.endpoint)
+        val sub = buildString {
+            append(meta.group).append(" · ").append(meta.label)
+            if (!feed.param.isNullOrBlank()) append(" · ").append(feed.param)
         }
-        val rowWarn = if (broken) """<span class="rowwarn show">⚠ ${reasonText.htmlEsc()}</span>""" else ""
+        val offCls = if (!feed.visible) " off" else ""
         """
-        <div class="cfg-row$warnCls" draggable="true" data-t10-i="$i" style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+        <div class="cfg-row$offCls" draggable="true" data-req-i="$i" style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
           <span class="drag-handle" style="cursor:grab;user-select:none;flex-shrink:0">⠿</span>
+          <span class="badge" style="flex:none;font-size:.62rem">${seerrKindBadge(feed.kind)}</span>
           <div style="flex:1">
-            <div style="font-size:.9rem">${title.htmlEsc()}</div>
+            <div style="font-size:.9rem">${feed.name.htmlEsc()}</div>
             <div class="tiny muted">${sub.htmlEsc()}</div>
           </div>
-          $rowWarn
-          <button class="btn sm ghost" data-t10-del="$i">✕</button>
+          <span class="muted tiny">show</span>
+          <span class="toggle${if (feed.visible) " on" else ""}" data-req-vistoggle="$i" style="cursor:pointer"></span>
+          <button class="btn sm ghost" data-req-del="$i">✕</button>
         </div>
         """.trimIndent()
     }.joinToString("")
-    val addable = discoverSpecs.filter { it.id !in d.lists }
-    // Group addable specs by provider for a cleaner dropdown
-    val addOptions = addable.groupBy { it.providerId }.entries.joinToString("") { (pid, specs) ->
-        val pname = DISCOVER_PROVIDER_NAMES[pid] ?: pid
-        """<optgroup label="$pname">${specs.joinToString("") { spec ->
-            val cov = coverageByListId[spec.id]
-            val flag = if (coverage != null && cov != null && !cov.covered) " ⚠" else ""
-            """<option value="${spec.id}">${spec.title.htmlEsc()}$flag</option>"""
+
+    val groupedOptions = SEERR_ENDPOINTS.groupBy { it.group }.entries.joinToString("") { (group, metas) ->
+        """<optgroup label="${group.htmlEsc()}">${metas.joinToString("") { m ->
+            """<option value="${m.endpoint.name}">${m.label.htmlEsc()}</option>"""
         }}</optgroup>"""
     }
-    val addSelect = if (addable.isNotEmpty())
-        """<select id="t10-add" class="input" style="margin-top:6px;font-size:.85rem"><option value="">+ Add list…</option>$addOptions</select>"""
-    else if (discoverSpecs.isEmpty())
-        """<p class="tiny muted" style="margin-top:6px">No providers enabled — enable chart sources in <a href="#/settings?tab=discover">Settings → Discover</a>.</p>"""
-    else
-        """<p class="tiny muted" style="margin-top:6px">All available charts for this country are added.</p>"""
-    val countryWarnCls = if (!countryIngested) " warn" else ""
-    val countryHint = if (!countryIngested)
-        """<div class="fhint-warn">Not in <a href="#/settings?tab=discover">Settings → Discover</a>'s ingested countries — these lists will stay empty until it's added there.</div>"""
-    else ""
+
     sect.innerHTML = """
         <div class="card" style="padding:18px 20px;margin-bottom:18px">
           <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
-            <div style="font-weight:600">Top 10</div>
-            <span class="badge info" style="font-size:.6rem">Discover</span>
+            <div style="font-weight:600">Request</div>
+            <span class="badge info" style="font-size:.6rem">Jellyseerr</span>
             <span style="flex:1"></span>
             <label style="display:flex;align-items:center;gap:6px;font-size:.85rem"><input type="checkbox" id="top10-enable"$enabledChecked> show this tab</label>
           </div>
           <p style="font-size:.82rem;color:var(--ink-soft);margin-bottom:12px">
-            Requires the *arr serving the selected lists (movies → Radarr, TV → Sonarr) connected in
-            <a href="#/settings?tab=downloads">Settings → Download tools</a> — otherwise the tab won't appear.
-            Enable chart providers in <a href="#/settings?tab=discover">Settings → Discover</a>.
+            Powered by the Seerr server connected in <a href="#/settings?tab=downloads">Settings → Download tools</a>.
+            Each row below is a Seerr discover feed — browse the catalogue and request what's missing; requests
+            &amp; approvals are handled by Seerr, then the title is organised by Jellystructure.
           </p>
           <div id="top10-body" style="display:grid;gap:12px">
             <label style="display:flex;align-items:center;gap:10px;font-size:.9rem">
               <input type="checkbox" id="top10-canrequest"$canReqChecked>
               Allow this user to request downloads <span class="tiny muted">(admins always can)</span>
             </label>
-            <div class="field$countryWarnCls" style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin:0;">
-              <span style="font-size:.9rem">Country</span>
-              <select id="top10-region" class="input" style="width:200px;font-size:.85rem">$regionOptions</select>
-            </div>
-            $countryHint
             <div>
-              <div style="font-size:.85rem;font-weight:500;margin-bottom:6px">Lists shown to this user</div>
-              <div id="t10-list">$selectedRows</div>
-              $addSelect
+              <div class="row center" style="margin-bottom:6px">
+                <div style="font-size:.85rem;font-weight:500">Rows shown in Request</div>
+                <span class="spacer"></span>
+                <span class="tiny muted">drag to reorder</span>
+              </div>
+              <div id="t10-list">$rows</div>
+              <div style="position:relative;margin-top:8px">
+                <button id="req-add-btn" class="btn sm ghost">＋ Add row</button>
+                <div id="req-addmenu" class="req-addmenu" style="display:none;position:absolute;right:0;top:calc(100% + 6px);z-index:30;width:284px;padding:10px;border-radius:12px;background:var(--fill);border:1px solid var(--line-2);box-shadow:0 18px 50px rgba(0,0,0,.45)">
+                  <select id="req-add-endpoint" class="input" style="width:100%;font-size:.85rem;margin-bottom:8px">
+                    <option value="">Choose a feed…</option>
+                    $groupedOptions
+                  </select>
+                  <div id="req-add-fields" style="display:none">
+                    <div class="field" style="margin-bottom:8px"><label id="req-add-param-label" class="tiny">Value</label><input id="req-add-param" class="input" style="width:100%"></div>
+                    <div class="field" style="margin-bottom:8px"><label class="tiny">Display name</label><input id="req-add-name" class="input" style="width:100%"></div>
+                    <button id="req-add-confirm" class="btn sm" style="width:100%">Add</button>
+                  </div>
+                </div>
+              </div>
+              ${if (d.feeds.isEmpty()) """<p class="tiny muted" style="margin-top:6px">No feeds added — this user's Request tab will be empty.</p>""" else ""}
             </div>
-            <p class="tiny muted">Country charts are <b>ranking only</b> (no view counts); Netflix global &amp; all-time lists carry real viewership hours.</p>
-            <div class="t10-status" id="t10-status">${buildDiscoverIssuesHtml(d, countryIngested, coverageByListId)}</div>
           </div>
         </div>
     """.trimIndent()
-    sect.querySelector("#t10-status")?.querySelectorAll(".fix[data-goto]")?.let { nodes ->
-        for (i in 0 until nodes.length) {
-            val el = nodes.item(i) as? HTMLElement ?: continue
-            el.addEventListener("click") { dev.jellystructure.App.navigate(el.getAttribute("data-goto") ?: return@addEventListener) }
-        }
-    }
-    wireDragReorder(container, sect, "t10", "t10-list",
-        get = { currentConfig.discover.lists },
-        set = { currentConfig = currentConfig.copy(discover = currentConfig.discover.copy(lists = it)) },
+
+    wireDragReorder(container, sect, "req", "t10-list",
+        get = { currentConfig.discover.feeds },
+        set = { currentConfig = currentConfig.copy(discover = currentConfig.discover.copy(feeds = it)) },
         ::renderDiscover)
-    for (i in d.lists.indices) {
-        sect.querySelector("[data-t10-del='$i']")?.addEventListener("click") { _ ->
+    for (i in d.feeds.indices) {
+        sect.querySelector("[data-req-del='$i']")?.addEventListener("click") { _ ->
             structural(container, {
-                val l = currentConfig.discover.lists.toMutableList(); l.removeAt(i)
-                currentConfig = currentConfig.copy(discover = currentConfig.discover.copy(lists = l))
+                val fs = currentConfig.discover.feeds.toMutableList(); fs.removeAt(i)
+                currentConfig = currentConfig.copy(discover = currentConfig.discover.copy(feeds = fs))
+            }, ::renderDiscover)
+        }
+        sect.querySelector("[data-req-vistoggle='$i']")?.addEventListener("click") { _ ->
+            structural(container, {
+                val fs = currentConfig.discover.feeds.toMutableList()
+                fs[i] = fs[i].copy(visible = !fs[i].visible)
+                currentConfig = currentConfig.copy(discover = currentConfig.discover.copy(feeds = fs))
             }, ::renderDiscover)
         }
     }
-    (sect.querySelector("#t10-add") as? HTMLSelectElement)?.let { add ->
-        add.addEventListener("change") { _ ->
-            val v = add.value
-            if (v.isNotBlank()) structural(container, {
-                currentConfig = currentConfig.copy(discover = currentConfig.discover.copy(lists = currentConfig.discover.lists + v))
+
+    val addBtn = sect.querySelector("#req-add-btn") as? HTMLElement
+    val addMenu = sect.querySelector("#req-addmenu") as? HTMLElement
+    addBtn?.addEventListener("click") { _ -> addMenu?.style?.display = if (addMenu.style.display == "none") "block" else "none" }
+    val endpointSel = sect.querySelector("#req-add-endpoint") as? HTMLSelectElement
+    val fieldsEl = sect.querySelector("#req-add-fields") as? HTMLElement
+    val paramLabelEl = sect.querySelector("#req-add-param-label") as? HTMLElement
+    val paramInput = sect.querySelector("#req-add-param") as? HTMLInputElement
+    val nameInput = sect.querySelector("#req-add-name") as? HTMLInputElement
+    fun closeAddMenu() {
+        addMenu?.style?.display = "none"
+        fieldsEl?.style?.display = "none"
+        if (endpointSel != null) endpointSel.value = ""
+    }
+    endpointSel?.addEventListener("change") { _ ->
+        val chosen = runCatching { SeerrDiscoverEndpoint.valueOf(endpointSel.value) }.getOrNull()
+        if (chosen == null) { fieldsEl?.style?.display = "none"; return@addEventListener }
+        val meta = seerrEndpointMeta(chosen)
+        if (!chosen.needsParam) {
+            structural(container, {
+                val fs = currentConfig.discover.feeds + SeerrFeed(
+                    id = genId("feed"), kind = meta.kind, endpoint = chosen, param = null, name = meta.label,
+                )
+                currentConfig = currentConfig.copy(discover = currentConfig.discover.copy(feeds = fs))
             }, ::renderDiscover)
+            closeAddMenu()
+        } else {
+            fieldsEl?.style?.display = "block"
+            paramLabelEl?.textContent = meta.paramLabel
+            if (paramInput != null) paramInput.value = ""
+            if (nameInput != null) nameInput.value = ""
         }
     }
-    (sect.querySelector("#top10-region") as? HTMLSelectElement)?.let { reg ->
-        reg.addEventListener("change") { _ ->
-            collectConfig(container) // capture the new region (+ other edits)
-            val scope = rcScope ?: return@addEventListener
-            scope.launch {
-                loadDiscoverForRegion(currentConfig.discover.region)
-                val valid = discoverSpecs.map { it.id }.toSet()
-                currentConfig = currentConfig.copy(discover = currentConfig.discover.copy(lists = currentConfig.discover.lists.filter { it in valid }))
-                renderDiscover(container); renderPreview(container)
-            }
-        }
+    sect.querySelector("#req-add-confirm")?.addEventListener("click") { _ ->
+        val chosen = runCatching { SeerrDiscoverEndpoint.valueOf(endpointSel?.value ?: "") }.getOrNull() ?: return@addEventListener
+        val meta = seerrEndpointMeta(chosen)
+        val param = paramInput?.value?.trim().orEmpty()
+        if (param.isBlank()) return@addEventListener
+        val name = nameInput?.value?.trim()?.ifBlank { "${meta.label} · $param" } ?: "${meta.label} · $param"
+        structural(container, {
+            val fs = currentConfig.discover.feeds + SeerrFeed(
+                id = genId("feed"), kind = meta.kind, endpoint = chosen, param = param, name = name,
+            )
+            currentConfig = currentConfig.copy(discover = currentConfig.discover.copy(feeds = fs))
+        }, ::renderDiscover)
+        closeAddMenu()
     }
 }
 
@@ -2508,19 +2486,11 @@ private fun collectConfig(container: Element) {
     val portraitEnabled = (container.querySelector("#portrait-enable") as? HTMLInputElement)?.checked ?: (currentConfig.portrait?.heroHeightPct != null)
     val portraitHeroHeight = (container.querySelector("#portrait-hero-height") as? HTMLInputElement)?.value?.toIntOrNull()
     val portrait = if (portraitEnabled) PortraitConfig(heroHeightPct = portraitHeroHeight ?: currentConfig.portrait?.heroHeightPct ?: 30) else null
-    // Discover (R50) — toggles/selects from the DOM; the ordered `lists` are managed structurally.
-    // R154: `sources` is derived from the selected lists' providers (this editor is list-first, not
-    // source-first — see renderDiscover) so it stays accurate for any other consumer without its own UI
-    // control; `source` (singular) is kept in sync too for pre-R154 clients reading the legacy field.
-    val derivedSources = currentConfig.discover.lists
-        .mapNotNull { id -> discoverSpecs.firstOrNull { it.id == id }?.providerId }
-        .distinct()
+    // Request (Phase 137) — toggles from the DOM; the ordered `feeds` (rows + visibility) are managed
+    // structurally by renderDiscover's add/remove/drag-reorder handlers, not read from the DOM here.
     val discover = currentConfig.discover.copy(
         enabled    = (container.querySelector("#top10-enable") as? HTMLInputElement)?.checked ?: currentConfig.discover.enabled,
         canRequest = (container.querySelector("#top10-canrequest") as? HTMLInputElement)?.checked ?: currentConfig.discover.canRequest,
-        source     = derivedSources.firstOrNull() ?: currentConfig.discover.source,
-        sources    = derivedSources.ifEmpty { currentConfig.discover.sources },
-        region     = (container.querySelector("#top10-region") as? HTMLSelectElement)?.value ?: currentConfig.discover.region,
     )
     currentConfig = RaviloConfig(
         heroes = heroes,

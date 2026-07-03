@@ -2,8 +2,6 @@ package dev.jellystructure.api
 
 import dev.jellystructure.shared.tv.ChannelLogo
 import dev.jellystructure.shared.tv.ChannelLogoUpload
-import dev.jellystructure.shared.tv.ChartListSpec
-import dev.jellystructure.shared.tv.DiscoverCoverageResponse
 import dev.jellystructure.shared.tv.RaviloConfig
 import dev.jellystructure.shared.tv.ResolvedBehaviour
 import dev.jellystructure.shared.tv.ViewerSettingsRequest
@@ -76,14 +74,6 @@ object RaviloApi {
         if (!r.status.isSuccess()) throw Exception(r.body<String>())
         return r.body()
     }
-
-    /** R50 — available chart lists for the Top 10 editor (Phase 57). */
-    suspend fun getDiscoverLists(region: String): List<ChartListSpec> =
-        httpClient.get("/api/discover/lists?region=$region").body()
-
-    // R154 — coverage for the config editor's validation banner (which lists actually have ingested data).
-    suspend fun getDiscoverCoverage(region: String): DiscoverCoverageResponse =
-        httpClient.get("/api/discover/coverage?region=$region").body()
 
     suspend fun putConfig(userId: String, config: RaviloConfig) {
         val r = httpClient.put("/api/tv/admin/config?userId=$userId") {

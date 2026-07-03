@@ -142,6 +142,10 @@ class RaviloConfigService(
         val rowIds = config.rows.map { it.id }
         if (rowIds.any { it.isBlank() }) return "Every row must have an id."
         if (rowIds.size != rowIds.toSet().size) return "Row ids must be unique."
+        // Phase 137 — a parameterised Seerr feed (genre/language/studio/network) needs its value; the
+        // endpoint itself is already type-safe (an invalid enum name fails deserialization earlier).
+        val badFeed = config.discover.feeds.firstOrNull { it.endpoint.needsParam && it.param.isNullOrBlank() }
+        if (badFeed != null) return "Request feed '${badFeed.name}' (${badFeed.endpoint}) needs a value."
         return null
     }
 
