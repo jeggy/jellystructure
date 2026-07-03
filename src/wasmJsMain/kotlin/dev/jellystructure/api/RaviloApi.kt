@@ -5,6 +5,8 @@ import dev.jellystructure.shared.tv.ChannelLogoUpload
 import dev.jellystructure.shared.tv.ChartListSpec
 import dev.jellystructure.shared.tv.DiscoverCoverageResponse
 import dev.jellystructure.shared.tv.RaviloConfig
+import dev.jellystructure.shared.tv.ResolvedBehaviour
+import dev.jellystructure.shared.tv.ViewerSettingsRequest
 import io.ktor.client.call.body
 import io.ktor.client.request.delete
 import io.ktor.client.request.get
@@ -54,6 +56,25 @@ object RaviloApi {
     suspend fun removeUserConfig(userId: String) {
         val r = httpClient.delete("/api/tv/admin/config?userId=$userId")
         if (!r.status.isSuccess()) throw Exception(r.body<String>())
+    }
+
+    // R162 — the field-level behaviour & preferences overlay, independent of the layout config above.
+    suspend fun getBehaviour(userId: String): ResolvedBehaviour =
+        httpClient.get("/api/tv/admin/behaviour?userId=$userId").body()
+
+    suspend fun setBehaviour(userId: String, req: ViewerSettingsRequest): ResolvedBehaviour {
+        val r = httpClient.put("/api/tv/admin/behaviour?userId=$userId") {
+            contentType(ContentType.Application.Json)
+            setBody(req)
+        }
+        if (!r.status.isSuccess()) throw Exception(r.body<String>())
+        return r.body()
+    }
+
+    suspend fun resetBehaviourField(userId: String, field: String): ResolvedBehaviour {
+        val r = httpClient.delete("/api/tv/admin/behaviour?userId=$userId&field=$field")
+        if (!r.status.isSuccess()) throw Exception(r.body<String>())
+        return r.body()
     }
 
     /** R50 — available chart lists for the Top 10 editor (Phase 57). */

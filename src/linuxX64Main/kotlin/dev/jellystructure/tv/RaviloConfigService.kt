@@ -1,7 +1,10 @@
 package dev.jellystructure.tv
 
 import dev.jellystructure.db.JellystructureDb
+import dev.jellystructure.shared.tv.BehaviourOverlay
 import dev.jellystructure.shared.tv.RaviloConfig
+import dev.jellystructure.shared.tv.ResolvedBehaviour
+import dev.jellystructure.shared.tv.ResolvedBehaviourField
 import dev.jellystructure.shared.tv.RowConfig
 import dev.jellystructure.shared.tv.RowKind
 import dev.jellystructure.shared.tv.Skin
@@ -42,19 +45,31 @@ class RaviloConfigService(
 ) {
 
     /**
-     * R51: resolve config for a viewer.
-     * - If the user has their own record → use it (full override).
+     * R51/R162: resolve config for a viewer.
+     * - If the user has their own **layout** record → use it (full override) as the base.
      * - Otherwise fall through to the global record (`__global__`).
      * - If neither exists, seed and return the global default.
+     * - R162: the five behaviour & preference fields (skin/tileShape/showContinueProgress/
+     *   autoplayNext/uiLanguage) are then **always** overwritten with the resolved behaviour overlay
+     *   (viewer entry → admin entry → global default) — independent of the layout record above, so
+     *   a stale value left in an old per-user record (or the global record itself) never wins.
      */
     fun getConfig(userId: String): RaviloConfig {
-        if (userId != GLOBAL_USER_ID) {
+        val base = if (userId != GLOBAL_USER_ID) {
             val userStored = db.raviloConfigQueries.getByUser(userId).executeAsOneOrNull()
             if (userStored != null) {
-                return runCatching { json.decodeFromString<RaviloConfig>(userStored) }.getOrDefault(getGlobalConfig())
-            }
-        }
-        return getGlobalConfig()
+                runCatching { json.decodeFromString<RaviloConfig>(userStored) }.getOrDefault(getGlobalConfig())
+            } else getGlobalConfig()
+        } else getGlobalConfig()
+        if (userId == GLOBAL_USER_ID) return base
+        val resolved = resolveBehaviour(userId)
+        return base.copy(
+            viewerSkinOverride = resolved.skin.value.takeIf { resolved.skin.source != "global" },
+            showContinueProgress = resolved.showContinueProgress.value,
+            autoplayNext = resolved.autoplayNext.value,
+            tileShape = resolved.tileShape.value,
+            uiLanguage = resolved.uiLanguage.value,
+        )
     }
 
     fun getGlobalConfig(): RaviloConfig {
@@ -130,22 +145,144 @@ class RaviloConfigService(
         return null
     }
 
+    // ── R162: field-level behaviour & preferences overlay (independent of the layout record above) ──
+
+    fun getBehaviourOverlay(userId: String): BehaviourOverlay {
+        val stored = db.raviloBehaviourQueries.getByUser(userId).executeAsOneOrNull() ?: return BehaviourOverlay()
+        return runCatching { json.decodeFromString<BehaviourOverlay>(stored) }.getOrDefault(BehaviourOverlay())
+    }
+
+    private fun saveBehaviourOverlay(userId: String, overlay: BehaviourOverlay) {
+        db.raviloBehaviourQueries.upsert(user_id = userId, json = json.encodeToString(overlay), updated_at = nowMs())
+        eventBus?.notifyConfigChanged(userId)
+    }
+
+    /** Resolution: viewer-tagged entry → admin-tagged entry → global default. Never touches the
+     *  `ravilo_config` layout table — this is the whole point of the R162 split. */
+    fun resolveBehaviour(userId: String): ResolvedBehaviour {
+        val overlay = getBehaviourOverlay(userId)
+        val global = getGlobalConfig()
+        fun <T> field(value: T?, writer: String?, fallback: T): ResolvedBehaviourField<T> =
+            if (value != null) ResolvedBehaviourField(value, writer ?: "admin") else ResolvedBehaviourField(fallback, "global")
+        return ResolvedBehaviour(
+            uiLanguage = field(overlay.uiLanguage, overlay.uiLanguageWriter, global.uiLanguage),
+            skin = field(overlay.skin, overlay.skinWriter, global.defaultSkin),
+            tileShape = field(overlay.tileShape, overlay.tileShapeWriter, global.tileShape),
+            showContinueProgress = field(overlay.showContinueProgress, overlay.showContinueProgressWriter, global.showContinueProgress),
+            autoplayNext = field(overlay.autoplayNext, overlay.autoplayNextWriter, global.autoplayNext),
+        )
+    }
+
     /**
-     * Apply only the viewer-tweakable fields; layout (heroes/channels/rows) is operator-only.
-     * A viewer's skin choice is stored in [RaviloConfig.viewerSkinOverride], never in defaultSkin,
-     * so a later operator change to the default still surfaces for viewers who never picked one.
+     * R162 (bug fix — was `applyViewerSettings`): apply the viewer-tweakable settings from
+     * `PUT /api/tv/settings`. Writes **only** to the behaviour overlay, tagged `"viewer"` — never
+     * reads or writes the `ravilo_config` layout table, so a global-layout viewer changing a single
+     * setting from the on-TV Settings screen no longer snapshots the whole resolved layout into a
+     * personal record (the R141 §D orphaning trap). Setting a value equal to the current global
+     * default clears back to "follow global" instead of storing a stale override.
      */
-    fun applyViewerSettings(userId: String, skin: Skin?, showContinueProgress: Boolean?, autoplayNext: Boolean?, tileShape: TileShape?) {
-        val current = getConfig(userId)
-        save(
-            userId = userId,
-            config = current.copy(
-                viewerSkinOverride = skin ?: current.viewerSkinOverride,
-                showContinueProgress = showContinueProgress ?: current.showContinueProgress,
-                autoplayNext = autoplayNext ?: current.autoplayNext,
-                tileShape = tileShape ?: current.tileShape,
+    fun applyViewerSettings(userId: String, skin: Skin?, showContinueProgress: Boolean?, autoplayNext: Boolean?, tileShape: TileShape?, uiLanguage: String? = null) {
+        val global = getGlobalConfig()
+        val current = getBehaviourOverlay(userId)
+        fun <T> next(incoming: T?, curValue: T?, curWriter: String?, globalDefault: T): Pair<T?, String?> = when {
+            incoming == null -> curValue to curWriter
+            incoming == globalDefault -> null to null   // follow-global is sticky (FR-R162-3)
+            else -> incoming to "viewer"
+        }
+        val (uiLang, uiLangW) = next(uiLanguage, current.uiLanguage, current.uiLanguageWriter, global.uiLanguage)
+        val (sk, skW) = next(skin, current.skin, current.skinWriter, global.defaultSkin)
+        val (ts, tsW) = next(tileShape, current.tileShape, current.tileShapeWriter, global.tileShape)
+        val (scp, scpW) = next(showContinueProgress, current.showContinueProgress, current.showContinueProgressWriter, global.showContinueProgress)
+        val (apn, apnW) = next(autoplayNext, current.autoplayNext, current.autoplayNextWriter, global.autoplayNext)
+        saveBehaviourOverlay(
+            userId,
+            BehaviourOverlay(
+                uiLanguage = uiLang, uiLanguageWriter = uiLangW,
+                skin = sk, skinWriter = skW,
+                tileShape = ts, tileShapeWriter = tsW,
+                showContinueProgress = scp, showContinueProgressWriter = scpW,
+                autoplayNext = apn, autoplayNextWriter = apnW,
             ),
         )
+    }
+
+    /** Admin config-editor override — same "equal to global ⇒ follow global" stickiness. Refuses to
+     *  overwrite a viewer-tagged entry (the editor's only action on those is [resetBehaviourField]). */
+    private fun <T> setAdminBehaviourOverride(viewerValue: T?, viewerWriter: String?, incoming: T, globalDefault: T): Pair<T?, String?> {
+        if (viewerWriter == "viewer") return viewerValue to viewerWriter
+        return if (incoming == globalDefault) null to null else incoming to "admin"
+    }
+
+    fun setAdminSkin(userId: String, value: Skin) {
+        val cur = getBehaviourOverlay(userId); val global = getGlobalConfig()
+        val (v, w) = setAdminBehaviourOverride(cur.skin, cur.skinWriter, value, global.defaultSkin)
+        saveBehaviourOverlay(userId, cur.copy(skin = v, skinWriter = w))
+    }
+    fun setAdminTileShape(userId: String, value: TileShape) {
+        val cur = getBehaviourOverlay(userId); val global = getGlobalConfig()
+        val (v, w) = setAdminBehaviourOverride(cur.tileShape, cur.tileShapeWriter, value, global.tileShape)
+        saveBehaviourOverlay(userId, cur.copy(tileShape = v, tileShapeWriter = w))
+    }
+    fun setAdminShowContinueProgress(userId: String, value: Boolean) {
+        val cur = getBehaviourOverlay(userId); val global = getGlobalConfig()
+        val (v, w) = setAdminBehaviourOverride(cur.showContinueProgress, cur.showContinueProgressWriter, value, global.showContinueProgress)
+        saveBehaviourOverlay(userId, cur.copy(showContinueProgress = v, showContinueProgressWriter = w))
+    }
+    fun setAdminAutoplayNext(userId: String, value: Boolean) {
+        val cur = getBehaviourOverlay(userId); val global = getGlobalConfig()
+        val (v, w) = setAdminBehaviourOverride(cur.autoplayNext, cur.autoplayNextWriter, value, global.autoplayNext)
+        saveBehaviourOverlay(userId, cur.copy(autoplayNext = v, autoplayNextWriter = w))
+    }
+    fun setAdminUiLanguage(userId: String, value: String) {
+        val cur = getBehaviourOverlay(userId); val global = getGlobalConfig()
+        val (v, w) = setAdminBehaviourOverride(cur.uiLanguage, cur.uiLanguageWriter, value, global.uiLanguage)
+        saveBehaviourOverlay(userId, cur.copy(uiLanguage = v, uiLanguageWriter = w))
+    }
+
+    /** Reset (clears back to "follow global") — works on both admin- and viewer-tagged entries; this
+     *  is the editor's only action on a viewer-set value. */
+    fun resetBehaviourField(userId: String, field: String) {
+        val cur = getBehaviourOverlay(userId)
+        val next = when (field) {
+            "ui_language" -> cur.copy(uiLanguage = null, uiLanguageWriter = null)
+            "skin" -> cur.copy(skin = null, skinWriter = null)
+            "tile_shape" -> cur.copy(tileShape = null, tileShapeWriter = null)
+            "show_continue_progress" -> cur.copy(showContinueProgress = null, showContinueProgressWriter = null)
+            "autoplay_next" -> cur.copy(autoplayNext = null, autoplayNextWriter = null)
+            else -> cur
+        }
+        saveBehaviourOverlay(userId, next)
+    }
+
+    /**
+     * R162 migration (best-effort, idempotent — safe to call repeatedly): lift the legacy per-user
+     * layout record's behaviour fields into the new overlay, then leave the layout record's own
+     * fields untouched (only the 5 behaviour fields become irrelevant there, per [getConfig]'s merge).
+     * `viewerSkinOverride` is viewer-set by construction; the rest are best-guess `admin` entries when
+     * they differ from the global record. No-ops when an overlay already exists for the user (so it
+     * can't clobber a real post-migration change) or the user has no per-user record at all.
+     */
+    fun migrateLegacyBehaviourFields(userId: String) {
+        if (userId == GLOBAL_USER_ID) return
+        if (db.raviloBehaviourQueries.getByUser(userId).executeAsOneOrNull() != null) return
+        val stored = db.raviloConfigQueries.getByUser(userId).executeAsOneOrNull() ?: return
+        val legacy = runCatching { json.decodeFromString<RaviloConfig>(stored) }.getOrNull() ?: return
+        val global = getGlobalConfig()
+        val overlay = BehaviourOverlay(
+            skin = legacy.viewerSkinOverride, skinWriter = if (legacy.viewerSkinOverride != null) "viewer" else null,
+            tileShape = legacy.tileShape.takeIf { it != global.tileShape }, tileShapeWriter = "admin".takeIf { legacy.tileShape != global.tileShape },
+            showContinueProgress = legacy.showContinueProgress.takeIf { it != global.showContinueProgress }, showContinueProgressWriter = "admin".takeIf { legacy.showContinueProgress != global.showContinueProgress },
+            autoplayNext = legacy.autoplayNext.takeIf { it != global.autoplayNext }, autoplayNextWriter = "admin".takeIf { legacy.autoplayNext != global.autoplayNext },
+            uiLanguage = legacy.uiLanguage.takeIf { it != global.uiLanguage }, uiLanguageWriter = "admin".takeIf { legacy.uiLanguage != global.uiLanguage },
+        )
+        if (overlay != BehaviourOverlay()) saveBehaviourOverlay(userId, overlay)
+    }
+
+    /** Run [migrateLegacyBehaviourFields] once at boot for every existing per-user layout record. */
+    fun migrateAllLegacyBehaviourFields() {
+        for (userId in db.raviloConfigQueries.allUserIds().executeAsList()) {
+            runCatching { migrateLegacyBehaviourFields(userId) }
+        }
     }
 }
 

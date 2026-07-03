@@ -552,6 +552,49 @@ fun Route.tvRoutes(
         call.respond(mapOf("status" to "ok"))
     }
 
+    // R162: the field-level behaviour & preferences overlay — independent of /tv/admin/config above
+    // (the R51 layout override). Never gated by "has a custom layout"; editable in both scopes.
+    get("/tv/admin/behaviour") {
+        runCatching { call.attributes[SessionKey] }.getOrNull()
+            ?: run { call.respond(HttpStatusCode.Unauthorized, mapOf("error" to "Not logged in")); return@get }
+        val userId = call.request.queryParameters["userId"]
+            ?: return@get call.respond(HttpStatusCode.BadRequest, mapOf("error" to "userId is required"))
+        call.respond(raviloConfigService.resolveBehaviour(userId))
+    }
+
+    // PUT body: same shape as ViewerSettingsRequest — only the one field being changed is non-null.
+    // Global scope (?scope=global) edits the global defaults directly (via the layout config save path,
+    // unchanged); this route only ever writes a per-user overlay entry, so scope=global is rejected.
+    put("/tv/admin/behaviour") {
+        runCatching { call.attributes[SessionKey] }.getOrNull()
+            ?: run { call.respond(HttpStatusCode.Unauthorized, mapOf("error" to "Not logged in")); return@put }
+        val userId = call.request.queryParameters["userId"]
+            ?: return@put call.respond(HttpStatusCode.BadRequest, mapOf("error" to "userId is required"))
+        if (userId == dev.jellystructure.tv.GLOBAL_USER_ID) {
+            call.respond(HttpStatusCode.BadRequest, mapOf("error" to "Set the global default via /tv/admin/config instead")); return@put
+        }
+        val req = runCatching { call.receive<ViewerSettingsRequest>() }.getOrElse {
+            call.respond(HttpStatusCode.BadRequest, mapOf("error" to "Invalid request: ${it.message}")); return@put
+        }
+        req.skin?.let { raviloConfigService.setAdminSkin(userId, it) }
+        req.tileShape?.let { raviloConfigService.setAdminTileShape(userId, it) }
+        req.showContinueProgress?.let { raviloConfigService.setAdminShowContinueProgress(userId, it) }
+        req.autoplayNext?.let { raviloConfigService.setAdminAutoplayNext(userId, it) }
+        req.uiLanguage?.let { raviloConfigService.setAdminUiLanguage(userId, it) }
+        call.respond(raviloConfigService.resolveBehaviour(userId))
+    }
+
+    delete("/tv/admin/behaviour") {
+        runCatching { call.attributes[SessionKey] }.getOrNull()
+            ?: run { call.respond(HttpStatusCode.Unauthorized, mapOf("error" to "Not logged in")); return@delete }
+        val userId = call.request.queryParameters["userId"]
+            ?: return@delete call.respond(HttpStatusCode.BadRequest, mapOf("error" to "userId is required"))
+        val field = call.request.queryParameters["field"]
+            ?: return@delete call.respond(HttpStatusCode.BadRequest, mapOf("error" to "field is required"))
+        raviloConfigService.resetBehaviourField(userId, field)
+        call.respond(raviloConfigService.resolveBehaviour(userId))
+    }
+
     // ── Channel-logo asset library (R36 §F) ──────────────────────────────────
     // R133: public artwork — serves jellystructure's OWN on-disk poster/backdrop/logo (resized + cached),
     // no Jellyfin call (AuthPlugin OPEN_API_PATHS; Coil can't attach a token, images aren't sensitive).
@@ -620,6 +663,7 @@ fun Route.tvRoutes(
             showContinueProgress = req.showContinueProgress,
             autoplayNext = req.autoplayNext,
             tileShape = req.tileShape,
+            uiLanguage = req.uiLanguage,
         )
         call.respond(mapOf("status" to "ok"))
     }

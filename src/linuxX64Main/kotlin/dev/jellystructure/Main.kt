@@ -136,6 +136,7 @@ fun main() = runBlocking {
     val raviloDeviceService = RaviloDeviceService(db)
     val tvEventBus = dev.jellystructure.tv.TvEventBus(rootScope)
     val raviloConfigService = RaviloConfigService(db, tvEventBus)
+    raviloConfigService.migrateAllLegacyBehaviourFields()  // R162: one-time, idempotent
     val homeFeedService = HomeFeedService(mediaStore, raviloConfigService, jellyfinClient, configStore)
     val browseService = BrowseService(mediaStore, jellyfinClient, configStore)
     val detailService = DetailService(mediaStore, jellyfinClient, configStore)
