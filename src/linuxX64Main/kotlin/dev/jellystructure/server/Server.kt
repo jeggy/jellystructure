@@ -2,6 +2,7 @@ package dev.jellystructure.server
 
 import dev.jellystructure.auth.JellyfinClient
 import dev.jellystructure.auth.SessionService
+import dev.jellystructure.io.FileIo
 import dev.jellystructure.log.Logger
 import dev.jellystructure.media.ActivityLog
 import dev.jellystructure.auth.installAuthPlugin
@@ -89,10 +90,8 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
-import kotlinx.io.buffered
 import kotlinx.io.files.Path
 import kotlinx.io.files.SystemFileSystem
-import kotlinx.io.readByteArray
 import kotlinx.serialization.Serializable
 import platform.posix.exit
 import platform.posix.fgets
@@ -358,7 +357,12 @@ fun startServer(
                     close(CloseReason(CloseReason.Codes.VIOLATED_POLICY, "Invalid or missing device token"))
                     return@webSocket
                 }
-                tvEventBus.register(device.jellyfinUserId, device.deviceId, this)
+                // Phase 134 (FR-OPS2 §D) — defensive hard cap; a reconnect of an already-registered
+                // device always succeeds, only a genuinely new device can be refused.
+                if (!tvEventBus.tryRegister(device.jellyfinUserId, device.deviceId, this)) {
+                    close(CloseReason(CloseReason.Codes.TRY_AGAIN_LATER, "TV event session limit reached"))
+                    return@webSocket
+                }
                 // Phase 110 — while this TV is connected, bridge one outbound session to Jellyfin for
                 // it (dashboard messages, remote control). Best-effort: never let a bridge problem take
                 // down the TV's own event socket.
@@ -448,14 +452,14 @@ private suspend fun io.ktor.server.application.ApplicationCall.serveFrontendFile
 
     val target = Path("$dir/$rel")
     if (SystemFileSystem.exists(target)) {
-        serveStaticBytes(SystemFileSystem.source(target).buffered().readByteArray(), rel)
+        serveStaticBytes(FileIo.readBytes(target), rel)
         return
     }
 
     // SPA fallback — never cache index.html (it bootstraps the WASM app)
     val index = Path("$dir/index.html")
     if (SystemFileSystem.exists(index)) {
-        val bytes = SystemFileSystem.source(index).buffered().readByteArray()
+        val bytes = FileIo.readBytes(index)
         response.cacheControl(CacheControl.NoCache(null))
         respondBytes(bytes, ContentType.Text.Html)
     } else {

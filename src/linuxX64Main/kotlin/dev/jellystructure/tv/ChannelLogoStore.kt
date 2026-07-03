@@ -1,15 +1,14 @@
 package dev.jellystructure.tv
 
+import dev.jellystructure.io.FileIo
 import dev.jellystructure.log.Logger
 import dev.jellystructure.shared.tv.ChannelLogo
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.alloc
 import kotlinx.cinterop.memScoped
 import kotlinx.cinterop.ptr
-import kotlinx.io.buffered
 import kotlinx.io.files.Path
 import kotlinx.io.files.SystemFileSystem
-import kotlinx.io.readByteArray
 import platform.posix.CLOCK_REALTIME
 import platform.posix.clock_gettime
 import platform.posix.rename
@@ -39,10 +38,7 @@ class ChannelLogoStore(dataDir: String) {
             .joinToString("").trim('-').lowercase().take(40).ifEmpty { "logo" }
         val stored = "${nowMs()}-$base.$ext"
         val tmp = "$dir/$stored.tmp"
-        val sink = SystemFileSystem.sink(Path(tmp)).buffered()
-        sink.write(bytes, 0, bytes.size)
-        sink.flush()
-        sink.close()
+        FileIo.writeBytes(Path(tmp), bytes)   // Phase 134: use{}-scoped — no FD leak on a mid-write throw
         @OptIn(ExperimentalForeignApi::class)
         rename(tmp, "$dir/$stored")
         Logger.info("Channel logo uploaded: $stored (${bytes.size} bytes)")
@@ -64,7 +60,7 @@ class ChannelLogoStore(dataDir: String) {
         if (".." in name || "/" in name || "\\" in name) return null
         val p = Path("$dir/$name")
         if (!SystemFileSystem.exists(p)) return null
-        return SystemFileSystem.source(p).buffered().readByteArray()
+        return FileIo.readBytes(p)
     }
 
     fun contentType(name: String): String = when (name.substringAfterLast('.', "").lowercase()) {

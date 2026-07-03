@@ -1,5 +1,6 @@
 package dev.jellystructure.media
 
+import dev.jellystructure.io.FileIo
 import dev.jellystructure.jobs.JobEvent
 import dev.jellystructure.jobs.WsBroadcaster
 import kotlinx.cinterop.ExperimentalForeignApi
@@ -7,11 +8,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import kotlinx.io.buffered
 import kotlinx.io.files.Path
 import kotlinx.io.files.SystemFileSystem
-import kotlinx.io.readString
-import kotlinx.io.writeString
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
@@ -60,14 +58,14 @@ class ActivityLog(
     fun load() {
         val path = Path(filePath)
         if (SystemFileSystem.exists(path)) runCatching {
-            val content = SystemFileSystem.source(path).buffered().readString()
+            val content = FileIo.readText(path)
             val loaded = json.decodeFromString(ListSerializer(ActivityEntry.serializer()), content)
             entries.addAll(loaded)
             nextId = (loaded.maxOfOrNull { it.id } ?: 0) + 1
         }
         val rp = Path(runsFile)
         if (SystemFileSystem.exists(rp)) runCatching {
-            val content = SystemFileSystem.source(rp).buffered().readString()
+            val content = FileIo.readText(rp)
             runs.addAll(json.decodeFromString(ListSerializer(RunRecord.serializer()), content))
         }
     }
@@ -132,10 +130,7 @@ class ActivityLog(
         val tmp = "$filePath.tmp"
         runCatching {
             val content = json.encodeToString(ListSerializer(ActivityEntry.serializer()), snapshot)
-            val sink = SystemFileSystem.sink(Path(tmp)).buffered()
-            sink.writeString(content)
-            sink.flush()
-            sink.close()
+            FileIo.writeText(Path(tmp), content)   // Phase 134: use{}-scoped
             @OptIn(ExperimentalForeignApi::class)
             platform.posix.rename(tmp, filePath)
         }
@@ -146,10 +141,7 @@ class ActivityLog(
         val tmp = "$runsFile.tmp"
         runCatching {
             val content = json.encodeToString(ListSerializer(RunRecord.serializer()), snapshot)
-            val sink = SystemFileSystem.sink(Path(tmp)).buffered()
-            sink.writeString(content)
-            sink.flush()
-            sink.close()
+            FileIo.writeText(Path(tmp), content)   // Phase 134: use{}-scoped
             @OptIn(ExperimentalForeignApi::class)
             platform.posix.rename(tmp, runsFile)
         }
