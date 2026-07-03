@@ -181,6 +181,59 @@ private fun tsRow(label: String, epochSec: Long?, first: Boolean = false, helpTi
     return """<div class="ts-row${if (first) " first" else ""}"><span class="ts-k">${label.esc()}$help</span><span class="ts-v">$v</span></div>"""
 }
 
+/** Phase 131: abbreviate a vote count for the compact pagebar pill (28,431 → "28K"); the full count
+ *  is still shown in the tooltip and the Overview card. */
+private fun abbrevVotes(n: Long): String = when {
+    n >= 1_000_000 -> "${(n / 100_000) / 10.0}M".replace(".0M", "M")
+    n >= 1_000     -> "${n / 1000}K"
+    else           -> n.toString()
+}
+
+/** Phase 131: pagebar `.imdb-pill` — compact IMDb ★ rating · votes, linking to imdb.com. Hidden
+ *  entirely when the item has no rating yet (no imdbId, or not synced). */
+private fun buildImdbPillHtml(item: MediaItem): String {
+    val imdbId = item.imdbId?.takeIf { it.isNotBlank() } ?: return ""
+    val rating = item.imdbRating ?: return ""
+    val ratingStr = (kotlin.math.round(rating.aggregateRating * 10) / 10).let { if (it == it.toLong().toDouble()) "${it.toLong()}.0" else it.toString() }
+    val syncedAgo = dev.jellystructure.formatRelativeAgo(rating.syncedAt.toString())
+    return """<a class="imdb-pill" href="https://www.imdb.com/title/$imdbId/" target="_blank" rel="noopener" title="IMDb $ratingStr/10 · ${rating.voteCount} votes · synced $syncedAgo"><span class="imdb-wm"><span class="imdb-star">★</span>IMDb</span><b>$ratingStr</b><span class="imdb-votes">${abbrevVotes(rating.voteCount)}</span></a>"""
+}
+
+/** Phase 131: Overview "IMDb rating" card — score, votes, id link, synced-ago, Re-sync. Empty state
+ *  (no card) when the item has no imdbId yet. */
+private fun buildImdbCard(item: MediaItem): String {
+    val imdbId = item.imdbId?.takeIf { it.isNotBlank() } ?: return ""
+    val rating = item.imdbRating
+    if (rating == null) {
+        return """
+        <div class="card" id="imdb-card" style="margin-top:16px;">
+          <div class="row center"><h4 style="margin:0;">IMDb rating</h4></div>
+          <hr class="dash" style="margin:10px 0 14px;">
+          <div class="tiny muted">Not synced yet.</div>
+          <div class="pill-row" style="margin-top:11px;">
+            <span class="btn sm ghost" id="imdb-resync">Re-sync from imdbapi.dev</span>
+          </div>
+        </div>"""
+    }
+    val ratingStr = (kotlin.math.round(rating.aggregateRating * 10) / 10).let { if (it == it.toLong().toDouble()) "${it.toLong()}.0" else it.toString() }
+    val syncedAgo = dev.jellystructure.formatRelativeAgo(rating.syncedAt.toString())
+    return """
+    <div class="card" id="imdb-card" style="margin-top:16px;">
+      <div class="row center"><h4 style="margin:0;">IMDb rating</h4><span class="spacer"></span><span class="badge info">synced</span></div>
+      <div class="imdb-big" style="margin-top:10px;">
+        <span class="imdb-wm"><span class="imdb-star">★</span>IMDb</span>
+        <span class="imdb-score"><span>$ratingStr</span><span class="imdb-max">/10</span></span>
+      </div>
+      <div class="tiny muted" style="margin-top:5px;">${rating.voteCount} votes</div>
+      <hr class="dash" style="margin:10px 0;">
+      <div class="row center tiny" style="justify-content:space-between;gap:7px;">
+        <span><span class="muted">id</span> <a href="https://www.imdb.com/title/$imdbId/" target="_blank" rel="noopener" class="mono">$imdbId</a></span>
+        <span class="muted">synced $syncedAgo</span>
+      </div>
+      <div class="pill-row" style="margin-top:10px;"><span class="btn sm fill" id="imdb-resync" style="justify-content:center;">Re-sync from imdbapi.dev</span></div>
+    </div>"""
+}
+
 /** Phase 130: "Trailer" card on the Overview tab — the one official trailer ingested from TMDB's
  *  `videos` section (YouTube/Vimeo). Mirrors design's `#trailer-card`. Empty state when the item has
  *  no trailer (nothing usable on TMDB, or never re-fetched since scan). */
@@ -560,6 +613,7 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
             $overviewMainHtml
           </div>
           ${buildTrailerCard(item)}
+          ${buildImdbCard(item)}
           ${buildTimestampsCard(item)}"""
 
     // The tab bar + all tab panels.
@@ -632,6 +686,7 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
           ${if (item.tmdbId != null) """<span class="badge ok" id="match-badge">TMDB matched</span>""" else """<span class="badge warn" id="match-badge">No TMDB match</span>"""}
           <span class="audio-flags" id="audio-flags">${audioFlagsHtml(item.tracks)}</span>
           $ageRatingBadgeHtml
+          ${buildImdbPillHtml(item)}
           <span id="seeding-pill" style="display:none;cursor:pointer;" title="Click to open Seeding tab"></span>
           <span class="spacer"></span>
           ${run {
@@ -752,6 +807,9 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
     }
     document.getElementById("trailer-clear")?.addEventListener("click") {
         scope.launch { MediaApi.clearTrailer(item.id); renderMediaDetail(container, scope, item.id) }
+    }
+    document.getElementById("imdb-resync")?.addEventListener("click") {
+        scope.launch { MediaApi.syncImdbRating(item.id); renderMediaDetail(container, scope, item.id) }
     }
 
     document.getElementById("lang-override-btn")?.addEventListener("click") {
