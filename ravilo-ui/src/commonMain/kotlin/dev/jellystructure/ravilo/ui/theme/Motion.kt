@@ -51,8 +51,6 @@ object RaviloMotion {
     // drift never visibly stalls before the slide changes.
     const val HERO_KEN_BURNS_SCALE = 1.05f
     const val HERO_KEN_BURNS_TRAVEL_MS = 9_000
-    // R91 parallax: hero drifts at this fraction of content scroll speed as it leaves the viewport.
-    const val HERO_PARALLAX_FACTOR = 0.5f
 
     // ── Screen transitions (R92) ────────────────────────────────────────────────
     // Short directional slide + fade. Push slides in from the trailing edge; pop mirrors it.
