@@ -330,22 +330,6 @@ class JellyfinClient {
         result.getOrNull()
     }
 
-    suspend fun getSeriesEpisodes(
-        baseUrl: String,
-        userToken: String,
-        userId: String,
-        seriesId: String,
-    ): List<JellyfinEpisodeItem> = runCatching {
-        val url = baseUrl.trimEnd('/') +
-            "/Shows/$seriesId/Episodes?UserId=$userId" +
-            "&Fields=UserData,RunTimeTicks,SeasonName"
-        httpGet(url) { jellyfinAuth(userToken) }
-            .bodyOrNull<JellyfinEpisodesResponse>("getSeriesEpisodes")?.items.orEmpty()
-    }.let { result ->
-        if (result.isFailure) Logger.warn("Jellyfin getSeriesEpisodes failed: ${result.exceptionOrNull()?.message}")
-        result.getOrDefault(emptyList())
-    }
-
     /**
      * R82: Fetch per-episode static metadata (id, runtime, season name) without a user context —
      * uses the admin token so this can be called at scan time without a paired user session.

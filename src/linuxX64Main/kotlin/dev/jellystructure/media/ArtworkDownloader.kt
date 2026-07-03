@@ -208,6 +208,14 @@ class ArtworkDownloader(private val tmdbClient: TmdbClient, private val screengr
         }
     }
 
+    /** Phase 121: stamps `Episode.hasStill` from an on-disk check so triage/Library filtering can stay
+     *  O(1) in-memory instead of statting the filesystem per request. Call wherever a scan/rescan/sync
+     *  (re)builds a TV show's episode list, right before the result is persisted. No-op for movies. */
+    fun stampHasStill(item: MediaItem): MediaItem {
+        if (item.kind != MediaKind.TV_SHOW || item.episodes.isEmpty()) return item
+        return item.copy(episodes = item.episodes.map { ep -> ep.copy(hasStill = checkEpisodeStill(ep).stillExists) })
+    }
+
     fun episodeStillPath(episode: Episode): String {  // R133: public so RaviloArtworkService can resolve stills
         val dir = episode.path.substringBeforeLast('/')
         val baseName = episode.filename.substringBeforeLast('.')

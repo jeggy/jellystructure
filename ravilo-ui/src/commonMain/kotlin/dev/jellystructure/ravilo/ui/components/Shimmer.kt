@@ -14,7 +14,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
@@ -85,27 +84,10 @@ fun TileShimmer(modifier: Modifier = Modifier) {
     }
 }
 
-/** Skeleton for a landscape tile (360×202). */
-@Composable
-fun LandscapeShimmer(modifier: Modifier = Modifier) {
-    val brush = rememberShimmerBrush()
-    val colors = RaviloTheme.colors
-    Column(modifier = modifier.width(360.dp)) {
-        ShimmerBox(
-            modifier = Modifier.width(360.dp).height(202.dp),
-            brush = brush,
-            radius = colors.tileRadius.value,
-        )
-        Spacer(Modifier.height(8.dp))
-        ShimmerBox(modifier = Modifier.width(240.dp).height(18.dp), brush = brush)
-    }
-}
-
 /** Full-screen loading shell shown while HomeState.Loading is active. */
 @Composable
 fun HomeLoadingShell() {
     val brush = rememberShimmerBrush()
-    val colors = RaviloTheme.colors
 
     Column(modifier = Modifier.fillMaxWidth()) {
         // Hero skeleton
@@ -137,7 +119,6 @@ fun HomeLoadingShell() {
 @Composable
 fun DetailLoadingShell() {
     val brush = rememberShimmerBrush()
-    val colors = RaviloTheme.colors
 
     Column(modifier = Modifier.fillMaxWidth()) {
         // Hero skeleton

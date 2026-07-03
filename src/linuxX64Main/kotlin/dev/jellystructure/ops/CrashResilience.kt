@@ -31,7 +31,7 @@ fun setCrashWebhookUrl(url: String) {
 
 @OptIn(kotlin.experimental.ExperimentalNativeApi::class, ExperimentalForeignApi::class)
 fun installCrashHook(dataDir: String) {
-    kotlin.native.setUnhandledExceptionHook { throwable ->
+    setUnhandledExceptionHook { throwable ->
         runCatching {
             val message = throwable.message ?: throwable.toString()
             val frames = throwable.stackTraceToString().lineSequence().take(8).joinToString("\n")

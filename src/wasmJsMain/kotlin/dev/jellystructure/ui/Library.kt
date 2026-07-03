@@ -1,4 +1,4 @@
-@file:OptIn(kotlin.js.ExperimentalWasmJsInterop::class)
+@file:OptIn(ExperimentalWasmJsInterop::class)
 
 package dev.jellystructure.ui
 
@@ -50,7 +50,8 @@ private val ISSUE_FILTER_LABELS = mapOf(
     "multi_default" to "Multiple default audio",
     "language_mix" to "Mixed-language series",
     "missing_from_source" to "No longer in Jellyfin",
-    "missing_overview" to "Missing overview",
+    "missing_still" to "Missing episode image",
+    "duplicate" to "Duplicate entries",
 )
 private var libSearch: String? = null
 private var libSort: String? = null
@@ -103,7 +104,7 @@ private fun parseLibraryUrl() {
 }
 
 private fun updateLibraryUrl() {
-    val params = buildList<String> {
+    val params = buildList {
         libKind?.let { add("kind=${it.name}") }
         libFilter?.let { add("filter=$it") }
         libSearch?.let { add("search=${dev.jellystructure.encodeURIComponent(it)}") }
@@ -291,7 +292,7 @@ private fun updateActiveChips(scope: CoroutineScope? = null) {
     val container = document.getElementById("active-chips") as? HTMLElement ?: return
     container.innerHTML = ""
 
-    val active = buildList<Triple<String, String, String>> {
+    val active = buildList {
         libStudios.forEach  { add(Triple("studio:$it",  "Studio",  it)) }
         libNetworks.forEach { add(Triple("network:$it", "Network", it)) }
         libGenres.forEach   { add(Triple("genre:$it",   "Genre",   it)) }
@@ -339,7 +340,7 @@ private fun updateActiveChips(scope: CoroutineScope? = null) {
                 key.startsWith("issue:") -> libFilter = null
             }
             updateActiveChips(scope)
-            if (scope != null) scope.launch { loadMore(scope, reset = true) }
+            scope?.launch { loadMore(scope, reset = true) }
         }
         container.appendChild(chip)
     }
@@ -382,8 +383,7 @@ private fun connectScanSocket(scope: CoroutineScope) {
     ws.onmessage = { ev ->
         val text = ev.data.toString()
         runCatching {
-            val event = scanJson.decodeFromString<JobEvent>(text)
-            when (event) {
+            when (val event = scanJson.decodeFromString<JobEvent>(text)) {
                 is JobEvent.ItemScanned -> {
                     libScannedCount++
                     if (isQueryActive()) {
@@ -517,7 +517,7 @@ private suspend fun loadMore(scope: CoroutineScope, reset: Boolean) {
                 libTags,
                 match = libMatch,
                 conditions = libConds.filter { it.values.isNotEmpty() || it.facet == "track_title" || (it.facet == "content_row" && it.rows.isNotEmpty()) }
-                    .map { dev.jellystructure.shared.tv.Condition(it.facet, it.op, it.values.toList(), it.rows.toList()) },
+                    .map { Condition(it.facet, it.op, it.values.toList(), it.rows.toList()) },
                 tracker = libTracker,
             )
             if (page == null) {
@@ -529,7 +529,7 @@ private suspend fun loadMore(scope: CoroutineScope, reset: Boolean) {
 
             libTotal = page.total
             // Phase 117: on a dashboard-breakdown deep link, show "N titles · M issues" — the instance
-            // count (episode/track-level for untagged/missing_overview) alongside the title count, so
+            // count (episode/track-level for untagged/missing_still) alongside the title count, so
             // "200 issues" and "3 titles" are both legible instead of looking contradictory.
             val issueType = libFilter?.let { ISSUE_FILTER_LABELS[it] }?.let { libFilter }
             val instanceSuffix = if (issueType != null) {

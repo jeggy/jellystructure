@@ -6,7 +6,6 @@ import io.ktor.client.request.*
 import io.ktor.client.statement.*
 import io.ktor.http.*
 import io.ktor.websocket.*
-import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
 // R146: ids per /api/tv/playstate request. 100 × ~33 chars ≈ 3.3 KB — well under the Ktor CIO
@@ -49,37 +48,6 @@ class TvApiClient(
         return json.decodeFromString<PairResult>(r.bodyAsText())
     }
 
-    suspend fun approvePairing(code: String) {
-        client.post("$baseUrl/api/tv/pair/approve") {
-            jsonBody("""{"code":${code.jsonStr()}}""")
-        }.assertSuccess()
-    }
-
-    /** R18: poll with optional device_id so a second pairing reuses the existing device slot. */
-    suspend fun pollPairingWithDevice(pollToken: String, deviceId: String?): PairResult? {
-        val body = if (deviceId != null)
-            """{"poll_token":${pollToken.jsonStr()},"device_id":${deviceId.jsonStr()}}"""
-        else
-            """{"poll_token":${pollToken.jsonStr()}}"""
-        val r = client.post("$baseUrl/api/tv/pair/poll") { jsonBody(body) }
-        if (r.status == io.ktor.http.HttpStatusCode.Accepted) return null
-        r.assertSuccess()
-        return json.decodeFromString<PairResult>(r.bodyAsText())
-    }
-
-    /** R18: list all signed-in users on this device. */
-    suspend fun getSessions(): List<TvSession> {
-        val r = client.get("$baseUrl/api/tv/sessions") { auth() }
-        r.assertSuccess()
-        return json.decodeFromString<List<TvSession>>(r.bodyAsText())
-    }
-
-    /** R18: remove one user's session from this device. */
-    suspend fun removeSession(userId: String) {
-        val r = client.delete("$baseUrl/api/tv/sessions/$userId") { auth() }
-        r.assertSuccess()
-    }
-
     // ─── Feed ────────────────────────────────────────────────────────────────
 
     suspend fun getHome(): HomeFeed {
@@ -92,12 +60,6 @@ class TvApiClient(
         val r = client.get("$baseUrl/api/tv/channel/$id") { auth() }
         r.assertSuccess()
         return json.decodeFromString<HomeFeed>(r.bodyAsText())
-    }
-
-    suspend fun getContinue(): List<MediaCard> {
-        val r = client.get("$baseUrl/api/tv/continue") { auth() }
-        r.assertSuccess()
-        return json.decodeFromString<List<MediaCard>>(r.bodyAsText())
     }
 
     // ─── Browse + search ─────────────────────────────────────────────────────

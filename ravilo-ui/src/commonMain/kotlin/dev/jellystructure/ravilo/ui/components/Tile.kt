@@ -37,7 +37,6 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.jellystructure.ravilo.ui.focus.dpadFocusable
-import dev.jellystructure.ravilo.ui.i18n.str
 import dev.jellystructure.ravilo.ui.seams.RemoteImage
 import dev.jellystructure.ravilo.ui.theme.RaviloMotion
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
@@ -96,7 +95,7 @@ fun Tile(
     // Snappier focus feel (R43): StiffnessMedium settles fast; soft StiffnessMediumLow read laggy.
     val focusSpec = remember { RaviloMotion.focusSpring<Float>() }
     val dpSpec    = remember { RaviloMotion.focusSpring<Dp>() }
-    val scale         by animateFloatAsState(if (focused) RaviloMotion.TileFocusScale else 1f, focusSpec, label = "tileScale")
+    val scale         by animateFloatAsState(if (focused) RaviloMotion.TILE_FOCUS_SCALE else 1f, focusSpec, label = "tileScale")
     val ringWidth     by animateDpAsState(if (focused) 3.dp else 0.dp, dpSpec, label = "tileBorder")
     val glowElevation by animateDpAsState(if (focused) 24.dp else 0.dp, dpSpec, label = "tileShadow")
     val tileShape = remember(colors.tileRadius) { RoundedCornerShape(colors.tileRadius) }

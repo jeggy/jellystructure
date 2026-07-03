@@ -80,10 +80,9 @@ fun <T> StaticContentRow(
     val bringIntoViewSpec = remember(insetPx) {
         object : BringIntoViewSpec {
             override fun calculateScrollDistance(offset: Float, size: Float, containerSize: Float): Float {
-                val leading = offset
                 val trailing = offset + size
                 return when {
-                    leading < 0f -> leading - insetPx                     // clipped at start → reveal at the left inset
+                    offset < 0f -> offset - insetPx                       // clipped at start → reveal at the left inset
                     trailing > containerSize -> trailing - containerSize  // clipped at end → reveal
                     else -> 0f                                            // fully visible → don't move
                 }

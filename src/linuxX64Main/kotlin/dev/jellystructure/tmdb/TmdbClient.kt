@@ -334,8 +334,7 @@ class TmdbClient(
     }
 
     suspend fun getMovieDetails(tmdbId: Int, language: String? = null): TmdbMovieDetails? {
-        val cacheKey = tmdbId
-        if (language == null) detailsCache[cacheKey]?.let { return it }
+        if (language == null) detailsCache[tmdbId]?.let { return it }
         val key = apiKey()
         if (key.isBlank()) return null
         val result = runCatching {
@@ -348,7 +347,7 @@ class TmdbClient(
                 return getMovieDetails(tmdbId, language)
             }
             val details = response.body<TmdbMovieDetails>()
-            if (language == null) detailsCache[cacheKey] = details
+            if (language == null) detailsCache[tmdbId] = details
             details
         }
         if (result.isFailure) Logger.warn("TMDB details failed for id=$tmdbId lang=$language: ${result.exceptionOrNull()?.message}")
@@ -466,16 +465,6 @@ class TmdbClient(
             if (r.status != HttpStatusCode.OK) return TmdbCreditsResponse()
             r.body<TmdbCreditsResponse>()
         }.getOrElse { Logger.warn("TMDB movie full credits failed tmdbId=$tmdbId: ${it.message}"); TmdbCreditsResponse() }
-    }
-
-    /** Phase 75 — full cast + crew for a TV series. */
-    suspend fun getTvFullCredits(tmdbId: Int): TmdbCreditsResponse {
-        val key = apiKey(); if (key.isBlank()) return TmdbCreditsResponse()
-        return runCatching {
-            val r = httpGet("$baseUrl/tv/$tmdbId/credits") { parameter("api_key", key) }
-            if (r.status != HttpStatusCode.OK) return TmdbCreditsResponse()
-            r.body<TmdbCreditsResponse>()
-        }.getOrElse { Logger.warn("TMDB tv full credits failed tmdbId=$tmdbId: ${it.message}"); TmdbCreditsResponse() }
     }
 
     /** Phase 76 — aggregate_credits for a TV series (includes total_episode_count per cast member). */
@@ -810,7 +799,7 @@ class TmdbClient(
 
     // Preference order for a movie's release `type` when several entries carry a certification for
     // the same country: theatrical (3) first, then digital/physical/limited-theatrical, TV, premiere.
-    private val RELEASE_TYPE_PREFERENCE = listOf(3, 4, 5, 2, 6, 1)
+    private val releaseTypePreference = listOf(3, 4, 5, 2, 6, 1)
 
     /** Phase 106: per-country certification map for a movie (uppercase ISO-3166-1 → code), picking the
      *  best release-type entry per country. Best-effort — empty map on any failure/missing key. */
@@ -827,7 +816,7 @@ class TmdbClient(
             val map = LinkedHashMap<String, String>()
             for (c in response.body<TmdbReleaseDatesResponse>().results) {
                 val byType = c.releaseDates.groupBy { it.type }
-                val code = RELEASE_TYPE_PREFERENCE.firstNotNullOfOrNull { t ->
+                val code = releaseTypePreference.firstNotNullOfOrNull { t ->
                     byType[t]?.firstOrNull { it.certification.isNotBlank() }?.certification
                 } ?: c.releaseDates.firstOrNull { it.certification.isNotBlank() }?.certification
                 if (!code.isNullOrBlank()) map[c.country.uppercase()] = code

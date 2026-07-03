@@ -3,7 +3,6 @@ package dev.jellystructure.ui
 import dev.jellystructure.api.BatchCountRequest
 import dev.jellystructure.api.JellyfinUser
 import dev.jellystructure.api.AdminConfigResponse
-import dev.jellystructure.api.MetadataApi
 import dev.jellystructure.api.RaviloApi
 import dev.jellystructure.Router
 import dev.jellystructure.historyPushState
@@ -14,8 +13,6 @@ import dev.jellystructure.shared.tv.ChannelButtonSpec
 import dev.jellystructure.shared.tv.ChannelConfig
 import dev.jellystructure.shared.tv.ChannelRowsConfig
 import dev.jellystructure.shared.tv.ChannelSystemRows
-import dev.jellystructure.shared.tv.SystemContinue
-import dev.jellystructure.shared.tv.SystemNewly
 import dev.jellystructure.shared.tv.ChannelStyle
 import dev.jellystructure.shared.tv.PageHeroConfig
 import dev.jellystructure.shared.tv.ChartListSpec
@@ -82,7 +79,6 @@ private var facets: Map<String, List<String>> = emptyMap() // "NETWORK"/"STUDIO"
 // has already visited. Invalidated immediately before each successful Save.
 private val scopeConfigCache = HashMap<String, AdminConfigResponse>()
 
-private val CHANNEL_KINDS = listOf("NETWORK", "STUDIO", "GENRE", "TAG")
 private val AUTO_ADVANCE_OPTIONS = listOf(0 to "Off", 4 to "4 s", 6 to "6 s", 7 to "7 s", 8 to "8 s", 10 to "10 s")
 private val BRAND_COLOR_PRESETS = listOf(
     "HBO"         to "linear-gradient(135deg,#3b2a78,#15102e)",
@@ -453,11 +449,6 @@ private fun structural(container: Element, mutate: () -> Unit, rerender: (Elemen
     renderPreview(container)
 }
 
-private fun <T> List<T>.swapped(i: Int, j: Int): List<T> {
-    if (i !in indices || j !in indices) return this
-    val m = toMutableList(); val t = m[i]; m[i] = m[j]; m[j] = t; return m
-}
-
 // ── Pair a TV (modal, opened from sticky pagebar button) ──────────────────────
 
 private fun renderPair(container: Element, scope: CoroutineScope) {
@@ -601,7 +592,6 @@ private fun resolveHeroDisplayHints(container: Element) {
 
 private fun renderHeroes(container: Element) {
     val sect = container.querySelector("#sect-heroes") ?: return
-    val last = currentConfig.heroes.lastIndex
     val rows = currentConfig.heroes.mapIndexed { i, h ->
         val title = h.displayTitle ?: h.itemId.take(24)
         val meta = h.displayMeta ?: ""
@@ -952,7 +942,6 @@ private fun legacyToConds(c: ChannelConfig): List<WbCond> {
 
 private fun renderChannels(container: Element) {
     val sect = container.querySelector("#sect-channels") ?: return
-    val last = currentConfig.channels.lastIndex
     val rows = currentConfig.channels.mapIndexed { i, c ->
         val showChecked = if (c.enabled) " checked" else ""
         val summary = if (c.conditions.isNotEmpty()) {
@@ -1038,7 +1027,6 @@ private fun renderChannels(container: Element) {
 
 private fun openChannelEditorPage(container: Element, scope: CoroutineScope, idx: Int, c: ChannelConfig) {
     historyPushState("#/ravilo?channel=${c.id}")
-    val seed = if (c.conditions.isNotEmpty()) wbCondsFrom(c.conditions) else legacyToConds(c)
     val styleChecked = { s: String -> if ((if (c.style == ChannelStyle.LOGO) "logo" else "text") == s) " checked" else "" }
     val pHero = c.pageHero
     val heroEnabled = pHero?.enabled == true
@@ -1071,7 +1059,7 @@ private fun openChannelEditorPage(container: Element, scope: CoroutineScope, idx
     container.innerHTML = """
         <div class="pagebar" style="margin-bottom:18px">
           <button id="ch-ed-back" class="btn sm ghost">‹ Back to layout</button>
-          <h2 style="margin:0;flex:1;text-align:center">${(if (c.name.isBlank()) "Channel" else c.name).htmlEsc()}</h2>
+          <h2 style="margin:0;flex:1;text-align:center">${c.name.ifBlank { "Channel" }.htmlEsc()}</h2>
           <button id="ch-ed-cancel" class="btn sm ghost">Cancel</button>
           <button id="ch-ed-save" class="btn primary">Save changes</button>
         </div>
@@ -1278,7 +1266,7 @@ private fun openChannelEditorPage(container: Element, scope: CoroutineScope, idx
         val ch = currentConfig.channels.getOrNull(idx)
         if (ch == null || ch.rows?.mode != "custom") { host.innerHTML = ""; return }
         val rows = ch.rows?.items?.filter { it.enabled } ?: emptyList()
-        val channelConds = if (ch.conditions.isNotEmpty()) ch.conditions else wbConds(legacyToConds(ch))
+        val channelConds = ch.conditions.ifEmpty { wbConds(legacyToConds(ch)) }
         host.innerHTML = """<div class="tiny muted">Checking coverage…</div>"""
         scope.launch {
             val pool = MediaApi.list(viewer = currentUserId, match = ch.match.name, conditions = channelConds, pageSize = 1)?.total ?: 0
@@ -1304,7 +1292,7 @@ private fun openChannelEditorPage(container: Element, scope: CoroutineScope, idx
                         .takeIf { it.isNotEmpty() }?.let { "$key=" + it.joinToString(",") { v -> dev.jellystructure.encodeURIComponent(v) } }
                 val coverCond = Condition(facet = "content_row", op = "is_none_of", rows = rows)
                 val covParam = "coverage=" + dev.jellystructure.encodeURIComponent(
-                    kotlinx.serialization.json.Json.Default.encodeToString(Condition.serializer(), coverCond))
+                    kotlinx.serialization.json.Json.encodeToString(Condition.serializer(), coverCond))
                 val params = listOfNotNull(
                     pf("studio", "studios"), pf("network", "networks"), pf("genre", "genres"), pf("tag", "tags"),
                     if (ch.match.name == "ANY") "match=ANY" else null,
@@ -1385,8 +1373,8 @@ private fun openChannelEditorPage(container: Element, scope: CoroutineScope, idx
     val fileInput = container.querySelector("#ch-logo-file") as? HTMLInputElement
     container.querySelector("#ch-logo-upload-btn")?.addEventListener("click") { _ -> fileInput?.click() }
     fileInput?.addEventListener("change") { _ ->
-        val file: org.w3c.files.File = fileInput.files?.item(0) ?: return@addEventListener
-        val reader = org.w3c.files.FileReader()
+        val file: File = fileInput.files?.item(0) ?: return@addEventListener
+        val reader = FileReader()
         reader.onload = { _ ->
             val dataUrl = (reader.result as? JsString)?.toString() ?: ""
             if (dataUrl.isNotEmpty()) scope.launch {
@@ -1411,7 +1399,7 @@ private fun openChannelEditorPage(container: Element, scope: CoroutineScope, idx
 
     // Hero enable toggle
     container.querySelector("#ch-hero-enabled")?.addEventListener("change") { _ ->
-        val cb = container.querySelector("#ch-hero-enabled") as? org.w3c.dom.HTMLInputElement ?: return@addEventListener
+        val cb = container.querySelector("#ch-hero-enabled") as? HTMLInputElement ?: return@addEventListener
         val body = container.querySelector("#ch-hero-body") as? HTMLElement ?: return@addEventListener
         body.style.opacity = if (cb.checked) "1" else ".45"
         body.setAttribute("style", "transition:opacity .15s;opacity:${if (cb.checked) "1" else ".45"};${if (!cb.checked) "pointer-events:none;" else ""}")
@@ -1443,7 +1431,7 @@ private fun openChannelEditorPage(container: Element, scope: CoroutineScope, idx
         val logo = (container.querySelector("#ch-ed-logo") as? HTMLInputElement)?.value?.trim()?.ifBlank { null }
         val color = (container.querySelector("#ch-ed-color") as? HTMLInputElement)?.value?.trim()?.ifBlank { null }
         val styleVal = (container.querySelector("input[name='ch-ed-style']:checked") as? HTMLInputElement)?.value ?: "logo"
-        val heroEn = (container.querySelector("#ch-hero-enabled") as? org.w3c.dom.HTMLInputElement)?.checked ?: false
+        val heroEn = (container.querySelector("#ch-hero-enabled") as? HTMLInputElement)?.checked ?: false
         val rowsMode = (container.querySelector("input[name='ch-rows-mode']:checked") as? HTMLInputElement)?.value ?: "inherit"
         fun padOf(t: String, r: String, b: String, l: String): ChannelButtonPadding? {
             val top = (container.querySelector("#$t") as? HTMLInputElement)?.value?.toIntOrNull() ?: 0
@@ -1585,7 +1573,7 @@ private fun openHeroEditorOverlay(
     val ov = document.createElement("div") as HTMLElement
     ov.id = "hero-ov"
     ov.style.cssText = "position:fixed;inset:0;background:#000a;display:flex;align-items:center;justify-content:center;z-index:9000"
-    var editItems = heroItems.toMutableList()
+    val editItems = heroItems.toMutableList()
 
     fun rowHtml(i: Int, h: HeroConfig): String {
         val bg = heroGradient(h.itemId)
@@ -1774,15 +1762,15 @@ private fun renderFilterSummary(container: Element, channelIdx: Int) {
 /** Inline filter workbench — renders condition rows directly into [host] without a modal. */
 // ── Rows ──────────────────────────────────────────────────────────────────────
 
-private val MEDIA_KINDS = listOf("" to "All", "MOVIE" to "Movies", "SERIES" to "Series")
-
 private fun RowKind.isSystem() = this == RowKind.CONTINUE || this == RowKind.NEWLY_ADDED
 
-private fun systemRowSource(r: RowConfig): String = when {
-    r.kind == RowKind.CONTINUE                                     -> "Continue + Next Up, merged"
-    r.kind == RowKind.NEWLY_ADDED && r.mediaKind == "MOVIE"       -> "kind = movie · sort newest"
-    r.kind == RowKind.NEWLY_ADDED && r.mediaKind == "SERIES"      -> "kind = series · sort newest"
-    r.kind == RowKind.NEWLY_ADDED                                  -> "movies + series combined · sort newest"
+private fun systemRowSource(r: RowConfig): String = when (r.kind) {
+    RowKind.CONTINUE -> "Continue + Next Up, merged"
+    RowKind.NEWLY_ADDED -> when (r.mediaKind) {
+        "MOVIE" -> "kind = movie · sort newest"
+        "SERIES" -> "kind = series · sort newest"
+        else -> "movies + series combined · sort newest"
+    }
     else -> ""
 }
 

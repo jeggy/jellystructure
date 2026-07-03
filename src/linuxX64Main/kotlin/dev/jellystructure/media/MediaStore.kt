@@ -185,24 +185,6 @@ class MediaStore(
         return newlyMissing
     }
 
-    fun deleteMissing(presentIds: Set<String>) {
-        val allIds = db.mediaQueries.allIds().executeAsList()
-        val toDelete = allIds.filter { it !in presentIds }
-        if (toDelete.isNotEmpty()) {
-            db.transaction {
-                toDelete.forEach { id ->
-                    allItemsCache    = null
-                    peopleIndexCache = null
-                    jellyfinIdIndex  = null
-                    genreIndexCache  = null
-                    libraryVersion++
-                    db.mediaQueries.deleteById(id)
-                }
-            }
-            println("[INFO] MediaStore: deleted ${toDelete.size} items no longer in scan")
-        }
-    }
-
     suspend fun update(rawItems: List<MediaItem>) {
         val newItems = disambiguateIds(rawItems)
         // Snapshot existing titlesByLang before deleting so a full rescan never erases
@@ -275,7 +257,13 @@ class MediaStore(
                 "multi_default" -> items = items.filter { TriageDetection.hasMultiDefault(it) }
                 "language_mix" -> items = items.filter { it.languageMix }
                 "missing_from_source" -> items = items.filter { it.missingFromSource }
-                "missing_overview" -> items = items.filter { TriageDetection.missingOverviewCount(it) > 0 }
+                "missing_still" -> items = items.filter { TriageDetection.missingStillCount(it) > 0 }
+                "duplicate" -> {
+                    // Phase 122: hoisted out of the per-item lambda — it's a whole-library relationship,
+                    // computed once per request, not per item.
+                    val dupIds = TriageDetection.duplicateIds(items)
+                    items = items.filter { it.id in dupIds }
+                }
             }
             items
         }.let { items ->
@@ -356,10 +344,10 @@ class MediaStore(
      *  no index exists for nested episode ids). Null if the id isn't in this library at all. */
     fun resolvePlayTarget(jellyfinId: String): Pair<String, String?>? {
         resolveByJellyfinId(jellyfinId)?.let { item ->
-            return (if (item.kind == dev.jellystructure.model.MediaKind.TV_SHOW) "series" else "movie") to item.title
+            return (if (item.kind == MediaKind.TV_SHOW) "series" else "movie") to item.title
         }
         allItems().asSequence()
-            .filter { it.kind == dev.jellystructure.model.MediaKind.TV_SHOW }
+            .filter { it.kind == MediaKind.TV_SHOW }
             .forEach { series -> series.episodes.firstOrNull { it.jellyfinId == jellyfinId }?.let { return "episode" to null } }
         return null
     }
@@ -425,22 +413,24 @@ class MediaStore(
 
     suspend fun addOrUpdate(item: MediaItem) {
         val existing = get(item.id)
-        // If another row already holds the same Jellyfin ID under a different slug (e.g. the year
-        // was unknown on the first scan so the id was "girl-taken", then TMDB returned 2026 and
-        // the scanner now produces "girl-taken-2026"), delete the stale row so it doesn't show up
-        // as a duplicate in the library.
+        // If other rows already hold the same Jellyfin ID under different slugs (e.g. the year was
+        // unknown on the first scan so the id was "girl-taken", then TMDB returned 2026 and the
+        // scanner now produces "girl-taken-2026" — or two unlocked scan workers raced on the same
+        // jellyfinId), delete ALL of them, not just one, so a duplicate can't survive a rescan
+        // (Phase 122; the previous single-victim deletion was last-wins and could never see more
+        // than one twin at a time).
         val jellyfinId = item.jellyfinId
-        var stale: MediaItem? = null
-        if (jellyfinId != null) {
-            stale = resolveByJellyfinId(jellyfinId)
-            if (stale != null && stale.id != item.id) {
-                allItemsCache    = null
-                peopleIndexCache = null
-                jellyfinIdIndex  = null
-                genreIndexCache  = null
-                db.mediaQueries.deleteById(stale.id)
-                println("[INFO] MediaStore: removed stale duplicate ${stale.id} → replaced by ${item.id}")
-            } else stale = null
+        val twins = if (jellyfinId != null) allItems().filter { it.jellyfinId == jellyfinId && it.id != item.id } else emptyList()
+        val stale = twins.firstOrNull()
+        if (twins.isNotEmpty()) {
+            allItemsCache    = null
+            peopleIndexCache = null
+            jellyfinIdIndex  = null
+            genreIndexCache  = null
+            for (t in twins) {
+                db.mediaQueries.deleteById(t.id)
+                println("[INFO] MediaStore: removed stale duplicate ${t.id} → replaced by ${item.id}")
+            }
         }
         // Phase 108: the item's real predecessor is `stale` across an id-rename (existing is null in
         // that case, keyed under the old id), otherwise `existing` — so createdAt/episode createdAt
@@ -472,8 +462,6 @@ class MediaStore(
     fun tvEpisodeCount(): Int = db.mediaQueries.sumEpisodeCount().executeAsOne().toInt()
 
     fun totalIssueCount(): Int = db.mediaQueries.sumIssueCount().executeAsOne().toInt()
-
-    fun languageMixCount(): Int = db.mediaQueries.countLanguageMix().executeAsOne().toInt()
 
     fun nfoCoveredCount(): Int {
         val ver = libraryVersion

@@ -49,7 +49,7 @@ fun RaviloButton(
     var focused by remember { mutableStateOf(false) }
     val focusSpec = remember { RaviloMotion.softSpring<Float>() }
     val dpSpec    = remember { RaviloMotion.softSpring<Dp>() }
-    val scale           by animateFloatAsState(if (focused) RaviloMotion.ButtonFocusScale else 1f, focusSpec, label = "buttonScale")
+    val scale           by animateFloatAsState(if (focused) RaviloMotion.BUTTON_FOCUS_SCALE else 1f, focusSpec, label = "buttonScale")
     val glowElevation   by animateDpAsState(if (focused) 16.dp else 0.dp, dpSpec, label = "buttonShadow")
     // Lift: 4dp upward on focus (converted to px for graphicsLayer)
     val liftPx by animateFloatAsState(

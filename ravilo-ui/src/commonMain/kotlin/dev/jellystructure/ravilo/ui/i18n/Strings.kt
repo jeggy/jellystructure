@@ -3,7 +3,7 @@ package dev.jellystructure.ravilo.ui.i18n
 // ─── Locale table ─────────────────────────────────────────────────────────────
 // Keys with {name} style placeholders. Missing keys fall back to "en", then the key itself.
 
-private val EN = mapOf<String, String>(
+private val EN = mapOf(
     "nav.home"            to "Home",
     "nav.movies"          to "Movies",
     "nav.series"          to "Series",
@@ -86,7 +86,7 @@ private val EN = mapOf<String, String>(
     "sonarr.via_sonarr"   to "Sonarr",
 )
 
-private val DA = mapOf<String, String>(
+private val DA = mapOf(
     "nav.home"            to "Hjem",
     "nav.movies"          to "Film",
     "nav.series"          to "Serier",
@@ -168,7 +168,7 @@ private val DA = mapOf<String, String>(
     "sonarr.via_sonarr"   to "Sonarr",
 )
 
-private val FO = mapOf<String, String>(
+private val FO = mapOf(
     "nav.home"            to "Heim",
     "nav.movies"          to "Filmar",
     "nav.series"          to "Seriar",

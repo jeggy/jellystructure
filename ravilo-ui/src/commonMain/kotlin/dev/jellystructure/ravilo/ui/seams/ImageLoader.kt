@@ -57,7 +57,7 @@ fun RemoteImage(
     val request = remember(resolved) {
         ImageRequest.Builder(ctx)
             .data(resolved)
-            .crossfade(RaviloMotion.ImageCrossfadeMs)
+            .crossfade(RaviloMotion.IMAGE_CROSSFADE_MS)
             .build()
     }
 

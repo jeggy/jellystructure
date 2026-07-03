@@ -94,7 +94,4 @@ object MetadataApi {
     suspend fun fetchLogoBatch(kind: String): BatchLogoResult? = runCatching {
         httpClient.post("/api/metadata/$kind/artwork/batch").body<BatchLogoResult>()
     }.getOrNull()
-
-    fun logoUrl(kind: String, name: String): String =
-        "/api/metadata/$kind/${encodeURIComponent(name)}/artwork"
 }

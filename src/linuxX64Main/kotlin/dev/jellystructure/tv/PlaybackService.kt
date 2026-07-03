@@ -79,7 +79,7 @@ class PlaybackService(
         device: DeviceData,
         jellyfinId: String,
         @Suppress("UNUSED_PARAMETER") capabilities: ClientCapabilities,
-    ): StreamTicket? {
+    ): StreamTicket {
         val jellyfinBase = configStore.current.apiKeys.jellyfinUrl.trimEnd('/')
         val token = jellyfinClient.tvToken(jellyfinBase, device, configStore.current.apiKeys.jellyfinToken)
         // Phase 110: this device's own Jellyfin identity — every call below presents it, so the
@@ -211,12 +211,10 @@ class PlaybackService(
         val uid = device.jellyfinUserId
 
         // Leaf ids to write: an explicit season set, else a series → all its episodes, else the item itself.
-        val targets: List<String> = (if (episodeIds.isNotEmpty()) {
-            episodeIds
-        } else {
+        val targets: List<String> = episodeIds.ifEmpty {
             val mi = mediaStore.resolveByJellyfinId(itemId)
             if (mi != null && mi.episodes.isNotEmpty()) mi.episodes.mapNotNull { it.jellyfinId } else listOf(itemId)
-        }).filterNot { it.startsWith('/') }.distinct()
+        }.filterNot { it.startsWith('/') }.distinct()
 
         coroutineScope {
             targets.map { id ->
@@ -302,7 +300,7 @@ class PlaybackService(
         jellyfinId: String,
         subtitleStreamIndex: Int,
         positionMs: Long,
-    ): StreamTicket? {
+    ): StreamTicket {
         val jellyfinBase = configStore.current.apiKeys.jellyfinUrl.trimEnd('/')
         val token = jellyfinClient.tvToken(jellyfinBase, device, configStore.current.apiKeys.jellyfinToken)
         val identity = JellyfinDeviceIdentity.forDevice(device)

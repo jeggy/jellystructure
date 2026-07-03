@@ -1,0 +1,2 @@
+-- Phase 123 — ETA for remux jobs, v13 -> v14.
+ALTER TABLE media_job ADD COLUMN eta_seconds INTEGER;

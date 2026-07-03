@@ -2,7 +2,6 @@ package dev.jellystructure.ui
 
 import dev.jellystructure.App
 import dev.jellystructure.api.DetectedTrackerGroup
-import dev.jellystructure.api.JsTag
 import dev.jellystructure.api.MediaApi
 import dev.jellystructure.api.MetadataApi
 import dev.jellystructure.api.MetadataEntry
@@ -129,7 +128,6 @@ private fun loadTab(container: Element, scope: CoroutineScope, tab: String, sort
 private fun renderLogoGrid(entries: List<MetadataEntry>, kind: String, linkPrefix: String): String {
     val singularKind = if (kind == "studios") "studio" else "network"
     if (entries.isEmpty()) return """<p class="muted tiny">No ${singularKind}s found. Run a scan to populate.</p>"""
-    val hasAny = entries.any { it.hasLogo }
     val missingCount = entries.count { !it.hasLogo }
     return buildString {
         if (kind == "networks") {
@@ -310,7 +308,7 @@ private fun showTagModal(content: HTMLElement, scope: CoroutineScope, editName: 
         ev.preventDefault()
         modal.style.display = "none"
         val href = (ev.target as? HTMLElement)?.getAttribute("href") ?: return@addEventListener
-        App.navigate(href)
+        App.navigate(href.removePrefix("#"))
     }
     for (i in 0 until swatchEls.length) {
         val s = swatchEls.item(i) as? HTMLElement ?: continue
@@ -513,8 +511,6 @@ private fun showTrackerModal(content: HTMLElement, scope: CoroutineScope, existi
     val back = document.createElement("div") as HTMLElement
     back.className = "modal-back open"
     val hostLines = (existing?.hosts ?: emptyList()).joinToString("\n") { it.esc() }
-    val privChecked = if (existing?.isPrivate != false) "checked" else ""
-    val pubChecked = if (existing?.isPrivate == false) "checked" else ""
     back.innerHTML = """
         <div class="modal">
           <span class="x" id="trk-x">✕</span>

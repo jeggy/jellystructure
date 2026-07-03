@@ -1,21 +1,16 @@
-@file:OptIn(kotlin.js.ExperimentalWasmJsInterop::class)
+@file:OptIn(ExperimentalWasmJsInterop::class)
 
 package dev.jellystructure.ui
 
 import dev.jellystructure.App
 import dev.jellystructure.encodeURIComponent
-import dev.jellystructure.api.ArtworkStatus
 import dev.jellystructure.api.ArtworkCandidate
 import dev.jellystructure.api.ArtworkCandidatesResponse
 import dev.jellystructure.api.ConfigApi
-import dev.jellystructure.api.HistoryEntry
 import dev.jellystructure.api.JsTag
 import dev.jellystructure.api.MediaApi
 import dev.jellystructure.api.PersonSearchResult
-import dev.jellystructure.api.RaviloApi
 import dev.jellystructure.api.DriftField
-import dev.jellystructure.shared.tv.HeroConfig
-import dev.jellystructure.api.SeedingStatus
 import dev.jellystructure.api.TmdbMatchResult
 import dev.jellystructure.model.Episode
 import dev.jellystructure.model.MediaItem
@@ -39,7 +34,6 @@ import org.w3c.dom.Element
 import org.w3c.dom.HTMLElement
 import org.w3c.dom.HTMLFormElement
 import org.w3c.dom.HTMLInputElement
-import org.w3c.dom.HTMLSelectElement
 import org.w3c.dom.HTMLTextAreaElement
 import org.w3c.dom.events.KeyboardEvent
 
@@ -159,6 +153,14 @@ private fun buildAgeRatingTrace(item: MediaItem, ageRatingCascade: List<String>)
                 """<div class="rc-tr rest"><span class="rc-cc">${step.region.esc()}</span><span class="rc-tn">${label.esc()}</span><span class="rc-tv">not reached</span></div>"""
         }
     }
+    val notInCascade = item.certifications
+        .filterKeys { key -> ageRatingCascade.none { it.equals(key, ignoreCase = true) } }
+        .filterValues { it.isNotBlank() }
+        .entries.sortedBy { it.key }
+    val notInCascadeLine = if (notInCascade.isEmpty()) "" else {
+        val list = notInCascade.joinToString(" · ") { (region, code) -> "${region.uppercase().esc()} ${code.esc()}" }
+        """<div class="tiny muted" style="margin-top:8px;">TMDB also has: $list — add a region to your cascade to use one.</div>"""
+    }
     return """
     <div class="override" style="margin-top:16px;">
       <div class="row center"><h4 style="margin:0;">Age rating</h4><span class="spacer"></span><span class="badge info">region cascade</span></div>
@@ -166,6 +168,7 @@ private fun buildAgeRatingTrace(item: MediaItem, ageRatingCascade: List<String>)
       <div class="box flat" style="margin-top:10px;background:var(--bg-2);">
         <div class="rc-trace">$rows</div>
       </div>
+      $notInCascadeLine
       <div class="tiny muted" style="margin-top:8px;">Stored on the item &amp; filterable in the <a href="#/library">Library workbench</a>.</div>
     </div>""".trimIndent()
 }
@@ -214,18 +217,6 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
     } else {
         """<div class="imgslot" style="height:260px;"><div class="x"></div><span>No poster</span></div>"""
     }
-
-    val overviewHtml = if (!item.overview.isNullOrBlank()) {
-        """<div class="field">
-             <label>Plot</label>
-             <div class="input" style="min-height:70px;align-items:flex-start;">${item.overview.esc()}</div>
-           </div>"""
-    } else if (!item.resolvedLanguage.isNullOrBlank()) {
-        """<div class="field">
-             <label>Plot</label>
-             <div class="badge warn" style="font-size:.8rem;padding:6px 10px;">No ${langDisplay(item.resolvedLanguage)} overview on TMDB</div>
-           </div>"""
-    } else ""
 
     // Phase 94: genre provenance, derived from the TMDB baseline (item.tmdbGenres). A user-added genre
     // (present but not in the baseline) gets an accent dot; TMDB genres the user removed (in the baseline,
@@ -288,16 +279,6 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
         <span class="tiny muted">Jellystructure tags (dotted) survive re-syncs.</span>
       </div>
     </div>"""
-
-    val issueBadge = when {
-        item.languageMix ->
-            """<span class="badge warn">multi-language series</span>"""
-        item.issueCount > 0 ->
-            """<span class="badge bad">${item.issueCount} untagged track${if (item.issueCount != 1) "s" else ""}</span>"""
-        else ->
-            """<span class="badge ok">all tracks tagged</span>"""
-    }
-
 
     val nfoDisabled = item.tmdbId == null || (item.languageMix && item.resolvedLanguage.isNullOrBlank())
     val nfoDisabledReason = when {
@@ -827,11 +808,6 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
 
     // Inline metadata editing — per-field dirty indicators + diff triggers
     val editableIds = listOf("edit-title", "edit-year", "edit-original-title", "edit-overview", "edit-director", "edit-studio")
-    val origValues = editableIds.associateWith { id ->
-        (document.getElementById(id) as? HTMLInputElement)?.value
-            ?: (document.getElementById(id) as? HTMLTextAreaElement)?.value ?: ""
-    }
-    val origTags = item.tags.toSet()
     val origGenres = item.genres
 
     fun currentTagSet(): Set<String> {
@@ -927,7 +903,7 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
             kotlinx.browser.window.setTimeout({ tagDropdown.style.display = "none"; null }, 150)
         }
         tagInput.addEventListener("keydown") { ev ->
-            val ke = ev as? org.w3c.dom.events.KeyboardEvent ?: return@addEventListener
+            val ke = ev as? KeyboardEvent ?: return@addEventListener
             if (ke.key == "Enter") {
                 ke.preventDefault()
                 val tag = tagInput.value.trim()
@@ -1043,7 +1019,7 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
         input.value = ""
     }
     (document.getElementById("genre-input") as? HTMLInputElement)?.addEventListener("keydown") { e ->
-        val ke = e as? org.w3c.dom.events.KeyboardEvent ?: return@addEventListener
+        val ke = e as? KeyboardEvent ?: return@addEventListener
         if (ke.key == "Enter") {
             ke.preventDefault()
             val input = document.getElementById("genre-input") as? HTMLInputElement ?: return@addEventListener
@@ -1203,13 +1179,14 @@ private fun buildEpisodesTab(item: MediaItem): String {
 
     // Season summary chips
     val totalUntagged = item.episodes.sumOf { ep -> ep.tracks.count { (it.kind == TrackKind.AUDIO || it.kind == TrackKind.SUBTITLE) && it.language == null } }
-    val missingStill = item.episodes.count { it.stillPath.isNullOrBlank() }
-    val missingOverview = item.episodes.count { it.overview.isNullOrBlank() }
+    // Phase 121: on-disk truth (TMDB still OR screen-grab), not TMDB-metadata-only stillPath —
+    // a screen-grabbed episode has a real image and shouldn't be flagged. Missing plot text
+    // (the old `missingOverview`) is no longer treated as an issue at all.
+    val missingStill = item.episodes.count { !it.hasStill }
     val seasonSummary = buildString {
         append("""<div class="row center" style="gap:8px;flex-wrap:wrap;margin-bottom:16px;">""")
         if (totalUntagged > 0) append("""<span class="badge bad">$totalUntagged untagged track${if (totalUntagged != 1) "s" else ""}</span>""")
         if (missingStill > 0) append("""<span class="badge warn">$missingStill missing still${if (missingStill != 1) "s" else ""}</span>""")
-        if (missingOverview > 0) append("""<span class="badge">$missingOverview missing overview${if (missingOverview != 1) "s" else ""}</span>""")
         if (totalUntagged > 0) append("""<span class="tiny muted">Expand each episode row below to assign languages.</span>""")
         append("</div>")
     }
@@ -1520,7 +1497,7 @@ private fun showTmdbMatchModal(
 
     document.getElementById("tmdb-match-search")?.addEventListener("click") { doSearch() }
     (document.getElementById("tmdb-match-query") as? HTMLInputElement)?.addEventListener("keydown") { e ->
-        if ((e as? org.w3c.dom.events.KeyboardEvent)?.key == "Enter") doSearch()
+        if ((e as? KeyboardEvent)?.key == "Enter") doSearch()
     }
     // Auto-search on open
     scope.launch {
@@ -1656,10 +1633,6 @@ private fun wireSeasonSelector() {
     fun allOpts(): List<HTMLElement> {
         val nl = spList.querySelectorAll("[data-season-sel]")
         return (0 until nl.length).mapNotNull { nl.item(it) as? HTMLElement }
-    }
-
-    fun currentSel(): String? {
-        return allOpts().firstOrNull { it.classList.contains("cur") }?.getAttribute("data-season-sel")
     }
 
     fun showSeason(sel: String) {
@@ -1879,7 +1852,7 @@ private fun wireEpisodeEditing(item: MediaItem, container: Element, scope: Corou
             val epFilename = input.getAttribute("data-ep-filename") ?: continue
             val specifier = input.getAttribute("data-specifier") ?: continue
             input.addEventListener("keydown") { e ->
-                val ke = e as? org.w3c.dom.events.KeyboardEvent ?: return@addEventListener
+                val ke = e as? KeyboardEvent ?: return@addEventListener
                 if (ke.key == "Enter") {
                     val lang = input.value.trim()
                     if (lang.isEmpty()) return@addEventListener
@@ -1914,7 +1887,7 @@ private fun wireEpisodeEditing(item: MediaItem, container: Element, scope: Corou
 }
 
 private fun openEpisodeTrackModal(
-    ep: dev.jellystructure.model.Episode,
+    ep: Episode,
     mediaId: String,
     container: Element,
     scope: CoroutineScope,
@@ -1946,7 +1919,7 @@ private fun openEpisodeTrackModal(
     document.getElementById("te-x")?.addEventListener("click") { _ -> close() }
     backdrop.addEventListener("click") { e -> if (e.target === backdrop) close() }
     document.addEventListener("keydown") { e ->
-        if ((e as? org.w3c.dom.events.KeyboardEvent)?.key == "Escape") close()
+        if ((e as? KeyboardEvent)?.key == "Escape") close()
     }
 
     wireUnifiedTrackEditor(
@@ -2230,7 +2203,7 @@ private var artLang = ""        // unified language/text filter (Phase 48):
                                 // "" = All · "textless" = no text · "withtext" = any language · else a language code
 private var artHiRes = false
 private var artSort = "vote"    // vote | res
-private var lbCandidates: List<dev.jellystructure.api.ArtworkCandidate> = emptyList()
+private var lbCandidates: List<ArtworkCandidate> = emptyList()
 private var lbIdx = 0
 
 /** Build a multipart upload via the browser FormData + fetch (drag-drop / file pick). */
@@ -2635,7 +2608,7 @@ private fun openArtLightbox(startIdx: Int, t: ArtTarget, scope: CoroutineScope, 
     lbIdx = startIdx.coerceIn(0, (lbCandidates.size - 1).coerceAtLeast(0))
 
     val existing = document.getElementById("art-lightbox")
-    if (existing != null) { existing.remove() }
+    existing?.remove()
 
     val overlay = document.createElement("div") as HTMLElement
     overlay.id = "art-lightbox"
@@ -3027,7 +3000,7 @@ private fun permCopyBlock(command: String, comment: String? = null): String {
 }
 
 private fun buildNfoPermFixHtml(path: String): String {
-    val p = if (path.isNotBlank()) path else "/path/to/media"
+    val p = path.ifBlank { "/path/to/media" }
     val tabActive = "padding:6px 14px;border:none;cursor:pointer;background:none;border-bottom:2px solid var(--hi);font-weight:600;color:var(--ink);font-size:.82rem;"
     val tabInactive = "padding:6px 14px;border:none;cursor:pointer;background:none;border-bottom:2px solid transparent;color:var(--ink-soft);font-size:.82rem;"
     val switchDocker = "document.getElementById('perm-tab-docker').style.display='';document.getElementById('perm-tab-native').style.display='none';document.getElementById('perm-tab-docker-btn').setAttribute('style','$tabActive');document.getElementById('perm-tab-native-btn').setAttribute('style','$tabInactive');"
@@ -3171,65 +3144,7 @@ private fun injectDiffStyles() {
     document.head?.appendChild(style)
 }
 
-// ── Word diff ─────────────────────────────────────────────────────────────────
-
-private data class DiffEntry(val word: String, val status: String)
-
-private fun computeWordDiff(original: String, current: String): List<DiffEntry> {
-    val ow = original.split(Regex("\\s+")).filter { it.isNotEmpty() }
-    val cw = current.split(Regex("\\s+")).filter { it.isNotEmpty() }
-    val m = ow.size; val n = cw.size
-    val dp = Array(m + 1) { IntArray(n + 1) }
-    for (i in 1..m) for (j in 1..n)
-        dp[i][j] = if (ow[i-1] == cw[j-1]) dp[i-1][j-1] + 1 else maxOf(dp[i-1][j], dp[i][j-1])
-    val result = mutableListOf<DiffEntry>()
-    var i = m; var j = n
-    while (i > 0 || j > 0) {
-        when {
-            i > 0 && j > 0 && ow[i-1] == cw[j-1] -> { result += DiffEntry(ow[i-1], "same"); i--; j-- }
-            j > 0 && (i == 0 || dp[i][j-1] >= dp[i-1][j]) -> { result += DiffEntry(cw[j-1], "added"); j-- }
-            else -> { result += DiffEntry(ow[i-1], "removed"); i-- }
-        }
-    }
-    result.reverse()
-    return result
-}
-
-private fun diffBeforeHtml(diff: List<DiffEntry>): String =
-    diff.filter { it.status != "added" }.joinToString(" ") { (w, s) ->
-        if (s == "removed") """<span class="diff-removed">${w.esc()}</span>""" else w.esc()
-    }.ifBlank { """<span class="muted tiny">empty</span>""" }
-
-private fun diffAfterHtml(diff: List<DiffEntry>): String =
-    diff.filter { it.status != "removed" }.joinToString(" ") { (w, s) ->
-        if (s == "added") """<span class="diff-added">${w.esc()}</span>""" else w.esc()
-    }.ifBlank { """<span class="muted tiny">empty</span>""" }
-
 // ── Diff popups ───────────────────────────────────────────────────────────────
-
-private fun showDiffPopup(label: String, original: String, current: String, isNumeric: Boolean = false) {
-    document.getElementById("diff-modal-overlay")?.remove()
-    val diff = if (isNumeric) null else computeWordDiff(original, current)
-    val beforeHtml = if (isNumeric) original.esc().ifBlank { """<span class="muted tiny">empty</span>""" }
-                     else diff?.let { diffBeforeHtml(it) } ?: original.esc()
-    val afterHtml  = if (isNumeric) current.esc().ifBlank { """<span class="muted tiny">empty</span>""" }
-                     else diff?.let { diffAfterHtml(it) } ?: current.esc()
-    renderDiffOverlay("""
-        <div class="row center" style="margin-bottom:2px;">
-          <strong style="font-size:.95rem;">$label — changes</strong>
-          <span class="spacer"></span>
-          <button id="diff-modal-close" class="btn sm ghost" style="padding:2px 8px;">✕</button>
-        </div>
-        <div class="diff-section">
-          <div class="diff-section-label">Before</div>
-          <div class="diff-content">$beforeHtml</div>
-        </div>
-        <div class="diff-section">
-          <div class="diff-section-label">After</div>
-          <div class="diff-content">$afterHtml</div>
-        </div>
-    """.trimIndent())
-}
 
 private fun showTagsDiffPopup(origTags: List<String>, currentTags: List<String>, label: String = "Tags") {
     document.getElementById("diff-modal-overlay")?.remove()
@@ -3297,7 +3212,6 @@ private fun renderSeriesCastTabHtml(item: MediaItem): String = buildString {
 }
 
 private fun renderSeriesScopeHtml(item: MediaItem): String = buildString {
-    val totalEps = item.cast.sumOf { it.episodeCount }.let { if (it == 0) "" else "" }
     append("""<div class="card" style="margin-bottom:16px;">""")
     append("""<div class="row center"><h4 style="margin:0;">Cast</h4><span class="badge info" style="margin-left:7px;">${item.cast.size}</span><span class="spacer"></span><span class="tiny muted">drag to reorder · written to tvshow.nfo</span></div>""")
     append("""<hr class="dash" style="margin:10px 0 14px;">""")
@@ -3386,7 +3300,7 @@ private fun renderSeasonMatrixHtml(item: MediaItem, matrixView: String): String 
             append("""<tr><td class="name">${p.name.esc()} <span class="r">· ${(p.character ?: p.role ?: "").esc()}</span></td>""")
             for (ep in seasonEps) {
                 val en = ep.episodeNumber ?: 0
-                val present = if (override != null) override.contains(en) else true
+                val present = override?.contains(en) ?: true
                 val cls = if (present) "on" else "off"
                 append("""<td class="cell" data-cell="main:$pi:$selSeason:$en"><span class="dot $cls"></span></td>""")
             }
@@ -3464,9 +3378,9 @@ private fun renderEpisodeScopeHtml(item: MediaItem, selSeason: Int, selEp: Int):
 }
 
 private fun renderPersonCardHtml(p: Person, showEpBadge: Boolean = false, inherited: Boolean = false, guest: Boolean = false, removeAttr: String = ""): String = buildString {
-    val PAL = listOf("#7b6ef0","#2dd49a","#f5b542","#3fb6f5","#e36588","#5b8def","#19d6c6","#b15cd0")
-    val colorIndex = p.name.fold(0) { acc, c -> acc + c.code } % PAL.size
-    val color = PAL[colorIndex]
+    val pal = listOf("#7b6ef0","#2dd49a","#f5b542","#3fb6f5","#e36588","#5b8def","#19d6c6","#b15cd0")
+    val colorIndex = p.name.fold(0) { acc, c -> acc + c.code } % pal.size
+    val color = pal[colorIndex]
     val initials = p.name.split(" ").filter { it.isNotBlank() }.take(2).joinToString("") { it.first().uppercaseChar().toString() }
     val imgSrc = if (!p.profilePath.isNullOrBlank()) "/api/people/${p.tmdbId}/image" else ""
     val inh = if (inherited) " inh" else ""
@@ -3499,14 +3413,14 @@ private fun renderCastGridHtml(cast: List<Person>, showEpBadge: Boolean = false)
 
 private fun renderCrewHtml(crew: List<Person>): String {
     if (crew.isEmpty()) return """<span class="muted tiny">No crew — click "Fetch from TMDB" to populate.</span>"""
-    val PAL = listOf("#7b6ef0","#2dd49a","#f5b542","#3fb6f5","#e36588","#5b8def","#19d6c6","#b15cd0")
-    val byDept = crew.groupBy { it.department?.takeIf { it.isNotBlank() } ?: "Other" }
+    val pal = listOf("#7b6ef0","#2dd49a","#f5b542","#3fb6f5","#e36588","#5b8def","#19d6c6","#b15cd0")
+    val byDept = crew.groupBy { person -> person.department?.takeIf { it.isNotBlank() } ?: "Other" }
     return byDept.entries.joinToString("") { (dept, members) ->
         val rows = members.joinToString("") { p ->
-            val ci = p.name.fold(0) { acc, c -> acc + c.code } % PAL.size
+            val ci = p.name.fold(0) { acc, c -> acc + c.code } % pal.size
             val av = p.name.split(" ").filter { it.isNotBlank() }.take(2).joinToString("") { it.first().uppercaseChar().toString() }
             """<div class="crew-row" data-person-id="${p.tmdbId}">
-                 <span class="crew-av" style="background:${PAL[ci]};">$av</span>
+                 <span class="crew-av" style="background:${pal[ci]};">$av</span>
                  <div style="flex:1;min-width:0;">
                    <div class="crew-name">${p.name.esc()}</div>
                    <div class="crew-job">${(p.job ?: "").esc()}</div>

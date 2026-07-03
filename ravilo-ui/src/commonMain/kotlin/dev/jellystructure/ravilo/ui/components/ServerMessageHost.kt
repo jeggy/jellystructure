@@ -106,7 +106,7 @@ private fun ServerMessageToast(toast: ToastItem, onDismiss: () -> Unit) {
     LaunchedEffect(dismissed) {
         if (!dismissed) return@LaunchedEffect
         visible = false
-        delay(RaviloMotion.ToastTransitionMs.toLong())
+        delay(RaviloMotion.TOAST_TRANSITION_MS.toLong())
         onDismiss()
     }
     LaunchedEffect(toast.id) {
@@ -116,11 +116,11 @@ private fun ServerMessageToast(toast: ToastItem, onDismiss: () -> Unit) {
 
     val offsetX by animateDpAsState(
         targetValue = if (visible) 0.dp else 36.dp,
-        animationSpec = tween(RaviloMotion.ToastTransitionMs),
+        animationSpec = tween(RaviloMotion.TOAST_TRANSITION_MS),
     )
     val alpha by animateFloatAsState(
         targetValue = if (visible) 1f else 0f,
-        animationSpec = tween(RaviloMotion.ToastTransitionMs),
+        animationSpec = tween(RaviloMotion.TOAST_TRANSITION_MS),
     )
     // Countdown bar: full while entering, then drains linearly over the toast's own display duration.
     val barProgress by animateFloatAsState(

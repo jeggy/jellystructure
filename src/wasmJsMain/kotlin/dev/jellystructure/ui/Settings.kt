@@ -9,7 +9,6 @@ import dev.jellystructure.api.ScanConfig
 import dev.jellystructure.api.ConfigResponse
 import dev.jellystructure.api.LibraryMapping
 import dev.jellystructure.api.LibraryPathDiag
-import dev.jellystructure.api.JellyfinLibrary
 import dev.jellystructure.api.ConfigApi
 import dev.jellystructure.api.MediaApi
 import dev.jellystructure.api.ArrConfig
@@ -738,11 +737,11 @@ private suspend fun populateToolChips() {
     val chipEl = document.getElementById("tool-status-chip") as? HTMLElement ?: return
     val report = ConfigApi.getHealthFull() ?: return
     val tools = listOf("ffmpeg", "ffprobe", "mkvpropedit")
-    val chips = tools.map { name ->
+    val chips = tools.joinToString("") { name ->
         val check = report.checks.find { it.name == name }
         val cls = if (check?.ok == true) "ok" else "bad"
         """<span class="badge $cls" style="font-size:.72rem;margin-right:4px">$name</span>"""
-    }.joinToString("")
+    }
     chipEl.innerHTML = chips
 }
 
@@ -1102,7 +1101,7 @@ private fun renderLibraryList() {
             refreshTomlPreview(readForm())
         }
         installLanguagePickerById("lib-fallback-$i")
-        val scope = settingsScope ?: return@forEachIndexed
+        settingsScope ?: return@forEachIndexed
         val lib = libraryMappings[i]
         if (!lib.skip) {
             document.getElementById("lib-scan-btn")?.let { } // no-op; use querySelectorAll below
@@ -1791,15 +1790,15 @@ private data class PipeBlockDef(
 
 private data class PipeCadRow(val key: String, val nm: String, val yr: String, val cadValue: String)
 
-private val PIPE_SCAN_IC = """<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="7" cy="7" r="4.4"/><line x1="10.4" y1="10.4" x2="14" y2="14"/></svg>"""
-private val PIPE_TMDB_IC = """<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3.5" width="12" height="9" rx="1.6"/><line x1="2" y1="6.4" x2="14" y2="6.4"/><line x1="4.4" y1="9.2" x2="8.4" y2="9.2"/></svg>"""
-private val PIPE_ART_IC  = """<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2.6" width="12" height="10.8" rx="1.6"/><circle cx="5.6" cy="6" r="1.2"/><polyline points="3,12 6.4,8.6 9,11 11,9 13.4,11.4"/></svg>"""
-private val PIPE_NFO_IC  = """<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 1.9h4.2L12 5.5V14.1H4Z"/><polyline points="8,1.9 8,5.6 12,5.6"/><line x1="6" y1="9.1" x2="10" y2="9.1"/><line x1="6" y1="11.3" x2="10" y2="11.3"/></svg>"""
-private val PIPE_SYNC_IC = """<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M13 8a5 5 0 1 1-1.5-3.6"/><polyline points="13.2,2.4 13.3,5 10.6,5.2"/></svg>"""
-private val PIPE_ARR_IC  = """<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2 5.2h4l1.2 1.4h6.8V12.4H2Z"/><path d="M9.5 9.4a2 2 0 1 1-.6-1.5"/><polyline points="10.4,7.3 10.5,9 8.9,9"/></svg>"""
-private val PIPE_DRIFT_IC= """<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 1.9 14.6 13.5H1.4Z"/><line x1="8" y1="6.4" x2="8" y2="9.6"/><line x1="8" y1="11.4" x2="8" y2="11.5"/></svg>"""
-private val PIPE_NOTIFY_IC="""<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6.6a4 4 0 0 1 8 0c0 2.8 1.2 3.7 1.2 3.7H2.8S4 9.4 4 6.6Z"/><path d="M6.6 12.6a1.5 1.5 0 0 0 2.8 0"/></svg>"""
-private val PIPE_WAIT_IC = """<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8.8" r="5.1"/><line x1="8" y1="8.8" x2="8" y2="5.8"/><line x1="8" y1="8.8" x2="10" y2="9.8"/><line x1="6.2" y1="1.9" x2="9.8" y2="1.9"/></svg>"""
+private const val PIPE_SCAN_IC = """<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="7" cy="7" r="4.4"/><line x1="10.4" y1="10.4" x2="14" y2="14"/></svg>"""
+private const val PIPE_TMDB_IC = """<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3.5" width="12" height="9" rx="1.6"/><line x1="2" y1="6.4" x2="14" y2="6.4"/><line x1="4.4" y1="9.2" x2="8.4" y2="9.2"/></svg>"""
+private const val PIPE_ART_IC  = """<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2.6" width="12" height="10.8" rx="1.6"/><circle cx="5.6" cy="6" r="1.2"/><polyline points="3,12 6.4,8.6 9,11 11,9 13.4,11.4"/></svg>"""
+private const val PIPE_NFO_IC  = """<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 1.9h4.2L12 5.5V14.1H4Z"/><polyline points="8,1.9 8,5.6 12,5.6"/><line x1="6" y1="9.1" x2="10" y2="9.1"/><line x1="6" y1="11.3" x2="10" y2="11.3"/></svg>"""
+private const val PIPE_SYNC_IC = """<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M13 8a5 5 0 1 1-1.5-3.6"/><polyline points="13.2,2.4 13.3,5 10.6,5.2"/></svg>"""
+private const val PIPE_ARR_IC  = """<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2 5.2h4l1.2 1.4h6.8V12.4H2Z"/><path d="M9.5 9.4a2 2 0 1 1-.6-1.5"/><polyline points="10.4,7.3 10.5,9 8.9,9"/></svg>"""
+private const val PIPE_DRIFT_IC= """<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 1.9 14.6 13.5H1.4Z"/><line x1="8" y1="6.4" x2="8" y2="9.6"/><line x1="8" y1="11.4" x2="8" y2="11.5"/></svg>"""
+private const val PIPE_NOTIFY_IC="""<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6.6a4 4 0 0 1 8 0c0 2.8 1.2 3.7 1.2 3.7H2.8S4 9.4 4 6.6Z"/><path d="M6.6 12.6a1.5 1.5 0 0 0 2.8 0"/></svg>"""
+private const val PIPE_WAIT_IC = """<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8.8" r="5.1"/><line x1="8" y1="8.8" x2="8" y2="5.8"/><line x1="8" y1="8.8" x2="10" y2="9.8"/><line x1="6.2" y1="1.9" x2="9.8" y2="1.9"/></svg>"""
 
 private val PIPE_BLOCKS = mapOf(
     "scan_files"    to PipeBlockDef("Scan media files",          "New & changed files + stale re-checks by release age.", "#7b6ef0", PIPE_SCAN_IC),
@@ -2118,9 +2117,8 @@ private fun wirePipelineBuilder(scope: CoroutineScope) {
         for (i in 0 until nodes.length) {
             val s = nodes.item(i) as? HTMLElement ?: continue
             val f = s.getAttribute("data-f") ?: continue
-            val capturedF = f
             s.addEventListener("click") {
-                pipelineFreq = capturedF
+                pipelineFreq = f
                 renderPipelineFreq()
             }
         }
@@ -2156,10 +2154,9 @@ private fun wirePipelineBuilder(scope: CoroutineScope) {
         val ds   = document.createElement("div"); ds.className = "ds"; ds.textContent = d.subtitle
         info.appendChild(nm); info.appendChild(ds)
         item.appendChild(ic); item.appendChild(info)
-        val capturedKey = key
         item.addEventListener("click") {
             if (pipeInsertAt < 0) return@addEventListener
-            pipelineSteps.add(pipeInsertAt, PipelineStep(step = capturedKey))
+            pipelineSteps.add(pipeInsertAt, PipelineStep(step = key))
             closePipelinePalette()
             renderPipeline()
         }

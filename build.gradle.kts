@@ -121,8 +121,7 @@ tasks.register("runDev") {
         val yarnTooling = File(System.getProperty("user.home"), ".kotlin/kotlin-npm-tooling/yarn")
         val toolingNodeModules = yarnTooling.listFiles()
             ?.filter { it.isDirectory }
-            ?.mapNotNull { it.resolve("node_modules").takeIf { f -> f.isDirectory } }
-            ?.firstOrNull()
+            ?.firstNotNullOfOrNull { it.resolve("node_modules").takeIf { f -> f.isDirectory } }
             ?: error("Kotlin npm tooling not found in ~/.kotlin/kotlin-npm-tooling")
         val webpackDevServer = toolingNodeModules.resolve(".bin/webpack-dev-server")
 

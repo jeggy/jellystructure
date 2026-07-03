@@ -39,7 +39,7 @@ import kotlinx.io.readByteArray
  * (avatar fetch + ffmpeg spawn both consume FDs from the same process-wide table).
  */
 class RaviloArtworkService(
-    private val dataDir: String,
+    dataDir: String,
     private val configStore: ConfigStore,
     private val store: MediaStore,
     private val artwork: ArtworkDownloader,
@@ -171,7 +171,7 @@ class RaviloArtworkService(
             cacheIndex.remove(key)?.let { cacheBytes -= it }
             cacheIndex[key] = size
             cacheBytes += size
-            if (cacheBytes <= cap) return@withLock emptyList<String>()
+            if (cacheBytes <= cap) return@withLock emptyList()
             val out = ArrayList<String>()
             val it = cacheIndex.entries.iterator()
             while (cacheBytes > low && it.hasNext()) {
