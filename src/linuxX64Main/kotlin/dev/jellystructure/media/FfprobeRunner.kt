@@ -8,6 +8,8 @@ import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.allocArray
 import kotlinx.cinterop.memScoped
 import kotlinx.cinterop.toKString
+import kotlinx.io.files.Path
+import kotlinx.io.files.SystemFileSystem
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -42,6 +44,21 @@ private data class FfprobeTags(
 )
 
 private val json = Json { ignoreUnknownKeys = true }
+
+/** Phase 128: why a file's track probe came back the way it did — surfaced to the operator instead of
+ *  silently collapsing every failure mode into an empty track list (which used to read as "no audio",
+ *  masking a corrupt/unreadable file or a missing ffprobe binary). */
+enum class ProbeStatus { OK, NO_AUDIO, CORRUPT, UNREADABLE, PROBE_MISSING, UNKNOWN }
+
+/** [managed] defaults false — `FfprobeRunner` has no Sonarr/Radarr knowledge; the route handler that
+ *  knows the item's `*arr` status fills it in via `.copy(managed = ...)`. */
+@Serializable
+data class ProbeDiagnosis(
+    val status: ProbeStatus,
+    val detail: String,
+    val streamCounts: Map<TrackKind, Int> = emptyMap(),
+    val managed: Boolean = false,
+)
 
 object FfprobeRunner {
     suspend fun probe(filePath: String): List<Track> {
@@ -86,6 +103,47 @@ object FfprobeRunner {
         }
         if (result.isFailure) Logger.warn("Failed to parse ffprobe output for $filePath: ${result.exceptionOrNull()?.message}")
         return result.getOrElse { emptyList() }
+    }
+
+    /**
+     * Phase 128 — a diagnostic probe that keeps ffprobe's stderr (`2>&1`, unlike [probe]'s `2>/dev/null`
+     * on the scan hot path) so a corrupt/unreadable file or a missing ffprobe binary is distinguishable
+     * from a genuinely audio-less container instead of collapsing into the same empty track list.
+     */
+    suspend fun diagnose(filePath: String): ProbeDiagnosis {
+        if (!SystemFileSystem.exists(Path(filePath))) {
+            return ProbeDiagnosis(ProbeStatus.UNREADABLE, "File not found: $filePath")
+        }
+        val escaped = filePath.replace("'", "'\\''")
+        val command = "ffprobe -hide_banner -show_streams -print_format json '$escaped' 2>&1"
+        val output = runCommand(command)
+            ?: return ProbeDiagnosis(ProbeStatus.UNKNOWN, "ffprobe produced no output")
+
+        // A clean JSON parse (streams present or not) wins over any warning noise ffprobe printed to
+        // stderr alongside otherwise-valid output.
+        val parsed = runCatching { json.decodeFromString(FfprobeOutput.serializer(), output) }.getOrNull()
+        if (parsed != null) {
+            val counts = parsed.streams.groupingBy {
+                when (it.codecType) {
+                    "audio" -> TrackKind.AUDIO
+                    "subtitle" -> TrackKind.SUBTITLE
+                    "video" -> TrackKind.VIDEO
+                    else -> TrackKind.DATA
+                }
+            }.eachCount()
+            val status = if ((counts[TrackKind.AUDIO] ?: 0) > 0) ProbeStatus.OK else ProbeStatus.NO_AUDIO
+            return ProbeDiagnosis(status, "Parsed ${parsed.streams.size} stream(s)", counts)
+        }
+
+        // Parse failed — classify from the raw (stdout+stderr) text.
+        val firstLine = output.lineSequence().firstOrNull { it.isNotBlank() } ?: output
+        val status = when {
+            output.contains("No such file or directory") || output.contains("Permission denied") -> ProbeStatus.UNREADABLE
+            output.contains("moov atom not found") || output.contains("Invalid data found") || output.contains("Invalid NAL") -> ProbeStatus.CORRUPT
+            output.contains("ffprobe: not found") || output.contains("command not found") -> ProbeStatus.PROBE_MISSING
+            else -> ProbeStatus.UNKNOWN
+        }
+        return ProbeDiagnosis(status, firstLine)
     }
 
     /** R131: media duration in seconds, or null if unknown — used to pick a screen-grab timestamp. */

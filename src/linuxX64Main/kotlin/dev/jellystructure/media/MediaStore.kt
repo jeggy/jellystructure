@@ -264,6 +264,7 @@ class MediaStore(
                     val dupIds = TriageDetection.duplicateIds(items)
                     items = items.filter { it.id in dupIds }
                 }
+                "zero_audio" -> items = items.filter { TriageDetection.zeroAudioCount(it) > 0 }
             }
             items
         }.let { items ->

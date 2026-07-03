@@ -51,4 +51,42 @@ class ArrRescanService(
             }
         }
     }
+
+    private suspend fun findArrId(item: MediaItem): Int? {
+        val cfg = configStore.current
+        return when (item.kind) {
+            MediaKind.MOVIE -> {
+                val r = cfg.radarr ?: return null
+                if (!r.enabled || r.url.isBlank()) return null
+                val tmdbId = item.tmdbId ?: return null
+                runCatching { client.findMovieId(r.url, r.apiKey, tmdbId) }.getOrNull()
+            }
+            MediaKind.TV_SHOW -> {
+                val s = cfg.sonarr ?: return null
+                if (!s.enabled || s.url.isBlank()) return null
+                runCatching { client.findSeriesIdByPath(s.url, s.apiKey, item.path) }.getOrNull()
+            }
+        }
+    }
+
+    /** Phase 128 — read-only "is this item findable in a configured Sonarr/Radarr" check, for the
+     *  diagnose endpoint's UI decision (show Re-acquire vs. manual-repair guidance) without triggering
+     *  anything. Distinct from [nudge], which is fire-and-forget. */
+    suspend fun isManaged(item: MediaItem): Boolean = findArrId(item) != null
+
+    /** Phase 128 — managed-only, synchronous rescan trigger for the "Re-acquire" repair button (an
+     *  operator has replaced the broken file and wants *arr to pick it up), reusing the same
+     *  find/rescan calls as [nudge] but reporting back so the route can respond honestly instead of a
+     *  fire-and-forget "queued". Returns (managed, ok, detail). */
+    suspend fun reacquire(item: MediaItem): Triple<Boolean, Boolean, String> {
+        val id = findArrId(item) ?: return Triple(false, false, "Not managed by a configured Sonarr/Radarr")
+        val cfg = configStore.current
+        val ok = runCatching {
+            when (item.kind) {
+                MediaKind.MOVIE -> cfg.radarr?.let { client.rescanMovie(it.url, it.apiKey, id) } ?: false
+                MediaKind.TV_SHOW -> cfg.sonarr?.let { client.rescanSeries(it.url, it.apiKey, id) } ?: false
+            }
+        }.getOrDefault(false)
+        return Triple(true, ok, if (ok) "Rescan triggered" else "Rescan request failed")
+    }
 }

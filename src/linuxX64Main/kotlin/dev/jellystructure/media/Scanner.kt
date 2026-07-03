@@ -174,7 +174,10 @@ class Scanner(
             jellyfinId = jItem.id,
             tmdbId = tmdbFinalId,
             originalLanguage = details?.originalLanguage?.takeIf { it.isNotBlank() },
-            resolvedLanguage = resolvedLang,
+            // Phase 128: a zero-audio-track title (e.g. a corrupt/truncated file) shouldn't display a
+            // language it never earned — the fallback above exists to keep the TMDB query above working,
+            // not to fabricate a display language.
+            resolvedLanguage = resolvedLang.takeIf { audioLangs.isNotEmpty() },
             posterPath = details?.posterPath,
             backdropPath = details?.backdropPath,
             overview = details?.overview?.takeIf { it.isNotBlank() },
@@ -249,7 +252,13 @@ class Scanner(
         val episodes = mutableListOf<Episode>()
         for (file in filesToProbe) {
             val tracks = FfprobeRunner.probe(file)
-            if (tracks.isEmpty()) Logger.warn("ffprobe returned no tracks for episode: $file", "scan")  // Phase 53-E
+            // Phase 128: diagnose() re-probes with stderr kept, so the scan log says WHY (corrupt,
+            // unreadable, etc.) instead of just that the track list came back empty. Rare path — only
+            // runs for a file that already produced zero tracks — so the extra ffprobe call is fine.
+            if (tracks.isEmpty()) {
+                val reason = FfprobeRunner.diagnose(file)
+                Logger.warn("ffprobe returned no tracks for episode: $file (${reason.status}: ${reason.detail})", "scan")
+            }
             val epIssueCount = tracks.count {
                 (it.kind == TrackKind.AUDIO || it.kind == TrackKind.SUBTITLE) && it.language == null
             }
@@ -278,7 +287,8 @@ class Scanner(
                 episodeNumber = epNum,
                 tracks = tracks,
                 issueCount = epIssueCount,
-                resolvedLanguage = epResolvedLang,
+                // Phase 128: honest per-episode display language — see the scanMovie comment above.
+                resolvedLanguage = epResolvedLang.takeIf { audioLangs.isNotEmpty() },
                 title = epDetails?.name?.takeIf { it.isNotBlank() },
                 overview = epDetails?.overview?.takeIf { it.isNotBlank() },
                 stillPath = epDetails?.stillPath,
@@ -336,7 +346,9 @@ class Scanner(
                 jellyfinId = jItem.id,
                 tmdbId = seriesTmdbId,
                 originalLanguage = mixDetails?.originalLanguage?.takeIf { it.isNotBlank() },
-                resolvedLanguage = majorityLang,
+                // Phase 128: majorityLang is already null when no episode has any audio; the explicit
+                // check here just makes that guarantee robust rather than incidental.
+                resolvedLanguage = majorityLang.takeIf { firstTracks.any { t -> t.kind == TrackKind.AUDIO } },
                 posterPath = mixDetails?.posterPath,
                 backdropPath = mixDetails?.backdropPath,
                 overview = mixDetails?.overview?.takeIf { it.isNotBlank() },
@@ -388,7 +400,8 @@ class Scanner(
             jellyfinId = jItem.id,
             tmdbId = tvTmdbFinalId,
             originalLanguage = details?.originalLanguage?.takeIf { it.isNotBlank() },
-            resolvedLanguage = resolvedLang,
+            // Phase 128: honest display language — see the scanMovie comment above.
+            resolvedLanguage = resolvedLang.takeIf { audioLangs.isNotEmpty() },
             posterPath = details?.posterPath,
             backdropPath = details?.backdropPath,
             overview = details?.overview?.takeIf { it.isNotBlank() },
@@ -453,7 +466,8 @@ class Scanner(
             tmdbId = details.id,
             year = details.releaseDate.take(4).toIntOrNull() ?: item.year,
             originalLanguage = details.originalLanguage.takeIf { it.isNotBlank() },
-            resolvedLanguage = resolvedLang,
+            // Phase 128: honest display language — see the scanMovie comment above.
+            resolvedLanguage = resolvedLang.takeIf { audioLangs.isNotEmpty() },
             posterPath = details.posterPath,
             backdropPath = details.backdropPath,
             overview = details.overview.takeIf { it.isNotBlank() },
@@ -523,7 +537,8 @@ class Scanner(
                 episodeNumber = epNum,
                 tracks = tracks,
                 issueCount = epIssueCount,
-                resolvedLanguage = epLangPriority.firstOrNull(),
+                // Phase 128: honest per-episode display language — see the scanMovie comment above.
+                resolvedLanguage = epLangPriority.firstOrNull().takeIf { audioLangs.isNotEmpty() },
                 title = epDetails?.name?.takeIf { it.isNotBlank() } ?: existingEp?.title,
                 overview = epDetails?.overview?.takeIf { it.isNotBlank() } ?: existingEp?.overview,
                 stillPath = epDetails?.stillPath ?: existingEp?.stillPath,
@@ -573,7 +588,10 @@ class Scanner(
             tmdbId = syncSeriesFinalId,
             year = updatedDetails?.firstAirDate?.take(4)?.toIntOrNull() ?: item.year,
             originalLanguage = updatedDetails?.originalLanguage?.takeIf { it.isNotBlank() } ?: item.originalLanguage,
-            resolvedLanguage = resolvedLang,
+            // Phase 128: honest display language — see the scanMovie comment above. Covers both the
+            // majority-vote branch (already naturally null with zero audio anywhere) and the single-
+            // language branch, uniformly, off the item-level tracks (= firstTracks).
+            resolvedLanguage = resolvedLang.takeIf { firstTracks.any { t -> t.kind == TrackKind.AUDIO } },
             posterPath = updatedDetails?.posterPath ?: item.posterPath,
             backdropPath = updatedDetails?.backdropPath ?: item.backdropPath,
             overview = updatedDetails?.overview?.takeIf { it.isNotBlank() } ?: item.overview,
@@ -620,7 +638,8 @@ class Scanner(
             updatedEpisodes[idx] = ep.copy(
                 tracks = tracks,
                 issueCount = epIssueCount,
-                resolvedLanguage = epLangPriority.firstOrNull(),
+                // Phase 128: honest per-episode display language — see the scanMovie comment above.
+                resolvedLanguage = epLangPriority.firstOrNull().takeIf { audioLangs.isNotEmpty() },
                 title = epDetails?.name?.takeIf { it.isNotBlank() } ?: ep.title,
                 overview = epDetails?.overview?.takeIf { it.isNotBlank() } ?: ep.overview,
                 stillPath = epDetails?.stillPath ?: ep.stillPath,
@@ -687,7 +706,8 @@ class Scanner(
                     tmdbId = details.id,
                     year = details.releaseDate.take(4).toIntOrNull() ?: item.year,
                     originalLanguage = details.originalLanguage.takeIf { it.isNotBlank() },
-                    resolvedLanguage = resolvedLang,
+                    // Phase 128: honest display language — see the scanMovie comment above.
+                    resolvedLanguage = resolvedLang.takeIf { audioLangs.isNotEmpty() },
                     posterPath = details.posterPath,
                     backdropPath = details.backdropPath,
                     overview = details.overview.takeIf { it.isNotBlank() },
@@ -727,7 +747,10 @@ class Scanner(
                             overview = epDetails.overview.takeIf { it.isNotBlank() },
                             stillPath = epDetails.stillPath,
                             tmdbEpisodeId = epDetails.id,
-                            resolvedLanguage = resolvedLang,
+                            // Phase 128: the series' resolved language is applied per-episode here, but
+                            // an episode with no audio tracks of its own (e.g. a corrupt file) shouldn't
+                            // inherit it — check THIS episode's tracks, not the series-level audioLangs.
+                            resolvedLanguage = resolvedLang.takeIf { ep.tracks.any { t -> t.kind == TrackKind.AUDIO } },
                             runtime = epDetails.runtime ?: ep.runtime,
                             airDate = epDetails.airDate?.takeIf { it.isNotBlank() } ?: ep.airDate,  // R148
                         ) else ep
@@ -744,7 +767,9 @@ class Scanner(
                     tmdbId = details.id,
                     year = details.firstAirDate.take(4).toIntOrNull() ?: item.year,
                     originalLanguage = details.originalLanguage.takeIf { it.isNotBlank() },
-                    resolvedLanguage = resolvedLang,
+                    // Phase 128: honest display language — see the scanMovie comment above, off the
+                    // item-level sourceTracks/audioLangs computed earlier in this function.
+                    resolvedLanguage = resolvedLang.takeIf { audioLangs.isNotEmpty() },
                     posterPath = details.posterPath,
                     backdropPath = details.backdropPath,
                     overview = details.overview.takeIf { it.isNotBlank() },
