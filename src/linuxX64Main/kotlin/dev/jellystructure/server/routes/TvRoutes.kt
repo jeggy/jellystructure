@@ -409,6 +409,16 @@ fun Route.tvRoutes(
         call.respond(upcomingService?.getUpcoming() ?: dev.jellystructure.shared.tv.UpcomingFeed(enabled = false))
     }
 
+    // R167 — not-held-item detail (Discover-detail parity: live TMDB genres/runtime/cast). Best-effort:
+    // a lookup miss still returns 404 so the client falls back to the plain feed item it already has,
+    // never a blank screen.
+    get("/tv/upcoming/item/{id}") {
+        call.attributes[DeviceKey]  // auth only
+        val id = call.parameters["id"] ?: return@get call.respond(HttpStatusCode.BadRequest)
+        val detail = upcomingService?.getDetail(id) ?: return@get call.respond(HttpStatusCode.NotFound)
+        call.respond(detail)
+    }
+
     get("/tv/discover/item/{listId}/{rank}") {
         val device = call.attributes[DeviceKey]
         val listId = call.parameters["listId"] ?: return@get call.respond(HttpStatusCode.BadRequest)

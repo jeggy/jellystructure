@@ -437,8 +437,9 @@ private fun UpcomingCard(item: UpcomingItem, focusRequester: FocusRequester?, on
                 },
         ) {
             // Cross-module `val` properties (item.posterUrl is declared in :shared) aren't
-            // smart-cast — bind to a local val first.
-            val posterUrl = item.posterUrl
+            // smart-cast — bind to a local val first. R167: not-held items have no on-disk poster —
+            // fall back to the client-direct-CDN remote poster before the gradient placeholder.
+            val posterUrl = item.posterUrl ?: item.posterRemoteUrl
             if (posterUrl != null) {
                 RemoteImage(posterUrl, item.title, Modifier.fillMaxSize())
             } else {
