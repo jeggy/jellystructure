@@ -22,9 +22,10 @@ surfaced read-only on the admin detail page and on the TV detail DTO. One rating
 ## Requirements
 
 ### FR-131-1 — Source the IMDb id
-1. Resolve each title's **IMDb id** (`ttNNNNNNN`) from the data we already have — the Jellyfin item's
-   provider ids and/or the TMDB `external_ids` fetched at scan (`imdb_id`). Store `MediaItem.imdbId`
-   (additive, nullable). No IMDb id ⇒ no rating fetch, no rating.
+1. ~~Store `MediaItem.imdbId`~~ **Already exists** (dev review 2026-07-03): `MediaItem.imdbId`
+   (`model/Media.kt`) has been populated from TMDB `external_ids` at every scan/sync/re-pull site for
+   many phases and already drives the admin pagebar's IMDb external link. This requirement reduces to:
+   **reuse it**. No IMDb id ⇒ no rating fetch, no rating.
 
 ### FR-131-2 — Fetch + store from imdbapi.dev
 2. For each title with an `imdbId`, call **imdbapi.dev** and store the response on the item:
@@ -48,9 +49,12 @@ surfaced read-only on the admin detail page and on the TV detail DTO. One rating
      has no `imdbId` or no rating yet.
 
 ### FR-131-5 — Expose it on the Ravilo TV DTO
-5. Add `imdbRating` (`{ aggregateRating, voteCount }`, null when absent) to `MediaCard` where useful and to
-   `MovieDetail` / `SeriesDetail`, populated by `DetailService` from the stored `MediaItem.imdbRating` —
-   **catalog-only, zero external calls at read time** (the value is already on the item). R164 renders it.
+5. Add `imdbRating` (`{ aggregateRating, voteCount }`, null when absent) to `MovieDetail` / `SeriesDetail`
+   **only**, populated by `DetailService` from the stored `MediaItem.imdbRating` — **catalog-only, zero
+   external calls at read time** (the value is already on the item). R164 renders it. *(Dev review
+   2026-07-03: the original "add to `MediaCard` where useful" is dropped — R164 is detail-hero-only, and
+   `MediaCard` rides every home/browse/channel feed row, so a speculative field there is pure payload
+   bloat; add it in the future phase that actually puts a rating badge on tiles.)*
 
 ## Invariants
 - **Stored + scheduled, never ad-hoc** — the API is called by the sync job (and manual Re-sync), not on
@@ -76,3 +80,23 @@ surfaced read-only on the admin detail page and on the TV detail DTO. One rating
 - Related: **[R164](../ravilo/requirements/phase-R164-imdb-rating.md)** (Ravilo detail rating display — the
   primary consumer), **Phase 106 / R153** (ingest→DTO→render pattern), **Phase 91** (scan/sync pipeline this
   hooks a block into), **Phase 108** (additive JSON-blob fields, no migration).
+
+## Dev-review addenda (2026-07-03 — backend decisions the design mock couldn't know)
+
+1. **`imdbId` already exists** — see FR-131-1; only `MediaItem.imdbRating` is new.
+2. **Concrete API:** `GET https://api.imdbapi.dev/titles/{imdbId}` → read `rating.aggregateRating` +
+   `rating.voteCount` (a batch endpoint, `/titles:batchGet`, exists — verify its per-request id cap at
+   implementation time and prefer it for the bulk sync). Free, no API key.
+3. **New outbound client = Phase 129 mandate:** the imdbapi.dev client MUST use the shared
+   `OutboundHttp.client` and wrap every call in `OutboundHttp.withPermit` — no new `HttpClient(Curl)`
+   (the FD-budget rule from Phase 118/129). Throttle the bulk sync modestly (e.g. small batches + delay)
+   on top of the permit gate.
+4. **Scheduling anchor:** the periodic sync is a new **`PipelineStep` kind** in `cfg.scan.pipeline`
+   (Phase 91) executed by `executePipeline` in `Main.kt`'s scheduler loop — NOT a second scheduler.
+   Admins who don't add the step still get the manual per-title Re-sync. Default cadence when the step is
+   enabled: whatever the pipeline schedule fires (the spec's "weekly" is a Settings suggestion, not a new
+   config axis).
+5. **Explicit routes:** `POST /api/media/{id}/imdb-rating/sync` (manual per-title Re-sync; responds with
+   the stored rating-or-null) — records to `MediaHistory`.
+6. **Series id note:** for a series, `imdbId` is the **show** id (that is what the scanner stores from
+   TMDB TV `external_ids`) — consistent with the show-level-rating invariant.
