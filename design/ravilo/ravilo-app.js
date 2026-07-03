@@ -42,9 +42,7 @@
         <div class="navitem foc cur" data-nav="home">${t('nav_home')}</div>
         <div class="navitem foc" data-nav="movies">${t('nav_movies')}</div>
         <div class="navitem foc" data-nav="series">${t('nav_series')}</div>
-        <div class="navitem foc" data-nav="upcoming" id="rv-nav-upcoming" style="display:none">${t('nav_upcoming')}</div>
-        <div class="navitem foc" data-nav="top10" id="rv-nav-top10" style="display:none">${t('nav_top10')}</div>
-        <div class="navitem foc" data-nav="mylist">${t('nav_mylist')}</div>
+        <div class="navitem foc" data-nav="discover" id="rv-nav-discover">${t('nav_discover')}</div>
       </div>
       <div class="right">
         <div class="search-ic foc" data-nav="search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><line x1="16.5" y1="16.5" x2="21" y2="21"></line></svg></div>
@@ -52,6 +50,46 @@
         <div class="avatar foc" data-nav="profile" id="rv-avatar">ER</div>
       </div>`;
     stage.appendChild(appbar);
+
+    // ---- profile menu (avatar dropdown: My List / Continue / Settings / Unpair / Switch) ----
+    const profmenu = el('div', 'profmenu');
+    profmenu.innerHTML = `
+      <div class="pm-head">
+        <div class="pm-av" id="pm-av">ER</div>
+        <div class="pm-id"><div class="pm-name" id="pm-name">Profile</div><div class="pm-sub" id="pm-sub"></div></div>
+        <div class="pm-switch foc" data-pm="switch">${t('pm_switch')}</div>
+      </div>
+      <div class="pm-div"></div>
+      <div class="pm-row foc" data-pm="mylist"><span class="pm-ic">＋</span> ${t('nav_mylist')}</div>
+      <div class="pm-row foc" data-pm="settings"><span class="pm-ic">⚙</span> ${t('pm_settings')}</div>
+      <div class="pm-row foc" data-pm="unpair"><span class="pm-ic">⏏</span> ${t('pm_unpair')}</div>`;
+    stage.appendChild(profmenu);
+    function pmItems() { return [...profmenu.querySelectorAll('.foc')]; }
+    function openProfMenu() {
+      const u = currentUser() || {};
+      const av = profmenu.querySelector('#pm-av'); if (av) { av.textContent = u.initials || 'ER'; if (u.color) av.style.background = u.color; }
+      const nm = profmenu.querySelector('#pm-name'); if (nm) nm.textContent = u.name || 'Profile';
+      const sb = profmenu.querySelector('#pm-sub'); if (sb) sb.textContent = (u.kid ? 'Kids · ' : '') + String(u.lang || 'en').toUpperCase();
+      profmenu.classList.add('on'); stopHero();
+      pmItems().forEach(e => e.classList.remove('focused'));
+      const first = profmenu.querySelector('[data-pm="mylist"]'); if (first) first.classList.add('focused');
+    }
+    function closeProfMenu() { profmenu.classList.remove('on'); if (view.type === 'home') startHero(); }
+    function moveProfMenu(dr) {
+      if (!dr) return; const its = pmItems();
+      let i = its.findIndex(e => e.classList.contains('focused')); if (i < 0) i = 0;
+      i = Math.max(0, Math.min(its.length - 1, i + dr));
+      its.forEach(e => e.classList.remove('focused')); its[i].classList.add('focused');
+    }
+    function activateProfMenu() {
+      const f = profmenu.querySelector('.foc.focused'); if (!f) return;
+      const a = f.dataset.pm; closeProfMenu();
+      if (a === 'mylist') go({ type: 'grid', kind: 'mylist', title: t('nav_mylist'), nav: 'mylist' });
+      else if (a === 'settings') openSettings();
+      else if (a === 'switch') openProfiles('switch');
+      else if (a === 'unpair') { renderUnpairConfirm(); prof.style.display = 'flex'; }
+    }
+    profmenu.addEventListener('click', e => { e.stopPropagation(); const r = e.target.closest('.foc'); if (!r) return; pmItems().forEach(x => x.classList.remove('focused')); r.classList.add('focused'); activateProfMenu(); });
 
     const screen = el('div', 'screen');
     const scroll = el('div', 'screen-scroll');
@@ -545,25 +583,30 @@
     }
     function rankTile(it, list) {
       const tl = el('div', 'rtile foc'); tl._ditem = it; tl._dlist = list;
-      const sub = list.metric === 'rank'
-        ? t('weeks_on', { n: it.weeks })
-        : (it.views ? t('views_week', { v: it.views }) : t('weeks_on', { n: it.weeks }));
+      const meta = [it.year, it.genre].filter(Boolean).join(' · ');
       tl.innerHTML = `
-        <div class="rtop">
-          <div class="rnum">${it.rank}</div>
-          <div class="rposter"><div class="art">${artGrad(it)}${statusMark(it)}</div></div>
-        </div>
+        <div class="rposter"><div class="art">${artGrad(it)}${statusMark(it)}</div></div>
         <div class="label">${it.title}</div>
-        <div class="sub">${sub} ${trendBadge(it)}</div>`;
+        <div class="sub">${meta}${it.rating ? ' · ' + it.rating + '+' : ''}</div>`;
       return tl;
     }
     function discoverRow(list) {
       const r = el('div', 'crow drow');
-      r.innerHTML = `<div class="crow-head"><h2>${list.title}</h2><span class="cfg">${list.scope === 'country' ? R.discover.config.region : (list.scope === 'alltime' ? 'All-time' : 'Global')}</span><span class="more">${list.note || ''}</span></div>`;
+      r.innerHTML = `<div class="crow-head"><h2>${list.title}</h2></div>`;
       const track = el('div', 'track focus-row');
       list.items.forEach(it => track.appendChild(rankTile(it, list)));
       r.appendChild(track);
       return r;
+    }
+    function seerrEnabled() { return !!(R.config && R.config.seerr); }
+    function discSegment(active) {
+      const seg = el('div', 'discseg');
+      const mk = (tab, label) => '<div class="dseg foc' + (tab === active ? ' cur' : '') + '" data-disctab="' + tab + '">' + label + '</div>';
+      let html = '';
+      if (upcomingEnabled()) html += mk('coming', t('seg_coming'));
+      if (seerrEnabled()) html += mk('request', t('seg_request'));
+      seg.innerHTML = html;
+      return seg;
     }
     function renderDiscover() {
       stopHero(); scroll.innerHTML = '';
@@ -571,20 +614,19 @@
       const region = R.discover.config.regionName || R.discover.config.region;
       const wrap = el('div', 'discoverscreen');
       const head = el('div', 'dischead');
-      head.innerHTML = `<div class="dischead-row"><h1>${t('nav_top10')}</h1><span class="disc-sub">${t('top10_sub', { region })}</span></div>`;
-      const srcRow = el('div', 'srcpick focus-row');
-      (R.discover.sources || []).forEach(s => {
-        const c = el('div', 'srcchip foc' + (s.enabled ? (s.id === src.id ? ' cur' : '') : ' off')); c._src = s;
-        c.innerHTML = `<span class="srcwm" style="background:${s.accent}">${s.wm}</span><span class="srcnm">${s.name}</span><span class="srcvia">${s.enabled ? t('via_source', { src: s.via }) : 'soon'}</span>`;
-        srcRow.appendChild(c);
-      });
-      head.appendChild(srcRow);
+      head.innerHTML = `<div class="dischead-row"><h1>${t('nav_discover')}</h1><span class="disc-sub">${t('request_sub')}</span></div>`;
+      const dctrl = el('div', 'dischead-controls focus-row');
+      dctrl.appendChild(discSegment('request'));
+      const sp = el('div', 'dsearch foc'); sp.dataset.seerrsearch = '1';
+      sp.innerHTML = `<span class="sic">⌕</span>${t('search_seerr')}`;
+      dctrl.appendChild(sp);
+      head.appendChild(dctrl);
       wrap.appendChild(head);
       const lists = listsForUser();
       lists.forEach(l => wrap.appendChild(discoverRow(l)));
       wrap.appendChild(el('div', 'screen-end'));
       scroll.appendChild(wrap);
-      appbar.querySelectorAll('.navitem').forEach(n => n.classList.toggle('cur', n.dataset.nav === 'top10'));
+      appbar.querySelectorAll('.navitem').forEach(n => n.classList.toggle('cur', n.dataset.nav === 'discover'));
     }
 
     function requestFetch(it) {
@@ -690,15 +732,6 @@
             ${discoverActions(it)}
           </div>
         </div>
-        <div class="ddt-why">
-          <h2>${t('why_trending')}</h2>
-          <div class="ddt-stats">
-            <div class="ddt-stat"><div class="k">${t('rank_in', { n: it.rank, region: isCountry ? region : (list.scope === 'alltime' ? 'all-time' : 'global') })}</div><div class="v">#${it.rank}</div></div>
-            <div class="ddt-stat"><div class="k">${list && list.metric === 'rank' ? 'On chart' : 'Views'}</div><div class="v">${list && list.metric === 'rank' ? t('weeks_on', { n: it.weeks }) : (it.views ? it.views : '—')}</div></div>
-            <div class="ddt-stat"><div class="k">Trend</div><div class="v ddt-trend">${trendBadge(it)}</div></div>
-          </div>
-          ${isCountry ? `<div class="ddt-foot">Country charts are ranking only — no view counts. Source: ${src.name} via ${src.via}.</div>` : `<div class="ddt-foot">Source: ${src.name} via ${src.via}.</div>`}
-        </div>
         <div class="screen-end"></div>`;
       scroll.appendChild(d);
       appbar.querySelectorAll('.navitem').forEach(n => n.classList.remove('cur'));
@@ -765,8 +798,9 @@
 
       const wrap = el('div', 'upscreen');
       const head = el('div', 'uphead');
-      head.innerHTML = `<div class="uphead-row"><h1>${t('nav_upcoming')}</h1><span class="disc-sub">${t('upcoming_sub')}</span></div>`;
+      head.innerHTML = `<div class="uphead-row"><h1>${t('nav_discover')}</h1><span class="disc-sub">${t('upcoming_sub')}</span></div>`;
       const chips = el('div', 'upfilter focus-row');
+      chips.appendChild(discSegment('coming'));
       [['all', t('up_all')], ['series', t('up_series')], ['movies', t('up_movies')]].forEach(([k, l]) => {
         const ch = el('div', 'upchip foc' + (k === src ? ' cur' : '')); ch._upsrc = k;
         ch.innerHTML = `<span class="upchip-dot ${k}"></span>${l}`;
@@ -823,7 +857,7 @@
 
       wrap.appendChild(el('div', 'screen-end'));
       scroll.appendChild(wrap);
-      appbar.querySelectorAll('.navitem').forEach(n => n.classList.toggle('cur', n.dataset.nav === 'upcoming'));
+      appbar.querySelectorAll('.navitem').forEach(n => n.classList.toggle('cur', n.dataset.nav === 'discover'));
     }
     function renderUpcomingDetail(it) {
       stopHero(); scroll.innerHTML = '';
@@ -908,12 +942,33 @@
       scroll.appendChild(wrap);
       appbar.querySelectorAll('.navitem').forEach(n => n.classList.toggle('cur', n.dataset.nav === v.nav));
     }
-    function searchFilter(q) { const c = catalog(); if (!q.trim()) return c.slice(0, 18); const l = q.toLowerCase(); return c.filter(it => it.title.toLowerCase().includes(l)); }
+    function seerrCatalog() {
+      const seen = {}, out = [];
+      (R.discover.lists || []).forEach(l => (l.items || []).forEach(it => { if (it && it.title && !seen[it.title]) { seen[it.title] = 1; out.push(it); } }));
+      return out;
+    }
+    function searchFilter(q) {
+      const c = (view && view.seerr) ? seerrCatalog() : catalog();
+      if (!q.trim()) return c.slice(0, 18);
+      const l = q.toLowerCase(); return c.filter(it => it.title.toLowerCase().includes(l));
+    }
+    function renderSearchResults(container, items) {
+      if (view && view.seerr) {
+        container.innerHTML = '';
+        if (!items.length) { container.innerHTML = '<div class="empty">Nothing on Seerr matches.</div>'; return; }
+        const per = 6;
+        for (let i = 0; i < items.length; i += per) {
+          const row = el('div', 'grid-row focus-row');
+          items.slice(i, i + per).forEach(it => row.appendChild(rankTile(it, { scope: 'global', metric: '' })));
+          container.appendChild(row);
+        }
+      } else buildGridRows(container, items);
+    }
     function renderSearch(v) {
       stopHero(); scroll.innerHTML = '';
       v.query = v.query || '';
       const wrap = el('div', 'searchscreen');
-      wrap.innerHTML = `<div class="searchbar"><span class="sic">⌕</span><span class="sq">${v.query ? esc(v.query) : '<i>Search movies &amp; series…</i>'}</span></div>`;
+      wrap.innerHTML = `<div class="searchbar"><span class="sic">⌕</span><span class="sq">${v.query ? esc(v.query) : '<i>' + (v.seerr ? 'Search Seerr — films, series…' : 'Search movies &amp; series…') + '</i>'}</span></div>`;
       const kb = el('div', 'keyboard');
       ['ABCDEFGHIJ', 'KLMNOPQRST', 'UVWXYZ0123', '456789'].forEach(rk => {
         const kr = el('div', 'kbd-row focus-row');
@@ -925,10 +980,10 @@
       kb.appendChild(kr2);
       wrap.appendChild(kb);
       wrap.appendChild(el('div', 'gridhead small', `<h2 class="sres-h">${v.query ? 'Results' : 'Suggestions'}</h2>`));
-      const res = el('div', 'pgrid sresults'); buildGridRows(res, searchFilter(v.query)); wrap.appendChild(res);
+      const res = el('div', 'pgrid sresults'); renderSearchResults(res, searchFilter(v.query)); wrap.appendChild(res);
       wrap.appendChild(el('div', 'screen-end'));
       scroll.appendChild(wrap);
-      appbar.querySelectorAll('.navitem').forEach(n => n.classList.toggle('cur', n.dataset.nav === 'search'));
+      appbar.querySelectorAll('.navitem').forEach(n => n.classList.toggle('cur', n.dataset.nav === (v.seerr ? 'discover' : 'search')));
     }
     function esc(s) { return s.replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c])); }
     function catalogHas(title) { return catalog().some(it => it.title === title); }
@@ -1031,6 +1086,7 @@
       focusEl(its[cur.c]);
     }
     function move(dr, dc) {
+      if (profmenu.classList.contains('on')) { moveProfMenu(dr); return; }
       if (overlay.classList.contains('on')) { moveOverlay(dc); return; }
       const all = rows();
       if (dr) {
@@ -1060,6 +1116,7 @@
     }
 
     function activate() {
+      if (profmenu.classList.contains('on')) { activateProfMenu(); return; }
       if (overlay.classList.contains('on')) {
         const f0 = overlay.querySelector('.foc.focused');
         if (f0 && f0.dataset.ov === 'play') { const it = overlay._item; closeOverlay(); if (it) playItem(it); } else closeOverlay();
@@ -1073,11 +1130,14 @@
         else if (f.dataset.nav === 'movies') go({ type: 'grid', kind: 'film', title: 'Movies', nav: 'movies' });
         else if (f.dataset.nav === 'series') go({ type: 'grid', kind: 'series', title: 'Series', nav: 'series' });
         else if (f.dataset.nav === 'top10') go({ type: 'discover' });
+        else if (f.dataset.nav === 'discover') go({ type: upcomingEnabled() ? 'upcoming' : 'discover' });
         else if (f.dataset.nav === 'upcoming') go({ type: 'upcoming' });
         else if (f.dataset.nav === 'mylist') go({ type: 'grid', kind: 'mylist', title: 'My List', nav: 'mylist' });
-        else if (f.dataset.nav === 'profile') openProfiles('switch');
+        else if (f.dataset.nav === 'profile') openProfMenu();
         return;
       }
+      if (f.dataset.disctab) { go({ type: f.dataset.disctab === 'coming' ? 'upcoming' : 'discover' }); return; }
+      if (f.dataset.seerrsearch) { go({ type: 'search', query: '', seerr: true }); return; }
       if (f._genre) {
         const wrap = scroll.querySelector('.gridscreen'); const grid = wrap.querySelector('.pgrid');
         const base = view._all || [];
@@ -1092,9 +1152,9 @@
         else if (f._key === 'clear') view.query = '';
         else if (f._key === 'space') view.query += ' ';
         else view.query += f._key;
-        scroll.querySelector('.sq').innerHTML = view.query ? esc(view.query) : '<i>Search movies &amp; series…</i>';
+        scroll.querySelector('.sq').innerHTML = view.query ? esc(view.query) : '<i>' + (view.seerr ? 'Search Seerr — films, series…' : 'Search movies &amp; series…') + '</i>';
         scroll.querySelector('.sres-h').textContent = view.query.trim() ? 'Results' : 'Suggestions';
-        buildGridRows(scroll.querySelector('.sresults'), searchFilter(view.query));
+        renderSearchResults(scroll.querySelector('.sresults'), searchFilter(view.query));
         return;
       }
       if (f.dataset.hero) { const he = f.closest('.hero'); toDetail((he && he._items ? he._items : R.hero)[heroIdx]); return; }
@@ -1154,10 +1214,12 @@
     }
     function back() {
       if (trailerOpen) { closeTrailer(); return; }
+      if (profmenu.classList.contains('on')) { closeProfMenu(); return; }
       if (overlay.classList.contains('on')) { closeOverlay(); return; }
       if (view.type === 'discoverDetail') { go(view.from || { type: 'discover' }); return; }
       if (view.type === 'upcomingDetail') { go(view.from || { type: 'upcoming' }); return; }
       if (view.type === 'movie' || view.type === 'series') { go(view.from || { type: 'home' }); return; }
+      if (view.type === 'search' && view.seerr) { go({ type: 'discover' }); return; }
       if (view.type !== 'home') go({ type: 'home' });
     }
     function cap(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
@@ -1321,7 +1383,7 @@
     }
     // re-label the persistent app-bar nav after a language switch (screens re-localize via go())
     function relabelChrome() {
-      const map = { home: 'nav_home', movies: 'nav_movies', series: 'nav_series', top10: 'nav_top10', mylist: 'nav_mylist', upcoming: 'nav_upcoming' };
+      const map = { home: 'nav_home', movies: 'nav_movies', series: 'nav_series', discover: 'nav_discover', top10: 'nav_top10', mylist: 'nav_mylist', upcoming: 'nav_upcoming' };
       appbar.querySelectorAll('.navitem').forEach(n => { const k = map[n.dataset.nav]; if (k) n.textContent = t(k); });
     }
     // Top 10 tab is gated: Radarr enabled in Jellystructure AND the user's per-user discover config.
@@ -1330,8 +1392,8 @@
       return !!(R.discover && R.discover.config && R.discover.config.radarr && u && u.discover && u.discover.enabled && (u.discover.lists || []).length);
     }
     function updateDiscoverNav() {
-      const el = document.getElementById('rv-nav-top10');
-      if (el) el.style.display = discoverEnabled() ? '' : 'none';
+      const el = document.getElementById('rv-nav-discover');
+      if (el) el.style.display = (upcomingEnabled() || seerrEnabled()) ? '' : 'none';
     }
     function renderProfiles() {
       const signed = profiles.filter(p => p.signedIn);

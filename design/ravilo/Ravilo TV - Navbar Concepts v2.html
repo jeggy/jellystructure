@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="en" data-skin="aurora">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="design_doc_mode" content="canvas">
+<title>Ravilo TV — Navbar Concepts v2</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Sora:wght@300;400;500;600;700&display=swap');
+
+:root{
+  --bg:#0a0c13; --bg-2:#0e111b;
+  --ink:#f3f4fb; --ink-soft:#aeb4cb; --ink-dim:#6b7290;
+  --line:rgba(255,255,255,.09);
+  --card:#161a28; --card-2:#1b2031;
+  --accent:#7b6ef0; --accent-2:#3fb6f5;
+  --grad:linear-gradient(120deg,#7b6ef0,#3fb6f5);
+  --ring:#8e82ff; --ring-glow:rgba(123,110,240,.55);
+  --chip:rgba(255,255,255,.10);
+  --ease:cubic-bezier(.22,.61,.36,1);
+}
+*{box-sizing:border-box; margin:0; padding:0;}
+body{ font-family:'Sora',sans-serif; }
+
+/* ---------- canvas scaffolding ---------- */
+.intro{ position:absolute; width:1240px; color:#e9ecf6; }
+.intro .eyebrow{ font-family:'JetBrains Mono','Sora',monospace; letter-spacing:.32em; text-transform:uppercase; font-size:15px; color:#8b93ad; }
+.intro h1{ font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:52px; letter-spacing:-1.5px; margin:10px 0 14px; color:#f4f5fb;}
+.intro p{ font-size:20px; line-height:1.55; color:#aeb4cb; max-width:1040px; }
+.intro p b{ color:#e9ecf6; font-weight:600; }
+.rules{ display:flex; gap:14px; margin-top:22px; flex-wrap:wrap; }
+.rule{ display:flex; align-items:center; gap:10px; padding:11px 18px; border-radius:13px; background:rgba(255,255,255,.045); border:1px solid var(--line); font-size:16px; color:#c9cde0; }
+.rule b{ color:#f3f4fb; font-weight:600; }
+.rule .dot{ width:9px; height:9px; border-radius:50%; flex:none; }
+.rule .p{ background:#7b6ef0; } .rule .d{ background:#3fb6f5; }
+
+.concept{ position:absolute; width:1920px; }
+.clabel{ display:flex; align-items:baseline; gap:18px; margin-bottom:20px; flex-wrap:wrap; }
+.clabel .idx{ font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:28px; color:var(--accent); letter-spacing:-.5px; }
+.clabel .name{ font-family:'Space Grotesk',sans-serif; font-weight:600; font-size:30px; color:#f3f4fb; letter-spacing:-.5px; }
+.clabel .note{ font-size:19px; color:#9aa0ba; }
+.clabel .tag{ font-family:'JetBrains Mono',monospace; font-size:13px; letter-spacing:.12em; text-transform:uppercase; padding:5px 12px; border-radius:8px; }
+.tag.you{ background:rgba(63,182,245,.13); color:#5fc4f7; border:1px solid rgba(63,182,245,.3);}
+.tag.new{ background:rgba(123,110,240,.15); color:#a99ff4; border:1px solid rgba(123,110,240,.32);}
+
+/* ---------- stage ---------- */
+.stage{ position:relative; width:1920px; height:660px; border-radius:22px; overflow:hidden;
+  background:var(--bg); color:var(--ink); box-shadow:0 40px 90px -30px rgba(0,0,0,.7); border:1px solid rgba(255,255,255,.06); }
+.backdrop{ position:absolute; inset:0;
+  background:
+    radial-gradient(120% 105% at 76% 12%, rgba(96,146,206,.55), rgba(24,32,54,.25) 44%, transparent 72%),
+    radial-gradient(95% 130% at 58% 128%, rgba(123,110,240,.4), transparent 60%),
+    linear-gradient(100deg,#0a0c13 6%, #131a2e 42%, #223052 72%, #33507e 100%); }
+.flat{ position:absolute; inset:0; background:radial-gradient(120% 120% at 15% 0%, #12172a 0%, #0a0c13 60%); }
+.vign{ position:absolute; inset:0; background:linear-gradient(90deg, rgba(10,12,19,.97) 0%, rgba(10,12,19,.82) 30%, rgba(10,12,19,.32) 62%, rgba(10,12,19,.04) 100%), linear-gradient(0deg, var(--bg) 3%, rgba(10,12,19,0) 42%); }
+
+/* ---------- app bar ---------- */
+.appbar{ position:relative; z-index:5; height:92px; display:flex; align-items:center; gap:38px; padding:0 64px;
+  background:linear-gradient(180deg, rgba(0,0,0,.55), rgba(0,0,0,0)); }
+.brand{ display:flex; align-items:center; gap:14px; font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:31px; letter-spacing:-1px; }
+.brand .mark{ width:48px; height:48px; flex:none; filter:drop-shadow(0 0 16px var(--ring-glow)); }
+.brand .wm{ color:var(--ink); }
+.topnav{ display:flex; align-items:center; gap:8px; }
+.navitem{ font-size:21px; font-weight:500; color:var(--ink-soft); padding:9px 20px; border-radius:11px; white-space:nowrap; position:relative; display:flex; align-items:center; gap:9px; }
+.navitem.cur{ color:var(--ink); font-weight:600; }
+.navitem.focused{ background:var(--ink); color:#0a0c13; }
+.navitem.focused svg{ color:#0a0c13; }
+.caret{ width:15px; height:15px; }
+.right{ margin-left:auto; display:flex; align-items:center; gap:22px; }
+.clock{ font-size:19px; color:var(--ink-soft); font-variant-numeric:tabular-nums; }
+.iconbtn{ width:44px; height:44px; border-radius:50%; display:flex; align-items:center; justify-content:center; color:var(--ink-soft); }
+.iconbtn.focused{ background:var(--ink); color:#0a0c13; }
+.iconbtn svg{ width:24px; height:24px; display:block; }
+.avatar{ width:44px; height:44px; border-radius:50%; display:flex; align-items:center; justify-content:center; background:var(--grad); font-weight:700; font-size:18px; color:#fff; }
+.avatar.focused{ box-shadow:0 0 0 4px var(--ring); }
+.searchpill{ display:flex; align-items:center; gap:13px; height:50px; padding:0 22px; border-radius:26px; background:rgba(255,255,255,.07); border:1px solid var(--line); color:var(--ink-dim); font-size:18px; min-width:300px; }
+.searchpill.focused{ background:var(--ink); color:#3a3f52; border-color:transparent; }
+.searchpill svg{ width:22px; height:22px; }
+
+/* ---------- hero ---------- */
+.hero{ position:absolute; z-index:4; left:64px; top:196px; }
+.kicker{ font-family:'JetBrains Mono',monospace; letter-spacing:.28em; font-size:15px; color:var(--accent-2); text-transform:uppercase; }
+.htitle{ font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:74px; line-height:.98; letter-spacing:-2px; color:#fff; margin:14px 0 4px; white-space:nowrap; }
+.hmeta{ display:flex; align-items:center; gap:16px; font-size:19px; color:var(--ink-soft); margin-top:16px; }
+.hmeta .chip{ background:var(--chip); padding:4px 11px; border-radius:7px; font-size:16px; font-weight:600; color:#eef0fa; }
+
+/* channel rail peek */
+.railpeek{ position:absolute; z-index:4; left:64px; bottom:34px; right:64px; }
+.rp-head{ font-family:'Space Grotesk',sans-serif; font-weight:600; font-size:24px; color:#eef0fa; margin-bottom:16px; letter-spacing:-.4px; }
+.rp-track{ display:flex; gap:16px; }
+.cpill{ width:210px; height:96px; border-radius:14px; display:flex; align-items:center; justify-content:center; font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:24px; color:#fff; letter-spacing:-.3px; flex:none; box-shadow:0 12px 30px -12px rgba(0,0,0,.6); }
+.c1{ background:linear-gradient(135deg,#1a49c9,#1170e4);} .c2{ background:linear-gradient(135deg,#8f1024,#c31b34);}
+.c3{ background:linear-gradient(135deg,#243049,#3a4d78); color:#dfe6f5;} .c4{ background:linear-gradient(135deg,#0b7d5a,#12b07d);}
+.c5{ background:linear-gradient(135deg,#3a1a72,#6a35c9);} .c6{ background:linear-gradient(135deg,#123a86,#1f7ad0);}
+
+/* ---------- content screen (Discover / Home rows) ---------- */
+.screen{ position:absolute; z-index:4; left:0; right:0; top:92px; bottom:0; padding:26px 64px; display:flex; flex-direction:column; gap:26px; }
+.dischead{ display:flex; align-items:baseline; gap:18px; }
+.dischead h1{ font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:44px; letter-spacing:-1.2px; color:#fff; }
+.dischead .dsub{ font-size:19px; color:var(--ink-soft); }
+.segment{ display:flex; align-items:center; gap:5px; padding:5px; border-radius:16px; background:rgba(255,255,255,.06); border:1px solid var(--line); align-self:flex-start; }
+.segment .seg{ font-size:21px; font-weight:500; color:var(--ink-soft); padding:10px 24px; border-radius:12px; display:flex; align-items:center; gap:10px; }
+.segment .seg svg{ width:22px; height:22px; }
+.segment .seg.on{ background:var(--ink); color:#0a0c13; font-weight:600; }
+.segment .seg.on svg{ color:#0a0c13; }
+.segment .seg.more{ padding:10px 16px; color:var(--ink-dim); }
+
+.drow{ display:flex; flex-direction:column; gap:15px; }
+.drow-h{ display:flex; align-items:center; gap:12px; font-family:'Space Grotesk',sans-serif; font-weight:600; font-size:25px; color:#eef0fa; letter-spacing:-.4px; }
+.drow-h svg{ width:25px; height:25px; color:var(--accent-2); }
+.drow-track{ display:flex; gap:30px; align-items:flex-end; }
+.drow-track.cards{ gap:18px; align-items:stretch; }
+
+.ranktile{ display:flex; align-items:flex-end; }
+.rank-num{ font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:158px; line-height:.7; color:transparent; -webkit-text-stroke:2.5px rgba(174,180,203,.55); margin-right:-24px; margin-bottom:-6px; }
+.rank-poster{ width:144px; height:206px; border-radius:12px; flex:none; box-shadow:0 16px 34px -14px rgba(0,0,0,.7); position:relative; overflow:hidden; }
+.rank-poster .rp-scrim{ position:absolute; inset:0; background:linear-gradient(0deg, rgba(0,0,0,.7), transparent 55%); }
+.rank-poster .rp-t{ position:absolute; left:12px; right:12px; bottom:11px; z-index:2; font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:18px; color:#fff; line-height:1.05; }
+
+.upcard{ width:270px; border-radius:16px; background:var(--card); border:1px solid var(--line); padding:20px; display:flex; flex-direction:column; gap:14px; flex:none; }
+.upcard .uc-date{ display:inline-flex; align-items:center; gap:8px; align-self:flex-start; font-family:'JetBrains Mono',monospace; font-size:13px; letter-spacing:.08em; color:var(--accent-2); background:rgba(63,182,245,.12); padding:5px 11px; border-radius:8px; }
+.upcard .uc-t{ font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:23px; color:#fff; letter-spacing:-.4px; line-height:1.1; }
+.upcard .uc-sub{ font-size:15px; color:var(--ink-soft); margin-top:auto; display:flex; align-items:center; gap:8px; }
+.upcard .uc-dot{ width:7px; height:7px; border-radius:50%; background:#2dd49a; }
+
+/* ---------- profile menu ---------- */
+.profmenu{ position:absolute; z-index:9; top:82px; right:64px; width:346px; padding:14px; border-radius:20px;
+  background:rgba(16,19,31,.97); border:1px solid rgba(255,255,255,.11); box-shadow:0 40px 80px -24px rgba(0,0,0,.85); backdrop-filter:blur(16px); }
+.pm-head{ display:flex; align-items:center; gap:14px; padding:8px 8px 14px; }
+.pm-av{ width:52px; height:52px; border-radius:50%; background:var(--grad); display:flex; align-items:center; justify-content:center; font-weight:700; font-size:20px; color:#fff; flex:none; }
+.pm-id{ flex:1; } .pm-name{ font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:22px; color:#fff; } .pm-sub{ font-size:14px; color:var(--ink-dim); }
+.pm-switch{ font-size:15px; color:var(--accent-2); font-weight:600; padding:6px 12px; border-radius:9px; border:1px solid rgba(63,182,245,.3); }
+.pm-div{ height:1px; background:var(--line); margin:4px 6px 10px; }
+.pm-row{ display:flex; align-items:center; gap:14px; padding:13px 12px; border-radius:12px; font-size:20px; color:var(--ink-soft); }
+.pm-row svg{ width:23px; height:23px; flex:none; }
+.pm-row .pm-badge{ margin-left:auto; font-family:'JetBrains Mono',monospace; font-size:14px; font-weight:600; color:#0a0c13; background:var(--accent-2); border-radius:20px; padding:2px 10px; }
+.pm-row.focused{ background:var(--ink); color:#0a0c13; }
+.pm-row.focused svg{ color:#0a0c13; }
+.pm-row.focused .pm-badge{ background:#0a0c13; color:#fff; }
+
+/* ---------- browse mega menu ---------- */
+.browsemenu{ position:absolute; z-index:9; top:82px; left:236px; width:648px; padding:14px; border-radius:20px;
+  background:rgba(16,19,31,.97); border:1px solid rgba(255,255,255,.11); box-shadow:0 40px 80px -24px rgba(0,0,0,.85); backdrop-filter:blur(16px);
+  display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+.bm-card{ display:flex; align-items:center; gap:16px; padding:18px; border-radius:14px; background:rgba(255,255,255,.04); border:1px solid var(--line); }
+.bm-card svg{ width:30px; height:30px; color:var(--accent-2); flex:none; }
+.bm-card>div{ display:flex; flex-direction:column; gap:3px; }
+.bm-t{ font-family:'Space Grotesk',sans-serif; font-weight:600; font-size:22px; color:#fff; white-space:nowrap; }
+.bm-s{ font-size:15px; color:var(--ink-dim); }
+.bm-card.focused{ background:var(--ink); }
+.bm-card.focused svg{ color:var(--accent); }
+.bm-card.focused .bm-t{ color:#0a0c13; } .bm-card.focused .bm-s{ color:#3a3f52; }
+</style>
+</head>
+<body>
+
+<!-- ============ INTRO ============ -->
+<div class="intro" style="left:80px; top:56px;">
+  <div class="eyebrow">Ravilo TV · Aurora skin · Round 2</div>
+  <h1>Personal stuff under you, discovery in one place</h1>
+  <p>Running with your two moves — <b>My List lives under the profile avatar</b>, and <b>Top 10 + Upcoming merge into one “Discover”</b> — plus two more directions of my own. Every concept is a real screen moment, not just a bar.</p>
+  <div class="rules">
+    <div class="rule"><span class="dot d"></span><b>Merged:</b>&nbsp;Top 10 + Upcoming → “Discover” (Trending · Coming Soon)</div>
+    <div class="rule"><span class="dot p"></span><b>Under the avatar ▾:</b>&nbsp;My List · Switch profile · Settings</div>
+  </div>
+</div>
+
+<!-- ============ 1 · PROFILE HUB ============ -->
+<div class="concept" style="left:80px; top:440px;">
+  <div class="clabel">
+    <span class="idx">01</span><span class="name">Profile hub</span>
+    <span class="tag you">Your idea</span>
+    <span class="note">My List, profiles &amp; settings tuck under the avatar. Bar drops to four.</span>
+  </div>
+  <div class="stage">
+    <div class="backdrop"></div><div class="vign"></div>
+    <div class="appbar">
+      <div class="brand"><svg class="mark" viewBox="12 20 76 76"><defs><linearGradient id="j1" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="var(--accent)"/><stop offset="1" stop-color="var(--accent-2)"/></linearGradient></defs><path d="M22 52 C22 24 78 24 78 52 C66 45 59 45 50 49 C41 45 34 45 22 52 Z" fill="url(#j1)"/><g stroke="url(#j1)" stroke-width="4.5" stroke-linecap="round" fill="none"><path d="M33 51 q-5 12 1 20 q5 8 0 14" opacity=".9"/><path d="M44 52 q-4 13 1 21 q4 9 0 13" opacity=".72"/><path d="M56 52 q4 13 -1 21 q-4 9 0 13" opacity=".72"/><path d="M67 51 q5 12 -1 20 q-5 8 0 14" opacity=".9"/></g></svg><span class="wm">Ravilo</span></div>
+      <div class="topnav">
+        <div class="navitem cur">Home</div>
+        <div class="navitem">Movies</div>
+        <div class="navitem">Series</div>
+        <div class="navitem">Discover</div>
+      </div>
+      <div class="right">
+        <div class="iconbtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><line x1="16.5" y1="16.5" x2="21" y2="21"></line></svg></div>
+        <div class="clock">21:11</div>
+        <div class="avatar focused">ER</div>
+      </div>
+    </div>
+    <div class="profmenu">
+      <div class="pm-head">
+        <div class="pm-av">ER</div>
+        <div class="pm-id"><div class="pm-name">Erik</div><div class="pm-sub">Faroe · Aurora skin</div></div>
+        <div class="pm-switch">Switch</div>
+      </div>
+      <div class="pm-div"></div>
+      <div class="pm-row focused"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M6 3h12v18l-6-4-6 4z"/></svg>My List <span class="pm-badge">12</span></div>
+      <div class="pm-row"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>Continue Watching</div>
+      <div class="pm-row"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 8h9M18 8h2M4 16h2M11 16h9"/><circle cx="15.5" cy="8" r="2.3"/><circle cx="8" cy="16" r="2.3"/></svg>Settings</div>
+      <div class="pm-row"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 3v9"/><path d="M6.5 7a7 7 0 1 0 11 0"/></svg>Unpair this TV</div>
+    </div>
+    <div class="hero">
+      <div class="kicker">Blender Open Movie · Film</div>
+      <h1 class="htitle">Big Buck Bunny</h1>
+      <div class="hmeta"><span class="chip">4K</span><span>2008</span><span>Animation · Comedy</span><span class="chip">G+</span></div>
+    </div>
+    <div class="railpeek">
+      <div class="rp-head">Channels &amp; Collections</div>
+      <div class="rp-track"><span class="cpill c1">Disney+</span><span class="cpill c2">dansktv</span><span class="cpill c3">Universal</span><span class="cpill c4">Viaplay</span><span class="cpill c5">HBO</span><span class="cpill c6">Paramount+</span></div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 2 · DISCOVER (MERGED) ============ -->
+<div class="concept" style="left:80px; top:1300px;">
+  <div class="clabel">
+    <span class="idx">02</span><span class="name">Discover, merged</span>
+    <span class="tag you">Your idea</span>
+    <span class="note">Top 10 + Upcoming become one screen with a Trending / Coming Soon toggle.</span>
+  </div>
+  <div class="stage">
+    <div class="flat"></div>
+    <div class="appbar">
+      <div class="brand"><svg class="mark" viewBox="12 20 76 76"><defs><linearGradient id="j2" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="var(--accent)"/><stop offset="1" stop-color="var(--accent-2)"/></linearGradient></defs><path d="M22 52 C22 24 78 24 78 52 C66 45 59 45 50 49 C41 45 34 45 22 52 Z" fill="url(#j2)"/><g stroke="url(#j2)" stroke-width="4.5" stroke-linecap="round" fill="none"><path d="M33 51 q-5 12 1 20 q5 8 0 14" opacity=".9"/><path d="M44 52 q-4 13 1 21 q4 9 0 13" opacity=".72"/><path d="M56 52 q4 13 -1 21 q-4 9 0 13" opacity=".72"/><path d="M67 51 q5 12 -1 20 q-5 8 0 14" opacity=".9"/></g></svg><span class="wm">Ravilo</span></div>
+      <div class="topnav">
+        <div class="navitem">Home</div>
+        <div class="navitem">Movies</div>
+        <div class="navitem">Series</div>
+        <div class="navitem cur focused">Discover</div>
+      </div>
+      <div class="right">
+        <div class="iconbtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><line x1="16.5" y1="16.5" x2="21" y2="21"></line></svg></div>
+        <div class="clock">21:11</div>
+        <div class="avatar">ER</div>
+      </div>
+    </div>
+    <div class="screen">
+      <div class="dischead"><h1>Discover</h1><span class="dsub">What everyone’s watching — and what’s on the way</span></div>
+      <div class="segment">
+        <div class="seg on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 16l6-6 4 4 8-8"/><path d="M15 6h6v6"/></svg>Trending</div>
+        <div class="seg"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>Coming Soon</div>
+      </div>
+      <div class="drow">
+        <div class="drow-h">Trending this week · Faroe</div>
+        <div class="drow-track">
+          <div class="ranktile"><span class="rank-num">1</span><div class="rank-poster" style="background:linear-gradient(150deg,#243049,#3a4d78);"><div class="rp-scrim"></div><div class="rp-t">Nordvest</div></div></div>
+          <div class="ranktile"><span class="rank-num">2</span><div class="rank-poster" style="background:linear-gradient(150deg,#0b3d5a,#1272a0);"><div class="rp-scrim"></div><div class="rp-t">Havets Hjarta</div></div></div>
+          <div class="ranktile"><span class="rank-num">3</span><div class="rank-poster" style="background:linear-gradient(150deg,#3a1a52,#6a35a9);"><div class="rp-scrim"></div><div class="rp-t">The Expanse</div></div></div>
+          <div class="ranktile"><span class="rank-num">4</span><div class="rank-poster" style="background:linear-gradient(150deg,#5a3410,#a8681f);"><div class="rp-scrim"></div><div class="rp-t">Sintel</div></div></div>
+          <div class="ranktile"><span class="rank-num">5</span><div class="rank-poster" style="background:linear-gradient(150deg,#123a2e,#1f8a5b);"><div class="rp-scrim"></div><div class="rp-t">Cosmos Laundromat</div></div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 3 · DISCOVERY IN HOME ============ -->
+<div class="concept" style="left:80px; top:2160px;">
+  <div class="clabel">
+    <span class="idx">03</span><span class="name">Discovery folded into Home</span>
+    <span class="tag new">My idea</span>
+    <span class="note">No Discover tab at all — Trending + Coming Soon are just rows on Home.</span>
+  </div>
+  <div class="stage">
+    <div class="flat"></div>
+    <div class="appbar">
+      <div class="brand"><svg class="mark" viewBox="12 20 76 76"><defs><linearGradient id="j3" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="var(--accent)"/><stop offset="1" stop-color="var(--accent-2)"/></linearGradient></defs><path d="M22 52 C22 24 78 24 78 52 C66 45 59 45 50 49 C41 45 34 45 22 52 Z" fill="url(#j3)"/><g stroke="url(#j3)" stroke-width="4.5" stroke-linecap="round" fill="none"><path d="M33 51 q-5 12 1 20 q5 8 0 14" opacity=".9"/><path d="M44 52 q-4 13 1 21 q4 9 0 13" opacity=".72"/><path d="M56 52 q4 13 -1 21 q-4 9 0 13" opacity=".72"/><path d="M67 51 q5 12 -1 20 q-5 8 0 14" opacity=".9"/></g></svg><span class="wm">Ravilo</span></div>
+      <div class="topnav">
+        <div class="navitem cur">Home</div>
+        <div class="navitem">Movies</div>
+        <div class="navitem">Series</div>
+      </div>
+      <div class="right">
+        <div class="iconbtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><line x1="16.5" y1="16.5" x2="21" y2="21"></line></svg></div>
+        <div class="clock">21:11</div>
+        <div class="avatar">ER</div>
+      </div>
+    </div>
+    <div class="screen">
+      <div class="drow">
+        <div class="drow-h"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 16l6-6 4 4 8-8"/><path d="M15 6h6v6"/></svg>Trending This Week</div>
+        <div class="drow-track">
+          <div class="ranktile"><span class="rank-num">1</span><div class="rank-poster" style="background:linear-gradient(150deg,#243049,#3a4d78);"><div class="rp-scrim"></div><div class="rp-t">Nordvest</div></div></div>
+          <div class="ranktile"><span class="rank-num">2</span><div class="rank-poster" style="background:linear-gradient(150deg,#0b3d5a,#1272a0);"><div class="rp-scrim"></div><div class="rp-t">Havets Hjarta</div></div></div>
+          <div class="ranktile"><span class="rank-num">3</span><div class="rank-poster" style="background:linear-gradient(150deg,#3a1a52,#6a35a9);"><div class="rp-scrim"></div><div class="rp-t">The Expanse</div></div></div>
+          <div class="ranktile"><span class="rank-num">4</span><div class="rank-poster" style="background:linear-gradient(150deg,#5a3410,#a8681f);"><div class="rp-scrim"></div><div class="rp-t">Sintel</div></div></div>
+        </div>
+      </div>
+      <div class="drow">
+        <div class="drow-h"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>Coming Soon</div>
+        <div class="drow-track cards">
+          <div class="upcard"><span class="uc-date">FRI · 11 JUL</span><div class="uc-t">Nordvest<br>S2 : E5</div><div class="uc-sub"><span class="uc-dot"></span>Airing · Sonarr</div></div>
+          <div class="upcard"><span class="uc-date">SAT · 12 JUL</span><div class="uc-t">Dune:<br>Part Two</div><div class="uc-sub"><span class="uc-dot"></span>Released · Radarr</div></div>
+          <div class="upcard"><span class="uc-date">MON · 14 JUL</span><div class="uc-t">Havets<br>Hjarta S3</div><div class="uc-sub"><span class="uc-dot"></span>Premiere · Sonarr</div></div>
+          <div class="upcard"><span class="uc-date">WED · 16 JUL</span><div class="uc-t">Tears of<br>Steel 2</div><div class="uc-sub"><span class="uc-dot"></span>Announced</div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 4 · BROWSE MEGA-MENU ============ -->
+<div class="concept" style="left:80px; top:3020px;">
+  <div class="clabel">
+    <span class="idx">04</span><span class="name">One “Browse” door</span>
+    <span class="tag new">My idea</span>
+    <span class="note">Movies · Series · Discover collapse behind Browse ▾. Bar = Home · Browse.</span>
+  </div>
+  <div class="stage">
+    <div class="backdrop"></div><div class="vign"></div>
+    <div class="appbar">
+      <div class="brand"><svg class="mark" viewBox="12 20 76 76"><defs><linearGradient id="j4" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="var(--accent)"/><stop offset="1" stop-color="var(--accent-2)"/></linearGradient></defs><path d="M22 52 C22 24 78 24 78 52 C66 45 59 45 50 49 C41 45 34 45 22 52 Z" fill="url(#j4)"/><g stroke="url(#j4)" stroke-width="4.5" stroke-linecap="round" fill="none"><path d="M33 51 q-5 12 1 20 q5 8 0 14" opacity=".9"/><path d="M44 52 q-4 13 1 21 q4 9 0 13" opacity=".72"/><path d="M56 52 q4 13 -1 21 q-4 9 0 13" opacity=".72"/><path d="M67 51 q5 12 -1 20 q-5 8 0 14" opacity=".9"/></g></svg><span class="wm">Ravilo</span></div>
+      <div class="topnav">
+        <div class="navitem cur">Home</div>
+        <div class="navitem focused">Browse
+          <svg class="caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 9l6 6 6-6"/></svg>
+        </div>
+      </div>
+      <div class="right">
+        <div class="iconbtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><line x1="16.5" y1="16.5" x2="21" y2="21"></line></svg></div>
+        <div class="clock">21:11</div>
+        <div class="avatar">ER</div>
+      </div>
+    </div>
+    <div class="browsemenu">
+      <div class="bm-card focused"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2.5"/><path d="M8 5v14M16 5v14" stroke-width="1.6"/></svg><div><div class="bm-t">Movies</div><div class="bm-s">312 titles</div></div></div>
+      <div class="bm-card"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"><rect x="3" y="6" width="18" height="12" rx="2.5"/><path d="M9 21h6"/></svg><div><div class="bm-t">Series</div><div class="bm-s">48 shows</div></div></div>
+      <div class="bm-card"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 16l6-6 4 4 8-8"/><path d="M15 6h6v6"/></svg><div><div class="bm-t">Trending</div><div class="bm-s">Top 10 this week</div></div></div>
+      <div class="bm-card"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg><div><div class="bm-t">Coming Soon</div><div class="bm-s">Next 30 days</div></div></div>
+    </div>
+    <div class="hero">
+      <div class="kicker">Blender Open Movie · Film</div>
+      <h1 class="htitle">Big Buck Bunny</h1>
+      <div class="hmeta"><span class="chip">4K</span><span>2008</span><span>Animation · Comedy</span><span class="chip">G+</span></div>
+    </div>
+    <div class="railpeek">
+      <div class="rp-head">Channels &amp; Collections</div>
+      <div class="rp-track"><span class="cpill c1">Disney+</span><span class="cpill c2">dansktv</span><span class="cpill c3">Universal</span><span class="cpill c4">Viaplay</span><span class="cpill c5">HBO</span><span class="cpill c6">Paramount+</span></div>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

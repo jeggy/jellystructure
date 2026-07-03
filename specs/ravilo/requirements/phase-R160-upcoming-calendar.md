@@ -1,4 +1,4 @@
-# Phase R160 — Upcoming: a dedicated air/release calendar with detail, "already available" & "missing" states
+# Phase R155 — Upcoming: a dedicated air/release calendar with detail, "already available" & "missing" states
 
 > A first-class **Upcoming** tab (gated on Sonarr **or** Radarr) that shows a **TV-friendly calendar**
 > of what's on the way: Sonarr's next monitored **episodes** and Radarr's monitored **movie releases**,
@@ -165,28 +165,3 @@ ingest, no overdue query.
 - Related: **R149** (on-surface next-airing; this phase delivers its deferred dedicated screen + movie
   equivalents + countdown), **R148** (episode air dates), **Phase 54 / Discover + R48–R50** (Radarr-backed
   request/fetch + `config.radarr` gating this mirrors), **R153** (age-rating badge reused in the detail meta).
-
-## Dev-review addenda (2026-07-03 — backend decisions the design mock couldn't know)
-
-1. **Feed endpoint + server-side cache.** The feed is `GET /api/tv/upcoming` (device-token gated, like
-   `/api/tv/discover`). The assembled calendar (Sonarr calendar + queue, Radarr calendar, catalogue
-   resolution, overdue query) is **cached server-side with a short TTL (~5 min, the R86 `HomeFeedService`
-   pattern)** — a TV opening the tab must NOT fan out live requests to Sonarr/Radarr per view. Manual
-   refresh = cache-expiry refetch, still best-effort.
-2. **Gating flag is server-derived, not raw config.** The client mock gates on `config.sonarr ||
-   config.radarr`, but the real `RaviloConfig` deliberately carries no *arr config. Expose a derived
-   boolean (e.g. `upcoming_enabled`) on the config/feed DTO, computed server-side from `[sonarr]`/`[radarr]`
-   presence — same pattern as `discover.enabled` gating `discoverEnabled()`. No provider details leak.
-3. **Artwork.** Items **already in the library** use the normal image proxy (`/api/tv/image/{id}/…`,
-   R85/R133). Items we don't hold render the **gradient placeholder** from the design — no proxying of
-   Sonarr/Radarr-hosted images this phase (avoids a new external-image pipeline + FD surface).
-4. **Download-% freshness.** The mock polls per-card. Real app: the % rides the feed payload; freshness
-   comes from refetching the feed on tab-open + a modest on-screen interval (~30–60 s). No TvEventBus push
-   this phase (display-only surface; the acquisition-status push from R49 can be reused later if wanted).
-5. **ArrClient stays read-only + pooled.** Calendar (`/api/v3/calendar`) and queue (`/api/v3/queue`) reads
-   extend the existing `ArrClient` (read + rescan only — the Phase 54 scope fence holds; no add/grab/delete)
-   and automatically ride the Phase 129 shared `OutboundHttp.client` + `withPermit` gate.
-6. **"Series already in the catalogue" routing (§G).** The server resolves this — each feed item carries
-   the catalogue `itemId` when the title (or its series) exists in `MediaStore` (match by tvdbId/tmdbId,
-   the R149 `SonarrEnrichService` mapping). The client routes on `itemId != null`, it never matches titles
-   itself.
