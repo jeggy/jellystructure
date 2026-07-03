@@ -73,7 +73,11 @@ class UpcomingService(
                 if (!ep.monitored) continue
                 val date = ep.airDate?.takeIf { it.isNotBlank() } ?: ep.airDateUtc?.take(10) ?: continue
                 val queued = queue.firstOrNull { it.refId == ep.seriesId && it.season == ep.seasonNumber && it.episode == ep.episodeNumber }
-                val itemId = seriesByTvdb[series.tvdbId]?.id
+                val matched = seriesByTvdb[series.tvdbId]
+                // itemId is the client-navigable id (matches DetailService.toMediaCard's `jellyfinId ?: id`
+                // convention — /api/tv/series/{id} resolves via resolveByJellyfinId, NOT MediaItem.id).
+                // posterUrl keys off MediaItem.id (the on-disk artwork cache key) — a different id scheme.
+                val itemId = matched?.let { it.jellyfinId ?: it.id }
                 all += UpcomingItem(
                     id = "ep-${ep.seriesId}-${ep.seasonNumber}-${ep.episodeNumber}",
                     kind = TvMediaKind.SERIES,
@@ -81,7 +85,7 @@ class UpcomingService(
                     year = series.year,
                     genre = series.genres.firstOrNull(),
                     itemId = itemId,
-                    posterUrl = itemId?.let { RaviloImageUrl.poster(it) },
+                    posterUrl = matched?.let { RaviloImageUrl.poster(it.id) },
                     date = date,
                     time = extractTime(ep.airDateUtc),
                     season = ep.seasonNumber,
@@ -102,7 +106,8 @@ class UpcomingService(
                 if (!mv.monitored) continue
                 val (date, releaseType) = pickMovieRelease(mv, today, start, end) ?: continue
                 val queued = queue.firstOrNull { it.refId == mv.id }
-                val itemId = moviesByTmdb[mv.tmdbId]?.id
+                val matched = moviesByTmdb[mv.tmdbId]
+                val itemId = matched?.let { it.jellyfinId ?: it.id }
                 all += UpcomingItem(
                     id = "mv-${mv.id}",
                     kind = TvMediaKind.MOVIE,
@@ -110,7 +115,7 @@ class UpcomingService(
                     year = mv.year,
                     genre = mv.genres.firstOrNull(),
                     itemId = itemId,
-                    posterUrl = itemId?.let { RaviloImageUrl.poster(it) },
+                    posterUrl = matched?.let { RaviloImageUrl.poster(it.id) },
                     date = date,
                     releaseType = releaseType,
                     status = resolveStatus(date, today, itemId != null, queued != null),
