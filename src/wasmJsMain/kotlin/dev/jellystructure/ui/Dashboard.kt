@@ -56,7 +56,7 @@ fun renderDashboard(container: Element, scope: CoroutineScope) {
             <hr class="dash" style="margin:11px 0">
             <div id="attention-breakdown"><span class="muted tiny">Loading…</span></div>
           </div>
-          <div class="col" style="width:320px;flex:none;gap:14px">
+          <div class="col dash-sidecol" style="width:320px;flex:none;gap:14px">
             <div class="card">
               <h3 style="margin:0 0 8px;font-size:1.05rem">Recently processed</h3>
               <div id="recent-list" class="tiny" style="line-height:2"><span class="muted">Loading…</span></div>
