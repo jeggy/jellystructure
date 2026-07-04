@@ -627,6 +627,16 @@ enum class SeerrDiscoverEndpoint(val needsParam: Boolean) {
     TRENDING(false),
 }
 
+/** One choice in the add-row popover's genre/studio/network picker — `logoPath` is a TMDB `/t/p/...`
+ *  path (null for genres, which have no logo) so the admin editor can show a recognizable brand mark
+ *  instead of a bare id. */
+@Serializable
+data class PickerOption(
+    val id: Int,
+    val name: String,
+    val logoPath: String? = null,
+)
+
 // ─── Request bodies ───────────────────────────────────────────────────────────
 
 @Serializable

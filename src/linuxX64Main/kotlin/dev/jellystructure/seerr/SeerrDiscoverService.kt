@@ -12,24 +12,33 @@ import dev.jellystructure.shared.tv.DiscoverResponse
 import dev.jellystructure.shared.tv.DiscoverRow
 import dev.jellystructure.shared.tv.MediaKind
 import dev.jellystructure.shared.tv.Person
+import dev.jellystructure.shared.tv.PickerOption
 import dev.jellystructure.shared.tv.RequestEntry
 import kotlin.math.round
 
 // Standard TMDB genre id → name tables (movie/tv lists differ) — stable, rarely-changing reference
 // data; discover/search results only carry genreIds, so the first id is resolved to a display label
-// here rather than round-tripping to TMDB for a name lookup per tile.
-private val MOVIE_GENRES = mapOf(
+// here rather than round-tripping to TMDB for a name lookup per tile. Not private: also the source
+// for the admin Request-tab add-row genre dropdown (Phase 138, seerrGenreOptions below).
+val MOVIE_GENRES = mapOf(
     28 to "Action", 12 to "Adventure", 16 to "Animation", 35 to "Comedy", 80 to "Crime",
     99 to "Documentary", 18 to "Drama", 10751 to "Family", 14 to "Fantasy", 36 to "History",
     27 to "Horror", 10402 to "Music", 9648 to "Mystery", 10749 to "Romance", 878 to "Science Fiction",
     10770 to "TV Movie", 53 to "Thriller", 10752 to "War", 37 to "Western",
 )
-private val TV_GENRES = mapOf(
+val TV_GENRES = mapOf(
     10759 to "Action & Adventure", 16 to "Animation", 35 to "Comedy", 80 to "Crime",
     99 to "Documentary", 18 to "Drama", 10751 to "Family", 10762 to "Kids", 9648 to "Mystery",
     10763 to "News", 10764 to "Reality", 10765 to "Sci-Fi & Fantasy", 10766 to "Soap",
     10767 to "Talk", 10768 to "War & Politics", 37 to "Western",
 )
+
+/** Phase 138 — genre options for the admin Request-tab add-row dropdown, sorted alphabetically
+ *  (the raw maps above are declaration-ordered for readability, not display order). */
+fun seerrGenreOptions(kind: String): List<PickerOption> =
+    (if (kind == "tv") TV_GENRES else MOVIE_GENRES)
+        .map { (id, name) -> PickerOption(id, name) }
+        .sortedBy { it.name }
 
 /**
  * R171 — the TV's Request tab: renders configured Seerr feeds (Phase 137), the Seerr-scoped search,

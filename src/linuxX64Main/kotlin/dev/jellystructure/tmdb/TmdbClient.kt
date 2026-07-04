@@ -722,6 +722,22 @@ class TmdbClient(
         return result.getOrNull()
     }
 
+    /** Phase 138 — full result list (vs. [searchCompany]'s first-match) for the admin Request-tab
+     *  studio picker's live search. */
+    suspend fun searchCompanies(query: String): List<TmdbCompany> {
+        val key = apiKey()
+        if (key.isBlank() || query.isBlank()) return emptyList()
+        val result = runCatching {
+            val response = httpGet("$baseUrl/search/company") {
+                parameter("api_key", key)
+                parameter("query", query)
+            }
+            response.body<TmdbCompanySearchResponse>().results.take(10)
+        }
+        if (result.isFailure) Logger.warn("TMDB company search failed for '$query': ${result.exceptionOrNull()?.message}")
+        return result.getOrElse { emptyList() }
+    }
+
     suspend fun getEpisodeDetails(seriesId: Int, season: Int, episode: Int, language: String? = null): TmdbEpisodeDetails? {
         val key = apiKey()
         if (key.isBlank()) return null

@@ -66,6 +66,7 @@ fun Route.configureConfigRoutes(
     qbClient: QBittorrentClient? = null,
     arrClient: ArrClient? = null,
     seerrClient: SeerrClient? = null,
+    tmdbClient: dev.jellystructure.tmdb.TmdbClient? = null,
 ) {
     get("/config") {
         call.respond(ConfigResponse(configStore.current, effectiveScanThreads))
@@ -153,5 +154,21 @@ fun Route.configureConfigRoutes(
             )
         }
         call.respond(diags)
+    }
+
+    // Phase 138 — Request tab add-row pickers (genre/studio/network dropdowns instead of raw TMDB ids).
+    get("/config/seerr/genres") {
+        call.respond(dev.jellystructure.seerr.seerrGenreOptions(call.request.queryParameters["kind"] ?: "movie"))
+    }
+    get("/config/seerr/studios") {
+        val q = call.request.queryParameters["q"]?.trim().orEmpty()
+        if (q.isBlank()) { call.respond(dev.jellystructure.seerr.CURATED_STUDIOS); return@get }
+        val results = tmdbClient?.let { runCatching { it.searchCompanies(q) }.getOrDefault(emptyList()) }.orEmpty()
+        call.respond(results.map { dev.jellystructure.shared.tv.PickerOption(it.id, it.name, it.logoPath) })
+    }
+    get("/config/seerr/networks") {
+        // No live catalogue search for networks — TMDB has no /search/network endpoint; the operator
+        // types into a fixed curated list, filtered client-side.
+        call.respond(dev.jellystructure.seerr.CURATED_NETWORKS)
     }
 }
