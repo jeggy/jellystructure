@@ -25,6 +25,9 @@ actual fun TrailerEmbed(site: String, key: String, modifier: Modifier) {
             f.style.cssText = "position:fixed;top:0;left:0;width:100%;height:100%;border:0;z-index:2;pointer-events:none;background:#000"
             f.src = url
             f.setAttribute("allow", "autoplay; encrypted-media; picture-in-picture")
+            // YouTube error 153 fires when the embed request carries no/blocked referrer (e.g. an
+            // ad-blocker or privacy extension stripping it) — pin a policy that still sends one.
+            f.setAttribute("referrerpolicy", "strict-origin-when-cross-origin")
             document.body?.appendChild(f)
         }
         onDispose {

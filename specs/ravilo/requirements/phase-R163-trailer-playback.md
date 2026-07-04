@@ -110,3 +110,16 @@ a DTO trailer field.
    iframe embed **is** YouTube's official player, so ToS-wise this is the sanctioned path.
 3. **DTO note:** `trailer.thumb` (the Phase 130 dev-review addition for Vimeo thumbnails) is not needed
    by this phase — the button opens straight into playback; only the admin card uses thumbnails.
+
+4. **Bug fix (2026-07-04) — Android trailers showed YouTube error 153.** Root cause: `TrailerEmbedAndroid.kt`
+   called `webView.loadUrl(embedUrl)` directly, making the embed URL the WebView's very first navigation —
+   with no referring page, no `Referer`/`Origin` header reaches the provider's embed validation, which is
+   exactly what error 153 ("video player configuration error") rejects. Fixed by hosting the `<iframe>`
+   inside a synthetic local page loaded via `loadDataWithBaseURL(embedOrigin, html, …)`, where `embedOrigin`
+   is the provider's own real https origin (`https://www.youtube.com` / `https://player.vimeo.com`) — this
+   gives the iframe's request a proper referrer. Also enabled `settings.domStorageEnabled` (the iframe
+   player needs local/session storage) and `CookieManager.setAcceptThirdPartyCookies` (the embed is
+   third-party relative to the synthetic origin, and Android WebView blocks third-party cookies by
+   default). The web target's DOM `<iframe>` runs in a real browser origin so it wasn't the primary
+   suspect, but got a defensive `referrerpolicy="strict-origin-when-cross-origin"` too, since ad-blockers/
+   privacy extensions can strip the referrer there as well.
