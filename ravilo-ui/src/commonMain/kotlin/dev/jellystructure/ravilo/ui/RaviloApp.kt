@@ -591,7 +591,16 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                                 RaviloNavTarget.HOME -> resetTo(Dest.Home(dest.displayName))
                                 RaviloNavTarget.MOVIES -> push(Dest.Browse(BrowseKind.MOVIES, dest.displayName))
                                 RaviloNavTarget.SERIES -> push(Dest.Browse(BrowseKind.SERIES, dest.displayName))
-                                RaviloNavTarget.DISCOVER -> {} // already on Discover
+                                // Bug fix: this used to be a hard no-op ("already on Discover"), but since
+                                // R170 merged two separately-navigable tabs (Upcoming, Discover/Top10) into
+                                // one shared nav slot, that no-op now fires for BOTH segments — and this
+                                // screen's own two-stage-Back (`atTop = { navBarFocused }`) + entry-focus
+                                // routinely park D-pad focus directly on this now-inert button, unlike
+                                // Home/Browse/Channel which refocus real content instead. Reuse the same
+                                // switch already wired to the in-screen pill (onSwitchToRequest below) so
+                                // the nav button does the pre-R170-equivalent thing: flip segments when the
+                                // other one exists, instead of nothing.
+                                RaviloNavTarget.DISCOVER -> if (discoverAvailable) replaceTop(Dest.Discover(dest.displayName, DiscoverSegment.REQUEST)) else Unit
                             }
                         },
                         onProfile = { profileMenuOpen = true },
@@ -619,7 +628,9 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                                 RaviloNavTarget.HOME -> resetTo(Dest.Home(dest.displayName))
                                 RaviloNavTarget.MOVIES -> push(Dest.Browse(BrowseKind.MOVIES, dest.displayName))
                                 RaviloNavTarget.SERIES -> push(Dest.Browse(BrowseKind.SERIES, dest.displayName))
-                                RaviloNavTarget.DISCOVER -> {} // already on Discover
+                                // Same fix as the COMING_SOON branch above, mirrored: switch to the other
+                                // segment instead of no-op'ing when it exists.
+                                RaviloNavTarget.DISCOVER -> if (upcomingAvailable) replaceTop(Dest.Discover(dest.displayName, DiscoverSegment.COMING_SOON)) else Unit
                             }
                         },
                         onEntrySelect = { mediaType, tmdbId -> push(Dest.DiscoverItem(mediaType, tmdbId, dest.displayName)) },
