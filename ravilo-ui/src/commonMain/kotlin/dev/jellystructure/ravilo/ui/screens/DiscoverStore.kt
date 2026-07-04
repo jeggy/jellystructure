@@ -24,6 +24,9 @@ sealed class DiscoverState {
 class DiscoverStore(private val apiClient: TvApiClient) {
     /** Row index (0-based within data.rows) of the last tapped entry — used to restore scroll position on Back. */
     var lastSelectedRowIndex: Int = -1
+    /** Bug fix: the exact tile (matching `StaticContentRow`'s `itemKey` format, "<feedId>:<tmdbId>") to
+     *  re-focus on Back-return, so the user lands back on the tile they opened instead of the nav bar. */
+    var lastSelectedItemKey: String? = null
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val _state = MutableStateFlow<DiscoverState>(DiscoverState.Loading)
     val state: StateFlow<DiscoverState> = _state.asStateFlow()

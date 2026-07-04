@@ -119,13 +119,16 @@ private fun DiscoverLoaded(
     val navBarFR = remember { FocusRequester() }
     val columnFR = remember { FocusRequester() }
 
-    // Restore scroll to last-selected row on Back-return from detail.
+    // Restore scroll to last-selected row on Back-return from detail. Bug fix: only default focus to
+    // the AppBar on a genuinely fresh entry — when returning from a detail/search screen we just
+    // opened a tile from, restoreItemKey (passed to StaticContentRow below) re-focuses that exact tile
+    // instead, matching BrowseScreen's R139 pattern.
     LaunchedEffect(Unit) {
         val idx = store.lastSelectedRowIndex
         if (idx >= 0) {
             listState.scrollToItem((idx + 1).coerceAtLeast(0)) // +1 for header item
         }
-        runCatching { navBarFR.requestFocus() }
+        if (store.lastSelectedItemKey == null) runCatching { navBarFR.requestFocus() }
     }
 
     // Two-stage Back: first Back focuses AppBar (and scrolls to top); second Back (from AppBar) pops.
@@ -180,9 +183,12 @@ private fun DiscoverLoaded(
                     title = row.feedName,
                     items = row.entries,
                     itemKey = { e -> "${row.feedId}:${e.entry.tmdbId}" },
-                ) { _, e, _ ->   // R139: StaticContentRow signature gained a FocusRequester slot (Discover keeps its row-level restore)
-                    RequestTile(e) {
+                    // Bug fix: only the row we last opened a tile from carries a restore target.
+                    restoreItemKey = if (ri == store.lastSelectedRowIndex) store.lastSelectedItemKey else null,
+                ) { _, e, fr ->
+                    RequestTile(e, focusRequester = fr) {
                         store.lastSelectedRowIndex = ri
+                        store.lastSelectedItemKey = "${row.feedId}:${e.entry.tmdbId}"
                         onEntrySelect(if (e.entry.mediaKind == MediaKind.SERIES) "tv" else "movie", e.entry.tmdbId)
                     }
                 }
@@ -237,7 +243,7 @@ private fun SeerrSearchPill(onSelect: () -> Unit) {
  * Non-private: also used by [SeerrSearchScreen]'s result grid.
  */
 @Composable
-internal fun RequestTile(e: DiscoverEntry, onFocused: () -> Unit = {}, onSelect: () -> Unit) {
+internal fun RequestTile(e: DiscoverEntry, focusRequester: FocusRequester? = null, onFocused: () -> Unit = {}, onSelect: () -> Unit) {
     val colors = RaviloTheme.colors
     Tile(
         title = e.entry.title,
@@ -245,6 +251,7 @@ internal fun RequestTile(e: DiscoverEntry, onFocused: () -> Unit = {}, onSelect:
         subtitle = requestSubline(e.entry),
         episodeBadge = discoverStatusLabel(e.acquisition),
         episodeBadgeColor = discoverStatusColor(e.acquisition.status, colors.accent).copy(alpha = 0.92f),
+        focusRequester = focusRequester,
         onFocused = onFocused,
         onSelect = onSelect,
     )

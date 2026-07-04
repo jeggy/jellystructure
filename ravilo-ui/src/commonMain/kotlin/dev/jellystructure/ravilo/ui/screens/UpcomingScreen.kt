@@ -3,6 +3,7 @@ package dev.jellystructure.ravilo.ui.screens
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -96,6 +97,10 @@ class UpcomingStore(private val apiClient: TvApiClient) {
     private val _state = MutableStateFlow<UpcomingState>(UpcomingState.Loading)
     val state: StateFlow<UpcomingState> = _state.asStateFlow()
     val listState = LazyListState()
+    /** Bug fix: the exact card (matching `StaticContentRow`'s `itemKey` — a plain item id for the
+     *  day rows, "missing:<id>" for the missing row) to re-focus on Back-return, so the user lands
+     *  back on the card they opened instead of the nav bar. */
+    var lastSelectedItemKey: String? = null
 
     init { load() }
 
@@ -200,7 +205,10 @@ private fun UpcomingLoaded(
     val scope = rememberCoroutineScope()
     val navBarFR = remember { FocusRequester() }
     val columnFR = remember { FocusRequester() }
-    LaunchedEffect(Unit) { runCatching { navBarFR.requestFocus() } }
+    // Bug fix: only default focus to the AppBar on a genuinely fresh entry — when returning from a
+    // detail screen we just opened a card from, restoreItemKey (passed to StaticContentRow below)
+    // re-focuses that exact card instead, matching BrowseScreen's R139 pattern.
+    LaunchedEffect(Unit) { if (store.lastSelectedItemKey == null) runCatching { navBarFR.requestFocus() } }
 
     var navBarFocused by remember { mutableStateOf(false) }
     Box(
@@ -259,8 +267,9 @@ private fun UpcomingLoaded(
                             title = dayLabel(day),
                             items = grouped[day].orEmpty(),
                             itemKey = { it.id },
+                            restoreItemKey = store.lastSelectedItemKey,
                         ) { _, item, fr ->
-                            UpcomingCard(item, fr, onSelect = { onItemSelect(item) })
+                            UpcomingCard(item, fr, onSelect = { store.lastSelectedItemKey = item.id; onItemSelect(item) })
                         }
                     }
                 }
@@ -278,8 +287,9 @@ private fun UpcomingLoaded(
                         title = null,
                         items = feed.missing,
                         itemKey = { "missing:${it.id}" },
+                        restoreItemKey = store.lastSelectedItemKey,
                     ) { _, item, fr ->
-                        UpcomingCard(item, fr, onSelect = { onItemSelect(item) })
+                        UpcomingCard(item, fr, onSelect = { store.lastSelectedItemKey = "missing:${item.id}"; onItemSelect(item) })
                     }
                 }
             }
@@ -320,6 +330,10 @@ private fun FilterChips(active: UpcomingFilter, onFilterChange: (UpcomingFilter)
                 modifier = Modifier
                     .background(if (isActive) colors.accent else colors.surfaceVariant, RoundedCornerShape(20.dp))
                     .then(if (focused && !isActive) Modifier.background(colors.surfaceVariant, RoundedCornerShape(20.dp)) else Modifier)
+                    // Bug fix: the active chip's solid accent background hid focus entirely (only the
+                    // inactive branch above got a focus treatment) — a border shows regardless of active
+                    // state, so you can always tell which chip has D-pad focus.
+                    .then(if (focused) Modifier.border(2.dp, colors.focusRing, RoundedCornerShape(20.dp)) else Modifier)
                     .dpadFocusable(
                         focusRequester = frs[i],
                         onFocused = { focused = true },
