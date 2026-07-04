@@ -205,3 +205,14 @@ draft mapping assumed, and a couple of design decisions were made explicitly rat
    `DiscoverCoverageResponse`) is deleted now that nothing references it (R167's dependency on
    `tmdbImg`/`tmdbPoster` was on those *helper functions* in `DiscoverScreen.kt`, not the chart types —
    both helpers survive, repointed at `RequestEntry`).
+7. **Bug fix (2026-07-05) — item 1's "no per-item download progress" claim was half wrong.** It was
+   verified against Seerr's *documented* OpenAPI spec, which indeed doesn't mention it — but a live
+   in-progress request's actual JSON response carries a `mediaInfo.downloadStatus[]` array (Seerr's
+   `Media` entity relaying Radarr/Sonarr's own download-client queue via its internal `downloadtracker.ts`,
+   undocumented but real) with genuine `size`/`sizeLeft` bytes and `timeLeft`. `SeerrMediaInfo` now parses
+   it; `status=3/PROCESSING` with a non-empty, non-zero-size `downloadStatus` reports real `DOWNLOADING` +
+   a computed percentage + ETA instead of always collapsing to a bare "in queue" — status=3 with nothing
+   grabbed yet still correctly reads as `QUEUED`. Reported live: "Mood Swing" showed "In queue" while
+   Seerr's own response already had it at ~52% (`downloadStatus[0].size`/`sizeLeft`). No reconciler was
+   added — this is still a live, per-request derivation, just reading a field that exists but wasn't
+   parsed before.
