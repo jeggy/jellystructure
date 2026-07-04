@@ -322,6 +322,12 @@ data class ArrCalendarEpisode(
 data class ArrCalendarSeriesRef(
     val title: String = "",
     val tvdbId: Int = 0,
+    // Bug fix: TMDB's own external_ids can lag/omit the TheTVDB cross-reference for a show even when
+    // Sonarr (which resolves TVDB IDs directly) has the correct one — jellystructure's own scan then
+    // stores a null tvdbId, so tvdbId-only matching against our MediaStore permanently misses a show we
+    // actually hold in full. Sonarr's calendar series object also carries tmdbId; used as a fallback
+    // match key in UpcomingService.
+    val tmdbId: Int = 0,
     val network: String? = null,
     val year: Int? = null,
     val genres: List<String> = emptyList(),

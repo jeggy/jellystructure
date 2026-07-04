@@ -108,6 +108,12 @@ class UpcomingService(
         val seriesByTvdb: Map<Int, dev.jellystructure.model.MediaItem> = allItems
             .filter { it.kind == StoreKind.TV_SHOW && it.tvdbId != null && it.tvdbId != 0 }
             .associateBy { it.tvdbId!! }
+        // Bug fix: fallback match key for a show TMDB hasn't cross-referenced to TheTVDB yet (so our own
+        // scan recorded a null tvdbId) even though Sonarr — which resolves TVDB directly — has the right
+        // one. Without this a fully-held series (all episodes on disk) shows as permanently "missing".
+        val seriesByTmdb: Map<Int, dev.jellystructure.model.MediaItem> = allItems
+            .filter { it.kind == StoreKind.TV_SHOW && it.tmdbId != null && it.tmdbId != 0 }
+            .associateBy { it.tmdbId!! }
         val moviesByTmdb: Map<Int, dev.jellystructure.model.MediaItem> = allItems
             .filter { it.kind == StoreKind.MOVIE && it.tmdbId != null && it.tmdbId != 0 }
             .associateBy { it.tmdbId!! }
@@ -124,6 +130,7 @@ class UpcomingService(
                 val date = ep.airDate?.takeIf { it.isNotBlank() } ?: ep.airDateUtc?.take(10) ?: continue
                 val queued = queue.firstOrNull { it.refId == ep.seriesId && it.season == ep.seasonNumber && it.episode == ep.episodeNumber }
                 val matched = seriesByTvdb[series.tvdbId]
+                    ?: series.tmdbId.takeIf { it != 0 }?.let { seriesByTmdb[it] }
                 // itemId is the client-navigable id (matches DetailService.toMediaCard's `jellyfinId ?: id`
                 // convention — /api/tv/series/{id} resolves via resolveByJellyfinId, NOT MediaItem.id).
                 // posterUrl keys off MediaItem.id (the on-disk artwork cache key) — a different id scheme.
@@ -134,7 +141,7 @@ class UpcomingService(
                     it.seasonNumber == ep.seasonNumber && it.episodeNumber == ep.episodeNumber
                 }
                 val itemIdStr = "ep-${ep.seriesId}-${ep.seasonNumber}-${ep.episodeNumber}"
-                keys[itemIdStr] = DetailKey(tmdbId = null, tvdbId = series.tvdbId.takeIf { it != 0 }, isSeries = true)
+                keys[itemIdStr] = DetailKey(tmdbId = series.tmdbId.takeIf { it != 0 }, tvdbId = series.tvdbId.takeIf { it != 0 }, isSeries = true)
                 all += UpcomingItem(
                     id = itemIdStr,
                     kind = TvMediaKind.SERIES,
