@@ -318,7 +318,7 @@ fun startServer(
                 acquisitionService?.let { acquisitionRoutes(it) }
                 // R171 — the TV Request tab's Seerr-backed discover/search/request service; null (tab
                 // reports unavailable) until a SeerrClient is wired, exactly like the other optional *arr services above.
-                val seerrDiscoverService = seerrClient?.let { dev.jellystructure.seerr.SeerrDiscoverService(configStore, it, raviloConfigService, mediaStore, requestLanguageService, requestIntentStore) }
+                val seerrDiscoverService = seerrClient?.let { dev.jellystructure.seerr.SeerrDiscoverService(configStore, it, raviloConfigService, mediaStore, requestLanguageService, requestIntentStore, acquisitionService) }
                 tvRoutes(deviceService, raviloConfigService, homeFeedService, browseService, detailService, playbackService, sessionService, jellyfinClient, configStore, channelLogoStore, imageProxyService, tvEventBus, upcomingService, seerrDiscoverService)
             }
 
