@@ -57,6 +57,8 @@ import dev.jellystructure.ravilo.ui.screens.RaviloNavTarget
 import dev.jellystructure.ravilo.ui.screens.raviloNavTarget
 import dev.jellystructure.ravilo.ui.screens.SearchScreen
 import dev.jellystructure.ravilo.ui.screens.SearchStore
+import dev.jellystructure.ravilo.ui.screens.SeerrSearchScreen
+import dev.jellystructure.ravilo.ui.screens.SeerrSearchStore
 import dev.jellystructure.ravilo.ui.screens.SeriesDetailScreen
 import dev.jellystructure.ravilo.ui.screens.SeriesDetailStore
 import dev.jellystructure.ravilo.ui.screens.SettingsScreen
@@ -144,7 +146,11 @@ private sealed class Dest {
     // two segments of one merged Discover tab; `segment` decides which of UpcomingScreen/DiscoverScreen
     // actually renders (see DiscoverSegment/defaultDiscoverSegment in NavItems.kt).
     data class Discover(val displayName: String, val segment: DiscoverSegment) : Dest()
-    data class DiscoverItem(val listId: String, val rank: Int, val displayName: String) : Dest()
+    // R171 — addressed by mediaType ("movie"|"tv") + tmdbId; Request rows have no rank concept.
+    data class DiscoverItem(val mediaType: String, val tmdbId: Int, val displayName: String) : Dest()
+    // R171 — the Request tab's Seerr-scoped search (FR-R171-3), a separate destination from the
+    // library `Dest.Search` above (different result type/action: request tiles, not play tiles).
+    data class SeerrSearch(val displayName: String) : Dest()
     data class UpcomingDetail(val id: String, val displayName: String) : Dest()
     data class MovieDetail(val itemId: String, val displayName: String) : Dest()
     data class SeriesDetail(val itemId: String, val displayName: String) : Dest()
@@ -170,7 +176,8 @@ private sealed class Dest {
         is Browse         -> "/browse/${kind.name.lowercase()}"
         is Search         -> "/search"
         is Discover       -> "/discover"
-        is DiscoverItem   -> "/discover/$listId/$rank"
+        is DiscoverItem   -> "/discover/$mediaType/$tmdbId"
+        is SeerrSearch    -> "/discover/search"
         is UpcomingDetail -> "/upcoming/$id"
         is MovieDetail    -> "/movie/$itemId"
         is SeriesDetail   -> "/series/$itemId"
@@ -342,6 +349,7 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
             is Dest.Home -> d.displayName; is Dest.ChannelView -> d.displayName
             is Dest.Browse -> d.displayName; is Dest.Search -> d.displayName
             is Dest.Discover -> d.displayName; is Dest.DiscoverItem -> d.displayName
+            is Dest.SeerrSearch -> d.displayName
             is Dest.UpcomingDetail -> d.displayName
             is Dest.MovieDetail -> d.displayName; is Dest.SeriesDetail -> d.displayName
             is Dest.Player -> d.displayName; is Dest.Settings -> d.displayName
@@ -614,9 +622,10 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                                 RaviloNavTarget.DISCOVER -> {} // already on Discover
                             }
                         },
-                        onEntrySelect = { listId, rank -> push(Dest.DiscoverItem(listId, rank, dest.displayName)) },
+                        onEntrySelect = { mediaType, tmdbId -> push(Dest.DiscoverItem(mediaType, tmdbId, dest.displayName)) },
                         onProfile = { profileMenuOpen = true },
                         onSearch = { push(Dest.Search(dest.displayName)) },
+                        onSearchSeerr = { push(Dest.SeerrSearch(dest.displayName)) },
                         upcomingAvailable = upcomingAvailable,
                         onSwitchToComingSoon = if (upcomingAvailable) {
                             { replaceTop(Dest.Discover(dest.displayName, DiscoverSegment.COMING_SOON)) }
@@ -626,11 +635,20 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
             }
 
             is Dest.DiscoverItem -> {
-                val store = remember(dest.listId, dest.rank) { DiscoverDetailStore(apiClient, dest.listId, dest.rank) }
+                val store = remember(dest.mediaType, dest.tmdbId) { DiscoverDetailStore(apiClient, dest.mediaType, dest.tmdbId) }
                 DiscoverDetailScreen(
                     store = store,
                     onWatchMovie = { itemId, title -> push(Dest.Player(itemId, title, displayName = dest.displayName)) },
                     onGoToSeries = { itemId -> push(Dest.SeriesDetail(itemId, dest.displayName)) },
+                )
+            }
+
+            is Dest.SeerrSearch -> {
+                val store = keptStore("seerrsearch:${dest.displayName}") { SeerrSearchStore(apiClient) }
+                SeerrSearchScreen(
+                    store = store,
+                    onBack = { pop() },
+                    onEntrySelect = { mediaType, tmdbId -> push(Dest.DiscoverItem(mediaType, tmdbId, dest.displayName)) },
                 )
             }
 

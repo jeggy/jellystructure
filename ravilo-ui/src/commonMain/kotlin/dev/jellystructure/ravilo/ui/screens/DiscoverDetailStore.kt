@@ -17,11 +17,12 @@ sealed class DiscoverDetailState {
     data class Error(val message: String) : DiscoverDetailState()
 }
 
-/** R49 — the dedicated Discover detail (separate from the R13 library detail). */
+/** R171 — the dedicated Request detail (separate from the R13 library detail), replacing the retired
+ *  R49 chart Discover detail. Addressed by mediaType+tmdbId — Request rows have no rank concept. */
 class DiscoverDetailStore(
     private val apiClient: TvApiClient,
-    private val listId: String,
-    private val rank: Int,
+    private val mediaType: String,
+    private val tmdbId: Int,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val _state = MutableStateFlow<DiscoverDetailState>(DiscoverDetailState.Loading)
@@ -31,7 +32,7 @@ class DiscoverDetailStore(
 
     fun load() {
         scope.launch {
-            _state.value = runCatching { DiscoverDetailState.Loaded(apiClient.getDiscoverItem(listId, rank)) }
+            _state.value = runCatching { DiscoverDetailState.Loaded(apiClient.getDiscoverItem(mediaType, tmdbId)) }
                 .getOrElse { DiscoverDetailState.Error(it.message ?: "Unknown error") }
         }
     }
@@ -43,8 +44,9 @@ class DiscoverDetailStore(
     }
 
     fun request() {
+        val cur = (_state.value as? DiscoverDetailState.Loaded)?.detail ?: return
         scope.launch {
-            runCatching { apiClient.requestDiscover(listId, rank) }.getOrNull()?.let { applyAcquisition(it) }
+            runCatching { apiClient.requestDiscover(mediaType, tmdbId, cur.entry.title) }.getOrNull()?.let { applyAcquisition(it) }
         }
     }
 }
