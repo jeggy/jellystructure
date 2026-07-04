@@ -28,7 +28,9 @@ import org.jetbrains.compose.resources.painterResource
 
 // ISO 639-1 (2-letter) AND ISO 639-2/B + /T (3-letter) → flag drawable.
 // ffprobe and Jellyfin MediaStreams use 3-letter codes; include both so lookup never silently fails.
-private val LANG_CC: Map<String, DrawableResource> = mapOf(
+// Phase 139 — made internal (was private) so RequestLanguagePicker can reuse it for request-language
+// flags (RequestLanguageIntent.flag is deliberately the same ISO-639-1 vocabulary, not a country code).
+internal val LANG_CC: Map<String, DrawableResource> = mapOf(
     "en" to Res.drawable.flag_gb, "eng" to Res.drawable.flag_gb,
     "fr" to Res.drawable.flag_fr, "fra" to Res.drawable.flag_fr, "fre" to Res.drawable.flag_fr,
     "de" to Res.drawable.flag_de, "deu" to Res.drawable.flag_de, "ger" to Res.drawable.flag_de,

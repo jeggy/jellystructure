@@ -60,4 +60,10 @@ data class AcquisitionRecord(
     val downloadRate: String? = null,
     val requestedBy: String? = null,
     val episodes: List<AcquisitionEpisodeRec> = emptyList(),
+    // Phase 139 — the request-language intent id chosen for this title, if any. The client looks up
+    // its flag/label in the DiscoverResponse's `languages` catalog rather than duplicating them here.
+    val language: String? = null,
+    // Phase 139 — true when [language] resolved to a `strict` intent and the title isn't AVAILABLE yet:
+    // the UI shows "waiting for a <label> release" + a Change-language action instead of a generic stall.
+    val languageStrictWaiting: Boolean = false,
 )

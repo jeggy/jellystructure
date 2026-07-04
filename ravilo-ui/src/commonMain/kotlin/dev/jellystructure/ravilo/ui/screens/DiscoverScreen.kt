@@ -79,6 +79,7 @@ fun DiscoverScreen(
 ) {
     val colors = RaviloTheme.colors
     val state by store.state.collectAsState()
+    val myRequests by store.myRequests.collectAsState()
     val navItems = raviloNavItems(discoverAvailable = true)
 
     // R33 live config refresh + payload-bearing acquisition patching (Phase 56).
@@ -94,7 +95,7 @@ fun DiscoverScreen(
                 Spacer(Modifier.height(200.dp)); Text("Request unavailable", color = colors.text, fontSize = 20.sp)
                 Spacer(Modifier.height(8.dp)); Text(s.message, color = colors.textSecondary, fontSize = 14.sp)
             }
-            is DiscoverState.Loaded -> DiscoverLoaded(store, s.data, displayName, DISCOVER_NAV_INDEX, navItems, onNavSelect, onEntrySelect, onProfile, onSearch, onSearchSeerr, onSwitchToComingSoon)
+            is DiscoverState.Loaded -> DiscoverLoaded(store, s.data, myRequests, displayName, DISCOVER_NAV_INDEX, navItems, onNavSelect, onEntrySelect, onProfile, onSearch, onSearchSeerr, onSwitchToComingSoon)
         }
     }
 }
@@ -103,6 +104,7 @@ fun DiscoverScreen(
 private fun DiscoverLoaded(
     store: DiscoverStore,
     data: DiscoverResponse,
+    myRequests: List<DiscoverEntry>,
     displayName: String,
     activeNav: Int,
     navItems: List<String>,
@@ -163,6 +165,22 @@ private fun DiscoverLoaded(
                     if (onSwitchToComingSoon != null) {
                         Spacer(Modifier.height(12.dp))
                         DiscoverSegmentPill(other = str("seg.coming"), onSelect = onSwitchToComingSoon)
+                    }
+                }
+            }
+            // Phase 139 §D.2 — "In progress": the viewer's own not-yet-available requests, so a
+            // strict-waiting pick from days ago is easy to find again (and switch, from its detail page).
+            if (myRequests.isNotEmpty()) {
+                item(key = "discover-in-progress") {
+                    Spacer(Modifier.height(RaviloDimens.rowGap))
+                    StaticContentRow(
+                        title = str("request.in_progress"),
+                        items = myRequests,
+                        itemKey = { e -> "in-progress:${e.entry.tmdbId}" },
+                    ) { _, e, fr ->
+                        RequestTile(e, focusRequester = fr) {
+                            onEntrySelect(if (e.entry.mediaKind == MediaKind.SERIES) "tv" else "movie", e.entry.tmdbId)
+                        }
                     }
                 }
             }

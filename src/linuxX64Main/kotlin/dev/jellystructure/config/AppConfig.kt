@@ -23,6 +23,8 @@ data class AppConfig(
     val trackers: List<TrackerEntry> = emptyList(),
     // Phase 114 — realtime ingest (arr webhooks + Jellyfin LibraryChanged)
     val ingest: IngestConfig = IngestConfig(),
+    // Phase 139 — request-language steering (Original vs Nordic/Danish etc.)
+    @SerialName("request_language") val requestLanguage: RequestLanguageConfig = RequestLanguageConfig(),
 )
 
 // Phase 114 — realtime ingest. `realtime` defaults on when a Jellyfin token is configured (checked at
@@ -95,6 +97,43 @@ data class ArrConfig(
     val url: String = "",
     @SerialName("api_key") val apiKey: String = "",
     @SerialName("rescan_after_write") val rescanAfterWrite: Boolean = true,
+)
+
+/**
+ * Phase 139 — the request-language intent catalog. [intents] is what Settings ▸ Download tools ▸
+ * Request languages edits; [kidsDefault], if set, is an intent [RequestLanguageIntent.id] that wins
+ * over the catalog's own `default`-flagged intent whenever the requesting device is a Kids profile
+ * (`device.isKids`). Empty/absent `intents` ⇒ the feature is fully inert — requests behave exactly as
+ * before (no `profileId`/`tags` added to the Seerr call).
+ */
+@Serializable
+data class RequestLanguageConfig(
+    val intents: List<RequestLanguageIntent> = emptyList(),
+    @SerialName("kids_default") val kidsDefault: String? = null,
+)
+
+/**
+ * Phase 139 — one request-language intent (e.g. "Original" or "Dansk / Nordic"). [match] blank ⇒ no
+ * custom format is provisioned; the request just uses [baseProfile] as-is (this is `original`'s shape —
+ * nothing to clone, nothing to score). [match] non-blank ⇒ Settings' "Set up profiles" action
+ * provisions a release-title custom format + a clone of [baseProfile] scoring it, and fills the
+ * `*ProfileId`/`*FormatId` fields below — those are **derived state**, not admin-typed, refreshed on
+ * every provisioning run (never hand-edit them in config.toml).
+ */
+@Serializable
+data class RequestLanguageIntent(
+    val id: String,
+    val label: String,
+    val flag: String = "",                                     // ISO-639-1 language code (e.g. "da") — matches AudioFlagStrip's flag lookup; blank = original-language flag / globe
+    @SerialName("base_profile") val baseProfile: String = "",   // an existing Radarr/Sonarr quality-profile name
+    val match: String = "",                                     // release-title regex; blank = use baseProfile as-is
+    val tags: List<String> = emptyList(),                       // optional *arr indexer tag names (traffic hygiene, not required for correctness)
+    val strict: Boolean = false,                                // true = only a matching release ever qualifies (minFormatScore gate)
+    val default: Boolean = false,                               // the non-kids fallback when no per-viewer override exists
+    @SerialName("radarr_profile_id") val radarrProfileId: Int? = null,
+    @SerialName("sonarr_profile_id") val sonarrProfileId: Int? = null,
+    @SerialName("radarr_format_id") val radarrFormatId: Int? = null,
+    @SerialName("sonarr_format_id") val sonarrFormatId: Int? = null,
 )
 
 @Serializable
