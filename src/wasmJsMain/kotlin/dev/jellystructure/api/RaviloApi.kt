@@ -2,12 +2,14 @@ package dev.jellystructure.api
 
 import dev.jellystructure.shared.tv.ChannelLogo
 import dev.jellystructure.shared.tv.ChannelLogoUpload
+import dev.jellystructure.shared.tv.PickerOption
 import dev.jellystructure.shared.tv.RaviloConfig
 import dev.jellystructure.shared.tv.ResolvedBehaviour
 import dev.jellystructure.shared.tv.ViewerSettingsRequest
 import io.ktor.client.call.body
 import io.ktor.client.request.delete
 import io.ktor.client.request.get
+import io.ktor.client.request.parameter
 import io.ktor.client.request.post
 import io.ktor.client.request.put
 import io.ktor.client.request.setBody
@@ -90,6 +92,16 @@ object RaviloApi {
         }
         if (!r.status.isSuccess()) throw Exception(r.body<String>())
     }
+
+    // Phase 138 — Request tab add-row pickers (genre/studio/network dropdowns instead of raw TMDB ids).
+    suspend fun getSeerrGenres(kind: String): List<PickerOption> =
+        httpClient.get("/api/config/seerr/genres") { parameter("kind", kind) }.body()
+
+    suspend fun getSeerrStudios(q: String = ""): List<PickerOption> =
+        httpClient.get("/api/config/seerr/studios") { if (q.isNotBlank()) parameter("q", q) }.body()
+
+    suspend fun getSeerrNetworks(): List<PickerOption> =
+        httpClient.get("/api/config/seerr/networks").body()
 
     suspend fun listChannelLogos(): List<ChannelLogo> =
         httpClient.get("/api/tv/admin/channel-logos").body()

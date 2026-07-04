@@ -15,6 +15,7 @@ import dev.jellystructure.shared.tv.ChannelRowsConfig
 import dev.jellystructure.shared.tv.ChannelSystemRows
 import dev.jellystructure.shared.tv.ChannelStyle
 import dev.jellystructure.shared.tv.PageHeroConfig
+import dev.jellystructure.shared.tv.PickerOption
 import dev.jellystructure.shared.tv.SeerrFeed
 import dev.jellystructure.shared.tv.SeerrFeedKind
 import dev.jellystructure.shared.tv.SeerrDiscoverEndpoint
@@ -2024,7 +2025,23 @@ private fun renderDiscover(container: Element) {
                     $groupedOptions
                   </select>
                   <div id="req-add-fields" style="display:none">
-                    <div class="field" style="margin-bottom:8px"><label id="req-add-param-label" class="tiny">Value</label><input id="req-add-param" class="input" style="width:100%"></div>
+                    <!-- Phase 138 — genre/studio/network get a dropdown/search picker instead of a raw
+                         TMDB id text field; #req-add-param stays a single hidden carrier so the confirm
+                         handler below is unchanged regardless of which widget set it. -->
+                    <div class="field" id="req-add-lang-wrap" style="margin-bottom:8px;display:none">
+                      <label id="req-add-param-label" class="tiny">Value</label>
+                      <input id="req-add-lang-input" class="input" style="width:100%">
+                    </div>
+                    <div class="field" id="req-add-genre-wrap" style="margin-bottom:8px;display:none">
+                      <label class="tiny">Genre</label>
+                      <select id="req-add-genre-select" class="input" style="width:100%;font-size:.85rem"><option value="">Loading…</option></select>
+                    </div>
+                    <div class="field" id="req-add-picker-wrap" style="margin-bottom:8px;display:none">
+                      <label id="req-add-picker-label" class="tiny">Studio</label>
+                      <input id="req-add-picker-search" class="input" style="width:100%;font-size:.85rem;margin-bottom:6px" placeholder="Search…" autocomplete="off">
+                      <div id="req-add-picker-results" style="display:flex;flex-direction:column;gap:2px;max-height:220px;overflow-y:auto"></div>
+                    </div>
+                    <input type="hidden" id="req-add-param">
                     <div class="field" style="margin-bottom:8px"><label class="tiny">Display name</label><input id="req-add-name" class="input" style="width:100%"></div>
                     <button id="req-add-confirm" class="btn sm" style="width:100%">Add</button>
                   </div>
@@ -2064,11 +2081,54 @@ private fun renderDiscover(container: Element) {
     val paramLabelEl = sect.querySelector("#req-add-param-label") as? HTMLElement
     val paramInput = sect.querySelector("#req-add-param") as? HTMLInputElement
     val nameInput = sect.querySelector("#req-add-name") as? HTMLInputElement
+    val langWrap = sect.querySelector("#req-add-lang-wrap") as? HTMLElement
+    val langInput = sect.querySelector("#req-add-lang-input") as? HTMLInputElement
+    val genreWrap = sect.querySelector("#req-add-genre-wrap") as? HTMLElement
+    val genreSelect = sect.querySelector("#req-add-genre-select") as? HTMLSelectElement
+    val pickerWrap = sect.querySelector("#req-add-picker-wrap") as? HTMLElement
+    val pickerLabelEl = sect.querySelector("#req-add-picker-label") as? HTMLElement
+    val pickerSearchInput = sect.querySelector("#req-add-picker-search") as? HTMLInputElement
+    val pickerResultsEl = sect.querySelector("#req-add-picker-results") as? HTMLElement
+
     fun closeAddMenu() {
         addMenu?.style?.display = "none"
         fieldsEl?.style?.display = "none"
         if (endpointSel != null) endpointSel.value = ""
     }
+
+    fun pickerRowHtml(item: PickerOption): String {
+        val logoHtml = item.logoPath?.let {
+            """<img src="https://image.tmdb.org/t/p/w92$it" style="max-width:100%;max-height:100%;object-fit:contain">"""
+        } ?: """<span style="font-size:.6rem;color:#666">—</span>"""
+        return """<div data-pick-id="${item.id}" class="cfg-row" style="padding:6px 8px;cursor:pointer;gap:8px">
+            <div style="width:34px;height:22px;flex:none;display:flex;align-items:center;justify-content:center;background:#fff;border-radius:4px;overflow:hidden">$logoHtml</div>
+            <div style="font-size:.85rem;flex:1">${item.name.htmlEsc()}</div>
+          </div>"""
+    }
+    fun showPickerResults(items: List<PickerOption>) {
+        pickerResultsEl?.innerHTML = if (items.isEmpty())
+            """<div class="tiny muted" style="padding:8px 2px">No results.</div>"""
+        else items.joinToString("") { pickerRowHtml(it) }
+        val nodeList = pickerResultsEl?.querySelectorAll("[data-pick-id]") ?: return
+        for (j in 0 until nodeList.length) {
+            val el = nodeList.item(j) as? HTMLElement ?: continue
+            val idStr = el.getAttribute("data-pick-id") ?: continue
+            val item = items.firstOrNull { it.id.toString() == idStr } ?: continue
+            el.addEventListener("click") { _ ->
+                val all = pickerResultsEl.querySelectorAll("[data-pick-id]")
+                for (k in 0 until all.length) (all.item(k) as? HTMLElement)?.setAttribute("style", "padding:6px 8px;cursor:pointer;gap:8px")
+                el.setAttribute("style", "padding:6px 8px;cursor:pointer;gap:8px;background:var(--hi-soft)")
+                if (paramInput != null) paramInput.value = item.id.toString()
+                if (nameInput != null) nameInput.value = item.name
+            }
+        }
+    }
+
+    var loadedGenres: List<PickerOption> = emptyList()
+    var pickerKind: String? = null   // "studio" (live TMDB search) | "network" (client-filter over the curated list — TMDB has no network search)
+    var networkCache: List<PickerOption> = emptyList()
+    var pickerSearchJob: Job? = null
+
     endpointSel?.addEventListener("change") { _ ->
         val chosen = runCatching { SeerrDiscoverEndpoint.valueOf(endpointSel.value) }.getOrNull()
         if (chosen == null) { fieldsEl?.style?.display = "none"; return@addEventListener }
@@ -2081,13 +2141,79 @@ private fun renderDiscover(container: Element) {
                 currentConfig = currentConfig.copy(discover = currentConfig.discover.copy(feeds = fs))
             }, ::renderDiscover)
             closeAddMenu()
-        } else {
-            fieldsEl?.style?.display = "block"
-            paramLabelEl?.textContent = meta.paramLabel
-            if (paramInput != null) paramInput.value = ""
-            if (nameInput != null) nameInput.value = ""
+            return@addEventListener
+        }
+        fieldsEl?.style?.display = "block"
+        if (paramInput != null) paramInput.value = ""
+        if (nameInput != null) nameInput.value = ""
+        langWrap?.style?.display = "none"
+        genreWrap?.style?.display = "none"
+        pickerWrap?.style?.display = "none"
+        pickerKind = null
+        val scope = rcScope
+        when (chosen) {
+            SeerrDiscoverEndpoint.MOVIES_LANGUAGE, SeerrDiscoverEndpoint.TV_LANGUAGE -> {
+                langWrap?.style?.display = "block"
+                paramLabelEl?.textContent = meta.paramLabel
+                if (langInput != null) langInput.value = ""
+            }
+            SeerrDiscoverEndpoint.MOVIES_GENRE, SeerrDiscoverEndpoint.TV_GENRE -> {
+                genreWrap?.style?.display = "block"
+                genreSelect?.innerHTML = """<option value="">Loading…</option>"""
+                val kind = if (chosen == SeerrDiscoverEndpoint.TV_GENRE) "tv" else "movie"
+                scope?.launch {
+                    val genres = runCatching { RaviloApi.getSeerrGenres(kind) }.getOrDefault(emptyList())
+                    loadedGenres = genres
+                    genreSelect?.innerHTML = """<option value="">Choose a genre…</option>""" +
+                        genres.joinToString("") { g -> """<option value="${g.id}">${g.name.htmlEsc()}</option>""" }
+                }
+            }
+            SeerrDiscoverEndpoint.MOVIES_STUDIO -> {
+                pickerWrap?.style?.display = "block"
+                pickerKind = "studio"
+                pickerLabelEl?.textContent = "Studio"
+                if (pickerSearchInput != null) pickerSearchInput.value = ""
+                pickerResultsEl?.innerHTML = """<div class="tiny muted" style="padding:8px 2px">Loading…</div>"""
+                scope?.launch { showPickerResults(runCatching { RaviloApi.getSeerrStudios() }.getOrDefault(emptyList())) }
+            }
+            SeerrDiscoverEndpoint.TV_NETWORK -> {
+                pickerWrap?.style?.display = "block"
+                pickerKind = "network"
+                pickerLabelEl?.textContent = "Network"
+                if (pickerSearchInput != null) pickerSearchInput.value = ""
+                pickerResultsEl?.innerHTML = """<div class="tiny muted" style="padding:8px 2px">Loading…</div>"""
+                scope?.launch {
+                    val networks = runCatching { RaviloApi.getSeerrNetworks() }.getOrDefault(emptyList())
+                    networkCache = networks
+                    showPickerResults(networks)
+                }
+            }
+            else -> {}
         }
     }
+
+    langInput?.addEventListener("input") { _ -> if (paramInput != null) paramInput.value = langInput.value }
+    genreSelect?.addEventListener("change") { _ ->
+        if (paramInput != null) paramInput.value = genreSelect.value
+        val picked = loadedGenres.firstOrNull { it.id.toString() == genreSelect.value }
+        if (nameInput != null && picked != null) nameInput.value = picked.name
+    }
+    pickerSearchInput?.addEventListener("input") { _ ->
+        val q = pickerSearchInput.value.trim()
+        when (pickerKind) {
+            "studio" -> {
+                pickerSearchJob?.cancel()
+                pickerSearchJob = rcScope?.launch {
+                    delay(250)
+                    showPickerResults(runCatching { RaviloApi.getSeerrStudios(q) }.getOrDefault(emptyList()))
+                }
+            }
+            "network" -> showPickerResults(
+                if (q.isBlank()) networkCache else networkCache.filter { it.name.contains(q, ignoreCase = true) },
+            )
+        }
+    }
+
     sect.querySelector("#req-add-confirm")?.addEventListener("click") { _ ->
         val chosen = runCatching { SeerrDiscoverEndpoint.valueOf(endpointSel?.value ?: "") }.getOrNull() ?: return@addEventListener
         val meta = seerrEndpointMeta(chosen)
