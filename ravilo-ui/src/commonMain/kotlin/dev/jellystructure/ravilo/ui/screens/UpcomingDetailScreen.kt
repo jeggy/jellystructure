@@ -23,18 +23,21 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import dev.jellystructure.ravilo.ui.focus.dpadFocusable
 import dev.jellystructure.ravilo.ui.i18n.str
 import dev.jellystructure.ravilo.ui.seams.RemoteImage
 import dev.jellystructure.ravilo.ui.theme.raviloHPad
@@ -105,7 +108,18 @@ fun UpcomingDetailScreen(store: UpcomingDetailStore) {
     val colors = RaviloTheme.colors
     val state by store.state.collectAsState()
 
-    Box(Modifier.fillMaxSize().background(colors.background)) {
+    // Bug fix: this screen never claimed Compose focus anywhere, in any state. This app's only
+    // Back-handling is a Compose key-event listener at the nav root (RaviloApp.kt) that requires focus
+    // to bubble from — there is no Android-level BackHandler fallback anywhere (by design, R80). An
+    // unfocused screen means the hardware Back key never reaches app code at all; it fell straight
+    // through to the Activity's default finish(), closing the whole app instead of navigating back.
+    // Requested unconditionally (not nested in the Loaded branch below) so Back also works during the
+    // brief Loading state. dpadFocusable with no onSelect/onBack just gives the screen a real focus
+    // target — it never consumes Back itself, so the key event still bubbles up to pop() normally.
+    val rootFR = remember { FocusRequester() }
+    LaunchedEffect(Unit) { runCatching { rootFR.requestFocus() } }
+
+    Box(Modifier.fillMaxSize().background(colors.background).dpadFocusable(focusRequester = rootFR)) {
         when (val s = state) {
             is UpcomingDetailState.Loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator(color = colors.textSecondary)
