@@ -50,10 +50,19 @@ class RequestLanguageService(
 
     /**
      * The Radarr/Sonarr `profileId` (+ resolved indexer tag ids) for a resolved intent, to add to the
-     * Seerr request payload. Falls back to resolving [RequestLanguageIntent.baseProfile] by name when
-     * the intent has no provisioned profile yet (covers `original`, whose blank `match` means nothing
-     * was ever provisioned — it just uses the named profile as-is). A configured tag name with no
-     * matching *arr tag is silently dropped (tags are traffic hygiene, never load-bearing).
+     * Seerr request payload.
+     *
+     * Bug fix: a steered intent (non-blank `match`, e.g. "Dansk") whose custom format + scored profile
+     * had never been provisioned (the admin hasn't visited Settings ▸ Download tools ▸ Request
+     * languages ▸ "Set up profiles" yet) used to silently fall back to resolving [baseProfile] *by
+     * name* — the plain, unscored profile, identical to no language preference at all. For a `strict`
+     * intent this is the worst possible failure mode: the viewer explicitly picked "Dansk", got zero
+     * enforcement, and no error surfaced anywhere. Verified live: requesting "Mood Swing 2" as Dansk
+     * grabbed a plain English FjordLeech release, because Radarr had no "Request language: Dansk"
+     * custom format or "HD-1080p · Dansk" profile at all — only the stock defaults. Now provisions
+     * on-demand (same idempotent create-or-update as the bulk [provision] flow) the first time an
+     * intent is actually used, instead of requiring the admin to run it first. A configured tag name
+     * with no matching *arr tag is silently dropped (tags are traffic hygiene, never load-bearing).
      */
     suspend fun profileFor(intentId: String?, mediaKind: MediaKind): Pair<Int?, List<Int>> {
         val i = intent(intentId) ?: return null to emptyList()
@@ -61,13 +70,32 @@ class RequestLanguageService(
             MediaKind.MOVIE -> configStore.current.radarr
             MediaKind.SERIES -> configStore.current.sonarr
         }?.takeIf { it.enabled } ?: return (if (mediaKind == MediaKind.MOVIE) i.radarrProfileId else i.sonarrProfileId) to emptyList()
-        val storedProfileId = if (mediaKind == MediaKind.MOVIE) i.radarrProfileId else i.sonarrProfileId
+        val arrKind = if (mediaKind == MediaKind.MOVIE) "radarr" else "sonarr"
+        var storedProfileId = if (mediaKind == MediaKind.MOVIE) i.radarrProfileId else i.sonarrProfileId
+        if (storedProfileId == null && i.match.isNotBlank()) {
+            provisionOneIntent(cfg, arrKind, i)?.let { (cfId, profId) ->
+                storedProfileId = profId
+                persistProvisioned(i.id, arrKind, cfId, profId)
+            }
+        }
         val profileId = storedProfileId ?: arrClient.findQualityProfileIdByName(cfg.url, cfg.apiKey, i.baseProfile)
         val tagIds = if (i.tags.isEmpty()) emptyList() else {
             val existing = arrClient.getTags(cfg.url, cfg.apiKey)
             i.tags.mapNotNull { name -> existing.firstOrNull { it.label.equals(name, ignoreCase = true) }?.id }
         }
         return profileId to tagIds
+    }
+
+    /** Persists one intent's newly-provisioned ids back into config (the on-demand path in [profileFor]
+     *  — the bulk [runProvisioning] does the equivalent for every intent at once). */
+    private suspend fun persistProvisioned(intentId: String, arrKind: String, customFormatId: Int, profileId: Int) {
+        val cat = configStore.current.requestLanguage
+        val intents = cat.intents.map { i ->
+            if (i.id != intentId) i
+            else if (arrKind == "radarr") i.copy(radarrFormatId = customFormatId, radarrProfileId = profileId)
+            else i.copy(sonarrFormatId = customFormatId, sonarrProfileId = profileId)
+        }
+        configStore.update(configStore.current.copy(requestLanguage = cat.copy(intents = intents)))
     }
 
     // ── Provisioning (Settings ▸ Download tools ▸ Request languages ▸ Set up profiles) ──────────────
@@ -128,6 +156,17 @@ class RequestLanguageService(
             ids[i.id] = cfId to profId
         }
         return lines to ids
+    }
+
+    /** Single-intent create-or-update, shared by the bulk [provisionOneArr] loop above and [profileFor]'s
+     *  on-demand path — same idempotent upsert either way, just scoped to one intent instead of the
+     *  whole catalog. Returns null if the custom format or profile upsert failed. */
+    private suspend fun provisionOneIntent(cfg: ArrConfig, arrKind: String, i: RequestLanguageIntent): Pair<Int, Int>? {
+        val cfName = "Request language: ${i.label}"
+        val profileName = "${i.baseProfile} · ${i.label}"
+        val cfId = arrClient.upsertReleaseTitleCustomFormat(cfg.url, cfg.apiKey, cfName, i.match) ?: return null
+        val profId = arrClient.upsertScoredQualityProfile(cfg.url, cfg.apiKey, i.baseProfile, profileName, cfId, cfName, i.strict) ?: return null
+        return cfId to profId
     }
 
     // ── Change-later (§E): switch a still-waiting request's language ────────────────────────────────
