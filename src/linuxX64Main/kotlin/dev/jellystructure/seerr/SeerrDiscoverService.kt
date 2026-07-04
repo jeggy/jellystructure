@@ -199,15 +199,27 @@ class SeerrDiscoverService(
         val langSvc = requestLanguageService
         val viewerDefault = raviloConfigService.getBehaviourOverlay(userId).requestLanguage
         val resolvedLanguage = langSvc?.resolveIntentId(language, viewerDefault, isKids)
+        val resolvedIntent = resolvedLanguage?.let { langSvc?.intent(it) }
         val (profileId, tagIds) = if (langSvc != null && resolvedLanguage != null) langSvc.profileFor(resolvedLanguage, mediaKind) else (null to emptyList())
-        if (langSvc != null && resolvedLanguage != null) {
-            val intent = langSvc.intent(resolvedLanguage)
-            requestIntentStore?.save(mediaKind, tmdbId, userId, resolvedLanguage, intent?.strict ?: false, dev.jellystructure.nowEpochSec())
+        // Bug fix: a steering intent (non-blank `match`, e.g. "Dansk") that couldn't be resolved to a
+        // real scored *arr profile must reject the request outright — proceeding with profileId=null
+        // would let Seerr fall back to its own default profile, silently enforcing no language
+        // preference at all (see RequestLanguageService.profileFor's doc for the incident this fixes:
+        // "Inside Out 2" requested as Dansk grabbed a plain English release with no error anywhere).
+        if (resolvedIntent != null && resolvedIntent.match.isNotBlank() && profileId == null) {
+            return AcquisitionRecord(
+                itemKey, mediaKind, AcquisitionStatus.FAILED, tmdbId, title,
+                reason = "\"${resolvedIntent.label}\" isn't set up in Radarr/Sonarr yet — ask the admin to check Settings ▸ Download tools ▸ Request languages",
+                retryable = true,
+            )
+        }
+        if (resolvedLanguage != null && resolvedIntent != null) {
+            requestIntentStore?.save(mediaKind, tmdbId, userId, resolvedLanguage, resolvedIntent.strict, dev.jellystructure.nowEpochSec())
         }
 
         val result = seerrClient.createRequest(seerr.url, seerr.apiKey, mediaType, tmdbId, profileId, tagIds)
             ?: return AcquisitionRecord(itemKey, mediaKind, AcquisitionStatus.FAILED, tmdbId, title, reason = "Seerr request failed", retryable = true)
-        val strictWaiting = requestLanguageService?.intent(resolvedLanguage)?.strict == true
+        val strictWaiting = resolvedIntent?.strict == true
         val (status, progress, eta) = statusFromMediaInfo(result.media)
         return AcquisitionRecord(itemKey, mediaKind, status, tmdbId, title, progress = progress, eta = eta, language = resolvedLanguage, languageStrictWaiting = strictWaiting)
     }
