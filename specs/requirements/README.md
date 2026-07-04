@@ -10,3 +10,8 @@ both products. A spec's location or body no longer encodes status.
 
 After an "updated designs" sync, run [`scripts/check-phases.sh`](../../scripts/check-phases.sh): it
 flags any spec here with no row in `STATUS.md`, and any `STATUS.md` row whose spec went missing.
+
+Also run [`scripts/check-fd-hygiene.sh`](../../scripts/check-fd-hygiene.sh) (Phase 134 — unclosed
+`SystemFileSystem.source()`/`.sink()` file-descriptor leaks) and
+[`scripts/check-mobile-css.sh`](../../scripts/check-mobile-css.sh) (Phase 138 — design-sync-fragile CSS
+rules in `design/app/app.css` that a wholesale sync export can silently strip).
