@@ -298,7 +298,10 @@ internal fun discoverStatusLabel(a: AcquisitionRecord): String? = when (a.status
     }
     AcquisitionStatus.IMPORTING -> "Importing…"
     AcquisitionStatus.FAILED -> "Failed"
-    AcquisitionStatus.NOT_REQUESTED -> "Request"
+    // Bug fix (2026-07-05): every not-yet-requested tile showed a "Request" badge — every title in a
+    // feed always has this state until acted on, so it added noise rather than information. No badge
+    // at all is the tile's neutral/default look; a real status only appears once one exists.
+    AcquisitionStatus.NOT_REQUESTED -> null
 }
 
 internal fun discoverStatusColor(status: AcquisitionStatus, accent: Color): Color = when (status) {

@@ -150,10 +150,11 @@ private fun DetailContent(
                     }
                 }
             }
-            // live status line — skip NOT_REQUESTED, the PrimaryAction button below already says "Request"
-            // Phase 139 §C — the chosen language's flag rides along every status state.
+            // live status line — discoverStatusLabel already returns null for NOT_REQUESTED (the
+            // PrimaryAction button below is the only "Request" affordance). Phase 139 §C — the chosen
+            // language's flag rides along every status state.
             val statusText = if (a.languageStrictWaiting) str("request.waiting_for", mapOf("lang" to requestLanguageLabel(detail.languages, a.language).orEmpty()))
-                else discoverStatusLabel(a)?.takeIf { a.status != AcquisitionStatus.NOT_REQUESTED }
+                else discoverStatusLabel(a)
             if (statusText != null) {
                 Spacer(Modifier.height(6.dp))
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
