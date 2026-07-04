@@ -136,12 +136,16 @@ class SeerrClient {
     private fun discoverPath(endpoint: SeerrDiscoverEndpoint, param: String?): String = when (endpoint) {
         SeerrDiscoverEndpoint.MOVIES_POPULAR -> "/discover/movies"
         SeerrDiscoverEndpoint.MOVIES_GENRE -> "/discover/movies/genre/${param.orEmpty()}"
-        SeerrDiscoverEndpoint.MOVIES_LANGUAGE -> "/discover/movies/language/${param.orEmpty()}"
+        // Bug fix: Seerr's language-discover route matches the ISO-639-1 code case-sensitively — an
+        // uppercase code (e.g. "DA", easy to type by habit) silently returns zero results instead of
+        // erroring, so the feed just looks empty. Verified live: /language/da -> 6443 results,
+        // /language/DA -> 0. Lowercasing here guards every caller, not just the admin add-row UI.
+        SeerrDiscoverEndpoint.MOVIES_LANGUAGE -> "/discover/movies/language/${param.orEmpty().lowercase()}"
         SeerrDiscoverEndpoint.MOVIES_STUDIO -> "/discover/movies/studio/${param.orEmpty()}"
         SeerrDiscoverEndpoint.MOVIES_UPCOMING -> "/discover/movies/upcoming"
         SeerrDiscoverEndpoint.TV_POPULAR -> "/discover/tv"
         SeerrDiscoverEndpoint.TV_GENRE -> "/discover/tv/genre/${param.orEmpty()}"
-        SeerrDiscoverEndpoint.TV_LANGUAGE -> "/discover/tv/language/${param.orEmpty()}"
+        SeerrDiscoverEndpoint.TV_LANGUAGE -> "/discover/tv/language/${param.orEmpty().lowercase()}"
         SeerrDiscoverEndpoint.TV_NETWORK -> "/discover/tv/network/${param.orEmpty()}"
         SeerrDiscoverEndpoint.TV_UPCOMING -> "/discover/tv/upcoming"
         SeerrDiscoverEndpoint.TRENDING -> "/discover/trending"
