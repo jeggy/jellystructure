@@ -208,7 +208,8 @@ class SeerrDiscoverService(
         val result = seerrClient.createRequest(seerr.url, seerr.apiKey, mediaType, tmdbId, profileId, tagIds)
             ?: return AcquisitionRecord(itemKey, mediaKind, AcquisitionStatus.FAILED, tmdbId, title, reason = "Seerr request failed", retryable = true)
         val strictWaiting = requestLanguageService?.intent(resolvedLanguage)?.strict == true
-        return AcquisitionRecord(itemKey, mediaKind, statusFromMediaInfoStatus(result.media.status), tmdbId, title, language = resolvedLanguage, languageStrictWaiting = strictWaiting)
+        val (status, progress, eta) = statusFromMediaInfo(result.media)
+        return AcquisitionRecord(itemKey, mediaKind, status, tmdbId, title, progress = progress, eta = eta, language = resolvedLanguage, languageStrictWaiting = strictWaiting)
     }
 
     private fun libraryByTmdbId(): Map<Int, MediaItem> =
@@ -234,23 +235,40 @@ class SeerrDiscoverService(
         if (libItem != null) {
             return AcquisitionRecord(itemKey, mediaKind, AcquisitionStatus.AVAILABLE, tmdbId, title, progress = 100, itemId = libItem.id)
         }
-        val status = statusFromMediaInfoStatus(mediaInfo?.status)
+        val (status, progress, eta) = statusFromMediaInfo(mediaInfo)
         // Phase 139 — the persisted intent (not Seerr's own status, which carries no language) drives
         // the flag + "waiting for a <label> release" state; AVAILABLE is already handled above.
         val row = requestIntentStore?.get(mediaKind, tmdbId)
-        return AcquisitionRecord(itemKey, mediaKind, status, tmdbId, title, language = row?.languageId, languageStrictWaiting = row?.strict == true && status != AcquisitionStatus.AVAILABLE)
+        return AcquisitionRecord(itemKey, mediaKind, status, tmdbId, title, progress = progress, eta = eta, language = row?.languageId, languageStrictWaiting = row?.strict == true && status != AcquisitionStatus.AVAILABLE)
     }
 
-    /** Seerr `MediaInfo.status`: 1=UNKNOWN 2=PENDING 3=PROCESSING 4=PARTIALLY_AVAILABLE 5=AVAILABLE
-     *  6=DELETED. §B scope note: the public API has no per-item download progress/ETA and no distinct
-     *  "declined" signal on this field, so PROCESSING folds queued/downloading/importing into one
-     *  QUEUED bucket, and a declined request simply reads back as NOT_REQUESTED (re-requestable) rather
-     *  than a flagged FAILED — see the R171 implementation note. */
-    private fun statusFromMediaInfoStatus(status: Int?): AcquisitionStatus = when (status) {
-        2 -> AcquisitionStatus.REQUESTED
-        3 -> AcquisitionStatus.QUEUED
-        4, 5 -> AcquisitionStatus.AVAILABLE
-        else -> AcquisitionStatus.NOT_REQUESTED
+    /**
+     * Seerr `MediaInfo.status`: 1=UNKNOWN 2=PENDING 3=PROCESSING 4=PARTIALLY_AVAILABLE 5=AVAILABLE
+     * 6=DELETED. A declined request simply reads back as NOT_REQUESTED (re-requestable) rather than a
+     * flagged FAILED, since this field carries no distinct "declined" signal — see the R171 note.
+     *
+     * Bug fix (2026-07-05): status=3/PROCESSING used to collapse queued/downloading/importing into one
+     * bare "in queue" — the R171-era assumption was that Seerr's public API exposes no per-item
+     * progress/ETA. Verified live against a real in-progress movie that this is only half true: the flat
+     * `status` field indeed can't distinguish them, but the *nested* `downloadStatus` array (Seerr
+     * relaying Radarr/Sonarr's own download-client queue) carries real `size`/`sizeLeft` bytes whenever
+     * a download is actually under way. When present, this now reports real DOWNLOADING + a genuine
+     * percentage + ETA; status=3 with no entries yet (nothing grabbed) still correctly reads as QUEUED.
+     */
+    private fun statusFromMediaInfo(mediaInfo: SeerrMediaInfo?): Triple<AcquisitionStatus, Int, String?> = when (mediaInfo?.status) {
+        2 -> Triple(AcquisitionStatus.REQUESTED, 0, null)
+        3 -> {
+            val items = mediaInfo.downloadStatus
+            val totalSize = items.sumOf { it.size }
+            if (items.isEmpty() || totalSize <= 0) Triple(AcquisitionStatus.QUEUED, 0, null)
+            else {
+                val totalLeft = items.sumOf { it.sizeLeft }
+                val pct = (((totalSize - totalLeft).toDouble() / totalSize) * 100).toInt().coerceIn(0, 99)
+                Triple(AcquisitionStatus.DOWNLOADING, pct, items.firstOrNull()?.timeLeft)
+            }
+        }
+        4, 5 -> Triple(AcquisitionStatus.AVAILABLE, 100, null)
+        else -> Triple(AcquisitionStatus.NOT_REQUESTED, 0, null)
     }
 
     private fun formatRating(voteAverage: Double?): String? =
