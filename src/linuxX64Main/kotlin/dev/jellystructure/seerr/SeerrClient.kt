@@ -43,9 +43,30 @@ data class SeerrCatalogResult(
     val mediaInfo: SeerrMediaInfo? = null,
 )
 
-/** `status`: 1=UNKNOWN 2=PENDING 3=PROCESSING 4=PARTIALLY_AVAILABLE 5=AVAILABLE 6=DELETED. */
+/**
+ * `status`: 1=UNKNOWN 2=PENDING 3=PROCESSING 4=PARTIALLY_AVAILABLE 5=AVAILABLE 6=DELETED.
+ *
+ * [downloadStatus] — verified live (2026-07-05) against a real in-progress movie: Seerr's `Media`
+ * entity proxies real byte-level progress straight from Radarr/Sonarr's own download-client queue
+ * (`server/lib/downloadtracker.ts` `DownloadingItem`), even though it isn't in the public OpenAPI
+ * docs. Empty while status=3/PROCESSING but nothing has actually been grabbed yet (still "in queue");
+ * populated once a download is under way — this is what R171 called out as unavailable, but it exists.
+ */
 @Serializable
-data class SeerrMediaInfo(val status: Int = 0)
+data class SeerrMediaInfo(
+    val status: Int = 0,
+    val downloadStatus: List<SeerrDownloadItem> = emptyList(),
+)
+
+/** One item (a movie, or one episode of a series) actively tracked by the download client, as Seerr
+ *  relays it. [size]/[sizeLeft] are bytes; `size - sizeLeft` over `size` is the real progress fraction. */
+@Serializable
+data class SeerrDownloadItem(
+    val size: Long = 0,
+    val sizeLeft: Long = 0,
+    val status: String = "",
+    val timeLeft: String? = null,
+)
 
 @Serializable
 data class SeerrCatalogPage(
