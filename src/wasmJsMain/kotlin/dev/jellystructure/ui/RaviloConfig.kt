@@ -2192,7 +2192,10 @@ private fun renderDiscover(container: Element) {
         }
     }
 
-    langInput?.addEventListener("input") { _ -> if (paramInput != null) paramInput.value = langInput.value }
+    // Bug fix: Seerr's language-discover route matches the ISO-639-1 code case-sensitively (an
+    // uppercase "DA" silently returns zero results) — lowercase whatever's stored so a feed can't go
+    // silently empty just because the operator typed it in a different case.
+    langInput?.addEventListener("input") { _ -> if (paramInput != null) paramInput.value = langInput.value.trim().lowercase() }
     genreSelect?.addEventListener("change") { _ ->
         if (paramInput != null) paramInput.value = genreSelect.value
         val picked = loadedGenres.firstOrNull { it.id.toString() == genreSelect.value }
