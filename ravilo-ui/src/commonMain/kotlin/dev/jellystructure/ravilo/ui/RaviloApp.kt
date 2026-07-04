@@ -635,7 +635,9 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
             }
 
             is Dest.DiscoverItem -> {
-                val store = remember(dest.mediaType, dest.tmdbId) { DiscoverDetailStore(apiClient, dest.mediaType, dest.tmdbId) }
+                val store = remember(dest.mediaType, dest.tmdbId) {
+                    DiscoverDetailStore(apiClient, dest.mediaType, dest.tmdbId, onLocalAcquisition = { liveAcquisition.tryEmit(it) })
+                }
                 DiscoverDetailScreen(
                     store = store,
                     onWatchMovie = { itemId, title -> push(Dest.Player(itemId, title, displayName = dest.displayName)) },
