@@ -84,7 +84,6 @@ fun MovieDetailScreen(
     onProfile: (() -> Unit)? = null,
     onSearch: (() -> Unit)? = null,
     discoverAvailable: Boolean = false,
-    upcomingAvailable: Boolean = false,
 ) {
     val colors = RaviloTheme.colors
     LaunchedEffect(itemId) { store.load(itemId) }
@@ -110,7 +109,6 @@ fun MovieDetailScreen(
                 onProfile = onProfile,
                 onSearch = onSearch,
                 discoverAvailable = discoverAvailable,
-                upcomingAvailable = upcomingAvailable,
             )
         }
     }
@@ -129,7 +127,6 @@ private fun MovieDetailLoaded(
     onProfile: (() -> Unit)?,
     onSearch: (() -> Unit)?,
     discoverAvailable: Boolean,
-    upcomingAvailable: Boolean = false,
 ) {
     val colors = RaviloTheme.colors
     val spaceGrotesk = SpaceGrotesk
@@ -164,7 +161,7 @@ private fun MovieDetailLoaded(
         derivedStateOf { listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 0 }
     }
 
-    val navItems = raviloNavItems(upcomingAvailable, discoverAvailable)
+    val navItems = raviloNavItems(discoverAvailable)
 
     Box(Modifier.fillMaxSize()) {
         @OptIn(ExperimentalFoundationApi::class)

@@ -344,13 +344,15 @@ fun Route.tvRoutes(
         call.respond(mapOf("rev" to rev))
     }
 
-    // Phase 136 — the chart/Discover-charts backend (RapidAPI/Netflix-Tudum/JustWatch) is retired in
-    // favour of Jellyseerr/Overseerr. The per-user config model (RaviloConfig.discover) and this route
-    // are repurposed for Seerr feeds by Phase 137/R171; until then this always reports unavailable so
-    // an old TV build's Discover tab just stays hidden rather than erroring.
+    // Phase 136 retired the chart/Discover-charts backend (RapidAPI/Netflix-Tudum/JustWatch) in favour
+    // of Jellyseerr/Overseerr; Phase 137 gave the config editor a Seerr-feed row model. R170 gates the
+    // TV's merged Discover tab on this `available` flag — true once Seerr is connected, even though the
+    // actual feed rows aren't served yet (R171 rebuilds this route's rows against Seerr; until then
+    // DiscoverScreen shows its own "nothing to show yet" empty state rather than an error).
     get("/tv/discover") {
         call.attributes[DeviceKey]
-        call.respond(DiscoverResponse(available = false, source = "", region = "", canRequest = false))
+        val seerrEnabled = configStore.current.seerr?.enabled == true
+        call.respond(DiscoverResponse(available = seerrEnabled, source = "", region = "", canRequest = false))
     }
 
     // R160 — the calendar is the same for every viewer (no per-user scoping), server-cached with a

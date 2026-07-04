@@ -121,16 +121,18 @@ private enum class UpcomingFilter { ALL, SERIES, MOVIES }
 fun UpcomingScreen(
     store: UpcomingStore,
     displayName: String,
-    discoverAvailable: Boolean,
     onNavSelect: (Int) -> Unit,
     onProfile: () -> Unit,
     onSearch: () -> Unit,
     onItemSelect: (UpcomingItem) -> Unit,
+    // R170 — set when Request (Seerr feeds) is *also* available, so this segment needs a way over to
+    // it; null when Coming Soon is the only Discover segment (no switcher shown).
+    onSwitchToRequest: (() -> Unit)? = null,
 ) {
     val colors = RaviloTheme.colors
     val state by store.state.collectAsState()
-    // Being on this screen implies Upcoming itself is available; it always sits right after Series.
-    val navItems = raviloNavItems(upcomingAvailable = true, discoverAvailable = discoverAvailable)
+    // Being on this screen implies the Discover tab itself is active, regardless of which segment.
+    val navItems = raviloNavItems(discoverAvailable = true)
 
     val live = LocalLiveConfig.current
     LaunchedEffect(live) { live?.collect { store.refresh(silent = true) } }
@@ -156,6 +158,7 @@ fun UpcomingScreen(
                 onProfile = onProfile,
                 onSearch = onSearch,
                 onItemSelect = onItemSelect,
+                onSwitchToRequest = onSwitchToRequest,
             )
         }
     }
@@ -171,6 +174,7 @@ private fun UpcomingLoaded(
     onProfile: () -> Unit,
     onSearch: () -> Unit,
     onItemSelect: (UpcomingItem) -> Unit,
+    onSwitchToRequest: (() -> Unit)?,
 ) {
     val colors = RaviloTheme.colors
     var filter by remember { mutableStateOf(UpcomingFilter.ALL) }
@@ -219,6 +223,10 @@ private fun UpcomingLoaded(
                 Column(Modifier.fillMaxWidth().padding(horizontal = raviloHPad, vertical = 8.dp)) {
                     Text(str("nav.upcoming"), color = colors.text, fontSize = 26.sp, fontWeight = FontWeight.Bold, fontFamily = SpaceGrotesk)
                     Text(str("up.subtitle"), color = colors.textSecondary, fontSize = 13.sp)
+                    if (onSwitchToRequest != null) {
+                        Spacer(Modifier.height(12.dp))
+                        DiscoverSegmentPill(other = str("seg.request"), onSelect = onSwitchToRequest)
+                    }
                     Spacer(Modifier.height(16.dp))
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         FilterChips(filter, onFilterChange = { filter = it })

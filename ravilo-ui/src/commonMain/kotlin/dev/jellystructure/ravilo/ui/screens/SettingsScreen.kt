@@ -102,18 +102,22 @@ class SettingsStore(private val apiClient: TvApiClient) {
         scope.launch { runCatching { apiClient.putViewerSettings(uiLanguage = lang) } }
     }
 
-    /**
-     * R161 — "Unpair this TV": revokes every session this device holds (not just the active one),
-     * then clears the local store. Distinct from per-session Sign out. Best-effort per token — a
-     * failed revoke for one session doesn't stop the others; the local store is cleared regardless
-     * so the device always ends up back at the pairing gate.
-     */
-    suspend fun unpairDevice() {
-        for (session in MultiTokenStore.getAll()) {
-            runCatching { apiClient.unpair(session.deviceToken) }
-        }
-        MultiTokenStore.clear()
+    /** R161 — "Unpair this TV". Delegates to [unpairAllSessions] (also used by R170's avatar
+     *  ProfileMenu, which unpairs without loading the rest of Settings' state). */
+    suspend fun unpairDevice() = unpairAllSessions(apiClient)
+}
+
+/**
+ * R161/R170 — revokes every session this device holds (not just the active one), then clears the
+ * local store. Distinct from per-session Sign out. Best-effort per token — a failed revoke for one
+ * session doesn't stop the others; the local store is cleared regardless so the device always ends
+ * up back at the pairing gate.
+ */
+suspend fun unpairAllSessions(apiClient: TvApiClient) {
+    for (session in MultiTokenStore.getAll()) {
+        runCatching { apiClient.unpair(session.deviceToken) }
     }
+    MultiTokenStore.clear()
 }
 
 @Composable
@@ -171,8 +175,9 @@ fun SettingsScreen(
     }
 }
 
+/** Non-private: reused by R170's avatar ProfileMenu (a different file), not just this screen. */
 @Composable
-private fun UnpairConfirmOverlay(onCancel: () -> Unit, onConfirm: () -> Unit) {
+fun UnpairConfirmOverlay(onCancel: () -> Unit, onConfirm: () -> Unit) {
     val colors = RaviloTheme.colors
     val cancelFR = remember { FocusRequester() }
     val confirmFR = remember { FocusRequester() }
