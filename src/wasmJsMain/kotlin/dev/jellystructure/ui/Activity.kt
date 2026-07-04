@@ -829,7 +829,7 @@ private fun formatRemaining(ms: Double): String {
 private fun stepLabel(step: String): String = when (step) {
     "scan_files" -> "Scan"
     "pull_tmdb" -> "TMDB"
-    "download_artwork" -> "Artwork"
+    "fetch_artwork" -> "Artwork"
     "sync_imdb_ratings" -> "IMDb"
     "rescan_arr" -> "*arr"
     "write_nfo" -> "NFO"
