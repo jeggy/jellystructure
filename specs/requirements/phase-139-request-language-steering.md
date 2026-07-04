@@ -44,8 +44,9 @@ and lets a viewer **change a still-waiting request's language later** from the a
 ### A. Request-language intent catalog (config)
 1. New config array `[[request_language]]` (`config/AppConfig.kt`, alongside `[radarr]`/`[sonarr]`/`[seerr]`):
    per intent — `id` (sent by the app, e.g. `original`/`nordic`), `label` (endonym shown on TV, e.g.
-   `Original`/`Dansk`), `flag` (ISO-3166 country code for the flag asset, e.g. `dk`; `original` → blank
-   ⇒ the title's own original-language flag / globe), `base_profile` (name of an existing *arr profile to
+   `Original`/`Dansk`), `flag` (ISO-639-1 language code for the flag asset — matches `AudioFlagStrip`'s
+   existing lookup, e.g. `da`; `original` → blank ⇒ the title's own original-language flag / globe),
+   `base_profile` (name of an existing *arr profile to
    clone, e.g. `HD-1080p`), `match` (release-title regex; blank = no custom format ⇒ plain base profile,
    used by `original`), `tags` (optional *arr indexer tags), `strict` (bool), and one intent flagged
    `default = true`. Optional global `kids_default` (intent id).

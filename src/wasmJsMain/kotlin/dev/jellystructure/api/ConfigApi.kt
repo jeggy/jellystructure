@@ -68,6 +68,35 @@ data class PipelineStep(
 @Serializable
 data class ScanConfig(val pipeline: List<PipelineStep> = emptyList())
 
+// Phase 139 — request-language steering (Original vs Nordic/Danish etc.). Mirrors the backend
+// dev.jellystructure.config.RequestLanguageIntent field-for-field, including the provisioned-state
+// fields (*ProfileId/*FormatId) — those round-trip untouched since the Settings card only edits the
+// admin-typed fields, never those.
+@Serializable
+data class RequestLanguageIntent(
+    val id: String = "",
+    val label: String = "",
+    val flag: String = "",
+    @SerialName("base_profile") val baseProfile: String = "",
+    val match: String = "",
+    val tags: List<String> = emptyList(),
+    val strict: Boolean = false,
+    val default: Boolean = false,
+    @SerialName("radarr_profile_id") val radarrProfileId: Int? = null,
+    @SerialName("sonarr_profile_id") val sonarrProfileId: Int? = null,
+    @SerialName("radarr_format_id") val radarrFormatId: Int? = null,
+    @SerialName("sonarr_format_id") val sonarrFormatId: Int? = null,
+)
+
+@Serializable
+data class RequestLanguageConfig(
+    val intents: List<RequestLanguageIntent> = emptyList(),
+    @SerialName("kids_default") val kidsDefault: String? = null,
+)
+
+@Serializable
+data class ProvisionPlanLine(val arrKind: String = "", val kind: String = "", val name: String = "", val action: String = "")
+
 @Serializable
 data class AppConfig(
     @SerialName("api_keys") val apiKeys: ApiKeys = ApiKeys(),
@@ -82,6 +111,7 @@ data class AppConfig(
     @SerialName("scan_schedule") val scanSchedule: String = "",
     val scan: ScanConfig = ScanConfig(),
     val trackers: List<TrackerConfig> = emptyList(),
+    @SerialName("request_language") val requestLanguage: RequestLanguageConfig = RequestLanguageConfig(),
 )
 
 @Serializable
@@ -196,6 +226,16 @@ object ConfigApi {
     suspend fun testRadarr(url: String, apiKey: String): ArrTestResult? = testArr("radarr", url, apiKey)
     suspend fun testSonarr(url: String, apiKey: String): ArrTestResult? = testArr("sonarr", url, apiKey)
     suspend fun testSeerr(url: String, apiKey: String): ArrTestResult? = testArr("seerr", url, apiKey)
+
+    // Phase 139 — "Set up profiles in Radarr/Sonarr": preview shows what would be created/updated
+    // (read-only), provision actually does it (idempotent — safe to re-run).
+    suspend fun previewRequestLanguage(): List<ProvisionPlanLine>? = runCatching {
+        httpClient.get("/api/config/request-language/preview").body<List<ProvisionPlanLine>>()
+    }.getOrNull()
+
+    suspend fun provisionRequestLanguage(): List<ProvisionPlanLine>? = runCatching {
+        httpClient.post("/api/config/request-language/provision").body<List<ProvisionPlanLine>>()
+    }.getOrNull()
     private suspend fun testArr(kind: String, url: String, apiKey: String): ArrTestResult? = runCatching {
         httpClient.post("/api/config/test-$kind") {
             contentType(ContentType.Application.Json)

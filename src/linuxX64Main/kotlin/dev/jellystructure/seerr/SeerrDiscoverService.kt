@@ -1,5 +1,6 @@
 package dev.jellystructure.seerr
 
+import dev.jellystructure.arr.RequestLanguageService
 import dev.jellystructure.config.ConfigStore
 import dev.jellystructure.media.MediaStore
 import dev.jellystructure.model.MediaItem
@@ -56,10 +57,15 @@ class SeerrDiscoverService(
     private val seerrClient: SeerrClient,
     private val raviloConfigService: RaviloConfigService,
     private val mediaStore: MediaStore,
+    // Phase 139 — null (rather than a required param) so this constructor doesn't ripple through every
+    // existing call site; absent ⇒ the feature is fully inert (resolveIntentId/optionsFor on an empty
+    // catalog already return null/no-catalog, same as if RequestLanguageService were never wired).
+    private val requestLanguageService: RequestLanguageService? = null,
+    private val requestIntentStore: RequestIntentStore? = null,
 ) {
     private fun seerr() = configStore.current.seerr?.takeIf { it.enabled && it.url.isNotBlank() }
 
-    suspend fun getRequestFeeds(userId: String, isAdmin: Boolean): DiscoverResponse {
+    suspend fun getRequestFeeds(userId: String, isAdmin: Boolean, isKids: Boolean = false): DiscoverResponse {
         val d = raviloConfigService.getConfig(userId).discover
         val seerr = seerr()
         if (!d.enabled || seerr == null) return DiscoverResponse(available = false, canRequest = false)
@@ -72,7 +78,33 @@ class SeerrDiscoverService(
                 .map { toDiscoverEntry(it, libByTmdb) }
             DiscoverRow(feedId = feed.id, feedName = feed.name, entries = entries)
         }
-        return DiscoverResponse(available = true, canRequest = isAdmin || d.canRequest, rows = rows)
+        val viewerDefault = raviloConfigService.getBehaviourOverlay(userId).requestLanguage
+        val (languages, defaultLanguage) = requestLanguageService?.optionsFor(viewerDefault, isKids) ?: (emptyList<dev.jellystructure.shared.tv.RequestLanguageOption>() to null)
+        return DiscoverResponse(available = true, canRequest = isAdmin || d.canRequest, rows = rows, languages = languages, defaultLanguage = defaultLanguage)
+    }
+
+    /** Phase 139 §D.2 — the viewer's own not-yet-available requests, for the Request tab's "In progress"
+     *  rail. Re-derives each entry's live status exactly like [getEntry] (no separate poller); a request
+     *  that has since become AVAILABLE simply drops off this list on the next fetch. */
+    suspend fun getMyRequests(userId: String): List<DiscoverEntry> {
+        val store = requestIntentStore ?: return emptyList()
+        val seerr = seerr() ?: return emptyList()
+        val libByTmdb = libraryByTmdbId()
+        return store.forUser(userId).mapNotNull { row ->
+            if (row.mediaKind == MediaKind.SERIES) {
+                val d = seerrClient.tvDetails(seerr.url, seerr.apiKey, row.tmdbId) ?: return@mapNotNull null
+                val acq = acquisitionFor(row.tmdbId, MediaKind.SERIES, d.title(), d.mediaInfo, libByTmdb)
+                if (acq.status == AcquisitionStatus.AVAILABLE) return@mapNotNull null
+                val entry = RequestEntry(row.tmdbId, MediaKind.SERIES, d.title(), d.firstAirDate?.take(4)?.toIntOrNull(), d.genres.firstOrNull()?.name, formatRating(d.voteAverage), d.posterPath, d.backdropPath, d.overview)
+                DiscoverEntry(entry, acq)
+            } else {
+                val d = seerrClient.movieDetails(seerr.url, seerr.apiKey, row.tmdbId) ?: return@mapNotNull null
+                val acq = acquisitionFor(row.tmdbId, MediaKind.MOVIE, d.title, d.mediaInfo, libByTmdb)
+                if (acq.status == AcquisitionStatus.AVAILABLE) return@mapNotNull null
+                val entry = RequestEntry(row.tmdbId, MediaKind.MOVIE, d.title, d.releaseDate?.take(4)?.toIntOrNull(), d.genres.firstOrNull()?.name, formatRating(d.voteAverage), d.posterPath, d.backdropPath, d.overview)
+                DiscoverEntry(entry, acq)
+            }
+        }
     }
 
     suspend fun search(query: String): List<DiscoverEntry> {
@@ -85,9 +117,11 @@ class SeerrDiscoverService(
             .map { toDiscoverEntry(it, libByTmdb) }
     }
 
-    suspend fun getEntry(mediaType: String, tmdbId: Int): DiscoverDetail? {
+    suspend fun getEntry(mediaType: String, tmdbId: Int, userId: String? = null, isKids: Boolean = false): DiscoverDetail? {
         val seerr = seerr() ?: return null
         val libByTmdb = libraryByTmdbId()
+        val viewerDefault = userId?.let { raviloConfigService.getBehaviourOverlay(it).requestLanguage }
+        val (languages, defaultLanguage) = requestLanguageService?.optionsFor(viewerDefault, isKids) ?: (emptyList<dev.jellystructure.shared.tv.RequestLanguageOption>() to null)
         return if (mediaType == "tv") {
             val d = seerrClient.tvDetails(seerr.url, seerr.apiKey, tmdbId) ?: return null
             val entry = RequestEntry(
@@ -103,6 +137,8 @@ class SeerrDiscoverService(
                 runtime = d.episodeRunTime.firstOrNull(),
                 isSeries = true,
                 cast = d.credits.cast.map(::toPerson),
+                languages = languages,
+                defaultLanguage = defaultLanguage,
             )
         } else {
             val d = seerrClient.movieDetails(seerr.url, seerr.apiKey, tmdbId) ?: return null
@@ -119,13 +155,38 @@ class SeerrDiscoverService(
                 runtime = d.runtime,
                 isSeries = false,
                 cast = d.credits.cast.map(::toPerson),
+                languages = languages,
+                defaultLanguage = defaultLanguage,
             )
         }
     }
 
-    /** [mediaType] is `"movie"` or `"tv"`; [title] is only used to label a FAILED record when Seerr
-     *  rejects the request. Requesting obeys the per-user `canRequest` permission (Phase 137). */
-    suspend fun request(userId: String, isAdmin: Boolean, mediaType: String, tmdbId: Int, title: String): AcquisitionRecord {
+    /** Phase 139 §E — switch a still-waiting request to a different language: re-profiles the *arr item
+     *  and re-searches ([RequestLanguageService.changeLanguage]), then updates the persisted intent so
+     *  the flag/waiting-state the client sees next reflects the new choice. False on any failure (bad
+     *  intent id, item not found in the *arr, etc.) — the caller responds accordingly, nothing partial. */
+    suspend fun changeLanguage(userId: String, mediaType: String, tmdbId: Int, newLanguage: String): Boolean {
+        val svc = requestLanguageService ?: return false
+        val mediaKind = if (mediaType == "tv") MediaKind.SERIES else MediaKind.MOVIE
+        val intent = svc.intent(newLanguage) ?: return false
+        val ok = svc.changeLanguage(mediaKind, tmdbId, newLanguage)
+        if (ok) requestIntentStore?.save(mediaKind, tmdbId, userId, newLanguage, intent.strict, dev.jellystructure.nowEpochSec())
+        return ok
+    }
+
+    /**
+     * [mediaType] is `"movie"` or `"tv"`; [title] is only used to label a FAILED record when Seerr
+     * rejects the request. Requesting obeys the per-user `canRequest` permission (Phase 137).
+     *
+     * Phase 139 — [language] is the viewer's explicit pick (null = let the resolution precedence in
+     * [RequestLanguageService.resolveIntentId] decide: per-viewer default → kids default → catalog
+     * default). The resolved intent is persisted to [requestIntentStore] *before* the Seerr call so a
+     * request that fails still remembers the viewer's choice for a retry, and turned into a
+     * `profileId`/`tags` pair added to the Seerr payload — a feature-off catalog (no
+     * [requestLanguageService] wired, or an empty catalog) resolves to `null` and reproduces exactly
+     * today's plain request.
+     */
+    suspend fun request(userId: String, isAdmin: Boolean, mediaType: String, tmdbId: Int, title: String, language: String? = null, isKids: Boolean = false): AcquisitionRecord {
         val mediaKind = if (mediaType == "tv") MediaKind.SERIES else MediaKind.MOVIE
         val itemKey = "tmdb:$tmdbId"
         val d = raviloConfigService.getConfig(userId).discover
@@ -134,9 +195,20 @@ class SeerrDiscoverService(
         }
         val seerr = seerr()
             ?: return AcquisitionRecord(itemKey, mediaKind, AcquisitionStatus.FAILED, tmdbId, title, reason = "Seerr not configured", retryable = true)
-        val result = seerrClient.createRequest(seerr.url, seerr.apiKey, mediaType, tmdbId)
+
+        val langSvc = requestLanguageService
+        val viewerDefault = raviloConfigService.getBehaviourOverlay(userId).requestLanguage
+        val resolvedLanguage = langSvc?.resolveIntentId(language, viewerDefault, isKids)
+        val (profileId, tagIds) = if (langSvc != null && resolvedLanguage != null) langSvc.profileFor(resolvedLanguage, mediaKind) else (null to emptyList())
+        if (langSvc != null && resolvedLanguage != null) {
+            val intent = langSvc.intent(resolvedLanguage)
+            requestIntentStore?.save(mediaKind, tmdbId, userId, resolvedLanguage, intent?.strict ?: false, dev.jellystructure.nowEpochSec())
+        }
+
+        val result = seerrClient.createRequest(seerr.url, seerr.apiKey, mediaType, tmdbId, profileId, tagIds)
             ?: return AcquisitionRecord(itemKey, mediaKind, AcquisitionStatus.FAILED, tmdbId, title, reason = "Seerr request failed", retryable = true)
-        return AcquisitionRecord(itemKey, mediaKind, statusFromMediaInfoStatus(result.media.status), tmdbId, title)
+        val strictWaiting = requestLanguageService?.intent(resolvedLanguage)?.strict == true
+        return AcquisitionRecord(itemKey, mediaKind, statusFromMediaInfoStatus(result.media.status), tmdbId, title, language = resolvedLanguage, languageStrictWaiting = strictWaiting)
     }
 
     private fun libraryByTmdbId(): Map<Int, MediaItem> =
@@ -162,7 +234,11 @@ class SeerrDiscoverService(
         if (libItem != null) {
             return AcquisitionRecord(itemKey, mediaKind, AcquisitionStatus.AVAILABLE, tmdbId, title, progress = 100, itemId = libItem.id)
         }
-        return AcquisitionRecord(itemKey, mediaKind, statusFromMediaInfoStatus(mediaInfo?.status), tmdbId, title)
+        val status = statusFromMediaInfoStatus(mediaInfo?.status)
+        // Phase 139 — the persisted intent (not Seerr's own status, which carries no language) drives
+        // the flag + "waiting for a <label> release" state; AVAILABLE is already handled above.
+        val row = requestIntentStore?.get(mediaKind, tmdbId)
+        return AcquisitionRecord(itemKey, mediaKind, status, tmdbId, title, language = row?.languageId, languageStrictWaiting = row?.strict == true && status != AcquisitionStatus.AVAILABLE)
     }
 
     /** Seerr `MediaInfo.status`: 1=UNKNOWN 2=PENDING 3=PROCESSING 4=PARTIALLY_AVAILABLE 5=AVAILABLE

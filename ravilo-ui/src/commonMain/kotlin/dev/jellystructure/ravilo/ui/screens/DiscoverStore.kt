@@ -1,6 +1,7 @@
 package dev.jellystructure.ravilo.ui.screens
 
 import dev.jellystructure.shared.tv.AcquisitionRecord
+import dev.jellystructure.shared.tv.DiscoverEntry
 import dev.jellystructure.shared.tv.DiscoverResponse
 import dev.jellystructure.shared.tv.MediaKind
 import dev.jellystructure.shared.tv.TvApiClient
@@ -30,6 +31,10 @@ class DiscoverStore(private val apiClient: TvApiClient) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val _state = MutableStateFlow<DiscoverState>(DiscoverState.Loading)
     val state: StateFlow<DiscoverState> = _state.asStateFlow()
+    // Phase 139 §D.2 — the viewer's own not-yet-available requests ("In progress" rail). Separate flow
+    // from `state` since it's a cross-feed concern, not one more configured row.
+    private val _myRequests = MutableStateFlow<List<DiscoverEntry>>(emptyList())
+    val myRequests: StateFlow<List<DiscoverEntry>> = _myRequests.asStateFlow()
     private var loadJob: Job? = null
 
     init { load() }
@@ -40,6 +45,7 @@ class DiscoverStore(private val apiClient: TvApiClient) {
         loadJob = scope.launch {
             _state.value = runCatching { DiscoverState.Loaded(apiClient.getDiscover()) }
                 .getOrElse { DiscoverState.Error(it.message ?: "Unknown error") }
+            loadMyRequests()
         }
     }
 
@@ -49,10 +55,16 @@ class DiscoverStore(private val apiClient: TvApiClient) {
         loadJob?.cancel()
         loadJob = scope.launch {
             runCatching { apiClient.getDiscover() }.getOrNull()?.let { _state.value = DiscoverState.Loaded(it) }
+            loadMyRequests()
         }
     }
 
-    /** Patch every tile whose entry matches this record — server-pushed, no re-pull. */
+    private suspend fun loadMyRequests() {
+        runCatching { apiClient.getMyRequests() }.getOrNull()?.let { _myRequests.value = it }
+    }
+
+    /** Patch every tile whose entry matches this record — server-pushed, no re-pull. Also drops a now-
+     *  AVAILABLE title off the "In progress" rail (or patches it in place otherwise) without a re-fetch. */
     fun applyAcquisition(rec: AcquisitionRecord) {
         val cur = (_state.value as? DiscoverState.Loaded)?.data ?: return
         val rows = cur.rows.map { row ->
@@ -62,13 +74,20 @@ class DiscoverStore(private val apiClient: TvApiClient) {
             })
         }
         _state.value = DiscoverState.Loaded(cur.copy(rows = rows))
+        _myRequests.value = _myRequests.value.mapNotNull { e ->
+            val matches = (rec.tmdbId != null && rec.tmdbId == e.entry.tmdbId) || rec.itemKey == e.acquisition.itemKey
+            if (!matches) e
+            else if (rec.status == dev.jellystructure.shared.tv.AcquisitionStatus.AVAILABLE) null
+            else e.copy(acquisition = rec)
+        }
     }
 
     /** Request a title; patch the entry from the server's returned status record. */
-    fun request(tmdbId: Int, mediaKind: MediaKind, title: String) {
+    fun request(tmdbId: Int, mediaKind: MediaKind, title: String, language: String? = null) {
         val seerrKind = if (mediaKind == MediaKind.SERIES) "tv" else "movie"
         scope.launch {
-            runCatching { apiClient.requestDiscover(seerrKind, tmdbId, title) }.getOrNull()?.let { applyAcquisition(it) }
+            runCatching { apiClient.requestDiscover(seerrKind, tmdbId, title, language) }.getOrNull()?.let { applyAcquisition(it) }
+            loadMyRequests()
         }
     }
 }

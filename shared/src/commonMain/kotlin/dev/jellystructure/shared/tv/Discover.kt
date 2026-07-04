@@ -39,12 +39,31 @@ data class DiscoverEntry(
  * R171 — the whole Request payload for the signed-in user. `available` is the server-decided gating
  * (Seerr connected + enabled); the TV shows/hides the Request segment from it. No `source`/`region` —
  * Seerr feeds aren't provider/country scoped like the retired charts were.
+ *
+ * Phase 139 — [languages] is the request-language catalog (flags/labels only — never the *arr
+ * profile/tags/regex internals) the TV needs to render the Original/Nordic picker; empty/single ⇒ the
+ * picker is skipped entirely (§A.3). [defaultLanguage] is this viewer's already-resolved default
+ * (explicit per-user override → kids default → catalog default) so the client never re-implements that
+ * precedence — it only needs to pre-select the matching row.
  */
 @Serializable
 data class DiscoverResponse(
     val available: Boolean,
     val canRequest: Boolean,
     val rows: List<DiscoverRow> = emptyList(),
+    val languages: List<RequestLanguageOption> = emptyList(),
+    val defaultLanguage: String? = null,
+)
+
+/** Phase 139 — one request-language choice as the TV needs it: just enough to render a flag + endonym
+ *  row in the picker. The admin-configured *arr wiring (base profile/match regex/tags) never leaves
+ *  the backend. A blank [flag] (used by `original`) means "show the title's own original-language flag
+ *  / a globe", not a missing asset. */
+@Serializable
+data class RequestLanguageOption(
+    val id: String,
+    val label: String,
+    val flag: String = "",
 )
 
 /** R171 — the dedicated detail payload for one Request entry (no playback/seasons; request + trailer-less). */
@@ -57,6 +76,10 @@ data class DiscoverDetail(
     val runtime: Int? = null,
     val isSeries: Boolean = false,
     val cast: List<Person> = emptyList(),
+    // Phase 139 — same catalog/default as DiscoverResponse (see its doc), needed here too since this is
+    // what actually backs the Request-press screen.
+    val languages: List<RequestLanguageOption> = emptyList(),
+    val defaultLanguage: String? = null,
 )
 
 /** Phase 56/R49 — the WS `acquisition_changed` payload envelope (record inline). */

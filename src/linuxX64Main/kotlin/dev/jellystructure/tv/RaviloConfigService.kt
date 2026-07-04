@@ -42,6 +42,11 @@ private val DEFAULT_CONFIG = RaviloConfig(
 class RaviloConfigService(
     private val db: JellystructureDb,
     private val eventBus: TvEventBus? = null,
+    // Phase 139 — resolves the request-language catalog's default-flagged intent id, the "global
+    // default" fallback for the requestLanguage overlay field below (unlike uiLanguage/skin/etc., that
+    // fallback isn't a RaviloConfig field — it lives in AppConfig's admin-managed catalog). Null (not
+    // wired) ⇒ the field always reads as "global" with an empty-string default, same as an empty catalog.
+    private val requestLanguageService: dev.jellystructure.arr.RequestLanguageService? = null,
 ) {
 
     /**
@@ -168,12 +173,14 @@ class RaviloConfigService(
         val global = getGlobalConfig()
         fun <T> field(value: T?, writer: String?, fallback: T): ResolvedBehaviourField<T> =
             if (value != null) ResolvedBehaviourField(value, writer ?: "admin") else ResolvedBehaviourField(fallback, "global")
+        val catalogDefault = requestLanguageService?.resolveIntentId(null, null, false).orEmpty()
         return ResolvedBehaviour(
             uiLanguage = field(overlay.uiLanguage, overlay.uiLanguageWriter, global.uiLanguage),
             skin = field(overlay.skin, overlay.skinWriter, global.defaultSkin),
             tileShape = field(overlay.tileShape, overlay.tileShapeWriter, global.tileShape),
             showContinueProgress = field(overlay.showContinueProgress, overlay.showContinueProgressWriter, global.showContinueProgress),
             autoplayNext = field(overlay.autoplayNext, overlay.autoplayNextWriter, global.autoplayNext),
+            requestLanguage = field(overlay.requestLanguage, overlay.requestLanguageWriter, catalogDefault),
         )
     }
 
@@ -243,6 +250,15 @@ class RaviloConfigService(
         saveBehaviourOverlay(userId, cur.copy(uiLanguage = v, uiLanguageWriter = w))
     }
 
+    /** Phase 139 — admin-editor-only per-viewer default request language (no on-TV Settings control
+     *  yet, unlike the other fields' viewer-writable twins). */
+    fun setAdminRequestLanguage(userId: String, value: String) {
+        val cur = getBehaviourOverlay(userId)
+        val catalogDefault = requestLanguageService?.resolveIntentId(null, null, false).orEmpty()
+        val (v, w) = setAdminBehaviourOverride(cur.requestLanguage, cur.requestLanguageWriter, value, catalogDefault)
+        saveBehaviourOverlay(userId, cur.copy(requestLanguage = v, requestLanguageWriter = w))
+    }
+
     /** Reset (clears back to "follow global") — works on both admin- and viewer-tagged entries; this
      *  is the editor's only action on a viewer-set value. */
     fun resetBehaviourField(userId: String, field: String) {
@@ -253,6 +269,7 @@ class RaviloConfigService(
             "tile_shape" -> cur.copy(tileShape = null, tileShapeWriter = null)
             "show_continue_progress" -> cur.copy(showContinueProgress = null, showContinueProgressWriter = null)
             "autoplay_next" -> cur.copy(autoplayNext = null, autoplayNextWriter = null)
+            "request_language" -> cur.copy(requestLanguage = null, requestLanguageWriter = null)
             else -> cur
         }
         saveBehaviourOverlay(userId, next)

@@ -78,7 +78,11 @@ private data class TvDiscoverRequest(
     val mediaKind: String? = null,   // "movie" | "tv"
     val tmdbId: Int? = null,
     val title: String? = null,
+    val language: String? = null,    // Phase 139 — explicit request-language intent id; null = resolve server-side
 )
+
+@Serializable
+private data class ChangeRequestLanguageBody(val language: String)
 
 fun Route.tvRoutes(
     deviceService: RaviloDeviceService,
@@ -357,9 +361,16 @@ fun Route.tvRoutes(
     // (shouldn't happen outside tests) — falls back to unavailable rather than 500ing.
     get("/tv/discover") {
         val device = call.attributes[DeviceKey]
-        val resp = seerrDiscoverService?.getRequestFeeds(device.jellyfinUserId, device.isAdmin)
+        val resp = seerrDiscoverService?.getRequestFeeds(device.jellyfinUserId, device.isAdmin, device.isKids)
             ?: DiscoverResponse(available = false, canRequest = false)
         call.respond(resp)
+    }
+
+    // Phase 139 §D.2 — the viewer's own not-yet-available requests (the Request tab's "In progress"
+    // rail), so a strict-waiting choice made days ago is easy to find again and change.
+    get("/tv/discover/requests/mine") {
+        val device = call.attributes[DeviceKey]
+        call.respond(seerrDiscoverService?.getMyRequests(device.jellyfinUserId) ?: emptyList())
     }
 
     // R160 — the calendar is the same for every viewer (no per-user scoping), server-cached with a
@@ -382,10 +393,10 @@ fun Route.tvRoutes(
     // R171 — request detail: {mediaType}=movie|tv, {tmdbId}=TMDB id (addressing changed from the
     // retired chart flow's listId+rank, since Request rows have no rank concept).
     get("/tv/discover/item/{mediaType}/{tmdbId}") {
-        call.attributes[DeviceKey]
+        val device = call.attributes[DeviceKey]
         val mediaType = call.parameters["mediaType"] ?: return@get call.respond(HttpStatusCode.BadRequest)
         val tmdbId = call.parameters["tmdbId"]?.toIntOrNull() ?: return@get call.respond(HttpStatusCode.BadRequest)
-        val detail = seerrDiscoverService?.getEntry(mediaType, tmdbId) ?: return@get call.respond(HttpStatusCode.NotFound)
+        val detail = seerrDiscoverService?.getEntry(mediaType, tmdbId, device.jellyfinUserId, device.isKids) ?: return@get call.respond(HttpStatusCode.NotFound)
         call.respond(detail)
     }
 
@@ -395,7 +406,21 @@ fun Route.tvRoutes(
         val tmdbId = req.tmdbId ?: return@post call.respond(HttpStatusCode.BadRequest, mapOf("error" to "no tmdbId"))
         val service = seerrDiscoverService
             ?: return@post call.respond(HttpStatusCode.ServiceUnavailable, mapOf("error" to "discover request unavailable"))
-        call.respond(service.request(device.jellyfinUserId, device.isAdmin, req.mediaKind ?: "movie", tmdbId, req.title.orEmpty()))
+        call.respond(service.request(device.jellyfinUserId, device.isAdmin, req.mediaKind ?: "movie", tmdbId, req.title.orEmpty(), req.language, device.isKids))
+    }
+
+    // Phase 139 §E — switch a still-waiting request to a different language: re-profiles + re-searches
+    // the *arr item and updates the persisted intent. 404 covers "nothing requested at that id" and
+    // "request-language feature not configured" alike — the client shows the same generic failure either way.
+    post("/tv/discover/request/{mediaType}/{tmdbId}/language") {
+        val device = call.attributes[DeviceKey]
+        val mediaType = call.parameters["mediaType"] ?: return@post call.respond(HttpStatusCode.BadRequest)
+        val tmdbId = call.parameters["tmdbId"]?.toIntOrNull() ?: return@post call.respond(HttpStatusCode.BadRequest)
+        val body = runCatching { call.receive<ChangeRequestLanguageBody>() }.getOrElse {
+            return@post call.respond(HttpStatusCode.BadRequest, mapOf("error" to "language is required"))
+        }
+        val ok = seerrDiscoverService?.changeLanguage(device.jellyfinUserId, mediaType, tmdbId, body.language) ?: false
+        if (ok) call.respond(HttpStatusCode.OK) else call.respond(HttpStatusCode.NotFound, mapOf("error" to "couldn't change language"))
     }
 
     // R171 — search scoped to the Seerr catalogue only (never the local library — that stays on the
@@ -513,6 +538,7 @@ fun Route.tvRoutes(
         req.showContinueProgress?.let { raviloConfigService.setAdminShowContinueProgress(userId, it) }
         req.autoplayNext?.let { raviloConfigService.setAdminAutoplayNext(userId, it) }
         req.uiLanguage?.let { raviloConfigService.setAdminUiLanguage(userId, it) }
+        req.requestLanguage?.let { raviloConfigService.setAdminRequestLanguage(userId, it) }
         call.respond(raviloConfigService.resolveBehaviour(userId))
     }
 

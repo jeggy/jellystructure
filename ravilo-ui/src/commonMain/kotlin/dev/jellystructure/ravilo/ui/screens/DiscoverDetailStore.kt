@@ -43,10 +43,21 @@ class DiscoverDetailStore(
         if (matches) _state.value = DiscoverDetailState.Loaded(cur.copy(acquisition = rec))
     }
 
-    fun request() {
+    /** Phase 139 — [language] is the viewer's explicit pick from [dev.jellystructure.ravilo.ui.components.RequestLanguagePicker];
+     *  null lets the server resolve it (per-viewer default → kids default → catalog default) — the
+     *  no-popup path when the catalog has 0-1 languages. */
+    fun request(language: String? = null) {
         val cur = (_state.value as? DiscoverDetailState.Loaded)?.detail ?: return
         scope.launch {
-            runCatching { apiClient.requestDiscover(mediaType, tmdbId, cur.entry.title) }.getOrNull()?.let { applyAcquisition(it) }
+            runCatching { apiClient.requestDiscover(mediaType, tmdbId, cur.entry.title, language) }.getOrNull()?.let { applyAcquisition(it) }
+        }
+    }
+
+    /** Phase 139 §E — switch a still-waiting request to a different language; re-loads on success so
+     *  the fresh acquisition record (new flag/waiting-state) replaces the stale one. */
+    fun changeLanguage(language: String) {
+        scope.launch {
+            if (runCatching { apiClient.changeRequestLanguage(mediaType, tmdbId, language) }.getOrDefault(false)) load()
         }
     }
 }

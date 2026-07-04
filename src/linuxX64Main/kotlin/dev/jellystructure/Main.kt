@@ -136,7 +136,12 @@ fun main() = runBlocking {
 
     val raviloDeviceService = RaviloDeviceService(db)
     val tvEventBus = dev.jellystructure.tv.TvEventBus(rootScope)
-    val raviloConfigService = RaviloConfigService(db, tvEventBus)
+    // Phase 139 — constructed before RaviloConfigService: it needs arrClient to resolve the request-
+    // language catalog's default intent (RaviloConfigService.resolveBehaviour's requestLanguage field).
+    val arrClient = ArrClient()
+    val requestLanguageService = dev.jellystructure.arr.RequestLanguageService(configStore, arrClient)
+    val requestIntentStore = dev.jellystructure.seerr.RequestIntentStore(db)
+    val raviloConfigService = RaviloConfigService(db, tvEventBus, requestLanguageService)
     raviloConfigService.migrateAllLegacyBehaviourFields()  // R162: one-time, idempotent
     val homeFeedService = HomeFeedService(mediaStore, raviloConfigService, jellyfinClient, configStore)
     val browseService = BrowseService(mediaStore, jellyfinClient, configStore)
@@ -149,7 +154,6 @@ fun main() = runBlocking {
     val qbClient = QBittorrentClient()
     val seedingSnapshot = SeedingSnapshot(configStore, qbClient)
     val seedingGuard = SeedingGuard(seedingSnapshot)
-    val arrClient = ArrClient()
     val seerrClient = dev.jellystructure.seerr.SeerrClient()
     val arrRescan = ArrRescanService(configStore, arrClient, rootScope)
     val sonarrEnrich = SonarrEnrichService(mediaStore, arrClient, configStore)
@@ -181,7 +185,7 @@ fun main() = runBlocking {
     val shutdown = startServer(
         configStore, sessionService, raviloDeviceService, raviloConfigService, channelLogoStore, homeFeedService, browseService, detailService, playbackService, jellyfinClient, mediaStore, scanner,
         artworkDownloader, tmdbClient, scanTracker, mediaHistory, activityLog, broadcaster,
-        frontendDir, raviloWebDir = raviloWebDir, port = port, scanDispatcher = scanDispatcher, effectiveScanThreads = effectiveScanThreads, jsTagStore = jsTagStore, seedingGuard = seedingGuard, seedingSnapshot = seedingSnapshot, logoDownloader = logoDownloader, qbClient = qbClient, arrClient = arrClient, arrRescan = arrRescan, sonarrEnrich = sonarrEnrich, acquisitionService = acquisitionService, seerrClient = seerrClient, tvEventBus = tvEventBus, imageProxyService = imageProxyService, mediaJobQueue = mediaJobQueue, sessionBridge = sessionBridge, apiKeyStore = apiKeyStore, realtimeIngest = realtimeIngest, libraryListener = libraryListener, fdWatchdog = fdWatchdog, imdbClient = imdbClient, upcomingService = upcomingService,
+        frontendDir, raviloWebDir = raviloWebDir, port = port, scanDispatcher = scanDispatcher, effectiveScanThreads = effectiveScanThreads, jsTagStore = jsTagStore, seedingGuard = seedingGuard, seedingSnapshot = seedingSnapshot, logoDownloader = logoDownloader, qbClient = qbClient, arrClient = arrClient, arrRescan = arrRescan, sonarrEnrich = sonarrEnrich, acquisitionService = acquisitionService, seerrClient = seerrClient, tvEventBus = tvEventBus, imageProxyService = imageProxyService, mediaJobQueue = mediaJobQueue, sessionBridge = sessionBridge, apiKeyStore = apiKeyStore, realtimeIngest = realtimeIngest, libraryListener = libraryListener, fdWatchdog = fdWatchdog, imdbClient = imdbClient, upcomingService = upcomingService, requestLanguageService = requestLanguageService, requestIntentStore = requestIntentStore,
     )
 
     // R149: populate Sonarr next-airing data for all TV shows on startup (background, non-blocking).

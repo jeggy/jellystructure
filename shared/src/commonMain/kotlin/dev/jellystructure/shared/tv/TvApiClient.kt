@@ -266,13 +266,32 @@ class TvApiClient(
         return json.decodeFromString(r.bodyAsText())
     }
 
-    /** [mediaKind] is `"movie"` or `"tv"` — matches Seerr's own vocabulary, not [MediaKind]'s enum names. */
-    suspend fun requestDiscover(mediaKind: String, tmdbId: Int, title: String): AcquisitionRecord {
+    /** [mediaKind] is `"movie"` or `"tv"` — matches Seerr's own vocabulary, not [MediaKind]'s enum names.
+     *  Phase 139 — [language] is the viewer's explicit pick from the Original/Nordic popup; null lets
+     *  the server resolve it (per-viewer default → kids default → catalog default). */
+    suspend fun requestDiscover(mediaKind: String, tmdbId: Int, title: String, language: String? = null): AcquisitionRecord {
         val r = client.post("$baseUrl/api/tv/discover/request") {
-            auth(); jsonBody("""{"mediaKind":${mediaKind.jsonStr()},"tmdbId":$tmdbId,"title":${title.jsonStr()}}""")
+            auth(); jsonBody("""{"mediaKind":${mediaKind.jsonStr()},"tmdbId":$tmdbId,"title":${title.jsonStr()}${language?.let { ""","language":${it.jsonStr()}""" }.orEmpty()}}""")
         }
         r.assertSuccess()
         return json.decodeFromString(r.bodyAsText())
+    }
+
+    /** Phase 139 §D.2 — the viewer's own not-yet-available requests (Request tab's "In progress" rail). */
+    suspend fun getMyRequests(): List<DiscoverEntry> {
+        val r = client.get("$baseUrl/api/tv/discover/requests/mine") { auth() }
+        r.assertSuccess()
+        return json.decodeFromString(r.bodyAsText())
+    }
+
+    /** Phase 139 §E — switch a still-waiting request to a different language; re-profiles + re-searches
+     *  server-side. Returns false (not throws) on failure — the caller shows a "couldn't change" toast
+     *  rather than treating it like a network error. */
+    suspend fun changeRequestLanguage(mediaType: String, tmdbId: Int, language: String): Boolean {
+        val r = client.post("$baseUrl/api/tv/discover/request/$mediaType/$tmdbId/language") {
+            auth(); jsonBody("""{"language":${language.jsonStr()}}""")
+        }
+        return r.status.value in 200..299
     }
 
     // ─── Live events (R33/R141) ──────────────────────────────────────────────
