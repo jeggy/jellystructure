@@ -66,8 +66,10 @@ fun HomeScreen(
 ) {
     val colors = RaviloTheme.colors
     val state by store.state.collectAsState()
-    val discoverAvailable by store.discoverAvailable.collectAsState()
+    val chartsAvailable by store.discoverAvailable.collectAsState()
     val upcomingAvailable by store.upcomingAvailable.collectAsState()
+    // R170 — one merged Discover tab covers both segments; the tab itself shows if either is available.
+    val discoverAvailable = upcomingAvailable || chartsAvailable
 
     // R33: silently re-pull the home feed when this user's layout changes elsewhere.
     val live = dev.jellystructure.ravilo.ui.LocalLiveConfig.current
@@ -83,7 +85,6 @@ fun HomeScreen(
                 activeNav = activeNav,
                 displayName = displayName,
                 discoverAvailable = discoverAvailable,
-                upcomingAvailable = upcomingAvailable,
                 onNavSelect = onNavSelect,
                 onItemSelect = onItemSelect,
                 onItemPlay = onItemPlay,
@@ -103,7 +104,6 @@ private fun HomeLoaded(
     activeNav: Int,
     displayName: String,
     discoverAvailable: Boolean,
-    upcomingAvailable: Boolean,
     onNavSelect: (Int) -> Unit,
     onItemSelect: (MediaCard) -> Unit,
     onItemPlay: (MediaCard) -> Unit,
@@ -289,7 +289,7 @@ private fun HomeLoaded(
         displayName.split(' ').filter { it.isNotBlank() }.take(2)
             .joinToString("") { it.first().uppercase() }
     }
-    val navItems = raviloNavItems(upcomingAvailable, discoverAvailable)
+    val navItems = raviloNavItems(discoverAvailable)
     val appBarScrolled by remember { derivedStateOf {
         listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 0
     } }
