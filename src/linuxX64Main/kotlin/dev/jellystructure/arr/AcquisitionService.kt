@@ -56,6 +56,43 @@ class AcquisitionService(
     fun snapshot(keys: List<String>): List<AcquisitionRecord> = store.getMany(keys)
     fun get(itemKey: String): AcquisitionRecord? = store.get(itemKey)
 
+    /**
+     * Feature: bridges a Seerr-originated request (Phase 137/171/139 — [dev.jellystructure.seerr.SeerrDiscoverService.request])
+     * into this same reconciler, so the Request tab gets live-updating progress instead of a static
+     * badge until the page is reloaded. That flow tells Seerr to add+search the title directly — it
+     * never went through [request] above — so [poll] never learned it existed. Best-effort: if the
+     * *arr internal id can't be resolved yet (should be immediate, since Seerr's own request call
+     * synchronously adds the movie/series to Radarr/Sonarr before returning), this is a silent no-op —
+     * the reconciler simply won't have progress for this title until a later registration succeeds.
+     */
+    suspend fun trackSeerrRequest(
+        mediaKind: MediaKind,
+        tmdbId: Int,
+        title: String,
+        requestedBy: String?,
+        language: String? = null,
+        languageStrictWaiting: Boolean = false,
+    ) = mutex.withLock {
+        val itemKey = "tmdb:$tmdbId"
+        val now = nowMs()
+        val rec = AcquisitionRecord(
+            itemKey, mediaKind, AcquisitionStatus.REQUESTED, tmdbId, title,
+            requestedBy = requestedBy, language = language, languageStrictWaiting = languageStrictWaiting,
+        )
+        when (mediaKind) {
+            MediaKind.MOVIE -> {
+                val r = configStore.current.radarr?.takeIf { it.enabled } ?: return@withLock
+                val movieId = client.findMovieId(r.url, r.apiKey, tmdbId) ?: return@withLock
+                store.save(rec, "radarr", movieId, now)
+            }
+            MediaKind.SERIES -> {
+                val s = configStore.current.sonarr?.takeIf { it.enabled } ?: return@withLock
+                val seriesId = client.findSeriesIdByTmdbId(s.url, s.apiKey, tmdbId) ?: return@withLock
+                store.save(rec, "sonarr", seriesId, now)
+            }
+        }
+    }
+
     // ---- request ----
     suspend fun request(mediaKind: MediaKind, tmdbId: Int, title: String, requestedBy: String?): AcquisitionRecord =
         mutex.withLock {

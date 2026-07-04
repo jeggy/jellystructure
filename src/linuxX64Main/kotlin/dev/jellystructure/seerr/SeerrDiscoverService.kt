@@ -1,5 +1,6 @@
 package dev.jellystructure.seerr
 
+import dev.jellystructure.arr.AcquisitionService
 import dev.jellystructure.arr.RequestLanguageService
 import dev.jellystructure.config.ConfigStore
 import dev.jellystructure.media.MediaStore
@@ -46,11 +47,17 @@ fun seerrGenreOptions(kind: String): List<PickerOption> =
  * request detail and the request action, replacing the retired chart engine (Phase 136). Client never
  * calls Seerr directly (constitution) — every call here proxies through [SeerrClient].
  *
- * Deliberately **not** a persisted/reconciled acquisition source: every discover/search/detail call
- * re-derives each tile's status live from Seerr's own embedded `mediaInfo` (or the request-creation
- * response), rather than a background poller. See the R171 implementation note for why — in short, the
- * public Seerr API doesn't expose per-item download progress/ETA, so there is nothing a reconciler
- * would add over "the tab always shows what Seerr says right now."
+ * Every discover/search/detail *read* still re-derives each tile's status live from Seerr's own
+ * embedded `mediaInfo` (or the request-creation response) rather than a persisted store — the public
+ * Seerr API doesn't expose per-item download progress/ETA, so there'd be nothing to read back.
+ *
+ * Bug fix: [request] now bridges a successful Seerr request into [AcquisitionService]'s existing
+ * Radarr/Sonarr queue reconciler (`trackSeerrRequest`) — that poller already runs continuously and
+ * pushes live progress over the same WebSocket channel the client listens on; it just never knew Seerr-
+ * originated requests existed, so the Request tab's badge stayed static ("Requested"/0%) until the page
+ * was closed and reopened. This is a one-time registration call, not a new poller — the "no reconciler
+ * needed" reasoning above was about *reading*, not about live progress push, which reuses the one that
+ * already exists for the older direct-to-*arr flow.
  */
 class SeerrDiscoverService(
     private val configStore: ConfigStore,
@@ -62,6 +69,9 @@ class SeerrDiscoverService(
     // catalog already return null/no-catalog, same as if RequestLanguageService were never wired).
     private val requestLanguageService: RequestLanguageService? = null,
     private val requestIntentStore: RequestIntentStore? = null,
+    // Bug fix: null-safe for the same reason as above — absent ⇒ requests behave exactly as before
+    // (no live progress bridge), same as if AcquisitionService were never wired.
+    private val acquisitionService: AcquisitionService? = null,
 ) {
     private fun seerr() = configStore.current.seerr?.takeIf { it.enabled && it.url.isNotBlank() }
 
@@ -221,6 +231,12 @@ class SeerrDiscoverService(
             ?: return AcquisitionRecord(itemKey, mediaKind, AcquisitionStatus.FAILED, tmdbId, title, reason = "Seerr request failed", retryable = true)
         val strictWaiting = resolvedIntent?.strict == true
         val (status, progress, eta) = statusFromMediaInfo(result.media)
+        // Bug fix: register with the acquisition reconciler so this title's progress keeps updating
+        // live (over the existing WebSocket channel) instead of staying frozen at whatever Seerr
+        // reported at request time until the page is reloaded. No-op if already available.
+        if (status != AcquisitionStatus.AVAILABLE) {
+            acquisitionService?.trackSeerrRequest(mediaKind, tmdbId, title, userId, resolvedLanguage, strictWaiting)
+        }
         return AcquisitionRecord(itemKey, mediaKind, status, tmdbId, title, progress = progress, eta = eta, language = resolvedLanguage, languageStrictWaiting = strictWaiting)
     }
 
