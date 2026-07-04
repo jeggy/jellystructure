@@ -50,19 +50,25 @@ class RequestLanguageService(
 
     /**
      * The Radarr/Sonarr `profileId` (+ resolved indexer tag ids) for a resolved intent, to add to the
-     * Seerr request payload.
+     * Seerr request payload. Returns `null` profileId for a steering intent (non-blank `match`) that
+     * cannot be backed by a real scored profile — the caller (see [dev.jellystructure.seerr.SeerrDiscoverService.request])
+     * must treat that as "reject the request", never as "proceed without steering".
      *
-     * Bug fix: a steered intent (non-blank `match`, e.g. "Dansk") whose custom format + scored profile
-     * had never been provisioned (the admin hasn't visited Settings ▸ Download tools ▸ Request
-     * languages ▸ "Set up profiles" yet) used to silently fall back to resolving [baseProfile] *by
-     * name* — the plain, unscored profile, identical to no language preference at all. For a `strict`
-     * intent this is the worst possible failure mode: the viewer explicitly picked "Dansk", got zero
-     * enforcement, and no error surfaced anywhere. Verified live: requesting "Inside Out 2" as Dansk
-     * grabbed a plain English TorrentLeech release, because Radarr had no "Request language: Dansk"
-     * custom format or "HD-1080p · Dansk" profile at all — only the stock defaults. Now provisions
-     * on-demand (same idempotent create-or-update as the bulk [provision] flow) the first time an
-     * intent is actually used, instead of requiring the admin to run it first. A configured tag name
-     * with no matching *arr tag is silently dropped (tags are traffic hygiene, never load-bearing).
+     * Bug fix: this used to fall back to resolving [RequestLanguageIntent.baseProfile] *by name* — the
+     * plain, unscored profile — whenever no provisioned profile id was stored, including for steering
+     * intents like "Dansk". That's silently identical to no language preference at all: for a `strict`
+     * intent the viewer explicitly picked "Dansk", got zero enforcement, and no error surfaced anywhere.
+     * Verified live: requesting "Inside Out 2" as Dansk grabbed a plain English TorrentLeech release,
+     * because Radarr had no "Request language: Dansk" custom format or "HD-1080p · Dansk" profile at
+     * all — only the stock defaults (Settings ▸ Download tools ▸ Request languages ▸ "Set up profiles"
+     * had never been run). Now: on-demand provisioning (same idempotent upsert as the bulk [provision]
+     * flow) is attempted the first time a steering intent is used, so most requests just work without
+     * the admin needing to set anything up first — but if that provisioning attempt *also* fails (e.g.
+     * the *arr API errors), this returns null rather than quietly degrading to the unscored profile.
+     * The by-name fallback still applies to `original`-shaped intents (blank `match`), which are
+     * designed to never be provisioned — "just use the named profile as-is" is the intended behavior
+     * there, not a degradation. A configured tag name with no matching *arr tag is silently dropped
+     * (tags are traffic hygiene, never load-bearing).
      */
     suspend fun profileFor(intentId: String?, mediaKind: MediaKind): Pair<Int?, List<Int>> {
         val i = intent(intentId) ?: return null to emptyList()
@@ -78,7 +84,7 @@ class RequestLanguageService(
                 persistProvisioned(i.id, arrKind, cfId, profId)
             }
         }
-        val profileId = storedProfileId ?: arrClient.findQualityProfileIdByName(cfg.url, cfg.apiKey, i.baseProfile)
+        val profileId = storedProfileId ?: (if (i.match.isBlank()) arrClient.findQualityProfileIdByName(cfg.url, cfg.apiKey, i.baseProfile) else null)
         val tagIds = if (i.tags.isEmpty()) emptyList() else {
             val existing = arrClient.getTags(cfg.url, cfg.apiKey)
             i.tags.mapNotNull { name -> existing.firstOrNull { it.label.equals(name, ignoreCase = true) }?.id }
