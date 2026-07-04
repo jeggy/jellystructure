@@ -476,12 +476,12 @@ suspend fun executePipeline(
                     updated?.let { store.addOrUpdate(it) }
                 }
             }
-            "download_artwork" -> {
+            "fetch_artwork" -> {
                 // R125/R126: "missing" scope = anything fetch() can fill is absent — poster/fanart, plus
                 // episode stills + season posters for series.
                 val toProcess = if (step.scope == "all") workingSet
                     else workingSet.filter { artworkDownloader.isArtworkIncomplete(it) }
-                Logger.info("download_artwork: ${toProcess.size} items (scope=${step.scope})")
+                Logger.info("fetch_artwork: ${toProcess.size} items (scope=${step.scope})")
                 runPipelineStepPool(
                     jobId, step.step, toProcess, pipelineStepConcurrency(step.step, scanWorkers),
                     scanTracker, broadcaster, labelOf = { it.title },
