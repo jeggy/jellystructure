@@ -566,6 +566,13 @@ data class BehaviourOverlay(
     @SerialName("show_continue_progress_writer") val showContinueProgressWriter: String? = null,
     @SerialName("autoplay_next") val autoplayNext: Boolean? = null,
     @SerialName("autoplay_next_writer") val autoplayNextWriter: String? = null,
+    // Phase 139 — per-viewer default request-language intent id (e.g. "nordic"). Unlike the other
+    // fields above, its "global default" fallback is NOT a RaviloConfig field — it's whichever
+    // request-language intent the admin flagged `default = true` in AppConfig (resolved in
+    // SeerrDiscoverService, which already has ConfigStore access), so there is no matching field on
+    // [RaviloConfig] the way `uiLanguage`/`skin`/etc. have one.
+    @SerialName("request_language") val requestLanguage: String? = null,
+    @SerialName("request_language_writer") val requestLanguageWriter: String? = null,
 )
 
 /** One resolved behaviour field for the config-editor UI: the effective [value] plus where it came
@@ -581,6 +588,9 @@ data class ResolvedBehaviour(
     @SerialName("tile_shape") val tileShape: ResolvedBehaviourField<TileShape>,
     @SerialName("show_continue_progress") val showContinueProgress: ResolvedBehaviourField<Boolean>,
     @SerialName("autoplay_next") val autoplayNext: ResolvedBehaviourField<Boolean>,
+    // Phase 139 — "global" here means "the catalog's default-flagged intent" (or the kids-default
+    // intent for a kids device), resolved server-side since only the backend has the AppConfig catalog.
+    @SerialName("request_language") val requestLanguage: ResolvedBehaviourField<String>,
 )
 
 /** R159 — portrait-only display overrides. Each field null = that override is off; the block itself
@@ -676,6 +686,8 @@ data class ViewerSettingsRequest(
     // R162: joins the other four in the field-level behaviour overlay (R161 will be the first UI to
     // actually send it — the field/plumbing lands now so that phase is a pure UI change).
     @SerialName("ui_language") val uiLanguage: String? = null,
+    // Phase 139 — admin-editor-only for now (no on-TV Settings control yet); same overlay mechanism.
+    @SerialName("request_language") val requestLanguage: String? = null,
 )
 
 @Serializable

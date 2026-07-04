@@ -35,6 +35,7 @@ import kotlin.js.JsString
 import kotlinx.browser.document
 import kotlinx.browser.window
 import dev.jellystructure.api.MediaApi
+import dev.jellystructure.api.ConfigApi
 import org.w3c.files.File
 import org.w3c.files.FileReader
 import dev.jellystructure.model.MediaItem
@@ -96,6 +97,10 @@ private fun seerrKindBadge(kind: SeerrFeedKind): String = when (kind) {
 
 private var users: List<JellyfinUser> = emptyList()
 private var facets: Map<String, List<String>> = emptyMap() // "NETWORK"/"STUDIO"/"GENRE"/"TAG" -> values
+// Phase 139 — request-language catalog (id to label), for the per-user "Default request language"
+// field below. Loaded once at mount (admin-managed, not per-user) from the same /api/config the
+// Settings page's Request-languages card edits. Empty = feature not configured — the field is hidden.
+private var requestLanguageOptions: List<Pair<String, String>> = emptyList()
 // Client-side scope config cache: avoids a server round-trip when switching between scopes the user
 // has already visited. Invalidated immediately before each successful Save.
 private val scopeConfigCache = HashMap<String, AdminConfigResponse>()
@@ -137,6 +142,7 @@ fun renderRaviloConfig(container: Element, scope: CoroutineScope) {
             return@launch
         }
         facets = loadFacets()
+        requestLanguageOptions = runCatching { ConfigApi.get()?.config?.requestLanguage?.intents?.map { it.id to it.label } }.getOrNull().orEmpty()
         // R51: always start in global scope
         currentUserId = GLOBAL_SCOPE; currentScopeIsGlobal = true; currentHasOverride = false
         val resp = runCatching { RaviloApi.getConfigWithMeta(scope = "global") }.getOrNull()
@@ -395,6 +401,7 @@ private fun wireShell(container: Element, scope: CoroutineScope) {
         val uid = currentUserId
         val req = when {
             t is HTMLSelectElement && t.id == "beh-u-lang" -> ViewerSettingsRequest(uiLanguage = t.value)
+            t is HTMLSelectElement && t.id == "beh-u-reqlang" -> ViewerSettingsRequest(requestLanguage = t.value)
             t is HTMLSelectElement && t.id == "beh-u-skin" -> runCatching { Skin.valueOf(t.value) }.getOrNull()?.let { ViewerSettingsRequest(skin = it) }
             t is HTMLInputElement && t.id == "beh-u-progress" -> ViewerSettingsRequest(showContinueProgress = t.checked)
             t is HTMLInputElement && t.id == "beh-u-autoplay" -> ViewerSettingsRequest(autoplayNext = t.checked)
@@ -2459,6 +2466,18 @@ private fun renderBehaviourUser(sect: Element) {
               """<label style="display:flex;align-items:center;gap:8px"><input type="checkbox" id="beh-u-autoplay"$autoplayChecked></label>""",
               r.autoplayNext.source, "id=\"beh-reset-autoplay_next\"",
           )}
+          ${if (requestLanguageOptions.isEmpty()) "" else {
+              val reqLangDisabled = if (r.requestLanguage.source == "viewer") " disabled" else ""
+              val reqLangOptions = requestLanguageOptions.joinToString("") { (id, label) ->
+                  val sel = if (id == r.requestLanguage.value) " selected" else ""
+                  """<option value="${id}"$sel>${label.htmlEsc()}</option>"""
+              }
+              behFieldRow(
+                  "Default request language", "Which language the Request/Discover tab pre-selects for this viewer",
+                  """<select id="beh-u-reqlang" class="input" style="width:160px;font-size:.85rem"$reqLangDisabled>$reqLangOptions</select>""",
+                  r.requestLanguage.source, "id=\"beh-reset-request_language\"",
+              )
+          }}
         </div>
     """.trimIndent()
 }

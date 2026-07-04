@@ -1,0 +1,25 @@
+-- Phase 139 — records which request-language intent a viewer chose for a title, independent of Seerr's
+-- own live status (which carries no language). One row per requested title (media_kind + tmdb_id);
+-- re-requesting or changing language overwrites the row rather than accumulating history.
+CREATE TABLE request_intent (
+    media_kind TEXT NOT NULL,       -- 'MOVIE' | 'SERIES'
+    tmdb_id INTEGER NOT NULL,
+    requested_by TEXT NOT NULL,     -- jellyfinUserId
+    language_id TEXT NOT NULL,      -- RequestLanguageIntent.id
+    strict INTEGER NOT NULL DEFAULT 0,
+    requested_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    PRIMARY KEY (media_kind, tmdb_id)
+);
+
+CREATE INDEX request_intent_user ON request_intent(requested_by);
+
+upsert:
+INSERT OR REPLACE INTO request_intent(media_kind, tmdb_id, requested_by, language_id, strict, requested_at, updated_at)
+VALUES (:media_kind, :tmdb_id, :requested_by, :language_id, :strict, :requested_at, :updated_at);
+
+getOne:
+SELECT * FROM request_intent WHERE media_kind = :media_kind AND tmdb_id = :tmdb_id;
+
+forUser:
+SELECT * FROM request_intent WHERE requested_by = :requested_by ORDER BY requested_at DESC;

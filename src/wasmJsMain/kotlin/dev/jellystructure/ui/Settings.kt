@@ -16,6 +16,9 @@ import dev.jellystructure.api.ArrConfig
 import dev.jellystructure.api.QBittorrentConfig
 import dev.jellystructure.api.QBittorrentPathMapping
 import dev.jellystructure.api.SeerrConfig
+import dev.jellystructure.api.RequestLanguageConfig
+import dev.jellystructure.api.RequestLanguageIntent
+import dev.jellystructure.api.ProvisionPlanLine
 import dev.jellystructure.api.MetadataConfig
 import dev.jellystructure.resolver.CertificationCatalog
 import dev.jellystructure.api.httpClient
@@ -311,6 +314,23 @@ fun renderSettings(container: Element, scope: CoroutineScope, query: Map<String,
               </div>
             </div>
 
+            <div class="card set-section" id="sect-request-lang" data-tab="downloads">
+              <div class="row center"><h3 style="font-size:1.05rem;margin:0;">Request languages</h3><span class="badge info" style="margin-left:8px;">Nordic / Danish etc.</span></div>
+              <div class="tiny muted" style="margin:8px 0 14px;">Lets a viewer request a title in a chosen language (e.g. <b>Dansk / Nordic</b> vs <b>Original</b>) — Jellystructure auto-creates a matching custom format + quality profile in Radarr/Sonarr so the grab lands the right release. See the Ravilo config editor's Request tab for each viewer's default.</div>
+              <div id="rl-rows"></div>
+              <button id="rl-add" class="btn sm ghost" style="margin-top:8px">+ Add language</button>
+              <div class="field" style="margin-top:14px"><label>Kids default</label>
+                <select id="rl-kids-default" class="input" style="max-width:260px"></select>
+                <span class="hint">Which language a Kids-profile TV requests in, unless the viewer has their own default set.</span>
+              </div>
+              <div style="display:flex;align-items:center;gap:8px;margin-top:14px">
+                <button id="rl-preview-btn" class="btn sm ghost">Preview</button>
+                <button id="rl-provision-btn" class="btn sm">Set up profiles in Radarr/Sonarr</button>
+                <span id="chk-rl" class="tiny muted"></span>
+              </div>
+              <div id="rl-plan" style="margin-top:10px;display:none"></div>
+            </div>
+
             <div class="card set-section" id="sect-ingest" data-tab="downloads">
               <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
                 <h3 style="font-size:1rem;margin:0">Realtime ingest</h3>
@@ -469,6 +489,7 @@ private val SECTION_TAB = mapOf(
     "sect-crossseed" to "downloads",
     "sect-arr" to "downloads",
     "sect-seerr" to "downloads",
+    "sect-request-lang" to "downloads",
     "sect-notifications" to "notifications",
     "sect-advanced" to "advanced",
 )
@@ -532,6 +553,10 @@ private var radarrRescan = true
 private var sonarrEnabled = false
 private var sonarrRescan = true
 private var seerrEnabled = false
+// Phase 139 — request-language intents (rebuilt into the DOM on every change; simple list, no
+// drag-reorder — order doesn't affect behaviour here the way it does for content rows/feeds).
+private val requestLanguageIntents: MutableList<RequestLanguageIntent> = mutableListOf()
+private var requestLanguageKidsDefault: String? = null
 private var notifScanDone = true
 private var notifNoMatch = false
 private var notifWriteFailed = true
@@ -568,6 +593,12 @@ private fun populateForm(response: ConfigResponse) {
     if (seerr != null) { setInputValue("seerr-url", seerr.url); setInputValue("seerr-key", seerr.apiKey) }
     setArrKeyBadge("seerr", (seerr?.apiKey ?: "").isNotBlank())
     (document.getElementById("seerr-on") as? HTMLElement)?.style?.display = if (seerrEnabled) "block" else "none"
+
+    // Phase 139 — request-language intents (Original/Dansk-Nordic etc.)
+    requestLanguageIntents.clear()
+    requestLanguageIntents.addAll(config.requestLanguage.intents)
+    requestLanguageKidsDefault = config.requestLanguage.kidsDefault
+    renderRequestLanguageRows()
 
     overwriteNfo = config.behavior.overwriteNfo
     fetchImages = config.behavior.fetchImages
@@ -768,6 +799,7 @@ private fun attachListeners(scope: CoroutineScope) {
     wireArr(scope, "radarr")
     wireArr(scope, "sonarr")
     wireSeerr(scope)
+    wireRequestLanguage(scope)
 
     document.getElementById("notif-scan-done-toggle")?.addEventListener("click") {
         notifScanDone = !notifScanDone
@@ -1112,6 +1144,7 @@ private fun readForm(): AppConfig = AppConfig(
     ) else null,
     scanSchedule = if (pipelineEnabled) computePipeCron() else "",
     scan = ScanConfig(pipeline = if (pipelineEnabled) pipelineSteps.toList() else emptyList()),
+    requestLanguage = RequestLanguageConfig(intents = requestLanguageIntents.toList(), kidsDefault = requestLanguageKidsDefault?.takeIf { it.isNotBlank() }),
 )
 
 private fun refreshTomlPreview(config: AppConfig) {
@@ -1302,6 +1335,102 @@ private fun wireSeerr(scope: CoroutineScope) {
         val btn = document.getElementById("seerr-key-reveal") as? HTMLElement
         if (inp.type == "password") { inp.type = "text"; btn?.textContent = "Hide" }
         else { inp.type = "password"; btn?.textContent = "Show" }
+    }
+}
+
+// Phase 139 — request-language intents (Original/Dansk-Nordic etc.). Plain list, no drag-reorder (order
+// doesn't affect behaviour here); rebuilt into the DOM on every add/remove/default-change, with
+// event-delegated input/change/click listeners on the container (matches the codebase's `data-act`
+// delegation convention, e.g. TrackEditor.kt) so a rebuild never needs to re-bind per-row listeners.
+private fun renderRequestLanguageRows() {
+    val rows = document.getElementById("rl-rows") as? HTMLElement ?: return
+    rows.innerHTML = requestLanguageIntents.mapIndexed { i, intent ->
+        """<div class="row" data-i="$i" style="gap:8px;align-items:center;padding:8px 0;border-bottom:1px solid var(--line);flex-wrap:wrap">
+          <input class="input rl-f" data-f="id" data-i="$i" value="${intent.id.esc()}" placeholder="id" style="width:90px" title="Sent by the app, e.g. nordic">
+          <input class="input rl-f" data-f="label" data-i="$i" value="${intent.label.esc()}" placeholder="Label" style="width:110px" title="Shown on TV, e.g. Dansk">
+          <input class="input rl-f" data-f="flag" data-i="$i" value="${intent.flag.esc()}" placeholder="cc" style="width:52px" title="ISO-639-1 language code for the flag, e.g. da — blank = original-language flag">
+          <input class="input rl-f" data-f="base_profile" data-i="$i" value="${intent.baseProfile.esc()}" placeholder="Base profile" style="width:130px" title="An existing Radarr/Sonarr quality profile name to clone">
+          <input class="input rl-f" data-f="match" data-i="$i" value="${intent.match.esc()}" placeholder="Release-title regex (blank = use base profile as-is)" style="flex:1;min-width:220px;font-family:'JetBrains Mono',monospace;font-size:.82rem">
+          <label class="tiny row center" style="gap:4px;white-space:nowrap;cursor:pointer"><input type="checkbox" class="rl-f" data-f="strict" data-i="$i"${if (intent.strict) " checked" else ""}> strict</label>
+          <label class="tiny row center" style="gap:4px;white-space:nowrap;cursor:pointer"><input type="radio" name="rl-default" class="rl-f" data-f="default" data-i="$i"${if (intent.default) " checked" else ""}> default</label>
+          <button class="btn sm ghost" data-act="rl-remove" data-i="$i" type="button">✕</button>
+        </div>"""
+    }.joinToString("")
+
+    val kidsSel = document.getElementById("rl-kids-default") as? HTMLSelectElement
+    kidsSel?.innerHTML = """<option value="">(none — use each viewer's/global default)</option>""" +
+        requestLanguageIntents.joinToString("") { """<option value="${it.id.esc()}"${if (it.id.isNotBlank() && it.id == requestLanguageKidsDefault) " selected" else ""}>${it.label.esc()}</option>""" }
+}
+
+private fun wireRequestLanguage(scope: CoroutineScope) {
+    document.getElementById("rl-add")?.addEventListener("click") {
+        requestLanguageIntents.add(RequestLanguageIntent(default = requestLanguageIntents.isEmpty()))
+        renderRequestLanguageRows()
+        refreshTomlPreview(readForm())
+    }
+    document.getElementById("rl-rows")?.addEventListener("input") { ev ->
+        val target = ev.target as? HTMLInputElement ?: return@addEventListener
+        if (!target.classList.contains("rl-f")) return@addEventListener
+        val i = target.getAttribute("data-i")?.toIntOrNull() ?: return@addEventListener
+        val f = target.getAttribute("data-f") ?: return@addEventListener
+        val cur = requestLanguageIntents.getOrNull(i) ?: return@addEventListener
+        requestLanguageIntents[i] = when (f) {
+            "id" -> cur.copy(id = target.value)
+            "label" -> cur.copy(label = target.value)
+            "flag" -> cur.copy(flag = target.value)
+            "base_profile" -> cur.copy(baseProfile = target.value)
+            "match" -> cur.copy(match = target.value)
+            else -> cur
+        }
+        refreshTomlPreview(readForm())
+    }
+    document.getElementById("rl-rows")?.addEventListener("change") { ev ->
+        val target = ev.target as? HTMLInputElement ?: return@addEventListener
+        val i = target.getAttribute("data-i")?.toIntOrNull() ?: return@addEventListener
+        when (target.getAttribute("data-f")) {
+            "strict" -> requestLanguageIntents[i] = requestLanguageIntents[i].copy(strict = target.checked)
+            "default" -> {
+                for (j in requestLanguageIntents.indices) requestLanguageIntents[j] = requestLanguageIntents[j].copy(default = j == i)
+                renderRequestLanguageRows()
+            }
+        }
+        refreshTomlPreview(readForm())
+    }
+    document.getElementById("rl-rows")?.addEventListener("click") { ev ->
+        val btn = (ev.target as? HTMLElement)?.closest("[data-act='rl-remove']") as? HTMLElement ?: return@addEventListener
+        val i = btn.getAttribute("data-i")?.toIntOrNull() ?: return@addEventListener
+        requestLanguageIntents.removeAt(i)
+        renderRequestLanguageRows()
+        refreshTomlPreview(readForm())
+    }
+    document.getElementById("rl-kids-default")?.addEventListener("change") {
+        requestLanguageKidsDefault = (document.getElementById("rl-kids-default") as? HTMLSelectElement)?.value?.takeIf { it.isNotBlank() }
+        refreshTomlPreview(readForm())
+    }
+    document.getElementById("rl-preview-btn")?.addEventListener("click") { scope.launch { runRequestLanguagePlan(preview = true) } }
+    document.getElementById("rl-provision-btn")?.addEventListener("click") { scope.launch { runRequestLanguagePlan(preview = false) } }
+}
+
+private suspend fun runRequestLanguagePlan(preview: Boolean) {
+    val chk = document.getElementById("chk-rl") as? HTMLElement
+    val planEl = document.getElementById("rl-plan") as? HTMLElement
+    chk?.textContent = if (preview) "Checking…" else "Applying…"
+    val lines = if (preview) ConfigApi.previewRequestLanguage() else ConfigApi.provisionRequestLanguage()
+    if (lines == null) {
+        chk?.innerHTML = """<span class="badge bad">Request failed — check Radarr/Sonarr are connected above</span>"""
+        return
+    }
+    chk?.innerHTML = if (preview) "" else """<span class="badge ok">Done — reload this page to see the stored profile ids</span>"""
+    planEl?.style?.display = "block"
+    planEl?.innerHTML = if (lines.isEmpty())
+        """<span class="tiny muted">Nothing to provision — every intent's "match" is blank (Original-shaped needs no custom format).</span>"""
+    else buildString {
+        append("""<table class="wf-table"><tbody>""")
+        for (l in lines) {
+            val cls = when (l.action) { "create", "created" -> "ok"; "failed" -> "bad"; else -> "warn" }
+            append("""<tr><td class="muted tiny">${l.arrKind.esc()}</td><td class="tiny">${l.kind.esc()}</td><td>${l.name.esc()}</td><td><span class="badge $cls" style="font-size:.7rem">${l.action.esc()}</span></td></tr>""")
+        }
+        append("</tbody></table>")
     }
 }
 

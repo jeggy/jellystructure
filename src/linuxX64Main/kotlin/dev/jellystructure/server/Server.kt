@@ -138,6 +138,8 @@ fun startServer(
     fdWatchdog: dev.jellystructure.ops.FdWatchdog,
     imdbClient: dev.jellystructure.imdb.ImdbClient,
     upcomingService: dev.jellystructure.tv.UpcomingService? = null,
+    requestLanguageService: dev.jellystructure.arr.RequestLanguageService? = null,
+    requestIntentStore: dev.jellystructure.seerr.RequestIntentStore? = null,
 ): suspend () -> Unit {
     // Fire-and-forget work (scans, NFO/artwork pushes, image fetches) runs as appScope.launch{}.
     // On Kotlin/Native an exception escaping a launched coroutine reaches the global handler and
@@ -301,7 +303,7 @@ fun startServer(
                 }
 
                 authRoutes(sessionService, jellyfinClient, configStore)
-                configureConfigRoutes(configStore, effectiveScanThreads, qbClient, arrClient, seerrClient, tmdbClient)
+                configureConfigRoutes(configStore, effectiveScanThreads, qbClient, arrClient, seerrClient, tmdbClient, requestLanguageService)
                 setupRoutes(configStore, jellyfinClient)
                 jellyfinRoutes(configStore, jellyfinClient)
                 mediaRoutes(mediaStore, scanner, artworkDownloader, tmdbClient, appScope, scanTracker, broadcaster, jellyfinClient, configStore, mediaHistory, scanDispatcher, seedingGuard, seedingSnapshot, raviloConfigService, logoDownloader, arrRescan, sonarrEnrich, mediaJobQueue, imdbClient)
@@ -316,7 +318,7 @@ fun startServer(
                 acquisitionService?.let { acquisitionRoutes(it) }
                 // R171 — the TV Request tab's Seerr-backed discover/search/request service; null (tab
                 // reports unavailable) until a SeerrClient is wired, exactly like the other optional *arr services above.
-                val seerrDiscoverService = seerrClient?.let { dev.jellystructure.seerr.SeerrDiscoverService(configStore, it, raviloConfigService, mediaStore) }
+                val seerrDiscoverService = seerrClient?.let { dev.jellystructure.seerr.SeerrDiscoverService(configStore, it, raviloConfigService, mediaStore, requestLanguageService, requestIntentStore) }
                 tvRoutes(deviceService, raviloConfigService, homeFeedService, browseService, detailService, playbackService, sessionService, jellyfinClient, configStore, channelLogoStore, imageProxyService, tvEventBus, upcomingService, seerrDiscoverService)
             }
 

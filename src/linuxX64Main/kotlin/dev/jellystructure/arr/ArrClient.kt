@@ -7,6 +7,7 @@ import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.parameter
 import io.ktor.client.request.post
+import io.ktor.client.request.put
 import io.ktor.client.request.setBody
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
@@ -14,6 +15,7 @@ import io.ktor.http.contentType
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.doubleOrNull
@@ -39,6 +41,7 @@ private data class ArrSeriesRef(
     val path: String = "",
     val status: String = "",          // "continuing" | "ended"
     val nextAiring: String? = null,   // ISO UTC datetime e.g. "2026-07-04T20:00:00Z"
+    val tmdbId: Int = 0,              // Phase 139 — Sonarr v4 exposes this directly, no bridge needed
 )
 
 /** Sonarr series info exposed to R149 enrichment: id, path, status, next-airing UTC datetime. */
@@ -63,6 +66,8 @@ class ArrClient {
         OutboundHttp.withPermit { http.get(url, block) }
     private suspend fun httpPost(url: String, block: io.ktor.client.request.HttpRequestBuilder.() -> Unit = {}): io.ktor.client.statement.HttpResponse =
         OutboundHttp.withPermit { http.post(url, block) }
+    private suspend fun httpPut(url: String, block: io.ktor.client.request.HttpRequestBuilder.() -> Unit = {}): io.ktor.client.statement.HttpResponse =
+        OutboundHttp.withPermit { http.put(url, block) }
     private suspend fun httpDelete(url: String, block: io.ktor.client.request.HttpRequestBuilder.() -> Unit = {}): io.ktor.client.statement.HttpResponse =
         OutboundHttp.withPermit { http.delete(url, block) }
 
@@ -154,6 +159,166 @@ class ArrClient {
         val roots = rootFolders(url, apiKey)
         return if (roots.size == 1) roots.first() else null
     }
+
+    /** Sonarr: resolve a series' `seriesId` by TMDB id (Sonarr v4 exposes `tmdbId` directly on `/series`,
+     *  unlike [findSeriesIdByPath] which is needed only where no tmdbId is in hand yet). */
+    suspend fun findSeriesIdByTmdbId(url: String, apiKey: String, tmdbId: Int): Int? = runCatching {
+        val series: List<ArrSeriesRef> = httpGet(base(url) + "/series") { header("X-Api-Key", apiKey) }.body()
+        series.firstOrNull { it.tmdbId == tmdbId }?.id
+    }.getOrNull()
+
+    // ---- Phase 139: request-language provisioning (custom format + cloned quality profile) ----
+
+    /** Every existing custom format, with the release-title regex it holds (blank if it isn't a
+     *  `ReleaseTitleSpecification`) — enough to decide create-vs-update by name, idempotently. */
+    suspend fun getCustomFormats(url: String, apiKey: String): List<ArrCustomFormatRef> = runCatching {
+        val arr = httpGet(base(url) + "/customformat") { header("X-Api-Key", apiKey) }.body<JsonArray>()
+        arr.map { it.jsonObject }.map { o ->
+            val spec = o["specifications"]?.jsonArray?.firstOrNull()?.jsonObject
+            val value = spec?.get("fields")?.jsonArray
+                ?.map { it.jsonObject }
+                ?.firstOrNull { f -> f["name"]?.jsonPrimitive?.contentOrNull == "value" }
+                ?.get("value")?.jsonPrimitive?.contentOrNull.orEmpty()
+            ArrCustomFormatRef(o["id"]?.jsonPrimitive?.intOrNull ?: 0, o["name"]?.jsonPrimitive?.contentOrNull ?: "", value)
+        }
+    }.getOrElse { emptyList() }
+
+    /**
+     * Create-or-update (by [name]) a single-specification `ReleaseTitleSpecification` custom format
+     * matching [regex]. Idempotent: a matching name+regex is left untouched; a matching name with a
+     * different regex is updated in place (never duplicated). Returns the format's id, or null on failure.
+     */
+    suspend fun upsertReleaseTitleCustomFormat(url: String, apiKey: String, name: String, regex: String): Int? = runCatching {
+        val existing = getCustomFormats(url, apiKey).firstOrNull { it.name == name }
+        if (existing != null && existing.matchValue == regex) return existing.id
+        val payload = buildJsonObject {
+            put("name", name)
+            put("includeCustomFormatWhenRenaming", false)
+            put("specifications", buildJsonArray {
+                add(buildJsonObject {
+                    put("name", name)
+                    put("implementation", "ReleaseTitleSpecification")
+                    put("negate", false)
+                    put("required", false)
+                    put("fields", buildJsonArray {
+                        add(buildJsonObject { put("name", "value"); put("value", regex) })
+                    })
+                })
+            })
+        }
+        if (existing == null) {
+            val resp = httpPost(base(url) + "/customformat") {
+                header("X-Api-Key", apiKey); contentType(ContentType.Application.Json); setBody(payload.toString())
+            }
+            if (resp.status == HttpStatusCode.Created || resp.status == HttpStatusCode.OK)
+                resp.body<JsonObject>()["id"]?.jsonPrimitive?.intOrNull else null
+        } else {
+            val body = buildJsonObject { put("id", existing.id); payload.forEach { (k, v) -> put(k, v) } }
+            val resp = httpPut(base(url) + "/customformat/${existing.id}") {
+                header("X-Api-Key", apiKey); contentType(ContentType.Application.Json); setBody(body.toString())
+            }
+            if (resp.status == HttpStatusCode.Accepted || resp.status == HttpStatusCode.OK) existing.id else null
+        }
+    }.getOrNull()
+
+    /** Existing *arr indexer tags (name → id). Best-effort — a configured tag name with no match is
+     *  simply dropped by the caller rather than blocking the request over a decorative extra (Phase 139's
+     *  `tags` field is traffic hygiene, never load-bearing for correctness). */
+    suspend fun getTags(url: String, apiKey: String): List<ArrTag> = runCatching {
+        httpGet(base(url) + "/tag") { header("X-Api-Key", apiKey) }.body<List<ArrTag>>()
+    }.getOrElse { emptyList() }
+
+    /** Exact-name profile id lookup, no fallback-to-first (unlike [resolveQualityProfileId], which is
+     *  for acquisition where a blank/unmatched name should still resolve to *something*) — provisioning
+     *  must fail loudly on a typo'd base-profile name rather than silently clone the wrong one. */
+    suspend fun findQualityProfileIdByName(url: String, apiKey: String, name: String): Int? =
+        getQualityProfiles(url, apiKey).firstOrNull { it.name.equals(name, ignoreCase = true) }?.id
+
+    /**
+     * Create-or-update (by [newName]) a quality profile that scores [customFormatId]. On first creation,
+     * clones every field from the [baseProfileName] profile (items/cutoff/language/etc. — the same
+     * "echo the looked-up object, override a few keys" idiom as [addMovie]/[addSeries]); on later runs it
+     * re-fetches and updates the **existing target profile itself** (not the base again), so a manual
+     * tweak made after creation (e.g. widening allowed resolutions) survives a re-provision. [strict]
+     * sets `minFormatScore` to the same value as the format's own score (a hard gate — only a release
+     * carrying it ever qualifies) vs `0` (the format is preferred, not required). Returns the resulting
+     * profile's id, or null if [baseProfileName] doesn't exist on first creation.
+     */
+    suspend fun upsertScoredQualityProfile(
+        url: String,
+        apiKey: String,
+        baseProfileName: String,
+        newName: String,
+        customFormatId: Int,
+        customFormatName: String,
+        strict: Boolean,
+    ): Int? = runCatching {
+        val profiles = getQualityProfiles(url, apiKey)
+        val existingId = profiles.firstOrNull { it.name.equals(newName, ignoreCase = true) }?.id
+        val sourceId = existingId
+            ?: profiles.firstOrNull { it.name.equals(baseProfileName, ignoreCase = true) }?.id
+            ?: return null
+        val sourceJson = httpGet(base(url) + "/qualityprofile/$sourceId") { header("X-Api-Key", apiKey) }.body<JsonObject>()
+        val formatScore = if (strict) 10000 else 1000
+        val minScore = if (strict) formatScore else 0
+        val newFormatItems = buildJsonArray {
+            (sourceJson["formatItems"]?.jsonArray ?: JsonArray(emptyList()))
+                .map { it.jsonObject }
+                .filter { it["format"]?.jsonPrimitive?.intOrNull != customFormatId }
+                .forEach { add(it) }
+            add(buildJsonObject { put("format", customFormatId); put("name", customFormatName); put("score", formatScore) })
+        }
+        val payload = buildJsonObject {
+            sourceJson.forEach { (k, v) -> if (k != "id") put(k, v) }
+            put("name", newName)
+            put("formatItems", newFormatItems)
+            put("minFormatScore", minScore)
+        }
+        if (existingId == null) {
+            val resp = httpPost(base(url) + "/qualityprofile") {
+                header("X-Api-Key", apiKey); contentType(ContentType.Application.Json); setBody(payload.toString())
+            }
+            if (resp.status == HttpStatusCode.Created || resp.status == HttpStatusCode.OK)
+                resp.body<JsonObject>()["id"]?.jsonPrimitive?.intOrNull else null
+        } else {
+            val body = buildJsonObject { put("id", existingId); payload.forEach { (k, v) -> put(k, v) } }
+            val resp = httpPut(base(url) + "/qualityprofile/$existingId") {
+                header("X-Api-Key", apiKey); contentType(ContentType.Application.Json); setBody(body.toString())
+            }
+            if (resp.status == HttpStatusCode.Accepted || resp.status == HttpStatusCode.OK) existingId else null
+        }
+    }.getOrNull()
+
+    /** Change-later (Phase 139 §E): re-point an already-added movie at a different quality profile,
+     *  echoing its current object back with just `qualityProfileId` overridden (same idiom as [addMovie]). */
+    suspend fun setMovieQualityProfile(url: String, apiKey: String, movieId: Int, profileId: Int): Boolean = runCatching {
+        val movie = httpGet(base(url) + "/movie/$movieId") { header("X-Api-Key", apiKey) }.body<JsonObject>()
+        val payload = buildJsonObject { movie.forEach { (k, v) -> put(k, v) }; put("qualityProfileId", profileId) }
+        val resp = httpPut(base(url) + "/movie/$movieId") {
+            header("X-Api-Key", apiKey); contentType(ContentType.Application.Json); setBody(payload.toString())
+        }
+        resp.status == HttpStatusCode.Accepted || resp.status == HttpStatusCode.OK
+    }.getOrElse { false }
+
+    /** Change-later (Phase 139 §E): series equivalent of [setMovieQualityProfile]. */
+    suspend fun setSeriesQualityProfile(url: String, apiKey: String, seriesId: Int, profileId: Int): Boolean = runCatching {
+        val series = httpGet(base(url) + "/series/$seriesId") { header("X-Api-Key", apiKey) }.body<JsonObject>()
+        val payload = buildJsonObject { series.forEach { (k, v) -> put(k, v) }; put("qualityProfileId", profileId) }
+        val resp = httpPut(base(url) + "/series/$seriesId") {
+            header("X-Api-Key", apiKey); contentType(ContentType.Application.Json); setBody(payload.toString())
+        }
+        resp.status == HttpStatusCode.Accepted || resp.status == HttpStatusCode.OK
+    }.getOrElse { false }
+
+    /** Trigger an immediate search for one movie (verified against Radarr's `MoviesSearchCommand`:
+     *  `name="MoviesSearch"`, `movieIds` is a list even for one item). */
+    suspend fun searchMovieNow(url: String, apiKey: String, movieId: Int): Boolean =
+        command(url, apiKey, """{"name":"MoviesSearch","movieIds":[$movieId]}""")
+
+    /** Trigger an immediate search for one series (verified against Sonarr's `SeriesSearchCommand`:
+     *  `name="SeriesSearch"`, singular `seriesId` — mirrors the existing [rescanSeries] shape exactly). */
+    suspend fun searchSeriesNow(url: String, apiKey: String, seriesId: Int): Boolean =
+        command(url, apiKey, """{"name":"SeriesSearch","seriesId":$seriesId}""")
 
     /** Radarr: add by TMDB id + start a search. Returns the new movieId, or null. */
     suspend fun addMovie(url: String, apiKey: String, tmdbId: Int, rootFolder: String, qualityProfileId: Int): Int? = runCatching {
@@ -276,6 +441,13 @@ class ArrClient {
 
 @Serializable
 data class ArrQualityProfile(val id: Int = 0, val name: String = "")
+
+@Serializable
+data class ArrTag(val id: Int = 0, val label: String = "")
+
+/** Phase 139 — an existing custom format's id/name/regex, enough to decide idempotent create-vs-update
+ *  without a second per-id fetch (the `/customformat` list endpoint already returns full specs). */
+data class ArrCustomFormatRef(val id: Int, val name: String, val matchValue: String)
 
 @Serializable
 data class ArrEpisode(

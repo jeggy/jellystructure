@@ -1,0 +1,15 @@
+-- Phase 139 — request-language intent per requested title, v16 -> v17. Must stay byte-for-byte
+-- identical to RequestIntent.sq's CREATE TABLE (a fresh DB via Schema.create and an upgraded one via
+-- this file must end up with the same schema — see the R162/ravilo_behaviour bug this mirrors the fix for).
+CREATE TABLE request_intent (
+    media_kind TEXT NOT NULL,
+    tmdb_id INTEGER NOT NULL,
+    requested_by TEXT NOT NULL,
+    language_id TEXT NOT NULL,
+    strict INTEGER NOT NULL DEFAULT 0,
+    requested_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    PRIMARY KEY (media_kind, tmdb_id)
+);
+
+CREATE INDEX request_intent_user ON request_intent(requested_by);

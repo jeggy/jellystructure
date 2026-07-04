@@ -13,6 +13,8 @@ import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.add
+import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
@@ -168,14 +170,30 @@ class SeerrClient {
         httpGet(base(url) + "/tv/$tmdbId", apiKey).body<SeerrTvDetails>()
     }.getOrNull()
 
-    /** `mediaType` is `"movie"` or `"tv"` (a tv request always asks for every season). Returns null on
-     *  failure (declined by permission, or Seerr unreachable) — the caller surfaces that as FAILED. */
-    suspend fun createRequest(url: String, apiKey: String, mediaType: String, tmdbId: Int): SeerrRequestResult? =
+    /**
+     * `mediaType` is `"movie"` or `"tv"` (a tv request always asks for every season). Returns null on
+     * failure (declined by permission, or Seerr unreachable) — the caller surfaces that as FAILED.
+     *
+     * Phase 139 — [profileId] (+ optional [tagIds]) steers which Radarr/Sonarr quality profile the
+     * request lands on, e.g. a Nordic-scored profile for a Danish-dub pick. Both are Seerr's own
+     * documented `POST /request` fields (verified against `seerr-api.yml`); omitted (null/empty) they
+     * simply aren't sent, reproducing today's plain-request behaviour exactly.
+     */
+    suspend fun createRequest(
+        url: String,
+        apiKey: String,
+        mediaType: String,
+        tmdbId: Int,
+        profileId: Int? = null,
+        tagIds: List<Int> = emptyList(),
+    ): SeerrRequestResult? =
         runCatching {
             val payload = buildJsonObject {
                 put("mediaType", mediaType)
                 put("mediaId", tmdbId)
                 if (mediaType == "tv") put("seasons", "all")
+                profileId?.let { put("profileId", it) }
+                if (tagIds.isNotEmpty()) put("tags", buildJsonArray { tagIds.forEach { add(it) } })
             }
             val resp = httpPost(base(url) + "/request", apiKey) {
                 contentType(ContentType.Application.Json); setBody(payload.toString())

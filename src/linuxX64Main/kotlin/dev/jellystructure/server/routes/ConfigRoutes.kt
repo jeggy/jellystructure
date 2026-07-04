@@ -67,9 +67,24 @@ fun Route.configureConfigRoutes(
     arrClient: ArrClient? = null,
     seerrClient: SeerrClient? = null,
     tmdbClient: dev.jellystructure.tmdb.TmdbClient? = null,
+    requestLanguageService: dev.jellystructure.arr.RequestLanguageService? = null,
 ) {
     get("/config") {
         call.respond(ConfigResponse(configStore.current, effectiveScanThreads))
+    }
+
+    // Phase 139 — Settings ▸ Download tools ▸ Request languages ▸ "Set up profiles". Preview shows what
+    // would be created/updated (read-only *arr GETs); apply actually provisions, idempotently, and
+    // persists the resulting profile/format ids back into config.requestLanguage.intents.
+    get("/config/request-language/preview") {
+        val svc = requestLanguageService
+            ?: return@get call.respond(HttpStatusCode.ServiceUnavailable, mapOf("error" to "request-language service not available"))
+        call.respond(svc.preview())
+    }
+    post("/config/request-language/provision") {
+        val svc = requestLanguageService
+            ?: return@post call.respond(HttpStatusCode.ServiceUnavailable, mapOf("error" to "request-language service not available"))
+        call.respond(svc.provision())
     }
     put("/config") {
         val received = call.receive<AppConfig>()

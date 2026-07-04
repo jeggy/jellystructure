@@ -26,7 +26,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -41,6 +43,10 @@ import androidx.compose.ui.unit.sp
 import dev.jellystructure.ravilo.ui.LocalLiveAcquisition
 import dev.jellystructure.ravilo.ui.components.ButtonStyle
 import dev.jellystructure.ravilo.ui.components.RaviloButton
+import dev.jellystructure.ravilo.ui.components.RequestLanguagePicker
+import dev.jellystructure.ravilo.ui.components.requestLanguageFlag
+import dev.jellystructure.ravilo.ui.components.requestLanguageLabel
+import dev.jellystructure.ravilo.ui.i18n.str
 import dev.jellystructure.ravilo.ui.seams.RemoteImage
 import dev.jellystructure.ravilo.ui.theme.raviloHPad
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
@@ -72,6 +78,10 @@ fun DiscoverDetailScreen(
     }
 }
 
+/** Phase 139 §A.3 — the picker only ever appears when there's a real choice; 0-1 catalog languages
+ *  means every "Request"/"Change language" press resolves server-side with no popup at all. */
+private fun DiscoverDetail.hasLanguageChoice(): Boolean = languages.size > 1
+
 @Composable
 private fun DetailContent(
     detail: DiscoverDetail,
@@ -89,6 +99,13 @@ private fun DetailContent(
         Brush.verticalGradient(0f to Color.Transparent, 0.55f to colors.background.copy(alpha = 0.85f), 1f to colors.background)
     }
     val scrollState = rememberScrollState()
+
+    // Phase 139 §A — 0-1 catalog languages resolves server-side with no popup at all; otherwise the
+    // popup appears and the chosen id flows into whichever action asked for it (Request vs Change language).
+    var pendingAction by remember { mutableStateOf<((String) -> Unit)?>(null) }
+    fun withLanguage(action: (String?) -> Unit) {
+        if (detail.hasLanguageChoice()) pendingAction = { lang -> action(lang) } else action(null)
+    }
 
     Box(Modifier.fillMaxSize()) {
         // Fixed full-bleed backdrop at top
@@ -134,13 +151,26 @@ private fun DetailContent(
                 }
             }
             // live status line — skip NOT_REQUESTED, the PrimaryAction button below already says "Request"
-            discoverStatusLabel(a)?.takeIf { a.status != AcquisitionStatus.NOT_REQUESTED }?.let {
+            // Phase 139 §C — the chosen language's flag rides along every status state.
+            val statusText = if (a.languageStrictWaiting) str("request.waiting_for", mapOf("lang" to requestLanguageLabel(detail.languages, a.language).orEmpty()))
+                else discoverStatusLabel(a)?.takeIf { a.status != AcquisitionStatus.NOT_REQUESTED }
+            if (statusText != null) {
                 Spacer(Modifier.height(6.dp))
-                Text(it, color = discoverStatusColor(a.status, colors.accent), fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    RequestLanguageFlag(requestLanguageFlag(detail.languages, a.language))
+                    Text(statusText, color = discoverStatusColor(a.status, colors.accent), fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                }
             }
             a.reason?.takeIf { a.status == AcquisitionStatus.FAILED }?.let {
                 Spacer(Modifier.height(2.dp))
                 Text(it, color = colors.textSecondary, fontSize = 13.sp)
+            }
+            // Phase 139 §D — switch a still-waiting strict request to a different language.
+            if (a.languageStrictWaiting && detail.hasLanguageChoice()) {
+                Spacer(Modifier.height(8.dp))
+                RaviloButton(str("request.change_language"), style = ButtonStyle.GHOST, onSelect = {
+                    pendingAction = { lang -> store.changeLanguage(lang) }
+                })
             }
             Spacer(Modifier.height(14.dp))
             e.overview?.takeIf { it.isNotBlank() }?.let {
@@ -149,7 +179,7 @@ private fun DetailContent(
             }
 
             // status-driven primary action
-            PrimaryAction(detail, actionFR, store, onWatchMovie, onGoToSeries)
+            PrimaryAction(detail, actionFR, store, onWatchMovie, onGoToSeries, requestWithLanguage = ::withLanguage)
 
             if (detail.cast.isNotEmpty()) {
                 Spacer(Modifier.height(22.dp))
@@ -157,6 +187,29 @@ private fun DetailContent(
             }
             Spacer(Modifier.height(8.dp))
         }
+
+        pendingAction?.let { action ->
+            RequestLanguagePicker(
+                languages = detail.languages,
+                default = detail.defaultLanguage,
+                onSelect = { lang -> action(lang); pendingAction = null },
+                onDismiss = { pendingAction = null },
+            )
+        }
+    }
+}
+
+/** A 28×20dp flag, or nothing (not a globe) — the globe placeholder belongs in the picker rows where
+ *  every language including "original" is listed side by side; a bare status line just omits it. */
+@Composable
+private fun RequestLanguageFlag(flagCode: String?) {
+    val drawable = flagCode?.let { dev.jellystructure.ravilo.ui.components.LANG_CC[it.lowercase()] }
+    if (drawable != null) {
+        androidx.compose.foundation.Image(
+            painter = org.jetbrains.compose.resources.painterResource(drawable),
+            contentDescription = null,
+            modifier = Modifier.size(width = 24.dp, height = 17.dp).clip(RoundedCornerShape(3.dp)),
+        )
     }
 }
 
@@ -167,6 +220,7 @@ private fun PrimaryAction(
     store: DiscoverDetailStore,
     onWatchMovie: (String, String) -> Unit,
     onGoToSeries: (String) -> Unit,
+    requestWithLanguage: ((String?) -> Unit) -> Unit,
 ) {
     val a = detail.acquisition
     val itemId = a.itemId
@@ -185,10 +239,10 @@ private fun PrimaryAction(
             RaviloButton(discoverStatusLabel(a) ?: "Working…", focusRequester = fr, style = ButtonStyle.GHOST)
         }
         a.status == AcquisitionStatus.FAILED -> {
-            RaviloButton("Retry request", focusRequester = fr, onSelect = { store.request() })
+            RaviloButton("Retry request", focusRequester = fr, onSelect = { requestWithLanguage { lang -> store.request(lang) } })
         }
         else -> {
-            RaviloButton("Request", focusRequester = fr, onSelect = { store.request() })
+            RaviloButton("Request", focusRequester = fr, onSelect = { requestWithLanguage { lang -> store.request(lang) } })
         }
     }
 }
