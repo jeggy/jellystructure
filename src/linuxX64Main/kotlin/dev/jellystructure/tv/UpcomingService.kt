@@ -215,20 +215,30 @@ class UpcomingService(
         images.firstOrNull { it.coverType == coverType }?.remoteUrl?.takeIf { it.isNotBlank() }
 
     /** Sonarr has no per-episode availability flag — a grace window avoids flagging MISSING the
-     *  instant the air date passes (a just-aired episode legitimately isn't grabbable yet). */
+     *  instant the air date passes (a just-aired episode legitimately isn't grabbable yet).
+     *
+     *  Bug fix: [held] (our own MediaStore — the ground truth for "can the user watch this now") must
+     *  win over [queued] (the *arr's live queue). A completed-but-never-cleared queue entry (Radarr/
+     *  Sonarr stuck on an import warning, `sizeLeft == 0` forever) previously showed as "Downloading
+     *  100%" indefinitely for an item we'd already fully scanned in, and its still-`queued` status also
+     *  exempted it from the past-date filter below — so an already-watched movie kept reappearing in
+     *  the calendar a month after its release date. Verified live: Radarr's queue had a `trackedState:
+     *  importPending` / `trackedStatus: warning` entry for "The Passenger" (tmdbId 1285959) with
+     *  `sizeLeft: 0`, even though the file was on disk and fully scanned. */
     private fun resolveEpisodeStatus(date: String, today: String, held: Boolean, queued: Boolean): UpcomingStatus = when {
-        queued -> UpcomingStatus.DOWNLOADING
         held -> UpcomingStatus.AVAILABLE
+        queued -> UpcomingStatus.DOWNLOADING
         shiftDate(date, EPISODE_MISSING_GRACE_DAYS) < today -> UpcomingStatus.MISSING
         else -> UpcomingStatus.MONITORED
     }
 
     /** [isAvailable] is Radarr's own computed signal (bakes in the movie's `minimumAvailability`) —
      *  a "Released"-minimum movie that's only had a cinema release has `isAvailable == false` and is
-     *  therefore never MISSING, even though [date] (from [pickMovieRelease]) may be in the past. */
+     *  therefore never MISSING, even though [date] (from [pickMovieRelease]) may be in the past.
+     *  [held] wins over [queued] for the same reason as [resolveEpisodeStatus] above. */
     private fun resolveMovieStatus(date: String, today: String, held: Boolean, queued: Boolean, isAvailable: Boolean): UpcomingStatus = when {
-        queued -> UpcomingStatus.DOWNLOADING
         held -> UpcomingStatus.AVAILABLE
+        queued -> UpcomingStatus.DOWNLOADING
         isAvailable && date < today -> UpcomingStatus.MISSING
         else -> UpcomingStatus.MONITORED
     }
