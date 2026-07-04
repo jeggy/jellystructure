@@ -161,3 +161,47 @@ the state from **Seerr `mediaInfo`** instead of the *arr queue (Phase 136 §D pi
 - App: `shared/.../tv/TvApiClient.kt:80/233/239/253`; `screens/DiscoverScreen.kt:228/259-277/356-402`,
   `screens/DiscoverDetailScreen.kt:110-118/177/210`, `screens/SearchScreen.kt:120`, `ImageLoader.kt:46-51`.
 - Seerr API + enums: [Phase 136](../../requirements/phase-136-seerr-connection-retire-charts.md) §D0.
+
+### Implementation note (2026-07-04)
+
+Shipped per the design above, with several concrete choices/scope calls made during the build — the
+Seerr API's actual documented shape (verified against `seerr-api.yml`, github.com/seerr-team/seerr —
+Jellyseerr's current upstream, having moved from `Fallenbagel/jellyseerr`) turned out narrower than §B's
+draft mapping assumed, and a couple of design decisions were made explicitly rather than silently:
+
+1. **No persisted acquisition store or reconciler for Seerr.** §B's draft proposed a poller (`GET
+   /request`) mapping a `downloadStatus[]`/`estimatedCompletionTime`/`sizeLeft` shape to progress % + ETA.
+   That shape **does not exist** in Seerr's public OpenAPI spec — `MediaInfo.status` (1=UNKNOWN,
+   2=PENDING, 3=PROCESSING, 4=PARTIALLY_AVAILABLE, 5=AVAILABLE, 6=DELETED) and `MediaRequest.status`
+   (1=PENDING APPROVAL, 2=APPROVED, 3=DECLINED) are all that's exposed; there is no per-item download
+   percentage or ETA anywhere in the documented API. Building a reconciler on top of that would add
+   polling infrastructure without adding any real liveness — a manual re-fetch (opening the tab, or
+   pull-to-refresh-equivalent) already shows current truth. So `SeerrDiscoverService` derives every
+   tile/detail's `AcquisitionStatus` **live, per request**, from the entry's own embedded `mediaInfo` (or
+   the request-creation response) — `PROCESSING(3)` folds queued/downloading/importing into one `QUEUED`
+   bucket (no progress %); `PARTIALLY_AVAILABLE`/`AVAILABLE` → `AVAILABLE`; everything else (including a
+   `DECLINED` request, which isn't visible on the embedded `mediaInfo` at all) → `NOT_REQUESTED`, i.e. a
+   declined request just reads back as re-requestable rather than a flagged `FAILED`. This also sidesteps
+   the collision risk of a second reconciler racing `AcquisitionService`'s existing *arr-queue poll over
+   the same `AcquisitionStore` rows.
+2. **Genre names** for feed-row tiles come from a small hardcoded TMDB genre-id→name table
+   (`SeerrDiscoverService.kt`'s `MOVIE_GENRES`/`TV_GENRES`) — Seerr's discover/search list results only
+   carry `genreIds: List<Int>`, not names, and TMDB's genre list is stable/public reference data, not
+   worth a live lookup per tile. The detail screen instead gets real genre names from Seerr's `GET
+   /movie/{id}` / `GET /tv/{id}` detail endpoints (which inline genres/runtime/cast/mediaInfo together).
+3. **Seerr search is a separate screen/store** (`SeerrSearchScreen.kt`/`SeerrSearchStore.kt`), not a mode
+   flag on the existing `SearchScreen`/`SearchStore`. The two searches return different item shapes
+   (`DiscoverEntry` with a live status badge vs. plain library `MediaCard`) and the existing search
+   screen's IME/grid/focus-restore logic wasn't worth entangling with a second result type — duplicating
+   ~150 lines was the lower-risk choice over generalizing a screen that was already working.
+4. **`Tile` gained one optional param**, `episodeBadgeColor` (default = the existing neutral black),
+   so Request tiles can color-code their status badge (green available / red failed / accent in-progress
+   / neutral not-requested) through the same generic `episodeBadge` slot Continue Watching already uses,
+   instead of a bespoke tile composable.
+5. **Addressing changed** from the retired chart flow's `listId+rank` to `mediaType+tmdbId` throughout
+   (`Dest.DiscoverItem`, `/tv/discover/item/{mediaType}/{tmdbId}`, `TvApiClient.getDiscoverItem`,
+   `DiscoverDetailStore`) — Request rows have no rank concept.
+6. `Chart.kt` (`ChartEntry`/`ChartListSpec`/`Trend`/`ListCoverage`/`ProviderCoverage`/
+   `DiscoverCoverageResponse`) is deleted now that nothing references it (R167's dependency on
+   `tmdbImg`/`tmdbPoster` was on those *helper functions* in `DiscoverScreen.kt`, not the chart types —
+   both helpers survive, repointed at `RequestEntry`).

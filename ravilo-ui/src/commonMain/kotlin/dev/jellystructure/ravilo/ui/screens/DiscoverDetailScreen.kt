@@ -50,7 +50,6 @@ import dev.jellystructure.shared.tv.AcquisitionStatus
 import dev.jellystructure.shared.tv.DiscoverDetail
 import dev.jellystructure.shared.tv.MediaKind
 import dev.jellystructure.shared.tv.Person
-import dev.jellystructure.shared.tv.Trend
 
 @Composable
 fun DiscoverDetailScreen(
@@ -98,7 +97,7 @@ private fun DetailContent(
             Box(Modifier.matchParentSize().background(scrim))
         }
 
-        // Scrollable content overlay — D-pad DOWN from button reaches WhyTrending
+        // Scrollable content overlay
         Column(
             Modifier
                 .fillMaxSize()
@@ -106,17 +105,6 @@ private fun DetailContent(
                 .padding(horizontal = raviloHPad)
                 .padding(top = 200.dp, bottom = 48.dp),
         ) {
-            // kicker: source + rank chip
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("${detail.sourceLabel} via ${detail.attribution}", color = colors.accent, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-                Spacer(Modifier.width(10.dp))
-                Text(
-                    "#${e.rank} in ${e.listId.substringAfterLast('-').uppercase()}",
-                    color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.background(colors.accent.copy(alpha = 0.9f), RoundedCornerShape(6.dp)).padding(horizontal = 8.dp, vertical = 2.dp),
-                )
-            }
-            Spacer(Modifier.height(8.dp))
             Text(e.title, color = colors.text, fontSize = 28.sp, fontWeight = FontWeight.Bold, fontFamily = SpaceGrotesk)
             Spacer(Modifier.height(6.dp))
             // year · kind · runtime
@@ -126,7 +114,7 @@ private fun DetailContent(
                 if (detail.isSeries) "$base / ep" else base
             }
             Text(
-                listOfNotNull(e.year?.toString(), if (e.kind == MediaKind.SERIES) "Series" else "Movie", runtimeLabel).joinToString("  ·  "),
+                listOfNotNull(e.year?.toString(), if (e.mediaKind == MediaKind.SERIES) "Series" else "Movie", runtimeLabel).joinToString("  ·  "),
                 color = colors.textSecondary, fontSize = 14.sp,
             )
             // genre chips
@@ -145,8 +133,8 @@ private fun DetailContent(
                     }
                 }
             }
-            // live status line
-            discoverStatusLabel(a)?.let {
+            // live status line — skip NOT_REQUESTED, the PrimaryAction button below already says "Request"
+            discoverStatusLabel(a)?.takeIf { a.status != AcquisitionStatus.NOT_REQUESTED }?.let {
                 Spacer(Modifier.height(6.dp))
                 Text(it, color = discoverStatusColor(a.status, colors.accent), fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
             }
@@ -163,10 +151,8 @@ private fun DetailContent(
             // status-driven primary action
             PrimaryAction(detail, actionFR, store, onWatchMovie, onGoToSeries)
 
-            Spacer(Modifier.height(22.dp))
-            WhyTrending(detail)
             if (detail.cast.isNotEmpty()) {
-                Spacer(Modifier.height(20.dp))
+                Spacer(Modifier.height(22.dp))
                 CastSection(detail.cast)
             }
             Spacer(Modifier.height(8.dp))
@@ -187,7 +173,7 @@ private fun PrimaryAction(
     when {
         // In library (or ≥1 episode): play a movie, or open the proper library series detail.
         itemId != null && (a.status == AcquisitionStatus.AVAILABLE || a.firstAvailable) -> {
-            if (detail.entry.kind == MediaKind.SERIES) {
+            if (detail.entry.mediaKind == MediaKind.SERIES) {
                 RaviloButton("Go to series", focusRequester = fr, onSelect = { onGoToSeries(itemId) })
             } else {
                 RaviloButton("Watch Now", focusRequester = fr, onSelect = { onWatchMovie(itemId, detail.entry.title) })
@@ -203,36 +189,6 @@ private fun PrimaryAction(
         }
         else -> {
             RaviloButton("Request", focusRequester = fr, onSelect = { store.request() })
-        }
-    }
-}
-
-@Composable
-private fun WhyTrending(detail: DiscoverDetail) {
-    val colors = RaviloTheme.colors
-    val e = detail.entry
-    val trend = when (e.trend) { Trend.UP -> "Climbing"; Trend.DOWN -> "Falling"; Trend.NEW -> "New this week"; Trend.SAME -> "Holding" }
-    val lines = buildList {
-        add("Rank #${e.rank}")
-        if (e.views != null) add("${e.views} views") else add("${e.weeksOnChart} week(s) on chart")
-        add(trend)
-    }
-    Column(
-        Modifier
-            .fillMaxWidth(0.5f)
-            .background(colors.surface.copy(alpha = 0.6f), RoundedCornerShape(12.dp))
-            .focusable()
-            .padding(14.dp),
-        verticalArrangement = Arrangement.spacedBy(4.dp),
-    ) {
-        Text("Why it's trending", color = colors.text, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-        Row(horizontalArrangement = Arrangement.spacedBy(18.dp)) {
-            lines.forEach { Text(it, color = colors.textSecondary, fontSize = 13.sp) }
-        }
-        if (e.views == null) {
-            Text("Country charts are ranking only — no view counts.", color = colors.textSecondary.copy(alpha = 0.7f), fontSize = 11.sp)
-        } else {
-            Text("Views are Netflix hours watched in the chart week.", color = colors.textSecondary.copy(alpha = 0.7f), fontSize = 11.sp)
         }
     }
 }

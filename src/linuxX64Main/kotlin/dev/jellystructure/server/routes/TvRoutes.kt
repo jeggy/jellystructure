@@ -73,6 +73,13 @@ private data class AdminConfigEnvelope(
     val isGlobal: Boolean,
 )
 
+@Serializable
+private data class TvDiscoverRequest(
+    val mediaKind: String? = null,   // "movie" | "tv"
+    val tmdbId: Int? = null,
+    val title: String? = null,
+)
+
 fun Route.tvRoutes(
     deviceService: RaviloDeviceService,
     raviloConfigService: RaviloConfigService,
@@ -87,6 +94,7 @@ fun Route.tvRoutes(
     imageProxyService: RaviloArtworkService? = null,
     tvEventBus: TvEventBus? = null,
     upcomingService: dev.jellystructure.tv.UpcomingService? = null,
+    seerrDiscoverService: dev.jellystructure.seerr.SeerrDiscoverService? = null,
 ) {
     route("/tv/pair") {
         post("/start") {
@@ -344,15 +352,14 @@ fun Route.tvRoutes(
         call.respond(mapOf("rev" to rev))
     }
 
-    // Phase 136 retired the chart/Discover-charts backend (RapidAPI/Netflix-Tudum/JustWatch) in favour
-    // of Jellyseerr/Overseerr; Phase 137 gave the config editor a Seerr-feed row model. R170 gates the
-    // TV's merged Discover tab on this `available` flag — true once Seerr is connected, even though the
-    // actual feed rows aren't served yet (R171 rebuilds this route's rows against Seerr; until then
-    // DiscoverScreen shows its own "nothing to show yet" empty state rather than an error).
+    // R171 — the TV's Request tab: Seerr-backed discover feeds (Phase 137 row config), replacing the
+    // chart engine Phase 136 retired. `seerrDiscoverService` is null only if Main.kt didn't wire it
+    // (shouldn't happen outside tests) — falls back to unavailable rather than 500ing.
     get("/tv/discover") {
-        call.attributes[DeviceKey]
-        val seerrEnabled = configStore.current.seerr?.enabled == true
-        call.respond(DiscoverResponse(available = seerrEnabled, source = "", region = "", canRequest = false))
+        val device = call.attributes[DeviceKey]
+        val resp = seerrDiscoverService?.getRequestFeeds(device.jellyfinUserId, device.isAdmin)
+            ?: DiscoverResponse(available = false, canRequest = false)
+        call.respond(resp)
     }
 
     // R160 — the calendar is the same for every viewer (no per-user scoping), server-cached with a
@@ -372,15 +379,33 @@ fun Route.tvRoutes(
         call.respond(detail)
     }
 
-    // Phase 136 — stubbed alongside /tv/discover above; Phase 137/R171 rebuild these against Seerr.
-    get("/tv/discover/item/{listId}/{rank}") {
+    // R171 — request detail: {mediaType}=movie|tv, {tmdbId}=TMDB id (addressing changed from the
+    // retired chart flow's listId+rank, since Request rows have no rank concept).
+    get("/tv/discover/item/{mediaType}/{tmdbId}") {
         call.attributes[DeviceKey]
-        call.respond(HttpStatusCode.NotFound)
+        val mediaType = call.parameters["mediaType"] ?: return@get call.respond(HttpStatusCode.BadRequest)
+        val tmdbId = call.parameters["tmdbId"]?.toIntOrNull() ?: return@get call.respond(HttpStatusCode.BadRequest)
+        val detail = seerrDiscoverService?.getEntry(mediaType, tmdbId) ?: return@get call.respond(HttpStatusCode.NotFound)
+        call.respond(detail)
     }
 
     post("/tv/discover/request") {
+        val device = call.attributes[DeviceKey]
+        val req = call.receive<TvDiscoverRequest>()
+        val tmdbId = req.tmdbId ?: return@post call.respond(HttpStatusCode.BadRequest, mapOf("error" to "no tmdbId"))
+        val service = seerrDiscoverService
+            ?: return@post call.respond(HttpStatusCode.ServiceUnavailable, mapOf("error" to "discover request unavailable"))
+        call.respond(service.request(device.jellyfinUserId, device.isAdmin, req.mediaKind ?: "movie", tmdbId, req.title.orEmpty()))
+    }
+
+    // R171 — search scoped to the Seerr catalogue only (never the local library — that stays on the
+    // AppBar search icon / GET /tv/search). Results are request tiles, same live-status derivation as
+    // the discover feed rows.
+    get("/tv/search/seerr") {
         call.attributes[DeviceKey]
-        call.respond(HttpStatusCode.ServiceUnavailable, mapOf("error" to "discover request unavailable"))
+        val q = call.request.queryParameters["q"].orEmpty()
+        val items = seerrDiscoverService?.search(q) ?: emptyList()
+        call.respond(dev.jellystructure.shared.tv.SeerrSearchResults(query = q, items = items))
     }
 
     // Admin config endpoints — authenticated by session cookie (jellystructure admin login)
