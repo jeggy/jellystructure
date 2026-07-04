@@ -2014,7 +2014,11 @@ private fun renderDiscover(container: Element) {
               <div id="t10-list">$rows</div>
               <div style="position:relative;margin-top:8px">
                 <button id="req-add-btn" class="btn sm ghost">＋ Add row</button>
-                <div id="req-addmenu" class="req-addmenu" style="display:none;position:absolute;right:0;top:calc(100% + 6px);z-index:30;width:284px;padding:10px;border-radius:12px;background:var(--fill);border:1px solid var(--line-2);box-shadow:0 18px 50px rgba(0,0,0,.45)">
+                <!-- Bug fix: .card sets backdrop-filter, which creates its own CSS stacking context —
+                     that traps this popover's z-index below a LATER sibling card no matter how high
+                     it's set, once the popover extends past the Request card's bottom edge. Anchoring
+                     upward (bottom, not top) keeps it entirely within this card's own bounds instead. -->
+                <div id="req-addmenu" class="req-addmenu" style="display:none;position:absolute;right:0;bottom:calc(100% + 6px);z-index:30;width:284px;padding:10px;border-radius:12px;background:var(--fill);border:1px solid var(--line-2);box-shadow:0 18px 50px rgba(0,0,0,.45)">
                   <select id="req-add-endpoint" class="input" style="width:100%;font-size:.85rem;margin-bottom:8px">
                     <option value="">Choose a feed…</option>
                     $groupedOptions
