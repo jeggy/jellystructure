@@ -228,7 +228,7 @@ class TvApiClient(
         }.assertSuccess()
     }
 
-    // ─── Discover / Top 10 (R48) ─────────────────────────────────────────────
+    // ─── Request / Seerr discover (R171, replaces the retired R48 chart Top 10) ──────────────
 
     suspend fun getDiscover(): DiscoverResponse {
         val r = client.get("$baseUrl/api/tv/discover") { auth() }
@@ -236,8 +236,16 @@ class TvApiClient(
         return json.decodeFromString(r.bodyAsText())
     }
 
-    suspend fun getDiscoverItem(listId: String, rank: Int): DiscoverDetail {
-        val r = client.get("$baseUrl/api/tv/discover/item/$listId/$rank") { auth() }
+    /** [mediaType] is `"movie"` or `"tv"`. */
+    suspend fun getDiscoverItem(mediaType: String, tmdbId: Int): DiscoverDetail {
+        val r = client.get("$baseUrl/api/tv/discover/item/$mediaType/$tmdbId") { auth() }
+        r.assertSuccess()
+        return json.decodeFromString(r.bodyAsText())
+    }
+
+    /** Search scoped to the Seerr catalogue only (never the local library — see [search]). */
+    suspend fun searchSeerr(query: String): SeerrSearchResults {
+        val r = client.get("$baseUrl/api/tv/search/seerr") { auth(); parameter("q", query) }
         r.assertSuccess()
         return json.decodeFromString(r.bodyAsText())
     }
@@ -258,9 +266,10 @@ class TvApiClient(
         return json.decodeFromString(r.bodyAsText())
     }
 
-    suspend fun requestDiscover(listId: String, rank: Int): AcquisitionRecord {
+    /** [mediaKind] is `"movie"` or `"tv"` — matches Seerr's own vocabulary, not [MediaKind]'s enum names. */
+    suspend fun requestDiscover(mediaKind: String, tmdbId: Int, title: String): AcquisitionRecord {
         val r = client.post("$baseUrl/api/tv/discover/request") {
-            auth(); jsonBody("""{"listId":${listId.jsonStr()},"rank":$rank}""")
+            auth(); jsonBody("""{"mediaKind":${mediaKind.jsonStr()},"tmdbId":$tmdbId,"title":${title.jsonStr()}}""")
         }
         r.assertSuccess()
         return json.decodeFromString(r.bodyAsText())

@@ -2,6 +2,7 @@ package dev.jellystructure.ravilo.ui.screens
 
 import dev.jellystructure.shared.tv.AcquisitionRecord
 import dev.jellystructure.shared.tv.DiscoverResponse
+import dev.jellystructure.shared.tv.MediaKind
 import dev.jellystructure.shared.tv.TvApiClient
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -18,7 +19,8 @@ sealed class DiscoverState {
     data class Error(val message: String) : DiscoverState()
 }
 
-/** R49 — Top 10 / Discover store. Loads the composed feed and patches tiles live on acquisition events. */
+/** R171 — Request (Seerr) store, replacing the retired R49 chart Top 10. Loads the composed feed and
+ *  patches tiles live on acquisition events. */
 class DiscoverStore(private val apiClient: TvApiClient) {
     /** Row index (0-based within data.rows) of the last tapped entry — used to restore scroll position on Back. */
     var lastSelectedRowIndex: Int = -1
@@ -60,9 +62,10 @@ class DiscoverStore(private val apiClient: TvApiClient) {
     }
 
     /** Request a title; patch the entry from the server's returned status record. */
-    fun request(listId: String, rank: Int) {
+    fun request(tmdbId: Int, mediaKind: MediaKind, title: String) {
+        val seerrKind = if (mediaKind == MediaKind.SERIES) "tv" else "movie"
         scope.launch {
-            runCatching { apiClient.requestDiscover(listId, rank) }.getOrNull()?.let { applyAcquisition(it) }
+            runCatching { apiClient.requestDiscover(seerrKind, tmdbId, title) }.getOrNull()?.let { applyAcquisition(it) }
         }
     }
 }

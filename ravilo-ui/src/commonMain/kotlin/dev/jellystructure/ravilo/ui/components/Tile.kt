@@ -81,6 +81,10 @@ fun Tile(
     /** R113: small season/episode indicator (e.g. "S1:E3") overlaid on the image for TV shows in
      *  Continue Watching. Null = no badge. */
     episodeBadge: String? = null,
+    /** R171 — overrides [episodeBadge]'s background; defaults to the existing neutral black pill.
+     *  Lets Request tiles color-code by acquisition status (available/failed/in-progress) while every
+     *  other caller is unaffected. */
+    episodeBadgeColor: Color = Color.Black.copy(alpha = 0.6f),
     /** R149: "Soon • SxxExx" badge for continuing series with a scheduled episode. Null = no badge. */
     upcomingLabel: String? = null,
     onFocused: () -> Unit = {},
@@ -259,7 +263,7 @@ fun Tile(
                     modifier = Modifier
                         .align(Alignment.TopStart)
                         .padding(8.dp)
-                        .background(Color.Black.copy(alpha = 0.6f), RoundedCornerShape(4.dp))
+                        .background(episodeBadgeColor, RoundedCornerShape(4.dp))
                         .padding(horizontal = 6.dp, vertical = 2.dp),
                 ) {
                     Text(
