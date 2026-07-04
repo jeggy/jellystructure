@@ -31,10 +31,11 @@ class HomeStore(private val apiClient: TvApiClient) {
     // R139: identity of the tile the user last navigated from, so Back re-focuses that exact tile.
     var focusRowKey: String? = null
     var focusItemKey: String? = null
-    // R49 — server-decided Top 10 tab gating (Radarr/Sonarr + per-user opt-in + non-empty lists).
+    // R49/Phase 136 — server-decided Request-segment gating (now: is Seerr connected/enabled).
     private val _discoverAvailable = MutableStateFlow(false)
     val discoverAvailable: StateFlow<Boolean> = _discoverAvailable.asStateFlow()
-    // R160 — server-decided Upcoming tab gating ([sonarr]/[radarr] presence).
+    // R160 — server-decided Coming-Soon-segment gating ([sonarr]/[radarr] presence). R170 merges both
+    // this and [discoverAvailable] into the single Discover tab — see raviloNavItems/DiscoverSegment.
     private val _upcomingAvailable = MutableStateFlow(false)
     val upcomingAvailable: StateFlow<Boolean> = _upcomingAvailable.asStateFlow()
     private var loadJob: Job? = null

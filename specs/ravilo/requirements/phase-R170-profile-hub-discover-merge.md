@@ -132,3 +132,31 @@ tab shows when `upcomingAvailable || seerrEnabled`.
 - `screens/UpcomingScreen.kt` (Coming Soon body), `screens/DiscoverScreen.kt:82` (Request body — rebuilt in R171).
 - `shared/.../tv/TvApiClient.kt:225` (`unpair`), `:233/247` (`getDiscover`/`getUpcoming`).
 - Mock: `design/ravilo/ravilo-app.js` (`profmenu`, `discSegment`, `updateDiscoverNav`/`seerrEnabled`).
+
+**Implementation note (2026-07-04):** shipped per the design above, with three call-outs on where the
+build deviated from (or made a concrete choice within) the plan:
+
+1. **Unpair extraction** — took the first of §B's two suggested options: `UnpairConfirmOverlay` in
+   `SettingsScreen.kt` lost its `private` modifier and `SettingsStore.unpairDevice()` now delegates to a
+   new top-level `unpairAllSessions(apiClient)`, so the new `ProfileMenu.kt` (in `components/`, not
+   `screens/`) calls the exact same revoke logic without instantiating a whole `SettingsStore` (which
+   would also trigger an unrelated settings-config load).
+2. **No shared chrome shell for the segment switch** — §C describes "the segment bar sits above the
+   content" for both segments, which reads as one shell hosting swappable content. The build instead
+   keeps `UpcomingScreen`/`DiscoverScreen` as two complete, independent screens (each still renders its
+   own full `AppBar`), reached via one `Dest.Discover(displayName, segment)` — `RaviloApp.kt`'s `when`
+   picks which composable renders. Each screen gained a small `DiscoverSegmentPill` "↔ switch" affordance
+   in its header column (shown only when the *other* segment is also available). Rationale: extracting a
+   shared AppBar+segment-bar shell would mean pulling the content out of both existing screens into
+   chromeless sub-composables — real work that's hard to justify before R171 replaces `DiscoverScreen`'s
+   entire body anyway. Switching segments uses `replaceTop`, and because both segments share the same
+   `Dest.Discover` class, `AnimatedContent`'s `contentKey = { it::class }` treats it as a same-class swap
+   (no slide transition) — the same treatment every other same-class tab switch already gets.
+3. **Request segment is still empty** — `DiscoverScreen` renders against the Phase-136-stubbed
+   `/tv/discover` route, so `data.rows` is always `[]` even once Seerr is connected (R171 wires the real
+   feed rows). Rather than ship a broken-looking bare "Top 10" header with zero rows, the empty-rows case
+   now renders a "Nothing to request yet — add feeds in the Ravilo config editor" placeholder line;
+   `DiscoverScreen`'s header text itself was also renamed from "Top 10" to "Request" per Phase 137's
+   rename. The `seerrEnabled` repoint (§D) landed as a one-line change to `TvRoutes.kt`'s `/tv/discover`
+   handler (`configStore.current.seerr?.enabled == true`) since `configStore: ConfigStore` was already a
+   parameter there — no new DTO field was needed, `DiscoverResponse.available` carries it as designed.
