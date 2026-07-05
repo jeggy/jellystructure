@@ -54,6 +54,14 @@ fun QueryNode.isLive(): Boolean = when (this) {
     is ConditionGroup -> children.any { it.isLive() }
 }
 
+/** Does this node contain any condition matching [predicate], anywhere in the tree — regardless of
+ *  liveness (mirrors the flat-era check "does the stack reference this facet at all", used e.g. to
+ *  decide whether to bother resolving hero-carousel ids for a `hero_item` condition). */
+fun QueryNode.anyCondition(predicate: (Condition) -> Boolean): Boolean = when (this) {
+    is Condition -> predicate(this)
+    is ConditionGroup -> children.any { it.anyCondition(predicate) }
+}
+
 // ─── Pruning (deep-copy, drop empty nodes) ─────────────────────────────────────
 
 private fun pruneNode(n: QueryNode): QueryNode? = when (n) {
