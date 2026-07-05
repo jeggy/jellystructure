@@ -78,7 +78,7 @@ class PlaybackService(
     suspend fun startPlayback(
         device: DeviceData,
         jellyfinId: String,
-        @Suppress("UNUSED_PARAMETER") capabilities: ClientCapabilities,
+        capabilities: ClientCapabilities,
     ): StreamTicket {
         val jellyfinBase = configStore.current.apiKeys.jellyfinUrl.trimEnd('/')
         val token = jellyfinClient.tvToken(jellyfinBase, device, configStore.current.apiKeys.jellyfinToken)
@@ -107,7 +107,9 @@ class PlaybackService(
 
         // R56: negotiate delivery via PlaybackInfo + DeviceProfile. Jellyfin tells us whether the item
         // can direct-play; if not, it hands back a TranscodingUrl. Fall back to a direct-play URL.
-        val source = jellyfinClient.getPlaybackInfo(jellyfinBase, token, device.jellyfinUserId, jellyfinId, identity = identity)
+        // Bug fix: [capabilities] used to be discarded here — an HDR10/HLG source always direct-played
+        // regardless of what the device could actually display correctly (see deviceProfile()'s doc).
+        val source = jellyfinClient.getPlaybackInfo(jellyfinBase, token, device.jellyfinUserId, jellyfinId, capabilities = capabilities, identity = identity)
             ?.mediaSources?.firstOrNull()
         val needsTranscode = source != null && !source.supportsDirectPlay && source.transcodingUrl != null
         Logger.info(
@@ -309,7 +311,11 @@ class PlaybackService(
         val audio = buildAudioTracks(itemDetail)
         // R56: ask Jellyfin (PlaybackInfo + DeviceProfile, with the sub index for Encode burn-in) for the
         // real TranscodingUrl; fall back to a hand-built HLS burn-in URL if PlaybackInfo is unavailable.
-        val negotiated = jellyfinClient.getPlaybackInfo(jellyfinBase, token, device.jellyfinUserId, jellyfinId, subtitleStreamIndex, identity)
+        // Bug fix: this used to pass subtitleStreamIndex positionally into what is now the new
+        // `capabilities` parameter slot — named args here since burn-in restream doesn't have the
+        // original session's capabilities on hand; ClientCapabilities()'s conservative SDR-only default
+        // is fine since this path already forces a transcode for the subtitle burn-in regardless.
+        val negotiated = jellyfinClient.getPlaybackInfo(jellyfinBase, token, device.jellyfinUserId, jellyfinId, subtitleStreamIndex = subtitleStreamIndex, identity = identity)
             ?.mediaSources?.firstOrNull()?.transcodingUrl
             ?.let { if (it.startsWith("http")) it else "$jellyfinBase$it" }
         Logger.info("PlaybackInfo(burn-in): item=$jellyfinId sub=$subtitleStreamIndex negotiated=${negotiated != null}", "tv")
