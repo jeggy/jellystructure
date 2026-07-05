@@ -147,7 +147,7 @@ currently reflows with TV-tuned sizing, on-device test is the user's). Older ope
 > flagged for the dev team: requests route **through Seerr** (Seerr owns approval), retiring the direct-to-*arr
 > request path for TV while Radarr/Sonarr stay for R160 Upcoming. Still `Planned` (nothing built).
 
-> **2026-07-05 — Workbench query blocks (one new design spec, `Planned`, not yet dev-reviewed/built).**
+> **2026-07-05 — Workbench query blocks (one new design spec, `Planned`, dev-reviewed same day, not built).**
 > **Phase 140** upgrades the shared R32 filter Workbench from a flat ALL/ANY condition stack to **blocks**:
 > recursive AND/OR groups with per-block **NOT** and nestable sub-blocks (depth ≤ 3), everywhere the
 > Workbench opens — Library filter, Channels, Home rows, and per-channel rows, where the owning channel's
@@ -158,7 +158,17 @@ currently reflows with TV-tuned sizing, on-device test is the user's). Older ope
 > coarse-pointer tap targets, viewport-clamped popovers). Interaction model fully built in the design
 > mockups (`design/app/ravilo-builders.js`/`.css`, `library.html`, `ravilo-config.html` — the seeded
 > Kringvarp channel demos `(Tag nordic-noir OR dansk-tv OR Genre Thriller) AND Network Kringvarp`).
-> No Ravilo TV app change (backend evaluates; TV renders pushed rows). **Next numbers: 141 / R173.**
+> No Ravilo TV app change (backend evaluates; TV renders pushed rows). **Dev review (2026-07-05)**
+> corrected the spec against the real backend before implementation: the tree must be an **additive
+> `query` field** (installed TV APKs also deserialize `RaviloConfig`; safe only via
+> `ignoreUnknownKeys`), serialization pinned to a sealed `QueryNode` union with a `kind` discriminator,
+> the stale `Workbench.kt:332` "classification" pointer re-attributed to `Library.kt`'s lossy URL
+> flattening (which the phase now deletes — Library URLs never carried `conditions=`), batch-count +
+> facets request bodies gain the tree ("reused as-is" was impossible), `Condition.rows`/R87 recursion
+> and the pre-R32 typed-filter fallback chain covered, the design's demo facet/op vocabulary explicitly
+> non-normative, empty-NOT semantics decided (neutral, diverging from the design's literal `matchNode`),
+> and the channel-scoped ANY count mis-composition (`wbConds + wbBaseConds`) flagged as fixed-by-design.
+> **Next numbers: 141 / R173.**
 
 ## Admin phases (jellystructure)
 
