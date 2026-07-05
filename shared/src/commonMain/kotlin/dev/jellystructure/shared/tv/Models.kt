@@ -398,15 +398,23 @@ data class HeroConfig(
  * are carried verbatim in [rows] (RowConfig specs, reused — no parallel taxonomy, no ids to resolve);
  * `values` is unused for this facet. A title matches "is_any_of" iff it matches any listed row's
  * filter; "is_none_of" iff none. Evaluated by the same per-title matcher as every other condition.
+ *
+ * Phase 140 — also a leaf [QueryNode] (`: QueryNode`, `@SerialName("cond")`) so it can sit inside a
+ * [ConditionGroup] tree. This is additive: kotlinx-serialization only injects the `"kind"` class
+ * discriminator when serializing *through* the sealed `QueryNode` type (e.g. a `List<QueryNode>`
+ * field) — every existing call site that serializes `Condition`/`List<Condition>` directly (batch-
+ * count, `/media/facets`, the legacy `conditions=` URL param) keeps producing/expecting the exact
+ * same shape as before, unchanged. See `QueryTree.kt` for the tree model + migration/prune helpers.
  */
 @Serializable
+@SerialName("cond")
 data class Condition(
     val facet: String,
     val op: String = "is_any_of",
     val values: List<String> = emptyList(),
     // R87: referenced content rows for the `content_row` facet (empty for all other facets).
     val rows: List<RowConfig> = emptyList(),
-)
+) : QueryNode
 
 /** R53 — per-display-mode edge padding for the channel button (0..40 px each side). */
 @Serializable
@@ -482,6 +490,11 @@ data class ChannelConfig(
     @SerialName("filter_tag") val filterTag: String? = null,
     val match: MatchMode = MatchMode.ALL,
     val conditions: List<Condition> = emptyList(),
+    // Phase 140 — the recursive blocks tree; null = not yet migrated from match/conditions (see
+    // ChannelConfig.effectiveQuery() in QueryTree.kt). Additive field — an installed Ravilo TV APK
+    // that predates this phase just skips it (ignoreUnknownKeys) since the TV never evaluates
+    // filters itself (server-pushed rows only).
+    val query: ConditionGroup? = null,
     val enabled: Boolean = true,
     val order: Int = 0,
     // R52 — optional per-page hero carousel (null = page has no hero).
@@ -514,6 +527,8 @@ data class RowConfig(
     @SerialName("media_kind") val mediaKind: String? = null, // "MOVIE", "SERIES", or null = all
     val match: MatchMode = MatchMode.ALL,
     val conditions: List<Condition> = emptyList(),
+    // Phase 140 — see ChannelConfig.query above; same additive/migration story here.
+    val query: ConditionGroup? = null,
 )
 
 @Serializable
