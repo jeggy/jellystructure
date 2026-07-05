@@ -58,6 +58,13 @@ data class ClientCapabilities(
     @SerialName("audio_codecs") val audioCodecs: List<String> = emptyList(),
     @SerialName("max_audio_channels") val maxAudioChannels: Int = 8,
     @SerialName("hls_only") val hlsOnly: Boolean = false,
+    // Bug fix: an HDR10/HDR10+ (PQ) or HLG source used to always direct-play regardless of whether
+    // the device could actually display it correctly — Jellyfin's DeviceProfile declared no VideoRange
+    // constraint at all, so it never had a reason to tone-map-transcode to SDR. These default to
+    // `false` (conservative: assume SDR-only, which forces a correctly tone-mapped transcode) unless
+    // the client has verified real display/decoder support (see ravilo-ui's `detectHdrSupport()`).
+    @SerialName("supports_hdr10") val supportsHdr10: Boolean = false,
+    @SerialName("supports_hlg") val supportsHlg: Boolean = false,
 )
 
 @Serializable

@@ -1,5 +1,6 @@
 package dev.jellystructure.ravilo.ui.screens
 
+import dev.jellystructure.ravilo.ui.seams.detectHdrSupport
 import dev.jellystructure.shared.tv.CardPlayState
 import dev.jellystructure.shared.tv.ClientCapabilities
 import dev.jellystructure.shared.tv.StreamTicket
@@ -37,6 +38,10 @@ class PlayerStore(private val apiClient: TvApiClient) {
         _state.value = PlayerSessionState.Loading
         scope.launch {
             _state.value = runCatching {
+                // Bug fix: this used to be a static literal with no HDR signal, so the server always
+                // assumed direct-play was safe even for HDR10/HLG sources the device might not be able
+                // to display correctly (see ClientCapabilities.supportsHdr10/supportsHlg docs).
+                val hdr = detectHdrSupport()
                 val ticket = apiClient.startPlayback(
                     itemId = itemId,
                     capabilities = ClientCapabilities(
@@ -44,6 +49,8 @@ class PlayerStore(private val apiClient: TvApiClient) {
                         videoCodecs = listOf("h264", "hevc", "vp9", "av1"),
                         audioCodecs = listOf("aac", "mp3", "flac", "opus", "ac3", "eac3"),
                         maxAudioChannels = 8,
+                        supportsHdr10 = hdr.hdr10,
+                        supportsHlg = hdr.hlg,
                     ),
                 )
                 startHeartbeat(itemId, positionProvider, isPausedProvider)
