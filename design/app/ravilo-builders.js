@@ -1,7 +1,9 @@
 /* Ravilo config — interactive builders (Phase R-build)
    Workbench filter builder (Content rows + Channels) and Hero item builder.
-   Real title pool → real live match counts. Vanilla JS, no deps.
-   Styling via .cf-* classes added to ravilo-config.html. */
+   Queries are BLOCKS: recursive AND/OR groups with per-block NOT and nestable
+   sub-blocks. Per-channel rows carry the channel's own query as a locked first
+   block. Real title pool → real live match counts. Vanilla JS, no deps.
+   Styling via .cf-* classes (ravilo-builders.css). */
 (function () {
   'use strict';
 
@@ -118,6 +120,70 @@
   function opsFor(f){ const ty = FACETS[f].type; return ty === 'num' ? NUM_OPS : ty === 'text' ? TEXT_OPS : LIST_OPS; }
   function opLabel(f, op){ return (opsFor(f).find(o => o[0]===op) || opsFor(f)[0])[1]; }
 
+  /* ===================== query tree (blocks) =====================
+     A workbench query is a recursive tree:
+       group: { kind:'group', join:'and'|'or', not:false, children:[ cond|group ] }
+       cond:  { kind:'cond', facet, op, values[] }
+     state.root is always a group whose children are the top-level BLOCKS
+     (each itself a group); conditions never sit directly at the root. */
+  function mkCond(facet, op, values){ facet = facet || 'genre'; return { kind:'cond', facet, op: op || opsFor(facet)[0][0], values: values || [] }; }
+  function mkGroup(join, children, not){ return { kind:'group', join: join || 'or', not: !!not, children: children || [] }; }
+  function isGroup(n){ return !!n && (n.kind === 'group' || Array.isArray(n.children)); }
+  function condLive(c){ return !!(c.values && c.values.length); }
+  function nodeLive(n){ return isGroup(n) ? n.children.some(nodeLive) : condLive(n); }
+  // legacy flat { match, conditions[] } → tree.  ALL → one block per condition · ANY → a single OR block.
+  function migrateState(state){
+    if (!state || state.root) return state;
+    const conds = (state.conditions || []).map(c => ({ kind:'cond', facet: c.facet, op: c.op, values: (c.values || []).slice() }));
+    const live = conds.length ? conds : [mkCond()];
+    state.root = state.match === 'any'
+      ? mkGroup('and', [ mkGroup('or', live) ])
+      : mkGroup('and', live.map(c => mkGroup('or', [c])));
+    delete state.conditions; delete state.match;
+    return state;
+  }
+  function matchNode(t, n){
+    if (!isGroup(n)) return matchOne(t, n);
+    const kids = n.children.filter(nodeLive);
+    if (!kids.length) return !n.not;                    // an empty block is neutral
+    const hit = n.join === 'or' ? kids.some(k => matchNode(t, k)) : kids.every(k => matchNode(t, k));
+    return n.not ? !hit : hit;
+  }
+  function stateHasConditions(state){
+    if (!state) return false;
+    return state.root ? nodeLive(state.root) : (state.conditions || []).some(c => c.values && c.values.length);
+  }
+  // human summary of a query — "(Tag “a” or Genre “b”) and Studio “c”"
+  function condSummary(c){
+    const f = FACETS[c.facet];
+    const valTxt = f.type === 'num' ? c.values[0]
+      : f.type === 'rows' ? c.values.map(v => v && v.name).filter(Boolean).join(', ')
+      : '“' + c.values.join('”, “') + '”';
+    return f.label + ' ' + opLabel(c.facet, c.op) + ' ' + valTxt;
+  }
+  function groupSummary(g, top){
+    if (!isGroup(g)) return condLive(g) ? condSummary(g) : '';
+    const kids = g.children.filter(nodeLive).map(k => isGroup(k) ? groupSummary(k, false) : condSummary(k)).filter(Boolean);
+    if (!kids.length) return '';
+    let s = kids.join(g.join === 'or' ? ' or ' : ' and ');
+    if (!top && (kids.length > 1 || g.not)) s = '(' + s + ')';
+    if (g.not) s = 'not ' + s;
+    return s;
+  }
+  function querySummary(state){ migrateState(state); return groupSummary(state.root, true); }
+  // deep-copy + drop empty conditions / empty groups (root always stays a group)
+  function pruneNode(n){
+    if (!isGroup(n)) return condLive(n) ? n : null;
+    const kids = n.children.map(pruneNode).filter(Boolean);
+    if (!kids.length) return null;
+    return { kind:'group', join: n.join, not: n.not, children: kids };
+  }
+  function pruneState(state){
+    const s = migrateState(JSON.parse(JSON.stringify(state)));
+    s.root = pruneNode(s.root) || mkGroup('and', []);
+    return s;
+  }
+
   /* ===================== match evaluation ===================== */
   function matchOne(t, cond) {
     const f = FACETS[cond.facet]; if (!f) return true;
@@ -150,9 +216,8 @@
   function matchesState(t, state) {
     if (state.include === 'movie' && t.kind !== 'movie') return false;
     if (state.include === 'series' && t.kind !== 'series') return false;
-    const conds = state.conditions.filter(c => c.values && c.values.length);
-    if (!conds.length) return true;
-    return state.match === 'any' ? conds.some(c => matchOne(t, c)) : conds.every(c => matchOne(t, c));
+    migrateState(state);
+    return matchNode(t, state.root);
   }
   function evaluate(state) {
     return TITLES.filter(t => matchesState(t, state));
@@ -211,8 +276,8 @@
     pop.innerHTML = inner;
     document.body.appendChild(pop);
     const r = anchor.getBoundingClientRect();
-    pop.style.left = Math.min(r.left, window.innerWidth - pop.offsetWidth - 12) + 'px';
-    pop.style.top = (r.bottom + 6) + 'px';
+    pop.style.left = Math.max(8, Math.min(r.left, window.innerWidth - pop.offsetWidth - 12)) + 'px';
+    pop.style.top = Math.max(8, Math.min(r.bottom + 6, window.innerHeight - pop.offsetHeight - 10)) + 'px';
     pop.addEventListener('click', e => { const it = e.target.closest('[data-val]'); if (it) { onPick(it.dataset.val); } });
     const close = e => { if (!pop.contains(e.target) && e.target !== anchor) { pop.remove(); document.removeEventListener('mousedown', close); } };
     setTimeout(() => document.addEventListener('mousedown', close), 0);
@@ -267,15 +332,17 @@
     const isChannel = opts.mode === 'channel';
     const isLibrary = opts.mode === 'library';
     const asScreen = isChannel;   // channels get a dedicated full screen
-    const state = opts.state || {
-      match: 'all', include: 'all',
-      conditions: [ { facet: 'genre', op: 'isAny', values: [] } ],
+    const state = migrateState(opts.state) || {
+      include: 'all',
+      root: mkGroup('and', [ mkGroup('or', [ mkCond() ]) ]),
       title: '', chStyle: 'logo', chColor: CH_COLORS[0], chText: '', chLogo: null, customGrad: null,
       chPad: { logo: { t:0, r:0, b:0, l:0 }, text: { t:0, r:0, b:0, l:0 } },
       hero: { on:false, items:[], height:48, advance:7 },
       rows: { mode:'inherit', items:[], system: { continue:{ show:true, scope:'all' }, newly:{ show:true, scope:'all', merge:false } } }
     };
-    if (!state.conditions.length) state.conditions.push({ facet:'genre', op:'isAny', values:[] });
+    state.root.children = state.root.children.map(b => isGroup(b) ? b : mkGroup('or', [ b ]));
+    if (!state.root.children.length) state.root.children.push(mkGroup('or', [ mkCond() ]));
+    state.root.children.forEach(b => { if (!b.children.length) b.children.push(mkCond()); });
 
     // padding panel open/closed per display mode — defaults open only when already configured
     const padOpen = {};
@@ -288,15 +355,21 @@
     const node = el(`<div class="cf-modal${asScreen ? ' cf-screen' : ''}" style="max-width:${asScreen ? '1040px' : '1000px'};"></div>`);
     function dismiss(){ asScreen ? closeScreen() : closeModal(); }
 
+    function firstLiveCond(n){
+      if (!isGroup(n)) return condLive(n) ? n : null;
+      for (const k of n.children){ const f = firstLiveCond(k); if (f) return f; }
+      return null;
+    }
     function autoTitle() {
-      const c = state.conditions.find(c => c.values.length);
+      const c = firstLiveCond(state.root);
       if (!c) return isChannel ? 'New channel' : 'New row';
       if (FACETS[c.facet].type === 'num') return FACETS[c.facet].label + ' ' + opLabel(c.facet,c.op) + ' ' + c.values[0];
       return c.values.slice(0,2).map(v => (v && typeof v === 'object') ? v.name : v).join(' & ') + (c.values.length>2 ? ' +' : '');
     }
 
     function render() {
-      const matches = evaluate(state);
+      let matches = evaluate(state);
+      if (opts.channelContext && opts.channelContext.state) matches = matches.filter(t => matchesState(t, opts.channelContext.state));
       const titleVal = state.title || autoTitle();
       const isCustom = isChannel && state.chColor && CH_COLORS.indexOf(state.chColor) === -1;
       const hero = state.hero || {};
@@ -352,16 +425,15 @@
           <span class="tiny muted">esc to cancel</span>
           <span class="cf-x" data-x>✕</span>
         </div>`}
-        <div style="display:flex;align-items:stretch;">
-          <div style="flex:1;padding:18px;min-width:0;">
+        <div class="cf-body">
+          <div class="cf-main">
             <div class="row center" style="gap:8px;">
-              <span class="cf-eyebrow">Match</span>
-              <span class="seg cf-match"><span class="${state.match==='all'?'on':''}" data-m="all">ALL</span><span class="${state.match==='any'?'on':''}" data-m="any">ANY</span></span>
-              <span class="tiny muted">of these conditions</span>
+              <span class="cf-eyebrow">Query</span>
+              <span class="tiny muted">blocks combine top-to-bottom — click a connector pill to flip AND / OR</span>
             </div>
 
-            <div class="cf-conds" style="display:flex;flex-direction:column;gap:8px;margin-top:11px;"></div>
-            <div style="padding-left:44px;margin-top:9px;"><span class="vchip add" data-add style="padding:7px 12px;">＋ Add condition</span></div>
+            <div class="cf-blocks"></div>
+            <div class="cf-addblock-row"><span class="vchip add" data-addblock style="padding:7px 12px;">＋ Add block</span></div>
 
             <div class="row center" style="gap:14px;margin-top:16px;flex-wrap:wrap;">
               <div><span class="cf-eyebrow">Include</span>
@@ -451,7 +523,7 @@
               </div>
               <div class="cf-herobox">
                 <div class="cf-eyebrow" style="margin-bottom:8px;">Filter rows</div>
-                <div class="cf-herolist">${rowItems.length ? rowItems.map((it,i)=>`<div class="cf-heroitem" data-rdedit="${i}"><span class="badge info" style="font-size:.56rem;flex:none;">row</span><span style="flex:1;min-width:0;"><b>${it.title}</b>${it.summary?` <span class="muted">· ${it.summary}</span>`:''}</span><span class="badge" style="font-size:.56rem;flex:none;">${evaluate(it.state).length} titles</span><button type="button" class="cf-herorm" data-rdrm="${i}" title="Remove">✕</button></div>`).join('') : `<div class="tiny muted" style="padding:9px 2px;">No custom rows yet — add one or more.</div>`}</div>
+                <div class="cf-herolist">${rowItems.length ? rowItems.map((it,i)=>`<div class="cf-heroitem" data-rdedit="${i}"><span class="badge info" style="font-size:.56rem;flex:none;">row</span><span style="flex:1;min-width:0;"><b>${it.title}</b>${it.summary?` <span class="muted">· ${it.summary}</span>`:''}</span><span class="badge" style="font-size:.56rem;flex:none;">${evaluate(it.state).filter(t => matchesState(t, state)).length} in this channel</span><button type="button" class="cf-herorm" data-rdrm="${i}" title="Remove">✕</button></div>`).join('') : `<div class="tiny muted" style="padding:9px 2px;">No custom rows yet — add one or more.</div>`}</div>
                 <button type="button" class="btn sm ghost" data-rowadd style="margin-top:9px;">＋ Add row</button>
                 <div class="tiny muted" style="margin-top:11px;line-height:1.5;">These workbench rows render below the system rows, replacing the Home rows on this channel’s page.</div>
               </div>
@@ -465,10 +537,10 @@
             </div>
           </div>
 
-          <div style="width:300px;flex:none;border-left:1px solid var(--line);padding:18px;background:var(--fill-2);">
+          <div class="cf-side">
             <span class="cf-eyebrow">Matches now</span>
             <div class="row center" style="gap:10px;margin-top:10px;">
-              <span class="cf-matchcount"><span class="n">${matches.length}</span><span class="l">titles</span></span>
+              <span class="cf-matchcount"><span class="n">${matches.length}</span><span class="l">titles${opts.channelContext ? ' in “' + opts.channelContext.name + '”' : ''}</span></span>
               <span class="spacer"></span><span class="badge ${matches.length?'ok':'warn'}">${matches.length?'live':'none'}</span>
             </div>
             <div class="cf-prevgrid" style="display:grid;grid-template-columns:repeat(4,1fr);gap:7px;margin-top:12px;">
@@ -485,37 +557,111 @@
           <span class="btn sm ghost" data-x>Cancel</span>
           <span class="btn sm primary" data-save>${opts.saveLabel || (opts.edit ? 'Save changes' : (isChannel ? 'Add channel' : 'Add row'))}</span>
         </div>`;
-      renderConds();
+      renderBlocks();
       wire();
     }
 
-    function renderConds() {
-      const wrap = node.querySelector('.cf-conds');
-      wrap.innerHTML = state.conditions.map((c, i) => {
-        const f = FACETS[c.facet];
-        const valHtml = f.type === 'num'
-          ? (c.values.length ? `<span class="vchip" data-vchip="${i}:0">${c.values[0]} <span class="x" data-rmval="${i}:0">✕</span></span>` : `<span class="vchip add" data-num="${i}">＋ value</span>`)
-          : f.type === 'text'
-          ? (c.values.length ? `<span class="vchip" data-text="${i}">“${c.values[0]}” <span class="x" data-rmval="${i}:0">✕</span></span>` : `<span class="vchip add" data-text="${i}">＋ text…</span>`)
-          : f.type === 'rows'
-          ? c.values.map((v, vi) => `<span class="vchip">${(v && v.name) || ''} <span class="x" data-rmval="${i}:${vi}">✕</span></span>`).join('') + ((opts.rowsContext && opts.rowsContext.length) ? `<span class="vchip add" data-pickrows="${i}">＋</span>` : (c.values.length ? '' : `<span class="tiny muted">no rows</span>`))
-          : c.values.map((v, vi) => `<span class="vchip">${v} <span class="x" data-rmval="${i}:${vi}">✕</span></span>`).join('') + `<span class="vchip add" data-pick="${i}">＋</span>`;
-        return `<div style="display:flex;align-items:center;gap:8px;">
-          <span class="cf-join" style="width:36px;text-align:center;visibility:${i===0?'hidden':'visible'};">${state.match==='any'?'OR':'AND'}</span>
-          <div class="cf-cond" style="flex:1;">
-            <span class="cf-facet" data-facet="${i}">${f.label} <span style="color:var(--ink-soft);">▾</span></span>
-            <span class="cf-op" data-op="${i}">${opLabel(c.facet, c.op)} <span style="color:var(--ink-soft);">▾</span></span>
-            ${valHtml}
-            <span class="spacer"></span>
-            ${state.conditions.length>1?`<span class="cf-rmcond" data-rmcond="${i}" title="Remove condition">✕</span>`:''}
-          </div>
-        </div>`;
+    /* ---------------- recursive block renderer ---------------- */
+    const MAX_DEPTH = 3;    // block → sub-block → one more; deeper turns unreadable
+    const LOCK_SVG = '<svg width="11" height="12" viewBox="0 0 11 12" aria-hidden="true"><rect x="1" y="5" width="9" height="6.2" rx="1.6" fill="currentColor"></rect><path d="M3.1 5V3.5a2.4 2.4 0 0 1 4.8 0V5" fill="none" stroke="currentColor" stroke-width="1.5"></path></svg>';
+    function nodeAt(path){ let n = state.root; for (const i of path.split('.')) n = n.children[+i]; return n; }
+    function parentOf(path){ const parts = path.split('.'); const idx = +parts.pop(); let n = state.root; for (const i of parts) n = n.children[+i]; return { parent: n, idx }; }
+    // keep the editor usable after removals: dissolve empty groups, root keeps ≥1 block
+    function cleanup(){
+      (function walk(g){
+        g.children.forEach(k => { if (isGroup(k)) walk(k); });
+        g.children = g.children.filter(k => !isGroup(k) || k.children.length);
+      })(state.root);
+      if (!state.root.children.length) state.root.children.push(mkGroup('or', [ mkCond() ]));
+    }
+    function scopePool(){
+      const base = opts.scopeState ? evaluate(opts.scopeState) : TITLES;
+      return base.filter(t => state.include === 'movie' ? t.kind === 'movie' : state.include === 'series' ? t.kind === 'series' : true);
+    }
+    function condHtml(c, path, locked){
+      const f = FACETS[c.facet];
+      const x = vi => locked ? '' : ` <span class="x" data-rmval="${path}:${vi}">✕</span>`;
+      let valHtml = '';
+      if (f.type === 'num') {
+        valHtml = c.values.length ? `<span class="vchip${locked?' lk':''}">${c.values[0]}${x(0)}</span>`
+          : (locked ? '' : `<span class="vchip add" data-num="${path}">＋ value</span>`);
+      } else if (f.type === 'text') {
+        valHtml = c.values.length ? `<span class="vchip${locked?' lk':''}">“${c.values[0]}”${x(0)}</span>`
+          : (locked ? '' : `<span class="vchip add" data-text="${path}">＋ text…</span>`);
+      } else if (f.type === 'rows') {
+        valHtml = c.values.map((v, vi) => `<span class="vchip${locked?' lk':''}">${(v && v.name) || ''}${x(vi)}</span>`).join('')
+          + (locked ? '' : ((opts.rowsContext && opts.rowsContext.length) ? `<span class="vchip add" data-pickrows="${path}">＋</span>` : (c.values.length ? '' : `<span class="tiny muted">no rows</span>`)));
+      } else {
+        valHtml = c.values.map((v, vi) => `<span class="vchip${locked?' lk':''}">${v}${x(vi)}</span>`).join('')
+          + (locked ? '' : `<span class="vchip add" data-pick="${path}">＋</span>`);
+      }
+      const facetEl = locked ? `<span class="cf-facet lk">${f.label}</span>`
+        : `<span class="cf-facet" data-facet="${path}">${f.label} <span style="color:var(--ink-soft);">▾</span></span>`;
+      const opEl = locked ? `<span class="cf-op lk">${opLabel(c.facet, c.op)}</span>`
+        : `<span class="cf-op" data-op="${path}">${opLabel(c.facet, c.op)} <span style="color:var(--ink-soft);">▾</span></span>`;
+      const rm = locked ? '' : `<span class="cf-rmcond" data-rmnode="${path}" title="Remove condition">✕</span>`;
+      return `<div class="cf-cond">${facetEl}${opEl}${valHtml}<span class="spacer"></span>${rm}</div>`;
+    }
+    function joinPill(g, path){
+      return `<div class="cf-railjoin"><span class="cf-jpill" data-join="${path}" title="Click to switch to ${g.join==='or'?'AND':'OR'}">${g.join==='or'?'OR':'AND'} <span class="c">⇅</span></span></div>`;
+    }
+    function blockHtml(g, path, depth){
+      const pool = scopePool();
+      const live = nodeLive(g);
+      const eff = live ? pool.filter(t => matchNode(t, g)).length : pool.length;
+      const rows = g.children.map((k, i) => {
+        const p = path + '.' + i;
+        return (i ? joinPill(g, path) : '') + `<div class="cf-brow">${isGroup(k) ? blockHtml(k, p, depth + 1) : condHtml(k, p, false)}</div>`;
       }).join('');
+      return `<div class="cf-block${depth > 1 ? ' sub' : ''}${g.not ? ' not' : ''}">
+        <div class="cf-block-head">
+          <span class="cf-not${g.not ? ' on' : ''}" data-not="${path}" title="${g.not ? 'This block excludes its matches — click to match normally' : 'Click to exclude everything this block matches'}">NOT</span>
+          ${g.not ? '<span class="tiny cf-notlabel">excludes</span>' : ''}
+          <span class="spacer"></span>
+          <span class="badge${g.not ? ' bad' : ''}" style="font-size:.6rem;">${live ? eff + (opts.channelContext ? ' in channel' : ' titles') : 'no conditions yet'}</span>
+          <span class="cf-rmblock" data-rmnode="${path}" title="Remove ${depth > 1 ? 'sub-block' : 'block'}">✕</span>
+        </div>
+        ${rows}
+        <div class="cf-block-adds"><span class="vchip add" data-addcond="${path}">＋ Condition</span>${depth < MAX_DEPTH ? `<span class="vchip add" data-addsub="${path}">＋ Sub-block</span>` : ''}</div>
+      </div>`;
+    }
+    function renderBlocks() {
+      const wrap = node.querySelector('.cf-blocks');
+      let html = '';
+      const ctx = opts.channelContext;
+      if (ctx && ctx.state) {
+        migrateState(ctx.state);
+        const chN = TITLES.filter(t => matchesState(t, ctx.state)).length;
+        const lockedRows = g => g.children.filter(nodeLive).map((k, i) =>
+          (i ? `<div class="cf-railjoin lk"><span class="cf-jpill lk">${g.join==='or'?'OR':'AND'}</span></div>` : '')
+          + `<div class="cf-brow">${isGroup(k)
+              ? `<div class="cf-block sub lk-sub">${k.not ? '<div class="cf-block-head"><span class="cf-not on lk">NOT</span><span class="tiny cf-notlabel">excludes</span></div>' : ''}${lockedRows(k)}</div>`
+              : condHtml(k, '', true)}</div>`
+        ).join('');
+        const liveKids = ctx.state.root.children.filter(nodeLive);
+        const single = liveKids.length === 1 && isGroup(liveKids[0]) && !liveKids[0].not;
+        const body = single ? lockedRows(liveKids[0]) : lockedRows(ctx.state.root);
+        html += `<div class="cf-block locked">
+          <div class="cf-block-head">
+            <span class="cf-lock">${LOCK_SVG} Channel</span>
+            <b class="cf-lockname">${ctx.name}</b>
+            <span class="spacer"></span>
+            <span class="badge" style="font-size:.6rem;">${chN} titles</span>
+          </div>
+          ${body || '<div class="tiny muted" style="padding:2px 2px 4px;">No conditions — the channel shows everything.</div>'}
+          <div class="cf-lockfoot tiny muted">Locked — this row can only show titles inside “${ctx.name}”. Edit the filter on the channel itself.</div>
+        </div>
+        <div class="cf-bjoin lk"><span class="cf-jpill lk">${LOCK_SVG} AND</span></div>`;
+      }
+      html += state.root.children.map((b, i) =>
+        (i ? `<div class="cf-bjoin"><span class="cf-jpill" data-join="__root" title="Click to switch to ${state.root.join==='or'?'AND':'OR'}">${state.root.join==='or'?'OR':'AND'} <span class="c">⇅</span></span></div>` : '')
+        + blockHtml(b, String(i), 1)
+      ).join('');
+      wrap.innerHTML = html;
     }
 
     function wire() {
       node.querySelectorAll('[data-x]').forEach(b => b.onclick = dismiss);
-      node.querySelectorAll('.cf-match span').forEach(s => s.onclick = () => { state.match = s.dataset.m; render(); });
       node.querySelectorAll('.cf-include span').forEach(s => s.onclick = () => { state.include = s.dataset.inc; render(); });
       function refreshChPrev(){ const box = node.querySelector('.cf-chprev'); if (box){ const fresh = el(channelWM(state, state.title||autoTitle(), {cls:'studio-wm cf-chprev', style:'width:100%;height:46px;margin-top:14px;', font:'1.05rem'})); box.replaceWith(fresh); } }
       const ti = node.querySelector('.cf-title'); if (ti) ti.oninput = () => { state.title = ti.value; const ct0 = node.querySelector('.cf-chtext'); if (ct0) ct0.placeholder = ti.value || autoTitle(); refreshChPrev(); };
@@ -568,19 +714,22 @@
       const rowAddBtn = node.querySelector('[data-rowadd]');
       if (rowAddBtn) rowAddBtn.onclick = () => openFilter({
         mode: 'row', headTitle: 'Add channel row', saveLabel: 'Add row',
+        channelContext: { name: state.title || autoTitle(), state: state }, scopeState: state,
         onSave: ({ state: rs, title, summary }) => { ensureRows().items.push({ title, summary, state: rs }); render(); }
       });
       node.querySelectorAll('[data-rdedit]').forEach(it => it.onclick = e => {
         if (e.target.closest('[data-rdrm]')) return;
         const i = +it.dataset.rdedit, rw = ensureRows();
         openFilter({ mode:'row', edit:true, headTitle:'Edit channel row', saveLabel:'Save row', state: rw.items[i].state,
+          channelContext: { name: state.title || autoTitle(), state: state }, scopeState: state,
           onSave: ({ state: rs, title, summary }) => { rw.items[i] = { title, summary, state: rs }; render(); } });
       });
       node.querySelectorAll('[data-rdrm]').forEach(b => b.onclick = e => { e.stopPropagation(); const rw = ensureRows(); rw.items.splice(+b.dataset.rdrm, 1); render(); });
       const coverAdd = node.querySelector('[data-coveradd]');
       if (coverAdd) coverAdd.onclick = () => openFilter({
         mode: 'row', headTitle: 'Add catch-all row', saveLabel: 'Add row',
-        state: { match: 'all', include: 'all', conditions: [{ facet: 'genre', op: 'isAny', values: [] }], title: 'More titles' },
+        channelContext: { name: state.title || autoTitle(), state: state }, scopeState: state,
+        state: { include: 'all', root: mkGroup('and', [ mkGroup('or', [ mkCond() ]) ]), title: 'More titles' },
         onSave: ({ state: rs, title, summary }) => { ensureRows().items.push({ title, summary, state: rs }); render(); }
       });
       const coverLink = node.querySelector('[data-coverlink]');
@@ -590,12 +739,13 @@
         const rowsCtx = items.map(it => ({ name: it.title, state: it.state }));
         // The coverage gap as an ordinary workbench filter: the channel's own conditions,
         // ANDed with "Content row is none of <its rows>". Fully editable in the Library builder.
+        const chan = pruneState(state);
         const filter = {
-          match: 'all', include: 'all',
-          conditions: [
-            ...state.conditions.filter(c => c.values && c.values.length).map(c => JSON.parse(JSON.stringify(c))),
-            { facet: 'row', op: 'isNot', values: rowsCtx.map(r => ({ name: r.name, state: r.state })) }
-          ]
+          include: 'all',
+          root: mkGroup('and', [
+            ...chan.root.children,
+            mkGroup('or', [ { kind: 'cond', facet: 'row', op: 'isNot', values: rowsCtx.map(r => ({ name: r.name, state: r.state })) } ])
+          ])
         };
         const payload = { label: state.title || autoTitle(), filter, rows: rowsCtx };
         try { localStorage.setItem('js-cov-filter', JSON.stringify(payload)); } catch (err) {}
@@ -621,13 +771,29 @@
         upBtn.onclick = () => upFile.click();
         upFile.onchange = () => { const f = upFile.files && upFile.files[0]; if (!f) return; const rd = new FileReader(); rd.onload = () => { state.chLogo = { type:'upload', src: rd.result, label: f.name }; render(); }; rd.readAsDataURL(f); };
       }
-      node.querySelector('[data-add]').onclick = () => { state.conditions.push({ facet:'genre', op:'isAny', values:[] }); render(); };
-
-      node.querySelectorAll('[data-rmcond]').forEach(b => b.onclick = () => { state.conditions.splice(+b.dataset.rmcond,1); render(); });
-      node.querySelectorAll('[data-rmval]').forEach(b => b.onclick = () => { const [i,vi] = b.dataset.rmval.split(':').map(Number); state.conditions[i].values.splice(vi,1); render(); });
+      const groupOf = p => p === '__root' ? state.root : nodeAt(p);
+      node.querySelectorAll('[data-join]').forEach(a => a.onclick = () => { const g = groupOf(a.dataset.join); g.join = g.join === 'or' ? 'and' : 'or'; render(); });
+      node.querySelectorAll('[data-not]').forEach(a => a.onclick = () => { const g = nodeAt(a.dataset.not); g.not = !g.not; render(); });
+      const addBlockBtn = node.querySelector('[data-addblock]');
+      if (addBlockBtn) addBlockBtn.onclick = () => { state.root.children.push(mkGroup('or', [ mkCond() ])); render(); };
+      node.querySelectorAll('[data-addcond]').forEach(a => a.onclick = () => { nodeAt(a.dataset.addcond).children.push(mkCond()); render(); });
+      node.querySelectorAll('[data-addsub]').forEach(a => a.onclick = () => {
+        const g = nodeAt(a.dataset.addsub);
+        g.children.push(mkGroup(g.join === 'or' ? 'and' : 'or', [ mkCond() ]));   // a sub-block exists to mix operators — default to the opposite join
+        render();
+      });
+      node.querySelectorAll('[data-rmnode]').forEach(b => b.onclick = () => {
+        const { parent, idx } = parentOf(b.dataset.rmnode);
+        parent.children.splice(idx, 1);
+        cleanup(); render();
+      });
+      node.querySelectorAll('[data-rmval]').forEach(b => b.onclick = () => {
+        const s = b.dataset.rmval, ci = s.lastIndexOf(':');
+        nodeAt(s.slice(0, ci)).values.splice(+s.slice(ci + 1), 1); render();
+      });
 
       node.querySelectorAll('[data-facet]').forEach(a => a.onclick = () => {
-        const i = +a.dataset.facet;
+        const c = nodeAt(a.dataset.facet);
         let last = null;
         const rowsOk = !!(opts.rowsContext && opts.rowsContext.length);
         const items = Object.keys(FACETS).filter(k => rowsOk || !FACETS[k].contextual).map(k => {
@@ -637,54 +803,55 @@
           return head + `<div class="cf-popitem" data-val="${k}">${FACETS[k].label}</div>`;
         }).join('');
         popover(a, items, v => {
-          state.conditions[i].facet = v; state.conditions[i].op = opsFor(v)[0][0]; state.conditions[i].values = []; render();
+          c.facet = v; c.op = opsFor(v)[0][0]; c.values = []; render();
         });
       });
       node.querySelectorAll('[data-op]').forEach(a => a.onclick = () => {
-        const i = +a.dataset.op, f = state.conditions[i].facet;
-        popover(a, opsFor(f).map(o => `<div class="cf-popitem" data-val="${o[0]}">${o[1]}</div>`).join(''), v => { state.conditions[i].op = v; render(); });
+        const c = nodeAt(a.dataset.op);
+        popover(a, opsFor(c.facet).map(o => `<div class="cf-popitem" data-val="${o[0]}">${o[1]}</div>`).join(''), v => { c.op = v; render(); });
       });
       node.querySelectorAll('[data-pick]').forEach(a => a.onclick = () => {
-        const i = +a.dataset.pick, f = state.conditions[i].facet;
-        const cur = state.conditions[i].values;
-        const fac = FACETS[f];
+        const c = nodeAt(a.dataset.pick);
+        const cur = c.values;
+        const fac = FACETS[c.facet];
         // R127 — item count per facet value, ordered by count desc. When the workbench is
-        // scoped to a channel (opts.scopeState), counts narrow to that channel's set and
-        // values absent from it disappear; library-wide workbench shows global counts.
-        const scope = opts.scopeState ? evaluate(opts.scopeState) : TITLES;
+        // scoped to a channel (opts.scopeState / a locked channel block), counts narrow to
+        // that channel's set and values absent from it disappear; library-wide shows global.
+        const scopeSrc = opts.scopeState || (opts.channelContext && opts.channelContext.state);
+        const scope = scopeSrc ? evaluate(scopeSrc) : TITLES;
         const counts = fac.options
           .map(o => ({ o, n: scope.filter(t => fac.get(t).map(String).includes(String(o))).length }))
-          .filter(c => !opts.scopeState || c.n > 0)
+          .filter(x => !scopeSrc || x.n > 0)
           .sort((x, y) => y.n - x.n);
-        const inner = counts.map(c =>
-          `<div class="cf-popitem ${cur.includes(c.o)?'on':''}" data-val="${c.o}">${cur.includes(c.o)?'✓ ':''}<span class="wb-vname">${c.o}</span><span class="wb-vcount">${c.n}</span></div>`
+        const inner = counts.map(x =>
+          `<div class="cf-popitem ${cur.includes(x.o)?'on':''}" data-val="${x.o}">${cur.includes(x.o)?'✓ ':''}<span class="wb-vname">${x.o}</span><span class="wb-vcount">${x.n}</span></div>`
         ).join('') || '<div class="cf-popitem" style="opacity:.6;cursor:default;">No values in scope</div>';
         popover(a, inner, v => {
           if (!cur.includes(v)) cur.push(v); render();
         });
       });
       node.querySelectorAll('[data-pickrows]').forEach(a => a.onclick = () => {
-        const i = +a.dataset.pickrows;
-        const cur = state.conditions[i].values.map(v => v && v.name);
+        const c = nodeAt(a.dataset.pickrows);
+        const cur = c.values.map(v => v && v.name);
         const avail = (opts.rowsContext || []);
         const inner = avail.map((r, ri) => `<div class="cf-popitem ${cur.includes(r.name)?'on':''}" data-val="${ri}">${cur.includes(r.name)?'✓ ':''}${r.name}</div>`).join('') || '<div class="cf-popitem" style="opacity:.6;cursor:default;">No content rows</div>';
         popover(a, inner, v => {
-          const r = avail[+v]; if (r && !cur.includes(r.name)) state.conditions[i].values.push({ name: r.name, state: r.state }); render();
+          const r = avail[+v]; if (r && !cur.includes(r.name)) c.values.push({ name: r.name, state: r.state }); render();
         });
       });
       node.querySelectorAll('[data-num]').forEach(a => a.onclick = () => {
-        const i = +a.dataset.num, f = FACETS[state.conditions[i].facet];
-        popover(a, `<div style="padding:8px;"><input class="input cf-numin" type="number" ${f.min!=null?`min="${f.min}"`:''} ${f.max!=null?`max="${f.max}"`:''} step="${f.step||1}" placeholder="${state.conditions[i].facet==='year'?'2015':'7.5'}" style="width:120px;"><div class="btn sm primary cf-numok" style="margin-top:8px;justify-content:center;">Set</div></div>`, ()=>{});
+        const c = nodeAt(a.dataset.num), f = FACETS[c.facet];
+        popover(a, `<div style="padding:8px;"><input class="input cf-numin" type="number" ${f.min!=null?`min="${f.min}"`:''} ${f.max!=null?`max="${f.max}"`:''} step="${f.step||1}" placeholder="${c.facet==='year'?'2015':'7.5'}" style="width:120px;"><div class="btn sm primary cf-numok" style="margin-top:8px;justify-content:center;">Set</div></div>`, ()=>{});
         const pop = document.querySelector('.cf-pop'); const inp = pop.querySelector('.cf-numin'); inp.focus();
-        const ok = () => { if (inp.value!=='') { state.conditions[i].values = [inp.value]; } pop.remove(); render(); };
+        const ok = () => { if (inp.value!=='') { c.values = [inp.value]; } pop.remove(); render(); };
         pop.querySelector('.cf-numok').onclick = ok;
         inp.onkeydown = e => { if (e.key==='Enter') ok(); };
       });
       node.querySelectorAll('[data-text]').forEach(a => a.onclick = () => {
-        const i = +a.dataset.text;
-        popover(a, `<div style="padding:8px;"><input class="input cf-txtin" type="text" value="${(state.conditions[i].values[0]||'').replace(/"/g,'&quot;')}" placeholder="e.g. Synstolkning, Commentary, SDH" style="width:200px;"><div class="btn sm primary cf-txtok" style="margin-top:8px;justify-content:center;">Set</div></div>`, ()=>{});
+        const c = nodeAt(a.dataset.text);
+        popover(a, `<div style="padding:8px;"><input class="input cf-txtin" type="text" value="${(c.values[0]||'').replace(/"/g,'&quot;')}" placeholder="e.g. Synstolkning, Commentary, SDH" style="width:200px;"><div class="btn sm primary cf-txtok" style="margin-top:8px;justify-content:center;">Set</div></div>`, ()=>{});
         const pop = document.querySelector('.cf-pop'); const inp = pop.querySelector('.cf-txtin'); inp.focus();
-        const ok = () => { state.conditions[i].values = inp.value.trim() ? [inp.value.trim()] : []; pop.remove(); render(); };
+        const ok = () => { c.values = inp.value.trim() ? [inp.value.trim()] : []; pop.remove(); render(); };
         pop.querySelector('.cf-txtok').onclick = ok;
         inp.onkeydown = e => { if (e.key==='Enter') ok(); };
       });
@@ -695,13 +862,7 @@
     function commit() {
       const matches = evaluate(state);
       const title = state.title || autoTitle();
-      const summary = state.conditions.filter(c=>c.values.length).map(c => {
-        const f = FACETS[c.facet];
-        const valTxt = f.type==='num' ? c.values[0]
-          : f.type==='rows' ? c.values.map(v => v && v.name).filter(Boolean).join(', ')
-          : '“'+c.values.join('”, “')+'”';
-        return f.label + ' ' + opLabel(c.facet,c.op) + ' ' + valTxt;
-      }).join(state.match==='any'?'  OR  ':'  ·  ') || 'all titles';
+      const summary = querySummary(state) || 'all titles';
       const heroTag = isChannel && state.hero && state.hero.on ? '  ·  ⊳ hero' : '';
       const rowsTag = isChannel && state.rows && state.rows.mode === 'custom' ? '  ·  ▤ custom rows' : '';
 
@@ -762,8 +923,8 @@
           <span class="cf-grab">⠿</span><b style="font-size:.98rem;">${opts.headTitle || ((opts.edit?'Edit':'New') + ' hero item')}</b>
           <span class="spacer"></span><span class="tiny muted">esc to cancel</span><span class="cf-x" data-x>✕</span>
         </div>
-        <div style="display:flex;">
-          <div style="width:430px;flex:none;padding:18px;border-right:1px solid var(--line);">
+        <div class="cf-hbody">
+          <div class="cf-hleft">
             ${step1}
             <hr class="dash" style="margin:16px 0;">
             <span class="cf-eyebrow">${opts.lockTitle ? 'Dress it for the carousel' : '2 · Dress it for the carousel'}</span>
@@ -914,9 +1075,17 @@
       r.dataset.kind = 'channel';
       const networks = ['HBO','TV 2','Kringvarp','DR'];
       const isTag = r.querySelector('.src').textContent.includes('tag');
+      const chTitle = r.querySelector('.nm').textContent.trim();
       r._cfState = isTag
-        ? { match:'all', include:'all', conditions:[{facet:'tag',op:'isAny',values:['dansk-tv']}], title:r.querySelector('.nm').textContent.trim(), chStyle:'text', chColor:CH_COLORS[4] }
-        : { match:'all', include:'all', conditions:[{facet:'network',op:'isAny',values:[networks[i]||'HBO']}], title:r.querySelector('.nm').textContent.trim(), chStyle:'logo', chColor:CH_COLORS[i%CH_COLORS.length] };
+        ? { include:'all', root: mkGroup('and', [ mkGroup('or', [ mkCond('tag','isAny',['dansk-tv']) ]) ]), title: chTitle, chStyle:'text', chColor:CH_COLORS[4] }
+        : networks[i] === 'Kringvarp'
+        // block showcase: (Tag nordic-noir or dansk-tv or Genre Thriller) AND (Network Kringvarp)
+        ? { include:'all', title: chTitle, chStyle:'logo', chColor:CH_COLORS[i%CH_COLORS.length],
+            root: mkGroup('and', [
+              mkGroup('or', [ mkCond('tag','isAny',['nordic-noir','dansk-tv']), mkCond('genre','isAny',['Thriller']) ]),
+              mkGroup('or', [ mkCond('network','isAny',['Kringvarp']) ])
+            ]) }
+        : { include:'all', root: mkGroup('and', [ mkGroup('or', [ mkCond('network','isAny',[networks[i]||'HBO']) ]) ]), title: chTitle, chStyle:'logo', chColor:CH_COLORS[i%CH_COLORS.length] };
       bindRow(r);
     });
     document.querySelectorAll('#rowlist .cfg-row').forEach(r => {
@@ -926,7 +1095,7 @@
       const src = r.querySelector('.src').textContent;
       const vals = (src.match(/“([^”]+)”/g) || []).map(s => s.replace(/[“”]/g,''));
       const facet = src.startsWith('tag') ? 'tag' : 'genre';
-      r._cfState = { match:'any', include:'all', conditions:[{facet, op:'isAny', values: vals.length?vals:['Drama']}], title:r.querySelector('.nm').textContent.trim() };
+      r._cfState = { include:'all', root: mkGroup('and', [ mkGroup('or', [ mkCond(facet, 'isAny', vals.length ? vals : ['Drama']) ]) ]), title: r.querySelector('.nm').textContent.trim() };
       bindRow(r);
     });
     document.querySelectorAll('#herolist .cfg-row').forEach(r => {
@@ -951,7 +1120,8 @@
     const aRow = find('sect-rows', 'Add row'); if (aRow) aRow.onclick = () => openFilter({ mode:'row' });
   }
 
-  window.RaviloBuilders = { openFilter, openHero, evaluate, matchesState, rowCoverage, grad, TITLES, FACETS };
+  window.RaviloBuilders = { openFilter, openHero, evaluate, matchesState, rowCoverage, grad, TITLES, FACETS,
+    mkGroup, mkCond, migrateState, pruneState, stateHasConditions, nodeHasValues: nodeLive, groupSummary, querySummary };
   document.addEventListener('DOMContentLoaded', () => { seed(); wireAdds(); });
   if (document.readyState !== 'loading') { seed(); wireAdds(); }
 })();

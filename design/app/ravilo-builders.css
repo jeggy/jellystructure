@@ -174,3 +174,90 @@ body.cf-screen-on .app-main2 > :not(#cf-screen-root) { display: none; }
   border-radius: 8px; color: var(--ink-dim); cursor: pointer; transition: background .12s, color .12s; }
 .edit-ic:hover { background: var(--fill-3); color: var(--acc-ink); }
 .cfg-row:hover .edit-ic { color: var(--ink-soft); }
+
+/* ============ query blocks — grouped AND/OR builder ============ */
+.cf-blocks { display: flex; flex-direction: column; margin-top: 12px; }
+.cf-block { border: 1px solid var(--line-2); border-radius: 12px; background: var(--fill-2); padding: 9px 10px 10px;
+  box-shadow: 0 10px 26px rgba(0,0,0,.14); }
+.cf-block .cf-block { background: var(--fill-3); box-shadow: none; }
+.cf-blocks .cf-cond { background: var(--fill-3); }
+.cf-block .cf-block .cf-cond { background: var(--fill-2); }
+.cf-block-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.cf-block-adds { display: flex; gap: 8px; margin-top: 9px; padding-left: 2px; }
+.cf-rmblock { cursor: pointer; color: var(--ink-dim); font-size: .8rem; padding: 2px 5px; }
+.cf-rmblock:hover { color: var(--bad); }
+.cf-addblock-row { margin-top: 12px; }
+
+/* connector rails + join pills (click to flip AND/OR for that group) */
+.cf-railjoin { position: relative; height: 26px; margin-left: 20px; display: flex; align-items: center; }
+.cf-railjoin::before { content: ''; position: absolute; left: 13px; top: -5px; bottom: -5px; width: 2px; border-radius: 2px; background: var(--line-2); }
+.cf-bjoin { position: relative; height: 36px; margin-left: 20px; display: flex; align-items: center; }
+.cf-bjoin::before { content: ''; position: absolute; left: 13px; top: -7px; bottom: -7px; width: 2px; background: var(--line-2); }
+.cf-jpill { position: relative; z-index: 1; display: inline-flex; align-items: center; gap: 5px;
+  font-family: 'JetBrains Mono', monospace; font-size: .64rem; font-weight: 700; letter-spacing: .08em;
+  padding: 3px 10px; border-radius: 999px; border: 1px solid var(--line-2); background: var(--fill-3);
+  color: var(--acc-ink); cursor: pointer; user-select: none; }
+.cf-jpill:hover { border-color: var(--hi); }
+.cf-jpill .c { opacity: .5; font-size: .74rem; }
+.cf-jpill.lk { cursor: default; color: var(--ink-soft); gap: 6px; }
+.cf-jpill.lk:hover { border-color: var(--line-2); }
+.cf-bjoin .cf-jpill { font-size: .68rem; padding: 4px 12px; background: var(--fill); box-shadow: 0 6px 16px rgba(0,0,0,.24); }
+
+/* NOT — a block can exclude everything it matches */
+.cf-not { font-family: 'JetBrains Mono', monospace; font-size: .6rem; font-weight: 700; letter-spacing: .1em;
+  padding: 3px 8px; border-radius: 6px; border: 1px dashed var(--line-2); color: var(--ink-dim); cursor: pointer; user-select: none; }
+.cf-not:hover { color: var(--ink); border-color: var(--ink-dim); }
+.cf-not.on { border: 1px solid color-mix(in srgb, var(--bad) 55%, transparent);
+  background: color-mix(in srgb, var(--bad) 16%, transparent); color: var(--bad); }
+.cf-not.lk { cursor: default; }
+.cf-notlabel { color: var(--bad); font-weight: 600; }
+.cf-block.not { border-color: color-mix(in srgb, var(--bad) 40%, var(--line-2)); }
+
+/* locked channel block — a per-channel row inherits the channel query, read-only */
+.cf-block.locked { filter: saturate(.75); }
+.cf-block.locked .cf-cond { opacity: .78; }
+.cf-lock { display: inline-flex; align-items: center; gap: 6px; font-size: .64rem; text-transform: uppercase;
+  letter-spacing: .09em; font-weight: 700; color: var(--ink-soft); }
+.cf-lock svg { opacity: .8; flex: none; }
+.cf-lockname { font-size: .86rem; }
+.cf-lockfoot { margin-top: 9px; line-height: 1.45; color: var(--ink-dim); }
+.vchip.lk, .cf-facet.lk, .cf-op.lk { cursor: default; }
+.cf-block.sub.lk-sub { opacity: .95; }
+
+/* ============ modal column layout (was inline) + mobile ============ */
+.cf-body { display: flex; align-items: stretch; }
+.cf-main { flex: 1; padding: 18px; min-width: 0; }
+.cf-side { width: 300px; flex: none; border-left: 1px solid var(--line); padding: 18px; background: var(--fill-2); }
+.cf-hbody { display: flex; }
+.cf-hleft { width: 430px; flex: none; padding: 18px; border-right: 1px solid var(--line); }
+
+/* comfortable tap targets on touch devices */
+@media (pointer: coarse) {
+  .cf-facet, .cf-op { padding: 9px 12px; }
+  .vchip { padding: 8px 11px; }
+  .cf-jpill { padding: 6px 13px; }
+  .cf-not { padding: 6px 10px; }
+  .cf-rmcond, .cf-rmblock, .cf-x, .vchip .x { padding: 6px 8px; }
+}
+
+/* narrow screens: single column, popup becomes a bottom sheet, tighter rails */
+@media (max-width: 760px) {
+  .cf-modal-back { padding: 0; align-items: flex-end; }
+  .cf-modal:not(.cf-screen) { max-height: 94dvh; border-radius: 16px 16px 0 0;
+    border-left: none; border-right: none; border-bottom: none; }
+  .cf-body, .cf-hbody { flex-direction: column; }
+  .cf-main { padding: 14px 12px 16px; }
+  .cf-side { width: auto; border-left: none; border-top: 1px solid var(--line); padding: 14px 12px 18px; }
+  .cf-hleft { width: auto; border-right: none; border-bottom: 1px solid var(--line); padding: 14px 12px; }
+  .cf-modal-head, .cf-screen-head { padding: 12px; gap: 8px; }
+  .cf-grab { display: none; }
+  .cf-railjoin, .cf-bjoin { margin-left: 10px; }
+  .cf-railjoin::before { left: 11px; }
+  .cf-bjoin::before { left: 11px; }
+  .cf-bjoin { height: 32px; }
+  .cf-block { padding: 8px 8px 9px; border-radius: 10px; }
+  .cf-cond { padding: 9px; gap: 7px; }
+  .cf-lockfoot { font-size: .7rem; }
+  .cf-prevgrid { grid-template-columns: repeat(5, 1fr) !important; }
+  .cf-padgrid { max-width: none; }
+}
