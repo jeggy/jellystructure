@@ -18,6 +18,8 @@ import dev.jellystructure.shared.tv.RaviloConfig
 import dev.jellystructure.shared.tv.Row
 import dev.jellystructure.shared.tv.RowConfig
 import dev.jellystructure.shared.tv.RowKind
+import dev.jellystructure.shared.tv.effectiveQuery
+import dev.jellystructure.shared.tv.isLive
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.alloc
 import kotlinx.cinterop.memScoped
@@ -339,7 +341,12 @@ class HomeFeedService(
             if (cards.isNotEmpty()) Row(rowCfg.id, rowCfg.title ?: "Genre", RowKind.GENRE, cards) else null
         }
         RowKind.CUSTOM -> {
-            val matched = all.filter { ConditionEvaluator.matches(it, rowCfg.match, rowCfg.conditions, heroIds, configStore.current.metadata.ageRatingCascade) }
+            // Phase 140 — effectiveQuery() reads rowCfg.query when the editor has migrated this row to
+            // the blocks tree (and cleared match/conditions on save); falls back to migrating the
+            // legacy flat shape on the fly otherwise. Reading match/conditions directly here would
+            // silently stop filtering the moment a row is saved as a tree.
+            val query = rowCfg.effectiveQuery()
+            val matched = all.filter { ConditionEvaluator.matches(it, query, heroIds, configStore.current.metadata.ageRatingCascade) }
             val filtered = when (rowCfg.mediaKind) {
                 "MOVIE"  -> matched.filter { it.kind == MediaKind.MOVIE }
                 "SERIES" -> matched.filter { it.kind == MediaKind.TV_SHOW }
@@ -440,8 +447,12 @@ class HomeFeedService(
     }
 
     private fun MediaItem.matchesChannel(ch: ChannelConfig, heroIds: Set<String>): Boolean {
-        // R32: a condition stack supersedes the legacy single typed filters.
-        if (ch.conditions.isNotEmpty()) return ConditionEvaluator.matches(this, ch.match, ch.conditions, heroIds, configStore.current.metadata.ageRatingCascade)
+        // Phase 140: the blocks tree (ch.query, or the legacy flat shape migrated on the fly by
+        // effectiveQuery()) supersedes the legacy single typed filters — same fallback chain as
+        // before, just query-aware so a channel doesn't silently stop filtering the moment it's
+        // saved as a tree (which clears match/conditions).
+        val query = ch.effectiveQuery()
+        if (query.isLive()) return ConditionEvaluator.matches(this, query, heroIds, configStore.current.metadata.ageRatingCascade)
         if (ch.filterNetwork != null && network.equals(ch.filterNetwork, ignoreCase = true)) return true
         if (ch.filterStudio  != null && studio.equals(ch.filterStudio,  ignoreCase = true)) return true
         if (ch.filterGenre   != null && genres.any { it.equals(ch.filterGenre, ignoreCase = true) }) return true

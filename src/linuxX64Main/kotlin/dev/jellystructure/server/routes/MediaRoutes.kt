@@ -74,7 +74,10 @@ import dev.jellystructure.torrent.SeedingCheckResult
 import dev.jellystructure.torrent.SeedingGuard
 import dev.jellystructure.torrent.SeedingSnapshot
 import dev.jellystructure.shared.tv.Condition
+import dev.jellystructure.shared.tv.ConditionGroup
 import dev.jellystructure.shared.tv.MatchMode
+import dev.jellystructure.shared.tv.anyCondition
+import dev.jellystructure.shared.tv.migrateFlatQuery
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
@@ -188,20 +191,27 @@ fun Route.mediaRoutes(
             // R32 hero-item facet: filter by membership in a viewer's hero carousel.
             val heroMode = call.request.queryParameters["heroItem"]?.takeIf { it == "featured" || it == "not_featured" }
             val viewer = call.request.queryParameters["viewer"]?.takeIf { it.isNotBlank() }
-            // R74: condition stack — JSON-encoded List<Condition> + match=ALL|ANY.
+            // Phase 140: query= (JSON tree) is the primary carrier; the legacy R74 conditions=/match=
+            // pair is still accepted and migrated, for old deep-linked API callers.
+            val queryJson = call.request.queryParameters["query"]
             val conditionsJson = call.request.queryParameters["conditions"]
-            val conditions = if (!conditionsJson.isNullOrBlank()) {
-                runCatching { lenientJson.decodeFromString(ListSerializer(Condition.serializer()), conditionsJson) }.getOrElse { emptyList() }
-            } else emptyList()
             val match = call.request.queryParameters["match"]?.let { runCatching { MatchMode.valueOf(it) }.getOrNull() } ?: MatchMode.ALL
-            val heroIds = if ((heroMode != null || conditions.any { it.facet == "hero_item" }) && viewer != null)
+            val query: ConditionGroup? = when {
+                !queryJson.isNullOrBlank() -> runCatching { lenientJson.decodeFromString(ConditionGroup.serializer(), queryJson) }.getOrNull()
+                !conditionsJson.isNullOrBlank() -> {
+                    val conditions = runCatching { lenientJson.decodeFromString(ListSerializer(Condition.serializer()), conditionsJson) }.getOrElse { emptyList() }
+                    if (conditions.isEmpty()) null else migrateFlatQuery(match, conditions)
+                }
+                else -> null
+            }
+            val heroIds = if ((heroMode != null || query?.anyCondition { it.facet == "hero_item" } == true) && viewer != null)
                 raviloConfigService.getConfig(viewer).heroes.map { it.itemId }.toSet() else emptySet()
             // Phase 98 — tracker filter: "any" = seeded anywhere, else a named tracker from the registry.
             val trackerFilter = call.request.queryParameters["tracker"]?.takeIf { it.isNotBlank() }
             val seededIds = if (trackerFilter != null) {
                 seedingSnapshot.seededItemIds(trackerFilter, store.allItems(), configStore.current)
             } else null
-            val result = store.list(kind, filter, search, sort, pageNum, pageSize, studios, networks, genres, audioLangs, trackTitle, audioCodec, untaggedAudio, tags, heroIds, heroMode, conditions, match, seededIds, excludeMissing = viewer != null)
+            val result = store.list(kind, filter, search, sort, pageNum, pageSize, studios, networks, genres, audioLangs, trackTitle, audioCodec, untaggedAudio, tags, heroIds, heroMode, query, seededIds, excludeMissing = viewer != null)
             // Phase 89: strip heavy fields not needed for grid cards (cast/crew/tracks/titlesByLang/episodes)
             // to reduce response size from ~61KB/item mean to ~1KB/item.
             val stripped = result.copy(items = result.items.map { it.copy(
@@ -214,18 +224,20 @@ fun Route.mediaRoutes(
         // POST /api/media/batch-count — evaluate N condition stacks in one library scan.
         // Used by RaviloConfig channel count badges: N channels → 1 call instead of N.
         post("/batch-count") {
+            // Phase 140 — query (the blocks tree) is the primary carrier; match/conditions (R74) still
+            // accepted and migrated per-request, for old callers.
             @Serializable data class BatchCountReq(
                 val index: Int,
                 val match: String = "ALL",
                 val conditions: List<Condition> = emptyList(),
+                val query: ConditionGroup? = null,
             )
             @Serializable data class BatchCountRes(val index: Int, val total: Int)
             val requests = call.receive<List<BatchCountReq>>()
-            val pairs = requests.map { req ->
-                val m = runCatching { MatchMode.valueOf(req.match) }.getOrElse { MatchMode.ALL }
-                m to req.conditions
+            val trees = requests.map { req ->
+                req.query ?: migrateFlatQuery(runCatching { MatchMode.valueOf(req.match) }.getOrElse { MatchMode.ALL }, req.conditions)
             }
-            val counts = store.countBatch(pairs)
+            val counts = store.countBatch(trees)
             call.respond(requests.mapIndexed { i, req -> BatchCountRes(req.index, counts[i]) })
         }
 
@@ -267,7 +279,9 @@ fun Route.mediaRoutes(
         // one pass. Used by the Workbench in a channel content-row scope; the global GET facets above stay
         // for the library-wide workbench.
         post("/facets") {
-            @Serializable data class FacetReq(val match: String = "ALL", val conditions: List<Condition> = emptyList())
+            // Phase 140 — query (the blocks tree) is the primary carrier; match/conditions (R74) still
+            // accepted and migrated, for old callers.
+            @Serializable data class FacetReq(val match: String = "ALL", val conditions: List<Condition> = emptyList(), val query: ConditionGroup? = null)
             @Serializable data class FItem(val value: String, val count: Int, val color: String? = null)
             @Serializable data class NarrowedFacetsResponse(
                 val studios: List<FItem>, val networks: List<FItem>, val genres: List<FItem>, val tags: List<FItem>,
@@ -275,8 +289,8 @@ fun Route.mediaRoutes(
                 val audioLanguages: List<FItem>, val audioCodecs: List<FItem>, val trackTitles: List<FItem>,
             )
             val req = call.receive<FacetReq>()
-            val m = runCatching { MatchMode.valueOf(req.match) }.getOrElse { MatchMode.ALL }
-            val (meta, track) = store.facetsNarrowed(m, req.conditions)
+            val tree = req.query ?: migrateFlatQuery(runCatching { MatchMode.valueOf(req.match) }.getOrElse { MatchMode.ALL }, req.conditions)
+            val (meta, track) = store.facetsNarrowed(tree)
             call.respond(NarrowedFacetsResponse(
                 studios  = meta.studios.map  { FItem(it.value, it.count, it.color) },
                 networks = meta.networks.map { FItem(it.value, it.count, it.color) },
