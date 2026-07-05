@@ -33,6 +33,11 @@ kotlin {
                 linkerOpts("-L/usr/lib/x86_64-linux-gnu", "--allow-shlib-undefined")
             }
         }
+        // Phase 140 — the repo's first native tests (linuxX64Test) link the whole of linuxX64Main
+        // (SQLDelight-generated code references sqlite3) but the auto-created test binary doesn't
+        // inherit executable{}'s linkerOpts above; same fix needed here or `./gradlew linuxX64Test`
+        // fails at the link step with "unable to find library -lsqlite3", not a compile error.
+        binaries.getTest("DEBUG").linkerOpts("-L/usr/lib/x86_64-linux-gnu", "--allow-shlib-undefined")
     }
 
     wasmJs {
