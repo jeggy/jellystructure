@@ -9,6 +9,8 @@ import dev.jellystructure.shared.tv.RowConfig
 import dev.jellystructure.shared.tv.RowKind
 import dev.jellystructure.shared.tv.Skin
 import dev.jellystructure.shared.tv.TileShape
+import dev.jellystructure.shared.tv.maxBlockDepth
+import dev.jellystructure.shared.tv.pruned
 import kotlinx.serialization.json.Json
 import platform.posix.CLOCK_REALTIME
 import platform.posix.clock_gettime
@@ -121,14 +123,18 @@ class RaviloConfigService(
             c.copy(
                 order = i,
                 brandColor = sanitizeBrandColor(c.brandColor),
+                // Phase 140 — a persisted tree is always pruned first, so it never contains empty
+                // conditions/groups (round-tripping a saved query gives back exactly what was live).
+                query = c.query?.pruned(),
                 pageHero = c.pageHero?.let { h ->
                     h.copy(items = h.items.filter { it.itemId.isNotBlank() }.mapIndexed { j, item -> item.copy(order = j) })
                 },
                 paddingLogo = c.paddingLogo?.let { p -> p.copy(top = p.top.coerceIn(0,40), right = p.right.coerceIn(0,40), bottom = p.bottom.coerceIn(0,40), left = p.left.coerceIn(0,40)) },
                 paddingText = c.paddingText?.let { p -> p.copy(top = p.top.coerceIn(0,40), right = p.right.coerceIn(0,40), bottom = p.bottom.coerceIn(0,40), left = p.left.coerceIn(0,40)) },
+                rows = c.rows?.let { rc -> rc.copy(items = rc.items.map { it.copy(query = it.query?.pruned()) }) },
             )
         },
-        rows = config.rows.mapIndexed { i, r -> r.copy(order = i) },
+        rows = config.rows.mapIndexed { i, r -> r.copy(order = i, query = r.query?.pruned()) },
         heroHeightPct = config.heroHeightPct.coerceIn(40, 100),
         autoAdvanceSeconds = config.autoAdvanceSeconds.coerceIn(0, 120),
         // R159 — portrait can go smaller than landscape's 40 floor (a phone hero at 40% is still huge).
@@ -151,6 +157,14 @@ class RaviloConfigService(
         // endpoint itself is already type-safe (an invalid enum name fails deserialization earlier).
         val badFeed = config.discover.feeds.firstOrNull { it.endpoint.needsParam && it.param.isNullOrBlank() }
         if (badFeed != null) return "Request feed '${badFeed.name}' (${badFeed.endpoint}) needs a value."
+        // Phase 140 — the editor caps block nesting at 3 (block -> sub-block -> one more); enforce it
+        // here too so a malformed/hand-edited payload can't bypass the editor's own limit. Depth-agnostic
+        // model/evaluator (maxBlockDepth is just a validation helper), checked over every channel query,
+        // every per-channel row query, and every top-level Home row query.
+        val allQueries = config.channels.mapNotNull { it.query } +
+            config.channels.flatMap { it.rows?.items.orEmpty() }.mapNotNull { it.query } +
+            config.rows.mapNotNull { it.query }
+        if (allQueries.any { it.maxBlockDepth() > 3 }) return "A filter is nested too deep (max 3 levels: block, sub-block, one more)."
         return null
     }
 
