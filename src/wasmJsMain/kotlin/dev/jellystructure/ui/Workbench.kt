@@ -828,6 +828,27 @@ private fun injectWorkbenchStyles() {
         .wbc-tile { width:74px; height:46px; border-radius:9px; border:1px solid var(--line-2); background:var(--fill-2); cursor:pointer; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px; overflow:hidden; color:var(--ink-soft); }
         .wbc-tile.on { border-color:var(--hi); box-shadow:0 0 0 2px var(--hi); }
         .wbc-tile img { max-width:84%; max-height:70%; object-fit:contain; }
+
+        /* Phase 140 §F — comfortable tap targets on touch devices (ported from design/app/ravilo-builders.css). */
+        @media (pointer: coarse) {
+            .wb-facet, .wb-op { padding:9px 12px; }
+            .wb-vchip { padding:8px 12px; }
+            .wb-jpill { padding:7px 14px; }
+            .wb-not-toggle { padding:7px 11px; }
+            .wb-rm, .wb-block-rm { padding:7px 9px; }
+        }
+        /* narrow screens: the modal becomes a bottom sheet, the side (matches) panel stacks below the
+           query, tighter rails — ported from the design's @media (max-width: 760px) block. */
+        @media (max-width: 760px) {
+            .wb-overlay { padding:0; align-items:flex-end; }
+            .wb-modal { max-height:94dvh; border-radius:16px 16px 0 0; border-left:none; border-right:none; border-bottom:none; width:100%; overflow-y:auto; }
+            .wb-body { flex-direction:column; }
+            .wb-main { padding:0; }
+            .wb-side { width:auto; }
+            .wb-subblock-wrap { margin-left:10px; padding-left:8px; }
+            .wb-block { padding:9px; border-radius:10px; }
+            .wb-cond { padding:9px; }
+        }
     """.trimIndent()
     document.head?.appendChild(style)
 }
