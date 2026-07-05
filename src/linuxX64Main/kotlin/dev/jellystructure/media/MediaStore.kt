@@ -11,8 +11,8 @@ import dev.jellystructure.model.recencyKey
 import dev.jellystructure.nfo.NfoWriter
 import dev.jellystructure.resolver.CertificationResolver
 import dev.jellystructure.resolver.LanguageResolver
-import dev.jellystructure.shared.tv.Condition
-import dev.jellystructure.shared.tv.MatchMode
+import dev.jellystructure.shared.tv.ConditionGroup
+import dev.jellystructure.shared.tv.isLive
 import dev.jellystructure.tv.ConditionEvaluator
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.alloc
@@ -246,8 +246,10 @@ class MediaStore(
         tags: List<String> = emptyList(),
         heroIds: Set<String> = emptySet(),
         heroMode: String? = null,   // "featured" | "not_featured" — membership in a viewer's hero carousel
-        conditions: List<Condition> = emptyList(),
-        match: MatchMode = MatchMode.ALL,
+        // Phase 140 — the blocks tree (query= param, or conditions=/match= migrated by the caller —
+        // MediaRoutes.kt resolves whichever the request used into one ConditionGroup before calling in,
+        // so this API is tree-native and single-shaped).
+        query: ConditionGroup? = null,
         allowedIds: Set<String>? = null,  // Phase 98: tracker filter — null = no restriction
         excludeMissing: Boolean = false,  // true in viewer/Ravilo-config context: hide missingFromSource rows
     ): MediaPage {
@@ -293,12 +295,12 @@ class MediaStore(
                     item.issueCount > 0 || item.languageMix || item.hasMultiDefaultAudio() || !posterArtworkExists(item)
                 }
             }
-            // R74: when a condition stack is provided, route through ConditionEvaluator so that
-            // ANY ORs correctly (and is_none_of / not_contains become exact). The legacy per-facet
-            // AND block is kept as the fast path when no conditions stack is passed.
-            if (conditions.isNotEmpty()) {
+            // R74/Phase 140: when a query tree is provided, route through ConditionEvaluator so joins/
+            // NOT/nesting evaluate correctly. The legacy per-facet AND block is kept as the fast path
+            // when no query is passed.
+            if (query != null && query.isLive()) {
                 val cascade = ageRatingCascade()
-                result = result.filter { item -> ConditionEvaluator.matches(item, match, conditions, heroIds, cascade) }
+                result = result.filter { item -> ConditionEvaluator.matches(item, query, heroIds, cascade) }
             } else {
                 if (studios.isNotEmpty()) result = result.filter { item -> studios.any { s -> item.studio.equals(s, ignoreCase = true) } }
                 if (networks.isNotEmpty()) result = result.filter { item -> networks.any { n -> item.network.equals(n, ignoreCase = true) } }
@@ -566,22 +568,26 @@ class MediaStore(
     }
 
     /** Evaluate N condition stacks against the library in a single pass. Avoids N×allItems() calls. */
-    fun countBatch(requests: List<Pair<MatchMode, List<Condition>>>): List<Int> {
+    /** Phase 140 — one entry per requested query tree (channel/row/block badges); a caller with a
+     *  legacy flat match/conditions request resolves it to a tree first (`migrateFlatQuery`). */
+    fun countBatch(requests: List<ConditionGroup>): List<Int> {
         if (requests.isEmpty()) return emptyList()
         val all = liveItems()  // batch-count is always Ravilo-config context
         val cascade = ageRatingCascade()
-        return requests.map { (match, conditions) ->
-            if (conditions.isEmpty()) all.size
-            else all.count { item -> ConditionEvaluator.matches(item, match, conditions, emptySet(), cascade) }
+        return requests.map { query ->
+            if (!query.isLive()) all.size
+            else all.count { item -> ConditionEvaluator.matches(item, query, emptySet(), cascade) }
         }
     }
 
-    /** R127: facet value counts narrowed to the items matching [conditions] (e.g. a channel's filter) —
+    /** R127: facet value counts narrowed to the items matching [query] (e.g. a channel's filter) —
      *  meta (studio/network/genre/tag) + track (audio language/codec/title), each count-sorted, only
-     *  values present in the narrowed set. Uncached: computed on demand when the workbench opens in scope. */
-    fun facetsNarrowed(match: MatchMode, conditions: List<Condition>): Pair<MetaFacets, TrackFacets> {
-        val items = if (conditions.isEmpty()) liveItems()  // workbench narrowed-facets = Ravilo-config context
-            else liveItems().filter { ConditionEvaluator.matches(it, match, conditions, emptySet(), ageRatingCascade()) }
+     *  values present in the narrowed set. Uncached: computed on demand when the workbench opens in
+     *  scope. Phase 140: [query] is the blocks tree; a caller with the legacy flat shape resolves it
+     *  first (`migrateFlatQuery`). */
+    fun facetsNarrowed(query: ConditionGroup): Pair<MetaFacets, TrackFacets> {
+        val items = if (!query.isLive()) liveItems()  // workbench narrowed-facets = Ravilo-config context
+            else liveItems().filter { ConditionEvaluator.matches(it, query, emptySet(), ageRatingCascade()) }
         return buildMetaFacetsFrom(items) to buildTrackFacetsFrom(items)
     }
 
