@@ -20,6 +20,11 @@ import kotlinx.io.files.SystemFileSystem
 private val TITLE_YEAR_RE = Regex("""^(.+?)\s+\((\d{4})\)\s*$""")
 // Season allows up to 4 digits so year-as-season numbering (e.g. S2025E01) parses (Phase 53-C).
 private val SEASON_EP_RE = Regex("""[Ss](\d{1,4})[Ee](\d{1,3})""")
+// Fallback for the Kodi/XBMC "2x01" numbering some downloads carry instead of S02E01. Anchored on
+// both sides (\b) with a 2-digit season cap and a ≥2-digit episode so it can't latch onto a
+// resolution token like 1280x720 (there is no word boundary inside "1280x720", and "80x720" is
+// excluded because the season is preceded by a digit). Only consulted when SEASON_EP_RE misses.
+private val ALT_SEASON_EP_RE = Regex("""\b(\d{1,2})x(\d{2,3})\b""")
 private val VIDEO_EXTENSIONS = setOf("mkv", "mp4", "avi", "mov", "m4v", "webm", "ts", "m2ts")
 
 class Scanner(
@@ -439,7 +444,9 @@ class Scanner(
 
     private fun parseSeasonEpisode(path: String): Pair<Int?, Int?> {
         val filename = path.substringAfterLast('/')
-        val match = SEASON_EP_RE.find(filename) ?: return Pair(null, null)
+        val match = SEASON_EP_RE.find(filename)
+            ?: ALT_SEASON_EP_RE.find(filename)
+            ?: return Pair(null, null)
         return Pair(match.groupValues[1].toIntOrNull(), match.groupValues[2].toIntOrNull())
     }
 
