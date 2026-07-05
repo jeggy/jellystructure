@@ -9,6 +9,7 @@ import dev.jellystructure.model.Person
 import dev.jellystructure.model.Track
 import dev.jellystructure.model.TrackKind
 import dev.jellystructure.shared.tv.Condition
+import dev.jellystructure.shared.tv.ConditionGroup
 import io.ktor.client.call.body
 import io.ktor.client.request.delete
 import io.ktor.client.request.get
@@ -166,13 +167,15 @@ data class NarrowedFacets(
 )
 
 @Serializable
-private data class FacetReq(val match: String = "ALL", val conditions: List<Condition> = emptyList())
+private data class FacetReq(val match: String = "ALL", val conditions: List<Condition> = emptyList(), val query: ConditionGroup? = null)
 
 @Serializable
 data class BatchCountRequest(
     val index: Int,
     val match: String = "ALL",
     val conditions: List<Condition> = emptyList(),
+    // Phase 140 — the blocks tree; takes priority over match/conditions when present.
+    val query: ConditionGroup? = null,
 )
 
 @Serializable
@@ -221,6 +224,8 @@ object MediaApi {
         viewer: String? = null,
         match: String = "ALL",
         conditions: List<Condition> = emptyList(),
+        // Phase 140 — the blocks tree; takes priority over match/conditions when present.
+        query: ConditionGroup? = null,
         tracker: String? = null,
     ): MediaPage? = runCatching {
         httpClient.get("/api/media") {
@@ -230,8 +235,10 @@ object MediaApi {
             if (!sort.isNullOrBlank()) parameter("sort", sort)
             parameter("page", page)
             parameter("pageSize", pageSize)
-            // R74: when a condition stack is provided, send it instead of per-facet params.
-            if (conditions.isNotEmpty()) {
+            if (query != null) {
+                parameter("query", KJson.encodeToString(ConditionGroup.serializer(), query))
+            } else if (conditions.isNotEmpty()) {
+                // R74: when a condition stack is provided, send it instead of per-facet params.
                 parameter("conditions", KJson.encodeToString(ListSerializer(Condition.serializer()), conditions))
                 parameter("match", match)
             } else {
@@ -262,6 +269,14 @@ object MediaApi {
         httpClient.post("/api/media/facets") {
             contentType(ContentType.Application.Json)
             setBody(FacetReq(match, conditions))
+        }.body<NarrowedFacets>()
+    }.getOrNull()
+
+    /** Phase 140 — tree-native narrowed facets (the blocks editor's channel-scoped value-picker counts). */
+    suspend fun narrowedFacets(query: ConditionGroup): NarrowedFacets? = runCatching {
+        httpClient.post("/api/media/facets") {
+            contentType(ContentType.Application.Json)
+            setBody(FacetReq(query = query))
         }.body<NarrowedFacets>()
     }.getOrNull()
 

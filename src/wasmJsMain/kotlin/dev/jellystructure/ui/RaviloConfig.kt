@@ -20,7 +20,12 @@ import dev.jellystructure.shared.tv.SeerrFeed
 import dev.jellystructure.shared.tv.SeerrFeedKind
 import dev.jellystructure.shared.tv.SeerrDiscoverEndpoint
 import dev.jellystructure.shared.tv.Condition
+import dev.jellystructure.shared.tv.ConditionGroup
 import dev.jellystructure.shared.tv.MatchMode
+import dev.jellystructure.shared.tv.QueryJoin
+import dev.jellystructure.shared.tv.QueryNode
+import dev.jellystructure.shared.tv.effectiveQuery
+import dev.jellystructure.shared.tv.isLive
 import dev.jellystructure.shared.tv.HeroConfig
 import dev.jellystructure.shared.tv.RaviloConfig
 import dev.jellystructure.shared.tv.PortraitConfig
@@ -121,12 +126,24 @@ private val BRAND_COLOR_PRESETS = listOf(
 
 private fun genId(prefix: String) = "$prefix-${Random.nextInt(100_000, 999_999)}"
 
-private fun wbMode(match: String) = if (match == "ANY") MatchMode.ANY else MatchMode.ALL
-private fun wbConds(conds: List<WbCond>): List<Condition> =
-    conds.filter { it.values.isNotEmpty() || it.facet == "track_title" || (it.facet == "content_row" && it.rows.isNotEmpty()) }
-        .map { Condition(it.facet, it.op, it.values.toList(), it.rows.toList()) }
-private fun wbCondsFrom(conds: List<Condition>): List<WbCond> =
-    conds.map { WbCond(it.facet, it.op, it.values.toMutableList(), it.rows.toMutableList()) }
+// Phase 140 — the workbench now trades in ConditionGroup trees directly; the first live value
+// anywhere in a tree seeds an auto-generated channel/row name (mirrors the old flat "first
+// condition's first value" heuristic).
+private fun QueryNode.firstValueOrNull(): String? = when (this) {
+    is Condition -> values.firstOrNull()
+    is ConditionGroup -> children.firstNotNullOfOrNull { it.firstValueOrNull() }
+}
+
+// Seed the popup's condition tree from a legacy single-typed channel so editing preserves its filter.
+private fun legacyToQuery(c: ChannelConfig): ConditionGroup {
+    val (kind, value) = c.kindAndValue()
+    if (value.isBlank()) return ConditionGroup()
+    return ConditionGroup(QueryJoin.AND, children = listOf(ConditionGroup(QueryJoin.OR, children = listOf(Condition(kind.lowercase(), "is_any_of", listOf(value))))))
+}
+
+/** The tree to seed the editor with: the migrated query/conditions when live, else the pre-R32 typed
+ *  single filter (mirrors HomeFeedService.matchesChannel's query -> conditions -> typed-filter chain). */
+private fun ChannelConfig.editorQuery(): ConditionGroup = effectiveQuery().let { if (it.isLive()) it else legacyToQuery(this) }
 
 // The jellyfish brand mark (matches design/app/ravilo-config.html).
 private const val RAVILO_MARK = """<svg viewBox="12 20 76 76" aria-hidden="true" style="width:1.12em;height:1.12em;flex:none;filter:drop-shadow(0 0 8px rgba(123,110,240,.5))"><defs><linearGradient id="ravJelly" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#7b6ef0"/><stop offset="1" stop-color="#3fb6f5"/></linearGradient></defs><path d="M22 52 C22 24 78 24 78 52 C66 45 59 45 50 49 C41 45 34 45 22 52 Z" fill="url(#ravJelly)"/><g stroke="url(#ravJelly)" stroke-width="4.5" stroke-linecap="round" fill="none"><path d="M33 51 q-5 12 1 20 q5 8 0 14" opacity=".9"/><path d="M44 52 q-4 13 1 21 q4 9 0 13" opacity=".72"/><path d="M56 52 q4 13 -1 21 q-4 9 0 13" opacity=".72"/><path d="M67 51 q5 12 -1 20 q-5 8 0 14" opacity=".9"/></g></svg>"""
@@ -1003,19 +1020,14 @@ private fun channelFillCss(brandColor: String?): String {
     return t // solid hex passes through
 }
 
-// Seed the popup's condition stack from a legacy single-typed channel so editing preserves its filter.
-private fun legacyToConds(c: ChannelConfig): List<WbCond> {
-    val (kind, value) = c.kindAndValue()
-    if (value.isBlank()) return emptyList()
-    return listOf(WbCond(kind.lowercase(), "is_any_of", mutableListOf(value)))
-}
-
 private fun renderChannels(container: Element) {
     val sect = container.querySelector("#sect-channels") ?: return
     val rows = currentConfig.channels.mapIndexed { i, c ->
         val showChecked = if (c.enabled) " checked" else ""
-        val summary = if (c.conditions.isNotEmpty()) {
-            "${c.conditions.size} condition(s) · ${c.match.name}"
+        // Phase 140 — the tree's own parenthesised summary; falls back to the pre-R32 typed filter.
+        val eq = c.effectiveQuery()
+        val summary = if (eq.isLive()) {
+            groupSummary(eq.toWbGroup(), top = true)
         } else {
             val (kind, value) = c.kindAndValue()
             if (value.isNotBlank()) "${kind.lowercase().replaceFirstChar { it.uppercase() }}: $value" else "No filter yet"
@@ -1051,10 +1063,7 @@ private fun renderChannels(container: Element) {
     val scope = rcScope
     if (scope != null && currentConfig.channels.isNotEmpty()) {
         scope.launch {
-            val requests = currentConfig.channels.mapIndexed { i, c ->
-                val conds = if (c.conditions.isNotEmpty()) wbCondsFrom(c.conditions) else legacyToConds(c)
-                BatchCountRequest(index = i, match = c.match.name, conditions = wbConds(conds))
-            }
+            val requests = currentConfig.channels.mapIndexed { i, c -> BatchCountRequest(index = i, query = c.editorQuery()) }
             val results = MediaApi.batchCount(requests) ?: return@launch
             for (result in results) {
                 val badge = sect.querySelector("#ch-count-${result.index}") as? HTMLElement ?: continue
@@ -1068,11 +1077,11 @@ private fun renderChannels(container: Element) {
     sect.querySelector("#ch-workbench")?.addEventListener("click") { _ ->
         val scope = rcScope ?: return@addEventListener
         openWorkbench(scope, "New channel — condition workbench", viewer = currentUserId, applyLabel = "Create channel",
-            onApply = { match, _, conds ->
-                val label = conds.firstOrNull { it.values.isNotEmpty() }?.values?.firstOrNull() ?: "Channel"
+            onApply = { query, _ ->
+                val label = query.firstValueOrNull() ?: "Channel"
                 structural(container, {
                     currentConfig = currentConfig.copy(channels = currentConfig.channels +
-                        ChannelConfig(id = genId("ch"), name = label, match = wbMode(match), conditions = wbConds(conds)))
+                        ChannelConfig(id = genId("ch"), name = label, query = query))
                 }, ::renderChannels)
             })
     }
@@ -1113,7 +1122,8 @@ private fun openChannelEditorPage(container: Element, scope: CoroutineScope, idx
     }
     val rowsCustomItems = c.rows?.items ?: emptyList()
     val chRowsListHtml = rowsCustomItems.mapIndexed { i, r ->
-        val condSrc = if (r.conditions.isNotEmpty()) "${r.conditions.size} condition(s) · match ${r.match.name.lowercase()}" else "No filter — shows all media"
+        val eq = r.effectiveQuery()
+        val condSrc = if (eq.isLive()) groupSummary(eq.toWbGroup(), top = true) else "No filter — shows all media"
         val name = r.title?.takeIf { it.isNotBlank() } ?: "Custom row"
         """<div class="cfg-row" style="margin-bottom:6px"><div style="flex:1;min-width:0"><input class="input" style="width:100%;max-width:220px;font-size:.84rem;padding:3px 8px;height:auto" placeholder="Row title" value="${name.htmlEsc()}" data-row-ch-title="$i"><div class="src" style="margin-top:3px">${condSrc.htmlEsc()}</div></div><button class="btn sm ghost" data-row-ch-edit="$i" style="white-space:nowrap">Edit filter</button><button class="btn sm ghost" data-row-ch-del="$i" style="color:var(--bad)">&#x2715;</button></div>"""
     }.joinToString("")
@@ -1317,13 +1327,17 @@ private fun openChannelEditorPage(container: Element, scope: CoroutineScope, idx
             }
         }
     }
-    // R87: a catch-all (no-condition) row matches everything scoped to the channel (R59) — closes the gap.
+    // R87/Phase 140: a catch-all row = the channel's own blocks verbatim AND a `content_row is_none_of
+    // <existing rows>` block — properly scoped to the channel (was: bare conditions = emptyList(),
+    // which matched the whole library, not just this channel).
     fun addCatchAllRow() {
         val list = currentConfig.channels.toMutableList()
         val cur = list[idx]
         val existing = cur.rows ?: ChannelRowsConfig(mode = "custom")
-        val catchAll = RowConfig(id = genId("row"), kind = RowKind.CUSTOM, title = "All other titles",
-            match = MatchMode.ALL, conditions = emptyList())
+        val channelQuery = cur.editorQuery()
+        val gapBlock = ConditionGroup(QueryJoin.AND, children = listOf(Condition("content_row", "is_none_of", rows = existing.items.filter { it.enabled })))
+        val catchAllQuery = if (channelQuery.isLive()) ConditionGroup(QueryJoin.AND, children = listOf(channelQuery, gapBlock)) else gapBlock
+        val catchAll = RowConfig(id = genId("row"), kind = RowKind.CUSTOM, title = "All other titles", query = catchAllQuery)
         list[idx] = cur.copy(rows = existing.copy(mode = "custom", items = existing.items + catchAll))
         currentConfig = currentConfig.copy(channels = list)
         reRenderChannelRows()
@@ -1336,12 +1350,12 @@ private fun openChannelEditorPage(container: Element, scope: CoroutineScope, idx
         val ch = currentConfig.channels.getOrNull(idx)
         if (ch == null || ch.rows?.mode != "custom") { host.innerHTML = ""; return }
         val rows = ch.rows?.items?.filter { it.enabled } ?: emptyList()
-        val channelConds = ch.conditions.ifEmpty { wbConds(legacyToConds(ch)) }
+        val channelQuery = ch.editorQuery()
         host.innerHTML = """<div class="tiny muted">Checking coverage…</div>"""
         scope.launch {
-            val pool = MediaApi.list(viewer = currentUserId, match = ch.match.name, conditions = channelConds, pageSize = 1)?.total ?: 0
-            val gapConds = channelConds + Condition(facet = "content_row", op = "is_none_of", rows = rows)
-            val page = MediaApi.list(viewer = currentUserId, match = "ALL", conditions = gapConds, pageSize = 24)
+            val pool = MediaApi.list(viewer = currentUserId, query = channelQuery, pageSize = 1)?.total ?: 0
+            val gapQuery = ConditionGroup(QueryJoin.AND, children = listOf(channelQuery, ConditionGroup(QueryJoin.AND, children = listOf(Condition("content_row", "is_none_of", rows = rows)))))
+            val page = MediaApi.list(viewer = currentUserId, query = gapQuery, pageSize = 24)
             val n = page?.total ?: 0
             if (n == 0) {
                 host.innerHTML = """<div class="card" style="padding:12px 14px;background:rgba(56,161,105,.10);border:1px solid rgba(56,161,105,.30)"><div style="display:flex;align-items:center;gap:8px"><b style="flex:1">Not shown by any row</b><span class="badge" style="background:rgba(56,161,105,.22);color:#38a169">0 of $pool</span></div><div class="tiny" style="margin-top:6px;color:var(--ink-soft)">✓ Every title in this channel appears in at least one row — nothing falls through the gaps.</div></div>""".trimIndent()
@@ -1354,21 +1368,14 @@ private fun openChannelEditorPage(container: Element, scope: CoroutineScope, idx
             val lead = if (rows.isEmpty()) "No rows yet — all <b>$n</b> titles that match this channel would be unreachable." else "These <b>$n</b> titles match the channel filter but <b>aren’t shown by any content row</b>, so viewers browsing this channel won’t find them."
             host.innerHTML = """<div class="card" style="padding:12px 14px;background:rgba(214,158,46,.10);border:1px solid rgba(214,158,46,.30)"><div style="display:flex;align-items:center;gap:8px"><b style="flex:1">Not shown by any row</b><span class="badge" style="background:rgba(214,158,46,.22);color:#d69e2e">$n of $pool</span></div><div class="tiny" style="margin:6px 0 10px;line-height:1.5;color:var(--ink-soft)">$lead <span class="muted">System rows (Continue, Newly Added) aren’t counted.</span></div><div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(56px,1fr));gap:7px;max-height:200px;overflow:auto;margin-bottom:11px">$tiles</div><div style="display:flex;gap:8px;flex-wrap:wrap"><button type="button" id="cov-addcatchall" class="btn sm ghost">＋ Add a catch-all row for these</button><button type="button" id="cov-openlib" class="btn sm ghost">Open these $n in Library ↗</button></div></div>""".trimIndent()
             host.querySelector("#cov-addcatchall")?.addEventListener("click") { _ -> addCatchAllRow() }
-            // R87d: hand the coverage filter to the Library — channel conds as per-facet params + the
-            // content_row gap condition as the `coverage` param (which carries the rows for editing).
+            // Phase 140 — hand the whole gap query (channel blocks AND content_row is_none_of) to the
+            // Library verbatim via query=, replacing the old lossy per-facet-params + coverage= pair
+            // (which only carried studio/network/genre/tag — anything else in the channel's filter,
+            // e.g. audio/age-rating/NOT/sub-blocks, silently dropped on handoff).
             host.querySelector("#cov-openlib")?.addEventListener("click") { _ ->
-                fun pf(facet: String, key: String): String? =
-                    channelConds.filter { it.facet == facet && it.op == "is_any_of" }.flatMap { it.values }.distinct()
-                        .takeIf { it.isNotEmpty() }?.let { "$key=" + it.joinToString(",") { v -> dev.jellystructure.encodeURIComponent(v) } }
-                val coverCond = Condition(facet = "content_row", op = "is_none_of", rows = rows)
-                val covParam = "coverage=" + dev.jellystructure.encodeURIComponent(
-                    kotlinx.serialization.json.Json.encodeToString(Condition.serializer(), coverCond))
-                val params = listOfNotNull(
-                    pf("studio", "studios"), pf("network", "networks"), pf("genre", "genres"), pf("tag", "tags"),
-                    if (ch.match.name == "ANY") "match=ANY" else null,
-                    covParam,
-                )
-                dev.jellystructure.App.navigate("/library?" + params.joinToString("&"))
+                val covParam = "query=" + dev.jellystructure.encodeURIComponent(
+                    kotlinx.serialization.json.Json.encodeToString(ConditionGroup.serializer(), gapQuery))
+                dev.jellystructure.App.navigate("/library?$covParam")
             }
         }
     }
@@ -1545,23 +1552,19 @@ private fun openChannelEditorPage(container: Element, scope: CoroutineScope, idx
         }
     }
 
-    // R60: channel base-scope conds passed to row workbench so results are pre-scoped to the channel filter
-    fun chBaseConds(): List<WbCond> {
-        val ch = currentConfig.channels.getOrNull(idx) ?: return emptyList()
-        return if (ch.conditions.isNotEmpty()) wbCondsFrom(ch.conditions) else emptyList()
-    }
-    fun chBaseMatch(): String = currentConfig.channels.getOrNull(idx)?.match?.name ?: "ALL"
+    // R60/Phase 140: the channel's own query, passed to the row workbench as the locked first block
+    // so results are pre-scoped to the channel filter (and rendered read-only, not just narrowed).
+    fun chBaseQuery(): ConditionGroup? = currentConfig.channels.getOrNull(idx)?.editorQuery()?.takeIf { it.isLive() }
 
     // R59/R60: "Add row" for channel custom rows
     container.querySelector("#ch-rows-add")?.addEventListener("click") { _ ->
         openWorkbench(scope, "New row — ${c.name.ifBlank { "Channel" }}", viewer = currentUserId,
             applyLabel = "Add row",
-            baseConds = chBaseConds(), baseMatch = chBaseMatch(),
-            onApply = { match, include, conds ->
-                val label = conds.firstOrNull { it.values.isNotEmpty() }?.values?.firstOrNull() ?: "Custom row"
+            baseQuery = chBaseQuery(),
+            onApply = { query, include ->
+                val label = query.firstValueOrNull() ?: "Custom row"
                 val mediaKind = when (include) { "movies" -> "MOVIE"; "series" -> "SERIES"; else -> null }
-                val newRow = RowConfig(id = genId("row"), kind = RowKind.CUSTOM, title = label,
-                    mediaKind = mediaKind, match = wbMode(match), conditions = wbConds(conds))
+                val newRow = RowConfig(id = genId("row"), kind = RowKind.CUSTOM, title = label, mediaKind = mediaKind, query = query)
                 val list = currentConfig.channels.toMutableList()
                 val cur = list[idx]
                 val existing = cur.rows ?: ChannelRowsConfig(mode = "custom")
@@ -1578,15 +1581,15 @@ private fun openChannelEditorPage(container: Element, scope: CoroutineScope, idx
             val row = currentConfig.channels.getOrNull(idx)?.rows?.items?.getOrNull(ri) ?: return@addEventListener
             val inc = when (row.mediaKind) { "MOVIE" -> "movies"; "SERIES" -> "series"; else -> "all" }
             openWorkbench(scope, "Edit row — ${(row.title ?: "Custom row").htmlEsc()}", viewer = currentUserId,
-                initialMatch = row.match.name, initialInclude = inc, initialConds = wbCondsFrom(row.conditions),
+                initialQuery = row.effectiveQuery(), initialInclude = inc,
                 applyLabel = "Update row",
-                baseConds = chBaseConds(), baseMatch = chBaseMatch(),
-                onApply = { match, inc2, conds ->
+                baseQuery = chBaseQuery(),
+                onApply = { query, inc2 ->
                     val mediaKind = when (inc2) { "movies" -> "MOVIE"; "series" -> "SERIES"; else -> null }
                     val list = currentConfig.channels.toMutableList()
                     val cur = list[idx]
                     val items = cur.rows?.items?.toMutableList() ?: return@openWorkbench
-                    items[ri] = items[ri].copy(kind = RowKind.CUSTOM, match = wbMode(match), conditions = wbConds(conds), mediaKind = mediaKind)
+                    items[ri] = items[ri].copy(kind = RowKind.CUSTOM, query = query, mediaKind = mediaKind)
                     list[idx] = cur.copy(rows = cur.rows!!.copy(items = items))
                     currentConfig = currentConfig.copy(channels = list)
                     reRenderChannelRows()
@@ -1616,14 +1619,12 @@ private fun openChannelEditorPage(container: Element, scope: CoroutineScope, idx
     renderFilterSummary(container, idx)
     container.querySelector("#ch-ed-filter-edit")?.addEventListener("click") { _ ->
         val ch = currentConfig.channels.getOrNull(idx) ?: return@addEventListener
-        val initSeed = if (ch.conditions.isNotEmpty()) wbCondsFrom(ch.conditions) else legacyToConds(ch)
         openWorkbench(scope, "Filter — ${ch.name.ifBlank { "Channel" }}", viewer = currentUserId,
-            initialMatch = ch.match.name,
-            initialConds = initSeed,
+            initialQuery = ch.editorQuery(),
             applyLabel = "Apply filter",
-            onApply = { match, _, conds ->
+            onApply = { query, _ ->
                 val list = currentConfig.channels.toMutableList()
-                list[idx] = list[idx].copy(match = wbMode(match), conditions = wbConds(conds))
+                list[idx] = list[idx].copy(query = query)
                 currentConfig = currentConfig.copy(channels = list)
                 renderFilterSummary(container, idx)
             }
@@ -1813,19 +1814,11 @@ private fun renderFilterSummary(container: Element, channelIdx: Int) {
     val host = container.querySelector("#ch-ed-filter-summary") as? HTMLElement ?: return
     val ch = currentConfig.channels.getOrNull(channelIdx)
     if (ch == null) { host.innerHTML = ""; return }
-    val conds = ch.conditions
-    host.innerHTML = if (conds.isEmpty()) {
+    val eq = ch.editorQuery()
+    host.innerHTML = if (!eq.isLive()) {
         """<span class="tiny muted">No filter — shows all content</span>"""
     } else {
-        val matchLabel = if (ch.match == MatchMode.ANY) "ANY" else "ALL"
-        val pills = conds.joinToString("") { cond ->
-            val facetLabel = cond.facet.replaceFirstChar { it.uppercase() }
-            val valStr = cond.values.take(3).joinToString(", ").let {
-                if (cond.values.size > 3) "$it +${cond.values.size - 3}" else it
-            }.ifBlank { "…" }
-            """<span class="badge" style="margin-right:4px;margin-bottom:4px">${facetLabel.htmlEsc()}: ${valStr.htmlEsc()}</span>"""
-        }
-        """<div style="font-size:.8rem;color:var(--ink-soft);margin-bottom:6px">Match <b>$matchLabel</b> of:</div><div>$pills</div>"""
+        """<div style="font-size:.8rem;color:var(--ink-soft)">${groupSummary(eq.toWbGroup(), top = true).htmlEsc()}</div>"""
     }
 }
 
@@ -1880,7 +1873,8 @@ private fun renderRows(container: Element) {
             """<div class="cfg-row" draggable="true" data-row-i="$i" style="${rowOpacity}transition:opacity .2s"><span class="grab" style="cursor:grab;user-select:none;flex-shrink:0">&#x2807;</span><span class="badge ok" style="flex:none;font-size:.65rem">system</span><div style="flex:1;min-width:0"><div class="nm">${name.htmlEsc()}</div>${if (srcLine.isNotEmpty()) """<div class="src">${srcLine.htmlEsc()}</div>""" else ""}</div>$toggleHtml</div>"""
         } else {
             val badgeLabel = if (r.kind == RowKind.GENRE) "genre" else "filter"
-            val condSrc = if (r.conditions.isNotEmpty()) "${r.conditions.size} condition(s) · match ${r.match.name.lowercase()}" else "No filter — shows all media"
+            val eq = r.effectiveQuery()
+            val condSrc = if (eq.isLive()) groupSummary(eq.toWbGroup(), top = true) else "No filter — shows all media"
             val name = r.title?.takeIf { it.isNotBlank() } ?: "Custom row"
             """<div class="cfg-row" draggable="true" data-row-i="$i" style="${rowOpacity}transition:opacity .2s"><span class="grab" style="cursor:grab;user-select:none;flex-shrink:0">&#x2807;</span><span class="badge info" style="flex:none;font-size:.65rem">$badgeLabel</span><div style="flex:1;min-width:0"><input class="input" style="width:100%;max-width:200px;font-size:.84rem;padding:3px 8px;height:auto" placeholder="Row title" value="${name.htmlEsc()}" data-row-title="$i"><div class="src" style="margin-top:3px">${condSrc.htmlEsc()}</div></div><button class="btn sm ghost" data-row-edit="$i" style="white-space:nowrap">Edit filter</button>$toggleHtml<button class="btn sm ghost" data-row-del="$i" style="color:var(--bad)">&#x2715;</button></div>"""
         }
@@ -1921,12 +1915,12 @@ private fun renderRows(container: Element) {
     sect.querySelector("#row-add")?.addEventListener("click") { _ ->
         val scope = rcScope ?: return@addEventListener
         openWorkbench(scope, "New content row", viewer = currentUserId, applyLabel = "Add row",
-            onApply = { match, include, conds ->
-                val label = conds.firstOrNull { it.values.isNotEmpty() }?.values?.firstOrNull() ?: "Custom row"
+            onApply = { query, include ->
+                val label = query.firstValueOrNull() ?: "Custom row"
                 val mediaKind = when (include) { "movies" -> "MOVIE"; "series" -> "SERIES"; else -> null }
                 structural(container, {
                     currentConfig = currentConfig.copy(rows = currentConfig.rows +
-                        RowConfig(id = genId("row"), kind = RowKind.CUSTOM, title = label, mediaKind = mediaKind, match = wbMode(match), conditions = wbConds(conds)))
+                        RowConfig(id = genId("row"), kind = RowKind.CUSTOM, title = label, mediaKind = mediaKind, query = query))
                 }, ::renderRows)
             })
     }
@@ -1944,12 +1938,12 @@ private fun renderRows(container: Element) {
             val r = currentConfig.rows.getOrNull(i) ?: return@addEventListener
             val include = when (r.mediaKind) { "MOVIE" -> "movies"; "SERIES" -> "series"; else -> "all" }
             openWorkbench(scope, "Edit row — ${(r.title ?: "custom row")}", viewer = currentUserId,
-                initialMatch = r.match.name, initialInclude = include, initialConds = wbCondsFrom(r.conditions), applyLabel = "Update row",
-                onApply = { match, inc, conds ->
+                initialQuery = r.effectiveQuery(), initialInclude = include, applyLabel = "Update row",
+                onApply = { query, inc ->
                     val mediaKind = when (inc) { "movies" -> "MOVIE"; "series" -> "SERIES"; else -> null }
                     structural(container, {
                         val list = currentConfig.rows.toMutableList()
-                        list[i] = list[i].copy(kind = RowKind.CUSTOM, match = wbMode(match), conditions = wbConds(conds), mediaKind = mediaKind)
+                        list[i] = list[i].copy(kind = RowKind.CUSTOM, query = query, mediaKind = mediaKind)
                         currentConfig = currentConfig.copy(rows = list)
                     }, ::renderRows)
                 })

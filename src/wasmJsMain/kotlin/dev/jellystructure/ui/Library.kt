@@ -5,6 +5,11 @@ package dev.jellystructure.ui
 import dev.jellystructure.App
 import dev.jellystructure.api.MediaApi
 import dev.jellystructure.shared.tv.Condition
+import dev.jellystructure.shared.tv.ConditionGroup
+import dev.jellystructure.shared.tv.MatchMode
+import dev.jellystructure.shared.tv.QueryJoin
+import dev.jellystructure.shared.tv.isLive
+import dev.jellystructure.shared.tv.migrateFlatQuery
 import dev.jellystructure.elemNearViewportBottom
 import dev.jellystructure.historyReplaceState
 import dev.jellystructure.observeSections
@@ -74,6 +79,11 @@ private var libMatch: String = "ALL"  // R74: "ALL" | "ANY"
 // Channel conditions ride the normal per-facet params; this rides a `coverage` param so it survives nav.
 private var libCoverageCond: Condition? = null
 private var libTracker: String? = null  // Phase 98: "seeded on" tracker filter
+// Phase 140 — the full-workbench blocks tree, when it goes beyond what the simple per-facet fields
+// above can express (NOT, sub-blocks, cross-facet OR blocks, etc). Opening the workbench REPLACES the
+// simple quick-filters with whatever tree the user builds there — they're two tiers of "current
+// filter" (quick chips = fast common case, the workbench = the advanced editor), not merged.
+private var libQuery: ConditionGroup? = null
 private val libCovJson = Json { ignoreUnknownKeys = true }
 
 // -- URL helpers ----------------------------------------------------------
@@ -103,6 +113,8 @@ private fun parseLibraryUrl() {
     // R87: decode the handed-off content_row gap condition (null on a normal library visit).
     libCoverageCond  = param("coverage")?.let { runCatching { libCovJson.decodeFromString(Condition.serializer(), it) }.getOrNull() }
     libTracker       = param("tracker")
+    // Phase 140 — the workbench's full tree, when present (folds in what coverage= used to carry).
+    libQuery         = param("query")?.let { runCatching { libCovJson.decodeFromString(ConditionGroup.serializer(), it) }.getOrNull() }
 }
 
 private fun updateLibraryUrl() {
@@ -122,6 +134,7 @@ private fun updateLibraryUrl() {
         if (libMatch == "ANY") add("match=ANY")
         libCoverageCond?.let { add("coverage=${dev.jellystructure.encodeURIComponent(libCovJson.encodeToString(Condition.serializer(), it))}") }
         libTracker?.let { add("tracker=${dev.jellystructure.encodeURIComponent(it)}") }
+        libQuery?.let { add("query=${dev.jellystructure.encodeURIComponent(libCovJson.encodeToString(ConditionGroup.serializer(), it))}") }
     }
     val newHash = if (params.isEmpty()) "#/library" else "#/library?${params.joinToString("&")}"
     historyReplaceState(newHash)
@@ -282,7 +295,7 @@ private fun attachLibraryListeners(scope: CoroutineScope) {
         libStudios = emptyList(); libNetworks = emptyList(); libGenres = emptyList()
         libTags = emptyList(); libAudioLangs = emptyList()
         libTrackTitle = null; libAudioCodec = null; libUntaggedAudio = false
-        libCoverageCond = null; libTracker = null
+        libCoverageCond = null; libTracker = null; libQuery = null
         libKind = null; libSort = null; libMatch = "ALL"
         syncFilterUiToState(scope)
         scope.launch { loadMore(scope, reset = true) }
@@ -313,6 +326,10 @@ private fun updateActiveChips(scope: CoroutineScope? = null) {
         // Phase 117: a dashboard-breakdown deep link (?filter=<issue type>) shows as a normal removable
         // chip, same as any other filter — "attention"/"missing_artwork" keep their dedicated quick chips.
         libFilter?.let { f -> ISSUE_FILTER_LABELS[f]?.let { label -> add(Triple("issue:$f", "Issue", label)) } }
+        // Phase 140 — the full-workbench tree, as one chip (✕ clears the whole thing).
+        libQuery?.takeIf { it.isLive() }?.let { q ->
+            add(Triple("query", "Advanced filter", groupSummary(q.toWbGroup(), top = true).ifBlank { "…" }))
+        }
     }
 
     container.style.display = if (active.isEmpty()) "none" else "flex"
@@ -341,6 +358,7 @@ private fun updateActiveChips(scope: CoroutineScope? = null) {
                 key == "coverage"       -> libCoverageCond = null  // R87
                 key == "tracker"        -> libTracker = null
                 key.startsWith("issue:") -> libFilter = null
+                key == "query"          -> libQuery = null  // Phase 140
             }
             updateActiveChips(scope)
             scope?.launch { loadMore(scope, reset = true) }
@@ -521,6 +539,10 @@ private suspend fun loadMore(scope: CoroutineScope, reset: Boolean) {
                 match = libMatch,
                 conditions = libConds.filter { it.values.isNotEmpty() || it.facet == "track_title" || (it.facet == "content_row" && it.rows.isNotEmpty()) }
                     .map { Condition(it.facet, it.op, it.values.toList(), it.rows.toList()) },
+                // Phase 140 — the workbench's full tree, when present; takes priority in MediaApi.list
+                // over the plain conditions/match above (the fast path stays for the common quick-
+                // filter-only case, when this is null).
+                query = libEffectiveQuery(),
                 tracker = libTracker,
             )
             if (page == null) {
@@ -632,6 +654,16 @@ private fun libConditionsFromState(): List<WbCond> = buildList {
     libCoverageCond?.let { add(WbCond(it.facet, it.op, it.values.toMutableList(), it.rows.toMutableList())) }
 }
 
+/** Phase 140 — the tree to actually send to /api/media: null when only the simple per-facet quick-
+ *  filters are active (today's fast path, unaffected), else those AND'd with [libQuery] (the full-
+ *  workbench tree, when it's been used). */
+private fun libEffectiveQuery(): ConditionGroup? {
+    val extra = libQuery?.takeIf { it.isLive() } ?: return null
+    val liveConds = libConditionsFromState().filter { nodeLive(it) }.map { it.toShared() as Condition }
+    return if (liveConds.isEmpty()) extra
+        else ConditionGroup(QueryJoin.AND, children = listOf(migrateFlatQuery(MatchMode.ALL, liveConds), extra))
+}
+
 private fun libInclude(): String = when (libKind) {
     MediaKind.MOVIE -> "movies"; MediaKind.TV_SHOW -> "series"; else -> "all"
 }
@@ -643,35 +675,26 @@ private fun libInclude(): String = when (libKind) {
 private fun wireLibraryWorkbench(scope: CoroutineScope) {
     fun open(title: String) = openWorkbench(
         scope = scope, title = title, viewer = null,
-        initialMatch = libMatch, initialInclude = libInclude(), initialConds = libConditionsFromState(),
+        initialQuery = libEffectiveQuery() ?: migrateFlatQuery(MatchMode.ALL, libConditionsFromState().filter { nodeLive(it) }.map { it.toShared() as Condition }),
+        initialInclude = libInclude(),
         applyLabel = "Apply to Library",
         // R87: offer the content_row facet (and let the handed-off condition be edited) using its own rows.
         rowsContext = libCoverageCond?.rows ?: emptyList(),
-        onApply = { match, include, conds -> applyWorkbenchToLibrary(match, include, conds) },
+        onApply = { query, include -> applyWorkbenchToLibrary(query, include) },
     )
     document.getElementById("lib-workbench")?.addEventListener("click") { open("Library filter") }
 }
 
-/** Only the is_any_of / contains subset maps to the Library's URL filter; that is what the grid serves. */
-private fun applyWorkbenchToLibrary(match: String, include: String, conds: List<WbCond>) {
-    fun vals(f: String) = conds.filter { it.facet == f && it.op == "is_any_of" }.flatMap { it.values }.distinct()
+/** Phase 140 — the workbench's full tree REPLACES the simple per-facet quick-filters entirely (see
+ *  [libQuery]'s doc): clears them and carries the tree via the query= URL param, folding in what
+ *  coverage= used to carry on its own. */
+private fun applyWorkbenchToLibrary(query: ConditionGroup, include: String) {
+    libStudios = emptyList(); libNetworks = emptyList(); libGenres = emptyList(); libTags = emptyList()
+    libAudioLangs = emptyList(); libUntaggedAudio = false; libAudioCodec = null; libTrackTitle = null
+    libCoverageCond = null; libMatch = "ALL"
     val params = buildList {
         when (include) { "movies" -> add("kind=MOVIE"); "series" -> add("kind=TV_SHOW") }
-        vals("studio").takeIf { it.isNotEmpty() }?.let { add("studios=${it.joinToString(",") { v -> dev.jellystructure.encodeURIComponent(v) }}") }
-        vals("network").takeIf { it.isNotEmpty() }?.let { add("networks=${it.joinToString(",") { v -> dev.jellystructure.encodeURIComponent(v) }}") }
-        vals("genre").takeIf { it.isNotEmpty() }?.let { add("genres=${it.joinToString(",") { v -> dev.jellystructure.encodeURIComponent(v) }}") }
-        vals("tag").takeIf { it.isNotEmpty() }?.let { add("tags=${it.joinToString(",") { v -> dev.jellystructure.encodeURIComponent(v) }}") }
-        val al = vals("audio_language")
-        al.filter { it != "untagged" }.takeIf { it.isNotEmpty() }?.let { add("audioLang=${it.joinToString(",")}") }
-        if (al.contains("untagged")) add("untaggedAudio=true")
-        vals("audio_codec").firstOrNull()?.let { add("audioCodec=$it") }
-        conds.firstOrNull { it.facet == "track_title" && it.op == "contains" }?.values?.firstOrNull()?.let { add("trackTitle=${dev.jellystructure.encodeURIComponent(it)}") }
-        if (match == "ANY") add("match=ANY")
-        // R87: carry an edited content_row gap condition back into the URL so it survives the navigate.
-        conds.firstOrNull { it.facet == "content_row" && it.rows.isNotEmpty() }?.let { c ->
-            val cond = Condition(c.facet, c.op, c.values.toList(), c.rows.toList())
-            add("coverage=${dev.jellystructure.encodeURIComponent(libCovJson.encodeToString(Condition.serializer(), cond))}")
-        }
+        if (query.isLive()) add("query=${dev.jellystructure.encodeURIComponent(libCovJson.encodeToString(ConditionGroup.serializer(), query))}")
     }
     App.navigate(if (params.isEmpty()) "/library" else "/library?${params.joinToString("&")}")
 }
