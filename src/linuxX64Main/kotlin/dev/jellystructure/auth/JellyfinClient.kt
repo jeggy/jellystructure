@@ -2,6 +2,7 @@ package dev.jellystructure.auth
 
 import dev.jellystructure.OutboundHttp
 import dev.jellystructure.log.Logger
+import dev.jellystructure.shared.tv.ClientCapabilities
 import io.ktor.client.call.body
 import io.ktor.client.request.HttpRequestBuilder
 import io.ktor.client.request.delete
@@ -25,7 +26,24 @@ private const val AUTH_HEADER =
 // items stream the raw container) and per-format subtitle delivery: text subs External, image subs
 // Embed where the player can render them, PGS via Encode (server burn-in). Permissive on purpose —
 // the Ravilo player + :ravilo-player FFmpeg decoder handle the codecs the library actually holds.
-private const val DEVICE_PROFILE = """{"MaxStreamingBitrate":120000000,"DirectPlayProfiles":[{"Container":"mkv,mp4,webm,mov,avi,ts,m2ts,flv,3gp,mpegts","Type":"Video","VideoCodec":"h264,hevc,vp8,vp9,av1,mpeg4,mpeg2video,vc1","AudioCodec":"aac,ac3,eac3,mp3,flac,vorbis,opus,dts,truehd,pcm,mp2,alac"}],"TranscodingProfiles":[{"Container":"ts","Type":"Video","VideoCodec":"h264","AudioCodec":"aac,ac3,mp3","Protocol":"hls","Context":"Streaming"}],"SubtitleProfiles":[{"Format":"vtt","Method":"External"},{"Format":"srt","Method":"External"},{"Format":"subrip","Method":"External"},{"Format":"ass","Method":"External"},{"Format":"ssa","Method":"External"},{"Format":"vobsub","Method":"Embed"},{"Format":"dvdsub","Method":"Embed"},{"Format":"dvbsub","Method":"Embed"},{"Format":"pgssub","Method":"Encode"},{"Format":"pgs","Method":"Encode"}]}"""
+//
+// Bug fix: this used to be a single hardcoded constant with no CodecProfiles entry at all, so it
+// never told Jellyfin anything about HDR — an HDR10/HDR10+/HLG (PQ) source always matched the plain
+// DirectPlayProfile and streamed byte-for-byte, whatever the actual device's display could handle.
+// Verified live against a real HDR10+ file ("Undertone"): with no CodecProfiles, PlaybackInfo reports
+// SupportsDirectPlay=true; adding a CodecProfile with a VideoRangeType condition correctly flips it to
+// SupportsDirectPlay=false / TranscodeReasons=VideoRangeTypeNotSupported, and Jellyfin's transcode
+// correctly tone-maps to SDR (h264-rangetype=SDR in the resulting TranscodingUrl). [capabilities]'s
+// supportsHdr10/supportsHlg (default false — conservative) widen the allowed VideoRangeType list only
+// when the client has verified real HDR display/decode support.
+private fun deviceProfile(capabilities: ClientCapabilities): String {
+    val allowedRanges = buildList {
+        add("SDR")
+        if (capabilities.supportsHdr10) { add("HDR10"); add("HDR10Plus") }
+        if (capabilities.supportsHlg) add("HLG")
+    }.joinToString("|")
+    return """{"MaxStreamingBitrate":120000000,"DirectPlayProfiles":[{"Container":"mkv,mp4,webm,mov,avi,ts,m2ts,flv,3gp,mpegts","Type":"Video","VideoCodec":"h264,hevc,vp8,vp9,av1,mpeg4,mpeg2video,vc1","AudioCodec":"aac,ac3,eac3,mp3,flac,vorbis,opus,dts,truehd,pcm,mp2,alac"}],"CodecProfiles":[{"Type":"Video","Codec":"hevc,h264,vp9,av1","Conditions":[{"Condition":"EqualsAny","Property":"VideoRangeType","Value":"$allowedRanges","IsRequired":true}]}],"TranscodingProfiles":[{"Container":"ts","Type":"Video","VideoCodec":"h264","AudioCodec":"aac,ac3,mp3","Protocol":"hls","Context":"Streaming"}],"SubtitleProfiles":[{"Format":"vtt","Method":"External"},{"Format":"srt","Method":"External"},{"Format":"subrip","Method":"External"},{"Format":"ass","Method":"External"},{"Format":"ssa","Method":"External"},{"Format":"vobsub","Method":"Embed"},{"Format":"dvdsub","Method":"Embed"},{"Format":"dvbsub","Method":"Embed"},{"Format":"pgssub","Method":"Encode"},{"Format":"pgs","Method":"Encode"}]}"""
+}
 
 class JellyfinClient {
     private suspend fun httpGet(url: String, block: HttpRequestBuilder.() -> Unit = {}): HttpResponse =
@@ -220,7 +238,7 @@ class JellyfinClient {
     }.let { if (it.isFailure) Logger.warn("Jellyfin startPlaybackSession failed: ${it.exceptionOrNull()?.message}") }
 
     /**
-     * R56 — negotiate delivery with Jellyfin. POSTs a [DEVICE_PROFILE] to PlaybackInfo; Jellyfin replies
+     * R56 — negotiate delivery with Jellyfin. POSTs a [deviceProfile] to PlaybackInfo; Jellyfin replies
      * per MediaSource whether it can direct-play, else returns a TranscodingUrl (e.g. for a burned-in
      * image subtitle). [subtitleStreamIndex] asks Jellyfin to Encode-burn that sub into the video.
      */
@@ -229,6 +247,7 @@ class JellyfinClient {
         userToken: String,
         userId: String,
         itemId: String,
+        capabilities: ClientCapabilities = ClientCapabilities(),
         subtitleStreamIndex: Int? = null,
         identity: JellyfinDeviceIdentity? = null,
     ): JellyfinPlaybackInfoResponse? = runCatching {
@@ -236,7 +255,7 @@ class JellyfinClient {
         httpPost(baseUrl.trimEnd('/') + "/Items/$itemId/PlaybackInfo?UserId=$userId") {
             jellyfinAuth(userToken, identity)
             contentType(ContentType.Application.Json)
-            setBody("""{"MediaSourceId":"$itemId","DeviceProfile":$DEVICE_PROFILE$subBody}""")
+            setBody("""{"MediaSourceId":"$itemId","DeviceProfile":${deviceProfile(capabilities)}$subBody}""")
         }.bodyOrNull<JellyfinPlaybackInfoResponse>("getPlaybackInfo")
     }.getOrElse { Logger.warn("Jellyfin getPlaybackInfo failed: ${it.message}"); null }
 
