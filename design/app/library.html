@@ -193,8 +193,8 @@
   } catch (e) { initialFilter = null; }
 
   let state = initialFilter
-    ? { conditions: (initialFilter.conditions || []).filter(c => c.values && c.values.length), match: initialFilter.match || 'all', include: 'all' }
-    : { conditions: [], match: 'all', include: 'all' };   // workbench filter (empty = all)
+    ? Object.assign(RB.pruneState(initialFilter), { include: 'all' })
+    : { root: RB.mkGroup('and', []), include: 'all' };   // workbench query (empty = all)
 
   function effective() {
     return Object.assign({}, state, { include: kind });
@@ -229,27 +229,20 @@
   }
 
   function renderActive() {
-    const FACETS = RB.FACETS;
-    const opL = { isAny: 'is any of', isNot: 'is none of', gte: '≥', lte: '≤', eq: '=', contains: 'contains', ncontains: 'does not contain' };
-    const chips = state.conditions.filter(c => c.values.length).map((c, i) => {
-      const f = FACETS[c.facet];
-      const val = f.type === 'text' ? '“' + c.values[0] + '”'
-        : f.type === 'num' ? c.values[0]
-        : f.type === 'rows' ? c.values.map(v => v && v.name).filter(Boolean).join(', ')
-        : c.values.join(', ');
-      return `<span class="fxchip" data-edit="1">${f.label} ${opL[c.op] || c.op} ${val} <span class="rm" data-rm="${i}">✕</span></span>`;
-    });
+    // one chip per top-level BLOCK — its text is the block's summary, ✕ removes the whole block
+    const blocks = (state.root ? state.root.children : []).map((b, i) => ({ b, i })).filter(x => RB.nodeHasValues(x.b));
+    const chips = blocks.map(x => `<span class="fxchip" data-edit="1">${RB.groupSummary(x.b, false)} <span class="rm" data-rm="${x.i}">✕</span></span>`);
     if (chips.length) {
-      const word = state.match === 'any' ? ' <span class="tiny muted">any of</span> ' : ' <span class="tiny muted">and</span> ';
+      const word = ` <span class="tiny muted">${state.root.join === 'or' ? 'or' : 'and'}</span> `;
       const handoff = handoffLabel ? `<a class="tiny" href="ravilo-config.html" style="margin-left:10px;color:var(--ink-soft);" title="Coverage gap for the “${handoffLabel}” channel">‹ from “${handoffLabel}” · Ravilo config</a>` : '';
       active.innerHTML = chips.join(word)
         + `<span class="livecount" style="margin-left:6px;"><span class="n">${matches().length}</span><span class="tiny muted">titles match</span></span>`
         + `<span class="tiny" style="margin-left:6px;cursor:pointer;color:var(--acc-ink);" id="edit-filter">edit ⚙</span>`
         + `<span class="tiny" style="margin-left:6px;cursor:pointer;color:var(--ink-soft);" id="clear-filter">clear all</span>`
         + handoff;
-      active.querySelectorAll('[data-rm]').forEach(b => b.onclick = e => { e.stopPropagation(); state.conditions.splice(+b.dataset.rm, 1); renderAll(); });
+      active.querySelectorAll('[data-rm]').forEach(b => b.onclick = e => { e.stopPropagation(); state.root.children.splice(+b.dataset.rm, 1); renderAll(); });
       active.querySelector('#edit-filter').onclick = openBuilder;
-      active.querySelector('#clear-filter').onclick = () => { state.conditions = []; handoffLabel = ''; renderAll(); };
+      active.querySelector('#clear-filter').onclick = () => { state = { root: RB.mkGroup('and', []), include: 'all' }; handoffLabel = ''; renderAll(); };
       active.querySelectorAll('.fxchip[data-edit]').forEach(c => c.onclick = e => { if (!e.target.dataset.rm) openBuilder(); });
     } else {
       active.innerHTML = '';
@@ -265,7 +258,7 @@
   let done = false;
 
   function browsing() {
-    return !state.conditions.some(c => c.values.length) && quick === 'all' && !search && !seedTracker;
+    return !RB.stateHasConditions(state) && quick === 'all' && !search && !seedTracker;
   }
   function buildOrder() {
     const base = matches();
@@ -330,12 +323,12 @@
   function openBuilder() {
     RB.openFilter({
       mode: 'library',
-      edit: state.conditions.some(c => c.values.length),
+      edit: RB.stateHasConditions(state),
       headTitle: 'Library filter',
       saveLabel: 'Apply filter',
       rowsContext: rowsContext,
-      state: JSON.parse(JSON.stringify(state.conditions.length ? state : { match: 'all', include: 'all', conditions: [{ facet: 'genre', op: 'isAny', values: [] }] })),
-      onSave: ({ state: s }) => { state = { conditions: s.conditions.filter(c => c.values.length), match: s.match, include: 'all' }; renderAll(); }
+      state: JSON.parse(JSON.stringify(state)),
+      onSave: ({ state: s }) => { state = Object.assign(RB.pruneState(s), { include: 'all' }); renderAll(); }
     });
   }
 
@@ -344,10 +337,10 @@
 
   /* Clear filters (Phase 101) — one-click reset of the whole filter row */
   const clearBtn = document.getElementById('lib-clear');
-  function anyActive() { return state.conditions.some(c => c.values.length) || quick !== 'all' || !!search || !!seedTracker; }
+  function anyActive() { return RB.stateHasConditions(state) || quick !== 'all' || !!search || !!seedTracker; }
   function syncClear() { if (clearBtn) clearBtn.classList.toggle('show', anyActive()); }
   clearBtn.addEventListener('click', () => {
-    state.conditions = []; handoffLabel = '';
+    state = { root: RB.mkGroup('and', []), include: 'all' }; handoffLabel = '';
     quick = 'all';
     document.querySelectorAll('.filterbar .fchip[data-quick]').forEach(x => x.classList.toggle('on', x.dataset.quick === 'all'));
     search = ''; document.getElementById('lib-search').value = '';

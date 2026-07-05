@@ -251,8 +251,4 @@
   .app-main2.app-flush { height: calc(100vh - 54px); height: calc(100dvh - 54px); }
   .statgrid { grid-template-columns: repeat(2,1fr); }
   .pagebar h1 { font-size: 1.5rem; }
-
-  /* Dashboard: "Recently processed" + "Quick actions" are desktop-only — the attention
-     queue is the mobile-priority content and gets the full width instead. */
-  .dash-sidecol { display: none; }
 }
