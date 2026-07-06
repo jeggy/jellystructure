@@ -77,6 +77,7 @@ import dev.jellystructure.ravilo.ui.seams.PlayerSubtitleTrack
 import dev.jellystructure.ravilo.ui.seams.PlayerChromeActions
 import dev.jellystructure.ravilo.ui.seams.PlayerChromeBridge
 import dev.jellystructure.ravilo.ui.seams.PlayerChromeState
+import dev.jellystructure.ravilo.ui.seams.PlayerImmersiveEffect
 import dev.jellystructure.ravilo.ui.seams.PlayerLifecycleEffect
 import dev.jellystructure.ravilo.ui.seams.PlayerVideoSurface
 import dev.jellystructure.ravilo.ui.seams.RaviloPlayer
@@ -89,6 +90,7 @@ import dev.jellystructure.ravilo.ui.seams.wakeOnPointerMove
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.input.pointer.pointerInput
+import dev.jellystructure.ravilo.ui.theme.LocalCompact
 import dev.jellystructure.ravilo.ui.theme.RaviloColors
 import dev.jellystructure.ravilo.ui.theme.RaviloMotion
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
@@ -426,6 +428,11 @@ fun PlayerScreen(
 
     // Pause/resume when activity goes to background (Home button) and returns
     PlayerLifecycleEffect(player, wasPlaying = { isPlaying })
+    // Bug fix: force landscape + hide system bars for as long as the player is on screen — the
+    // phone app is portrait-locked with visible system bars everywhere else, which left the player
+    // stuck in portrait (heavy top/bottom letterboxing on any normal landscape video) plus a status/
+    // nav-bar-shaped margin baked in on top of that.
+    PlayerImmersiveEffect()
 
     // Cleanup on exit — stop the Jellyfin playback session and release the player engine
     DisposableEffect(Unit) {
@@ -563,9 +570,16 @@ fun PlayerScreen(
                 },
                 // R157 (FR-R157-2.4) — on web, a click on empty space toggles chrome instead of
                 // activating the focused control (the web convention; a click has no D-pad "focus"
-                // concept to act on). Android/TV: playerTapTogglesChrome is false, so this stays null
-                // and dpadFocusable's default (onTap falls back to onSelect) preserves today's behaviour.
-                onTap = if (playerTapTogglesChrome) {
+                // concept to act on). TV: playerTapTogglesChrome is false and LocalCompact is always
+                // false (a TV window is never handset-width), so this stays null there and
+                // dpadFocusable's default (onTap falls back to onSelect) preserves the D-pad behaviour.
+                // Bug fix: ravilo-ui's androidMain is shared by both the TV and phone apps, so the old
+                // `playerTapTogglesChrome` platform constant (false for "Android") couldn't distinguish
+                // them — a phone tap fell through to onSelect, i.e. "activate whatever the D-pad focus
+                // happens to be on," not the tap-to-toggle-chrome behaviour every mobile video player
+                // has. LocalCompact (< 600dp window width) is the existing runtime signal already used
+                // to tell a handset apart from a TV within this same compilation.
+                onTap = if (playerTapTogglesChrome || LocalCompact.current) {
                     { if (chromeVisible) chromeVisible = false else wake() }
                 } else null,
             )
