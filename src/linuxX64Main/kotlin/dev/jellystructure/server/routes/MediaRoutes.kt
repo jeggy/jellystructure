@@ -322,6 +322,23 @@ fun Route.mediaRoutes(
                 call.respond(item)
             }
 
+            // DELETE /api/media/{id} — permanently remove an item that's no longer in Jellyfin (the
+            // Phase 95 "missing_from_source" triage's "review & remove if intended" action). Refuses
+            // (409) if the item is still present in Jellyfin — a deliberate safety valve, not a
+            // general-purpose delete route.
+            delete {
+                val id = call.parameters["id"] ?: return@delete call.respond(HttpStatusCode.BadRequest)
+                val item = store.resolve(id) ?: return@delete call.respond(HttpStatusCode.NotFound)
+                when (store.deleteItem(id)) {
+                    true -> {
+                        Logger.info("Removed '${item.title}' (${item.id}) — no longer in Jellyfin", "system")
+                        call.respond(HttpStatusCode.NoContent)
+                    }
+                    false -> call.respond(HttpStatusCode.Conflict, mapOf("error" to "Still present in Jellyfin — can't remove."))
+                    null -> call.respond(HttpStatusCode.NotFound)
+                }
+            }
+
             get("/history") {
                 val id = call.parameters["id"]
                     ?: return@get call.respond(HttpStatusCode.BadRequest)
