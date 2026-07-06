@@ -548,6 +548,17 @@ object MediaApi {
         if (response.status == HttpStatusCode.OK) response.body<MediaItem>() else null
     }.getOrNull()
 
+    // Permanently remove an item no longer in Jellyfin (the missing_from_source triage's "review &
+    // remove if intended"). true = removed, false = server refused (still present in Jellyfin),
+    // null = not found / request failed.
+    suspend fun deleteItem(id: String): Boolean? = runCatching {
+        when (httpClient.delete("/api/media/$id").status) {
+            HttpStatusCode.NoContent -> true
+            HttpStatusCode.Conflict -> false
+            else -> null
+        }
+    }.getOrNull()
+
     // Phase 131: manual per-title IMDb rating re-sync against imdbapi.dev.
     suspend fun syncImdbRating(id: String): MediaItem? = runCatching {
         val response = httpClient.post("/api/media/$id/imdb-rating/sync")
