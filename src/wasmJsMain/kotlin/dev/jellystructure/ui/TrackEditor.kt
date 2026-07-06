@@ -182,6 +182,7 @@ fun buildUnifiedTrackEditorShell(prefix: String, filePath: String): String {
             <div class="row center" style="margin-bottom:10px;gap:8px;">
               <span class="badge warn" id="$prefix-pending-badge">0 pending</span>
               <span class="spacer"></span>
+              <span id="$prefix-apply-msg" class="tiny" style="font-weight:600;"></span>
               <button id="$prefix-discard" class="btn sm ghost">Discard</button>
               <button id="$prefix-apply" class="btn sm">Apply</button>
             </div>
@@ -228,8 +229,24 @@ fun wireUnifiedTrackEditor(
 
     fun model() = if (currentKind == "audio") audioModel else subsModel
 
-    val listEl = document.getElementById("$prefix-list") as? HTMLElement ?: return
-    val segEl = document.getElementById("$prefix-seg") as? HTMLElement ?: return
+    // Bug fix: this function is called anew every time the Tracks tab is (re-)activated — MediaDetail.kt
+    // wires it both at initial render (when ?tab=tracks is already in the URL) and again on every
+    // tab-segment click — with no guard against re-entry. Each call attached a fresh set of listeners on
+    // top of any already there (getElementById returns the SAME persistent node across calls; nothing
+    // ever removed the old ones), so after a reload-then-reclick a single Apply press could fire multiple
+    // independent applyChanges() coroutines concurrently, each issuing its own mkvpropedit invocation
+    // against the same file — a real race that can leave the file's tracks unchanged. Cloning-and-
+    // replacing every element this function attaches a listener to guarantees each call starts from a
+    // listener-free node, however many times it's invoked.
+    fun freshById(id: String): HTMLElement? {
+        val el = document.getElementById(id) as? HTMLElement ?: return null
+        val clone = el.cloneNode(true) as HTMLElement
+        el.parentNode?.replaceChild(clone, el)
+        return clone
+    }
+
+    val listEl = freshById("$prefix-list") ?: return
+    val segEl = freshById("$prefix-seg") ?: return
     val colMidEl = document.getElementById("$prefix-col-mid") as? HTMLElement
     val explainEl = document.getElementById("$prefix-explain") as? HTMLElement
     val cascadeEl = document.getElementById("$prefix-cascade") as? HTMLElement
@@ -609,7 +626,16 @@ fun wireUnifiedTrackEditor(
             renderList()
             renderPending()
             val doneMsg = if (reorderQueued) "Changes applied — reorder queued, see Activity ▸ Jobs" else "Changes applied"
-            showDetailMsg(if (!anyError) doneMsg else "Some changes failed — see details", !anyError)
+            val finalMsg = if (!anyError) doneMsg else "Some changes failed — see details"
+            // Bug fix: #detail-msg lives at the top of the page, well above the fold on the Tracks tab —
+            // a "nothing happened" report turned out to be this message firing invisibly off-screen.
+            // Show it right next to the button the user is actually looking at too.
+            showDetailMsg(finalMsg, !anyError)
+            (document.getElementById("$prefix-apply-msg") as? HTMLElement)?.let { msgEl ->
+                msgEl.textContent = finalMsg
+                msgEl.style.color = if (anyError) "var(--bad)" else "var(--ok)"
+                kotlinx.browser.window.setTimeout({ msgEl.textContent = ""; null }, 5000)
+            }
 
             applyBtn.removeAttribute("disabled")
             applyBtn.textContent = "Apply"
@@ -731,7 +757,7 @@ fun wireUnifiedTrackEditor(
     }
 
     // Cascade fix — deferred like all other edits
-    document.getElementById("$prefix-cascade-fix")?.addEventListener("click") { _ ->
+    freshById("$prefix-cascade-fix")?.addEventListener("click") { _ ->
         if (resolvedLanguage.isNullOrBlank()) return@addEventListener
         val target = audioModel.find { it.lang == resolvedLanguage } ?: audioModel.firstOrNull() ?: return@addEventListener
         audioModel.forEach { it.def = false }
@@ -739,8 +765,8 @@ fun wireUnifiedTrackEditor(
         renderList(); renderPending()
     }
 
-    document.getElementById("$prefix-apply")?.addEventListener("click") { _ -> applyChanges() }
-    document.getElementById("$prefix-discard")?.addEventListener("click") { _ -> discardChanges() }
+    freshById("$prefix-apply")?.addEventListener("click") { _ -> applyChanges() }
+    freshById("$prefix-discard")?.addEventListener("click") { _ -> discardChanges() }
 
     // Initial render
     renderList()
