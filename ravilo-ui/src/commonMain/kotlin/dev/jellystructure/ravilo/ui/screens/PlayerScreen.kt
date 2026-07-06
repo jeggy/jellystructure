@@ -570,7 +570,7 @@ fun PlayerScreen(
                 } else null,
             )
     ) {
-        // ── Platform video surface (TextureView on Android, <video> element on WASM) ───
+        // ── Platform video surface (SurfaceView on Android, <video> element on WASM) ───
         PlayerVideoSurface(player, Modifier.fillMaxSize())
 
         // ── Dim scrim (deepens when chrome is up or paused) ──────────────────

@@ -3,7 +3,7 @@ package dev.jellystructure.ravilo.ui.seams
 import android.content.Context
 import android.graphics.Color
 import android.net.Uri
-import android.view.TextureView
+import android.view.SurfaceView
 import androidx.media3.common.text.CueGroup
 import androidx.media3.ui.CaptionStyleCompat
 import androidx.media3.ui.SubtitleView
@@ -99,7 +99,7 @@ actual class RaviloPlayer actual constructor() {
         mediaSession // touch the lazy session so it's active for the OS while this item plays (R44)
     }
 
-    fun setVideoTextureView(tv: TextureView) { exo.setVideoTextureView(tv) }
+    fun setVideoSurfaceView(sv: SurfaceView) { exo.setVideoSurfaceView(sv) }
 
     /** R55 — attach a SubtitleView so ExoPlayer's text renderer can forward cues to the UI. */
     fun setSubtitleView(view: SubtitleView) {
@@ -180,7 +180,8 @@ actual class RaviloPlayer actual constructor() {
         exo.release()
     }
 
-    // No-op — the video surface is already in-scene via TextureView; nothing to swap z-order with.
+    // No-op — the video surface is already in-scene via a normal (non-Z-order-on-top) SurfaceView
+    // inside the FrameLayout; nothing to swap z-order with.
     actual fun setChromeVisible(visible: Boolean) {}
 
     actual val positionMs: Long get() = exo.currentPosition.coerceAtLeast(0)

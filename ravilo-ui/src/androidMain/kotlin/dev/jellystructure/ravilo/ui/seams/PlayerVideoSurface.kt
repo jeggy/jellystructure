@@ -1,6 +1,6 @@
 package dev.jellystructure.ravilo.ui.seams
 
-import android.view.TextureView
+import android.view.SurfaceView
 import android.widget.FrameLayout
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.aspectRatio
@@ -18,8 +18,8 @@ import androidx.media3.ui.SubtitleView
 actual fun PlayerVideoSurface(player: RaviloPlayer, modifier: Modifier) {
     // R77: collect video geometry and compute display aspect ratio (DAR).
     // pixelWidthHeightRatio (SAR) corrects anamorphic encoding (e.g. DVD 720×480 @ SAR 32:27 → 16:9).
-    // On the TextureView path (API 21+) ExoPlayer applies rotation itself, so width/height already
-    // reflect the on-screen orientation — no swap needed.
+    // ExoPlayer applies rotation itself, so width/height already reflect the on-screen orientation —
+    // no swap needed.
     val videoSize by player.videoSize.collectAsState()
     val dar: Float = run {
         val w = videoSize.width
@@ -31,10 +31,17 @@ actual fun PlayerVideoSurface(player: RaviloPlayer, modifier: Modifier) {
     Box(modifier = modifier, contentAlignment = Alignment.Center) {
         AndroidView(
             factory = { ctx ->
-                // R55: wrap TextureView + SubtitleView overlay in a FrameLayout so cues render
-                // over the video. We do NOT adopt PlayerView — all transport chrome is custom Compose.
+                // Bug fix (phase-R173): TextureView doesn't correctly propagate HDR (PQ) color/transfer
+                // metadata to the display compositor — frames get GL-composited as an ordinary texture,
+                // so HDR content renders as if it were SDR gamma (very dark). SurfaceView is its own
+                // hardware-composer layer; the decoder's HDR metadata reaches SurfaceFlinger directly and
+                // the display tone-maps correctly, with no app-level color-mode API needed — verified
+                // against Jellyfin's own Android TV client, which does exactly this (a bare SurfaceView
+                // wired via `ExoPlayer.setVideoSurfaceView`, nothing else).
+                // R55: wrap SurfaceView + SubtitleView overlay in a FrameLayout so cues render over the
+                // video. We do NOT adopt PlayerView — all transport chrome is custom Compose.
                 val frame = FrameLayout(ctx)
-                val texture = TextureView(ctx)
+                val surface = SurfaceView(ctx)
                 val subtitles = SubtitleView(ctx).apply {
                     val bottomPx = (28 * ctx.resources.displayMetrics.density).toInt()
                     layoutParams = FrameLayout.LayoutParams(
@@ -43,12 +50,12 @@ actual fun PlayerVideoSurface(player: RaviloPlayer, modifier: Modifier) {
                     )
                     setPadding(0, 0, 0, bottomPx)
                 }
-                frame.addView(texture, FrameLayout.LayoutParams(
+                frame.addView(surface, FrameLayout.LayoutParams(
                     FrameLayout.LayoutParams.MATCH_PARENT,
                     FrameLayout.LayoutParams.MATCH_PARENT,
                 ))
                 frame.addView(subtitles)
-                player.setVideoTextureView(texture)
+                player.setVideoSurfaceView(surface)
                 player.setSubtitleView(subtitles)
                 frame
             },
