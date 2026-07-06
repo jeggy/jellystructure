@@ -336,7 +336,7 @@ fun renderSettings(container: Element, scope: CoroutineScope, query: Map<String,
                 <h3 style="font-size:1rem;margin:0">Realtime ingest</h3>
                 <span id="ingest-listener-badge" class="badge" style="font-size:.7rem;background:var(--fill-2)">…</span>
               </div>
-              <p class="hint" style="margin:0 0 14px">New imports reach Ravilo within minutes instead of waiting for the next scheduled scan. Add these as webhooks in Radarr/Sonarr (Settings → Connect → Webhooks) — leave everything unchecked except <strong>On Import</strong> / <strong>On Upgrade</strong>.</p>
+              <p class="hint" style="margin:0 0 14px">New imports reach Ravilo within minutes instead of waiting for the next scheduled scan. In Radarr/Sonarr open <strong>Settings → Connect</strong>, click <strong>+</strong> and add a <strong>Webhook</strong> — paste the matching URL below, keep the method on <strong>POST</strong>, and enable only <strong>On Import</strong> and <strong>On Upgrade</strong> (leave everything else off). The URL uses this page's address, so make sure it points at a host your Radarr/Sonarr can reach.</p>
               <div class="field">
                 <label>Sonarr webhook URL</label>
                 <div style="display:flex;gap:8px">
