@@ -6,6 +6,7 @@ import coil3.ImageLoader
 import coil3.SingletonImageLoader
 import coil3.memory.MemoryCache
 import coil3.request.crossfade
+import coil3.svg.SvgDecoder
 import dev.jellystructure.shared.tv.TvApiClient
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.js.Js
@@ -18,11 +19,14 @@ import kotlinx.serialization.json.Json
 // R98: 64 → 128 MB. The browser has no disk-cache tier, so the memory cache is the only thing
 // preventing a re-fetch on scroll-back; 64 MB thrashed on a 307-item library. Paired with R96
 // (LANDSCAPE backdrops now ~640px, ~9× smaller), 128 MB holds several full viewports comfortably.
+// Bug fix: no SvgDecoder was registered here (Android's RaviloAppContext.kt has always had one), so
+// SVG channel logos silently failed to decode and never rendered in the browser.
 private val imageLoaderInit = run {
     SingletonImageLoader.setSafe { ctx ->
         ImageLoader.Builder(ctx)
             .memoryCache { MemoryCache.Builder().maxSizeBytes(128L * 1024 * 1024).build() }
             .crossfade(true)
+            .components { add(SvgDecoder.Factory()) }
             .build()
     }
 }

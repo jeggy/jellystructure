@@ -66,6 +66,7 @@ kotlin {
         val wasmJsMain by getting {
             dependencies {
                 implementation(libs.ktor.client.js)
+                implementation(libs.coil.svg) // SVG channel logos — was Android-only, browser never decoded them
             }
         }
     }
