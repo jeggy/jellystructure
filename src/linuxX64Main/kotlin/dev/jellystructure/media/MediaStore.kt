@@ -471,6 +471,27 @@ class MediaStore(
         upsertItem(merged)
     }
 
+    /**
+     * Permanently removes a catalog item that's no longer in Jellyfin — the Phase 95 triage's
+     * "review & remove if intended" action, finally implemented. Deliberately refuses to delete an
+     * item still present in Jellyfin: this is a cleanup valve for stale/orphaned rows, not a general
+     * delete-anything operation. The item will only reappear on a future scan if Jellyfin has it again.
+     * Returns null if the id doesn't resolve at all, false if it resolves but isn't missing, true on
+     * success.
+     */
+    suspend fun deleteItem(id: String): Boolean? {
+        val item = resolve(id) ?: return null
+        if (!item.missingFromSource) return false
+        allItemsCache    = null
+        peopleIndexCache = null
+        jellyfinIdIndex  = null
+        genreIndexCache  = null
+        libraryVersion++
+        lastCheckedMap.remove(item.id)
+        db.mediaQueries.deleteById(item.id)
+        return true
+    }
+
     fun movieCount(): Int = db.mediaQueries.countByKind("MOVIE").executeAsOne().toInt()
 
     fun tvShowCount(): Int = db.mediaQueries.countByKind("TV_SHOW").executeAsOne().toInt()

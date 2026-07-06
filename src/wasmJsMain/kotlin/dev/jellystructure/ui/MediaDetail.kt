@@ -723,6 +723,24 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
 
         <div id="detail-msg" style="display:none;margin-bottom:14px"></div>
         <div id="nfo-perm-banner" style="display:none;margin-bottom:14px"></div>
+        ${if (item.missingFromSource) """
+        <div id="missing-banner" style="margin-bottom:14px">
+          <div style="background:var(--bad-soft);border:1px solid var(--bad);border-radius:6px;padding:10px 14px;display:flex;align-items:flex-start;gap:12px;flex-wrap:wrap;">
+            <span class="badge bad" style="flex:none;margin-top:1px;">⚠ No longer in Jellyfin</span>
+            <div style="flex:1;min-width:200px;">
+              <b style="font-size:.9rem;">Jellyfin no longer has this title.</b>
+              <div class="tiny muted" style="margin-top:5px;line-height:1.6;">
+                ${item.missingSince?.let { "Missing since ${tsAgo(it)}. " } ?: ""}It's kept here so you can review
+                it, but it's hidden from Ravilo. If this was intentional — deleted, moved, or reorganized in
+                Jellyfin — you can remove it from Jellystructure too. It'll only come back if Jellyfin has it
+                again on a future scan.
+              </div>
+              <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;">
+                <button id="missing-remove-btn" class="btn sm bad">Remove from Jellystructure</button>
+              </div>
+            </div>
+          </div>
+        </div>""" else ""}
         <div id="drift-banner" style="display:none;margin-bottom:14px"></div>
         <div id="jf-lock-banner" style="display:${if (item.jellyfinLockData || item.jellyfinLockedFields.isNotEmpty()) "block" else "none"};margin-bottom:14px">
           <div style="background:var(--bad-soft);border:1px solid var(--bad);border-radius:6px;padding:10px 14px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
@@ -775,6 +793,23 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
 
     document.getElementById("find-tmdb-match-btn")?.addEventListener("click") {
         showTmdbMatchModal(item, container, scope, fallbackLang, jellyfinUrl, tmdbLangs)
+    }
+
+    // Bug/feature: permanently remove an item Jellyfin no longer has (Phase 95 triage's "review &
+    // remove if intended", finally wired up). It'll only come back if Jellyfin has it again on a scan.
+    document.getElementById("missing-remove-btn")?.addEventListener("click") {
+        val ok = kotlinx.browser.window.confirm(
+            "Remove \"${item.title}\" from Jellystructure? This can't be undone here — it will only " +
+                "come back if Jellyfin has it again on a future scan.",
+        )
+        if (!ok) return@addEventListener
+        scope.launch {
+            when (MediaApi.deleteItem(item.id)) {
+                true -> App.navigate("/library?filter=missing_from_source")
+                false -> showDetailMsg("Still present in Jellyfin — can't remove.", false)
+                null -> showDetailMsg("Couldn't remove it — try again.", false)
+            }
+        }
     }
 
     document.getElementById("jf-lock-recheck-btn")?.addEventListener("click") {
