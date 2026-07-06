@@ -106,6 +106,10 @@ fun Route.configureConfigRoutes(
         // The frontend AppConfig model omits acquisition (config-file-only, not exposed in the Settings
         // UI). Preserve the stored value so a Settings save never wipes it.
         if (config.acquisition == null) config = config.copy(acquisition = stored.acquisition)
+        // Trackers are managed on Metadata ▸ Trackers via their own CRUD endpoints, and ingest is
+        // config-file-only — the Settings form (readForm) sends neither, so without this a Settings save
+        // would wipe the operator's tracker registry and reset the ingest webhook secret/realtime flag.
+        config = config.copy(trackers = stored.trackers, ingest = stored.ingest)
         configStore.update(config)
         call.respond(HttpStatusCode.NoContent)
     }
