@@ -488,30 +488,6 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
 
     val tracksHtml = if (!isTvShow) buildUnifiedTrackEditorShell("trk", item.path) else ""
 
-    // Embedded tracks summary for the overview tab (movies only — condensed read-only view)
-    val embeddedTracksSummary = if (!isTvShow && item.tracks.any { it.kind == TrackKind.AUDIO || it.kind == TrackKind.SUBTITLE }) {
-        val untagged = item.tracks.count { (it.kind == TrackKind.AUDIO || it.kind == TrackKind.SUBTITLE) && it.language == null }
-        val summaryBadge = if (untagged > 0)
-            """<span class="badge bad" style="font-size:.72rem;">$untagged untagged</span>"""
-        else
-            """<span class="badge ok" style="font-size:.72rem;">all tagged</span>"""
-        val trackChips = item.tracks
-            .filter { it.kind == TrackKind.AUDIO || it.kind == TrackKind.SUBTITLE }
-            .joinToString("") { t ->
-                val lang = t.language?.esc() ?: "?"
-                val badStyle = if (t.language == null) "border-color:var(--bad);" else ""
-                val defMark = if (t.default) " ★" else ""
-                """<span class="chip mono" style="font-size:.72rem;$badStyle">${t.kind.name.lowercase().first()} · $lang · ${t.codec.esc()}$defMark</span>"""
-            }
-        """<div class="card" style="margin-top:16px;">
-             <div class="row center" style="margin-bottom:8px;">
-               <h4 style="margin:0;font-size:.9rem;">Embedded tracks</h4>
-               <span class="spacer"></span>
-               $summaryBadge
-             </div>
-             <div style="display:flex;flex-wrap:wrap;gap:5px;">$trackChips</div>
-           </div>"""
-    } else ""
     val resolverTraceHtml = buildResolverTrace(item, fallbackLang, tmdbLangs)
     val ageRatingTraceHtml = buildAgeRatingTrace(item, ageRatingCascade)
     val ageRatingBadgeHtml = buildAgeRatingBadge(item, ageRatingCascade)
@@ -607,7 +583,7 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
 
     // Both movies and TV shows keep the left rail inside the overview panel so other tabs
     // (Tracks / Episodes / Artwork / NFO / History) are full-width.
-    val overviewPanelInner = """$embeddedTracksSummary
+    val overviewPanelInner = """
           <div class="row" style="align-items:flex-start;gap:22px;flex-wrap:wrap;">
             $leftRailHtml
             $overviewMainHtml
