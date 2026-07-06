@@ -5,14 +5,20 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.ScrollState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.draw.clip
@@ -41,6 +47,7 @@ import dev.jellystructure.ravilo.ui.LocalUserAvatarUrl
 import dev.jellystructure.ravilo.ui.focus.dpadFocusable
 import dev.jellystructure.ravilo.ui.i18n.str
 import dev.jellystructure.ravilo.ui.seams.RemoteImage
+import dev.jellystructure.ravilo.ui.theme.LocalCompact
 import dev.jellystructure.ravilo.ui.theme.RaviloDimens
 import dev.jellystructure.ravilo.ui.theme.raviloHPad
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
@@ -102,6 +109,14 @@ fun AppBar(
     }
     var focusedIdx by remember { mutableIntStateOf(-1) }
 
+    // Bug fix: on a narrow/portrait screen the nav items + search + clock + avatar don't all fit and
+    // used to just clip off the edge. horizontalScroll can't coexist with the weight(1f) spacer below
+    // (it needs a bounded width to compute leftover space; a scrollable Row gives unbounded width) —
+    // so compact mode drops the flexible spacer and scrolls instead. Wide (TV/desktop) is untouched:
+    // no scroll, same weight-based layout as before.
+    val compact = LocalCompact.current
+    val navScrollState = rememberScrollState()
+
     Box(
         modifier = modifier
             .fillMaxWidth()
@@ -113,7 +128,8 @@ fun AppBar(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = raviloHPad)
-                .matchParentSize(),
+                .matchParentSize()
+                .then(if (compact) Modifier.horizontalScroll(navScrollState) else Modifier),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(18.dp),   // R52: denser (was 28)
         ) {
@@ -194,7 +210,9 @@ fun AppBar(
                 )
             }
 
-            Box(modifier = Modifier.weight(1f))
+            // Wide: push the right cluster to the far edge. Compact: no bounded width to weight
+            // against (see above) — the Row's own spacedBy(18.dp) gap is enough; items just scroll.
+            if (!compact) Box(modifier = Modifier.weight(1f))
             // R52 right cluster: search icon · clock · avatar (gaps from the Row's spacedBy).
             if (onSearch != null) {
                 SearchIcon(
@@ -216,6 +234,39 @@ fun AppBar(
                 )
             }
         }
+
+        // Bug fix: a discoverable hint that there's more to scroll to — gesture-only horizontalScroll
+        // has no visible affordance on its own. Only rendered when content actually overflows
+        // (maxValue > 0); a wide screen where everything fits shows nothing, same as before this fix.
+        if (compact && navScrollState.maxValue > 0) {
+            NavScrollIndicator(navScrollState, Modifier.align(Alignment.BottomCenter))
+        }
+    }
+}
+
+@Composable
+private fun NavScrollIndicator(scrollState: ScrollState, modifier: Modifier = Modifier) {
+    val colors = RaviloTheme.colors
+    BoxWithConstraints(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = raviloHPad, vertical = 3.dp)
+            .height(3.dp),
+    ) {
+        val viewport = scrollState.viewportSize.toFloat()
+        val totalContent = viewport + scrollState.maxValue.toFloat()
+        val thumbFraction = if (totalContent > 0f) (viewport / totalContent).coerceIn(0.12f, 1f) else 1f
+        val scrollFraction = if (scrollState.maxValue > 0) scrollState.value.toFloat() / scrollState.maxValue.toFloat() else 0f
+        val thumbOffset = maxWidth * (1 - thumbFraction) * scrollFraction
+
+        Box(Modifier.fillMaxSize().background(colors.textSecondary.copy(alpha = 0.15f), RoundedCornerShape(2.dp)))
+        Box(
+            Modifier
+                .fillMaxWidth(thumbFraction)
+                .fillMaxHeight()
+                .offset(x = thumbOffset)
+                .background(colors.textSecondary.copy(alpha = 0.5f), RoundedCornerShape(2.dp)),
+        )
     }
 }
 
