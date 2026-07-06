@@ -32,6 +32,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import dev.jellystructure.ravilo.ui.LocalGridColumns
+import dev.jellystructure.ravilo.ui.LocalPortrait
+import dev.jellystructure.ravilo.ui.LocalPortraitGridColumns
 import dev.jellystructure.ravilo.ui.components.AppBar
 import dev.jellystructure.ravilo.ui.components.Tile
 import dev.jellystructure.ravilo.ui.focus.backToTopOnBack
@@ -306,8 +309,6 @@ private fun GenreChips(
     }
 }
 
-private const val GRID_COLS = 6
-
 @Composable
 private fun BrowseGrid(
     items: List<MediaCard>,
@@ -335,8 +336,10 @@ private fun BrowseGrid(
     // search direction and scrolls them into view; focusRestorer() returns focus to the last cell
     // on re-entry. No per-item FocusRequester (except the single first-cell back-to-top target, R55),
     // no scroll-to-focused effect.
+    // R174 — items per row is server-configured; portrait viewports use the smaller portrait count.
+    val cols = if (LocalPortrait.current) LocalPortraitGridColumns.current else LocalGridColumns.current
     LazyVerticalGrid(
-        columns = GridCells.Fixed(GRID_COLS),
+        columns = GridCells.Fixed(cols),
         state = gridState,
         modifier = Modifier.focusRestorer(),
         contentPadding = PaddingValues(horizontal = raviloHPad, vertical = RaviloDimens.trackPadV),

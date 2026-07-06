@@ -45,7 +45,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import dev.jellystructure.ravilo.ui.LocalGridColumns
 import dev.jellystructure.ravilo.ui.LocalLiveAcquisition
+import dev.jellystructure.ravilo.ui.LocalPortrait
+import dev.jellystructure.ravilo.ui.LocalPortraitGridColumns
 import dev.jellystructure.ravilo.ui.focus.backToTopOnBack
 import dev.jellystructure.ravilo.ui.i18n.str
 import dev.jellystructure.ravilo.ui.theme.RaviloDimens
@@ -55,8 +58,6 @@ import dev.jellystructure.ravilo.ui.theme.Sora
 import dev.jellystructure.ravilo.ui.theme.SpaceGrotesk
 import dev.jellystructure.shared.tv.MediaKind
 import kotlinx.coroutines.launch
-
-private const val GRID_COLS_SEERR_SEARCH = 5
 
 /**
  * R171 (FR-R171-3) — search scoped to the Seerr catalogue only, opened from the Request tab's search
@@ -195,8 +196,10 @@ fun SeerrSearchScreen(
         Spacer(Modifier.height(12.dp))
 
         if (items.isNotEmpty()) {
+            // R174 — server-configured items per row; portrait viewports use the smaller portrait count.
+            val cols = if (LocalPortrait.current) LocalPortraitGridColumns.current else LocalGridColumns.current
             LazyVerticalGrid(
-                columns = GridCells.Fixed(GRID_COLS_SEERR_SEARCH),
+                columns = GridCells.Fixed(cols),
                 state = gridState,
                 modifier = Modifier
                     .focusRequester(gridFR)
@@ -205,9 +208,9 @@ fun SeerrSearchScreen(
                         if (ev.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
                         when (ev.key) {
                             Key.DirectionUp ->
-                                if (focusedGridIdx < GRID_COLS_SEERR_SEARCH) { inGrid = false; true } else false
+                                if (focusedGridIdx < cols) { inGrid = false; true } else false
                             Key.DirectionLeft ->
-                                if (focusedGridIdx % GRID_COLS_SEERR_SEARCH == 0) { inGrid = false; true } else false
+                                if (focusedGridIdx % cols == 0) { inGrid = false; true } else false
                             else -> false
                         }
                     },

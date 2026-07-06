@@ -507,6 +507,15 @@ private fun wireShell(container: Element, scope: CoroutineScope) {
             container.querySelector("#portrait-hero-height-val")?.textContent = "${t.value}%"
             collectConfig(container); renderPreview(container)
         }
+        // R174 — grid-columns sliders: live number label, then collect into currentConfig.
+        if (t is HTMLInputElement && t.id == "portrait-grid-cols") {
+            container.querySelector("#portrait-grid-cols-val")?.textContent = t.value
+            collectConfig(container)
+        }
+        if (t is HTMLInputElement && t.id == "beh-grid-cols") {
+            container.querySelector("#beh-grid-cols-val")?.textContent = t.value
+            collectConfig(container)
+        }
     }
     // R159 — the toggle enables/disables the slider and flips the live-preview thumbnail.
     sections?.addEventListener("change") { ev ->
@@ -2363,6 +2372,10 @@ private fun renderBehaviourGlobal(sect: Element) {
               <span style="font-size:.9rem">Content size <span class="tiny muted">· grid/row tiles on the TV</span></span>
               <select id="beh-density" class="input" style="width:180px;font-size:.85rem">$densityOptions</select>
             </label>
+            <div>
+              <label style="display:block;font-size:.9rem">Items per row on grids <span class="mono" id="beh-grid-cols-val">${currentConfig.gridColumns}</span> <span class="tiny muted">· all-movies/series &amp; search, on TV/landscape</span></label>
+              <input type="range" id="beh-grid-cols" min="2" max="10" value="${currentConfig.gridColumns}" style="width:100%;margin-top:6px;accent-color:var(--acc,#7b6ef0)">
+            </div>
             <label style="display:flex;align-items:center;gap:10px;font-size:.9rem">
               <input type="checkbox" id="beh-skin-override"$overrideChecked>
               Allow users to override skin on their device
@@ -2486,6 +2499,7 @@ private fun renderPortrait(container: Element) {
     val checkedAttr = if (enabled) " checked" else ""
     val disabledAttr = if (!enabled) " disabled" else ""
     val sliderVal = portraitHero ?: 30
+    val portraitGridCols = currentConfig.portrait?.gridColumns ?: 2  // R174 — built-in portrait default is 2
     sect.innerHTML = """
         <div class="card" style="padding:18px 20px;margin-bottom:18px">
           <div style="font-weight:600;margin-bottom:6px">Portrait screen</div>
@@ -2498,6 +2512,8 @@ private fun renderPortrait(container: Element) {
           </label>
           <label style="display:block;font-size:.85rem;margin-bottom:4px">Hero height <span class="mono" id="portrait-hero-height-val">${sliderVal}%</span> of screen</label>
           <input type="range" id="portrait-hero-height" min="20" max="100" value="$sliderVal"$disabledAttr style="width:100%;accent-color:var(--acc,#7b6ef0)">
+          <label style="display:block;font-size:.85rem;margin:16px 0 4px">Items per row <span class="mono" id="portrait-grid-cols-val">$portraitGridCols</span> <span class="tiny muted">· all-movies/series &amp; search grids (default 2)</span></label>
+          <input type="range" id="portrait-grid-cols" min="1" max="4" value="$portraitGridCols" style="width:100%;accent-color:var(--acc,#7b6ef0)">
         </div>
     """.trimIndent()
 }
@@ -2631,7 +2647,17 @@ private fun collectConfig(container: Element) {
     // R159 — toggled off saves null (no override; portrait behaves exactly like landscape).
     val portraitEnabled = (container.querySelector("#portrait-enable") as? HTMLInputElement)?.checked ?: (currentConfig.portrait?.heroHeightPct != null)
     val portraitHeroHeight = (container.querySelector("#portrait-hero-height") as? HTMLInputElement)?.value?.toIntOrNull()
-    val portrait = if (portraitEnabled) PortraitConfig(heroHeightPct = portraitHeroHeight ?: currentConfig.portrait?.heroHeightPct ?: 30) else null
+    val portraitHero = if (portraitEnabled) (portraitHeroHeight ?: currentConfig.portrait?.heroHeightPct ?: 30) else null
+    // R174 — grid columns. Landscape lives on the config directly (behaviour card, global scope only —
+    // fall back to the stored value in per-user scope where the control isn't rendered). Portrait grid
+    // columns store null when at the built-in default (2), so the portrait block only exists when it
+    // actually carries an override (hero height and/or a non-default column count).
+    val gridColumns = (container.querySelector("#beh-grid-cols") as? HTMLInputElement)?.value?.toIntOrNull()?.coerceIn(2, 10)
+        ?: currentConfig.gridColumns
+    val portraitGridCols = ((container.querySelector("#portrait-grid-cols") as? HTMLInputElement)?.value?.toIntOrNull()
+        ?: currentConfig.portrait?.gridColumns ?: 2).coerceIn(1, 4).takeIf { it != 2 }
+    val portrait = if (portraitHero != null || portraitGridCols != null)
+        PortraitConfig(heroHeightPct = portraitHero, gridColumns = portraitGridCols) else null
     // Request (Phase 137) — toggles from the DOM; the ordered `feeds` (rows + visibility) are managed
     // structurally by renderDiscover's add/remove/drag-reorder handlers, not read from the DOM here.
     val discover = currentConfig.discover.copy(
@@ -2654,6 +2680,7 @@ private fun collectConfig(container: Element) {
         uiLanguage = uiLanguage,
         heroHeightPct = heroHeight,
         autoAdvanceSeconds = autoAdvance,
+        gridColumns = gridColumns,
         discover = discover,
         portrait = portrait,
     )
