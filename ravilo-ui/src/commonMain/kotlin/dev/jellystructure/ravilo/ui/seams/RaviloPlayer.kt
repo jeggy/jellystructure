@@ -51,7 +51,7 @@ expect class RaviloPlayer() {
      * (with `pointer-events: none`, so clicks still reach the canvas beneath) while chrome is hidden
      * so the picture is visible; back behind the canvas when chrome is shown so Compose's opaque
      * chrome paints over it and the canvas receives pointer events for the controls. No-op on
-     * Android, where the video surface is already in-scene via TextureView.
+     * Android, where the video surface is already in-scene via a normal (non-Z-order-on-top) SurfaceView.
      */
     fun setChromeVisible(visible: Boolean)
 
