@@ -137,8 +137,15 @@ class RaviloConfigService(
         rows = config.rows.mapIndexed { i, r -> r.copy(order = i, query = r.query?.pruned()) },
         heroHeightPct = config.heroHeightPct.coerceIn(40, 100),
         autoAdvanceSeconds = config.autoAdvanceSeconds.coerceIn(0, 120),
+        // R174 — poster-grid items per row: landscape 2..10, portrait 1..4 (fewer, phone-sized).
+        gridColumns = config.gridColumns.coerceIn(2, 10),
         // R159 — portrait can go smaller than landscape's 40 floor (a phone hero at 40% is still huge).
-        portrait = config.portrait?.let { p -> p.copy(heroHeightPct = p.heroHeightPct?.coerceIn(20, 100)) },
+        portrait = config.portrait?.let { p ->
+            p.copy(
+                heroHeightPct = p.heroHeightPct?.coerceIn(20, 100),
+                gridColumns = p.gridColumns?.coerceIn(1, 4),
+            )
+        },
     )
 
     /**

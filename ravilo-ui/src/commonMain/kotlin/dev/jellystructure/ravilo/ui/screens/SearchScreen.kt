@@ -45,6 +45,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import dev.jellystructure.ravilo.ui.LocalGridColumns
+import dev.jellystructure.ravilo.ui.LocalPortrait
+import dev.jellystructure.ravilo.ui.LocalPortraitGridColumns
 import dev.jellystructure.ravilo.ui.components.Tile
 import dev.jellystructure.ravilo.ui.focus.backToTopOnBack
 import dev.jellystructure.ravilo.ui.i18n.str
@@ -114,8 +117,6 @@ class SearchStore(private val apiClient: TvApiClient) {
         }
     }
 }
-
-private const val GRID_COLS_SEARCH = 5
 
 @Composable
 fun SearchScreen(
@@ -253,8 +254,10 @@ fun SearchScreen(
         Spacer(Modifier.height(12.dp))
 
         if (items.isNotEmpty()) {
+            // R174 — server-configured items per row; portrait viewports use the smaller portrait count.
+            val cols = if (LocalPortrait.current) LocalPortraitGridColumns.current else LocalGridColumns.current
             LazyVerticalGrid(
-                columns = GridCells.Fixed(GRID_COLS_SEARCH),
+                columns = GridCells.Fixed(cols),
                 state = gridState,
                 modifier = Modifier
                     .focusRequester(gridFR)
@@ -265,9 +268,9 @@ fun SearchScreen(
                         if (ev.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
                         when (ev.key) {
                             Key.DirectionUp ->
-                                if (focusedGridIdx < GRID_COLS_SEARCH) { inGrid = false; true } else false
+                                if (focusedGridIdx < cols) { inGrid = false; true } else false
                             Key.DirectionLeft ->
-                                if (focusedGridIdx % GRID_COLS_SEARCH == 0) { inGrid = false; true } else false
+                                if (focusedGridIdx % cols == 0) { inGrid = false; true } else false
                             else -> false
                         }
                     },

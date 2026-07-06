@@ -123,6 +123,12 @@ val LocalPlaystateCommands = staticCompositionLocalOf<SharedFlow<PlaystateComman
 /** Tile-size multiplier from the active user's `RaviloConfig.uiDensity`; read by [dev.jellystructure.ravilo.ui.components.Tile]. */
 val LocalTileScale = staticCompositionLocalOf { 1f }
 
+/** R174 — poster-grid items per row (all-movies/series browse + search + request search). Two values,
+ *  server-pushed on the one config payload; the screen selects by [LocalPortrait] (same presentation-
+ *  selection class as [LocalTileScale]). Defaults match the shared config: 6 landscape, 2 portrait. */
+val LocalGridColumns = staticCompositionLocalOf { 6 }
+val LocalPortraitGridColumns = staticCompositionLocalOf { 2 }
+
 /** R61 — server base URL (e.g. `http://192.168.1.100:8080`); used to resolve relative logo/image URLs. */
 val LocalServerBaseUrl = staticCompositionLocalOf { "" }
 
@@ -192,6 +198,9 @@ private sealed class Dest {
 fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeServer: () -> Unit = {}) {
     var lang by remember { mutableStateOf("en") }
     var tileScale by remember { mutableStateOf(1f) }
+    // R174 — grid columns, server-pushed on the config; portrait falls back to the built-in 2.
+    var gridColumns by remember { mutableStateOf(6) }
+    var portraitGridColumns by remember { mutableStateOf(2) }
     val themeState = rememberRaviloTheme()
 
     // Fetch the active user's config and apply server-owned interface prefs (language + skin)
@@ -203,6 +212,8 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                 lang = cfg.uiLanguage
                 themeState.skin = cfg.effectiveSkin()
                 tileScale = cfg.uiDensity.tileScale()
+                gridColumns = cfg.gridColumns
+                portraitGridColumns = cfg.portrait?.gridColumns ?: 2
             }
         }
     }
@@ -412,7 +423,7 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
             windowInfo.containerSize.height > windowInfo.containerSize.width
         }
 
-        CompositionLocalProvider(LocalLiveConfig provides liveConfig, LocalLiveAcquisition provides liveAcquisition, LocalServerMessages provides liveServerMessages, LocalPlaystateCommands provides livePlaystateCommands, LocalTileScale provides tileScale, LocalCompact provides compact, LocalPortrait provides portrait, LocalServerBaseUrl provides apiClient.baseUrl, LocalUserAvatarUrl provides activeAvatarUrl) {
+        CompositionLocalProvider(LocalLiveConfig provides liveConfig, LocalLiveAcquisition provides liveAcquisition, LocalServerMessages provides liveServerMessages, LocalPlaystateCommands provides livePlaystateCommands, LocalTileScale provides tileScale, LocalGridColumns provides gridColumns, LocalPortraitGridColumns provides portraitGridColumns, LocalCompact provides compact, LocalPortrait provides portrait, LocalServerBaseUrl provides apiClient.baseUrl, LocalUserAvatarUrl provides activeAvatarUrl) {
         Box(
             modifier = Modifier
                 .fillMaxSize()
