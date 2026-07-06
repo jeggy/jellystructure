@@ -559,6 +559,9 @@ data class RaviloConfig(
     @SerialName("ui_language") val uiLanguage: String = "en",
     @SerialName("hero_height_pct") val heroHeightPct: Int = 56,       // % of screen the hero fills (40..100)
     @SerialName("auto_advance_seconds") val autoAdvanceSeconds: Int = 7, // hero carousel interval seconds; 0 = off (0..120)
+    // R174 — items per row in the poster grids (all-movies/series browse + search + request search),
+    // landscape/TV. Portrait overrides this via PortraitConfig.gridColumns. Clamped 2..10 server-side.
+    @SerialName("grid_columns") val gridColumns: Int = 6,
     val discover: DiscoverConfig = DiscoverConfig(),                   // R48 — Top 10 / Discover tab
     // R159 — optional overrides applied only when the app's viewport is portrait. Null = no overrides
     // (portrait behaves exactly like landscape); the home for future portrait-only settings.
@@ -621,6 +624,9 @@ data class ResolvedBehaviour(
 @Serializable
 data class PortraitConfig(
     @SerialName("hero_height_pct") val heroHeightPct: Int? = null, // % of screen the hero fills in portrait (20..100)
+    // R174 — items per row in the poster grids when the viewport is portrait. null = the built-in
+    // portrait default (2, far fewer than the landscape count). Clamped 1..4 server-side.
+    @SerialName("grid_columns") val gridColumns: Int? = null,
 )
 
 /**
