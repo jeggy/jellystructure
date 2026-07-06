@@ -223,12 +223,17 @@ class SeerrDiscoverService(
                 retryable = true,
             )
         }
+        val result = seerrClient.createRequest(seerr.url, seerr.apiKey, mediaType, tmdbId, profileId, tagIds)
+            ?: return AcquisitionRecord(itemKey, mediaKind, AcquisitionStatus.FAILED, tmdbId, title, reason = "Seerr request failed", retryable = true)
+        // Bug fix: this used to save unconditionally *before* createRequest, so a failed Seerr call
+        // (network hiccup, Seerr-side rejection, etc.) still left a local "you requested this" row —
+        // jellystructure then treated the title as permanently "in progress" on the Request tab even
+        // though Seerr never actually received a request for it (confirmed live: "Grænseløs" had a
+        // request_intent row but zero mediaInfo on the Seerr side). Only persist the intent once Seerr
+        // has actually accepted the request.
         if (resolvedLanguage != null && resolvedIntent != null) {
             requestIntentStore?.save(mediaKind, tmdbId, userId, resolvedLanguage, resolvedIntent.strict, dev.jellystructure.nowEpochSec())
         }
-
-        val result = seerrClient.createRequest(seerr.url, seerr.apiKey, mediaType, tmdbId, profileId, tagIds)
-            ?: return AcquisitionRecord(itemKey, mediaKind, AcquisitionStatus.FAILED, tmdbId, title, reason = "Seerr request failed", retryable = true)
         val strictWaiting = resolvedIntent?.strict == true
         val (status, progress, eta) = statusFromMediaInfo(result.media)
         // Bug fix: register with the acquisition reconciler so this title's progress keeps updating
