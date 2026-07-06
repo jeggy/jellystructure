@@ -1,0 +1,43 @@
+/* ============================================================================
+   metadata.css — Metadata page component styles (Studios/Networks/Genres/Tags
+   cards + the Trackers tab). Extracted from metadata.html's inline <style> so
+   the real wasmJs app gets them (it loads only wf/app/flags/seeding/detail css).
+   Modal styles are intentionally omitted — the shared .modal/.modal-back come
+   from detail.css to keep a single definition across pages.
+   ============================================================================ */
+
+  .meta-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 14px; }
+  .meta-card { display: flex; align-items: center; gap: 13px; padding: 14px 15px; cursor: pointer; text-decoration: none; color: var(--ink);
+    background: var(--card-bg); -webkit-backdrop-filter: var(--blur); backdrop-filter: var(--blur); border: var(--card-bd); border-radius: var(--radius); box-shadow: var(--shadow-s); transition: transform .15s ease, box-shadow .2s ease, outline-color .2s ease; outline: 1px solid transparent; }
+  .meta-card:hover { transform: translateY(-2px); box-shadow: var(--shadow); outline-color: var(--hi); text-decoration: none; }
+  .meta-logo { width: 54px; height: 54px; flex: none; border-radius: 10px; display: flex; align-items: center; justify-content: center;
+    background: var(--fill-3); font-family: 'JetBrains Mono', monospace; font-size: .6rem; color: var(--ink-soft); text-align: center; padding: 4px; }
+  .meta-card .nm { font-weight: 600; }
+  .genre-chip { font-size: .9rem; padding: 8px 14px; }
+  .tag-card { display: flex; align-items: center; gap: 12px; padding: 13px 15px; cursor: pointer; }
+  .tag-dot-lg { width: 14px; height: 14px; border-radius: 50%; flex: none; }
+  .swatches { display: flex; gap: 8px; flex-wrap: wrap; }
+  .swatch { width: 28px; height: 28px; border-radius: 8px; cursor: pointer; border: 2px solid transparent; }
+  .swatch.on { border-color: var(--ink); }
+  /* trackers (Phase 98) */
+  .trk-card { display: flex; flex-direction: column; gap: 10px; align-items: stretch; }
+  .trk-top { display: flex; align-items: center; gap: 9px; }
+  .trk-top .nm { font-weight: 600; font-size: 1rem; }
+  .pvt-badge { font-size: .58rem; text-transform: uppercase; letter-spacing: .06em; padding: 2px 7px; border-radius: 5px; font-weight: 700; }
+  .pvt-badge.private { background: var(--hi-soft); color: var(--acc-ink); }
+  .pvt-badge.public { background: var(--fill-3); color: var(--ink-soft); }
+  .host-list { display: flex; flex-direction: column; gap: 5px; }
+  .host { display: flex; align-items: center; gap: 8px; font-family: 'JetBrains Mono', monospace; font-size: .74rem; color: var(--ink-soft);
+    background: var(--fill); border: 1px solid var(--line); border-radius: 7px; padding: 5px 9px; }
+  .host .hx { margin-left: auto; color: var(--ink-dim); cursor: pointer; font-size: .8rem; }
+  .host .hx:hover { color: var(--bad); }
+  .trk-meta { display: flex; align-items: center; gap: 12px; font-size: .74rem; color: var(--ink-soft); margin-top: 2px; }
+  .trk-link { display: inline-flex; align-items: center; gap: 6px; font-size: .76rem; font-weight: 600; color: var(--acc-ink);
+    text-decoration: none; padding: 5px 10px; border-radius: 7px; background: var(--hi-soft); border: 1px solid rgba(123,110,240,.3); }
+  .trk-link:hover { border-color: var(--hi); }
+  .trk-link b { font-family: 'JetBrains Mono', monospace; }
+  .add-host { display: flex; gap: 7px; align-items: center; }
+  .add-host input { font-family: 'JetBrains Mono', monospace; font-size: .74rem; }
+  .unmapped-row { display: flex; align-items: center; gap: 12px; padding: 10px 13px; border: 1px solid rgba(245,181,66,.4);
+    background: var(--warn-soft); border-radius: var(--radius-s); }
+  .unmapped-row .host-name { font-family: 'JetBrains Mono', monospace; font-size: .8rem; color: var(--ink); }
