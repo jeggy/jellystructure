@@ -61,6 +61,7 @@ kotlin {
                 implementation(libs.androidx.media3.exoplayer.hls)
                 implementation(libs.androidx.media3.session) // R44: MediaSession for hardware transport keys
                 implementation(libs.androidx.media3.ui)      // R55: SubtitleView cue rendering
+                implementation(libs.androidx.core)            // WindowCompat/WindowInsetsControllerCompat (PlayerImmersiveEffect)
             }
         }
         val wasmJsMain by getting {
