@@ -231,7 +231,11 @@ private fun SeriesDetailLoaded(
     val resumeEpId: String? = remember(allEps, overlay) {
         allEps.firstOrNull { ep -> overlay[ep.id].let { ps -> ps != null && !ps.played && ps.resumeMs > 0 } }?.id
             ?: allEps.firstOrNull { ep -> overlay[ep.id]?.played != true }?.id
-            ?: allEps.lastOrNull()?.id
+            // Bug fix: a fully-watched series used to fall through to `lastOrNull()` — the play button
+            // showed the hard-coded "Play · E1" label (below) but actually launched the *last* episode
+            // (reported: "Play E1" on a finished series played E40). Re-watching should restart from the
+            // first episode, which is exactly what the label already promises.
+            ?: allEps.firstOrNull()?.id
     }
 
     val playFR = remember { FocusRequester() }
@@ -432,7 +436,17 @@ private fun SeriesDetailLoaded(
                             modifier = Modifier.widthIn(min = 220.dp),
                             onSelect = {
                                 val epId = resumeEpId ?: episodes.firstOrNull()?.id
-                                if (epId != null) onPlay(buildEpisodeContext(detail, selectedSeasonIdx, episodes, epId, overlay))
+                                if (epId != null) {
+                                    // resumeEpId is computed across all seasons, so it may not live in the
+                                    // currently-shown season. Play it from *its own* season so the player's
+                                    // episode index and the next-episode target (nextEpId) are correct —
+                                    // otherwise buildEpisodeContext's indexOfFirst misses and silently plays
+                                    // that season's first episode instead.
+                                    val sIdx = detail.seasons.indexOfFirst { s -> s.episodes.any { it.id == epId } }
+                                        .takeIf { it >= 0 } ?: selectedSeasonIdx
+                                    val seasonEps = detail.seasons.getOrNull(sIdx)?.episodes ?: episodes
+                                    onPlay(buildEpisodeContext(detail, sIdx, seasonEps, epId, overlay))
+                                }
                             },
                         )
                         RaviloButton(
