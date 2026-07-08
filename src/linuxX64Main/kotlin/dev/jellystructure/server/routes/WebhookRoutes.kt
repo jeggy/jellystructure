@@ -123,13 +123,16 @@ private suspend fun nudgeAndIngest(
     val jellyfinPath = mapToJellyfinPath(arrPath, lib)
     jellyfinClient.notifyLibraryMediaUpdated(baseUrl, token, jellyfinPath)
 
-    // Bounded fallback poll (~5 min per spec FR A.3) — Jellyfin's own monitor settle delay is ~60s even
-    // after the nudge above; poll for the item to actually exist rather than guessing a fixed wait.
+    // Phase 145 — reliable resolution. Jellyfin's own monitor settle delay is ~60s even after the nudge;
+    // poll until the item exists. Use findRecentItemByPath (client-side path match) rather than the old
+    // getItemByPath — this Jellyfin ignores ?Path= and returned an arbitrary/wrong item. The Jellyfin
+    // LibraryChanged listener also enqueues this item with the correct id; the ingest's own debounce
+    // coalesces the overlap, so a double-enqueue here is harmless.
     val deadline = dev.jellystructure.nowEpochSec() + 5 * 60
     var found: dev.jellystructure.auth.JellyfinItem? = null
     while (dev.jellystructure.nowEpochSec() < deadline) {
         kotlinx.coroutines.delay(10_000L)
-        found = jellyfinClient.getItemByPath(baseUrl, token, jellyfinPath)
+        found = jellyfinClient.findRecentItemByPath(baseUrl, token, jellyfinPath)
         if (found != null) break
     }
     if (found == null) {
