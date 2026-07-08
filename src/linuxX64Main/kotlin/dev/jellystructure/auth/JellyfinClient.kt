@@ -367,7 +367,7 @@ class JellyfinClient {
         if (jellyfinIds.isEmpty()) return@runCatching emptyList()
         val ids = jellyfinIds.joinToString(",")
         val url = baseUrl.trimEnd('/') +
-            "/Users/$userId/Items?Ids=$ids&Fields=UserData&Limit=${jellyfinIds.size}"
+            "/Users/$userId/Items?Ids=$ids&Fields=UserData,RecursiveItemCount&Limit=${jellyfinIds.size}"
         httpGet(url) { jellyfinAuth(userToken) }
             .bodyOrNull<JellyfinUserDataItemsResponse>("getUserDataBulk")?.items.orEmpty()
     }.let { result ->
