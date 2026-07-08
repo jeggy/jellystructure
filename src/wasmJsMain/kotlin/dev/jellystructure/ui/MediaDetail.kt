@@ -40,6 +40,17 @@ import org.w3c.dom.events.KeyboardEvent
 private const val TMDB_IMG_LG = "https://image.tmdb.org/t/p/w500"
 private const val MONO_CODE_STYLE = "font-family:'JetBrains Mono',monospace;font-size:.78rem;"
 
+// Phase 144: still-image codecs some releases mux as a *video* track (cover art) — kept in lockstep
+// with the backend's TriageDetection.IMAGE_VIDEO_CODECS.
+private val IMAGE_VIDEO_CODECS = setOf("png", "mjpeg", "mjpg", "jpeg", "jpg", "bmp", "gif", "webp", "tiff")
+
+/** The specifier of a cover-image track muxed as video (alongside a real video), or null. */
+private fun coverVideoSpecifier(tracks: List<Track>): String? {
+    val videos = tracks.filter { it.kind == TrackKind.VIDEO }
+    if (videos.none { it.codec.lowercase() !in IMAGE_VIDEO_CODECS }) return null
+    return videos.firstOrNull { it.codec.lowercase() in IMAGE_VIDEO_CODECS }?.specifier
+}
+
 fun renderMediaDetail(container: Element, scope: CoroutineScope, mediaId: String, initialTab: String? = null) {
     container.innerHTML = """<span class="muted" style="padding:24px;display:block;">Loading…</span>"""
     scope.launch {
@@ -493,6 +504,34 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
     val ageRatingBadgeHtml = buildAgeRatingBadge(item, ageRatingCascade)
     val episodesTabHtml = if (isTvShow) buildEpisodesTab(item) else ""
 
+    // Phase 144: cover-art-muxed-as-video banner + one-click repair. Movie → drop its cover video
+    // stream; series → drop it from every affected episode file. Each drop is a queued ffmpeg remux.
+    val movieCoverSpec = if (!isTvShow) coverVideoSpecifier(item.tracks) else null
+    val coverEpisodes = if (isTvShow) item.episodes.mapNotNull { ep -> coverVideoSpecifier(ep.tracks)?.let { ep.filename to it } } else emptyList()
+    val hasCoverIssue = movieCoverSpec != null || coverEpisodes.isNotEmpty()
+    val coverBannerHtml = if (!hasCoverIssue) "" else {
+        val detail = if (isTvShow) "${coverEpisodes.size} episode${if (coverEpisodes.size != 1) "s" else ""} have"
+                     else "This file has"
+        val btnLabel = if (isTvShow) "Fix all (${coverEpisodes.size})" else "Fix cover track"
+        """
+        <div id="cover-banner" style="margin-bottom:14px">
+          <div style="background:var(--warn-soft);border:1px solid var(--warn);border-radius:6px;padding:10px 14px;display:flex;align-items:flex-start;gap:12px;flex-wrap:wrap;">
+            <span class="badge warn" style="flex:none;margin-top:1px;">⚠ Cover art muxed as video</span>
+            <div style="flex:1;min-width:200px;">
+              <b style="font-size:.9rem;">$detail a still image (cover art) muxed as a video track.</b>
+              <div class="tiny muted" style="margin-top:5px;line-height:1.6;">
+                Players can open the file but never start the video (it reads as an unknown extra video
+                stream). Repair drops just the cover stream via a fast <code>ffmpeg -c copy</code> remux —
+                no re-encode, audio and subtitles untouched.
+              </div>
+              <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;">
+                <button id="cover-fix-btn" class="btn sm warn">$btnLabel</button>
+              </div>
+            </div>
+          </div>
+        </div>"""
+    }
+
     // Detail topbar external links (design media.html: grouped into an "External links ▾" menu).
     val tmdbUrl: String? = if (item.tmdbId != null) {
         val tmdbPath = if (item.kind == MediaKind.TV_SHOW) "tv" else "movie"
@@ -717,6 +756,7 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
             </div>
           </div>
         </div>""" else ""}
+        $coverBannerHtml
         <div id="drift-banner" style="display:none;margin-bottom:14px"></div>
         <div id="jf-lock-banner" style="display:${if (item.jellyfinLockData || item.jellyfinLockedFields.isNotEmpty()) "block" else "none"};margin-bottom:14px">
           <div style="background:var(--bad-soft);border:1px solid var(--bad);border-radius:6px;padding:10px 14px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
@@ -784,6 +824,27 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
                 true -> App.navigate("/library?filter=missing_from_source")
                 false -> showDetailMsg("Still present in Jellyfin — can't remove.", false)
                 null -> showDetailMsg("Couldn't remove it — try again.", false)
+            }
+        }
+    }
+
+    // Phase 144: "Fix cover track" — drop the cover-image-muxed-as-video stream via queued ffmpeg
+    // remux(es). Movie = one job; series = one job per affected episode file.
+    document.getElementById("cover-fix-btn")?.addEventListener("click") {
+        val btn = document.getElementById("cover-fix-btn")
+        btn?.setAttribute("disabled", "true")
+        scope.launch {
+            if (movieCoverSpec != null) {
+                val job = MediaApi.removeTrack(item.id, movieCoverSpec)
+                if (job != null) showDetailMsg("Fixing cover track — remux queued. Track & progress in Activity ▸ Jobs.", true)
+                else { showDetailMsg("Couldn't queue the repair — is the file seeding?", false); btn?.removeAttribute("disabled") }
+            } else {
+                var queued = 0
+                for ((epFilename, spec) in coverEpisodes) {
+                    if (MediaApi.removeEpisodeTrack(item.id, epFilename, spec) != null) queued++
+                }
+                if (queued > 0) showDetailMsg("Fixing cover track on $queued episode${if (queued != 1) "s" else ""} — remuxes queued. Progress in Activity ▸ Jobs.", true)
+                else { showDetailMsg("Couldn't queue the repairs — are the files seeding?", false); btn?.removeAttribute("disabled") }
             }
         }
     }

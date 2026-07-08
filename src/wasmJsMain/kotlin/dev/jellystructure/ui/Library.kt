@@ -59,6 +59,7 @@ private val ISSUE_FILTER_LABELS = mapOf(
     "missing_still" to "Missing episode image",
     "duplicate" to "Duplicate entries",
     "zero_audio" to "No audio tracks",
+    "cover_as_video" to "Cover art muxed as video",   // Phase 144
 )
 private var libSearch: String? = null
 private var libSort: String? = null
