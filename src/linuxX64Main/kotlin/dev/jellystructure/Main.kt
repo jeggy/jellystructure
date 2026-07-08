@@ -171,7 +171,7 @@ fun main() = runBlocking {
     if (configStore.current.ingest.webhookSecret.isBlank()) {
         rootScope.launch { configStore.update(configStore.current.copy(ingest = configStore.current.ingest.copy(webhookSecret = dev.jellystructure.auth.generateSecureToken()))) }
     }
-    val realtimeIngest = dev.jellystructure.media.RealtimeIngestService(scanner, mediaStore, jellyfinClient, configStore, artworkDownloader, rootScope, broadcaster, mediaHistory, arrRescan, sonarrEnrich)
+    val realtimeIngest = dev.jellystructure.media.RealtimeIngestService(scanner, mediaStore, jellyfinClient, configStore, artworkDownloader, rootScope, broadcaster, mediaHistory, arrRescan, sonarrEnrich, imdbClient)
     val libraryListener = dev.jellystructure.tv.JellyfinLibraryListener(configStore, jellyfinClient, mediaStore, realtimeIngest, rootScope)
     libraryListener.start()
     // Phase 118 (FR C.4) — FD telemetry: the durable defense against the unfixable Ktor Native
@@ -475,10 +475,7 @@ suspend fun executePipeline(
                 runPipelineStepPool(
                     jobId, step.step, toProcess, pipelineStepConcurrency(step.step, scanWorkers),
                     scanTracker, broadcaster, labelOf = { it.title },
-                ) { item ->
-                    val updated = scanner.rescanMetadata(item)
-                    updated?.let { store.addOrUpdate(it) }
-                }
+                ) { item -> dev.jellystructure.media.PipelineStepOps.pullTmdb(item, scanner, store) }
             }
             "fetch_artwork" -> {
                 // R125/R126: "missing" scope = anything fetch() can fill is absent — poster/fanart, plus
@@ -489,10 +486,7 @@ suspend fun executePipeline(
                 runPipelineStepPool(
                     jobId, step.step, toProcess, pipelineStepConcurrency(step.step, scanWorkers),
                     scanTracker, broadcaster, labelOf = { it.title },
-                ) { item ->
-                    val current = store.get(item.id) ?: item
-                    artworkDownloader.fetch(current)
-                }
+                ) { item -> dev.jellystructure.media.PipelineStepOps.fetchArtwork(item, store, artworkDownloader) }
             }
             "write_nfo" -> {
                 // Phase 115 (FR B) — content-aware: the old `overwrite`-gated write meant an NFO
@@ -511,15 +505,14 @@ suspend fun executePipeline(
                     jobId, step.step, workingSet, pipelineStepConcurrency(step.step, scanWorkers),
                     scanTracker, broadcaster, labelOf = { it.title },
                 ) { item ->
-                    val current = store.get(item.id) ?: item
-                    val wouldBeHash = NfoWriter.contentHash(current, serverUrl, cfg.metadata.ageRatingCascade)
-                    if (wouldBeHash == current.nfoHash) { unchanged.incrementAndGet(); return@runPipelineStepPool }
-                    val onDiskHash = NfoWriter.onDiskHash(current)
-                    val isForeign = onDiskHash != null && onDiskHash != current.nfoHash
-                    if (isForeign && !(step.overwrite || cfg.behavior.overwriteNfo)) { foreignSkipped.incrementAndGet(); return@runPipelineStepPool }
-                    val r = NfoWriter.writeTracked(current, serverUrl, cfg.metadata.ageRatingCascade).getOrThrow()
-                    store.updateOne(current.copy(nfoWrittenAt = r.writtenAt, nfoHash = r.hash))
-                    written.incrementAndGet()
+                    when (dev.jellystructure.media.PipelineStepOps.writeNfo(
+                        item, store, serverUrl, cfg.metadata.ageRatingCascade,
+                        allowForeign = step.overwrite || cfg.behavior.overwriteNfo,
+                    )) {
+                        dev.jellystructure.media.PipelineStepOps.NfoResult.WRITTEN -> written.incrementAndGet()
+                        dev.jellystructure.media.PipelineStepOps.NfoResult.UNCHANGED -> unchanged.incrementAndGet()
+                        dev.jellystructure.media.PipelineStepOps.NfoResult.FOREIGN_SKIPPED -> foreignSkipped.incrementAndGet()
+                    }
                 }
                 Logger.info("write_nfo: ${written.value} written, ${unchanged.value} unchanged" +
                     if (foreignSkipped.value > 0) ", ${foreignSkipped.value} foreign NFO(s) skipped (set overwrite to replace)" else "")
@@ -534,11 +527,7 @@ suspend fun executePipeline(
                 runPipelineStepPool(
                     jobId, step.step, if (jellyfinReady) toSync else emptyList(),
                     pipelineStepConcurrency(step.step, scanWorkers), scanTracker, broadcaster, labelOf = { it.title },
-                ) { item ->
-                    val jid = item.jellyfinId ?: return@runPipelineStepPool
-                    val ok = jellyfinClient.refreshItem(cfg.apiKeys.jellyfinUrl, cfg.apiKeys.jellyfinToken, jid, full = true)
-                    if (ok) store.updateOne(item.copy(jfSyncedAt = nowEpochSec()))
-                }
+                ) { item -> dev.jellystructure.media.PipelineStepOps.syncJellyfin(item, store, jellyfinClient, cfg) }
             }
             "rescan_arr" -> {
                 Logger.info("rescan_arr: ${workingSet.size} items")
@@ -592,12 +581,7 @@ suspend fun executePipeline(
                     jobId, step.step, toSync, pipelineStepConcurrency(step.step, scanWorkers),
                     scanTracker, broadcaster, labelOf = { it.title },
                 ) { item ->
-                    val imdbId = item.imdbId ?: return@runPipelineStepPool
-                    val fetched = imdbClient?.getRating(imdbId)
-                    if (fetched != null) {
-                        store.updateOne(item.copy(imdbRating = dev.jellystructure.model.ImdbRating(fetched.aggregateRating, fetched.voteCount, nowEpochSec())))
-                        updated.incrementAndGet()
-                    }
+                    if (dev.jellystructure.media.PipelineStepOps.syncImdb(item, store, imdbClient)) updated.incrementAndGet()
                     delay(250)
                 }
                 Logger.info("sync_imdb_ratings: ${updated.value} of ${toSync.size} ratings updated")

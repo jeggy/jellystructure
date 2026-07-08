@@ -8,12 +8,12 @@ import dev.jellystructure.jobs.JobEvent
 import dev.jellystructure.jobs.WsBroadcaster
 import dev.jellystructure.log.Logger
 import dev.jellystructure.runTagged
-import dev.jellystructure.server.routes.pushToJellyfin
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.withLock
 
 /**
  * Phase 114 — targeted single-item ingest: given a Jellyfin item id that jellystructure may or may not
@@ -37,8 +37,16 @@ class RealtimeIngestService(
     private val mediaHistory: MediaHistory,
     private val arrRescan: ArrRescanService? = null,
     private val sonarrEnrich: SonarrEnrichService? = null,
+    private val imdbClient: dev.jellystructure.imdb.ImdbClient? = null,   // Phase 145
 ) {
     private val queueScope = CoroutineScope(SupervisorJob() + Dispatchers.Default.limitedParallelism(2))
+
+    // Phase 145 — coalesce bursts: a season import fires one event per episode, each of which resolves
+    // to (and re-scans) the same parent series. Skip a target whose full ingest ran within this window
+    // so a 10-episode import runs the pipeline once for the series, not ten times.
+    private val debounceMutex = kotlinx.coroutines.sync.Mutex()
+    private val lastIngestMs = HashMap<String, Long>()
+    private val debounceWindowMs = 8_000L
 
     /** Fire-and-forget: queues a targeted ingest for [jellyfinId]. Safe to call repeatedly — each call
      *  is an independent run (no dedup needed; a redundant re-scan of the same item is harmless). */
@@ -93,6 +101,18 @@ class RealtimeIngestService(
 
         if (jItem.type != "Movie" && jItem.type != "Series") return true // nothing to ingest — not a failure
 
+        // Phase 145 — coalesce bursts: skip a target whose full ingest ran within the debounce window.
+        val now = store.nowMs()
+        val coalesced = debounceMutex.withLock {
+            val last = lastIngestMs[jItem.id]
+            if (last != null && now - last < debounceWindowMs) true
+            else { lastIngestMs[jItem.id] = now; false }
+        }
+        if (coalesced) {
+            Logger.info("Realtime ingest: coalesced a burst event for ${jItem.id} (within ${debounceWindowMs}ms)", "ingest")
+            return true
+        }
+
         val existing = store.resolveByJellyfinId(jItem.id)
         val fresh = scanner.scanItem(jItem) ?: return false
         // Same additive tag-union as Scanner.rescanFromJellyfin — a re-scan must not drop tags the item
@@ -102,7 +122,36 @@ class RealtimeIngestService(
         store.addOrUpdate(enriched)
         broadcaster.broadcast(JobEvent.ItemScanned("realtime-ingest-${enriched.id}", enriched))
         mediaHistory.record(enriched.id, "realtime_ingest", "jellyfinId=${jItem.id}")
-        pushToJellyfin(enriched, artwork, configStore, jellyfinClient, appScope, store, arrRescan)
+        // Phase 145 — run the operator's *configured* [[scan.pipeline]] downstream steps for this one item
+        // (scan_files + pull_tmdb already covered by scanItem above), so an event-ingested item gets the
+        // exact same treatment as a scheduled run — artwork, IMDb ratings, NFO, Jellyfin — driven by config
+        // rather than the old hard-coded flow (which omitted IMDb + ignored the pipeline config entirely).
+        runConfiguredSteps(enriched.id)
         return true
+    }
+
+    /** Phase 145 — the per-item downstream pipeline for a freshly-scanned item, driven by the configured
+     *  [[scan.pipeline]] and dispatched through the same [PipelineStepOps] the scheduled run uses (so no
+     *  drift). Runs under this service's own activity — it never touches the global [ScanTracker]. */
+    private suspend fun runConfiguredSteps(itemId: String) {
+        val cfg = configStore.current
+        for (step in cfg.scan.pipeline) {
+            val current = store.get(itemId) ?: return   // gone mid-flight (e.g. deleted)
+            runCatching {
+                when (step.step) {
+                    "scan_files", "pull_tmdb" -> Unit  // already done by scanItem
+                    "fetch_artwork" -> PipelineStepOps.fetchArtwork(current, store, artwork)
+                    "sync_imdb_ratings" -> PipelineStepOps.syncImdb(current, store, imdbClient)
+                    "write_nfo" -> PipelineStepOps.writeNfo(
+                        current, store, cfg.apiKeys.jellyfinUrl, cfg.metadata.ageRatingCascade,
+                        allowForeign = step.overwrite || cfg.behavior.overwriteNfo,
+                        includeEpisodes = true,   // a fresh series' episodes each need their NFO (as pushToJellyfin did)
+                    )
+                    "sync_jellyfin" -> PipelineStepOps.syncJellyfin(current, store, jellyfinClient, cfg)
+                    "rescan_arr" -> arrRescan?.let { PipelineStepOps.rescanArr(current, it) }
+                    else -> Unit  // detect_drift etc. — bulk monitoring steps, not part of a single-item ingest
+                }
+            }.onFailure { Logger.warn("Realtime ingest: step '${step.step}' failed for $itemId: ${it.message}", "ingest") }
+        }
     }
 }

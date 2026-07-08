@@ -155,6 +155,18 @@ class JellyfinClient {
         httpGet(url) { jellyfinAuth(token) }.bodyOrNull<JellyfinItemsResponse>("getItemByPath")?.items?.firstOrNull()
     }.getOrElse { Logger.warn("Jellyfin getItemByPath failed: ${it.message}"); null }
 
+    /** Phase 145 — reliable path→item resolution. This Jellyfin **ignores** the `?Path=` filter
+     *  ([getItemByPath] then returns an arbitrary item), so instead pull the most-recently-added
+     *  Movie/Episode items and match the path **ourselves**. Bounded (last [limit] additions) and safe to
+     *  poll after a `notifyLibraryMediaUpdated` nudge. Returns the exact-path match, or null if not there yet. */
+    suspend fun findRecentItemByPath(baseUrl: String, token: String, path: String, limit: Int = 200): JellyfinItem? = runCatching {
+        val url = baseUrl.trimEnd('/') +
+            "/Items?Recursive=true&IncludeItemTypes=Movie,Episode&SortBy=DateCreated&SortOrder=Descending&Limit=$limit" +
+            "&Fields=Path,ProviderIds,ProductionYear,LockData,LockedFields,Tags,DateCreated,DateLastSaved,SeriesId"
+        httpGet(url) { jellyfinAuth(token) }.bodyOrNull<JellyfinItemsResponse>("findRecentItemByPath")
+            ?.items?.firstOrNull { it.path == path }
+    }.getOrElse { Logger.warn("Jellyfin findRecentItemByPath failed: ${it.message}"); null }
+
     /** Phase 114 — batch form of [getItem] for the LibraryChanged listener (chunked by the caller to
      *  keep URLs reasonable; Jellyfin has no documented Ids= count limit but a few hundred is prudent). */
     suspend fun getItemsByIds(baseUrl: String, token: String, jellyfinIds: List<String>): List<JellyfinItem> {
