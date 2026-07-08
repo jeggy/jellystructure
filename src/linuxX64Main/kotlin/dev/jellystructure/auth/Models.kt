@@ -183,10 +183,15 @@ data class JellyfinEpisodesResponse(
     @SerialName("Items") val items: List<JellyfinEpisodeItem> = emptyList(),
 )
 
-/** R83: thin projection used by the bulk /Users/{userId}/Items?Ids=…&Fields=UserData call. */
+/** R83: thin projection used by the bulk /Users/{userId}/Items?Ids=…&Fields=UserData call.
+ *  Phase note (2026-07-08): also carries Type + RecursiveItemCount so callers can reject a series
+ *  whose Jellyfin child rollup is empty — such a series reports UserData.Played=true vacuously
+ *  (0 unplayed of 0), which otherwise paints a false ✓ on the tile even though episodes exist. */
 @Serializable
 data class JellyfinUserDataItem(
     @SerialName("Id") val id: String,
+    @SerialName("Type") val type: String = "",
+    @SerialName("RecursiveItemCount") val recursiveItemCount: Int? = null,
     @SerialName("UserData") val userData: JellyfinUserData? = null,
 )
 

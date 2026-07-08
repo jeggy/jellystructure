@@ -147,7 +147,8 @@ class DetailService(
                     val pct = (ud.playedPercentage?.toFloat() ?: 0f) / 100f
                     results[jfItem.id] = CardPlayState(
                         resumeMs  = posMs,
-                        played    = ud.played,
+                        // Skip a vacuous series ✓ (empty Jellyfin child rollup → Played=true of 0). See PlaystateHydrator.
+                        played    = ud.played && !(jfItem.type == "Series" && jfItem.recursiveItemCount == 0),
                         playedPct = pct,
                     )
                 }
