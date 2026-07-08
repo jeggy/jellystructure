@@ -1148,6 +1148,35 @@ fun Route.mediaRoutes(
                     call.respond(HttpStatusCode.Accepted, mapOf("jobId" to job.id))
                 }
 
+                // DELETE /api/media/{id}/episodes/{epFilename}/tracks/{specifier} — Phase 144: drop one
+                // track from an episode file via the ffmpeg remux "remove" job (the movie twin lives in
+                // TrackRoutes.kt). Used by "Fix cover track" to drop a cover-image-muxed-as-video stream.
+                delete("/tracks/{specifier}") {
+                    val id = call.parameters["id"] ?: return@delete call.respond(HttpStatusCode.BadRequest)
+                    val epFilename = call.parameters["epFilename"] ?: return@delete call.respond(HttpStatusCode.BadRequest)
+                    val specifier = call.parameters["specifier"] ?: return@delete call.respond(HttpStatusCode.BadRequest)
+                    val item = store.resolve(id) ?: return@delete call.respond(HttpStatusCode.NotFound)
+                    val ep = item.episodes.firstOrNull { it.filename == epFilename }
+                        ?: return@delete call.respond(HttpStatusCode.NotFound, mapOf("error" to "episode not found"))
+                    ep.tracks.firstOrNull { it.specifier == specifier }
+                        ?: return@delete call.respond(HttpStatusCode.NotFound, mapOf("error" to "track not found"))
+
+                    when (val guard = seedingGuard.check(ep.path, configStore.current)) {
+                        is SeedingCheckResult.Blocked -> { call.respond(HttpStatusCode.Conflict, mapOf("error" to "File is seeded by '${guard.torrentName}'")); return@delete }
+                        is SeedingCheckResult.Unreachable -> { call.respond(HttpStatusCode.ServiceUnavailable, mapOf("error" to "qBittorrent unreachable: ${guard.reason}")); return@delete }
+                        else -> Unit
+                    }
+
+                    val epCode = if (ep.seasonNumber != null && ep.episodeNumber != null)
+                        "S${ep.seasonNumber.toString().padStart(2, '0')}E${ep.episodeNumber.toString().padStart(2, '0')}"
+                    else ep.filename
+                    val job = mediaJobQueue.enqueue(
+                        "remove", id, "${item.title} — $epCode",
+                        dev.jellystructure.jobs.MediaJobParams(specifier = specifier, episodeFilename = epFilename),
+                    )
+                    call.respond(HttpStatusCode.Accepted, mapOf("jobId" to job.id))
+                }
+
                 // PATCH /api/media/{id}/episodes/{epFilename}/metadata — edit episode title/overview
                 patch("/metadata") {
                     val id = call.parameters["id"]

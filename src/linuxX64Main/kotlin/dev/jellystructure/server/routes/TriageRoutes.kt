@@ -52,6 +52,7 @@ data class EpisodeTriageItem(
     val untaggedTracks: List<TriageTrack>,
     val missingStill: Boolean,  // Phase 121: no image on disk at all (was missingOverview — TMDB plot text isn't an issue)
     val multiDefault: MultiDefaultIssue? = null,
+    val coverAsVideo: String? = null,  // Phase 144: specifier of a cover-image track muxed as video (repairable), or null
 )
 
 @Serializable
@@ -71,6 +72,7 @@ data class TriageItem(
     val multiDefault: MultiDefaultIssue? = null,
     val missingArtwork: Boolean = false,   // R123: no poster.jpg on disk — needs artwork
     val missingFromSource: Boolean = false, // Phase 95: gone from Jellyfin — kept (scanner never deletes), needs review
+    val coverAsVideo: String? = null,       // Phase 144: movie — specifier of a cover-image track muxed as video, or null
 )
 
 // Phase 117: one row per triage issue type, always present (even at 0), carrying its own display copy
@@ -119,6 +121,8 @@ fun Route.triageRoutes(store: MediaStore, jellyfinClient: JellyfinClient, config
             val dupGroups = all.filter { !it.jellyfinId.isNullOrBlank() }.groupBy { it.jellyfinId }.filterValues { it.size > 1 }
             val zeroAudioInstances = all.sumOf { TriageDetection.zeroAudioCount(it) }
             val zeroAudioTitles = all.count { TriageDetection.zeroAudioCount(it) > 0 }
+            val coverAsVideoInstances = all.sumOf { TriageDetection.coverAsVideoCount(it) }  // Phase 144
+            val coverAsVideoTitles = all.count { TriageDetection.coverAsVideoCount(it) > 0 }
 
             val types = listOf(
                 TriageTypeCount("untagged", "Untagged audio/subtitle tracks",
@@ -148,6 +152,9 @@ fun Route.triageRoutes(store: MediaStore, jellyfinClient: JellyfinClient, config
                 TriageTypeCount("zero_audio", "No audio tracks",
                     "Zero audio tracks detected — usually a corrupt/truncated file. Open Tracks & order for the diagnosis and repair options.",
                     zeroAudioInstances, zeroAudioTitles),
+                TriageTypeCount("cover_as_video", "Cover art muxed as a video track",
+                    "A still image (cover.png etc.) is muxed as a second video stream — players may open the file but never start the video. Repairable: drop the cover stream.",
+                    coverAsVideoInstances, coverAsVideoTitles),
             )
             val result = TriageCount(types = types, total = types.sumOf { it.instances })
             triageCountCache = Pair(ver, result)
@@ -292,7 +299,8 @@ private fun MediaItem.toTriageItem(): TriageItem? {
                 .map { t -> TriageTrack(specifier = t.specifier, streamIndex = t.streamIndex, kind = t.kind.name.lowercase(), codec = t.codec, title = t.title) }
             val missingStill = !ep.hasStill
             val multiDefault = ep.detectMultiDefaultAudio()
-            if (untagged.isEmpty() && !missingStill && multiDefault == null) return@mapNotNull null
+            val coverAsVideo = TriageDetection.coverVideoSpecifier(ep.tracks)  // Phase 144
+            if (untagged.isEmpty() && !missingStill && multiDefault == null && coverAsVideo == null) return@mapNotNull null
             val code = if (ep.seasonNumber != null && ep.episodeNumber != null) {
                 "S${ep.seasonNumber.toString().padStart(2, '0')}E${ep.episodeNumber.toString().padStart(2, '0')}"
             } else ep.filename.substringBeforeLast('.')
@@ -303,6 +311,7 @@ private fun MediaItem.toTriageItem(): TriageItem? {
                 untaggedTracks = untagged,
                 missingStill = missingStill,
                 multiDefault = multiDefault,
+                coverAsVideo = coverAsVideo,
             )
         }
         val missingArtwork = !posterArtworkExists(this)
@@ -337,7 +346,8 @@ private fun MediaItem.toTriageItem(): TriageItem? {
     val mismatch = detectCascadeMismatch()
     val multiDefault = detectMultiDefaultAudio()
     val missingArtwork = !posterArtworkExists(this)
-    if (untagged.isEmpty() && mismatch == null && multiDefault == null && !missingArtwork && !missingFromSource) return null
+    val coverAsVideo = TriageDetection.coverVideoSpecifier(tracks)  // Phase 144
+    if (untagged.isEmpty() && mismatch == null && multiDefault == null && !missingArtwork && !missingFromSource && coverAsVideo == null) return null
     return TriageItem(
         mediaId = id,
         title = title,
@@ -351,6 +361,7 @@ private fun MediaItem.toTriageItem(): TriageItem? {
         multiDefault = multiDefault,
         missingArtwork = missingArtwork,
         missingFromSource = missingFromSource,
+        coverAsVideo = coverAsVideo,
     )
 }
 

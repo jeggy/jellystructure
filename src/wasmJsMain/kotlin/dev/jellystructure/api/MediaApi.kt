@@ -110,6 +110,7 @@ data class MultiDefaultIssue(val defaultSpecifiers: List<String>)
 data class EpisodeTriageItem(
     val filename: String, val episodeCode: String, val title: String? = null,
     val untaggedTracks: List<TriageTrack>, val missingStill: Boolean, val multiDefault: MultiDefaultIssue? = null,
+    val coverAsVideo: String? = null,   // Phase 144: specifier of a cover-image track muxed as video, or null
 )
 
 @Serializable
@@ -121,6 +122,7 @@ data class TriageItem(
     val languageMix: Boolean = false, val multiDefault: MultiDefaultIssue? = null,
     val missingArtwork: Boolean = false,
     val missingFromSource: Boolean = false,   // Phase 95: gone from Jellyfin — kept (scanner never deletes)
+    val coverAsVideo: String? = null,          // Phase 144: movie — specifier of a cover-image track muxed as video
 )
 
 @Serializable
@@ -669,6 +671,24 @@ object MediaApi {
             setBody("""{"kind":"$kind","order":[$orderJson]}""")
             contentType(ContentType.Application.Json)
         }
+        if (response.status.value !in 200..299) return@runCatching null
+        @Serializable data class JobIdResp(val jobId: String)
+        response.body<JobIdResp>().jobId
+    }.getOrNull()
+
+    /** Phase 144: drop a track from a movie file via the queued ffmpeg-remux "remove" job — returns the
+     *  job id, or null on failure. Used by "Fix cover track" to drop a cover-image-muxed-as-video stream. */
+    suspend fun removeTrack(id: String, specifier: String): String? = runCatching {
+        val response = httpClient.delete("/api/media/$id/tracks/${specifier.encodeURL()}")
+        if (response.status.value !in 200..299) return@runCatching null
+        @Serializable data class JobIdResp(val jobId: String)
+        response.body<JobIdResp>().jobId
+    }.getOrNull()
+
+    /** Phase 144: episode variant of [removeTrack] (a series' cover track lives on the episode file). */
+    suspend fun removeEpisodeTrack(id: String, epFilename: String, specifier: String): String? = runCatching {
+        val encoded = epFilename.encodeURL()
+        val response = httpClient.delete("/api/media/$id/episodes/$encoded/tracks/${specifier.encodeURL()}")
         if (response.status.value !in 200..299) return@runCatching null
         @Serializable data class JobIdResp(val jobId: String)
         response.body<JobIdResp>().jobId

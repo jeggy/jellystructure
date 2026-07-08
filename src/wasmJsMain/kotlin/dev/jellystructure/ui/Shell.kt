@@ -53,6 +53,7 @@ private fun triageSubline(item: dev.jellystructure.api.TriageItem): String {
     if (item.languageMix) parts += "mixed-language series"
     if (item.missingArtwork) parts += "missing poster artwork"
     if (item.missingFromSource) parts += "no longer in Jellyfin — kept, review & remove if intended"  // Phase 95
+    if (item.coverAsVideo != null) parts += "cover art muxed as video — playback-hostile, repairable"  // Phase 144
     val epIssues = item.episodeIssues
     if (epIssues.isNotEmpty()) {
         val first = epIssues.first()
@@ -60,6 +61,7 @@ private fun triageSubline(item: dev.jellystructure.api.TriageItem): String {
         if (first.untaggedTracks.isNotEmpty()) epParts += "untagged tracks"
         if (first.multiDefault != null) epParts += "multiple default audio"
         if (first.missingStill) epParts += "missing episode image"
+        if (first.coverAsVideo != null) epParts += "cover art muxed as video"  // Phase 144
         val more = if (epIssues.size > 1) " (+${epIssues.size - 1} more)" else ""
         parts += "${first.episodeCode} · ${epParts.joinToString(", ").ifEmpty { "needs attention" }}$more"
     }
