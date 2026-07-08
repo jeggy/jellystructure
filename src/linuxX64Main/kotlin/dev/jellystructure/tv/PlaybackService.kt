@@ -238,7 +238,8 @@ class PlaybackService(
                     val ud = jf.userData ?: return@forEach
                     out[jf.id] = CardPlayState(
                         resumeMs  = ud.playbackPositionTicks / TICKS_PER_MS,
-                        played    = ud.played,
+                        // Skip a vacuous series ✓ (empty Jellyfin child rollup → Played=true of 0). See PlaystateHydrator.
+                        played    = ud.played && !(jf.type == "Series" && jf.recursiveItemCount == 0),
                         playedPct = (ud.playedPercentage?.toFloat() ?: 0f) / 100f,
                     )
                 }

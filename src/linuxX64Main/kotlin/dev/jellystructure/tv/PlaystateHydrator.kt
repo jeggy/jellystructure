@@ -34,7 +34,10 @@ internal suspend fun fetchPlaystate(
                 val ud = jf.userData ?: return@forEach
                 out[jf.id] = CardPlayState(
                     resumeMs  = ud.playbackPositionTicks / HYDRATE_TICKS_PER_MS,
-                    played    = ud.played,
+                    // A series whose Jellyfin child rollup is empty (RecursiveItemCount == 0) reports
+                    // Played=true vacuously (0 unplayed of 0) — even when episodes exist but the series
+                    // aggregation is stale (verified: Unanimous). Don't paint a false ✓ on the tile.
+                    played    = ud.played && !(jf.type == "Series" && jf.recursiveItemCount == 0),
                     playedPct = (ud.playedPercentage?.toFloat() ?: 0f) / 100f,
                 )
             }
