@@ -279,6 +279,7 @@ class MediaStore(
                     items = items.filter { it.id in dupIds }
                 }
                 "zero_audio" -> items = items.filter { TriageDetection.zeroAudioCount(it) > 0 }
+                "cover_as_video" -> items = items.filter { TriageDetection.coverAsVideoCount(it) > 0 }  // Phase 144
             }
             items
         }.let { items ->

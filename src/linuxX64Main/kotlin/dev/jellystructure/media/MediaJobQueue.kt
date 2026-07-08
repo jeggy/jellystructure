@@ -249,8 +249,18 @@ class MediaJobQueue(
     private suspend fun runRemove(row: Media_job, params: MediaJobParams): Outcome {
         val item = store.resolve(row.media_id) ?: return Failure("Media item no longer exists")
         val specifier = params.specifier ?: return Failure("Missing target specifier")
-        val targetPath = item.path
-        val target = item.tracks.firstOrNull { it.specifier == specifier } ?: return Failure("Track not found")
+
+        // Phase 144: episode-aware, mirroring runReorder — a series' cover-art-as-video track lives on
+        // the individual episode file, not the series-level item.path.
+        val targetPath: String
+        val tracks: List<dev.jellystructure.model.Track>
+        if (params.episodeFilename != null) {
+            val ep = item.episodes.firstOrNull { it.filename == params.episodeFilename } ?: return Failure("Episode not found")
+            targetPath = ep.path; tracks = ep.tracks
+        } else {
+            targetPath = item.path; tracks = item.tracks
+        }
+        val target = tracks.firstOrNull { it.specifier == specifier } ?: return Failure("Track not found")
 
         guard(targetPath)?.let { return it }
 
@@ -267,8 +277,17 @@ class MediaJobQueue(
         val newTracks = FfprobeRunner.probe(targetPath)
         val newIssue = newTracks.count { (it.kind == TrackKind.AUDIO || it.kind == TrackKind.SUBTITLE) && it.language == null }
         val fresh = store.resolve(row.media_id) ?: item
-        store.updateOne(fresh.copy(tracks = newTracks, issueCount = newIssue))
-        mediaHistory.record(row.media_id, "remove_track", "specifier=$specifier")
+        if (params.episodeFilename != null) {
+            val epIdx = fresh.episodes.indexOfFirst { it.filename == params.episodeFilename }
+            if (epIdx >= 0) {
+                val updated = fresh.episodes.toMutableList()
+                updated[epIdx] = updated[epIdx].copy(tracks = newTracks, issueCount = newIssue)
+                store.updateOne(fresh.copy(episodes = updated))
+            }
+        } else {
+            store.updateOne(fresh.copy(tracks = newTracks, issueCount = newIssue))
+        }
+        mediaHistory.record(row.media_id, "remove_track", "${params.episodeFilename?.let { "ep=$it " } ?: ""}specifier=$specifier")
         postWriteSync(fresh)
         return Success
     }

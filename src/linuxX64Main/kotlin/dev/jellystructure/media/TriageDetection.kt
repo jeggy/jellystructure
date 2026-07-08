@@ -59,4 +59,30 @@ object TriageDetection {
     } else {
         if (item.tracks.none { it.kind == TrackKind.AUDIO }) 1 else 0
     }
+
+    // Phase 144: still-image codecs that some releases mux as a *video* track (cover art). ffprobe
+    // reports these as VIDEO streams; players expose them as `video/x-unknown` and can end up with no
+    // working video decoder (see specs/research-reports/ravilo-cover-art-video-track-2026-07-08.md).
+    private val IMAGE_VIDEO_CODECS = setOf("png", "mjpeg", "mjpg", "jpeg", "jpg", "bmp", "gif", "webp", "tiff")
+
+    /** Count of image-codec VIDEO tracks muxed alongside a real video track (the cover-art-as-video
+     *  signature). 0 when there is no real video to pair with, so a genuinely image-only file (rare)
+     *  isn't mislabelled. Attached pictures / MKV attachments are not VIDEO tracks and never match. */
+    private fun tracksCoverAsVideo(tracks: List<Track>): Int {
+        val videos = tracks.filter { it.kind == TrackKind.VIDEO }
+        val hasRealVideo = videos.any { it.codec.lowercase() !in IMAGE_VIDEO_CODECS }
+        return if (hasRealVideo) videos.count { it.codec.lowercase() in IMAGE_VIDEO_CODECS } else 0
+    }
+
+    fun coverAsVideoCount(item: MediaItem): Int = if (item.kind == MediaKind.TV_SHOW) {
+        item.episodes.sumOf { tracksCoverAsVideo(it.tracks) }
+    } else tracksCoverAsVideo(item.tracks)
+
+    /** The specifier of the (first) cover image video track in a track list, or null. Used by the
+     *  repair to target the exact stream to drop. */
+    fun coverVideoSpecifier(tracks: List<Track>): String? {
+        val videos = tracks.filter { it.kind == TrackKind.VIDEO }
+        if (videos.none { it.codec.lowercase() !in IMAGE_VIDEO_CODECS }) return null
+        return videos.firstOrNull { it.codec.lowercase() in IMAGE_VIDEO_CODECS }?.specifier
+    }
 }
