@@ -39,7 +39,7 @@ This split is the most important rule in this document.
   concern against any other host.
 - **Data plane — Jellyfin directly.** The actual **video/audio byte stream** and **image assets**
   are fetched **directly from Jellyfin** by the device, using a short-lived access token and base URL
-  that jellystructure brokers during pairing. jellystructure is **not** a video proxy.
+  that jellystructure brokers at sign-in. jellystructure is **not** a video proxy.
 
 Rationale: routing tens of Mbit/s of video through the Kotlin/Native backend would be wasteful and
 fragile; Jellyfin already serves media efficiently on the LAN. jellystructure stays the single
@@ -158,23 +158,28 @@ The repository now produces **two distinct WebAssembly bundles**, and they must 
 
 ## Architectural Invariants
 
-### Authentication & device pairing
-Ravilo follows the same "no separate account" spirit as jellystructure, adapted for a TV with no
-keyboard:
-1. The TV app contacts **only jellystructure**. A device begins unauthenticated.
-2. Sign-in uses a **pairing-code flow**: the TV shows a short code; the user approves it from an
-   already-signed-in jellystructure web session (or types Jellyfin credentials on a paired phone) —
-   no password is typed on the TV.
-3. jellystructure authenticates against Jellyfin (`POST /Users/AuthenticateByName`), and — unlike the
-   admin web app — **Ravilo permits non-admin Jellyfin users** (it is an end-viewer app, not the
-   operator console).
+### Authentication & device sign-in
+Ravilo follows the same "no separate account" spirit as jellystructure — viewers sign in with their
+existing **Jellyfin** credentials; there is no separate Ravilo account:
+1. The TV app contacts **only jellystructure** for the control plane. A device begins unauthenticated.
+2. Sign-in is a **username + password login entered on the device** (Ravilo's on-screen keyboard /
+   the remote), **proxied through jellystructure** to Jellyfin (`POST /Users/AuthenticateByName`) —
+   the credential call to Jellyfin is made by jellystructure, not by the TV. There is no pairing code
+   and no admin-approval step.
+3. jellystructure authenticates as the **chosen** Jellyfin user (never silently as the admin), and —
+   unlike the admin web app — **Ravilo permits non-admin Jellyfin users** (it is an end-viewer app,
+   not the operator console). Each signed-in profile authenticates under its **own per-(device, user)
+   Jellyfin device identity**, so several people can sign in on one TV without evicting one another's
+   sessions.
 4. On success jellystructure stores a **device session** (opaque token, SQLite) bound to that
    Jellyfin user, and brokers to the device: a control-plane device token + the Jellyfin **base URL**
    and a **data-plane access token** for streaming/images.
 5. Every `/api/tv/**` call and the playback-reporting channel validate the device token; missing or
-   revoked → 401 and the TV returns to pairing.
-6. The Jellyfin password is **never** stored or sent to the TV. Data-plane tokens are scoped and
-   refreshable through jellystructure; the TV never performs Jellyfin sign-in itself.
+   revoked → 401 and the TV returns to the **login screen**.
+6. The Jellyfin password is **never stored, logged, or persisted** — jellystructure relays it once to
+   Jellyfin at sign-in and discards it, keeping only the resulting scoped tokens. Data-plane tokens
+   are scoped and refreshable through jellystructure; the device performs no Jellyfin sign-in call of
+   its own (it posts credentials to jellystructure, which does).
 
 ### Per-user configuration is server-owned and synced
 - A viewer's Ravilo layout (hero items, channels, row order/visibility, the merged-"Newly Added"
