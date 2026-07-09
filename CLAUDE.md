@@ -11,19 +11,19 @@ GitHub is the **source of truth**; we layer designs on top of it.
 - **Pull (repo → here):** the canonical specs live in the repo under `specs/`. This
   project keeps an exact mirror of `specs/` at its root, plus `CLAUDE.md`. Re-pull
   with the GitHub tools (ref `main`) whenever the specs move.
-- **Export (here → repo):** export the whole project; `specs/`, `CLAUDE.md` **and**
-  `STATUS.md` go to the **repo root**, and *everything else* (`app/`, `ravilo/`, `flags/`,
+- **Export (here → repo):** export the whole project; `specs/` and `CLAUDE.md` go to the
+  **repo root**, and *everything else* (`app/`, `ravilo/`, `flags/`,
   `wireframes/`, `flags.css`, `scraps/`, `uploads/`, the standalone logo HTML…) goes
   under the repo's **`design/`** folder. Then commit + push.
-- **`STATUS.md` is maintained two-way** (single source of truth for phase status,
-  admin + Ravilo in one file). It lives at the repo root **and** is mirrored at this
-  project's root; **both** the repo team and this project edit it. **Re-pull it (ref
-  `main`) before editing** to absorb the other team's changes, then export it back to the
-  repo root alongside `specs/` + `CLAUDE.md`.
-- **Watch the loop:** the export overwrites the repo's `CLAUDE.md`, `STATUS.md` and
-  `design/**` with this project's copies, so edits made *only* in the repo get reverted
-  on the next export. Re-pull `specs/`, `CLAUDE.md` **and** `STATUS.md` before editing;
-  keep the design-side source of truth here.
+  **⚠ The export must LEAVE ALONE:** the repo's **`STATUS.md`** (code-owned — a 2026-07-04
+  export overwrote it with our stale mirror and reverted ~14 phases; the dev team restored it
+  and asked us to never ship it again), **`specs/research-reports/`** (code-owned; re-add
+  nothing, delete nothing), and **`scripts/`**. Never delete repo-side spec files our mirror
+  lacks — re-pull first instead. After a push the dev team runs `scripts/check-phases.sh` and
+  `scripts/check-mobile-css.sh`; keep both green.
+- **`STATUS.md` here is a read-only mirror** (single source of truth for phase status lives at
+  the repo root, maintained by the dev team). **Re-pull it (ref `main`) whenever you need
+  current status** — never edit locally, never export it.
 
 ### Spec layout (mirrored at `specs/`)
 - `specs/constitution.md` — non-negotiable architecture, language-resolution
@@ -36,13 +36,19 @@ GitHub is the **source of truth**; we layer designs on top of it.
 - `specs/research-reports/` — dated deep-dives (research, not spec; may go stale).
 
 ## Where the work stands (read the repo `STATUS.md` for the live table)
-- **Admin phases 0–90 ✓ Done.** **Ravilo R01–R86 ✓ Done.** No `⚠ Partial` left.
-- **15 phases Planned (not built):** admin 82–85 (premise-corrected CSS/UX fixes —
-  several already reflected in these mockups); Ravilo R63–R74 (TV image-pipeline
-  perf, channel-list copy/preview polish, focus + player-chrome tweaks).
-- Recent landings: backend-performance sprint (88/89/90 + R86), R62 brand recolor,
-  R75–R81 TV detail (audio/subtitle flags, top navbar, cast & crew), R51 global vs
-  per-user config, R48–R50 Discover / Top 10.
+- **Everything through admin 140 / Ravilo R174 is ✓ Done except:** admin **141–143**
+  (proxied login · restricted-user catalog filtering · Users & Devices overview) and
+  **R175** (TV login screen) — all `Planned`, specs written; **mockups added
+  2026-07-09** (Users & devices Settings tab · TV login screen in the main mockup).
+  144/145 (cover-as-video triage+repair, event-driven pipeline) are Done.
+- Recent landings: Seerr pivot (136/137 + R170/R171), request-language steering (139 +
+  R172), Workbench query blocks (140), HDR tone-map fix (R173), grid-columns config
+  (R174), cover-as-video (144), event-driven pipeline (145).
+- **2026-07-09 audit:** design mirrors verified byte-identical with repo `design/**`;
+  repo-side refactor adopted (`media/series/metadata.html` now link `app/detail.css` +
+  `app/metadata.css` — keep these files). Known mockup gaps vs shipped code: dashboard
+  triage breakdown (117) + cover-as-video surfaces (144), R172 language picker, R174
+  grid-columns controls — see `Design-Implementation Audit 2026-07-09.md`.
 
 ## Design constraints to respect
 - `design/app/` + `design/ravilo/` mockups are the **visual target** for the
@@ -59,7 +65,8 @@ GitHub is the **source of truth**; we layer designs on top of it.
   the dark surfaces ("Soft Charcoal").
 - Type: **Space Grotesk** (display) · **Sora** (UI) · **JetBrains Mono** (code/IDs).
 - Tokens: `--ok` resolved/success · `--warn` dirty/mixed · `--bad` error.
-- Shared `app/wf.css` (tokens + components) + `app/app.css` (shell). `app/app-shell.js`
+- Shared `app/wf.css` (tokens + components) + `app/app.css` (shell) + per-page
+  `app/detail.css` (media/series) and `app/metadata.css`. `app/app-shell.js`
   injects the sidebar, mobile drawer, ambient scan dock, floating **Triage dock**,
   and ⌘K command palette.
 
@@ -71,7 +78,8 @@ GitHub is the **source of truth**; we layer designs on top of it.
   **swatches** + dotted chips, Phase 82).
 - **Settings** (`settings.html`) — URL-addressable **tabs** (Phase 55): Connections ·
   Libraries · Metadata · **Download tools** (Radarr/Sonarr + cross-seed) ·
-  Notifications · Advanced.
+  Notifications · Advanced · **Users & devices** (Phase 143 design: per-user Ravilo
+  devices + admin web sessions, revoke / sign-out-everywhere).
 - **Movie detail** (`media.html`) / **Series detail** (`series.html`) — the single
   editing surface. **Write-through** editing (Phases 71/74): edits commit to disk
   immediately; the split button is **Save → NFO / Sync Jellyfin / Save & Sync** (the
@@ -85,16 +93,17 @@ GitHub is the **source of truth**; we layer designs on top of it.
 ## Ravilo companion app (`ravilo/`)
 - **Ravilo TV** (`ravilo/Ravilo TV.html` → `ravilo-app.js` + `ravilo.css`) — the TV UI:
   Home (hero carousel, channel rail, content rows), Movies/Series/My List grids,
-  Search, Movie/Series **detail** (audio flags R75, cast & crew R81; subtitle flags
-  R78 are the open gap), **Top 10 / Discover** screen + detail with live request
-  status (R48/R49), Player. Three skins (Aurora/Midnight/Noir). `ravilo-i18n.js`
+  Search, Movie/Series **detail** (merged audio+subtitle flag line R75/R78/R134, cast &
+  crew R81), **Discover** (profile-hub nav R170; Coming Soon + Seerr **Request** tab
+  R171), Player. Three skins (Aurora/Midnight/Noir). `ravilo-i18n.js`
   (en/da/fo). `Ravilo Mobile.html` + `mobile/` = the Android **phone** target (R60).
 - **Ravilo config editor** (`app/ravilo-config.html`) — the Jellystructure-side editor
   for a viewer's TV layout. Has: **Global vs per-user scope switcher** (R51), Home
   hero carousel (single global height 40–100% + auto-advance, R58), Channels &
   collections, Content rows (system rows = Continue + Newly Added, R54/R61),
   **Top 10 / Discover** lists (R50), Behaviour (skin, tile shape, ui-lang),
-  **Pair-a-TV** modal + **sticky** action navbar (R57), live preview iframe.
+  **Pair-a-TV** modal + **sticky** action navbar (R57), live preview iframe. TV sign-in
+  is now the R175 **username/password login** (pairing code removed from the TV mockup).
 - **Shared filter workbench** powers filters everywhere: `app/ravilo-builders.js`
   (+ `ravilo-builders.css`) exposes `window.RaviloBuilders` and is loaded by **both**
   `ravilo-config.html` and `library.html` (R32). Facets = **Studio · Network · Genre ·

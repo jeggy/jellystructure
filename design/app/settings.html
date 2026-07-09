@@ -32,6 +32,33 @@
   .set-section[data-tab] { display: none; }
   .set-section[data-tab].tab-show { display: block; }
 
+  /* Users & devices (Phase 143) */
+  .usr-av { width: 34px; height: 34px; border-radius: 50%; flex: none; display: inline-flex; align-items: center; justify-content: center;
+    font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: .8rem; color: #fff; }
+  .usr-table td { vertical-align: middle; }
+  .usr-table tr.usr-hd td { font-size: .62rem; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; color: var(--ink-dim);
+    padding-top: 12px; padding-bottom: 3px; border-bottom: none; }
+  .usr-table tr.usr-hd:first-child td { padding-top: 2px; }
+  .usr-revoke.confirm, .usr-signout-all.confirm { background: var(--bad-soft); color: var(--bad); border-color: var(--bad); }
+  .usr-empty { color: var(--ink-dim); font-size: .8rem; padding: 10px 0 2px; }
+  .usr-access { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; margin: 10px 0 -1px; }
+  .usr-access > .muted:first-child { font-size: .6rem; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; color: var(--ink-dim); }
+  .usr-access .chip { font-size: .72rem; cursor: default; }
+  .usr-tagdot { width: 8px; height: 8px; border-radius: 50%; flex: none; display: inline-block; margin-right: 6px; }
+  .usr-tagdot.ok { background: var(--ok); } .usr-tagdot.bad { background: var(--bad); }
+  .usr-more-row { display: none; }
+  .usr-table.hist-open .usr-more-row { display: table-row; }
+  .usr-showmore td { padding-top: 9px; border-bottom: none; }
+  /* now watching / recently watched (Jellyfin sessions + playback history, read-only) */
+  .usr-now { display: flex; align-items: center; gap: 12px; background: var(--hi-soft); border: 1px solid rgba(123,110,240,.28); border-radius: 10px; padding: 10px 13px; margin-top: 11px; }
+  .usr-now-ic { width: 26px; height: 26px; flex: none; border-radius: 50%; background: var(--hi); color: #fff; display: inline-flex; align-items: center; justify-content: center; font-size: .68rem; padding-left: 2px; }
+  .usr-now-main { flex: 1; min-width: 0; }
+  .usr-now-t { font-size: .85rem; font-weight: 700; }
+  .usr-now-sub { font-size: .72rem; color: var(--ink-soft); margin-top: 1px; }
+  .usr-now-bar { width: 130px; flex: none; }
+  .usr-now-bar .bar { height: 5px; }
+  .usr-now-pct { font-size: .7rem; color: var(--ink-soft); font-variant-numeric: tabular-nums; flex: none; }
+
   /* age-rating region cascade (Metadata tab) */
   .rc-list { list-style: none; margin: 12px 0 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
   .rc-item { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border: 1px solid var(--line-2); border-radius: 10px; background: var(--fill-2); }
@@ -232,6 +259,7 @@
       <div class="navitem" data-tab="libraries">Libraries<span class="nav-badge" data-badge="libraries">!</span></div>
       <div class="navitem" data-tab="metadata">Metadata<span class="nav-badge" data-badge="metadata">!</span></div>
       <div class="navitem" data-tab="downloads">Download tools<span class="nav-badge" data-badge="downloads">!</span></div>
+      <div class="navitem" data-tab="users">Users &amp; devices</div>
       <div class="navitem" data-tab="notifications">Notifications</div>
       <div class="navitem" data-tab="advanced">Advanced</div>
     </div>
@@ -439,6 +467,100 @@
         </div>
       </div>
 
+      <!-- USERS & DEVICES (Phase 143 — sessions overview + revoke) -->
+      <div class="card set-section" id="sect-users" data-tab="users">
+        <div class="row center"><h3 style="font-size:1.05rem;margin:0;">Users &amp; devices</h3><span class="badge info" style="margin-left:8px;">from Jellyfin</span><span class="spacer"></span><span class="chip" style="font-size:.72rem;">4 users</span><span class="chip" style="font-size:.72rem;">7 devices</span><span class="chip ok" style="font-size:.72rem;background:var(--ok-soft);"><span class="dot ok"></span> 3 connected now</span><span class="btn sm ghost" id="users-refresh">↻ Refresh</span></div>
+        <div class="tiny muted" style="margin:8px 0 0;line-height:1.6;">Every Jellyfin user with their Ravilo devices and admin web sessions — when each was created, last used, and whether it’s connected right now. <b>Revoke</b> signs that one device or browser out (it must sign in again); <b>Sign out everywhere</b> clears all of a user’s devices <i>and</i> web sessions in one action. The <b>access</b> line mirrors each user’s Jellyfin policy — library access, allowed / blocked tags, and max rating; Ravilo serves only what it permits. <b>Now watching</b> and <b>recently watched</b> come from Jellyfin’s sessions and playback history. Everything here is read-only against Jellyfin — edit accounts and policies there.</div>
+
+        <!-- Jógvan (admin) -->
+        <div class="box flat usr-group" style="padding:14px 15px;margin-top:14px;">
+          <div class="row center" style="gap:11px;">
+            <span class="usr-av" style="background:linear-gradient(120deg,#7b6ef0,#3fb6f5);">JJ</span>
+            <div><b>Jógvan</b> <span class="badge info" style="margin-left:5px;">admin</span><div class="tiny muted mono" style="margin-top:1px;">jellyfin · 8c41…e2</div></div>
+            <span class="spacer"></span>
+            <span class="btn sm ghost usr-signout-all">⏻ Sign out everywhere</span>
+          </div>
+          <div class="usr-now"><span class="usr-now-ic">▶</span><div class="usr-now-main"><div class="usr-now-t">Hraðar Ljós (2024)</div><div class="usr-now-sub">now watching · Living room TV · 1080p direct play</div></div><div class="usr-now-bar"><div class="bar"><i style="width:61%"></i></div></div><span class="usr-now-pct">1:12:08 / 1:58:24</span></div>
+          <table class="wf-table usr-table" style="margin-top:11px;">
+            <tr class="usr-hd"><td>Ravilo devices</td><td>created</td><td>last seen</td><td></td><td></td></tr>
+            <tr><td><b>Living room TV</b> <span class="tiny muted">· Shield TV</span></td><td class="tiny muted">2 May 2026</td><td class="tiny muted">2 min ago</td><td><span class="badge ok"><span class="dot ok"></span> connected</span></td><td class="num"><span class="btn sm ghost usr-revoke">Revoke</span></td></tr>
+            <tr><td><b>Pixel 8</b> <span class="tiny muted">· phone</span></td><td class="tiny muted">11 Jun 2026</td><td class="tiny muted">yesterday 21:40</td><td></td><td class="num"><span class="btn sm ghost usr-revoke">Revoke</span></td></tr>
+            <tr class="usr-hd"><td>Admin web sessions</td><td>created</td><td>last used</td><td></td><td></td></tr>
+            <tr><td><b>Chrome · macOS</b> <span class="badge" style="margin-left:5px;font-size:.62rem;">this session</span></td><td class="tiny muted">today 09:12</td><td class="tiny muted">just now</td><td><span class="tiny muted">expires in 13 days</span></td><td class="num"><span class="btn sm ghost usr-revoke" data-self="1">Revoke</span></td></tr>
+            <tr><td><b>Firefox · Windows</b></td><td class="tiny muted">1 Jul 2026</td><td class="tiny muted">3 days ago</td><td><span class="tiny muted">expires in 6 days</span></td><td class="num"><span class="btn sm ghost usr-revoke">Revoke</span></td></tr>
+            <tr class="usr-hd"><td>Recently watched</td><td>when</td><td>device</td><td></td><td></td></tr>
+            <tr><td><b>Nordvest</b> <span class="tiny muted">· S02E04</span></td><td class="tiny muted">yesterday 22:41</td><td class="tiny muted">Living room TV</td><td><span class="badge ok">✓ finished</span></td><td></td></tr>
+            <tr><td><b>Cosmos Laundromat</b> <span class="tiny muted">· 2015</span></td><td class="tiny muted">Mon 20:04</td><td class="tiny muted">Pixel 8</td><td><span class="badge">stopped at 37%</span></td><td></td></tr>
+            <tr><td><b>Hraðar Ljós</b> <span class="tiny muted">· 2024</span></td><td class="tiny muted">Sun 21:18</td><td class="tiny muted">Living room TV</td><td><span class="badge ok">✓ finished</span></td><td></td></tr>
+            <tr><td><b>Glass Half</b> <span class="tiny muted">· 2015</span></td><td class="tiny muted">Sat 20:30</td><td class="tiny muted">Living room TV</td><td><span class="badge ok">✓ finished</span></td><td></td></tr>
+            <tr class="usr-more-row"><td><b>Agent 327</b> <span class="tiny muted">· 2017</span></td><td class="tiny muted">Fri 22:02</td><td class="tiny muted">Living room TV</td><td><span class="badge ok">✓ finished</span></td><td></td></tr>
+            <tr class="usr-more-row"><td><b>Sintel</b> <span class="tiny muted">· 2010</span></td><td class="tiny muted">Fri 21:15</td><td class="tiny muted">Living room TV</td><td><span class="badge ok">✓ finished</span></td><td></td></tr>
+            <tr class="usr-more-row"><td><b>Spring</b> <span class="tiny muted">· 2019</span></td><td class="tiny muted">3 Jul 20:44</td><td class="tiny muted">Pixel 8</td><td><span class="badge">stopped at 81%</span></td><td></td></tr>
+            <tr class="usr-more-row"><td><b>Charge</b> <span class="tiny muted">· 2022</span></td><td class="tiny muted">2 Jul 21:37</td><td class="tiny muted">Living room TV</td><td><span class="badge ok">✓ finished</span></td><td></td></tr>
+            <tr class="usr-showmore"><td colspan="5"><span class="btn sm ghost usr-more-btn" data-more="14">Show 14 more ▾</span> <span class="tiny muted" style="margin-left:8px;">22 plays in the last month · full history lives in Jellyfin</span></td></tr>
+          </table>
+        </div>
+
+        <!-- Eyð -->
+        <div class="box flat usr-group" style="padding:14px 15px;margin-top:12px;">
+          <div class="row center" style="gap:11px;">
+            <span class="usr-av" style="background:linear-gradient(120deg,#e0792f,#f5b542);">ER</span>
+            <div><b>Eyð Restorff</b><div class="tiny muted mono" style="margin-top:1px;">jellyfin · 4fa7…91</div></div>
+            <span class="spacer"></span>
+            <span class="btn sm ghost usr-signout-all">⏻ Sign out everywhere</span>
+          </div>
+          <table class="wf-table usr-table" style="margin-top:11px;">
+            <tr class="usr-hd"><td>Ravilo devices</td><td>created</td><td>last seen</td><td></td><td></td></tr>
+            <tr><td><b>Bedroom TV</b> <span class="tiny muted">· Chromecast HD</span></td><td class="tiny muted">18 Mar 2026</td><td class="tiny muted">41 min ago</td><td><span class="badge ok"><span class="dot ok"></span> connected</span></td><td class="num"><span class="btn sm ghost usr-revoke">Revoke</span></td></tr>
+            <tr><td><b>Ravilo Web</b> <span class="tiny muted">· browser</span></td><td class="tiny muted">29 Jun 2026</td><td class="tiny muted">6 days ago</td><td></td><td class="num"><span class="btn sm ghost usr-revoke">Revoke</span></td></tr>
+            <tr class="usr-hd"><td>Recently watched</td><td>when</td><td>device</td><td></td><td></td></tr>
+            <tr><td><b>Havets Hjarta</b> <span class="tiny muted">· S02E01</span></td><td class="tiny muted">today 21:12</td><td class="tiny muted">Bedroom TV</td><td><span class="badge">stopped at 64%</span></td><td></td></tr>
+            <tr><td><b>Havets Hjarta</b> <span class="tiny muted">· S01 · E01–E08</span></td><td class="tiny muted">29 Jun – 6 Jul</td><td class="tiny muted">Bedroom TV</td><td><span class="badge ok">✓ 8 episodes</span></td><td></td></tr>
+            <tr><td><b>Big Buck Bunny</b> <span class="tiny muted">· 2008</span></td><td class="tiny muted">4 Jul 21:02</td><td class="tiny muted">Ravilo Web</td><td><span class="badge ok">✓ finished</span></td><td></td></tr>
+            <tr><td><b>Nordvest</b> <span class="tiny muted">· S01 · E01–E06</span></td><td class="tiny muted">20 – 27 Jun</td><td class="tiny muted">Bedroom TV</td><td><span class="badge ok">✓ 6 episodes</span></td><td></td></tr>
+            <tr class="usr-more-row"><td><b>Dansk Krimi</b> <span class="tiny muted">· S03 · E01–E10</span></td><td class="tiny muted">8 – 19 Jun</td><td class="tiny muted">Bedroom TV</td><td><span class="badge ok">✓ season finished</span></td><td></td></tr>
+            <tr class="usr-more-row"><td><b>Sommeren ’92</b> <span class="tiny muted">· 2019</span></td><td class="tiny muted">6 Jun 20:58</td><td class="tiny muted">Ravilo Web</td><td><span class="badge ok">✓ finished</span></td><td></td></tr>
+            <tr class="usr-showmore"><td colspan="5"><span class="btn sm ghost usr-more-btn" data-more="29">Show 29 more ▾</span> <span class="tiny muted" style="margin-left:8px;">consecutive episodes group into one row · 43 plays in the last month</span></td></tr>
+          </table>
+        </div>
+
+        <!-- Charlotte (restricted) -->
+        <div class="box flat usr-group" style="padding:14px 15px;margin-top:12px;">
+          <div class="row center" style="gap:11px;">
+            <span class="usr-av" style="background:linear-gradient(120deg,#19d6c6,#2a8cf0);">CH</span>
+            <div><b>Charlotte</b> <span class="badge warn" style="margin-left:5px;" title="Jellyfin user policy — Ravilo serves only what it permits (Phase 142)">restricted</span><div class="tiny muted mono" style="margin-top:1px;">jellyfin · b2c9…0d</div></div>
+            <span class="spacer"></span>
+            <span class="btn sm ghost usr-signout-all">⏻ Sign out everywhere</span>
+          </div>
+          <div class="usr-access tiny"><span class="muted">access</span><span class="chip">3 of 5 libraries <span class="muted">· Movies · Series · Dansk TV</span></span><span class="chip"><span class="usr-tagdot bad"></span>blocked tags <b>horror</b> · <b>true-crime</b></span></div>
+          <table class="wf-table usr-table" style="margin-top:11px;">
+            <tr class="usr-hd"><td>Ravilo devices</td><td>created</td><td>last seen</td><td></td><td></td></tr>
+            <tr><td><b>Kitchen TV</b> <span class="tiny muted">· Fire TV Stick</span></td><td class="tiny muted">7 Apr 2026</td><td class="tiny muted">2 weeks ago</td><td></td><td class="num"><span class="btn sm ghost usr-revoke">Revoke</span></td></tr>
+            <tr class="usr-hd"><td>Recently watched</td><td>when</td><td>device</td><td></td><td></td></tr>
+            <tr><td><b>Sommeren ’92</b> <span class="tiny muted">· 2019</span></td><td class="tiny muted">24 Jun 20:12</td><td class="tiny muted">Kitchen TV</td><td><span class="badge ok">✓ finished</span></td><td></td></tr>
+          </table>
+        </div>
+
+        <!-- Kids -->
+        <div class="box flat usr-group" style="padding:14px 15px;margin-top:12px;">
+          <div class="row center" style="gap:11px;">
+            <span class="usr-av" style="background:linear-gradient(120deg,#2dd49a,#3fb6f5);">BA</span>
+            <div><b>Barnið</b> <span class="badge" style="margin-left:5px;">kids</span><div class="tiny muted mono" style="margin-top:1px;">jellyfin · 77d1…3c</div></div>
+            <span class="spacer"></span>
+            <span class="btn sm ghost usr-signout-all">⏻ Sign out everywhere</span>
+          </div>
+          <div class="usr-access tiny"><span class="muted">access</span><span class="chip"><span class="usr-tagdot ok"></span>allowed tag <b>kids-safe</b> only</span><span class="chip">max rating <b>7</b></span><span class="chip">2 of 5 libraries <span class="muted">· Movies · Series</span></span></div>
+          <div class="usr-now"><span class="usr-now-ic">▶</span><div class="usr-now-main"><div class="usr-now-t">Caminandes 3: Llamigos</div><div class="usr-now-sub">now watching · Playroom TV</div></div><div class="usr-now-bar"><div class="bar"><i style="width:68%"></i></div></div><span class="usr-now-pct">08:12 / 12:00</span></div>
+          <table class="wf-table usr-table" style="margin-top:11px;">
+            <tr class="usr-hd"><td>Ravilo devices</td><td>created</td><td>last seen</td><td></td><td></td></tr>
+            <tr><td><b>Playroom TV</b> <span class="tiny muted">· Android TV</span></td><td class="tiny muted">2 Jun 2026</td><td class="tiny muted">12 min ago</td><td><span class="badge ok"><span class="dot ok"></span> connected</span></td><td class="num"><span class="btn sm ghost usr-revoke">Revoke</span></td></tr>
+            <tr class="usr-hd"><td>Recently watched</td><td>when</td><td>device</td><td></td><td></td></tr>
+            <tr><td><b>Big Buck Bunny</b> <span class="tiny muted">· 2008</span></td><td class="tiny muted">today 08:44</td><td class="tiny muted">Playroom TV</td><td><span class="badge ok">✓ finished</span></td><td></td></tr>
+            <tr><td><b>Wing It!</b> <span class="tiny muted">· 2023</span></td><td class="tiny muted">yesterday 17:20</td><td class="tiny muted">Playroom TV</td><td><span class="badge ok">✓ finished</span></td><td></td></tr>
+          </table>
+        </div>
+      </div>
+
       <!-- NOTIFICATIONS (Phase 36) -->
       <div class="card set-section" id="sect-notifications" data-tab="notifications">
         <h3 style="font-size:1.05rem;margin:0 0 10px;">Notifications</h3>
@@ -555,6 +677,37 @@
   showTab(new URLSearchParams(location.search).get('tab'));
 
   document.querySelectorAll('.toggle').forEach(t => t.addEventListener('click', () => t.classList.toggle('on')));
+
+  // ---- Users & devices (Phase 143): revoke + sign-out-everywhere, confirm before firing ----
+  function armConfirm(btn, label, fire) {
+    if (btn.classList.contains('confirm')) { fire(); return; }
+    const orig = btn.textContent;
+    btn.classList.add('confirm'); btn.textContent = label;
+    setTimeout(() => { if (document.body.contains(btn)) { btn.classList.remove('confirm'); btn.textContent = orig; } }, 3500);
+  }
+  document.querySelectorAll('.usr-more-btn').forEach(b => b.addEventListener('click', () => {
+    const tbl = b.closest('.usr-table');
+    const open = tbl.classList.toggle('hist-open');
+    b.textContent = open ? 'Show less ▴' : 'Show ' + b.dataset.more + ' more ▾';
+  }));
+  document.querySelectorAll('.usr-revoke').forEach(b => b.addEventListener('click', () => {
+    armConfirm(b, b.dataset.self ? 'Revoke — signs YOU out?' : 'Revoke — sure?', () => {
+      const tr = b.closest('tr');
+      tr.style.transition = 'opacity .3s'; tr.style.opacity = '0';
+      setTimeout(() => tr.remove(), 320);
+    });
+  }));
+  document.querySelectorAll('.usr-signout-all').forEach(b => b.addEventListener('click', () => {
+    armConfirm(b, 'Sign out all — sure?', () => {
+      const g = b.closest('.usr-group');
+      const tbl = g.querySelector('.usr-table');
+      tbl.style.transition = 'opacity .3s'; tbl.style.opacity = '0';
+      setTimeout(() => {
+        tbl.outerHTML = '<div class="usr-empty">No active devices or sessions — everything signed out. This user\u2019s next Ravilo or web login starts fresh.</div>';
+      }, 320);
+      b.classList.remove('confirm'); b.textContent = '⏻ Sign out everywhere';
+    });
+  }));
 
   // ---- distributed health checks: update each chip where it lives, then bubble
   //      failures up to the left-nav badges + the top "Test connections" button ----

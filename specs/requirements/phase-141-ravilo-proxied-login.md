@@ -106,3 +106,11 @@ credential proxy is required.
 - The `/tv/pair/*` routes and the admin Pair-a-TV modal are gone; `check-phases.sh` passes.
 - Verified via `compileKotlinLinuxX64` + admin `compileKotlinWasmJs`; a paired token authorizes as the
   real user against the live Jellyfin API (not the server fallback).
+
+## Design addendum (2026-07-09, design-side)
+
+§B6 is reflected in the mockups: the config editor's Pair-a-TV button, modal, code inputs and their
+CSS/JS are removed from `design/app/ravilo-config.html`; the pagebar slot now holds a **"Users &
+devices"** link to `settings.html?tab=users` (Phase 143) — the operator's replacement surface for
+"which TVs are signed in". The TV-side login screen this phase enables is mocked per **R175** (see its
+addendum).
