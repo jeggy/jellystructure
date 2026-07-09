@@ -13,12 +13,16 @@ CREATE TABLE ravilo_device (
     -- Phase 142: normalized (no dashes, lowercased), comma-joined Jellyfin library ids this user may
     -- see; NULL = unrestricted (admin or EnableAllFolders). Refreshed on every login.
     allowed_libraries TEXT,
+    -- Phase 142 follow-up: lowercased, comma-joined Jellyfin Policy AllowedTags/BlockedTags. Refreshed
+    -- on every login, same as allowed_libraries.
+    allowed_tags TEXT,
+    blocked_tags TEXT,
     PRIMARY KEY (device_id, jellyfin_user_id)
 );
 
 insertDevice:
-INSERT OR REPLACE INTO ravilo_device(device_id, jellyfin_user_id, jellyfin_username, jellyfin_user_token, is_admin, is_kids, device_token, display_name, created_at, last_seen, allowed_libraries)
-VALUES (:device_id, :jellyfin_user_id, :jellyfin_username, :jellyfin_user_token, :is_admin, :is_kids, :device_token, :display_name, :created_at, :last_seen, :allowed_libraries);
+INSERT OR REPLACE INTO ravilo_device(device_id, jellyfin_user_id, jellyfin_username, jellyfin_user_token, is_admin, is_kids, device_token, display_name, created_at, last_seen, allowed_libraries, allowed_tags, blocked_tags)
+VALUES (:device_id, :jellyfin_user_id, :jellyfin_username, :jellyfin_user_token, :is_admin, :is_kids, :device_token, :display_name, :created_at, :last_seen, :allowed_libraries, :allowed_tags, :blocked_tags);
 
 getByToken:
 SELECT * FROM ravilo_device WHERE device_token = :device_token;

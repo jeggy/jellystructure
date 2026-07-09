@@ -1,0 +1,5 @@
+-- Phase 142 follow-up — tag-based restriction, alongside the library-based restriction Phase 142
+-- shipped with. Lowercased, comma-joined Jellyfin tag names; NULL/empty = no restriction of that kind.
+-- Refreshed on every login, same as allowed_libraries (v19 -> v20).
+ALTER TABLE ravilo_device ADD COLUMN allowed_tags TEXT;
+ALTER TABLE ravilo_device ADD COLUMN blocked_tags TEXT;
