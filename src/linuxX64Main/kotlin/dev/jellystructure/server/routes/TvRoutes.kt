@@ -101,6 +101,10 @@ private data class WatchHistoryEntry(
     @SerialName("episode_count") val episodeCount: Int = 1,
     @SerialName("first_played_at") val firstPlayedAt: Long,  // epoch seconds; oldest play in the group
     @SerialName("last_played_at") val lastPlayedAt: Long,    // epoch seconds; newest play in the group
+    // Phase 143 follow-up — false only for the in-progress ("stopped at N%") items folded in on the
+    // first page (see the /history route); true (and progressPct null) for every grouped finished row.
+    val finished: Boolean = true,
+    @SerialName("progress_pct") val progressPct: Int? = null,
 )
 
 @Serializable
@@ -642,7 +646,30 @@ fun Route.tvRoutes(
         )
         // Caveat (documented, not a bug): a binge run can straddle a page boundary, splitting one
         // logical group across two "Show more" pages — acceptable for a history view, not a spec violation.
-        call.respond(WatchHistoryPage(entries = groupHistoryEntries(raw), hasMore = raw.size == HISTORY_PAGE_SIZE))
+        val finishedEntries = groupHistoryEntries(raw)
+        // Phase 143 follow-up — fold in "stopped at N%" (in-progress) items, first page only: there are
+        // only ever a handful at once (Continue Watching, not a growing history), so no pagination is
+        // needed for these; re-fetching them on every "Show more" click would be wasted work. Reuses
+        // getResumeItems (built for the device's own paired token) with the ADMIN token instead — the
+        // same "admin token, arbitrary userId" pattern getRecentlyPlayed/getUsers already rely on.
+        val entries = if (offset == 0) {
+            val resumable = jellyfinClient.getResumeItems(config.apiKeys.jellyfinUrl, config.apiKeys.jellyfinToken, userId, limit = 10)
+            val inProgress = resumable.mapNotNull { item ->
+                val playedAt = item.userData?.lastPlayedDate?.let { dev.jellystructure.util.isoToEpochSeconds(it) } ?: return@mapNotNull null
+                WatchHistoryEntry(
+                    title = item.seriesName ?: item.name,
+                    episodeLabel = if (item.seriesId != null) {
+                        "S${(item.seasonNumber ?: 0).toString().padStart(2, '0')} · E${(item.episodeNumber ?: 0).toString().padStart(2, '0')}"
+                    } else null,
+                    firstPlayedAt = playedAt,
+                    lastPlayedAt = playedAt,
+                    finished = false,
+                    progressPct = item.userData?.playedPercentage?.toInt(),
+                )
+            }
+            (finishedEntries + inProgress).sortedByDescending { it.lastPlayedAt }
+        } else finishedEntries
+        call.respond(WatchHistoryPage(entries = entries, hasMore = raw.size == HISTORY_PAGE_SIZE))
     }
 
     put("/tv/admin/config") {
