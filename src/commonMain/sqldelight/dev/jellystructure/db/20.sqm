@@ -1,0 +1,34 @@
+-- Bug fix: `ravilo_device` was created (2.sqm) with device_id alone as PRIMARY KEY, but a device_id
+-- identifies a PHYSICAL device (from the client's DeviceIdStore), not a (device, user) pair — multiple
+-- Jellyfin profiles can be added to the same physical TV/phone (R18's "Add user"). With only device_id
+-- as the key, logging in a second profile on an already-paired device REPLACED the first profile's row
+-- (same primary key), silently invalidating its device_token — the first profile then hit "Invalid or
+-- missing device token" on its next request (reproduced live: adding "Olivar" on a phone already signed
+-- in as "jogvan" evicted jogvan's row). SQLite can't ALTER a PRIMARY KEY in place, so rebuild the table
+-- with the composite key the .sq file has always declared: PRIMARY KEY (device_id, jellyfin_user_id)
+-- (v20 -> v21).
+CREATE TABLE ravilo_device_new (
+    device_id TEXT NOT NULL,
+    jellyfin_user_id TEXT NOT NULL,
+    jellyfin_username TEXT NOT NULL,
+    jellyfin_user_token TEXT NOT NULL,
+    is_admin INTEGER NOT NULL DEFAULT 0,
+    is_kids INTEGER NOT NULL DEFAULT 0,
+    device_token TEXT NOT NULL UNIQUE,
+    display_name TEXT NOT NULL DEFAULT '',
+    created_at INTEGER NOT NULL,
+    last_seen INTEGER NOT NULL,
+    allowed_libraries TEXT,
+    allowed_tags TEXT,
+    blocked_tags TEXT,
+    PRIMARY KEY (device_id, jellyfin_user_id)
+);
+
+INSERT INTO ravilo_device_new
+SELECT device_id, jellyfin_user_id, jellyfin_username, jellyfin_user_token, is_admin, is_kids,
+       device_token, display_name, created_at, last_seen, allowed_libraries, allowed_tags, blocked_tags
+FROM ravilo_device;
+
+DROP TABLE ravilo_device;
+
+ALTER TABLE ravilo_device_new RENAME TO ravilo_device;
