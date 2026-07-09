@@ -93,3 +93,63 @@ the old pairing-code panel, its `.pair-code` CSS and pairing copy are removed �
 3. **Entry points** (§B4): first-run gate, the profile switcher's `＋ Add user` tile, and a new
    **`＋ Add user` row in the R170 ProfileMenu** all open the same LoginScreen.
 4. **i18n**: all login strings added in en/da/fo (`login_*`, `key_*`).
+
+## Dev-review addenda (2026-07-09) — reconciled with live code
+
+Verified against `ravilo-ui`/`shared`. This section **supersedes** the requirements/addendum where they differ.
+
+### Verified (accurate as written)
+- The multi-user plumbing exists: `LocalSession(userId, displayName, deviceToken, isAdmin, isKids,
+  avatarUrl)`, `MultiTokenStore` (an **`expect object`** — `localStorage` on wasm, **SharedPreferences on
+  Android**), `ProfilePickerScreen`, `ProfileMenu → onSwitchProfile`. The server PK `(device_id,
+  jellyfin_user_id)` models several users per device.
+- `LoginScreen` in **commonMain** compiles for both targets; `:ravilo-android:compileReleaseKotlin` is a real
+  task and pulls all screens from `ravilo-ui` commonMain. §Acceptance's compile targets are valid as written.
+- §C (restricted users are transparent to the client) is correct and honours "render server-pushed state
+  only" — no client ACL.
+
+### ⚠ Two load-bearing premises are false in the current code
+1. **There is no reusable on-screen keyboard "the same one Search uses".** `SearchScreen` uses a
+   **`BasicTextField` + the native platform IME** (`LocalSoftwareKeyboardController`) — there is nothing to
+   reuse, and §A1 contradicts the design addendum §1 (which mocks a full custom D-pad keyboard = net-new).
+   **Decide one:** (a) reuse the native IME + add `visualTransformation = PasswordVisualTransformation()`
+   for masking (simplest, matches Search, recommended); or (b) build the custom D-pad keyboard the addendum
+   draws (net-new component). Make §A1 and the addendum agree; drop "reuse".
+2. **The client has no persisted `deviceId` at all.** `deviceId` is **server-minted** today (`pollPairing`
+   via `generateSecureToken()`); the client persists only the opaque `deviceToken`. §A2's "generate/read the
+   device's stable `deviceId`" is **net-new**: a new `expect object` store (wasm `localStorage` / Android
+   `SharedPreferences`). And **`deviceName` has no client source either** — add Android `Build.MODEL` / wasm
+   `navigator.userAgent`.
+   - **This intersects Phase 141's headline gap.** Because Jellyfin **prunes older tokens per DeviceId on a
+     new login under that id**, a shared TV must **not** reuse one physical `deviceId` for every profile —
+     the second **Add user** would prune the first profile's Jellyfin token. So generate a **stable
+     per-profile deviceId** (one per profile slot, reused on that profile's re-login), which makes the
+     Jellyfin login identity unique per user. Persist it **per profile** (e.g. carried on `LocalSession` /
+     keyed store), not once per device. This is the load-bearing detail for multi-user; coordinate the exact
+     identity string with Phase 141 §A2.
+
+### Corrections to apply
+- The poll/token logic §"Current state" points at `PairingScreen.kt:80-95`, but it actually lives in a
+  **`PairingStore`** class (the composable is only the view). `TokenStore.set` + `MultiTokenStore.add` move
+  into the new `LoginStore`/handler unchanged.
+- **`ProfileMenu` has no "Add user" row today** (rows: Switch / My List / Settings / Unpair). §B4 needs a
+  **new row + a new `onAddUser` callback** threaded through `ProfileMenu(...)` and its `RaviloApp` call site
+  — net-new plumbing, not just "re-open the same screen".
+- **The removal surface is larger than §A3 names.** Repoint every `Dest.Pairing` reference: `RaviloApp.kt`
+  at ~274/277 (first-run gate), 376 (app-bar hide), 482-498 (`Dest.Pairing → PairingScreen`), and the
+  sign-out/unpair resets at 782/787/802; and `ProfilePickerScreen.kt:154-179` (the `AddingUser →
+  PairingScreen(PairingStore…)` reuse). Retire `PairingStore` + `PairingState.Waiting/Expired`; the
+  `PairingChallenge` DTO orphans; remove `TvApiClient.startPairing/pollPairing`.
+- **R170 goes stale here:** `phase-R170-profile-hub-discover-merge.md:106` documents sign-out-all as
+  `… → resetTo(Dest.Pairing)`. R175 repoints that to the login destination — note it so R170's behaviour
+  doc doesn't lie.
+
+### Docs to reconcile when this ships
+- **`specs/ravilo/constitution.md` §"Authentication & device pairing" (161-177)** — pts 2/5/6 mandate the
+  pairing-code flow and *"no password typed on the TV / the TV never performs Jellyfin sign-in itself"*,
+  which R175 reverses (password is typed on the TV but still proxied server-side, never stored). The
+  invariant must be rewritten (shared with Phase 141's doc-reconcile note).
+- **`specs/ravilo/plan.md`** — Screens list (163) `Pairing → Login`; DTO/route lines per Phase 141's note.
+- **`specs/ravilo/requirements/phase-R161-in-app-settings.md`** (already ✓ Done) uses "pairing"/"the pairing
+  this Unpair reverses" terminology; `unpair` itself is retained (141 §B7), so this is a wording refresh
+  only, not a behavioural break — low priority.
