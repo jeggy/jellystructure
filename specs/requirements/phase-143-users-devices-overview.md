@@ -109,3 +109,77 @@ API delta vs §B: the overview response additionally needs the per-user **policy
 playing**, and **recent plays** (suggest: fold `access` + `nowPlaying` + the first history page into
 `GET /api/tv/admin/overview`; lazy `GET /api/tv/admin/users/{userId}/history?offset=` behind the
 expander). All Jellyfin reads are read-only; jellystructure still never mutates accounts or policies.
+
+## Dev-review addenda (2026-07-09) — reconciled with live code + DB
+
+Verified against the working tree and the live `config/jellystructure.db`. This section **supersedes** the
+spec body/addendum where they differ.
+
+### Verified (accurate as written)
+- Live `session` table is exactly `token, jellyfin_user_id, jellyfin_username, jellyfin_user_token,
+  expires_at` — **no `created_at`, no `last_used`** (15 rows, all `jogvan`). §Problem is accurate.
+- `RaviloDeviceService` has `listByUser/listSessions/removeSession/unpair`; **`allDevices()` does not exist**
+  and `RaviloDevice.sq` has no all-rows query — §B's new query is genuinely new. `created_at`/`last_seen` on
+  `ravilo_device` are real (debounced once/min).
+- `TvEventBus.isConnected(deviceId)` gives live connected state (it is `suspend`); already used by
+  `/tv/admin/devices`. Phase-55 tab machinery (`data-tab` + `?tab=`) slots a new `users` tab in cleanly.
+
+### Corrections to apply
+- **§A1 double-counts existing work.** `session.getAll` **and** `session.deleteByToken` already exist, and
+  `SessionService.revoke(token)` already wraps the delete — do **not** "add revoke-by-token". What is
+  genuinely new: the two columns, a `SessionService.list()` wrapper over the existing `getAll`, and the
+  `last_used_at` bump. The debounce reference is mis-named: `RaviloDeviceService.updateLastSeen` is a SQL
+  query; the real analog is the **inline once/min guard inside `validateDeviceToken`**. `SessionService`
+  has **no in-memory cache**, and `validate()` is called on **every** cookie request (`AuthPlugin.kt:99`)
+  without touching the row — so the bump needs a **new in-memory `lastWritten` map**, or it becomes a SQLite
+  UPDATE per request.
+- **Stale anchors:** API-keys card is **`Settings.kt:1580-1655`** (not 1582-1649) and its revoke is
+  **one-click** — the addendum's two-step "Revoke — sure?" morph is **net-new** behaviour, not "mirror the
+  card". Admin cookie gate is **`AuthPlugin.kt:97-111`** (not 75-95; 75-95 is the device-token branch).
+- **`DELETE /tv/admin/devices/{deviceId}` also requires `?userId=`** and revokes **one `(device_id,
+  jellyfin_user_id)` row** via `deleteByDeviceAndUser` — it is a per-(device,user) revoke, not a whole-device
+  delete. That is actually correct for the user-grouped overview (each row is a pairing), but the spec's
+  route signature and "for a device" wording must say so.
+- **"Sign out everywhere" needs new queries that don't exist.** Neither `session` nor `ravilo_device` has a
+  `deleteByUser`. Either add both, or loop (`getAll`→filter→`deleteByToken`; `listByUser`→`removeSession`).
+  Call this out in §B3.
+- **Web sessions are admin-only.** `/auth/login` 403s non-admins (`AuthRoutes.kt:56-62`), so **every**
+  `session` row is an admin. In the user-grouped view, only admin users ever have a web-sessions sub-list;
+  restricted users show **devices only**. The mockup/§C must not render a web-sessions group for non-admins.
+
+### Architecture — the addendum over-reaches on live Jellyfin reads
+The design addendum sources "Now watching" from Jellyfin `GET /Sessions` and folds per-user history into the
+base overview. Both cut against the project's standing line (*"Ravilo/admin uses jellystructure's own store;
+Jellyfin = streaming only"*) and the outbound-FD ceiling (all Jellyfin calls pass `OutboundHttp.withPermit`,
+Semaphore 64; CIO dies at FD ≥ 1024). Reconcile as follows:
+- **Now watching (Ravilo devices): needs ZERO new outbound.** jellystructure already tracks live Ravilo
+  playback locally — `PlaybackService.activePlayback` / `nowPlayingItem(deviceId)`, already surfaced by
+  `/tv/admin/devices` and `/api/remote/devices`. Source the strip from there (extend the accessor for title
+  via `MediaStore.resolveByJellyfinId`, position, and — new — play method, which `startPlayback` knows as
+  `needsTranscode` but doesn't store). Reserve `GET /Sessions` as an **explicit opt-in** only if catching
+  **non-Ravilo** playback (phone/web) is truly wanted — and note it is then the sole new outbound call.
+- **Access line (policy summary): FREE.** `getUsers()` → `GET /Users` already returns each user's full
+  `Policy` inline, so the summary adds **no** call — just more deserialized fields.
+- **Recently watched: the only section that must read Jellyfin live** (there is no local play-history store —
+  playstate is read live per fetch). Keep it **strictly lazy per expanded user** (`GET
+  /api/tv/admin/users/{userId}/history?offset=`); do **not** fan it out across all users on the base
+  overview (N-users × a call each against the 64-gate). Needs `LastPlayedDate` added to `JellyfinUserData`
+  (only `PlayedPercentage`/`Played`/position today) and a new `Filters=IsPlayed&SortBy=DatePlayed` call. The
+  "group consecutive episodes" rule can't fully group across a pagination boundary (minor caveat); the
+  "month play count" footer needs an extra count query or an approximation.
+
+### JellyfinPolicy field coordination (with Phase 142)
+The addendum's "add `AllowedTags`/`BlockedTags`/`MaxParentalRating`" is partly wrong: **`MaxParentalRating`
+already exists** on `JellyfinPolicy` — only `AllowedTags`/`BlockedTags` are missing (both real; `AllowedTags`
+is Jellyfin **10.9+**, nullable-safe). `MaxParentalRating` is an **Int score**, not a label — the "max
+rating" chip needs a score→label map jellystructure does not have. And 142 is **also** adding
+`EnableAllFolders`/`EnabledFolders` to the same 2-field model — the two specs must describe **one** consistent
+`JellyfinPolicy` (142 owns the folder fields; 143 owns the tag fields; `MaxParentalRating` already present).
+
+### Design gaps
+- **Self-revoke.** Revoking your own `js_session` (or "sign out everywhere" on your own admin user) kills your
+  current cookie → next request 401 → bounced to login. `AuthPlugin` already puts the live `SessionData`
+  (incl. its `token`) into `SessionKey`, so the backend can mark **"(this session)"** and the FE can warn
+  before firing (the addendum's "Revoke — signs YOU out?" is implementable). Require both.
+- **Plan.md:** `specs/plan.md` §"API Routes › Auth" should gain `GET /api/tv/admin/overview`, the revoke
+  routes, and `POST /api/tv/admin/users/{userId}/signout-all`; note the two new `session` columns.

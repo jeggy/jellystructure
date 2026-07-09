@@ -114,3 +114,91 @@ CSS/JS are removed from `design/app/ravilo-config.html`; the pagebar slot now ho
 devices"** link to `settings.html?tab=users` (Phase 143) — the operator's replacement surface for
 "which TVs are signed in". The TV-side login screen this phase enables is mocked per **R175** (see its
 addendum).
+
+## Dev-review addenda (2026-07-09) — reconciled with live code + DB
+
+Verified against the working tree, the live `config/jellystructure.db`, and the Jellyfin behaviour the
+codebase already documents. This section **supersedes** the spec body where they differ.
+
+### Verified (accurate as written)
+- **The problem is real and current.** Live `ravilo_device` = **24 rows, every one `jogvan` / `is_admin=1`,
+  across only 4 distinct Jellyfin tokens, 24 distinct `device_id`s** — matches §Problem exactly.
+  `ravilo_pairing` is empty (dormant already). §Problem's two-bug root cause is line-accurate.
+- `authenticateByName(baseUrl, username, password, identity)` exists and already sends the DeviceId in the
+  `MediaBrowser … DeviceId="…"` auth header — the proxy primitive is in place.
+- `RaviloDeviceService` has `startPairing/pollPairing/approvePairing/validateDeviceToken/unpair`;
+  `loginDevice` does **not** exist yet (correct). `insertDevice` is `INSERT OR REPLACE` on PK
+  `(device_id, jellyfin_user_id)`, so a direct upsert works with no PK-collision crash.
+- `JellyfinSessionBridge`'s read loop is **already crash-safe** (incoming wrapped in `runCatching`, outer
+  `catch(Throwable)` rethrows only `CancellationException`, keepalive send `runCatching`). §C must
+  **preserve** this, not regress it.
+
+### ⚠ Headline design gap — multi-user Add-user collides with Jellyfin's per-DeviceId token pruning
+This is the one substantive hole and it is **not** noted anywhere in the spec/research report. `forDevice`
+mints the Jellyfin identity as **`"ravilo-<deviceId>"` — one DeviceId per *physical device*** (see
+`JellyfinClient.kt:422-428`). But the Phase-110 KDoc there states, from live observation: *"Jellyfin prunes
+a DeviceId's older tokens on every new login under that same id."* So on a shared TV, when a second person
+does **Add user** (R175) under the same physical `deviceId`, Jellyfin **prunes the first profile's token** →
+switching back to profile 1 → `tvToken()` 401 → falls back to the admin/server token → the exact class of
+bug this arc exists to kill, re-created for multi-user.
+- **Fix:** the Jellyfin login identity must be **unique per (device, user)**, not per physical device — e.g.
+  `"ravilo-<deviceId>-<username>"` (the username is known at login time, before we learn the userId, so it
+  can seed the DeviceId; a client-generated per-profile slot id also works). Keep the **jellystructure**
+  `ravilo_device.device_id` as-is (physical-device grouping / the composite PK) — only the *Jellyfin*
+  DeviceId needs the per-user suffix. Phase 143 groups by user, not by physical device, so it is unaffected.
+- **Bridge implication:** `JellyfinSessionBridge` opens `…/socket?deviceId=ravilo-<id>` — it must use the
+  **active profile's** per-user identity (the DeviceId the active token was minted under), or the 403 returns.
+- This needs a decision from the dev team; **recommend per-(device,user) identity.** Update §A2 accordingly.
+
+### Corrections to apply
+- **Stale anchors:** `authenticateByName` is **`JellyfinClient.kt:59-83`** (not 41-65); the "prunes older
+  tokens per DeviceId" statement is the **`JellyfinDeviceIdentity` KDoc at 422-428** (not 411-416, which is
+  `getNextUp`); `tvToken()` is **`PlaybackService.kt:388-417`** (not 387-416); `isTokenNegativeCached` is at
+  421. `tokenRejectionLogged` is at **line 43** and is **file-`private`**, and `tvToken`/`isTokenNegativeCached`
+  are **package-level functions**, not members of `class PlaybackService` — so §C8's bridge **cannot reuse
+  the same `HashSet`** (it needs its own once-per-transition gate) and `tvToken()` needs a server token the
+  bridge must source from `configStore` (it has none today).
+- **§A2 signature:** `JellyfinDeviceIdentity.forDevice(...)` takes a **`DeviceData`**, not
+  `(deviceId, deviceName)` strings — at login no `DeviceData` exists yet. Construct
+  `JellyfinDeviceIdentity("ravilo-<deviceId>-<user>", deviceName)` directly (or add a
+  `forDevice(deviceId, user, deviceName)` overload). As written §A2 will not compile.
+- **§A1 / OPEN_API_PATHS:** add `/api/tv/login` **and remove** the now-dead `/api/tv/pair/{start,poll,approve}`
+  entries (current list: `/api/auth/login`, `/api/setup`, the three pair paths, `/api/tv/events`,
+  `/api/tv/channel-logos/`, `/api/tv/image/`, `/api/webhooks/`).
+- **§A4 return type:** `loginDevice` should return the **domain `Pair<DeviceData, String>`** (device + token)
+  the way `pollPairing` does; the route builds the `PairResult` DTO. It should `getByDeviceAndUser` first to
+  reuse an existing `device_token`/`created_at` (token stability), else mint a new one.
+- **§B6 removal boundary:** `post("/unpair")` lives **inside the same `route("/tv/pair"){ … }` block
+  (spanning 103-207)**; §B7 keeps unpair, so the removal is **start/poll/approve only — the `route` wrapper
+  and `/unpair` stay**. "Remove `TvRoutes.kt:103-196`" is not a clean wholesale delete.
+- **Base URL:** state explicitly that the credential proxy is **server-side** — `authenticateByName` runs
+  against `configStore.current.apiKeys.jellyfinUrl` (existing blank-URL → 503 guard reused); the **client
+  sends only `{username, password, deviceId, deviceName}`** and never sees the Jellyfin URL. (Note: whether
+  that hop is HTTPS depends on the configured Jellyfin URL — the spec's "over HTTPS" is only true if the
+  operator configured an https URL; on a LAN it is often plain http. Reword to "proxied server-side, never
+  persisted or logged" rather than asserting HTTPS.)
+- **Error taxonomy (for R175's two error states):** `authenticateByName` throws `IllegalArgumentException`
+  on Jellyfin **401**, `IllegalStateException` on other non-2xx, and the blank-URL guard returns **503**. Map
+  401 → "invalid credentials", 503/throw → "server unreachable / not configured". Disabled Jellyfin accounts
+  surface as 401 (matches §A3).
+
+### Non-goals / stale-rows clarification
+The 24 stale admin rows are **not** superseded by re-login. A migrating device logs in with a *new*
+`(deviceId, realUserId)` row; the old `(oldDeviceId, jogvan)` row is never matched by the upsert and
+**lingers as an orphan** until explicitly removed (Phase 143's revoke, or a one-time reset). Reword the
+Non-goal ("they keep working as admin until each is re-logged-in") to say they **persist as orphans**.
+
+### Docs to reconcile when this ships (spec wins, but these must not silently contradict it)
+- **`specs/ravilo/constitution.md` §"Authentication & device pairing" (161-177)** — the invariant currently
+  reads *"Sign-in uses a **pairing-code flow** … no password is typed on the TV"* (pt 2), *"the TV returns
+  to pairing"* (pt 5), *"the TV never performs Jellyfin sign-in itself"* (pt 6). Points **2, 5, 6 are
+  directly contradicted** by this arc and must be rewritten to the proxied username/password login
+  (password still never stored/sent-onward; token still minted server-side — those halves survive).
+- **`specs/ravilo/plan.md`** — route table lines **114-116** (`/api/tv/pair/{start,poll,approve}`) → replace
+  with `POST /api/tv/login`; the `PairingChallenge` DTO (line 75) orphans; "Auth header = the device token
+  from pairing" (103) → "…from login"; the `ravilo_device` description (147) drops its "Pairing" note; the
+  Screens list (163) `Pairing` → `Login`.
+- **Cross-spec seam with Phase 142:** 142 §A2 assumes "the policy is already fetched at login (Phase 141)"
+  and persists the allowed-library set on the device row — but **this spec does not currently fetch or
+  persist `policy.enabledFolders`**. Either 141's `loginDevice` must also capture the folder access (add it
+  here), or 142 owns that fetch. Make the hand-off explicit in one of the two specs.
