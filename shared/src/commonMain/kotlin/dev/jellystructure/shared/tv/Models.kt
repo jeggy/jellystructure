@@ -339,6 +339,19 @@ data class SearchResults(
 data class TvEvent(val type: String, val rev: Long = 0)
 
 /**
+ * Pushed once a live Jellyfin playstate fetch completes for a user — every one of that user's connected
+ * devices patches its already-rendered tiles in place (the same `WatchedBus` path R147 uses for a
+ * locally-triggered "mark as watched"), so a fetch made to satisfy one device's `/api/tv/home` request
+ * keeps every other open screen for that user in sync too, instead of each one needing its own
+ * independent live round trip.
+ */
+@Serializable
+data class PlaystateChangedEnvelope(
+    val type: String = "",
+    val patch: Map<String, CardPlayState> = emptyMap(),
+)
+
+/**
  * R152 — a Jellyfin dashboard "send message" relayed device-addressed over `/api/tv/events` (via the
  * Phase 110 session bridge). Payload-bearing, same envelope shape as [dev.jellystructure.shared.tv.AcquisitionChangedEnvelope].
  */
