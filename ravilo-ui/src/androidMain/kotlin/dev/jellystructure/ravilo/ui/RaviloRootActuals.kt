@@ -3,6 +3,7 @@ package dev.jellystructure.ravilo.ui
 import android.content.SharedPreferences
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
+import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.plugins.websocket.WebSockets
 import io.ktor.serialization.kotlinx.json.json
@@ -16,6 +17,17 @@ actual fun createTvApiClient(baseUrl: String, deviceTokenProvider: () -> String?
             json(Json { ignoreUnknownKeys = true; isLenient = true })
         }
         install(WebSockets)
+        // Bug fix: with no HttpTimeout plugin, Ktor enforces no client-side timeout at all — a
+        // genuinely unreachable/slow server (phone off the home network, a TV whose WiFi hasn't
+        // reconnected after sleep) fell through to the OS's raw TCP connect timeout, often 60-120+s.
+        // HomeStore retries failed loads 4x, so this could compound into minutes of an apparently
+        // "stuck forever" shimmer skeleton with no feedback. Bound every REST call so a real failure
+        // surfaces (with retry) in well under 30s.
+        install(HttpTimeout) {
+            connectTimeoutMillis = 5_000L
+            requestTimeoutMillis = 10_000L
+            socketTimeoutMillis = 10_000L
+        }
     }
     return TvApiClient(httpClient, baseUrl, deviceTokenProvider)
 }

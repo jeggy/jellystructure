@@ -2,6 +2,7 @@ package dev.jellystructure.ravilo.ui.screens
 
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.LocalBringIntoViewSpec
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -11,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.material3.Text
@@ -18,8 +20,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
@@ -28,6 +32,7 @@ import androidx.compose.ui.focus.onFocusChanged
 import kotlinx.coroutines.launch
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalWindowInfo
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.jellystructure.ravilo.ui.LocalPortrait
@@ -37,6 +42,7 @@ import dev.jellystructure.ravilo.ui.components.HeroCarousel
 import dev.jellystructure.ravilo.ui.components.HomeLoadingShell
 import dev.jellystructure.ravilo.ui.components.StaticContentRow
 import dev.jellystructure.ravilo.ui.components.Tile
+import dev.jellystructure.ravilo.ui.focus.dpadFocusable
 import dev.jellystructure.ravilo.ui.focus.rememberEdgeBringIntoViewSpec
 import dev.jellystructure.ravilo.ui.focus.backToTopOnBack
 import dev.jellystructure.ravilo.ui.components.TileVariant
@@ -50,10 +56,12 @@ import dev.jellystructure.shared.tv.Channel
 import dev.jellystructure.shared.tv.MediaCard
 import dev.jellystructure.shared.tv.Row
 import dev.jellystructure.shared.tv.RowKind
+import dev.jellystructure.shared.tv.TvApiClient
 
 @Composable
 fun HomeScreen(
     store: HomeStore,
+    apiClient: TvApiClient,
     activeNav: Int = 0,
     displayName: String = "",
     onNavSelect: (Int) -> Unit = {},
@@ -63,6 +71,9 @@ fun HomeScreen(
     onSeeAll: (String?) -> Unit = {},
     onProfile: () -> Unit = {},
     onSearch: () -> Unit = {},
+    // Fires when the user signs out from the error state (see HomeErrorState) — a device whose
+    // locally-cached token no longer matches any server-side record can never recover via Retry.
+    onSignOut: () -> Unit = {},
 ) {
     val colors = RaviloTheme.colors
     val state by store.state.collectAsState()
@@ -78,7 +89,12 @@ fun HomeScreen(
     Box(modifier = Modifier.fillMaxSize().background(colors.background)) {
         when (val s = state) {
             is HomeState.Loading -> HomeLoadingShell()
-            is HomeState.Error   -> HomeErrorState(s.message) { store.refresh() }
+            is HomeState.Error   -> HomeErrorState(
+                message = s.message,
+                apiClient = apiClient,
+                onRetry = { store.refresh() },
+                onSignOut = onSignOut,
+            )
             is HomeState.Loaded  -> HomeLoaded(
                 feed = s.feed,
                 store = store,   // R137 retained scroll + R139 focus-key
@@ -309,9 +325,26 @@ private fun HomeLoaded(
 
 // HomeLoadingShell is imported from Shimmer.kt
 
+/**
+ * Bug fix: this used to render only text — [onRetry] was accepted but never wired to anything, and
+ * there was no way back to the login screen. A device whose locally-cached token no longer matches
+ * any server-side record (re-pair, DB reset, "old local storage") could never recover from here
+ * short of clearing app data outside the app. Retry re-runs the load; Sign out clears the local
+ * session and best-effort revokes it server-side (see [unpairAllSessions]) so the device lands back
+ * on the login screen instead of being permanently stuck.
+ */
 @Composable
-private fun HomeErrorState(message: String, onRetry: () -> Unit) {
+private fun HomeErrorState(
+    message: String,
+    apiClient: TvApiClient,
+    onRetry: () -> Unit,
+    onSignOut: () -> Unit,
+) {
     val colors = RaviloTheme.colors
+    val scope = rememberCoroutineScope()
+    val retryFR = remember { FocusRequester() }
+    val signOutFR = remember { FocusRequester() }
+    LaunchedEffect(Unit) { runCatching { retryFR.requestFocus() } }
     Column(
         modifier = Modifier.fillMaxSize().padding(40.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -320,5 +353,35 @@ private fun HomeErrorState(message: String, onRetry: () -> Unit) {
         Text(str("error.generic"), color = colors.text, fontSize = 20.sp)
         Spacer(Modifier.height(12.dp))
         Text(message, color = colors.textSecondary, fontSize = 14.sp)
+        Spacer(Modifier.height(28.dp))
+        var retryFocused by remember { mutableStateOf(false) }
+        Box(
+            modifier = Modifier
+                .background(colors.surfaceVariant, RoundedCornerShape(8.dp))
+                .then(if (retryFocused) Modifier.border(2.dp, colors.focusRing, RoundedCornerShape(8.dp)) else Modifier)
+                .dpadFocusable(
+                    focusRequester = retryFR,
+                    onFocused = { retryFocused = true },
+                    onBlurred = { retryFocused = false },
+                    onDown = { runCatching { signOutFR.requestFocus() } },
+                    onSelect = onRetry,
+                )
+                .padding(horizontal = 24.dp, vertical = 12.dp),
+        ) { Text(str("action.retry"), color = colors.text, fontSize = 14.sp, fontWeight = FontWeight.SemiBold) }
+        Spacer(Modifier.height(12.dp))
+        var signOutFocused by remember { mutableStateOf(false) }
+        Box(
+            modifier = Modifier
+                .background(colors.surfaceVariant, RoundedCornerShape(8.dp))
+                .then(if (signOutFocused) Modifier.border(2.dp, colors.focusRing, RoundedCornerShape(8.dp)) else Modifier)
+                .dpadFocusable(
+                    focusRequester = signOutFR,
+                    onFocused = { signOutFocused = true },
+                    onBlurred = { signOutFocused = false },
+                    onUp = { runCatching { retryFR.requestFocus() } },
+                    onSelect = { scope.launch { unpairAllSessions(apiClient); onSignOut() } },
+                )
+                .padding(horizontal = 24.dp, vertical = 12.dp),
+        ) { Text(str("profile.sign_out"), color = colors.textSecondary, fontSize = 14.sp, fontWeight = FontWeight.SemiBold) }
     }
 }

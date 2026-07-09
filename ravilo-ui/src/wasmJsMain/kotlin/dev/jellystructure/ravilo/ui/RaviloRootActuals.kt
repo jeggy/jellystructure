@@ -10,6 +10,7 @@ import coil3.svg.SvgDecoder
 import dev.jellystructure.shared.tv.TvApiClient
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.js.Js
+import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.plugins.websocket.WebSockets
 import io.ktor.serialization.kotlinx.json.json
@@ -38,6 +39,15 @@ actual fun createTvApiClient(baseUrl: String, deviceTokenProvider: () -> String?
             json(Json { ignoreUnknownKeys = true; isLenient = true })
         }
         install(WebSockets) // live config push (R33)
+        // Bug fix (Android originally): no HttpTimeout plugin meant no client-side bound at all on a
+        // stalled request; a genuinely unreachable/slow server surfaced as an apparently endless
+        // loading shimmer instead of the retry/error UI within a reasonable time. Matches the Android
+        // actual's bound.
+        install(HttpTimeout) {
+            connectTimeoutMillis = 5_000L
+            requestTimeoutMillis = 10_000L
+            socketTimeoutMillis = 10_000L
+        }
     }
     return TvApiClient(httpClient, baseUrl, deviceTokenProvider)
 }

@@ -94,6 +94,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.launch
+import kotlin.time.Clock
 
 /**
  * R33 live-config signal. The active session's WebSocket emits here on every `config_changed` (and on
@@ -240,9 +241,17 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
         if (activeUserId == null) return@LaunchedEffect
         var backoff = 1000L
         while (true) {
+            // Bug fix: a device whose token no longer matches any ravilo_device row (stale local
+            // storage after a re-pair/DB reset) still completes the WS *upgrade* — the server only
+            // rejects the token afterward, inside the handler — so onOpen() fires and used to reset
+            // backoff to 1000ms on every single doomed attempt. That defeated the backoff entirely and
+            // reconnected roughly once a second forever instead of backing off to the 15s cap. Only
+            // treat the attempt as healthy (and reset backoff) if the socket stayed open a meaningful
+            // duration; a near-instant open-then-close is treated like any other failed attempt.
+            var openedAt: kotlin.time.Instant? = null
             runCatching {
                 apiClient.connectEvents(
-                    onOpen = { backoff = 1000L; liveConfig.emit(0L) },
+                    onOpen = { openedAt = Clock.System.now(); liveConfig.emit(0L) },
                     onEvent = { liveConfig.emit(it.rev) },
                     onAcquisition = { liveAcquisition.emit(it) },
                     onServerMessage = { liveServerMessages.emit(it) },
@@ -251,8 +260,9 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                     onNavigate = { liveNavigate.emit(it) },
                 )
             }
+            val heldOpenMs = openedAt?.let { (Clock.System.now() - it).inWholeMilliseconds } ?: 0L
+            backoff = if (heldOpenMs >= 2_000L) 1_000L else (backoff * 2).coerceAtMost(15_000L)
             delay(backoff)
-            backoff = (backoff * 2).coerceAtMost(15_000L)
         }
     }
     // R141: degrade-to-poll fallback — safety net for when the WS is down or a single event is missed.
@@ -509,8 +519,10 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                 LaunchedEffect(Unit) { liveConfig.emit(0L) }
                 HomeScreen(
                     store = store,
+                    apiClient = apiClient,
                     displayName = dest.displayName,
                     onProfile = { profileMenuOpen = true },
+                    onSignOut = { resetTo(Dest.Login) },
                     onNavSelect = { idx ->
                         when (raviloNavTarget(idx, upcomingAvailable || discoverAvailable)) {
                             RaviloNavTarget.HOME -> {} // already home
