@@ -77,3 +77,35 @@ used — the exact question the operator asked. Concretely:
   sessions in one action.
 - Admin web sessions now record and display `created_at` + `last_used_at` (previously only expiry).
 - `check-phases.sh` passes; verified via `compileKotlinLinuxX64` + admin `compileKotlinWasmJs`.
+
+## Design addendum (2026-07-09, design-side — mockup shipped, not yet dev-reviewed)
+
+Mockup: **`design/app/settings.html?tab=users`** — a "Users & devices" tab between Download tools and
+Notifications (Phase-55 tab machinery; header carries summary chips `N users · N devices · N connected
+now` + a Refresh button). Per §C it mirrors the API-keys card interaction model. Per-user group card:
+avatar + name + short Jellyfin id, badges (`admin` / `restricted` / `kids`), then:
+
+1. **Access line (extends §B/§C).** A read-only chip row mirroring the user's **full Jellyfin policy**:
+   library access (`3 of 5 libraries · Movies · Series · Dansk TV`), **allowed / blocked tags**
+   (`blocked tags horror · true-crime`, `allowed tag kids-safe only`) and **max rating**. Needs
+   `AllowedTags` / `BlockedTags` / `MaxParentalRating` deserialized on `JellyfinPolicy` (display-only
+   here; Phase 142 *enforces* libraries only — see the 142 addendum for the enforcement follow-up).
+2. **Now watching.** An accent strip under the header when the user has a live session: title, device,
+   play method, progress bar + position. Source: Jellyfin `GET /Sessions` (`NowPlayingItem` +
+   `PlayState`, admin token), point-in-time on load/refresh — no push.
+3. **Recently watched.** A history section in the same table: title/episode · when · device · a
+   `✓ finished` / `stopped at N%` badge. Source: per-user played items sorted by `DatePlayed`
+   (`UserData.LastPlayedDate` / `PlayedPercentage`). Two rules keep binge-scale history scannable:
+   **consecutive episodes of one series group into a single row** (`Havets Hjarta · S01 · E01–E08 ·
+   29 Jun – 6 Jul · ✓ 8 episodes`), and the table shows ~4 recent entries with an inline **"Show N
+   more ▾"** expander (footer notes the month's play count and that full history lives in Jellyfin).
+4. **Destructive actions.** Two-step confirm: the button itself morphs (`Revoke` → `Revoke — sure?`,
+   auto-reverts after ~3.5 s); the admin's *current* web session warns `Revoke — signs YOU out?`.
+   **Sign out everywhere** empties the whole group into an explanatory empty state.
+5. **Entry point.** The Ravilo config editor's pagebar links here (its Pair-a-TV button/modal is
+   removed per Phase 141 §B6).
+
+API delta vs §B: the overview response additionally needs the per-user **policy summary**, **now
+playing**, and **recent plays** (suggest: fold `access` + `nowPlaying` + the first history page into
+`GET /api/tv/admin/overview`; lazy `GET /api/tv/admin/users/{userId}/history?offset=` behind the
+expander). All Jellyfin reads are read-only; jellystructure still never mutates accounts or policies.

@@ -247,6 +247,10 @@
   }
   body.nav-open .nav-backdrop { opacity: 1; pointer-events: auto; }
 
+  /* Phase 138 (FR-DB1) — "Recently processed" + "Quick actions" are desktop-only on the Dashboard.
+     Guarded repo-side by scripts/check-mobile-css.sh — keep this exact rule. */
+  .dash-sidecol { display: none; }
+
   .app-main2 { padding: 22px 18px 120px; }
   .app-main2.app-flush { height: calc(100vh - 54px); height: calc(100dvh - 54px); }
   .statgrid { grid-template-columns: repeat(2,1fr); }

@@ -73,3 +73,23 @@ to a shared TV is just another login.
 - Invalid credentials show a clear error; no pairing code appears anywhere.
 - Verified via `:ravilo-ui:compileKotlinWasmJs` **and** `:ravilo-android:compileReleaseKotlin` (the real
   TV release target); on-device sign-in confirmed after a rebuild/deploy.
+
+## Design addendum (2026-07-09, design-side — mockup shipped, not yet dev-reviewed)
+
+Mocked directly in the main TV mockup (`design/ravilo/ravilo-app.js` + `ravilo.css` + `ravilo-i18n.js`);
+the old pairing-code panel, its `.pair-code` CSS and pairing copy are removed — no code appears anywhere.
+
+1. **LoginScreen** (§A1): a centered panel — title "Sign in to Jellyfin", one-line explainer, Username +
+   Password fields (masked with `•`, blinking cursor in the active field, accent ring marks which field
+   receives input) — with a D-pad **on-screen keyboard** below: digits row, three letter rows ending in
+   `- . _ @`, and wide `⇧ Shift · Space · ⌫ Delete` keys. Enter on a field re-targets typing; the
+   existing row-based D-pad grid handles navigation unchanged. Physical/remote keyboards also type
+   directly (printable keys + Backspace); Escape/Back returns to the profile gate or switcher it came
+   from.
+2. **States** (§A1/A2): idle → `Signing in…` (spinner on the primary button, input locked) → success
+   (profile appended + switched, toast `Signed in as {name}`) or an inline error banner — empty-field
+   prompts and "Wrong username or password — check them and try again" (mockup demos it with password
+   `wrong`).
+3. **Entry points** (§B4): first-run gate, the profile switcher's `＋ Add user` tile, and a new
+   **`＋ Add user` row in the R170 ProfileMenu** all open the same LoginScreen.
+4. **i18n**: all login strings added in en/da/fo (`login_*`, `key_*`).
