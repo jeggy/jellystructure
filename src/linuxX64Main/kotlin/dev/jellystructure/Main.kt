@@ -55,7 +55,9 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.runBlocking
 import platform.posix.SIGINT
+import platform.posix.SIGPIPE
 import platform.posix.SIGTERM
+import platform.posix.SIG_IGN
 import platform.posix.getenv
 import platform.posix.localtime_r
 import platform.posix.mktime
@@ -130,6 +132,14 @@ fun main() = runBlocking {
 
     signal(SIGTERM, staticCFunction(::onSignal))
     signal(SIGINT, staticCFunction(::onSignal))
+    // Bug fix: writing to a socket whose peer already disconnected raises SIGPIPE, whose default
+    // action is to terminate the process outright — a raw POSIX signal, not a Kotlin exception, so it
+    // completely bypasses every `catch (e: Throwable)` around the WS read/write loops (see
+    // reference-ktor-native-ws-crash.md). A client disconnecting mid-broadcast (e.g. a second device
+    // added via TV login connecting/disconnecting in quick succession) could kill the entire server
+    // instantly. Ignoring SIGPIPE makes the write instead fail normally with EPIPE, which the existing
+    // runCatching/try-catch around sends already handles.
+    signal(SIGPIPE, SIG_IGN)
 
     Logger.info("Starting jellystructure on port $port")
     Logger.info("Serving frontend from $frontendDir")
