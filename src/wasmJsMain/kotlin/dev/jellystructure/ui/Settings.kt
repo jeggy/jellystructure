@@ -1706,9 +1706,13 @@ private suspend fun loadUserHistory(userId: String, reset: Boolean) {
         val range = if (e.firstPlayedAt == e.lastPlayedAt) formatHistoryTs(e.lastPlayedAt)
                     else "${formatHistoryTs(e.firstPlayedAt)} – ${formatHistoryTs(e.lastPlayedAt)}"
         val epPart = e.episodeLabel?.let { " · $it" } ?: ""
-        val doneBadge = if (e.episodeCount > 1) "✓ ${e.episodeCount} episodes" else "✓ finished"
+        val badge = when {
+            !e.finished -> """<span style="color:var(--acc-ink)">▶ stopped at ${e.progressPct ?: 0}%</span>"""
+            e.episodeCount > 1 -> "✓ ${e.episodeCount} episodes"
+            else -> "✓ finished"
+        }
         """<div class="tiny" style="padding:5px 0;border-top:1px solid var(--line)">
-             <b>${e.title.esc()}</b>$epPart · $range · $doneBadge
+             <b>${e.title.esc()}</b>$epPart · $range · $badge
            </div>"""
     }
     bodyEl.innerHTML += rowsHtml
@@ -1787,6 +1791,7 @@ private suspend fun refreshUsersList(scope: CoroutineScope) {
                <button class="tiny users-history-toggle" data-user="${u.userId}" style="background:none;border:none;color:var(--acc-ink);cursor:pointer;padding:0">Recently watched ▾</button>
                <div id="history-body-${u.userId}" style="display:none;margin-top:6px"></div>
                <button id="history-more-${u.userId}" class="btn sm ghost users-history-more" data-user="${u.userId}" style="display:none;margin-top:6px">Show more</button>
+               <div id="history-footer-${u.userId}" class="tiny muted" style="display:none;margin-top:6px">Full history lives in Jellyfin.</div>
              </div>
            </div>"""
     }
@@ -1843,9 +1848,11 @@ private suspend fun refreshUsersList(scope: CoroutineScope) {
             btn.addEventListener("click") {
                 val userId = btn.getAttribute("data-user") ?: return@addEventListener
                 val bodyEl = document.getElementById("history-body-$userId") as? HTMLElement ?: return@addEventListener
+                val footerEl = document.getElementById("history-footer-$userId") as? HTMLElement
                 val collapsed = bodyEl.style.display == "none"
                 if (collapsed) {
                     bodyEl.style.display = "block"
+                    footerEl?.style?.display = "block"
                     btn.textContent = "Recently watched ▴"
                     if (bodyEl.innerHTML.isBlank()) {
                         bodyEl.innerHTML = """<span class="tiny muted">Loading…</span>"""
@@ -1853,6 +1860,7 @@ private suspend fun refreshUsersList(scope: CoroutineScope) {
                     }
                 } else {
                     bodyEl.style.display = "none"
+                    footerEl?.style?.display = "none"
                     btn.textContent = "Recently watched ▾"
                 }
             }

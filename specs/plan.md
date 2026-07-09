@@ -189,9 +189,9 @@ data class Episode(
 |--------|------|-------------|
 | GET | `/tv/admin/overview` | Every Jellyfin user → their Ravilo devices (name, created, last-seen, connected, admin/kids) + admin web sessions (created, last-used, expiry) + a policy access-line summary. Now-playing is sourced from the local `PlaybackService.activePlayback` (no extra Jellyfin call) |
 | DELETE | `/tv/admin/devices/{deviceId}?userId=` | Revoke one `(device, user)` row (requires `userId`; supersedes the orphaned per-user list route) |
-| DELETE | `/tv/admin/sessions/{token}` | Revoke one admin web session (invalidates that cookie) |
+| DELETE | `/tv/admin/sessions/{id}` | Revoke one admin web session (invalidates that cookie). `{id}` is a 12-hex-char **prefix** of the token, never the raw token — the response never returns a session's full token, since that value literally is the `js_session` cookie |
 | POST | `/tv/admin/users/{userId}/signout-all` | Revoke all of a user's device tokens **and** web sessions |
-| GET | `/tv/admin/users/{userId}/history?offset=` | Lazy per-user watch history (Jellyfin `IsPlayed`/`DatePlayed`); loaded only behind the row's expander, never fanned out on the overview |
+| GET | `/tv/admin/users/{userId}/history?offset=` | Lazy per-user watch history: finished plays (Jellyfin `Filters=IsPlayed`, grouped consecutive-episode runs) plus in-progress "stopped at N%" items (`Filters=IsResumable`, folded in on the first page only). Loaded only behind the row's expander, never fanned out on the overview |
 
 > All under `/api/tv/admin/**`, **cookie-gated** by the `js_session` admin cookie (not the device token) —
 > distinct from the device-token `/api/tv/**` TV surface documented in `ravilo/plan.md §3`. Every Jellyfin
