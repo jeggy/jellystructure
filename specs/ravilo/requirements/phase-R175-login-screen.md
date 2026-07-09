@@ -150,6 +150,6 @@ Verified against `ravilo-ui`/`shared`. This section **supersedes** the requireme
   which R175 reverses (password is typed on the TV but still proxied server-side, never stored). The
   invariant must be rewritten (shared with Phase 141's doc-reconcile note).
 - **`specs/ravilo/plan.md`** — Screens list (163) `Pairing → Login`; DTO/route lines per Phase 141's note.
-- **`specs/ravilo/requirements/phase-R161-in-app-settings.md`** (already ✓ Done) uses "pairing"/"the pairing
-  this Unpair reverses" terminology; `unpair` itself is retained (141 §B7), so this is a wording refresh
-  only, not a behavioural break — low priority.
+- **Phase R161** (✓ Done — spec pruned, see git history) uses "pairing"/"the pairing this Unpair reverses"
+  terminology; `unpair` itself is retained (141 §B7), so this is a wording refresh only, not a
+  behavioural break — low priority.
