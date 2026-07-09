@@ -232,6 +232,31 @@ class JellyfinClient {
         result.getOrDefault(emptyList())
     }
 
+    /**
+     * Phase 143 — the target user's fully-watched items, newest-played first, for the Users & Devices
+     * "Recently watched" history. Scope note: only `Filters=IsPlayed` (finished) items — an in-progress
+     * ("stopped at N%") item would need a second, differently-filtered call; skipped to keep this to one
+     * request. [adminToken] (not the target user's own token) — the same elevated token [getUsers] uses.
+     */
+    suspend fun getRecentlyPlayed(
+        baseUrl: String,
+        adminToken: String,
+        userId: String,
+        limit: Int = 20,
+        startIndex: Int = 0,
+    ): List<JellyfinPlayItem> = runCatching {
+        val url = baseUrl.trimEnd('/') +
+            "/Users/$userId/Items?Filters=IsPlayed&Recursive=true" +
+            "&IncludeItemTypes=Movie,Episode&Limit=$limit&StartIndex=$startIndex" +
+            "&SortBy=DatePlayed&SortOrder=Descending" +
+            "&Fields=UserData,SeriesId,SeriesName,SeasonId,IndexNumber,ParentIndexNumber"
+        httpGet(url) { jellyfinAuth(adminToken) }
+            .bodyOrNull<JellyfinPlayItemsResponse>("getRecentlyPlayed")?.items.orEmpty()
+    }.let { result ->
+        if (result.isFailure) Logger.warn("Jellyfin getRecentlyPlayed failed: ${result.exceptionOrNull()?.message}")
+        result.getOrDefault(emptyList())
+    }
+
     suspend fun startPlaybackSession(
         baseUrl: String,
         userToken: String,
