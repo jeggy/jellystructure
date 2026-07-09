@@ -44,9 +44,9 @@ class HomeFeedService(
     private val configStore: ConfigStore,
 ) {
     // Phase R86-A: stale-while-revalidate home feed cache per Jellyfin user.
-    // Key = jellyfinUserId; invalidated on library write (libraryVersion) or config change
-    // (cfgHash) or TTL (Continue stays fresh within FEED_TTL_MS).
-    private data class FeedEntry(val feed: HomeFeed, val builtAt: Long, val libVer: Long, val cfgHash: Int)
+    // Key = jellyfinUserId; invalidated on library write (libraryVersion), config change (cfgHash),
+    // a Phase 142 library-access change (allowedHash), or TTL (Continue stays fresh within FEED_TTL_MS).
+    private data class FeedEntry(val feed: HomeFeed, val builtAt: Long, val libVer: Long, val cfgHash: Int, val allowedHash: Int)
     private val feedCache = HashMap<String, FeedEntry>()
 
     suspend fun getHomeFeed(device: DeviceData): HomeFeed {
@@ -54,17 +54,18 @@ class HomeFeedService(
         val libVer = mediaStore.libraryVersion
         val config = configService.getConfig(userId)
         val cfgHash = config.hashCode()
+        val allowedHash = device.allowedLibraries.hashCode()
         val now = nowMs()
 
         feedCache[userId]?.let { cached ->
-            if (cached.libVer == libVer && cached.cfgHash == cfgHash && (now - cached.builtAt) < FEED_TTL_MS)
+            if (cached.libVer == libVer && cached.cfgHash == cfgHash && cached.allowedHash == allowedHash && (now - cached.builtAt) < FEED_TTL_MS)
                 return hydrateWatched(device, cached.feed)
         }
 
         val feed = buildHomeFeed(device, config)
-        feedCache[userId] = FeedEntry(feed, now, libVer, cfgHash)
+        feedCache[userId] = FeedEntry(feed, now, libVer, cfgHash, allowedHash)
         // R142: hydrate played-state AFTER the structural-feed cache so tile ✓ / progress are always fresh
-        // (cache key is libVer + cfgHash; per-user playstate is not part of it).
+        // (cache key is libVer + cfgHash + allowedHash; per-user playstate is not part of it).
         return hydrateWatched(device, feed)
     }
 
@@ -89,7 +90,7 @@ class HomeFeedService(
 
     private suspend fun buildHomeFeed(device: DeviceData, config: RaviloConfig): HomeFeed = coroutineScope {
         val jellyfinBase = configStore.current.apiKeys.jellyfinUrl.trimEnd('/')
-        val allDeferred   = async { mediaStore.liveItems() }
+        val allDeferred   = async { mediaStore.liveItems(device.allowedLibraries) }
         // R85: token no longer needed for image URLs; still needed for buildContinueRow.
         val tokenDeferred = async { jellyfinClient.tvToken(jellyfinBase, device, configStore.current.apiKeys.jellyfinToken) }
         val all   = allDeferred.await()
@@ -110,7 +111,7 @@ class HomeFeedService(
         val channelCfg = config.channels.find { it.id == channelId }
             ?: return@coroutineScope HomeFeed(emptyList(), emptyList(), emptyList())
         val jellyfinBase  = configStore.current.apiKeys.jellyfinUrl.trimEnd('/')
-        val allDeferred   = async { mediaStore.liveItems() }
+        val allDeferred   = async { mediaStore.liveItems(device.allowedLibraries) }
         // R85: token no longer needed for image URLs; still needed for buildContinueRow.
         val tokenDeferred = async { jellyfinClient.tvToken(jellyfinBase, device, configStore.current.apiKeys.jellyfinToken) }
         val allItems = allDeferred.await()

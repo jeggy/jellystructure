@@ -28,6 +28,9 @@ data class DeviceData(
     val isKids: Boolean = false,   // R18: Jellyfin user has a parental-rating cap
     val displayName: String = "", // Phase 110: the TV's own name ("Stue TV"), for the Jellyfin session bridge
     val lastSeen: Long = 0L,      // Phase 111: for the remote-control / Ravilo config editor device list
+    // Phase 142: this user's allowed Jellyfin library ids (GUID-normalized), or null if unrestricted
+    // (admin / EnableAllFolders). Gates the Ravilo catalog — see MediaStore.visibleTo.
+    val allowedLibraries: Set<String>? = null,
 )
 
 @Serializable
@@ -35,6 +38,10 @@ data class JellyfinPolicy(
     @SerialName("IsAdministrator") val isAdministrator: Boolean,
     // R18: present (non-null) when the Jellyfin user is restricted to a max rating → treat as a "Kids" profile.
     @SerialName("MaxParentalRating") val maxParentalRating: Int? = null,
+    // Phase 142: library-level access. EnabledFolders is a list of Jellyfin library ItemIds; it's
+    // meaningless (and typically empty) when EnableAllFolders=true.
+    @SerialName("EnableAllFolders") val enableAllFolders: Boolean = true,
+    @SerialName("EnabledFolders") val enabledFolders: List<String> = emptyList(),
 )
 
 @Serializable

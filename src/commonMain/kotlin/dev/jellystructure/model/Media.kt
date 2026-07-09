@@ -188,6 +188,10 @@ data class MediaItem(
     // Phase 131: IMDb rating from imdbapi.dev, refreshed only by the scheduled sync step or manual
     // Re-sync — a failed/absent lookup leaves the previous value intact (never blanks a good rating).
     val imdbRating: ImdbRating? = null,
+    // Phase 142: the owning Jellyfin library's ItemId (= config LibraryMapping.jellyfinId), captured at
+    // scan time. Gates Ravilo visibility for restricted (non-EnableAllFolders) Jellyfin users — see
+    // MediaStore.visibleTo. Null on pre-142 rows until the one-time path-prefix backfill runs.
+    val libraryId: String? = null,
 )
 
 /** Phase 108: the sort key every "recently added" surface uses (Ravilo's Newly Added, Browse default,

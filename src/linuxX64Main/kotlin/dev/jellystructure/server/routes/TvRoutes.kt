@@ -124,6 +124,10 @@ fun Route.tvRoutes(
             jellyfinUserToken = authResult.accessToken,
             isAdmin = authResult.user.policy.isAdministrator,
             isKids = authResult.user.policy.maxParentalRating != null,   // R18: parental cap ⇒ Kids profile
+            // Phase 142 — AuthenticateByName already returns the full Policy inline, so this needs no
+            // extra Jellyfin call. EnableAllFolders ⇒ unrestricted (null); else the enabled set (RAW —
+            // loginDevice normalizes it).
+            allowedLibraries = if (authResult.user.policy.enableAllFolders) null else authResult.user.policy.enabledFolders.toSet(),
         )
         call.respond(PairResult(
             session = TvSession(
@@ -238,8 +242,9 @@ fun Route.tvRoutes(
     }
 
     get("/tv/facets") {
+        val device = call.attributes[DeviceKey]
         val kind = call.request.queryParameters["kind"]
-        call.respond(browseService.facets(kind))
+        call.respond(browseService.facets(device, kind))
     }
 
     // ── Playback ─────────────────────────────────────────────────────────────
