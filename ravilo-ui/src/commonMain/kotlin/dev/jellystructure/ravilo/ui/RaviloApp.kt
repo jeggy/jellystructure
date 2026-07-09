@@ -67,6 +67,7 @@ import dev.jellystructure.ravilo.ui.screens.UpcomingDetailScreen
 import dev.jellystructure.ravilo.ui.screens.UpcomingDetailStore
 import dev.jellystructure.ravilo.ui.screens.UpcomingScreen
 import dev.jellystructure.ravilo.ui.screens.UpcomingStore
+import dev.jellystructure.ravilo.ui.screens.WatchedBus
 import dev.jellystructure.ravilo.ui.i18n.WithLocale
 import coil3.compose.LocalPlatformContext
 import dev.jellystructure.ravilo.ui.components.ProfileMenu
@@ -258,6 +259,10 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                     onPlayItem = { livePlayItem.emit(it) },
                     onPlaystateCommand = { livePlaystateCommands.emit(it) },
                     onNavigate = { liveNavigate.emit(it) },
+                    // Home-feed playstate cache/concurrency fix — a live Jellyfin fetch made to satisfy
+                    // this or another device's own /api/tv/home request lands here; reuse the existing
+                    // R147 patch-in-place path (WatchedBus) instead of forcing a re-fetch.
+                    onPlaystateChanged = { patch -> WatchedBus.publish(patch) },
                 )
             }
             val heldOpenMs = openedAt?.let { (Clock.System.now() - it).inWholeMilliseconds } ?: 0L

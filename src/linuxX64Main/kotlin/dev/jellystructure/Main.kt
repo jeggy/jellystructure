@@ -153,7 +153,7 @@ fun main() = runBlocking {
     val requestIntentStore = dev.jellystructure.seerr.RequestIntentStore(db)
     val raviloConfigService = RaviloConfigService(db, tvEventBus, requestLanguageService)
     raviloConfigService.migrateAllLegacyBehaviourFields()  // R162: one-time, idempotent
-    val homeFeedService = HomeFeedService(mediaStore, raviloConfigService, jellyfinClient, configStore)
+    val homeFeedService = HomeFeedService(mediaStore, raviloConfigService, jellyfinClient, configStore, tvEventBus)
     val browseService = BrowseService(mediaStore, jellyfinClient, configStore)
     val detailService = DetailService(mediaStore, jellyfinClient, configStore)
     val playbackService = PlaybackService(mediaStore, jellyfinClient, configStore)
