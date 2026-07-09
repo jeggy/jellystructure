@@ -16,6 +16,8 @@ data class SessionData(
     val jellyfinUsername: String,
     val jellyfinUserToken: String,
     val expiresAt: Long,
+    val createdAt: Long = 0L,      // Phase 143
+    val lastUsedAt: Long = 0L,     // Phase 143
 )
 
 data class DeviceData(
@@ -28,6 +30,7 @@ data class DeviceData(
     val isKids: Boolean = false,   // R18: Jellyfin user has a parental-rating cap
     val displayName: String = "", // Phase 110: the TV's own name ("Stue TV"), for the Jellyfin session bridge
     val lastSeen: Long = 0L,      // Phase 111: for the remote-control / Ravilo config editor device list
+    val createdAt: Long = 0L,     // Phase 143: for the Users & Devices admin overview
     // Phase 142: this user's allowed Jellyfin library ids (GUID-normalized), or null if unrestricted
     // (admin / EnableAllFolders). Gates the Ravilo catalog — see MediaStore.visibleTo.
     val allowedLibraries: Set<String>? = null,
@@ -42,6 +45,11 @@ data class JellyfinPolicy(
     // meaningless (and typically empty) when EnableAllFolders=true.
     @SerialName("EnableAllFolders") val enableAllFolders: Boolean = true,
     @SerialName("EnabledFolders") val enabledFolders: List<String> = emptyList(),
+    // Phase 143 — display-only on the Users & Devices access line (Jellyfin 10.9+; absent on older
+    // servers, hence the safe empty-list default). Enforcement is a documented follow-up to Phase 142,
+    // not built here.
+    @SerialName("AllowedTags") val allowedTags: List<String> = emptyList(),
+    @SerialName("BlockedTags") val blockedTags: List<String> = emptyList(),
 )
 
 @Serializable

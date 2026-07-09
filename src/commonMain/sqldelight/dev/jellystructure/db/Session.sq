@@ -3,12 +3,16 @@ CREATE TABLE session (
     jellyfin_user_id TEXT NOT NULL,
     jellyfin_username TEXT NOT NULL,
     jellyfin_user_token TEXT NOT NULL,
-    expires_at INTEGER NOT NULL
+    expires_at INTEGER NOT NULL,
+    -- Phase 143: previously only expiry was tracked. 0 on rows written before this migration —
+    -- last_used_at self-heals on the row's next validate(); created_at ages out within the 7-day TTL.
+    created_at INTEGER NOT NULL DEFAULT 0,
+    last_used_at INTEGER NOT NULL DEFAULT 0
 );
 
 upsert:
-INSERT OR REPLACE INTO session(token, jellyfin_user_id, jellyfin_username, jellyfin_user_token, expires_at)
-VALUES (:token, :jellyfin_user_id, :jellyfin_username, :jellyfin_user_token, :expires_at);
+INSERT OR REPLACE INTO session(token, jellyfin_user_id, jellyfin_username, jellyfin_user_token, expires_at, created_at, last_used_at)
+VALUES (:token, :jellyfin_user_id, :jellyfin_username, :jellyfin_user_token, :expires_at, :created_at, :last_used_at);
 
 getByToken:
 SELECT * FROM session WHERE token = :token;
@@ -16,8 +20,14 @@ SELECT * FROM session WHERE token = :token;
 deleteByToken:
 DELETE FROM session WHERE token = :token;
 
+deleteByUser:
+DELETE FROM session WHERE jellyfin_user_id = :jellyfin_user_id;
+
 deleteExpired:
 DELETE FROM session WHERE expires_at < :now;
+
+updateLastUsed:
+UPDATE session SET last_used_at = :last_used_at WHERE token = :token;
 
 getAll:
 SELECT * FROM session;

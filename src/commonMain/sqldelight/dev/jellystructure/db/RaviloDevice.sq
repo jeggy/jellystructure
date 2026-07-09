@@ -33,6 +33,10 @@ SELECT * FROM ravilo_device WHERE device_id = :device_id AND jellyfin_user_id = 
 getByUser:
 SELECT * FROM ravilo_device WHERE jellyfin_user_id = :jellyfin_user_id ORDER BY last_seen DESC;
 
+-- Phase 143 — every device row across every user, for the Users & Devices admin overview.
+getAllDevices:
+SELECT * FROM ravilo_device ORDER BY jellyfin_user_id, last_seen DESC;
+
 updateLastSeen:
 UPDATE ravilo_device SET last_seen = :last_seen WHERE device_token = :device_token;
 
@@ -41,3 +45,7 @@ DELETE FROM ravilo_device WHERE device_token = :device_token;
 
 deleteByDeviceAndUser:
 DELETE FROM ravilo_device WHERE device_id = :device_id AND jellyfin_user_id = :jellyfin_user_id;
+
+-- Phase 143 — "sign out everywhere": every device row this Jellyfin user has ever signed into.
+deleteByUser:
+DELETE FROM ravilo_device WHERE jellyfin_user_id = :jellyfin_user_id;
