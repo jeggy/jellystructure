@@ -45,7 +45,7 @@ class HomeFeedService(
 ) {
     // Phase R86-A: stale-while-revalidate home feed cache per Jellyfin user.
     // Key = jellyfinUserId; invalidated on library write (libraryVersion), config change (cfgHash),
-    // a Phase 142 library-access change (allowedHash), or TTL (Continue stays fresh within FEED_TTL_MS).
+    // a Phase 142 (+ tag follow-up) policy change (allowedHash), or TTL (Continue stays fresh within FEED_TTL_MS).
     private data class FeedEntry(val feed: HomeFeed, val builtAt: Long, val libVer: Long, val cfgHash: Int, val allowedHash: Int)
     private val feedCache = HashMap<String, FeedEntry>()
 
@@ -54,7 +54,7 @@ class HomeFeedService(
         val libVer = mediaStore.libraryVersion
         val config = configService.getConfig(userId)
         val cfgHash = config.hashCode()
-        val allowedHash = device.allowedLibraries.hashCode()
+        val allowedHash = (device.allowedLibraries.hashCode() * 31 + device.allowedTags.hashCode()) * 31 + device.blockedTags.hashCode()
         val now = nowMs()
 
         feedCache[userId]?.let { cached ->
@@ -90,7 +90,7 @@ class HomeFeedService(
 
     private suspend fun buildHomeFeed(device: DeviceData, config: RaviloConfig): HomeFeed = coroutineScope {
         val jellyfinBase = configStore.current.apiKeys.jellyfinUrl.trimEnd('/')
-        val allDeferred   = async { mediaStore.liveItems(device.allowedLibraries) }
+        val allDeferred   = async { mediaStore.liveItems(device) }
         // R85: token no longer needed for image URLs; still needed for buildContinueRow.
         val tokenDeferred = async { jellyfinClient.tvToken(jellyfinBase, device, configStore.current.apiKeys.jellyfinToken) }
         val all   = allDeferred.await()
@@ -111,7 +111,7 @@ class HomeFeedService(
         val channelCfg = config.channels.find { it.id == channelId }
             ?: return@coroutineScope HomeFeed(emptyList(), emptyList(), emptyList())
         val jellyfinBase  = configStore.current.apiKeys.jellyfinUrl.trimEnd('/')
-        val allDeferred   = async { mediaStore.liveItems(device.allowedLibraries) }
+        val allDeferred   = async { mediaStore.liveItems(device) }
         // R85: token no longer needed for image URLs; still needed for buildContinueRow.
         val tokenDeferred = async { jellyfinClient.tvToken(jellyfinBase, device, configStore.current.apiKeys.jellyfinToken) }
         val allItems = allDeferred.await()

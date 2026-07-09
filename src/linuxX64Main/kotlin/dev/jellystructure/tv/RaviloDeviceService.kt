@@ -24,6 +24,13 @@ private fun encodeAllowedLibraries(ids: Set<String>?): String? = ids?.joinToStri
 private fun decodeAllowedLibraries(raw: String?): Set<String>? =
     raw?.split(",")?.filter { it.isNotBlank() }?.toSet()
 
+// Phase 142 follow-up — tag-based restriction (Jellyfin Policy AllowedTags/BlockedTags), stored the
+// same comma-joined way as allowed_libraries; lowercased so a casing difference never lets a blocked
+// tag through or hides an allowed one.
+private fun encodeTags(tags: Set<String>): String? = tags.takeIf { it.isNotEmpty() }?.joinToString(",")
+private fun decodeTags(raw: String?): Set<String> =
+    raw?.split(",")?.filter { it.isNotBlank() }?.toSet() ?: emptySet()
+
 class RaviloDeviceService(private val db: JellystructureDb) {
 
     // token → (DeviceData, cachedAtMs, lastSeenWrittenMs)
@@ -49,8 +56,14 @@ class RaviloDeviceService(private val db: JellystructureDb) {
         // boundary where they enter the system. Refreshed on every login so a Jellyfin-side access
         // change catches up the next time the viewer signs in.
         allowedLibraries: Set<String>? = null,
+        // Phase 142 follow-up — same policy response, its AllowedTags/BlockedTags. Pass RAW (any case);
+        // lowercased once here.
+        allowedTags: Set<String> = emptySet(),
+        blockedTags: Set<String> = emptySet(),
     ): Pair<DeviceData, String> {
         val normalizedAllowed = allowedLibraries?.map { normalizeGuid(it) }?.toSet()
+        val normalizedAllowedTags = allowedTags.map { it.lowercase() }.toSet()
+        val normalizedBlockedTags = blockedTags.map { it.lowercase() }.toSet()
         val now = nowMs()
         val existing = db.raviloDeviceQueries.getByDeviceAndUser(device_id = deviceId, jellyfin_user_id = jellyfinUserId)
             .executeAsOneOrNull()
@@ -71,6 +84,8 @@ class RaviloDeviceService(private val db: JellystructureDb) {
             created_at = createdAt,
             last_seen = now,
             allowed_libraries = encodeAllowedLibraries(normalizedAllowed),
+            allowed_tags = encodeTags(normalizedAllowedTags),
+            blocked_tags = encodeTags(normalizedBlockedTags),
         )
         // Force a fresh DB read on the next validateDeviceToken call — the token/policy may have
         // changed even though the device_token itself was reused (re-login as the same user).
@@ -88,6 +103,8 @@ class RaviloDeviceService(private val db: JellystructureDb) {
                 lastSeen = now,
                 createdAt = createdAt,
                 allowedLibraries = normalizedAllowed,
+                allowedTags = normalizedAllowedTags,
+                blockedTags = normalizedBlockedTags,
             ),
             deviceToken,
         )
@@ -124,6 +141,8 @@ class RaviloDeviceService(private val db: JellystructureDb) {
             lastSeen = row.last_seen,
             createdAt = row.created_at,
             allowedLibraries = decodeAllowedLibraries(row.allowed_libraries),
+            allowedTags = decodeTags(row.allowed_tags),
+            blockedTags = decodeTags(row.blocked_tags),
         )
         tokenCache[token] = TokenEntry(data, now, now)
         return data
@@ -149,6 +168,8 @@ class RaviloDeviceService(private val db: JellystructureDb) {
                 lastSeen = row.last_seen,
                 createdAt = row.created_at,
                 allowedLibraries = decodeAllowedLibraries(row.allowed_libraries),
+                allowedTags = decodeTags(row.allowed_tags),
+                blockedTags = decodeTags(row.blocked_tags),
             )
         }
 
@@ -172,6 +193,8 @@ class RaviloDeviceService(private val db: JellystructureDb) {
                 lastSeen = row.last_seen,
                 createdAt = row.created_at,
                 allowedLibraries = decodeAllowedLibraries(row.allowed_libraries),
+                allowedTags = decodeTags(row.allowed_tags),
+                blockedTags = decodeTags(row.blocked_tags),
             )
         }
 
@@ -196,6 +219,8 @@ class RaviloDeviceService(private val db: JellystructureDb) {
                 lastSeen = row.last_seen,
                 createdAt = row.created_at,
                 allowedLibraries = decodeAllowedLibraries(row.allowed_libraries),
+                allowedTags = decodeTags(row.allowed_tags),
+                blockedTags = decodeTags(row.blocked_tags),
             )
         }
 }

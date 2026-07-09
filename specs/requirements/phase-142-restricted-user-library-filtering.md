@@ -102,6 +102,17 @@ filter with the same drop-before-DTO rule. Until then the admin UI shows tag/rat
 Ravilo does not yet enforce — the 143 tab is the only surface that makes that gap visible to an
 operator, which is deliberate.
 
+## Dev-review follow-up (2026-07-09, later — tags now enforced)
+
+Found live: a real user (Olivar, `EnableAllFolders=true`, `AllowedTags=[børne-tv]`) passed the library
+check trivially and saw the entire catalog in Ravilo — exactly the gap this addendum flagged. **Tag
+enforcement is now built**, per the recommendation above: `DeviceData.allowedTags`/`blockedTags`
+(lowercased at login, from the same Policy response), two new `ravilo_device` columns (migration
+`19.sqm`), `MediaItem.passesTagPolicy` + a combined `MediaItem.visibleTo(device)` gating every read path
+§C lists, via a new `MediaStore.liveItems(device)` overload. Covered by `VisibleToTest`. **Still open:**
+`maxParentalRating` enforcement — Jellyfin's numeric score has no established mapping to this
+codebase's TMDB-certification strings, so it stays display-only on the 143 access line for now.
+
 ## Dev-review addenda (2026-07-09) — reconciled with live code
 
 Verified against the working tree. This section **supersedes** the spec body where they differ.

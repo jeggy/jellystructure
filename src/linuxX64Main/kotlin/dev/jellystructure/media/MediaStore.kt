@@ -1,5 +1,6 @@
 package dev.jellystructure.media
 
+import dev.jellystructure.auth.DeviceData
 import dev.jellystructure.config.ConfigStore
 import dev.jellystructure.db.JellystructureDb
 import dev.jellystructure.log.Logger
@@ -34,6 +35,25 @@ fun MediaItem.visibleTo(allowed: Set<String>?): Boolean {
     if (allowed == null) return true
     return libraryId != null && normalizeGuid(libraryId) in allowed
 }
+
+/**
+ * Phase 142 follow-up — Jellyfin Policy AllowedTags/BlockedTags, alongside library-level restriction.
+ * [allowedTags]/[blockedTags] are already lowercased (see [DeviceData]); this item's own [MediaItem.tags]
+ * are lowercased at comparison time so casing differences never let a blocked title through or hide an
+ * allowed one. Mirrors Jellyfin's own semantics: BlockedTags always excludes; a non-empty AllowedTags is
+ * an allow-list — only items carrying at least one of those tags pass.
+ */
+fun MediaItem.passesTagPolicy(allowedTags: Set<String>, blockedTags: Set<String>): Boolean {
+    if (allowedTags.isEmpty() && blockedTags.isEmpty()) return true
+    val ownTags = tags.map { it.lowercase() }
+    if (blockedTags.isNotEmpty() && ownTags.any { it in blockedTags }) return false
+    if (allowedTags.isNotEmpty() && ownTags.none { it in allowedTags }) return false
+    return true
+}
+
+/** Phase 142 (+ follow-up) — the full device-facing visibility check: library access AND tag policy. */
+fun MediaItem.visibleTo(device: DeviceData): Boolean =
+    visibleTo(device.allowedLibraries) && passesTagPolicy(device.allowedTags, device.blockedTags)
 
 class MediaStore(
     private val db: JellystructureDb,
@@ -421,6 +441,11 @@ class MediaStore(
      *  already GUID-normalized; null = unrestricted). Compose with [liveItems] at every Ravilo
      *  device-facing read path (Phase 142) — restricted users only, never the admin surfaces. */
     fun liveItems(allowed: Set<String>?): List<MediaItem> = liveItems().filter { it.visibleTo(allowed) }
+
+    /** Phase 142 + follow-up — the full per-device filter (library access AND tag policy). Prefer this
+     *  overload at every Ravilo device-facing read path; the [allowed]-only overload above is kept for
+     *  the narrower library-only check DetailService needs per-item. */
+    fun liveItems(device: DeviceData): List<MediaItem> = liveItems().filter { it.visibleTo(device) }
 
     /**
      * R100: items sharing any genre with [source], newest first, capped at [limit] — gathered from the

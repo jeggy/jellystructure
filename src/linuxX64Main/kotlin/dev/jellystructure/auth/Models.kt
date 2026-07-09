@@ -34,6 +34,10 @@ data class DeviceData(
     // Phase 142: this user's allowed Jellyfin library ids (GUID-normalized), or null if unrestricted
     // (admin / EnableAllFolders). Gates the Ravilo catalog — see MediaStore.visibleTo.
     val allowedLibraries: Set<String>? = null,
+    // Phase 142 follow-up: this user's Jellyfin Policy AllowedTags/BlockedTags (lowercased), empty sets
+    // when Jellyfin sent none. Gates the Ravilo catalog alongside allowedLibraries.
+    val allowedTags: Set<String> = emptySet(),
+    val blockedTags: Set<String> = emptySet(),
 )
 
 @Serializable
