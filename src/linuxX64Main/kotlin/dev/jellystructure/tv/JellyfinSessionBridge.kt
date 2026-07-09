@@ -55,6 +55,10 @@ class JellyfinSessionBridge(
     private val bridgeSemaphore = Semaphore(MAX_BRIDGE_CONNECTIONS)
     private val active = HashMap<String, Job>() // deviceId -> connection loop job
 
+    // Phase 141 (§C) — log the "dropped" warn once per transition, not once per reconnect attempt; a
+    // repeatedly-dead token used to spam this line on every flap. Cleared on a successful connect.
+    private val bridgeDropLogged = HashSet<String>()
+
     /** Starts (or no-ops if already running) the bridge for [device]. Safe to call repeatedly. */
     fun connect(device: DeviceData) {
         if (active.containsKey(device.deviceId)) return
@@ -64,6 +68,7 @@ class JellyfinSessionBridge(
     /** Stops the bridge for [deviceId] — closes the Jellyfin session promptly on the dashboard. */
     fun disconnect(deviceId: String) {
         active.remove(deviceId)?.cancel()
+        bridgeDropLogged.remove(deviceId)
     }
 
     private suspend fun runLoop(device: DeviceData) {
@@ -79,13 +84,18 @@ class JellyfinSessionBridge(
                     delay(RECONNECT_MAX_MS)
                     continue
                 }
+                // Phase 141 (§C) — the same negative-cache + server-token fallback PlaybackService's
+                // REST calls already use: a dead paired token opens the bridge under the server
+                // identity instead of 403ing the WS handshake forever.
+                val effectiveToken = jellyfinClient.tvToken(base, device, cfg.apiKeys.jellyfinToken)
                 val wsUrl = base.replaceFirst(Regex("^http"), "ws") +
-                    "/socket?api_key=${device.jellyfinUserToken}&deviceId=${identity.deviceId}"
+                    "/socket?api_key=$effectiveToken&deviceId=${identity.deviceId}"
                 try {
                     http.webSocket(wsUrl) {
                         Logger.info("Jellyfin session bridge connected: device=${device.deviceId} user=${device.jellyfinUserId}", "tv")
                         backoff = RECONNECT_BASE_MS
-                        runCatching { jellyfinClient.postCapabilities(base, device.jellyfinUserToken, identity) }
+                        bridgeDropLogged.remove(device.deviceId)
+                        runCatching { jellyfinClient.postCapabilities(base, effectiveToken, identity) }
 
                         val keepaliveJob = launch {
                             while (kotlinx.coroutines.currentCoroutineContext().isActive) {
@@ -109,7 +119,9 @@ class JellyfinSessionBridge(
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Throwable) {
-                    Logger.warn("Jellyfin session bridge dropped for device=${device.deviceId}: ${e.message}", "tv")
+                    if (bridgeDropLogged.add(device.deviceId)) {
+                        Logger.warn("Jellyfin session bridge dropped for device=${device.deviceId}: ${e.message}", "tv")
+                    }
                 }
                 if (!active.containsKey(device.deviceId)) return // disconnect() removed us — stop reconnecting
                 delay(backoff)

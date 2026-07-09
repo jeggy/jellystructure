@@ -12,8 +12,8 @@ import dev.jellystructure.shared.tv.CardPlayState
 import dev.jellystructure.shared.tv.MarkRequest
 import dev.jellystructure.shared.tv.PlayedRequest
 import dev.jellystructure.shared.tv.RaviloConfig
-import dev.jellystructure.shared.tv.PairingChallenge
 import dev.jellystructure.shared.tv.PairResult
+import dev.jellystructure.shared.tv.TvLoginRequest
 import dev.jellystructure.shared.tv.PlaybackProgressRequest
 import dev.jellystructure.shared.tv.PlaybackRestreamRequest
 import dev.jellystructure.shared.tv.PlaybackStartRequest
@@ -44,27 +44,6 @@ import kotlin.io.encoding.Base64
 import kotlin.io.encoding.ExperimentalEncodingApi
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
-
-@Serializable
-private data class PollRequest(
-    @SerialName("poll_token") val pollToken: String,
-    @SerialName("device_id") val deviceId: String? = null,
-)
-
-// Phase 110: optional — old TV/web clients that send no body (or an empty one) still pair fine, just
-// without a device name until they update (backfilled as "Ravilo TV <short-id>").
-@Serializable
-private data class PairingStartRequest(
-    @SerialName("device_name") val deviceName: String? = null,
-)
-
-
-@Serializable
-private data class ApproveRequest(
-    val code: String,
-    val username: String? = null,
-    val password: String? = null,
-)
 
 @Serializable
 private data class AdminConfigEnvelope(
@@ -100,110 +79,73 @@ fun Route.tvRoutes(
     upcomingService: dev.jellystructure.tv.UpcomingService? = null,
     seerrDiscoverService: dev.jellystructure.seerr.SeerrDiscoverService? = null,
 ) {
-    route("/tv/pair") {
-        post("/start") {
-            val deviceName = runCatching { call.receive<PairingStartRequest>() }.getOrNull()?.deviceName
-            val result = deviceService.startPairing(deviceName)
-            call.respond(PairingChallenge(
-                code = result.code,
-                pollToken = result.pollToken,
-                expiresAt = result.expiresAt,
-            ))
+    // Phase 141 — proxied username/password login, replacing the code+poll+admin-approve pairing flow.
+    // No device token exists yet (OPEN_API_PATHS); jellystructure authenticates the credentials against
+    // Jellyfin itself and mints a device token bound to the returned user (never the admin, silently).
+    post("/tv/login") {
+        val req = runCatching { call.receive<TvLoginRequest>() }.getOrElse {
+            call.respond(HttpStatusCode.BadRequest, mapOf("error" to "Invalid request"))
+            return@post
         }
-
-        post("/poll") {
-            val req = call.receive<PollRequest>()
-            val result = deviceService.pollPairing(req.pollToken, req.deviceId)
-            if (result == null) {
-                call.respond(HttpStatusCode.Accepted, mapOf("status" to "pending"))
-                return@post
-            }
-            val (device, deviceToken) = result
-            call.respond(PairResult(
-                session = TvSession(
-                    deviceId = device.deviceId,
-                    userId = device.jellyfinUserId,
-                    displayName = device.jellyfinUsername,
-                    isAdmin = device.isAdmin,
-                    isKids = device.isKids,
-                    avatarUrl = RaviloImageUrl.avatar(device.jellyfinUserId),
-                ),
-                deviceToken = deviceToken,
-            ))
+        if (req.username.isBlank() || req.password.isBlank() || req.deviceId.isBlank()) {
+            call.respond(HttpStatusCode.BadRequest, mapOf("error" to "username, password and deviceId are required"))
+            return@post
         }
-
-        // Approver is either an already-signed-in jellystructure admin (cookie)
-        // or any Jellyfin user supplying credentials directly (phone form).
-        post("/approve") {
-            val req = call.receive<ApproveRequest>()
-
-            val cookieToken = call.request.cookies["js_session"]
-            val cookieSession = cookieToken?.let { sessionService.validate(it) }
-
-            val jellyfinUserId: String
-            val jellyfinUsername: String
-            val jellyfinUserToken: String
-            val isAdmin: Boolean
-            var isKids = false   // R18
-
-            if (cookieSession != null) {
-                jellyfinUserId = cookieSession.jellyfinUserId
-                jellyfinUsername = cookieSession.jellyfinUsername
-                jellyfinUserToken = cookieSession.jellyfinUserToken
-                isAdmin = true
-            } else if (req.username != null && req.password != null) {
-                val config = configStore.current
-                if (config.apiKeys.jellyfinUrl.isBlank()) {
-                    call.respond(HttpStatusCode.ServiceUnavailable, mapOf("error" to "Jellyfin not configured"))
-                    return@post
-                }
-                // Phase 110: a scratch per-pairing DeviceId (not the shared server identity, and not
-                // yet the TV's real one — that's only known once polling creates the device row).
-                // Jellyfin keys sessions by the DeviceId on EACH request, not the one a token was
-                // minted under, so this only needs to avoid colliding with another concurrent
-                // pairing/TV — the root-cause 401 storm was two TVs sharing one identity forever, not
-                // this one-time mint call.
-                val pairingIdentity = dev.jellystructure.auth.JellyfinDeviceIdentity("ravilo-pair-${req.code}", "Ravilo pairing")
-                val authResult = runCatching {
-                    jellyfinClient.authenticateByName(config.apiKeys.jellyfinUrl, req.username, req.password, pairingIdentity)
-                }.getOrElse {
-                    call.respond(HttpStatusCode.Unauthorized, mapOf("error" to "Invalid Jellyfin credentials"))
-                    return@post
-                }
-                jellyfinUserId = authResult.user.id
-                jellyfinUsername = authResult.user.name
-                jellyfinUserToken = authResult.accessToken
-                isAdmin = authResult.user.policy.isAdministrator
-                isKids = authResult.user.policy.maxParentalRating != null   // R18: parental cap ⇒ Kids profile
-            } else {
-                call.respond(HttpStatusCode.Unauthorized, mapOf("error" to "Authentication required"))
-                return@post
-            }
-
-            val approved = deviceService.approvePairing(
-                code = req.code,
-                jellyfinUserId = jellyfinUserId,
-                jellyfinUsername = jellyfinUsername,
-                jellyfinUserToken = jellyfinUserToken,
-                isAdmin = isAdmin,
-                isKids = isKids,
+        val config = configStore.current
+        if (config.apiKeys.jellyfinUrl.isBlank()) {
+            call.respond(HttpStatusCode.ServiceUnavailable, mapOf("error" to "Jellyfin not configured"))
+            return@post
+        }
+        // The identity presented for THIS auth call, before the Jellyfin userId is known — built from
+        // deviceId + username (not forDevice(), which needs a DeviceData row that doesn't exist yet).
+        // Folding the username in here is what keeps two different profiles on one shared TV from
+        // colliding on a single Jellyfin DeviceId (see JellyfinDeviceIdentity.forDevice's KDoc) —
+        // post-login calls use forDevice(device), which folds in the now-known jellyfinUserId instead.
+        val loginIdentity = dev.jellystructure.auth.JellyfinDeviceIdentity(
+            "ravilo-${req.deviceId}-${req.username}",
+            req.deviceName?.ifBlank { null } ?: "Ravilo TV",
+        )
+        val authAttempt = runCatching {
+            jellyfinClient.authenticateByName(config.apiKeys.jellyfinUrl, req.username, req.password, loginIdentity)
+        }
+        val authResult = authAttempt.getOrElse { e ->
+            val invalidCredentials = e is IllegalArgumentException
+            call.respond(
+                if (invalidCredentials) HttpStatusCode.Unauthorized else HttpStatusCode.ServiceUnavailable,
+                mapOf("error" to if (invalidCredentials) "Invalid username or password" else "Could not reach Jellyfin"),
             )
-            if (!approved) {
-                call.respond(HttpStatusCode.NotFound, mapOf("error" to "Invalid or expired pairing code"))
+            return@post
+        }
+        val (device, deviceToken) = deviceService.loginDevice(
+            deviceId = req.deviceId,
+            deviceName = req.deviceName,
+            jellyfinUserId = authResult.user.id,
+            jellyfinUsername = authResult.user.name,
+            jellyfinUserToken = authResult.accessToken,
+            isAdmin = authResult.user.policy.isAdministrator,
+            isKids = authResult.user.policy.maxParentalRating != null,   // R18: parental cap ⇒ Kids profile
+        )
+        call.respond(PairResult(
+            session = TvSession(
+                deviceId = device.deviceId,
+                userId = device.jellyfinUserId,
+                displayName = device.jellyfinUsername,
+                isAdmin = device.isAdmin,
+                isKids = device.isKids,
+                avatarUrl = RaviloImageUrl.avatar(device.jellyfinUserId),
+            ),
+            deviceToken = deviceToken,
+        ))
+    }
+
+    post("/tv/pair/unpair") {
+        val device = runCatching { call.attributes[DeviceKey] }.getOrNull()
+            ?: run {
+                call.respond(HttpStatusCode.Unauthorized, mapOf("error" to "No device session"))
                 return@post
             }
-            call.respond(mapOf("status" to "approved"))
-        }
-
-        post("/unpair") {
-            val device = runCatching { call.attributes[DeviceKey] }.getOrNull()
-                ?: run {
-                    call.respond(HttpStatusCode.Unauthorized, mapOf("error" to "No device session"))
-                    return@post
-                }
-            deviceService.unpair(device.deviceToken)
-            call.respond(mapOf("status" to "unpaired"))
-        }
+        deviceService.unpair(device.deviceToken)
+        call.respond(mapOf("status" to "unpaired"))
     }
 
     // ── Multi-user sessions ──────────────────────────────────────────────────

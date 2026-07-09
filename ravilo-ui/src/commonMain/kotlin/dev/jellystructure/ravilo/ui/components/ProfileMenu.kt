@@ -54,6 +54,7 @@ fun ProfileMenu(
     onMyList: () -> Unit,
     onSettings: () -> Unit,
     onSwitchProfile: () -> Unit,
+    onAddUser: () -> Unit,
     onUnpaired: () -> Unit,
 ) {
     val colors = RaviloTheme.colors
@@ -74,6 +75,7 @@ fun ProfileMenu(
     val switchFR = remember { FocusRequester() }
     val myListFR = remember { FocusRequester() }
     val settingsFR = remember { FocusRequester() }
+    val addUserFR = remember { FocusRequester() }
     val unpairFR = remember { FocusRequester() }
     LaunchedEffect(Unit) { runCatching { switchFR.requestFocus() } }
 
@@ -115,14 +117,22 @@ fun ProfileMenu(
                 label = str("pm.settings"),
                 focusRequester = settingsFR,
                 onUp = { myListFR.requestFocus() },
-                onDown = { unpairFR.requestFocus() },
+                onDown = { addUserFR.requestFocus() },
                 onSelect = onSettings,
+                onBack = onClose,
+            )
+            ProfileMenuRow(
+                label = str("pm.add_user"),
+                focusRequester = addUserFR,
+                onUp = { settingsFR.requestFocus() },
+                onDown = { unpairFR.requestFocus() },
+                onSelect = onAddUser,
                 onBack = onClose,
             )
             ProfileMenuRow(
                 label = str("pm.unpair"),
                 focusRequester = unpairFR,
-                onUp = { settingsFR.requestFocus() },
+                onUp = { addUserFR.requestFocus() },
                 onDown = { switchFR.requestFocus() },
                 onSelect = { showUnpairConfirm = true },
                 onBack = onClose,

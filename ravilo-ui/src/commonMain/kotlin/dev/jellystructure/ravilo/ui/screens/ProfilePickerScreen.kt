@@ -152,13 +152,20 @@ fun ProfilePickerScreen(
             }
 
             is ProfilePickerState.AddingUser -> {
-                // Reuse PairingScreen to add a user; PairingStore caches the token via
-                // MultiTokenStore, then we return to the picker (now showing the new user).
-                val pairingStore = remember { PairingStore(apiClient) }
+                // R175 — reuse LoginScreen to add a user; LoginStore caches the token via
+                // MultiTokenStore and switches the active profile to it, so a successful sign-in
+                // here navigates on (same as tapping a tile) rather than just returning to the picker.
+                val loginStore = remember { LoginStore(apiClient) }
                 val cancelFR = remember { FocusRequester() }
                 LaunchedEffect(Unit) { runCatching { cancelFR.requestFocus() } }
                 Box(Modifier.fillMaxSize()) {
-                    PairingScreen(store = pairingStore, onPaired = { store.cancelAdd() })
+                    LoginScreen(
+                        store = loginStore,
+                        onSignedIn = {
+                            val active = MultiTokenStore.getActive()
+                            if (active != null) onProfileSelected(active) else store.cancelAdd()
+                        },
+                    )
                     // Always-focusable cancel so the flow is escapable (incl. Back at a cold-start gate)
                     Box(
                         modifier = Modifier

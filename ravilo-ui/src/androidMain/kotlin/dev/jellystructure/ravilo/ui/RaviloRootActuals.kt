@@ -35,6 +35,17 @@ actual object TokenStore {
     actual fun clear() { prefs().edit().remove("device_token").apply() }
 }
 
+actual object DeviceIdStore {
+    actual fun get(): String {
+        prefs().getString("device_id", null)?.let { return it }
+        val id = randomDeviceId()
+        prefs().edit().putString("device_id", id).apply()
+        return id
+    }
+}
+
+actual fun deviceDisplayName(): String = android.os.Build.MODEL ?: "Ravilo TV"
+
 // R80: no-ops on Android — navigation is handled by Key.Back key events.
 actual fun pushRoute(route: String) {}
 actual fun replaceRoute(route: String) {}
