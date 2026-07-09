@@ -20,6 +20,7 @@ import dev.jellystructure.shared.tv.RowConfig
 import dev.jellystructure.shared.tv.RowKind
 import dev.jellystructure.shared.tv.effectiveQuery
 import dev.jellystructure.shared.tv.isLive
+import dev.jellystructure.shared.tv.CardPlayState
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.alloc
 import kotlinx.cinterop.memScoped
@@ -27,6 +28,8 @@ import kotlinx.cinterop.ptr
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 import platform.posix.CLOCK_REALTIME
 import platform.posix.clock_gettime
 import platform.posix.timespec
@@ -36,20 +39,34 @@ private const val HERO_AUTO_COUNT = 5
 private const val FEED_TTL_MS = 5 * 60_000L  // Continue row freshness window
 private const val CONTINUE_TIMEOUT_MS = 6_000L  // R102: cap the live Jellyfin resume/next-up wait
 private const val WATCHED_TIMEOUT_MS = 2_500L  // R142: cap the played-state overlay so it never hangs the feed
+// Bug fix: shorter than FEED_TTL_MS on purpose — watched/in-progress state changes far more often than
+// the structural feed (rows/heroes/channels), so it needs its own, tighter freshness window.
+private const val PLAYSTATE_TTL_MS = 20_000L
 
 class HomeFeedService(
     private val mediaStore: MediaStore,
     private val configService: RaviloConfigService,
     private val jellyfinClient: JellyfinClient,
     private val configStore: ConfigStore,
+    private val tvEventBus: TvEventBus,
 ) {
+    private val json = Json { encodeDefaults = true }
+
     // Phase R86-A: stale-while-revalidate home feed cache per Jellyfin user.
     // Key = jellyfinUserId; invalidated on library write (libraryVersion), config change (cfgHash),
     // a Phase 142 (+ tag follow-up) policy change (allowedHash), or TTL (Continue stays fresh within FEED_TTL_MS).
     private data class FeedEntry(val feed: HomeFeed, val builtAt: Long, val libVer: Long, val cfgHash: Int, val allowedHash: Int)
     private val feedCache = HashMap<String, FeedEntry>()
 
-    suspend fun getHomeFeed(device: DeviceData): HomeFeed {
+    // Bug fix: per-user cache for the WHOLE catalog's playstate (not just one feed's rows) — a cache hit
+    // costs zero Jellyfin calls regardless of which rows end up in the feed, and it's what lets the
+    // structural-feed build and the playstate fetch run concurrently below (neither needs the other's
+    // output — the old code fetched playstate AFTER building the feed, purely because it read the
+    // feed's own row ids as its candidate list; fetching for the whole catalog removes that dependency).
+    private data class PlaystateEntry(val data: Map<String, CardPlayState>, val builtAt: Long)
+    private val playstateCache = HashMap<String, PlaystateEntry>()
+
+    suspend fun getHomeFeed(device: DeviceData): HomeFeed = coroutineScope {
         val userId = device.jellyfinUserId
         val libVer = mediaStore.libraryVersion
         val config = configService.getConfig(userId)
@@ -57,31 +74,61 @@ class HomeFeedService(
         val allowedHash = (device.allowedLibraries.hashCode() * 31 + device.allowedTags.hashCode()) * 31 + device.blockedTags.hashCode()
         val now = nowMs()
 
-        feedCache[userId]?.let { cached ->
-            if (cached.libVer == libVer && cached.cfgHash == cfgHash && cached.allowedHash == allowedHash && (now - cached.builtAt) < FEED_TTL_MS)
-                return hydrateWatched(device, cached.feed)
+        val cachedStructural = feedCache[userId]?.takeIf {
+            it.libVer == libVer && it.cfgHash == cfgHash && it.allowedHash == allowedHash && (now - it.builtAt) < FEED_TTL_MS
         }
 
-        val feed = buildHomeFeed(device, config)
-        feedCache[userId] = FeedEntry(feed, now, libVer, cfgHash, allowedHash)
-        // R142: hydrate played-state AFTER the structural-feed cache so tile ✓ / progress are always fresh
-        // (cache key is libVer + cfgHash + allowedHash; per-user playstate is not part of it).
-        return hydrateWatched(device, feed)
+        // Bug fix: these two used to run sequentially (build the whole feed — including its own live
+        // Continue-row Jellyfin calls — THEN fetch playstate afterward), stacking their worst-case
+        // latencies. Neither depends on the other's result (see PlaystateEntry doc above), so run them
+        // concurrently; a cache hit on either side just returns immediately without touching Jellyfin.
+        val feedDeferred = async {
+            cachedStructural?.feed ?: buildHomeFeed(device, config).also {
+                feedCache[userId] = FeedEntry(it, now, libVer, cfgHash, allowedHash)
+            }
+        }
+        val playstateDeferred = async { playstateFor(device, now) }
+        applyPlaystate(feedDeferred.await(), playstateDeferred.await())
+    }
+
+    /**
+     * Returns this user's cached whole-catalog playstate if still fresh; otherwise fetches it live,
+     * caches it, and — since a fresh fetch is the whole point of the exercise — broadcasts it to every
+     * OTHER device signed in as this user (see [TvEventBus.notifyPlaystateChanged]) so an already-open
+     * Home/Browse/Search screen elsewhere patches its tiles instantly instead of waiting for its own
+     * next load to independently pay the same live round trip.
+     */
+    private suspend fun playstateFor(device: DeviceData, now: Long): Map<String, CardPlayState> {
+        val userId = device.jellyfinUserId
+        playstateCache[userId]?.takeIf { (now - it.builtAt) < PLAYSTATE_TTL_MS }?.let { return it.data }
+        val ps = fetchAllPlaystate(device)
+        playstateCache[userId] = PlaystateEntry(ps, now)
+        if (ps.isNotEmpty()) tvEventBus.notifyPlaystateChanged(userId, json.encodeToString(ps))
+        return ps
+    }
+
+    /**
+     * Fetch played/in-progress state for this user's ENTIRE visible catalog, not just whatever ends up
+     * in one particular feed's rows — the ids come straight from [MediaStore]'s own cache, so this has
+     * no data dependency on [buildHomeFeed] and can run concurrently with it. Bounded by
+     * [WATCHED_TIMEOUT_MS] — on a slow Jellyfin the feed ships without fresh watched-state, same as before.
+     */
+    private suspend fun fetchAllPlaystate(device: DeviceData): Map<String, CardPlayState> {
+        val ids = mediaStore.liveItems(device).mapNotNull { it.jellyfinId }
+        if (ids.isEmpty()) return emptyMap()
+        val base = configStore.current.apiKeys.jellyfinUrl.trimEnd('/')
+        return withTimeoutOrNull(WATCHED_TIMEOUT_MS) {
+            val token = jellyfinClient.tvToken(base, device, configStore.current.apiKeys.jellyfinToken)
+            fetchPlaystate(jellyfinClient, base, token, device.jellyfinUserId, ids)
+        } ?: emptyMap()
     }
 
     /**
      * R142 — overlay each tile's Jellyfin played / in-progress state. Continue Watching rows keep their
      * episode-level progress (carried in the card already); all other rows get a ✓ when played or a resume
-     * sliver when in-progress. Bounded by [WATCHED_TIMEOUT_MS] — on a slow Jellyfin the feed ships as-is.
+     * sliver when in-progress.
      */
-    private suspend fun hydrateWatched(device: DeviceData, feed: HomeFeed): HomeFeed {
-        val ids = feed.rows.filter { it.kind != RowKind.CONTINUE }.flatMap { row -> row.items.map { it.id } }
-        if (ids.isEmpty()) return feed
-        val base = configStore.current.apiKeys.jellyfinUrl.trimEnd('/')
-        val ps = withTimeoutOrNull(WATCHED_TIMEOUT_MS) {
-            val token = jellyfinClient.tvToken(base, device, configStore.current.apiKeys.jellyfinToken)
-            fetchPlaystate(jellyfinClient, base, token, device.jellyfinUserId, ids)
-        } ?: return feed
+    private fun applyPlaystate(feed: HomeFeed, ps: Map<String, CardPlayState>): HomeFeed {
         if (ps.isEmpty()) return feed
         return feed.copy(rows = feed.rows.map { row ->
             if (row.kind == RowKind.CONTINUE) row else row.copy(items = row.items.map { it.withPlaystate(ps) })
@@ -114,6 +161,7 @@ class HomeFeedService(
         val allDeferred   = async { mediaStore.liveItems(device) }
         // R85: token no longer needed for image URLs; still needed for buildContinueRow.
         val tokenDeferred = async { jellyfinClient.tvToken(jellyfinBase, device, configStore.current.apiKeys.jellyfinToken) }
+        val playstateDeferred = async { playstateFor(device, nowMs()) }
         val allItems = allDeferred.await()
         val token    = tokenDeferred.await()
         val heroIds  = config.heroes.map { it.itemId }.toSet()
@@ -123,7 +171,7 @@ class HomeFeedService(
             buildHeroesFromList(pageHero.items, allItems)
         else
             emptyList()
-        hydrateWatched(device, HomeFeed(
+        applyPlaystate(HomeFeed(
             heroes = heroes,
             channels = buildChannels(config),
             rows = buildRows(config, device, filtered, allItems, jellyfinBase, token, channelFilter = channelCfg),
@@ -131,7 +179,7 @@ class HomeFeedService(
             autoAdvanceSeconds = config.autoAdvanceSeconds,
             tileShape = config.tileShape,
             portraitHeroHeightPct = config.portrait?.heroHeightPct,
-        ))
+        ), playstateDeferred.await())
     }
 
     // ─── Heroes ───────────────────────────────────────────────────────────────

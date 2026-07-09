@@ -316,6 +316,9 @@ class TvApiClient(
         onPlayItem: suspend (PlayItemEnvelope) -> Unit = {},
         onPlaystateCommand: suspend (PlaystateCommandEnvelope) -> Unit = {},
         onNavigate: suspend (NavigateEnvelope) -> Unit = {},
+        // Pushed once a live Jellyfin playstate fetch completes for this user (see PlaystateChangedEnvelope) —
+        // patch already-rendered tiles in place, the same way onAcquisition does for acquisition status.
+        onPlaystateChanged: suspend (Map<String, CardPlayState>) -> Unit = {},
     ) {
         val token = deviceToken() ?: return
         val wsUrl = baseUrl.replaceFirst("http", "ws").trimEnd('/') +
@@ -342,6 +345,9 @@ class TvApiClient(
                     }
                     "navigate" -> {
                         runCatching { json.decodeFromString<NavigateEnvelope>(text) }.getOrNull()?.let { onNavigate(it) }
+                    }
+                    "playstate_changed" -> {
+                        runCatching { json.decodeFromString<PlaystateChangedEnvelope>(text).patch }.getOrNull()?.let { onPlaystateChanged(it) }
                     }
                     else -> onEvent(ev)
                 }

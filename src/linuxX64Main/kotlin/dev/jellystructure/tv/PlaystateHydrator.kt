@@ -3,6 +3,9 @@ package dev.jellystructure.tv
 import dev.jellystructure.auth.JellyfinClient
 import dev.jellystructure.shared.tv.CardPlayState
 import dev.jellystructure.shared.tv.MediaCard
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 
@@ -24,26 +27,32 @@ internal suspend fun fetchPlaystate(
     token: String,
     userId: String,
     ids: List<String>,
-): Map<String, CardPlayState> {
+): Map<String, CardPlayState> = coroutineScope {
     val realIds = ids.filterNot { it.startsWith('/') }.distinct()
-    if (realIds.isEmpty()) return emptyMap()
+    if (realIds.isEmpty()) return@coroutineScope emptyMap()
+    // Bug fix: chunks used to be fetched one at a time in a plain for-loop, so N chunks cost N sequential
+    // Jellyfin round trips even though hydrateGate has room for 4 concurrent holders — the semaphore's
+    // capacity was going unused by this, its own primary caller. Fan the chunks out concurrently (still
+    // gated by the same semaphore, so overall fan-out across every fetchPlaystate caller stays capped).
     val out = mutableMapOf<String, CardPlayState>()
-    for (chunk in realIds.chunked(HYDRATE_CHUNK)) {
-        hydrateGate.withPermit {
-            jellyfinClient.getUserDataBulk(base, token, userId, chunk).forEach { jf ->
-                val ud = jf.userData ?: return@forEach
-                out[jf.id] = CardPlayState(
-                    resumeMs  = ud.playbackPositionTicks / HYDRATE_TICKS_PER_MS,
-                    // A series whose Jellyfin child rollup is empty (RecursiveItemCount == 0) reports
-                    // Played=true vacuously (0 unplayed of 0) — even when episodes exist but the series
-                    // aggregation is stale (verified: Pluribus). Don't paint a false ✓ on the tile.
-                    played    = ud.played && !(jf.type == "Series" && jf.recursiveItemCount == 0),
-                    playedPct = (ud.playedPercentage?.toFloat() ?: 0f) / 100f,
-                )
-            }
+    realIds.chunked(HYDRATE_CHUNK).map { chunk ->
+        async {
+            hydrateGate.withPermit { jellyfinClient.getUserDataBulk(base, token, userId, chunk) }
+        }
+    }.awaitAll().forEach { results ->
+        results.forEach { jf ->
+            val ud = jf.userData ?: return@forEach
+            out[jf.id] = CardPlayState(
+                resumeMs  = ud.playbackPositionTicks / HYDRATE_TICKS_PER_MS,
+                // A series whose Jellyfin child rollup is empty (RecursiveItemCount == 0) reports
+                // Played=true vacuously (0 unplayed of 0) — even when episodes exist but the series
+                // aggregation is stale (verified: Pluribus). Don't paint a false ✓ on the tile.
+                played    = ud.played && !(jf.type == "Series" && jf.recursiveItemCount == 0),
+                playedPct = (ud.playedPercentage?.toFloat() ?: 0f) / 100f,
+            )
         }
     }
-    return out
+    out
 }
 
 /**

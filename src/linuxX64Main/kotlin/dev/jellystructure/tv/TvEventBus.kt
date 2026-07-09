@@ -150,4 +150,22 @@ class TvEventBus(private val scope: CoroutineScope) {
             runCatching { target.send(Frame.Text(msg)) }
         }
     }
+
+    /**
+     * Home-feed playstate cache/concurrency fix — a live Jellyfin playstate fetch made to satisfy one
+     * device's `/api/tv/home` request is broadcast here so every OTHER device signed into the same
+     * [userId] patches its already-rendered tiles in place too, instead of each independently paying its
+     * own live round trip on its own next load. Per-user (not per-device), like [notifyConfigChanged];
+     * payload-bearing (the patch inline), like [notifyAcquisitionChanged]. [patchJson] is a pre-serialized
+     * `Map<String, CardPlayState>` — the caller already has a `Json` instance configured, so this class
+     * (which otherwise builds its small payloads by hand) doesn't need one of its own.
+     */
+    fun notifyPlaystateChanged(userId: String, patchJson: String) {
+        scope.launch {
+            val targets = mutex.withLock { sessions[userId]?.values?.toList() ?: emptyList() }
+            if (targets.isEmpty()) return@launch
+            val msg = """{"type":"playstate_changed","patch":$patchJson}"""
+            for (s in targets) runCatching { s.send(Frame.Text(msg)) }
+        }
+    }
 }
