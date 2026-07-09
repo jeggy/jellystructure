@@ -86,6 +86,7 @@ class RaviloDeviceService(private val db: JellystructureDb) {
                 isKids = isKids,
                 displayName = displayName,
                 lastSeen = now,
+                createdAt = createdAt,
                 allowedLibraries = normalizedAllowed,
             ),
             deviceToken,
@@ -121,6 +122,7 @@ class RaviloDeviceService(private val db: JellystructureDb) {
             isKids = row.is_kids == 1L,
             displayName = row.display_name.ifBlank { "Ravilo TV ${row.device_id.take(6)}" },
             lastSeen = row.last_seen,
+            createdAt = row.created_at,
             allowedLibraries = decodeAllowedLibraries(row.allowed_libraries),
         )
         tokenCache[token] = TokenEntry(data, now, now)
@@ -145,6 +147,7 @@ class RaviloDeviceService(private val db: JellystructureDb) {
                 isKids = row.is_kids == 1L,
                 displayName = row.display_name.ifBlank { "Ravilo TV ${row.device_id.take(6)}" },
                 lastSeen = row.last_seen,
+                createdAt = row.created_at,
                 allowedLibraries = decodeAllowedLibraries(row.allowed_libraries),
             )
         }
@@ -152,6 +155,29 @@ class RaviloDeviceService(private val db: JellystructureDb) {
     /** Removes a specific user's session from [deviceId] without affecting others. */
     fun removeSession(deviceId: String, jellyfinUserId: String) {
         db.raviloDeviceQueries.deleteByDeviceAndUser(device_id = deviceId, jellyfin_user_id = jellyfinUserId)
+    }
+
+    /** Phase 143 — every device row across every user, for the Users & Devices admin overview. */
+    fun allDevices(): List<DeviceData> =
+        db.raviloDeviceQueries.getAllDevices().executeAsList().map { row ->
+            DeviceData(
+                deviceId = row.device_id,
+                deviceToken = row.device_token,
+                jellyfinUserId = row.jellyfin_user_id,
+                jellyfinUsername = row.jellyfin_username,
+                jellyfinUserToken = row.jellyfin_user_token,
+                isAdmin = row.is_admin == 1L,
+                isKids = row.is_kids == 1L,
+                displayName = row.display_name.ifBlank { "Ravilo TV ${row.device_id.take(6)}" },
+                lastSeen = row.last_seen,
+                createdAt = row.created_at,
+                allowedLibraries = decodeAllowedLibraries(row.allowed_libraries),
+            )
+        }
+
+    /** Phase 143 — "sign out everywhere": every device row this Jellyfin user has ever signed into. */
+    fun deleteAllForUser(jellyfinUserId: String) {
+        db.raviloDeviceQueries.deleteByUser(jellyfin_user_id = jellyfinUserId)
     }
 
     /** Phase 111 — every device paired to [jellyfinUserId] (remote-control device list / D.1's admin
@@ -168,6 +194,7 @@ class RaviloDeviceService(private val db: JellystructureDb) {
                 isKids = row.is_kids == 1L,
                 displayName = row.display_name.ifBlank { "Ravilo TV ${row.device_id.take(6)}" },
                 lastSeen = row.last_seen,
+                createdAt = row.created_at,
                 allowedLibraries = decodeAllowedLibraries(row.allowed_libraries),
             )
         }

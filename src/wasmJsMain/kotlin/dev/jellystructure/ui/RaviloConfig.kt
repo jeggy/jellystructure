@@ -241,6 +241,7 @@ private fun buildShell(): String {
       <h1 style="display:flex;align-items:center;gap:.4em">$RAVILO_MARK Ravilo TV</h1>
       <span class="badge info">app config</span>
       <span class="spacer"></span>
+      <a href="#/settings?tab=users" class="btn sm ghost" style="margin-right:8px">Users &amp; devices</a>
       <span class="badge ok" id="rav-synced">saved · synced</span>
       <button id="rav-save" class="btn primary">Save</button>
     </div>
