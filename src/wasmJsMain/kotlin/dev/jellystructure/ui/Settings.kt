@@ -1680,6 +1680,42 @@ private suspend fun loadUsersCard(scope: CoroutineScope) {
 private fun usersAgo(epochMs: Long): String = if (epochMs <= 0) "never" else dev.jellystructure.formatRelativeAgo((epochMs / 1000).toString())
 private fun usersAt(epochMs: Long): String = if (epochMs <= 0) "—" else dev.jellystructure.formatStoredTs((epochMs / 1000).toString())
 
+// Phase 143 (design addendum) — "Recently watched" per-user lazy pagination. Note: history timestamps
+// from the backend are already epoch SECONDS (Jellyfin ISO DatePlayed) — unlike usersAt/usersAgo above,
+// which divide by 1000 because device/session timestamps are epoch millis. Do not mix the two helpers.
+private val historyNextOffset = mutableMapOf<String, Int>()
+private fun formatHistoryTs(epochSec: Long): String = if (epochSec <= 0) "—" else dev.jellystructure.formatStoredTs(epochSec.toString())
+
+private suspend fun loadUserHistory(userId: String, reset: Boolean) {
+    val bodyEl = document.getElementById("history-body-$userId") as? HTMLElement ?: return
+    val moreBtn = document.getElementById("history-more-$userId") as? HTMLElement
+    if (reset) { historyNextOffset[userId] = 0; bodyEl.innerHTML = "" }
+    val offset = historyNextOffset[userId] ?: 0
+    val page = runCatching { dev.jellystructure.api.RaviloApi.getHistory(userId, offset) }.getOrNull()
+    if (page == null) {
+        bodyEl.innerHTML = """<span class="tiny" style="color:var(--bad)">Couldn't load history.</span>"""
+        moreBtn?.style?.display = "none"
+        return
+    }
+    if (page.entries.isEmpty() && offset == 0) {
+        bodyEl.innerHTML = """<span class="tiny muted">No watch history yet.</span>"""
+        moreBtn?.style?.display = "none"
+        return
+    }
+    val rowsHtml = page.entries.joinToString("") { e ->
+        val range = if (e.firstPlayedAt == e.lastPlayedAt) formatHistoryTs(e.lastPlayedAt)
+                    else "${formatHistoryTs(e.firstPlayedAt)} – ${formatHistoryTs(e.lastPlayedAt)}"
+        val epPart = e.episodeLabel?.let { " · $it" } ?: ""
+        val doneBadge = if (e.episodeCount > 1) "✓ ${e.episodeCount} episodes" else "✓ finished"
+        """<div class="tiny" style="padding:5px 0;border-top:1px solid var(--line)">
+             <b>${e.title.esc()}</b>$epPart · $range · $doneBadge
+           </div>"""
+    }
+    bodyEl.innerHTML += rowsHtml
+    historyNextOffset[userId] = offset + page.entries.size
+    moreBtn?.style?.display = if (page.hasMore) "inline-block" else "none"
+}
+
 private suspend fun refreshUsersList(scope: CoroutineScope) {
     val listEl = document.getElementById("users-list") as? HTMLElement ?: return
     val users = runCatching { dev.jellystructure.api.RaviloApi.getOverview() }.getOrNull()
@@ -1747,6 +1783,11 @@ private suspend fun refreshUsersList(scope: CoroutineScope) {
              <div class="tiny muted" style="margin-bottom:6px">${accessLine.esc()}</div>
              $deviceRows
              $sessionRows
+             <div style="margin-top:10px">
+               <button class="tiny users-history-toggle" data-user="${u.userId}" style="background:none;border:none;color:var(--acc-ink);cursor:pointer;padding:0">Recently watched ▾</button>
+               <div id="history-body-${u.userId}" style="display:none;margin-top:6px"></div>
+               <button id="history-more-${u.userId}" class="btn sm ghost users-history-more" data-user="${u.userId}" style="display:none;margin-top:6px">Show more</button>
+             </div>
            </div>"""
     }
 
@@ -1790,6 +1831,39 @@ private suspend fun refreshUsersList(scope: CoroutineScope) {
                     runCatching { dev.jellystructure.api.RaviloApi.signOutAll(userId) }
                     refreshUsersList(scope)
                 }
+            }
+        }
+    }
+    // Phase 143 (design addendum) — "Recently watched" stays collapsed and unfetched until the admin
+    // actually opens it: the one section that reads Jellyfin live, kept lazy per-user (never fanned
+    // out across every user on this page's load).
+    listEl.querySelectorAll(".users-history-toggle").let { nodes ->
+        for (i in 0 until nodes.length) {
+            val btn = nodes.item(i) as? HTMLElement ?: continue
+            btn.addEventListener("click") {
+                val userId = btn.getAttribute("data-user") ?: return@addEventListener
+                val bodyEl = document.getElementById("history-body-$userId") as? HTMLElement ?: return@addEventListener
+                val collapsed = bodyEl.style.display == "none"
+                if (collapsed) {
+                    bodyEl.style.display = "block"
+                    btn.textContent = "Recently watched ▴"
+                    if (bodyEl.innerHTML.isBlank()) {
+                        bodyEl.innerHTML = """<span class="tiny muted">Loading…</span>"""
+                        scope.launch { loadUserHistory(userId, reset = true) }
+                    }
+                } else {
+                    bodyEl.style.display = "none"
+                    btn.textContent = "Recently watched ▾"
+                }
+            }
+        }
+    }
+    listEl.querySelectorAll(".users-history-more").let { nodes ->
+        for (i in 0 until nodes.length) {
+            val btn = nodes.item(i) as? HTMLElement ?: continue
+            btn.addEventListener("click") {
+                val userId = btn.getAttribute("data-user") ?: return@addEventListener
+                scope.launch { loadUserHistory(userId, reset = false) }
             }
         }
     }
