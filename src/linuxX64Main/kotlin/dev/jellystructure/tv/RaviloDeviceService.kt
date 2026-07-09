@@ -15,6 +15,15 @@ import platform.posix.timespec
 private const val TOKEN_CACHE_TTL_MS  = 5 * 60_000L  // serve cached DeviceData for 5 min
 private const val LAST_SEEN_DEBOUNCE_MS = 60_000L      // write updateLastSeen at most once/min
 
+// Phase 142 — GUIDs from Jellyfin's Policy and from /Library/VirtualFolders can differ in dashing/case
+// across server versions; normalize once at every boundary (here, and in MediaStore.visibleTo) so a
+// formatting difference never makes a restricted user's catalog wrongly empty. `internal` so MediaStore
+// (a different package, same module) reuses this exact definition instead of a second copy that could drift.
+internal fun normalizeGuid(id: String): String = id.replace("-", "").lowercase()
+private fun encodeAllowedLibraries(ids: Set<String>?): String? = ids?.joinToString(",")
+private fun decodeAllowedLibraries(raw: String?): Set<String>? =
+    raw?.split(",")?.filter { it.isNotBlank() }?.toSet()
+
 class RaviloDeviceService(private val db: JellystructureDb) {
 
     // token → (DeviceData, cachedAtMs, lastSeenWrittenMs)
@@ -35,7 +44,13 @@ class RaviloDeviceService(private val db: JellystructureDb) {
         jellyfinUserToken: String,
         isAdmin: Boolean,
         isKids: Boolean,
+        // Phase 142 — this user's allowed library set (null = unrestricted), resolved from the Jellyfin
+        // policy returned inline by AuthenticateByName. Pass RAW ids — normalized once here, at the
+        // boundary where they enter the system. Refreshed on every login so a Jellyfin-side access
+        // change catches up the next time the viewer signs in.
+        allowedLibraries: Set<String>? = null,
     ): Pair<DeviceData, String> {
+        val normalizedAllowed = allowedLibraries?.map { normalizeGuid(it) }?.toSet()
         val now = nowMs()
         val existing = db.raviloDeviceQueries.getByDeviceAndUser(device_id = deviceId, jellyfin_user_id = jellyfinUserId)
             .executeAsOneOrNull()
@@ -55,6 +70,7 @@ class RaviloDeviceService(private val db: JellystructureDb) {
             display_name = displayName,
             created_at = createdAt,
             last_seen = now,
+            allowed_libraries = encodeAllowedLibraries(normalizedAllowed),
         )
         // Force a fresh DB read on the next validateDeviceToken call — the token/policy may have
         // changed even though the device_token itself was reused (re-login as the same user).
@@ -70,6 +86,7 @@ class RaviloDeviceService(private val db: JellystructureDb) {
                 isKids = isKids,
                 displayName = displayName,
                 lastSeen = now,
+                allowedLibraries = normalizedAllowed,
             ),
             deviceToken,
         )
@@ -104,6 +121,7 @@ class RaviloDeviceService(private val db: JellystructureDb) {
             isKids = row.is_kids == 1L,
             displayName = row.display_name.ifBlank { "Ravilo TV ${row.device_id.take(6)}" },
             lastSeen = row.last_seen,
+            allowedLibraries = decodeAllowedLibraries(row.allowed_libraries),
         )
         tokenCache[token] = TokenEntry(data, now, now)
         return data
@@ -127,6 +145,7 @@ class RaviloDeviceService(private val db: JellystructureDb) {
                 isKids = row.is_kids == 1L,
                 displayName = row.display_name.ifBlank { "Ravilo TV ${row.device_id.take(6)}" },
                 lastSeen = row.last_seen,
+                allowedLibraries = decodeAllowedLibraries(row.allowed_libraries),
             )
         }
 
@@ -149,6 +168,7 @@ class RaviloDeviceService(private val db: JellystructureDb) {
                 isKids = row.is_kids == 1L,
                 displayName = row.display_name.ifBlank { "Ravilo TV ${row.device_id.take(6)}" },
                 lastSeen = row.last_seen,
+                allowedLibraries = decodeAllowedLibraries(row.allowed_libraries),
             )
         }
 }

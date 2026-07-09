@@ -43,7 +43,7 @@ class BrowseService(
         val jellyfinBase  = configStore.current.apiKeys.jellyfinUrl.trimEnd('/')
         val tokenDeferred = async { jellyfinClient.tvToken(jellyfinBase, device, configStore.current.apiKeys.jellyfinToken) }
         // liveItems() doesn't need the token; start it immediately in parallel.
-        val allDeferred   = async { mediaStore.liveItems() }
+        val allDeferred   = async { mediaStore.liveItems(device.allowedLibraries) }
 
         val mediaKind = when (kind) {
             "movie"  -> MediaKind.MOVIE
@@ -90,7 +90,7 @@ class BrowseService(
 
     /** Multi-language search: matches title, originalTitle, and every titlesByLang value. */
     suspend fun search(device: DeviceData, query: String): SearchResults {
-        val all = mediaStore.liveItems()
+        val all = mediaStore.liveItems(device.allowedLibraries)
         val jellyfinBase = configStore.current.apiKeys.jellyfinUrl.trimEnd('/')
 
         val cards = if (query.isBlank()) {
@@ -119,15 +119,16 @@ class BrowseService(
         return SearchResults(query = query, items = cards.map { it.withPlaystate(ps) })
     }
 
-    /** Available filter values + counts for browse filter chips. */
-    fun facets(kind: String?): BrowseFacets {
+    /** Available filter values + counts for browse filter chips. Phase 142: scoped to [device]'s
+     *  allowed libraries — a restricted user's chips (and counts) never leak a blocked title. */
+    fun facets(device: DeviceData, kind: String?): BrowseFacets {
         val mediaKind = when (kind) {
             "movie"  -> MediaKind.MOVIE
             "series" -> MediaKind.TV_SHOW
             else     -> null
         }
-        val all = if (mediaKind != null) mediaStore.liveItems().filter { it.kind == mediaKind }
-                  else mediaStore.liveItems()
+        val scoped = mediaStore.liveItems(device.allowedLibraries)
+        val all = if (mediaKind != null) scoped.filter { it.kind == mediaKind } else scoped
 
         val genreCounts   = mutableMapOf<String, Int>()
         val studioCounts  = mutableMapOf<String, Int>()
