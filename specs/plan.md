@@ -135,6 +135,7 @@ data class MediaItem(
     val jellyfinLockData: Boolean = false,               // Phase 22 — Jellyfin-side lock state
     val jellyfinLockedFields: List<String> = emptyList(),
     val titlesByLang: Map<String, String> = emptyMap(),  // Phase 29 — every title ever seen, per language code
+    val libraryId: String? = null,                       // Phase 142 — owning Jellyfin library ItemId (= LibraryMapping.jellyfinId); gates restricted-user visibility. null on pre-142 blobs, path-prefix backfilled.
 )
 ```
 
@@ -179,6 +180,22 @@ data class Episode(
 | POST | `/auth/login` | Jellyfin admin sign-in; sets HttpOnly session cookie |
 | POST | `/auth/logout` | Clear session |
 | GET | `/auth/me` | Current user profile |
+
+> Admin web sessions live in the `session` table. Phase 143 adds `created_at` + `last_used_at`
+> (bumped once/min in `SessionService.validate`) so a session can show created / last-used, not just expiry.
+
+### Users & Devices (Phase 143 — cookie-gated admin surface, consumed by the Settings "Users & devices" tab)
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/tv/admin/overview` | Every Jellyfin user → their Ravilo devices (name, created, last-seen, connected, admin/kids) + admin web sessions (created, last-used, expiry) + a policy access-line summary. Now-playing is sourced from the local `PlaybackService.activePlayback` (no extra Jellyfin call) |
+| DELETE | `/tv/admin/devices/{deviceId}?userId=` | Revoke one `(device, user)` row (requires `userId`; supersedes the orphaned per-user list route) |
+| DELETE | `/tv/admin/sessions/{token}` | Revoke one admin web session (invalidates that cookie) |
+| POST | `/tv/admin/users/{userId}/signout-all` | Revoke all of a user's device tokens **and** web sessions |
+| GET | `/tv/admin/users/{userId}/history?offset=` | Lazy per-user watch history (Jellyfin `IsPlayed`/`DatePlayed`); loaded only behind the row's expander, never fanned out on the overview |
+
+> All under `/api/tv/admin/**`, **cookie-gated** by the `js_session` admin cookie (not the device token) —
+> distinct from the device-token `/api/tv/**` TV surface documented in `ravilo/plan.md §3`. Every Jellyfin
+> read here is read-only; jellystructure never mutates Jellyfin accounts or policies.
 
 ### Setup
 | Method | Path | Description |

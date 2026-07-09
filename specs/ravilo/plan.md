@@ -72,7 +72,8 @@ Serializable DTOs (illustrative; defined once, consumed by backend + both client
 
 ```
 TvSession(deviceId, userId, displayName, isAdmin)
-PairingChallenge(code, expiresAt, pollToken)
+TvLoginRequest(username, password, deviceId, deviceName)   # posted to POST /api/tv/login; password proxied to Jellyfin, never stored
+PairResult(deviceToken, session: TvSession)                # login response (name kept from the retired pairing flow)
 ClientCapabilities(containers:[…], videoCodecs:[…], audioCodecs:[…], maxAudioChannels, hlsOnly?)
                                                   # what the Android player can decode, incl. the FFmpeg decoder
 StreamTicket(jellyfinBaseUrl, accessToken, itemId, container, directPlay, hlsUrl?, startPositionMs,
@@ -100,7 +101,7 @@ RaviloConfig(heroes:[…], channels:[…], rows:[…], mergeNewlyAdded:Bool,
 ```
 
 `:shared` also exposes a coroutine **`TvApiClient`** (Ktor client) with one suspend function per
-`/api/tv` endpoint, returning the DTOs above. Auth header = the device token from pairing.
+`/api/tv` endpoint, returning the DTOs above. Auth header = the device token from sign-in (`POST /api/tv/login`).
 
 ---
 
@@ -111,9 +112,8 @@ surface is untouched.)
 
 | Method · path | Purpose | Notes |
 |---|---|---|
-| `POST /api/tv/pair/start` | Begin device pairing | returns `PairingChallenge` (code + poll token) |
-| `POST /api/tv/pair/poll` | TV polls for approval | → `TvSession` + device token once approved |
-| `POST /api/tv/pair/approve` | Web/phone approves a code | called from a signed-in jellystructure session |
+| `POST /api/tv/login` | Sign in a device (username + password) | proxied to Jellyfin `AuthenticateByName` under a per-`(device,user)` identity; → `PairResult` (device token + `TvSession`). Retires the code+poll+approve pairing flow (Phase 141 / R175) |
+| `POST /api/tv/unpair` | Sign a device/profile out | removes its `ravilo_device` row; the client drops that `LocalSession` |
 | `GET  /api/tv/home` | The composed home feed | server-composes hero/channels/rows from user config |
 | `GET  /api/tv/channel/{id}` | A channel's scoped feed | same row set, filtered to studio/network/genre/tag |
 | `GET  /api/tv/browse` | Movies / Series / My List grids | `kind`, paging, reuses Phase 30 facets/filters |
@@ -144,8 +144,11 @@ surface is untouched.)
   read.
 - Read/written by: the jellystructure web **Ravilo config screen** (R16) and the viewer-settings
   subset via `PUT /api/tv/settings`. Read by `GET /api/tv/home` and `GET /api/tv/config`.
-- **Device sessions** table: `ravilo_device(device_id, user_id, token, created, last_seen)`. Pairing
-  challenges are short-lived (in-memory or a tiny table with TTL).
+- **Device sessions** table: `ravilo_device(device_id, jellyfin_user_id, jellyfin_user_token,
+  device_token, is_admin, is_kids, display_name, created_at, last_seen)` — one row per `(device, user)`,
+  created **directly at sign-in** (`POST /api/tv/login`; no pairing-challenge table). Phase 142 adds an
+  allowed-libraries column for restricted-user catalog filtering. (The legacy `ravilo_pairing` table is
+  left dormant, not dropped, by Phase 141.)
 - Because config is keyed by user, **all of a user's devices read the same layout**; a save from any
   surface is visible on next `GET /api/tv/home`.
 
@@ -160,7 +163,7 @@ surface is untouched.)
   arrow/pointer (Web) events. One row/column model used by every screen.
 - **Components:** `Tile` (poster/landscape), `HeroCarousel`, `ChannelCard`, `ContentRow`,
   `EpisodeCard`, `SeasonPicker`, `CastCircle`, `OnScreenKeyboard`, `AppBar`, focusable `Button`.
-- **Screens** (all common): Pairing, Home, Channel, Browse grid (Movies/Series/My List), Search,
+- **Screens** (all common): Login, Home, Channel, Browse grid (Movies/Series/My List), Search,
   MovieDetail, SeriesDetail, Player chrome, Settings.
 - **Stores:** `HomeStore`, `DetailStore`, `SearchStore`, `PlaybackStore`, `SessionStore` — coroutine
   `StateFlow`s fed by `TvApiClient`; screens render store state only.
