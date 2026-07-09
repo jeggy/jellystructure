@@ -242,6 +242,10 @@ fun Route.tvRoutes(
             // extra Jellyfin call. EnableAllFolders ⇒ unrestricted (null); else the enabled set (RAW —
             // loginDevice normalizes it).
             allowedLibraries = if (authResult.user.policy.enableAllFolders) null else authResult.user.policy.enabledFolders.toSet(),
+            // Phase 142 follow-up — same policy response, its AllowedTags/BlockedTags (RAW; loginDevice
+            // lowercases them).
+            allowedTags = authResult.user.policy.allowedTags.toSet(),
+            blockedTags = authResult.user.policy.blockedTags.toSet(),
         )
         call.respond(PairResult(
             session = TvSession(
@@ -655,7 +659,8 @@ fun Route.tvRoutes(
         val entries = if (offset == 0) {
             val resumable = jellyfinClient.getResumeItems(config.apiKeys.jellyfinUrl, config.apiKeys.jellyfinToken, userId, limit = 10)
             val inProgress = resumable.mapNotNull { item ->
-                val playedAt = item.userData?.lastPlayedDate?.let { dev.jellystructure.util.isoToEpochSeconds(it) } ?: return@mapNotNull null
+                val userData = item.userData ?: return@mapNotNull null
+                val playedAt = userData.lastPlayedDate?.let { dev.jellystructure.util.isoToEpochSeconds(it) } ?: return@mapNotNull null
                 WatchHistoryEntry(
                     title = item.seriesName ?: item.name,
                     episodeLabel = if (item.seriesId != null) {
@@ -664,7 +669,7 @@ fun Route.tvRoutes(
                     firstPlayedAt = playedAt,
                     lastPlayedAt = playedAt,
                     finished = false,
-                    progressPct = item.userData?.playedPercentage?.toInt(),
+                    progressPct = userData.playedPercentage?.toInt(),
                 )
             }
             (finishedEntries + inProgress).sortedByDescending { it.lastPlayedAt }

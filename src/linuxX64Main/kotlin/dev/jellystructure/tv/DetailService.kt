@@ -40,7 +40,7 @@ class DetailService(
         val item = mediaStore.resolveByJellyfinId(jellyfinId) ?: return null
         // Phase 142: a blocked item's detail returns 404 (as if absent) rather than leaking metadata —
         // defense-in-depth, since the user's own token would 403 the stream anyway.
-        if (!item.visibleTo(device.allowedLibraries)) return null
+        if (!item.visibleTo(device)) return null
 
         // R82: audio/sub languages from local scanned tracks; R83: runtime from local model.
         val movieAudioLangs = item.tracks
@@ -54,7 +54,7 @@ class DetailService(
             synopsis           = item.overview,
             runtime            = item.runtime ?: 0,
             cast               = castFrom(item),
-            related            = hydrateRelated(device, mediaStore.relatedByGenre(item, RELATED_LIMIT).filter { it.visibleTo(device.allowedLibraries) }.map { it.toMediaCard() }.distinctBy { it.id }),
+            related            = hydrateRelated(device, mediaStore.relatedByGenre(item, RELATED_LIMIT).filter { it.visibleTo(device) }.map { it.toMediaCard() }.distinctBy { it.id }),
             playback           = null,  // R83: hydrated by /api/tv/playstate (R84 overlays it)
             audioLanguages     = movieAudioLangs,
             subtitleLanguages  = movieSubLangs,
@@ -68,7 +68,7 @@ class DetailService(
     suspend fun getSeriesDetail(device: DeviceData, jellyfinId: String): SeriesDetail? {
         val item = mediaStore.resolveByJellyfinId(jellyfinId) ?: return null
         // Phase 142: see the matching check in getMovieDetail.
-        if (!item.visibleTo(device.allowedLibraries)) return null
+        if (!item.visibleTo(device)) return null
 
         val seasonNums = item.episodes.map { it.seasonNumber ?: 0 }.distinct().sorted()
 
@@ -118,7 +118,7 @@ class DetailService(
             synopsis          = item.overview,
             seasons           = seasons,
             cast              = castFrom(item),
-            related           = hydrateRelated(device, mediaStore.relatedByGenre(item, RELATED_LIMIT).filter { it.visibleTo(device.allowedLibraries) }.map { it.toMediaCard() }.distinctBy { it.id }),
+            related           = hydrateRelated(device, mediaStore.relatedByGenre(item, RELATED_LIMIT).filter { it.visibleTo(device) }.map { it.toMediaCard() }.distinctBy { it.id }),
             progress          = null,  // R83: hydrated by /api/tv/playstate (R84 overlays it)
             audioLanguages    = seriesAudioLangs,
             subtitleLanguages = seriesSubLangs,
