@@ -1,7 +1,7 @@
 # Phase R163 — Ravilo TV: Play-Trailer button + fullscreen YouTube / Vimeo embed player
 
 > The detail hero's **▷ Trailer** button becomes real: it appears **only when the title has a trailer**
-> (the `trailer` ref on the detail DTO from [Phase 130](../../requirements/phase-130-tmdb-trailer-ingest.md)),
+> (the `trailer` ref on the detail DTO from Phase 130 — ✓ Done, spec pruned, see git history),
 > and selecting it opens the trailer **fullscreen** in an **embedded YouTube / Vimeo player**, chrome-matched
 > to the real media player. Back / Select on Close exits and stops playback. Because TMDB trailers live on
 > YouTube/Vimeo, they **can't** run through the Media3/ExoPlayer engine (no direct stream) — this is a
@@ -88,7 +88,7 @@ a DTO trailer field.
   (`openTrailer` / `closeTrailer` / `trailerEmbed`, the conditional hero button, the capture-phase key handler,
   `back()` guard); `design/ravilo/ravilo.css` (`.rv-trailer` / `.rv-tr-*`); `design/ravilo/ravilo-i18n.js`
   (`trailer`).
-- Backend / app: **[Phase 130](../../requirements/phase-130-tmdb-trailer-ingest.md)** `detail.trailer` DTO
+- Backend / app: **Phase 130** (✓ Done — spec pruned, see git history) `detail.trailer` DTO
   field; a Compose **TrailerScreen/overlay** hosting the provider embed (WebView / YouTube-Vimeo player) with
   Back + Close; button gating on the detail screens.
 - Related: **Phase 130** (TMDB ingest + DTO — the data source), **R14** (the media-player chrome this mirrors),
