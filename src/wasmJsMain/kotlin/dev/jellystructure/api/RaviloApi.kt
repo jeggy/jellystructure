@@ -79,6 +79,23 @@ data class OverviewUser(
     val sessions: List<OverviewSession>,
 )
 
+// Phase 143 (design addendum) — "Recently watched" lazy history. Timestamps are epoch **seconds**
+// (Jellyfin ISO DatePlayed), unlike the millis-based timestamps above — see formatHistoryTs in Settings.kt.
+@Serializable
+data class WatchHistoryEntry(
+    val title: String,
+    @SerialName("episode_label") val episodeLabel: String? = null,
+    @SerialName("episode_count") val episodeCount: Int = 1,
+    @SerialName("first_played_at") val firstPlayedAt: Long,
+    @SerialName("last_played_at") val lastPlayedAt: Long,
+)
+
+@Serializable
+data class WatchHistoryPage(
+    val entries: List<WatchHistoryEntry>,
+    @SerialName("has_more") val hasMore: Boolean,
+)
+
 object RaviloApi {
     suspend fun getUsers(): List<JellyfinUser> =
         httpClient.get("/api/jellyfin/users").body()
@@ -172,5 +189,8 @@ object RaviloApi {
     suspend fun signOutAll(userId: String) {
         httpClient.post("/api/tv/admin/users/$userId/signout-all")
     }
+
+    suspend fun getHistory(userId: String, offset: Int = 0): WatchHistoryPage =
+        httpClient.get("/api/tv/admin/users/$userId/history") { parameter("offset", offset) }.body()
 
 }

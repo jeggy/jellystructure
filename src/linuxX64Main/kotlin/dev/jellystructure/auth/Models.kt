@@ -115,6 +115,9 @@ data class JellyfinUserData(
     @SerialName("PlayedPercentage") val playedPercentage: Double? = null,
     @SerialName("PlaybackPositionTicks") val playbackPositionTicks: Long = 0,
     @SerialName("Played") val played: Boolean = false,
+    // Phase 143 — ISO-8601 UTC; when this item was last played, for the Users & Devices "Recently
+    // watched" history (sorted server-side via SortBy=DatePlayed).
+    @SerialName("LastPlayedDate") val lastPlayedDate: String? = null,
 )
 
 @Serializable

@@ -91,6 +91,68 @@ private data class OverviewUser(
     val sessions: List<OverviewSession>,
 )
 
+// Phase 143 (design addendum) — "Recently watched" lazy history DTOs. Timestamps are epoch **seconds**
+// (straight off Jellyfin's ISO DatePlayed via isoToEpochSeconds) — unlike every other Phase 143
+// timestamp above, which is epoch millis (nowMs()-based); the admin frontend must not conflate the two.
+@Serializable
+private data class WatchHistoryEntry(
+    val title: String,
+    @SerialName("episode_label") val episodeLabel: String? = null,  // e.g. "S01 · E01–E08"; null for a movie
+    @SerialName("episode_count") val episodeCount: Int = 1,
+    @SerialName("first_played_at") val firstPlayedAt: Long,  // epoch seconds; oldest play in the group
+    @SerialName("last_played_at") val lastPlayedAt: Long,    // epoch seconds; newest play in the group
+)
+
+@Serializable
+private data class WatchHistoryPage(
+    val entries: List<WatchHistoryEntry>,
+    @SerialName("has_more") val hasMore: Boolean,
+)
+
+private const val HISTORY_PAGE_SIZE = 20
+
+/** Phase 143 — collapses consecutive episodes of the same series **and season** (adjacent in the
+ *  DatePlayed-sorted list) into one row, matching the design addendum's
+ *  "Havets Hjarta · S01 · E01–E08 · ✓ 8 episodes" example. A movie, or an episode whose neighbours
+ *  belong to a different series/season, is its own one-item row. */
+private fun groupHistoryEntries(items: List<dev.jellystructure.auth.JellyfinPlayItem>): List<WatchHistoryEntry> {
+    fun playedAt(item: dev.jellystructure.auth.JellyfinPlayItem): Long =
+        item.userData?.lastPlayedDate?.let { dev.jellystructure.util.isoToEpochSeconds(it) } ?: 0L
+
+    val result = mutableListOf<WatchHistoryEntry>()
+    var i = 0
+    while (i < items.size) {
+        val head = items[i]
+        if (head.seriesId == null) {
+            result.add(WatchHistoryEntry(title = head.name, firstPlayedAt = playedAt(head), lastPlayedAt = playedAt(head)))
+            i++
+            continue
+        }
+        var j = i + 1
+        while (j < items.size && items[j].seriesId == head.seriesId && items[j].seasonNumber == head.seasonNumber) j++
+        val run = items.subList(i, j)
+        val playedTimes = run.map { playedAt(it) }.filter { it > 0 }
+        val episodeNums = run.mapNotNull { it.episodeNumber }
+        val epLabel = buildString {
+            append("S${(head.seasonNumber ?: 0).toString().padStart(2, '0')}")
+            episodeNums.minOrNull()?.let { min ->
+                append(" · E${min.toString().padStart(2, '0')}")
+                val max = episodeNums.maxOrNull()!!
+                if (max != min) append("–E${max.toString().padStart(2, '0')}")
+            }
+        }
+        result.add(WatchHistoryEntry(
+            title = head.seriesName ?: head.name,
+            episodeLabel = epLabel,
+            episodeCount = run.size,
+            firstPlayedAt = playedTimes.minOrNull() ?: 0L,
+            lastPlayedAt = playedTimes.maxOrNull() ?: 0L,
+        ))
+        i = j
+    }
+    return result
+}
+
 private const val SESSION_ID_PREFIX_LEN = 12
 
 @Serializable
@@ -560,6 +622,27 @@ fun Route.tvRoutes(
         deviceService.deleteAllForUser(userId)
         sessionService.revokeAllForUser(userId)
         call.respond(mapOf("ok" to true))
+    }
+
+    // Phase 143 (design addendum) — "Recently watched": the one section of the overview that must read
+    // Jellyfin live (no local play-history store). Strictly lazy, one user at a time, behind the FE's
+    // "Show more" expander — never fanned out across all users on the base overview.
+    get("/tv/admin/users/{userId}/history") {
+        runCatching { call.attributes[SessionKey] }.getOrNull()
+            ?: return@get call.respond(HttpStatusCode.Unauthorized, mapOf("error" to "Not logged in"))
+        val userId = call.parameters["userId"] ?: return@get call.respond(HttpStatusCode.BadRequest)
+        val offset = call.request.queryParameters["offset"]?.toIntOrNull()?.coerceAtLeast(0) ?: 0
+        val config = configStore.current
+        if (config.apiKeys.jellyfinUrl.isBlank() || config.apiKeys.jellyfinToken.isBlank()) {
+            call.respond(WatchHistoryPage(emptyList(), false)); return@get
+        }
+        val raw = jellyfinClient.getRecentlyPlayed(
+            config.apiKeys.jellyfinUrl, config.apiKeys.jellyfinToken, userId,
+            limit = HISTORY_PAGE_SIZE, startIndex = offset,
+        )
+        // Caveat (documented, not a bug): a binge run can straddle a page boundary, splitting one
+        // logical group across two "Show more" pages — acceptable for a history view, not a spec violation.
+        call.respond(WatchHistoryPage(entries = groupHistoryEntries(raw), hasMore = raw.size == HISTORY_PAGE_SIZE))
     }
 
     put("/tv/admin/config") {

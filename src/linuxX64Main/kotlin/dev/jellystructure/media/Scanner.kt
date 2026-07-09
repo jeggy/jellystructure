@@ -13,6 +13,7 @@ import dev.jellystructure.model.Person
 import dev.jellystructure.model.TrackKind
 import dev.jellystructure.resolver.LanguageResolver
 import dev.jellystructure.tmdb.TmdbClient
+import dev.jellystructure.util.isoToEpochSeconds
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.io.files.Path
 import kotlinx.io.files.SystemFileSystem
@@ -1047,19 +1048,4 @@ class Scanner(
 
     @OptIn(ExperimentalForeignApi::class)
     private fun epochSeconds(): Long = platform.posix.time(null)
-
-    /** Parse a Jellyfin `DateCreated` (ISO-8601 UTC, e.g. "2021-06-27T18:51:37.0000000Z") to epoch
-     *  seconds. Manual (no kotlinx-datetime on Native) via days-from-civil (Hinnant); null if unparseable. */
-    private val isoDateRe = Regex("""(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})""")
-    private fun isoToEpochSeconds(iso: String): Long? {
-        val (ys, mos, ds, hs, mis, ss) = (isoDateRe.find(iso) ?: return null).destructured
-        val y = ys.toInt(); val mo = mos.toInt(); val d = ds.toInt()
-        val yy = if (mo <= 2) y - 1 else y
-        val era = (if (yy >= 0) yy else yy - 399) / 400
-        val yoe = yy - era * 400
-        val doy = (153 * (if (mo > 2) mo - 3 else mo + 9) + 2) / 5 + d - 1
-        val doe = yoe * 365 + yoe / 4 - yoe / 100 + doy
-        val days = era.toLong() * 146097L + doe.toLong() - 719468L
-        return days * 86400L + hs.toInt() * 3600L + mis.toInt() * 60L + ss.toInt()
-    }
 }
