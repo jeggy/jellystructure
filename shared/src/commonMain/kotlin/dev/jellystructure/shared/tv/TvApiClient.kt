@@ -27,23 +27,15 @@ class TvApiClient(
     private val json: Json = Json { ignoreUnknownKeys = true; isLenient = true },
 ) {
 
-    // ─── Pairing (no auth) ───────────────────────────────────────────────────
+    // ─── Login (no auth) ─────────────────────────────────────────────────────
 
-    suspend fun startPairing(): PairingChallenge {
-        val r = client.post("$baseUrl/api/tv/pair/start")
-        r.assertSuccess()
-        return json.decodeFromString<PairingChallenge>(r.bodyAsText())
-    }
-
-    /**
-     * TV polls until the web/phone client approves the code.
-     * Returns null while approval is pending (server responds 202).
-     */
-    suspend fun pollPairing(pollToken: String): PairResult? {
-        val r = client.post("$baseUrl/api/tv/pair/poll") {
-            jsonBody("""{"poll_token":${pollToken.jsonStr()}}""")
+    /** Phase 141/R175 — proxied username/password sign-in: jellystructure authenticates against
+     *  Jellyfin server-side and mints a device token bound to the returned user. Throws
+     *  [TvApiError.Http] on failure (401 = invalid credentials; 503 = Jellyfin not configured). */
+    suspend fun login(username: String, password: String, deviceId: String, deviceName: String? = null): PairResult {
+        val r = client.post("$baseUrl/api/tv/login") {
+            jsonBody(json.encodeToString(TvLoginRequest(username, password, deviceId, deviceName)))
         }
-        if (r.status == HttpStatusCode.Accepted) return null
         r.assertSuccess()
         return json.decodeFromString<PairResult>(r.bodyAsText())
     }

@@ -426,11 +426,18 @@ class JellyfinClient {
  * DeviceId's older tokens on every new login under that same id, so with one shared id, pairing a
  * second TV could invalidate the first TV's token. It also makes each TV show up as its own named
  * session in the Jellyfin dashboard instead of one anonymous "Jellystructure" session for all of them.
+ *
+ * Phase 141: [forDevice] folds in [DeviceData.jellyfinUserId] as well, so the identity is unique per
+ * **(device, user)** rather than per physical device. Without this, two profiles signed in on the same
+ * shared TV (R175 multi-user) would share one DeviceId, and the same pruning behaviour that motivated
+ * this class in the first place would invalidate the first profile's token the moment the second one
+ * signs in. The initial `POST /api/tv/login` auth call (before a `DeviceData` row exists) builds an
+ * equivalent identity directly from `deviceId` + `username`.
  */
 data class JellyfinDeviceIdentity(val deviceId: String, val deviceName: String) {
     companion object {
         fun forDevice(device: DeviceData): JellyfinDeviceIdentity =
-            JellyfinDeviceIdentity("ravilo-${device.deviceId}", device.displayName.ifBlank { "Ravilo TV" })
+            JellyfinDeviceIdentity("ravilo-${device.deviceId}-${device.jellyfinUserId}", device.displayName.ifBlank { "Ravilo TV" })
     }
 }
 

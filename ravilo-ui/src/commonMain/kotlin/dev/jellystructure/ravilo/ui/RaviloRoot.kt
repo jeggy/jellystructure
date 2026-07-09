@@ -25,6 +25,35 @@ expect object TokenStore {
     fun clear()
 }
 
+/**
+ * Phase 141/R175 — a stable id for this physical device, generated once and persisted forever
+ * (unlike the retired pairing flow's server-minted id). The server folds it — together with the
+ * signed-in user — into the Jellyfin identity it authenticates under, so re-logins (e.g. `Add user`
+ * on a shared TV) are recognized as the same device instead of minting an unrelated one each time.
+ */
+expect object DeviceIdStore {
+    fun get(): String
+}
+
+/** A short, human-readable label for this device/platform, sent at login so the server's device list
+ *  (Phase 143) shows something friendlier than "Ravilo TV <id>" when nothing better is known. */
+expect fun deviceDisplayName(): String
+
+private val HEX_CHARS = "0123456789abcdef"
+
+/** Portable across every KMP target — used by each [DeviceIdStore] actual to mint a fresh id on first
+ *  use; storage (where it's persisted) is the only platform-specific part. */
+internal fun randomDeviceId(): String {
+    val bytes = kotlin.random.Random.nextBytes(16)
+    return buildString {
+        for (b in bytes) {
+            val v = b.toInt() and 0xFF
+            append(HEX_CHARS[v ushr 4])
+            append(HEX_CHARS[v and 0x0F])
+        }
+    }
+}
+
 // ─── R80: Browser history / URL navigation seam ──────────────────────────────
 
 /** Push a hash route into browser history. No-op on non-web targets. */

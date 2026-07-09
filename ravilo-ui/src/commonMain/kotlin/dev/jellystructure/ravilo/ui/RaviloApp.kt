@@ -47,8 +47,8 @@ import dev.jellystructure.ravilo.ui.screens.HomeStore
 import dev.jellystructure.ravilo.ui.screens.MovieDetailScreen
 import dev.jellystructure.ravilo.ui.screens.MovieDetailStore
 import dev.jellystructure.ravilo.ui.screens.MultiTokenStore
-import dev.jellystructure.ravilo.ui.screens.PairingScreen
-import dev.jellystructure.ravilo.ui.screens.PairingStore
+import dev.jellystructure.ravilo.ui.screens.LoginScreen
+import dev.jellystructure.ravilo.ui.screens.LoginStore
 import dev.jellystructure.ravilo.ui.screens.PlayerScreen
 import dev.jellystructure.ravilo.ui.screens.PlayerStore
 import dev.jellystructure.ravilo.ui.screens.ProfilePickerScreen
@@ -142,7 +142,7 @@ private enum class NavDir { Forward, Back, Reset }
 // ─── Navigation destinations ──────────────────────────────────────────────────
 
 private sealed class Dest {
-    data object Pairing : Dest()
+    data object Login : Dest()
     data object ProfilePicker : Dest()
     data class Home(val displayName: String) : Dest()
     data class ChannelView(val channel: Channel, val displayName: String) : Dest()
@@ -175,7 +175,7 @@ private sealed class Dest {
 
     // R80: each Dest maps to a hash route (web) or is ignored (android/TV).
     fun toRoute(): String = when (this) {
-        is Pairing        -> "/pairing"
+        is Login          -> "/login"
         is ProfilePicker  -> "/profiles"
         is Home           -> "/home"
         is ChannelView    -> "/channel/${channel.id}"
@@ -274,7 +274,7 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
         val initialDest = remember {
             val sessions = MultiTokenStore.getAll()
             when {
-                sessions.isEmpty() -> Dest.Pairing
+                sessions.isEmpty() -> Dest.Login
                 sessions.size == 1 -> {
                     MultiTokenStore.setActive(sessions.first().userId)
                     Dest.Home(sessions.first().displayName)
@@ -373,7 +373,7 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
         // never queued (FR-R155-1.2/.3).
         LaunchedEffect(Unit) {
             livePlayItem.collect { env ->
-                if (activeUserId == null || stack.lastOrNull() is Dest.ProfilePicker || stack.lastOrNull() is Dest.Pairing) {
+                if (activeUserId == null || stack.lastOrNull() is Dest.ProfilePicker || stack.lastOrNull() is Dest.Login) {
                     return@collect
                 }
                 val displayName = destDisplayName(stack.lastOrNull())
@@ -479,17 +479,17 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                 )
             }
 
-            is Dest.Pairing -> {
-                val store = remember { PairingStore(apiClient) }
-                PairingScreen(
+            is Dest.Login -> {
+                val store = remember { LoginStore(apiClient) }
+                LoginScreen(
                     store = store,
-                    onPaired = {
+                    onSignedIn = {
                         val active = MultiTokenStore.getActive()
                         activeUserId = active?.userId
                         activeAvatarUrl = active?.avatarUrl
                         refreshConfig()
-                        // Reset the stack so Back from Home doesn't return to pairing,
-                        // and carry the freshly-paired user's display name.
+                        // Reset the stack so Back from Home doesn't return to the login screen,
+                        // and carry the freshly-signed-in user's display name.
                         val name = MultiTokenStore.getActive()?.displayName ?: ""
                         resetTo(Dest.Home(name))
                     },
@@ -779,12 +779,12 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                     store = store,
                     displayName = dest.displayName,
                     onSkinChange = { themeState.skin = it },
-                    onSignOut = { resetTo(Dest.Pairing) },
+                    onSignOut = { resetTo(Dest.Login) },
                     onBack = { pop() },
                     // R161: unpair revokes every session this device holds (store.unpairDevice() has
                     // already cleared MultiTokenStore by the time this fires) — always lands on the
-                    // pairing gate, matching the "no sessions" boot state.
-                    onUnpair = { resetTo(Dest.Pairing) },
+                    // login gate, matching the "no sessions" boot state.
+                    onUnpair = { resetTo(Dest.Login) },
                 )
             }
         } } // when / AnimatedContent
@@ -799,7 +799,10 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                 onMyList = { profileMenuOpen = false; push(Dest.Browse(BrowseKind.MY_LIST, currentDisplayName)) },
                 onSettings = { profileMenuOpen = false; push(Dest.Settings(currentDisplayName)) },
                 onSwitchProfile = { profileMenuOpen = false; push(Dest.ProfilePicker) },
-                onUnpaired = { profileMenuOpen = false; resetTo(Dest.Pairing) },
+                // R175 — "Add user" opens the same LoginScreen; a successful sign-in resets the stack
+                // to the new profile's Home (see the Dest.Login branch above).
+                onAddUser = { profileMenuOpen = false; push(Dest.Login) },
+                onUnpaired = { profileMenuOpen = false; resetTo(Dest.Login) },
             )
         }
         FrameTrackerOverlay(fpsOverlay)  // R94: F5 toggles; no-op when false
