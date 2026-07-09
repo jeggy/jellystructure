@@ -115,13 +115,4 @@ object RaviloApi {
         return r.body()
     }
 
-    suspend fun approvePairing(code: String) {
-        val r = httpClient.post("/api/tv/pair/approve") {
-            contentType(ContentType.Application.Json)
-            setBody("""{"code":${code.jsonQuote()}}""")
-        }
-        if (!r.status.isSuccess()) throw Exception(r.body<String>())
-    }
 }
-
-private fun String.jsonQuote() = "\"${replace("\\", "\\\\").replace("\"", "\\\"")}\""

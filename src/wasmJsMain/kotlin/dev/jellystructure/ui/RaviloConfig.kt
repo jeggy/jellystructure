@@ -241,7 +241,6 @@ private fun buildShell(): String {
       <h1 style="display:flex;align-items:center;gap:.4em">$RAVILO_MARK Ravilo TV</h1>
       <span class="badge info">app config</span>
       <span class="spacer"></span>
-      <button id="pair-tv-btn" class="btn sm"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:5px;vertical-align:-2px"><rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg>Pair a TV</button>
       <span class="badge ok" id="rav-synced">saved · synced</span>
       <button id="rav-save" class="btn primary">Save</button>
     </div>
@@ -294,7 +293,6 @@ private fun buildShell(): String {
         </div>
       </nav>
       <div class="col fill" style="min-width:280px" id="rav-sections">
-        <div id="sect-pair"></div>
         <div id="sect-heroes"></div>
         <div id="sect-channels"></div>
         <div id="sect-rows"></div>
@@ -527,7 +525,6 @@ private fun wireShell(container: Element, scope: CoroutineScope) {
 }
 
 private fun renderSections(container: Element, scope: CoroutineScope) {
-    renderPair(container, scope)
     renderHeroes(container)
     renderChannels(container)
     renderRows(container)
@@ -543,107 +540,6 @@ private fun structural(container: Element, mutate: () -> Unit, rerender: (Elemen
     mutate()
     rerender(container)
     renderPreview(container)
-}
-
-// ── Pair a TV (modal, opened from sticky pagebar button) ──────────────────────
-
-private fun renderPair(container: Element, scope: CoroutineScope) {
-    document.getElementById("pair-back")?.let { it.parentElement?.removeChild(it) }
-    container.querySelector("#sect-pair")?.let { (it as? HTMLElement)?.style?.display = "none" }
-
-    val userOptions = if (users.isEmpty()) {
-        """<option value="">No users found</option>"""
-    } else {
-        users.joinToString("") { u -> """<option value="${u.id.htmlEsc()}">${u.displayName.htmlEsc()}</option>""" }
-    }
-
-    val modal = document.createElement("div") as HTMLElement
-    modal.id = "pair-back"
-    modal.className = "pair-back"
-    modal.innerHTML = """
-        <div class="card pair-modal">
-          <div class="row center" style="gap:11px;margin-bottom:4px">
-            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8M12 17v4"/>
-            </svg>
-            <h3 style="margin:0">Pair a TV</h3>
-            <span class="spacer"></span><span class="x" id="pair-x">&#x2715;</span>
-          </div>
-          <p class="tiny muted" style="line-height:1.55;margin:4px 0 16px">On the TV, open <b>Ravilo &#x2192; Add user</b>. Choose which Jellyfin user this TV signs in as, then enter the 6-character code shown on screen.</p>
-          <div class="field" style="margin-bottom:15px">
-            <label>Sign in as</label>
-            <select id="pair-user-sel" class="input" style="width:100%">$userOptions</select>
-          </div>
-          <div class="field" style="margin-bottom:0">
-            <label>Pairing code</label>
-            <div class="code-inputs" id="pair-code-inputs">
-              <input maxlength="1" data-ci="0" autocomplete="off" aria-label="code 1" spellcheck="false">
-              <input maxlength="1" data-ci="1" autocomplete="off" aria-label="code 2" spellcheck="false">
-              <input maxlength="1" data-ci="2" autocomplete="off" aria-label="code 3" spellcheck="false">
-              <input maxlength="1" data-ci="3" autocomplete="off" aria-label="code 4" spellcheck="false">
-              <input maxlength="1" data-ci="4" autocomplete="off" aria-label="code 5" spellcheck="false">
-              <input maxlength="1" data-ci="5" autocomplete="off" aria-label="code 6" spellcheck="false">
-            </div>
-          </div>
-          <div class="tiny muted" style="margin-top:9px">The code expires after a few minutes.</div>
-          <div id="pair-result" style="margin-top:10px;font-size:.85rem;display:none"></div>
-          <div class="row" style="justify-content:flex-end;gap:8px;margin-top:18px">
-            <button class="btn ghost" id="pair-cancel">Cancel</button>
-            <button class="btn primary" id="pair-go" disabled>Pair TV</button>
-          </div>
-        </div>
-    """.trimIndent()
-    document.body?.appendChild(modal)
-
-    fun closeModal() { modal.classList.remove("open") }
-    container.querySelector("#pair-tv-btn")?.addEventListener("click") { _ -> modal.classList.add("open") }
-    modal.querySelector("#pair-x")?.addEventListener("click") { _ -> closeModal() }
-    modal.querySelector("#pair-cancel")?.addEventListener("click") { _ -> closeModal() }
-    modal.addEventListener("click") { ev -> if (ev.target == modal) closeModal() }
-
-    val codeInputs = modal.querySelectorAll("#pair-code-inputs input")
-    val pairGoBtn = modal.querySelector("#pair-go") as? HTMLElement
-    val resultEl = modal.querySelector("#pair-result") as? HTMLElement
-
-    fun getCode(): String = buildString {
-        for (k in 0 until codeInputs.length) append((codeInputs.item(k) as? HTMLInputElement)?.value?.uppercase() ?: "")
-    }
-    fun updatePairBtn() {
-        if (getCode().length == 6) pairGoBtn?.removeAttribute("disabled")
-        else pairGoBtn?.setAttribute("disabled", "true")
-    }
-    for (k in 0 until codeInputs.length) {
-        val inp = codeInputs.item(k) as? HTMLInputElement ?: continue
-        inp.addEventListener("input") { _ ->
-            inp.value = inp.value.uppercase().take(1)
-            if (inp.value.isNotEmpty() && k < codeInputs.length - 1) (codeInputs.item(k + 1) as? HTMLInputElement)?.focus()
-            updatePairBtn()
-        }
-        inp.addEventListener("keydown") { ev ->
-            if ((ev as? org.w3c.dom.events.KeyboardEvent)?.key == "Backspace" && inp.value.isEmpty() && k > 0)
-                (codeInputs.item(k - 1) as? HTMLInputElement)?.focus()
-        }
-    }
-    pairGoBtn?.addEventListener("click") { _ ->
-        val code = getCode(); if (code.length != 6) return@addEventListener
-        pairGoBtn.setAttribute("disabled", "true")
-        resultEl?.textContent = "Pairing…"; resultEl?.style?.display = "block"
-        scope.launch {
-            runCatching { RaviloApi.approvePairing(code) }.fold(
-                onSuccess = {
-                    resultEl?.textContent = "✓ TV paired successfully!"
-                    resultEl?.setAttribute("style", "margin-top:10px;font-size:.85rem;color:var(--ok);display:block")
-                    for (k in 0 until codeInputs.length) (codeInputs.item(k) as? HTMLInputElement)?.value = ""
-                    pairGoBtn.setAttribute("disabled", "true")
-                },
-                onFailure = { err ->
-                    resultEl?.textContent = "Failed: ${err.message ?: "unknown error"}"
-                    resultEl?.setAttribute("style", "margin-top:10px;font-size:.85rem;color:var(--bad);display:block")
-                    pairGoBtn.removeAttribute("disabled")
-                },
-            )
-        }
-    }
 }
 
 // ── Heroes ────────────────────────────────────────────────────────────────────

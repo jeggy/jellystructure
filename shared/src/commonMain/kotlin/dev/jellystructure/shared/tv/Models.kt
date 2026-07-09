@@ -23,13 +23,16 @@ fun UiDensity.tileScale(): Float = when (this) {
     UiDensity.COMFORTABLE -> 1f
 }
 
-// ─── Pairing ──────────────────────────────────────────────────────────────────
+// ─── Login ────────────────────────────────────────────────────────────────────
 
+/** Phase 141/R175 — posted to `POST /api/tv/login`. [deviceId] is the device's own stable id
+ *  (client-generated, persisted); the Jellyfin credentials are proxied server-side and never stored. */
 @Serializable
-data class PairingChallenge(
-    val code: String,
-    @SerialName("expires_at") val expiresAt: Long,
-    @SerialName("poll_token") val pollToken: String,
+data class TvLoginRequest(
+    val username: String,
+    val password: String,
+    @SerialName("device_id") val deviceId: String,
+    @SerialName("device_name") val deviceName: String? = null,
 )
 
 @Serializable
@@ -42,7 +45,7 @@ data class TvSession(
     @SerialName("avatar_url") val avatarUrl: String? = null,
 )
 
-/** Returned by `POST /api/tv/pair/poll` when the challenge has been approved. */
+/** Returned by `POST /api/tv/login` on a successful sign-in. */
 @Serializable
 data class PairResult(
     val session: TvSession,

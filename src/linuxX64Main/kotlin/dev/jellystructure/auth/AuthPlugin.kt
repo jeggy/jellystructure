@@ -15,11 +15,9 @@ val ApiKeyAttr = AttributeKey<ApiKeyData>("RaviloApiKey")
 private val OPEN_API_PATHS = listOf(
     "/api/auth/login",
     "/api/setup",
-    "/api/tv/pair/start",
-    "/api/tv/pair/poll",
-    // /api/tv/pair/approve is open at the plugin level; the route handler checks for
-    // a valid cookie session or direct Jellyfin credentials itself.
-    "/api/tv/pair/approve",
+    // Phase 141 — no device token exists yet at sign-in; the route itself authenticates the
+    // credentials against Jellyfin before minting one. Retires /api/tv/pair/{start,poll,approve}.
+    "/api/tv/login",
     // /api/tv/events is the live-config WebSocket (R33); browsers can't send a bearer header on the
     // handshake, so the route validates a device token from the query string itself.
     "/api/tv/events",

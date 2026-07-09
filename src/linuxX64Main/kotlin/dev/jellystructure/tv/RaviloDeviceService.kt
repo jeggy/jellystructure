@@ -4,28 +4,16 @@ import dev.jellystructure.auth.DeviceData
 import dev.jellystructure.auth.generateSecureToken
 import dev.jellystructure.db.JellystructureDb
 import kotlinx.cinterop.ExperimentalForeignApi
-import kotlinx.cinterop.addressOf
 import kotlinx.cinterop.alloc
-import kotlinx.cinterop.convert
 import kotlinx.cinterop.memScoped
 import kotlinx.cinterop.ptr
-import kotlinx.cinterop.usePinned
 import platform.posix.CLOCK_REALTIME
-import platform.posix.O_RDONLY
-import platform.posix.close
 import platform.posix.clock_gettime
-import platform.posix.open
-import platform.posix.read
 import platform.posix.timespec
-
-private const val PAIRING_TTL_MS = 5L * 60 * 1000
-private val CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789".toCharArray()
 
 // Phase R86-B: avoid a SQLite SELECT + UPDATE on every TV API call by caching validated tokens.
 private const val TOKEN_CACHE_TTL_MS  = 5 * 60_000L  // serve cached DeviceData for 5 min
 private const val LAST_SEEN_DEBOUNCE_MS = 60_000L      // write updateLastSeen at most once/min
-
-data class PairingStartResult(val code: String, val pollToken: String, val expiresAt: Long)
 
 class RaviloDeviceService(private val db: JellystructureDb) {
 
@@ -33,89 +21,53 @@ class RaviloDeviceService(private val db: JellystructureDb) {
     private data class TokenEntry(val data: DeviceData, val cachedAt: Long, var lastSeenWritten: Long)
     private val tokenCache = HashMap<String, TokenEntry>()
 
-    init {
-        db.raviloPairingQueries.deleteExpired(nowMs())
-    }
-
-    // Phase 110: [deviceName] is the TV's own name (Android device model / browser label), sent at
-    // pairing-start; carried through to ravilo_device.display_name once polling creates the device row.
-    fun startPairing(deviceName: String? = null): PairingStartResult {
-        val code = generateCode()
-        val pollToken = generateSecureToken()
-        val pairId = generateSecureToken()
-        val expiresAt = nowMs() + PAIRING_TTL_MS
-        db.raviloPairingQueries.insertPairing(
-            pair_id = pairId,
-            code = code,
-            poll_token = pollToken,
-            expires_at = expiresAt,
-            device_name = deviceName?.take(80)?.ifBlank { null },
-        )
-        return PairingStartResult(code = code, pollToken = pollToken, expiresAt = expiresAt)
-    }
-
-    fun approvePairing(
-        code: String,
+    /**
+     * Phase 141 — direct username/password sign-in (`POST /api/tv/login`): upserts the `(deviceId,
+     * jellyfinUserId)` row directly, bypassing the retired `ravilo_pairing` challenge table entirely.
+     * Reuses an existing row's `device_token`/`created_at` (via [existingDeviceId]'s counterpart lookup)
+     * so a re-login doesn't churn the client's stored token; mints a fresh one for a first-time sign-in.
+     */
+    fun loginDevice(
+        deviceId: String,
+        deviceName: String?,
         jellyfinUserId: String,
         jellyfinUsername: String,
         jellyfinUserToken: String,
         isAdmin: Boolean,
-        isKids: Boolean = false,
-    ): Boolean {
+        isKids: Boolean,
+    ): Pair<DeviceData, String> {
         val now = nowMs()
-        db.raviloPairingQueries.approve(
+        val existing = db.raviloDeviceQueries.getByDeviceAndUser(device_id = deviceId, jellyfin_user_id = jellyfinUserId)
+            .executeAsOneOrNull()
+        val deviceToken = existing?.device_token ?: generateSecureToken()
+        val createdAt = existing?.created_at ?: now
+        val displayName = deviceName?.take(80)?.ifBlank { null }
+            ?: existing?.display_name?.takeIf { it.isNotBlank() }
+            ?: "Ravilo TV ${deviceId.take(6)}"
+        db.raviloDeviceQueries.insertDevice(
+            device_id = deviceId,
             jellyfin_user_id = jellyfinUserId,
             jellyfin_username = jellyfinUsername,
             jellyfin_user_token = jellyfinUserToken,
             is_admin = if (isAdmin) 1L else 0L,
             is_kids = if (isKids) 1L else 0L,
-            code = code,
-            now = now,
-        )
-        return db.raviloPairingQueries.getByCode(code, now).executeAsOneOrNull()?.approved == 1L
-    }
-
-    /** Returns (DeviceData, deviceToken) once the challenge is approved, null while pending.
-     *  [existingDeviceId] lets an already-paired device add a second user without changing its id. */
-    fun pollPairing(pollToken: String, existingDeviceId: String? = null): Pair<DeviceData, String>? {
-        val row = db.raviloPairingQueries.getByPollToken(pollToken, nowMs()).executeAsOneOrNull()
-            ?: return null
-        if (row.approved == 0L) return null
-        val userId = row.jellyfin_user_id ?: return null
-        val username = row.jellyfin_username ?: return null
-        val userToken = row.jellyfin_user_token ?: return null
-
-        val deviceId = existingDeviceId ?: generateSecureToken()
-        val deviceToken = generateSecureToken()
-        val now = nowMs()
-        // Phase 110: prefer the name the TV sent at pairing-start; an already-paired device adding a
-        // second user (existingDeviceId set) keeps whatever name the first pairing gave it.
-        val displayName = row.device_name?.takeIf { it.isNotBlank() }
-            ?: existingDeviceId?.let { db.raviloDeviceQueries.getByDevice(it).executeAsList().firstOrNull()?.display_name?.takeIf { n -> n.isNotBlank() } }
-            ?: "Ravilo TV ${deviceId.take(6)}"
-        db.raviloDeviceQueries.insertDevice(
-            device_id = deviceId,
-            jellyfin_user_id = userId,
-            jellyfin_username = username,
-            jellyfin_user_token = userToken,
-            is_admin = row.is_admin,
-            is_kids = row.is_kids,
             device_token = deviceToken,
             display_name = displayName,
-            created_at = now,
+            created_at = createdAt,
             last_seen = now,
         )
-        db.raviloPairingQueries.consume(pollToken)
-
+        // Force a fresh DB read on the next validateDeviceToken call — the token/policy may have
+        // changed even though the device_token itself was reused (re-login as the same user).
+        tokenCache.remove(deviceToken)
         return Pair(
             DeviceData(
                 deviceId = deviceId,
                 deviceToken = deviceToken,
-                jellyfinUserId = userId,
-                jellyfinUsername = username,
-                jellyfinUserToken = userToken,
-                isAdmin = row.is_admin == 1L,
-                isKids = row.is_kids == 1L,
+                jellyfinUserId = jellyfinUserId,
+                jellyfinUsername = jellyfinUsername,
+                jellyfinUserToken = jellyfinUserToken,
+                isAdmin = isAdmin,
+                isKids = isKids,
                 displayName = displayName,
                 lastSeen = now,
             ),
@@ -199,18 +151,6 @@ class RaviloDeviceService(private val db: JellystructureDb) {
                 lastSeen = row.last_seen,
             )
         }
-
-    @OptIn(ExperimentalForeignApi::class)
-    private fun generateCode(): String {
-        val bytes = ByteArray(6)
-        bytes.usePinned { pinned ->
-            val fd = open("/dev/urandom", O_RDONLY)
-            read(fd, pinned.addressOf(0), 6.convert())
-            close(fd)
-        }
-        // 32 chars in alphabet = 256 / 32 = 8 → no modulo bias
-        return bytes.map { CODE_ALPHABET[(it.toInt() and 0xFF) % CODE_ALPHABET.size] }.joinToString("")
-    }
 }
 
 @OptIn(ExperimentalForeignApi::class)

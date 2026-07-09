@@ -67,6 +67,20 @@ actual object TokenStore {
     actual fun clear() = jsClearToken()
 }
 
+private fun jsGetDeviceId(): String? = js("localStorage.getItem('ravilo_device_id')")
+private fun jsSetDeviceId(id: String): Unit = js("localStorage.setItem('ravilo_device_id', id)")
+
+actual object DeviceIdStore {
+    actual fun get(): String {
+        jsGetDeviceId()?.takeIf { it.isNotBlank() }?.let { return it }
+        val id = randomDeviceId()
+        jsSetDeviceId(id)
+        return id
+    }
+}
+
+actual fun deviceDisplayName(): String = "Ravilo Web"
+
 // ─── R80: Browser history / URL navigation ────────────────────────────────────
 
 private fun jsGetHash(): String = js("window.location.hash")
