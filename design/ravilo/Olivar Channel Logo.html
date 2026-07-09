@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="design_doc_mode" content="canvas">
+<title>Olivar — Channel Logo Options</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&family=Baloo+2:wght@500;600;700;800&family=Nunito:ital,wght@0,600;0,800;1,700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --red:#E8362B; --blue:#1E73D6; --blue-deep:#155BB0; --yellow:#FBBE1E;
+    --navy:#122A4B; --cream:#FFF6E9; --ink:#122A4B;
+  }
+  *{ box-sizing:border-box; }
+  body{ margin:0; font-family:'Nunito',sans-serif; color:var(--ink); }
+
+  .frame{ position:absolute; }
+
+  /* ---- header ---- */
+  .hd{ width:1360px; }
+  .hd h1{ font-family:'Baloo 2',cursive; font-weight:800; font-size:44px; margin:0 0 6px; letter-spacing:-.5px; }
+  .hd h1 .dot{ color:var(--red); }
+  .hd p{ margin:0; font-size:17px; line-height:1.55; color:#4a5a70; max-width:760px; }
+  .hd .legend{ display:flex; gap:10px; margin-top:16px; flex-wrap:wrap; }
+  .hd .lg{ display:flex; align-items:center; gap:8px; font-size:13px; font-weight:700; color:#4a5a70; background:#fff; border:1px solid #e4e9f1; border-radius:999px; padding:7px 13px 7px 8px; }
+  .hd .sw{ width:18px; height:18px; border-radius:6px; }
+
+  /* ---- option card ---- */
+  .card{ width:640px; background:#fff; border:1px solid #e4e9f1; border-radius:22px; padding:26px 26px 28px;
+    box-shadow:0 18px 44px -22px rgba(18,42,75,.4); }
+  .card .ey{ display:flex; align-items:baseline; gap:11px; margin-bottom:4px; }
+  .card .num{ font-family:'Baloo 2',cursive; font-weight:800; font-size:15px; color:#fff; background:var(--navy);
+    width:30px; height:30px; border-radius:9px; display:flex; align-items:center; justify-content:center; flex:none; }
+  .card h2{ font-family:'Baloo 2',cursive; font-weight:700; font-size:24px; margin:0; letter-spacing:-.3px; }
+  .card .concept{ font-size:14.5px; line-height:1.5; color:#5a6a80; margin:9px 0 20px; min-height:44px; }
+
+  /* the channel button — the real deliverable */
+  .btn-big{ border-radius:20px; height:172px; display:flex; align-items:center; justify-content:center;
+    overflow:hidden; box-shadow:inset 0 0 0 1px rgba(255,255,255,.08); }
+  .btn-big svg{ width:82%; height:auto; }
+
+  .sub{ display:flex; gap:16px; margin-top:16px; align-items:stretch; }
+  .sub .mini{ flex:none; border-radius:14px; height:70px; width:232px; display:flex; align-items:center; justify-content:center; overflow:hidden; }
+  .sub .mini svg{ width:80%; height:auto; }
+  .sub .markwrap{ flex:1; display:flex; align-items:center; gap:14px; background:var(--cream);
+    border-radius:14px; padding:0 18px; }
+  .sub .markwrap .mk{ width:56px; height:56px; flex:none; }
+  .sub .markwrap .mk svg{ width:100%; height:100%; display:block; }
+  .sub .cap{ font-size:12px; font-weight:700; color:#8a97a8; line-height:1.4; }
+  .sub .cap b{ color:var(--navy); display:block; font-size:12.5px; }
+
+  /* rail context card */
+  .rail-card{ width:640px; background:var(--navy); border-radius:22px; padding:26px; color:#fff;
+    box-shadow:0 18px 44px -22px rgba(18,42,75,.6); }
+  .rail-card h2{ font-family:'Baloo 2',cursive; font-weight:700; font-size:22px; margin:0 0 4px; }
+  .rail-card p{ margin:0 0 20px; font-size:14px; color:#9fb2cc; }
+  .rail{ display:flex; gap:14px; overflow:hidden; }
+  .rail .chip{ height:112px; border-radius:16px; flex:none; display:flex; align-items:center; justify-content:center; overflow:hidden; box-shadow:0 8px 20px -10px rgba(0,0,0,.5); }
+  .rail .chip.w4{ width:190px; } .rail .chip.w3{ width:150px; }
+  .rail .chip svg{ width:82%; height:auto; }
+  .rail .lbl{ font-size:11px; color:#7f93b0; text-align:center; margin-top:8px; font-weight:700; }
+  .rail-col{ display:flex; flex-direction:column; }
+</style>
+</head>
+<body>
+
+  <!-- ================= HEADER ================= -->
+  <div class="frame hd" style="left:60px; top:56px;">
+    <h1>Olivar<span class="dot">.</span></h1>
+    <p>Five logo directions for Olivar's channel — where all his content lives. Bright nursery-toy primaries,
+      built on two Faroese/Danish motifs: the friendly <b>Merkið cross</b> and a <b>little boat on the waves</b>.
+      Each is shown as it'll sit in Ravilo — a horizontal channel button — plus the mark on its own.</p>
+    <div class="legend">
+      <span class="lg"><span class="sw" style="background:var(--red)"></span>Dannebrog red</span>
+      <span class="lg"><span class="sw" style="background:var(--blue)"></span>Faroe blue</span>
+      <span class="lg"><span class="sw" style="background:var(--yellow)"></span>Toy yellow</span>
+      <span class="lg"><span class="sw" style="background:var(--navy)"></span>Ink navy</span>
+      <span class="lg"><span class="sw" style="background:var(--cream);border:1px solid #e4d9c4"></span>Cream</span>
+    </div>
+  </div>
+
+  <!-- cards injected by JS -->
+  <div id="cards"></div>
+
+<script>
+const C = { red:'#E8362B', blue:'#1E73D6', blueDeep:'#155BB0', yellow:'#FBBE1E', navy:'#122A4B', cream:'#FFF6E9', white:'#ffffff' };
+
+/* ---------- reusable marks (100x100 viewBox inner content) ---------- */
+
+// friendly offset Merkið cross on a squircle tile
+function crossTile(bg, opts){
+  opts = opts||{};
+  const tile = opts.tile!==false;
+  return `
+    ${tile?`<rect x="4" y="4" width="92" height="92" rx="26" fill="${opts.tileFill||C.white}"/>`:''}
+    <g>
+      <rect x="30" y="10" width="20" height="80" rx="9" fill="${C.blue}"/>
+      <rect x="10" y="38" width="80" height="20" rx="9" fill="${C.blue}"/>
+      <rect x="35" y="14" width="10" height="72" rx="5" fill="${C.red}"/>
+      <rect x="14" y="43" width="72" height="10" rx="5" fill="${C.red}"/>
+    </g>`;
+}
+
+// little sailboat with a cross sail, sun, waves
+function boat(opts){
+  opts = opts||{};
+  const sun = opts.sun!==false;
+  return `
+    ${sun?`<circle cx="82" cy="20" r="11" fill="${C.yellow}"/>`:''}
+    <!-- waves -->
+    <path d="M0 76 q10 -9 20 0 t20 0 t20 0 t20 0 t20 0 V100 H0 Z" fill="${C.blue}"/>
+    <path d="M0 85 q10 -8 20 0 t20 0 t20 0 t20 0 t20 0 V100 H0 Z" fill="${C.blueDeep}"/>
+    <!-- mast -->
+    <rect x="45" y="13" width="5" height="54" rx="2.5" fill="${C.navy}"/>
+    <!-- pennant flag: clean rounded wave -->
+    <path d="M45.5 12 Q31 10.5 24.5 16.5 Q31 22.5 45.5 21 Z" fill="${C.yellow}"/>
+    <circle cx="47.5" cy="12" r="3.2" fill="${C.yellow}"/>
+    <!-- sail -->
+    <path d="M53 19 C 74 30 78 52 71 62 a3 3 0 0 1 -2 1 H53 a2 2 0 0 1 -2 -2 Z" fill="${C.white}"/>
+    <!-- cross on sail -->
+    <rect x="60" y="26" width="5.5" height="30" rx="2.7" fill="${C.red}"/>
+    <rect x="52" y="39" width="21" height="5.5" rx="2.7" fill="${C.red}"/>
+    <!-- hull -->
+    <path d="M18 63 h58 a4 4 0 0 1 3.8 5.2 l-3.4 11 a8 8 0 0 1 -7.6 5.5 H25.2 a8 8 0 0 1 -7.6 -5.5 l-3.4 -11 A4 4 0 0 1 18 63 Z" fill="${C.red}"/>
+    <rect x="24" y="70" width="52" height="5" rx="2.5" fill="#fff" opacity=".85"/>`;
+}
+
+// life-buoy ring O
+function buoy(cx,cy,r){
+  const inner=r*0.6, w=r*0.44, band=(r-inner)+5;
+  const patch=(ang)=>`<g transform="rotate(${ang} ${cx} ${cy})"><rect x="${cx-w/2}" y="${cy-r-2}" width="${w}" height="${band}" rx="${Math.min(w/2,6)}" fill="#fff"/></g>`;
+  return `<circle cx="${cx}" cy="${cy}" r="${r}" fill="${C.red}"/>
+    ${patch(45)}${patch(135)}${patch(225)}${patch(315)}
+    <circle cx="${cx}" cy="${cy}" r="${inner}" fill="${C.cream}"/>
+    <circle cx="${cx}" cy="${cy}" r="${inner}" fill="none" stroke="${C.navy}" stroke-width="2" opacity=".1"/>`;
+}
+
+// play-button sail inside roundel (sibling-channel language)
+function playSail(){
+  return `
+    <circle cx="50" cy="50" r="46" fill="${C.blue}"/>
+    <circle cx="50" cy="50" r="46" fill="none" stroke="#0e4f9c" stroke-width="2"/>
+    <!-- sail/play triangle -->
+    <path d="M40 24 C 66 34 72 58 63 70 a3 3 0 0 1 -2.5 1.4 H40 a3 3 0 0 1 -3 -3 Z" fill="#fff"/>
+    <rect x="47" y="32" width="5.5" height="30" rx="2.7" fill="${C.red}"/>
+    <rect x="39" y="45" width="21" height="5.5" rx="2.7" fill="${C.red}"/>
+    <!-- hull under -->
+    <path d="M30 70 h40 a3 3 0 0 1 2.9 3.8 l-1.8 6 a6 6 0 0 1 -5.8 4.4 H34.7 a6 6 0 0 1 -5.8 -4.4 l-1.8 -6 A3 3 0 0 1 30 70 Z" fill="${C.yellow}"/>`;
+}
+
+/* ---------- wordmark ---------- */
+// returns an SVG <text> block. family: 'fredoka' | 'baloo'
+function word(x, y, size, fill, family, weight, text){
+  const fam = family==='baloo' ? "'Baloo 2'" : family==='nunito' ? "'Nunito'" : "'Fredoka'";
+  return `<text x="${x}" y="${y}" font-family="${fam},sans-serif" font-weight="${weight}" font-size="${size}" letter-spacing="-.5" fill="${fill}">${text}</text>`;
+}
+
+/* ---------- lockups (full horizontal logo SVG) ---------- */
+function svg(vw, inner){ return `<svg viewBox="0 0 ${vw} 100" xmlns="http://www.w3.org/2000/svg">${inner}</svg>`; }
+
+const OPTIONS = [
+  {
+    name:'Set Sail', bg:C.blue, w:'w4',
+    concept:'The hero mark — a chunky red boat with a cross sail, bobbing on the waves under a little sun. Warm, storybook, unmistakably his.',
+    lockup: svg(300, `<g transform="translate(2,2) scale(.96)">${boat()}</g>` + word(112, 64, 46, '#fff', 'fredoka', 600, 'Olivar')),
+    mark: svg(100, boat()),
+    markBg:C.cream,
+  },
+  {
+    name:'Merkið', bg:C.red, w:'w4',
+    concept:'The friendly Faroese cross as a plump, round-armed badge on a cream tile. Simple, bold, reads instantly at any size.',
+    lockup: svg(300, `<g transform="translate(4,4) scale(.92)">${crossTile()}</g>` + word(116, 64, 47, '#fff', 'baloo', 700, 'Olivar')),
+    mark: svg(100, crossTile()),
+    markBg:C.cream,
+  },
+  {
+    name:'Little Sailor', bg:C.cream, w:'w4', ink:true,
+    concept:'Letters lead. Bouncy multi-colour name, the O a little life-buoy and the i dotted with a boat — playful and very toddler.',
+    lockup: svg(340, (function(){
+      // colorful letters via tspans; buoy replaces O, boat dots the i
+      const letters = word(80, 66, 50, C.navy, 'baloo', 800,
+        `<tspan fill="${C.blue}">l</tspan><tspan fill="${C.yellow}">i</tspan><tspan fill="${C.red}">v</tspan><tspan fill="${C.blue}">a</tspan><tspan fill="${C.red}">r</tspan>`);
+      // buoy as O at left
+      const o = `<g transform="translate(8,18)">${buoy(30,32,30)}</g>`;
+      // boat dot over the i
+      const dot = `<g transform="translate(96,2) scale(.22)">${boat({sun:false})}</g>`;
+      return o + letters + dot;
+    })()),
+    mark: svg(100, `<g transform="translate(8,8) scale(.84)">${buoy(50,50,46)}</g>`),
+    markBg:'#eaf1fb',
+  },
+  {
+    name:'Play & Sail', bg:C.yellow, w:'w3', ink:true,
+    concept:'Ties into the sibling channels\u2019 play-button look — a sail that doubles as a play triangle inside a sunny roundel. Feels native to Ravilo.',
+    lockup: svg(300, `<g transform="translate(4,4) scale(.92)">${playSail()}</g>` + word(112, 64, 46, C.navy, 'fredoka', 600, 'Olivar')),
+    mark: svg(100, playSail()),
+    markBg:'#fff6df',
+  },
+  {
+    name:'Big Boat', bg:C.navy, w:'w4',
+    concept:'The illustrative one — a bold boat riding a deep-navy night, name tucked warm and round beside it. Great if it ever grows past the button.',
+    lockup: svg(300, `<g transform="translate(2,2) scale(.96)">${boat()}</g>` + word(112, 64, 46, C.yellow, 'baloo', 700, 'Olivar')),
+    mark: svg(100, boat()),
+    markBg:'#eef2f8',
+  },
+];
+
+/* ---------- render cards ---------- */
+const pos = [ [60,300],[740,300],[60,760],[740,760],[60,1220] ];
+const cards = document.getElementById('cards');
+OPTIONS.forEach((o,i)=>{
+  const [x,y] = pos[i];
+  const f = document.createElement('div');
+  f.className='frame'; f.style.left=x+'px'; f.style.top=y+'px';
+  f.innerHTML = `
+    <div class="card">
+      <div class="ey"><span class="num">${i+1}</span><h2>${o.name}</h2></div>
+      <div class="concept">${o.concept}</div>
+      <div class="btn-big" style="background:${o.bg}">${o.lockup}</div>
+      <div class="sub">
+        <div class="mini" style="background:${o.bg}">${o.lockup}</div>
+        <div class="markwrap" style="background:${o.markBg}">
+          <div class="mk">${o.mark}</div>
+          <div class="cap"><b>Mark only</b>app icon / favicon / stamp</div>
+        </div>
+      </div>
+    </div>`;
+  cards.appendChild(f);
+});
+
+/* ---------- rail context card ---------- */
+(function(){
+  const f = document.createElement('div');
+  f.className='frame'; f.style.left='740px'; f.style.top='1220px';
+  const chips = OPTIONS.map((o,i)=>`
+    <div class="rail-col">
+      <div class="chip ${o.w}" style="background:${o.bg}">${o.lockup}</div>
+      <div class="lbl">${i+1}. ${o.name}</div>
+    </div>`).join('');
+  f.innerHTML = `
+    <div class="rail-card">
+      <h2>In the channel rail</h2>
+      <p>How each button reads next to the others, at real size.</p>
+      <div class="rail">${chips}</div>
+    </div>`;
+  document.getElementById('cards').appendChild(f);
+})();
+</script>
+</body>
+</html>

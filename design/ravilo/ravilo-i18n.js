@@ -157,6 +157,29 @@
   Object.assign(STR.da, { language: 'Sprog', settings: 'Indstillinger', theme: 'Tema', unpair: 'Fjern parring', unpair_desc: 'Logger alle brugere ud og fjerner dette tv\u2019s parring.', toast_unpaired: '\u2713 Dette tv er blevet fjernet', unpair_confirm: 'Fjern parring?', unpair_yes: 'Ja, fjern parring' });
   Object.assign(STR.fo, { language: 'M\u00e1l', settings: 'Stillingar', theme: 'Tema', unpair: 'Avpara sj\u00f3nvarp', unpair_desc: 'Ritar allar br\u00fakarar \u00fat og strikar parringina \u00e1 hesum sj\u00f3nvarpi.', toast_unpaired: '\u2713 Hetta sj\u00f3nvarpi\u00f0 er avpara\u00f0', unpair_confirm: 'Avpara sj\u00f3nvarp?', unpair_yes: 'Ja, avpara' });
 
+  // ---- R175: username/password login (replaces the pairing code) ----
+  Object.assign(STR.en, {
+    login_title: 'Sign in to Jellyfin', login_sub: 'Use your Jellyfin username and password. Each person signs in once \u2014 their profile stays on this TV.',
+    login_user: 'Username', login_pass: 'Password', login_btn: 'Sign in', login_busy: 'Signing in\u2026',
+    login_err_user: 'Enter your Jellyfin username.', login_err_pass: 'Enter your password.',
+    login_err_cred: 'Wrong username or password \u2014 check them and try again.',
+    key_shift: '\u21e7 Shift', key_space: 'Space', key_del: '\u232b Delete',
+  });
+  Object.assign(STR.da, {
+    login_title: 'Log ind p\u00e5 Jellyfin', login_sub: 'Brug dit Jellyfin-brugernavn og din adgangskode. Hver person logger ind \u00e9n gang \u2014 profilen bliver p\u00e5 dette tv.',
+    login_user: 'Brugernavn', login_pass: 'Adgangskode', login_btn: 'Log ind', login_busy: 'Logger ind\u2026',
+    login_err_user: 'Indtast dit Jellyfin-brugernavn.', login_err_pass: 'Indtast din adgangskode.',
+    login_err_cred: 'Forkert brugernavn eller adgangskode \u2014 tjek dem og pr\u00f8v igen.',
+    key_shift: '\u21e7 Skift', key_space: 'Mellemrum', key_del: '\u232b Slet',
+  });
+  Object.assign(STR.fo, {
+    login_title: 'Rita inn \u00e1 Jellyfin', login_sub: 'Br\u00faka t\u00edtt Jellyfin-br\u00fakaranavn og loyniord. Hv\u00f8r persónur ritar inn eina fer\u00f0 \u2014 vangamyndin ver\u00f0ur verandi \u00e1 hesum sj\u00f3nvarpi.',
+    login_user: 'Br\u00fakaranavn', login_pass: 'Loyniord', login_btn: 'Rita inn', login_busy: 'Ritar inn\u2026',
+    login_err_user: 'Skriva t\u00edtt Jellyfin-br\u00fakaranavn.', login_err_pass: 'Skriva t\u00edtt loyniord.',
+    login_err_cred: 'Skeivt br\u00fakaranavn ella loyniord \u2014 kanna tey og royn aftur.',
+    key_shift: '\u21e7 Skift', key_space: 'Millumr\u00fam', key_del: '\u232b Strika',
+  });
+
   let lang = 'en';
   window.RAVILO_I18N = STR;
   window.RAVILO_LANGS_UI = [

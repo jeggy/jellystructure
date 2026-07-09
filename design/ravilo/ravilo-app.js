@@ -61,6 +61,7 @@
       </div>
       <div class="pm-div"></div>
       <div class="pm-row foc" data-pm="mylist"><span class="pm-ic">＋</span> ${t('nav_mylist')}</div>
+      <div class="pm-row foc" data-pm="adduser"><span class="pm-ic">＋</span> ${t('add_user')}</div>
       <div class="pm-row foc" data-pm="settings"><span class="pm-ic">⚙</span> ${t('pm_settings')}</div>
       <div class="pm-row foc" data-pm="unpair"><span class="pm-ic">⏏</span> ${t('pm_unpair')}</div>`;
     stage.appendChild(profmenu);
@@ -85,6 +86,7 @@
       const f = profmenu.querySelector('.foc.focused'); if (!f) return;
       const a = f.dataset.pm; closeProfMenu();
       if (a === 'mylist') go({ type: 'grid', kind: 'mylist', title: t('nav_mylist'), nav: 'mylist' });
+      else if (a === 'adduser') openSignin();
       else if (a === 'settings') openSettings();
       else if (a === 'switch') openProfiles('switch');
       else if (a === 'unpair') { renderUnpairConfirm(); prof.style.display = 'flex'; }
@@ -1491,32 +1493,123 @@
       if (pid && pid.indexOf('__lang:') === 0) { setUserLang(pid.slice(7)); return; }
       if (pid === '__logout') { renderUnpairConfirm(); return; }
       if (pid === '__logout-confirm') { doLogout(); return; }
-      if (pid === '__close') { if (pMode === 'unpair') { openSettings(); return; } if (pMode === 'settings') { openProfiles('switch'); return; } closeProfiles(); return; }
+      if (pid === '__close') { if (pMode === 'unpair') { openSettings(); return; } if (pMode === 'settings') { openProfiles('switch'); return; } if (pMode === 'signin') { openProfiles(sgBack); return; } closeProfiles(); return; }
+      if (pid && pid.indexOf('__kb:') === 0) { sgKey(pid.slice(5)); return; }
+      if (pid && pid.indexOf('__field:') === 0) { sgField = pid.slice(8); sgPaintFields(); return; }
+      if (pid === '__login') { sgSubmit(); return; }
       if (pid === '__add') { openSignin(); return; }
       const p = profiles.find(x => x.id === pid); if (!p) return;
       applyUser(p); closeProfiles();
       go({ type: 'home' }); setTimeout(() => focusRC(0, 0), 30);
       flash(t('signed_in_as', { name: p.name }));
     }
-    // sign-in: pairing-code flow (matches the Ravilo pairing model — no password typed on the TV)
+    // sign-in (R175): username + password entered on the TV, proxied to Jellyfin via
+    // POST /api/tv/login (Phase 141). No pairing code, no polling — each success appends a profile.
+    let sgUser = '', sgPass = '', sgField = 'user', sgShift = false, sgErr = null, sgBusy = false, sgBack = 'gate';
+    const SG_COLORS = ['linear-gradient(135deg,#7b6ef0,#3fb6f5)', 'linear-gradient(135deg,#19d6c6,#2a8cf0)', 'linear-gradient(135deg,#f5b542,#e0792f)', 'linear-gradient(135deg,#e0567a,#7b6ef0)'];
+    function sgFieldHTML(id, label, val, ph) {
+      const live = sgField === id;
+      const shown = id === 'pass' ? '\u2022'.repeat(val.length) : val;
+      const body = val.length
+        ? '<span class="' + (id === 'pass' ? 'mask' : '') + '">' + esc(shown) + '</span>' + (live ? '<span class="cursor"></span>' : '')
+        : (live ? '<span class="cursor"></span>' : '<span class="ph">' + esc(ph) + '</span>');
+      return '<div class="signin-field"><label>' + label + '</label><div class="inp foc' + (live ? ' live' : '') + '" data-pid="__field:' + id + '" data-sgf="' + id + '">' + body + '</div></div>';
+    }
+    function sgKeyRow(chars) {
+      return '<div class="kbd-row">' + chars.split('').map(c => {
+        const shown = sgShift ? c.toUpperCase() : c;
+        return '<div class="key foc" data-pid="__kb:ch:' + esc(c) + '">' + esc(shown) + '</div>';
+      }).join('') + '</div>';
+    }
     function openSignin() {
+      if (pMode !== 'signin') sgBack = (pMode === 'switch' || pMode === 'gate') ? pMode : 'switch';
       pMode = 'signin';
+      sgUser = ''; sgPass = ''; sgField = 'user'; sgShift = false; sgErr = null; sgBusy = false;
       prof.className = 'profiles switch';
-      const code = Math.random().toString(36).slice(2, 8).toUpperCase();
+      prof.style.display = 'flex';
+      renderSignin();
+    }
+    function renderSignin() {
       prof.innerHTML =
-        '<div class="signin-panel"><h3>' + t('add_title') + '</h3>' +
-        '<div class="sub">' + t('add_sub') + '</div>' +
-        '<div class="pair-code">' + code + '</div>' +
-        '<div class="row center" style="gap:14px;justify-content:flex-end;display:flex;"><span class="btn ghost foc" data-pid="__close">' + t('back') + '</span><span class="btn primary foc" data-pid="__waiting">' + t('waiting') + '</span></div></div>';
-      pTiles = [...prof.querySelectorAll('.foc')]; pIdx = 0; paintP();
+        '<div class="login-wrap">' +
+          '<div class="signin-panel">' +
+            '<h3>' + t('login_title') + '</h3>' +
+            '<div class="sub">' + t('login_sub') + '</div>' +
+            sgFieldHTML('user', t('login_user'), sgUser, 'eyd') +
+            sgFieldHTML('pass', t('login_pass'), sgPass, '\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022') +
+            (sgErr ? '<div class="signin-err">⚠ ' + sgErr + '</div>' : '') +
+            '<div class="actions">' +
+              '<span class="btn ghost foc" data-pid="__close">' + t('back') + '</span>' +
+              '<span class="btn primary foc" data-pid="__login">' + (sgBusy ? '<span class="spin"></span> ' + t('login_busy') : t('login_btn')) + '</span>' +
+            '</div>' +
+          '</div>' +
+          '<div class="login-kbd">' +
+            sgKeyRow('1234567890') +
+            sgKeyRow('qwertyuiop') +
+            sgKeyRow('asdfghjkl-') +
+            sgKeyRow('zxcvbnm._@') +
+            '<div class="kbd-row">' +
+              '<div class="key wide foc" data-pid="__kb:shift">' + t('key_shift') + '</div>' +
+              '<div class="key wide foc" data-pid="__kb:space">' + t('key_space') + '</div>' +
+              '<div class="key wide foc" data-pid="__kb:del">' + t('key_del') + '</div>' +
+            '</div>' +
+          '</div>' +
+        '</div>';
+      pTiles = [...prof.querySelectorAll('.foc')];
+      if (pIdx >= pTiles.length) pIdx = 0;
+      paintP();
+    }
+    function sgPaintFields() {
+      prof.querySelectorAll('[data-sgf]').forEach(f => {
+        const id = f.dataset.sgf, val = id === 'pass' ? sgPass : sgUser, live = sgField === id;
+        const shown = id === 'pass' ? '\u2022'.repeat(val.length) : val;
+        f.classList.toggle('live', live);
+        f.innerHTML = val.length
+          ? '<span class="' + (id === 'pass' ? 'mask' : '') + '">' + esc(shown) + '</span>' + (live ? '<span class="cursor"></span>' : '')
+          : (live ? '<span class="cursor"></span>' : '<span class="ph">' + esc(id === 'pass' ? '\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022' : 'eyd') + '</span>');
+      });
+    }
+    function sgType(ch) {
+      if (sgBusy) return;
+      if (ch === '\b') { if (sgField === 'pass') sgPass = sgPass.slice(0, -1); else sgUser = sgUser.slice(0, -1); }
+      else { if (sgField === 'pass') sgPass += ch; else sgUser += ch; }
+      sgPaintFields();
+    }
+    function sgKey(code) {
+      if (code === 'shift') { sgShift = !sgShift; renderSignin(); return; }
+      if (code === 'space') { sgType(' '); return; }
+      if (code === 'del') { sgType('\b'); return; }
+      if (code.indexOf('ch:') === 0) { const c = code.slice(3); sgType(sgShift ? c.toUpperCase() : c); }
+    }
+    function sgSubmit() {
+      if (sgBusy) return;
+      if (!sgUser.trim()) { sgErr = t('login_err_user'); sgField = 'user'; renderSignin(); return; }
+      if (!sgPass) { sgErr = t('login_err_pass'); sgField = 'pass'; renderSignin(); return; }
+      sgErr = null; sgBusy = true; renderSignin();
+      // demo: the password “wrong” shows the invalid-credentials state; anything else signs in
+      setTimeout(() => {
+        sgBusy = false;
+        if (sgPass === 'wrong') { sgPass = ''; sgErr = t('login_err_cred'); sgField = 'pass'; renderSignin(); return; }
+        const name = sgUser.trim();
+        const initials = name.split(/[\s._-]+/).filter(Boolean).map(w => w[0]).join('').slice(0, 2).toUpperCase() || 'U';
+        const p = { id: 'u-' + Date.now(), name: name[0].toUpperCase() + name.slice(1), initials, color: SG_COLORS[profiles.length % SG_COLORS.length], lang: 'en', signedIn: true };
+        profiles.push(p);
+        applyUser(p); closeProfiles();
+        flash(t('signed_in_as', { name: p.name }));
+      }, 900);
     }
     // capture-phase key handling so the gate/switcher owns input while open
     window.addEventListener('keydown', e => {
       if (prof.style.display === 'none') return;
       const k = e.key;
+      // R175: while the login screen is open, printable keys + Backspace type into the active field
+      if (pMode === 'signin' && !sgBusy) {
+        if (k.length === 1 && k !== ' ' && !e.metaKey && !e.ctrlKey && !e.altKey) { e.preventDefault(); e.stopImmediatePropagation(); sgType(k); return; }
+        if (k === 'Backspace') { e.preventDefault(); e.stopImmediatePropagation(); sgType('\b'); return; }
+      }
       if (!['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','Enter',' ','Backspace','Escape'].includes(k)) return;
       e.preventDefault(); e.stopImmediatePropagation();
-      if (k === 'Backspace' || k === 'Escape') { if (pMode === 'unpair') { openSettings(); return; } if (pMode === 'settings') { openProfiles('switch'); return; } if (pMode === 'switch' || pMode === 'signin') closeProfiles(); return; }
+      if (k === 'Backspace' || k === 'Escape') { if (pMode === 'unpair') { openSettings(); return; } if (pMode === 'settings') { openProfiles('switch'); return; } if (pMode === 'signin') { openProfiles(sgBack); return; } if (pMode === 'switch') closeProfiles(); return; }
       if (k === 'Enter' || k === ' ') { const t = pTiles[pIdx]; if (t) pickProfile(t.dataset.pid); return; }
       if (k === 'ArrowRight') movePidx('right');
       else if (k === 'ArrowLeft') movePidx('left');

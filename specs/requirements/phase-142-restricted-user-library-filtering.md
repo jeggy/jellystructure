@@ -89,3 +89,15 @@ screens, no errors, just their permitted content; an admin sees everything, unch
   the filter predicate (admin sees all; a 2-library user sees only those) plus a manual on-device check.
 - A blocked item's detail id returns 404; no blocked title appears in any channel/row/facet count.
 - Verified via `compileKotlinLinuxX64` + `linuxX64Test` + admin `compileKotlinWasmJs`.
+
+## Design addendum (2026-07-09, design-side — not yet dev-reviewed)
+
+The Phase 143 mockup's per-user **access line** displays the *full* Jellyfin policy — library access
+**plus allowed/blocked tags and max parental rating** — because tag-based restriction is a normal way
+households restrict content in Jellyfin. Display is covered by 143 (read the extra `Policy` fields);
+**enforcement** of tags/rating on the device-facing read paths remains outside this phase's scope (see
+Non-goals) and is recommended as a **follow-up phase**: reuse §C's `visibleTo` predicate seam, extend
+the persisted per-device policy snapshot with `allowedTags`/`blockedTags`/`maxParentalRating`, and
+filter with the same drop-before-DTO rule. Until then the admin UI shows tag/rating restrictions that
+Ravilo does not yet enforce — the 143 tab is the only surface that makes that gap visible to an
+operator, which is deliberate.
