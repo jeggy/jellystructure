@@ -88,6 +88,8 @@ data class WatchHistoryEntry(
     @SerialName("episode_count") val episodeCount: Int = 1,
     @SerialName("first_played_at") val firstPlayedAt: Long,
     @SerialName("last_played_at") val lastPlayedAt: Long,
+    val finished: Boolean = true,
+    @SerialName("progress_pct") val progressPct: Int? = null,
 )
 
 @Serializable
