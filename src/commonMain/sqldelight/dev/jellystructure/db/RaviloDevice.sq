@@ -10,12 +10,15 @@ CREATE TABLE ravilo_device (
     display_name TEXT NOT NULL DEFAULT '',
     created_at INTEGER NOT NULL,
     last_seen INTEGER NOT NULL,
+    -- Phase 142: normalized (no dashes, lowercased), comma-joined Jellyfin library ids this user may
+    -- see; NULL = unrestricted (admin or EnableAllFolders). Refreshed on every login.
+    allowed_libraries TEXT,
     PRIMARY KEY (device_id, jellyfin_user_id)
 );
 
 insertDevice:
-INSERT OR REPLACE INTO ravilo_device(device_id, jellyfin_user_id, jellyfin_username, jellyfin_user_token, is_admin, is_kids, device_token, display_name, created_at, last_seen)
-VALUES (:device_id, :jellyfin_user_id, :jellyfin_username, :jellyfin_user_token, :is_admin, :is_kids, :device_token, :display_name, :created_at, :last_seen);
+INSERT OR REPLACE INTO ravilo_device(device_id, jellyfin_user_id, jellyfin_username, jellyfin_user_token, is_admin, is_kids, device_token, display_name, created_at, last_seen, allowed_libraries)
+VALUES (:device_id, :jellyfin_user_id, :jellyfin_username, :jellyfin_user_token, :is_admin, :is_kids, :device_token, :display_name, :created_at, :last_seen, :allowed_libraries);
 
 getByToken:
 SELECT * FROM ravilo_device WHERE device_token = :device_token;

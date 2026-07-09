@@ -14,6 +14,7 @@ import dev.jellystructure.resolver.LanguageResolver
 import dev.jellystructure.shared.tv.ConditionGroup
 import dev.jellystructure.shared.tv.isLive
 import dev.jellystructure.tv.ConditionEvaluator
+import dev.jellystructure.tv.normalizeGuid
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.alloc
 import kotlinx.cinterop.memScoped
@@ -22,6 +23,17 @@ import kotlinx.serialization.json.Json
 import platform.posix.CLOCK_REALTIME
 import platform.posix.clock_gettime
 import platform.posix.timespec
+
+/**
+ * Phase 142 — true if a restricted user's [allowed] library set (already GUID-normalized; null =
+ * unrestricted, e.g. admin/EnableAllFolders) permits this item. **Fail-closed**: an item with no
+ * [MediaItem.libraryId] yet (not backfilled, or its library isn't mapped) is hidden from restricted
+ * users — visible only once the backfill/scan actually resolves its library.
+ */
+fun MediaItem.visibleTo(allowed: Set<String>?): Boolean {
+    if (allowed == null) return true
+    return libraryId != null && normalizeGuid(libraryId) in allowed
+}
 
 class MediaStore(
     private val db: JellystructureDb,
@@ -119,6 +131,31 @@ class MediaStore(
         }
         backfillSearchText()
         backfillTimestamps()
+        backfillLibraryIds()
+    }
+
+    // Phase 142: one-time startup backfill for rows scanned before libraryId existed. Matches the
+    // stored (local) item.path against config.libraries the same direction syncMovie/rescanMetadata
+    // use — local-path first, falling back to jellyfinPath — NOT scanItem's jellyfinPath-first match
+    // (scanItem matches the Jellyfin API's path; item.path here is always the local filesystem path).
+    // Must run before Phase 142 filtering activates, or already-scanned items would be wrongly hidden.
+    private suspend fun backfillLibraryIds() {
+        val libraries = configStore.current.libraries
+        val toBackfill = allItems().filter { it.libraryId == null }
+        if (toBackfill.isEmpty()) return
+        var backfilled = 0
+        db.transaction {
+            for (item in toBackfill) {
+                val lib = libraries.firstOrNull { lib ->
+                    val prefix = lib.localPath.ifBlank { lib.jellyfinPath }
+                    prefix.isNotBlank() && item.path.startsWith(prefix)
+                } ?: continue
+                val libId = lib.jellyfinId.ifBlank { null } ?: continue
+                upsertItem(item.copy(libraryId = libId))
+                backfilled++
+            }
+        }
+        if (backfilled > 0) Logger.info("MediaStore: backfilled libraryId for $backfilled rows", "media")
     }
 
     // Phase 108: one-time startup backfill for rows written before createdAt/updatedAt existed.
@@ -379,6 +416,11 @@ class MediaStore(
     /** Items that are present in Jellyfin — `missingFromSource` rows excluded. Use this in Ravilo
      *  catalog/browse paths so stale items (removed/re-added in Jellyfin) never surface to viewers. */
     fun liveItems(): List<MediaItem> = allItems().filter { !it.missingFromSource }
+
+    /** Items visible to a device with [allowed] library access ([DeviceData.allowedLibraries] —
+     *  already GUID-normalized; null = unrestricted). Compose with [liveItems] at every Ravilo
+     *  device-facing read path (Phase 142) — restricted users only, never the admin surfaces. */
+    fun liveItems(allowed: Set<String>?): List<MediaItem> = liveItems().filter { it.visibleTo(allowed) }
 
     /**
      * R100: items sharing any genre with [source], newest first, capped at [limit] — gathered from the

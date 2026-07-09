@@ -77,9 +77,10 @@ class Scanner(
             jellyfinPath
         }
         val effectiveFallback = lib.fallbackLanguage?.ifBlank { null } ?: globalFallback
+        val libraryId = lib.jellyfinId.ifBlank { null }
         return when (jItem.type) {
-            "Movie" -> scanMovie(jItem, localPath, effectiveFallback)
-            "Series" -> scanSeries(jItem, localPath, effectiveFallback)
+            "Movie" -> scanMovie(jItem, localPath, effectiveFallback, libraryId)
+            "Series" -> scanSeries(jItem, localPath, effectiveFallback, libraryId)
             else -> null
         }
     }
@@ -136,7 +137,7 @@ class Scanner(
         return fresh.copy(tags = (fresh.tags + existing.tags).distinct())
     }
 
-    private suspend fun scanMovie(jItem: JellyfinItem, localPath: String, fallback: String): MediaItem? {
+    private suspend fun scanMovie(jItem: JellyfinItem, localPath: String, fallback: String, libraryId: String?): MediaItem? {
         if (!SystemFileSystem.exists(Path(localPath))) {
             Logger.warn("Movie file not found on disk: $localPath")
             return null
@@ -209,10 +210,11 @@ class Scanner(
             runtime = details?.runtime,
             certifications = certifications,
             trailer = trailer,
+            libraryId = libraryId,
         )
     }
 
-    private suspend fun scanSeries(jItem: JellyfinItem, localPath: String, fallback: String): MediaItem? {
+    private suspend fun scanSeries(jItem: JellyfinItem, localPath: String, fallback: String, libraryId: String?): MediaItem? {
         if (!SystemFileSystem.exists(Path(localPath))) {
             Logger.warn("Series directory not found on disk: $localPath")
             return null
@@ -384,6 +386,7 @@ class Scanner(
                 seasonNames = seasonNamesMap,
                 certifications = mixCertifications,
                 trailer = mixTrailer,
+                libraryId = libraryId,
             )
         }
 
@@ -439,6 +442,7 @@ class Scanner(
             seasonNames = seasonNamesMap,
             certifications = tvCertifications,
             trailer = tvTrailer,
+            libraryId = libraryId,
         )
     }
 
@@ -499,6 +503,9 @@ class Scanner(
             runtime = details.runtime,
             certifications = syncCertifications.ifEmpty { item.certifications },
             trailer = syncTrailer,
+            // Phase 142: self-heals if the library mapping changed since the last scan; `lib` above
+            // already resolves by the stored item's local path (the correct direction for this call).
+            libraryId = lib?.jellyfinId?.ifBlank { null } ?: item.libraryId,
         )
     }
 
@@ -627,6 +634,7 @@ class Scanner(
             tvdbId = syncSeriesExtIds?.tvdbId ?: item.tvdbId,
             certifications = syncSeriesCertifications.ifEmpty { item.certifications },
             trailer = syncSeriesTrailer,
+            libraryId = lib?.jellyfinId?.ifBlank { null } ?: item.libraryId,   // Phase 142: self-heal
         )
     }
 
@@ -742,6 +750,7 @@ class Scanner(
                     runtime = details.runtime,
                     certifications = rescanCertifications.ifEmpty { item.certifications },
                     trailer = rescanTrailer,
+                    libraryId = lib?.jellyfinId?.ifBlank { null } ?: item.libraryId,   // Phase 142: self-heal
                 )
             }
             MediaKind.TV_SHOW -> {
@@ -807,6 +816,7 @@ class Scanner(
                     crew = rescanTvCrew,
                     certifications = rescanTvCertifications.ifEmpty { item.certifications },
                     trailer = rescanTvTrailer,
+                    libraryId = lib?.jellyfinId?.ifBlank { null } ?: item.libraryId,   // Phase 142: self-heal
                 )
             }
         }
