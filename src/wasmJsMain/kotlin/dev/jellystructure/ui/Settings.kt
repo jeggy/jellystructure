@@ -63,6 +63,7 @@ fun renderSettings(container: Element, scope: CoroutineScope, query: Map<String,
               ${settingsNavItemHtml("libraries", "Libraries")}
               ${settingsNavItemHtml("metadata", "Metadata")}
               ${settingsNavItemHtml("downloads", "Download tools")}
+              ${settingsNavItemHtml("users", "Users & devices")}
               ${settingsNavItemHtml("notifications", "Notifications")}
               ${settingsNavItemHtml("advanced", "Advanced")}
             </div>
@@ -354,6 +355,17 @@ fun renderSettings(container: Element, scope: CoroutineScope, query: Map<String,
               <div class="hint" id="ingest-listener-detail" style="margin-top:2px"></div>
             </div>
 
+            <div class="card set-section" id="sect-users" data-tab="users">
+              <div class="row center" style="margin-bottom:12px">
+                <h3 style="font-size:1rem;margin:0">Users & devices</h3>
+                <span class="spacer"></span>
+                <span id="users-summary" class="tiny muted" style="margin-right:10px"></span>
+                <button id="users-refresh-btn" class="btn sm ghost">Refresh</button>
+              </div>
+              <p class="hint" style="margin:0 0 14px">Every Jellyfin user, their signed-in Ravilo devices, and admin web sessions — when each was created and last active, and whether it's connected right now.</p>
+              <div id="users-list"><span class="muted tiny">Loading…</span></div>
+            </div>
+
             <div class="card set-section" id="sect-notifications" data-tab="notifications">
               <h3 style="font-size:1rem;margin:0 0 14px">Notifications</h3>
               <div class="field">
@@ -423,6 +435,7 @@ fun renderSettings(container: Element, scope: CoroutineScope, query: Map<String,
     }
     scope.launch { loadApiKeysCard(scope) }
     scope.launch { loadIngestCard() }
+    scope.launch { loadUsersCard(scope) }
 
     wireSettingsTabs(container)
     showTab(query["tab"]) // Phase 55 — URL-addressable tab (?tab=…), defaults to connections
@@ -490,10 +503,11 @@ private val SECTION_TAB = mapOf(
     "sect-arr" to "downloads",
     "sect-seerr" to "downloads",
     "sect-request-lang" to "downloads",
+    "sect-users" to "users",
     "sect-notifications" to "notifications",
     "sect-advanced" to "advanced",
 )
-private val SETTINGS_TABS = listOf("connections", "libraries", "metadata", "downloads", "notifications", "advanced")
+private val SETTINGS_TABS = listOf("connections", "libraries", "metadata", "downloads", "users", "notifications", "advanced")
 
 private fun applyHealthFailures(failsBySection: Map<String, Int>) {
     // Phase 55 — bubble section failures up to their owning tab.
@@ -1648,6 +1662,133 @@ private fun refreshApiKeyList() {
                         runCatching { httpClient.delete("/api/settings/api-keys/$id") }
                         refreshApiKeyList()
                     }
+                }
+            }
+        }
+    }
+}
+
+// Phase 143 — Settings ▸ "Users & devices" tab: every Jellyfin user's Ravilo devices + admin web
+// sessions, mirroring the API-keys card's list+revoke interaction above.
+private suspend fun loadUsersCard(scope: CoroutineScope) {
+    refreshUsersList(scope)
+    document.getElementById("users-refresh-btn")?.addEventListener("click") {
+        scope.launch { refreshUsersList(scope) }
+    }
+}
+
+private fun usersAgo(epochMs: Long): String = if (epochMs <= 0) "never" else dev.jellystructure.formatRelativeAgo((epochMs / 1000).toString())
+private fun usersAt(epochMs: Long): String = if (epochMs <= 0) "—" else dev.jellystructure.formatStoredTs((epochMs / 1000).toString())
+
+private suspend fun refreshUsersList(scope: CoroutineScope) {
+    val listEl = document.getElementById("users-list") as? HTMLElement ?: return
+    val users = runCatching { dev.jellystructure.api.RaviloApi.getOverview() }.getOrNull()
+    if (users == null) {
+        listEl.innerHTML = """<span class="tiny" style="color:var(--bad)">Couldn't load users & devices.</span>"""
+        return
+    }
+    val deviceCount = users.sumOf { it.devices.size }
+    val connectedCount = users.sumOf { u -> u.devices.count { it.connected } }
+    (document.getElementById("users-summary") as? HTMLElement)?.textContent =
+        "${users.size} users · $deviceCount devices · $connectedCount connected now"
+
+    if (users.isEmpty()) {
+        listEl.innerHTML = """<span class="muted tiny">No users have signed in yet.</span>"""
+        return
+    }
+
+    listEl.innerHTML = users.joinToString("") { u ->
+        val p = u.policy
+        val badges = buildString {
+            if (p.isAdmin) append("""<span class="badge info" style="margin-left:6px">admin</span>""")
+            if (!p.allFolders) append("""<span class="badge warn" style="margin-left:6px">restricted</span>""")
+            if (u.devices.any { it.isKids }) append("""<span class="badge" style="margin-left:6px">kids</span>""")
+        }
+        val access = if (p.allFolders) "All libraries" else "${p.libraryCount ?: 0} of ${p.totalLibraries} libraries"
+        val tagBits = buildList {
+            if (p.blockedTags.isNotEmpty()) add("blocked tags " + p.blockedTags.joinToString(", "))
+            if (p.allowedTags.isNotEmpty()) add("allowed tags " + p.allowedTags.joinToString(", "))
+            p.maxRating?.let { add("max rating $it") }
+        }
+        val accessLine = (listOf(access) + tagBits).joinToString(" · ")
+
+        val deviceRows = if (u.devices.isEmpty()) """<div class="tiny muted" style="padding:6px 0">No Ravilo devices.</div>""" else u.devices.joinToString("") { d ->
+            val connBadge = if (d.connected) """<span class="badge ok" style="margin-left:6px">connected</span>""" else ""
+            val playing = d.nowPlaying?.let { """<div class="tiny" style="color:var(--acc-ink)">▶ playing $it</div>""" } ?: ""
+            """<div class="row center" style="padding:7px 0;border-top:1px solid var(--line)">
+                 <div style="flex:1;min-width:0">
+                   <b class="tiny">${d.name.esc()}</b>$connBadge
+                   <div class="tiny muted">created ${usersAt(d.createdAt)} · last seen ${usersAgo(d.lastSeen)}</div>
+                   $playing
+                 </div>
+                 <button class="btn sm ghost users-revoke-device" data-device="${d.deviceId}" data-user="${u.userId}">Revoke</button>
+               </div>"""
+        }
+
+        val sessionRows = if (u.sessions.isEmpty()) "" else """
+            <div class="tiny muted" style="margin-top:10px;margin-bottom:2px">Admin web sessions</div>
+        """ + u.sessions.joinToString("") { s ->
+            val cur = if (s.isCurrent) """<span class="badge info" style="margin-left:6px">this session</span>""" else ""
+            """<div class="row center" style="padding:7px 0;border-top:1px solid var(--line)">
+                 <div style="flex:1;min-width:0">
+                   <b class="tiny">Web session</b>$cur
+                   <div class="tiny muted">created ${usersAt(s.createdAt)} · last used ${usersAgo(s.lastUsedAt)}</div>
+                 </div>
+                 <button class="btn sm ghost users-revoke-session" data-id="${s.id}" data-current="${s.isCurrent}">Revoke</button>
+               </div>"""
+        }
+
+        """<div class="card" style="margin-bottom:12px;padding:14px 16px">
+             <div class="row center" style="margin-bottom:4px">
+               <b>${u.username.esc()}</b>$badges
+               <span class="spacer"></span>
+               <button class="btn sm ghost users-signout-all" data-user="${u.userId}" style="color:var(--bad)">Sign out everywhere</button>
+             </div>
+             <div class="tiny muted" style="margin-bottom:6px">${accessLine.esc()}</div>
+             $deviceRows
+             $sessionRows
+           </div>"""
+    }
+
+    listEl.querySelectorAll(".users-revoke-device").let { nodes ->
+        for (i in 0 until nodes.length) {
+            val btn = nodes.item(i) as? HTMLElement ?: continue
+            btn.addEventListener("click") {
+                val deviceId = btn.getAttribute("data-device") ?: return@addEventListener
+                val userId = btn.getAttribute("data-user") ?: return@addEventListener
+                if (!window.confirm("Revoke this device? It will need to sign in again.")) return@addEventListener
+                scope.launch {
+                    runCatching { dev.jellystructure.api.RaviloApi.revokeDevice(deviceId, userId) }
+                    refreshUsersList(scope)
+                }
+            }
+        }
+    }
+    listEl.querySelectorAll(".users-revoke-session").let { nodes ->
+        for (i in 0 until nodes.length) {
+            val btn = nodes.item(i) as? HTMLElement ?: continue
+            btn.addEventListener("click") {
+                val id = btn.getAttribute("data-id") ?: return@addEventListener
+                val isCurrent = btn.getAttribute("data-current") == "true"
+                val msg = if (isCurrent) "Revoke your OWN session? You will be signed out immediately."
+                          else "Revoke this admin web session?"
+                if (!window.confirm(msg)) return@addEventListener
+                scope.launch {
+                    runCatching { dev.jellystructure.api.RaviloApi.revokeSession(id) }
+                    if (isCurrent) window.location.reload() else refreshUsersList(scope)
+                }
+            }
+        }
+    }
+    listEl.querySelectorAll(".users-signout-all").let { nodes ->
+        for (i in 0 until nodes.length) {
+            val btn = nodes.item(i) as? HTMLElement ?: continue
+            btn.addEventListener("click") {
+                val userId = btn.getAttribute("data-user") ?: return@addEventListener
+                if (!window.confirm("Sign this user out everywhere — every device AND every admin web session? This can't be undone.")) return@addEventListener
+                scope.launch {
+                    runCatching { dev.jellystructure.api.RaviloApi.signOutAll(userId) }
+                    refreshUsersList(scope)
                 }
             }
         }

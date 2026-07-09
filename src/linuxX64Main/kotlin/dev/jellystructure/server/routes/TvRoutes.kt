@@ -45,6 +45,54 @@ import kotlin.io.encoding.ExperimentalEncodingApi
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
+// Phase 143 — Users & Devices admin overview DTOs.
+@Serializable
+private data class OverviewDevice(
+    @SerialName("device_id") val deviceId: String,
+    val name: String,
+    val connected: Boolean,
+    @SerialName("is_admin") val isAdmin: Boolean,
+    @SerialName("is_kids") val isKids: Boolean,
+    @SerialName("created_at") val createdAt: Long,
+    @SerialName("last_seen") val lastSeen: Long,
+    @SerialName("now_playing") val nowPlaying: String? = null,
+)
+
+@Serializable
+private data class OverviewSession(
+    // Phase 143: NEVER the raw session token (that IS the js_session cookie value — returning it would
+    // let any admin viewing this page hijack another admin's live session). A 12-char prefix of a
+    // cryptographically random 64-char token leaks ~48 of 256 bits — not enough to reconstruct it —
+    // and is resolved back to the full token server-side by the revoke route below.
+    val id: String,
+    @SerialName("created_at") val createdAt: Long,
+    @SerialName("last_used_at") val lastUsedAt: Long,
+    @SerialName("expires_at") val expiresAt: Long,
+    @SerialName("is_current") val isCurrent: Boolean,
+)
+
+@Serializable
+private data class OverviewPolicy(
+    @SerialName("is_admin") val isAdmin: Boolean,
+    @SerialName("all_folders") val allFolders: Boolean,
+    @SerialName("library_count") val libraryCount: Int? = null,  // null when allFolders (unrestricted)
+    @SerialName("total_libraries") val totalLibraries: Int = 0,
+    @SerialName("allowed_tags") val allowedTags: List<String> = emptyList(),
+    @SerialName("blocked_tags") val blockedTags: List<String> = emptyList(),
+    @SerialName("max_rating") val maxRating: Int? = null,
+)
+
+@Serializable
+private data class OverviewUser(
+    @SerialName("user_id") val userId: String,
+    val username: String,
+    val policy: OverviewPolicy,
+    val devices: List<OverviewDevice>,
+    val sessions: List<OverviewSession>,
+)
+
+private const val SESSION_ID_PREFIX_LEN = 12
+
 @Serializable
 private data class AdminConfigEnvelope(
     val config: RaviloConfig,
@@ -423,6 +471,94 @@ fun Route.tvRoutes(
         val userId = call.request.queryParameters["userId"]
             ?: return@delete call.respond(HttpStatusCode.BadRequest, mapOf("error" to "userId is required"))
         deviceService.removeSession(deviceId, userId)
+        call.respond(mapOf("ok" to true))
+    }
+
+    // Phase 143 — every Jellyfin user → their Ravilo devices + admin web sessions + policy summary, one
+    // fetch. Supersedes the per-user get("/tv/admin/devices") above for the new "Users & devices" tab
+    // (that route stays for any other caller). Now-playing is sourced from the same local
+    // PlaybackService.activePlayback map /tv/admin/devices already reads — no extra Jellyfin call.
+    get("/tv/admin/overview") {
+        val session = runCatching { call.attributes[SessionKey] }.getOrNull()
+            ?: return@get call.respond(HttpStatusCode.Unauthorized, mapOf("error" to "Not logged in"))
+        val config = configStore.current
+        val allDevices = deviceService.allDevices()
+        val allSessions = sessionService.list()
+        // Every admin's full Policy, in one call — already fetched for admin login elsewhere; reused
+        // here rather than a per-user round-trip. Skipped gracefully if Jellyfin isn't configured yet.
+        val jfPolicies = if (config.apiKeys.jellyfinUrl.isNotBlank() && config.apiKeys.jellyfinToken.isNotBlank()) {
+            jellyfinClient.getUsers(config.apiKeys.jellyfinUrl, config.apiKeys.jellyfinToken)
+                .associate { it.id to it.policy }
+        } else emptyMap()
+        val totalLibraries = config.libraries.size
+
+        val userIds = (allDevices.map { it.jellyfinUserId } + allSessions.map { it.jellyfinUserId }).distinct()
+        val users = userIds.map { uid ->
+            val userDevices = allDevices.filter { it.jellyfinUserId == uid }
+            val userSessions = allSessions.filter { it.jellyfinUserId == uid }
+            val username = userDevices.firstOrNull()?.jellyfinUsername ?: userSessions.firstOrNull()?.jellyfinUsername ?: uid
+            val policy = jfPolicies[uid]
+            OverviewUser(
+                userId = uid,
+                username = username,
+                policy = OverviewPolicy(
+                    // Sessions exist only for admins (AuthRoutes 403s a non-admin login); fall back to
+                    // that signal if the live Policy lookup missed (Jellyfin unreachable/unconfigured).
+                    isAdmin = policy?.isAdministrator ?: (userDevices.any { it.isAdmin } || userSessions.isNotEmpty()),
+                    allFolders = policy?.enableAllFolders ?: true,
+                    libraryCount = policy?.takeUnless { it.enableAllFolders }?.enabledFolders?.size,
+                    totalLibraries = totalLibraries,
+                    allowedTags = policy?.allowedTags ?: emptyList(),
+                    blockedTags = policy?.blockedTags ?: emptyList(),
+                    maxRating = policy?.maxParentalRating,
+                ),
+                devices = userDevices.map { d ->
+                    OverviewDevice(
+                        deviceId = d.deviceId,
+                        name = d.displayName,
+                        connected = tvEventBus?.isConnected(d.deviceId) ?: false,
+                        isAdmin = d.isAdmin,
+                        isKids = d.isKids,
+                        createdAt = d.createdAt,
+                        lastSeen = d.lastSeen,
+                        nowPlaying = dev.jellystructure.tv.nowPlayingItem(d.deviceId),
+                    )
+                },
+                sessions = userSessions.map { s ->
+                    OverviewSession(
+                        id = s.token.take(SESSION_ID_PREFIX_LEN),
+                        createdAt = s.createdAt,
+                        lastUsedAt = s.lastUsedAt,
+                        expiresAt = s.expiresAt,
+                        isCurrent = s.token == session.token,
+                    )
+                },
+            )
+        }
+        call.respond(users)
+    }
+
+    // Phase 143 — revoke one admin web session by its wire-safe id prefix (never the raw token; see
+    // OverviewSession). Resolving the prefix back to a full token is an in-memory scan over `list()` —
+    // the session count is always small (tens at most), so this is cheap.
+    delete("/tv/admin/sessions/{id}") {
+        runCatching { call.attributes[SessionKey] }.getOrNull()
+            ?: return@delete call.respond(HttpStatusCode.Unauthorized, mapOf("error" to "Not logged in"))
+        val id = call.parameters["id"] ?: return@delete call.respond(HttpStatusCode.BadRequest)
+        val match = sessionService.list().firstOrNull { it.token.startsWith(id) }
+            ?: return@delete call.respond(HttpStatusCode.NotFound, mapOf("error" to "Session not found"))
+        sessionService.revoke(match.token)
+        call.respond(mapOf("ok" to true))
+    }
+
+    // Phase 143 — "sign out everywhere": revokes every device token AND every admin web session this
+    // Jellyfin user holds, in one action.
+    post("/tv/admin/users/{userId}/signout-all") {
+        runCatching { call.attributes[SessionKey] }.getOrNull()
+            ?: return@post call.respond(HttpStatusCode.Unauthorized, mapOf("error" to "Not logged in"))
+        val userId = call.parameters["userId"] ?: return@post call.respond(HttpStatusCode.BadRequest)
+        deviceService.deleteAllForUser(userId)
+        sessionService.revokeAllForUser(userId)
         call.respond(mapOf("ok" to true))
     }
 

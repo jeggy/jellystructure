@@ -37,6 +37,48 @@ data class AdminConfigResponse(
     @SerialName("isGlobal") val isGlobal: Boolean = false,
 )
 
+// Phase 143 — GET /tv/admin/overview response shapes (Users & devices Settings tab).
+@Serializable
+data class OverviewDevice(
+    @SerialName("device_id") val deviceId: String,
+    val name: String,
+    val connected: Boolean,
+    @SerialName("is_admin") val isAdmin: Boolean,
+    @SerialName("is_kids") val isKids: Boolean,
+    @SerialName("created_at") val createdAt: Long,
+    @SerialName("last_seen") val lastSeen: Long,
+    @SerialName("now_playing") val nowPlaying: String? = null,
+)
+
+@Serializable
+data class OverviewSession(
+    val id: String,
+    @SerialName("created_at") val createdAt: Long,
+    @SerialName("last_used_at") val lastUsedAt: Long,
+    @SerialName("expires_at") val expiresAt: Long,
+    @SerialName("is_current") val isCurrent: Boolean,
+)
+
+@Serializable
+data class OverviewPolicy(
+    @SerialName("is_admin") val isAdmin: Boolean,
+    @SerialName("all_folders") val allFolders: Boolean,
+    @SerialName("library_count") val libraryCount: Int? = null,
+    @SerialName("total_libraries") val totalLibraries: Int = 0,
+    @SerialName("allowed_tags") val allowedTags: List<String> = emptyList(),
+    @SerialName("blocked_tags") val blockedTags: List<String> = emptyList(),
+    @SerialName("max_rating") val maxRating: Int? = null,
+)
+
+@Serializable
+data class OverviewUser(
+    @SerialName("user_id") val userId: String,
+    val username: String,
+    val policy: OverviewPolicy,
+    val devices: List<OverviewDevice>,
+    val sessions: List<OverviewSession>,
+)
+
 object RaviloApi {
     suspend fun getUsers(): List<JellyfinUser> =
         httpClient.get("/api/jellyfin/users").body()
@@ -113,6 +155,22 @@ object RaviloApi {
         }
         if (!r.status.isSuccess()) throw Exception(r.body<String>())
         return r.body()
+    }
+
+    // Phase 143 — Users & Devices Settings tab.
+    suspend fun getOverview(): List<OverviewUser> =
+        httpClient.get("/api/tv/admin/overview").body()
+
+    suspend fun revokeDevice(deviceId: String, userId: String) {
+        httpClient.delete("/api/tv/admin/devices/$deviceId") { parameter("userId", userId) }
+    }
+
+    suspend fun revokeSession(id: String) {
+        httpClient.delete("/api/tv/admin/sessions/$id")
+    }
+
+    suspend fun signOutAll(userId: String) {
+        httpClient.post("/api/tv/admin/users/$userId/signout-all")
     }
 
 }

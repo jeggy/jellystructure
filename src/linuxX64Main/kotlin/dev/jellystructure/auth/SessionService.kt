@@ -17,8 +17,16 @@ import platform.posix.read
 import platform.posix.timespec
 
 private const val SESSION_TTL_MS = 7L * 24 * 60 * 60 * 1000
+// Phase 143: mirrors RaviloDeviceService.validateDeviceToken's inline debounce — validate() is called
+// on every cookie-authed admin request, so writing last_used_at unconditionally would be a SQLite
+// UPDATE per request.
+private const val LAST_USED_DEBOUNCE_MS = 60_000L
 
 class SessionService(private val db: JellystructureDb) {
+
+    // token -> last time last_used_at was actually written (debounce state; not a data cache like
+    // RaviloDeviceService's, since a session's own row rarely changes underneath it).
+    private val lastUsedWritten = HashMap<String, Long>()
 
     init {
         // Remove expired sessions on startup
@@ -31,12 +39,15 @@ class SessionService(private val db: JellystructureDb) {
         jellyfinUserToken: String,
     ): String {
         val token = generateSecureToken()
+        val now = nowMs()
         db.sessionQueries.upsert(
             token = token,
             jellyfin_user_id = jellyfinUserId,
             jellyfin_username = jellyfinUsername,
             jellyfin_user_token = jellyfinUserToken,
-            expires_at = nowMs() + SESSION_TTL_MS,
+            expires_at = now + SESSION_TTL_MS,
+            created_at = now,
+            last_used_at = now,
         )
         return token
     }
@@ -44,17 +55,43 @@ class SessionService(private val db: JellystructureDb) {
     fun validate(token: String): SessionData? {
         val row = db.sessionQueries.getByToken(token).executeAsOneOrNull() ?: return null
         if (row.expires_at < nowMs()) return null
+        val now = nowMs()
+        if ((now - (lastUsedWritten[token] ?: 0L)) >= LAST_USED_DEBOUNCE_MS) {
+            db.sessionQueries.updateLastUsed(last_used_at = now, token = token)
+            lastUsedWritten[token] = now
+        }
         return SessionData(
             token = row.token,
             jellyfinUserId = row.jellyfin_user_id,
             jellyfinUsername = row.jellyfin_username,
             jellyfinUserToken = row.jellyfin_user_token,
             expiresAt = row.expires_at,
+            createdAt = row.created_at,
+            lastUsedAt = row.last_used_at,
         )
     }
 
     fun revoke(token: String) {
+        lastUsedWritten.remove(token)
         db.sessionQueries.deleteByToken(token)
+    }
+
+    /** Phase 143 — "sign out everywhere": every admin web session this Jellyfin user holds. */
+    fun revokeAllForUser(jellyfinUserId: String) {
+        db.sessionQueries.deleteByUser(jellyfinUserId)
+    }
+
+    /** Phase 143 — every live admin web session, for the Users & Devices overview. */
+    fun list(): List<SessionData> = db.sessionQueries.getAll().executeAsList().map { row ->
+        SessionData(
+            token = row.token,
+            jellyfinUserId = row.jellyfin_user_id,
+            jellyfinUsername = row.jellyfin_username,
+            jellyfinUserToken = row.jellyfin_user_token,
+            expiresAt = row.expires_at,
+            createdAt = row.created_at,
+            lastUsedAt = row.last_used_at,
+        )
     }
 }
 
