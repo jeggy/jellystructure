@@ -146,6 +146,7 @@ private val EN = mapOf(
     "player.burning_in_subtitle" to "Burning in subtitle… (transcoding)",
     "loading"             to "Loading...",
     "error.generic"       to "Something went wrong",
+    "action.retry"        to "Retry",
     "off"                 to "Off",
     "on"                  to "On",
     // R149: Sonarr next-airing
@@ -297,6 +298,7 @@ private val DA = mapOf(
     "player.tab_subtitles" to "Undertekster",
     "loading"             to "Indlaeder...",
     "error.generic"       to "Noget gik galt",
+    "action.retry"        to "Prøv igen",
     "off"                 to "Fra",
     "on"                  to "Til",
     // R149: Sonarr next-airing
@@ -448,6 +450,7 @@ private val FO = mapOf(
     "player.tab_subtitles" to "Undirtekstir",
     "loading"             to "Ledur inn...",
     "error.generic"       to "Nakad gjekk skeivt",
+    "action.retry"        to "Royn aftur",
     "off"                 to "Av",
     "on"                  to "A",
     // R149: Sonarr next-airing

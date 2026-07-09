@@ -87,9 +87,20 @@ class HomeStore(private val apiClient: TvApiClient) {
     /**
      * [silent] = true keeps the current Loaded feed on screen and swaps in the new one when it
      * arrives (no Loading flash, scroll/focus preserved) — used for R33 live config push.
+     *
+     * Bug fix: a silent refresh only makes sense once something has actually loaded — it must never
+     * disturb an in-flight initial load or an already-shown Error. The WS reconnect loop emits on
+     * every reconnect attempt, including doomed ones from a stale/invalid device token; those used to
+     * repeatedly `loadJob?.cancel()` the in-flight bounded retry-then-Error sequence (whether by
+     * restarting it via `load()` or by replacing it with a one-shot attempt that does nothing on
+     * failure), so the screen either never reached Error or flickered into it for under a second at a
+     * time before being reset back to Loading — effectively a permanent blank/loading screen with no
+     * stable, readable feedback. A silent refresh while not yet Loaded is now a no-op: the original
+     * bounded sequence (or a user-initiated non-silent retry) is the only thing allowed to resolve it.
      */
     fun refresh(silent: Boolean = false) {
         if (!silent) { load(); return }
+        if (_state.value !is HomeState.Loaded) return
         loadJob?.cancel()
         loadJob = scope.launch {
             runCatching { apiClient.getHome() }.getOrNull()?.let { _state.value = HomeState.Loaded(it.deduped()) }
