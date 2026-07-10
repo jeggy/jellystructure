@@ -9,6 +9,12 @@
 <link rel="stylesheet" href="ravilo-builders.css">
 <style>
   .pagebar h1 { display: inline-flex; align-items: center; gap: .34em; white-space: nowrap; }
+  /* Preferences (behaviour) is a per-user overlay that's always editable — never show the layout-lock card there */
+  [data-rtab="preferences"] #scope-lock { display: none !important; }
+  .lt-prow { display: flex; align-items: center; gap: 16px; padding: 13px 0; border-top: 1px solid var(--line); }
+  .lt-prow .m { flex: 1; }
+  .lt-prow .nm { font-weight: 600; }
+  .lt-prow .d { font-size: .76rem; color: var(--ink-soft); margin-top: 3px; line-height: 1.45; max-width: 60ch; }
   .ravilo-mark { width: 1.12em; height: 1.12em; flex: none; vertical-align: middle; filter: drop-shadow(0 0 10px rgba(123,110,240,.5)); }
   /* draggable config list rows */
   .cfg-row { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--radius-s); background: var(--fill-2); }
@@ -92,7 +98,6 @@
     <span class="badge info">app config</span>
     <span class="spacer"></span>
     <a class="btn sm ghost" href="../ravilo/Ravilo TV.html" target="_blank" rel="noopener">Open Ravilo ↗</a>
-    <a class="btn sm" href="settings.html?tab=users" title="TVs sign in on-screen with a Jellyfin username + password (no pairing code). Manage every user’s devices and sessions in Settings."><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:5px;vertical-align:-2px;"><rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg>Users &amp; devices</a>
     <span class="badge ok">saved · synced</span>
     <span class="btn primary">Save</span>
   </div>
@@ -120,8 +125,9 @@
     <!-- section nav -->
     <div class="card flat" id="set-nav" style="width:166px;flex:none;padding:8px;position:sticky;top:92px;">
       <div class="navitem active" data-goto="sect-hero">Hero carousel</div>
-      <div class="navitem" data-goto="sect-studios">Channels</div>
+      <div class="navitem" data-goto="sect-studios">Collections</div>
       <div class="navitem" data-goto="sect-rows">Content rows</div>
+      <div class="navitem" data-goto="sect-livetv">Live TV</div>
       <div class="navitem" data-goto="sect-top10">Request</div>
       <div class="navitem" data-goto="sect-behaviour">Behaviour</div>
     </div>    <div class="col fill" id="config-col">
@@ -157,7 +163,7 @@
 
       <!-- STUDIOS / CHANNELS -->
       <div class="card set-section" id="sect-studios">
-        <div class="row center"><h3 style="font-size:1.05rem;margin:0;">Channels &amp; collections</h3><span class="spacer"></span><span class="btn sm ghost">＋ Add channel</span></div>
+        <div class="row center"><h3 style="font-size:1.05rem;margin:0;">Collections</h3><span class="spacer"></span><span class="btn sm ghost">＋ Add collection</span></div>
         <p class="tiny muted" style="margin:6px 0 14px;">The Disney+-style logo row under the hero. Each opens a view with the <b>same content rows below</b>, filtered to that channel. Map each to a Jellyfin studio, network, genre or tag. Optionally give a channel its <b>own hero carousel</b>. <b>Click a channel to edit it.</b></p>
 
         <div id="studiolist">
@@ -187,6 +193,24 @@
           <div class="cfg-row" data-newly="split"><span class="grab">⠿</span><span class="badge ok" style="flex:none;">system</span><div style="flex:1;"><div class="nm">Newly Added Movies</div><div class="src">kind = movie · sort newest</div></div><span class="muted tiny">show</span><span class="toggle on"></span></div>
           <div class="cfg-row" data-newly="split"><span class="grab">⠿</span><span class="badge ok" style="flex:none;">system</span><div style="flex:1;"><div class="nm">Newly Added Series</div><div class="src">kind = series · sort newest</div></div><span class="muted tiny">show</span><span class="toggle on"></span></div>
           <div class="cfg-row" data-newly="merged" style="display:none;"><span class="grab">⠿</span><span class="badge ok" style="flex:none;">system</span><div style="flex:1;"><div class="nm">Newly Added</div><div class="src">movies + series combined · sort newest</div></div><span class="muted tiny">show</span><span class="toggle on"></span></div>
+        </div>
+      </div>
+
+      <!-- LIVE TV ON HOME (only shown when Live TV is enabled in Ravilo → Live TV) -->
+      <div class="card set-section" id="sect-livetv">
+        <div class="row center"><h3 style="font-size:1.05rem;margin:0;">Live TV on Home</h3><span class="badge info" style="margin-left:8px;">Live TV enabled</span><span class="spacer"></span><a class="btn sm ghost" href="livetv.html">Manage channels ↗</a></div>
+        <p class="tiny muted" style="margin:6px 0 14px;">Live TV is woven into this home — never a top-nav tab. These options appear because <b>Live TV is enabled</b> in <a href="livetv.html">Ravilo → Live TV</a>; turn it off there and this section disappears (Live TV leaves Home entirely).</p>
+        <div class="lt-prow">
+          <div class="m"><div class="nm">“On now” row</div><div class="d">A live row of what's playing now, placed among the Home rows. Selecting a channel tunes it; an <b>Open TV Guide</b> action opens the full channels × time guide.</div></div>
+          <span class="toggle on lt-tg"></span>
+        </div>
+        <div class="lt-prow">
+          <div class="m"><div class="nm">“On now” row position</div><div class="d">Where the live row sits on the Home screen.</div></div>
+          <select class="select" style="width:auto;min-width:180px;"><option>Top of Home</option><option selected>After Continue Watching</option><option>Bottom of Home</option></select>
+        </div>
+        <div class="lt-prow">
+          <div class="m"><div class="nm">Live TV collection</div><div class="d">A Collection tile in the rail that opens straight into the guide — for viewers who want Live TV alongside their other collections.</div></div>
+          <span class="toggle lt-tg"></span>
         </div>
       </div>
 
@@ -238,6 +262,18 @@
       <div class="card set-section" id="sect-behaviour">
         <div class="row center"><h3 style="font-size:1.05rem;margin:0;">Behaviour &amp; preferences</h3><span class="badge info" id="beh-scope-badge" style="margin-left:8px;">global defaults</span></div>
         <p class="tiny muted" id="beh-intro" style="margin:8px 0 2px;"></p>
+        <!-- R174: grid-columns is a global LAYOUT default (not a per-user overlay field) — shown only in global scope -->
+        <div class="beh-row" id="beh-grid" style="border-top:1px solid var(--line);border-bottom:1px solid var(--line);align-items:center;">
+          <div class="beh-main">
+            <div class="beh-name">Items per row on grids <span class="badge" style="font-size:.55rem;vertical-align:1px;margin-left:4px;">layout · all users</span></div>
+            <div class="beh-desc">How many posters sit across the all-movies / all-series grid and the search results on a TV or desktop. A phone held in portrait uses fewer automatically.</div>
+          </div>
+          <div class="beh-right" style="align-items:stretch;min-width:230px;">
+            <label class="tiny" style="display:flex;justify-content:space-between;gap:12px;">Landscape / TV <span class="mono" id="grid-cols-val">6</span></label>
+            <input type="range" min="2" max="10" value="6" id="grid-cols" style="width:100%;accent-color:var(--hi);">
+            <span class="beh-state follow" style="align-self:flex-end;">Applies to every user</span>
+          </div>
+        </div>
         <div id="beh-list" style="margin-top:8px;"></div>
         <div class="note blue" id="beh-foot" style="margin-top:14px;"></div>
       </div>
@@ -259,6 +295,37 @@
 
 <div id="cf-modal-root"></div>
 
+<script>
+  /* Ravilo section is split across sidebar items (Home layout · Requests · Preferences) that
+     share one editor + scope switcher via ?tab=. Set data-page BEFORE app-shell reads it so the
+     right sidebar item highlights, and show only the active tab's sections. */
+  (function () {
+    var tab = new URLSearchParams(location.search).get('tab') || 'layout';
+    if (['layout', 'requests', 'preferences'].indexOf(tab) < 0) tab = 'layout';
+    var main = document.querySelector('.app-main2');
+    main.dataset.page = 'ravilo-' + tab;
+    main.dataset.rtab = tab;
+    var GROUPS = { layout: ['sect-hero', 'sect-studios', 'sect-rows', 'sect-livetv'], requests: ['sect-top10'], preferences: ['sect-behaviour'] };
+    var show = GROUPS[tab];
+    document.querySelectorAll('#config-col .set-section').forEach(function (s) { s.style.display = show.indexOf(s.id) >= 0 ? '' : 'none'; });
+    var nav = document.getElementById('set-nav');
+    if (nav) {
+      if (tab !== 'layout') { nav.style.display = 'none'; }
+      else {
+        nav.style.display = '';
+        nav.querySelectorAll('.navitem[data-goto]').forEach(function (n) { n.style.display = show.indexOf(n.dataset.goto) >= 0 ? '' : 'none'; });
+      }
+    }
+    var TITLES = { layout: 'Layout', requests: 'Requests', preferences: 'Preferences' };
+    var SUBS = {
+      layout: 'Lay out the Ravilo home screen your viewers see on their TVs — the hero carousel, collections and content rows. Ravilo pulls all media from Jellyfin; this layout is served by Jellystructure.',
+      requests: 'Choose the Jellyseerr / Overseerr discover feeds each viewer can browse and request from — and whether they can request at all.',
+      preferences: 'Per-viewer behaviour — skin, interface language, tile shape, default request language and grid columns. Overriding a preference never forks a viewer\u2019s layout.'
+    };
+    var h1 = document.querySelector('.pagebar h1'); if (h1 && h1.lastChild) h1.lastChild.textContent = ' Ravilo · ' + TITLES[tab];
+    var sub = document.querySelector('.page-sub'); if (sub) sub.textContent = SUBS[tab];
+  })();
+</script>
 <script src="app-shell.js"></script>
 <script src="ravilo-builders.js"></script>
 <script>
@@ -314,22 +381,28 @@
     const badge = document.getElementById('beh-scope-badge');
     const intro = document.getElementById('beh-intro');
     const foot  = document.getElementById('beh-foot');
+    const grid  = document.getElementById('beh-grid');
+    const gridInput = document.getElementById('grid-cols');
+    const gridVal   = document.getElementById('grid-cols-val');
+    if (gridInput && gridVal) gridInput.addEventListener('input', () => { gridVal.textContent = gridInput.value; });
     if (!list) return { render() {} };
     const toast = m => (window.__toast ? window.__toast(m) : 0);
 
     // global defaults every user starts from
-    const GLOBAL = { lang: 'en', skin: 'aurora', tile: 'poster', progress: true };
-    const ORDER  = { lang: ['en', 'da', 'fo'], skin: ['aurora', 'midnight', 'noir'], tile: ['poster', 'wide', 'square'] };
+    const GLOBAL = { lang: 'en', skin: 'aurora', tile: 'poster', progress: true, reqlang: 'nordic' };
+    const ORDER  = { lang: ['en', 'da', 'fo'], skin: ['aurora', 'midnight', 'noir'], tile: ['poster', 'wide', 'square'], reqlang: ['original', 'nordic'] };
     const SHORT  = {
       lang: { en: 'English', da: 'Dansk', fo: 'Føroyskt' },
       skin: { aurora: 'Aurora', midnight: 'Midnight', noir: 'Noir' },
       tile: { poster: 'Poster', wide: 'Wide', square: 'Square' },
+      reqlang: { original: 'Original', nordic: 'Dansk / Nordic' },
     };
     const FULL = {
       lang: { en: 'English', da: 'Danish (Dansk)', fo: 'Faroese (Føroyskt)' },
       skin: { aurora: 'Aurora', midnight: 'Midnight', noir: 'Noir' },
       tile: { poster: 'Standard poster', wide: 'Wide landscape', square: 'Square' },
       progress: { true: 'On', false: 'Off' },
+      reqlang: { original: 'Original (standard release)', nordic: 'Dansk / Nordic release' },
     };
     const DEFS = [
       { key: 'lang', name: 'Interface language', device: true,
@@ -340,6 +413,8 @@
         desc: 'How rows render on the TV. Continue Watching always stays landscape.' },
       { key: 'progress', name: 'Progress bars on Continue Watching', device: false,
         desc: 'Show a resume-position bar under in-progress tiles.' },
+      { key: 'reqlang', name: 'Default request language', device: false,
+        desc: 'Which language a Request grabs by default — the standard release or the Nordic/Danish one (usually incl. English). The viewer can still pick a different language when they request, and switch a waiting request later.' },
     ];
 
     let ctx = { scope: 'global', user: null };
@@ -361,6 +436,7 @@
     function render(scope, user) {
       ctx = { scope, user };
       const onUser = scope === 'user' && !!user;
+      if (grid) grid.style.display = onUser ? 'none' : '';   // R174: global layout field, hidden in per-user scope
       badge.className = 'badge ' + (onUser ? 'warn' : 'info');
       badge.textContent = onUser ? 'preferences · ' + user.name.split(' ')[0] : 'global defaults';
       intro.innerHTML = onUser
@@ -453,7 +529,7 @@
       lock.style.display = locked ? '' : 'none';
       if (locked) {
         lockTitle.textContent = u.name + ' uses the global layout';
-        lockSub.textContent = 'Create a custom layout to give ' + u.name + ' a different Ravilo home. It fully replaces the global layout — hero, channels, rows and Top 10 — for them. Behaviour preferences below are separate and keep following your global defaults.';
+        lockSub.textContent = 'Create a custom layout to give ' + u.name + ' a different Ravilo home. It fully replaces the global layout — hero, collections, rows and requests — for them. Behaviour preferences below are separate and keep following your global defaults.';
       }
 
       const rmOld = noteBox.querySelector('#scope-remove'); if (rmOld) rmOld.remove();
@@ -746,6 +822,10 @@
   if (master) master.addEventListener('click', () => setTimeout(render, 0));
   render();
 })();
+</script>
+<script>
+  /* Live TV on Home — placement toggles (mockup) */
+  document.querySelectorAll('#sect-livetv .lt-tg').forEach(function (t) { t.addEventListener('click', function () { this.classList.toggle('on'); }); });
 </script>
 </body>
 </html>
