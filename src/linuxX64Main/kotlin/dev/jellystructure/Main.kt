@@ -218,6 +218,12 @@ fun main() = runBlocking {
     val liveTvStore = dev.jellystructure.tv.LiveTvStore("$dataDir/livetv.json")
     liveTvStore.load()
     val liveTvService = dev.jellystructure.tv.LiveTvService(dataDir, liveTvStore, jellyfinClient, configStore, tvEventBus)
+    // Bug fix: channel names/logos/current-program only ever lived in an in-memory cache populated by
+    // sync(), which was only called from admin routes — after every restart, Live TV showed placeholder
+    // "Channel N" text (previously the raw Jellyfin id) until an admin happened to open Live TV settings.
+    // Cheap (one Jellyfin GET, see sync()'s own doc comment) and safe to call unconditionally — it no-ops
+    // if Jellyfin isn't configured/reachable yet.
+    rootScope.launch { runCatching { liveTvService.sync() } }
     val shutdown = startServer(
         configStore, sessionService, raviloDeviceService, raviloConfigService, channelLogoStore, homeFeedService, browseService, detailService, playbackService, jellyfinClient, mediaStore, scanner,
         artworkDownloader, tmdbClient, scanTracker, mediaHistory, activityLog, broadcaster,
