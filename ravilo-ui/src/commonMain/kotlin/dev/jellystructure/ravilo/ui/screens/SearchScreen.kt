@@ -242,6 +242,8 @@ fun SearchScreen(
             query.isEmpty()                              -> str("search.suggestions_label")
             items.isEmpty() && state is SearchState.Loaded -> str("search.empty", mapOf("query" to query))
             state is SearchState.Loading                 -> str("loading")
+            // Bug fix: "1 results" read wrong — found during general mobile exploration testing.
+            items.size == 1                              -> str("search.result_one")
             else                                         -> str("search.results", mapOf("count" to items.size.toString()))
         }
         Text(
