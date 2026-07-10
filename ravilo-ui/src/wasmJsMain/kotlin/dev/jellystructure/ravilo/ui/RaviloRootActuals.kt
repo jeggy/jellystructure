@@ -2,6 +2,7 @@
 
 package dev.jellystructure.ravilo.ui
 
+import androidx.compose.runtime.Composable
 import coil3.ImageLoader
 import coil3.SingletonImageLoader
 import coil3.memory.MemoryCache
@@ -114,3 +115,8 @@ actual fun installHashListener(onRoute: (String) -> Unit): () -> Unit {
 
 private fun jsInstallPopStateListener(callback: () -> Unit): Unit =
     js("window.addEventListener('popstate', function(){ callback() })")
+
+// Browser back/forward already goes through installHashListener/popstate above — no separate system
+// back gesture to bridge here.
+@Composable
+actual fun PlatformBackHandler(enabled: Boolean, onBack: () -> Unit) {}

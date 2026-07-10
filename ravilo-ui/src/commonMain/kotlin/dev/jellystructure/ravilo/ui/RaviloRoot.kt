@@ -68,6 +68,20 @@ expect fun replaceRoute(route: String)
  */
 expect fun installHashListener(onRoute: (String) -> Unit): () -> Unit
 
+/**
+ * Bug fix: the app's whole back-navigation stack was driven only by `Key.Back` KeyEvents (RaviloApp's
+ * root `.onKeyEvent{}`), which a TV remote's physical back key genuinely sends — but on Android phones
+ * with gesture navigation (the default since Android 10, and Pixel's default), a back-swipe is handled
+ * entirely by the system's OnBackPressedDispatcher/predictive-back and never reaches Compose as a
+ * KeyEvent at all. Confirmed live: on the Pixel 9, back did nothing on the standalone Live TV Guide
+ * screen (or any screen without its own explicit back affordance). PlatformBackHandler bridges the
+ * platform's native back gesture into the same pop() the D-pad/remote path already uses — a no-op on
+ * platforms where system back doesn't bypass Compose's key-event system (web: browser back already
+ * goes through installHashListener above).
+ */
+@Composable
+expect fun PlatformBackHandler(enabled: Boolean, onBack: () -> Unit)
+
 @Composable
 fun RaviloRoot() {
     var baseUrl by remember { mutableStateOf(raviloBaseUrl()) }

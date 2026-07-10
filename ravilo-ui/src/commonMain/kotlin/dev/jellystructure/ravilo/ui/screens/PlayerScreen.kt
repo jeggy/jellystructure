@@ -90,7 +90,7 @@ import dev.jellystructure.ravilo.ui.seams.wakeOnPointerMove
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.input.pointer.pointerInput
-import dev.jellystructure.ravilo.ui.theme.LocalCompact
+import dev.jellystructure.ravilo.ui.theme.LocalHandset
 import dev.jellystructure.ravilo.ui.theme.RaviloColors
 import dev.jellystructure.ravilo.ui.theme.RaviloMotion
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
@@ -570,16 +570,21 @@ fun PlayerScreen(
                 },
                 // R157 (FR-R157-2.4) — on web, a click on empty space toggles chrome instead of
                 // activating the focused control (the web convention; a click has no D-pad "focus"
-                // concept to act on). TV: playerTapTogglesChrome is false and LocalCompact is always
-                // false (a TV window is never handset-width), so this stays null there and
+                // concept to act on). TV: playerTapTogglesChrome is false and LocalHandset is always
+                // false (a TV window is never handset-sized), so this stays null there and
                 // dpadFocusable's default (onTap falls back to onSelect) preserves the D-pad behaviour.
                 // Bug fix: ravilo-ui's androidMain is shared by both the TV and phone apps, so the old
                 // `playerTapTogglesChrome` platform constant (false for "Android") couldn't distinguish
                 // them — a phone tap fell through to onSelect, i.e. "activate whatever the D-pad focus
                 // happens to be on," not the tap-to-toggle-chrome behaviour every mobile video player
-                // has. LocalCompact (< 600dp window width) is the existing runtime signal already used
-                // to tell a handset apart from a TV within this same compilation.
-                onTap = if (playerTapTogglesChrome || LocalCompact.current) {
+                // has.
+                // Bug fix: this used to read LocalCompact (< 600dp window WIDTH), which flips to false
+                // the instant a phone rotates to landscape for playback — width becomes the long edge.
+                // Once the auto-hide timer fired, tapping the video could never bring the controls back
+                // on a phone (confirmed live: pause worked once from the initially-visible chrome, but
+                // there was no way to reveal it again after it hid). LocalHandset uses the SMALLEST side
+                // (Android's own "smallest width" convention), so it stays true across rotation.
+                onTap = if (playerTapTogglesChrome || LocalHandset.current) {
                     { if (chromeVisible) chromeVisible = false else wake() }
                 } else null,
             )

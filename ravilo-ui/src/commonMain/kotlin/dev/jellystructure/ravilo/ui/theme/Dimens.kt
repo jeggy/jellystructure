@@ -12,6 +12,15 @@ import androidx.compose.ui.unit.dp
 // don't waste a narrow screen. Defaults false → TV/large layouts are completely unchanged.
 val LocalCompact = staticCompositionLocalOf { false }
 
+// Bug fix: LocalCompact is deliberately width-only (correct for "narrow window → stack content full
+// width" everywhere it's used) but that makes it flip to false the moment a phone rotates to landscape
+// for video playback — width becomes the device's long edge. PlayerScreen's tap-to-toggle-chrome relied
+// on LocalCompact and so silently stopped working in landscape: tapping the video never brought the
+// controls back once they auto-hid. LocalHandset is the orientation-stable form-factor signal (the
+// smaller of width/height, i.e. "smallest width" — matches Android's own sw dp qualifier), for the few
+// call sites that need "is this actually a phone" rather than "is the window narrow right now".
+val LocalHandset = staticCompositionLocalOf { false }
+
 // R145: responsive horizontal content gutter — tight on phones, TV-wide otherwise. Replaces the fixed
 // 48dp screenPadH at every content-margin call site.
 val raviloHPad: Dp
