@@ -40,8 +40,19 @@ import dev.jellystructure.ravilo.ui.theme.RaviloTheme
 import dev.jellystructure.shared.tv.LiveTvChannel
 import dev.jellystructure.shared.tv.LiveTvGuideProgram
 import kotlin.time.Clock
+import kotlin.time.Instant
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.toLocalDateTime
 
 private const val PX_PER_MINUTE = 4.4f
+
+// Bug fix: program cells showed only the title, no start/end time at all — reported as "missing
+// timestamps" after the guide was made reachable (the "See All"/"TV Guide" link fix). Matches
+// AppBar's ClockDisplay formatting (24h HH:mm, device-local time zone).
+private fun formatGuideTime(epochMs: Long): String {
+    val t = Instant.fromEpochMilliseconds(epochMs).toLocalDateTime(TimeZone.currentSystemDefault())
+    return "${t.hour.toString().padStart(2, '0')}:${t.minute.toString().padStart(2, '0')}"
+}
 
 /**
  * Phase R177 §C — the full-schedule EPG guide: one horizontally-scrollable row of programs per
@@ -185,6 +196,10 @@ private fun GuideChannelRow(
                             .padding(8.dp),
                     ) {
                         Column {
+                            Text(
+                                "${formatGuideTime(p.startMs)}–${formatGuideTime(p.endMs)}",
+                                color = colors.textDim, fontSize = 10.sp, fontWeight = FontWeight.Medium,
+                            )
                             Text(p.name, color = colors.text, fontSize = 12.sp, fontWeight = FontWeight.Medium, maxLines = 2)
                             if (isNow) {
                                 val progress = ((nowMs - p.startMs).toFloat() / (p.endMs - p.startMs).toFloat()).coerceIn(0f, 1f)

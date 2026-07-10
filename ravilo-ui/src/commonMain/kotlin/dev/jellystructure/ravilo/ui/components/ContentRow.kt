@@ -32,7 +32,9 @@ import androidx.compose.ui.focus.focusRestorer
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.sp
+import dev.jellystructure.ravilo.ui.focus.dpadFocusable
 import dev.jellystructure.ravilo.ui.theme.RaviloDimens
 import dev.jellystructure.ravilo.ui.theme.raviloHPad
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
@@ -145,11 +147,22 @@ fun <T> StaticContentRow(
                     letterSpacing = (-0.3).sp,
                 )
                 if (seeAllLabel != null && onSeeAll != null) {
+                    // Bug fix: this Text had no clickable/dpadFocusable modifier at all — onSeeAll was
+                    // captured but never invoked, so "See All" / "TV Guide" links were dead on every
+                    // platform (confirmed live: tapping "TV Guide" on the Home screen did nothing).
+                    // dpadFocusable's onSelect covers both D-pad Enter and a pointer tap (see its doc).
+                    var seeAllFocused by remember { mutableStateOf(false) }
                     Text(
                         text = seeAllLabel,
                         color = colors.accent,
                         fontSize = 15.sp,
                         fontWeight = FontWeight.Medium,
+                        textDecoration = if (seeAllFocused) TextDecoration.Underline else TextDecoration.None,
+                        modifier = Modifier.dpadFocusable(
+                            onFocused = { seeAllFocused = true },
+                            onBlurred = { seeAllFocused = false },
+                            onSelect = onSeeAll,
+                        ),
                     )
                 }
             }
