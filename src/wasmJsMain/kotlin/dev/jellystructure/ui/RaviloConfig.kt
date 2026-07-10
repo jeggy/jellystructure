@@ -148,9 +148,19 @@ private fun ChannelConfig.editorQuery(): ConditionGroup = effectiveQuery().let {
 // The jellyfish brand mark (matches design/app/ravilo-config.html).
 private const val RAVILO_MARK = """<svg viewBox="12 20 76 76" aria-hidden="true" style="width:1.12em;height:1.12em;flex:none;filter:drop-shadow(0 0 8px rgba(123,110,240,.5))"><defs><linearGradient id="ravJelly" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#7b6ef0"/><stop offset="1" stop-color="#3fb6f5"/></linearGradient></defs><path d="M22 52 C22 24 78 24 78 52 C66 45 59 45 50 49 C41 45 34 45 22 52 Z" fill="url(#ravJelly)"/><g stroke="url(#ravJelly)" stroke-width="4.5" stroke-linecap="round" fill="none"><path d="M33 51 q-5 12 1 20 q5 8 0 14" opacity=".9"/><path d="M44 52 q-4 13 1 21 q4 9 0 13" opacity=".72"/><path d="M56 52 q4 13 -1 21 q-4 9 0 13" opacity=".72"/><path d="M67 51 q5 12 -1 20 q-5 8 0 14" opacity=".9"/></g></svg>"""
 
+// Phase 148 — Layout/Requests/Preferences are separate sidebar links to this same page (`?tab=`), so
+// switching between them is a real hash navigation that re-invokes this function. Once loaded once in
+// this session, later calls skip the reload — otherwise every tab click would refetch users/config and
+// reset the scope switcher back to Global, defeating "one shared editor" (spec §B1).
+private var raviloLoaded = false
+
 fun renderRaviloConfig(container: Element, scope: CoroutineScope) {
     rcScope = scope
     rcContainerRef = container
+    if (raviloLoaded) {
+        handleRaviloRoute(container, scope)
+        return
+    }
     container.innerHTML = buildLoadingShell()
     scope.launch {
         users = runCatching { RaviloApi.getUsers() }.getOrDefault(emptyList())
@@ -164,6 +174,7 @@ fun renderRaviloConfig(container: Element, scope: CoroutineScope) {
         currentUserId = GLOBAL_SCOPE; currentScopeIsGlobal = true; currentHasOverride = false
         val resp = runCatching { RaviloApi.getConfigWithMeta(scope = "global") }.getOrNull()
         currentConfig = resp?.config ?: RaviloConfig()
+        raviloLoaded = true
         if (!popstateWired) {
             popstateWired = true
             window.addEventListener("popstate") { _ ->
@@ -176,6 +187,10 @@ fun renderRaviloConfig(container: Element, scope: CoroutineScope) {
     }
 }
 
+// Phase 148 — the three sidebar Ravilo tabs (Layout · Requests · Preferences) all share this one
+// editor + scope switcher via `?tab=`; "Live TV" and "Users & devices" are separate pages entirely.
+private val RAVILO_TABS = listOf("layout", "requests", "preferences")
+
 private fun handleRaviloRoute(container: Element, scope: CoroutineScope) {
     val channelId = Router.currentQuery()["channel"]
     if (!channelId.isNullOrBlank()) {
@@ -184,6 +199,12 @@ private fun handleRaviloRoute(container: Element, scope: CoroutineScope) {
             openChannelEditorPage(container, scope, idx, currentConfig.channels[idx])
             return
         }
+    }
+    if (Router.currentQuery()["tab"] !in RAVILO_TABS) {
+        // Canonicalize the bare "/ravilo" (no explicit tab) so the URL — and the sidebar's
+        // query-aware active-nav match — always carries one, without adding a history entry.
+        Router.navigate("/ravilo", mapOf("tab" to "layout"), replace = true)
+        updateActiveNav(Router.current())
     }
     renderFull(container, scope)
 }
@@ -223,7 +244,17 @@ private fun datalistsHtml(): String = buildString {
     }
 }
 
+/** Which `?tab=` this page is showing — defaults to "layout" (handleRaviloRoute canonicalizes the URL to match). */
+private fun currentRavTab(): String = Router.currentQuery()["tab"]?.takeIf { it in RAVILO_TABS } ?: "layout"
+
+private fun ravSectionDivHtml(id: String, ownerTab: String, activeTab: String): String {
+    val cls = if (ownerTab == activeTab) "rav-tab-section tab-show" else "rav-tab-section"
+    return """<div id="$id" class="$cls" data-rtab="$ownerTab"></div>"""
+}
+
 private fun buildShell(): String {
+    val tab = currentRavTab()
+    val tabLabel = when (tab) { "requests" -> "Requests"; "preferences" -> "Preferences"; else -> "Layout" }
     return """
     <style>
       /* Sticky section nav (anchored side menu) — mirrors wf.css .navitem, with button-chrome reset. */
@@ -235,13 +266,16 @@ private fun buildShell(): String {
       }
       .rav-nav-item:hover { background:var(--fill-3); color:var(--ink); }
       .rav-nav-item.active { background:var(--hi-soft); color:var(--acc-ink); font-weight:600; }
+      /* Phase 148 — tab-gated sections: only the active `?tab`'s sections render. */
+      .rav-tab-section[data-rtab] { display:none; }
+      .rav-tab-section[data-rtab].tab-show { display:block; }
     </style>
     ${datalistsHtml()}
     <div class="pagebar" style="position:sticky;top:0;z-index:50;background:var(--bg);border-bottom:1px solid var(--line);margin-bottom:18px">
-      <h1 style="display:flex;align-items:center;gap:.4em">$RAVILO_MARK Ravilo TV</h1>
+      <h1 style="display:flex;align-items:center;gap:.4em">$RAVILO_MARK Ravilo · $tabLabel</h1>
       <span class="badge info">app config</span>
       <span class="spacer"></span>
-      <a href="#/settings?tab=users" class="btn sm ghost" style="margin-right:8px">Users &amp; devices</a>
+      <a href="#/ravilo-users" class="btn sm ghost" style="margin-right:8px">Users &amp; devices</a>
       <span class="badge ok" id="rav-synced">saved · synced</span>
       <button id="rav-save" class="btn primary">Save</button>
     </div>
@@ -264,17 +298,17 @@ private fun buildShell(): String {
       } else ""}
       <div class="tiny" id="rav-scope-hint" style="flex:1;color:var(--ink-soft)">
         ${if (currentScopeIsGlobal) "Default layout for all users. Any user without a custom layout sees this."
-          else if (currentHasOverride) "Custom <b>layout</b> — overrides the global hero/channels/rows/Top 10 for this user only. <b>Global layout changes won't reach them</b> (their Behaviour &amp; preferences below are unaffected either way)."
+          else if (currentHasOverride) "Custom <b>layout</b> — overrides the global hero/collections/rows/Top 10 for this user only. <b>Global layout changes won't reach them</b> (their Behaviour &amp; preferences below are unaffected either way)."
           else "This user follows the global layout. Behaviour &amp; preferences below are independent and always editable."}
       </div>
       ${if (!currentScopeIsGlobal && currentHasOverride) """<button id="rav-remove-override" class="btn sm ghost" style="color:var(--bad)">Remove custom layout</button>""" else ""}
     </div>
-    ${if (!currentScopeIsGlobal && !currentHasOverride) """
+    ${if (tab != "preferences" && !currentScopeIsGlobal && !currentHasOverride) """
     <div class="card" id="rav-lock-card" style="margin-bottom:18px;padding:18px 20px;display:flex;align-items:center;gap:14px;">
       <span style="font-size:1.4rem">🔒</span>
       <div class="col" style="flex:1">
         <b>${users.find { it.id == currentUserId }?.displayName?.htmlEsc() ?: currentUserId} uses the global layout</b>
-        <div class="tiny muted">Create a custom layout to give them their own personalised hero, channels, rows &amp; Top 10 — a
+        <div class="tiny muted">Create a custom layout to give them their own personalised hero, collections, rows &amp; Top 10 — a
           <b>Behaviour &amp; preferences</b> override doesn't need one, see below.</div>
       </div>
       <button id="rav-create-override" class="btn">Create custom layout</button>
@@ -283,23 +317,23 @@ private fun buildShell(): String {
     <div id="rav-msg" style="display:none;margin-bottom:12px"></div>
 
     <div class="row" style="align-items:flex-start;gap:22px;flex-wrap:wrap">
+      ${if (tab == "layout") """
       <nav style="width:150px;flex-shrink:0;position:sticky;top:88px">
         <div style="display:flex;flex-direction:column;gap:2px">
           <button data-rav-sect="sect-heroes"   class="rav-nav-item">Hero carousel</button>
-          <button data-rav-sect="sect-channels" class="rav-nav-item">Channels</button>
+          <button data-rav-sect="sect-channels" class="rav-nav-item">Collections</button>
           <button data-rav-sect="sect-rows"     class="rav-nav-item">Content rows</button>
-          <button data-rav-sect="sect-discover" class="rav-nav-item">Request</button>
-          <button data-rav-sect="sect-behaviour"class="rav-nav-item">Behaviour</button>
           <button data-rav-sect="sect-portrait" class="rav-nav-item">Portrait screen</button>
         </div>
       </nav>
+      """ else ""}
       <div class="col fill" style="min-width:280px" id="rav-sections">
-        <div id="sect-heroes"></div>
-        <div id="sect-channels"></div>
-        <div id="sect-rows"></div>
-        <div id="sect-discover"></div>
-        <div id="sect-behaviour"></div>
-        <div id="sect-portrait"></div>
+        ${ravSectionDivHtml("sect-heroes", "layout", tab)}
+        ${ravSectionDivHtml("sect-channels", "layout", tab)}
+        ${ravSectionDivHtml("sect-rows", "layout", tab)}
+        ${ravSectionDivHtml("sect-portrait", "layout", tab)}
+        ${ravSectionDivHtml("sect-discover", "requests", tab)}
+        ${ravSectionDivHtml("sect-behaviour", "preferences", tab)}
       </div>
       <div class="card" style="width:280px;flex:none;position:sticky;top:88px;padding:12px">
         <div class="row center" style="margin:2px 4px 10px"><h4 style="margin:0">Live preview</h4><span class="spacer"></span><span class="badge ok" style="font-size:.6rem">this user</span></div>
@@ -636,7 +670,7 @@ private fun renderHeroes(container: Element) {
           </div>
           <p style="font-size:.82rem;color:var(--ink-soft);margin:0 0 14px">
             The top banner on the Home page. Drag to reorder; the carousel auto-advances on the TV.
-            Each channel can have its own hero too — set it in the channel's editor.
+            Each collection can have its own hero too — set it in the collection's editor.
           </p>
           <div id="herolist" style="display:flex;flex-direction:column;gap:9px">
             $rows
@@ -948,7 +982,7 @@ private fun renderChannels(container: Element) {
           <span id="ch-count-$i" class="badge" style="white-space:nowrap;font-size:.75rem;color:var(--ink-soft)">…</span>
           ${if (c.rows?.mode == "custom") """<span class="badge" style="white-space:nowrap;background:var(--fill-2);font-size:.7rem">▤ custom rows</span>""" else ""}
           <span class="spacer" style="flex:1"></span>
-          <button class="btn sm ghost" data-ch-edit="$i" title="Edit channel button + filter">✎ Edit</button>
+          <button class="btn sm ghost" data-ch-edit="$i" title="Edit collection button + filter">✎ Edit</button>
           <label style="display:flex;align-items:center;gap:5px;font-size:.8rem;white-space:nowrap"><input type="checkbox" data-ch-enabled="$i"$showChecked> Show</label>
           <button class="btn sm ghost" data-ch-del="$i">✕</button>
         </div>
@@ -956,12 +990,12 @@ private fun renderChannels(container: Element) {
     }.joinToString("")
     sect.innerHTML = """
         <div class="card" style="padding:18px 20px;margin-bottom:18px">
-          <div style="font-weight:600;margin-bottom:10px">Channels</div>
+          <div style="font-weight:600;margin-bottom:10px">Collections</div>
           <p style="font-size:.82rem;color:var(--ink-soft);margin-bottom:14px">
-            The logo row under the hero. <b>Click ✎ Edit on a channel</b> to set its filter, choose Logo or Text, pick or upload a brand logo, and set the brand fill (solid or gradient).
+            The logo row under the hero. <b>Click ✎ Edit on a collection</b> to set its filter, choose Logo or Text, pick or upload a brand logo, and set the brand fill (solid or gradient).
           </p>
           <div id="ch-list">$rows</div>
-          <button id="ch-add" class="btn sm ghost" style="margin-top:6px">+ Add channel</button>
+          <button id="ch-add" class="btn sm ghost" style="margin-top:6px">+ Add collection</button>
           <button id="ch-workbench" class="btn sm ghost" style="margin-top:6px">⚙ Build with workbench</button>
         </div>
     """.trimIndent()
@@ -982,9 +1016,9 @@ private fun renderChannels(container: Element) {
     }
     sect.querySelector("#ch-workbench")?.addEventListener("click") { _ ->
         val scope = rcScope ?: return@addEventListener
-        openWorkbench(scope, "New channel — condition workbench", viewer = currentUserId, applyLabel = "Create channel",
+        openWorkbench(scope, "New collection — condition workbench", viewer = currentUserId, applyLabel = "Create collection",
             onApply = { query, _ ->
-                val label = query.firstValueOrNull() ?: "Channel"
+                val label = query.firstValueOrNull() ?: "Collection"
                 structural(container, {
                     currentConfig = currentConfig.copy(channels = currentConfig.channels +
                         ChannelConfig(id = genId("ch"), name = label, query = query))
@@ -1024,7 +1058,7 @@ private fun openChannelEditorPage(container: Element, scope: CoroutineScope, idx
     fun scopeSeg(group: String, current: String): String {
         val allOn = if (current == "all") " class=\"on\"" else ""
         val chOn = if (current == "channel") " class=\"on\"" else ""
-        return "<span class=\"seg cf-sysscope\" data-sys=\"$group\" style=\"flex:none;font-size:.78rem\"><span data-scope=\"all\"$allOn>All titles</span><span data-scope=\"channel\"$chOn>This channel</span></span>"
+        return "<span class=\"seg cf-sysscope\" data-sys=\"$group\" style=\"flex:none;font-size:.78rem\"><span data-scope=\"all\"$allOn>All titles</span><span data-scope=\"channel\"$chOn>This collection</span></span>"
     }
     val rowsCustomItems = c.rows?.items ?: emptyList()
     val chRowsListHtml = rowsCustomItems.mapIndexed { i, r ->
@@ -1045,7 +1079,7 @@ private fun openChannelEditorPage(container: Element, scope: CoroutineScope, idx
     container.innerHTML = """
         <div class="pagebar" style="margin-bottom:18px">
           <button id="ch-ed-back" class="btn sm ghost">‹ Back to layout</button>
-          <h2 style="margin:0;flex:1;text-align:center">${c.name.ifBlank { "Channel" }.htmlEsc()}</h2>
+          <h2 style="margin:0;flex:1;text-align:center">${c.name.ifBlank { "Collection" }.htmlEsc()}</h2>
           <button id="ch-ed-cancel" class="btn sm ghost">Cancel</button>
           <button id="ch-ed-save" class="btn primary">Save changes</button>
         </div>
@@ -1055,14 +1089,14 @@ private fun openChannelEditorPage(container: Element, scope: CoroutineScope, idx
           <!-- Left: Button + Filter -->
           <div>
             <div class="card" style="padding:18px 20px;margin-bottom:14px">
-              <b>Channel button</b>
+              <b>Collection button</b>
               <div style="margin-top:12px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
                 <label><input type="radio" name="ch-ed-style" value="logo"${styleChecked("logo")}> Logo</label>
                 <label><input type="radio" name="ch-ed-style" value="text"${styleChecked("text")}> Text</label>
               </div>
               <div style="margin-top:10px">
                 <label class="tiny muted">Name</label>
-                <input id="ch-ed-name" class="input" value="${c.name.htmlEsc()}" placeholder="Channel name" style="width:100%;margin-top:4px">
+                <input id="ch-ed-name" class="input" value="${c.name.htmlEsc()}" placeholder="Collection name" style="width:100%;margin-top:4px">
               </div>
               <div style="margin-top:10px" id="ch-logo-section">
                 <label class="tiny muted">Logo (for Logo style)</label>
@@ -1076,7 +1110,7 @@ private fun openChannelEditorPage(container: Element, scope: CoroutineScope, idx
               </div>
               <div style="margin-top:14px">
                 <label class="tiny muted">Brand fill</label>
-                <div id="ch-color-preview" style="background:$previewBg;width:100%;aspect-ratio:${ChannelButtonSpec.ASPECT_RATIO};border-radius:${(ChannelButtonSpec.CORNER_RATIO * 100).toInt()}%;margin:6px 0 10px;display:flex;align-items:center;justify-content:center;color:#fff;font-family:var(--font-display,'Space Grotesk',sans-serif);font-weight:700;font-size:.82rem;overflow:hidden;max-height:80px">${c.name.take(12).ifEmpty { "Channel" }.htmlEsc()}</div>
+                <div id="ch-color-preview" style="background:$previewBg;width:100%;aspect-ratio:${ChannelButtonSpec.ASPECT_RATIO};border-radius:${(ChannelButtonSpec.CORNER_RATIO * 100).toInt()}%;margin:6px 0 10px;display:flex;align-items:center;justify-content:center;color:#fff;font-family:var(--font-display,'Space Grotesk',sans-serif);font-weight:700;font-size:.82rem;overflow:hidden;max-height:80px">${c.name.take(12).ifEmpty { "Collection" }.htmlEsc()}</div>
                 <div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:10px">$swatchHtml</div>
                 <div style="display:flex;gap:8px;align-items:center">
                   <input type="color" id="ch-color-native" value="$solidHex" title="Custom colour" style="width:36px;height:36px;padding:2px;border:1px solid var(--line);border-radius:8px;cursor:pointer;background:transparent;flex:none">
@@ -1157,19 +1191,19 @@ private fun openChannelEditorPage(container: Element, scope: CoroutineScope, idx
             </label>
           </div>
           <div id="ch-rows-custom-body" style="${if (!rowsCustom) "display:none;" else ""}">
-            <p class="tiny muted" style="margin:0 0 10px">Custom rows for this channel. <b>System rows</b> (Continue Watching, Newly Added) sit on top; your filter rows follow below.</p>
+            <p class="tiny muted" style="margin:0 0 10px">Custom rows for this collection. <b>System rows</b> (Continue Watching, Newly Added) sit on top; your filter rows follow below.</p>
             <!-- R143: per-channel system rows -->
             <div class="cf-sysrows" style="border:1px solid var(--line);border-radius:8px;padding:12px 14px;margin-bottom:14px">
               <div style="font-size:.7rem;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-soft);margin-bottom:8px">System rows</div>
               <div class="cf-sysrow ${if (!contShow) "off" else ""}" style="display:flex;align-items:center;gap:10px;margin-bottom:8px;${if (!contShow) "opacity:.5" else ""}">
                 <span class="badge ok" style="flex:none;font-size:.62rem">system</span>
-                <div style="flex:1;min-width:0"><div style="font-size:.88rem;font-weight:500">Continue Watching</div><div class="tiny muted">${if (contScope == "channel") "In-progress titles from this channel" else "Your whole Continue + Next Up row"}</div></div>
+                <div style="flex:1;min-width:0"><div style="font-size:.88rem;font-weight:500">Continue Watching</div><div class="tiny muted">${if (contScope == "channel") "In-progress titles from this collection" else "Your whole Continue + Next Up row"}</div></div>
                 ${scopeSeg("continue", contScope)}
                 <span class="toggle${if (contShow) " on" else ""}" data-systog="continue" style="cursor:pointer;flex:none"></span>
               </div>
               <div class="cf-sysrow ${if (!newlyShow) "off" else ""}" style="display:flex;align-items:center;gap:10px;${if (!newlyShow) "opacity:.5" else ""}">
                 <span class="badge ok" style="flex:none;font-size:.62rem">system</span>
-                <div style="flex:1;min-width:0"><div style="font-size:.88rem;font-weight:500">Newly Added</div><div class="tiny muted">${if (newlyScope == "channel") "Newest titles in this channel" else "Newest titles library-wide"}${if (newlyMerge) " · combined" else " · Movies + Series"}</div></div>
+                <div style="flex:1;min-width:0"><div style="font-size:.88rem;font-weight:500">Newly Added</div><div class="tiny muted">${if (newlyScope == "channel") "Newest titles in this collection" else "Newest titles library-wide"}${if (newlyMerge) " · combined" else " · Movies + Series"}</div></div>
                 ${scopeSeg("newly", newlyScope)}
                 <span class="toggle${if (newlyShow) " on" else ""}" data-systog="newly" style="cursor:pointer;flex:none"></span>
               </div>
@@ -1184,7 +1218,7 @@ private fun openChannelEditorPage(container: Element, scope: CoroutineScope, idx
             <!-- R87: row-coverage gap panel (filled async by renderCoverage) -->
             <div id="ch-rows-coverage" style="margin-top:14px"></div>
           </div>
-          <p id="ch-rows-inherit-note" class="tiny muted" style="margin:0;${if (rowsCustom) "display:none;" else ""}">Shows the global Home rows scoped to this channel — the default behaviour.</p>
+          <p id="ch-rows-inherit-note" class="tiny muted" style="margin:0;${if (rowsCustom) "display:none;" else ""}">Shows the global Home rows scoped to this collection — the default behaviour.</p>
         </div>
     """.trimIndent()
 
@@ -1264,14 +1298,14 @@ private fun openChannelEditorPage(container: Element, scope: CoroutineScope, idx
             val page = MediaApi.list(viewer = currentUserId, query = gapQuery, pageSize = 24)
             val n = page?.total ?: 0
             if (n == 0) {
-                host.innerHTML = """<div class="card" style="padding:12px 14px;background:rgba(56,161,105,.10);border:1px solid rgba(56,161,105,.30)"><div style="display:flex;align-items:center;gap:8px"><b style="flex:1">Not shown by any row</b><span class="badge" style="background:rgba(56,161,105,.22);color:#38a169">0 of $pool</span></div><div class="tiny" style="margin-top:6px;color:var(--ink-soft)">✓ Every title in this channel appears in at least one row — nothing falls through the gaps.</div></div>""".trimIndent()
+                host.innerHTML = """<div class="card" style="padding:12px 14px;background:rgba(56,161,105,.10);border:1px solid rgba(56,161,105,.30)"><div style="display:flex;align-items:center;gap:8px"><b style="flex:1">Not shown by any row</b><span class="badge" style="background:rgba(56,161,105,.22);color:#38a169">0 of $pool</span></div><div class="tiny" style="margin-top:6px;color:var(--ink-soft)">✓ Every title in this collection appears in at least one row — nothing falls through the gaps.</div></div>""".trimIndent()
                 return@launch
             }
             val tiles = (page?.items ?: emptyList()).joinToString("") { m ->
                 val img = if (!m.posterPath.isNullOrBlank()) """<img src="${posterSrc(m.posterPath, "https://image.tmdb.org/t/p/w185")}" alt="" style="width:100%;height:100%;object-fit:cover">""" else """<div style="display:flex;align-items:center;justify-content:center;width:100%;height:100%;font-size:.7rem;color:var(--ink-soft)">${m.title.take(2).htmlEsc()}</div>"""
                 """<div title="${m.title.htmlEsc()}" style="aspect-ratio:2/3;border-radius:6px;overflow:hidden;background:var(--fill-2)">$img</div>"""
             }
-            val lead = if (rows.isEmpty()) "No rows yet — all <b>$n</b> titles that match this channel would be unreachable." else "These <b>$n</b> titles match the channel filter but <b>aren’t shown by any content row</b>, so viewers browsing this channel won’t find them."
+            val lead = if (rows.isEmpty()) "No rows yet — all <b>$n</b> titles that match this collection would be unreachable." else "These <b>$n</b> titles match the collection filter but <b>aren’t shown by any content row</b>, so viewers browsing this collection won’t find them."
             host.innerHTML = """<div class="card" style="padding:12px 14px;background:rgba(214,158,46,.10);border:1px solid rgba(214,158,46,.30)"><div style="display:flex;align-items:center;gap:8px"><b style="flex:1">Not shown by any row</b><span class="badge" style="background:rgba(214,158,46,.22);color:#d69e2e">$n of $pool</span></div><div class="tiny" style="margin:6px 0 10px;line-height:1.5;color:var(--ink-soft)">$lead <span class="muted">System rows (Continue, Newly Added) aren’t counted.</span></div><div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(56px,1fr));gap:7px;max-height:200px;overflow:auto;margin-bottom:11px">$tiles</div><div style="display:flex;gap:8px;flex-wrap:wrap"><button type="button" id="cov-addcatchall" class="btn sm ghost">＋ Add a catch-all row for these</button><button type="button" id="cov-openlib" class="btn sm ghost">Open these $n in Library ↗</button></div></div>""".trimIndent()
             host.querySelector("#cov-addcatchall")?.addEventListener("click") { _ -> addCatchAllRow() }
             // Phase 140 — hand the whole gap query (channel blocks AND content_row is_none_of) to the
@@ -1294,7 +1328,7 @@ private fun openChannelEditorPage(container: Element, scope: CoroutineScope, idx
         val preview = container.querySelector("#ch-color-preview") as? HTMLElement ?: return
         val bg = channelFillCss(color.ifBlank { null })
         preview.setAttribute("style", "background:$bg;width:100%;aspect-ratio:${ChannelButtonSpec.ASPECT_RATIO};border-radius:${(ChannelButtonSpec.CORNER_RATIO * 100).toInt()}%;margin:6px 0 10px;display:flex;align-items:center;justify-content:center;color:#fff;font-family:var(--font-display,'Space Grotesk',sans-serif);font-weight:700;font-size:.82rem;overflow:hidden;max-height:80px")
-        preview.textContent = ((container.querySelector("#ch-ed-name") as? HTMLInputElement)?.value?.take(12) ?: c.name.take(12)).ifEmpty { "Channel" }
+        preview.textContent = ((container.querySelector("#ch-ed-name") as? HTMLInputElement)?.value?.take(12) ?: c.name.take(12)).ifEmpty { "Collection" }
     }
     nativeInput?.addEventListener("input") { _ ->
         val hex = nativeInput.value
@@ -1398,7 +1432,7 @@ private fun openChannelEditorPage(container: Element, scope: CoroutineScope, idx
     container.querySelector("#ch-hero-edit")?.addEventListener("click") { _ ->
         val ch = currentConfig.channels.getOrNull(idx) ?: return@addEventListener
         val heroItems = ch.pageHero?.items ?: emptyList()
-        openHeroEditorOverlay(container, scope, heroItems, title = "Page hero — ${ch.name.ifBlank { "channel" }}") { updatedItems ->
+        openHeroEditorOverlay(container, scope, heroItems, title = "Page hero — ${ch.name.ifBlank { "collection" }}") { updatedItems ->
             val list = currentConfig.channels.toMutableList()
             val cur = list[idx]
             list[idx] = cur.copy(pageHero = (cur.pageHero ?: PageHeroConfig()).copy(items = updatedItems))
@@ -1464,7 +1498,7 @@ private fun openChannelEditorPage(container: Element, scope: CoroutineScope, idx
 
     // R59/R60: "Add row" for channel custom rows
     container.querySelector("#ch-rows-add")?.addEventListener("click") { _ ->
-        openWorkbench(scope, "New row — ${c.name.ifBlank { "Channel" }}", viewer = currentUserId,
+        openWorkbench(scope, "New row — ${c.name.ifBlank { "Collection" }}", viewer = currentUserId,
             applyLabel = "Add row",
             baseQuery = chBaseQuery(),
             onApply = { query, include ->
@@ -1525,7 +1559,7 @@ private fun openChannelEditorPage(container: Element, scope: CoroutineScope, idx
     renderFilterSummary(container, idx)
     container.querySelector("#ch-ed-filter-edit")?.addEventListener("click") { _ ->
         val ch = currentConfig.channels.getOrNull(idx) ?: return@addEventListener
-        openWorkbench(scope, "Filter — ${ch.name.ifBlank { "Channel" }}", viewer = currentUserId,
+        openWorkbench(scope, "Filter — ${ch.name.ifBlank { "Collection" }}", viewer = currentUserId,
             initialQuery = ch.editorQuery(),
             applyLabel = "Apply filter",
             onApply = { query, _ ->
@@ -1794,7 +1828,7 @@ private fun renderRows(container: Element) {
             <label style="display:flex;align-items:center;gap:10px;font-size:.9rem;cursor:pointer">
               <input type="checkbox" id="merge-newly-added"$mergeChecked>
               <div><b>Merge newly added</b> <span style="font-size:.8rem;color:var(--ink-soft)">&mdash; ${if (merging) "one combined row (all media)" else "two rows: Movies + Series"}</span>
-                <div class="tiny muted" style="margin-top:3px">ON: one "Newly Added" row for all media. OFF: separate "Movies — Newly Added" and "Series — Newly Added" rows. Applies to Home and to channels set to "Same as Home"; each channel can override this in its own editor.</div></div>
+                <div class="tiny muted" style="margin-top:3px">ON: one "Newly Added" row for all media. OFF: separate "Movies — Newly Added" and "Series — Newly Added" rows. Applies to Home and to collections set to "Same as Home"; each collection can override this in its own editor.</div></div>
             </label>
           </div>
           <div id="row-list">$rows</div>
@@ -2251,7 +2285,7 @@ private fun renderBehaviourGlobal(sect: Element) {
           <div style="font-weight:600;margin-bottom:2px">Behaviour &amp; preferences</div>
           <div class="tiny muted" style="margin-bottom:14px">Defaults for every user. A per-user override (set below when viewing a specific user) or the
             viewer's own on-TV choice (language/skin) takes precedence over these — see R161/R162. This is
-            separate from the <b>layout</b> override above (hero/channels/rows/Top 10).</div>
+            separate from the <b>layout</b> override above (hero/collections/rows/Top 10).</div>
           <div style="display:grid;gap:14px">
             <label style="display:flex;align-items:center;justify-content:space-between;gap:12px">
               <span style="font-size:.9rem">Interface language <span class="tiny muted">· viewer-editable on the TV</span></span>
@@ -2342,7 +2376,7 @@ private fun renderBehaviourUser(sect: Element) {
     sect.innerHTML = """
         <div class="card" style="padding:18px 20px;margin-bottom:18px">
           <div style="font-weight:600;margin-bottom:2px">Behaviour &amp; preferences — ${userName.htmlEsc()}</div>
-          <div class="tiny muted" style="margin-bottom:6px">Field-level — separate from the <b>layout</b> override above (hero/channels/rows/Top 10).
+          <div class="tiny muted" style="margin-bottom:6px">Field-level — separate from the <b>layout</b> override above (hero/collections/rows/Top 10).
             Overriding a preference here never creates a custom layout; ${userName.htmlEsc()} keeps following the global layout
             and its future updates.</div>
           ${behFieldRow(
@@ -2473,7 +2507,7 @@ private fun renderPreview(container: Element) {
             append("""<div style="display:flex;gap:4px;padding:6px 8px;overflow:hidden">""")
             channels.take(5).forEach { c ->
                 val bg = c.brandColor?.takeIf { it.isNotBlank() } ?: "#1b2031"
-                append("""<span style="background:$bg;color:#fff;font-size:.52rem;padding:2px 6px;border-radius:5px;white-space:nowrap">${c.name.ifBlank { "Channel" }.htmlEsc()}</span>""")
+                append("""<span style="background:$bg;color:#fff;font-size:.52rem;padding:2px 6px;border-radius:5px;white-space:nowrap">${c.name.ifBlank { "Collection" }.htmlEsc()}</span>""")
             }
             append("</div>")
         }
