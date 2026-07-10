@@ -238,7 +238,7 @@ data class JellyfinLiveTvProgramsResponse(
     @SerialName("Items") val items: List<JellyfinLiveTvProgram> = emptyList(),
 )
 
-/** `POST /LiveTv/LiveStreams/Open` response — activates the tuner/provider stream; `mediaSource.path`
+/** `POST /LiveStreams/Open` response — activates the tuner/provider stream; `mediaSource.path`
  *  is the definitive playable URL, `mediaSource.liveStreamId` (or top-level [id]) closes it later. */
 @Serializable
 data class JellyfinLiveStreamOpenResponse(
