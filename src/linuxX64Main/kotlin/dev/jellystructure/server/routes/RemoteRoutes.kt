@@ -56,7 +56,8 @@ fun Route.remoteRoutes(deviceService: RaviloDeviceService, tvEventBus: TvEventBu
                     name = d.displayName,
                     connected = tvEventBus.isConnected(d.deviceId),
                     lastSeen = d.lastSeen,
-                    nowPlaying = nowPlayingItem(d.deviceId),
+                    // Bug fix: this used to be the raw Jellyfin item id (a hex UUID) — resolve to a title.
+                    nowPlaying = nowPlayingItem(d.deviceId)?.let { mediaStore.titleForJellyfinId(it) ?: it },
                 )
             }
             call.respond(devices)
