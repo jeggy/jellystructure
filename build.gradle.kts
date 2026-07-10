@@ -378,7 +378,15 @@ afterEvaluate {
 
     // Move generated source directory: commonMain → linuxX64Main
     commonMain.kotlin.setSrcDirs(commonMain.kotlin.srcDirs.filter { it != generatedDir })
-    linuxX64Main.kotlin.srcDir(generatedDir)
+    // Bug fix: a plain `srcDir(File)` here loses the task dependency SQLDelight normally wires onto
+    // commonMain automatically — compileKotlinLinuxX64 (and therefore link*ExecutableLinuxX64) had NO
+    // Gradle dependency on generateCommonMainJellystructureDbInterface, so a build starting from a
+    // clean/missing build/generated/sqldelight dir (fresh checkout, `clean`, cache eviction) failed with
+    // a wall of "Unresolved reference" on *Queries/db columns — confirmed via `compileKotlinLinuxX64
+    // --dry-run`, which showed the generation task absent from the task graph entirely. `files(...)
+    // .builtBy(...)` is the correct Gradle idiom: it makes the directory a first-class task output, so
+    // every consumer (this compile task, its test variant, IDE sync) gets the dependency automatically.
+    linuxX64Main.kotlin.srcDir(files(generatedDir).builtBy(tasks.named("generateCommonMainJellystructureDbInterface")))
 
     // Move the sqldelight:runtime dependency: commonMainApi → linuxX64MainImplementation
     // (SQLDelight adds it to commonMainApi, not commonMainImplementation)
