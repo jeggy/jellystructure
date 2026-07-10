@@ -19,6 +19,8 @@ import dev.jellystructure.server.routes.authRoutes
 import dev.jellystructure.server.routes.configureConfigRoutes
 import dev.jellystructure.server.routes.jellyfinRoutes
 import dev.jellystructure.server.routes.jobsRoutes
+import dev.jellystructure.server.routes.liveTvRoutes
+import dev.jellystructure.tv.LiveTvService
 import dev.jellystructure.server.routes.mediaRoutes
 import dev.jellystructure.server.routes.setupRoutes
 import dev.jellystructure.server.routes.trackRoutes
@@ -140,6 +142,7 @@ fun startServer(
     upcomingService: dev.jellystructure.tv.UpcomingService? = null,
     requestLanguageService: dev.jellystructure.arr.RequestLanguageService? = null,
     requestIntentStore: dev.jellystructure.seerr.RequestIntentStore? = null,
+    liveTvService: LiveTvService,
 ): suspend () -> Unit {
     // Fire-and-forget work (scans, NFO/artwork pushes, image fetches) runs as appScope.launch{}.
     // On Kotlin/Native an exception escaping a launched coroutine reaches the global handler and
@@ -320,6 +323,7 @@ fun startServer(
                 // reports unavailable) until a SeerrClient is wired, exactly like the other optional *arr services above.
                 val seerrDiscoverService = seerrClient?.let { dev.jellystructure.seerr.SeerrDiscoverService(configStore, it, raviloConfigService, mediaStore, requestLanguageService, requestIntentStore, acquisitionService) }
                 tvRoutes(deviceService, raviloConfigService, homeFeedService, browseService, detailService, playbackService, sessionService, jellyfinClient, configStore, channelLogoStore, imageProxyService, tvEventBus, upcomingService, seerrDiscoverService)
+                liveTvRoutes(liveTvService)
             }
 
             webSocket("/ws") {
@@ -379,6 +383,8 @@ fun startServer(
                     // Phase 110 (FR B.2) — a TV disconnecting clears its Now Playing immediately rather
                     // than waiting out the 90s heartbeat timeout.
                     runCatching { playbackService.stopWatchdogTick { deviceId -> tvEventBus.isConnected(deviceId) } }
+                    // Phase 147 — same immediate-close behavior for an open live-TV stream.
+                    runCatching { liveTvService.stopWatchdogTick { deviceId -> tvEventBus.isConnected(deviceId) } }
                 }
             }
 
