@@ -228,6 +228,11 @@ fun PlayerScreen(
 
     fun wake() { chromeVisible = true; chromeRevision++ }
     fun scheduleHide() { chromeRevision++ }
+    // R178 (FR-RV-SEL1-1): every site that hides the chrome must also drop the hand-rolled `focus`
+    // back to PLAY — otherwise a later Select re-dispatches on whatever control was focused when
+    // chrome hid (e.g. reopening Audio & Subs) instead of the expected play/pause. Route every
+    // chrome-hide through this single choke point rather than a bare `chromeVisible = false`.
+    fun hideChrome() { chromeVisible = false; focus = PlFocus.PLAY }
 
     fun skip(ms: Long) {
         val newPos = (positionMs + ms).coerceIn(0L, durationMs.coerceAtLeast(0L))
@@ -368,7 +373,7 @@ fun PlayerScreen(
     LaunchedEffect(chromeRevision) {
         if (chromeRevision == 0L) return@LaunchedEffect
         delay(CHROME_HIDE_MS)
-        if (!pickerOpen && !nextUpVisible && !epRailOpen) chromeVisible = false
+        if (!pickerOpen && !nextUpVisible && !epRailOpen) hideChrome()
     }
 
     // R157/R169 (FR-R157-1.3 fallback) — web only, no-op elsewhere: keep the <video> element's z-order
@@ -521,8 +526,17 @@ fun PlayerScreen(
                     }
                 },
                 onSelect = {
+                    // R178 (FR-RV-SEL1-2): captured *before* wake() (which flips chromeVisible to true
+                    // unconditionally) — this is the only way to know whether chrome was actually hidden
+                    // when Select was pressed. Defense in depth alongside hideChrome() (FR-RV-SEL1-1):
+                    // even if some future path hides chrome without resetting `focus`, Select still can't
+                    // re-trigger a hidden control's action while nothing is visibly focused.
+                    val wasHidden = !chromeVisible
                     wake()
-                    when {
+                    if (wasHidden) {
+                        // FR-RV-SEL1-3: togglePlay() already calls wake(), so chrome is revealed too.
+                        togglePlay()
+                    } else when {
                         nextUpVisible -> { if (nuFocus == NuFocus.PLAY) advanceNext() else stayThrough() }
                         epRailOpen -> chooseEpisode()
                         pickerOpen -> choosePick()
@@ -550,7 +564,7 @@ fun PlayerScreen(
                         scrubbing     -> { scrubbing = false; wake() }
                         // R112: if the controls are showing, Back just hides them → fullscreen video.
                         // Only Back with nothing on screen leaves the player (so it takes two presses).
-                        chromeVisible -> chromeVisible = false
+                        chromeVisible -> hideChrome()
                         else          -> onBack()
                     }
                 },
@@ -585,7 +599,7 @@ fun PlayerScreen(
                 // there was no way to reveal it again after it hid). LocalHandset uses the SMALLEST side
                 // (Android's own "smallest width" convention), so it stays true across rotation.
                 onTap = if (playerTapTogglesChrome || LocalHandset.current) {
-                    { if (chromeVisible) chromeVisible = false else wake() }
+                    { if (chromeVisible) hideChrome() else wake() }
                 } else null,
             )
     ) {
