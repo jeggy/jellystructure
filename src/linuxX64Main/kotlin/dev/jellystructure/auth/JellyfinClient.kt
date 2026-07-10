@@ -485,15 +485,25 @@ class JellyfinClient {
         userToken: String,
         userId: String,
         openToken: String,
+        itemId: String,
+        playSessionId: String? = null,
         capabilities: ClientCapabilities = ClientCapabilities(),
         identity: JellyfinDeviceIdentity? = null,
     ): JellyfinLiveStreamOpenResponse? = runCatching {
         // Bug fix: this is a MediaInfoController route, NOT under /LiveTv/ — Jellyfin 404s
         // "/LiveTv/LiveStreams/Open" (verified against server source). Real path is "/LiveStreams/Open".
+        //
+        // Bug fix: the server's OpenLiveStream action defaults ItemId to Guid.Empty when it's absent
+        // from both the query string and this body — without a real channel id it can't resolve the
+        // tuner/provider source and throws server-side, surfacing here as a generic
+        // "400 Error processing request." (verified against server source: `ItemId = itemId ??
+        // openLiveStreamDto?.ItemId ?? Guid.Empty`). PlaySessionId is carried over from the PlaybackInfo
+        // call it followed, matching official clients' behavior.
+        val psidBody = playSessionId?.let { ""","PlaySessionId":"$it"""" } ?: ""
         httpPost(baseUrl.trimEnd('/') + "/LiveStreams/Open") {
             jellyfinAuth(userToken, identity)
             contentType(ContentType.Application.Json)
-            setBody("""{"OpenToken":"$openToken","UserId":"$userId","DeviceProfile":${deviceProfile(capabilities)}}""")
+            setBody("""{"OpenToken":"$openToken","UserId":"$userId","ItemId":"$itemId"$psidBody,"DeviceProfile":${deviceProfile(capabilities)}}""")
         }.bodyOrNull<JellyfinLiveStreamOpenResponse>("openLiveStream")
     }.getOrElse { Logger.warn("Jellyfin openLiveStream failed: ${it.message}"); null }
 
