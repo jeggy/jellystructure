@@ -50,11 +50,10 @@ fun renderDashboard(container: Element, scope: CoroutineScope) {
               <button id="reopen-dock" class="btn sm">Show attention dock</button>
               <button id="dash-triage" class="btn sm">Browse all →</button>
             </div>
-            <div class="tiny muted" style="margin:6px 0 0">Step through every flagged item from the floating dock, bottom-right — it opens each one's detail page where you fix it. Closed it? <b>Show attention dock</b> brings it back.</div>
-            <hr class="dash" style="margin:11px 0">
-            <div id="attention-list"><span class="muted tiny">Loading…</span></div>
+            <div class="tiny muted" style="margin:6px 0 0">Every flagged item, grouped by issue type. Click a type to open Library filtered to just those; or step through them one by one from the floating dock, bottom-right. Closed the dock? <b>Show attention dock</b> brings it back.</div>
             <hr class="dash" style="margin:11px 0">
             <div id="attention-breakdown"><span class="muted tiny">Loading…</span></div>
+            <div class="tiny muted" style="margin-top:10px"><a id="dash-browse-all-footer" style="cursor:pointer;text-decoration:underline">Browse all flagged items in Library →</a></div>
           </div>
           <div class="col dash-sidecol" style="width:320px;flex:none;gap:14px">
             <div class="card">
@@ -83,7 +82,8 @@ fun renderDashboard(container: Element, scope: CoroutineScope) {
     document.getElementById("dash-scan")?.addEventListener("click") {
         scope.launch { triggerDashboardScan(scope, resume = false) }
     }
-    document.getElementById("dash-triage")?.addEventListener("click") { App.navigate("/library") }
+    document.getElementById("dash-triage")?.addEventListener("click") { App.navigate("/library?filter=attention") }
+    document.getElementById("dash-browse-all-footer")?.addEventListener("click") { App.navigate("/library?filter=attention") }
     document.getElementById("stat-issues-cell")?.addEventListener("click") { App.navigate("/library") }
     document.getElementById("reopen-dock")?.addEventListener("click") { callOpenAttentionDock() }
     document.getElementById("qa-triage")?.addEventListener("click") { App.navigate("/library") }
@@ -125,7 +125,6 @@ fun renderDashboard(container: Element, scope: CoroutineScope) {
 
     scope.launch {
         loadDashboardStats()
-        loadAttentionQueue()
         loadAttentionBreakdown()
         loadRecentActivity()
         val status = MediaApi.scanStatus()
@@ -146,49 +145,6 @@ fun renderDashboard(container: Element, scope: CoroutineScope) {
     }
 }
 
-private suspend fun loadAttentionQueue() {
-    val page = MediaApi.list(filter = "attention", pageSize = 8) ?: return
-    val listEl = document.getElementById("attention-list") as? HTMLElement ?: return
-    if (page.total == 0) {
-        listEl.innerHTML = """<div class="muted tiny">No items need attention — everything looks good.</div>"""
-        return
-    }
-    (document.getElementById("attention-count") as? HTMLElement)?.let {
-        it.textContent = "${page.total} items"
-        it.style.display = ""
-    }
-    val rows = page.items.joinToString("") { item ->
-        val badge = when {
-            item.languageMix ->
-                """<span class="badge warn" style="font-size:.7rem">language mix</span>"""
-            item.issueCount > 0 ->
-                """<span class="badge bad" style="font-size:.7rem">${item.issueCount} untagged</span>"""
-            else -> ""
-        }
-        val year = item.year?.let { " ($it)" } ?: ""
-        val kind = item.kind.name.lowercase().replace('_', ' ')
-        val nav = "/media/${item.jellyfinId ?: item.id}"
-        """<tr data-nav="$nav" style="cursor:pointer">
-             <td style="font-weight:700">${item.title.esc()}$year</td>
-             <td>$badge</td>
-             <td class="muted tiny">$kind</td>
-             <td><button class="btn sm" data-nav="$nav">Open</button></td>
-           </tr>"""
-    }
-    listEl.innerHTML = """<table class="wf-table"><tbody>$rows</tbody></table>"""
-    if (page.total > 8) {
-        listEl.innerHTML += """<div class="tiny muted" style="margin-top:8px"><a id="dash-see-all" style="cursor:pointer;text-decoration:underline">…${page.total - 8} more — filter Library by "Needs attention" →</a></div>"""
-        document.getElementById("dash-see-all")?.addEventListener("click") { App.navigate("/library") }
-    }
-    listEl.querySelectorAll("[data-nav]").let { nodes ->
-        for (i in 0 until nodes.length) {
-            val el = nodes.item(i) as? HTMLElement ?: continue
-            val nav = el.getAttribute("data-nav") ?: continue
-            el.addEventListener("click") { App.navigate(nav) }
-        }
-    }
-}
-
 private suspend fun loadDashboardStats() {
     val stats = MediaApi.stats() ?: return
     (document.getElementById("stat-movies") as? HTMLElement)?.textContent = stats.movies.toString()
@@ -198,8 +154,10 @@ private suspend fun loadDashboardStats() {
     // it used to be store.totalIssueCount() (an untagged-only SQL sum), a different, smaller number.
 }
 
-/** Phase 117: one row per triage issue type — every type, always, including zeros — each linking to
- *  the Library pre-filtered to that issue. Mirrors the Triage dock's phrasing (Shell.kt triageSubline). */
+/** Phase 117, redesigned Phase 146: a two-column grid, one cell per triage issue type — every type,
+ *  always, including zeros — each cell fully clickable through to the Library pre-filtered to that
+ *  issue. Zero-count cells are dimmed but stay clickable (an empty filtered Library is still a valid,
+ *  honest result). Mirrors the Triage dock's phrasing (Shell.kt triageSubline). */
 private suspend fun loadAttentionBreakdown() {
     val count = MediaApi.getTriageCount()
     val el = document.getElementById("attention-breakdown") as? HTMLElement ?: return
@@ -208,19 +166,28 @@ private suspend fun loadAttentionBreakdown() {
         return
     }
     (document.getElementById("stat-issues") as? HTMLElement)?.textContent = count.total.toString()
+    (document.getElementById("attention-count") as? HTMLElement)?.let {
+        it.textContent = "${count.total} items"
+        it.style.display = ""
+    }
+    val byKey = count.types.associateBy { it.key }
+    // Phase 146: fixed, severity-grouped order + a bad/warn severity per type — neither exists on
+    // TriageTypeCount, so both are authored here. Any type not in this list (forward-compat with a
+    // future triage type) renders after these, defaulting to "bad".
+    val ordered = ATTENTION_ROW_ORDER.mapNotNull { (key, sev) -> byKey[key]?.let { it to sev } } +
+        count.types.filter { it.key !in ATTENTION_ROW_ORDER.map { o -> o.first } }.map { it to "bad" }
     el.innerHTML = buildString {
-        append("""<div class="tiny muted" style="margin-bottom:8px;">Every issue type Jellystructure tracks — click one to see the affected titles in the Library.</div>""")
-        for (t in count.types) {
+        append("""<div class="attn-breakdown">""")
+        for ((t, severity) in ordered) {
             val zero = t.instances == 0
             val countLabel = if (t.instances != t.titles) "${t.instances} (${t.titles} title${if (t.titles != 1) "s" else ""})" else "${t.instances}"
-            val badgeCls = if (zero) "badge" else "badge bad"
-            val rowStyle = if (zero) "opacity:.55;" else "cursor:pointer;"
-            append("""<div class="row center" style="padding:6px 0;$rowStyle" ${if (!zero) """data-issue-filter="${t.key}"""" else ""}>""")
-            append("""<div style="flex:1;min-width:0;"><b style="font-size:.86rem;">${t.label.esc()}</b>""")
-            append("""<div class="tiny muted" style="margin-top:1px;">${t.description.esc()}</div></div>""")
-            append("""<span class="$badgeCls" style="flex-shrink:0;margin-left:10px;">${if (zero) "✓ 0" else countLabel}</span>""")
+            val badgeCls = if (zero) "badge" else "badge $severity"
+            append("""<div class="abk${if (zero) " zero" else ""}" data-issue-filter="${t.key}">""")
+            append("""<span class="abk-l"><b>${t.label.esc()}</b><span class="d">${t.description.esc()}</span></span>""")
+            append("""<span class="$badgeCls">${if (zero) "✓ 0" else countLabel}</span>""")
             append("</div>")
         }
+        append("</div>")
     }
     el.querySelectorAll("[data-issue-filter]").let { nodes ->
         for (i in 0 until nodes.length) {
@@ -232,6 +199,23 @@ private suspend fun loadAttentionBreakdown() {
         }
     }
 }
+
+// Phase 146 §A4: fixed, severity-grouped row order for the attention breakdown (not alphabetical, not
+// count-sorted — a stable position lets an operator build muscle memory). `missing_artwork` is the 10th
+// triage type the design mockup omitted; kept as a bad-severity cell next to `missing_still` (same class
+// of "missing visual asset" issue) per the dev-review addendum's recommendation.
+private val ATTENTION_ROW_ORDER = listOf(
+    "untagged" to "bad",
+    "missing_still" to "bad",
+    "missing_artwork" to "bad",
+    "cascade_mismatch" to "warn",
+    "language_mix" to "warn",
+    "multi_default" to "warn",
+    "cover_as_video" to "bad",
+    "zero_audio" to "bad",
+    "duplicate" to "bad",
+    "missing_from_source" to "bad",
+)
 
 private suspend fun loadRecentActivity() {
     val entries = MediaApi.getRecentActivity()
