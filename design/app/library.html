@@ -96,6 +96,7 @@
     <span class="chip fchip on" data-quick="all">All</span>
     <span class="chip fchip" data-quick="attention">Needs attention</span>
     <span class="chip fchip" data-quick="missing_artwork" title="No poster.jpg on disk">Missing artwork</span>
+    <span class="chip fchip" data-quick="cover_as_video" title="Cover art muxed as a selectable video track — playback-hostile, repairable">Cover-as-video</span>
     <span class="seedfilter" id="seedfilter" title="Show only items seeded on a tracker (qBittorrent). Not a workbench facet — a library view.">
       <span class="muted tiny" style="margin-left:4px;">🌱 seeded on:</span>
       <select class="seedsel" id="seed-tracker">
@@ -155,6 +156,8 @@
     'Whispering Pines': { k: 'attention', label: 'language mix', cls: 'warn' },
     'Kids Quest': { k: 'attention', label: 'no match', cls: 'bad' },
     'Nordvest': { k: 'attention', label: '4 eps attention', cls: 'bad' },
+    'Iron Veil': { k: 'cover_as_video', label: 'cover as video', cls: 'bad' },
+    'The Last Fjord': { k: 'cover_as_video', label: 'cover as video', cls: 'bad' },
     'Agent 327': { k: 'missing_artwork', label: 'no poster on disk', cls: 'warn' },
     'Laugh Track': { k: 'missing_artwork', label: 'no poster on disk', cls: 'warn' },
     'Little Robots': { k: 'missing_artwork', label: 'no poster on disk', cls: 'warn' },
@@ -390,6 +393,18 @@
   io.observe(sentinel);
   window.addEventListener('scroll', fill, { passive: true });
   window.addEventListener('resize', fill, { passive: true });
+
+  // Deep-link from the Dashboard triage breakdown: ?filter=<triage-type> activates the closest
+  // quick chip (cover_as_video / missing_artwork have their own; every other type folds into the
+  // umbrella "Needs attention" chip).
+  try {
+    const fp = new URLSearchParams(location.search).get('filter');
+    if (fp) {
+      const chipFor = ['all', 'attention', 'missing_artwork', 'cover_as_video'].includes(fp) ? fp : 'attention';
+      quick = chipFor;
+      document.querySelectorAll('.filterbar .fchip[data-quick]').forEach(x => x.classList.toggle('on', x.dataset.quick === chipFor));
+    }
+  } catch (e) {}
 
   renderAll();
 })();

@@ -265,6 +265,15 @@
   <div class="tabpanel" data-panel="tracks" style="display:none;">
     <div class="row" style="align-items:flex-start;">
       <div class="col fill">
+        <!-- cover-art-muxed-as-video repair (Phase 144) — shown when the scan finds an image-codec video stream beside a real one -->
+        <div class="note red" id="cover-video-alert" style="display:flex;gap:11px;align-items:flex-start;">
+          <span class="badge bad" style="flex:none;">Cover as video</span>
+          <div class="tiny" style="line-height:1.6;flex:1;">A <b>cover image is muxed as a selectable video track</b> (<span class="mono">0:v:1 · png · 857×856</span>), alongside the real video (<span class="mono">0:v:0 · h264 · 1920×1080</span>). This is <b>playback-hostile</b> — some players hand the PNG to the video decoder and show nothing. Repairable with a lossless remux.
+            <div class="mono tiny" style="margin-top:7px;color:var(--ink-soft);background:var(--bg-2);border-radius:6px;padding:6px 9px;">ffmpeg -i input.mkv -map 0 -map -0:v:1 -c copy output.mkv</div>
+          </div>
+          <span class="btn sm bad" id="cover-fix-btn" style="flex:none;align-self:center;" title="Drop the cover PNG video stream via a lossless -c copy remux (queued as a background job on the media worker).">Fix cover track</span>
+        </div>
+
         <!-- cascade-mismatch alert (audio only; shown by the engine when default ≠ resolved) -->
         <div class="note" id="cascade-alert" style="background:var(--warn-soft);border-color:rgba(245,181,66,.4);display:flex;gap:11px;align-items:flex-start;">
           <span class="badge warn" style="flex:none;">Default ≠ resolved</span>
@@ -1201,6 +1210,18 @@
     document.body.appendChild(t); setTimeout(() => t.remove(), 1800);
   }
   window.__toast = toast;
+
+  /* ---- Phase 144: Fix cover track (drop image-codec video stream via -c copy remux) ---- */
+  (function coverFix() {
+    const alert = document.getElementById('cover-video-alert');
+    const btn = document.getElementById('cover-fix-btn');
+    if (!alert || !btn) return;
+    btn.addEventListener('click', () => {
+      alert.innerHTML = '<span class="badge ok" style="flex:none;">Queued</span>'
+        + '<div class="tiny" style="line-height:1.6;flex:1;">Cover-track remux <b>queued</b> on the media worker — <span class="mono">-c copy</span>, no re-encode. When it finishes the PNG video stream is gone and this item leaves the <b>cover-as-video</b> triage bucket. Watch it in <a href="activity.html">Activity ▸ Jobs</a>.</div>';
+      toast('Fix cover track queued · ffmpeg -c copy remux (Activity ▸ Jobs)');
+    });
+  })();
 })();
 </script>
 

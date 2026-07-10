@@ -573,12 +573,13 @@
       let s = t('fetching') + ' · ' + (it.progress || 0) + '%'; if (it.stalled) s += ' · ' + t('stalled'); else if (it.metadata) s += ' · ' + t('starting'); return s;
     }
     function statusMark(it) {
+      const fl = reqFlag(it);
       switch (it.status) {
         case 'available':   return `<span class="rstat avail" title="In Library">✓</span>`;
-        case 'requested':   return `<span class="rstat req"><span class="dot"></span>${t('requested')}</span>`;
-        case 'queued':      return `<span class="rstat queue">${t('in_queue')}${it.queuePos ? ' · #' + it.queuePos : ''}</span>`;
-        case 'downloading': return `<span class="rstat fetch"><span class="spin"></span><span class="pct">${fetchShort(it)}</span></span>`;
-        case 'importing':   return `<span class="rstat importing"><span class="spin"></span>${t('importing')}</span>`;
+        case 'requested':   return `<span class="rstat req"><span class="dot"></span>${t('requested')}${fl}</span>`;
+        case 'queued':      return `<span class="rstat queue">${t('in_queue')}${it.queuePos ? ' · #' + it.queuePos : ''}${fl}</span>`;
+        case 'downloading': return `<span class="rstat fetch"><span class="spin"></span><span class="pct">${fetchShort(it)}</span>${fl}</span>`;
+        case 'importing':   return `<span class="rstat importing"><span class="spin"></span>${t('importing')}${fl}</span>`;
         case 'failed':      return `<span class="rstat failed">${t('failed')}</span>`;
         default: return '';
       }
@@ -625,6 +626,8 @@
       head.appendChild(dctrl);
       wrap.appendChild(head);
       const lists = listsForUser();
+      const rail = inProgressRail();
+      if (rail) wrap.appendChild(rail);
       lists.forEach(l => wrap.appendChild(discoverRow(l)));
       wrap.appendChild(el('div', 'screen-end'));
       scroll.appendChild(wrap);
@@ -689,30 +692,37 @@
       }, 1500);
     }
     function discoverStatusLine(it) {
+      const fl = reqFlag(it);
+      const x = it.reqLang ? reqIntent(it.reqLang) : null;
+      if (x && x.strict && (it.status === 'requested' || it.status === 'queued'))
+        return `<span class="ddt-state fetch"><span class="dot"></span> ${t('req_waiting_for', { lang: x.waitLabel || x.label })} ${fl}</span>`;
       switch (it.status) {
         case 'available':   return `<span class="ddt-state avail">✓ ${t('in_library')}</span>`;
-        case 'downloading': return `<span class="ddt-state fetch"><span class="spin"></span> ${fetchLong(it)}</span>`;
-        case 'queued':      return `<span class="ddt-state fetch">${t('in_queue')}${it.queuePos ? ' · #' + it.queuePos : ''}</span>`;
-        case 'requested':   return `<span class="ddt-state fetch"><span class="dot"></span> ${t('requested')}</span>`;
-        case 'importing':   return `<span class="ddt-state fetch"><span class="spin"></span> ${t('importing')}</span>`;
+        case 'downloading': return `<span class="ddt-state fetch"><span class="spin"></span> ${fetchLong(it)} ${fl}</span>`;
+        case 'queued':      return `<span class="ddt-state fetch">${t('in_queue')}${it.queuePos ? ' · #' + it.queuePos : ''} ${fl}</span>`;
+        case 'requested':   return `<span class="ddt-state fetch"><span class="dot"></span> ${t('requested')} ${fl}</span>`;
+        case 'importing':   return `<span class="ddt-state fetch"><span class="spin"></span> ${t('importing')} ${fl}</span>`;
         case 'failed':      return `<span class="ddt-state failed">${t('failed')}</span>`;
         default: return `<span class="ddt-state none">${t('not_in_library')}</span>`;
       }
     }
     function discoverActions(it) {
+      const fl = reqFlag(it);
       let primary;
       if (it.status === 'available') primary = `<div class="btn primary foc" data-dact="watch"><span class="ic">▶</span> ${t('watch_now')}</div>`;
       else if (it.status === 'downloading' && it.kind === 'series' && it.firstAvailable) primary = `<div class="btn primary foc" data-dact="watch"><span class="ic">▶</span> ${t('watch_e1')}</div>`;
-      else if (it.status === 'downloading') primary = `<div class="btn fetching foc" data-dact="progress"><span class="spin"></span> ${fetchLong(it)}</div>`;
-      else if (it.status === 'queued') primary = `<div class="btn fetching foc" data-dact="progress">${t('in_queue')}${it.queuePos ? ' · #' + it.queuePos : ''}</div>`;
-      else if (it.status === 'requested') primary = `<div class="btn fetching foc" data-dact="progress"><span class="dot"></span> ${t('requested')}</div>`;
-      else if (it.status === 'importing') primary = `<div class="btn fetching foc" data-dact="progress"><span class="spin"></span> ${t('importing')}</div>`;
+      else if (it.status === 'downloading') primary = `<div class="btn fetching foc" data-dact="progress"><span class="spin"></span> ${fetchLong(it)} ${fl}</div>`;
+      else if (it.status === 'queued') primary = `<div class="btn fetching foc" data-dact="progress">${t('in_queue')}${it.queuePos ? ' · #' + it.queuePos : ''} ${fl}</div>`;
+      else if (it.status === 'requested') primary = `<div class="btn fetching foc" data-dact="progress"><span class="dot"></span> ${t('requested')} ${fl}</div>`;
+      else if (it.status === 'importing') primary = `<div class="btn fetching foc" data-dact="progress"><span class="spin"></span> ${t('importing')} ${fl}</div>`;
       else if (it.status === 'failed') primary = `<div class="btn primary foc" data-dact="request"><span class="ic">↻</span> ${t('retry_fetch')}</div>`;
       else primary = `<div class="btn primary foc" data-dact="request"><span class="ic">＋</span> ${t('request_fetch')}</div>`;
       const prog = (it.status === 'downloading' && it.kind === 'series' && it.firstAvailable)
         ? `<div class="btn fetching foc" data-dact="progress"><span class="spin"></span> ${fetchLong(it)}</div>` : '';
+      const pending = ['requested', 'queued', 'downloading', 'importing'].includes(it.status);
+      const change = (pending && it.reqLang) ? `<div class="btn ghost foc" data-dact="reqlang"><span class="ic">⇄</span> ${t('req_change_language')}</div>` : '';
       return `<div class="ddt-actions focus-row">
-        ${primary}${prog}
+        ${primary}${prog}${change}
         ${it.status === 'available' ? `<div class="btn ghost foc" data-dact="list"><span class="ic">＋</span> ${t('add_list')}</div>` : ''}
       </div>`;
     }
@@ -1206,7 +1216,8 @@
       if (f.dataset.dact) {
         const it = view.item;
         if (f.dataset.dact === 'watch') playItem(it);
-        else if (f.dataset.dact === 'request') requestFetch(it);
+        else if (f.dataset.dact === 'request') openLangPicker(it, false);
+        else if (f.dataset.dact === 'reqlang') openLangPicker(it, true);
         else if (f.dataset.dact === 'progress') flash(fetchLong(it));
         else if (f.dataset.dact === 'list') flash('＋ ' + it.title);
         return;
@@ -1282,6 +1293,93 @@
       if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Enter', ' ', 'Backspace', 'Escape'].includes(k)) { e.preventDefault(); e.stopImmediatePropagation(); }
       if (k === 'Backspace' || k === 'Escape' || k === 'Enter' || k === ' ') closeTrailer();
     }, true);
+
+    /* ---- request-language picker (R172) — flags-first Original vs Dansk/Nordic ----
+       The intent catalog is authored in admin Settings (Phase 139); here it's the two
+       live intents. Pressing Request opens this popup with the viewer's resolved default
+       pre-focused, so Select is usually one confirm; a strict (Nordic) request that's still
+       waiting can be switched to another language later. 0–1 intents → no popup. */
+    const REQ_INTENTS = [
+      { id: 'original', label: 'Original', desc: 'Standard release', cc: null },
+      { id: 'nordic',   label: 'Dansk / Nordic', waitLabel: 'Dansk', desc: 'Nordic release · usually incl. English', cc: 'dk', strict: true },
+    ];
+    const REQ_DEFAULT = 'nordic';   // resolved per-viewer default (admin config · kids), pre-selected
+    function reqIntent(id) { return REQ_INTENTS.find(x => x.id === id) || REQ_INTENTS[0]; }
+    function reqFlag(it) {
+      if (!it || !it.reqLang) return '';
+      const x = reqIntent(it.reqLang);
+      return x.cc ? `<span class="fi fi-${x.cc} reqflag" title="${x.label}"></span>`
+                  : `<span class="reqflag globe" title="${x.label}">🌐</span>`;
+    }
+    const langEl = el('div', 'rv-lang'); langEl.style.display = 'none'; stage.appendChild(langEl);
+    let langCtx = null;
+    function langPickerOpen() { return langEl.style.display !== 'none'; }
+    function openLangPicker(it, change) {
+      if (REQ_INTENTS.length < 2) { requestFetch(it); return; }   // no real choice → fire as before
+      langCtx = { it, change };
+      const pre = it.reqLang || REQ_DEFAULT;
+      const rows = REQ_INTENTS.map(x => {
+        const flag = x.cc ? `<span class="fi fi-${x.cc} rv-lang-flag"></span>` : `<span class="rv-lang-flag globe">🌐</span>`;
+        return `<div class="rv-lang-opt foc${x.id === pre ? ' focused' : ''}" data-intent="${x.id}">` +
+          `${flag}<span class="rv-lang-l"><b>${x.label}</b><span class="rv-lang-desc">${x.desc}</span></span>` +
+          `<span class="rv-lang-tick">✓</span></div>`;
+      }).join('');
+      langEl.innerHTML = `<div class="rv-lang-card">` +
+        `<div class="rv-lang-h">${change ? t('req_change_language') : t('req_in_language')}</div>` +
+        `<div class="rv-lang-sub">${esc(it.title)}</div>` +
+        `<div class="rv-lang-rows">${rows}</div>` +
+        `<div class="rv-lang-foot">${t('req_confirm_hint')}</div></div>`;
+      langEl.style.display = 'flex';
+    }
+    function closeLangPicker() { langEl.style.display = 'none'; langCtx = null; }
+    function langMove(dir) {
+      const opts = [...langEl.querySelectorAll('.rv-lang-opt')];
+      let i = opts.findIndex(o => o.classList.contains('focused'));
+      i = (i + dir + opts.length) % opts.length;
+      opts.forEach((o, k) => o.classList.toggle('focused', k === i));
+    }
+    function langChoose() {
+      const cur = langEl.querySelector('.rv-lang-opt.focused'); if (!cur || !langCtx) return;
+      const id = cur.dataset.intent, it = langCtx.it, change = langCtx.change;
+      it.reqLang = id; closeLangPicker();
+      if (change) { patchDiscoverItem(it); flash(reqIntent(id).label + ' · ' + t('requested_via')); }
+      else requestFetch(it);
+    }
+    langEl.addEventListener('click', e => {
+      const opt = e.target.closest('.rv-lang-opt');
+      if (opt) { langEl.querySelectorAll('.rv-lang-opt').forEach(o => o.classList.toggle('focused', o === opt)); langChoose(); return; }
+      if (e.target === langEl) closeLangPicker();
+    });
+    window.addEventListener('keydown', e => {
+      if (!langPickerOpen()) return;
+      const k = e.key;
+      if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Enter',' ','Backspace','Escape'].includes(k)) { e.preventDefault(); e.stopImmediatePropagation(); }
+      if (k === 'ArrowUp' || k === 'ArrowLeft') langMove(-1);
+      else if (k === 'ArrowDown' || k === 'ArrowRight') langMove(1);
+      else if (k === 'Enter' || k === ' ') langChoose();
+      else if (k === 'Backspace' || k === 'Escape') closeLangPicker();
+    }, true);
+
+    /* In-progress rail (R172 §D2): the viewer's own not-yet-available requests, so a strict
+       pick from days ago is easy to re-find and switch. Seeded once as static exemplars. */
+    let myReqSeeded = false; const myRequests = [];
+    function seedMyRequests() {
+      if (myReqSeeded) return; myReqSeeded = true;
+      const cat = seerrCatalog();
+      if (cat[0]) { cat[0].reqLang = 'nordic';   cat[0].status = 'requested';   cat[0].queuePos = 4; myRequests.push(cat[0]); }
+      if (cat[1]) { cat[1].reqLang = 'original'; cat[1].status = 'downloading'; cat[1].progress = 42; cat[1].metadata = false; myRequests.push(cat[1]); }
+    }
+    function inProgressRail() {
+      seedMyRequests();
+      const items = myRequests.filter(it => it.status && it.status !== 'available' && it.status !== 'not_requested');
+      if (!items.length) return null;
+      const r = el('div', 'crow drow inprog');
+      r.innerHTML = `<div class="crow-head"><h2>${t('req_in_progress')}</h2></div>`;
+      const track = el('div', 'track focus-row');
+      items.forEach(it => track.appendChild(rankTile(it, null)));
+      r.appendChild(track);
+      return r;
+    }
 
     /* ---- toast ---- */
     function flash(msg) {
