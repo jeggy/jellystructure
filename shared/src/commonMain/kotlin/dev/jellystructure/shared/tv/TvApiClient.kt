@@ -286,6 +286,45 @@ class TvApiClient(
         return r.status.value in 200..299
     }
 
+    // ─── Live TV (Phase 147/R177) ────────────────────────────────────────────
+
+    /** Shown+available channels for the Home "On now" row / EPG guide's channel list — embedded
+     *  current/next program, no separate guide fetch (jellystructure Phase 147 addendum C). */
+    suspend fun getLiveTvChannels(): List<LiveTvChannel> {
+        val r = client.get("$baseUrl/api/tv/livetv/channels") { auth() }
+        r.assertSuccess()
+        return json.decodeFromString(r.bodyAsText())
+    }
+
+    /** Full-schedule guide grid, cached server-side at the admin-configured cadence. */
+    suspend fun getLiveTvGuide(days: Int = 7): List<LiveTvGuideProgram> {
+        val r = client.get("$baseUrl/api/tv/livetv/guide") { auth(); parameter("days", days) }
+        r.assertSuccess()
+        return json.decodeFromString(r.bodyAsText())
+    }
+
+    /** Tunes a channel — Jellyfin's explicit open handshake (Phase 147 addendum D); the returned
+     *  ticket's [LiveTvStreamTicket.liveStreamId] must be passed to [stopLiveTv] on exit. */
+    suspend fun tuneLiveTv(channelId: String, capabilities: ClientCapabilities): LiveTvStreamTicket {
+        val r = client.post("$baseUrl/api/tv/livetv/channels/$channelId/tune") {
+            auth()
+            jsonBody(json.encodeToString(LiveTvTuneRequest(channelId, capabilities)))
+        }
+        r.assertSuccess()
+        return json.decodeFromString(r.bodyAsText())
+    }
+
+    suspend fun liveTvHeartbeat() {
+        runCatching { client.post("$baseUrl/api/tv/livetv/heartbeat") { auth() } }
+    }
+
+    suspend fun stopLiveTv(liveStreamId: String) {
+        client.post("$baseUrl/api/tv/livetv/stop") {
+            auth()
+            jsonBody(json.encodeToString(LiveTvStopRequest(liveStreamId)))
+        }.assertSuccess()
+    }
+
     // ─── Live events (R33/R141) ──────────────────────────────────────────────
 
     /** R141: degrade-to-poll fallback. Returns the server's monotonic config-change rev so the client

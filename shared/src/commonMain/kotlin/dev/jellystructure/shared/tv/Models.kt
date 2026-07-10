@@ -194,6 +194,9 @@ data class HomeFeed(
     @SerialName("tile_shape") val tileShape: TileShape = TileShape.POSTER,
     // R159 — portrait-only hero height override (20-100); null = no override, portrait uses heroHeightPct.
     @SerialName("portrait_hero_height_pct") val portraitHeroHeightPct: Int? = null,
+    // Phase 147/R177 — placement for the Home "On now" row / Live TV collection; null = not configured
+    // (Live TV disabled or never placed) — the client renders no Live TV surface at all in that case.
+    @SerialName("live_tv_home") val liveTvHome: LiveTvHomePlacement? = null,
 )
 
 // ─── Detail ───────────────────────────────────────────────────────────────────
