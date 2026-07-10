@@ -123,6 +123,27 @@ fun main() = runBlocking {
     val scanTracker = ScanTracker(db)
     scanTracker.load()
 
+    // Bug fix: Episode.hasStill is a persisted snapshot (Phase 121), but several code paths (the scan
+    // gap-fill fetch, the fetch_artwork pipeline step, pushToJellyfin's background fetch, and the manual
+    // fetch/screengrab/save endpoints) fetched or generated a still on disk without ever re-stamping it
+    // afterward — so an episode whose still genuinely exists (TMDB-sourced or a locally-generated
+    // screengrab, both valid; TMDB just wins when both are available) stayed flagged "missing" in
+    // triage/Library/Dashboard forever. Those call sites are now fixed to restamp after every fetch; this
+    // one-time, idempotent pass corrects whatever's already wrong in the current library so the numbers
+    // are right immediately, not just for episodes touched by a future scan.
+    rootScope.launch {
+        var corrected = 0
+        for (item in mediaStore.allItems()) {
+            if (item.kind != dev.jellystructure.model.MediaKind.TV_SHOW) continue
+            val restamped = artworkDownloader.stampHasStill(item)
+            if (restamped.episodes.map { it.hasStill } != item.episodes.map { it.hasStill }) {
+                mediaStore.updateOne(restamped)
+                corrected++
+            }
+        }
+        if (corrected > 0) Logger.info("Startup: corrected stale hasStill flags for $corrected series", "artwork")
+    }
+
     // Phase 134 (FR-OPS2 §F): 32→100 — a worker/thread count doesn't cost FDs by itself (workers queue
     // behind ProcessGate/OutboundHttp, both raised alongside this), so a powerful host can genuinely
     // run 100 concurrent scan workers instead of the extra 68 just queuing uselessly behind a 32-ceiling.

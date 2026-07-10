@@ -25,9 +25,15 @@ object PipelineStepOps {
         scanner.rescanMetadata(item)?.let { store.addOrUpdate(it) }
     }
 
-    /** `fetch_artwork` — download any missing poster/backdrop/logo/stills (reads the freshest copy). */
+    /** `fetch_artwork` — download any missing poster/backdrop/logo/stills (reads the freshest copy).
+     *  Bug fix: `fetch()` may just have created episode stills on disk (TMDB or a screengrab fallback —
+     *  either is a real, valid still); `Episode.hasStill` is a persisted snapshot (Phase 121), so it must
+     *  be re-stamped + saved here, or triage/Library/Dashboard keep reporting these episodes "missing"
+     *  indefinitely (`stampHasStill` no-ops for movies). */
     suspend fun fetchArtwork(item: MediaItem, store: MediaStore, artwork: ArtworkDownloader) {
-        artwork.fetch(store.get(item.id) ?: item)
+        val current = store.get(item.id) ?: item
+        artwork.fetch(current)
+        store.updateOne(artwork.stampHasStill(current))
     }
 
     /** `sync_imdb_ratings` — fetch + store the IMDb rating for an item that has an imdbId. Returns true

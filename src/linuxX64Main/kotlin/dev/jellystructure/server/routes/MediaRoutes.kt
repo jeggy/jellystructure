@@ -487,6 +487,11 @@ fun Route.mediaRoutes(
                     val item = store.resolve(id)
                         ?: return@post call.respond(HttpStatusCode.NotFound)
                     val status = artwork.fetch(item)   // R125: fetch() now also downloads missing episode stills
+                    // Bug fix: fetch() may just have created episode stills (TMDB or a screengrab fallback —
+                    // either is a real, valid still); Episode.hasStill is a persisted snapshot, so it must be
+                    // re-stamped + saved now, or triage/Library/Dashboard keep reporting these episodes
+                    // "missing" indefinitely (stampHasStill no-ops for movies).
+                    store.updateOne(artwork.stampHasStill(item))
                     if (status.posterExists || status.fanartExists) {
                         mediaHistory.record(id, "artwork_fetch", "poster=${status.posterExists} fanart=${status.fanartExists}")
                         val cfg = configStore.current
@@ -710,6 +715,11 @@ fun Route.mediaRoutes(
                         if (result.stillExists) fetched++
                     }
                 }
+                // Bug fix: fetchEpisodeStill() may just have created stills on disk (TMDB or a screengrab
+                // fallback — either is a real, valid still); Episode.hasStill is a persisted snapshot, so
+                // it must be re-stamped + saved now, or triage/Library/Dashboard keep reporting these
+                // episodes "missing" indefinitely.
+                if (fetched > 0) store.updateOne(artwork.stampHasStill(store.get(id) ?: item))
                 mediaHistory.record(id, "episode_stills_fetch", "fetched=$fetched")
                 call.respond(mapOf("fetched" to fetched))
             }
@@ -837,6 +847,10 @@ fun Route.mediaRoutes(
                     val ep = item.episodes.firstOrNull { it.filename == epFilename } ?: return@post call.respond(HttpStatusCode.NotFound)
                     val st = artwork.screengrabEpisodeStill(ep)
                     if (!st.stillExists) return@post call.respond(HttpStatusCode.BadGateway, mapOf("error" to "frame extraction failed"))
+                    // Bug fix: a screengrab is a real, valid still — Episode.hasStill is a persisted
+                    // snapshot, so it must be re-stamped + saved now, or triage/Library/Dashboard keep
+                    // reporting this episode "missing" indefinitely.
+                    store.updateOne(artwork.stampHasStill(item))
                     mediaHistory.record(id, "still_screengrab", "ep=$epFilename")
                     val cfg = configStore.current
                     if (!item.jellyfinId.isNullOrBlank() && cfg.apiKeys.jellyfinUrl.isNotBlank()) {
@@ -856,6 +870,9 @@ fun Route.mediaRoutes(
                     if (req.source.isBlank()) return@post call.respond(HttpStatusCode.BadRequest, mapOf("error" to "source required"))
                     val ok = artwork.saveEpisodeStill(ep, req.source)
                     if (!ok) return@post call.respond(HttpStatusCode.BadGateway, mapOf("error" to "download failed"))
+                    // Bug fix: Episode.hasStill is a persisted snapshot, so it must be re-stamped + saved
+                    // now, or triage/Library/Dashboard keep reporting this episode "missing" indefinitely.
+                    store.updateOne(artwork.stampHasStill(item))
                     mediaHistory.record(id, "episode_still_save", "ep=$epFilename")
                     val cfg = configStore.current
                     if (!item.jellyfinId.isNullOrBlank() && cfg.apiKeys.jellyfinUrl.isNotBlank()) {
@@ -1783,6 +1800,11 @@ fun Route.mediaRoutes(
                 val status = artwork.check(item)
                 if (!status.posterExists || !status.fanartExists) {
                     artwork.fetch(item)
+                    // Bug fix: fetch() may just have created episode stills (TMDB or a screengrab
+                    // fallback — either is a real, valid still); Episode.hasStill is a persisted
+                    // snapshot, so it must be re-stamped + saved now, or triage/Library/Dashboard
+                    // keep reporting these episodes "missing" indefinitely (no-ops for movies).
+                    store.updateOne(artwork.stampHasStill(store.get(item.id) ?: item))
                 }
             }
         }
@@ -1868,7 +1890,15 @@ internal suspend fun pushToJellyfin(
         }
         .onFailure { Logger.warn("pushToJellyfin: NFO write failed for '${item.id}': ${it.message}") }
 
-    appScope.launch { artwork.fetch(item) }
+    // Bug fix: fetch() may create episode stills on disk (TMDB or a screengrab fallback — either is a
+    // real, valid still); Episode.hasStill is a persisted snapshot, so it must be re-stamped + saved
+    // after fetch completes, or triage/Library/Dashboard keep reporting these episodes "missing"
+    // indefinitely (stampHasStill no-ops for movies).
+    appScope.launch {
+        artwork.fetch(item)
+        val fresh = store.get(item.id) ?: item
+        store.updateOne(artwork.stampHasStill(fresh))
+    }
 
     val cfg = configStore.current
     if (cfg.apiKeys.jellyfinUrl.isBlank() || cfg.apiKeys.jellyfinToken.isBlank()) return true
@@ -1989,6 +2019,20 @@ internal suspend fun runScan(
                                 if (artworkDownloader != null && artworkDownloader.isArtworkIncomplete(item)) {
                                     val cur = store.get(item.id) ?: item
                                     runCatching { artworkDownloader.fetch(cur) }
+                                        .onSuccess {
+                                            // Bug fix: fetch() may just have created episode stills (TMDB or a
+                                            // screengrab fallback — either is a real, valid still); Episode.hasStill
+                                            // was stamped BEFORE this fetch ran (line 1984, correctly reflecting
+                                            // "nothing on disk yet"), so it must be re-stamped + persisted now, or
+                                            // triage/Library/Dashboard keep reporting these episodes "missing"
+                                            // indefinitely (stampHasStill no-ops for movies).
+                                            val restamped = artworkDownloader.stampHasStill(cur)
+                                            store.updateOne(restamped)
+                                            allItemsMutex.withLock {
+                                                val idx = allItems.indexOfFirst { it.id == restamped.id }
+                                                if (idx >= 0) allItems[idx] = restamped
+                                            }
+                                        }
                                         .onFailure { Logger.warn("scan artwork fetch failed for '${item.id}': ${it.message}", "artwork") }
                                 }
                             }
