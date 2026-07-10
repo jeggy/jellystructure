@@ -72,3 +72,53 @@ Preferences** — instead of one catch-all "Ravilo TV" page plus scattered Ravil
 Design-authored, `Planned`, not yet dev-reviewed. Exports to
 `specs/requirements/phase-148-ravilo-admin-nav-restructure.md`; `scripts/check-phases.sh` will flag it
 for a `STATUS.md` row. **Next admin number after this is 149.**
+
+## Dev-review addenda (2026-07-10)
+Verified against the shipped wasmJs admin frontend. The IA changes are sound and mostly contained, but the
+spec's central mockup citation is misleading and one precedent can't be browsed.
+
+**A. THE nav is Kotlin (`Shell.kt`), NOT `app-shell.js` — the cited mockup never ships.** `syncDesignAssets`
+copies only `wf.css/app.css/detail.css/metadata.css/seeding.css/seeding.js` from `design/app`;
+**`app-shell.js` is not in that list**, and the wasm `index.html` loads only `seeding.js` +
+`jellystructure.js`. The runtime sidebar is built entirely in `Shell.kt` (`NAV` list + `shellHtml()`/
+`renderShell()`), currently exactly Dashboard/Library/Activity · Setup(Metadata/Settings) · Apps(→"Ravilo
+TV"). So renaming Apps→Ravilo, adding the five items, and the **collapsible-group chevron +
+`localStorage 'js-nav-collapsed:'` logic (§A2) all get re-implemented in Kotlin `Shell.kt`** — the
+equivalent code already sitting in `design/app/app-shell.js` (which is *already at the Phase-148 target*)
+is a visual reference only, wired to nothing at runtime. A dev reader must not assume editing app-shell.js
+changes the app. This is the single most important correction in the spec.
+
+**B. Query routing already works; per-tab active-state does not.** `Router.currentQuery()` already parses
+query params and `RaviloConfig.kt` already reads them (`["channel"]`), so making the editor
+`?tab`-addressable is trivial. But active-nav is **href string-matching** in `Shell.kt` (there is **no
+`data-page` mechanism** in the Kotlin runtime — that exists only in the mockup), and hrefs render as
+`#/ravilo` while routes are path-only `/ravilo` (a latent `#`-prefix mismatch worth an on-device check).
+Three sidebar items sharing the `/ravilo` path need **query-aware hrefs + matching** for §B3's per-tab
+highlight — the one non-trivial piece.
+
+**C. The editor has SIX sections, not five — the spec omits "Portrait screen" (R159).** `renderSections()`
+renders Hero carousel · Channels · Content rows · Request · Behaviour · **Portrait screen**, all at once
+(2595-line file; a scrollspy section-nav, not tab-gating). The scope switcher + pagebar live in the shared
+`renderFull` scaffold, so gating `renderSections`/the section-nav by `?tab` cleanly preserves the shared
+switcher (matches §B1's rationale — a contained refactor). Assign the unmentioned **Portrait screen**
+section to a tab explicitly (Layout is the natural home).
+
+**D. Users & devices extraction is confirmed and self-contained.** It lives as a Settings tab
+(`Settings.kt`: the `users` nav item, `sect-users`, `SECTION_TAB`/`SETTINGS_TABS`, `loadUsersCard`/
+`refreshUsersList`/`loadUserHistory`). The three `users*` functions only touch `#users-list`/
+`#users-summary`, so extraction = delete the tab wiring + move them into a new page renderer + a `Main.kt`
+route + a `Shell.kt` NAV entry. Moderate, low-risk.
+
+**E. Collections rename: ~20-25 user-facing strings; model ids stay; the R64 precedent is git-history only.**
+Admin `RaviloConfig.kt` has ~12 distinct "Channel(s)" display strings (section nav/header, "+ Add channel",
+workbench "Create channel", "Channel button", placeholders, fallback names). The TV runtime i18n is **3
+keys × 3 langs = 9 values** (`section.channels`, `section.channels_sub`, `browse.empty_channel` in
+`ravilo-ui/.../i18n/Strings.kt`) — **keys stay, values change**. Plus the design files. **Do not touch**
+`up.network="Kanal"` (that's the *Network* metadata field, a different concept). Model ids
+(`ChannelConfig`, `data-kind="channel"`, CSS) stay per §D. **Note:** the "like R64" precedent can't be
+browsed — R64's spec was pruned to git history in the earlier cleanup — but the pattern (display-strings-
+only rename, keys/ids unchanged) is sound and low-risk regardless.
+
+**F. Ordering.** This rename is the prerequisite that frees the word "Channels" for Live TV (Phases
+147/R177). Land 148 §D **before — or together with —** the Live TV epic, or the admin + TV app briefly
+carry two "Channel" meanings.
