@@ -264,7 +264,7 @@ class LiveTvService(
             Logger.warn("LiveTv: no OpenToken for channel=$channelId — cannot tune", "livetv")
             return null
         }
-        val opened = jellyfinClient.openLiveStream(base, token, device.jellyfinUserId, openToken, capabilities, identity) ?: return null
+        val opened = jellyfinClient.openLiveStream(base, token, device.jellyfinUserId, openToken, channelId, info?.playSessionId, capabilities, identity) ?: return null
         val mediaSource = opened.mediaSource ?: return null
         val streamUrl = mediaSource.path ?: return null
         val liveStreamId = mediaSource.liveStreamId ?: opened.id ?: return null
