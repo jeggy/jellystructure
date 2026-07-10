@@ -9,7 +9,9 @@ import dev.jellystructure.ui.renderBulkReorderWizard
 import dev.jellystructure.ui.renderMediaDetail
 import dev.jellystructure.ui.renderMetadata
 import dev.jellystructure.ui.renderSetup
+import dev.jellystructure.ui.renderLiveTvPlaceholder
 import dev.jellystructure.ui.renderRaviloConfig
+import dev.jellystructure.ui.renderRaviloUsers
 import dev.jellystructure.ui.renderSettings
 import dev.jellystructure.ui.renderShell
 import dev.jellystructure.ui.updateActiveNav
@@ -57,7 +59,7 @@ object App {
         val container = document.getElementById("page-content") ?: return
         val path = Router.currentPath()
         val query = Router.currentQuery()
-        updateActiveNav(path)
+        updateActiveNav(Router.current())
         when {
             path == "/" || path.isEmpty() || path == "/dashboard" -> renderDashboard(container, scope)
             path.startsWith("/library") -> renderLibrary(container, scope, query)
@@ -72,7 +74,9 @@ object App {
                 else renderLibrary(container, scope, query)
             }
             path == "/activity" -> renderActivity(container, scope, query)
+            path.startsWith("/ravilo-users") -> renderRaviloUsers(container, scope)
             path.startsWith("/ravilo") -> renderRaviloConfig(container, scope)
+            path.startsWith("/livetv") -> renderLiveTvPlaceholder(container)
             path == "/settings" -> renderSettings(container, scope, query)
             path.startsWith("/metadata") -> renderMetadata(container, scope, query["tab"] ?: "studios")
             else -> renderDashboard(container, scope)

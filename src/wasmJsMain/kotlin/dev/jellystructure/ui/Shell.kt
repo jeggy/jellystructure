@@ -77,8 +77,14 @@ private val ICONS = mapOf(
     "metadata"  to """<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>""",
     "settings"  to """<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><line x1="3" y1="8" x2="10" y2="8"/><circle cx="12" cy="8" r="2"/><line x1="14" y1="8" x2="21" y2="8"/><line x1="3" y1="16" x2="7" y2="16"/><circle cx="9" cy="16" r="2"/><line x1="11" y1="16" x2="21" y2="16"/></svg>""",
     "tv"        to """<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="13" rx="2"/><polyline points="8 21 12 18 16 21"/></svg>""",
+    "livetv"    to """<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="m17 2-5 5-5-5"/></svg>""",
+    "requests"  to """<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>""",
+    "users"     to """<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>""",
+    "prefs"     to """<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>""",
 )
 
+// Phase 148 — "Ravilo" section: one shared editor (ravilo-config, tab-addressable) plus the
+// standalone Live TV and Users & devices pages.
 private val NAV: List<NavEntry> = listOf(
     NavLink("/dashboard", "Dashboard", "dashboard"),
     NavLink("/library", "Library", "library"),
@@ -86,8 +92,12 @@ private val NAV: List<NavEntry> = listOf(
     NavGroup("Setup"),
     NavLink("/metadata", "Metadata", "metadata"),
     NavLink("/settings", "Settings", "settings"),
-    NavGroup("Apps"),
-    NavLink("/ravilo", "Ravilo TV", "tv"),
+    NavGroup("Ravilo"),
+    NavLink("/ravilo?tab=layout", "Layout", "tv"),
+    NavLink("/livetv", "Live TV", "livetv"),
+    NavLink("/ravilo?tab=requests", "Requests", "requests"),
+    NavLink("/ravilo-users", "Users & devices", "users"),
+    NavLink("/ravilo?tab=preferences", "Preferences", "prefs"),
 )
 
 fun renderShell(user: UserProfile) {
@@ -110,6 +120,21 @@ fun renderShell(user: UserProfile) {
                 e.preventDefault()
                 document.body?.classList?.remove("nav-open")
                 App.navigate(href)
+            }
+        }
+    }
+
+    // Phase 148 — collapsible sidebar groups, persisted per group.
+    document.querySelectorAll(".app-side .group-toggle").let { toggles ->
+        for (i in 0 until toggles.length) {
+            val btn = toggles.item(i) as? HTMLElement ?: continue
+            btn.addEventListener("click") { e ->
+                e.preventDefault()
+                val wrap = btn.closest(".nav-group") as? HTMLElement ?: return@addEventListener
+                val nowCollapsed = !wrap.classList.contains("collapsed")
+                wrap.classList.toggle("collapsed")
+                val group = btn.getAttribute("data-group") ?: return@addEventListener
+                window.localStorage.setItem("js-nav-collapsed:$group", if (nowCollapsed) "1" else "0")
             }
         }
     }
@@ -630,12 +655,27 @@ private fun updateSidebarStatus(triageCount: Int) {
     }
 }
 
+/**
+ * An href matches the current route when their paths agree; if the href also carries a `tab=`
+ * query param (the three Ravilo-editor tabs all share the `/ravilo` path), the current route's
+ * `tab` must match too — plain hrefs (no query) match on path alone regardless of any query the
+ * current route happens to carry (e.g. `/library?filter=…` still highlights Library).
+ */
+private fun hrefMatchesRoute(href: String, currentRoute: String): Boolean {
+    val hrefPath = href.substringBefore('?')
+    val curPath = currentRoute.substringBefore('?')
+    if (hrefPath != curPath) return false
+    val hrefTab = href.substringAfter('?', "").split('&').firstOrNull { it.startsWith("tab=") } ?: return true
+    val curTab = currentRoute.substringAfter('?', "").split('&').firstOrNull { it.startsWith("tab=") }
+    return hrefTab == curTab
+}
+
 fun updateActiveNav(currentRoute: String) {
-    val links = document.querySelectorAll(".app-side a")
+    val links = document.querySelectorAll(".app-side a.nav")
     for (i in 0 until links.length) {
         val a = links.item(i) as? HTMLElement ?: continue
-        val href = a.getAttribute("href") ?: continue
-        a.className = if (href == currentRoute) "nav active" else "nav"
+        val href = a.getAttribute("href")?.removePrefix("#") ?: continue
+        a.className = if (hrefMatchesRoute(href, currentRoute)) "nav active" else "nav"
     }
     // Hide scan dock on Activity page, restore it elsewhere if scan is running
     val dock = document.getElementById("ambient-dock") as? HTMLElement ?: return
@@ -658,21 +698,49 @@ private fun resolveTheme(pref: String): String = when (pref) {
     else -> pref
 }
 
-private fun shellHtml(user: UserProfile, savedPref: String = "system"): String {
-    val navHtml = NAV.joinToString("") { entry ->
+private const val NAV_CHEVRON = """<svg class="grp-chev" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>"""
+
+private fun navGroupCollapsed(label: String): Boolean =
+    window.localStorage.getItem("js-nav-collapsed:$label") == "1"
+
+private fun navLinkHtml(entry: NavLink): String {
+    val countHtml = when {
+        entry.href == "/triage" -> """<span class="count" id="triage-count-badge"></span>"""
+        entry.count != null -> """<span class="count">${entry.count}</span>"""
+        else -> ""
+    }
+    return """<a class="nav" href="#${entry.href}"><span class="l"><span class="ico">${ICONS[entry.icon] ?: entry.icon}</span>${entry.label}</span>$countHtml</a>"""
+}
+
+/** Renders [NAV], wrapping each [NavGroup]'s following links in a collapsible `.nav-group` (Phase 148). */
+private fun navHtml(): String {
+    val pre = StringBuilder()
+    val groups = StringBuilder()
+    var groupLabel: String? = null
+    var groupItems = StringBuilder()
+    fun flushGroup() {
+        val label = groupLabel ?: return
+        val collapsedCls = if (navGroupCollapsed(label)) " collapsed" else ""
+        groups.append(
+            """<div class="nav-group$collapsedCls" data-group="$label"><button type="button" class="group-label group-toggle" data-group="$label">$label$NAV_CHEVRON</button><div class="nav-group-items">$groupItems</div></div>""",
+        )
+        groupItems = StringBuilder()
+    }
+    for (entry in NAV) {
         when (entry) {
-            is NavGroup ->
-                """<div class="group-label">${entry.label}</div>"""
+            is NavGroup -> { flushGroup(); groupLabel = entry.label }
             is NavLink -> {
-                val countHtml = when {
-                    entry.href == "/triage" -> """<span class="count" id="triage-count-badge"></span>"""
-                    entry.count != null -> """<span class="count">${entry.count}</span>"""
-                    else -> ""
-                }
-                """<a class="nav" href="#${entry.href}"><span class="l"><span class="ico">${ICONS[entry.icon] ?: entry.icon}</span>${entry.label}</span>$countHtml</a>"""
+                val html = navLinkHtml(entry)
+                if (groupLabel == null) pre.append(html) else groupItems.append(html)
             }
         }
     }
+    flushGroup()
+    return pre.toString() + groups.toString()
+}
+
+private fun shellHtml(user: UserProfile, savedPref: String = "system"): String {
+    val navHtml = navHtml()
     return """
         <div class="nav-backdrop" id="nav-backdrop"></div>
         <div class="shell">

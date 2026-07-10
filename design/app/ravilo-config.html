@@ -134,14 +134,14 @@
       <!-- lock prompt: shown when a user without a custom layout is selected -->
       <div class="card" id="scope-lock" style="display:none;margin-bottom:14px;border-color:var(--hi);background:var(--hi-soft);">
         <div class="row center" style="gap:12px;">
-          <div style="flex:1;"><b id="scope-lock-title">This user uses the global layout</b><div class="tiny muted" id="scope-lock-sub">Create a custom layout to give them a different Ravilo home. It fully replaces the global layout — hero, channels, rows and Top 10 — for this user. Behaviour preferences below stay separate.</div></div>
+          <div style="flex:1;"><b id="scope-lock-title">This user uses the global layout</b><div class="tiny muted" id="scope-lock-sub">Create a custom layout to give them a different Ravilo home. It fully replaces the global layout — hero, collections, rows and Top 10 — for this user. Behaviour preferences below stay separate.</div></div>
           <span class="btn primary" id="scope-create">Create custom layout</span>
         </div>
       </div>
       <!-- HERO -->
       <div class="card set-section" id="sect-hero">
         <div class="row center"><h3 style="font-size:1.05rem;margin:0;">Home hero carousel</h3><span class="badge info" style="margin-left:8px;">1–10 items</span><span class="spacer"></span><span class="btn sm ghost">＋ Add hero item</span></div>
-        <p class="tiny muted" style="margin:6px 0 14px;">The top banner on the <b>Home</b> page. Drag to reorder; the carousel auto-advances on the TV. These are pulled from your Jellyfin library by title. <b>Each channel can have its own hero too</b> — set it in the channel’s editor.</p>
+        <p class="tiny muted" style="margin:6px 0 14px;">The top banner on the <b>Home</b> page. Drag to reorder; the carousel auto-advances on the TV. These are pulled from your Jellyfin library by title. <b>Each collection can have its own hero too</b> — set it in the collection’s editor.</p>
 
         <div id="herolist">
           <div class="cfg-row"><span class="grab">⠿</span><div class="hero-thumb" style="background:linear-gradient(145deg,hsl(265 48% 36%),hsl(310 52% 14%));"><span class="t">Nordvest</span></div><div style="flex:1;"><div class="nm">Nordvest <span class="badge" style="font-size:.6rem;">New Season</span></div><div class="src">Series · Kringvarp · 2023</div></div><span class="muted tiny">show</span><span class="toggle on"></span><span class="btn sm ghost rm">✕</span></div>
@@ -164,7 +164,7 @@
       <!-- STUDIOS / CHANNELS -->
       <div class="card set-section" id="sect-studios">
         <div class="row center"><h3 style="font-size:1.05rem;margin:0;">Collections</h3><span class="spacer"></span><span class="btn sm ghost">＋ Add collection</span></div>
-        <p class="tiny muted" style="margin:6px 0 14px;">The Disney+-style logo row under the hero. Each opens a view with the <b>same content rows below</b>, filtered to that channel. Map each to a Jellyfin studio, network, genre or tag. Optionally give a channel its <b>own hero carousel</b>. <b>Click a channel to edit it.</b></p>
+        <p class="tiny muted" style="margin:6px 0 14px;">The Disney+-style logo row under the hero. Each opens a view with the <b>same content rows below</b>, filtered to that collection. Map each to a Jellyfin studio, network, genre or tag. Optionally give a collection its <b>own hero carousel</b>. <b>Click a collection to edit it.</b></p>
 
         <div id="studiolist">
           <div class="cfg-row"><span class="grab">⠿</span><div class="studio-wm" style="background:linear-gradient(135deg,#3b2a78,#15102e);">HBO</div><div style="flex:1;"><div class="nm">HBO</div><div class="src">filter: network = “HBO”</div></div><span class="toggle on"></span><span class="btn sm ghost rm">✕</span></div>
@@ -178,7 +178,7 @@
       <!-- ROWS -->
       <div class="card set-section" id="sect-rows">
         <div class="row center"><h3 style="font-size:1.05rem;margin:0;">Content rows</h3><span class="badge info" style="margin-left:8px;">5–20 rows</span><span class="spacer"></span><span class="btn sm ghost">＋ Add row</span></div>
-        <p class="tiny muted" style="margin:6px 0 14px;"><b>System rows</b> (Continue, Newly Added) sit at the top — toggle or rename them, but they can’t be removed. Everything below is a <b>workbench-filter row</b> you build with conditions. This set is reused inside every channel view, scoped to that channel.</p>
+        <p class="tiny muted" style="margin:6px 0 14px;"><b>System rows</b> (Continue, Newly Added) sit at the top — toggle or rename them, but they can’t be removed. Everything below is a <b>workbench-filter row</b> you build with conditions. This set is reused inside every collection view, scoped to that collection.</p>
 
         <!-- merge toggle -->
         <div class="box flat" style="background:var(--hi-soft);border-color:rgba(123,110,240,.3);margin-bottom:14px;">

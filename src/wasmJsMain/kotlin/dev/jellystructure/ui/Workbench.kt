@@ -344,11 +344,11 @@ private fun wbRenderBlocks() {
 
 private fun renderLockedBlock(base: WbGroup): String {
     val summary = groupSummary(base, top = true).ifBlank { "No conditions — the channel shows everything." }
-    val count = wbLockedCount?.let { "$it in channel" } ?: "…"
+    val count = wbLockedCount?.let { "$it in collection" } ?: "…"
     return """
       <div class="wb-block wb-block-locked">
         <div class="wb-block-head">
-          <span class="wb-lock-eyebrow">🔒 Channel</span>
+          <span class="wb-lock-eyebrow">🔒 Collection</span>
           <span class="spacer"></span>
           <span class="wb-block-count">${count.esc()}</span>
         </div>
@@ -671,7 +671,7 @@ private fun wbChannelChip(): String {
     val inner = if (wbChStyle == "logo" && !wbLogoUrl.isNullOrBlank()) {
         """<img src="${wbLogoUrl!!.esc()}" alt="">"""
     } else {
-        (if (wbChStyle == "logo") wbChName.take(3).uppercase() else wbChName.take(12).ifEmpty { "Channel" }).esc()
+        (if (wbChStyle == "logo") wbChName.take(3).uppercase() else wbChName.take(12).ifEmpty { "Collection" }).esc()
     }
     return """<div class="wbc-chip" style="background:$fill;">$inner</div>"""
 }
