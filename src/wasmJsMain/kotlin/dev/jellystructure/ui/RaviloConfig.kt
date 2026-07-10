@@ -184,6 +184,15 @@ fun renderRaviloConfig(container: Element, scope: CoroutineScope) {
         if (!popstateWired) {
             popstateWired = true
             window.addEventListener("popstate") { _ ->
+                // Bug fix: assigning `location.hash` fires BOTH hashchange and popstate in Chrome/
+                // Firefox, and this listener is never removed once installed. Without this guard, ANY
+                // later sidebar navigation away from Ravilo (Settings, Metadata, Live TV, Users &
+                // devices, anywhere) would hashchange to the right page correctly, then have this stale
+                // popstate handler immediately fire too — see no `?tab=` on the new route, canonicalize
+                // back to "/ravilo?tab=layout", and re-render Ravilo on top of it, silently undoing the
+                // click. Scope this to only the cases it's actually for: the channel-editor sub-page's
+                // Back button (pushState-based, genuinely needs popstate) landing back on "/ravilo".
+                if (Router.currentPath() != "/ravilo") return@addEventListener
                 val c = rcContainerRef ?: return@addEventListener
                 val s = rcScope ?: return@addEventListener
                 handleRaviloRoute(c, s)
