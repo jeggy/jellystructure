@@ -257,7 +257,7 @@ class LiveTvService(
     suspend fun tune(device: DeviceData, channelId: String, capabilities: ClientCapabilities): LiveTvStreamTicket? {
         val base = jellyfinBase(); val token = jellyfinClient.tvToken(base, device, configStore.current.apiKeys.jellyfinToken)
         val identity = JellyfinDeviceIdentity.forDevice(device)
-        val info = jellyfinClient.getPlaybackInfo(base, token, device.jellyfinUserId, channelId, capabilities = capabilities, identity = identity)
+        val info = jellyfinClient.getPlaybackInfo(base, token, device.jellyfinUserId, channelId, capabilities = capabilities, identity = identity, mediaSourceId = null)
         val source = info?.mediaSources?.firstOrNull { !it.openToken.isNullOrBlank() } ?: info?.mediaSources?.firstOrNull()
         val openToken = source?.openToken
         if (openToken.isNullOrBlank()) {

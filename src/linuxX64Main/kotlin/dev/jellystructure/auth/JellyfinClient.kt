@@ -278,6 +278,9 @@ class JellyfinClient {
      * R56 — negotiate delivery with Jellyfin. POSTs a [deviceProfile] to PlaybackInfo; Jellyfin replies
      * per MediaSource whether it can direct-play, else returns a TranscodingUrl (e.g. for a burned-in
      * image subtitle). [subtitleStreamIndex] asks Jellyfin to Encode-burn that sub into the video.
+     * [mediaSourceId] defaults to [itemId] (correct for VOD, where the item's own id is its default
+     * media source) — pass null for Live TV channels, whose tuner/provider mints its own MediaSource
+     * ids+OpenTokens that never match the channel id (R177: sending it made Jellyfin return no sources).
      */
     suspend fun getPlaybackInfo(
         baseUrl: String,
@@ -287,12 +290,14 @@ class JellyfinClient {
         capabilities: ClientCapabilities = ClientCapabilities(),
         subtitleStreamIndex: Int? = null,
         identity: JellyfinDeviceIdentity? = null,
+        mediaSourceId: String? = itemId,
     ): JellyfinPlaybackInfoResponse? = runCatching {
         val subBody = subtitleStreamIndex?.let { ""","SubtitleStreamIndex":$it""" } ?: ""
+        val mediaSourceBody = mediaSourceId?.let { ""","MediaSourceId":"$it"""" } ?: ""
         httpPost(baseUrl.trimEnd('/') + "/Items/$itemId/PlaybackInfo?UserId=$userId") {
             jellyfinAuth(userToken, identity)
             contentType(ContentType.Application.Json)
-            setBody("""{"MediaSourceId":"$itemId","DeviceProfile":${deviceProfile(capabilities)}$subBody}""")
+            setBody("""{"DeviceProfile":${deviceProfile(capabilities)}$mediaSourceBody$subBody}""")
         }.bodyOrNull<JellyfinPlaybackInfoResponse>("getPlaybackInfo")
     }.getOrElse { Logger.warn("Jellyfin getPlaybackInfo failed: ${it.message}"); null }
 
