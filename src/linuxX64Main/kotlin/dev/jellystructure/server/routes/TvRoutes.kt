@@ -192,6 +192,7 @@ fun Route.tvRoutes(
     tvEventBus: TvEventBus? = null,
     upcomingService: dev.jellystructure.tv.UpcomingService? = null,
     seerrDiscoverService: dev.jellystructure.seerr.SeerrDiscoverService? = null,
+    mediaStore: dev.jellystructure.media.MediaStore? = null,
 ) {
     // Phase 141 — proxied username/password login, replacing the code+poll+admin-approve pairing flow.
     // No device token exists yet (OPEN_API_PATHS); jellystructure authenticates the credentials against
@@ -528,7 +529,8 @@ fun Route.tvRoutes(
                 name = d.displayName,
                 connected = tvEventBus?.isConnected(d.deviceId) ?: false,
                 lastSeen = d.lastSeen,
-                nowPlaying = dev.jellystructure.tv.nowPlayingItem(d.deviceId),
+                // Bug fix: this used to be the raw Jellyfin item id (a hex UUID) — resolve to a title.
+                nowPlaying = dev.jellystructure.tv.nowPlayingItem(d.deviceId)?.let { id -> mediaStore?.titleForJellyfinId(id) ?: id },
             )
         }
         call.respond(devices)
@@ -591,7 +593,8 @@ fun Route.tvRoutes(
                         isKids = d.isKids,
                         createdAt = d.createdAt,
                         lastSeen = d.lastSeen,
-                        nowPlaying = dev.jellystructure.tv.nowPlayingItem(d.deviceId),
+                        // Bug fix: this used to be the raw Jellyfin item id (a hex UUID) — resolve to a title.
+                        nowPlaying = dev.jellystructure.tv.nowPlayingItem(d.deviceId)?.let { id -> mediaStore?.titleForJellyfinId(id) ?: id },
                     )
                 },
                 sessions = userSessions.map { s ->
