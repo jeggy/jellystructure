@@ -141,7 +141,12 @@ class LiveTvService(
         val liveById = lastLiveChannels.associateBy { it.id }
         return store.overridesByChannelId().values.sortedBy { it.order }.map { ov ->
             val live = liveById[ov.channelId]
-            val name = live?.name?.takeIf { it.isNotBlank() } ?: ov.channelId
+            // Bug fix: this used to fall back to the raw Jellyfin channel id (a hex UUID) whenever the
+            // in-memory `lastLiveChannels` cache hadn't been populated yet (e.g. right after a backend
+            // restart, before the next sync() cadence) — every screen (Home rail, TV Guide, in-player
+            // channel switcher, badge initials) renders `name` verbatim, so the id leaked to the TV.
+            // Never show it; fall back to a plain "Channel N" placeholder instead.
+            val name = live?.name?.takeIf { it.isNotBlank() } ?: "Channel ${ov.number}"
             // Public path (like R133's channel-logos/image-proxy) — the TV client can't attach a device
             // token to an <img>/Coil image request, and logos aren't sensitive.
             val logo = ov.logoOverrideUrl
