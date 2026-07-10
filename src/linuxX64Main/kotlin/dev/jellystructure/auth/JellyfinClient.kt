@@ -476,7 +476,8 @@ class JellyfinClient {
      * Dev-review addendum D — the live tuning handshake, a SIBLING to [getPlaybackInfo]/startPlayback,
      * not a branch of it: negotiate via the same `/Items/{id}/PlaybackInfo` (Live TV channels are
      * Items too) to get an `OpenToken`, then activate the tuner/provider stream via
-     * `POST /LiveTv/LiveStreams/Open`. The returned MediaSource's `Path` is the definitive playable
+     * `POST /LiveStreams/Open` — a MediaInfoController route, NOT under `/LiveTv/`. The returned
+     * MediaSource's `Path` is the definitive playable
      * URL; its `LiveStreamId` (or the response's top-level `Id`) must be passed to [closeLiveStream].
      */
     suspend fun openLiveStream(
@@ -487,7 +488,9 @@ class JellyfinClient {
         capabilities: ClientCapabilities = ClientCapabilities(),
         identity: JellyfinDeviceIdentity? = null,
     ): JellyfinLiveStreamOpenResponse? = runCatching {
-        httpPost(baseUrl.trimEnd('/') + "/LiveTv/LiveStreams/Open") {
+        // Bug fix: this is a MediaInfoController route, NOT under /LiveTv/ — Jellyfin 404s
+        // "/LiveTv/LiveStreams/Open" (verified against server source). Real path is "/LiveStreams/Open".
+        httpPost(baseUrl.trimEnd('/') + "/LiveStreams/Open") {
             jellyfinAuth(userToken, identity)
             contentType(ContentType.Application.Json)
             setBody("""{"OpenToken":"$openToken","UserId":"$userId","DeviceProfile":${deviceProfile(capabilities)}}""")
@@ -495,7 +498,7 @@ class JellyfinClient {
     }.getOrElse { Logger.warn("Jellyfin openLiveStream failed: ${it.message}"); null }
 
     suspend fun closeLiveStream(baseUrl: String, userToken: String, liveStreamId: String, identity: JellyfinDeviceIdentity? = null): Boolean = runCatching {
-        httpPost(baseUrl.trimEnd('/') + "/LiveTv/LiveStreams/Close") {
+        httpPost(baseUrl.trimEnd('/') + "/LiveStreams/Close") {
             jellyfinAuth(userToken, identity)
             contentType(ContentType.Application.Json)
             setBody("""{"LiveStreamId":"$liveStreamId"}""")

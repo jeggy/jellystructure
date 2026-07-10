@@ -123,7 +123,7 @@ single `/LiveTv/Channels` call; only the full guide grid (R177 §C) needs `/Live
 **D. Live playback is an infinite HLS stream with an explicit open/close lifecycle the VOD path lacks.**
 Channel `PlaybackInfo` returns one MediaSource: `Protocol:Http`, `Path: …/master.m3u8`,
 **`IsInfiniteStream:true`, `RequiresOpening:true`, `RequiresClosing:true`**. Jellyfin requires
-`POST /LiveTv/LiveStreams/Open` before, and a close after — a lifecycle `PlaybackService.startPlayback`
+`POST /LiveStreams/Open` (a MediaInfoController route, not under `/LiveTv/`) before, and a close after — a lifecycle `PlaybackService.startPlayback`
 (VOD: resume position, `buildSubtracks` MediaStreams walk, stop-watchdog position tracking) does **not**
 implement and must not reuse verbatim. A live tune is a **sibling method**, not a branch of
 `startPlayback`. 147 must expose the tune/stream endpoint R177's player consumes.
