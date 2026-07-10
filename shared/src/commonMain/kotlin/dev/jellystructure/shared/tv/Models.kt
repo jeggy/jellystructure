@@ -582,6 +582,10 @@ data class RaviloConfig(
     // R159 — optional overrides applied only when the app's viewport is portrait. Null = no overrides
     // (portrait behaves exactly like landscape); the home for future portrait-only settings.
     val portrait: PortraitConfig? = null,
+    // Phase 147/148 — where Live TV surfaces on Home (placement only; enabling Live TV itself is the
+    // Live TV page's job). Null = not configured — the Layout tab's "Live TV on Home" section only
+    // renders once Live TV is enabled there, and defaults apply from that point on.
+    @SerialName("live_tv_home") val liveTvHome: LiveTvHomePlacement? = null,
 ) {
     /** The skin actually rendered: the viewer's override when allowed, else the operator default. */
     fun effectiveSkin(): Skin = if (allowSkinOverride) (viewerSkinOverride ?: defaultSkin) else defaultSkin

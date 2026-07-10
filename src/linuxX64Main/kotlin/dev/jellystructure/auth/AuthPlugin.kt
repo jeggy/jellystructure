@@ -27,6 +27,9 @@ private val OPEN_API_PATHS = listOf(
     // /api/tv/image/{itemId}/{type} is the R85 Jellyfin image proxy cache. Images are not sensitive
     // and Coil can't attach a device token to image requests.
     "/api/tv/image/",
+    // Phase 147 — Live TV channel logos (proxied from Jellyfin's ImageTags.Primary); same reasoning as
+    // channel-logos/image above — not sensitive, and an <img>/Coil request can't carry a device token.
+    "/api/tv/livetv/logo/",
     // Phase 114 — *arr webhooks: authenticated by their own per-install secret query param, since *arr's
     // webhook sender can't attach a cookie/device-token/API-key like every other caller.
     "/api/webhooks/",

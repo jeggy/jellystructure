@@ -185,6 +185,65 @@ data class JellyfinMediaSourceInfo(
     @SerialName("SupportsTranscoding") val supportsTranscoding: Boolean = false,
     @SerialName("TranscodingUrl") val transcodingUrl: String? = null,
     @SerialName("MediaStreams") val mediaStreams: List<JellyfinMediaStream> = emptyList(),
+    // Phase 147 — Live TV's MediaSource carries these; a VOD MediaSource never sets them (defaults are
+    // the VOD case). `RequiresOpening`/`RequiresClosing` gate the LiveStreams/Open+Close lifecycle
+    // (dev-review addendum D — Live TV is NOT a branch of the VOD PlaybackInfo→stream flow).
+    @SerialName("Protocol") val protocol: String? = null,
+    @SerialName("Path") val path: String? = null,
+    @SerialName("IsInfiniteStream") val isInfiniteStream: Boolean = false,
+    @SerialName("RequiresOpening") val requiresOpening: Boolean = false,
+    @SerialName("RequiresClosing") val requiresClosing: Boolean = false,
+    @SerialName("OpenToken") val openToken: String? = null,
+    @SerialName("LiveStreamId") val liveStreamId: String? = null,
+)
+
+// ── Phase 147 — Live TV (surfaced from Jellyfin; jellystructure never manages tuners/guide) ──────────
+
+@Serializable
+data class JellyfinLiveTvInfo(
+    @SerialName("IsEnabled") val isEnabled: Boolean = false,
+)
+
+@Serializable
+data class JellyfinChannelImageTags(
+    @SerialName("Primary") val primary: String? = null,
+)
+
+/** Dev-review addendum C: `CurrentProgram` is embedded on the channel itself — no separate Programs
+ *  call is needed for "On now" data. Addendum B: no category/kids/news/sports data exists here. */
+@Serializable
+data class JellyfinLiveTvProgram(
+    @SerialName("Name") val name: String = "",
+    @SerialName("StartDate") val startDate: String? = null,
+    @SerialName("EndDate") val endDate: String? = null,
+    @SerialName("ChannelId") val channelId: String? = null,
+    @SerialName("IsSeries") val isSeries: Boolean = false,
+)
+
+@Serializable
+data class JellyfinLiveTvChannel(
+    @SerialName("Id") val id: String,
+    @SerialName("Name") val name: String = "",
+    @SerialName("ImageTags") val imageTags: JellyfinChannelImageTags? = null,
+    @SerialName("CurrentProgram") val currentProgram: JellyfinLiveTvProgram? = null,
+)
+
+@Serializable
+data class JellyfinLiveTvChannelsResponse(
+    @SerialName("Items") val items: List<JellyfinLiveTvChannel> = emptyList(),
+)
+
+@Serializable
+data class JellyfinLiveTvProgramsResponse(
+    @SerialName("Items") val items: List<JellyfinLiveTvProgram> = emptyList(),
+)
+
+/** `POST /LiveTv/LiveStreams/Open` response — activates the tuner/provider stream; `mediaSource.path`
+ *  is the definitive playable URL, `mediaSource.liveStreamId` (or top-level [id]) closes it later. */
+@Serializable
+data class JellyfinLiveStreamOpenResponse(
+    @SerialName("MediaSource") val mediaSource: JellyfinMediaSourceInfo? = null,
+    @SerialName("Id") val id: String? = null,
 )
 
 @Serializable

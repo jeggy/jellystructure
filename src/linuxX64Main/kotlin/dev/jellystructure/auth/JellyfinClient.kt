@@ -427,6 +427,76 @@ class JellyfinClient {
         result.getOrDefault(emptySet())
     }
 
+    // ── Phase 147 — Live TV ────────────────────────────────────────────────────────
+
+    /** Dev-review addendum A: gate "Live TV available" on channel count > 0, NOT on this — an
+     *  M3U/HLS-provider setup reports `Tuners:[]` yet serves channels fine. Kept for the raw
+     *  IsEnabled flag only (Jellyfin's own Live TV kill switch). */
+    suspend fun getLiveTvInfo(baseUrl: String, token: String): JellyfinLiveTvInfo? = runCatching {
+        httpGet(baseUrl.trimEnd('/') + "/LiveTv/Info") { jellyfinAuth(token) }
+            .bodyOrNull<JellyfinLiveTvInfo>("getLiveTvInfo")
+    }.getOrElse { Logger.warn("Jellyfin getLiveTvInfo failed: ${it.message}"); null }
+
+    suspend fun getLiveTvChannels(baseUrl: String, token: String): List<JellyfinLiveTvChannel> = runCatching {
+        val url = baseUrl.trimEnd('/') + "/LiveTv/Channels?EnableImages=true"
+        httpGet(url) { jellyfinAuth(token) }
+            .bodyOrNull<JellyfinLiveTvChannelsResponse>("getLiveTvChannels")?.items.orEmpty()
+    }.let { result ->
+        if (result.isFailure) Logger.warn("Jellyfin getLiveTvChannels failed: ${result.exceptionOrNull()?.message}")
+        result.getOrDefault(emptyList())
+    }
+
+    /** Full-schedule guide fetch for the R177 EPG grid (addendum C — "On now"/channel bar don't need
+     *  this; only the full guide grid does). [minStartUtc]/[maxStartUtc] are Jellyfin's expected
+     *  ISO-8601 UTC bounds (e.g. `2026-07-10T00:00:00.000Z`). */
+    suspend fun getLiveTvPrograms(
+        baseUrl: String,
+        token: String,
+        channelIds: List<String>,
+        minStartUtc: String,
+        maxStartUtc: String,
+    ): List<JellyfinLiveTvProgram> = runCatching {
+        if (channelIds.isEmpty()) return@runCatching emptyList()
+        val url = baseUrl.trimEnd('/') +
+            "/LiveTv/Programs?ChannelIds=${channelIds.joinToString(",")}" +
+            "&MinStartDate=${minStartUtc.encodeURLParameter()}&MaxStartDate=${maxStartUtc.encodeURLParameter()}"
+        httpGet(url) { jellyfinAuth(token) }
+            .bodyOrNull<JellyfinLiveTvProgramsResponse>("getLiveTvPrograms")?.items.orEmpty()
+    }.let { result ->
+        if (result.isFailure) Logger.warn("Jellyfin getLiveTvPrograms failed: ${result.exceptionOrNull()?.message}")
+        result.getOrDefault(emptyList())
+    }
+
+    /**
+     * Dev-review addendum D — the live tuning handshake, a SIBLING to [getPlaybackInfo]/startPlayback,
+     * not a branch of it: negotiate via the same `/Items/{id}/PlaybackInfo` (Live TV channels are
+     * Items too) to get an `OpenToken`, then activate the tuner/provider stream via
+     * `POST /LiveTv/LiveStreams/Open`. The returned MediaSource's `Path` is the definitive playable
+     * URL; its `LiveStreamId` (or the response's top-level `Id`) must be passed to [closeLiveStream].
+     */
+    suspend fun openLiveStream(
+        baseUrl: String,
+        userToken: String,
+        userId: String,
+        openToken: String,
+        capabilities: ClientCapabilities = ClientCapabilities(),
+        identity: JellyfinDeviceIdentity? = null,
+    ): JellyfinLiveStreamOpenResponse? = runCatching {
+        httpPost(baseUrl.trimEnd('/') + "/LiveTv/LiveStreams/Open") {
+            jellyfinAuth(userToken, identity)
+            contentType(ContentType.Application.Json)
+            setBody("""{"OpenToken":"$openToken","UserId":"$userId","DeviceProfile":${deviceProfile(capabilities)}}""")
+        }.bodyOrNull<JellyfinLiveStreamOpenResponse>("openLiveStream")
+    }.getOrElse { Logger.warn("Jellyfin openLiveStream failed: ${it.message}"); null }
+
+    suspend fun closeLiveStream(baseUrl: String, userToken: String, liveStreamId: String, identity: JellyfinDeviceIdentity? = null): Boolean = runCatching {
+        httpPost(baseUrl.trimEnd('/') + "/LiveTv/LiveStreams/Close") {
+            jellyfinAuth(userToken, identity)
+            contentType(ContentType.Application.Json)
+            setBody("""{"LiveStreamId":"$liveStreamId"}""")
+        }.status.isSuccess()
+    }.getOrElse { Logger.warn("Jellyfin closeLiveStream failed: ${it.message}"); false }
+
     suspend fun getNextUp(
         baseUrl: String,
         userToken: String,
