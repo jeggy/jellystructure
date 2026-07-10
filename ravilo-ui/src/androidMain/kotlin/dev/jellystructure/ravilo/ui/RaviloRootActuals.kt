@@ -1,6 +1,8 @@
 package dev.jellystructure.ravilo.ui
 
 import android.content.SharedPreferences
+import androidx.activity.compose.BackHandler
+import androidx.compose.runtime.Composable
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.HttpTimeout
@@ -62,3 +64,10 @@ actual fun deviceDisplayName(): String = android.os.Build.MODEL ?: "Ravilo TV"
 actual fun pushRoute(route: String) {}
 actual fun replaceRoute(route: String) {}
 actual fun installHashListener(onRoute: (String) -> Unit): () -> Unit = {}
+
+// Bug fix: bridges Android's system back gesture/button (which bypasses Compose's Key.Back KeyEvent
+// path under gesture navigation) into the app's existing pop() logic. See RaviloRoot.kt's doc comment.
+@Composable
+actual fun PlatformBackHandler(enabled: Boolean, onBack: () -> Unit) {
+    BackHandler(enabled = enabled, onBack = onBack)
+}

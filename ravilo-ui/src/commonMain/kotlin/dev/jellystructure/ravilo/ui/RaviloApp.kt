@@ -79,6 +79,7 @@ import dev.jellystructure.ravilo.ui.components.ServerMessageHost
 import dev.jellystructure.ravilo.ui.perf.FrameTrackerOverlay
 import dev.jellystructure.ravilo.ui.seams.prefetchImage
 import dev.jellystructure.ravilo.ui.theme.LocalCompact
+import dev.jellystructure.ravilo.ui.theme.LocalHandset
 import dev.jellystructure.ravilo.ui.theme.RaviloMotion
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
 import dev.jellystructure.ravilo.ui.theme.rememberRaviloTheme
@@ -443,6 +444,13 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
             val wPx = windowInfo.containerSize.width
             wPx > 0 && with(density) { wPx.toDp() } < 600.dp
         }
+        // Orientation-stable counterpart to `compact` — see LocalHandset's doc comment for why
+        // width-only breaks for a rotated phone (e.g. video playback, which is landscape-only).
+        val handset = remember(windowInfo.containerSize.width, windowInfo.containerSize.height, density) {
+            val wPx = windowInfo.containerSize.width; val hPx = windowInfo.containerSize.height
+            val shortPx = minOf(wPx, hPx)
+            shortPx > 0 && with(density) { shortPx.toDp() } < 600.dp
+        }
         // R159 — orientation, not width: a resized browser window or a rotated phone flips this live.
         // Compact controls *sizing*; portrait controls *these overrides* — a portrait phone is usually
         // both, but they're independent signals (e.g. a narrow-but-landscape split-screen window).
@@ -450,7 +458,13 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
             windowInfo.containerSize.height > windowInfo.containerSize.width
         }
 
-        CompositionLocalProvider(LocalLiveConfig provides liveConfig, LocalLiveAcquisition provides liveAcquisition, LocalServerMessages provides liveServerMessages, LocalPlaystateCommands provides livePlaystateCommands, LocalTileScale provides tileScale, LocalGridColumns provides gridColumns, LocalPortraitGridColumns provides portraitGridColumns, LocalCompact provides compact, LocalPortrait provides portrait, LocalServerBaseUrl provides apiClient.baseUrl, LocalUserAvatarUrl provides activeAvatarUrl) {
+        CompositionLocalProvider(LocalLiveConfig provides liveConfig, LocalLiveAcquisition provides liveAcquisition, LocalServerMessages provides liveServerMessages, LocalPlaystateCommands provides livePlaystateCommands, LocalTileScale provides tileScale, LocalGridColumns provides gridColumns, LocalPortraitGridColumns provides portraitGridColumns, LocalCompact provides compact, LocalHandset provides handset, LocalPortrait provides portrait, LocalServerBaseUrl provides apiClient.baseUrl, LocalUserAvatarUrl provides activeAvatarUrl) {
+        // Bug fix: the block below only catches Key.Back as a Compose KeyEvent, which a TV remote's
+        // physical back key genuinely sends but Android's system back gesture/button does NOT under
+        // gesture navigation — it's intercepted by OnBackPressedDispatcher before Compose ever sees a
+        // KeyEvent. Confirmed live on the Pixel 9: back did nothing on any screen without its own
+        // on-screen back affordance. This bridges the platform's real back action into the same pop().
+        PlatformBackHandler(enabled = stack.size > 1) { pop() }
         Box(
             modifier = Modifier
                 .fillMaxSize()
