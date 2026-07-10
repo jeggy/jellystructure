@@ -44,6 +44,10 @@ import dev.jellystructure.ravilo.ui.screens.DiscoverStore
 import dev.jellystructure.ravilo.ui.screens.defaultDiscoverSegment
 import dev.jellystructure.ravilo.ui.screens.HomeScreen
 import dev.jellystructure.ravilo.ui.screens.HomeStore
+import dev.jellystructure.ravilo.ui.screens.LiveTvGuideScreen
+import dev.jellystructure.ravilo.ui.screens.LiveTvGuideStore
+import dev.jellystructure.ravilo.ui.screens.LiveTvPlayerScreen
+import dev.jellystructure.ravilo.ui.screens.LiveTvPlayerStore
 import dev.jellystructure.ravilo.ui.screens.MovieDetailScreen
 import dev.jellystructure.ravilo.ui.screens.MovieDetailStore
 import dev.jellystructure.ravilo.ui.screens.MultiTokenStore
@@ -174,6 +178,12 @@ private sealed class Dest {
         val currentEpIndex: Int = 0,
     ) : Dest()
     data class Settings(val displayName: String) : Dest()
+    // Phase R177 — a deliberate sibling to Player (see LiveTvPlayerStore's doc comment): live channels
+    // have no resume position and need Jellyfin's explicit open/close handshake, so this is its own
+    // destination rather than a branch of Dest.Player. Never reached from raviloNavItems (no top-nav
+    // tab) — only from the Home "On now" row or the guide below.
+    data class LiveTv(val channelId: String, val displayName: String) : Dest()
+    data class LiveTvGuide(val displayName: String) : Dest()
 
     // R80: each Dest maps to a hash route (web) or is ignored (android/TV).
     fun toRoute(): String = when (this) {
@@ -191,6 +201,8 @@ private sealed class Dest {
         is SeriesDetail   -> "/series/$itemId"
         is Player         -> "/player/$itemId"
         is Settings       -> "/settings"
+        is LiveTv         -> "/livetv/$channelId"
+        is LiveTvGuide    -> "/livetv-guide"
     }
 }
 
@@ -548,6 +560,8 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                     },
                     onChannelSelect = { ch -> push(Dest.ChannelView(ch, dest.displayName)) },
                     onSeeAll = { push(Dest.Browse(BrowseKind.ALL, dest.displayName)) },
+                    onLiveTvChannelSelect = { ch -> push(Dest.LiveTv(ch.channelId, dest.displayName)) },
+                    onOpenLiveTvGuide = { push(Dest.LiveTvGuide(dest.displayName)) },
                 )
             }
 
@@ -787,6 +801,30 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                             currentEpIndex = newIdx,
                         ))
                     },
+                )
+            }
+
+            is Dest.LiveTv -> {
+                // remember(dest.channelId) — a zap/number-entry re-tune inside the player mutates the
+                // SAME store instance in place (LiveTvPlayerStore.tune), it does not push a new Dest;
+                // this key only matters if the caller navigates to a genuinely different channel Dest.
+                val store = remember(dest.channelId) { LiveTvPlayerStore(apiClient) }
+                LiveTvPlayerScreen(
+                    channelId = dest.channelId,
+                    store = store,
+                    onBack = { pop() },
+                )
+            }
+
+            is Dest.LiveTvGuide -> {
+                val store = remember { LiveTvGuideStore(apiClient) }
+                LiveTvGuideScreen(
+                    store = store,
+                    displayName = dest.displayName,
+                    onBack = { pop() },
+                    onTuneChannel = { ch -> replaceTop(Dest.LiveTv(ch.channelId, dest.displayName)) },
+                    onProfile = { profileMenuOpen = true },
+                    onSearch = { push(Dest.Search(dest.displayName)) },
                 )
             }
 

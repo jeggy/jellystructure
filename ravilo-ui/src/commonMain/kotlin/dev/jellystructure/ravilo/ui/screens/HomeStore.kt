@@ -2,6 +2,7 @@ package dev.jellystructure.ravilo.ui.screens
 
 import androidx.compose.foundation.lazy.LazyListState
 import dev.jellystructure.shared.tv.HomeFeed
+import dev.jellystructure.shared.tv.LiveTvChannel
 import dev.jellystructure.shared.tv.TvApiClient
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -12,6 +13,10 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+
+// Phase R177 — "On now" program info rolls over at each boundary; poll independently of the (coarser,
+// R33-pushed) structural home feed cache, same rationale as the Continue-Watching row's own live fetch.
+private const val LIVE_TV_REFRESH_MS = 60_000L
 
 private fun HomeFeed.deduped() = copy(rows = rows.map { r -> r.copy(items = r.items.distinctBy { it.id }) })
 
@@ -38,7 +43,12 @@ class HomeStore(private val apiClient: TvApiClient) {
     // this and [discoverAvailable] into the single Discover tab — see raviloNavItems/DiscoverSegment.
     private val _upcomingAvailable = MutableStateFlow(false)
     val upcomingAvailable: StateFlow<Boolean> = _upcomingAvailable.asStateFlow()
+    // Phase R177 — the Home "On now" row; empty when Live TV is disabled/not placed on Home
+    // (HomeFeed.liveTvHome null or showOnNowRow false).
+    private val _liveTvChannels = MutableStateFlow<List<LiveTvChannel>>(emptyList())
+    val liveTvChannels: StateFlow<List<LiveTvChannel>> = _liveTvChannels.asStateFlow()
     private var loadJob: Job? = null
+    private var liveTvPollJob: Job? = null
 
     init {
         load()
@@ -64,7 +74,9 @@ class HomeStore(private val apiClient: TvApiClient) {
             for (i in 0..3) {
                 val result = runCatching { apiClient.getHome() }
                 if (result.isSuccess) {
-                    _state.value = HomeState.Loaded(result.getOrThrow().deduped())
+                    val feed = result.getOrThrow().deduped()
+                    _state.value = HomeState.Loaded(feed)
+                    setUpLiveTvPolling(feed)
                     return@launch
                 }
                 lastErr = result.exceptionOrNull()?.message ?: "Unknown error"
@@ -74,6 +86,24 @@ class HomeStore(private val apiClient: TvApiClient) {
         }
         refreshDiscoverAvailable()
         refreshUpcomingAvailable()
+    }
+
+    /** (Re)starts the "On now" poll loop iff [feed] places it on Home; a no-op restart when the
+     *  placement is unchanged just keeps the existing loop running instead of resetting its cadence. */
+    private fun setUpLiveTvPolling(feed: HomeFeed) {
+        val wants = feed.liveTvHome?.showOnNowRow == true
+        if (!wants) {
+            liveTvPollJob?.cancel(); liveTvPollJob = null
+            _liveTvChannels.value = emptyList()
+            return
+        }
+        if (liveTvPollJob?.isActive == true) return
+        liveTvPollJob = scope.launch {
+            while (true) {
+                _liveTvChannels.value = runCatching { apiClient.getLiveTvChannels() }.getOrDefault(_liveTvChannels.value)
+                delay(LIVE_TV_REFRESH_MS)
+            }
+        }
     }
 
     private fun refreshDiscoverAvailable() {
@@ -103,7 +133,10 @@ class HomeStore(private val apiClient: TvApiClient) {
         if (_state.value !is HomeState.Loaded) return
         loadJob?.cancel()
         loadJob = scope.launch {
-            runCatching { apiClient.getHome() }.getOrNull()?.let { _state.value = HomeState.Loaded(it.deduped()) }
+            runCatching { apiClient.getHome() }.getOrNull()?.deduped()?.let {
+                _state.value = HomeState.Loaded(it)
+                setUpLiveTvPolling(it)
+            }
         }
         refreshDiscoverAvailable()
         refreshUpcomingAvailable()
