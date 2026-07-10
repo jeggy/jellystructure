@@ -9,7 +9,7 @@ import dev.jellystructure.ui.renderBulkReorderWizard
 import dev.jellystructure.ui.renderMediaDetail
 import dev.jellystructure.ui.renderMetadata
 import dev.jellystructure.ui.renderSetup
-import dev.jellystructure.ui.renderLiveTvPlaceholder
+import dev.jellystructure.ui.renderLiveTv
 import dev.jellystructure.ui.renderRaviloConfig
 import dev.jellystructure.ui.renderRaviloUsers
 import dev.jellystructure.ui.renderSettings
@@ -76,7 +76,7 @@ object App {
             path == "/activity" -> renderActivity(container, scope, query)
             path.startsWith("/ravilo-users") -> renderRaviloUsers(container, scope)
             path.startsWith("/ravilo") -> renderRaviloConfig(container, scope)
-            path.startsWith("/livetv") -> renderLiveTvPlaceholder(container)
+            path.startsWith("/livetv") -> renderLiveTv(container, scope)
             path == "/settings" -> renderSettings(container, scope, query)
             path.startsWith("/metadata") -> renderMetadata(container, scope, query["tab"] ?: "studios")
             else -> renderDashboard(container, scope)

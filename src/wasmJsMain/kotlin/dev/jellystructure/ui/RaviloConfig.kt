@@ -106,6 +106,9 @@ private var facets: Map<String, List<String>> = emptyMap() // "NETWORK"/"STUDIO"
 // field below. Loaded once at mount (admin-managed, not per-user) from the same /api/config the
 // Settings page's Request-languages card edits. Empty = feature not configured — the field is hidden.
 private var requestLanguageOptions: List<Pair<String, String>> = emptyList()
+// Phase 147/148 §F — whether Live TV is enabled (fetched once at mount); gates the Layout tab's
+// "Live TV on Home" placement section entirely (nav item + section div + collectConfig field).
+private var liveTvHomeAvailable: Boolean = false
 // Client-side scope config cache: avoids a server round-trip when switching between scopes the user
 // has already visited. Invalidated immediately before each successful Save.
 private val scopeConfigCache = HashMap<String, AdminConfigResponse>()
@@ -170,6 +173,9 @@ fun renderRaviloConfig(container: Element, scope: CoroutineScope) {
         }
         facets = loadFacets()
         requestLanguageOptions = runCatching { ConfigApi.get()?.config?.requestLanguage?.intents?.map { it.id to it.label } }.getOrNull().orEmpty()
+        // Phase 147/148 §F — the "Live TV on Home" placement section only renders once Live TV is
+        // enabled on the Live TV page; that page owns connection + lineup, this one owns placement.
+        liveTvHomeAvailable = runCatching { dev.jellystructure.api.LiveTvApi.overview()?.enabled }.getOrNull() ?: false
         // R51: always start in global scope
         currentUserId = GLOBAL_SCOPE; currentScopeIsGlobal = true; currentHasOverride = false
         val resp = runCatching { RaviloApi.getConfigWithMeta(scope = "global") }.getOrNull()
@@ -324,6 +330,7 @@ private fun buildShell(): String {
           <button data-rav-sect="sect-channels" class="rav-nav-item">Collections</button>
           <button data-rav-sect="sect-rows"     class="rav-nav-item">Content rows</button>
           <button data-rav-sect="sect-portrait" class="rav-nav-item">Portrait screen</button>
+          ${if (liveTvHomeAvailable) """<button data-rav-sect="sect-livetv-home" class="rav-nav-item">Live TV on Home</button>""" else ""}
         </div>
       </nav>
       """ else ""}
@@ -332,6 +339,7 @@ private fun buildShell(): String {
         ${ravSectionDivHtml("sect-channels", "layout", tab)}
         ${ravSectionDivHtml("sect-rows", "layout", tab)}
         ${ravSectionDivHtml("sect-portrait", "layout", tab)}
+        ${if (liveTvHomeAvailable) ravSectionDivHtml("sect-livetv-home", "layout", tab) else ""}
         ${ravSectionDivHtml("sect-discover", "requests", tab)}
         ${ravSectionDivHtml("sect-behaviour", "preferences", tab)}
       </div>
@@ -566,7 +574,33 @@ private fun renderSections(container: Element, scope: CoroutineScope) {
     renderDiscover(container)
     renderBehaviour(container)
     renderPortrait(container)
+    if (liveTvHomeAvailable) renderLiveTvHome(container)
     renderPreview(container)
+}
+
+// Phase 147/148 §F — placement only ("On now" row + Live TV collection in the rail); the Live TV page
+// owns connection/lineup/enabling. Section only exists in the DOM when liveTvHomeAvailable (see buildShell).
+private fun renderLiveTvHome(container: Element) {
+    val sect = container.querySelector("#sect-livetv-home") ?: return
+    val placement = currentConfig.liveTvHome ?: dev.jellystructure.shared.tv.LiveTvHomePlacement()
+    sect.innerHTML = """
+        <div class="card" style="padding:18px 20px;margin-bottom:18px">
+          <div style="font-weight:600;margin-bottom:6px">Live TV on Home</div>
+          <p class="tiny muted" style="margin:0 0 14px">Where Live TV surfaces on the Home screen — never as its own top-nav tab. Connection, the channel lineup and the guide live on the <a href="#/livetv">Live TV</a> page.</p>
+          <label style="display:flex;align-items:center;gap:10px;font-size:.9rem;margin-bottom:10px">
+            <input type="checkbox" id="livetv-home-shownow"${if (placement.showOnNowRow) " checked" else ""}>
+            Show an "On now" row on Home
+          </label>
+          <div style="margin:0 0 14px 26px">
+            <label style="display:block;font-size:.85rem;margin-bottom:4px">Row position <span class="tiny muted">(0 = top, among the other Home rows)</span></label>
+            <input type="number" id="livetv-home-position" class="input" style="width:100px" min="0" max="20" value="${placement.onNowRowPosition}">
+          </div>
+          <label style="display:flex;align-items:center;gap:10px;font-size:.9rem">
+            <input type="checkbox" id="livetv-home-collection"${if (placement.showCollection) " checked" else ""}>
+            Also show a Live TV collection in the rail
+          </label>
+        </div>
+    """.trimIndent()
 }
 
 /** Capture current DOM edits, apply a structural change, then re-render the given section + preview. */
@@ -2595,6 +2629,14 @@ private fun collectConfig(container: Element) {
         enabled    = (container.querySelector("#top10-enable") as? HTMLInputElement)?.checked ?: currentConfig.discover.enabled,
         canRequest = (container.querySelector("#top10-canrequest") as? HTMLInputElement)?.checked ?: currentConfig.discover.canRequest,
     )
+    // Phase 147/148 §F — only present in the DOM when liveTvHomeAvailable; otherwise preserve whatever
+    // was already stored (a config saved while Live TV was disabled must not lose its placement).
+    val liveTvHomeShownowEl = container.querySelector("#livetv-home-shownow") as? HTMLInputElement
+    val liveTvHome = if (liveTvHomeShownowEl != null) dev.jellystructure.shared.tv.LiveTvHomePlacement(
+        showOnNowRow = liveTvHomeShownowEl.checked,
+        onNowRowPosition = (container.querySelector("#livetv-home-position") as? HTMLInputElement)?.value?.toIntOrNull()?.coerceIn(0, 20) ?: 0,
+        showCollection = (container.querySelector("#livetv-home-collection") as? HTMLInputElement)?.checked ?: false,
+    ) else currentConfig.liveTvHome
     currentConfig = RaviloConfig(
         heroes = heroes,
         channels = channels,
@@ -2614,6 +2656,7 @@ private fun collectConfig(container: Element) {
         gridColumns = gridColumns,
         discover = discover,
         portrait = portrait,
+        liveTvHome = liveTvHome,
     )
 }
 
