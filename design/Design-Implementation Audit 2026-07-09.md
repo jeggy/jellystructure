@@ -31,6 +31,19 @@ dev-side refactor, which we adopted:
 
 ## 3 · Mockups lag shipped implementation (open design work)
 
+> **✅ 2026-07-10 — all four items below CLOSED.** Mockups added to match shipped code:
+> (1) dashboard triage-type breakdown card in `index.html` (per-type rows, count badges,
+> zeros dimmed, deep-link to `library.html?filter=<type>`) + quick-actions parity (6 buttons);
+> (2) cover-as-video surfaces — `library.html` `Cover-as-video` quick chip + `cover_as_video`
+> STATUS entries, `app-shell.js` triage-dock queue entry ("cover art muxed as video —
+> playback-hostile, repairable"), and the `media.html` Tracks-tab **"Fix cover track"** banner
+> with `-c copy` command preview; (3) R172 request-language picker in `ravilo-app.js` (Original
+> vs Dansk/Nordic flag popup on Request, chosen-flag status chips, "Waiting for a Dansk release"
+> + Change-language, and an **In progress** rail on the Request tab) + `ravilo-i18n.js` en/da/fo
+> keys + a **Default request language** overlay field in `ravilo-config.html`'s Behaviour card;
+> (4) R174 **Items per row on grids** landscape slider (2–10) in the Behaviour card, global
+> scope only (portrait slider stays out of scope — R159 portrait section was never mocked).
+
 1. **Dashboard triage breakdown (Phase 117, + 121/122/128/144 types)** —
    `Dashboard.kt` renders an `attention-breakdown` card: one row per issue type
    (label + description + count badge, zeros dimmed, click → Library

@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Jellystructure — Live TV</title>
+<link rel="stylesheet" href="wf.css">
+<link rel="stylesheet" href="app.css">
+<style>
+  .tvlogo { width: 46px; height: 32px; border-radius: 6px; display: inline-flex; align-items: center; justify-content: center;
+    color: #fff; font-weight: 700; font-family: 'Space Grotesk', sans-serif; font-size: 13px; letter-spacing: .5px; flex: none;
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,.14); }
+  .lineup { width: 100%; border-collapse: collapse; }
+  .lineup th { text-align: left; font-size: .72rem; text-transform: uppercase; letter-spacing: .1em; color: var(--ink-soft);
+    font-weight: 600; padding: 8px 10px; border-bottom: 1px solid var(--line); }
+  .lineup td { padding: 10px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+  .lineup tr:hover td { background: var(--hi-soft); }
+  .lineup tr.off td { opacity: .5; }
+  .lineup tr.removed td { opacity: .55; background: var(--bad-soft); }
+  .lineup .cnum { font-family: 'JetBrains Mono', monospace; font-size: .9rem; color: var(--ink); width: 54px; }
+  .lineup .cname { font-weight: 600; font-size: .95rem; }
+  .lineup .ord { display: inline-flex; flex-direction: column; gap: 1px; }
+  .lineup .ord button { width: 22px; height: 16px; border: 1px solid var(--line-2); background: var(--fill-2); color: var(--ink-soft);
+    border-radius: 5px; cursor: pointer; font-size: .6rem; line-height: 1; display: flex; align-items: center; justify-content: center; }
+  .lineup .ord button:hover { border-color: var(--hi); color: var(--hi); }
+  .filterrow { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; margin: 14px 0 6px; }
+  .filterrow .fchip { cursor: pointer; }
+  .filterrow .fchip.on { background: var(--hi); color: #fff; border-color: transparent; }
+  .searchwrap input { font: inherit; font-size: .85rem; padding: 8px 12px; border-radius: 9px; border: 1px solid var(--line-2);
+    background: var(--fill-2); color: var(--ink); width: 200px; }
+  .kv { display: flex; gap: 26px; flex-wrap: wrap; }
+  .kv .k { font-size: .72rem; text-transform: uppercase; letter-spacing: .1em; color: var(--ink-soft); }
+  .kv .v { font-size: 1.15rem; font-weight: 700; font-family: 'Space Grotesk', sans-serif; margin-top: 2px; }
+</style>
+</head>
+<body class="wf-body app-body">
+
+<main class="app-main2 wide" data-page="livetv" data-screen-label="Live TV config">
+  <div class="pagebar">
+    <h1>Live TV</h1>
+    <span class="spacer"></span>
+    <span class="badge ok" title="Live TV is served by Jellyfin; jellystructure organizes how it appears in Ravilo.">● connected via Jellyfin</span>
+    <span class="btn sm ghost" id="refresh-btn">⟲ Refresh from Jellyfin</span>
+    <span class="chip" style="gap:9px;"><span class="tiny muted">Live TV in Ravilo</span><span class="toggle on" id="master-toggle"></span></span>
+  </div>
+  <p class="page-sub">Ravilo watches Live TV through Jellyfin — <b>tuners and the program guide are configured in Jellyfin</b>. Here you choose <b>which channels appear in Ravilo</b>, set their number, logo &amp; order, and how often the guide refreshes. Per-user access (who sees Live TV, and which channels) lives in the <a href="ravilo-config.html">Ravilo config</a>.</p>
+
+  <!-- connection + guide source -->
+  <div class="row" style="align-items:stretch;gap:16px;margin-top:6px;">
+    <div class="card fill">
+      <div class="row center"><h3 style="margin:0;font-size:1.05rem;">Source</h3><span class="spacer"></span><span class="btn sm ghost" id="test-btn">Test connection</span></div>
+      <hr class="dash" style="margin:11px 0;">
+      <div class="kv">
+        <div><div class="k">Channels discovered</div><div class="v" id="kv-disc">40</div></div>
+        <div><div class="k">Shown in Ravilo</div><div class="v" id="kv-shown">—</div></div>
+        <div><div class="k">Guide data</div><div class="v">XMLTV</div></div>
+        <div><div class="k">Last synced</div><div class="v">3 min ago</div></div>
+      </div>
+      <div class="note blue" style="margin-top:14px;">The tuner (HDHomeRun / M3U) and EPG are managed in <b>Jellyfin ▸ Live TV</b>. Jellystructure reads the resulting channel list and guide — it never touches the tuner.</div>
+    </div>
+    <div class="card" style="width:360px;">
+      <h3 style="margin:0 0 4px;font-size:1.05rem;">Guide</h3>
+      <div class="field" style="margin-top:12px;">
+        <label>EPG source</label>
+        <select class="select"><option>Jellyfin guide (XMLTV)</option><option>Custom XMLTV URL…</option></select>
+        <span class="hint">Where program data comes from. Jellyfin's own guide is used by default.</span>
+      </div>
+      <div class="field" style="margin-top:12px;">
+        <label>Refresh the guide every</label>
+        <select class="select"><option>15 minutes</option><option selected>1 hour</option><option>6 hours</option><option>Daily</option></select>
+        <span class="hint">How often jellystructure re-pulls now/next + the full schedule.</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- lineup-change banner -->
+  <div class="note" id="lineup-banner" style="margin-top:16px;display:flex;gap:12px;align-items:center;background:var(--warn-soft);border-color:rgba(245,181,66,.4);">
+    <span class="badge warn" style="flex:none;">Lineup changed</span>
+    <div class="tiny" style="flex:1;line-height:1.5;"><b id="new-count">3</b> new channels appeared and <b id="gone-count">1</b> is no longer in Jellyfin since the last sync. New channels stay <b>hidden</b> until you show them, so your Ravilo layout never changes on its own.</div>
+    <span class="btn sm" id="show-new-btn">Show new channels</span>
+    <span class="btn sm ghost" id="dismiss-gone-btn">Remove missing</span>
+  </div>
+
+  <!-- channel lineup -->
+  <div class="card" style="margin-top:16px;">
+    <div class="row center"><h3 style="margin:0;font-size:1.05rem;">Channel lineup</h3><span class="spacer"></span>
+      <span class="searchwrap"><input id="lu-search" type="search" placeholder="Search channels…"></span>
+    </div>
+    <div class="filterrow" id="lu-filters">
+      <span class="muted tiny">show:</span>
+      <span class="chip fchip on" data-f="all">All</span>
+      <span class="chip fchip" data-f="shown">In Ravilo</span>
+      <span class="chip fchip" data-f="hidden">Hidden</span>
+      <span class="chip fchip" data-f="new">New</span>
+      <span class="chip fchip" data-f="removed">Unavailable</span>
+    </div>
+    <div class="tiny muted" style="margin:4px 0 12px;">Drag order with ▲▼ · toggle to show a channel in Ravilo · click a number to renumber. Hidden channels stay in Jellyfin — they just don't appear on the TV.</div>
+    <table class="lineup">
+      <thead><tr><th style="width:44px;">Order</th><th style="width:64px;">In&nbsp;Ravilo</th><th style="width:60px;">#</th><th>Channel</th><th style="width:150px;">Category</th><th style="width:90px;">Guide</th><th style="width:150px;">Status</th></tr></thead>
+      <tbody id="lu-body"></tbody>
+    </table>
+    <div class="tiny muted" id="lu-more" style="margin-top:12px;"></div>
+  </div>
+</main>
+
+<script src="app-shell.js"></script>
+<script>
+(function () {
+  const CATS = { news:['News',208], sport:['Sport',150], ent:['Entertainment',280], film:['Film',20], kids:['Kids',45], doc:['Documentary',190], music:['Music',330], nordic:['Nordic',260] };
+  function grad(h){ return 'linear-gradient(135deg, hsl('+h+' 55% 40%), hsl('+((h+40)%360)+' 60% 22%))'; }
+  function initials(n){ return n.split(' ').map(w=>w[0]).join('').slice(0,3).toUpperCase(); }
+
+  // sample lineup (a slice of the 40 Jellyfin channels + the recent lineup changes)
+  const raw = [
+    ['Kringvarp 1','news',true,true,'ok'], ['Kringvarp 2','nordic',true,true,'ok'], ['KVF Sport','sport',true,true,'ok'],
+    ['DR1','ent',true,true,'ok'], ['DR2','doc',true,true,'ok'], ['TV 2','ent',true,true,'ok'],
+    ['TV 2 Nyheder','news',true,true,'ok'], ['TV 2 Sport','sport',true,true,'ok'], ['Atlantic Film','film',true,true,'ok'],
+    ['Fjord Film','film',false,true,'ok'], ['Nordic Noir','nordic',true,true,'ok'], ['Kids Kanal','kids',true,false,'ok'],
+    ['Nature HD','doc',true,true,'ok'], ['Beat FM TV','music',false,true,'ok'],
+    ['Premier Sport 3','sport',false,true,'new'], ['Saga Drama','nordic',false,true,'new'], ['Klassisk HD','music',false,false,'new'],
+    ['Retro Movies','film',true,true,'removed'],
+  ];
+  let chans = raw.map((c,i)=>({ id:i, num:101+i, name:c[0], cat:c[1], shown:c[2], guide:c[3], state:c[4] }));
+  let filter = 'all', search = '';
+
+  const body = document.getElementById('lu-body');
+  const $ = id => document.getElementById(id);
+
+  function counts(){
+    const live = chans.filter(c=>c.state!=='removed');
+    $('kv-disc').textContent = live.length;
+    $('kv-shown').textContent = live.filter(c=>c.shown).length;
+    $('new-count').textContent = chans.filter(c=>c.state==='new').length;
+    $('gone-count').textContent = chans.filter(c=>c.state==='removed').length;
+    const banner = $('lineup-banner');
+    banner.style.display = (chans.some(c=>c.state==='new'||c.state==='removed')) ? 'flex' : 'none';
+  }
+  function statusCell(c){
+    if (c.state==='new') return '<span class="badge info">✦ New since sync</span>';
+    if (c.state==='removed') return '<span class="badge bad">No longer in Jellyfin</span>';
+    return '<span class="tiny muted">'+(c.shown?'Shown':'Hidden')+'</span>';
+  }
+  function render(){
+    let list = chans.filter(c=>{
+      if (filter==='shown') return c.shown && c.state!=='removed';
+      if (filter==='hidden') return !c.shown && c.state!=='removed';
+      if (filter==='new') return c.state==='new';
+      if (filter==='removed') return c.state==='removed';
+      return true;
+    });
+    if (search) list = list.filter(c=>c.name.toLowerCase().includes(search.toLowerCase()) || String(c.num).includes(search));
+    body.innerHTML = list.map(c=>{
+      const h = CATS[c.cat][1];
+      const cls = c.state==='removed' ? 'removed' : (!c.shown ? 'off' : '');
+      const toggle = c.state==='removed'
+        ? '<span class="tiny muted">—</span>'
+        : '<span class="toggle'+(c.shown?' on':'')+'" data-tg="'+c.id+'"></span>';
+      const actions = c.state==='removed'
+        ? '<span class="btn sm bad" data-rm="'+c.id+'">Remove from layout</span>'
+        : statusCell(c);
+      return '<tr class="'+cls+'" data-id="'+c.id+'">'+
+        '<td><span class="ord"><button data-up="'+c.id+'">▲</button><button data-dn="'+c.id+'">▼</button></span></td>'+
+        '<td>'+toggle+'</td>'+
+        '<td class="cnum">'+c.num+'</td>'+
+        '<td><div class="row center" style="gap:11px;"><span class="tvlogo" style="background:'+grad(h)+'">'+initials(c.name)+'</span><span class="cname">'+c.name+'</span></div></td>'+
+        '<td><span class="chip" style="font-size:.72rem;">'+CATS[c.cat][0]+'</span></td>'+
+        '<td>'+(c.guide?'<span class="badge ok" style="font-size:.62rem;">EPG</span>':'<span class="badge warn" style="font-size:.62rem;">no guide</span>')+'</td>'+
+        '<td>'+actions+'</td>'+
+      '</tr>';
+    }).join('');
+    $('lu-more').textContent = filter==='all' && !search ? 'Showing all '+list.filter(c=>c.state!=='removed').length+' channels Jellyfin currently provides · plus any flagged unavailable.' : list.length+' channel'+(list.length===1?'':'s')+' match.';
+    counts();
+  }
+
+  body.addEventListener('click', e=>{
+    const tg=e.target.closest('[data-tg]'); if(tg){ const c=chans.find(x=>x.id==tg.dataset.tg); c.shown=!c.shown; render(); return; }
+    const rm=e.target.closest('[data-rm]'); if(rm){ chans=chans.filter(x=>x.id!=rm.dataset.rm); render(); return; }
+    const up=e.target.closest('[data-up]'); if(up){ move(+up.dataset.up,-1); return; }
+    const dn=e.target.closest('[data-dn]'); if(dn){ move(+dn.dataset.dn,1); return; }
+  });
+  function move(id,d){ const i=chans.findIndex(c=>c.id===id), j=i+d; if(j<0||j>=chans.length) return; const t=chans[i]; chans[i]=chans[j]; chans[j]=t;
+    const a=chans[i].num; chans[i].num=chans[j].num; chans[j].num=a; render(); }
+
+  document.querySelectorAll('#lu-filters .fchip').forEach(c=>c.addEventListener('click',()=>{
+    document.querySelectorAll('#lu-filters .fchip').forEach(x=>x.classList.toggle('on',x===c)); filter=c.dataset.f; render();
+  }));
+  $('lu-search').addEventListener('input', e=>{ search=e.target.value; render(); });
+  $('show-new-btn').addEventListener('click', ()=>{ chans.forEach(c=>{ if(c.state==='new'){ c.shown=true; c.state='ok'; } }); render(); toast('New channels are now shown in Ravilo'); });
+  $('dismiss-gone-btn').addEventListener('click', ()=>{ chans=chans.filter(c=>c.state!=='removed'); render(); toast('Removed unavailable channels from the layout'); });
+  $('refresh-btn').addEventListener('click', ()=>toast('Re-pulling channels + guide from Jellyfin…'));
+  $('test-btn').addEventListener('click', ()=>toast('Live TV reachable · 40 channels · guide OK'));
+  $('master-toggle').addEventListener('click', function(){ this.classList.toggle('on'); toast(this.classList.contains('on')?'Live TV enabled in Ravilo':'Live TV hidden from Ravilo'); });
+
+  function toast(m){ const t=document.createElement('div'); t.className='toast'; t.textContent=m; document.body.appendChild(t); setTimeout(()=>t.remove(),1900); }
+
+  render();
+})();
+</script>
+</body>
+</html>

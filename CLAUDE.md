@@ -46,9 +46,11 @@ GitHub is the **source of truth**; we layer designs on top of it.
   (R174), cover-as-video (144), event-driven pipeline (145).
 - **2026-07-09 audit:** design mirrors verified byte-identical with repo `design/**`;
   repo-side refactor adopted (`media/series/metadata.html` now link `app/detail.css` +
-  `app/metadata.css` — keep these files). Known mockup gaps vs shipped code: dashboard
-  triage breakdown (117) + cover-as-video surfaces (144), R172 language picker, R174
-  grid-columns controls — see `Design-Implementation Audit 2026-07-09.md`.
+  `app/metadata.css` — keep these files). **2026-07-10: the four open mockup gaps are now
+  closed** — dashboard triage-type breakdown (117) + cover-as-video surfaces (144, Library
+  filter · triage-dock entry · detail "Fix cover track"), Ravilo request-language picker +
+  In-progress rail + config default (R172), and the grid-columns landscape slider (R174).
+  Design now matches shipped code across admin 0–145 / Ravilo R01–R176.
 
 ## Design constraints to respect
 - `design/app/` + `design/ravilo/` mockups are the **visual target** for the

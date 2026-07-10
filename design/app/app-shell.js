@@ -29,7 +29,11 @@
     signout:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M14 4h4a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1h-4"/><path d="M9 8l-4 4 4 4"/><line x1="5" y1="12" x2="15" y2="12"/></svg>',
     attn:      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><path d="M12 4 21 19H3z"/><line x1="12" y1="10" x2="12" y2="14" stroke-linecap="round"/><circle cx="12" cy="16.6" r="0.4" fill="currentColor" stroke="none"/></svg>',
     menu:      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="17" x2="20" y2="17"/></svg>',
-    ravilo:    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><rect x="3" y="4.5" width="18" height="12.5" rx="2"/><path d="M10 8.5l4.5 2.75L10 14z" fill="currentColor" stroke="none"/><line x1="8.5" y1="20" x2="15.5" y2="20" stroke-linecap="round"/></svg>'
+    ravilo:    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><rect x="3" y="4.5" width="18" height="12.5" rx="2"/><path d="M10 8.5l4.5 2.75L10 14z" fill="currentColor" stroke="none"/><line x1="8.5" y1="20" x2="15.5" y2="20" stroke-linecap="round"/></svg>',
+    livetv:    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><rect x="3" y="6" width="18" height="12" rx="2"/><path d="M8 3.5 12 6l4-2.5" stroke-linecap="round"/></svg>',
+    requests:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M5 4h14v16l-7-4-7 4z"/><path d="M12 8v5M9.5 10.5h5"/></svg>',
+    prefs:     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><line x1="6" y1="4" x2="6" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/><line x1="18" y1="4" x2="18" y2="20"/><circle cx="6" cy="9" r="2.3" fill="var(--fill-2)"/><circle cx="12" cy="15" r="2.3" fill="var(--fill-2)"/><circle cx="18" cy="8" r="2.3" fill="var(--fill-2)"/></svg>',
+    users:     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.2"/><path d="M3.5 19a5.5 5.5 0 0 1 11 0"/><path d="M16 5.3a3.2 3.2 0 0 1 0 6M18.6 19a5.5 5.5 0 0 0-3-4.9"/></svg>'
   };
 
   /* ---- brand mark: “Quartet Play” (structure tile with the open slot as a play) ---- */
@@ -57,8 +61,12 @@
     { group: 'Setup' },
     { href: 'metadata.html', label: 'Metadata',  icon: 'metadata',  page: 'metadata'  },
     { href: 'settings.html', label: 'Settings',  icon: 'settings',  page: 'settings'  },
-    { group: 'Apps' },
-    { href: 'ravilo-config.html', label: 'Ravilo TV', icon: 'ravilo', page: 'ravilo' },
+    { group: 'Ravilo' },
+    { href: 'ravilo-config.html?tab=layout',      label: 'Layout',          icon: 'ravilo',   page: 'ravilo-layout'      },
+    { href: 'livetv.html',                        label: 'Live TV',         icon: 'livetv',   page: 'livetv'            },
+    { href: 'ravilo-config.html?tab=requests',    label: 'Requests',        icon: 'requests', page: 'ravilo-requests'    },
+    { href: 'ravilo-users.html',                  label: 'Users & devices', icon: 'users',    page: 'ravilo-users'       },
+    { href: 'ravilo-config.html?tab=preferences', label: 'Preferences',     icon: 'prefs',    page: 'ravilo-preferences' },
   ];
   const here = (location.pathname.split('/').pop() || 'index.html');
   const main = document.querySelector('.app-main2');
@@ -71,6 +79,7 @@
     { title: 'Nordvest',       sub: 'S01E02 · missing still + overview', href: 'series.html' },
     { title: 'Babel Fish',     sub: 'S02E05 · multiple default audio', href: 'series.html' },
     { title: 'Caminandes 2',   sub: 'missing poster artwork', href: 'media.html' },
+    { title: 'Server Farm', sub: 'S01 · cover art muxed as video — playback-hostile, repairable', href: 'series.html' },
     { title: 'The Daily Show', sub: 'no longer in Jellyfin — kept, flagged for triage', href: 'series.html' },
   ];
   const ATTN_TOTAL = 214;
@@ -83,12 +92,22 @@
   side.className = 'app-side';
   side.innerHTML =
     '<div class="logo">' + BRAND(30) + ' Jellystructure</div>' +
-    NAV.map(item => {
-      if (item.group) return '<div class="group-label">' + item.group + '</div>';
-      const active = (item.href === here) || (item.page === current) ? ' active' : '';
-      return '<a class="nav' + active + '" href="' + item.href + '">' +
-        '<span class="l"><span class="ico">' + I[item.icon] + '</span>' + item.label + '</span></a>';
-    }).join('') +
+    (function () {
+      var CHEV = '<svg class="grp-chev" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>';
+      var navA = function (item) {
+        var active = (item.href === here) || (item.page === current) ? ' active' : '';
+        return '<a class="nav' + active + '" href="' + item.href + '"><span class="l"><span class="ico">' + I[item.icon] + '</span>' + item.label + '</span></a>';
+      };
+      var pre = [], groups = [], cur = null;
+      NAV.forEach(function (item) { if (item.group) { cur = { label: item.group, items: [] }; groups.push(cur); } else if (cur) cur.items.push(item); else pre.push(item); });
+      var collapsed = function (g) { try { return localStorage.getItem('js-nav-collapsed:' + g) === '1'; } catch (e) { return false; } };
+      return pre.map(navA).join('') + groups.map(function (g) {
+        return '<div class="nav-group' + (collapsed(g.label) ? ' collapsed' : '') + '" data-group="' + g.label + '">' +
+          '<button type="button" class="group-label group-toggle" data-group="' + g.label + '" aria-label="Toggle ' + g.label + '">' + g.label + CHEV + '</button>' +
+          '<div class="nav-group-items">' + g.items.map(navA).join('') + '</div>' +
+        '</div>';
+      }).join('');
+    })() +
     '<div class="grow"></div>' +
     '<div class="status">' +
       '<div class="row"><span class="dot ok"></span> Jellyfin online</div>' +
@@ -105,6 +124,28 @@
   shell.appendChild(side);
   if (main) { main.parentNode.removeChild(main); shell.appendChild(main); }
   document.body.insertBefore(shell, document.body.firstChild);
+
+  /* ---- collapsible sidebar groups (persisted per group) ---- */
+  (function () {
+    var st = document.createElement('style');
+    st.textContent =
+      '.nav-group{display:flex;flex-direction:column;}' +
+      '.group-label.group-toggle{display:flex;align-items:center;width:100%;background:transparent;border:0;cursor:pointer;text-align:left;font-family:inherit;}' +
+      '.group-label.group-toggle:hover{color:var(--ink);}' +
+      '.group-label .grp-chev{margin-left:auto;opacity:.6;transition:transform .18s ease;}' +
+      '.nav-group.collapsed .grp-chev{transform:rotate(-90deg);}' +
+      '.nav-group-items{display:flex;flex-direction:column;overflow:hidden;}' +
+      '.nav-group.collapsed .nav-group-items{display:none;}';
+    document.head.appendChild(st);
+    side.querySelectorAll('.group-toggle').forEach(function (btn) {
+      btn.addEventListener('click', function (e) {
+        e.preventDefault();
+        var wrap = btn.closest('.nav-group');
+        var isC = wrap.classList.toggle('collapsed');
+        try { localStorage.setItem('js-nav-collapsed:' + btn.dataset.group, isC ? '1' : '0'); } catch (err) {}
+      });
+    });
+  })();
 
   /* ---- mobile top bar + drawer backdrop (CSS hides these on desktop) ---- */
   const topbar = document.createElement('div');

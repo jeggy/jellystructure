@@ -6,6 +6,22 @@
 <title>Jellystructure — Dashboard</title>
 <link rel="stylesheet" href="wf.css">
 <link rel="stylesheet" href="app.css">
+<style>
+  /* Phase 117 — triage-type breakdown on the dashboard */
+  .attn-breakdown { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 10px; margin: 4px 0 2px; }
+  .abk { display: flex; align-items: center; gap: 10px; padding: 9px 11px; border-radius: 9px;
+    border: 1px solid var(--line); background: var(--fill-2); text-decoration: none; color: var(--ink);
+    transition: border-color .15s ease, background .15s ease, transform .1s ease; }
+  .abk:hover { border-color: var(--hi); background: var(--hi-soft); text-decoration: none; }
+  .abk:active { transform: translateY(1px); }
+  .abk .abk-l { display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1; }
+  .abk .abk-l b { font-family: 'Space Grotesk', sans-serif; font-size: .92rem; font-weight: 600; }
+  .abk .abk-l .d { font-size: .72rem; color: var(--ink-soft); line-height: 1.3; }
+  .abk .badge { flex: none; }
+  .abk.zero { opacity: .5; }
+  .abk.zero:hover { opacity: .8; }
+  @media (max-width: 640px) { .attn-breakdown { grid-template-columns: 1fr; } }
+</style>
 </head>
 <body class="wf-body app-body">
 
@@ -28,17 +44,21 @@
 
   <div class="row" style="margin-top:18px;align-items:stretch;">
     <div class="card fill">
-      <div class="row center"><h3 style="margin:0;font-size:1.1rem;">Needs your attention</h3><span class="spacer"></span><span class="badge bad">214 items</span><button class="btn sm" id="reopen-dock">Show attention dock</button><a class="btn sm" href="library.html">Browse all →</a></div>
-      <div class="tiny muted" style="margin:6px 0 0;">Step through every flagged item from the floating dock, bottom-right — it opens each one's detail page where you fix it. Closed it? <b>Show attention dock</b> brings it back.</div>
+      <div class="row center"><h3 style="margin:0;font-size:1.1rem;">Needs your attention</h3><span class="spacer"></span><span class="badge bad">214 items</span><button class="btn sm" id="reopen-dock">Show attention dock</button><a class="btn sm" href="library.html?filter=attention">Browse all →</a></div>
+      <div class="tiny muted" style="margin:6px 0 0;">Every flagged item, grouped by issue type. Click a type to open Library filtered to just those; or step through them one by one from the floating dock, bottom-right. Closed the dock? <b>Show attention dock</b> brings it back.</div>
       <hr class="dash" style="margin:11px 0;">
-      <table class="wf-table">
-        <tr><td><a href="media.html" style="color:var(--ink);font-weight:700;">Big Buck Bunny (2008)</a></td><td><span class="badge bad">2 untagged audio</span></td><td class="muted tiny num">0:a:1, 0:a:2</td><td><a class="btn sm" href="media.html">Open</a></td></tr>
-        <tr><td><a href="media.html" style="color:var(--ink);font-weight:700;">Sintel (2010)</a></td><td><span class="badge warn">default ≠ resolved</span></td><td class="muted tiny num">0:a:1 fr</td><td><a class="btn sm" href="media.html">Open</a></td></tr>
-        <tr><td><a href="series.html" style="color:var(--ink);font-weight:700;">Nordvest (2023)</a></td><td><span class="badge bad">S01E02 · missing still + overview</span></td><td class="muted tiny">episode</td><td><a class="btn sm" href="series.html">Open</a></td></tr>
-        <tr><td><a href="media.html" style="color:var(--ink);font-weight:700;">Caminandes 2 (2013)</a></td><td><span class="badge bad">missing poster artwork</span></td><td class="muted tiny">no poster.jpg on disk</td><td><a class="btn sm" href="media.html">Open</a></td></tr>
-        <tr><td><a href="series.html" style="color:var(--ink);font-weight:700;">Babel Fish (2021)</a></td><td><span class="badge warn">language mix</span></td><td class="muted tiny">distribution shown · writes not blocked</td><td><a class="btn sm" href="series.html">Review</a></td></tr>
-      </table>
-      <div class="tiny muted" style="margin-top:8px;"><a href="library.html">…210 more — filter Library by “Needs attention” →</a></div>
+      <div class="attn-breakdown">
+        <a class="abk" href="library.html?filter=untagged"><span class="abk-l"><b>Untagged audio</b><span class="d">an audio track carries no language tag</span></span><span class="badge bad">63</span></a>
+        <a class="abk" href="library.html?filter=missing_still"><span class="abk-l"><b>Missing episode still</b><span class="d">no still image on disk for an episode</span></span><span class="badge bad">39</span></a>
+        <a class="abk" href="library.html?filter=cascade_mismatch"><span class="abk-l"><b>Default ≠ resolved</b><span class="d">default audio isn't the resolved metadata language</span></span><span class="badge warn">41</span></a>
+        <a class="abk" href="library.html?filter=language_mix"><span class="abk-l"><b>Language mix</b><span class="d">episodes disagree on audio language (not blocked)</span></span><span class="badge warn">28</span></a>
+        <a class="abk" href="library.html?filter=multi_default"><span class="abk-l"><b>Multiple default audio</b><span class="d">more than one audio track flagged default</span></span><span class="badge warn">12</span></a>
+        <a class="abk" href="library.html?filter=cover_as_video"><span class="abk-l"><b>Cover art as video</b><span class="d">cover image muxed as a selectable video track</span></span><span class="badge bad">8</span></a>
+        <a class="abk" href="library.html?filter=zero_audio"><span class="abk-l"><b>Zero audio tracks</b><span class="d">file has no playable audio stream</span></span><span class="badge bad">4</span></a>
+        <a class="abk zero" href="library.html?filter=duplicate"><span class="abk-l"><b>Duplicate entry</b><span class="d">two rows share one Jellyfin id</span></span><span class="badge">0</span></a>
+        <a class="abk zero" href="library.html?filter=missing_from_source"><span class="abk-l"><b>Missing from source</b><span class="d">vanished from disk — kept, not deleted</span></span><span class="badge">0</span></a>
+      </div>
+      <div class="tiny muted" style="margin-top:10px;"><a href="library.html?filter=attention">Browse all flagged items in Library →</a></div>
     </div>
 
     <div class="col dash-sidecol" style="width:320px;">
@@ -53,11 +73,14 @@
       <div class="card">
         <h3 style="margin:0 0 8px;font-size:1.05rem;">Quick actions</h3>
         <div class="pill-row">
-          <a class="chip" href="media.html#tab=tracks">Set track defaults</a>
-          <span class="chip">Re-pull artwork</span>
-          <span class="chip">Tell Jellyfin to refresh</span>
+          <a class="chip" href="library.html?filter=attention">View attention</a>
+          <a class="chip" href="media.html#tab=tracks">Manage tracks</a>
+          <span class="chip" id="qa-artwork">Re-pull artwork</span>
+          <span class="chip" id="qa-nfo">Sync NFOs to Jellyfin</span>
+          <span class="chip" id="qa-rescan">Jellyfin rescan</span>
+          <a class="chip" href="activity.html">View activity</a>
         </div>
-        <div class="tiny muted" style="margin-top:10px;">A job is running — watch it in the dock, bottom-right, or on <a href="activity.html">Activity</a>.</div>
+        <div class="tiny muted" id="qa-feedback" style="margin-top:10px;">A job is running — watch it in the dock, bottom-right, or on <a href="activity.html">Activity</a>.</div>
       </div>
     </div>
   </div>
@@ -69,6 +92,15 @@
   document.getElementById('reopen-dock').addEventListener('click', function () {
     if (window.openAttentionDock) window.openAttentionDock();
   });
+  // Quick actions — kick off a background job + show a feedback line (matches shipped behaviour)
+  var qaFeedback = document.getElementById('qa-feedback');
+  function qa(id, msg) {
+    var el = document.getElementById(id);
+    if (el) el.addEventListener('click', function () { if (qaFeedback) qaFeedback.innerHTML = msg + ' — watch it in the dock, bottom-right, or on <a href="activity.html">Activity</a>.'; });
+  }
+  qa('qa-artwork', 'Re-pull artwork queued for all items');
+  qa('qa-nfo', 'Writing NFOs and asking Jellyfin to re-read them');
+  qa('qa-rescan', 'Jellyfin library rescan requested');
 </script>
 </body>
 </html>
