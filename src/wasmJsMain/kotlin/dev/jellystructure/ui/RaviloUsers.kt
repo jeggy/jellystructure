@@ -110,7 +110,7 @@ private suspend fun refreshUsersList(scope: CoroutineScope) {
 
         val deviceRows = if (u.devices.isEmpty()) """<div class="tiny muted" style="padding:6px 0">No Ravilo devices.</div>""" else u.devices.joinToString("") { d ->
             val connBadge = if (d.connected) """<span class="badge ok" style="margin-left:6px">connected</span>""" else ""
-            val playing = d.nowPlaying?.let { """<div class="tiny" style="color:var(--acc-ink)">▶ playing $it</div>""" } ?: ""
+            val playing = d.nowPlaying?.let { """<div class="tiny" style="color:var(--acc-ink)">▶ playing ${it.esc()}</div>""" } ?: ""
             """<div class="row center" style="padding:7px 0;border-top:1px solid var(--line)">
                  <div style="flex:1;min-width:0">
                    <b class="tiny">${d.name.esc()}</b>$connBadge

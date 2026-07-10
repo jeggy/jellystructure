@@ -425,6 +425,26 @@ class MediaStore(
         return null
     }
 
+    /**
+     * Bug fix: the Users & Devices "now playing" line was showing the raw Jellyfin item id (a hex
+     * UUID) because nothing resolved it to a title. Human-readable label for [jellyfinId] — a movie/
+     * series' own title, or "Series · S01E02 · Episode title" for an episode (same O(n) episode scan
+     * as [resolvePlayTarget] — no index exists for nested episode ids). Null if the id isn't in this
+     * library at all (e.g. a stale/deleted item), so callers can fall back gracefully.
+     */
+    fun titleForJellyfinId(jellyfinId: String): String? {
+        resolveByJellyfinId(jellyfinId)?.let { return it.title }
+        for (series in allItems()) {
+            if (series.kind != MediaKind.TV_SHOW) continue
+            val ep = series.episodes.firstOrNull { it.jellyfinId == jellyfinId } ?: continue
+            val code = if (ep.seasonNumber != null && ep.episodeNumber != null)
+                "S${ep.seasonNumber.toString().padStart(2, '0')}E${ep.episodeNumber.toString().padStart(2, '0')}"
+            else null
+            return listOfNotNull(series.title, code, ep.title?.takeIf { it.isNotBlank() }).joinToString(" · ")
+        }
+        return null
+    }
+
     fun allItems(): List<MediaItem> {
         val cached = allItemsCache
         if (cached != null) return cached
