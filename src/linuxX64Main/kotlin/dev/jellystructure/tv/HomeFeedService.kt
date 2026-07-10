@@ -150,6 +150,7 @@ class HomeFeedService(
             autoAdvanceSeconds = config.autoAdvanceSeconds,
             tileShape = config.tileShape,
             portraitHeroHeightPct = config.portrait?.heroHeightPct,
+            liveTvHome = config.liveTvHome,
         )
     }
 

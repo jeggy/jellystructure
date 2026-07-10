@@ -53,6 +53,7 @@ import dev.jellystructure.ravilo.ui.i18n.str
 import dev.jellystructure.ravilo.ui.theme.RaviloDimens
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
 import dev.jellystructure.shared.tv.Channel
+import dev.jellystructure.shared.tv.LiveTvChannel
 import dev.jellystructure.shared.tv.MediaCard
 import dev.jellystructure.shared.tv.Row
 import dev.jellystructure.shared.tv.RowKind
@@ -74,6 +75,9 @@ fun HomeScreen(
     // Fires when the user signs out from the error state (see HomeErrorState) — a device whose
     // locally-cached token no longer matches any server-side record can never recover via Retry.
     onSignOut: () -> Unit = {},
+    // Phase R177 — selecting an "On now" tile tunes straight into the live player (never a top-nav tab).
+    onLiveTvChannelSelect: (LiveTvChannel) -> Unit = {},
+    onOpenLiveTvGuide: () -> Unit = {},
 ) {
     val colors = RaviloTheme.colors
     val state by store.state.collectAsState()
@@ -108,6 +112,8 @@ fun HomeScreen(
                 onSeeAll = onSeeAll,
                 onProfile = onProfile,
                 onSearch = onSearch,
+                onLiveTvChannelSelect = onLiveTvChannelSelect,
+                onOpenLiveTvGuide = onOpenLiveTvGuide,
             )
         }
     }
@@ -127,8 +133,12 @@ private fun HomeLoaded(
     onSeeAll: (String?) -> Unit,
     onProfile: () -> Unit,
     onSearch: () -> Unit,
+    onLiveTvChannelSelect: (LiveTvChannel) -> Unit,
+    onOpenLiveTvGuide: () -> Unit,
 ) {
     val listState = store.listState   // R137
+    val liveTvChannels by store.liveTvChannels.collectAsState()
+    val onNowRowIndex = feed.liveTvHome?.onNowRowPosition?.coerceAtLeast(0) ?: 0
     val scope = rememberCoroutineScope()
 
     // Hero height as a % of the screen, per the user's config (R27); auto-advance interval too.
@@ -258,44 +268,20 @@ private fun HomeLoaded(
             }
         }
 
-        // Content rows
-        items(feed.rows.size, key = { ri -> feed.rows[ri].id }) { ri ->
-            val row: Row = feed.rows[ri]
-            // Compute variant here so urlResolver and Tile use the same value.
-            val rowVariant = if (row.kind == RowKind.CONTINUE) TileVariant.LANDSCAPE else feed.tileShape.toTileVariant()
-
-            Spacer(Modifier.height(RaviloDimens.rowGap))
-            StaticContentRow(
-                title = row.title,
-                items = row.items,
-                itemKey = { card -> card.id },
-                urlResolver = { card ->
-                    val u = if (rowVariant == TileVariant.LANDSCAPE) card.backdropUrl ?: card.posterUrl else card.posterUrl
-                    // R96 fix: prefetch the SAME ?w= URL the Tile will request (else prefetch warms the
-                    // full-size image and the tile cache-misses → double download).
-                    u?.let { sizedProxyUrl(it, tileRequestedWidth(rowVariant)) }
-                },
-                bringRowHeaderIntoView = false,  // R108: spec topInset already shows the title
-                restoreItemKey = if (store.focusRowKey == row.id) store.focusItemKey else null,  // R139
-            ) { _, card, fr ->
-                // R113: in Continue Watching, show the season/episode as a small on-image badge for TV
-                // shows and leave just the series title below (was "S1E3 · Episode" as the subtitle).
-                val isContinue = row.kind == RowKind.CONTINUE
-                val episodeBadge = if (isContinue && card.seasonNumber != null && card.episodeNumber != null)
-                    "S${card.seasonNumber}:E${card.episodeNumber}" else null
-                Tile(
-                    title = card.title,
-                    subtitle = if (isContinue) null else card.nextUpLabel,
-                    episodeBadge = episodeBadge,
-                    posterUrl = if (rowVariant == TileVariant.LANDSCAPE) card.backdropUrl ?: card.posterUrl else card.posterUrl,
-                    variant = rowVariant,
-                    progressPct = card.progressPct ?: 0f,
-                    watched = card.watched,
-                    upcomingLabel = card.upcomingEpisode,
-                    focusRequester = fr,  // R139
-                    onSelect = { store.focusRowKey = row.id; store.focusItemKey = card.id; onItemSelect(card) },  // R139
-                )
+        // Content rows, with the Phase R177 "On now" row interleaved at feed.liveTvHome's configured
+        // position (never a top-nav tab — it only ever lives among the Home rows).
+        val clampedOnNowIndex = onNowRowIndex.coerceIn(0, feed.rows.size)
+        items(clampedOnNowIndex, key = { ri -> feed.rows[ri].id }) { ri ->
+            ContentRowItem(feed.rows[ri], feed, store, onItemSelect)
+        }
+        if (liveTvChannels.isNotEmpty()) {
+            item(key = "on_now") {
+                Spacer(Modifier.height(RaviloDimens.rowGap))
+                OnNowRow(liveTvChannels, store, onLiveTvChannelSelect, onOpenLiveTvGuide)
             }
+        }
+        items(feed.rows.size - clampedOnNowIndex, key = { i -> feed.rows[clampedOnNowIndex + i].id }) { i ->
+            ContentRowItem(feed.rows[clampedOnNowIndex + i], feed, store, onItemSelect)
         }
     }
     }
@@ -320,6 +306,87 @@ private fun HomeLoaded(
         onSearch = onSearch,
         scrolled = appBarScrolled,
     )
+    }
+}
+
+@Composable
+private fun ContentRowItem(
+    row: Row,
+    feed: dev.jellystructure.shared.tv.HomeFeed,
+    store: HomeStore,
+    onItemSelect: (MediaCard) -> Unit,
+) {
+    // Compute variant here so urlResolver and Tile use the same value.
+    val rowVariant = if (row.kind == RowKind.CONTINUE) TileVariant.LANDSCAPE else feed.tileShape.toTileVariant()
+    Spacer(Modifier.height(RaviloDimens.rowGap))
+    StaticContentRow(
+        title = row.title,
+        items = row.items,
+        itemKey = { card -> card.id },
+        urlResolver = { card ->
+            val u = if (rowVariant == TileVariant.LANDSCAPE) card.backdropUrl ?: card.posterUrl else card.posterUrl
+            // R96 fix: prefetch the SAME ?w= URL the Tile will request (else prefetch warms the
+            // full-size image and the tile cache-misses → double download).
+            u?.let { sizedProxyUrl(it, tileRequestedWidth(rowVariant)) }
+        },
+        bringRowHeaderIntoView = false,  // R108: spec topInset already shows the title
+        restoreItemKey = if (store.focusRowKey == row.id) store.focusItemKey else null,  // R139
+    ) { _, card, fr ->
+        // R113: in Continue Watching, show the season/episode as a small on-image badge for TV
+        // shows and leave just the series title below (was "S1E3 · Episode" as the subtitle).
+        val isContinue = row.kind == RowKind.CONTINUE
+        val episodeBadge = if (isContinue && card.seasonNumber != null && card.episodeNumber != null)
+            "S${card.seasonNumber}:E${card.episodeNumber}" else null
+        Tile(
+            title = card.title,
+            subtitle = if (isContinue) null else card.nextUpLabel,
+            episodeBadge = episodeBadge,
+            posterUrl = if (rowVariant == TileVariant.LANDSCAPE) card.backdropUrl ?: card.posterUrl else card.posterUrl,
+            variant = rowVariant,
+            progressPct = card.progressPct ?: 0f,
+            watched = card.watched,
+            upcomingLabel = card.upcomingEpisode,
+            focusRequester = fr,  // R139
+            onSelect = { store.focusRowKey = row.id; store.focusItemKey = card.id; onItemSelect(card) },  // R139
+        )
+    }
+}
+
+/** Phase R177 — the Home "On now" row: each tile is a channel's currently-airing program with its
+ *  live elapsed-time progress bar (reuses [Tile]'s existing progressPct rendering). Selecting a tile
+ *  tunes that channel directly (opens the live player) — there is no intermediate detail screen. */
+@Composable
+private fun OnNowRow(
+    channels: List<LiveTvChannel>,
+    store: HomeStore,
+    onLiveTvChannelSelect: (LiveTvChannel) -> Unit,
+    onOpenLiveTvGuide: () -> Unit,
+) {
+    StaticContentRow(
+        title = str("livetv.on_now"),
+        items = channels,
+        seeAllLabel = str("livetv.guide"),
+        onSeeAll = onOpenLiveTvGuide,
+        itemKey = { it.channelId },
+        urlResolver = { it.logoUrl },
+        bringRowHeaderIntoView = false,
+        restoreItemKey = if (store.focusRowKey == "on_now") store.focusItemKey else null,
+    ) { _, ch, fr ->
+        val program = ch.currentProgram
+        val nowMs = remember { kotlin.time.Clock.System.now().toEpochMilliseconds() }
+        val progress = if (program != null && program.endMs > program.startMs)
+            ((nowMs - program.startMs).toFloat() / (program.endMs - program.startMs).toFloat()).coerceIn(0f, 1f)
+        else 0f
+        Tile(
+            title = ch.name,
+            subtitle = program?.name ?: str("livetv.no_programs"),
+            episodeBadge = if (ch.number > 0) ch.number.toString() else null,
+            posterUrl = ch.logoUrl,
+            variant = TileVariant.LANDSCAPE,
+            progressPct = progress,
+            focusRequester = fr,
+            onSelect = { store.focusRowKey = "on_now"; store.focusItemKey = ch.channelId; onLiveTvChannelSelect(ch) },
+        )
     }
 }
 
