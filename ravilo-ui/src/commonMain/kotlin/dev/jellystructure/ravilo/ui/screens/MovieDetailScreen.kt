@@ -277,9 +277,15 @@ private fun MovieDetailLoaded(
                         val minsLeft = if (isResume && ps != null && runtimeMs > 0)
                             ((runtimeMs - ps.resumeMs) / 60_000L).toInt() else 0
                         val playLabel = when {
-                            played   -> str("action.play_again")          // R142
-                            isResume -> "${str("action.resume")} · $minsLeft min left"
-                            else     -> str("action.play")
+                            played -> str("action.play_again")          // R142
+                            // Bug fix: detail.runtime is the item's metadata runtime (whole minutes,
+                            // e.g. from TMDB/NFO) which can understate the actual media file's duration
+                            // — when it does, minsLeft goes negative ("Resume · -1 min left"). The
+                            // metadata is untrustworthy here, not the resume position, so drop the
+                            // estimate rather than show a nonsensical or fabricated number.
+                            isResume && minsLeft > 0 -> "${str("action.resume")} · $minsLeft min left"
+                            isResume -> str("action.resume")
+                            else -> str("action.play")
                         }
                         // Fixed min-width: sized for the longest "Resume · NN min left" label so
                         // swapping Play→Resume never shifts the adjacent buttons (no-flicker rule).

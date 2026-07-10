@@ -211,8 +211,10 @@ fun BrowseScreen(
                         Spacer(Modifier.height(16.dp))
                     }
                     // Count + grid
+                    // Bug fix: "1 titles" read wrong — found during general mobile exploration testing.
                     Text(
-                        str("browse.titles", mapOf("count" to s.results.items.size.toString())),
+                        if (s.results.items.size == 1) str("browse.title_one")
+                        else str("browse.titles", mapOf("count" to s.results.items.size.toString())),
                         color = colors.textSecondary,
                         fontSize = 16.sp,
                         modifier = Modifier.padding(horizontal = raviloHPad),
