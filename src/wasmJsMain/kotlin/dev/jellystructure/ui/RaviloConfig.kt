@@ -339,7 +339,6 @@ private fun buildShell(): String {
           <button data-rav-sect="sect-channels" class="rav-nav-item">Collections</button>
           <button data-rav-sect="sect-rows"     class="rav-nav-item">Content rows</button>
           <button data-rav-sect="sect-portrait" class="rav-nav-item">Portrait screen</button>
-          ${if (liveTvHomeAvailable) """<button data-rav-sect="sect-livetv-home" class="rav-nav-item">Live TV on Home</button>""" else ""}
         </div>
       </nav>
       """ else ""}
@@ -348,7 +347,6 @@ private fun buildShell(): String {
         ${ravSectionDivHtml("sect-channels", "layout", tab)}
         ${ravSectionDivHtml("sect-rows", "layout", tab)}
         ${ravSectionDivHtml("sect-portrait", "layout", tab)}
-        ${if (liveTvHomeAvailable) ravSectionDivHtml("sect-livetv-home", "layout", tab) else ""}
         ${ravSectionDivHtml("sect-discover", "requests", tab)}
         ${ravSectionDivHtml("sect-behaviour", "preferences", tab)}
       </div>
@@ -583,16 +581,18 @@ private fun renderSections(container: Element, scope: CoroutineScope) {
     renderDiscover(container)
     renderBehaviour(container)
     renderPortrait(container)
-    if (liveTvHomeAvailable) renderLiveTvHome(container)
     renderPreview(container)
 }
 
-// Phase 147/148 §F — placement only ("On now" row + Live TV collection in the rail); the Live TV page
-// owns connection/lineup/enabling. Section only exists in the DOM when liveTvHomeAvailable (see buildShell).
-private fun renderLiveTvHome(container: Element) {
-    val sect = container.querySelector("#sect-livetv-home") ?: return
+// Phase 147/148 §F, folded into Content rows (user request — this and the row-order list are both
+// "where things sit on Home", easier to see/configure as one section instead of two): placement only
+// ("On now" row + Live TV collection in the rail); the Live TV page owns connection/lineup/enabling.
+// Rendered only when liveTvHomeAvailable (see renderRows) — a config saved while Live TV is disabled
+// elsewhere must not lose its placement, so collectConfig still checks for the DOM element's presence
+// rather than assuming this card was rendered.
+private fun liveTvHomeCardHtml(): String {
     val placement = currentConfig.liveTvHome ?: dev.jellystructure.shared.tv.LiveTvHomePlacement()
-    sect.innerHTML = """
+    return """
         <div class="card" style="padding:18px 20px;margin-bottom:18px">
           <div style="font-weight:600;margin-bottom:6px">Live TV on Home</div>
           <p class="tiny muted" style="margin:0 0 14px">Where Live TV surfaces on the Home screen — never as its own top-nav tab. Connection, the channel lineup and the guide live on the <a href="#/livetv">Live TV</a> page.</p>
@@ -601,7 +601,7 @@ private fun renderLiveTvHome(container: Element) {
             Show an "On now" row on Home
           </label>
           <div style="margin:0 0 14px 26px">
-            <label style="display:block;font-size:.85rem;margin-bottom:4px">Row position <span class="tiny muted">(0 = top, among the other Home rows)</span></label>
+            <label style="display:block;font-size:.85rem;margin-bottom:4px">Row position <span class="tiny muted">(0 = top, among the rows above)</span></label>
             <input type="number" id="livetv-home-position" class="input" style="width:100px" min="0" max="20" value="${placement.onNowRowPosition}">
           </div>
           <label style="display:flex;align-items:center;gap:10px;font-size:.9rem">
@@ -1877,6 +1877,7 @@ private fun renderRows(container: Element) {
           <div id="row-list">$rows</div>
           <button id="row-add" class="btn sm ghost" style="margin-top:6px">+ Add row</button>
         </div>
+        ${if (liveTvHomeAvailable) liveTvHomeCardHtml() else ""}
     """.trimIndent()
 
     sect.querySelectorAll("[data-row-toggle]").let { toggles ->
