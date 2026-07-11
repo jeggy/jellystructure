@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="design_doc_mode" content="canvas">
+<title>Multi-Episode Files — Option B (triptych)</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Sora:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: 'Sora', system-ui, sans-serif; }
+  .frame { position: absolute; }
+
+  .doc-title { color: #f3f4fb; }
+  .doc-title h1 { font-family: 'Space Grotesk', sans-serif; font-size: 40px; font-weight: 700; letter-spacing: -1px; margin: 0 0 8px; }
+  .doc-title .badge-b { display: inline-block; font-family: 'JetBrains Mono', monospace; font-size: 13px; font-weight: 600; letter-spacing: 1px; text-transform: uppercase; color: #f5b542; border: 1px solid rgba(245,181,66,.4); background: rgba(245,181,66,.12); border-radius: 20px; padding: 3px 12px; margin-bottom: 14px; }
+  .doc-title p { font-size: 17px; color: #aeb4cb; margin: 0; max-width: 940px; line-height: 1.55; }
+  .doc-title code { font-family: 'JetBrains Mono', monospace; font-size: .85em; background: rgba(123,110,240,.16); color: #cbc3ff; padding: 2px 7px; border-radius: 6px; }
+  .surf-tag { font-family: 'JetBrains Mono', monospace; font-size: 12px; font-weight: 600; letter-spacing: 1.5px; text-transform: uppercase; color: #6b7290; margin-bottom: 10px; white-space: nowrap; }
+
+  /* explainer */
+  .explain { background: #12141d; border: 1px solid rgba(255,255,255,.09); border-radius: 16px; padding: 24px 28px; color: #f3f4fb; }
+  .explain h3 { font-family: 'Space Grotesk', sans-serif; font-size: 18px; margin: 0 0 12px; }
+  .explain ol { margin: 0; padding-left: 20px; }
+  .explain li { font-size: 15px; color: #aeb4cb; line-height: 1.65; margin-bottom: 8px; }
+  .explain li b { color: #f3f4fb; }
+  .explain .k { font-family: 'JetBrains Mono', monospace; font-size: .85em; color: #f5b542; }
+
+  /* composition diagram */
+  .compo { background: #10131e; border: 1px solid rgba(255,255,255,.09); border-radius: 16px; padding: 24px 28px; color: #f3f4fb; }
+  .compo h3 { font-family: 'Space Grotesk', sans-serif; font-size: 18px; margin: 0 0 18px; }
+  .compo-flow { display: flex; align-items: center; gap: 18px; }
+  .src-stack { display: flex; flex-direction: column; gap: 8px; }
+  .src { width: 130px; height: 73px; border-radius: 8px; position: relative; overflow: hidden; box-shadow: 0 6px 16px rgba(0,0,0,.4); }
+  .src .sl { position: absolute; left: 8px; top: 5px; font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 15px; color: #fff; text-shadow: 0 1px 6px rgba(0,0,0,.7); }
+  .compo-arrow { font-size: 30px; color: #6b7290; }
+  .compo-note { font-size: 13px; color: #6b7290; margin-top: 14px; line-height: 1.5; }
+
+  /* ===== shared triptych still ===== */
+  .trip { position: absolute; inset: 0; }
+  .trip .tp { position: absolute; inset: 0; background-size: cover; background-position: center; }
+  .trip .tp1 { clip-path: polygon(0 0, 37% 0, 29% 100%, 0 100%); }
+  .trip .tp2 { clip-path: polygon(37% 0, 69% 0, 61% 100%, 29% 100%); }
+  .trip .tp3 { clip-path: polygon(69% 0, 100% 0, 100% 100%, 61% 100%); }
+  .trip .seam { position: absolute; top: -8%; height: 116%; width: 3px; background: rgba(255,255,255,.9); box-shadow: 0 0 0 1.5px rgba(0,0,0,.55); z-index: 4; }
+  .trip .seam1 { left: 33%; transform: rotate(8.1deg); }
+  .trip .seam2 { left: 65%; transform: rotate(8.1deg); }
+  .trip .tnum { position: absolute; top: 7px; font-family: 'Space Grotesk', sans-serif; font-weight: 700; color: #fff; text-shadow: 0 2px 10px rgba(0,0,0,.85); z-index: 5; line-height: 1; }
+
+  /* ============ RAVILO TV ============ */
+  .rv { --bg:#0a0c13; --ink:#f3f4fb; --ink-soft:#aeb4cb; --ink-dim:#6b7290; --line:rgba(255,255,255,.09); --accent:#7b6ef0; --good:#2dd49a; --chip:rgba(255,255,255,.10); --grad:linear-gradient(120deg,#7b6ef0,#3fb6f5); --ring:#8e82ff;
+    background: radial-gradient(120% 100% at 0% 0%, #141826 0%, var(--bg) 60%); border: 1px solid var(--line); border-radius: 18px; overflow: hidden; color: var(--ink); box-shadow: 0 30px 80px rgba(0,0,0,.5); }
+  .rv-inner { padding: 26px 30px 32px; }
+  .rv-head { display: flex; align-items: center; gap: 14px; margin-bottom: 22px; }
+  .rv-head h2 { font-family: 'Space Grotesk', sans-serif; font-size: 24px; font-weight: 600; letter-spacing: -.5px; margin: 0; }
+  .rv-head .sub { font-size: 15px; color: var(--ink-soft); }
+  .rv-head .bar { width: 150px; height: 6px; border-radius: 6px; background: var(--chip); overflow: hidden; margin-left: auto; }
+  .rv-head .bar > i { display: block; height: 100%; background: var(--grad); }
+  .rv-track { display: flex; gap: 20px; align-items: flex-start; }
+
+  .epc { width: 440px; flex: none; }
+  .epc-still { position: relative; aspect-ratio: 16/9; border-radius: 12px; overflow: hidden; border: 2px solid transparent; box-shadow: 0 10px 26px rgba(0,0,0,.4); }
+  .epc.focus .epc-still { border-color: var(--ring); box-shadow: 0 0 0 4px rgba(142,130,255,.5), 0 20px 44px rgba(0,0,0,.6); }
+  .epc-dur { position: absolute; right: 10px; top: 10px; background: rgba(0,0,0,.6); color: #fff; font-size: 12px; padding: 3px 8px; border-radius: 7px; z-index: 6; }
+  .epc-play { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; z-index: 6; }
+  .epc-play span { width: 54px; height: 54px; border-radius: 50%; background: rgba(0,0,0,.45); -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px); border: 2px solid rgba(255,255,255,.8); color: #fff; display: flex; align-items: center; justify-content: center; font-size: 21px; }
+  .epc-rng { position: absolute; left: 12px; bottom: 11px; z-index: 6; font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 15px; color: #fff; text-shadow: 0 2px 10px rgba(0,0,0,.8); background: rgba(10,12,19,.55); padding: 3px 10px; border-radius: 20px; }
+  .epc-info { margin-top: 13px; }
+  .epc-t { font-size: 19px; font-weight: 600; color: var(--ink); }
+  .combo-list { margin-top: 10px; display: flex; flex-direction: column; }
+  .combo-row { display: flex; align-items: center; gap: 12px; padding: 8px 2px; border-bottom: 1px solid var(--line); }
+  .combo-row:last-child { border-bottom: none; }
+  .combo-row .cn { font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--accent); width: 30px; flex: none; }
+  .combo-row .ct { font-size: 15px; color: var(--ink-soft); flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .combo-row .cd { font-size: 12px; color: var(--ink-dim); }
+  .combo-tag { display: inline-flex; align-items: center; gap: 6px; background: rgba(245,181,66,.14); border: 1px solid rgba(245,181,66,.4); color: #f5b542; font-size: 12px; font-weight: 600; padding: 4px 10px; border-radius: 20px; margin-top: 12px; }
+  .epc.dim { opacity: .45; }
+
+  /* ============ MOBILE ============ */
+  .phone { width: 400px; background: #05060b; border-radius: 40px; padding: 12px; box-shadow: 0 30px 80px rgba(0,0,0,.55); border: 1px solid rgba(255,255,255,.08); }
+  .phone-screen { --bg:#0a0c13; --ink:#f3f4fb; --ink-soft:#aeb4cb; --ink-dim:#6b7290; --line:rgba(255,255,255,.09); --accent:#7b6ef0;
+    background: var(--bg); border-radius: 30px; overflow: hidden; color: var(--ink); position: relative; }
+  .phone-notch { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); width: 110px; height: 24px; background: #05060b; border-radius: 20px; z-index: 10; }
+  .m-hero { height: 150px; position: relative; }
+  .m-hero .hg { position: absolute; inset: 0; background: linear-gradient(135deg,#5b4bd6,#2a8cf0); }
+  .m-hero .hf { position: absolute; inset: 0; background: linear-gradient(0deg, var(--bg) 4%, rgba(10,12,19,0) 60%); }
+  .m-hero .ht { position: absolute; left: 20px; bottom: 14px; font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 24px; }
+  .m-body { padding: 18px 16px 22px; }
+  .m-sec { display: flex; align-items: baseline; gap: 8px; margin-bottom: 14px; }
+  .m-sec h3 { font-family: 'Space Grotesk', sans-serif; font-size: 18px; margin: 0; }
+  .m-sec .ms { font-size: 12px; color: var(--ink-soft); }
+  .m-list { display: flex; flex-direction: column; gap: 14px; }
+  .m-combo { border: 1px solid var(--line); border-radius: 12px; padding: 10px; }
+  .m-combo .mstill { position: relative; aspect-ratio: 16/9; border-radius: 9px; overflow: hidden; }
+  .m-combo .mrng { position: absolute; left: 9px; bottom: 8px; z-index: 6; font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 13px; color: #fff; text-shadow: 0 2px 8px rgba(0,0,0,.8); background: rgba(10,12,19,.55); padding: 2px 9px; border-radius: 20px; }
+  .m-combo .mdur { position: absolute; right: 8px; top: 8px; z-index: 6; background: rgba(0,0,0,.6); color: #fff; font-size: 11px; padding: 2px 7px; border-radius: 6px; }
+  .m-combo .mmeta { margin-top: 10px; }
+  .m-combo .mt { font-size: 15px; font-weight: 600; }
+  .m-combo .mrows { margin-top: 8px; border-top: 1px solid var(--line); padding-top: 8px; }
+  .m-combo .mrow { display: flex; gap: 10px; padding: 4px 0; font-size: 13px; }
+  .m-combo .mrow .n { font-family: 'JetBrains Mono', monospace; color: var(--accent); width: 26px; }
+  .m-combo .mrow .t { color: var(--ink-soft); }
+
+  /* ============ ADMIN artwork picker ============ */
+  .adm { --bg:#16181f; --fill2:#20242f; --fill3:#2f3441; --ink:#dde1ec; --ink-soft:#9aa0b4; --ink-dim:rgba(221,225,236,.4); --line:rgba(255,255,255,.08); --line2:rgba(255,255,255,.14); --hi:#7b6ef0; --hi-soft:rgba(123,110,240,.16); --grad:linear-gradient(122deg,#b15cd0,#7b6ef0 48%,#00a4dc); --ok:#2dd49a; --warn:#f5b542; --info:#3fb6f5;
+    background: var(--bg); border: 1px solid var(--line); border-radius: 16px; overflow: hidden; color: var(--ink); box-shadow: 0 30px 80px rgba(0,0,0,.5); }
+  .adm-inner { padding: 24px 26px 28px; }
+  .adm-head { display: flex; align-items: center; gap: 12px; margin-bottom: 6px; }
+  .adm-head h4 { font-family: 'Space Grotesk', sans-serif; font-size: 19px; margin: 0; }
+  .adm-head .chip { font-size: .78rem; font-weight: 600; padding: 4px 11px; border: 1px solid var(--line2); border-radius: 20px; background: var(--fill2); }
+  .adm-head .chip.acc { background: var(--hi-soft); color: #cbc3ff; border-color: transparent; }
+  .adm-sub { font-size: .88rem; color: var(--ink-soft); margin-bottom: 20px; line-height: 1.5; }
+  .adm-sub .k { font-family: 'JetBrains Mono', monospace; font-size: .85em; color: #cbc3ff; }
+
+  .art-cols { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
+  .art-col { }
+  .art-colhead { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+  .art-colhead .num { font-family: 'JetBrains Mono', monospace; font-size: .74rem; color: var(--hi); background: var(--hi-soft); padding: 2px 8px; border-radius: 6px; font-weight: 600; }
+  .art-colhead .tt { font-size: .92rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .art-sel { position: relative; aspect-ratio: 16/9; border-radius: 10px; overflow: hidden; border: 2px solid var(--ok); box-shadow: 0 8px 22px rgba(0,0,0,.4); }
+  .art-sel .ribbon { position: absolute; top: 0; right: 0; z-index: 4; background: var(--ok); color: #04140d; font-size: .58rem; font-weight: 700; letter-spacing: .05em; padding: 3px 9px; border-bottom-left-radius: 9px; }
+  .art-strip-label { font-size: .68rem; text-transform: uppercase; letter-spacing: .06em; color: var(--ink-dim); font-weight: 700; margin: 14px 0 8px; display: flex; align-items: center; gap: 8px; }
+  .art-strip-label .fi { width: 18px; height: 13px; border-radius: 2px; box-shadow: 0 0 0 1px var(--line2); background-size: cover; }
+  .art-strip { display: flex; gap: 9px; }
+  .art-cand { position: relative; flex: 1; aspect-ratio: 16/9; border-radius: 8px; overflow: hidden; cursor: pointer; border: 1px solid var(--line); outline: 2px solid transparent; outline-offset: 2px; }
+  .art-cand.current { outline-color: var(--ok); }
+  .art-cand.sel { outline-color: var(--hi); box-shadow: 0 0 0 2px var(--hi-soft); }
+  .art-cand .cimg { position: absolute; inset: 0; background-size: cover; background-position: center; }
+  .art-cand .clang { position: absolute; left: 4px; top: 4px; z-index: 3; font-family: 'JetBrains Mono', monospace; font-size: .58rem; font-weight: 600; color: #fff; background: rgba(0,0,0,.6); padding: 1px 5px; border-radius: 4px; }
+  .art-cand .cdot { position: absolute; right: 4px; bottom: 4px; z-index: 3; width: 16px; height: 16px; border-radius: 50%; background: var(--ok); color: #04140d; font-size: .62rem; font-weight: 800; display: flex; align-items: center; justify-content: center; }
+  .art-more { margin-top: 10px; display: inline-flex; align-items: center; gap: 6px; font-size: .78rem; font-weight: 600; color: var(--ink-soft); background: var(--fill3); border: 1px solid var(--line2); border-radius: 8px; padding: 6px 11px; cursor: pointer; }
+  .adm-note { font-size: .82rem; color: var(--ink-soft); background: rgba(63,182,245,.08); border: 1px solid rgba(63,182,245,.25); border-radius: 8px; padding: 10px 13px; margin-top: 22px; line-height: 1.55; }
+  .adm-note b { color: var(--info); }
+</style>
+</head>
+<body>
+
+  <!-- TITLE -->
+  <div class="frame doc-title" style="left:80px; top:56px; width:2600px;">
+    <span class="badge-b">Option B · chosen direction</span>
+    <h1>Combined card — one image per episode</h1>
+    <p>Each episode still is picked normally from TMDB in the admin (three files → three stills). Ravilo shows the <code>S01E01E02E03</code> file as a <b style="color:#f3f4fb;">single card</b> whose still is split by two lightly-skewed lines, so all three episode images are visible at once.</p>
+  </div>
+
+  <!-- EXPLAINER -->
+  <div class="frame explain" style="left:80px; top:212px; width:1000px;">
+    <h3>How it works</h3>
+    <ol>
+      <li><b>Admin:</b> the file spans <span class="k">E01–E03</span>. Each episode keeps its own poster/still — pick one from TMDB just like a normal single episode.</li>
+      <li><b>Ravilo:</b> the three chosen stills are composed into one card as a <b>skewed triptych</b> — two diagonal seams divide the frame into thirds.</li>
+      <li><b>Playback &amp; watched:</b> one continuous file → one play action, all three mark watched together (Option B behaviour).</li>
+    </ol>
+  </div>
+
+  <!-- COMPOSITION DIAGRAM -->
+  <div class="frame compo" style="left:1120px; top:212px; width:900px;">
+    <h3>Composing the card</h3>
+    <div class="compo-flow">
+      <div class="src-stack">
+        <div class="src" style="background:linear-gradient(135deg,#5b4bd6,#2a8cf0)"><span class="sl">01</span></div>
+        <div class="src" style="background:linear-gradient(135deg,#c94b8f,#6a3fd6)"><span class="sl">02</span></div>
+        <div class="src" style="background:linear-gradient(135deg,#2f9e7e,#1c6f9c)"><span class="sl">03</span></div>
+      </div>
+      <span class="compo-arrow">→</span>
+      <div style="width:420px; aspect-ratio:16/9; border-radius:12px; overflow:hidden; position:relative; box-shadow:0 12px 30px rgba(0,0,0,.5);">
+        <div class="trip">
+          <div class="tp tp1" style="background:linear-gradient(135deg,#5b4bd6,#2a8cf0)"></div>
+          <div class="tp tp2" style="background:linear-gradient(135deg,#c94b8f,#6a3fd6)"></div>
+          <div class="tp tp3" style="background:linear-gradient(135deg,#2f9e7e,#1c6f9c)"></div>
+          <span class="seam seam1"></span><span class="seam seam2"></span>
+          <span class="tnum" style="left:14px; font-size:26px;">01</span>
+          <span class="tnum" style="left:44%; font-size:26px;">02</span>
+          <span class="tnum" style="right:16px; font-size:26px;">03</span>
+        </div>
+      </div>
+    </div>
+    <div class="compo-note">Two seams, tilted ~8°. Each panel is one episode's TMDB still — swap any one in the admin and only that third changes.</div>
+  </div>
+
+  <!-- RAVILO TV -->
+  <div class="frame surf-tag" style="left:80px; top:540px;">Ravilo TV — series detail</div>
+  <div class="frame rv" style="left:80px; top:566px; width:1080px;">
+    <div class="rv-inner">
+      <div class="rv-head">
+        <h2>Episodes</h2>
+        <span class="sub">Season 1 · 8 files</span>
+        <span class="bar"><i style="width:13%"></i></span>
+      </div>
+      <div class="rv-track">
+        <div class="epc focus">
+          <div class="epc-still">
+            <div class="trip">
+              <div class="tp tp1" style="background:linear-gradient(135deg,#5b4bd6,#2a8cf0)"></div>
+              <div class="tp tp2" style="background:linear-gradient(135deg,#c94b8f,#6a3fd6)"></div>
+              <div class="tp tp3" style="background:linear-gradient(135deg,#2f9e7e,#1c6f9c)"></div>
+              <span class="seam seam1"></span><span class="seam seam2"></span>
+              <span class="tnum" style="left:13px; font-size:22px;">01</span>
+              <span class="tnum" style="left:45%; font-size:22px;">02</span>
+              <span class="tnum" style="right:14px; font-size:22px;">03</span>
+            </div>
+            <span class="epc-dur">23m</span>
+            <div class="epc-play"><span>▶</span></div>
+            <span class="epc-rng">Episodes 1–3</span>
+          </div>
+          <div class="epc-info">
+            <div class="epc-t">Episodes 1–3</div>
+            <div class="combo-list">
+              <div class="combo-row"><span class="cn">01</span><span class="ct">Bravo Dooby-Doo</span><span class="cd">8m</span></div>
+              <div class="combo-row"><span class="cn">02</span><span class="ct">Jungle Boy</span><span class="cd">8m</span></div>
+              <div class="combo-row"><span class="cn">03</span><span class="ct">Blanky Hanky Panky</span><span class="cd">7m</span></div>
+            </div>
+            <span class="combo-tag">◇ 3 episodes · one continuous file</span>
+          </div>
+        </div>
+        <div class="epc dim">
+          <div class="epc-still">
+            <div class="trip">
+              <div class="tp tp1" style="background:linear-gradient(135deg,#d68b3f,#c94b6f)"></div>
+              <div class="tp tp2" style="background:linear-gradient(135deg,#4b6bd6,#19a6c6)"></div>
+              <div class="tp tp3" style="background:linear-gradient(135deg,#8f5bd6,#3f6fd6)"></div>
+              <span class="seam seam1"></span><span class="seam seam2"></span>
+              <span class="tnum" style="left:13px; font-size:22px;">04</span>
+              <span class="tnum" style="left:45%; font-size:22px;">05</span>
+              <span class="tnum" style="right:14px; font-size:22px;">06</span>
+            </div>
+            <span class="epc-dur">24m</span>
+            <span class="epc-rng">Episodes 4–6</span>
+          </div>
+          <div class="epc-info">
+            <div class="epc-t">Episodes 4–6</div>
+            <div class="combo-list">
+              <div class="combo-row"><span class="cn">04</span><span class="ct">Super Duped</span><span class="cd">8m</span></div>
+              <div class="combo-row"><span class="cn">05</span><span class="ct">Bearly Enough Time</span><span class="cd">8m</span></div>
+              <div class="combo-row"><span class="cn">06</span><span class="ct">Little Big Head Man</span><span class="cd">8m</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MOBILE -->
+  <div class="frame surf-tag" style="left:80px; top:1330px;">Ravilo Mobile</div>
+  <div class="frame phone" style="left:80px; top:1356px;">
+    <div class="phone-screen">
+      <div class="phone-notch"></div>
+      <div class="m-hero"><div class="hg"></div><div class="hf"></div><div class="ht">Johnny Bravo</div></div>
+      <div class="m-body">
+        <div class="m-sec"><h3>Episodes</h3><span class="ms">Season 1 · 8 files</span></div>
+        <div class="m-list">
+          <div class="m-combo">
+            <div class="mstill">
+              <div class="trip">
+                <div class="tp tp1" style="background:linear-gradient(135deg,#5b4bd6,#2a8cf0)"></div>
+                <div class="tp tp2" style="background:linear-gradient(135deg,#c94b8f,#6a3fd6)"></div>
+                <div class="tp tp3" style="background:linear-gradient(135deg,#2f9e7e,#1c6f9c)"></div>
+                <span class="seam seam1"></span><span class="seam seam2"></span>
+                <span class="tnum" style="left:9px; font-size:15px;">01</span>
+                <span class="tnum" style="left:45%; font-size:15px;">02</span>
+                <span class="tnum" style="right:10px; font-size:15px;">03</span>
+              </div>
+              <span class="mdur">23m</span>
+              <span class="mrng">Episodes 1–3</span>
+            </div>
+            <div class="mmeta">
+              <div class="mt">Episodes 1–3</div>
+              <div class="mrows">
+                <div class="mrow"><span class="n">01</span><span class="t">Bravo Dooby-Doo</span></div>
+                <div class="mrow"><span class="n">02</span><span class="t">Jungle Boy</span></div>
+                <div class="mrow"><span class="n">03</span><span class="t">Blanky Hanky Panky</span></div>
+              </div>
+            </div>
+          </div>
+          <div class="m-combo">
+            <div class="mstill">
+              <div class="trip">
+                <div class="tp tp1" style="background:linear-gradient(135deg,#d68b3f,#c94b6f)"></div>
+                <div class="tp tp2" style="background:linear-gradient(135deg,#4b6bd6,#19a6c6)"></div>
+                <div class="tp tp3" style="background:linear-gradient(135deg,#8f5bd6,#3f6fd6)"></div>
+                <span class="seam seam1"></span><span class="seam seam2"></span>
+                <span class="tnum" style="left:9px; font-size:15px;">04</span>
+                <span class="tnum" style="left:45%; font-size:15px;">05</span>
+                <span class="tnum" style="right:10px; font-size:15px;">06</span>
+              </div>
+              <span class="mdur">24m</span>
+              <span class="mrng">Episodes 4–6</span>
+            </div>
+            <div class="mmeta"><div class="mt">Episodes 4–6</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ADMIN ARTWORK PICKER -->
+  <div class="frame surf-tag" style="left:620px; top:1330px;">Admin — Artwork · per-episode picker</div>
+  <div class="frame adm" style="left:620px; top:1356px; width:1120px;">
+    <div class="adm-inner">
+      <div class="adm-head"><h4>Episodes 1–3 · Artwork</h4><span class="chip">1 file</span><span class="chip acc">3 episodes</span></div>
+      <div class="adm-sub">Each episode keeps its own still — choose one from TMDB, exactly like a normal episode. Ravilo composes the three into the triptych card. <span class="k">…S01E01E02E03…mkv</span></div>
+
+      <div class="art-cols">
+        <!-- E01 -->
+        <div class="art-col">
+          <div class="art-colhead"><span class="num">E01</span><span class="tt">Bravo Dooby-Doo</span></div>
+          <div class="art-sel"><div class="trip"><div class="tp" style="inset:0;background:linear-gradient(135deg,#5b4bd6,#2a8cf0)"></div></div><span class="ribbon">ON DISK</span></div>
+          <div class="art-strip-label"><span class="fi" style="background:linear-gradient(#fff,#fff)"></span>From TMDB · English</div>
+          <div class="art-strip">
+            <div class="art-cand current sel"><div class="cimg" style="background:linear-gradient(135deg,#5b4bd6,#2a8cf0)"></div><span class="clang">en</span><span class="cdot">✓</span></div>
+            <div class="art-cand"><div class="cimg" style="background:linear-gradient(160deg,#4257c8,#1f8fb0)"></div><span class="clang">en</span></div>
+            <div class="art-cand"><div class="cimg" style="background:linear-gradient(200deg,#6a4bd6,#2a6cf0)"></div><span class="clang">—</span></div>
+          </div>
+          <div class="art-more">▾ More from TMDB</div>
+        </div>
+        <!-- E02 -->
+        <div class="art-col">
+          <div class="art-colhead"><span class="num">E02</span><span class="tt">Jungle Boy</span></div>
+          <div class="art-sel"><div class="trip"><div class="tp" style="inset:0;background:linear-gradient(135deg,#c94b8f,#6a3fd6)"></div></div><span class="ribbon">ON DISK</span></div>
+          <div class="art-strip-label"><span class="fi" style="background:linear-gradient(#fff,#fff)"></span>From TMDB · English</div>
+          <div class="art-strip">
+            <div class="art-cand current sel"><div class="cimg" style="background:linear-gradient(135deg,#c94b8f,#6a3fd6)"></div><span class="clang">en</span><span class="cdot">✓</span></div>
+            <div class="art-cand"><div class="cimg" style="background:linear-gradient(160deg,#b0417f,#5a34c0)"></div><span class="clang">en</span></div>
+            <div class="art-cand"><div class="cimg" style="background:linear-gradient(200deg,#d64ba0,#7a3fd6)"></div><span class="clang">—</span></div>
+          </div>
+          <div class="art-more">▾ More from TMDB</div>
+        </div>
+        <!-- E03 -->
+        <div class="art-col">
+          <div class="art-colhead"><span class="num">E03</span><span class="tt">Blanky Hanky Panky</span></div>
+          <div class="art-sel"><div class="trip"><div class="tp" style="inset:0;background:linear-gradient(135deg,#2f9e7e,#1c6f9c)"></div></div><span class="ribbon">ON DISK</span></div>
+          <div class="art-strip-label"><span class="fi" style="background:linear-gradient(#fff,#fff)"></span>From TMDB · English</div>
+          <div class="art-strip">
+            <div class="art-cand current sel"><div class="cimg" style="background:linear-gradient(135deg,#2f9e7e,#1c6f9c)"></div><span class="clang">en</span><span class="cdot">✓</span></div>
+            <div class="art-cand"><div class="cimg" style="background:linear-gradient(160deg,#289070,#186488)"></div><span class="clang">en</span></div>
+            <div class="art-cand"><div class="cimg" style="background:linear-gradient(200deg,#3fae8e,#1c7f9c)"></div><span class="clang">—</span></div>
+          </div>
+          <div class="art-more">▾ More from TMDB</div>
+        </div>
+      </div>
+
+      <div class="adm-note"><b>One picker per episode.</b> Nothing changes about how you review or choose a still — it's the standard TMDB gallery. The only new thing: the three selected stills feed Ravilo's single triptych card. Change E02's image and only the middle panel updates.</div>
+    </div>
+  </div>
+
+</body>
+</html>

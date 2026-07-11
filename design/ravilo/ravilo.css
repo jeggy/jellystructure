@@ -482,6 +482,28 @@ body { font-family: 'Sora', sans-serif; }
 .ep-play.focused .play { opacity: 1; }
 .ep-play.focused .ep-t { color: var(--ink); }
 
+/* Multi-episode files — combined "triptych" card (Option B) */
+.combo-still .trip { position: absolute; inset: 0; }
+.combo-still .trip .tp { position: absolute; inset: 0; }
+.combo-still .trip .tp1 { clip-path: polygon(0 0, 37% 0, 29% 100%, 0 100%); }
+.combo-still .trip .tp2 { clip-path: polygon(37% 0, 69% 0, 61% 100%, 29% 100%); }
+.combo-still .trip .tp3 { clip-path: polygon(69% 0, 100% 0, 100% 100%, 61% 100%); }
+.combo-still .trip .seam { position: absolute; top: -8%; height: 116%; width: 3px; background: rgba(255,255,255,.9); box-shadow: 0 0 0 1.5px rgba(0,0,0,.55); z-index: 4; }
+.combo-still .trip .seam1 { left: 33%; transform: rotate(8.1deg); }
+.combo-still .trip .seam2 { left: 65%; transform: rotate(8.1deg); }
+.combo-still .tnum { position: absolute; top: 7px; font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 26px; color: #fff; text-shadow: 0 2px 10px rgba(0,0,0,.85); z-index: 5; line-height: 1; }
+.combo-still .tnum1 { left: 14px; }
+.combo-still .tnum2 { left: 44%; }
+.combo-still .tnum3 { right: 14px; }
+.ep-rng { position: absolute; left: 12px; bottom: 15px; z-index: 6; font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 14px; color: #fff; text-shadow: 0 2px 10px rgba(0,0,0,.8); background: rgba(10,12,19,.55); padding: 3px 10px; border-radius: 20px; }
+.combo-list { margin-top: 8px; display: flex; flex-direction: column; }
+.combo-row { display: flex; align-items: center; gap: 10px; padding: 4px 0; border-bottom: 1px solid var(--line); }
+.combo-row:last-child { border-bottom: none; }
+.combo-row .cn { font-family: 'JetBrains Mono', monospace; font-size: 13px; color: var(--accent); width: 30px; flex: none; }
+.combo-row .ct { font-size: 16px; color: var(--ink-soft); flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.combo-row .cd { font-size: 13px; color: var(--ink-dim); }
+.combo-file { margin-top: 9px; font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--accent); }
+
 /* ---------- watched-state (R07) ---------- */
 /* browse tiles (rows + Movies/Series/My List grids): ✓ watched check + in-progress sliver */
 .tile.poster .art .tile-check { position: absolute; top: 10px; right: 10px; z-index: 3;
