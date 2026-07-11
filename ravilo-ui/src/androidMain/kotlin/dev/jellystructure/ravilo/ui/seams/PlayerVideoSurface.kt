@@ -1,7 +1,6 @@
 package dev.jellystructure.ravilo.ui.seams
 
 import android.view.SurfaceView
-import android.widget.FrameLayout
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
@@ -38,31 +37,34 @@ actual fun PlayerVideoSurface(player: RaviloPlayer, modifier: Modifier) {
                 // the display tone-maps correctly, with no app-level color-mode API needed — verified
                 // against Jellyfin's own Android TV client, which does exactly this (a bare SurfaceView
                 // wired via `ExoPlayer.setVideoSurfaceView`, nothing else).
-                // R55: wrap SurfaceView + SubtitleView overlay in a FrameLayout so cues render over the
-                // video. We do NOT adopt PlayerView — all transport chrome is custom Compose.
-                val frame = FrameLayout(ctx)
                 val surface = SurfaceView(ctx)
-                val subtitles = SubtitleView(ctx).apply {
-                    val bottomPx = (28 * ctx.resources.displayMetrics.density).toInt()
-                    layoutParams = FrameLayout.LayoutParams(
-                        FrameLayout.LayoutParams.MATCH_PARENT,
-                        FrameLayout.LayoutParams.MATCH_PARENT,
-                    )
-                    setPadding(0, 0, 0, bottomPx)
-                }
-                frame.addView(surface, FrameLayout.LayoutParams(
-                    FrameLayout.LayoutParams.MATCH_PARENT,
-                    FrameLayout.LayoutParams.MATCH_PARENT,
-                ))
-                frame.addView(subtitles)
                 player.setVideoSurfaceView(surface)
-                player.setSubtitleView(subtitles)
-                frame
+                surface
             },
             // R77: constrain to DAR when known — Compose fits the view inside the available space
             // and the PlayerScreen's black background shows through as letterbox/pillarbox bars.
             // Falls back to fillMaxSize() until the first frame is decoded (VideoSize.UNKNOWN).
             modifier = if (dar > 0f) Modifier.aspectRatio(dar) else Modifier.fillMaxSize(),
+        )
+        // Bug fix: SubtitleView used to live *inside* the DAR-constrained AndroidView above (wrapped
+        // together with the SurfaceView in a FrameLayout), so its bottom padding was measured from the
+        // bottom of the (possibly letterboxed) video frame, not the true screen edge. Any content
+        // narrower than the display (e.g. 2.35:1 cinemascope on a 16:9 TV) left a black letterbox bar
+        // below the video, and subtitles sat pinned above that bar — well above the true bottom of the
+        // screen. Reported "subtitles too high" on stue TV; the effect is barely visible on a phone
+        // (smaller screen, closer viewing distance) which is why it went unnoticed when the 28dp inset
+        // was tuned (R77, same day). Now a sibling AndroidView at the outer fillMaxSize() Box level —
+        // still drawn on top of the SurfaceView (declared after it, same z-order Compose already gave
+        // the old FrameLayout children) — so its padding is always relative to the real screen bottom.
+        AndroidView(
+            factory = { ctx ->
+                val subtitles = SubtitleView(ctx)
+                val bottomPx = (28 * ctx.resources.displayMetrics.density).toInt()
+                subtitles.setPadding(0, 0, 0, bottomPx)
+                player.setSubtitleView(subtitles)
+                subtitles
+            },
+            modifier = Modifier.fillMaxSize(),
         )
     }
 }
