@@ -23,9 +23,20 @@ actual fun TrailerEmbed(site: String, key: String, modifier: Modifier) {
     // R163 dev-review addendum 4 — YouTube error 153: `loadUrl(url)` makes the embed URL the WebView's
     // very FIRST navigation, so there is no referring page and no Referer/Origin header for the
     // provider's embed validation to check — that's exactly what error 153 rejects. Fix: give the
-    // WebView a real page context first (`loadDataWithBaseURL` at the provider's own https origin,
-    // hosting an <iframe> to the embed URL) so the iframe request carries a proper referrer.
-    val embedOrigin = if (site.equals("vimeo", ignoreCase = true)) "https://player.vimeo.com" else "https://www.youtube.com"
+    // WebView a real page context first (`loadDataWithBaseURL` at some https origin, hosting an
+    // <iframe> to the embed URL) so the iframe request carries a proper referrer.
+    //
+    // Bug fix: that origin was the provider's OWN domain (youtube.com) — confirmed live (soveværelse
+    // TV) and reproduced headlessly (Playwright) that this makes YouTube's embed validation reject
+    // the video with "Error code: 152 - 4", even for videos that are public/embeddable everywhere
+    // else (YouTube's own oEmbed endpoint serves this exact video fine). Likely cause: a page whose
+    // origin/referrer IS youtube.com embedding a youtube.com iframe doesn't look like a legitimate
+    // third-party embed (which is what every real site's trailer embed actually is) — it looks like
+    // YouTube embedding itself, which its own validation appears to special-case and reject. A
+    // neutral, unrelated origin (confirmed working both live and headlessly) fixes it; it doesn't
+    // need to resolve anywhere since `loadDataWithBaseURL` never fetches it — it's only used as the
+    // Origin/Referer metadata for the iframe's own request.
+    val embedOrigin = "https://ravilotv.invalid"
     val html = """
         <!DOCTYPE html><html><head><meta name="viewport" content="width=device-width, initial-scale=1">
         <style>html,body{margin:0;padding:0;background:#000;overflow:hidden}iframe{position:fixed;inset:0;width:100%;height:100%;border:0}</style>
