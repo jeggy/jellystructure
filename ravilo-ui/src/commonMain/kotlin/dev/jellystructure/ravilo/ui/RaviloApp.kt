@@ -835,8 +835,17 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                 LiveTvGuideScreen(
                     store = store,
                     displayName = dest.displayName,
+                    discoverAvailable = upcomingAvailable || discoverAvailable,
                     onBack = { pop() },
                     onTuneChannel = { ch -> replaceTop(Dest.LiveTv(ch.channelId, dest.displayName)) },
+                    onNavSelect = { idx ->
+                        when (raviloNavTarget(idx, upcomingAvailable || discoverAvailable)) {
+                            RaviloNavTarget.HOME -> resetTo(Dest.Home(dest.displayName))
+                            RaviloNavTarget.MOVIES -> push(Dest.Browse(BrowseKind.MOVIES, dest.displayName))
+                            RaviloNavTarget.SERIES -> push(Dest.Browse(BrowseKind.SERIES, dest.displayName))
+                            RaviloNavTarget.DISCOVER -> push(Dest.Discover(dest.displayName, defaultDiscoverSegment(upcomingAvailable, discoverAvailable)))
+                        }
+                    },
                     onProfile = { profileMenuOpen = true },
                     onSearch = { push(Dest.Search(dest.displayName)) },
                 )

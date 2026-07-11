@@ -155,12 +155,21 @@ private fun HomeLoaded(
 
     val hasHero     = feed.heroes.isNotEmpty()
     val hasChannels = feed.channels.isNotEmpty()
+    // Bug fix: DOWN from the hero landed on the 2nd tile of the row below (e.g. "On Now"'s KVF1
+    // instead of DR1) — confirmed live on soveværelse TV. The old comment below assumed native
+    // focus search handles hero↔first-row correctly, but the hero's focus box spans the full
+    // width while the row's tiles are left-anchored, so Compose's nearest-candidate search picks
+    // whichever tile sits closest to the hero's horizontal center — not index 0. Explicit bridge,
+    // same idiom as heroFR/navBarFR below.
+    val onNowIsFirstRow = !hasChannels && onNowRowIndex.coerceIn(0, feed.rows.size) == 0 && liveTvChannels.isNotEmpty()
+    val firstRowFR = remember { FocusRequester() }
 
-    // Native focus traversal handles movement between rows, within a row, and hero↔first row.
-    // Only the app-bar overlay needs explicit bridges (it is not a spatial neighbour of the
-    // content): heroFR receives down-from-app-bar, navBarFR receives up-from-hero. columnFR is
-    // the entry point when there is no hero. All three are single, always-composed requesters —
-    // never one-per-item across a lazy list (that was the source of the stuck/lag behaviour).
+    // Native focus traversal handles movement between rows and within a row. Only the app-bar
+    // overlay and the hero→first-row jump need explicit bridges (neither is a reliable spatial
+    // neighbour of what's below/above it): heroFR receives down-from-app-bar, navBarFR receives
+    // up-from-hero, firstRowFR receives down-from-hero. columnFR is the entry point when there is
+    // no hero. All are single, always-composed requesters — never one-per-item across a lazy list
+    // (that was the source of the stuck/lag behaviour).
     val navBarFR = remember { FocusRequester() }
     val heroFR   = remember { FocusRequester() }
     val columnFR = remember { FocusRequester() }
@@ -238,7 +247,7 @@ private fun HomeLoaded(
                         // R101: freeze the Ken Burns drift while the list is actively scrolling so the
                         // full-width hero stops its per-frame scaled redraw during the gesture.
                         driftEnabled = { !listState.isScrollInProgress },
-                        // Down omitted → native focus search moves into the channel rail / first row.
+                        onDown = { runCatching { firstRowFR.requestFocus() } },
                     )
                 }
             }
@@ -255,13 +264,13 @@ private fun HomeLoaded(
                     urlResolver = { ch -> ch.logoUrl },
                     bringRowHeaderIntoView = false,  // R108: spec topInset already shows the title
                     restoreItemKey = if (store.focusRowKey == "channels") store.focusItemKey else null,  // R139
-                ) { _, ch, fr ->
+                ) { i, ch, fr ->
                     ChannelCard(
                         name = ch.name,
                         logoUrl = ch.logoUrl,
                         brandColor = ch.brandColor,
                         logoPadding = if (ch.style == dev.jellystructure.shared.tv.ChannelStyle.LOGO) ch.paddingLogo else ch.paddingText,
-                        focusRequester = fr,  // R139
+                        focusRequester = fr ?: if (i == 0) firstRowFR else null,  // R139 / hero-down bridge
                         onSelect = { store.focusRowKey = "channels"; store.focusItemKey = ch.id; onChannelSelect(ch) },  // R139
                     )
                 }
@@ -272,16 +281,17 @@ private fun HomeLoaded(
         // position (never a top-nav tab — it only ever lives among the Home rows).
         val clampedOnNowIndex = onNowRowIndex.coerceIn(0, feed.rows.size)
         items(clampedOnNowIndex, key = { ri -> feed.rows[ri].id }) { ri ->
-            ContentRowItem(feed.rows[ri], feed, store, onItemSelect)
+            ContentRowItem(feed.rows[ri], feed, store, onItemSelect, firstItemFR = if (!hasChannels && ri == 0) firstRowFR else null)
         }
         if (liveTvChannels.isNotEmpty()) {
             item(key = "on_now") {
                 Spacer(Modifier.height(RaviloDimens.rowGap))
-                OnNowRow(liveTvChannels, store, onLiveTvChannelSelect, onOpenLiveTvGuide)
+                OnNowRow(liveTvChannels, store, onLiveTvChannelSelect, onOpenLiveTvGuide, firstItemFR = if (onNowIsFirstRow) firstRowFR else null)
             }
         }
         items(feed.rows.size - clampedOnNowIndex, key = { i -> feed.rows[clampedOnNowIndex + i].id }) { i ->
-            ContentRowItem(feed.rows[clampedOnNowIndex + i], feed, store, onItemSelect)
+            val isVeryFirstRow = !hasChannels && clampedOnNowIndex == 0 && liveTvChannels.isEmpty() && i == 0
+            ContentRowItem(feed.rows[clampedOnNowIndex + i], feed, store, onItemSelect, firstItemFR = if (isVeryFirstRow) firstRowFR else null)
         }
     }
     }
@@ -315,6 +325,7 @@ private fun ContentRowItem(
     feed: dev.jellystructure.shared.tv.HomeFeed,
     store: HomeStore,
     onItemSelect: (MediaCard) -> Unit,
+    firstItemFR: FocusRequester? = null,
 ) {
     // Compute variant here so urlResolver and Tile use the same value.
     val rowVariant = if (row.kind == RowKind.CONTINUE) TileVariant.LANDSCAPE else feed.tileShape.toTileVariant()
@@ -331,7 +342,7 @@ private fun ContentRowItem(
         },
         bringRowHeaderIntoView = false,  // R108: spec topInset already shows the title
         restoreItemKey = if (store.focusRowKey == row.id) store.focusItemKey else null,  // R139
-    ) { _, card, fr ->
+    ) { i, card, fr ->
         // R113: in Continue Watching, show the season/episode as a small on-image badge for TV
         // shows and leave just the series title below (was "S1E3 · Episode" as the subtitle).
         val isContinue = row.kind == RowKind.CONTINUE
@@ -346,7 +357,7 @@ private fun ContentRowItem(
             progressPct = card.progressPct ?: 0f,
             watched = card.watched,
             upcomingLabel = card.upcomingEpisode,
-            focusRequester = fr,  // R139
+            focusRequester = fr ?: if (i == 0) firstItemFR else null,  // R139 / hero-down bridge
             onSelect = { store.focusRowKey = row.id; store.focusItemKey = card.id; onItemSelect(card) },  // R139
         )
     }
@@ -361,6 +372,7 @@ private fun OnNowRow(
     store: HomeStore,
     onLiveTvChannelSelect: (LiveTvChannel) -> Unit,
     onOpenLiveTvGuide: () -> Unit,
+    firstItemFR: FocusRequester? = null,
 ) {
     StaticContentRow(
         title = str("livetv.on_now"),
@@ -371,7 +383,7 @@ private fun OnNowRow(
         urlResolver = { it.logoUrl },
         bringRowHeaderIntoView = false,
         restoreItemKey = if (store.focusRowKey == "on_now") store.focusItemKey else null,
-    ) { _, ch, fr ->
+    ) { i, ch, fr ->
         val program = ch.currentProgram
         val nowMs = remember { kotlin.time.Clock.System.now().toEpochMilliseconds() }
         val progress = if (program != null && program.endMs > program.startMs)
@@ -384,7 +396,7 @@ private fun OnNowRow(
             posterUrl = ch.logoUrl,
             variant = TileVariant.LANDSCAPE,
             progressPct = progress,
-            focusRequester = fr,
+            focusRequester = fr ?: if (i == 0) firstItemFR else null,   // hero-down bridge
             onSelect = { store.focusRowKey = "on_now"; store.focusItemKey = ch.channelId; onLiveTvChannelSelect(ch) },
         )
     }
