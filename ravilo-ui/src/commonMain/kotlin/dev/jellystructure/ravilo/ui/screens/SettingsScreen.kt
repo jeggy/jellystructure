@@ -135,6 +135,12 @@ fun SettingsScreen(
     val state by store.state.collectAsState()
     val scope = rememberCoroutineScope()
     var showUnpairConfirm by remember { mutableStateOf(false) }
+    // Bug fix: Sign out used to fire immediately on Select, no confirmation at all — unlike Unpair,
+    // even though "Sign out" here means the same thing (the string is literally "Sign out / Unpair")
+    // and needs the Jellyfin username+password to recover. Confirmed live on soveværelse TV: an
+    // ordinary D-pad navigation slip signed the device out with zero warning. Same confirm-overlay
+    // treatment as Unpair now applies.
+    var showSignOutConfirm by remember { mutableStateOf(false) }
 
     // R33: silently re-pull settings when the user's config changes elsewhere.
     val live = dev.jellystructure.ravilo.ui.LocalLiveConfig.current
@@ -173,7 +179,7 @@ fun SettingsScreen(
                     config = s.config,
                     displayName = displayName,
                     store = store,
-                    onSignOut = onSignOut,
+                    onSignOut = { showSignOutConfirm = true },
                     onSkinChange = onSkinChange,
                     onUnpairRequest = { showUnpairConfirm = true },
                 )
@@ -182,8 +188,23 @@ fun SettingsScreen(
         // R161: 2-D nav is "steps out one level" for Back/Esc — the confirm overlay owns input while
         // shown (dpadFocusable's onBack on Cancel closes it) and defaults focus to the non-destructive
         // Cancel choice.
+        if (showSignOutConfirm) {
+            ConfirmOverlay(
+                title = str("settings.sign_out_confirm"),
+                description = str("settings.sign_out_desc"),
+                confirmLabel = str("settings.sign_out_yes"),
+                onCancel = { showSignOutConfirm = false },
+                onConfirm = {
+                    showSignOutConfirm = false
+                    onSignOut()
+                },
+            )
+        }
         if (showUnpairConfirm) {
-            UnpairConfirmOverlay(
+            ConfirmOverlay(
+                title = str("settings.unpair_confirm"),
+                description = str("settings.unpair_desc"),
+                confirmLabel = str("settings.unpair_yes"),
                 onCancel = { showUnpairConfirm = false },
                 onConfirm = {
                     showUnpairConfirm = false
@@ -194,9 +215,13 @@ fun SettingsScreen(
     }
 }
 
-/** Non-private: reused by R170's avatar ProfileMenu (a different file), not just this screen. */
+/**
+ * Generic danger-confirm overlay — extracted so Sign out gets the same "are you sure" treatment as
+ * Unpair (it used to fire immediately on Select with zero confirmation; confirmed live on
+ * soveværelse TV that an ordinary D-pad navigation slip can sign the device out with no warning).
+ */
 @Composable
-fun UnpairConfirmOverlay(onCancel: () -> Unit, onConfirm: () -> Unit) {
+fun ConfirmOverlay(title: String, description: String, confirmLabel: String, onCancel: () -> Unit, onConfirm: () -> Unit) {
     val colors = RaviloTheme.colors
     val cancelFR = remember { FocusRequester() }
     val confirmFR = remember { FocusRequester() }
@@ -211,9 +236,9 @@ fun UnpairConfirmOverlay(onCancel: () -> Unit, onConfirm: () -> Unit) {
                 .padding(32.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Text(str("settings.unpair_confirm"), color = colors.text, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+            Text(title, color = colors.text, fontSize = 20.sp, fontWeight = FontWeight.Bold)
             Spacer(Modifier.height(8.dp))
-            Text(str("settings.unpair_desc"), color = colors.textSecondary, fontSize = 14.sp)
+            Text(description, color = colors.textSecondary, fontSize = 14.sp)
             Spacer(Modifier.height(28.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 var cancelFocused by remember { mutableStateOf(false) }
@@ -245,10 +270,22 @@ fun UnpairConfirmOverlay(onCancel: () -> Unit, onConfirm: () -> Unit) {
                             onBack = onCancel,
                         )
                         .padding(horizontal = 24.dp, vertical = 12.dp),
-                ) { Text(str("settings.unpair_yes"), color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold) }
+                ) { Text(confirmLabel, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold) }
             }
         }
     }
+}
+
+/** Non-private: reused by R170's avatar ProfileMenu (a different file), not just this screen. */
+@Composable
+fun UnpairConfirmOverlay(onCancel: () -> Unit, onConfirm: () -> Unit) {
+    ConfirmOverlay(
+        title = str("settings.unpair_confirm"),
+        description = str("settings.unpair_desc"),
+        confirmLabel = str("settings.unpair_yes"),
+        onCancel = onCancel,
+        onConfirm = onConfirm,
+    )
 }
 
 // R161 — endonyms, not translated (a language picker names languages in themselves regardless of
