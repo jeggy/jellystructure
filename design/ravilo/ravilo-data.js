@@ -58,7 +58,7 @@
     drama: ['Arvur','Stilla Vatn','Det Tavse Hus','Glasberget','Mod Strømmen','Fars Hænder','Vesterhavet','Lyset i Nord','Hjemkomst','Bølgebryder'],
     action: ['Jarnvegur','Siste Utvei','Kaperen','Nordlys Protocol','Brennur','Fald','Vargtid','Stormkast','Isbjørn','Granat'],
     scifi: ['Cosmos Laundromat','Hraðar Ljós','Tears of Steel','Sintel','Banens Ende','Drift 7','Polstjernen','Aurora Station','Det Niende Lag','Ekko'],
-    comedy: ['Fjollerne i Nord','Sommerhus & Sild','Naboer','Fars Ferie','Den Gode Nabo','Tøris','Kaffepause','Bryllupsballaden','Hytteliv','Strandvask'],
+    comedy: ['Johnny Bravo','Fjollerne i Nord','Sommerhus & Sild','Naboer','Fars Ferie','Den Gode Nabo','Tøris','Kaffepause','Bryllupsballaden','Hytteliv','Strandvask'],
     docs: ['Havets Folk','Ísland frá Lofti','Vulkanens Børn','Stillehavets Dyb','Gletsjeren','Fugleøen','Det Vilde Norden','Tang & Tang','Nordens Ulve','Lyset Vender'],
     family: ['Spring','Caminandes','Agent 327','Glas Halvt','Bukken & Bjørnen','Vintereventyr','Den Lille Havfrue','Skovens Konge','Trolde','Snemand'],
   };
@@ -98,7 +98,26 @@
 
   // ---------- detail-page data (episodes / cast / related) ----------
   function ep(n, title, dur, desc, pct, air) { return { n, title, dur, desc, pct: pct || 0, air: air || '', grad: grad(title + n) }; }
+  // Multi-episode files: one .mkv holds three episodes (S01E01E02E03…), so a 24-ep
+  // season lives in 8 files. Jellystructure maps all three episodes per file; Ravilo
+  // shows each file as one combined "triptych" card (Option B — one continuous unit).
+  function jbFile(startN, segs) {
+    const p = n => String(n).padStart(2, '0');
+    const fname = `Johnny.Bravo.S01E${p(startN)}E${p(startN + 1)}E${p(startN + 2)}.NORDIC.PDTV.x264-ROCKETRACCOON.mkv`;
+    return segs.map((s, i) => { const e = ep(startN + i, s[0], s[1], s[2], s[3] || 0); e.file = fname; e.fidx = i; e.fcount = segs.length; return e; });
+  }
+  const JB_S1 = [].concat(
+    jbFile(1, [['Bravo Dooby-Doo', '8m', 'Johnny teams up with a talking dog to crack a haunted-house case.', 100], ['Jungle Boy in Mr. Monkeyman', '8m', 'A feral jungle kid mistakes Johnny for his long-lost mother.', 40], ['Blanky Hanky Panky', '7m', 'Johnny will do anything to reclaim his beloved childhood blanket.', 0]]),
+    jbFile(4, [['Super Duped', '8m', 'A caped stranger cons Johnny into a very un-heroic errand.', 0], ['Bearly Enough Time', '8m', 'Johnny plays babysitter to a mischievous bear cub.', 0], ['Little Big Head Man', '7m', 'A shrink ray leaves Johnny pocket-sized in the big city.', 0]]),
+    jbFile(7, [['Johnny Meets Adam West', '8m', 'Johnny mistakes a retired TV hero for the genuine article.', 0], ['Bravo, James Bravo', '8m', 'Johnny goes undercover as a not-so-secret agent.', 0], ['Cover Boy', '7m', 'A modeling gig goes straight to Johnny’s enormous head.', 0]]),
+    jbFile(10, [['’Twas the Night', '8m', 'Johnny tries to catch Santa in the act on Christmas Eve.', 0], ['A Wolf in Chick’s Clothing', '8m', 'Johnny’s new crush has a decidedly hairy secret.', 0], ['Blabber Mouth', '7m', 'A magic gumball leaves Johnny unable to stop talking.', 0]]),
+    jbFile(13, [['Speed Bravo', '8m', 'Johnny must keep his heart rate up or the gym explodes.', 0], ['The Perfect Gift', '8m', 'Mother’s Day sends Johnny on a frantic last-minute hunt.', 0], ['Man-Witch', '7m', 'A hex turns Johnny’s beloved hair against him.', 0]]),
+    jbFile(16, [['The Learning Tree', '8m', 'Johnny mentors a kid and teaches all the wrong lessons.', 0], ['Johnny Meets Donny', '8m', 'A washed-up pop idol becomes Johnny’s unlikely roommate.', 0], ['Beach Blanket Bravo', '8m', 'Lifeguard Johnny is more hazard than help on the sand.', 0]]),
+    jbFile(19, [['Frankenbravo', '8m', 'A mad scientist decides Johnny’s physique is just the ticket.', 0], ['Mama’s New Boyfriend', '8m', 'Johnny vets his mother’s suspiciously slick new suitor.', 0], ['Panic in Jerky Town', '7m', 'A beef-jerky shortage drives the whole town to the brink.', 0]]),
+    jbFile(22, [['Karma Krisis', '8m', 'Cosmic payback comes due for a lifetime of Johnny’s antics.', 0], ['Bravo Dooby-Doo II', '8m', 'The talking dog returns with a mystery twice as spooky.', 0], ['The Sensitive Male', '7m', 'Johnny discovers his feelings, to everyone’s alarm.', 0]])
+  );
   const SERIES_EP = {
+    'Johnny Bravo': [ JB_S1 ],
     'Nordvest': [
       [ // Season 1
         ep(1, 'Hvalvík', '58m', 'Detective Sigrun Restorff steps off the ferry into the town that raised her — and a body that won\u2019t let her leave.', 100, '2023-09-03'),
@@ -125,6 +144,11 @@
       { n: 'Sigrun Restorff', r: 'Detective' }, { n: 'Páll Heinason', r: 'Sergeant' },
       { n: 'Marin Klett', r: 'Prosecutor' }, { n: 'Tóki á Bø', r: 'Harbourmaster' },
       { n: 'Eva Restorff', r: 'Sister' }, { n: 'S. Goedegebure', r: 'Creator' },
+    ],
+    'Johnny Bravo': [
+      { n: 'Johnny Bravo', r: 'Himself' }, { n: 'Little Suzy', r: 'Neighbor' },
+      { n: 'Mama Bravo', r: 'Mother' }, { n: 'Carl Chryniszzswics', r: 'Best Friend' },
+      { n: 'Pops', r: 'Diner Owner' }, { n: 'Van Partible', r: 'Creator' },
     ],
     'Big Buck Bunny': [
       { n: 'Big Buck', r: 'The Bunny' }, { n: 'Frank', r: 'Squirrel' }, { n: 'Rinky', r: 'Squirrel' },
@@ -171,6 +195,11 @@
   //   fetching   → Radarr is grabbing it now (progress %)
   //   none       → not in library — the user can request a fetch via Radarr
   const config = { radarr: true, sonarr: true, seerr: true, region: 'DK', regionName: 'Denmark',
+    // Live TV (Phase 147 / R177). jellystructure surfaces Jellyfin's Live TV into Ravilo.
+    // Woven into Home — NEVER a top-nav tab. Placement is config-driven (global/per-user):
+    //   onNowRow    → the Home "On now" row (+ its position among the rows)
+    //   collection  → a "Live TV" tile in the Channels & Collections rail (opens the guide)
+    livetv: { enabled: true, onNowRow: true, collection: true, position: 'after-continue', density: 'spacious' },
     // Age-rating region cascade (global; set in Jellystructure → Settings → Metadata).
     // Jellystructure resolves each title's certification by walking this ordered list and
     // using the first region that has one. Here it drives the badge + the workbench facet.
