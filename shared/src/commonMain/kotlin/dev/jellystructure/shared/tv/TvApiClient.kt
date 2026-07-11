@@ -296,9 +296,12 @@ class TvApiClient(
         return json.decodeFromString(r.bodyAsText())
     }
 
-    /** Full-schedule guide grid, cached server-side at the admin-configured cadence. */
-    suspend fun getLiveTvGuide(days: Int = 7): List<LiveTvGuideProgram> {
-        val r = client.get("$baseUrl/api/tv/livetv/guide") { auth(); parameter("days", days) }
+    /** Full-schedule guide grid, cached server-side at the admin-configured cadence. [hoursBack] pulls
+     *  in recently-elapsed programs too (user request — the guide used to only ever look forward). */
+    suspend fun getLiveTvGuide(days: Int = 7, hoursBack: Int = 0): List<LiveTvGuideProgram> {
+        val r = client.get("$baseUrl/api/tv/livetv/guide") {
+            auth(); parameter("days", days); parameter("hoursBack", hoursBack)
+        }
         r.assertSuccess()
         return json.decodeFromString(r.bodyAsText())
     }

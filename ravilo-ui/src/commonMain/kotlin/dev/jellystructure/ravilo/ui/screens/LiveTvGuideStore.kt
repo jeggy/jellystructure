@@ -24,7 +24,8 @@ class LiveTvGuideStore(private val apiClient: TvApiClient) {
     private val _state = MutableStateFlow<LiveTvGuideState>(LiveTvGuideState.Loading)
     val state: StateFlow<LiveTvGuideState> = _state.asStateFlow()
 
-    fun load(days: Int = 2) {
+    // User request: the guide should scroll 4h into the past as well as 2 days into the future.
+    fun load(days: Int = 2, hoursBack: Int = 4) {
         _state.value = LiveTvGuideState.Loading
         scope.launch {
             val channels = runCatching { apiClient.getLiveTvChannels() }.getOrNull()
@@ -32,7 +33,7 @@ class LiveTvGuideStore(private val apiClient: TvApiClient) {
                 _state.value = LiveTvGuideState.Error("Couldn't load channels")
                 return@launch
             }
-            val programs = runCatching { apiClient.getLiveTvGuide(days) }.getOrDefault(emptyList())
+            val programs = runCatching { apiClient.getLiveTvGuide(days, hoursBack) }.getOrDefault(emptyList())
             _state.value = LiveTvGuideState.Loaded(channels, programs)
         }
     }

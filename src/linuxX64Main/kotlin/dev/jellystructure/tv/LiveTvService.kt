@@ -235,15 +235,20 @@ class LiveTvService(
      * Full-schedule guide grid (R177 §C) for [days] ahead, cached at the configured cadence (addendum F
      * — dropped the custom-XMLTV source; cadence-only against Jellyfin's own guide). "On now"/next never
      * calls this — see [homeChannels]'s embedded CurrentProgram (addendum C).
+     *
+     * [hoursBack] (user request): the guide used to only ever query from "now" forward, so scrolling left
+     * never revealed anything — the floor is now `now - hoursBack`. Whether that actually returns anything
+     * depends on the Jellyfin server's own EPG source retaining recently-elapsed programs; if it doesn't,
+     * this floor is harmless (Jellyfin just returns nothing before its own retention edge).
      */
-    suspend fun guide(days: Int = 7): List<LiveTvGuideProgram> {
+    suspend fun guide(days: Int = 7, hoursBack: Int = 0): List<LiveTvGuideProgram> {
         val cadenceMs = store.settings().epgCadenceMinutes.coerceAtLeast(1) * 60_000L
         val now = nowMs()
         if (guideCache.isEmpty() || now - guideCacheFetchedAt > cadenceMs) {
             val base = jellyfinBase(); val token = jellyfinToken()
             val channelIds = store.overridesByChannelId().values.filter { it.shown && !it.unavailable }.map { it.channelId }
             if (base.isNotBlank() && token.isNotBlank() && channelIds.isNotEmpty()) {
-                val programs = jellyfinClient.getLiveTvPrograms(base, token, channelIds, utcIsoNow(), utcIsoPlusDays(days))
+                val programs = jellyfinClient.getLiveTvPrograms(base, token, channelIds, utcIsoMinusHours(hoursBack), utcIsoPlusDays(days))
                 guideCache = programs.mapNotNull { p ->
                     val chId = p.channelId ?: return@mapNotNull null
                     val start = p.startDate?.let(::isoToEpochMs) ?: return@mapNotNull null
@@ -365,18 +370,21 @@ private fun nowMs(): Long = memScoped {
 }
 
 @OptIn(ExperimentalForeignApi::class)
-private fun utcIsoNow(): String = memScoped {
+private fun utcIsoPlusDays(days: Int): String = memScoped {
     val t = alloc<time_tVar>(); time(t.ptr)
+    t.value = (t.value.convert<Long>() + days.toLong() * 86_400L).convert()
     val tmv = alloc<tm>(); gmtime_r(t.ptr, tmv.ptr)
     val buf = allocArray<ByteVar>(32)
     strftime(buf, 32.convert(), "%Y-%m-%dT%H:%M:%S.000Z", tmv.ptr)
     buf.toKString()
 }
 
+/** User request: the guide should scroll 4h into the past as well as forward — [hours] is subtracted
+ *  from now to become the query's MinStartDate floor (was always "now", so there was no past window). */
 @OptIn(ExperimentalForeignApi::class)
-private fun utcIsoPlusDays(days: Int): String = memScoped {
+private fun utcIsoMinusHours(hours: Int): String = memScoped {
     val t = alloc<time_tVar>(); time(t.ptr)
-    t.value = (t.value.convert<Long>() + days.toLong() * 86_400L).convert()
+    t.value = (t.value.convert<Long>() - hours.toLong() * 3_600L).convert()
     val tmv = alloc<tm>(); gmtime_r(t.ptr, tmv.ptr)
     val buf = allocArray<ByteVar>(32)
     strftime(buf, 32.convert(), "%Y-%m-%dT%H:%M:%S.000Z", tmv.ptr)
