@@ -105,11 +105,21 @@ fun ChannelCard(
     val glowColor   = remember(accentColor) { accentColor.copy(alpha = 0.55f) }
 
     // Channel-button background. A gradient brandColor (e.g. "linear-gradient(135deg,#3b2a78,#15102e)")
-    // renders its own stops; a solid keeps the subtle accent→card wash. Diagonal via POSITIVE_INFINITY
-    // (density-independent); the authored angle is approximated to the card diagonal.
+    // renders its own stops; a solid brandColor now renders as an actual solid fill too. Diagonal via
+    // POSITIVE_INFINITY (density-independent); the authored angle is approximated to the card diagonal.
+    //
+    // Bug fix: a solid brandColor used to be discarded as "the background" and instead blended at
+    // SOLID_WASH_ALPHA (28%) into the near-black theme `colors.card` — reported live: a channel with a
+    // black logo + solid WHITE brandColor rendered as an almost entirely near-black tile (a faint white
+    // corner glow, nothing more), making the black logo invisible instead of showing a white tile with a
+    // legible black logo. The wash-to-card treatment is now reserved for the true "no brandColor set"
+    // case (brandFill == null) — a chosen solid color, however light or dark, always renders as itself.
     val cardGradient = remember(brandFill, accentColor, colors.card) {
-        val stops = if (brandFill != null && brandFill.colors.size >= 2) brandFill.colors
-                    else listOf(accentColor.copy(alpha = ChannelButtonSpec.SOLID_WASH_ALPHA), colors.card)
+        val stops = when {
+            brandFill != null && brandFill.colors.size >= 2 -> brandFill.colors
+            brandFill != null -> brandFill.colors.let { listOf(it[0], it[0]) }
+            else -> listOf(accentColor.copy(alpha = ChannelButtonSpec.SOLID_WASH_ALPHA), colors.card)
+        }
         Brush.linearGradient(
             colors = stops,
             start = Offset(0f, 0f),
