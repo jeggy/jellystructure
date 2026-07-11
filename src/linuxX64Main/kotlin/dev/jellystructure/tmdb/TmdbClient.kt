@@ -13,6 +13,9 @@ import kotlinx.coroutines.delay
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
+/** Cap on [TmdbClient]'s internal 429 retry loop — see the `httpGet` doc comment. */
+private const val MAX_429_RETRIES = 5
+
 @Serializable
 data class TmdbSearchResponse(
     val results: List<TmdbSearchResult> = emptyList(),
@@ -324,10 +327,40 @@ class TmdbClient(
 
     private val detailsCache = mutableMapOf<Int, TmdbMovieDetails>()
 
+    // Bug fix: getRegionedLanguageTags returns series-level data (the show's /translations) but used
+    // to be re-fetched from scratch for every episode that missed its primary language — for a
+    // 300-episode series that's up to 300 redundant identical requests in one pull_tmdb run. Cached
+    // per (tmdbId, isMovie), same idiom as [detailsCache].
+    private val regionTagsCache = mutableMapOf<Pair<Int, Boolean>, Map<String, String>>()
+
     private fun apiKey(): String = configStore.current.apiKeys.tmdbV3Key
 
-    private suspend fun httpGet(url: String, block: HttpRequestBuilder.() -> Unit = {}): HttpResponse =
-        OutboundHttp.withPermit { http.get(url, block) }
+    /**
+     * Bug fix: every one of the ~18 call sites below used to handle a 429 itself, via
+     * `if (status == TooManyRequests) { delay(3000); return theSameFunction(sameArgs) }` — an
+     * unbounded, silent, per-call-site recursive retry. A library with even a handful of
+     * long-running TV series (300+ episodes each is common for reality shows/sitcoms) makes a
+     * `pull_tmdb` "scope=all" run issue thousands of sequential episode-detail requests; once TMDB
+     * starts rate-limiting under that volume, dozens of in-flight coroutines can end up retrying
+     * this way *indefinitely* in lockstep, with zero log trace (the retry was silent) — from the
+     * outside this looked exactly like the whole backend hanging. Centralizing the retry here (a)
+     * caps it at [MAX_429_RETRIES] instead of forever, and (b) finally logs every occurrence, so a
+     * future incident shows "TMDB rate-limited" in the activity log instead of just going quiet.
+     */
+    private suspend fun httpGet(url: String, block: HttpRequestBuilder.() -> Unit = {}): HttpResponse {
+        var attempt = 0
+        while (true) {
+            val response = OutboundHttp.withPermit { http.get(url, block) }
+            if (response.status != HttpStatusCode.TooManyRequests) return response
+            attempt++
+            if (attempt > MAX_429_RETRIES) {
+                Logger.warn("TMDB rate-limited (429) $attempt times, giving up: $url", "tmdb")
+                return response
+            }
+            Logger.warn("TMDB rate-limited (429), retrying in 3s (attempt $attempt/$MAX_429_RETRIES): $url", "tmdb")
+            delay(3000)
+        }
+    }
 
     suspend fun searchMovie(title: String, year: Int?): TmdbSearchResult? {
         val key = apiKey()
@@ -337,10 +370,6 @@ class TmdbClient(
                 parameter("api_key", key)
                 parameter("query", title)
                 if (year != null) parameter("year", year)
-            }
-            if (response.status == HttpStatusCode.TooManyRequests) {
-                delay(3000)
-                return searchMovie(title, year)
             }
             response.body<TmdbSearchResponse>().results.firstOrNull()
         }
@@ -356,10 +385,6 @@ class TmdbClient(
             val response = httpGet("$baseUrl/movie/$tmdbId") {
                 parameter("api_key", key)
                 if (!language.isNullOrBlank()) parameter("language", language)
-            }
-            if (response.status == HttpStatusCode.TooManyRequests) {
-                delay(3000)
-                return getMovieDetails(tmdbId, language)
             }
             val details = response.body<TmdbMovieDetails>()
             if (language == null) detailsCache[tmdbId] = details
@@ -410,10 +435,6 @@ class TmdbClient(
                 parameter("query", title)
                 if (year != null) parameter("first_air_date_year", year)
             }
-            if (response.status == HttpStatusCode.TooManyRequests) {
-                delay(3000)
-                return searchTv(title, year)
-            }
             response.body<TmdbTvSearchResponse>().results.firstOrNull()
         }
         if (result.isFailure) Logger.warn("TMDB TV search failed for '$title': ${result.exceptionOrNull()?.message}")
@@ -427,10 +448,6 @@ class TmdbClient(
             val response = httpGet("$baseUrl/tv/$tmdbId") {
                 parameter("api_key", key)
                 if (!language.isNullOrBlank()) parameter("language", language)
-            }
-            if (response.status == HttpStatusCode.TooManyRequests) {
-                delay(3000)
-                return getTvDetails(tmdbId, language)
             }
             response.body<TmdbTvDetails>()
         }
@@ -586,10 +603,6 @@ class TmdbClient(
             val response = httpGet("$baseUrl/$path") {
                 parameter("api_key", key)
             }
-            if (response.status == HttpStatusCode.TooManyRequests) {
-                delay(3000)
-                return getTranslationLanguages(tmdbId, isMovie)
-            }
             response.body<TmdbTranslationsResponse>().translations
                 // Include a language when TMDB has ANY localized content (name/title or overview).
                 // Some minority languages (e.g. fo-FO) only have a translated title with no overview;
@@ -618,10 +631,6 @@ class TmdbClient(
             val response = httpGet("$baseUrl/$path") {
                 parameter("api_key", key)
             }
-            if (response.status == HttpStatusCode.TooManyRequests) {
-                delay(3000)
-                return getTranslatedTitles(tmdbId, isMovie)
-            }
             response.body<TmdbTranslationsResponse>().translations
                 .filter { it.languageCode.isNotBlank() }
                 .mapNotNull { t ->
@@ -642,16 +651,14 @@ class TmdbClient(
      * region-qualified tag. First translation (with an overview) wins per language.
      */
     suspend fun getRegionedLanguageTags(tmdbId: Int, isMovie: Boolean): Map<String, String> {
+        val cacheKey = tmdbId to isMovie
+        regionTagsCache[cacheKey]?.let { return it }
         val key = apiKey()
         if (key.isBlank()) return emptyMap()
         val path = if (isMovie) "movie/$tmdbId/translations" else "tv/$tmdbId/translations"
         val result = runCatching {
             val response = httpGet("$baseUrl/$path") {
                 parameter("api_key", key)
-            }
-            if (response.status == HttpStatusCode.TooManyRequests) {
-                delay(3000)
-                return getRegionedLanguageTags(tmdbId, isMovie)
             }
             val map = LinkedHashMap<String, String>()
             for (t in response.body<TmdbTranslationsResponse>().translations) {
@@ -662,8 +669,13 @@ class TmdbClient(
             }
             map
         }
-        if (result.isFailure) Logger.warn("TMDB regioned tags failed tmdbId=$tmdbId: ${result.exceptionOrNull()?.message}")
-        return result.getOrElse { emptyMap() }
+        if (result.isFailure) {
+            Logger.warn("TMDB regioned tags failed tmdbId=$tmdbId: ${result.exceptionOrNull()?.message}")
+            return emptyMap()
+        }
+        val tags = result.getOrThrow()
+        regionTagsCache[cacheKey] = tags
+        return tags
     }
 
     suspend fun searchMovieAll(query: String, year: Int?): List<TmdbSearchResult> {
@@ -674,10 +686,6 @@ class TmdbClient(
                 parameter("api_key", key)
                 parameter("query", query)
                 if (year != null) parameter("year", year)
-            }
-            if (response.status == HttpStatusCode.TooManyRequests) {
-                delay(3000)
-                return searchMovieAll(query, year)
             }
             response.body<TmdbSearchResponse>().results.take(10)
         }
@@ -694,10 +702,6 @@ class TmdbClient(
                 parameter("query", query)
                 if (year != null) parameter("first_air_date_year", year)
             }
-            if (response.status == HttpStatusCode.TooManyRequests) {
-                delay(3000)
-                return searchTvAll(query, year)
-            }
             response.body<TmdbTvSearchResponse>().results.take(10)
         }
         if (result.isFailure) Logger.warn("TMDB TV search failed for '$query': ${result.exceptionOrNull()?.message}")
@@ -711,10 +715,6 @@ class TmdbClient(
             val response = httpGet("$baseUrl/search/company") {
                 parameter("api_key", key)
                 parameter("query", name)
-            }
-            if (response.status == HttpStatusCode.TooManyRequests) {
-                delay(3000)
-                return searchCompany(name)
             }
             response.body<TmdbCompanySearchResponse>().results.firstOrNull()
         }
@@ -745,10 +745,6 @@ class TmdbClient(
             val response = httpGet("$baseUrl/tv/$seriesId/season/$season/episode/$episode") {
                 parameter("api_key", key)
                 if (!language.isNullOrBlank()) parameter("language", language)
-            }
-            if (response.status == HttpStatusCode.TooManyRequests) {
-                delay(3000)
-                return getEpisodeDetails(seriesId, season, episode, language)
             }
             if (response.status.value == 404) return null
             response.body<TmdbEpisodeDetails>()
@@ -791,10 +787,6 @@ class TmdbClient(
             val response = httpGet("$baseUrl/$path/images") {
                 parameter("api_key", key)
             }
-            if (response.status == HttpStatusCode.TooManyRequests) {
-                delay(3000)
-                return getImages(path)
-            }
             if (response.status.value == 404) return null
             response.body<TmdbImagesResponse>()
         }
@@ -811,10 +803,6 @@ class TmdbClient(
         if (key.isBlank()) return emptyList()
         val result = runCatching {
             val response = httpGet("$baseUrl/movie/$tmdbId/keywords") { parameter("api_key", key) }
-            if (response.status == HttpStatusCode.TooManyRequests) {
-                delay(3000)
-                return getMovieKeywords(tmdbId)
-            }
             if (response.status.value == 404) return emptyList()
             response.body<TmdbMovieKeywordsResponse>().keywords.map { it.name }
         }
@@ -827,10 +815,6 @@ class TmdbClient(
         if (key.isBlank()) return emptyList()
         val result = runCatching {
             val response = httpGet("$baseUrl/tv/$tmdbId/keywords") { parameter("api_key", key) }
-            if (response.status == HttpStatusCode.TooManyRequests) {
-                delay(3000)
-                return getTvKeywords(tmdbId)
-            }
             if (response.status.value == 404) return emptyList()
             response.body<TmdbTvKeywordsResponse>().results.map { it.name }
         }
@@ -853,10 +837,6 @@ class TmdbClient(
         if (key.isBlank()) return emptyMap()
         val result = runCatching {
             val response = httpGet("$baseUrl/movie/$tmdbId/release_dates") { parameter("api_key", key) }
-            if (response.status == HttpStatusCode.TooManyRequests) {
-                delay(3000)
-                return getMovieCertifications(tmdbId)
-            }
             if (response.status.value == 404) return emptyMap()
             val map = LinkedHashMap<String, String>()
             for (c in response.body<TmdbReleaseDatesResponse>().results) {
@@ -879,10 +859,6 @@ class TmdbClient(
         if (key.isBlank()) return emptyMap()
         val result = runCatching {
             val response = httpGet("$baseUrl/tv/$tmdbId/content_ratings") { parameter("api_key", key) }
-            if (response.status == HttpStatusCode.TooManyRequests) {
-                delay(3000)
-                return getTvCertifications(tmdbId)
-            }
             if (response.status.value == 404) return emptyMap()
             val map = LinkedHashMap<String, String>()
             for (e in response.body<TmdbContentRatingsResponse>().results) {
@@ -913,10 +889,6 @@ class TmdbClient(
         if (key.isBlank()) return null
         val result = runCatching {
             val response = httpGet("$baseUrl/movie/$tmdbId/videos") { parameter("api_key", key) }
-            if (response.status == HttpStatusCode.TooManyRequests) {
-                delay(3000)
-                return getMovieVideos(tmdbId, originalLanguage)
-            }
             if (response.status.value == 404) return null
             selectTrailerVideo(response.body<TmdbVideosResponse>().results, originalLanguage)
         }
@@ -929,10 +901,6 @@ class TmdbClient(
         if (key.isBlank()) return null
         val result = runCatching {
             val response = httpGet("$baseUrl/tv/$tmdbId/videos") { parameter("api_key", key) }
-            if (response.status == HttpStatusCode.TooManyRequests) {
-                delay(3000)
-                return getTvVideos(tmdbId, originalLanguage)
-            }
             if (response.status.value == 404) return null
             selectTrailerVideo(response.body<TmdbVideosResponse>().results, originalLanguage)
         }
