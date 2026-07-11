@@ -47,19 +47,6 @@
 }
 
 .app-side .group-label { padding-top: 16px; }
-
-/* Phase 148 — collapsible sidebar groups */
-.app-side .nav-group { display: flex; flex-direction: column; }
-.app-side .group-label.group-toggle {
-  display: flex; align-items: center; width: 100%; background: transparent; border: 0;
-  cursor: pointer; text-align: left; font-family: inherit;
-}
-.app-side .group-label.group-toggle:hover { color: var(--ink); }
-.app-side .group-label .grp-chev { margin-left: auto; opacity: .6; transition: transform .18s ease; }
-.app-side .nav-group.collapsed .grp-chev { transform: rotate(-90deg); }
-.app-side .nav-group-items { display: flex; flex-direction: column; overflow: hidden; }
-.app-side .nav-group.collapsed .nav-group-items { display: none; }
-
 .app-side .grow { flex: 1; min-height: 12px; }
 
 .app-side .status {

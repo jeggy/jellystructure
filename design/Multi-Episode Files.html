@@ -1,0 +1,589 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="design_doc_mode" content="canvas">
+<title>Multi-Episode Files — S01E01E02E03</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Sora:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: 'Sora', system-ui, sans-serif; }
+
+  /* ---------- canvas chrome ---------- */
+  .frame { position: absolute; }
+  .doc-title { font-family: 'Space Grotesk', sans-serif; color: #f3f4fb; }
+  .doc-title h1 { font-size: 40px; font-weight: 700; letter-spacing: -1px; margin: 0 0 8px; }
+  .doc-title p { font-family: 'Sora', sans-serif; font-size: 17px; color: #aeb4cb; margin: 0; max-width: 900px; line-height: 1.55; }
+  .doc-title code { font-family: 'JetBrains Mono', monospace; font-size: .85em; background: rgba(123,110,240,.16); color: #cbc3ff; padding: 2px 7px; border-radius: 6px; }
+
+  .col-label { font-family: 'Space Grotesk', sans-serif; color: #f3f4fb; }
+  .col-label .tag { display: inline-block; font-family: 'JetBrains Mono', monospace; font-size: 13px; font-weight: 600; letter-spacing: 1px; text-transform: uppercase; color: #8e82ff; border: 1px solid rgba(142,130,255,.4); border-radius: 20px; padding: 3px 12px; margin-bottom: 12px; }
+  .col-label h2 { font-size: 28px; font-weight: 700; letter-spacing: -.5px; margin: 0 0 8px; }
+  .col-label p { font-family: 'Sora', sans-serif; font-size: 15px; color: #aeb4cb; margin: 0; line-height: 1.5; }
+  .col-label .best { display: inline-flex; align-items: center; gap: 6px; margin-top: 12px; font-family: 'Sora', sans-serif; font-size: 13px; font-weight: 600; color: #2dd49a; background: rgba(45,212,154,.12); border: 1px solid rgba(45,212,154,.35); border-radius: 8px; padding: 5px 10px; }
+  .col-label .best.neutral { color: #f5b542; background: rgba(245,181,66,.12); border-color: rgba(245,181,66,.35); }
+  .col-label .best.blue { color: #3fb6f5; background: rgba(63,182,245,.12); border-color: rgba(63,182,245,.35); }
+
+  .surf-tag { font-family: 'JetBrains Mono', monospace; font-size: 12px; font-weight: 600; letter-spacing: 1.5px; text-transform: uppercase; color: #6b7290; margin-bottom: 10px; white-space: nowrap; }
+
+  /* problem card */
+  .problem { background: #12141d; border: 1px solid rgba(255,255,255,.09); border-radius: 16px; padding: 26px 30px; color: #f3f4fb; }
+  .problem h3 { font-family: 'Space Grotesk', sans-serif; font-size: 19px; margin: 0 0 14px; }
+  .problem .fileline { font-family: 'JetBrains Mono', monospace; font-size: 14px; color: #cbc3ff; background: #0a0c13; border: 1px solid rgba(255,255,255,.08); border-radius: 8px; padding: 10px 14px; margin-bottom: 14px; overflow-x: auto; white-space: nowrap; }
+  .problem .fileline b { color: #ffd166; }
+  .problem p { font-size: 15px; color: #aeb4cb; line-height: 1.6; margin: 0 0 10px; }
+  .problem .detect { display: flex; gap: 14px; margin-top: 16px; }
+  .problem .dcard { flex: 1; background: #0a0c13; border: 1px solid rgba(255,255,255,.08); border-radius: 10px; padding: 14px 16px; }
+  .problem .dcard .dh { font-family: 'JetBrains Mono', monospace; font-size: 12px; letter-spacing: .5px; text-transform: uppercase; margin-bottom: 6px; }
+  .problem .dcard.a .dh { color: #2dd49a; }
+  .problem .dcard.b .dh { color: #f5b542; }
+  .problem .dcard span { font-size: 13.5px; color: #aeb4cb; line-height: 1.5; }
+
+  /* ============ RAVILO TV ============ */
+  .rv { --bg:#0a0c13; --card:#161a28; --ink:#f3f4fb; --ink-soft:#aeb4cb; --ink-dim:#6b7290; --line:rgba(255,255,255,.09); --accent:#7b6ef0; --good:#2dd49a; --chip:rgba(255,255,255,.10); --grad:linear-gradient(120deg,#7b6ef0,#3fb6f5); --ring:#8e82ff;
+    background: radial-gradient(120% 100% at 0% 0%, #141826 0%, var(--bg) 60%); border: 1px solid var(--line); border-radius: 18px; overflow: hidden; color: var(--ink); box-shadow: 0 30px 80px rgba(0,0,0,.5); }
+  .rv-inner { padding: 26px 30px 32px; }
+  .rv-head { display: flex; align-items: center; gap: 14px; margin-bottom: 22px; }
+  .rv-head h2 { font-family: 'Space Grotesk', sans-serif; font-size: 24px; font-weight: 600; letter-spacing: -.5px; margin: 0; }
+  .rv-head .sub { font-size: 15px; color: var(--ink-soft); }
+  .rv-head .bar { width: 150px; height: 6px; border-radius: 6px; background: var(--chip); overflow: hidden; margin-left: auto; }
+  .rv-head .bar > i { display: block; height: 100%; background: var(--grad); }
+
+  .rv-track { display: flex; gap: 16px; align-items: flex-start; }
+
+  /* file grouping bracket (Option A) */
+  .filegrp { position: relative; padding-top: 34px; }
+  .filebar { position: absolute; top: 0; left: 0; right: 0; display: flex; align-items: center; gap: 8px; font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--ink-soft); }
+  .filebar .fico { color: var(--accent); }
+  .filebar .fname { color: #cbc3ff; }
+  .filebar .fchip { font-family: 'Sora', sans-serif; font-weight: 600; color: var(--accent); background: rgba(123,110,240,.16); border: 1px solid rgba(123,110,240,.4); border-radius: 20px; padding: 1px 9px; font-size: 11px; }
+  .filebar-line { position: absolute; top: 26px; left: 0; right: 0; height: 8px; border: 1px solid var(--line); border-bottom: none; border-radius: 8px 8px 0 0; opacity: .5; }
+
+  .epc { width: 280px; flex: none; }
+  .epc-still { position: relative; aspect-ratio: 16/9; border-radius: 12px; overflow: hidden; border: 2px solid transparent; box-shadow: 0 10px 26px rgba(0,0,0,.4); }
+  .epc.focus .epc-still { border-color: var(--ring); box-shadow: 0 0 0 4px rgba(142,130,255,.5), 0 20px 44px rgba(0,0,0,.6); }
+  .epc-grad { position: absolute; inset: 0; }
+  .epc-num { position: absolute; left: 13px; top: 6px; font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 34px; color: #fff; text-shadow: 0 2px 12px rgba(0,0,0,.7); }
+  .epc-dur { position: absolute; right: 10px; top: 10px; background: rgba(0,0,0,.55); color: #fff; font-size: 12px; padding: 3px 8px; border-radius: 7px; }
+  .epc-ch { position: absolute; left: 12px; bottom: 12px; display: inline-flex; align-items: center; gap: 5px; background: rgba(10,12,19,.72); -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px); color: #d7d2ff; font-size: 11px; font-weight: 600; padding: 3px 8px; border-radius: 7px; border: 1px solid rgba(142,130,255,.4); }
+  .epc-check { position: absolute; right: 12px; bottom: 12px; width: 26px; height: 26px; border-radius: 50%; background: var(--good); color: #06281c; font-size: 15px; font-weight: 800; display: flex; align-items: center; justify-content: center; }
+  .epc-play { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; }
+  .epc-play span { width: 52px; height: 52px; border-radius: 50%; background: rgba(0,0,0,.5); border: 2px solid rgba(255,255,255,.75); color: #fff; display: flex; align-items: center; justify-content: center; font-size: 20px; }
+  .epc-prog { position: absolute; left: 12px; right: 12px; bottom: 9px; height: 5px; border-radius: 4px; background: rgba(255,255,255,.3); }
+  .epc-prog > i { display: block; height: 100%; border-radius: 4px; background: var(--accent); }
+  .epc.watched .epc-still { opacity: .6; }
+  .epc-info { margin-top: 11px; }
+  .epc-t { font-size: 18px; font-weight: 600; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .epc-d { font-size: 14px; color: var(--ink-dim); margin-top: 4px; line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .epc.dim { opacity: .4; }
+
+  /* combined card (Option B) */
+  .epc.combo { width: 380px; }
+  .epc.combo .epc-num { font-size: 26px; left: 15px; top: 10px; letter-spacing: -1px; }
+  .combo-list { margin-top: 12px; display: flex; flex-direction: column; gap: 2px; }
+  .combo-row { display: flex; align-items: center; gap: 10px; padding: 8px 4px; border-bottom: 1px solid var(--line); }
+  .combo-row:last-child { border-bottom: none; }
+  .combo-row .cn { font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--accent); width: 34px; flex: none; }
+  .combo-row .ct { font-size: 15px; color: var(--ink-soft); flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .combo-row .cd { font-size: 12px; color: var(--ink-dim); }
+  .combo-tag { display: inline-flex; align-items: center; gap: 5px; background: rgba(245,181,66,.14); border: 1px solid rgba(245,181,66,.4); color: #f5b542; font-size: 12px; font-weight: 600; padding: 3px 9px; border-radius: 20px; margin-top: 10px; }
+
+  /* group / expandable (Option C) */
+  .grp { display: flex; gap: 20px; align-items: flex-start; }
+  .grp-card { width: 260px; flex: none; position: relative; }
+  .grp-stack { position: relative; aspect-ratio: 16/9; }
+  .grp-stack .sl { position: absolute; border-radius: 12px; }
+  .grp-stack .s2 { inset: -10px -10px auto auto; width: 100%; height: 100%; background: #10131e; border: 1px solid var(--line); transform: translate(10px,-10px); opacity: .6; }
+  .grp-stack .s1 { inset: -5px -5px auto auto; width: 100%; height: 100%; background: #141826; border: 1px solid var(--line); transform: translate(5px,-5px); opacity: .8; }
+  .grp-stack .s0 { position: relative; inset: auto; width: 100%; height: 100%; overflow: hidden; border: 2px solid transparent; box-shadow: 0 10px 26px rgba(0,0,0,.4); }
+  .grp-badge { position: absolute; right: 10px; top: 10px; z-index: 3; background: var(--grad); color: #fff; font-size: 12px; font-weight: 700; padding: 3px 9px; border-radius: 20px; }
+  .grp-title { position: absolute; left: 14px; bottom: 12px; z-index: 3; font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 22px; color: #fff; text-shadow: 0 2px 12px rgba(0,0,0,.7); }
+  .grp-meta { margin-top: 18px; }
+  .grp-meta .gt { font-size: 18px; font-weight: 600; }
+  .grp-meta .gd { font-size: 13px; color: var(--ink-dim); margin-top: 4px; }
+  .grp-panel { flex: 1; background: #10131e; border: 1px solid var(--line); border-radius: 14px; padding: 8px 6px; }
+  .subrow { display: flex; align-items: center; gap: 12px; padding: 11px 14px; border-radius: 10px; }
+  .subrow + .subrow { border-top: 1px solid var(--line); }
+  .subrow:hover { background: rgba(255,255,255,.04); }
+  .subrow .sn { font-family: 'JetBrains Mono', monospace; font-size: 13px; color: var(--accent); width: 40px; flex: none; }
+  .subrow .sthumb { width: 70px; height: 40px; border-radius: 6px; flex: none; }
+  .subrow .smeta { flex: 1; min-width: 0; }
+  .subrow .stt { font-size: 15px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .subrow .std { font-size: 12px; color: var(--ink-dim); margin-top: 2px; }
+  .subrow .splay { color: var(--ink-soft); font-size: 15px; }
+
+  /* ============ MOBILE ============ */
+  .phone { width: 400px; background: #05060b; border-radius: 40px; padding: 12px; box-shadow: 0 30px 80px rgba(0,0,0,.55); border: 1px solid rgba(255,255,255,.08); }
+  .phone-screen { --bg:#0a0c13; --ink:#f3f4fb; --ink-soft:#aeb4cb; --ink-dim:#6b7290; --line:rgba(255,255,255,.09); --accent:#7b6ef0; --good:#2dd49a; --grad:linear-gradient(120deg,#7b6ef0,#3fb6f5);
+    background: var(--bg); border-radius: 30px; overflow: hidden; color: var(--ink); position: relative; }
+  .phone-notch { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); width: 110px; height: 24px; background: #05060b; border-radius: 20px; z-index: 10; }
+  .m-hero { height: 150px; position: relative; }
+  .m-hero .hg { position: absolute; inset: 0; background: linear-gradient(135deg,#5b4bd6,#2a8cf0); }
+  .m-hero .hf { position: absolute; inset: 0; background: linear-gradient(0deg, var(--bg) 4%, rgba(10,12,19,0) 60%); }
+  .m-hero .ht { position: absolute; left: 20px; bottom: 14px; font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 24px; }
+  .m-hero .hm { position: absolute; left: 20px; bottom: -2px; font-size: 12px; color: var(--ink-soft); }
+  .m-body { padding: 18px 16px 22px; }
+  .m-sec { display: flex; align-items: baseline; gap: 8px; margin-bottom: 14px; }
+  .m-sec h3 { font-family: 'Space Grotesk', sans-serif; font-size: 18px; margin: 0; }
+  .m-sec .ms { font-size: 12px; color: var(--ink-soft); }
+  .m-list { display: flex; flex-direction: column; gap: 10px; }
+  .m-ep { display: flex; gap: 12px; align-items: center; }
+  .m-thumb { width: 96px; height: 54px; border-radius: 8px; flex: none; position: relative; overflow: hidden; }
+  .m-thumb .mn { position: absolute; left: 7px; top: 3px; font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 18px; color: #fff; text-shadow: 0 1px 6px rgba(0,0,0,.7); }
+  .m-thumb .mc { position: absolute; right: 5px; bottom: 5px; width: 18px; height: 18px; border-radius: 50%; background: var(--good); color: #06281c; font-size: 11px; font-weight: 800; display: flex; align-items: center; justify-content: center; }
+  .m-meta { flex: 1; min-width: 0; }
+  .m-meta .mt { font-size: 15px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .m-meta .md { font-size: 12px; color: var(--ink-dim); margin-top: 2px; }
+  .m-ch { display: inline-flex; align-items: center; gap: 4px; font-size: 10.5px; font-weight: 600; color: #d7d2ff; border: 1px solid rgba(142,130,255,.4); border-radius: 20px; padding: 1px 7px; margin-top: 3px; }
+  /* mobile file group header */
+  .m-file { display: flex; align-items: center; gap: 8px; padding: 8px 10px; background: rgba(123,110,240,.08); border: 1px solid rgba(123,110,240,.22); border-radius: 10px; margin-bottom: 2px; }
+  .m-file .mfi { color: var(--accent); }
+  .m-file .mfn { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #cbc3ff; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .m-file .mfc { font-size: 10.5px; font-weight: 700; color: var(--accent); }
+  .m-grouped { border-left: 2px solid rgba(123,110,240,.4); padding-left: 12px; margin-left: 6px; display: flex; flex-direction: column; gap: 10px; margin-top: 8px; }
+  /* mobile combined (B) */
+  .m-combo { border: 1px solid var(--line); border-radius: 12px; padding: 12px; }
+  .m-combo .mch { display: flex; gap: 12px; align-items: center; }
+  .m-combo .mcrows { margin-top: 10px; border-top: 1px solid var(--line); padding-top: 8px; }
+  .m-combo .mcrow { display: flex; gap: 8px; padding: 5px 0; font-size: 13px; }
+  .m-combo .mcrow .n { font-family: 'JetBrains Mono', monospace; color: var(--accent); }
+  .m-combo .mcrow .t { color: var(--ink-soft); }
+  /* mobile expandable (C) */
+  .m-grp { border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+  .m-grp-head { display: flex; gap: 12px; align-items: center; padding: 12px; }
+  .m-grp-head .gb { font-size: 11px; font-weight: 700; color: #fff; background: var(--grad); padding: 2px 8px; border-radius: 20px; }
+  .m-grp-head .chev { margin-left: auto; color: var(--ink-soft); transform: rotate(90deg); }
+  .m-grp-body { background: rgba(255,255,255,.03); border-top: 1px solid var(--line); }
+  .m-sub { display: flex; gap: 10px; align-items: center; padding: 10px 12px; }
+  .m-sub + .m-sub { border-top: 1px solid var(--line); }
+  .m-sub .sn { font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--accent); width: 30px; }
+  .m-sub .st { font-size: 13.5px; flex: 1; }
+  .m-sub .sd { font-size: 11px; color: var(--ink-dim); }
+
+  /* ============ ADMIN ============ */
+  .adm { --bg:#16181f; --fill2:#20242f; --fill3:#2f3441; --ink:#dde1ec; --ink-soft:#9aa0b4; --ink-dim:rgba(221,225,236,.4); --line:rgba(255,255,255,.08); --line2:rgba(255,255,255,.14); --hi:#7b6ef0; --hi-soft:rgba(123,110,240,.16); --grad:linear-gradient(122deg,#b15cd0,#7b6ef0 48%,#00a4dc); --ok:#2dd49a; --warn:#f5b542; --info:#3fb6f5; --bad:#ff6f61;
+    background: var(--bg); border: 1px solid var(--line); border-radius: 16px; overflow: hidden; color: var(--ink); box-shadow: 0 30px 80px rgba(0,0,0,.5); }
+  .adm-inner { padding: 22px 24px 26px; }
+  .adm-head { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
+  .adm-head h4 { font-family: 'Space Grotesk', sans-serif; font-size: 18px; margin: 0; white-space: nowrap; }
+  .adm-head .chip { font-size: .78rem; font-weight: 600; padding: 4px 11px; border: 1px solid var(--line2); border-radius: 20px; background: var(--fill2); }
+  .adm-head .spacer { flex: 1; }
+  .adm-head .seg { display: inline-flex; border: 1px solid var(--line2); border-radius: 9px; overflow: hidden; background: var(--fill2); }
+  .adm-head .seg span { padding: 6px 12px; font-size: .8rem; font-weight: 600; color: var(--ink-soft); border-right: 1px solid var(--line); }
+  .adm-head .seg span.on { background: var(--hi-soft); color: #cbc3ff; }
+  .adm-head .seg span:last-child { border-right: none; }
+
+  .ep { border: 1px solid var(--line); border-radius: 10px; background: var(--fill2); overflow: hidden; }
+  .ep + .ep { margin-top: 9px; }
+  .ep-row { display: flex; align-items: center; gap: 13px; padding: 11px 14px; }
+  .ep-thumb { width: 84px; height: 48px; border-radius: 6px; flex: none; position: relative; overflow: hidden; }
+  .ep-thumb .en { position: absolute; left: 6px; top: 2px; font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 15px; color: #fff; text-shadow: 0 1px 5px rgba(0,0,0,.7); }
+  .ep-meta { flex: 1; min-width: 0; }
+  .ep-meta .t { font-weight: 600; font-size: .95rem; display: flex; align-items: center; gap: 9px; flex-wrap: wrap; }
+  .ep-meta .t .num { font-family: 'JetBrains Mono', monospace; font-size: .78rem; color: var(--ink-soft); }
+  .ep-meta .s { font-size: .8rem; color: var(--ink-soft); margin-top: 3px; display: flex; align-items: center; gap: 9px; flex-wrap: wrap; }
+  .badge { display: inline-flex; align-items: center; gap: 5px; font-size: .72rem; font-weight: 600; padding: 2px 9px; border-radius: 20px; }
+  .badge.ok { background: rgba(45,212,154,.15); color: var(--ok); }
+  .badge.info { background: rgba(63,182,245,.15); color: var(--info); }
+  .badge.warn { background: rgba(245,181,66,.15); color: var(--warn); }
+  .badge.acc { background: var(--hi-soft); color: #cbc3ff; }
+  .chip.mono { font-family: 'JetBrains Mono', monospace; }
+  .ep-chev { color: var(--ink-soft); font-size: 1.1rem; flex: none; }
+  .ep-chev.open { transform: rotate(90deg); }
+
+  /* admin file group header */
+  .filehdr { display: flex; align-items: center; gap: 11px; padding: 10px 14px; background: rgba(123,110,240,.08); border: 1px solid rgba(123,110,240,.22); border-radius: 10px; margin-bottom: 9px; }
+  .filehdr .fi { color: var(--hi); }
+  .filehdr .fn { font-family: 'JetBrains Mono', monospace; font-size: .8rem; color: #cbc3ff; }
+  .filehdr .fspacer { flex: 1; }
+  .adm-grouped { border-left: 2px solid rgba(123,110,240,.35); padding-left: 12px; margin-left: 4px; }
+  .adm-grouped .ep + .ep { margin-top: 8px; }
+
+  /* admin expandable body (C) */
+  .ep.open { border-color: var(--hi); }
+  .ep-body { border-top: 1px dashed var(--line); padding: 6px 8px; background: rgba(0,0,0,.15); }
+  .ep-sub { display: flex; align-items: center; gap: 12px; padding: 9px 10px; border-radius: 8px; }
+  .ep-sub + .ep-sub { border-top: 1px solid var(--line); }
+  .ep-sub .sn { font-family: 'JetBrains Mono', monospace; font-size: .78rem; color: var(--hi); width: 42px; }
+  .ep-sub .sth { width: 62px; height: 35px; border-radius: 5px; flex: none; }
+  .ep-sub .smeta { flex: 1; }
+  .ep-sub .stt { font-size: .88rem; font-weight: 600; }
+  .ep-sub .std { font-size: .74rem; color: var(--ink-dim); margin-top: 1px; }
+  .ep-sub .btn { font-size: .74rem; font-weight: 600; color: var(--ink-soft); background: var(--fill3); border: 1px solid var(--line2); border-radius: 7px; padding: 4px 10px; }
+
+  .note-blue { font-size: .82rem; color: var(--ink-soft); background: rgba(63,182,245,.08); border: 1px solid rgba(63,182,245,.25); border-radius: 8px; padding: 9px 12px; margin-top: 12px; line-height: 1.5; }
+  .note-blue b { color: var(--info); }
+</style>
+</head>
+<body>
+
+  <!-- ===== TITLE ===== -->
+  <div class="frame doc-title" style="left:80px; top:56px; width:3600px;">
+    <h1>Multi-Episode Files — S01E01E02E03</h1>
+    <p>One <code>.mkv</code> holds three episodes, so a 24-episode season lives in 8 files. Today only the first episode of each file shows up — <b style="color:#ff8f85;">E02 and E03 look missing.</b> Below: the fix, shown three ways across all three surfaces. The design detects whether the file has <b>chapter markers</b> and adapts.</p>
+  </div>
+
+  <!-- ===== PROBLEM / DETECTION ===== -->
+  <div class="frame problem" style="left:80px; top:190px; width:1180px;">
+    <h3>The file</h3>
+    <div class="fileline">Johnny.Bravo.<b>S01E01E02E03</b>.NORDIC.PDTV.x264-ROCKETRACCOON.mkv</div>
+    <p>Jellyfin maps this file to episode 1 only; 2 and 3 have no item, so Ravilo shows a gap. The scan already knows the file spans <b>E01–E03</b> from the filename — we just need to represent all three.</p>
+    <div class="detect">
+      <div class="dcard a">
+        <div class="dh">◆ Chapters present</div>
+        <span>Split into three entries that each play the file, jumping to the chapter start. Per-episode progress &amp; watched-state.</span>
+      </div>
+      <div class="dcard b">
+        <div class="dh">◆ No chapters</div>
+        <span>Treat as one continuous unit — play the whole file, mark all three watched together.</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================ -->
+  <!-- OPTION A -->
+  <!-- ============================================================ -->
+  <div class="frame col-label" style="left:80px; top:520px; width:1240px;">
+    <span class="tag">Option A</span>
+    <h2>Split into virtual episodes</h2>
+    <p>E01, E02, E03 each appear as their own episode, visibly linked as coming from one file. Nothing looks missing. Playing E02 opens the file at its chapter.</p>
+    <span class="best">✓ Best when the file has chapter markers</span>
+  </div>
+
+  <!-- A · TV -->
+  <div class="frame surf-tag" style="left:80px; top:700px;">Ravilo TV — series detail</div>
+  <div class="frame rv" style="left:80px; top:726px; width:1180px;">
+    <div class="rv-inner">
+      <div class="rv-head">
+        <h2>Episodes</h2>
+        <span class="sub">4 of 24 watched · Season 1</span>
+        <span class="bar"><i style="width:17%"></i></span>
+      </div>
+      <div class="rv-track">
+        <div class="filegrp">
+          <div class="filebar"><span class="fico">▤</span><span class="fname">…S01E01E02E03…mkv</span><span class="fchip">3 eps · chapters</span></div>
+          <div class="filebar-line"></div>
+          <div class="rv-track" style="gap:16px;">
+            <div class="epc watched">
+              <div class="epc-still"><div class="epc-grad" style="background:linear-gradient(135deg,#5b4bd6,#2a8cf0)"></div><span class="epc-num">01</span><span class="epc-dur">8m</span><span class="epc-ch">◆ 1 of 3</span><span class="epc-check">✓</span></div>
+              <div class="epc-info"><div class="epc-t">01. Bravo Dooby-Doo</div><div class="epc-d">Johnny helps a talking dog solve a haunted-house mystery.</div></div>
+            </div>
+            <div class="epc focus">
+              <div class="epc-still"><div class="epc-grad" style="background:linear-gradient(135deg,#c94b8f,#6a3fd6)"></div><span class="epc-num">02</span><span class="epc-dur">8m</span><span class="epc-ch">◆ 2 of 3</span><div class="epc-play"><span>▶</span></div><div class="epc-prog"><i style="width:40%"></i></div></div>
+              <div class="epc-info"><div class="epc-t">02. Jungle Boy</div><div class="epc-d">A feral kid mistakes Johnny for his long-lost mother.</div></div>
+            </div>
+            <div class="epc">
+              <div class="epc-still"><div class="epc-grad" style="background:linear-gradient(135deg,#2f9e7e,#1c6f9c)"></div><span class="epc-num">03</span><span class="epc-dur">7m</span><span class="epc-ch">◆ 3 of 3</span></div>
+              <div class="epc-info"><div class="epc-t">03. Blanky Hanky Panky</div><div class="epc-d">Johnny will do anything to reclaim his childhood blanket.</div></div>
+            </div>
+          </div>
+        </div>
+        <div class="epc dim" style="margin-left:6px;">
+          <div class="epc-still"><div class="epc-grad" style="background:linear-gradient(135deg,#d68b3f,#c94b6f)"></div><span class="epc-num">04</span><span class="epc-dur">8m</span></div>
+          <div class="epc-info"><div class="epc-t">04. Super Duped</div><div class="epc-d">…S01E04E05E06…mkv</div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- A · Mobile -->
+  <div class="frame surf-tag" style="left:80px; top:1330px;">Ravilo Mobile</div>
+  <div class="frame phone" style="left:80px; top:1356px;">
+    <div class="phone-screen">
+      <div class="phone-notch"></div>
+      <div class="m-hero"><div class="hg"></div><div class="hf"></div><div class="ht">Johnny Bravo</div></div>
+      <div class="m-body">
+        <div class="m-sec"><h3>Episodes</h3><span class="ms">Season 1 · 4/24</span></div>
+        <div class="m-list">
+          <div class="m-file"><span class="mfi">▤</span><span class="mfn">…S01E01E02E03…mkv</span><span class="mfc">3 eps</span></div>
+          <div class="m-grouped">
+            <div class="m-ep">
+              <div class="m-thumb" style="background:linear-gradient(135deg,#5b4bd6,#2a8cf0)"><span class="mn">01</span><span class="mc">✓</span></div>
+              <div class="m-meta"><div class="mt">Bravo Dooby-Doo</div><div class="md">8 min · watched</div><span class="m-ch">◆ 1 of 3</span></div>
+            </div>
+            <div class="m-ep">
+              <div class="m-thumb" style="background:linear-gradient(135deg,#c94b8f,#6a3fd6)"><span class="mn">02</span></div>
+              <div class="m-meta"><div class="mt">Jungle Boy</div><div class="md">8 min · 3 min left</div><span class="m-ch">◆ 2 of 3</span></div>
+            </div>
+            <div class="m-ep">
+              <div class="m-thumb" style="background:linear-gradient(135deg,#2f9e7e,#1c6f9c)"><span class="mn">03</span></div>
+              <div class="m-meta"><div class="mt">Blanky Hanky Panky</div><div class="md">7 min</div><span class="m-ch">◆ 3 of 3</span></div>
+            </div>
+          </div>
+          <div class="m-file" style="margin-top:6px;"><span class="mfi">▤</span><span class="mfn">…S01E04E05E06…mkv</span><span class="mfc">3 eps</span></div>
+          <div class="m-grouped">
+            <div class="m-ep">
+              <div class="m-thumb" style="background:linear-gradient(135deg,#d68b3f,#c94b6f)"><span class="mn">04</span></div>
+              <div class="m-meta"><div class="mt">Super Duped</div><div class="md">8 min</div><span class="m-ch">◆ 1 of 3</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- A · Admin -->
+  <div class="frame surf-tag" style="left:560px; top:1330px;">Admin — Seasons &amp; episodes</div>
+  <div class="frame adm" style="left:560px; top:1356px; width:760px;">
+    <div class="adm-inner">
+      <div class="adm-head"><h4>Season 1</h4><span class="chip">24 episodes · 8 files</span><span class="spacer"></span><span class="seg"><span class="on">Season 1</span><span>Season 2</span></span></div>
+      <div class="filehdr"><span class="fi">▤</span><span class="fn">Johnny.Bravo.S01E01E02E03.NORDIC.PDTV.x264-ROCKETRACCOON.mkv</span><span class="fspacer"></span><span class="badge acc">3 episodes · chapters</span></div>
+      <div class="adm-grouped">
+        <div class="ep">
+          <div class="ep-row">
+            <div class="ep-thumb" style="background:linear-gradient(135deg,#5b4bd6,#2a8cf0)"><span class="en">01</span></div>
+            <div class="ep-meta"><div class="t"><span class="num">S01E01</span> Bravo Dooby-Doo</div><div class="s">8 min · ch 00:00 · <span class="badge ok">complete</span></div></div>
+            <span class="ep-chev">›</span>
+          </div>
+        </div>
+        <div class="ep">
+          <div class="ep-row">
+            <div class="ep-thumb" style="background:linear-gradient(135deg,#c94b8f,#6a3fd6)"><span class="en">02</span></div>
+            <div class="ep-meta"><div class="t"><span class="num">S01E02</span> Jungle Boy</div><div class="s">8 min · ch 08:04 · <span class="badge ok">complete</span></div></div>
+            <span class="ep-chev">›</span>
+          </div>
+        </div>
+        <div class="ep">
+          <div class="ep-row">
+            <div class="ep-thumb" style="background:linear-gradient(135deg,#2f9e7e,#1c6f9c)"><span class="en">03</span></div>
+            <div class="ep-meta"><div class="t"><span class="num">S01E03</span> Blanky Hanky Panky</div><div class="s">7 min · ch 16:11 · <span class="badge ok">complete</span></div></div>
+            <span class="ep-chev">›</span>
+          </div>
+        </div>
+      </div>
+      <div class="note-blue"><b>One file, three items.</b> Chapter offsets come from the container; each virtual episode carries its own still, overview &amp; watched-state and streams the same file with a start offset.</div>
+    </div>
+  </div>
+
+  <!-- ============================================================ -->
+  <!-- OPTION B -->
+  <!-- ============================================================ -->
+  <div class="frame col-label" style="left:1420px; top:520px; width:1240px;">
+    <span class="tag">Option B</span>
+    <h2>One combined card</h2>
+    <p>A single card labelled <b>E01–E03</b> lists all three titles and plays the whole file. Honest that it is one continuous unit — no false "jump" affordance.</p>
+    <span class="best neutral">✓ Best when there are no chapter markers</span>
+  </div>
+
+  <!-- B · TV -->
+  <div class="frame surf-tag" style="left:1420px; top:700px;">Ravilo TV — series detail</div>
+  <div class="frame rv" style="left:1420px; top:726px; width:1180px;">
+    <div class="rv-inner">
+      <div class="rv-head">
+        <h2>Episodes</h2>
+        <span class="sub">1 of 8 files watched · Season 1</span>
+        <span class="bar"><i style="width:13%"></i></span>
+      </div>
+      <div class="rv-track">
+        <div class="epc combo focus">
+          <div class="epc-still"><div class="epc-grad" style="background:linear-gradient(135deg,#5b4bd6,#2a8cf0)"></div><span class="epc-num">01–03</span><span class="epc-dur">23m</span><div class="epc-play"><span>▶</span></div></div>
+          <div class="epc-info">
+            <div class="epc-t">Episodes 1–3</div>
+            <div class="combo-list">
+              <div class="combo-row"><span class="cn">01</span><span class="ct">Bravo Dooby-Doo</span><span class="cd">8m</span></div>
+              <div class="combo-row"><span class="cn">02</span><span class="ct">Jungle Boy</span><span class="cd">8m</span></div>
+              <div class="combo-row"><span class="cn">03</span><span class="ct">Blanky Hanky Panky</span><span class="cd">7m</span></div>
+            </div>
+            <span class="combo-tag">◇ 3 episodes · one continuous file</span>
+          </div>
+        </div>
+        <div class="epc combo dim">
+          <div class="epc-still"><div class="epc-grad" style="background:linear-gradient(135deg,#d68b3f,#c94b6f)"></div><span class="epc-num">04–06</span><span class="epc-dur">24m</span></div>
+          <div class="epc-info">
+            <div class="epc-t">Episodes 4–6</div>
+            <div class="combo-list">
+              <div class="combo-row"><span class="cn">04</span><span class="ct">Super Duped</span><span class="cd">8m</span></div>
+              <div class="combo-row"><span class="cn">05</span><span class="ct">Bearly Enough Time</span><span class="cd">8m</span></div>
+              <div class="combo-row"><span class="cn">06</span><span class="ct">Little Big Head Man</span><span class="cd">8m</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- B · Mobile -->
+  <div class="frame surf-tag" style="left:1420px; top:1330px;">Ravilo Mobile</div>
+  <div class="frame phone" style="left:1420px; top:1356px;">
+    <div class="phone-screen">
+      <div class="phone-notch"></div>
+      <div class="m-hero"><div class="hg"></div><div class="hf"></div><div class="ht">Johnny Bravo</div></div>
+      <div class="m-body">
+        <div class="m-sec"><h3>Episodes</h3><span class="ms">Season 1 · 8 files</span></div>
+        <div class="m-list">
+          <div class="m-combo">
+            <div class="mch">
+              <div class="m-thumb" style="width:110px;height:62px;background:linear-gradient(135deg,#5b4bd6,#2a8cf0)"><span class="mn">1–3</span></div>
+              <div class="m-meta"><div class="mt">Episodes 1–3</div><div class="md">23 min · one file</div></div>
+            </div>
+            <div class="mcrows">
+              <div class="mcrow"><span class="n">01</span><span class="t">Bravo Dooby-Doo</span></div>
+              <div class="mcrow"><span class="n">02</span><span class="t">Jungle Boy</span></div>
+              <div class="mcrow"><span class="n">03</span><span class="t">Blanky Hanky Panky</span></div>
+            </div>
+          </div>
+          <div class="m-combo">
+            <div class="mch">
+              <div class="m-thumb" style="width:110px;height:62px;background:linear-gradient(135deg,#d68b3f,#c94b6f)"><span class="mn">4–6</span></div>
+              <div class="m-meta"><div class="mt">Episodes 4–6</div><div class="md">24 min · one file</div></div>
+            </div>
+            <div class="mcrows">
+              <div class="mcrow"><span class="n">04</span><span class="t">Super Duped</span></div>
+              <div class="mcrow"><span class="n">05</span><span class="t">Bearly Enough Time</span></div>
+              <div class="mcrow"><span class="n">06</span><span class="t">Little Big Head Man</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- B · Admin -->
+  <div class="frame surf-tag" style="left:1900px; top:1330px;">Admin — Seasons &amp; episodes</div>
+  <div class="frame adm" style="left:1900px; top:1356px; width:760px;">
+    <div class="adm-inner">
+      <div class="adm-head"><h4>Season 1</h4><span class="chip">24 episodes · 8 files</span><span class="spacer"></span><span class="seg"><span class="on">Season 1</span><span>Season 2</span></span></div>
+      <div class="ep">
+        <div class="ep-row">
+          <div class="ep-thumb" style="background:linear-gradient(135deg,#5b4bd6,#2a8cf0)"><span class="en">1–3</span></div>
+          <div class="ep-meta"><div class="t"><span class="num">S01E01–E03</span> Episodes 1–3 <span class="badge info">single file</span></div><div class="s">23 min · Bravo Dooby-Doo · Jungle Boy · Blanky Hanky Panky</div></div>
+          <span class="ep-chev">›</span>
+        </div>
+      </div>
+      <div class="ep">
+        <div class="ep-row">
+          <div class="ep-thumb" style="background:linear-gradient(135deg,#d68b3f,#c94b6f)"><span class="en">4–6</span></div>
+          <div class="ep-meta"><div class="t"><span class="num">S01E04–E06</span> Episodes 4–6 <span class="badge info">single file</span></div><div class="s">24 min · Super Duped · Bearly Enough Time · Little Big Head Man</div></div>
+          <span class="ep-chev">›</span>
+        </div>
+      </div>
+      <div class="note-blue"><b>One row per file.</b> No chapter markers means we can't seek reliably to a boundary, so the three episodes stay together as one playable, watchable unit.</div>
+    </div>
+  </div>
+
+  <!-- ============================================================ -->
+  <!-- OPTION C -->
+  <!-- ============================================================ -->
+  <div class="frame col-label" style="left:2760px; top:520px; width:1160px;">
+    <span class="tag">Option C</span>
+    <h2>Grouped &amp; expandable</h2>
+    <p>One tidy card per file with a <b>3-in-1</b> badge; open it to reveal the three episodes. Keeps long seasons compact and works with <i>or</i> without chapters.</p>
+    <span class="best blue">✓ Best hybrid — safe for mixed libraries</span>
+  </div>
+
+  <!-- C · TV -->
+  <div class="frame surf-tag" style="left:2760px; top:700px;">Ravilo TV — series detail (expanded)</div>
+  <div class="frame rv" style="left:2760px; top:726px; width:1160px;">
+    <div class="rv-inner">
+      <div class="rv-head">
+        <h2>Episodes</h2>
+        <span class="sub">Season 1 · 8 files</span>
+        <span class="bar"><i style="width:13%"></i></span>
+      </div>
+      <div class="grp">
+        <div class="grp-card">
+          <div class="grp-stack">
+            <div class="sl s2"></div><div class="sl s1"></div>
+            <div class="sl s0"><div class="epc-grad" style="background:linear-gradient(135deg,#5b4bd6,#2a8cf0)"></div><span class="grp-badge">3 in 1</span><span class="grp-title">Ep 1–3</span></div>
+          </div>
+          <div class="grp-meta"><div class="gt">Episodes 1–3</div><div class="gd">23 min · one file · ◆ chapters</div></div>
+        </div>
+        <div class="grp-panel">
+          <div class="subrow">
+            <span class="sn">01</span>
+            <div class="sthumb" style="background:linear-gradient(135deg,#5b4bd6,#2a8cf0)"></div>
+            <div class="smeta"><div class="stt">Bravo Dooby-Doo</div><div class="std">8 min · watched</div></div>
+            <span class="splay">✓</span>
+          </div>
+          <div class="subrow">
+            <span class="sn">02</span>
+            <div class="sthumb" style="background:linear-gradient(135deg,#c94b8f,#6a3fd6)"></div>
+            <div class="smeta"><div class="stt">Jungle Boy</div><div class="std">8 min · 3 min left</div></div>
+            <span class="splay">▶</span>
+          </div>
+          <div class="subrow">
+            <span class="sn">03</span>
+            <div class="sthumb" style="background:linear-gradient(135deg,#2f9e7e,#1c6f9c)"></div>
+            <div class="smeta"><div class="stt">Blanky Hanky Panky</div><div class="std">7 min</div></div>
+            <span class="splay">▶</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- C · Mobile -->
+  <div class="frame surf-tag" style="left:2760px; top:1330px;">Ravilo Mobile</div>
+  <div class="frame phone" style="left:2760px; top:1356px;">
+    <div class="phone-screen">
+      <div class="phone-notch"></div>
+      <div class="m-hero"><div class="hg"></div><div class="hf"></div><div class="ht">Johnny Bravo</div></div>
+      <div class="m-body">
+        <div class="m-sec"><h3>Episodes</h3><span class="ms">Season 1 · 8 files</span></div>
+        <div class="m-list">
+          <div class="m-grp">
+            <div class="m-grp-head">
+              <div class="m-thumb" style="background:linear-gradient(135deg,#5b4bd6,#2a8cf0)"><span class="mn">1–3</span></div>
+              <div class="m-meta"><div class="mt">Episodes 1–3 <span class="gb">3 in 1</span></div><div class="md">23 min · one file</div></div>
+              <span class="chev">›</span>
+            </div>
+            <div class="m-grp-body">
+              <div class="m-sub"><span class="sn">01</span><span class="st">Bravo Dooby-Doo</span><span class="sd">✓</span></div>
+              <div class="m-sub"><span class="sn">02</span><span class="st">Jungle Boy</span><span class="sd">3m left</span></div>
+              <div class="m-sub"><span class="sn">03</span><span class="st">Blanky Hanky Panky</span><span class="sd">7m</span></div>
+            </div>
+          </div>
+          <div class="m-grp">
+            <div class="m-grp-head">
+              <div class="m-thumb" style="background:linear-gradient(135deg,#d68b3f,#c94b6f)"><span class="mn">4–6</span></div>
+              <div class="m-meta"><div class="mt">Episodes 4–6 <span class="gb">3 in 1</span></div><div class="md">24 min · one file</div></div>
+              <span class="chev" style="transform:none;">›</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- C · Admin -->
+  <div class="frame surf-tag" style="left:3240px; top:1330px;">Admin — Seasons &amp; episodes (expanded)</div>
+  <div class="frame adm" style="left:3240px; top:1356px; width:680px;">
+    <div class="adm-inner">
+      <div class="adm-head"><h4>Season 1</h4><span class="chip">24 episodes · 8 files</span></div>
+      <div class="ep open">
+        <div class="ep-row">
+          <div class="ep-thumb" style="background:linear-gradient(135deg,#5b4bd6,#2a8cf0)"><span class="en">1–3</span></div>
+          <div class="ep-meta"><div class="t"><span class="num">S01E01–E03</span> Episodes 1–3 <span class="badge acc">3 in 1 file</span></div><div class="s">23 min · ◆ chapters detected</div></div>
+          <span class="ep-chev open">›</span>
+        </div>
+        <div class="ep-body">
+          <div class="ep-sub">
+            <span class="sn">E01</span><div class="sth" style="background:linear-gradient(135deg,#5b4bd6,#2a8cf0)"></div>
+            <div class="smeta"><div class="stt">Bravo Dooby-Doo</div><div class="std">ch 00:00 · 8 min</div></div>
+            <span class="btn">Edit</span>
+          </div>
+          <div class="ep-sub">
+            <span class="sn">E02</span><div class="sth" style="background:linear-gradient(135deg,#c94b8f,#6a3fd6)"></div>
+            <div class="smeta"><div class="stt">Jungle Boy</div><div class="std">ch 08:04 · 8 min</div></div>
+            <span class="btn">Edit</span>
+          </div>
+          <div class="ep-sub">
+            <span class="sn">E03</span><div class="sth" style="background:linear-gradient(135deg,#2f9e7e,#1c6f9c)"></div>
+            <div class="smeta"><div class="stt">Blanky Hanky Panky</div><div class="std">ch 16:11 · 7 min</div></div>
+            <span class="btn">Edit</span>
+          </div>
+        </div>
+      </div>
+      <div class="ep">
+        <div class="ep-row">
+          <div class="ep-thumb" style="background:linear-gradient(135deg,#d68b3f,#c94b6f)"><span class="en">4–6</span></div>
+          <div class="ep-meta"><div class="t"><span class="num">S01E04–E06</span> Episodes 4–6 <span class="badge acc">3 in 1 file</span></div><div class="s">24 min · ◆ chapters detected</div></div>
+          <span class="ep-chev">›</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</body>
+</html>
