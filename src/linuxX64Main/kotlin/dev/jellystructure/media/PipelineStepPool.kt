@@ -3,10 +3,24 @@ package dev.jellystructure.media
 import dev.jellystructure.jobs.JobEvent
 import dev.jellystructure.jobs.WsBroadcaster
 import dev.jellystructure.log.Logger
+import dev.jellystructure.nowEpochSec
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlin.concurrent.AtomicInt
+
+/** Bug fix: a pipeline run that goes quiet (e.g. one item's per-episode TMDB fetches taking many
+ *  minutes) used to leave zero trace in the logs/activity feed until it finally finished or errored
+ *  — an incident could only be diagnosed by attaching a debugger/profiler to the live process. Any
+ *  item still running past this threshold gets a WARN logged (repeating every [STUCK_ITEM_LOG_INTERVAL_SEC]
+ *  while it stays stuck), so the activity log / DB shows exactly which item and how long, even if the
+ *  process is otherwise unresponsive by the time anyone looks. */
+private const val STUCK_ITEM_WARN_SEC = 20L
+private const val STUCK_ITEM_LOG_INTERVAL_SEC = 20L
 
 /**
  * Phase 135 (FR-135-1/FR-135-2) — run [items] through a bounded worker pool (mirrors `runScan`'s
@@ -47,6 +61,9 @@ suspend fun <T> runPipelineStepPool(
     scanTracker.targetWorkers.value = concurrency.coerceAtLeast(1)
     scanTracker.activeWorkers.value = 0
 
+    val inFlightMutex = Mutex()
+    val inFlightSince = mutableMapOf<String, Long>()   // label -> started epoch sec
+
     coroutineScope {
         val channel = Channel<T>(Channel.UNLIMITED)
         launch {
@@ -56,25 +73,41 @@ suspend fun <T> runPipelineStepPool(
             }
             channel.close()
         }
-        repeat(scanTracker.targetWorkers.value) {
+        val watchdog = launch {
+            while (true) {
+                delay(STUCK_ITEM_LOG_INTERVAL_SEC * 1000)
+                val now = nowEpochSec()
+                val stuck = inFlightMutex.withLock { inFlightSince.toMap() }
+                    .filterValues { now - it >= STUCK_ITEM_WARN_SEC }
+                for ((label, startedAt) in stuck) {
+                    Logger.warn("$step: '$label' still running after ${now - startedAt}s", "pipeline")
+                }
+            }
+        }
+        val workerJobs = List(scanTracker.targetWorkers.value) {
             scanTracker.activeWorkers.incrementAndGet()
             launch {
                 try {
                     for (item in channel) {
                         if (scanTracker.cancelRequested) break
+                        val label = labelOf(item)
+                        inFlightMutex.withLock { inFlightSince[label] = nowEpochSec() }
                         runCatching { perItem(item) }
                             .onFailure { e ->
-                                Logger.warn("$step failed for '${labelOf(item)}': ${e.message}")
+                                Logger.warn("$step failed for '$label': ${e.message}")
                                 onItemFailure(item, e)
                             }
+                        inFlightMutex.withLock { inFlightSince.remove(label) }
                         val done = processed.incrementAndGet().coerceAtMost(total)
-                        broadcaster.broadcast(JobEvent.StepProgress(jobId, step, labelOf(item), done, total))
+                        broadcaster.broadcast(JobEvent.StepProgress(jobId, step, label, done, total))
                     }
                 } finally {
                     scanTracker.activeWorkers.decrementAndGet()
                 }
             }
         }
+        workerJobs.joinAll()
+        watchdog.cancel()
     }
     broadcaster.broadcast(JobEvent.StepFinished(jobId, step, "$total item${if (total != 1) "s" else ""} processed"))
 }
