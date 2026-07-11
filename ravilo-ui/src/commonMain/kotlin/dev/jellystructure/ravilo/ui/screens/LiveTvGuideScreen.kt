@@ -130,6 +130,17 @@ fun LiveTvGuideScreen(
                     delta
                 }
 
+                // User request: the guide now fetches 4h of past + 2 days of future programs, so
+                // guideOriginMs (the earliest program start) is ~4h before "now" — without this, every
+                // row's LazyListState starts at its default offset 0, which IS guideOriginMs, opening the
+                // guide 4h in the past instead of on what's currently airing. Scroll all rows forward to
+                // "now" on load (a 15min lead-in so the current program's start is still visible, not
+                // flush against the edge), same shared-fan-out mechanism as the drag-scroll sync.
+                LaunchedEffect(rowListStates) {
+                    val leadMinutes = ((nowMs - guideOriginMs) / 60_000L - 15L).coerceAtLeast(0L)
+                    rowListStates.values.forEach { it.scrollBy(leadMinutes * PX_PER_MINUTE) }
+                }
+
                 // This screen had no initial-focus target — every other screen requests focus onto
                 // a nav bar / first cell on load, but this one never did, so a D-pad landing here had
                 // nothing to move focus away from the (non-directional) root box: LEFT/RIGHT/DOWN were

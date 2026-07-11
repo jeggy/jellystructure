@@ -102,7 +102,9 @@ fun Route.liveTvRoutes(liveTvService: LiveTvService) {
     get("/tv/livetv/guide") {
         call.attributes[DeviceKey]
         val days = call.request.queryParameters["days"]?.toIntOrNull()?.coerceIn(1, 14) ?: 7
-        call.respond(liveTvService.guide(days))
+        // User request: guide should scroll 4h into the past as well as forward — was always "now" floor.
+        val hoursBack = call.request.queryParameters["hoursBack"]?.toIntOrNull()?.coerceIn(0, 48) ?: 0
+        call.respond(liveTvService.guide(days, hoursBack))
     }
 
     post("/tv/livetv/channels/{id}/tune") {
