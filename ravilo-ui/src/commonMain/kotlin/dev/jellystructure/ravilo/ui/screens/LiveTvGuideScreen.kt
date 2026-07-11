@@ -2,11 +2,16 @@ package dev.jellystructure.ravilo.ui.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.ScrollableState
+import androidx.compose.foundation.gestures.scrollBy
+import androidx.compose.foundation.gestures.scrollable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -14,8 +19,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.gestures.rememberScrollableState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
@@ -25,6 +33,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -41,6 +50,7 @@ import dev.jellystructure.shared.tv.LiveTvChannel
 import dev.jellystructure.shared.tv.LiveTvGuideProgram
 import kotlin.time.Clock
 import kotlin.time.Instant
+import kotlinx.coroutines.launch
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
 
@@ -87,8 +97,40 @@ fun LiveTvGuideScreen(
             }
             is LiveTvGuideState.Loaded -> {
                 val categories = remember(s.channels) { s.channels.map { it.category }.filter { it.isNotBlank() }.distinct().sorted() }
-                val visibleChannels = if (selectedCategory == null) s.channels else s.channels.filter { it.category == selectedCategory }
+                val visibleChannels = remember(s.channels, selectedCategory) {
+                    if (selectedCategory == null) s.channels else s.channels.filter { it.category == selectedCategory }
+                }
                 val nowMs = remember { Clock.System.now().toEpochMilliseconds() }
+
+                // Bug fix: each channel's program row scrolled independently — dragging one channel's
+                // row left/right left every other row showing whatever time slice it happened to be at,
+                // so the grid didn't read as one shared timeline the way a real TV guide does. Two parts:
+                // (1) guideOriginMs anchors every row to the SAME absolute clock position (the earliest
+                // program start across the whole grid), via a per-row leading spacer in GuideChannelRow —
+                // without this, scrolling every row by the same pixel amount wouldn't line them up, since
+                // each channel's own program list can start at a different real time. (2) sharedScrollableState
+                // fans every drag/fling delta out to every row's own LazyListState via scrollBy, so once
+                // aligned they move together. (D-pad focus-driven auto-scroll within a single row is
+                // unaffected by this — this covers the touch/drag scroll gesture, which is what "scrolling
+                // a channel" means on the phone/web targets this was reported on.)
+                val guideOriginMs = remember(s.programs) { s.programs.minOfOrNull { it.startMs } ?: nowMs }
+                val rowListStates = remember(visibleChannels) {
+                    visibleChannels.associate { it.channelId to LazyListState() }
+                }
+                val scope = rememberCoroutineScope()
+                val sharedScrollableState = rememberScrollableState { delta ->
+                    scope.launch { rowListStates.values.forEach { it.scrollBy(-delta) } }
+                    delta
+                }
+
+                // This screen had no initial-focus target — every other screen requests focus onto
+                // a nav bar / first cell on load, but this one never did, so a D-pad landing here had
+                // nothing to move focus away from the (non-directional) root box: LEFT/RIGHT/DOWN were
+                // all silently swallowed. Land on the first channel's row like BrowseScreen's firstCellFR.
+                val firstChannelFR = remember { FocusRequester() }
+                LaunchedEffect(visibleChannels.isNotEmpty()) {
+                    if (visibleChannels.isNotEmpty()) runCatching { firstChannelFR.requestFocus() }
+                }
 
                 Column(modifier = Modifier.fillMaxSize().padding(top = 88.dp)) {
                     Text(
@@ -115,12 +157,16 @@ fun LiveTvGuideScreen(
                         contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 60.dp),
                         verticalArrangement = Arrangement.spacedBy(4.dp),
                     ) {
-                        items(visibleChannels, key = { it.channelId }) { ch ->
+                        itemsIndexed(visibleChannels, key = { _, ch -> ch.channelId }) { index, ch ->
                             GuideChannelRow(
                                 channel = ch,
                                 programs = s.programs.filter { it.channelId == ch.channelId }.sortedBy { it.startMs },
                                 nowMs = nowMs,
+                                guideOriginMs = guideOriginMs,
+                                listState = rowListStates.getValue(ch.channelId),
+                                scrollableState = sharedScrollableState,
                                 onTune = { onTuneChannel(ch) },
+                                channelFocusRequester = if (index == 0) firstChannelFR else null,
                             )
                         }
                     }
@@ -160,7 +206,11 @@ private fun GuideChannelRow(
     channel: LiveTvChannel,
     programs: List<LiveTvGuideProgram>,
     nowMs: Long,
+    guideOriginMs: Long,
+    listState: LazyListState,
+    scrollableState: ScrollableState,
     onTune: () -> Unit,
+    channelFocusRequester: FocusRequester? = null,
 ) {
     val colors = RaviloTheme.colors
     Row(modifier = Modifier.fillMaxWidth().height(78.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -169,7 +219,10 @@ private fun GuideChannelRow(
         Column(
             modifier = Modifier.width(140.dp).fillMaxSize()
                 .background(if (chFocused) colors.accentDim else colors.surface)
-                .dpadFocusable(onFocused = { chFocused = true }, onBlurred = { chFocused = false }, onSelect = onTune)
+                .dpadFocusable(
+                    focusRequester = channelFocusRequester,
+                    onFocused = { chFocused = true }, onBlurred = { chFocused = false }, onSelect = onTune,
+                )
                 .padding(10.dp),
             verticalArrangement = Arrangement.Center,
         ) {
@@ -182,7 +235,23 @@ private fun GuideChannelRow(
                 Text(str("livetv.no_programs"), color = colors.textDim, fontSize = 12.sp, modifier = Modifier.padding(12.dp))
             }
         } else {
-            LazyRow(horizontalArrangement = Arrangement.spacedBy(2.dp), modifier = Modifier.fillMaxSize()) {
+            // Leading spacer aligns this row's first program to guideOriginMs (the earliest program
+            // start across ALL channels) — without it, two channels whose own schedules start at
+            // different real times would render item 0 at the same x position despite representing
+            // different clock times, so scrolling them by equal pixel amounts (below) wouldn't keep
+            // them showing the same time slice.
+            val leadingGapMin = ((programs.first().startMs - guideOriginMs) / 60_000L).coerceAtLeast(0L)
+            LazyRow(
+                state = listState,
+                // The shared scrollableState (fanned out to every row's listState) drives scrolling
+                // instead — a row's own drag gesture would fight it and desync from the others.
+                userScrollEnabled = false,
+                horizontalArrangement = Arrangement.spacedBy(2.dp),
+                modifier = Modifier.fillMaxSize().scrollable(scrollableState, Orientation.Horizontal),
+            ) {
+                if (leadingGapMin > 0) {
+                    item(key = "__lead") { Spacer(Modifier.width((leadingGapMin * PX_PER_MINUTE).dp).fillMaxHeight()) }
+                }
                 items(programs, key = { "${it.channelId}-${it.startMs}" }) { p ->
                     val isNow = nowMs in p.startMs until p.endMs
                     val minutes = ((p.endMs - p.startMs) / 60_000L).coerceAtLeast(1L).toInt()
