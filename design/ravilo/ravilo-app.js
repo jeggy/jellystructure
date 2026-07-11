@@ -217,6 +217,16 @@
       },
     });
 
+    // ---- Live TV (Phase R177) — woven into Home; never a top-nav tab ----
+    const liveTV = window.initRaviloLiveTV(stage, {
+      el, t: window.t, scroll, appbar, flash, interactive,
+      getView: () => view,
+      go: (v) => go(v),
+      goHome: () => go({ type: 'home' }),
+      stopHero: stopHero,
+      currentUser: () => currentUser(),
+    });
+
     function clock() {
       const d = new Date();
       const c = appbar.querySelector('.clock');
@@ -318,6 +328,8 @@
         c.innerHTML = `<div class="sheen"></div>${mark}`;
         track.appendChild(c);
       });
+      const ltTile = liveTV && liveTV.collectionTile && liveTV.collectionTile();
+      if (ltTile) track.appendChild(ltTile);
       r.appendChild(track);
       return r;
     }
@@ -333,7 +345,13 @@
       scroll.innerHTML = '';
       scroll.appendChild(buildHero());
       scroll.appendChild(studioRail());
-      rowSet().forEach(rc => scroll.appendChild(contentRow(rc)));
+      // Live TV "On now" row — placed right after Continue Watching (config position)
+      const onNow = liveTV.onNowRow();
+      rowSet().forEach(rc => {
+        scroll.appendChild(contentRow(rc));
+        if (onNow && rc.id === 'continue') scroll.appendChild(onNow);
+      });
+      if (onNow && !onNow.isConnected) scroll.appendChild(onNow);
       scroll.appendChild(el('div', 'screen-end'));
       setHero(0); startHero();
       appbar.querySelectorAll('.navitem').forEach(n => n.classList.toggle('cur', n.dataset.nav === 'home'));
@@ -391,6 +409,45 @@
         <div class="ep-info"><div class="ep-t">${e.n}. ${e.title}${st.watched ? ` <span class="ep-tag">${t('watched')}</span>` : ''}</div>${e.air ? `<div class="ep-date">${epAirLabel(e.air)}</div>` : ''}<div class="ep-d">${e.desc}</div></div>`;
       const done = el('div', 'ep-done foc' + (st.watched ? ' on' : '')); done._epdone = true; done._epn = e.n; done._epidx = idx; done.setAttribute('data-epidx', idx);
       done.innerHTML = `<span class="ep-done-ic">${st.watched ? '✓' : ''}</span><span class="ep-done-tx">${st.watched ? t('watched') : t('mark_watched')}</span>`;
+      card.appendChild(play); card.appendChild(done);
+      return card;
+    }
+    // Multi-episode files (S01E01E02E03…): group consecutive episodes that share one
+    // file into a single render unit, shown as one combined triptych card (Option B).
+    function padN(n) { return String(n).padStart(2, '0'); }
+    function episodeUnits(eps) {
+      const units = []; let cur = null;
+      eps.forEach((e, i) => {
+        if (e.file) {
+          if (cur && cur.file === e.file) { cur.eps.push(e); cur.idxs.push(i); }
+          else { cur = { type: 'file', file: e.file, eps: [e], idxs: [i] }; units.push(cur); }
+        } else { units.push({ type: 'single', e, idx: i }); cur = null; }
+      });
+      return units;
+    }
+    function comboCard(item, season, u, states) {
+      const eps = u.eps, idxs = u.idxs;
+      const st = idxs.map(i => states[i]);
+      const allW = st.every(s => s.watched);
+      const grpPct = Math.round(st.reduce((a, s) => a + (s.watched ? 100 : (s.pct || 0)), 0) / st.length);
+      const anyProg = !allW && grpPct > 0;
+      const first = eps[0].n, last = eps[eps.length - 1].n;
+      const durSum = eps.reduce((a, e) => a + (parseInt(e.dur) || 0), 0);
+      const card = el('div', 'ep-card combo' + (allW ? ' watched' : '') + (anyProg ? ' inprogress' : ''));
+      const tiles = eps.slice(0, 3).map((e, i) => `<div class="tp tp${i + 1}" style="background:${e.grad}"></div>`).join('');
+      const nums = eps.slice(0, 3).map((e, i) => `<span class="tnum tnum${i + 1}">${padN(e.n)}</span>`).join('');
+      const play = el('div', 'ep-play foc'); play._ep = eps[0]; play._epidx = idxs[0];
+      play.innerHTML = `<div class="ep-still combo-still">
+        <div class="trip">${tiles}<span class="seam seam1"></span><span class="seam seam2"></span>${nums}</div>
+        ${allW ? '<span class="ep-check">✓</span>' : ''}
+        <div class="play"><span>▶</span></div>
+        ${anyProg ? `<div class="ep-prog"><i style="width:${grpPct}%"></i></div>` : ''}
+        <span class="ep-rng">Episodes ${first}–${last}</span></div>
+        <div class="ep-info"><div class="ep-t">Episodes ${first}–${last}${allW ? ` <span class="ep-tag">${t('watched')}</span>` : ''}</div>
+          <div class="combo-list">${eps.map(e => `<div class="combo-row"><span class="cn">${padN(e.n)}</span><span class="ct">${e.title}</span><span class="cd">${e.dur}</span></div>`).join('')}</div>
+          <div class="combo-file">▤ 1 file · ${eps.length} episodes · ${durSum}m</div></div>`;
+      const done = el('div', 'ep-done foc' + (allW ? ' on' : '')); done._epfile = u; done._epidx = idxs[0]; done.setAttribute('data-epidx', idxs[0]);
+      done.innerHTML = `<span class="ep-done-ic">${allW ? '✓' : ''}</span><span class="ep-done-tx">${allW ? t('watched') : t('mark_watched')}</span>`;
       card.appendChild(play); card.appendChild(done);
       return card;
     }
@@ -524,10 +581,17 @@
         d.appendChild(sec);
         const epRow = el('div', 'crow eprow');
         const track = el('div', 'track focus-row');
-        track.dataset.def = prog.idx * 2;
-        eps.forEach((e, i) => track.appendChild(episodeCard(e, {
-          watched: states[i].watched, inprogress: states[i].pct > 0 && !states[i].watched, upnext: i === prog.idx, pct: states[i].pct,
-        }, i)));
+        const units = episodeUnits(eps);
+        let def = 0;
+        units.forEach((u, ui) => {
+          const has = u.type === 'file' ? u.idxs.includes(prog.idx) : u.idx === prog.idx;
+          if (has) def = ui * 2;
+        });
+        track.dataset.def = def;
+        units.forEach(u => {
+          if (u.type === 'file') { track.appendChild(comboCard(item, season, u, states)); }
+          else { const i = u.idx; track.appendChild(episodeCard(eps[i], { watched: states[i].watched, inprogress: states[i].pct > 0 && !states[i].watched, upnext: i === prog.idx, pct: states[i].pct }, i)); }
+        });
         epRow.appendChild(track);
         d.appendChild(epRow);
       }
@@ -1037,6 +1101,13 @@
       flash(!st.watched ? t('toast_marked_watched') : t('toast_marked_unwatched'));
       renderDetail(item); refocusSel('.ep-done[data-epidx="' + idx + '"]');
     }
+    function toggleFileWatched(item, season, u) {
+      const allW = u.eps.every(e => W.epState(item.title, season, e.n, e.pct).watched);
+      u.eps.forEach(e => W.setEpWatched(item.title, season, e.n, !allW));
+      syncSeriesItemState(item, season);
+      flash(!allW ? t('toast_all_watched') : t('toast_all_unwatched'));
+      renderDetail(item); refocusSel('.ep-done[data-epidx="' + u.idxs[0] + '"]');
+    }
 
     function go(v) {
       view = v;
@@ -1049,6 +1120,7 @@
       else if (v.type === 'discoverDetail') renderDiscoverDetail(v.item, v.list);
       else if (v.type === 'grid') renderGrid(v);
       else if (v.type === 'search') renderSearch(v);
+      else if (v.type === 'liveGuide') liveTV.renderGuide();
       scroll.scrollTop = 0;
       setTimeout(() => {
         if (v.type === 'home') focusRowByIndex(0);
@@ -1056,6 +1128,7 @@
         else if (v.type === 'upcoming') focusRC(firstContentRowIndex(), 0);
         else if (v.type === 'movie' || v.type === 'series') { const ai = rows().findIndex(r => r.classList.contains('dactions')); focusRC(ai > 0 ? ai : 1, 0); } // entry focus stays on Play (R135)
         else if (v.type === 'upcomingDetail') { const ni = items(appbar).findIndex(n => n.dataset && n.dataset.nav === 'upcoming'); focusRC(0, ni > 0 ? ni : 0); } // info-only page → rest focus on the nav
+        else if (v.type === 'liveGuide') liveTV.focusGuide(); // the Live TV module owns guide focus
         else focusRC(1, 0); // discoverDetail / grid / search → first focusable row
       }, 30);
     }
@@ -1148,6 +1221,8 @@
         else if (f.dataset.nav === 'profile') openProfMenu();
         return;
       }
+      if (f.dataset.liveguide) { go({ type: 'liveGuide' }); return; }
+      if (f._livech) { liveTV.tune(f._livech.id, { type: 'home' }); return; }
       if (f.dataset.disctab) { go({ type: f.dataset.disctab === 'coming' ? 'upcoming' : 'discover' }); return; }
       if (f.dataset.seerrsearch) { go({ type: 'search', query: '', seerr: true }); return; }
       if (f._genre) {
@@ -1174,6 +1249,7 @@
       if (f.dataset.play) { playItem(view.item, view.season || 0); return; }
       if (f.dataset.mark) { toggleItemWatched(view.item); return; }
       if (f.dataset.markall) { toggleSeasonWatched(view.item, view.season || 0); return; }
+      if (f._epfile) { toggleFileWatched(view.item, view.season || 0, f._epfile); return; }
       if (f._epdone) { toggleEpisodeWatched(view.item, view.season || 0, f._epn, f._epidx); return; }
       if (f.dataset.trailer) { openTrailer(view.item); return; }
       if (f.dataset.list) { flash('＋ Added ' + view.item.title + ' to My List'); return; }
