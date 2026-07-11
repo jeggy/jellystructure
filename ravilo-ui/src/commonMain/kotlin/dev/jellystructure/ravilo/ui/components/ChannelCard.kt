@@ -166,8 +166,15 @@ fun ChannelCard(
                     onDrawWithContent {
                         drawContent()
                         val bw = ringWidth.toPx()
+                        // Bug fix: this used to be accentColor (the brand color's own first stop, at
+                        // partial alpha) — for a light/white brandColor (e.g. Apple TV+, see the
+                        // background fix above) that made the focus ring nearly invisible against a
+                        // same-toned background. The focus ring is chrome, not brand identity: it now
+                        // always uses the theme's own focusRing token (same one every other focusable
+                        // surface in the app uses), at full opacity, so it stays legible regardless of
+                        // the tile's own colors.
                         if (bw > 0f) drawRoundRect(
-                            color = accentColor.copy(alpha = ChannelButtonSpec.RING_ALPHA),
+                            color = colors.focusRing,
                             cornerRadius = radius,
                             style = Stroke(width = bw),
                             topLeft = Offset(bw / 2f, bw / 2f),

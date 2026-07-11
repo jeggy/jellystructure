@@ -20,7 +20,6 @@ object ChannelButtonSpec {
     // Focus ring & glow
     const val FOCUS_SCALE     = 1.08f
     const val RING_WIDTH_DP   = 3
-    const val RING_ALPHA      = 0.7f
     const val GLOW_ELEV_DP    = 22
 
     // Brand fill defaults
