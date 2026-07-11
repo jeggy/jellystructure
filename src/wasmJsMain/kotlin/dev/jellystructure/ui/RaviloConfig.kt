@@ -584,34 +584,6 @@ private fun renderSections(container: Element, scope: CoroutineScope) {
     renderPreview(container)
 }
 
-// Phase 147/148 §F, folded into Content rows (user request — this and the row-order list are both
-// "where things sit on Home", easier to see/configure as one section instead of two): placement only
-// ("On now" row + Live TV collection in the rail); the Live TV page owns connection/lineup/enabling.
-// Rendered only when liveTvHomeAvailable (see renderRows) — a config saved while Live TV is disabled
-// elsewhere must not lose its placement, so collectConfig still checks for the DOM element's presence
-// rather than assuming this card was rendered.
-private fun liveTvHomeCardHtml(): String {
-    val placement = currentConfig.liveTvHome ?: dev.jellystructure.shared.tv.LiveTvHomePlacement()
-    return """
-        <div class="card" style="padding:18px 20px;margin-bottom:18px">
-          <div style="font-weight:600;margin-bottom:6px">Live TV on Home</div>
-          <p class="tiny muted" style="margin:0 0 14px">Where Live TV surfaces on the Home screen — never as its own top-nav tab. Connection, the channel lineup and the guide live on the <a href="#/livetv">Live TV</a> page.</p>
-          <label style="display:flex;align-items:center;gap:10px;font-size:.9rem;margin-bottom:10px">
-            <input type="checkbox" id="livetv-home-shownow"${if (placement.showOnNowRow) " checked" else ""}>
-            Show an "On now" row on Home
-          </label>
-          <div style="margin:0 0 14px 26px">
-            <label style="display:block;font-size:.85rem;margin-bottom:4px">Row position <span class="tiny muted">(0 = top, among the rows above)</span></label>
-            <input type="number" id="livetv-home-position" class="input" style="width:100px" min="0" max="20" value="${placement.onNowRowPosition}">
-          </div>
-          <label style="display:flex;align-items:center;gap:10px;font-size:.9rem">
-            <input type="checkbox" id="livetv-home-collection"${if (placement.showCollection) " checked" else ""}>
-            Also show a Live TV collection in the rail
-          </label>
-        </div>
-    """.trimIndent()
-}
-
 /** Capture current DOM edits, apply a structural change, then re-render the given section + preview. */
 private fun structural(container: Element, mutate: () -> Unit, rerender: (Element) -> Unit) {
     collectConfig(container)
@@ -1832,6 +1804,27 @@ private fun normalizedRows(rows: List<RowConfig>): List<RowConfig> {
     return (missing + rows).mapIndexed { i, r -> r.copy(order = i) }
 }
 
+// User request: Live TV's "On now" row used to be a separate card with its own numeric position
+// input, split away from the row list it actually interleaves with — hard to see the full Home
+// layout in one place. It's now a pinned pseudo-row IN the same draggable list as Continue Watching /
+// Newly Added, exactly like those system rows: RowSlot merges currentConfig.rows with a synthetic
+// LiveTv entry (only when liveTvHomeAvailable) at index onNowRowPosition — which needs no backend
+// change at all, since that's already precisely how HomeScreen.kt (the Ravilo TV client) interprets
+// onNowRowPosition: a splice-index into the *other* rows. Its position in the combined list IS the
+// splice index; dragging it directly edits onNowRowPosition, no translation needed on save beyond
+// "where did it end up" / "what are the real rows without it".
+private sealed class RowSlot {
+    data class Real(val row: RowConfig) : RowSlot()
+    data object LiveTv : RowSlot()
+}
+
+private fun buildRowSlots(): List<RowSlot> {
+    val real: List<RowSlot> = currentConfig.rows.map { RowSlot.Real(it) }
+    if (!liveTvHomeAvailable) return real
+    val pos = (currentConfig.liveTvHome?.onNowRowPosition ?: 0).coerceIn(0, real.size)
+    return real.toMutableList().apply { add(pos, RowSlot.LiveTv) }
+}
+
 private fun renderRows(container: Element) {
     val sect = container.querySelector("#sect-rows") ?: return
     val merging = currentConfig.mergeNewlyAdded
@@ -1840,7 +1833,17 @@ private fun renderRows(container: Element) {
     val normalRows = normalizedRows(currentConfig.rows)
     if (normalRows.size != currentConfig.rows.size) currentConfig = currentConfig.copy(rows = normalRows)
 
-    val rows = currentConfig.rows.mapIndexed { i, r ->
+    val slots = buildRowSlots()
+    val placement = currentConfig.liveTvHome ?: dev.jellystructure.shared.tv.LiveTvHomePlacement()
+
+    val rows = slots.mapIndexed { i, slot ->
+        if (slot is RowSlot.LiveTv) {
+            val checked = if (placement.showOnNowRow) " checked" else ""
+            val showLabel = if (placement.showOnNowRow) "show" else "hidden"
+            val toggleHtml = """<label style="display:flex;align-items:center;gap:4px;font-size:.8rem;white-space:nowrap;margin-left:auto;cursor:pointer"><span class="muted tiny">$showLabel</span><span class="toggle${if (placement.showOnNowRow) " on" else ""}" data-row-toggle="$i" style="margin-left:4px"></span><input type="checkbox" data-row-enabled="$i"$checked style="display:none"></label>"""
+            return@mapIndexed """<div class="cfg-row" draggable="true" data-row-i="$i"><span class="grab" style="cursor:grab;user-select:none;flex-shrink:0">&#x2807;</span><span class="badge ok" style="flex:none;font-size:.65rem">system</span><div style="flex:1;min-width:0"><div class="nm">Live TV — On now</div><div class="src">Currently-airing channel tiles · connection &amp; lineup on the <a href="#/livetv">Live TV</a> page</div></div>$toggleHtml</div>"""
+        }
+        val r = (slot as RowSlot.Real).row
         val system = r.kind.isSystem()
         // Only grey out typed NEWLY_ADDED rows (MOVIE/SERIES) when merge is ON — they're superseded.
         // The all-media (mediaKind=null) row is always active: it shows as 1 row (merge ON) or 2 (OFF).
@@ -1866,7 +1869,7 @@ private fun renderRows(container: Element) {
     sect.innerHTML = """
         <div class="card" style="padding:18px 20px;margin-bottom:18px">
           <div style="font-weight:600;margin-bottom:10px">Content rows</div>
-          <p style="font-size:.82rem;color:var(--ink-soft);margin-bottom:14px">The vertical stack on Home. System rows can be hidden and reordered but not removed.</p>
+          <p style="font-size:.82rem;color:var(--ink-soft);margin-bottom:14px">The vertical stack on Home. System rows can be hidden and reordered but not removed.${if (liveTvHomeAvailable) """ Live TV's "On now" row is pinned into the same list, same as Continue Watching / Newly Added — connection, the channel lineup and the guide live on the <a href="#/livetv">Live TV</a> page.""" else ""}</p>
           <div class="box flat" style="background:var(--hi-soft);border:1px solid rgba(255,180,0,.25);border-radius:8px;padding:12px 14px;margin-bottom:14px">
             <label style="display:flex;align-items:center;gap:10px;font-size:.9rem;cursor:pointer">
               <input type="checkbox" id="merge-newly-added"$mergeChecked>
@@ -1876,8 +1879,13 @@ private fun renderRows(container: Element) {
           </div>
           <div id="row-list">$rows</div>
           <button id="row-add" class="btn sm ghost" style="margin-top:6px">+ Add row</button>
+          ${if (liveTvHomeAvailable) """
+          <label style="display:flex;align-items:center;gap:10px;font-size:.85rem;margin-top:14px;padding-top:14px;border-top:1px solid var(--line)">
+            <input type="checkbox" id="livetv-home-collection"${if (placement.showCollection) " checked" else ""}>
+            Also show a Live TV collection in the Collections rail
+          </label>
+          """ else ""}
         </div>
-        ${if (liveTvHomeAvailable) liveTvHomeCardHtml() else ""}
     """.trimIndent()
 
     sect.querySelectorAll("[data-row-toggle]").let { toggles ->
@@ -1908,27 +1916,44 @@ private fun renderRows(container: Element) {
                 }, ::renderRows)
             })
     }
+    // Combined-list drag reorder — the Live TV pseudo-slot moves through the exact same mechanism as
+    // any real row; its position in the reordered list directly becomes onNowRowPosition (a splice
+    // index into the *other* rows, which is precisely what's left once the LiveTv entry is filtered
+    // back out — no translation needed beyond "where did it end up").
     wireDragReorder(container, sect, "row", "row-list",
-        get = { currentConfig.rows }, set = { currentConfig = currentConfig.copy(rows = it) }, ::renderRows)
-    for (i in currentConfig.rows.indices) {
+        get = { slots }, set = { newSlots ->
+            val newRows = newSlots.filterIsInstance<RowSlot.Real>().mapIndexed { j, s -> s.row.copy(order = j) }
+            val newPos = newSlots.indexOfFirst { it is RowSlot.LiveTv }
+            currentConfig = currentConfig.copy(
+                rows = newRows,
+                liveTvHome = if (liveTvHomeAvailable && newPos >= 0)
+                    placement.copy(onNowRowPosition = newPos)
+                else currentConfig.liveTvHome,
+            )
+        }, ::renderRows)
+    // Delete/edit are keyed by the row's own stable id, not its position in the combined slots list
+    // (that index shifts depending on where the Live TV pseudo-slot happens to sit).
+    for (slot in slots) {
+        if (slot !is RowSlot.Real) continue
+        val rowId = slot.row.id
+        val i = slots.indexOf(slot)
         sect.querySelector("[data-row-del='$i']")?.addEventListener("click") { _ ->
             structural(container, {
-                val list = currentConfig.rows.toMutableList(); list.removeAt(i)
-                currentConfig = currentConfig.copy(rows = list)
+                currentConfig = currentConfig.copy(rows = currentConfig.rows.filterNot { it.id == rowId })
             }, ::renderRows)
         }
         sect.querySelector("[data-row-edit='$i']")?.addEventListener("click") { _ ->
             val scope = rcScope ?: return@addEventListener
-            val r = currentConfig.rows.getOrNull(i) ?: return@addEventListener
+            val r = currentConfig.rows.find { it.id == rowId } ?: return@addEventListener
             val include = when (r.mediaKind) { "MOVIE" -> "movies"; "SERIES" -> "series"; else -> "all" }
             openWorkbench(scope, "Edit row — ${(r.title ?: "custom row")}", viewer = currentUserId,
                 initialQuery = r.effectiveQuery(), initialInclude = include, applyLabel = "Update row",
                 onApply = { query, inc ->
                     val mediaKind = when (inc) { "movies" -> "MOVIE"; "series" -> "SERIES"; else -> null }
                     structural(container, {
-                        val list = currentConfig.rows.toMutableList()
-                        list[i] = list[i].copy(kind = RowKind.CUSTOM, query = query, mediaKind = mediaKind)
-                        currentConfig = currentConfig.copy(rows = list)
+                        currentConfig = currentConfig.copy(rows = currentConfig.rows.map {
+                            if (it.id == rowId) it.copy(kind = RowKind.CUSTOM, query = query, mediaKind = mediaKind) else it
+                        })
                     }, ::renderRows)
                 })
         }
@@ -2592,13 +2617,29 @@ private fun collectConfig(container: Element) {
             order = i,
         )
     }
-    val rows = currentConfig.rows.mapIndexed { i, existing ->
+    // Live TV's "On now" row is a pinned pseudo-slot in the same #row-list DOM as real rows (see
+    // renderRows/buildRowSlots) — walk the same combined-slot shape so `data-row-*='$i'` lookups line
+    // up, splitting the Live TV slot's own state back out into liveTvShowOnNow/liveTvPos rather than
+    // a RowConfig (it isn't backed by one).
+    var liveTvShowOnNow = currentConfig.liveTvHome?.showOnNowRow ?: true
+    var liveTvPos = currentConfig.liveTvHome?.onNowRowPosition ?: 0
+    val rows = buildRowSlots().mapIndexedNotNull { i, slot ->
         fun q(attr: String) = container.querySelector("[$attr='$i']")
-        val titleEl = q("data-row-title") as? HTMLInputElement
-        val title   = if (titleEl != null) titleEl.value.trim().ifEmpty { null } else existing.title
-        val enabled = (q("data-row-enabled") as? HTMLInputElement)?.checked ?: existing.enabled
-        existing.copy(title = title, enabled = enabled, order = i)
-    }
+        when (slot) {
+            is RowSlot.LiveTv -> {
+                liveTvShowOnNow = (q("data-row-enabled") as? HTMLInputElement)?.checked ?: liveTvShowOnNow
+                liveTvPos = i
+                null
+            }
+            is RowSlot.Real -> {
+                val existing = slot.row
+                val titleEl = q("data-row-title") as? HTMLInputElement
+                val title   = if (titleEl != null) titleEl.value.trim().ifEmpty { null } else existing.title
+                val enabled = (q("data-row-enabled") as? HTMLInputElement)?.checked ?: existing.enabled
+                existing.copy(title = title, enabled = enabled)
+            }
+        }
+    }.mapIndexed { j, r -> r.copy(order = j) }
     val mergeNewlyAdded = (container.querySelector("#merge-newly-added") as? HTMLInputElement)?.checked ?: currentConfig.mergeNewlyAdded
     val heroHeight   = (container.querySelector("#hero-height") as? HTMLInputElement)?.value?.toIntOrNull() ?: 56
     val autoAdvance  = (container.querySelector("#auto-advance") as? HTMLSelectElement)?.value?.toIntOrNull() ?: 7
@@ -2639,12 +2680,13 @@ private fun collectConfig(container: Element) {
         enabled    = (container.querySelector("#top10-enable") as? HTMLInputElement)?.checked ?: currentConfig.discover.enabled,
         canRequest = (container.querySelector("#top10-canrequest") as? HTMLInputElement)?.checked ?: currentConfig.discover.canRequest,
     )
-    // Phase 147/148 §F — only present in the DOM when liveTvHomeAvailable; otherwise preserve whatever
-    // was already stored (a config saved while Live TV was disabled must not lose its placement).
-    val liveTvHomeShownowEl = container.querySelector("#livetv-home-shownow") as? HTMLInputElement
-    val liveTvHome = if (liveTvHomeShownowEl != null) dev.jellystructure.shared.tv.LiveTvHomePlacement(
-        showOnNowRow = liveTvHomeShownowEl.checked,
-        onNowRowPosition = (container.querySelector("#livetv-home-position") as? HTMLInputElement)?.value?.toIntOrNull()?.coerceIn(0, 20) ?: 0,
+    // Phase 147/148 §F — showOnNowRow/onNowRowPosition come from the Live TV pseudo-slot in the row
+    // list above (liveTvShowOnNow/liveTvPos); only present in the DOM when liveTvHomeAvailable —
+    // otherwise preserve whatever was already stored (a config saved while Live TV was disabled must
+    // not lose its placement).
+    val liveTvHome = if (liveTvHomeAvailable) dev.jellystructure.shared.tv.LiveTvHomePlacement(
+        showOnNowRow = liveTvShowOnNow,
+        onNowRowPosition = liveTvPos.coerceIn(0, 20),
         showCollection = (container.querySelector("#livetv-home-collection") as? HTMLInputElement)?.checked ?: false,
     ) else currentConfig.liveTvHome
     currentConfig = RaviloConfig(
