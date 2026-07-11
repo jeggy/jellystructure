@@ -66,7 +66,7 @@ class BrowseService(
         val filtered = all
             .let { items -> if (mediaKind != null) items.filter { it.kind == mediaKind } else items }
             .let { items -> if (genres.isNotEmpty())   items.filter { i -> genres.any   { g -> i.genres.any  { it.equals(g, ignoreCase = true) } } } else items }
-            .let { items -> if (studios.isNotEmpty())  items.filter { i -> studios.any  { s -> i.studio?.equals(s, ignoreCase = true) == true } } else items }
+            .let { items -> if (studios.isNotEmpty())  items.filter { i -> studios.any  { s -> i.studio?.equals(s, ignoreCase = true) == true || i.secondaryStudios.any { it.equals(s, ignoreCase = true) } } } else items }
             .let { items -> if (networks.isNotEmpty()) items.filter { i -> networks.any { n -> i.network?.equals(n, ignoreCase = true) == true } } else items }
             .let { items -> if (tags.isNotEmpty())     items.filter { i -> tags.any     { t -> i.tags.any    { it.equals(t, ignoreCase = true) } } } else items }
 
@@ -137,7 +137,7 @@ class BrowseService(
 
         for (item in all) {
             item.genres.forEach  { g -> genreCounts[g]   = (genreCounts[g]   ?: 0) + 1 }
-            item.studio?.let     { s -> studioCounts[s]  = (studioCounts[s]  ?: 0) + 1 }
+            (listOfNotNull(item.studio) + item.secondaryStudios).distinct().forEach { s -> studioCounts[s] = (studioCounts[s] ?: 0) + 1 }
             item.network?.let    { n -> networkCounts[n] = (networkCounts[n] ?: 0) + 1 }
             item.tags.forEach    { t -> tagCounts[t]     = (tagCounts[t]     ?: 0) + 1 }
         }

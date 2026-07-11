@@ -130,6 +130,11 @@ data class MediaItem(
     val studio: String? = null,
     val studioTmdbId: Int? = null,
     val studioLogoPath: String? = null,
+    // Every OTHER TMDB production company beyond the primary one (e.g. Netflix/Apple credited as
+    // a secondary company, not lead studio) — Studio-facet filters match against this too, so a
+    // streaming platform's originals are findable even when it's never index-0. Display/NFO/the
+    // Metadata screen's Studios tab still use `studio` alone; this is filter-matching only.
+    val secondaryStudios: List<String> = emptyList(),
     val network: String? = null,
     val networkTmdbId: Int? = null,
     val networkLogoPath: String? = null,
