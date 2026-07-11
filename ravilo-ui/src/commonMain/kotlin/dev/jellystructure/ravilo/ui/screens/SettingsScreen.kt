@@ -140,9 +140,28 @@ fun SettingsScreen(
     val live = dev.jellystructure.ravilo.ui.LocalLiveConfig.current
     LaunchedEffect(live) { live?.collect { store.refresh(silent = true) } }
 
+    // Bug fix: this "‹ Back" label had no dpadFocusable/onClick at all — a purely decorative dead
+    // affordance on every input platform. Also gives Loading/Error something to focus (previously
+    // nothing was focused until SettingsContent's progressFR, once Loaded).
+    val backFR = remember { FocusRequester() }
+    var backFocused by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { runCatching { backFR.requestFocus() } }
+
     Box(modifier = Modifier.fillMaxSize().background(colors.background)) {
         Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 80.dp, vertical = 40.dp)) {
-            Text("‹ ${str("action.back")}", color = colors.textSecondary, fontSize = 13.sp)
+            Text(
+                "‹ ${str("action.back")}",
+                color = if (backFocused) colors.text else colors.textSecondary,
+                fontSize = 13.sp,
+                modifier = Modifier
+                    .then(if (backFocused) Modifier.border(2.dp, colors.focusRing, RoundedCornerShape(6.dp)) else Modifier)
+                    .dpadFocusable(
+                        focusRequester = backFR,
+                        onFocused = { backFocused = true }, onBlurred = { backFocused = false },
+                        onSelect = onBack,
+                    )
+                    .padding(horizontal = 6.dp, vertical = 4.dp),
+            )
             Spacer(Modifier.height(8.dp))
             Text(str("nav.settings"), color = colors.text, fontSize = 32.sp, fontWeight = FontWeight.Bold)
             Spacer(Modifier.height(40.dp))

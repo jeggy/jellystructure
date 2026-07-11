@@ -219,6 +219,11 @@ fun ChannelScreen(
                                             autoAdvanceSeconds = s.feed.autoAdvanceSeconds,
                                             onOpenDetail = { store.focusRowKey = null; store.focusItemKey = null; onItemSelect(it) },  // R139
                                             onUp = { runCatching { channelBarFR.requestFocus() } },
+                                            // Bug fix: native focus search from the full-width hero into the row
+                                            // below picked whichever tile sat nearest the hero's horizontal
+                                            // center, not index 0 (same off-by-one confirmed live on Home's
+                                            // "On Now" row) — bridge explicitly to the real first tile.
+                                            onDown = { runCatching { firstTileFR.requestFocus() } },
                                         )
                                     }
                                 }
@@ -244,7 +249,7 @@ fun ChannelScreen(
                                         progressPct = card.progressPct ?: 0f,
                                         watched = card.watched,
                                         upcomingLabel = card.upcomingEpisode,
-                                        focusRequester = fr ?: if (!hasHero && ri == 0 && idx == 0) firstTileFR else null,  // R139
+                                        focusRequester = fr ?: if (ri == 0 && idx == 0) firstTileFR else null,  // R139
                                         onSelect = { store.focusRowKey = row.id; store.focusItemKey = card.id; onItemSelect(card) },  // R139
                                     )
                                 }

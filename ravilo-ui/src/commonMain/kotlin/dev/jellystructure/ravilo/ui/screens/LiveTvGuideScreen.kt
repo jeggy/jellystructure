@@ -75,8 +75,10 @@ private fun formatGuideTime(epochMs: Long): String {
 fun LiveTvGuideScreen(
     store: LiveTvGuideStore,
     displayName: String,
+    discoverAvailable: Boolean,
     onBack: () -> Unit,
     onTuneChannel: (LiveTvChannel) -> Unit,
+    onNavSelect: (Int) -> Unit = {},
     onProfile: () -> Unit = {},
     onSearch: () -> Unit = {},
 ) {
@@ -85,7 +87,12 @@ fun LiveTvGuideScreen(
     LaunchedEffect(Unit) { store.load() }
 
     var selectedCategory by remember { mutableStateOf<String?>(null) }
-    val backFR = remember { FocusRequester() }
+    val navItems = raviloNavItems(discoverAvailable)
+    val navBarFR = remember { FocusRequester() }
+
+    // Give the bar initial focus so Back works even during Loading/Error (matches ChannelScreen);
+    // the Loaded branch below re-routes focus onto the first channel row once data is in.
+    LaunchedEffect(Unit) { runCatching { navBarFR.requestFocus() } }
 
     Box(modifier = Modifier.fillMaxSize().background(colors.background).dpadFocusable(onBack = onBack)) {
         when (val s = state) {
@@ -174,11 +181,11 @@ fun LiveTvGuideScreen(
             }
         }
         AppBar(
-            navItems = emptyList(),
-            activeNav = -1,
-            onNavSelect = {},
-            navFR = backFR,
-            userInitials = "",
+            navItems = navItems,
+            activeNav = -1,   // the guide isn't one of the section tabs → no tab highlighted
+            onNavSelect = onNavSelect,
+            navFR = navBarFR,
+            userInitials = displayName.take(2).uppercase(),
             onProfile = onProfile,
             onSearch = onSearch,
             scrolled = true,

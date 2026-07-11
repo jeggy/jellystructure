@@ -70,6 +70,7 @@ fun HeroCarousel(
     autoAdvanceSeconds: Int = 7,
     onOpenDetail: (MediaCard) -> Unit = {},
     onUp: (() -> Unit)? = null,
+    onDown: (() -> Unit)? = null,
     /** R101: Ken Burns drifts only while this is true (false ⇒ frozen). HomeScreen passes
      *  `!isScrollInProgress` so the hero stops its per-frame scaled redraw during a scroll gesture. */
     driftEnabled: () -> Boolean = { true },
@@ -157,13 +158,17 @@ fun HeroCarousel(
             // (which only fill the box) and shows a thin un-darkened line at the very bottom edge.
             .clipToBounds()
             // R53: the whole hero is one focusable surface — select opens detail, Left/Right page the
-            // carousel (cyclic, since a full-bleed hero has no horizontal neighbour). onDown omitted so
-            // native focus search drops into the channel rail / first content row.
+            // carousel (cyclic, since a full-bleed hero has no horizontal neighbour).
+            // Bug fix: onDown used to be omitted, relying on native focus search to drop into the
+            // channel rail / first content row — but the hero's focus box spans the full width while
+            // the row below is left-anchored, so the "nearest" candidate was often the 2nd tile, not
+            // the 1st (confirmed live on soveværelse TV). The caller now bridges explicitly, like onUp.
             .dpadFocusable(
                 focusRequester = focusRequester,
                 onLeft  = { activeIndex = (activeIndex - 1 + items.size) % items.size; resetTick++ },
                 onRight = { activeIndex = (activeIndex + 1) % items.size; resetTick++ },
                 onUp    = onUp,
+                onDown  = onDown,
                 onSelect = { onOpenDetail(active.item) },
             )
             // R121: touch-swipe paging for the phone/web targets — drag left → next, right → previous
