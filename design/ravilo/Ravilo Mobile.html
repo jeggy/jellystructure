@@ -116,6 +116,36 @@
   .dsyn{ margin-top:16px; font-size:14px; line-height:1.6; color:var(--ink-soft); }
   .seclbl{ font-family:'Space Grotesk',sans-serif; font-size:15px; font-weight:600; margin:22px 0 11px; }
 
+  /* Multi-episode files — combined triptych card (Option B) */
+  .melist{ display:flex; flex-direction:column; gap:14px; }
+  .mecombo{ border:1px solid var(--line); border-radius:14px; overflow:hidden; background:rgba(255,255,255,.03); }
+  .mestill{ position:relative; aspect-ratio:16/9; }
+  .mestill .trip, .mestill .trip .tp{ position:absolute; inset:0; }
+  .mestill .trip .tp1{ clip-path:polygon(0 0,37% 0,29% 100%,0 100%); }
+  .mestill .trip .tp2{ clip-path:polygon(37% 0,69% 0,61% 100%,29% 100%); }
+  .mestill .trip .tp3{ clip-path:polygon(69% 0,100% 0,100% 100%,61% 100%); }
+  .mestill .seam{ position:absolute; top:-8%; height:116%; width:2.5px; background:rgba(255,255,255,.9); box-shadow:0 0 0 1px rgba(0,0,0,.5); z-index:4; }
+  .mestill .seam1{ left:33%; transform:rotate(8.1deg); }
+  .mestill .seam2{ left:65%; transform:rotate(8.1deg); }
+  .mestill .tnum{ position:absolute; top:6px; font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:18px; color:#fff; text-shadow:0 2px 8px rgba(0,0,0,.85); z-index:5; }
+  .mestill .tnum1{ left:10px; } .mestill .tnum2{ left:45%; } .mestill .tnum3{ right:10px; }
+  .mestill .merng{ position:absolute; left:10px; bottom:9px; z-index:6; font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:12px; color:#fff; text-shadow:0 2px 8px rgba(0,0,0,.8); background:rgba(10,12,19,.55); padding:2px 9px; border-radius:20px; }
+  .mebody{ padding:11px 13px 13px; }
+  .met{ font-size:15px; font-weight:600; }
+  .merows{ margin-top:7px; }
+  .merow{ display:flex; gap:10px; align-items:center; padding:5px 0; border-bottom:1px solid var(--line); font-size:13px; }
+  .merow:last-child{ border-bottom:none; }
+  .merow .n{ font-family:'JetBrains Mono',ui-monospace,monospace; color:var(--accent); width:26px; flex:none; }
+  .merow .t{ color:var(--ink-soft); flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .merow .d{ color:var(--ink-dim); font-size:11px; }
+  .mefile{ margin-top:9px; font-family:'JetBrains Mono',ui-monospace,monospace; font-size:11px; color:var(--accent); }
+  .merow-single{ display:flex; gap:11px; align-items:center; padding:11px 13px; border:1px solid var(--line); border-radius:14px; }
+  .methumb{ width:104px; height:59px; border-radius:8px; flex:none; position:relative; overflow:hidden; }
+  .methumb .mn{ position:absolute; left:7px; top:3px; font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:16px; color:#fff; text-shadow:0 1px 5px rgba(0,0,0,.7); }
+  .memeta2{ flex:1; min-width:0; }
+  .memeta2 .mt2{ font-size:14px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .memeta2 .md2{ font-size:11px; color:var(--ink-dim); margin-top:2px; }
+
   .label{ position:absolute; bottom:-30px; left:0; right:0; text-align:center; color:#54596b; font-size:12px; font-family:'Space Grotesk',sans-serif; letter-spacing:.05em; }
 </style>
 </head>
@@ -262,6 +292,32 @@
   }
 
   /* ---- detail ---- */
+  function mPad(n){ return String(n).padStart(2,'0'); }
+  function mEpUnits(eps){ const u=[]; let cur=null; eps.forEach(e=>{ if(e.file){ if(cur&&cur.file===e.file){ cur.eps.push(e); } else { cur={file:e.file,eps:[e]}; u.push(cur); } } else { u.push({single:e}); cur=null; } }); return u; }
+  function episodesHTML(it){
+    if(it.kind!=='series' || !R.episodesFor) return '';
+    const eps = R.episodesFor(it, 0);
+    const units = mEpUnits(eps);
+    const cards = units.map(u=>{
+      if(u.single){ const e=u.single; return '<div class="merow-single">'
+        + '<div class="methumb" style="background:'+e.grad+'"><span class="mn">'+mPad(e.n)+'</span></div>'
+        + '<div class="memeta2"><div class="mt2">'+esc(e.title)+'</div><div class="md2">'+esc(e.dur)+'</div></div></div>'; }
+      const eps3=u.eps.slice(0,3);
+      const tiles=eps3.map((e,i)=>'<div class="tp tp'+(i+1)+'" style="background:'+e.grad+'"></div>').join('');
+      const nums=eps3.map((e,i)=>'<span class="tnum tnum'+(i+1)+'">'+mPad(e.n)+'</span>').join('');
+      const first=u.eps[0].n, last=u.eps[u.eps.length-1].n;
+      const durSum=u.eps.reduce((a,e)=>a+(parseInt(e.dur)||0),0);
+      const rows=u.eps.map(e=>'<div class="merow"><span class="n">'+mPad(e.n)+'</span><span class="t">'+esc(e.title)+'</span><span class="d">'+esc(e.dur)+'</span></div>').join('');
+      return '<div class="mecombo">'
+        + '<div class="mestill"><div class="trip">'+tiles+'<span class="seam seam1"></span><span class="seam seam2"></span>'+nums+'</div>'
+        + '<span class="merng">Episodes '+first+'\u2013'+last+'</span></div>'
+        + '<div class="mebody"><div class="met">Episodes '+first+'\u2013'+last+'</div>'
+        + '<div class="merows">'+rows+'</div>'
+        + '<div class="mefile">\u25a4 1 file \u00b7 '+u.eps.length+' episodes \u00b7 '+durSum+'m</div></div></div>';
+    }).join('');
+    return '<div class="seclbl">Episodes <span style="font-weight:400;color:var(--ink-dim);font-family:Sora,sans-serif;font-size:12px;">Season 1 \u00b7 '+units.length+' files</span></div>'
+      + '<div class="melist">'+cards+'</div>';
+  }
   function findItem(title){
     const all = [].concat(R.hero, ...R.rows.map(r=>r.items), ...R.discover.lists.map(l=>l.items));
     return all.find(x=>x.title===title) || {title, year:'', genre:'', rating:'12', grad:R.grad(title), initials:R.initials(title)};
@@ -277,6 +333,7 @@
       + '<div class="dmeta"><span>'+esc(String(it.year))+'</span><span>·</span><span>'+esc(it.genre||'')+'</span><span class="pg">'+esc(it.rating)+'</span>'+(it.kind?'<span>·</span><span>'+(it.kind==='series'?'Series':'Film')+'</span>':'')+'</div>'
       + '<div class="dbtns"><button class="btn play">▶ Play</button><button class="btn ghost">＋ My List</button></div>'
       + '<div class="dsyn">'+esc(syn)+'</div>'
+      + (it.kind==='series' ? episodesHTML(it) : '')
       + '<div class="seclbl">More like this</div>'
       + '<div class="track" style="padding-left:0;padding-right:0;">'+more.map(tile).join('')+'</div>'
       + '<div style="height:24px;"></div></div>';
