@@ -189,6 +189,18 @@ fun PlayerScreen(
     var nextUpDismissed by remember { mutableStateOf(false) }
     var countdown     by remember { mutableIntStateOf(COUNTDOWN_SECS) }
     var nuFocus       by remember { mutableStateOf(NuFocus.PLAY) }
+    // Bug fix: PlayerScreen is reused across an episode transition (replaceTop keeps this composable —
+    // see LaunchedEffect(itemId) below), and so is `player` itself (remembered once, above) — its
+    // outgoing stream keeps playing (and reporting near-the-end position/duration) for as long as the
+    // new episode's stream ticket takes to round-trip, before `player.load()` actually swaps it. The
+    // poll loop (LaunchedEffect(Unit) below, never restarts either) kept reading that stale position
+    // every tick, so right after a manual "next episode" pick it could re-satisfy the near-end/isEnded
+    // check using the OUTGOING episode's tail end and re-arm nextUpVisible — starting a fresh 8s
+    // countdown that then auto-advances a SECOND time while the new episode is already playing,
+    // restarting it. Tracks which itemId the player is actually loaded for; the poll loop's near-end/
+    // isEnded checks are gated on this matching the current itemId so a stale outgoing stream can never
+    // trigger next-up again.
+    var loadedForItemId by remember { mutableStateOf<String?>(null) }
 
     // Episode rail
     var epRailOpen  by remember { mutableStateOf(false) }
@@ -324,7 +336,13 @@ fun PlayerScreen(
 
     // Start the playback session
     LaunchedEffect(itemId) {
+        // Bug fix: also reset the next-up card/countdown here, not just nextUpDismissed — see
+        // loadedForItemId's comment above. Belt-and-suspenders alongside the loadedForItemId gate below:
+        // this clears any next-up state left over from the outgoing episode the instant a new one
+        // starts loading, rather than waiting for the (already-gated) poll loop to notice.
         nextUpDismissed = false  // R111: each episode (replaceTop keeps this composable) starts fresh
+        nextUpVisible = false
+        countdown = COUNTDOWN_SECS
         store.startSession(itemId, positionProvider = { positionMs }, isPausedProvider = { !isPlaying })
     }
 
@@ -337,6 +355,7 @@ fun PlayerScreen(
         player.load(streamUrl, s.ticket.startPositionMs, s.ticket.subtitles, s.ticket.audio)
         player.play()
         isPlaying = true
+        loadedForItemId = itemId   // Bug fix: see loadedForItemId's declaration comment above.
         wake()
     }
 
@@ -351,8 +370,15 @@ fun PlayerScreen(
             audioTracks = player.audioTracks
             subtitleTracks = player.subtitleTracks
 
+            // Bug fix: gate every next-up/end-of-stream check on the player actually being loaded for
+            // the CURRENT itemId — otherwise, right after a manual (or auto) advance, these checks kept
+            // reading the OUTGOING episode's near-the-end position/duration during the brief gap before
+            // the new episode's stream ticket loads, re-arming next-up and auto-advancing a second time
+            // into the episode that had just started. See loadedForItemId's declaration comment above.
+            val playerLoadedForCurrentItem = loadedForItemId == itemId
+
             // Near-end → show next-up card (R111: not if the viewer dismissed it via "Watch credits")
-            if (nextEpisodeId != null && durationMs > 0 && !nextUpVisible && !nextUpDismissed && !player.isEnded) {
+            if (playerLoadedForCurrentItem && nextEpisodeId != null && durationMs > 0 && !nextUpVisible && !nextUpDismissed && !player.isEnded) {
                 if ((durationMs - positionMs) in 1..NEXTUP_AT_MS) {
                     nextUpVisible = true
                     nuFocus = NuFocus.PLAY
@@ -360,10 +386,10 @@ fun PlayerScreen(
             }
 
             // Natural end with no next episode → exit
-            if (player.isEnded && nextEpisodeId == null) {
+            if (playerLoadedForCurrentItem && player.isEnded && nextEpisodeId == null) {
                 onBack(); break
             }
-            if (player.isEnded && !nextUpVisible) {
+            if (playerLoadedForCurrentItem && player.isEnded && !nextUpVisible) {
                 nextUpVisible = true; nuFocus = NuFocus.PLAY
             }
         }
