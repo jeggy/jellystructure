@@ -61,7 +61,7 @@ object ConditionEvaluator {
                 val audio = item.tracks.filter { it.kind == TrackKind.AUDIO }
                 val resolvedCode = CertificationResolver.resolve(ageRatingCascade, item.certifications)?.code
                 return ItemFacets(
-                    studio         = setOfNotNull(item.studio?.lowercase()),
+                    studio         = (listOfNotNull(item.studio) + item.secondaryStudios).mapTo(HashSet()) { it.lowercase() },
                     network        = setOfNotNull(item.network?.lowercase()),
                     genres         = item.genres.mapTo(HashSet()) { it.lowercase() },
                     tags           = item.tags.mapTo(HashSet()) { it.lowercase() },

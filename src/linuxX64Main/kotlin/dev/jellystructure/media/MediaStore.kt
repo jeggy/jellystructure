@@ -360,7 +360,7 @@ class MediaStore(
                 val cascade = ageRatingCascade()
                 result = result.filter { item -> ConditionEvaluator.matches(item, query, heroIds, cascade) }
             } else {
-                if (studios.isNotEmpty()) result = result.filter { item -> studios.any { s -> item.studio.equals(s, ignoreCase = true) } }
+                if (studios.isNotEmpty()) result = result.filter { item -> studios.any { s -> item.studio.equals(s, ignoreCase = true) || item.secondaryStudios.any { it.equals(s, ignoreCase = true) } } }
                 if (networks.isNotEmpty()) result = result.filter { item -> networks.any { n -> item.network.equals(n, ignoreCase = true) } }
                 if (genres.isNotEmpty()) result = result.filter { item -> genres.any { g -> item.genres.any { it.equals(g, ignoreCase = true) } } }
                 if (audioLangs.isNotEmpty() || trackTitle != null || audioCodec != null || untaggedAudio) {
@@ -650,7 +650,7 @@ class MediaStore(
         val ageRatingCounts = mutableMapOf<String, Int>()
         val cascade = ageRatingCascade()
         for (item in items) {
-            item.studio?.let  { s -> studioCounts[s]  = (studioCounts[s]  ?: 0) + 1 }
+            (listOfNotNull(item.studio) + item.secondaryStudios).distinct().forEach { s -> studioCounts[s] = (studioCounts[s] ?: 0) + 1 }
             item.network?.let { n -> networkCounts[n] = (networkCounts[n] ?: 0) + 1 }
             item.genres.forEach { g -> genreCounts[g] = (genreCounts[g] ?: 0) + 1 }
             item.tags.forEach   { t -> tagCounts[t]   = (tagCounts[t]   ?: 0) + 1 }
