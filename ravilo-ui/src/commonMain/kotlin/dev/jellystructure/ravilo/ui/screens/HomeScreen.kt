@@ -45,6 +45,7 @@ import dev.jellystructure.ravilo.ui.components.Tile
 import dev.jellystructure.ravilo.ui.focus.dpadFocusable
 import dev.jellystructure.ravilo.ui.focus.rememberEdgeBringIntoViewSpec
 import dev.jellystructure.ravilo.ui.focus.backToTopOnBack
+import dev.jellystructure.ravilo.ui.focus.requestFocusRetrying
 import dev.jellystructure.ravilo.ui.components.TileVariant
 import dev.jellystructure.ravilo.ui.components.tileRequestedWidth
 import dev.jellystructure.ravilo.ui.components.toTileVariant
@@ -167,12 +168,19 @@ private fun HomeLoaded(
     // Native focus traversal handles movement between rows and within a row. Only the app-bar
     // overlay and the hero→first-row jump need explicit bridges (neither is a reliable spatial
     // neighbour of what's below/above it): heroFR receives down-from-app-bar, navBarFR receives
-    // up-from-hero, firstRowFR receives down-from-hero. columnFR is the entry point when there is
-    // no hero. All are single, always-composed requesters — never one-per-item across a lazy list
-    // (that was the source of the stuck/lag behaviour).
+    // up-from-hero, firstRowFR receives down-from-hero AND down-from-app-bar-when-hero-less (it is
+    // always attached to whichever composable is currently the first focusable row/tile — see the
+    // firstItemFR wiring below). All are single, always-composed requesters — never one-per-item
+    // across a lazy list (that was the source of the stuck/lag behaviour).
+    //
+    // Bug fix: down-from-app-bar used to request focus on a `columnFR` attached to the LazyColumn
+    // container itself — per Compose docs, requesting focus on a container with no focusable of its
+    // own is unreliable (whether a descendant's focus target silently claims the delegated request
+    // is unspecified). Reported live: D-pad Down from the nav bar sometimes did nothing, stranding
+    // focus in the top bar. Now uses the same firstRowFR bridge the hero uses, which is guaranteed to
+    // be attached to a real focusable tile whenever the feed has any content.
     val navBarFR = remember { FocusRequester() }
     val heroFR   = remember { FocusRequester() }
-    val columnFR = remember { FocusRequester() }
 
     // Land focus somewhere sensible on entry. With a hero, focus it; otherwise focus the app bar
     // (always composed + focusable) so a hero-less feed never opens with nothing focused — Down
@@ -221,7 +229,7 @@ private fun HomeLoaded(
         // R140: generous bottom padding so the LAST row can still scroll up to the same comfortable height
         // as the others (never stranded at the very bottom of the screen).
         contentPadding = PaddingValues(bottom = 240.dp),
-        modifier = Modifier.fillMaxSize().focusRequester(columnFR),
+        modifier = Modifier.fillMaxSize(),
     ) {
         // Hero carousel
         if (hasHero) {
@@ -247,7 +255,7 @@ private fun HomeLoaded(
                         // R101: freeze the Ken Burns drift while the list is actively scrolling so the
                         // full-width hero stops its per-frame scaled redraw during the gesture.
                         driftEnabled = { !listState.isScrollInProgress },
-                        onDown = { runCatching { firstRowFR.requestFocus() } },
+                        onDown = { requestFocusRetrying(scope, firstRowFR) },
                     )
                 }
             }
@@ -310,7 +318,20 @@ private fun HomeLoaded(
         activeNav = activeNav,
         onNavSelect = onNavSelect,
         navFR = navBarFR,
-        onDown = { runCatching { if (hasHero) heroFR.requestFocus() else columnFR.requestFocus() } },
+        onDown = {
+            if (hasHero) {
+                // Bug fix: heroFR.requestFocus() used to be called directly here — if the list had been
+                // scrolled down, the hero (lazy item 0) was disposed and requestFocus() threw, silently
+                // swallowed, stranding focus in the nav bar. Scrolling to the top first (same idiom as
+                // backToTopOnBack above) forces the hero back into composition before focusing it.
+                scope.launch {
+                    runCatching { listState.scrollToItem(0) }
+                    runCatching { heroFR.requestFocus() }
+                }
+            } else {
+                requestFocusRetrying(scope, firstRowFR)
+            }
+        },
         userInitials = initials,
         onProfile = onProfile,
         onSearch = onSearch,

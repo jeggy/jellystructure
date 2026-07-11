@@ -7,6 +7,7 @@ import androidx.compose.foundation.interaction.HoverInteraction
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
 import androidx.compose.ui.focus.FocusRequester
@@ -18,12 +19,31 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.pointerInput
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.launch
 
 /**
  * Physical remote / keyboard media-transport keys (R44). Distinct from D-pad/OK so the player can
  * react to them no matter which on-screen control is focused, even with the chrome hidden.
  */
 enum class MediaKey { PLAY_PAUSE, PLAY, PAUSE, STOP, FAST_FORWARD, REWIND, NEXT, PREVIOUS }
+
+/**
+ * Bug fix: cross-screen focus bridges (hero↔nav-bar↔first-row jumps in HomeScreen) sat behind a bare
+ * `runCatching { fr.requestFocus() }` — if the target was mid-recomposition at the exact moment the
+ * key press fired (a lazy-list item just got replaced/rekeyed, or scrolled back into range),
+ * `requestFocus()` throws because the requester isn't attached to any focus target yet, and the
+ * swallowed exception left the user stuck with the key press silently doing nothing. One retry after
+ * the next frame (giving the new composable time to attach) covers that transient window without any
+ * visible delay on the overwhelmingly common immediate-success path.
+ */
+fun requestFocusRetrying(scope: CoroutineScope, focusRequester: FocusRequester) {
+    if (runCatching { focusRequester.requestFocus() }.isSuccess) return
+    scope.launch {
+        withFrameNanos {}
+        runCatching { focusRequester.requestFocus() }
+    }
+}
 
 /**
  * D-pad focus helper.
