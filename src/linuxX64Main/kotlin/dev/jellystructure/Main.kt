@@ -49,9 +49,11 @@ import kotlinx.cinterop.value
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CoroutineExceptionHandler
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.newFixedThreadPoolContext
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.runBlocking
 import platform.posix.SIGINT
@@ -75,7 +77,7 @@ private fun onSignal(sig: Int) {
     shutdownRequested.value = 1
 }
 
-@OptIn(ExperimentalForeignApi::class)
+@OptIn(ExperimentalForeignApi::class, ExperimentalCoroutinesApi::class, kotlinx.coroutines.DelicateCoroutinesApi::class)
 fun main() = runBlocking {
     val configFile = env("CONFIG_FILE", "./data/config.toml")
     val dbFile = env("DB_FILE", "./data/jellystructure.db")
@@ -147,8 +149,19 @@ fun main() = runBlocking {
     // Phase 134 (FR-OPS2 §F): 32→100 — a worker/thread count doesn't cost FDs by itself (workers queue
     // behind ProcessGate/OutboundHttp, both raised alongside this), so a powerful host can genuinely
     // run 100 concurrent scan workers instead of the extra 68 just queuing uselessly behind a 32-ceiling.
+    //
+    // Bug fix: this used to be `Dispatchers.Default.limitedParallelism(n)` — a *view* over the same
+    // shared thread pool every other Default-dispatched coroutine in the process uses (including
+    // whatever the Ktor CIO engine or route handlers hop onto Dispatchers.Default for). A live
+    // incident showed Ravilo TV/phone clients timing out on plain reads (`/api/tv/series/{id}`) while
+    // a heavy `pull_tmdb` pipeline run was in flight — even after fixing that run's own N+1/retry-storm
+    // bug, a legitimate full pipeline over hundreds of episodes is still substantial sustained work,
+    // and sharing Default's pool means it can still queue up ahead of interactive request handling.
+    // A dedicated fixed thread pool guarantees scan/pipeline work can never contend with request
+    // threads for a CPU slot, however heavy either side gets. @DelicateCoroutinesApi: this pool is
+    // intentionally never closed — it's meant to live for the whole process, same as Dispatchers.Default.
     val effectiveScanThreads = configStore.current.behavior.scanThreads.coerceIn(1, 100)
-    val scanDispatcher = Dispatchers.Default.limitedParallelism(effectiveScanThreads)
+    val scanDispatcher = newFixedThreadPoolContext(effectiveScanThreads, "scan-pool")
     scanTracker.targetWorkers.value = configStore.current.behavior.scanWorkers.coerceIn(1, 100)
 
     signal(SIGTERM, staticCFunction(::onSignal))
