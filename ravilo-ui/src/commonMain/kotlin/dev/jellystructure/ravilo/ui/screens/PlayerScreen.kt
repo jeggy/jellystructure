@@ -2,6 +2,7 @@ package dev.jellystructure.ravilo.ui.screens
 
 import dev.jellystructure.ravilo.ui.LocalPlaystateCommands
 import dev.jellystructure.ravilo.ui.components.EpisodeTriptych
+import dev.jellystructure.ravilo.ui.components.LANG_CC
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
@@ -17,6 +18,7 @@ import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.hoverable
@@ -35,6 +37,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -73,6 +77,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.jellystructure.ravilo.ui.focus.MediaKey
 import dev.jellystructure.ravilo.ui.focus.dpadFocusable
+import dev.jellystructure.ravilo.ui.i18n.LocalLang
 import dev.jellystructure.ravilo.ui.i18n.str
 import dev.jellystructure.ravilo.ui.i18n.t
 import dev.jellystructure.ravilo.ui.seams.PlayerAudioTrack
@@ -99,6 +104,8 @@ import dev.jellystructure.ravilo.ui.theme.RaviloTheme
 import dev.jellystructure.ravilo.ui.theme.SpaceGrotesk
 import dev.jellystructure.ravilo.ui.theme.accentGradient
 import kotlinx.coroutines.delay
+import org.jetbrains.compose.resources.DrawableResource
+import org.jetbrains.compose.resources.painterResource
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -926,9 +933,11 @@ fun PlayerScreen(
                 pickerTab     = pickerTab,
                 pickerIdx     = pickerIdx,
                 audioTracks   = audioTracks,
-                subtitleTracks = subOptions,
+                subOptions    = subOptions,
+                nativeSubtitleTracks = subtitleTracks,
                 selectedAudio = selectedAudio,
                 selectedSub   = selectedSub,
+                originalLanguage = currentOriginalLanguage,
             )
         }
 
@@ -1478,16 +1487,31 @@ private fun EpisodeChip(colors: RaviloColors) {
 
 // ─── Track picker popup ───────────────────────────────────────────────────────
 
+// R180 (FR-RV-ASP1-1) — one row's presentation data, resolved once per recomposition from either a
+// PlayerAudioTrack or a PlayerSubtitleTrack (or neither, for the synthetic Off row).
+private data class PickerRow(
+    val language: String?,
+    val fallbackLabel: String,
+    val isOff: Boolean,
+    val badges: List<String>,
+)
+
 @Composable
 private fun TrackPicker(
     colors: RaviloColors,
     pickerTab: Int,
     pickerIdx: Int,
     audioTracks: List<PlayerAudioTrack>,
-    subtitleTracks: List<PlayerSubtitleTrack?>,
+    subOptions: List<PlayerSubtitleTrack?>,
+    nativeSubtitleTracks: List<PlayerSubtitleTrack>,
     selectedAudio: Int,
     selectedSub: Int,
+    originalLanguage: String?,
 ) {
+    val lang = LocalLang.current
+    val audioFlag = audioTracks.getOrNull(selectedAudio)?.language?.lowercase()?.let { LANG_CC[it] }
+    val subFlag = if (selectedSub >= 0) nativeSubtitleTracks.getOrNull(selectedSub)?.language?.lowercase()?.let { LANG_CC[it] } else null
+
     Box(
         modifier = Modifier
             .padding(end = 48.dp, bottom = 36.dp)
@@ -1500,41 +1524,64 @@ private fun TrackPicker(
         Column {
             // Tabs
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                PickerTab(str("player.tab_audio"), pickerTab == 0)
-                PickerTab(str("player.tab_subtitles"), pickerTab == 1)
+                PickerTab(str("player.tab_audio"), pickerTab == 0, audioFlag)
+                PickerTab(str("player.tab_subtitles"), pickerTab == 1, subFlag)
             }
             Spacer(Modifier.height(14.dp))
 
-            // Options
+            // Options — R180: every row leads with a flag/glyph and a plain endonym name; badges are
+            // a fixed jargon-free vocabulary derived in audioBadges()/subtitleBadges(), never a codec
+            // or delivery-method string.
             val effectiveAudio = audioTracks.ifEmpty { listOf(PlayerAudioTrack(0, "Default", null)) }
-            val items: List<Triple<String, String?, String?>> = if (pickerTab == 0) {
-                // Secondary line: humanized language, hidden when the label already starts with it.
-                effectiveAudio.map { Triple(it.label, langLine(it.language, it.label), null) }
+            val rows: List<PickerRow> = if (pickerTab == 0) {
+                effectiveAudio.map { PickerRow(it.language, it.label, false, audioBadges(it, originalLanguage, lang)) }
             } else {
-                subtitleTracks.mapIndexed { i, sub ->
-                    if (sub == null) Triple(str("off"), null, null)
-                    else Triple(sub.label, langLine(sub.language, sub.label), if (sub.forced) "FORCED" else if (sub.isDefault) "DEFAULT" else null)
+                subOptions.map { sub ->
+                    if (sub == null) PickerRow(null, "", true, emptyList())
+                    else PickerRow(sub.language, sub.label, false, subtitleBadges(sub, lang))
                 }
             }
             val selectedInTab = if (pickerTab == 0) selectedAudio else selectedSub + 1
+            val lastIdx = (rows.size - 1).coerceAtLeast(0)
+            val listState = rememberLazyListState()
 
-            items.forEachIndexed { i, (label, lang, flag) ->
-                PickerOption(
-                    label   = label,
-                    lang    = lang,
-                    flag    = flag,
-                    selected = i == selectedInTab,
-                    focused  = i == pickerIdx,
-                    colors  = colors,
-                )
-                if (i < items.lastIndex) Spacer(Modifier.height(8.dp))
+            // R180 — open pre-scrolled to the active row (jump, no animation). Keyed on pickerTab: it
+            // "changes" (from unset) on TrackPicker's first composition — i.e. every time the picker
+            // freshly opens, since AnimatedVisibility disposes this composable on close — and again on
+            // every later tab switch, both of which should reset scroll position outright rather than
+            // animate from wherever the other tab happened to be scrolled.
+            LaunchedEffect(pickerTab) {
+                listState.scrollToItem(pickerIdx.coerceIn(0, lastIdx))
+            }
+            // R180 — keep the D-pad-focused row visible as it moves (10+ track titles genuinely
+            // overflow a fixed-height list — verified: a real title has 7 audio + 13 subtitle tracks).
+            LaunchedEffect(pickerIdx) {
+                listState.animateScrollToItem(pickerIdx.coerceIn(0, lastIdx))
+            }
+
+            LazyColumn(
+                state = listState,
+                modifier = Modifier.heightIn(max = 400.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                itemsIndexed(rows) { i, row ->
+                    PickerOption(
+                        language      = row.language,
+                        fallbackLabel = row.fallbackLabel,
+                        isOff         = row.isOff,
+                        badges        = row.badges,
+                        selected      = i == selectedInTab,
+                        focused       = i == pickerIdx,
+                        colors        = colors,
+                    )
+                }
             }
         }
     }
 }
 
 @Composable
-private fun PickerTab(label: String, active: Boolean) {
+private fun PickerTab(label: String, active: Boolean, flagRes: DrawableResource? = null) {
     val colors = RaviloTheme.colors
     Box(
         modifier = Modifier
@@ -1549,20 +1596,39 @@ private fun PickerTab(label: String, active: Boolean) {
             .padding(horizontal = 18.dp),
         contentAlignment = Alignment.Center,
     ) {
-        Text(
-            text = label,
-            color = if (active) colors.text else colors.textSecondary,
-            fontSize = 13.sp,
-            fontWeight = FontWeight.SemiBold,
-        )
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(
+                text = label,
+                color = if (active) colors.text else colors.textSecondary,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold,
+            )
+            if (flagRes != null) {
+                Image(
+                    painter = painterResource(flagRes),
+                    contentDescription = null,
+                    modifier = Modifier
+                        .size(width = 20.dp, height = 14.dp)
+                        .clip(RoundedCornerShape(3.dp))
+                        .border(0.5.dp, Color.White.copy(0.2f), RoundedCornerShape(3.dp)),
+                )
+            }
+        }
     }
 }
 
+/** R180 (FR-RV-ASP1-1) — the picker row's primary name: endonym first, then the English humanized
+ *  name, then whatever label the track already carries (untitled/uncoded tracks — a real, expected
+ *  case, e.g. commentary tracks with no language tag). */
+private fun pickerName(language: String?, fallbackLabel: String): String =
+    endonym(language) ?: languageName(language) ?: fallbackLabel
+
 @Composable
 private fun PickerOption(
-    label: String,
-    lang: String?,
-    flag: String?,
+    language: String?,
+    fallbackLabel: String,
+    isOff: Boolean,
+    badges: List<String>,
     selected: Boolean,
     focused: Boolean,
     colors: RaviloColors,
@@ -1579,7 +1645,7 @@ private fun PickerOption(
             )
             .padding(horizontal = 14.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         // Radio tick
         Box(
@@ -1592,20 +1658,101 @@ private fun PickerOption(
         ) {
             if (selected) Text("✓", color = colors.onAccent, fontSize = 11.sp, fontWeight = FontWeight.Bold)
         }
-        Column(modifier = Modifier.weight(1f)) {
-            Text(label, color = colors.text, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
-            if (lang != null) Text(lang, color = colors.textSecondary, fontSize = 12.sp)
-        }
-        if (flag != null) {
-            Box(
-                modifier = Modifier
-                    .clip(RoundedCornerShape(5.dp))
-                    .border(1.dp, Color.White.copy(0.22f), RoundedCornerShape(5.dp))
-                    .padding(horizontal = 7.dp, vertical = 2.dp),
-            ) {
-                Text(flag, color = colors.accentSecondary, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.6.sp)
+
+        // Flag / glyph — never a codec or delivery-method cue (FR-RV-ASP1-2).
+        val flagRes = if (!isOff) language?.lowercase()?.let { LANG_CC[it] } else null
+        Box(modifier = Modifier.size(width = 40.dp, height = 30.dp), contentAlignment = Alignment.Center) {
+            when {
+                flagRes != null -> Image(
+                    painter = painterResource(flagRes),
+                    contentDescription = null,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .clip(RoundedCornerShape(5.dp))
+                        .border(1.dp, Color.White.copy(0.18f), RoundedCornerShape(5.dp)),
+                )
+                else -> Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .clip(RoundedCornerShape(7.dp))
+                        .background(Color.White.copy(0.07f)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    val tint = Color.White.copy(0.55f)
+                    if (isOff) PickerGlyphOff(Modifier.size(20.dp), tint) else PickerGlyphMic(Modifier.size(20.dp), tint)
+                }
             }
         }
+
+        Column(modifier = Modifier.weight(1f)) {
+            Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                val name = if (isOff) str("off") else pickerName(language, fallbackLabel)
+                Text(name, color = colors.text, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                val suffix = if (isOff) null else regionSuffix(fallbackLabel)
+                if (suffix != null) Text(suffix, color = colors.textSecondary, fontSize = 12.sp)
+            }
+            if (badges.isNotEmpty()) {
+                Row(modifier = Modifier.padding(top = 5.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    badges.forEach { badge ->
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(Color.White.copy(0.06f))
+                                .border(1.dp, Color.White.copy(0.14f), RoundedCornerShape(6.dp))
+                                .padding(horizontal = 8.dp, vertical = 3.dp),
+                        ) {
+                            Text(badge, color = colors.textSecondary, fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** R180 — hand-drawn crossed-subtitle glyph for the Off row (mirrors the design's `I.subsoff` SVG). */
+@Composable
+private fun PickerGlyphOff(modifier: Modifier, tint: Color) {
+    Canvas(modifier) {
+        val w = size.width; val h = size.height
+        val strokeW = w * 0.10f
+        drawRoundRect(
+            color = tint,
+            topLeft = Offset(w * 0.10f, h * 0.18f),
+            size = Size(w * 0.80f, h * 0.64f),
+            cornerRadius = CornerRadius(w * 0.14f),
+            style = Stroke(strokeW, cap = StrokeCap.Round),
+        )
+        drawLine(tint, Offset(w * 0.26f, h * 0.5f), Offset(w * 0.50f, h * 0.5f), strokeW, StrokeCap.Round)
+        drawLine(tint, Offset(w * 0.58f, h * 0.5f), Offset(w * 0.74f, h * 0.5f), strokeW, StrokeCap.Round)
+        drawLine(tint, Offset(w * 0.08f, h * 0.08f), Offset(w * 0.92f, h * 0.92f), strokeW, StrokeCap.Round)
+    }
+}
+
+/** R180 — hand-drawn mic glyph for a track with no resolvable language (e.g. an untagged commentary
+ *  track) — mirrors the design's `I.mic` SVG. */
+@Composable
+private fun PickerGlyphMic(modifier: Modifier, tint: Color) {
+    Canvas(modifier) {
+        val w = size.width; val h = size.height
+        val strokeW = w * 0.10f
+        drawRoundRect(
+            color = tint,
+            topLeft = Offset(w * 0.36f, h * 0.06f),
+            size = Size(w * 0.28f, h * 0.48f),
+            cornerRadius = CornerRadius(w * 0.14f),
+            style = Stroke(strokeW, cap = StrokeCap.Round),
+        )
+        drawArc(
+            color = tint,
+            startAngle = 15f,
+            sweepAngle = 150f,
+            useCenter = false,
+            topLeft = Offset(w * 0.16f, h * 0.26f),
+            size = Size(w * 0.68f, h * 0.48f),
+            style = Stroke(strokeW, cap = StrokeCap.Round),
+        )
+        drawLine(tint, Offset(w * 0.5f, h * 0.68f), Offset(w * 0.5f, h * 0.88f), strokeW, StrokeCap.Round)
     }
 }
 
@@ -1918,24 +2065,13 @@ private fun Long.toTimestamp(): String {
 
 private fun Int.pad2() = toString().padStart(2, '0')
 
-/**
- * Secondary picker line: the humanized language (R46), or null when the primary [label] already
- * conveys it (Jellyfin's DisplayTitle usually leads with the language) so we don't show it twice.
- */
-private fun langLine(language: String?, label: String): String? {
-    val name = languageName(language) ?: language?.takeIf { it.isNotBlank() } ?: return null
-    val shown = label.contains(name, ignoreCase = true) ||
-        (language != null && label.contains(language, ignoreCase = true))
-    return if (shown) null else name
-}
-
 // ─── R180: flag-forward picker — endonyms, title-parsing, badges ──────────────
 
 /**
  * R180 (FR-RV-ASP1-1) — the picker's primary row label is the **endonym** (a track's own native name:
- * `da → Dansk`, not `da → Danish`) — unlike [languageName] above, which returns English names and stays
- * in use for [langLine]'s secondary line. Covers the library's top languages (verified via a DB scan of
- * the real library during the R180 dev review).
+ * `da → Dansk`, not `da → Danish`) — unlike [languageName], which returns English names and is used
+ * elsewhere (e.g. [pickerName]'s fallback for a language the endonym map doesn't cover). Covers the
+ * library's top languages (verified via a DB scan of the real library during the R180 dev review).
  */
 private fun endonym(code: String?): String? =
     code?.lowercase()?.trim()?.let { RAVILO_ENDONYMS[it] }
