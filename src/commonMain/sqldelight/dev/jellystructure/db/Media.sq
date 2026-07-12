@@ -55,6 +55,9 @@ WHERE (:kind IS NULL OR kind = :kind)
 allIds:
 SELECT id FROM media;
 
+searchIds:
+SELECT id FROM media WHERE search_text LIKE ('%' || :search || '%');
+
 countEmptySearchText:
 SELECT COUNT(*) FROM media WHERE search_text = '';
 
