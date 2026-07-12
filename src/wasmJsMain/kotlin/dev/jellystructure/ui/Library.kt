@@ -47,8 +47,23 @@ private var libLoadedCount = 0    // cards currently in the grid
 private var libTotal = 0
 private var libEndReached = false
 private var libLoading = false
+// Bug fix: a reset (filter/kind/search/sort change) that arrives while a background infinite-scroll
+// continuation is still in flight used to just no-op (see loadMore's libLoading guard below) — but
+// the click handler that triggered it updates the chip's "active" styling synchronously regardless,
+// so the UI could show a filter as selected while the grid kept showing the previous filter's items
+// until the user re-triggered the action. Remember that a reset was requested and run it immediately
+// once the in-flight load finishes, reading whatever filter state is current at that point (the
+// module-level lib* vars are already the single source of truth by the time this fires).
+private var libPendingReset = false
 private var libKind: MediaKind? = null
 private var libFilter: String? = null
+// Bug fix: id -> rendered card element, so a live-scan append (appendItemToGrid) is an O(1) map
+// lookup instead of a `querySelector` scan of the whole grid — at n cards already rendered, a full
+// rescan of n items used to cost O(n) DOM work *per scanned item* (existence check + placeholder
+// check), i.e. O(n^2) total for the scan, and it gets worse every time the library grows. Cleared
+// wherever the grid's contents are thrown away (loadMore reset, scan start) — a stale entry pointing
+// at a detached element would make a later `existing.replaceWith(newCard)` silently no-op.
+private val libCardsById = HashMap<String, Element>()
 // Phase 117: display labels for a dashboard-breakdown deep link's per-type `?filter=` value.
 private val ISSUE_FILTER_LABELS = mapOf(
     "untagged" to "Untagged tracks",
@@ -196,6 +211,15 @@ fun renderLibrary(container: Element, scope: CoroutineScope, query: Map<String, 
     syncFilterUiToState(scope)
     attachLibraryListeners(scope)
     wireLibraryWorkbench(scope)
+    // Bug fix: one delegated listener on the grid instead of one addEventListener per card — card
+    // count grows with the library (and with how much of it has been scrolled through), so a
+    // per-card listener was unbounded growth for no benefit; #poster-grid itself is recreated fresh
+    // by the innerHTML assignment above, so this is re-attached once per Library render.
+    document.getElementById("poster-grid")?.addEventListener("click") { ev ->
+        val target = (ev.target as? Element)?.closest(".poster[data-id]") ?: return@addEventListener
+        val id = target.getAttribute("data-id") ?: return@addEventListener
+        App.navigate("/media/$id")
+    }
 
     // R101: gate the observer so an early reset=false load can't run before the canonical reset=true load
     // completes — the initial observer fire sees initialLoadDone=false and skips (closes the race).
@@ -384,6 +408,7 @@ private suspend fun triggerScan(scope: CoroutineScope) {
     libPendingScanCount = 0
     setScanRunning(true)
     document.getElementById("poster-grid")?.innerHTML = ""
+    libCardsById.clear()
     document.getElementById("lib-total")?.textContent = ""
     setLoadMore("")
     // Reset the scroller so the post-scan reload starts a fresh sequence.
@@ -435,22 +460,16 @@ private fun connectScanSocket(scope: CoroutineScope) {
 
 private fun appendItemToGrid(item: MediaItem, scope: CoroutineScope) {
     val grid = document.getElementById("poster-grid") ?: return
-    grid.querySelector(".muted")?.remove()
-    val existing = grid.querySelector(".poster[data-id=\"${item.jellyfinId ?: item.id}\"]")
-    val html = posterCardHtml(item)
-    if (existing != null) {
-        val tmp = document.createElement("div")
-        tmp.innerHTML = html
-        val newCard = tmp.firstElementChild ?: return
-        existing.replaceWith(newCard)
-        (newCard as? HTMLElement)?.addEventListener("click") { App.navigate("/media/${item.jellyfinId ?: item.id}") }
-    } else {
-        val tmp = document.createElement("div")
-        tmp.innerHTML = html
-        val newCard = tmp.firstElementChild ?: return
-        grid.appendChild(newCard)
-        (newCard as? HTMLElement)?.addEventListener("click") { App.navigate("/media/${item.jellyfinId ?: item.id}") }
-    }
+    // Only the very first live-scanned item needs to remove the "Loading…"/placeholder text — once
+    // libCardsById is non-empty it's already gone, so skip the (otherwise O(n)) querySelector.
+    if (libCardsById.isEmpty()) grid.querySelector(".muted")?.remove()
+    val id = item.jellyfinId ?: item.id
+    val tmp = document.createElement("div")
+    tmp.innerHTML = posterCardHtml(item)
+    val newCard = tmp.firstElementChild ?: return
+    val existing = libCardsById[id]
+    if (existing != null) existing.replaceWith(newCard) else grid.appendChild(newCard)
+    libCardsById[id] = newCard
 }
 
 private fun updateScanBannerCount(count: Int) {
@@ -517,16 +536,26 @@ private fun codecDisplay(codec: String): String = when (codec.lowercase()) {
  * resets all funnel through here.
  */
 private suspend fun loadMore(scope: CoroutineScope, reset: Boolean) {
-    if (libLoading) return
+    if (libLoading) {
+        if (reset) libPendingReset = true
+        return
+    }
     libLoading = true
     val grid = document.getElementById("poster-grid")
     if (reset) {
         updateLibraryUrl()
         libSlice = 0; libLoadedCount = 0; libTotal = 0; libEndReached = false
         grid?.innerHTML = """<span class="muted" style="padding:24px;display:block;">Loading…</span>"""
+        libCardsById.clear()
         setLoadMore("")
     }
     try {
+        // Bug fix: hoisted out of the slice loop below — this used to fire once per slice (2-3x on a
+        // viewport that needs multiple slices to fill), even though the answer is identical across
+        // every slice of the same filter/search.
+        val issueType = libFilter?.let { ISSUE_FILTER_LABELS[it] }?.let { libFilter }
+        val issueInstances = issueType?.let { MediaApi.getTriageCount()?.types?.firstOrNull { t -> t.key == issueType }?.instances }
+
         var firstSlice = reset
         while (!libEndReached) {
             if (!firstSlice) setLoadMore("""<span class="muted tiny">Loading more…</span>""")
@@ -557,11 +586,8 @@ private suspend fun loadMore(scope: CoroutineScope, reset: Boolean) {
             // Phase 117: on a dashboard-breakdown deep link, show "N titles · M issues" — the instance
             // count (episode/track-level for untagged/missing_still) alongside the title count, so
             // "200 issues" and "3 titles" are both legible instead of looking contradictory.
-            val issueType = libFilter?.let { ISSUE_FILTER_LABELS[it] }?.let { libFilter }
-            val instanceSuffix = if (issueType != null) {
-                val type = MediaApi.getTriageCount()?.types?.firstOrNull { it.key == issueType }
-                if (type != null && type.instances != page.total) " · ${type.instances} issue${if (type.instances != 1) "s" else ""}" else ""
-            } else ""
+            val instanceSuffix = if (issueInstances != null && issueInstances != page.total)
+                " · $issueInstances issue${if (issueInstances != 1) "s" else ""}" else ""
             document.getElementById("lib-total")?.textContent =
                 "${page.total} item${if (page.total != 1) "s" else ""}$instanceSuffix"
 
@@ -587,6 +613,10 @@ private suspend fun loadMore(scope: CoroutineScope, reset: Boolean) {
         setLoadMore("")
     } finally {
         libLoading = false
+        if (libPendingReset) {
+            libPendingReset = false
+            scope.launch { loadMore(scope, reset = true) }
+        }
     }
 }
 
@@ -594,13 +624,15 @@ private fun setLoadMore(html: String) {
     (document.getElementById("lib-loadmore") as? HTMLElement)?.innerHTML = html
 }
 
+// Bug fix: no longer attaches a per-card click listener — clicks are handled by one delegated
+// listener on #poster-grid (see renderLibrary). Still indexes each card into libCardsById.
 private fun bindPosterClicks(grid: Element?) {
     grid ?: return
     grid.querySelectorAll(".poster[data-id]").let { nodes ->
         for (i in 0 until nodes.length) {
             val el = nodes.item(i) as? HTMLElement ?: continue
             val id = el.getAttribute("data-id") ?: continue
-            el.addEventListener("click") { App.navigate("/media/$id") }
+            libCardsById[id] = el
         }
     }
 }
@@ -613,7 +645,7 @@ private fun appendPosterCards(grid: Element?, items: List<MediaItem>) {
         val card = tmp.firstElementChild ?: break
         val id = card.getAttribute("data-id")
         grid.appendChild(card)
-        if (id != null) (card as? HTMLElement)?.addEventListener("click") { App.navigate("/media/$id") }
+        if (id != null) libCardsById[id] = card
     }
 }
 
