@@ -117,8 +117,22 @@ private data class ArtworkCandidatesResponse(
 private data class SaveCandidateRequest(val asset: String = "", val source: String)
 
 // Wire shape for GET /api/media/{id}/episodes/stills — mirrors the frontend's EpisodeStillStatus.
+// Phase 149: episodeNumber disambiguates entries sharing a filename (a multi-episode file) — the
+// frontend used to key these by filename alone, collapsing a group's N statuses down to one.
 @Serializable
-private data class EpisodeStillStatusDto(val filename: String, val stillExists: Boolean, val stillPath: String, val source: String? = null)
+private data class EpisodeStillStatusDto(val filename: String, val stillExists: Boolean, val stillPath: String, val source: String? = null, val episodeNumber: Int? = null)
+
+/**
+ * Phase 149: resolves the target episode for a still-related route. Several episodes can share
+ * [epFilename] (a multi-episode file) — [epNum], when present, disambiguates which one via an EXACT
+ * match (never silently falls back to "first match" once the caller has told us which episode it
+ * means, since that could misdirect an edit to the wrong episode). Omitted [epNum] (an older client, or
+ * the overwhelmingly common non-ambiguous case) falls back to plain filename matching, unchanged from
+ * pre-149 behavior.
+ */
+private fun resolveStillEpisode(item: MediaItem, epFilename: String, epNum: Int?): Episode? =
+    if (epNum != null) item.episodes.firstOrNull { it.filename == epFilename && it.episodeNumber == epNum }
+    else item.episodes.firstOrNull { it.filename == epFilename }
 
 // Wire shape for the batch fire-and-forget endpoints ("…started", item count).
 @Serializable
@@ -696,7 +710,7 @@ fun Route.mediaRoutes(
                     ?: return@get call.respond(HttpStatusCode.NotFound)
                 val statuses = item.episodes.map { ep ->
                     val status = artwork.checkEpisodeStill(ep)
-                    EpisodeStillStatusDto(ep.filename, status.stillExists, status.stillPath, status.source)
+                    EpisodeStillStatusDto(ep.filename, status.stillExists, status.stillPath, status.source, ep.episodeNumber)
                 }
                 call.respond(statuses)
             }
@@ -747,7 +761,8 @@ fun Route.mediaRoutes(
                     ?: return@post call.respond(HttpStatusCode.BadRequest)
                 val item = store.resolve(id)
                     ?: return@post call.respond(HttpStatusCode.NotFound)
-                val ep = item.episodes.firstOrNull { it.filename == epFilename }
+                val epNum = call.request.queryParameters["ep"]?.toIntOrNull()
+                val ep = resolveStillEpisode(item, epFilename, epNum)
                     ?: return@post call.respond(HttpStatusCode.NotFound, mapOf("error" to "episode not found"))
 
                 val multipart = call.receiveMultipart()
@@ -807,7 +822,8 @@ fun Route.mediaRoutes(
                     val id = call.parameters["id"] ?: return@get call.respond(HttpStatusCode.BadRequest)
                     val epFilename = call.parameters["epFilename"] ?: return@get call.respond(HttpStatusCode.BadRequest)
                     val item = store.resolve(id) ?: return@get call.respond(HttpStatusCode.NotFound)
-                    val ep = item.episodes.firstOrNull { it.filename == epFilename }
+                    val epNum = call.request.queryParameters["ep"]?.toIntOrNull()
+                    val ep = resolveStillEpisode(item, epFilename, epNum)
                         ?: return@get call.respond(HttpStatusCode.NotFound)
                     val tid = item.tmdbId
                     val s = ep.seasonNumber
@@ -825,7 +841,8 @@ fun Route.mediaRoutes(
                     val id = call.parameters["id"] ?: return@get call.respond(HttpStatusCode.BadRequest)
                     val epFilename = call.parameters["epFilename"] ?: return@get call.respond(HttpStatusCode.BadRequest)
                     val item = store.resolve(id) ?: return@get call.respond(HttpStatusCode.NotFound)
-                    val ep = item.episodes.firstOrNull { it.filename == epFilename } ?: return@get call.respond(HttpStatusCode.NotFound)
+                    val epNum = call.request.queryParameters["ep"]?.toIntOrNull()
+                    val ep = resolveStillEpisode(item, epFilename, epNum) ?: return@get call.respond(HttpStatusCode.NotFound)
                     val st = artwork.checkEpisodeStill(ep)
                     if (!st.stillExists) return@get call.respond(HttpStatusCode.NotFound)
                     val bytes = runCatching { FileIo.readBytes(Path(st.stillPath)) }.getOrNull()
@@ -842,7 +859,8 @@ fun Route.mediaRoutes(
                     val id = call.parameters["id"] ?: return@post call.respond(HttpStatusCode.BadRequest)
                     val epFilename = call.parameters["epFilename"] ?: return@post call.respond(HttpStatusCode.BadRequest)
                     val item = store.resolve(id) ?: return@post call.respond(HttpStatusCode.NotFound)
-                    val ep = item.episodes.firstOrNull { it.filename == epFilename } ?: return@post call.respond(HttpStatusCode.NotFound)
+                    val epNum = call.request.queryParameters["ep"]?.toIntOrNull()
+                    val ep = resolveStillEpisode(item, epFilename, epNum) ?: return@post call.respond(HttpStatusCode.NotFound)
                     val st = artwork.screengrabEpisodeStill(ep)
                     if (!st.stillExists) return@post call.respond(HttpStatusCode.BadGateway, mapOf("error" to "frame extraction failed"))
                     // Bug fix: a screengrab is a real, valid still — Episode.hasStill is a persisted
@@ -854,7 +872,7 @@ fun Route.mediaRoutes(
                     if (!item.jellyfinId.isNullOrBlank() && cfg.apiKeys.jellyfinUrl.isNotBlank()) {
                         jellyfinClient.refreshItem(cfg.apiKeys.jellyfinUrl, cfg.apiKeys.jellyfinToken, item.jellyfinId)
                     }
-                    call.respond(EpisodeStillStatusDto(ep.filename, st.stillExists, st.stillPath, st.source))
+                    call.respond(EpisodeStillStatusDto(ep.filename, st.stillExists, st.stillPath, st.source, ep.episodeNumber))
                 }
 
                 // POST /api/media/{id}/episodes/{epFilename}/still/save  { source }
@@ -862,7 +880,8 @@ fun Route.mediaRoutes(
                     val id = call.parameters["id"] ?: return@post call.respond(HttpStatusCode.BadRequest)
                     val epFilename = call.parameters["epFilename"] ?: return@post call.respond(HttpStatusCode.BadRequest)
                     val item = store.resolve(id) ?: return@post call.respond(HttpStatusCode.NotFound)
-                    val ep = item.episodes.firstOrNull { it.filename == epFilename }
+                    val epNum = call.request.queryParameters["ep"]?.toIntOrNull()
+                    val ep = resolveStillEpisode(item, epFilename, epNum)
                         ?: return@post call.respond(HttpStatusCode.NotFound)
                     val req = call.receive<SaveCandidateRequest>()
                     if (req.source.isBlank()) return@post call.respond(HttpStatusCode.BadRequest, mapOf("error" to "source required"))

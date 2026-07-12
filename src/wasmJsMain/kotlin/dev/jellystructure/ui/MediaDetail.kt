@@ -1346,7 +1346,14 @@ private fun buildEpisodesTab(item: MediaItem): String {
             val issueSummary = if (seasonIssues > 0)
                 """<span class="badge bad" style="font-size:.72rem;">$seasonIssues untagged</span>"""
             else ""
-            val rows = eps.mapIndexed { idx, ep -> buildEpisodeRow(ep, season, idx, item.id, item.scannedAt) }.joinToString("")
+            // Phase 149: group by shared file first — a multi-episode file (`S01E01E02E03.mkv`) renders
+            // as ONE combined row (buildMultiEpisodeGroupRow) instead of N separate rows; a lone episode
+            // (the overwhelming majority) renders exactly as before via buildEpisodeRow.
+            val fileGroups = eps.groupBy { it.path }.values.sortedBy { g -> g.minOf { it.episodeNumber ?: Int.MAX_VALUE } }
+            val rows = fileGroups.mapIndexed { idx, group ->
+                if (group.size > 1) buildMultiEpisodeGroupRow(group, season, idx, item.id)
+                else buildEpisodeRow(group.first(), season, idx, item.id, item.scannedAt)
+            }.joinToString("")
             val seasonAttr = if (season != null) """data-season="$season"""" else ""
             val hidden = if (seasonKeys.size > 1 && season != firstSeasonKey) "display:none;" else ""
             """<div class="ep-season-block" data-season-block="${seasonSelKey(season)}" style="margin-bottom:20px;$hidden">
@@ -1527,6 +1534,98 @@ private fun buildEpisodeRow(ep: Episode, season: Int?, idx: Int, mediaId: String
                 class="ep-still-file-input" data-form-id="still-form-$bodyId">
             </form>
             ${buildEpisodeTimestamps(ep, itemScannedAt)}
+          </div>
+        </div>"""
+}
+
+private fun msToClock(ms: Long): String {
+    val totalSec = ms / 1000
+    val h = totalSec / 3600
+    val m = (totalSec % 3600) / 60
+    val s = totalSec % 60
+    return if (h > 0) "${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}"
+    else "${m}:${s.toString().padStart(2, '0')}"
+}
+
+/**
+ * Phase 149 — one row per multi-episode FILE (Option B: `design/app/series-johnnybravo.html`), replacing
+ * what would otherwise be [episodes].size separate [buildEpisodeRow] rows for a file whose name spans an
+ * episode range (`S01E01E02E03.mkv`). Expandable via the same `.ep-toggle-row`/`data-body` mechanism
+ * [buildEpisodeRow] already uses. Sub-rows are deliberately simpler than a lone episode's row (no inline
+ * title/overview/still-upload form) — per-episode metadata editing for a shared file isn't wired up yet
+ * (tracked as a follow-up); "Edit tracks" opens the existing whole-file track editor, which already
+ * applies correctly to every contained episode.
+ */
+private fun buildMultiEpisodeGroupRow(episodes: List<Episode>, season: Int?, groupIdx: Int, mediaId: String): String {
+    val ordered = episodes.sortedBy { it.partIndex }
+    val first = ordered.first()
+    val last = ordered.last()
+    fun code(ep: Episode) = if (season != null && ep.episodeNumber != null)
+        "S${season.toString().padStart(2, '0')}E${ep.episodeNumber.toString().padStart(2, '0')}" else ep.filename
+    val rangeLabel = if (season != null && first.episodeNumber != null && last.episodeNumber != null)
+        "${code(first)}–E${last.episodeNumber.toString().padStart(2, '0')}"
+    else first.filename.substringBeforeLast('.')
+
+    val panels = ordered.take(3).mapIndexed { i, ep ->
+        val bg = if (!ep.stillPath.isNullOrBlank())
+            "background-image:url('$TMDB_IMG_LG${ep.stillPath}');background-size:cover;background-position:center;"
+        else "background:var(--fill-3);"
+        """<div class="tp tp${i + 1}" style="$bg"></div>"""
+    }.joinToString("")
+    val panelCount = ordered.size.coerceAtMost(3)
+    val seams = (1 until panelCount).joinToString("") { i -> """<span class="seam seam$i"></span>""" }
+    val nums = ordered.take(3).mapIndexed { i, ep ->
+        """<span class="tn tn${i + 1}">${(ep.episodeNumber ?: 0).toString().padStart(2, '0')}</span>"""
+    }.joinToString("")
+
+    val totalRuntime = ordered.sumOf { it.runtime ?: 0 }
+    val hasChapters = ordered.any { it.hasChapters }
+    val chapterBadge = if (hasChapters) """<span class="badge ok" style="font-size:.7rem;">chapters</span>"""
+    else """<span class="badge" style="font-size:.7rem;">no chapters — continuous</span>"""
+    val untagged = ordered.sumOf { ep -> ep.tracks.count { (it.kind == TrackKind.AUDIO || it.kind == TrackKind.SUBTITLE) && it.language == null } }
+    val issueBadge = if (untagged > 0) """<span class="badge bad" style="font-size:.7rem;">$untagged untagged</span>""" else ""
+    val missingStillCount = ordered.count { !it.hasStill }
+    val stillBadge = if (missingStillCount > 0)
+        """<span class="badge warn" style="font-size:.7rem;">$missingStillCount missing still${if (missingStillCount != 1) "s" else ""}</span>"""
+    else ""
+
+    val bodyId = "mep-body-s${season ?: 0}-$groupIdx"
+    val toggleId = "mep-toggle-s${season ?: 0}-$groupIdx"
+
+    val subRows = ordered.joinToString("") { ep ->
+        val c = code(ep)
+        val thumb = if (!ep.stillPath.isNullOrBlank())
+            """<img class="sth" src="$TMDB_IMG_LG${ep.stillPath}" alt="">"""
+        else """<div class="sth"></div>"""
+        val chapterInfo = if (ep.hasChapters && ep.chapterStartMs != null) "chapter ${msToClock(ep.chapterStartMs)}" else null
+        val durInfo = ep.runtime?.let { "$it min" }
+        val meta = listOfNotNull(chapterInfo, durInfo).joinToString(" · ")
+        """<div class="sub-ep">
+             <span class="sn">${c.esc()}</span>
+             $thumb
+             <div class="sm"><div class="stt">${(ep.title?.takeIf { it.isNotBlank() } ?: c).esc()}</div><div class="std">${meta.esc()}</div></div>
+             <button class="btn sm ghost ep-trk-btn" style="font-size:.72rem;"
+               data-media-id="$mediaId" data-ep-filename="${ep.filename.esc()}">Edit tracks &amp; order →</button>
+           </div>"""
+    }
+
+    return """
+        <div style="border:1px solid var(--line);border-radius:6px;margin-bottom:6px;overflow:hidden;background:var(--fill-2);">
+          <div id="$toggleId" class="ep-toggle-row" data-body="$bodyId"
+               style="display:flex;align-items:center;gap:10px;padding:9px 12px;cursor:pointer;">
+            <div style="width:72px;height:40px;flex-shrink:0;"><div class="eptrip">$panels$seams$nums</div></div>
+            <span class="num" style="min-width:96px;font-size:.82rem;">${rangeLabel.esc()}</span>
+            <span class="badge acc" style="font-size:.7rem;">${ordered.size} in 1 file</span>
+            <span class="tiny muted">${totalRuntime}m</span>
+            $chapterBadge
+            $issueBadge
+            $stillBadge
+            <span class="ep-chev" style="color:var(--ink-soft);font-size:.9rem;margin-left:4px;">›</span>
+          </div>
+          <div id="$bodyId" style="display:none;padding:0 12px 12px;">
+            <div class="filechip" style="margin:8px 0;">${first.filename.esc()}</div>
+            <div style="margin-bottom:6px;">$subRows</div>
+            <div class="note-slim"><b>Multi-episode file.</b> One file → ${ordered.size} <span class="filechip">episodedetails.nfo</span> blocks. A track edit (reorder/default/forced) applies to the <b>whole shared file</b> — all ${ordered.size} episodes above; each episode's still and overview are still tracked independently.</div>
           </div>
         </div>"""
 }
@@ -2379,6 +2478,9 @@ private class ArtTarget(
     val kind: String = "asset", // asset | season | episode
     val season: Int = -1,
     val epFilename: String = "",
+    // Phase 149: disambiguates which episode when several share epFilename (a multi-episode file) —
+    // always populated for "episode" targets (harmless/unused for the non-ambiguous single-episode case).
+    val epNum: Int? = null,
     var onDisk: Boolean = false,
     var source: String? = null,   // R131: "tmdb" | "screengrab" | "manual" — for stills
 )
@@ -2453,14 +2555,23 @@ private suspend fun buildArtTargets(item: MediaItem): List<ArtTarget> {
             val label = if (s.season == 0) "Specials" else "Season ${s.season}"
             targets.add(ArtTarget("poster", label, "2 / 3", kind = "season", season = s.season, onDisk = s.posterExists))
         }
-        val stillStatus = MediaApi.getEpisodeStillStatuses(item.id)?.associate { it.filename to it } ?: emptyMap()
+        // Bug fix (Phase 149): a multi-episode file's episodes all share `filename`, so keying this
+        // lookup by filename alone collapsed a group's N statuses down to whichever one associate()
+        // kept last. Key by (filename, episodeNumber) — the backend already returns one distinct status
+        // per episode (see EpisodeStillStatusDto's episodeNumber field).
+        val stillStatus = MediaApi.getEpisodeStillStatuses(item.id)
+            ?.associateBy { it.filename to it.episodeNumber } ?: emptyMap()
         item.episodes.forEach { ep ->
             val s = ep.seasonNumber
             val e = ep.episodeNumber
             val code = if (s != null && e != null) "S${s.toString().padStart(2, '0')}E${e.toString().padStart(2, '0')}" else ep.filename
-            val label = if (!ep.title.isNullOrBlank()) "$code · ${ep.title}" else code
-            val ss = stillStatus[ep.filename]
-            targets.add(ArtTarget("still", label, "16 / 9", kind = "episode", epFilename = ep.filename, onDisk = ss?.stillExists ?: false, source = ss?.source))
+            // Phase 149: flag which shared file this episode belongs to so the rail's flat list stays
+            // legible once several rows come from the same multi-episode file. Plain text (not HTML) —
+            // the whole label gets `.esc()`-ed as one string when rendered.
+            val groupTag = if (ep.partCount > 1) " (shared file)" else ""
+            val label = (if (!ep.title.isNullOrBlank()) "$code · ${ep.title}" else code) + groupTag
+            val ss = stillStatus[ep.filename to ep.episodeNumber]
+            targets.add(ArtTarget("still", label, "16 / 9", kind = "episode", epFilename = ep.filename, epNum = ep.episodeNumber, onDisk = ss?.stillExists ?: false, source = ss?.source))
         }
     }
     return targets
@@ -2538,13 +2649,13 @@ private fun wireArtRail() {
 
 private suspend fun galleryFetch(t: ArtTarget): ArtworkCandidatesResponse? = when (t.kind) {
     "season" -> MediaApi.getSeasonPosterCandidates(artId, t.season)
-    "episode" -> MediaApi.getEpisodeStillCandidates(artId, t.epFilename)
+    "episode" -> MediaApi.getEpisodeStillCandidates(artId, t.epFilename, t.epNum)
     else -> MediaApi.getArtworkCandidates(artId, t.asset)
 }
 
 private suspend fun gallerySave(t: ArtTarget, source: String): Boolean = when (t.kind) {
     "season" -> MediaApi.saveSeasonPoster(artId, t.season, source)
-    "episode" -> MediaApi.saveEpisodeStill(artId, t.epFilename, source)
+    "episode" -> MediaApi.saveEpisodeStill(artId, t.epFilename, source, t.epNum)
     else -> MediaApi.saveArtworkCandidate(artId, t.asset, source) != null
 }
 
@@ -2645,7 +2756,7 @@ private fun renderArtGallery() {
             else          -> "ok" to "From TMDB"
         }
         """<div class="row center" style="margin-bottom:10px;gap:10px;">
-             <img src="/api/media/$artId/episodes/${encodeURIComponent(t.epFilename)}/still/file?b=$artStillBust" style="height:64px;aspect-ratio:16/9;object-fit:cover;border-radius:6px;border:1px solid var(--line)" alt="current still">
+             <img src="/api/media/$artId/episodes/${encodeURIComponent(t.epFilename)}/still/file?b=$artStillBust${if (t.epNum != null) "&ep=${t.epNum}" else ""}" style="height:64px;aspect-ratio:16/9;object-fit:cover;border-radius:6px;border:1px solid var(--line)" alt="current still">
              <div><div class="tiny" style="font-weight:600;margin-bottom:2px;">Current still on disk</div><span class="badge $badgeCls" style="font-size:.62rem;">${badgeTxt.esc()}</span></div>
            </div>"""
     } else ""
@@ -2756,7 +2867,7 @@ private fun wireArtGallery() {
             val btn = document.getElementById("art-screengrab-btn") as? HTMLElement
             btn?.setAttribute("disabled", "")
             showDetailMsg("Grabbing a frame…", true)
-            val st = MediaApi.screengrabStill(artId, t.epFilename)
+            val st = MediaApi.screengrabStill(artId, t.epFilename, t.epNum)
             btn?.removeAttribute("disabled")
             if (st != null && st.stillExists) {
                 t.onDisk = true; t.source = st.source; artStillBust++
@@ -2769,7 +2880,7 @@ private fun wireArtGallery() {
     }
     // Upload (asset / episode kinds): drive the hidden multipart form for asset, FormData for episode.
     val uploadUrl = if (t.kind == "episode")
-        "/api/media/$artId/episodes/${encodeURIComponent(t.epFilename)}/still/upload"
+        "/api/media/$artId/episodes/${encodeURIComponent(t.epFilename)}/still/upload${if (t.epNum != null) "?ep=${t.epNum}" else ""}"
     else "/api/media/$artId/artwork/upload"
     document.getElementById("art-upload-btn")?.addEventListener("click") {
         (document.getElementById("art-upload-file") as? HTMLInputElement)?.let { input ->
