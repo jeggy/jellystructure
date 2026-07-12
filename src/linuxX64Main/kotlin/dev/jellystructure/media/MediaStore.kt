@@ -342,11 +342,13 @@ class MediaStore(
         }.let { items ->
             var result = items
             if (searchLower != null) {
-                result = result.filter { item ->
-                    item.title.lowercase().contains(searchLower) ||
-                    item.originalTitle?.lowercase()?.contains(searchLower) == true ||
-                    item.titlesByLang.values.any { it.lowercase().contains(searchLower) }
-                }
+                // Bug fix: search_text (title + originalTitle + every titlesByLang value, lowercased,
+                // written at scan/edit time — see buildSearchText()) was already indexed
+                // (media_search_text) but never actually queried; this used to re-lowercase and
+                // .contains() all three fields per item, in Kotlin, on every search request. Push the
+                // match down to the indexed SQL column instead.
+                val matchedIds = db.mediaQueries.searchIds(searchLower).executeAsList().toHashSet()
+                result = result.filter { it.id in matchedIds }
             }
             if (filter == "attention") {
                 result = result.filter { item ->
