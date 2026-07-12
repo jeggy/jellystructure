@@ -205,6 +205,10 @@ fun PlayerScreen(
     var pickerIdx  by remember { mutableIntStateOf(0) }
     var selectedAudio by remember { mutableIntStateOf(0) }
     var selectedSub   by remember { mutableIntStateOf(-1) } // -1 = off
+    // R181 — which itemId the layered resolver has already run for; compared against currentItemId
+    // (rememberUpdatedState) each poll tick so it re-arms exactly once per episode, same mechanism as
+    // loadedForItemId above, and never re-fires mid-playback or fights a later manual pick.
+    var resolvedForItemId by remember { mutableStateOf<String?>(null) }
 
     // Next-up card
     var nextUpVisible by remember { mutableStateOf(false) }
@@ -313,20 +317,84 @@ fun PlayerScreen(
         episodes?.getOrNull(focusedEpIdx)?.id?.let { onNavigateToEpisode?.invoke(it) }
     }
 
+    // R181 — client-local only (never sent to the jellystructure backend), keyed per profile via
+    // MultiTokenStore.getActive()?.userId, same store family as the auth-session cache. Read-modify-
+    // write against whatever's already persisted so an audio-only (or subtitle-only) pick doesn't
+    // clobber the other axis's remembered choice. Off is a real persisted state (subtitlesOff = true),
+    // not "no preference" (null subtitleLanguage with subtitlesOff = false).
+    fun persistChoice(newAudioLanguage: String? = null, newSubtitleLanguage: String? = null, newSubtitlesOff: Boolean? = null) {
+        val profileId = MultiTokenStore.getActive()?.userId ?: return
+        val seriesKey = currentSeriesId ?: currentItemId
+        val existing = PlaybackPrefsStore.getSeriesChoice(profileId, seriesKey) ?: PlaybackPrefsStore.getGlobalChoice(profileId)
+        val choice = RememberedChoice(
+            audioLanguage = newAudioLanguage ?: existing?.audioLanguage,
+            subtitleLanguage = if (newSubtitlesOff == true) null else (newSubtitleLanguage ?: existing?.subtitleLanguage),
+            subtitlesOff = newSubtitlesOff ?: existing?.subtitlesOff ?: false,
+        )
+        PlaybackPrefsStore.setSeriesChoice(profileId, seriesKey, choice)
+        PlaybackPrefsStore.setGlobalChoice(profileId, choice)
+    }
+
+    // R181 (FR-RV-TRK1) — layered resolution, run once per item the first tick after track discovery
+    // completes (see the call site in the poll loop below): per-series remembered choice → learned
+    // global-language preference → source default → first-track/Off. Each tier's lookup returns null
+    // when it can't be satisfied in THIS title (e.g. a remembered language absent from this file's
+    // tracks), falling through to the next via `?:` rather than a hard-coded index. Matches by
+    // language, never by ExoPlayer track index (indices differ across episodes/files). Scope note:
+    // only matches against native/external subtitleTracks, never encodeSubTracks (PGS burn-in) — a
+    // remembered language that exists only as a PGS track in this file falls through instead of
+    // silently triggering an autoplay transcode; PGS stays a manual pick, same as today.
+    fun resolveTrackSelection() {
+        val profileId = MultiTokenStore.getActive()?.userId
+        val seriesKey = currentSeriesId ?: currentItemId
+        val seriesChoice = profileId?.let { PlaybackPrefsStore.getSeriesChoice(it, seriesKey) }
+        val globalChoice = profileId?.let { PlaybackPrefsStore.getGlobalChoice(it) }
+
+        fun tierAudio(choice: RememberedChoice?): Int? =
+            choice?.audioLanguage?.let { lang -> audioTracks.firstOrNull { it.language.equals(lang, ignoreCase = true) }?.index }
+
+        val audioIdx = tierAudio(seriesChoice) ?: tierAudio(globalChoice)
+            ?: audioTracks.firstOrNull { it.isDefault }?.index
+            ?: audioTracks.firstOrNull()?.index
+            ?: 0
+        player.selectAudioTrack(audioIdx)
+        selectedAudio = audioIdx
+
+        fun tierSub(choice: RememberedChoice?): Int? = when {
+            choice == null -> null
+            choice.subtitlesOff -> -1
+            else -> choice.subtitleLanguage?.let { lang -> subtitleTracks.firstOrNull { it.language.equals(lang, ignoreCase = true) }?.index }
+        }
+
+        val subIdx = tierSub(seriesChoice) ?: tierSub(globalChoice)
+            ?: subtitleTracks.firstOrNull { it.isDefault }?.index
+            ?: subtitleTracks.firstOrNull { it.forced }?.index
+            ?: -1
+        player.selectSubtitleTrack(subIdx)
+        selectedSub = subIdx
+    }
+
     fun choosePick() {
         if (pickerTab == 0) {
             selectedAudio = pickerIdx
             player.selectAudioTrack(pickerIdx)
+            persistChoice(newAudioLanguage = audioTracks.getOrNull(pickerIdx)?.language)
         } else {
             val sub = subOptions.getOrNull(pickerIdx)
             if (sub != null && sub.deliveryMethod == "encode") {
                 // R56: PGS burn-in — restream with subtitle index baked into the Jellyfin transcode.
                 burningInSub = true
                 store.restreamWithSub(itemId, sub.jellyfinStreamIndex, player.positionMs)
+                // R181 — still worth remembering the language (helps other titles' global tier and a
+                // rewatch of this series where the language exists as a native track), even though the
+                // resolver above never auto-selects a PGS track back in.
+                persistChoice(newSubtitleLanguage = sub.language, newSubtitlesOff = false)
             } else {
                 val subIdx = pickerIdx - 1   // option 0 = Off
                 selectedSub = subIdx
                 player.selectSubtitleTrack(subIdx)
+                if (subIdx < 0) persistChoice(newSubtitlesOff = true)
+                else persistChoice(newSubtitleLanguage = subtitleTracks.getOrNull(subIdx)?.language, newSubtitlesOff = false)
             }
         }
         pickerOpen = false
@@ -404,6 +472,16 @@ fun PlayerScreen(
                 // not the raw itemId parameter — see that declaration's comment for why this loop
                 // specifically needs the live reference.
                 val playerLoadedForCurrentItem = loadedForItemId == currentItemId
+
+                // R181 — resolve once per item, the first tick after the (now-current) stream's tracks
+                // are actually discovered. Gated on playerLoadedForCurrentItem for the same reason as
+                // the next-up checks below: right after an advance, audioTracks/subtitleTracks can
+                // still briefly reflect the OUTGOING episode until the new load swaps in, and resolving
+                // against stale tracks could pick a bogus index for the new one.
+                if (playerLoadedForCurrentItem && resolvedForItemId != currentItemId && audioTracks.isNotEmpty()) {
+                    resolveTrackSelection()
+                    resolvedForItemId = currentItemId
+                }
 
                 // Near-end → show next-up card (R111: not if dismissed via "Watch credits")
                 if (playerLoadedForCurrentItem && currentNextEpisodeId != null && durationMs > 0 && !nextUpVisible && !nextUpDismissed && !player.isEnded) {
