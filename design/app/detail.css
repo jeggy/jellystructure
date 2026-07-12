@@ -356,4 +356,26 @@
 .cmd-block .flag { color: var(--acc-ink); }
 .staged-op { display: flex; align-items: center; gap: 10px; padding: 6px 0; border-bottom: 1px dashed var(--line); font-size: .84rem; }
 .staged-op:last-child { border-bottom: none; }
+
+/* Phase 149 — multi-episode files: combined-row (Option B) + triptych thumbnail */
+.filechip { font-family: 'JetBrains Mono', monospace; font-size: .72rem; color: var(--ink-soft); }
+.eptrip { position: relative; width: 100%; height: 100%; border-radius: 6px; overflow: hidden; }
+.eptrip .tp { position: absolute; inset: 0; }
+.eptrip .tp1 { clip-path: polygon(0 0, 37% 0, 29% 100%, 0 100%); }
+.eptrip .tp2 { clip-path: polygon(37% 0, 69% 0, 61% 100%, 29% 100%); }
+.eptrip .tp3 { clip-path: polygon(69% 0, 100% 0, 100% 100%, 61% 100%); }
+.eptrip .seam { position: absolute; top: -10%; height: 120%; width: 2px; background: rgba(255,255,255,.85); box-shadow: 0 0 0 .8px rgba(0,0,0,.5); }
+.eptrip .seam1 { left: 33%; transform: rotate(8deg); }
+.eptrip .seam2 { left: 65%; transform: rotate(8deg); }
+.eptrip .tn { position: absolute; top: 2px; font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: .58rem; color: #fff; text-shadow: 0 1px 4px rgba(0,0,0,.8); }
+.eptrip .tn1 { left: 4px; } .eptrip .tn2 { left: 42%; } .eptrip .tn3 { right: 4px; }
+.sub-ep { display: flex; align-items: center; gap: 12px; padding: 9px 2px; }
+.sub-ep + .sub-ep { border-top: 1px solid var(--line); }
+.sub-ep .sn { font-family: 'JetBrains Mono', monospace; font-size: .76rem; color: var(--hi); width: 44px; flex: none; }
+.sub-ep .sth { width: 70px; height: 40px; border-radius: 5px; flex: none; object-fit: cover; background: var(--fill-3); }
+.sub-ep .sm { flex: 1; min-width: 0; }
+.sub-ep .stt { font-size: .9rem; font-weight: 600; }
+.sub-ep .std { font-size: .74rem; color: var(--ink-dim); margin-top: 1px; }
+.note-slim { font-size: .82rem; color: var(--ink-soft); background: rgba(63,182,245,.08); border: 1px solid rgba(63,182,245,.25); border-radius: 8px; padding: 9px 12px; line-height: 1.5; }
+.note-slim b { color: var(--info); }
 .staged-op .op-ic { width: 22px; height: 22px; flex: none; border-radius: 6px; display: inline-flex; align-items: center; justify-content: center; font-size: .7rem; background: var(--hi-soft); color: var(--acc-ink); }
