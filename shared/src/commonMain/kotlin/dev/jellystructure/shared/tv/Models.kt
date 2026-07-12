@@ -313,6 +313,9 @@ data class MovieDetail(
     val trailer: TvTrailer? = null,
     /** Phase 131: null when the title has no IMDb rating yet. R164 renders it. */
     @SerialName("imdb_rating") val imdbRating: TvImdbRating? = null,
+    /** R181 — the title's own original-audio language (ISO code), for the player's "Dubbed" badge on
+     *  audio tracks in a different language. Null when unknown. */
+    @SerialName("original_language") val originalLanguage: String? = null,
 )
 
 @Serializable
@@ -336,6 +339,9 @@ data class SeriesDetail(
     val trailer: TvTrailer? = null,
     /** Phase 131: null when the title has no IMDb rating yet (the show-level rating). R164 renders it. */
     @SerialName("imdb_rating") val imdbRating: TvImdbRating? = null,
+    /** R181 — the series' own original-audio language (ISO code), for the player's "Dubbed" badge on
+     *  audio tracks in a different language. Null when unknown. */
+    @SerialName("original_language") val originalLanguage: String? = null,
 )
 
 // ─── Search ───────────────────────────────────────────────────────────────────

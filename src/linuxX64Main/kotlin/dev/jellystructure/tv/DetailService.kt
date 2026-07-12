@@ -62,6 +62,7 @@ class DetailService(
             ratingBadge        = item.ratingBadge(),  // Phase 106
             trailer            = item.tvTrailer(),  // Phase 130
             imdbRating         = item.tvImdbRating(),  // Phase 131
+            originalLanguage   = item.originalLanguage,  // R181 — player's "Dubbed" audio badge
         )
     }
 
@@ -137,6 +138,7 @@ class DetailService(
             ratingBadge       = item.ratingBadge(),  // Phase 106
             trailer           = item.tvTrailer(),  // Phase 130
             imdbRating        = item.tvImdbRating(),  // Phase 131
+            originalLanguage  = item.originalLanguage,  // R181 — player's "Dubbed" audio badge
         )
     }
 

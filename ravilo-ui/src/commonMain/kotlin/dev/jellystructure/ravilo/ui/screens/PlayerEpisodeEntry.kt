@@ -27,4 +27,8 @@ data class EpisodePlayContext(
     val nextEpTitle: String?,
     val episodes: List<PlayerEpisodeEntry>,
     val currentEpIndex: Int,
+    /** R181 — the series' own item id, for per-series remembered audio/subtitle choices. */
+    val seriesId: String? = null,
+    /** R181/R180 — the series' original-audio language, for the player's "Dubbed" audio badge. */
+    val originalLanguage: String? = null,
 )
