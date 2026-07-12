@@ -1221,8 +1221,10 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
         showTagsDiffPopup(origGenres.sorted(), currentGenreList().sorted(), label = "Genres")
     }
     // R128: load the library's distinct genres for the picker (deduped + count-sorted by the API).
+    // Bug fix: routed through the shared FacetsCache (also used by the Library workbench) instead of
+    // an uncached fetch on every single detail-page open — arguably the most-visited screen in the app.
     scope.launch {
-        allGenres = MediaApi.metaFacets()?.genres?.map { it.value to it.count } ?: emptyList()
+        allGenres = FacetsCache.meta()?.genres?.map { it.value to it.count } ?: emptyList()
         if ((document.getElementById("genre-suggest") as? HTMLElement)?.style?.display == "flex") renderGenreSuggest()
     }
 
