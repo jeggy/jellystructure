@@ -146,6 +146,10 @@ fun PlayerScreen(
     nextEpisodeTitle: String? = null,
     episodes: List<PlayerEpisodeEntry>? = null,
     currentEpIndex: Int = 0,
+    // R181 — the series' own id (movies: their own id) for per-series remembered audio/subtitle
+    // choices; R181/R180 — the title's original-audio language for the "Dubbed" audio badge.
+    seriesId: String? = null,
+    originalLanguage: String? = null,
     store: PlayerStore,
     onBack: () -> Unit,
     onNavigateToEpisode: ((String) -> Unit)? = null,
@@ -166,6 +170,10 @@ fun PlayerScreen(
     // reference that always reflects the latest recomposition, without needing to restart it.
     val currentItemId by rememberUpdatedState(itemId)
     val currentNextEpisodeId by rememberUpdatedState(nextEpisodeId)
+    // R181/R180 — same staleness risk as itemId/nextEpisodeId above: these are read inside the poll
+    // loop's resolution/remember logic, which must see the current recomposition's value.
+    val currentSeriesId by rememberUpdatedState(seriesId)
+    val currentOriginalLanguage by rememberUpdatedState(originalLanguage)
 
     val player = remember { RaviloPlayer() }
 
