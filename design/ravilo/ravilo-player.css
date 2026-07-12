@@ -156,7 +156,7 @@
 /* ============================================================
    TRACK PICKER (audio / subtitles popup)
    ============================================================ */
-.pl-picker { position: absolute; right: 64px; bottom: 56px; width: 720px; z-index: 12;
+.pl-picker { position: absolute; right: 64px; bottom: 56px; width: 760px; z-index: 12;
   background: rgba(14,17,27,.94); -webkit-backdrop-filter: blur(20px); backdrop-filter: blur(20px);
   border: 1px solid var(--line); border-radius: 22px; box-shadow: 0 40px 120px rgba(0,0,0,.7);
   padding: 30px 32px 28px; opacity: 0; transform: translateY(16px) scale(.98); pointer-events: none;
@@ -168,15 +168,29 @@
 .pl-tab svg { width: 22px; height: 22px; }
 .pl-tab.cur { color: var(--ink); box-shadow: inset 0 0 0 2px var(--accent); }
 .pl-tab.focused { background: #fff; color: #0a0c13; transform: scale(1.04); box-shadow: 0 0 0 4px var(--ring); }
-.pl-cols { display: grid; grid-template-columns: 1fr; gap: 8px; max-height: 360px; overflow: hidden; }
-.pl-opt { display: flex; align-items: center; gap: 16px; padding: 15px 18px; border-radius: 14px; cursor: pointer;
+.pl-tab-flag { display: inline-flex; align-items: center; }
+.pl-tab-flag:empty { display: none; }
+.pl-tab-flag .fi { width: 1.5em; height: 1.12em; font-size: 20px; border-radius: 4px; box-shadow: 0 0 0 1px rgba(255,255,255,.2), 0 2px 6px rgba(0,0,0,.4); }
+.pl-tab.focused .pl-tab-flag .fi { box-shadow: 0 0 0 1px rgba(0,0,0,.25), 0 2px 6px rgba(0,0,0,.3); }
+.pl-cols { display: flex; flex-direction: column; gap: 7px; max-height: 640px; overflow-y: auto; }
+.pl-cols::-webkit-scrollbar { width: 0; }
+.pl-opt { display: flex; align-items: center; gap: 16px; padding: 13px 16px; border-radius: 14px; cursor: pointer;
   border: 2px solid transparent; transition: background .15s, box-shadow .15s, transform .12s; }
-.pl-opt .tick { width: 28px; height: 28px; flex: none; border-radius: 50%; border: 2px solid var(--ink-dim); display: flex; align-items: center; justify-content: center; color: transparent; font-size: 16px; font-weight: 800; }
+.pl-opt .tick { width: 26px; height: 26px; flex: none; border-radius: 50%; border: 2px solid var(--ink-dim); display: flex; align-items: center; justify-content: center; color: transparent; font-size: 15px; font-weight: 800; }
 .pl-opt.sel .tick { border-color: var(--accent); background: var(--accent); color: #0a0c13; }
-.pl-opt .ol { flex: 1; }
-.pl-opt .on2 { font-size: 21px; font-weight: 600; color: var(--ink); }
-.pl-opt .od { font-size: 16px; color: var(--ink-soft); margin-top: 3px; }
-.pl-opt .flag { font-size: 13px; font-weight: 700; letter-spacing: .6px; color: var(--accent-2); border: 1px solid var(--line); padding: 3px 9px; border-radius: 7px; text-transform: uppercase; }
+.pl-opt.sel { background: rgba(123,110,240,.10); }
+/* big flag anchors every row (Direction 2 — flag-forward) */
+.pl-opt .pl-flag { font-size: 40px; flex: none; border-radius: 6px; box-shadow: 0 0 0 1px rgba(255,255,255,.16), 0 6px 16px rgba(0,0,0,.45); }
+.pl-opt .pl-flag.off, .pl-opt .pl-flag.none { position: relative; width: 1.72em; height: 1.3em; font-size: 33px; display: inline-flex; align-items: center; justify-content: center; background: rgba(255,255,255,.07); box-shadow: inset 0 0 0 1px var(--line); color: var(--ink-dim); border-radius: 9px; }
+.pl-opt .pl-flag.off svg, .pl-opt .pl-flag.none svg { width: 56%; height: 56%; }
+.pl-opt .ol { flex: 1; min-width: 0; }
+.pl-opt .on2 { font-size: 21px; font-weight: 600; color: var(--ink); display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.pl-opt .on-sub { font-size: 15px; font-weight: 500; color: var(--ink-dim); }
+.pl-badges { display: flex; align-items: center; gap: 7px; margin-top: 7px; flex-wrap: wrap; }
+.pl-chip { display: inline-flex; align-items: center; gap: 5px; font-size: 14px; font-weight: 600; letter-spacing: .2px; padding: 4px 11px; border-radius: 8px; background: rgba(255,255,255,.06); border: 1px solid var(--line); color: var(--ink-soft); white-space: nowrap; }
+.pl-chip.fmt { color: var(--ink); background: rgba(255,255,255,.09); }
+.pl-chip.def { color: var(--accent-2); border-color: rgba(63,182,245,.32); background: rgba(63,182,245,.10); }
+.pl-chip.tag { color: var(--ink); }
 .pl-opt.focused { background: rgba(255,255,255,.10); box-shadow: 0 0 0 3px var(--ring); transform: translateX(2px); }
 
 /* ============================================================

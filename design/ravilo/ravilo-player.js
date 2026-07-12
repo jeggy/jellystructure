@@ -27,7 +27,28 @@
     chev:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5 8 12l7 7"/></svg>',
     audio: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9v6h4l5 4V5L8 9z"/><path d="M17 8a5 5 0 0 1 0 8"/></svg>',
     chevdown: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>',
+    mic:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M6 11a6 6 0 0 0 12 0M12 17v4"/></svg>',
+    subsoff:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="3"/><path d="M7 14h4M15 14h2"/><path d="M4 4l16 16"/></svg>',
   };
+
+  // ISO-639-1 -> flag-icons country code (from ravilo-app.js LANG_CC)
+  const PL_CC = { en:'gb', fr:'fr', de:'de', es:'es', da:'dk', fo:'fo', is:'is', no:'no', sv:'se', fi:'fi', nl:'nl', it:'it', pt:'pt', pl:'pl', ru:'ru', ja:'jp', ko:'kr', zh:'cn' };
+  // jargon-free variant labels (no codec names, no delivery-method talk)
+  const PL_KIND = { forced:'Signs only', sdh:'Sound described', describe:'Describes action', commentary:'Commentary' };
+  function plFlag(o) {
+    if (o.off) return `<span class="pl-flag off">${I.subsoff}</span>`;
+    if (!o.lang || !PL_CC[o.lang]) return `<span class="pl-flag none">${I.mic}</span>`;
+    return `<span class="fi fi-${PL_CC[o.lang]} pl-flag"></span>`;
+  }
+  function plChip(txt, cls) { return `<span class="pl-chip ${cls || ''}">${txt}</span>`; }
+  function plBadges(o, isAudio) {
+    const b = [];
+    if (isAudio && o.fmt) b.push(plChip(o.fmt, 'fmt'));
+    if (o.def) b.push(plChip('Default', 'def'));
+    if (o.kind) b.push(plChip(PL_KIND[o.kind], 'tag'));
+    if (o.note) b.push(plChip(o.note, ''));
+    return b.length ? `<span class="pl-badges">${b.join('')}</span>` : '';
+  }
 
   function fmt(s) {
     s = Math.max(0, Math.round(s));
@@ -101,8 +122,8 @@
 
       <div class="pl-picker">
         <div class="pl-picker-head">
-          <div class="pl-tab foc cur" data-tab="audio">${I.audio}<span>Audio</span></div>
-          <div class="pl-tab foc" data-tab="subs">${I.cc}<span>Subtitles</span></div>
+          <div class="pl-tab foc cur" data-tab="audio">${I.audio}<span>Audio</span><span class="pl-tab-flag" data-flag="audio"></span></div>
+          <div class="pl-tab foc" data-tab="subs">${I.cc}<span>Subtitles</span><span class="pl-tab-flag" data-flag="subs"></span></div>
         </div>
         <div class="pl-cols"></div>
       </div>
@@ -298,21 +319,42 @@
     /* ---------- track picker ---------- */
     function openPicker() { root.classList.add('picker'); showChrome(); pickerTab = 'audio'; pickIdx = sel.audio; renderPicker(); }
     function closePicker() { root.classList.remove('picker'); scheduleHide(); }
+    // flag shown inside a tab for the currently-selected track (real language only)
+    function plTabFlag(o) {
+      if (!o || o.off || !o.lang || !PL_CC[o.lang]) return '';
+      return `<span class="fi fi-${PL_CC[o.lang]}"></span>`;
+    }
     function renderPicker() {
       root.querySelectorAll('.pl-tab').forEach(t => t.classList.toggle('cur', t.dataset.tab === pickerTab));
-      const list = pickerTab === 'audio' ? ctx.audio : ctx.subs;
-      const selIdx = pickerTab === 'audio' ? sel.audio : sel.subs;
+      const af = root.querySelector('.pl-tab-flag[data-flag="audio"]');
+      const sf = root.querySelector('.pl-tab-flag[data-flag="subs"]');
+      if (af) af.innerHTML = plTabFlag(ctx.audio[sel.audio]);
+      if (sf) sf.innerHTML = plTabFlag(ctx.subs[sel.subs]);
+      const isAudio = pickerTab === 'audio';
+      const list = isAudio ? ctx.audio : ctx.subs;
+      const selIdx = isAudio ? sel.audio : sel.subs;
       els.pickCols.innerHTML = list.map((o, i) =>
         `<div class="pl-opt foc${i === selIdx ? ' sel' : ''}${i === pickIdx ? ' focused' : ''}" data-oi="${i}">
            <span class="tick">✓</span>
-           <span class="ol"><span class="on2">${o.label}</span>${o.desc ? `<span class="od">${o.desc}</span>` : ''}</span>
-           ${o.flag ? `<span class="flag">${o.flag}</span>` : ''}
+           ${plFlag(o)}
+           <span class="ol"><span class="on2">${o.label}${o.sub ? ` <span class="on-sub">${o.sub}</span>` : ''}</span>${plBadges(o, isAudio)}</span>
          </div>`).join('');
+      scrollFocusIntoView();
+    }
+    function scrollFocusIntoView() {
+      const box = els.pickCols;
+      const el = box.querySelector('.pl-opt.focused');
+      if (!box || !el) return;
+      const top = el.offsetTop, bottom = top + el.offsetHeight;
+      const pad = 8;
+      if (top - pad < box.scrollTop) box.scrollTop = Math.max(0, top - pad);
+      else if (bottom + pad > box.scrollTop + box.clientHeight) box.scrollTop = bottom + pad - box.clientHeight;
     }
     function pickerNav(d) {
       const list = pickerTab === 'audio' ? ctx.audio : ctx.subs;
       pickIdx = Math.max(0, Math.min(list.length - 1, pickIdx + d));
       root.querySelectorAll('.pl-opt').forEach((e, i) => e.classList.toggle('focused', i === pickIdx));
+      scrollFocusIntoView();
     }
     function pickerSwitchTab(tab) { if (tab === pickerTab) return; pickerTab = tab; pickIdx = tab === 'audio' ? sel.audio : sel.subs; renderPicker(); }
     function pickerChoose() {
