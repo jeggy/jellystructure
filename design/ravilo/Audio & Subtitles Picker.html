@@ -1,0 +1,567 @@
+<!doctype html>
+<html lang="en" data-skin="aurora">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="design_doc_mode" content="canvas">
+<title>Ravilo — Audio &amp; Subtitles picker overhaul</title>
+<link rel="stylesheet" href="../flags.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Sora:wght@300;400;500;600;700&family=JetBrains+Mono:wght@500;600&display=swap');
+
+/* ---- Aurora skin tokens (mirrored from ravilo.css) ---- */
+:root{
+  --bg:#0a0c13; --bg-2:#0e111b; --ink:#f3f4fb; --ink-soft:#aeb4cb; --ink-dim:#6b7290;
+  --line:rgba(255,255,255,.09); --card:#161a28; --card-2:#1b2031;
+  --accent:#7b6ef0; --accent-2:#3fb6f5; --grad:linear-gradient(120deg,#7b6ef0,#3fb6f5);
+  --ring:#8e82ff; --ring-glow:rgba(123,110,240,.55); --chip:rgba(255,255,255,.10);
+  --good:#2dd49a; --warm:#f5b542; --ease:cubic-bezier(.22,.61,.36,1);
+}
+[data-skin="midnight"]{ --bg:#04101a; --bg-2:#07151f; --ink:#eafcff; --ink-soft:#9fc2cf; --ink-dim:#5a7d8a;
+  --line:rgba(160,230,255,.10); --card:#0a1c28; --card-2:#0e2533; --accent:#19d6c6; --accent-2:#2a8cf0;
+  --grad:linear-gradient(120deg,#19d6c6,#2a8cf0); --ring:#28e6d6; --ring-glow:rgba(40,230,214,.5); }
+[data-skin="noir"]{ --bg:#080807; --bg-2:#0d0c0a; --ink:#f7f3ea; --ink-soft:#c7bfae; --ink-dim:#807868;
+  --line:rgba(255,240,210,.10); --card:#16140f; --card-2:#1f1c15; --accent:#f5b542; --accent-2:#e0792f;
+  --grad:linear-gradient(120deg,#f5b542,#e0792f); --ring:#ffcf6b; --ring-glow:rgba(245,181,66,.5); }
+
+*{ box-sizing:border-box; }
+body{ margin:0; font-family:'Sora',sans-serif; color:var(--ink); -webkit-font-smoothing:antialiased; }
+
+/* ---- canvas frame chrome ---- */
+.col{ position:absolute; }
+.frame-label{ font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:26px; color:#0f1117; margin:0 0 4px; }
+.frame-note{ font-size:15px; color:#5b6070; margin:0 0 18px; max-width:1000px; line-height:1.5; }
+.frame-note b{ color:#2b2f3a; font-weight:600; }
+.surf-tag{ display:inline-block; font-family:'JetBrains Mono',monospace; font-size:12px; letter-spacing:.5px; text-transform:uppercase;
+  color:#7a8091; background:#eef0f4; border:1px solid #e0e3ea; border-radius:6px; padding:3px 9px; margin:0 0 10px; }
+
+/* ============================================================
+   TV player backdrop
+   ============================================================ */
+.tv{ position:relative; width:1040px; height:640px; border-radius:20px; overflow:hidden;
+  background:#000; box-shadow:0 30px 90px rgba(10,12,25,.5); }
+.tv-still{ position:absolute; inset:0; }
+.tv-still .g{ position:absolute; inset:0; }
+.tv-grain{ position:absolute; inset:0; opacity:.3; mix-blend-mode:overlay;
+  background-image:radial-gradient(rgba(255,255,255,.10) 1px, transparent 1px); background-size:4px 4px; }
+.tv-vig{ position:absolute; inset:0; background:radial-gradient(120% 90% at 50% 42%, transparent 40%, rgba(0,0,0,.55) 100%); }
+.tv-dim{ position:absolute; inset:0; background:rgba(4,5,9,.46); }
+/* faint player context (title + progress), sits behind the picker */
+.tv-ctx{ position:absolute; left:40px; right:40px; bottom:34px; opacity:.5; }
+.tv-ctx .k{ font-size:15px; letter-spacing:2px; text-transform:uppercase; color:var(--ink-soft); }
+.tv-ctx .t{ font-family:'Space Grotesk',sans-serif; font-size:30px; font-weight:700; margin-top:4px; }
+.tv-ctx .barrow{ display:flex; align-items:center; gap:16px; margin-top:16px; font-size:14px; color:var(--ink-soft);
+  font-variant-numeric:tabular-nums; }
+.tv-ctx .bar{ flex:1; height:5px; border-radius:3px; background:rgba(255,255,255,.18); position:relative; }
+.tv-ctx .bar i{ position:absolute; left:0; top:0; bottom:0; width:38%; border-radius:3px; background:var(--grad); }
+
+/* ============================================================
+   Phone frame
+   ============================================================ */
+.phone{ position:relative; width:412px; height:820px; border-radius:44px; overflow:hidden;
+  background:#000; box-shadow:0 30px 90px rgba(10,12,25,.5); border:1px solid rgba(255,255,255,.06); }
+.ph-still{ position:absolute; inset:0; }
+.ph-still .g{ position:absolute; inset:0; }
+.ph-dim{ position:absolute; inset:0; background:rgba(4,5,9,.5); }
+.ph-status{ position:absolute; top:0; left:0; right:0; height:52px; display:flex; align-items:center;
+  justify-content:space-between; padding:0 34px; font-size:15px; font-weight:600; color:#fff; z-index:5; }
+.ph-status .dots{ display:flex; gap:5px; align-items:center; }
+.ph-status .dots span{ width:16px; height:11px; border-radius:2px; background:rgba(255,255,255,.85); }
+.ph-notch{ position:absolute; top:12px; left:50%; transform:translateX(-50%); width:104px; height:28px;
+  border-radius:16px; background:#000; z-index:6; }
+/* bottom sheet */
+.sheet{ position:absolute; left:0; right:0; bottom:0; z-index:10;
+  background:rgba(13,16,26,.97); -webkit-backdrop-filter:blur(24px); backdrop-filter:blur(24px);
+  border-top:1px solid var(--line); border-radius:26px 26px 0 0; box-shadow:0 -30px 80px rgba(0,0,0,.6);
+  padding:12px 18px 30px; }
+.sheet .grab{ width:44px; height:5px; border-radius:3px; background:rgba(255,255,255,.22); margin:2px auto 14px; }
+
+/* ============================================================
+   Picker panel (shared)  —  .pk  (TV)   /   .pk.pk--phone
+   ============================================================ */
+.pk{ position:absolute; right:28px; bottom:26px; width:640px; z-index:12;
+  background:rgba(14,17,27,.94); -webkit-backdrop-filter:blur(22px); backdrop-filter:blur(22px);
+  border:1px solid var(--line); border-radius:22px; box-shadow:0 40px 120px rgba(0,0,0,.7);
+  padding:26px 26px 22px; font-family:'Sora',sans-serif; }
+.pk--phone{ position:static; width:auto; background:none; box-shadow:none; border:none; padding:2px 2px 0; backdrop-filter:none; }
+
+.pk-title{ font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:16px; letter-spacing:.4px;
+  text-transform:uppercase; color:var(--ink-dim); margin:0 0 14px; }
+.pk--phone .pk-title{ font-size:14px; margin-bottom:12px; }
+
+/* tabs */
+.pk-tabs{ display:flex; gap:10px; margin-bottom:18px; }
+.pk-tab{ display:flex; align-items:center; gap:9px; padding:10px 22px; border-radius:28px; cursor:pointer;
+  background:var(--chip); color:var(--ink-soft); font-size:18px; font-weight:600; border:2px solid transparent;
+  transition:all .15s var(--ease); }
+.pk-tab svg{ width:20px; height:20px; }
+.pk-tab.cur{ color:var(--ink); box-shadow:inset 0 0 0 2px var(--accent); }
+.pk-tab.focused{ background:#fff; color:#0a0c13; box-shadow:0 0 0 4px var(--ring); }
+.pk--phone .pk-tab{ font-size:15px; padding:9px 18px; flex:1; justify-content:center; }
+.pk--phone .pk-tab svg{ width:17px; height:17px; }
+
+/* flag */
+.pk-flag{ font-size:30px; border-radius:5px; box-shadow:0 0 0 1px rgba(255,255,255,.16), 0 5px 14px rgba(0,0,0,.45);
+  flex:none; }
+.pk-flag.off,.pk-flag.none{ position:relative; width:1.72em; height:1.32em; display:inline-flex; align-items:center;
+  justify-content:center; background:rgba(255,255,255,.07); box-shadow:inset 0 0 0 1px var(--line); color:var(--ink-dim); }
+.pk-flag.off svg,.pk-flag.none svg{ width:64%; height:64%; }
+.pk--phone .pk-flag{ font-size:23px; }
+
+/* generic row (dir 1 & 2) */
+.pk-list{ display:flex; flex-direction:column; gap:7px; }
+.pk-row{ display:flex; align-items:center; gap:15px; padding:13px 15px; border-radius:14px; cursor:pointer;
+  border:2px solid transparent; transition:background .15s, box-shadow .15s, transform .12s; }
+.pk-tick{ width:26px; height:26px; flex:none; border-radius:50%; border:2px solid var(--ink-dim);
+  display:flex; align-items:center; justify-content:center; color:transparent; }
+.pk-tick svg{ width:15px; height:15px; }
+.pk-row.sel .pk-tick{ border-color:var(--accent); background:var(--accent); color:#0a0c13; }
+.pk-main{ flex:1; min-width:0; }
+.pk-name{ font-size:21px; font-weight:600; color:var(--ink); display:flex; align-items:baseline; gap:8px; flex-wrap:wrap; }
+.pk-name .pk-sub{ font-size:15px; font-weight:500; color:var(--ink-dim); }
+.pk-badges{ display:flex; align-items:center; gap:7px; margin-top:6px; flex-wrap:wrap; }
+.pk-row.focused{ background:rgba(255,255,255,.10); box-shadow:0 0 0 3px var(--ring); transform:translateX(2px); }
+.pk-row.sel{ background:rgba(123,110,240,.10); }
+.pk--phone .pk-row{ gap:13px; padding:11px 12px; }
+.pk--phone .pk-name{ font-size:17px; }
+.pk--phone .pk-tick{ width:22px; height:22px; }
+
+/* chips / badges */
+.pk-chip{ display:inline-flex; align-items:center; gap:5px; font-size:13px; font-weight:600; letter-spacing:.2px;
+  padding:4px 10px; border-radius:8px; background:rgba(255,255,255,.06); border:1px solid var(--line); color:var(--ink-soft);
+  white-space:nowrap; }
+.pk-chip svg{ width:13px; height:13px; }
+.pk-chip.fmt{ color:var(--ink); background:rgba(255,255,255,.09); }
+.pk-chip.def{ color:var(--accent-2); border-color:rgba(63,182,245,.32); background:rgba(63,182,245,.10); }
+.pk-chip.tag{ color:var(--ink); }
+.pk-chip.slow{ color:var(--warm); border-color:rgba(245,181,66,.34); background:rgba(245,181,66,.10); }
+.pk--phone .pk-chip{ font-size:11.5px; padding:3px 8px; }
+
+/* footer hint (dir 1 & 3) */
+.pk-foot{ margin-top:16px; padding-top:14px; border-top:1px solid var(--line); display:flex; align-items:center; gap:10px;
+  font-size:15px; color:var(--ink-soft); min-height:22px; }
+.pk-foot .fi-ic{ color:var(--accent-2); flex:none; display:flex; }
+.pk-foot .fi-ic svg{ width:18px; height:18px; }
+.pk-foot b{ color:var(--ink); font-weight:600; }
+
+/* ---- dir 1: grouped by language ---- */
+.d1 .pk-group{ border-radius:14px; }
+.d1 .pk-ghead{ display:flex; align-items:center; gap:15px; padding:11px 15px 7px; }
+.d1 .pk-gname{ font-size:21px; font-weight:600; }
+.d1 .pk-variants{ display:flex; flex-direction:column; gap:5px; padding:0 0 8px 56px; }
+.d1 .pk-var{ display:flex; align-items:center; gap:12px; padding:9px 14px; border-radius:11px; cursor:pointer;
+  border:2px solid transparent; }
+.d1 .pk-var .pk-tick{ width:22px; height:22px; }
+.d1 .pk-var .vn{ flex:1; font-size:18px; color:var(--ink-soft); font-weight:500; display:flex; align-items:center; gap:8px; }
+.d1 .pk-var.sel .vn{ color:var(--ink); }
+.d1 .pk-var.sel .pk-tick{ border-color:var(--accent); background:var(--accent); color:#0a0c13; }
+.d1 .pk-var.focused{ background:rgba(255,255,255,.10); box-shadow:0 0 0 3px var(--ring); }
+.d1 .pk-gdiv{ height:1px; background:var(--line); margin:2px 8px; }
+
+/* ---- dir 2: flag-forward ---- */
+.d2 .pk-flag{ font-size:42px; }
+.d2 .pk-row{ padding:13px 16px; }
+.d2 .pk-name{ font-size:23px; }
+.d2 .pk--phone,.pk--phone.d2 .pk-flag{ font-size:30px; }
+.pk--phone.d2 .pk-flag{ font-size:30px; }
+
+/* ---- dir 3: two-pane ---- */
+.d3{ width:900px; }
+.d3 .pk-panes{ display:grid; grid-template-columns:300px 1fr; gap:18px; }
+.d3 .pk-langcol{ display:flex; flex-direction:column; gap:6px; max-height:390px; overflow:hidden; padding-right:16px;
+  border-right:1px solid var(--line); }
+.d3 .pk-lang{ display:flex; align-items:center; gap:13px; padding:11px 12px; border-radius:12px; cursor:pointer;
+  border:2px solid transparent; }
+.d3 .pk-lang .ln{ flex:1; font-size:19px; font-weight:600; color:var(--ink-soft); }
+.d3 .pk-lang .cnt{ font-size:13px; color:var(--ink-dim); }
+.d3 .pk-lang.cur{ background:rgba(255,255,255,.05); }
+.d3 .pk-lang.cur .ln{ color:var(--ink); }
+.d3 .pk-lang.focused{ background:#fff; box-shadow:0 0 0 3px var(--ring); }
+.d3 .pk-lang.focused .ln,.d3 .pk-lang.focused .cnt{ color:#0a0c13; }
+.d3 .pk-lang .chev{ color:var(--ink-dim); }
+.d3 .pk-detail{ padding-left:2px; }
+.d3 .pk-detail-h{ display:flex; align-items:center; gap:14px; margin-bottom:14px; }
+.d3 .pk-detail-h .dh-name{ font-family:'Space Grotesk',sans-serif; font-size:26px; font-weight:700; }
+.d3 .pk-opt{ display:flex; align-items:flex-start; gap:13px; padding:14px 15px; border-radius:13px; cursor:pointer;
+  border:2px solid transparent; margin-bottom:7px; }
+.d3 .pk-opt .pk-tick{ margin-top:2px; }
+.d3 .pk-opt .oi{ flex:1; }
+.d3 .pk-opt .on{ font-size:20px; font-weight:600; color:var(--ink); display:flex; align-items:center; gap:9px; }
+.d3 .pk-opt .oh{ font-size:15px; color:var(--ink-soft); margin-top:4px; line-height:1.4; }
+.d3 .pk-opt.sel{ background:rgba(123,110,240,.10); }
+.d3 .pk-opt.sel .pk-tick{ border-color:var(--accent); background:var(--accent); color:#0a0c13; }
+.d3 .pk-opt.focused{ background:rgba(255,255,255,.10); box-shadow:0 0 0 3px var(--ring); }
+
+/* ---- dir 4: sound & subtitles, plain ---- */
+.d4{ width:820px; }
+.d4 .pk4-sec{ margin-bottom:20px; }
+.d4 .pk4-sec:last-child{ margin-bottom:0; }
+.d4 .pk4-q{ display:flex; align-items:center; gap:11px; font-family:'Space Grotesk',sans-serif;
+  font-size:22px; font-weight:700; margin-bottom:14px; }
+.d4 .pk4-q .qic{ width:34px; height:34px; border-radius:10px; background:var(--chip); display:flex; align-items:center;
+  justify-content:center; color:var(--accent-2); flex:none; }
+.d4 .pk4-q .qic svg{ width:20px; height:20px; }
+.d4 .pk4-cards{ display:flex; gap:11px; flex-wrap:wrap; }
+.d4 .pk4-card{ display:flex; flex-direction:column; align-items:center; gap:9px; width:104px; padding:15px 8px 13px;
+  border-radius:16px; cursor:pointer; border:2px solid var(--line); background:rgba(255,255,255,.03); transition:all .15s var(--ease); }
+.d4 .pk4-card .pk-flag{ font-size:40px; }
+.d4 .pk4-card .cn{ font-size:16px; font-weight:600; color:var(--ink-soft); text-align:center; }
+.d4 .pk4-card.sel{ border-color:var(--accent); background:rgba(123,110,240,.12); }
+.d4 .pk4-card.sel .cn{ color:var(--ink); }
+.d4 .pk4-card.focused{ border-color:transparent; box-shadow:0 0 0 3px var(--ring); background:rgba(255,255,255,.08); }
+.d4 .pk4-card .pk-flag.off,.d4 .pk4-card .pk-flag.none{ font-size:40px; }
+.d4 .pk4-variantbar{ display:flex; align-items:center; gap:10px; margin-top:14px; padding:13px 16px; border-radius:14px;
+  background:rgba(255,255,255,.04); border:1px solid var(--line); flex-wrap:wrap; }
+.d4 .pk4-variantbar .vlab{ font-size:15px; color:var(--ink-dim); margin-right:2px; }
+.d4 .pk4-pill{ font-size:16px; font-weight:600; color:var(--ink-soft); padding:8px 16px; border-radius:11px;
+  background:var(--chip); cursor:pointer; border:2px solid transparent; display:inline-flex; align-items:center; gap:7px; }
+.d4 .pk4-pill.sel{ color:#0a0c13; background:#fff; }
+.d4 .pk4-pill.focused{ box-shadow:0 0 0 3px var(--ring); }
+.pk--phone.d4 .pk4-card{ width:calc(33.333% - 8px); }
+.pk--phone.d4 .pk4-cards{ flex-wrap:wrap; }
+
+/* ---- header banner ---- */
+.banner{ position:absolute; background:#fff; border:1px solid #e6e8ee; border-radius:22px; padding:34px 40px;
+  box-shadow:0 20px 60px rgba(20,24,40,.10); }
+.banner h1{ font-family:'Space Grotesk',sans-serif; font-size:34px; font-weight:700; margin:0 0 8px; color:#12141c; }
+.banner .lede{ font-size:17px; line-height:1.55; color:#454a5a; margin:0 0 22px; max-width:1180px; }
+.banner .lede b{ color:#12141c; }
+.legend{ display:flex; gap:14px; flex-wrap:wrap; }
+.legend .lg{ background:#0a0c13; border-radius:14px; padding:14px 16px; min-width:210px; flex:1; }
+.legend .lg .lh{ display:flex; align-items:center; gap:9px; margin-bottom:6px; }
+.legend .lg .lh .pk-chip{ font-size:13px; }
+.legend .lg p{ margin:0; font-size:13.5px; line-height:1.45; color:var(--ink-soft); }
+.legend .lg p b{ color:var(--ink); font-weight:600; }
+.dim-note{ font-size:13px; color:#8b90a0; margin:18px 0 0; }
+.dim-note b{ color:#3a3f4c; }
+</style>
+</head>
+<body>
+
+<!-- ============================ HEADER ============================ -->
+<div class="banner" style="left:80px; top:60px; width:4400px;">
+  <h1>Audio &amp; Subtitles — friendly picker overhaul</h1>
+  <p class="lede">
+    Same job as today's in-player picker, rebuilt so <b>no technical knowledge is needed to turn on subtitles</b>.
+    Country <b>flags anchor every language</b>, labels are plain, and <b>every track stays available</b> — nothing is hidden.
+    Codec names (PGS, E-AC3, mov_text…) never appear. Below: four layout directions, each shown on <b>TV</b> and <b>phone</b>.
+    All four share the same friendly vocabulary and carry across the Aurora / Midnight / Noir skins.
+  </p>
+  <div class="legend">
+    <div class="lg">
+      <div class="lh"><span class="pk-chip tag">Signs only</span></div>
+      <p>A <b>forced</b> track. Only translates on-screen text &amp; foreign lines — not the whole film.</p>
+    </div>
+    <div class="lg">
+      <div class="lh"><span class="pk-chip tag">Sound described</span></div>
+      <p><b>SDH</b>, in plain words. Adds speaker names &amp; sound-effect notes for deaf / hard-of-hearing viewers.</p>
+    </div>
+    <div class="lg">
+      <div class="lh"><span class="pk-chip tag">Describes action</span></div>
+      <p>An <b>audio-description</b> track (Synstolkning). Narrates what's happening on screen.</p>
+    </div>
+    <div class="lg">
+      <div class="lh"><span class="pk-chip slow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>Starts in a moment</span></div>
+      <p>The only cost cue. This subtitle needs a few seconds to start — <b>no explanation of why</b>.</p>
+    </div>
+    <div class="lg">
+      <div class="lh"><span class="pk-chip def">Default</span> <span class="pk-chip fmt">Surround 5.1</span></div>
+      <p>Kept because they help you choose: the source's suggested track, and <b>surround vs. stereo</b>.</p>
+    </div>
+  </div>
+  <p class="dim-note">Sample title exercises the real hard cases from the library scan: Danish/English dubs, a Danish audio-description track, a director's commentary, forced + SDH variants, an image (PGS) Chinese track, and 5 languages.</p>
+</div>
+
+<!-- columns get injected here -->
+<div id="cols"></div>
+
+<script>
+/* ---------- shared data ---------- */
+var CC = { da:'dk', en:'gb', es:'es', zh:'cn', fi:'fi', fo:'fo', sv:'se', no:'no', de:'de', pt:'pt', fr:'fr' };
+
+var AUDIO = [
+  { id:'a-da',  lang:'da', name:'Dansk',                 fmt:'Surround 5.1', def:true },
+  { id:'a-en',  lang:'en', name:'English',               fmt:'Stereo', note:'Dubbed' },
+  { id:'a-ad',  lang:'da', name:'Dansk',                 fmt:'Surround 5.1', kind:'describe' },
+  { id:'a-com', lang:null, name:"Director's commentary", fmt:'Stereo', kind:'commentary' }
+];
+var SUBS = [
+  { id:'s-off',   off:true,  name:'Off' },
+  { id:'s-da',    lang:'da', name:'Dansk' },
+  { id:'s-daf',   lang:'da', name:'Dansk',    kind:'forced' },
+  { id:'s-en',    lang:'en', name:'English' },
+  { id:'s-ensdh', lang:'en', name:'English',  kind:'sdh' },
+  { id:'s-es',    lang:'es', name:'Español' },
+  { id:'s-zh',    lang:'zh', name:'中文', sub:'Simplified', slow:true },
+  { id:'s-fi',    lang:'fi', name:'Suomi' }
+];
+var SEL = { audio:'a-da', subs:'s-da' };
+
+/* friendly variant meta */
+var KIND = {
+  forced:     { chip:'Signs only',      hint:'Only translates on-screen text and foreign-language lines.' },
+  sdh:        { chip:'Sound described', hint:'Includes speaker names and sound-effect notes.' },
+  describe:   { chip:'Describes action',hint:'Extra narration of what is happening on screen.' },
+  commentary: { chip:'Commentary',      hint:'The filmmakers talking over the film.' }
+};
+
+/* ---------- icons ---------- */
+var IC = {
+  check:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg>',
+  clock:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>',
+  audio:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9v6h4l5 4V5L8 9z"/><path d="M17 8a5 5 0 0 1 0 8"/></svg>',
+  cc:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="3"/><path d="M9.5 10.2A2.2 2.2 0 0 0 7.8 13.4 2.2 2.2 0 0 0 9.5 14M16 10.2a2.2 2.2 0 0 0-1.7 3.2 2.2 2.2 0 0 0 1.7.6"/></svg>',
+  off:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="3"/><path d="M7 14h4M15 14h2"/><path d="M4 4l16 16"/></svg>',
+  mic:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M6 11a6 6 0 0 0 12 0M12 17v4"/></svg>',
+  chev:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>',
+  info:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></svg>'
+};
+
+/* ---------- small builders ---------- */
+function flag(o, extra){
+  extra = extra || '';
+  if(o.off)  return '<span class="pk-flag off '+extra+'">'+IC.off+'</span>';
+  if(!o.lang) return '<span class="pk-flag none '+extra+'">'+IC.mic+'</span>';
+  return '<span class="fi fi-'+CC[o.lang]+' pk-flag '+extra+'"></span>';
+}
+function tick(){ return '<span class="pk-tick">'+IC.check+'</span>'; }
+function chip(txt, cls){ return '<span class="pk-chip '+(cls||'')+'">'+txt+'</span>'; }
+function slowChip(){ return '<span class="pk-chip slow">'+IC.clock+'Starts in a moment</span>'; }
+
+/* badges for a track in a list context */
+function badges(o, isAudio){
+  var out = [];
+  if(isAudio && o.fmt) out.push(chip(o.fmt, 'fmt'));
+  if(o.def) out.push(chip('Default','def'));
+  if(o.kind) out.push(chip(KIND[o.kind].chip,'tag'));
+  if(o.note) out.push(chip(o.note,''));
+  if(o.slow) out.push(slowChip());
+  return out.join('');
+}
+
+/* ============================================================
+   DIRECTION 1 — grouped by language
+   ============================================================ */
+function d1(kind, sel){
+  var list = kind==='audio' ? AUDIO : SUBS;
+  var html = '<div class="pk-list">';
+  // Off pinned (subs)
+  var groups = {}, order = [];
+  list.forEach(function(o){
+    if(o.off){ return; }
+    var key = o.lang || o.id;
+    if(!groups[key]){ groups[key]=[]; order.push(key); }
+    groups[key].push(o);
+  });
+  if(kind==='subs'){
+    var off = list[0], offSel = sel===off.id;
+    html += '<div class="pk-row'+(offSel?' sel':'')+'">'+tick()+flag(off)+'<span class="pk-main"><span class="pk-name">Off</span></span></div>';
+    html += '<div class="d1 pk-gdiv"></div>';
+  }
+  html += '<div class="d1">';
+  order.forEach(function(key, gi){
+    var items = groups[key], head = items[0];
+    html += '<div class="pk-group">';
+    html += '<div class="pk-ghead">'+flag(head)+'<span class="pk-gname">'+head.name+(head.sub?' <span class="pk-sub" style="font-size:15px;color:var(--ink-dim);font-weight:500">('+head.sub+')</span>':'')+'</span></div>';
+    html += '<div class="pk-variants">';
+    items.forEach(function(o){
+      var s = sel===o.id;
+      var vlabel = o.kind ? KIND[o.kind].chip : (kind==='audio' ? o.fmt : 'Full subtitles');
+      var extra = [];
+      if(kind==='audio' && o.kind && o.fmt) extra.push(chip(o.fmt,'fmt'));
+      if(o.def) extra.push(chip('Default','def'));
+      if(o.slow) extra.push(slowChip());
+      html += '<div class="pk-var'+(s?' sel':'')+'">'+tick()+'<span class="vn">'+vlabel+' '+extra.join('')+'</span></div>';
+    });
+    html += '</div></div>';
+    if(gi<order.length-1) html += '<div class="d1 pk-gdiv"></div>';
+  });
+  html += '</div></div>';
+  return html;
+}
+
+/* ============================================================
+   DIRECTION 2 — flag-forward flat list
+   ============================================================ */
+function d2(kind, sel, focusId){
+  var list = kind==='audio' ? AUDIO : SUBS;
+  var html = '<div class="d2 pk-list">';
+  list.forEach(function(o){
+    var s = sel===o.id, f = focusId===o.id;
+    var name = o.name + (o.sub?' <span class="pk-sub">'+o.sub+'</span>':'');
+    var b = badges(o, kind==='audio');
+    html += '<div class="pk-row'+(s?' sel':'')+(f?' focused':'')+'">'+tick()+flag(o)+
+      '<span class="pk-main"><span class="pk-name">'+name+'</span>'+(b?'<span class="pk-badges">'+b+'</span>':'')+'</span></div>';
+  });
+  html += '</div>';
+  return html;
+}
+
+/* ============================================================
+   DIRECTION 3 — two-pane (language → variants)
+   ============================================================ */
+function d3(kind, sel, activeLang){
+  var list = kind==='audio' ? AUDIO : SUBS;
+  var langs = [], seen = {};
+  list.forEach(function(o){
+    if(o.off) return;
+    var key = o.lang || o.id;
+    if(!seen[key]){ seen[key]=[]; langs.push({key:key, head:o}); }
+    seen[key].push(o);
+  });
+  var html = '<div class="d3">';
+  html += '<div class="pk-panes"><div class="pk-langcol">';
+  if(kind==='subs'){
+    var offSel = sel==='s-off';
+    html += '<div class="pk-lang'+(offSel?' cur':'')+'">'+flag({off:true})+'<span class="ln">Off</span></div>';
+  }
+  langs.forEach(function(L){
+    var cur = activeLang===L.key;
+    var cnt = seen[L.key].length;
+    html += '<div class="pk-lang'+(cur?' cur focused':'')+'">'+flag(L.head)+
+      '<span class="ln">'+L.head.name+(L.head.sub?' <span class="cnt">('+L.head.sub+')</span>':'')+'</span>'+
+      (cnt>1?'<span class="cnt">'+cnt+'</span>':'')+'<span class="chev">'+IC.chev+'</span></div>';
+  });
+  html += '</div>';
+  // detail pane
+  var items = seen[activeLang] || [];
+  var head = items[0];
+  html += '<div class="pk-detail"><div class="pk-detail-h">'+flag(head,'')+'<span class="dh-name">'+head.name+'</span></div>';
+  items.forEach(function(o){
+    var s = sel===o.id;
+    var title = o.kind ? KIND[o.kind].chip : (kind==='audio' ? o.fmt : 'Full subtitles');
+    var hint = o.kind ? KIND[o.kind].hint : (kind==='audio' ? 'The standard soundtrack.' : 'The complete translation of all dialogue.');
+    var extra = '';
+    if(kind==='audio' && o.kind && o.fmt) extra += ' '+chip(o.fmt,'fmt');
+    if(o.def) extra += ' '+chip('Default','def');
+    if(o.slow){ extra += ' '+slowChip(); }
+    html += '<div class="pk-opt'+(s?' sel':'')+'">'+tick()+'<span class="oi"><span class="on">'+title+extra+'</span><span class="oh">'+hint+'</span></span></div>';
+  });
+  html += '</div></div></div>';
+  return html;
+}
+
+/* ============================================================
+   DIRECTION 4 — sound & subtitles, plain (two questions)
+   ============================================================ */
+function d4card(o, sel, foc){
+  var name = o.off ? 'Off' : o.name;
+  return '<div class="pk4-card'+(sel?' sel':'')+(foc?' focused':'')+'">'+flag(o)+'<span class="cn">'+name+'</span></div>';
+}
+function d4(){
+  var html = '<div class="d4">';
+  // SOUND
+  html += '<div class="pk4-sec"><div class="pk4-q"><span class="qic">'+IC.audio+'</span>Sound</div>';
+  html += '<div class="pk4-cards">';
+  html += d4card(AUDIO[0], true, true);   // Dansk
+  html += d4card(AUDIO[1], false, false); // English
+  // commentary as card
+  html += d4card(AUDIO[3], false, false);
+  html += '</div>';
+  html += '<div class="pk4-variantbar"><span class="vlab">Danish:</span>'+
+    '<span class="pk4-pill sel">Surround 5.1</span>'+
+    '<span class="pk4-pill">Describes action</span>'+
+    '</div>';
+  html += '</div>';
+  // SUBTITLES
+  html += '<div class="pk4-sec"><div class="pk4-q"><span class="qic">'+IC.cc+'</span>Subtitles</div>';
+  html += '<div class="pk4-cards">';
+  html += d4card({off:true}, false, false);
+  html += d4card(SUBS[1], true, false);   // Dansk (selected)
+  html += d4card(SUBS[3], false, false);  // English
+  html += d4card(SUBS[5], false, false);  // Español
+  html += d4card(SUBS[6], false, false);  // 中文
+  html += d4card(SUBS[7], false, false);  // Suomi
+  html += '</div>';
+  html += '<div class="pk4-variantbar"><span class="vlab">Danish subtitles:</span>'+
+    '<span class="pk4-pill sel">Full</span>'+
+    '<span class="pk4-pill">Signs only</span>'+
+    '</div>';
+  html += '</div>';
+  html += '</div>';
+  return html;
+}
+
+/* ---------- panel assembly ---------- */
+function tabs(active, phone){
+  return '<div class="pk-tabs">'+
+    '<div class="pk-tab'+(active==='audio'?' cur focused':'')+'">'+IC.audio+'<span>Audio</span></div>'+
+    '<div class="pk-tab'+(active==='subs'?' cur':'')+'">'+IC.cc+'<span>Subtitles</span></div>'+
+  '</div>';
+}
+function foot(text){
+  return '<div class="pk-foot"><span class="fi-ic">'+IC.info+'</span><span>'+text+'</span></div>';
+}
+
+/* build a picker panel body for a direction + tab */
+function panel(dir, tab, phone){
+  var body='', foott='';
+  if(dir===1){ body = tabs(tab)+d1(tab, tab==='audio'?SEL.audio:SEL.subs);
+    foott = tab==='subs' ? foot('<b>Dansk · Signs only</b> — only translates on-screen text and foreign lines.') : foot('<b>Dansk · Surround 5.1</b> is playing.'); body += foott; }
+  else if(dir===2){ body = tabs(tab)+d2(tab, tab==='audio'?SEL.audio:SEL.subs, tab==='subs'?'s-daf':'a-da'); }
+  else if(dir===3){ body = tabs(tab)+d3(tab, tab==='audio'?SEL.audio:SEL.subs, 'da'); }
+  else if(dir===4){ body = '<div class="pk-title">Language</div>'+d4(); }
+  return body;
+}
+
+/* ---------- backdrops ---------- */
+var STILL = 'radial-gradient(120% 130% at 78% 18%, #26406b 0%, #16203c 42%, #0a0e1c 100%)';
+function tvStill(){
+  return '<div class="tv-still"><div class="g" style="background:'+STILL+'"></div></div>'+
+    '<div class="tv-grain"></div><div class="tv-vig"></div><div class="tv-dim"></div>'+
+    '<div class="tv-ctx"><div class="k">Ravilo · Movie</div><div class="t">Skygger over Havn</div>'+
+    '<div class="barrow"><span>42:18</span><div class="bar"><i></i></div><span>1:52:30</span></div></div>';
+}
+function phoneChrome(){
+  return '<div class="ph-notch"></div><div class="ph-status"><span>20:14</span><span class="dots"><span></span></span></div>'+
+    '<div class="ph-still"><div class="g" style="background:'+STILL+'"></div></div><div class="ph-dim"></div>';
+}
+
+/* ---------- column definitions ---------- */
+var COLS = [
+  { dir:1, name:'1 · Grouped by language', note:'The safe, by-the-book read. One flag + language name per group; variants (Full / Signs only …) nest beneath. Pick a language first, tweak the variant only if you want to. A footer line explains whatever you land on.', tvTab:'subs', phTab:'subs' },
+  { dir:2, name:'2 · Flag-forward list', note:'Biggest flags, flattest list — scan by flag, not by reading. Every track is one row with a plain name and small badges (Surround 5.1 · Default · Signs only · Starts in a moment). Fastest to recognise your language.', tvTab:'subs', phTab:'subs' },
+  { dir:3, name:'3 · Two-pane (language → options)', note:'Languages on the left, the chosen language\u2019s options on the right — with a one-line plain explanation for each. Scales gracefully when a title has many languages; natural left/right on a remote.', tvTab:'subs', phTab:'subs' },
+  { dir:4, name:'4 · Two plain questions', note:'The friendliest reframe: no tabs, no jargon — just \u201cSound\u201d and \u201cSubtitles\u201d as big flag cards. Variants become simple pills under the chosen language. Everything visible at once; least reading of all.', tvTab:'subs', phTab:'subs' }
+];
+
+var COLX = [80, 1220, 2360, 3500];
+var COLTOP = 470;
+
+var host = document.getElementById('cols');
+COLS.forEach(function(C, i){
+  var col = document.createElement('div');
+  col.className = 'col';
+  col.style.left = COLX[i]+'px';
+  col.style.top = COLTOP+'px';
+  col.style.width = '1040px';
+
+  var pkClass = 'pk d'+C.dir + (C.dir===3?' d3':'') + (C.dir===4?' d4':'');
+  // TV
+  var tvPanel = '<div class="'+pkClass+'">'+panel(C.dir, C.tvTab, false)+'</div>';
+  // phone
+  var phPanel = '<div class="'+pkClass+' pk--phone">'+ (C.dir===4? ('<div class="pk-title">Language</div>'+d4Phone()) : (tabs(C.phTab)+phoneBody(C.dir, C.phTab)) )+'</div>';
+
+  col.innerHTML =
+    '<div class="frame-label">'+C.name+'</div>'+
+    '<div class="frame-note">'+C.note+'</div>'+
+    '<span class="surf-tag">On TV · in-player overlay</span>'+
+    '<div class="tv">'+tvStill()+tvPanel+'</div>'+
+    '<div style="height:44px"></div>'+
+    '<span class="surf-tag">On phone · bottom sheet</span>'+
+    '<div class="phone">'+phoneChrome()+'<div class="sheet"><div class="grab"></div>'+phPanel+'</div></div>';
+  host.appendChild(col);
+});
+
+/* phone bodies reuse the same renderers (subs tab) */
+function phoneBody(dir, tab){
+  if(dir===1) return d1(tab, SEL.subs)+foot('<b>Dansk · Signs only</b> — on-screen text &amp; foreign lines only.');
+  if(dir===2) return d2(tab, SEL.subs, 's-daf');
+  if(dir===3) return d3(tab, SEL.subs, 'da');
+  return '';
+}
+function d4Phone(){ return d4(); }
+</script>
+</body>
+</html>
