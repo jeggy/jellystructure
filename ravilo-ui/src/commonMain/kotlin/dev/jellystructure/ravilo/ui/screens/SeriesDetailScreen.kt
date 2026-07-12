@@ -153,6 +153,20 @@ private fun episodeDisplayTitle(ep: Episode, episodes: List<Episode>): String {
     return if (range != null) "Episodes ${range.first}-${range.second}" else ep.title
 }
 
+/** Groups consecutive episodes sharing a physical `file` (a multi-episode release) into one unit;
+ *  a lone episode is its own group of 1. Mirrors the episode rail's grouping (below) so the player's
+ *  in-player episode picker never shows one entry per contained episode of the same file — bug fix:
+ *  it used to map the flat episode list 1:1, so a 3-episode file produced 3 duplicate-looking picker
+ *  entries all titled "Episodes 1-3", none of which reflected which file was actually playing. */
+private fun episodeGroups(episodes: List<Episode>): List<List<Episode>> =
+    episodes.groupBy { if (it.file.isBlank()) "single:${it.id}" else it.file }.values.toList()
+
+/** Picks the group's natural entry point: in-progress, else first unwatched, else the first episode. */
+private fun groupEntryPoint(group: List<Episode>, overlay: Map<String, CardPlayState>): Episode =
+    group.firstOrNull { ep -> overlay[ep.id].let { ps -> ps != null && !ps.played && ps.resumeMs > 0 } }
+        ?: group.firstOrNull { ep -> overlay[ep.id]?.played != true }
+        ?: group.first()
+
 private fun buildEpisodeContext(
     detail: SeriesDetail,
     seasonIdx: Int,
@@ -161,9 +175,12 @@ private fun buildEpisodeContext(
     overlay: Map<String, CardPlayState> = emptyMap(),
 ): EpisodePlayContext {
     val sNum = detail.seasons.getOrNull(seasonIdx)?.index ?: (seasonIdx + 1)
-    val epIdx = episodes.indexOfFirst { it.id == epId }.coerceAtLeast(0)
-    val ep    = episodes.getOrElse(epIdx) { episodes[0] }
-    val nextEp = episodes.getOrNull(epIdx + 1)
+    val groups = episodeGroups(episodes)
+    val groupIdx = groups.indexOfFirst { g -> g.any { it.id == epId } }.coerceAtLeast(0)
+    val group = groups.getOrElse(groupIdx) { groups.firstOrNull() ?: episodes.take(1) }
+    val ep = group.firstOrNull { it.id == epId } ?: group.firstOrNull() ?: episodes.first()
+    val nextGroup = groups.getOrNull(groupIdx + 1)
+    val nextEp = nextGroup?.let { groupEntryPoint(it, overlay) }
     return EpisodePlayContext(
         episodeId    = epId,
         episodeTitle = episodeDisplayTitle(ep, episodes),
@@ -171,21 +188,24 @@ private fun buildEpisodeContext(
         nextEpId     = nextEp?.id,
         nextEpLabel  = nextEp?.let { episodeKicker(sNum, it, episodes) },
         nextEpTitle  = nextEp?.let { episodeDisplayTitle(it, episodes) },
-        episodes     = episodes.mapIndexed { i, e ->
+        episodes     = groups.map { g ->
+            val rep = groupEntryPoint(g, overlay)
             // R84: prefer overlay playstate; fall back to 0f/false (catalog carries null from R83)
-            val ps = overlay[e.id]
+            val ps = overlay[rep.id]
+            val totalRuntime = g.sumOf { it.runtime }
+            val groupWatched = g.all { overlay[it.id]?.played ?: it.playback?.watched ?: false }
             PlayerEpisodeEntry(
-                id            = e.id,
-                n             = e.episodeNumber,
-                title         = episodeDisplayTitle(e, episodes),
-                kicker        = episodeKicker(sNum, e, episodes),
-                durationLabel = if (e.runtime > 0) "${e.runtime}m" else "",
-                progressPct   = ps?.playedPct ?: e.playback?.pct ?: 0f,
-                watched       = ps?.played ?: e.playback?.watched ?: false,
-                stillUrl      = e.stillUrl,
+                id            = rep.id,
+                numberLabel   = if (g.size > 1) null else rep.episodeNumber.toString(),
+                title         = episodeDisplayTitle(rep, episodes),
+                kicker        = episodeKicker(sNum, rep, episodes),
+                durationLabel = if (totalRuntime > 0) "${totalRuntime}m" else "",
+                progressPct   = ps?.playedPct ?: rep.playback?.pct ?: 0f,
+                watched       = groupWatched,
+                stillUrl      = g.firstOrNull()?.stillUrl,
             )
         },
-        currentEpIndex = epIdx,
+        currentEpIndex = groupIdx,
     )
 }
 
@@ -536,12 +556,9 @@ private fun SeriesDetailLoaded(
 
                     // Phase R179: group consecutive episodes sharing a physical `file` (a multi-episode
                     // release, e.g. S01E01E02E03.mkv) into ONE rail slot — a lone episode is its own
-                    // group of 1. Built from server-pushed `file` only; never inspects filenames.
-                    val episodeGroups = remember(episodes) {
-                        // Guard: a blank `file` (older cached data, before this field existed) must never
-                        // accidentally group unrelated episodes together — key each one singly instead.
-                        episodes.groupBy { if (it.file.isBlank()) "single:${it.id}" else it.file }.values.toList()
-                    }
+                    // group of 1. Built from server-pushed `file` only; never inspects filenames. Shared
+                    // with buildEpisodeContext so the in-player episode picker groups the same way.
+                    val episodeGroups = remember(episodes) { episodeGroups(episodes) }
                     val epRowState = rememberLazyListState()
                     // Scroll to the GROUP containing the first unwatched episode whenever the selected
                     // season or overlay changes. Bug fix: this used to index into the flat `episodes`
@@ -567,9 +584,7 @@ private fun SeriesDetailLoaded(
                                 // The whole card plays/toggles as one unit — target whichever contained
                                 // episode is the natural entry point: in-progress, else first unwatched,
                                 // else the group's first episode.
-                                val targetEp = group.firstOrNull { ep ->
-                                    overlay[ep.id].let { ps -> ps != null && !ps.played && ps.resumeMs > 0 }
-                                } ?: group.firstOrNull { ep -> overlay[ep.id]?.played != true } ?: group.first()
+                                val targetEp = groupEntryPoint(group, overlay)
                                 val groupWatched = group.all { overlay[it.id]?.played == true }
                                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                     MultiEpisodeCard(

@@ -1,9 +1,12 @@
 package dev.jellystructure.ravilo.ui.screens
 
-/** Lightweight episode descriptor passed to PlayerScreen for the in-player episode rail. */
+/** Lightweight episode descriptor passed to PlayerScreen for the in-player episode rail.
+ *  [numberLabel] is null for a multi-episode-file group (its [title] is already "Episodes X-Y",
+ *  so a leading number would either repeat or misrepresent it — the rail card omits the badge
+ *  and the numeric prefix entirely in that case). */
 data class PlayerEpisodeEntry(
     val id: String,
-    val n: Int,
+    val numberLabel: String?,
     val title: String,
     val kicker: String,        // e.g. "S1 · E3"
     val durationLabel: String, // e.g. "42m"
