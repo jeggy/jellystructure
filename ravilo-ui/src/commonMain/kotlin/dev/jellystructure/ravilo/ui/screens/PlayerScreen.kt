@@ -1656,15 +1656,17 @@ private fun EpisodeRailCard(
                 // Dark scrim so the episode number / badge / progress stay legible
                 Box(Modifier.matchParentSize().background(Color.Black.copy(alpha = 0.28f)))
             }
-            // Episode number
-            Text(
-                text = ep.n.toString(),
-                color = Color.White,
-                fontSize = 22.sp,
-                fontWeight = FontWeight.Bold,
-                fontFamily = SpaceGrotesk,
-                modifier = Modifier.align(Alignment.TopStart).padding(8.dp),
-            )
+            // Episode number (omitted for a multi-episode-file group — see [PlayerEpisodeEntry]).
+            ep.numberLabel?.let { label ->
+                Text(
+                    text = label,
+                    color = Color.White,
+                    fontSize = 22.sp,
+                    fontWeight = FontWeight.Bold,
+                    fontFamily = SpaceGrotesk,
+                    modifier = Modifier.align(Alignment.TopStart).padding(8.dp),
+                )
+            }
             // NOW PLAYING badge
             if (isCurrent) {
                 Box(
@@ -1700,7 +1702,7 @@ private fun EpisodeRailCard(
         }
         Spacer(Modifier.height(8.dp))
         Text(
-            text = "${ep.n}. ${ep.title}",
+            text = ep.numberLabel?.let { "$it. ${ep.title}" } ?: ep.title,
             color = if (isCurrent || isFocused) Color.White else Color.White.copy(0.65f),
             fontSize = 14.sp,
             fontWeight = FontWeight.SemiBold,
