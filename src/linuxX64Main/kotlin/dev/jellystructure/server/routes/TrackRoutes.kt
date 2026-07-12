@@ -573,14 +573,17 @@ fun Route.trackRoutes(
                     val newTracks = FfprobeRunner.probe(ep.path)
                     val latestItem = store.resolve(id)
                     if (latestItem != null) {
-                        val epIdx = latestItem.episodes.indexOfFirst { it.filename == ep.filename }
-                        if (epIdx >= 0) {
-                            val newIssue = newTracks.count { (it.kind == TrackKind.AUDIO || it.kind == TrackKind.SUBTITLE) && it.language == null }
-                            val epResolved = if (kind == TrackKind.AUDIO) primaryAudioLanguage(configStore.current, ep.path, newTracks) else ep.resolvedLanguage
-                            val updatedEps = latestItem.episodes.toMutableList()
-                            updatedEps[epIdx] = ep.copy(tracks = newTracks, issueCount = newIssue, resolvedLanguage = epResolved)
-                            store.updateOne(latestItem.copy(episodes = updatedEps))
+                        // Bug fix (dev-review addendum §6, Phase 149): the edit (mkvpropedit/ffmpeg) just
+                        // ran on the shared PHYSICAL FILE, so it affects every episode contained in it —
+                        // this used to refresh only the first Episode matched by filename, leaving
+                        // sibling episodes in a multi-episode group with stale cached tracks until a full
+                        // rescan. Refresh every episode sharing this filename, not just one.
+                        val newIssue = newTracks.count { (it.kind == TrackKind.AUDIO || it.kind == TrackKind.SUBTITLE) && it.language == null }
+                        val epResolved = if (kind == TrackKind.AUDIO) primaryAudioLanguage(configStore.current, ep.path, newTracks) else ep.resolvedLanguage
+                        val updatedEps = latestItem.episodes.map { e ->
+                            if (e.filename == ep.filename) e.copy(tracks = newTracks, issueCount = newIssue, resolvedLanguage = epResolved) else e
                         }
+                        store.updateOne(latestItem.copy(episodes = updatedEps))
                     }
 
                     store.resolve(id)?.let { broadcaster.broadcast(JobEvent.ItemScanned(jobId, it)) }

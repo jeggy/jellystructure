@@ -436,10 +436,9 @@ fun Route.mediaRoutes(
                             // For TV shows, also write episodedetails.nfo for each episode (Phase 76: pass main cast)
                             if (item.kind == MediaKind.TV_SHOW) {
                                 var epWritten = 0
-                                for (ep in item.episodes) {
-                                    NfoWriter.writeEpisode(ep, item.cast)
-                                        .onSuccess { epWritten++ }
-                                        .onFailure { Logger.warn("Episode NFO write failed for ${ep.filename}: ${it.message}") }
+                                for ((group, result) in NfoWriter.writeEpisodeNfos(item.episodes, item.cast)) {
+                                    result.onSuccess { epWritten += group.size }
+                                        .onFailure { Logger.warn("Episode NFO write failed for ${group.first().filename}: ${it.message}") }
                                 }
                                 if (epWritten > 0) Logger.info("Wrote $epWritten episode NFO(s) for '$id'")
                             }
@@ -732,10 +731,9 @@ fun Route.mediaRoutes(
                     ?: return@post call.respond(HttpStatusCode.NotFound)
                 var written = 0
                 var failed = 0
-                for (ep in item.episodes) {
-                    NfoWriter.writeEpisode(ep, item.cast)
-                        .onSuccess { written++ }
-                        .onFailure { failed++ }
+                for ((group, result) in NfoWriter.writeEpisodeNfos(item.episodes, item.cast)) {
+                    result.onSuccess { written += group.size }
+                        .onFailure { failed += group.size }
                 }
                 mediaHistory.record(id, "episode_nfo_write", "written=$written failed=$failed")
                 call.respond(mapOf("written" to written, "failed" to failed))
@@ -1834,9 +1832,8 @@ fun Route.mediaRoutes(
                         current = item.copy(nfoWrittenAt = result.writtenAt, nfoHash = result.hash)
                         store.updateOne(current)
                         if (item.kind == MediaKind.TV_SHOW) {
-                            for (ep in item.episodes) {
-                                NfoWriter.writeEpisode(ep, item.cast)
-                                    .onFailure { Logger.warn("batch-push: episode NFO failed for ${ep.filename}: ${it.message}") }
+                            for ((group, result) in NfoWriter.writeEpisodeNfos(item.episodes, item.cast)) {
+                                result.onFailure { Logger.warn("batch-push: episode NFO failed for ${group.first().filename}: ${it.message}") }
                             }
                         }
                     }
@@ -1880,10 +1877,9 @@ internal suspend fun pushToJellyfin(
             store.updateOne(current)
             if (item.kind == MediaKind.TV_SHOW) {
                 var epWritten = 0
-                for (ep in item.episodes) {
-                    NfoWriter.writeEpisode(ep, item.cast)
-                        .onSuccess { epWritten++ }
-                        .onFailure { Logger.warn("pushToJellyfin: episode NFO failed for ${ep.filename}: ${it.message}") }
+                for ((group, result) in NfoWriter.writeEpisodeNfos(item.episodes, item.cast)) {
+                    result.onSuccess { epWritten += group.size }
+                        .onFailure { Logger.warn("pushToJellyfin: episode NFO failed for ${group.first().filename}: ${it.message}") }
                 }
                 if (epWritten > 0) Logger.info("pushToJellyfin: wrote $epWritten episode NFOs for '${item.id}'")
             }

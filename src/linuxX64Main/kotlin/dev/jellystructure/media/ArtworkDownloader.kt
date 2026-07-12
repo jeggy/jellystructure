@@ -205,7 +205,14 @@ class ArtworkDownloader(private val tmdbClient: TmdbClient, private val screengr
     fun episodeStillPath(episode: Episode): String {  // R133: public so RaviloArtworkService can resolve stills
         val dir = episode.path.substringBeforeLast('/')
         val baseName = episode.filename.substringBeforeLast('.')
-        return "$dir/$baseName-thumb.jpg"
+        // Bug fix (Phase 149 dev-review addendum §4): a multi-episode file's N episodes all share
+        // path/filename, so keying purely off baseName collided every episode in the group onto the
+        // SAME disk path — fetching E02's still silently overwrote E01's. Fold the episode number into
+        // the filename whenever the file has more than one contained episode; a normal single-episode
+        // file (the overwhelming majority) keeps today's exact path unchanged, so nothing needs
+        // migrating for existing libraries.
+        val suffix = if (episode.partCount > 1) "-e${episode.episodeNumber ?: episode.partIndex}" else ""
+        return "$dir/$baseName-thumb$suffix.jpg"
     }
 
     private fun mediaDir(item: MediaItem) = when (item.kind) {

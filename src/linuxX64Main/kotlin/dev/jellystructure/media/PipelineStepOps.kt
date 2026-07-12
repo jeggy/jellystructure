@@ -69,7 +69,9 @@ object PipelineStepOps {
             }
         }
         if (includeEpisodes && current.kind == dev.jellystructure.model.MediaKind.TV_SHOW) {
-            for (ep in current.episodes) runCatching { NfoWriter.writeEpisode(ep, current.cast) }
+            // Bug fix: writeEpisodeNfos groups by shared file first — a multi-episode file's contained
+            // episodes get ONE combined NFO instead of each overwriting the last (see its doc comment).
+            NfoWriter.writeEpisodeNfos(current.episodes, current.cast)
         }
         return result
     }
