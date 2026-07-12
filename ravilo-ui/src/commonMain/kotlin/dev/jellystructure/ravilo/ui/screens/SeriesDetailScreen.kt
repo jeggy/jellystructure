@@ -128,6 +128,31 @@ fun SeriesDetailScreen(
     }
 }
 
+/**
+ * Phase R179 bug fix: when [ep] belongs to a multi-episode file group (`partCount > 1`), the player is
+ * genuinely playing the whole shared file — its on-screen kicker/title used to show just this one
+ * episode (e.g. "S1 · E1" / episode 1's own title) even though episodes 2 and 3 play right along with
+ * it, reading as if only one episode were showing. Returns the group's (lowest, highest) episode
+ * number when [ep] is grouped, else null for the ordinary single-episode case.
+ */
+private fun episodeGroupRange(ep: Episode, episodes: List<Episode>): Pair<Int, Int>? {
+    if (ep.partCount <= 1 || ep.file.isBlank()) return null
+    val nums = episodes.filter { it.file == ep.file }.map { it.episodeNumber }
+    val lo = nums.minOrNull() ?: return null
+    val hi = nums.maxOrNull() ?: return null
+    return if (lo != hi) lo to hi else null
+}
+
+private fun episodeKicker(sNum: Int, ep: Episode, episodes: List<Episode>): String {
+    val range = episodeGroupRange(ep, episodes)
+    return if (range != null) "S$sNum · E${range.first}-${range.second}" else "S$sNum · E${ep.episodeNumber}"
+}
+
+private fun episodeDisplayTitle(ep: Episode, episodes: List<Episode>): String {
+    val range = episodeGroupRange(ep, episodes)
+    return if (range != null) "Episodes ${range.first}-${range.second}" else ep.title
+}
+
 private fun buildEpisodeContext(
     detail: SeriesDetail,
     seasonIdx: Int,
@@ -141,19 +166,19 @@ private fun buildEpisodeContext(
     val nextEp = episodes.getOrNull(epIdx + 1)
     return EpisodePlayContext(
         episodeId    = epId,
-        episodeTitle = ep.title,
-        kicker       = "S$sNum · E${ep.episodeNumber}",
+        episodeTitle = episodeDisplayTitle(ep, episodes),
+        kicker       = episodeKicker(sNum, ep, episodes),
         nextEpId     = nextEp?.id,
-        nextEpLabel  = nextEp?.let { "S$sNum · E${it.episodeNumber}" },
-        nextEpTitle  = nextEp?.title,
+        nextEpLabel  = nextEp?.let { episodeKicker(sNum, it, episodes) },
+        nextEpTitle  = nextEp?.let { episodeDisplayTitle(it, episodes) },
         episodes     = episodes.mapIndexed { i, e ->
             // R84: prefer overlay playstate; fall back to 0f/false (catalog carries null from R83)
             val ps = overlay[e.id]
             PlayerEpisodeEntry(
                 id            = e.id,
                 n             = e.episodeNumber,
-                title         = e.title,
-                kicker        = "S$sNum · E${e.episodeNumber}",
+                title         = episodeDisplayTitle(e, episodes),
+                kicker        = episodeKicker(sNum, e, episodes),
                 durationLabel = if (e.runtime > 0) "${e.runtime}m" else "",
                 progressPct   = ps?.playedPct ?: e.playback?.pct ?: 0f,
                 watched       = ps?.played ?: e.playback?.watched ?: false,
