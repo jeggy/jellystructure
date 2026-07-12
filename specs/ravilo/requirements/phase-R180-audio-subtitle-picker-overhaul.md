@@ -182,17 +182,31 @@ forward it. Fix: **widen `PlayerAudioTrack` with `channels: Int?` + `isDefault: 
 actuals.** Derive the badge from `channels` (>2 → Surround; 2 → Stereo; 1 → Mono) — never from the codec
 string (which FR-RV-ASP1-2 bans showing anyway).
 
-**3. SDH / Commentary / Describes-action / region-qualifier have no flags — parse them from the title, and coverage is partial.**
+**3. SDH / Commentary / Describes-action / region-qualifier have no flags — parse them from the title (audio titles matter too), and coverage is partial.**
 Only `forced` (→ "Signs only") and `isDefault` are real booleans. "Sound described" (SDH), "Commentary",
-"Describes action" (AD), and the `中文 · Simplified` suffix must be **derived by scanning the track
-`label`/title**. Real markers in this library (verified from the DB): SDH → `(SDH)` / `SDH` / `hard of
-hearing`; AD → `Synstolkning` / `Audio Description` / `Described` / `AD`; commentary → `Commentary`;
-region → `(Simplified)` / `(Traditional)` / `(Canadian)` / `(Latin America)`. Two cautions: (a) **many
-tracks have no title at all** (every PGS track on the 28-Years-Later test title, and the 191
-`unknown`-codec tracks, are untitled) → those correctly fall back to flag+name per the non-goal, so badge
-coverage is inherently partial; (b) the same DisplayTitle string also contains the codec/channel words
-FR-RV-ASP1-2 bans (`Dolby Digital - 5.1`) — the parser must **classify the marker and discard the rest,
-never echo the title**.
+"Describes action" (AD), and the region suffix (`中文 · Simplified`, `Français · Québec`) must be **derived
+by scanning the track `label`/title** — on **both subtitle _and_ audio** rows. **Audio titles are a real,
+high-coverage signal, not an afterthought: 27% of audio tracks in this library carry a title** — but they
+fall into four buckets, and only the last is a badge:
+   - **codec/channel noise to _discard_** (~half of titled audio): `Stereo`, `Surround 5.1`, `DTS-HD MA
+     5.1`, `Dolby Digital`, `TrueHD Atmos 7.1`, `AAC2.0`, … — never shown (FR-RV-ASP1-2); channel info
+     comes from the `channels` field (§2), never from parsing these.
+   - **bare language names** redundant with the flag/endonym (`English`, `Dansk`, `Faroese`) — drop.
+   - **regional dub variants** (very common — ~1,120 tracks): `European`, `Latin American`, `Brazilian`,
+     `Taiwan`, `United States`, `VFF`/`VFQ` (French France/Québec) → the audio analogue of the subtitle
+     region suffix; render as the muted `on-sub` qualifier on the name, not as a codec.
+   - **the actual badge markers**: commentary → `Commentary…` (163 tracks; the plain word — do **not**
+     echo the long "Commentary by creators Trey Parker and Matt Stone" tail); AD → `Audio Description` /
+     `AD` (7), and **`Synstolkning`** (the Danish AD term the viewer flagged — **0 in raw ffprobe titles
+     but present in Jellyfin's DisplayTitle**, which is the label the player actually receives, so detect
+     on the DisplayTitle/label, not just the embedded title); SDH (subtitles) → `(SDH)` / `SDH` / `hard of
+     hearing`; region → `(Simplified)` / `(Traditional)` / `(Canadian)`.
+
+Two cautions: (a) **many tracks have no title at all** (every PGS track on the 28-Years-Later test title,
+and the 191 `unknown`-codec tracks, are untitled) → those correctly fall back to flag+name per the
+non-goal, so badge coverage is inherently partial; (b) the same DisplayTitle also carries the codec/channel
+words FR-RV-ASP1-2 bans (`Dansk - Synstolkning - Dolby Digital - 5.1`) — the parser must **classify the one
+marker it recognises and discard the rest, never echo the title.**
 
 **4. "Dubbed" needs the title's original language, which reaches the player nowhere.**
 `originalLanguage` is on **no** TV DTO, no `Dest.Player`, no play context (grep-confirmed). Pick one:
@@ -202,7 +216,12 @@ never echo the title**.
    - **(b) defer the Dubbed badge** to a follow-up; ship the other five badges now.
 
    Recommend (a) if cheap in your DTO layer, else (b). This is the **only** badge with a hard data gap —
-   don't let it block the rest.
+   don't let it block the rest. **Partial supplement (from §3's audio-title scan):** ~20 tracks in this
+   library tag the source track's title `[Original]` / `Original | …` (e.g. `English [Original]`, `dansk
+   [original]`). Where that marker is present it identifies the original track **directly** — every
+   other-language audio row is then "Dubbed" relative to it, **without** `originalLanguage`. Useful as a
+   fallback/confirmation, but low-coverage (~20 tracks), so it doesn't replace (a)/(b) — it just narrows
+   the gap for titles that self-tag.
 
 **5. FR-RV-ASP1-8 (scroll-follow) is net-new, not a restyle.**
 Today's list is a plain `Column { items.forEachIndexed {…} }` (`PlayerScreen.kt` ~L1413) in a fixed-width
