@@ -245,9 +245,6 @@ fun PlayerScreen(
     var pauseFlash by remember { mutableStateOf(false) }
     var pauseFlashIsPlay by remember { mutableStateOf(true) }
 
-    // R56: "burning in…" indicator shown while the restream ticket is loading for a PGS encode sub.
-    var burningInSub by remember { mutableStateOf(false) }
-
     // R56: encode subs (PGS) from the server-pushed ticket, appended after native tracks in the picker.
     val encodeSubTracks: List<PlayerSubtitleTrack> = remember(sessionState) {
         val subs = (sessionState as? PlayerSessionState.Ready)?.ticket?.subtitles
@@ -390,7 +387,6 @@ fun PlayerScreen(
             val sub = subOptions.getOrNull(pickerIdx)
             if (sub != null && sub.deliveryMethod == "encode") {
                 // R56: PGS burn-in — restream with subtitle index baked into the Jellyfin transcode.
-                burningInSub = true
                 store.restreamWithSub(itemId, sub.jellyfinStreamIndex, player.positionMs)
                 // R181 — still worth remembering the language (helps other titles' global tier and a
                 // rewatch of this series where the language exists as a native track), even though the
@@ -448,7 +444,6 @@ fun PlayerScreen(
     // Load player when the StreamTicket is ready (initial load or R56 restream)
     LaunchedEffect(sessionState) {
         val s = sessionState as? PlayerSessionState.Ready ?: return@LaunchedEffect
-        burningInSub = false
         val streamUrl = s.ticket.hlsUrl
             ?: "${s.ticket.jellyfinBaseUrl}/Videos/${s.ticket.itemId}/stream.${s.ticket.container}?api_key=${s.ticket.accessToken}"
         player.load(streamUrl, s.ticket.startPositionMs, s.ticket.subtitles, s.ticket.audio)
@@ -767,8 +762,10 @@ fun PlayerScreen(
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 BufferingSpinner(colors)
                 Spacer(Modifier.height(48.dp))
+                // R180 (FR-RV-ASP1-2) — a neutral loading string regardless of cause; naming the PGS
+                // burn-in restream here would leak the delivery method, which the picker keeps invisible.
                 Text(
-                    if (burningInSub) str("player.burning_in_subtitle") else str("loading"),
+                    str("loading"),
                     color = Color.White.copy(0.7f), fontSize = 18.sp,
                 )
             }

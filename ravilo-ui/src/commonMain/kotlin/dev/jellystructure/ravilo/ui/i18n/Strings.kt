@@ -160,7 +160,6 @@ private val EN = mapOf(
     "player.rail_hint"    to "← → switch  ·  ↵ play  ·  ↑ back",
     "player.tab_audio"    to "Audio",
     "player.tab_subtitles" to "Subtitles",
-    "player.burning_in_subtitle" to "Burning in subtitle… (transcoding)",
     "player.badge_default" to "Default",
     "player.badge_surround51" to "Surround 5.1",
     "player.badge_stereo" to "Stereo",
