@@ -271,10 +271,12 @@ fun HeroCarousel(
             )
 
             // Meta: year · rating
-            val meta = listOfNotNull(
-                active.item.year?.toString(),
-                active.item.rating,
-            ).joinToString(" · ")
+            // Bug fix: remember()ed like the equivalent computation in SeriesDetailScreen/
+            // MovieDetailScreen — this recomputed on every recomposition (every activeIndex change
+            // from D-pad paging or the auto-advance timer) despite being trivial, stable input.
+            val meta = remember(active.item.year, active.item.rating) {
+                listOfNotNull(active.item.year?.toString(), active.item.rating).joinToString(" · ")
+            }
             if (meta.isNotEmpty()) {
                 Spacer(Modifier.height(8.dp))
                 Text(
