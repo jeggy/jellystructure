@@ -202,7 +202,7 @@ private fun buildEpisodeContext(
                 durationLabel = if (totalRuntime > 0) "${totalRuntime}m" else "",
                 progressPct   = ps?.playedPct ?: rep.playback?.pct ?: 0f,
                 watched       = groupWatched,
-                stillUrl      = g.firstOrNull()?.stillUrl,
+                stillUrls     = g.take(3).map { it.stillUrl },
             )
         },
         currentEpIndex = groupIdx,

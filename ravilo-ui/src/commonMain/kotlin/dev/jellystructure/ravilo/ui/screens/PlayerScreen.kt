@@ -1,6 +1,7 @@
 package dev.jellystructure.ravilo.ui.screens
 
 import dev.jellystructure.ravilo.ui.LocalPlaystateCommands
+import dev.jellystructure.ravilo.ui.components.EpisodeTriptych
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
@@ -81,7 +82,6 @@ import dev.jellystructure.ravilo.ui.seams.PlayerImmersiveEffect
 import dev.jellystructure.ravilo.ui.seams.PlayerLifecycleEffect
 import dev.jellystructure.ravilo.ui.seams.PlayerVideoSurface
 import dev.jellystructure.ravilo.ui.seams.RaviloPlayer
-import dev.jellystructure.ravilo.ui.seams.RemoteImage
 import dev.jellystructure.ravilo.ui.seams.languageName
 import dev.jellystructure.ravilo.ui.seams.playerBackdropColor
 import dev.jellystructure.ravilo.ui.seams.playerTapTogglesChrome
@@ -1646,13 +1646,10 @@ private fun EpisodeRailCard(
                     shape = RoundedCornerShape(9.dp),
                 ),
         ) {
-            // Still image (falls back to the flat box colour when absent)
-            ep.stillUrl?.let { url ->
-                RemoteImage(
-                    url = url,
-                    contentDescription = null,
-                    modifier = Modifier.matchParentSize(),
-                )
+            // Still image(s) — a single image for a lone episode, a seamed triptych for a group
+            // (falls back to the flat box colour when no still is available at all).
+            if (ep.stillUrls.any { it != null }) {
+                EpisodeTriptych(stillUrls = ep.stillUrls, modifier = Modifier.matchParentSize())
                 // Dark scrim so the episode number / badge / progress stay legible
                 Box(Modifier.matchParentSize().background(Color.Black.copy(alpha = 0.28f)))
             }

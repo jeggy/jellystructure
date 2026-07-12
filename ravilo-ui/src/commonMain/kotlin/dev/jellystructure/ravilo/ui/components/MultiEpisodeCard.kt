@@ -5,17 +5,13 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.GenericShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -29,9 +25,7 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -39,7 +33,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.jellystructure.ravilo.ui.focus.dpadFocusable
 import dev.jellystructure.ravilo.ui.i18n.str
-import dev.jellystructure.ravilo.ui.seams.RemoteImage
 import dev.jellystructure.ravilo.ui.theme.RaviloMotion
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
 import dev.jellystructure.ravilo.ui.theme.Sora
@@ -124,42 +117,11 @@ fun MultiEpisodeCard(
                 .background(colors.surface),
         ) {
             val panels = ordered.take(3)
-            // Bug fix (round 2): a rotated 2dp-wide divider Box gets clipped by its own unrotated
-            // layout bounds, so it can't render a real diagonal seam — it just showed as a near-straight
-            // fragment. A true diagonal seam needs each panel's OWN pixels cut on a slant, not a divider
-            // drawn on top. Each panel (after the first) is widened by `seamSlant` on its leading edge and
-            // shifted left by the same amount so it overlaps the previous panel; it's then clipped with a
-            // diagonal shape that trims that overlap to a slant, revealing the previous (already-drawn,
-            // unclipped) panel underneath in the cut sliver. Panels are drawn left-to-right in composition
-            // order, and Compose draws later Box children on top, so each seam's "reveal" is automatic —
-            // no zIndex juggling needed. Each panel's own Box width still ~= its 1/3 share (± the seam
-            // bleed), so RemoteImage's cover/center crop stays correctly scoped to that panel, unlike the
-            // original mockup's full-container clip-path which scaled `background-size:cover` off the
-            // whole card.
-            BoxWithConstraints(modifier = Modifier.matchParentSize()) {
-                val panelWidth = maxWidth / panels.size.coerceAtLeast(1)
-                val seamSlant = 14.dp
-                panels.forEachIndexed { i, ep ->
-                    val bleedLeft = i > 0
-                    val bleedRight = i < panels.size - 1
-                    val boxWidth = panelWidth +
-                        (if (bleedLeft) seamSlant else 0.dp) +
-                        (if (bleedRight) seamSlant else 0.dp)
-                    val xOffset = panelWidth * i - (if (bleedLeft) seamSlant else 0.dp)
-                    Box(
-                        modifier = Modifier
-                            .offset(x = xOffset)
-                            .width(boxWidth)
-                            .fillMaxHeight()
-                            .then(if (bleedLeft) Modifier.clip(diagonalSeamShape(seamSlant)) else Modifier),
-                    ) {
-                        val stillUrl = ep.stillUrl
-                        if (stillUrl != null) {
-                            RemoteImage(url = stillUrl, contentDescription = ep.title, modifier = Modifier.matchParentSize())
-                        }
-                    }
-                }
-            }
+            EpisodeTriptych(
+                stillUrls = panels.map { it.stillUrl },
+                contentDescriptions = panels.map { it.title },
+                modifier = Modifier.matchParentSize(),
+            )
 
             // Duration badge (top-end) — combined runtime.
             if (totalRuntime > 0) {
@@ -235,22 +197,5 @@ fun MultiEpisodeCard(
             }
         }
     }
-    }
-}
-
-/** Clips a panel's leading edge on a slant (top cut `slant` further right than the bottom), trimming
- *  its overlap with the previous panel down to a diagonal reveal. See the triptych comment above. */
-@Composable
-private fun diagonalSeamShape(slant: Dp): Shape {
-    val slantPx = with(LocalDensity.current) { slant.toPx() }
-    return remember(slantPx) {
-        GenericShape { size, _ ->
-            val s = slantPx.coerceIn(0f, size.width)
-            moveTo(s, 0f)
-            lineTo(size.width, 0f)
-            lineTo(size.width, size.height)
-            lineTo(0f, size.height)
-            close()
-        }
     }
 }
