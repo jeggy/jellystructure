@@ -24,6 +24,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
@@ -57,6 +58,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 
 enum class BrowseKind(val apiKey: String?) {
@@ -69,6 +71,17 @@ sealed class BrowseState {
     data class Error(val message: String) : BrowseState()
 }
 
+// Bug fix (R118 follow-up): items fetched per page. The grid pages in as the user scrolls near its
+// current end instead of fetching the whole filtered set in one response — that "full set" response
+// used to grow with the whole library on every single Browse "All" open, even though the lazy grid
+// only ever composes/loads images for the handful of visible cells. Appending pages only ever adds
+// tiles past what's already rendered (never reorders/resizes/removes an existing one), so this
+// doesn't violate the no-flicker/no-row-jump rule — that rule is about content popping in among
+// already-visible rows, not about more of the same grid becoming available further down as you keep
+// scrolling, which is standard behavior for any scrollable list.
+private const val BROWSE_PAGE_SIZE = 60
+private const val BROWSE_LOAD_MORE_LOOKAHEAD = 2 * 6  // ~2 rows at a typical 6-column width
+
 class BrowseStore(private val apiClient: TvApiClient) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val _state = MutableStateFlow<BrowseState>(BrowseState.Loading)
@@ -76,11 +89,16 @@ class BrowseStore(private val apiClient: TvApiClient) {
     val gridState = LazyGridState()   // R137: retained grid scroll survives navigate→back
     var focusItemKey: String? = null  // R139: the grid cell the user last navigated from
     private var loadJob: Job? = null
+    private var loadMoreJob: Job? = null
 
     var activeKind: BrowseKind = BrowseKind.ALL
         private set
     var activeGenre: String? = null
         private set
+
+    private var currentPage = 1
+    private var endReached = false
+    private var loadingMore = false
 
     init {
         // R147: patch grid tiles in place when a watched-state change is broadcast (instant, no re-fetch).
@@ -95,12 +113,14 @@ class BrowseStore(private val apiClient: TvApiClient) {
     }
 
     fun load(kind: BrowseKind = activeKind, genre: String? = null) {
-        loadJob?.cancel()
+        loadJob?.cancel(); loadMoreJob?.cancel()
         activeKind = kind; activeGenre = genre
+        currentPage = 1; endReached = false; loadingMore = false
         _state.value = BrowseState.Loading
         loadJob = scope.launch {
             _state.value = runCatching {
-                val results = apiClient.browse(kind = kind.apiKey, genre = genre)  // R118: full set (no pageSize cap)
+                val results = apiClient.browse(kind = kind.apiKey, genre = genre, page = 1, pageSize = BROWSE_PAGE_SIZE)
+                endReached = results.items.size < BROWSE_PAGE_SIZE
                 val facets = apiClient.getFacets(kind = kind.apiKey)
                 BrowseState.Loaded(results, facets)
             }.getOrElse { BrowseState.Error(it.message ?: "Unknown error") }
@@ -110,8 +130,9 @@ class BrowseStore(private val apiClient: TvApiClient) {
     /** Filter by genre in place — keeps the facets/genre chips mounted (no Loading flicker),
      *  refetches only the results grid so focus never escapes to "Home" (R67). */
     fun filterByGenre(genre: String?) {
-        loadJob?.cancel()
+        loadJob?.cancel(); loadMoreJob?.cancel()
         activeGenre = genre
+        currentPage = 1; endReached = false; loadingMore = false
         val currentFacets = (_state.value as? BrowseState.Loaded)?.facets
         if (currentFacets != null) {
             // Keep the current state visible (chips stay mounted); swap results in place.
@@ -121,13 +142,40 @@ class BrowseStore(private val apiClient: TvApiClient) {
         loadJob = scope.launch {
             val kind = activeKind
             _state.value = runCatching {
-                val results = apiClient.browse(kind = kind.apiKey, genre = genre)  // R118: full set (no pageSize cap)
+                val results = apiClient.browse(kind = kind.apiKey, genre = genre, page = 1, pageSize = BROWSE_PAGE_SIZE)
+                endReached = results.items.size < BROWSE_PAGE_SIZE
                 val facets = currentFacets ?: apiClient.getFacets(kind = kind.apiKey)
                 BrowseState.Loaded(results, facets)
             }.getOrElse { cur ->
                 currentFacets?.let { BrowseState.Loaded((_state.value as? BrowseState.Loaded)?.results ?: emptyResults, it) }
                     ?: BrowseState.Error(cur.message ?: "Unknown error")
             }
+        }
+    }
+
+    /** Appends the next page to the grid — call only once the user has scrolled near the currently
+     *  loaded end (see LoadMoreEffect in BrowseScreen). No-ops past the last page or while already
+     *  fetching, so a fast scroll can't fire overlapping/duplicate page requests. */
+    fun loadMore() {
+        if (endReached || loadingMore) return
+        if (_state.value !is BrowseState.Loaded) return
+        loadingMore = true
+        val kind = activeKind
+        val genre = activeGenre
+        val nextPage = currentPage + 1
+        loadMoreJob = scope.launch {
+            val more = runCatching {
+                apiClient.browse(kind = kind.apiKey, genre = genre, page = nextPage, pageSize = BROWSE_PAGE_SIZE)
+            }.getOrNull()
+            if (more != null) {
+                currentPage = nextPage
+                endReached = more.items.size < BROWSE_PAGE_SIZE
+                val cur = _state.value as? BrowseState.Loaded
+                if (cur != null) {
+                    _state.value = BrowseState.Loaded(cur.results.copy(items = cur.results.items + more.items), cur.facets)
+                }
+            }
+            loadingMore = false
         }
     }
 }
@@ -212,9 +260,11 @@ fun BrowseScreen(
                     }
                     // Count + grid
                     // Bug fix: "1 titles" read wrong — found during general mobile exploration testing.
+                    // Bug fix: reads the true total (s.results.total), not items.size — the grid now
+                    // pages in (R118 follow-up), so items.size is only how much has loaded so far.
                     Text(
-                        if (s.results.items.size == 1) str("browse.title_one")
-                        else str("browse.titles", mapOf("count" to s.results.items.size.toString())),
+                        if (s.results.total == 1) str("browse.title_one")
+                        else str("browse.titles", mapOf("count" to s.results.total.toString())),
                         color = colors.textSecondary,
                         fontSize = 16.sp,
                         modifier = Modifier.padding(horizontal = raviloHPad),
@@ -226,6 +276,7 @@ fun BrowseScreen(
                         firstCellFR = firstCellFR,
                         restoreItemKey = store.focusItemKey,   // R139
                         onItemSelect = { card -> store.focusItemKey = card.id; onItemSelect(card) },  // R139: save on select
+                        onLoadMore = { store.loadMore() },
                     )
                 }
             }
@@ -318,10 +369,23 @@ private fun BrowseGrid(
     firstCellFR: FocusRequester,
     restoreItemKey: String?,   // R139: the cell to re-focus on Back (its scroll is already retained)
     onItemSelect: (MediaCard) -> Unit,
+    onLoadMore: () -> Unit,   // R118 follow-up: fetch the next page once scrolled near the loaded end
 ) {
     // R88: warm the next 4 poster images ahead of the scroll position.
     val prefetchUrls = remember(items) { items.map { it.posterUrl.orEmpty() } }
     PrefetchLazyGridEffect(gridState = gridState, urls = prefetchUrls)
+
+    // Bug fix (R118 follow-up): trigger the next page a couple of rows before the user actually hits
+    // the loaded end, same lookahead spirit as the image prefetch above — onLoadMore() itself is a
+    // no-op once the store has no more pages or a fetch is already in flight, so this can fire on
+    // every scroll tick harmlessly.
+    LaunchedEffect(gridState, items.size) {
+        snapshotFlow { gridState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1 }
+            .distinctUntilChanged()
+            .collect { lastVisible ->
+                if (lastVisible >= 0 && lastVisible >= items.size - BROWSE_LOAD_MORE_LOOKAHEAD) onLoadMore()
+            }
+    }
 
     // R139: on a Back-return, re-focus the cell the user navigated from. The grid's scroll is retained
     // (R137) so the cell is already in view → request focus directly (no scroll disturbance).
