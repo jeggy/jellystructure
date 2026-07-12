@@ -765,13 +765,15 @@ fun Route.tvRoutes(
         val result = svc.serve(itemId, type, width) ?: return@get call.respond(HttpStatusCode.NotFound)
         call.respondCachedBytes(result.first, ContentType.parse(result.second))
     }
-    // R133: episode still — addressed by series id + episode filename.
+    // R133: episode still — addressed by series id + episode filename. Phase 149: ?ep= disambiguates
+    // when several episodes share that filename (a multi-episode file).
     get("/tv/image/{itemId}/still/{epFilename}") {
         val itemId = call.parameters["itemId"] ?: return@get call.respond(HttpStatusCode.BadRequest)
         val epFilename = call.parameters["epFilename"] ?: return@get call.respond(HttpStatusCode.BadRequest)
         val svc = imageProxyService ?: return@get call.respond(HttpStatusCode.ServiceUnavailable)
         val width = call.request.queryParameters["w"]?.toIntOrNull()
-        val result = svc.serveStill(itemId, epFilename, width) ?: return@get call.respond(HttpStatusCode.NotFound)
+        val epNum = call.request.queryParameters["ep"]?.toIntOrNull()
+        val result = svc.serveStill(itemId, epFilename, epNum, width) ?: return@get call.respond(HttpStatusCode.NotFound)
         call.respondCachedBytes(result.first, ContentType.parse(result.second))
     }
     // R133: user avatar — the one remaining (cached) Jellyfin fetch; reused by the admin pairing UI.

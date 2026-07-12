@@ -1566,17 +1566,17 @@ private fun buildMultiEpisodeGroupRow(episodes: List<Episode>, season: Int?, gro
         "${code(first)}–E${last.episodeNumber.toString().padStart(2, '0')}"
     else first.filename.substringBeforeLast('.')
 
-    val panels = ordered.take(3).mapIndexed { i, ep ->
+    // Bug fix: each panel is now a genuine 1/3-width flex child (background-size:cover scoped to its
+    // OWN box), not a full-width div revealed by clip-path — the old layout made background-size:cover
+    // scale each still to cover the WHOLE triptych, so panel 1 showed its still's left edge and panel 3
+    // its right edge instead of each still's own center. See detail.css's .eptrip rules.
+    val panels = ordered.take(3).joinToString("") { ep ->
         val bg = if (!ep.stillPath.isNullOrBlank())
             "background-image:url('$TMDB_IMG_LG${ep.stillPath}');background-size:cover;background-position:center;"
         else "background:var(--fill-3);"
-        """<div class="tp tp${i + 1}" style="$bg"></div>"""
-    }.joinToString("")
-    val panelCount = ordered.size.coerceAtMost(3)
-    val seams = (1 until panelCount).joinToString("") { i -> """<span class="seam seam$i"></span>""" }
-    val nums = ordered.take(3).mapIndexed { i, ep ->
-        """<span class="tn tn${i + 1}">${(ep.episodeNumber ?: 0).toString().padStart(2, '0')}</span>"""
-    }.joinToString("")
+        val num = (ep.episodeNumber ?: 0).toString().padStart(2, '0')
+        """<div class="tp" style="$bg"><span class="tn">$num</span></div>"""
+    }
 
     val totalRuntime = ordered.sumOf { it.runtime ?: 0 }
     val hasChapters = ordered.any { it.hasChapters }
@@ -1613,7 +1613,7 @@ private fun buildMultiEpisodeGroupRow(episodes: List<Episode>, season: Int?, gro
         <div style="border:1px solid var(--line);border-radius:6px;margin-bottom:6px;overflow:hidden;background:var(--fill-2);">
           <div id="$toggleId" class="ep-toggle-row" data-body="$bodyId"
                style="display:flex;align-items:center;gap:10px;padding:9px 12px;cursor:pointer;">
-            <div style="width:72px;height:40px;flex-shrink:0;"><div class="eptrip">$panels$seams$nums</div></div>
+            <div style="width:72px;height:40px;flex-shrink:0;"><div class="eptrip">$panels</div></div>
             <span class="num" style="min-width:96px;font-size:.82rem;">${rangeLabel.esc()}</span>
             <span class="badge acc" style="font-size:.7rem;">${ordered.size} in 1 file</span>
             <span class="tiny muted">${totalRuntime}m</span>

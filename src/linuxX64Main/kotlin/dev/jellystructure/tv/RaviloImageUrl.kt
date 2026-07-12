@@ -10,6 +10,11 @@ object RaviloImageUrl {
     fun backdrop(id: String)     = "/api/tv/image/$id/backdrop"
     fun heroBackdrop(id: String) = "/api/tv/image/$id/backdrop"
     fun logo(id: String)         = "/api/tv/image/$id/logo"
-    fun still(seriesId: String, epFilename: String) = "/api/tv/image/$seriesId/still/${epFilename.encodeURLPathPart()}"
+    // Phase 149: epNum disambiguates when several episodes share epFilename (a multi-episode file) —
+    // omitted for the ordinary non-ambiguous single-episode case.
+    fun still(seriesId: String, epFilename: String, epNum: Int? = null): String {
+        val base = "/api/tv/image/$seriesId/still/${epFilename.encodeURLPathPart()}"
+        return if (epNum != null) "$base?ep=$epNum" else base
+    }
     fun avatar(userId: String)   = "/api/tv/image/user/$userId/avatar"
 }
