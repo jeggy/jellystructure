@@ -21,10 +21,30 @@ import io.ktor.client.request.setBody
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
+import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json as KJson
+
+/**
+ * Bug fix: shadows `kotlin.runCatching` for every unqualified call in this file. Every MediaApi
+ * function wraps its suspend HTTP call in `runCatching { ... }.getOrNull()` (or `.getOrDefault(...)`/
+ * `.getOrElse { }`) — the stdlib version catches `CancellationException` like any other `Throwable`
+ * and wraps it into a *failed* `Result` instead of letting it unwind the coroutine, which defeats
+ * cooperative cancellation (e.g. Library's search input cancels the in-flight request job on every
+ * keystroke and relaunches a new one — with the stdlib runCatching, the "cancelled" call just quietly
+ * finishes its own null-handling path instead of actually stopping). Same signature/behavior
+ * otherwise, so every existing `.getOrNull()`/`.getOrDefault(...)`/`.getOrElse { }`/`return@runCatching`
+ * call site keeps working completely unchanged.
+ */
+private inline fun <T> runCatching(block: () -> T): Result<T> = try {
+    Result.success(block())
+} catch (e: CancellationException) {
+    throw e
+} catch (e: Throwable) {
+    Result.failure(e)
+}
 
 @Serializable
 data class StatsResponse(
