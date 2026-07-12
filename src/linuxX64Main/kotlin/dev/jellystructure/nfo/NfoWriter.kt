@@ -117,6 +117,45 @@ object NfoWriter {
         nfoPath
     }
 
+    /**
+     * Phase 149: [episodes] must all share the same physical file (same `path`/`filename` — the caller
+     * groups; this doesn't re-check). Writes the Jellyfin/Kodi multi-episode convention: N stacked
+     * `<episodedetails>` blocks in ONE `.nfo`, ordered by [Episode.partIndex].
+     *
+     * Bug fix (dev-review addendum §5): the pre-149 call sites looped `writeEpisode` once per episode —
+     * for a multi-episode file every episode resolves to the SAME nfoPath, so each iteration overwrote
+     * the last, silently dropping every earlier episode's block. Callers should use [writeEpisodeNfos]
+     * (which groups automatically) rather than calling this directly.
+     */
+    suspend fun writeEpisodeGroup(episodes: List<Episode>, inheritedCast: List<Person> = emptyList()): Result<String> = runCatching {
+        require(episodes.isNotEmpty()) { "writeEpisodeGroup called with no episodes" }
+        val ordered = episodes.sortedBy { it.partIndex }
+        val first = ordered.first()
+        val dir = first.path.substringBeforeLast('/')
+        val baseName = first.filename.substringBeforeLast('.')
+        val nfoPath = "$dir/$baseName.nfo"
+        val xml = buildString {
+            appendLine("""<?xml version="1.0" encoding="utf-8" standalone="yes"?>""")
+            for (ep in ordered) append(buildEpisodeDetailsBlock(ep, inheritedCast))
+        }
+        writeAtomically(nfoPath, xml)
+        Logger.info("Wrote multi-episode NFO (${ordered.size} episodes): $nfoPath", "nfo")
+        nfoPath
+    }
+
+    /**
+     * Phase 149 — the entry point every caller that writes a series' episode NFOs should use instead of
+     * looping [writeEpisode] per episode: groups [episodes] by shared `path` first, so a multi-episode
+     * file's contained episodes get ONE combined NFO instead of overwriting each other. A lone episode
+     * (the overwhelming majority) writes exactly as [writeEpisode] always did. Returns each group
+     * alongside its write [Result] (not just the result) so callers can count/log per-episode, not just
+     * per-file, without redoing the grouping themselves.
+     */
+    suspend fun writeEpisodeNfos(episodes: List<Episode>, inheritedCast: List<Person> = emptyList()): List<Pair<List<Episode>, Result<String>>> =
+        episodes.groupBy { it.path }.values.map { group ->
+            group to (if (group.size > 1) writeEpisodeGroup(group, inheritedCast) else writeEpisode(group.first(), inheritedCast))
+        }
+
     fun episodeNfoExists(episode: Episode): Boolean {
         val dir = episode.path.substringBeforeLast('/')
         val baseName = episode.filename.substringBeforeLast('.')
@@ -135,6 +174,13 @@ object NfoWriter {
 
     private fun buildEpisodeXml(episode: Episode, inheritedCast: List<Person> = emptyList()): String = buildString {
         appendLine("""<?xml version="1.0" encoding="utf-8" standalone="yes"?>""")
+        append(buildEpisodeDetailsBlock(episode, inheritedCast))
+    }
+
+    /** The `<episodedetails>...</episodedetails>` block only, no XML declaration — [buildEpisodeXml]
+     *  wraps one with a declaration for the single-episode case; [writeEpisodeGroup] stacks several
+     *  under one shared declaration for a multi-episode file. */
+    private fun buildEpisodeDetailsBlock(episode: Episode, inheritedCast: List<Person> = emptyList()): String = buildString {
         appendLine("<episodedetails>")
         if (!episode.title.isNullOrBlank()) {
             appendLine("  <title>${episode.title.esc()}</title>")
