@@ -120,3 +120,8 @@ private fun jsInstallPopStateListener(callback: () -> Unit): Unit =
 // back gesture to bridge here.
 @Composable
 actual fun PlatformBackHandler(enabled: Boolean, onBack: () -> Unit) {}
+
+// No web equivalent to "close the app" (closing a tab the user opened isn't scriptable) — see
+// RaviloRoot.kt's doc comment.
+@Composable
+actual fun rememberExitAction(): () -> Unit = {}

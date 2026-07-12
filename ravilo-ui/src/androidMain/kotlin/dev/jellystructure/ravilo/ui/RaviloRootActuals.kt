@@ -1,8 +1,10 @@
 package dev.jellystructure.ravilo.ui
 
+import android.app.Activity
 import android.content.SharedPreferences
 import androidx.activity.compose.BackHandler
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.platform.LocalContext
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.HttpTimeout
@@ -70,4 +72,12 @@ actual fun installHashListener(onRoute: (String) -> Unit): () -> Unit = {}
 @Composable
 actual fun PlatformBackHandler(enabled: Boolean, onBack: () -> Unit) {
     BackHandler(enabled = enabled, onBack = onBack)
+}
+
+// See RaviloRoot.kt's doc comment. finishAndRemoveTask() (not finish()) also drops the Recents/
+// overview entry — the app is gone, not just backgrounded, matching what the user asked for.
+@Composable
+actual fun rememberExitAction(): () -> Unit {
+    val activity = LocalContext.current as? Activity
+    return { activity?.finishAndRemoveTask() }
 }

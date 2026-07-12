@@ -82,6 +82,18 @@ expect fun installHashListener(onRoute: (String) -> Unit): () -> Unit
 @Composable
 expect fun PlatformBackHandler(enabled: Boolean, onBack: () -> Unit)
 
+/**
+ * Bug fix: pressing back at the root of the stack (Home, nothing left to pop) fell through to
+ * Android's own default back behavior — for a launcher-affinity root activity (both the TV and phone
+ * apps are `LEANBACK_LAUNCHER`/launcher-category) that's `moveTaskToBack`, not `finish()`, so the app
+ * was left running in the background rather than actually closing; picking it back up resumed the same
+ * instance instead of a fresh start. Returns an action that properly closes the app; a no-op on web,
+ * where there's no equivalent to "close the tab" and back is already handled by browser history
+ * (see [PlatformBackHandler]'s doc comment).
+ */
+@Composable
+expect fun rememberExitAction(): () -> Unit
+
 @Composable
 fun RaviloRoot() {
     var baseUrl by remember { mutableStateOf(raviloBaseUrl()) }
