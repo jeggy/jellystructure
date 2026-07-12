@@ -177,6 +177,11 @@ private sealed class Dest {
         val displayName: String,
         val episodes: List<dev.jellystructure.ravilo.ui.screens.PlayerEpisodeEntry>? = null,
         val currentEpIndex: Int = 0,
+        /** R181 — the series' own item id (or, for a movie, the movie's own id — it's its own bucket)
+         *  for per-series remembered audio/subtitle choices. */
+        val seriesId: String? = null,
+        /** R181/R180 — the title's original-audio language, for the player's "Dubbed" audio badge. */
+        val originalLanguage: String? = null,
     ) : Dest()
     data class Settings(val displayName: String) : Dest()
     // Phase R177 — a deliberate sibling to Player (see LiveTvPlayerStore's doc comment): live channels
@@ -411,6 +416,7 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                         itemId = env.jellyfinId,
                         title = env.title.orEmpty(),
                         displayName = displayName,
+                        seriesId = env.jellyfinId,   // R181 — a movie is its own remembered bucket
                     ))
                 }
             }
@@ -569,7 +575,7 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                             // A series needs episode-resolution (resume point + rail) that only the
                             // detail screen has, so Play opens it; a movie plays directly.
                             card.kind == MediaKind.SERIES -> push(Dest.SeriesDetail(card.id, dest.displayName))
-                            else -> push(Dest.Player(card.id, card.title, displayName = dest.displayName))
+                            else -> push(Dest.Player(card.id, card.title, displayName = dest.displayName, seriesId = card.id))
                         }
                     },
                     onChannelSelect = { ch -> push(Dest.ChannelView(ch, dest.displayName)) },
@@ -707,7 +713,7 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                 }
                 DiscoverDetailScreen(
                     store = store,
-                    onWatchMovie = { itemId, title -> push(Dest.Player(itemId, title, displayName = dest.displayName)) },
+                    onWatchMovie = { itemId, title -> push(Dest.Player(itemId, title, displayName = dest.displayName, seriesId = itemId)) },
                     onGoToSeries = { itemId -> push(Dest.SeriesDetail(itemId, dest.displayName)) },
                 )
             }
@@ -732,7 +738,15 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                     itemId = dest.itemId,
                     store = store,
                     onBack = { pop() },
-                    onPlay = { card -> push(Dest.Player(card.id, card.title, displayName = dest.displayName)) },
+                    onPlay = { detail ->
+                        push(Dest.Player(
+                            detail.card.id,
+                            detail.card.title,
+                            displayName = dest.displayName,
+                            seriesId = detail.card.id,   // R181 — a movie is its own remembered bucket
+                            originalLanguage = detail.originalLanguage,
+                        ))
+                    },
                     onRelatedSelect = { openDetail(it, dest.displayName) },
                     displayName = dest.displayName,
                     discoverAvailable = upcomingAvailable || discoverAvailable,
@@ -766,6 +780,8 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                             displayName   = dest.displayName,
                             episodes      = ctx.episodes,
                             currentEpIndex = ctx.currentEpIndex,
+                            seriesId      = ctx.seriesId,
+                            originalLanguage = ctx.originalLanguage,
                         ))
                     },
                     onRelatedSelect = { openDetail(it, dest.displayName) },
@@ -795,6 +811,8 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                     nextEpisodeTitle = dest.nextEpTitle,
                     episodes         = dest.episodes,
                     currentEpIndex   = dest.currentEpIndex,
+                    seriesId         = dest.seriesId,
+                    originalLanguage = dest.originalLanguage,
                     store            = store,
                     onBack           = { pop() },
                     onNavigateToEpisode = { nextId ->
@@ -813,6 +831,9 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                             displayName    = dest.displayName,
                             episodes       = eps,
                             currentEpIndex = newIdx,
+                            // R181 — same series, same original language, for the whole binge.
+                            seriesId         = dest.seriesId,
+                            originalLanguage = dest.originalLanguage,
                         ))
                     },
                 )

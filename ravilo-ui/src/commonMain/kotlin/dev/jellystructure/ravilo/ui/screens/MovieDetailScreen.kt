@@ -77,7 +77,9 @@ fun MovieDetailScreen(
     itemId: String,
     store: MovieDetailStore,
     onBack: () -> Unit,
-    onPlay: (MediaCard) -> Unit,
+    // R181/R180: the whole detail (not just the card) so the caller can thread seriesId +
+    // originalLanguage into Dest.Player for per-series remembered tracks + the "Dubbed" badge.
+    onPlay: (MovieDetail) -> Unit,
     onRelatedSelect: (MediaCard) -> Unit,
     displayName: String = "",
     onNavSelect: (Int) -> Unit = {},
@@ -119,7 +121,7 @@ private fun MovieDetailLoaded(
     detail: MovieDetail,
     overlay: Map<String, CardPlayState>,
     onBack: () -> Unit,
-    onPlay: (MediaCard) -> Unit,
+    onPlay: (MovieDetail) -> Unit,
     onMarkPlayed: (Boolean) -> Unit,
     onRelatedSelect: (MediaCard) -> Unit,
     displayName: String,
@@ -294,7 +296,7 @@ private fun MovieDetailLoaded(
                             focusRequester = playFR,
                             style = ButtonStyle.PRIMARY,
                             modifier = Modifier.widthIn(min = 200.dp),
-                            onSelect = { onPlay(detail.card) },
+                            onSelect = { onPlay(detail) },
                         )
                         // R142: mark played / unplayed write-through. Re-renders from the server-returned state.
                         RaviloButton(

@@ -206,6 +206,8 @@ private fun buildEpisodeContext(
             )
         },
         currentEpIndex = groupIdx,
+        seriesId = detail.card.id,
+        originalLanguage = detail.originalLanguage,
     )
 }
 
