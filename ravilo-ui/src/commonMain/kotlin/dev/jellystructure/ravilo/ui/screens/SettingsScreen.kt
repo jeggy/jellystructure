@@ -114,10 +114,12 @@ class SettingsStore(private val apiClient: TvApiClient) {
  * up back at the pairing gate.
  */
 suspend fun unpairAllSessions(apiClient: TvApiClient) {
-    for (session in MultiTokenStore.getAll()) {
+    val sessions = MultiTokenStore.getAll()
+    for (session in sessions) {
         runCatching { apiClient.unpair(session.deviceToken) }
     }
     MultiTokenStore.clear()
+    sessions.forEach { PlaybackPrefsStore.clearProfile(it.userId) }   // R181 — local playback memory
 }
 
 @Composable
