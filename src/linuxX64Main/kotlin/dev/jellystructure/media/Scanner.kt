@@ -26,7 +26,73 @@ private val SEASON_EP_RE = Regex("""[Ss](\d{1,4})[Ee](\d{1,3})""")
 // resolution token like 1280x720 (there is no word boundary inside "1280x720", and "80x720" is
 // excluded because the season is preceded by a digit). Only consulted when SEASON_EP_RE misses.
 private val ALT_SEASON_EP_RE = Regex("""\b(\d{1,2})x(\d{2,3})\b""")
+// Phase 149 — multi-episode filename tails, anchored at the START of whatever follows the first
+// SxxEyy/AxB match (so they only ever consume immediately-adjacent tokens, never something further
+// into the filename like a resolution or release-group tag). No trailing \b on the per-token head
+// regexes below: digits/letters are all \w, so "E02" immediately followed by "E03" (or "x02" by "x03")
+// has no word-boundary between them — the walk only needs the START anchor per step.
+private val EP_RANGE_TAIL_RE = Regex("""^\s*-\s*[Ee](\d{1,3})""")
+private val EP_TOKEN_HEAD_RE = Regex("""^[Ee](\d{1,3})""")
+private val ALT_EP_TOKEN_HEAD_RE = Regex("""^x(\d{2,3})""")
+// Bug fix: a chained "1x01x02x03" is one solid run of word characters (digits + the letter x are both
+// \w), so ALT_SEASON_EP_RE's \b-anchored single-pair form can never match a substring in the MIDDLE of
+// that chain (there's no boundary between "01" and the next "x") — it would silently fail to match this
+// filename at all, not just capture one episode. This variant requires ≥1 repeated "xNN" tail and
+// anchors \b only at the true start/end of the whole chain.
+private val ALT_MULTI_EP_HEAD_RE = Regex("""\b(\d{1,2})x(\d{2,3})((?:x\d{2,3})+)\b""")
 private val VIDEO_EXTENSIONS = setOf("mkv", "mp4", "avi", "mov", "m4v", "webm", "ts", "m2ts")
+
+/**
+ * Phase 149: a multi-episode file (`S01E01E02E03.mkv`, `S01E01-E03.mkv`, `1x01x02x03.mkv`) spans
+ * several episode numbers — returns the FULL contained list, not just the first. The overwhelmingly
+ * common single-episode filename still returns a one-element list, so this is the only parse function
+ * needed; there is no separate single-episode variant to keep in sync. A top-level pure function (no
+ * `Scanner` instance state involved) so it's directly unit-testable — see `ScannerFilenameParsingTest`.
+ */
+internal fun parseSeasonEpisodes(path: String): Pair<Int?, List<Int>> {
+    val filename = path.substringAfterLast('/')
+    val seasonMatch = SEASON_EP_RE.find(filename)
+    if (seasonMatch != null) {
+        val season = seasonMatch.groupValues[1].toIntOrNull()
+        val firstEp = seasonMatch.groupValues[2].toIntOrNull() ?: return Pair(season, emptyList())
+        val rest = filename.substring(seasonMatch.range.last + 1)
+        // Range form: SxxEyy-Ezz — the middle numbers aren't in the filename, so expand them.
+        val rangeMatch = EP_RANGE_TAIL_RE.find(rest)
+        if (rangeMatch != null) {
+            val lastEp = rangeMatch.groupValues[1].toIntOrNull()
+            if (lastEp != null && lastEp > firstEp) return Pair(season, (firstEp..lastEp).toList())
+        }
+        // Repeated-token form: SxxEyyEzzEww… — scan consecutive trailing E\d+ tokens.
+        val episodes = mutableListOf(firstEp)
+        var remaining = rest
+        while (true) {
+            val tokenMatch = EP_TOKEN_HEAD_RE.find(remaining) ?: break
+            episodes += tokenMatch.groupValues[1].toIntOrNull() ?: break
+            remaining = remaining.substring(tokenMatch.range.last + 1)
+        }
+        return Pair(season, episodes)
+    }
+    // Fallback Kodi/XBMC numbering: 1x01x02x03 (repeated-token form only — no dash-range convention).
+    // Try the chained multi-episode pattern first (it requires ≥1 repeat and won't match a lone
+    // "2x01"); fall back to the plain single-pair pattern when there's no chain.
+    val altChainMatch = ALT_MULTI_EP_HEAD_RE.find(filename)
+    if (altChainMatch != null) {
+        val season = altChainMatch.groupValues[1].toIntOrNull()
+        val firstEp = altChainMatch.groupValues[2].toIntOrNull() ?: return Pair(season, emptyList())
+        val episodes = mutableListOf(firstEp)
+        var remaining = altChainMatch.groupValues[3]   // the "x02x03…" tail, captured as one span
+        while (true) {
+            val tokenMatch = ALT_EP_TOKEN_HEAD_RE.find(remaining) ?: break
+            episodes += tokenMatch.groupValues[1].toIntOrNull() ?: break
+            remaining = remaining.substring(tokenMatch.range.last + 1)
+        }
+        return Pair(season, episodes)
+    }
+    val altMatch = ALT_SEASON_EP_RE.find(filename) ?: return Pair(null, emptyList())
+    val season = altMatch.groupValues[1].toIntOrNull()
+    val firstEp = altMatch.groupValues[2].toIntOrNull() ?: return Pair(season, emptyList())
+    return Pair(season, listOf(firstEp))
+}
 
 class Scanner(
     private val configStore: ConfigStore,
@@ -277,41 +343,58 @@ class Scanner(
             val audioLangs = tracks.filter { it.kind == TrackKind.AUDIO }.map { it.language }
             val epLangPriority = LanguageResolver.priorityList(audioLangs, fallback)
             val epResolvedLang = epLangPriority.firstOrNull()
-            val (seasonNum, epNum) = parseSeasonEpisode(file)
+            val (seasonNum, epNums) = parseSeasonEpisodes(file)
+            // Phase 149: a multi-episode file (`S01E01E02E03.mkv`) yields >1 contained episode number.
+            // An unparseable filename still yields exactly one Episode (episodeNumber = null), matching
+            // pre-149 behaviour — partCount is 1 either way.
+            val partCount = epNums.size.coerceAtLeast(1)
+            val partEpisodeNums: List<Int?> = if (epNums.isEmpty()) listOf(null) else epNums
+            // Chapters are only worth reading for the (rare) multi-episode case — skip the extra
+            // ffprobe invocation entirely for the overwhelmingly common single-episode file.
+            val chapterMarkers = if (partCount > 1) FfprobeRunner.chapters(file) else emptyList()
+            val hasMatchingChapters = chapterMarkers.size == partCount
 
-            // Fetch per-episode TMDB details in the episode's own resolved language
-            val epDetails = if (seriesTmdbId != null && seasonNum != null && epNum != null) {
-                tmdb.getEpisodeDetailsLocalized(seriesTmdbId, seasonNum, epNum, epLangPriority)
-            } else null
+            partEpisodeNums.forEachIndexed { partIdx, epNum ->
+                // Fetch per-episode TMDB details in the episode's own resolved language — independent
+                // per contained episode, exactly like a normal single-episode file.
+                val epDetails = if (seriesTmdbId != null && seasonNum != null && epNum != null) {
+                    tmdb.getEpisodeDetailsLocalized(seriesTmdbId, seasonNum, epNum, epLangPriority)
+                } else null
 
-            // Phase 76: fetch guest stars + episode crew from TMDB
-            val (epGuests, epCrew) = if (seriesTmdbId != null && seasonNum != null && epNum != null) {
-                fetchEpisodeCredits(seriesTmdbId, seasonNum, epNum)
-            } else Pair(emptyList(), emptyList())
+                // Phase 76: fetch guest stars + episode crew from TMDB
+                val (epGuests, epCrew) = if (seriesTmdbId != null && seasonNum != null && epNum != null) {
+                    fetchEpisodeCredits(seriesTmdbId, seasonNum, epNum)
+                } else Pair(emptyList(), emptyList())
 
-            // R82: map (season, ep) → Jellyfin id from the pre-fetched meta
-            val jfEp = if (seasonNum != null && epNum != null) jfBySeasonEp[seasonNum to epNum] else null
+                // R82: map (season, ep) → Jellyfin id from the pre-fetched meta
+                val jfEp = if (seasonNum != null && epNum != null) jfBySeasonEp[seasonNum to epNum] else null
 
-            episodes += Episode(
-                filename = file.substringAfterLast('/'),
-                path = file,
-                seasonNumber = seasonNum,
-                episodeNumber = epNum,
-                tracks = tracks,
-                issueCount = epIssueCount,
-                // Phase 128: honest per-episode display language — see the scanMovie comment above.
-                resolvedLanguage = epResolvedLang.takeIf { audioLangs.isNotEmpty() },
-                title = epDetails?.name?.takeIf { it.isNotBlank() },
-                overview = epDetails?.overview?.takeIf { it.isNotBlank() },
-                stillPath = epDetails?.stillPath,
-                tmdbEpisodeId = epDetails?.id,
-                guestStars = epGuests,
-                crew = epCrew,
-                jellyfinId = jfEp?.id,
-                runtime = epDetails?.runtime,
-                airDate = epDetails?.airDate?.takeIf { it.isNotBlank() },  // R148
-                jellyfinCreatedAt = jfEp?.dateCreated?.let { isoToEpochSeconds(it) },  // Phase 108
-            )
+                episodes += Episode(
+                    filename = file.substringAfterLast('/'),
+                    path = file,
+                    seasonNumber = seasonNum,
+                    episodeNumber = epNum,
+                    tracks = tracks,
+                    issueCount = epIssueCount,
+                    // Phase 128: honest per-episode display language — see the scanMovie comment above.
+                    resolvedLanguage = epResolvedLang.takeIf { audioLangs.isNotEmpty() },
+                    title = epDetails?.name?.takeIf { it.isNotBlank() },
+                    overview = epDetails?.overview?.takeIf { it.isNotBlank() },
+                    stillPath = epDetails?.stillPath,
+                    tmdbEpisodeId = epDetails?.id,
+                    guestStars = epGuests,
+                    crew = epCrew,
+                    jellyfinId = jfEp?.id,
+                    runtime = epDetails?.runtime,
+                    airDate = epDetails?.airDate?.takeIf { it.isNotBlank() },  // R148
+                    jellyfinCreatedAt = jfEp?.dateCreated?.let { isoToEpochSeconds(it) },  // Phase 108
+                    partIndex = partIdx,
+                    partCount = partCount,
+                    chapterStartMs = if (hasMatchingChapters) chapterMarkers[partIdx].startMs else null,
+                    chapterEndMs = if (hasMatchingChapters) chapterMarkers[partIdx].endMs else null,
+                    hasChapters = hasMatchingChapters,
+                )
+            }
         }
 
         val sortedEpisodes = episodes.sortedWith(
@@ -448,14 +531,6 @@ class Scanner(
         )
     }
 
-    private fun parseSeasonEpisode(path: String): Pair<Int?, Int?> {
-        val filename = path.substringAfterLast('/')
-        val match = SEASON_EP_RE.find(filename)
-            ?: ALT_SEASON_EP_RE.find(filename)
-            ?: return Pair(null, null)
-        return Pair(match.groupValues[1].toIntOrNull(), match.groupValues[2].toIntOrNull())
-    }
-
     /** Full re-probe + TMDB for a movie. Replaces tracks and re-resolves language. */
     suspend fun syncMovie(item: MediaItem): MediaItem? {
         val config = configStore.current
@@ -547,37 +622,58 @@ class Scanner(
             val epIssueCount = tracks.count { (it.kind == TrackKind.AUDIO || it.kind == TrackKind.SUBTITLE) && it.language == null }
             val audioLangs = tracks.filter { it.kind == TrackKind.AUDIO }.map { it.language }
             val epLangPriority = LanguageResolver.priorityList(audioLangs, fallback)
-            val (seasonNum, epNum) = parseSeasonEpisode(file)
-            val existingEp = item.episodes.firstOrNull { it.filename == file.substringAfterLast('/') }
-            val epDetails = if (seriesTmdbId != null && seasonNum != null && epNum != null) {
-                tmdb.getEpisodeDetailsLocalized(seriesTmdbId, seasonNum, epNum, epLangPriority)
-            } else null
-            // Phase 76: preserve existing guest stars/crew; re-fetch from TMDB if available
-            val (epGuests, epCrew) = if (seriesTmdbId != null && seasonNum != null && epNum != null) {
-                fetchEpisodeCredits(seriesTmdbId, seasonNum, epNum)
-            } else Pair(existingEp?.guestStars ?: emptyList(), existingEp?.crew ?: emptyList())
-            episodes += Episode(
-                filename = file.substringAfterLast('/'),
-                path = file,
-                seasonNumber = seasonNum,
-                episodeNumber = epNum,
-                tracks = tracks,
-                issueCount = epIssueCount,
-                // Phase 128: honest per-episode display language — see the scanMovie comment above.
-                resolvedLanguage = epLangPriority.firstOrNull().takeIf { audioLangs.isNotEmpty() },
-                title = epDetails?.name?.takeIf { it.isNotBlank() } ?: existingEp?.title,
-                overview = epDetails?.overview?.takeIf { it.isNotBlank() } ?: existingEp?.overview,
-                stillPath = epDetails?.stillPath ?: existingEp?.stillPath,
-                tmdbEpisodeId = epDetails?.id ?: existingEp?.tmdbEpisodeId,
-                guestStars = epGuests,
-                crew = epCrew,
-                jellyfinId = existingEp?.jellyfinId
-                    ?: (if (seasonNum != null && epNum != null) jfBySeasonEp[seasonNum to epNum]?.id else null),
-                runtime = epDetails?.runtime ?: existingEp?.runtime,
-                airDate = epDetails?.airDate?.takeIf { it.isNotBlank() } ?: existingEp?.airDate,  // R148
-                jellyfinCreatedAt = existingEp?.jellyfinCreatedAt
-                    ?: (if (seasonNum != null && epNum != null) jfBySeasonEp[seasonNum to epNum]?.dateCreated?.let { isoToEpochSeconds(it) } else null),  // Phase 108
-            )
+            val (seasonNum, epNums) = parseSeasonEpisodes(file)
+            val partCount = epNums.size.coerceAtLeast(1)
+            val partEpisodeNums: List<Int?> = if (epNums.isEmpty()) listOf(null) else epNums
+            val chapterMarkers = if (partCount > 1) FfprobeRunner.chapters(file) else emptyList()
+            val hasMatchingChapters = chapterMarkers.size == partCount
+
+            partEpisodeNums.forEachIndexed { partIdx, epNum ->
+                // Bug fix (dev-review addendum §2, Phase 149): this used to match by filename equality,
+                // which collapses every episode of a multi-episode file (they share one filename) onto
+                // the SAME stale match — corrupting all but one of them on every rescan. Match by
+                // (season, episode) instead, which is unique per contained episode; only fall back to
+                // filename equality for the (rare) unparseable-filename case, preserving the old behaviour
+                // there since there's no (season, episode) identity to match on.
+                val existingEp = if (epNum != null)
+                    item.episodes.firstOrNull { it.seasonNumber == seasonNum && it.episodeNumber == epNum }
+                else
+                    item.episodes.firstOrNull { it.filename == file.substringAfterLast('/') }
+                val epDetails = if (seriesTmdbId != null && seasonNum != null && epNum != null) {
+                    tmdb.getEpisodeDetailsLocalized(seriesTmdbId, seasonNum, epNum, epLangPriority)
+                } else null
+                // Phase 76: preserve existing guest stars/crew; re-fetch from TMDB if available
+                val (epGuests, epCrew) = if (seriesTmdbId != null && seasonNum != null && epNum != null) {
+                    fetchEpisodeCredits(seriesTmdbId, seasonNum, epNum)
+                } else Pair(existingEp?.guestStars ?: emptyList(), existingEp?.crew ?: emptyList())
+                episodes += Episode(
+                    filename = file.substringAfterLast('/'),
+                    path = file,
+                    seasonNumber = seasonNum,
+                    episodeNumber = epNum,
+                    tracks = tracks,
+                    issueCount = epIssueCount,
+                    // Phase 128: honest per-episode display language — see the scanMovie comment above.
+                    resolvedLanguage = epLangPriority.firstOrNull().takeIf { audioLangs.isNotEmpty() },
+                    title = epDetails?.name?.takeIf { it.isNotBlank() } ?: existingEp?.title,
+                    overview = epDetails?.overview?.takeIf { it.isNotBlank() } ?: existingEp?.overview,
+                    stillPath = epDetails?.stillPath ?: existingEp?.stillPath,
+                    tmdbEpisodeId = epDetails?.id ?: existingEp?.tmdbEpisodeId,
+                    guestStars = epGuests,
+                    crew = epCrew,
+                    jellyfinId = existingEp?.jellyfinId
+                        ?: (if (seasonNum != null && epNum != null) jfBySeasonEp[seasonNum to epNum]?.id else null),
+                    runtime = epDetails?.runtime ?: existingEp?.runtime,
+                    airDate = epDetails?.airDate?.takeIf { it.isNotBlank() } ?: existingEp?.airDate,  // R148
+                    jellyfinCreatedAt = existingEp?.jellyfinCreatedAt
+                        ?: (if (seasonNum != null && epNum != null) jfBySeasonEp[seasonNum to epNum]?.dateCreated?.let { isoToEpochSeconds(it) } else null),  // Phase 108
+                    partIndex = partIdx,
+                    partCount = partCount,
+                    chapterStartMs = if (hasMatchingChapters) chapterMarkers[partIdx].startMs else existingEp?.chapterStartMs,
+                    chapterEndMs = if (hasMatchingChapters) chapterMarkers[partIdx].endMs else existingEp?.chapterEndMs,
+                    hasChapters = hasMatchingChapters || (existingEp?.hasChapters ?: false),
+                )
+            }
         }
         val sortedEpisodes = episodes.sortedWith(compareBy({ it.seasonNumber ?: 999 }, { it.episodeNumber ?: 999 }))
         val audioSets = sortedEpisodes.map { ep -> ep.tracks.filter { it.kind == TrackKind.AUDIO }.map { it.language }.toSet() }

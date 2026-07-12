@@ -43,6 +43,21 @@ private data class FfprobeTags(
     val title: String? = null,
 )
 
+/** Phase 149: one chapter marker's start/end offset within a file, in whole milliseconds. */
+@Serializable
+data class ChapterMarker(val startMs: Long, val endMs: Long)
+
+@Serializable
+private data class FfprobeChaptersOutput(
+    val chapters: List<FfprobeChapterEntry> = emptyList(),
+)
+
+@Serializable
+private data class FfprobeChapterEntry(
+    @SerialName("start_time") val startTime: String = "0",
+    @SerialName("end_time") val endTime: String = "0",
+)
+
 private val json = Json { ignoreUnknownKeys = true }
 
 /** Phase 128: why a file's track probe came back the way it did — surfaced to the operator instead of
@@ -144,6 +159,28 @@ object FfprobeRunner {
             else -> ProbeStatus.UNKNOWN
         }
         return ProbeDiagnosis(status, firstLine)
+    }
+
+    /**
+     * Phase 149: a multi-episode file's chapter markers (only meaningful when the caller already knows
+     * the file contains N>1 episodes — a separate ffprobe invocation from [probe], since chapters are
+     * rare and this would otherwise add a process spawn to every single-episode scan). Returns an empty
+     * list when the container has no chapters or the read fails — the caller treats that as "no usable
+     * chapters," never an error.
+     */
+    suspend fun chapters(filePath: String): List<ChapterMarker> {
+        val escaped = filePath.replace("'", "'\\''")
+        val command = "ffprobe -v quiet -print_format json -show_chapters '$escaped' 2>/dev/null"
+        val output = runCommand(command) ?: return emptyList()
+        val result = runCatching {
+            json.decodeFromString(FfprobeChaptersOutput.serializer(), output).chapters.map { ch ->
+                val startSec = ch.startTime.toDoubleOrNull() ?: 0.0
+                val endSec = ch.endTime.toDoubleOrNull() ?: 0.0
+                ChapterMarker(startMs = (startSec * 1000).toLong(), endMs = (endSec * 1000).toLong())
+            }
+        }
+        if (result.isFailure) Logger.warn("Failed to parse ffprobe chapters for $filePath: ${result.exceptionOrNull()?.message}")
+        return result.getOrElse { emptyList() }
     }
 
     /** R131: media duration in seconds, or null if unknown — used to pick a screen-grab timestamp. */
