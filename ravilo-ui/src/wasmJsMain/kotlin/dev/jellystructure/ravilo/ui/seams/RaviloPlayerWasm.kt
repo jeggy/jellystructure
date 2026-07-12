@@ -110,7 +110,7 @@ actual class RaviloPlayer actual constructor() {
     actual val audioTracks: List<PlayerAudioTrack> get() =
         loadedAudio.mapIndexed { i, a ->
             val label = a.label?.takeIf { it.isNotBlank() } ?: languageName(a.language) ?: a.language ?: "Track ${i + 1}"
-            PlayerAudioTrack(i, label, a.language)
+            PlayerAudioTrack(i, label, a.language, a.channels, a.isDefault)
         }
     actual val subtitleTracks: List<PlayerSubtitleTrack> get() =
         loadedSubtitles.mapIndexed { i, s ->

@@ -74,6 +74,7 @@ import androidx.compose.ui.unit.sp
 import dev.jellystructure.ravilo.ui.focus.MediaKey
 import dev.jellystructure.ravilo.ui.focus.dpadFocusable
 import dev.jellystructure.ravilo.ui.i18n.str
+import dev.jellystructure.ravilo.ui.i18n.t
 import dev.jellystructure.ravilo.ui.seams.PlayerAudioTrack
 import dev.jellystructure.ravilo.ui.seams.PlayerSubtitleTrack
 import dev.jellystructure.ravilo.ui.seams.PlayerChromeActions
@@ -1848,4 +1849,133 @@ private fun langLine(language: String?, label: String): String? {
     val shown = label.contains(name, ignoreCase = true) ||
         (language != null && label.contains(language, ignoreCase = true))
     return if (shown) null else name
+}
+
+// ─── R180: flag-forward picker — endonyms, title-parsing, badges ──────────────
+
+/**
+ * R180 (FR-RV-ASP1-1) — the picker's primary row label is the **endonym** (a track's own native name:
+ * `da → Dansk`, not `da → Danish`) — unlike [languageName] above, which returns English names and stays
+ * in use for [langLine]'s secondary line. Covers the library's top languages (verified via a DB scan of
+ * the real library during the R180 dev review).
+ */
+private fun endonym(code: String?): String? =
+    code?.lowercase()?.trim()?.let { RAVILO_ENDONYMS[it] }
+
+private val RAVILO_ENDONYMS: Map<String, String> = mapOf(
+    "en" to "English", "eng" to "English",
+    "da" to "Dansk", "dan" to "Dansk",
+    "fo" to "Føroyskt", "fao" to "Føroyskt",
+    "sv" to "Svenska", "swe" to "Svenska",
+    "no" to "Norsk", "nor" to "Norsk", "nb" to "Norsk", "nob" to "Norsk",
+    "de" to "Deutsch", "ger" to "Deutsch", "deu" to "Deutsch",
+    "fr" to "Français", "fre" to "Français", "fra" to "Français",
+    "es" to "Español", "spa" to "Español",
+    "fi" to "Suomi", "fin" to "Suomi",
+    "nl" to "Nederlands", "dut" to "Nederlands", "nld" to "Nederlands",
+    "zh" to "中文", "chi" to "中文", "zho" to "中文",
+    "pt" to "Português", "por" to "Português",
+    "it" to "Italiano", "ita" to "Italiano",
+    "pl" to "Polski", "pol" to "Polski",
+    "ru" to "Русский", "rus" to "Русский",
+    "ja" to "日本語", "jpn" to "日本語",
+    "ko" to "한국어", "kor" to "한국어",
+    "ar" to "العربية", "ara" to "العربية",
+    "hi" to "हिन्दी", "hin" to "हिन्दी",
+    "cs" to "Čeština", "cze" to "Čeština", "ces" to "Čeština",
+    "tr" to "Türkçe", "tur" to "Türkçe",
+    "is" to "Íslenska", "isl" to "Íslenska", "ice" to "Íslenska",
+)
+
+private enum class TrackVariant { SDH, DESCRIBES_ACTION, COMMENTARY, NONE }
+
+// (FR-RV-ASP1-3) — derived from a track's own label/DisplayTitle, verified against the real library DB
+// during the R180 dev review (audio titles carry these too, e.g. "Synstolkning", "Commentary by…").
+private val SDH_RE = Regex("""\bsdh\b|hard of hearing""", RegexOption.IGNORE_CASE)
+private val AD_RE = Regex("""synstolkning|audio description|\bad\b|\bdescribed\b""", RegexOption.IGNORE_CASE)
+private val COMMENTARY_RE = Regex("""commentary""", RegexOption.IGNORE_CASE)
+// DB-verified low-coverage "this track is the source's own original" marker (~20 tracks in the library,
+// e.g. "English [Original]", "dansk [original]", "Original | Dansk (Danmark)") — see R180 addendum §4.
+private val ORIGINAL_MARKER_RE = Regex("""\[\s*original\s*]|^\s*original\s*\|""", RegexOption.IGNORE_CASE)
+
+// Region/variant qualifiers rendered as a small muted suffix on the name (FR-RV-ASP1-1), never a badge —
+// covers both the subtitle region suffix (Simplified/Traditional/…) and the audio regional-dub tags
+// found in the DB scan (European/Latin American/Brazilian/VFF/VFQ/…). First match wins.
+private val REGION_MARKERS: List<Pair<Regex, String>> = listOf(
+    Regex("""\bsimplified\b""", RegexOption.IGNORE_CASE) to "Simplified",
+    Regex("""\btraditional\b""", RegexOption.IGNORE_CASE) to "Traditional",
+    Regex("""\bcanad(a|ian)\b""", RegexOption.IGNORE_CASE) to "Canadian",
+    Regex("""\blatin american?\b""", RegexOption.IGNORE_CASE) to "Latin American",
+    Regex("""\beuropean\b""", RegexOption.IGNORE_CASE) to "European",
+    Regex("""\bbrazil(ian)?\b""", RegexOption.IGNORE_CASE) to "Brazilian",
+    Regex("""\btaiwan\b""", RegexOption.IGNORE_CASE) to "Taiwan",
+    Regex("""\bunited states\b""", RegexOption.IGNORE_CASE) to "United States",
+    Regex("""\bunited kingdom\b""", RegexOption.IGNORE_CASE) to "UK",
+    Regex("""\bvff\b""", RegexOption.IGNORE_CASE) to "VFF",
+    Regex("""\bvfq\b""", RegexOption.IGNORE_CASE) to "VFQ",
+)
+
+/** Muted region/variant suffix for a track's name (e.g. `中文 · Simplified`), or null — never a badge. */
+private fun regionSuffix(title: String?): String? {
+    if (title.isNullOrBlank()) return null
+    for ((re, display) in REGION_MARKERS) if (re.containsMatchIn(title)) return display
+    return null
+}
+
+private fun trackVariant(title: String?): TrackVariant {
+    if (title.isNullOrBlank()) return TrackVariant.NONE
+    return when {
+        COMMENTARY_RE.containsMatchIn(title) -> TrackVariant.COMMENTARY
+        SDH_RE.containsMatchIn(title) -> TrackVariant.SDH
+        AD_RE.containsMatchIn(title) -> TrackVariant.DESCRIBES_ACTION
+        else -> TrackVariant.NONE
+    }
+}
+
+private fun isOriginalMarked(title: String?): Boolean =
+    title != null && ORIGINAL_MARKER_RE.containsMatchIn(title)
+
+/**
+ * R180 (FR-RV-ASP1-3) — jargon-free badge words for an audio row, derived **only** from flags/channel
+ * count/title markers, never from a codec string. [originalLanguage] is the title's own original-audio
+ * language (R181 plumbing) for the Dubbed badge; a track explicitly self-tagged `[Original]` is never
+ * Dubbed regardless (the low-coverage marker corroborates/overrides the language comparison — R180
+ * addendum §4). Plain (non-`@Composable`) — takes [lang] directly so it's callable from resolver code,
+ * not just rendering; pass `LocalLang.current` from a composable call site.
+ */
+private fun audioBadges(track: PlayerAudioTrack, originalLanguage: String?, lang: String): List<String> {
+    val badges = mutableListOf<String>()
+    if (track.isDefault) badges += t("player.badge_default", lang)
+    track.channels?.let { ch ->
+        when {
+            ch > 2 -> badges += t("player.badge_surround51", lang)
+            ch == 2 -> badges += t("player.badge_stereo", lang)
+            // mono/unknown: no fitting word in the fixed vocabulary — omit rather than guess (non-goal).
+        }
+    }
+    when (trackVariant(track.label)) {
+        TrackVariant.COMMENTARY -> badges += t("player.badge_commentary", lang)
+        TrackVariant.DESCRIBES_ACTION -> badges += t("player.badge_describes_action", lang)
+        else -> {}
+    }
+    val dubbed = !isOriginalMarked(track.label) &&
+        originalLanguage != null && track.language != null &&
+        !originalLanguage.equals(track.language, ignoreCase = true)
+    if (dubbed) badges += t("player.badge_dubbed", lang)
+    return badges
+}
+
+/** R180 (FR-RV-ASP1-3) — jargon-free badge words for a subtitle row. Default and Signs-only (forced)
+ *  may co-occur, per the spec. See [audioBadges] for why [lang] is explicit. */
+private fun subtitleBadges(track: PlayerSubtitleTrack, lang: String): List<String> {
+    val badges = mutableListOf<String>()
+    if (track.isDefault) badges += t("player.badge_default", lang)
+    if (track.forced) badges += t("player.badge_signs_only", lang)
+    when (trackVariant(track.label)) {
+        TrackVariant.SDH -> badges += t("player.badge_sound_described", lang)
+        TrackVariant.DESCRIBES_ACTION -> badges += t("player.badge_describes_action", lang)
+        TrackVariant.COMMENTARY -> badges += t("player.badge_commentary", lang)
+        else -> {}
+    }
+    return badges
 }
