@@ -3,7 +3,15 @@ package dev.jellystructure.ravilo.ui.seams
 import dev.jellystructure.shared.tv.AudioTrack
 import dev.jellystructure.shared.tv.SubTrack
 
-data class PlayerAudioTrack(val index: Int, val label: String, val language: String?)
+data class PlayerAudioTrack(
+    val index: Int,
+    val label: String,
+    val language: String?,
+    /** R180 — channel count, for the picker's Surround 5.1 / Stereo badge. Null when unknown. */
+    val channels: Int? = null,
+    /** R180 — the source's own "pick this automatically" track, for the Default badge. */
+    val isDefault: Boolean = false,
+)
 data class PlayerSubtitleTrack(
     val index: Int,
     val label: String,

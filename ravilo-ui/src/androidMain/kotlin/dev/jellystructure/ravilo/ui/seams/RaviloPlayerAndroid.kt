@@ -208,7 +208,10 @@ actual class RaviloPlayer actual constructor() {
                         ?: languageName(format.language)
                         ?: format.language?.uppercase()
                         ?: "Track ${idx + 1}"
-                    result += PlayerAudioTrack(idx, label, meta?.language ?: format.language)
+                    // R180 — prefer the server-derived meta (Jellyfin MediaStreams); fall back to the
+                    // container format's own channel count when meta lacks it.
+                    val channels = meta?.channels ?: format.channelCount.takeIf { it > 0 }
+                    result += PlayerAudioTrack(idx, label, meta?.language ?: format.language, channels, meta?.isDefault ?: false)
                     idx++
                 }
             }
