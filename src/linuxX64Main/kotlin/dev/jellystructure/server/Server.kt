@@ -203,6 +203,8 @@ fun startServer(
 
         installAuthPlugin(sessionService, validateDeviceToken = { deviceService.validateDeviceToken(it) }, validateApiKey = { apiKeyStore.validate(it) })
 
+        installGzipCompression()
+
         // Phase 129 (FR-OPS1 §B.2) — global load shed, earliest pipeline phase so a shed response
         // costs the least possible work (no routing, no auth, no handler — none of which would open
         // further FDs). Replaces the old image/TV-events-only shed. `Connection: close` (not just the
