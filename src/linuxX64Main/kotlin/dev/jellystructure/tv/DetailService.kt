@@ -81,7 +81,10 @@ class DetailService(
                 // R133: episode still from jellystructure's on-disk <base>-thumb.jpg (series id + filename).
                 val stillUrl = RaviloImageUrl.still(item.id, ep.filename)
                 TvEpisode(
-                    id = ep.jellyfinId ?: ep.path,
+                    // Bug fix (Phase 149): episodes sharing a file also share `path`, so the jellyfinId
+                    // fallback used to collapse a whole group onto the SAME id — the episodeNumber
+                    // suffix keeps every episode unique even when jellyfinId isn't populated yet.
+                    id = ep.jellyfinId ?: "${ep.path}#${ep.episodeNumber ?: seasonNum}",
                     episodeNumber = ep.episodeNumber ?: 0,
                     title = ep.title ?: "Episode ${ep.episodeNumber ?: seasonNum}",
                     runtime = ep.runtime ?: 0,
@@ -89,6 +92,11 @@ class DetailService(
                     stillUrl = stillUrl,
                     playback = null,  // R83: hydrated by /api/tv/playstate (R84 overlays it)
                     airDate = ep.airDate,  // R148: scanned TMDB air date — no request-time call
+                    file = ep.path,  // Phase 149: R179's client-side grouping key
+                    partIndex = ep.partIndex,
+                    partCount = ep.partCount,
+                    chapterStartMs = ep.chapterStartMs,
+                    hasChapters = ep.hasChapters,
                 )
             }
             Season(index = seasonNum, name = seasonName, episodes = tvEpisodes)
