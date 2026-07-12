@@ -67,8 +67,9 @@ class HomeStore(private val apiClient: TvApiClient) {
         loadJob?.cancel()
         _state.value = HomeState.Loading
         loadJob = scope.launch {
-            // Retry up to 3 times (1 s, 2 s, 4 s) before emitting Error — survives cold-start
-            // network not-yet-warm and first-launch activeUserId race.
+            // Fast bounded burst first: 1 s, 2 s, 4 s between attempts — survives cold-start network
+            // not-yet-warm and first-launch activeUserId race without leaving the user stalled on
+            // Loading for long.
             var lastErr = "Unknown error"
             val delays = longArrayOf(1_000L, 2_000L, 4_000L)
             for (i in 0..3) {
@@ -83,6 +84,23 @@ class HomeStore(private val apiClient: TvApiClient) {
                 if (i < 3) delay(delays[i])
             }
             _state.value = HomeState.Error(lastErr)
+            // Bug fix: once on the error screen, recovery required the user to notice a transient
+            // network blip (flaky TV wifi, backend mid-restart) had cleared and manually press Retry —
+            // reported as this screen showing up "too often". Keep quietly retrying every 15 s in the
+            // background so a blip that clears on its own resolves without the user touching anything;
+            // capped at 20 attempts (~5 min) so a genuinely dead backend/invalid token doesn't spin
+            // forever — the manual Retry / Sign out buttons stay available throughout and after.
+            repeat(20) {
+                delay(15_000L)
+                val result = runCatching { apiClient.getHome() }
+                if (result.isSuccess) {
+                    val feed = result.getOrThrow().deduped()
+                    _state.value = HomeState.Loaded(feed)
+                    setUpLiveTvPolling(feed)
+                    return@launch
+                }
+                _state.value = HomeState.Error(result.exceptionOrNull()?.message ?: lastErr)
+            }
         }
         refreshDiscoverAvailable()
         refreshUpcomingAvailable()
