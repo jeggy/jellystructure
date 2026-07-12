@@ -37,25 +37,47 @@ class PlayerStore(private val apiClient: TvApiClient) {
         currentItemId = itemId
         _state.value = PlayerSessionState.Loading
         scope.launch {
-            _state.value = runCatching {
-                // Bug fix: this used to be a static literal with no HDR signal, so the server always
-                // assumed direct-play was safe even for HDR10/HLG sources the device might not be able
-                // to display correctly (see ClientCapabilities.supportsHdr10/supportsHlg docs).
-                val hdr = detectHdrSupport()
-                val ticket = apiClient.startPlayback(
-                    itemId = itemId,
-                    capabilities = ClientCapabilities(
-                        containers = listOf("mkv", "mp4", "avi", "mov"),
-                        videoCodecs = listOf("h264", "hevc", "vp9", "av1"),
-                        audioCodecs = listOf("aac", "mp3", "flac", "opus", "ac3", "eac3"),
-                        maxAudioChannels = 8,
-                        supportsHdr10 = hdr.hdr10,
-                        supportsHlg = hdr.hlg,
-                    ),
-                )
-                startHeartbeat(itemId, positionProvider, isPausedProvider)
-                PlayerSessionState.Ready(ticket)
-            }.getOrElse { PlayerSessionState.Error(it.message ?: "Failed to start playback") }
+            // Bug fix: a failed startPlayback (e.g. a transient network blip during an auto-advance to
+            // the next episode) used to surface as PlayerSessionState.Error with no code anywhere
+            // reading that state — the player just sat frozen on the outgoing episode's last frame
+            // forever, reported as "stuck" with "auto play next doesn't work". Retry with exponential
+            // backoff — 1s, 2s, 4s, 8s — before giving up; shorter than HomeStore's 10-attempt policy
+            // since this is mid-playback (the user is actively watching, not just browsing) — ~15s of
+            // quiet retry survives a blip without leaving a spinner up for minutes. PlayerScreen now
+            // also renders PlayerSessionState.Error with a manual Retry as the final fallback.
+            var lastErr = "Failed to start playback"
+            var delayMs = 1_000L
+            repeat(5) { attempt ->
+                val result = runCatching {
+                    // Bug fix: this used to be a static literal with no HDR signal, so the server always
+                    // assumed direct-play was safe even for HDR10/HLG sources the device might not be
+                    // able to display correctly (see ClientCapabilities.supportsHdr10/supportsHlg docs).
+                    val hdr = detectHdrSupport()
+                    val ticket = apiClient.startPlayback(
+                        itemId = itemId,
+                        capabilities = ClientCapabilities(
+                            containers = listOf("mkv", "mp4", "avi", "mov"),
+                            videoCodecs = listOf("h264", "hevc", "vp9", "av1"),
+                            audioCodecs = listOf("aac", "mp3", "flac", "opus", "ac3", "eac3"),
+                            maxAudioChannels = 8,
+                            supportsHdr10 = hdr.hdr10,
+                            supportsHlg = hdr.hlg,
+                        ),
+                    )
+                    ticket
+                }
+                if (result.isSuccess) {
+                    startHeartbeat(itemId, positionProvider, isPausedProvider)
+                    _state.value = PlayerSessionState.Ready(result.getOrThrow())
+                    return@launch
+                }
+                lastErr = result.exceptionOrNull()?.message ?: lastErr
+                if (attempt < 4) {
+                    delay(delayMs)
+                    delayMs *= 2
+                }
+            }
+            _state.value = PlayerSessionState.Error(lastErr)
         }
     }
 

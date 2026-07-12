@@ -654,6 +654,59 @@ fun PlayerScreen(
             }
         }
 
+        // ── Error overlay ──────────────────────────────────────────────────────
+        // Bug fix: PlayerSessionState.Error was never checked anywhere in this screen — a failed
+        // startPlayback (all retries exhausted, see PlayerStore.startSession) used to leave the player
+        // sitting on the outgoing episode's frozen last frame forever, with no indication anything had
+        // gone wrong and no way to recover short of backing out entirely. Reported as "stuck" with
+        // "auto play next doesn't work".
+        val sessionError = sessionState as? PlayerSessionState.Error
+        if (sessionError != null) {
+            val retryFR = remember { FocusRequester() }
+            val backFR = remember { FocusRequester() }
+            LaunchedEffect(sessionState) { runCatching { retryFR.requestFocus() } }
+            var retryFocused by remember { mutableStateOf(false) }
+            var backFocused by remember { mutableStateOf(false) }
+            Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.82f)), contentAlignment = Alignment.Center) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(str("error.generic"), color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
+                    Spacer(Modifier.height(10.dp))
+                    Text(sessionError.message, color = Color.White.copy(alpha = 0.65f), fontSize = 13.sp)
+                    Spacer(Modifier.height(24.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Box(
+                            modifier = Modifier
+                                .background(if (retryFocused) Color.White else Color.White.copy(alpha = 0.15f), RoundedCornerShape(8.dp))
+                                .border(2.dp, if (retryFocused) colors.focusRing else Color.Transparent, RoundedCornerShape(8.dp))
+                                .dpadFocusable(
+                                    focusRequester = retryFR,
+                                    onFocused = { retryFocused = true },
+                                    onBlurred = { retryFocused = false },
+                                    onSelect = { store.startSession(itemId, positionProvider = { positionMs }, isPausedProvider = { !isPlaying }) },
+                                )
+                                .padding(horizontal = 22.dp, vertical = 12.dp),
+                        ) {
+                            Text(str("action.retry"), color = if (retryFocused) Color.Black else Color.White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                        }
+                        Box(
+                            modifier = Modifier
+                                .background(if (backFocused) Color.White.copy(alpha = 0.18f) else Color.White.copy(alpha = 0.08f), RoundedCornerShape(8.dp))
+                                .border(2.dp, if (backFocused) colors.focusRing else Color.Transparent, RoundedCornerShape(8.dp))
+                                .dpadFocusable(
+                                    focusRequester = backFR,
+                                    onFocused = { backFocused = true },
+                                    onBlurred = { backFocused = false },
+                                    onSelect = onBack,
+                                )
+                                .padding(horizontal = 22.dp, vertical = 12.dp),
+                        ) {
+                            Text(str("action.back"), color = Color.White.copy(alpha = 0.85f), fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                        }
+                    }
+                }
+            }
+        }
+
         // ── Buffering spinner (while playing but stalled) ────────────────────
         // (In a real integration the engine signals buffering; we skip this for now)
 
@@ -778,6 +831,10 @@ fun PlayerScreen(
                 colors         = colors,
                 nextEpLabel    = nextEpisodeLabel,
                 nextEpTitle    = nextEpisodeTitle,
+                // Bug fix: the card's thumbnail was always an empty placeholder box — `episodes` (the
+                // same grouped list `currentEpIndex` indexes into) already carries each entry's still(s),
+                // so the next episode's is one lookup away rather than needing new plumbing end-to-end.
+                nextEpStillUrls = episodes?.getOrNull(currentEpIndex + 1)?.stillUrls ?: emptyList(),
                 countdown      = countdown,
                 nuFocus        = nuFocus,
             )
@@ -1446,6 +1503,7 @@ private fun NextUpCard(
     colors: RaviloColors,
     nextEpLabel: String?,
     nextEpTitle: String?,
+    nextEpStillUrls: List<String?>,
     countdown: Int,
     nuFocus: NuFocus,
 ) {
@@ -1460,7 +1518,10 @@ private fun NextUpCard(
             .padding(14.dp),
     ) {
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            // Thumbnail placeholder + countdown ring
+            // Thumbnail (falls back to the flat box colour when no still is available) + countdown ring.
+            // When the next entry is itself a multi-episode-file group, nextEpStillUrls carries up to 3
+            // URLs and EpisodeTriptych renders the same seamed-diagonal treatment used everywhere else a
+            // group appears, instead of just showing that group's first episode's image alone.
             Box(
                 modifier = Modifier
                     .width(104.dp)
@@ -1469,6 +1530,9 @@ private fun NextUpCard(
                     .background(Color(0xFF1A1D28)),
                 contentAlignment = Alignment.BottomEnd,
             ) {
+                if (nextEpStillUrls.any { it != null }) {
+                    EpisodeTriptych(stillUrls = nextEpStillUrls, modifier = Modifier.matchParentSize())
+                }
                 Box(modifier = Modifier.padding(6.dp)) {
                     CountdownRing(colors, countdown)
                 }
