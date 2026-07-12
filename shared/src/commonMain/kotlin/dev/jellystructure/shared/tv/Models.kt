@@ -244,6 +244,21 @@ data class Episode(
     val playback: PlaybackState? = null,
     /** R148: episode first-air date (ISO yyyy-MM-dd) from the scanned MediaItem. Null = no date line. */
     @SerialName("air_date") val airDate: String? = null,
+    /**
+     * Phase 149: the shared physical file this episode lives in — episodes sharing this value are a
+     * "multi-episode file" (e.g. `S01E01E02E03.mkv`); the client groups by it to render one combined
+     * card instead of N. Never parsed by the client (constitution: renders server-pushed state only).
+     */
+    val file: String = "",
+    /** Phase 149: 0-based position within [file]'s group, ordered by episode number. */
+    @SerialName("part_index") val partIndex: Int = 0,
+    /** Phase 149: size of [file]'s group (1 for a normal single-episode file). */
+    @SerialName("part_count") val partCount: Int = 1,
+    /** Phase 149: this episode's start offset (ms) within [file], when the container's chapter count
+     *  matched the contained-episode count. Null when the file has no usable chapters. */
+    @SerialName("chapter_start_ms") val chapterStartMs: Long? = null,
+    /** Phase 149: true only when every episode in [file]'s group got a chapter offset. */
+    @SerialName("has_chapters") val hasChapters: Boolean = false,
 )
 
 @Serializable
