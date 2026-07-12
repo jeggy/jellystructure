@@ -101,11 +101,16 @@
     toast_marked_unwatched: 'Marked unwatched \u00b7 synced to Jellyfin',
     toast_all_watched: '\u2713 Season marked watched \u00b7 synced to Jellyfin',
     toast_all_unwatched: 'Season marked unwatched \u00b7 synced to Jellyfin',
+    // R179: multi-episode file (e.g. S01E01E02E03.mkv) combined card copy.
+    episodes_range: 'Episodes {a}\u2013{b}',
+    episodes_one_file: '1 file \u00b7 {n} episodes \u00b7 {mins}m',
   });
   Object.assign(STR.da, {
     mark_watched: 'Mark\u00e9r som set', watched: 'Set', play_again: 'Afspil igen',
     mark_all_watched: 'Mark\u00e9r alle som set', mark_all_unwatched: 'Mark\u00e9r alle som uset',
     watched_of: '{w} af {n} set',
+    episodes_range: 'Afsnit {a}\u2013{b}',
+    episodes_one_file: '1 fil \u00b7 {n} afsnit \u00b7 {mins}m',
     toast_marked_watched: '\u2713 Markeret som set \u00b7 synket til Jellyfin',
     toast_marked_unwatched: 'Markeret som uset \u00b7 synket til Jellyfin',
     toast_all_watched: '\u2713 S\u00e6son markeret som set \u00b7 synket til Jellyfin',
@@ -145,6 +150,8 @@
     mark_watched: 'Merk sum s\u00e6tt', watched: 'S\u00e6tt', play_again: 'Sp\u00e6l aftur',
     mark_all_watched: 'Merk \u00f8ll sum s\u00e6dd', mark_all_unwatched: 'Merk \u00f8ll sum \u00f3s\u00e6dd',
     watched_of: '{w} av {n} s\u00e6dd',
+    episodes_range: 'Partar {a}\u2013{b}',
+    episodes_one_file: '1 f\u00edla \u00b7 {n} partar \u00b7 {mins}m',
     toast_marked_watched: '\u2713 Merkt sum s\u00e6tt \u00b7 samstillt vi\u00f0 Jellyfin',
     toast_marked_unwatched: 'Merkt sum \u00f3s\u00e6tt \u00b7 samstillt vi\u00f0 Jellyfin',
     toast_all_watched: '\u2713 \u00c1rst\u00ed\u00f0 merkt sum s\u00e6dd \u00b7 samstillt vi\u00f0 Jellyfin',

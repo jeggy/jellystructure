@@ -61,6 +61,7 @@ import dev.jellystructure.ravilo.ui.components.DetailLoadingShell
 import dev.jellystructure.ravilo.ui.components.EpisodeCard
 import dev.jellystructure.ravilo.ui.components.DetailSynopsis
 import dev.jellystructure.ravilo.ui.components.ImdbChip
+import dev.jellystructure.ravilo.ui.components.MultiEpisodeCard
 import dev.jellystructure.ravilo.ui.components.RaviloButton
 import dev.jellystructure.ravilo.ui.components.SeasonPicker
 import dev.jellystructure.ravilo.ui.components.Tile
@@ -508,12 +509,24 @@ private fun SeriesDetailLoaded(
                         }
                     }
 
+                    // Phase R179: group consecutive episodes sharing a physical `file` (a multi-episode
+                    // release, e.g. S01E01E02E03.mkv) into ONE rail slot — a lone episode is its own
+                    // group of 1. Built from server-pushed `file` only; never inspects filenames.
+                    val episodeGroups = remember(episodes) {
+                        // Guard: a blank `file` (older cached data, before this field existed) must never
+                        // accidentally group unrelated episodes together — key each one singly instead.
+                        episodes.groupBy { if (it.file.isBlank()) "single:${it.id}" else it.file }.values.toList()
+                    }
                     val epRowState = rememberLazyListState()
-                    // Scroll to first unwatched episode whenever the selected season or overlay changes.
-                    LaunchedEffect(selectedSeasonIdx, overlay) {
+                    // Scroll to the GROUP containing the first unwatched episode whenever the selected
+                    // season or overlay changes. Bug fix: this used to index into the flat `episodes`
+                    // list, which no longer matches the rail's item count once episodes are grouped.
+                    LaunchedEffect(selectedSeasonIdx, overlay, episodeGroups) {
                         if (overlay.isEmpty()) return@LaunchedEffect
-                        val firstUnwatched = episodes.indexOfFirst { ep -> overlay[ep.id]?.played != true }
-                        val scrollTo = if (firstUnwatched >= 0) firstUnwatched else 0
+                        val firstUnwatchedEp = episodes.firstOrNull { ep -> overlay[ep.id]?.played != true }
+                        val scrollTo = firstUnwatchedEp
+                            ?.let { target -> episodeGroups.indexOfFirst { g -> g.any { it.id == target.id } } }
+                            ?.takeIf { it >= 0 } ?: 0
                         if (scrollTo > 0) epRowState.scrollToItem(scrollTo)
                     }
                     Spacer(Modifier.height(RaviloDimens.rowHeadPadB))
@@ -523,19 +536,40 @@ private fun SeriesDetailLoaded(
                         contentPadding = PaddingValues(horizontal = raviloHPad, vertical = RaviloDimens.trackPadV),
                         horizontalArrangement = Arrangement.spacedBy(RaviloDimens.itemSpacing),
                     ) {
-                        items(episodes.size, key = { i -> episodes[i].id }) { i ->
-                            val ep = episodes[i]
-                            val epWatched = overlay[ep.id]?.played == true
-                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                EpisodeCard(
-                                    episode = ep,
-                                    // R84: overlay-driven; no "UP NEXT" ribbon until playstate arrives
-                                    isResumeEpisode = overlayLoaded && ep.id == resumeEpId,
-                                    playstateOverride = overlay[ep.id],
-                                    onSelect = { onPlay(buildEpisodeContext(detail, selectedSeasonIdx, episodes, ep.id, overlay)) },
-                                )
-                                Spacer(Modifier.height(6.dp))
-                                EpisodeWatchToggle(watched = epWatched, onToggle = { onMarkEpisode(ep.id, !epWatched) })
+                        items(episodeGroups.size, key = { i -> episodeGroups[i].first().id }) { i ->
+                            val group = episodeGroups[i]
+                            if (group.size > 1) {
+                                // The whole card plays/toggles as one unit — target whichever contained
+                                // episode is the natural entry point: in-progress, else first unwatched,
+                                // else the group's first episode.
+                                val targetEp = group.firstOrNull { ep ->
+                                    overlay[ep.id].let { ps -> ps != null && !ps.played && ps.resumeMs > 0 }
+                                } ?: group.firstOrNull { ep -> overlay[ep.id]?.played != true } ?: group.first()
+                                val groupWatched = group.all { overlay[it.id]?.played == true }
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    MultiEpisodeCard(
+                                        episodes = group,
+                                        isResumeGroup = overlayLoaded && group.any { it.id == resumeEpId },
+                                        playstateOverlay = overlay,
+                                        onSelect = { onPlay(buildEpisodeContext(detail, selectedSeasonIdx, episodes, targetEp.id, overlay)) },
+                                    )
+                                    Spacer(Modifier.height(6.dp))
+                                    EpisodeWatchToggle(watched = groupWatched, onToggle = { onMarkEpisode(targetEp.id, !groupWatched) })
+                                }
+                            } else {
+                                val ep = group.first()
+                                val epWatched = overlay[ep.id]?.played == true
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    EpisodeCard(
+                                        episode = ep,
+                                        // R84: overlay-driven; no "UP NEXT" ribbon until playstate arrives
+                                        isResumeEpisode = overlayLoaded && ep.id == resumeEpId,
+                                        playstateOverride = overlay[ep.id],
+                                        onSelect = { onPlay(buildEpisodeContext(detail, selectedSeasonIdx, episodes, ep.id, overlay)) },
+                                    )
+                                    Spacer(Modifier.height(6.dp))
+                                    EpisodeWatchToggle(watched = epWatched, onToggle = { onMarkEpisode(ep.id, !epWatched) })
+                                }
                             }
                         }
                     }
