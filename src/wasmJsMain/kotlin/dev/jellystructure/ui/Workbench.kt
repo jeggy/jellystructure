@@ -258,8 +258,10 @@ fun openWorkbench(
     document.body?.appendChild(overlay)
 
     scope.launch {
-        if (wbMeta == null) wbMeta = MediaApi.metaFacets()
-        if (wbTrack == null) wbTrack = MediaApi.trackFacets()
+        // Bug fix: routed through the shared FacetsCache (also used by MediaDetail's genre picker)
+        // instead of each screen fetching independently — whichever opens first warms it for the other.
+        wbMeta = FacetsCache.meta()
+        wbTrack = FacetsCache.track()
         // R127: in a channel content-row scope, narrow facet counts to the channel's filter (computed once;
         // values not present in the channel disappear, the rest are ordered by their in-channel count).
         wbNarrowed = wbBaseRoot?.toSharedGroup()?.takeIf { it.isLive() }?.let { MediaApi.narrowedFacets(it) }
