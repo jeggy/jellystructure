@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -24,7 +25,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
@@ -122,9 +122,14 @@ fun MultiEpisodeCard(
                 .background(colors.surface),
         ) {
             val panels = ordered.take(3)
+            // Bug fix: each panel Box previously had no height constraint inside the Row, so
+            // RemoteImage's matchParentSize() had nothing to match — the still silently collapsed to
+            // near-zero height (only the absolutely-positioned episode-number text was visible). Both
+            // fillMaxWidth()+fillMaxHeight() are needed since a Row's children default to wrap-content
+            // on the cross axis (height here), not just the main axis weight() already handles.
             Row(modifier = Modifier.matchParentSize()) {
                 panels.forEachIndexed { i, ep ->
-                    Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                    Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
                         val stillUrl = ep.stillUrl
                         if (stillUrl != null) {
                             RemoteImage(url = stillUrl, contentDescription = ep.title, modifier = Modifier.matchParentSize())
@@ -138,13 +143,16 @@ fun MultiEpisodeCard(
                             modifier = Modifier.align(Alignment.TopStart).padding(6.dp),
                         )
                     }
-                    // Skewed seam between panels (matches the admin mockup's ~8° tilt).
+                    // Bug fix: a rotated 2dp-wide divider gets clipped by its own (equally thin) layout
+                    // bounds — Compose measures/clips a Box to its unrotated size, so an 8° tilt on a
+                    // razor-thin box mostly rendered as a broken/near-invisible fragment. A straight
+                    // divider (matching the same simplification made to the admin CSS triptych) is
+                    // simple, robust, and still clearly reads as "3 distinct stills" at this card size.
                     if (i < panels.size - 1) {
                         Box(
                             modifier = Modifier
                                 .width(2.dp)
-                                .fillMaxWidth()
-                                .rotate(8f)
+                                .fillMaxHeight()
                                 .background(Color.White.copy(alpha = 0.85f)),
                         )
                     }

@@ -70,13 +70,25 @@ class RaviloArtworkService(
         return resizeServe(cacheKey(itemId, type, width), source, type, width)
     }
 
-    /** Episode still: addressed by the series id + the episode filename. */
-    suspend fun serveStill(seriesId: String, epFilename: String, width: Int? = null): Pair<ByteArray, String>? {
+    /**
+     * Episode still: addressed by the series id + the episode filename, disambiguated by [epNum] when
+     * several episodes share that filename (a multi-episode file, Phase 149). Bug fix: this used to
+     * always resolve `firstOrNull { it.filename == epFilename }` — every episode in a group has the same
+     * filename, so it always served episode 1's still for the whole group, no matter which episode's
+     * still was actually requested (reported: Ravilo's triptych card showed the same image 3 times).
+     * Omitted [epNum] falls back to the first match, unchanged for the ordinary single-episode case.
+     */
+    suspend fun serveStill(seriesId: String, epFilename: String, epNum: Int? = null, width: Int? = null): Pair<ByteArray, String>? {
         val item = store.resolve(seriesId) ?: return null
-        val ep = item.episodes.firstOrNull { it.filename == epFilename } ?: return null
+        val ep = if (epNum != null) item.episodes.firstOrNull { it.filename == epFilename && it.episodeNumber == epNum }
+            else item.episodes.firstOrNull { it.filename == epFilename }
+        ep ?: return null
         val source = artwork.episodeStillPath(ep)
         val wSuffix = width?.takeIf { it > 0 && it != 640 }?.let { "-$it" } ?: ""
-        return resizeServe("$seriesId-still-${epFilename.hashCode().toUInt()}$wSuffix", source, "still", width)
+        // Bug fix: the cache key was filename-only too, so every episode in a group shared one cache
+        // entry — whichever still got resized+cached first silently served for all of them afterward.
+        val epSuffix = ep.episodeNumber?.let { "-e$it" } ?: ""
+        return resizeServe("$seriesId-still-${epFilename.hashCode().toUInt()}$epSuffix$wSuffix", source, "still", width)
     }
 
     /** Avatar — the one remaining (cached) Jellyfin fetch. Durable cache; 404 when Jellyfin has no image. */

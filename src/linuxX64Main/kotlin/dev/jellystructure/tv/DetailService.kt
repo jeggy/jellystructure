@@ -79,7 +79,9 @@ class DetailService(
             val seasonName = item.seasonNames[seasonNum] ?: "Season $seasonNum"
             val tvEpisodes = eps.map { ep ->
                 // R133: episode still from jellystructure's on-disk <base>-thumb.jpg (series id + filename).
-                val stillUrl = RaviloImageUrl.still(item.id, ep.filename)
+                // Bug fix (Phase 149): episodes sharing a file also share filename — pass episodeNumber
+                // so the image route serves THIS episode's still, not always the group's first one.
+                val stillUrl = RaviloImageUrl.still(item.id, ep.filename, ep.episodeNumber)
                 TvEpisode(
                     // Bug fix (Phase 149): episodes sharing a file also share `path`, so the jellyfinId
                     // fallback used to collapse a whole group onto the SAME id — the episodeNumber
