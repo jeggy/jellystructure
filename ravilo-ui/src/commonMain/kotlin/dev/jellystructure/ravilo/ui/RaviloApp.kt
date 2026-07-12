@@ -470,7 +470,16 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
         // gesture navigation — it's intercepted by OnBackPressedDispatcher before Compose ever sees a
         // KeyEvent. Confirmed live on the Pixel 9: back did nothing on any screen without its own
         // on-screen back affordance. This bridges the platform's real back action into the same pop().
-        PlatformBackHandler(enabled = stack.size > 1) { pop() }
+        //
+        // Bug fix: back at the true root (Home, nothing left to pop) used to fall through to the
+        // platform's own default — on Android that's `moveTaskToBack`, leaving the app running in the
+        // background instead of closing it. Only Home gets this treatment (not e.g. Login/ProfilePicker,
+        // which stay on the platform default) — see rememberExitAction's doc comment.
+        val exitApp = rememberExitAction()
+        val atHomeRoot = stack.size == 1 && stack.last() is Dest.Home
+        PlatformBackHandler(enabled = stack.size > 1 || atHomeRoot) {
+            if (stack.size > 1) pop() else exitApp()
+        }
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -481,6 +490,11 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                         ev.key == Key.F5 -> { fpsOverlay = !fpsOverlay; true }  // R94 debug toggle
                         (ev.key == Key.Back || ev.key == Key.Escape || ev.key == Key.Backspace) && stack.size > 1 ->
                             { pop(); true }
+                        // Bug fix: same root-exit treatment as PlatformBackHandler above, for the TV
+                        // remote's physical Back key (a real Compose KeyEvent, handled here rather than
+                        // through PlatformBackHandler's system-gesture bridge).
+                        (ev.key == Key.Back || ev.key == Key.Escape || ev.key == Key.Backspace) && atHomeRoot ->
+                            { exitApp(); true }
                         else -> false
                     }
                 }
