@@ -43,7 +43,6 @@ import dev.jellystructure.ravilo.ui.seams.RemoteImage
 import dev.jellystructure.ravilo.ui.theme.RaviloMotion
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
 import dev.jellystructure.ravilo.ui.theme.Sora
-import dev.jellystructure.ravilo.ui.theme.SpaceGrotesk
 import dev.jellystructure.ravilo.ui.theme.accentGradient
 import dev.jellystructure.shared.tv.CardPlayState
 import dev.jellystructure.shared.tv.Episode
@@ -71,7 +70,6 @@ fun MultiEpisodeCard(
 ) {
     val colors = RaviloTheme.colors
     val sora = Sora
-    val spaceGrotesk = SpaceGrotesk
     var focused by remember { mutableStateOf(false) }
     val focusSpec = remember { RaviloMotion.softSpring<Float>() }
     val dpSpec    = remember { RaviloMotion.softSpring<Dp>() }
@@ -159,14 +157,6 @@ fun MultiEpisodeCard(
                         if (stillUrl != null) {
                             RemoteImage(url = stillUrl, contentDescription = ep.title, modifier = Modifier.matchParentSize())
                         }
-                        Text(
-                            text = "${ep.episodeNumber}",
-                            color = Color.White.copy(alpha = 0.85f),
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Bold,
-                            fontFamily = spaceGrotesk,
-                            modifier = Modifier.align(Alignment.TopStart).padding(6.dp),
-                        )
                     }
                 }
             }
