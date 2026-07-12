@@ -350,6 +350,11 @@ data class SeriesDetail(
 data class SearchResults(
     val query: String,
     val items: List<MediaCard>,
+    // Bug fix: total matching count, independent of how many `items` this particular page carries --
+    // Browse's grid paginates now (R118 follow-up) and needs the true total for its "N titles" count,
+    // not just the current page's size. Defaults to items.size for every existing non-paginated caller
+    // (search()'s suggestions/results, which already return the full matching set in one response).
+    val total: Int = items.size,
 )
 
 // ─── Live events (R33) ──────────────────────────────────────────────────────────
