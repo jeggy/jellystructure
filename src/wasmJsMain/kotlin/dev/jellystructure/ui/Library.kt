@@ -42,6 +42,7 @@ internal fun posterSrc(posterPath: String, tmdbPrefix: String): String =
     if (posterPath.startsWith("/tv/image/")) posterPath else "$tmdbPrefix$posterPath"
 
 private const val LIB_SLICE = 60  // items fetched per infinite-scroll slice
+private const val MIN_SEARCH_LEN = 2  // shorter queries fall back to the unfiltered list, no request
 private var libSlice = 0          // slices loaded so far for the current filter set; next fetch = libSlice + 1
 private var libLoadedCount = 0    // cards currently in the grid
 private var libTotal = 0
@@ -274,7 +275,9 @@ private fun attachLibraryListeners(scope: CoroutineScope) {
 
     document.getElementById("lib-search")?.addEventListener("input") {
         val v = (document.getElementById("lib-search") as? HTMLInputElement)?.value?.trim()
-        libSearch = if (v.isNullOrBlank()) null else v  // capture latest value immediately
+        // Bug fix: below MIN_SEARCH_LEN, treat it the same as no search (falls back to the unfiltered
+        // list) instead of firing a full server-side decode+scan for a 1-char query on every keystroke.
+        libSearch = if (v.isNullOrBlank() || v.length < MIN_SEARCH_LEN) null else v  // capture latest value immediately
         libSearchJob?.cancel()
         libSearchJob = scope.launch { delay(250); loadMore(scope, reset = true) }
     }
