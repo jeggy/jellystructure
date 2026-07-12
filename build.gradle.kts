@@ -345,6 +345,7 @@ tasks.named("wasmJsBrowserDistribution") {
         val linuxX64Test by getting {
             dependencies {
                 implementation(kotlin("test"))
+                implementation(libs.ktor.server.test.host)
             }
         }
         val wasmJsMain by getting {
