@@ -65,7 +65,7 @@ data class ArtworkCandidatesResponse(
 data class SeasonStatus(val season: Int, val posterExists: Boolean = false)
 
 @Serializable
-data class EpisodeStillStatus(val filename: String, val stillExists: Boolean = false, val stillPath: String = "", val source: String? = null)
+data class EpisodeStillStatus(val filename: String, val stillExists: Boolean = false, val stillPath: String = "", val source: String? = null, val episodeNumber: Int? = null)
 
 @Serializable
 data class NfoWriteResult(val path: String)
@@ -421,20 +421,25 @@ object MediaApi {
         }.status == HttpStatusCode.OK
     }.getOrDefault(false)
 
-    suspend fun getEpisodeStillCandidates(id: String, epFilename: String): ArtworkCandidatesResponse? = runCatching {
-        httpClient.get("/api/media/$id/episodes/${encodeURIComponent(epFilename)}/still/candidates").body<ArtworkCandidatesResponse>()
+    // Phase 149: epNum disambiguates when several episodes share epFilename (a multi-episode file) —
+    // omitted for the overwhelmingly common non-ambiguous case, unchanged from pre-149 behavior.
+    suspend fun getEpisodeStillCandidates(id: String, epFilename: String, epNum: Int? = null): ArtworkCandidatesResponse? = runCatching {
+        val epParam = if (epNum != null) "?ep=$epNum" else ""
+        httpClient.get("/api/media/$id/episodes/${encodeURIComponent(epFilename)}/still/candidates$epParam").body<ArtworkCandidatesResponse>()
     }.getOrNull()
 
-    suspend fun saveEpisodeStill(id: String, epFilename: String, source: String): Boolean = runCatching {
-        httpClient.post("/api/media/$id/episodes/${encodeURIComponent(epFilename)}/still/save") {
+    suspend fun saveEpisodeStill(id: String, epFilename: String, source: String, epNum: Int? = null): Boolean = runCatching {
+        val epParam = if (epNum != null) "?ep=$epNum" else ""
+        httpClient.post("/api/media/$id/episodes/${encodeURIComponent(epFilename)}/still/save$epParam") {
             contentType(ContentType.Application.Json)
             setBody("""{"source":${jsonStr(source)}}""")
         }.status == HttpStatusCode.OK
     }.getOrDefault(false)
 
     // R131: generate / regenerate a screen-grab still from the episode's video frame.
-    suspend fun screengrabStill(id: String, epFilename: String): EpisodeStillStatus? = runCatching {
-        httpClient.post("/api/media/$id/episodes/${encodeURIComponent(epFilename)}/still/screengrab").body<EpisodeStillStatus>()
+    suspend fun screengrabStill(id: String, epFilename: String, epNum: Int? = null): EpisodeStillStatus? = runCatching {
+        val epParam = if (epNum != null) "?ep=$epNum" else ""
+        httpClient.post("/api/media/$id/episodes/${encodeURIComponent(epFilename)}/still/screengrab$epParam").body<EpisodeStillStatus>()
     }.getOrNull()
 
     suspend fun getEpisodeStillStatuses(id: String): List<EpisodeStillStatus>? = runCatching {
