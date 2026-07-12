@@ -1529,13 +1529,20 @@ private fun TrackPicker(
             // Options — R180: every row leads with a flag/glyph and a plain endonym name; badges are
             // a fixed jargon-free vocabulary derived in audioBadges()/subtitleBadges(), never a codec
             // or delivery-method string.
-            val effectiveAudio = audioTracks.ifEmpty { listOf(PlayerAudioTrack(0, "Default", null)) }
-            val rows: List<PickerRow> = if (pickerTab == 0) {
-                effectiveAudio.map { PickerRow(it.language, it.label, false, audioBadges(it, originalLanguage, lang)) }
-            } else {
-                subOptions.map { sub ->
-                    if (sub == null) PickerRow(null, "", true, emptyList())
-                    else PickerRow(sub.language, sub.label, false, subtitleBadges(sub, lang))
+            // Bug fix: this used to recompute on every recomposition — including the per-track title
+            // regex matching inside audioBadges()/subtitleBadges() — even though TrackPicker
+            // recomposes on every single D-pad Up/Down while the picker is open (pickerIdx is a
+            // parameter). remember() so it only re-runs when the tab or the underlying track data
+            // actually changes.
+            val rows: List<PickerRow> = remember(pickerTab, audioTracks, subOptions, originalLanguage, lang) {
+                if (pickerTab == 0) {
+                    val effectiveAudio = audioTracks.ifEmpty { listOf(PlayerAudioTrack(0, "Default", null)) }
+                    effectiveAudio.map { PickerRow(it.language, it.label, false, audioBadges(it, originalLanguage, lang)) }
+                } else {
+                    subOptions.map { sub ->
+                        if (sub == null) PickerRow(null, "", true, emptyList())
+                        else PickerRow(sub.language, sub.label, false, subtitleBadges(sub, lang))
+                    }
                 }
             }
             val selectedInTab = if (pickerTab == 0) selectedAudio else selectedSub + 1
