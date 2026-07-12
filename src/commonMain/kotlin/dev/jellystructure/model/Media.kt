@@ -104,6 +104,21 @@ data class Episode(
     val createdAt: Long? = null,
     /** Phase 108: Jellyfin's own DateCreated for this episode, when the episode-list fetch provides it. Display only. */
     val jellyfinCreatedAt: Long? = null,
+    /** Phase 149: multi-episode files (e.g. `S01E01E02E03.mkv`) model as N Episodes sharing one `path`/
+     *  `filename` — a "file group". [partIndex] is this episode's 0-based position within the group
+     *  (ordered by episode number); [partCount] is the group size (1 for a normal single-episode file).
+     *  Both default to the single-episode case so no migration/backfill is needed. */
+    val partIndex: Int = 0,
+    val partCount: Int = 1,
+    /** Phase 149: this episode's start/end offset (ms) within the shared file, when the container has
+     *  chapter markers whose count matches the contained-episode count. Null when the file has no usable
+     *  chapters — the group still plays as one continuous unit, never an error. */
+    val chapterStartMs: Long? = null,
+    val chapterEndMs: Long? = null,
+    /** Phase 149: whether [chapterStartMs]/[chapterEndMs] are populated for every episode in this file's
+     *  group (all-or-nothing per file — either the chapter count matched and every episode got an offset,
+     *  or none did). */
+    val hasChapters: Boolean = false,
 )
 
 @Serializable
