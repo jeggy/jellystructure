@@ -51,6 +51,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -151,6 +152,20 @@ fun PlayerScreen(
 ) {
     val colors = RaviloTheme.colors
     val sessionState by store.state.collectAsState()
+
+    // Bug fix: the poll loop below is a LaunchedEffect(Unit) that's deliberately never restarted
+    // across an episode transition (see loadedForItemId's comment — same underlying `player`
+    // instance is reused so the outgoing stream doesn't visibly restart). But `itemId` and
+    // `nextEpisodeId` are plain function parameters — a coroutine launched once captures their
+    // VALUE at that moment and never sees later recompositions' updates. After the first
+    // successful auto-advance, this loop's `itemId` stayed frozen on the very first episode
+    // forever while `loadedForItemId` correctly kept moving on, so `playerLoadedForCurrentItem`
+    // went permanently false — silently disabling next-up/auto-advance/end-of-stream detection
+    // for the rest of this screen's life. Reported as "stuck" after a couple of episodes, with
+    // "auto play next" never working again. rememberUpdatedState gives the poll loop a live
+    // reference that always reflects the latest recomposition, without needing to restart it.
+    val currentItemId by rememberUpdatedState(itemId)
+    val currentNextEpisodeId by rememberUpdatedState(nextEpisodeId)
 
     val player = remember { RaviloPlayer() }
 
@@ -363,34 +378,45 @@ fun PlayerScreen(
     LaunchedEffect(Unit) {
         while (true) {
             delay(POLL_MS)
-            positionMs  = player.positionMs
-            durationMs  = player.durationMs
-            bufferedMs  = player.bufferedMs
-            isPlaying   = player.isPlaying
-            audioTracks = player.audioTracks
-            subtitleTracks = player.subtitleTracks
+            try {
+                positionMs  = player.positionMs
+                durationMs  = player.durationMs
+                bufferedMs  = player.bufferedMs
+                isPlaying   = player.isPlaying
+                audioTracks = player.audioTracks
+                subtitleTracks = player.subtitleTracks
 
-            // Bug fix: gate every next-up/end-of-stream check on the player actually being loaded for
-            // the CURRENT itemId — otherwise, right after a manual (or auto) advance, these checks kept
-            // reading the OUTGOING episode's near-the-end position/duration during the brief gap before
-            // the new episode's stream ticket loads, re-arming next-up and auto-advancing a second time
-            // into the episode that had just started. See loadedForItemId's declaration comment above.
-            val playerLoadedForCurrentItem = loadedForItemId == itemId
+                // Bug fix: gate every next-up/end-of-stream check on the player actually being loaded
+                // for the CURRENT itemId — otherwise, right after a manual (or auto) advance, these
+                // checks kept reading the OUTGOING episode's near-the-end position/duration during the
+                // brief gap before the new episode's stream ticket loads, re-arming next-up and
+                // auto-advancing a second time into the episode that had just started. See
+                // loadedForItemId's declaration comment above. Uses currentItemId (rememberUpdatedState),
+                // not the raw itemId parameter — see that declaration's comment for why this loop
+                // specifically needs the live reference.
+                val playerLoadedForCurrentItem = loadedForItemId == currentItemId
 
-            // Near-end → show next-up card (R111: not if the viewer dismissed it via "Watch credits")
-            if (playerLoadedForCurrentItem && nextEpisodeId != null && durationMs > 0 && !nextUpVisible && !nextUpDismissed && !player.isEnded) {
-                if ((durationMs - positionMs) in 1..NEXTUP_AT_MS) {
-                    nextUpVisible = true
-                    nuFocus = NuFocus.PLAY
+                // Near-end → show next-up card (R111: not if dismissed via "Watch credits")
+                if (playerLoadedForCurrentItem && currentNextEpisodeId != null && durationMs > 0 && !nextUpVisible && !nextUpDismissed && !player.isEnded) {
+                    if ((durationMs - positionMs) in 1..NEXTUP_AT_MS) {
+                        nextUpVisible = true
+                        nuFocus = NuFocus.PLAY
+                    }
                 }
-            }
 
-            // Natural end with no next episode → exit
-            if (playerLoadedForCurrentItem && player.isEnded && nextEpisodeId == null) {
-                onBack(); break
-            }
-            if (playerLoadedForCurrentItem && player.isEnded && !nextUpVisible) {
-                nextUpVisible = true; nuFocus = NuFocus.PLAY
+                // Natural end with no next episode → exit
+                if (playerLoadedForCurrentItem && player.isEnded && currentNextEpisodeId == null) {
+                    onBack(); break
+                }
+                if (playerLoadedForCurrentItem && player.isEnded && !nextUpVisible) {
+                    nextUpVisible = true; nuFocus = NuFocus.PLAY
+                }
+            } catch (e: Throwable) {
+                // Bug fix: an exception on any single tick (e.g. a transient native-player getter
+                // failure) used to kill this whole polling loop for the rest of the PlayerScreen's
+                // lifetime — silently ending all next-up/auto-advance/end-of-stream detection with no
+                // crash and no visible symptom beyond "playback just stops responding". Keep polling
+                // instead of dying on one bad tick.
             }
         }
     }
