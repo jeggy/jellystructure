@@ -20,14 +20,18 @@ signs-only track, a track with sound descriptions, an audio-description track, a
 words**, and says nothing about codecs, containers, or how a track is delivered.
 
 ## Current state (verified)
-- The player already has a two-tab **TrackPicker** popup (`PlayerScreen.kt:1252-1305`, rows via
-  `PickerOption`): Audio | Subtitles, a flat list of rows, ✓ tick on the active one, D-pad navigable,
+- The player already has a two-tab **TrackPicker** popup (~~`PlayerScreen.kt:1252-1305`~~ **now
+  `TrackPicker`@~1395 + `PickerOption`@~1475 — the file grew ~150 lines from today's playback fixes**,
+  rows via `PickerOption`): Audio | Subtitles, a flat list of rows, ✓ tick on the active one, D-pad navigable,
   card ~`0xFF0E1119`@94% with a focus ring. Today each row shows a **raw-ish label + a `desc` string**
   (e.g. `5.1 · E-AC-3 · dub`, `Signs only` / `Forced`) — i.e. codec and delivery jargon leaks into the UI.
 - Flags already exist for this exact use: **`AudioFlagStrip.kt`** `LANG_CC` map + `composeResources/
   drawable/flag_*.png` (incl. `da→flag_dk`, `fo→flag_fo`, `en→flag_gb`), used on the detail hero's merged
-  audio+subtitle flag line (R75/R78/R134) and reused by the R172 request-language picker. `languageName()`
-  / `RAVILO_LANGS_UI` already resolve endonyms (`da→Dansk`, `fo→Føroyskt`).
+  audio+subtitle flag line (R75/R78/R134) and reused by the R172 request-language picker. ~~`languageName()`
+  / `RAVILO_LANGS_UI` already resolve endonyms (`da→Dansk`, `fo→Føroyskt`).~~ **[dev-review — not true; see
+  addendum §1. `RAVILO_LANGS_UI` exists only in the design mockup (`design/ravilo/ravilo-i18n.js:203`), NOT
+  in the Compose app; `languageName()` (`RaviloPlayer.kt:75`) returns _English_ names (`da→"Danish"`). The
+  endonym label has no existing Kotlin source and must be ported.]**
 - The backend (`PlaybackService.kt`) buckets every subtitle codec into three **delivery methods**
   (external text / embed image / encode-PGS-burn-in); PGS still triggers a live transcode
   (`SubtitleMethod=Encode`). **This bucketing stays internal** — see FR-RV-ASP1-2.
@@ -154,11 +158,87 @@ assets as the detail hero and R172); `languageName()` / `RAVILO_LANGS_UI` (endon
   active track; the rest of the screen doesn't shift.
 - en/da/fo strings present for tab labels and all badges.
 
-## Status note
-Design-authored, `Planned`, not yet dev-reviewed. Exports to
-`specs/ravilo/requirements/phase-R180-audio-subtitle-picker-overhaul.md`; `scripts/check-phases.sh` will
-flag it for a `STATUS.md` row (STATUS.md is code-owned — do not add the row from the design side).
-**Next Ravilo number after this is R181.**
+## Dev-review addenda (2026-07-12)
+
+Reviewed against the live player (`PlayerScreen.kt`, `RaviloPlayer.kt` + Android/Wasm actuals,
+`AudioFlagStrip.kt`, the shared TV DTOs) and a scan of the real library DB. The chosen design
+(Direction 2, flag-forward) is sound and internally consistent, and the picker **is** a restyle of the
+existing `TrackPicker`. **But the design's clean `tracksFor()` shape (`lang`/`fmt`/`def`/`kind`/`note`/
+`sub`) hides that several badges depend on data that does not currently reach the client.** So this phase
+is a restyle **plus** three small data-plumbing changes and one new scrolling list. Corrections/additions:
+
+**1. The endonym label has no Kotlin source (Current-state is wrong here).**
+`RAVILO_LANGS_UI` lives only in the design JS (`design/ravilo/ravilo-i18n.js:203`); `languageName()`
+(`RaviloPlayer.kt:75`) returns **English** (`da→"Danish"`). FR-RV-ASP1-1's primary label (`Dansk`,
+`Føroyskt`, `中文`) needs a **new `code→endonym` map ported to Kotlin** — cover at least the library's top
+languages (en da fo sv no de fr es fi nl zh pt it pl, per the DB scan). Do **not** use `languageName()`
+for the row label. The **flag** map (`LANG_CC`) is fine as-is (see §7).
+
+**2. Audio rows drop `channels` + `isDefault` — blocks the "Surround 5.1 / Stereo" and audio "Default" badges.**
+The runtime model `PlayerAudioTrack(index, label, language)` (`RaviloPlayer.kt:6`) carries neither, even
+though the shared `AudioTrack` DTO has `channels` + `isDefault` and the Android actual
+(`RaviloPlayerAndroid.kt` ~L202–211) **already holds that `meta` at the mapping site** and just doesn't
+forward it. Fix: **widen `PlayerAudioTrack` with `channels: Int?` + `isDefault: Boolean`, populate in both
+actuals.** Derive the badge from `channels` (>2 → Surround; 2 → Stereo; 1 → Mono) — never from the codec
+string (which FR-RV-ASP1-2 bans showing anyway).
+
+**3. SDH / Commentary / Describes-action / region-qualifier have no flags — parse them from the title, and coverage is partial.**
+Only `forced` (→ "Signs only") and `isDefault` are real booleans. "Sound described" (SDH), "Commentary",
+"Describes action" (AD), and the `中文 · Simplified` suffix must be **derived by scanning the track
+`label`/title**. Real markers in this library (verified from the DB): SDH → `(SDH)` / `SDH` / `hard of
+hearing`; AD → `Synstolkning` / `Audio Description` / `Described` / `AD`; commentary → `Commentary`;
+region → `(Simplified)` / `(Traditional)` / `(Canadian)` / `(Latin America)`. Two cautions: (a) **many
+tracks have no title at all** (every PGS track on the 40-Years-Gone test title, and the 191
+`unknown`-codec tracks, are untitled) → those correctly fall back to flag+name per the non-goal, so badge
+coverage is inherently partial; (b) the same DisplayTitle string also contains the codec/channel words
+FR-RV-ASP1-2 bans (`Dolby Digital - 5.1`) — the parser must **classify the marker and discard the rest,
+never echo the title**.
+
+**4. "Dubbed" needs the title's original language, which reaches the player nowhere.**
+`originalLanguage` is on **no** TV DTO, no `Dest.Player`, no play context (grep-confirmed). Pick one:
+   - **(a) plumb it** — add `originalLanguage: String?` to the series/movie detail DTO → `EpisodePlayContext`
+     / `Dest.Player` → `PlayerScreen`, then flag audio rows whose language differs. Moderate (one nullable
+     field down an existing path).
+   - **(b) defer the Dubbed badge** to a follow-up; ship the other five badges now.
+
+   Recommend (a) if cheap in your DTO layer, else (b). This is the **only** badge with a hard data gap —
+   don't let it block the rest.
+
+**5. FR-RV-ASP1-8 (scroll-follow) is net-new, not a restyle.**
+Today's list is a plain `Column { items.forEachIndexed {…} }` (`PlayerScreen.kt` ~L1413) in a fixed-width
+`Box` with **unbounded height** — a 10+-track title (the library has them: 40-Years-Gone = 7 audio + 13
+subtitle tracks) overflows off-screen. FR-RV-ASP1-8 requires: **bound the popup height**, make the list a
+`LazyColumn`/`Column.verticalScroll` with a `LazyListState`, follow focus via `animateScrollToItem`, and
+**open scrolled to the active index**. Real work — the "restyle, don't replace" note undersells this item.
+
+**6. Consistency: the existing PGS "burn-in" overlay violates the spirit of FR-RV-ASP1-2.**
+FR-RV-ASP1-2 bans delivery + latency cues, but choosing a PGS subtitle today shows a full-screen overlay
+reading **"Burning in subtitle… (transcoding)"** (`Strings.kt:163`, shown at `PlayerScreen.kt:677`) —
+which names the delivery method **and** is a latency cue. Either scope FR-RV-ASP1-2 explicitly to the
+picker rows, or (recommended) **reword this overlay to a neutral loading state** (reuse the generic
+buffering spinner / "Loading…") so the delivery method stays invisible end-to-end. Product decision.
+
+**7. Minor.**
+   - `LANG_CC` is **not duplicated** — it lives once in `AudioFlagStrip.kt` (`internal`, already reused by
+     `RequestLanguagePicker` + `DiscoverDetailScreen`); just import it. The picker's real dup risk is only
+     the English-name map (`LANGUAGE_NAMES` in `RaviloPlayer.kt`), which is separate from the new endonym
+     map you add in §1. So "centralise the duplicated `LANG_CC`" is a non-issue.
+   - The design **exploration** file's Direction-2 blurb still lists a *"Starts in a moment"* latency badge
+     (`Audio & Subtitles Picker.html:524`); the final `plBadges` correctly dropped it and FR-RV-ASP1-2
+     forbids it — **follow the spec, not the exploration blurb.**
+
+**Ship order:** (1) endonym map + (2) `PlayerAudioTrack` channels/isDefault are prerequisites for the
+visible badges; then (3) title-parsing, (5) scrollable list, and finally the flag-forward restyle + tab
+flags (both straightforward once the data is present). (4) Dubbed and (6) overlay wording are the two
+product decisions to confirm. Everything is grounded in the provided design files
+(`design/ravilo/Audio & Subtitles Picker.html` Direction 2, `ravilo-player.{js,css}` `.pl-opt`/`.pl-flag`/
+`.pl-badges`/`.pl-chip`/`.pl-tab-flag`) — the CSS/markup there is the visual target and needs no change.
+
+## Status
+Design-authored, **dev-reviewed 2026-07-12**, `Planned`. `scripts/check-phases.sh` will flag it for a
+`STATUS.md` row — **STATUS.md is code-owned; do not add the row from the design side.** The deferred
+"remember my language" follow-up (this spec's non-goal) is now specified as **R181** (client-side default
+& remembered-language). **Next Ravilo number after R181 is R182.**
 
 ## Source references
 - Design: `design/ravilo/Ravilo TV.html` — `ravilo-player.js` (`renderPicker`, `PL_CC`, `PL_KIND`,
