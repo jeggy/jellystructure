@@ -20,6 +20,8 @@ import kotlinx.coroutines.withTimeoutOrNull
 private const val SEARCH_SUGGESTION_LIMIT = 20
 // R142: cap the played-state overlay fetch so a slow Jellyfin never hangs a browse/search response.
 private const val HYDRATE_TIMEOUT_MS = 2_500L
+// Bug fix: shorter queries fall back to the suggestions path instead of a full-library contains-scan.
+private const val MIN_SEARCH_LEN = 2
 
 class BrowseService(
     private val mediaStore: MediaStore,
@@ -85,7 +87,7 @@ class BrowseService(
         val ps = withTimeoutOrNull(HYDRATE_TIMEOUT_MS) {
             fetchPlaystate(jellyfinClient, jellyfinBase, token, device.jellyfinUserId, cards.map { it.id })
         } ?: emptyMap()
-        SearchResults(query = kind ?: "all", items = cards.map { it.withPlaystate(ps) })
+        SearchResults(query = kind ?: "all", items = cards.map { it.withPlaystate(ps) }, total = sorted.size)
     }
 
     /** Multi-language search: matches title, originalTitle, and every titlesByLang value. */
@@ -93,7 +95,9 @@ class BrowseService(
         val all = mediaStore.liveItems(device)
         val jellyfinBase = configStore.current.apiKeys.jellyfinUrl.trimEnd('/')
 
-        val cards = if (query.isBlank()) {
+        // Bug fix: a 1-char query used to trigger the same full-library contains-scan as any other
+        // query, with no min-length guard — fall back to the same suggestions path as a blank query.
+        val cards = if (query.isBlank() || query.length < MIN_SEARCH_LEN) {
             all.sortedByDescending { it.recencyKey() }
                 .take(SEARCH_SUGGESTION_LIMIT)
                 .map { it.toMediaCard() }
