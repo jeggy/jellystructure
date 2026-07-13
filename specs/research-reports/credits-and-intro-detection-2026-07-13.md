@@ -85,6 +85,19 @@ feature:
 Two independent research passes (Jellyfin plugin internals; commercial/OSS prior art), condensed —
 full source list in §7.
 
+**Decision (per direction, 2026-07-13): port/adapt Intro Skipper's own approach into jellystructure's
+backend directly, with credit, rather than reinvent it from research papers.** Both projects are
+GPL-3.0 — confirmed jellystructure's own `LICENSE` at the repo root is GPL-3.0, matching Intro Skipper's
+(`github.com/intro-skipper/intro-skipper/blob/master/LICENSE`) — so there's no license conflict to
+route around; porting/adapting their algorithm (parameter values, thresholds, the two-technique split
+below) into jellystructure's own Kotlin/Native code is straightforward GPL-to-GPL reuse, same as
+jellystructure already being self-hosted-only (no distribution-triggered copyleft concerns even
+without the license match). Attribution belongs as an in-code credit/comment block linking their repo
+wherever their approach is adapted, plus a note in the project's own licensing/credits surface. This
+meaningfully de-risks the "build our own" plan: the parameter values below (Hamming-distance matching,
+`blackdetect`/`silencedetect` thresholds, position-window bounds) are Intro Skipper's own
+already-tuned-on-real-libraries starting points, not values to rediscover from scratch.
+
 **Skip Intro and Skip Credits are two different problems with two different techniques**, confirmed
 across every implementation surveyed (Jellyfin's Intro Skipper, Plex):
 
@@ -121,14 +134,32 @@ across every implementation surveyed (Jellyfin's Intro Skipper, Plex):
   zero-cost first pass, but detection has to be the primary strategy — there's nothing free to lean on
   at scale.**
 - **Jellyfin 10.10+ ships a native `MediaSegments` API** (`/MediaSegments/{itemId}`, typed
-  Commercial/Preview/Recap/Outro/Intro/Unknown segments with a Skip/PromptToSkip/Mute action). Newer
-  Intro Skipper releases write into this native API via `IMediaSegmentProvider` rather than a bespoke
-  mechanism. **This is a genuine optional freebie**: if a user already runs Intro Skipper on their
-  Jellyfin server, jellystructure could read already-computed segments for nothing. But making this a
-  *dependency* would break the "Jellyfin is streaming-only, jellystructure owns catalog data" principle
-  this codebase already follows deliberately (see `[[ravilo-off-jellyfin-data]]`) — it should be an
-  optional, best-effort import, never the only path, since most users won't have Intro Skipper
-  installed at all.
+  Commercial/Preview/Recap/Outro/Intro/Unknown segments with a Skip/PromptToSkip/Mute action) — but a
+  follow-up check (2026-07-13) found the **write side is plugin-gated even on a vanilla server**: core
+  Jellyfin only exposes read endpoints for it; creating/deleting segments requires installing the
+  separate `intro-skipper/jellyfin-plugin-ms-api` plugin on top, and populating anything meaningful in
+  the first place still means running Intro Skipper (or an equivalent provider) to begin with. **Decision:
+  do not integrate with `MediaSegments` at all, in either direction** — reading it would only ever
+  return data for the minority of users who happen to already run Intro Skipper, and writing to it needs
+  yet another plugin most users won't have. This also keeps the codebase's existing principle intact:
+  Jellyfin is streaming-only, jellystructure owns catalog data (see `[[ravilo-off-jellyfin-data]]`).
+  jellystructure will build its own equivalent of what Intro Skipper does (audio fingerprinting +
+  ffmpeg heuristics, §5), entirely in-house, so no Jellyfin-side plugin is ever required for Ravilo's
+  Skip Intro / Next Episode to work.
+- **Jellyfin's `Chapters` field (`BaseItemDto.Chapters`) is genuinely native, no plugin required** —
+  confirmed 2026-07-13. Unlike `MediaSegments`, this is real out-of-the-box Jellyfin: it reads embedded
+  chapter atoms *and* Jellyfin's own external chapter-XML-sidecar convention (a recent, still-native
+  addition — external files take priority over embedded ones). jellystructure's own `FfprobeRunner`
+  already reads embedded chapters directly from the file (Phase 149) which is equal-or-better for the
+  embedded case and needs no Jellyfin round-trip — but it can't see an external chapter sidecar the way
+  Jellyfin's own API can. Worth considering as a *supplementary* source (check Jellyfin's `Chapters` in
+  addition to the direct ffprobe read, preferring whichever has more/better titled markers) rather than
+  a replacement — this is a case of "use it because it's out of the box," not "depend on a plugin."
+- **Validating precedent, not a dependency**: the official `jellyfin/jellyfin-plugin-chapter-segments`
+  plugin (hosted under the Jellyfin org itself) does exactly the "map chapter markers → typed segments"
+  technique proposed in §5.1 below — confirming it's a sound, low-risk approach. It's still a plugin
+  a user would have to install, so it doesn't change the decision above; jellystructure will implement
+  the same mapping logic itself, natively, rather than depend on this plugin either.
 
 ## 4. Proposed data model
 
@@ -141,10 +172,10 @@ data class SegmentMarkers(
     val introStartMs: Long? = null,
     val introEndMs: Long? = null,
     val creditsStartMs: Long? = null,
-    // "chapter" (title pattern match) | "heuristic" (ffmpeg black/silence/position) |
-    // "fingerprint" (cross-episode audio match) | "manual" (admin-entered/edited) | "jellyfin" (native
-    // MediaSegments import). Per-field in principle, but a single value covering the whole record is
-    // simpler and matches how confident an admin needs to be before trusting it.
+    // "chapter" (title pattern match, possibly cross-checked against Jellyfin's own native Chapters
+    // API — §3) | "heuristic" (ffmpeg black/silence/position) | "fingerprint" (cross-episode audio
+    // match) | "manual" (admin-entered/edited). Per-field in principle, but a single value covering the
+    // whole record is simpler and matches how confident an admin needs to be before trusting it.
     val source: String? = null,
     // Set the moment an admin edits ANY field via the new management UI (§6) — a scan must never
     // silently overwrite a manual correction; re-detecting an item requires an explicit "Re-scan" action.
@@ -165,7 +196,8 @@ default** (experimental, non-trivial compute) with a settings toggle. Runs in th
 cheapest/most-certain first, stopping as soon as a field is filled unless `all` scope forces a re-run:
 
 1. **Chapter-title pattern match** (near-zero cost — chapters are already fetched for multi-episode
-   files, and cheap to fetch for any file otherwise). Regex against chapter titles for
+   files, and cheap to fetch for any file otherwise; optionally cross-checked against Jellyfin's own
+   `Chapters` API per §3 for external-sidecar coverage). Regex against chapter titles for
    credits/recap/preview-adjacent words (language-aware, at minimum English + the library's own
    detected languages). Sets `source = "chapter"` on a hit. This alone catches SOME well-tagged rips for
    free and should ship even if nothing else does.
@@ -178,15 +210,15 @@ cheapest/most-certain first, stopping as soon as a field is filled unless `all` 
    single highest-value/lowest-risk piece to build first — it needs no other episodes, works for both
    movies and shows, and directly fixes the reported problem.
 3. **Cross-episode audio fingerprinting** (Chromaprint via `fpcalc`, gated by `ProcessGate`, only
-   attempted for series with ≥2 episodes in the same season not yet fingerprinted). Compute + persist a
-   fingerprint per episode once (so adding a new episode later only computes its own, comparing against
-   already-cached ones — never re-fingerprint a whole season per new episode), find the longest matching
-   run near the start of the episode across episode pairs, store as `introStartMs`/`introEndMs`. This is
-   the compute-heavy phase (external `fpcalc` binary, one ffmpeg decode pass per episode) — ship this
-   after #2 is proven out, and keep it strictly opt-in with a "beta" label in the settings UI.
-4. **(Optional, later) Jellyfin `MediaSegments` import** — before running #2/#3 for an item, best-effort
-   check whether Jellyfin already has segments for it (from a user-run Intro Skipper) and import those
-   with `source = "jellyfin"` instead of spending local compute. Purely additive, never required.
+   attempted for series with ≥2 episodes in the same season not yet fingerprinted) — jellystructure's own
+   in-house equivalent of what Intro Skipper does, built natively so no Jellyfin-side plugin is ever
+   required (per §3's decision). Compute + persist a fingerprint per episode once (so adding a new
+   episode later only computes its own, comparing against already-cached ones — never re-fingerprint a
+   whole season per new episode), find the longest matching run near the start of the episode across
+   episode pairs, store as `introStartMs`/`introEndMs`. This is the compute-heavy phase (external
+   `fpcalc` binary, one ffmpeg decode pass per episode) — sequenced after #2 because it's more work to
+   build and only applies to multi-episode shows, not because it's lower-priority; it's the real target
+   for a full Skip Intro experience and should ship as a supported feature, not a permanent beta.
 
 ## 6. Proposed player UX changes
 
@@ -220,7 +252,7 @@ this app's own established pattern of the **movie/series detail page as the sing
 - Extend the per-episode row (and the equivalent single row for a movie) with a **segment scrubber**: a
   thin timeline bar spanning the episode's runtime with two draggable range markers (intro) and one
   draggable point marker (credits start), each labeled with its `source` (chapter/heuristic/
-  fingerprint/manual/jellyfin) as a small badge so the admin knows how much to trust it at a glance.
+  fingerprint/manual) as a small badge so the admin knows how much to trust it at a glance.
   Phase 149's own design mockup (`design/app/series-johnnybravo.html`) already plans an expandable
   per-file row with chapter info for multi-episode files — this is a natural, adjacent addition to that
   same row rather than a new screen.
@@ -243,10 +275,10 @@ this app's own established pattern of the **movie/series detail page as the sing
 1. **Chapter-title pattern match + ffmpeg credits heuristic** (§5.1–5.2) for both movies and episodes,
    with the admin scrubber UI and the player's graceful-fallback trigger change. This alone is the
    direct fix for the reported problem, needs no cross-episode data, and is the lowest-risk slice.
-2. **Cross-episode audio fingerprinting** for Skip Intro (§5.3), opt-in/beta, shipped once #1 is proven
-   live.
-3. **(Optional, low-priority) Jellyfin `MediaSegments` import** (§5.4) as a free-when-available
-   enhancement, never a dependency.
+2. **Cross-episode audio fingerprinting** for Skip Intro (§5.3), ported/adapted from Intro Skipper's own
+   approach (§3) — shipped once #1 is proven live, as a supported feature (not a permanent beta), since
+   this is the real target for full parity with what Intro Skipper achieves, self-contained inside
+   jellystructure with no Jellyfin-side plugin required.
 
 ## 9. Open questions for the design pass
 
@@ -258,13 +290,22 @@ this app's own established pattern of the **movie/series detail page as the sing
   existing ffmpeg/ffprobe binaries, and what that means for the deployment story.
 - Confidence threshold / minimum-runtime guardrails to avoid false positives on cold-opens, mid-episode
   black scenes, or shows that use silence artistically near the true end of an episode.
+- Exact placement of the GPL-3.0 attribution to Intro Skipper (in-code comment at the ported call site
+  is the minimum; whether jellystructure has (or needs) a project-wide CREDITS/THIRD-PARTY-NOTICES file
+  to also list it) — both projects being GPL-3.0 (§3) means this is straightforward, just needs a
+  decided convention.
 
 ## Sources
 
 - github.com/intro-skipper/intro-skipper (+ wiki: Settings-Analysis, Settings-Performance,
   Movies-and-Segment-Types, Edit-Timestamps-&-Fingerprints), github.com/ConfusedPolarBear/intro-skipper,
   forum.jellyfin.org/t-intro-skipper-project-dead
-- jellyfin.org/docs/general/server/metadata/media-segments, github.com/jellyfin/jellyfin/pull/10530
+- github.com/intro-skipper/intro-skipper/blob/master/LICENSE (GPL-3.0, confirmed 2026-07-13 — matches
+  jellystructure's own repo-root `LICENSE`)
+- jellyfin.org/docs/general/server/metadata/media-segments, github.com/jellyfin/jellyfin/pull/10530,
+  github.com/endrl/jellyfin-plugin-ms-api / github.com/intro-skipper/jellyfin-plugin-ms-api (confirms
+  MediaSegments write endpoints are plugin-gated, not native), github.com/jellyfin/jellyfin-plugin-chapter-segments
+  (official Jellyfin-org plugin — validates the chapter-to-segment mapping technique)
 - ayosec.github.io/ffmpeg-filters-docs (blackdetect/silencedetect/freezedetect/scdet),
   blog.gdeltproject.org (blackdetect for commercial-block detection),
   gist.github.com/Hellowlol/96e4e7b3591eebc3ec0a4de9f5883fdf
