@@ -61,4 +61,19 @@ object SegmentDetection {
             confidence = null,  // an exact marker needs no confidence score (see SegmentMarkers doc)
         )
     }
+
+    /**
+     * FR-SEG1-3 — the ffmpeg credits heuristic (`FfmpegRunner.detectCreditsStart`), for when chapter
+     * matching found nothing. Works on movies and standalone episodes alike (no reference episode
+     * needed). Returns null when nothing coincides in the scanned window — the caller leaves
+     * `creditsStartMs` unset, so the player keeps today's end-of-file fallback.
+     */
+    suspend fun fromCreditsHeuristic(filePath: String, durationSec: Double): SegmentMarkers? {
+        val hit = FfmpegRunner.detectCreditsStart(filePath, durationSec) ?: return null
+        return SegmentMarkers(
+            creditsStartMs = hit.startMs,
+            source = "heuristic",
+            confidence = hit.confidence,
+        )
+    }
 }

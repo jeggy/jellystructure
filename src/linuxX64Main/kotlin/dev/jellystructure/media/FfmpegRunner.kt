@@ -210,4 +210,63 @@ object FfmpegRunner {
         val q = if (output.endsWith(".png")) "" else "-q:v 3 "
         return runCommand("ffmpeg -y -i '$inEsc' -vf scale=$w:$h -frames:v 1 $q'$outEsc' 2>&1")
     }
+
+    // Phase 150 (FR-SEG1-3) — below this runtime, treat the file as TV-episode-length (a short window
+    // is enough); at/above it, movie-length (credits can run much longer, so scan further back).
+    private const val CREDITS_WINDOW_THRESHOLD_SEC = 3000.0  // 50min
+    private const val CREDITS_WINDOW_TV_SEC = 180.0          // last 3min
+    private const val CREDITS_WINDOW_MOVIE_SEC = 900.0       // last 15min
+
+    // Empirically verified live (2026-07-13, a real ~104min library file): black_start:/silence_start:
+    // in blackdetect/silencedetect's stderr output are relative to the SEEK point (matching that same
+    // run's own progress "time=" counter resetting to ~0), never absolute file position — confirmed by
+    // a black_start/black_end landing exactly at the requested window's own end. Every timestamp below
+    // must have windowStartSec added back before it means anything against the file's real timeline.
+    private const val BLACK_SILENCE_TOLERANCE_SEC = 2.0
+
+    data class CreditsHeuristicResult(val startMs: Long, val confidence: Double)
+
+    /**
+     * FR-SEG1-3 — the credits heuristic: scans only the file's own last few minutes (sized from
+     * [durationSec], never the whole file — this is the "cheap, no reference episode needed" tier) for
+     * the earliest point where a black-frame run and a silence run coincide, the classic "the last scene
+     * ends, credits roll" cut. [CreditsHeuristicResult.confidence] is highest when the black and silence
+     * onsets nearly align (a clean cut) and lower the further apart they are, floored/capped so it's
+     * never reported as fully certain either way — this is a heuristic, not an exact marker (unlike a
+     * chapter match). Returns null when nothing coincides in the window; the caller leaves
+     * `creditsStartMs` unset so the player keeps today's end-of-file fallback — never a worse guess than
+     * the status quo.
+     */
+    suspend fun detectCreditsStart(filePath: String, durationSec: Double): CreditsHeuristicResult? {
+        if (durationSec <= 0) return null
+        val windowSec = if (durationSec < CREDITS_WINDOW_THRESHOLD_SEC) CREDITS_WINDOW_TV_SEC else CREDITS_WINDOW_MOVIE_SEC
+        val windowStartSec = (durationSec - windowSec).coerceAtLeast(0.0)
+        val escaped = filePath.replace("'", "'\\''")
+        val cmd = "ffmpeg -ss $windowStartSec -i '$escaped' -t ${durationSec - windowStartSec} " +
+            "-vf blackdetect=d=0.5:pic_th=0.98:pix_th=0.10 -af silencedetect=noise=-60dB:d=0.5 -f null - 2>&1"
+        val output = captureCommand(cmd) ?: return null
+
+        val blackStarts = Regex("""black_start:([\d.]+)""").findAll(output)
+            .mapNotNull { it.groupValues[1].toDoubleOrNull() }.toList()
+        val silenceStarts = Regex("""silence_start:\s*([\d.]+)""").findAll(output)
+            .mapNotNull { it.groupValues[1].toDoubleOrNull() }.toList()
+        if (blackStarts.isEmpty() || silenceStarts.isEmpty()) return null
+
+        // blackStarts is already in ffmpeg's (ascending) emission order, so the first black event with
+        // ANY silence event within tolerance is the earliest such coincidence — the genuine
+        // "scene ends, credits begin" transition, not a later pause within the credits themselves.
+        var bestBlack: Double? = null
+        var bestSilence: Double? = null
+        for (b in blackStarts) {
+            val s = silenceStarts.firstOrNull { kotlin.math.abs(it - b) <= BLACK_SILENCE_TOLERANCE_SEC } ?: continue
+            bestBlack = b; bestSilence = s
+            break
+        }
+        if (bestBlack == null || bestSilence == null) return null
+
+        val gap = kotlin.math.abs(bestSilence - bestBlack)
+        val relativeSec = minOf(bestBlack, bestSilence)
+        val confidence = (1.0 - gap / BLACK_SILENCE_TOLERANCE_SEC).coerceIn(0.3, 0.9)
+        return CreditsHeuristicResult(startMs = ((windowStartSec + relativeSec) * 1000).toLong(), confidence = confidence)
+    }
 }
