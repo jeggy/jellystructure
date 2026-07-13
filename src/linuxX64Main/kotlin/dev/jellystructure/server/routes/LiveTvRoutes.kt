@@ -53,7 +53,7 @@ fun Route.liveTvRoutes(liveTvService: LiveTvService) {
         val req = runCatching { call.receive<LiveTvChannelUpdate>() }.getOrElse {
             call.respond(HttpStatusCode.BadRequest, mapOf("error" to "Invalid request")); return@put
         }
-        val ok = liveTvService.updateChannel(id, req.shown, req.number, req.category, req.logoOverrideUrl)
+        val ok = liveTvService.updateChannel(id, req.shown, req.number, req.category, req.logoOverrideUrl, req.displayName)
         if (!ok) return@put call.respond(HttpStatusCode.NotFound, mapOf("error" to "Unknown channel"))
         call.respond(liveTvService.lineup())
     }
