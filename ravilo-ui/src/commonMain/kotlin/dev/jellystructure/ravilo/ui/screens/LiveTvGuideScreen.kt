@@ -1,7 +1,10 @@
 package dev.jellystructure.ravilo.ui.screens
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.gestures.BringIntoViewSpec
+import androidx.compose.foundation.gestures.LocalBringIntoViewSpec
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.ScrollableState
 import androidx.compose.foundation.gestures.scrollable
@@ -28,10 +31,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -103,6 +106,18 @@ private sealed class GuideCell {
     data class Prog(val program: LiveTvGuideProgram) : GuideCell()
     data class Gap(val minutes: Float) : GuideCell()
 }
+
+/**
+ * Bug fix ("navigation is very jumpy"): every row used to react to a plain `Float` minutes value by
+ * instantly `scrollToItem`-ing to it, for BOTH a continuous touch-drag (many tiny deltas per frame —
+ * instant tracking is exactly right there, it IS the drag) and a discrete D-pad focus jump (one big
+ * step per keypress — instant here reads as a hard teleport, not a glide). [animate] tells every row's
+ * collector which of the two just happened so it can pick the matching motion — `scrollToItem` for a
+ * drag delta (1:1 with the finger, an animation would only lag behind it) and `animateScrollToItem`
+ * for a focus jump (a short, smooth glide instead of a snap). The initial on-load positioning also
+ * sets `animate = false` — there's no prior on-screen position to glide from.
+ */
+private data class GuideViewport(val minutes: Float, val animate: Boolean)
 
 private fun buildGuideCells(programs: List<LiveTvGuideProgram>, originMs: Long): List<GuideCell> = buildList {
     var cursor = originMs
@@ -197,9 +212,12 @@ fun LiveTvGuideScreen(
                 val guideOriginMs = remember(s.programs) { s.programs.minOfOrNull { it.startMs } ?: nowMs }
                 val maxEndMs = remember(s.programs) { s.programs.maxOfOrNull { it.endMs } ?: (guideOriginMs + 3_600_000L) }
                 val maxViewportMinutes = remember(guideOriginMs, maxEndMs) { ((maxEndMs - guideOriginMs) / 60_000f).coerceAtLeast(0f) }
-                var viewportStartMinutes by remember { mutableFloatStateOf(0f) }
+                var viewport by remember { mutableStateOf(GuideViewport(0f, animate = false)) }
                 val sharedScrollableState = rememberScrollableState { delta ->
-                    viewportStartMinutes = (viewportStartMinutes - delta / PX_PER_MINUTE).coerceIn(0f, maxViewportMinutes)
+                    viewport = GuideViewport(
+                        (viewport.minutes - delta / PX_PER_MINUTE).coerceIn(0f, maxViewportMinutes),
+                        animate = false,
+                    )
                     delta
                 }
                 // Bug fix: D-pad LEFT/RIGHT used to rely on Compose's native "scroll the focused item
@@ -212,9 +230,10 @@ fun LiveTvGuideScreen(
                 // search to actually move between program cells), every cell reports its own start time
                 // whenever it gains focus — native search still drives which cell focuses next, this
                 // just keeps the shared canonical state (and therefore every other row) truthful about
-                // where the newly-focused cell actually is.
+                // where the newly-focused cell actually is. animate = true here (see GuideViewport) is
+                // the fix for the follow-up "jumpy" report: a focus move is a discrete jump, not a drag.
                 fun onCellFocused(startMinutes: Float) {
-                    viewportStartMinutes = startMinutes.coerceIn(0f, maxViewportMinutes)
+                    viewport = GuideViewport(startMinutes.coerceIn(0f, maxViewportMinutes), animate = true)
                 }
 
                 // User request: open on the start of the OLDEST currently-active program (across every
@@ -229,7 +248,10 @@ fun LiveTvGuideScreen(
                     maxOf(oldest, nowMs - 3_600_000L)
                 }
                 LaunchedEffect(guideOriginMs, oldestActiveStartMs) {
-                    viewportStartMinutes = ((oldestActiveStartMs - guideOriginMs) / 60_000f - 10f).coerceAtLeast(0f)
+                    viewport = GuideViewport(
+                        ((oldestActiveStartMs - guideOriginMs) / 60_000f - 10f).coerceAtLeast(0f),
+                        animate = false,
+                    )
                 }
 
                 // This screen had no initial-focus target — every other screen requests focus onto
@@ -266,7 +288,7 @@ fun LiveTvGuideScreen(
                     GuideTimeRuler(
                         guideOriginMs = guideOriginMs,
                         maxEndMs = maxEndMs,
-                        viewportStartMinutes = { viewportStartMinutes },
+                        viewport = { viewport },
                         scrollableState = sharedScrollableState,
                     )
                     Spacer(Modifier.height(8.dp))
@@ -280,7 +302,7 @@ fun LiveTvGuideScreen(
                                 programs = s.programs.filter { it.channelId == ch.channelId }.sortedBy { it.startMs },
                                 nowMs = nowMs,
                                 guideOriginMs = guideOriginMs,
-                                viewportStartMinutes = { viewportStartMinutes },
+                                viewport = { viewport },
                                 scrollableState = sharedScrollableState,
                                 onTune = { onTuneChannel(ch) },
                                 onCellFocused = ::onCellFocused,
@@ -342,15 +364,15 @@ private fun CategoryChip(label: String, selected: Boolean, onSelect: () -> Unit)
  * have a clear "top of the hour" reference. Ticks start at the first ROUND hour at/after
  * [guideOriginMs] (there's nothing to show for the partial hour before that — the guide can't scroll
  * earlier than its own origin) and run every 60min through [maxEndMs]. Shares [scrollTarget] with
- * [GuideChannelRow] so both always land on the exact same clock position for a given
- * [viewportStartMinutes] — ticks are uniformly 60min wide (well over the 90dp min-width floor, so no
- * stretching/rounding mismatch versus program cells to account for).
+ * [GuideChannelRow] so both always land on the exact same clock position for a given viewport target —
+ * ticks are uniformly 60min wide (well over the 90dp min-width floor, so no stretching/rounding
+ * mismatch versus program cells to account for).
  */
 @Composable
 private fun GuideTimeRuler(
     guideOriginMs: Long,
     maxEndMs: Long,
-    viewportStartMinutes: () -> Float,
+    viewport: () -> GuideViewport,
     scrollableState: ScrollableState,
 ) {
     val colors = RaviloTheme.colors
@@ -375,10 +397,14 @@ private fun GuideTimeRuler(
     // only shows up once the offset itself is large enough to notice, exactly the density-vs-dp gap.
     val density = LocalDensity.current.density
 
+    // Bug fix ("navigation is very jumpy"): scrollToItem is an instant teleport — fine for a touch
+    // drag (many tiny deltas already tracking the finger 1:1) but a hard cut for a D-pad focus jump
+    // (one big discrete step). animateScrollToItem glides instead; see GuideViewport's doc comment.
     LaunchedEffect(listState, itemWidthsMin, density) {
-        snapshotFlow(viewportStartMinutes).collectLatest { minutes ->
-            val (idx, px) = scrollTarget(itemWidthsMin, minutes)
-            listState.scrollToItem(idx, (px * density).toInt())
+        snapshotFlow(viewport).collectLatest { v ->
+            val (idx, px) = scrollTarget(itemWidthsMin, v.minutes)
+            if (v.animate) listState.animateScrollToItem(idx, (px * density).toInt())
+            else listState.scrollToItem(idx, (px * density).toInt())
         }
     }
 
@@ -410,7 +436,7 @@ private fun GuideChannelRow(
     programs: List<LiveTvGuideProgram>,
     nowMs: Long,
     guideOriginMs: Long,
-    viewportStartMinutes: () -> Float,
+    viewport: () -> GuideViewport,
     scrollableState: ScrollableState,
     onTune: () -> Unit,
     onCellFocused: (Float) -> Unit,
@@ -494,13 +520,31 @@ private fun GuideChannelRow(
             // but LazyListState.scrollToItem's scrollOffset param wants real device pixels directly.
             val density = LocalDensity.current.density
 
+            // Bug fix ("navigation is very jumpy") — see GuideViewport's doc comment: instant for a
+            // drag delta, animated for a discrete D-pad focus jump.
             LaunchedEffect(listState, itemWidthsMin, density) {
-                snapshotFlow(viewportStartMinutes).collectLatest { minutes ->
-                    val (idx, px) = scrollTarget(itemWidthsMin, minutes)
-                    listState.scrollToItem(idx, (px * density).toInt())
+                snapshotFlow(viewport).collectLatest { v ->
+                    val (idx, px) = scrollTarget(itemWidthsMin, v.minutes)
+                    if (v.animate) listState.animateScrollToItem(idx, (px * density).toInt())
+                    else listState.scrollToItem(idx, (px * density).toInt())
                 }
             }
 
+            // Second half of the same fix: Compose's native "scroll the focused item into view" would
+            // otherwise ALSO move this row the moment a cell inside it focuses — racing the animated
+            // scroll above (which already computes the exact right target from real program data) on
+            // the very row that just received focus, and being the one row where the janky "double
+            // motion" was most visible. A no-op BringIntoViewSpec (never reports work left to do) mutes
+            // that native pass everywhere in this row; touch-drag and D-pad focus jumps both still move
+            // it, just through the one deliberate path above.
+            @OptIn(ExperimentalFoundationApi::class)
+            val noOpBringIntoView = remember {
+                object : BringIntoViewSpec {
+                    override fun calculateScrollDistance(offset: Float, size: Float, containerSize: Float) = 0f
+                }
+            }
+            @OptIn(ExperimentalFoundationApi::class)
+            CompositionLocalProvider(LocalBringIntoViewSpec provides noOpBringIntoView) {
             LazyRow(
                 state = listState,
                 // The shared scrollableState drives scrolling — a row's own drag gesture would fight
@@ -537,11 +581,11 @@ private fun GuideChannelRow(
                     val showText = cellWidthDp >= TEXT_MIN_WIDTH_DP
                     // User request: each cell is focusable/selectable again (selecting opens the
                     // details overlay for this specific program — see onProgramSelect). LEFT/RIGHT is
-                    // deliberately left to Compose's native focus search (moves to the adjacent cell
-                    // and scrolls just this row into view, same as before the sync bug fix) —
-                    // onCellFocused below is what keeps every OTHER row's viewport truthful about
-                    // wherever native search lands, without needing to hand-roll the cell-to-cell
-                    // traversal ourselves.
+                    // deliberately left to Compose's native focus search (moves to the adjacent cell —
+                    // the row's own scroll-into-view is muted above, onCellFocused's animated jump
+                    // handles revealing it instead) — onCellFocused below is what keeps every OTHER
+                    // row's viewport truthful about wherever native search lands, without needing to
+                    // hand-roll the cell-to-cell traversal ourselves.
                     var pFocused by remember { mutableStateOf(false) }
                     val startMinutes = remember(p.startMs, guideOriginMs) { (p.startMs - guideOriginMs) / 60_000f }
                     Box(
@@ -580,6 +624,7 @@ private fun GuideChannelRow(
                         }
                     }
                 }
+            }
             }
         }
     }
