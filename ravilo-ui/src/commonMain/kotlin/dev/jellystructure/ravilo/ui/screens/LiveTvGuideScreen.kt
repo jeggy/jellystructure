@@ -61,6 +61,9 @@ import kotlinx.datetime.toLocalDateTime
 private const val PX_PER_MINUTE = 4.4f
 private const val CHANNEL_COL_WIDTH_DP = 140
 private const val CHANNEL_COL_SPACER_DP = 2
+// Bug fix: D-pad LEFT/RIGHT paces the shared viewport by this fixed amount (see PAGE_MINUTES call
+// sites' doc comment for why this replaced per-program-cell focus).
+private const val PAGE_MINUTES = 30f
 
 /**
  * Computes which item (index 0 = the very first rendered cell, whatever it is — a gap spacer or a
@@ -178,10 +181,23 @@ fun LiveTvGuideScreen(
                 // thing in every row, and the hour ruler below lines up with all of them unconditionally.
                 val guideOriginMs = remember(s.programs) { s.programs.minOfOrNull { it.startMs } ?: nowMs }
                 val maxEndMs = remember(s.programs) { s.programs.maxOfOrNull { it.endMs } ?: (guideOriginMs + 3_600_000L) }
+                val maxViewportMinutes = remember(guideOriginMs, maxEndMs) { ((maxEndMs - guideOriginMs) / 60_000f).coerceAtLeast(0f) }
                 var viewportStartMinutes by remember { mutableFloatStateOf(0f) }
                 val sharedScrollableState = rememberScrollableState { delta ->
-                    viewportStartMinutes = (viewportStartMinutes - delta / PX_PER_MINUTE).coerceAtLeast(0f)
+                    viewportStartMinutes = (viewportStartMinutes - delta / PX_PER_MINUTE).coerceIn(0f, maxViewportMinutes)
                     delta
+                }
+                // Bug fix: D-pad LEFT/RIGHT used to rely on Compose's native "scroll the focused item
+                // into view" behaviour on a per-program-cell focus target — that only scrolls the ONE
+                // focused row's own LazyListState, never touches viewportStartMinutes, so every other
+                // row froze in place (confirmed: worked correctly on mobile, where dragging a row
+                // instead drives sharedScrollableState above, which every row already reacts to via its
+                // own LaunchedEffect/scrollToItem — see the extensive fix history in the Loaded branch
+                // below). Routes D-pad paging through that exact same canonical-state mechanism instead,
+                // by a fixed amount so — per this file's own established lesson — a page means the same
+                // real time regardless of which channel's cell widths happen to be focused.
+                fun pageViewport(deltaMinutes: Float) {
+                    viewportStartMinutes = (viewportStartMinutes + deltaMinutes).coerceIn(0f, maxViewportMinutes)
                 }
 
                 // User request: open on the start of the OLDEST currently-active program (across every
@@ -251,6 +267,7 @@ fun LiveTvGuideScreen(
                                 viewportStartMinutes = { viewportStartMinutes },
                                 scrollableState = sharedScrollableState,
                                 onTune = { onTuneChannel(ch) },
+                                onPage = ::pageViewport,
                                 channelFocusRequester = if (index == 0) firstChannelFR else null,
                             )
                         }
@@ -362,12 +379,19 @@ private fun GuideChannelRow(
     viewportStartMinutes: () -> Float,
     scrollableState: ScrollableState,
     onTune: () -> Unit,
+    onPage: (Float) -> Unit,
     channelFocusRequester: FocusRequester? = null,
 ) {
     val colors = RaviloTheme.colors
     val listState = rememberLazyListState()
     Row(modifier = Modifier.fillMaxWidth().height(78.dp), verticalAlignment = Alignment.CenterVertically) {
         // Sticky-ish channel column (not a true pinned-column grid — see the R177 status note on scope).
+        // Bug fix: this is now the ONLY focusable target in the row (program cells below lost their own
+        // dpadFocusable — see that comment) specifically so D-pad LEFT/RIGHT paging never has to decide
+        // which program cell to move focus onto next: the channel box is never lazily virtualized away,
+        // so it's a stable, always-focusable anchor regardless of how far the shared viewport pages.
+        // Selecting any program cell always tuned this same channel anyway (never the specific program
+        // — "you watch live, not the future slot"), so this loses no functionality.
         var chFocused by remember { mutableStateOf(false) }
         Row(
             modifier = Modifier.width(CHANNEL_COL_WIDTH_DP.dp).fillMaxSize()
@@ -375,6 +399,8 @@ private fun GuideChannelRow(
                 .dpadFocusable(
                     focusRequester = channelFocusRequester,
                     onFocused = { chFocused = true }, onBlurred = { chFocused = false }, onSelect = onTune,
+                    onLeft = { onPage(-PAGE_MINUTES) },
+                    onRight = { onPage(PAGE_MINUTES) },
                 )
                 .padding(10.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -465,13 +491,14 @@ private fun GuideChannelRow(
                     val p = (cell as GuideCell.Prog).program
                     val isNow = nowMs in p.startMs until p.endMs
                     val minutes = ((p.endMs - p.startMs) / 60_000L).coerceAtLeast(1L).toInt()
-                    var pFocused by remember { mutableStateOf(false) }
+                    // Bug fix: no longer its own dpadFocusable target — see the channel-box comment
+                    // above. Selecting any cell always tuned this same channel regardless, so a program
+                    // cell never needed independent focus; only the "now" background highlight (unrelated
+                    // to focus) is real content here.
                     Box(
                         modifier = Modifier
                             .width((minutes * PX_PER_MINUTE).dp).fillMaxSize()
                             .background(if (isNow) colors.accentDim else colors.surfaceVariant, RoundedCornerShape(6.dp))
-                            .then(if (pFocused) Modifier.border(2.dp, colors.focusRing, RoundedCornerShape(6.dp)) else Modifier)
-                            .dpadFocusable(onFocused = { pFocused = true }, onBlurred = { pFocused = false }, onSelect = onTune)
                             .padding(8.dp),
                     ) {
                         Column {
