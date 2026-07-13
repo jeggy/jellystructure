@@ -203,11 +203,18 @@ private fun buildEpisodeContext(
                 progressPct   = ps?.playedPct ?: rep.playback?.pct ?: 0f,
                 watched       = groupWatched,
                 stillUrls     = g.take(3).map { it.stillUrl },
+                // Phase 150: a multi-episode-file group's credits belong to its LAST contained episode
+                // (the shared file's own end) — g.last(), not the group's rep(resentative) entry point,
+                // which can be any episode in the group. Detection itself currently skips these groups
+                // entirely (PipelineStepOps.detectSegments), so this is empty/default in practice today —
+                // forward-compatible for whenever that scope limitation is lifted.
+                segments      = g.last().segments,
             )
         },
         currentEpIndex = groupIdx,
         seriesId = detail.card.id,
         originalLanguage = detail.originalLanguage,
+        segments = ep.segments,  // Phase 150 — the CURRENTLY PLAYING episode's own segments
     )
 }
 
