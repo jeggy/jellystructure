@@ -1835,11 +1835,13 @@ private const val PIPE_DRIFT_IC= """<svg viewBox="0 0 16 16" fill="none" stroke=
 private const val PIPE_NOTIFY_IC="""<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6.6a4 4 0 0 1 8 0c0 2.8 1.2 3.7 1.2 3.7H2.8S4 9.4 4 6.6Z"/><path d="M6.6 12.6a1.5 1.5 0 0 0 2.8 0"/></svg>"""
 private const val PIPE_WAIT_IC = """<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8.8" r="5.1"/><line x1="8" y1="8.8" x2="8" y2="5.8"/><line x1="8" y1="8.8" x2="10" y2="9.8"/><line x1="6.2" y1="1.9" x2="9.8" y2="1.9"/></svg>"""
 private const val PIPE_IMDB_IC = """<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M8 1.6 9.6 5.9l4.5.2-3.6 2.8 1.3 4.4L8 10.6l-3.8 2.7 1.3-4.4-3.6-2.8 4.5-.2Z"/></svg>"""
+private const val PIPE_SEG_IC  = """<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3.2v9.6l6-4.8Z"/><line x1="11" y1="3.2" x2="11" y2="12.8"/><line x1="13.4" y1="3.2" x2="13.4" y2="12.8"/></svg>"""
 
 private val PIPE_BLOCKS = mapOf(
     "scan_files"    to PipeBlockDef("Scan media files",          "New & changed files + stale re-checks by release age.", "#7b6ef0", PIPE_SCAN_IC),
     "pull_tmdb"     to PipeBlockDef("Pull TMDB metadata",        "Match titles · metadata · original language.",           "#3fb6f5", PIPE_TMDB_IC),
     "fetch_artwork" to PipeBlockDef("Download artwork",          "Poster · fanart · logo · stills from TMDB.",            "#b15cd0", PIPE_ART_IC),
+    "detect_segments" to PipeBlockDef("Detect intro & credits",  "Chapter-title match + ffmpeg black-frame / silence for Skip Intro / Skip Credits.", "#e0954a", PIPE_SEG_IC),
     "write_nfo"     to PipeBlockDef("Write NFO files",           "Write .nfo files to disk.",                             "#2dd49a", PIPE_NFO_IC),
     "sync_jellyfin" to PipeBlockDef("Sync Jellyfin",             "POST /Items/{id}/Refresh so Jellyfin re-reads the NFOs.","#18c2d4", PIPE_SYNC_IC),
     "rescan_arr"    to PipeBlockDef("Rescan in Radarr / Sonarr", "Nudge the *arr that manages each touched title.",       "#f5b542", PIPE_ARR_IC, needsArr = true),
@@ -1848,8 +1850,8 @@ private val PIPE_BLOCKS = mapOf(
     "notify"        to PipeBlockDef("Send notification",         "Ping your webhook when the run reaches here.",          "#e0639a", PIPE_NOTIFY_IC),
     "wait"          to PipeBlockDef("Wait",                      "Pause before the next step (let Jellyfin settle).",     "#9aa0b4", PIPE_WAIT_IC),
 )
-private val PIPE_PALETTE = listOf("pull_tmdb","fetch_artwork","write_nfo","sync_jellyfin","rescan_arr","detect_drift","sync_imdb_ratings","wait","notify")
-private val PIPE_SHORT   = mapOf("scan_files" to "Scan","pull_tmdb" to "TMDB","fetch_artwork" to "Artwork","write_nfo" to "NFO","sync_jellyfin" to "Jellyfin","rescan_arr" to "*arr","detect_drift" to "Drift","sync_imdb_ratings" to "IMDb","notify" to "Notify","wait" to "Wait")
+private val PIPE_PALETTE = listOf("pull_tmdb","fetch_artwork","detect_segments","write_nfo","sync_jellyfin","rescan_arr","detect_drift","sync_imdb_ratings","wait","notify")
+private val PIPE_SHORT   = mapOf("scan_files" to "Scan","pull_tmdb" to "TMDB","fetch_artwork" to "Artwork","detect_segments" to "Segments","write_nfo" to "NFO","sync_jellyfin" to "Jellyfin","rescan_arr" to "*arr","detect_drift" to "Drift","sync_imdb_ratings" to "IMDb","notify" to "Notify","wait" to "Wait")
 private val CAD_VALS     = listOf("daily","weekly","monthly","6months","yearly","never")
 private val CAD_LABELS   = listOf("every day","every week","every month","every 6 months","every year","never")
 private val WAIT_MINS    = listOf(5, 10, 15, 30, 60)
@@ -2003,6 +2005,7 @@ private fun pipeStepEl(step: PipelineStep, idx: Int): Element {
     when (step.step) {
         "scan_files"                      -> opts.appendChild(pipeScanCfgEl(step, idx))
         "pull_tmdb", "fetch_artwork"      -> opts.appendChild(pipeScopeEl(step, idx))
+        "detect_segments"                 -> opts.appendChild(pipeSegmentsCfgEl(step, idx))
         "write_nfo"                       -> opts.appendChild(pipeOverwriteEl(step, idx))
         "notify"                          -> opts.appendChild(pipeNotifyEl(step, idx))
         "wait"                            -> opts.appendChild(pipeWaitEl(step, idx))
@@ -2123,6 +2126,58 @@ private fun pipeOverwriteEl(step: PipelineStep, idx: Int): Element {
     el.appendChild(t); el.appendChild(lbl)
     el.addEventListener("click") { pipelineSteps[idx] = pipelineSteps[idx].copy(overwrite = !pipelineSteps[idx].overwrite); renderPipeline() }
     return el
+}
+
+// Phase 150 — detect_segments options: cross-episode fingerprinting + trust-stinger-tags toggles, plus
+// the chapter-title keyword chip list (design/app/settings.html "Intro & credits detection" card,
+// reconciled onto the pipeline-step model per the dev-review addendum — one source of truth, not a
+// parallel config).
+private fun pipeSegmentsCfgEl(step: PipelineStep, idx: Int): Element {
+    val box = document.createElement("div") as HTMLElement
+    box.setAttribute("style", "display:flex;flex-direction:column;gap:8px;")
+
+    val fpRow = document.createElement("label") as HTMLElement; fpRow.className = "opt-tog"
+    val fpTog = document.createElement("span"); fpTog.className = "mini-toggle" + (if (step.detectFingerprint) " on" else "")
+    val fpLbl = document.createElement("span"); fpLbl.textContent = "Cross-episode intro fingerprinting"
+    fpRow.appendChild(fpTog); fpRow.appendChild(fpLbl)
+    fpRow.addEventListener("click") { pipelineSteps[idx] = pipelineSteps[idx].copy(detectFingerprint = !pipelineSteps[idx].detectFingerprint); renderPipeline() }
+
+    val stRow = document.createElement("label") as HTMLElement; stRow.className = "opt-tog"
+    val stTog = document.createElement("span"); stTog.className = "mini-toggle" + (if (step.trustStingerTags) " on" else "")
+    val stLbl = document.createElement("span"); stLbl.textContent = "Trust TMDB stinger tags"
+    stRow.appendChild(stTog); stRow.appendChild(stLbl)
+    stRow.addEventListener("click") { pipelineSteps[idx] = pipelineSteps[idx].copy(trustStingerTags = !pipelineSteps[idx].trustStingerTags); renderPipeline() }
+
+    val kwWrap = document.createElement("div") as HTMLElement
+    val kwLbl = document.createElement("div") as HTMLElement; kwLbl.className = "tiny muted"
+    kwLbl.textContent = "Extra chapter-title keywords (credits)"
+    val kwChips = document.createElement("div") as HTMLElement
+    kwChips.setAttribute("style", "display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;")
+    step.chapterKeywords.forEachIndexed { ki, kw ->
+        val chip = document.createElement("span") as HTMLElement; chip.className = "chip"
+        chip.textContent = "$kw ✕"; chip.title = "Click to remove"
+        chip.setAttribute("style", "cursor:pointer;")
+        chip.addEventListener("click") {
+            pipelineSteps[idx] = pipelineSteps[idx].copy(chapterKeywords = pipelineSteps[idx].chapterKeywords.filterIndexed { j, _ -> j != ki })
+            renderPipeline()
+        }
+        kwChips.appendChild(chip)
+    }
+    val addChip = document.createElement("span") as HTMLElement
+    addChip.className = "chip"; addChip.setAttribute("style", "border-style:dashed;cursor:pointer;")
+    addChip.textContent = "+ add"
+    addChip.addEventListener("click") {
+        val word = window.prompt("Chapter-title keyword to match (credits)")?.trim()
+        if (!word.isNullOrEmpty()) {
+            pipelineSteps[idx] = pipelineSteps[idx].copy(chapterKeywords = pipelineSteps[idx].chapterKeywords + word)
+            renderPipeline()
+        }
+    }
+    kwChips.appendChild(addChip)
+    kwWrap.appendChild(kwLbl); kwWrap.appendChild(kwChips)
+
+    box.appendChild(fpRow); box.appendChild(stRow); box.appendChild(kwWrap)
+    return box
 }
 
 private fun pipeNotifyEl(step: PipelineStep, idx: Int): Element {

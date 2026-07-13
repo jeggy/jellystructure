@@ -141,6 +141,7 @@ data class EpisodeTriageItem(
     val filename: String, val episodeCode: String, val title: String? = null,
     val untaggedTracks: List<TriageTrack>, val missingStill: Boolean, val multiDefault: MultiDefaultIssue? = null,
     val coverAsVideo: String? = null,   // Phase 144: specifier of a cover-image track muxed as video, or null
+    val segmentsLowConfidence: Boolean = false,  // Phase 150: this episode's own heuristic guess is below the trust threshold
 )
 
 @Serializable
@@ -153,6 +154,8 @@ data class TriageItem(
     val missingArtwork: Boolean = false,
     val missingFromSource: Boolean = false,   // Phase 95: gone from Jellyfin — kept (scanner never deletes)
     val coverAsVideo: String? = null,          // Phase 144: movie — specifier of a cover-image track muxed as video
+    val segmentsLowConfidence: Boolean = false,  // Phase 150: movie — its own heuristic guess is below the trust threshold
+    val noSegments: Boolean = false,             // Phase 150: title-level — no marker anywhere yet
 )
 
 @Serializable
