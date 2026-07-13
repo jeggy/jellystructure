@@ -1,0 +1,5 @@
+-- Phase 150 — indexed triage flag: true when a movie/episode has any usable segment marker
+-- (chapter/heuristic/fingerprint/manual), so the "no segments detected" triage filter doesn't need to
+-- deserialize the JSON blob for every row (v21 -> v22).
+ALTER TABLE media ADD COLUMN has_segments INTEGER NOT NULL DEFAULT 0;
+CREATE INDEX media_has_segments ON media(has_segments);

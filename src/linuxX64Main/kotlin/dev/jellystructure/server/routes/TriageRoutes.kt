@@ -53,6 +53,7 @@ data class EpisodeTriageItem(
     val missingStill: Boolean,  // Phase 121: no image on disk at all (was missingOverview — TMDB plot text isn't an issue)
     val multiDefault: MultiDefaultIssue? = null,
     val coverAsVideo: String? = null,  // Phase 144: specifier of a cover-image track muxed as video (repairable), or null
+    val segmentsLowConfidence: Boolean = false,  // Phase 150: this episode's own heuristic guess is below the trust threshold
 )
 
 @Serializable
@@ -73,6 +74,8 @@ data class TriageItem(
     val missingArtwork: Boolean = false,   // R123: no poster.jpg on disk — needs artwork
     val missingFromSource: Boolean = false, // Phase 95: gone from Jellyfin — kept (scanner never deletes), needs review
     val coverAsVideo: String? = null,       // Phase 144: movie — specifier of a cover-image track muxed as video, or null
+    val segmentsLowConfidence: Boolean = false,  // Phase 150: movie — its own heuristic guess is below the trust threshold
+    val noSegments: Boolean = false,             // Phase 150: title-level — no marker anywhere yet (movie, or whole series)
 )
 
 // Phase 117: one row per triage issue type, always present (even at 0), carrying its own display copy
@@ -123,6 +126,13 @@ fun Route.triageRoutes(store: MediaStore, jellyfinClient: JellyfinClient, config
             val zeroAudioTitles = all.count { TriageDetection.zeroAudioCount(it) > 0 }
             val coverAsVideoInstances = all.sumOf { TriageDetection.coverAsVideoCount(it) }  // Phase 144
             val coverAsVideoTitles = all.count { TriageDetection.coverAsVideoCount(it) > 0 }
+            // Phase 150: only meaningful once detect_segments is actually enabled — otherwise EVERY title
+            // has "no segments" (the feature has simply never run) and the row would flood with a
+            // misleading "everything is broken" count for an admin who hasn't opted in at all.
+            val segmentsEnabled = configStore.current.scan.pipeline.any { it.step == "detect_segments" && it.enabled }
+            val segmentsLowConfInstances = if (segmentsEnabled) all.sumOf { TriageDetection.lowConfidenceSegmentsCount(it) } else 0
+            val segmentsLowConfTitles = if (segmentsEnabled) all.count { TriageDetection.lowConfidenceSegmentsCount(it) > 0 } else 0
+            val noSegmentsTitles = if (segmentsEnabled) all.count { TriageDetection.hasNoSegments(it) } else 0
 
             val types = listOf(
                 TriageTypeCount("untagged", "Untagged audio/subtitle tracks",
@@ -155,6 +165,12 @@ fun Route.triageRoutes(store: MediaStore, jellyfinClient: JellyfinClient, config
                 TriageTypeCount("cover_as_video", "Cover art muxed as a video track",
                     "A still image (cover.png etc.) is muxed as a second video stream — players may open the file but never start the video. Repairable: drop the cover stream.",
                     coverAsVideoInstances, coverAsVideoTitles),
+                TriageTypeCount("segments_lowconf", "Low-confidence segments",
+                    "Intro/credits found by heuristic below 0.60 — worth an eyeball.",
+                    segmentsLowConfInstances, segmentsLowConfTitles),
+                TriageTypeCount("no_segments", "No intro/credits detected",
+                    "Skip Intro/Credits falls back to the fixed end-of-file heuristic — no chapter, heuristic, or manual marker exists yet.",
+                    noSegmentsTitles, noSegmentsTitles),
             )
             val result = TriageCount(types = types, total = types.sumOf { it.instances })
             triageCountCache = Pair(ver, result)
@@ -162,8 +178,11 @@ fun Route.triageRoutes(store: MediaStore, jellyfinClient: JellyfinClient, config
         }
 
         get {
+            // Phase 150: same segmentsEnabled gate as /triage/count — kept in lockstep so the dock never
+            // shows "no segments"/"low-confidence segments" entries the breakdown badge reports as 0.
+            val segmentsEnabled = configStore.current.scan.pipeline.any { it.step == "detect_segments" && it.enabled }
             val items = store.allItems()
-                .mapNotNull { it.toTriageItem() }
+                .mapNotNull { it.toTriageItem(segmentsEnabled) }
             call.respond(items)
         }
 
@@ -291,7 +310,7 @@ fun Route.triageRoutes(store: MediaStore, jellyfinClient: JellyfinClient, config
     }
 }
 
-private fun MediaItem.toTriageItem(): TriageItem? {
+private fun MediaItem.toTriageItem(segmentsEnabled: Boolean = false): TriageItem? {
     if (kind == MediaKind.TV_SHOW) {
         val epIssues = episodes.mapNotNull { ep ->
             val untagged = ep.tracks
@@ -300,7 +319,8 @@ private fun MediaItem.toTriageItem(): TriageItem? {
             val missingStill = !ep.hasStill
             val multiDefault = ep.detectMultiDefaultAudio()
             val coverAsVideo = TriageDetection.coverVideoSpecifier(ep.tracks)  // Phase 144
-            if (untagged.isEmpty() && !missingStill && multiDefault == null && coverAsVideo == null) return@mapNotNull null
+            val segmentsLowConfidence = segmentsEnabled && TriageDetection.isLowConfidenceSegments(ep.segments)  // Phase 150
+            if (untagged.isEmpty() && !missingStill && multiDefault == null && coverAsVideo == null && !segmentsLowConfidence) return@mapNotNull null
             val code = if (ep.seasonNumber != null && ep.episodeNumber != null) {
                 "S${ep.seasonNumber.toString().padStart(2, '0')}E${ep.episodeNumber.toString().padStart(2, '0')}"
             } else ep.filename.substringBeforeLast('.')
@@ -312,10 +332,12 @@ private fun MediaItem.toTriageItem(): TriageItem? {
                 missingStill = missingStill,
                 multiDefault = multiDefault,
                 coverAsVideo = coverAsVideo,
+                segmentsLowConfidence = segmentsLowConfidence,
             )
         }
         val missingArtwork = !posterArtworkExists(this)
-        if (epIssues.isEmpty() && !missingArtwork && !missingFromSource) return null
+        val noSegments = segmentsEnabled && TriageDetection.hasNoSegments(this)  // Phase 150
+        if (epIssues.isEmpty() && !missingArtwork && !missingFromSource && !noSegments) return null
         return TriageItem(
             mediaId = id,
             title = title,
@@ -330,6 +352,7 @@ private fun MediaItem.toTriageItem(): TriageItem? {
             languageMix = languageMix,
             missingArtwork = missingArtwork,
             missingFromSource = missingFromSource,
+            noSegments = noSegments,
         )
     }
     val untagged = tracks
@@ -347,7 +370,10 @@ private fun MediaItem.toTriageItem(): TriageItem? {
     val multiDefault = detectMultiDefaultAudio()
     val missingArtwork = !posterArtworkExists(this)
     val coverAsVideo = TriageDetection.coverVideoSpecifier(tracks)  // Phase 144
-    if (untagged.isEmpty() && mismatch == null && multiDefault == null && !missingArtwork && !missingFromSource && coverAsVideo == null) return null
+    val segmentsLowConfidence = segmentsEnabled && TriageDetection.isLowConfidenceSegments(segments)  // Phase 150
+    val noSegments = segmentsEnabled && TriageDetection.hasNoSegments(this)  // Phase 150
+    if (untagged.isEmpty() && mismatch == null && multiDefault == null && !missingArtwork && !missingFromSource &&
+        coverAsVideo == null && !segmentsLowConfidence && !noSegments) return null
     return TriageItem(
         mediaId = id,
         title = title,
@@ -362,6 +388,8 @@ private fun MediaItem.toTriageItem(): TriageItem? {
         missingArtwork = missingArtwork,
         missingFromSource = missingFromSource,
         coverAsVideo = coverAsVideo,
+        segmentsLowConfidence = segmentsLowConfidence,
+        noSegments = noSegments,
     )
 }
 

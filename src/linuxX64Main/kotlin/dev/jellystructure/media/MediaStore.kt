@@ -337,6 +337,8 @@ class MediaStore(
                 }
                 "zero_audio" -> items = items.filter { TriageDetection.zeroAudioCount(it) > 0 }
                 "cover_as_video" -> items = items.filter { TriageDetection.coverAsVideoCount(it) > 0 }  // Phase 144
+                "segments_lowconf" -> items = items.filter { TriageDetection.lowConfidenceSegmentsCount(it) > 0 }  // Phase 150
+                "no_segments" -> items = items.filter { TriageDetection.hasNoSegments(it) }  // Phase 150
             }
             items
         }.let { items ->
@@ -720,6 +722,7 @@ class MediaStore(
             network = item.network,
             issue_count = item.issueCount.toLong(),
             language_mix = if (item.languageMix) 1L else 0L,
+            has_segments = if (TriageDetection.hasAnySegments(item)) 1L else 0L,
             scanned_at = item.scannedAt,
             tmdb_id = item.tmdbId?.toLong(),
             poster_path = item.posterPath,

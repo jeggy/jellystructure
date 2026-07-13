@@ -62,6 +62,11 @@ data class PipelineStep(
     // Phase 115 — detect_drift option: silently fix "Jellyfin behind" items (write NFO if needed + full
     // refresh) and only report real external drift, instead of just reporting every non-converged item.
     @SerialName("auto_reassert") val autoReassert: Boolean = false,
+    // Phase 150 — detect_segments options. detectFingerprint is schema-only until Stage 14 (cross-episode
+    // audio fingerprinting) ships — it's persisted but not yet consumed anywhere.
+    @SerialName("detect_fingerprint") val detectFingerprint: Boolean = false,
+    @SerialName("trust_stinger_tags") val trustStingerTags: Boolean = true,
+    @SerialName("chapter_keywords") val chapterKeywords: List<String> = emptyList(),
 )
 
 // Phase 136 — Jellyseerr/Overseerr connection. Mirrors ArrConfig's shape (Phase 54) so the Settings UI,

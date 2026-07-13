@@ -107,11 +107,18 @@ object PipelineStepOps {
      * iteration; these files are the minority of a library, and skipping them leaves their episodes with
      * no segment data, exactly like every episode today.
      */
-    private suspend fun detectForPath(path: String, current: SegmentMarkers): SegmentMarkers? {
+    private suspend fun detectForPath(path: String, current: SegmentMarkers, extraChapterKeywords: List<String>): SegmentMarkers? {
         if (current.manuallyConfirmed) return null
         if (current.introStartMs != null || current.creditsStartMs != null) return null
 
-        SegmentDetection.fromChapters(FfprobeRunner.chapters(path))?.let { hit ->
+        // Phase 150 dev-review addendum §2 / settings card: admin-added words extend (never replace)
+        // the built-in list, classified as CREDITS — the settings card exposes one flat keyword list
+        // with no per-word intro/credits kind selector, and extra words are overwhelmingly going to be
+        // credits synonyms in other languages (recap/previously/next-time are already built in).
+        val keywords = if (extraChapterKeywords.isEmpty()) DEFAULT_CHAPTER_KEYWORDS
+        else DEFAULT_CHAPTER_KEYWORDS + extraChapterKeywords.filter { it.isNotBlank() }.map { ChapterKeyword(it, ChapterSegmentKind.CREDITS) }
+
+        SegmentDetection.fromChapters(FfprobeRunner.chapters(path), keywords)?.let { hit ->
             return current.copy(
                 introStartMs = hit.introStartMs,
                 introEndMs = hit.introEndMs,
@@ -126,17 +133,17 @@ object PipelineStepOps {
         return current.copy(creditsStartMs = hit.creditsStartMs, source = hit.source, confidence = hit.confidence)
     }
 
-    suspend fun detectSegments(item: MediaItem, store: MediaStore) {
+    suspend fun detectSegments(item: MediaItem, store: MediaStore, extraChapterKeywords: List<String> = emptyList()) {
         when (item.kind) {
             MediaKind.MOVIE -> {
-                val updated = detectForPath(item.path, item.segments) ?: return
+                val updated = detectForPath(item.path, item.segments, extraChapterKeywords) ?: return
                 store.updateOne(item.copy(segments = updated))
             }
             MediaKind.TV_SHOW -> {
                 var changed = false
                 val updatedEpisodes = item.episodes.map { ep ->
                     if (ep.partCount > 1) return@map ep
-                    val updated = detectForPath(ep.path, ep.segments) ?: return@map ep
+                    val updated = detectForPath(ep.path, ep.segments, extraChapterKeywords) ?: return@map ep
                     changed = true
                     ep.copy(segments = updated)
                 }
