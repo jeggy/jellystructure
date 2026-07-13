@@ -1,5 +1,7 @@
 package dev.jellystructure.ravilo.ui.screens
 
+import dev.jellystructure.shared.tv.TvSegmentMarkers
+
 /** Lightweight episode descriptor passed to PlayerScreen for the in-player episode rail.
  *  [numberLabel] is null for a multi-episode-file group (its [title] is already "Episodes X-Y",
  *  so a leading number would either repeat or misrepresent it — the rail card omits the badge
@@ -15,6 +17,8 @@ data class PlayerEpisodeEntry(
     val progressPct: Float,    // 0–1, from Jellyfin watched data
     val watched: Boolean,
     val stillUrls: List<String?>,
+    /** Phase 150 — this entry's own intro/credits segments (R182 Skip Intro / Skip Credits). */
+    val segments: TvSegmentMarkers = TvSegmentMarkers(),
 )
 
 /** Context built by SeriesDetailScreen when the user selects Play on an episode. */
@@ -31,4 +35,6 @@ data class EpisodePlayContext(
     val seriesId: String? = null,
     /** R181/R180 — the series' original-audio language, for the player's "Dubbed" audio badge. */
     val originalLanguage: String? = null,
+    /** Phase 150 — the CURRENTLY PLAYING episode's own segments (R182 Skip Intro / Skip Credits). */
+    val segments: TvSegmentMarkers = TvSegmentMarkers(),
 )
