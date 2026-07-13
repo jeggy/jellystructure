@@ -74,6 +74,14 @@ GitHub is the **source of truth**; we layer designs on top of it.
   (`ravilo/ravilo-player.js`/`.css` + `ravilo-app.js`; `app/series-simpsons.html` + `detail.css`;
   `app/ravilo-config.html`; `app/settings.html`; `app/index.html`); exploration in
   `Skip Intro & Credits - Directions.html`. Neither has a `STATUS.md` row yet.
+  **Both dev-reviewed 2026-07-13** (each carries a "Dev-review addenda" section reconciled with live
+  code): 150's TMDB-stinger claim holds only on the *re-pull* path (not the initial full scan) and must
+  match keywords by name; the `detect_segments` settings card must map onto the existing pipeline-step
+  model, not a parallel config. R182's biggest correction — skip-behaviour settings share **one** backend
+  store (`RaviloConfigService`: `ravilo_config` global + `ravilo_behaviour` per-user overlay), authored via
+  the **admin** Ravilo-config editor (the on-TV Settings screen can't set a global default); "Autoplay next
+  episode" is a **pre-existing** field (de-dup, not new) that the player doesn't actually consume today, and
+  the player must be newly wired to read `getConfig()` at playback.
 - Recent landings: Live TV (147 + R177), Seerr pivot (136/137 + R170/R171), request-language
   steering (139 + R172), Workbench query blocks (140), HDR tone-map fix (R173), grid-columns
   config (R174), cover-as-video (144), event-driven pipeline (145).

@@ -103,6 +103,9 @@ existing `AppConfig.ScanConfig.pipeline` shape.
 At TMDB ingest, read the `duringcreditsstinger` / `aftercreditsstinger` keywords (already ingested as tags,
 Phase 51) into `SegmentMarkers.stinger`. This is what lets Ravilo (R182) offer **"Skip to scene"** and **never
 auto-skip past** a mid/post-credits scene. A "Trust TMDB stinger tags" settings toggle governs it.
+**(Dev review: the keyword→tag substrate is real but this is only true on the *TMDB re-pull* path, not the
+initial full scan; match by name (the id is discarded); "Phase 51" is a STATUS ledger entry, not a spec file
+— see addendum §1.)**
 
 ### D. Admin management UI — on the detail page (the single editing surface)
 #### FR-SEG1-7 — Per-episode / per-movie segment editor, write-through
@@ -179,3 +182,67 @@ is 151.**
 - Triage pattern: `TriageDetection.kt` + `TriageRoutes.kt` (Phase 144).
 - DTO trip to finish: `SeriesDetailScreen.buildEpisodeContext` → `PlayerEpisodeEntry` (drops `chapterStartMs`).
 - Intro Skipper (GPL-3.0, algorithm/parameters to adapt): github.com/intro-skipper/intro-skipper.
+
+## Dev-review addenda (2026-07-13) — reconciled with live code
+
+1. **FR-SEG1-6 "already ingested as tags, Phase 51" — true substrate, three caveats that change the design.**
+   TMDB keywords *are* fetched (`TmdbClient.getMovieKeywords`/`getTvKeywords` → `/movie/{id}/keywords` +
+   `/tv/{id}/keywords`, `TmdbClient.kt:800-823`) and flattened into the single `MediaItem.tags` list
+   (`model/Media.kt:143` — there is no separate `keywords` field; genres are separate) via `mergeRepullTags`
+   (`Scanner.kt:103-111`). That much is the real Phase 51 / "Phase 19 §15" rule. But:
+   - **Keywords enter `tags` only on the TMDB *re-pull* paths, never the initial full scan.** `scanMovie`
+     sets `tags = jItem.tags` (`Scanner.kt:273,465,521` — Jellyfin's own tags), and sync-from-Jellyfin is a
+     union (`:204`). TMDB keyword names arrive only via `pull_tmdb` → `rescanMetadata`
+     (`PipelineStepOps.kt:23-26`; `Scanner.kt:824,846` movie / `:889,911` TV), `syncMovie` (`:555,578`), and
+     `syncSeriesEpisodes` (`:704,730`). **Consequence:** a freshly-scanned title has *no* stinger tag until a
+     `pull_tmdb`/sync has run for it, so the acceptance criterion "a title tagged `aftercreditsstinger`
+     carries a `stinger` marker" holds only *after a re-pull*, not after a bare scan. Either accept and
+     document that ordering, or add stinger-keyword fetching to the full-scan path.
+   - **Match by name, not id.** `TmdbKeyword.id` is parsed then discarded (`.map { it.name }`,
+     `TmdbClient.kt:248-257`). The merge must match the literal strings `"duringcreditsstinger"` /
+     `"aftercreditsstinger"` by name.
+   - **There is no `phase-51-*.md`.** Phase 51 is a `STATUS.md` ledger row (line 300) + a `constitution.md`
+     reference (§ lines 231-235); the code attributes the rule to "Phase 19 §15" (`Scanner.kt:104`). Cite it
+     as the generic keyword→tag mechanism, and be explicit that the stinger *extraction* itself is net-new
+     (no `SegmentMarkers`/`stinger`/`duringcreditsstinger` symbol exists anywhere in `src/`/`shared/` today).
+   - **Clean hook point:** the raw keyword-name list (`rescanTmdbTags`) is already in scope one line above the
+     `tags = mergeRepullTags(...)` assignment inside `rescanMetadata`'s `item.copy(...)` block — read the
+     stinger names there before they're flattened into `tags`; no extra TMDB request needed on those paths.
+
+2. **§B/§E `detect_segments` settings surface — the standalone card and the pipeline-step model need one
+   source of truth.** The design (`design/app/settings.html`) renders "Intro & credits detection" as a
+   *standalone Libraries card* with three toggles (`seg-detect`/`seg-fp`/`seg-stinger`) + a chapter-keyword
+   chip list. But §B specifies it as a single `PipelineStep` in `ScanConfig.pipeline`
+   (`AppConfig.kt:41-65`), and the Settings→Libraries tab *already* has a pipeline-builder UI that
+   adds/enables/configures steps (`Settings.kt:157+`, `pipelineSteps`/`renderPipeline`, `:565-698`). The
+   card's controls must map onto that one step, not a parallel config: "Detect segments on scan" = the step
+   present+enabled in the list; the other two toggles + the keyword chips = **new per-step option fields** on
+   the flat `PipelineStep` data class (e.g. `detect_fingerprint: Boolean`, `trust_stinger_tags: Boolean`,
+   `chapter_keywords: List<String>`, following the existing `scope`/`overwrite`/`auto_reassert` precedent at
+   `AppConfig.kt:55-64`). Decide whether the card *is* that step's editor (with the pipeline builder showing
+   it as a linked node) or a second surface writing the same step — don't let the two diverge into competing
+   "does detect_segments run?" truths.
+
+3. **FR-SEG1-2 chapter-title matching populates BOTH intro and credits, not just credits.** The design's
+   default keyword chips mix segment kinds: `Credits`/`End Credits`/`Rulletekster`/`Endamál` are
+   **credits-side** (→ `creditsStartMs`); `Recap`/`Previously` are **recap/intro-side** (a recap chapter near
+   the start → `introStartMs`/`introEndMs`); `Next Time` is a **post-credits** next-episode preview. A single
+   flat "if any keyword matches, set `source=chapter`" can't tell which field to fill. Give each configured
+   keyword a segment kind (intro vs credits) and a position sanity check (a "Recap" at 0:00 is an intro; a
+   "Credits" at 0:00 is noise) — i.e. split the keyword config by segment, don't lump it.
+
+4. **FR-SEG1-5 "fill from the highest-confidence source" is undefined while chapter/manual carry
+   `confidence = null`.** The model sets `confidence` to `0..1` for auto sources but `null` for chapter and
+   manual. Comparing a null-confidence chapter hit against a 0.6 heuristic hit has no defined winner. Pin an
+   explicit precedence: **manual (locked) > chapter (exact marker) > fingerprint/heuristic by numeric
+   confidence** — so `null` never has to sort against a number.
+
+5. **Confirmed accurate (no change needed):** migration is at `20.sqm`, so the `has_segments` indexed column
+   is `21.sqm` following the `19/20.sqm` `ALTER TABLE ADD COLUMN` pattern; `ScanConfig.pipeline` /
+   `PipelineStep(step, enabled, scope)` shape is as described (`pull_tmdb`/`download_artwork` already use
+   `scope`); `FfprobeRunner.chapters` does discard `tags.title` (the zero-cost first-pass win is real); the
+   §F DTO trip (`buildEpisodeContext` dropping `chapterStartMs`) is confirmed. `PipelineStepOps` does run on
+   both the scheduled scan and realtime ingest.
+
+Pairs with **[R182](../ravilo/requirements/phase-R182-skip-intro-credits.md)** (also dev-reviewed
+2026-07-13 — see its own addenda; R182 consumes this phase's `segments` DTO + a separate viewer-settings lane).
