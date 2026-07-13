@@ -646,7 +646,7 @@ suspend fun executePipeline(
                 runPipelineStepPool(
                     jobId, step.step, toProcess, pipelineStepConcurrency(step.step, scanWorkers),
                     scanTracker, broadcaster, labelOf = { it.title },
-                ) { item -> dev.jellystructure.media.PipelineStepOps.detectSegments(item, store) }
+                ) { item -> dev.jellystructure.media.PipelineStepOps.detectSegments(item, store, step.chapterKeywords) }
             }
             "sync_imdb_ratings" -> {
                 // Phase 131: keyed by imdbId; a title without one has no rating to sync. A *small* pool

@@ -2,6 +2,7 @@ package dev.jellystructure.media
 
 import dev.jellystructure.model.MediaItem
 import dev.jellystructure.model.MediaKind
+import dev.jellystructure.model.SegmentMarkers
 import dev.jellystructure.model.Track
 import dev.jellystructure.model.TrackKind
 import dev.jellystructure.resolver.LanguageResolver
@@ -85,4 +86,31 @@ object TriageDetection {
         if (videos.none { it.codec.lowercase() !in IMAGE_VIDEO_CODECS }) return null
         return videos.firstOrNull { it.codec.lowercase() in IMAGE_VIDEO_CODECS }?.specifier
     }
+
+    // Phase 150 (FR-SEG1-8): two triage rows for Skip Intro/Credits — "worth an eyeball" (a heuristic
+    // guess below the trust threshold) and "nothing detected at all" (Ravilo falls back to its
+    // fixed end-of-file heuristic). Mirrors the has_segments indexed column's own definition of "any
+    // usable segment marker" (MediaStore.upsertItem) — kept in lockstep by construction, both read
+    // straight off SegmentMarkers.introStartMs/creditsStartMs.
+    private const val LOW_CONFIDENCE_THRESHOLD = 0.60
+
+    /** Single-episode/movie-level check — also used directly by TriageRoutes' per-episode dock entries. */
+    fun isLowConfidenceSegments(s: SegmentMarkers): Boolean =
+        s.source == "heuristic" && (s.confidence ?: 1.0) < LOW_CONFIDENCE_THRESHOLD
+
+    /** Episode/movie-level count of heuristic segment guesses below the trust threshold. */
+    fun lowConfidenceSegmentsCount(item: MediaItem): Int = if (item.kind == MediaKind.TV_SHOW) {
+        item.episodes.count { isLowConfidenceSegments(it.segments) }
+    } else if (isLowConfidenceSegments(item.segments)) 1 else 0
+
+    private fun hasSegmentData(s: SegmentMarkers): Boolean = s.introStartMs != null || s.creditsStartMs != null
+
+    /** True once ANY usable marker exists anywhere on the title — the whole series for a TV show (one
+     *  episode with data is enough; per-episode granularity isn't useful for a title-level flag), or the
+     *  movie itself. Also backs the has_segments indexed column. */
+    fun hasAnySegments(item: MediaItem): Boolean = if (item.kind == MediaKind.TV_SHOW) {
+        item.episodes.any { hasSegmentData(it.segments) }
+    } else hasSegmentData(item.segments)
+
+    fun hasNoSegments(item: MediaItem): Boolean = !hasAnySegments(item)
 }

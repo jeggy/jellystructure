@@ -1719,7 +1719,8 @@ fun Route.mediaRoutes(
                 source = null, confidence = null, manuallyConfirmed = false,
             ))
             store.updateOne(cleared)
-            PipelineStepOps.detectSegments(cleared, store)
+            val chapterKeywords = configStore.current.scan.pipeline.firstOrNull { it.step == "detect_segments" }?.chapterKeywords ?: emptyList()
+            PipelineStepOps.detectSegments(cleared, store, chapterKeywords)
             val refreshed = store.resolve(id) ?: cleared
             broadcaster.broadcast(JobEvent.ItemScanned("segments-rescan-$id", refreshed))
             call.respond(refreshed)
@@ -1771,7 +1772,8 @@ fun Route.mediaRoutes(
                 ))
             }
             store.updateOne(cleared)
-            PipelineStepOps.detectSegments(cleared, store)
+            val chapterKeywords = configStore.current.scan.pipeline.firstOrNull { it.step == "detect_segments" }?.chapterKeywords ?: emptyList()
+            PipelineStepOps.detectSegments(cleared, store, chapterKeywords)
             val refreshed = store.resolve(id) ?: cleared
             broadcaster.broadcast(JobEvent.ItemScanned("ep-segments-rescan-$id", refreshed))
             call.respond(refreshed)

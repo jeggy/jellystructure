@@ -553,7 +553,10 @@ class Scanner(
         val issueCount = tracks.count { (it.kind == TrackKind.AUDIO || it.kind == TrackKind.SUBTITLE) && it.language == null }
         val primaryCompany = details.productionCompanies.firstOrNull()
         val tmdbTags = tmdb.getMovieKeywords(details.id)
-        val syncStinger = SegmentDetection.stingerFromTmdbKeywords(tmdbTags)  // Phase 150 (FR-SEG1-6)
+        // Phase 150 (FR-SEG1-6): "Trust TMDB stinger tags" toggle, defaulting to trust when the
+        // detect_segments step isn't configured at all (matches PipelineStep.trustStingerTags' own default).
+        val trustStingers = config.scan.pipeline.firstOrNull { it.step == "detect_segments" }?.trustStingerTags != false
+        val syncStinger = if (trustStingers) SegmentDetection.stingerFromTmdbKeywords(tmdbTags) else null
         val syncExtIds = tmdb.getExternalIds(details.id, isMovie = true)
         val syncCertifications = tmdb.getMovieCertifications(details.id)
         val syncTrailer = buildTrailer(tmdb.getMovieVideos(details.id, details.originalLanguage))
@@ -829,7 +832,8 @@ class Scanner(
                 // Phase 150 (FR-SEG1-6): same raw keyword-name list mergeRepullTags flattens into `tags`
                 // below — no second TMDB request. Movies only (a series' top-level `segments` isn't used;
                 // each episode carries its own — see SegmentMarkers' doc comment).
-                val rescanStinger = SegmentDetection.stingerFromTmdbKeywords(rescanTmdbTags)
+                val trustStingers = config.scan.pipeline.firstOrNull { it.step == "detect_segments" }?.trustStingerTags != false
+                val rescanStinger = if (trustStingers) SegmentDetection.stingerFromTmdbKeywords(rescanTmdbTags) else null
                 val rescanMovieExtIds = tmdb.getExternalIds(details.id, isMovie = true)
                 val rescanCertifications = tmdb.getMovieCertifications(details.id)
                 val rescanTrailer = buildTrailer(tmdb.getMovieVideos(details.id, details.originalLanguage))
