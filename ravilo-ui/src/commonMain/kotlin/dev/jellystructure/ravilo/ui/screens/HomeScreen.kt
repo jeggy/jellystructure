@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.CompositionLocalProvider
@@ -420,6 +421,11 @@ private fun OnNowRow(
         // The guide tile is now the row's first item, so the hero-down focus bridge lands there
         // instead of on the first channel tile.
         leadingItem = { LiveTvGuideTile(onClick = onOpenLiveTvGuide, focusRequester = firstItemFR) },
+        // Design inspiration (design/ravilo/ravilo-livetv.js onNowRow()'s lt-onnow-head): a live-dot
+        // beside the title and a "N channels · From Jellyfin" info line where the old "TV Guide" link
+        // used to sit — now that the guide has its own tile, that slot is free for this instead.
+        titleAccessory = { LiveDot() },
+        trailingInfo = str("livetv.channels_from_jellyfin", mapOf("count" to channels.size.toString())),
     ) { _, ch, fr ->
         val program = ch.currentProgram
         val nowMs = remember { kotlin.time.Clock.System.now().toEpochMilliseconds() }
@@ -429,6 +435,9 @@ private fun OnNowRow(
         Tile(
             title = ch.name,
             subtitle = program?.name ?: str("livetv.no_programs"),
+            // User request ("show timestamps on the channels home screen") — the current program's
+            // time range, matching the design's `.ptime` line (design/ravilo/ravilo-livetv.css).
+            caption = program?.let { "${formatGuideTime(it.startMs)}–${formatGuideTime(it.endMs)}" },
             episodeBadge = if (ch.number > 0) ch.number.toString() else null,
             posterUrl = ch.logoUrl,
             variant = TileVariant.SQUARE,
@@ -442,6 +451,13 @@ private fun OnNowRow(
             onSelect = { store.focusRowKey = "on_now"; store.focusItemKey = ch.channelId; onLiveTvChannelSelect(ch) },
         )
     }
+}
+
+/** A small solid red dot beside the "On Now" title — the same red as the in-player LIVE badge
+ *  (LiveTvPlayerScreen.kt), reused here per the design mockup's `.live-dot` (ravilo-livetv.css). */
+@Composable
+private fun LiveDot() {
+    Box(modifier = Modifier.size(8.dp).background(Color(0xFFE0263B), CircleShape))
 }
 
 /** The row's leading "Open TV Guide" entry point (see [OnNowRow]'s doc comment) — an icon + kicker +
