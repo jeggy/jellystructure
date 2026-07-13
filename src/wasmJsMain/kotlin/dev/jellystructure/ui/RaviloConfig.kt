@@ -33,6 +33,7 @@ import dev.jellystructure.shared.tv.ResolvedBehaviour
 import dev.jellystructure.shared.tv.RowConfig
 import dev.jellystructure.shared.tv.RowKind
 import dev.jellystructure.shared.tv.Skin
+import dev.jellystructure.shared.tv.SkipMode
 import dev.jellystructure.shared.tv.TileShape
 import dev.jellystructure.shared.tv.UiDensity
 import dev.jellystructure.shared.tv.ViewerSettingsRequest
@@ -470,6 +471,9 @@ private fun wireShell(container: Element, scope: CoroutineScope) {
             t is HTMLSelectElement && t.id == "beh-u-skin" -> runCatching { Skin.valueOf(t.value) }.getOrNull()?.let { ViewerSettingsRequest(skin = it) }
             t is HTMLInputElement && t.id == "beh-u-progress" -> ViewerSettingsRequest(showContinueProgress = t.checked)
             t is HTMLInputElement && t.id == "beh-u-autoplay" -> ViewerSettingsRequest(autoplayNext = t.checked)
+            t is HTMLSelectElement && t.id == "beh-u-skip-intro" -> runCatching { SkipMode.valueOf(t.value) }.getOrNull()?.let { ViewerSettingsRequest(skipIntro = it) }
+            t is HTMLSelectElement && t.id == "beh-u-skip-credits" -> runCatching { SkipMode.valueOf(t.value) }.getOrNull()?.let { ViewerSettingsRequest(skipCredits = it) }
+            t is HTMLSelectElement && t.id == "beh-u-skip-secs" -> t.value.toIntOrNull()?.let { ViewerSettingsRequest(skipSecs = it) }
             else -> null
         } ?: return@addEventListener
         scope.launch {
@@ -2296,6 +2300,9 @@ private fun <T> wireDragReorder(
 
 private val TILE_SHAPE_LABELS = mapOf(TileShape.POSTER to "Standard poster", TileShape.LANDSCAPE to "Wide landscape", TileShape.SQUARE to "Square")
 private val DENSITY_LABELS = mapOf(UiDensity.COMPACT to "Compact (smaller)", UiDensity.COZY to "Cozy", UiDensity.COMFORTABLE to "Comfortable (default)")
+// R182 — Skip Intro / Skip Credits behaviour.
+private val SKIP_MODE_LABELS = mapOf(SkipMode.OFF to "Off", SkipMode.PROMPT to "Prompt", SkipMode.AUTO to "Auto")
+private val SKIP_SECS_CHOICES = listOf(4, 6, 8)
 private val LANGS = listOf("en" to "English", "da" to "Dansk", "fo" to "Føroyskt")
 
 // R162: cache of the resolved per-user behaviour overlay, keyed by user id so a scope/user switch
@@ -2349,6 +2356,18 @@ private fun renderBehaviourGlobal(sect: Element) {
         val sel = if (code == currentConfig.uiLanguage) " selected" else ""
         """<option value="$code"$sel>$label</option>"""
     }
+    val skipIntroOptions = SkipMode.entries.joinToString("") { m ->
+        val sel = if (m == currentConfig.skipIntro) " selected" else ""
+        """<option value="${m.name}"$sel>${SKIP_MODE_LABELS[m] ?: m.name}</option>"""
+    }
+    val skipCreditsOptions = SkipMode.entries.joinToString("") { m ->
+        val sel = if (m == currentConfig.skipCredits) " selected" else ""
+        """<option value="${m.name}"$sel>${SKIP_MODE_LABELS[m] ?: m.name}</option>"""
+    }
+    val skipSecsOptions = SKIP_SECS_CHOICES.joinToString("") { s ->
+        val sel = if (s == currentConfig.skipSecs) " selected" else ""
+        """<option value="$s"$sel>${s}s</option>"""
+    }
     sect.innerHTML = """
         <div class="card" style="padding:18px 20px;margin-bottom:18px">
           <div style="font-weight:600;margin-bottom:2px">Behaviour &amp; preferences</div>
@@ -2387,6 +2406,18 @@ private fun renderBehaviourGlobal(sect: Element) {
             <label style="display:flex;align-items:center;gap:10px;font-size:.9rem">
               <input type="checkbox" id="beh-autoplay"$autoplayChecked>
               Autoplay next episode
+            </label>
+            <label style="display:flex;align-items:center;justify-content:space-between;gap:12px">
+              <span style="font-size:.9rem">Skip intros <span class="tiny muted">· R182</span></span>
+              <select id="beh-skip-intro" class="input" style="width:160px;font-size:.85rem">$skipIntroOptions</select>
+            </label>
+            <label style="display:flex;align-items:center;justify-content:space-between;gap:12px">
+              <span style="font-size:.9rem">Skip credits <span class="tiny muted">· R182</span></span>
+              <select id="beh-skip-credits" class="input" style="width:160px;font-size:.85rem">$skipCreditsOptions</select>
+            </label>
+            <label style="display:flex;align-items:center;justify-content:space-between;gap:12px">
+              <span style="font-size:.9rem">Skip button countdown</span>
+              <select id="beh-skip-secs" class="input" style="width:160px;font-size:.85rem">$skipSecsOptions</select>
             </label>
           </div>
         </div>
@@ -2442,6 +2473,21 @@ private fun renderBehaviourUser(sect: Element) {
     }
     val progressChecked = if (r.showContinueProgress.value) " checked" else ""
     val autoplayChecked = if (r.autoplayNext.value) " checked" else ""
+    val skipIntroDisabled = if (r.skipIntro.source == "viewer") " disabled" else ""
+    val skipIntroOptions = SkipMode.entries.joinToString("") { m ->
+        val sel = if (m == r.skipIntro.value) " selected" else ""
+        """<option value="${m.name}"$sel>${SKIP_MODE_LABELS[m] ?: m.name}</option>"""
+    }
+    val skipCreditsDisabled = if (r.skipCredits.source == "viewer") " disabled" else ""
+    val skipCreditsOptions = SkipMode.entries.joinToString("") { m ->
+        val sel = if (m == r.skipCredits.value) " selected" else ""
+        """<option value="${m.name}"$sel>${SKIP_MODE_LABELS[m] ?: m.name}</option>"""
+    }
+    val skipSecsDisabled = if (r.skipSecs.source == "viewer") " disabled" else ""
+    val skipSecsOptions = SKIP_SECS_CHOICES.joinToString("") { s ->
+        val sel = if (s == r.skipSecs.value) " selected" else ""
+        """<option value="$s"$sel>${s}s</option>"""
+    }
     sect.innerHTML = """
         <div class="card" style="padding:18px 20px;margin-bottom:18px">
           <div style="font-weight:600;margin-bottom:2px">Behaviour &amp; preferences — ${userName.htmlEsc()}</div>
@@ -2472,6 +2518,21 @@ private fun renderBehaviourUser(sect: Element) {
               "Autoplay next episode", null,
               """<label style="display:flex;align-items:center;gap:8px"><input type="checkbox" id="beh-u-autoplay"$autoplayChecked></label>""",
               r.autoplayNext.source, "id=\"beh-reset-autoplay_next\"",
+          )}
+          ${behFieldRow(
+              "Skip intros", "R182",
+              """<select id="beh-u-skip-intro" class="input" style="width:160px;font-size:.85rem"$skipIntroDisabled>$skipIntroOptions</select>""",
+              r.skipIntro.source, "id=\"beh-reset-skip_intro\"",
+          )}
+          ${behFieldRow(
+              "Skip credits", "R182",
+              """<select id="beh-u-skip-credits" class="input" style="width:160px;font-size:.85rem"$skipCreditsDisabled>$skipCreditsOptions</select>""",
+              r.skipCredits.source, "id=\"beh-reset-skip_credits\"",
+          )}
+          ${behFieldRow(
+              "Skip button countdown", null,
+              """<select id="beh-u-skip-secs" class="input" style="width:160px;font-size:.85rem"$skipSecsDisabled>$skipSecsOptions</select>""",
+              r.skipSecs.source, "id=\"beh-reset-skip_secs\"",
           )}
           ${if (requestLanguageOptions.isEmpty()) "" else {
               val reqLangDisabled = if (r.requestLanguage.source == "viewer") " disabled" else ""
@@ -2660,6 +2721,11 @@ private fun collectConfig(container: Element) {
     val allowOverride = (container.querySelector("#beh-skin-override") as? HTMLInputElement)?.checked ?: true
     val showProgress  = (container.querySelector("#beh-progress") as? HTMLInputElement)?.checked ?: true
     val autoplayNext  = (container.querySelector("#beh-autoplay") as? HTMLInputElement)?.checked ?: currentConfig.autoplayNext
+    val skipIntro = runCatching { SkipMode.valueOf((container.querySelector("#beh-skip-intro") as? HTMLSelectElement)?.value ?: "") }
+        .getOrDefault(currentConfig.skipIntro)
+    val skipCredits = runCatching { SkipMode.valueOf((container.querySelector("#beh-skip-credits") as? HTMLSelectElement)?.value ?: "") }
+        .getOrDefault(currentConfig.skipCredits)
+    val skipSecs = (container.querySelector("#beh-skip-secs") as? HTMLSelectElement)?.value?.toIntOrNull() ?: currentConfig.skipSecs
     // R159 — toggled off saves null (no override; portrait behaves exactly like landscape).
     val portraitEnabled = (container.querySelector("#portrait-enable") as? HTMLInputElement)?.checked ?: (currentConfig.portrait?.heroHeightPct != null)
     val portraitHeroHeight = (container.querySelector("#portrait-hero-height") as? HTMLInputElement)?.value?.toIntOrNull()
@@ -2699,6 +2765,9 @@ private fun collectConfig(container: Element) {
         // Preserve viewer-set fields that are not exposed in the admin UI.
         viewerSkinOverride = currentConfig.viewerSkinOverride,
         autoplayNext = autoplayNext,
+        skipIntro = skipIntro,
+        skipCredits = skipCredits,
+        skipSecs = skipSecs,
         showContinueProgress = showProgress,
         tileShape = tileShape,
         uiDensity = uiDensity,

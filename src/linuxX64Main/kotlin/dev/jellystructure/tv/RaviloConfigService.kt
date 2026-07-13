@@ -8,6 +8,7 @@ import dev.jellystructure.shared.tv.ResolvedBehaviourField
 import dev.jellystructure.shared.tv.RowConfig
 import dev.jellystructure.shared.tv.RowKind
 import dev.jellystructure.shared.tv.Skin
+import dev.jellystructure.shared.tv.SkipMode
 import dev.jellystructure.shared.tv.TileShape
 import dev.jellystructure.shared.tv.maxBlockDepth
 import dev.jellystructure.shared.tv.pruned
@@ -24,6 +25,9 @@ private val json = Json { ignoreUnknownKeys = true }
 
 /** R51 sentinel key for the global (all-users) layout. Not a real Jellyfin user id. */
 const val GLOBAL_USER_ID = "__global__"
+
+/** R182 — the only valid Skip Intro/Credits countdown lengths. */
+val SKIP_SECS_OPTIONS = listOf(4, 6, 8)
 
 private val DEFAULT_ROWS = listOf(
     RowConfig(id = "continue",  kind = RowKind.CONTINUE,    title = "Continue Watching", enabled = true, order = 0),
@@ -76,6 +80,9 @@ class RaviloConfigService(
             autoplayNext = resolved.autoplayNext.value,
             tileShape = resolved.tileShape.value,
             uiLanguage = resolved.uiLanguage.value,
+            skipIntro = resolved.skipIntro.value,
+            skipCredits = resolved.skipCredits.value,
+            skipSecs = resolved.skipSecs.value,
         )
     }
 
@@ -146,7 +153,12 @@ class RaviloConfigService(
                 gridColumns = p.gridColumns?.coerceIn(1, 4),
             )
         },
+        // R182 — the countdown is one of exactly three lengths; snap a stray value (hand-edited config,
+        // or a future UI slider) to the nearest of them rather than silently accepting an odd number.
+        skipSecs = snapSkipSecs(config.skipSecs),
     )
+
+    private fun snapSkipSecs(v: Int): Int = SKIP_SECS_OPTIONS.minByOrNull { kotlin.math.abs(it - v) } ?: 6
 
     /**
      * Validate an incoming admin-edited config before persisting. Returns an error message, or null
@@ -201,6 +213,9 @@ class RaviloConfigService(
             tileShape = field(overlay.tileShape, overlay.tileShapeWriter, global.tileShape),
             showContinueProgress = field(overlay.showContinueProgress, overlay.showContinueProgressWriter, global.showContinueProgress),
             autoplayNext = field(overlay.autoplayNext, overlay.autoplayNextWriter, global.autoplayNext),
+            skipIntro = field(overlay.skipIntro, overlay.skipIntroWriter, global.skipIntro),
+            skipCredits = field(overlay.skipCredits, overlay.skipCreditsWriter, global.skipCredits),
+            skipSecs = field(overlay.skipSecs, overlay.skipSecsWriter, global.skipSecs),
             requestLanguage = field(overlay.requestLanguage, overlay.requestLanguageWriter, catalogDefault),
         )
     }
@@ -280,6 +295,24 @@ class RaviloConfigService(
         saveBehaviourOverlay(userId, cur.copy(requestLanguage = v, requestLanguageWriter = w))
     }
 
+    /** R182 — admin-editor-only Skip Intro / Skip Credits + countdown length (no on-TV Settings
+     *  control, same shape as [setAdminRequestLanguage]). */
+    fun setAdminSkipIntro(userId: String, value: SkipMode) {
+        val cur = getBehaviourOverlay(userId); val global = getGlobalConfig()
+        val (v, w) = setAdminBehaviourOverride(cur.skipIntro, cur.skipIntroWriter, value, global.skipIntro)
+        saveBehaviourOverlay(userId, cur.copy(skipIntro = v, skipIntroWriter = w))
+    }
+    fun setAdminSkipCredits(userId: String, value: SkipMode) {
+        val cur = getBehaviourOverlay(userId); val global = getGlobalConfig()
+        val (v, w) = setAdminBehaviourOverride(cur.skipCredits, cur.skipCreditsWriter, value, global.skipCredits)
+        saveBehaviourOverlay(userId, cur.copy(skipCredits = v, skipCreditsWriter = w))
+    }
+    fun setAdminSkipSecs(userId: String, value: Int) {
+        val cur = getBehaviourOverlay(userId); val global = getGlobalConfig()
+        val (v, w) = setAdminBehaviourOverride(cur.skipSecs, cur.skipSecsWriter, value, global.skipSecs)
+        saveBehaviourOverlay(userId, cur.copy(skipSecs = v, skipSecsWriter = w))
+    }
+
     /** Reset (clears back to "follow global") — works on both admin- and viewer-tagged entries; this
      *  is the editor's only action on a viewer-set value. */
     fun resetBehaviourField(userId: String, field: String) {
@@ -291,6 +324,9 @@ class RaviloConfigService(
             "show_continue_progress" -> cur.copy(showContinueProgress = null, showContinueProgressWriter = null)
             "autoplay_next" -> cur.copy(autoplayNext = null, autoplayNextWriter = null)
             "request_language" -> cur.copy(requestLanguage = null, requestLanguageWriter = null)
+            "skip_intro" -> cur.copy(skipIntro = null, skipIntroWriter = null)
+            "skip_credits" -> cur.copy(skipCredits = null, skipCreditsWriter = null)
+            "skip_secs" -> cur.copy(skipSecs = null, skipSecsWriter = null)
             else -> cur
         }
         saveBehaviourOverlay(userId, next)
