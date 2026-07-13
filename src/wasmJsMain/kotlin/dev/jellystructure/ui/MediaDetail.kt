@@ -11,6 +11,7 @@ import dev.jellystructure.api.JsTag
 import dev.jellystructure.api.MediaApi
 import dev.jellystructure.api.PersonSearchResult
 import dev.jellystructure.api.DriftField
+import dev.jellystructure.api.SegmentMarkersUpdate
 import dev.jellystructure.api.TmdbMatchResult
 import dev.jellystructure.model.Episode
 import dev.jellystructure.model.MediaItem
@@ -18,6 +19,7 @@ import dev.jellystructure.model.MediaKind
 import dev.jellystructure.model.NfoFileNode
 import dev.jellystructure.model.NfoFileTree
 import dev.jellystructure.model.Person
+import dev.jellystructure.model.SegmentMarkers
 import dev.jellystructure.model.Track
 import dev.jellystructure.model.TrackKind
 import dev.jellystructure.resolver.LangStepOutcome
@@ -497,7 +499,7 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
            </div>"""
     } else ""
 
-    val tracksHtml = if (!isTvShow) buildUnifiedTrackEditorShell("trk", item.path) else ""
+    val tracksHtml = if (!isTvShow) buildUnifiedTrackEditorShell("trk", item.path) + buildSegmentEditor(item.segments, item.runtime, item.id, null, null) else ""
 
     val resolverTraceHtml = buildResolverTrace(item, fallbackLang, tmdbLangs)
     val ageRatingTraceHtml = buildAgeRatingTrace(item, ageRatingCascade)
@@ -912,6 +914,7 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
         scope.launch { handleWriteNfo(item.id, refresh = true, scope = scope) }
     }
     wirePagebarMenus()
+    wireSegmentEditors(scope)
 
     // Artwork tab (Phase 47) is built lazily by loadArtworkTab() on first show / tab switch.
 
@@ -1536,6 +1539,7 @@ private fun buildEpisodeRow(ep: Episode, season: Int?, idx: Int, mediaId: String
                 class="ep-still-file-input" data-form-id="still-form-$bodyId">
             </form>
             ${buildEpisodeTimestamps(ep, itemScannedAt)}
+            ${buildSegmentEditor(ep.segments, ep.runtime, mediaId, ep.filename, ep.episodeNumber)}
           </div>
         </div>"""
 }
@@ -1645,6 +1649,226 @@ private fun buildEpisodeTimestamps(ep: Episode, itemScannedAt: Long): String {
         ${grp("Scanned", itemScannedAt)}
         ${grp("Created · Jellyfin", ep.jellyfinCreatedAt)}
       </div>"""
+}
+
+// ── Phase 150: Skip Intro / Skip Credits segment scrubber (design/app/series-simpsons.html .segwrap) ──
+
+private fun clockToMs(raw: String): Long? {
+    val trimmed = raw.trim()
+    if (trimmed.isEmpty()) return null
+    val parts = trimmed.split(":")
+    if (parts.size !in 1..3) return null
+    val nums = parts.map { it.trim().toIntOrNull() ?: return null }
+    val (h, m, s) = when (nums.size) {
+        1 -> Triple(0, 0, nums[0])
+        2 -> Triple(0, nums[0], nums[1])
+        else -> Triple(nums[0], nums[1], nums[2])
+    }
+    if (h < 0 || m !in 0..59 || s !in 0..59) return null
+    return (h * 3600L + m * 60L + s) * 1000L
+}
+
+private fun fmtConfidence(c: Double): String {
+    val hundredths = (c * 100).toInt().coerceIn(0, 99)
+    return "0.${hundredths.toString().padStart(2, '0')}"
+}
+
+/**
+ * Phase 150 FR-SEG1-7: the per-episode / per-movie Intro & credits editor. [runtimeMinutes] is
+ * TMDB's episode/movie runtime (only minute precision, and sometimes null) — good enough for the
+ * illustrative timeline bar, but the mm:ss fields (backed by exact millisecond markers) are the real
+ * source of truth for editing, not the bar. [epFilename]/[epNumber] are null for a movie.
+ */
+private fun buildSegmentEditor(segments: SegmentMarkers, runtimeMinutes: Int?, mediaId: String, epFilename: String?, epNumber: Int?): String {
+    val idAttrs = buildString {
+        append(""" data-media-id="$mediaId"""")
+        if (epFilename != null) append(""" data-ep-filename="${epFilename.esc()}"""")
+        if (epNumber != null) append(""" data-ep-number="$epNumber"""")
+    }
+    val hasAny = segments.introStartMs != null || segments.creditsStartMs != null
+    if (!hasAny) {
+        return """
+        <div class="segwrap nodet"$idAttrs>
+          <div class="seg-head"><span class="seg-lbl">Intro &amp; credits</span><span class="badge bad" style="margin-left:8px;">not detected</span></div>
+          <div class="segbar empty"><span class="seg-empty">No markers — Ravilo falls back to a Next-Up card shortly before the file ends.</span></div>
+          <div class="seg-foot">
+            <span class="muted tiny">Run detection to enable Skip Intro / Skip Credits here.</span>
+            <span class="spacer"></span>
+            <span class="seg-save-msg tiny muted"></span>
+            <span class="btn sm seg-rescan">↻ Detect segments</span>
+          </div>
+        </div>
+        """.trimIndent()
+    }
+
+    val runtimeMs = runtimeMinutes?.let { it.toLong() * 60_000L }
+    fun pct(ms: Long): Double = if (runtimeMs != null && runtimeMs > 0) (ms.toDouble() / runtimeMs * 100).coerceIn(0.0, 100.0) else 0.0
+
+    val introLeft = segments.introStartMs
+    val introRight = segments.introEndMs
+    val credAt = segments.creditsStartMs
+    val stgAt = segments.stinger?.atMs
+
+    val barInnerHtml = if (runtimeMs == null || runtimeMs <= 0) {
+        """<span class="seg-empty">Timeline preview unavailable (runtime unknown) — exact fields below are still authoritative.</span>"""
+    } else {
+        buildString {
+            append("""<div class="seg-ticks"></div>""")
+            if (introLeft != null && introRight != null) {
+                val l = pct(introLeft)
+                val w = (pct(introRight) - l).coerceAtLeast(0.0)
+                append("""<div class="seg-intro" style="left:$l%;width:$w%"><i class="h l"></i><i class="h r"></i></div>""")
+            }
+            if (credAt != null) {
+                append("""<div class="seg-cred" style="left:${pct(credAt)}%"><i class="h"></i></div>""")
+            }
+            if (stgAt != null) {
+                append("""<div class="seg-stg" style="left:${pct(stgAt)}%"></div>""")
+            }
+        }
+    }
+    val barClass = if (runtimeMs == null || runtimeMs <= 0) "segbar empty" else "segbar"
+
+    val stingerLegend = if (segments.stinger != null) """<span><i class="sw sw-s"></i>Post-credits scene</span>""" else ""
+    val srcBadge = when (segments.source) {
+        "fingerprint" -> """<span class="badge seg-src-fp">fingerprint${segments.confidence?.let { " · " + fmtConfidence(it) } ?: ""}</span>"""
+        "heuristic" -> """<span class="badge warn">heuristic${segments.confidence?.let { " · " + fmtConfidence(it) } ?: ""}</span>"""
+        "chapter" -> """<span class="badge ok">chapter</span>"""
+        "manual" -> """<span class="badge">manual</span>"""
+        else -> ""
+    }
+    val stingerBadge = segments.stinger?.let {
+        val label = if (it.kind == "during") "★ scene during credits" else "★ scene after credits"
+        """<span class="badge seg-stinger" title="TMDB stinger tag">$label</span>"""
+    } ?: ""
+
+    val introStartStr = introLeft?.let { msToClock(it) } ?: ""
+    val introEndStr = introRight?.let { msToClock(it) } ?: ""
+    val credStartStr = credAt?.let { msToClock(it) } ?: ""
+    val locked = segments.manuallyConfirmed
+
+    return """
+    <div class="segwrap${if (locked) " locked" else ""}"$idAttrs>
+      <div class="seg-head">
+        <span class="seg-lbl">Intro &amp; credits</span>
+        <span class="seg-legend">
+          <span><i class="sw sw-i"></i>Intro</span>
+          <span><i class="sw sw-c"></i>Credits</span>
+          $stingerLegend
+        </span>
+      </div>
+      <div class="$barClass">$barInnerHtml</div>
+      <div class="seg-foot">
+        <label class="tiny muted">Intro
+          <input class="input seg-field" data-field="introStart" data-orig="$introStartStr" value="$introStartStr" placeholder="m:ss" style="width:56px;">
+          –
+          <input class="input seg-field" data-field="introEnd" data-orig="$introEndStr" value="$introEndStr" placeholder="m:ss" style="width:56px;">
+        </label>
+        <label class="tiny muted">Credits
+          <input class="input seg-field" data-field="creditsStart" data-orig="$credStartStr" value="$credStartStr" placeholder="m:ss" style="width:56px;">
+        </label>
+        $srcBadge
+        $stingerBadge
+        <span class="spacer"></span>
+        <span class="seg-save-msg tiny muted"></span>
+        <span class="btn sm ghost seg-rescan">↻ Re-scan</span>
+        <span class="btn sm ghost seg-lock${if (locked) " on" else ""}">${if (locked) "🔒 Locked" else "🔓 Lock"}</span>
+      </div>
+    </div>
+    """.trimIndent()
+}
+
+/** Wires every `.segwrap` on the page (episode rows + the movie Tracks tab) after render. */
+private fun wireSegmentEditors(scope: CoroutineScope) {
+    val nodes = document.querySelectorAll(".segwrap")
+    for (i in 0 until nodes.length) {
+        (nodes.item(i) as? HTMLElement)?.let { wireOneSegmentEditor(it, scope) }
+    }
+}
+
+private fun wireOneSegmentEditor(wrap: HTMLElement, scope: CoroutineScope) {
+    val mediaId = wrap.getAttribute("data-media-id") ?: return
+    val epFilename = wrap.getAttribute("data-ep-filename")
+    val epNumber = wrap.getAttribute("data-ep-number")?.toIntOrNull()
+    val msgEl = wrap.querySelector(".seg-save-msg") as? HTMLElement
+
+    fun segmentsOf(updated: MediaItem): SegmentMarkers =
+        if (epFilename != null) {
+            updated.episodes.firstOrNull { it.filename == epFilename && (epNumber == null || it.episodeNumber == epNumber) }?.segments ?: SegmentMarkers()
+        } else updated.segments
+
+    fun runtimeOf(updated: MediaItem): Int? =
+        if (epFilename != null) {
+            updated.episodes.firstOrNull { it.filename == epFilename && (epNumber == null || it.episodeNumber == epNumber) }?.runtime
+        } else updated.runtime
+
+    fun refresh(updated: MediaItem) {
+        val html = buildSegmentEditor(segmentsOf(updated), runtimeOf(updated), mediaId, epFilename, epNumber)
+        val temp = document.createElement("div")
+        temp.innerHTML = html
+        val newNode = temp.firstElementChild
+        val parent = wrap.parentNode
+        if (newNode != null && parent != null) {
+            parent.replaceChild(newNode, wrap)
+            (newNode as? HTMLElement)?.let { wireOneSegmentEditor(it, scope) }
+        }
+    }
+
+    fun runUpdate(update: SegmentMarkersUpdate) {
+        msgEl?.textContent = "Saving…"
+        scope.launch {
+            val updated = if (epFilename != null) MediaApi.patchEpisodeSegments(mediaId, epFilename, epNumber, update)
+                          else MediaApi.patchSegments(mediaId, update)
+            if (updated != null) refresh(updated) else {
+                msgEl?.textContent = "Failed"
+                showDetailMsg("Segment update failed.", false)
+            }
+        }
+    }
+
+    (wrap.querySelector(".seg-rescan") as? HTMLElement)?.addEventListener("click") {
+        msgEl?.textContent = "Scanning…"
+        scope.launch {
+            val updated = if (epFilename != null) MediaApi.rescanEpisodeSegments(mediaId, epFilename, epNumber)
+                          else MediaApi.rescanSegments(mediaId)
+            if (updated != null) refresh(updated) else {
+                msgEl?.textContent = "Failed"
+                showDetailMsg("Re-scan failed.", false)
+            }
+        }
+    }
+
+    (wrap.querySelector(".seg-lock") as? HTMLElement)?.addEventListener("click") {
+        runUpdate(SegmentMarkersUpdate(locked = !wrap.classList.contains("locked")))
+    }
+
+    val inputs = wrap.querySelectorAll(".seg-field")
+    for (i in 0 until inputs.length) {
+        val input = inputs.item(i) as? HTMLInputElement ?: continue
+        val field = input.getAttribute("data-field") ?: continue
+        fun commit() {
+            val orig = input.getAttribute("data-orig") ?: ""
+            if (input.value.trim() == orig) return
+            val ms = clockToMs(input.value)
+            if (input.value.isNotBlank() && ms == null) {
+                showDetailMsg("Invalid time — use m:ss or h:mm:ss.", false)
+                input.value = orig
+                return
+            }
+            val update = when (field) {
+                "introStart" -> SegmentMarkersUpdate(introStartMs = ms)
+                "introEnd" -> SegmentMarkersUpdate(introEndMs = ms)
+                "creditsStart" -> SegmentMarkersUpdate(creditsStartMs = ms)
+                else -> return
+            }
+            runUpdate(update)
+        }
+        input.addEventListener("blur") { commit() }
+        input.addEventListener("keydown") { e ->
+            val ke = e as? KeyboardEvent ?: return@addEventListener
+            if (ke.key == "Enter") input.blur()
+        }
+    }
 }
 
 private fun showSyncModal(item: MediaItem, container: Element, scope: CoroutineScope) {
