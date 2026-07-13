@@ -199,6 +199,7 @@ fun Route.mediaRoutes(
     sonarrEnrich: dev.jellystructure.arr.SonarrEnrichService? = null,
     mediaJobQueue: dev.jellystructure.media.MediaJobQueue,
     imdbClient: dev.jellystructure.imdb.ImdbClient,
+    fingerprintService: dev.jellystructure.media.FingerprintService,
 ) {
     route("/media") {
         get {
@@ -1719,8 +1720,8 @@ fun Route.mediaRoutes(
                 source = null, confidence = null, manuallyConfirmed = false,
             ))
             store.updateOne(cleared)
-            val chapterKeywords = configStore.current.scan.pipeline.firstOrNull { it.step == "detect_segments" }?.chapterKeywords ?: emptyList()
-            PipelineStepOps.detectSegments(cleared, store, chapterKeywords)
+            val segStep = configStore.current.scan.pipeline.firstOrNull { it.step == "detect_segments" }
+            PipelineStepOps.detectSegments(cleared, store, segStep?.chapterKeywords ?: emptyList(), fingerprintService, segStep?.detectFingerprint ?: false)
             val refreshed = store.resolve(id) ?: cleared
             broadcaster.broadcast(JobEvent.ItemScanned("segments-rescan-$id", refreshed))
             call.respond(refreshed)
@@ -1772,8 +1773,8 @@ fun Route.mediaRoutes(
                 ))
             }
             store.updateOne(cleared)
-            val chapterKeywords = configStore.current.scan.pipeline.firstOrNull { it.step == "detect_segments" }?.chapterKeywords ?: emptyList()
-            PipelineStepOps.detectSegments(cleared, store, chapterKeywords)
+            val segStep = configStore.current.scan.pipeline.firstOrNull { it.step == "detect_segments" }
+            PipelineStepOps.detectSegments(cleared, store, segStep?.chapterKeywords ?: emptyList(), fingerprintService, segStep?.detectFingerprint ?: false)
             val refreshed = store.resolve(id) ?: cleared
             broadcaster.broadcast(JobEvent.ItemScanned("ep-segments-rescan-$id", refreshed))
             call.respond(refreshed)
@@ -1849,7 +1850,7 @@ fun Route.mediaRoutes(
                 "▶ Pipeline run started (manual)${if (full) " (full)" else ""}", scanTracker,
             ) {
                 if (runsPipeline) {
-                    executePipeline(pipeline, jobId, store, scanner, scanTracker, broadcaster, configStore, jellyfinClient, scanDispatcher, artwork, arrRescan, sonarrEnrich, imdbClient, fullRun = full)
+                    executePipeline(pipeline, jobId, store, scanner, scanTracker, broadcaster, configStore, jellyfinClient, scanDispatcher, artwork, arrRescan, sonarrEnrich, imdbClient, fingerprintService, fullRun = full)
                 } else {
                     runScan(jobId, emptySet(), store, scanner, scanTracker, broadcaster, configStore, jellyfinClient, scanDispatcher, artworkDownloader = if (configStore.current.behavior.fetchImages) artwork else null)
                 }
