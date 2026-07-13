@@ -47,6 +47,22 @@
 }
 
 .app-side .group-label { padding-top: 16px; }
+
+/* Phase 148 — collapsible nav groups. .group-label doubles as a <button> (group-toggle) now,
+   so it needs its browser button chrome reset on top of the plain-label typography above. */
+.app-side .nav-group { display: flex; flex-direction: column; }
+.app-side .group-label.group-toggle {
+  display: flex; align-items: center; width: 100%;
+  background: transparent; border: 0; cursor: pointer;
+  text-align: left; font-family: inherit; border-radius: var(--radius-s);
+  transition: background .15s ease, color .15s ease;
+}
+.app-side .group-label.group-toggle:hover { background: var(--fill-3); color: var(--ink); }
+.app-side .group-label .grp-chev { margin-left: auto; flex: none; opacity: .6; transition: transform .18s ease; }
+.app-side .nav-group.collapsed .grp-chev { transform: rotate(-90deg); }
+.app-side .nav-group-items { display: flex; flex-direction: column; overflow: hidden; }
+.app-side .nav-group.collapsed .nav-group-items { display: none; }
+
 .app-side .grow { flex: 1; min-height: 12px; }
 
 .app-side .status {
