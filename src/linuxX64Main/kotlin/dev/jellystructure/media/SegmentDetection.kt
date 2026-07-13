@@ -96,4 +96,113 @@ object SegmentDetection {
         }
         return Stinger(atMs = null, kind = kind)  // exact timing is an admin/future-detector refinement
     }
+
+    // ── FR-SEG1-4: cross-episode audio-fingerprint intro matching ──────────────────────────────────
+
+    // Chromaprint's raw fingerprint has one 32-bit value per ~0.124s of audio, with a fixed ~2.64s
+    // startup offset before the first value — empirically derived 2026-07-13 (linear regression, 9
+    // window sizes 30s–3600s against a real library file, residuals <0.1s) and independently confirmed
+    // against a SECOND file of a different codec/sample-rate producing byte-for-byte identical frame
+    // counts for the same -length window — these are pure libchromaprint algorithm constants, not
+    // source-dependent. `elapsed_seconds_at_frame[i] ≈ FRAME_OFFSET_SEC + i * FRAME_SEC`.
+    private const val FRAME_SEC = 0.1238114
+    private const val FRAME_OFFSET_SEC = 2.641479
+
+    // Sliding-offset Hamming-distance correlation + longest-matching-run-with-gap-tolerance is the same
+    // general technique the Intro Skipper Jellyfin plugin (GPL-3.0, matching this project's own LICENSE)
+    // uses for Chromaprint-based intro detection. This is an independent implementation — Intro Skipper's
+    // C# source wasn't available to reference in this session, so nothing below is a line-for-line port —
+    // validated instead by empirical testing against real library files (see FRAME_SEC/FRAME_OFFSET_SEC
+    // above, and the thresholds below, both derived/tuned this session rather than copied).
+    private const val HAMMING_THRESHOLD = 6          // out of 32 bits (~19% bit-error tolerance/frame)
+    private const val MAX_GAP_FRAMES = 2             // tolerate up to 2 consecutive non-matching frames in a run
+    private const val MIN_RUN_FRAMES = 65            // ~8s — filters out short coincidental matches
+    private const val MAX_OFFSET_SEARCH_SEC = 120.0  // search ±2 minutes of misalignment between episodes
+
+    private fun popcount(x: Int): Int {
+        var v = x
+        var count = 0
+        while (v != 0) { v = v and (v - 1); count++ }
+        return count
+    }
+
+    private data class RunCandidate(val offset: Int, val start: Int, val end: Int)
+
+    /** Result of [findIntroMatch]: the matched run's bounds in BOTH fingerprints' own coordinate
+     *  frames — comparing episode A against a reference episode B tells you both episodes' intro
+     *  bounds from one comparison, since the match position in each one's own array IS that episode's
+     *  own local timing. */
+    data class FingerprintIntroMatch(
+        val aStartMs: Long, val aEndMs: Long,
+        val bStartMs: Long, val bEndMs: Long,
+        val confidence: Double,
+    )
+
+    /**
+     * Finds the longest run where [a] and [b]'s fingerprints agree (within [HAMMING_THRESHOLD] bits/
+     * frame, tolerating up to [MAX_GAP_FRAMES] consecutive misses) across every offset in
+     * ±[MAX_OFFSET_SEARCH_SEC], and returns its bounds in both fingerprints' own timelines. Null when
+     * the longest run found is shorter than [MIN_RUN_FRAMES] (or either input is empty) — the caller
+     * leaves `introStartMs`/`introEndMs` unset, same graceful-fallback shape as every other tier.
+     */
+    fun findIntroMatch(a: List<Int>, b: List<Int>): FingerprintIntroMatch? {
+        if (a.isEmpty() || b.isEmpty()) return null
+        val maxOffsetFrames = (MAX_OFFSET_SEARCH_SEC / FRAME_SEC).toInt()
+
+        var best: RunCandidate? = null
+        for (offset in -maxOffsetFrames..maxOffsetFrames) {
+            val n = if (offset >= 0) minOf(a.size - offset, b.size) else minOf(a.size, b.size + offset)
+            if (n <= 0) continue
+
+            fun matches(i: Int): Boolean {
+                val ai = if (offset >= 0) i + offset else i
+                val bi = if (offset >= 0) i else i - offset
+                return popcount(a[ai] xor b[bi]) <= HAMMING_THRESHOLD
+            }
+
+            var i = 0
+            while (i < n) {
+                if (!matches(i)) { i++; continue }
+                val start = i
+                var last = i
+                var gap = 0
+                var j = i
+                while (j < n) {
+                    if (matches(j)) { last = j; gap = 0 } else { gap++; if (gap > MAX_GAP_FRAMES) break }
+                    j++
+                }
+                val current = best
+                if (current == null || (last - start) > (current.end - current.start)) {
+                    best = RunCandidate(offset, start, last)
+                }
+                i = j
+            }
+        }
+
+        val candidate = best ?: return null
+        val length = candidate.end - candidate.start + 1
+        if (length < MIN_RUN_FRAMES) return null
+
+        // candidate.start/.end are LOGICAL loop positions, not directly either array's own index — the
+        // same offset-dependent mapping `matches()` used above (ai = i+offset / bi = i when offset≥0,
+        // ai = i / bi = i-offset when offset<0) must convert them back to each array's real coordinates.
+        fun aIndex(i: Int) = if (candidate.offset >= 0) i + candidate.offset else i
+        fun bIndex(i: Int) = if (candidate.offset >= 0) i else i - candidate.offset
+        fun toMs(frame: Int) = ((FRAME_OFFSET_SEC + frame * FRAME_SEC) * 1000).toLong()
+
+        var matchCount = 0
+        for (k in candidate.start..candidate.end) {
+            val ai = aIndex(k); val bi = bIndex(k)
+            if (ai in a.indices && bi in b.indices && popcount(a[ai] xor b[bi]) <= HAMMING_THRESHOLD) matchCount++
+        }
+        // Match density within the run scaled into the same [0.3, 0.9] presentation range the ffmpeg
+        // heuristic uses, so both auto-detected sources read comparably in the admin scrubber.
+        val confidence = (0.3 + (matchCount.toDouble() / length) * 0.6).coerceIn(0.3, 0.9)
+
+        return FingerprintIntroMatch(
+            aStartMs = toMs(aIndex(candidate.start)), aEndMs = toMs(aIndex(candidate.end)),
+            bStartMs = toMs(bIndex(candidate.start)), bEndMs = toMs(bIndex(candidate.end)),
+            confidence = confidence,
+        )
+    }
 }

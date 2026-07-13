@@ -4,6 +4,7 @@ import dev.jellystructure.arr.ArrRescanService
 import dev.jellystructure.auth.JellyfinClient
 import dev.jellystructure.config.AppConfig
 import dev.jellystructure.imdb.ImdbClient
+import dev.jellystructure.model.Episode
 import dev.jellystructure.model.ImdbRating
 import dev.jellystructure.model.MediaItem
 import dev.jellystructure.model.MediaKind
@@ -133,7 +134,13 @@ object PipelineStepOps {
         return current.copy(creditsStartMs = hit.creditsStartMs, source = hit.source, confidence = hit.confidence)
     }
 
-    suspend fun detectSegments(item: MediaItem, store: MediaStore, extraChapterKeywords: List<String> = emptyList()) {
+    suspend fun detectSegments(
+        item: MediaItem,
+        store: MediaStore,
+        extraChapterKeywords: List<String> = emptyList(),
+        fingerprintService: FingerprintService? = null,
+        detectFingerprint: Boolean = false,
+    ) {
         when (item.kind) {
             MediaKind.MOVIE -> {
                 val updated = detectForPath(item.path, item.segments, extraChapterKeywords) ?: return
@@ -147,8 +154,63 @@ object PipelineStepOps {
                     changed = true
                     ep.copy(segments = updated)
                 }
-                if (changed) store.updateOne(item.copy(episodes = updatedEpisodes))
+                val afterChapterHeuristic = if (changed) item.copy(episodes = updatedEpisodes) else item
+                if (changed) store.updateOne(afterChapterHeuristic)
+
+                // FR-SEG1-4 — cross-episode audio fingerprinting (Skip Intro), gated on the
+                // detect_fingerprint pipeline-step toggle: heavier (an fpcalc decode per episode) than
+                // the chapter/heuristic tier above, so it's opt-in on top of detect_segments itself.
+                if (detectFingerprint && fingerprintService != null) {
+                    detectIntroFingerprints(afterChapterHeuristic, store, fingerprintService)
+                }
             }
         }
+    }
+
+    /**
+     * FR-SEG1-4 — cross-episode audio fingerprinting for a series' Skip Intro bounds. Compares every
+     * eligible episode (`partCount == 1`, not `manuallyConfirmed`, no `introStartMs` yet) against ONE
+     * reference episode per season — the season's lowest-numbered `partCount == 1` episode — rather
+     * than every pair of episodes: full pairwise comparison is O(n²) fpcalc/compare work for a
+     * property (a season's fixed intro) that a single well-chosen reference already reveals. One
+     * comparison fills BOTH sides' bounds at once (`SegmentDetection.findIntroMatch` returns both
+     * fingerprints' own coordinate frames), so the reference episode itself is usually filled in for
+     * free the first time any other episode matches against it.
+     *
+     * A season needs ≥2 eligible `partCount == 1` episodes to have anything to compare (FR-SEG1-4's
+     * own "series ≥2 episodes" scope) — a lone episode, or a season where everything already has an
+     * intro from an earlier tier, is a silent no-op here, same as every other segment-detection tier.
+     */
+    private suspend fun detectIntroFingerprints(item: MediaItem, store: MediaStore, fingerprintService: FingerprintService) {
+        fun key(ep: Episode) = "${ep.filename}#${ep.episodeNumber}"
+        val updates = mutableMapOf<String, SegmentMarkers>()
+        fun segmentsFor(ep: Episode) = updates[key(ep)] ?: ep.segments
+        fun eligible(ep: Episode) = segmentsFor(ep).let { !it.manuallyConfirmed && it.introStartMs == null }
+
+        val bySeason = item.episodes.filter { it.partCount == 1 }.groupBy { it.seasonNumber }
+        for (episodes in bySeason.values) {
+            if (episodes.size < 2) continue
+            val sorted = episodes.sortedBy { it.episodeNumber ?: Int.MAX_VALUE }
+            val reference = sorted.first()
+            for (ep in sorted.drop(1)) {
+                if (!eligible(ep)) continue
+                val refFp = fingerprintService.getOrCompute(item.id, reference) ?: continue
+                val curFp = fingerprintService.getOrCompute(item.id, ep) ?: continue
+                val match = SegmentDetection.findIntroMatch(curFp, refFp) ?: continue
+                updates[key(ep)] = segmentsFor(ep).copy(
+                    introStartMs = match.aStartMs, introEndMs = match.aEndMs,
+                    source = "fingerprint", confidence = match.confidence,
+                )
+                if (eligible(reference)) {
+                    updates[key(reference)] = segmentsFor(reference).copy(
+                        introStartMs = match.bStartMs, introEndMs = match.bEndMs,
+                        source = "fingerprint", confidence = match.confidence,
+                    )
+                }
+            }
+        }
+        if (updates.isEmpty()) return
+        val updatedEpisodes = item.episodes.map { ep -> updates[key(ep)]?.let { ep.copy(segments = it) } ?: ep }
+        store.updateOne(item.copy(episodes = updatedEpisodes))
     }
 }

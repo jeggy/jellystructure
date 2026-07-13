@@ -269,4 +269,27 @@ object FfmpegRunner {
         val confidence = (1.0 - gap / BLACK_SILENCE_TOLERANCE_SEC).coerceIn(0.3, 0.9)
         return CreditsHeuristicResult(startMs = ((windowStartSec + relativeSec) * 1000).toLong(), confidence = confidence)
     }
+
+    // Phase 150 (FR-SEG1-4) — Chromaprint fingerprint for cross-episode intro matching, via the
+    // `fpcalc` CLI (Chromaprint's own command-line tool; must be present on PATH — the
+    // detect_fingerprint pipeline-step toggle is what an admin opts into once it's installed).
+    // -length bounds decoded/analyzed audio to the first [windowSec] of the file — the intro is always
+    // near the start, and a full-episode fingerprint (many thousands of frames) would be needless
+    // compute and cache size for content this tier never looks at.
+    private const val FINGERPRINT_WINDOW_SEC = 600
+
+    /**
+     * Raw Chromaprint fingerprint (one 32-bit value per ~0.124s of audio, verified empirically 2026-07-13
+     * against two real library files of different codecs/sample-rates — see SegmentDetection's own
+     * FRAME_SEC/FRAME_OFFSET_SEC constants) for the first [windowSec] of [filePath]'s audio. Each value
+     * is parsed via Long (fpcalc prints these as *unsigned* 32-bit decimals, some exceeding
+     * Int.MAX_VALUE) then narrowed to Int — same bit pattern, just reinterpreted as signed, which is all
+     * XOR/popcount frame comparison ever needs. Null on any fpcalc failure (not installed, corrupt file).
+     */
+    suspend fun computeFingerprint(filePath: String, windowSec: Int = FINGERPRINT_WINDOW_SEC): List<Int>? {
+        val escaped = filePath.replace("'", "'\\''")
+        val output = captureCommand("fpcalc -raw -length $windowSec '$escaped' 2>&1") ?: return null
+        val match = Regex("""FINGERPRINT=([\d,]+)""").find(output) ?: return null
+        return match.groupValues[1].split(",").mapNotNull { it.trim().toLongOrNull()?.toInt() }.takeIf { it.isNotEmpty() }
+    }
 }
