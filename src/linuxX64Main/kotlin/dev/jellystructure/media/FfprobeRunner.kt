@@ -43,9 +43,12 @@ private data class FfprobeTags(
     val title: String? = null,
 )
 
-/** Phase 149: one chapter marker's start/end offset within a file, in whole milliseconds. */
+/** Phase 149: one chapter marker's start/end offset within a file, in whole milliseconds. [title] is
+ *  the chapter's own free-text name when the container has one (Phase 150: some rips literally name a
+ *  chapter "Credits"/"Recap" — previously discarded here, now the input to chapter-title pattern
+ *  matching, see `SegmentDetection.kt`). */
 @Serializable
-data class ChapterMarker(val startMs: Long, val endMs: Long)
+data class ChapterMarker(val startMs: Long, val endMs: Long, val title: String? = null)
 
 @Serializable
 private data class FfprobeChaptersOutput(
@@ -56,6 +59,12 @@ private data class FfprobeChaptersOutput(
 private data class FfprobeChapterEntry(
     @SerialName("start_time") val startTime: String = "0",
     @SerialName("end_time") val endTime: String = "0",
+    val tags: FfprobeChapterTags = FfprobeChapterTags(),
+)
+
+@Serializable
+private data class FfprobeChapterTags(
+    val title: String? = null,
 )
 
 private val json = Json { ignoreUnknownKeys = true }
@@ -176,7 +185,11 @@ object FfprobeRunner {
             json.decodeFromString(FfprobeChaptersOutput.serializer(), output).chapters.map { ch ->
                 val startSec = ch.startTime.toDoubleOrNull() ?: 0.0
                 val endSec = ch.endTime.toDoubleOrNull() ?: 0.0
-                ChapterMarker(startMs = (startSec * 1000).toLong(), endMs = (endSec * 1000).toLong())
+                ChapterMarker(
+                    startMs = (startSec * 1000).toLong(),
+                    endMs = (endSec * 1000).toLong(),
+                    title = ch.tags.title?.takeIf { it.isNotBlank() },
+                )
             }
         }
         if (result.isFailure) Logger.warn("Failed to parse ffprobe chapters for $filePath: ${result.exceptionOrNull()?.message}")
