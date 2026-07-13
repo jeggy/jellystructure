@@ -79,7 +79,7 @@ fun <T> StaticContentRow(
     titleAccessory: (@Composable () -> Unit)? = null,
     /** A plain, non-interactive label at the header's end — shown only when [seeAllLabel]/[onSeeAll]
      *  aren't (they're mutually exclusive with this: a row has an action link OR an info caption,
-     *  never a visual double-up). e.g. Home On Now's "5 channels · From Jellyfin". */
+     *  never a visual double-up). e.g. Home On Now's "5 channels". */
     trailingInfo: String? = null,
     itemContent: @Composable (index: Int, item: T, focusRequester: FocusRequester?) -> Unit,
 ) {
