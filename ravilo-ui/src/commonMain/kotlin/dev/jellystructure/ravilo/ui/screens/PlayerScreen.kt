@@ -125,6 +125,11 @@ private const val POLL_MS        = 500L
 private enum class PlFocus { SKIP_INTRO, SEEK_BAR, SKIP_BACK, PLAY, SKIP_FWD, TRACKS, NEXT_EP, BACK }
 private enum class NuFocus { PLAY, STAY }
 
+// R182 (FR-RV-SKIP1-2) — the credits card's ONE primary action, chosen by priority: a stinger (from
+// Phase 150 §C) always wins (never auto-skip past it); else a real next episode; else a plain
+// skip-credits/exit. "Watch credits" (NuFocus.STAY) is offered in every mode alongside this one action.
+private enum class CreditsCardMode { STINGER, NEXT_EPISODE, SKIP_CREDITS }
+
 // R182 — SKIP_INTRO only enters the order while the pill is actually visible (mirrors NEXT_EP's own
 // hasNextEp gating), first in the order per the design prototype's own focus-order function.
 private fun transportOrder(hasNextEp: Boolean, hasSkipIntro: Boolean): List<PlFocus> =
@@ -348,6 +353,30 @@ fun PlayerScreen(
     // it. It can still re-appear at the true end of the file (the isEnded branch ignores the latch).
     fun stayThrough() { nextUpVisible = false; nextUpDismissed = true; chromeVisible = true; scheduleHide() }
 
+    // R182 (FR-RV-SKIP1-2) — CreditsCardMode.STINGER's primary action. Stinger.atMs is null in every
+    // title today (TMDB's during/aftercreditsstinger keywords carry no timestamp — see Phase 150
+    // SegmentDetection.stingerFromTmdbKeywords); "never blindly skip past it" means we can't just jump
+    // to the natural end either, so without a known position this lands 2s before the file's actual end
+    // — past the long credits ROLL (whose start we DO know) while still leaving the tail of the file,
+    // where a mid/post-credits scene always sits, to play out normally.
+    fun skipToScene() {
+        val target = currentSegments.stinger?.atMs ?: (durationMs - 2_000L).coerceAtLeast(positionMs)
+        player.seekTo(target)
+        positionMs = target
+        nextUpVisible = false
+        wake()
+    }
+
+    // R182 (FR-RV-SKIP1-2) — CreditsCardMode.SKIP_CREDITS's primary action: a movie or a series' last
+    // episode with no stinger has nothing to seek forward TO, so this is simply "I'm done" — the same
+    // exit the pre-R182 isEnded handler used to trigger unconditionally (and silently, with no card) for
+    // any item with no next episode.
+    fun skipCredits() {
+        nextUpVisible = false
+        if (durationMs > 0 && positionMs >= durationMs * 90 / 100) store.markWatched(itemId)
+        onBack()
+    }
+
     // R182 (FR-RV-SKIP1-1) — fires on an explicit OK press on the pill AND from the countdown-elapsed
     // auto-trigger in Auto mode (see the skipIntroCountingDown LaunchedEffect below) — same action either
     // way, matching the design prototype's own single skipIntro() used from both paths.
@@ -542,18 +571,21 @@ fun PlayerScreen(
                     resolvedForItemId = currentItemId
                 }
 
-                // Near-end → show next-up card (R111: not if dismissed via "Watch credits")
-                if (playerLoadedForCurrentItem && currentNextEpisodeId != null && durationMs > 0 && !nextUpVisible && !nextUpDismissed && !player.isEnded) {
-                    if ((durationMs - positionMs) in 1..NEXTUP_AT_MS) {
-                        nextUpVisible = true
-                        nuFocus = NuFocus.PLAY
-                    }
+                // Credits card trigger (R111/R182 FR-RV-SKIP1-2): the real creditsStartMs when known,
+                // else the existing NEXTUP_AT_MS-before-end heuristic (§D graceful fallback for an
+                // unscanned title). R182 also drops the old "no next episode ⇒ exit immediately, no
+                // card at all" special case below — a movie/last-episode now gets the same card, with a
+                // Skip credits action, instead of being silently kicked out at the natural end.
+                val creditsStart = currentSegments.creditsStartMs
+                val creditsReached = if (creditsStart != null) positionMs >= creditsStart
+                    else durationMs > 0 && (durationMs - positionMs) in 1..NEXTUP_AT_MS
+                if (playerLoadedForCurrentItem && creditsReached && !nextUpVisible && !nextUpDismissed && !player.isEnded) {
+                    nextUpVisible = true
+                    nuFocus = NuFocus.PLAY
                 }
 
-                // Natural end with no next episode → exit
-                if (playerLoadedForCurrentItem && player.isEnded && currentNextEpisodeId == null) {
-                    onBack(); break
-                }
+                // Natural end — safety net for a title whose duration/creditsStartMs never satisfied the
+                // check above (e.g. bad metadata); still shows the card rather than exiting silently.
                 if (playerLoadedForCurrentItem && player.isEnded && !nextUpVisible) {
                     nextUpVisible = true; nuFocus = NuFocus.PLAY
                 }
@@ -613,6 +645,15 @@ fun PlayerScreen(
         else if (focus == PlFocus.SKIP_INTRO) focus = PlFocus.PLAY
     }
 
+    // R182 (FR-RV-SKIP1-2) — priority: a stinger always wins (never auto-skip past it), else a real
+    // next episode, else plain skip-credits/exit. Derived every recomposition — segments/nextEpisodeId
+    // only ever change across an episode transition, when nextUpVisible/nextUpDismissed also reset.
+    val creditsCardMode = when {
+        segments.stinger != null -> CreditsCardMode.STINGER
+        nextEpisodeId != null -> CreditsCardMode.NEXT_EPISODE
+        else -> CreditsCardMode.SKIP_CREDITS
+    }
+
     // R157/R169 (FR-R157-1.3 fallback) — web only, no-op elsewhere: keep the <video> element's z-order
     // in sync. The video only needs to hide behind the canvas when a *Compose-drawn* overlay that the
     // web DOM chrome (below) doesn't replicate is open — the track picker, next-up card, episode rail,
@@ -649,8 +690,10 @@ fun PlayerScreen(
     DisposableEffect(Unit) { onDispose { setPointerCursorHidden(false) } }
 
     // Next-up countdown
+    // R182 (FR-RV-SKIP1-2): "the auto-advance countdown ring appears ONLY in the Next Episode case" —
+    // the stinger case pauses auto-skip entirely (no countdown) and skip-credits simply waits for input.
     LaunchedEffect(nextUpVisible) {
-        if (!nextUpVisible) return@LaunchedEffect
+        if (!nextUpVisible || creditsCardMode != CreditsCardMode.NEXT_EPISODE) return@LaunchedEffect
         countdown = currentSkipSecs
         repeat(currentSkipSecs) {
             delay(1_000)
@@ -796,7 +839,14 @@ fun PlayerScreen(
                         // FR-RV-SEL1-3: togglePlay() already calls wake(), so chrome is revealed too.
                         togglePlay()
                     } else when {
-                        nextUpVisible -> { if (nuFocus == NuFocus.PLAY) advanceNext() else stayThrough() }
+                        nextUpVisible -> {
+                            if (nuFocus == NuFocus.STAY) stayThrough()
+                            else when (creditsCardMode) {
+                                CreditsCardMode.STINGER -> skipToScene()
+                                CreditsCardMode.NEXT_EPISODE -> advanceNext()
+                                CreditsCardMode.SKIP_CREDITS -> skipCredits()
+                            }
+                        }
                         epRailOpen -> chooseEpisode()
                         pickerOpen -> choosePick()
                         focus == PlFocus.SKIP_INTRO -> skipIntro()
@@ -1085,6 +1135,9 @@ fun PlayerScreen(
         ) {
             NextUpCard(
                 colors         = colors,
+                mode           = creditsCardMode,
+                itemKicker     = itemKicker,
+                isSeries       = episodes != null,
                 nextEpLabel    = nextEpisodeLabel,
                 nextEpTitle    = nextEpisodeTitle,
                 // Bug fix: the card's thumbnail was always an empty placeholder box — `episodes` (the
@@ -1903,6 +1956,9 @@ private fun PickerGlyphMic(modifier: Modifier, tint: Color) {
 @Composable
 private fun NextUpCard(
     colors: RaviloColors,
+    mode: CreditsCardMode,
+    itemKicker: String?,
+    isSeries: Boolean,
     nextEpLabel: String?,
     nextEpTitle: String?,
     nextEpStillUrls: List<String?>,
@@ -1910,6 +1966,20 @@ private fun NextUpCard(
     totalSecs: Int,
     nuFocus: NuFocus,
 ) {
+    // R182 (FR-RV-SKIP1-2) — everything below the thumbnail/ring differs by mode; the NEXT_EPISODE case
+    // is exactly the pre-R182 card, unchanged. Never more than two buttons in any mode.
+    val kickerText = if (mode == CreditsCardMode.NEXT_EPISODE) str("player.up_next") else str("player.credits_kicker")
+    val subLabel = if (mode == CreditsCardMode.NEXT_EPISODE) nextEpLabel else itemKicker
+    val titleText = when (mode) {
+        CreditsCardMode.NEXT_EPISODE -> nextEpTitle ?: str("detail.episode")
+        CreditsCardMode.STINGER -> str("player.stinger_title")
+        CreditsCardMode.SKIP_CREDITS -> if (isSeries) str("player.end_of_episode") else str("player.end_of_movie")
+    }
+    val primaryLabel = when (mode) {
+        CreditsCardMode.NEXT_EPISODE -> "> ${str("player.play_in", mapOf("secs" to countdown.toString()))}"
+        CreditsCardMode.STINGER -> str("player.skip_to_scene")
+        CreditsCardMode.SKIP_CREDITS -> str("player.skip_credits")
+    }
     // R111: compact card tucked into the bottom-right corner (was a 560dp full-width banner).
     Box(
         modifier = Modifier
@@ -1921,10 +1991,11 @@ private fun NextUpCard(
             .padding(14.dp),
     ) {
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            // Thumbnail (falls back to the flat box colour when no still is available) + countdown ring.
-            // When the next entry is itself a multi-episode-file group, nextEpStillUrls carries up to 3
-            // URLs and EpisodeTriptych renders the same seamed-diagonal treatment used everywhere else a
-            // group appears, instead of just showing that group's first episode's image alone.
+            // Thumbnail (falls back to the flat box colour when no still is available) + countdown ring
+            // (NEXT_EPISODE only — a stinger pauses auto-skip entirely and skip-credits simply waits for
+            // input, so neither shows a ring at all). When the next entry is itself a multi-episode-file
+            // group, nextEpStillUrls carries up to 3 URLs and EpisodeTriptych renders the same
+            // seamed-diagonal treatment used everywhere else a group appears.
             Box(
                 modifier = Modifier
                     .width(104.dp)
@@ -1936,24 +2007,30 @@ private fun NextUpCard(
                 if (nextEpStillUrls.any { it != null }) {
                     EpisodeTriptych(stillUrls = nextEpStillUrls, modifier = Modifier.matchParentSize())
                 }
-                Box(modifier = Modifier.padding(6.dp)) {
-                    CountdownRing(colors, countdown, totalSecs)
+                if (mode == CreditsCardMode.NEXT_EPISODE) {
+                    Box(modifier = Modifier.padding(6.dp)) {
+                        CountdownRing(colors, countdown, totalSecs)
+                    }
                 }
             }
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = str("player.up_next"),
+                    text = kickerText,
                     color = colors.accentSecondary,
                     fontSize = 9.sp,
                     fontWeight = FontWeight.Bold,
                     letterSpacing = 1.5.sp,
                 )
+                // R182 — "there's a scene after this" is worth flagging even before the title line.
+                if (mode == CreditsCardMode.STINGER) {
+                    Text("★ ${str("player.stinger_badge")}", color = colors.accent, fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
+                }
                 Spacer(Modifier.height(3.dp))
-                nextEpLabel?.let {
+                subLabel?.let {
                     Text(it, color = colors.textSecondary, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
                 }
                 Text(
-                    text = nextEpTitle ?: str("detail.episode"),
+                    text = titleText,
                     color = colors.text,
                     fontSize = 15.sp,
                     fontWeight = FontWeight.Bold,
@@ -1963,7 +2040,7 @@ private fun NextUpCard(
                 Spacer(Modifier.height(10.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     NuButton(
-                        label = "> ${str("player.play_in", mapOf("secs" to countdown.toString()))}",
+                        label = primaryLabel,
                         focused = nuFocus == NuFocus.PLAY,
                         isPrimary = true,
                         colors = colors,
