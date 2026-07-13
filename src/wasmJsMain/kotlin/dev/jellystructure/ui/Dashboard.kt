@@ -212,6 +212,8 @@ private val ATTENTION_ROW_ORDER = listOf(
     "language_mix" to "warn",
     "multi_default" to "warn",
     "cover_as_video" to "bad",
+    "segments_lowconf" to "warn",
+    "no_segments" to "warn",
     "zero_audio" to "bad",
     "duplicate" to "bad",
     "missing_from_source" to "bad",
