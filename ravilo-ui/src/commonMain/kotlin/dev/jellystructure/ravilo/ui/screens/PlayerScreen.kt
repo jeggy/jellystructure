@@ -158,6 +158,9 @@ fun PlayerScreen(
     // choices; R181/R180 — the title's original-audio language for the "Dubbed" audio badge.
     seriesId: String? = null,
     originalLanguage: String? = null,
+    // Phase 150 — this title's own intro/credits segments (R182 Skip Intro / Skip Credits consumes
+    // this; this stage only threads it in).
+    segments: dev.jellystructure.shared.tv.TvSegmentMarkers = dev.jellystructure.shared.tv.TvSegmentMarkers(),
     store: PlayerStore,
     onBack: () -> Unit,
     onNavigateToEpisode: ((String) -> Unit)? = null,
@@ -182,6 +185,8 @@ fun PlayerScreen(
     // loop's resolution/remember logic, which must see the current recomposition's value.
     val currentSeriesId by rememberUpdatedState(seriesId)
     val currentOriginalLanguage by rememberUpdatedState(originalLanguage)
+    // Phase 150 — same staleness risk: the near-end/skip-intro checks (R182) run inside the poll loop.
+    val currentSegments by rememberUpdatedState(segments)
 
     val player = remember { RaviloPlayer() }
 

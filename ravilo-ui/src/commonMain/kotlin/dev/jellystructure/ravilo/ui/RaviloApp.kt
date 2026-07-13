@@ -182,6 +182,8 @@ private sealed class Dest {
         val seriesId: String? = null,
         /** R181/R180 — the title's original-audio language, for the player's "Dubbed" audio badge. */
         val originalLanguage: String? = null,
+        /** Phase 150 — this title's own intro/credits segments (R182 Skip Intro / Skip Credits). */
+        val segments: dev.jellystructure.shared.tv.TvSegmentMarkers = dev.jellystructure.shared.tv.TvSegmentMarkers(),
     ) : Dest()
     data class Settings(val displayName: String) : Dest()
     // Phase R177 — a deliberate sibling to Player (see LiveTvPlayerStore's doc comment): live channels
@@ -759,6 +761,7 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                             displayName = dest.displayName,
                             seriesId = detail.card.id,   // R181 — a movie is its own remembered bucket
                             originalLanguage = detail.originalLanguage,
+                            segments = detail.segments,  // Phase 150
                         ))
                     },
                     onRelatedSelect = { openDetail(it, dest.displayName) },
@@ -796,6 +799,7 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                             currentEpIndex = ctx.currentEpIndex,
                             seriesId      = ctx.seriesId,
                             originalLanguage = ctx.originalLanguage,
+                            segments      = ctx.segments,  // Phase 150
                         ))
                     },
                     onRelatedSelect = { openDetail(it, dest.displayName) },
@@ -827,6 +831,7 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                     currentEpIndex   = dest.currentEpIndex,
                     seriesId         = dest.seriesId,
                     originalLanguage = dest.originalLanguage,
+                    segments         = dest.segments,  // Phase 150
                     store            = store,
                     onBack           = { pop() },
                     onNavigateToEpisode = { nextId ->
@@ -848,6 +853,7 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                             // R181 — same series, same original language, for the whole binge.
                             seriesId         = dest.seriesId,
                             originalLanguage = dest.originalLanguage,
+                            segments         = newEp.segments,  // Phase 150 — the NEW episode's own segments
                         ))
                     },
                 )
