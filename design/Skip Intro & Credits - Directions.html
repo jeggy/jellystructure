@@ -1,0 +1,556 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="design_doc_mode" content="canvas">
+<title>Skip Intro &amp; Credits — Directions</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Sora:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Sora', sans-serif; background: #33353d; }
+  a { color: #7b6ef0; } a:hover { color: #8e82ff; }
+
+  /* ---- token scopes ---- */
+  .rv {
+    --bg:#0a0c13; --ink:#f3f4fb; --ink-soft:#aeb4cb; --ink-dim:#6b7290;
+    --line:rgba(255,255,255,.09); --card:#161a28; --card-2:#1b2031;
+    --accent:#7b6ef0; --accent-2:#3fb6f5; --grad:linear-gradient(120deg,#7b6ef0,#3fb6f5);
+    --ring:#8e82ff; --ring-glow:rgba(123,110,240,.55); --chip:rgba(255,255,255,.10); --good:#2dd49a;
+    --warn:#f5b542; --ease:cubic-bezier(.22,.61,.36,1);
+  }
+  .js {
+    --bg:#16181f; --bg-2:#1a1d25; --fill:#262a37; --fill-2:#20242f; --fill-3:#2f3441;
+    --ink:#dde1ec; --ink-soft:#9aa0b4; --ink-dim:rgba(221,225,236,.32);
+    --line:rgba(255,255,255,.08); --line-2:rgba(255,255,255,.14);
+    --grad:linear-gradient(122deg,#b15cd0 0%,#7b6ef0 48%,#00a4dc 100%);
+    --hi:#7b6ef0; --hi-soft:rgba(123,110,240,.16); --acc-ink:#c6bcfb;
+    --ok:#2dd49a; --ok-soft:rgba(45,212,154,.15); --warn:#f5b542; --warn-soft:rgba(245,181,66,.15);
+    --bad:#ff6f61; --bad-soft:rgba(255,111,97,.15); --info:#3fb6f5; --info-soft:rgba(63,182,245,.15);
+    --ease:cubic-bezier(.22,.61,.36,1);
+  }
+
+  /* ---- canvas scaffolding ---- */
+  .artframe { position: absolute; }
+  .lab { font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:19px; color:#f3f4fb; letter-spacing:-.2px; margin-bottom:4px; display:flex; align-items:center; gap:10px; }
+  .lab .n { font-family:'JetBrains Mono',monospace; font-size:12px; font-weight:700; color:#0a0c13; background:#c6bcfb; padding:2px 7px; border-radius:6px; }
+  .lab .star { color:#f5b542; }
+  .subl { font-size:13.5px; color:#b4b8c6; margin-bottom:14px; max-width:900px; line-height:1.5; }
+  .cap { margin-top:14px; max-width:900px; font-size:13.5px; line-height:1.55; color:#c3c6d2; }
+  .cap b { color:#fff; font-weight:600; }
+  .cap .tag { display:inline-block; font-family:'JetBrains Mono',monospace; font-size:11.5px; background:rgba(255,255,255,.1); color:#dfe2ec; padding:1px 6px; border-radius:5px; }
+  .sectionhead { font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:30px; color:#fff; letter-spacing:-.5px; }
+  .sectionhead .k { font-size:15px; font-weight:600; color:#9aa0b4; font-family:'Sora',sans-serif; letter-spacing:0; margin-left:14px; }
+  .rule { height:2px; background:linear-gradient(90deg,rgba(255,255,255,.22),rgba(255,255,255,0)); margin-top:12px; }
+
+  /* ============ PLAYER STILL ============ */
+  .still { position:relative; width:900px; height:506px; border-radius:16px; overflow:hidden;
+    box-shadow:0 30px 80px rgba(0,0,0,.5); background:#000; color:var(--ink); font-family:'Sora',sans-serif; }
+  .still .vid { position:absolute; inset:0; }
+  .still .grain { position:absolute; inset:0; opacity:.3; mix-blend-mode:overlay;
+    background-image:radial-gradient(rgba(255,255,255,.10) 1px, transparent 1px); background-size:3px 3px; }
+  .still .vig { position:absolute; inset:0; background:radial-gradient(120% 90% at 50% 40%, transparent 42%, rgba(0,0,0,.55) 100%); }
+  .still .scrim { position:absolute; left:0; right:0; bottom:0; height:62%;
+    background:linear-gradient(0deg, rgba(0,0,0,.82) 6%, rgba(0,0,0,.35) 46%, transparent); }
+  .still .scrimtop { position:absolute; left:0; right:0; top:0; height:26%;
+    background:linear-gradient(180deg, rgba(0,0,0,.55), transparent); }
+  .st-meta { position:absolute; left:34px; bottom:34px; z-index:3; }
+  .st-kick { font-size:11px; font-weight:700; letter-spacing:2px; text-transform:uppercase; color:var(--accent-2); margin-bottom:7px; }
+  .st-title { font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:30px; line-height:1; letter-spacing:-.6px; }
+  .st-sub { font-size:13px; color:var(--ink-soft); margin-top:8px; }
+  .st-tl { position:absolute; left:34px; right:34px; bottom:26px; z-index:3; display:flex; align-items:center; gap:12px; }
+  .st-tl .tc { font-family:'JetBrains Mono',monospace; font-size:12px; color:var(--ink); min-width:44px; }
+  .st-tl .tc.dur { color:var(--ink-soft); text-align:right; }
+  .st-bar { flex:1; height:5px; border-radius:4px; background:rgba(255,255,255,.24); position:relative; overflow:hidden; }
+  .st-bar i { position:absolute; left:0; top:0; height:100%; border-radius:4px; background:var(--grad); }
+  .st-corner-note { position:absolute; top:24px; left:34px; z-index:3; display:inline-flex; align-items:center; gap:8px;
+    font-size:11px; font-weight:600; color:var(--ink-soft); background:rgba(0,0,0,.4); border:1px solid var(--line);
+    padding:6px 12px; border-radius:9px; -webkit-backdrop-filter:blur(6px); backdrop-filter:blur(6px); }
+  .st-corner-note .d { width:7px;height:7px;border-radius:50%;background:var(--good); box-shadow:0 0 8px var(--good); }
+
+  /* segment band overlay on the timeline (shows where intro/credits sit) */
+  .seg-intro { position:absolute; top:0; height:100%; background:rgba(142,130,255,.75); }
+  .seg-credit { position:absolute; top:0; height:100%; background:rgba(245,181,66,.85); }
+
+  /* ---- Skip Intro / Credits pill family ---- */
+  .pill { position:absolute; z-index:5; display:inline-flex; align-items:center; gap:12px;
+    height:52px; padding:0 24px; border-radius:14px; font-weight:600; font-size:19px; cursor:default;
+    background:rgba(10,12,19,.6); border:1px solid rgba(255,255,255,.35); color:#fff;
+    -webkit-backdrop-filter:blur(10px); backdrop-filter:blur(10px); box-shadow:0 10px 34px rgba(0,0,0,.5); }
+  .pill svg { width:24px; height:24px; }
+  .pill .kbd { font-family:'JetBrains Mono',monospace; font-size:12px; font-weight:700; padding:3px 8px; border-radius:7px;
+    background:rgba(255,255,255,.16); border:1px solid rgba(255,255,255,.3); color:#fff; margin-left:2px; }
+  .pill.br { right:34px; bottom:96px; }
+  /* focused / primary treatments */
+  .pill.solid { background:#fff; color:#0a0c13; border-color:transparent; box-shadow:0 0 0 4px var(--ring-glow), 0 16px 40px rgba(0,0,0,.5); }
+  .pill.grad { background:var(--grad); color:#fff; border-color:transparent; box-shadow:0 12px 36px rgba(123,110,240,.5); }
+  .pill .autofill { position:absolute; left:0; bottom:0; height:4px; border-radius:0 0 14px 14px; background:var(--accent); width:62%; }
+  .pill.grad .autofill { background:rgba(255,255,255,.9); }
+
+  /* edge tab variant */
+  .edgetab { position:absolute; right:0; bottom:120px; z-index:5; display:inline-flex; align-items:center; gap:12px;
+    height:60px; padding:0 26px 0 22px; border-radius:16px 0 0 16px; font-weight:600; font-size:19px; color:#fff;
+    background:rgba(10,12,19,.72); border:1px solid rgba(255,255,255,.28); border-right:none;
+    -webkit-backdrop-filter:blur(10px); backdrop-filter:blur(10px); box-shadow:-10px 12px 40px rgba(0,0,0,.5); }
+  .edgetab::before { content:''; position:absolute; left:0; top:10px; bottom:10px; width:4px; border-radius:4px; background:var(--grad); }
+  .edgetab svg { width:24px; height:24px; }
+
+  /* small stinger warn badge */
+  .stinger { display:inline-flex; align-items:center; gap:7px; font-size:12px; font-weight:600; color:#0a0c13;
+    background:var(--warn); padding:4px 11px; border-radius:8px; }
+  .stinger.ghost { color:var(--warn); background:rgba(245,181,66,.16); border:1px solid rgba(245,181,66,.4); }
+
+  /* ---- Next-Up / credits card ---- */
+  .nucard { position:absolute; right:34px; bottom:34px; z-index:6; width:520px; padding:22px;
+    background:rgba(14,17,27,.95); border:1px solid var(--line); border-radius:20px;
+    box-shadow:0 40px 120px rgba(0,0,0,.7); -webkit-backdrop-filter:blur(20px); backdrop-filter:blur(20px); }
+  .nu-kick { font-size:11px; font-weight:700; letter-spacing:2px; text-transform:uppercase; color:var(--accent-2); margin-bottom:14px; }
+  .nu-body { display:flex; gap:16px; }
+  .nu-shot { width:172px; height:97px; flex:none; border-radius:10px; overflow:hidden; position:relative; box-shadow:0 10px 26px rgba(0,0,0,.5); }
+  .nu-shot .ring { position:absolute; right:8px; bottom:8px; width:40px; height:40px; }
+  .nu-info { flex:1; min-width:0; }
+  .nu-ep { font-size:12px; font-weight:600; color:var(--ink-soft); margin-bottom:5px; }
+  .nu-title { font-family:'Space Grotesk',sans-serif; font-size:22px; font-weight:700; letter-spacing:-.4px; line-height:1.05; margin-bottom:9px; }
+  .nu-desc { font-size:12.5px; line-height:1.45; color:var(--ink-soft); display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+  .nu-acts { display:flex; gap:10px; margin-top:16px; flex-wrap:wrap; }
+  .nu-btn { height:44px; padding:0 20px; border-radius:11px; display:inline-flex; align-items:center; gap:9px;
+    font-size:15px; font-weight:600; background:var(--chip); color:var(--ink); border:2px solid transparent; }
+  .nu-btn svg { width:19px; height:19px; }
+  .nu-btn.primary { background:#fff; color:#0a0c13; box-shadow:0 0 0 4px var(--ring-glow); }
+  .nu-btn .ct { font-variant-numeric:tabular-nums; opacity:.75; }
+  .ring-bg { fill:none; stroke:rgba(255,255,255,.25); stroke-width:5; }
+  .ring-fg { fill:none; stroke:var(--accent); stroke-width:5; stroke-linecap:round; transform:rotate(-90deg); transform-origin:center; }
+  .ring-num { fill:#fff; font-family:'JetBrains Mono',monospace; font-size:20px; font-weight:700; text-anchor:middle; dominant-baseline:central; }
+
+  /* ============ RAVILO SETTINGS still ============ */
+  .rv-screen { position:relative; width:900px; height:600px; border-radius:16px; overflow:hidden;
+    background:var(--bg); color:var(--ink); box-shadow:0 30px 80px rgba(0,0,0,.5); font-family:'Sora',sans-serif; padding:44px 48px; }
+  .rv-screen::before { content:''; position:absolute; inset:0; background:radial-gradient(80% 60% at 85% 0%, rgba(123,110,240,.16), transparent 60%); pointer-events:none; }
+  .rv-h { font-family:'Space Grotesk',sans-serif; font-size:30px; font-weight:700; letter-spacing:-.6px; }
+  .rv-hsub { font-size:14px; color:var(--ink-soft); margin-top:8px; margin-bottom:28px; }
+  .rv-row { display:flex; align-items:center; gap:20px; padding:22px 0; border-top:1px solid var(--line); }
+  .rv-row:last-child { border-bottom:1px solid var(--line); }
+  .rv-row .ic { width:48px; height:48px; flex:none; border-radius:13px; background:var(--chip); display:flex; align-items:center; justify-content:center; color:var(--accent-2); }
+  .rv-row .ic svg { width:26px; height:26px; }
+  .rv-row .txt { flex:1; min-width:0; }
+  .rv-row .rt { font-size:19px; font-weight:600; }
+  .rv-row .rd { font-size:13px; color:var(--ink-soft); margin-top:4px; line-height:1.4; }
+  .rv-seg { display:inline-flex; gap:4px; padding:4px; border-radius:12px; background:var(--chip); border:1px solid var(--line); flex:none; }
+  .rv-seg button { border:none; font-family:'Sora',sans-serif; font-size:14px; font-weight:600; padding:9px 16px; border-radius:9px; background:transparent; color:var(--ink-soft); cursor:pointer; }
+  .rv-seg button.on { background:#fff; color:#0a0c13; }
+  .rv-toggle { width:54px; height:31px; border-radius:16px; background:var(--grad); position:relative; flex:none; }
+  .rv-toggle::after { content:''; position:absolute; top:3px; right:3px; width:25px; height:25px; border-radius:50%; background:#fff; box-shadow:0 2px 6px rgba(0,0,0,.4); }
+  .rv-toggle.off { background:var(--chip); }
+  .rv-toggle.off::after { right:auto; left:3px; }
+
+  /* ============ ADMIN (jellystructure) ============ */
+  .js-screen { position:relative; background:var(--bg); color:var(--ink); border-radius:16px; overflow:hidden;
+    box-shadow:0 30px 80px rgba(0,0,0,.5); font-family:'Sora',sans-serif; border:1px solid var(--line); }
+  .js-card { background:var(--card-bg,rgba(46,51,66,.74)); border:1px solid var(--line); border-radius:16px; }
+  .chip { display:inline-flex; align-items:center; gap:6px; font-size:11.5px; font-weight:600; padding:4px 10px; border-radius:8px;
+    background:var(--fill-2); border:1px solid var(--line); color:var(--ink-soft); }
+  .chip .d { width:7px; height:7px; border-radius:50%; }
+  .chip.src-heur { color:var(--warn); background:var(--warn-soft); border-color:rgba(245,181,66,.3); }
+  .chip.src-fp { color:var(--acc-ink); background:var(--hi-soft); border-color:rgba(123,110,240,.35); }
+  .chip.src-chap { color:var(--info); background:var(--info-soft); border-color:rgba(63,182,245,.3); }
+  .chip.src-manual { color:var(--ok); background:var(--ok-soft); border-color:rgba(45,212,154,.35); }
+  .btn { display:inline-flex; align-items:center; gap:8px; font-family:'Sora',sans-serif; font-weight:600; font-size:13.5px;
+    padding:9px 16px; border-radius:10px; border:1px solid var(--line-2); background:var(--fill); color:var(--ink); cursor:pointer; }
+  .btn.ghost { background:transparent; }
+  .btn.primary { background:var(--grad); border-color:transparent; color:#fff; }
+  .btn svg { width:16px; height:16px; }
+  .field { font-family:'JetBrains Mono',monospace; font-size:14px; font-weight:600; color:var(--ink);
+    background:var(--fill-2); border:1px solid var(--line-2); border-radius:9px; padding:8px 12px; display:inline-flex; align-items:center; gap:8px; }
+  .field .lbl { font-family:'Sora',sans-serif; font-size:11px; font-weight:600; color:var(--ink-dim); text-transform:uppercase; letter-spacing:.06em; }
+
+  /* admin timeline scrubber */
+  .scrub { position:relative; height:56px; border-radius:12px; background:var(--fill-2); border:1px solid var(--line); overflow:hidden; }
+  .scrub .ticks { position:absolute; inset:0; background-image:repeating-linear-gradient(90deg, rgba(255,255,255,.06) 0 1px, transparent 1px 10%); }
+  .scrub .sintro { position:absolute; top:0; bottom:0; background:rgba(123,110,240,.32); border-left:2px solid var(--hi); border-right:2px solid var(--hi); }
+  .scrub .sintro .h { position:absolute; top:50%; width:14px; height:28px; border-radius:5px; background:var(--hi); transform:translateY(-50%); box-shadow:0 2px 8px rgba(0,0,0,.5); }
+  .scrub .sintro .h.l { left:-8px; } .scrub .sintro .h.r { right:-8px; }
+  .scrub .scred { position:absolute; top:0; bottom:0; width:3px; background:var(--warn); box-shadow:0 0 10px rgba(245,181,66,.7); }
+  .scrub .scred .h { position:absolute; top:50%; left:50%; width:16px; height:30px; border-radius:5px; background:var(--warn); transform:translate(-50%,-50%); box-shadow:0 2px 8px rgba(0,0,0,.5); }
+  .scrub .stg { position:absolute; top:0; bottom:0; width:2px; background:var(--info); }
+  .scrub .lblchip { position:absolute; top:8px; font-size:10.5px; font-weight:700; letter-spacing:.4px; padding:2px 7px; border-radius:6px; white-space:nowrap; }
+
+  .js-eprow { display:flex; align-items:center; gap:18px; padding:16px 20px; }
+  .js-epthumb { width:118px; height:66px; border-radius:9px; flex:none; position:relative; overflow:hidden; box-shadow:0 6px 16px rgba(0,0,0,.4); }
+  .js-epnum { position:absolute; left:9px; top:6px; font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:22px; color:#fff; text-shadow:0 2px 8px rgba(0,0,0,.7); }
+
+  .breakdown-row { display:flex; align-items:center; gap:14px; padding:14px 0; border-top:1px solid var(--line); }
+  .breakdown-row:first-of-type { border-top:none; }
+  .bd-ic { width:40px; height:40px; border-radius:11px; flex:none; display:flex; align-items:center; justify-content:center; }
+  .bd-count { font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:26px; min-width:44px; }
+
+  .set-row { display:flex; align-items:center; gap:16px; padding:18px 0; border-top:1px solid var(--line); }
+  .set-row:first-of-type { border-top:none; }
+  .set-toggle { width:50px; height:29px; border-radius:15px; background:var(--grad); position:relative; flex:none; }
+  .set-toggle::after { content:''; position:absolute; top:3px; right:3px; width:23px; height:23px; border-radius:50%; background:#fff; }
+  .set-toggle.off { background:var(--fill-3); }
+  .set-toggle.off::after { right:auto; left:3px; }
+  .muted { color:var(--ink-soft); }
+  .mono { font-family:'JetBrains Mono',monospace; }
+</style>
+</head>
+<body>
+
+<!-- ================= BRIEF ================= -->
+<div class="artframe" style="left:120px; top:80px; width:1500px;">
+  <div class="lab">Skip Intro &amp; Credits — design brief <span class="n">READ ME</span></div>
+  <div class="js js-card" style="padding:34px 38px; line-height:1.62; font-size:14.5px; color:var(--ink);">
+    <div style="display:flex; gap:40px; flex-wrap:wrap;">
+      <div style="flex:1; min-width:420px;">
+        <div style="font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:20px; color:#fff; margin-bottom:10px;">What this is</div>
+        <p style="color:var(--ink-soft);">A Netflix/Plex-level <b style="color:#fff;">Skip&nbsp;Intro</b> + <b style="color:#fff;">Skip&nbsp;Credits / Next&nbsp;Episode</b> experience for Ravilo, driven by real per-file segment timestamps that jellystructure detects and an admin can correct — grounded in <span class="mono" style="font-size:12.5px;">credits-and-intro-detection-2026-07-13</span>.</p>
+        <div style="font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:20px; color:#fff; margin:22px 0 10px;">Where the numbers come from (4 sources, cheapest→surest)</div>
+        <ul style="color:var(--ink-soft); padding-left:20px; display:flex; flex-direction:column; gap:6px;">
+          <li><span class="chip src-chap" style="vertical-align:middle;">chapter</span> chapter-title pattern match (near-zero cost)</li>
+          <li><span class="chip src-heur" style="vertical-align:middle;">heuristic</span> ffmpeg black-frame + silence (works on movies &amp; single episodes)</li>
+          <li><span class="chip src-fp" style="vertical-align:middle;">fingerprint</span> cross-episode audio match (Skip&nbsp;Intro; ≥2 eps)</li>
+          <li><span class="chip src-manual" style="vertical-align:middle;">manual</span> admin-corrected — <b style="color:#fff;">locked, never overwritten by a scan</b></li>
+        </ul>
+      </div>
+      <div style="flex:1; min-width:420px;">
+        <div style="font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:20px; color:#fff; margin-bottom:10px;">Decisions baked in</div>
+        <ul style="color:var(--ink-soft); padding-left:20px; display:flex; flex-direction:column; gap:8px;">
+          <li><b style="color:#fff;">Prompt-to-skip is the default</b> — a pill you press. An <b style="color:#fff;">Auto-skip</b> mode is a per-user Ravilo setting (your ask).</li>
+          <li><b style="color:#fff;">Stinger-aware.</b> We merge TMDB's <span class="mono" style="font-size:12.5px;">duringcreditsstinger</span> / <span class="mono" style="font-size:12.5px;">aftercreditsstinger</span> tags: when a title has a mid/post-credits scene, Skip Credits <b style="color:#fff;">never blindly skips past it</b> — it offers "Skip to scene" and auto-skip is suppressed.</li>
+          <li><b style="color:#fff;">Graceful fallback.</b> Any title with no detected timestamp behaves <b style="color:#fff;">exactly as today</b> (Next-Up card at 34s from end). The feature can only ever improve, never regress.</li>
+          <li><b style="color:#fff;">Admin lives on the detail page</b> — the single editing surface, matching Artwork / Tracks / write-through editing.</li>
+        </ul>
+        <div style="margin-top:18px; padding:12px 16px; border-radius:12px; background:var(--hi-soft); border:1px solid rgba(123,110,240,.3); font-size:13px; color:var(--acc-ink);">
+          <b>Pick per row.</b> These are atomic options to mix &amp; match — a pill style from A, a credits model from B, then I wire your picks into the live <span class="mono" style="font-size:12px;">Ravilo&nbsp;TV.html</span> + admin series detail.
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ================= SECTION A ================= -->
+<div class="artframe" style="left:120px; top:620px; width:3810px;">
+  <div class="sectionhead">A · Ravilo — Skip Intro affordance <span class="k">4 variations · appears only while position is inside the detected intro window</span></div>
+  <div class="rule"></div>
+</div>
+
+<!-- A1 -->
+<div class="artframe rv" style="left:120px; top:720px;">
+  <div class="lab">A1 · By-the-book pill</div>
+  <div class="subl">The safe Netflix default: a quiet translucent pill, bottom-right, one press seeks to intro-end.</div>
+  <div class="still">
+    <div class="vid" style="background:linear-gradient(135deg,#241a4d,#0f2a45 60%,#0a0c13);"></div>
+    <div class="grain"></div><div class="vig"></div><div class="scrimtop"></div><div class="scrim"></div>
+    <div class="st-corner-note"><span class="d"></span>Intro · 0:12–1:38</div>
+    <div class="pill br"><span class="mono" style="font-size:12px; opacity:.85;">↵</span> Skip Intro</div>
+    <div class="st-meta"><div class="st-kick">The Sopranos</div><div class="st-title">College</div><div class="st-sub">S1:E5 · 55 min</div></div>
+    <div class="st-tl"><div class="tc">1:04</div>
+      <div class="st-bar"><span class="seg-intro" style="left:0.4%; width:5%;"></span><i style="width:2%;"></i></div>
+      <div class="tc dur">55:00</div></div>
+  </div>
+  <div class="cap"><b>Placement</b> bottom-right, above the transport. <b>Motion</b> fades in at intro start, auto-hides with chrome. <b>Focus</b> is pre-placed on it, so one <span class="tag">OK</span> skips. Lowest-risk, reads on every skin.</div>
+</div>
+
+<!-- A2 -->
+<div class="artframe rv" style="left:1090px; top:720px;">
+  <div class="lab">A2 · Glass pill + auto-fill</div>
+  <div class="subl">Same pill, plus a thin accent line that fills — the visible countdown for <b>Auto-skip</b> mode.</div>
+  <div class="still">
+    <div class="vid" style="background:linear-gradient(135deg,#0d3b2e,#0a2036 55%,#0a0c13);"></div>
+    <div class="grain"></div><div class="vig"></div><div class="scrimtop"></div><div class="scrim"></div>
+    <div class="st-corner-note"><span class="d" style="background:var(--accent);box-shadow:0 0 8px var(--accent);"></span>Auto-skip in 3s</div>
+    <div class="pill br" style="border-color:rgba(255,255,255,.5);">
+      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 5v14l9-7z"/><rect x="16" y="5" width="3" height="14" rx="1"/></svg>
+      Skip Intro <span class="autofill"></span></div>
+    <div class="st-meta"><div class="st-kick">Offboarding</div><div class="st-title">Good News About Mondays</div><div class="st-sub">S1:E2 · 49 min</div></div>
+    <div class="st-tl"><div class="tc">1:22</div>
+      <div class="st-bar"><span class="seg-intro" style="left:1%; width:6%;"></span><i style="width:3%;"></i></div>
+      <div class="tc dur">49:00</div></div>
+  </div>
+  <div class="cap"><b>Dual-purpose:</b> in Prompt mode the fill is hidden; in Auto mode it fills over ~4s so a skip is never a jarring jump-cut and stays cancellable. Same footprint as A1.</div>
+</div>
+
+<!-- A3 -->
+<div class="artframe rv" style="left:2060px; top:720px;">
+  <div class="lab">A3 · Edge tab</div>
+  <div class="subl">Anchored to the screen edge and sliding in — reads as a "drawer handle", very low visual weight.</div>
+  <div class="still">
+    <div class="vid" style="background:linear-gradient(135deg,#3a1526,#241033 55%,#0a0c13);"></div>
+    <div class="grain"></div><div class="vig"></div><div class="scrimtop"></div><div class="scrim"></div>
+    <div class="st-corner-note"><span class="d"></span>Intro · 0:00–1:12</div>
+    <div class="edgetab">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 4l8 8-8 8"/><path d="M15 4v16"/></svg>
+      Skip Intro</div>
+    <div class="st-meta"><div class="st-kick">Stranger Things</div><div class="st-title">Chapter One</div><div class="st-sub">S1:E1 · 48 min</div></div>
+    <div class="st-tl"><div class="tc">0:38</div>
+      <div class="st-bar"><span class="seg-intro" style="left:0%; width:4.5%;"></span><i style="width:1.3%;"></i></div>
+      <div class="tc dur">48:00</div></div>
+  </div>
+  <div class="cap"><b>Motion</b> slides in from the right edge, retracts on skip or when the window ends. Distinct from the transport controls so it never competes for the same focus lane. Slightly more novel.</div>
+</div>
+
+<!-- A4 -->
+<div class="artframe rv" style="left:3030px; top:720px;">
+  <div class="lab">A4 · Premium gradient <span class="star">★</span></div>
+  <div class="subl">The most "premium" read: Aurora-gradient fill with a key hint. Highest emphasis, still tasteful.</div>
+  <div class="still">
+    <div class="vid" style="background:linear-gradient(135deg,#12203f,#301a44 60%,#0a0c13);"></div>
+    <div class="grain"></div><div class="vig"></div><div class="scrimtop"></div><div class="scrim"></div>
+    <div class="st-corner-note"><span class="d"></span>Intro · 0:20–1:44</div>
+    <div class="pill br grad">
+      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 5v14l9-7z"/><rect x="16" y="5" width="3" height="14" rx="1"/></svg>
+      Skip Intro <span class="kbd">OK</span><span class="autofill"></span></div>
+    <div class="st-meta"><div class="st-kick">The Last of Us</div><div class="st-title">Long, Long Time</div><div class="st-sub">S1:E3 · 76 min</div></div>
+    <div class="st-tl"><div class="tc">0:52</div>
+      <div class="st-bar"><span class="seg-intro" style="left:0.6%; width:5.5%;"></span><i style="width:1.8%;"></i></div>
+      <div class="tc dur">76:00</div></div>
+  </div>
+  <div class="cap"><b>Gradient</b> uses the live skin's <span class="tag">--grad</span> so it recolors on Midnight/Noir automatically. Carries the D-pad <span class="tag">OK</span> hint inline. Best when Skip Intro should feel like a marquee feature.</div>
+</div>
+
+<!-- ================= SECTION B ================= -->
+<div class="artframe" style="left:120px; top:1500px; width:3810px;">
+  <div class="sectionhead">B · Ravilo — Skip Credits ↔ Next Episode <span class="k">how the end-of-content moment works · pick one model · B4 is the stinger layer on top</span></div>
+  <div class="rule"></div>
+</div>
+
+<!-- B1 -->
+<div class="artframe rv" style="left:120px; top:1600px;">
+  <div class="lab">B1 · Retarget only</div>
+  <div class="subl">Keep today's Next-Up card &amp; countdown — just fire it at real <span class="tag">creditsStart</span> instead of 34s-from-end.</div>
+  <div class="still">
+    <div class="vid" style="background:linear-gradient(135deg,#101a33,#0a0c13);"></div>
+    <div class="grain"></div><div class="vig"></div><div class="scrim"></div>
+    <div class="nucard">
+      <div class="nu-kick">Up Next</div>
+      <div class="nu-body">
+        <div class="nu-shot"><div style="position:absolute;inset:0;background:linear-gradient(135deg,#2a1c4d,#123047);"></div>
+          <svg class="ring" viewBox="0 0 56 56"><circle class="ring-bg" cx="28" cy="28" r="23"/><circle class="ring-fg" cx="28" cy="28" r="23" style="stroke-dasharray:144.5; stroke-dashoffset:54;"/><text class="ring-num" x="28" y="29">5</text></svg></div>
+        <div class="nu-info"><div class="nu-ep">S1:E6</div><div class="nu-title">Pax Soprana</div>
+          <div class="nu-desc">Tony deals with the fallout as Junior settles into his new role.</div>
+          <div class="nu-acts"><div class="nu-btn primary"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>Play <span class="ct">in 5s</span></div>
+            <div class="nu-btn">Watch credits</div></div></div>
+      </div>
+    </div>
+    <div class="st-tl"><div class="tc">52:10</div>
+      <div class="st-bar"><i style="width:95%;"></i><span class="seg-credit" style="left:95%; width:5%;"></span></div>
+      <div class="tc dur">55:00</div></div>
+  </div>
+  <div class="cap"><b>Smallest change.</b> One affordance, no new UI. The card simply appears when credits actually start (often minutes earlier than today). Doesn't offer an in-place "keep watching just the credits" beyond the existing dismiss.</div>
+</div>
+
+<!-- B2 -->
+<div class="artframe rv" style="left:1090px; top:1600px;">
+  <div class="lab">B2 · Two moments</div>
+  <div class="subl">A quiet <b>Skip Credits</b> pill at credits-start (mirrors Skip Intro), <b>then</b> the Next-Up card near the very end.</div>
+  <div class="still">
+    <div class="vid" style="background:linear-gradient(135deg,#0d2b24,#0a0c13);"></div>
+    <div class="grain"></div><div class="vig"></div><div class="scrim"></div>
+    <div class="pill br"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 5v14l9-7z"/><rect x="16" y="5" width="3" height="14" rx="1"/></svg> Skip Credits</div>
+    <div class="st-meta"><div class="st-kick">Offboarding</div><div class="st-title">Credits rolling…</div><div class="st-sub">Ends in 2:40</div></div>
+    <div class="st-tl"><div class="tc">46:20</div>
+      <div class="st-bar"><i style="width:82%;"></i><span class="seg-credit" style="left:82%; width:18%;"></span></div>
+      <div class="tc dur">49:00</div></div>
+  </div>
+  <div class="cap"><b>Most symmetrical</b> with Skip Intro — same pill vocabulary at both ends. Skip Credits jumps straight to the next episode's start (or the end card). Two distinct moments = two chances, but slightly more UI.</div>
+</div>
+
+<!-- B3 -->
+<div class="artframe rv" style="left:2060px; top:1600px;">
+  <div class="lab">B3 · Merged card</div>
+  <div class="subl">One combined moment at credits-start: the Next-Up card whose primary action is "Skip credits &amp; play next".</div>
+  <div class="still">
+    <div class="vid" style="background:linear-gradient(135deg,#2a1230,#0a0c13);"></div>
+    <div class="grain"></div><div class="vig"></div><div class="scrim"></div>
+    <div class="nucard">
+      <div class="nu-kick">Credits · Up Next</div>
+      <div class="nu-body">
+        <div class="nu-shot"><div style="position:absolute;inset:0;background:linear-gradient(135deg,#3a1c40,#1a2c4d);"></div>
+          <svg class="ring" viewBox="0 0 56 56"><circle class="ring-bg" cx="28" cy="28" r="23"/><circle class="ring-fg" cx="28" cy="28" r="23" style="stroke-dasharray:144.5; stroke-dashoffset:90;"/><text class="ring-num" x="28" y="29">7</text></svg></div>
+        <div class="nu-info"><div class="nu-ep">S1:E3</div><div class="nu-title">The Perfect Storm</div>
+          <div class="nu-desc">The team regroups after an unexpected loss changes everything.</div>
+          <div class="nu-acts"><div class="nu-btn primary"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 5v14l9-7z"/><rect x="16" y="5" width="3" height="14" rx="1"/></svg>Skip credits <span class="ct">· 7s</span></div>
+            <div class="nu-btn">Watch credits</div></div></div>
+      </div>
+    </div>
+    <div class="st-tl"><div class="tc">44:05</div>
+      <div class="st-bar"><i style="width:80%;"></i><span class="seg-credit" style="left:80%; width:20%;"></span></div>
+      <div class="tc dur">49:00</div></div>
+  </div>
+  <div class="cap"><b>Fewest decisions for the viewer</b> — skipping credits and starting the next episode are the same button. Richest single moment; the countdown still auto-advances if untouched.</div>
+</div>
+
+<!-- B4 -->
+<div class="artframe rv" style="left:3030px; top:1600px;">
+  <div class="lab">B4 · Stinger-aware <span class="star">★</span></div>
+  <div class="subl">The TMDB-tag layer over B1–B3: when a title has a mid/post-credits scene, we protect it.</div>
+  <div class="still">
+    <div class="vid" style="background:linear-gradient(135deg,#132038,#0a0c13);"></div>
+    <div class="grain"></div><div class="vig"></div><div class="scrim"></div>
+    <div class="nucard" style="width:540px;">
+      <div class="nu-kick" style="color:var(--warn); display:flex; align-items:center; gap:9px;">
+        <span class="stinger"><svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l2.4 7.4H22l-6 4.5 2.3 7.4-6.3-4.6-6.3 4.6L7.9 13.9 2 9.4h7.6z"/></svg> Scene after the credits</span>
+      </div>
+      <div class="nu-body">
+        <div class="nu-shot"><div style="position:absolute;inset:0;background:linear-gradient(135deg,#1c2c4d,#3a1c40);"></div></div>
+        <div class="nu-info"><div class="nu-ep">Marvel · TMDB <span class="mono" style="font-size:11px;">aftercreditsstinger</span></div>
+          <div class="nu-title" style="font-size:20px;">There's more after this</div>
+          <div class="nu-desc">Auto-skip is paused for this title so you don't miss the extra scene.</div>
+          <div class="nu-acts">
+            <div class="nu-btn primary" style="box-shadow:0 0 0 4px rgba(245,181,66,.4); background:var(--warn); color:#0a0c13;">Skip to scene <span class="ct">3:58</span></div>
+            <div class="nu-btn">Next episode</div></div></div>
+      </div>
+    </div>
+    <div class="st-tl"><div class="tc">1:52:30</div>
+      <div class="st-bar"><i style="width:70%;"></i><span class="seg-credit" style="left:70%; width:26%;"></span><span class="seg-intro" style="left:96%; width:4%; background:var(--warn);"></span></div>
+      <div class="tc dur">2:04:00</div></div>
+  </div>
+  <div class="cap"><b>The premium differentiator.</b> Merging <span class="tag">duringcreditsstinger</span>/<span class="tag">aftercreditsstinger</span>: instead of skipping the whole roll, we offer <b>Skip to scene</b> and disable silent auto-skip — so a Marvel-style tag is never skipped past. Layers onto whichever of B1–B3 you choose.</div>
+</div>
+
+<!-- ================= SECTION C ================= -->
+<div class="artframe" style="left:120px; top:2380px; width:1900px;">
+  <div class="sectionhead">C · Ravilo — the per-user setting <span class="k">your ask: Prompt-to-skip default, with an Auto option, per profile</span></div>
+  <div class="rule"></div>
+</div>
+
+<div class="artframe rv" style="left:120px; top:2480px;">
+  <div class="lab">C1 · Settings → Playback</div>
+  <div class="subl">Lives with the existing Behaviour &amp; preferences (Language / Theme). Device-local per profile (matches R181).</div>
+  <div class="rv-screen">
+    <div class="rv-h">Playback</div>
+    <div class="rv-hsub">How intros, credits and the next episode behave on this profile.</div>
+    <div class="rv-row">
+      <div class="ic"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 5v14l9-7z"/><rect x="16" y="5" width="3" height="14" rx="1"/></svg></div>
+      <div class="txt"><div class="rt">Skip intros</div><div class="rd">Show a Skip button, jump automatically, or leave intros alone.</div></div>
+      <div class="rv-seg"><button>Off</button><button class="on">Prompt</button><button>Auto</button></div>
+    </div>
+    <div class="rv-row">
+      <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="3"/><path d="M7 15c1-2 3-2 4 0M14 15c1-2 3-2 4 0"/></svg></div>
+      <div class="txt"><div class="rt">Skip credits</div><div class="rd">Titles with a scene after the credits are always protected.</div></div>
+      <div class="rv-seg"><button>Off</button><button class="on">Prompt</button><button>Auto</button></div>
+    </div>
+    <div class="rv-row">
+      <div class="ic"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 5v14l9-7z"/><rect x="16" y="5" width="3" height="14" rx="1"/></svg></div>
+      <div class="txt"><div class="rt">Autoplay next episode</div><div class="rd">Roll into the next episode when one is up.</div></div>
+      <div class="rv-toggle"></div>
+    </div>
+  </div>
+  <div class="cap"><b>Three states, not a bare toggle:</b> <b>Off</b> (never intrude) · <b>Prompt</b> (pill, the default) · <b>Auto</b> (A2's auto-fill countdown). Credits row mirrors it and states the stinger guarantee inline.</div>
+</div>
+
+<!-- ================= SECTION D ================= -->
+<div class="artframe" style="left:120px; top:3260px; width:3000px;">
+  <div class="sectionhead">D · jellystructure — manage &amp; correct segments <span class="k">on the series/movie detail page · the single editing surface</span></div>
+  <div class="rule"></div>
+</div>
+
+<!-- D1 scrubber -->
+<div class="artframe js" style="left:120px; top:3360px;">
+  <div class="lab">D1 · Segment scrubber on the episode row</div>
+  <div class="subl">Expands from the Seasons &amp; episodes row (adjacent to the Phase-149 chapter view). Drag the intro range and the credits point, or type exact timestamps; write-through, no Save button.</div>
+  <div class="js-screen" style="width:1560px;">
+    <!-- row header -->
+    <div class="js-eprow" style="border-bottom:1px solid var(--line);">
+      <div class="js-epthumb"><div style="position:absolute;inset:0;background:linear-gradient(135deg,#2a1c4d,#123047);"></div><span class="js-epnum">5</span></div>
+      <div style="flex:1; min-width:0;">
+        <div style="font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:19px;">5 · College</div>
+        <div style="font-size:13px; color:var(--ink-soft); margin-top:3px;">22:41 · <span class="mono">S01E05</span> · aired 1999-01-24</div>
+      </div>
+      <span class="chip src-heur"><span class="d" style="background:var(--warn);"></span>heuristic · 0.72</span>
+      <span class="chip" style="color:var(--info); background:var(--info-soft); border-color:rgba(63,182,245,.3);"><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l2.4 7.4H22l-6 4.5 2.3 7.4-6.3-4.6-6.3 4.6L7.9 13.9 2 9.4h7.6z"/></svg> TMDB: after-credits scene</span>
+    </div>
+    <!-- expanded body -->
+    <div style="padding:24px 26px;">
+      <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:12px;">
+        <div style="font-size:12px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--ink-dim);">Segment timeline</div>
+        <div style="display:flex; gap:12px; align-items:center;">
+          <span style="display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--ink-soft);"><span style="width:12px;height:12px;border-radius:3px;background:var(--hi);"></span>Intro</span>
+          <span style="display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--ink-soft);"><span style="width:12px;height:12px;border-radius:3px;background:var(--warn);"></span>Credits start</span>
+          <span style="display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--ink-soft);"><span style="width:12px;height:12px;border-radius:3px;background:var(--info);"></span>Stinger</span>
+        </div>
+      </div>
+      <div class="scrub">
+        <div class="ticks"></div>
+        <div class="sintro" style="left:3%; width:7%;"><span class="h l"></span><span class="h r"></span></div>
+        <span class="lblchip" style="left:3%; background:var(--hi-soft); color:var(--acc-ink);">0:41 → 2:20</span>
+        <div class="scred" style="left:88%;"><span class="h"></span></div>
+        <span class="lblchip" style="left:74.5%; background:var(--warn-soft); color:var(--warn);">Credits 20:02</span>
+        <div class="stg" style="left:97%;"></div>
+      </div>
+      <div style="display:flex; align-items:center; gap:12px; margin-top:11px; font-family:'JetBrains Mono',monospace; font-size:11px; color:var(--ink-dim);">
+        <span>0:00</span><span style="flex:1; text-align:center;">frame preview follows the dragged marker →</span><span>22:41</span>
+      </div>
+      <!-- numeric + actions -->
+      <div style="display:flex; align-items:flex-end; gap:14px; margin-top:20px; flex-wrap:wrap;">
+        <div style="display:flex; flex-direction:column; gap:6px;"><span class="field lbl">Intro start</span><span class="field">0:41</span></div>
+        <div style="display:flex; flex-direction:column; gap:6px;"><span class="field lbl">Intro end</span><span class="field">2:20</span></div>
+        <div style="display:flex; flex-direction:column; gap:6px;"><span class="field lbl">Credits start</span><span class="field">20:02</span></div>
+        <div style="flex:1;"></div>
+        <button class="btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg>Re-scan</button>
+        <button class="btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>Lock manual</button>
+        <button class="btn primary"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>Preview in player</button>
+      </div>
+      <div style="margin-top:16px; padding:11px 15px; border-radius:11px; background:var(--warn-soft); border:1px solid rgba(245,181,66,.3); font-size:12.5px; color:var(--ink); line-height:1.5;">
+        <b style="color:var(--warn);">Detected by heuristic (confidence 0.72).</b> Dragging any marker sets the source to <span class="chip src-manual" style="vertical-align:middle;">manual</span> and locks it — future scans won't overwrite. TMDB flags an <b>after-credits scene</b>, so Ravilo will offer "Skip to scene" rather than skipping past it.
+      </div>
+    </div>
+  </div>
+  <div class="cap"><b>Source badge + confidence</b> tell the admin how much to trust an auto-detection at a glance. Everything is write-through (Phase 71/74). The stinger tag surfaces here too, so admin and viewer see one consistent truth.</div>
+</div>
+
+<!-- D2 triage -->
+<div class="artframe js" style="left:1800px; top:3360px;">
+  <div class="lab">D2 · Triage entry</div>
+  <div class="subl">On the Dashboard breakdown + Triage dock (Phase 144 pattern) — a global, actionable queue.</div>
+  <div class="js-card" style="width:640px; padding:26px 28px;">
+    <div style="display:flex; align-items:center; gap:10px; margin-bottom:6px;">
+      <div style="font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:19px; color:var(--ink);">Intro &amp; credits detection</div>
+      <span class="chip" style="margin-left:auto;">307 titles</span>
+    </div>
+    <div style="font-size:13px; color:var(--ink-soft); margin-bottom:14px;">Segment coverage across the library.</div>
+    <div class="breakdown-row">
+      <div class="bd-ic" style="background:var(--ok-soft); color:var(--ok);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></div>
+      <div class="bd-count" style="color:var(--ok);">241</div>
+      <div style="flex:1;"><div style="font-weight:600; font-size:15px;">Detected</div><div style="font-size:12.5px; color:var(--ink-soft);">chapter, heuristic or fingerprint</div></div>
+    </div>
+    <div class="breakdown-row">
+      <div class="bd-ic" style="background:var(--warn-soft); color:var(--warn);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9 2 18a2 2 0 0 0 1.7 3h16.6a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg></div>
+      <div class="bd-count" style="color:var(--warn);">38</div>
+      <div style="flex:1;"><div style="font-weight:600; font-size:15px;">Low confidence</div><div style="font-size:12.5px; color:var(--ink-soft);">heuristic &lt; 0.6 — worth an eyeball</div></div>
+      <button class="btn ghost" style="font-size:12.5px;">Review</button>
+    </div>
+    <div class="breakdown-row">
+      <div class="bd-ic" style="background:var(--bad-soft); color:var(--bad);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8v5M12 16h.01"/><circle cx="12" cy="12" r="9"/></svg></div>
+      <div class="bd-count" style="color:var(--bad);">28</div>
+      <div style="flex:1;"><div style="font-weight:600; font-size:15px;">No segments</div><div style="font-size:12.5px; color:var(--ink-soft);">falls back to 34s-from-end</div></div>
+      <button class="btn ghost" style="font-size:12.5px;">Review</button>
+    </div>
+  </div>
+  <div class="cap"><b>Pure predicate</b> over the stored fields — no new subsystem. Clicking a row opens the Library filtered to those titles.</div>
+</div>
+
+<!-- D3 settings -->
+<div class="artframe js" style="left:1800px; top:3900px;">
+  <div class="lab">D3 · Settings toggle</div>
+  <div class="subl">Settings → a Playback section. The pipeline step is off by default; fingerprinting is its own opt-in.</div>
+  <div class="js-card" style="width:640px; padding:26px 28px;">
+    <div style="font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:18px; margin-bottom:4px;">Intro &amp; credits detection</div>
+    <div style="font-size:13px; color:var(--ink-soft); margin-bottom:8px;">Adds a <span class="mono" style="font-size:12px;">detect_segments</span> step to the scan pipeline.</div>
+    <div class="set-row">
+      <div style="flex:1;"><div style="font-weight:600; font-size:15px;">Detect segments on scan</div><div style="font-size:12.5px; color:var(--ink-soft); margin-top:3px;">Chapter titles + ffmpeg black/silence. Works on movies and episodes.</div></div>
+      <div class="set-toggle"></div>
+    </div>
+    <div class="set-row">
+      <div style="flex:1;"><div style="font-weight:600; font-size:15px; display:flex; align-items:center; gap:8px;">Cross-episode intro fingerprinting <span class="chip src-fp" style="font-size:10.5px;">heavier</span></div><div style="font-size:12.5px; color:var(--ink-soft); margin-top:3px;">Audio-matches episodes in a season to find intros. Needs <span class="mono" style="font-size:11.5px;">fpcalc</span>.</div></div>
+      <div class="set-toggle off"></div>
+    </div>
+    <div class="set-row">
+      <div style="flex:1;"><div style="font-weight:600; font-size:15px;">Trust TMDB stinger tags</div><div style="font-size:12.5px; color:var(--ink-soft); margin-top:3px;">Protect titles tagged <span class="mono" style="font-size:11.5px;">during/aftercreditsstinger</span> from auto-skip.</div></div>
+      <div class="set-toggle"></div>
+    </div>
+  </div>
+  <div class="cap"><b>Two independent gates:</b> the cheap heuristic pass, and the heavier fingerprinting — following the existing per-step pipeline config shape.</div>
+</div>
+
+</body>
+</html>

@@ -389,13 +389,16 @@
     const toast = m => (window.__toast ? window.__toast(m) : 0);
 
     // global defaults every user starts from
-    const GLOBAL = { lang: 'en', skin: 'aurora', tile: 'poster', progress: true, reqlang: 'nordic' };
-    const ORDER  = { lang: ['en', 'da', 'fo'], skin: ['aurora', 'midnight', 'noir'], tile: ['poster', 'wide', 'square'], reqlang: ['original', 'nordic'] };
+    const GLOBAL = { lang: 'en', skin: 'aurora', tile: 'poster', progress: true, reqlang: 'nordic', skipIntro: 'prompt', skipCredits: 'prompt', skipSecs: '6', autoplay: true };
+    const ORDER  = { lang: ['en', 'da', 'fo'], skin: ['aurora', 'midnight', 'noir'], tile: ['poster', 'wide', 'square'], reqlang: ['original', 'nordic'], skipIntro: ['off', 'prompt', 'auto'], skipCredits: ['off', 'prompt', 'auto'], skipSecs: ['4', '6', '8'] };
     const SHORT  = {
       lang: { en: 'English', da: 'Dansk', fo: 'Føroyskt' },
       skin: { aurora: 'Aurora', midnight: 'Midnight', noir: 'Noir' },
       tile: { poster: 'Poster', wide: 'Wide', square: 'Square' },
       reqlang: { original: 'Original', nordic: 'Dansk / Nordic' },
+      skipIntro: { off: 'Off', prompt: 'Prompt', auto: 'Auto' },
+      skipCredits: { off: 'Off', prompt: 'Prompt', auto: 'Auto' },
+      skipSecs: { '4': '4s', '6': '6s', '8': '8s' },
     };
     const FULL = {
       lang: { en: 'English', da: 'Danish (Dansk)', fo: 'Faroese (Føroyskt)' },
@@ -403,6 +406,10 @@
       tile: { poster: 'Standard poster', wide: 'Wide landscape', square: 'Square' },
       progress: { true: 'On', false: 'Off' },
       reqlang: { original: 'Original (standard release)', nordic: 'Dansk / Nordic release' },
+      skipIntro: { off: 'Off', prompt: 'Show a Skip button', auto: 'Skip automatically' },
+      skipCredits: { off: 'Off', prompt: 'Show a Skip button', auto: 'Skip automatically' },
+      skipSecs: { '4': '4 seconds', '6': '6 seconds', '8': '8 seconds' },
+      autoplay: { true: 'On', false: 'Off' },
     };
     const DEFS = [
       { key: 'lang', name: 'Interface language', device: true,
@@ -415,6 +422,14 @@
         desc: 'Show a resume-position bar under in-progress tiles.' },
       { key: 'reqlang', name: 'Default request language', device: false,
         desc: 'Which language a Request grabs by default — the standard release or the Nordic/Danish one (usually incl. English). The viewer can still pick a different language when they request, and switch a waiting request later.' },
+      { key: 'skipIntro', name: 'Skip intros', device: false, group: 'Playback',
+        desc: 'When a detected intro is playing: show a <b>Skip Intro</b> button (Prompt), jump past it silently (Auto), or leave intros alone (Off). Needs intro detection enabled in <b>Settings → Playback</b>.' },
+      { key: 'skipCredits', name: 'Skip credits', device: false,
+        desc: 'At the credits: offer <b>Skip credits / Next episode</b> (Prompt), skip automatically (Auto), or Off. Titles TMDB flags with a scene after the credits are <b>always protected</b> from auto-skip.' },
+      { key: 'skipSecs', name: 'Skip button countdown', device: false,
+        desc: 'How long the Skip button stays on screen before it tucks away. It reappears whenever the viewer opens the player controls, and stays until the intro ends.' },
+      { key: 'autoplay', name: 'Autoplay next episode', device: false,
+        desc: 'Roll straight into the next episode when the credits card counts down.' },
     ];
 
     let ctx = { scope: 'global', user: null };
@@ -425,8 +440,8 @@
       return ov ? ov.val : GLOBAL[def.key];
     }
     function ctlHTML(def, value, active) {
-      if (def.key === 'progress')
-        return '<span class="toggle' + (value ? ' on' : '') + (active ? '' : ' beh-ro') + '" data-ctl="progress"></span>';
+      if (def.key === 'progress' || def.key === 'autoplay')
+        return '<span class="toggle' + (value ? ' on' : '') + (active ? '' : ' beh-ro') + '" data-ctl="' + def.key + '"></span>';
       const opts = ORDER[def.key].map(v =>
         '<button class="' + (v === value ? 'on' : '') + '" data-key="' + def.key + '" data-val="' + v + '"' + (active ? '' : ' disabled') + '>' + SHORT[def.key][v] + '</button>'
       ).join('');
@@ -483,8 +498,8 @@
     list.addEventListener('click', e => {
       const opt = e.target.closest('button[data-key]');
       if (opt && !opt.disabled) { setVal(opt.dataset.key, opt.dataset.val); return; }
-      const tog = e.target.closest('.toggle[data-ctl="progress"]');
-      if (tog && !tog.classList.contains('beh-ro')) { setVal('progress', !resolved({ key: 'progress' }, ctx.user)); return; }
+      const tog = e.target.closest('.toggle[data-ctl]');
+      if (tog && !tog.classList.contains('beh-ro')) { const k = tog.dataset.ctl; setVal(k, !resolved({ key: k }, ctx.user)); return; }
       const rs = e.target.closest('[data-reset]');
       if (rs) reset(rs.dataset.reset);
     });

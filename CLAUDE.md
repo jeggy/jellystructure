@@ -48,11 +48,45 @@ GitHub is the **source of truth**; we layer designs on top of it.
   targets: `app/series-johnnybravo.html` (combined file rows + per-episode artwork picker),
   `ravilo/Ravilo TV.html` + `ravilo/Ravilo Mobile.html` (triptych combined card, Option B);
   exploration in `Multi-Episode Files.html` + `Multi-Episode Files - Option B.html`.
+- **R180 (flag-forward Audio & Subtitles picker) + R181 (default & remembered tracks)** —
+  both `Planned`, design-authored. **R180** (the in-player picker redesign — flag-forward flat
+  list, jargon-free badges, keep every track, selected-track flag per tab, D-pad scroll-follow)
+  is design-complete in `ravilo/` (`ravilo-player.js`/`ravilo-player.css`; exploration in
+  `Audio & Subtitles Picker.html`). **R181** is the behaviour *beneath* that picker — silent
+  default-track resolution (source `isDefault` over track 0) plus device-local, per-profile
+  memory of the viewer's audio/subtitle language choices (per-series + learned global,
+  carried across a binge; never sent to the backend). R181 is **spec-only** (the memory is
+  invisible; only an optional reset affordance would add UI) — no dedicated mockup, and it
+  has an open design decision (layered per-series-over-global vs global-only vs per-title) to
+  confirm before build. Neither has a `STATUS.md` row yet.
+- **150 (intro & credits segment detection) + R182 (Skip Intro / Skip Credits)** — both `Planned`,
+  design-authored 2026-07-13, graduated from the `credits-and-intro-detection-2026-07-13` research
+  report. **150** is the admin/backend half: a `detect_segments` scan-pipeline step (chapter-title
+  match → ffmpeg black/silence credits heuristic → cross-episode audio fingerprinting for intros,
+  ported from Intro Skipper GPL), a nullable-JSON `SegmentMarkers` model (no migration), the TMDB
+  `during/aftercreditsstinger` merge, a per-episode/movie **segment scrubber** on the detail page
+  (source+confidence badges, Re-scan, Lock, write-through), triage entries + Settings toggles, and the
+  DTO trip to the player. **R182** is the Ravilo half: a visibility-countdown **Skip Intro** pill and a
+  **stinger-aware credits card** (always “Watch credits” + one of Skip-to-scene → Next Episode → Skip
+  credits; movies never show Next Episode), with behaviour (Prompt/Auto/Off + countdown + autoplay)
+  configured jellystructure-side in Ravilo config → Preferences (not in the app), and graceful fallback
+  to today's behaviour when unscanned. R182 depends on 150. Design is **wired into the live apps**
+  (`ravilo/ravilo-player.js`/`.css` + `ravilo-app.js`; `app/series-simpsons.html` + `detail.css`;
+  `app/ravilo-config.html`; `app/settings.html`; `app/index.html`); exploration in
+  `Skip Intro & Credits - Directions.html`. Neither has a `STATUS.md` row yet.
 - Recent landings: Live TV (147 + R177), Seerr pivot (136/137 + R170/R171), request-language
   steering (139 + R172), Workbench query blocks (140), HDR tone-map fix (R173), grid-columns
   config (R174), cover-as-video (144), event-driven pipeline (145).
 - **2026-07-12 sync:** re-pulled the `specs/` mirror + `STATUS.md` from repo `main`. Design now
   matches shipped code across admin 0–148 / Ravilo R01–R178, plus the design-complete 149/R179.
+- **2026-07-13 sync:** re-pulled the full `specs/` mirror + `STATUS.md` from repo `main`. Only
+  change since the last sync is the **new R181 spec** (`phase-R181-default-and-remembered-tracks.md`);
+  everything else was unchanged. Newest Planned specs are **R180 + R181**; next Ravilo number is R182.
+- **2026-07-13 (later):** pulled the new `credits-and-intro-detection-2026-07-13` research report and
+  designed Skip Intro / Skip Credits into the live apps, then authored two specs from it —
+  **`phase-150-intro-credits-segment-detection.md`** (admin/backend + management) and
+  **`phase-R182-skip-intro-credits.md`** (Ravilo player). Both `Planned`, design-authored, not exported
+  to the repo or in `STATUS.md` yet. Next numbers are now **151 / R183**.
 
 ## Design constraints to respect
 - `design/app/` + `design/ravilo/` mockups are the **visual target** for the

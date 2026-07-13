@@ -275,3 +275,25 @@
 .pl-epc.focused { transform: scale(1.05); }
 .pl-epc.focused .epc-thumb { border-color: var(--ring); box-shadow: 0 0 0 4px var(--ring), 0 20px 46px rgba(0,0,0,.6); }
 .pl-epc.focused .epc-t { color: #fff; }
+
+/* ============================================================
+   SKIP INTRO pill (segment-driven) + stinger badge on credits card
+   ============================================================ */
+.pl-skipintro { position: absolute; right: 64px; bottom: 210px; z-index: 8; display: inline-flex; align-items: center; gap: 14px;
+  height: 64px; padding: 0 26px; border-radius: 16px; font-family: 'Sora', sans-serif; font-size: 22px; font-weight: 600; color: #fff;
+  background: rgba(10,12,19,.62); border: 1px solid rgba(255,255,255,.4); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px);
+  box-shadow: 0 14px 40px rgba(0,0,0,.5); opacity: 0; transform: translateY(10px); pointer-events: none; overflow: hidden;
+  transition: opacity .3s var(--ease), transform .3s var(--ease), background .2s, box-shadow .2s; }
+.player.skipintro .pl-skipintro { opacity: 1; transform: none; pointer-events: auto; }
+.player.picker .pl-skipintro, .player.nextup .pl-skipintro, .player.eprail .pl-skipintro { opacity: 0; pointer-events: none; }
+.pl-skipintro svg { width: 28px; height: 28px; display: block; }
+.pl-skipintro .si-kbd { font-family: var(--mono); font-size: 15px; font-weight: 700; padding: 4px 10px; border-radius: 8px;
+  background: rgba(255,255,255,.16); border: 1px solid rgba(255,255,255,.3); }
+.pl-skipintro .si-fill { position: absolute; left: 0; bottom: 0; height: 4px; width: 0; background: var(--grad); }
+.pl-skipintro.focused { background: #fff; color: #0a0c13; border-color: transparent; box-shadow: 0 0 0 4px var(--ring), 0 16px 44px rgba(0,0,0,.55); }
+.pl-skipintro.focused .si-kbd { background: rgba(10,12,19,.12); border-color: rgba(10,12,19,.25); color: #0a0c13; }
+.pl-skipintro.focused .si-fill { background: rgba(10,12,19,.4); }
+
+.nu-stinger { display: inline-flex; align-items: center; gap: 9px; font-size: 15px; font-weight: 700; letter-spacing: .3px; color: #0a0c13;
+  background: var(--warn); padding: 7px 14px; border-radius: 9px; }
+.nu-stinger svg { width: 17px; height: 17px; }

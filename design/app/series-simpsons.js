@@ -111,6 +111,50 @@
   }
 
   function pad(n){ return String(n).padStart(2,'0'); }
+  function fmt(s){ return Math.floor(s/60)+':'+pad(Math.round(s%60)); }
+  /* Phase 15x: per-episode intro/credits segment editor (write-through). Values are
+     synthesized deterministically here so the demo shows detected / low-confidence /
+     not-detected / stinger cases. */
+  function segBlock(n, e) {
+    const runMin = 21 + (e % 3), runSec = runMin * 60;
+    const st = (n * 3 + e) % 5;
+    const src = (st === 0 || st === 1 || st === 2) ? 'fingerprint' : (st === 3 ? 'heuristic' : null);
+    const stinger = ((n + e) % 11 === 0);
+    const id = 'S' + pad(n) + 'E' + pad(e);
+    if (!src) {
+      return '<div class="segwrap nodet">' +
+        '<div class="seg-head"><span class="seg-lbl">Intro &amp; credits</span><span class="badge bad" style="margin-left:8px;">not detected</span></div>' +
+        '<div class="segbar empty"><span class="seg-empty">No markers — Ravilo falls back to a Next-Up card 34s before the file ends.</span></div>' +
+        '<div class="seg-foot"><span class="muted tiny">Run detection to enable Skip Intro / Skip Credits here.</span><span class="spacer"></span>' +
+          '<span class="btn sm seg-rescan" data-ep="' + id + '">↻ Detect segments</span></div>' +
+      '</div>';
+    }
+    const iS = 28 + (e % 4) * 4, iE = iS + 70 + (e % 3) * 8, cS = runSec - (52 + (e % 3) * 8);
+    const conf = (src === 'fingerprint' ? 0.90 + (e % 6) / 60 : 0.55 + (e % 4) / 40).toFixed(2);
+    const pct = v => (v / runSec * 100);
+    const srcBadge = src === 'fingerprint'
+      ? '<span class="badge seg-src-fp">fingerprint · ' + conf + '</span>'
+      : '<span class="badge warn">heuristic · ' + conf + '</span>';
+    return '<div class="segwrap">' +
+      '<div class="seg-head"><span class="seg-lbl">Intro &amp; credits</span>' +
+        '<span class="seg-legend"><span><i class="sw sw-i"></i>Intro</span><span><i class="sw sw-c"></i>Credits</span>' +
+        (stinger ? '<span><i class="sw sw-s"></i>Post-credits scene</span>' : '') + '</span></div>' +
+      '<div class="segbar">' +
+        '<div class="seg-ticks"></div>' +
+        '<div class="seg-intro" style="left:' + pct(iS).toFixed(1) + '%;width:' + (pct(iE) - pct(iS)).toFixed(1) + '%"><i class="h l"></i><i class="h r"></i></div>' +
+        '<div class="seg-cred" style="left:' + pct(cS).toFixed(1) + '%"><i class="h"></i></div>' +
+        (stinger ? '<div class="seg-stg" style="left:97%"></div>' : '') +
+      '</div>' +
+      '<div class="seg-foot">' +
+        '<span class="chip mono">Intro ' + fmt(iS) + '–' + fmt(iE) + '</span>' +
+        '<span class="chip mono">Credits ' + fmt(cS) + '</span>' + srcBadge +
+        (stinger ? '<span class="badge seg-stinger" title="TMDB tag: aftercreditsstinger">★ scene after credits</span>' : '') +
+        '<span class="spacer"></span>' +
+        '<span class="btn sm ghost seg-rescan" data-ep="' + id + '">↻ Re-scan</span>' +
+        '<span class="btn sm ghost seg-lock" data-ep="' + id + '">🔓 Lock</span>' +
+      '</div>' +
+    '</div>';
+  }
   function renderEpisodes(n) {
     const eps = SEASONS[n-1].eps;
     let html = '';
@@ -137,12 +181,19 @@
               (k===1?'<span class="badge bad">1 untagged</span>':'')+(k===2?'<span class="badge bad">2 defaults</span>':'')+
               '<span class="btn sm '+(attn?'':'ghost')+' ep-tracks" data-ep="'+id+'" data-k="'+k+'">'+(attn?'Fix':'Edit')+' tracks &amp; order \u2192</span></div>'+
           '</div>'+
-        '</div></div></div>';
+        '</div>' + segBlock(n, e) + '</div></div>';
     }
     const wrap = document.getElementById('eplist');
     wrap.innerHTML = html;
     wrap.querySelectorAll('.ep-row').forEach(r => r.addEventListener('click', () => r.closest('.ep').classList.toggle('open')));
     wrap.querySelectorAll('.ep-tracks').forEach(b => b.addEventListener('click', e => { e.stopPropagation(); openEditor(b.dataset.ep, +b.dataset.k); }));
+    wrap.querySelectorAll('.seg-rescan').forEach(b => b.addEventListener('click', ev => { ev.stopPropagation(); teToast('Re-scanning ' + b.dataset.ep + ' for intro & credits…'); }));
+    wrap.querySelectorAll('.seg-lock').forEach(b => b.addEventListener('click', ev => {
+      ev.stopPropagation(); b.classList.toggle('on'); const on = b.classList.contains('on');
+      b.innerHTML = on ? '🔒 Locked' : '🔓 Lock';
+      const sw = b.closest('.segwrap'); if (sw) sw.classList.toggle('locked', on);
+      teToast(on ? 'Locked — scans won’t overwrite these markers' : 'Unlocked — scans may update these markers');
+    }));
   }
 
   /* ---------- episode track editor (same merged editor) ---------- */

@@ -30,6 +30,7 @@
   --chip: rgba(255,255,255,.10);
   --tile-radius: 12px;
   --good: #2dd49a;
+  --warn: #f5b542;
 }
 
 [data-skin="midnight"] {
