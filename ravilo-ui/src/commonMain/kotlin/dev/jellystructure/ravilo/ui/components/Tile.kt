@@ -31,6 +31,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -74,6 +75,11 @@ fun Tile(
     posterUrl: String?,
     focusRequester: FocusRequester? = null,
     variant: TileVariant = TileVariant.POSTER,
+    /** R177 follow-up: channel logos are small brand marks (often with transparent/white padding),
+     *  not photographic backdrops — Crop cropped their top/bottom and let a white logo canvas bleed
+     *  through the semi-transparent progress-bar track. OnNowRow passes Fit; every poster/backdrop
+     *  caller keeps the old Crop default. */
+    contentScale: ContentScale = ContentScale.Crop,
     subtitle: String? = null,
     progressPct: Float = 0f,
     watched: Boolean = false,
@@ -161,10 +167,18 @@ fun Tile(
                     },
             ) {
             if (posterUrl != null) {
+                // A persistent backdrop under the image, not just a load-time placeholder: a Crop
+                // image fully covers it either way, but a Fit image (a logo) only paints its fitted
+                // area, and without this the rest of the tile — and the progress bar's semi-transparent
+                // track drawn over it below — would show raw black/transparent instead of a neutral card.
+                if (contentScale == ContentScale.Fit) {
+                    Box(modifier = Modifier.matchParentSize().background(colors.surfaceVariant))
+                }
                 RemoteImage(
                     url = posterUrl,
                     contentDescription = title,
                     modifier = Modifier.matchParentSize(),
+                    contentScale = contentScale,
                     placeholderColor = posterPlaceholder,
                     // R96: LANDSCAPE tiles render a backdrop (proxy default 1920px) into a ~256dp slot —
                     // request ~640px so Coil decodes ~0.9 MB, not ~8.3 MB. POSTER/SQUARE already use
