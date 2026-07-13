@@ -66,6 +66,11 @@ private const val CHANNEL_COL_SPACER_DP = 2
 // range label entirely rather than wrapping/truncating it into unreadable fragments — see the call
 // site's doc comment.
 private const val TIME_LABEL_MIN_WIDTH_DP = 110f
+// User request ("too many '...' shown"): below this width (~13min at PX_PER_MINUTE) even a single
+// ellipsized word is a near-useless 2-3 letter fragment — e.g. a real DR Ramasjang block of ~10min
+// segments rendered "Ma…", "Gal…" back to back. Below it the cell shows no text at all (just its
+// colored/isNow fill), still focusable/selectable — the details overlay always has the full title.
+private const val TEXT_MIN_WIDTH_DP = 56f
 
 /**
  * Computes which item (index 0 = the very first rendered cell, whatever it is — a gap spacer or a
@@ -528,6 +533,7 @@ private fun GuideChannelRow(
                     // entirely rather than wrapped or truncated into unreadable fragments; both texts
                     // are always capped to a single rendered line each with an ellipsis, never a wrap.
                     val showTimeLabel = cellWidthDp >= TIME_LABEL_MIN_WIDTH_DP
+                    val showText = cellWidthDp >= TEXT_MIN_WIDTH_DP
                     // User request: each cell is focusable/selectable again (selecting opens the
                     // details overlay for this specific program — see onProgramSelect). LEFT/RIGHT is
                     // deliberately left to Compose's native focus search (moves to the adjacent cell
@@ -547,20 +553,22 @@ private fun GuideChannelRow(
                                 onBlurred = { pFocused = false },
                                 onSelect = { onProgramSelect(p) },
                             )
-                            .padding(8.dp),
+                            .padding(horizontal = 6.dp, vertical = 8.dp),
                     ) {
                         Column {
-                            if (showTimeLabel) {
+                            if (showText) {
+                                if (showTimeLabel) {
+                                    Text(
+                                        "${formatGuideTime(p.startMs)}–${formatGuideTime(p.endMs)}",
+                                        color = colors.textDim, fontSize = 10.sp, fontWeight = FontWeight.Medium,
+                                        maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                    )
+                                }
                                 Text(
-                                    "${formatGuideTime(p.startMs)}–${formatGuideTime(p.endMs)}",
-                                    color = colors.textDim, fontSize = 10.sp, fontWeight = FontWeight.Medium,
-                                    maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                    p.name, color = colors.text, fontSize = 12.sp, fontWeight = FontWeight.Medium,
+                                    maxLines = if (showTimeLabel) 2 else 1, overflow = TextOverflow.Ellipsis,
                                 )
                             }
-                            Text(
-                                p.name, color = colors.text, fontSize = 12.sp, fontWeight = FontWeight.Medium,
-                                maxLines = if (showTimeLabel) 2 else 1, overflow = TextOverflow.Ellipsis,
-                            )
                             if (isNow) {
                                 val progress = ((nowMs - p.startMs).toFloat() / (p.endMs - p.startMs).toFloat()).coerceIn(0f, 1f)
                                 Spacer(Modifier.height(4.dp))
