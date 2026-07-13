@@ -70,6 +70,9 @@ fun <T> StaticContentRow(
     bringRowHeaderIntoView: Boolean = true,
     /** R139: on a Back-return, scroll this row to the item with this key and focus it (the originating tile). */
     restoreItemKey: Any? = null,
+    /** An extra, non-[T] tile rendered before [items] (e.g. Home's "Open TV Guide" entry point ahead of
+     *  the On Now channel tiles) — its own focus target, unrelated to [itemKey]/[restoreItemKey]. */
+    leadingItem: (@Composable () -> Unit)? = null,
     itemContent: @Composable (index: Int, item: T, focusRequester: FocusRequester?) -> Unit,
 ) {
     val colors = RaviloTheme.colors
@@ -114,7 +117,13 @@ fun <T> StaticContentRow(
         // R99: key on urlResolver too — a row-kind/tile-shape change swaps the resolver (poster↔backdrop)
         // while `items` stays the same object, so remember(items) alone would prefetch stale URLs and
         // guarantee a cache miss when the tiles render the new ones.
-        val prefetchUrls = remember(items, urlResolver) { items.map { urlResolver(it).orEmpty() } }
+        // A leadingItem occupies real LazyRow position 0, shifting every items[] tile's actual position
+        // by one — prepend a blank placeholder (PrefetchEffect already skips blank URLs) so the index
+        // lastVisibleIndex reports lines back up with this list instead of prefetching one item early.
+        val prefetchUrls = remember(items, urlResolver, leadingItem != null) {
+            val base = items.map { urlResolver(it).orEmpty() }
+            if (leadingItem != null) listOf("") + base else base
+        }
         PrefetchLazyRowEffect(listState = listState, urls = prefetchUrls)
     }
 
@@ -179,6 +188,9 @@ fun <T> StaticContentRow(
                     vertical = RaviloDimens.trackPadV,
                 ),
             ) {
+                if (leadingItem != null) {
+                    item(key = "__leading") { leadingItem() }
+                }
                 items(items.size, key = if (itemKey != null) { i -> itemKey(items[i]) } else null) { i ->
                     val fr = if (restoreItemKey != null && itemKey != null && itemKey(items[i]) == restoreItemKey) restoreFR else null
                     itemContent(i, items[i], fr)
