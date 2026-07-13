@@ -146,7 +146,11 @@ class LiveTvService(
             // restart, before the next sync() cadence) — every screen (Home rail, TV Guide, in-player
             // channel switcher, badge initials) renders `name` verbatim, so the id leaked to the TV.
             // Never show it; fall back to a plain "Channel N" placeholder instead.
-            val name = live?.name?.takeIf { it.isNotBlank() } ?: "Channel ${ov.number}"
+            // Admin rename wins over Jellyfin's own name; blank/absent falls through to it, then to
+            // the id-avoiding placeholder above.
+            val name = ov.displayName?.takeIf { it.isNotBlank() }
+                ?: live?.name?.takeIf { it.isNotBlank() }
+                ?: "Channel ${ov.number}"
             // Public path (like R133's channel-logos/image-proxy) — the TV client can't attach a device
             // token to an <img>/Coil image request, and logos aren't sensitive.
             val logo = ov.logoOverrideUrl
@@ -183,6 +187,7 @@ class LiveTvService(
         number: Int? = null,
         category: String? = null,
         logoOverrideUrl: String? = null,
+        displayName: String? = null,
     ): Boolean {
         if (store.override(channelId) == null) return false
         store.upsertOverride(channelId) { ov ->
@@ -191,6 +196,9 @@ class LiveTvService(
                 number = number ?: ov.number,
                 category = category ?: ov.category,
                 logoOverrideUrl = logoOverrideUrl ?: ov.logoOverrideUrl,
+                // "" (the admin clearing the input) is intentionally stored as-is, not skipped — see
+                // lineup()'s isNotBlank() fallback, which is what actually makes it "revert to Jellyfin".
+                displayName = displayName ?: ov.displayName,
                 isNew = false, // any explicit edit acknowledges the "new" badge
             )
         }
