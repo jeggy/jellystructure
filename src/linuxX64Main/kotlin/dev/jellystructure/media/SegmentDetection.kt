@@ -1,6 +1,7 @@
 package dev.jellystructure.media
 
 import dev.jellystructure.model.SegmentMarkers
+import dev.jellystructure.model.Stinger
 
 /**
  * Phase 150 (FR-SEG1-2/3) — the detection layer behind `detect_segments`: finds where a file's intro
@@ -75,5 +76,24 @@ object SegmentDetection {
             source = "heuristic",
             confidence = hit.confidence,
         )
+    }
+
+    /**
+     * FR-SEG1-6 — TMDB's `duringcreditsstinger`/`aftercreditsstinger` keywords, matched by NAME (TMDB
+     * keyword ids are never kept past the initial fetch — see `TmdbClient.getMovieKeywords`/
+     * `getTvKeywords`, which already discard them). Only called from the TMDB re-pull path
+     * (`Scanner.rescanMetadata`) with the SAME raw keyword-name list that's about to be flattened into
+     * `tags` (`mergeRepullTags`) — never a second TMDB request. Dev-review addendum §1: this means a
+     * freshly-scanned title has no stinger until its first re-pull runs, not immediately after a bare
+     * scan; accepted as the ordering this reuses, rather than adding a second keyword fetch to the
+     * (much more frequent) initial full-scan path.
+     */
+    fun stingerFromTmdbKeywords(tmdbKeywords: List<String>): Stinger? {
+        val kind = when {
+            tmdbKeywords.any { it.equals("aftercreditsstinger", ignoreCase = true) } -> "after"
+            tmdbKeywords.any { it.equals("duringcreditsstinger", ignoreCase = true) } -> "during"
+            else -> return null
+        }
+        return Stinger(atMs = null, kind = kind)  // exact timing is an admin/future-detector refinement
     }
 }
