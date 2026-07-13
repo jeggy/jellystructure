@@ -740,6 +740,9 @@ fun Route.tvRoutes(
         req.autoplayNext?.let { raviloConfigService.setAdminAutoplayNext(userId, it) }
         req.uiLanguage?.let { raviloConfigService.setAdminUiLanguage(userId, it) }
         req.requestLanguage?.let { raviloConfigService.setAdminRequestLanguage(userId, it) }
+        req.skipIntro?.let { raviloConfigService.setAdminSkipIntro(userId, it) }
+        req.skipCredits?.let { raviloConfigService.setAdminSkipCredits(userId, it) }
+        req.skipSecs?.let { raviloConfigService.setAdminSkipSecs(userId, it) }
         call.respond(raviloConfigService.resolveBehaviour(userId))
     }
 

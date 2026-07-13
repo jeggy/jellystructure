@@ -16,6 +16,10 @@ enum class MatchMode { ALL, ANY }
 /** Operator-set content size for the TV grids/rows. COMFORTABLE = current sizing. */
 enum class UiDensity { COMPACT, COZY, COMFORTABLE }
 
+/** R182 — Skip Intro / Skip Credits behaviour. PROMPT = pill/card shown, viewer presses OK to skip;
+ *  AUTO = auto-skips when its countdown elapses (still cancellable); OFF = never shown. */
+enum class SkipMode { OFF, PROMPT, AUTO }
+
 /** Multiplier applied to tile dimensions on the TV for the chosen density. */
 fun UiDensity.tileScale(): Float = when (this) {
     UiDensity.COMPACT -> 0.82f
@@ -623,6 +627,10 @@ data class RaviloConfig(
     @SerialName("viewer_skin_override") val viewerSkinOverride: Skin? = null,
     @SerialName("show_continue_progress") val showContinueProgress: Boolean = true,
     @SerialName("autoplay_next") val autoplayNext: Boolean = true,
+    // R182 — Skip Intro / Skip Credits, global defaults (per-user overrides via BehaviourOverlay).
+    @SerialName("skip_intro") val skipIntro: SkipMode = SkipMode.PROMPT,
+    @SerialName("skip_credits") val skipCredits: SkipMode = SkipMode.PROMPT,
+    @SerialName("skip_secs") val skipSecs: Int = 6, // 4/6/8
     @SerialName("tile_shape") val tileShape: TileShape = TileShape.POSTER,
     @SerialName("ui_density") val uiDensity: UiDensity = UiDensity.COMFORTABLE,
     @SerialName("ui_language") val uiLanguage: String = "en",
@@ -664,6 +672,13 @@ data class BehaviourOverlay(
     @SerialName("show_continue_progress_writer") val showContinueProgressWriter: String? = null,
     @SerialName("autoplay_next") val autoplayNext: Boolean? = null,
     @SerialName("autoplay_next_writer") val autoplayNextWriter: String? = null,
+    // R182 — Skip Intro / Skip Credits + countdown length, admin-editor-only (no on-TV Settings control).
+    @SerialName("skip_intro") val skipIntro: SkipMode? = null,
+    @SerialName("skip_intro_writer") val skipIntroWriter: String? = null,
+    @SerialName("skip_credits") val skipCredits: SkipMode? = null,
+    @SerialName("skip_credits_writer") val skipCreditsWriter: String? = null,
+    @SerialName("skip_secs") val skipSecs: Int? = null,
+    @SerialName("skip_secs_writer") val skipSecsWriter: String? = null,
     // Phase 139 — per-viewer default request-language intent id (e.g. "nordic"). Unlike the other
     // fields above, its "global default" fallback is NOT a RaviloConfig field — it's whichever
     // request-language intent the admin flagged `default = true` in AppConfig (resolved in
@@ -686,6 +701,9 @@ data class ResolvedBehaviour(
     @SerialName("tile_shape") val tileShape: ResolvedBehaviourField<TileShape>,
     @SerialName("show_continue_progress") val showContinueProgress: ResolvedBehaviourField<Boolean>,
     @SerialName("autoplay_next") val autoplayNext: ResolvedBehaviourField<Boolean>,
+    @SerialName("skip_intro") val skipIntro: ResolvedBehaviourField<SkipMode>,
+    @SerialName("skip_credits") val skipCredits: ResolvedBehaviourField<SkipMode>,
+    @SerialName("skip_secs") val skipSecs: ResolvedBehaviourField<Int>,
     // Phase 139 — "global" here means "the catalog's default-flagged intent" (or the kids-default
     // intent for a kids device), resolved server-side since only the backend has the AppConfig catalog.
     @SerialName("request_language") val requestLanguage: ResolvedBehaviourField<String>,
@@ -789,6 +807,10 @@ data class ViewerSettingsRequest(
     @SerialName("ui_language") val uiLanguage: String? = null,
     // Phase 139 — admin-editor-only for now (no on-TV Settings control yet); same overlay mechanism.
     @SerialName("request_language") val requestLanguage: String? = null,
+    // R182 — admin-editor-only (no on-TV Settings control); same overlay mechanism.
+    @SerialName("skip_intro") val skipIntro: SkipMode? = null,
+    @SerialName("skip_credits") val skipCredits: SkipMode? = null,
+    @SerialName("skip_secs") val skipSecs: Int? = null,
 )
 
 @Serializable
