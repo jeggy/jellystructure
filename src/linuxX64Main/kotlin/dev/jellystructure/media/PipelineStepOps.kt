@@ -6,6 +6,8 @@ import dev.jellystructure.config.AppConfig
 import dev.jellystructure.imdb.ImdbClient
 import dev.jellystructure.model.ImdbRating
 import dev.jellystructure.model.MediaItem
+import dev.jellystructure.model.MediaKind
+import dev.jellystructure.model.SegmentMarkers
 import dev.jellystructure.nfo.NfoWriter
 import dev.jellystructure.nowEpochSec
 
@@ -89,4 +91,57 @@ object PipelineStepOps {
 
     /** `rescan_arr` — nudge Radarr/Sonarr to rescan the item's folder. */
     fun rescanArr(item: MediaItem, arrRescan: ArrRescanService) = arrRescan.nudge(item)
+
+    /**
+     * `detect_segments` (Phase 150, FR-SEG1-2/3/5) — chapter-title match, falling back to the ffmpeg
+     * credits heuristic, for a movie or (per-episode) a series that doesn't already have segment data.
+     * Never touches a `manuallyConfirmed` record, and skips a field that's already filled — the
+     * resolution precedence is manual > chapter > numeric confidence (dev-review addendum §4), so once
+     * something is set, only an explicit re-scan (which the admin scrubber's Re-scan button drives by
+     * clearing the fields first) re-runs detection for it.
+     *
+     * Known scope limitation for this pass: a multi-episode file's episodes (`partCount > 1`) are
+     * skipped entirely. Credits only make sense at the very end of the shared FILE (after the last
+     * contained episode), and an intro/recap chapter only at its very start (before the first) — properly
+     * windowing detection per-position within one shared file is real extra work deferred to a later
+     * iteration; these files are the minority of a library, and skipping them leaves their episodes with
+     * no segment data, exactly like every episode today.
+     */
+    private suspend fun detectForPath(path: String, current: SegmentMarkers): SegmentMarkers? {
+        if (current.manuallyConfirmed) return null
+        if (current.introStartMs != null || current.creditsStartMs != null) return null
+
+        SegmentDetection.fromChapters(FfprobeRunner.chapters(path))?.let { hit ->
+            return current.copy(
+                introStartMs = hit.introStartMs,
+                introEndMs = hit.introEndMs,
+                creditsStartMs = hit.creditsStartMs,
+                source = hit.source,
+                confidence = hit.confidence,
+            )
+        }
+
+        val duration = FfprobeRunner.duration(path) ?: return null
+        val hit = SegmentDetection.fromCreditsHeuristic(path, duration) ?: return null
+        return current.copy(creditsStartMs = hit.creditsStartMs, source = hit.source, confidence = hit.confidence)
+    }
+
+    suspend fun detectSegments(item: MediaItem, store: MediaStore) {
+        when (item.kind) {
+            MediaKind.MOVIE -> {
+                val updated = detectForPath(item.path, item.segments) ?: return
+                store.updateOne(item.copy(segments = updated))
+            }
+            MediaKind.TV_SHOW -> {
+                var changed = false
+                val updatedEpisodes = item.episodes.map { ep ->
+                    if (ep.partCount > 1) return@map ep
+                    val updated = detectForPath(ep.path, ep.segments) ?: return@map ep
+                    changed = true
+                    ep.copy(segments = updated)
+                }
+                if (changed) store.updateOne(item.copy(episodes = updatedEpisodes))
+            }
+        }
+    }
 }
