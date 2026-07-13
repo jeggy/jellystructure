@@ -52,6 +52,7 @@ data class LiveTvChannelUpdate(
     val number: Int? = null,
     val category: String? = null,
     @SerialName("logo_override_url") val logoOverrideUrl: String? = null,
+    @SerialName("display_name") val displayName: String? = null,
 )
 
 @Serializable

@@ -19,6 +19,9 @@ data class LiveTvChannelOverride(
     val number: Int = 0,
     val order: Int = 0,
     @SerialName("logo_override_url") val logoOverrideUrl: String? = null,
+    // Admin-owned rename, distinct from Jellyfin's own channel name — null/blank means "use Jellyfin's
+    // name" (see LiveTvService.lineup()'s resolution order), so clearing the admin input reverts it.
+    @SerialName("display_name") val displayName: String? = null,
     val category: String = "",           // 100% jellystructure-owned (addendum B — Jellyfin has none)
     val unavailable: Boolean = false,     // present in the store but gone from Jellyfin's live lineup
     @SerialName("is_new") val isNew: Boolean = false, // badge: appeared since the operator last acted

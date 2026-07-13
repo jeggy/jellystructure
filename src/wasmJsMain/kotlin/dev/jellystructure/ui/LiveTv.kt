@@ -187,7 +187,7 @@ private fun renderLineupBody() {
              <td><span class="ord"><button data-up="${c.channelId}">▲</button><button data-dn="${c.channelId}">▼</button></span></td>
              <td>$toggle</td>
              <td class="cnum">${c.number}</td>
-             <td><div class="row center" style="gap:11px">$logo<span class="cname">${c.name.esc()}</span></div></td>
+             <td><div class="row center" style="gap:11px">$logo<input class="cname nameinput" data-name="${c.channelId}" value="${c.name.esc()}" placeholder="Channel name"></div></td>
              <td><input class="catinput" data-cat="${c.channelId}" value="${c.category.esc()}" placeholder="Uncategorized"></td>
              <td>$guideBadge</td>
              <td>$actions</td>
@@ -272,8 +272,13 @@ private fun wireLiveTv(container: Element, scope: CoroutineScope) {
     }
     body.addEventListener("change") { ev ->
         val t = ev.target as? HTMLInputElement ?: return@addEventListener
-        val id = t.getAttribute("data-cat") ?: return@addEventListener
-        scope.launch { ltvChannels = LiveTvApi.updateChannel(id, LiveTvChannelUpdate(category = t.value)) }
+        t.getAttribute("data-cat")?.let { id ->
+            scope.launch { ltvChannels = LiveTvApi.updateChannel(id, LiveTvChannelUpdate(category = t.value)) }
+            return@addEventListener
+        }
+        t.getAttribute("data-name")?.let { id ->
+            scope.launch { ltvChannels = LiveTvApi.updateChannel(id, LiveTvChannelUpdate(displayName = t.value)) }
+        }
     }
 }
 
