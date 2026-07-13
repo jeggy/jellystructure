@@ -53,6 +53,8 @@ private fun renderLiveTvFull(container: Element, scope: CoroutineScope) {
         border-radius:5px;cursor:pointer;font-size:.6rem;line-height:1;display:flex;align-items:center;justify-content:center; }
       .lineup .ord button:hover { border-color:var(--hi);color:var(--hi); }
       .lineup .catinput { width:110px;font-size:.78rem;padding:5px 7px;border-radius:6px;border:1px solid var(--line-2);background:var(--fill-2);color:var(--ink); }
+      .lineup .nameinput { flex:1;min-width:0;padding:6px 9px;border-radius:6px;border:1px solid var(--line-2);background:var(--fill-2);color:var(--ink); }
+      .lineup .catinput:focus, .lineup .nameinput:focus { outline:none;border-color:var(--hi); }
       .ltv-filterrow { display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin:14px 0 6px; }
       .ltv-filterrow .fchip { cursor:pointer; }
       .ltv-filterrow .fchip.on { background:var(--hi);color:#fff;border-color:transparent; }
