@@ -628,6 +628,26 @@ suspend fun executePipeline(
                         .onFailure { Logger.warn("detect_drift notify webhook failed: ${it.message}") }
                 }
             }
+            "detect_segments" -> {
+                // Phase 150 (FR-SEG1-2/3/5) — "missing" = the item (movie) or any of its non-grouped
+                // episodes (series) has neither an intro nor a credits timestamp yet. PipelineStepOps
+                // itself re-checks per-field before doing any work, so "all" scope safely re-runs
+                // detection only where a field is still actually empty — it never re-detects (or
+                // overwrites) something a chapter/heuristic/manual source already filled.
+                fun needsDetection(item: dev.jellystructure.model.MediaItem): Boolean = when (item.kind) {
+                    dev.jellystructure.model.MediaKind.MOVIE ->
+                        item.segments.introStartMs == null && item.segments.creditsStartMs == null
+                    dev.jellystructure.model.MediaKind.TV_SHOW -> item.episodes.any {
+                        it.partCount == 1 && it.segments.introStartMs == null && it.segments.creditsStartMs == null
+                    }
+                }
+                val toProcess = if (step.scope == "all") workingSet else workingSet.filter(::needsDetection)
+                Logger.info("detect_segments: ${toProcess.size} items (scope=${step.scope})")
+                runPipelineStepPool(
+                    jobId, step.step, toProcess, pipelineStepConcurrency(step.step, scanWorkers),
+                    scanTracker, broadcaster, labelOf = { it.title },
+                ) { item -> dev.jellystructure.media.PipelineStepOps.detectSegments(item, store) }
+            }
             "sync_imdb_ratings" -> {
                 // Phase 131: keyed by imdbId; a title without one has no rating to sync. A *small* pool
                 // (pipelineStepConcurrency caps this step at 2) preserves the intended per-call throttle
