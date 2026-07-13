@@ -63,6 +63,10 @@ data class PipelineStep(
     val overwrite: Boolean = false,
     val minutes: Int = 5,
     val on: String = "summary",
+    // Phase 150 — detect_segments options.
+    @SerialName("detect_fingerprint") val detectFingerprint: Boolean = false,
+    @SerialName("trust_stinger_tags") val trustStingerTags: Boolean = true,
+    @SerialName("chapter_keywords") val chapterKeywords: List<String> = emptyList(),
 )
 
 @Serializable
