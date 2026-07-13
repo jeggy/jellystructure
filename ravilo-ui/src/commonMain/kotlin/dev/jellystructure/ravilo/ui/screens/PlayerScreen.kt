@@ -122,11 +122,14 @@ private const val POLL_MS        = 500L
 
 // ─── Focus model ──────────────────────────────────────────────────────────────
 
-private enum class PlFocus { SEEK_BAR, SKIP_BACK, PLAY, SKIP_FWD, TRACKS, NEXT_EP, BACK }
+private enum class PlFocus { SKIP_INTRO, SEEK_BAR, SKIP_BACK, PLAY, SKIP_FWD, TRACKS, NEXT_EP, BACK }
 private enum class NuFocus { PLAY, STAY }
 
-private fun transportOrder(hasNextEp: Boolean): List<PlFocus> =
+// R182 — SKIP_INTRO only enters the order while the pill is actually visible (mirrors NEXT_EP's own
+// hasNextEp gating), first in the order per the design prototype's own focus-order function.
+private fun transportOrder(hasNextEp: Boolean, hasSkipIntro: Boolean): List<PlFocus> =
     buildList {
+        if (hasSkipIntro) add(PlFocus.SKIP_INTRO)
         add(PlFocus.SEEK_BAR); add(PlFocus.SKIP_BACK); add(PlFocus.PLAY)
         add(PlFocus.SKIP_FWD); add(PlFocus.TRACKS)
         if (hasNextEp) add(PlFocus.NEXT_EP)
@@ -218,6 +221,15 @@ fun PlayerScreen(
     var chromeRevision by remember { mutableLongStateOf(0L) }
     // R157 (FR-R157-3.2) — bumping restarts the cursor auto-hide timer, independently of chrome.
     var pointerActivityRevision by remember { mutableLongStateOf(0L) }
+
+    // R182 — Skip Intro pill (FR-RV-SKIP1-1). skipIntroCountingDown mirrors the design prototype's own
+    // skipPromptOn: true only during the brief grace window right after entering the intro; the pill's
+    // visibility beyond that rides the SAME chrome show/hide seam (chromeVisible) rather than a separate
+    // latch, so it reappears on wake() and can hide again with chrome — see skipIntroPillVisible below.
+    // skipIntroCountdownDone guards against re-arming a second countdown for the same intro window.
+    var skipIntroCountingDown by remember { mutableStateOf(false) }
+    var skipIntroCountdownDone by remember { mutableStateOf(false) }
+    var skipIntroCountdownSecs by remember { mutableIntStateOf(0) }
 
     // Focus
     var focus    by remember { mutableStateOf(PlFocus.PLAY) }
@@ -335,6 +347,19 @@ fun PlayerScreen(
     // R111: "Watch credits" — hide the card AND latch it so the near-end poll won't immediately re-show
     // it. It can still re-appear at the true end of the file (the isEnded branch ignores the latch).
     fun stayThrough() { nextUpVisible = false; nextUpDismissed = true; chromeVisible = true; scheduleHide() }
+
+    // R182 (FR-RV-SKIP1-1) — fires on an explicit OK press on the pill AND from the countdown-elapsed
+    // auto-trigger in Auto mode (see the skipIntroCountingDown LaunchedEffect below) — same action either
+    // way, matching the design prototype's own single skipIntro() used from both paths.
+    fun skipIntro() {
+        val end = currentSegments.introEndMs ?: return
+        player.seekTo(end)
+        positionMs = end
+        skipIntroCountingDown = false
+        skipIntroCountdownDone = true
+        if (focus == PlFocus.SKIP_INTRO) focus = PlFocus.PLAY
+        wake()
+    }
 
     fun chooseEpisode() {
         if (focusedEpIdx == currentEpIndex) { epRailOpen = false; return }
@@ -532,6 +557,26 @@ fun PlayerScreen(
                 if (playerLoadedForCurrentItem && player.isEnded && !nextUpVisible) {
                     nextUpVisible = true; nuFocus = NuFocus.PLAY
                 }
+
+                // R182 (FR-RV-SKIP1-1) — Skip Intro pill. Entering [introStartMs, introEndMs) for the
+                // first time this episode arms the brief grace-window countdown (skipIntroCountingDown);
+                // beyond that the pill's visibility rides chromeVisible (see skipIntroPillVisible in the
+                // composable body) rather than anything tracked here. Leaving the window (playback moved
+                // past introEndMs, or a fresh episode with no intro at all) resets the once-per-window
+                // latch so a later intro (rare, but not impossible) can arm again.
+                val iStart = currentSegments.introStartMs
+                val iEnd = currentSegments.introEndMs
+                val insideIntro = playerLoadedForCurrentItem && iStart != null && iEnd != null && iEnd > iStart &&
+                    positionMs in iStart until iEnd
+                if (insideIntro && currentSkipIntroMode != dev.jellystructure.shared.tv.SkipMode.OFF &&
+                    !skipIntroCountingDown && !skipIntroCountdownDone) {
+                    skipIntroCountingDown = true
+                }
+                if (!insideIntro && (skipIntroCountingDown || skipIntroCountdownDone)) {
+                    skipIntroCountingDown = false
+                    skipIntroCountdownDone = false
+                    if (focus == PlFocus.SKIP_INTRO) focus = PlFocus.PLAY
+                }
             } catch (e: Throwable) {
                 // Bug fix: an exception on any single tick (e.g. a transient native-player getter
                 // failure) used to kill this whole polling loop for the rest of the PlayerScreen's
@@ -549,13 +594,30 @@ fun PlayerScreen(
         if (!pickerOpen && !nextUpVisible && !epRailOpen) hideChrome()
     }
 
+    // R182 (FR-RV-SKIP1-1) — derived every recomposition (the composable body always sees the latest
+    // positionMs/segments — no staleness risk here, unlike the long-lived effects above): visible once
+    // inside [introStartMs, introEndMs), for the brief grace countdown OR whenever chrome itself is up
+    // (matching the design prototype's own refreshSkipIntro() — reappears on wake(), no separate latch),
+    // and never over another modal overlay.
+    val skipIntroStart = segments.introStartMs
+    val skipIntroEnd = segments.introEndMs
+    val insideIntroWindow = skipIntroStart != null && skipIntroEnd != null && skipIntroEnd > skipIntroStart &&
+        positionMs in skipIntroStart until skipIntroEnd
+    val skipIntroPillVisible = insideIntroWindow && skipIntroMode != dev.jellystructure.shared.tv.SkipMode.OFF &&
+        (skipIntroCountingDown || chromeVisible) && !pickerOpen && !nextUpVisible && !epRailOpen
+
+    // Mirrors the design prototype: the pill grabs focus the instant it appears, and releases it back to
+    // PLAY the instant it's gone — so a later Select never dispatches on a control that's no longer shown.
+    LaunchedEffect(skipIntroPillVisible) {
+        if (skipIntroPillVisible) focus = PlFocus.SKIP_INTRO
+        else if (focus == PlFocus.SKIP_INTRO) focus = PlFocus.PLAY
+    }
+
     // R157/R169 (FR-R157-1.3 fallback) — web only, no-op elsewhere: keep the <video> element's z-order
     // in sync. The video only needs to hide behind the canvas when a *Compose-drawn* overlay that the
-    // web DOM chrome (below) doesn't replicate is open — the track picker, next-up card, or episode
-    // rail. For the everyday "chrome visible, nothing else open" state the video now stays promoted
-    // (visible) and PlayerChromeBridge below draws the basic transport on top of it instead (R169 —
-    // this CMP version's canvas can't composite Compose-drawn chrome over a still-visible video).
-    val videoBehindCanvas = pickerOpen || nextUpVisible || epRailOpen
+    // web DOM chrome (below) doesn't replicate is open — the track picker, next-up card, episode rail,
+    // or (R182) the Skip Intro pill.
+    val videoBehindCanvas = pickerOpen || nextUpVisible || epRailOpen || skipIntroPillVisible
     LaunchedEffect(videoBehindCanvas) { player.setChromeVisible(videoBehindCanvas) }
 
     // R169 (FR-R169-3) — push live state to the web DOM transport bar (no-op on Android/TV) whenever
@@ -599,6 +661,24 @@ fun PlayerScreen(
         // still calls advanceNext() directly through their own existing call sites, untouched. With
         // autoplayNext off the card simply sits at 0 waiting for one of those instead of navigating itself.
         if (nextUpVisible && currentAutoplayNext) advanceNext()
+    }
+
+    // R182 — Skip Intro pill's own brief grace-window countdown (FR-RV-SKIP1-1): governs the pill's
+    // INITIAL visibility only (see skipIntroPillVisible below, which takes over via chromeVisible once
+    // this elapses) — Auto mode additionally seeks past the intro once the countdown runs out, unless
+    // the viewer already pressed OK sooner (skipIntro() sets skipIntroCountingDown = false itself).
+    LaunchedEffect(skipIntroCountingDown) {
+        if (!skipIntroCountingDown) return@LaunchedEffect
+        skipIntroCountdownSecs = currentSkipSecs
+        repeat(currentSkipSecs) {
+            delay(1_000)
+            skipIntroCountdownSecs--
+        }
+        // Cancelled (not reaching here) if skipIntro() already flipped skipIntroCountingDown to false —
+        // same cancel-on-key-change idiom the existing next-up countdown effect above relies on.
+        skipIntroCountingDown = false
+        skipIntroCountdownDone = true
+        if (currentSkipIntroMode == dev.jellystructure.shared.tv.SkipMode.AUTO) skipIntro()
     }
 
     // Pause-flash auto-dismiss
@@ -649,7 +729,7 @@ fun PlayerScreen(
                             scrubPos = (scrubPos - scrubStep()).coerceAtLeast(0L)
                         }
                         else -> {
-                            val order = transportOrder(nextEpisodeId != null)
+                            val order = transportOrder(nextEpisodeId != null, skipIntroPillVisible)
                             val idx = order.indexOf(focus)
                             if (idx > 0) focus = order[idx - 1]
                         }
@@ -669,7 +749,7 @@ fun PlayerScreen(
                             scrubPos = (scrubPos + scrubStep()).coerceAtMost(durationMs)
                         }
                         else -> {
-                            val order = transportOrder(nextEpisodeId != null)
+                            val order = transportOrder(nextEpisodeId != null, skipIntroPillVisible)
                             val idx = order.indexOf(focus)
                             if (idx < order.lastIndex) focus = order[idx + 1]
                         }
@@ -698,6 +778,8 @@ fun PlayerScreen(
                             if (scrubbing) commitScrub()
                             focus = PlFocus.PLAY
                         }
+                        // R182 — matches the design prototype's own ArrowDown handling for 'skipintro'.
+                        focus == PlFocus.SKIP_INTRO -> focus = PlFocus.PLAY
                         episodes != null -> { epRailOpen = true; chromeVisible = true }
                         else -> {}
                     }
@@ -717,6 +799,7 @@ fun PlayerScreen(
                         nextUpVisible -> { if (nuFocus == NuFocus.PLAY) advanceNext() else stayThrough() }
                         epRailOpen -> chooseEpisode()
                         pickerOpen -> choosePick()
+                        focus == PlFocus.SKIP_INTRO -> skipIntro()
                         focus == PlFocus.SEEK_BAR -> {
                             if (scrubbing) commitScrub() else { scrubbing = true; scrubPos = positionMs }
                         }
@@ -951,6 +1034,24 @@ fun PlayerScreen(
                 onSeekStart = { ms -> wake(); focus = PlFocus.SEEK_BAR; scrubbing = true; scrubPos = ms },
                 onSeekDrag = { ms -> scrubPos = ms },
                 onSeekEnd = { commitScrub() },
+            )
+        }
+
+        // ── Skip Intro pill (R182, FR-RV-SKIP1-1) ─────────────────────────────
+        // Bottom-end, but padded up well above the transport row (design: right:64px/bottom:210px) so it
+        // never overlaps the seek bar/controls — those two never show at once in practice anyway (intro
+        // is at the episode's start, the transport padding here is what matters).
+        AnimatedVisibility(
+            visible = skipIntroPillVisible,
+            enter = fadeIn(tween(200)),
+            exit = fadeOut(tween(200)),
+            modifier = Modifier.align(Alignment.BottomEnd).padding(end = 28.dp, bottom = 160.dp),
+        ) {
+            SkipIntroPill(
+                colors = colors,
+                countdown = skipIntroCountdownSecs,
+                totalSecs = skipSecs,
+                focused = focus == PlFocus.SKIP_INTRO,
             )
         }
 
@@ -1927,6 +2028,45 @@ private fun NuButton(label: String, focused: Boolean, isPrimary: Boolean, colors
             fontSize = 12.sp,
             fontWeight = FontWeight.SemiBold,
             maxLines = 1,
+        )
+    }
+}
+
+// ─── Skip Intro pill (R182) ───────────────────────────────────────────────────
+
+@Composable
+private fun SkipIntroPill(colors: RaviloColors, countdown: Int, totalSecs: Int, focused: Boolean) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        modifier = Modifier
+            .scale(if (focused) 1.04f else 1f)
+            .clip(RoundedCornerShape(10.dp))
+            .background(if (focused) Color.White else Color(0xFF0E1119).copy(alpha = 0.92f))
+            .border(
+                width = if (focused) 2.dp else 1.dp,
+                color = if (focused) colors.focusRing else Color.White.copy(alpha = 0.14f),
+                shape = RoundedCornerShape(10.dp),
+            )
+            .then(if (focused) Modifier.shadow(12.dp, RoundedCornerShape(10.dp), spotColor = colors.focusGlow) else Modifier)
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+    ) {
+        CountdownRing(colors, countdown, totalSecs)
+        Text(
+            text = str("player.skip_intro"),
+            color = if (focused) Color(0xFF0A0C13) else colors.text,
+            fontSize = 14.sp,
+            fontWeight = FontWeight.SemiBold,
+        )
+        Text(
+            text = "OK",
+            color = if (focused) Color(0xFF0A0C13) else colors.text,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier
+                .clip(RoundedCornerShape(6.dp))
+                .background((if (focused) Color(0xFF0A0C13) else Color.White).copy(alpha = 0.12f))
+                .padding(horizontal = 7.dp, vertical = 2.dp),
         )
     }
 }
