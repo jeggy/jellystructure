@@ -30,6 +30,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import kotlinx.coroutines.launch
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.text.font.FontWeight
@@ -416,6 +417,11 @@ private fun OnNowRow(
             episodeBadge = if (ch.number > 0) ch.number.toString() else null,
             posterUrl = ch.logoUrl,
             variant = TileVariant.LANDSCAPE,
+            // Bug fix: Crop (Tile's default, right for photographic posters/backdrops) cut the top off
+            // channel logos and let a white logo canvas bleed through the progress track's ~20%-alpha
+            // background. Fit shows the whole mark on a neutral card instead — same treatment the TV
+            // Guide's channel column and program-details overlay already use for the same logos.
+            contentScale = ContentScale.Fit,
             progressPct = progress,
             focusRequester = fr ?: if (i == 0) firstItemFR else null,   // hero-down bridge
             onSelect = { store.focusRowKey = "on_now"; store.focusItemKey = ch.channelId; onLiveTvChannelSelect(ch) },
