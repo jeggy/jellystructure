@@ -213,6 +213,10 @@ hr.dash { border: none; border-top: 1px solid var(--line); margin: 18px 0; }
 .chip.sugg:hover, .chip.ghost:hover { border-color: var(--hi); color: var(--ink); }
 /* accent-filled chips (markup uses inline background:var(--hi)) need light ink */
 .chip[style*="--hi)"]:not([style*="soft"]) { color: #fff; border-color: transparent; }
+/* Selected-filter-chip state — used by Library's ".active-chip" and Activity's ".act"
+   modifiers. Neither had a design reference (not in any mockup) — matches the same
+   selected treatment as .theme-seg button.on / .seg-pill button.on elsewhere. */
+.chip.active-chip, .chip.act { background: var(--hi-soft); color: var(--acc-ink); border-color: var(--hi); }
 
 .badge { display: inline-flex; align-items:center; gap:5px; font-size: .72rem; font-weight: 600;
   padding: 3px 9px; border-radius: 7px; border:1px solid transparent; white-space: nowrap; }
@@ -280,6 +284,38 @@ hr.dash { border: none; border-top: 1px solid var(--line); margin: 18px 0; }
 [data-theme="light"] .log .muted { color: #8d93a8; }
 .log .ts { color: var(--ink-soft); } .log .warnc { color: var(--warn); } .log .badc { color: var(--bad); } .log .okc { color: var(--ok); }
 
+/* Activity page — media-worker status dot + job-queue rows (design/app/activity.html,
+   never shipped). Verified against the real markup directly: the mockup's .runpick/
+   .rp-dot/.run-sel searchable-run-picker isn't implemented in the real Kotlin page at
+   all, so those are intentionally NOT ported (nothing uses them — porting would be dead
+   CSS, not a fix). */
+.wk-dot { width: 10px; height: 10px; border-radius: 50%; flex: none; }
+.wk-dot.busy { background: var(--warn); box-shadow: 0 0 0 4px var(--warn-soft); }
+.wk-dot.idle { background: var(--ink-dim); }
+.jobs-count {
+  display: inline-flex; align-items: center; justify-content: center; min-width: 16px; height: 16px;
+  padding: 0 5px; border-radius: 20px; background: var(--warn); color: #1a1204;
+  font-size: .62rem; font-weight: 800; margin-left: 6px;
+}
+.jobrow { display: flex; align-items: center; gap: 12px; padding: 11px 4px; border-top: 1px dashed var(--line); }
+.jobrow:first-child { border-top: none; }
+.jobrow.leaving { opacity: 0; transform: translateX(10px); transition: opacity .25s, transform .25s; }
+.jq-pos {
+  width: 22px; height: 22px; flex: none; border-radius: 6px; background: var(--fill-3); color: var(--ink-soft);
+  font-size: .72rem; font-weight: 700; display: flex; align-items: center; justify-content: center;
+}
+.jq-ic { width: 22px; flex: none; text-align: center; font-weight: 800; }
+.jq-ic.ok { color: var(--ok); } .jq-ic.bad { color: var(--bad); }
+.jq-main { flex: 1; min-width: 0; }
+.jq-title { font-size: .86rem; }
+.jq-sub { font-size: .72rem; color: var(--ink-dim); margin-top: 2px; }
+
+/* Ravilo config's hero-carousel row thumbnail (design/app/ravilo-config.html) — the
+   element's own dynamic style= only sets `background`, so the box shape/overlay-label
+   positioning still needs this. */
+.hero-thumb { width: 92px; height: 52px; border-radius: 8px; flex: none; position: relative; overflow: hidden; }
+.hero-thumb .t { position: absolute; left: 8px; bottom: 6px; font-family: 'Space Grotesk',sans-serif; font-weight: 700; font-size: .72rem; color: #fff; text-shadow: 0 1px 4px rgba(0,0,0,.6); }
+
 /* ---------- info note / callout ---------- */
 .note {
   font-family: 'Sora', sans-serif; font-size: .9rem; line-height: 1.45;
@@ -289,6 +325,13 @@ hr.dash { border: none; border-top: 1px solid var(--line); margin: 18px 0; }
 .note.blue { background: var(--info-soft); border-color: rgba(63,182,245,.35); }
 .note.red  { background: var(--bad-soft); border-color: rgba(255,111,97,.35); }
 .note-row { display: flex; gap: 16px; align-items: flex-start; flex-wrap: wrap; margin: 10px 0; }
+/* RaviloConfig's upload-failure notice — same red-alert treatment as .note.red, no
+   reference anywhere (not in the mockup either); this is new, not a port. */
+.alert-bad {
+  font-family: 'Sora', sans-serif; font-size: .85rem; line-height: 1.4;
+  background: var(--bad-soft); color: var(--bad); padding: 10px 12px;
+  border-radius: var(--radius-s); border: 1px solid rgba(255,111,97,.35);
+}
 
 /* floating toast (created by page scripts) */
 .toast {
