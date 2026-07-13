@@ -553,6 +553,7 @@ class Scanner(
         val issueCount = tracks.count { (it.kind == TrackKind.AUDIO || it.kind == TrackKind.SUBTITLE) && it.language == null }
         val primaryCompany = details.productionCompanies.firstOrNull()
         val tmdbTags = tmdb.getMovieKeywords(details.id)
+        val syncStinger = SegmentDetection.stingerFromTmdbKeywords(tmdbTags)  // Phase 150 (FR-SEG1-6)
         val syncExtIds = tmdb.getExternalIds(details.id, isMovie = true)
         val syncCertifications = tmdb.getMovieCertifications(details.id)
         val syncTrailer = buildTrailer(tmdb.getMovieVideos(details.id, details.originalLanguage))
@@ -584,6 +585,9 @@ class Scanner(
             // Phase 142: self-heals if the library mapping changed since the last scan; `lib` above
             // already resolves by the stored item's local path (the correct direction for this call).
             libraryId = lib?.jellyfinId?.ifBlank { null } ?: item.libraryId,
+            // Phase 150: same never-touch-a-manual-record / only-add-never-clear rule as rescanMetadata.
+            segments = if (item.segments.manuallyConfirmed) item.segments
+                       else item.segments.copy(stinger = syncStinger ?: item.segments.stinger),
         )
     }
 
@@ -822,6 +826,10 @@ class Scanner(
                     ?: localized.language
                 val rescanCompany = details.productionCompanies.firstOrNull()
                 val rescanTmdbTags = tmdb.getMovieKeywords(details.id)
+                // Phase 150 (FR-SEG1-6): same raw keyword-name list mergeRepullTags flattens into `tags`
+                // below — no second TMDB request. Movies only (a series' top-level `segments` isn't used;
+                // each episode carries its own — see SegmentMarkers' doc comment).
+                val rescanStinger = SegmentDetection.stingerFromTmdbKeywords(rescanTmdbTags)
                 val rescanMovieExtIds = tmdb.getExternalIds(details.id, isMovie = true)
                 val rescanCertifications = tmdb.getMovieCertifications(details.id)
                 val rescanTrailer = buildTrailer(tmdb.getMovieVideos(details.id, details.originalLanguage))
@@ -851,6 +859,12 @@ class Scanner(
                     certifications = rescanCertifications.ifEmpty { item.certifications },
                     trailer = rescanTrailer,
                     libraryId = lib?.jellyfinId?.ifBlank { null } ?: item.libraryId,   // Phase 142: self-heal
+                    // Phase 150: never touch a manually-confirmed record; otherwise only ADD a stinger
+                    // TMDB currently reports — never clear one an earlier fetch found but this one omits
+                    // (keyword lists can be flaky/incomplete; losing a real stinger flag would be worse
+                    // than a stale one).
+                    segments = if (item.segments.manuallyConfirmed) item.segments
+                               else item.segments.copy(stinger = rescanStinger ?: item.segments.stinger),
                 )
             }
             MediaKind.TV_SHOW -> {
