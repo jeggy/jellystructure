@@ -45,6 +45,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -232,8 +233,32 @@ fun LiveTvGuideScreen(
                 // just keeps the shared canonical state (and therefore every other row) truthful about
                 // where the newly-focused cell actually is. animate = true here (see GuideViewport) is
                 // the fix for the follow-up "jumpy" report: a focus move is a discrete jump, not a drag.
-                fun onCellFocused(startMinutes: Float) {
-                    viewport = GuideViewport(startMinutes.coerceIn(0f, maxViewportMinutes), animate = true)
+                //
+                // Second bug fix ("navigating left just goes into the channel logo"): this used to set
+                // viewport.minutes = startMinutes unconditionally — the focused cell's own start ALWAYS
+                // became the viewport's left edge, on every single focus move. That pins whichever cell
+                // is focused to be the leftmost one on screen, permanently — there is never a cell to
+                // its left within the visible (or even composed/lazy-loaded) window, so LEFT has nothing
+                // to land on except the channel column. Fixed by only moving the viewport when the
+                // newly-focused cell is actually clipped, and only by the minimum amount to reveal it —
+                // the same "don't move a fully-visible tile, reveal a clipped one at the edge" pattern
+                // StaticContentRow's own BringIntoViewSpec already uses (ContentRow.kt), just computed
+                // in minutes instead of pixels since that's this screen's own canonical unit.
+                val density = LocalDensity.current.density
+                val screenWidthPx = LocalWindowInfo.current.containerSize.width
+                val viewportWidthMinutes = remember(screenWidthPx, density) {
+                    ((screenWidthPx / density) - CHANNEL_COL_WIDTH_DP - CHANNEL_COL_SPACER_DP)
+                        .coerceAtLeast(0f) / PX_PER_MINUTE
+                }
+                fun onCellFocused(startMinutes: Float, endMinutes: Float) {
+                    val visibleStart = viewport.minutes
+                    val visibleEnd = visibleStart + viewportWidthMinutes
+                    val newStart = when {
+                        startMinutes < visibleStart -> startMinutes
+                        endMinutes > visibleEnd -> endMinutes - viewportWidthMinutes
+                        else -> return // already fully visible — don't move anything
+                    }
+                    viewport = GuideViewport(newStart.coerceIn(0f, maxViewportMinutes), animate = true)
                 }
 
                 // User request: open on the start of the OLDEST currently-active program (across every
@@ -439,7 +464,7 @@ private fun GuideChannelRow(
     viewport: () -> GuideViewport,
     scrollableState: ScrollableState,
     onTune: () -> Unit,
-    onCellFocused: (Float) -> Unit,
+    onCellFocused: (Float, Float) -> Unit,
     onProgramSelect: (LiveTvGuideProgram) -> Unit,
     channelFocusRequester: FocusRequester? = null,
 ) {
@@ -588,13 +613,14 @@ private fun GuideChannelRow(
                     // hand-roll the cell-to-cell traversal ourselves.
                     var pFocused by remember { mutableStateOf(false) }
                     val startMinutes = remember(p.startMs, guideOriginMs) { (p.startMs - guideOriginMs) / 60_000f }
+                    val endMinutes = remember(p.endMs, guideOriginMs) { (p.endMs - guideOriginMs) / 60_000f }
                     Box(
                         modifier = Modifier
                             .width(cellWidthDp.dp).fillMaxSize()
                             .background(if (isNow) colors.accentDim else colors.surfaceVariant, RoundedCornerShape(6.dp))
                             .then(if (pFocused) Modifier.border(2.dp, colors.focusRing, RoundedCornerShape(6.dp)) else Modifier)
                             .dpadFocusable(
-                                onFocused = { pFocused = true; onCellFocused(startMinutes) },
+                                onFocused = { pFocused = true; onCellFocused(startMinutes, endMinutes) },
                                 onBlurred = { pFocused = false },
                                 onSelect = { onProgramSelect(p) },
                             )
