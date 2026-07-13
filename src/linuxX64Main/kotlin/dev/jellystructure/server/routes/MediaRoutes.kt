@@ -22,6 +22,7 @@ import dev.jellystructure.media.LogoDownloader
 import dev.jellystructure.media.MediaHistory
 import dev.jellystructure.media.MediaStore
 import dev.jellystructure.media.MkvpropeditRunner
+import dev.jellystructure.media.PipelineStepOps
 import dev.jellystructure.media.Scanner
 import dev.jellystructure.media.ScanTracker
 import dev.jellystructure.model.Episode
@@ -116,6 +117,18 @@ private data class ArtworkCandidatesResponse(
 @Serializable
 private data class SaveCandidateRequest(val asset: String = "", val source: String)
 
+// Phase 150 — manual segment-marker edit. Omitted fields keep their current value (the same
+// no-explicit-null-clear convention as LiveTvChannelOverride's elvis-merge fields elsewhere in this
+// codebase); "Re-scan" is the escape hatch to actually clear a field. [locked] defaults to true on any
+// edit (an admin editing a value implies confirming it), matching SegmentMarkers.manuallyConfirmed.
+@Serializable
+private data class SegmentMarkersUpdate(
+    val introStartMs: Long? = null,
+    val introEndMs: Long? = null,
+    val creditsStartMs: Long? = null,
+    val locked: Boolean? = null,
+)
+
 // Wire shape for GET /api/media/{id}/episodes/stills — mirrors the frontend's EpisodeStillStatus.
 // Phase 149: episodeNumber disambiguates entries sharing a filename (a multi-episode file) — the
 // frontend used to key these by filename alone, collapsing a group's N statuses down to one.
@@ -133,6 +146,14 @@ private data class EpisodeStillStatusDto(val filename: String, val stillExists: 
 private fun resolveStillEpisode(item: MediaItem, epFilename: String, epNum: Int?): Episode? =
     if (epNum != null) item.episodes.firstOrNull { it.filename == epFilename && it.episodeNumber == epNum }
     else item.episodes.firstOrNull { it.filename == epFilename }
+
+// Phase 150 — replaces [target] (an Episode already resolved via [resolveStillEpisode]) within [item]'s
+// episode list, matched by filename + episodeNumber together so a multi-episode-file group's other
+// members are never touched even when the caller omitted the disambiguating query param.
+private fun MediaItem.replaceEpisode(target: Episode, transform: (Episode) -> Episode): MediaItem =
+    copy(episodes = episodes.map { ep ->
+        if (ep.filename == target.filename && ep.episodeNumber == target.episodeNumber) transform(ep) else ep
+    })
 
 // Wire shape for the batch fire-and-forget endpoints ("…started", item count).
 @Serializable
@@ -1662,6 +1683,98 @@ fun Route.mediaRoutes(
             store.updateOne(updated)
             broadcaster.broadcast(JobEvent.ItemScanned("ep-cast-fetch-$id", updated))
             call.respond(updated)
+        }
+
+        // Phase 150 — Skip Intro / Skip Credits segment markers
+
+        // PATCH /api/media/{id}/segments — manual edit + lock a movie's segment markers
+        patch("/{id}/segments") {
+            val id = call.parameters["id"] ?: return@patch call.respond(HttpStatusCode.BadRequest)
+            val item = store.resolve(id) ?: return@patch call.respond(HttpStatusCode.NotFound)
+            if (item.kind != MediaKind.MOVIE) return@patch call.respond(HttpStatusCode.BadRequest, mapOf("error" to "not a movie"))
+            val req = runCatching { call.receive<SegmentMarkersUpdate>() }.getOrElse {
+                return@patch call.respond(HttpStatusCode.BadRequest, mapOf("error" to "invalid segments payload"))
+            }
+            val updated = item.copy(segments = item.segments.copy(
+                introStartMs = req.introStartMs ?: item.segments.introStartMs,
+                introEndMs = req.introEndMs ?: item.segments.introEndMs,
+                creditsStartMs = req.creditsStartMs ?: item.segments.creditsStartMs,
+                source = "manual",
+                confidence = null,
+                manuallyConfirmed = req.locked ?: true,
+            ))
+            store.updateOne(updated)
+            broadcaster.broadcast(JobEvent.ItemScanned("segments-edit-$id", updated))
+            call.respond(updated)
+        }
+
+        // POST /api/media/{id}/segments/rescan — clear detected markers (never the TMDB-owned stinger)
+        // and re-run detection for this one movie.
+        post("/{id}/segments/rescan") {
+            val id = call.parameters["id"] ?: return@post call.respond(HttpStatusCode.BadRequest)
+            val item = store.resolve(id) ?: return@post call.respond(HttpStatusCode.NotFound)
+            if (item.kind != MediaKind.MOVIE) return@post call.respond(HttpStatusCode.BadRequest, mapOf("error" to "not a movie"))
+            val cleared = item.copy(segments = item.segments.copy(
+                introStartMs = null, introEndMs = null, creditsStartMs = null,
+                source = null, confidence = null, manuallyConfirmed = false,
+            ))
+            store.updateOne(cleared)
+            PipelineStepOps.detectSegments(cleared, store)
+            val refreshed = store.resolve(id) ?: cleared
+            broadcaster.broadcast(JobEvent.ItemScanned("segments-rescan-$id", refreshed))
+            call.respond(refreshed)
+        }
+
+        // PATCH /api/media/{id}/episodes/{filename}/segments?episodeNumber=N — manual edit + lock an
+        // episode's segment markers. episodeNumber disambiguates a multi-episode-file group the same
+        // way resolveStillEpisode does for stills (Phase 149).
+        patch("/{id}/episodes/{filename}/segments") {
+            val id = call.parameters["id"] ?: return@patch call.respond(HttpStatusCode.BadRequest)
+            val filename = call.parameters["filename"] ?: return@patch call.respond(HttpStatusCode.BadRequest)
+            val epNum = call.request.queryParameters["episodeNumber"]?.toIntOrNull()
+            val item = store.resolve(id) ?: return@patch call.respond(HttpStatusCode.NotFound)
+            val target = resolveStillEpisode(item, filename, epNum)
+                ?: return@patch call.respond(HttpStatusCode.NotFound, mapOf("error" to "episode not found"))
+            val req = runCatching { call.receive<SegmentMarkersUpdate>() }.getOrElse {
+                return@patch call.respond(HttpStatusCode.BadRequest, mapOf("error" to "invalid segments payload"))
+            }
+            val updated = item.replaceEpisode(target) { ep ->
+                ep.copy(segments = ep.segments.copy(
+                    introStartMs = req.introStartMs ?: ep.segments.introStartMs,
+                    introEndMs = req.introEndMs ?: ep.segments.introEndMs,
+                    creditsStartMs = req.creditsStartMs ?: ep.segments.creditsStartMs,
+                    source = "manual",
+                    confidence = null,
+                    manuallyConfirmed = req.locked ?: true,
+                ))
+            }
+            store.updateOne(updated)
+            broadcaster.broadcast(JobEvent.ItemScanned("ep-segments-edit-$id", updated))
+            call.respond(updated)
+        }
+
+        // POST /api/media/{id}/episodes/{filename}/segments/rescan?episodeNumber=N — clear detected
+        // markers for one episode (never the TMDB-owned stinger, which lives at the series/movie level
+        // anyway) and re-run detection for just that episode. A no-op for a multi-episode-file member
+        // (partCount > 1) — Stage 5 skips those for auto-detection entirely.
+        post("/{id}/episodes/{filename}/segments/rescan") {
+            val id = call.parameters["id"] ?: return@post call.respond(HttpStatusCode.BadRequest)
+            val filename = call.parameters["filename"] ?: return@post call.respond(HttpStatusCode.BadRequest)
+            val epNum = call.request.queryParameters["episodeNumber"]?.toIntOrNull()
+            val item = store.resolve(id) ?: return@post call.respond(HttpStatusCode.NotFound)
+            val target = resolveStillEpisode(item, filename, epNum)
+                ?: return@post call.respond(HttpStatusCode.NotFound, mapOf("error" to "episode not found"))
+            val cleared = item.replaceEpisode(target) { ep ->
+                ep.copy(segments = ep.segments.copy(
+                    introStartMs = null, introEndMs = null, creditsStartMs = null,
+                    source = null, confidence = null, manuallyConfirmed = false,
+                ))
+            }
+            store.updateOne(cleared)
+            PipelineStepOps.detectSegments(cleared, store)
+            val refreshed = store.resolve(id) ?: cleared
+            broadcaster.broadcast(JobEvent.ItemScanned("ep-segments-rescan-$id", refreshed))
+            call.respond(refreshed)
         }
     }
 
