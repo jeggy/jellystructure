@@ -115,8 +115,9 @@ private fun buildGuideCells(programs: List<LiveTvGuideProgram>, originMs: Long):
 
 // Bug fix: program cells showed only the title, no start/end time at all — reported as "missing
 // timestamps" after the guide was made reachable (the "See All"/"TV Guide" link fix). Matches
-// AppBar's ClockDisplay formatting (24h HH:mm, device-local time zone).
-private fun formatGuideTime(epochMs: Long): String {
+// AppBar's ClockDisplay formatting (24h HH:mm, device-local time zone). Not private: Home's On Now
+// row (HomeScreen.kt) reuses it for the same "current program's time range" display.
+fun formatGuideTime(epochMs: Long): String {
     val t = Instant.fromEpochMilliseconds(epochMs).toLocalDateTime(TimeZone.currentSystemDefault())
     return "${t.hour.toString().padStart(2, '0')}:${t.minute.toString().padStart(2, '0')}"
 }

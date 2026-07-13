@@ -81,6 +81,10 @@ fun Tile(
      *  caller keeps the old Crop default. */
     contentScale: ContentScale = ContentScale.Crop,
     subtitle: String? = null,
+    /** User request ("show timestamps on the channels home screen") — a third, dimmer line below
+     *  [subtitle] for the On Now row's current-program time range. Null = no line (every other
+     *  caller). */
+    caption: String? = null,
     progressPct: Float = 0f,
     watched: Boolean = false,
     isNew: Boolean = false,
@@ -331,6 +335,17 @@ fun Tile(
                 text = subtitle,
                 color = colors.textDim,
                 fontSize = 14.sp,
+                fontFamily = sora,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.width(w),
+            )
+        }
+        if (!caption.isNullOrEmpty()) {
+            Text(
+                text = caption,
+                color = colors.textDim,
+                fontSize = 12.sp,
                 fontFamily = sora,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,

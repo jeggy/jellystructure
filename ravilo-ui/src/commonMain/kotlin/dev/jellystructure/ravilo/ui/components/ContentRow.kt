@@ -13,6 +13,7 @@ import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.Text
@@ -33,6 +34,7 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.jellystructure.ravilo.ui.focus.dpadFocusable
 import dev.jellystructure.ravilo.ui.theme.RaviloDimens
@@ -73,6 +75,12 @@ fun <T> StaticContentRow(
     /** An extra, non-[T] tile rendered before [items] (e.g. Home's "Open TV Guide" entry point ahead of
      *  the On Now channel tiles) — its own focus target, unrelated to [itemKey]/[restoreItemKey]. */
     leadingItem: (@Composable () -> Unit)? = null,
+    /** A small non-focusable accessory before [title] (e.g. Home On Now's live-dot). */
+    titleAccessory: (@Composable () -> Unit)? = null,
+    /** A plain, non-interactive label at the header's end — shown only when [seeAllLabel]/[onSeeAll]
+     *  aren't (they're mutually exclusive with this: a row has an action link OR an info caption,
+     *  never a visual double-up). e.g. Home On Now's "5 channels · From Jellyfin". */
+    trailingInfo: String? = null,
     itemContent: @Composable (index: Int, item: T, focusRequester: FocusRequester?) -> Unit,
 ) {
     val colors = RaviloTheme.colors
@@ -147,14 +155,20 @@ fun <T> StaticContentRow(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
-                Text(
-                    text = title,
-                    color = colors.text,
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    fontFamily = spaceGrotesk,
-                    letterSpacing = (-0.3).sp,
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (titleAccessory != null) {
+                        titleAccessory()
+                        Spacer(Modifier.width(8.dp))
+                    }
+                    Text(
+                        text = title,
+                        color = colors.text,
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        fontFamily = spaceGrotesk,
+                        letterSpacing = (-0.3).sp,
+                    )
+                }
                 if (seeAllLabel != null && onSeeAll != null) {
                     // Bug fix: this Text had no clickable/dpadFocusable modifier at all — onSeeAll was
                     // captured but never invoked, so "See All" / "TV Guide" links were dead on every
@@ -173,6 +187,8 @@ fun <T> StaticContentRow(
                             onSelect = onSeeAll,
                         ),
                     )
+                } else if (trailingInfo != null) {
+                    Text(text = trailingInfo, color = colors.textDim, fontSize = 13.sp, fontFamily = spaceGrotesk)
                 }
             }
             Spacer(Modifier.height(RaviloDimens.rowHeadPadB))
