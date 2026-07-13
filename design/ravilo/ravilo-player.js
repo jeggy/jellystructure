@@ -23,6 +23,8 @@
     back10:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4 6 9l5 5"/><path d="M6 9h8a5 5 0 0 1 0 10h-3"/></svg>',
     fwd10: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 4 18 9l-5 5"/><path d="M18 9h-8a5 5 0 0 0 0 10h3"/></svg>',
     next:  '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 5v14l9-7z"/><rect x="16" y="5" width="3" height="14" rx="1"/></svg>',
+    scene: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l2.4 7.4H22l-6 4.5 2.3 7.4-6.3-4.6-6.3 4.6L7.9 13.9 2 9.4h7.6z"/></svg>',
+    skipfwd: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 4l8 8-8 8"/><path d="M15 4v16"/></svg>',
     cc:    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="3"/><path d="M9.5 10.2A2.2 2.2 0 0 0 7.8 13.4 2.2 2.2 0 0 0 9.5 14M16 10.2a2.2 2.2 0 0 0-1.7 3.2 2.2 2.2 0 0 0 1.7.6"/></svg>',
     chev:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5 8 12l7 7"/></svg>',
     audio: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9v6h4l5 4V5L8 9z"/><path d="M17 8a5 5 0 0 1 0 8"/></svg>',
@@ -120,6 +122,11 @@
         </div>
       </div>
 
+      <div class="pl-skipintro" data-pf="skipintro">
+        ${I.skipfwd}<span class="si-label">Skip Intro</span><span class="si-kbd">OK</span>
+        <span class="si-fill"></span>
+      </div>
+
       <div class="pl-picker">
         <div class="pl-picker-head">
           <div class="pl-tab foc cur" data-tab="audio">${I.audio}<span>Audio</span><span class="pl-tab-flag" data-flag="audio"></span></div>
@@ -129,7 +136,7 @@
       </div>
 
       <div class="pl-nextup">
-        <div class="nu-kick"><span class="nu-kicktext">Up Next</span></div>
+        <div class="nu-kick"><span class="nu-kicktext">Up Next</span><span class="nu-stinger">${I.scene}<span>Scene after the credits</span></span></div>
         <div class="pl-nu-body">
           <div class="pl-nu-shot"><div class="g"></div><img alt="">
             <svg class="ring" viewBox="0 0 56 56"><circle class="nu-ring-bg" cx="28" cy="28" r="23"/><circle class="nu-ring-fg" cx="28" cy="28" r="23"/><text class="nu-ring-num" x="28" y="28">8</text></svg>
@@ -168,7 +175,9 @@
       pickCols: q('.pl-cols'),
       nu: { ep: q('.pl-nu-ep'), title: q('.pl-nu-title'), desc: q('.pl-nu-desc'),
             img: q('.pl-nu-shot img'), g: q('.pl-nu-shot .g'), kick: q('.nu-kicktext'),
-            ringFg: q('.nu-ring-fg'), ringNum: q('.nu-ring-num'), ct: q('.pl-nu-btn .ct'), stay: q('.nu-stay-label') },
+            ringFg: q('.nu-ring-fg'), ringNum: q('.nu-ring-num'), ct: q('.pl-nu-btn .ct'), stay: q('.nu-stay-label'),
+            primary: q('[data-pf="nu-play"]'), ring: q('.pl-nu-shot .ring'), stinger: q('.nu-stinger') },
+      si: q('.pl-skipintro'), siFill: q('.si-fill'),
       epchipText: q('.pl-epchip .ectext'), erSeason: q('.er-season'), erTrack: q('.er-track'),
     };
 
@@ -180,10 +189,14 @@
     let epIdx = 0;                // focused episode in the rail
     let countdown = COUNTDOWN;
     let tickTimer = null, hideTimer = null, bufferTimer = null, cdTimer = null;
+    let introEntered = false, skipPromptOn = false, skipTimer = null;
+    let cardMode = 'next', cardDismissed = false;
 
     // transport focus order; nextbtn only when series
     function order() {
-      const o = ['bar', 'back10', 'play', 'fwd10', 'tracks'];
+      const o = [];
+      if (root.classList.contains('skipintro')) o.push('skipintro');
+      o.push('bar', 'back10', 'play', 'fwd10', 'tracks');
       if (ctx && ctx.nextMeta) o.push('nextbtn');
       o.push('back');
       return o;
@@ -263,6 +276,7 @@
     function showChrome() {
       root.classList.add('chrome');
       renderSub();
+      refreshSkipIntro();
       clearTimeout(hideTimer);
       if (playing && !pickerOpen() && !root.classList.contains('nextup')) scheduleHide();
     }
@@ -270,7 +284,7 @@
       clearTimeout(hideTimer);
       hideTimer = setTimeout(() => {
         if (playing && !pickerOpen() && !root.classList.contains('nextup') && !scrubbing) {
-          root.classList.remove('chrome'); renderSub();
+          root.classList.remove('chrome'); renderSub(); refreshSkipIntro();
         }
       }, HIDE_MS);
     }
@@ -281,15 +295,27 @@
       if (!playing || scrubbing) return;
       pos = Math.min(ctx.duration, pos + 1);
       paintTime(); paintFrame(pos);
-      const remain = ctx.duration - pos;
-      if (ctx.nextMeta && remain <= NEXTUP_AT && !root.classList.contains('nextup') && !root.classList.contains('eprail')) openNextUp();
+      handleIntroTick();
+      const seg = ctx.segments;
+      const creditsAt = seg && seg.creditsStart ? seg.creditsStart : null;
+      const hasCard = !!(creditsAt || ctx.nextMeta);
+      const reached = creditsAt != null ? pos >= creditsAt : (ctx.duration - pos) <= NEXTUP_AT;
+      if (hasCard && reached && !cardDismissed && !root.classList.contains('nextup') && !root.classList.contains('eprail')) openCreditsCard();
       if (pos >= ctx.duration) onEnd();
     }, 1000); }
+    function handleIntroTick() {
+      const s = ctx && ctx.segments;
+      if (!s || !(s.introEnd > s.introStart)) return;
+      const inside = pos >= s.introStart && pos < s.introEnd;
+      if (inside && !introEntered) { introEntered = true; skipPromptOn = true; startSkipCountdown(s.skipSecs || 6); }
+      if (!inside && introEntered) { introEntered = false; skipPromptOn = false; }
+      refreshSkipIntro();
+    }
     function stopTick() { if (tickTimer) clearInterval(tickTimer); tickTimer = null; }
 
     function onEnd() {
       stopTick(); ended = true;
-      if (ctx.nextMeta) { if (!root.classList.contains('nextup')) openNextUp(); }
+      if (ctx.nextMeta || (ctx.segments && ctx.segments.stinger)) { if (!root.classList.contains('nextup')) openCreditsCard(); }
       else { setPlaying(false); flash('✓ Finished · ' + ctx.title); exit(); }
     }
 
@@ -395,24 +421,86 @@
       if (c) load(c, true); else closeEpRail();
     }
 
-    /* ---------- next-up ---------- */
-    function openNextUp() {
-      root.classList.add('nextup'); showChrome();
-      const n = ctx.nextMeta;
-      els.nu.kick.textContent = ctx.type === 'episode' ? 'Up Next' : 'Up Next';
-      els.nu.ep.textContent = n.ep || '';
-      els.nu.title.textContent = n.title || '';
-      els.nu.desc.textContent = n.desc || '';
-      els.nu.stay.textContent = ctx.type === 'episode' ? 'Watch credits' : 'Back to detail';
-      if (n.frame) { els.nu.img.style.display = ''; els.nu.img.src = n.frame; els.nu.g.style.display = 'none'; }
-      else { els.nu.img.style.display = 'none'; els.nu.g.style.display = ''; els.nu.g.style.background = n.grad || ctx.grad; }
+    /* ---------- skip intro (R18x segment-driven) ---------- */
+    function introActiveNow() {
+      const s = ctx && ctx.segments;
+      return !!(s && s.introEnd > s.introStart && pos >= s.introStart && pos < s.introEnd);
+    }
+    function startSkipCountdown(secs) {
+      clearTimeout(skipTimer);
+      const f = els.siFill;
+      if (f) { f.style.transition = 'none'; f.style.width = '100%'; void f.offsetWidth;
+        f.style.transition = 'width ' + secs + 's linear'; f.style.width = '0%'; }
+      skipTimer = setTimeout(() => { skipPromptOn = false; refreshSkipIntro(); }, secs * 1000);
+    }
+    function refreshSkipIntro() {
+      const active = introActiveNow();
+      const show = active && (skipPromptOn || root.classList.contains('chrome'))
+        && !pickerOpen() && !root.classList.contains('nextup') && !root.classList.contains('eprail');
+      const was = root.classList.contains('skipintro');
+      root.classList.toggle('skipintro', show);
+      if (show && !was) { focus = 'skipintro'; paintFocus(); }
+      if (!show && was && focus === 'skipintro') { focus = 'play'; paintFocus(); }
+    }
+    function skipIntro() {
+      const s = ctx && ctx.segments; if (!s) return;
+      pos = Math.min(ctx.duration - 1, s.introEnd); ended = false;
+      introEntered = false; skipPromptOn = false; clearTimeout(skipTimer);
+      root.classList.remove('skipintro'); focus = 'play';
+      paintTime(); paintFrame(pos); paintFocus();
+      flash('⏭ Skipped intro'); showChrome();
+    }
+
+    /* ---------- credits / next-up card (stinger-aware, R18x) ----------
+       Always offers 'Watch credits' (dismiss) + exactly ONE action, by priority:
+       Skip to scene (stinger) → Next Episode (series) → Skip credits (fallback). */
+    function creditsMode() {
+      const s = ctx && ctx.segments;
+      if (s && s.stinger) return 'stinger';
+      if (ctx && ctx.nextMeta) return 'next';
+      return 'skip';
+    }
+    function openCreditsCard() {
+      root.classList.add('nextup'); root.classList.remove('skipintro'); showChrome();
+      const mode = creditsMode(); cardMode = mode;
+      if (els.nu.stinger) els.nu.stinger.style.display = mode === 'stinger' ? '' : 'none';
+      els.nu.kick.style.display = mode === 'stinger' ? 'none' : '';
+      els.nu.kick.textContent = mode === 'next' ? 'Up Next' : 'Credits';
+      let thumbGrad = ctx.grad, thumbFrame = null;
+      if (mode === 'next') {
+        const n = ctx.nextMeta;
+        els.nu.ep.textContent = n.ep || '';
+        els.nu.title.textContent = n.title || '';
+        els.nu.desc.textContent = n.desc || '';
+        thumbGrad = n.grad || ctx.grad; thumbFrame = n.frame || null;
+      } else if (mode === 'stinger') {
+        els.nu.ep.textContent = ctx.type === 'episode' ? ctx.kicker : (ctx.title || '');
+        els.nu.title.textContent = 'There’s a scene after this';
+        els.nu.desc.textContent = 'A scene plays after the credits — auto-skip is paused so you don’t miss it.';
+      } else {
+        els.nu.ep.textContent = ctx.type === 'episode' ? ctx.kicker : (ctx.title || '');
+        els.nu.title.textContent = 'End of ' + (ctx.type === 'episode' ? 'episode' : 'film');
+        els.nu.desc.textContent = 'The credits are rolling.';
+      }
+      if (thumbFrame) { els.nu.img.style.display = ''; els.nu.img.src = thumbFrame; els.nu.g.style.display = 'none'; }
+      else { els.nu.img.style.display = 'none'; els.nu.g.style.display = ''; els.nu.g.style.background = thumbGrad; }
+      const P = els.nu.primary;
+      if (P) {
+        if (mode === 'stinger') P.innerHTML = I.scene + '<span>Skip to scene</span>';
+        else if (mode === 'next') P.innerHTML = I.next + '<span>Next Episode <span class="ct">in ' + COUNTDOWN + 's</span></span>';
+        else P.innerHTML = I.skipfwd + '<span>Skip credits</span>';
+        els.nu.ct = P.querySelector('.ct');
+      }
+      els.nu.stay.textContent = 'Watch credits';
       focus = 'nu-play';
-      countdown = COUNTDOWN; updateRing();
       clearInterval(cdTimer);
-      cdTimer = setInterval(() => {
-        countdown--; updateRing();
-        if (countdown <= 0) { clearInterval(cdTimer); advanceNext(); }
-      }, 1000);
+      if (mode === 'next') {
+        if (els.nu.ring) els.nu.ring.style.display = '';
+        countdown = COUNTDOWN; updateRing();
+        cdTimer = setInterval(() => { countdown--; updateRing(); if (countdown <= 0) { clearInterval(cdTimer); advanceNext(); } }, 1000);
+      } else {
+        if (els.nu.ring) els.nu.ring.style.display = 'none';
+      }
       paintFocus();
     }
     function updateRing() {
@@ -420,9 +508,23 @@
       els.nu.ringFg.style.strokeDasharray = C;
       els.nu.ringFg.style.strokeDashoffset = C * (1 - countdown / COUNTDOWN);
       els.nu.ringNum.textContent = Math.max(0, countdown);
-      els.nu.ct.textContent = 'in ' + Math.max(0, countdown) + 's';
+      if (els.nu.ct) els.nu.ct.textContent = 'in ' + Math.max(0, countdown) + 's';
     }
     function closeNextUp() { root.classList.remove('nextup'); clearInterval(cdTimer); }
+    function cardPrimary() {
+      if (cardMode === 'stinger') { seekToStinger(); return; }
+      if (cardMode === 'next') { advanceNext(); return; }
+      closeNextUp();
+      const next = ctx.resolveNext ? ctx.resolveNext() : null;
+      if (next) load(next, true); else exit();
+    }
+    function seekToStinger() {
+      const s = ctx && ctx.segments;
+      closeNextUp(); cardDismissed = true;
+      if (s && s.stinger) { pos = Math.min(ctx.duration - 1, s.stinger.at); ended = false; paintTime(); paintFrame(pos); }
+      if (!playing) setPlaying(true); else showChrome();
+      flash('⏭ Jumped to the post-credits scene');
+    }
     function advanceNext() {
       closeNextUp();
       const next = ctx.resolveNext ? ctx.resolveNext() : null;
@@ -430,8 +532,8 @@
       load(next, true);
     }
     function stayThrough() {
-      closeNextUp();
-      if (ctx.type === 'episode') { showChrome(); if (!playing) setPlaying(true); }   // keep watching credits
+      closeNextUp(); cardDismissed = true;
+      if (ctx.type === 'episode' || (ctx.segments && ctx.segments.creditsStart)) { showChrome(); if (!playing) setPlaying(true); }
       else exit();
     }
 
@@ -464,7 +566,7 @@
       if (root.classList.contains('nextup')) {
         if (k === 'ArrowLeft') { focus = 'nu-play'; paintFocus(); }
         else if (k === 'ArrowRight') { focus = 'nu-stay'; paintFocus(); }
-        else if (k === 'Enter' || k === ' ') { clearInterval(cdTimer); focus === 'nu-play' ? advanceNext() : stayThrough(); }
+        else if (k === 'Enter' || k === ' ') { clearInterval(cdTimer); focus === 'nu-play' ? cardPrimary() : stayThrough(); }
         else if (k === 'Backspace' || k === 'Escape') { clearInterval(cdTimer); stayThrough(); }
         return;
       }
@@ -499,7 +601,7 @@
       if (k === 'ArrowLeft') { if (focus === 'bar') scrub(-1); else moveFocus(-1); }
       else if (k === 'ArrowRight') { if (focus === 'bar') scrub(1); else moveFocus(1); }
       else if (k === 'ArrowUp') { focus = 'bar'; paintFocus(); }
-      else if (k === 'ArrowDown') { if (focus === 'bar') { focus = 'play'; paintFocus(); } else if (ctx.episodes) openEpRail(); }
+      else if (k === 'ArrowDown') { if (focus === 'bar') { focus = 'play'; paintFocus(); } else if (focus === 'skipintro') { focus = 'play'; paintFocus(); } else if (ctx.episodes) openEpRail(); }
       else if (k === 'Enter' || k === ' ') activate();
       else if (k === 'Backspace' || k === 'Escape') exit();
     }
@@ -512,6 +614,7 @@
         case 'fwd10': skip(SKIP_FWD); break;
         case 'tracks': openPicker(); break;
         case 'nextbtn': advanceNext(); break;
+        case 'skipintro': skipIntro(); break;
         case 'back': exit(); break;
       }
     }
@@ -529,7 +632,7 @@
       const pf = e.target.closest('[data-pf]');
       if (pf) {
         const id = pf.dataset.pf;
-        if (id === 'nu-play') { clearInterval(cdTimer); advanceNext(); return; }
+        if (id === 'nu-play') { clearInterval(cdTimer); cardPrimary(); return; }
         if (id === 'nu-stay') { clearInterval(cdTimer); stayThrough(); return; }
         focus = id; paintFocus(); activate(); return;
       }
@@ -548,7 +651,8 @@
       scrubbing = false; els.barWrap.classList.remove('scrubbing');
       sel = { audio: c.audioDefault || 0, subs: c.subsDefault || 0 };
       focus = 'play';
-      root.classList.remove('picker', 'nextup', 'eprail');
+      introEntered = false; skipPromptOn = false; cardDismissed = false; clearTimeout(skipTimer);
+      root.classList.remove('picker', 'nextup', 'eprail', 'skipintro');
       root.classList.toggle('series', !!c.episodes);
       paintMeta(); paintTime(); paintFrame(pos); paintFocus();
       if (c.episodes) buildEpRail();

@@ -330,6 +330,24 @@
         <div class="pipe-canvas" id="pipeline" style="margin-top:14px;"></div>
       </div>
 
+      <!-- INTRO & CREDITS DETECTION (detect_segments pipeline step) -->
+      <div class="card set-section" id="sect-segments" data-tab="libraries">
+        <div class="row center"><h3 style="font-size:1.05rem;margin:0;">Intro &amp; credits detection</h3><span class="badge info" style="margin-left:8px;">detect_segments</span></div>
+        <div class="tiny muted" style="margin:8px 0 6px;line-height:1.6;">Detects where each title's intro and credits actually start, so Ravilo can offer <b>Skip Intro</b> / <b>Skip Credits</b> instead of a fixed end-of-file guess. Runs as a scan-pipeline step; review or correct any result on the series or movie detail page.</div>
+        <hr class="dash" style="margin:10px 0;">
+        <div class="row center" style="padding:6px 0;"><div><b>Detect segments on scan</b><div class="tiny muted">Chapter-title match + ffmpeg black-frame / silence. Works on movies and single episodes.</div></div><span class="spacer"></span><span class="toggle on" id="seg-detect"></span></div>
+        <hr class="dash" style="margin:6px 0;">
+        <div class="row center" style="padding:6px 0;"><div><b>Cross-episode intro fingerprinting</b> <span class="badge" style="margin-left:4px;">heavier</span><div class="tiny muted">Audio-matches episodes across a season to find intros (the full Skip-Intro experience). Needs the <span class="mono">fpcalc</span> (Chromaprint) binary; series with ≥2 episodes.</div></div><span class="spacer"></span><span class="toggle" id="seg-fp"></span></div>
+        <hr class="dash" style="margin:6px 0;">
+        <div class="row center" style="padding:6px 0;"><div><b>Trust TMDB stinger tags</b><div class="tiny muted">Protect titles tagged <span class="mono">during/aftercreditsstinger</span> — Skip Credits offers “Skip to scene” and never auto-skips past them.</div></div><span class="spacer"></span><span class="toggle on" id="seg-stinger"></span></div>
+        <hr class="dash" style="margin:10px 0;">
+        <div class="field" style="margin:0;"><label>Chapter-title keywords <span class="muted">(matched case-insensitively; extend per library language)</span></label>
+          <div class="row" style="gap:6px;flex-wrap:wrap;margin-top:8px;">
+            <span class="chip">Credits</span><span class="chip">End Credits</span><span class="chip">Recap</span><span class="chip">Previously</span><span class="chip">Next Time</span><span class="chip">Rulletekster</span><span class="chip">Endamál</span><span class="chip" style="border-style:dashed;cursor:pointer;">+ add</span>
+          </div>
+        </div>
+      </div>
+
       <!-- LIBRARY MAPPING -->
       <div class="card set-section" id="sect-library" data-tab="libraries">
         <div class="row center"><h3 style="font-size:1.05rem;margin:0;">Library mapping</h3><span class="badge info" style="margin-left:8px;">from Jellyfin</span><span class="spacer"></span><span class="btn sm">↻ Re-discover</span></div>
