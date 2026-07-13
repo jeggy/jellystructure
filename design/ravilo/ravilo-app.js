@@ -167,6 +167,19 @@
       return hls ? { mode: 'HLS', detail: 'Transcode · H.264 · 720p', hls: true } : { mode: 'Direct Play', detail: 'HEVC · 1080p' };
     }
     function durFor(item) { return isBBB(item) ? 596 : (item.kind === 'series' ? 52 : 112) * 60; }
+    function segmentsFor(dur, type, hasStinger) {
+      const ep = type === 'episode';
+      const introEnd = ep ? 48 : 24;
+      return {
+        introStart: ep ? 5 : 3,
+        introEnd: introEnd,
+        creditsStart: Math.max(introEnd + 60, dur - (ep ? 150 : 165)),
+        stinger: hasStinger ? { at: dur - 30, kind: 'after' } : null,
+        source: ep ? 'fingerprint' : 'heuristic',
+        confidence: ep ? 0.94 : 0.78,
+        skipSecs: 6,
+      };
+    }
     function movieCtx(item) {
       const ts = tracksFor(item), dur = durFor(item);
       const mst = W.itemState(item.title), mp = mst.pct || item.pct || 0;
@@ -180,6 +193,7 @@
         stream: streamFor(item), audio: ts.audio, subs: ts.subs, audioDefault: ts.audioDefault, subsDefault: ts.subsDefault,
         sampleSub: isBBB(item) ? 'It’s going to be a beautiful day.' : SAMPLE_FO,
         nextMeta: null, resolveNext: null,
+        segments: segmentsFor(dur, 'film', isBBB(item) || (item.title.charCodeAt(0) % 2 === 0)),
       };
     }
     function episodeCtx(seriesItem, season, eps, idx) {
@@ -201,6 +215,7 @@
         epIndex: idx,
         episodes: eps.map(x => { const xs = W.epState(seriesItem.title, season, x.n, x.pct); return { n: x.n, title: x.title, dur: x.dur, grad: x.grad, pct: xs.pct || 0, watched: xs.watched }; }),
         resolveEpisode: (i) => episodeCtx(seriesItem, season, eps, i),
+        segments: segmentsFor(dur, 'episode', false),
       };
     }
     function playItem(item, season) {
