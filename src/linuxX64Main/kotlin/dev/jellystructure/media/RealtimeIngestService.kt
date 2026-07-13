@@ -141,7 +141,7 @@ class RealtimeIngestService(
                 when (step.step) {
                     "scan_files", "pull_tmdb" -> Unit  // already done by scanItem
                     "fetch_artwork" -> PipelineStepOps.fetchArtwork(current, store, artwork)
-                    "detect_segments" -> PipelineStepOps.detectSegments(current, store)
+                    "detect_segments" -> PipelineStepOps.detectSegments(current, store, step.chapterKeywords)
                     "sync_imdb_ratings" -> PipelineStepOps.syncImdb(current, store, imdbClient)
                     "write_nfo" -> PipelineStepOps.writeNfo(
                         current, store, cfg.apiKeys.jellyfinUrl, cfg.metadata.ageRatingCascade,
