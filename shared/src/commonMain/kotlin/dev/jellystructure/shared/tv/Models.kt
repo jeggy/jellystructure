@@ -232,6 +232,26 @@ data class CardPlayState(
     @SerialName("played_pct") val playedPct: Float = 0f,
 )
 
+/** Phase 150: the client-facing mirror of `dev.jellystructure.model.Stinger` — a mid/post-credits
+ *  scene TMDB flags. Its mere presence tells the player to never auto-skip past it (R182). */
+@Serializable
+data class TvStinger(
+    @SerialName("at_ms") val atMs: Long? = null,
+    val kind: String,
+)
+
+/** Phase 150: the client-facing mirror of `dev.jellystructure.model.SegmentMarkers` — where this
+ *  title's intro/credits segments start, so Ravilo (R182) can offer Skip Intro / Skip Credits instead
+ *  of a fixed end-of-file guess. `source`/`confidence` are read-only display info for a future admin
+ *  surface; the player only needs the timestamps + [stinger]. */
+@Serializable
+data class TvSegmentMarkers(
+    @SerialName("intro_start_ms") val introStartMs: Long? = null,
+    @SerialName("intro_end_ms") val introEndMs: Long? = null,
+    @SerialName("credits_start_ms") val creditsStartMs: Long? = null,
+    val stinger: TvStinger? = null,
+)
+
 @Serializable
 data class Episode(
     val id: String,
@@ -259,6 +279,8 @@ data class Episode(
     @SerialName("chapter_start_ms") val chapterStartMs: Long? = null,
     /** Phase 149: true only when every episode in [file]'s group got a chapter offset. */
     @SerialName("has_chapters") val hasChapters: Boolean = false,
+    /** Phase 150: this episode's own intro/credits segments (R182 Skip Intro / Skip Credits). */
+    val segments: TvSegmentMarkers = TvSegmentMarkers(),
 )
 
 @Serializable
@@ -316,6 +338,8 @@ data class MovieDetail(
     /** R181 — the title's own original-audio language (ISO code), for the player's "Dubbed" badge on
      *  audio tracks in a different language. Null when unknown. */
     @SerialName("original_language") val originalLanguage: String? = null,
+    /** Phase 150: this movie's own intro/credits segments (R182 Skip Intro / Skip Credits). */
+    val segments: TvSegmentMarkers = TvSegmentMarkers(),
 )
 
 @Serializable

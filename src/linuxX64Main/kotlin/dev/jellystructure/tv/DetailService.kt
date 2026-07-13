@@ -8,6 +8,7 @@ import dev.jellystructure.media.visibleTo
 import dev.jellystructure.model.Episode
 import dev.jellystructure.model.MediaItem
 import dev.jellystructure.model.MediaKind
+import dev.jellystructure.model.SegmentMarkers
 import dev.jellystructure.shared.tv.CardPlayState
 import dev.jellystructure.shared.tv.MediaCard
 import dev.jellystructure.shared.tv.MovieDetail
@@ -17,6 +18,8 @@ import dev.jellystructure.shared.tv.NextAiring
 import dev.jellystructure.shared.tv.RatingBadge
 import dev.jellystructure.shared.tv.SeriesDetail
 import dev.jellystructure.shared.tv.TvImdbRating
+import dev.jellystructure.shared.tv.TvSegmentMarkers
+import dev.jellystructure.shared.tv.TvStinger
 import dev.jellystructure.shared.tv.TvTrailer
 import dev.jellystructure.resolver.CertificationResolver
 import kotlinx.coroutines.sync.Semaphore
@@ -63,6 +66,7 @@ class DetailService(
             trailer            = item.tvTrailer(),  // Phase 130
             imdbRating         = item.tvImdbRating(),  // Phase 131
             originalLanguage   = item.originalLanguage,  // R181 — player's "Dubbed" audio badge
+            segments           = item.segments.toTv(),  // Phase 150
         )
     }
 
@@ -100,6 +104,7 @@ class DetailService(
                     partCount = ep.partCount,
                     chapterStartMs = ep.chapterStartMs,
                     hasChapters = ep.hasChapters,
+                    segments = ep.segments.toTv(),  // Phase 150
                 )
             }
             Season(index = seasonNum, name = seasonName, episodes = tvEpisodes)
@@ -224,6 +229,16 @@ class DetailService(
     /** Phase 131: catalog-only — the item's stored IMDb rating; never fetched at detail-read time. */
     private fun MediaItem.tvImdbRating(): TvImdbRating? =
         imdbRating?.let { TvImdbRating(aggregateRating = it.aggregateRating, voteCount = it.voteCount) }
+
+    /** Phase 150: catalog-only — the stored segment markers (Episode's own or a movie's), straight off
+     *  the in-memory model. An extension on the server-side [SegmentMarkers] itself (not [MediaItem])
+     *  since it's shared by both the per-episode and per-movie mapping call sites above. */
+    private fun SegmentMarkers.toTv(): TvSegmentMarkers = TvSegmentMarkers(
+        introStartMs = introStartMs,
+        introEndMs = introEndMs,
+        creditsStartMs = creditsStartMs,
+        stinger = stinger?.let { TvStinger(atMs = it.atMs, kind = it.kind) },
+    )
 }
 
 private const val CAST_LIMIT = 20

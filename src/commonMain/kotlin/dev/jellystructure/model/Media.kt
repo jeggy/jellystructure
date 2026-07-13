@@ -25,6 +25,40 @@ data class ImdbRating(
     val syncedAt: Long,
 )
 
+/** Phase 150: a mid/post-credits scene TMDB flags via the `duringcreditsstinger`/`aftercreditsstinger`
+ *  keywords (ingested as ordinary tags per Phase 51 — see `MediaStore`/`Scanner`'s TMDB re-pull merge).
+ *  [kind] is `"during"` or `"after"`; [atMs] is null until an admin (or a future detector) pins the
+ *  exact moment — its mere presence is enough for the player to never auto-skip past it. */
+@Serializable
+data class Stinger(
+    val atMs: Long? = null,
+    val kind: String,
+)
+
+/** Phase 150 (FR-SEG1-1): where this title's intro and credits segments actually start, so Ravilo can
+ *  offer Skip Intro / Skip Credits instead of a fixed "N seconds before the file ends" guess. Embedded
+ *  on both [Episode] and [MediaItem] (a movie has no episodes but still has its own credits/intro) —
+ *  nullable fields, JSON-blob only, exactly like Phase 149's `chapterStartMs`/`hasChapters`: no schema
+ *  migration needed, a plain default-valued field addition.
+ *  [source] — `"chapter"` (title pattern match) | `"heuristic"` (ffmpeg black/silence/position) |
+ *  `"fingerprint"` (cross-episode audio match) | `"manual"` (admin-entered/edited). [confidence] is
+ *  `0..1` for the two automatic-and-uncertain sources (`heuristic`/`fingerprint`) and null for
+ *  `chapter`/`manual` (an exact marker or an admin's own eyes need no confidence score) — resolution
+ *  precedence is manual > chapter > numeric confidence, never a null-vs-number comparison (dev-review
+ *  addendum §4). [manuallyConfirmed] is set the moment an admin edits any field via the segment
+ *  scrubber; a scan must never silently overwrite a manual correction — only an explicit Re-scan clears it.
+ */
+@Serializable
+data class SegmentMarkers(
+    val introStartMs: Long? = null,
+    val introEndMs: Long? = null,
+    val creditsStartMs: Long? = null,
+    val stinger: Stinger? = null,
+    val source: String? = null,
+    val confidence: Double? = null,
+    val manuallyConfirmed: Boolean = false,
+)
+
 @Serializable
 enum class TrackKind { VIDEO, AUDIO, SUBTITLE, DATA }
 
@@ -119,6 +153,8 @@ data class Episode(
      *  group (all-or-nothing per file — either the chapter count matched and every episode got an offset,
      *  or none did). */
     val hasChapters: Boolean = false,
+    /** Phase 150: this episode's own intro/credits segments (see [SegmentMarkers]). */
+    val segments: SegmentMarkers = SegmentMarkers(),
 )
 
 @Serializable
@@ -212,6 +248,9 @@ data class MediaItem(
     // scan time. Gates Ravilo visibility for restricted (non-EnableAllFolders) Jellyfin users — see
     // MediaStore.visibleTo. Null on pre-142 rows until the one-time path-prefix backfill runs.
     val libraryId: String? = null,
+    /** Phase 150: this item's own intro/credits segments (movies only in practice — a TV_SHOW's
+     *  episodes each carry their own via [Episode.segments]; see [SegmentMarkers]). */
+    val segments: SegmentMarkers = SegmentMarkers(),
 )
 
 /** Phase 108: the sort key every "recently added" surface uses (Ravilo's Newly Added, Browse default,
