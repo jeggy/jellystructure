@@ -43,6 +43,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.jellystructure.ravilo.ui.components.AppBar
@@ -61,9 +62,10 @@ import kotlinx.datetime.toLocalDateTime
 private const val PX_PER_MINUTE = 4.4f
 private const val CHANNEL_COL_WIDTH_DP = 140
 private const val CHANNEL_COL_SPACER_DP = 2
-// Bug fix: D-pad LEFT/RIGHT paces the shared viewport by this fixed amount (see PAGE_MINUTES call
-// sites' doc comment for why this replaced per-program-cell focus).
-private const val PAGE_MINUTES = 30f
+// Bug fix: below this rendered cell width (~25min at PX_PER_MINUTE), the program cell drops its time
+// range label entirely rather than wrapping/truncating it into unreadable fragments — see the call
+// site's doc comment.
+private const val TIME_LABEL_MIN_WIDTH_DP = 110f
 
 /**
  * Computes which item (index 0 = the very first rendered cell, whatever it is — a gap spacer or a
@@ -118,8 +120,10 @@ private fun formatGuideTime(epochMs: Long): String {
  * Phase R177 §C — the full-schedule EPG guide: one horizontally-scrollable row of programs per
  * channel (sticky channel column), category filter chips (channel-level — addendum B, Jellyfin has
  * no per-program category data), a "now" line per row (the current program is highlighted with its
- * live elapsed progress). Selecting a program tunes its channel LIVE, not the future slot — the
- * spec's own framing (§C1: "you watch live, not the future slot").
+ * live elapsed progress). Selecting a program cell opens a details overlay for that specific
+ * program (title/time/channel) with an explicit "Watch Live" action — selecting the channel column
+ * itself still tunes immediately, matching the spec's own framing (§C1: "you watch live, not the
+ * future slot") for that entry point.
  */
 @Composable
 fun LiveTvGuideScreen(
@@ -139,6 +143,11 @@ fun LiveTvGuideScreen(
     var selectedCategory by remember { mutableStateOf<String?>(null) }
     val navItems = raviloNavItems(discoverAvailable)
     val navBarFR = remember { FocusRequester() }
+    // Hoisted out of the Loaded branch (unlike most of its other state) so the details overlay below
+    // — which must render on top of the AppBar, i.e. as a sibling declared after it — can both set it
+    // (from inside Loaded) and read it (from outside).
+    val firstChannelFR = remember { FocusRequester() }
+    var selectedProgram by remember { mutableStateOf<Pair<LiveTvChannel, LiveTvGuideProgram>?>(null) }
 
     // Give the bar initial focus so Back works even during Loading/Error (matches ChannelScreen);
     // the Loaded branch below re-routes focus onto the first channel row once data is in.
@@ -193,11 +202,13 @@ fun LiveTvGuideScreen(
                 // row froze in place (confirmed: worked correctly on mobile, where dragging a row
                 // instead drives sharedScrollableState above, which every row already reacts to via its
                 // own LaunchedEffect/scrollToItem — see the extensive fix history in the Loaded branch
-                // below). Routes D-pad paging through that exact same canonical-state mechanism instead,
-                // by a fixed amount so — per this file's own established lesson — a page means the same
-                // real time regardless of which channel's cell widths happen to be focused.
-                fun pageViewport(deltaMinutes: Float) {
-                    viewportStartMinutes = (viewportStartMinutes + deltaMinutes).coerceIn(0f, maxViewportMinutes)
+                // below). Rather than intercepting LEFT/RIGHT (which would still need native focus
+                // search to actually move between program cells), every cell reports its own start time
+                // whenever it gains focus — native search still drives which cell focuses next, this
+                // just keeps the shared canonical state (and therefore every other row) truthful about
+                // where the newly-focused cell actually is.
+                fun onCellFocused(startMinutes: Float) {
+                    viewportStartMinutes = startMinutes.coerceIn(0f, maxViewportMinutes)
                 }
 
                 // User request: open on the start of the OLDEST currently-active program (across every
@@ -219,7 +230,6 @@ fun LiveTvGuideScreen(
                 // a nav bar / first cell on load, but this one never did, so a D-pad landing here had
                 // nothing to move focus away from the (non-directional) root box: LEFT/RIGHT/DOWN were
                 // all silently swallowed. Land on the first channel's row like BrowseScreen's firstCellFR.
-                val firstChannelFR = remember { FocusRequester() }
                 LaunchedEffect(visibleChannels.isNotEmpty()) {
                     if (visibleChannels.isNotEmpty()) runCatching { firstChannelFR.requestFocus() }
                 }
@@ -267,7 +277,8 @@ fun LiveTvGuideScreen(
                                 viewportStartMinutes = { viewportStartMinutes },
                                 scrollableState = sharedScrollableState,
                                 onTune = { onTuneChannel(ch) },
-                                onPage = ::pageViewport,
+                                onCellFocused = ::onCellFocused,
+                                onProgramSelect = { p -> selectedProgram = ch to p },
                                 channelFocusRequester = if (index == 0) firstChannelFR else null,
                             )
                         }
@@ -285,6 +296,23 @@ fun LiveTvGuideScreen(
             onSearch = onSearch,
             scrolled = true,
         )
+        selectedProgram?.let { (channel, program) ->
+            ProgramDetailsOverlay(
+                channel = channel,
+                program = program,
+                onWatchLive = {
+                    selectedProgram = null
+                    onTuneChannel(channel)
+                },
+                onDismiss = {
+                    selectedProgram = null
+                    // No per-cell FocusRequester exists to return to precisely (deliberately, to avoid
+                    // one-per-lazy-item — see the channel-box comment on the same tradeoff); the first
+                    // channel row is a stable, always-present fallback anchor.
+                    runCatching { firstChannelFR.requestFocus() }
+                },
+            )
+        }
     }
 }
 
@@ -379,19 +407,17 @@ private fun GuideChannelRow(
     viewportStartMinutes: () -> Float,
     scrollableState: ScrollableState,
     onTune: () -> Unit,
-    onPage: (Float) -> Unit,
+    onCellFocused: (Float) -> Unit,
+    onProgramSelect: (LiveTvGuideProgram) -> Unit,
     channelFocusRequester: FocusRequester? = null,
 ) {
     val colors = RaviloTheme.colors
     val listState = rememberLazyListState()
     Row(modifier = Modifier.fillMaxWidth().height(78.dp), verticalAlignment = Alignment.CenterVertically) {
         // Sticky-ish channel column (not a true pinned-column grid — see the R177 status note on scope).
-        // Bug fix: this is now the ONLY focusable target in the row (program cells below lost their own
-        // dpadFocusable — see that comment) specifically so D-pad LEFT/RIGHT paging never has to decide
-        // which program cell to move focus onto next: the channel box is never lazily virtualized away,
-        // so it's a stable, always-focusable anchor regardless of how far the shared viewport pages.
-        // Selecting any program cell always tuned this same channel anyway (never the specific program
-        // — "you watch live, not the future slot"), so this loses no functionality.
+        // Its own focus target, independent of the program cells below — selecting it tunes this
+        // channel immediately (no details popup), a quick "just watch this channel" path alongside
+        // the cells' richer per-program flow.
         var chFocused by remember { mutableStateOf(false) }
         Row(
             modifier = Modifier.width(CHANNEL_COL_WIDTH_DP.dp).fillMaxSize()
@@ -399,8 +425,6 @@ private fun GuideChannelRow(
                 .dpadFocusable(
                     focusRequester = channelFocusRequester,
                     onFocused = { chFocused = true }, onBlurred = { chFocused = false }, onSelect = onTune,
-                    onLeft = { onPage(-PAGE_MINUTES) },
-                    onRight = { onPage(PAGE_MINUTES) },
                 )
                 .padding(10.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -491,22 +515,52 @@ private fun GuideChannelRow(
                     val p = (cell as GuideCell.Prog).program
                     val isNow = nowMs in p.startMs until p.endMs
                     val minutes = ((p.endMs - p.startMs) / 60_000L).coerceAtLeast(1L).toInt()
-                    // Bug fix: no longer its own dpadFocusable target — see the channel-box comment
-                    // above. Selecting any cell always tuned this same channel regardless, so a program
-                    // cell never needed independent focus; only the "now" background highlight (unrelated
-                    // to focus) is real content here.
+                    val cellWidthDp = minutes * PX_PER_MINUTE
+                    // Bug fix: short programs (a real, common case — e.g. DR Ramasjang's ~15min
+                    // segments) render as narrow cells by design (no width floor — see the comment
+                    // above buildGuideCells' caller on why one cell must never be wider than its own
+                    // duration*PX_PER_MINUTE). Neither Text had line/overflow limits, so on a narrow
+                    // cell both the time range and the title wrapped onto several lines, breaking mid-
+                    // word ("Gala"/"ktisk", "08:40"/"-08:5"/"0") instead of the "narrow, possibly
+                    // textless sliver" already described (but not actually implemented) in the comment
+                    // two screens up. Below TIME_LABEL_MIN_WIDTH_DP the time range (the less useful of
+                    // the two — the ruler above already conveys roughly when a cell starts) is dropped
+                    // entirely rather than wrapped or truncated into unreadable fragments; both texts
+                    // are always capped to a single rendered line each with an ellipsis, never a wrap.
+                    val showTimeLabel = cellWidthDp >= TIME_LABEL_MIN_WIDTH_DP
+                    // User request: each cell is focusable/selectable again (selecting opens the
+                    // details overlay for this specific program — see onProgramSelect). LEFT/RIGHT is
+                    // deliberately left to Compose's native focus search (moves to the adjacent cell
+                    // and scrolls just this row into view, same as before the sync bug fix) —
+                    // onCellFocused below is what keeps every OTHER row's viewport truthful about
+                    // wherever native search lands, without needing to hand-roll the cell-to-cell
+                    // traversal ourselves.
+                    var pFocused by remember { mutableStateOf(false) }
+                    val startMinutes = remember(p.startMs, guideOriginMs) { (p.startMs - guideOriginMs) / 60_000f }
                     Box(
                         modifier = Modifier
-                            .width((minutes * PX_PER_MINUTE).dp).fillMaxSize()
+                            .width(cellWidthDp.dp).fillMaxSize()
                             .background(if (isNow) colors.accentDim else colors.surfaceVariant, RoundedCornerShape(6.dp))
+                            .then(if (pFocused) Modifier.border(2.dp, colors.focusRing, RoundedCornerShape(6.dp)) else Modifier)
+                            .dpadFocusable(
+                                onFocused = { pFocused = true; onCellFocused(startMinutes) },
+                                onBlurred = { pFocused = false },
+                                onSelect = { onProgramSelect(p) },
+                            )
                             .padding(8.dp),
                     ) {
                         Column {
+                            if (showTimeLabel) {
+                                Text(
+                                    "${formatGuideTime(p.startMs)}–${formatGuideTime(p.endMs)}",
+                                    color = colors.textDim, fontSize = 10.sp, fontWeight = FontWeight.Medium,
+                                    maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                )
+                            }
                             Text(
-                                "${formatGuideTime(p.startMs)}–${formatGuideTime(p.endMs)}",
-                                color = colors.textDim, fontSize = 10.sp, fontWeight = FontWeight.Medium,
+                                p.name, color = colors.text, fontSize = 12.sp, fontWeight = FontWeight.Medium,
+                                maxLines = if (showTimeLabel) 2 else 1, overflow = TextOverflow.Ellipsis,
                             )
-                            Text(p.name, color = colors.text, fontSize = 12.sp, fontWeight = FontWeight.Medium, maxLines = 2)
                             if (isNow) {
                                 val progress = ((nowMs - p.startMs).toFloat() / (p.endMs - p.startMs).toFloat()).coerceIn(0f, 1f)
                                 Spacer(Modifier.height(4.dp))
@@ -517,6 +571,76 @@ private fun GuideChannelRow(
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+/**
+ * User request — selecting a program cell opens this instead of tuning directly: title/time/channel
+ * plus an explicit "Watch Live" action, so browsing the guide with the D-pad doesn't blow past a
+ * program you meant to look at and immediately jump the channel. Back dismisses without tuning.
+ */
+@Composable
+private fun ProgramDetailsOverlay(
+    channel: LiveTvChannel,
+    program: LiveTvGuideProgram,
+    onWatchLive: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val colors = RaviloTheme.colors
+    val watchLiveFR = remember { FocusRequester() }
+    LaunchedEffect(Unit) { runCatching { watchLiveFR.requestFocus() } }
+
+    Box(
+        modifier = Modifier.fillMaxSize()
+            .background(Color.Black.copy(alpha = 0.7f))
+            .dpadFocusable(onBack = onDismiss),
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(
+            modifier = Modifier
+                .width(480.dp)
+                .background(colors.surface, RoundedCornerShape(16.dp))
+                .padding(28.dp),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                val logoUrl = channel.logoUrl
+                if (logoUrl != null) {
+                    RemoteImage(
+                        url = logoUrl,
+                        contentDescription = channel.name,
+                        contentScale = ContentScale.Fit,
+                        modifier = Modifier.size(28.dp),
+                    )
+                    Spacer(Modifier.width(8.dp))
+                }
+                Text("${channel.number}  ${channel.name}", color = colors.textSecondary, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+            }
+            Spacer(Modifier.height(14.dp))
+            Text(program.name, color = colors.text, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(6.dp))
+            Text(
+                "${formatGuideTime(program.startMs)}–${formatGuideTime(program.endMs)}",
+                color = colors.textDim, fontSize = 14.sp,
+            )
+            Spacer(Modifier.height(24.dp))
+            var wlFocused by remember { mutableStateOf(false) }
+            Box(
+                modifier = Modifier
+                    .background(if (wlFocused) colors.accent else colors.accentDim, RoundedCornerShape(10.dp))
+                    .dpadFocusable(
+                        focusRequester = watchLiveFR,
+                        onFocused = { wlFocused = true }, onBlurred = { wlFocused = false },
+                        onSelect = onWatchLive,
+                    )
+                    .padding(horizontal = 22.dp, vertical = 13.dp),
+            ) {
+                Text(
+                    str("livetv.watch_live"),
+                    color = if (wlFocused) colors.onAccent else colors.text,
+                    fontSize = 15.sp, fontWeight = FontWeight.SemiBold,
+                )
             }
         }
     }
