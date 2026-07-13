@@ -872,7 +872,12 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                     displayName = dest.displayName,
                     discoverAvailable = upcomingAvailable || discoverAvailable,
                     onBack = { pop() },
-                    onTuneChannel = { ch -> replaceTop(Dest.LiveTv(ch.channelId, dest.displayName)) },
+                    // Bug fix: this used to replaceTop the guide itself with the LiveTv player, which
+                    // dropped the guide from the stack — Back from the player then skipped straight to
+                    // whatever was below the guide (Home), not back to the guide the user actually came
+                    // from. push() keeps the guide on the stack so Back unwinds one screen at a time,
+                    // same as tuning from anywhere else (e.g. Home's On Now row already pushes).
+                    onTuneChannel = { ch -> push(Dest.LiveTv(ch.channelId, dest.displayName)) },
                     onNavSelect = { idx ->
                         when (raviloNavTarget(idx, upcomingAvailable || discoverAvailable)) {
                             RaviloNavTarget.HOME -> resetTo(Dest.Home(dest.displayName))
