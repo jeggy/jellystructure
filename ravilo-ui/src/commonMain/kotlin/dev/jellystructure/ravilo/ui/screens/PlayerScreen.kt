@@ -112,7 +112,10 @@ import org.jetbrains.compose.resources.painterResource
 private const val CHROME_HIDE_MS = 3_600L
 private const val CURSOR_HIDE_MS = 2_000L // R157 FR-R157-3.2
 private const val NEXTUP_AT_MS   = 20_000L    // R111: show next-up card when this many ms remain (was 34s — too early)
-private const val COUNTDOWN_SECS = 8
+// R182 — replaces the old hardcoded COUNTDOWN_SECS = 8: the "Skip button countdown" viewer setting
+// (RaviloConfig.skipSecs, one of 4/6/8) now governs both the Skip Intro pill and this next-up/credits
+// countdown. This is only the pre-fetch seed (RaviloConfig's own default) until getConfig() resolves.
+private const val DEFAULT_SKIP_SECS = 6
 private const val SKIP_BACK_MS   = 10_000L
 private const val SKIP_FWD_MS    = 30_000L
 private const val POLL_MS        = 500L
@@ -188,6 +191,18 @@ fun PlayerScreen(
     // Phase 150 — same staleness risk: the near-end/skip-intro checks (R182) run inside the poll loop.
     val currentSegments by rememberUpdatedState(segments)
 
+    // R182 — resolved per-viewer skip behaviour (jellystructure Ravilo config → Preferences; there is
+    // no in-app settings screen for these — see PlayerStore.getConfig()). Re-fetched every episode (the
+    // LaunchedEffect(itemId) below) so a mid-binge settings change takes effect on the next episode.
+    var skipIntroMode by remember { mutableStateOf(dev.jellystructure.shared.tv.SkipMode.PROMPT) }
+    var skipCreditsMode by remember { mutableStateOf(dev.jellystructure.shared.tv.SkipMode.PROMPT) }
+    var skipSecs by remember { mutableIntStateOf(DEFAULT_SKIP_SECS) }
+    var autoplayNextEnabled by remember { mutableStateOf(true) }
+    val currentSkipIntroMode by rememberUpdatedState(skipIntroMode)
+    val currentSkipCreditsMode by rememberUpdatedState(skipCreditsMode)
+    val currentSkipSecs by rememberUpdatedState(skipSecs)
+    val currentAutoplayNext by rememberUpdatedState(autoplayNextEnabled)
+
     val player = remember { RaviloPlayer() }
 
     // Playback state — polled every 500 ms from the player
@@ -227,7 +242,7 @@ fun PlayerScreen(
     // R111: once the viewer picks "Watch credits" we latch it dismissed so the near-end poll doesn't
     // re-show the card on the very next tick. Reset per-episode in LaunchedEffect(itemId).
     var nextUpDismissed by remember { mutableStateOf(false) }
-    var countdown     by remember { mutableIntStateOf(COUNTDOWN_SECS) }
+    var countdown     by remember { mutableIntStateOf(DEFAULT_SKIP_SECS) }
     var nuFocus       by remember { mutableStateOf(NuFocus.PLAY) }
     // Bug fix: PlayerScreen is reused across an episode transition (replaceTop keeps this composable —
     // see LaunchedEffect(itemId) below), and so is `player` itself (remembered once, above) — its
@@ -442,8 +457,20 @@ fun PlayerScreen(
         // starts loading, rather than waiting for the (already-gated) poll loop to notice.
         nextUpDismissed = false  // R111: each episode (replaceTop keeps this composable) starts fresh
         nextUpVisible = false
-        countdown = COUNTDOWN_SECS
+        countdown = currentSkipSecs
         store.startSession(itemId, positionProvider = { positionMs }, isPausedProvider = { !isPlaying })
+    }
+
+    // R182 — resolve skip behaviour in parallel with session start (not blocking playback start on an
+    // extra round-trip). Falls back to the current (previous episode's, or the DEFAULT_SKIP_SECS-seeded)
+    // values on failure — never blocks or breaks playback.
+    LaunchedEffect(itemId) {
+        store.getConfig()?.let { cfg ->
+            skipIntroMode = cfg.skipIntro
+            skipCreditsMode = cfg.skipCredits
+            skipSecs = cfg.skipSecs
+            autoplayNextEnabled = cfg.autoplayNext
+        }
     }
 
     // Load player when the StreamTicket is ready (initial load or R56 restream)
@@ -562,12 +589,16 @@ fun PlayerScreen(
     // Next-up countdown
     LaunchedEffect(nextUpVisible) {
         if (!nextUpVisible) return@LaunchedEffect
-        countdown = COUNTDOWN_SECS
-        repeat(COUNTDOWN_SECS) {
+        countdown = currentSkipSecs
+        repeat(currentSkipSecs) {
             delay(1_000)
             countdown--
         }
-        if (nextUpVisible) advanceNext()
+        // R182 (dev-review addendum §2) — autoplayNext gates only the countdown's OWN auto-invocation;
+        // a manual pick (Select on the PLAY button, the transport's Next Episode control, or MediaKey.NEXT)
+        // still calls advanceNext() directly through their own existing call sites, untouched. With
+        // autoplayNext off the card simply sits at 0 waiting for one of those instead of navigating itself.
+        if (nextUpVisible && currentAutoplayNext) advanceNext()
     }
 
     // Pause-flash auto-dismiss
@@ -960,6 +991,7 @@ fun PlayerScreen(
                 // so the next episode's is one lookup away rather than needing new plumbing end-to-end.
                 nextEpStillUrls = episodes?.getOrNull(currentEpIndex + 1)?.stillUrls ?: emptyList(),
                 countdown      = countdown,
+                totalSecs      = skipSecs,
                 nuFocus        = nuFocus,
             )
         }
@@ -1774,6 +1806,7 @@ private fun NextUpCard(
     nextEpTitle: String?,
     nextEpStillUrls: List<String?>,
     countdown: Int,
+    totalSecs: Int,
     nuFocus: NuFocus,
 ) {
     // R111: compact card tucked into the bottom-right corner (was a 560dp full-width banner).
@@ -1803,7 +1836,7 @@ private fun NextUpCard(
                     EpisodeTriptych(stillUrls = nextEpStillUrls, modifier = Modifier.matchParentSize())
                 }
                 Box(modifier = Modifier.padding(6.dp)) {
-                    CountdownRing(colors, countdown)
+                    CountdownRing(colors, countdown, totalSecs)
                 }
             }
             Column(modifier = Modifier.weight(1f)) {
@@ -1847,16 +1880,16 @@ private fun NextUpCard(
 }
 
 @Composable
-private fun CountdownRing(colors: RaviloColors, countdown: Int) {
+private fun CountdownRing(colors: RaviloColors, countdown: Int, totalSecs: Int) {
     Canvas(Modifier.size(34.dp)) {
         val r = 13.dp.toPx()
         val stroke = 3.5.dp.toPx()
         drawCircle(Color.White.copy(0.25f), r, style = Stroke(stroke))
-        if (countdown > 0) {
+        if (countdown > 0 && totalSecs > 0) {
             drawArc(
                 color = colors.accent,
                 startAngle = -90f,
-                sweepAngle = 360f * countdown.toFloat() / COUNTDOWN_SECS,
+                sweepAngle = 360f * countdown.toFloat() / totalSecs,
                 useCenter = false,
                 style = Stroke(stroke, cap = StrokeCap.Round),
             )

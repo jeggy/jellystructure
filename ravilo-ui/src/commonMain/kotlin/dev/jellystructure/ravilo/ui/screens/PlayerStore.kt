@@ -3,6 +3,7 @@ package dev.jellystructure.ravilo.ui.screens
 import dev.jellystructure.ravilo.ui.seams.detectHdrSupport
 import dev.jellystructure.shared.tv.CardPlayState
 import dev.jellystructure.shared.tv.ClientCapabilities
+import dev.jellystructure.shared.tv.RaviloConfig
 import dev.jellystructure.shared.tv.StreamTicket
 import dev.jellystructure.shared.tv.TvApiClient
 import kotlinx.coroutines.CoroutineScope
@@ -106,6 +107,12 @@ class PlayerStore(private val apiClient: TvApiClient) {
         _state.value = PlayerSessionState.Idle
         currentItemId = null
     }
+
+    /** R182 — resolved per-viewer skip/autoplay behaviour for the player (skipIntro/skipCredits/
+     *  skipSecs/autoplayNext), already viewer-resolved server-side (RaviloConfigService.getConfig).
+     *  Suspends directly (unlike the other methods here, which fire-and-forget via scope.launch) so the
+     *  caller's own LaunchedEffect can await it and update local state. */
+    suspend fun getConfig(): RaviloConfig? = runCatching { apiClient.getConfig() }.getOrNull()
 
     /** R142: explicit played write-through used when advancing to the next episode (the finished one). */
     fun markWatched(itemId: String) {
