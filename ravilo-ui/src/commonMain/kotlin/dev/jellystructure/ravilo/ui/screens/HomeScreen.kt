@@ -422,8 +422,11 @@ private fun OnNowRow(
         // instead of on the first channel tile.
         leadingItem = { LiveTvGuideTile(onClick = onOpenLiveTvGuide, focusRequester = firstItemFR) },
         // Design inspiration (design/ravilo/ravilo-livetv.js onNowRow()'s lt-onnow-head): a live-dot
-        // beside the title and a "N channels · From Jellyfin" info line where the old "TV Guide" link
-        // used to sit — now that the guide has its own tile, that slot is free for this instead.
+        // beside the title and a "N channels" info line where the old "TV Guide" link used to sit —
+        // now that the guide has its own tile, that slot is free for this instead. User request:
+        // Ravilo doesn't mention Jellyfin by name anywhere in its own UI (a branding/white-label
+        // choice — Jellyfin is jellystructure's own backend detail, not something the viewer-facing
+        // app surfaces), so this drops the design mockup's own "· From Jellyfin" suffix.
         titleAccessory = { LiveDot() },
         trailingInfo = str("livetv.channels_from_jellyfin", mapOf("count" to channels.size.toString())),
     ) { _, ch, fr ->
