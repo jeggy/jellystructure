@@ -1,9 +1,11 @@
 package dev.jellystructure.ravilo.ui.screens
 
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.LocalBringIntoViewSpec
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -11,6 +13,8 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.derivedStateOf
@@ -30,10 +34,13 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import kotlinx.coroutines.launch
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.jellystructure.ravilo.ui.LocalPortrait
@@ -53,7 +60,9 @@ import dev.jellystructure.ravilo.ui.components.toTileVariant
 import dev.jellystructure.ravilo.ui.seams.sizedProxyUrl
 import dev.jellystructure.ravilo.ui.i18n.str
 import dev.jellystructure.ravilo.ui.theme.RaviloDimens
+import dev.jellystructure.ravilo.ui.theme.RaviloMotion
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
+import dev.jellystructure.ravilo.ui.theme.accentGradient
 import dev.jellystructure.shared.tv.Channel
 import dev.jellystructure.shared.tv.LiveTvChannel
 import dev.jellystructure.shared.tv.MediaCard
@@ -387,7 +396,12 @@ private fun ContentRowItem(
 
 /** Phase R177 — the Home "On now" row: each tile is a channel's currently-airing program with its
  *  live elapsed-time progress bar (reuses [Tile]'s existing progressPct rendering). Selecting a tile
- *  tunes that channel directly (opens the live player) — there is no intermediate detail screen. */
+ *  tunes that channel directly (opens the live player) — there is no intermediate detail screen.
+ *  User request: real channel logos are square, so tiles are SQUARE (not LANDSCAPE) here — with Fit
+ *  content scale that now matches the tile's own aspect, a square logo fills it edge to edge with no
+ *  letterboxing at all. The "Open TV Guide" entry point used to be a text link in the row header
+ *  (dead space-wise and easy to miss); it's now its own leading tile in the track, matching the design
+ *  mockup's `lt-guidetile` treatment (`design/ravilo/ravilo-livetv.js` `onNowRow()`). */
 @Composable
 private fun OnNowRow(
     channels: List<LiveTvChannel>,
@@ -399,13 +413,14 @@ private fun OnNowRow(
     StaticContentRow(
         title = str("livetv.on_now"),
         items = channels,
-        seeAllLabel = str("livetv.guide"),
-        onSeeAll = onOpenLiveTvGuide,
         itemKey = { it.channelId },
         urlResolver = { it.logoUrl },
         bringRowHeaderIntoView = false,
         restoreItemKey = if (store.focusRowKey == "on_now") store.focusItemKey else null,
-    ) { i, ch, fr ->
+        // The guide tile is now the row's first item, so the hero-down focus bridge lands there
+        // instead of on the first channel tile.
+        leadingItem = { LiveTvGuideTile(onClick = onOpenLiveTvGuide, focusRequester = firstItemFR) },
+    ) { _, ch, fr ->
         val program = ch.currentProgram
         val nowMs = remember { kotlin.time.Clock.System.now().toEpochMilliseconds() }
         val progress = if (program != null && program.endMs > program.startMs)
@@ -416,15 +431,59 @@ private fun OnNowRow(
             subtitle = program?.name ?: str("livetv.no_programs"),
             episodeBadge = if (ch.number > 0) ch.number.toString() else null,
             posterUrl = ch.logoUrl,
-            variant = TileVariant.LANDSCAPE,
+            variant = TileVariant.SQUARE,
             // Bug fix: Crop (Tile's default, right for photographic posters/backdrops) cut the top off
             // channel logos and let a white logo canvas bleed through the progress track's ~20%-alpha
             // background. Fit shows the whole mark on a neutral card instead — same treatment the TV
             // Guide's channel column and program-details overlay already use for the same logos.
             contentScale = ContentScale.Fit,
             progressPct = progress,
-            focusRequester = fr ?: if (i == 0) firstItemFR else null,   // hero-down bridge
+            focusRequester = fr,
             onSelect = { store.focusRowKey = "on_now"; store.focusItemKey = ch.channelId; onLiveTvChannelSelect(ch) },
+        )
+    }
+}
+
+/** The row's leading "Open TV Guide" entry point (see [OnNowRow]'s doc comment) — an icon + kicker +
+ *  title + subtitle card, sized to match the SQUARE channel tiles beside it. */
+@Composable
+private fun LiveTvGuideTile(onClick: () -> Unit, focusRequester: FocusRequester? = null) {
+    val colors = RaviloTheme.colors
+    var focused by remember { mutableStateOf(false) }
+    val scale by animateFloatAsState(if (focused) RaviloMotion.TILE_FOCUS_SCALE else 1f, label = "guideTileScale")
+    val tileShape = remember(colors.tileRadius) { RoundedCornerShape(colors.tileRadius) }
+    Column(
+        modifier = Modifier
+            .width(180.dp).height(180.dp)
+            .graphicsLayer { scaleX = scale; scaleY = scale }
+            .background(colors.surfaceVariant, tileShape)
+            .then(if (focused) Modifier.border(2.dp, colors.focusRing, tileShape) else Modifier)
+            .dpadFocusable(
+                focusRequester = focusRequester,
+                onFocused = { focused = true },
+                onBlurred = { focused = false },
+                onSelect = onClick,
+            )
+            .padding(16.dp),
+        verticalArrangement = Arrangement.Center,
+    ) {
+        Box(
+            modifier = Modifier.size(40.dp).background(colors.accentGradient, RoundedCornerShape(10.dp)),
+            contentAlignment = Alignment.Center,
+        ) { Text("▦", color = Color.White, fontSize = 18.sp) }
+        Spacer(Modifier.height(10.dp))
+        Text(
+            str("livetv.guide_kicker"), color = colors.textDim, fontSize = 11.sp,
+            fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp,
+        )
+        Text(
+            str("livetv.open_guide"), color = colors.text, fontSize = 16.sp,
+            fontWeight = FontWeight.SemiBold, maxLines = 2,
+        )
+        Spacer(Modifier.height(2.dp))
+        Text(
+            str("livetv.guide_subtitle"), color = colors.textSecondary, fontSize = 12.sp,
+            maxLines = 2, overflow = TextOverflow.Ellipsis,
         )
     }
 }
