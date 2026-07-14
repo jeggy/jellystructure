@@ -238,7 +238,7 @@ data class ScanStatus(
 )
 
 @Serializable
-data class ActiveScanItem(val label: String, val startedAt: Long)
+data class ActiveScanItem(val label: String, val startedAt: Long, val detail: String? = null)
 
 enum class PipelineRunResult { STARTED, ALREADY_RUNNING, FAILED }
 

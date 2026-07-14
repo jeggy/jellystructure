@@ -537,7 +537,7 @@ suspend fun executePipeline(
                 runPipelineStepPool(
                     jobId, step.step, toProcess, pipelineStepConcurrency(step.step, scanWorkers),
                     scanTracker, broadcaster, labelOf = { it.title },
-                ) { item -> dev.jellystructure.media.PipelineStepOps.pullTmdb(item, scanner, store) }
+                ) { item, _ -> dev.jellystructure.media.PipelineStepOps.pullTmdb(item, scanner, store) }
             }
             "fetch_artwork" -> {
                 // R125/R126: "missing" scope = anything fetch() can fill is absent — poster/fanart, plus
@@ -548,7 +548,7 @@ suspend fun executePipeline(
                 runPipelineStepPool(
                     jobId, step.step, toProcess, pipelineStepConcurrency(step.step, scanWorkers),
                     scanTracker, broadcaster, labelOf = { it.title },
-                ) { item -> dev.jellystructure.media.PipelineStepOps.fetchArtwork(item, store, artworkDownloader) }
+                ) { item, _ -> dev.jellystructure.media.PipelineStepOps.fetchArtwork(item, store, artworkDownloader) }
             }
             "write_nfo" -> {
                 // Phase 115 (FR B) — content-aware: the old `overwrite`-gated write meant an NFO
@@ -566,7 +566,7 @@ suspend fun executePipeline(
                 runPipelineStepPool(
                     jobId, step.step, workingSet, pipelineStepConcurrency(step.step, scanWorkers),
                     scanTracker, broadcaster, labelOf = { it.title },
-                ) { item ->
+                ) { item, _ ->
                     when (dev.jellystructure.media.PipelineStepOps.writeNfo(
                         item, store, serverUrl, cfg.metadata.ageRatingCascade,
                         allowForeign = step.overwrite || cfg.behavior.overwriteNfo,
@@ -589,14 +589,14 @@ suspend fun executePipeline(
                 runPipelineStepPool(
                     jobId, step.step, if (jellyfinReady) toSync else emptyList(),
                     pipelineStepConcurrency(step.step, scanWorkers), scanTracker, broadcaster, labelOf = { it.title },
-                ) { item -> dev.jellystructure.media.PipelineStepOps.syncJellyfin(item, store, jellyfinClient, cfg) }
+                ) { item, _ -> dev.jellystructure.media.PipelineStepOps.syncJellyfin(item, store, jellyfinClient, cfg) }
             }
             "rescan_arr" -> {
                 Logger.info("rescan_arr: ${workingSet.size} items")
                 runPipelineStepPool(
                     jobId, step.step, workingSet, pipelineStepConcurrency(step.step, scanWorkers),
                     scanTracker, broadcaster, labelOf = { it.title },
-                ) { item -> arrRescan.nudge(item) }
+                ) { item, _ -> arrRescan.nudge(item) }
             }
             "detect_drift" -> {
                 // Phase 115 (FR F) — real state evaluation across the working set, replacing the no-op.
@@ -605,7 +605,7 @@ suspend fun executePipeline(
                 runPipelineStepPool(
                     jobId, step.step, workingSet, pipelineStepConcurrency(step.step, scanWorkers),
                     scanTracker, broadcaster, labelOf = { it.title },
-                ) { item ->
+                ) { item, _ ->
                     val current = store.get(item.id) ?: item
                     val result = dev.jellystructure.nfo.DriftEvaluator.evaluate(current, jellyfinClient, cfg)
                     when (result.state) {
@@ -659,7 +659,7 @@ suspend fun executePipeline(
                 runPipelineStepPool(
                     jobId, step.step, toProcess, pipelineStepConcurrency(step.step, scanWorkers),
                     scanTracker, broadcaster, labelOf = { it.title },
-                ) { item -> dev.jellystructure.media.PipelineStepOps.detectSegments(item, store, step.chapterKeywords, fingerprintService, step.detectFingerprint) }
+                ) { item, reportDetail -> dev.jellystructure.media.PipelineStepOps.detectSegments(item, store, step.chapterKeywords, fingerprintService, step.detectFingerprint, reportDetail) }
             }
             "sync_imdb_ratings" -> {
                 // Phase 131: keyed by imdbId; a title without one has no rating to sync. A *small* pool
@@ -671,7 +671,7 @@ suspend fun executePipeline(
                 runPipelineStepPool(
                     jobId, step.step, toSync, pipelineStepConcurrency(step.step, scanWorkers),
                     scanTracker, broadcaster, labelOf = { it.title },
-                ) { item ->
+                ) { item, _ ->
                     if (dev.jellystructure.media.PipelineStepOps.syncImdb(item, store, imdbClient)) updated.incrementAndGet()
                     delay(250)
                 }
