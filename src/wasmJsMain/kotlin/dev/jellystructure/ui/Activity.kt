@@ -161,6 +161,17 @@ fun renderActivity(container: Element, scope: CoroutineScope, query: Map<String,
               </div>
             </div>
           </div>
+          <div class="card fill" id="workers-card">
+            <div class="row center">
+              <h4 style="margin:0">Workers</h4>
+              <span class="spacer"></span>
+              <span class="mono tiny muted" id="workers-count"></span>
+            </div>
+            <hr class="dash" style="margin:10px 0">
+            <div id="workers-list" class="tiny" style="display:flex;flex-direction:column;gap:6px;max-height:150px;overflow-y:auto">
+              <div class="muted">No active workers.</div>
+            </div>
+          </div>
         </div>
 
         <div id="act-idle" class="card" style="margin-bottom:14px;display:none">
@@ -722,9 +733,35 @@ private suspend fun pollWorkers(container: Element) {
                 it.textContent = "Workers: ${status.activeWorkers}/${status.configuredWorkers}"
                 it.style.display = ""
             }
+            renderWorkersList(container, status.activeItems)
             applyScanStatus(container, status)
         }
         delay(2000)
+    }
+}
+
+/** Shows what each concurrent worker is currently doing (not just the "N/M" count) — polled alongside
+ *  the rest of [pollWorkers] since a worker mid-item never fires a discrete WS event of its own; this is
+ *  the only way a long-running item (e.g. one fpcalc call in a 200+-episode detect_segments fingerprint
+ *  pass) is visible while it's still in flight, rather than only once it finishes or gets stuck long
+ *  enough to warrant a log line. */
+private fun renderWorkersList(container: Element, items: List<dev.jellystructure.api.ActiveScanItem>) {
+    val listEl = container.querySelector("#workers-list") as? HTMLElement ?: return
+    val countEl = container.querySelector("#workers-count") as? HTMLElement
+    countEl?.textContent = if (items.isEmpty()) "" else "${items.size} active"
+    if (items.isEmpty()) {
+        listEl.innerHTML = """<div class="muted">No active workers.</div>"""
+        return
+    }
+    val nowSec = (nowMs() / 1000.0).toLong()
+    listEl.innerHTML = items.joinToString("") { item ->
+        val elapsedSec = (nowSec - item.startedAt).coerceAtLeast(0)
+        val stuck = elapsedSec >= 20
+        val timeColor = if (stuck) "var(--bad)" else "var(--muted)"
+        """<div class="row center" style="gap:8px">
+             <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${item.label.escapeHtml()}</span>
+             <span class="mono tiny" style="color:$timeColor">${formatRemaining(elapsedSec * 1000.0)}</span>
+           </div>"""
     }
 }
 
@@ -739,6 +776,7 @@ private fun hideJobUI(container: Element) {
     (container.querySelector("#act-columns") as? HTMLElement)?.style?.display = "none"
     (container.querySelector("#act-idle") as? HTMLElement)?.style?.display = "block"
     resetNowCard(container)
+    renderWorkersList(container, emptyList())
 }
 
 private fun updateNowFilename(container: Element, shortName: String) {

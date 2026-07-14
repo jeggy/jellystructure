@@ -9,8 +9,6 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import kotlin.concurrent.AtomicInt
 
 /** Bug fix: a pipeline run that goes quiet (e.g. one item's per-episode TMDB fetches taking many
@@ -61,9 +59,6 @@ suspend fun <T> runPipelineStepPool(
     scanTracker.targetWorkers.value = concurrency.coerceAtLeast(1)
     scanTracker.activeWorkers.value = 0
 
-    val inFlightMutex = Mutex()
-    val inFlightSince = mutableMapOf<String, Long>()   // label -> started epoch sec
-
     coroutineScope {
         val channel = Channel<T>(Channel.UNLIMITED)
         launch {
@@ -77,10 +72,9 @@ suspend fun <T> runPipelineStepPool(
             while (true) {
                 delay(STUCK_ITEM_LOG_INTERVAL_SEC * 1000)
                 val now = nowEpochSec()
-                val stuck = inFlightMutex.withLock { inFlightSince.toMap() }
-                    .filterValues { now - it >= STUCK_ITEM_WARN_SEC }
-                for ((label, startedAt) in stuck) {
-                    Logger.warn("$step: '$label' still running after ${now - startedAt}s", "pipeline")
+                val stuck = scanTracker.activeItemsSnapshot().filter { now - it.startedAt >= STUCK_ITEM_WARN_SEC }
+                for (item in stuck) {
+                    Logger.warn("$step: '${item.label}' still running after ${now - item.startedAt}s", "pipeline")
                 }
             }
         }
@@ -91,13 +85,13 @@ suspend fun <T> runPipelineStepPool(
                     for (item in channel) {
                         if (scanTracker.cancelRequested) break
                         val label = labelOf(item)
-                        inFlightMutex.withLock { inFlightSince[label] = nowEpochSec() }
+                        val token = scanTracker.beginItem(label)
                         runCatching { perItem(item) }
                             .onFailure { e ->
                                 Logger.warn("$step failed for '$label': ${e.message}")
                                 onItemFailure(item, e)
                             }
-                        inFlightMutex.withLock { inFlightSince.remove(label) }
+                        scanTracker.endItem(token)
                         val done = processed.incrementAndGet().coerceAtMost(total)
                         broadcaster.broadcast(JobEvent.StepProgress(jobId, step, label, done, total))
                     }

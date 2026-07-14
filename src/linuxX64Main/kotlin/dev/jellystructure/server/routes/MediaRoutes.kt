@@ -2134,9 +2134,12 @@ internal suspend fun runScan(
                     try {
                         for (jItem in channel) {
                             if (scanTracker.cancelRequested) break
+                            val activeToken = scanTracker.beginItem(jItem.name)
                             val item = try { scanner.scanItem(jItem)?.let { artworkDownloader?.stampHasStill(it) ?: it } } catch (e: Exception) {
                                 Logger.error("scanItem failed for '${jItem.name}': ${e.message}", "scan")
                                 null
+                            } finally {
+                                scanTracker.endItem(activeToken)
                             }
                             if (item != null) {
                                 allItemsMutex.withLock { allItems += item }
