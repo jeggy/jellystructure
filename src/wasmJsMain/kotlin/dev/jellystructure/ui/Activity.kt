@@ -145,7 +145,7 @@ fun renderActivity(container: Element, scope: CoroutineScope, query: Map<String,
         </div>
 
         <div id="act-columns" class="row" style="display:none;align-items:stretch;gap:14px;margin-bottom:14px">
-          <div class="card fill" id="now-card">
+          <div class="card fill" id="now-card" style="min-width:0">
             <div class="row center">
               <h4 style="margin:0">Now processing</h4>
               <span class="spacer"></span>
@@ -156,12 +156,12 @@ fun renderActivity(container: Element, scope: CoroutineScope, query: Map<String,
               <div class="imgslot" id="now-poster" style="width:60px;height:88px;flex:none;background:var(--fill-3);border-radius:6px;overflow:hidden;display:flex;align-items:center;justify-content:center">
                 <span class="tiny muted">poster</span>
               </div>
-              <div class="tiny" style="line-height:1.85" id="now-ops">
+              <div class="tiny" style="line-height:1.85;min-width:0;overflow:hidden" id="now-ops">
                 <div class="muted">Waiting for next item…</div>
               </div>
             </div>
           </div>
-          <div class="card fill" id="workers-card">
+          <div class="card fill" id="workers-card" style="min-width:0">
             <div class="row center">
               <h4 style="margin:0">Workers</h4>
               <span class="spacer"></span>
