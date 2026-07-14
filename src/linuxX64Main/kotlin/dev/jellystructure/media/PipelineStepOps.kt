@@ -170,25 +170,37 @@ object PipelineStepOps {
     }
 
     /**
-     * FR-SEG1-4 — cross-episode audio fingerprinting for a series' Skip Intro bounds. Compares every
-     * eligible episode (`partCount == 1`, not `manuallyConfirmed`, no `introStartMs` yet) against ONE
-     * reference episode per season — the season's lowest-numbered `partCount == 1` episode — rather
-     * than every pair of episodes: full pairwise comparison is O(n²) fpcalc/compare work for a
-     * property (a season's fixed intro) that a single well-chosen reference already reveals. One
-     * comparison fills BOTH sides' bounds at once (`SegmentDetection.findIntroMatch` returns both
-     * fingerprints' own coordinate frames), so the reference episode itself is usually filled in for
-     * free the first time any other episode matches against it.
+     * FR-SEG1-4, amended 2026-07-14 — cross-episode audio fingerprinting for a series' Skip Intro
+     * bounds, via a **season-wide consensus** rather than one fixed reference episode. The original
+     * design compared every episode against ONE reference (the season's lowest-numbered episode) —
+     * cheaper (O(n) comparisons), but confirmed broken on real data: a season's premiere commonly has
+     * an atypical intro cut (extended cold open, bonus footage, a different edit), so when it's the
+     * reference, the WHOLE season fails to correlate even though the rest of the season's episodes
+     * correlate cleanly with each other. Now every eligible episode is compared against every OTHER
+     * episode in its season (not just one), and each episode's final bounds come from reconciling
+     * every successful pairwise match it took part in via [SegmentDetection.aggregateIntroCandidates]
+     * (cluster-by-proximity + majority-cluster median) — no single episode can take the rest of its
+     * season down with it, and the result no longer rests on one comparison's luck.
      *
-     * A season needs ≥2 eligible `partCount == 1` episodes to have anything to compare (FR-SEG1-4's
-     * own "series ≥2 episodes" scope) — a lone episode, or a season where everything already has an
-     * intro from an earlier tier, is a silent no-op here, same as every other segment-detection tier.
+     * This is a deliberate speed-for-correctness tradeoff (explicit product direction: this runs as a
+     * background pipeline step and processing time is not a priority) — comparison count grows from
+     * O(n) to (bounded) O(n²) per season. Crucially this does NOT add any `fpcalc`/[ProcessGate] load:
+     * each episode's fingerprint is still computed/cached exactly once ([FingerprintService.getOrCompute]
+     * is memoized per-run below on top of its own on-disk cache); only the count of cheap, in-process,
+     * no-I/O [SegmentDetection.findIntroMatch] calls increases.
      *
-     * Bug fix (transparency): this is the one tier whose per-item cost scales with episode count — a
-     * 250-episode show needs ~250 `fpcalc` runs, and the pipeline-step watchdog only ever showed
-     * "<title> still running after Ns" with zero insight into what was actually happening for that
-     * whole multi-hour stretch. Logs one line per episode *before* its (possibly slow) fingerprint
-     * compute/compare, plus start/end summaries — all via [Logger.info], which already reaches both the
-     * persisted activity log and the live Activity page (no new event type / UI needed).
+     * A season needs ≥2 `partCount == 1` episodes to have anything to compare (FR-SEG1-4's own
+     * "series ≥2 episodes" scope) — a lone episode, or a season where everything already has an intro
+     * from an earlier tier, is a silent no-op here, same as every other segment-detection tier. An
+     * already-filled/`manuallyConfirmed` episode is never a write target but remains a valid
+     * comparison partner for every other episode's own pairs (more data, better consensus).
+     *
+     * Progress reporting is deliberately two different scales: [reportDetail] (live, ephemeral, feeds
+     * the Activity page's per-worker "Workers" card only) fires once per pair — honest about scale,
+     * however many pairs a large season needs. [Logger.info] (persisted to the capped 10k-entry
+     * activity-log ring buffer) stays at O(episodes) cardinality — once per episode fingerprinted,
+     * once per episode's final consensus — so a big season's O(n²) pair count can't flood out
+     * unrelated history from that shared, capped log.
      */
     private suspend fun detectIntroFingerprints(
         item: MediaItem,
@@ -210,55 +222,76 @@ object PipelineStepOps {
         val seasonsToProcess = bySeason.values.filter { it.size >= 2 }
         if (seasonsToProcess.isEmpty()) return
 
-        val totalCandidates = seasonsToProcess.sumOf { it.size - 1 }
-        Logger.info(
-            "detect_segments: fingerprinting '${item.title}' — ${seasonsToProcess.size} season(s), $totalCandidates episode(s) to compare",
-            "pipeline", item.id,
-        )
-
-        var doneCount = 0
-        for (episodes in seasonsToProcess) {
+        // Every unordered pair within a season, kept only when at least one side still needs a
+        // result — a pair between two already-filled/manually-confirmed episodes would produce a
+        // candidate nobody writes, so it's not worth correlating.
+        val allPairs = seasonsToProcess.flatMap { episodes ->
             val sorted = episodes.sortedBy { it.episodeNumber ?: Int.MAX_VALUE }
-            val reference = sorted.first()
-            for (ep in sorted.drop(1)) {
-                doneCount++
-                if (!eligible(ep)) continue
-                reportDetail("${epLabel(ep)} ($doneCount/$totalCandidates)")
-                Logger.info(
-                    "detect_segments: '${item.title}' ${epLabel(ep)} — comparing against ${epLabel(reference)} ($doneCount/$totalCandidates)",
-                    "pipeline", item.id,
-                )
-                val refFp = fingerprintService.getOrCompute(item.id, reference)
-                if (refFp == null) {
-                    Logger.warn("detect_segments: '${item.title}' ${epLabel(reference)} — fpcalc failed, skipping this season", "pipeline", item.id)
-                    break
-                }
-                val curFp = fingerprintService.getOrCompute(item.id, ep)
-                if (curFp == null) {
-                    Logger.warn("detect_segments: '${item.title}' ${epLabel(ep)} — fpcalc failed", "pipeline", item.id)
-                    continue
-                }
-                val match = SegmentDetection.findIntroMatch(curFp, refFp)
-                if (match == null) {
-                    Logger.info("detect_segments: '${item.title}' ${epLabel(ep)} — no intro match found", "pipeline", item.id)
-                    continue
-                }
-                Logger.info(
-                    "detect_segments: '${item.title}' ${epLabel(ep)} — intro matched, ${(match.aEndMs - match.aStartMs) / 1000}s (confidence ${(match.confidence * 100).toInt()}%)",
-                    "pipeline", item.id,
-                )
-                updates[key(ep)] = segmentsFor(ep).copy(
-                    introStartMs = match.aStartMs, introEndMs = match.aEndMs,
-                    source = "fingerprint", confidence = match.confidence,
-                )
-                if (eligible(reference)) {
-                    updates[key(reference)] = segmentsFor(reference).copy(
-                        introStartMs = match.bStartMs, introEndMs = match.bEndMs,
-                        source = "fingerprint", confidence = match.confidence,
-                    )
+            buildList {
+                for (i in sorted.indices) for (j in i + 1 until sorted.size) {
+                    if (eligible(sorted[i]) || eligible(sorted[j])) add(sorted[i] to sorted[j])
                 }
             }
         }
+        if (allPairs.isEmpty()) return
+
+        val touchedEpisodes = allPairs.flatMap { listOf(it.first, it.second) }.distinctBy { key(it) }
+        Logger.info(
+            "detect_segments: fingerprinting '${item.title}' — ${seasonsToProcess.size} season(s), " +
+                "${touchedEpisodes.size} episode(s), ${allPairs.size} pair(s) to correlate",
+            "pipeline", item.id,
+        )
+
+        // Phase A — warm the fingerprint cache: one fpcalc call per distinct episode, ever (same
+        // total as the old single-reference design in the worst case). One warning per FAILED
+        // episode, not per pair it would have participated in.
+        val fpCache = mutableMapOf<String, List<Int>?>()
+        val failedEpisodes = mutableSetOf<String>()
+        for ((i, ep) in touchedEpisodes.withIndex()) {
+            reportDetail("fingerprinting ${epLabel(ep)} (${i + 1}/${touchedEpisodes.size})")
+            val fp = fingerprintService.getOrCompute(item.id, ep)
+            fpCache[key(ep)] = fp
+            if (fp == null) {
+                failedEpisodes += key(ep)
+                Logger.warn("detect_segments: '${item.title}' ${epLabel(ep)} — fpcalc failed, excluded from correlation", "pipeline", item.id)
+            }
+        }
+
+        // Phase B — correlate every kept pair; each eligible side of a successful match contributes
+        // one IntroCandidate towards that episode's eventual consensus.
+        val candidates = mutableMapOf<String, MutableList<SegmentDetection.IntroCandidate>>()
+        fun addCandidate(ep: Episode, c: SegmentDetection.IntroCandidate) {
+            candidates.getOrPut(key(ep)) { mutableListOf() }.add(c)
+        }
+        for ((i, pair) in allPairs.withIndex()) {
+            val (epA, epB) = pair
+            reportDetail("correlating ${i + 1}/${allPairs.size} (${epLabel(epA)} × ${epLabel(epB)})")
+            if (key(epA) in failedEpisodes || key(epB) in failedEpisodes) continue
+            val fpA = fpCache[key(epA)] ?: continue
+            val fpB = fpCache[key(epB)] ?: continue
+            val match = SegmentDetection.findIntroMatch(fpA, fpB) ?: continue
+            if (eligible(epA)) addCandidate(epA, SegmentDetection.IntroCandidate(match.aStartMs, match.aEndMs, match.confidence))
+            if (eligible(epB)) addCandidate(epB, SegmentDetection.IntroCandidate(match.bStartMs, match.bEndMs, match.confidence))
+        }
+
+        // Phase C — reconcile each episode's candidates into one consensus answer and stage the write.
+        for (episodes in seasonsToProcess) {
+            for (ep in episodes) {
+                if (!eligible(ep)) continue
+                val epCandidates = candidates[key(ep)] ?: continue
+                val consensus = SegmentDetection.aggregateIntroCandidates(epCandidates) ?: continue
+                Logger.info(
+                    "detect_segments: '${item.title}' ${epLabel(ep)} — consensus from ${epCandidates.size} pairwise " +
+                        "match(es), ${(consensus.endMs - consensus.startMs) / 1000}s intro (confidence ${(consensus.confidence * 100).toInt()}%)",
+                    "pipeline", item.id,
+                )
+                updates[key(ep)] = segmentsFor(ep).copy(
+                    introStartMs = consensus.startMs, introEndMs = consensus.endMs,
+                    source = "fingerprint", confidence = consensus.confidence,
+                )
+            }
+        }
+
         if (updates.isEmpty()) {
             Logger.info("detect_segments: '${item.title}' — fingerprinting found no new intro matches", "pipeline", item.id)
             return
