@@ -659,10 +659,39 @@ suspend fun executePipeline(
                 }
                 val toProcess = if (step.scope == "all") workingSet else workingSet.filter(::needsDetection)
                 Logger.info("detect_segments: ${toProcess.size} items (scope=${step.scope})")
+
+                // One work item per season (not per series) for the fingerprint pass below — the unit
+                // PipelineStepOps.eligibleSeasons already computes, so this just carries it alongside
+                // the owning series through the worker pool.
+                data class SeasonWorkItem(val item: dev.jellystructure.model.MediaItem, val seasonEpisodes: List<dev.jellystructure.model.Episode>)
+
+                // Bug fix — a large, many-season show used to monopolize one worker slot for its
+                // *entire* fingerprint run (every season processed sequentially inside one item's
+                // detectSegments call), leaving the rest of the configured worker pool idle once fewer
+                // series than workers remained. Phase A (cheap chapter/heuristic tier, unchanged
+                // per-item granularity) runs to completion first — Phase B's season work items need its
+                // results (an episode chapter-matching just filled may no longer be fingerprint-eligible)
+                // and there'd be nothing to correlate before it's done anyway. Phase B then dispatches
+                // one work item PER SEASON, not per series, so a 10-season show spreads across up to 10
+                // worker slots concurrently instead of one.
                 runPipelineStepPool(
                     jobId, step.step, toProcess, { pipelineStepConcurrency(step.step, configStore.current.behavior.scanWorkers) },
                     scanTracker, broadcaster, labelOf = { it.title },
-                ) { item, reportDetail -> dev.jellystructure.media.PipelineStepOps.detectSegments(item, store, step.chapterKeywords, fingerprintService, step.detectFingerprint, reportDetail) }
+                ) { item, _ -> dev.jellystructure.media.PipelineStepOps.detectChapterAndHeuristic(item, store, step.chapterKeywords) }
+
+                if (step.detectFingerprint && fingerprintService != null) {
+                    val freshItems = toProcess.mapNotNull { store.get(it.id) }
+                    val seasonWorkItems = freshItems
+                        .filter { it.kind == dev.jellystructure.model.MediaKind.TV_SHOW }
+                        .flatMap { item -> dev.jellystructure.media.PipelineStepOps.eligibleSeasons(item).map { season -> SeasonWorkItem(item, season) } }
+                    Logger.info("detect_segments: ${seasonWorkItems.size} season(s) to fingerprint")
+                    runPipelineStepPool(
+                        jobId, step.step, seasonWorkItems, { pipelineStepConcurrency(step.step, configStore.current.behavior.scanWorkers) },
+                        scanTracker, broadcaster, labelOf = { "${it.item.title} S${it.seasonEpisodes.first().seasonNumber?.toString()?.padStart(2, '0') ?: "??"}" },
+                    ) { workItem, reportDetail ->
+                        dev.jellystructure.media.PipelineStepOps.detectIntroFingerprintsForSeason(workItem.item, store, fingerprintService, workItem.seasonEpisodes, reportDetail)
+                    }
+                }
             }
             "sync_imdb_ratings" -> {
                 // Phase 131: keyed by imdbId; a title without one has no rating to sync. A *small* pool
