@@ -246,3 +246,35 @@ is 151.**
 
 Pairs with **[R182](../ravilo/requirements/phase-R182-skip-intro-credits.md)** (also dev-reviewed
 2026-07-13 — see its own addenda; R182 consumes this phase's `segments` DTO + a separate viewer-settings lane).
+
+## Amendment (2026-07-14) — FR-SEG1-4 reworked: season-wide consensus, not a single reference
+
+**Bug confirmed via live testing** (not a hypothesis): on the real show "The Big Door Prize", the
+season's premiere episode — FR-SEG1-4's fixed "reference" — fails to correlate with **any** other
+episode in its own season (verified by running the actual `findIntroMatch` matching code directly
+against the real cached Chromaprint fingerprints in `config/fingerprints/`: 8/8 comparisons failed
+in season 1, 9/9 in season 2). Meanwhile ordinary non-reference pairs within the *same* seasons
+matched cleanly (confidence 0.86–0.90), proving the intro is genuinely consistent and detectable —
+the flaw is trusting one arbitrary episode (premieres commonly carry an extended cold open, bonus
+footage, or a different edit) as the sole arbiter for a whole season.
+
+**FR-SEG1-4 is amended** to replace "one fixed reference episode per season" with a **full pairwise,
+season-wide consensus**: every eligible episode (`partCount == 1`, not `manuallyConfirmed`,
+`introStartMs == null`) is compared against every other episode in its season — not just one fixed
+reference — and each episode's final `introStartMs`/`introEndMs`/`confidence` is derived by
+clustering that episode's successful pairwise matches by proximity (5s tolerance) and taking the
+majority cluster's median bounds, weighting confidence by how much the cluster agrees. This means
+one atypical episode (e.g. an unusual premiere) can no longer take down detection for the rest of
+its season, and the result is robust against any single false-positive pairwise match rather than
+resting on one comparison.
+
+Priority is correctness over speed: this runs as a background pipeline step, and the user has
+explicitly directed that processing time is not a concern here. This does **not** increase
+`fpcalc`/`ProcessGate` load — each episode's fingerprint is still computed/cached exactly once
+(`FingerprintService.getOrCompute`, unchanged); only the count of the cheap, in-process, no-I/O
+pairwise correlation calls (`SegmentDetection.findIntroMatch`, algorithm itself unchanged) grows
+from O(n) to (bounded) O(n²) per season.
+
+Implementation: `SegmentDetection.aggregateIntroCandidates` (new pure function, tolerance-bucket
+clustering + majority-cluster median) and a rewritten `PipelineStepOps.detectIntroFingerprints`
+(same public entry point via `detectSegments`, no signature changes propagate to any caller).
