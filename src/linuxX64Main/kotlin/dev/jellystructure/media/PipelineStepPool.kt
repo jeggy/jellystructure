@@ -43,7 +43,11 @@ suspend fun <T> runPipelineStepPool(
     broadcaster: WsBroadcaster,
     labelOf: (T) -> String,
     onItemFailure: (T, Throwable) -> Unit = { item, e -> },
-    perItem: suspend (T) -> Unit,
+    // reportDetail: an item can push a live sub-status (e.g. "S02E03 (3/12)") while it's still in
+    // flight — its own [ScanTracker.ActiveScanItem.label] is set once at dispatch and would otherwise sit
+    // static for however long that one item takes (detect_segments' fingerprint tier is the motivating
+    // case: one series can run for hours across hundreds of episodes).
+    perItem: suspend (T, reportDetail: suspend (String?) -> Unit) -> Unit,
 ) {
     scanTracker.setActiveStep(step)
     val total = items.size
@@ -86,7 +90,7 @@ suspend fun <T> runPipelineStepPool(
                         if (scanTracker.cancelRequested) break
                         val label = labelOf(item)
                         val token = scanTracker.beginItem(label)
-                        runCatching { perItem(item) }
+                        runCatching { perItem(item) { detail -> scanTracker.updateItemDetail(token, detail) } }
                             .onFailure { e ->
                                 Logger.warn("$step failed for '$label': ${e.message}")
                                 onItemFailure(item, e)

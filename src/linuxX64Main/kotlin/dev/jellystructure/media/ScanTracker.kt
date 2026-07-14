@@ -33,7 +33,7 @@ data class ScanStatusResponse(
 )
 
 @Serializable
-data class ActiveScanItem(val label: String, val startedAt: Long)
+data class ActiveScanItem(val label: String, val startedAt: Long, val detail: String? = null)
 
 class ScanTracker(private val db: JellystructureDb) {
     // In-memory fast-read flags; authoritative state persisted in DB
@@ -79,6 +79,14 @@ class ScanTracker(private val db: JellystructureDb) {
 
     suspend fun endItem(token: Long) {
         activeItemsMutex.withLock { activeItemsMap.remove(token) }
+    }
+
+    // Sub-item progress (e.g. "S02E03 (3/12)" while a single series' fingerprint pass works through its
+    // episodes) — an item's label is set once at beginItem and would otherwise sit static for however
+    // long that one item takes, which is exactly the case (detect_segments' fingerprint tier) this was
+    // added for.
+    suspend fun updateItemDetail(token: Long, detail: String?) {
+        activeItemsMutex.withLock { activeItemsMap[token]?.let { activeItemsMap[token] = it.copy(detail = detail) } }
     }
 
     suspend fun activeItemsSnapshot(): List<ActiveScanItem> =

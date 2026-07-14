@@ -758,9 +758,13 @@ private fun renderWorkersList(container: Element, items: List<dev.jellystructure
         val elapsedSec = (nowSec - item.startedAt).coerceAtLeast(0)
         val stuck = elapsedSec >= 20
         val timeColor = if (stuck) "var(--bad)" else "var(--muted)"
-        """<div class="row center" style="gap:8px">
-             <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${item.label.escapeHtml()}</span>
-             <span class="mono tiny" style="color:$timeColor">${formatRemaining(elapsedSec * 1000.0)}</span>
+        val detailHtml = item.detail?.let { """<div class="muted" style="font-size:.72rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${it.escapeHtml()}</div>""" } ?: ""
+        """<div style="display:flex;flex-direction:column;gap:2px">
+             <div class="row center" style="gap:8px">
+               <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${item.label.escapeHtml()}</span>
+               <span class="mono tiny" style="color:$timeColor">${formatRemaining(elapsedSec * 1000.0)}</span>
+             </div>
+             $detailHtml
            </div>"""
     }
 }

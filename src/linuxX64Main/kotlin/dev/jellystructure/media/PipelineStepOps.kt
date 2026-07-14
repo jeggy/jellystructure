@@ -141,6 +141,7 @@ object PipelineStepOps {
         extraChapterKeywords: List<String> = emptyList(),
         fingerprintService: FingerprintService? = null,
         detectFingerprint: Boolean = false,
+        reportDetail: suspend (String?) -> Unit = {},
     ) {
         when (item.kind) {
             MediaKind.MOVIE -> {
@@ -162,7 +163,7 @@ object PipelineStepOps {
                 // detect_fingerprint pipeline-step toggle: heavier (an fpcalc decode per episode) than
                 // the chapter/heuristic tier above, so it's opt-in on top of detect_segments itself.
                 if (detectFingerprint && fingerprintService != null) {
-                    detectIntroFingerprints(afterChapterHeuristic, store, fingerprintService)
+                    detectIntroFingerprints(afterChapterHeuristic, store, fingerprintService, reportDetail)
                 }
             }
         }
@@ -189,7 +190,12 @@ object PipelineStepOps {
      * compute/compare, plus start/end summaries — all via [Logger.info], which already reaches both the
      * persisted activity log and the live Activity page (no new event type / UI needed).
      */
-    private suspend fun detectIntroFingerprints(item: MediaItem, store: MediaStore, fingerprintService: FingerprintService) {
+    private suspend fun detectIntroFingerprints(
+        item: MediaItem,
+        store: MediaStore,
+        fingerprintService: FingerprintService,
+        reportDetail: suspend (String?) -> Unit = {},
+    ) {
         fun key(ep: Episode) = "${ep.filename}#${ep.episodeNumber}"
         val updates = mutableMapOf<String, SegmentMarkers>()
         fun segmentsFor(ep: Episode) = updates[key(ep)] ?: ep.segments
@@ -217,6 +223,7 @@ object PipelineStepOps {
             for (ep in sorted.drop(1)) {
                 doneCount++
                 if (!eligible(ep)) continue
+                reportDetail("${epLabel(ep)} ($doneCount/$totalCandidates)")
                 Logger.info(
                     "detect_segments: '${item.title}' ${epLabel(ep)} — comparing against ${epLabel(reference)} ($doneCount/$totalCandidates)",
                     "pipeline", item.id,
