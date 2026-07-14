@@ -27,7 +27,13 @@ data class ScanStatusResponse(
     val trigger: String? = null,
     val scope: String? = null,
     val type: String? = null,
+    // per-worker visibility — one entry per item currently in flight across scan_files/runPipelineStepPool,
+    // so the Activity page can show what each concurrent worker is doing (not just an "N/M" count).
+    val activeItems: List<ActiveScanItem> = emptyList(),
 )
+
+@Serializable
+data class ActiveScanItem(val label: String, val startedAt: Long)
 
 class ScanTracker(private val db: JellystructureDb) {
     // In-memory fast-read flags; authoritative state persisted in DB
@@ -57,6 +63,26 @@ class ScanTracker(private val db: JellystructureDb) {
     fun setDescriptors(trigger: String, runScope: String, type: String?) {
         _trigger = trigger; _runScope = runScope; _type = type
     }
+
+    // Per-worker visibility — every concurrent worker (scan_files' pool in MediaRoutes.kt, and every
+    // runPipelineStepPool step) reports the item it's working on here, keyed by an opaque token (not the
+    // label) so two workers that happen to pick up same-titled items can never clobber each other's entry.
+    private val activeItemsMutex = Mutex()
+    private val activeItemsMap = mutableMapOf<Long, ActiveScanItem>()
+    private val activeItemToken = AtomicLong(0L)
+
+    suspend fun beginItem(label: String): Long {
+        val token = activeItemToken.incrementAndGet()
+        activeItemsMutex.withLock { activeItemsMap[token] = ActiveScanItem(label, epochSeconds()) }
+        return token
+    }
+
+    suspend fun endItem(token: Long) {
+        activeItemsMutex.withLock { activeItemsMap.remove(token) }
+    }
+
+    suspend fun activeItemsSnapshot(): List<ActiveScanItem> =
+        activeItemsMutex.withLock { activeItemsMap.values.sortedBy { it.startedAt } }
 
     private val recordMutex = Mutex()
 
@@ -92,6 +118,7 @@ class ScanTracker(private val db: JellystructureDb) {
         activeWorkers.value = 0
         _activeStep = null
         _stepPlan = emptyList()
+        activeItemsMap.clear()
         _status = "RUNNING"
         _jobId = jobId
         _startedAt = epochSeconds()
@@ -109,6 +136,7 @@ class ScanTracker(private val db: JellystructureDb) {
         activeWorkers.value = 0
         _activeStep = null
         _stepPlan = emptyList()
+        activeItemsMap.clear()
         _status = "RUNNING"
         db.scanStateQueries.upsertState(
             status = "RUNNING",
@@ -160,7 +188,7 @@ class ScanTracker(private val db: JellystructureDb) {
         db.scanStateQueries.clearOldProcessed("")
     }
 
-    fun status() = ScanStatusResponse(
+    suspend fun status() = ScanStatusResponse(
         running = _status == "RUNNING",
         status = _status,
         jobId = _jobId.ifBlank { null },
@@ -174,6 +202,7 @@ class ScanTracker(private val db: JellystructureDb) {
         trigger = _trigger,
         scope = _runScope,
         type = _type,
+        activeItems = activeItemsSnapshot(),
     )
 }
 

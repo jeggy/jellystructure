@@ -233,7 +233,12 @@ data class ScanStatus(
     val trigger: String? = null,
     val scope: String? = null,
     val type: String? = null,
+    // one entry per item currently in flight across every concurrent worker — see ScanTracker.beginItem
+    val activeItems: List<ActiveScanItem> = emptyList(),
 )
+
+@Serializable
+data class ActiveScanItem(val label: String, val startedAt: Long)
 
 enum class PipelineRunResult { STARTED, ALREADY_RUNNING, FAILED }
 
