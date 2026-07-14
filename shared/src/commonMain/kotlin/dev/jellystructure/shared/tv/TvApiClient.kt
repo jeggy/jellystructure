@@ -1,6 +1,7 @@
 package dev.jellystructure.shared.tv
 
 import io.ktor.client.*
+import io.ktor.client.plugins.*
 import io.ktor.client.plugins.websocket.*
 import io.ktor.client.request.*
 import io.ktor.client.statement.*
@@ -365,7 +366,19 @@ class TvApiClient(
         val token = deviceToken() ?: return
         val wsUrl = baseUrl.replaceFirst("http", "ws").trimEnd('/') +
             "/api/tv/events?token=" + token.encodeURLParameter()
-        client.webSocket(wsUrl) {
+        // Bug fix: the shared HttpClient's HttpTimeout plugin (requestTimeoutMillis/socketTimeoutMillis
+        // = 10s, installed to bound ordinary REST calls) applies to this WebSocket session too, since
+        // Ktor treats a WS as one continuous request — it silently force-closed this otherwise-idle
+        // long-lived connection every ~10s, which the reconnect loop above (RaviloApp.kt) then papered
+        // over as a healthy reconnect (held open well past its own 2s "was it real" threshold),
+        // producing a live connect/disconnect/force-stop-playback cycle every ~10s indefinitely.
+        // Exempt only this call from the client-wide REST bound; regular requests are unaffected.
+        client.webSocket(wsUrl, request = {
+            timeout {
+                requestTimeoutMillis = HttpTimeoutConfig.INFINITE_TIMEOUT_MS
+                socketTimeoutMillis = HttpTimeoutConfig.INFINITE_TIMEOUT_MS
+            }
+        }) {
             onOpen()
             for (frame in incoming) {
                 if (frame !is Frame.Text) continue
