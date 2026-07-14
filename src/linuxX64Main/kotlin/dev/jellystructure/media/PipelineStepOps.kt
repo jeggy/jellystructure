@@ -4,6 +4,7 @@ import dev.jellystructure.arr.ArrRescanService
 import dev.jellystructure.auth.JellyfinClient
 import dev.jellystructure.config.AppConfig
 import dev.jellystructure.imdb.ImdbClient
+import dev.jellystructure.log.Logger
 import dev.jellystructure.model.Episode
 import dev.jellystructure.model.ImdbRating
 import dev.jellystructure.model.MediaItem
@@ -180,23 +181,65 @@ object PipelineStepOps {
      * A season needs ≥2 eligible `partCount == 1` episodes to have anything to compare (FR-SEG1-4's
      * own "series ≥2 episodes" scope) — a lone episode, or a season where everything already has an
      * intro from an earlier tier, is a silent no-op here, same as every other segment-detection tier.
+     *
+     * Bug fix (transparency): this is the one tier whose per-item cost scales with episode count — a
+     * 250-episode show needs ~250 `fpcalc` runs, and the pipeline-step watchdog only ever showed
+     * "<title> still running after Ns" with zero insight into what was actually happening for that
+     * whole multi-hour stretch. Logs one line per episode *before* its (possibly slow) fingerprint
+     * compute/compare, plus start/end summaries — all via [Logger.info], which already reaches both the
+     * persisted activity log and the live Activity page (no new event type / UI needed).
      */
     private suspend fun detectIntroFingerprints(item: MediaItem, store: MediaStore, fingerprintService: FingerprintService) {
         fun key(ep: Episode) = "${ep.filename}#${ep.episodeNumber}"
         val updates = mutableMapOf<String, SegmentMarkers>()
         fun segmentsFor(ep: Episode) = updates[key(ep)] ?: ep.segments
         fun eligible(ep: Episode) = segmentsFor(ep).let { !it.manuallyConfirmed && it.introStartMs == null }
+        fun epLabel(ep: Episode): String {
+            val s = ep.seasonNumber?.toString()?.padStart(2, '0') ?: "??"
+            val e = ep.episodeNumber?.toString()?.padStart(2, '0') ?: "??"
+            return "S${s}E$e"
+        }
 
         val bySeason = item.episodes.filter { it.partCount == 1 }.groupBy { it.seasonNumber }
-        for (episodes in bySeason.values) {
-            if (episodes.size < 2) continue
+        val seasonsToProcess = bySeason.values.filter { it.size >= 2 }
+        if (seasonsToProcess.isEmpty()) return
+
+        val totalCandidates = seasonsToProcess.sumOf { it.size - 1 }
+        Logger.info(
+            "detect_segments: fingerprinting '${item.title}' — ${seasonsToProcess.size} season(s), $totalCandidates episode(s) to compare",
+            "pipeline", item.id,
+        )
+
+        var doneCount = 0
+        for (episodes in seasonsToProcess) {
             val sorted = episodes.sortedBy { it.episodeNumber ?: Int.MAX_VALUE }
             val reference = sorted.first()
             for (ep in sorted.drop(1)) {
+                doneCount++
                 if (!eligible(ep)) continue
-                val refFp = fingerprintService.getOrCompute(item.id, reference) ?: continue
-                val curFp = fingerprintService.getOrCompute(item.id, ep) ?: continue
-                val match = SegmentDetection.findIntroMatch(curFp, refFp) ?: continue
+                Logger.info(
+                    "detect_segments: '${item.title}' ${epLabel(ep)} — comparing against ${epLabel(reference)} ($doneCount/$totalCandidates)",
+                    "pipeline", item.id,
+                )
+                val refFp = fingerprintService.getOrCompute(item.id, reference)
+                if (refFp == null) {
+                    Logger.warn("detect_segments: '${item.title}' ${epLabel(reference)} — fpcalc failed, skipping this season", "pipeline", item.id)
+                    break
+                }
+                val curFp = fingerprintService.getOrCompute(item.id, ep)
+                if (curFp == null) {
+                    Logger.warn("detect_segments: '${item.title}' ${epLabel(ep)} — fpcalc failed", "pipeline", item.id)
+                    continue
+                }
+                val match = SegmentDetection.findIntroMatch(curFp, refFp)
+                if (match == null) {
+                    Logger.info("detect_segments: '${item.title}' ${epLabel(ep)} — no intro match found", "pipeline", item.id)
+                    continue
+                }
+                Logger.info(
+                    "detect_segments: '${item.title}' ${epLabel(ep)} — intro matched, ${(match.aEndMs - match.aStartMs) / 1000}s (confidence ${(match.confidence * 100).toInt()}%)",
+                    "pipeline", item.id,
+                )
                 updates[key(ep)] = segmentsFor(ep).copy(
                     introStartMs = match.aStartMs, introEndMs = match.aEndMs,
                     source = "fingerprint", confidence = match.confidence,
@@ -209,8 +252,12 @@ object PipelineStepOps {
                 }
             }
         }
-        if (updates.isEmpty()) return
+        if (updates.isEmpty()) {
+            Logger.info("detect_segments: '${item.title}' — fingerprinting found no new intro matches", "pipeline", item.id)
+            return
+        }
         val updatedEpisodes = item.episodes.map { ep -> updates[key(ep)]?.let { ep.copy(segments = it) } ?: ep }
         store.updateOne(item.copy(episodes = updatedEpisodes))
+        Logger.info("detect_segments: '${item.title}' — fingerprinting done, ${updates.size} episode(s) updated", "pipeline", item.id)
     }
 }
