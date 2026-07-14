@@ -23,8 +23,6 @@ import org.w3c.dom.events.MouseEvent
 private fun currentTimeString(): String = js("new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false})")
 private fun nowMs(): Double = js("Date.now()")
 
-private const val TMDB_POSTER_W92 = "https://image.tmdb.org/t/p/w92"
-
 private var activitySocket: WebSocket? = null
 private var activityScope: CoroutineScope? = null
 private var jobItemCount = 0
@@ -33,13 +31,10 @@ private var jobFailCount = 0
 private var jobTotalCount = 0    // Phase 116: real worklist size from the Started event (0 = unknown)
 private var jobProgressCount = 0 // Phase 116: attempted-so-far (success+failure) from FileProgress events
 private var jobStartMs = 0.0     // Phase 116: for the rolling items/sec → "~T remaining" estimate
-private var activityCurrentTitle: String? = null
-private var activityCurrentPoster: String? = null
 private var scanRunning = false
 private var activeLogCategory: String = ""
 private var errorsOnlyFilter: Boolean = false
 private var activeRunFilter: String? = null   // 93g: scope the log to one scan/pipeline run
-private var lastToolCommand: String? = null
 private var jobsPollActive = false   // Phase 109: true while the "Jobs & workers" segment is showing
 
 // Phase 135 — the whole ordered step plan for the active/last run, which step is active, and a
@@ -81,8 +76,6 @@ fun renderActivity(container: Element, scope: CoroutineScope, query: Map<String,
     jobItemCount = 0
     jobDoneCount = 0
     jobFailCount = 0
-    activityCurrentTitle = null
-    activityCurrentPoster = null
     scanRunning = false
     activeLogCategory = ""
     errorsOnlyFilter = false
@@ -145,22 +138,6 @@ fun renderActivity(container: Element, scope: CoroutineScope, query: Map<String,
         </div>
 
         <div id="act-columns" class="row" style="display:none;align-items:stretch;gap:14px;margin-bottom:14px">
-          <div class="card fill" id="now-card" style="min-width:0">
-            <div class="row center">
-              <h4 style="margin:0">Now processing</h4>
-              <span class="spacer"></span>
-              <span class="mono tiny" id="now-filename" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:220px"></span>
-            </div>
-            <hr class="dash" style="margin:10px 0">
-            <div class="row" style="gap:10px;align-items:flex-start">
-              <div class="imgslot" id="now-poster" style="width:60px;height:88px;flex:none;background:var(--fill-3);border-radius:6px;overflow:hidden;display:flex;align-items:center;justify-content:center">
-                <span class="tiny muted">poster</span>
-              </div>
-              <div class="tiny" style="line-height:1.85;min-width:0;height:150px;overflow-y:auto;overflow-x:hidden" id="now-ops">
-                <div class="muted">Waiting for next item…</div>
-              </div>
-            </div>
-          </div>
           <div class="card fill" id="workers-card" style="min-width:0">
             <div class="row center">
               <h4 style="margin:0">Workers</h4>
@@ -607,11 +584,8 @@ private fun handleEvent(container: Element, raw: String) {
             activityScope?.launch { pollWorkers(container) }
         }
         "progress" -> {
-            val file = extractJsonField(raw, "file") ?: "?"
             val current = extractJsonField(raw, "current") ?: "?"
             val total = extractJsonField(raw, "total") ?: "?"
-            val shortName = file.substringAfterLast('/')
-            updateNowFilename(container, shortName)
             // Phase 116: the scanner precomputes its worklist up front, so `total` here is exact —
             // drives both the overall bar and (via jobTotalCount from Started) the ETA label.
             val cur = current.toIntOrNull(); val tot = total.toIntOrNull()
@@ -632,12 +606,6 @@ private fun handleEvent(container: Element, raw: String) {
                 activityScope?.launch { pollWorkers(container) }
             }
             jobItemCount++
-            val title = extractJsonField(raw, "title") ?: extractNestedField(raw, "item", "title")
-            val poster = extractJsonField(raw, "posterPath") ?: extractNestedField(raw, "item", "posterPath")
-            val path = extractNestedField(raw, "item", "path")
-            activityCurrentTitle = title
-            activityCurrentPoster = poster
-            updateNowCard(container, title, poster, path)
             updateOvLabel(container)
             updateActivityChips(container)
         }
@@ -689,11 +657,9 @@ private fun handleEvent(container: Element, raw: String) {
         }
         "step_progress" -> {
             val step = extractJsonField(raw, "step") ?: "?"
-            val item = extractJsonField(raw, "item") ?: "?"
             val current = extractJsonField(raw, "current")?.toIntOrNull()
             val total = extractJsonField(raw, "total")?.toIntOrNull()
             activeStepName = step
-            updateNowFilename(container, item)
             if (current != null && total != null && total > 0) {
                 val pct = (current * 100 / total).coerceIn(0, 100)
                 (container.querySelector("#ov-bar") as? HTMLElement)?.style?.width = "$pct%"
@@ -715,10 +681,6 @@ private fun handleEvent(container: Element, raw: String) {
             val message = extractJsonField(raw, "message") ?: ""
             val runId = extractJsonField(raw, "runId")
             val step = extractJsonField(raw, "step")
-            if (category == "track" && (message.startsWith("ffmpeg:") || message.startsWith("mkvpropedit:"))) {
-                lastToolCommand = message
-                refreshNowOps(container)
-            }
             appendLogEntry(container, level, category, message, runId = runId, stepTag = step)
         }
         else -> appendLogEntry(container, "info", "system", raw)
@@ -779,64 +741,7 @@ private fun hideJobUI(container: Element) {
     (container.querySelector("#overall-card") as? HTMLElement)?.style?.display = "none"
     (container.querySelector("#act-columns") as? HTMLElement)?.style?.display = "none"
     (container.querySelector("#act-idle") as? HTMLElement)?.style?.display = "block"
-    resetNowCard(container)
     renderWorkersList(container, emptyList())
-}
-
-private fun updateNowFilename(container: Element, shortName: String) {
-    (container.querySelector("#now-filename") as? HTMLElement)?.textContent = shortName
-}
-
-private fun updateNowCard(container: Element, title: String?, poster: String?, path: String?) {
-    val displayName = title ?: path?.substringAfterLast('/') ?: "Unknown"
-    updateNowFilename(container, displayName)
-
-    val posterEl = container.querySelector("#now-poster") as? HTMLElement
-    if (posterEl != null) {
-        val posterUrl = when {
-            poster == null -> null
-            poster.startsWith("http") -> poster
-            poster.startsWith("/") && poster.length < 120 -> "$TMDB_POSTER_W92$poster"
-            else -> null
-        }
-        if (posterUrl != null) {
-            posterEl.innerHTML = """<img src="$posterUrl" style="width:100%;height:100%;object-fit:cover" alt="poster">"""
-        } else {
-            posterEl.innerHTML = """<span class="tiny muted" style="text-align:center;padding:4px">${displayName.take(20)}</span>"""
-        }
-    }
-
-    val opsEl = container.querySelector("#now-ops") as? HTMLElement
-    if (opsEl != null) {
-        opsEl.innerHTML = buildString {
-            if (title != null) append("""<div><b>$title</b></div>""")
-            if (path != null) append("""<div class="muted mono" style="font-size:.7rem">${path.substringAfterLast('/')}</div>""")
-            append("""<div style="margin-top:6px;color:var(--hi)">⟳ processing…</div>""")
-            val cmd = lastToolCommand
-            if (cmd != null) append("""<pre class="log" style="font-size:.68rem;margin-top:4px;white-space:pre-wrap;word-break:break-all">${cmd.escapeHtml()}</pre>""")
-        }
-    }
-}
-
-private fun refreshNowOps(container: Element) {
-    val opsEl = container.querySelector("#now-ops") as? HTMLElement ?: return
-    val existing = opsEl.innerHTML
-    val cmdHtml = """<pre class="log" style="font-size:.68rem;margin-top:4px;white-space:pre-wrap;word-break:break-all">${lastToolCommand?.escapeHtml() ?: ""}</pre>"""
-    val preIdx = existing.indexOf("<pre")
-    if (preIdx >= 0) {
-        opsEl.innerHTML = existing.substring(0, preIdx) + cmdHtml
-    } else {
-        opsEl.innerHTML = existing + cmdHtml
-    }
-}
-
-private fun resetNowCard(container: Element) {
-    (container.querySelector("#now-filename") as? HTMLElement)?.textContent = ""
-    (container.querySelector("#now-poster") as? HTMLElement)?.innerHTML = """<span class="tiny muted">poster</span>"""
-    (container.querySelector("#now-ops") as? HTMLElement)?.innerHTML = """<div class="muted">Waiting for next item…</div>"""
-    activityCurrentTitle = null
-    activityCurrentPoster = null
-    lastToolCommand = null
 }
 
 /** Phase 116: "N of M · ~T remaining" once a real total is known (jobTotalCount > 0), else the old
