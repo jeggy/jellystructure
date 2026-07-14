@@ -205,4 +205,67 @@ object SegmentDetection {
             confidence = confidence,
         )
     }
+
+    // ── FR-SEG1-4 amendment (2026-07-14) — season-wide consensus ───────────────────────────────────
+
+    // How close two candidates' starts need to be (in ms) to count as the same intro window. Matches
+    // are already frame-quantized (~124ms) by findIntroMatch; this only needs to absorb small
+    // offset-search jitter between different pairings of the same episode, not distinguish a
+    // genuinely different intro.
+    private const val CLUSTER_TOLERANCE_MS = 5_000L
+
+    /** One episode's intro-bounds guess from a single successful pairwise comparison — that
+     *  episode's own `aStartMs/aEndMs` or `bStartMs/bEndMs` (whichever side it was) from a
+     *  [FingerprintIntroMatch], plus that match's confidence. */
+    data class IntroCandidate(val startMs: Long, val endMs: Long, val confidence: Double)
+
+    /**
+     * Amendment (2026-07-14) — replaces "trust the single reference-episode comparison" with a
+     * season-wide consensus: an episode compared against every other episode in its season
+     * contributes one [IntroCandidate] per successful pairing, and this reconciles them into one
+     * final answer. A single fixed reference episode (e.g. a premiere with an atypical intro cut)
+     * can no longer take down detection for a whole season — confirmed via real fingerprint data
+     * where the premiere failed to match ANY sibling while siblings matched each other cleanly.
+     *
+     * Buckets candidates by proximity ([CLUSTER_TOLERANCE_MS]) rather than taking a plain median:
+     * a genuine mid-season format change would otherwise average across two real, distinct
+     * clusters into a meaningless midpoint. The largest cluster (ties broken by summed confidence)
+     * wins, and its member candidates' median start/end is the final answer — median rather than
+     * mean so a single further outlier inside the winning cluster can't skew the boundary.
+     *
+     * Confidence reflects *agreement*, not just per-pair correlation strength: full agreement
+     * (every candidate landed in the winning cluster) preserves the cluster's mean per-pair
+     * confidence unchanged; a contested result (e.g. a near-even split) is pulled toward the 0.3
+     * floor, honestly signaling low certainty rather than reporting one lucky pair's own score.
+     */
+    fun aggregateIntroCandidates(candidates: List<IntroCandidate>): IntroCandidate? {
+        if (candidates.isEmpty()) return null
+        val sorted = candidates.sortedBy { it.startMs }
+        val clusters = mutableListOf<MutableList<IntroCandidate>>()
+        for (c in sorted) {
+            val last = clusters.lastOrNull()
+            if (last != null && kotlin.math.abs(c.startMs - last.last().startMs) <= CLUSTER_TOLERANCE_MS) {
+                last.add(c)
+            } else {
+                clusters.add(mutableListOf(c))
+            }
+        }
+        val winner = clusters.maxWithOrNull(compareBy({ it.size }, { it.sumOf(IntroCandidate::confidence) }))
+            ?: return null
+
+        fun median(values: List<Long>): Long {
+            val s = values.sorted()
+            val m = s.size / 2
+            return if (s.size % 2 == 1) s[m] else (s[m - 1] + s[m]) / 2
+        }
+
+        val meanConfidence = winner.map { it.confidence }.average()
+        val agreement = winner.size.toDouble() / candidates.size
+        val finalConfidence = (0.3 + (meanConfidence - 0.3) * agreement).coerceIn(0.3, 0.9)
+        return IntroCandidate(
+            startMs = median(winner.map { it.startMs }),
+            endMs = median(winner.map { it.endMs }),
+            confidence = finalConfidence,
+        )
+    }
 }
