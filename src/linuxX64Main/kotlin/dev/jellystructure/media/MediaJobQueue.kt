@@ -344,7 +344,7 @@ class MediaJobQueue(
         return out?.trim()?.toLongOrNull()
     }
 
-    private fun tmpFileFor(row: Media_job): String? {
+    private suspend fun tmpFileFor(row: Media_job): String? {
         val item = store.resolve(row.media_id) ?: return null
         val params = runCatching { json.decodeFromString(MediaJobParams.serializer(), row.params) }.getOrNull() ?: return null
         val path = if (params.episodeFilename != null)

@@ -125,7 +125,7 @@ class BrowseService(
 
     /** Available filter values + counts for browse filter chips. Phase 142: scoped to [device]'s
      *  allowed libraries — a restricted user's chips (and counts) never leak a blocked title. */
-    fun facets(device: DeviceData, kind: String?): BrowseFacets {
+    suspend fun facets(device: DeviceData, kind: String?): BrowseFacets {
         val mediaKind = when (kind) {
             "movie"  -> MediaKind.MOVIE
             "series" -> MediaKind.TV_SHOW

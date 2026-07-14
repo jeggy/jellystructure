@@ -130,7 +130,7 @@ class JellyfinLibraryListener(
     // LibraryChanged batches ItemsAdded/ItemsUpdated ids; ItemsUpdated is included only when we don't
     // already hold the item (Phase 95 non-destructive invariant: removal detection stays scan-only, and
     // re-ingesting every metadata nudge for items we already track would be noisy busywork).
-    private fun parseItemsAdded(raw: String): List<String> {
+    private suspend fun parseItemsAdded(raw: String): List<String> {
         val json = runCatching { Json.parseToJsonElement(raw).jsonObject }.getOrNull() ?: return emptyList()
         if (json["MessageType"]?.jsonPrimitive?.contentOrNull != "LibraryChanged") return emptyList()
         val data = json["Data"] as? JsonObject ?: return emptyList()
