@@ -156,7 +156,7 @@ fun renderActivity(container: Element, scope: CoroutineScope, query: Map<String,
               <div class="imgslot" id="now-poster" style="width:60px;height:88px;flex:none;background:var(--fill-3);border-radius:6px;overflow:hidden;display:flex;align-items:center;justify-content:center">
                 <span class="tiny muted">poster</span>
               </div>
-              <div class="tiny" style="line-height:1.85;min-width:0;overflow:hidden" id="now-ops">
+              <div class="tiny" style="line-height:1.85;min-width:0;height:150px;overflow-y:auto;overflow-x:hidden" id="now-ops">
                 <div class="muted">Waiting for next item…</div>
               </div>
             </div>
@@ -168,7 +168,7 @@ fun renderActivity(container: Element, scope: CoroutineScope, query: Map<String,
               <span class="mono tiny muted" id="workers-count"></span>
             </div>
             <hr class="dash" style="margin:10px 0">
-            <div id="workers-list" class="tiny" style="display:flex;flex-direction:column;gap:6px;max-height:150px;overflow-y:auto">
+            <div id="workers-list" class="tiny" style="display:flex;flex-direction:column;gap:6px;height:150px;overflow-y:auto">
               <div class="muted">No active workers.</div>
             </div>
           </div>
