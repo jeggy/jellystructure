@@ -245,7 +245,7 @@ class SeerrDiscoverService(
         return AcquisitionRecord(itemKey, mediaKind, status, tmdbId, title, progress = progress, eta = eta, language = resolvedLanguage, languageStrictWaiting = strictWaiting)
     }
 
-    private fun libraryByTmdbId(): Map<Int, MediaItem> =
+    private suspend fun libraryByTmdbId(): Map<Int, MediaItem> =
         mediaStore.allItems().mapNotNull { item -> item.tmdbId?.let { it to item } }.toMap()
 
     private fun toDiscoverEntry(r: SeerrCatalogResult, libByTmdb: Map<Int, MediaItem>): DiscoverEntry {
