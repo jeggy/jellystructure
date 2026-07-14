@@ -7,7 +7,6 @@ import dev.jellystructure.nowEpochSec
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
 import kotlin.concurrent.AtomicInt
 
@@ -31,14 +30,23 @@ private const val STUCK_ITEM_LOG_INTERVAL_SEC = 20L
  * A per-item failure is caught and logged (via [onItemFailure]) and does not abort the step — matches
  * the pre-135 sequential steps' `runCatching`-per-item semantics. Real per-item concurrency is still
  * bounded by whatever gate the underlying call already sits behind (`OutboundHttp`, `ProcessGate`, the
- * artwork downloader's own semaphore) — this pool's [concurrency] only controls how many items are
+ * artwork downloader's own semaphore) — this pool's worker count only controls how many items are
  * *dispatched* concurrently into that gate, not a new, separate limit.
+ *
+ * Bug fix: [targetWorkers] is now a supplier, re-polled every 500ms (same cadence as `runScan`'s own
+ * supervisor) instead of a fixed count snapshotted once at the start — every OTHER pipeline step
+ * (everything routed through this function) previously couldn't have its worker count changed once a
+ * run had already started; only `scan_files` (which has its own separate, hand-written pool in
+ * `runScan`) supported live rescaling. Workers launched here now drain (exit after finishing their
+ * current item) when scaled down, and new workers spin up live when scaled up — identical semantics
+ * to `runScan`'s worker factory, just generalized to any item type.
  */
+@OptIn(kotlinx.coroutines.DelicateCoroutinesApi::class) // channel.isClosedForReceive — same accepted usage as runScan (MediaRoutes.kt)
 suspend fun <T> runPipelineStepPool(
     jobId: String,
     step: String,
     items: List<T>,
-    concurrency: Int,
+    targetWorkers: () -> Int,
     scanTracker: ScanTracker,
     broadcaster: WsBroadcaster,
     labelOf: (T) -> String,
@@ -60,7 +68,7 @@ suspend fun <T> runPipelineStepPool(
     }
 
     val processed = AtomicInt(0)
-    scanTracker.targetWorkers.value = concurrency.coerceAtLeast(1)
+    scanTracker.targetWorkers.value = targetWorkers().coerceAtLeast(1)
     scanTracker.activeWorkers.value = 0
 
     coroutineScope {
@@ -82,7 +90,8 @@ suspend fun <T> runPipelineStepPool(
                 }
             }
         }
-        val workerJobs = List(scanTracker.targetWorkers.value) {
+
+        fun launchWorker() {
             scanTracker.activeWorkers.incrementAndGet()
             launch {
                 try {
@@ -98,13 +107,41 @@ suspend fun <T> runPipelineStepPool(
                         scanTracker.endItem(token)
                         val done = processed.incrementAndGet().coerceAtMost(total)
                         broadcaster.broadcast(JobEvent.StepProgress(jobId, step, label, done, total))
+                        // Scale-down drain: exit if we are excess, matching runScan's worker factory.
+                        if (scanTracker.activeWorkers.value > scanTracker.targetWorkers.value) {
+                            Logger.info("$step: worker draining (scale-down)", "pipeline")
+                            break
+                        }
                     }
                 } finally {
                     scanTracker.activeWorkers.decrementAndGet()
                 }
             }
         }
-        workerJobs.joinAll()
+
+        repeat(scanTracker.targetWorkers.value) { launchWorker() }
+
+        val supervisor = launch {
+            while (!channel.isClosedForReceive || scanTracker.activeWorkers.value > 0) {
+                delay(500)
+                val newTarget = targetWorkers().coerceAtLeast(1)
+                if (newTarget != scanTracker.targetWorkers.value) {
+                    Logger.info("$step: workers ${scanTracker.targetWorkers.value} → $newTarget", "pipeline")
+                    scanTracker.targetWorkers.value = newTarget
+                }
+                val active = scanTracker.activeWorkers.value
+                val target = scanTracker.targetWorkers.value
+                if (target > active && !channel.isClosedForReceive) {
+                    repeat(target - active) { launchWorker() }
+                }
+            }
+        }
+
+        // Joining only the workers launched here would race a mid-drain scale-up (the supervisor can
+        // launch more after this point). The supervisor's own while-condition already means "producer
+        // done AND every worker wound down" — joining it (not cancelling) waits for that same
+        // condition to go false and the loop to exit naturally, matching runScan's completion signal.
+        supervisor.join()
         watchdog.cancel()
     }
     broadcaster.broadcast(JobEvent.StepFinished(jobId, step, "$total item${if (total != 1) "s" else ""} processed"))

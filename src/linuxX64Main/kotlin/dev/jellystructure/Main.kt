@@ -528,14 +528,17 @@ suspend fun executePipeline(
         // uniformly (matching most steps' pre-existing per-item error handling; rescan_arr/detect_drift
         // previously had none at the top level — an item failure there now degrades gracefully instead
         // of aborting the rest of the run, which is strictly safer under concurrent dispatch).
-        val scanWorkers = configStore.current.behavior.scanWorkers
+        // Bug fix: each step's target worker count is now a supplier re-polled live by
+        // runPipelineStepPool's own supervisor (matching runScan's scan_files pattern) instead of a
+        // fixed count snapshotted here once — a worker-count change in Settings now takes effect on
+        // the very next poll tick, not just on the next scan/step.
         when (step.step) {
             "pull_tmdb" -> {
                 val toProcess = if (step.scope == "all") workingSet
                     else workingSet.filter { it.tmdbId == null }
                 Logger.info("pull_tmdb: ${toProcess.size} items (scope=${step.scope})")
                 runPipelineStepPool(
-                    jobId, step.step, toProcess, pipelineStepConcurrency(step.step, scanWorkers),
+                    jobId, step.step, toProcess, { pipelineStepConcurrency(step.step, configStore.current.behavior.scanWorkers) },
                     scanTracker, broadcaster, labelOf = { it.title },
                 ) { item, _ -> dev.jellystructure.media.PipelineStepOps.pullTmdb(item, scanner, store) }
             }
@@ -546,7 +549,7 @@ suspend fun executePipeline(
                     else workingSet.filter { artworkDownloader.isArtworkIncomplete(it) }
                 Logger.info("fetch_artwork: ${toProcess.size} items (scope=${step.scope})")
                 runPipelineStepPool(
-                    jobId, step.step, toProcess, pipelineStepConcurrency(step.step, scanWorkers),
+                    jobId, step.step, toProcess, { pipelineStepConcurrency(step.step, configStore.current.behavior.scanWorkers) },
                     scanTracker, broadcaster, labelOf = { it.title },
                 ) { item, _ -> dev.jellystructure.media.PipelineStepOps.fetchArtwork(item, store, artworkDownloader) }
             }
@@ -564,7 +567,7 @@ suspend fun executePipeline(
                 val unchanged = AtomicInt(0)
                 val foreignSkipped = AtomicInt(0)
                 runPipelineStepPool(
-                    jobId, step.step, workingSet, pipelineStepConcurrency(step.step, scanWorkers),
+                    jobId, step.step, workingSet, { pipelineStepConcurrency(step.step, configStore.current.behavior.scanWorkers) },
                     scanTracker, broadcaster, labelOf = { it.title },
                 ) { item, _ ->
                     when (dev.jellystructure.media.PipelineStepOps.writeNfo(
@@ -588,13 +591,13 @@ suspend fun executePipeline(
                 Logger.info("sync_jellyfin: ${toSync.size} of ${workingSet.size} items have unsynced NFO changes")
                 runPipelineStepPool(
                     jobId, step.step, if (jellyfinReady) toSync else emptyList(),
-                    pipelineStepConcurrency(step.step, scanWorkers), scanTracker, broadcaster, labelOf = { it.title },
+                    { pipelineStepConcurrency(step.step, configStore.current.behavior.scanWorkers) }, scanTracker, broadcaster, labelOf = { it.title },
                 ) { item, _ -> dev.jellystructure.media.PipelineStepOps.syncJellyfin(item, store, jellyfinClient, cfg) }
             }
             "rescan_arr" -> {
                 Logger.info("rescan_arr: ${workingSet.size} items")
                 runPipelineStepPool(
-                    jobId, step.step, workingSet, pipelineStepConcurrency(step.step, scanWorkers),
+                    jobId, step.step, workingSet, { pipelineStepConcurrency(step.step, configStore.current.behavior.scanWorkers) },
                     scanTracker, broadcaster, labelOf = { it.title },
                 ) { item, _ -> arrRescan.nudge(item) }
             }
@@ -603,7 +606,7 @@ suspend fun executePipeline(
                 val converged = AtomicInt(0); val nfoStale = AtomicInt(0)
                 val jfBehind = AtomicInt(0); val external = AtomicInt(0)
                 runPipelineStepPool(
-                    jobId, step.step, workingSet, pipelineStepConcurrency(step.step, scanWorkers),
+                    jobId, step.step, workingSet, { pipelineStepConcurrency(step.step, configStore.current.behavior.scanWorkers) },
                     scanTracker, broadcaster, labelOf = { it.title },
                 ) { item, _ ->
                     val current = store.get(item.id) ?: item
@@ -657,7 +660,7 @@ suspend fun executePipeline(
                 val toProcess = if (step.scope == "all") workingSet else workingSet.filter(::needsDetection)
                 Logger.info("detect_segments: ${toProcess.size} items (scope=${step.scope})")
                 runPipelineStepPool(
-                    jobId, step.step, toProcess, pipelineStepConcurrency(step.step, scanWorkers),
+                    jobId, step.step, toProcess, { pipelineStepConcurrency(step.step, configStore.current.behavior.scanWorkers) },
                     scanTracker, broadcaster, labelOf = { it.title },
                 ) { item, reportDetail -> dev.jellystructure.media.PipelineStepOps.detectSegments(item, store, step.chapterKeywords, fingerprintService, step.detectFingerprint, reportDetail) }
             }
@@ -669,7 +672,7 @@ suspend fun executePipeline(
                 Logger.info("sync_imdb_ratings: ${toSync.size} of ${workingSet.size} items have an IMDb id")
                 val updated = AtomicInt(0)
                 runPipelineStepPool(
-                    jobId, step.step, toSync, pipelineStepConcurrency(step.step, scanWorkers),
+                    jobId, step.step, toSync, { pipelineStepConcurrency(step.step, configStore.current.behavior.scanWorkers) },
                     scanTracker, broadcaster, labelOf = { it.title },
                 ) { item, _ ->
                     if (dev.jellystructure.media.PipelineStepOps.syncImdb(item, store, imdbClient)) updated.incrementAndGet()
