@@ -833,7 +833,15 @@ fun PlayerScreen(
                     // when Select was pressed. Defense in depth alongside hideChrome() (FR-RV-SEL1-1):
                     // even if some future path hides chrome without resetting `focus`, Select still can't
                     // re-trigger a hidden control's action while nothing is visibly focused.
-                    val wasHidden = !chromeVisible
+                    //
+                    // Bug fix: the Skip Intro pill (skipIntroPillVisible) and the Next-up/credits card
+                    // (nextUpVisible) both render independent of chromeVisible by design — chrome can
+                    // still be auto-hidden (CHROME_HIDE_MS) when either shows, since neither forces
+                    // chromeVisible = true. The plain !chromeVisible check treated that as "everything's
+                    // hidden, just wake" and swallowed the real Select into a togglePlay(), even though
+                    // the pill/card was visibly focused on screen the whole time. Both are genuinely
+                    // interactive whenever they're showing, regardless of chrome.
+                    val wasHidden = !chromeVisible && focus != PlFocus.SKIP_INTRO && !nextUpVisible
                     wake()
                     if (wasHidden) {
                         // FR-RV-SEL1-3: togglePlay() already calls wake(), so chrome is revealed too.
