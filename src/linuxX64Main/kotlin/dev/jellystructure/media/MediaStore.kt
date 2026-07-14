@@ -20,6 +20,8 @@ import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.alloc
 import kotlinx.cinterop.memScoped
 import kotlinx.cinterop.ptr
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.Json
 import platform.posix.CLOCK_REALTIME
 import platform.posix.clock_gettime
@@ -80,6 +82,13 @@ class MediaStore(
     // Phase 88: decoded-library cache — skip JSON deserialisation on every read path.
     // Invalidated synchronously on every write (upsertItem). Rebuilt lazily on next allItems() call.
     private var allItemsCache: List<MediaItem>? = null
+
+    // Bug fix: allItemsCache had no synchronization at all — concurrent callers hitting a cold cache
+    // (e.g. right after a backend restart, or the moment a write invalidates it) each independently
+    // ran the full ~25MB DB scan + JSON decode, multiplying CPU load by however many requests arrived
+    // in that window instead of sharing one result. Guards the cache-fill only; a warm-cache read never
+    // touches this lock.
+    private val allItemsMutex = Mutex()
 
     // Phase R86: monotonic counter incremented on every write. Used by HomeFeedService as a cache
     // invalidation key — if libraryVersion hasn't changed, the home feed is still valid.
@@ -207,7 +216,7 @@ class MediaStore(
         ts.tv_sec * 1000L + ts.tv_nsec / 1_000_000L
     }
 
-    private fun backfillSearchText() {
+    private suspend fun backfillSearchText() {
         val emptyCount = db.mediaQueries.countEmptySearchText().executeAsOne()
         if (emptyCount == 0L) return
         val items = allItems()
@@ -286,7 +295,7 @@ class MediaStore(
         }
     }
 
-    fun list(
+    suspend fun list(
         kind: MediaKind? = null,
         filter: String? = null,
         search: String? = null,
@@ -405,10 +414,10 @@ class MediaStore(
     }
 
     // Resolves either a slug id or a Jellyfin UUID — Jellyfin ID is the canonical URL form.
-    fun resolve(id: String): MediaItem? = get(id) ?: resolveByJellyfinId(id)
+    suspend fun resolve(id: String): MediaItem? = get(id) ?: resolveByJellyfinId(id)
 
     /** O(1) lookup by Jellyfin UUID via a lazy-built in-memory index. */
-    fun resolveByJellyfinId(jellyfinId: String): MediaItem? {
+    suspend fun resolveByJellyfinId(jellyfinId: String): MediaItem? {
         val index = jellyfinIdIndex ?: allItems()
             .associateBy { it.jellyfinId ?: "" }
             .filterKeys { it.isNotEmpty() }
@@ -419,7 +428,7 @@ class MediaStore(
     /** Phase 111/R155 — resolves a Jellyfin id to what the remote-control `play_item` event needs:
      *  "movie" | "series" (both O(1) via [resolveByJellyfinId]) or "episode" (O(n) scan over series —
      *  no index exists for nested episode ids). Null if the id isn't in this library at all. */
-    fun resolvePlayTarget(jellyfinId: String): Pair<String, String?>? {
+    suspend fun resolvePlayTarget(jellyfinId: String): Pair<String, String?>? {
         resolveByJellyfinId(jellyfinId)?.let { item ->
             return (if (item.kind == MediaKind.TV_SHOW) "series" else "movie") to item.title
         }
@@ -436,7 +445,7 @@ class MediaStore(
      * as [resolvePlayTarget] — no index exists for nested episode ids). Null if the id isn't in this
      * library at all (e.g. a stale/deleted item), so callers can fall back gracefully.
      */
-    fun titleForJellyfinId(jellyfinId: String): String? {
+    suspend fun titleForJellyfinId(jellyfinId: String): String? {
         resolveByJellyfinId(jellyfinId)?.let { return it.title }
         for (series in allItems()) {
             if (series.kind != MediaKind.TV_SHOW) continue
@@ -449,27 +458,32 @@ class MediaStore(
         return null
     }
 
-    fun allItems(): List<MediaItem> {
-        val cached = allItemsCache
-        if (cached != null) return cached
-        return db.mediaQueries.getAll().executeAsList().mapNotNull { blob ->
-            runCatching { json.decodeFromString(MediaItem.serializer(), blob) }.getOrNull()
-        }.also { allItemsCache = it }
+    suspend fun allItems(): List<MediaItem> {
+        // Fast, unlocked path: once warm, every read is a plain field access — the lock below is only
+        // ever taken while the cache is cold.
+        allItemsCache?.let { return it }
+        return allItemsMutex.withLock {
+            // Double-checked: another caller may have filled it while this one waited for the lock.
+            allItemsCache?.let { return@withLock it }
+            db.mediaQueries.getAll().executeAsList().mapNotNull { blob ->
+                runCatching { json.decodeFromString(MediaItem.serializer(), blob) }.getOrNull()
+            }.also { allItemsCache = it }
+        }
     }
 
     /** Items that are present in Jellyfin — `missingFromSource` rows excluded. Use this in Ravilo
      *  catalog/browse paths so stale items (removed/re-added in Jellyfin) never surface to viewers. */
-    fun liveItems(): List<MediaItem> = allItems().filter { !it.missingFromSource }
+    suspend fun liveItems(): List<MediaItem> = allItems().filter { !it.missingFromSource }
 
     /** Items visible to a device with [allowed] library access ([DeviceData.allowedLibraries] —
      *  already GUID-normalized; null = unrestricted). Compose with [liveItems] at every Ravilo
      *  device-facing read path (Phase 142) — restricted users only, never the admin surfaces. */
-    fun liveItems(allowed: Set<String>?): List<MediaItem> = liveItems().filter { it.visibleTo(allowed) }
+    suspend fun liveItems(allowed: Set<String>?): List<MediaItem> = liveItems().filter { it.visibleTo(allowed) }
 
     /** Phase 142 + follow-up — the full per-device filter (library access AND tag policy). Prefer this
      *  overload at every Ravilo device-facing read path; the [allowed]-only overload above is kept for
      *  the narrower library-only check DetailService needs per-item. */
-    fun liveItems(device: DeviceData): List<MediaItem> = liveItems().filter { it.visibleTo(device) }
+    suspend fun liveItems(device: DeviceData): List<MediaItem> = liveItems().filter { it.visibleTo(device) }
 
     /**
      * R100: items sharing any genre with [source], newest first, capped at [limit] — gathered from the
@@ -477,7 +491,7 @@ class MediaStore(
      * (any shared genre, exclude self, sort by scannedAt desc). Dedup is by id (cheap) rather than by
      * the deep data-class equality of MediaItem.
      */
-    fun relatedByGenre(source: MediaItem, limit: Int): List<MediaItem> {
+    suspend fun relatedByGenre(source: MediaItem, limit: Int): List<MediaItem> {
         if (source.genres.isEmpty()) return emptyList()
         val index = genreIndexCache ?: buildGenreIndex().also { genreIndexCache = it }
         val byId = LinkedHashMap<String, MediaItem>()
@@ -488,7 +502,7 @@ class MediaStore(
         return byId.values.sortedByDescending { it.recencyKey() }.take(limit)
     }
 
-    private fun buildGenreIndex(): Map<String, List<MediaItem>> {
+    private suspend fun buildGenreIndex(): Map<String, List<MediaItem>> {
         val map = HashMap<String, MutableList<MediaItem>>()
         for (item in allItems()) {
             for (g in item.genres) map.getOrPut(g) { mutableListOf() }.add(item)
@@ -501,12 +515,12 @@ class MediaStore(
      * guest stars/crew. Builds a cached index once; rebuilt after the next write. Returns the
      * first non-blank profilePath found, or null if the person isn't in the library.
      */
-    fun personProfilePath(tmdbId: Int): String? {
+    suspend fun personProfilePath(tmdbId: Int): String? {
         val index = peopleIndexCache ?: buildPeopleIndex().also { peopleIndexCache = it }
         return index[tmdbId]
     }
 
-    private fun buildPeopleIndex(): Map<Int, String> {
+    private suspend fun buildPeopleIndex(): Map<Int, String> {
         val map = HashMap<Int, String>()
         for (item in allItems()) {
             val all = item.cast + item.crew + item.episodes.flatMap { it.guestStars + it.crew }
@@ -592,25 +606,25 @@ class MediaStore(
 
     fun totalIssueCount(): Int = db.mediaQueries.sumIssueCount().executeAsOne().toInt()
 
-    fun nfoCoveredCount(): Int {
+    suspend fun nfoCoveredCount(): Int {
         val ver = libraryVersion
         nfoCoveredCache?.let { (v, c) -> if (v == ver) return c }
         return allItems().count { NfoWriter.exists(it) }.also { nfoCoveredCache = Pair(ver, it) }
     }
 
-    fun nfoCoveragePercent(): Int {
+    suspend fun nfoCoveragePercent(): Int {
         val total = db.mediaQueries.count().executeAsOne().toInt()
         if (total == 0) return 0
         return (nfoCoveredCount() * 100) / total
     }
 
-    fun trackFacets(): TrackFacets {
+    suspend fun trackFacets(): TrackFacets {
         val ver = libraryVersion
         trackFacetsCache?.let { (v, f) -> if (v == ver) return f }
         return buildTrackFacets().also { trackFacetsCache = Pair(ver, it) }
     }
 
-    private fun buildTrackFacets(): TrackFacets = buildTrackFacetsFrom(allItems())
+    private suspend fun buildTrackFacets(): TrackFacets = buildTrackFacetsFrom(allItems())
 
     private fun buildTrackFacetsFrom(items: List<MediaItem>): TrackFacets {
         val langCounts = mutableMapOf<String, Int>()
@@ -638,13 +652,13 @@ class MediaStore(
         )
     }
 
-    fun metaFacets(): MetaFacets {
+    suspend fun metaFacets(): MetaFacets {
         val ver = libraryVersion
         metaFacetsCache?.let { (v, f) -> if (v == ver) return f }
         return buildMetaFacets().also { metaFacetsCache = Pair(ver, it) }
     }
 
-    private fun buildMetaFacets(): MetaFacets = buildMetaFacetsFrom(allItems())
+    private suspend fun buildMetaFacets(): MetaFacets = buildMetaFacetsFrom(allItems())
 
     private fun buildMetaFacetsFrom(items: List<MediaItem>): MetaFacets {
         val studioCounts  = mutableMapOf<String, Int>()
@@ -683,7 +697,7 @@ class MediaStore(
     /** Evaluate N condition stacks against the library in a single pass. Avoids N×allItems() calls. */
     /** Phase 140 — one entry per requested query tree (channel/row/block badges); a caller with a
      *  legacy flat match/conditions request resolves it to a tree first (`migrateFlatQuery`). */
-    fun countBatch(requests: List<ConditionGroup>): List<Int> {
+    suspend fun countBatch(requests: List<ConditionGroup>): List<Int> {
         if (requests.isEmpty()) return emptyList()
         val all = liveItems()  // batch-count is always Ravilo-config context
         val cascade = ageRatingCascade()
@@ -698,7 +712,7 @@ class MediaStore(
      *  values present in the narrowed set. Uncached: computed on demand when the workbench opens in
      *  scope. Phase 140: [query] is the blocks tree; a caller with the legacy flat shape resolves it
      *  first (`migrateFlatQuery`). */
-    fun facetsNarrowed(query: ConditionGroup): Pair<MetaFacets, TrackFacets> {
+    suspend fun facetsNarrowed(query: ConditionGroup): Pair<MetaFacets, TrackFacets> {
         val items = if (!query.isLive()) liveItems()  // workbench narrowed-facets = Ravilo-config context
             else liveItems().filter { ConditionEvaluator.matches(it, query, emptySet(), ageRatingCascade()) }
         return buildMetaFacetsFrom(items) to buildTrackFacetsFrom(items)

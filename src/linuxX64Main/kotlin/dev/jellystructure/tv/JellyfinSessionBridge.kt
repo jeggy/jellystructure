@@ -132,7 +132,7 @@ class JellyfinSessionBridge(
 
     // FR C.3 — inbound command routing: Jellyfin dashboard/Home Assistant → this device's own
     // /api/tv/events socket, via TvEventBus's device-addressed events.
-    private fun handleIncoming(device: DeviceData, raw: String) {
+    private suspend fun handleIncoming(device: DeviceData, raw: String) {
         val json = runCatching { Json.parseToJsonElement(raw).jsonObject }.getOrNull() ?: return
         val messageType = json["MessageType"]?.jsonPrimitive?.contentOrNull ?: return
         val data = json["Data"] as? JsonObject
