@@ -5,6 +5,7 @@ import dev.jellystructure.jobs.JobEvent
 import dev.jellystructure.jobs.WsBroadcaster
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -16,6 +17,16 @@ import kotlinx.serialization.json.Json
 
 private const val MAX_ENTRIES = 10_000
 private const val MAX_RUNS = 200
+// Bug fix: log() used to fire an unthrottled scope.launch { persistSnapshot() } on every single call —
+// a full JSON-encode + file-write + rename of up to MAX_ENTRIES entries. Dozens of concurrent scan
+// workers each logging ("Scanning series: X", per-episode fingerprint progress, etc.) turned this into
+// potentially hundreds of full log-file rewrites per second, saturating disk/CPU and making the whole
+// site (not just the Activity page) sluggish for the entire scan's duration. Debounce to at most one
+// persist per this interval, however many log() calls arrive in between — this is a crash-recovery
+// snapshot only, live reads (list()/runSummaries()) always serve straight from the in-memory deque, so
+// batching writes has no correctness cost, only a bounded (and acceptable) window of log history that
+// could be lost on an actual crash.
+private const val PERSIST_DEBOUNCE_MS = 1_000L
 
 @Serializable
 data class ActivityEntry(
@@ -62,6 +73,7 @@ class ActivityLog(
     private var nextId = 0
     private val json = Json { ignoreUnknownKeys = true }
     private val runsFile get() = "$filePath.runs"
+    private var persistScheduled = false   // guarded by mutex — see schedulePersistSnapshot()
 
     fun load() {
         val path = Path(filePath)
@@ -85,7 +97,7 @@ class ActivityLog(
             if (entries.size > MAX_ENTRIES) entries.removeFirst()
             e
         }
-        scope.launch { persistSnapshot() }
+        schedulePersistSnapshot()
         broadcaster.broadcast(JobEvent.LogLine(entry.level, entry.category, entry.message, entry.mediaId, entry.runId, entry.step))
     }
 
@@ -133,6 +145,23 @@ class ActivityLog(
     suspend fun clear() {
         mutex.withLock { entries.clear(); runs.clear() }
         persistSnapshot(); persistRuns()
+    }
+
+    // Leading-edge debounce: only one persist is ever scheduled at a time. A log() that arrives while
+    // one is already pending just no-ops here — it'll be captured by that same pending write (or, if it
+    // arrives after the pending write already started its delay, by the very next one, since the flag
+    // resets before the actual write runs).
+    private suspend fun schedulePersistSnapshot() {
+        val shouldSchedule = mutex.withLock {
+            if (persistScheduled) false else { persistScheduled = true; true }
+        }
+        if (shouldSchedule) {
+            scope.launch {
+                delay(PERSIST_DEBOUNCE_MS)
+                mutex.withLock { persistScheduled = false }
+                persistSnapshot()
+            }
+        }
     }
 
     private suspend fun persistSnapshot() {
