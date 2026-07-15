@@ -15,6 +15,9 @@ import dev.jellystructure.resolver.LanguageResolver
 import dev.jellystructure.tmdb.TmdbClient
 import dev.jellystructure.util.isoToEpochSeconds
 import kotlinx.cinterop.ExperimentalForeignApi
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.io.files.Path
 import kotlinx.io.files.SystemFileSystem
 
@@ -327,74 +330,85 @@ class Scanner(
             .mapValues { (_, eps) -> eps.firstOrNull()?.seasonName ?: "" }
             .filterValues { it.isNotBlank() }
 
-        val episodes = mutableListOf<Episode>()
-        for (file in filesToProbe) {
-            val tracks = FfprobeRunner.probe(file)
-            // Phase 128: diagnose() re-probes with stderr kept, so the scan log says WHY (corrupt,
-            // unreadable, etc.) instead of just that the track list came back empty. Rare path — only
-            // runs for a file that already produced zero tracks — so the extra ffprobe call is fine.
-            if (tracks.isEmpty()) {
-                val reason = FfprobeRunner.diagnose(file)
-                Logger.warn("ffprobe returned no tracks for episode: $file (${reason.status}: ${reason.detail})", "scan")
-            }
-            val epIssueCount = tracks.count {
-                (it.kind == TrackKind.AUDIO || it.kind == TrackKind.SUBTITLE) && it.language == null
-            }
-            val audioLangs = tracks.filter { it.kind == TrackKind.AUDIO }.map { it.language }
-            val epLangPriority = LanguageResolver.priorityList(audioLangs, fallback)
-            val epResolvedLang = epLangPriority.firstOrNull()
-            val (seasonNum, epNums) = parseSeasonEpisodes(file)
-            // Phase 149: a multi-episode file (`S01E01E02E03.mkv`) yields >1 contained episode number.
-            // An unparseable filename still yields exactly one Episode (episodeNumber = null), matching
-            // pre-149 behaviour — partCount is 1 either way.
-            val partCount = epNums.size.coerceAtLeast(1)
-            val partEpisodeNums: List<Int?> = if (epNums.isEmpty()) listOf(null) else epNums
-            // Chapters are only worth reading for the (rare) multi-episode case — skip the extra
-            // ffprobe invocation entirely for the overwhelmingly common single-episode file.
-            val chapterMarkers = if (partCount > 1) FfprobeRunner.chapters(file) else emptyList()
-            val hasMatchingChapters = chapterMarkers.size == partCount
+        // Bug fix: this was a plain sequential `for` loop — one ffprobe + TMDB round trip per episode,
+        // one after another. A big show (e.g. a 300+-episode series) monopolized its entire worker slot
+        // for however long that took in total, while every other worker sat idle once the rest of the
+        // library was done. Every file's work is independent (its own ffprobe probe, its own per-episode
+        // TMDB fetches), so dispatch them all concurrently instead — real concurrency stays bounded by
+        // the existing ProcessGate (ffprobe) and OutboundHttp (TMDB) gates exactly as before, this only
+        // changes how many files get DISPATCHED into those gates at once, matching the same dispatch-
+        // only-bounds-nothing-new principle `runPipelineStepPool`/`runScan` already rely on.
+        val episodes = coroutineScope {
+            filesToProbe.map { file ->
+                async {
+                    val tracks = FfprobeRunner.probe(file)
+                    // Phase 128: diagnose() re-probes with stderr kept, so the scan log says WHY (corrupt,
+                    // unreadable, etc.) instead of just that the track list came back empty. Rare path — only
+                    // runs for a file that already produced zero tracks — so the extra ffprobe call is fine.
+                    if (tracks.isEmpty()) {
+                        val reason = FfprobeRunner.diagnose(file)
+                        Logger.warn("ffprobe returned no tracks for episode: $file (${reason.status}: ${reason.detail})", "scan")
+                    }
+                    val epIssueCount = tracks.count {
+                        (it.kind == TrackKind.AUDIO || it.kind == TrackKind.SUBTITLE) && it.language == null
+                    }
+                    val audioLangs = tracks.filter { it.kind == TrackKind.AUDIO }.map { it.language }
+                    val epLangPriority = LanguageResolver.priorityList(audioLangs, fallback)
+                    val epResolvedLang = epLangPriority.firstOrNull()
+                    val (seasonNum, epNums) = parseSeasonEpisodes(file)
+                    // Phase 149: a multi-episode file (`S01E01E02E03.mkv`) yields >1 contained episode number.
+                    // An unparseable filename still yields exactly one Episode (episodeNumber = null), matching
+                    // pre-149 behaviour — partCount is 1 either way.
+                    val partCount = epNums.size.coerceAtLeast(1)
+                    val partEpisodeNums: List<Int?> = if (epNums.isEmpty()) listOf(null) else epNums
+                    // Chapters are only worth reading for the (rare) multi-episode case — skip the extra
+                    // ffprobe invocation entirely for the overwhelmingly common single-episode file.
+                    val chapterMarkers = if (partCount > 1) FfprobeRunner.chapters(file) else emptyList()
+                    val hasMatchingChapters = chapterMarkers.size == partCount
 
-            partEpisodeNums.forEachIndexed { partIdx, epNum ->
-                // Fetch per-episode TMDB details in the episode's own resolved language — independent
-                // per contained episode, exactly like a normal single-episode file.
-                val epDetails = if (seriesTmdbId != null && seasonNum != null && epNum != null) {
-                    tmdb.getEpisodeDetailsLocalized(seriesTmdbId, seasonNum, epNum, epLangPriority)
-                } else null
+                    partEpisodeNums.mapIndexed { partIdx, epNum ->
+                        // Fetch per-episode TMDB details in the episode's own resolved language — independent
+                        // per contained episode, exactly like a normal single-episode file.
+                        val epDetails = if (seriesTmdbId != null && seasonNum != null && epNum != null) {
+                            tmdb.getEpisodeDetailsLocalized(seriesTmdbId, seasonNum, epNum, epLangPriority)
+                        } else null
 
-                // Phase 76: fetch guest stars + episode crew from TMDB
-                val (epGuests, epCrew) = if (seriesTmdbId != null && seasonNum != null && epNum != null) {
-                    fetchEpisodeCredits(seriesTmdbId, seasonNum, epNum)
-                } else Pair(emptyList(), emptyList())
+                        // Phase 76: fetch guest stars + episode crew from TMDB
+                        val (epGuests, epCrew) = if (seriesTmdbId != null && seasonNum != null && epNum != null) {
+                            fetchEpisodeCredits(seriesTmdbId, seasonNum, epNum)
+                        } else Pair(emptyList(), emptyList())
 
-                // R82: map (season, ep) → Jellyfin id from the pre-fetched meta
-                val jfEp = if (seasonNum != null && epNum != null) jfBySeasonEp[seasonNum to epNum] else null
+                        // R82: map (season, ep) → Jellyfin id from the pre-fetched meta
+                        val jfEp = if (seasonNum != null && epNum != null) jfBySeasonEp[seasonNum to epNum] else null
 
-                episodes += Episode(
-                    filename = file.substringAfterLast('/'),
-                    path = file,
-                    seasonNumber = seasonNum,
-                    episodeNumber = epNum,
-                    tracks = tracks,
-                    issueCount = epIssueCount,
-                    // Phase 128: honest per-episode display language — see the scanMovie comment above.
-                    resolvedLanguage = epResolvedLang.takeIf { audioLangs.isNotEmpty() },
-                    title = epDetails?.name?.takeIf { it.isNotBlank() },
-                    overview = epDetails?.overview?.takeIf { it.isNotBlank() },
-                    stillPath = epDetails?.stillPath,
-                    tmdbEpisodeId = epDetails?.id,
-                    guestStars = epGuests,
-                    crew = epCrew,
-                    jellyfinId = jfEp?.id,
-                    runtime = epDetails?.runtime,
-                    airDate = epDetails?.airDate?.takeIf { it.isNotBlank() },  // R148
-                    jellyfinCreatedAt = jfEp?.dateCreated?.let { isoToEpochSeconds(it) },  // Phase 108
-                    partIndex = partIdx,
-                    partCount = partCount,
-                    chapterStartMs = if (hasMatchingChapters) chapterMarkers[partIdx].startMs else null,
-                    chapterEndMs = if (hasMatchingChapters) chapterMarkers[partIdx].endMs else null,
-                    hasChapters = hasMatchingChapters,
-                )
-            }
+                        Episode(
+                            filename = file.substringAfterLast('/'),
+                            path = file,
+                            seasonNumber = seasonNum,
+                            episodeNumber = epNum,
+                            tracks = tracks,
+                            issueCount = epIssueCount,
+                            // Phase 128: honest per-episode display language — see the scanMovie comment above.
+                            resolvedLanguage = epResolvedLang.takeIf { audioLangs.isNotEmpty() },
+                            title = epDetails?.name?.takeIf { it.isNotBlank() },
+                            overview = epDetails?.overview?.takeIf { it.isNotBlank() },
+                            stillPath = epDetails?.stillPath,
+                            tmdbEpisodeId = epDetails?.id,
+                            guestStars = epGuests,
+                            crew = epCrew,
+                            jellyfinId = jfEp?.id,
+                            runtime = epDetails?.runtime,
+                            airDate = epDetails?.airDate?.takeIf { it.isNotBlank() },  // R148
+                            jellyfinCreatedAt = jfEp?.dateCreated?.let { isoToEpochSeconds(it) },  // Phase 108
+                            partIndex = partIdx,
+                            partCount = partCount,
+                            chapterStartMs = if (hasMatchingChapters) chapterMarkers[partIdx].startMs else null,
+                            chapterEndMs = if (hasMatchingChapters) chapterMarkers[partIdx].endMs else null,
+                            hasChapters = hasMatchingChapters,
+                        )
+                    }
+                }
+            }.awaitAll().flatten()
         }
 
         val sortedEpisodes = episodes.sortedWith(
