@@ -586,7 +586,12 @@ fun PlayerScreen(
 
                 // Natural end — safety net for a title whose duration/creditsStartMs never satisfied the
                 // check above (e.g. bad metadata); still shows the card rather than exiting silently.
-                if (playerLoadedForCurrentItem && player.isEnded && !nextUpVisible) {
+                // Bug fix: this was missing the same !nextUpDismissed guard the trigger above has, so a
+                // movie/last-episode's credits card became un-dismissable — "Watch credits" (or Back,
+                // which calls the same stayThrough()) hid it, but the instant playback reached its real
+                // end a moment later, this check fired again (it only looked at nextUpVisible, not
+                // whether the viewer had already dismissed it) and popped it right back up, forever.
+                if (playerLoadedForCurrentItem && player.isEnded && !nextUpVisible && !nextUpDismissed) {
                     nextUpVisible = true; nuFocus = NuFocus.PLAY
                 }
 
