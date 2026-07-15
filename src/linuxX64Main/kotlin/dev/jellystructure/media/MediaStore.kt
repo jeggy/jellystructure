@@ -180,11 +180,17 @@ class MediaStore(
                     prefix.isNotBlank() && item.path.startsWith(prefix)
                 } ?: continue
                 val libId = lib.jellyfinId.ifBlank { null } ?: continue
-                upsertItem(item.copy(libraryId = libId))
+                upsertItemDbOnly(item.copy(libraryId = libId))
                 backfilled++
             }
         }
-        if (backfilled > 0) Logger.info("MediaStore: backfilled libraryId for $backfilled rows", "media")
+        // One-time startup batch (not the live-scan hot path) — a single invalidate for the whole
+        // batch is simpler than patching per row, and just as correct since nothing else can be
+        // running concurrently against a fresh cache this early.
+        if (backfilled > 0) {
+            allItemsMutex.withLock { allItemsCache = null }
+            Logger.info("MediaStore: backfilled libraryId for $backfilled rows", "media")
+        }
     }
 
     // Phase 108: one-time startup backfill for rows written before createdAt/updatedAt existed.
@@ -201,9 +207,10 @@ class MediaStore(
                     updatedAt = item.updatedAt ?: item.scannedAt,
                     episodes = item.episodes.map { ep -> if (ep.createdAt == null) ep.copy(createdAt = fallback) else ep },
                 )
-                upsertItem(backfilled)
+                upsertItemDbOnly(backfilled)
             }
         }
+        allItemsMutex.withLock { allItemsCache = null }
         Logger.info("MediaStore: backfilled createdAt/updatedAt for ${toBackfill.size} rows")
     }
 
@@ -268,6 +275,11 @@ class MediaStore(
         // Snapshot existing titlesByLang before deleting so a full rescan never erases
         // languages pulled in earlier scans.
         val existing: Map<String, MediaItem> = allItems().associateBy { it.id }
+        // This is a wholesale replace (deleteAll + selective reinsert) — an item present in the old
+        // cache but absent from newItems must NOT survive. upsertItem's incremental patch below only
+        // adds/updates, never removes, so it can't express that; force a full invalidate here instead
+        // and let the next allItems() rebuild fully and correctly from the post-replace DB state.
+        allItemsMutex.withLock { allItemsCache = null }
         db.transaction {
             db.mediaQueries.deleteAll()
             newItems.forEach { item ->
@@ -290,7 +302,7 @@ class MediaStore(
                 // arrives. (epoch seconds; nowMs() is ms.)
                 val freshAdded = if (gainedEpisodes) nowMs() / 1000 else (item.addedAt ?: old?.addedAt)
                 merged = merged.copy(addedAt = listOfNotNull(freshAdded, old?.addedAt).maxOrNull())
-                upsertItem(merged)
+                upsertItemDbOnly(merged)
             }
         }
     }
@@ -544,7 +556,8 @@ class MediaStore(
         val twins = if (jellyfinId != null) allItems().filter { it.jellyfinId == jellyfinId && it.id != item.id } else emptyList()
         val stale = twins.firstOrNull()
         if (twins.isNotEmpty()) {
-            allItemsCache    = null
+            // A real deletion (not the common upsertItem patch path below) — full invalidate.
+            allItemsMutex.withLock { allItemsCache = null }
             peopleIndexCache = null
             jellyfinIdIndex  = null
             genreIndexCache  = null
@@ -588,7 +601,8 @@ class MediaStore(
     suspend fun deleteItem(id: String): Boolean? {
         val item = resolve(id) ?: return null
         if (!item.missingFromSource) return false
-        allItemsCache    = null
+        // A real deletion (not the common upsertItem patch path) — full invalidate.
+        allItemsMutex.withLock { allItemsCache = null }
         peopleIndexCache = null
         jellyfinIdIndex  = null
         genreIndexCache  = null
@@ -718,11 +732,12 @@ class MediaStore(
         return buildMetaFacetsFrom(items) to buildTrackFacetsFrom(items)
     }
 
-    private fun upsertItem(item: MediaItem) {
-        allItemsCache    = null
-        peopleIndexCache = null
-        jellyfinIdIndex  = null
-        genreIndexCache  = null
+    // DB write + non-cache bookkeeping only — split out so the one-time startup backfills
+    // (backfillLibraryIds/backfillTimestamps) and the bulk-replace update() can call this from inside a
+    // (non-suspend) db.transaction {} block. Those three callers invalidate allItemsCache themselves,
+    // once for the whole batch, rather than patching per item — they're either one-time startup work or
+    // an already-wholesale replace, not the hot per-item path upsertItem's cache patch exists for.
+    private fun upsertItemDbOnly(item: MediaItem) {
         libraryVersion++
         val now = nowMs()
         lastCheckedMap[item.id] = now
@@ -744,6 +759,28 @@ class MediaStore(
             search_text = buildSearchText(item),
             last_checked = now,
         )
+    }
+
+    private suspend fun upsertItem(item: MediaItem) {
+        // Bug fix: this used to null the whole cache on every single write. During an active scan,
+        // addOrUpdate fires once per scanned item from potentially dozens of concurrent workers — the
+        // cache was being invalidated multiple times a second for the run's entire duration, so any
+        // Library-page load or filter-workbench query in that window always paid the full library
+        // decode, never getting a warm hit (a real symptom: the Library page and its filter workbench
+        // both went from instant to multi-second the moment a scan started). Patch the one changed item
+        // into the already-decoded list in place instead — the cache now stays warm through an entire
+        // scan. Only meaningful when the cache is already warm (a cold/null cache has nothing to patch,
+        // and correctly stays null until the next allItems() rebuilds it in full).
+        allItemsMutex.withLock {
+            allItemsCache = allItemsCache?.let { cache ->
+                val idx = cache.indexOfFirst { it.id == item.id }
+                if (idx >= 0) cache.toMutableList().also { it[idx] = item } else cache + item
+            }
+        }
+        peopleIndexCache = null
+        jellyfinIdIndex  = null
+        genreIndexCache  = null
+        upsertItemDbOnly(item)
     }
 
     private fun buildSearchText(item: MediaItem): String = buildString {
