@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyRow
@@ -489,11 +490,14 @@ private fun GuideChannelRow(
             // User request: channel logos alongside the name.
             val logoUrl = channel.logoUrl
             if (logoUrl != null) {
+                // Bug fix: a fixed square slot squashed a wide wordmark logo (e.g. a 3.2:1
+                // horizontal lockup) down to an illegible sliver — height-constrained, width
+                // follows the image's own aspect ratio (capped to protect this row's layout).
                 RemoteImage(
                     url = logoUrl,
                     contentDescription = channel.name,
                     contentScale = ContentScale.Fit,
-                    modifier = Modifier.size(32.dp),
+                    modifier = Modifier.height(32.dp).widthIn(max = 96.dp),
                 )
                 Spacer(Modifier.width(8.dp))
             }
@@ -691,7 +695,7 @@ private fun ProgramDetailsOverlay(
                         url = logoUrl,
                         contentDescription = channel.name,
                         contentScale = ContentScale.Fit,
-                        modifier = Modifier.size(28.dp),
+                        modifier = Modifier.height(28.dp).widthIn(max = 84.dp),
                     )
                     Spacer(Modifier.width(8.dp))
                 }

@@ -6,12 +6,14 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -239,14 +241,25 @@ fun LiveTvPlayerScreen(
 @Composable
 private fun ChannelLogo(channel: LiveTvChannel, size: androidx.compose.ui.unit.Dp) {
     val colors = RaviloTheme.colors
-    Box(
-        modifier = Modifier.size(size).background(colors.surfaceVariant, RoundedCornerShape(6.dp)),
-        contentAlignment = Alignment.Center,
-    ) {
-        val logo = channel.logoUrl
-        if (!logo.isNullOrBlank()) {
-            AsyncImage(model = logo, contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
-        } else {
+    val logo = channel.logoUrl
+    if (!logo.isNullOrBlank()) {
+        // Bug fix: a fixed SQUARE slot forced every logo's aspect ratio to 1:1 — fine for a
+        // roughly-square brand mark, but a wide horizontal wordmark (e.g. a 3.2:1 lockup) got
+        // shrunk down to an illegibly thin sliver to fit. Height stays fixed (matches the
+        // surrounding row's other `size` usages); width now follows the image's own aspect
+        // ratio, capped so an extreme logo can't blow out the row.
+        Box(
+            modifier = Modifier.height(size).widthIn(max = size * 3)
+                .background(colors.surfaceVariant, RoundedCornerShape(6.dp)),
+            contentAlignment = Alignment.Center,
+        ) {
+            AsyncImage(model = logo, contentDescription = null, modifier = Modifier.fillMaxHeight(), contentScale = ContentScale.Fit)
+        }
+    } else {
+        Box(
+            modifier = Modifier.size(size).background(colors.surfaceVariant, RoundedCornerShape(6.dp)),
+            contentAlignment = Alignment.Center,
+        ) {
             Text(channel.name.take(3).uppercase(), color = colors.text, fontSize = 11.sp, fontWeight = FontWeight.Bold)
         }
     }
