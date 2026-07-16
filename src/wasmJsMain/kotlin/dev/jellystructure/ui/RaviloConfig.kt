@@ -1462,7 +1462,18 @@ private fun openChannelEditorPage(container: Element, scope: CoroutineScope, idx
     }
 
     // Save changes
+    //
+    // Bug fix: this button is labeled "Save changes" but used to only stage the edit into the
+    // in-memory `currentConfig` and navigate back to the list — it never actually persisted to the
+    // server. That edit only became durable if the user ALSO separately clicked the page-level
+    // "Save" button (top navbar); reported live as a channel's custom brandColor gradient silently
+    // reverting to whatever was last actually persisted (in this case an earlier preset swatch),
+    // with no error shown, because the in-page click genuinely looked/felt like a completed save.
+    // Now persists immediately, matching its own label and the write-through convention used
+    // elsewhere in the admin (media/series detail). Stays on this page with an error message on
+    // failure instead of navigating away, so a failed save is never silently lost.
     container.querySelector("#ch-ed-save")?.addEventListener("click") { _ ->
+        if (!currentScopeIsGlobal && !currentHasOverride) return@addEventListener  // lock state
         val name = (container.querySelector("#ch-ed-name") as? HTMLInputElement)?.value?.trim() ?: c.name
         val logo = (container.querySelector("#ch-ed-logo") as? HTMLInputElement)?.value?.trim()?.ifBlank { null }
         val color = (container.querySelector("#ch-ed-color") as? HTMLInputElement)?.value?.trim()?.ifBlank { null }
@@ -1494,9 +1505,29 @@ private fun openChannelEditorPage(container: Element, scope: CoroutineScope, idx
             // R143: the system block is already in cur.rows (mutated live by the system-row toggles); copy preserves it.
             rows = if (rowsMode == "custom") (cur.rows ?: ChannelRowsConfig()).copy(mode = "custom") else null,
         )
-        currentConfig = currentConfig.copy(channels = list)
-        historyReplaceState("#/ravilo")
-        renderFull(container, scope)
+        val updatedConfig = currentConfig.copy(channels = list)
+
+        val msg = container.querySelector("#ch-ed-msg") as? HTMLElement
+        val saveBtn = container.querySelector("#ch-ed-save") as? HTMLElement
+        saveBtn?.setAttribute("disabled", "true")
+        scope.launch {
+            runCatching {
+                if (currentScopeIsGlobal) RaviloApi.putGlobalConfig(updatedConfig)
+                else RaviloApi.putConfig(currentUserId, updatedConfig)
+            }.fold(
+                onSuccess = {
+                    currentConfig = updatedConfig
+                    scopeConfigCache.remove(if (currentScopeIsGlobal) "global" else currentUserId)
+                    historyReplaceState("#/ravilo")
+                    renderFull(container, scope)
+                },
+                onFailure = { e ->
+                    saveBtn?.removeAttribute("disabled")
+                    msg?.innerHTML = """<div class="alert-bad">Save failed: ${e.message?.htmlEsc()}</div>"""
+                    msg?.setAttribute("style", "display:block;margin-bottom:12px")
+                },
+            )
+        }
     }
 
     // R59: rows mode toggle shows/hides custom body
