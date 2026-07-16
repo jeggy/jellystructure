@@ -406,12 +406,21 @@ private fun renderCondRow(c: WbCond, path: List<Int>): String {
             fun tagChip(t: TrackFacetItem): String {
                 val dot = if (t.color != null) """<span class="tag-dot" style="background:${t.color}"></span>""" else ""
                 val cnt = if (t.count > 0) """<span class="wb-vcount">${t.count}</span>""" else ""
-                return """<span class="wb-vchip${if (c.values.contains(t.value)) " on" else ""}" data-path="$p" data-v="${t.value.esc()}">$dot${t.value.esc()}$cnt</span>"""
+                return """<span class="wb-vchip${if (c.values.contains(t.value)) " on" else ""}" data-path="$p" data-v="${t.value.esc()}" data-search="${t.value.lowercase().esc()}">$dot${t.value.esc()}$cnt</span>"""
             }
-            val (js, other) = wbItemsFor("tag").take(80).partition { it.color != null }
+            // No .take(N) cap: all tags load up front, and the search box (below) narrows the
+            // display client-side — a fixed list can grow past any cap once a library accumulates
+            // a lot of user-created tags.
+            val (js, other) = wbItemsFor("tag").partition { it.color != null }
             buildString {
-                if (js.isNotEmpty()) append("""<div class="wb-vgroup">Jellystructure tags</div><div class="wb-vchips">${js.joinToString("") { tagChip(it) }}</div>""")
-                if (other.isNotEmpty()) append("""<div class="wb-vgroup">Other tags</div><div class="wb-vchips">${other.joinToString("") { tagChip(it) }}</div>""")
+                if (js.isEmpty() && other.isEmpty()) {
+                    append("""<span class="muted tiny">No tags yet</span>""")
+                } else {
+                    append("""<input class="input wb-vsearch" placeholder="Search tags…" autocomplete="off">""")
+                    if (js.isNotEmpty()) append("""<div class="wb-vsection"><div class="wb-vgroup">Jellystructure tags</div><div class="wb-vchips">${js.joinToString("") { tagChip(it) }}</div></div>""")
+                    if (other.isNotEmpty()) append("""<div class="wb-vsection"><div class="wb-vgroup">Other tags</div><div class="wb-vchips">${other.joinToString("") { tagChip(it) }}</div></div>""")
+                    append("""<div class="wb-vempty muted tiny" style="display:none;">No tags match</div>""")
+                }
             }
         }
         "content_row" -> {
@@ -591,6 +600,28 @@ private fun wbWireCondRows() {
                 if (existing >= 0) c.rows.removeAt(existing)
                 else wbRowsContext.firstOrNull { it.id == rid }?.let { c.rows.add(it) }
                 wbRenderBlocks(); wbRefreshPreview()
+            } }
+    }
+    // Tag search: pure client-side chip filtering, no re-render (all tags are already loaded) —
+    // typing narrows visibility of .wb-vchip within this condition's own .wb-vsection groups.
+    document.querySelectorAll("#wb-blocks .wb-vsearch").let { els ->
+        for (i in 0 until els.length) { val el = els.item(i) as? HTMLInputElement ?: continue
+            el.addEventListener("input") {
+                val wrap = el.closest(".wb-cond") as? HTMLElement ?: return@addEventListener
+                val q = el.value.trim().lowercase()
+                var anyVisible = false
+                wrap.querySelectorAll(".wb-vsection").let { sections ->
+                    for (s in 0 until sections.length) { val section = sections.item(s) as? HTMLElement ?: continue
+                        var sectionHasVisible = false
+                        section.querySelectorAll(".wb-vchip").let { chips ->
+                            for (j in 0 until chips.length) { val chip = chips.item(j) as? HTMLElement ?: continue
+                                val matches = q.isEmpty() || (chip.getAttribute("data-search") ?: "").contains(q)
+                                chip.style.display = if (matches) "" else "none"
+                                if (matches) { sectionHasVisible = true; anyVisible = true }
+                            } }
+                        section.style.display = if (sectionHasVisible) "" else "none"
+                    } }
+                (wrap.querySelector(".wb-vempty") as? HTMLElement)?.style?.display = if (!anyVisible && q.isNotEmpty()) "" else "none"
             } }
     }
 }
@@ -800,6 +831,8 @@ private fun injectWorkbenchStyles() {
         .wb-cond { border:1px solid var(--line); border-radius:11px; padding:10px; margin-bottom:6px; background:var(--fill); }
         .wb-cond-head { display:flex; align-items:center; gap:8px; margin-bottom:8px; }
         .wb-facet, .wb-op { padding:4px 8px; }
+        .wb-vsearch { display:block; width:100%; margin-bottom:8px; padding:5px 9px; font-size:.8rem; }
+        .wb-vempty { padding:4px 0; }
         .wb-vchips { display:flex; flex-wrap:wrap; gap:6px; max-height:120px; overflow:auto; }
         .wb-vchip { display:inline-flex; align-items:center; gap:6px; padding:3px 9px; border-radius:18px; border:1px solid var(--line-2); background:var(--fill-2); color:var(--ink); cursor:pointer; font-size:.76rem; }
         .wb-vchip.on { background:var(--hi); border-color:transparent; color:#fff; }
@@ -834,6 +867,7 @@ private fun injectWorkbenchStyles() {
         /* Phase 140 §F — comfortable tap targets on touch devices (ported from design/app/ravilo-builders.css). */
         @media (pointer: coarse) {
             .wb-facet, .wb-op { padding:9px 12px; }
+            .wb-vsearch { padding:9px 12px; }
             .wb-vchip { padding:8px 12px; }
             .wb-jpill { padding:7px 14px; }
             .wb-not-toggle { padding:7px 11px; }
