@@ -242,8 +242,13 @@ object FfmpegRunner {
         val windowSec = if (durationSec < CREDITS_WINDOW_THRESHOLD_SEC) CREDITS_WINDOW_TV_SEC else CREDITS_WINDOW_MOVIE_SEC
         val windowStartSec = (durationSec - windowSec).coerceAtLeast(0.0)
         val escaped = filePath.replace("'", "'\\''")
-        val cmd = "ffmpeg -ss $windowStartSec -i '$escaped' -t ${durationSec - windowStartSec} " +
-            "-vf blackdetect=d=0.5:pic_th=0.98:pix_th=0.10 -af silencedetect=noise=-60dB:d=0.5 -f null - 2>&1"
+        // Bug fix: blackdetect/silencedetect decode every frame in the window and ffmpeg defaults to
+        // using as many threads as it finds useful — unlike runRemuxTracked's nice/ionice treatment,
+        // this call ran at normal priority with no thread cap, so ProcessGate's 16 concurrent slots
+        // could each spin up several decode threads and saturate the whole host, starving the API
+        // server (same fix shape as runRemuxTracked's "protects API/playback from a big remux").
+        val cmd = "nice -n 19 ionice -c3 ffmpeg -ss $windowStartSec -i '$escaped' -t ${durationSec - windowStartSec} " +
+            "-threads 2 -vf blackdetect=d=0.5:pic_th=0.98:pix_th=0.10 -af silencedetect=noise=-60dB:d=0.5 -f null - 2>&1"
         val output = captureCommand(cmd) ?: return null
 
         val blackStarts = Regex("""black_start:([\d.]+)""").findAll(output)
@@ -288,7 +293,9 @@ object FfmpegRunner {
      */
     suspend fun computeFingerprint(filePath: String, windowSec: Int = FINGERPRINT_WINDOW_SEC): List<Int>? {
         val escaped = filePath.replace("'", "'\\''")
-        val output = captureCommand("fpcalc -raw -length $windowSec '$escaped' 2>&1") ?: return null
+        // Same nice/ionice treatment as detectCreditsStart — fpcalc shells out to libavcodec for audio
+        // decode, and up to 16 of these can run concurrently under ProcessGate.
+        val output = captureCommand("nice -n 19 ionice -c3 fpcalc -raw -length $windowSec '$escaped' 2>&1") ?: return null
         val match = Regex("""FINGERPRINT=([\d,]+)""").find(output) ?: return null
         return match.groupValues[1].split(",").mapNotNull { it.trim().toLongOrNull()?.toInt() }.takeIf { it.isNotEmpty() }
     }
