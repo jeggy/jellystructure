@@ -512,7 +512,14 @@ fun PlayerScreen(
         nextUpDismissed = false  // R111: each episode (replaceTop keeps this composable) starts fresh
         nextUpVisible = false
         countdown = currentSkipSecs
-        store.startSession(itemId, positionProvider = { positionMs }, isPausedProvider = { !isPlaying })
+        // durationProvider: lets the store take the ≥90% mark-played decision itself if it is closed
+        // (episode change / screen teardown) without an explicit stopSession — see PlayerStore.close().
+        store.startSession(
+            itemId,
+            positionProvider = { positionMs },
+            isPausedProvider = { !isPlaying },
+            durationProvider = { durationMs },
+        )
     }
 
     // R182 — resolve skip behaviour in parallel with session start (not blocking playback start on an
