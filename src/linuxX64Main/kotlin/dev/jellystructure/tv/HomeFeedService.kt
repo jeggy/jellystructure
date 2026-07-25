@@ -92,6 +92,23 @@ class HomeFeedService(
     }
 
     /**
+     * Bug fix: a playback stop (and the played write-through) used to only forward to Jellyfin — nothing
+     * touched [feedCache] (FEED_TTL_MS = 5 min) or [playstateCache] (PLAYSTATE_TTL_MS = 20s). The Continue
+     * row is built INSIDE the cached feed from Jellyfin's Resume + NextUp, so even a perfectly correct
+     * stop stayed invisible on Home for up to five minutes: the row still showed the episode at its old
+     * position, or still showed one the viewer had just finished. Drop both caches for this user so the
+     * next load rebuilds the row, and re-read the playstate right away so the R176 `playstate_changed`
+     * push patches any Home/Browse screen that is already open (on this device or another of the
+     * viewer's). Best-effort: a failure here must never turn a successful stop into an error response.
+     */
+    suspend fun invalidatePlaystate(device: DeviceData) {
+        val userId = device.jellyfinUserId
+        feedCache.remove(userId)
+        playstateCache.remove(userId)
+        runCatching { playstateFor(device, nowMs()) }
+    }
+
+    /**
      * Returns this user's cached whole-catalog playstate if still fresh; otherwise fetches it live,
      * caches it, and — since a fresh fetch is the whole point of the exercise — broadcasts it to every
      * OTHER device signed in as this user (see [TvEventBus.notifyPlaystateChanged]) so an already-open

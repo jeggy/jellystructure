@@ -385,6 +385,10 @@ fun Route.tvRoutes(
         val req = call.receive<PlaybackStopRequest>()
         playbackService.stopPlayback(device, req.itemId, req.positionMs)
         call.respond(mapOf("status" to "ok"))
+        // Bug fix: the stop used to be forwarded to Jellyfin and nothing else — the cached home feed
+        // (5 min) kept serving the pre-stop Continue row, so a correct stop could stay invisible on
+        // Home for minutes. Runs after responding so the client's stop ack isn't delayed by it.
+        homeFeedService.invalidatePlaystate(device)
     }
 
     // R56: restream with a subtitle burned in (PGS encode path)
@@ -399,6 +403,7 @@ fun Route.tvRoutes(
         val req = call.receive<MarkRequest>()
         playbackService.mark(device, req.itemId, req.watched)
         call.respond(mapOf("status" to "ok"))
+        homeFeedService.invalidatePlaystate(device)  // see /tv/playback/stop
     }
 
     // R142 — played/unplayed write-through (movie / episode / season / series). Returns the authoritative
@@ -407,6 +412,8 @@ fun Route.tvRoutes(
         val device = call.attributes[DeviceKey]
         val req = call.receive<PlayedRequest>()
         call.respond(playbackService.setPlayed(device, req.itemId, req.played, req.episodeIds))
+        // A finished episode must leave (and its successor enter) the Continue row now, not in 5 minutes.
+        homeFeedService.invalidatePlaystate(device)  // see /tv/playback/stop
     }
 
     // ── Per-user config ──────────────────────────────────────────────────────
