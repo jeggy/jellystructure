@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
@@ -819,7 +820,15 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
             }
 
             is Dest.Player -> {
+                // remember(dest.itemId) — an auto-advance/next-episode does replaceTop(Dest.Player(…)),
+                // which keeps the SAME PlayerScreen composed and only swaps dest.itemId, so a new store
+                // is built per episode. Bug fix: the outgoing one used to be silently dropped and kept
+                // running — its 10s progress heartbeat went on POSTing for the finished episode's id with
+                // the CURRENT episode's playhead (N episodes ⇒ N phantom "Now Playing" sessions on the
+                // Jellyfin dashboard, and trashed resume positions ⇒ wrong Continue Watching). Closing it
+                // on dispose cancels that heartbeat and reports a final stop for the episode we left.
                 val store = remember(dest.itemId) { PlayerStore(apiClient) }
+                DisposableEffect(store) { onDispose { store.close() } }
                 PlayerScreen(
                     itemId           = dest.itemId,
                     itemTitle        = dest.title,
