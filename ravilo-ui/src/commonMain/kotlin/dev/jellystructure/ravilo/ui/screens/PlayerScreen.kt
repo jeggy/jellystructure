@@ -751,10 +751,22 @@ fun PlayerScreen(
     // nav-bar-shaped margin baked in on top of that.
     PlayerImmersiveEffect()
 
-    // Cleanup on exit — stop the Jellyfin playback session and release the player engine
+    // Stop the playback session for the item we are leaving. Bug fix: this used to be keyed on Unit
+    // together with the player teardown below, so the effect block ran exactly once and its onDispose
+    // captured the `store` from the FIRST composition. After a binge (each episode replaceTops a new
+    // Dest.Player with its own store — see RaviloApp) pressing Back therefore stopped EPISODE 1's
+    // session, using episode 5's positionMs/durationMs — clobbering episode 1's resume position and
+    // even mark-playing it when episode 5 happened to be ≥90% — while episode 5's own session was never
+    // stopped at all. Keying on `store` makes this fire once per episode with that episode's own
+    // playhead, which is also what makes the resume point (and Continue Watching) correct.
+    DisposableEffect(store) {
+        onDispose { store.stopSession(positionMs, durationMs) }  // R142: ≥90% → mark played
+    }
+
+    // Release the player engine only when the screen itself goes away — the engine is remembered per
+    // screen and deliberately REUSED across episodes, so this must NOT be keyed on the store/itemId.
     DisposableEffect(Unit) {
         onDispose {
-            store.stopSession(positionMs, durationMs)  // R142: ≥90% → mark played
             player.release()
             PlayerChromeBridge.hide()  // R169 — no-op on Android/TV
         }
