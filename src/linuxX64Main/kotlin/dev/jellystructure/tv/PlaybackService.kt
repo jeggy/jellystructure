@@ -23,6 +23,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.sync.withPermit
+import kotlin.concurrent.Volatile
 import platform.posix.CLOCK_REALTIME
 import platform.posix.clock_gettime
 import platform.posix.timespec
@@ -51,14 +52,119 @@ private val playedGate = Semaphore(4)
 // Phase 110 (FR B.2) — stop watchdog: a playback the client hasn't heartbeated (progress report, ~every
 // 10s) in STOP_WATCHDOG_MS is force-stopped server-side, so an app kill / network drop / HDMI-off
 // doesn't leave "Now Playing" lingering in the Jellyfin dashboard until its own 5-minute timeout.
-// Key = deviceId (one active playback per device); cleared on an explicit stop.
-private val lastHeartbeatMs = HashMap<String, Long>()
-private val activePlayback = HashMap<String, Triple<DeviceData, String, Long>>() // deviceId -> (device, jellyfinId, lastKnownPositionMs)
+//
+// Bug fix: this used to be keyed by deviceId alone ("one active playback per device"), but the Jellyfin
+// play-session id is per ITEM (see playSessionIdFor), so a device can legitimately hold more than one
+// Jellyfin session at a time — which is exactly what a leaking client produced. Starting episode 2 then
+// overwrote episode 1's entry, leaving episode 1's Jellyfin session untracked and therefore unreapable
+// by the watchdog (a phantom "Now Playing" forever), and a late stop for episode 1 wiped the tracking
+// for the episode actually playing. Keyed by (deviceId, jellyfinId) the watchdog reaps every stale
+// session, not just the last one.
+internal data class PlaybackKey(val deviceId: String, val jellyfinId: String)
+
+internal class TrackedPlayback(
+    val device: DeviceData,
+    val jellyfinId: String,
+    val positionMs: Long,
+    val heartbeatMs: Long,
+)
+
+private const val STOP_WATCHDOG_MS = 90_000L
+
+// A stopped playback stays "stopped" for this long so a progress tick that was already in flight when
+// the stop landed can't resurrect the session. Comfortably longer than the client's 10s tick.
+private const val STOP_GRACE_MS = 60_000L
+
+/**
+ * The in-memory register of what is playing where, backing the Phase 110 (FR B.2) stop watchdog and the
+ * Phase 111 (FR B.1) "now playing" device list. Extracted from loose top-level HashMaps so the exact
+ * bugs below are unit-testable (see PlaybackTrackerTest); [clock] is injectable for the same reason.
+ *
+ * Bug fix: the maps used to be mutated from concurrent request coroutines with no synchronisation at
+ * all, unlike tokenCacheMutex right above — a concurrent HashMap rehash is a data race and a crash risk
+ * on Kotlin/Native. Every mutation now happens under [mutex].
+ */
+internal class PlaybackTracker(private val clock: () -> Long = ::nowMs) {
+    private val mutex = Mutex()
+    private val active = HashMap<PlaybackKey, TrackedPlayback>()
+    private val stoppedUntilMs = HashMap<PlaybackKey, Long>()
+
+    // Non-suspend readers (nowPlaying, called from route handlers) can't take the mutex, so they read an
+    // immutable snapshot republished on every mutation instead of iterating the live map.
+    @Volatile
+    private var snapshot: Map<PlaybackKey, TrackedPlayback> = emptyMap()
+
+    suspend fun started(device: DeviceData, jellyfinId: String, positionMs: Long) {
+        val key = PlaybackKey(device.deviceId, jellyfinId)
+        mutex.withLock {
+            stoppedUntilMs.remove(key)  // an explicit new start ends the post-stop grace window
+            active[key] = TrackedPlayback(device, jellyfinId, positionMs, clock())
+            publish()
+        }
+    }
+
+    /**
+     * Records a heartbeat. Returns false when this is a late tick for a playback that already reported a
+     * stop — bug fix: such a tick used to re-register the playback AND get pushed to Jellyfin,
+     * resurrecting a finished session and overwriting the final resume position we had just written.
+     */
+    suspend fun heartbeat(device: DeviceData, jellyfinId: String, positionMs: Long): Boolean {
+        val key = PlaybackKey(device.deviceId, jellyfinId)
+        return mutex.withLock {
+            if ((stoppedUntilMs[key] ?: 0L) > clock()) {
+                false
+            } else {
+                active[key] = TrackedPlayback(device, jellyfinId, positionMs, clock())
+                publish()
+                true
+            }
+        }
+    }
+
+    /**
+     * Bug fix: the entry used to be removed by deviceId regardless of which item stopped, so a late stop
+     * for episode 1 dropped the tracking for the episode actually playing.
+     */
+    suspend fun stopped(device: DeviceData, jellyfinId: String) {
+        val key = PlaybackKey(device.deviceId, jellyfinId)
+        mutex.withLock {
+            active.remove(key)
+            stoppedUntilMs[key] = clock() + STOP_GRACE_MS
+            publish()
+        }
+    }
+
+    /** Everything currently tracked, snapshotted so callers can suspend while walking it. Also prunes
+     *  expired post-stop grace entries — the watchdog tick is the natural janitor. */
+    suspend fun tracked(): List<TrackedPlayback> = mutex.withLock {
+        val now = clock()
+        stoppedUntilMs.entries.removeAll { it.value <= now }
+        active.values.toList()
+    }
+
+    /** Has [playback] gone [STOP_WATCHDOG_MS] without a heartbeat (app kill / network drop / HDMI-off)? */
+    fun isHeartbeatStale(playback: TrackedPlayback): Boolean =
+        clock() - playback.heartbeatMs > STOP_WATCHDOG_MS
+
+    /** With per-item keying a device can briefly hold several entries (an overlapping stop/start), so
+     *  report the most recently heartbeated one — that is the one actually on screen. */
+    fun nowPlaying(deviceId: String): String? =
+        snapshot.values
+            .filter { it.device.deviceId == deviceId }
+            .maxByOrNull { it.heartbeatMs }
+            ?.jellyfinId
+
+    /** Must be called while holding [mutex]. */
+    private fun publish() {
+        snapshot = active.toMap()
+    }
+}
+
+internal val playbackTracker = PlaybackTracker()
 
 /** Phase 111 (FR B.1) — the Jellyfin item id this device is actively playing, or null. Used by the
- *  remote-control device list; reads the same map the stop watchdog does, no separate tracking. */
-fun nowPlayingItem(deviceId: String): String? = activePlayback[deviceId]?.second
-private const val STOP_WATCHDOG_MS = 90_000L
+ *  remote-control device list; reads the same tracking the stop watchdog does, no separate state. */
+fun nowPlayingItem(deviceId: String): String? = playbackTracker.nowPlaying(deviceId)
 
 private fun playSessionIdFor(device: DeviceData, jellyfinId: String): String = "${device.deviceId}-$jellyfinId"
 
@@ -123,8 +229,7 @@ class PlaybackService(
             "$jellyfinBase/Videos/$jellyfinId/stream?Static=true&MediaSourceId=$jellyfinId&DeviceId=${identity.deviceId}&api_key=$token"
         }
 
-        lastHeartbeatMs[device.deviceId] = nowMs()
-        activePlayback[device.deviceId] = Triple(device, jellyfinId, startPositionMs)
+        playbackTracker.started(device, jellyfinId, startPositionMs)
 
         return StreamTicket(
             jellyfinBaseUrl = jellyfinBase,
@@ -142,10 +247,14 @@ class PlaybackService(
     }
 
     suspend fun reportProgress(device: DeviceData, jellyfinId: String, positionMs: Long, isPaused: Boolean) {
+        // A straggling tick for an item that already reported a stop must not be forwarded — see
+        // PlaybackTracker.heartbeat.
+        if (!playbackTracker.heartbeat(device, jellyfinId, positionMs)) {
+            Logger.info("Ignoring progress for already-stopped playback item=$jellyfinId device=${device.deviceId}", "tv")
+            return
+        }
         val jellyfinBase = configStore.current.apiKeys.jellyfinUrl.trimEnd('/')
         val token = jellyfinClient.tvToken(jellyfinBase, device, configStore.current.apiKeys.jellyfinToken)
-        lastHeartbeatMs[device.deviceId] = nowMs()
-        activePlayback[device.deviceId] = Triple(device, jellyfinId, positionMs)
         jellyfinClient.reportPlaybackProgress(
             jellyfinBase, token, jellyfinId,
             positionMs * TICKS_PER_MS, isPaused, jellyfinId,
@@ -154,10 +263,9 @@ class PlaybackService(
     }
 
     suspend fun stopPlayback(device: DeviceData, jellyfinId: String, positionMs: Long) {
+        playbackTracker.stopped(device, jellyfinId)
         val jellyfinBase = configStore.current.apiKeys.jellyfinUrl.trimEnd('/')
         val token = jellyfinClient.tvToken(jellyfinBase, device, configStore.current.apiKeys.jellyfinToken)
-        lastHeartbeatMs.remove(device.deviceId)
-        activePlayback.remove(device.deviceId)
         jellyfinClient.stopPlaybackSession(
             jellyfinBase, token, jellyfinId,
             positionMs * TICKS_PER_MS, jellyfinId,
@@ -170,18 +278,19 @@ class PlaybackService(
      *  anything for a device whose TV-events socket has disconnected (checked via [isDeviceConnected]).
      *  Called on a periodic tick from Main.kt; also callable immediately on a TV disconnect. */
     suspend fun stopWatchdogTick(isDeviceConnected: suspend (String) -> Boolean) {
-        val now = nowMs()
+        // Snapshot first: isDeviceConnected suspends, and stopPlayback below takes the tracker's own
+        // (non-reentrant) mutex.
+        val tracked = playbackTracker.tracked()
         // buildList's lambda is inline, so the suspend isDeviceConnected() call is allowed here —
         // a plain `.filter { }` lambda is not inline and can't call a suspend function.
         val stale = buildList {
-            for ((deviceId, value) in activePlayback.entries) {
-                val heartbeatStale = now - (lastHeartbeatMs[deviceId] ?: 0L) > STOP_WATCHDOG_MS
-                if (heartbeatStale || !isDeviceConnected(deviceId)) add(value)
+            for (p in tracked) {
+                if (playbackTracker.isHeartbeatStale(p) || !isDeviceConnected(p.device.deviceId)) add(p)
             }
         }
-        for ((device, jellyfinId, positionMs) in stale) {
-            Logger.info("Stop watchdog: force-stopping stale playback item=$jellyfinId device=${device.deviceId}", "tv")
-            runCatching { stopPlayback(device, jellyfinId, positionMs) }
+        for (p in stale) {
+            Logger.info("Stop watchdog: force-stopping stale playback item=${p.jellyfinId} device=${p.device.deviceId}", "tv")
+            runCatching { stopPlayback(p.device, p.jellyfinId, p.positionMs) }
                 .onFailure { Logger.warn("Stop watchdog: force-stop failed: ${it.message}", "tv") }
         }
     }
