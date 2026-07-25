@@ -480,6 +480,19 @@ fun PlayerScreen(
 
     fun scrubStep() = SKIP_BACK_MS.coerceAtMost(maxOf(5_000L, (durationMs * 0.012).toLong()))
 
+    // Single place that arms a playback session, shared by the initial start and by the return-from-
+    // background re-arm (PlayerLifecycleEffect's onForeground) so both hand the store the same providers.
+    // durationProvider lets the store take the ≥90% mark-played decision itself if it is closed without
+    // an explicit stopSession — see PlayerStore.close().
+    fun armSession(id: String) {
+        store.startSession(
+            id,
+            positionProvider = { positionMs },
+            isPausedProvider = { !isPlaying },
+            durationProvider = { durationMs },
+        )
+    }
+
     // R155 — remote playstate commands (Phase 111 Home Assistant / Jellyfin dashboard buttons via the
     // Phase 110 bridge). Set (not toggle) play state so a stale/duplicate command is idempotent.
     // Collecting LocalPlaystateCommands only while this screen is composed is itself the "ignore when
@@ -512,14 +525,7 @@ fun PlayerScreen(
         nextUpDismissed = false  // R111: each episode (replaceTop keeps this composable) starts fresh
         nextUpVisible = false
         countdown = currentSkipSecs
-        // durationProvider: lets the store take the ≥90% mark-played decision itself if it is closed
-        // (episode change / screen teardown) without an explicit stopSession — see PlayerStore.close().
-        store.startSession(
-            itemId,
-            positionProvider = { positionMs },
-            isPausedProvider = { !isPlaying },
-            durationProvider = { durationMs },
-        )
+        armSession(itemId)
     }
 
     // R182 — resolve skip behaviour in parallel with session start (not blocking playback start on an
@@ -743,8 +749,17 @@ fun PlayerScreen(
         pauseFlash = false
     }
 
-    // Pause/resume when activity goes to background (Home button) and returns
-    PlayerLifecycleEffect(player, wasPlaying = { isPlaying })
+    // Pause/resume when activity goes to background (Home button) and returns. Bug fix: also END the
+    // playback session while we are away instead of leaving it open with a paused heartbeat (phantom
+    // "streaming" in the Jellyfin dashboard, and no final resume position if the app is then killed),
+    // and re-arm it for the SAME item if the viewer comes back. Uses currentItemId (rememberUpdatedState),
+    // not the raw itemId parameter, so a re-arm after a binge starts the episode we are actually on.
+    PlayerLifecycleEffect(
+        player,
+        wasPlaying = { isPlaying },
+        onBackground = { store.stopSession(positionMs, durationMs) },
+        onForeground = { armSession(currentItemId) },
+    )
     // Bug fix: force landscape + hide system bars for as long as the player is on screen — the
     // phone app is portrait-locked with visible system bars everywhere else, which left the player
     // stuck in portrait (heavy top/bottom letterboxing on any normal landscape video) plus a status/
