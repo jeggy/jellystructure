@@ -216,6 +216,9 @@ private val ATTENTION_ROW_ORDER = listOf(
     "no_segments" to "warn",
     "zero_audio" to "bad",
     "duplicate" to "bad",
+    // Bug fix (Ravilo auto-play-next loop): duplicate episode FILES — same severity class as a duplicate
+    // library entry, and kept next to it: both are "one thing exists twice" problems.
+    "duplicate_episode" to "bad",
     "missing_from_source" to "bad",
 )
 

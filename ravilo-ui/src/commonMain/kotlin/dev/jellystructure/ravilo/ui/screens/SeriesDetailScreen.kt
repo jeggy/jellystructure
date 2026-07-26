@@ -159,7 +159,16 @@ private fun episodeDisplayTitle(ep: Episode, episodes: List<Episode>): String {
  *  it used to map the flat episode list 1:1, so a 3-episode file produced 3 duplicate-looking picker
  *  entries all titled "Episodes 1-3", none of which reflected which file was actually playing. */
 private fun episodeGroups(episodes: List<Episode>): List<List<Episode>> =
-    episodes.groupBy { if (it.file.isBlank()) "single:${it.id}" else it.file }.values.toList()
+    // Bug fix (auto-play-next loop): grouping is by FILE, so two different files that both claim the same
+    // episode (a library folder extracted twice, or a mislabelled release) used to become two rail slots
+    // carrying the SAME id — the "next" group after episode 1 was episode 1 again, the credits card
+    // announced it, and requesting a jump to the id already playing could only be a no-op. It also fed
+    // duplicate keys to the rail's LazyRow. The backend now exposes one entry per (season, episode), but
+    // an unscanned/older library can still hand us a collision, so the id is deduped here too: whatever
+    // the metadata says, an id occupies exactly one group.
+    episodes.distinctBy { it.id }
+        .groupBy { if (it.file.isBlank()) "single:${it.id}" else it.file }
+        .values.toList()
 
 /** Picks the group's natural entry point: in-progress, else first unwatched, else the first episode. */
 private fun groupEntryPoint(group: List<Episode>, overlay: Map<String, CardPlayState>): Episode =

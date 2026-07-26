@@ -65,6 +65,9 @@ private fun triageSubline(item: dev.jellystructure.api.TriageItem): String {
         if (first.missingStill) epParts += "missing episode image"
         if (first.coverAsVideo != null) epParts += "cover art muxed as video"  // Phase 144
         if (first.segmentsLowConfidence) epParts += "low-confidence segments"  // Phase 150
+        // Bug fix (Ravilo auto-play-next loop): a second file claiming this episode number — Ravilo can
+        // only ever play one of them, so the copy has to be removed/renumbered on disk.
+        if (first.duplicateEpisode) epParts += "duplicate episode file — another file claims this number"
         val more = if (epIssues.size > 1) " (+${epIssues.size - 1} more)" else ""
         parts += "${first.episodeCode} · ${epParts.joinToString(", ").ifEmpty { "needs attention" }}$more"
     }

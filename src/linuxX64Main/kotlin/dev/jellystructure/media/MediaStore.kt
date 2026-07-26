@@ -356,6 +356,9 @@ class MediaStore(
                     val dupIds = TriageDetection.duplicateIds(items)
                     items = items.filter { it.id in dupIds }
                 }
+                // Bug fix (Ravilo auto-play-next loop): two files claiming the same S__E__ — see
+                // TriageDetection.duplicateEpisodeCount / DuplicateEpisodes.
+                "duplicate_episode" -> items = items.filter { TriageDetection.duplicateEpisodeCount(it) > 0 }
                 "zero_audio" -> items = items.filter { TriageDetection.zeroAudioCount(it) > 0 }
                 "cover_as_video" -> items = items.filter { TriageDetection.coverAsVideoCount(it) > 0 }  // Phase 144
                 "segments_lowconf" -> items = items.filter { TriageDetection.lowConfidenceSegmentsCount(it) > 0 }  // Phase 150
