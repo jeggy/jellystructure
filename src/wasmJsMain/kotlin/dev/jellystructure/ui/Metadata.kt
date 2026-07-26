@@ -333,6 +333,7 @@ private fun showTagModal(content: HTMLElement, scope: CoroutineScope, editName: 
                 MetadataApi.updateTag(name, color, desc) != null
             }
             if (!ok) { errEl?.let { it.style.display = "block"; it.textContent = if (isNew) "Tag name already exists" else "Save failed" }; return@launch }
+            FacetsCache.invalidate()
             modal.style.display = "none"
             // Reload tags tab
             val sort = (content.querySelector("#metadata-sort") as? HTMLInputElement)?.value ?: "count"
@@ -346,6 +347,7 @@ private fun showTagModal(content: HTMLElement, scope: CoroutineScope, editName: 
         if (editName != null && window.confirm("Delete tag \"$editName\"? The tag will be removed from the definition list. Items that have it will keep the tag string until their next sync.")) {
             scope.launch {
                 MetadataApi.deleteTag(editName)
+                FacetsCache.invalidate()
                 modal.style.display = "none"
                 val sort = (content.querySelector("#metadata-sort") as? HTMLInputElement)?.value ?: "count"
                 val tags = MetadataApi.getTags(sort)

@@ -1,5 +1,6 @@
 package dev.jellystructure.ravilo.ui.screens
 
+import dev.jellystructure.ravilo.ui.seams.detectAvcDecoderLimits
 import dev.jellystructure.ravilo.ui.seams.detectHdrSupport
 import dev.jellystructure.shared.tv.CardPlayState
 import dev.jellystructure.shared.tv.ClientCapabilities
@@ -75,6 +76,9 @@ class PlayerStore(private val apiClient: TvApiClient) {
                     // assumed direct-play was safe even for HDR10/HLG sources the device might not be
                     // able to display correctly (see ClientCapabilities.supportsHdr10/supportsHlg docs).
                     val hdr = detectHdrSupport()
+                    // R183: Dolby Vision + the real H.264 decode ceiling, so DV profile-8 titles
+                    // direct-play and any fallback transcode is one this device can actually decode.
+                    val avc = detectAvcDecoderLimits()
                     val ticket = apiClient.startPlayback(
                         itemId = itemId,
                         capabilities = ClientCapabilities(
@@ -84,6 +88,11 @@ class PlayerStore(private val apiClient: TvApiClient) {
                             maxAudioChannels = 8,
                             supportsHdr10 = hdr.hdr10,
                             supportsHlg = hdr.hlg,
+                            supportsDolbyVision = hdr.dolbyVision,
+                            supportsDolbyVisionEl = hdr.dolbyVisionEl,
+                            maxH264Width = avc.maxWidth,
+                            maxH264Height = avc.maxHeight,
+                            maxH264Level = avc.maxLevel,
                         ),
                     )
                     ticket
