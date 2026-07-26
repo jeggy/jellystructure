@@ -1036,7 +1036,10 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
                 network = if (item.kind == MediaKind.TV_SHOW) directorVal else null,
             )
             metaMsg?.textContent = if (updated != null) "Saved ✓" else "Save failed"
-            if (updated != null) { delay(1500); metaMsg?.textContent = "" }
+            if (updated != null) {
+                FacetsCache.invalidate()
+                delay(1500); metaMsg?.textContent = ""
+            }
         }
     }
 

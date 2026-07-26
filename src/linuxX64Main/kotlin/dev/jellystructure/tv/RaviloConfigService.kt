@@ -383,7 +383,11 @@ private fun isValidBrandColor(v: String): Boolean {
         val inner = s.substringAfter('(').substringBeforeLast(')')
         val colorParts = inner.split(',').map { it.trim() }
             .filter { it.isNotEmpty() && !it.endsWith("deg") && !it.startsWith("to ", ignoreCase = true) }
-        return colorParts.size >= 2 && colorParts.all { isColorToken(it) }
+        // A stop can carry a trailing CSS position (e.g. "#7FD6F2 60%", ChannelCard's parseColorStop
+        // accepts these for 3+-stop gradients) — strip it before validating the color itself, else a
+        // perfectly valid positioned stop reads as malformed and gets clamped to DEFAULT_BRAND_COLOR
+        // on every save (normalize() re-sanitizes every channel, not just the one being edited).
+        return colorParts.size >= 2 && colorParts.all { isColorToken(it.substringBefore(' ')) }
     }
     return isColorToken(s)
 }

@@ -1,5 +1,6 @@
 package dev.jellystructure.ravilo.ui.screens
 
+import dev.jellystructure.ravilo.ui.seams.detectAvcDecoderLimits
 import dev.jellystructure.ravilo.ui.seams.detectHdrSupport
 import dev.jellystructure.shared.tv.ClientCapabilities
 import dev.jellystructure.shared.tv.LiveTvChannel
@@ -46,6 +47,7 @@ class LiveTvPlayerStore(private val apiClient: TvApiClient) {
 
     private fun capabilities(): ClientCapabilities {
         val hdr = detectHdrSupport()
+        val avc = detectAvcDecoderLimits() // R183 — declare an honest, decodable transcode target.
         return ClientCapabilities(
             containers = listOf("ts", "mp4"),
             videoCodecs = listOf("h264", "hevc"),
@@ -54,6 +56,11 @@ class LiveTvPlayerStore(private val apiClient: TvApiClient) {
             hlsOnly = true, // live channels are always HLS (IsInfiniteStream — Phase 147 addendum D)
             supportsHdr10 = hdr.hdr10,
             supportsHlg = hdr.hlg,
+            supportsDolbyVision = hdr.dolbyVision,
+            supportsDolbyVisionEl = hdr.dolbyVisionEl,
+            maxH264Width = avc.maxWidth,
+            maxH264Height = avc.maxHeight,
+            maxH264Level = avc.maxLevel,
         )
     }
 
