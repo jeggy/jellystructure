@@ -119,6 +119,17 @@ private const val DEFAULT_SKIP_SECS = 6
 private const val SKIP_BACK_MS   = 10_000L
 private const val SKIP_FWD_MS    = 30_000L
 private const val POLL_MS        = 500L
+// Bug fix (auto-advance retry loop): how long a requested advance gets to actually take effect before
+// we treat it as failed. Navigating to the next episode is a synchronous state swap in practice, so
+// this sits generously above any real transition.
+private const val ADVANCE_TIMEOUT_MS = 5_000L
+// Bug fix (auto-advance retry loop): a trustworthy creditsStartMs can never sit in the first half of a
+// title. A bogus marker (0, or one that belongs to a different episode inside a multi-episode file)
+// used to satisfy the credits check on the very first poll tick, so the next-episode countdown fired
+// at the START of every episode and the player hopped through a whole series in skipSecs-long steps —
+// reported as "it just gets stuck trying to play the next episode over and over". Below this fraction
+// of the duration the marker is ignored and the NEXTUP_AT_MS end-of-file heuristic is used instead.
+private const val CREDITS_MARKER_MIN_FRACTION = 0.5
 
 // ─── Focus model ──────────────────────────────────────────────────────────────
 
@@ -199,6 +210,12 @@ fun PlayerScreen(
     // Phase 150 — same staleness risk: the near-end/skip-intro checks (R182) run inside the poll loop.
     val currentSegments by rememberUpdatedState(segments)
 
+    // Bug fix (auto-advance retry loop): a "next episode" id that IS the episode already playing is not
+    // a next episode — navigating to it can only be a no-op, while the credits card kept offering it and
+    // the countdown kept re-firing it forever. Resolved once here so every consumer (credits-card mode,
+    // transport order, the Next Episode control, MediaKey.NEXT) agrees on whether a next episode exists.
+    val resolvedNextEpisodeId = nextEpisodeId?.takeIf { it != itemId }
+
     // R182 — resolved per-viewer skip behaviour (jellystructure Ravilo config → Preferences; there is
     // no in-app settings screen for these — see PlayerStore.getConfig()). Re-fetched every episode (the
     // LaunchedEffect(itemId) below) so a mid-binge settings change takes effect on the next episode.
@@ -273,6 +290,14 @@ fun PlayerScreen(
     // isEnded checks are gated on this matching the current itemId so a stale outgoing stream can never
     // trigger next-up again.
     var loadedForItemId by remember { mutableStateOf<String?>(null) }
+    // Bug fix (auto-advance retry loop): which itemId we have already asked the host to advance away
+    // from. advanceNext() only *requests* a navigation — if the host can't act on it (no episode list,
+    // an id that isn't in it, or a target equal to the current item) nothing changes, and the poll loop
+    // below happily re-armed the credits card on the very next tick, restarting the countdown and
+    // re-requesting the same advance forever ("auto play next doesn't work and ends in a forever loop").
+    // One attempt per episode: the re-arm checks are gated on this, and a request that never takes
+    // effect leaves the player instead (see the ADVANCE_TIMEOUT_MS effect below).
+    var advanceRequestedForItemId by remember { mutableStateOf<String?>(null) }
 
     // Episode rail
     var epRailOpen  by remember { mutableStateOf(false) }
@@ -343,10 +368,20 @@ fun PlayerScreen(
 
     fun advanceNext() {
         nextUpVisible = false
+        val nextId = resolvedNextEpisodeId
+        if (nextId == null || onNavigateToEpisode == null) {
+            // Nothing to advance to. Latch the card dismissed so the poll loop can't re-show it (and,
+            // with it, re-run this countdown) every tick for the rest of the file.
+            nextUpDismissed = true
+            return
+        }
         // R142: a genuinely finished episode (≥90%) is marked played as we advance, so up-next stays
         // correct; a manual skip mid-episode is not (it stays in-progress with its resume sliver).
         if (durationMs > 0 && positionMs >= durationMs * 90 / 100) store.markWatched(itemId)
-        nextEpisodeId?.let { onNavigateToEpisode?.invoke(it) }
+        // Latched BEFORE the call: see advanceRequestedForItemId — exactly one advance attempt per
+        // episode, never a retry loop.
+        advanceRequestedForItemId = itemId
+        onNavigateToEpisode.invoke(nextId)
     }
 
     // R111: "Watch credits" — hide the card AND latch it so the near-end poll won't immediately re-show
@@ -589,10 +624,18 @@ fun PlayerScreen(
                 // unscanned title). R182 also drops the old "no next episode ⇒ exit immediately, no
                 // card at all" special case below — a movie/last-episode now gets the same card, with a
                 // Skip credits action, instead of being silently kicked out at the natural end.
-                val creditsStart = currentSegments.creditsStartMs
+                // Bug fix (auto-advance retry loop): only a marker that plausibly belongs to THIS stream is
+                // trusted — positive, inside the known duration, and in its back half (see
+                // CREDITS_MARKER_MIN_FRACTION). Anything else falls back to the end-of-file heuristic
+                // rather than declaring the episode finished seconds after it started.
+                val creditsStart = currentSegments.creditsStartMs?.takeIf {
+                    durationMs > 0 && it > 0 && it < durationMs && it >= (durationMs * CREDITS_MARKER_MIN_FRACTION).toLong()
+                }
                 val creditsReached = if (creditsStart != null) positionMs >= creditsStart
                     else durationMs > 0 && (durationMs - positionMs) in 1..NEXTUP_AT_MS
-                if (playerLoadedForCurrentItem && creditsReached && !nextUpVisible && !nextUpDismissed && !player.isEnded) {
+                val advanceAlreadyRequested = advanceRequestedForItemId == currentItemId
+                if (playerLoadedForCurrentItem && creditsReached && !advanceAlreadyRequested &&
+                    !nextUpVisible && !nextUpDismissed && !player.isEnded) {
                     nextUpVisible = true
                     nuFocus = NuFocus.PLAY
                 }
@@ -604,7 +647,8 @@ fun PlayerScreen(
                 // which calls the same stayThrough()) hid it, but the instant playback reached its real
                 // end a moment later, this check fired again (it only looked at nextUpVisible, not
                 // whether the viewer had already dismissed it) and popped it right back up, forever.
-                if (playerLoadedForCurrentItem && player.isEnded && !nextUpVisible && !nextUpDismissed) {
+                if (playerLoadedForCurrentItem && player.isEnded && !advanceAlreadyRequested &&
+                    !nextUpVisible && !nextUpDismissed) {
                     nextUpVisible = true; nuFocus = NuFocus.PLAY
                 }
 
@@ -668,7 +712,7 @@ fun PlayerScreen(
     // only ever change across an episode transition, when nextUpVisible/nextUpDismissed also reset.
     val creditsCardMode = when {
         segments.stinger != null -> CreditsCardMode.STINGER
-        nextEpisodeId != null -> CreditsCardMode.NEXT_EPISODE
+        resolvedNextEpisodeId != null -> CreditsCardMode.NEXT_EPISODE
         else -> CreditsCardMode.SKIP_CREDITS
     }
 
@@ -722,6 +766,17 @@ fun PlayerScreen(
         // still calls advanceNext() directly through their own existing call sites, untouched. With
         // autoplayNext off the card simply sits at 0 waiting for one of those instead of navigating itself.
         if (nextUpVisible && currentAutoplayNext) advanceNext()
+    }
+
+    // Bug fix (auto-advance retry loop): an advance we requested but that never took effect used to be
+    // invisible — the credits card simply came back and tried again, forever, on an episode that had
+    // already finished playing. A successful advance swaps itemId within a frame, so if we are still on
+    // the same item after this grace period the navigation genuinely failed: leave the player (Back is
+    // always meaningful — see the Ravilo constitution) instead of retrying or freezing on the last frame.
+    LaunchedEffect(advanceRequestedForItemId) {
+        val requested = advanceRequestedForItemId ?: return@LaunchedEffect
+        delay(ADVANCE_TIMEOUT_MS)
+        if (currentItemId == requested) onBack()
     }
 
     // R182 — Skip Intro pill's own brief grace-window countdown (FR-RV-SKIP1-1): governs the pill's
@@ -811,7 +866,7 @@ fun PlayerScreen(
                             scrubPos = (scrubPos - scrubStep()).coerceAtLeast(0L)
                         }
                         else -> {
-                            val order = transportOrder(nextEpisodeId != null, skipIntroPillVisible)
+                            val order = transportOrder(resolvedNextEpisodeId != null, skipIntroPillVisible)
                             val idx = order.indexOf(focus)
                             if (idx > 0) focus = order[idx - 1]
                         }
@@ -831,7 +886,7 @@ fun PlayerScreen(
                             scrubPos = (scrubPos + scrubStep()).coerceAtMost(durationMs)
                         }
                         else -> {
-                            val order = transportOrder(nextEpisodeId != null, skipIntroPillVisible)
+                            val order = transportOrder(resolvedNextEpisodeId != null, skipIntroPillVisible)
                             val idx = order.indexOf(focus)
                             if (idx < order.lastIndex) focus = order[idx + 1]
                         }
@@ -934,7 +989,7 @@ fun PlayerScreen(
                         MediaKey.PAUSE        -> if (isPlaying) togglePlay() else wake()
                         MediaKey.FAST_FORWARD -> skip(SKIP_FWD_MS)
                         MediaKey.REWIND       -> skip(-SKIP_BACK_MS)
-                        MediaKey.NEXT         -> if (nextEpisodeId != null) advanceNext() else wake()
+                        MediaKey.NEXT         -> if (resolvedNextEpisodeId != null) advanceNext() else wake()
                         MediaKey.PREVIOUS     -> { player.seekTo(0); positionMs = 0; wake() }
                         MediaKey.STOP         -> onBack()
                     }
@@ -1102,7 +1157,7 @@ fun PlayerScreen(
                 scrubPos        = scrubPos,
                 isPlaying       = isPlaying,
                 focus           = focus,
-                hasNextEp       = nextEpisodeId != null,
+                hasNextEp       = resolvedNextEpisodeId != null,
                 isSeries        = episodes != null,
                 epRailOpen      = epRailOpen,
                 pickerOpen      = pickerOpen,

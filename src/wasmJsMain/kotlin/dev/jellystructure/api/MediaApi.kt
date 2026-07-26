@@ -142,6 +142,9 @@ data class EpisodeTriageItem(
     val untaggedTracks: List<TriageTrack>, val missingStill: Boolean, val multiDefault: MultiDefaultIssue? = null,
     val coverAsVideo: String? = null,   // Phase 144: specifier of a cover-image track muxed as video, or null
     val segmentsLowConfidence: Boolean = false,  // Phase 150: this episode's own heuristic guess is below the trust threshold
+    // Bug fix (Ravilo auto-play-next loop): another file already claims this episode number — fix the
+    // files on disk (delete the copy, or renumber it), then re-scan.
+    val duplicateEpisode: Boolean = false,
 )
 
 @Serializable

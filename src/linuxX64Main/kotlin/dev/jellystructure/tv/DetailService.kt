@@ -3,6 +3,7 @@ package dev.jellystructure.tv
 import dev.jellystructure.auth.DeviceData
 import dev.jellystructure.auth.JellyfinClient
 import dev.jellystructure.config.ConfigStore
+import dev.jellystructure.media.DuplicateEpisodes
 import dev.jellystructure.media.MediaStore
 import dev.jellystructure.media.visibleTo
 import dev.jellystructure.model.Episode
@@ -75,10 +76,18 @@ class DetailService(
         // Phase 142: see the matching check in getMovieDetail.
         if (!item.visibleTo(device)) return null
 
-        val seasonNums = item.episodes.map { it.seasonNumber ?: 0 }.distinct().sorted()
+        // Bug fix (Ravilo auto-play-next loop): a library can legitimately contain two FILES that both
+        // parse to the same S__E__ (a folder extracted twice, or two mislabelled release files). The
+        // scanner keyed Jellyfin ids by (season, episode), so both entries carried the same id and Ravilo
+        // built two rail slots out of them — making the "next episode" after episode 1 episode 1 itself,
+        // which no navigation can satisfy (verified: Tellytots S01 existed twice, once nested inside the
+        // S02 folder). The redundant copies stay in the workbench (see the `duplicate_episode` triage
+        // type); the playback API only ever exposes ONE entry per (season, episode).
+        val uniqueEpisodes = DuplicateEpisodes.deduped(item.episodes)
+        val seasonNums = uniqueEpisodes.map { it.seasonNumber ?: 0 }.distinct().sorted()
 
         val seasons = seasonNums.map { seasonNum ->
-            val eps: List<Episode> = item.episodes
+            val eps: List<Episode> = uniqueEpisodes
                 .filter { (it.seasonNumber ?: 0) == seasonNum }
                 .sortedBy { it.episodeNumber ?: 0 }
             val seasonName = item.seasonNames[seasonNum] ?: "Season $seasonNum"
@@ -107,11 +116,13 @@ class DetailService(
                     segments = ep.segments.toTv(),  // Phase 150
                 )
             }
-            Season(index = seasonNum, name = seasonName, episodes = tvEpisodes)
+            // Last line of defence: whatever the metadata says, two episodes with the same id can never
+            // reach a client — that is exactly what made the player's next-up card re-fire forever.
+            Season(index = seasonNum, name = seasonName, episodes = tvEpisodes.distinctBy { it.id })
         }
 
         // Use the first episode's scanned tracks for flag strips (no extra Jellyfin round-trip).
-        val firstEpTracks = item.episodes.firstOrNull()?.tracks
+        val firstEpTracks = uniqueEpisodes.firstOrNull()?.tracks
         val seriesAudioLangs = firstEpTracks
             ?.filter { it.kind == dev.jellystructure.model.TrackKind.AUDIO }
             ?.mapNotNull { it.language?.lowercase()?.takeIf { l -> l.isNotBlank() } }

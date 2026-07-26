@@ -4,6 +4,7 @@ import dev.jellystructure.auth.JellyfinClient
 import dev.jellystructure.config.ConfigStore
 import dev.jellystructure.torrent.SeedingCheckResult
 import dev.jellystructure.torrent.SeedingGuard
+import dev.jellystructure.media.DuplicateEpisodes
 import dev.jellystructure.media.FfmpegRunner
 import dev.jellystructure.media.FfprobeRunner
 import dev.jellystructure.media.MediaHistory
@@ -54,6 +55,9 @@ data class EpisodeTriageItem(
     val multiDefault: MultiDefaultIssue? = null,
     val coverAsVideo: String? = null,  // Phase 144: specifier of a cover-image track muxed as video (repairable), or null
     val segmentsLowConfidence: Boolean = false,  // Phase 150: this episode's own heuristic guess is below the trust threshold
+    /** Bug fix (Ravilo auto-play-next loop): this entry is a redundant copy — another file already claims
+     *  the same episode number. Not repairable from here: the FILES have to be fixed on disk. */
+    val duplicateEpisode: Boolean = false,
 )
 
 @Serializable
@@ -126,6 +130,8 @@ fun Route.triageRoutes(store: MediaStore, jellyfinClient: JellyfinClient, config
             val zeroAudioTitles = all.count { TriageDetection.zeroAudioCount(it) > 0 }
             val coverAsVideoInstances = all.sumOf { TriageDetection.coverAsVideoCount(it) }  // Phase 144
             val coverAsVideoTitles = all.count { TriageDetection.coverAsVideoCount(it) > 0 }
+            val dupEpisodeInstances = all.sumOf { TriageDetection.duplicateEpisodeCount(it) }
+            val dupEpisodeTitles = all.count { TriageDetection.duplicateEpisodeCount(it) > 0 }
             // Phase 150: only meaningful once detect_segments is actually enabled — otherwise EVERY title
             // has "no segments" (the feature has simply never run) and the row would flood with a
             // misleading "everything is broken" count for an admin who hasn't opted in at all.
@@ -159,6 +165,9 @@ fun Route.triageRoutes(store: MediaStore, jellyfinClient: JellyfinClient, config
                 TriageTypeCount("duplicate", "Duplicate library entries",
                     "The same Jellyfin item appears more than once — both open the same detail page; re-scan or remove the extra entry.",
                     dupGroups.values.sumOf { it.size }, dupGroups.size),
+                TriageTypeCount("duplicate_episode", "Duplicate episode files",
+                    "Two files claim the same episode number — Ravilo can only play one of them, and auto-play-next stalls on the copy. Delete the extra file, or fix its episode number, then re-scan.",
+                    dupEpisodeInstances, dupEpisodeTitles),
                 TriageTypeCount("zero_audio", "No audio tracks",
                     "Zero audio tracks detected — usually a corrupt/truncated file. Open Tracks & order for the diagnosis and repair options.",
                     zeroAudioInstances, zeroAudioTitles),
@@ -312,7 +321,8 @@ fun Route.triageRoutes(store: MediaStore, jellyfinClient: JellyfinClient, config
 
 private fun MediaItem.toTriageItem(segmentsEnabled: Boolean = false): TriageItem? {
     if (kind == MediaKind.TV_SHOW) {
-        val epIssues = episodes.mapNotNull { ep ->
+        val dupEpisodeIndices = DuplicateEpisodes.extraIndices(episodes)
+        val epIssues = episodes.mapIndexedNotNull { epIdx, ep ->
             val untagged = ep.tracks
                 .filter { (it.kind == TrackKind.AUDIO || it.kind == TrackKind.SUBTITLE) && it.language == null }
                 .map { t -> TriageTrack(specifier = t.specifier, streamIndex = t.streamIndex, kind = t.kind.name.lowercase(), codec = t.codec, title = t.title) }
@@ -320,7 +330,9 @@ private fun MediaItem.toTriageItem(segmentsEnabled: Boolean = false): TriageItem
             val multiDefault = ep.detectMultiDefaultAudio()
             val coverAsVideo = TriageDetection.coverVideoSpecifier(ep.tracks)  // Phase 144
             val segmentsLowConfidence = segmentsEnabled && TriageDetection.isLowConfidenceSegments(ep.segments)  // Phase 150
-            if (untagged.isEmpty() && !missingStill && multiDefault == null && coverAsVideo == null && !segmentsLowConfidence) return@mapNotNull null
+            val duplicateEpisode = epIdx in dupEpisodeIndices
+            if (untagged.isEmpty() && !missingStill && multiDefault == null && coverAsVideo == null &&
+                !segmentsLowConfidence && !duplicateEpisode) return@mapIndexedNotNull null
             val code = if (ep.seasonNumber != null && ep.episodeNumber != null) {
                 "S${ep.seasonNumber.toString().padStart(2, '0')}E${ep.episodeNumber.toString().padStart(2, '0')}"
             } else ep.filename.substringBeforeLast('.')
@@ -333,6 +345,7 @@ private fun MediaItem.toTriageItem(segmentsEnabled: Boolean = false): TriageItem
                 multiDefault = multiDefault,
                 coverAsVideo = coverAsVideo,
                 segmentsLowConfidence = segmentsLowConfidence,
+                duplicateEpisode = duplicateEpisode,
             )
         }
         val missingArtwork = !posterArtworkExists(this)
