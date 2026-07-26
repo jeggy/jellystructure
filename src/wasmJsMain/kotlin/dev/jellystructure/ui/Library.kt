@@ -74,6 +74,7 @@ private val ISSUE_FILTER_LABELS = mapOf(
     "missing_from_source" to "No longer in Jellyfin",
     "missing_still" to "Missing episode image",
     "duplicate" to "Duplicate entries",
+    "duplicate_episode" to "Duplicate episode files",
     "zero_audio" to "No audio tracks",
     "cover_as_video" to "Cover art muxed as video",   // Phase 144
 )

@@ -411,9 +411,17 @@ class Scanner(
             }.awaitAll().flatten()
         }
 
-        val sortedEpisodes = episodes.sortedWith(
-            compareBy({ it.seasonNumber ?: 999 }, { it.episodeNumber ?: 999 })
+        // Bug fix (Ravilo auto-play-next loop): `jfBySeasonEp` above is keyed by (season, episode), so
+        // every file that parses to the same code was handed the SAME Jellyfin id — two rail entries with
+        // one id, and a "next episode" that was the episode already playing. The redundant copies keep
+        // their row (the operator needs to see and fix them — they surface as the `duplicate_episode`
+        // triage type) but lose the borrowed id, so only one entry ever owns an episode's identity.
+        val sortedEpisodes = DuplicateEpisodes.withUniqueIds(
+            episodes.sortedWith(compareBy({ it.seasonNumber ?: 999 }, { it.episodeNumber ?: 999 }))
         )
+        DuplicateEpisodes.describe(sortedEpisodes).forEach {
+            Logger.warn("Series '$title' has duplicate episode files — $it", "scan")
+        }
 
         // Language mix: audio language sets differ across episodes
         val audioSets = sortedEpisodes.map { ep ->

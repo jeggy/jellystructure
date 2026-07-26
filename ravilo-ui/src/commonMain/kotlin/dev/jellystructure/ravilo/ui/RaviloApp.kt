@@ -844,25 +844,35 @@ fun RaviloApp(apiClient: TvApiClient, initialDisplayName: String = "", onChangeS
                     store            = store,
                     onBack           = { pop() },
                     onNavigateToEpisode = { nextId ->
-                        val eps = dest.episodes ?: return@PlayerScreen
-                        val newIdx = eps.indexOfFirst { it.id == nextId }
-                        if (newIdx < 0) return@PlayerScreen
-                        val newEp = eps[newIdx]
-                        val nextEp = eps.getOrNull(newIdx + 1)
-                        replaceTop(Dest.Player(
-                            itemId         = newEp.id,
-                            title          = newEp.title,
-                            kicker         = newEp.kicker,
+                        // Bug fix: this used to bail out silently whenever `dest.episodes` was absent or
+                        // `nextId` wasn't in it — the player had no way to know the navigation never
+                        // happened, so its credits card re-armed on the next poll tick and re-requested
+                        // the same advance over and over ("the auto play next episode doesn't work and
+                        // ends in a forever loop"). Now the target id ALWAYS plays: an id we can't place
+                        // in the list falls back to the outgoing card's own next-episode labels and
+                        // simply carries no further next-episode target (so the binge stops cleanly at
+                        // that episode) instead of trapping playback in a retry loop.
+                        val eps = dest.episodes
+                        val newIdx = eps?.indexOfFirst { it.id == nextId } ?: -1
+                        val newEp = if (newIdx >= 0) eps?.get(newIdx) else null
+                        val nextEp = if (newIdx >= 0) eps?.getOrNull(newIdx + 1) else null
+                        if (nextId != dest.itemId) replaceTop(Dest.Player(
+                            itemId         = nextId,
+                            title          = newEp?.title ?: dest.nextEpTitle ?: dest.title,
+                            kicker         = newEp?.kicker ?: dest.nextEpLabel,
                             nextEpId       = nextEp?.id,
                             nextEpLabel    = nextEp?.kicker,
                             nextEpTitle    = nextEp?.title,
                             displayName    = dest.displayName,
                             episodes       = eps,
-                            currentEpIndex = newIdx,
+                            currentEpIndex = newIdx.coerceAtLeast(0),
                             // R181 — same series, same original language, for the whole binge.
                             seriesId         = dest.seriesId,
                             originalLanguage = dest.originalLanguage,
-                            segments         = newEp.segments,  // Phase 150 — the NEW episode's own segments
+                            // Phase 150 — the NEW episode's own segments; an unplaceable id has none, and
+                            // must NOT inherit the outgoing episode's (a stale credits marker would fire
+                            // the next-up countdown from the start of the new stream).
+                            segments         = newEp?.segments ?: dev.jellystructure.shared.tv.TvSegmentMarkers(),
                         ))
                     },
                 )

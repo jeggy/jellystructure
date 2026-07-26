@@ -51,6 +51,15 @@ object TriageDetection {
             .flatten()
             .mapTo(mutableSetOf()) { it.id }
 
+    /** Bug fix (Ravilo auto-play-next loop): how many episode entries are redundant copies — two files
+     *  claiming the same S__E__ (a folder extracted twice, or two mislabelled release files). Invisible
+     *  before: nothing flagged it, while Ravilo built a rail slot for each copy, so the "next episode"
+     *  after episode 1 could be episode 1 itself and the player's next-up card re-fired forever. See
+     *  [DuplicateEpisodes] for how the scanner/playback API protect themselves; this is the
+     *  operator-facing signal that the FILES still need fixing. */
+    fun duplicateEpisodeCount(item: MediaItem): Int =
+        if (item.kind == MediaKind.TV_SHOW) DuplicateEpisodes.extraCount(item.episodes) else 0
+
     /** Phase 128: an item/episode with literally zero audio tracks — most often a corrupt/truncated
      *  file (verified case: ffprobe "moov atom not found") rather than a genuinely audio-less
      *  container. `issueCount`/`untaggedCount` don't catch this — they only count UNTAGGED tracks, and
