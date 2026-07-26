@@ -36,13 +36,69 @@ private const val AUTH_HEADER =
 // correctly tone-maps to SDR (h264-rangetype=SDR in the resulting TranscodingUrl). [capabilities]'s
 // supportsHdr10/supportsHlg (default false — conservative) widen the allowed VideoRangeType list only
 // when the client has verified real HDR display/decode support.
-private fun deviceProfile(capabilities: ClientCapabilities): String {
-    val allowedRanges = buildList {
-        add("SDR")
-        if (capabilities.supportsHdr10) { add("HDR10"); add("HDR10Plus") }
-        if (capabilities.supportsHlg) add("HLG")
-    }.joinToString("|")
-    return """{"MaxStreamingBitrate":120000000,"DirectPlayProfiles":[{"Container":"mkv,mp4,webm,mov,avi,ts,m2ts,flv,3gp,mpegts","Type":"Video","VideoCodec":"h264,hevc,vp8,vp9,av1,mpeg4,mpeg2video,vc1","AudioCodec":"aac,ac3,eac3,mp3,flac,vorbis,opus,dts,truehd,pcm,mp2,alac"}],"CodecProfiles":[{"Type":"Video","Codec":"hevc,h264,vp9,av1","Conditions":[{"Condition":"EqualsAny","Property":"VideoRangeType","Value":"$allowedRanges","IsRequired":true}]}],"TranscodingProfiles":[{"Container":"ts","Type":"Video","VideoCodec":"h264","AudioCodec":"aac,ac3,mp3","Protocol":"hls","Context":"Streaming"}],"SubtitleProfiles":[{"Format":"vtt","Method":"External"},{"Format":"srt","Method":"External"},{"Format":"subrip","Method":"External"},{"Format":"ass","Method":"External"},{"Format":"ssa","Method":"External"},{"Format":"vobsub","Method":"Embed"},{"Format":"dvdsub","Method":"Embed"},{"Format":"dvbsub","Method":"Embed"},{"Format":"pgssub","Method":"Encode"},{"Format":"pgs","Method":"Encode"}]}"""
+//
+// R183 splits the two moving parts out into [allowedVideoRangeTypes] (which Dolby Vision variants may
+// direct-play) and [h264TargetConditions] (an honest, decodable transcode target) — see their docs.
+internal fun deviceProfile(capabilities: ClientCapabilities): String =
+    """{"MaxStreamingBitrate":120000000,"DirectPlayProfiles":[{"Container":"mkv,mp4,webm,mov,avi,ts,m2ts,flv,3gp,mpegts","Type":"Video","VideoCodec":"h264,hevc,vp8,vp9,av1,mpeg4,mpeg2video,vc1","AudioCodec":"aac,ac3,eac3,mp3,flac,vorbis,opus,dts,truehd,pcm,mp2,alac"}],"CodecProfiles":[{"Type":"Video","Codec":"hevc,h264,vp9,av1","Conditions":[{"Condition":"EqualsAny","Property":"VideoRangeType","Value":"${allowedVideoRangeTypes(capabilities).joinToString("|")}","IsRequired":true}]},{"Type":"Video","Codec":"h264","Conditions":${h264TargetConditions(capabilities)}}],"TranscodingProfiles":[{"Container":"ts","Type":"Video","VideoCodec":"h264","AudioCodec":"aac,ac3,mp3","Protocol":"hls","Context":"Streaming"}],"SubtitleProfiles":[{"Format":"vtt","Method":"External"},{"Format":"srt","Method":"External"},{"Format":"subrip","Method":"External"},{"Format":"ass","Method":"External"},{"Format":"ssa","Method":"External"},{"Format":"vobsub","Method":"Embed"},{"Format":"dvdsub","Method":"Embed"},{"Format":"dvbsub","Method":"Embed"},{"Format":"pgssub","Method":"Encode"},{"Format":"pgs","Method":"Encode"}]}"""
+
+/**
+ * R183 — the `VideoRangeType`s this client may direct-play, mirroring how Jellyfin's own Android TV
+ * client decides it (`util/profile/deviceProfile.kt`, which builds the inverse — an *unsupported* set —
+ * from the same signals):
+ * - **Dolby Vision profile 8** (`DOVIWith…`) is single-layer DV whose base layer *is* a conformant
+ *   HDR10 / HDR10+ / HLG / SDR stream, with the DV metadata in RPU NAL units every decoder ignores.
+ *   So it direct-plays correctly on any device that handles the base range — no DV decoder needed.
+ *   This is the bug this phase fixes: `DOVIWithHDR10Plus` (13 of the library's DV titles, e.g.
+ *   "Contact Week") was never in the allowed list, so every DV title was permanently forced into a
+ *   transcode no matter how capable the client was.
+ * - **Profile 5** (`DOVI`) is DV-only (IPT-PQ-C2) — garbage colours without a real DV decoder, so it
+ *   stays gated behind [ClientCapabilities.supportsDolbyVision].
+ * - **Profile 7** (`DOVIWithEL`, `DOVIWithELHDR10Plus`) is dual-layer; the enhancement layer needs DV
+ *   *and* multi-instance HEVC decode → gated behind [ClientCapabilities.supportsDolbyVisionEl].
+ * - `DOVIInvalid` is never allowed (the list is an allow-list, so it's excluded by construction).
+ */
+internal fun allowedVideoRangeTypes(capabilities: ClientCapabilities): List<String> = buildList {
+    add("SDR")
+    // DV profile 8.2 — SDR base layer, so plain SDR decode is enough (Jellyfin's Android TV client
+    // likewise never marks this one unsupported).
+    add("DOVIWithSDR")
+    if (capabilities.supportsHdr10) {
+        add("HDR10"); add("HDR10Plus")
+        add("DOVIWithHDR10"); add("DOVIWithHDR10Plus")
+    }
+    if (capabilities.supportsHlg) {
+        add("HLG")
+        add("DOVIWithHLG") // DV profile 8.4 — HLG base layer.
+    }
+    if (capabilities.supportsDolbyVision) add("DOVI")
+    if (capabilities.supportsDolbyVisionEl) {
+        add("DOVIWithEL")
+        if (capabilities.supportsHdr10) add("DOVIWithELHDR10Plus")
+    }
+}
+
+/**
+ * R183 — declares the H.264 **transcode target** so Jellyfin advertises an HLS variant the client can
+ * actually decode. Jellyfin derives the master playlist's `CODECS`/`RESOLUTION` from what the profile
+ * claims: with nothing declared it fell back to `avc1.424029` (Baseline, level 4.1) while still
+ * targeting the source's native 4K, and ExoPlayer drops any variant whose declared profile/level can't
+ * carry its resolution — with a single variant on offer, preparation failed before the first frame.
+ *
+ * Verified live (Jellyfin 10.11.11): these conditions turn the 3840x1606 `avc1.424029` variant into
+ * `avc1.640033` (High, level 5.1) at 1920x803, and they also cap the PGS burn-in re-stream the same way.
+ * `IsRequired=false` — a *declaration* of the encoder target, not a direct-play requirement.
+ *
+ * Deliberately **no `VideoBitrate` condition**: verified live that one blocks direct play of any source
+ * above it (a high-bitrate H.264 remux would start transcoding for no reason).
+ */
+private fun h264TargetConditions(capabilities: ClientCapabilities): String {
+    // 0 = the client didn't report its decoder ceiling (web, older builds) → 1080p High/L5.1, which
+    // every H.264 decoder in the fleet handles.
+    val maxWidth = capabilities.maxH264Width.takeIf { it > 0 } ?: 1920
+    val maxHeight = capabilities.maxH264Height.takeIf { it > 0 } ?: 1080
+    val maxLevel = capabilities.maxH264Level.takeIf { it > 0 } ?: 51
+    return """[{"Condition":"EqualsAny","Property":"VideoProfile","Value":"high|main|baseline|constrained baseline","IsRequired":false},{"Condition":"LessThanEqual","Property":"VideoLevel","Value":"$maxLevel","IsRequired":false},{"Condition":"LessThanEqual","Property":"Width","Value":"$maxWidth","IsRequired":false},{"Condition":"LessThanEqual","Property":"Height","Value":"$maxHeight","IsRequired":false}]"""
 }
 
 class JellyfinClient {

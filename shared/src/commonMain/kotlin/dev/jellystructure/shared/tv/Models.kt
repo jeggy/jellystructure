@@ -72,6 +72,24 @@ data class ClientCapabilities(
     // the client has verified real display/decoder support (see ravilo-ui's `detectHdrSupport()`).
     @SerialName("supports_hdr10") val supportsHdr10: Boolean = false,
     @SerialName("supports_hlg") val supportsHlg: Boolean = false,
+    // R183: Dolby Vision. `supportsDolbyVision` = a real DV decoder (needed for profile 5, which has no
+    // HDR10 base layer); `supportsDolbyVisionEl` = dual-layer DV (profile 7's enhancement layer, which
+    // additionally needs multi-instance HEVC decode). A DV **profile 8** file carries an HDR10/HDR10+/HLG/
+    // SDR base layer, so it plays correctly on any decoder that handles that base range even without DV —
+    // which is why `supportsHdr10` alone unlocks it (see `deviceProfile()`), exactly as Jellyfin's own
+    // Android TV client decides it.
+    @SerialName("supports_dolby_vision") val supportsDolbyVision: Boolean = false,
+    @SerialName("supports_dolby_vision_el") val supportsDolbyVisionEl: Boolean = false,
+    // R183: the client's real H.264 decode ceiling, used to declare an honest transcode target. Jellyfin
+    // advertises the HLS variant's `CODECS`/`RESOLUTION` from what the profile claims — with nothing
+    // declared it defaults to **Baseline level 4.1** while still targeting the source's full 4K, and
+    // ExoPlayer rejects that variant outright (no decoder accepts 3840x1606 Baseline-L4.1), so playback
+    // failed before the first frame. 0 = unknown → the server falls back to a universally-decodable
+    // 1080p High/L5.1 declaration.
+    @SerialName("max_h264_width") val maxH264Width: Int = 0,
+    @SerialName("max_h264_height") val maxH264Height: Int = 0,
+    /** H.264 level ×10, Jellyfin's own encoding (e.g. `51` = level 5.1). */
+    @SerialName("max_h264_level") val maxH264Level: Int = 0,
 )
 
 @Serializable

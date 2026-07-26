@@ -10,8 +10,13 @@ import dev.jellystructure.api.TrackFacets
  * ("Add filter") and the movie/series detail genre picker — previously each fetched independently
  * (Workbench had its own cache; MediaDetail had none at all, refetching on every single detail-page
  * open, arguably the most-visited screen in the app). Whichever screen opens first now warms it for
- * the other. Never invalidated: facet values change rarely, and a stale value only means a
- * brand-new studio/tag/genre briefly doesn't show up as a filter option until the next full page load.
+ * the other. Bug fix: this used to never invalidate, on the assumption a stale value only means a
+ * brand-new studio/tag/genre briefly doesn't show up until "the next full page load" — but this is a
+ * genuine hash-routed SPA (see Main.kt) with no full reload between screens, so once anything primed
+ * the cache in a tab (just opening any detail page counts), a newly created tag stayed invisible in
+ * the filter workbench for the rest of that tab's life. Callers now invalidate() after any mutation
+ * that can introduce a new facet value (tag create/update/delete in Metadata.kt, tags/genres edits in
+ * MediaDetail.kt's saveMetaNow).
  */
 object FacetsCache {
     private var meta: MetaFacets? = null
@@ -19,4 +24,9 @@ object FacetsCache {
 
     suspend fun meta(): MetaFacets? = meta ?: MediaApi.metaFacets().also { meta = it }
     suspend fun track(): TrackFacets? = track ?: MediaApi.trackFacets().also { track = it }
+
+    fun invalidate() {
+        meta = null
+        track = null
+    }
 }
