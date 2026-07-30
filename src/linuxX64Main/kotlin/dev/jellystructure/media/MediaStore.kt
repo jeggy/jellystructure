@@ -576,6 +576,11 @@ class MediaStore(
         }
         merged = merged.copy(episodes = stampEpisodeCreatedAt(merged.episodes, old?.episodes))
         merged = stampTimestamps(merged, old)
+        // Phase 153: Scanner never sets these — a fresh scan left them null every cycle, which broke
+        // write_nfo's content-hash compare (a real hash can never equal null) and sync_jellyfin's
+        // staleness gate (nfoWrittenAt > jfSyncedAt, comparing against a just-reset baseline). Carry
+        // them forward from `old` exactly like the other drift/lock state above.
+        merged = merged.copy(nfoWrittenAt = old?.nfoWrittenAt, nfoHash = old?.nfoHash, jfSyncedAt = old?.jfSyncedAt)
         upsertItem(merged)
     }
 

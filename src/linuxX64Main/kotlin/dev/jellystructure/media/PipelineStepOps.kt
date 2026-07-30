@@ -78,6 +78,24 @@ object PipelineStepOps {
             // Bug fix: writeEpisodeNfos groups by shared file first — a multi-episode file's contained
             // episodes get ONE combined NFO instead of each overwriting the last (see its doc comment).
             NfoWriter.writeEpisodeNfos(current.episodes, current.cast)
+        } else if (current.kind == dev.jellystructure.model.MediaKind.TV_SHOW) {
+            // Phase 153 — jellystructure owns Jellyfin's metadata; an episode it can confidently number
+            // from its own filename parse but never got a jellyfinId for (Phase 152's Triage signal)
+            // never had an NFO written at all on the routine scheduled run, since includeEpisodes is
+            // false here. Repair just those files, without turning on a full per-episode rewrite for
+            // the whole series every cycle. Write the WHOLE file's episode group (every partIndex
+            // sibling), not just the unresolved episode, so a multi-episode file's combined NFO stays
+            // complete even when only one of its contained episodes failed to join.
+            val filesNeedingRepair = current.episodes
+                .filter { it.episodeNumber != null && it.jellyfinId == null }
+                .mapTo(mutableSetOf()) { it.path }
+            if (filesNeedingRepair.isNotEmpty()) {
+                NfoWriter.writeEpisodeNfos(current.episodes.filter { it.path in filesNeedingRepair }, current.cast)
+                // Bump nfoWrittenAt even though the series-level tvshow.nfo content may be unchanged —
+                // otherwise sync_jellyfin's staleness gate never notices this repair and never refreshes
+                // Jellyfin, leaving the new episode NFO on disk but never read.
+                store.updateOne((store.get(current.id) ?: current).copy(nfoWrittenAt = nowEpochSec()))
+            }
         }
         return result
     }
