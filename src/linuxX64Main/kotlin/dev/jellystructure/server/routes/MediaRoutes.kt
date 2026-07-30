@@ -479,6 +479,13 @@ fun Route.mediaRoutes(
                                 }
                                 if (epWritten > 0) Logger.info("Wrote $epWritten episode NFO(s) for '$id'")
                             }
+                            // Phase 153 — plan.md documents this route as "Write NFO … trigger Jellyfin
+                            // refresh"; the trigger was missing, so a manual write never actually got
+                            // Jellyfin to re-read it until some other action (e.g. Sync) happened to.
+                            val cfg = configStore.current
+                            if (!item.jellyfinId.isNullOrBlank() && cfg.apiKeys.jellyfinUrl.isNotBlank()) {
+                                jellyfinClient.refreshItem(cfg.apiKeys.jellyfinUrl, cfg.apiKeys.jellyfinToken, item.jellyfinId, full = true)
+                            }
                             call.respond(mapOf("path" to result.path))
                         }
                         .onFailure { e ->
