@@ -60,6 +60,16 @@ object TriageDetection {
     fun duplicateEpisodeCount(item: MediaItem): Int =
         if (item.kind == MediaKind.TV_SHOW) DuplicateEpisodes.extraCount(item.episodes) else 0
 
+    /** Phase 152: an episode jellystructure could confidently number from its own filename parse
+     *  (episodeNumber != null) but never got a jellyfinId for — neither Jellyfin's own IndexNumber nor
+     *  the Phase 152 path fallback resolved it, usually because Jellyfin's own scanner never numbered
+     *  the file at all. Silent otherwise: this episode drops out of the local playstate overlay,
+     *  next-episode targeting, and (independent of jellystructure) Jellyfin's own NextUp/Resume. */
+    fun unresolvedJellyfinIdCount(item: MediaItem): Int =
+        if (item.kind == MediaKind.TV_SHOW) {
+            item.episodes.count { it.episodeNumber != null && it.jellyfinId == null }
+        } else 0
+
     /** Phase 128: an item/episode with literally zero audio tracks — most often a corrupt/truncated
      *  file (verified case: ffprobe "moov atom not found") rather than a genuinely audio-less
      *  container. `issueCount`/`untaggedCount` don't catch this — they only count UNTAGGED tracks, and

@@ -257,6 +257,8 @@ data class JellyfinEpisodeItem(
     @SerialName("SeasonName") val seasonName: String? = null,
     // Phase 108: display-only, best-effort — only populated when this fetch runs (jellyfinId backfill).
     @SerialName("DateCreated") val dateCreated: String? = null,
+    // Phase 152 — fallback join key when Jellyfin never numbered this episode (no IndexNumber).
+    @SerialName("Path") val path: String? = null,
 )
 
 @Serializable

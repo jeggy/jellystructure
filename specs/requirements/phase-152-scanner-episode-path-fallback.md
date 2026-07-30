@@ -10,7 +10,9 @@
 > right season/episode itself from the filename. That silent `jellyfinId = null` then breaks every
 > jellystructure-side feature keyed on it (playstate overlay, detail page, "next episode" resolution).
 
-**Status:** Planned.
+**Status:** Implemented. Requires a re-scan of any affected series (e.g. Stormester) to take effect — the
+fallback runs at scan time, so already-stored episode rows keep `jellyfinId: null` until their series is
+next scanned/re-pulled.
 
 ## Bug report / investigation
 "Clicking on the DanskTV channel, there is only one item in Continue Watching, but there should be a
@@ -93,6 +95,16 @@ chance report. Message should point at the real fix: check/fix the episode's num
   root-caused; a targeted rename/manual-identify in Jellyfin is the direct fix and is on the operator).
 - The played/`PlaybackPositionTicks` desync bug also reported this session — unrelated root cause, see
   **R185**.
+
+## Dev-review addendum (2026-07-30 — implementation notes)
+
+1. **`unresolved_jellyfin_id` counts by episode, not by title, same as `duplicate_episode`.** A title with
+   several unresolved episodes counts each instance; `unresolvedIdTitles` counts how many titles have at
+   least one, matching the existing dashboard convention.
+2. Verified via `compileKotlinLinuxX64`, `linuxX64Test` (full suite passes), `compileKotlinWasmJs` (admin —
+   no DTO shape changed, `TriageTypeCount` already had the right fields). Not on-device/live-scan verified
+   this session (would need a re-scan of Stormester against the live Jellyfin, which is a scan-triggering
+   action — left for the user to run alongside the Jellyfin-side metadata fix noted above).
 
 ## Source references
 - Join: `src/linuxX64Main/kotlin/dev/jellystructure/media/Scanner.kt` (`scanItem`, `scanSeries`,
