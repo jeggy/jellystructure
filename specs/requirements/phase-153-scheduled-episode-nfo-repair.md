@@ -8,7 +8,9 @@
 > (not just a manual per-item click), jellystructure now writes a correct `<season>`/`<episode>` NFO
 > for any episode it can't otherwise resolve to a Jellyfin id, and tells Jellyfin to re-read it.
 
-**Status:** Planned.
+**Status:** Implemented. Takes effect on the next scheduled run for any affected series (e.g. Mesterholdet) —
+requires the operator's pipeline to have both `write_nfo` and `sync_jellyfin` steps configured (Settings),
+same prerequisite the pre-existing drift-sync mechanism already had.
 
 ## Investigation
 Traced the full write→notify pipeline for this specific file
@@ -102,6 +104,21 @@ step in the same scheduled run (`write_nfo` → `sync_jellyfin` run sequentially
 - Retrying `RealtimeIngestService`'s event-driven path for episodes it missed historically — FR-SCAN2-2's
   scheduled-scan repair is a superset that also catches this case on the next cycle, no separate backfill
   needed.
+
+## Dev-review addendum (2026-07-30 — implementation notes)
+
+1. **FR-SCAN2-2's repair write lives in an `else if` alongside the existing `includeEpisodes` branch** in
+   `PipelineStepOps.writeNfo` — the two are mutually exclusive on purpose: a caller that already asked for
+   every episode's NFO (event-driven ingest, manual push) doesn't need the narrower repair pass on top of
+   that in the same call.
+2. **The repair pass re-reads `store.get(current.id)` before bumping `nfoWrittenAt`**, not `current` itself
+   — the series-level branch above it may have already called `store.updateOne` in the same invocation
+   (the `WRITTEN` case), and re-fetching avoids stomping that write with a stale in-memory copy.
+3. Verified via `compileKotlinLinuxX64`, `linuxX64Test` (full suite passes — FR-SCAN2-1's carry-forward
+   didn't break any existing artwork-lock/timestamp/duplicate-id test), `compileKotlinWasmJs` (admin, no
+   DTO shape changed). Not verified against a live scheduled run this session (would need to wait for/
+   trigger the operator's actual scan cycle) — the closed loop (write → bump → sync_jellyfin → refresh →
+   Jellyfin re-reads) is code-verified end-to-end but not yet observed live for Mesterholdet specifically.
 
 ## Source references
 - Tracking-field reset: `src/linuxX64Main/kotlin/dev/jellystructure/media/MediaStore.kt` (`addOrUpdate`,
