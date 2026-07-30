@@ -299,6 +299,14 @@ class PlaybackService(
         val jellyfinBase = configStore.current.apiKeys.jellyfinUrl.trimEnd('/')
         val token = jellyfinClient.tvToken(jellyfinBase, device, configStore.current.apiKeys.jellyfinToken)
         if (watched) {
+            // R185 — markPlayed alone never touches PlaybackPositionTicks, so a stale/leaked resume
+            // position can outlive the played flag and keep this item showing as "in progress" in
+            // Continue Watching. Zero it explicitly at the same choke point every "mark watched" path
+            // goes through, rather than relying on whichever caller happens to also report a stop.
+            jellyfinClient.stopPlaybackSession(
+                jellyfinBase, token, jellyfinId, 0L, jellyfinId,
+                JellyfinDeviceIdentity.forDevice(device), playSessionIdFor(device, jellyfinId),
+            )
             jellyfinClient.markPlayed(jellyfinBase, token, device.jellyfinUserId, jellyfinId)
         } else {
             jellyfinClient.markUnplayed(jellyfinBase, token, device.jellyfinUserId, jellyfinId)
@@ -331,8 +339,18 @@ class PlaybackService(
             targets.map { id ->
                 async {
                     playedGate.withPermit {
-                        if (played) jellyfinClient.markPlayed(base, token, uid, id)
-                        else        jellyfinClient.markUnplayed(base, token, uid, id)
+                        if (played) {
+                            // R185 — same gap as mark() above: the manual watched-toggle had NO position
+                            // handling at all, so a partially-watched item flipped to "watched" here kept
+                            // its stale nonzero PlaybackPositionTicks forever. Zero it alongside markPlayed.
+                            jellyfinClient.stopPlaybackSession(
+                                base, token, id, 0L, id,
+                                JellyfinDeviceIdentity.forDevice(device), playSessionIdFor(device, id),
+                            )
+                            jellyfinClient.markPlayed(base, token, uid, id)
+                        } else {
+                            jellyfinClient.markUnplayed(base, token, uid, id)
+                        }
                     }
                 }
             }.awaitAll()
