@@ -14,6 +14,16 @@
 fallback runs at scan time, so already-stored episode rows keep `jellyfinId: null` until their series is
 next scanned/re-pulled.
 
+> **Correction (2026-07-30, Phase 153):** this spec's framing above and its "Out of scope" section below
+> were wrong to treat Jellyfin's missing `IndexNumber` as purely an external/operator problem.
+> jellystructure is the metadata authority for Jellyfin (`constitution.md`) — it already owns the
+> write-NFO-and-refresh mechanism, and Phase 153 found that mechanism simply never ran for this class of
+> episode on the routine scheduled scan. **Phase 153 closes that gap**: jellystructure now writes a
+> corrective episode NFO and triggers a Jellyfin refresh automatically for exactly the population this
+> phase's own `unresolved_jellyfin_id` Triage type flags, no operator action required. This phase's own
+> fallback join (FR-SCAN1-2) and Triage signal (FR-SCAN1-3) remain correct and are what Phase 153 builds
+> on — only the "this is outside our control" framing was superseded.
+
 ## Bug report / investigation
 "Clicking on the DanskTV channel, there is only one item in Continue Watching, but there should be a
 bunch — Stormester should be in there but isn't." (2026-07-30.)
