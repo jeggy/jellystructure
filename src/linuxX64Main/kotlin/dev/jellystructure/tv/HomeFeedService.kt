@@ -455,6 +455,10 @@ class HomeFeedService(
         val seen = mutableSetOf<String>()
 
         for (play in resumeItems) {
+            // R185 — Jellyfin's own IsResumable filter is PlaybackPositionTicks > 0 only, with no Played
+            // check; the two can disagree (stale/leaked position outliving a played flag — see the spec)
+            // regardless of what caused it. Never show an already-watched title as in-progress.
+            if (play.userData?.played == true) continue
             val itemId = play.seriesId ?: play.id
             if (!seen.add(itemId)) continue
             val mediaItem = all.firstOrNull { it.jellyfinId == itemId } ?: continue

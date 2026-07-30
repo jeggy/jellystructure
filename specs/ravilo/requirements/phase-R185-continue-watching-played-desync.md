@@ -6,7 +6,10 @@
 > Jellyfin's own `Played` and `PlaybackPositionTicks` fields going out of sync on the SAME item, with
 > nothing in jellystructure ever reconciling them before Continue Watching renders.
 
-**Status:** Planned.
+**Status:** Implemented. Verified via `compileKotlinLinuxX64`/`linuxX64Test`. Not yet live-verified against
+a fresh Jellyfin mark-played call (the fix is one-way — it stops *new* corruption and hides the 62
+already-corrupted rows found live, but doesn't retroactively repair their `PlaybackPositionTicks`, which
+FR-RV-CW1-2's filter makes moot for display purposes).
 
 ## Bug report
 "I can often see already finished watched series in my continue watching section in Ravilo."
