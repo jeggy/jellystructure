@@ -10,7 +10,7 @@
 > `PlaybackTracker` on the watchdog) and **590b9ff** (Continue Watching cache invalidation on stop) —
 > none of them own a spec either; this phase is the first to document this corner of the player.
 
-**Status:** Planned.
+**Status:** Implemented, not yet on-device verified (see Dev-review addendum).
 
 ## Bug report
 "Sometimes the auto-play is auto-advancing in Ravilo. So when next episode starts it starts already
@@ -104,6 +104,32 @@ freshly-observed position), never the outgoing episode's.
 - Retroactively spec'ing 0fadfc0 / b877813 / 590b9ff in full — this phase only documents the slice of
   their behavior that's load-bearing for this fix (the `onBackground`/`onForeground` contract). A
   follow-up phase could give the background/foreground session lifecycle its own proper spec.
+
+## Dev-review addendum (2026-07-30 — implementation notes)
+
+1. **FR-RV-POS1-1 and FR-RV-POS1-2 turned out to be one mechanism, not two.** The itemId-reset alone
+   (`positionMs = 0L` in `LaunchedEffect(itemId)`) only holds until the *next* poll tick, ~500 ms later —
+   and that tick still unconditionally overwrote `positionMs`/`durationMs` from `player.positionMs`, which
+   still reflects the outgoing stream until `player.load()` swaps it in. So the reset alone doesn't close
+   the window; the poll loop had to stop being unconditional. Implemented as: the poll loop's
+   `positionMs`/`durationMs` assignment is now gated on the same `playerLoadedForCurrentItem` boolean the
+   next-up/end-of-stream checks already used (`PlayerScreen.kt`), and a new `positionKnownForItemId` state
+   var is set alongside it — so the values simply never advance past the itemId-reset zero until the
+   player is actually loaded for the current item. `PlayerLifecycleEffect`'s `onBackground` reads that
+   flag and substitutes `0L` if it doesn't match `currentItemId`, which in practice is now a pure
+   defense-in-depth backstop (the gated poll loop already prevents `positionMs` from ever holding stale
+   data), covering the theoretical case of an `ON_STOP` landing before Compose has dispatched the
+   `LaunchedEffect(itemId)` reset at all.
+2. **FR-RV-POS1-3 (regression coverage) — no automated test.** `ravilo-ui` has no test source set at all
+   (`ravilo-ui/build.gradle.kts` declares only `commonMain`/`androidMain`/`wasmJsMain`, no `commonTest`,
+   no Compose UI testing dependency) — adding that infrastructure for one test was judged disproportionate
+   to this bug fix's scope. Falling back to the spec's documented allowance: manual repro is to auto-advance
+   near the end of an episode while forcing an `ON_STOP` (Home button / recents) at the moment the credits
+   card's countdown fires, then resume and confirm the new episode starts at 0:00, not near its own end.
+   User-initiated on-device testing, per project convention — not run as part of this change.
+3. Verified via compile check only, across every target that consumes `PlayerScreen.kt`:
+   `:ravilo-ui:compileDebugKotlinAndroid`, `:ravilo-ui:compileKotlinWasmJs`, `:ravilo-web:compileKotlinWasmJs`,
+   `:ravilo-android:compileDebugKotlin`, `:ravilo-phone:compileDebugKotlin` all pass.
 
 ## Source references
 - Bug: `ravilo-ui/src/commonMain/kotlin/dev/jellystructure/ravilo/ui/screens/PlayerScreen.kt`
