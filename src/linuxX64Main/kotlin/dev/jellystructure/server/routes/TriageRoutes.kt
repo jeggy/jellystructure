@@ -132,6 +132,8 @@ fun Route.triageRoutes(store: MediaStore, jellyfinClient: JellyfinClient, config
             val coverAsVideoTitles = all.count { TriageDetection.coverAsVideoCount(it) > 0 }
             val dupEpisodeInstances = all.sumOf { TriageDetection.duplicateEpisodeCount(it) }
             val dupEpisodeTitles = all.count { TriageDetection.duplicateEpisodeCount(it) > 0 }
+            val unresolvedIdInstances = all.sumOf { TriageDetection.unresolvedJellyfinIdCount(it) }
+            val unresolvedIdTitles = all.count { TriageDetection.unresolvedJellyfinIdCount(it) > 0 }
             // Phase 150: only meaningful once detect_segments is actually enabled — otherwise EVERY title
             // has "no segments" (the feature has simply never run) and the row would flood with a
             // misleading "everything is broken" count for an admin who hasn't opted in at all.
@@ -168,6 +170,9 @@ fun Route.triageRoutes(store: MediaStore, jellyfinClient: JellyfinClient, config
                 TriageTypeCount("duplicate_episode", "Duplicate episode files",
                     "Two files claim the same episode number — Ravilo can only play one of them, and auto-play-next stalls on the copy. Delete the extra file, or fix its episode number, then re-scan.",
                     dupEpisodeInstances, dupEpisodeTitles),
+                TriageTypeCount("unresolved_jellyfin_id", "Episode never matched in Jellyfin",
+                    "jellystructure could read a season/episode from the filename, but Jellyfin never numbered this file (no IndexNumber) — it silently drops out of playstate, next-episode targeting, and Jellyfin's own Continue Watching/Next Up. Fix the episode's identification in Jellyfin (rename to match its naming rules, or manually identify it), then re-scan.",
+                    unresolvedIdInstances, unresolvedIdTitles),
                 TriageTypeCount("zero_audio", "No audio tracks",
                     "Zero audio tracks detected — usually a corrupt/truncated file. Open Tracks & order for the diagnosis and repair options.",
                     zeroAudioInstances, zeroAudioTitles),
