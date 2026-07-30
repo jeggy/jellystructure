@@ -23,6 +23,11 @@ data class ArtworkStatus(
     val posterExists: Boolean,
     val fanartExists: Boolean,
     val logoExists: Boolean = false,
+    // Phase 151: true when the on-disk file was explicitly picked/uploaded by an operator (`.manual`
+    // marker sidecar) and is therefore never touched by an automatic download again.
+    val posterManual: Boolean = false,
+    val fanartManual: Boolean = false,
+    val logoManual: Boolean = false,
 )
 
 @Serializable
@@ -30,6 +35,7 @@ data class EpisodeStillStatus(
     val stillExists: Boolean,
     val stillPath: String,
     val source: String? = null,  // R131: "tmdb" | "screengrab" | "manual" | null — from the .src sidecar
+    val manual: Boolean = false, // Phase 151: operator-chosen — never auto-replaced (`.manual` marker)
 )
 
 /** R122: true when a `poster.jpg` artwork file exists on disk for [item] — the real (Jellyfin) poster
@@ -53,11 +59,49 @@ class ArtworkDownloader(private val tmdbClient: TmdbClient, private val screengr
             posterExists = SystemFileSystem.exists(Path("$dir/poster.jpg")),
             fanartExists = SystemFileSystem.exists(Path("$dir/fanart.jpg")),
             logoExists = SystemFileSystem.exists(Path("$dir/clearlogo.png")),
+            posterManual = isManual("$dir/poster.jpg"),
+            fanartManual = isManual("$dir/fanart.jpg"),
+            logoManual = isManual("$dir/clearlogo.png"),
         )
     }
 
+    // --- Phase 151 (FR-ART2): the manual-artwork marker -------------------------------------------
+    //
+    // "<image>.manual" written next to an image whenever an operator explicitly picks, uploads or
+    // generates it. Every automatic writer (the scan pipeline's download_artwork step, a TMDB re-pull,
+    // realtime ingest, the legacy misplaced-artwork cleanup) must leave a marked file alone.
+    //
+    // A sidecar rather than a MediaItem field because it covers the assets that have no field to lock —
+    // clearlogo, season posters and episode stills — and, living with the media, it survives a DB reset.
+    // The item-level poster/backdrop additionally carry `MediaItem.lockedArtwork` (Phase 133), which is
+    // what keeps the *metadata* path from reverting; this marker is what protects the *file*.
+
+    private fun manualMarkerPath(imagePath: String) = "$imagePath.manual"
+
+    /** True when [imagePath] was explicitly chosen by an operator and must never be auto-overwritten. */
+    fun isManual(imagePath: String): Boolean = SystemFileSystem.exists(Path(manualMarkerPath(imagePath)))
+
+    /** Marks [imagePath] as operator-chosen. Idempotent; failures are non-fatal (the image itself is
+     *  already written, and skip-if-present still shields it from the ordinary gap-fill download). */
+    fun markManual(imagePath: String) {
+        runCatching { FileIo.writeText(Path(manualMarkerPath(imagePath)), "1") }
+    }
+
+    fun isAssetManual(item: MediaItem, asset: String): Boolean =
+        assetPath(item, asset)?.let { isManual(it) } ?: false
+
+    fun markAssetManual(item: MediaItem, asset: String) {
+        assetPath(item, asset)?.let { markManual(it) }
+    }
+
+    fun isSeasonPosterManual(item: MediaItem, season: Int): Boolean = isManual(seasonPosterPath(item, season))
+
+    fun isEpisodeStillManual(episode: Episode): Boolean = isManual(episodeStillPath(episode))
+
     suspend fun fetch(item: MediaItem): ArtworkStatus {
         val dir = mediaDir(item)
+        // Skip-if-present is what protects an operator's chosen image here: a file already on disk is
+        // never re-downloaded, manual or not (Phase 151 additionally records WHY it must stay).
         val posterExists = SystemFileSystem.exists(Path("$dir/poster.jpg"))
         val fanartExists = SystemFileSystem.exists(Path("$dir/fanart.jpg"))
         val logoExists = SystemFileSystem.exists(Path("$dir/clearlogo.png"))
@@ -80,10 +124,13 @@ class ArtworkDownloader(private val tmdbClient: TmdbClient, private val screengr
         // Only delete the old file once the correct-path file is confirmed present.
         if (item.kind == MediaKind.TV_SHOW) {
             val oldDir = item.path.substringBeforeLast('/')
+            // Phase 151: never sweep away an image an operator placed/picked deliberately — `oldDir` is
+            // the PARENT of the series directory, i.e. usually the library root, where a hand-picked
+            // library-level image can legitimately live.
             if (oldDir != dir) {
-                if (posterOk) deleteIfExists("$oldDir/poster.jpg")
-                if (fanartOk) deleteIfExists("$oldDir/fanart.jpg")
-                if (logoExists) deleteIfExists("$oldDir/clearlogo.png")
+                if (posterOk && !isManual("$oldDir/poster.jpg")) deleteIfExists("$oldDir/poster.jpg")
+                if (fanartOk && !isManual("$oldDir/fanart.jpg")) deleteIfExists("$oldDir/fanart.jpg")
+                if (logoExists && !isManual("$oldDir/clearlogo.png")) deleteIfExists("$oldDir/clearlogo.png")
             }
             // R125: episode stills are part of fetch() now — download any missing (each from the
             // episode's stored stillPath), bounded by the shared download gate. So every fetch()
@@ -100,11 +147,19 @@ class ArtworkDownloader(private val tmdbClient: TmdbClient, private val screengr
                 val posters = runCatching { tmdbClient.getSeasonImages(tid, season)?.posters }.getOrNull().orEmpty()
                 val pick = posters.filter { it.languageCode == item.resolvedLanguage }.ifEmpty { posters }
                     .maxByOrNull { it.voteAverage }
-                if (pick != null) runCatching { saveSeasonPoster(item, season, pick.filePath) }
+                // Phase 151: manual = false — this is the automatic gap-fill, not an operator's pick.
+                if (pick != null) runCatching { saveSeasonPoster(item, season, pick.filePath, manual = false) }
             }
         }
 
-        return ArtworkStatus(posterExists = posterOk, fanartExists = fanartOk, logoExists = logoExists)
+        return ArtworkStatus(
+            posterExists = posterOk,
+            fanartExists = fanartOk,
+            logoExists = logoExists,
+            posterManual = isManual("$dir/poster.jpg"),
+            fanartManual = isManual("$dir/fanart.jpg"),
+            logoManual = isManual("$dir/clearlogo.png"),
+        )
     }
 
     /** R126: true if any artwork the "Download artwork" step can fetch is missing on disk — poster/fanart
@@ -115,9 +170,12 @@ class ArtworkDownloader(private val tmdbClient: TmdbClient, private val screengr
         if (item.kind != MediaKind.TV_SHOW) return false
         // R131: a still is "incomplete" when missing OR a screen-grab that TMDB can now upgrade — so the
         // next scheduled "Download artwork (missing)" run re-processes the series and swaps in the real still.
+        // Phase 151: a still an operator chose (uploaded/picked, or generated from a frame in the picker)
+        // is NOT "incomplete" — without this a locked screen-grab would mark its series incomplete on
+        // every run forever, since fetchEpisodeStill now refuses to upgrade it.
         if (item.episodes.any { ep ->
             val st = checkEpisodeStill(ep)
-            !st.stillExists || (st.source == "screengrab" && !ep.stillPath.isNullOrBlank())
+            !st.stillExists || (st.source == "screengrab" && !ep.stillPath.isNullOrBlank() && !st.manual)
         }) return true
         return item.episodes.mapNotNull { it.seasonNumber }.distinct().any { !checkSeasonPoster(item, it) }
     }
@@ -147,7 +205,12 @@ class ArtworkDownloader(private val tmdbClient: TmdbClient, private val screengr
     fun checkEpisodeStill(episode: Episode): EpisodeStillStatus {
         val destPath = episodeStillPath(episode)
         val exists = SystemFileSystem.exists(Path(destPath))
-        return EpisodeStillStatus(stillExists = exists, stillPath = destPath, source = if (exists) readStillSrc(destPath) else null)
+        return EpisodeStillStatus(
+            stillExists = exists,
+            stillPath = destPath,
+            source = if (exists) readStillSrc(destPath) else null,
+            manual = exists && isManual(destPath),
+        )
     }
 
     suspend fun fetchEpisodeStill(episode: Episode): EpisodeStillStatus {
@@ -155,13 +218,16 @@ class ArtworkDownloader(private val tmdbClient: TmdbClient, private val screengr
         val stillUrl = episode.stillPath
         if (SystemFileSystem.exists(Path(destPath))) {
             val src = readStillSrc(destPath)
+            val manual = isManual(destPath)
             // R131: a screen-grab is the lowest priority — once TMDB has a real still, upgrade to it.
-            if (src == "screengrab" && !stillUrl.isNullOrBlank()) {
+            // Phase 151: …unless the operator chose that frame themselves (picker "Generate from frame"),
+            // in which case it's locked like any other manual pick.
+            if (src == "screengrab" && !stillUrl.isNullOrBlank() && !manual) {
                 val ok = download("$TMDB_ORIGINAL$stillUrl", destPath)
                 if (ok) writeStillSrc(destPath, "tmdb")
                 return EpisodeStillStatus(stillExists = true, stillPath = destPath, source = if (ok) "tmdb" else src)
             }
-            return EpisodeStillStatus(stillExists = true, stillPath = destPath, source = src)
+            return EpisodeStillStatus(stillExists = true, stillPath = destPath, source = src, manual = manual)
         }
         // Nothing on disk: prefer the real TMDB still; otherwise grab a frame as a placeholder.
         if (!stillUrl.isNullOrBlank()) {
@@ -174,13 +240,25 @@ class ArtworkDownloader(private val tmdbClient: TmdbClient, private val screengr
         return EpisodeStillStatus(stillExists = ok, stillPath = destPath, source = if (ok) "screengrab" else null)
     }
 
-    /** R131: regenerate a screen-grab still on demand (the picker's "Generate from frame" button). Always
-     *  marks it `screengrab` (lowest priority) — a manual upload/candidate is the way to lock a custom frame. */
+    /** R131: regenerate a screen-grab still on demand (the picker's "Generate from frame" button). Keeps
+     *  the `screengrab` source label, but (Phase 151) locks the file — an operator pressing the button is
+     *  choosing this frame, so no automatic run may upgrade it to TMDB's still behind their back. */
     suspend fun screengrabEpisodeStill(episode: Episode): EpisodeStillStatus {
         val destPath = episodeStillPath(episode)
         val ok = screengrabber.grabEpisodeStill(episode, destPath)
-        if (ok) writeStillSrc(destPath, "screengrab")
-        return EpisodeStillStatus(stillExists = ok || SystemFileSystem.exists(Path(destPath)), stillPath = destPath, source = if (ok) "screengrab" else readStillSrc(destPath))
+        if (ok) {
+            writeStillSrc(destPath, "screengrab")
+            // Phase 151: pressing "Generate from frame" IS an explicit operator choice — keep the source
+            // as `screengrab` (so the picker still labels it honestly) but lock the file so the next
+            // "Download artwork" run can't silently swap in TMDB's still.
+            markManual(destPath)
+        }
+        return EpisodeStillStatus(
+            stillExists = ok || SystemFileSystem.exists(Path(destPath)),
+            stillPath = destPath,
+            source = if (ok) "screengrab" else readStillSrc(destPath),
+            manual = isManual(destPath),
+        )
     }
 
     // R131: provenance sidecar next to each still ("<base>-thumb.jpg.src"), mirroring the image-proxy `.ct`.
@@ -242,10 +320,14 @@ class ArtworkDownloader(private val tmdbClient: TmdbClient, private val screengr
         assetPath(item, asset)?.let { p -> runCatching { FileIo.writeText(Path("$p.src"), source) } }
     }
 
-    /** `source` is either a TMDB file_path (leading "/") or a full http(s) URL. */
-    suspend fun saveAsset(item: MediaItem, asset: String, source: String): Boolean {
+    /** `source` is either a TMDB file_path (leading "/") or a full http(s) URL.
+     *  Phase 151: [manual] marks the result operator-chosen (the default — every caller is an explicit
+     *  pick today), so no automatic path overwrites it afterwards. */
+    suspend fun saveAsset(item: MediaItem, asset: String, source: String, manual: Boolean = true): Boolean {
         val dest = assetPath(item, asset) ?: return false
-        return download(toUrl(source), dest)
+        val ok = download(toUrl(source), dest)
+        if (ok && manual) markManual(dest)
+        return ok
     }
 
     /** Jellyfin local naming for a season poster at the series root. */
@@ -258,13 +340,21 @@ class ArtworkDownloader(private val tmdbClient: TmdbClient, private val screengr
     fun checkSeasonPoster(item: MediaItem, season: Int): Boolean =
         SystemFileSystem.exists(Path(seasonPosterPath(item, season)))
 
-    suspend fun saveSeasonPoster(item: MediaItem, season: Int, source: String): Boolean =
-        download(toUrl(source), seasonPosterPath(item, season))
+    /** Phase 151: [manual] is false only for the automatic gap-fill inside [fetch]. */
+    suspend fun saveSeasonPoster(item: MediaItem, season: Int, source: String, manual: Boolean = true): Boolean {
+        val dest = seasonPosterPath(item, season)
+        val ok = download(toUrl(source), dest)
+        if (ok && manual) markManual(dest)
+        return ok
+    }
 
     suspend fun saveEpisodeStill(episode: Episode, source: String): Boolean {
         val dest = episodeStillPath(episode)
         val ok = download(toUrl(source), dest)
-        if (ok) writeStillSrc(dest, "manual")  // R131: a manual pick is permanent — never auto-upgraded
+        if (ok) {
+            writeStillSrc(dest, "manual")  // R131: a manual pick is permanent — never auto-upgraded
+            markManual(dest)              // Phase 151: same lock every other manual asset carries
+        }
         return ok
     }
 

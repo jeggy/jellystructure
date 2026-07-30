@@ -115,15 +115,9 @@ class MediaStore(
 
     // Phase 133: a manually-picked/uploaded poster or backdrop must survive every automatic metadata
     // pull (scan/sync/re-pull), which otherwise unconditionally resets posterPath/backdropPath to TMDB's
-    // current default. Single choke point mirroring preserveJsTags/mergeUserGenres — the Scanner never
-    // needs to know about the lock itself.
-    private fun preserveLockedArtwork(fresh: MediaItem, existing: MediaItem?): MediaItem {
-        if (existing == null || existing.lockedArtwork.isEmpty()) return fresh
-        var result = fresh.copy(lockedArtwork = existing.lockedArtwork)
-        if ("poster" in existing.lockedArtwork) result = result.copy(posterPath = existing.posterPath)
-        if ("backdrop" in existing.lockedArtwork) result = result.copy(backdropPath = existing.backdropPath)
-        return result
-    }
+    // current default. The guard itself lives in ArtworkLock.kt (Phase 151) and is applied at BOTH write
+    // choke points below, mirroring preserveJsTags/mergeUserGenres — the Scanner never needs to know
+    // about the lock itself.
 
     // Phase 108: JS-owned created/updated timestamps. createdAt is stamped once (first insert) and
     // never moves; updatedAt only bumps when the item's actual content changed — a scan that re-finds
@@ -574,7 +568,9 @@ class MediaStore(
         // survive a slug change instead of resetting.
         val old = stale ?: existing
         var merged = preserveJsTags(item, existing)
-        merged = preserveLockedArtwork(merged, existing)
+        // Phase 151: key the artwork lock off `old`, not `existing`, so a slug rename (id change) keeps
+        // the operator's locked poster instead of silently falling back to the fresh TMDB default.
+        merged = preserveLockedArtwork(merged, old)
         if (existing != null && existing.titlesByLang.isNotEmpty()) {
             merged = merged.copy(titlesByLang = existing.titlesByLang + item.titlesByLang)
         }
@@ -583,11 +579,20 @@ class MediaStore(
         upsertItem(merged)
     }
 
-    suspend fun updateOne(item: MediaItem) {
+    /**
+     * Phase 151: [respectArtworkLock] applies the same manual-artwork guard `addOrUpdate` uses. It
+     * defaults to true because most `updateOne` callers pass an item derived from current store state
+     * (where the guard is a no-op), while the ones that matter — `POST /{id}/sync`,
+     * `POST /{id}/repull-jellyfin` and `pushToJellyfin` — persist a *freshly scanned* item whose
+     * posterPath/backdropPath were just reset to TMDB's default. Only the explicit artwork routes (an
+     * operator picking/uploading a new image, which deliberately changes the locked value) pass false.
+     */
+    suspend fun updateOne(item: MediaItem, respectArtworkLock: Boolean = true) {
         val existing = get(item.id)
         var merged = if (existing != null && existing.titlesByLang.isNotEmpty()) {
             item.copy(titlesByLang = existing.titlesByLang + item.titlesByLang)
         } else item
+        if (respectArtworkLock) merged = preserveLockedArtwork(merged, existing)
         merged = merged.copy(episodes = stampEpisodeCreatedAt(merged.episodes, existing?.episodes))
         merged = stampTimestamps(merged, existing)
         upsertItem(merged)
