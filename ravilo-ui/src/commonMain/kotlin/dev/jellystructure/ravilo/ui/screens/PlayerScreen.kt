@@ -290,6 +290,14 @@ fun PlayerScreen(
     // isEnded checks are gated on this matching the current itemId so a stale outgoing stream can never
     // trigger next-up again.
     var loadedForItemId by remember { mutableStateOf<String?>(null) }
+    // R184 (FR-RV-POS1-2) — which itemId positionMs/durationMs actually reflect right now. Bug fix: a
+    // lifecycle stop (PlayerLifecycleEffect's onBackground below) landing in the gap between advanceNext()
+    // swapping to the next episode's PlayerStore and that episode's stream actually loading could read
+    // the OUTGOING episode's still-playing near-the-end positionMs and report it as the NEW episode's own
+    // stop position — Jellyfin then resumed the new episode minutes in on the very next play. Mirrors
+    // loadedForItemId above but tracked separately since it must stay valid even when this screen never
+    // reaches a poll tick before onBackground fires.
+    var positionKnownForItemId by remember { mutableStateOf<String?>(null) }
     // Bug fix (auto-advance retry loop): which itemId we have already asked the host to advance away
     // from. advanceNext() only *requests* a navigation — if the host can't act on it (no episode list,
     // an id that isn't in it, or a target equal to the current item) nothing changes, and the poll loop
@@ -560,6 +568,13 @@ fun PlayerScreen(
         nextUpDismissed = false  // R111: each episode (replaceTop keeps this composable) starts fresh
         nextUpVisible = false
         countdown = currentSkipSecs
+        // R184 (FR-RV-POS1-1): positionMs/durationMs are screen-scoped, not per-episode (this composable
+        // is reused across the whole binge — see loadedForItemId's comment above) — reset them the instant
+        // a new episode starts loading so nothing can read the outgoing episode's near-the-end values
+        // during the round-trip before its own stream is loaded.
+        positionMs = 0L
+        durationMs = 0L
+        positionKnownForItemId = null
         armSession(itemId)
     }
 
@@ -592,13 +607,6 @@ fun PlayerScreen(
         while (true) {
             delay(POLL_MS)
             try {
-                positionMs  = player.positionMs
-                durationMs  = player.durationMs
-                bufferedMs  = player.bufferedMs
-                isPlaying   = player.isPlaying
-                audioTracks = player.audioTracks
-                subtitleTracks = player.subtitleTracks
-
                 // Bug fix: gate every next-up/end-of-stream check on the player actually being loaded
                 // for the CURRENT itemId — otherwise, right after a manual (or auto) advance, these
                 // checks kept reading the OUTGOING episode's near-the-end position/duration during the
@@ -608,6 +616,22 @@ fun PlayerScreen(
                 // not the raw itemId parameter — see that declaration's comment for why this loop
                 // specifically needs the live reference.
                 val playerLoadedForCurrentItem = loadedForItemId == currentItemId
+
+                // R184 (FR-RV-POS1-1/2): same staleness this loop already guards next-up/end-of-stream
+                // checks against also applied to positionMs/durationMs themselves — they were assigned
+                // unconditionally every tick, so during this same gap they held the OUTGOING episode's
+                // near-the-end values, observable by anything reading them (e.g. a lifecycle stop, see
+                // positionKnownForItemId's declaration comment). Only update — and only mark them
+                // known-fresh for currentItemId — once the player is actually loaded for it.
+                if (playerLoadedForCurrentItem) {
+                    positionMs = player.positionMs
+                    durationMs = player.durationMs
+                    positionKnownForItemId = currentItemId
+                }
+                bufferedMs  = player.bufferedMs
+                isPlaying   = player.isPlaying
+                audioTracks = player.audioTracks
+                subtitleTracks = player.subtitleTracks
 
                 // R181 — resolve once per item, the first tick after the (now-current) stream's tracks
                 // are actually discovered. Gated on playerLoadedForCurrentItem for the same reason as
@@ -812,7 +836,14 @@ fun PlayerScreen(
     PlayerLifecycleEffect(
         player,
         wasPlaying = { isPlaying },
-        onBackground = { store.stopSession(positionMs, durationMs) },
+        // R184 (FR-RV-POS1-2): belt-and-suspenders alongside the itemId-reset above — even if this fires
+        // before positionKnownForItemId has ever been set fresh for currentItemId (e.g. ON_STOP landing
+        // before the poll loop's first tick for the new episode), never report a position that isn't
+        // known to belong to the item store.stopSession is about to close out.
+        onBackground = {
+            val positionIsFresh = positionKnownForItemId == currentItemId
+            store.stopSession(if (positionIsFresh) positionMs else 0L, if (positionIsFresh) durationMs else 0L)
+        },
         onForeground = { armSession(currentItemId) },
     )
     // Bug fix: force landscape + hide system bars for as long as the player is on screen — the
