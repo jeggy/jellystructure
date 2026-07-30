@@ -4,6 +4,7 @@ import dev.jellystructure.auth.JellyfinClient
 import dev.jellystructure.auth.JellyfinEpisodeItem
 import dev.jellystructure.auth.JellyfinItem
 import dev.jellystructure.config.ConfigStore
+import dev.jellystructure.config.LibraryMapping
 import dev.jellystructure.log.Logger
 import dev.jellystructure.model.Episode
 import dev.jellystructure.model.MediaItem
@@ -150,7 +151,7 @@ class Scanner(
         val libraryId = lib.jellyfinId.ifBlank { null }
         return when (jItem.type) {
             "Movie" -> scanMovie(jItem, localPath, effectiveFallback, libraryId)
-            "Series" -> scanSeries(jItem, localPath, effectiveFallback, libraryId)
+            "Series" -> scanSeries(jItem, localPath, effectiveFallback, libraryId, lib)
             else -> null
         }
     }
@@ -285,7 +286,7 @@ class Scanner(
         )
     }
 
-    private suspend fun scanSeries(jItem: JellyfinItem, localPath: String, fallback: String, libraryId: String?): MediaItem? {
+    private suspend fun scanSeries(jItem: JellyfinItem, localPath: String, fallback: String, libraryId: String?, lib: LibraryMapping): MediaItem? {
         if (!SystemFileSystem.exists(Path(localPath))) {
             Logger.warn("Series directory not found on disk: $localPath")
             return null
@@ -325,6 +326,12 @@ class Scanner(
             jellyfinClient.getSeriesEpisodesMeta(scanBaseUrl.trimEnd('/'), scanAdminToken, jItem.id)
         } else emptyList()
         val jfBySeasonEp = jfEpsMeta.associateBy { (it.parentIndexNumber ?: 0) to (it.indexNumber ?: 0) }
+        // Phase 152: fallback join for a file Jellyfin's own scanner placed on disk but never numbered
+        // (no IndexNumber) — jfBySeasonEp can't key it, but jellystructure's own parseSeasonEpisodes
+        // below often still derives the right (season, episode) from the filename. Match by path instead,
+        // translated to Jellyfin's own view of it via the same library prefix substitution scanItem
+        // already computes for the series directory.
+        val jfByPath = jfEpsMeta.mapNotNull { ep -> ep.path?.let { it to ep } }.toMap()
         val seasonNamesMap: Map<Int, String> = jfEpsMeta
             .groupBy { it.parentIndexNumber ?: 0 }
             .mapValues { (_, eps) -> eps.firstOrNull()?.seasonName ?: "" }
@@ -378,8 +385,10 @@ class Scanner(
                             fetchEpisodeCredits(seriesTmdbId, seasonNum, epNum)
                         } else Pair(emptyList(), emptyList())
 
-                        // R82: map (season, ep) → Jellyfin id from the pre-fetched meta
-                        val jfEp = if (seasonNum != null && epNum != null) jfBySeasonEp[seasonNum to epNum] else null
+                        // R82: map (season, ep) → Jellyfin id from the pre-fetched meta. Phase 152: fall
+                        // back to a path match when Jellyfin never numbered this file — see jfByPath above.
+                        val jfEp = (if (seasonNum != null && epNum != null) jfBySeasonEp[seasonNum to epNum] else null)
+                            ?: jfByPath[if (lib.jellyfinPath.isNotBlank()) file.replaceFirst(lib.localPath, lib.jellyfinPath) else file]
 
                         Episode(
                             filename = file.substringAfterLast('/'),

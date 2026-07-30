@@ -443,7 +443,7 @@ class JellyfinClient {
         seriesId: String,
     ): List<JellyfinEpisodeItem> = runCatching {
         val url = baseUrl.trimEnd('/') +
-            "/Shows/$seriesId/Episodes?Fields=RunTimeTicks,SeasonName,DateCreated"
+            "/Shows/$seriesId/Episodes?Fields=RunTimeTicks,SeasonName,DateCreated,Path"
         httpGet(url) { jellyfinAuth(token) }
             .bodyOrNull<JellyfinEpisodesResponse>("getSeriesEpisodesMeta")?.items.orEmpty()
     }.let { result ->
