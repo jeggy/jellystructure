@@ -14,6 +14,7 @@ import dev.jellystructure.jobs.JobEvent
 import dev.jellystructure.jobs.WsBroadcaster
 import dev.jellystructure.log.Logger
 import dev.jellystructure.log.WorkerId
+import dev.jellystructure.media.ArtworkAsset
 import dev.jellystructure.media.ArtworkDownloader
 import dev.jellystructure.media.FfmpegRunner
 import dev.jellystructure.media.FfprobeRunner
@@ -133,7 +134,7 @@ private data class SegmentMarkersUpdate(
 // Phase 149: episodeNumber disambiguates entries sharing a filename (a multi-episode file) — the
 // frontend used to key these by filename alone, collapsing a group's N statuses down to one.
 @Serializable
-private data class EpisodeStillStatusDto(val filename: String, val stillExists: Boolean, val stillPath: String, val source: String? = null, val episodeNumber: Int? = null)
+private data class EpisodeStillStatusDto(val filename: String, val stillExists: Boolean, val stillPath: String, val source: String? = null, val episodeNumber: Int? = null, val manual: Boolean = false)
 
 /**
  * Phase 149: resolves the target episode for a still-related route. Several episodes can share
@@ -161,7 +162,7 @@ private data class BatchStartedResponse(val status: String, val total: Int)
 
 // Wire shape for GET /api/media/{id}/seasons — mirrors the frontend's SeasonStatus.
 @Serializable
-private data class SeasonStatusDto(val season: Int, val posterExists: Boolean)
+private data class SeasonStatusDto(val season: Int, val posterExists: Boolean, val posterManual: Boolean = false)
 
 private fun mapCandidates(images: List<TmdbImage>, onDiskSource: String?): List<ArtworkCandidate> =
     images.map { img ->
@@ -591,13 +592,24 @@ fun Route.mediaRoutes(
                     // and point the admin at the file we just wrote — an upload has no TMDB file_path,
                     // so posterPath/backdropPath would otherwise stay stale and the upload would be
                     // invisible in the admin (Ravilo already renders on-disk artwork and would show it).
-                    val asset = when (type) { "poster" -> "poster"; "fanart", "backdrop" -> "backdrop"; else -> null }
+                    val asset = when (type) {
+                        "poster" -> ArtworkAsset.POSTER
+                        "fanart", "backdrop" -> ArtworkAsset.BACKDROP
+                        "logo", "clearlogo" -> ArtworkAsset.CLEARLOGO
+                        else -> null
+                    }
+                    // Phase 151: lock the FILE too, for every uploaded asset (clearlogo included — it has
+                    // no MediaItem field to lock, so the on-disk marker is its only protection).
+                    if (asset != null) artwork.markAssetManual(item, asset)
                     val updated = when (asset) {
-                        "poster" -> item.copy(posterPath = "/tv/image/${item.id}/poster", lockedArtwork = (item.lockedArtwork + "poster").distinct())
-                        "backdrop" -> item.copy(backdropPath = "/tv/image/${item.id}/backdrop", lockedArtwork = (item.lockedArtwork + "backdrop").distinct())
+                        ArtworkAsset.POSTER -> item.copy(posterPath = "/tv/image/${item.id}/poster", lockedArtwork = (item.lockedArtwork + asset).distinct())
+                        ArtworkAsset.BACKDROP -> item.copy(backdropPath = "/tv/image/${item.id}/backdrop", lockedArtwork = (item.lockedArtwork + asset).distinct())
+                        ArtworkAsset.CLEARLOGO -> item.copy(lockedArtwork = (item.lockedArtwork + asset).distinct())
                         else -> item
                     }
-                    if (updated !== item) store.updateOne(updated)
+                    // respectArtworkLock = false: this IS the explicit operator action that sets the lock,
+                    // so it must be allowed to change the locked value (Phase 151).
+                    if (updated !== item) store.updateOne(updated, respectArtworkLock = false)
 
                     val cfg = configStore.current
                     if (!item.jellyfinId.isNullOrBlank() && cfg.apiKeys.jellyfinUrl.isNotBlank()) {
@@ -668,11 +680,14 @@ fun Route.mediaRoutes(
                         "backdrop" -> item.copy(backdropPath = req.source)
                         else -> item
                     } else item
-                    // Phase 133: an explicit pick locks the asset so it survives the next TMDB sync/re-pull.
-                    if (req.asset == "poster" || req.asset == "backdrop") {
+                    // Phase 133/151: an explicit pick locks the asset so it survives the next TMDB
+                    // sync/re-pull — the metadata via lockedArtwork, the file via the `.manual` marker
+                    // written by saveAsset above.
+                    if (ArtworkAsset.isLockable(req.asset)) {
                         updated = updated.copy(lockedArtwork = (updated.lockedArtwork + req.asset).distinct())
                     }
-                    if (updated !== item) store.updateOne(updated)
+                    // respectArtworkLock = false — see the upload route: an explicit re-pick must win.
+                    if (updated !== item) store.updateOne(updated, respectArtworkLock = false)
                     mediaHistory.record(id, "artwork_save", "asset=${req.asset}")
                     val cfg = configStore.current
                     if (!updated.jellyfinId.isNullOrBlank() && cfg.apiKeys.jellyfinUrl.isNotBlank()) {
@@ -690,7 +705,7 @@ fun Route.mediaRoutes(
                 val id = call.parameters["id"] ?: return@get call.respond(HttpStatusCode.BadRequest)
                 val item = store.resolve(id) ?: return@get call.respond(HttpStatusCode.NotFound)
                 val seasons = item.episodes.mapNotNull { it.seasonNumber }.distinct().sorted()
-                call.respond(seasons.map { SeasonStatusDto(it, artwork.checkSeasonPoster(item, it)) })
+                call.respond(seasons.map { SeasonStatusDto(it, artwork.checkSeasonPoster(item, it), artwork.isSeasonPosterManual(item, it)) })
             }
 
             // GET /api/media/{id}/seasons/{season}/poster/candidates
@@ -732,7 +747,7 @@ fun Route.mediaRoutes(
                     ?: return@get call.respond(HttpStatusCode.NotFound)
                 val statuses = item.episodes.map { ep ->
                     val status = artwork.checkEpisodeStill(ep)
-                    EpisodeStillStatusDto(ep.filename, status.stillExists, status.stillPath, status.source, ep.episodeNumber)
+                    EpisodeStillStatusDto(ep.filename, status.stillExists, status.stillPath, status.source, ep.episodeNumber, status.manual)
                 }
                 call.respond(statuses)
             }
@@ -894,7 +909,7 @@ fun Route.mediaRoutes(
                     if (!item.jellyfinId.isNullOrBlank() && cfg.apiKeys.jellyfinUrl.isNotBlank()) {
                         jellyfinClient.refreshItem(cfg.apiKeys.jellyfinUrl, cfg.apiKeys.jellyfinToken, item.jellyfinId)
                     }
-                    call.respond(EpisodeStillStatusDto(ep.filename, st.stillExists, st.stillPath, st.source, ep.episodeNumber))
+                    call.respond(EpisodeStillStatusDto(ep.filename, st.stillExists, st.stillPath, st.source, ep.episodeNumber, st.manual))
                 }
 
                 // POST /api/media/{id}/episodes/{epFilename}/still/save  { source }
