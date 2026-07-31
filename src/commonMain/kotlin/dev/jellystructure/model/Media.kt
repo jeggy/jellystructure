@@ -155,6 +155,13 @@ data class Episode(
     val hasChapters: Boolean = false,
     /** Phase 150: this episode's own intro/credits segments (see [SegmentMarkers]). */
     val segments: SegmentMarkers = SegmentMarkers(),
+    /** Phase 153 (FR-SCAN2-5): Jellyfin has an item for this file but no `IndexNumber` for it — its
+     *  own scan-time resolve failed and Jellyfin never retries one, so the episode silently drops out
+     *  of Jellyfin's NextUp/Resume (and therefore Ravilo's Continue Watching) forever. Set from the
+     *  matched `JellyfinEpisodeItem` on every scan, so it clears itself once a repair lands. Only ever
+     *  true when jellystructure DID parse a real episode number from the filename — an episode we can't
+     *  number either is not repairable and is never flagged. */
+    val jellyfinIndexMissing: Boolean = false,
 )
 
 @Serializable

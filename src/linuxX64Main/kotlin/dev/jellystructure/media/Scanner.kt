@@ -414,6 +414,9 @@ class Scanner(
                             chapterStartMs = if (hasMatchingChapters) chapterMarkers[partIdx].startMs else null,
                             chapterEndMs = if (hasMatchingChapters) chapterMarkers[partIdx].endMs else null,
                             hasChapters = hasMatchingChapters,
+                            // Phase 153 (FR-SCAN2-5) — Jellyfin knows this file but never assigned it an
+                            // episode number, and never retries; flag it so write_nfo/sync_jellyfin repair it.
+                            jellyfinIndexMissing = epNum != null && jfEp != null && jfEp.indexNumber == null,
                         )
                     }
                 }
@@ -647,13 +650,25 @@ class Scanner(
         // and any episode is still missing one (e.g. scanned before R82 or via old sync path).
         val scanBaseUrl = config.apiKeys.jellyfinUrl
         val scanAdminToken = config.apiKeys.jellyfinToken
-        val jfBySeasonEp: Map<Pair<Int, Int>, JellyfinEpisodeItem> = if (
+        // Phase 153: also refetch when an episode is flagged jellyfinIndexMissing — that flag has to be
+        // re-derived from Jellyfin to clear once a repair lands, and those episodes DO have a jellyfinId
+        // (which is exactly why the `jellyfinId == null` condition alone never covered them).
+        val jfEpsMetaSync: List<JellyfinEpisodeItem> = if (
             item.jellyfinId != null && scanBaseUrl.isNotBlank() && scanAdminToken.isNotBlank() &&
-            item.episodes.any { it.jellyfinId == null }
+            item.episodes.any { it.jellyfinId == null || it.jellyfinIndexMissing }
         ) {
             jellyfinClient.getSeriesEpisodesMeta(scanBaseUrl.trimEnd('/'), scanAdminToken, item.jellyfinId)
-                .associateBy { (it.parentIndexNumber ?: 0) to (it.indexNumber ?: 0) }
-        } else emptyMap()
+        } else emptyList()
+        val jfBySeasonEp: Map<Pair<Int, Int>, JellyfinEpisodeItem> =
+            jfEpsMetaSync.associateBy { (it.parentIndexNumber ?: 0) to (it.indexNumber ?: 0) }
+        // Phase 152/153: an unnumbered Jellyfin item keys into jfBySeasonEp under (season, 0) and can
+        // only be found by path — same fallback scanSeries uses.
+        val jfByPathSync: Map<String, JellyfinEpisodeItem> =
+            jfEpsMetaSync.mapNotNull { ep -> ep.path?.let { it to ep } }.toMap()
+        /** Local path → Jellyfin's own view of it, via this library's prefix mapping. */
+        fun toJellyfinPath(localFile: String): String =
+            if (lib != null && lib.jellyfinPath.isNotBlank()) localFile.replaceFirst(lib.localPath, lib.jellyfinPath)
+            else localFile
         val episodes = mutableListOf<Episode>()
         for (file in episodeFiles) {
             val tracks = FfprobeRunner.probe(file)
@@ -710,6 +725,11 @@ class Scanner(
                     chapterStartMs = if (hasMatchingChapters) chapterMarkers[partIdx].startMs else existingEp?.chapterStartMs,
                     chapterEndMs = if (hasMatchingChapters) chapterMarkers[partIdx].endMs else existingEp?.chapterEndMs,
                     hasChapters = hasMatchingChapters || (existingEp?.hasChapters ?: false),
+                    // Phase 153 (FR-SCAN2-5/8) — re-derived from Jellyfin whenever we refetched its meta,
+                    // so a landed repair clears the flag; otherwise keep whatever the last scan recorded.
+                    jellyfinIndexMissing = if (jfEpsMetaSync.isEmpty()) (existingEp?.jellyfinIndexMissing ?: false)
+                        else epNum != null && jfByPathSync[toJellyfinPath(file)]?.indexNumber == null &&
+                            jfByPathSync.containsKey(toJellyfinPath(file)),
                 )
             }
         }
