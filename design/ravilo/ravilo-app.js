@@ -345,6 +345,13 @@
       r.innerHTML = `<div class="crow-head"><h2>${rowTitle(rowCfg)}</h2>${rowCfg.cfg ? `<span class="cfg">${rowCfg.cfg}</span>` : ''}<span class="more">${t('see_all')} ›</span></div>`;
       const track = el('div', 'track focus-row');
       rowCfg.items.forEach(it => track.appendChild(tile(it, rowCfg.kind)));
+      // end-of-track “See all” tile → the browse page seeded to this row (only when >8 items)
+      if ((rowCfg.items || []).length > 8) {
+        const sa = el('div', 'tile ' + (rowCfg.kind === 'land' ? 'land' : 'poster') + ' seeall foc');
+        sa._seeall = rowCfg;
+        sa.innerHTML = `<div class="art"><div class="sa-ic">→</div><div class="sa-tx">${t('see_all')}</div><div class="sa-n">${rowCfg.items.length}+ ${t('br_titles')}</div></div><div class="label">&nbsp;</div>`;
+        track.appendChild(sa);
+      }
       r.appendChild(track);
       return r;
     }
@@ -1014,6 +1021,11 @@
     function updateUpcomingNav() { const e = document.getElementById('rv-nav-upcoming'); if (e) e.style.display = upcomingEnabled() ? '' : 'none'; }
 
     /* ---------------- BROWSE GRID + SEARCH ---------------- */
+    // generic browse page (Movies / Series / row “See all”) — module in ravilo-browse.js
+    let _browse = null;
+    function browse() {
+      return _browse || (_browse = window.RaviloBrowse.create({ R, W, el, esc, scroll, appbar, go, buildGridRows, tracksFor, rowTitle, catalog, stopHero, getView: () => view }));
+    }
     let _catalog = null;
     function catalog() {
       if (_catalog) return _catalog;
@@ -1143,6 +1155,7 @@
 
     function go(v) {
       view = v;
+      if (_browse) _browse.closePop();   // never carry a browse popover across views
       if (v.type === 'home') renderHome();
       else if (v.type === 'category') renderCategory(v.studio);
       else if (v.type === 'movie' || v.type === 'series') renderDetail(v.item);
@@ -1151,6 +1164,7 @@
       else if (v.type === 'upcomingDetail') renderUpcomingDetail(v.item);
       else if (v.type === 'discoverDetail') renderDiscoverDetail(v.item, v.list);
       else if (v.type === 'grid') renderGrid(v);
+      else if (v.type === 'browse') browse().render(v);
       else if (v.type === 'search') renderSearch(v);
       else if (v.type === 'liveGuide') liveTV.renderGuide();
       scroll.scrollTop = 0;
@@ -1244,8 +1258,8 @@
       if (f.dataset.nav) {
         if (f.dataset.nav === 'home') go({ type: 'home' });
         else if (f.dataset.nav === 'search') go({ type: 'search', query: '' });
-        else if (f.dataset.nav === 'movies') go({ type: 'grid', kind: 'film', title: 'Movies', nav: 'movies' });
-        else if (f.dataset.nav === 'series') go({ type: 'grid', kind: 'series', title: 'Series', nav: 'series' });
+        else if (f.dataset.nav === 'movies') go({ type: 'browse', kind: 'film', title: t('nav_movies'), nav: 'movies' });
+        else if (f.dataset.nav === 'series') go({ type: 'browse', kind: 'series', title: t('nav_series'), nav: 'series' });
         else if (f.dataset.nav === 'top10') go({ type: 'discover' });
         else if (f.dataset.nav === 'discover') go({ type: upcomingEnabled() ? 'upcoming' : 'discover' });
         else if (f.dataset.nav === 'upcoming') go({ type: 'upcoming' });
@@ -1257,6 +1271,8 @@
       if (f._livech) { liveTV.tune(f._livech.id, { type: 'home' }); return; }
       if (f.dataset.disctab) { go({ type: f.dataset.disctab === 'coming' ? 'upcoming' : 'discover' }); return; }
       if (f.dataset.seerrsearch) { go({ type: 'search', query: '', seerr: true }); return; }
+      if (f._seeall) { go({ type: 'browse', row: f._seeall, from: view }); return; }
+      if (f._facet || f._sortbtn || f._facetreset) { browse().onChip(f); return; }
       if (f._genre) {
         const wrap = scroll.querySelector('.gridscreen'); const grid = wrap.querySelector('.pgrid');
         const base = view._all || [];
@@ -1338,6 +1354,7 @@
       if (profmenu.classList.contains('on')) { closeProfMenu(); return; }
       if (overlay.classList.contains('on')) { closeOverlay(); return; }
       if (view.type === 'discoverDetail') { go(view.from || { type: 'discover' }); return; }
+      if (view.type === 'browse' && view.from) { go(view.from); return; }
       if (view.type === 'upcomingDetail') { go(view.from || { type: 'upcoming' }); return; }
       if (view.type === 'movie' || view.type === 'series') { go(view.from || { type: 'home' }); return; }
       if (view.type === 'search' && view.seerr) { go({ type: 'discover' }); return; }

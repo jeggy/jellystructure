@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 100" width="320" height="100" role="img" aria-label="Barna Sjónvarp">
+  <g transform="translate(2,2) scale(.96)">
+    <path d="M50 8 L59.99 36.24 L89.95 37.02 L66 55.25 L74.69 83.98 L50 67 L25.31 83.98 L33.83 55.25 L10.05 37.02 L40 36.24 Z" fill="#FFC42E" stroke="#FFC42E" stroke-width="7" stroke-linejoin="round"></path>
+    <path d="M44 38 L65 50 L44 62 Z" fill="#ffffff" stroke="#ffffff" stroke-width="6" stroke-linejoin="round"></path>
+  </g>
+  <text x="112" y="54" font-family="&#39;Fredoka&#39;,&#39;Baloo 2&#39;,sans-serif" font-weight="600" font-size="44" letter-spacing="-.5" fill="#182A4E">Barna</text>
+  <g transform="translate(114,66)">
+    <rect x="0" y="0" width="122" height="26" rx="9" fill="#FFC42E"></rect>
+    <text x="61" y="18.5" font-family="&#39;Fredoka&#39;,sans-serif" font-weight="600" font-size="14" letter-spacing="2.5" fill="#182A4E" text-anchor="middle">SJÓNVARP</text>
+  </g>
+</svg>
