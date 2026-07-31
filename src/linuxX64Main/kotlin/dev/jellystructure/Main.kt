@@ -191,7 +191,7 @@ fun main() = runBlocking {
     val raviloConfigService = RaviloConfigService(db, tvEventBus, requestLanguageService)
     raviloConfigService.migrateAllLegacyBehaviourFields()  // R162: one-time, idempotent
     val homeFeedService = HomeFeedService(mediaStore, raviloConfigService, jellyfinClient, configStore, tvEventBus)
-    val browseService = BrowseService(mediaStore, jellyfinClient, configStore)
+    val browseService = BrowseService(mediaStore, jellyfinClient, configStore, raviloConfigService)
     val detailService = DetailService(mediaStore, jellyfinClient, configStore)
     val playbackService = PlaybackService(mediaStore, jellyfinClient, configStore)
     val mediaHistory = MediaHistory(db)

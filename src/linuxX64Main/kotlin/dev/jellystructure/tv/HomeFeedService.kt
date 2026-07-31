@@ -10,10 +10,13 @@ import dev.jellystructure.model.recencyKey
 import dev.jellystructure.resolver.CertificationResolver
 import dev.jellystructure.shared.tv.Channel
 import dev.jellystructure.shared.tv.ChannelConfig
+import dev.jellystructure.shared.tv.Condition
+import dev.jellystructure.shared.tv.ConditionGroup
 import dev.jellystructure.shared.tv.Hero
 import dev.jellystructure.shared.tv.HeroConfig
 import dev.jellystructure.shared.tv.HomeFeed
 import dev.jellystructure.shared.tv.MediaCard
+import dev.jellystructure.shared.tv.QueryJoin
 import dev.jellystructure.shared.tv.RaviloConfig
 import dev.jellystructure.shared.tv.Row
 import dev.jellystructure.shared.tv.RowConfig
@@ -307,7 +310,7 @@ class HomeFeedService(
                 addNewlyAddedRows(result, src, merge = sys.newly.merge)
             }
             for (rowCfg in channelRows.items.filter { it.enabled }.sortedBy { it.order }) {
-                buildFilterRow(rowCfg, all, heroIds)?.let { result.add(it) }
+                buildFilterRow(rowCfg, all, heroIds, channelFilter)?.let { result.add(it) }
             }
             return result
         }
@@ -343,7 +346,7 @@ class HomeFeedService(
                     if (cards.isNotEmpty()) result.add(Row(rowCfg.id, rowCfg.title ?: "Newly Added", RowKind.NEWLY_ADDED, cards))
                 }
 
-                RowKind.GENRE, RowKind.CUSTOM -> buildFilterRow(rowCfg, all, heroIds)?.let { result.add(it) }
+                RowKind.GENRE, RowKind.CUSTOM -> buildFilterRow(rowCfg, all, heroIds, channelFilter)?.let { result.add(it) }
             }
         }
 
@@ -393,8 +396,17 @@ class HomeFeedService(
         if (series.isNotEmpty()) result.add(Row("$idPrefix-series", titlePrefix?.let { "$it — Series" } ?: "Series — Newly Added", RowKind.NEWLY_ADDED, series))
     }
 
-    /** R143: build one GENRE or CUSTOM filter row from [all] (already channel-scoped in channel context). */
-    private fun buildFilterRow(rowCfg: RowConfig, all: List<MediaItem>, heroIds: Set<String>): Row? = when (rowCfg.kind) {
+    /** R187 — ANDs [channelFilter]'s own query (when this row is channel-scoped) onto [query] so a
+     *  seeded browse page re-submitted against the seeded-browse endpoint reproduces the same
+     *  candidate set this row was built from, not just the row's own filter in isolation. */
+    private fun withChannelSeed(channelFilter: ChannelConfig?, query: ConditionGroup): ConditionGroup {
+        val channelQuery = channelFilter?.effectiveQuery() ?: return query
+        return ConditionGroup(QueryJoin.AND, children = listOf(channelQuery, query))
+    }
+
+    /** R143: build one GENRE or CUSTOM filter row from [all] (already channel-scoped in channel context).
+     *  R187: also populates [Row.seedQuery]/[Row.seedMediaKind] for the "→ See all" browse page. */
+    private fun buildFilterRow(rowCfg: RowConfig, all: List<MediaItem>, heroIds: Set<String>, channelFilter: ChannelConfig? = null): Row? = when (rowCfg.kind) {
         RowKind.GENRE -> {
             val genreTerms = (rowCfg.title ?: "").split("&", ",").map { it.trim().lowercase() }.filter { it.isNotBlank() }
             val cards = all
@@ -405,7 +417,21 @@ class HomeFeedService(
                 .mapNotNull { it.toMediaCardOrNull() }
                 .distinctBy { it.id }
                 .toList()
-            if (cards.isNotEmpty()) Row(rowCfg.id, rowCfg.title ?: "Genre", RowKind.GENRE, cards) else null
+            if (cards.isEmpty()) null else {
+                // R187 — the row's own substring match (e.g. title term "sci" catching "Science
+                // Fiction") isn't expressible as ConditionEvaluator's exact-match "genre" facet, so
+                // resolve it down to the real genre STRINGS it actually matched in this candidate set
+                // and seed on those instead — reproducible via the seeded-browse endpoint, and correct
+                // for exactly this row's real membership, not an approximation of the substring rule.
+                val matchedGenreValues = all.asSequence()
+                    .flatMap { it.genres }
+                    .filter { g -> genreTerms.isEmpty() || genreTerms.any { t -> g.lowercase().contains(t) } }
+                    .distinct().toList()
+                val seed = withChannelSeed(channelFilter, ConditionGroup(QueryJoin.AND, children = listOf(
+                    Condition(facet = "genre", op = "is_any_of", values = matchedGenreValues),
+                )))
+                Row(rowCfg.id, rowCfg.title ?: "Genre", RowKind.GENRE, cards, seedQuery = seed, seedMediaKind = rowCfg.mediaKind)
+            }
         }
         RowKind.CUSTOM -> {
             // Phase 140 — effectiveQuery() reads rowCfg.query when the editor has migrated this row to
@@ -424,9 +450,23 @@ class HomeFeedService(
                 .take(ROW_ITEM_LIMIT)
                 .mapNotNull { it.toMediaCardOrNull() }
                 .distinctBy { it.id }
-            if (cards.isNotEmpty()) Row(rowCfg.id, rowCfg.title ?: "Custom", RowKind.CUSTOM, cards) else null
+            if (cards.isEmpty()) null else Row(
+                rowCfg.id, rowCfg.title ?: "Custom", RowKind.CUSTOM, cards,
+                seedQuery = withChannelSeed(channelFilter, query), seedMediaKind = rowCfg.mediaKind,
+            )
         }
         else -> null
+    }
+
+    /** R187 (§G-4) — Continue Watching's own "→ See all" path: Continue Watching isn't expressible as a
+     *  [dev.jellystructure.shared.tv.ConditionGroup] (it's a live Jellyfin resume/next-up join, not a
+     *  catalog filter), so it can't reuse [BrowseService.browseByQuery] — this is its dedicated
+     *  resolution, identical to [buildContinueRow] but without the Home row's [ROW_ITEM_LIMIT] cap. */
+    suspend fun continueWatchingAll(device: DeviceData): List<MediaCard> {
+        val jellyfinBase = configStore.current.apiKeys.jellyfinUrl.trimEnd('/')
+        val token = jellyfinClient.tvToken(jellyfinBase, device, configStore.current.apiKeys.jellyfinToken)
+        val all = mediaStore.liveItems(device)
+        return buildContinueRow(device, all, jellyfinBase, token, limit = Int.MAX_VALUE)
     }
 
     private suspend fun buildContinueRow(
@@ -434,6 +474,7 @@ class HomeFeedService(
         all: List<MediaItem>,
         jellyfinBase: String,
         token: String,
+        limit: Int = ROW_ITEM_LIMIT,
     ): List<MediaCard> = coroutineScope {
         val jellyfinUrl = configStore.current.apiKeys.jellyfinUrl.takeIf { it.isNotBlank() }
             ?: return@coroutineScope emptyList()
@@ -479,7 +520,7 @@ class HomeFeedService(
             cards.add(mediaItem.toMediaCard(nextUpLabel = label, seasonNumber = s, episodeNumber = e))
         }
 
-        cards.take(ROW_ITEM_LIMIT)
+        cards.take(limit)
     }
 
     // ─── Helpers ──────────────────────────────────────────────────────────────

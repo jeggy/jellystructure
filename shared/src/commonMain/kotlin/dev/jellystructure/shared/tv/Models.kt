@@ -171,6 +171,46 @@ data class MediaCard(
     @SerialName("age_rating") val ageRating: Int = 18,
 )
 
+/**
+ * R187 — one browse-page grid tile: the same [card] every other surface uses, plus the extra per-item
+ * facets the browse page's facet bar needs (genre list, audio languages, quality, channel membership).
+ * Deliberately NOT folded into [MediaCard] itself — every other card-consuming surface (Home rows,
+ * search, Continue Watching) would pay for fields it never uses; R164's decision to keep IMDb rating off
+ * MediaCard for the same reason is the precedent this follows. The browse page fetches the FULL
+ * seed-matching set in one call ([SeededBrowseResponse] — this project's catalog is a few hundred items,
+ * confirmed cheap at that scale) and does all facet counting/filtering/sorting client-side from it, so
+ * no further round trip is needed as the viewer toggles facets.
+ */
+@Serializable
+data class BrowseCard(
+    val card: MediaCard,
+    val genres: List<String> = emptyList(),
+    @SerialName("audio_languages") val audioLanguages: List<String> = emptyList(),
+    /** e.g. "4K HDR" / "1080p" / "720p" / "SD". Null when the item has no probed video track yet. */
+    val quality: String? = null,
+    /** Ravilo channel ids (`ChannelConfig.id`) this item currently belongs to. */
+    val channels: List<String> = emptyList(),
+    /** For client-side sort-by-IMDb only (FR-RV-BROWSE1-7) — deliberately NOT added to [MediaCard]
+     *  itself, per R164's existing payload-bloat decision to keep it detail-DTO-only; [BrowseCard] is
+     *  its own additive wrapper, so this doesn't reopen that decision for every other card surface. */
+    @SerialName("imdb_rating") val imdbRating: TvImdbRating? = null,
+)
+
+/** Request body for the seeded-browse endpoints — the row's (channel-ANDed) [Row.seedQuery] plus the
+ *  page's own [Row.seedMediaKind], re-submitted verbatim by the client. Null query = no additional
+ *  filter (the Movies/Series nav case — media kind only). */
+@Serializable
+data class SeededBrowseRequest(
+    val query: ConditionGroup? = null,
+    @SerialName("media_kind") val mediaKind: String? = null,
+)
+
+@Serializable
+data class SeededBrowseResponse(
+    val items: List<BrowseCard>,
+    val total: Int,
+)
+
 @Serializable
 data class Person(
     val id: String,
@@ -208,6 +248,18 @@ data class Row(
     val title: String,
     val kind: RowKind,
     val items: List<MediaCard>,
+    /** R187 — this row's resolvable seed for a "→ See all" browse page: the same condition tree
+     *  (already ANDed with the channel's own query when this row is channel-scoped) the server used to
+     *  build [items], re-submittable to the seeded-browse endpoint to get the FULL matching set with
+     *  facets. Null for CONTINUE (not condition-tree-representable — needs its own dedicated resolution
+     *  path, see the R187 spec's §G-4) and whenever a row was built by legacy code that hasn't been
+     *  updated to populate it. [seedMediaKind] ("MOVIE"/"SERIES"/null) is a separate, non-tree filter —
+     *  mirrors [RowConfig.mediaKind] / `BrowseService.browse`'s own `kind` param. Whether to actually
+     *  show a "→ See all" tile is a client decision: [items] is already capped at 30 and never
+     *  truncates below the row's true count when that count is <= 30, so `items.size > 8` is exactly
+     *  equivalent to "the full seed has more than 8 items" — no separate total-count field is needed. */
+    val seedQuery: ConditionGroup? = null,
+    val seedMediaKind: String? = null,
 )
 
 @Serializable

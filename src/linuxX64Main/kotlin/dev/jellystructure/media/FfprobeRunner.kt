@@ -29,6 +29,10 @@ private data class FfprobeStream(
     @SerialName("codec_type") val codecType: String = "unknown",
     val disposition: FfprobeDisposition = FfprobeDisposition(),
     val tags: FfprobeTags = FfprobeTags(),
+    // R187 (Quality facet) — only present on the video stream.
+    val width: Int? = null,
+    val height: Int? = null,
+    @SerialName("color_transfer") val colorTransfer: String? = null,
 )
 
 @Serializable
@@ -113,6 +117,10 @@ object FfprobeRunner {
                 // Treat "und" (undetermined) and blank as untagged
                 val lang = stream.tags.language
                     ?.takeIf { it.isNotBlank() && it != "und" }
+                // R187 (Quality facet) — HDR vs SDR only; color_transfer values per ITU-T H.273.
+                val videoRange = if (kind == TrackKind.VIDEO) {
+                    if (stream.colorTransfer in setOf("smpte2084", "arib-std-b67")) "HDR" else "SDR"
+                } else null
                 Track(
                     streamIndex = stream.index,
                     specifier = "0:$typeChar:$typeIndex",
@@ -122,6 +130,9 @@ object FfprobeRunner {
                     title = stream.tags.title?.takeIf { it.isNotBlank() },
                     default = stream.disposition.default != 0,
                     forced = stream.disposition.forced != 0,
+                    width = if (kind == TrackKind.VIDEO) stream.width else null,
+                    height = if (kind == TrackKind.VIDEO) stream.height else null,
+                    videoRange = videoRange,
                 )
             }
         }

@@ -18,6 +18,7 @@ import dev.jellystructure.shared.tv.PlaybackProgressRequest
 import dev.jellystructure.shared.tv.PlaybackRestreamRequest
 import dev.jellystructure.shared.tv.PlaybackStartRequest
 import dev.jellystructure.shared.tv.PlaybackStopRequest
+import dev.jellystructure.shared.tv.SeededBrowseRequest
 import dev.jellystructure.shared.tv.TvSession
 import dev.jellystructure.shared.tv.ViewerSettingsRequest
 import dev.jellystructure.tv.BrowseService
@@ -352,6 +353,24 @@ fun Route.tvRoutes(
         val networks = call.request.queryParameters.getAll("network") ?: emptyList()
         val tags     = call.request.queryParameters.getAll("tag")     ?: emptyList()
         call.respond(browseService.browse(device, kind, genres, studios, networks, tags, sort, page, pageSize))
+    }
+
+    // R187 (§G-4) — Continue Watching's own "→ See all": not a ConditionGroup seed (see
+    // HomeFeedService.continueWatchingAll's doc comment), so it's a dedicated endpoint, not a
+    // /tv/browse/seeded call. Plain MediaCards, not BrowseCard — Continue Watching's own See-all page
+    // doesn't offer the catalog facet bar (genre/quality/etc.), just the viewer's full in-progress list.
+    get("/tv/continue/all") {
+        val device = call.attributes[DeviceKey]
+        call.respond(homeFeedService.continueWatchingAll(device))
+    }
+
+    // R187 — the "→ See all" browse page's seed resolver: POST (not GET) because the seed is a
+    // ConditionGroup tree, not flat query params. Returns the FULL matching set — see
+    // BrowseService.browseByQuery's doc comment for why no pagination/narrowed-facets round trip.
+    post("/tv/browse/seeded") {
+        val device = call.attributes[DeviceKey]
+        val req = runCatching { call.receive<SeededBrowseRequest>() }.getOrDefault(SeededBrowseRequest())
+        call.respond(browseService.browseByQuery(device, req.query, req.mediaKind))
     }
 
     get("/tv/search") {
