@@ -118,6 +118,11 @@ private data class ArtworkCandidatesResponse(
 @Serializable
 private data class SaveCandidateRequest(val asset: String = "", val source: String)
 
+/** Phase 154 — per-run step skip from the pre-run dialog (`POST /api/pipeline/run`). Defaulted so a
+ *  bodyless call behaves exactly as before this phase. Never persisted; see FR-PIPE1-6. */
+@Serializable
+private data class PipelineRunRequest(val skipSteps: List<String> = emptyList())
+
 // Phase 150 — manual segment-marker edit. Omitted fields keep their current value (the same
 // no-explicit-null-clear convention as LiveTvChannelOverride's elvis-merge fields elsewhere in this
 // codebase); "Re-scan" is the escape hatch to actually clear a field. [locked] defaults to true on any
@@ -1862,14 +1867,24 @@ fun Route.mediaRoutes(
         // (sync_imdb_ratings, write_nfo, …) sees the whole library this run, not just whatever's due
         // for an unrelated metadata recheck.
         val full = call.request.queryParameters["full"] == "true"
-        val pipeline = configStore.current.scan.pipeline.filter { it.enabled }
+        // Phase 154 (FR-PIPE1-6): optional per-run step skip from the pre-run dialog. Read defensively so
+        // a bodyless call (the pre-154 client, curl, the command palette) keeps working unchanged. This is
+        // a ONE-RUN filter — nothing is written to config, and the scheduled path never sees it.
+        // scan_files is never skippable: executePipeline runs discovery regardless of whether it's in the
+        // list (Main.kt's default-PipelineStep fallback), so honouring it here would be a lie (FR-PIPE1-4).
+        val skipSteps = runCatching { call.receive<PipelineRunRequest>() }.getOrDefault(PipelineRunRequest())
+            .skipSteps.filterNot { it == "scan_files" }.toSet()
+        val pipeline = configStore.current.scan.pipeline.filter { it.enabled && it.step !in skipSteps }
         val jobId = scanTracker.startNew()
         val runsPipeline = pipeline.isNotEmpty() && arrRescan != null
+        // FR-PIPE1-7: record the skip on the run descriptor Activity already renders, so a suspiciously
+        // fast run is self-explanatory days later.
+        val skipSuffix = if (skipSteps.isEmpty()) "" else " · skipped: ${skipSteps.sorted().joinToString(", ")}"
         appScope.launch {
             runTagged(
                 jobId, "manual", if (runsPipeline) "pipeline" else "library",
-                if (runsPipeline) (if (full) "full" else "normal") else null,
-                "▶ Pipeline run started (manual)${if (full) " (full)" else ""}", scanTracker,
+                if (runsPipeline) ((if (full) "full" else "normal") + skipSuffix) else null,
+                "▶ Pipeline run started (manual)${if (full) " (full)" else ""}$skipSuffix", scanTracker,
             ) {
                 if (runsPipeline) {
                     executePipeline(pipeline, jobId, store, scanner, scanTracker, broadcaster, configStore, jellyfinClient, scanDispatcher, artwork, arrRescan, sonarrEnrich, imdbClient, fingerprintService, fullRun = full)
