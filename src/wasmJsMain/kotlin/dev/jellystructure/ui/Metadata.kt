@@ -1,6 +1,8 @@
 package dev.jellystructure.ui
 
 import dev.jellystructure.App
+import dev.jellystructure.api.AgeRatingRow
+import dev.jellystructure.api.AgeRatingsResponse
 import dev.jellystructure.api.DetectedTrackerGroup
 import dev.jellystructure.api.MediaApi
 import dev.jellystructure.api.MetadataApi
@@ -16,7 +18,8 @@ import org.w3c.dom.HTMLElement
 import org.w3c.dom.HTMLInputElement
 import org.w3c.dom.HTMLTextAreaElement
 
-private val TAB_LABELS = listOf("studios", "networks", "genres", "tags", "trackers")
+// Phase 155 — "ages" slots in after "tags" per the spec (FR-AGE1-3).
+private val TAB_LABELS = listOf("studios", "networks", "genres", "tags", "ages", "trackers")
 
 fun renderMetadata(container: Element, scope: CoroutineScope, initialTab: String = "studios") {
     val activeTab = if (initialTab in TAB_LABELS) initialTab else "studios"
@@ -27,7 +30,7 @@ fun renderMetadata(container: Element, scope: CoroutineScope, initialTab: String
 
 private fun buildMetadataShell(activeTab: String): String {
     val tabs = TAB_LABELS.joinToString("") { tab ->
-        val label = tab.replaceFirstChar { it.uppercase() }
+        val label = if (tab == "ages") "Age ratings" else tab.replaceFirstChar { it.uppercase() }
         val active = if (tab == activeTab) " on" else ""
         """<span class="$active" data-tab="$tab">$label</span>"""
     }
@@ -114,6 +117,11 @@ private fun loadTab(container: Element, scope: CoroutineScope, tab: String, sort
                 val tags = MetadataApi.getTags(sort)
                 content.innerHTML = if (tags == null) errorHtml() else renderTagsTab(tags)
                 if (tags != null) wireTagsTab(content, scope)
+            }
+            "ages" -> {
+                val data = MetadataApi.getAgeRatings()
+                content.innerHTML = if (data == null) errorHtml() else renderAgeRatingsTab(data)
+                if (data != null) wireAgeRatingsTab(content, scope)
             }
             "trackers" -> {
                 val trackers = MediaApi.getTrackers()
@@ -359,6 +367,113 @@ private fun showTagModal(content: HTMLElement, scope: CoroutineScope, editName: 
 }
 
 private fun errorHtml() = """<span class="badge bad">Failed to load — check server connection.</span>"""
+
+// ── Phase 155 — Age ratings tab ──────────────────────────────────────────────────
+
+private fun renderAgeLadder(mapped: List<AgeRatingRow>, unmappedCount: Int): String {
+    val byAge = mapped.filter { it.age != null }.groupBy { it.age!! }.entries.sortedBy { it.key }
+    return buildString {
+        append("""<div class="age-ladder" id="age-ladder">""")
+        for ((age, rows) in byAge) {
+            val certWord = if (rows.size == 1) "cert" else "certs"
+            val items = rows.sumOf { it.itemCount }
+            append("""<span class="age-chip"><b>$age+</b><span class="tiny">${rows.size} $certWord &middot; $items items</span></span>""")
+        }
+        if (unmappedCount > 0) {
+            append("""<span class="age-chip warn"><b>$unmappedCount</b><span class="tiny">unmapped</span></span>""")
+        }
+        append("</div>")
+    }
+}
+
+private fun renderAgeRatingsTab(data: AgeRatingsResponse): String = buildString {
+    append("""<div class="note blue" style="margin-bottom:18px;">Certifications arrive from TMDB in every country&rsquo;s own system &mdash; <b>G</b>, <b>TV-MA</b>, <b>Fr&aring;n 15 &aring;r</b>, <b>Btl</b>&hellip; Map each cascade-resolved value to one <b>normalized age (0&ndash;18)</b>. Ravilo&rsquo;s Maturity filter and kids profiles use only the number &mdash; a title rated <span class="mono-cert">PG-13</span> simply becomes <b>13+</b>, nothing is ever shown as &ldquo;G&rdquo; or &ldquo;TV-PG&rdquo;, and anything with <b>no (mapped) rating is treated as 18</b> when filtering &mdash; never shown as an 18+ badge, and still listed when no maturity range is set. Changes are written through immediately. Which raw certification gets picked per title is a separate setting: <a href="#/settings?tab=metadata">Settings &rarr; Age ratings (region cascade)</a>.</div>""")
+
+    if (!data.cascadeConfigured) {
+        append("""<p class="muted tiny">No region cascade is configured yet, so every title currently resolves to no certification (age 18). Configure one in <a href="#/settings?tab=metadata">Settings &rarr; Age ratings</a> to populate this tab.</p>""")
+        return@buildString
+    }
+
+    append("""<div class="row center" style="margin-bottom:10px;"><h3 style="margin:0;font-size:1.15rem;">Normalized scale</h3><span class="tiny muted" style="margin-left:10px;">what viewers see in Ravilo</span><span class="spacer"></span><span class="btn sm ghost" id="age-suggest">Suggest mappings</span></div>""")
+    append(renderAgeLadder(data.mapped, data.unmapped.size))
+
+    append("""<div class="row center" style="margin:22px 0 10px;"><h3 style="margin:0;font-size:1.05rem;">Certification mappings</h3><span class="tiny muted" style="margin-left:10px;">${data.mapped.size} mapped${if (data.unmapped.isNotEmpty()) " &middot; ${data.unmapped.size} unmapped" else ""}</span></div>""")
+    if (data.mapped.isEmpty()) {
+        append("""<p class="muted tiny">No mapped certifications yet — every raw value found is listed under Unmapped below.</p>""")
+    } else {
+        append("""<div class="age-table" id="age-table">""")
+        for (row in data.mapped) {
+            append("""<div class="age-row" data-code="${row.code.esc()}"><span class="mono-cert">${row.code.esc()}</span><span class="sysbadge">${(row.system ?: "—").esc()}</span><span class="tiny muted">${row.itemCount} items</span><span class="spacer"></span><span class="tiny muted arrow">&rarr;</span><span class="age-step"><span class="st-btn" data-d="-1">&minus;</span><span class="st-val">${row.age}+</span><span class="st-btn" data-d="1">+</span></span></div>""")
+        }
+        append("</div>")
+    }
+
+    if (data.unmapped.isNotEmpty()) {
+        append("""<h3 style="margin:24px 0 4px;font-size:1.05rem;">Unmapped certifications <span class="tiny muted" style="font-weight:400;">&mdash; seen in the library but not on the scale yet; these titles are treated as <b>18+</b> (hidden from kids profiles) until mapped</span></h3>""")
+        append("""<div class="col" style="gap:8px;margin-top:8px;" id="age-unmapped">""")
+        for (row in data.unmapped) {
+            append("""<div class="unmapped-row age-un" data-code="${row.code.esc()}"><span class="mono-cert">${row.code.esc()}</span><span class="sysbadge">${(row.system ?: "—").esc()}</span><span class="tiny muted">on <b>${row.itemCount}</b> item${if (row.itemCount != 1) "s" else ""}</span><span class="spacer"></span><span class="age-step"><span class="st-btn" data-d="-1">&minus;</span><span class="st-val">18</span><span class="st-btn" data-d="1">+</span></span><span class="btn sm" data-map="1">Map</span></div>""")
+        }
+        append("</div>")
+    }
+}
+
+private fun wireAgeRatingsTab(content: HTMLElement, scope: CoroutineScope) {
+    fun reload() { loadTab(content.parentElement ?: content, scope, "ages", "count") }
+
+    // Mapped rows: +/- stepper, write-through on every click.
+    val rows = content.querySelectorAll("#age-table .age-row")
+    for (i in 0 until rows.length) {
+        val row = rows.item(i) as? HTMLElement ?: continue
+        val code = row.getAttribute("data-code") ?: continue
+        val valEl = row.querySelector(".st-val") as? HTMLElement
+        val current = valEl?.textContent?.removeSuffix("+")?.toIntOrNull() ?: continue
+        val buttons = row.querySelectorAll(".st-btn")
+        for (j in 0 until buttons.length) {
+            val btn = buttons.item(j) as? HTMLElement ?: continue
+            val delta = btn.getAttribute("data-d")?.toIntOrNull() ?: continue
+            btn.addEventListener("click") { _ ->
+                val newAge = (current + delta).coerceIn(0, 18)
+                if (newAge == current) return@addEventListener
+                scope.launch {
+                    MetadataApi.setAgeRating(code, newAge)
+                    reload()
+                }
+            }
+        }
+    }
+
+    // Unmapped rows: stepper adjusts a local (unpersisted) value, Map commits it.
+    val unmapped = content.querySelectorAll("#age-unmapped .age-un")
+    for (i in 0 until unmapped.length) {
+        val row = unmapped.item(i) as? HTMLElement ?: continue
+        val code = row.getAttribute("data-code") ?: continue
+        val valEl = row.querySelector(".st-val") as? HTMLElement ?: continue
+        val buttons = row.querySelectorAll(".st-btn")
+        for (j in 0 until buttons.length) {
+            val btn = buttons.item(j) as? HTMLElement ?: continue
+            val delta = btn.getAttribute("data-d")?.toIntOrNull() ?: continue
+            btn.addEventListener("click") { _ ->
+                val cur = valEl.textContent?.toIntOrNull() ?: 18
+                valEl.textContent = (cur + delta).coerceIn(0, 18).toString()
+            }
+        }
+        row.querySelector("[data-map]")?.addEventListener("click") { _ ->
+            val age = valEl.textContent?.toIntOrNull() ?: 18
+            scope.launch {
+                MetadataApi.setAgeRating(code, age)
+                reload()
+            }
+        }
+    }
+
+    content.querySelector("#age-suggest")?.addEventListener("click") { _ ->
+        scope.launch {
+            MetadataApi.suggestAgeRatings()
+            reload()
+        }
+    }
+}
 
 // ---------- Phase 98: Tracker registry tab ----------
 

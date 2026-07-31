@@ -158,6 +158,13 @@ data class LanguageRules(
 @Serializable
 data class MetadataConfig(
     @SerialName("age_rating_cascade") val ageRatingCascade: List<String> = emptyList(),
+    // Phase 155 — cascade-resolved certification code (CertificationResolver.resolve()'s .code, e.g.
+    // "PG-13") -> normalized age 0-18. Keyed on the RESOLVED code, not the raw per-country map — see
+    // the spec's Backend review addendum for why (~22 rows for a real library vs. 200+ raw, ambiguous
+    // per-country strings). Empty until first seeded (CertificationResolver.AGE_SEED) or until an
+    // operator maps something; CertificationResolver.normalizedAge() treats any code missing from this
+    // map (including "no cascade match at all") as 18.
+    @SerialName("age_rating_map") val ageRatingMap: Map<String, Int> = emptyMap(),
 )
 
 @Serializable
