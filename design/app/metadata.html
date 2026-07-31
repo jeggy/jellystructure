@@ -24,6 +24,7 @@
     <span data-tab="networks">Networks</span>
     <span data-tab="genres">Genres</span>
     <span data-tab="tags">Tags</span>
+    <span data-tab="ages">Age ratings</span>
     <span data-tab="trackers">Trackers</span>
   </div>
 
@@ -88,6 +89,23 @@
       <span class="chip">based on game <span class="muted">7</span></span>
       <span class="chip">silent <span class="muted">5</span></span>
       <span class="chip">crime drama <span class="muted">22</span></span>
+    </div>
+  </div>
+
+  <!-- AGE RATINGS -->
+  <div class="tabpanel" data-panel="ages" style="display:none;">
+    <div class="note blue" style="margin-bottom:18px;">Certifications arrive from NFO and TMDB in every country&rsquo;s own system &mdash; <b>G</b>, <b>TV-MA</b>, <b>Fr&aring;n 15 &aring;r</b>, <b>Btl</b>&hellip; Map each raw value to one <b>normalized age (0&ndash;18)</b>. Ravilo&rsquo;s Maturity filter and kids profiles use only the number &mdash; a title rated <span class="mono-cert">PG-13</span> simply becomes <b>13+</b>, nothing is ever shown as &ldquo;G&rdquo; or &ldquo;TV-PG&rdquo;, and anything with <b>no (mapped) rating is treated as 18</b> when filtering &mdash; never shown as an 18+ badge, and still listed when no maturity range is set. Changes are written through immediately.</div>
+
+    <div class="row center" style="margin-bottom:10px;"><h3 style="margin:0;font-size:1.15rem;">Normalized scale</h3><span class="tiny muted" style="margin-left:10px;">what viewers see in Ravilo</span><span class="spacer"></span><span class="btn sm ghost" id="age-suggest">Suggest mappings</span></div>
+    <div class="age-ladder" id="age-ladder"></div>
+
+    <div class="row center" style="margin:22px 0 10px;"><h3 style="margin:0;font-size:1.05rem;">Certification mappings</h3><span class="tiny muted" style="margin-left:10px;">20 mapped &middot; across 6 systems</span></div>
+    <div class="age-table" id="age-table"></div>
+
+    <h3 style="margin:24px 0 4px;font-size:1.05rem;">Unmapped certifications <span class="tiny muted" style="font-weight:400;">&mdash; seen in the library but not on the scale yet; these titles are treated as <b>18+</b> (hidden from kids profiles) until mapped</span></h3>
+    <div class="col" style="gap:8px;margin-top:8px;" id="age-unmapped">
+      <div class="unmapped-row age-un" data-val="NR"><span class="mono-cert">NR</span><span class="sysbadge">NFO</span><span class="tiny muted">on <b>12</b> items</span><span class="spacer"></span><span class="age-step"><span class="st-btn" data-d="-1">&minus;</span><span class="st-val">18</span><span class="st-btn" data-d="1">+</span></span><span class="btn sm" data-map="1">Map</span></div>
+      <div class="unmapped-row age-un" data-val="Btl"><span class="mono-cert">Btl</span><span class="sysbadge">NFO</span><span class="tiny muted">on <b>2</b> items &middot; unknown system &mdash; check the source files</span><span class="spacer"></span><span class="age-step"><span class="st-btn" data-d="-1">&minus;</span><span class="st-val">18</span><span class="st-btn" data-d="1">+</span></span><span class="btn sm" data-map="1">Map</span></div>
     </div>
   </div>
 
@@ -211,6 +229,52 @@
   document.getElementById('trk-create').addEventListener('click', closeTrk);
   trk.addEventListener('click', e => { if (e.target === trk) closeTrk(); });
   document.querySelectorAll('.seg span').forEach(s => s.addEventListener('click', () => { const sib = s.parentElement.querySelectorAll('span'); sib.forEach(x => x.classList.remove('on')); s.classList.add('on'); }));
+
+  /* age ratings — raw certification → normalized 0–18 (write-through) */
+  const CERTS = [
+    { v: 'A', sys: 'Denmark', n: 9, age: 0 }, { v: 'G', sys: 'MPAA', n: 14, age: 0 },
+    { v: 'TV-Y', sys: 'US TV', n: 3, age: 0 }, { v: 'TV-G', sys: 'US TV', n: 2, age: 0 },
+    { v: 'U', sys: 'BBFC', n: 4, age: 0 },
+    { v: '7', sys: 'Denmark', n: 11, age: 7 }, { v: 'TV-Y7', sys: 'US TV', n: 2, age: 7 },
+    { v: 'Från 7 år', sys: 'Sweden', n: 3, age: 7 }, { v: 'PG', sys: 'MPAA', n: 16, age: 7 },
+    { v: 'TV-PG', sys: 'US TV', n: 5, age: 7 },
+    { v: '9', sys: 'Iceland', n: 2, age: 9 }, { v: '11', sys: 'Denmark', n: 6, age: 11 },
+    { v: '12', sys: 'BBFC', n: 9, age: 12 }, { v: 'PG-13', sys: 'MPAA', n: 21, age: 13 },
+    { v: 'TV-14', sys: 'US TV', n: 7, age: 14 },
+    { v: '15', sys: 'Denmark', n: 8, age: 15 }, { v: 'Från 15 år', sys: 'Sweden', n: 4, age: 15 },
+    { v: 'R', sys: 'MPAA', n: 13, age: 17 }, { v: 'TV-MA', sys: 'US TV', n: 9, age: 17 },
+    { v: '18', sys: 'BBFC', n: 3, age: 18 },
+  ];
+  const ladder = document.getElementById('age-ladder'), atable = document.getElementById('age-table');
+  function drawAges() {
+    const byAge = {};
+    CERTS.forEach(c => { (byAge[c.age] = byAge[c.age] || []).push(c); });
+    const ages = Object.keys(byAge).map(Number).sort((a, b) => a - b);
+    ladder.innerHTML = ages.map(a => `<span class="age-chip"><b>${a}+</b><span class="tiny">${byAge[a].length} cert${byAge[a].length > 1 ? 's' : ''} · ${byAge[a].reduce((s, c) => s + c.n, 0)} items</span></span>`).join('')
+      + '<span class="age-chip warn"><b>2</b><span class="tiny">unmapped</span></span>';
+    atable.innerHTML = CERTS.slice().sort((a, b) => a.age - b.age || a.v.localeCompare(b.v)).map((c, i) =>
+      `<div class="age-row" data-i="${CERTS.indexOf(c)}"><span class="mono-cert">${c.v}</span><span class="sysbadge">${c.sys}</span><a class="tiny muted" href="library.html" style="text-decoration:none;color:inherit;">${c.n} items</a><span class="spacer"></span><span class="tiny muted arrow">→</span><span class="age-step"><span class="st-btn" data-d="-1">−</span><span class="st-val">${c.age}+</span><span class="st-btn" data-d="1">+</span></span></div>`).join('');
+  }
+  drawAges();
+  atable.addEventListener('click', e => {
+    const b = e.target.closest('.st-btn'); if (!b) return;
+    const row = b.closest('.age-row'), c = CERTS[+row.dataset.i];
+    c.age = Math.max(0, Math.min(18, c.age + (+b.dataset.d)));
+    row.querySelector('.st-val').textContent = c.age + '+';
+    row.classList.remove('saved'); void row.offsetWidth; row.classList.add('saved');   // write-through pulse
+    const byAge = {}; CERTS.forEach(x => { (byAge[x.age] = byAge[x.age] || []).push(x); });
+    const ages = Object.keys(byAge).map(Number).sort((x, y) => x - y);
+    ladder.innerHTML = ages.map(a => `<span class="age-chip"><b>${a}+</b><span class="tiny">${byAge[a].length} cert${byAge[a].length > 1 ? 's' : ''} · ${byAge[a].reduce((s, x) => s + x.n, 0)} items</span></span>`).join('') + ladder.querySelector('.warn').outerHTML;
+  });
+  document.getElementById('age-unmapped').addEventListener('click', e => {
+    const row = e.target.closest('.age-un'); if (!row) return;
+    const st = e.target.closest('.st-btn');
+    if (st) { const v = row.querySelector('.st-val'); v.textContent = Math.max(0, Math.min(18, parseInt(v.textContent) + (+st.dataset.d))); return; }
+    if (e.target.closest('[data-map]')) {
+      row.classList.add('mapped');
+      row.querySelector('[data-map]').outerHTML = '<span class="tiny" style="color:var(--ok);font-weight:600;">✓ mapped · written through</span>';
+    }
+  });
 })();
 </script>
 </body>
