@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="en" data-skin="aurora">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ravilo — Browse & Filter UI Directions</title>
+<link rel="stylesheet" href="ravilo.css">
+<link rel="stylesheet" href="../flags.css">
+<style>
+  html, body { margin: 0 !important; background: #06070d; font-family: 'Sora', sans-serif; height: auto !important; min-height: 100% !important; overflow: auto !important; }
+  .page { max-width: 1760px; margin: 0 auto; padding: 60px 40px 120px; }
+  .intro { margin-bottom: 56px; }
+  .frame { margin: 0 auto 72px; }
+  /* scaler: reserves scaled height, scales the 1920-wide stage down to fit column width */
+  .scaler { position: relative; width: 100%; overflow: hidden; border-radius: 10px; }
+  .scaler > .rv-stage { position: absolute; top: 0; left: 0; transform-origin: top left; }
+  .fr-label { font-family: 'Space Grotesk', sans-serif; color: #e8eaf3; }
+  .fr-label b { display: block; font-size: 30px; font-weight: 700; letter-spacing: -.5px; }
+  .fr-label .k { font-size: 16px; font-weight: 600; letter-spacing: 2px; text-transform: uppercase; color: #8e82ff; margin-bottom: 6px; }
+  .fr-cap { font-family: 'Sora', sans-serif; color: #b7bdd4; font-size: 19px; line-height: 1.5; }
+  .fr-cap b { color: #eef0f7; font-weight: 600; }
+  .fr-cap .pro { color: #2dd49a; } .fr-cap .con { color: #f5b542; }
+
+  /* static stage clone of #stage (ravilo.css scopes chrome to .appbar/.screen, not #stage) */
+  .rv-stage { width: 1920px; height: 1080px; background: var(--bg); color: var(--ink); display: flex; flex-direction: column; overflow: hidden; border-radius: 10px; box-shadow: 0 50px 120px -30px rgba(0,0,0,.8); position: relative; }
+  .rv-stage .appbar { height: 92px; }
+  .rv-stage .screen { position: relative; flex: 1; overflow: hidden; margin-top: -92px; }
+  .rv-stage .screen-scroll { position: absolute; inset: 0; overflow: hidden; }
+
+  /* ---------- shared browse header ---------- */
+  .browsehead { align-items: flex-start; }
+  .crumb { font-size: 19px; color: var(--ink-dim); margin-bottom: 8px; font-weight: 500; }
+  .crumb b { color: var(--ink-soft); font-weight: 600; }
+  .gridsub { font-size: 20px; color: var(--ink-soft); margin-top: 10px; max-width: 900px; }
+  .gridsub .seedtag { color: var(--accent); font-weight: 600; }
+  .browsehead .gridcount { margin-left: auto; align-self: baseline; }
+
+  /* ---------- A · top facet bar + popover ---------- */
+  .fbar { display: flex; gap: 12px; padding: 0 64px; margin-bottom: 30px; align-items: center; }
+  .facet { display: flex; align-items: center; gap: 9px; padding: 11px 20px; border-radius: 30px; background: var(--chip); color: var(--ink-soft); font-size: 18px; font-weight: 600; white-space: nowrap; border: 2px solid transparent; }
+  .facet .caret { font-size: 13px; opacity: .55; }
+  .facet .cnt { background: var(--accent); color: #fff; border-radius: 20px; font-size: 13px; padding: 1px 8px; font-weight: 700; }
+  .facet.active { color: var(--ink); box-shadow: inset 0 0 0 2px var(--accent); }
+  .facet.focused { background: var(--ink); color: #0a0c13; transform: scale(1.05); box-shadow: 0 0 0 4px var(--ring); }
+  .facet.focused .caret { opacity: .8; }
+  .fsort { margin-left: auto; display: flex; align-items: center; gap: 9px; padding: 11px 20px; border-radius: 30px; background: var(--chip); color: var(--ink); font-size: 18px; font-weight: 600; }
+  .fsort .lb { color: var(--ink-dim); font-weight: 500; }
+  .fpop { position: absolute; z-index: 50; top: 296px; left: 232px; width: 340px; padding: 12px; border-radius: 18px; background: rgba(16,19,31,.98); border: 1px solid rgba(255,255,255,.12); box-shadow: 0 40px 80px -20px rgba(0,0,0,.85); }
+  .fpop .ph { font-size: 14px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--ink-dim); padding: 6px 12px 12px; }
+  .fpop .opt { display: flex; align-items: center; gap: 14px; padding: 13px 14px; border-radius: 12px; font-size: 20px; color: var(--ink-soft); }
+  .fpop .opt .box { width: 26px; height: 26px; border-radius: 7px; border: 2px solid rgba(255,255,255,.22); display: flex; align-items: center; justify-content: center; font-size: 17px; flex: none; }
+  .fpop .opt.on { color: var(--ink); }
+  .fpop .opt.on .box { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .fpop .opt.focused { background: var(--ink); color: #0a0c13; }
+  .fpop .opt.focused .box { border-color: #0a0c13; }
+  .fpop .opt.focused.on .box { background: #0a0c13; border-color: #0a0c13; color: #fff; }
+  .fpop .cnt-side { margin-left: auto; font-size: 15px; color: var(--ink-dim); }
+  .fpop .opt.focused .cnt-side { color: #4a4d5e; }
+
+  /* ---------- B · persistent left rail ---------- */
+  .brow { display: flex; gap: 44px; padding: 0 64px; }
+  .frail { width: 336px; flex: none; }
+  .frail .fg { margin-bottom: 30px; }
+  .frail .fg h4 { font-size: 15px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--ink-dim); margin: 0 0 14px; font-weight: 600; }
+  .frail .opt { display: flex; align-items: center; gap: 13px; padding: 10px 12px; border-radius: 11px; font-size: 19px; color: var(--ink-soft); }
+  .frail .opt .box { width: 24px; height: 24px; border-radius: 6px; border: 2px solid rgba(255,255,255,.22); display: flex; align-items: center; justify-content: center; font-size: 16px; flex: none; }
+  .frail .opt.on { color: var(--ink); }
+  .frail .opt.on .box { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .frail .opt.focused { background: var(--ink); color: #0a0c13; }
+  .frail .opt .n { margin-left: auto; font-size: 14px; color: var(--ink-dim); }
+  .frail .opt.focused .n { color: #4a4d5e; }
+  .frail .clr { margin-top: 4px; font-size: 17px; color: var(--accent); font-weight: 600; padding: 8px 12px; }
+  .bgrid { flex: 1; min-width: 0; }
+  .bgrid .grid-row { gap: 22px; margin-bottom: 26px; }
+
+  /* ---------- C · Filters button + drawer ---------- */
+  .topbtns { display: flex; gap: 14px; padding: 0 64px; margin-bottom: 30px; align-items: center; }
+  .tbtn { display: flex; align-items: center; gap: 11px; padding: 13px 26px; border-radius: 14px; background: var(--chip); color: var(--ink); font-size: 19px; font-weight: 600; }
+  .tbtn.primary { background: var(--grad); color: #fff; }
+  .tbtn .cnt { background: rgba(255,255,255,.28); border-radius: 20px; font-size: 14px; padding: 1px 9px; font-weight: 700; }
+  .tbtn.focused { box-shadow: 0 0 0 4px var(--ring); }
+  .actchips { display: flex; gap: 10px; margin-left: 8px; flex-wrap: wrap; }
+  .actchip { display: flex; align-items: center; gap: 8px; padding: 9px 16px; border-radius: 24px; background: rgba(123,110,240,.16); color: var(--ink); font-size: 16px; font-weight: 500; border: 1px solid rgba(123,110,240,.4); }
+  .actchip .x { color: var(--ink-dim); font-size: 15px; }
+  .scrim { position: absolute; inset: 0; background: rgba(4,6,12,.55); z-index: 45; }
+  .drawer { position: absolute; top: 0; right: 0; bottom: 0; width: 560px; z-index: 46; background: rgba(14,17,27,.99); border-left: 1px solid rgba(255,255,255,.1); box-shadow: -40px 0 90px -20px rgba(0,0,0,.8); display: flex; flex-direction: column; }
+  .drawer .dh { padding: 40px 44px 20px; display: flex; align-items: baseline; gap: 14px; }
+  .drawer .dh h3 { font-family: 'Space Grotesk', sans-serif; font-size: 34px; font-weight: 700; letter-spacing: -.5px; }
+  .drawer .dh .rst { margin-left: auto; font-size: 17px; color: var(--accent); font-weight: 600; }
+  .drawer .dbody { flex: 1; overflow: hidden; padding: 6px 32px; }
+  .drawer .fg { margin-bottom: 24px; }
+  .drawer .fg h4 { font-size: 15px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--ink-dim); margin: 0 0 10px; padding: 0 12px; font-weight: 600; }
+  .drawer .chips { display: flex; flex-wrap: wrap; gap: 10px; padding: 0 12px; }
+  .dchip { padding: 9px 18px; border-radius: 24px; background: var(--chip); color: var(--ink-soft); font-size: 17px; font-weight: 600; border: 2px solid transparent; }
+  .dchip.on { color: var(--ink); background: rgba(123,110,240,.2); box-shadow: inset 0 0 0 2px var(--accent); }
+  .dchip.focused { background: var(--ink); color: #0a0c13; box-shadow: 0 0 0 4px var(--ring); }
+  .drawer .df { padding: 22px 40px 40px; border-top: 1px solid var(--line); }
+  .drawer .apply { width: 100%; height: 68px; border-radius: 16px; background: var(--grad); color: #fff; font-size: 22px; font-weight: 700; display: flex; align-items: center; justify-content: center; }
+
+  /* ---------- see-all end-of-row tile ---------- */
+  .tile.seeall .art { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; background: linear-gradient(160deg, var(--card-2), var(--card)); border: 2px dashed var(--line); box-shadow: none; }
+  .tile.seeall.poster .art { aspect-ratio: 2/3; }
+  .tile.seeall.land .art { aspect-ratio: 16/9; }
+  .tile.seeall .sa-ic { width: 62px; height: 62px; border-radius: 50%; background: rgba(255,255,255,.06); display: flex; align-items: center; justify-content: center; font-size: 30px; color: var(--accent); }
+  .tile.seeall .sa-tx { font-family: 'Space Grotesk', sans-serif; font-size: 21px; font-weight: 600; color: var(--ink); }
+  .tile.seeall .sa-n { font-size: 15px; color: var(--ink-dim); }
+  .tile.seeall.focused .art { border-color: var(--ring); box-shadow: 0 0 0 4px var(--ring); }
+  .tile.seeall .label { visibility: hidden; }
+
+  .callout { position: absolute; z-index: 60; background: #8e82ff; color: #10121f; font-weight: 700; font-size: 15px; padding: 7px 13px; border-radius: 9px; box-shadow: 0 8px 24px rgba(0,0,0,.4); font-family: 'Sora',sans-serif; }
+  .callout::after { content: ''; position: absolute; width: 12px; height: 12px; background: #8e82ff; transform: rotate(45deg); }
+  .callout.down::after { bottom: -5px; left: 24px; }
+</style>
+</head>
+<body>
+<div class="page">
+
+<div class="intro">
+  <div class="fr-label"><span class="k">Ravilo · Browse</span><b>Filter UI directions — pick one to build into the app</b></div>
+  <div class="fr-cap" style="margin-top:10px;">Same seeded browse page (<b>Nordic Noir</b> content row → subtitle breadcrumb, no seed chip) rendered three ways. Added filters stack (AND across facets, OR within a facet · multi-select). Facets: Genre · Type · Maturity · Year · Watched · Audio · Channel · 4K/HDR. Sorts: Recently added · A–Z · Year · Maturity · IMDb. Frame&nbsp;0 shows the entry point — a <b>→ See all</b> tile at the end of any row with more than 8 items.</div>
+</div>
+
+<!-- Frame 0 — entry point -->
+<div class="frame" id="f0">
+  <div class="fr-label" style="margin-bottom:20px;"><span class="k">Frame 0</span><b>Entry point · “See all” tile</b></div>
+  <div class="scaler"><div class="rv-stage" data-render="entry"></div></div>
+  <div class="fr-cap" style="margin-top:24px;">A focusable <b>→ See all</b> tile sits at the end of every library row (and Continue Watching) once it has <b>&gt; 8 items</b> — D-pad right past the last poster lands on it and opens the browse page seeded from that row. No header link to hunt for; it lives on the same focus track the user is already on.</div>
+</div>
+
+<!-- Frame A -->
+<div class="frame" id="fa">
+  <div class="fr-label" style="margin-bottom:20px;"><span class="k">Direction A</span><b>Top facet bar + drop-down</b></div>
+  <div class="scaler"><div class="rv-stage" data-render="A"></div></div>
+  <div class="fr-cap" style="margin-top:24px;"><b>Horizontal pills under the title; OK opens a checklist popover.</b> <span class="pro">＋ Grid stays full 6-wide; familiar; one row of D-pad focus to reach every facet.</span> <span class="con">－ Values hidden until opened; many facets can wrap to a second line.</span></div>
+</div>
+
+<!-- Frame B -->
+<div class="frame" id="fb">
+  <div class="fr-label" style="margin-bottom:20px;"><span class="k">Direction B</span><b>Persistent left rail</b></div>
+  <div class="scaler"><div class="rv-stage" data-render="B"></div></div>
+  <div class="fr-cap" style="margin-top:24px;"><b>All facets always visible in a left column; grid on the right.</b> <span class="pro">＋ Nothing hidden; live per-value counts; feels like a real catalog.</span> <span class="con">－ Costs ~340px so the grid drops to 5-wide; long facet lists need their own scroll.</span></div>
+</div>
+
+<!-- Frame C -->
+<div class="frame" id="fc">
+  <div class="fr-label" style="margin-bottom:20px;"><span class="k">Direction C</span><b>Filters button → slide-in drawer</b></div>
+  <div class="scaler"><div class="rv-stage" data-render="C"></div></div>
+  <div class="fr-cap" style="margin-top:24px;"><b>Clean full-width grid; a Filters button opens a full drawer with a live count + Apply.</b> <span class="pro">＋ Maximum room for content; scales to any number of facets; active filters shown as removable chips.</span> <span class="con">－ Filtering is a deliberate mode change, not always-on.</span></div>
+</div>
+
+</div>
+
+<script src="ravilo-i18n.js"></script>
+<script src="ravilo-data.js"></script>
+<script>
+(function () {
+  const R = window.RAVILO;
+  function hash(s){let h=2166136261;for(let i=0;i<s.length;i++){h^=s.charCodeAt(i);h=Math.imul(h,16777619);}return Math.abs(h);}
+  const GMAP = { nordic:'Crime', drama:'Drama', action:'Action', scifi:'Sci-Fi', comedy:'Comedy', docs:'Documentary', family:'Family', animation:'Animation', crime:'Crime', thriller:'Thriller', adventure:'Adventure', mystery:'Mystery', fantasy:'Fantasy' };
+  const EXTRA = ['Thriller','Mystery','Adventure','Fantasy'];
+  const LANGS = [['fo','Føroyskt'],['da','Dansk'],['en','English'],['no','Norsk']];
+  const CHANNELS = ['Varpið','Dansk TV','HBO','Disney+'];
+  function normG(tok){ const k=tok.trim().toLowerCase(); return GMAP[k] || (tok.trim().charAt(0).toUpperCase()+tok.trim().slice(1)); }
+  const _fc = {};
+  function facets(it){
+    if(_fc[it.title]) return _fc[it.title];
+    const h = hash(it.title);
+    const base = (it.genre||'').split(/\s*·\s*/).filter(Boolean).map(normG);
+    const genres = Array.from(new Set(base));
+    if(h % 2 === 0) genres.push(EXTRA[h % EXTRA.length]);
+    const f = {
+      genres: Array.from(new Set(genres)),
+      type: it.kind === 'series' ? 'series' : 'film',
+      rating: it.rating,
+      decade: (Math.floor((it.year||2018)/10)*10) + 's',
+      watched: [ 'unwatched','unwatched','inprogress','watched' ][h % 4],
+      lang: LANGS[(h>>3) % LANGS.length],
+      channel: CHANNELS[(h>>5) % CHANNELS.length],
+      hdr: [ '4K','HDR',null,null ][(h>>7) % 4],
+      imdb: +(6 + (h % 40) / 10).toFixed(1)
+    };
+    return _fc[it.title] = f;
+  }
+
+  // catalog (dedup hero + rows)
+  const seen = {}, catalog = [];
+  const push = it => { if(it && it.title && !seen[it.title]){ seen[it.title]=1; catalog.push(it); } };
+  R.hero.forEach(push); R.rows.forEach(r => r.items.forEach(push));
+
+  // seed = "Nordic Noir" custom row → here, the whole library (breadcrumb narrows the intent)
+  const seed = catalog.filter(it => !/^Big Buck/.test(it.title));
+
+  // shared demo filter state (same across A/B/C so they compare)
+  const STATE = { genres:['Crime','Drama'], sort:'imdb' };
+  function apply(items, st){
+    let r = items.filter(it => {
+      const f = facets(it);
+      if(st.genres && st.genres.length && !st.genres.some(g => f.genres.some(x => x.toLowerCase()===g.toLowerCase()))) return false;
+      return true;
+    });
+    if(st.sort==='imdb') r = r.slice().sort((a,b)=>facets(b).imdb-facets(a).imdb);
+    else if(st.sort==='az') r = r.slice().sort((a,b)=>a.title.localeCompare(b.title));
+    else if(st.sort==='year') r = r.slice().sort((a,b)=>(b.year||0)-(a.year||0));
+    return r;
+  }
+  function countGenre(g){ return seed.filter(it => facets(it).genres.some(x=>x.toLowerCase()===g.toLowerCase())).length; }
+
+  function tt(it){ return it.image ? `<img class="tile-img" src="${it.image}" alt="">` : `<div class="grad" style="background:${it.grad}"></div><div class="tt">${it.title}</div>`; }
+  function poster(it){
+    const f = facets(it);
+    const badge = f.hdr ? `<div class="badge">${f.hdr}</div>` : '';
+    return `<div class="tile poster foc"><div class="art">${tt(it)}${badge}</div>
+      <div class="label">${it.title}</div><div class="sub">${it.year} · ${f.genres[0]||''}</div></div>`;
+  }
+  function seeAll(kind, n){
+    const k = kind === 'land' ? 'land' : 'poster';
+    return `<div class="tile ${k} seeall foc"><div class="art"><div class="sa-ic">→</div><div class="sa-tx">See all</div><div class="sa-n">${n} titles</div></div><div class="label">.</div></div>`;
+  }
+  function land(it){
+    return `<div class="tile land cont foc"><div class="art">${tt(it)}${(it.pct||0)>0?`<div class="pbar"><i style="width:${it.pct}%"></i></div>`:''}<div class="play"><span>▶</span></div>${it.next?'<div class="cont-badge">Next up</div>':''}</div>
+      <div class="label">${it.title}</div><div class="sub cont-sub">${it.ep||''}</div></div>`;
+  }
+
+  function appbar(cur){
+    const nav = ['home:Home','movies:Movies','series:Series','discover:Discover'].map(x=>{const [k,l]=x.split(':');return `<div class="navitem${k===cur?' cur':''}">${l}</div>`;}).join('');
+    return `<div class="appbar"><div class="brand"><span class="wm">Ravilo</span></div>
+      <div class="topnav">${nav}</div>
+      <div class="right"><div class="search-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><line x1="21" y1="21" x2="16.5" y2="16.5"></line></svg></div>
+      <div class="clock">21:04</div><div class="avatar">ER</div></div></div>`;
+  }
+  function browseHead(n){
+    return `<div class="gridhead browsehead"><div>
+      <div class="crumb">◂ Home · <b>Nordic Noir</b></div>
+      <h1>Nordic Noir</h1>
+      <div class="gridsub">From your <span class="seedtag">Nordic Noir</span> row · refined to <b>Crime + Drama</b>, sorted by IMDb</div>
+    </div><span class="gridcount">${n} titles</span></div>`;
+  }
+  function gridRows(items, per){
+    let h = '';
+    for(let i=0;i<items.length;i+=per){ h += `<div class="grid-row focus-row">${items.slice(i,i+per).map(poster).join('')}</div>`; }
+    return h;
+  }
+
+  function screen(inner){ return `<div class="screen"><div class="screen-scroll">${inner}</div></div>`; }
+
+  // ---- Frame 0 · entry point ----
+  function renderEntry(stage){
+    const nordic = R.rows.find(r=>r.id==='g-nordic').items;
+    const cont = R.rows.find(r=>r.id==='continue').items.concat(R.rows.find(r=>r.id==='continue').items.slice(0,1)); // 9 → >8
+    const row = (title, cfg, items, kind, fn) =>
+      `<div class="crow"><div class="crow-head"><h2>${title}</h2>${cfg?`<span class="cfg">${cfg}</span>`:''}</div>
+        <div class="track focus-row">${items.map(fn).join('')}${seeAll(kind, items.length)}</div></div>`;
+    stage.innerHTML = appbar('home') + screen(
+      `<div style="height:120px"></div>` +
+      row('Nordic Noir', '', nordic, 'poster', poster) +
+      row('Continue Watching', 'Continue + Next Up', cont, 'land', land)
+    );
+    // focus the see-all on the first row + callout
+    const sa = stage.querySelectorAll('.crow')[0].querySelector('.seeall'); sa.classList.add('focused');
+  }
+
+  // ---- A · top facet bar ----
+  function renderA(stage){
+    const items = apply(seed, STATE);
+    const facetDefs = [
+      ['Genre', 2, true],['Type', 0, false],['Maturity', 0, false],['Year', 0, false],
+      ['Watched', 0, false],['Audio', 0, false],['Channel', 0, false],['4K/HDR', 0, false]
+    ];
+    const bar = facetDefs.map(([l,c,a]) =>
+      `<div class="facet${a?' active':''}">${l}${c?`<span class="cnt">${c}</span>`:''}<span class="caret">▾</span></div>`).join('');
+    const genres = [['Crime',countGenre('Crime'),true],['Drama',countGenre('Drama'),true],['Thriller',countGenre('Thriller'),false],['Sci-Fi',countGenre('Sci-Fi'),false],['Action',countGenre('Action'),false],['Documentary',countGenre('Documentary'),false]];
+    const pop = `<div class="fpop"><div class="ph">Genre · pick any</div>${genres.map(([g,n,on],i)=>
+      `<div class="opt${on?' on':''}${i===2?' focused':''}"><span class="box">${on?'✓':''}</span>${g}<span class="cnt-side">${n}</span></div>`).join('')}</div>`;
+    stage.innerHTML = appbar('home') + screen(
+      `<div class="gridscreen">${browseHead(items.length)}
+        <div class="fbar">${bar}<div class="fsort"><span class="lb">Sort</span> IMDb rating ▾</div></div>
+        <div class="pgrid">${gridRows(items.slice(0,18),6)}</div></div>`
+    ) + pop;
+    // mark the focused facet
+    stage.querySelectorAll('.facet')[0].classList.add('focused');
+  }
+
+  // ---- B · left rail ----
+  function renderB(stage){
+    const items = apply(seed, STATE);
+    const grp = (title, opts) => `<div class="fg"><h4>${title}</h4>${opts.map(([l,n,on,foc])=>
+      `<div class="opt${on?' on':''}${foc?' focused':''}"><span class="box">${on?'✓':''}</span>${l}${n!=null?`<span class="n">${n}</span>`:''}</div>`).join('')}</div>`;
+    const rail = grp('Genre', [['Crime',countGenre('Crime'),true],['Drama',countGenre('Drama'),true,true],['Thriller',countGenre('Thriller'),false],['Sci-Fi',countGenre('Sci-Fi'),false],['Action',countGenre('Action'),false]])
+      + grp('Type', [['Films',null,false],['Series',null,false]])
+      + grp('Maturity', [['G / 7',null,false],['12',null,false],['16',null,false]])
+      + grp('Watched', [['Unwatched',null,false],['In progress',null,false],['Watched',null,false]])
+      + `<div class="clr">Clear all</div>`;
+    stage.innerHTML = appbar('home') + screen(
+      `<div class="gridscreen">${browseHead(items.length)}
+        <div class="brow"><div class="frail focus-col">${rail}</div>
+        <div class="bgrid"><div class="topbtns" style="padding:0;margin-bottom:22px"><div class="fsort"><span class="lb">Sort</span> IMDb rating ▾</div></div>
+        <div class="pgrid" style="padding:0">${gridRows(items.slice(0,15),5)}</div></div></div></div>`
+    );
+  }
+
+  // ---- C · filters drawer ----
+  function renderC(stage){
+    const items = apply(seed, STATE);
+    const chips = (opts) => opts.map(([l,on,foc])=>`<div class="dchip${on?' on':''}${foc?' focused':''}">${on?'✓ ':''}${l}</div>`).join('');
+    const drawer = `<div class="scrim"></div><div class="drawer">
+      <div class="dh"><h3>Filters</h3><span class="rst">Reset</span></div>
+      <div class="dbody">
+        <div class="fg"><h4>Genre</h4><div class="chips">${chips([['Crime',true],['Drama',true,true],['Thriller',false],['Sci-Fi',false],['Action',false],['Comedy',false],['Documentary',false],['Family',false]])}</div></div>
+        <div class="fg"><h4>Type</h4><div class="chips">${chips([['Films',false],['Series',false]])}</div></div>
+        <div class="fg"><h4>Maturity</h4><div class="chips">${chips([['G / 7',false],['12',false],['16',false]])}</div></div>
+        <div class="fg"><h4>Watched</h4><div class="chips">${chips([['Unwatched',false],['In progress',false],['Watched',false]])}</div></div>
+        <div class="fg"><h4>Audio</h4><div class="chips">${chips([['Føroyskt',false],['Dansk',false],['English',false]])}</div></div>
+      </div>
+      <div class="df"><div class="apply">Show ${items.length} titles</div></div></div>`;
+    stage.innerHTML = appbar('home') + screen(
+      `<div class="gridscreen">${browseHead(items.length)}
+        <div class="topbtns"><div class="tbtn focused">⚙ Filters <span class="cnt">2</span></div>
+          <div class="tbtn">↕ Sort · IMDb</div>
+          <div class="actchips"><div class="actchip">Crime <span class="x">✕</span></div><div class="actchip">Drama <span class="x">✕</span></div></div></div>
+        <div class="pgrid">${gridRows(items.slice(0,18),6)}</div></div>`
+    ) + drawer;
+  }
+
+  document.querySelectorAll('.rv-stage').forEach(st => {
+    const k = st.dataset.render;
+    if(k==='entry') renderEntry(st);
+    else if(k==='A') renderA(st);
+    else if(k==='B') renderB(st);
+    else if(k==='C') renderC(st);
+  });
+
+  function fit(){
+    document.querySelectorAll('.scaler').forEach(box => {
+      const s = box.querySelector('.rv-stage');
+      const scale = box.clientWidth / 1920;
+      s.style.transform = 'scale(' + scale + ')';
+      box.style.height = (1080 * scale) + 'px';
+    });
+  }
+  fit();
+  window.addEventListener('resize', fit);
+})();
+</script>
+</body>
+</html>

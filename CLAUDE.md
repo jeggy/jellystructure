@@ -36,65 +36,38 @@ GitHub is the **source of truth**; we layer designs on top of it.
 - `specs/research-reports/` — dated deep-dives (research, not spec; may go stale).
 
 ## Where the work stands (read the repo `STATUS.md` for the live table)
-- **All admin phases through 148 and Ravilo through R178 are ✓ Done** (per repo
-  `STATUS.md`, ref `main`, 2026-07-12): the 141–143 + R175 auth arc (proxied login ·
-  restricted-user filtering · Users & Devices overview · TV login) landed 2026-07-09;
-  since then **146** (dashboard attention-breakdown redesign), **147** (admin Live TV
-  config) + **148** (sidebar "Ravilo" nav restructure), and Ravilo **R177** (watch Live
-  TV: guide / Now-Next / zapping / player) + **R178** (player D-pad stale-focus fix).
-- **149 (multi-episode files) + R179 (multi-episode combined card)** — design mockups
-  **complete**, dev-reviewed 2026-07-12 (each spec carries dev-review addenda), **not yet
-  built in code** (no `STATUS.md` row yet; `check-phases.sh` will flag them for one). Design
-  targets: `app/series-johnnybravo.html` (combined file rows + per-episode artwork picker),
-  `ravilo/Ravilo TV.html` + `ravilo/Ravilo Mobile.html` (triptych combined card, Option B);
-  exploration in `Multi-Episode Files.html` + `Multi-Episode Files - Option B.html`.
-- **R180 (flag-forward Audio & Subtitles picker) + R181 (default & remembered tracks)** —
-  both `Planned`, design-authored. **R180** (the in-player picker redesign — flag-forward flat
-  list, jargon-free badges, keep every track, selected-track flag per tab, D-pad scroll-follow)
-  is design-complete in `ravilo/` (`ravilo-player.js`/`ravilo-player.css`; exploration in
-  `Audio & Subtitles Picker.html`). **R181** is the behaviour *beneath* that picker — silent
-  default-track resolution (source `isDefault` over track 0) plus device-local, per-profile
-  memory of the viewer's audio/subtitle language choices (per-series + learned global,
-  carried across a binge; never sent to the backend). R181 is **spec-only** (the memory is
-  invisible; only an optional reset affordance would add UI) — no dedicated mockup, and it
-  has an open design decision (layered per-series-over-global vs global-only vs per-title) to
-  confirm before build. Neither has a `STATUS.md` row yet.
-- **150 (intro & credits segment detection) + R182 (Skip Intro / Skip Credits)** — both `Planned`,
-  design-authored 2026-07-13, graduated from the `credits-and-intro-detection-2026-07-13` research
-  report. **150** is the admin/backend half: a `detect_segments` scan-pipeline step (chapter-title
-  match → ffmpeg black/silence credits heuristic → cross-episode audio fingerprinting for intros,
-  ported from Intro Skipper GPL), a nullable-JSON `SegmentMarkers` model (no migration), the TMDB
-  `during/aftercreditsstinger` merge, a per-episode/movie **segment scrubber** on the detail page
-  (source+confidence badges, Re-scan, Lock, write-through), triage entries + Settings toggles, and the
-  DTO trip to the player. **R182** is the Ravilo half: a visibility-countdown **Skip Intro** pill and a
-  **stinger-aware credits card** (always “Watch credits” + one of Skip-to-scene → Next Episode → Skip
-  credits; movies never show Next Episode), with behaviour (Prompt/Auto/Off + countdown + autoplay)
-  configured jellystructure-side in Ravilo config → Preferences (not in the app), and graceful fallback
-  to today's behaviour when unscanned. R182 depends on 150. Design is **wired into the live apps**
-  (`ravilo/ravilo-player.js`/`.css` + `ravilo-app.js`; `app/series-simpsons.html` + `detail.css`;
-  `app/ravilo-config.html`; `app/settings.html`; `app/index.html`); exploration in
-  `Skip Intro & Credits - Directions.html`. Neither has a `STATUS.md` row yet.
-  **Both dev-reviewed 2026-07-13** (each carries a "Dev-review addenda" section reconciled with live
-  code): 150's TMDB-stinger claim holds only on the *re-pull* path (not the initial full scan) and must
-  match keywords by name; the `detect_segments` settings card must map onto the existing pipeline-step
-  model, not a parallel config. R182's biggest correction — skip-behaviour settings share **one** backend
-  store (`RaviloConfigService`: `ravilo_config` global + `ravilo_behaviour` per-user overlay), authored via
-  the **admin** Ravilo-config editor (the on-TV Settings screen can't set a global default); "Autoplay next
-  episode" is a **pre-existing** field (de-dup, not new) that the player doesn't actually consume today, and
-  the player must be newly wired to read `getConfig()` at playback.
+- **All admin phases through 151 and Ravilo through R183 are ✓ Done** in code (per repo
+  `STATUS.md`, ref `main`, synced 2026-07-31). Everything we designed has now shipped:
+  **149/R179** (multi-episode files/combined card), **R180/R181** (flag-forward Audio &
+  Subtitles picker + default/remembered tracks), and **150/R182** (intro & credits segment
+  detection + Skip Intro / Skip Credits, implemented 2026-07-13 incl. cross-episode Chromaprint
+  fingerprinting once `fpcalc` landed on the backend).
+- **New since our last sync — 8 dev-authored specs pulled (not design work):**
+  - **151** — manually-selected images never auto-overwritten (closes the Phase-133 hole on the
+    Sync / Re-pull `updateOne` path; extends the lock to clearlogo, season posters, episode stills). ✓ Done.
+  - **152** — scanner falls back to filename `(season, episode)` when Jellyfin has no `IndexNumber`. Implemented.
+  - **153** — scheduled scan actively repairs an unmatched episode's numbering (writes corrective
+    episode NFO + triggers Jellyfin refresh). Implemented.
+  - **154** — pre-run dialog to untick slow pipeline steps (e.g. `detect_segments`) **for one run only**,
+    nothing written to config. Implemented.
+  - **R183** — Dolby Vision playback + decodable transcode fallback (extends R56/R173; DV was R173's
+    non-goal and every DV title was force-transcoded to an undecodable Baseline/L4.1 4K stream). ✓ Done.
+  - **R184** — auto-advance no longer starts the next episode minutes in (stale position leak). Implemented.
+  - **R185** — Continue Watching hides fully-watched titles (Jellyfin `Played`/`PlaybackPositionTicks`
+    desync, 62/115 rows corrupted live). Implemented.
+  - **R186** — Continue Watching fetch window widened past the global top-20 so channel rows (e.g. DanskTV)
+    aren't starved. Implemented.
 - Recent landings: Live TV (147 + R177), Seerr pivot (136/137 + R170/R171), request-language
   steering (139 + R172), Workbench query blocks (140), HDR tone-map fix (R173), grid-columns
   config (R174), cover-as-video (144), event-driven pipeline (145).
-- **2026-07-12 sync:** re-pulled the `specs/` mirror + `STATUS.md` from repo `main`. Design now
-  matches shipped code across admin 0–148 / Ravilo R01–R178, plus the design-complete 149/R179.
-- **2026-07-13 sync:** re-pulled the full `specs/` mirror + `STATUS.md` from repo `main`. Only
-  change since the last sync is the **new R181 spec** (`phase-R181-default-and-remembered-tracks.md`);
-  everything else was unchanged. Newest Planned specs are **R180 + R181**; next Ravilo number is R182.
-- **2026-07-13 (later):** pulled the new `credits-and-intro-detection-2026-07-13` research report and
-  designed Skip Intro / Skip Credits into the live apps, then authored two specs from it —
-  **`phase-150-intro-credits-segment-detection.md`** (admin/backend + management) and
-  **`phase-R182-skip-intro-credits.md`** (Ravilo player). Both `Planned`, design-authored, not exported
-  to the repo or in `STATUS.md` yet. Next numbers are now **151 / R183**.
+- **⚠ Repo-side STATUS gap (dev team's to fix, not us):** `STATUS.md` on `main` has no rows for
+  admin **152/153/154** or Ravilo **R184/R185/R186** though their spec files exist and read
+  *Implemented* — `scripts/check-phases.sh` will flag them. `STATUS.md` is a read-only mirror here.
+- **Next unassigned numbers: 156 / R188** (155 = age-rating normalization, R187 = browse page — both
+  design-authored 2026-07-31, `Planned`, not yet exported to the repo or in `STATUS.md`).
+- **2026-07-31 sync:** re-pulled the entire `specs/` tree (68 files) + `STATUS.md` from repo `main`;
+  repo was well ahead. Wrote `github.md` as the sync receipt. Design now matches shipped code across
+  admin 0–154 / Ravilo R01–R186. See `github.md` for the screen map and details.
 
 ## Design constraints to respect
 - `design/app/` + `design/ravilo/` mockups are the **visual target** for the
@@ -121,7 +94,13 @@ GitHub is the **source of truth**; we layer designs on top of it.
   multi-axis filters, multi-language search, infinite scroll, shared filter
   workbench) · **Activity** (`activity.html`).
 - **Metadata** (`metadata.html`) — Studios · Networks · Genres · Tags (JS-tag color
-  **swatches** + dotted chips, Phase 82).
+  **swatches** + dotted chips, Phase 82) · **Age ratings** (design-complete 2026-07-31, no spec
+  yet): maps every raw certification (G, TV-MA, “Från 15 år”, Btl…) to a normalized age 0–18 —
+  ladder summary, per-cert stepper (write-through pulse), unmapped-cert triage (NR/Btl → treated
+  as 18 in filters/kids gating — never shown as an 18+ badge — and listed when no range is set).
+  Feeds Ravilo’s Maturity filter, which shows only numbers
+  (`0+ · 7+ · 13+…`, `normAge()` in `ravilo-browse.js`). **Spec: `phase-155-age-rating-normalization.md`
+  (design-authored 2026-07-31, Planned).**
 - **Settings** (`settings.html`) — URL-addressable **tabs** (Phase 55): Connections ·
   Libraries · Metadata · **Download tools** (Radarr/Sonarr + cross-seed) ·
   Notifications · Advanced · **Users & devices** (Phase 143 design: per-user Ravilo
@@ -157,7 +136,19 @@ GitHub is the **source of truth**; we layer designs on top of it.
   **Sound described** (SDH) · **Describes action** (audio-description) · **Commentary** — no
   codec names and no delivery-method cues (`ravilo-player.js` `renderPicker`/`PL_KIND`/`plFlag`/
   `plBadges` + `ravilo-player.css`; track data in `ravilo-app.js` `tracksFor()`; exploration in
-  `Audio &amp; Subtitles Picker.html`). **Live TV** (`Ravilo Live TV.html` → `livetv-app.jsx` · `livetv.css` ·
+  `Audio &amp; Subtitles Picker.html`). **Browse page** (design-complete 2026-07-31, spec authored:
+  `specs/ravilo/requirements/phase-R187-browse-page.md`, Planned; admin half `phase-155`):
+  Movies/Series nav + an end-of-row **→ See all** tile (rows with &gt;8
+  items, incl. Continue Watching + channel-scoped rows) open a shared browse page
+  (`ravilo-browse.js`, Direction A: top facet bar → checklist popover). Facets Genre · Type ·
+  Maturity · Year · Watched · Audio · Channel · Quality — multi-select OR within a facet, AND
+  across facets, stacking on the row seed (breadcrumb + "Úr …" subtitle, no seed chip); popover
+  values sort by count desc then A–Z. **Maturity is a D-pad range picker**, not a checklist:
+  From / Up-to rows over the normalized age ladder (◂ ▸ adjusts, OK confirms, ladder viz
+  highlights the span) expressing ≤7, 7–12, 15+, 4–14 — any integer bounds 0–18; chip shows the range
+  label ("≤ 7", "7–12", "15+"). No/unmapped rating ⇒ treated as 18 (never badged). Sort defaults to Recently added (A–Z · Z–A · Year ·
+  Maturity · IMDb). Popover owns the D-pad via capture keys (langPicker pattern); exploration in
+  `Ravilo Browse - Filter UI Directions.html`. **Live TV** (`Ravilo Live TV.html` → `livetv-app.jsx` · `livetv.css` ·
   `livetv-data.js`, R177) is woven into Home — an **“On now”** row → full EPG guide, channel
   zapping + number entry, Now/Next overlay, and a live player; **never a top-nav tab**
   (placement configured in `ravilo-config.html`, Phase 147 §F). Three skins
