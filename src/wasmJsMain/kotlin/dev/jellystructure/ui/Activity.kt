@@ -782,6 +782,9 @@ private fun stepLabel(step: String): String = when (step) {
     "write_nfo" -> "NFO"
     "sync_jellyfin" -> "Jellyfin"
     "detect_drift" -> "Drift"
+    // Phase 154 (FR-PIPE1-8): was missing, so this fell through to the raw step id in the step chips —
+    // the one step most likely to be looked for, now that it can be skipped per run.
+    "detect_segments" -> "Segments"
     "wait" -> "Wait"
     "notify" -> "Notify"
     else -> step
