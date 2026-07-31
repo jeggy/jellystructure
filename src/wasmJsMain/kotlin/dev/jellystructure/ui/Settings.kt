@@ -1468,7 +1468,7 @@ private fun renderAgeRatingCascade() {
         li.className = "rc-item" + (if (i == 0) " top" else "")
         li.setAttribute("draggable", "true")
 
-        val grip = document.createElement("span"); grip.className = "rc-grip"; grip.textContent = "⛷"
+        val grip = document.createElement("span"); grip.className = "rc-grip"; grip.textContent = "⠿"
         val ord = document.createElement("span"); ord.className = "rc-ord"; ord.textContent = (i + 1).toString()
         val ccEl = document.createElement("span"); ccEl.className = "rc-cc"; ccEl.textContent = region.code
         val nameEl = document.createElement("span"); nameEl.className = "rc-name"; nameEl.textContent = region.name

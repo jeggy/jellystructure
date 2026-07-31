@@ -338,6 +338,63 @@ hr.dash { border: none; border-top: 1px solid var(--line); margin: 18px 0; }
 .hero-thumb { width: 92px; height: 52px; border-radius: 8px; flex: none; position: relative; overflow: hidden; }
 .hero-thumb .t { position: absolute; left: 8px; bottom: 6px; font-family: 'Space Grotesk',sans-serif; font-weight: 700; font-size: .72rem; color: #fff; text-shadow: 0 1px 4px rgba(0,0,0,.6); }
 
+/* Settings > Metadata's age-rating region-cascade editor (#rc-list/.rc-add/.rc-menu) — reorder
+   (drag or ▲▼), remove, add-from-catalog. Never had a design pass at all (no mockup, no shipped
+   CSS) despite Phase 106 shipping the feature — related to but distinct from detail.css's
+   .rc-trace/.rc-tr (the per-title cascade-resolution trace card on the media detail page; same
+   "rc-" family/concept, different page and markup shape). ADDED 2026-07-31 — Settings.kt has no
+   dedicated CSS file in syncDesignAssets' copy list, so this lives here alongside the dashboard/
+   activity components above. */
+.rc-list { display: flex; flex-direction: column; gap: 8px; margin: 10px 0 12px; padding: 0; list-style: none; }
+.rc-item {
+  display: flex; align-items: center; gap: 10px; padding: 10px 12px;
+  background: var(--card-bg); border: var(--card-bd); border-radius: var(--radius-s);
+  box-shadow: var(--shadow-s); cursor: grab; transition: border-color .15s ease, opacity .15s ease;
+}
+.rc-item.top { border-color: var(--hi); background: var(--hi-soft); }
+.rc-item.dragging { opacity: .4; cursor: grabbing; }
+.rc-item.drag-over { border-color: var(--hi); box-shadow: 0 0 0 2px var(--hi); }
+.rc-grip { color: var(--ink-dim); font-size: 1.05rem; letter-spacing: -2px; flex: none; cursor: grab; }
+.rc-item:active .rc-grip { cursor: grabbing; }
+.rc-ord {
+  width: 22px; height: 22px; flex: none; border-radius: 50%; background: var(--fill-3); color: var(--ink-soft);
+  font-family: 'JetBrains Mono', monospace; font-size: .72rem; font-weight: 700;
+  display: flex; align-items: center; justify-content: center;
+}
+.rc-item.top .rc-ord { background: var(--hi); color: #fff; }
+.rc-item .rc-cc {
+  font-family: 'JetBrains Mono', monospace; font-size: .74rem; font-weight: 700; text-transform: uppercase;
+  background: var(--fill-3); color: var(--ink); padding: 2px 7px; border-radius: 5px; flex: none;
+}
+.rc-name { font-weight: 600; font-size: .88rem; flex: none; white-space: nowrap; }
+.rc-sys { font-size: .74rem; color: var(--ink-soft); flex: none; white-space: nowrap; }
+.rc-scale { display: flex; gap: 4px; flex-wrap: wrap; margin-left: 2px; }
+.rc-scale span {
+  font-family: 'JetBrains Mono', monospace; font-size: .66rem; color: var(--ink-dim);
+  background: var(--fill-2); padding: 1px 6px; border-radius: 4px;
+}
+.rc-top-tag {
+  font-size: .66rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em;
+  color: var(--acc-ink); background: var(--hi-soft); padding: 2px 8px; border-radius: 20px; flex: none;
+  white-space: nowrap;
+}
+.rc-actions { display: flex; align-items: center; gap: 2px; margin-left: auto; flex: none; }
+.rc-btn {
+  width: 24px; height: 24px; display: flex; align-items: center; justify-content: center;
+  border-radius: 6px; color: var(--ink-soft); font-size: .74rem; cursor: pointer; user-select: none;
+  transition: background .15s ease, color .15s ease;
+}
+.rc-btn:hover { background: var(--fill-3); color: var(--ink); }
+.rc-btn.dis { opacity: .3; pointer-events: none; }
+.rc-btn.rm:hover { background: var(--bad-soft); color: var(--bad); }
+
+.rc-add { position: relative; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.rc-menu { display: none; position: absolute; top: calc(100% + 6px); left: 0; z-index: 30; min-width: 260px; max-height: 320px; overflow: auto; padding: 6px; }
+.rc-add.open .rc-menu { display: block; }
+.rc-mi { display: flex; align-items: center; gap: 10px; padding: 8px 9px; border-radius: 7px; cursor: pointer; transition: background .15s ease; }
+.rc-mi:hover { background: var(--fill-3); }
+.rc-mi .rc-name { flex: 1; }
+
 /* ---------- info note / callout ---------- */
 .note {
   font-family: 'Sora', sans-serif; font-size: .9rem; line-height: 1.45;
