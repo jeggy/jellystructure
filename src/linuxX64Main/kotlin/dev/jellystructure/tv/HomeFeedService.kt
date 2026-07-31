@@ -506,6 +506,7 @@ class HomeFeedService(
             year = year,
             genre = genres.firstOrNull(),
             rating = CertificationResolver.resolve(configStore.current.metadata.ageRatingCascade, certifications)?.code,
+            ageRating = CertificationResolver.normalizedAge(configStore.current.metadata.ageRatingCascade, configStore.current.metadata.ageRatingMap, certifications),
             posterUrl = RaviloImageUrl.poster(id),     // R133: keyed by MediaItem.id (on-disk artwork)
             backdropUrl = RaviloImageUrl.backdrop(id),
             progressPct = progressPct,

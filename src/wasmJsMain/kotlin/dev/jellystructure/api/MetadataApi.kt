@@ -51,6 +51,17 @@ data class CreateTagRequest(val name: String, val color: String = "#6b7280", val
 @Serializable
 data class UpdateTagRequest(val color: String? = null, val description: String? = null)
 
+// Phase 155 — one cascade-resolved certification code, its normalized age (null = unmapped, the
+// stepper defaults to 18) and how many items resolve to it.
+@Serializable
+data class AgeRatingRow(val code: String, val system: String? = null, val itemCount: Int, val age: Int? = null)
+
+@Serializable
+data class AgeRatingsResponse(val mapped: List<AgeRatingRow>, val unmapped: List<AgeRatingRow>, val cascadeConfigured: Boolean)
+
+@Serializable
+data class SetAgeRatingRequest(val code: String, val age: Int)
+
 object MetadataApi {
     suspend fun getStudios(sort: String = "count"): List<MetadataEntry>? = runCatching {
         httpClient.get("/api/metadata/studios?sort=$sort").body<List<MetadataEntry>>()
@@ -70,6 +81,21 @@ object MetadataApi {
 
     suspend fun getAllJsTags(): List<JsTag>? = runCatching {
         httpClient.get("/api/tags").body<List<JsTag>>()
+    }.getOrNull()
+
+    suspend fun getAgeRatings(): AgeRatingsResponse? = runCatching {
+        httpClient.get("/api/metadata/age-ratings").body<AgeRatingsResponse>()
+    }.getOrNull()
+
+    suspend fun setAgeRating(code: String, age: Int): Boolean = runCatching {
+        httpClient.post("/api/metadata/age-ratings") {
+            contentType(ContentType.Application.Json)
+            setBody(SetAgeRatingRequest(code, age))
+        }.status == HttpStatusCode.OK
+    }.getOrDefault(false)
+
+    suspend fun suggestAgeRatings(): AgeRatingsResponse? = runCatching {
+        httpClient.post("/api/metadata/age-ratings/suggest").body<AgeRatingsResponse>()
     }.getOrNull()
 
     suspend fun createTag(name: String, color: String, description: String): JsTag? = runCatching {

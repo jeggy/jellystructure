@@ -8,9 +8,7 @@
 > is ever labelled "G" or "TV-PG" again. The Ravilo-side consumer (the browse page's Maturity range
 > filter) is **Phase R187**.
 
-**Status:** Planned. Backend-reviewed 2026-07-31 (see addendum) — corrects the design tool's mistaken
-"NFO + TMDB" sourcing claim and its R134 citation, and resolves an ambiguity (raw per-country map vs.
-cascade-resolved code) that materially changes table size and storage choice.
+**Status:** Implemented 2026-07-31. See implementation addendum below.
 
 ## Goal
 An operator opens **Metadata → Age ratings**, sees every certification value present in the library
@@ -159,11 +157,48 @@ number. Additive and defaulted — old clients ignore it.
   orders/filters purely on it.
 
 ## Status
-Design-complete, **`Planned`**, backend-reviewed 2026-07-31. Design lives in `design/app/metadata.html`
-(+ `metadata.css`) — tab, ladder, stepper rows, unmapped triage (visual reference only; the stepper
-control itself has no shipped Kotlin equivalent yet). Consumer spec: **Phase R187**.
+Implemented 2026-07-31. Design lived in `design/app/metadata.html` (+ `metadata.css`) — tab, ladder,
+stepper rows, unmapped triage; the Kotlin implementation reuses those CSS classes verbatim (verified by
+rendering the real emitted markup against the real stylesheet). Consumer spec: **Phase R187**.
 `scripts/check-phases.sh` will flag it for a `STATUS.md` row — **STATUS.md is code-owned; do not
 add the row from the design side.** **Next admin number after this is 156.**
+
+## Implementation addendum (2026-07-31)
+
+- **FR-AGE1-1**: `MetadataConfig.ageRatingMap: Map<String, Int>` (`config/AppConfig.kt`), config.toml-
+  persisted as designed. Seed table is `CertificationResolver.AGE_SEED` (`resolver/CertificationResolver.kt`)
+  — hand-picked per-code ages matching this project's own live library sample exactly, covering every
+  code in `CertificationCatalog`'s 10 regional scales plus the common US TV Parental Guidelines codes.
+  No separate "US TV" catalog entry was added (the open decision the backend review flagged) — TV codes
+  are seeded generically in `AGE_SEED` without a region attribution, which is sufficient since the age
+  table doesn't need to know which region a code came from, only what it means.
+- **FR-AGE1-2**: `CertificationResolver.normalizedAge(cascade, ageRatingMap, certifications): Int` — pure
+  function, mirrors `resolve()`'s style, defaults to 18 whenever the cascade misses or the resolved code
+  has no map entry.
+- **FR-AGE1-3/4**: `GET/POST /api/metadata/age-ratings` + `POST /api/metadata/age-ratings/suggest`
+  (`server/routes/MetadataRoutes.kt`) — groups the live catalog by resolved code, splits mapped/unmapped,
+  attaches a best-effort source-region label. Returns `cascadeConfigured: Boolean` so the admin tab can
+  render the empty-cascade state explicitly (FR-AGE1-2's dependency note) instead of a silently blank
+  table. The admin tab (`ui/Metadata.kt`, "ages" slotted into `TAB_LABELS` after "tags") reuses the design
+  mockup's exact CSS classes (`.age-ladder`/`.age-chip`/`.age-table`/`.age-row`/`.mono-cert`/`.sysbadge`/
+  `.age-step`/`.st-btn`/`.unmapped-row`) — no new CSS was needed. Simplified from the mockup's client-side-
+  only ladder recompute to a full tab reload after each write (`loadTab(...)`, matching this file's
+  existing Trackers-tab idiom exactly) — same end result, less duplicated aggregation logic to keep in
+  sync between client and server.
+- **FR-AGE1-5**: `MediaCard.ageRating: Int` (`shared/.../tv/Models.kt`), defaulted to 18. Turned out
+  simpler than the backend review's "enumerate MovieDetailResponse/SeriesDetailResponse separately"
+  recommendation — `MovieDetail`/`SeriesDetail` both nest `card: MediaCard`, so adding the field once to
+  `MediaCard` reaches detail pages for free via `.card.ageRating`; no separate field needed on either
+  detail DTO. Wired into all three `MediaCard` construction sites (`BrowseService.kt`, `HomeFeedService.kt`,
+  `DetailService.kt`).
+- Cross-link to Settings' pre-existing "Age ratings" (region cascade) section added both directions (the
+  new tab's intro note links to Settings; the empty-cascade state links there too) per the naming-
+  collision note.
+- Verified: `compileKotlinLinuxX64`, `linuxX64Test` (full suite), `compileKotlinWasmJs` (admin),
+  `:ravilo-ui:compileDebugKotlinAndroid` + `:ravilo-ui:compileKotlinWasmJs` (Compose consumers of the
+  changed shared `MediaCard`) all pass. Admin tab markup rendered against the real `wf.css`/`app.css`/
+  `metadata.css` and screenshotted — matches the mockup. Not live-clicked in the running app (needs a
+  backend restart, operator-run) and Ravilo doesn't consume `ageRating` yet (that's R187).
 
 ## Backend review addendum (2026-07-31)
 

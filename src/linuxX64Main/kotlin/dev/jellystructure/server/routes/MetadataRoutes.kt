@@ -1,6 +1,7 @@
 package dev.jellystructure.server.routes
 
 import dev.jellystructure.server.respondCachedBytes
+import dev.jellystructure.config.AppConfig
 import dev.jellystructure.config.ConfigStore
 import dev.jellystructure.config.TrackerEntry
 import dev.jellystructure.media.JsTag
@@ -8,6 +9,8 @@ import dev.jellystructure.media.JsTagStore
 import dev.jellystructure.media.LogoDownloader
 import dev.jellystructure.media.MediaStore
 import dev.jellystructure.model.MediaKind
+import dev.jellystructure.resolver.CertificationCatalog
+import dev.jellystructure.resolver.CertificationResolver
 import dev.jellystructure.torrent.SeedingSnapshot
 import dev.jellystructure.torrent.TrackerResolver
 import io.ktor.http.ContentType
@@ -58,6 +61,17 @@ data class CreateTagRequest(val name: String, val color: String = "#6b7280", val
 @Serializable
 data class UpdateTagRequest(val color: String? = null, val description: String? = null)
 
+// Phase 155 — one cascade-resolved certification code, its (best-effort) source-region label, how many
+// items resolve to it, and its normalized age (null = unmapped; the client defaults its stepper to 18).
+@Serializable
+data class AgeRatingRow(val code: String, val system: String?, val itemCount: Int, val age: Int? = null)
+
+@Serializable
+data class AgeRatingsResponse(val mapped: List<AgeRatingRow>, val unmapped: List<AgeRatingRow>, val cascadeConfigured: Boolean)
+
+@Serializable
+data class SetAgeRatingRequest(val code: String, val age: Int)
+
 @Serializable
 data class TrackerWithStats(val name: String, val private: Boolean, val hosts: List<String>, val torrentCount: Int)
 
@@ -66,6 +80,41 @@ data class CreateTrackerRequest(val name: String, val private: Boolean = false, 
 
 @Serializable
 data class UpdateTrackerRequest(val name: String? = null, val private: Boolean? = null, val hosts: List<String>? = null)
+
+/** Phase 155 — groups the library by cascade-resolved certification code, splits into mapped/unmapped
+ *  against [dev.jellystructure.config.MetadataConfig.ageRatingMap], and attaches a best-effort
+ *  source-region label per code (the first region seen producing it — informational only, since the
+ *  same code can theoretically arrive from more than one cascade region across different items). An
+ *  empty cascade means every item resolves to no certification at all — reported via
+ *  [AgeRatingsResponse.cascadeConfigured] so the tab can show an explicit empty state instead of a
+ *  silently blank table (see the spec's FR-AGE1-2 dependency note). */
+private suspend fun computeAgeRatings(store: MediaStore, cfg: AppConfig?): AgeRatingsResponse {
+    val cascade = cfg?.metadata?.ageRatingCascade ?: emptyList()
+    val map = cfg?.metadata?.ageRatingMap ?: emptyMap()
+    if (cascade.isEmpty()) return AgeRatingsResponse(emptyList(), emptyList(), cascadeConfigured = false)
+
+    class Agg { var count = 0; val regions = mutableSetOf<String>() }
+    val byCode = mutableMapOf<String, Agg>()
+    for (item in store.allItems()) {
+        val resolved = CertificationResolver.resolve(cascade, item.certifications) ?: continue
+        val agg = byCode.getOrPut(resolved.code) { Agg() }
+        agg.count++
+        agg.regions += resolved.region
+    }
+    fun systemLabel(regions: Set<String>): String? =
+        regions.firstOrNull()?.let { CertificationCatalog.BY_CODE[it]?.system ?: it }
+
+    val (mappedCodes, unmappedCodes) = byCode.keys.partition { it in map }
+    val mapped = mappedCodes.map { code ->
+        val agg = byCode.getValue(code)
+        AgeRatingRow(code = code, system = systemLabel(agg.regions), itemCount = agg.count, age = map[code])
+    }.sortedWith(compareBy({ it.age ?: 0 }, { it.code.lowercase() }))
+    val unmapped = unmappedCodes.map { code ->
+        val agg = byCode.getValue(code)
+        AgeRatingRow(code = code, system = systemLabel(agg.regions), itemCount = agg.count, age = null)
+    }.sortedByDescending { it.itemCount }
+    return AgeRatingsResponse(mapped, unmapped, cascadeConfigured = true)
+}
 
 fun Route.metadataRoutes(store: MediaStore, tagStore: JsTagStore, logoDownloader: LogoDownloader, seedingSnapshot: SeedingSnapshot, configStore: ConfigStore? = null) {
     route("/metadata") {
@@ -251,6 +300,33 @@ fun Route.metadataRoutes(store: MediaStore, tagStore: JsTagStore, logoDownloader
                     cs.update(config.copy(trackers = config.trackers.filter { it.name != name }))
                     call.respond(HttpStatusCode.NoContent)
                 }
+            }
+        }
+
+        // Phase 155 — cascade-resolved certification -> normalized age 0-18. Keyed on the code
+        // CertificationResolver.resolve() already produces (this install's cascade, not per-region raw
+        // strings) — see the spec's Backend review addendum for why.
+        route("/age-ratings") {
+            get {
+                call.respond(computeAgeRatings(store, configStore?.current))
+            }
+            post {
+                val cs = configStore ?: return@post call.respond(HttpStatusCode.ServiceUnavailable)
+                val req = call.receive<SetAgeRatingRequest>()
+                if (req.code.isBlank()) return@post call.respond(HttpStatusCode.BadRequest, mapOf("error" to "code required"))
+                val age = req.age.coerceIn(0, 18)
+                val config = cs.current
+                cs.update(config.copy(metadata = config.metadata.copy(ageRatingMap = config.metadata.ageRatingMap + (req.code to age))))
+                call.respond(AgeRatingRow(code = req.code, system = null, itemCount = 0, age = age))
+            }
+            // FR-AGE1-3 "Suggest mappings" — fills every still-unmapped code from
+            // CertificationResolver.AGE_SEED; never overwrites an operator's existing explicit choice.
+            post("/suggest") {
+                val cs = configStore ?: return@post call.respond(HttpStatusCode.ServiceUnavailable)
+                val config = cs.current
+                val seeded = CertificationResolver.AGE_SEED.filterKeys { it !in config.metadata.ageRatingMap }
+                cs.update(config.copy(metadata = config.metadata.copy(ageRatingMap = config.metadata.ageRatingMap + seeded)))
+                call.respond(computeAgeRatings(store, cs.current))
             }
         }
     }
